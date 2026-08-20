@@ -1,11 +1,11 @@
 //! Boolean assembly: turn the arrangement engine's per-face output (`LocalFace`, named by
-//! `Node` seam triples) into result solids, and the mandatory coplanar-face cleaning pass.
+//! `NodeId` seam triples) into result solids, and the mandatory coplanar-face cleaning pass.
 //!
 //! The public [`boolean`] entry lives here and delegates the cell-complex work to
 //! [`crate::arrangement`]; the engine calls back into [`assemble_fuse_cut`] and
 //! [`unify_coplanar_faces`] to build and clean the shells (a legal module cycle).
 
-use crate::combinatorics;
+use crate::combinatorics::{self, NodeId};
 use crate::planes::{ClassIx, WorkingPlane, uf_find};
 use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
@@ -283,7 +283,7 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
     let mut parent: Vec<usize> = (0..faces.len()).collect();
     // Which faces use each ring edge. A count other than two is not a contact between neighbours:
     // one is a dangling edge and more is a pinch, and both are the edge-use guard's to name.
-    let mut users: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
+    let mut users: HashMap<(NodeId, NodeId), Vec<usize>> = HashMap::new();
     for (i, lf) in faces.iter().enumerate() {
         for ring in rings_of(lf) {
             let k = ring.len();
@@ -342,7 +342,7 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
 /// A result solid is a *material* component plus the cavity components nested in it, and that
 /// grouping is the unit [`reconstruct`] mints vertex and edge handles per: two faces in one group
 /// may share a handle, two faces in different groups never do. Every question asked here is asked
-/// of `LocalFace`/`Node`/`jd` alone — none of it reads the arena — which is what lets it run first.
+/// of `LocalFace`/`NodeId`/`jd` alone — none of it reads the arena — which is what lets it run first.
 ///
 /// ★★ **The group, not the component, is the right unit.** A cavity that touches its host's outer
 /// shell is one solid with a pinch, and a pinch is counted on *handles* ([`check_result_topology`],
@@ -427,7 +427,7 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
             .iter()
             .flat_map(|lf| {
                 lf.poly_rings()
-                    .flat_map(|r| r.iter().map(|Node::Seam(t)| *t))
+                    .flat_map(|r| r.iter().map(|NodeId::ThreePlane(t)| *t))
             })
             .collect()
     };
@@ -600,14 +600,6 @@ pub(crate) struct SeamVertex {
     pub(crate) tol: f64,
 }
 
-/// A node in a reconstructed face loop: the sorted plane triple naming a seam vertex.
-/// `Eq`/`Hash` give identity dedup so an A-piece and a B-piece that meet at a seam node
-/// share one result vertex/edge; `Ord` gives the deterministic node order replay needs.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub(crate) enum Node {
-    Seam([usize; 3]), // sorted triple (key into the seam map)
-}
-
 /// One ring of a result face: its nodes, and **the plane each edge rides**.
 ///
 /// ★ **The walls are carried, not derived.** Reading an edge's supporting plane back out of its two
@@ -619,7 +611,7 @@ pub(crate) enum Node {
 /// Derefs to its nodes, so the many places that only walk the ring read unchanged.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Ring {
-    pub(crate) nodes: Vec<Node>,
+    pub(crate) nodes: Vec<NodeId>,
     /// `walls[i]` is the plane class the edge `nodes[i] -> nodes[i+1]` rides.
     pub(crate) walls: Vec<usize>,
 }
@@ -629,11 +621,11 @@ impl Ring {
     /// every vertex is a clean three-plane point so "the class the two names share besides `p`" is
     /// well defined. Production never derives; see the type's note.
     #[cfg(test)]
-    pub(crate) fn from_clean_names(p: usize, nodes: Vec<Node>) -> Ring {
+    pub(crate) fn from_clean_names(p: usize, nodes: Vec<NodeId>) -> Ring {
         let k = nodes.len();
         let walls = (0..k)
             .map(|i| {
-                let (Node::Seam(a), Node::Seam(b)) = (nodes[i], nodes[(i + 1) % k]);
+                let (NodeId::ThreePlane(a), NodeId::ThreePlane(b)) = (nodes[i], nodes[(i + 1) % k]);
                 a.iter()
                     .copied()
                     .find(|&c| c != p && b.contains(&c))
@@ -645,14 +637,14 @@ impl Ring {
 }
 
 impl std::ops::Deref for Ring {
-    type Target = [Node];
-    fn deref(&self) -> &[Node] {
+    type Target = [NodeId];
+    fn deref(&self) -> &[NodeId] {
         &self.nodes
     }
 }
 
 impl Ring {
-    pub(crate) fn new(nodes: Vec<Node>, walls: Vec<usize>) -> Ring {
+    pub(crate) fn new(nodes: Vec<NodeId>, walls: Vec<usize>) -> Ring {
         debug_assert_eq!(nodes.len(), walls.len(), "one wall per edge");
         Ring { nodes, walls }
     }
@@ -864,7 +856,8 @@ fn self_touch_reject(
             for r in rings_of(lf) {
                 let k = r.nodes.len();
                 for i in 0..k {
-                    let (Node::Seam(u), Node::Seam(v)) = (r.nodes[i], r.nodes[(i + 1) % k]);
+                    let (NodeId::ThreePlane(u), NodeId::ThreePlane(v)) =
+                        (r.nodes[i], r.nodes[(i + 1) % k]);
                     owners
                         .entry(if u < v { [u, v] } else { [v, u] })
                         .or_default()
@@ -1019,7 +1012,7 @@ fn reconstruct(
     // its two edges at that corner.** Those three are result faces by construction, so
     // `defs_are_remappable` holds by construction — and their meet is exactly this vertex, since
     // the two edge lines through it are distinct (checked, not assumed — see the corner guards).
-    let mut edge_faces: HashMap<(usize, (Node, Node)), Vec<usize>> = HashMap::new();
+    let mut edge_faces: HashMap<(usize, (NodeId, NodeId)), Vec<usize>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         for ring in lf.poly_rings() {
             let k = ring.len();
@@ -1034,7 +1027,7 @@ fn reconstruct(
     // The plane on the other side of an edge, **within this solid**. `None` rather than an error:
     // a corner this cannot
     // resolve is one to skip, and the edge-use guard further down is what judges the face set.
-    let far_plane = |g: usize, a: Node, b: Node, own: usize| -> Option<usize> {
+    let far_plane = |g: usize, a: NodeId, b: NodeId, own: usize| -> Option<usize> {
         let mut others = edge_faces
             .get(&(g, norm_edge(a, b)))?
             .iter()
@@ -1043,7 +1036,7 @@ fn reconstruct(
         let o = others.next()?;
         others.all(|x| x == o).then_some(o)
     };
-    let mut def_triple: HashMap<(usize, Node), [usize; 3]> = HashMap::new();
+    let mut def_triple: HashMap<(usize, NodeId), [usize; 3]> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
         for ring in lf.poly_rings() {
@@ -1085,14 +1078,14 @@ fn reconstruct(
     }
 
     // Vertices (deterministic: first appearance across faces in order).
-    let mut vh: HashMap<(usize, Node), Handle<Vertex>> = HashMap::new();
+    let mut vh: HashMap<(usize, NodeId), Handle<Vertex>> = HashMap::new();
     let mut node_handle =
-        |model: &mut Model, g: usize, node: Node| -> Result<Handle<Vertex>, BoolError> {
+        |model: &mut Model, g: usize, node: NodeId| -> Result<Handle<Vertex>, BoolError> {
             if let Some(&h) = vh.get(&(g, node)) {
                 return Ok(h);
             }
             let handle = match node {
-                Node::Seam(triple) => {
+                NodeId::ThreePlane(triple) => {
                     // A face references a seam node whose triple was not welded into `seam` — a
                     // reconstruction dropped a crossing. Reject (never panic): an unmodeled flush
                     // topology must decline honestly, not abort the kernel (DNA).
@@ -1520,7 +1513,7 @@ fn reconstruct(
 }
 
 /// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.
-fn norm_edge(a: Node, b: Node) -> (Node, Node) {
+fn norm_edge(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
@@ -1565,7 +1558,7 @@ pub(crate) fn unify_coplanar_faces(
 
     // Edge-connected components within a group.
     let mut comp: Vec<usize> = (0..n).collect();
-    let mut carriers: HashMap<(Node, Node), Vec<usize>> = HashMap::new();
+    let mut carriers: HashMap<(NodeId, NodeId), Vec<usize>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         // Holes count here too: a tool cap sitting flush inside another face touches it only
         // along that hole, so leaving `inner` out would put the two in different components and
@@ -1640,12 +1633,12 @@ pub(crate) fn unify_coplanar_faces(
 }
 
 /// A ring's directed edges, `i → i+1` around.
-fn ring_edges(ring: &[Node]) -> impl Iterator<Item = (Node, Node)> + '_ {
+fn ring_edges(ring: &[NodeId]) -> impl Iterator<Item = (NodeId, NodeId)> + '_ {
     (0..ring.len()).map(move |i| (ring[i], ring[(i + 1) % ring.len()]))
 }
 
 /// A ring's directed edges **with the wall each rides**.
-fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((Node, Node), usize)> + '_ {
+fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((NodeId, NodeId), usize)> + '_ {
     (0..ring.len()).map(move |i| {
         (
             (ring.nodes[i], ring.nodes[(i + 1) % ring.len()]),
@@ -1655,8 +1648,8 @@ fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((Node, Node), usize)>
 }
 
 /// The `[usize; 3]` form a ring's nodes carry, for the exact predicates.
-fn seam_ring(ring: &[Node]) -> Vec<[usize; 3]> {
-    ring.iter().map(|Node::Seam(t)| *t).collect()
+fn seam_ring(ring: &[NodeId]) -> Vec<[usize; 3]> {
+    ring.iter().map(|NodeId::ThreePlane(t)| *t).collect()
 }
 
 /// An outer ring with the holes that belong to it — what one merged region looks like before it
@@ -1679,7 +1672,7 @@ fn merge_component(
     // 1. Collect directed edges **with their walls**. A repeat in the same direction means two
     //    faces claim the same side.
     // One map, `(count, wall)` — the wall rides along rather than in a second table.
-    let mut dirs: HashMap<(Node, Node), (usize, usize)> = HashMap::new();
+    let mut dirs: HashMap<(NodeId, NodeId), (usize, usize)> = HashMap::new();
     for lf in group {
         for ring in lf.poly_rings() {
             for (e, wall) in ring_edges_walled(ring) {
@@ -1693,7 +1686,7 @@ fn merge_component(
     }
     // 2. An edge carried in both directions is interior — it separates nothing. Anything carried
     //    three or more times (either direction) is non-manifold in the plane.
-    let mut undirected: HashMap<(Node, Node), usize> = HashMap::new();
+    let mut undirected: HashMap<(NodeId, NodeId), usize> = HashMap::new();
     for &(a, b) in dirs.keys() {
         *undirected.entry(norm_edge(a, b)).or_insert(0) += 1;
     }
@@ -1704,7 +1697,7 @@ fn merge_component(
     //    point and the cycles are not determined — the merged contour would be a figure-8:
     //    nothing to re-thread, so the merge abstains (see the function doc). Which node
     //    collided is irrelevant to the outcome, so the first collision answers.
-    let mut next: HashMap<Node, Node> = HashMap::new();
+    let mut next: HashMap<NodeId, NodeId> = HashMap::new();
     for &(a, b) in dirs.keys() {
         if dirs.contains_key(&(b, a)) {
             continue; // interior
@@ -1713,9 +1706,9 @@ fn merge_component(
             return Ok(None);
         }
     }
-    let mut starts: Vec<Node> = next.keys().copied().collect();
+    let mut starts: Vec<NodeId> = next.keys().copied().collect();
     starts.sort_unstable();
-    let mut seen: HashSet<Node> = HashSet::new();
+    let mut seen: HashSet<NodeId> = HashSet::new();
     let mut cycles: Vec<Ring> = Vec::new();
     for start in starts {
         if seen.contains(&start) {
@@ -1770,7 +1763,7 @@ fn merge_component(
         // about that vertex, and settling for `nodes[0]` is what lost whole bands of rotation
         // angles here. `ring_in_ring` holds that retry now, for this caller and the two in the
         // arrangement alike.
-        let probes: Vec<[usize; 3]> = hole.nodes.iter().map(|Node::Seam(t)| *t).collect();
+        let probes: Vec<[usize; 3]> = hole.nodes.iter().map(|NodeId::ThreePlane(t)| *t).collect();
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
             let ring = outer.edges(jd, wc)?;
@@ -1806,9 +1799,9 @@ fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // Per node: its neighbours, and whether any face bends there. `first_wall` remembers one wall
     // per `(node, face)` and `bent` records the first disagreement — flat maps, because a nested
     // one per node costs more than the whole pass is worth (measured: 4% of a fold).
-    let mut nbrs: HashMap<Node, HashSet<Node>> = HashMap::new();
-    let mut first_wall: HashMap<(Node, usize), usize> = HashMap::new();
-    let mut bent: HashSet<Node> = HashSet::new();
+    let mut nbrs: HashMap<NodeId, HashSet<NodeId>> = HashMap::new();
+    let mut first_wall: HashMap<(NodeId, usize), usize> = HashMap::new();
+    let mut bent: HashSet<NodeId> = HashSet::new();
     for &fi in which {
         let lf = &out[fi];
         for ring in lf.poly_rings() {
@@ -1832,7 +1825,7 @@ fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
             }
         }
     }
-    let mut drop: HashSet<Node> = HashSet::new();
+    let mut drop: HashSet<NodeId> = HashSet::new();
     for (&node, ns) in &nbrs {
         // Exactly two neighbours, and on **every** face it appears in the two edges ride one wall.
         if ns.len() == 2 && !bent.contains(&node) {

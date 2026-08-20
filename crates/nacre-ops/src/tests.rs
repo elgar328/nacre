@@ -13,6 +13,7 @@ fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
         other => panic!("stating a plane: {other:?}"),
     }
 }
+use crate::combinatorics::NodeId;
 use crate::tolerant::Judge;
 use crate::transform::transform;
 use crate::{boolean::*, ops::*, planes::*};
@@ -4201,7 +4202,7 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
 
 /// A `FaceInfo` for the `unify_coplanar_faces` tests, which read none of its geometry; the rest is a
 /// valid-but-unreferenced dummy (`surf`/`face`/`plane` are never dereferenced there).
-fn face(plane_idx: usize, nodes: Vec<Node>, inner: Vec<Vec<Node>>) -> LocalFace {
+fn face(plane_idx: usize, nodes: Vec<NodeId>, inner: Vec<Vec<NodeId>>) -> LocalFace {
     LocalFace {
         surf: crate::planes::ClassIx::Plane(plane_idx),
         outer: crate::boolean::Bound::Ring(crate::boolean::Ring::from_clean_names(
@@ -4237,7 +4238,7 @@ fn unify_merges_a_coplanar_chain() {
         mk_axis_plane(&mut m, 1, 1.0, true),  // 6: y=1
     ];
     let _canon: Vec<usize> = (0..p.len()).collect();
-    let v = |x: usize, y: usize| Node::Seam([0, x, y]); // sorted: class, x-plane, y-plane
+    let v = |x: usize, y: usize| NodeId::ThreePlane([0, x, y]); // sorted: class, x-plane, y-plane
     let (c00, c10, c20, c30) = (v(1, 5), v(2, 5), v(3, 5), v(4, 5));
     let (c01, c11, c21, c31) = (v(1, 6), v(2, 6), v(3, 6), v(4, 6));
     let faces = vec![
@@ -4265,8 +4266,9 @@ fn an_overhang_fuse_keeps_the_two_z1_caps_separate() {
     // keeps them apart.
     //
     // This replaces two retired tests (`unify_keeps_opposite_normal_coplanar`,
-    // `unify_keeps_holed_faces`) that built `Node::Orig` faces to exercise a passthrough the
-    // arrangement never triggers — it emits all-`Seam`. The real invariant is exercised here on
+    // `unify_keeps_holed_faces`) that built pass-through faces (a retired second node variant) to
+    // exercise a passthrough the arrangement never triggers — every node it emits is a three-plane
+    // one. The real invariant is exercised here on
     // the production path, in the default `cargo test` run: `overhang_fuse_then_cut_matches_occt`
     // proves it against OCCT but is `#[ignore]`, so this hand-computed volume is the non-ignored
     // guard. A wrong merge collapses the topology — the volume shifts or `validate` speaks.
@@ -4318,7 +4320,7 @@ fn a_hole_filled_by_two_faces_still_merges() {
         mk_axis_plane(&mut m, 1, 3.0, true),  // 9: y=3
     ];
     let _canon: Vec<usize> = (0..p.len()).collect();
-    let v = |x: usize, y: usize| Node::Seam([0, x, y]);
+    let v = |x: usize, y: usize| NodeId::ThreePlane([0, x, y]);
     let (o00, o30, o33, o03) = (v(1, 6), v(5, 6), v(5, 9), v(1, 9));
     let (h11, h12, h22, h21) = (v(2, 7), v(2, 8), v(4, 8), v(4, 7));
     let (m12, m11) = (v(3, 8), v(3, 7)); // the split points on the hole's top and bottom
@@ -4359,16 +4361,16 @@ fn unify_keeps_a_vertex_that_is_a_corner_elsewhere() {
     ];
     let _canon: Vec<usize> = (0..p.len()).collect();
     let (v000, v100, v200) = (
-        Node::Seam([0, 1, 4]),
-        Node::Seam([0, 2, 4]),
-        Node::Seam([0, 3, 4]),
+        NodeId::ThreePlane([0, 1, 4]),
+        NodeId::ThreePlane([0, 2, 4]),
+        NodeId::ThreePlane([0, 3, 4]),
     );
     let (v010, v110, v210) = (
-        Node::Seam([0, 1, 5]),
-        Node::Seam([0, 2, 5]),
-        Node::Seam([0, 3, 5]),
+        NodeId::ThreePlane([0, 1, 5]),
+        NodeId::ThreePlane([0, 2, 5]),
+        NodeId::ThreePlane([0, 3, 5]),
     );
-    let (v101, v201) = (Node::Seam([2, 4, 6]), Node::Seam([3, 4, 6]));
+    let (v101, v201) = (NodeId::ThreePlane([2, 4, 6]), NodeId::ThreePlane([3, 4, 6]));
     let faces = vec![
         face(0, vec![v000, v100, v110, v010], vec![]),
         face(0, vec![v100, v200, v210, v110], vec![]),

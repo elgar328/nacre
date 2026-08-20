@@ -16,7 +16,8 @@
 //! module existed. **So a missed proof costs time and nothing else, and no tolerance enters** —
 //! the same reason the kernel is allowed to have a fast path at all.
 
-use crate::boolean::{LocalFace, Node};
+use crate::boolean::LocalFace;
+use crate::combinatorics::NodeId;
 use crate::planes::{ClassIx, FaceRow, SolidSide, WorkingPlane};
 use crate::{BoolKind, he_start};
 use nacre_cip::{WitnessPoint, orient3d_filter};
@@ -297,8 +298,8 @@ pub(crate) type CanonFace = (usize, bool, Vec<[usize; 3]>, Vec<Vec<[usize; 3]>>)
 
 #[cfg(any(debug_assertions, test))]
 pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
-    let ring = |r: &[Node]| -> Vec<[usize; 3]> {
-        let t: Vec<[usize; 3]> = r.iter().map(|Node::Seam(t)| *t).collect();
+    let ring = |r: &[NodeId]| -> Vec<[usize; 3]> {
+        let t: Vec<[usize; 3]> = r.iter().map(|NodeId::ThreePlane(t)| *t).collect();
         match t.iter().enumerate().min_by_key(|(_, v)| **v) {
             Some((i, _)) => t[i..].iter().chain(&t[..i]).copied().collect(),
             None => t,
@@ -367,10 +368,10 @@ pub(crate) fn pass_through(
         }
         let same = d > 0.0;
         let ring = |lp: &nacre_topo::Loop| -> Option<crate::boolean::Ring> {
-            let mut r: Vec<Node> = lp
+            let mut r: Vec<NodeId> = lp
                 .half_edges
                 .iter()
-                .map(|&he| Some(Node::Seam(canon(vc.triple(he_start(model, he))?))))
+                .map(|&he| Some(NodeId::ThreePlane(canon(vc.triple(he_start(model, he))?))))
                 .collect::<Option<_>>()?;
             // ★ The wall of the edge leaving vertex `i` is the plane of the face on the other side
             // of that edge — carried, not derived (see `boolean::Ring`).

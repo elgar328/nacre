@@ -78,6 +78,23 @@ pub(crate) fn order_along(
     jd.orient3d(p, q, i, j) * dir_sign(jd, p, q, j)
 }
 
+/// **A vertex's identity** — the sorted plane triple that names it.
+///
+/// `Eq`/`Hash` give identity dedup so an A-piece and a B-piece that meet at a seam node share one
+/// result vertex/edge; `Ord` gives the deterministic node order replay needs — and it is the bare
+/// triple's lexicographic order, so every "smallest name wins" rule reads unchanged.
+///
+/// This was `boolean::Node`, spoken only by the assembler. It lives here because the arrangement
+/// names the same vertices, and the variant is spelled like [`nacre_topo::VertexDef::ThreePlane`]
+/// so the arrangement, the assembler and the topology store call the thing by one name.
+///
+/// Read it with `match`, never `let`-`else`: a new variant lights up the first and falls silently
+/// into the second — a defect this repository has already had.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(crate) enum NodeId {
+    ThreePlane([usize; 3]), // sorted triple (key into the seam map)
+}
+
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
 /// recovered from the two endpoint names.
 ///

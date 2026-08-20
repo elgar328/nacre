@@ -2529,7 +2529,7 @@ pub(crate) fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
 /// Only `+1` cells are hosts — a `-1` cell is either a hole (emitted as some host's inner ring) or
 /// the void root — so `-1` cells are skipped, never emitted as their own face.
 ///
-/// **Output contract:** every ring vertex is a `Node::Seam` triple, including triples that coincide
+/// **Output contract:** every ring vertex is a [`combinatorics::NodeId`] triple, including triples that coincide
 /// with an original A/B vertex (a cap corner); the weld table canonicalizes such a W-triple onto
 /// the same result vertex, or `assemble_fuse_cut`'s manifold guard rejects. This brick emits
 /// all-`Seam`; the reconciliation and assembly are later.
@@ -2545,8 +2545,9 @@ fn emit_faces(
     holes: &HashMap<usize, Vec<usize>>,
 ) -> (Vec<LocalFace>, Vec<(usize, Label)>) {
     let planes = jd.planes;
-    // `crate::boolean::Node` is lib.rs's arrangement node enum; the local `Node` (this module's
-    // three-valued-scan struct) shadows it here.
+    // [`combinatorics::NodeId`] is the vertex-identity enum; the local `Node` (this module's
+    // three-valued-scan struct, a *different* type that happens to share the word) shadows the
+    // glob-imported name here, which is why the identity is always spelled out in full.
     // ★ The wall travels with the ring. A half-edge was *told* which plane its edge rides, and
     // that is the one fact a name cannot always give back (see `boolean::Ring`). A circle cell
     // (pseudo-half-edge past the segment range) has no nodes — its boundary is the cylinder
@@ -2562,7 +2563,7 @@ fn emit_faces(
         crate::boolean::Bound::Ring(crate::boolean::Ring::new(
             cell.half_edges
                 .iter()
-                .map(|&he| crate::boolean::Node::Seam(segs[he / 2].end[he % 2]))
+                .map(|&he| combinatorics::NodeId::ThreePlane(segs[he / 2].end[he % 2]))
                 .collect(),
             cell.half_edges
                 .iter()
@@ -3180,7 +3181,7 @@ pub(crate) fn frame_audit(
 /// engine the public `crate::boolean` delegates to.
 ///
 /// Vertex welding is automatic: every result vertex is a sorted triple of three canon plane
-/// classes (`canon3`), so a corner shared by three planes gets one identical `Node::Seam`
+/// classes (`canon3`), so a corner shared by three planes gets one identical [`combinatorics::NodeId`]
 /// regardless of which plane was the cut class W — `assemble_fuse_cut` welds them to one vertex.
 /// A four-plane concurrency would name it inconsistently, which is what the alias table settles
 /// and what `boolean::Ring`'s carried walls keep out of the naming in the first place.
@@ -3351,7 +3352,7 @@ pub(crate) fn boolean(
             for f in &faces {
                 for loop_ in f.poly_rings() {
                     for node in loop_.iter() {
-                        let crate::boolean::Node::Seam(t) = node;
+                        let combinatorics::NodeId::ThreePlane(t) = node;
                         if seen.insert(*t, ()).is_some() {
                             continue;
                         }
@@ -4477,7 +4478,7 @@ mod tests {
                 .expect_ring()
                 .iter()
                 .map(|n| match n {
-                    crate::boolean::Node::Seam(t) => pt(*t, &jd),
+                    combinatorics::NodeId::ThreePlane(t) => pt(*t, &jd),
                 })
                 .collect();
             [
@@ -4536,7 +4537,7 @@ mod tests {
                 .outer
                 .expect_ring()
                 .iter()
-                .map(|crate::boolean::Node::Seam(t)| *t)
+                .map(|combinatorics::NodeId::ThreePlane(t)| *t)
                 .collect();
             assert!(ring.len() >= 3);
             assert_eq!(
@@ -4575,7 +4576,7 @@ mod tests {
                 .outer
                 .expect_ring()
                 .iter()
-                .map(|crate::boolean::Node::Seam(t)| *t)
+                .map(|combinatorics::NodeId::ThreePlane(t)| *t)
                 .collect();
             for w in ns
                 .windows(2)
@@ -4671,7 +4672,7 @@ mod tests {
                 .expect_ring()
                 .iter()
                 .map(|n| match n {
-                    crate::boolean::Node::Seam(t) => *t,
+                    combinatorics::NodeId::ThreePlane(t) => *t,
                 })
                 .collect();
             for w in ns
@@ -4884,10 +4885,10 @@ mod tests {
         );
 
         // Every undirected edge across outer + inner rings is used exactly twice (closed shell).
-        let triples = |ns: &[crate::boolean::Node]| -> Vec<[usize; 3]> {
+        let triples = |ns: &[combinatorics::NodeId]| -> Vec<[usize; 3]> {
             ns.iter()
                 .map(|n| match n {
-                    crate::boolean::Node::Seam(t) => *t,
+                    combinatorics::NodeId::ThreePlane(t) => *t,
                 })
                 .collect()
         };
@@ -4991,10 +4992,10 @@ mod tests {
         );
 
         // Every undirected edge across outer + inner rings is used exactly twice (closed shell).
-        let triples = |ns: &[crate::boolean::Node]| -> Vec<[usize; 3]> {
+        let triples = |ns: &[combinatorics::NodeId]| -> Vec<[usize; 3]> {
             ns.iter()
                 .map(|n| match n {
-                    crate::boolean::Node::Seam(t) => *t,
+                    combinatorics::NodeId::ThreePlane(t) => *t,
                 })
                 .collect()
         };
@@ -5272,10 +5273,10 @@ mod tests {
             2,
             "the two annular caps survive rotation"
         );
-        let triples = |ns: &[crate::boolean::Node]| -> Vec<[usize; 3]> {
+        let triples = |ns: &[combinatorics::NodeId]| -> Vec<[usize; 3]> {
             ns.iter()
                 .map(|n| match n {
-                    crate::boolean::Node::Seam(t) => *t,
+                    combinatorics::NodeId::ThreePlane(t) => *t,
                 })
                 .collect()
         };
