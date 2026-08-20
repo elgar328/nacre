@@ -249,14 +249,53 @@ fn turn_between(
     arriving: &RingEdge,
     leaving: &RingEdge,
 ) -> Result<i8, BoolError> {
-    let (a, b) = (arriving.wall, leaving.wall);
     let sa = edge_sign(jd, p, arriving)?;
     let sb = edge_sign(jd, p, leaving)?;
-    let det = jd.plane_pair_dir_sign(p, a, b);
-    if det == 0 {
-        return Err(reject(RejectReason::StraightAngle));
+    match turn(jd, p, (arriving.wall, sa), (leaving.wall, sb)) {
+        0 => Err(reject(RejectReason::StraightAngle)),
+        t => Ok(t),
     }
-    Ok(sa * sb * det * jd.planes[p].frame_sign)
+}
+
+/// **The signed turn between two directions at a point of plane `p`**, about that face's outward
+/// normal — `+1` left, `-1` right, `0` collinear. The one place the sign is made.
+///
+/// Each direction is given as `(wall, dir)`: the plane it rides beside `p`, and [`edge_dir`]'s
+/// sign along `n_p × n_wall`. The identity that makes it a single product is
+/// `((n_p×n_a) × (n_p×n_b))·n_p = ((n_p×n_a)·n_b)·|n_p|²`, so the turn's sign is
+/// `plane_pair_dir_sign(p, a, b)` corrected by the two travel signs and by `p`'s frame — no point
+/// is materialized and no coordinate is read.
+///
+/// ★★ **`0` comes back as `0`, on purpose.** Its two consumers want different things from it:
+/// `turn_between` calls it a [`RejectReason::StraightAngle`], and `arrangement`'s `angular_order`
+/// buckets it as the `0`/π pole and only rejects a *pair* of them. Deciding here would hand one
+/// caller a rule that is not its own. By the same test, [`edge_dir`]'s zero *does* live in the
+/// atom — both of its callers answer it identically.
+///
+/// ★★ **What arcs will widen, and what they will not.** A circle's tangent rides no plane, so an
+/// arc arrives as a direction this signature cannot spell: what grows is the **input type**, not
+/// the skeleton around it — the identity above becomes a cross product with one quadratic factor,
+/// whose sign closes over `QuadVal::sign` (the tangent `m × (p − o)` is *linear* in the branch
+/// point, so no biquadratic is needed; two tangents at one vertex would be quadratic, and that is
+/// two circles meeting, already refused as `CylinderPairContact`).
+///
+/// ★★★ **What catches a mistake here, measured.** Negating this product fails **83** tests — but
+/// *not* `arrangement`'s `angular_order_…_ccw` nor `a_reflex_node_turns_against_its_ring`, the two
+/// that look like its unit goldens. Those build their fixture's ring with the same rule they then
+/// read, so a global sign error flips twice and cancels: they pin relative structure, not the
+/// convention. The convention is pinned end-to-end (volumes, cavities, nesting) — so a "tidy-up"
+/// that drops the `frame_sign` factor will come back red, just not where a reader would look
+/// first. (Dropping only `frame_sign` fails 11, all end-to-end: the corpus does reach `Reversed`
+/// faces, but no unit fixture does.)
+///
+/// ★★★ **Two more places read the direction's representation, and they are not this atom** — a
+/// reader who widens only the input type here will miss them:
+/// - the π pole in `angular_order` (`same wall, opposite sign`), which for arcs becomes "same
+///   circle, opposite tangent";
+/// - the collinearity walk-back in [`loop_winding`] (`det == 0`), which becomes "are the tangents
+///   parallel".
+pub(crate) fn turn(jd: &Judge<'_, WorkingPlane>, p: usize, a: (usize, i8), b: (usize, i8)) -> i8 {
+    a.1 * b.1 * jd.plane_pair_dir_sign(p, a.0, b.0) * jd.planes[p].frame_sign
 }
 
 /// Face `f`'s outer-loop vertices as three-plane triples: `f`'s own plane, and the

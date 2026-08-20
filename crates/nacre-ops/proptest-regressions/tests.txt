@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e23360044f2e55abb23318494f3fd364547cb5ff927074411a979fc50a323d91 # shrinks to nx = 0.0, ny = 0.0
+cc a3f006e4d680177c7a64fa11f5f83a2d81e08bd7d97b818654f2ecabcf62d6bc # shrinks to nx = 0.0, ny = 0.0, nz = 0.4259236782732932
+cc b4522c82a8fc99dd4501263b37a6963e122b2fb52ea05068c2669afcc19a965a # shrinks to sx = 0.5, sy = 0.5, sz = 0.5, h = 0.05, dist = 0.1
+cc 0c1514cf6d470e480cc2eeb12986b20ba0e4fa4404f46f31f6db0e1495d4c851 # shrinks to sx = 0.5, sy = 0.5, sz = 1.0, h = 0.05, dist = 0.1
+cc 6382ca7eea06cf623b76f1e4dba8a6fb469051c3acdcdd19212c33350ee5a576 # shrinks to amin = [0.0, 0.0, 0.0], aext = [1.0, 1.0, 1.0], t = [0.15, 0.15, 0.15], s = [0.3, 0.3, 0.3]
+cc 6bc32894dffb681adc58581d0c538f2619a789a057efe60e9807cab8ef986b3c # shrinks to amin = [0.0, 0.0, 0.0], aext = [1.0, 1.0, 1.0], t = [0.05, 0.05, 0.05], bext = [1.0, 1.0, 1.0]

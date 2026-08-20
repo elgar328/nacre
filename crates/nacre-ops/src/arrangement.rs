@@ -1512,11 +1512,10 @@ fn angular_order(
     w: usize,
     edges: &[(usize, i8)],
 ) -> Result<Vec<usize>, BoolError> {
-    let planes = jd.planes;
-    let os = planes[w].frame_sign;
-    let cross = |i: usize, j: usize| -> i8 {
-        edges[i].1 * edges[j].1 * jd.plane_pair_dir_sign(w, edges[i].0, edges[j].0) * os
-    };
+    // ★ The same atom the winding reads (`combinatorics::turn`), which is what keeps the two from
+    // drifting; the `0` it returns is *this* function's to interpret — here it is the `0`/π pole,
+    // not the straight angle a ring's turn would reject.
+    let cross = |i: usize, j: usize| -> i8 { combinatorics::turn(jd, w, edges[i], edges[j]) };
     let (mut zero, mut pos, mut pole, mut neg) = (vec![], vec![], vec![], vec![]);
     for i in 0..edges.len() {
         match cross(0, i) {
