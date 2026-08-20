@@ -179,15 +179,37 @@ pub(crate) fn ring_edges_with_walls(
         .collect()
 }
 
-/// `+1` when the ring's edge `i → i+1` runs along `d = n_P × n_Q`, `-1` against it.
-fn edge_sign(jd: &Judge<'_, WorkingPlane>, p: usize, e: &RingEdge) -> Result<i8, BoolError> {
-    // `order_along` is `sign((V_i − V_j)·d)`, so `-1` — `V_i` precedes `V_j` — is the edge
-    // running along `+d`. Recomputed rather than remembered from the assembly walk.
-    match order_along(jd, p, e.wall, e.from_h, e.to_h) {
+/// **`+1` when an edge on plane `p` runs along `d = n_p × n_wall`, `-1` against it** — the one
+/// place that sign is made.
+///
+/// ★★ **It used to be made twice, two different ways.** `order_along` is `sign((V_i − V_j)·d)`, so
+/// the direction of travel is either `−order_along(from, to)` (invert the result) or
+/// `order_along(to, from)` (swap the arguments) — the same value by the antisymmetry of a
+/// difference, and this file spelled it the first way while `arrangement`'s `angular_order`
+/// spelled it the second, inline. They agreed only because two independent inversions happened to
+/// cancel; a change to `order_along`'s convention would have moved one and not the other.
+///
+/// ★ **The zero policy lives here, and that is not a matter of taste**: both callers answered a
+/// coincidence the same way (`CoincidentNodes`). Where two consumers want *different* answers —
+/// the turn's zero, which is a rejection to one and a bucket to the other — the policy stays with
+/// them and only the sign is shared (see [`turn`]).
+pub(crate) fn edge_dir(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    wall: usize,
+    from_h: usize,
+    to_h: usize,
+) -> Result<i8, BoolError> {
+    match order_along(jd, p, wall, from_h, to_h) {
         -1 => Ok(1),
         1 => Ok(-1),
         _ => Err(reject(RejectReason::CoincidentNodes)), // two nodes coincide
     }
+}
+
+/// [`edge_dir`] for a [`RingEdge`], which carries the three arguments already.
+fn edge_sign(jd: &Judge<'_, WorkingPlane>, p: usize, e: &RingEdge) -> Result<i8, BoolError> {
+    edge_dir(jd, p, e.wall, e.from_h, e.to_h)
 }
 
 /// The turn at ring node `i`, about the face's **outward** normal: `+1` left, `-1` right.
