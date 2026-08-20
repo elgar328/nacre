@@ -125,10 +125,17 @@ impl NodeId {
 /// so a name is the wrong type for their parameter.
 ///
 /// **It is total today, and that is the point.** When a second variant arrives this `match` is the
-/// single place that goes red, and the answer for every caller behind it is the same one: a branch
-/// point has no three-plane name, and none of these paths has another answer to give. The two
-/// places that *will* answer differently — [`node_coords_rat`] and [`loop_winding`]'s
-/// lexicographic scan — deliberately do not come through here.
+/// one place the ring-and-segment world goes red, and the answer for every caller behind it is the
+/// same one: a branch point has no three-plane name, and none of those paths has another to give.
+///
+/// Two sites that *dispatch* instead of declining stay out of it deliberately —
+/// [`node_coords_rat`] and [`loop_winding`]'s lexicographic scan, each with its own total
+/// replacement already built. ★ And one caller behind this door is **not** in the ring-and-segment
+/// world: `reuse::canonical` builds a comparison key, and its answer for a branch node is that the
+/// key's vessel widens (it already carries sentinels for circles and bands), not that the question
+/// is refused. It is a debug-only differential, so it does not earn a third `match` today — but it
+/// is not one of the callers this door's single answer is right for, and whoever opens the door
+/// next has to look at it.
 pub(crate) fn three_plane_name(n: NodeId) -> [usize; 3] {
     match n {
         NodeId::ThreePlane(t) => t,
