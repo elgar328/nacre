@@ -1539,7 +1539,7 @@ fn split_at_crossings(
 fn angular_order(
     jd: &Judge<'_, WorkingPlane>,
     w: usize,
-    edges: &[(usize, i8)],
+    edges: &[combinatorics::EdgeDir],
 ) -> Result<Vec<usize>, BoolError> {
     // ★ The same atom the winding reads (`combinatorics::turn`), which is what keeps the two from
     // drifting; the `0` it returns is *this* function's to interpret — here it is the `0`/π pole,
@@ -1974,8 +1974,14 @@ fn extract_cells(
                 // `order_along(target, origin)` — the swapped-argument spelling of what
                 // `edge_dir` makes by inverting the result. The two agreed only by the
                 // antisymmetry of a difference cancelling an inversion; now there is one.
-                let s = combinatorics::edge_dir(jd, wc, wall(he), origin_h(he), target_h(he))?;
-                edges.push((wall(he), s));
+                // ★ The maker pairs the carrier with the sense, so this site no longer can.
+                edges.push(combinatorics::edge_dir(
+                    jd,
+                    wc,
+                    wall(he),
+                    origin_h(he),
+                    target_h(he),
+                )?);
             }
         }
         let ord = timed!(E_ANGULAR, angular_order(jd, wc, &edges))?;
@@ -3935,7 +3941,16 @@ mod tests {
             [d[0] * s as f64, d[1] * s as f64, d[2] * s as f64]
         };
         // Five edges: both directions on the y-wall and x-wall lines, one on the diagonal.
-        let edges = [(fpy, 1i8), (fpy, -1), (fpx, 1), (fpx, -1), (fpd, 1)];
+        //
+        // ★ **The pairs stay, and the oracle below reads *them*, not the `EdgeDir`s.** A direction's
+        // representation is private to `combinatorics` on purpose (see `EdgeDir`); a test that needs
+        // coordinates is an oracle, and an oracle reads its own inputs — reading them back out of
+        // the value under test would derive the oracle from the answer.
+        let raw = [(fpy, 1i8), (fpy, -1), (fpx, 1), (fpx, -1), (fpd, 1)];
+        let edges: Vec<combinatorics::EdgeDir> = raw
+            .iter()
+            .map(|&(c, s)| combinatorics::EdgeDir::new(c, s))
+            .collect();
 
         let order = angular_order(&crate::planes::test_judge(&planes), w, &edges)
             .expect("five distinct directions leave one vertex — nothing to refuse here");
@@ -3951,12 +3966,12 @@ mod tests {
             let d = dir(e.0, e.1);
             d[1].atan2(d[0])
         };
-        let a0 = ang(edges[0]);
+        let a0 = ang(raw[0]);
         let mut want: Vec<usize> = (0..edges.len()).collect();
         want.sort_by(|&i, &j| {
             let (ci, cj) = (
-                (ang(edges[i]) - a0).rem_euclid(std::f64::consts::TAU),
-                (ang(edges[j]) - a0).rem_euclid(std::f64::consts::TAU),
+                (ang(raw[i]) - a0).rem_euclid(std::f64::consts::TAU),
+                (ang(raw[j]) - a0).rem_euclid(std::f64::consts::TAU),
             );
             ci.partial_cmp(&cj).unwrap()
         });

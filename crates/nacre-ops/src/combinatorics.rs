@@ -314,6 +314,37 @@ pub(crate) fn ring_edges_with_walls(
         .collect()
 }
 
+/// **A direction on a working plane**: the carrier that supplies it, and which way along it.
+///
+/// ★★★ **The fields are private, and that is the whole point.** Every rule that reads this
+/// representation — [`turn`], [`antiparallel`], [`parallel_carriers`] via [`continuation`] — lives
+/// in this module, and Rust's module privacy is what keeps it that way: a sibling module cannot
+/// reach in even by accident. The previous cell had to catch fifteen such bypasses with a `rg`
+/// gate because the identity it raised was an enum whose variants were nameable everywhere; here
+/// the boundary is a compile error instead of a grep.
+///
+/// ★★ **A test that must read a direction is not a violation — it is an oracle.** It should read
+/// **its own** inputs (the `(carrier, sense)` it built) rather than this type, both because that
+/// keeps the boundary and because an oracle read back out of the value under test is an oracle
+/// derived from its own answer. Do not add accessors for it.
+///
+/// ★ **`carrier`, not `wall`** — an arc's direction is carried by a circle, and the name says
+/// where this grows. It does not grow yet: the only consumer of the field,
+/// `Judge::plane_pair_dir_sign`, still demands a **plane** class.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct EdgeDir {
+    carrier: usize,
+    sense: i8,
+}
+
+impl EdgeDir {
+    /// A direction stated directly. Production makes them through [`edge_dir`]; this exists for
+    /// fixtures that state a `(carrier, sense)` pair by hand.
+    pub(crate) fn new(carrier: usize, sense: i8) -> EdgeDir {
+        EdgeDir { carrier, sense }
+    }
+}
+
 /// **`+1` when an edge on plane `p` runs along `d = n_p × n_wall`, `-1` against it** — the one
 /// place that sign is made.
 ///
@@ -334,16 +365,21 @@ pub(crate) fn edge_dir(
     wall: usize,
     from_h: usize,
     to_h: usize,
-) -> Result<i8, BoolError> {
-    match order_along(jd, p, wall, from_h, to_h) {
-        -1 => Ok(1),
-        1 => Ok(-1),
-        _ => Err(reject(RejectReason::CoincidentNodes)), // two nodes coincide
-    }
+) -> Result<EdgeDir, BoolError> {
+    let sense = match order_along(jd, p, wall, from_h, to_h) {
+        -1 => 1,
+        1 => -1,
+        _ => return Err(reject(RejectReason::CoincidentNodes)), // two nodes coincide
+    };
+    Ok(EdgeDir::new(wall, sense))
 }
 
 /// [`edge_dir`] for a [`RingEdge`], which carries the three arguments already.
-fn edge_sign(jd: &Judge<'_, WorkingPlane>, p: usize, e: &RingEdge) -> Result<i8, BoolError> {
+fn ring_edge_dir(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    e: &RingEdge,
+) -> Result<EdgeDir, BoolError> {
     edge_dir(jd, p, e.wall, e.from_h, e.to_h)
 }
 
@@ -408,8 +444,8 @@ pub(crate) fn parallel_carriers(
 /// back `0`. Pulled out of that guard the predicate answers a different question, because two
 /// directions on *different* carriers can also be collinear (aliasing that `union_wall` did not
 /// reach), and those belong in the `0` bucket rather than the `π` one.
-pub(crate) fn antiparallel(a: (usize, i8), b: (usize, i8)) -> bool {
-    a.0 == b.0 && a.1 != b.1
+pub(crate) fn antiparallel(a: EdgeDir, b: EdgeDir) -> bool {
+    a.carrier == b.carrier && a.sense != b.sense
 }
 
 /// What an earlier ring edge does relative to `later` — the three answers [`loop_winding`]'s
@@ -441,12 +477,12 @@ pub(crate) enum Continuation {
 pub(crate) fn continuation(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
-    earlier: (usize, i8),
-    later: (usize, i8),
+    earlier: EdgeDir,
+    later: EdgeDir,
 ) -> Continuation {
-    if !parallel_carriers(jd, p, earlier.0, later.0) {
+    if !parallel_carriers(jd, p, earlier.carrier, later.carrier) {
         Continuation::Turns
-    } else if earlier.1 == later.1 {
+    } else if earlier.sense == later.sense {
         Continuation::Straight
     } else {
         Continuation::DoublesBack
@@ -472,9 +508,9 @@ fn turn_between(
     arriving: &RingEdge,
     leaving: &RingEdge,
 ) -> Result<i8, BoolError> {
-    let sa = edge_sign(jd, p, arriving)?;
-    let sb = edge_sign(jd, p, leaving)?;
-    match turn(jd, p, (arriving.wall, sa), (leaving.wall, sb)) {
+    let sa = ring_edge_dir(jd, p, arriving)?;
+    let sb = ring_edge_dir(jd, p, leaving)?;
+    match turn(jd, p, sa, sb) {
         0 => Err(reject(RejectReason::StraightAngle)),
         t => Ok(t),
     }
@@ -542,8 +578,8 @@ fn turn_between(
 /// ends, so "the edge's direction" and "the direction *at* this endpoint" coincide and nothing has
 /// had to tell them apart. An arc's two ends differ, so every site that reads a whole-edge sign
 /// has to say which end it means; that is an **arity** change, not just a wider vessel.
-pub(crate) fn turn(jd: &Judge<'_, WorkingPlane>, p: usize, a: (usize, i8), b: (usize, i8)) -> i8 {
-    a.1 * b.1 * jd.plane_pair_dir_sign(p, a.0, b.0) * jd.planes[p].frame_sign
+pub(crate) fn turn(jd: &Judge<'_, WorkingPlane>, p: usize, a: EdgeDir, b: EdgeDir) -> i8 {
+    a.sense * b.sense * jd.plane_pair_dir_sign(p, a.carrier, b.carrier) * jd.planes[p].frame_sign
 }
 
 /// Face `f`'s outer-loop vertices as three-plane triples: `f`'s own plane, and the
@@ -1479,10 +1515,10 @@ pub(crate) fn loop_winding(
     // turn and whose neighbours' turn belongs to a different vertex. Skipping past that would
     // read a turn from somewhere else and call it this vertex's: a wrong winding, silently.
     let n = ring.len();
-    let leaving = (ring[lo].wall, edge_sign(jd, p, &ring[lo])?);
+    let leaving = ring_edge_dir(jd, p, &ring[lo])?;
     let mut back = (lo + n - 1) % n;
     loop {
-        let earlier = (ring[back].wall, edge_sign(jd, p, &ring[back])?);
+        let earlier = ring_edge_dir(jd, p, &ring[back])?;
         match continuation(jd, p, earlier, leaving) {
             Continuation::Turns => break,
             Continuation::DoublesBack => return Err(reject(RejectReason::StraightAngle)),
