@@ -147,6 +147,11 @@ impl QuadVal {
 
     /// The f64 realization `a + b·√c` — a **cache** value, not exactly rounded (three
     /// roundings compose); consumers that need a certified value go through the sign tower.
+    ///
+    /// ★★ **Witnesses and display only — never a decision.** Deciding on two realizations hands
+    /// the answer to `f64` rounding, which is what [`QuadVal::sign`] exists to take back. Said
+    /// out loud now that the first caller has arrived (a reject's witness location, drawn for a
+    /// human and asserted only approximately).
     pub fn to_f64(&self) -> f64 {
         self.a.to_f64() + self.b.to_f64() * self.c.to_f64().sqrt()
     }
