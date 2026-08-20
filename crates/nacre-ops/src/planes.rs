@@ -837,6 +837,15 @@ pub(crate) fn cylinder_gate(
         });
     }
 
+    // ★ **One row per `cyl_surfs` entry, in order** — the loop above either pushes or returns, so
+    // this table is indexed by the very `ClassIx::Cyl` number that named the surface. Consumers
+    // index it directly (`merge_circles`), which is only sound while that holds.
+    debug_assert_eq!(
+        cyls.len(),
+        cyl_surfs.len(),
+        "the cylinder class table is index-aligned with the class numbering"
+    );
+
     for cyl in cyls.iter() {
         let (o, m, r) = (cyl.def.origin(), cyl.def.dir(), cyl.def.radius());
         // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does

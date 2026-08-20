@@ -231,7 +231,8 @@ pub(crate) struct MergedCircle {
 }
 
 /// Group a class's circle traces by cylinder class, in ascending class order (deterministic —
-/// replay mints handles from this order). The def is read off any cylinder row of that class.
+/// replay mints handles from this order). The def comes from the class table, which a
+/// `ClassIx::Cyl` index indexes directly.
 fn merge_circles(
     circles: &[CircleTrace],
     cyls: &[crate::planes::WorkingCyl],
