@@ -13,6 +13,20 @@
 //! costs**, and it is the input to a decision the doc does not currently list — whether the
 //! predicates should learn to read `Wide` coefficients at all.
 //!
+//! ★★★ **Run it with `--test-threads=1`, or the labels lie:**
+//!
+//! ```text
+//! cargo test -p nacre-ops --test wide_datum_cost -- --ignored --nocapture --test-threads=1
+//! ```
+//!
+//! `climb_census::take()` is a **process-global** take-and-reset, and both measurements here
+//! bracket their own boolean with it. Run in parallel — the default — one test's `take()` walks
+//! off with the other's accumulated climbs, and every printed number is still plausible while
+//! being attributed to the wrong arm. Measured 2026-08-20: the same tree printed
+//! `narrow_name=415 / wide_name=0` on one parallel run and `narrow_name=414 / wide_name=917` on
+//! the next, which is how a comparison against a saved baseline invents a change that never
+//! happened. Serialized, the same tree prints the same table twice.
+//!
 //! ★ What is **not** measured here: the irrational-motion branch (homogeneous lifting, degree
 //! ~12). Its machinery is what S5(ii)-2 builds, so its cost cannot be taken before it exists —
 //! the doc's "measure the cost, then build" ordering does not apply to that half.

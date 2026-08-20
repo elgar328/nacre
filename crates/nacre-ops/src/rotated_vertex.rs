@@ -141,23 +141,25 @@ pub(crate) fn through_judged_points(
                 return None;
             }
         };
-        let mine = model.plane_motion(tri[0]);
-        let pure = if tri.iter().all(|h| model.plane_motion(*h) == mine) {
-            let names = tri.map(|h| model.surface_name.get(&h));
-            if let [Some(a), Some(b), Some(c)] = names {
-                nacre_scalar::three_planes_big([a, b, c])?
-                    .narrow()
-                    .map(|p| WitnessPoint::at(*p))
-                    .and_then(|wp| match mine {
-                        None => Some(wp),
-                        Some(m) => replay(wp, &motion_chain(model, m)?),
-                    })
-            } else {
-                None
-            }
-        } else {
-            None
-        };
+        // ★★ **The frame question is the door's** ([`nacre_topo::Model::vertex_meet`]). This was
+        // the last of the four places that compared `plane_motion(tri[0])` against the other two
+        // itself, and that reading calls a turned solid's corner a straddle: the invariant-plane
+        // restatement leaves its cap world-stated while the walls carry a node, and only the
+        // chain-fixes licence tells that apart from a real straddle. Here the copy cost no
+        // *capability* — a corner it misread still gets a correct `Meet` — but it made the judged
+        // road hand out a weaker witness than it had to.
+        //
+        // ★ The old spelling also let one vertex's non-meeting `?` out of the whole call. A fact
+        // about one vertex is not a fact about the triple; a vertex without a rational meet falls
+        // to `Meet`, which is exactly what that variant is for.
+        let pure = model.vertex_meet(vh).and_then(|(meet, frame)| {
+            meet.narrow()
+                .map(|p| WitnessPoint::at(*p))
+                .and_then(|wp| match frame {
+                    None => Some(wp),
+                    Some(m) => replay(wp, &motion_chain(model, m)?),
+                })
+        });
         *o = Some(match pure {
             Some(wp) => JudgedPoint::Pure(wp),
             None => JudgedPoint::Meet(Box::new([
