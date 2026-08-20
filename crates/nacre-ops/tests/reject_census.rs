@@ -288,6 +288,22 @@ fn circle_meets_segment(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> 
     boolean(m, BoolKind::Fuse, a, boss)
 }
 
+/// The same rejection from the **swapped** population: a `+X`-axis boss over the plate's corner.
+/// A `+Z` cylinder's circle always lives on a class interned before the wall that crosses it (face
+/// push order), so every shape that reaches the locator today hands it an ascending pair. Turning
+/// the boss inverts that, which is the only way the branch name's canonicalization runs at all.
+fn circle_meets_segment_turned(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let a = cub(m, [0.0; 3], [4.0, 4.0, 2.0]);
+    let boss = m.add_cylinder(
+        Point3::from_array([4.0, 0.25, 2.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        0.5,
+        1.0,
+    );
+    m.rebuild_adjacency();
+    boolean(m, BoolKind::Fuse, a, boss)
+}
+
 fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     // A tilted rational axis against an axis-aligned box: the box's planes are neither ⊥ nor
     // ∥ to (0,1,1), and — unlike rotating the box — every description stays world-rational,
@@ -369,7 +385,7 @@ fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 const BOOLEAN: &str = "crates/nacre-ops/src/boolean.rs";
 
-const CORPUS: [Fixture; 13] = [
+const CORPUS: [Fixture; 14] = [
     Fixture {
         name: "pinched-vertex",
         expect: Some(RejectReason::NonManifoldVertex),
@@ -461,6 +477,19 @@ const CORPUS: [Fixture; 13] = [
         // The wall below it clears, the footprint's axis along the cylinder having let it past.
         expect: Some(RejectReason::CircleMeetsSegment),
         run: circle_meets_segment,
+        raised: &[(
+            "circle_meets_segment",
+            None,
+            "crates/nacre-ops/src/arrangement.rs",
+        )],
+        surfaced: &[("circle_meets_segment", None)],
+    },
+    Fixture {
+        name: "circle-meets-segment-turned",
+        // The same reason from the population where the branch name's canonicalization actually
+        // runs — the first non-`+Z` cylinder in the corpus.
+        expect: Some(RejectReason::CircleMeetsSegment),
+        run: circle_meets_segment_turned,
         raised: &[(
             "circle_meets_segment",
             None,

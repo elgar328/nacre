@@ -1000,6 +1000,99 @@ mod tests {
         );
     }
 
+    /// ★★★ **The population where the naming rule actually fires — and the first non-`+Z`
+    /// cylinder in this repository.**
+    ///
+    /// Every `add_cylinder*` call in the suite states the axis `[0, 0, 1]` (measured: 87 of them),
+    /// and that is not an accident of taste — `add_cuboid` pushes faces `[−Z, +Z, −Y, +Y, −X, +X]`
+    /// and `build_prism` pushes "base cap, top cap, then walls", so a `+Z` cylinder's circle always
+    /// lives on a class interned **before** the wall that crosses it. Measured over the whole ops
+    /// suite: 463 of the 2060 `(class, wall)` pairs the gate examines are descending, but **all
+    /// nine that reach the locator are ascending**. So `NodeId::branch`'s canonicalization —
+    /// re-sorting the pair and restating the root with it — has never once been exercised by a
+    /// production path.
+    ///
+    /// Turning the boss onto `+X` inverts it: the rim lives on the box's `x = 4` face (class 5,
+    /// interned last) and the segment it crosses is on the `z = 2` cap (class 1). The pair swaps.
+    ///
+    /// ★ **A tangency, so there is exactly one root** and the assertion can name the point without
+    /// an `||`. That matters: [`a_boss_overhanging_the_plates_edge_is_still_refused`] deliberately
+    /// accepts either of its two crossings, and a fixture copied from that template would be green
+    /// whether or not the root rule is right. Here `disc = 0` — the rim (`x = 4`, centre
+    /// `(4, 2, 1.5)`, `r = 0.5`) touches `z = 2` at the single point `(4, 2, 2)`, solved from the
+    /// fixture's own numbers — and the name it must take is `QuadRoot::Double`, which a swap must
+    /// **not** toggle.
+    #[test]
+    fn a_turned_boss_tangent_to_the_plate_top_names_the_touch() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array([4.0, 2.0, 1.5]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            0.5,
+            1.0,
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect_err("turned boss");
+        let BoolError::Rejected {
+            reason: RejectReason::CircleMeetsSegment,
+            at: Some(crate::RejectWhere::Point(p)),
+        } = &err
+        else {
+            panic!("a tangency is one point: {err:?}");
+        };
+        let c = p.as_array();
+        assert!(
+            (0..3).all(|i| (c[i] - [4.0, 2.0, 2.0][i]).abs() < 1e-9),
+            "the tangency of the turned rim with the plate top: {c:?}"
+        );
+    }
+
+    /// ★★★ **The same turn, one genuine crossing — the lock the toggle can fail.**
+    ///
+    /// ★★ **Why the boss sits at the corner rather than mid-edge.** With *both* crossings admitted,
+    /// a missing toggle is invisible: the two breaks trade names, the witness is chosen as the
+    /// smallest name and its coordinate is derived from that same name, so the naming error and
+    /// the realization error cancel exactly at the break that gets reported. Derived, then built
+    /// around: put the rim so the segment admits **one** root and there is no partner to cancel
+    /// with.
+    ///
+    /// The rim (`x = 4`, centre `(4, 0.25, 2)`, `r = 0.5`) meets `z = 2` at `y = −0.25` and
+    /// `y = 0.75`; the plate's top edge runs `y ∈ [0, 4]`, so only `y = 0.75` is on the segment.
+    /// A root that failed to follow its pair through the sort names the *other* crossing — still
+    /// on the circle, but off the segment — and this assertion sees it move.
+    #[test]
+    fn a_turned_boss_over_the_plates_corner_names_the_crossing_on_the_segment() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array([4.0, 0.25, 2.0]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            0.5,
+            1.0,
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect_err("turned boss");
+        let BoolError::Rejected {
+            reason: RejectReason::CircleMeetsSegment,
+            at: Some(crate::RejectWhere::Point(p)),
+        } = &err
+        else {
+            panic!("a crossing's witness is a point: {err:?}");
+        };
+        let c = p.as_array();
+        assert!(
+            (0..3).all(|i| (c[i] - [4.0, 0.75, 2.0][i]).abs() < 1e-9),
+            "the one crossing that lies on the plate's top edge: {c:?}"
+        );
+    }
+
     /// **The fence: two cylinders with coplanar caps are still refused** — by the name that
     /// describes what is actually hard about them (two curved bodies to classify), not by a rule
     /// about seating.
