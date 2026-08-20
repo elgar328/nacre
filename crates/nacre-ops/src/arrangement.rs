@@ -1920,12 +1920,11 @@ fn extract_cells(
         {
             watch!(E_ORDER);
             for &he in outs {
-                let (rv, rf) = (origin_h(he), target_h(he));
-                // Direction sign away from v toward the far end (edge_sign convention).
-                let s = combinatorics::order_along(jd, wc, wall(he), rf, rv);
-                if s == 0 {
-                    return Err(reject(RejectReason::CoincidentNodes));
-                }
+                // Direction sign away from `v` toward the far end. ★ This used to call
+                // `order_along(target, origin)` — the swapped-argument spelling of what
+                // `edge_dir` makes by inverting the result. The two agreed only by the
+                // antisymmetry of a difference cancelling an inversion; now there is one.
+                let s = combinatorics::edge_dir(jd, wc, wall(he), origin_h(he), target_h(he))?;
                 edges.push((wall(he), s));
             }
         }
