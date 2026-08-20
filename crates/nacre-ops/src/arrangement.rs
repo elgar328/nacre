@@ -1672,6 +1672,19 @@ fn component_count(segs: &[MergedSeg]) -> usize {
 /// ★ Both copies of the per-class pipeline — the boolean's and the audit's replay — reach the
 /// cells through [`extract_cells`], so living here is what keeps the two from disagreeing about
 /// where a class stopped.
+///
+/// ★★ **It says where, and the where is the durable half.** [`circle_crossings`] locates what this
+/// rejects on: the points where a segment crosses the circle, which are `plane ∩ plane ∩ cylinder`
+/// — the shape [`nacre_topo::VertexDef::Branch`] names, and the points the *next* rung will split
+/// the circle into arcs at. When that lands, this rejection goes away and the locator stays. The
+/// witness is today's reachable consumer of it, not its purpose.
+///
+/// ★ **A trap left named for that next rung.** `Branch`'s `root` (`Lo`/`Hi`) is defined against
+/// the meet line of the two planes taken in **ascending handle order**, and its own doc warns that
+/// anything re-sorting the pair must toggle `root`. The arrangement works in *class indices*, so
+/// the roots recorded here are ordered by **this function's call order** (`wc`, then the
+/// segment's wall). Minting a `Branch` from one means establishing that correspondence, not
+/// assuming it.
 fn circles_meet_no_segment(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
