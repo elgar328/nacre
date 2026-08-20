@@ -234,8 +234,7 @@ pub(crate) struct MergedCircle {
 /// replay mints handles from this order). The def is read off any cylinder row of that class.
 fn merge_circles(
     circles: &[CircleTrace],
-    faces: &[FaceRow],
-    plane_ix: &[ClassIx],
+    cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Vec<MergedCircle>, BoolError> {
     let mut out: Vec<MergedCircle> = Vec::new();
     let mut sorted: Vec<&CircleTrace> = circles.iter().collect();
@@ -247,14 +246,11 @@ fn merge_circles(
                 continue;
             }
         }
-        let def = faces
-            .iter()
-            .enumerate()
-            .find_map(|(i, row)| match (plane_ix[i], row) {
-                (ClassIx::Cyl(k), FaceRow::Cylinder(cf)) if k == c.cyl => Some(cf.def.clone()),
-                _ => None,
-            })
-            .expect("a circle's cylinder class has a lateral row");
+        // ★ The class table answers directly. This used to scan the face rows for a lateral face
+        // of the same class and `expect` one — a runtime claim where the truth is structural: a
+        // `ClassIx::Cyl` index is an index *into this table*, built from the same map that issued
+        // it ("rebuilt from the same map so the two cannot drift", `dense_planes`).
+        let def = cyls[c.cyl].def.clone();
         out.push(MergedCircle {
             cyl: c.cyl,
             def,
@@ -2661,6 +2657,7 @@ pub(crate) fn trace_result_faces_full_for_test(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
+    cyls: &[crate::planes::WorkingCyl],
     n_a: usize,
     class_owner: &[Option<SolidSide>],
     trace_in: &combinatorics::TraceInput,
@@ -2673,6 +2670,7 @@ pub(crate) fn trace_result_faces_full_for_test(
         jd,
         faces,
         plane_ix,
+        cyls,
         n_a,
         class_owner,
         crate::reuse::ClassReuse::Proved,
@@ -2699,6 +2697,7 @@ fn trace_result_faces(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
+    cyls: &[crate::planes::WorkingCyl],
     n_a: usize,
     class_owner: &[Option<SolidSide>],
     reuse: crate::reuse::ClassReuse,
@@ -2798,7 +2797,7 @@ fn trace_result_faces(
             let merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
             let split = timed!(SPLIT, split_at_crossings(jd, wc, &merged, &mut local))?;
             let split = drop_newsless(split)?;
-            let circles = merge_circles(&tr.circles, faces, plane_ix)?;
+            let circles = merge_circles(&tr.circles, cyls)?;
             Ok(((split, circles), local))
         })?;
         splits.clear();
@@ -3077,6 +3076,7 @@ pub(crate) fn frame_audit(
         inc_b,
         geom,
         plane_ix,
+        cyls,
         standard,
         notes,
         ..
@@ -3148,7 +3148,7 @@ pub(crate) fn frame_audit(
                 let merged = merge_coincident(&tr.segs, wc, &local);
                 let split = split_at_crossings(&jd, wc, &merged, &mut local)?;
                 let split = drop_newsless(split)?;
-                let circles = merge_circles(&tr.circles, &faces_tab, &plane_ix)?;
+                let circles = merge_circles(&tr.circles, &cyls)?;
                 let (cells, face_of) = extract_cells(&jd, wc, &split, &circles)?;
                 let nesting = nest_cells(&jd, wc, &cells, &split, &circles)?;
                 let labels = label_cells(&cells, &face_of, &split, &circles, &nesting, [false; 4])?;
@@ -3259,6 +3259,7 @@ pub(crate) fn boolean(
             &jd,
             &faces_tab,
             &plane_ix,
+            &cyls,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
@@ -3294,6 +3295,7 @@ pub(crate) fn boolean(
                 &plain_jd,
                 &faces_tab,
                 &plane_ix,
+                &cyls,
                 n_a,
                 &class_owner,
                 crate::reuse::ClassReuse::Off,
@@ -4631,6 +4633,7 @@ mod tests {
             class_owner,
             standard,
             notes,
+            cyls,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
@@ -4650,6 +4653,7 @@ mod tests {
             &jd,
             &faces_tab,
             &plane_ix,
+            &cyls,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
@@ -4840,6 +4844,7 @@ mod tests {
             class_owner,
             standard,
             notes,
+            cyls,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
@@ -4859,6 +4864,7 @@ mod tests {
             &jd,
             &faces_tab,
             &plane_ix,
+            &cyls,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
@@ -4948,6 +4954,7 @@ mod tests {
             class_owner,
             standard,
             notes,
+            cyls,
             ..
         } = plane_index_setup(&m, u, slab).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
@@ -4967,6 +4974,7 @@ mod tests {
             &jd,
             &faces_tab,
             &plane_ix,
+            &cyls,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
@@ -5230,6 +5238,7 @@ mod tests {
             class_owner,
             standard,
             notes,
+            cyls,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
@@ -5249,6 +5258,7 @@ mod tests {
             &jd,
             &faces_tab,
             &plane_ix,
+            &cyls,
             n_a,
             &class_owner,
             crate::reuse::ClassReuse::Proved,
@@ -5401,6 +5411,7 @@ mod tests {
             n_a,
             standard,
             notes,
+            cyls,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
@@ -5420,6 +5431,7 @@ mod tests {
             &jd,
             &faces_tab,
             &plane_ix,
+            &cyls,
             n_a,
             &class_owner,
             // `Proved` on purpose: the reuse guard must be what turns the shortcut off, not the
@@ -5486,6 +5498,7 @@ mod tests {
             plane_ix,
             standard,
             notes,
+            cyls,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
@@ -5532,7 +5545,7 @@ mod tests {
             tr.circles
         );
 
-        let circles = merge_circles(&tr.circles, &faces_tab, &plane_ix).unwrap();
+        let circles = merge_circles(&tr.circles, &cyls).unwrap();
         let (cells, face_of) = extract_cells(&jd, wc, &[], &circles).unwrap();
         // Pseudo-half-edges 0 and 1 (no segments): the disk (+1) and its contour (−1).
         assert_eq!(cells.len(), 2, "{cells:?}");
@@ -5597,6 +5610,7 @@ mod tests {
             plane_ix,
             standard,
             notes,
+            cyls,
             ..
         } = plane_index_setup(&m, a, b).unwrap();
         let jd = Judge::new(&planes, standard, &notes);
@@ -5620,7 +5634,7 @@ mod tests {
         );
 
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let circles = merge_circles(&tr.circles, &faces_tab, &plane_ix).unwrap();
+        let circles = merge_circles(&tr.circles, &cyls).unwrap();
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
         assert_eq!(
             split.len(),

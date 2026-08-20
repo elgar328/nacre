@@ -339,6 +339,7 @@ mod tests {
             n_a,
             standard,
             notes,
+            cyls,
             ..
         } = &setup;
         let jd = Judge::new(geom, *standard, notes);
@@ -358,6 +359,7 @@ mod tests {
             &jd,
             faces_tab,
             plane_ix,
+            cyls,
             *n_a,
             class_owner,
             &trace_in,
