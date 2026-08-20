@@ -11325,3 +11325,86 @@ clippy 0 · `--ignored` 스윕 · kit 14 · 앱(wasm×2 + tsc + vitest 142).
 - **씸 표에서 클래스 순서 ≠ 핸들 순서** — `NodeId::Branch` 는 평면 **클래스**로, `VertexDef::Branch`
   는 `Handle<Surface>` 로 정준이고 그 사상은 단조가 아니다. 다음 칸이 거기서 `VertexDef::Branch` 를
   주조할 때 `QuadRoot::canonical` 을 **두 번째로** 물려야 한다(그 자리에 주석으로 박아 뒀다).
+
+## 방향을 읽는 자리를 한 곳에 모으고, 경계를 컴파일러에게 맡긴다 (2026-08-21)
+
+M6-2b(원 → 호)의 배관 둘째 칸. 직전 칸이 정점 **신원**을 타입으로 올렸고(`NodeId::Branch`), 이
+칸은 그 짝인 **방향**이다. 커밋 둘: `94aa020`(인라인 규칙 셋이 이름을 얻는다) ·
+`17bda2a`(튜플이 필드 private 인 `EdgeDir` 이 된다). **답은 하나도 안 바뀐다.**
+
+### 왜 이 칸인가 — 엔진에 남은 이중성
+
+`extract_cells` 는 세그먼트의 감김을 **계산**하고(`loop_winding`) 원의 감김은 `winding: 1`/`-1`
+로 **단언**한다(원은 DCEL 궤도가 표현 못 해 `2n+2i` 유사 반모서리로 옆에 붙는다). 「계산된 답 vs
+단언된 답」이 DNA 가 경고하는 케이스워크의 표식이고, 그 이중성을 없애는 것이 호 분할의 값이며,
+그 앞을 막는 것이 «방향» 개념이다.
+
+### 한 함수가 답하던 질문 셋
+
+`edge_sign` 이 돌려주는 한 숫자를 세 소비자가 서로 다르게 읽고 있었다 — 「`v` 에서 멀어지는
+방향」·「회전이 일어나는 **점**에서의 방향」·「이 직선 구간이 이어지는가」. 직선에서는 두 끝의
+접선이 같아 셋이 일치한다. **그 전제가 어디에도 안 적혀 있었다.**
+
+### ★★★★ `turn` 의 doc 이 세어 둔 목록이 틀렸다 — 둘이 아니라 셋
+
+그 doc 은 *"Two more places read the direction's representation … a reader who widens only the
+input type here will miss them"* 라며 π 극과 walk-back 을 댄다. `plane_pair_dir_sign` 의 소비자를
+**전수로** 세니 하나 더 있었다: `split_at_crossings` 의 **벽 방향 family**(`Wall.dir`,
+`arrangement.rs:1350`). **다른 파일에 인라인**돼 있어서 그 문단이 못 봤다.
+
+⇒ 셋 다 이름을 받았다: `antiparallel`(π 극) · `parallel_carriers`(두 소비자) ·
+`Continuation{Turns, Straight, DoublesBack}`(walk-back 의 3분기).
+
+- ★★ **이름은 `collinear` 가 아니라 `parallel_carriers`** — 두 소비자의 **전제가 다르다**.
+  walk-back 의 두 모서리는 링을 통해 점을 공유하므로 평행 ⇒ 공선이지만, 벽 family 의 두 벽은
+  공유하지 않는다(그 자리 주석: *"Same family ⇒ the two lines are parallel and meet in no point"*).
+  술어는 평행성이고 **공선은 호출부의 추가 전제**다.
+- ★ **같은 원시의 다른 문장은 안 건드렸다**: `plane_pair_dir_sign(p, wall, c) != 0` 은 「이 세 번째
+  평면이 선을 자르는가」 — **점의 이름 가능성**이지 방향이 아니다. 접으면 한 이름이 두 명제를 진다.
+- ★ **`order_along`(~16자리)·`dir_sign` 도 안 건드렸다** — 「담체를 따라 **어디**」는 **위치**
+  개념이고, 원 위의 순서는 스칼라가 M6-1 에 이미 답해 뒀다(`circular_order_about_seam`). 즉
+  `order_along` 은 선의 것으로 남는다. 미루는 게 아니라 **그 일이 아니다**.
+
+### ★★★ 경계를 grep 이 아니라 컴파일러에게
+
+`EdgeDir { carrier, sense }` 의 **필드가 private** 이라 형제 모듈은 문법적으로 못 읽는다. 직전
+칸은 `rg` 게이트로 **우회 15곳**을 찾아야 했는데(변종 이름은 어디서나 쓸 수 있으니), 여기서는
+게이트가 **필요 없다**.
+
+**red 프로브가 컴파일 에러다**(실행해 봤다): `angular_order` 의 π 극에 옛 필드 읽기를 되돌리면
+`E0616: field 'carrier' of struct 'EdgeDir' is private`.
+
+★★ **이 아이디어를 죽일 뻔한 것 하나** — 방향의 필드를 읽는 자리가 프로덕션 말고 하나 더 있다:
+`angular_order` 테스트의 **`atan2` 좌표 오라클**. 순진한 답(접근자 추가)은 경계를 다시 문단으로
+되돌린다. 답은 **테스트가 자기 원시 쌍을 계속 들고** 호출에만 `EdgeDir::new` 를 쓰는 것이다.
+일반 규칙으로 적었다: **표현을 읽어야 하는 오라클은 위반이 아니라 오라클이고, 오라클은 자기
+입력을 읽는다** — 시험 대상에서 되읽으면 답에서 오라클을 유도하게 된다.
+
+### ★★★ 추출하기 **전에** 잰 것 — 안테나 팔에는 계측이 없다
+
+`--features nacre-ops/reject-trace` 로 워크스페이스를 돌렸다: **13개 이유, 48회 발화, 그중
+`straight_angle` 은 0**. 세 발생지(`combinatorics.rs` 회전의 0 · 안테나 · `boolean.rs:1123`) 어느
+것도 안 닿고, reject census 동결 코퍼스에도 없다(계측 자체는 살아 있다 — 위 13개가 음성 대조).
+
+⇒ `Continuation::DoublesBack` 은 `angular_order` 의 `UnorderedEdges` 와 같은 **미발화 백스톱**이다
+(상류 `merge_coincident`·`split_at_crossings` 가 막게 돼 있고 그건 **논증**이지 검사가 아니다).
+그 추출은 테스트가 아니라 **유도**로 지켰고, 그 사실을 술어의 doc 에 적었다.
+
+★ 추출에서 가장 자연스럽게 저지를 실수도 미리 못 박았다: walk-back 은 후보를 **언제나 `ring[lo]`**
+와 비교한다(`dir` 을 루프 밖에서 한 번 잡는다). 사슬로 바꾸면 「구간 전체가 한 방향」이 「이웃끼리만」
+으로 약해지고, **그것을 볼 계측이 없다**.
+
+### 관문
+
+53타깃 · 서리얼 25 · clippy 0 · fmt · **비트 census 두 프로파일 무변화** · reject census 무변화 ·
+`replay` 아레나 서명 무변화 · kit 14 · 앱(wasm×2 + tsc + vitest 142).
+
+★ **동작으로 잠기지 않는다**: 답을 하나도 안 바꾸므로 초록의 증거력은 «무변화» 뿐이고, 잠그는
+것은 **컴파일러**다 — 커밋 1이 「읽는 자리가 전부 한 파일에 있다」를 사람이 확인한 것이라면,
+커밋 2가 그것을 **언어가 강제하는 사실**로 바꿨다.
+
+### 다음
+
+호 분할 본체. 그때 `EdgeDir` 이 변종을 얻고(`turn` 의 `plane_pair_dir_sign` 이 「한 이차 인자를
+가진 외적」이 된다), `2n+2i` 탈출구가 **가로지른** 원에 대해 해소되며, 씸 표가
+`VertexDef::Branch` 를 주조할 때 **클래스 순서 ≠ 핸들 순서**의 두 번째 정준화가 필요하다.

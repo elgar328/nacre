@@ -345,8 +345,11 @@ impl EdgeDir {
     }
 }
 
-/// **`+1` when an edge on plane `p` runs along `d = n_p × n_wall`, `-1` against it** — the one
-/// place that sign is made.
+/// **An edge's direction on plane `p`** — its carrier is `wall` and its sense is `+1` when the edge
+/// runs along `d = n_p × n_wall`, `-1` against it. The one place a direction is made.
+///
+/// ★ It returns the sense **paired with the carrier it belongs to** ([`EdgeDir`]) rather than a
+/// bare `i8`, so no caller can pair them itself and pair them wrongly.
 ///
 /// ★★ **It used to be made twice, two different ways.** `order_along` is `sign((V_i − V_j)·d)`, so
 /// the direction of travel is either `−order_along(from, to)` (invert the result) or
