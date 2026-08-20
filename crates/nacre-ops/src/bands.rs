@@ -954,12 +954,17 @@ mod tests {
         );
     }
 
-    /// ★ **The negative control for the locator.** The same plate and bore, with the boss moved
-    /// clear in `x`: nothing on the shared plane comes near the rim, so the boolean succeeds and
-    /// no witness is ever formed. Without this, a locator that always found *something* would
-    /// look correct in every test above.
+    /// ★★ **The fence post: a crossing that lands exactly on a segment's endpoint.** The boss's
+    /// corner `(8,13)` sits on the rim `(8,10)`, `r = 3`, so both edges leaving it meet the circle
+    /// *at* their own end — the one place the in-segment test's inequality can be open or closed,
+    /// and the two spellings give different answers.
+    ///
+    /// **Measured, both ways:** counting `Zero` as inside names the corner `(8, 13, 5)`; excluding
+    /// it drops every root and falls back to the containment witness — a `Segment`, which would
+    /// say "this edge lies inside the circle" about an edge that runs *outward* from a single
+    /// touching point. Inclusive is the true sentence, and it is the one the arc split will need.
     #[test]
-    fn a_boss_clear_of_the_rim_needs_no_witness() {
+    fn a_crossing_on_a_segments_endpoint_is_inside_it() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -974,17 +979,22 @@ mod tests {
         m.rebuild_adjacency();
         let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
         let boss = m.add_cuboid(
-            Point3::from_array([28.0, 4.0, 5.0]),
-            Point3::from_array([36.0, 12.0, 8.0]),
+            Point3::from_array([8.0, 13.0, 5.0]),
+            Point3::from_array([12.0, 17.0, 8.0]),
         );
         m.rebuild_adjacency();
-        let out =
-            crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("nothing near the rim");
-        assert_eq!(out.len(), 1);
+        let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("corner on rim");
+        let BoolError::Rejected {
+            reason: RejectReason::CircleMeetsSegment,
+            at: Some(crate::RejectWhere::Point(p)),
+        } = &err
+        else {
+            panic!("the touch at the corner is a point, not the whole edge: {err:?}");
+        };
+        let c = p.as_array();
         assert!(
-            nacre_validate::validate(&m).is_empty(),
-            "{:?}",
-            nacre_validate::validate(&m)
+            (0..3).all(|i| (c[i] - [8.0, 13.0, 5.0][i]).abs() < 1e-9),
+            "the corner on the rim: {c:?}"
         );
     }
 

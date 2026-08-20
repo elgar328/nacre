@@ -1735,7 +1735,7 @@ fn circles_meet_no_segment(
                 // witness to choose). So this rule is *chosen*, not measured — which is why it is
                 // written out rather than left to whatever the locator would have returned.
                 breaks.push(Break {
-                    key: (circ.cyl, sg.end, 0),
+                    key: (circ.cyl, sg.wall, sg.end, 0),
                     crossing: false,
                     at: RejectWhere::Point(realize(&p0)),
                 });
@@ -1746,12 +1746,12 @@ fn circles_meet_no_segment(
                 // into a different rejection — this pass only ever *adds* a place.
                 None => {}
                 Some(xs) if xs.is_empty() => breaks.push(Break {
-                    key: (circ.cyl, sg.end, 0),
+                    key: (circ.cyl, sg.wall, sg.end, 0),
                     crossing: false,
                     at: RejectWhere::Segment([realize(&p0), realize(&p1)]),
                 }),
                 Some(xs) => breaks.extend(xs.into_iter().map(|(root, at)| Break {
-                    key: (circ.cyl, sg.end, root),
+                    key: (circ.cyl, sg.wall, sg.end, root),
                     crossing: true,
                     at: RejectWhere::Point(at),
                 })),
@@ -1767,10 +1767,16 @@ fn circles_meet_no_segment(
 /// One place a circle's closed-cell premise is broken, carrying where.
 struct Break {
     /// **The identity the witness is chosen by** — the circle's cylinder class, the segment's
-    /// canonical endpoint names, and which root. Never the coordinate: choosing the smallest
-    /// `f64` would let rounding pick what the user is shown, and never the `Vec` position, which
-    /// is the array spelling of the "map's first hit" `NonManifoldResultEdge` warns about.
-    key: (usize, [[usize; 3]; 2], u8),
+    /// wall and canonical endpoint names, and which root. Never the coordinate: choosing the
+    /// smallest `f64` would let rounding pick what the user is shown, and never the `Vec`
+    /// position, which is the array spelling of the "map's first hit" `NonManifoldResultEdge`
+    /// warns about.
+    ///
+    /// ★ **The wall is in the key so the key is total.** Segments merge by wall *and* endpoint
+    /// set, so two of them can carry the same endpoints on different walls; without the wall the
+    /// two would tie, and a stable sort would hand the choice straight back to the `Vec` order
+    /// this key exists to escape.
+    key: (usize, usize, [[usize; 3]; 2], u8),
     /// A crossing outranks a containment: it names a point of the geometry, where a containment
     /// can only point at the edge that sits inside.
     crossing: bool,
@@ -1820,6 +1826,11 @@ fn circle_crossings(
     let (line, roots) = match nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)? {
         CylinderMeet::Pair { line, s } => (line, vec![(0u8, s[0]), (1, s[1])]),
         CylinderMeet::Tangent { line, s } => (line, vec![(0u8, QuadVal::from_rat(s))]),
+        // ★ Unreachable while the caller's `hit` holds — a segment that meets the solid
+        // cylinder has a line that meets its surface, and this line is ⊥ to the axis so it
+        // cannot pass inside without crossing. Left returning "no crossings" rather than made
+        // loud: the cost of being wrong here is a witness of the wrong shape, and the cost of
+        // being wrong the other way is a panic on a valid model.
         CylinderMeet::Miss(_) => return Some(Vec::new()),
         other => unreachable!(
             "a circle's class is ⊥ to the axis, so its meet with any wall is ⊥ to the axis and \
