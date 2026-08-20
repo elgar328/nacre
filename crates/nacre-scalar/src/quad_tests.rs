@@ -814,3 +814,224 @@ fn moving_the_axis_moves_the_answer() {
         ri(3)
     ));
 }
+
+// ---- One ruler for two kinds of point (M6-2b preparation) ----
+//
+// ★★ An arrangement that carries arcs holds vertices of two shapes: a three-plane node, whose
+// coordinate is rational, and a plane·plane·cylinder node, whose coordinate is `a + b√c`. The
+// winding is read at the ring's lexicographically least node, so the two must be comparable —
+// and the comparison must never decline, because a "cannot order" would leave a valid solid
+// unbuilt for a reason about arithmetic rather than about shape.
+
+/// The unit z-cylinder cut by `x = 0` gives `(0, ±1, z)` — **rational** roots, so the same two
+/// points can be named the other way too, by three planes. ★ That is the only place the new road
+/// and the old one answer about the *same value*, which makes it the one independent oracle
+/// available: everything else about `a + b√c` has no three-plane spelling at all.
+#[test]
+fn the_two_roads_agree_where_a_crossing_is_rational() {
+    let (o, m, radius) = zcyl();
+    let cut = plane(1, 0, 0, 0); // x = 0
+    let lid = plane(0, 0, 1, -3); // z = 3
+    let CylinderMeet::Pair { line, s } =
+        plane_plane_cylinder(&cut, &lid, &o, &m, radius).expect("fits")
+    else {
+        panic!("x = 0 crosses the unit cylinder twice");
+    };
+    // ★ Which root is which is **derived, not read back**: `plane_plane_cylinder` orders along
+    // `d = n_cut × n_lid = (1,0,0) × (0,0,1) = (0,-1,0)`, so ascending `s` runs toward −y and
+    // `s[0]` is the `+y` end.
+    for (sv, want_y) in s.iter().zip([1.0, -1.0]) {
+        let p = branch_point_f64(&line, sv);
+        assert!(
+            (p[0]).abs() < 1e-12 && (p[1] - want_y).abs() < 1e-12 && (p[2] - 3.0).abs() < 1e-12,
+            "{p:?}"
+        );
+    }
+    // The same point, named by three planes: x = 0, z = 3, y = ±1.
+    for (sv, y) in s.iter().zip([1i128, -1]) {
+        let meet = crate::three_planes_big([
+            &crate::PlaneName::Narrow(cut),
+            &crate::PlaneName::Narrow(lid),
+            &crate::PlaneName::Narrow(plane(0, 1, 0, -y)),
+        ])
+        .expect("three independent planes");
+        for axis in 0..3 {
+            assert_eq!(
+                cmp_coord_meet_branch(&meet, &line, sv, axis),
+                Orient::Zero,
+                "the two roads name one point (axis {axis})"
+            );
+        }
+    }
+    // ★★ **Coincidence alone cannot see a reversed subtraction** — `Zero` is symmetric. So the
+    // same cross-road fixture also asserts a *direction*: the `y = +1` three-plane point against
+    // the `y = −1` root, where the answer has a sign to get wrong.
+    let top = crate::three_planes_big([
+        &crate::PlaneName::Narrow(cut),
+        &crate::PlaneName::Narrow(lid),
+        &crate::PlaneName::Narrow(plane(0, 1, 0, -1)),
+    ])
+    .expect("independent");
+    assert_eq!(
+        cmp_coord_meet_branch(&top, &line, &s[1], 1),
+        Orient::Positive,
+        "+1 lies above the −1 root"
+    );
+}
+
+/// **Hand-derived, from the geometry and not from the engine.** `x = 1/2` cuts the unit circle at
+/// `y = ±√3/2`, so on the `y` axis the second root is above the first and both straddle any
+/// rational between them. The three-plane point `(1/2, 0, 0)` sits between them.
+#[test]
+fn a_rational_point_is_placed_between_two_irrational_ones() {
+    let (o, m, radius) = zcyl();
+    let cut = plane(2, 0, 0, -1); // x = 1/2
+    let CylinderMeet::Pair { line, s } =
+        plane_plane_cylinder(&cut, &plane(0, 0, 1, 0), &o, &m, radius).expect("fits")
+    else {
+        panic!("x = 1/2 crosses twice");
+    };
+    let mid = crate::three_planes_big([
+        &crate::PlaneName::Narrow(cut),
+        &crate::PlaneName::Narrow(plane(0, 0, 1, 0)),
+        &crate::PlaneName::Narrow(plane(0, 1, 0, 0)), // y = 0
+    ])
+    .expect("independent");
+    // ★ Which root is which is **derived from the two normals**, not read back: the roots ascend
+    // along `d = n_cut × n_lid = (2,0,0) × (0,0,1) = (0,−2,0)`, so `s[0]` is the `+√3/2` end.
+    // Hence `y`: `s[1] = −√3/2  <  mid = 0  <  s[0] = +√3/2`.
+    assert_eq!(
+        cmp_coord_meet_branch(&mid, &line, &s[0], 1),
+        Orient::Negative
+    );
+    assert_eq!(
+        cmp_coord_meet_branch(&mid, &line, &s[1], 1),
+        Orient::Positive
+    );
+    // The two roots against each other, on the same radical — first storey.
+    assert_eq!(
+        cmp_coord_branch((&line, &s[0]), (&line, &s[1]), 1),
+        Orient::Positive
+    );
+    assert_eq!(
+        cmp_coord_branch((&line, &s[1]), (&line, &s[0]), 1),
+        Orient::Negative
+    );
+    // x is the same for both — the cut plane pins it.
+    assert_eq!(
+        cmp_coord_branch((&line, &s[0]), (&line, &s[1]), 0),
+        Orient::Zero
+    );
+    assert_eq!(cmp_coord_meet_branch(&mid, &line, &s[0], 0), Orient::Zero);
+}
+
+/// **Two different radicands — the second storey.** `x = 1/2` gives `y = ±√3/2`; `x = 3/5` gives
+/// `y = ±4/5`… so pick `x = 1/3`, whose `y = ±√8/3` shares no radicand with `√3/2`. The exact
+/// order must match the realized one, and the realization is only the *witness* here: the
+/// assertion is the hand-derived inequality `√8/3 > √3/2` (`8/9 > 3/4`).
+#[test]
+fn two_points_from_different_cuts_order_on_the_second_storey() {
+    let (o, m, radius) = zcyl();
+    let lid = plane(0, 0, 1, 0);
+    let roots = |a: i128, b: i128| {
+        let cut = plane(b, 0, 0, -a); // x = a/b
+        let CylinderMeet::Pair { line, s } =
+            plane_plane_cylinder(&cut, &lid, &o, &m, radius).expect("fits")
+        else {
+            panic!("crosses twice");
+        };
+        (line, s)
+    };
+    let (l_half, s_half) = roots(1, 2); // y = ±√3/2 ≈ ±0.8660
+    let (l_third, s_third) = roots(1, 3); // y = ±√8/3 ≈ ±0.9428
+    assert_ne!(
+        s_half[1].c(),
+        s_third[1].c(),
+        "the fixture must really reach the second storey"
+    );
+    // ★ Both lines order toward −y (`d = (b,0,0) × (0,0,1) = (0,−b,0)`), so `s[0]` is the upper
+    // root. √8/3 > √3/2 because 8/9 > 3/4 — derived from the radii, not read back.
+    assert_eq!(
+        cmp_coord_branch((&l_third, &s_third[0]), (&l_half, &s_half[0]), 1),
+        Orient::Positive
+    );
+    assert_eq!(
+        cmp_coord_branch((&l_half, &s_half[1]), (&l_third, &s_third[1]), 1),
+        Orient::Positive,
+        "mirrored below the axis, −√3/2 is the larger of the two"
+    );
+}
+
+/// ★ **A point too wide for `Rat` still answers.** Three planes whose meet needs a numerator past
+/// `i128` give a [`MeetPoint::Wide`]; the road that narrows to `Rat` would have declined here, and
+/// declining is what this whole design exists to avoid.
+#[test]
+fn a_wide_three_plane_point_is_still_placed() {
+    use num_bigint::BigInt;
+    let (o, m, radius) = zcyl();
+    let cut = plane(1, 0, 0, 0);
+    let lid = plane(0, 0, 1, 0);
+    let CylinderMeet::Pair { line, s } =
+        plane_plane_cylinder(&cut, &lid, &o, &m, radius).expect("fits")
+    else {
+        panic!("crosses twice");
+    };
+    // x = 10^40 · t / 10^40 — a wide name for the plane x = 7, so the meet is wide by carrier.
+    let huge: BigInt = BigInt::from(10u8).pow(40);
+    let wide_x = crate::PlaneName::Wide([
+        huge.clone(),
+        BigInt::from(0),
+        BigInt::from(0),
+        -(&huge * BigInt::from(7)),
+    ]);
+    let meet = crate::three_planes_big([
+        &wide_x,
+        &crate::PlaneName::Narrow(lid),
+        &crate::PlaneName::Narrow(plane(0, 1, 0, 0)),
+    ])
+    .expect("independent");
+    // The three-plane point is `(7, 0, 0)`; the branch points are `(0, +1, 0)` and `(0, −1, 0)`
+    // (ascending `s` runs toward −y, as derived above).
+    assert_eq!(
+        cmp_coord_meet_branch(&meet, &line, &s[0], 0),
+        Orient::Positive
+    );
+    assert_eq!(
+        cmp_coord_meet_branch(&meet, &line, &s[0], 1),
+        Orient::Negative
+    );
+    assert_eq!(
+        cmp_coord_meet_branch(&meet, &line, &s[1], 1),
+        Orient::Positive
+    );
+}
+
+/// The degenerate rung: an axis the line does not move along (`dir_k = 0`) makes the coordinate
+/// rational, so `b` vanishes and the comparison drops to a plain integer sign.
+#[test]
+fn an_axis_the_line_does_not_move_along_is_rational() {
+    let (o, m, radius) = zcyl();
+    let cut = plane(2, 0, 0, -1); // x = 1/2 — the line runs in y, not x or z
+    let lid = plane(0, 0, 1, -5); // z = 5
+    let CylinderMeet::Pair { line, s } =
+        plane_plane_cylinder(&cut, &lid, &o, &m, radius).expect("fits")
+    else {
+        panic!("crosses twice");
+    };
+    for sv in &s {
+        let p = branch_point_f64(&line, sv);
+        assert!(
+            (p[0] - 0.5).abs() < 1e-12 && (p[2] - 5.0).abs() < 1e-12,
+            "{p:?}"
+        );
+    }
+    // Both roots share x and z exactly, whatever the radical does to y.
+    assert_eq!(
+        cmp_coord_branch((&line, &s[0]), (&line, &s[1]), 0),
+        Orient::Zero
+    );
+    assert_eq!(
+        cmp_coord_branch((&line, &s[0]), (&line, &s[1]), 2),
+        Orient::Zero
+    );
+}

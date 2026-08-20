@@ -21,7 +21,7 @@
 //! Value equality is the sign tower's job (`x.checked_sub(y)?.sign() == Orient::Zero`);
 //! structural equality is deliberately not offered until a consumer needs it by name.
 
-use crate::{Orient, Rat};
+use crate::{MeetPoint, Orient, Rat};
 use num_bigint::BigInt;
 
 /// A quadratic algebraic scalar `a + b·√c`, exact.
@@ -179,6 +179,114 @@ fn integerize(a: Rat, b: Rat, c: Rat) -> (BigInt, BigInt, BigInt) {
     let bd = bd_raw * cq;
     // Multiply through by ad·bd (> 0): A = an·bd, B = bn·ad.
     (an * &bd, bn * ad, big_c)
+}
+
+/// One coordinate of a plane·plane·cylinder point, **exactly**: `(a + b·√c) / d` with `d > 0`.
+///
+/// ★★ **Integers, not `Rat` — and that is the whole design.** The point is
+/// `line.base() + s·line.dir()`, and building that in `QuadVal` (which is `Rat`-backed) can
+/// overflow `i128` on the way in. Every comparison below would then decline for a reason that has
+/// nothing to do with the geometry, which is the one thing this file exists to prevent. So the
+/// coordinate is carried to `BigInt` before anything is multiplied.
+///
+/// ★ **Not [`integerize`].** That one scales by a *positive* factor to make the radicand integral,
+/// which preserves the **sign** and not the value — fine inside one sign question, useless for
+/// comparing two numbers built independently. This keeps `d` so the value survives.
+struct AxisCoord {
+    a: BigInt,
+    b: BigInt,
+    c: BigInt,
+    d: BigInt,
+}
+
+/// The coordinate of `line.base() + s·line.dir()` on `axis`, exact.
+///
+/// `√(cn/cd) = √(cn·cd)/cd` folds the radicand's denominator into `b`, so the radicand comes out
+/// integral (`c`) and everything else rides one positive denominator.
+fn axis_coord(line: &MeetLine, s: &QuadVal, axis: usize) -> AxisCoord {
+    let big = |r: Rat| (BigInt::from(r.numer()), BigInt::from(r.denom()));
+    let (base_n, base_d) = big(line.base()[axis]);
+    let (dir_n, dir_d) = big(line.dir()[axis]);
+    let (a_n, a_d) = big(s.a());
+    let (b_n, b_d) = big(s.b());
+    let (c_n, c_d) = big(s.c());
+    // base/base_d + (a_n/a_d)·(dir_n/dir_d)  +  (b_n/b_d)·(dir_n/dir_d)/c_d · √(c_n·c_d)
+    let d = &base_d * &a_d * &dir_d * &b_d * &c_d;
+    let a = &base_n * (&a_d * &dir_d * &b_d * &c_d) + &a_n * &dir_n * (&base_d * &b_d * &c_d);
+    let b = &b_n * &dir_n * (&base_d * &a_d);
+    AxisCoord {
+        a,
+        b,
+        c: c_n * c_d,
+        d,
+    }
+}
+
+/// **The realized point of a plane·plane·cylinder crossing** — a cache value for witnesses and
+/// display, never a decision (see [`QuadVal::to_f64`]).
+///
+/// ★ Total: the exact coordinate is built in `BigInt`, so there is no width at which this stops
+/// answering. A caller that assembled the same expression in `QuadVal` would lose the point
+/// instead — which is what this replaces.
+pub fn branch_point_f64(line: &MeetLine, s: &QuadVal) -> [f64; 3] {
+    core::array::from_fn(|axis| {
+        let k = axis_coord(line, s, axis);
+        let f = |x: &BigInt| -> f64 {
+            use num_traits::ToPrimitive;
+            x.to_f64().unwrap_or(f64::NAN)
+        };
+        (f(&k.a) + f(&k.b) * f(&k.c).sqrt()) / f(&k.d)
+    })
+}
+
+/// **Which side of a plane·plane·cylinder point a three-plane point lies on, along one axis** —
+/// `Positive` when the three-plane point's coordinate is the larger. Exact and **total**.
+///
+/// The two vertices an arrangement can hold once arcs arrive are named in different worlds: a
+/// three-plane node is a rational point ([`MeetPoint`], `Narrow` or `Wide`), a branch node is
+/// `a + b√c`. `loop_winding` needs the lexicographically least node of a ring, so it must compare
+/// across them — and this is that comparison, reduced to one first-storey sign:
+/// `sign((m/dm) − (a + b√c)/d) = sign((m·d − a·dm) + (−b·dm)√c)` since both denominators are
+/// positive.
+///
+/// **The caller supplies the `MeetPoint`.** How it was solved — `three_planes_big` from canonical
+/// names, or the integer core from any exact rows — is not this predicate's business.
+///
+/// ★★ **What this rests on: rational plane coefficients.** An arbitrarily rotated plane has
+/// irrational coefficients and no rational name, and then there is nothing to lift. That case does
+/// not arise here because the cylinder gate refuses it upstream (`wp.rotated`, and a class with no
+/// `base_rat`), so this is the exact fast road **for the rational population** — not a universal
+/// comparison. When rotation opens (M6-3) the answer is the toleranced ladder in `nacre-cip`,
+/// which escalates precision and abstains *by name* rather than guessing, not this function
+/// stretched to fit.
+pub fn cmp_coord_meet_branch(m: &MeetPoint, line: &MeetLine, s: &QuadVal, axis: usize) -> Orient {
+    let (mm, dm) = m.lift();
+    let k = axis_coord(line, s, axis);
+    sign1_int(&(&mm[axis] * &k.d - &k.a * &dm), &(-(&k.b * &dm)), &k.c)
+}
+
+/// **The order of two plane·plane·cylinder points along one axis** — `Positive` when the first is
+/// the larger. Exact and **total**.
+///
+/// ★ **Same radical first, because it is cheaper — not because it is safer.** Two crossings of one
+/// segment with one circle are the two roots of a single quadratic, so they share a radicand and
+/// the difference stays on the first storey; that is also the pair an arc split meets most often.
+/// Different radicands (two different segments cutting one circle, or two circles) land on the
+/// second storey, and `biquad_sign_int` answers there without declining either — the `None` on its
+/// public entry is a *domain* answer (a negative radicand), which a discriminant cannot be.
+pub fn cmp_coord_branch(
+    first: (&MeetLine, &QuadVal),
+    second: (&MeetLine, &QuadVal),
+    axis: usize,
+) -> Orient {
+    let p = axis_coord(first.0, first.1, axis);
+    let q = axis_coord(second.0, second.1, axis);
+    let a = &p.a * &q.d - &q.a * &p.d;
+    let (b, c) = (&p.b * &q.d, -(&q.b * &p.d));
+    if p.c == q.c {
+        return sign1_int(&a, &(b + c), &p.c);
+    }
+    biquad_sign_int(&a, &b, &c, &BigInt::from(0), &p.c, &q.c)
 }
 
 fn sign_big(x: &BigInt) -> Orient {
