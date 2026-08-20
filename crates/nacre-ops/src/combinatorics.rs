@@ -379,8 +379,93 @@ pub(crate) fn turn_at(
     turn_between(jd, p, &ring[(i + n - 1) % n], &ring[i])
 }
 
-/// The turn from one edge to another, both on `P` — [`turn_at`] with the two edges named, so a
-/// caller that had to look past a straight stretch can say which pair it means.
+/// **Do two carriers give one direction on `P`?** — `P ∩ a` and `P ∩ b` are parallel.
+///
+/// ★ **`parallel`, not `collinear`, and the difference is the caller's.** Two parallel lines are
+/// the same line only when they share a point. [`loop_winding`]'s walk-back has that extra premise
+/// (its two edges are chained through a ring), so there parallel *does* mean collinear;
+/// `arrangement`'s wall direction families do not — its own comment says so: *"Same family ⇒ the
+/// two lines are parallel and meet in no point."* One predicate, two premises, and the premise
+/// belongs to whoever has it.
+///
+/// ★★ **The same primitive answers a different question elsewhere and that is left alone.**
+/// `plane_pair_dir_sign(p, wall, c) != 0` also spells "does this third plane *cut* the line" — a
+/// fact about whether a **point** can be named on it, not about an edge's direction. Same
+/// arithmetic, different sentence; folding them would put one name on two propositions.
+pub(crate) fn parallel_carriers(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: usize,
+    b: usize,
+) -> bool {
+    jd.plane_pair_dir_sign(p, a, b) == 0
+}
+
+/// **Two directions along one carrier, running opposite ways** — the `π` end of the angular order.
+///
+/// ★ **It is not "the angle is π"**, and the guard that makes it one stays with the caller:
+/// `arrangement`'s `angular_order` asks this only inside the bucket where the turn already came
+/// back `0`. Pulled out of that guard the predicate answers a different question, because two
+/// directions on *different* carriers can also be collinear (aliasing that `union_wall` did not
+/// reach), and those belong in the `0` bucket rather than the `π` one.
+pub(crate) fn antiparallel(a: (usize, i8), b: (usize, i8)) -> bool {
+    a.0 == b.0 && a.1 != b.1
+}
+
+/// What an earlier ring edge does relative to `later` — the three answers [`loop_winding`]'s
+/// walk-back needs, as one word each instead of two inline tests.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Continuation {
+    /// Not parallel: the loop turns here, so this is the edge the turn is read against.
+    Turns,
+    /// Parallel and the same way: one straight run, keep walking back.
+    Straight,
+    /// Parallel and the *opposite* way: the ring doubles back along the line it came in on — an
+    /// antenna, whose tip has no turn and whose neighbours' turn belongs to a different vertex.
+    DoublesBack,
+}
+
+/// [`Continuation`] of `earlier` with respect to `later`, both on `P`.
+///
+/// ★★★ **`later` is the *fixed* reference, never the previous candidate.** The walk-back compares
+/// every candidate with the edge the turn will be read at, not with its neighbour — chaining it
+/// would weaken "the whole run goes one way" into "each neighbouring pair does", and those differ
+/// on a run that reverses twice.
+///
+/// ★★ **Measured 2026-08-21: nothing in the suite reaches `DoublesBack`** — `straight_angle` is
+/// raised nowhere at all (`--features reject-trace` over the workspace: 13 reasons, 48 raises, this
+/// one zero), and it is not in the reject census's frozen corpus either. It is an unfired backstop
+/// like `angular_order`'s `UnorderedEdges`, kept because upstream is *supposed* to make it
+/// impossible (`merge_coincident`, `split_at_crossings`) and that is an argument rather than a
+/// check. So this extraction is defended by derivation, not by a test — recorded, not hidden.
+pub(crate) fn continuation(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    earlier: (usize, i8),
+    later: (usize, i8),
+) -> Continuation {
+    if !parallel_carriers(jd, p, earlier.0, later.0) {
+        Continuation::Turns
+    } else if earlier.1 == later.1 {
+        Continuation::Straight
+    } else {
+        Continuation::DoublesBack
+    }
+}
+
+/// The turn **at a point** — `leaving.node` — from the direction the loop arrives on to the one it
+/// leaves on.
+///
+/// ★★ **`arriving` need not be adjacent to `leaving`.** [`loop_winding`] walks back past a straight
+/// run and hands the edge on its far side; what licenses that substitution is
+/// [`Continuation::Straight`] — the run is parallel and travelled the same way, so its direction
+/// *is* the direction the loop arrives on. Nothing here checks it, because the caller is the one
+/// that established it.
+///
+/// ★ **Today the two edges' whole-edge directions are the directions at that point**, and that
+/// holds only because every edge is straight: a line's tangent is the same at both ends. An arc's
+/// is not, so this is the sentence that has to grow — an **arity** change ("which end"), not just a
+/// wider direction type.
 fn turn_between(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
@@ -435,12 +520,19 @@ fn turn_between(
 /// assertion is sensitive to that factor**, which is not the same as "no unit fixture reaches a
 /// reversed face".)
 ///
-/// ★★★ **Two more places read the direction's representation, and they are not this atom** — a
-/// reader who widens only the input type here will miss them:
-/// - the π pole in `angular_order` (`same wall, opposite sign`), which for arcs becomes "same
-///   circle, opposite tangent";
-/// - the collinearity walk-back in [`loop_winding`] (`det == 0`), which becomes "are the tangents
-///   parallel".
+/// ★★★ **Three more places read the direction's representation, and they are not this atom.** They
+/// used to be inline — this paragraph was the only thing that found them, and it **undercounted**:
+/// it listed two, and a sweep of `plane_pair_dir_sign`'s consumers turned up a third in another
+/// file. Each is a named function beside this one now, so the next widening is a `match` the
+/// compiler points at rather than a list a reader has to trust:
+/// - [`antiparallel`] — the π pole in `angular_order` ("same wall, opposite sign"), which for arcs
+///   becomes "same circle, opposite tangent";
+/// - [`parallel_carriers`] — [`loop_winding`]'s walk-back, which becomes "are the tangents
+///   parallel";
+/// - [`parallel_carriers`] again — `arrangement::split_at_crossings`' **wall direction families**
+///   (`Wall.dir`), the one the old list missed. It sits in a different file and asks the same
+///   question with a weaker premise (its two walls share no point), which is why one predicate
+///   serves both and the premise stays with the caller.
 ///
 /// ★ **Neither the coordinate half nor the naming half is open any more.** Comparing a three-plane
 /// node with a branch node is `nacre_scalar::quad::cmp_coord_meet_branch`, exact and total; and a
@@ -1387,15 +1479,20 @@ pub(crate) fn loop_winding(
     // turn and whose neighbours' turn belongs to a different vertex. Skipping past that would
     // read a turn from somewhere else and call it this vertex's: a wrong winding, silently.
     let n = ring.len();
-    let dir = edge_sign(jd, p, &ring[lo])?;
+    let leaving = (ring[lo].wall, edge_sign(jd, p, &ring[lo])?);
     let mut back = (lo + n - 1) % n;
-    while jd.plane_pair_dir_sign(p, ring[back].wall, ring[lo].wall) == 0 {
-        if edge_sign(jd, p, &ring[back])? != dir {
-            return Err(reject(RejectReason::StraightAngle)); // the ring doubles back here
+    loop {
+        let earlier = (ring[back].wall, edge_sign(jd, p, &ring[back])?);
+        match continuation(jd, p, earlier, leaving) {
+            Continuation::Turns => break,
+            Continuation::DoublesBack => return Err(reject(RejectReason::StraightAngle)),
+            Continuation::Straight => {}
         }
         back = (back + n - 1) % n;
         if back == lo {
-            // Every edge of the ring lies on one line: it bounds nothing.
+            // Every edge of the ring lies on one line: it bounds nothing. ★ This is the *loop's*
+            // termination, not one of `continuation`'s answers — it is about having walked the
+            // whole ring, not about what any one edge does.
             return Err(reject(RejectReason::DegenerateRing));
         }
     }

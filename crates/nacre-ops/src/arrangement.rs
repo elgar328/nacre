@@ -1347,7 +1347,7 @@ fn split_at_crossings(
             let at = *slot.entry(s.wall).or_insert_with(|| {
                 let dir = reps
                     .iter()
-                    .position(|&rep| jd.plane_pair_dir_sign(wc, rep, s.wall) == 0)
+                    .position(|&rep| combinatorics::parallel_carriers(jd, wc, rep, s.wall))
                     .unwrap_or_else(|| {
                         reps.push(s.wall);
                         reps.len() - 1
@@ -1551,7 +1551,7 @@ fn angular_order(
             c if c > 0 => pos.push(i),
             c if c < 0 => neg.push(i),
             // Collinear with the reference: angle 0 (same ray) or π (opposite ray).
-            _ if edges[i].0 == edges[0].0 && edges[i].1 != edges[0].1 => pole.push(i),
+            _ if combinatorics::antiparallel(edges[i], edges[0]) => pole.push(i),
             _ => zero.push(i),
         }
     }
