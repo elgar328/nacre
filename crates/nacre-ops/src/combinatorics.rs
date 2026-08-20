@@ -442,9 +442,14 @@ fn turn_between(
 /// - the collinearity walk-back in [`loop_winding`] (`det == 0`), which becomes "are the tangents
 ///   parallel".
 ///
-/// ★ The *coordinate* half of that widening is no longer open: comparing a three-plane node with a
-/// branch node is `nacre_scalar::quad::cmp_coord_meet_branch`, exact and total. What remains is
-/// naming — the arrangement still identifies a vertex by three plane classes.
+/// ★ **Neither the coordinate half nor the naming half is open any more.** Comparing a three-plane
+/// node with a branch node is `nacre_scalar::quad::cmp_coord_meet_branch`, exact and total; and a
+/// branch point now has a name ([`NodeId::Branch`], minted by `arrangement::circle_crossings`).
+/// What is left for arcs is exactly this: the **direction** concept, at the three sites above.
+/// ★★ And it is not only the input type — for a straight edge the tangent is the same at both
+/// ends, so "the edge's direction" and "the direction *at* this endpoint" coincide and nothing has
+/// had to tell them apart. An arc's two ends differ, so every site that reads a whole-edge sign
+/// has to say which end it means; that is an **arity** change, not just a wider vessel.
 pub(crate) fn turn(jd: &Judge<'_, WorkingPlane>, p: usize, a: (usize, i8), b: (usize, i8)) -> i8 {
     a.1 * b.1 * jd.plane_pair_dir_sign(p, a.0, b.0) * jd.planes[p].frame_sign
 }

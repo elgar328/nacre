@@ -63,7 +63,11 @@ pub enum VertexDef {
     /// place that rule lives** — do not spell it again at the site.
     ///
     /// The producer arrives with M6-2's boolean; until then hand-built fixtures and validate
-    /// are the consumers (the `FaceMisoriented`-control precedent).
+    /// are the consumers (the `FaceMisoriented`-control precedent). ★ As of M6-2b the *name* has
+    /// one a layer up — `nacre-ops`' arrangement mints these points as `NodeId::Branch` — but this
+    /// **definition** still does not: the assembler's seam table declines a branch node rather
+    /// than minting one, because class order and handle order are canonical in different index
+    /// spaces and that correspondence has to be established a second time.
     Branch {
         /// The two cutting planes, ascending handle order (the `ThreePlane` precedent).
         planes: [Handle<Surface>; 2],

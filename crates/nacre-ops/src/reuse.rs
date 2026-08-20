@@ -222,6 +222,11 @@ pub(crate) fn class_plans(
 /// The arrangement names a vertex `sorted3([w, f, third])`: the three plane classes that meet
 /// there. A vertex of a solid meets exactly the classes of the faces around it, so the same name
 /// is available without arranging anything.
+///
+/// ★ That is *a* name, not the only one since M6-2b — the arrangement also names branch points
+/// ([`crate::combinatorics::NodeId::Branch`]). This table stays three-plane by construction: its
+/// population is the vertices a **solid already has**, and a solid gains a branch vertex only when
+/// the arc split starts building them.
 pub(crate) struct VertexClasses {
     vertices: HashMap<Handle<Vertex>, Vec<usize>>,
     /// Each edge's two plane classes — **the wall a ring edge rides**, from the incidence rather
