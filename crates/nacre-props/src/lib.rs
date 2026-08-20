@@ -242,6 +242,10 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
                 match edge_curve(model, he) {
                     Curve::Line(_) => grow(model.vertex_point(he_start(model, he)?), [0.0; 3]),
                     Curve::Circle(circle) => {
+                        // ★ The **whole** circle's extent, whatever the edge's endpoints say — so
+                        // an arc (M6-2b) grows the box too much, never too little. A bound that
+                        // errs outward stays a bound, which is why this one needs no change when
+                        // arcs arrive; `sample_edge` in `nacre-tess` is the one that would not.
                         let n = circle.normal().as_array();
                         let r = circle.radius();
                         let pad = std::array::from_fn(|i| r * (1.0 - n[i] * n[i]).max(0.0).sqrt());
@@ -323,6 +327,12 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
         // `nacre-ops` needs the same computation for its sketch frames).
         nacre_geom::planar_region_area_centroid(&points, &[]).ok_or(PropsError::UnsupportedBoundary)
     } else if outer.half_edges.len() == 1 {
+        // ★ **`len() == 1` is what makes the whole-circle formula safe when arcs arrive**, and the
+        // reason is structural rather than a check: an arc has two *different* endpoints, so it
+        // cannot close a loop alone — the smallest arc-bounded loop is an arc plus a chord, two
+        // half-edges, which lands in the `else` and declines. Written down so the next reader does
+        // not "fix" a formula that is not wrong. (A loop *mixing* arcs with lines is the same
+        // decline, and `nacre-validate::loop_winding` names it as its own landing site.)
         match edge_curve(model, outer.half_edges[0]) {
             Curve::Circle(circle) => {
                 let area = PI * circle.radius() * circle.radius();

@@ -286,6 +286,16 @@ fn sample_edge(
         Curve::Circle(c) => {
             // Full-circle rim (v0 == v1 = seam): point 0 is the seam vertex at
             // angle 0 (= centre + r·ref_dir), the rest are interior edge points.
+            //
+            // ★★★ **This walks 0..τ without looking at `v1`, so an *arc* would come out a whole
+            // circle — silently.** `design.md` fixes an arc as a `Curve::Circle` edge whose two
+            // vertices differ (a closed edge being the full circle), so the two are told apart by
+            // `v0 == v1` and nothing here asks. There is no producer yet (the arrangement refuses
+            // a crossed circle, `RejectReason::CircleMeetsSegment`), which is why this is written
+            // down rather than fixed: when the arc split lands, this is the first place downstream
+            // that answers wrongly instead of declining. The test note at the bottom of this file
+            // already knew — the walking code did not say so.
+            debug_assert_eq!(v0, v1, "an arc reaches this walk as a whole circle (M6-2b)");
             let n = circle_segments(cfg, c.radius());
             let mut ring = Vec::with_capacity(n);
             ring.push(vertex_of(t, vmap, model, v0));
