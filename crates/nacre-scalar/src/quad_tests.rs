@@ -348,18 +348,12 @@ fn the_degenerate_ladder_names_every_outcome() {
             // Both roots lie on both cutting planes — the zero cross-check for plane_side,
             // meaningful precisely because the general root is irrational.
             for sv in &s {
-                assert_eq!(
-                    plane_side(&plane(1, 0, 0, 0), &line, sv),
-                    Some(Orient::Zero)
-                );
-                assert_eq!(
-                    plane_side(&plane(0, 0, 1, 0), &line, sv),
-                    Some(Orient::Zero)
-                );
+                assert_eq!(plane_side(&plane(1, 0, 0, 0), &line, sv), Orient::Zero);
+                assert_eq!(plane_side(&plane(0, 0, 1, 0), &line, sv), Orient::Zero);
             }
             // And the membership planes y = ±1 pin which root is which.
             assert_eq!(
-                plane_side(&plane(0, 1, 0, -1), &line, &s[0]).unwrap(),
+                plane_side(&plane(0, 1, 0, -1), &line, &s[0]),
                 if lo[1] > 0.0 {
                     Orient::Zero
                 } else {
@@ -399,8 +393,8 @@ fn a_tilted_meet_realizes_onto_its_carriers() {
                 let rhs = 1.5f64.powi(2) * dot(&mf, &mf);
                 assert!((lhs - rhs).abs() < 1e-9, "off the cylinder: {lhs} vs {rhs}");
                 // plane_side against its own carriers is exactly zero.
-                assert_eq!(plane_side(&p1, &line, sv), Some(Orient::Zero));
-                assert_eq!(plane_side(&p2, &line, sv), Some(Orient::Zero));
+                assert_eq!(plane_side(&p1, &line, sv), Orient::Zero);
+                assert_eq!(plane_side(&p2, &line, sv), Orient::Zero);
             }
         }
         other => panic!("expected Pair, got {other:?}"),

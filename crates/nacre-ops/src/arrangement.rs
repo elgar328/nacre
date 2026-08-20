@@ -1862,7 +1862,7 @@ fn circle_crossings(
         for (e, want) in &fences {
             // An endpoint-coincident crossing (`Zero`) counts as inside: it is a real point of
             // both the circle and the segment, and the arc split will need it.
-            let side = nacre_scalar::quad::plane_side(e, &line, &s)?;
+            let side = nacre_scalar::quad::plane_side(e, &line, &s);
             let got = match side {
                 nacre_scalar::Orient::Positive => 1,
                 nacre_scalar::Orient::Negative => -1,

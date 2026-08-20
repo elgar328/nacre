@@ -849,14 +849,39 @@ fn skew_axes_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Rat) -
     }
 }
 
-/// The side of `plane` a line-point lies on — `n·p + d = (n·base + d) + s·(n·dir)`, one
-/// `QuadVal` multiply-add, then the sign tower. `None` on overflow.
-pub fn plane_side(plane: &[Rat; 4], line: &MeetLine, s: &QuadVal) -> Option<Orient> {
-    let n = [plane[0], plane[1], plane[2]];
-    let base_term = dot3(&n, &line.base)?.checked_add(plane[3])?;
-    let dir_term = dot3(&n, &line.dir)?;
-    let val = QuadVal::from_rat(base_term).checked_add(&s.checked_mul_rat(dir_term)?)?;
-    Some(val.sign())
+/// The side of `plane` a line-point lies on — `n·p + d = (n·base + d) + s·(n·dir)`, then the sign
+/// tower. Exact and **total**.
+///
+/// ★★ **The arithmetic runs in `BigInt`, and that is the point.** The first spelling built the
+/// value in checked `Rat` and answered `None` on overflow, which put a width limit inside a
+/// *shape* question — the thing this crate exists to keep out. Its consumers are the arrangement's
+/// containment tests, where a decline is not a smaller answer but a refused solid.
+///
+/// Denominators are cleared as positive factors, so only the numerator's sign survives:
+/// `sign(P + Q·√c)` with `P`, `Q` rational becomes `sign1_int` on
+/// `(P.num·Q.den·c.den, Q.num·P.den, c.num·c.den)` — the same `√(p/q) = √(pq)/q` fold
+/// [`integerize`] uses.
+pub fn plane_side(plane: &[Rat; 4], line: &MeetLine, s: &QuadVal) -> Orient {
+    // Exact rationals as (numerator, denominator) with the denominator positive — `Ratio` keeps
+    // it so, and every step below preserves it.
+    type Q = (BigInt, BigInt);
+    let q = |r: Rat| -> Q { (BigInt::from(r.numer()), BigInt::from(r.denom())) };
+    let mul = |a: &Q, b: &Q| -> Q { (&a.0 * &b.0, &a.1 * &b.1) };
+    let add = |a: &Q, b: &Q| -> Q { (&a.0 * &b.1 + &b.0 * &a.1, &a.1 * &b.1) };
+    let dot = |v: &V3| -> Q {
+        (0..3).fold((BigInt::from(0), BigInt::from(1)), |acc, i| {
+            add(&acc, &mul(&q(plane[i]), &q(v[i])))
+        })
+    };
+    // P = (n·base + d) + s.a·(n·dir),  Q = s.b·(n·dir),  radicand s.c
+    let dir_term = dot(&line.dir);
+    let p = add(
+        &add(&dot(&line.base), &q(plane[3])),
+        &mul(&q(s.a()), &dir_term),
+    );
+    let r = mul(&q(s.b()), &dir_term);
+    let (cn, cd) = q(s.c());
+    sign1_int(&(&p.0 * &r.1 * &cd), &(&r.0 * &p.1), &(&cn * &cd))
 }
 
 /// Where a point sits on the seam-cut circle `(0, 2π)` — the four classes the circular order
