@@ -306,6 +306,10 @@ fn turn_between(
 ///   circle, opposite tangent";
 /// - the collinearity walk-back in [`loop_winding`] (`det == 0`), which becomes "are the tangents
 ///   parallel".
+///
+/// ★ The *coordinate* half of that widening is no longer open: comparing a three-plane node with a
+/// branch node is `nacre_scalar::quad::cmp_coord_meet_branch`, exact and total. What remains is
+/// naming — the arrangement still identifies a vertex by three plane classes.
 pub(crate) fn turn(jd: &Judge<'_, WorkingPlane>, p: usize, a: (usize, i8), b: (usize, i8)) -> i8 {
     a.1 * b.1 * jd.plane_pair_dir_sign(p, a.0, b.0) * jd.planes[p].frame_sign
 }
@@ -1122,9 +1126,12 @@ pub(crate) fn point_in_component(
 /// the direction's *representation* and will need their own answers: the collinearity walk-back
 /// below (`plane_pair_dir_sign == 0`, which becomes "are the tangents parallel"), and the
 /// lexicographic minimum above — whose comparison runs through `nacre_predicates`' expansion
-/// arithmetic while a branch point's coordinate is a `QuadVal`. **Those two representations do not
-/// meet today**; `node_coords_rat`'s rational road exists but declines on overflow. Named here so
-/// the next rung does not discover it late.
+/// arithmetic while a branch point's coordinate is `a + b√c`. ★ **That one is now answered**
+/// (`nacre_scalar::quad::cmp_coord_meet_branch` / `cmp_coord_branch`): both coordinates lift to
+/// `BigInt` and the difference is a single sign question on the existing tower, total in every
+/// pair. What is left here is not the arithmetic but the **plumbing** — this scan speaks in
+/// `[usize; 3]` node names, and a branch node has no such name until the arrangement's vertex
+/// identity widens.
 ///
 /// A ring may be *non-simple* — visiting one node twice — and still be a legitimate face: the
 /// unbounded contour of two cells that meet at a single point pinches through that point, tracing
