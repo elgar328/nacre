@@ -214,17 +214,20 @@ fn edge_sign(jd: &Judge<'_, WorkingPlane>, p: usize, e: &RingEdge) -> Result<i8,
 
 /// The turn at ring node `i`, about the face's **outward** normal: `+1` left, `-1` right.
 ///
-/// **No point is materialized, and no coordinate is read.** The incoming edge runs along
-/// `s_a·(n_P × n_A)` and the outgoing along `s_b·(n_P × n_B)`, where `A` and `B` are node
-/// `i`'s two non-`P` planes. Their cross product, dotted with `n_P`:
+/// **No point is materialized, and no coordinate is read** — the algebra that makes that true
+/// lives with the atom, [`turn`], and is not repeated here.
 ///
-/// ```text
-///   (n_P × n_A) × (n_P × n_B) = n_P · det[n_P, n_A, n_B]      (a×b)×(a×c) = a·det(a,b,c)
-///     ⇒  turn = s_a · s_b · sign(det[n_P, n_A, n_B]) · orient_sign(P)
-/// ```
+/// ★ **It is `0` exactly when the two walls name the same plane.** The node is `P ∩ A ∩ B`, and a
+/// point exists there only if the three normals are independent — so with two genuinely different
+/// planes the determinant cannot vanish. Two edges through one node whose lines are parallel are
+/// two edges on **one** line, and that is the straight stretch a ring can arrive as (the
+/// arrangement names a point wherever a feature crosses an edge); [`loop_winding`] walks back past
+/// exactly that.
 ///
-/// and `sign(det[…])` is [`plane_pair_dir_sign`](nacre_geom::intersect::plane_pair_dir_sign), already exact. It is never `0`: node `i`
-/// lies on all three planes, and a point exists there only if their normals are independent.
+/// ★★ **"Same plane" is not "same class".** Aliasing lets two classes name one plane, which is why
+/// `angular_order` folds them (`Aliases::union_wall`) and still keeps an honest `UnorderedEdges`
+/// for the pair aliasing did not reach. (The older wording here said "never `0`" — a claim about
+/// the predicate, where the truth is a claim about the two walls.)
 ///
 /// A ring is not convex, so this is **not** the winding — at a reflex node it is its
 /// opposite. [`loop_winding`] asks it at a hull vertex, where the two agree.
@@ -261,10 +264,17 @@ fn turn_between(
 /// normal — `+1` left, `-1` right, `0` collinear. The one place the sign is made.
 ///
 /// Each direction is given as `(wall, dir)`: the plane it rides beside `p`, and [`edge_dir`]'s
-/// sign along `n_p × n_wall`. The identity that makes it a single product is
-/// `((n_p×n_a) × (n_p×n_b))·n_p = ((n_p×n_a)·n_b)·|n_p|²`, so the turn's sign is
-/// `plane_pair_dir_sign(p, a, b)` corrected by the two travel signs and by `p`'s frame — no point
-/// is materialized and no coordinate is read.
+/// sign along `n_p × n_wall`. **No point is materialized and no coordinate is read** — the two
+/// directions are `s_a·(n_p × n_a)` and `s_b·(n_p × n_b)`, and
+///
+/// ```text
+///   (n_p × n_a) × (n_p × n_b) = n_p · det[n_p, n_a, n_b]      (a×b)×(a×c) = a·det(a,b,c)
+///     ⇒  turn = s_a · s_b · sign(det[n_p, n_a, n_b]) · orient_sign(p)
+/// ```
+///
+/// where `sign(det[…])` is `plane_pair_dir_sign`, already exact. ★ The derivation is spelled
+/// **here and nowhere else**: it used to sit in [`turn_at`]'s doc while the product itself was
+/// written out twice, which is the shape this function exists to end.
 ///
 /// ★★ **`0` comes back as `0`, on purpose.** Its two consumers want different things from it:
 /// `turn_between` calls it a [`RejectReason::StraightAngle`], and `arrangement`'s `angular_order`
@@ -285,8 +295,10 @@ fn turn_between(
 /// read, so a global sign error flips twice and cancels: they pin relative structure, not the
 /// convention. The convention is pinned end-to-end (volumes, cavities, nesting) — so a "tidy-up"
 /// that drops the `frame_sign` factor will come back red, just not where a reader would look
-/// first. (Dropping only `frame_sign` fails 11, all end-to-end: the corpus does reach `Reversed`
-/// faces, but no unit fixture does.)
+/// first. (Dropping only `frame_sign` fails 11, all end-to-end — so the corpus does reach
+/// `Reversed` faces. What that measures about the unit tests is narrower than it looks: **no unit
+/// assertion is sensitive to that factor**, which is not the same as "no unit fixture reaches a
+/// reversed face".)
 ///
 /// ★★★ **Two more places read the direction's representation, and they are not this atom** — a
 /// reader who widens only the input type here will miss them:
