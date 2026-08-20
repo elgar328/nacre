@@ -1105,6 +1105,15 @@ pub(crate) fn point_in_component(
 /// on its hull (fold each side of a pentagon slightly inward), so no such edge is guaranteed.
 /// A hull *vertex* always exists.
 ///
+/// ★★ **Where arcs will touch this** (M6-2b): the turn is read at **one** node, so a curved edge
+/// needs no angle sum — only its tangent's direction at that node. Two other things here do read
+/// the direction's *representation* and will need their own answers: the collinearity walk-back
+/// below (`plane_pair_dir_sign == 0`, which becomes "are the tangents parallel"), and the
+/// lexicographic minimum above — whose comparison runs through `nacre_predicates`' expansion
+/// arithmetic while a branch point's coordinate is a `QuadVal`. **Those two representations do not
+/// meet today**; `node_coords_rat`'s rational road exists but declines on overflow. Named here so
+/// the next rung does not discover it late.
+///
 /// A ring may be *non-simple* — visiting one node twice — and still be a legitimate face: the
 /// unbounded contour of two cells that meet at a single point pinches through that point, tracing
 /// a figure-8. The winding is read from the turn at the lexicographically smallest node, and a

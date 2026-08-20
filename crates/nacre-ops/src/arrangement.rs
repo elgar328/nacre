@@ -1526,6 +1526,13 @@ fn angular_order(
             _ => zero.push(i),
         }
     }
+    // ★★ **The π pole is a question about the direction's *representation*, not about the turn**
+    // — "same wall class, opposite travel sign". A circle's arc rides no wall, so when arcs arrive
+    // this test becomes "same circle, opposite tangent" and cannot be reached through
+    // `combinatorics::turn`. It is one of the three places the representation leaks (the atom, this
+    // pole, and `loop_winding`'s collinearity walk-back); widening only the atom's input type would
+    // leave this one answering about a field that is no longer there.
+    //
     // ★★★ **The order below exists only if no two edges share an angle, and that is an
     // assumption about *upstream*, not about this function.** Two edges leaving one vertex whose
     // turn is zero are on one line — parallel plus a shared point — so their cyclic order has no
