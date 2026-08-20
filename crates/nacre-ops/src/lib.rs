@@ -663,6 +663,13 @@ pub enum RejectReason {
     ///
     /// ★ Its per-face sibling is `DeclineKind::BranchNode`: the tracer's decline structure carries
     /// a face handle, so the paths inside it say *where* instead of raising this.
+    ///
+    /// ★★ **It ships with no fixture, and that is recorded rather than hidden.** Nothing mints a
+    /// branch node into a ring yet — the arrangement's only branch names live in the reject
+    /// witness's own key — so no shape in the corpus reaches these arms. The reject census is
+    /// fixture-driven and does not enumerate reasons, so nothing forces a row; when the arc split
+    /// gives these paths a real population, that is when one is owed. (`DegenerateWitness` is the
+    /// precedent: no fixture, written down, and not taken as licence to delete the guard.)
     BranchVertexUnnamed,
     /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
     /// intersection is an ellipse (M6-3's vocabulary).

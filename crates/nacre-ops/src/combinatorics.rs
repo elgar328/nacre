@@ -1307,15 +1307,24 @@ pub(crate) fn loop_winding(
     // it means moving the quad tower down into `nacre-cip` or lifting the ladder up into this
     // crate. **And the population is empty** — no ring can hold a branch node until the arc split
     // lands — so the comparator would ship unexercised.
-    let keys: Vec<[usize; 3]> = ring
-        .iter()
-        .map(|e| match e.node {
-            NodeId::ThreePlane(t) => Some(t),
-            NodeId::Branch { .. } => None,
-        })
-        .collect::<Option<_>>()
-        .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
-    let key = |i: usize| -> [usize; 3] { keys[i] };
+    //
+    // ★ **The scan is a scan, not a `Vec`.** This runs once per cell of every plane class, and
+    // rings here reach 95 nodes; collecting the names would put a heap allocation on that path for
+    // a check that only has to answer yes or no. The licence the closure then reads is this loop.
+    for e in ring {
+        match e.node {
+            NodeId::ThreePlane(_) => {}
+            NodeId::Branch { .. } => return Err(reject(RejectReason::BranchVertexUnnamed)),
+        }
+    }
+    let key = |i: usize| -> [usize; 3] {
+        match ring[i].node {
+            NodeId::ThreePlane(t) => t,
+            // Licensed by the scan above, in this function, three lines up — not by a caller's
+            // promise. A `match` and not `let`-`else` so a third variant lights it up.
+            NodeId::Branch { .. } => unreachable!("the scan above rejected every branch node"),
+        }
+    };
     // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with
     // the running minimum just means "not strictly smaller", so keep it; do not reject.
     let mut lo = 0usize;
@@ -1474,18 +1483,31 @@ pub(crate) fn node_coords_rat(
 /// `Pair`, and the mismatches are `None` rather than a nearest guess — so a second name for a
 /// tangency's one point is unrepresentable here, not merely discouraged.
 ///
-/// `def` must be the cylinder `n` names; the caller holds it (the class table's row) and this has
-/// no way to look it up. `None` is a three-plane node, a class with no rational description, a
-/// root the meet does not have, or checked-`Rat` overflow.
+/// `def` must be the cylinder class `n` names; the caller holds the class table's row and this has
+/// no way to look one up, so `cyl` comes with it and the two are checked against the name rather
+/// than promised — a mismatched pair would otherwise realize a real point of the *wrong* cylinder.
+/// `None` is a three-plane node, a class with no rational description, a root the meet does not
+/// have, or checked-`Rat` overflow.
 pub(crate) fn branch_point(
     jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
 ) -> Option<[f64; 3]> {
     use nacre_scalar::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
     let (planes, root) = match n {
-        NodeId::Branch { planes, root, .. } => (planes, root),
+        NodeId::Branch {
+            planes,
+            cyl: named,
+            root,
+        } => {
+            debug_assert_eq!(
+                named, cyl,
+                "the def handed in is not the cylinder the name says"
+            );
+            (planes, root)
+        }
         NodeId::ThreePlane(_) => return None,
     };
     let (p1, p2) = (

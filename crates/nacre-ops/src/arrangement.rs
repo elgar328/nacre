@@ -1790,7 +1790,7 @@ fn circles_meet_no_segment(
                 // the other crossing, visibly. A realization that overflows drops that one break
                 // (the same rule the `None` arm above follows) rather than moving the rejection.
                 Some(xs) => breaks.extend(xs.into_iter().filter_map(|n| {
-                    let at = combinatorics::branch_point(jd, &circ.def, n)?;
+                    let at = combinatorics::branch_point(jd, circ.cyl, &circ.def, n)?;
                     Some(Break {
                         key: (circ.cyl, sg.wall, sg.end, Some(n)),
                         crossing: true,
