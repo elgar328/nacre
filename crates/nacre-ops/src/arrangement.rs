@@ -1674,9 +1674,16 @@ fn component_count(segs: &[MergedSeg]) -> usize {
 /// where a class stopped.
 fn circles_meet_no_segment(
     jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
     segs: &[MergedSeg],
     circles: &[MergedCircle],
 ) -> Result<(), BoolError> {
+    // ★ **Collected, not returned at the first hit.** The verdict does not care which pair came
+    // first, but the *witness* would: reporting whichever the loops reached first makes the
+    // location depend on iteration order. Gathering them all lets the witness be chosen by name
+    // (`Break::key`), the rule `NonManifoldResultEdge` established. Only the failing path pays,
+    // and that path is a rejection.
+    let mut breaks: Vec<Break> = Vec::new();
     for circ in circles {
         let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
         for sg in segs {
@@ -1690,17 +1697,165 @@ fn circles_meet_no_segment(
             // real question — skipping it would let the one case it can express slip through.
             // (`extract_cells`' `CoincidentNodes` owns the malformed-edge story; this only avoids
             // asking a segment predicate about something that is not a segment.)
-            let hit = if p0 == p1 {
+            let collapsed = p0 == p1;
+            let hit = if collapsed {
                 nacre_scalar::cylinder_radial_side(&p0, &o, &m, r) != nacre_scalar::Orient::Positive
             } else {
                 nacre_scalar::segment_meets_cylinder(&p0, &p1, &o, &m, r)
             };
-            if hit {
-                return Err(reject(RejectReason::CircleMeetsSegment));
+            if !hit {
+                continue;
+            }
+            // ★★ **The verdict above is not re-asked below.** "Does a segment meet the solid
+            // cylinder" and "where does it cross the circle" are different questions — a segment
+            // lying wholly *inside* the disk answers yes to the first and has no crossing at all,
+            // and it still breaks the closed-cell premise. So the locator only decides the
+            // witness's shape; `hit` alone decides the rejection.
+            if collapsed {
+                // The line through a collapsed edge is not where the point is; its own coordinate
+                // is. Running the locator here would name a place the geometry never visits — the
+                // trap is that a collapsed edge still *has* a wall and a line, so the locator
+                // would answer, plausibly and wrongly.
+                //
+                // ★ **Unmeasured, and said so.** A probe across the whole ops suite reaches this
+                // branch **zero** times; it is defensive (as it already was before it had a
+                // witness to choose). So this rule is *chosen*, not measured — which is why it is
+                // written out rather than left to whatever the locator would have returned.
+                breaks.push(Break {
+                    key: (circ.cyl, sg.end, 0),
+                    crossing: false,
+                    at: RejectWhere::Point(realize(&p0)),
+                });
+                continue;
+            }
+            match circle_crossings(jd, wc, circ, sg, [&p0, &p1]) {
+                // Overflow in the locator leaves the rejection witnessless rather than turning it
+                // into a different rejection — this pass only ever *adds* a place.
+                None => {}
+                Some(xs) if xs.is_empty() => breaks.push(Break {
+                    key: (circ.cyl, sg.end, 0),
+                    crossing: false,
+                    at: RejectWhere::Segment([realize(&p0), realize(&p1)]),
+                }),
+                Some(xs) => breaks.extend(xs.into_iter().map(|(root, at)| Break {
+                    key: (circ.cyl, sg.end, root),
+                    crossing: true,
+                    at: RejectWhere::Point(at),
+                })),
             }
         }
     }
-    Ok(())
+    let Some(w) = witness(breaks) else {
+        return Ok(());
+    };
+    Err(crate::reject_at(RejectReason::CircleMeetsSegment, w))
+}
+
+/// One place a circle's closed-cell premise is broken, carrying where.
+struct Break {
+    /// **The identity the witness is chosen by** — the circle's cylinder class, the segment's
+    /// canonical endpoint names, and which root. Never the coordinate: choosing the smallest
+    /// `f64` would let rounding pick what the user is shown, and never the `Vec` position, which
+    /// is the array spelling of the "map's first hit" `NonManifoldResultEdge` warns about.
+    key: (usize, [[usize; 3]; 2], u8),
+    /// A crossing outranks a containment: it names a point of the geometry, where a containment
+    /// can only point at the edge that sits inside.
+    crossing: bool,
+    at: RejectWhere,
+}
+
+/// The witness of the whole class — `None` when nothing broke.
+fn witness(mut breaks: Vec<Break>) -> Option<RejectWhere> {
+    breaks.sort_by_key(|b| (!b.crossing, b.key));
+    breaks.into_iter().next().map(|b| b.at)
+}
+
+fn realize(p: &[nacre_scalar::Rat; 3]) -> Point3 {
+    Point3::from_array([p[0].to_f64(), p[1].to_f64(), p[2].to_f64()])
+}
+
+/// **Where a segment crosses a circle**, exactly — the points a `VertexDef::Branch` names.
+///
+/// The segment rides `wc ∩ sg.wall` and the circle is `cylinder ∩ wc`, so a crossing is
+/// `plane ∩ plane ∩ cylinder` — the very shape [`nacre_scalar::plane_plane_cylinder`] answers and
+/// [`nacre_topo::VertexDef::Branch`] names. Solving along the segment instead would be shorter and
+/// would yield a point with **no name**, which the next rung (splitting the circle into arcs)
+/// would have to re-derive.
+///
+/// ★ **Only three of `CylinderMeet`'s variants can arrive here, and that is provable.** A plane
+/// cuts a cylinder in a *circle* only when it is ⊥ to the axis, so `wc ∩ sg.wall` is always ⊥ to
+/// the axis too:
+/// - `CoincidentPlanes`/`ParallelPlanes` — the segment lies on that line, so the line exists;
+/// - `OnRuling` — a line on the cylinder and on `wc` would have to lie inside `cylinder ∩ wc`,
+///   which is a circle, and a circle contains no line;
+/// - `AxisParallelMiss` — a line ⊥ to the axis is not ∥ to it.
+///
+/// The quadratic cannot degenerate either: its leading coefficient is `|d|² > 0` because `d ⊥ m`.
+///
+/// `None` is overflow (the caller drops the witness, never the rejection).
+fn circle_crossings(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    circ: &MergedCircle,
+    sg: &MergedSeg,
+    ends: [&[nacre_scalar::Rat; 3]; 2],
+) -> Option<Vec<(u8, Point3)>> {
+    use nacre_scalar::quad::{CylinderMeet, QuadVal};
+    let w = combinatorics::class_coeffs_rat(jd, wc)?;
+    let v = combinatorics::class_coeffs_rat(jd, sg.wall)?;
+    let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
+    let (line, roots) = match nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)? {
+        CylinderMeet::Pair { line, s } => (line, vec![(0u8, s[0]), (1, s[1])]),
+        CylinderMeet::Tangent { line, s } => (line, vec![(0u8, QuadVal::from_rat(s))]),
+        CylinderMeet::Miss(_) => return Some(Vec::new()),
+        other => unreachable!(
+            "a circle's class is ⊥ to the axis, so its meet with any wall is ⊥ to the axis and \
+             can only miss, touch or cross the cylinder — got {other:?}"
+        ),
+    };
+    // The two planes pinning the segment's ends on this line. ★ Which side of each is "inside"
+    // is read off the **opposite endpoint**, never assumed: the sign conventions of a class's
+    // stored coefficients are not this function's to guess.
+    let mut fences = Vec::with_capacity(2);
+    for k in 0..2 {
+        let e = combinatorics::class_coeffs_rat(jd, sg.end_h[k])?;
+        let far = ends[1 - k];
+        let mut at_far = e[3];
+        for i in 0..3 {
+            at_far = at_far.checked_add(e[i].checked_mul(far[i])?)?;
+        }
+        fences.push((e, at_far.numer().signum()));
+    }
+    let mut out = Vec::new();
+    for (root, s) in roots {
+        let mut inside = true;
+        for (e, want) in &fences {
+            // An endpoint-coincident crossing (`Zero`) counts as inside: it is a real point of
+            // both the circle and the segment, and the arc split will need it.
+            let side = nacre_scalar::quad::plane_side(e, &line, &s)?;
+            let got = match side {
+                nacre_scalar::Orient::Positive => 1,
+                nacre_scalar::Orient::Negative => -1,
+                nacre_scalar::Orient::Zero => 0,
+            };
+            if got != 0 && got != *want {
+                inside = false;
+                break;
+            }
+        }
+        if !inside {
+            continue;
+        }
+        let base = line.base();
+        let dir = line.dir();
+        let mut p = [0.0f64; 3];
+        for i in 0..3 {
+            let coord = QuadVal::from_rat(base[i]).checked_add(&s.checked_mul_rat(dir[i])?)?;
+            p[i] = coord.to_f64();
+        }
+        out.push((root, Point3::from_array(p)));
+    }
+    Some(out)
 }
 
 /// Extract the arrangement's cells (faces) from the split 1-skeleton by a DCEL face-walk. Returns
@@ -1718,7 +1873,7 @@ fn extract_cells(
     segs: &[MergedSeg],
     circles: &[MergedCircle],
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
-    circles_meet_no_segment(jd, segs, circles)?;
+    circles_meet_no_segment(jd, wc, segs, circles)?;
     let n = segs.len();
     let he_count = 2 * n;
     let origin = |he: usize| segs[he / 2].end[he % 2]; // he%2==0: end[0]; ==1: end[1]

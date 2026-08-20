@@ -851,7 +851,141 @@ mod tests {
             ),
             "{err:?}"
         );
+        // ★ **And it says where.** The rim (centre `(4,2,2)`, `r = 0.5`) meets the plate's edge
+        // `x = 4` at `(4, 2 ± 0.5, 2)` — solved from the fixture's own numbers, not read back off
+        // the engine. The deterministic choice among the two is by name, so the assertion names
+        // both and demands one of them.
+        let BoolError::Rejected { at: Some(at), .. } = &err else {
+            panic!("the refusal should carry a witness: {err:?}");
+        };
+        let crate::RejectWhere::Point(p) = at else {
+            panic!("a crossing's witness is a point: {at:?}");
+        };
+        let c = p.as_array();
+        let near = |q: [f64; 3]| (0..3).all(|i| (c[i] - q[i]).abs() < 1e-9);
+        assert!(
+            near([4.0, 1.5, 2.0]) || near([4.0, 2.5, 2.0]),
+            "witness {p:?} is neither crossing"
+        );
         assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+    }
+
+    /// ★★ **The other cause under the same name, and it says so with a different witness shape.**
+    /// A boss standing over a bore, its whole outline *inside* the rim: no segment crosses the
+    /// circle, yet the disk cell is still cut and the closed-cell premise still breaks. The
+    /// rejection is the same one — the umbrella's proposition holds for both — and what tells the
+    /// two apart is the witness: a crossing names a `Point`, a containment can only name the edge
+    /// that sits inside.
+    #[test]
+    fn a_segment_inside_the_rim_is_refused_with_the_edge_as_its_witness() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        let hole = m.add_cylinder(
+            Point3::from_array([8.0, 10.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            7.0,
+        );
+        m.rebuild_adjacency();
+        let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
+        // Footprint `[7,9] × [9,11]` sits wholly inside the rim `(8,10)`, `r = 3`; `z ∈ [5,8]`
+        // leaves the bore's span `t ∈ [1,6]` clear along the axis, so the wall rule passes it on.
+        let boss = m.add_cuboid(
+            Point3::from_array([7.0, 9.0, 5.0]),
+            Point3::from_array([9.0, 11.0, 8.0]),
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("inside the rim");
+        let BoolError::Rejected {
+            reason: RejectReason::CircleMeetsSegment,
+            at: Some(crate::RejectWhere::Segment(ends)),
+        } = &err
+        else {
+            panic!("a containment names the edge that sits inside: {err:?}");
+        };
+        // Both ends on the shared plane `z = 5`, and both strictly inside the rim.
+        for e in ends {
+            let c = e.as_array();
+            assert!((c[2] - 5.0).abs() < 1e-9, "on the shared plane: {c:?}");
+            let d2 = (c[0] - 8.0).powi(2) + (c[1] - 10.0).powi(2);
+            assert!(d2 < 9.0 - 1e-9, "inside the rim: {c:?}");
+        }
+    }
+
+    /// **The double root, which is one point.** The boss's `x = 11` edge is exactly tangent to the
+    /// rim `(8,10)`, `r = 3`, so the locator's quadratic has a double root and the touch is
+    /// rational — `(11, 10, 5)`, solved from the fixture, not read back. The third arm of
+    /// `CylinderMeet` that can reach here, and the only one whose point carries no radical.
+    #[test]
+    fn a_segment_tangent_to_the_rim_names_the_touch() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        let hole = m.add_cylinder(
+            Point3::from_array([8.0, 10.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            7.0,
+        );
+        m.rebuild_adjacency();
+        let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
+        let boss = m.add_cuboid(
+            Point3::from_array([11.0, 8.0, 5.0]),
+            Point3::from_array([15.0, 12.0, 8.0]),
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("tangent edge");
+        let BoolError::Rejected {
+            reason: RejectReason::CircleMeetsSegment,
+            at: Some(crate::RejectWhere::Point(p)),
+        } = &err
+        else {
+            panic!("a touch is a point: {err:?}");
+        };
+        let c = p.as_array();
+        assert!(
+            (0..3).all(|i| (c[i] - [11.0, 10.0, 5.0][i]).abs() < 1e-9),
+            "the tangency is the touch point: {c:?}"
+        );
+    }
+
+    /// ★ **The negative control for the locator.** The same plate and bore, with the boss moved
+    /// clear in `x`: nothing on the shared plane comes near the rim, so the boolean succeeds and
+    /// no witness is ever formed. Without this, a locator that always found *something* would
+    /// look correct in every test above.
+    #[test]
+    fn a_boss_clear_of_the_rim_needs_no_witness() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        let hole = m.add_cylinder(
+            Point3::from_array([8.0, 10.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            7.0,
+        );
+        m.rebuild_adjacency();
+        let holed = crate::boolean(&mut m, BoolKind::Cut, plate, hole).expect("bore")[0];
+        let boss = m.add_cuboid(
+            Point3::from_array([28.0, 4.0, 5.0]),
+            Point3::from_array([36.0, 12.0, 8.0]),
+        );
+        m.rebuild_adjacency();
+        let out =
+            crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("nothing near the rim");
+        assert_eq!(out.len(), 1);
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
     }
 
     /// **The fence: two cylinders with coplanar caps are still refused** — by the name that
