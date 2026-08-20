@@ -516,7 +516,7 @@ pub(crate) fn collect_planes(
             };
             let Some(&c) = leaves
                 .iter()
-                .find(|&&c| crate::rotated_vertex::chain_preserves_plane_row(model, c, &name))
+                .find(|&&c| model.chain_preserves_plane_row(c, &name))
             else {
                 continue;
             };

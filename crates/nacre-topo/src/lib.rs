@@ -859,6 +859,84 @@ impl Model {
         self.motions.get(h)
     }
 
+    /// Whether every node of `leaf`'s recorded chain fixes the plane `coeffs` **as a set** —
+    /// the consumer-side twin of the producer's `Isometry::fixes_plane`, on the same scalar
+    /// atoms (one rule per motion kind, two thin composers).
+    ///
+    /// What it licenses: a world-stated plane among motion-carrying carriers is usable in
+    /// the carriers' *pre-motion* frame **iff** the chain fixes it — then its world equation
+    /// is the same equation there, and the corner solves as if all three shared the chain.
+    /// The invariant-plane restatement mints exactly this shape (a turned block's corner =
+    /// restated cap × two chained walls), and this check is what keeps the licence honest:
+    /// a frame-hosted datum's cap hits the `Frame` arm and the caller stays declined.
+    ///
+    /// ★ **It lives here, below `nacre-ops`, because [`Model::vertex_meet`] needs it.** Without
+    /// the rescue that door reads a turned solid's corner as straddling frames — every carrier
+    /// but the fixed cap moved — and the datum road it gates loses its named form. Keeping the
+    /// rule in `nacre-ops` would mean a second walk down here, and this rule already cost the
+    /// kernel a regression by existing in more than one spelling.
+    ///
+    /// Conservative by construction — `Frame` nodes are never fixed (their basis is
+    /// irrational), and the scalar atoms answer `false` on overflow.
+    pub fn chain_fixes_plane(
+        &self,
+        leaf: Handle<MotionNode>,
+        coeffs: &[nacre_scalar::Rat; 4],
+    ) -> bool {
+        self.chain_fixes(leaf, coeffs, false)
+    }
+
+    /// The strict twin: every node carries the plane's **coefficient row verbatim**, not merely
+    /// the set. The one place they part is a mirror whose plane is the carrier itself (`n ∥ axis`,
+    /// on-plane): the set maps to itself but the row comes back negated — harmless to a Cramer
+    /// solve (both determinants negate, the ratio stands), fatal to a determinant *sign* read.
+    /// So [`Model::chain_fixes_plane`] licenses solving, and this licenses judging-table
+    /// descriptions (`nacre_ops`' mirror re-chaining).
+    pub fn chain_preserves_plane_row(
+        &self,
+        leaf: Handle<MotionNode>,
+        coeffs: &[nacre_scalar::Rat; 4],
+    ) -> bool {
+        self.chain_fixes(leaf, coeffs, true)
+    }
+
+    fn chain_fixes(
+        &self,
+        leaf: Handle<MotionNode>,
+        coeffs: &[nacre_scalar::Rat; 4],
+        rows_verbatim: bool,
+    ) -> bool {
+        let mut cur = Some(leaf);
+        while let Some(h) = cur {
+            let n: &MotionNode = self.motion(h);
+            let fixed = match &n.motion {
+                Motion::Rotate { axis, .. } => {
+                    nacre_scalar::axis_rotation_fixes_plane(*axis, coeffs)
+                }
+                Motion::Translate { offset } => {
+                    nacre_scalar::translation_fixes_plane(offset, coeffs)
+                }
+                Motion::Mirror { axis, offset } => {
+                    if rows_verbatim {
+                        coeffs[match axis {
+                            nacre_scalar::Axis::X => 0,
+                            nacre_scalar::Axis::Y => 1,
+                            nacre_scalar::Axis::Z => 2,
+                        }] == nacre_scalar::Rat::from_int(0)
+                    } else {
+                        nacre_scalar::mirror_fixes_plane(*axis, *offset, coeffs)
+                    }
+                }
+                Motion::Frame { .. } => false,
+            };
+            if !fixed {
+                return false;
+            }
+            cur = n.parent;
+        }
+        true
+    }
+
     /// Push a **plane**, stating its truth outright: the f64 cache, three exact points, and the
     /// motion they are written before (`None` = the world). The truth is not optional — that is
     /// the S6b point: a point-less plane, and with it `SurfaceDef::Inexact`, stopped existing.

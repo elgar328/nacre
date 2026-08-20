@@ -66,7 +66,7 @@ pub(crate) enum ClassPlan {
 /// ★ **Mixed frames decline — unless the odd carrier is provably fixed.** Since the
 /// invariant-plane restatement, a turned block's corner is a restated world cap × two
 /// chained walls; the cap's world equation is *also* its equation in the walls' pre-motion
-/// frame precisely when the chain fixes the plane ([`crate::rotated_vertex::chain_fixes_plane`]
+/// frame precisely when the chain fixes the plane ([`nacre_topo::Model::chain_fixes_plane`]
 /// — the consumer-side twin of the producer's own gate), so the triple solves in that
 /// frame and the chain replays as before. A mixed corner the chain does **not** fix — a
 /// prism's base ring under a caller-stated world plane, the frame realization being
@@ -121,9 +121,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                         // chain fixes it — then its equation holds in the pre-motion frame
                         // too. Otherwise: mixed frames, decline (see the doc).
                         for (c, m) in coeffs.iter().zip(&motions) {
-                            if m.is_none()
-                                && !crate::rotated_vertex::chain_fixes_plane(model, leaf, c)
-                            {
+                            if m.is_none() && !model.chain_fixes_plane(leaf, c) {
                                 return None;
                             }
                         }
