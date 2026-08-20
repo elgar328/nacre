@@ -1009,8 +1009,12 @@ fn how_wide_a_discovered_coordinate_is() {
 /// fixed plane's world equation is its pre-motion equation. That is the arm where a zero is
 /// evidence, and it is the arm that went red for 169 commits when the kernel read the caps'
 /// `motion: None` as a straddle (see the module doc's 2026-08-20 section).
+/// ★★★ **Not `#[ignore]`d, unlike its two neighbours** — this one carries an *assertion*, and
+/// hiding an assertion behind a flag the commit hook never passes is how the regression above
+/// lived for 169 commits. It costs ~0.3s and its table is captured unless it fails, so the price
+/// of the hook seeing it is nothing. The other two measurements print and assert nothing, so they
+/// stay where they are.
 #[test]
-#[ignore = "measurement — run explicitly, prints the table"]
 fn how_much_of_the_datum_vocabulary_the_frame_wall_costs() {
     let mut blocked_somewhere = false;
     for (what, m) in [

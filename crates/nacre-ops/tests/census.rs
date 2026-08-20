@@ -682,6 +682,86 @@ fn dump() {
             record(&format!("cyl {kn}"), &m, &inputs, &out);
         }
     }
+    // ── **A datum through a turned solid's corners, and a boolean over it** (`dt`).
+    //
+    // ★★★★★ **This family exists because its absence hid a regression for 169 commits.** Every
+    // datum above is `DatumDef::Stated`; nothing in this corpus stated one **through vertices**,
+    // so when the invariant-plane restatement made `vertex_meet` read a turned solid's corners as
+    // straddling — costing every one of them the named datum road — the census crossed it
+    // bit-identical and said nothing. The rule (`docs/truth-and-cache.md`, gate 8b) is to put the
+    // population a change touches into the ledger, and this is that population.
+    //
+    // ★★ **It does not stop at making the datum.** The plane a `ThroughVertices` datum mints is
+    // where `collect_planes` has to choose between the exact witness road and the judged one, and
+    // that fork is only reached when such a plane meets a boolean. So the datum hosts a prism and
+    // the prism is an operand: a row that only *built* a datum would never walk the road worth
+    // watching.
+    for (kn, k) in KINDS {
+        let mut m = Model::new();
+        let block = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        let turned = xf(
+            &mut m,
+            block,
+            Isometry::rotation(nacre_scalar::Rotation {
+                axis: Axis::Z,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
+            }),
+        );
+        // Three corners of the turned block, in handle order so the statement is replay-stable.
+        let mut vs: Vec<Handle<nacre_topo::Vertex>> = Vec::new();
+        {
+            let sol = m.solids.get(turned);
+            'pick: for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+                for &fh in &m.shells.get(sh).faces {
+                    for &he in &m.faces.get(fh).outer.half_edges {
+                        let vh = m.he_start(he);
+                        if !vs.contains(&vh) {
+                            vs.push(vh);
+                        }
+                        if vs.len() == 3 {
+                            break 'pick;
+                        }
+                    }
+                }
+            }
+        }
+        vs.sort_by_key(|v| v.index());
+        let Ok(OpOutput::DatumPlane { frame, .. }) = apply(
+            &mut m,
+            &Operation::DatumPlane {
+                def: DatumDef::ThroughVertices([vs[0], vs[1], vs[2]]),
+            },
+        ) else {
+            panic!("a datum through three corners of a turned block")
+        };
+        let OpOutput::Extrude { solid: tool, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile: nacre_ops::Profile2d::polygon(vec![
+                    nacre_math::Point2::from_array([-0.6, -0.6]),
+                    nacre_math::Point2::from_array([0.6, -0.6]),
+                    nacre_math::Point2::from_array([0.6, 0.6]),
+                    nacre_math::Point2::from_array([-0.6, 0.6]),
+                ])
+                .unwrap(),
+                dist: 1.4,
+            },
+        )
+        .expect("a prism on the datum") else {
+            unreachable!("extrude yields Extrude output")
+        };
+        m.rebuild_adjacency();
+        let inputs = operands(&m, turned, tool);
+        let out = boolean(&mut m, k, turned, tool);
+        m.rebuild_adjacency();
+        record(&format!("dt {kn}"), &m, &inputs, &out);
+    }
+
     // ★★★★★ **The link that turns "interning explains it" into something falsifiable.** Since S2
     // every plane with points is named (wide ones in the arbitrary-precision vessel), so a
     // coordinate can move only when wide planes *merge* — a `c ` line that moves must come with
