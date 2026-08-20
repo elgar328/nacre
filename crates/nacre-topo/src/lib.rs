@@ -1160,15 +1160,40 @@ impl Model {
             // variant is a compile error, not a silent fall-through).
             VertexDef::OnSeam(_) | VertexDef::Branch { .. } => return None,
         };
-        let frame = self.plane_motion(tri[0]);
-        if tri.iter().any(|h| self.plane_motion(*h) != frame) {
-            return None; // this vertex's carriers straddle frames
+        let motions = tri.map(|h| self.plane_motion(h));
+        // One shared leaf among the **moved** carriers; no moved carrier means the world.
+        let mut leaf = None;
+        for m in motions.iter().flatten() {
+            match leaf {
+                None => leaf = Some(*m),
+                Some(l) if l == *m => {}
+                Some(_) => return None, // two histories — no shared frame
+            }
         }
         let names = tri.map(|h| self.surface_name.get(&h));
         let [Some(a), Some(b), Some(c)] = names else {
             return None;
         };
-        Some((nacre_scalar::three_planes_big([a, b, c])?, frame))
+        // ★★ **A world-stated carrier among chained ones is not a straddle if the chain fixes
+        // it.** The invariant-plane restatement mints exactly that shape — a turned block's
+        // corner is a restated cap × two chained walls — and a fixed plane's world equation *is*
+        // its equation in the pre-motion frame, so the corner solves as if all three shared the
+        // chain. Reading the mismatch as a straddle is what cost every turned solid's corners
+        // their named datum road; `chain_fixes_plane` is the licence that tells them apart.
+        //
+        // ★ `narrow()` is asked **only of the carriers being licensed**, never of the other two:
+        // this function's answer is a `MeetPoint` of any width, and refusing a `Wide` carrier
+        // here would quietly switch off the capability `a_datum_through_wide_meets_keeps_its_name`
+        // locks. A `Wide` *fixed* carrier declines the licence — the same conservatism the atoms
+        // have, recorded rather than papered over.
+        if let Some(leaf) = leaf {
+            for (n, m) in [a, b, c].iter().zip(&motions) {
+                if m.is_none() && !n.narrow().is_some_and(|c| self.chain_fixes_plane(leaf, c)) {
+                    return None; // this vertex's carriers straddle frames
+                }
+            }
+        }
+        Some((nacre_scalar::three_planes_big([a, b, c])?, leaf))
     }
 
     /// [`Model::through_meets`]' all-narrow projection — the form a **witness triangle** takes,

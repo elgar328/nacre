@@ -4014,11 +4014,14 @@ fn two_faces_of_one_judged_surface_are_one_class() {
             for lp in std::iter::once(&m.faces.get(fh).outer).chain(m.faces.get(fh).inner.iter()) {
                 for &he in &lp.half_edges {
                     let vh = m.he_start(he);
-                    let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+                    let nacre_topo::VertexDef::ThreePlane(_) = m.vertices.get(vh).def else {
                         continue;
                     };
-                    let mine = m.plane_motion(tri[0]);
-                    if tri.iter().any(|h| m.plane_motion(*h) != mine) {
+                    // ★ The kernel says which corners it can place in one frame; comparing the
+                    // three carriers' motions here would be `vertex_meet`'s rule written twice,
+                    // and since the invariant-plane restatement that copy calls a turned solid's
+                    // corner straddling when the chain-fixes licence places it.
+                    if m.vertex_meet(vh).is_none() {
                         straddle.get_or_insert(vh);
                     } else if !pure.contains(&vh) {
                         pure.push(vh);

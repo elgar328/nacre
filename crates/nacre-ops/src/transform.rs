@@ -684,6 +684,18 @@ fn transform_solid(
                 // right answer. `points_move` refusing the transporting path is what rules out
                 // the other case, where a node is missing because the walk thought it could carry
                 // points that do not exist.
+                //
+                // ★★ **A second road to `None` opened in 2026-08-20 and is still not reachable
+                // here — recorded rather than assumed away.** The `invariant` test above reads
+                // the plane's *name*, and `Through` planes had none until the fixed-carrier
+                // licence gave a turned solid's datums one back. So `invariant = true` became
+                // possible for this arm for the first time. It needs the datum's plane to be
+                // fixed by the motion — for a rotation that means its normal lies along the
+                // axis — **and** to have stayed a `Through` truth. Every axis-normal plane
+                // through three of a solid's vertices in today's fixtures is a face plane, so it
+                // interns onto that `Known` surface and never arrives here. A stepped solid with
+                // three co-planar vertices off any face, or a translation along a datum's own
+                // plane, would be the shapes that do; nobody has built one.
                 let out = model.push_plane_through(pl, *vs, new_motion);
                 debug_assert!(
                     new_motion.is_some() || out.0 == s,

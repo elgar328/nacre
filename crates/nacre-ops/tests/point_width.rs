@@ -135,6 +135,39 @@
 //! every population classifies as acceptable. What is NOT open is the boolean over such a datum's
 //! own face — at the time `ImplicitPlaneUnsupported`, a boundary 16-3 then removed by seating an
 //! implicit-point plane (open item 16-3).
+//!
+//! # A regression this file caught, and what fixing it moved (2026-08-20)
+//!
+//! ★★★★★ **The `turned_after_the_cut` row above stopped being true, and only this file knew.**
+//! The invariant-plane restatement (`0dbab39`) stopped minting a motion node for a plane the
+//! motion *fixes*, so a Z-turned block's caps stay world-stated while its walls carry a node.
+//! Every corner is two walls and one cap, so `Model::vertex_meet` — reading "all three carriers
+//! share one motion" — called all 16 of them straddling: `pure` 16 → 0, `accepted_straddle`
+//! 0 → 560. The kernel had drifted away from a number this doc recorded correctly, for 169
+//! commits, behind `#[ignore]`.
+//!
+//! The rule that tells the two apart already existed in the same commit
+//! (`Model::chain_fixes_plane`: a world-stated carrier is usable in the chain's frame **iff** the
+//! chain fixes it) and had been applied to exactly one of the places that needed it. Applying it
+//! at the door restores the row — `turned_after_the_cut` is now letter-identical to
+//! `boolean_corner`, which is the invariance a rigid motion owes.
+//!
+//! ★★ **And it opened a population that was never open**: a seam corner whose odd carrier is the
+//! *still* operand's cap is admissible when the turn fixes that cap. So `boolean_rotated` now
+//! exceeds its own 2026-08-08 record rather than merely returning to it:
+//!
+//! | `boolean_rotated` | 2026-08-08 | 2026-08-17..20 (regressed) | now |
+//! |---|---|---|---|
+//! | solved / pure | 8 | 8 | **12** |
+//! | `mixed_motion` | 12 | 12 | **8** |
+//! | width max (bits) | 4 | 4 | **7** |
+//! | `pure_frames` | 1 | 1 | **2** |
+//! | accepted (named) | 4.9% | 4.9% | **5.3%** |
+//!
+//! ★ The 4-bit maximum in the first table was therefore a **number about a smaller population**
+//! than its row claimed — the wider corners were being dropped before they were measured. That is
+//! the shape to watch for here: this file's counters can shrink a population silently while every
+//! assertion stays green.
 
 use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
@@ -299,19 +332,22 @@ fn measure(m: &Model) -> Tally {
             t.wide_carrier += 1;
         }
 
-        let (a, b, c) = (
-            motion_of(m, tri[0]),
-            motion_of(m, tri[1]),
-            motion_of(m, tri[2]),
-        );
-        if !(a == b && b == c) {
-            // Structural, not width: the exact road needs one shared frame to replay from.
-            t.mixed_motion += 1;
-            continue;
-        }
-
-        let Some(point) = nacre_scalar::three_planes_big([names[0], names[1], names[2]]) else {
-            t.singular += 1;
+        // ★★★ **The kernel says which vertices have a frame; this table only labels the rest.**
+        // These lines used to compare the three carriers' motions here, which is `vertex_meet`'s
+        // rule written a second time — and once the invariant-plane restatement landed, the copy
+        // said "mixed" for every corner of a turned solid and **dropped them out of the width
+        // table entirely** (`continue`). The tables stayed green while measuring a smaller
+        // population than they claimed. Asking the door is what keeps the two in step.
+        let Some((point, _frame)) = m.vertex_meet(vh) else {
+            // Two causes are left (the def kind and a missing name were handled above): no
+            // shared frame, or — same frame, no meet — carriers on one line. The split is for
+            // the table's wording; the capability answer above is the kernel's.
+            let f = m.plane_motion(tri[0]);
+            if tri.iter().all(|h| m.plane_motion(*h) == f) {
+                t.singular += 1;
+            } else {
+                t.mixed_motion += 1;
+            }
             continue;
         };
         let w = point.width_bits();
@@ -462,21 +498,25 @@ fn datum_reach(m: &Model) -> Reach {
             let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
                 return VertexReach::Undefined;
             };
-            let (a, b, c) = (
-                motion_of(m, tri[0]),
-                motion_of(m, tri[1]),
-                motion_of(m, tri[2]),
-            );
-            if !(a == b && b == c) {
-                return VertexReach::Straddle;
-            }
             let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();
             if names.len() != 3 {
                 return VertexReach::Undefined;
             }
-            match nacre_scalar::three_planes_big([names[0], names[1], names[2]]) {
-                Some(p) => VertexReach::Pure(a, p),
-                None => VertexReach::Undefined, // carriers share a line — no unique point
+            // ★★★ **Ask the door, do not re-derive its rule.** `VertexReach::Pure` carries
+            // exactly `vertex_meet`'s return — this classifier *was* that function, written a
+            // second time, and the copy is what kept reporting yesterday's kernel after the
+            // invariant-plane restatement moved the line.
+            match m.vertex_meet(vh) {
+                Some((p, f)) => VertexReach::Pure(f, p),
+                // The label only; the capability answer is the kernel's above.
+                None => {
+                    let f = m.plane_motion(tri[0]);
+                    if tri.iter().all(|h| m.plane_motion(*h) == f) {
+                        VertexReach::Undefined // carriers share a line — no unique point
+                    } else {
+                        VertexReach::Straddle
+                    }
+                }
             }
         })
         .collect();
@@ -964,8 +1004,11 @@ fn how_wide_a_discovered_coordinate_is() {
 ///
 /// ★★ **Two negative controls, because one of them cannot fail.** `boolean_corner` has no motion,
 /// so "zero mixed" there is true by construction and measures nothing.
-/// [`turned_after_the_cut`] has motion on every surface and all of it shared — that is the arm
-/// where a zero is evidence.
+/// [`turned_after_the_cut`] has motion on every surface that the turn moves, and every carrier
+/// solvable in that one frame — the caps stay world-stated because the turn **fixes** them, and a
+/// fixed plane's world equation is its pre-motion equation. That is the arm where a zero is
+/// evidence, and it is the arm that went red for 169 commits when the kernel read the caps'
+/// `motion: None` as a straddle (see the module doc's 2026-08-20 section).
 #[test]
 #[ignore = "measurement — run explicitly, prints the table"]
 fn how_much_of_the_datum_vocabulary_the_frame_wall_costs() {
@@ -983,7 +1026,9 @@ fn how_much_of_the_datum_vocabulary_the_frame_wall_costs() {
             assert_eq!(
                 t.accepted_straddle + t.accepted_nameless,
                 0,
-                "{what}: every carrier shares one frame here, so nothing may be mixed at all"
+                "{what}: every carrier is solvable in one frame here, so nothing may be mixed \
+                 at all — the turn fixes the caps, and a fixed plane's world equation is its \
+                 pre-motion equation (`Model::chain_fixes_plane`)"
             );
             assert!(t.accepted > 0, "{what}: the control accepted nothing");
         } else {

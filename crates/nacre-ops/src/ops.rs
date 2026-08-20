@@ -1057,10 +1057,16 @@ fn datum_plane(
         model: &Model,
         vs: [Handle<Vertex>; 3],
     ) -> Result<ThroughStatement, OpError> {
-        // Pass one: what kind of statement is this? Frames only — no solve happens until the
-        // road is known, because a solve's failure means different things on different roads
-        // (a too-wide coordinate kills the named road but a meet never asks it to fit).
-        let mut mixed = false;
+        // ★★★★ **Which frame a vertex is solvable in is [`nacre_topo::Model::vertex_meet`]'s
+        // answer, not a second copy of its rule.** This function used to compare
+        // `plane_motion(tri[0])` against the other two itself. That reading calls a turned
+        // solid's corner a straddle — the invariant-plane restatement leaves its cap
+        // world-stated while the walls carry a node — and, worse, it can now *disagree* with
+        // the door: `push_plane_through` derives the interning name through `vertex_meet`, so a
+        // producer that says "no frame" while the door says "this one" files a frame-local name
+        // as a world plane. That is the defect `a_datum_through_frame_local_vertices_is_not_a
+        // _world_plane` exists to catch. One decision, one place.
+        let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
         let mut frames = [None; 3];
         for (i, vh) in vs.iter().enumerate() {
             let tri = match model.vertices.get(*vh).def {
@@ -1072,13 +1078,6 @@ fn datum_plane(
                     return Err(OpError::VertexNotThreePlane);
                 }
             };
-            let mine = model.plane_motion(tri[0]);
-            if tri.iter().any(|h| model.plane_motion(*h) != mine) {
-                // ★ A straddling vertex — no rational coordinate anywhere, but a complete
-                // definition (the meet of its carriers). The judged road takes it (16-2), as
-                // long as every carrier can hand out a witness triangle of its own.
-                mixed = true;
-            }
             if tri.iter().any(|h| !model.surface_name.contains_key(h)) {
                 // ★★ The one population still refused here: a carrier that is itself a nameless
                 // datum (a datum on a nameless datum — depth). Its triangle needs the judged
@@ -1087,31 +1086,33 @@ fn datum_plane(
                 // the label further.
                 return Err(OpError::VerticesInMixedFrames);
             }
-            frames[i] = Some(mine);
+            let Some((meet, frame)) = model.vertex_meet(*vh) else {
+                // ★ A straddling vertex — no rational coordinate anywhere, but a complete
+                // definition (the meet of its carriers). The judged road takes it (16-2), as
+                // long as every carrier can hand out a witness triangle of its own.
+                //
+                // ★★★ **"The carriers meet" is not assertable here, and finding that out cost a
+                // red run.** The old pass two `expect`ed it, and rightly: it ran only after the
+                // frames agreed. Solving three names *stated in different frames* is not the
+                // same question — they are not three planes in one coordinate system, so
+                // `three_planes_big` declines for a straddling vertex as a matter of course. An
+                // assertion here would measure the proposition next door. The invariant now
+                // lives where it is meaningful: past this `else`, every `pts[i]` is `Some`, so
+                // the named road below has the meets by construction rather than by `expect`.
+                return Ok(ThroughStatement::Nameless);
+            };
+            pts[i] = Some(meet);
+            frames[i] = Some(frame);
         }
-        // ★★ Any straddle, or pure vertices in differing frames — the judged road. The
-        // collinearity question is *not* asked here: with no shared frame there is no exact
-        // solve to ask it in, and the judged constructor's failure is reported as undecided,
-        // never as proven collinear.
-        if mixed || !(frames[1] == frames[0] && frames[2] == frames[0]) {
+        // ★★ Pure vertices in differing frames — the judged road. The collinearity question is
+        // *not* asked there: with no shared frame there is no exact solve to ask it in, and the
+        // judged constructor's failure is reported as undecided, never as proven collinear.
+        if !(frames[1] == frames[0] && frames[2] == frames[0]) {
             return Ok(ThroughStatement::Nameless);
         }
-        // Pass two, named road only: solve in the one shared frame. ★ The meets are kept at
-        // whatever width they need (open item 17) — the name is a function of the *plane*, and
-        // `plane_name_from_meets` derives it without ever asking a coordinate to fit `Rat`.
-        let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
-        for (p, vh) in pts.iter_mut().zip(vs) {
-            let nacre_topo::VertexDef::ThreePlane(tri) = model.vertices.get(vh).def else {
-                unreachable!("pass one verified the definitions");
-            };
-            let names = tri.map(|h| model.surface_name.get(&h));
-            let [Some(a), Some(b), Some(c)] = names else {
-                unreachable!("pass one verified the names");
-            };
-            *p = Some(nacre_scalar::three_planes_big([a, b, c]).expect(
-                "a ThreePlane vertex's carriers meet — that is why the vertex exists (C2/S7)",
-            ));
-        }
+        // ★ The meets are kept at whatever width they need (open item 17) — the name is a
+        // function of the *plane*, and `plane_name_from_meets` derives it without ever asking a
+        // coordinate to fit `Rat`.
         let meets = pts.map(|p| p.expect("filled above"));
         if nacre_scalar::plane_name_from_meets([&meets[0], &meets[1], &meets[2]]).is_none() {
             return Err(OpError::CollinearVertices);

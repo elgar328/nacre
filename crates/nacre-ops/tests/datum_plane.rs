@@ -1555,14 +1555,20 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         out
     };
 
-    // Split them by whether their own three carriers share a motion.
+    // Split them by whether the kernel can place them in one frame.
+    //
+    // ★★ **Ask the door, do not compare the three carriers' motions here.** That comparison is
+    // `Model::vertex_meet`'s rule written a second time, and since the invariant-plane
+    // restatement it over-counts: a turned solid's corner mixes a *fixed* world-stated cap with
+    // moved walls, and the chain-fixes licence places it in the walls' frame. A copy of the old
+    // rule would file such a corner as "straddling" and this test would go on asserting about a
+    // vertex that is not the population it names — green, and measuring something else.
     let (mut pure, mut straddling) = (Vec::new(), Vec::new());
     for vh in mine {
-        let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+        let VertexDef::ThreePlane(_) = m.vertices.get(vh).def else {
             continue;
         };
-        let mine = m.plane_motion(tri[0]);
-        if tri.iter().any(|h| m.plane_motion(*h) != mine) {
+        if m.vertex_meet(vh).is_none() {
             straddling.push(vh);
         } else {
             pure.push(vh);
@@ -1573,6 +1579,13 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         "a turned-against-still cut must leave carriers straddling — the fixture stopped measuring"
     );
     assert!(pure.len() >= 3, "and some corners must still be pure");
+    // ★★ **Both lists come out of a `HashSet` walk, so order them before choosing.** Picking the
+    // first of a hash-ordered list is a coin flip dressed as a fixture: it made this test fail
+    // about once in twenty when the straddling pool shrank (measured), because some straddler is
+    // collinear with the two pure corners and the op then answers `CollinearVertices` — a real
+    // refusal about a fixture the test never meant to build.
+    pure.sort_by_key(|v| v.index());
+    straddling.sort_by_key(|v| v.index());
 
     // A triple that does solve, so the swap below has something to be the difference from.
     let solvable = (0..pure.len())
@@ -1586,7 +1599,19 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     // carriers) is complete even though its coordinate exists in no frame at all. This block used
     // to assert `VerticesInMixedFrames`; the acceptance below is the same fixture with the wall
     // moved, end to end: datum → sketch → extrude → validate → deterministic rebuild.
-    let swapped = [straddling[0], solvable[1], solvable[2]];
+    //
+    // ★ The straddler is chosen for **not being collinear** with the two pure corners, which is a
+    // property of the triple and nothing to do with the proposition — three points on one line
+    // name no plane whatever their frames are.
+    let not_collinear = |t: &[nacre_store::Handle<nacre_topo::Vertex>; 3]| {
+        let p = t.map(|v| m.vertex_point(v));
+        (p[1] - p[0]).cross(p[2] - p[0]).norm() > 1e-9
+    };
+    let swapped = straddling
+        .iter()
+        .map(|&s| [s, solvable[1], solvable[2]])
+        .find(not_collinear)
+        .expect("a straddling corner off the line through the two pure ones");
     assert!(
         m.through_points_rat(swapped).is_none(),
         "a straddling vertex has no rational coordinate in any single frame"
@@ -2412,4 +2437,107 @@ fn a_frame_says_where_it_is() {
     // placement through `frame_world_basis`/`exact_frame`), and that the drawn lines land where
     // the extruded solid does — measured end to end where the two can be seen together, in
     // nacre-kit's `sketch_lines` tests.
+}
+
+/// ★★★★★ **A turn does not cost a solid its datum vocabulary** — the regression `point_width`
+/// caught, locked where a caller can see it.
+///
+/// The invariant-plane restatement (`0dbab39`) stopped minting a motion node for a plane the
+/// motion *fixes*, so a Z-turned block's caps stay world-stated while its walls carry a node.
+/// Every corner is two walls and one cap, and the door read that mismatch as "these carriers
+/// straddle frames" — so **every corner of every turned solid** lost the named datum road and
+/// fell to the judged one: a nameless plane, no interning, a predicate answering every question
+/// a name would have closed. Nothing was wrong, and everything was worse.
+///
+/// The three assertions are the three things that road buys, and nothing else says them: the
+/// plane has a **name**, the same statement comes back as the **same handle**, and the whole
+/// thing survives a further motion. A volume or a coordinate check would pass either way — this
+/// is the "did it take the exact road" test `docs/truth-and-cache.md`'s gate rule asks for beside
+/// every ε comparison.
+#[test]
+fn a_turn_does_not_cost_a_solid_its_named_datum() {
+    let mut m = Model::new();
+    let block = m.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([10.0, 10.0, 10.0]),
+    );
+    let turn = |deg: i128| Operation::Transform {
+        solid: block,
+        isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+            axis: Axis::Z,
+            point: [nacre_scalar::Rat::from_int(0); 3],
+            angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(deg)).unwrap(),
+        }),
+    };
+    let OpOutput::Transform { solid: turned } = apply(&mut m, &turn(37)).expect("turn") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+
+    // ★ **Fixture validity first**: the turn must actually have left a cap world-stated beside
+    // moved walls, or this measures the easy case. Without that mismatch the rescue is never
+    // asked and the test would pass on a kernel that does not have it.
+    let mixed = live_verts(&m).into_iter().any(|vh| {
+        let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+            return false;
+        };
+        let f = m.plane_motion(tri[0]);
+        tri.iter().any(|h| m.plane_motion(*h) != f)
+    });
+    assert!(
+        mixed,
+        "fixture: the turn must leave a fixed cap beside moved walls, or the rescue is untested"
+    );
+
+    let vs0 = live_verts(&m);
+    let mut vs = [vs0[0], vs0[1], vs0[2]];
+    vs.sort_by_key(|v| v.index());
+    let OpOutput::DatumPlane { plane, .. } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("a datum through three corners of a turned solid") else {
+        unreachable!()
+    };
+
+    // ① The named road, which is the whole proposition.
+    assert!(
+        m.surface_name.contains_key(&plane),
+        "a datum through a turned solid's corners must take the named road — a nameless plane \
+         here means the door read the fixed cap as a straddle again"
+    );
+    // ② …and a name is only worth having if it interns: the same three vertices, restated.
+    let OpOutput::DatumPlane { plane: again, .. } = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices(vs),
+        },
+    )
+    .expect("restating the same datum") else {
+        unreachable!()
+    };
+    assert_eq!(
+        plane, again,
+        "one plane, one handle — that is what the name is for"
+    );
+    // ③ And the road stays open under a further motion. ★ This is also the first time a *named*
+    // `Through` plane meets `transform`'s invariant arm (which reads the plane's name to decide),
+    // so this line walks a path that was unreachable while these planes had no name.
+    let OpOutput::Transform { .. } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid: turned,
+            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+                axis: Axis::Z,
+                point: [nacre_scalar::Rat::from_int(0); 3],
+                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(11)).unwrap(),
+            }),
+        },
+    )
+    .expect("turning a solid that carries a named datum") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
 }
