@@ -1115,9 +1115,9 @@ impl Model {
     /// triangle. One spelling, so the name a plane interns under and the points a predicate
     /// reasons about cannot describe different planes.
     ///
-    /// `None` on any of: a vertex that is not a three-plane point, carriers that do not share
-    /// one motion (then no frame holds a rational coordinate at all), or a carrier with no
-    /// recorded name.
+    /// `None` on any of: a vertex that is not a three-plane point, a vertex [`Model::vertex_meet`]
+    /// cannot place in one frame, a carrier with no recorded name, or three vertices whose frames
+    /// disagree.
     pub fn through_meets(
         &self,
         vertices: [Handle<Vertex>; 3],
@@ -1145,9 +1145,18 @@ impl Model {
     /// needs the three to *agree*, which is a weaker demand and would silently mix frames if it
     /// were copied.
     ///
-    /// `None` on any of: a vertex that is not a three-plane point, carriers that do not share one
-    /// motion (then no frame holds a rational coordinate at all), or a carrier with no recorded
-    /// name.
+    /// ★★★ **"Carriers in one frame" is not "carriers with one `motion` field".** The sentence
+    /// that used to stand here — *`None` when the carriers do not share one motion, since then no
+    /// frame holds a rational coordinate at all* — became false with the invariant-plane
+    /// restatement, and reading it as still true cost every turned solid's corners their named
+    /// datum road for 169 commits. A motion that **fixes** a plane restates nothing, so that plane
+    /// stays world-stated beside carriers that moved; its world equation *is* its equation in
+    /// their pre-motion frame, and [`Model::chain_fixes_plane`] is what proves it.
+    ///
+    /// `None` on any of: a vertex that is not a three-plane point; carriers carrying **two**
+    /// motion histories; a world-stated carrier the shared chain does not fix (or whose name is
+    /// `Wide`, since the licence reads narrow coefficients — conservative, and recorded); a
+    /// carrier with no recorded name; or three carriers that meet in no point.
     pub fn vertex_meet(
         &self,
         v: Handle<Vertex>,

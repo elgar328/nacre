@@ -691,11 +691,17 @@ fn transform_solid(
                 // licence gave a turned solid's datums one back. So `invariant = true` became
                 // possible for this arm for the first time. It needs the datum's plane to be
                 // fixed by the motion — for a rotation that means its normal lies along the
-                // axis — **and** to have stayed a `Through` truth. Every axis-normal plane
-                // through three of a solid's vertices in today's fixtures is a face plane, so it
-                // interns onto that `Known` surface and never arrives here. A stepped solid with
-                // three co-planar vertices off any face, or a translation along a datum's own
-                // plane, would be the shapes that do; nobody has built one.
+                // axis — **and** to have stayed a `Through` truth.
+                //
+                // ★ **What is measured and what is argued, kept apart.** *Measured*: the assert
+                // below did not fire anywhere in the suite, `replay`'s proptest included, and that
+                // proptest does emit `Copy`/`Rotate` beside `DatumThroughVertices`. *Argued* (not
+                // swept): for a cuboid every axis-normal plane through three of its vertices is a
+                // face plane, so it interns onto that `Known` surface and never reaches this arm —
+                // which would explain the silence, but no probe has confirmed it is the reason.
+                // Shapes that ought to reach it: a stepped solid with three co-planar vertices off
+                // any face, or a translation along a datum's own plane. Nobody has built one, so
+                // "unreachable" is **not** what this says.
                 let out = model.push_plane_through(pl, *vs, new_motion);
                 debug_assert!(
                     new_motion.is_some() || out.0 == s,

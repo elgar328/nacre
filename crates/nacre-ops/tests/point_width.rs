@@ -402,9 +402,14 @@ enum VertexReach {
     /// own `TooWide` kind and block its triple; the named road accepts it now, so width stopped
     /// being a reach distinction — exactly mirroring the producer).
     Pure(Option<Handle<nacre_topo::MotionNode>>, MeetPoint),
-    /// This vertex's own three carriers are in different frames. **The kernel makes these**, not
-    /// the caller: a cut between a turned operand and a still one leaves corners where an unmoved
-    /// wall meets two turned ones.
+    /// The door cannot place this vertex in any one frame. **The kernel makes these**, not the
+    /// caller: a cut between a turned operand and a still one leaves corners where an unmoved wall
+    /// meets two turned ones.
+    ///
+    /// ★ Not simply "its three carriers carry different motions" — since the invariant-plane
+    /// restatement a *fixed* world-stated carrier sits beside moved ones and is placeable anyway
+    /// (`Model::chain_fixes_plane`). Counting those here is what made this table report a kernel
+    /// that no longer existed.
     Straddle,
     /// `OnSeam`, or a carrier with no name.
     Undefined,

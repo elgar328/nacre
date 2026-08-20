@@ -1047,8 +1047,9 @@ fn datum_plane(
             [nacre_scalar::MeetPoint; 3],
             Option<Handle<nacre_topo::MotionNode>>,
         ),
-        /// ★ Every vertex pure, but the frames differ (open item 16, first wall): no frame
-        /// holds a rational triple, no name exists, and the plane takes the judged road.
+        /// ★ No one frame holds all three: either a vertex the door cannot place at all (16-2's
+        /// straddle) or three placeable vertices whose frames differ (16-1's first wall). No
+        /// rational triple, no name, and the plane takes the judged road.
         Nameless,
     }
 
