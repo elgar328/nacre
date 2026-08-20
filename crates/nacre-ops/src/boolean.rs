@@ -427,7 +427,7 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
             .iter()
             .flat_map(|lf| {
                 lf.poly_rings()
-                    .flat_map(|r| r.iter().map(|NodeId::ThreePlane(t)| *t))
+                    .flat_map(|r| r.iter().map(|&n| combinatorics::three_plane_name(n)))
             })
             .collect()
     };
@@ -596,7 +596,7 @@ fn comp_key(model: &Model, faces: &[Handle<Face>]) -> Vec<[f64; 3]> {
 /// B-plane, or 1 A + 2 B). Shared (one `Handle`) by every incident result piece.
 pub(crate) struct SeamVertex {
     pub(crate) point: Point3,
-    pub(crate) triple: [usize; 3], // sorted combined-plane indices
+    pub(crate) triple: NodeId,
     pub(crate) tol: f64,
 }
 
@@ -625,7 +625,10 @@ impl Ring {
         let k = nodes.len();
         let walls = (0..k)
             .map(|i| {
-                let (NodeId::ThreePlane(a), NodeId::ThreePlane(b)) = (nodes[i], nodes[(i + 1) % k]);
+                let (a, b) = (
+                    combinatorics::three_plane_name(nodes[i]),
+                    combinatorics::three_plane_name(nodes[(i + 1) % k]),
+                );
                 a.iter()
                     .copied()
                     .find(|&c| c != p && b.contains(&c))
@@ -655,7 +658,7 @@ impl Ring {
         jd: &Judge<'_, WorkingPlane>,
         p: usize,
     ) -> Result<Vec<combinatorics::RingEdge>, BoolError> {
-        combinatorics::ring_edges_with_walls(jd, p, &seam_ring(&self.nodes), &self.walls)
+        combinatorics::ring_edges_with_walls(jd, p, &self.nodes, &self.walls)
     }
 }
 
@@ -827,7 +830,7 @@ fn self_touch_reject(
     groups: &[Vec<usize>],
     by_comp_lf: &[Vec<&LocalFace>],
 ) -> Result<(), BoolError> {
-    let pt: HashMap<[usize; 3], (Point3, f64)> = seam
+    let pt: HashMap<NodeId, (Point3, f64)> = seam
         .iter()
         .map(|sv| (sv.triple, (sv.point, sv.tol)))
         .collect();
@@ -848,7 +851,7 @@ fn self_touch_reject(
         // One pass: which faces sit on each plane, which two faces own each edge, and a box per
         // face already widened by its own vertices' tolerances.
         let mut by_plane: HashMap<usize, Vec<usize>> = HashMap::new();
-        let mut owners: HashMap<[[usize; 3]; 2], Vec<usize>> = HashMap::new();
+        let mut owners: HashMap<[NodeId; 2], Vec<usize>> = HashMap::new();
         let mut boxes: Vec<([f64; 3], [f64; 3])> = Vec::with_capacity(faces.len());
         for (j, lf) in faces.iter().enumerate() {
             by_plane.entry(lf.surf.plane()).or_default().push(j);
@@ -856,8 +859,7 @@ fn self_touch_reject(
             for r in rings_of(lf) {
                 let k = r.nodes.len();
                 for i in 0..k {
-                    let (NodeId::ThreePlane(u), NodeId::ThreePlane(v)) =
-                        (r.nodes[i], r.nodes[(i + 1) % k]);
+                    let (u, v) = (r.nodes[i], r.nodes[(i + 1) % k]);
                     owners
                         .entry(if u < v { [u, v] } else { [v, u] })
                         .or_default()
@@ -875,7 +877,11 @@ fn self_touch_reject(
         }
         let mut rings_of_face: HashMap<usize, Vec<Vec<combinatorics::RingEdge>>> = HashMap::new();
         for (&[u, v], own) in &owners {
-            for q in u.iter().copied().filter(|x| v.contains(x)) {
+            let (up, vp) = (
+                combinatorics::three_plane_name(u),
+                combinatorics::three_plane_name(v),
+            );
+            for q in up.iter().copied().filter(|x| vp.contains(x)) {
                 let Some(js) = by_plane.get(&q) else { continue };
                 for &j in js.iter().filter(|j| !own.contains(j)) {
                     let (lo, hi) = boxes[j];
@@ -907,7 +913,7 @@ fn self_touch_reject(
                     else {
                         continue; // an edge whose faces are both on `q` is not an edge
                     };
-                    if combinatorics::segment_meets_face(jd, q, w2, u, v, &rings_of_face[&j])? {
+                    if combinatorics::segment_meets_face(jd, q, w2, up, vp, &rings_of_face[&j])? {
                         // The offending edge itself, as the witness: both endpoints are in `pt`
                         // (the `in_box` guard above already looked them up).
                         return Err(crate::reject_at(
@@ -1084,52 +1090,54 @@ fn reconstruct(
             if let Some(&h) = vh.get(&(g, node)) {
                 return Ok(h);
             }
-            let handle = match node {
-                NodeId::ThreePlane(triple) => {
-                    // A face references a seam node whose triple was not welded into `seam` — a
-                    // reconstruction dropped a crossing. Reject (never panic): an unmodeled flush
-                    // topology must decline honestly, not abort the kernel (DNA).
-                    let sv = seam
-                        .iter()
-                        .find(|s| s.triple == triple)
-                        .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                    // A vertex that is a corner of no face at all has no name in the result's own
-                    // planes — a degeneracy, and the honest answer is the one this reason already
-                    // carries ("a corner with no turn").
-                    let tri = def_triple
-                        .get(&(g, node))
-                        .copied()
-                        .ok_or_else(|| reject(RejectReason::StraightAngle))?;
-                    let def = VertexDef::ThreePlane([
-                        planes[tri[0]].surf,
-                        planes[tri[1]].surf,
-                        planes[tri[2]].surf,
-                    ]);
-                    // ★★ **The tolerance measures the planes the vertex is *defined* by.**
-                    //
-                    // The arrangement made the coordinate and `sv.tol` as a pair — `three_planes` on
-                    // one triple, `vertex_tol` on the same one. The lines above then **re-name** the
-                    // vertex in the result's own surfaces, which is a *different* triple wherever four
-                    // planes concur (that is why the derivation exists). The old code carried the
-                    // tolerance through that swap on the grounds that "every plane through the point
-                    // contains it exactly" — **true only while nothing is rotated**. A rotated plane
-                    // passes a realized point within an ulp or two, not through it, so the carried
-                    // tolerance bounded a distance nobody was going to measure while `validate`
-                    // measured a different one (found by `replay`'s proptest; 454 of 91,394 result
-                    // vertices in the corpus were short, by at most 2.1e-14 — rounding, as it should
-                    // be, but rounding the record has to admit to).
-                    //
-                    // ★ Measured on `model.surface(..)`, the very object `validate` reads — not on the
-                    // class's own `plane` copy, or this would compare two descriptions of one plane
-                    // again. And `max`ed with `sv.tol` rather than replacing it: the arrangement's
-                    // figure also covers the pairwise meet lines, which is a real part of what this
-                    // number means.
-                    let tol = [tri[0], tri[1], tri[2]]
-                        .iter()
-                        .map(|&i| model.surface(planes[i].surf).distance(sv.point))
-                        .fold(sv.tol, f64::max);
-                    model.push_vertex(def, sv.point, Some(tol))
-                }
+            // A face references a seam node that was not welded into `seam` — a reconstruction
+            // dropped a crossing. Reject (never panic): an unmodeled flush topology must decline
+            // honestly, not abort the kernel (DNA).
+            //
+            // ★ This used to `match` the node to compare its triple against `SeamVertex.triple`.
+            // Both are identities now, so the comparison is the identity's own `==` and the
+            // destructure that existed only to reach the payload is gone.
+            let handle = {
+                let sv = seam
+                    .iter()
+                    .find(|s| s.triple == node)
+                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                // A vertex that is a corner of no face at all has no name in the result's own
+                // planes — a degeneracy, and the honest answer is the one this reason already
+                // carries ("a corner with no turn").
+                let tri = def_triple
+                    .get(&(g, node))
+                    .copied()
+                    .ok_or_else(|| reject(RejectReason::StraightAngle))?;
+                let def = VertexDef::ThreePlane([
+                    planes[tri[0]].surf,
+                    planes[tri[1]].surf,
+                    planes[tri[2]].surf,
+                ]);
+                // ★★ **The tolerance measures the planes the vertex is *defined* by.**
+                //
+                // The arrangement made the coordinate and `sv.tol` as a pair — `three_planes` on
+                // one triple, `vertex_tol` on the same one. The lines above then **re-name** the
+                // vertex in the result's own surfaces, which is a *different* triple wherever four
+                // planes concur (that is why the derivation exists). The old code carried the
+                // tolerance through that swap on the grounds that "every plane through the point
+                // contains it exactly" — **true only while nothing is rotated**. A rotated plane
+                // passes a realized point within an ulp or two, not through it, so the carried
+                // tolerance bounded a distance nobody was going to measure while `validate`
+                // measured a different one (found by `replay`'s proptest; 454 of 91,394 result
+                // vertices in the corpus were short, by at most 2.1e-14 — rounding, as it should
+                // be, but rounding the record has to admit to).
+                //
+                // ★ Measured on `model.surface(..)`, the very object `validate` reads — not on the
+                // class's own `plane` copy, or this would compare two descriptions of one plane
+                // again. And `max`ed with `sv.tol` rather than replacing it: the arrangement's
+                // figure also covers the pairwise meet lines, which is a real part of what this
+                // number means.
+                let tol = [tri[0], tri[1], tri[2]]
+                    .iter()
+                    .map(|&i| model.surface(planes[i].surf).distance(sv.point))
+                    .fold(sv.tol, f64::max);
+                model.push_vertex(def, sv.point, Some(tol))
             };
             vh.insert((g, node), handle);
             Ok(handle)
@@ -1647,11 +1655,6 @@ fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((NodeId, NodeId), usi
     })
 }
 
-/// The `[usize; 3]` form a ring's nodes carry, for the exact predicates.
-fn seam_ring(ring: &[NodeId]) -> Vec<[usize; 3]> {
-    ring.iter().map(|NodeId::ThreePlane(t)| *t).collect()
-}
-
 /// An outer ring with the holes that belong to it — what one merged region looks like before it
 /// becomes a `LocalFace`.
 type RegionRings = (Ring, Vec<Ring>);
@@ -1763,7 +1766,11 @@ fn merge_component(
         // about that vertex, and settling for `nodes[0]` is what lost whole bands of rotation
         // angles here. `ring_in_ring` holds that retry now, for this caller and the two in the
         // arrangement alike.
-        let probes: Vec<[usize; 3]> = hole.nodes.iter().map(|NodeId::ThreePlane(t)| *t).collect();
+        let probes: Vec<[usize; 3]> = hole
+            .nodes
+            .iter()
+            .map(|&n| combinatorics::three_plane_name(n))
+            .collect();
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
             let ring = outer.edges(jd, wc)?;

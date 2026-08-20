@@ -1429,6 +1429,13 @@ fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// One face ring, as plane triples.
 type Ring = Vec<[usize; 3]>;
 
+/// A ring of vertex names as the plane triples these fixtures assert about.
+fn names(ring: &[combinatorics::NodeId]) -> Ring {
+    ring.iter()
+        .map(|&n| combinatorics::three_plane_name(n))
+        .collect()
+}
+
 /// A **holed reflex face** from the live engine, as plane triples: `(planes, p, outer, hole)`.
 ///
 /// `Cut(L-prism, stub)` leaves the L's top cap carrying a hole — `"dimple"` a square one,
@@ -1495,8 +1502,8 @@ fn holed_face_rings_of(
             return (
                 planes,
                 plane_ix[fp].plane(),
-                outer.poly().expect("a poly outer").triples.clone(),
-                hole.poly().expect("a poly hole").triples.clone(),
+                names(&outer.poly().expect("a poly outer").triples),
+                names(&hole.poly().expect("a poly hole").triples),
             );
         }
     }
@@ -2575,9 +2582,10 @@ fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
                 c.planes.len(),
                 c.planes
             );
-            if !c.triple.contains(&c.wc) {
+            let triple = combinatorics::three_plane_name(c.triple);
+            if !triple.contains(&c.wc) {
                 trace_rule_checked += 1;
-                let mut derived = c.triple.to_vec();
+                let mut derived = triple.to_vec();
                 derived.push(c.wc);
                 derived.sort_unstable();
                 assert_eq!(
@@ -4238,7 +4246,7 @@ fn unify_merges_a_coplanar_chain() {
         mk_axis_plane(&mut m, 1, 1.0, true),  // 6: y=1
     ];
     let _canon: Vec<usize> = (0..p.len()).collect();
-    let v = |x: usize, y: usize| NodeId::ThreePlane([0, x, y]); // sorted: class, x-plane, y-plane
+    let v = |x: usize, y: usize| NodeId::three_planes([0, x, y]); // class, x-plane, y-plane
     let (c00, c10, c20, c30) = (v(1, 5), v(2, 5), v(3, 5), v(4, 5));
     let (c01, c11, c21, c31) = (v(1, 6), v(2, 6), v(3, 6), v(4, 6));
     let faces = vec![
@@ -4320,7 +4328,7 @@ fn a_hole_filled_by_two_faces_still_merges() {
         mk_axis_plane(&mut m, 1, 3.0, true),  // 9: y=3
     ];
     let _canon: Vec<usize> = (0..p.len()).collect();
-    let v = |x: usize, y: usize| NodeId::ThreePlane([0, x, y]);
+    let v = |x: usize, y: usize| NodeId::three_planes([0, x, y]);
     let (o00, o30, o33, o03) = (v(1, 6), v(5, 6), v(5, 9), v(1, 9));
     let (h11, h12, h22, h21) = (v(2, 7), v(2, 8), v(4, 8), v(4, 7));
     let (m12, m11) = (v(3, 8), v(3, 7)); // the split points on the hole's top and bottom
@@ -4361,16 +4369,19 @@ fn unify_keeps_a_vertex_that_is_a_corner_elsewhere() {
     ];
     let _canon: Vec<usize> = (0..p.len()).collect();
     let (v000, v100, v200) = (
-        NodeId::ThreePlane([0, 1, 4]),
-        NodeId::ThreePlane([0, 2, 4]),
-        NodeId::ThreePlane([0, 3, 4]),
+        NodeId::three_planes([0, 1, 4]),
+        NodeId::three_planes([0, 2, 4]),
+        NodeId::three_planes([0, 3, 4]),
     );
     let (v010, v110, v210) = (
-        NodeId::ThreePlane([0, 1, 5]),
-        NodeId::ThreePlane([0, 2, 5]),
-        NodeId::ThreePlane([0, 3, 5]),
+        NodeId::three_planes([0, 1, 5]),
+        NodeId::three_planes([0, 2, 5]),
+        NodeId::three_planes([0, 3, 5]),
     );
-    let (v101, v201) = (NodeId::ThreePlane([2, 4, 6]), NodeId::ThreePlane([3, 4, 6]));
+    let (v101, v201) = (
+        NodeId::three_planes([2, 4, 6]),
+        NodeId::three_planes([3, 4, 6]),
+    );
     let faces = vec![
         face(0, vec![v000, v100, v110, v010], vec![]),
         face(0, vec![v100, v200, v210, v110], vec![]),
@@ -4908,6 +4919,7 @@ fn a_vertex_is_named_by_the_planes_that_touch_it() {
                 .expect("a poly outer")
                 .triples
                 .clone();
+            let tris = names(&tris);
             for t in &tris {
                 // The triple is already dense plane ids: distinct means three real planes.
                 assert!(
@@ -5047,8 +5059,8 @@ fn plane_triples_are_always_canon() {
                     .into_iter()
                     .filter_map(|lr| lr.poly().map(|nr| nr.triples.clone())),
             );
-            for t in rings.iter().flatten() {
-                for &k in t {
+            for t in rings.iter().flat_map(|r| names(r)) {
+                for &k in &t {
                     assert!(
                         k < planes.len(),
                         "triple {t:?} names {k}, out of the plane table"
@@ -5112,6 +5124,7 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
                 .expect("a poly outer")
                 .triples
                 .clone();
+            let tris = names(&tris);
             for t in &tris {
                 // The vertex lies on exactly its three defining planes; each must read 0.
                 for &q in t {

@@ -95,6 +95,46 @@ pub(crate) enum NodeId {
     ThreePlane([usize; 3]), // sorted triple (key into the seam map)
 }
 
+impl NodeId {
+    /// The canonical name of the point where three plane classes meet — **the only way one is
+    /// made**, so "two spellings of one vertex are one name" holds by construction.
+    ///
+    /// ★★ **Sorting is *this variant's* canonicalization, not the definition of canonical.** The
+    /// next variant's is bigger: a branch point is named by two planes, a cylinder and a root, and
+    /// [`nacre_topo::VertexDef::Branch`]'s doc states the rule — re-sorting the two plane handles
+    /// must **toggle the root**, because swapping them reverses the meet line and with it the
+    /// meaning of `Lo`/`Hi`. That rule is already implemented and red-locked in
+    /// `crate::transform`; a `NodeId::branch` must *read* it rather than copy the shape of this
+    /// one, or the same point gets two names and one of them points at the other root.
+    ///
+    /// It does **not** check for a collapsed triple. Two names being equal is a real condition
+    /// with *different answers at different callers* — `arrangement::plane_ring` declines
+    /// (`CollapsedTriple`), [`loop_triples`] falls back to naming the vertex from every plane
+    /// touching it — so making the constructor fallible would copy that fork to all eight minting
+    /// sites.
+    pub(crate) fn three_planes(mut t: [usize; 3]) -> NodeId {
+        t.sort_unstable();
+        NodeId::ThreePlane(t)
+    }
+}
+
+/// **The one door out of the identity and into the machinery that assumes every vertex has a
+/// three-plane name** — the ray casts, the ring walks, the wall-and-handle derivations, and the
+/// comparison keys. They take `[usize; 3]`, and rightly: an in-flight probe point like
+/// `point_in_component`'s `{a, b, q}` is three planes without being any vertex of the arrangement,
+/// so a name is the wrong type for their parameter.
+///
+/// **It is total today, and that is the point.** When a second variant arrives this `match` is the
+/// single place that goes red, and the answer for every caller behind it is the same one: a branch
+/// point has no three-plane name, and none of these paths has another answer to give. The two
+/// places that *will* answer differently — [`node_coords_rat`] and [`loop_winding`]'s
+/// lexicographic scan — deliberately do not come through here.
+pub(crate) fn three_plane_name(n: NodeId) -> [usize; 3] {
+    match n {
+        NodeId::ThreePlane(t) => t,
+    }
+}
+
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
 /// recovered from the two endpoint names.
 ///
@@ -108,7 +148,7 @@ pub(crate) enum NodeId {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct RingEdge {
     /// Identity of the vertex this edge leaves.
-    pub node: [usize; 3],
+    pub node: NodeId,
     /// The plane whose meet with `P` carries this edge.
     pub wall: usize,
     /// The endpoints as handles on `P ∩ wall` — the third plane pinning each there. Not a name:
@@ -124,6 +164,8 @@ pub(crate) struct RingEdge {
 /// wall) reads the wall the producer carries (`NamedRing`) instead, so no production path
 /// derives ring geometry from names any more. Kept for hand-built test rings, whose vertices
 /// are clean three-plane points by construction.
+/// ★ It takes bare triples, not [`NodeId`]s, because it is a **fixture constructor**: its callers
+/// hold hand-written literals, so this is where those become names (`NodeId::three_planes`).
 #[cfg(test)]
 pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingEdge>, BoolError> {
     (0..ring.len())
@@ -139,7 +181,7 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
                 return Err(reject(RejectReason::RingNaming));
             };
             Ok(RingEdge {
-                node: a,
+                node: NodeId::three_planes(a),
                 wall,
                 from_h,
                 to_h,
@@ -164,14 +206,14 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 pub(crate) fn ring_edges_with_walls(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
-    nodes: &[[usize; 3]],
+    nodes: &[NodeId],
     walls: &[usize],
 ) -> Result<Vec<RingEdge>, BoolError> {
     if nodes.len() != walls.len() {
         return Err(reject(RejectReason::RingNaming));
     }
-    let handle = |t: [usize; 3], wall: usize| -> Option<usize> {
-        let mut cs: Vec<usize> = t
+    let handle = |n: NodeId, wall: usize| -> Option<usize> {
+        let mut cs: Vec<usize> = three_plane_name(n)
             .iter()
             .copied()
             .filter(|&c| c != p && c != wall && jd.plane_pair_dir_sign(p, wall, c) != 0)
@@ -356,7 +398,7 @@ pub(crate) fn face_vertex_triples(
 /// even where the *names* degenerate (the fallback-named vertices still know their edges).
 #[derive(Clone, Debug)]
 pub(crate) struct NamedRing {
-    pub triples: Vec<[usize; 3]>,
+    pub triples: Vec<NodeId>,
     pub walls: Vec<usize>,
 }
 
@@ -537,7 +579,7 @@ fn loop_triples(
         ];
         t.sort_unstable();
         if t[0] != t[1] && t[1] != t[2] {
-            out.push(t);
+            out.push(NodeId::three_planes(t));
             continue;
         }
         // Both neighbours are one plane. The vertex is the two edges' shared endpoint — and only
@@ -590,8 +632,7 @@ fn loop_triples(
         if jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
             return Err(reject(RejectReason::ThreePlanes)); // three planes through one line, not one point
         }
-        t.sort_unstable();
-        out.push(t);
+        out.push(NodeId::three_planes(t));
     }
     Ok(LoopRing::Poly(NamedRing {
         triples: out,
@@ -783,7 +824,7 @@ pub(crate) fn every_ray(
     if ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
-    let nodes: Vec<[usize; 3]> = ring.iter().map(|e| e.node).collect();
+    let nodes: Vec<[usize; 3]> = ring.iter().map(|e| three_plane_name(e.node)).collect();
     let mut out = Vec::new();
     for &qa in v.iter().filter(|&&x| x != p) {
         // Where the ring meets the line — the walk `trace_transversal_face` reads too.
@@ -908,7 +949,7 @@ pub(crate) fn segment_meets_face(
     // whether passing it flips inside/outside.
     let mut events: Vec<([usize; 2], bool)> = Vec::new();
     for ring in rings {
-        let nodes: Vec<[usize; 3]> = ring.iter().map(|e| e.node).collect();
+        let nodes: Vec<[usize; 3]> = ring.iter().map(|e| three_plane_name(e.node)).collect();
         let Some(features) = ring_against_plane(jd, &nodes, w) else {
             // The whole ring lies on `w`: this face's boundary is the line itself, and the
             // alternation has no crossings to read. Refusing to guess.
@@ -1166,12 +1207,23 @@ pub(crate) fn loop_winding(
     if ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
+    // ★ **The comparator, in one place, reading the identity directly.** This is the second of the
+    // two sites that deliberately do not go through [`three_plane_name`]: `Judge::cmp_coord` speaks
+    // three plane indices (it lives in `nacre-cip`, below this crate, so the name cannot travel
+    // there), and a branch point's coordinate is `a + b√c` with its own total comparator
+    // (`nacre_scalar::quad::cmp_coord_meet_branch`). When that variant arrives *this* `match` is
+    // where the dispatch belongs — the door's single answer is the wrong one here.
+    let key = |n: NodeId| -> [usize; 3] {
+        match n {
+            NodeId::ThreePlane(t) => t,
+        }
+    };
     // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with
     // the running minimum just means "not strictly smaller", so keep it; do not reject.
     let mut lo = 0usize;
     for i in 1..ring.len() {
         let strictly_less = (0..3)
-            .map(|axis| jd.cmp_coord(ring[i].node, ring[lo].node, axis))
+            .map(|axis| jd.cmp_coord(key(ring[i].node), key(ring[lo].node), axis))
             .find(|&c| c != 0)
             == Some(-1);
         if strictly_less {
@@ -1193,7 +1245,7 @@ pub(crate) fn loop_winding(
         !ring.iter().enumerate().any(|(i, _)| {
             i != lo
                 && (0..3)
-                    .map(|axis| jd.cmp_coord(ring[i].node, ring[lo].node, axis))
+                    .map(|axis| jd.cmp_coord(key(ring[i].node), key(ring[lo].node), axis))
                     .find(|&c| c != 0)
                     == Some(-1)
         }),
@@ -1202,7 +1254,7 @@ pub(crate) fn loop_winding(
     // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
     // ambiguous — honest-reject rather than guess.
     let pinched_extreme = ring.iter().enumerate().any(|(i, _)| {
-        i != lo && (0..3).all(|axis| jd.cmp_coord(ring[i].node, ring[lo].node, axis) == 0)
+        i != lo && (0..3).all(|axis| jd.cmp_coord(key(ring[i].node), key(ring[lo].node), axis) == 0)
     });
     if pinched_extreme {
         return Err(reject(RejectReason::CoincidentNodes));
@@ -1278,15 +1330,22 @@ pub(crate) fn class_coeffs_rat(
 
 /// A node's exact coordinates: the rational meet of its three classes' descriptions. `None` when
 /// any class lacks a narrow rational description — the caller declines rather than guessing.
+///
+/// ★ **This reads the identity directly rather than going through [`three_plane_name`]**, because
+/// it is one of the two places whose answer for a second variant is *its own*: a branch point's
+/// coordinate is `a + b√c`, not a rational meet, so this `match` is where that decision belongs —
+/// not behind a door whose one answer is "no three-plane name, nothing to give".
 pub(crate) fn node_coords_rat(
     jd: &Judge<'_, WorkingPlane>,
-    t: [usize; 3],
+    n: NodeId,
 ) -> Option<[nacre_scalar::Rat; 3]> {
-    nacre_scalar::three_planes_rat([
-        class_coeffs_rat(jd, t[0])?,
-        class_coeffs_rat(jd, t[1])?,
-        class_coeffs_rat(jd, t[2])?,
-    ])
+    match n {
+        NodeId::ThreePlane(t) => nacre_scalar::three_planes_rat([
+            class_coeffs_rat(jd, t[0])?,
+            class_coeffs_rat(jd, t[1])?,
+            class_coeffs_rat(jd, t[2])?,
+        ]),
+    }
 }
 
 fn dot3_rat(x: &[nacre_scalar::Rat; 3], y: &[nacre_scalar::Rat; 3]) -> Option<nacre_scalar::Rat> {
@@ -1343,14 +1402,73 @@ impl Chart2dRat {
         Some([dot3_rat(p, &self.e1)?, dot3_rat(p, &self.e2)?])
     }
 
-    /// A ring of node triples in chart coordinates.
+    /// A ring of nodes in chart coordinates.
     pub(crate) fn ring(
         &self,
         jd: &Judge<'_, WorkingPlane>,
-        ring: &[[usize; 3]],
+        ring: &[NodeId],
     ) -> Option<Vec<[nacre_scalar::Rat; 2]>> {
         ring.iter()
-            .map(|&t| self.project(&node_coords_rat(jd, t)?))
+            .map(|&n| self.project(&node_coords_rat(jd, n)?))
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The canonical form is the sorted triple, and the constructor is the only way to get one —
+    /// so the same three planes named in any order are **one** name.
+    ///
+    /// The expected value is written out rather than derived, because a test that re-derives it
+    /// through the constructor would agree with the constructor however the constructor behaved.
+    #[test]
+    fn three_planes_names_one_vertex_however_it_is_spelled() {
+        let canonical = NodeId::ThreePlane([2, 5, 9]);
+        for spelling in [
+            [2, 5, 9],
+            [2, 9, 5],
+            [5, 2, 9],
+            [5, 9, 2],
+            [9, 2, 5],
+            [9, 5, 2],
+        ] {
+            assert_eq!(
+                NodeId::three_planes(spelling),
+                canonical,
+                "{spelling:?} names the same vertex as [2, 5, 9]"
+            );
+        }
+        assert_eq!(
+            three_plane_name(canonical),
+            [2, 5, 9],
+            "and the door agrees"
+        );
+    }
+
+    /// ★ **`Ord` is the bare triple's lexicographic order** — the proposition the whole migration
+    /// to this type stands on. Four rules read it and would answer differently if it moved:
+    /// `Aliases::union_point`'s "smallest name wins", `merge_component`'s sorted ring starts,
+    /// `reuse::canonical`'s ring rotation, and the reject witness's `Break::key`.
+    ///
+    /// Each expected sign is written by hand from the pair, not computed from either operand, so
+    /// the test cannot agree with a wrong implementation by sharing its derivation.
+    #[test]
+    fn a_name_orders_like_the_triple_it_is() {
+        use std::cmp::Ordering::{Equal, Greater, Less};
+        for (a, b, want) in [
+            ([0, 1, 2], [0, 1, 3], Less),    // last component decides
+            ([0, 1, 3], [0, 1, 2], Greater), // …and antisymmetrically
+            ([0, 2, 9], [0, 3, 4], Less),    // middle decides before last
+            ([1, 0, 0], [0, 9, 9], Greater), // first decides before middle
+            ([4, 4, 4], [4, 4, 4], Equal),
+        ] {
+            assert_eq!(
+                NodeId::ThreePlane(a).cmp(&NodeId::ThreePlane(b)),
+                want,
+                "{a:?} vs {b:?}"
+            );
+        }
     }
 }

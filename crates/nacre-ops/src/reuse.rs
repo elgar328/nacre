@@ -275,12 +275,10 @@ impl VertexClasses {
     /// the arrangement resolves through its alias table by picking one triple as the name — a
     /// choice this cannot reproduce from the solid alone. So the class is arranged instead, which
     /// is always right and merely slower.
-    fn triple(&self, v: Handle<Vertex>) -> Option<[usize; 3]> {
+    fn triple(&self, v: Handle<Vertex>) -> Option<NodeId> {
         let c = self.vertices.get(&v)?;
         let [a, b, d] = c[..] else { return None };
-        let mut t = [a, b, d];
-        t.sort_unstable();
-        Some(t)
+        Some(NodeId::three_planes([a, b, d]))
     }
 }
 
@@ -299,7 +297,10 @@ pub(crate) type CanonFace = (usize, bool, Vec<[usize; 3]>, Vec<Vec<[usize; 3]>>)
 #[cfg(any(debug_assertions, test))]
 pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
     let ring = |r: &[NodeId]| -> Vec<[usize; 3]> {
-        let t: Vec<[usize; 3]> = r.iter().map(|NodeId::ThreePlane(t)| *t).collect();
+        let t: Vec<[usize; 3]> = r
+            .iter()
+            .map(|&n| crate::combinatorics::three_plane_name(n))
+            .collect();
         match t.iter().enumerate().min_by_key(|(_, v)| **v) {
             Some((i, _)) => t[i..].iter().chain(&t[..i]).copied().collect(),
             None => t,
@@ -345,7 +346,7 @@ pub(crate) fn pass_through(
     plane_ix: &[ClassIx],
     range: std::ops::Range<usize>,
     vc: &VertexClasses,
-    canon: impl Fn([usize; 3]) -> [usize; 3],
+    canon: impl Fn(NodeId) -> NodeId,
 ) -> Option<Vec<LocalFace>> {
     let mut out = Vec::new();
     for fi in range {
@@ -371,7 +372,7 @@ pub(crate) fn pass_through(
             let mut r: Vec<NodeId> = lp
                 .half_edges
                 .iter()
-                .map(|&he| Some(NodeId::ThreePlane(canon(vc.triple(he_start(model, he))?))))
+                .map(|&he| Some(canon(vc.triple(he_start(model, he))?)))
                 .collect::<Option<_>>()?;
             // ★ The wall of the edge leaving vertex `i` is the plane of the face on the other side
             // of that edge — carried, not derived (see `boolean::Ring`).
