@@ -389,43 +389,6 @@ fn group_faces(
     // exact predicate per node, so doing it unconditionally put **12x** on the 80-fold star
     // (measured). Built once per component rather than once per query for the same reason: the
     // label below retries with another node when one grazes.
-    // ★★ **A curved face cannot be described to this probe, and dropping it would be a silent
-    // wrong answer** (M6-2a). `point_in_component` counts a ray's crossings of the component's
-    // faces; a lateral face left out of the description is a crossing never counted, and the
-    // parity comes back inverted for a ray that passes through it. So a component that must be
-    // *classified* (`n > 1`) and carries a curved face is refused by name instead.
-    //
-    // ★ Measured, not assumed: before this guard, `Fuse(box, a distant cylinder)` — two bodies,
-    // so `n = 2` — aborted the kernel on `ClassIx::plane()`. The population never reached the
-    // suite because every cylinder fixture until then returned a single component.
-    //
-    // The real answer is symbolic and already half-built: this probe's ray is the meet of two of
-    // the query's own planes, and `nacre_scalar::plane_plane_cylinder` names exactly what such a
-    // line does against a cylinder. Counting those crossings is the extension this guard is
-    // holding the door for.
-    // A **probe list**, so a branch node may be dropped: `first_deciding` below tries each in
-    // turn, and an exhausted list is already `Ok(None)` — the caller's own rejection.
-    let nodes_of = |c: usize| -> Vec<[usize; 3]> {
-        combinatorics::three_plane_probes(
-            by_comp_lf[c]
-                .iter()
-                .flat_map(|lf| lf.poly_rings().flat_map(|r| r.iter().copied())),
-        )
-    };
-    // ★★ **Narrowed, and the sentence is now true of exactly what is refused.** It used to refuse
-    // whenever *any* component held a cylinder face, because the ray could not count one. It can
-    // now, so what is left is the other half the old guard was hiding: a component with **no probe
-    // node at all** — a lone cylinder's faces are two circle-bounded caps and a band, none of
-    // which carries a vertex, so `nodes_of` comes back empty and there is nothing to ask the
-    // question *from*. That is still a curved component whose depth cannot be asked, so the name
-    // still says what happens; a coordinate-named witness is what lifts it.
-    if n > 1 {
-        for c in 0..n {
-            if nodes_of(c).is_empty() {
-                return Err(reject(RejectReason::CurvedComponentDepth));
-            }
-        }
-    }
     let comp_faces: Vec<combinatorics::ComponentFaces> = (0..if n > 1 { n } else { 0 })
         .map(|c| {
             by_comp_lf[c]
@@ -434,8 +397,8 @@ fn group_faces(
                     // ★ **Every boundary travels, in the engine's own vocabulary.** This used to
                     // keep `poly_rings()` only, which silently dropped a face's circular and
                     // banded bounds — and a ray that counts an incomplete component answers
-                    // confidently and wrongly. That drop is why the `CurvedComponentDepth` guard
-                    // exists; carrying the bounds is the first half of retiring it.
+                    // confidently and wrongly. That drop is what the `CurvedComponentDepth` guard
+                    // stood in for; carrying the bounds is the first half of what retired it.
                     let bound = |b: &Bound| -> Result<combinatorics::BoundEdges, BoolError> {
                         Ok(match b {
                             // `plane()` is the plane-only projection whose panic is the
@@ -473,6 +436,30 @@ fn group_faces(
                 .collect::<Result<_, BoolError>>()
         })
         .collect::<Result<_, BoolError>>()?;
+    // A **probe list**, so a branch node may be dropped: `first_deciding` below tries each in
+    // turn, and an exhausted list is already `Ok(None)` — the caller's own rejection.
+    //
+    // ★★★ **Coordinates only when there is no vertex to name.** A named probe is exact without
+    // coordinates at all, so it keeps working where no rational one exists (a rotated class), and
+    // it is the answer for every component that has a polygon anywhere on it. What has none is the
+    // shape `CurvedComponentDepth` used to refuse outright: a lone cylinder, whose boundary is two
+    // disks and a band and whose vertex count is therefore **zero**. `coord_probes` names a point
+    // on that boundary instead of a vertex of it.
+    let probes_of = |c: usize| -> Vec<combinatorics::Probe> {
+        let named: Vec<combinatorics::Probe> = combinatorics::three_plane_probes(
+            by_comp_lf[c]
+                .iter()
+                .flat_map(|lf| lf.poly_rings().flat_map(|r| r.iter().copied())),
+        )
+        .into_iter()
+        .map(combinatorics::Probe::Named)
+        .collect();
+        if named.is_empty() {
+            combinatorics::coord_probes(jd, &comp_faces[c])
+        } else {
+            named
+        }
+    };
     // Try `f` at each node in turn: the first node that **decides** wins, a node that abstains
     // (`Ok(None)` — it grazed a boundary) is passed over for the next, and a failed judgement
     // (`Err`) propagates immediately. The last part is the point of the shape: an abstention has
@@ -481,10 +468,10 @@ fn group_faces(
     // hit it. `Ok(None)` here means every node abstained; that being a reject is the *caller's*
     // proposition to raise.
     fn first_deciding<T>(
-        nodes: &[[usize; 3]],
-        mut f: impl FnMut([usize; 3]) -> Result<Option<T>, BoolError>,
+        probes: &[combinatorics::Probe],
+        mut f: impl FnMut(&combinatorics::Probe) -> Result<Option<T>, BoolError>,
     ) -> Result<Option<T>, BoolError> {
-        for &x in nodes {
+        for x in probes {
             if let Some(v) = f(x)? {
                 return Ok(Some(v));
             }
@@ -520,10 +507,10 @@ fn group_faces(
         // component. Trying them in turn is what the cavity search does, and for the same reason —
         // a node that grazes one component's boundary is a fact about that node, not about the
         // components.
-        let depth = first_deciding(&nodes_of(c), |x| {
+        let depth = first_deciding(&probes_of(c), |x| {
             let mut d = 0usize;
             for other in (0..n).filter(|&o| o != c) {
-                match combinatorics::point_in_component(jd, x, &comp_faces[other])? {
+                match combinatorics::probe_in_component(jd, x, &comp_faces[other])? {
                     Some(true) => d += 1,
                     Some(false) => {}
                     None => return Ok(None), // grazed — this node abstains
@@ -553,14 +540,14 @@ fn group_faces(
             // by the exact point-in-solid `point_in_component`. With no cavity this loop is empty
             // and every material emits cavity-free (the plain sever, unchanged).
             // ★ The rings hand over their walls; nothing here derives one from a name —
-            // `comp_faces`/`nodes_of` are the same pair the material/void label above uses.
+            // `comp_faces`/`probes_of` are the same pair the material/void label above uses.
             for d in (0..n).filter(|c| !positives.contains(c)) {
                 // A cavity node that classifies cleanly against *every* material (one shared origin
                 // keeps the nesting consistent); its `true` materials nest, so take the innermost.
-                let containers = first_deciding(&nodes_of(d), |x| {
+                let containers = first_deciding(&probes_of(d), |x| {
                     let mut cs = Vec::new();
                     for &m in &positives {
-                        match combinatorics::point_in_component(jd, x, &comp_faces[m])? {
+                        match combinatorics::probe_in_component(jd, x, &comp_faces[m])? {
                             Some(true) => cs.push(m),
                             Some(false) => {}
                             None => return Ok(None), // grazed against a material — abstain
@@ -586,8 +573,8 @@ fn group_faces(
                                 if o == c {
                                     continue;
                                 }
-                                let v = first_deciding(&nodes_of(c), |x| {
-                                    combinatorics::point_in_component(jd, x, &comp_faces[o])
+                                let v = first_deciding(&probes_of(c), |x| {
+                                    combinatorics::probe_in_component(jd, x, &comp_faces[o])
                                 })?
                                 .unwrap_or(false);
                                 inside.insert((c, o), v);

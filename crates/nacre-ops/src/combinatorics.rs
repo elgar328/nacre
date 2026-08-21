@@ -1351,26 +1351,334 @@ pub(crate) struct CompFace {
 
 /// How a ray met one cylindrical face.
 enum CurvedHit {
-    /// This many crossings lie **behind** the query along the line (the half the parity counts).
-    Behind(usize),
+    /// This many crossings lie on the **counted half** of the ray. ★ Which half that is belongs to
+    /// the caller, not here: it hands in the plane, and this counts that plane's negative side.
+    /// The two roads pick opposite halves — the named one counts behind its query, the coordinate
+    /// one ahead of its origin — and the parity is the same either way, so a name that said
+    /// "behind" would be false for one of them.
+    Counted(usize),
     /// The ray touched a boundary — tangent, on a ruling, or exactly through the query. Abandon
     /// this ray and let the caller try the next plane pair, the same policy `point_on_ring` sets
     /// for a polygon.
     Graze,
 }
 
-/// **Is the three-plane point `x` strictly inside this circle?** — `None` when it lies *on* the
-/// circle (non-generic, abandon) or when the arithmetic could not answer.
+/// **A component's probe** — a point to ask "how deep is this component nested" from.
+///
+/// ★ The two variants are two *descriptions of a point*, not two policies: a three-plane name is
+/// exact without coordinates at all (so it survives a rotated class, where no rational coordinate
+/// exists), and rational coordinates are what a component describes when **none of its faces
+/// carries a vertex** — a lone cylinder's boundary is two disks and a band.
+///
+/// ★★ **Both are points *on* the component's boundary**, which is what makes their depths
+/// comparable: today's named probe is a face vertex, and [`coord_probes`] takes a cap disk's
+/// **centre**, which lies on that face. An *interior* witness — the axis midpoint, say — would
+/// also answer containment, but it is a different kind of point and could be separated from the
+/// boundary by another component's wall.
+pub(crate) enum Probe {
+    Named([usize; 3]),
+    Coord {
+        p: [nacre_scalar::Rat; 3],
+        dir: [nacre_scalar::Rat; 3],
+    },
+}
+
+/// **Is this probe inside the component?** — the one door in front of the two roads.
+pub(crate) fn probe_in_component(
+    jd: &Judge<'_, WorkingPlane>,
+    probe: &Probe,
+    faces: &[CompFace],
+) -> Result<Option<bool>, BoolError> {
+    match probe {
+        Probe::Named(x) => point_in_component(jd, *x, faces),
+        Probe::Coord { p, dir } => point_in_faces_rat(jd, p, dir, faces),
+    }
+}
+
+/// **Coordinate probes of a component whose faces carry no vertex.**
+///
+/// The witness is a **cap disk's centre**: the face is planar with a circular outer bound, so the
+/// centre is the axis point at that plane's own axis parameter — the rule `bands.rs` already reads
+/// a class's position along an axis with ([`axis_param_of_plane`](crate::planes::axis_param_of_plane)).
+/// It is strictly inside the circle for any positive radius, so nothing needs to test that.
+///
+/// ★ **A holed cap is passed over rather than guessed at.** The centre of an annulus is in its
+/// hole, not on the face, and a witness that is not on the boundary is a confidently wrong depth
+/// rather than an abstention. Another face — or, if there is none, the caller's reject — is the
+/// remedy.
+///
+/// Several directions per point, because one ray can graze and the remedy is another direction;
+/// the order is not load-bearing.
+pub(crate) fn coord_probes(jd: &Judge<'_, WorkingPlane>, faces: &[CompFace]) -> Vec<Probe> {
+    use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
+    let nonzero = |v: &[Rat; 3]| v.iter().any(|c| *c != zero);
+    let neg = |v: &[Rat; 3]| -> Option<[Rat; 3]> {
+        Some([
+            zero.checked_sub(v[0])?,
+            zero.checked_sub(v[1])?,
+            zero.checked_sub(v[2])?,
+        ])
+    };
+    let mut out = Vec::new();
+    for f in faces {
+        let (CompSurf::Plane(q), BoundEdges::Circle(def)) = (&f.surf, &f.outer) else {
+            continue;
+        };
+        if !f.inner.is_empty() {
+            continue;
+        }
+        let Some(p) = class_coeffs_rat(jd, *q)
+            .and_then(|coeffs| crate::planes::axis_param_of_plane(&coeffs, def))
+            .and_then(|t| {
+                let (o, m) = (def.origin(), def.dir());
+                let mut p = [zero; 3];
+                for k in 0..3 {
+                    p[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
+                }
+                Some(p)
+            })
+        else {
+            continue;
+        };
+        let m = def.dir();
+        let mut dirs = vec![m];
+        dirs.extend(neg(&m));
+        for k in 0..3 {
+            let mut e = [zero; 3];
+            e[k] = Rat::from_int(1);
+            match cross3_rat(&e, &m) {
+                Some(w) if nonzero(&w) => {
+                    dirs.push(w);
+                    dirs.extend(neg(&w));
+                    break;
+                }
+                _ => {}
+            }
+        }
+        out.extend(dirs.into_iter().map(|dir| Probe::Coord { p, dir }));
+    }
+    out
+}
+
+/// **Two rational planes whose meet is the line through `p` along `dir`.**
+///
+/// ★ The normals are **basis crosses** (`ê_k × dir`), whose components are a shuffle of `dir`'s —
+/// no products, nothing to overflow. That is the same rule `SketchPlane::normal_def` states, and
+/// for the same reason: the "obvious" second direction `n × u` squares the inputs' widths.
+fn planes_through_line(
+    p: &[nacre_scalar::Rat; 3],
+    dir: &[nacre_scalar::Rat; 3],
+) -> Option<[[nacre_scalar::Rat; 4]; 2]> {
+    use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
+    let basis = |k: usize| -> [Rat; 3] {
+        let mut e = [zero; 3];
+        e[k] = Rat::from_int(1);
+        e
+    };
+    let mut ns: Vec<[Rat; 3]> = Vec::new();
+    for k in 0..3 {
+        if let Some(n) = cross3_rat(&basis(k), dir) {
+            if n.iter().any(|c| *c != zero)
+                && (ns.is_empty()
+                    || cross3_rat(&ns[0], &n).is_some_and(|c| c.iter().any(|v| *v != zero)))
+            {
+                ns.push(n);
+            }
+        }
+        if ns.len() == 2 {
+            break;
+        }
+    }
+    let [n0, n1] = <[[Rat; 3]; 2]>::try_from(ns).ok()?;
+    let plane = |n: [Rat; 3]| -> Option<[Rat; 4]> {
+        Some([n[0], n[1], n[2], zero.checked_sub(dot3_rat(&n, p)?)?])
+    };
+    Some([plane(n0)?, plane(n1)?])
+}
+
+/// **Is the point `p` inside this component**, asked along the ray `p + t·dir` — the coordinate
+/// twin of [`point_in_component`].
+///
+/// ★★★ **Two roads, one crossing rule.** The two differ only in how the *point* arrives: a
+/// three-plane name (exact without coordinates, so it survives a rotated class) or rational
+/// coordinates (the only thing a curved component can offer, since none of its faces carries a
+/// vertex). Everything they ask about a **face** — a circle's radial side, a band's roots and
+/// axial span, the abandon-on-boundary policy — is the same rule and is called, not restated.
+/// Restating it is how the two would come to disagree about a graze.
+///
+/// This road was `98e949a`'s casualty: K1 retired it when the band pass stopped needing it, and
+/// its own note said it answered *"a 3D containment question — the shape the component probe
+/// asks"*. It is back for that shape, with the curved arms it never had.
+///
+/// ★★ **What is measured, and what is owed.** `an_enclosed_cylindrical_void_is_a_cavity` is the
+/// fixture that makes this road say `true`, and it goes red if the road is stubbed to `false` —
+/// two *disjoint* bodies would not, since their answer is "outside" whatever the road does. The
+/// curved arm is entered there and by the fences, but always with a **miss**: `cylinders_clear`
+/// refuses any boolean whose two cylinders are within `r₁+r₂` of each other, so a ray from one
+/// cap's centre either misses the other band or crosses it **twice**, and the parity is the same
+/// with the arm stubbed to zero (measured). Its `k ≠ 0` behaviour is load-bearing through
+/// [`point_in_component`], which is the reason it is *called* here rather than restated: one arm,
+/// measured once. A fixture that loads it from **this** caller wants skew axes and is owed.
+///
+/// `Ok(None)` = this ray grazed; the caller has other directions to try.
+pub(crate) fn point_in_faces_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    p: &[nacre_scalar::Rat; 3],
+    dir: &[nacre_scalar::Rat; 3],
+    faces: &[CompFace],
+) -> Result<Option<bool>, BoolError> {
+    use nacre_geom::intersect::{RingSide, point_in_ring_2d_rat};
+    use nacre_scalar::Rat;
+    let not_rational = || reject(RejectReason::WitnessNotRational);
+    let zero = Rat::from_int(0);
+    if dir.iter().all(|c| *c == zero) {
+        return Err(reject(RejectReason::DegenerateWitness));
+    }
+    // The half this road counts is **ahead** of the origin, so its cut plane's negative side is
+    // `dir·(x − p) > 0` — the mirror of the named road, which counts behind. Either half has the
+    // same parity; what matters is that one road picks one.
+    let ahead = (|| {
+        let n = [
+            zero.checked_sub(dir[0])?,
+            zero.checked_sub(dir[1])?,
+            zero.checked_sub(dir[2])?,
+        ];
+        Some([n[0], n[1], n[2], zero.checked_sub(dot3_rat(&n, p)?)?])
+    })()
+    .ok_or_else(not_rational)?;
+    let line = planes_through_line(p, dir).ok_or_else(not_rational)?;
+
+    let mut count = 0usize;
+    for f in faces {
+        let q = match &f.surf {
+            CompSurf::Cylinder(def) => {
+                let BoundEdges::Band { lo, hi } = f.outer else {
+                    return Ok(None);
+                };
+                match cylinder_face_crossings(jd, [&line[0], &line[1]], def, [lo, hi], &ahead) {
+                    Some(CurvedHit::Counted(k)) => {
+                        count += k;
+                        continue;
+                    }
+                    Some(CurvedHit::Graze) | None => return Ok(None),
+                }
+            }
+            CompSurf::Plane(q) => *q,
+        };
+        let coeffs = class_coeffs_rat(jd, q).ok_or_else(not_rational)?;
+        let n = [coeffs[0], coeffs[1], coeffs[2]];
+        let nd = dot3_rat(&n, dir).ok_or_else(not_rational)?;
+        let residual = dot3_rat(&n, p)
+            .and_then(|v| v.checked_add(coeffs[3]))
+            .ok_or_else(not_rational)?;
+        if nd == zero {
+            // Parallel to this plane: it misses the face, unless the ray runs *inside* the plane,
+            // where "how many times does it cross this face" has no parity answer at all and
+            // another direction is the remedy.
+            //
+            // ★★ **The two roads differ here, and the difference is measured.** The named road's
+            // matching arm (`plane_pair_dir_sign == 0`) *continues* in both cases, counting the
+            // face as uncrossed even when its query sits on it — 26 rays in the suite lie in a
+            // face's plane and **2 of them are inside that face's material**, which is the very
+            // situation its own `fwd == 0 && in_g` arm abandons for a transversal plane. Abstaining
+            // is the safe half of the disagreement (it costs a probe, never an answer), so this
+            // road takes it; closing the gap on the other side is its own step.
+            if residual == zero {
+                return Ok(None);
+            }
+            continue;
+        }
+        let t = (|| -> Option<Rat> {
+            zero.checked_sub(residual)?
+                .checked_mul(Rat::new(nd.denom(), nd.numer())?)
+        })()
+        .ok_or_else(not_rational)?;
+        if t < zero {
+            continue; // behind the origin
+        }
+        let x = (|| -> Option<[Rat; 3]> {
+            let mut x = *p;
+            for k in 0..3 {
+                x[k] = x[k].checked_add(t.checked_mul(dir[k])?)?;
+            }
+            Some(x)
+        })()
+        .ok_or_else(not_rational)?;
+        let chart = Chart2dRat::of_normal(&n).ok_or_else(not_rational)?;
+        let x2 = chart.project(&x).ok_or_else(not_rational)?;
+        // Each bound answers by its own kind — the same split the named road makes.
+        let inside = |b: &BoundEdges| -> Result<Option<bool>, BoolError> {
+            match b {
+                BoundEdges::Ring(r) => {
+                    // ★ Under three nodes `point_in_ring_2d_rat` answers `Outside` by contract,
+                    // which would make a degenerate ring *invisible* to the parity instead of
+                    // loud. A face of a valid solid has no such ring, so saying so is free.
+                    if r.len() < 3 {
+                        return Err(reject(RejectReason::DegenerateRing));
+                    }
+                    // The branch check is spelled before the chart rather than left to
+                    // `node_coords_rat`'s `None`, so an unnamed vertex is reported as itself and
+                    // not as arithmetic that ran out of room — the same split `every_ray` makes.
+                    let nodes: Vec<NodeId> = r
+                        .iter()
+                        .map(|e| three_plane_name(e.node).map(NodeId::ThreePlane))
+                        .collect::<Option<_>>()
+                        .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
+                    let ring2 = chart.ring(jd, &nodes).ok_or_else(not_rational)?;
+                    Ok(match point_in_ring_2d_rat(x2, &ring2) {
+                        RingSide::Inside => Some(true),
+                        RingSide::Outside => Some(false),
+                        RingSide::OnBoundary => None,
+                    })
+                }
+                BoundEdges::Circle(def) => Ok(point_in_disk(&x, def)),
+                BoundEdges::Band { .. } => Ok(None),
+            }
+        };
+        let mut material = match inside(&f.outer)? {
+            Some(v) => v,
+            None => return Ok(None),
+        };
+        if material {
+            for hole in &f.inner {
+                match inside(hole)? {
+                    Some(true) => {
+                        material = false;
+                        break;
+                    }
+                    Some(false) => {}
+                    None => return Ok(None),
+                }
+            }
+        }
+        if t == zero {
+            // The crossing is the ray's own origin. On the face's material the query sits on the
+            // component's boundary, where "inside" has no answer; off it, the plane is touched at
+            // a point outside the face and counts for nothing.
+            if material {
+                return Ok(None);
+            }
+            continue;
+        }
+        if material {
+            count += 1;
+        }
+    }
+    Ok(Some(count % 2 == 1))
+}
+
+/// **Is `p` strictly inside this circle?** — `None` when it lies *on* the circle (non-generic,
+/// abandon) or when the arithmetic could not answer.
+///
+/// ★ It takes **coordinates**, so both roads ask it: the named probe realizes its three-plane
+/// crossing first, the coordinate road already has one. The rule must not be written twice.
 ///
 /// ★ The rule is `cylinder_radial_side`'s, the one `arrangement::node_in_circle` already reads —
 /// a circle bound is `cylinder ∩ plane`, so "inside the disk" is "inside the cylinder's radius".
-fn point_in_disk(
-    jd: &Judge<'_, WorkingPlane>,
-    x: [usize; 3],
-    def: &nacre_topo::CylinderDef,
-) -> Option<bool> {
-    let p = node_coords_rat(jd, NodeId::three_planes(x))?;
-    match nacre_scalar::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()) {
+fn point_in_disk(p: &[nacre_scalar::Rat; 3], def: &nacre_topo::CylinderDef) -> Option<bool> {
+    match nacre_scalar::cylinder_radial_side(p, &def.origin(), &def.dir(), def.radius()) {
         nacre_scalar::Orient::Negative => Some(true),
         nacre_scalar::Orient::Positive => Some(false),
         nacre_scalar::Orient::Zero => None,
@@ -1405,7 +1713,7 @@ fn curved_count(
     };
     // The cut plane through the ray's origin, normal `n_a × n_b` — the very direction
     // `plane_plane_cylinder` gives its meet line, so "negative side" is "behind the query".
-    let Some(behind) = (|| {
+    let Some(half) = (|| {
         let d = cross3_rat(&[ca[0], ca[1], ca[2]], &[cb[0], cb[1], cb[2]])?;
         let at = nacre_scalar::three_planes_rat([ca, cb, cc])?;
         let d0 = nacre_scalar::Rat::from_int(0).checked_sub(dot3_rat(&d, &at)?)?;
@@ -1414,24 +1722,29 @@ fn curved_count(
         return Ok(None);
     };
     Ok(
-        match cylinder_face_crossings(jd, [&ca, &cb], def, span, &behind) {
-            Some(CurvedHit::Behind(k)) => Some(k),
+        match cylinder_face_crossings(jd, [&ca, &cb], def, span, &half) {
+            Some(CurvedHit::Counted(k)) => Some(k),
             Some(CurvedHit::Graze) | None => None,
         },
     )
 }
 
-/// **Where the line `a ∩ b` crosses one lateral band, and how many of those are behind the query.**
+/// **Where the line `line[0] ∩ line[1]` crosses one lateral band, and how many of those lie on
+/// the half the caller is counting.**
 ///
 /// ★★★ **One copy, two roads.** The named-point probe below and the coordinate-point road both
 /// state their ray as *two rational planes*, so both ask this. Writing the arms twice is how the
 /// two would come to disagree about a graze.
 ///
-/// `behind` is a rational plane through the ray's origin whose normal is the line's own direction
-/// `n_a × n_b`; a crossing is behind the query exactly when it is on that plane's negative side.
-/// ★ That is not a convention to be guessed: `plane_plane_cylinder` builds the meet line's `dir`
-/// as `cross3(n_a, n_b)`, which is the very `d` that `order_along` — and therefore this probe's
-/// `fwd == 1` — measures against.
+/// `half` is a rational plane through the ray's origin, and a crossing counts exactly when it is
+/// on that plane's **negative** side — so each road states its own half and nothing here has a
+/// front or a back:
+///
+/// - the named road's normal is the line's own direction `n_a × n_b`, which counts **behind** the
+///   query. ★ That is not a convention to be guessed: `plane_plane_cylinder` builds the meet
+///   line's `dir` as `cross3(n_a, n_b)`, the very `d` that `order_along` — and therefore that
+///   probe's `fwd == 1` — measures against.
+/// - the coordinate road's normal is `−dir`, which counts **ahead** of the origin.
 ///
 /// `span` are the two rim plane classes. The test for "on this band" does **not** read their
 /// stored normals: it takes each rim's axis parameter ([`crate::planes::axis_param_of_plane`]) and
@@ -1445,7 +1758,7 @@ fn cylinder_face_crossings(
     line: [&[nacre_scalar::Rat; 4]; 2],
     def: &nacre_topo::CylinderDef,
     span: [usize; 2],
-    behind: &[nacre_scalar::Rat; 4],
+    half: &[nacre_scalar::Rat; 4],
 ) -> Option<CurvedHit> {
     use nacre_scalar::Orient;
     use nacre_scalar::quad::{CylinderMeet, QuadVal};
@@ -1460,7 +1773,7 @@ fn cylinder_face_crossings(
             CylinderMeet::OnRuling(_) => return Some(CurvedHit::Graze),
             // Parallel to the axis and off the surface, or missing the quadric outright: no crossing.
             CylinderMeet::AxisParallelMiss(_) | CylinderMeet::Miss(_) => {
-                return Some(CurvedHit::Behind(0));
+                return Some(CurvedHit::Counted(0));
             }
             // ★ Two classes can name one plane (aliasing), and then `a ∩ b` is not a line — there is
             // no ray to count along. `circle_crossings` proves these away for a class ⊥ to the axis;
@@ -1495,7 +1808,7 @@ fn cylinder_face_crossings(
         if sides[0] == sides[1] {
             continue; // outside the band's axial span — this face is not crossed there
         }
-        match nacre_scalar::quad::plane_side(behind, &meet, s) {
+        match nacre_scalar::quad::plane_side(half, &meet, s) {
             // The crossing **is** the ray's origin, and it is on this face: the query sits on the
             // other component's surface, which the parity cannot answer. Same as the planar
             // `fwd == 0 && in_g` arm.
@@ -1504,7 +1817,7 @@ fn cylinder_face_crossings(
             Orient::Positive => {}
         }
     }
-    Some(CurvedHit::Behind(count))
+    Some(CurvedHit::Counted(count))
 }
 
 /// A component as its faces, each boundary already carrying its edges' walls.
@@ -1524,10 +1837,6 @@ pub(crate) fn point_in_component(
     let attempt = |a: usize, b: usize, c: usize| -> Result<Option<bool>, BoolError> {
         let mut count = 0usize;
         for f in faces {
-            // ★ Only a planar face's crossing is a three-plane point, and only a polygon boundary
-            // answers "inside" by a ring walk. The curved arms are `CurvedComponentDepth`'s job
-            // (the guard upstream keeps them from arriving); abstaining is the honest placeholder
-            // — it costs the caller another node, never a wrong answer.
             // ★ A cylindrical face is counted by its own arm — the crossings are roots of a
             // quadratic, not three-plane points, and "inside the face" is an axial span rather
             // than a ring walk.
@@ -1566,7 +1875,8 @@ pub(crate) fn point_in_component(
                         }
                         Ok(every_ray(jd, q, x, r)?.first().copied())
                     }
-                    BoundEdges::Circle(def) => Ok(point_in_disk(jd, x, def)),
+                    BoundEdges::Circle(def) => Ok(node_coords_rat(jd, NodeId::three_planes(x))
+                        .and_then(|p| point_in_disk(&p, def))),
                     // A band bounds a cylinder, never a plane — a producer error, not an input.
                     BoundEdges::Band { .. } => Ok(None),
                 }

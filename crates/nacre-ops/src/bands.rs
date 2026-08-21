@@ -1093,11 +1093,15 @@ mod tests {
         );
     }
 
-    /// **The fence: two cylinders with coplanar caps are still refused** — by the name that
-    /// describes what is actually hard about them (two curved bodies to classify), not by a rule
-    /// about seating.
+    /// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in
+    /// the same two planes, which is what once made them look like a seating problem; what was
+    /// actually hard was classifying **two curved bodies**, and both are now probed from a cap
+    /// disk's centre — neither has a vertex to probe from.
+    ///
+    /// ★ Both volumes are the same number derived the same way (`π·0.5²·2`), so the assertion
+    /// cannot pass by matching one body against the other.
     #[test]
-    fn two_cylinders_with_coplanar_caps_are_still_refused() {
+    fn two_cylinders_with_coplanar_caps_fuse_apart() {
         let mut m = Model::new();
         let a = m.add_cylinder(
             Point3::from_array([0.0, 0.0, 0.0]),
@@ -1112,19 +1116,53 @@ mod tests {
             2.0,
         );
         m.rebuild_adjacency();
-        let before = m.live_solids.clone();
-        let err = crate::boolean(&mut m, BoolKind::Fuse, a, b).expect_err("two curved bodies");
+        let out = crate::boolean(&mut m, BoolKind::Fuse, a, b).expect("two curved bodies");
+        assert_eq!(out.len(), 2, "they do not touch");
         assert!(
-            matches!(
-                err,
-                BoolError::Rejected {
-                    reason: RejectReason::CurvedComponentDepth,
-                    ..
-                }
-            ),
-            "{err:?}"
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
         );
-        assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+        let want = std::f64::consts::PI * 0.25 * 2.0;
+        for &s in &out {
+            let v = nacre_props::mass_props(&m, s).expect("props").volume;
+            assert!((v - want).abs() < 1e-9, "an untouched cylinder: {v}");
+            let (v_n, e_n, f_n, l_n) = euler_counts(&m, s);
+            assert_eq!(
+                v_n - e_n + f_n - l_n,
+                2,
+                "genus 0: V{v_n} E{e_n} F{f_n} L{l_n}"
+            );
+        }
+    }
+
+    /// `χ = V − E + F − L` over a solid's shells, the relation `genus 1` is read from at
+    /// `a_through_hole_keeps_the_wall_between_the_caps` — hoisted so a second caller reads the
+    /// same counts rather than a second spelling of them.
+    fn euler_counts(m: &Model, s: Handle<Solid>) -> (i64, i64, i64, i64) {
+        let faces: Vec<_> = crate::planes::solid_shell_handles(m, s)
+            .into_iter()
+            .flat_map(|sh| m.shells.get(sh).faces.clone())
+            .collect();
+        let mut verts = std::collections::HashSet::new();
+        let mut edges = std::collections::HashSet::new();
+        let mut loops = 0i64;
+        for &fh in &faces {
+            let f = m.faces.get(fh);
+            loops += f.inner.len() as i64;
+            for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                for he in &lp.half_edges {
+                    edges.insert(he.edge);
+                    verts.extend(m.edges.get(he.edge).vertices);
+                }
+            }
+        }
+        (
+            verts.len() as i64,
+            edges.len() as i64,
+            faces.len() as i64,
+            loops,
+        )
     }
 
     // ---- Wall faces: the gate asks the boundary, not the infinite plane (M6-2b preparation) ----
@@ -1769,6 +1807,54 @@ mod tests {
         }
     }
 
+    /// **An enclosed cylindrical void is a cavity, not a second body.** A `[0,4]³` box `Cut` by a
+    /// radius-`0.5`, height-`2` cylinder wholly inside it: the boolean's two components are the
+    /// box's shell and the void's, and the void must come back **depth 1** — odd, so a hole.
+    ///
+    /// ★★★ **This is the population the coordinate probe exists for, and the only one that makes
+    /// it say `true`.** The void's boundary is two disks and a band, so it carries no vertex at
+    /// all and `nodes_of` came back empty — which is what `CurvedComponentDepth` used to refuse.
+    /// Two *disjoint* bodies exercise the same road, but their answer is "outside" either way, so
+    /// a road that always said `false` would pass them; here it would make the void a **second
+    /// solid** and the box's volume whole.
+    #[test]
+    fn an_enclosed_cylindrical_void_is_a_cavity() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
+        let void = m.add_cylinder(
+            Point3::from_array([2.0, 2.0, 1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, a, void).expect("a void inside a box");
+        assert_eq!(out.len(), 1, "one body, hollow — not two");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        assert_eq!(
+            m.solids.get(out[0]).cavities.len(),
+            1,
+            "the void is a cavity"
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 64.0 - std::f64::consts::PI * 0.25 * 2.0;
+        assert!(
+            (v - want).abs() < 1e-9,
+            "the box less the void: {v} vs {want}"
+        );
+        // Two shells, genus 0 each: `χ = V − E + F − L = 2(S − G) = 4`.
+        let (v_n, e_n, f_n, l_n) = euler_counts(&m, out[0]);
+        assert_eq!(
+            v_n - e_n + f_n - l_n,
+            4,
+            "two genus-0 shells: V{v_n} E{e_n} F{f_n} L{l_n}"
+        );
+    }
+
     /// **A drill that misses.** `Cut` returns the box untouched and `Fuse` returns two bodies —
     /// the population where a cylinder is present but no circle is ever emitted, so the whole
     /// curved path has to stay out of the way.
@@ -1791,12 +1877,16 @@ mod tests {
         let v = nacre_props::mass_props(&m, cut[0]).expect("props").volume;
         assert!((v - 8.0).abs() < 1e-12, "the box is untouched: {v}");
 
-        // ★ **The fuse this test's name promises — and the case that used to abort the kernel.**
-        // Two disjoint bodies means `n = 2`, and classifying them asks a ray probe that cannot be
-        // handed a lateral face. Until the guard landed, that asked a band face for its plane
-        // class and panicked; the honest answer is a named refusal, and this is where it is
-        // measured. (The name said "fuses apart" for a while before the body did — the fixture
-        // owed the population its own name promised.)
+        // ★★ **The fuse this test's name promises — and the case that used to abort the kernel.**
+        // Two disjoint bodies means `n = 2`, so each is classified by a ray probe. That probe
+        // first panicked (it asked a band face for its plane class), then refused by name
+        // (`CurvedComponentDepth`), and now answers: the ray counts a cylinder's crossings, and
+        // the bare cylinder — whose boundary carries **no vertex at all** — is probed from a cap
+        // disk's centre instead of from a corner.
+        //
+        // ★ The values are derived from the inputs, not read back from the result: a `[0,2]³` box
+        // is `8`, and a radius-`0.5`, height-`1` cylinder is `π/4`. Two separate bodies, each a
+        // sphere topologically (`χ = 2`), and `validate` clean.
         let mut m2 = Model::new();
         let a2 = m2.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
         let b2 = m2.add_cylinder(
@@ -1806,23 +1896,31 @@ mod tests {
             1.0,
         );
         m2.rebuild_adjacency();
-        let live_before = m2.live_solids.clone();
-        let err = crate::boolean(&mut m2, BoolKind::Fuse, a2, b2)
-            .expect_err("two bodies, one of them curved");
+        let out = crate::boolean(&mut m2, BoolKind::Fuse, a2, b2).expect("two bodies apart");
+        assert_eq!(out.len(), 2, "a fuse of two disjoint bodies is two bodies");
         assert!(
-            matches!(
-                err,
-                BoolError::Rejected {
-                    reason: RejectReason::CurvedComponentDepth,
-                    ..
-                }
-            ),
-            "{err:?}"
+            nacre_validate::validate(&m2).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m2)
         );
-        assert_eq!(
-            m2.live_solids, live_before,
-            "a refused boolean retires nothing"
+        let mut vols: Vec<f64> = out
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m2, s).expect("props").volume)
+            .collect();
+        vols.sort_by(|x, y| x.partial_cmp(y).expect("finite"));
+        let want = [std::f64::consts::PI * 0.25, 8.0];
+        assert!(
+            (0..2).all(|i| (vols[i] - want[i]).abs() < 1e-9),
+            "the cylinder and the box, each untouched: {vols:?}"
         );
+        for &s in &out {
+            let (v_n, e_n, f_n, l_n) = euler_counts(&m2, s);
+            assert_eq!(
+                v_n - e_n + f_n - l_n,
+                2,
+                "genus 0: V{v_n} E{e_n} F{f_n} L{l_n}"
+            );
+        }
     }
 
     /// **A blind hole, end to end.** The bore stops inside the box, so its own cap closes the
