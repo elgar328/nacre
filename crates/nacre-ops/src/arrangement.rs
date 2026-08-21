@@ -1934,6 +1934,96 @@ fn split_circles(
     let mut out_circles = Vec::new();
     let mut arcs = Vec::new();
 
+    // ★★ **The segment split runs first: the sharper question before the vaguer one.** Both halves
+    // refuse a point wearing two names, and the segment side sees the case the circle side cannot —
+    // a crossing that lands on an **endpoint**, a three-plane name and a branch name for one point.
+    //
+    // ★ **Unmeasured, and said so.** Swapping the two leaves every fixture green: the only one that
+    // reaches the two-names case cuts its circle at a *single* point, so the circle side's adjacent
+    // pairs are empty and it never asks. The order is right on principle and today it decides
+    // nothing — what it does decide is that a degenerate `[n, n]` arc is not built before a refusal
+    // that was going to happen anyway.
+    //
+    // ★★ **And it is why a one-node circle needs no name of its own here.** A circle cut at
+    // exactly one point is *slit*, not divided, and the arc below comes out `[n, n]` — the closed
+    // form a rim has. Measured: the only fixture that reaches it is
+    // `a_crossing_on_a_segments_endpoint`, where the single crossing **is** the two-names case and
+    // the segment half now refuses it first. A genuine slit (a segment ending strictly inside the
+    // disk) would fall through to the walk, whose orbit-length rule refuses a one-edge cycle by
+    // name — loudly, and where the sentence is true.
+    // ---- segments → sub-segments, in line order ----
+    for (si, sg) in segs.iter().cloned().enumerate() {
+        let mut nodes = std::mem::take(&mut on_seg[si]);
+        if nodes.is_empty() {
+            out_segs.push(sg);
+            continue;
+        }
+        nodes.sort_unstable();
+        nodes.dedup();
+        // ★★ **Every crossing on this segment shares one line, and that is checked rather than
+        // asserted — an unfired guard, measured to be.** (4 of 4 segment splits in the suite carry
+        // one line; the check is here because the *sort* below silently mixes two rulers if it ever
+        // stops holding, not because a fixture is red.) `branch_meet` re-solves from the *name*, whose plane pair is `{wc, wall}`
+        // sorted — the same two planes for every crossing here — and `plane_plane_cylinder` builds
+        // the meet line by Cramer from those two planes **before** it looks at the cylinder. So the
+        // parameters of crossings made by *different* cylinders are still comparable. That is the
+        // whole reason the ends and the crossings can be sorted into one sequence, so a comment
+        // is the wrong place for it: if it ever stops holding, the sort silently mixes two rulers.
+        let mut line: Option<nacre_scalar::quad::MeetLine> = None;
+        let mut keyed: Vec<(QuadVal, NodeId, combinatorics::EndPin)> = Vec::new();
+        for &n in &nodes {
+            let NodeId::Branch { cyl, .. } = n else {
+                return Err(reject(RejectReason::RingNaming));
+            };
+            let def = def_of.get(&cyl).ok_or_else(undecided)?;
+            let (l, s) = combinatorics::branch_meet(jd, cyl, def, n).ok_or_else(undecided)?;
+            if let Some(first) = &line {
+                if first.base() != l.base() || first.dir() != l.dir() {
+                    return Err(reject(RejectReason::RingNaming));
+                }
+            }
+            keyed.push((s, n, combinatorics::EndPin::Cylinder));
+            line = Some(l);
+        }
+        let line = line.ok_or_else(undecided)?;
+        for k in 0..2 {
+            let p = combinatorics::node_coords_rat(jd, sg.end[k]).ok_or_else(undecided)?;
+            keyed.push((
+                along(&line, &p).ok_or_else(undecided)?,
+                sg.end[k],
+                sg.end_h[k],
+            ));
+        }
+        let mut order: Vec<usize> = (0..keyed.len()).collect();
+        let mut bad = false;
+        order.sort_by(|&i, &j| match cmp_along(&keyed[i].0, &keyed[j].0) {
+            Some(o) => o,
+            None => {
+                bad = true;
+                core::cmp::Ordering::Equal
+            }
+        });
+        if bad {
+            return Err(undecided());
+        }
+        // ★ A crossing that lands **on** an endpoint is one point wearing two names — a three-plane
+        // one and a branch one — and the DCEL keys vertices by name, so shipping both would make
+        // two vertices where there is one. Refusing is honest; folding them is its own step.
+        for w in order.windows(2) {
+            if cmp_along(&keyed[w[0]].0, &keyed[w[1]].0) == Some(core::cmp::Ordering::Equal) {
+                return Err(reject(RejectReason::CoincidentNodes));
+            }
+        }
+        for w in order.windows(2) {
+            let (a, b) = (&keyed[w[0]], &keyed[w[1]]);
+            out_segs.push(MergedSeg {
+                wall: sg.wall,
+                end: [a.1, b.1],
+                end_h: [a.2, b.2],
+                merged: sg.merged.clone(),
+            });
+        }
+    }
     // ---- circles → arcs, in θ order about the seam ----
     for (ci, circ) in circles.iter().cloned().enumerate() {
         let mut nodes = std::mem::take(&mut on_circle[ci]);
@@ -1996,6 +2086,27 @@ fn split_circles(
             return Err(undecided());
         }
         let order: Vec<usize> = seam.into_iter().chain(chart).collect();
+        // ★ **Two names for one point, on the circle side.** Two walls crossing the circle at one
+        // point are two *different* branch names — `dedup` cannot see it, and the θ sort puts them
+        // adjacent — so an arc of zero length would follow. The segment side asks this question
+        // already; asking it here too is what keeps the two sides from disagreeing about what
+        // "one point" means.
+        for w in order.windows(2) {
+            if matches!(
+                nacre_scalar::quad::circular_order_about_seam(
+                    &circ.def.origin(),
+                    &circ.def.dir(),
+                    &circ.def.ref_dir(),
+                    (&meets[w[0]].0, &meets[w[0]].1),
+                    (&meets[w[1]].0, &meets[w[1]].1),
+                ),
+                Some(nacre_scalar::quad::SeamOrder::Ordered(
+                    core::cmp::Ordering::Equal
+                ))
+            ) {
+                return Err(reject(RejectReason::CoincidentNodes));
+            }
+        }
         for k in 0..order.len() {
             arcs.push(MergedArc {
                 cyl: circ.cyl,
@@ -2006,67 +2117,6 @@ fn split_circles(
         }
     }
 
-    // ---- segments → sub-segments, in line order ----
-    for (si, sg) in segs.iter().cloned().enumerate() {
-        let mut nodes = std::mem::take(&mut on_seg[si]);
-        if nodes.is_empty() {
-            out_segs.push(sg);
-            continue;
-        }
-        nodes.sort_unstable();
-        nodes.dedup();
-        // Every crossing on this segment shares the canonical line of `{wc, wall}`, whatever
-        // cylinder made it — that is what lets the ends and the crossings sort into one sequence.
-        let mut line = None;
-        let mut keyed: Vec<(QuadVal, NodeId, combinatorics::EndPin)> = Vec::new();
-        for &n in &nodes {
-            let NodeId::Branch { cyl, .. } = n else {
-                return Err(reject(RejectReason::RingNaming));
-            };
-            let def = def_of.get(&cyl).ok_or_else(undecided)?;
-            let (l, s) = combinatorics::branch_meet(jd, cyl, def, n).ok_or_else(undecided)?;
-            keyed.push((s, n, combinatorics::EndPin::Cylinder));
-            line = Some(l);
-        }
-        let line = line.ok_or_else(undecided)?;
-        for k in 0..2 {
-            let p = combinatorics::node_coords_rat(jd, sg.end[k]).ok_or_else(undecided)?;
-            keyed.push((
-                along(&line, &p).ok_or_else(undecided)?,
-                sg.end[k],
-                sg.end_h[k],
-            ));
-        }
-        let mut order: Vec<usize> = (0..keyed.len()).collect();
-        let mut bad = false;
-        order.sort_by(|&i, &j| match cmp_along(&keyed[i].0, &keyed[j].0) {
-            Some(o) => o,
-            None => {
-                bad = true;
-                core::cmp::Ordering::Equal
-            }
-        });
-        if bad {
-            return Err(undecided());
-        }
-        // ★ A crossing that lands **on** an endpoint is one point wearing two names — a three-plane
-        // one and a branch one — and the DCEL keys vertices by name, so shipping both would make
-        // two vertices where there is one. Refusing is honest; folding them is its own step.
-        for w in order.windows(2) {
-            if cmp_along(&keyed[w[0]].0, &keyed[w[1]].0) == Some(core::cmp::Ordering::Equal) {
-                return Err(reject(RejectReason::CoincidentNodes));
-            }
-        }
-        for w in order.windows(2) {
-            let (a, b) = (&keyed[w[0]], &keyed[w[1]]);
-            out_segs.push(MergedSeg {
-                wall: sg.wall,
-                end: [a.1, b.1],
-                end_h: [a.2, b.2],
-                merged: sg.merged.clone(),
-            });
-        }
-    }
     Ok(Some((out_segs, out_circles, arcs)))
 }
 
