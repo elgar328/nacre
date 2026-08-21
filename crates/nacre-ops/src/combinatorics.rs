@@ -1363,6 +1363,45 @@ enum CurvedHit {
     Graze,
 }
 
+/// **Is a face's material there**, given a way to ask one of its bounds — inside the outer bound
+/// and outside every hole.
+///
+/// ★★★ **The combination is one rule; only the *asking* is two.** A named point answers a polygon
+/// by a ring walk and a circle by its radial side; a rational one projects through a chart. Those
+/// genuinely differ — the point arrives differently. But "outer and not any hole, and abandon the
+/// moment a bound says *on me*" is the same sentence for both roads, and a sentence written twice
+/// is one that drifts ([[rule-lives-inline-next-door]] is this repository's most-repeated defect).
+/// It was written twice for one commit; this is that commit's correction.
+///
+/// ★★ **The hole clause fires and no test would notice if it stopped.** Measured: 7 entries with
+/// a hole across `nacre-ops`, **6 of which subtract** — and stubbing the loop away leaves every
+/// target green. That is a property of today's population, not of the rule: a hole here is a
+/// **through** bore, so a ray that passes through it pierces the *pair* of annular caps and a
+/// wrongly-counted crossing is wrongly counted **twice**, leaving the parity alone. A blind bore
+/// on a classified component breaks the pairing and there is no such fixture yet. Extraction is
+/// what guards this, not a lock.
+fn material_of(
+    f: &CompFace,
+    mut ask: impl FnMut(&BoundEdges) -> Result<Option<bool>, BoolError>,
+) -> Result<Option<bool>, BoolError> {
+    let Some(mut here) = ask(&f.outer)? else {
+        return Ok(None);
+    };
+    if here {
+        for hole in &f.inner {
+            match ask(hole)? {
+                Some(true) => {
+                    here = false;
+                    break;
+                }
+                Some(false) => {}
+                None => return Ok(None),
+            }
+        }
+    }
+    Ok(Some(here))
+}
+
 /// **A component's probe** — a point to ask "how deep is this component nested" from.
 ///
 /// ★ The two variants are two *descriptions of a point*, not two policies: a three-plane name is
@@ -1514,13 +1553,18 @@ fn planes_through_line(
 ///
 /// ★★ **What is measured, and what is owed.** `an_enclosed_cylindrical_void_is_a_cavity` is the
 /// fixture that makes this road say `true`, and it goes red if the road is stubbed to `false` —
-/// two *disjoint* bodies would not, since their answer is "outside" whatever the road does. The
-/// curved arm is entered there and by the fences, but always with a **miss**: `cylinders_clear`
-/// refuses any boolean whose two cylinders are within `r₁+r₂` of each other, so a ray from one
-/// cap's centre either misses the other band or crosses it **twice**, and the parity is the same
-/// with the arm stubbed to zero (measured). Its `k ≠ 0` behaviour is load-bearing through
-/// [`point_in_component`], which is the reason it is *called* here rather than restated: one arm,
-/// measured once. A fixture that loads it from **this** caller wants skew axes and is owed.
+/// two *disjoint* bodies would not, since their answer is "outside" whatever the road does.
+///
+/// ★ The **curved** arm, though, is barely loaded from here, and the counts say so: this road is
+/// entered **9 times** in the suite and **7 of those look at no cylinder face at all** (the other
+/// component is all planes — the void fixture's is a box). The two that do are
+/// `two_cylinders_with_coplanar_caps_fuse_apart`, and both are a **miss**. Nor can a fixture with
+/// parallel axes do better: `cylinders_clear` refuses any boolean whose two cylinders are within
+/// `r₁+r₂` of each other, so a ray from one cap's centre crosses the other band **0 or 2 times**
+/// and the parity is the same with the arm stubbed to zero (measured). Its `k ≠ 0` behaviour is
+/// load-bearing through [`point_in_component`], which is the reason it is *called* here rather
+/// than restated: one arm, measured once. A fixture that loads it from **this** caller wants
+/// **skew** axes and is owed.
 ///
 /// `Ok(None)` = this ray grazed; the caller has other directions to try.
 pub(crate) fn point_in_faces_rat(
@@ -1633,22 +1677,9 @@ pub(crate) fn point_in_faces_rat(
                 BoundEdges::Band { .. } => Ok(None),
             }
         };
-        let mut material = match inside(&f.outer)? {
-            Some(v) => v,
-            None => return Ok(None),
+        let Some(material) = material_of(f, inside)? else {
+            return Ok(None);
         };
-        if material {
-            for hole in &f.inner {
-                match inside(hole)? {
-                    Some(true) => {
-                        material = false;
-                        break;
-                    }
-                    Some(false) => {}
-                    None => return Ok(None),
-                }
-            }
-        }
         if t == zero {
             // The crossing is the ray's own origin — either the ray meets this plane there, or it
             // lies in it. On the face's material the query sits on the component's boundary, where
@@ -1874,22 +1905,7 @@ pub(crate) fn point_in_component(
                         BoundEdges::Band { .. } => Ok(None),
                     }
                 };
-                let Some(mut in_g) = inside(&f.outer)? else {
-                    return Ok(None);
-                };
-                if in_g {
-                    for hole in &f.inner {
-                        match inside(hole)? {
-                            Some(true) => {
-                                in_g = false;
-                                break;
-                            }
-                            Some(false) => {}
-                            None => return Ok(None),
-                        }
-                    }
-                }
-                Ok(Some(in_g))
+                material_of(f, inside)
             };
             if jd.plane_pair_dir_sign(a, b, q) == 0 {
                 // `L` is parallel to `q` — and possibly **in** it, which is not the same thing.

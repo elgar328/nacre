@@ -1852,6 +1852,106 @@ mod tests {
         );
     }
 
+    /// **A bore and a sealed void in one body.** `[0,8]×[0,4]×[0,4]` with a through bore at
+    /// `(2,2)` and, `4` away, a wholly enclosed cylinder at `(6,2)` — `128 − π − π/2`.
+    ///
+    /// ★ It is the only fixture where the **coordinate** probe meets a face with a hole: the
+    /// void has no vertex, so it is probed from a cap centre, and the body it asks about has
+    /// annular caps. Two cylinders in one boolean also need `cylinders_clear`, which the `4`
+    /// between the axes supplies.
+    #[test]
+    fn a_bore_and_a_sealed_void_live_in_one_body() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([8.0, 4.0, 4.0]),
+        );
+        let bore = m.add_cylinder(
+            Point3::from_array([2.0, 2.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            6.0,
+        );
+        m.rebuild_adjacency();
+        let bored = crate::boolean(&mut m, BoolKind::Cut, a, bore).expect("the bore");
+        let void = m.add_cylinder(
+            Point3::from_array([6.0, 2.0, 1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Cut, bored[0], void).expect("the sealed void");
+        assert_eq!(out.len(), 1, "one body");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        assert_eq!(
+            m.solids.get(out[0]).cavities.len(),
+            1,
+            "the void is a cavity"
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 128.0 - std::f64::consts::PI * 0.25 * 4.0 - std::f64::consts::PI * 0.25 * 2.0;
+        assert!((v - want).abs() < 1e-9, "the box less both: {v} vs {want}");
+    }
+
+    /// **A cavity finds its owner when there is more than one material.** The void fixture above
+    /// takes a shortcut the code makes explicit — one material owns every cavity, no search — so
+    /// the search itself is only reached when two materials stand apart. Here the hollow box is
+    /// fused with a distant second box, and the void must still come back as the **hollow box's**
+    /// cavity rather than a third body.
+    ///
+    /// ★ It is the only fixture that runs `first_deciding` over a **coordinate** probe in the
+    /// cavity-owner search: the void has no vertex, and every other multi-material case in the
+    /// suite has cavities with corners.
+    #[test]
+    fn a_cavity_with_no_vertex_still_finds_its_owner() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
+        let void = m.add_cylinder(
+            Point3::from_array([2.0, 2.0, 1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let hollow = crate::boolean(&mut m, BoolKind::Cut, a, void).expect("a void inside a box");
+        let b = m.add_cuboid(
+            Point3::from_array([10.0, 10.0, 10.0]),
+            Point3::from_array([14.0, 14.0, 14.0]),
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Fuse, hollow[0], b).expect("two bodies apart");
+        assert_eq!(out.len(), 2, "the void is a cavity, not a third body");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let mut seen: Vec<(f64, usize)> = out
+            .iter()
+            .map(|&s| {
+                (
+                    nacre_props::mass_props(&m, s).expect("props").volume,
+                    m.solids.get(s).cavities.len(),
+                )
+            })
+            .collect();
+        seen.sort_by(|x, y| x.0.partial_cmp(&y.0).expect("finite"));
+        let hollowed = 64.0 - std::f64::consts::PI * 0.25 * 2.0;
+        assert!(
+            (seen[0].0 - hollowed).abs() < 1e-9 && seen[0].1 == 1,
+            "the hollow box keeps its one cavity: {seen:?}"
+        );
+        assert!(
+            (seen[1].0 - 64.0).abs() < 1e-9 && seen[1].1 == 0,
+            "the second box is solid: {seen:?}"
+        );
+    }
+
     /// **A drill that misses.** `Cut` returns the box untouched and `Fuse` returns two bodies —
     /// the population where a cylinder is present but no circle is ever emitted, so the whole
     /// curved path has to stay out of the way.
