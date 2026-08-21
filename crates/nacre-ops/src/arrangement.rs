@@ -2353,41 +2353,36 @@ fn circle_crossings(
 /// leaves as `twin`, and `next` is `twin`'s **one-step** neighbour in the cyclic order. The step
 /// direction (predecessor vs successor) is `angular_order`'s handedness — unknown up front, so both
 /// are tried and the one giving exactly `component_count` faces of winding `-1` is kept.
-fn extract_cells(
+/// **The stopper**: an arc-bounded cell is walked, and then refused.
+///
+/// ★★★ Everything above it is live — the split, the walk over three half-edge ranges, the winding
+/// read at a branch point — and what is still missing is the *assembly*: `Ring` has no carrier for
+/// an arc, the rim table keys one closed edge per `(cylinder, plane)`, and `edge_for` keys edges by
+/// an unordered vertex pair, which would fold a chord and its two complementary arcs into one.
+///
+/// ★★ **It reads `has_arcs`, and the condition used to be "was split".** That stricter reading was
+/// right while `extract_cells` split *inside* itself: the cells it returned were numbered against a
+/// slice the caller did not have, so any `Ok` from a split arrangement was unusable whether or not
+/// arcs came out of it. The caller holds the `ClassEdges` now and hands the same one to everything
+/// below, so that mismatch cannot arise and the condition is the stopper's own sentence again.
+/// (`ClassEdges::of` still asserts the two coincide.)
+///
+/// ★ The witness is read from the **uncut** edges — `arc_split_witness` finds the crossing that
+/// made the split, and after the split there is nothing left crossing.
+fn arc_stopper(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
+    edges: &ClassEdges<'_>,
     segs: &[MergedSeg],
     circles: &[MergedCircle],
-) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
-    let edges = ClassEdges::of(jd, wc, segs, circles)?;
-    let walked = walk_cells(jd, wc, &edges);
-    // ★★★ **The stopper stands at the return** (2026-08-21). Everything above it is live — the
-    // split, the walk over three half-edge ranges, the winding read at a branch point — and what
-    // is still missing is the *assembly* below: `nest_cells` and `emit_faces` split half-edge
-    // kinds at `2·segs.len()`, which an arc range walks straight through. So the arcs are built
-    // and walked and then refused, the way C4a's `CylinderBooleanNotYet` stood until C4b-3
-    // removed it, and it intercepts the walk's failure too: the population's *name* does not
-    // depend on how far the walk got.
-    //
-    // ★★★★ **The condition is `split.is_some()`, not `!arcs.is_empty()`, and the difference is a
-    // safety one.** A split renumbers the half-edges — the caller's `segs` is not what was walked —
-    // so *any* `Ok` returned from a split arrangement is indexed against a slice the caller does
-    // not have, and `nest_cells`/`label_cells`/`emit_faces` would read another edge's geometry with
-    // nothing to say so. Being non-empty is a property of the *result*; being split is the property
-    // that makes the numbering incompatible, and that is what must gate the return.
-    //
-    // ★ The two coincide today, so the name stays true: `split_circles` answers `Some` only when
-    // some circle collected a crossing, and a circle with a crossing yields at least one arc
-    // (a tangency is skipped before it is collected, so it never makes a `Some`).
-    if edges.has_arcs() {
-        // ★ The witness is read from the **uncut** edges — `arc_split_witness` finds the crossing
-        // that made the split, and after the split there is nothing left crossing.
-        return Err(match arc_split_witness(jd, wc, segs, circles) {
-            Some(w) => crate::reject_at(RejectReason::ArcBoundNotYet, w),
-            None => reject(RejectReason::ArcBoundNotYet),
-        });
+) -> Result<(), BoolError> {
+    if !edges.has_arcs() {
+        return Ok(());
     }
-    walked
+    Err(match arc_split_witness(jd, wc, segs, circles) {
+        Some(w) => crate::reject_at(RejectReason::ArcBoundNotYet, w),
+        None => reject(RejectReason::ArcBoundNotYet),
+    })
 }
 
 /// **One plane class's edges, after the arc split — and the only thing that knows the half-edge
@@ -2741,32 +2736,27 @@ fn nest_cells(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     cells: &[Cell],
-    segs: &[MergedSeg],
-    circles: &[MergedCircle],
+    edges: &ClassEdges<'_>,
 ) -> Result<Nesting, BoolError> {
+    let circles = &edges.circles;
     let n = cells.len();
-    // Which circle a cell is (by pseudo-half-edge range), `None` for a segment cell.
+    // Which circle a cell is, `None` for a cell the walk built. ★ The range test is
+    // `ClassEdges::kind`'s now: an arc's half-edge is past the segments too, and reading one as a
+    // circle would ask the *disk's* exact statement about a shape that is not a disk.
     let circle_of = |c: &Cell| -> Option<usize> {
-        let he = *c.half_edges.first()?;
-        (he >= 2 * segs.len()).then(|| (he - 2 * segs.len()) / 2)
+        match edges.kind(*c.half_edges.first()?) {
+            HalfEdgeKind::Circle(i) => Some(i),
+            HalfEdgeKind::Seg(_) | HalfEdgeKind::Arc(_) => None,
+        }
     };
-    // As in `extract_cells`: the walk knows each edge's wall and handles, so the ring carries them
-    // instead of leaving them to be re-derived from the endpoint names. A circle cell has no
-    // ring — its containment questions run on the cylinder's exact statement instead.
+    // The walk knows each edge's carrier and both handles, so the ring carries them instead of
+    // leaving them to be re-derived from the endpoint names. A circle cell has no ring — its
+    // containment questions run on the cylinder's exact statement instead.
     let ring_of = |c: &Cell| -> Vec<combinatorics::RingEdge> {
         if circle_of(c).is_some() {
             return Vec::new();
         }
-        c.half_edges
-            .iter()
-            .map(|&he| combinatorics::RingEdge {
-                node: segs[he / 2].end[he % 2],
-                to: segs[he / 2].end[1 - he % 2],
-                carrier: combinatorics::Carrier::plane(segs[he / 2].wall),
-                from_h: segs[he / 2].end_h[he % 2],
-                to_h: segs[he / 2].end_h[1 - he % 2],
-            })
-            .collect()
+        c.half_edges.iter().map(|&he| edges.edge_at(he)).collect()
     };
     let rings: Vec<Vec<combinatorics::RingEdge>> = cells.iter().map(ring_of).collect();
     let pos: Vec<usize> = (0..n).filter(|&i| cells[i].winding == 1).collect();
@@ -3136,18 +3126,18 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
 fn label_cells(
     cells: &[Cell],
     face_of: &HashMap<usize, usize>,
-    segs: &[MergedSeg],
-    circles: &[MergedCircle],
+    edges: &ClassEdges<'_>,
     nesting: &Nesting,
     seed: Label,
 ) -> Result<Vec<Label>, BoolError> {
     // Crossing a circle flips like crossing any edge — its occupancy list is the mask's input;
     // the pseudo-half-edge numbering (`≥ 2·segs.len()`) picks the table.
     let mask_of = |he: usize| -> Result<Label, BoolError> {
-        if he / 2 < segs.len() {
-            edge_mask(&segs[he / 2].merged)
-        } else {
-            edge_mask(&circles[he / 2 - segs.len()].merged)
+        match edges.kind(he) {
+            HalfEdgeKind::Seg(i) => edge_mask(&edges.segs[i].merged),
+            // An arc is a piece of its circle's trace, so it carries the same contributions.
+            HalfEdgeKind::Arc(i) => edge_mask(&edges.arcs[i].merged),
+            HalfEdgeKind::Circle(i) => edge_mask(&edges.circles[i].merged),
         }
     };
     // A face-with-holes is one region: label its group as a unit. Group representative → members.
@@ -3230,8 +3220,7 @@ fn emit_faces(
     kind: BoolKind,
     labels: &[Label],
     cells: &[Cell],
-    segs: &[MergedSeg],
-    circles: &[MergedCircle],
+    edges: &ClassEdges<'_>,
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     holes: &HashMap<usize, Vec<usize>>,
@@ -3245,21 +3234,23 @@ fn emit_faces(
     // (pseudo-half-edge past the segment range) has no nodes — its boundary is the cylinder
     // class itself.
     let bound_of = |cell: &Cell| -> crate::boolean::Bound {
-        if let Some(&he) = cell.half_edges.first() {
-            if he >= 2 * segs.len() {
-                return crate::boolean::Bound::Circle {
-                    cyl: circles[(he - 2 * segs.len()) / 2].cyl,
-                };
-            }
+        if let Some(&he) = cell.half_edges.first()
+            && let HalfEdgeKind::Circle(i) = edges.kind(he)
+        {
+            return crate::boolean::Bound::Circle {
+                cyl: edges.circles[i].cyl,
+            };
         }
+        // ★ An arc-bearing cell reaches here and `Ring::new` has no carrier for it — the stopper
+        // stands between, and widening `Ring` is the assembly cell's own item.
         crate::boolean::Bound::Ring(crate::boolean::Ring::new(
+            cell.half_edges.iter().map(|&he| edges.origin(he)).collect(),
             cell.half_edges
                 .iter()
-                .map(|&he| segs[he / 2].end[he % 2])
-                .collect(),
-            cell.half_edges
-                .iter()
-                .map(|&he| segs[he / 2].wall)
+                .map(|&he| match edges.kind(he) {
+                    HalfEdgeKind::Seg(i) => edges.segs[i].wall,
+                    _ => usize::MAX,
+                })
                 .collect(),
         ))
     };
@@ -3295,11 +3286,12 @@ fn emit_faces(
     // hole's outermost bands end on the cylinder's own cap classes, and `Cut` drops those cap
     // faces — following the faces would leave those bands with no label to read, while the cell
     // (and its label) is right here.
-    let disk_labels = circles
+    let disk_labels = edges
+        .circles
         .iter()
         .enumerate()
         .filter_map(|(i, mc)| {
-            let he = 2 * segs.len() + 2 * i;
+            let he = edges.he_count() + 2 * i;
             let c = cells.iter().position(|cell| cell.half_edges == [he])?;
             Some((mc.cyl, labels[c]))
         })
@@ -3527,8 +3519,14 @@ fn trace_result_faces(
         type ClassOut = (Vec<LocalFace>, Vec<(usize, Label)>);
         let arrange = |wc: usize| -> Result<ClassOut, BoolError> {
             watch!(CELLS);
-            let (cells, face_of) = timed!(C_EXTRACT, extract_cells(jd, wc, split, circles))?;
-            let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, split, circles))?;
+            // ★★ **One `ClassEdges` for the whole pipeline.** The split renumbers half-edges, so
+            // everything below must read the *same* edges the walk did — building it here is what
+            // makes that structural instead of a promise. (`frame_audit` runs its own copy of this
+            // pipeline and must build it the same way; the arc fence locks that they agree.)
+            let edges = ClassEdges::of(jd, wc, split, circles)?;
+            let (cells, face_of) = timed!(C_EXTRACT, walk_cells(jd, wc, &edges))?;
+            arc_stopper(jd, wc, &edges, split, circles)?;
+            let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, &edges))?;
             // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
             // arrangement covers all of space, so its unbounded cells reach infinity, where neither
             // solid is. That is a fact about arranging the *whole* model — restrict the input to a
@@ -3536,20 +3534,11 @@ fn trace_result_faces(
             // is what the parameter records.
             let labels = timed!(
                 C_LABEL,
-                label_cells(&cells, &face_of, split, circles, &nesting, [false; 4])
+                label_cells(&cells, &face_of, &edges, &nesting, [false; 4])
             )?;
             Ok(timed!(
                 C_EMIT,
-                emit_faces(
-                    kind,
-                    &labels,
-                    &cells,
-                    split,
-                    circles,
-                    jd,
-                    wc,
-                    &nesting.holes,
-                )
+                emit_faces(kind, &labels, &cells, &edges, jd, wc, &nesting.holes)
             ))
         };
         // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
@@ -3848,19 +3837,17 @@ pub(crate) fn frame_audit(
                 let split = split_at_crossings(&jd, wc, &merged, &mut local)?;
                 let split = drop_newsless(split)?;
                 let circles = merge_circles(&tr.circles, &cyls)?;
-                let (cells, face_of) = extract_cells(&jd, wc, &split, &circles)?;
-                let nesting = nest_cells(&jd, wc, &cells, &split, &circles)?;
-                let labels = label_cells(&cells, &face_of, &split, &circles, &nesting, [false; 4])?;
-                let _ = emit_faces(
-                    kind,
-                    &labels,
-                    &cells,
-                    &split,
-                    &circles,
-                    &jd,
-                    wc,
-                    &nesting.holes,
-                );
+                // ★★★★ **The same edges and the same stopper the boolean uses.** This copy of the
+                // pipeline is what makes the audit an instrument; feeding it un-split edges would
+                // let it run to the end and report `failed_at: None` for an input the boolean
+                // refuses — *"the worst possible time to be lying"* (`decline_to_reject`). The
+                // arc fence in `bands.rs` locks the two together.
+                let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
+                let (cells, face_of) = walk_cells(&jd, wc, &edges)?;
+                arc_stopper(&jd, wc, &edges, &split, &circles)?;
+                let nesting = nest_cells(&jd, wc, &cells, &edges)?;
+                let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4])?;
+                let _ = emit_faces(kind, &labels, &cells, &edges, &jd, wc, &nesting.holes);
                 Ok(())
             };
             run().err().and_then(|e| match e {
@@ -4931,7 +4918,8 @@ mod tests {
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
 
-        let (cells, face_of) = extract_cells(&jd, wc, &split, &[]).unwrap();
+        let (cells, face_of) =
+            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &[]).unwrap()).unwrap();
 
         // ★★★ **An independent reading of every winding: the shoelace sign.**
         //
@@ -5060,9 +5048,23 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) = extract_cells(&jd, wc, &split, &[]).unwrap();
-        let nesting = nest_cells(&jd, wc, &cells, &split, &[]).unwrap();
-        let labels = label_cells(&cells, &face_of, &split, &[], &nesting, [false; 4]).unwrap();
+        let (cells, face_of) =
+            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &[]).unwrap()).unwrap();
+        let nesting = nest_cells(
+            &jd,
+            wc,
+            &cells,
+            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
+        )
+        .unwrap();
+        let labels = label_cells(
+            &cells,
+            &face_of,
+            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
+            &nesting,
+            [false; 4],
+        )
+        .unwrap();
 
         for (i, c) in cells.iter().enumerate() {
             if c.winding == -1 {
@@ -5134,9 +5136,23 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) = extract_cells(&jd, wc, &split, &[]).unwrap();
-        let nesting = nest_cells(&jd, wc, &cells, &split, &[]).unwrap();
-        let labels = label_cells(&cells, &face_of, &split, &[], &nesting, [false; 4]).unwrap();
+        let (cells, face_of) =
+            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &[]).unwrap()).unwrap();
+        let nesting = nest_cells(
+            &jd,
+            wc,
+            &cells,
+            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
+        )
+        .unwrap();
+        let labels = label_cells(
+            &cells,
+            &face_of,
+            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
+            &nesting,
+            [false; 4],
+        )
+        .unwrap();
 
         assert_eq!(cells.len(), 2, "one square: inner + unbounded");
         let inner = cells.iter().position(|c| c.winding == 1).unwrap();
@@ -5187,9 +5203,23 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) = extract_cells(&jd, wc, &split, &[]).unwrap();
-        let nesting = nest_cells(&jd, wc, &cells, &split, &[]).unwrap();
-        let labels = label_cells(&cells, &face_of, &split, &[], &nesting, [false; 4]).unwrap();
+        let (cells, face_of) =
+            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &[]).unwrap()).unwrap();
+        let nesting = nest_cells(
+            &jd,
+            wc,
+            &cells,
+            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
+        )
+        .unwrap();
+        let labels = label_cells(
+            &cells,
+            &face_of,
+            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
+            &nesting,
+            [false; 4],
+        )
+        .unwrap();
 
         // Centroid of a face's ring (convex cells here).
         let centroid = |f: &LocalFace| -> [f64; 2] {
@@ -5206,8 +5236,7 @@ mod tests {
             BoolKind::Fuse,
             &labels,
             &cells,
-            &split,
-            &[],
+            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
             &jd,
             wc,
             &nesting.holes,
@@ -5218,8 +5247,7 @@ mod tests {
             BoolKind::Cut,
             &labels,
             &cells,
-            &split,
-            &[],
+            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
             &jd,
             wc,
             &nesting.holes,
@@ -5235,8 +5263,7 @@ mod tests {
             BoolKind::Common,
             &labels,
             &cells,
-            &split,
-            &[],
+            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
             &jd,
             wc,
             &nesting.holes,
@@ -6253,7 +6280,8 @@ mod tests {
         );
 
         let circles = merge_circles(&tr.circles, &cyls).unwrap();
-        let (cells, face_of) = extract_cells(&jd, wc, &[], &circles).unwrap();
+        let (cells, face_of) =
+            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &[], &circles).unwrap()).unwrap();
         // Pseudo-half-edges 0 and 1 (no segments): the disk (+1) and its contour (−1).
         assert_eq!(cells.len(), 2, "{cells:?}");
         assert_eq!(
@@ -6264,14 +6292,27 @@ mod tests {
             (cells[1].half_edges.as_slice(), cells[1].winding),
             (&[1][..], -1)
         );
-        let nesting = nest_cells(&jd, wc, &cells, &[], &circles).unwrap();
+        let nesting = nest_cells(
+            &jd,
+            wc,
+            &cells,
+            &ClassEdges::of(&jd, wc, &[], &circles).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             nesting.root_groups,
             vec![1],
             "the contour bounds the unbounded region"
         );
         assert!(nesting.holes.is_empty());
-        let labels = label_cells(&cells, &face_of, &[], &circles, &nesting, [false; 4]).unwrap();
+        let labels = label_cells(
+            &cells,
+            &face_of,
+            &ClassEdges::of(&jd, wc, &[], &circles).unwrap(),
+            &nesting,
+            [false; 4],
+        )
+        .unwrap();
         assert_eq!(labels[1], [false; 4]);
         assert_eq!(
             labels[0],
@@ -6284,8 +6325,7 @@ mod tests {
             BoolKind::Fuse,
             &labels,
             &cells,
-            &[],
-            &circles,
+            &ClassEdges::of(&jd, wc, &[], &circles).unwrap(),
             &jd,
             wc,
             &nesting.holes,
@@ -6349,7 +6389,8 @@ mod tests {
             "the cap ring alone — the circle owes the splitter nothing"
         );
 
-        let (cells, face_of) = extract_cells(&jd, wc, &split, &circles).unwrap();
+        let (cells, face_of) =
+            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &circles).unwrap()).unwrap();
         assert_eq!(cells.len(), 4, "cap ±1 and circle ±1: {cells:?}");
         let at = |he: usize| cells.iter().position(|c| c.half_edges == [he]).unwrap();
         let (disk, contour) = (at(2 * split.len()), at(2 * split.len() + 1));
@@ -6358,14 +6399,27 @@ mod tests {
             .position(|c| c.winding == 1 && c.half_edges.len() == 4)
             .unwrap();
 
-        let nesting = nest_cells(&jd, wc, &cells, &split, &circles).unwrap();
+        let nesting = nest_cells(
+            &jd,
+            wc,
+            &cells,
+            &ClassEdges::of(&jd, wc, &split, &circles).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             nesting.holes.get(&cap).map(Vec::as_slice),
             Some(&[contour][..]),
             "the circle contour is the cap cell's hole"
         );
 
-        let labels = label_cells(&cells, &face_of, &split, &circles, &nesting, [false; 4]).unwrap();
+        let labels = label_cells(
+            &cells,
+            &face_of,
+            &ClassEdges::of(&jd, wc, &split, &circles).unwrap(),
+            &nesting,
+            [false; 4],
+        )
+        .unwrap();
         // The class is the box's **bottom** cap, so which of `W`'s two sides carries the box is
         // read off the class normal rather than assumed: the box occupies z>0.
         let up = planes[wc].plane.normal().as_array()[2] > 0.0;
@@ -6392,8 +6446,7 @@ mod tests {
             BoolKind::Cut,
             &labels,
             &cells,
-            &split,
-            &circles,
+            &ClassEdges::of(&jd, wc, &split, &circles).unwrap(),
             &jd,
             wc,
             &nesting.holes,
