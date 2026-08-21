@@ -3525,8 +3525,15 @@ fn trace_result_faces(
             // pipeline and must build it the same way; the arc fence locks that they agree.)
             let edges = ClassEdges::of(jd, wc, split, circles)?;
             let (cells, face_of) = timed!(C_EXTRACT, walk_cells(jd, wc, &edges))?;
+            // ★★ **The nesting is computed, then the stopper, then the `?`.** The stopper
+            // *intercepts*: an arc class must carry the same name out however far the pipeline
+            // got, or the fences' `ArcBoundNotYet` + witness would become whatever nesting said
+            // and the reject census would gain a raise site. What nesting answered is not thrown
+            // away though — the audit carries it (`ClassAudit`), which is what keeps this stage
+            // from being rediscovered.
+            let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, &edges));
             arc_stopper(jd, wc, &edges, split, circles)?;
-            let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, &edges))?;
+            let nesting = nesting?;
             // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
             // arrangement covers all of space, so its unbounded cells reach infinity, where neither
             // solid is. That is a fact about arranging the *whole* model — restrict the input to a
@@ -3746,6 +3753,25 @@ pub(crate) struct ClassAudit {
     pub declined: Vec<(usize, DeclineKind)>,
     /// The reason the per-class pipeline raised, if any (`None` = the class went through).
     pub failed_at: Option<RejectReason>,
+    /// **What the arrangement produced, before anything refused it** — cells walked, arcs the
+    /// split cut, and the nesting's two counts.
+    ///
+    /// ★★★ Without this the arc population is measured and thrown away: the stopper stands after
+    /// the nesting and swallows its answer, so a probe is the only way to see it — and a probe is
+    /// deleted before the commit. Then the next cell rediscovers a break here while debugging
+    /// something else, which is exactly the blame this stage was split to isolate. `None` when the
+    /// class stopped before that stage ran.
+    pub produced: Option<Produced>,
+}
+
+/// The per-class arrangement's output, for [`ClassAudit`].
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Produced {
+    pub cells: usize,
+    pub arcs: usize,
+    pub roots: usize,
+    pub holes: usize,
 }
 
 /// Audit every plane class of one boolean input pair. Runs the same per-class pipeline as
@@ -3824,12 +3850,14 @@ pub(crate) fn frame_audit(
                 .count(),
             declined: tr.declined.clone(),
             failed_at: None,
+            produced: None,
         };
         // Run the rest of the per-class pipeline, recording where it stops.
         audit.failed_at = if let Some(&(fp, kind)) = audit.declined.first() {
             Some(decline_to_reject(kind, faces_tab[fp].face()))
         } else {
-            let run = || -> Result<(), BoolError> {
+            let mut produced = None;
+            let mut run = || -> Result<(), BoolError> {
                 // A copy, so one class's split discoveries cannot leak into the next class's
                 // audit — the fixpoint above already holds everything the boolean would know.
                 let mut local = aliases.clone();
@@ -3844,17 +3872,28 @@ pub(crate) fn frame_audit(
                 // arc fence in `bands.rs` locks the two together.
                 let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
                 let (cells, face_of) = walk_cells(&jd, wc, &edges)?;
+                let nesting = nest_cells(&jd, wc, &cells, &edges);
+                if let Ok(n) = &nesting {
+                    produced = Some(Produced {
+                        cells: cells.len(),
+                        arcs: edges.arcs.len(),
+                        roots: n.root_groups.len(),
+                        holes: n.holes.len(),
+                    });
+                }
                 arc_stopper(&jd, wc, &edges, &split, &circles)?;
-                let nesting = nest_cells(&jd, wc, &cells, &edges)?;
+                let nesting = nesting?;
                 let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4])?;
                 let _ = emit_faces(kind, &labels, &cells, &edges, &jd, wc, &nesting.holes);
                 Ok(())
             };
-            run().err().and_then(|e| match e {
+            let stopped = run().err().and_then(|e| match e {
                 BoolError::Rejected { reason, .. } => Some(reason),
                 // No live-set check runs inside the pipeline, so this arm is unreachable.
                 BoolError::InputNotLive => None,
-            })
+            });
+            audit.produced = produced;
+            stopped
         };
         out.push(audit);
     }

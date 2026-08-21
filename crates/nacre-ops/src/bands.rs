@@ -1140,6 +1140,94 @@ mod tests {
         );
     }
 
+    /// **The audit and the boolean say the same thing about an arc class — and it says what the
+    /// arrangement produced.**
+    ///
+    /// ★★★★ Two things are pinned here and neither had a fence before.
+    ///
+    /// **One: the two copies of the per-class pipeline agree.** `frame_audit` re-runs pass A and B
+    /// inline rather than calling `arrange`, so a split hoisted into one and not the other compiles
+    /// perfectly and makes the audit report *no failure* for an input the boolean refuses —
+    /// `decline_to_reject`'s doc calls that "the worst possible time to be lying". The existing
+    /// guard (`the_audit_does_not_invent_failures`) cannot see it: its fixture is deliberately one
+    /// that fails **outside** the class pipeline.
+    ///
+    /// **Two: what the arrangement produced on an arc class.** The stopper stands after the nesting
+    /// and swallows its answer, so without this the whole arc population is measured by a probe and
+    /// the probe is deleted before the commit. The numbers are **derived, not read back**: the
+    /// boss's rim crosses one edge of the plate's top face twice, cutting the circle into **2**
+    /// arcs and the plane into **4** cells — `rect−disk`, `rect∩disk`, `disk−rect` and the outside.
+    /// Only the outside winds `−1`, so there is **1** root group; and it shares nodes with all
+    /// three `+1` cells (the plate's corners, the two crossings), so `cell_in_cell` answers "not
+    /// comparable" every time and there are **0** holes. Exactly **one** class is cut: the boss
+    /// stands *on* the top face, so only its base circle lies in a plane of the plate.
+    ///
+    /// ★★ **What it does *not* see, derived and then confirmed.** Flipping the sense the split
+    /// carries onto its sub-segments attaches the arcs to the **wrong cells** and swaps two
+    /// windings — and every number above stays put (the earlier probe read
+    /// `[(5,−1),(5,1),(3,1),(3,1)]`: four cells, one `−1`). Measured: this fence is green with that
+    /// flip. Its first reader is `label_cells`' keep decision, one stage further down.
+    #[test]
+    fn the_audit_and_the_boolean_agree_about_an_arc_class() {
+        for (origin, axis) in [
+            ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
+            ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
+        ] {
+            // The boolean takes `&mut Model` and the audit `&Model`; a rejected boolean leaves
+            // arena residue, so each gets its own build of the same fixture.
+            let build = || {
+                let mut m = Model::new();
+                let plate = m.add_cuboid(
+                    Point3::from_array([0.0; 3]),
+                    Point3::from_array([4.0, 4.0, 2.0]),
+                );
+                let boss = m.add_cylinder(
+                    Point3::from_array(origin),
+                    Vector3::from_array(axis),
+                    0.5,
+                    1.0,
+                );
+                m.rebuild_adjacency();
+                (m, plate, boss)
+            };
+            let (mut m, plate, boss) = build();
+            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect_err("an arc-bounded cell is not assembled yet");
+            let BoolError::Rejected { reason, .. } = err else {
+                panic!("{err:?}");
+            };
+            let (m, plate, boss) = build();
+            let audits = crate::arrangement::frame_audit(&m, BoolKind::Fuse, plate, boss).unwrap();
+            let stopped: Vec<_> = audits.iter().filter(|a| a.failed_at.is_some()).collect();
+            assert_eq!(
+                stopped.len(),
+                1,
+                "exactly one class carries the crossing, and the audit sees it"
+            );
+            assert_eq!(
+                stopped[0].failed_at,
+                Some(reason),
+                "the audit reports the reject the boolean raised"
+            );
+            let cut: Vec<_> = audits
+                .iter()
+                .filter_map(|a| a.produced)
+                .filter(|p| p.arcs > 0)
+                .collect();
+            assert_eq!(cut.len(), 1, "exactly one class has its circle cut");
+            assert_eq!(
+                cut[0],
+                crate::arrangement::Produced {
+                    cells: 4,
+                    arcs: 2,
+                    roots: 1,
+                    holes: 0,
+                },
+                "the arrangement walked the arcs and nested them"
+            );
+        }
+    }
+
     /// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in
     /// the same two planes, which is what once made them look like a seating problem; what was
     /// actually hard was classifying **two curved bodies**, and both are now probed from a cap
