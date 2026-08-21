@@ -1573,28 +1573,24 @@ pub(crate) fn point_in_faces_rat(
         let residual = dot3_rat(&n, p)
             .and_then(|v| v.checked_add(coeffs[3]))
             .ok_or_else(not_rational)?;
-        if nd == zero {
-            // Parallel to this plane: it misses the face, unless the ray runs *inside* the plane,
-            // where "how many times does it cross this face" has no parity answer at all and
-            // another direction is the remedy.
-            //
-            // ★★ **The two roads differ here, and the difference is measured.** The named road's
-            // matching arm (`plane_pair_dir_sign == 0`) *continues* in both cases, counting the
-            // face as uncrossed even when its query sits on it — 26 rays in the suite lie in a
-            // face's plane and **2 of them are inside that face's material**, which is the very
-            // situation its own `fwd == 0 && in_g` arm abandons for a transversal plane. Abstaining
-            // is the safe half of the disagreement (it costs a probe, never an answer), so this
-            // road takes it; closing the gap on the other side is its own step.
-            if residual == zero {
-                return Ok(None);
+        // ★ **Parallel is the origin's question, not the ray's.** `nd == 0` and a nonzero
+        // residual is a plain miss. `nd == 0` with a zero residual is the ray lying **in** this
+        // plane, where it never passes from one side of the face to the other — zero crossings —
+        // *unless* the origin is on the face itself, and then "is the origin inside the component"
+        // has no answer. That is exactly the `t == 0` policy below, so the two are one arm: a
+        // coplanar ray is the origin's own crossing.
+        let t = if nd == zero {
+            if residual != zero {
+                continue;
             }
-            continue;
-        }
-        let t = (|| -> Option<Rat> {
-            zero.checked_sub(residual)?
-                .checked_mul(Rat::new(nd.denom(), nd.numer())?)
-        })()
-        .ok_or_else(not_rational)?;
+            zero
+        } else {
+            (|| -> Option<Rat> {
+                zero.checked_sub(residual)?
+                    .checked_mul(Rat::new(nd.denom(), nd.numer())?)
+            })()
+            .ok_or_else(not_rational)?
+        };
         if t < zero {
             continue; // behind the origin
         }
@@ -1654,9 +1650,10 @@ pub(crate) fn point_in_faces_rat(
             }
         }
         if t == zero {
-            // The crossing is the ray's own origin. On the face's material the query sits on the
-            // component's boundary, where "inside" has no answer; off it, the plane is touched at
-            // a point outside the face and counts for nothing.
+            // The crossing is the ray's own origin — either the ray meets this plane there, or it
+            // lies in it. On the face's material the query sits on the component's boundary, where
+            // "inside" has no answer; off it, the plane is touched (or run along) at points
+            // outside the face and counts for nothing.
             if material {
                 return Ok(None);
             }
@@ -1858,45 +1855,67 @@ pub(crate) fn point_in_component(
                 return Ok(None);
             };
             let q = *q;
+            // Inside `q`'s material at the point `x`: inside the outer bound, outside every hole.
+            // ★ Each bound answers by its own kind — a polygon by a ring walk, a circle by its
+            // radial side — and either can say "the point is *on* me", which is the same
+            // non-generic abandon `point_on_ring` has always raised.
+            let material = |x: [usize; 3]| -> Result<Option<bool>, BoolError> {
+                let inside = |b: &BoundEdges| -> Result<Option<bool>, BoolError> {
+                    match b {
+                        BoundEdges::Ring(r) => {
+                            if point_on_ring(jd, q, x, r)? {
+                                return Ok(None);
+                            }
+                            Ok(every_ray(jd, q, x, r)?.first().copied())
+                        }
+                        BoundEdges::Circle(def) => Ok(node_coords_rat(jd, NodeId::three_planes(x))
+                            .and_then(|p| point_in_disk(&p, def))),
+                        // A band bounds a cylinder, never a plane — a producer error, not an input.
+                        BoundEdges::Band { .. } => Ok(None),
+                    }
+                };
+                let Some(mut in_g) = inside(&f.outer)? else {
+                    return Ok(None);
+                };
+                if in_g {
+                    for hole in &f.inner {
+                        match inside(hole)? {
+                            Some(true) => {
+                                in_g = false;
+                                break;
+                            }
+                            Some(false) => {}
+                            None => return Ok(None),
+                        }
+                    }
+                }
+                Ok(Some(in_g))
+            };
             if jd.plane_pair_dir_sign(a, b, q) == 0 {
-                continue; // `L` parallel to (or in) plane `q` — no transversal crossing
+                // `L` is parallel to `q` — and possibly **in** it, which is not the same thing.
+                // A coplanar ray never passes from one side of this face to the other, so zero
+                // crossings is the right count and always was. What the old `continue` also
+                // swallowed is the *query*: if it lies on this face, "is the query inside the
+                // component" has no answer at all, and skipping the face answers it anyway. That
+                // is the same proposition the `fwd == 0` arm below abandons for a transversal
+                // plane — one rule that had only one of its two spellings.
+                //
+                // ★ **Unfired, and measured to be.** 26 rays in the suite lie in a face's plane
+                // and **none** of them is on that face's material. (An earlier count said two;
+                // it read the *outer bound* rather than the face, and both were in a hole.) It is
+                // here because the sentence is true, not because a fixture is red.
+                let mut vq = [query[0], query[1], query[2]];
+                vq.sort_unstable();
+                if side_of(jd, vq, q) == 0 && material(vq)? != Some(false) {
+                    return Ok(None);
+                }
+                continue;
             }
             let mut x = [a, b, q];
             x.sort_unstable();
-            // Inside `q`'s material: inside the outer bound, outside every hole. ★ Each bound
-            // answers by its own kind — a polygon by a ring walk, a circle by its radial side —
-            // and either can say "the crossing is *on* me", which is the same non-generic
-            // abandon `point_on_ring` has always raised.
-            let inside = |b: &BoundEdges| -> Result<Option<bool>, BoolError> {
-                match b {
-                    BoundEdges::Ring(r) => {
-                        if point_on_ring(jd, q, x, r)? {
-                            return Ok(None);
-                        }
-                        Ok(every_ray(jd, q, x, r)?.first().copied())
-                    }
-                    BoundEdges::Circle(def) => Ok(node_coords_rat(jd, NodeId::three_planes(x))
-                        .and_then(|p| point_in_disk(&p, def))),
-                    // A band bounds a cylinder, never a plane — a producer error, not an input.
-                    BoundEdges::Band { .. } => Ok(None),
-                }
+            let Some(in_g) = material(x)? else {
+                return Ok(None);
             };
-            let mut in_g = match inside(&f.outer)? {
-                Some(v) => v,
-                None => return Ok(None),
-            };
-            if in_g {
-                for hole in &f.inner {
-                    match inside(hole)? {
-                        Some(true) => {
-                            in_g = false;
-                            break;
-                        }
-                        Some(false) => {}
-                        None => return Ok(None),
-                    }
-                }
-            }
             let fwd = order_along(jd, a, b, c, q);
             if fwd == 0 {
                 // The crossing is the ray origin itself (query on plane `q`). Inside `q`'s

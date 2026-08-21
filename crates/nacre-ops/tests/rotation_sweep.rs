@@ -416,13 +416,15 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
             }
         }
     }
-    // The walk itself, plus the two places that ask about a **single point** rather than a ring:
-    // `point_on_ring` ("is `v` on this edge's line") and the alias seed ("does this vertex lie on
-    // that class"). Neither reads a sign sequence, so neither is a walk.
+    // The walk itself, plus the three places that ask about a **single point** rather than a ring:
+    // `point_on_ring` ("is `v` on this edge's line"), the alias seed ("does this vertex lie on that
+    // class"), and the ray probe's parallel arm ("is the query on the plane the ray lies in").
+    // None reads a sign sequence, so none is a walk.
     offenders.retain(|o| {
         !o.contains("side_of(jd, nodes[i], q)")
             && !o.contains("side_of(jd, v, r)")
             && !o.contains("side_of(&jd, name, wc)")
+            && !o.contains("side_of(jd, vq, q)")
     });
     assert_eq!(
         offenders,
