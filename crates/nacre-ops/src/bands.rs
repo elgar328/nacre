@@ -910,12 +910,17 @@ mod tests {
         }
     }
 
-    /// **The double root, which is one point.** The boss's `x = 11` edge is exactly tangent to the
-    /// rim `(8,10)`, `r = 3`, so the locator's quadratic has a double root and the touch is
-    /// rational — `(11, 10, 5)`, solved from the fixture, not read back. The third arm of
-    /// `CylinderMeet` that can reach here, and the only one whose point carries no radical.
+    /// **A tangency builds.** The boss's `x = 11` edge is exactly tangent to the rim `(8,10)`,
+    /// `r = 3`, so the locator's quadratic has a double root — the third arm of `CylinderMeet`
+    /// that can reach here, and the only one whose point carries no radical (`(11, 10, 5)`,
+    /// rational).
+    ///
+    /// ★★ **And a touch is not a break**: the circle keeps its closed cell, so nothing about the
+    /// arrangement had to change for this to work. It was refused only because the guard's
+    /// sentence was wider than its proposition — measured before the narrowing landed, with the
+    /// whole guard off, this already produced exactly the solid asserted below.
     #[test]
-    fn a_segment_tangent_to_the_rim_names_the_touch() {
+    fn a_segment_tangent_to_the_rim_builds() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -934,18 +939,25 @@ mod tests {
             Point3::from_array([15.0, 12.0, 8.0]),
         );
         m.rebuild_adjacency();
-        let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("tangent edge");
-        let BoolError::Rejected {
-            reason: RejectReason::CircleMeetsSegment,
-            at: Some(crate::RejectWhere::Point(p)),
-        } = &err
-        else {
-            panic!("a touch is a point: {err:?}");
-        };
-        let c = p.as_array();
+        let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("a tangent edge");
+        assert_eq!(out.len(), 1, "the boss sits on material");
         assert!(
-            (0..3).all(|i| (c[i] - [11.0, 10.0, 5.0][i]).abs() < 1e-9),
-            "the tangency is the touch point: {c:?}"
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 40.0 * 20.0 * 5.0 - std::f64::consts::PI * 9.0 * 5.0 + 4.0 * 4.0 * 3.0;
+        assert!(
+            (v - want).abs() < 1e-9,
+            "plate less bore plus boss: {v} vs {want}"
+        );
+        // The through bore survives the fuse, so the one shell still has one handle.
+        let (v_n, e_n, f_n, l_n) = euler_counts(&m, out[0]);
+        assert_eq!(
+            v_n - e_n + f_n - l_n,
+            0,
+            "genus 1: V{v_n} E{e_n} F{f_n} L{l_n}"
         );
     }
 
@@ -1008,15 +1020,17 @@ mod tests {
     /// Turning the boss onto `+X` inverts it: the rim lives on the box's `x = 4` face (class 5,
     /// interned last) and the segment it crosses is on the `z = 2` cap (class 1). The pair swaps.
     ///
-    /// ★ **A tangency, so there is exactly one root** and the assertion can name the point without
-    /// an `||`. That matters: [`a_boss_overhanging_the_plates_edge_is_still_refused`] deliberately
+    /// ★ **A tangency, so there is exactly one root** — and since 2026-08-21 that also means the
+    /// circle is not separated, so this **builds** rather than refusing. The single root is still
+    /// what makes the naming rule visible here (it is what the fixture was written for), and the
+    /// witness it once asserted is now the *split point that never happens*. That matters: [`a_boss_overhanging_the_plates_edge_is_still_refused`] deliberately
     /// accepts either of its two crossings, and a fixture copied from that template would be green
     /// whether or not the root rule is right. Here `disc = 0` — the rim (`x = 4`, centre
     /// `(4, 2, 1.5)`, `r = 0.5`) touches `z = 2` at the single point `(4, 2, 2)`, solved from the
     /// fixture's own numbers — and the name it must take is `QuadRoot::Double`, which a swap must
     /// **not** toggle.
     #[test]
-    fn a_turned_boss_tangent_to_the_plate_top_names_the_touch() {
+    fn a_turned_boss_tangent_to_the_plate_top_builds() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1029,18 +1043,28 @@ mod tests {
             1.0,
         );
         m.rebuild_adjacency();
-        let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect_err("turned boss");
-        let BoolError::Rejected {
-            reason: RejectReason::CircleMeetsSegment,
-            at: Some(crate::RejectWhere::Point(p)),
-        } = &err
-        else {
-            panic!("a tangency is one point: {err:?}");
-        };
-        let c = p.as_array();
+        let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("a turned boss");
+        assert_eq!(
+            out.len(),
+            1,
+            "the boss's base disk sits on the plate's face"
+        );
         assert!(
-            (0..3).all(|i| (c[i] - [4.0, 2.0, 2.0][i]).abs() < 1e-9),
-            "the tangency of the turned rim with the plate top: {c:?}"
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 32.0 + std::f64::consts::PI * 0.25;
+        assert!(
+            (v - want).abs() < 1e-9,
+            "plate plus the whole boss: {v} vs {want}"
+        );
+        let (v_n, e_n, f_n, l_n) = euler_counts(&m, out[0]);
+        assert_eq!(
+            v_n - e_n + f_n - l_n,
+            2,
+            "genus 0: V{v_n} E{e_n} F{f_n} L{l_n}"
         );
     }
 

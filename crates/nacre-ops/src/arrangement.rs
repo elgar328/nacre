@@ -1800,6 +1800,31 @@ fn circles_meet_no_segment(
             }
         }
     }
+    // ★★★ **A touch is not a break.** The premise above is that a circle stays a *closed cell*,
+    // and only a break that **separates** the circle costs it that: a transversal crossing cuts it
+    // into arcs, while a tangency meets it at one point and leaves the loop closed. The two are
+    // told apart by the crossing's own name — `QuadRoot::Double` is the tangency's, and that
+    // variant exists precisely because "the two roots coincide" had to be sayable.
+    //
+    // ★ The other non-separating kind — a segment lying **inside** the disk — is *not* let through
+    // here. It leaves the circle closed too, but it puts a polygon in the disk cell, and
+    // `nest_cells` cannot host one yet. Its turn is its own step; refusing it is honest and this
+    // arm says which kinds are still breaks rather than pretending the list is closed.
+    //
+    // Measured: with the whole guard off, both tangency fixtures already build a correct solid —
+    // `4000 − 45π + 48` to 5e-13, one body, `validate` clean. Nothing was owed but this sentence.
+    let separates = |b: &Break| {
+        !matches!(
+            b.key.3,
+            Some(NodeId::Branch {
+                root: nacre_topo::QuadRoot::Double,
+                ..
+            })
+        )
+    };
+    if !breaks.iter().any(separates) {
+        return Ok(());
+    }
     let Some(w) = witness(breaks) else {
         return Ok(());
     };
