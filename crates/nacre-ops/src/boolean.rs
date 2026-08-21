@@ -371,7 +371,11 @@ struct Grouping {
 /// ★ **Deciding early is not the same as *rejecting* early.** [`reconstruct`] holds this `Result`
 /// and raises it exactly where the old code did, so a boolean that declines here leaves the arena
 /// it left before — the quantity `replay::a_late_reject_is_not_index_neutral` measures.
-fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grouping, BoolError> {
+fn group_faces(
+    jd: &Judge<'_, WorkingPlane>,
+    faces: &[LocalFace],
+    cyls: &[crate::planes::WorkingCyl],
+) -> Result<Grouping, BoolError> {
     let (labels, n) = face_components(faces);
     let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
     for (i, lf) in faces.iter().enumerate() {
@@ -399,9 +403,25 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
     // the query's own planes, and `nacre_scalar::plane_plane_cylinder` names exactly what such a
     // line does against a cylinder. Counting those crossings is the extension this guard is
     // holding the door for.
+    // A **probe list**, so a branch node may be dropped: `first_deciding` below tries each in
+    // turn, and an exhausted list is already `Ok(None)` — the caller's own rejection.
+    let nodes_of = |c: usize| -> Vec<[usize; 3]> {
+        combinatorics::three_plane_probes(
+            by_comp_lf[c]
+                .iter()
+                .flat_map(|lf| lf.poly_rings().flat_map(|r| r.iter().copied())),
+        )
+    };
+    // ★★ **Narrowed, and the sentence is now true of exactly what is refused.** It used to refuse
+    // whenever *any* component held a cylinder face, because the ray could not count one. It can
+    // now, so what is left is the other half the old guard was hiding: a component with **no probe
+    // node at all** — a lone cylinder's faces are two circle-bounded caps and a band, none of
+    // which carries a vertex, so `nodes_of` comes back empty and there is nothing to ask the
+    // question *from*. That is still a curved component whose depth cannot be asked, so the name
+    // still says what happens; a coordinate-named witness is what lifts it.
     if n > 1 {
-        for comp in by_comp_lf.iter().take(n) {
-            if comp.iter().any(|lf| lf.surf.cyl().is_some()) {
+        for c in 0..n {
+            if nodes_of(c).is_empty() {
                 return Err(reject(RejectReason::CurvedComponentDepth));
             }
         }
@@ -425,15 +445,23 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
                                 combinatorics::BoundEdges::Ring(r.edges(jd, lf.surf.plane())?)
                             }
                             Bound::Circle { cyl } => {
-                                combinatorics::BoundEdges::Circle { cyl: *cyl }
+                                combinatorics::BoundEdges::Circle(Box::new(cyls[*cyl].def.clone()))
                             }
                             Bound::Band { lo, hi } => {
                                 combinatorics::BoundEdges::Band { lo: *lo, hi: *hi }
                             }
                         })
                     };
+                    let surf = match lf.surf {
+                        ClassIx::Plane(c) => combinatorics::CompSurf::Plane(c),
+                        // ★ The truth travels, not the index — the probe should not have to hold
+                        // the class table to solve a crossing.
+                        ClassIx::Cyl(k) => {
+                            combinatorics::CompSurf::Cylinder(Box::new(cyls[k].def.clone()))
+                        }
+                    };
                     Ok(combinatorics::CompFace {
-                        surf: lf.surf,
+                        surf,
                         outer: bound(&lf.outer)?,
                         inner: lf
                             .inner
@@ -445,15 +473,6 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
                 .collect::<Result<_, BoolError>>()
         })
         .collect::<Result<_, BoolError>>()?;
-    // A **probe list**, so a branch node may be dropped: `first_deciding` below tries each in
-    // turn, and an exhausted list is already `Ok(None)` — the caller's own rejection.
-    let nodes_of = |c: usize| -> Vec<[usize; 3]> {
-        combinatorics::three_plane_probes(
-            by_comp_lf[c]
-                .iter()
-                .flat_map(|lf| lf.poly_rings().flat_map(|r| r.iter().copied())),
-        )
-    };
     // Try `f` at each node in turn: the first node that **decides** wins, a node that abstains
     // (`Ok(None)` — it grazed a boundary) is passed over for the next, and a failed judgement
     // (`Err`) propagates immediately. The last part is the point of the shape: an abstention has
@@ -994,7 +1013,7 @@ fn reconstruct(
     // reported it, and until then every face is one group — which is exactly the keying this
     // function used before groups existed. So a boolean that declines pushes the arena cells it
     // always did (`replay::a_late_reject_is_not_index_neutral` measures that).
-    let grouping = group_faces(jd, faces);
+    let grouping = group_faces(jd, faces, cyls);
     let group_of: Vec<usize> = match &grouping {
         Ok(g) => g.group_of.clone(),
         Err(_) => vec![0; faces.len()],

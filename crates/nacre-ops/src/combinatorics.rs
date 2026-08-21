@@ -1321,31 +1321,190 @@ fn point_on_ring(
 pub(crate) enum BoundEdges {
     /// A polygon, its edges carrying their walls (the only shape the ray counts today).
     Ring(Vec<RingEdge>),
-    /// A whole circle, by its cylinder class.
-    ///
-    /// ★ The payload's reader is the ray's **curved arm**, which is the next commit — the same
-    /// shape (and the same reason) as `boolean::Bound::Band`'s own `allow` while its producer was
-    /// still being built. Carrying the bound without reading it is this commit's whole point: it
-    /// is what makes the widening behaviour-neutral and checkable.
-    Circle {
-        #[allow(dead_code)]
-        cyl: usize,
-    },
+    /// A whole circle, by the cylinder whose surface it rides — a disk face's outer bound, or a
+    /// bored face's hole. Boxed for the same reason [`CompSurf::Cylinder`] is.
+    Circle(Box<nacre_topo::CylinderDef>),
     /// A lateral band's boundary: the two plane classes its rims sit on.
-    Band {
-        #[allow(dead_code)]
-        lo: usize,
-        #[allow(dead_code)]
-        hi: usize,
-    },
+    Band { lo: usize, hi: usize },
 }
 
-/// One face of a component — the class its surface lives in, and its boundaries.
+/// A component face's surface, as the ray needs it.
+///
+/// ★ A cylinder carries its **truth**, not its class index: the crossings are solved against
+/// `origin/dir/radius`, and the producer (`boolean`) is the one holding the class table. The
+/// consumer should not have to look anything up — the same rule `RingEdge` states about walls.
+#[derive(Clone, Debug)]
+pub(crate) enum CompSurf {
+    Plane(usize),
+    /// Boxed because a `CylinderDef` is four rationals wide and every *planar* face would
+    /// otherwise carry that much dead space — and planar faces are nearly all of them.
+    Cylinder(Box<nacre_topo::CylinderDef>),
+}
+
+/// One face of a component — its surface, and its boundaries.
 #[derive(Clone, Debug)]
 pub(crate) struct CompFace {
-    pub(crate) surf: crate::planes::ClassIx,
+    pub(crate) surf: CompSurf,
     pub(crate) outer: BoundEdges,
     pub(crate) inner: Vec<BoundEdges>,
+}
+
+/// How a ray met one cylindrical face.
+enum CurvedHit {
+    /// This many crossings lie **behind** the query along the line (the half the parity counts).
+    Behind(usize),
+    /// The ray touched a boundary — tangent, on a ruling, or exactly through the query. Abandon
+    /// this ray and let the caller try the next plane pair, the same policy `point_on_ring` sets
+    /// for a polygon.
+    Graze,
+}
+
+/// **Is the three-plane point `x` strictly inside this circle?** — `None` when it lies *on* the
+/// circle (non-generic, abandon) or when the arithmetic could not answer.
+///
+/// ★ The rule is `cylinder_radial_side`'s, the one `arrangement::node_in_circle` already reads —
+/// a circle bound is `cylinder ∩ plane`, so "inside the disk" is "inside the cylinder's radius".
+fn point_in_disk(
+    jd: &Judge<'_, WorkingPlane>,
+    x: [usize; 3],
+    def: &nacre_topo::CylinderDef,
+) -> Option<bool> {
+    let p = node_coords_rat(jd, NodeId::three_planes(x))?;
+    match nacre_scalar::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()) {
+        nacre_scalar::Orient::Negative => Some(true),
+        nacre_scalar::Orient::Positive => Some(false),
+        nacre_scalar::Orient::Zero => None,
+    }
+}
+
+/// [`cylinder_face_crossings`] for a probe ray named by three plane classes: it states the ray's
+/// two planes and the "behind" cut plane from the class table and hands them over.
+///
+/// `Ok(None)` — as `Some(None)` here — is the abandon-this-ray answer; `Err` never happens because
+/// every failure this can meet is arithmetic, and arithmetic that cannot answer is an abstention.
+fn curved_count(
+    jd: &Judge<'_, WorkingPlane>,
+    a: usize,
+    b: usize,
+    c: usize,
+    def: &nacre_topo::CylinderDef,
+    span: [usize; 2],
+) -> Result<Option<usize>, BoolError> {
+    // ★ The cylinder gate refuses any class that is rotated or has no narrow rational name
+    // (`planes.rs`), so in a boolean that has a cylinder these are always `Some`. A `None` here
+    // would mean that gate let something through — assert it, then abstain rather than guess.
+    let Some(((ca, cb), cc)) = class_coeffs_rat(jd, a)
+        .zip(class_coeffs_rat(jd, b))
+        .zip(class_coeffs_rat(jd, c))
+    else {
+        debug_assert!(
+            false,
+            "the cylinder gate is supposed to make these rational"
+        );
+        return Ok(None);
+    };
+    // The cut plane through the ray's origin, normal `n_a × n_b` — the very direction
+    // `plane_plane_cylinder` gives its meet line, so "negative side" is "behind the query".
+    let Some(behind) = (|| {
+        let d = cross3_rat(&[ca[0], ca[1], ca[2]], &[cb[0], cb[1], cb[2]])?;
+        let at = nacre_scalar::three_planes_rat([ca, cb, cc])?;
+        let d0 = nacre_scalar::Rat::from_int(0).checked_sub(dot3_rat(&d, &at)?)?;
+        Some([d[0], d[1], d[2], d0])
+    })() else {
+        return Ok(None);
+    };
+    Ok(
+        match cylinder_face_crossings(jd, [&ca, &cb], def, span, &behind) {
+            Some(CurvedHit::Behind(k)) => Some(k),
+            Some(CurvedHit::Graze) | None => None,
+        },
+    )
+}
+
+/// **Where the line `a ∩ b` crosses one lateral band, and how many of those are behind the query.**
+///
+/// ★★★ **One copy, two roads.** The named-point probe below and the coordinate-point road both
+/// state their ray as *two rational planes*, so both ask this. Writing the arms twice is how the
+/// two would come to disagree about a graze.
+///
+/// `behind` is a rational plane through the ray's origin whose normal is the line's own direction
+/// `n_a × n_b`; a crossing is behind the query exactly when it is on that plane's negative side.
+/// ★ That is not a convention to be guessed: `plane_plane_cylinder` builds the meet line's `dir`
+/// as `cross3(n_a, n_b)`, which is the very `d` that `order_along` — and therefore this probe's
+/// `fwd == 1` — measures against.
+///
+/// `span` are the two rim plane classes. The test for "on this band" does **not** read their
+/// stored normals: it takes each rim's axis parameter ([`crate::planes::axis_param_of_plane`]) and
+/// rebuilds a plane there with the **axis** as normal, so "between the rims" is simply "opposite
+/// sides of two planes that point the same way". Reading the stored normals is the mistake
+/// `plus_t_is_above`'s doc records as having turned 36 tests red.
+///
+/// `None` is checked-`Rat` arithmetic that could not answer — an honest decline, never a guess.
+fn cylinder_face_crossings(
+    jd: &Judge<'_, WorkingPlane>,
+    line: [&[nacre_scalar::Rat; 4]; 2],
+    def: &nacre_topo::CylinderDef,
+    span: [usize; 2],
+    behind: &[nacre_scalar::Rat; 4],
+) -> Option<CurvedHit> {
+    use nacre_scalar::Orient;
+    use nacre_scalar::quad::{CylinderMeet, QuadVal};
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (meet, roots): (_, [QuadVal; 2]) =
+        match nacre_scalar::quad::plane_plane_cylinder(line[0], line[1], &o, &m, r)? {
+            CylinderMeet::Pair { line, s } => (line, s),
+            // A tangency touches the surface without crossing it — parity has no answer there.
+            CylinderMeet::Tangent { .. } => return Some(CurvedHit::Graze),
+            // ★ The ray lies **on** the cylinder: every point of it is on the face. Not a crossing
+            // count at all.
+            CylinderMeet::OnRuling(_) => return Some(CurvedHit::Graze),
+            // Parallel to the axis and off the surface, or missing the quadric outright: no crossing.
+            CylinderMeet::AxisParallelMiss(_) | CylinderMeet::Miss(_) => {
+                return Some(CurvedHit::Behind(0));
+            }
+            // ★ Two classes can name one plane (aliasing), and then `a ∩ b` is not a line — there is
+            // no ray to count along. `circle_crossings` proves these away for a class ⊥ to the axis;
+            // a probe ray has no such proof, so they are answered rather than `unreachable!`d.
+            CylinderMeet::CoincidentPlanes | CylinderMeet::ParallelPlanes => {
+                return Some(CurvedHit::Graze);
+            }
+        };
+    // The two rims, restated with the **axis** as their normal so "between" is a sign difference.
+    let mut rim = Vec::with_capacity(2);
+    for c in span {
+        let coeffs = class_coeffs_rat(jd, c)?;
+        let t = crate::planes::axis_param_of_plane(&coeffs, def)?;
+        // n = m, d0 = −m·(o + t·m)
+        let mut d0 = nacre_scalar::Rat::from_int(0);
+        for k in 0..3 {
+            let at = o[k].checked_add(t.checked_mul(m[k])?)?;
+            d0 = d0.checked_sub(m[k].checked_mul(at)?)?;
+        }
+        rim.push([m[0], m[1], m[2], d0]);
+    }
+    let mut count = 0usize;
+    for s in &roots {
+        let sides = [
+            nacre_scalar::quad::plane_side(&rim[0], &meet, s),
+            nacre_scalar::quad::plane_side(&rim[1], &meet, s),
+        ];
+        // On a rim: the crossing is on the face's own boundary — non-generic, abandon.
+        if sides.contains(&Orient::Zero) {
+            return Some(CurvedHit::Graze);
+        }
+        if sides[0] == sides[1] {
+            continue; // outside the band's axial span — this face is not crossed there
+        }
+        match nacre_scalar::quad::plane_side(behind, &meet, s) {
+            // The crossing **is** the ray's origin, and it is on this face: the query sits on the
+            // other component's surface, which the parity cannot answer. Same as the planar
+            // `fwd == 0 && in_g` arm.
+            Orient::Zero => return Some(CurvedHit::Graze),
+            Orient::Negative => count += 1,
+            Orient::Positive => {}
+        }
+    }
+    Some(CurvedHit::Behind(count))
 }
 
 /// A component as its faces, each boundary already carrying its edges' walls.
@@ -1356,20 +1515,6 @@ pub(crate) fn point_in_component(
     query: [usize; 3],
     faces: &[CompFace],
 ) -> Result<Option<bool>, BoolError> {
-    // ★★ **This commit's premise, as a check rather than an argument.** Curved faces and circular
-    // bounds now *reach* this type, but `boolean`'s `CurvedComponentDepth` guard still keeps a
-    // component that has one from ever being probed — so every boundary here is still a polygon
-    // and the answers cannot have moved. If this fires, that argument is wrong and the change is
-    // no longer behaviour-neutral.
-    debug_assert!(
-        faces.iter().all(|f| {
-            matches!(f.surf, crate::planes::ClassIx::Plane(_))
-                && std::iter::once(&f.outer)
-                    .chain(f.inner.iter())
-                    .all(|b| matches!(b, BoundEdges::Ring(_)))
-        }),
-        "the guard is supposed to keep curved faces and circular bounds out of the probe"
-    );
     let mut vplanes = query.to_vec();
     vplanes.sort_unstable();
     vplanes.dedup();
@@ -1383,36 +1528,56 @@ pub(crate) fn point_in_component(
             // answers "inside" by a ring walk. The curved arms are `CurvedComponentDepth`'s job
             // (the guard upstream keeps them from arriving); abstaining is the honest placeholder
             // — it costs the caller another node, never a wrong answer.
-            let (crate::planes::ClassIx::Plane(q), BoundEdges::Ring(outer)) = (f.surf, &f.outer)
-            else {
+            // ★ A cylindrical face is counted by its own arm — the crossings are roots of a
+            // quadratic, not three-plane points, and "inside the face" is an axial span rather
+            // than a ring walk.
+            if let CompSurf::Cylinder(def) = &f.surf {
+                let BoundEdges::Band { lo, hi } = f.outer else {
+                    // A cylinder face bounded by anything but a band has no producer; refusing to
+                    // guess costs the caller another node, never a wrong answer.
+                    return Ok(None);
+                };
+                match curved_count(jd, a, b, c, def, [lo, hi])? {
+                    Some(k) => {
+                        count += k;
+                        continue;
+                    }
+                    None => return Ok(None),
+                }
+            }
+            let CompSurf::Plane(q) = &f.surf else {
                 return Ok(None);
             };
+            let q = *q;
             if jd.plane_pair_dir_sign(a, b, q) == 0 {
                 continue; // `L` parallel to (or in) plane `q` — no transversal crossing
             }
             let mut x = [a, b, q];
             x.sort_unstable();
-            let mut holes = Vec::with_capacity(f.inner.len());
-            for b in &f.inner {
+            // Inside `q`'s material: inside the outer bound, outside every hole. ★ Each bound
+            // answers by its own kind — a polygon by a ring walk, a circle by its radial side —
+            // and either can say "the crossing is *on* me", which is the same non-generic
+            // abandon `point_on_ring` has always raised.
+            let inside = |b: &BoundEdges| -> Result<Option<bool>, BoolError> {
                 match b {
-                    BoundEdges::Ring(r) => holes.push(r),
-                    _ => return Ok(None),
+                    BoundEdges::Ring(r) => {
+                        if point_on_ring(jd, q, x, r)? {
+                            return Ok(None);
+                        }
+                        Ok(every_ray(jd, q, x, r)?.first().copied())
+                    }
+                    BoundEdges::Circle(def) => Ok(point_in_disk(jd, x, def)),
+                    // A band bounds a cylinder, never a plane — a producer error, not an input.
+                    BoundEdges::Band { .. } => Ok(None),
                 }
-            }
-            for ring in std::iter::once(outer).chain(holes.iter().copied()) {
-                if point_on_ring(jd, q, x, ring)? {
-                    return Ok(None); // `x` on `q`'s boundary — non-generic, abandon
-                }
-            }
-            // Inside `q`'s material: inside the outer ring, outside every hole.
-            let inside_outer = match every_ray(jd, q, x, outer)?.first().copied() {
+            };
+            let mut in_g = match inside(&f.outer)? {
                 Some(v) => v,
                 None => return Ok(None),
             };
-            let mut in_g = inside_outer;
             if in_g {
-                for hole in &holes {
-                    match every_ray(jd, q, x, hole)?.first().copied() {
+                for hole in &f.inner {
+                    match inside(hole)? {
                         Some(true) => {
                             in_g = false;
                             break;
