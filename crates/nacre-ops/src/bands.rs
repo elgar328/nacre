@@ -475,14 +475,7 @@ mod tests {
         // ★ **Genus 1, re-derived rather than quoted.** An earlier plan wrote `V10−E15+F7−L2`
         // from memory; the counts are measured here and what is asserted is the relation
         // (`χ = V − E + F − L = 2(S − G)`, so one shell with one through hole gives `χ = 0`).
-        let reach = m.reachable();
-        let (v_n, e_n) = (reach.vertices.len() as i64, reach.edges.len() as i64);
-        let f_n = reach.faces.len() as i64;
-        let l_n: i64 = reach
-            .faces
-            .iter()
-            .map(|fh| m.faces.get(*fh).inner.len() as i64)
-            .sum();
+        let (v_n, e_n, f_n, l_n) = euler_counts(&m, s);
         assert_eq!(
             v_n - e_n + f_n - l_n,
             0,
@@ -1136,9 +1129,12 @@ mod tests {
         }
     }
 
-    /// `χ = V − E + F − L` over a solid's shells, the relation `genus 1` is read from at
-    /// `a_through_hole_keeps_the_wall_between_the_caps` — hoisted so a second caller reads the
-    /// same counts rather than a second spelling of them.
+    /// `χ = V − E + F − L` over **one solid's** shells — the counts the genus relation
+    /// `χ = 2(S − G)` is read from.
+    ///
+    /// ★ Per solid, not per model: `Model::reachable` spans every live solid, which coincides with
+    /// this only while a fixture makes exactly one. The fixtures that make two need the sum split,
+    /// and one spelling for all of them is what keeps the relation from being restated.
     fn euler_counts(m: &Model, s: Handle<Solid>) -> (i64, i64, i64, i64) {
         let faces: Vec<_> = crate::planes::solid_shell_handles(m, s)
             .into_iter()
