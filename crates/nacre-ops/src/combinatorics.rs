@@ -349,7 +349,9 @@ impl EdgeDir {
 /// runs along `d = n_p × n_wall`, `-1` against it. The one place a direction is made.
 ///
 /// ★ It returns the sense **paired with the carrier it belongs to** ([`EdgeDir`]) rather than a
-/// bare `i8`, so no caller can pair them itself and pair them wrongly.
+/// bare `i8`, so the callers that used to do that pairing by hand no longer can. (`EdgeDir::new`
+/// still states a pair directly — that is for fixtures, and it is the one place a wrong pairing is
+/// still spellable.)
 ///
 /// ★★ **It used to be made twice, two different ways.** `order_along` is `sign((V_i − V_j)·d)`, so
 /// the direction of travel is either `−order_along(from, to)` (invert the result) or
@@ -415,7 +417,9 @@ pub(crate) fn turn_at(
     i: usize,
 ) -> Result<i8, BoolError> {
     let n = ring.len();
-    turn_between(jd, p, &ring[(i + n - 1) % n], &ring[i])
+    let arriving = ring_edge_dir(jd, p, &ring[(i + n - 1) % n])?;
+    let leaving = ring_edge_dir(jd, p, &ring[i])?;
+    turn_between(jd, p, arriving, leaving)
 }
 
 /// **Do two carriers give one direction on `P`?** — `P ∩ a` and `P ∩ b` are parallel.
@@ -492,28 +496,27 @@ pub(crate) fn continuation(
     }
 }
 
-/// The turn **at a point** — `leaving.node` — from the direction the loop arrives on to the one it
-/// leaves on.
+/// The turn from the direction a loop **arrives on** to the one it **leaves on** — [`turn`] with
+/// the straight-angle policy its ring callers share.
 ///
-/// ★★ **`arriving` need not be adjacent to `leaving`.** [`loop_winding`] walks back past a straight
-/// run and hands the edge on its far side; what licenses that substitution is
-/// [`Continuation::Straight`] — the run is parallel and travelled the same way, so its direction
-/// *is* the direction the loop arrives on. Nothing here checks it, because the caller is the one
-/// that established it.
+/// ★★ **It takes two directions, not two edges, and the point they meet at is the caller's.**
+/// [`loop_winding`] reads this at `ring[lo].node`, and the arriving direction may come from an edge
+/// that is *not* adjacent to it: the walk-back hands the edge on the far side of a straight run,
+/// licensed by [`Continuation::Straight`] — the run is parallel and travelled the same way, so its
+/// direction *is* the one the loop arrives on. That premise belongs to the caller that established
+/// it, the same way [`antiparallel`]'s guard does.
 ///
-/// ★ **Today the two edges' whole-edge directions are the directions at that point**, and that
-/// holds only because every edge is straight: a line's tangent is the same at both ends. An arc's
-/// is not, so this is the sentence that has to grow — an **arity** change ("which end"), not just a
-/// wider direction type.
+/// ★ **Today an edge's whole-edge direction is its direction at either end**, and that holds only
+/// because every edge is straight: a line's tangent does not change along it. An arc's does, so
+/// the caller will have to say *which end* it means — an **arity** change, not just a wider
+/// direction type.
 fn turn_between(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
-    arriving: &RingEdge,
-    leaving: &RingEdge,
+    arriving: EdgeDir,
+    leaving: EdgeDir,
 ) -> Result<i8, BoolError> {
-    let sa = ring_edge_dir(jd, p, arriving)?;
-    let sb = ring_edge_dir(jd, p, leaving)?;
-    match turn(jd, p, sa, sb) {
+    match turn(jd, p, arriving, leaving) {
         0 => Err(reject(RejectReason::StraightAngle)),
         t => Ok(t),
     }
@@ -1520,10 +1523,12 @@ pub(crate) fn loop_winding(
     let n = ring.len();
     let leaving = ring_edge_dir(jd, p, &ring[lo])?;
     let mut back = (lo + n - 1) % n;
-    loop {
+    // ★ The direction the loop arrives on, carried out of the walk — the edge that ends it is the
+    // one the turn is read against, and its direction is already in hand.
+    let arriving = loop {
         let earlier = ring_edge_dir(jd, p, &ring[back])?;
         match continuation(jd, p, earlier, leaving) {
-            Continuation::Turns => break,
+            Continuation::Turns => break earlier,
             Continuation::DoublesBack => return Err(reject(RejectReason::StraightAngle)),
             Continuation::Straight => {}
         }
@@ -1534,8 +1539,8 @@ pub(crate) fn loop_winding(
             // whole ring, not about what any one edge does.
             return Err(reject(RejectReason::DegenerateRing));
         }
-    }
-    turn_between(jd, p, &ring[back], &ring[lo])
+    };
+    turn_between(jd, p, arriving, leaving)
 }
 
 /// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.
