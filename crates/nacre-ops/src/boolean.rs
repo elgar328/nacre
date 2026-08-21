@@ -397,8 +397,9 @@ fn group_faces(
                     // ★ **Every boundary travels, in the engine's own vocabulary.** This used to
                     // keep `poly_rings()` only, which silently dropped a face's circular and
                     // banded bounds — and a ray that counts an incomplete component answers
-                    // confidently and wrongly. That drop is what the `CurvedComponentDepth` guard
-                    // stood in for; carrying the bounds is the first half of what retired it.
+                    // confidently and wrongly. That drop is what the old `curved_component_depth`
+                    // refusal stood in for; carrying the bounds is the first half of what retired
+                    // it, name and all.
                     let bound = |b: &Bound| -> Result<combinatorics::BoundEdges, BoolError> {
                         Ok(match b {
                             // `plane()` is the plane-only projection whose panic is the
@@ -442,9 +443,9 @@ fn group_faces(
     // ★★★ **Coordinates only when there is no vertex to name.** A named probe is exact without
     // coordinates at all, so it keeps working where no rational one exists (a rotated class), and
     // it is the answer for every component that has a polygon anywhere on it. What has none is the
-    // shape `CurvedComponentDepth` used to refuse outright: a lone cylinder, whose boundary is two
-    // disks and a band and whose vertex count is therefore **zero**. `coord_probes` names a point
-    // on that boundary instead of a vertex of it.
+    // shape the retired `curved_component_depth` refused outright: a lone cylinder, whose boundary
+    // is two disks and a band and whose vertex count is therefore **zero**. `coord_probes` names a
+    // point on that boundary instead of a vertex of it.
     let probes_of = |c: usize| -> Vec<combinatorics::Probe> {
         let named: Vec<combinatorics::Probe> = combinatorics::three_plane_probes(
             by_comp_lf[c]

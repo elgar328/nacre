@@ -1813,7 +1813,8 @@ mod tests {
     ///
     /// ★★★ **This is the population the coordinate probe exists for, and the only one that makes
     /// it say `true`.** The void's boundary is two disks and a band, so it carries no vertex at
-    /// all and `nodes_of` came back empty — which is what `CurvedComponentDepth` used to refuse.
+    /// all and `nodes_of` came back empty — which is what `curved_component_depth`, now retired,
+    /// used to refuse.
     /// Two *disjoint* bodies exercise the same road, but their answer is "outside" either way, so
     /// a road that always said `false` would pass them; here it would make the void a **second
     /// solid** and the box's volume whole.
@@ -1880,7 +1881,8 @@ mod tests {
         // ★★ **The fuse this test's name promises — and the case that used to abort the kernel.**
         // Two disjoint bodies means `n = 2`, so each is classified by a ray probe. That probe
         // first panicked (it asked a band face for its plane class), then refused by name
-        // (`CurvedComponentDepth`), and now answers: the ray counts a cylinder's crossings, and
+        // (`curved_component_depth`, since retired), and now answers: the ray counts a
+        // cylinder's crossings, and
         // the bare cylinder — whose boundary carries **no vertex at all** — is probed from a cap
         // disk's centre instead of from a corner.
         //
