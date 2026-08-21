@@ -291,7 +291,7 @@ fn sample_edge(
             // circle — silently.** `design.md` fixes an arc as a `Curve::Circle` edge whose two
             // vertices differ (a closed edge being the full circle), so the two are told apart by
             // `v0 == v1` and nothing here asks. There is no producer yet (the arrangement refuses
-            // a crossed circle, `RejectReason::CircleMeetsSegment`), which is why this is written
+            // an arc-bounded loop, `RejectReason::ArcBoundNotYet`), which is why this is written
             // down rather than fixed: when the arc split lands, this is the first place downstream
             // that answers wrongly instead of declining. The test note at the bottom of this file
             // already knew — the walking code did not say so.

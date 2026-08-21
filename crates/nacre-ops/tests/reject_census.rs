@@ -472,30 +472,31 @@ const CORPUS: [Fixture; 14] = [
         surfaced: &[("wall_meets_lateral", None)],
     },
     Fixture {
-        name: "circle-meets-segment",
+        name: "arc-bound-not-yet",
         // A boss overhanging the plate's edge: its rim crosses the top face's boundary segment.
         // The wall below it clears, the footprint's axis along the cylinder having let it past.
-        expect: Some(RejectReason::CircleMeetsSegment),
+        // The circle is **split** there now; what stops is the assembly of an arc-bounded loop.
+        expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment,
         raised: &[(
-            "circle_meets_segment",
+            "arc_bound_not_yet",
             None,
             "crates/nacre-ops/src/arrangement.rs",
         )],
-        surfaced: &[("circle_meets_segment", None)],
+        surfaced: &[("arc_bound_not_yet", None)],
     },
     Fixture {
-        name: "circle-meets-segment-turned",
+        name: "arc-bound-not-yet-turned",
         // The same reason from the population where the branch name's canonicalization actually
         // runs — the first non-`+Z` cylinder in the corpus.
-        expect: Some(RejectReason::CircleMeetsSegment),
+        expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment_turned,
         raised: &[(
-            "circle_meets_segment",
+            "arc_bound_not_yet",
             None,
             "crates/nacre-ops/src/arrangement.rs",
         )],
-        surfaced: &[("circle_meets_segment", None)],
+        surfaced: &[("arc_bound_not_yet", None)],
     },
     Fixture {
         name: "cylinder-oblique",

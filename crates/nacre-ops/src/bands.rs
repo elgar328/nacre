@@ -815,7 +815,9 @@ mod tests {
     /// its base sits in — "the wall meets the lateral surface" was simply false. Reading the span
     /// as the **open** interval the uniform-slab theorem asks for lets the wall through, and the
     /// real obstruction then names itself where it lives: the boss's rim circle crosses the plate
-    /// top's boundary segment, which is [`RejectReason::CircleMeetsSegment`] (M6-2b's arcs).
+    /// top's boundary segment. ★ Since 2026-08-21 that crossing is **split** — the circle becomes
+    /// arcs and the witness below is the split point — and what still stops is assembling an
+    /// arc-bounded loop ([`RejectReason::ArcBoundNotYet`]).
     ///
     /// ★ **Measured, not reasoned:** with the span read as closed instead, this comes back to
     /// `WallMeetsLateral` — that is the whole difference the open reading makes here.
@@ -840,7 +842,7 @@ mod tests {
             matches!(
                 err,
                 BoolError::Rejected {
-                    reason: RejectReason::CircleMeetsSegment,
+                    reason: RejectReason::ArcBoundNotYet,
                     ..
                 }
             ),
@@ -1016,17 +1018,20 @@ mod tests {
         );
         m.rebuild_adjacency();
         let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("corner on rim");
-        let BoolError::Rejected {
-            reason: RejectReason::CircleMeetsSegment,
-            at: Some(crate::RejectWhere::Point(p)),
-        } = &err
-        else {
-            panic!("the touch at the corner is a point, not the whole edge: {err:?}");
-        };
-        let c = p.as_array();
+        // ★★ **One point, two names** — and the split says so by name. `(8,13,5)` is the boss's
+        // corner, so the arrangement already holds it as a three-plane vertex; the rim crossing
+        // names the *same* point as a `NodeId::Branch`. The DCEL keys vertices by name, so shipping
+        // both would put two vertices where there is one — folding them is its own step, and until
+        // then `CoincidentNodes` ("two names for one point") is the true sentence.
         assert!(
-            (0..3).all(|i| (c[i] - [8.0, 13.0, 5.0][i]).abs() < 1e-9),
-            "the corner on the rim: {c:?}"
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::CoincidentNodes,
+                    ..
+                }
+            ),
+            "{err:?}"
         );
     }
 
@@ -1122,7 +1127,7 @@ mod tests {
         m.rebuild_adjacency();
         let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect_err("turned boss");
         let BoolError::Rejected {
-            reason: RejectReason::CircleMeetsSegment,
+            reason: RejectReason::ArcBoundNotYet,
             at: Some(crate::RejectWhere::Point(p)),
         } = &err
         else {

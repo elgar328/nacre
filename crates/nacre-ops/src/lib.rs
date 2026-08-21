@@ -642,15 +642,6 @@ pub enum RejectReason {
     /// infinity, happened to pass through a hole. Stating what was verified keeps the sentence
     /// true however far the tests are later widened.
     WallMeetsLateral,
-    /// A cylinder's circle on a perpendicular class **crosses a segment** of the counterpart's
-    /// trace there. Splitting that circle into arcs — and giving the arcs endpoints the segment
-    /// machinery can carry — is M6-2b's work; until then the arrangement refuses rather than
-    /// treating the circle as the closed cell it no longer is.
-    ///
-    /// ★ This is the promise the population gate's wall rule used to keep as a side effect. It is
-    /// checked now where the circle and the segments actually are, so the gate is free to become
-    /// precise about its own question without silently removing this one.
-    CircleMeetsSegment,
     /// A ring holds a vertex the arrangement names as a `plane ∩ plane ∩ cylinder` **branch
     /// point**, on a path that speaks only three-plane names — the ring walks, the wall-and-handle
     /// derivation, the seam table. The point is exactly named; what is missing is that these paths
@@ -780,6 +771,17 @@ pub enum RejectReason {
     /// surface contact. This one means the arithmetic: the wall a wide model meets after the gate
     /// has already said yes. Sharing one name would put a width limit inside a geometric verdict.
     WitnessNotRational,
+    /// **A circle was cut into arcs, and nothing downstream can build one yet.**
+    ///
+    /// The arrangement now *splits* a circle a segment crosses — `split_circles` orders the
+    /// crossings about the seam and cuts the segments with them — but assembling an arc-bounded
+    /// loop needs the DCEL walk, the turn atom and the rim table to speak the curved carrier, and
+    /// they do not. So the refusal stands at the first place that sentence is true rather than at
+    /// the arrangement, which no longer has anything to refuse.
+    ///
+    /// ★ A stopper of the shape `CylinderBooleanNotYet` had in M6-2a: it names what is missing, it
+    /// is measured by the fixtures it holds, and the commit that finishes the road removes it.
+    ArcBoundNotYet,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
     /// A hole ring never touches the outer ring it sits in, and `point_in_ring` checks that
@@ -924,7 +926,6 @@ impl RejectReason {
             Self::ZeroLengthEdge => "zero_length_edge",
             Self::FourPlane => "fourplane",
             Self::WallMeetsLateral => "wall_meets_lateral",
-            Self::CircleMeetsSegment => "circle_meets_segment",
             Self::BranchVertexUnnamed => "branch_vertex_unnamed",
             Self::ObliqueCylinderCut => "oblique_cylinder_cut",
             Self::CylinderPairContact => "cylinder_pair_contact",
@@ -936,6 +937,7 @@ impl RejectReason {
             Self::DegenerateWitness => "degenerate_witness",
             Self::NoClearRay => "no_clear_ray",
             Self::WitnessNotRational => "witness_not_rational",
+            Self::ArcBoundNotYet => "arc_bound_not_yet",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
             Self::HoleRoots => "hole_roots",
@@ -963,7 +965,6 @@ impl RejectReason {
             | Self::ThreePlanes
             | Self::FourPlane
             | Self::WallMeetsLateral
-            | Self::CircleMeetsSegment
             | Self::BranchVertexUnnamed
             | Self::ObliqueCylinderCut
             | Self::CylinderPairContact
@@ -989,6 +990,7 @@ impl RejectReason {
             | Self::EdgeOccupancyConflict
             | Self::NoClearRay
             | Self::WitnessNotRational
+            | Self::ArcBoundNotYet
             | Self::PointOnRing
             | Self::HoleDepth
             | Self::CoplanarMerge => RejectClass::NotSupported,

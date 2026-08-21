@@ -211,7 +211,7 @@ pub(crate) struct Seg {
 /// keep this as a side effect — every ∥ wall face stands clear of the lateral, and a segment on
 /// this class is that face's own trace, so it inherited the clearance — which made a promise about
 /// *circles* rest on a rule about *walls*. [`circles_meet_no_segment`] asks it of the segments
-/// themselves now, so a crossed circle is named (`CircleMeetsSegment`) rather than treated as the
+/// themselves now, so a crossed circle is **split into arcs** rather than treated as the
 /// closed cell it is not, and the wall rule is free to become precise about its own question.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CircleTrace {
@@ -228,6 +228,31 @@ pub(crate) struct CircleTrace {
 pub(crate) struct MergedCircle {
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
+    pub merged: Vec<(SolidSide, SegKind)>,
+}
+
+/// **One arc of a circle a segment cut** — the DCEL edge a crossed circle becomes.
+///
+/// ★★ **A circle leaves the parallel road here.** An uncut circle is a one-edge closed cell that
+/// the orbit walk cannot express (orbits need ≥ 2 half-edges and a vertex to turn at), which is why
+/// [`extract_cells`] appends it *after* the walk on pseudo-half-edges. Cut, it has endpoints and is
+/// an ordinary edge — so the machinery it used to stand beside is the machinery it now uses.
+///
+/// ★ `end` is in the arc's **own travel order**, `end[0]` → `end[1]` counter-clockwise about the
+/// circle's normal. That is not a convention this crate invents: STEP's `EDGE_CURVE` runs from
+/// `edge_start` to `edge_end` along increasing parameter, and `nacre-step` already writes a
+/// circular edge that way — so the exporter needs nothing, and the STEP round-trip measures it.
+// The reader is the next brick: the DCEL walk, which needs the carrier and the endpoints, and
+// `label_cells`, which needs the contributions. Built here so the split can be measured on its own
+// output while the stopper (`ArcBoundNotYet`) holds the population back.
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub(crate) struct MergedArc {
+    pub cyl: usize,
+    pub def: nacre_topo::CylinderDef,
+    pub end: [NodeId; 2],
+    /// Inherited whole from the circle: an arc is a piece of the same trace, so it carries the same
+    /// `(solid, kind)` contributions and `edge_mask` reads it unchanged.
     pub merged: Vec<(SolidSide, SegKind)>,
 }
 
@@ -1185,8 +1210,9 @@ pub(crate) struct MergedSeg {
     /// Read by the next brick (crossings + split); kept here so the merged edge carries its
     /// geometry, not just its contributions.
     pub end: [NodeId; 2],
-    /// The endpoints as handles on this edge's line — see [`Seg::end_h`].
-    pub end_h: [usize; 2],
+    /// What pins each endpoint on this edge's line — see [`Seg::end_h`] for the plane case and
+    /// [`combinatorics::EndPin`] for why the arc split needed a second arm.
+    pub end_h: [combinatorics::EndPin; 2],
     /// Every `(solid, kind)` that produced this one geometric edge. Length 1 when nothing was
     /// coincident.
     pub merged: Vec<(SolidSide, SegKind)>,
@@ -1221,7 +1247,7 @@ fn merge_coincident(segs: &[Seg], wc: usize, aliases: &Aliases) -> Vec<MergedSeg
                     // pinned an endpoint there still pins it here.
                     wall: aliases.canon_wall(wc, s.wall),
                     end: [aliases.canon_point(s.end[0]), aliases.canon_point(s.end[1])],
-                    end_h: s.end_h,
+                    end_h: s.end_h.map(combinatorics::EndPin::Class),
                     merged: Vec::new(),
                 }
             })
@@ -1281,12 +1307,28 @@ fn split_at_crossings(
     // **not** mention `i` — for a segment's endpoints it is a property of the segment alone. The
     // containment test below sweeps `i` over every wall, so leaving it inside asked the same
     // question `|walls|` times over. (Measured: 1.5M `dir_sign` calls where 113k are distinct.)
-    let end_ds: Vec<[i8; 2]> = segs
+    // ★ **This pass is plane-only, and says so once.** It runs *before* the arc split, so every
+    // endpoint is still pinned by a third plane; a cylinder-pinned one here would be a wiring
+    // failure, and `RingNaming` is already the sentence for it ("a node has no third plane to be
+    // named by"). Reading the classes up front keeps the body below in the one vocabulary it can
+    // answer in, rather than threading an `Option` it has no arm for.
+    let end_c: Vec<[usize; 2]> = segs
         .iter()
         .map(|s| {
+            let [a, b] = s.end_h;
+            match (a.class(), b.class()) {
+                (Some(a), Some(b)) => Ok([a, b]),
+                _ => Err(reject(RejectReason::RingNaming)),
+            }
+        })
+        .collect::<Result<_, BoolError>>()?;
+    let end_ds: Vec<[i8; 2]> = segs
+        .iter()
+        .zip(&end_c)
+        .map(|(s, c)| {
             [
-                combinatorics::dir_sign(jd, wc, s.wall, s.end_h[0]),
-                combinatorics::dir_sign(jd, wc, s.wall, s.end_h[1]),
+                combinatorics::dir_sign(jd, wc, s.wall, c[0]),
+                combinatorics::dir_sign(jd, wc, s.wall, c[1]),
             ]
         })
         .collect();
@@ -1302,8 +1344,7 @@ fn split_at_crossings(
     // there shares its Cramer parts. Taking `r` instead would cap the sharing at one segment's two
     // endpoints, which is what a `_pair` predicate did.
     let closed_contains = |si: usize, at: &ImplicitPoint<'_, WorkingPlane>, r: usize| -> bool {
-        let s = &segs[si];
-        let (r0, r1) = (s.end_h[0], s.end_h[1]);
+        let [r0, r1] = end_c[si];
         // ★ **Asked before the predicates, not after.** Integer identity is a *sufficient* condition
         // for containment, so answering it first skips both orientations. It is not the whole test:
         // where four planes meet, one point wears two handles, and `r` may be the group's
@@ -1381,7 +1422,7 @@ fn split_at_crossings(
             #[cfg(test)]
             phase::scale::add(&phase::scale::COLLECT_TRIPS, segs.len());
             for &i in &wall.segs {
-                pts.extend(segs[i].end_h);
+                pts.extend(end_c[i]);
             }
             // ★ **Wall-major, because the question is about walls.** What lands in `pts` is a *wall*
             // — the class naming the crossing — so the loop that used to sweep every segment asked
@@ -1502,7 +1543,10 @@ fn split_at_crossings(
                 out.push(MergedSeg {
                     wall: w,
                     end: [sorted(p, aliases), sorted(q, aliases)],
-                    end_h: [p, q],
+                    end_h: [
+                        combinatorics::EndPin::Class(p),
+                        combinatorics::EndPin::Class(q),
+                    ],
                     merged,
                 });
             }
@@ -1720,12 +1764,12 @@ fn component_count(segs: &[MergedSeg]) -> usize {
 /// the roots recorded here are ordered by **this function's call order** (`wc`, then the
 /// segment's wall). Minting a `Branch` from one means establishing that correspondence, not
 /// assuming it.
-fn circles_meet_no_segment(
+fn arc_split_witness(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     segs: &[MergedSeg],
     circles: &[MergedCircle],
-) -> Result<(), BoolError> {
+) -> Option<RejectWhere> {
     // ★ **Collected, not returned at the first hit.** The verdict does not care which pair came
     // first, but the *witness* would: reporting whichever the loops reached first makes the
     // location depend on iteration order. Gathering them all lets the witness be chosen by name
@@ -1736,10 +1780,10 @@ fn circles_meet_no_segment(
         let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
         for sg in segs {
             let ends = sg.end.map(|t| combinatorics::node_coords_rat(jd, t));
+            // A node whose coordinates do not fit the road's vessel has no witness to give; the
+            // split above already declined for the same reason, so this only shapes the message.
             let [Some(p0), Some(p1)] = ends else {
-                // A node whose coordinates do not fit the road's vessel: the question is real and
-                // this cannot answer it, which is a decline rather than a pass.
-                return Err(reject(RejectReason::WitnessNotRational));
+                return None;
             };
             // ★ A collapsed edge is a *point*, and «is this point inside the disk» is still a
             // real question — skipping it would let the one case it can express slip through.
@@ -1818,12 +1862,263 @@ fn circles_meet_no_segment(
         )
     };
     if !breaks.iter().any(separates) {
-        return Ok(());
+        return None;
     }
-    let Some(w) = witness(breaks) else {
-        return Ok(());
+    witness(breaks)
+}
+
+/// **Cut every circle a segment crosses into arcs, and the segments with it.**
+///
+/// ★★★ This is the arc split. What it does *not* do is find the crossings — [`circle_crossings`]
+/// already names them, and has since the guard that used to refuse this population was written.
+/// The work here is ordering: around the circle (θ, [`nacre_scalar::quad::circular_order_about_seam`])
+/// to make arcs, and along each segment (the line parameter, [`cmp_along`]) to make sub-segments.
+///
+/// ★ A circle nothing crosses is returned **whole**, on the road it has always taken. The parallel
+/// road shrinks to the population it is actually about.
+#[allow(clippy::type_complexity)]
+fn split_circles(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    segs: &[MergedSeg],
+    circles: &[MergedCircle],
+) -> Result<Option<(Vec<MergedSeg>, Vec<MergedCircle>, Vec<MergedArc>)>, BoolError> {
+    use nacre_scalar::quad::QuadVal;
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    // Which nodes land on each circle, and which on each segment. Collected together because one
+    // crossing is a point of both — splitting only one of them would leave the other's edge running
+    // through a vertex it does not have.
+    let mut on_circle: Vec<Vec<NodeId>> = vec![Vec::new(); circles.len()];
+    let mut on_seg: Vec<Vec<NodeId>> = vec![Vec::new(); segs.len()];
+    for (ci, circ) in circles.iter().enumerate() {
+        let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
+        for (si, sg) in segs.iter().enumerate() {
+            let ends = sg.end.map(|t| combinatorics::node_coords_rat(jd, t));
+            let [Some(p0), Some(p1)] = ends else {
+                return Err(undecided());
+            };
+            if p0 == p1 || !nacre_scalar::segment_meets_cylinder(&p0, &p1, &o, &m, r) {
+                continue;
+            }
+            let Some(xs) = circle_crossings(jd, wc, circ, sg, [&p0, &p1]) else {
+                return Err(undecided());
+            };
+            for n in xs {
+                // A tangency touches without separating — `separates` above already let that
+                // shape through, and cutting there would make a zero-length arc.
+                if matches!(
+                    n,
+                    NodeId::Branch {
+                        root: nacre_topo::QuadRoot::Double,
+                        ..
+                    }
+                ) {
+                    continue;
+                }
+                on_circle[ci].push(n);
+                on_seg[si].push(n);
+            }
+        }
+    }
+
+    // The cylinder each crossing names, from the very list that made it — a segment's crossings
+    // all come from circles on this class, so nothing has to be looked up in the class table.
+    let def_of: HashMap<usize, nacre_topo::CylinderDef> =
+        circles.iter().map(|c| (c.cyl, c.def.clone())).collect();
+    // ★ Nothing crossed: the caller keeps its own slices and no edge is copied. The common case
+    // pays for the question and not for an answer it does not need.
+    if on_circle.iter().all(|v| v.is_empty()) {
+        return Ok(None);
+    }
+    let mut out_segs = Vec::with_capacity(segs.len());
+    let mut out_circles = Vec::new();
+    let mut arcs = Vec::new();
+
+    // ---- circles → arcs, in θ order about the seam ----
+    for (ci, circ) in circles.iter().cloned().enumerate() {
+        let mut nodes = std::mem::take(&mut on_circle[ci]);
+        if nodes.is_empty() {
+            out_circles.push(circ);
+            continue;
+        }
+        nodes.sort_unstable();
+        nodes.dedup();
+        let meets: Vec<(nacre_scalar::quad::MeetLine, QuadVal)> = nodes
+            .iter()
+            .map(|&n| combinatorics::branch_meet(jd, circ.cyl, &circ.def, n).ok_or_else(undecided))
+            .collect::<Result<_, BoolError>>()?;
+        // ★★★ **A crossing on the seam is ordered, not refused — it is the cut point.**
+        // `circular_order_about_seam` ranks θ ∈ (0, 2π) and answers `SeamIncident` **by name** for
+        // a point at θ = 0, because that point is outside the chart's *total* order. But what arcs
+        // need is the **cyclic** order, and a cyclic order tolerates one cut anywhere: the seam
+        // point is simply first. (Measured: the very first fixture puts a crossing there — a boss
+        // on a plate's edge cuts its own rim exactly on the seam generator, so this is the common
+        // case, not an exotic one.)
+        //
+        // ★ At most one node can be seam-incident: two would be the same point, and a crossing
+        // that coincides with another is refused below as the two-names-for-one-point it is.
+        let mut seam: Vec<usize> = Vec::new();
+        let mut chart: Vec<usize> = Vec::new();
+        for (i, meet) in meets.iter().enumerate() {
+            let on_seam = match nacre_scalar::quad::circular_order_about_seam(
+                &circ.def.origin(),
+                &circ.def.dir(),
+                &circ.def.ref_dir(),
+                (&meet.0, &meet.1),
+                (&meet.0, &meet.1),
+            ) {
+                Some(nacre_scalar::quad::SeamOrder::SeamIncident { first, .. }) => first,
+                Some(nacre_scalar::quad::SeamOrder::Ordered(_)) => false,
+                None => return Err(undecided()),
+            };
+            if on_seam { seam.push(i) } else { chart.push(i) }
+        }
+        if seam.len() > 1 {
+            return Err(reject(RejectReason::CoincidentNodes));
+        }
+        let mut bad_theta = false;
+        chart.sort_by(|&i, &j| {
+            match nacre_scalar::quad::circular_order_about_seam(
+                &circ.def.origin(),
+                &circ.def.dir(),
+                &circ.def.ref_dir(),
+                (&meets[i].0, &meets[i].1),
+                (&meets[j].0, &meets[j].1),
+            ) {
+                Some(nacre_scalar::quad::SeamOrder::Ordered(o)) => o,
+                _ => {
+                    bad_theta = true;
+                    core::cmp::Ordering::Equal
+                }
+            }
+        });
+        if bad_theta {
+            return Err(undecided());
+        }
+        let order: Vec<usize> = seam.into_iter().chain(chart).collect();
+        for k in 0..order.len() {
+            arcs.push(MergedArc {
+                cyl: circ.cyl,
+                def: circ.def.clone(),
+                end: [nodes[order[k]], nodes[order[(k + 1) % order.len()]]],
+                merged: circ.merged.clone(),
+            });
+        }
+    }
+
+    // ---- segments → sub-segments, in line order ----
+    for (si, sg) in segs.iter().cloned().enumerate() {
+        let mut nodes = std::mem::take(&mut on_seg[si]);
+        if nodes.is_empty() {
+            out_segs.push(sg);
+            continue;
+        }
+        nodes.sort_unstable();
+        nodes.dedup();
+        // Every crossing on this segment shares the canonical line of `{wc, wall}`, whatever
+        // cylinder made it — that is what lets the ends and the crossings sort into one sequence.
+        let mut line = None;
+        let mut keyed: Vec<(QuadVal, NodeId, combinatorics::EndPin)> = Vec::new();
+        for &n in &nodes {
+            let NodeId::Branch { cyl, .. } = n else {
+                return Err(reject(RejectReason::RingNaming));
+            };
+            let def = def_of.get(&cyl).ok_or_else(undecided)?;
+            let (l, s) = combinatorics::branch_meet(jd, cyl, def, n).ok_or_else(undecided)?;
+            keyed.push((s, n, combinatorics::EndPin::Cylinder));
+            line = Some(l);
+        }
+        let line = line.ok_or_else(undecided)?;
+        for k in 0..2 {
+            let p = combinatorics::node_coords_rat(jd, sg.end[k]).ok_or_else(undecided)?;
+            keyed.push((
+                along(&line, &p).ok_or_else(undecided)?,
+                sg.end[k],
+                sg.end_h[k],
+            ));
+        }
+        let mut order: Vec<usize> = (0..keyed.len()).collect();
+        let mut bad = false;
+        order.sort_by(|&i, &j| match cmp_along(&keyed[i].0, &keyed[j].0) {
+            Some(o) => o,
+            None => {
+                bad = true;
+                core::cmp::Ordering::Equal
+            }
+        });
+        if bad {
+            return Err(undecided());
+        }
+        // ★ A crossing that lands **on** an endpoint is one point wearing two names — a three-plane
+        // one and a branch one — and the DCEL keys vertices by name, so shipping both would make
+        // two vertices where there is one. Refusing is honest; folding them is its own step.
+        for w in order.windows(2) {
+            if cmp_along(&keyed[w[0]].0, &keyed[w[1]].0) == Some(core::cmp::Ordering::Equal) {
+                return Err(reject(RejectReason::CoincidentNodes));
+            }
+        }
+        for w in order.windows(2) {
+            let (a, b) = (&keyed[w[0]], &keyed[w[1]]);
+            out_segs.push(MergedSeg {
+                wall: sg.wall,
+                end: [a.1, b.1],
+                end_h: [a.2, b.2],
+                merged: sg.merged.clone(),
+            });
+        }
+    }
+    Ok(Some((out_segs, out_circles, arcs)))
+}
+
+/// **Where a point sits along a line**, as the one parameter both kinds of point can state: a
+/// three-plane end is rational, a branch end is `a + b√c`.
+///
+/// ★ The line is the **canonical** one — [`combinatorics::branch_meet`] re-solves from the name, so
+/// every crossing on one `(class, wall)` pair shares a `base`/`dir` whatever cylinder made it. That
+/// is what lets the two kinds be sorted into one sequence at all.
+fn along(line: &nacre_scalar::quad::MeetLine, p: &[Rat; 3]) -> Option<nacre_scalar::quad::QuadVal> {
+    use nacre_scalar::quad::QuadVal;
+    let (base, dir) = (line.base(), line.dir());
+    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
     };
-    Err(crate::reject_at(RejectReason::CircleMeetsSegment, w))
+    let mut rel = [Rat::from_int(0); 3];
+    for k in 0..3 {
+        rel[k] = p[k].checked_sub(base[k])?;
+    }
+    let dd = dot(&dir, &dir)?;
+    let t = dot(&rel, &dir)?.checked_mul(Rat::new(dd.denom(), dd.numer())?)?;
+    Some(QuadVal::from_rat(t))
+}
+
+/// The order of two line parameters. Same radicand is a subtraction and a sign; different ones
+/// (two cylinders cutting one segment) land on `biquad_sign`, which answers there without
+/// declining. `None` is checked-`Rat` overflow — the road's own name, not a shape answer.
+fn cmp_along(
+    a: &nacre_scalar::quad::QuadVal,
+    b: &nacre_scalar::quad::QuadVal,
+) -> Option<core::cmp::Ordering> {
+    use core::cmp::Ordering;
+    use nacre_scalar::Orient;
+    let orient = if a.c() == b.c() {
+        a.checked_sub(b)?.sign()
+    } else {
+        nacre_scalar::quad::biquad_sign(
+            a.a().checked_sub(b.a())?,
+            a.b(),
+            Rat::from_int(0).checked_sub(b.b())?,
+            Rat::from_int(0),
+            a.c(),
+            b.c(),
+        )?
+    };
+    Some(match orient {
+        Orient::Negative => Ordering::Less,
+        Orient::Positive => Ordering::Greater,
+        Orient::Zero => Ordering::Equal,
+    })
 }
 
 /// One place a circle's closed-cell premise is broken, carrying where.
@@ -1919,7 +2214,10 @@ fn circle_crossings(
     // stored coefficients are not this function's to guess.
     let mut fences = Vec::with_capacity(2);
     for k in 0..2 {
-        let e = combinatorics::class_coeffs_rat(jd, sg.end_h[k])?;
+        // ★ The fence is a **plane** through the segment's end. An end the arc split pinned with a
+        // cylinder has none, and this locator answers `None` — the caller's own policy for a
+        // witness it cannot form (it drops the witness, never the verdict).
+        let e = combinatorics::class_coeffs_rat(jd, sg.end_h[k].class()?)?;
         let far = ends[1 - k];
         let mut at_far = e[3];
         for i in 0..3 {
@@ -1967,7 +2265,18 @@ fn extract_cells(
     segs: &[MergedSeg],
     circles: &[MergedCircle],
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
-    circles_meet_no_segment(jd, wc, segs, circles)?;
+    // ★★★ **The split runs here, and stops here** (2026-08-21). A circle a segment crosses is cut
+    // into arcs by [`split_circles`] — that machinery is live and its own refusals (a crossing on
+    // the seam, a crossing that lands on an endpoint) are real. What is not built is the *assembly*
+    // of an arc-bounded loop, so the stopper stands at the first place that is true, the way C4a's
+    // `CylinderBooleanNotYet` stood until C4b-3 removed it. The population is unchanged; the name
+    // and the stage it is refused at are what moved.
+    if split_circles(jd, wc, segs, circles)?.is_some() {
+        return Err(match arc_split_witness(jd, wc, segs, circles) {
+            Some(w) => crate::reject_at(RejectReason::ArcBoundNotYet, w),
+            None => reject(RejectReason::ArcBoundNotYet),
+        });
+    }
     let n = segs.len();
     let he_count = 2 * n;
     let origin = |he: usize| segs[he / 2].end[he % 2]; // he%2==0: end[0]; ==1: end[1]

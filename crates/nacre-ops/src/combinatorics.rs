@@ -201,6 +201,38 @@ pub(crate) fn three_plane_probes(nodes: impl IntoIterator<Item = NodeId>) -> Vec
     nodes.into_iter().filter_map(three_plane_name).collect()
 }
 
+/// **What pins an endpoint on its edge's line** — the third carrier, in the vocabulary that names
+/// it.
+///
+/// ★ A traced segment's ends are always plane triples, so this had been a bare `usize` (the third
+/// plane class) everywhere. The arc split puts a **cylinder** crossing in the middle of a segment,
+/// and that point has no third *plane* — what pins it is the quadric, and its name is the
+/// [`NodeId::Branch`] the edge already carries in its endpoint list. So the pin says **which kind**
+/// and the name is read from beside it, rather than a second copy living here.
+///
+/// ★★ The two arms are two *orders*, not two spellings of one: [`order_along`] reads a class
+/// through `orient3d` × `dir_sign` (integer predicates), and a branch point through the
+/// `a + b√c` tower. Naming the kind is what makes the second reachable at all — a `usize` had
+/// nowhere to say "not a plane".
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum EndPin {
+    /// The third plane class: the point is `P ∩ wall ∩ this`.
+    Class(usize),
+    /// A cylinder crossing: the point is the [`NodeId::Branch`] this endpoint is named by.
+    Cylinder,
+}
+
+impl EndPin {
+    /// The plane class, for the sites that are still plane-only — and `None` is the honest answer
+    /// where a cylinder pinned the point, never a stand-in index.
+    pub(crate) fn class(self) -> Option<usize> {
+        match self {
+            EndPin::Class(c) => Some(c),
+            EndPin::Cylinder => None,
+        }
+    }
+}
+
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
 /// recovered from the two endpoint names.
 ///
@@ -217,10 +249,10 @@ pub(crate) struct RingEdge {
     pub node: NodeId,
     /// The plane whose meet with `P` carries this edge.
     pub wall: usize,
-    /// The endpoints as handles on `P ∩ wall` — the third plane pinning each there. Not a name:
-    /// see [`RingEdge`]'s note.
-    pub from_h: usize,
-    pub to_h: usize,
+    /// What pins each endpoint on `P ∩ wall` — a third plane, or the cylinder an arc split put
+    /// there ([`EndPin`]). Not a name: see [`RingEdge`]'s note.
+    pub from_h: EndPin,
+    pub to_h: EndPin,
 }
 
 /// Recover a ring's edges from its vertex names — the classic derivation, now in **one** place.
@@ -249,8 +281,8 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
             Ok(RingEdge {
                 node: NodeId::three_planes(a),
                 wall,
-                from_h,
-                to_h,
+                from_h: EndPin::Class(from_h),
+                to_h: EndPin::Class(to_h),
             })
         })
         .collect()
@@ -307,8 +339,8 @@ pub(crate) fn ring_edges_with_walls(
             Ok(RingEdge {
                 node: nodes[i],
                 wall,
-                from_h,
-                to_h,
+                from_h: EndPin::Class(from_h),
+                to_h: EndPin::Class(to_h),
             })
         })
         .collect()
@@ -368,10 +400,17 @@ pub(crate) fn edge_dir(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
     wall: usize,
-    from_h: usize,
-    to_h: usize,
+    from_h: EndPin,
+    to_h: EndPin,
 ) -> Result<EdgeDir, BoolError> {
-    let sense = match order_along(jd, p, wall, from_h, to_h) {
+    // ★ Plane-pinned ends order through the integer predicates. A cylinder-pinned one is the arc
+    // split's endpoint and orders through the `a + b√c` tower instead — the arm is owed, and until
+    // it lands saying so by name is the honest answer (`RingNaming`: "a node has no third plane to
+    // be named by").
+    let (Some(i), Some(j)) = (from_h.class(), to_h.class()) else {
+        return Err(reject(RejectReason::RingNaming));
+    };
+    let sense = match order_along(jd, p, wall, i, j) {
         -1 => 1,
         1 => -1,
         _ => return Err(reject(RejectReason::CoincidentNodes)), // two nodes coincide
@@ -1274,7 +1313,10 @@ fn point_on_ring(
         return Err(reject(RejectReason::DegenerateRing));
     }
     for e in ring {
-        let (r, si, sj) = (e.wall, e.from_h, e.to_h);
+        let (Some(si), Some(sj)) = (e.from_h.class(), e.to_h.class()) else {
+            return Err(reject(RejectReason::RingNaming));
+        };
+        let r = e.wall;
         if side_of(jd, v, r) != 0 {
             continue; // `v` is not even on the edge's line
         }
@@ -2216,6 +2258,23 @@ pub(crate) fn branch_point(
     def: &nacre_topo::CylinderDef,
     n: NodeId,
 ) -> Option<[f64; 3]> {
+    let (line, s) = branch_meet(jd, cyl, def, n)?;
+    Some(nacre_scalar::quad::branch_point_f64(&line, &s))
+}
+
+/// **The exact half of [`branch_point`]** — the `(line, s)` the name designates, before it is
+/// realized.
+///
+/// ★ «진실은 정의, 좌표는 캐시»: the pair *is* the point and the `[f64; 3]` beside it is its
+/// realization, so the two are one function split in the middle rather than two solves. Every
+/// exact question about a branch point — its order along the line, its side of a plane, its θ about
+/// the seam — takes this and never the realization.
+pub(crate) fn branch_meet(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    n: NodeId,
+) -> Option<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)> {
     use nacre_scalar::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
     let (planes, root) = match n {
@@ -2246,7 +2305,7 @@ pub(crate) fn branch_point(
         (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => (line, QuadVal::from_rat(s)),
         _ => return None,
     };
-    Some(nacre_scalar::quad::branch_point_f64(&line, &s))
+    Some((line, s))
 }
 
 fn dot3_rat(x: &[nacre_scalar::Rat; 3], y: &[nacre_scalar::Rat; 3]) -> Option<nacre_scalar::Rat> {
