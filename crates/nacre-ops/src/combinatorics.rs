@@ -247,6 +247,17 @@ impl EndPin {
 pub(crate) struct RingEdge {
     /// Identity of the vertex this edge leaves.
     pub node: NodeId,
+    /// Identity of the vertex it reaches.
+    ///
+    /// ★★ **The pins were already two and the names only one, and that asymmetry was the bug's
+    /// hiding place.** A direction is a property of `(edge, node)` — for a straight edge the two
+    /// ends give the same answer, so nothing ever had to say which end it meant, and a direction
+    /// taken at the *wrong* node was unspellable-looking but perfectly legal. With both names here,
+    /// [`dir_at`] can check that the node it is asked about is actually on this edge.
+    ///
+    /// ★ Measured before it was asserted: 153,798 rings in the suite, **0** where an edge's far end
+    /// is not the next edge's start. "A ring is a chain" was a producer's promise until now.
+    pub to: NodeId,
     /// The plane whose meet with `P` carries this edge.
     pub wall: usize,
     /// What pins each endpoint on `P ∩ wall` — a third plane, or the cylinder an arc split put
@@ -280,6 +291,7 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
             };
             Ok(RingEdge {
                 node: NodeId::three_planes(a),
+                to: NodeId::three_planes(b),
                 wall,
                 from_h: EndPin::Class(from_h),
                 to_h: EndPin::Class(to_h),
@@ -338,6 +350,7 @@ pub(crate) fn ring_edges_with_walls(
             };
             Ok(RingEdge {
                 node: nodes[i],
+                to: nodes[j],
                 wall,
                 from_h: EndPin::Class(from_h),
                 to_h: EndPin::Class(to_h),
@@ -418,12 +431,37 @@ pub(crate) fn edge_dir(
     Ok(EdgeDir::new(wall, sense))
 }
 
-/// [`edge_dir`] for a [`RingEdge`], which carries the three arguments already.
-fn ring_edge_dir(
+/// **An edge's direction of travel, read at one of its ends** — and the only way a direction is
+/// made.
+///
+/// ★★★★ **`node` is not decoration.** A straight edge's tangent is the same at both ends, so
+/// "the edge's direction" and "the direction *at* this end" have always been one thing and no
+/// caller had to say which it meant. An arc's two ends differ — and worse, a direction taken at a
+/// node the edge does not even touch is a perfectly legal call that returns a confident, wrong
+/// sign. That is not a hypothetical: it is what the first attempt at the arc walk did, and the
+/// `turn == 0` it produced took a measurement to explain.
+///
+/// So the node comes in and is **checked here, at the one place a direction is born** — not at
+/// `turn`, which would have to become fallible and drag `Result` through two sorts, and not at the
+/// callers, who would each have to remember. `debug_assert` because "a ring is a chain" is a
+/// *producer's* invariant, not an input's: the census runs in both profiles, so the debug one is
+/// the instrument.
+///
+/// ★ **The hoist survives.** `angular_order` builds one direction per outgoing half-edge and sorts
+/// on those values; building them inside the comparison instead would re-run `order_along` per
+/// comparison — the very mistake this file measured and fixed once before (`split_at_crossings`'
+/// `end_ds`: "1.5M `dir_sign` calls where 113k are distinct").
+pub(crate) fn dir_at(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
     e: &RingEdge,
+    node: NodeId,
 ) -> Result<EdgeDir, BoolError> {
+    debug_assert!(
+        node == e.node || node == e.to,
+        "a direction was asked at a node this edge does not touch — the ring is not a chain, \
+         or the caller paired two edges that do not meet"
+    );
     edge_dir(jd, p, e.wall, e.from_h, e.to_h)
 }
 
@@ -456,8 +494,10 @@ pub(crate) fn turn_at(
     i: usize,
 ) -> Result<i8, BoolError> {
     let n = ring.len();
-    let arriving = ring_edge_dir(jd, p, &ring[(i + n - 1) % n])?;
-    let leaving = ring_edge_dir(jd, p, &ring[i])?;
+    // ★ Both read **at this node** — the one they share. For a straight edge that is today's
+    // answer either way; naming it is what makes an arc's two ends tellable apart.
+    let arriving = dir_at(jd, p, &ring[(i + n - 1) % n], ring[i].node)?;
+    let leaving = dir_at(jd, p, &ring[i], ring[i].node)?;
     turn_between(jd, p, arriving, leaving)
 }
 
@@ -2138,15 +2178,30 @@ pub(crate) fn loop_winding(
     // way means the ring doubles back along the line it came in on — an antenna, whose tip has no
     // turn and whose neighbours' turn belongs to a different vertex. Skipping past that would
     // read a turn from somewhere else and call it this vertex's: a wrong winding, silently.
+    //
+    // ★★★ **The comparison is between neighbours, at the node they share** — it used to be between
+    // the candidate and `ring[lo]`, which is the same answer for straight edges (parallel and
+    // same-sense are both transitive along a chain of shared points) and **meaningless** the moment
+    // an edge is curved: a far arc's tangent is not `lo`'s tangent, so comparing them asks about
+    // two different places. An earlier note here worried that neighbour-only would *weaken* "the
+    // whole stretch runs one way"; transitivity is why it does not.
+    //
+    // ★★ **And the value carried out is `ring[back]`'s direction at its own start** — which is
+    // `lo`'s arriving direction **because the stretch is straight**. That equality *is* the
+    // premise; where it fails (a curved stretch), so does this walk, and the arc cell refuses
+    // rather than reading a winding from the wrong place.
     let n = ring.len();
-    let leaving = ring_edge_dir(jd, p, &ring[lo])?;
+    let leaving = dir_at(jd, p, &ring[lo], ring[lo].node)?;
     let mut back = (lo + n - 1) % n;
     // ★ The direction the loop arrives on, carried out of the walk — the edge that ends it is the
     // one the turn is read against, and its direction is already in hand.
     let arriving = loop {
-        let earlier = ring_edge_dir(jd, p, &ring[back])?;
-        match continuation(jd, p, earlier, leaving) {
-            Continuation::Turns => break earlier,
+        let ahead = (back + 1) % n;
+        let shared = ring[ahead].node;
+        let earlier = dir_at(jd, p, &ring[back], shared)?;
+        let later = dir_at(jd, p, &ring[ahead], shared)?;
+        match continuation(jd, p, earlier, later) {
+            Continuation::Turns => break dir_at(jd, p, &ring[back], ring[back].node)?,
             Continuation::DoublesBack => return Err(reject(RejectReason::StraightAngle)),
             Continuation::Straight => {}
         }

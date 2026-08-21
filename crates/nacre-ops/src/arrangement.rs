@@ -2354,12 +2354,20 @@ fn extract_cells(
                 // `edge_dir` makes by inverting the result. The two agreed only by the
                 // antisymmetry of a difference cancelling an inversion; now there is one.
                 // ★ The maker pairs the carrier with the sense, so this site no longer can.
-                edges.push(combinatorics::edge_dir(
+                // ★ The half-edge **leaves** `v`, so its direction is read at `v` — and `dir_at`
+                // is where that is checked. Built once per half-edge, which is the hoist the
+                // sort below rests on.
+                edges.push(combinatorics::dir_at(
                     jd,
                     wc,
-                    wall(he),
-                    origin_h(he),
-                    target_h(he),
+                    &combinatorics::RingEdge {
+                        node: origin(he),
+                        to: origin(he ^ 1),
+                        wall: wall(he),
+                        from_h: origin_h(he),
+                        to_h: target_h(he),
+                    },
+                    v,
                 )?);
             }
         }
@@ -2421,6 +2429,7 @@ fn extract_cells(
                 .iter()
                 .map(|&h| combinatorics::RingEdge {
                     node: origin(h),
+                    to: origin(h ^ 1),
                     wall: wall(h),
                     from_h: origin_h(h),
                     to_h: target_h(h),
@@ -2519,6 +2528,7 @@ fn nest_cells(
             .iter()
             .map(|&he| combinatorics::RingEdge {
                 node: segs[he / 2].end[he % 2],
+                to: segs[he / 2].end[1 - he % 2],
                 wall: segs[he / 2].wall,
                 from_h: segs[he / 2].end_h[he % 2],
                 to_h: segs[he / 2].end_h[1 - he % 2],
