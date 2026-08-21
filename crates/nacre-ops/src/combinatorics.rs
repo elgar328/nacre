@@ -1310,14 +1310,66 @@ fn point_on_ring(
 /// propagate, never be traded for the next node: an abstention has other nodes as its remedy,
 /// a failed judgement does not, and retrying it would let a real cause masquerade as
 /// "no clear ray" once every node hit it.
-/// A component as `(plane, rings)` per face, each ring already carrying its edges' walls.
-pub(crate) type ComponentFaces = Vec<(usize, Vec<Vec<RingEdge>>)>;
+/// One boundary of a component's face, with a polygon's edges already derived.
+///
+/// ★★★ **It mirrors [`crate::boolean::Bound`] on purpose.** The probe used to read a *flattened*
+/// projection — `Vec<Vec<RingEdge>>`, which can only spell a polygon — so every circular and
+/// banded boundary was **dropped on the way in** (`LocalFace::poly_rings`) and the component the
+/// ray counted was not the component. Reading the engine's own boundary vocabulary is what lets
+/// the ray count what is actually there.
+#[derive(Clone, Debug)]
+pub(crate) enum BoundEdges {
+    /// A polygon, its edges carrying their walls (the only shape the ray counts today).
+    Ring(Vec<RingEdge>),
+    /// A whole circle, by its cylinder class.
+    ///
+    /// ★ The payload's reader is the ray's **curved arm**, which is the next commit — the same
+    /// shape (and the same reason) as `boolean::Bound::Band`'s own `allow` while its producer was
+    /// still being built. Carrying the bound without reading it is this commit's whole point: it
+    /// is what makes the widening behaviour-neutral and checkable.
+    Circle {
+        #[allow(dead_code)]
+        cyl: usize,
+    },
+    /// A lateral band's boundary: the two plane classes its rims sit on.
+    Band {
+        #[allow(dead_code)]
+        lo: usize,
+        #[allow(dead_code)]
+        hi: usize,
+    },
+}
+
+/// One face of a component — the class its surface lives in, and its boundaries.
+#[derive(Clone, Debug)]
+pub(crate) struct CompFace {
+    pub(crate) surf: crate::planes::ClassIx,
+    pub(crate) outer: BoundEdges,
+    pub(crate) inner: Vec<BoundEdges>,
+}
+
+/// A component as its faces, each boundary already carrying its edges' walls.
+pub(crate) type ComponentFaces = Vec<CompFace>;
 
 pub(crate) fn point_in_component(
     jd: &Judge<'_, WorkingPlane>,
     query: [usize; 3],
-    faces: &[(usize, Vec<Vec<RingEdge>>)],
+    faces: &[CompFace],
 ) -> Result<Option<bool>, BoolError> {
+    // ★★ **This commit's premise, as a check rather than an argument.** Curved faces and circular
+    // bounds now *reach* this type, but `boolean`'s `CurvedComponentDepth` guard still keeps a
+    // component that has one from ever being probed — so every boundary here is still a polygon
+    // and the answers cannot have moved. If this fires, that argument is wrong and the change is
+    // no longer behaviour-neutral.
+    debug_assert!(
+        faces.iter().all(|f| {
+            matches!(f.surf, crate::planes::ClassIx::Plane(_))
+                && std::iter::once(&f.outer)
+                    .chain(f.inner.iter())
+                    .all(|b| matches!(b, BoundEdges::Ring(_)))
+        }),
+        "the guard is supposed to keep curved faces and circular bounds out of the probe"
+    );
     let mut vplanes = query.to_vec();
     vplanes.sort_unstable();
     vplanes.dedup();
@@ -1326,26 +1378,40 @@ pub(crate) fn point_in_component(
     // line grazed and the caller should try the next plane pair.
     let attempt = |a: usize, b: usize, c: usize| -> Result<Option<bool>, BoolError> {
         let mut count = 0usize;
-        for (q, rings) in faces {
-            let q = *q;
+        for f in faces {
+            // ★ Only a planar face's crossing is a three-plane point, and only a polygon boundary
+            // answers "inside" by a ring walk. The curved arms are `CurvedComponentDepth`'s job
+            // (the guard upstream keeps them from arriving); abstaining is the honest placeholder
+            // — it costs the caller another node, never a wrong answer.
+            let (crate::planes::ClassIx::Plane(q), BoundEdges::Ring(outer)) = (f.surf, &f.outer)
+            else {
+                return Ok(None);
+            };
             if jd.plane_pair_dir_sign(a, b, q) == 0 {
                 continue; // `L` parallel to (or in) plane `q` — no transversal crossing
             }
             let mut x = [a, b, q];
             x.sort_unstable();
-            for ring in rings {
+            let mut holes = Vec::with_capacity(f.inner.len());
+            for b in &f.inner {
+                match b {
+                    BoundEdges::Ring(r) => holes.push(r),
+                    _ => return Ok(None),
+                }
+            }
+            for ring in std::iter::once(outer).chain(holes.iter().copied()) {
                 if point_on_ring(jd, q, x, ring)? {
                     return Ok(None); // `x` on `q`'s boundary — non-generic, abandon
                 }
             }
             // Inside `q`'s material: inside the outer ring, outside every hole.
-            let inside_outer = match every_ray(jd, q, x, &rings[0])?.first().copied() {
+            let inside_outer = match every_ray(jd, q, x, outer)?.first().copied() {
                 Some(v) => v,
                 None => return Ok(None),
             };
             let mut in_g = inside_outer;
             if in_g {
-                for hole in &rings[1..] {
+                for hole in &holes {
                     match every_ray(jd, q, x, hole)?.first().copied() {
                         Some(true) => {
                             in_g = false;

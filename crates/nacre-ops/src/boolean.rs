@@ -411,13 +411,36 @@ fn group_faces(jd: &Judge<'_, WorkingPlane>, faces: &[LocalFace]) -> Result<Grou
             by_comp_lf[c]
                 .iter()
                 .map(|lf| {
-                    // Circle bounds carry no ring edges — their component adjacency is the
-                    // rim rule's (C4b); a node-level containment probe reads polygons only.
-                    let rings = lf
-                        .poly_rings()
-                        .map(|r| r.edges(jd, lf.surf.plane()))
-                        .collect::<Result<Vec<_>, BoolError>>()?;
-                    Ok((lf.surf.plane(), rings))
+                    // ★ **Every boundary travels, in the engine's own vocabulary.** This used to
+                    // keep `poly_rings()` only, which silently dropped a face's circular and
+                    // banded bounds — and a ray that counts an incomplete component answers
+                    // confidently and wrongly. That drop is why the `CurvedComponentDepth` guard
+                    // exists; carrying the bounds is the first half of retiring it.
+                    let bound = |b: &Bound| -> Result<combinatorics::BoundEdges, BoolError> {
+                        Ok(match b {
+                            // `plane()` is the plane-only projection whose panic is the
+                            // upstream-filter-bug detector: a polygon bound on a cylinder face
+                            // would be a producer error, not an input.
+                            Bound::Ring(r) => {
+                                combinatorics::BoundEdges::Ring(r.edges(jd, lf.surf.plane())?)
+                            }
+                            Bound::Circle { cyl } => {
+                                combinatorics::BoundEdges::Circle { cyl: *cyl }
+                            }
+                            Bound::Band { lo, hi } => {
+                                combinatorics::BoundEdges::Band { lo: *lo, hi: *hi }
+                            }
+                        })
+                    };
+                    Ok(combinatorics::CompFace {
+                        surf: lf.surf,
+                        outer: bound(&lf.outer)?,
+                        inner: lf
+                            .inner
+                            .iter()
+                            .map(bound)
+                            .collect::<Result<Vec<_>, BoolError>>()?,
+                    })
                 })
                 .collect::<Result<_, BoolError>>()
         })
