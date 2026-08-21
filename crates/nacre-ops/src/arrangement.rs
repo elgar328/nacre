@@ -2372,7 +2372,22 @@ fn extract_cells(
     // and walked and then refused, the way C4a's `CylinderBooleanNotYet` stood until C4b-3
     // removed it, and it intercepts the walk's failure too: the population's *name* does not
     // depend on how far the walk got.
-    if !arcs.is_empty() {
+    //
+    // ★★★★ **The condition is `split.is_some()`, not `!arcs.is_empty()`, and the difference is a
+    // safety one.** A split renumbers the half-edges — the caller's `segs` is not what was walked —
+    // so *any* `Ok` returned from a split arrangement is indexed against a slice the caller does
+    // not have, and `nest_cells`/`label_cells`/`emit_faces` would read another edge's geometry with
+    // nothing to say so. Being non-empty is a property of the *result*; being split is the property
+    // that makes the numbering incompatible, and that is what must gate the return.
+    //
+    // ★ The two coincide today, so the name stays true: `split_circles` answers `Some` only when
+    // some circle collected a crossing, and a circle with a crossing yields at least one arc
+    // (a tangency is skipped before it is collected, so it never makes a `Some`).
+    if split.is_some() {
+        debug_assert!(
+            !arcs.is_empty(),
+            "a split with no arc — the reject below names the wrong thing"
+        );
         // ★ The witness is read from the **uncut** edges — `arc_split_witness` finds the crossing
         // that made the split, and after the split there is nothing left crossing.
         return Err(match arc_split_witness(jd, wc, segs, circles) {
@@ -2543,7 +2558,30 @@ fn walk_cells(
                 winding: w,
             });
         }
-        if ok && cells.iter().filter(|c| c.winding == -1).count() == components {
+        // ★★★★ **Euler, and it is not decoration — it is the half of "this is a subdivision" the
+        // contour count cannot see.** The outer-contour rule counts one number and a walk can
+        // satisfy it while attaching the wrong edges: measured, dropping the canonical-to-stored
+        // turn in `combinatorics::arc_side` makes this class trace **one 8-half-edge orbit where
+        // there are four cells**, and the contour count passes it — a silently wrong subdivision,
+        // which is the thing this file exists to refuse. `V − E + F = 2C` sees it (`0 ≠ 2`).
+        //
+        // `F` is the walk's cell count, which is not the topological face count: each extra
+        // component contributes a second contour bounding the same outer region, so `F = f + C − 1`
+        // and `V − E + f = 1 + C` becomes this. Measured across the whole suite before it was
+        // asserted: **111,750 accepted walks, slack 0 in every one** — so it decides nothing that
+        // was passing, and the census is bit-identical.
+        let subdivides = |cells: &[Cell]| -> bool {
+            let (v, e, f) = (
+                outgoing.len() as i64,
+                (n + arcs.len()) as i64,
+                cells.len() as i64,
+            );
+            v - e + f == 2 * components as i64
+        };
+        if ok
+            && cells.iter().filter(|c| c.winding == -1).count() == components
+            && subdivides(&cells)
+        {
             // ★ **Circle cells, appended after the segment orbits** (M6-2a). Each circle is a
             // 1-edge component the DCEL walk cannot express (orbits need ≥3): a `+1` disk cell
             // and a `−1` contour, with pseudo-half-edges numbered past the segment range —

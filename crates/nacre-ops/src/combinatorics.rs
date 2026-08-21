@@ -581,10 +581,18 @@ fn arc_at(
     node: NodeId,
 ) -> Result<EdgeDir, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
-    // A three-plane node on an arc would be the two-names case the split refuses; saying so by
-    // name is better than realizing the wrong point.
-    let at =
-        branch_meet(jd, a.cyl, &a.def, node).ok_or_else(|| reject(RejectReason::RingNaming))?;
+    // ★★ **Two causes, two names.** `branch_meet` folds four `None`s into one, and they are not the
+    // same fact: a three-plane node on an arc is a *naming* failure (the split shipped the
+    // two-names case it exists to refuse), while a class with no rational description, a meet that
+    // does not solve, and a root the meet does not have are all "the exact route declined". Asking
+    // the kind first is what keeps `RingNaming`'s sentence true where it is raised.
+    //
+    // ★ Only the first is reachable from here: the other three would have stopped the split that
+    // built this arc, since it re-solves the same pair of classes for the same cylinder.
+    let NodeId::Branch { .. } = node else {
+        return Err(reject(RejectReason::RingNaming));
+    };
+    let at = branch_meet(jd, a.cyl, &a.def, node).ok_or_else(undecided)?;
     let coeffs = class_coeffs_rat(jd, p).ok_or_else(undecided)?;
     // The circle's centre: where the axis pierces this plane. ★ The canonical sign the coefficients
     // carry cancels in the parameter (numerator and denominator both flip), so this one does not
@@ -958,13 +966,19 @@ pub(crate) fn turn(
 /// |---|---|---|
 /// | the whole sign | negate the result | **invisible** — this same atom feeds both the cyclic order and the winding, and the walk tries both handednesses, so a *global* flip is absorbed by trying the other one |
 /// | `ccw` | drop it | **locked** — the two arcs at a crossing collapse into one bucket, `UnorderedEdges` |
-/// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus disagrees, and the wc=5 walk traces one 8-half-edge orbit where there are four cells |
+/// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus disagrees, and that class's walk merges four cells into one 8-half-edge orbit. ★ It used to be *accepted* there: the contour count passes it, and `arrangement::walk_cells`' Euler condition — added because of this probe — is what refuses it |
 /// | `axis_up` | drop it | **unexercised** — `true` on every class reached |
 /// | `frame_sign` | drop it | **unexercised** — `+1` on every class reached |
 ///
 /// The last two are derived, not guessed (the algebra is above), and a corpus with a face whose
 /// stored normal opposes its outward one, or a cylinder pointing the other way, is what would
 /// close them.
+///
+/// ★ **One gap is still open and named**: flipping the *sense* a split carries onto its
+/// sub-segments (`Carrier::Plane::sense`) attaches the arcs to the wrong cells and swaps two
+/// windings — and **nothing in the walk sees it**, because the cell count is unchanged and the
+/// contour count still comes out right. Its first reader is the assembly: `nest_cells` picks the
+/// root from the `-1` contours, and a swapped winding is what that would name.
 fn arc_side(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
@@ -2595,16 +2609,17 @@ pub(crate) fn loop_winding(
     );
     // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
     // ambiguous — honest-reject rather than guess.
-    let mut pinched_extreme = false;
+    // ★ Stops at the first pinch, as the `any` it replaced did. Running on would ask comparisons
+    // the old spelling never made, and one of those could *decline* — turning a `CoincidentNodes`
+    // that was already decided into a width reject.
     for i in 0..ring.len() {
         let mut same = i != lo;
         for axis in 0..3 {
             same = same && cmp_key(jd, key(i), key(lo), axis)? == 0;
         }
-        pinched_extreme |= same;
-    }
-    if pinched_extreme {
-        return Err(reject(RejectReason::CoincidentNodes));
+        if same {
+            return Err(reject(RejectReason::CoincidentNodes));
+        }
     }
     // **A ring node need not be a corner.** The arrangement names a point wherever another feature
     // crosses an edge, and `loop_triples` keeps such a vertex even when the loop runs straight

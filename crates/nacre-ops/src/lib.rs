@@ -513,8 +513,14 @@ pub enum RejectReason {
     /// seated faces claiming opposite sides, or one solid crossing the same edge twice. Whichever
     /// is right, nothing on that edge says which.
     EdgeOccupancyConflict,
-    /// No assignment of the class's rings to cells leaves exactly one outer boundary per
-    /// component — the planar subdivision does not close into faces the way a subdivision must.
+    /// **Neither traversal of the class's rings produced a subdivision.** Two things must hold and
+    /// both are checked: exactly one outer boundary per component, and `V − E + F = 2C` — the
+    /// Euler relation the walk's own cell count must satisfy.
+    ///
+    /// ★ The second is not a stricter reading of the first. A walk can attach the wrong edges to
+    /// the right number of contours: measured, one wrong sign in the arc turn merged four cells
+    /// into one eight-half-edge orbit and the contour count accepted it. Two numbers, two failure
+    /// modes, one proposition — this reason's.
     RingOrientation,
     /// **A closed ring met a line an odd number of times.** Crossings of a closed curve with a
     /// line come in pairs, so the alternation `segment_meets_face` reads along that line —
