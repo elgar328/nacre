@@ -865,14 +865,20 @@ mod tests {
         assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
     }
 
-    /// ★★ **The other cause under the same name, and it says so with a different witness shape.**
-    /// A boss standing over a bore, its whole outline *inside* the rim: no segment crosses the
-    /// circle, yet the disk cell is still cut and the closed-cell premise still breaks. The
-    /// rejection is the same one — the umbrella's proposition holds for both — and what tells the
-    /// two apart is the witness: a crossing names a `Point`, a containment can only name the edge
-    /// that sits inside.
+    /// ★★ **A boss standing over a bore, its whole outline *inside* the rim.** No segment crosses
+    /// the circle, so the circle keeps its closed cell — what the shape really asks is that the
+    /// **disk cell host a polygon**, and `nest_cells` refused to (a `debug_assert` said a disk
+    /// hosts nothing, for a reason that was already wrong: the guard actually keeping the
+    /// population out was `circles_meet_no_segment`).
+    ///
+    /// ★★★ **The population immediately found a live defect in the nesting predicate.** With the
+    /// disk allowed to host, the *circle*'s contour came back as a hole of the **square** — the
+    /// footprint `[7,9]×[9,11]` straddles the axis `(8,10)`, so "the circle's centre is inside the
+    /// ring" is true in the nesting that does not hold. One witness point says *whether* two
+    /// disjoint loops nest, never *which way*; the other direction is what settles it
+    /// (`cell_in_cell`).
     #[test]
-    fn a_segment_inside_the_rim_is_refused_with_the_edge_as_its_witness() {
+    fn a_segment_inside_the_rim_builds_the_boss_over_the_hole() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -893,21 +899,40 @@ mod tests {
             Point3::from_array([9.0, 11.0, 8.0]),
         );
         m.rebuild_adjacency();
-        let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("inside the rim");
-        let BoolError::Rejected {
-            reason: RejectReason::CircleMeetsSegment,
-            at: Some(crate::RejectWhere::Segment(ends)),
-        } = &err
-        else {
-            panic!("a containment names the edge that sits inside: {err:?}");
-        };
-        // Both ends on the shared plane `z = 5`, and both strictly inside the rim.
-        for e in ends {
-            let c = e.as_array();
-            assert!((c[2] - 5.0).abs() < 1e-9, "on the shared plane: {c:?}");
-            let d2 = (c[0] - 8.0).powi(2) + (c[1] - 10.0).powi(2);
-            assert!(d2 < 9.0 - 1e-9, "inside the rim: {c:?}");
-        }
+        let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("a boss over a bore");
+        // ★ The boss's whole footprint is inside the rim, so it stands over the **hole** and
+        // touches no material: two bodies, not one. That is forced rather than chosen — a boss
+        // that reached material inside the disk would lie within the bore's axial span, and the
+        // wall rule refuses that as `WallMeetsLateral`.
+        assert_eq!(out.len(), 2, "the boss touches nothing");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let mut vols: Vec<f64> = out
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+            .collect();
+        vols.sort_by(|x, y| x.partial_cmp(y).expect("finite"));
+        let want = [
+            2.0 * 2.0 * 3.0,
+            40.0 * 20.0 * 5.0 - std::f64::consts::PI * 9.0 * 5.0,
+        ];
+        assert!(
+            (0..2).all(|i| (vols[i] - want[i]).abs() < 1e-9),
+            "the boss and the bored plate: {vols:?} vs {want:?}"
+        );
+        // The plate keeps its through hole (χ = 0), the boss is a box (χ = 2).
+        let mut chi: Vec<i64> = out
+            .iter()
+            .map(|&s| {
+                let (v_n, e_n, f_n, l_n) = euler_counts(&m, s);
+                v_n - e_n + f_n - l_n
+            })
+            .collect();
+        chi.sort_unstable();
+        assert_eq!(chi, vec![0, 2], "genus 1 and genus 0");
     }
 
     /// **A tangency builds.** The boss's `x = 11` edge is exactly tangent to the rim `(8,10)`,

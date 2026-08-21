@@ -1800,26 +1800,21 @@ fn circles_meet_no_segment(
             }
         }
     }
-    // ★★★ **A touch is not a break.** The premise above is that a circle stays a *closed cell*,
-    // and only a break that **separates** the circle costs it that: a transversal crossing cuts it
-    // into arcs, while a tangency meets it at one point and leaves the loop closed. The two are
-    // told apart by the crossing's own name — `QuadRoot::Double` is the tangency's, and that
-    // variant exists precisely because "the two roots coincide" had to be sayable.
+    // ★★★ **Only what *separates* the circle is a break.** The premise above is that a circle
+    // stays a *closed cell*, and exactly one kind of contact costs it that — a **transversal
+    // crossing**, which cuts the loop into arcs. The other two leave it closed:
     //
-    // ★ The other non-separating kind — a segment lying **inside** the disk — is *not* let through
-    // here. It leaves the circle closed too, but it puts a polygon in the disk cell, and
-    // `nest_cells` cannot host one yet. Its turn is its own step; refusing it is honest and this
-    // arm says which kinds are still breaks rather than pretending the list is closed.
+    // - a **tangency** meets it at one point (`QuadRoot::Double`, the variant that exists because
+    //   "the two roots coincide" had to be sayable);
+    // - a **containment** — a segment wholly inside the disk — never meets the circle at all
+    //   (no root, so no name), it only puts a polygon in the disk cell. `nest_cells` hosts that
+    //   now, which is what let this arm widen.
     //
-    // Measured: with the whole guard off, both tangency fixtures already build a correct solid —
-    // `4000 − 45π + 48` to 5e-13, one body, `validate` clean. Nothing was owed but this sentence.
+    // So the test is the crossing's own name: a `Lo`/`Hi` root separates, anything else does not.
     let separates = |b: &Break| {
-        !matches!(
+        matches!(
             b.key.3,
-            Some(NodeId::Branch {
-                root: nacre_topo::QuadRoot::Double,
-                ..
-            })
+            Some(NodeId::Branch { root, .. }) if root != nacre_topo::QuadRoot::Double
         )
     };
     if !breaks.iter().any(separates) {
@@ -2184,65 +2179,27 @@ fn nest_cells(
         x
     }
 
+    let circle_ix: Vec<Option<usize>> = cells.iter().map(circle_of).collect();
     let mut holes: HashMap<usize, Vec<usize>> = HashMap::new();
     let mut roots: Vec<usize> = Vec::new();
     for c in (0..n).filter(|&i| cells[i].winding == -1) {
         let mut hosts: Vec<usize> = Vec::new();
         for &r in &pos {
-            match (circle_of(&cells[c]), circle_of(&cells[r])) {
-                // Two circles never nest in this population: the same circle's disk is `c`'s
-                // partner (adjacent, not nested), and distinct cylinders are pairwise clear by
-                // the gate (`dist > r₁+r₂` forbids containment).
-                (Some(_), Some(_)) => continue,
-                // A circle contour inside a polygon cell: one witness point decides (the loops
-                // are disjoint — the gate keeps every wall line clear of the circle), and the
-                // witness is the circle's **center** (= axis ∩ wc, rational).
-                (Some(ci), None) => {
-                    if circle_center_in_ring(jd, wc, &circles[ci], &rings[r])? {
-                        hosts.push(r);
-                    }
-                }
-                // A polygon contour inside a disk is population-impossible (its edges ride
-                // wall planes, all farther from the axis than r) — computed anyway, honestly,
-                // from one node's radial side.
-                (None, Some(ri)) => {
-                    if node_in_circle(jd, &rings[c], &circles[ri])? {
-                        hosts.push(r);
-                    }
-                }
-                (None, None) => {
-                    // Shares a node ⇒ adjacent (or `c`'s own partner) ⇒ not a hole of `r`.
-                    if rings[c]
-                        .iter()
-                        .any(|e| rings[r].iter().any(|f| f.node == e.node))
-                    {
-                        continue;
-                    }
-                    // Vertex-disjoint: `ring_in_ring` casts from each of `c`'s nodes until one
-                    // gives a clear ray; an exhausted ring is the genuine degeneracy it
-                    // rejects for — which is also why dropping a branch node here is honest.
-                    let probes = combinatorics::three_plane_probes(rings[c].iter().map(|e| e.node));
-                    if combinatorics::ring_in_ring(jd, wc, &probes, &rings[r])? {
-                        hosts.push(r);
-                    }
-                }
+            if cell_in_cell(jd, wc, &rings, circles, &circle_ix, c, r)? == Some(true) {
+                hosts.push(r);
             }
         }
         if hosts.is_empty() {
             roots.push(c);
         } else {
-            // The population proof above says a disk hosts nothing; keep the invariant loud
-            // and the ordering machinery polygon-only.
-            debug_assert!(
-                hosts.iter().all(|&r| circle_of(&cells[r]).is_none()),
-                "a disk cell hosted a contour — the gate's clearance proof is broken"
-            );
-            hosts.retain(|&r| circle_of(&cells[r]).is_none());
-            if hosts.is_empty() {
-                roots.push(c);
-                continue;
-            }
-            let host = innermost_host(jd, wc, &rings, &hosts)?;
+            // ★ **A disk may host** (2026-08-21). This used to `debug_assert` that it could not
+            // and then `retain` the disks away — and the assertion's stated reason was already
+            // wrong: what kept a polygon out of a disk was not the gate's clearance proof but
+            // `circles_meet_no_segment`, which refused the whole shape. Narrowing that guard to
+            // *separating* breaks brings the population here, and dropping the host would send the
+            // contour to `roots`, where `label_cells` seeds it **void** — the boss over a bore
+            // would lose its base face and the shell would open.
+            let host = innermost_host(jd, wc, &rings, circles, &circle_ix, &hosts)?;
             let (rc, rr) = (find(&mut parent, c), find(&mut parent, host));
             parent[rc] = rr;
             holes.entry(host).or_default().push(c);
@@ -2340,6 +2297,64 @@ fn node_in_circle(
     }
 }
 
+/// **Is cell `a`'s loop inside cell `b`'s?** — the one dispatch, four arms by carrier kind.
+///
+/// `Ok(None)` is *not comparable*, and it covers two shapes that both mean "these are neighbours,
+/// not nested": two circles (see below), and two polygons that **share a node** — a shared node is
+/// a split point, so the loops touch rather than one wrapping the other (that also excludes a
+/// contour's own `+1` partner, which carries the same ring).
+///
+/// ★★ **Written once because it is asked from two directions.** [`nest_cells`] asks it of
+/// (contour, `+1` cell) to find hosts, and [`innermost_host`] asks it of (host, host) to order
+/// them. The four arms are the same question either way; two spellings of it would be free to
+/// drift, which is this repository's most-repeated defect.
+///
+/// The arms:
+/// - **two circles** — never nested here: one circle's disk and its own contour are adjacent, and
+///   distinct cylinders are pairwise clear by the gate (`dist > r₁+r₂` forbids containment);
+/// - **circle in polygon** — the centre (`axis ∩ wc`, rational) inside the ring, **and the ring not
+///   inside the circle**. ★★ That second clause is not belt-and-braces: with disjoint loops the
+///   centre test alone says "inside" for *both* nestings when the polygon happens to straddle the
+///   centre — a boss standing over a bore, footprint `[7,9]×[9,11]` around the axis `(8,10)`, put
+///   the **circle** inside the **square**. `circle_center_in_ring`'s own doc says one point decides
+///   *"the loops are disjoint by the gate's clearance proof"*, and disjoint they are; what it does
+///   not settle is **which way round**. The other direction does, so the pair is the predicate;
+/// - **polygon in circle** — one node's radial side ([`node_in_circle`]), decisive on its own:
+///   disjoint loops put every node on one side;
+/// - **polygon in polygon** — a ray from each of `a`'s nodes until one is clear
+///   ([`combinatorics::ring_in_ring`]).
+fn cell_in_cell(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    rings: &[Vec<combinatorics::RingEdge>],
+    circles: &[MergedCircle],
+    circle_ix: &[Option<usize>],
+    a: usize,
+    b: usize,
+) -> Result<Option<bool>, BoolError> {
+    match (circle_ix[a], circle_ix[b]) {
+        (Some(_), Some(_)) => Ok(None),
+        (Some(ci), None) => Ok(Some(
+            circle_center_in_ring(jd, wc, &circles[ci], &rings[b])?
+                && !node_in_circle(jd, &rings[b], &circles[ci])?,
+        )),
+        (None, Some(ri)) => node_in_circle(jd, &rings[a], &circles[ri]).map(Some),
+        (None, None) => {
+            if rings[a]
+                .iter()
+                .any(|e| rings[b].iter().any(|f| f.node == e.node))
+            {
+                return Ok(None);
+            }
+            // ★ `ring_in_ring` casts from each of `a`'s nodes until one gives a clear ray; an
+            // exhausted ring is the genuine degeneracy it rejects for — which is also why
+            // dropping a branch node from the probe list here is honest.
+            let probes = combinatorics::three_plane_probes(rings[a].iter().map(|e| e.node));
+            combinatorics::ring_in_ring(jd, wc, &probes, &rings[b]).map(Some)
+        }
+    }
+}
+
 /// Which of `hosts` owns the hole: the **innermost** one — the candidate contained in all the
 /// others.
 ///
@@ -2362,22 +2377,19 @@ fn innermost_host(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     rings: &[Vec<combinatorics::RingEdge>],
+    circles: &[MergedCircle],
+    circle_ix: &[Option<usize>],
     hosts: &[usize],
 ) -> Result<usize, BoolError> {
     // ★ Two answers that used to be one. `None` meant *either* "adjacent, so not comparable" or
     // "every ray was spoiled", and both left as `HoleDepth` — whose own doc reads "if this fires,
     // rings are crossing and the fault is upstream", a diagnosis that is simply wrong for a
     // spoiled ray. Adjacency stays `None` here; an exhausted ring is now `NoClearRay`, its cause.
-    let inside = |a: usize, b: usize| -> Result<Option<bool>, BoolError> {
-        if rings[a]
-            .iter()
-            .any(|e| rings[b].iter().any(|f| f.node == e.node))
-        {
-            return Ok(None); // adjacent, not nested — not comparable
-        }
-        let probes = combinatorics::three_plane_probes(rings[a].iter().map(|e| e.node));
-        combinatorics::ring_in_ring(jd, wc, &probes, &rings[b]).map(Some)
-    };
+    //
+    // ★★ **A disk can be a host, so this asks the same four-way question `nest_cells` does** —
+    // it used to hold a polygon-only copy of one arm, which was sound only while a disk was
+    // filtered out before it got here. It is [`cell_in_cell`] now.
+    let inside = |a: usize, b: usize| cell_in_cell(jd, wc, rings, circles, circle_ix, a, b);
     let mut found = None;
     for &h in hosts {
         let mut wraps_all = true;
