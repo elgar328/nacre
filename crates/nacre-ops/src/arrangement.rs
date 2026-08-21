@@ -2359,12 +2359,8 @@ fn extract_cells(
     segs: &[MergedSeg],
     circles: &[MergedCircle],
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
-    let split = split_circles(jd, wc, segs, circles)?;
-    let (walk_segs, walk_circles, arcs) = match &split {
-        Some((s, c, a)) => (&s[..], &c[..], &a[..]),
-        None => (segs, circles, &[][..]),
-    };
-    let walked = walk_cells(jd, wc, walk_segs, walk_circles, arcs);
+    let edges = ClassEdges::of(jd, wc, segs, circles)?;
+    let walked = walk_cells(jd, wc, &edges);
     // ★★★ **The stopper stands at the return** (2026-08-21). Everything above it is live — the
     // split, the walk over three half-edge ranges, the winding read at a branch point — and what
     // is still missing is the *assembly* below: `nest_cells` and `emit_faces` split half-edge
@@ -2383,11 +2379,7 @@ fn extract_cells(
     // ★ The two coincide today, so the name stays true: `split_circles` answers `Some` only when
     // some circle collected a crossing, and a circle with a crossing yields at least one arc
     // (a tangency is skipped before it is collected, so it never makes a `Some`).
-    if split.is_some() {
-        debug_assert!(
-            !arcs.is_empty(),
-            "a split with no arc — the reject below names the wrong thing"
-        );
+    if edges.has_arcs() {
         // ★ The witness is read from the **uncut** edges — `arc_split_witness` finds the crossing
         // that made the split, and after the split there is nothing left crossing.
         return Err(match arc_split_witness(jd, wc, segs, circles) {
@@ -2396,6 +2388,157 @@ fn extract_cells(
         });
     }
     walked
+}
+
+/// **One plane class's edges, after the arc split — and the only thing that knows the half-edge
+/// numbering.**
+///
+/// Half-edge encoding: edge `i` gives `he = 2i` (forward, `end[0]→end[1]`) and `2i+1` (reverse);
+/// `twin(he) = he ^ 1`. The ranges are, in order:
+///
+/// - **segments** `[0, 2·ns)` — an ordinary two-ended edge on a plane's meet with `P`;
+/// - **arcs** `[2·ns, 2·(ns+na))` — a piece of a circle a segment cut, equally two-ended;
+/// - **uncut circles**, on pseudo-half-edges `2·(ns+na) + 2i` — a closed curve with no vertex is
+///   not an orbit the walk can express, so [`walk_cells`] appends those cells *after* the walk.
+///
+/// ★★★★ **The kind used to be asked with `he >= 2 * segs.len()`, in five places, and that sentence
+/// is now false.** Two ranges became three the day a circle could be cut, and every one of those
+/// five would read an arc as a circle — `nest_cells`' `ring_of` does it by indexing `segs[he / 2]`,
+/// which is not a wrong answer but an **index out of bounds** (measured). One type owns the
+/// numbering now, so the question is a `match` the compiler checks rather than an arithmetic
+/// comparison five readers each restate.
+///
+/// ★★ **It borrows or owns** (`Cow`). The split makes new `Vec`s; if this only borrowed, the
+/// caller would have to keep them alive and the whole preamble — split, build, walk — would be
+/// written once per caller, which is the shape `decline_to_reject`'s doc calls *"two copies … would
+/// let them drift"*. Owning lets [`ClassEdges::of`] be the single constructor both callers use.
+struct ClassEdges<'a> {
+    segs: std::borrow::Cow<'a, [MergedSeg]>,
+    arcs: std::borrow::Cow<'a, [MergedArc]>,
+    circles: std::borrow::Cow<'a, [MergedCircle]>,
+    /// Whether [`split_circles`] cut anything. Equal to `!arcs.is_empty()` — see [`Self::of`].
+    split: bool,
+}
+
+/// Which of the three ranges a half-edge is in, and its index within that range.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HalfEdgeKind {
+    Seg(usize),
+    Arc(usize),
+    Circle(usize),
+}
+
+impl<'a> ClassEdges<'a> {
+    /// Run the arc split and hold its result — **the one place a class's edges are assembled.**
+    fn of(
+        jd: &Judge<'_, WorkingPlane>,
+        wc: usize,
+        segs: &'a [MergedSeg],
+        circles: &'a [MergedCircle],
+    ) -> Result<Self, BoolError> {
+        use std::borrow::Cow;
+        Ok(match split_circles(jd, wc, segs, circles)? {
+            Some((s, c, a)) => {
+                // ★ The names below rest on this: `split_circles` answers `Some` only when some
+                // circle collected a crossing, and a crossing yields at least one arc (a tangency
+                // is skipped before it is collected). So "was split" and "has arcs" are one fact.
+                debug_assert!(!a.is_empty(), "a split that cut no circle into arcs");
+                ClassEdges {
+                    segs: Cow::Owned(s),
+                    arcs: Cow::Owned(a),
+                    circles: Cow::Owned(c),
+                    split: true,
+                }
+            }
+            None => ClassEdges {
+                segs: Cow::Borrowed(segs),
+                arcs: Cow::Borrowed(&[]),
+                circles: Cow::Borrowed(circles),
+                split: false,
+            },
+        })
+    }
+
+    /// Where the walk's half-edges end and the circles' pseudo-half-edges begin.
+    fn he_count(&self) -> usize {
+        2 * (self.segs.len() + self.arcs.len())
+    }
+
+    fn has_arcs(&self) -> bool {
+        debug_assert_eq!(self.split, !self.arcs.is_empty(), "see `of`");
+        !self.arcs.is_empty()
+    }
+
+    /// **The one classifier.** Everything that used to compare against `2 * segs.len()` asks this.
+    fn kind(&self, he: usize) -> HalfEdgeKind {
+        let ns = self.segs.len();
+        if he < 2 * ns {
+            HalfEdgeKind::Seg(he / 2)
+        } else if he < self.he_count() {
+            HalfEdgeKind::Arc((he - 2 * ns) / 2)
+        } else {
+            HalfEdgeKind::Circle((he - self.he_count()) / 2)
+        }
+    }
+
+    /// The vertex a half-edge leaves. `he % 2 == 0` takes `end[0]` — one rule, both ranges.
+    fn origin(&self, he: usize) -> NodeId {
+        match self.kind(he) {
+            HalfEdgeKind::Seg(i) => self.segs[i].end[he % 2],
+            HalfEdgeKind::Arc(i) => self.arcs[i].end[he % 2],
+            HalfEdgeKind::Circle(_) => {
+                unreachable!("a circle's pseudo-half-edge has no vertex to leave")
+            }
+        }
+    }
+
+    /// **The one place a `RingEdge` is made from a half-edge.**
+    ///
+    /// ★★★★ It used to be written twice, and the two spellings **differed**: the walk passed the
+    /// sense a split carried onto its sub-segments, and `nest_cells`' ring builder passed
+    /// `Carrier::plane(wall)` — that is, `sense: None`. The answers agreed only because the second
+    /// never saw a split segment; the day it does, it would drop the one fact the endpoints can no
+    /// longer supply. One spelling, so there is nothing to drift.
+    fn edge_at(&self, he: usize) -> combinatorics::RingEdge {
+        let carrier = match self.kind(he) {
+            // ★ `MergedArc::end` runs counter-clockwise about the axis, so the even half-edge
+            // travels that way and its twin the other. The convention is stated once, at the
+            // split; this is the only place it is read.
+            HalfEdgeKind::Arc(i) => {
+                let a = &self.arcs[i];
+                combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
+                    cyl: a.cyl,
+                    def: a.def.clone(),
+                    ccw: he % 2 == 0,
+                }))
+            }
+            HalfEdgeKind::Seg(i) => combinatorics::Carrier::Plane {
+                wall: self.segs[i].wall,
+                sense: self.segs[i].sense.map(|s| if he % 2 == 0 { s } else { -s }),
+            },
+            HalfEdgeKind::Circle(_) => {
+                unreachable!("a circle's pseudo-half-edge is not a ring edge")
+            }
+        };
+        // The endpoints as handles on this edge's line, carried by the producer. Not recovered from
+        // the names: a canonical name need not mention `wc` or the wall (see
+        // `combinatorics::RingEdge`). ★ An arc's ends are branch points by construction, which is
+        // what `EndPin::Cylinder` says.
+        let (from_h, to_h) = match self.kind(he) {
+            HalfEdgeKind::Seg(i) => (self.segs[i].end_h[he % 2], self.segs[i].end_h[1 - he % 2]),
+            _ => (
+                combinatorics::EndPin::Cylinder,
+                combinatorics::EndPin::Cylinder,
+            ),
+        };
+        combinatorics::RingEdge {
+            node: self.origin(he),
+            to: self.origin(he ^ 1),
+            carrier,
+            from_h,
+            to_h,
+        }
+    }
 }
 
 /// The DCEL walk itself: half-edges into cells, over the **three** ranges an arrangement can hold.
@@ -2407,64 +2550,14 @@ fn extract_cells(
 fn walk_cells(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
-    segs: &[MergedSeg],
-    circles: &[MergedCircle],
-    arcs: &[MergedArc],
+    edges: &ClassEdges<'_>,
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
+    let (segs, arcs, circles) = (&edges.segs, &edges.arcs, &edges.circles);
     let n = segs.len();
-    let he_count = 2 * (n + arcs.len());
-    let is_arc = |he: usize| he >= 2 * n;
-    let arc_of = |he: usize| &arcs[(he - 2 * n) / 2];
-    let origin = |he: usize| {
-        // he%2==0: end[0]; ==1: end[1] — one rule, both ranges.
-        if is_arc(he) {
-            arc_of(he).end[he % 2]
-        } else {
-            segs[he / 2].end[he % 2]
-        }
-    };
-    // The endpoints as handles on this edge's line, carried by the segment. Not recovered from the
-    // names: a canonical name need not mention `wc` or the wall (see `combinatorics::RingEdge`).
-    // ★ An arc's ends are branch points by construction, which is what `EndPin::Cylinder` says.
-    let origin_h = |he: usize| {
-        if is_arc(he) {
-            combinatorics::EndPin::Cylinder
-        } else {
-            segs[he / 2].end_h[he % 2]
-        }
-    };
-    let target_h = |he: usize| {
-        if is_arc(he) {
-            combinatorics::EndPin::Cylinder
-        } else {
-            segs[he / 2].end_h[1 - he % 2]
-        }
-    };
-    let carrier = |he: usize| {
-        if is_arc(he) {
-            let a = arc_of(he);
-            // ★ `MergedArc::end` runs counter-clockwise about the axis, so the even half-edge
-            // travels that way and its twin the other. The *whole* arc convention is stated once,
-            // at the split; this is the only place it is read.
-            combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
-                cyl: a.cyl,
-                def: a.def.clone(),
-                ccw: he % 2 == 0,
-            }))
-        } else {
-            combinatorics::Carrier::Plane {
-                wall: segs[he / 2].wall,
-                sense: segs[he / 2].sense.map(|s| if he % 2 == 0 { s } else { -s }),
-            }
-        }
-    };
-    let edge_of = |he: usize| combinatorics::RingEdge {
-        node: origin(he),
-        to: origin(he ^ 1),
-        carrier: carrier(he),
-        from_h: origin_h(he),
-        to_h: target_h(he),
-    };
+    let he_count = edges.he_count();
+    let is_arc = |he: usize| matches!(edges.kind(he), HalfEdgeKind::Arc(_));
+    let origin = |he: usize| edges.origin(he);
+    let edge_of = |he: usize| edges.edge_at(he);
 
     // Outgoing half-edges per vertex.
     let mut outgoing: HashMap<NodeId, Vec<usize>> = HashMap::new();
