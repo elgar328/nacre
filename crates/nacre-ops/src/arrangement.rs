@@ -242,10 +242,6 @@ pub(crate) struct MergedCircle {
 /// circle's normal. That is not a convention this crate invents: STEP's `EDGE_CURVE` runs from
 /// `edge_start` to `edge_end` along increasing parameter, and `nacre-step` already writes a
 /// circular edge that way — so the exporter needs nothing, and the STEP round-trip measures it.
-// The reader is the next brick: the DCEL walk, which needs the carrier and the endpoints, and
-// `label_cells`, which needs the contributions. Built here so the split can be measured on its own
-// output while the stopper (`ArcBoundNotYet`) holds the population back.
-#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub(crate) struct MergedArc {
     pub cyl: usize,
@@ -253,6 +249,11 @@ pub(crate) struct MergedArc {
     pub end: [NodeId; 2],
     /// Inherited whole from the circle: an arc is a piece of the same trace, so it carries the same
     /// `(solid, kind)` contributions and `edge_mask` reads it unchanged.
+    ///
+    /// ★ Unread until the stopper moves: its consumer is `label_cells`' `edge_mask`, which sits
+    /// past `extract_cells`' return. Carried now because the split is the only place that knows
+    /// which circle an arc came from.
+    #[allow(dead_code)]
     pub merged: Vec<(SolidSide, SegKind)>,
 }
 
@@ -1216,6 +1217,10 @@ pub(crate) struct MergedSeg {
     /// Every `(solid, kind)` that produced this one geometric edge. Length 1 when nothing was
     /// coincident.
     pub merged: Vec<(SolidSide, SegKind)>,
+    /// The travel sense from `end[0]` to `end[1]`, when the endpoints can no longer supply it —
+    /// see [`combinatorics::Carrier::Plane`]. `None` everywhere except a sub-segment the arc split
+    /// cut, whose cut end is a branch point with no third plane to order by.
+    pub sense: Option<i8>,
 }
 
 /// Merge segments that are the **same geometric edge** — same `wall` and same endpoint-triple set
@@ -1249,6 +1254,7 @@ fn merge_coincident(segs: &[Seg], wc: usize, aliases: &Aliases) -> Vec<MergedSeg
                     end: [aliases.canon_point(s.end[0]), aliases.canon_point(s.end[1])],
                     end_h: s.end_h.map(combinatorics::EndPin::Class),
                     merged: Vec::new(),
+                    sense: None,
                 }
             })
             .merged
@@ -1548,6 +1554,7 @@ fn split_at_crossings(
                         combinatorics::EndPin::Class(q),
                     ],
                     merged,
+                    sense: None,
                 });
             }
         }
@@ -1588,23 +1595,22 @@ fn angular_order(
     // ★ The same atom the winding reads (`combinatorics::turn`), which is what keeps the two from
     // drifting; the `0` it returns is *this* function's to interpret — here it is the `0`/π pole,
     // not the straight angle a ring's turn would reject.
-    let cross = |i: usize, j: usize| -> i8 { combinatorics::turn(jd, w, edges[i], edges[j]) };
+    let cross = |i: usize, j: usize| combinatorics::turn(jd, w, &edges[i], &edges[j]);
     let (mut zero, mut pos, mut pole, mut neg) = (vec![], vec![], vec![], vec![]);
     for i in 0..edges.len() {
-        match cross(0, i) {
+        match cross(0, i)? {
             c if c > 0 => pos.push(i),
             c if c < 0 => neg.push(i),
             // Collinear with the reference: angle 0 (same ray) or π (opposite ray).
-            _ if combinatorics::antiparallel(edges[i], edges[0]) => pole.push(i),
+            _ if combinatorics::antiparallel(&edges[i], &edges[0]) => pole.push(i),
             _ => zero.push(i),
         }
     }
     // ★★ **The π pole is a question about the direction's *representation*, not about the turn**
-    // — "same wall class, opposite travel sign". A circle's arc rides no wall, so when arcs arrive
-    // this test becomes "same circle, opposite tangent" and cannot be reached through
-    // `combinatorics::turn`. It is one of the three places the representation leaks (the atom, this
-    // pole, and `loop_winding`'s collinearity walk-back); widening only the atom's input type would
-    // leave this one answering about a field that is no longer there.
+    // — "same wall class, opposite travel sign", and for arcs "same circle, opposite tangent".
+    // Both live in `combinatorics::antiparallel` now. ★ Measured: the arc/arc arm never fires here,
+    // because segments are numbered before arcs and every crossing has one, so `edges[0]` is always
+    // a line; the two arcs at a node sit π apart and land in the two *open* buckets instead.
     //
     // ★★★ **The order below exists only if no two edges share an angle, and that is an
     // assumption about *upstream*, not about this function.** Two edges leaving one vertex whose
@@ -1631,7 +1637,7 @@ fn angular_order(
     for b in [&pos, &neg] {
         for x in 0..b.len() {
             for y in (x + 1)..b.len() {
-                if cross(b[x], b[y]) == 0 {
+                if cross(b[x], b[y])? == 0 {
                     return Err(reject(RejectReason::UnorderedEdges));
                 }
             }
@@ -1643,18 +1649,30 @@ fn angular_order(
         return Err(reject(RejectReason::UnorderedEdges));
     }
     // Within an open half-plane, `a` precedes `b` (smaller angle) iff `d_a × d_b > 0`.
-    let by_turn = |v: &mut Vec<usize>| {
+    // `turn` can now fail rather than answer — an arc's side is `a + b√c` arithmetic — and a
+    // comparator cannot carry that out, so the failure is caught in a flag and raised after the
+    // sort (the idiom this file already uses where an exact comparison rides a `sort_by`).
+    let by_turn = |v: &mut Vec<usize>| -> Result<(), BoolError> {
+        let mut bad = None;
         v.sort_by(|&a, &b| match cross(a, b) {
-            c if c > 0 => std::cmp::Ordering::Less,
-            c if c < 0 => std::cmp::Ordering::Greater,
+            Ok(c) if c > 0 => std::cmp::Ordering::Less,
+            Ok(c) if c < 0 => std::cmp::Ordering::Greater,
             // Unreachable after the check above, and spelled anyway: a comparator that answers
             // `Greater` both ways is a contract violation, and `sort_by` is then free to produce
             // any permutation.
-            _ => std::cmp::Ordering::Equal,
-        })
+            Ok(_) => std::cmp::Ordering::Equal,
+            Err(e) => {
+                bad = Some(e);
+                std::cmp::Ordering::Equal
+            }
+        });
+        match bad {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
     };
-    by_turn(&mut pos);
-    by_turn(&mut neg);
+    by_turn(&mut pos)?;
+    by_turn(&mut neg)?;
     let mut out = zero;
     out.extend(pos);
     out.extend(pole);
@@ -1706,9 +1724,9 @@ pub(crate) struct Cell {
     pub winding: i8,
 }
 
-/// Number of connected components of the 1-skeleton (union-find over vertex triples joined by each
-/// segment). The `-1`-winding face count must equal this.
-fn component_count(segs: &[MergedSeg]) -> usize {
+/// Number of connected components of the 1-skeleton (union-find over vertex names joined by each
+/// edge — segment or arc). The `-1`-winding face count must equal this.
+fn component_count(segs: &[MergedSeg], arcs: &[MergedArc]) -> usize {
     let mut idx: HashMap<NodeId, usize> = HashMap::new();
     let mut id = |t: NodeId, parent: &mut Vec<usize>| -> usize {
         let n = idx.len();
@@ -1725,8 +1743,13 @@ fn component_count(segs: &[MergedSeg]) -> usize {
         }
         x
     }
-    for s in segs {
-        let (a, b) = (id(s.end[0], &mut parent), id(s.end[1], &mut parent));
+    // ★ **The arcs join too.** The `-1` count the walk compares against is a count of the
+    // 1-skeleton's components, and an arc is an edge of that skeleton like any other — leaving them
+    // out would make a crossed circle look like a component of its own and the walk's check would
+    // then be off by one wherever a circle was cut.
+    let ends = segs.iter().map(|s| s.end).chain(arcs.iter().map(|a| a.end));
+    for e in ends {
+        let (a, b) = (id(e[0], &mut parent), id(e[1], &mut parent));
         let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
         parent[ra] = rb;
     }
@@ -2014,6 +2037,25 @@ fn split_circles(
                 return Err(reject(RejectReason::CoincidentNodes));
             }
         }
+        // ★★★ **The sub-segments' travel sense, taken from the whole segment's own two named
+        // ends — exactly, with no frame arithmetic at all.** Every sub-segment runs the way the
+        // segment ran, and the pieces below are emitted in **ascending** `along`; so the only
+        // question is whether ascending `along` *is* the segment's direction, and the two ends'
+        // own parameters answer it. (The alternative — turning `line.dir` into an `EdgeDir` sense
+        // — needs the canonical-vs-stored turn on two classes and an `f64` dot to decide it. This
+        // needs neither: `edge_dir` is still the one place a sense is made.)
+        let ends = (keyed.len() - 2, keyed.len() - 1); // the two pushed just above, in order
+        let forward = match cmp_along(&keyed[ends.0].0, &keyed[ends.1].0) {
+            Some(core::cmp::Ordering::Less) => true,
+            Some(core::cmp::Ordering::Greater) => false,
+            // Equal is the coincident-endpoint case the windows check above already refused, and
+            // `None` is a width decline.
+            _ => return Err(undecided()),
+        };
+        let whole = combinatorics::edge_dir(jd, wc, sg.wall, sg.end_h[0], sg.end_h[1])?
+            .sense()
+            .ok_or_else(undecided)?;
+        let sense = if forward { whole } else { -whole };
         for w in order.windows(2) {
             let (a, b) = (&keyed[w[0]], &keyed[w[1]]);
             out_segs.push(MergedSeg {
@@ -2021,6 +2063,7 @@ fn split_circles(
                 end: [a.1, b.1],
                 end_h: [a.2, b.2],
                 merged: sg.merged.clone(),
+                sense: Some(sense),
             });
         }
     }
@@ -2304,8 +2347,9 @@ fn circle_crossings(
 /// the cells plus `face_of[he] = cell index`, which the label brick uses to reach a neighbour cell
 /// across an edge as `face_of[twin(he)]`.
 ///
-/// Half-edge encoding: segment `i` gives `he = 2i` (forward, `end[0]→end[1]`) and `2i+1` (reverse);
-/// `twin(he) = he ^ 1`. `next` is set per vertex from `angular_order`: a half-edge arriving at `v`
+/// Half-edge encoding: edge `i` gives `he = 2i` (forward, `end[0]→end[1]`) and `2i+1` (reverse);
+/// `twin(he) = he ^ 1`. Segments are numbered first and the arcs a split made after them, so `he`
+/// alone says which kind it is — see [`walk_cells`]. `next` is set per vertex from `angular_order`: a half-edge arriving at `v`
 /// leaves as `twin`, and `next` is `twin`'s **one-step** neighbour in the cyclic order. The step
 /// direction (predecessor vs successor) is `angular_order`'s handedness — unknown up front, so both
 /// are tried and the one giving exactly `component_count` faces of winding `-1` is kept.
@@ -2315,26 +2359,97 @@ fn extract_cells(
     segs: &[MergedSeg],
     circles: &[MergedCircle],
 ) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
-    // ★★★ **The split runs here, and stops here** (2026-08-21). A circle a segment crosses is cut
-    // into arcs by [`split_circles`] — that machinery is live and its own refusals (a crossing on
-    // the seam, a crossing that lands on an endpoint) are real. What is not built is the *assembly*
-    // of an arc-bounded loop, so the stopper stands at the first place that is true, the way C4a's
-    // `CylinderBooleanNotYet` stood until C4b-3 removed it. The population is unchanged; the name
-    // and the stage it is refused at are what moved.
-    if split_circles(jd, wc, segs, circles)?.is_some() {
+    let split = split_circles(jd, wc, segs, circles)?;
+    let (walk_segs, walk_circles, arcs) = match &split {
+        Some((s, c, a)) => (&s[..], &c[..], &a[..]),
+        None => (segs, circles, &[][..]),
+    };
+    let walked = walk_cells(jd, wc, walk_segs, walk_circles, arcs);
+    // ★★★ **The stopper stands at the return** (2026-08-21). Everything above it is live — the
+    // split, the walk over three half-edge ranges, the winding read at a branch point — and what
+    // is still missing is the *assembly* below: `nest_cells` and `emit_faces` split half-edge
+    // kinds at `2·segs.len()`, which an arc range walks straight through. So the arcs are built
+    // and walked and then refused, the way C4a's `CylinderBooleanNotYet` stood until C4b-3
+    // removed it, and it intercepts the walk's failure too: the population's *name* does not
+    // depend on how far the walk got.
+    if !arcs.is_empty() {
+        // ★ The witness is read from the **uncut** edges — `arc_split_witness` finds the crossing
+        // that made the split, and after the split there is nothing left crossing.
         return Err(match arc_split_witness(jd, wc, segs, circles) {
             Some(w) => crate::reject_at(RejectReason::ArcBoundNotYet, w),
             None => reject(RejectReason::ArcBoundNotYet),
         });
     }
+    walked
+}
+
+/// The DCEL walk itself: half-edges into cells, over the **three** ranges an arrangement can hold.
+///
+/// - segments `[0, 2·ns)` — an ordinary two-ended edge on a plane's meet with `P`;
+/// - arcs `[2·ns, 2·(ns+na))` — a piece of a circle a segment cut, equally two-ended;
+/// - uncut circles, appended **after** the walk on pseudo-half-edges `2·(ns+na) + 2i`, because a
+///   closed curve with no vertex is not an orbit the walk can express.
+fn walk_cells(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    segs: &[MergedSeg],
+    circles: &[MergedCircle],
+    arcs: &[MergedArc],
+) -> Result<(Vec<Cell>, HashMap<usize, usize>), BoolError> {
     let n = segs.len();
-    let he_count = 2 * n;
-    let origin = |he: usize| segs[he / 2].end[he % 2]; // he%2==0: end[0]; ==1: end[1]
+    let he_count = 2 * (n + arcs.len());
+    let is_arc = |he: usize| he >= 2 * n;
+    let arc_of = |he: usize| &arcs[(he - 2 * n) / 2];
+    let origin = |he: usize| {
+        // he%2==0: end[0]; ==1: end[1] — one rule, both ranges.
+        if is_arc(he) {
+            arc_of(he).end[he % 2]
+        } else {
+            segs[he / 2].end[he % 2]
+        }
+    };
     // The endpoints as handles on this edge's line, carried by the segment. Not recovered from the
     // names: a canonical name need not mention `wc` or the wall (see `combinatorics::RingEdge`).
-    let origin_h = |he: usize| segs[he / 2].end_h[he % 2];
-    let target_h = |he: usize| segs[he / 2].end_h[1 - he % 2];
-    let wall = |he: usize| segs[he / 2].wall;
+    // ★ An arc's ends are branch points by construction, which is what `EndPin::Cylinder` says.
+    let origin_h = |he: usize| {
+        if is_arc(he) {
+            combinatorics::EndPin::Cylinder
+        } else {
+            segs[he / 2].end_h[he % 2]
+        }
+    };
+    let target_h = |he: usize| {
+        if is_arc(he) {
+            combinatorics::EndPin::Cylinder
+        } else {
+            segs[he / 2].end_h[1 - he % 2]
+        }
+    };
+    let carrier = |he: usize| {
+        if is_arc(he) {
+            let a = arc_of(he);
+            // ★ `MergedArc::end` runs counter-clockwise about the axis, so the even half-edge
+            // travels that way and its twin the other. The *whole* arc convention is stated once,
+            // at the split; this is the only place it is read.
+            combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
+                cyl: a.cyl,
+                def: a.def.clone(),
+                ccw: he % 2 == 0,
+            }))
+        } else {
+            combinatorics::Carrier::Plane {
+                wall: segs[he / 2].wall,
+                sense: segs[he / 2].sense.map(|s| if he % 2 == 0 { s } else { -s }),
+            }
+        }
+    };
+    let edge_of = |he: usize| combinatorics::RingEdge {
+        node: origin(he),
+        to: origin(he ^ 1),
+        carrier: carrier(he),
+        from_h: origin_h(he),
+        to_h: target_h(he),
+    };
 
     // Outgoing half-edges per vertex.
     let mut outgoing: HashMap<NodeId, Vec<usize>> = HashMap::new();
@@ -2357,18 +2472,7 @@ fn extract_cells(
                 // ★ The half-edge **leaves** `v`, so its direction is read at `v` — and `dir_at`
                 // is where that is checked. Built once per half-edge, which is the hoist the
                 // sort below rests on.
-                edges.push(combinatorics::dir_at(
-                    jd,
-                    wc,
-                    &combinatorics::RingEdge {
-                        node: origin(he),
-                        to: origin(he ^ 1),
-                        wall: wall(he),
-                        from_h: origin_h(he),
-                        to_h: target_h(he),
-                    },
-                    v,
-                )?);
+                edges.push(combinatorics::dir_at(jd, wc, &edge_of(he), v)?);
             }
         }
         let ord = timed!(E_ANGULAR, angular_order(jd, wc, &edges))?;
@@ -2376,7 +2480,7 @@ fn extract_cells(
     }
 
     watch!(E_WALK);
-    let components = component_count(segs);
+    let components = component_count(segs, arcs);
 
     // Try both step directions (predecessor / successor); keep the one whose bounded/outer split
     // is right. Handedness is fixed by `orient_sign(w)` and unknown up front.
@@ -2418,23 +2522,21 @@ fn extract_cells(
                     break;
                 }
             }
-            if !ok || cyc.len() < 3 {
+            // ★★ **Three half-edges is the *straight* floor, and it is a fact about lines.** Two
+            // straight edges between two points are one edge traced twice; two *arcs* between two
+            // points are a lens, and an arc and a chord are a circular segment — both are honest
+            // cells. So the floor reads the carriers, and a one-half-edge orbit (a circle a
+            // segment only grazed, slit but not divided) is refused in either.
+            let floor = if cyc.iter().any(|&h| is_arc(h)) { 2 } else { 3 };
+            if !ok || cyc.len() < floor {
                 ok = false;
                 break;
             }
-            // The cell's edges come from the walk, which knows each one's wall and both handles.
-            // The endpoint names cannot supply them: a canonical name need not mention this line's
-            // planes at all, which is what retired the derivation check that used to stand here.
-            let ring: Vec<combinatorics::RingEdge> = cyc
-                .iter()
-                .map(|&h| combinatorics::RingEdge {
-                    node: origin(h),
-                    to: origin(h ^ 1),
-                    wall: wall(h),
-                    from_h: origin_h(h),
-                    to_h: target_h(h),
-                })
-                .collect();
+            // The cell's edges come from the walk, which knows each one's carrier and both
+            // handles. The endpoint names cannot supply them: a canonical name need not mention
+            // this line's planes at all, which is what retired the derivation check that used to
+            // stand here — and an arc's carrier is not a plane class it could name anyway.
+            let ring: Vec<combinatorics::RingEdge> = cyc.iter().map(|&h| edge_of(h)).collect();
             let w = combinatorics::loop_winding(jd, wc, &ring)?;
             cells.push(Cell {
                 half_edges: cyc,
@@ -2449,7 +2551,7 @@ fn extract_cells(
             // twin arithmetic works unmodified (`2n` is even). The gate proves a circle meets
             // no segment, so no crossing machinery is owed.
             for (i, _) in circles.iter().enumerate() {
-                let he_in = 2 * n + 2 * i;
+                let he_in = he_count + 2 * i;
                 face_of.insert(he_in, cells.len());
                 cells.push(Cell {
                     half_edges: vec![he_in],
@@ -2529,7 +2631,7 @@ fn nest_cells(
             .map(|&he| combinatorics::RingEdge {
                 node: segs[he / 2].end[he % 2],
                 to: segs[he / 2].end[1 - he % 2],
-                wall: segs[he / 2].wall,
+                carrier: combinatorics::Carrier::plane(segs[he / 2].wall),
                 from_h: segs[he / 2].end_h[he % 2],
                 to_h: segs[he / 2].end_h[1 - he % 2],
             })

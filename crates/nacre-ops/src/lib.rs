@@ -655,12 +655,13 @@ pub enum RejectReason {
     /// ★ Its per-face sibling is `DeclineKind::BranchNode`: the tracer's decline structure carries
     /// a face handle, so the paths inside it say *where* instead of raising this.
     ///
-    /// ★★ **It ships with no fixture, and that is recorded rather than hidden.** Nothing mints a
-    /// branch node into a ring yet — the arrangement's only branch names live in the reject
-    /// witness's own key — so no shape in the corpus reaches these arms. The reject census is
-    /// fixture-driven and does not enumerate reasons, so nothing forces a row; when the arc split
-    /// gives these paths a real population, that is when one is owed. (`DegenerateWitness` is the
-    /// precedent: no fixture, written down, and not taken as licence to delete the guard.)
+    /// ★★ **A ring may now hold a branch node, and this no longer refuses one.**
+    /// `loop_winding` compares branch coordinates through the quad tower
+    /// (`combinatorics::CoordKey`); what is left here is the narrower sentence — a branch node
+    /// whose *cylinder* is not on any of the ring's own carriers, so the point cannot be re-solved
+    /// from its name. That arm has no fixture, and neither does the ray-cast one next to it; both
+    /// are recorded rather than hidden. (`DegenerateWitness` is the precedent: no fixture, written
+    /// down, and not taken as licence to delete the guard.)
     BranchVertexUnnamed,
     /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
     /// intersection is an ellipse (M6-3's vocabulary).
@@ -773,15 +774,35 @@ pub enum RejectReason {
     WitnessNotRational,
     /// **A circle was cut into arcs, and nothing downstream can build one yet.**
     ///
-    /// The arrangement now *splits* a circle a segment crosses — `split_circles` orders the
-    /// crossings about the seam and cuts the segments with them — but assembling an arc-bounded
-    /// loop needs the DCEL walk, the turn atom and the rim table to speak the curved carrier, and
-    /// they do not. So the refusal stands at the first place that sentence is true rather than at
-    /// the arrangement, which no longer has anything to refuse.
+    /// The arrangement splits a circle a segment crosses, **and now walks the result**: the DCEL
+    /// orbit spans the arc range, the turn atom answers for a curved carrier, and the winding is
+    /// read at a branch point. What is still missing is the *assembly* — `nest_cells`' `circle_of`,
+    /// `label_cells`' `mask_of`, `emit_faces`' `bound_of` and the circle-cell append all split
+    /// half-edge kinds at `2·segs.len()`, which an arc range walks straight through, and the rim
+    /// table has no arc row. So the refusal stands at `extract_cells`' **return**: the cells are
+    /// built and measured, and then not handed on.
+    ///
+    /// ★ It intercepts the walk's own failure too, so the population's name does not depend on how
+    /// far the walk got — which is what keeps this row of the reject census reading one thing.
     ///
     /// ★ A stopper of the shape `CylinderBooleanNotYet` had in M6-2a: it names what is missing, it
     /// is measured by the fixtures it holds, and the commit that finishes the road removes it.
     ArcBoundNotYet,
+    /// **A loop's winding had to be read across a *curved* straight stretch.**
+    ///
+    /// `loop_winding` reads the turn at the ring's extreme node, walking back past nodes the loop
+    /// runs straight through. The direction it carries out of that walk is the far edge's direction
+    /// **at its own start**, which is the extreme node's arriving direction only because a line's
+    /// tangent does not change along it. Two arcs of one circle are tangent-continuous too — so the
+    /// walk steps past them just the same — but their tangents differ, and the winding read there
+    /// would be the turn at some *other* point of the ring, confidently wrong.
+    ///
+    /// ★ An unfired guard by construction, and said so: in this cell's population every extreme
+    /// node is a real corner (a disk cut by chords is convex; a polygon minus disks turns at every
+    /// arc end), so the walk never takes a step. It fires the day that stops being true, and then
+    /// the answer is the general extreme-point rule — read the winding at the extremum of the
+    /// *region*, which may lie in an arc's interior — not a wider version of this walk.
+    CurvedStraightRun,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
     /// A hole ring never touches the outer ring it sits in, and `point_in_ring` checks that
@@ -938,6 +959,7 @@ impl RejectReason {
             Self::NoClearRay => "no_clear_ray",
             Self::WitnessNotRational => "witness_not_rational",
             Self::ArcBoundNotYet => "arc_bound_not_yet",
+            Self::CurvedStraightRun => "curved_straight_run",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
             Self::HoleRoots => "hole_roots",
@@ -991,6 +1013,7 @@ impl RejectReason {
             | Self::NoClearRay
             | Self::WitnessNotRational
             | Self::ArcBoundNotYet
+            | Self::CurvedStraightRun
             | Self::PointOnRing
             | Self::HoleDepth
             | Self::CoplanarMerge => RejectClass::NotSupported,

@@ -233,6 +233,58 @@ impl EndPin {
     }
 }
 
+/// **What carries a ring edge** — the plane whose meet with `P` the edge rides, or the circle an
+/// arc rides.
+///
+/// ★ The two arms are not symmetric and should not be made so. A plane carrier is an *index*: the
+/// class table answers everything about it, and the direction it gives is the same at both ends. An
+/// arc carrier has to carry the cylinder itself, because the direction it gives depends on **where
+/// on the circle** it is asked — which is what [`dir_at`]'s `node` is for.
+#[derive(Clone, Debug)]
+pub(crate) enum Carrier {
+    Plane {
+        /// The plane whose meet with `P` carries this edge.
+        wall: usize,
+        /// The travel sense along `n_P × n_wall`, when the **endpoints** cannot supply it.
+        ///
+        /// ★★ An arc split cuts a segment at branch points, and `order_along` speaks three-plane
+        /// classes only — so a sub-segment with a cut end has nothing to derive its sense from.
+        /// The split does know it (it sorted those points along the line), so it carries it here
+        /// rather than leaving a hole for [`edge_dir`] to fall into. `None` on an edge whose two
+        /// named ends still answer, which is every edge no split touched.
+        sense: Option<i8>,
+    },
+    Arc(Box<ArcCarrier>),
+}
+
+/// The circle an arc rides, and which way around it the arc runs.
+#[derive(Clone, Debug)]
+pub(crate) struct ArcCarrier {
+    /// The cylinder class — the arc's **identity**, so "two arcs of one circle" is an index
+    /// comparison and not a geometric one.
+    pub cyl: usize,
+    pub def: nacre_topo::CylinderDef,
+    /// `true` when travel is counter-clockwise about the cylinder's axis — the sense
+    /// `arrangement::split_circles` builds every `MergedArc` in, inverted for the twin half-edge.
+    pub ccw: bool,
+}
+
+impl Carrier {
+    /// A plane carrier whose sense its endpoints still supply — every edge outside a split.
+    pub(crate) fn plane(wall: usize) -> Carrier {
+        Carrier::Plane { wall, sense: None }
+    }
+
+    /// The carrying plane class, `None` for an arc. The named-road consumers (the ray casts, the
+    /// on-ring test) speak plane classes and nothing else, so this is where they decline.
+    pub(crate) fn wall(&self) -> Option<usize> {
+        match self {
+            Carrier::Plane { wall, .. } => Some(*wall),
+            Carrier::Arc(_) => None,
+        }
+    }
+}
+
 /// One edge of a ring on plane `P`, carrying **its own geometry** rather than leaving it to be
 /// recovered from the two endpoint names.
 ///
@@ -243,7 +295,7 @@ impl EndPin {
 /// the shared class is **some other plane than the one the edge rides**, silently. So the walker
 /// that knows the edge — the DCEL half-edge, which was told its wall — hands the geometry over
 /// instead, and only rings whose provenance is *names alone* go through [`ring_from_names`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub(crate) struct RingEdge {
     /// Identity of the vertex this edge leaves.
     pub node: NodeId,
@@ -258,9 +310,9 @@ pub(crate) struct RingEdge {
     /// ★ Measured before it was asserted: 153,798 rings in the suite, **0** where an edge's far end
     /// is not the next edge's start. "A ring is a chain" was a producer's promise until now.
     pub to: NodeId,
-    /// The plane whose meet with `P` carries this edge.
-    pub wall: usize,
-    /// What pins each endpoint on `P ∩ wall` — a third plane, or the cylinder an arc split put
+    /// What carries the edge — a plane's meet with `P`, or a circle ([`Carrier`]).
+    pub carrier: Carrier,
+    /// What pins each endpoint on the carrier — a third plane, or the cylinder an arc split put
     /// there ([`EndPin`]). Not a name: see [`RingEdge`]'s note.
     pub from_h: EndPin,
     pub to_h: EndPin,
@@ -292,7 +344,7 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
             Ok(RingEdge {
                 node: NodeId::three_planes(a),
                 to: NodeId::three_planes(b),
-                wall,
+                carrier: Carrier::plane(wall),
                 from_h: EndPin::Class(from_h),
                 to_h: EndPin::Class(to_h),
             })
@@ -351,7 +403,7 @@ pub(crate) fn ring_edges_with_walls(
             Ok(RingEdge {
                 node: nodes[i],
                 to: nodes[j],
-                wall,
+                carrier: Carrier::plane(wall),
                 from_h: EndPin::Class(from_h),
                 to_h: EndPin::Class(to_h),
             })
@@ -373,20 +425,58 @@ pub(crate) fn ring_edges_with_walls(
 /// keeps the boundary and because an oracle read back out of the value under test is an oracle
 /// derived from its own answer. Do not add accessors for it.
 ///
-/// ★ **`carrier`, not `wall`** — an arc's direction is carried by a circle, and the name says
-/// where this grows. It does not grow yet: the only consumer of the field,
-/// `Judge::plane_pair_dir_sign`, still demands a **plane** class.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct EdgeDir {
-    carrier: usize,
-    sense: i8,
+/// ★★★ **`carrier`, not `wall` — and it grew when arcs arrived.** A straight edge's direction is a plane carrier and a sign;
+/// an arc's is a **tangent at one end**, and the two ends differ. So the type is a sum, and the arc
+/// arm carries *everything the comparison needs* — the end as `(line, s)`, the circle's centre, and
+/// which way the axis points against the class's stored normal — rather than an index a reader
+/// would have to resolve against a table. That is what keeps [`turn`] from needing one.
+#[derive(Clone, Debug)]
+pub(crate) enum EdgeDir {
+    /// A straight edge: the plane whose meet with `P` carries it, `+1` when travel runs along
+    /// `n_P × n_carrier`.
+    Line { carrier: usize, sense: i8 },
+    /// An arc **at one of its ends**. Boxed: the exact end is a `MeetLine` and a `QuadVal`, an
+    /// order of magnitude wider than a line's two words, and every direction on the hot path is a
+    /// line.
+    Arc(Box<ArcDir>),
+}
+
+/// The payload of [`EdgeDir::Arc`] — private fields for the same reason the enum has them: every
+/// rule that reads a direction lives in this module.
+#[derive(Clone, Debug)]
+pub(crate) struct ArcDir {
+    cyl: usize,
+    /// The end this direction is taken at, exactly.
+    at: (nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    /// The circle's centre on `P` — rational, because a circle bound's plane is ⊥ to the axis.
+    centre: [nacre_scalar::Rat; 3],
+    /// `n_P · m > 0`: the class's **stored** normal against the cylinder's axis.
+    ///
+    /// ★ Measured **unexercised**: `true` on every class the corpus reaches, so a red probe that
+    /// drops it changes nothing. It is here because the algebra puts it here, not because a fixture
+    /// forced it — [`arc_side`] records which factors the population does lock.
+    axis_up: bool,
+    /// Travel runs counter-clockwise about the circle's own normal (the axis).
+    ///
+    /// ★ This one **is** locked: dropping it makes the two arcs at a crossing share a bucket in
+    /// `arrangement::angular_order`, and the walk comes back `UnorderedEdges`.
+    ccw: bool,
 }
 
 impl EdgeDir {
-    /// A direction stated directly. Production makes them through [`edge_dir`]; this exists for
-    /// fixtures that state a `(carrier, sense)` pair by hand.
+    /// A straight direction stated directly. Production makes them through [`dir_at`]; this exists
+    /// for fixtures that state a `(carrier, sense)` pair by hand.
     pub(crate) fn new(carrier: usize, sense: i8) -> EdgeDir {
-        EdgeDir { carrier, sense }
+        EdgeDir::Line { carrier, sense }
+    }
+
+    /// The travel sense of a straight direction — `None` for an arc, whose direction is not a sign
+    /// against a fixed carrier. Read by the split, which carries a sub-segment's sense forward.
+    pub(crate) fn sense(&self) -> Option<i8> {
+        match self {
+            EdgeDir::Line { sense, .. } => Some(*sense),
+            EdgeDir::Arc(_) => None,
+        }
     }
 }
 
@@ -462,7 +552,106 @@ pub(crate) fn dir_at(
         "a direction was asked at a node this edge does not touch — the ring is not a chain, \
          or the caller paired two edges that do not meet"
     );
-    edge_dir(jd, p, e.wall, e.from_h, e.to_h)
+    match &e.carrier {
+        // ★ The carried sense first, and only then the endpoints. Where a split supplied one, the
+        // endpoints *cannot* answer (a cut end is a branch point with no third plane), so this is
+        // not a shortcut around a road that works — it is the only road there is.
+        // ★ The coincident-endpoint check `edge_dir` makes is not lost with it: the split refuses
+        // two crossings at one parameter (`CoincidentNodes`) before any sub-segment is built, which
+        // is the only way a carried sense can exist at all.
+        Carrier::Plane {
+            wall,
+            sense: Some(s),
+        } => Ok(EdgeDir::new(*wall, *s)),
+        Carrier::Plane { wall, sense: None } => edge_dir(jd, p, *wall, e.from_h, e.to_h),
+        Carrier::Arc(a) => arc_at(jd, p, a, node),
+    }
+}
+
+/// **An arc's direction of travel at one of its ends** — the curved half of [`dir_at`].
+///
+/// Everything here is a *cache of the node's name*: [`branch_meet`] re-solves the point from the
+/// name rather than taking a producer's coordinate, and the circle's centre is the axis point at
+/// this plane's parameter. The direction itself is never materialized — [`turn`] reads it through
+/// one `a + b√c` sign, and the three booleans below are what orient that sign.
+fn arc_at(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: &ArcCarrier,
+    node: NodeId,
+) -> Result<EdgeDir, BoolError> {
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    // A three-plane node on an arc would be the two-names case the split refuses; saying so by
+    // name is better than realizing the wrong point.
+    let at =
+        branch_meet(jd, a.cyl, &a.def, node).ok_or_else(|| reject(RejectReason::RingNaming))?;
+    let coeffs = class_coeffs_rat(jd, p).ok_or_else(undecided)?;
+    // The circle's centre: where the axis pierces this plane. ★ The canonical sign the coefficients
+    // carry cancels in the parameter (numerator and denominator both flip), so this one does not
+    // need the stored-frame turn that `arc_side` does.
+    let t = crate::planes::axis_param_of_plane(&coeffs, &a.def).ok_or_else(undecided)?;
+    let (o, m) = (a.def.origin(), a.def.dir());
+    let centre: [nacre_scalar::Rat; 3] = (|| {
+        let mut c = [nacre_scalar::Rat::from_int(0); 3];
+        for k in 0..3 {
+            c[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
+        }
+        Some(c)
+    })()
+    .ok_or_else(undecided)?;
+    Ok(EdgeDir::Arc(Box::new(ArcDir {
+        cyl: a.cyl,
+        at,
+        centre,
+        axis_up: crate::planes::plus_t_is_above(&jd.planes[p], &a.def),
+        ccw: a.ccw,
+    })))
+}
+
+/// A class's exact description **turned to face its stored normal**.
+///
+/// ★★★ [`class_coeffs_rat`] hands back the class's *canonical* name — first nonzero component
+/// positive — which points the **other way** from the stored normal on half the classes. Every
+/// direction sign in this file is written in the stored frame ([`turn`]'s `frame_sign` bridge, the
+/// cell labels' "above"), so a rule spelled against the canonical normal reads backwards on exactly
+/// those classes and nowhere else. `planes::plus_t_is_above` carries the same warning and the
+/// thirty-six tests that went red at once when it was not heeded.
+///
+/// The turn is decided by an `f64` dot of two **parallel** vectors — the class's own normal, twice
+/// over — so the product is `±|a||b|`, a full magnitude from the sign boundary rather than a
+/// near-zero comparison. That is `plus_t_is_above`'s argument verbatim, and it is why this is total
+/// where the integer fold below is not.
+///
+/// ★ **And it is cross-checked against that integer fold.** `nacre_cip::predicate::name_stored_ints`
+/// does the same turn exactly, in integers, on the classes it can (`None` for a wide name or a
+/// witness that speaks another frame) — so where it answers, the two must agree.
+fn stored_coeffs_rat(jd: &Judge<'_, WorkingPlane>, c: usize) -> Option<[nacre_scalar::Rat; 4]> {
+    let coeffs = class_coeffs_rat(jd, c)?;
+    let n = nacre_math::Vector3::from_array([
+        coeffs[0].to_f64(),
+        coeffs[1].to_f64(),
+        coeffs[2].to_f64(),
+    ]);
+    let agrees = jd.planes[c].plane.normal().dot(n) > 0.0;
+    debug_assert!(
+        jd.planes[c].name_ints.as_ref().is_none_or(|ni| {
+            let k = (0..4).find(|&k| coeffs[k] != nacre_scalar::Rat::from_int(0));
+            // ★ Through `NameInts`' own accessor, not by touching the integers: production code
+            // in this crate reaches `BigInt` only through `nacre-cip`'s types (the `num-bigint`
+            // dependency is dev-only, and an assertion is not a reason to promote it).
+            k.is_none_or(|k| ((ni.coeff_sign(k) > 0) == (coeffs[k].numer() > 0)) == agrees)
+        }),
+        "the canonical-to-stored turn disagrees with the class's integer fold"
+    );
+    if agrees {
+        return Some(coeffs);
+    }
+    let zero = nacre_scalar::Rat::from_int(0);
+    let mut out = [zero; 4];
+    for k in 0..4 {
+        out[k] = zero.checked_sub(coeffs[k])?;
+    }
+    Some(out)
 }
 
 /// The turn at ring node `i`, about the face's **outward** normal: `+1` left, `-1` right.
@@ -498,7 +687,7 @@ pub(crate) fn turn_at(
     // answer either way; naming it is what makes an arc's two ends tellable apart.
     let arriving = dir_at(jd, p, &ring[(i + n - 1) % n], ring[i].node)?;
     let leaving = dir_at(jd, p, &ring[i], ring[i].node)?;
-    turn_between(jd, p, arriving, leaving)
+    turn_between(jd, p, &arriving, &leaving)
 }
 
 /// **Do two carriers give one direction on `P`?** — `P ∩ a` and `P ∩ b` are parallel.
@@ -530,8 +719,31 @@ pub(crate) fn parallel_carriers(
 /// back `0`. Pulled out of that guard the predicate answers a different question, because two
 /// directions on *different* carriers can also be collinear (aliasing that `union_wall` did not
 /// reach), and those belong in the `0` bucket rather than the `π` one.
-pub(crate) fn antiparallel(a: EdgeDir, b: EdgeDir) -> bool {
-    a.carrier == b.carrier && a.sense != b.sense
+pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
+    match (a, b) {
+        (
+            EdgeDir::Line {
+                carrier: ca,
+                sense: sa,
+            },
+            EdgeDir::Line {
+                carrier: cb,
+                sense: sb,
+            },
+        ) => ca == cb && sa != sb,
+        // ★ The two arcs of one circle meeting at one node are tangent by construction, so the
+        // only question left is which way each travels. **They are at one node by construction**
+        // too — a fan is built from a single vertex — which is why nothing here has to compare
+        // positions (an earlier attempt used the sign of `s` as a stand-in for "same node", and
+        // two different nodes can share it).
+        (EdgeDir::Arc(x), EdgeDir::Arc(y)) => x.cyl == y.cyl && x.ccw != y.ccw,
+        // ★★ **A line and an arc are never the π pole here, and the reason is upstream**: this is
+        // asked only where the turn already came back `0`, and a `0` turn against an arc means the
+        // segment is *tangent* at that node — while the split cuts only at **transversal**
+        // crossings. So `false` is not a shrug: it sends the pair to the `0` bucket, where
+        // `angular_order`'s `UnorderedEdges` names the surprise rather than ranking it.
+        _ => false,
+    }
 }
 
 /// What an earlier ring edge does relative to `later` — the three answers [`loop_winding`]'s
@@ -563,15 +775,41 @@ pub(crate) enum Continuation {
 pub(crate) fn continuation(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
-    earlier: EdgeDir,
-    later: EdgeDir,
+    earlier: &EdgeDir,
+    later: &EdgeDir,
 ) -> Continuation {
-    if !parallel_carriers(jd, p, earlier.carrier, later.carrier) {
-        Continuation::Turns
-    } else if earlier.sense == later.sense {
-        Continuation::Straight
-    } else {
-        Continuation::DoublesBack
+    match (earlier, later) {
+        (
+            EdgeDir::Line {
+                carrier: ce,
+                sense: se,
+            },
+            EdgeDir::Line {
+                carrier: cl,
+                sense: sl,
+            },
+        ) => {
+            if !parallel_carriers(jd, p, *ce, *cl) {
+                Continuation::Turns
+            } else if se == sl {
+                Continuation::Straight
+            } else {
+                Continuation::DoublesBack
+            }
+        }
+        // Two arcs of one circle share a tangent at the node they meet at — the curved reading of
+        // "parallel carriers". Same travel is a straight stretch; opposite is the antenna the
+        // caller refuses.
+        (EdgeDir::Arc(e), EdgeDir::Arc(l)) if e.cyl == l.cyl => {
+            if e.ccw == l.ccw {
+                Continuation::Straight
+            } else {
+                Continuation::DoublesBack
+            }
+        }
+        // A line and an arc at a **transversal** crossing turn — that is what transversal means,
+        // and the split makes no other kind of node.
+        _ => Continuation::Turns,
     }
 }
 
@@ -585,17 +823,22 @@ pub(crate) fn continuation(
 /// direction *is* the one the loop arrives on. That premise belongs to the caller that established
 /// it, the same way [`antiparallel`]'s guard does.
 ///
-/// ★ **Today an edge's whole-edge direction is its direction at either end**, and that holds only
-/// because every edge is straight: a line's tangent does not change along it. An arc's does, so
-/// the caller will have to say *which end* it means — an **arity** change, not just a wider
-/// direction type.
+/// ★ **Which end each direction was read at is [`dir_at`]'s to say** — a line's tangent does not
+/// change along it, an arc's does, and that is why the direction is built from `(edge, node)`
+/// rather than from an edge alone.
+///
+/// ★★ **The `0` refused here is the *straight* angle, and that is a plane sentence.** Two arcs of
+/// one circle meeting at a node are tangent-continuous, so [`turn`] answers `0` there without
+/// anything being wrong — the caller's walk-back reads that node as
+/// [`Continuation::Straight`] and steps past it, which is why the `0` that reaches here is the
+/// one where a loop doubles back on itself.
 fn turn_between(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
-    arriving: EdgeDir,
-    leaving: EdgeDir,
+    arriving: &EdgeDir,
+    leaving: &EdgeDir,
 ) -> Result<i8, BoolError> {
-    match turn(jd, p, arriving, leaving) {
+    match turn(jd, p, arriving, leaving)? {
         0 => Err(reject(RejectReason::StraightAngle)),
         t => Ok(t),
     }
@@ -655,16 +898,115 @@ fn turn_between(
 ///   question with a weaker premise (its two walls share no point), which is why one predicate
 ///   serves both and the premise stays with the caller.
 ///
-/// ★ **Neither the coordinate half nor the naming half is open any more.** Comparing a three-plane
-/// node with a branch node is `nacre_scalar::quad::cmp_coord_meet_branch`, exact and total; and a
-/// branch point now has a name ([`NodeId::Branch`], minted by `arrangement::circle_crossings`).
-/// What is left for arcs is exactly this: the **direction** concept, at the three sites above.
-/// ★★ And it is not only the input type — for a straight edge the tangent is the same at both
-/// ends, so "the edge's direction" and "the direction *at* this endpoint" coincide and nothing has
-/// had to tell them apart. An arc's two ends differ, so every site that reads a whole-edge sign
-/// has to say which end it means; that is an **arity** change, not just a wider vessel.
-pub(crate) fn turn(jd: &Judge<'_, WorkingPlane>, p: usize, a: EdgeDir, b: EdgeDir) -> i8 {
-    a.sense * b.sense * jd.plane_pair_dir_sign(p, a.carrier, b.carrier) * jd.planes[p].frame_sign
+/// ★ **All three now answer for arcs, and the arity question is settled where it belonged.** For a
+/// straight edge the tangent is the same at both ends, so "the edge's direction" and "the direction
+/// *at* this endpoint" coincide and nothing ever had to tell them apart; an arc's two ends differ.
+/// That is [`dir_at`]'s `node`, not a wider argument list here — the direction arrives already
+/// bound to the end it was read at, so the sites above compare two directions and nothing else.
+pub(crate) fn turn(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: &EdgeDir,
+    b: &EdgeDir,
+) -> Result<i8, BoolError> {
+    let frame = jd.planes[p].frame_sign;
+    Ok(match (a, b) {
+        (
+            EdgeDir::Line {
+                carrier: ca,
+                sense: sa,
+            },
+            EdgeDir::Line {
+                carrier: cb,
+                sense: sb,
+            },
+        ) => sa * sb * jd.plane_pair_dir_sign(p, *ca, *cb) * frame,
+        // ★★★ **A segment against an arc needs no new primitive, and the algebra says why.**
+        // A circle bound's plane is ⊥ to the axis (`circle_on_class` answers `None` otherwise), so
+        // `n_P ∥ m`. The arc's tangent is `T = ±(m × r)` with `r = x − c`, the segment's direction
+        // `d = n_P × n_carrier` is ⊥ to `m`, and BAC-CAB collapses the cross product:
+        //
+        //   (d × T) · m = (d × (m × r)) · m = (m (d·r) − r (d·m)) · m = (d·r)(m·m)
+        //
+        // so the whole turn is `sign(d · (x − c))` — **one** `a + b√c` question, and
+        // `quad::plane_side` is exactly it: the plane with normal `d` through the centre, measured
+        // at the branch point.
+        (EdgeDir::Line { carrier, sense }, EdgeDir::Arc(arc)) => {
+            sense * arc_side(jd, p, *carrier, arc)?
+        }
+        (EdgeDir::Arc(arc), EdgeDir::Line { carrier, sense }) => {
+            -sense * arc_side(jd, p, *carrier, arc)?
+        }
+        // Two arcs of one circle at one node are tangent: no turn to read. (Two *different*
+        // circles cannot meet at a node — `cylinders_clear` keeps them `r₁+r₂` apart.)
+        (EdgeDir::Arc(_), EdgeDir::Arc(_)) => 0,
+    })
+}
+
+/// `turn(line, arc)` with the line's sense factored out — the `sign(d·(x−c))` above, times the two
+/// frame factors.
+///
+/// ★★ **It is a `Result`, and that is deliberate.** The first attempt returned `0` both for
+/// "collinear" and for "the arithmetic ran out", and the callers read `0` as collinear — so a
+/// width failure came back as a *shape* answer and the diagnosis took an extra measurement. The
+/// two are different facts and this says so.
+///
+/// ★★★ **Which of its factors the corpus actually locks, measured by red probe** — because "the
+/// suite is green" says nothing about a sign no fixture can see:
+///
+/// | factor | probe | verdict |
+/// |---|---|---|
+/// | the whole sign | negate the result | **invisible** — this same atom feeds both the cyclic order and the winding, and the walk tries both handednesses, so a *global* flip is absorbed by trying the other one |
+/// | `ccw` | drop it | **locked** — the two arcs at a crossing collapse into one bucket, `UnorderedEdges` |
+/// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus disagrees, and the wc=5 walk traces one 8-half-edge orbit where there are four cells |
+/// | `axis_up` | drop it | **unexercised** — `true` on every class reached |
+/// | `frame_sign` | drop it | **unexercised** — `+1` on every class reached |
+///
+/// The last two are derived, not guessed (the algebra is above), and a corpus with a face whose
+/// stored normal opposes its outward one, or a cylinder pointing the other way, is what would
+/// close them.
+fn arc_side(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    carrier: usize,
+    arc: &ArcDir,
+) -> Result<i8, BoolError> {
+    use nacre_scalar::{Orient, Rat};
+    let wide = || reject(RejectReason::WitnessNotRational);
+    let ArcDir {
+        at,
+        centre,
+        axis_up,
+        ccw,
+        ..
+    } = arc;
+    // ★★ **Stored-frame normals, not the canonical ones.** `d` is compared against `frame_sign`
+    // below, which speaks the stored frame; `class_coeffs_rat` speaks the canonical one and points
+    // the other way on half the classes. See [`stored_coeffs_rat`].
+    let (Some(np), Some(nw)) = (stored_coeffs_rat(jd, p), stored_coeffs_rat(jd, carrier)) else {
+        return Err(wide());
+    };
+    let d = cross3_rat(&[np[0], np[1], np[2]], &[nw[0], nw[1], nw[2]]).ok_or_else(wide)?;
+    let plane = (|| -> Option<[Rat; 4]> {
+        Some([
+            d[0],
+            d[1],
+            d[2],
+            Rat::from_int(0).checked_sub(dot3_rat(&d, centre)?)?,
+        ])
+    })()
+    .ok_or_else(wide)?;
+    let side = match nacre_scalar::quad::plane_side(&plane, &at.0, &at.1) {
+        Orient::Positive => 1i8,
+        Orient::Negative => -1,
+        // The segment is **tangent** to the circle at this node. The split cuts only at
+        // transversal crossings, so this is a shape the producer should not have made — but it is
+        // still a *shape* answer, and `0` is what the callers read as "collinear".
+        Orient::Zero => 0,
+    };
+    let up = if *axis_up { 1i8 } else { -1 };
+    let way = if *ccw { 1i8 } else { -1 };
+    Ok(side * up * way * jd.planes[p].frame_sign)
 }
 
 /// Face `f`'s outer-loop vertices as three-plane triples: `f`'s own plane, and the
@@ -1191,7 +1533,11 @@ pub(crate) fn every_ray(
                     continue; // runs are counted above
                 };
                 // Strictly ahead of `v` along `dir · (n_P × n_Qa)`?
-                match order_along(jd, p, qa, ring[edge].wall, qb) {
+                let carrier = ring[edge]
+                    .carrier
+                    .wall()
+                    .ok_or_else(|| reject(RejectReason::RingNaming))?;
+                match order_along(jd, p, qa, carrier, qb) {
                     0 => return Err(reject(RejectReason::PointOnRing)), // `X == v`, inside an edge
                     o if o == dir => crossings += 1,
                     _ => {}
@@ -1264,7 +1610,10 @@ pub(crate) fn segment_meets_face(
         for f in &features {
             match *f {
                 Feature::Crossing { edge } => {
-                    let h = ring[edge].wall;
+                    let h = ring[edge]
+                        .carrier
+                        .wall()
+                        .ok_or_else(|| reject(RejectReason::RingNaming))?;
                     events.push(([h, h], true));
                 }
                 Feature::Run {
@@ -1356,7 +1705,10 @@ fn point_on_ring(
         let (Some(si), Some(sj)) = (e.from_h.class(), e.to_h.class()) else {
             return Err(reject(RejectReason::RingNaming));
         };
-        let r = e.wall;
+        let r = e
+            .carrier
+            .wall()
+            .ok_or_else(|| reject(RejectReason::RingNaming))?;
         if side_of(jd, v, r) != 0 {
             continue; // `v` is not even on the edge's line
         }
@@ -2050,6 +2402,96 @@ pub(crate) fn point_in_component(
     // dressing the abstention up as an error for the caller to catch and swallow.
     Ok(None)
 }
+/// **A ring node's coordinate, in whichever world names it** — the key
+/// [`loop_winding`]'s lexicographic scan orders by.
+///
+/// ★★★ **The two arms are not two widths of one thing, they are two *kinds*.** A three-plane node
+/// is the rational meet of three planes; a branch node's coordinate is `a + b√c` and no rational
+/// vessel holds it. That is why this is an enum and not a `[Rat; 3]` with a decline: the second
+/// arm is not a precision failure to be lifted, it is a different number.
+enum CoordKey {
+    /// The three classes, handed to `Judge::cmp_coord` — which keeps its toleranced ladder and its
+    /// escalation, so the existing population's answers are bit-identical to before.
+    Three([usize; 3]),
+    /// The point a plane pair cuts out of a cylinder: `base + s·dir` with `s = a + b√c`.
+    /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
+    /// common case.
+    Branch(Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>),
+}
+
+/// Build one ring node's key.
+///
+/// ★ **The cylinder comes from the ring's own arcs, not from a class-table lookup.** A crossing
+/// node has *both* an arc and a segment on it, so "the edge at index `i`" is the wrong place to
+/// ask — the segment there names no cylinder. The name says which cylinder (`NodeId::Branch`
+/// carries the class), and the arc that rides it is somewhere in this ring by construction: a
+/// branch node is an arc endpoint.
+fn coord_key(
+    jd: &Judge<'_, WorkingPlane>,
+    ring: &[RingEdge],
+    i: usize,
+) -> Result<CoordKey, BoolError> {
+    let node = ring[i].node;
+    let NodeId::Branch { cyl, .. } = node else {
+        // A `match` and not a fallback: a third variant must light this up rather than fall in
+        // here (`let`-`else` is what hid a new variant once already).
+        return match node {
+            NodeId::ThreePlane(t) => Ok(CoordKey::Three(t)),
+            NodeId::Branch { .. } => unreachable!("the let-else above took every branch node"),
+        };
+    };
+    let def = ring
+        .iter()
+        .find_map(|e| match &e.carrier {
+            Carrier::Arc(a) if a.cyl == cyl => Some(&a.def),
+            _ => None,
+        })
+        .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
+    let (line, s) =
+        branch_meet(jd, cyl, def, node).ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+    Ok(CoordKey::Branch(Box::new((line, s))))
+}
+
+/// Order two ring nodes along one world axis — `+1` when `a`'s coordinate is the larger.
+///
+/// The mixed pair is `nacre_scalar::quad::cmp_coord_meet_branch`, which is exact and **total**:
+/// both coordinates lift to one first-storey sign. It wants the three-plane side as a `MeetPoint`,
+/// and this crate builds one directly — `MeetPoint::Narrow` is a public variant, so no door has to
+/// be opened in `nacre-scalar` for it.
+fn cmp_key(
+    jd: &Judge<'_, WorkingPlane>,
+    a: &CoordKey,
+    b: &CoordKey,
+    axis: usize,
+) -> Result<i8, BoolError> {
+    use nacre_scalar::{Orient, quad};
+    let sign = |o: Orient| match o {
+        Orient::Positive => 1i8,
+        Orient::Negative => -1,
+        Orient::Zero => 0,
+    };
+    // ★ Through [`node_coords_rat`], not a second copy of the three-plane solve — the rational
+    // meet is stated once. The round-trip through the name is free: the solve is symmetric in its
+    // three planes, so canonical order changes nothing.
+    let meet = |t: [usize; 3]| {
+        node_coords_rat(jd, NodeId::three_planes(t))
+            .map(nacre_scalar::MeetPoint::Narrow)
+            .ok_or_else(|| reject(RejectReason::WitnessNotRational))
+    };
+    Ok(match (a, b) {
+        (CoordKey::Three(x), CoordKey::Three(y)) => jd.cmp_coord(*x, *y, axis),
+        (CoordKey::Three(x), CoordKey::Branch(b)) => {
+            sign(quad::cmp_coord_meet_branch(&meet(*x)?, &b.0, &b.1, axis))
+        }
+        (CoordKey::Branch(b), CoordKey::Three(y)) => {
+            -sign(quad::cmp_coord_meet_branch(&meet(*y)?, &b.0, &b.1, axis))
+        }
+        (CoordKey::Branch(a), CoordKey::Branch(b)) => {
+            sign(quad::cmp_coord_branch((&a.0, &a.1), (&b.0, &b.1), axis))
+        }
+    })
+}
+
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
 ///
@@ -2064,17 +2506,12 @@ pub(crate) fn point_in_component(
 /// on its hull (fold each side of a pentagon slightly inward), so no such edge is guaranteed.
 /// A hull *vertex* always exists.
 ///
-/// ★★ **Where arcs will touch this** (M6-2b): the turn is read at **one** node, so a curved edge
-/// needs no angle sum — only its tangent's direction at that node. Two other things here do read
-/// the direction's *representation* and will need their own answers: the collinearity walk-back
-/// below (`plane_pair_dir_sign == 0`, which becomes "are the tangents parallel"), and the
-/// lexicographic minimum above — whose comparison runs through `nacre_predicates`' expansion
-/// arithmetic while a branch point's coordinate is `a + b√c`. ★ **That one is now answered**
-/// (`nacre_scalar::quad::cmp_coord_meet_branch` / `cmp_coord_branch`): both coordinates lift to
-/// `BigInt` and the difference is a single sign question on the existing tower, total in every
-/// pair. What is left here is not the arithmetic but the **plumbing** — this scan speaks in
-/// `[usize; 3]` node names, and a branch node has no such name until the arrangement's vertex
-/// identity widens.
+/// ★★ **Where arcs touched this** (M6-2b, done): the turn is read at **one** node, so a curved edge
+/// needs no angle sum — only its tangent's direction at that node. The other two sites that read
+/// the direction's *representation* each got their own answer: the walk-back below asks
+/// [`continuation`], which has a curved arm ("are the tangents parallel" is "same circle, same
+/// travel"), and the lexicographic minimum above runs on [`CoordKey`], which holds a branch node's
+/// `a + b√c` coordinate beside a name and compares across the two through the quad tower.
 ///
 /// A ring may be *non-simple* — visiting one node twice — and still be a legitimate face: the
 /// unbounded contour of two cells that meet at a single point pinches through that point, tracing
@@ -2089,48 +2526,47 @@ pub(crate) fn loop_winding(
     p: usize,
     ring: &[RingEdge],
 ) -> Result<i8, BoolError> {
-    if ring.len() < 3 {
+    // ★ **The floor reads the carriers.** Two straight edges between two points are one edge traced
+    // twice; two arcs are a lens and an arc with its chord is a circular segment. See the same rule
+    // at the walk's orbit length (`arrangement::walk_cells`).
+    if ring.len()
+        < if ring.iter().any(|e| matches!(e.carrier, Carrier::Arc(_))) {
+            2
+        } else {
+            3
+        }
+    {
         return Err(reject(RejectReason::DegenerateRing));
     }
     // ★ **The comparator, in one place, reading the identity directly.** This is the second of the
     // two sites that deliberately do not go through [`three_plane_name`]: `Judge::cmp_coord` speaks
     // three plane indices (it lives in `nacre-cip`, below this crate, so the name cannot travel
-    // there), and a branch point's coordinate is `a + b√c` with its own total comparator
-    // (`nacre_scalar::quad::cmp_coord_meet_branch`). **This `match` is where that dispatch
-    // belongs** — the door's single answer is the wrong one here.
+    // there), and a branch point's coordinate is `a + b√c` with its own total comparators
+    // (`nacre_scalar::quad::cmp_coord_meet_branch` and `cmp_coord_branch`). **This dispatch is
+    // where that decision belongs** — the door's single answer is the wrong one here, and
+    // `Judge::cmp_coord`'s four-rung ladder speaks neither `MeetLine` nor `QuadVal`.
     //
-    // ★★ It declines today rather than dispatching, and the reason is a layer, not a scope call:
-    // `Judge::cmp_coord`'s four-rung ladder speaks neither `MeetLine` nor `QuadVal`, so widening
-    // it means moving the quad tower down into `nacre-cip` or lifting the ladder up into this
-    // crate. **And the population is empty** — no ring can hold a branch node until the arc split
-    // lands — so the comparator would ship unexercised.
-    //
-    // ★ **The scan is a scan, not a `Vec`.** This runs once per cell of every plane class, and
-    // rings here reach 95 nodes; collecting the names would put a heap allocation on that path for
-    // a check that only has to answer yes or no. The licence the closure then reads is this loop.
-    for e in ring {
-        match e.node {
-            NodeId::ThreePlane(_) => {}
-            NodeId::Branch { .. } => return Err(reject(RejectReason::BranchVertexUnnamed)),
-        }
-    }
-    let key = |i: usize| -> [usize; 3] {
-        match ring[i].node {
-            NodeId::ThreePlane(t) => t,
-            // Licensed by the scan above, in this function, three lines up — not by a caller's
-            // promise. A `match` and not `let`-`else` so a third variant lights it up.
-            NodeId::Branch { .. } => unreachable!("the scan above rejected every branch node"),
-        }
-    };
+    // ★★ **The keys are materialized, and that is a change of shape, not just of type.** The old
+    // spelling read `[usize; 3]` out of the name on every comparison — free. A branch key is a
+    // *solve* ([`branch_meet`] re-derives the point from the name), and the scan below asks for
+    // each node's key on the order of six times, so re-solving per read would multiply the exact
+    // work by that. One pass, one `Vec`.
+    let keys: Vec<CoordKey> = (0..ring.len())
+        .map(|i| coord_key(jd, ring, i))
+        .collect::<Result<_, BoolError>>()?;
+    let key = |i: usize| &keys[i];
     // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with
     // the running minimum just means "not strictly smaller", so keep it; do not reject.
     let mut lo = 0usize;
     for i in 1..ring.len() {
-        let strictly_less = (0..3)
-            .map(|axis| jd.cmp_coord(key(i), key(lo), axis))
-            .find(|&c| c != 0)
-            == Some(-1);
-        if strictly_less {
+        let mut order = 0i8;
+        for axis in 0..3 {
+            order = cmp_key(jd, key(i), key(lo), axis)?;
+            if order != 0 {
+                break;
+            }
+        }
+        if order == -1 {
             lo = i;
         }
     }
@@ -2145,22 +2581,28 @@ pub(crate) fn loop_winding(
     // ★ This is the postcondition the algorithm actually needs — cheaper than asking whether the
     // relation is transitive (`O(n)` against `O(n³)`, and rings here reach 95 nodes) and closer to
     // the point. **It holds however the predicates behave; it is the net under them.**
+    // ★ A declining comparison makes no claim, so it cannot witness a violation either: `0` is
+    // "says nothing" here, not "equal".
+    let lex = |i: usize, j: usize| -> i8 {
+        (0..3)
+            .map(|axis| cmp_key(jd, key(i), key(j), axis).unwrap_or(0))
+            .find(|&c| c != 0)
+            .unwrap_or(0)
+    };
     debug_assert!(
-        !ring.iter().enumerate().any(|(i, _)| {
-            i != lo
-                && (0..3)
-                    .map(|axis| jd.cmp_coord(key(i), key(lo), axis))
-                    .find(|&c| c != 0)
-                    == Some(-1)
-        }),
+        !(0..ring.len()).any(|i| i != lo && lex(i, lo) == -1),
         "the lexicographic scan did not find a minimum — the comparison is not an order here"
     );
     // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
     // ambiguous — honest-reject rather than guess.
-    let pinched_extreme = ring
-        .iter()
-        .enumerate()
-        .any(|(i, _)| i != lo && (0..3).all(|axis| jd.cmp_coord(key(i), key(lo), axis) == 0));
+    let mut pinched_extreme = false;
+    for i in 0..ring.len() {
+        let mut same = i != lo;
+        for axis in 0..3 {
+            same = same && cmp_key(jd, key(i), key(lo), axis)? == 0;
+        }
+        pinched_extreme |= same;
+    }
     if pinched_extreme {
         return Err(reject(RejectReason::CoincidentNodes));
     }
@@ -2171,8 +2613,11 @@ pub(crate) fn loop_winding(
     // straight edge, which has no turn to give.
     //
     // The turn to read is the one between the directions the loop **actually** arrives and leaves
-    // on: walk back past the edges collinear with the leaving one. `lo` stays a hull vertex — the
-    // stretch lies on a line through it, so the polygon is still on one side of that line.
+    // on: walk back past the edges the loop runs straight through. `lo` stays a hull vertex — the
+    // stretch lies on one **line** through it, so the region is still on one side of that line.
+    // ★ That argument is the straight one, and the guard below is where it stops: two arcs of one
+    // circle are also "straight through", and a *circle* through `lo` does not put the region on
+    // one side of anything.
     //
     // **Only while the stretch keeps going the same way.** A collinear edge traversed the *other*
     // way means the ring doubles back along the line it came in on — an antenna, whose tip has no
@@ -2186,10 +2631,12 @@ pub(crate) fn loop_winding(
     // two different places. An earlier note here worried that neighbour-only would *weaken* "the
     // whole stretch runs one way"; transitivity is why it does not.
     //
-    // ★★ **And the value carried out is `ring[back]`'s direction at its own start** — which is
-    // `lo`'s arriving direction **because the stretch is straight**. That equality *is* the
-    // premise; where it fails (a curved stretch), so does this walk, and the arc cell refuses
-    // rather than reading a winding from the wrong place.
+    // ★★★★ **And the value carried out is the one already read at a shared node** — never an
+    // edge's direction at its own far start. For a straight edge the two are the same value, which
+    // is why the older spelling stood; on a **diameter** chord they are exactly opposite, and that
+    // is what a boss straddling a plate edge measured (both half-disks are `+1`; the half whose arc
+    // *arrives* came back `−1`). Where the stretch is curved the equality that licenses stepping at
+    // all fails, and the walk refuses by name rather than reading a winding from the wrong place.
     let n = ring.len();
     let leaving = dir_at(jd, p, &ring[lo], ring[lo].node)?;
     let mut back = (lo + n - 1) % n;
@@ -2200,9 +2647,26 @@ pub(crate) fn loop_winding(
         let shared = ring[ahead].node;
         let earlier = dir_at(jd, p, &ring[back], shared)?;
         let later = dir_at(jd, p, &ring[ahead], shared)?;
-        match continuation(jd, p, earlier, later) {
-            Continuation::Turns => break dir_at(jd, p, &ring[back], ring[back].node)?,
+        match continuation(jd, p, &earlier, &later) {
+            // ★★★★ **`earlier`, and not `ring[back]`'s direction at its own start.** The two are
+            // the same value for a straight edge — a line's tangent does not change along it — and
+            // that equality is what let the older spelling stand. On an arc they differ by the
+            // whole turn of the arc, and on a *diameter* chord they are exactly opposite: measured,
+            // the two half-disks of a boss straddling a plate edge came back `+1` and `−1` where
+            // both are `+1`, because the half whose arc **arrives** read its tangent at the far
+            // end. This one is read at the node the loop actually passes through.
+            Continuation::Turns => break earlier,
             Continuation::DoublesBack => return Err(reject(RejectReason::StraightAngle)),
+            // ★★★ **The step is licensed by the stretch being a *line*.** What the walk carries out
+            // is `ring[back]`'s direction at its own start, and that equals `lo`'s arriving
+            // direction only because a line's tangent is the same everywhere on it. Two arcs of one
+            // circle are tangent-continuous, so `continuation` answers `Straight` for them too —
+            // and stepping there would read the winding from a different point of the ring.
+            Continuation::Straight
+                if matches!(earlier, EdgeDir::Arc(_)) || matches!(later, EdgeDir::Arc(_)) =>
+            {
+                return Err(reject(RejectReason::CurvedStraightRun));
+            }
             Continuation::Straight => {}
         }
         back = (back + n - 1) % n;
@@ -2213,7 +2677,7 @@ pub(crate) fn loop_winding(
             return Err(reject(RejectReason::DegenerateRing));
         }
     };
-    turn_between(jd, p, arriving, leaving)
+    turn_between(jd, p, &arriving, &leaving)
 }
 
 /// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.

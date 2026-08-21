@@ -252,6 +252,22 @@ pub struct NameInts {
     pub wide: bool,
 }
 
+impl NameInts {
+    /// The sign of one coefficient: `+1`, `0`, `-1`.
+    ///
+    /// ★ A door, so a consumer above this crate can ask which way the stored-oriented name points
+    /// without touching `BigInt`. `nacre-ops` reads it to check its own canonical→stored turn
+    /// against this exact one; giving it the integers instead would put an arbitrary-precision
+    /// type into a crate that deliberately has none.
+    pub fn coeff_sign(&self, k: usize) -> i8 {
+        match self.ints[k].sign() {
+            num_bigint::Sign::Plus => 1,
+            num_bigint::Sign::Minus => -1,
+            num_bigint::Sign::NoSign => 0,
+        }
+    }
+}
+
 /// Fold a plane's canonical name to the **stored orientation** — the one-time σ computation
 /// [`PlaneWitness::name_ints`] carries.
 ///
