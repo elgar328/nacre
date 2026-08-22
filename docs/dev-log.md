@@ -12443,3 +12443,65 @@ cut 검사로 `ArcBoundNotYet` 거절(`MissingSeam` = SuspectedDefect 오진 방
 `band_loop` 가 잘린 rim 에서 호 모서리들 + 씸으로 루프를 **조립** · grouping 분기 팔
 (`Ring::edges` shim 은퇴) · 잘린 원의 디스크 라벨(밴드 출력은 아직 못 믿는다) · 셸/봉합 ⇒
 **「걸친 보스가 빌드」**. tess 의 호 팔 · validate 의 혼합 루프도 그 여정.
+
+## 밴드가 호들로 조립된다 — 거절 후의 garbage가 이미 닫힌 셸이다 (2026-08-23)
+
+**커밋 둘** — ① 씸을 나르고·세우고·가른다, ② band_loop 조립 + raise 6층. 정지판은 유지 —
+이제 그 앞에서 **모든 위상이 완성**되고(닫힌-셸 가드가 조용히 통과), 남은 것은 밴드 밖이다.
+
+### ① CutRim — 분할이 이미 아는 것을 나른다 (census 비트 동일)
+
+`split_circles`의 원-분할이 이미 계산한 θ 순서·씸-일치 분류(`SeamIncident`, 이름 판정)를
+`CutRim { nodes, seam_is_node }`로 기록, disk_labels와 **한 구조로 묶어**(`Curved`) trace의
+반환 재넓힘을 이번 한 번으로 끝냈다(`work[k]` 번역 동일 자리). **`cut` 집합 은퇴**: 담체 칸의
+Def::Branch 초과근사 유도를 지우고 rim skip·Circle/Band 팔 전부 `cut_rims`를 읽는다 — 「이
+원이 잘렸나」의 출처가 하나.
+
+rim 표의 cut 팔이 **정점을 세운다**: 씸≡분기면 **별칭**(분기 정점 그대로 — straddling·매달린
+보스), 아니면 S 주조(centre+ref_dir·r · OnSeam · 실측 tol — turned `[4,0.25,1.5]`). 면 루프가
+**품은 호를 S에서 가른다** — wrap 판정은 **방향 있는** 매치(carried `ccw`로 CCW-쌍을 만들어
+분할의 `nodes.last()→nodes[0]`와 비교; 2-노드 원에서 상보 호가 같은 무순서 쌍이라 무순서
+매치는 양쪽을 다 갈랐을 것). red 둘: 분할 off → turned 조각 2≠3 · 별칭 off → OnSeam census
+2≠1(같은 점·다른 핸들의 S — `[v,v]` 산수는 못 보는 모양이라 개수·census가 계측).
+
+### ② 조립 — 사슬은 선주조, hi는 역순, raise는 가드 뒤
+
+- **`band_chains` 선주조**: `(g,k,c)`별 한 번, 면 순서(결정적) — 씸 정점에서 CCW로 분기
+  노드들을 지나 되돌아오는 조각들(`edge_for` 키-용접이라 캡 링과 **같은 핸들**; `band_loop`
+  안에서 못 만드는 이유 = `edge_for` 이중 가변 캡처).
+- **`band_loop`**: `[lo 순회, seam↑, hi 순회 역순, seam↓]` — 닫힌 모서리든 사슬이든 같은 규칙
+  (역순 = 조각 뒤집고 sense 반전). **hi-쪽 잘림은 도달 가능**(플랜 검토가 「미행사」를 반증):
+  판 밑 모서리에 **매달린 보스**(origin `[4,2,-1]` 축 +Z — 잘린 원 z=0 = hi 끝)가 게이트를
+  통과함을 실측하고 픽스처로 넣었다(씸≡분기 — hi-잘림+씸분할 조합만 픽스처 없음, 사슬 로직
+  공유, 울타리 doc에 기록). **양끝 다** 잘림은 chamber 뒤의 미도달 — 한 줄 정직 거절.
+- **raise = 닫힌-셸 가드 뒤**(6층 가로채기 — 실체화·면 루프·가드의 실패 전부
+  `deferred.unwrap_or` 양보). **가드가 호 입력에서 돌고, 조용히 통과한다** — reject census가
+  그 침묵을 기록한다(밴드 팔의 `arc_bound_not_yet` 울림이 **사라져** 두 행 raised가
+  arrangement+combinatorics로 복귀, blessed).
+
+### 잠금
+
+- **새 울타리 `the_refusals_garbage_is_already_a_closed_shell`**(픽스처 셋): 주조된 모든
+  모서리 사용 횟수 == 2 · 밴드 면 하나 · 외곽 루프 정점-연속 · 반모서리 5/6/5(유도값) · 씸
+  모서리만 두 번, 서로 반대 sense. red 셋 다 봤다: 사슬 방향 뒤집기 → 연속성 빨강 · 씸 생략 →
+  빨강 · 사슬을 외래 이유로 스텁 → **이름 유지**(6층).
+- F1 갱신: 원-담체 필터를 **혼합 쌍**으로 정밀화(씸 `[lat,lat]`가 걸리던 것 — 실측 덤프로 확인).
+- raise 이동 주석 grep-0(여섯 곳 — 다섯째 적용) · `ArcBoundNotYet` doc의 「아직 없는 것」이
+  「모양 뒤의 것들」(validate/tess 규약 · 양끝-잘림 라벨 · grouping shim)로 좁혀졌다.
+
+### 실수·계측 노트
+
+프로브 C 1회차가 fmt 개행 차이로 **미적용인 채 green을 읽을 뻔** — assert 안전망이 막았다
+(반복 3회째: 프로브는 python 패치 + assert로만).
+
+### 관문
+
+53타깃 **1109**(+1 garbage-셸 울타리) · nodef 25타깃 588 · clippy 0 · fmt · **census 두
+프로파일 비트 동일(두 커밋 다, t2 기준선과도 동일 — 비-호 항등의 증명)** · reject census(두
+행 raised 축소 blessed) · 스윕 53타깃 127 · perf release · kit 72 · 앱 142.
+
+### 다음 — 초록 칸
+
+validate 혼합 루프 + tess 호 팔(`sample_edge` debug_assert가 첫 하류) + **정지판 제거** —
+census 새 행(부피 유도값: straddling fuse = 32 + π/4), reject census 두 행이 초록으로 이동,
+kit/app. **「걸친 보스가 빌드」**.

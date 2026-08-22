@@ -1455,7 +1455,7 @@ mod tests {
     /// through the door production uses.**
     ///
     /// ★★★ Same instrument shape as the seam fence, same reason: the deferred stopper stands
-    /// behind `name_result_vertices` (past the face loop now) and intercepts
+    /// behind `name_result_vertices` (past the shell guard now) and intercepts
     /// everything, so no reject name can testify the naming completed — a direct second consumer
     /// is the only witness. This walks production's road (trace → clean → bands → seam → naming)
     /// and asserts on its product.
@@ -1689,7 +1689,7 @@ mod tests {
 
     /// **The refusal now leaves the branch vertices behind — minted, canonical, and measured.**
     ///
-    /// ★★ The deferred stopper stands past the face loop, so an arc reject's model
+    /// ★★ The deferred stopper stands past the shell guard, so an arc reject's model
     /// carries its minted vertices as garbage cells outside every live solid — the deliberate
     /// trade recorded at the raise site. That is also what makes the minting *observable*: no
     /// reject name can see past the interception, but the store can be read directly. Before the
@@ -1840,7 +1840,10 @@ mod tests {
             );
             let minted: Vec<_> = m.edges.iter().skip(minted_from).collect();
             let is_cyl = |sh| matches!(m.surface(sh), nacre_geom::Surface::Cylinder(_));
-            let on_circle = |e: &nacre_topo::Edge| e.surfaces.iter().any(|&sh| is_cyl(sh));
+            // A circle-carrier edge is a **mixed** pair (the cap plane and the lateral); the
+            // band's seam edge is `[lat, lat]` — both carriers the cylinder — and is not a
+            // piece of any circle.
+            let on_circle = |e: &nacre_topo::Edge| is_cyl(e.surfaces[0]) != is_cyl(e.surfaces[1]);
 
             // The cut circle's pieces: their directed vertex pairs chain into **one** cycle —
             // the observable of the `[A, B]`-CCW convention (for two pieces the cycle *is* the
@@ -1946,6 +1949,102 @@ mod tests {
                 })
                 .count();
             assert_eq!(chords, chord_edges, "the branch pair's line edges");
+        }
+    }
+
+    /// **The refusal's garbage is already a closed shell.**
+    ///
+    /// ★★★ The band assembles its cut rim from the arc chain now, and the deferred stopper
+    /// stands **after** the closed-shell guard — so for an arc input the guard runs, counts, and
+    /// passes in silence before the population is refused by name. This fence counts the same
+    /// closure directly on the store: every edge the rejected boolean minted is used exactly
+    /// twice across its garbage faces, and the band face's outer loop is one vertex-continuous
+    /// cycle of the derived length, with the seam edge traversed once in each sense.
+    ///
+    /// ★ Three fixtures: the straddling boss (lo rim cut, seam ≡ branch), the turned boss
+    /// (lo rim cut, seam splits the wrap arc — six half-edges), and the **hung** boss (the
+    /// straddling boss mirrored under the plate — the cut circle is the band's **hi** end, so
+    /// the chain is walked reversed; measured to pass the gate before this fence was written).
+    /// The hi-cut *and* seam-split combination has no fixture yet — the chain logic is shared,
+    /// and its population brings one when it arrives.
+    #[test]
+    fn the_refusals_garbage_is_already_a_closed_shell() {
+        for (origin, axis, band_len) in [
+            ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0], 5usize),
+            ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0], 6usize),
+            ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0], 5usize),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array(origin),
+                Vector3::from_array(axis),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            let faces_from = m.faces.len();
+            let before = m.live_solids.clone();
+            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect_err("the arc population is still refused");
+            assert!(
+                matches!(
+                    &err,
+                    BoolError::Rejected {
+                        reason: RejectReason::ArcBoundNotYet,
+                        ..
+                    }
+                ),
+                "{err:?}"
+            );
+            assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+            let garbage: Vec<_> = m.faces.iter().skip(faces_from).collect();
+            assert!(!garbage.is_empty(), "the face loop ran to completion");
+
+            // Closure: every edge of the garbage faces is used exactly twice.
+            let mut uses: std::collections::HashMap<_, usize> = std::collections::HashMap::new();
+            for (_, f) in &garbage {
+                for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
+                    for he in &lp.half_edges {
+                        *uses.entry(he.edge).or_default() += 1;
+                    }
+                }
+            }
+            let odd: Vec<_> = uses.iter().filter(|&(_, &n)| n != 2).collect();
+            assert!(
+                odd.is_empty(),
+                "a closed shell uses every edge twice: {odd:?}"
+            );
+
+            // The band face: one, on the cylinder, its outer loop a continuous cycle of the
+            // derived length, the seam edge once in each sense.
+            let bands: Vec<_> = garbage
+                .iter()
+                .filter(|(_, f)| matches!(m.surface(f.surface), nacre_geom::Surface::Cylinder(_)))
+                .collect();
+            assert_eq!(bands.len(), 1, "one band face");
+            let lp = &bands[0].1.outer;
+            assert_eq!(lp.half_edges.len(), band_len, "the derived loop length");
+            let ends = |he: &nacre_topo::HalfEdge| {
+                let [a, b] = m.edges.get(he.edge).vertices;
+                if he.forward { (a, b) } else { (b, a) }
+            };
+            for w in 0..lp.half_edges.len() {
+                let (_, e0) = ends(&lp.half_edges[w]);
+                let (s1, _) = ends(&lp.half_edges[(w + 1) % lp.half_edges.len()]);
+                assert_eq!(e0, s1, "the loop chains vertex to vertex at step {w}");
+            }
+            let mut seen: std::collections::HashMap<_, Vec<bool>> =
+                std::collections::HashMap::new();
+            for he in &lp.half_edges {
+                seen.entry(he.edge).or_default().push(he.forward);
+            }
+            let twice: Vec<_> = seen.values().filter(|v| v.len() == 2).collect();
+            assert_eq!(twice.len(), 1, "exactly one edge is walked twice: the seam");
+            assert_ne!(twice[0][0], twice[0][1], "once in each sense");
         }
     }
 

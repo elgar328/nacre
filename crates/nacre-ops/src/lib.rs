@@ -786,24 +786,24 @@ pub enum RejectReason {
     /// branch arm), the split-twin subdivision cuts every neighbouring edge at the branch points
     /// its own class could never discover, the naming pre-pass gives every vertex its definition,
     /// and **every vertex is minted** — `VertexDef::Branch` included, canonical in handle order.
-    /// The edges follow: `boolean::Ring` carries each edge's carrier (`Wall`), the arc edges of
-    /// every plane face are minted with the ordered circle key (`[A, B]` = CCW about the axis,
-    /// so the two complementary arcs between one branch pair are distinct edges), the rim table
-    /// skips a cut circle rather than minting a false closed `[v, v]` edge, and the face loop
-    /// assembles faces until it meets a cut rim's curved bound (measured: in both fixtures every
-    /// plane face assembles before that). So the refusal stands **after the face loop and before
-    /// the shell guard**: what ran is measured, and is then not handed on.
+    /// The edges and faces follow: `boolean::Ring` carries each edge's carrier (`Wall`), arc
+    /// edges are minted with the ordered circle key (`[A, B]` = CCW about the axis, complementary
+    /// arcs distinct), a cut rim's seam vertex stands where θ = 0 sits (the split's own carried
+    /// answer — a branch vertex on the seam, or a fresh vertex that cleaves the wrap arc), the
+    /// band assembles its boundary from the arc chain and the seam, and the **closed-shell guard
+    /// counts the whole thing and passes**. So the refusal stands **after the shell guard and
+    /// before the grouping's raise**: what ran is measured, and is then not handed on.
     ///
-    /// ★★ **A refusal here therefore leaves minted vertices, edges and faces in the store** —
-    /// garbage cells outside every live solid, the same class of residue a late reject's arena
-    /// cells have always been. The live-set is restored as ever; a session that keeps recording
-    /// after a reject rebuilds from the log (`replay`'s discipline).
+    /// ★★ **A refusal here therefore leaves a complete closed garbage shell in the store** —
+    /// vertices, edges and faces outside every live solid, the same class of residue a late
+    /// reject's arena cells have always been. The live-set is restored as ever; a session that
+    /// keeps recording after a reject rebuilds from the log (`replay`'s discipline).
     ///
-    /// What is still missing is the **band**: a cut rim's curved bounds refuse in the face loop
-    /// (the cut check in `circle_loop`/`band_loop` — a band's boundary is arcs joined by seam
-    /// edges, an assembly that does not exist yet), the grouping's component machinery still
-    /// reads rings through the legacy names-road (`Ring::edges`'s shim), and a cut circle leaves
-    /// the band pass with no disk label — so the closing never runs.
+    /// What is still missing is **everything after the shape exists**: `validate`'s loop rules
+    /// and `tess`'s `sample_edge` do not know the arc convention yet (each says so in place), a
+    /// band with **both** rims cut has no disk label to read (`chamber` refuses it earlier), and
+    /// the grouping's component machinery still reads rings through the legacy names-road
+    /// (`Ring::edges`'s shim). The green cell retires this stopper against the first two.
     ///
     /// ★ It intercepts **every** failure behind it — the per-class stages, the seam stretch, the
     /// naming and the materialization each hold the same shape (the stages run, the deferred

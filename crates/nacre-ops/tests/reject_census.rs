@@ -478,21 +478,19 @@ const CORPUS: [Fixture; 14] = [
         // The circle is **split** there now; what stops is the assembly of an arc-bounded loop.
         expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment,
-        // ★ Three guards ring, one surfaces. The grouping's component walk runs on arc faces
+        // ★ Two guards ring, one surfaces. The grouping's component walk runs on arc faces
         // first — its ring naming meets a branch node and rings `branch_vertex_unnamed`
-        // (`ring_edges_with_walls`); that error is *held* (the grouping's own discipline). The
-        // face loop then reaches a curved bound on a cut rim and its cut check rings
-        // `arc_bound_not_yet` from `boolean.rs` — captured, not propagated, so the deferred
-        // stopper's raise (after the face loop) supersedes both and the population's name never
-        // moves; the census records each ringing because a swallowed guard is still a guard that
-        // fired.
+        // (`ring_edges_with_walls`); that error is *held* (the grouping's own discipline) and
+        // the deferred stopper's raise (after the shell guard now) supersedes it. The face loop
+        // no longer rings anything: the band assembles its cut rim from the arc chain and the
+        // shell guard counts a closed garbage shell — that silence is itself part of this row's
+        // assertion.
         raised: &[
             (
                 "arc_bound_not_yet",
                 None,
                 "crates/nacre-ops/src/arrangement.rs",
             ),
-            ("arc_bound_not_yet", None, "crates/nacre-ops/src/boolean.rs"),
             (
                 "branch_vertex_unnamed",
                 None,
@@ -507,21 +505,19 @@ const CORPUS: [Fixture; 14] = [
         // runs — the first non-`+Z` cylinder in the corpus.
         expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment_turned,
-        // ★ Three guards ring, one surfaces. The grouping's component walk runs on arc faces
+        // ★ Two guards ring, one surfaces. The grouping's component walk runs on arc faces
         // first — its ring naming meets a branch node and rings `branch_vertex_unnamed`
-        // (`ring_edges_with_walls`); that error is *held* (the grouping's own discipline). The
-        // face loop then reaches a curved bound on a cut rim and its cut check rings
-        // `arc_bound_not_yet` from `boolean.rs` — captured, not propagated, so the deferred
-        // stopper's raise (after the face loop) supersedes both and the population's name never
-        // moves; the census records each ringing because a swallowed guard is still a guard that
-        // fired.
+        // (`ring_edges_with_walls`); that error is *held* (the grouping's own discipline) and
+        // the deferred stopper's raise (after the shell guard now) supersedes it. The face loop
+        // no longer rings anything: the band assembles its cut rim from the arc chain and the
+        // shell guard counts a closed garbage shell — that silence is itself part of this row's
+        // assertion.
         raised: &[
             (
                 "arc_bound_not_yet",
                 None,
                 "crates/nacre-ops/src/arrangement.rs",
             ),
-            ("arc_bound_not_yet", None, "crates/nacre-ops/src/boolean.rs"),
             (
                 "branch_vertex_unnamed",
                 None,

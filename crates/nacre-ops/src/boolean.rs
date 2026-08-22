@@ -1033,7 +1033,7 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// every ring node's defining triple.
 ///
 /// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
-/// one: the deferred arc stopper stands behind it (past the face loop now) and
+/// one: the deferred arc stopper stands behind it (past the shell guard now) and
 /// intercepts everything, so no
 /// reject name can testify that the naming completed — only a fence that calls it directly on the
 /// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
@@ -1359,7 +1359,7 @@ fn reconstruct(
     }
     let named = name_result_vertices(jd, seam, faces, cyls);
     // The naming's failure yields to the deferred stopper like every stage before it; the raise
-    // itself now stands after the face loop below.
+    // itself now stands after the shell guard below.
     let Named {
         grouping,
         group_of,
@@ -1483,7 +1483,7 @@ fn reconstruct(
         }
     }
     // The materialization's failure yields to the deferred stopper like the naming's above; the
-    // raise itself now stands after the face loop below.
+    // raise itself now stands after the shell guard below.
     if let Err(e) = materialized {
         return Err(deferred.unwrap_or(e));
     }
@@ -1660,6 +1660,53 @@ fn reconstruct(
         }
     };
 
+    // ★★ **A cut rim's boundary chain, minted once per `(group, cylinder, plane)` — before the
+    // face loop, in face order.** The chain walks the circle CCW from the seam vertex through the
+    // branch nodes and back (the wrap arc's two seam-split pieces included), so a cut rim's
+    // pieces exist under their `EdgeKey`s before either consumer asks: the cap faces' ring steps
+    // weld to these very handles by key, and `band_loop` reads the chain directly — which is
+    // also why this is not minted inside `band_loop`: two closures cannot both own `edge_for`.
+    // Iterated over the faces' curved bounds (not the map) so the minting order is
+    // deterministic, the same discipline as the rim table above.
+    let mut band_chains: HashMap<(usize, usize, usize), Vec<HalfEdge>> = HashMap::new();
+    for (fi, lf) in faces.iter().enumerate() {
+        let g = group_of[fi];
+        let keys: Vec<(usize, usize)> = std::iter::once(&lf.outer)
+            .chain(lf.inner.iter())
+            .flat_map(|b| match (b, lf.surf) {
+                (Bound::Circle { cyl }, ClassIx::Plane(c)) => vec![(*cyl, c)],
+                (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => vec![(k, *lo), (k, *hi)],
+                _ => Vec::new(),
+            })
+            .collect();
+        for (k, c) in keys {
+            if band_chains.contains_key(&(g, k, c)) {
+                continue;
+            }
+            let Some(cr) = cut_rims.get(&(k, c)) else {
+                continue; // an uncut rim's boundary is its closed edge, no chain to build
+            };
+            let Some(&(sv, _)) = rim.get(&(g, k, c)) else {
+                continue; // no seam vertex ⇒ no face in this group names the rim; nothing to chain
+            };
+            let mut vs: Vec<Handle<Vertex>> = Vec::with_capacity(cr.nodes.len() + 1);
+            if !cr.seam_is_node {
+                vs.push(sv);
+            }
+            vs.extend(cr.nodes.iter().map(|n| vh[&(g, *n)]));
+            debug_assert_eq!(vs[0], sv, "the chain starts at the seam vertex");
+            let m = vs.len();
+            let mut chain = Vec::with_capacity(m);
+            for i in 0..m {
+                let (u, v) = (vs[i], vs[(i + 1) % m]);
+                let e = edge_for(model, u, v, Wall::Arc { cyl: k, ccw: true }, planes[c].surf)?;
+                let forward = model.edges.get(e).vertices[0] == u;
+                chain.push(HalfEdge { edge: e, forward });
+            }
+            band_chains.insert((g, k, c), chain);
+        }
+    }
+
     let mut face_handles = Vec::new();
     let mut assembled: Result<(), BoolError> = Ok(());
     'faces: for (fi, lf) in faces.iter().enumerate() {
@@ -1770,43 +1817,55 @@ fn reconstruct(
         // seam, which the one face uses twice in opposite senses.
         let band_loop =
             |model: &mut Model, k: usize, lo: usize, hi: usize| -> Result<Loop, BoolError> {
-                // Same shape as `circle_loop`'s check, for both rims, before either lookup —
-                // the assembly of a cut rim's boundary from its arc pieces is the next commit.
-                if cut_rims.contains_key(&(k, lo)) || cut_rims.contains_key(&(k, hi)) {
+                // ★ Both rims cut is unreachable today — `chamber` finds no disk label at either
+                // end and refuses the band before it is emitted — so no chain code is written
+                // for a population nothing can reach; the honest name stands in its place.
+                if cut_rims.contains_key(&(k, lo)) && cut_rims.contains_key(&(k, hi)) {
                     return Err(reject(RejectReason::ArcBoundNotYet));
                 }
                 let (v_lo, e_lo) = *rim
                     .get(&(g, k, lo))
                     .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                let e_lo = e_lo.ok_or_else(|| reject(RejectReason::MissingSeam))?;
                 let (v_hi, e_hi) = *rim
                     .get(&(g, k, hi))
                     .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                let e_hi = e_hi.ok_or_else(|| reject(RejectReason::MissingSeam))?;
                 let lat = cyls[k].surf;
                 let seam_edge = model
                     .push_edge(Edge::carrier_pair(lat, lat), [v_lo, v_hi])
                     .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
-                Ok(Loop {
-                    half_edges: vec![
-                        HalfEdge {
-                            edge: e_lo,
-                            forward: true,
-                        },
-                        HalfEdge {
-                            edge: seam_edge,
-                            forward: true,
-                        },
-                        HalfEdge {
-                            edge: e_hi,
-                            forward: false,
-                        },
-                        HalfEdge {
-                            edge: seam_edge,
-                            forward: false,
-                        },
-                    ],
-                })
+                // ★★ **A rim's traversal: the closed edge, or the pre-minted chain.** Both walk
+                // the circle CCW; the `lo` rim is walked forward and the `hi` rim backward
+                // (reverse the pieces and flip each sense — one rule for the closed edge and the
+                // chain alike), exactly the senses the four-half-edge spelling always had.
+                let walk =
+                    |c: usize, closed: Option<Handle<Edge>>| -> Result<Vec<HalfEdge>, BoolError> {
+                        match closed {
+                            Some(e) => Ok(vec![HalfEdge {
+                                edge: e,
+                                forward: true,
+                            }]),
+                            None => band_chains
+                                .get(&(g, k, c))
+                                .cloned()
+                                .ok_or_else(|| reject(RejectReason::MissingSeam)),
+                        }
+                    };
+                let mut half_edges = walk(lo, e_lo)?;
+                half_edges.push(HalfEdge {
+                    edge: seam_edge,
+                    forward: true,
+                });
+                let mut hi_hes = walk(hi, e_hi)?;
+                hi_hes.reverse();
+                for he in &mut hi_hes {
+                    he.forward = !he.forward;
+                }
+                half_edges.extend(hi_hes);
+                half_edges.push(HalfEdge {
+                    edge: seam_edge,
+                    forward: false,
+                });
+                Ok(Loop { half_edges })
             };
         let mut ring_of = |b: &Bound, hole: bool| -> Result<Loop, BoolError> {
             let mut lp = match b {
@@ -1879,23 +1938,12 @@ fn reconstruct(
             orientation,
         }));
     }
-    // ★★★ **The deferred arc stopper's raise — after the face loop, before the shell guard.**
-    // The interception is the same shape at its fifth layer (per-class → seam stretch → naming →
-    // vertex materialization → face loop): the stages ran, their result is in hand, and the
-    // stopper's reject wins over whatever they said, so an arc population's name never depends
-    // on how far the pipeline got.
-    //
-    // ★★ **An arc reject therefore leaves minted vertices, edges and faces in the store —
-    // deliberately.** They are garbage cells outside every live solid, the same class of residue
-    // a late reject's arena cells have always been: the live-set fences stay green, and a session
-    // that keeps recording after a reject rebuilds from the log (`replay`'s discipline, stated in
-    // `docs/design.md`). Holding the raise any earlier would put the arc edge minting behind an
-    // interception nothing can see past — the unreachable-machinery trap this ladder keeps
-    // refusing.
-    if let Some(d) = deferred {
-        return Err(d);
+    // The face loop's failure yields to the deferred stopper like every stage before it; the
+    // raise itself now stands after the shell guard below (an incomplete face set has no shell
+    // to count, so an assembly failure still stops here).
+    if let Err(e) = assembled {
+        return Err(deferred.unwrap_or(e));
     }
-    assembled?;
     // Closed-shell guard: a 2-manifold b-rep uses every edge exactly twice (once from each of the
     // two faces that share it). A reconstruction that emits a face set with a dangling edge (use
     // count 1) or a pinched one (>2) is not a solid — `validate` would call it `NonManifoldEdge`,
@@ -1924,14 +1972,32 @@ fn reconstruct(
             .min_by_key(|e| e.index())
         {
             let [va, vb] = model.edges.get(eh).vertices;
-            return Err(crate::reject_at(
+            return Err(deferred.unwrap_or(crate::reject_at(
                 RejectReason::NonManifoldResultEdge,
                 crate::RejectWhere::Segment([model.vertex_point(va), model.vertex_point(vb)]),
-            ));
+            )));
         }
         if uses.values().any(|&n| n != 2) {
-            return Err(reject(RejectReason::OpenResultShell));
+            return Err(deferred.unwrap_or(reject(RejectReason::OpenResultShell)));
         }
+    }
+    // ★★★ **The deferred arc stopper's raise — after the shell guard, before the grouping's.**
+    // The interception is the same shape at its sixth layer (per-class → seam stretch → naming →
+    // vertex materialization → face loop → shell guard): the stages ran, the guard counted, and
+    // the stopper's reject wins over whatever they said, so an arc population's name never
+    // depends on how far the pipeline got. That the guard passes silently here is itself a
+    // measured fact — the reject census records any ringing, and the garbage-shell fence in
+    // `bands` counts the same closure directly.
+    //
+    // ★★ **An arc reject therefore leaves minted vertices, edges and faces in the store —
+    // deliberately.** They are garbage cells outside every live solid, the same class of residue
+    // a late reject's arena cells have always been: the live-set fences stay green, and a session
+    // that keeps recording after a reject rebuilds from the log (`replay`'s discipline, stated in
+    // `docs/design.md`). Holding the raise any earlier would put the band assembly behind an
+    // interception nothing can see past — the unreachable-machinery trap this ladder keeps
+    // refusing.
+    if let Some(d) = deferred {
+        return Err(d);
     }
     // ★ **The grouping decided at the top of this function, raised here** — where the old code
     // decided it, so a boolean that declines leaves the arena cells it always left. What it says:
