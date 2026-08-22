@@ -1169,9 +1169,50 @@ mod tests {
     /// flip. Its first reader is `label_cells`' keep decision, one stage further down.
     #[test]
     fn the_audit_and_the_boolean_agree_about_an_arc_class() {
-        for (origin, axis) in [
-            ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
-            ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
+        // `y = 0` meets the turned boss's circle (centre `(y,z) = (0.25, 2)`, `r = 0.5`) at
+        // `(z - 2)² = 0.1875`. The one irrational coordinate in either fixture, and the reason the
+        // ring comparison is `near()` rather than `==`.
+        let s = 2.0 - 3.0f64.sqrt() / 4.0;
+        for (origin, axis, n_out, want_rings) in [
+            (
+                [4.0, 2.0, 2.0],
+                [0.0, 0.0, 1.0],
+                // The plate's top face carries this class, so the ring is CCW about `+z`.
+                [0.0, 0.0, 1.0],
+                vec![
+                    // `rect - disk`: the plate's top, three corners and the inner arc.
+                    vec![
+                        [0.0, 0.0, 2.0],
+                        [4.0, 0.0, 2.0],
+                        [4.0, 1.5, 2.0],
+                        [4.0, 2.5, 2.0],
+                        [4.0, 4.0, 2.0],
+                        [0.0, 4.0, 2.0],
+                    ],
+                    // `disk - rect`: the overhang's underside — chord and outer arc.
+                    vec![[4.0, 1.5, 2.0], [4.0, 2.5, 2.0]],
+                ],
+            ),
+            (
+                [4.0, 0.25, 2.0],
+                [1.0, 0.0, 0.0],
+                // The plate's `x = 4` face carries this one, so CCW is about `+x`.
+                [1.0, 0.0, 0.0],
+                vec![
+                    // `rect - disk`: the plate's right face, the disk biting its top-left corner.
+                    vec![
+                        [4.0, 0.0, 0.0],
+                        [4.0, 4.0, 0.0],
+                        [4.0, 4.0, 2.0],
+                        [4.0, 0.75, 2.0],
+                        [4.0, 0.0, s],
+                    ],
+                    // `disk - rect`: the boss's base cap outside the plate. The corner `(4,0,2)` is
+                    // `0.25` from the circle's centre, so it sits *inside* the disk and is one of
+                    // this ring's three nodes.
+                    vec![[4.0, 0.0, s], [4.0, 0.0, 2.0], [4.0, 0.75, 2.0]],
+                ],
+            ),
         ] {
             // The boolean takes `&mut Model` and the audit `&Model`; a rejected boolean leaves
             // arena residue, so each gets its own build of the same fixture.
@@ -1209,15 +1250,16 @@ mod tests {
                 Some(reason),
                 "the audit reports the reject the boolean raised"
             );
-            // ★ By reference: `Produced` carries the labels now, so it is no longer `Copy`.
+            // ★ The whole audit, not just `produced`: the ring coordinates are a sibling field, and
+            // joining two filtered lists by index is the seam where they could come from different
+            // classes. ★ By reference: `Produced` carries the labels now, so it is no longer `Copy`.
             let cut: Vec<_> = audits
                 .iter()
-                .filter_map(|a| a.produced.as_ref())
-                .filter(|p| p.arcs > 0)
+                .filter(|a| a.produced.as_ref().is_some_and(|p| p.arcs > 0))
                 .collect();
             assert_eq!(cut.len(), 1, "exactly one class has its circle cut");
             assert_eq!(
-                *cut[0],
+                *cut[0].produced.as_ref().unwrap(),
                 crate::arrangement::Produced {
                     cells: 4,
                     arcs: 2,
@@ -1237,6 +1279,45 @@ mod tests {
                 },
                 "the arrangement walked the arcs, nested them, and labelled them"
             );
+            // ★★★★★ **And the faces it emitted, as coordinates.** This is what a wrong `sense` on a
+            // split segment moves and nothing before it does: the cell counts, the nesting and the
+            // sorted labels above are all identical whichever way the rings run.
+            //
+            // ★★★ **The premise first.** `emit_faces` emits CCW about `n_out(wc)`, and which face
+            // is the class root — hence which way `n_out` points — is a plane-table fact, not one
+            // of the fixture's numbers. Pinning it here means a root flip fails *this* assertion,
+            // with its own sentence, instead of silently reversing every ring below. Both come
+            // from the plane table, which no arrangement stage can move.
+            let got_n_out: Vec<f64> = cut[0]
+                .root_normal
+                .iter()
+                .map(|c| c * cut[0].orient_sign as f64)
+                .collect();
+            assert!(
+                got_n_out
+                    .iter()
+                    .zip(&n_out)
+                    .all(|(a, b)| (a - b).abs() < 1e-9),
+                "the rings below are derived CCW about {n_out:?}, but the class faces {got_n_out:?}"
+            );
+            let got = cut[0]
+                .outer_rings
+                .as_ref()
+                .expect("the stopper is behind `emit_faces`, so the rings are there");
+            assert_eq!(
+                got.len(),
+                want_rings.len(),
+                "one outer ring per emitted face"
+            );
+            for (g, w) in got.iter().zip(&want_rings) {
+                assert_eq!(g.len(), w.len(), "ring length: got {g:?}, want {w:?}");
+                assert!(
+                    g.iter()
+                        .zip(w)
+                        .all(|(p, q)| (0..3).all(|i| (p[i] - q[i]).abs() < 1e-9)),
+                    "ring: got {g:?}, want {w:?}"
+                );
+            }
         }
     }
 

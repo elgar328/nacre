@@ -1315,6 +1315,18 @@ fn reconstruct(
             let half_edges: Vec<HalfEdge> = (0..k)
                 .map(|t| {
                     let (va, vb) = (handles[t], handles[(t + 1) % k]);
+                    // ★★ **The sentinel is checked where it is read.** `arrangement::emit_faces`
+                    // puts `usize::MAX` in `walls[t]` for an arc half-edge, because a ring's walls
+                    // are plane classes and an arc rides a cylinder. The producer cannot promise
+                    // "no arc" — arc classes reach it — so the proposition that *is* true lives
+                    // here: nothing indexes the class table with the sentinel. Today the stopper
+                    // stands in front of assembly and this never fires; the day it does is the day
+                    // `Ring` owes a carrier.
+                    debug_assert_ne!(
+                        r.walls[t],
+                        usize::MAX,
+                        "an arc half-edge's wall sentinel reached the class table"
+                    );
                     let e = edge_for(model, va, vb, [planes[r.walls[t]].surf, face_surf])?;
                     let forward = model.edges.get(e).vertices[0] == va;
                     Ok(HalfEdge { edge: e, forward })

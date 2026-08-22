@@ -2390,14 +2390,23 @@ fn arc_stopper(
 
 /// **What one plane class's arrangement produced, before anything refuses it.**
 ///
-/// ★★ **Only what crosses the boundary — and taking a stage in *narrowed* it.** `face_of` used to
-/// be here; the one thing that reads it is `label_cells`, so pulling that stage inside made it
-/// purely internal. A stage moving in and the interface getting *smaller* is the sign the boundary
-/// was drawn in the right place.
+/// ★★★ **Taking `emit_faces` in made this *wider*, and "a stage moving in shrinks the interface"
+/// was never the law.** When `label_cells` moved in, `face_of` stopped crossing the boundary and
+/// that read like a sign the boundary was right. It was not a general rule — that field simply had
+/// one consumer. Here production reads only `faces` and `disk_labels`, but `frame_audit` is a
+/// legitimate *second* consumer of `cells`, `nesting` and `labels` (the counts and the labels it
+/// pins are exactly what the previous rung locked), so they stay. The test is not "did it shrink"
+/// but **"does each field have a consumer"** — and the `cfg(test)` says which consumer, since that
+/// second one is an instrument (`ClassAudit`, `#[cfg(test)]` like everything it touches).
 struct Staged {
+    #[cfg(test)]
     cells: Vec<Cell>,
+    #[cfg(test)]
     nesting: Nesting,
+    #[cfg(test)]
     labels: Vec<Label>,
+    faces: Vec<LocalFace>,
+    disk_labels: Vec<(usize, Label)>,
 }
 
 /// **The per-class stages, in one place** — the walk and the nesting.
@@ -2414,10 +2423,13 @@ struct Staged {
 /// *name* changes, which is exactly what happened once (`f8eb935`). One `Result` leaves one place
 /// to put the `?`, and it is after the stopper.
 ///
-/// ★ The *other* failure — skipping the stopper entirely — needs no machinery here: an arc ring
-/// then reaches `emit_faces`, where `bound_of`'s assertion says so (verified to fire).
+/// ★ **`emit_faces` is the last stage, and it cannot fail.** Every other stage returns a `Result`,
+/// so the stopper's interception is what decides the reject's *name*; this one returns its product
+/// outright. That is worth reading precisely — it means "the stopper still intercepts" cannot be
+/// probed from outside by making this stage fail, and the probe has to be planted here instead.
 fn per_class(
     jd: &Judge<'_, WorkingPlane>,
+    kind: BoolKind,
     wc: usize,
     edges: &ClassEdges<'_>,
 ) -> Result<Staged, BoolError> {
@@ -2432,10 +2444,19 @@ fn per_class(
         C_LABEL,
         label_cells(&cells, &face_of, edges, &nesting, [false; 4])
     )?;
+    let (faces, disk_labels) = timed!(
+        C_EMIT,
+        emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
+    );
     Ok(Staged {
+        #[cfg(test)]
         cells,
+        #[cfg(test)]
         nesting,
+        #[cfg(test)]
         labels,
+        faces,
+        disk_labels,
     })
 }
 
@@ -3297,16 +3318,11 @@ fn emit_faces(
         }
         // ★★ **`Ring` has no carrier for an arc, and this is where that runs out.** A ring's walls
         // are plane classes and `assemble_fuse_cut` indexes the class table with them, so an arc
-        // half-edge has nothing true to put here. The stopper stands between (an arc class never
-        // reaches this function), and widening `Ring` to a carrier is the assembly cell's own item;
-        // until then the sentinel is *checked* rather than trusted, because reaching it means an
-        // out-of-bounds index into that table and this file exists to keep those honest.
-        debug_assert!(
-            cell.half_edges
-                .iter()
-                .all(|&he| matches!(edges.kind(he), HalfEdgeKind::Seg(_))),
-            "an arc-bearing ring reached `emit_faces` — the stopper is in the wrong place"
-        );
+        // half-edge has nothing true to put here; widening `Ring` to a carrier is the next cell's
+        // own item. Until then the sentinel goes in and is checked **where it is read**
+        // (`boolean::edge_for`), not here: this is the producer, and the true proposition is not
+        // "no arc reaches me" — an arc class reaches this function on every run now that the
+        // stopper stands behind it — but "nobody indexes the class table with `usize::MAX`".
         crate::boolean::Bound::Ring(crate::boolean::Ring::new(
             cell.half_edges.iter().map(|&he| edges.origin(he)).collect(),
             cell.half_edges
@@ -3594,17 +3610,19 @@ fn trace_result_faces(
             // census would gain a raise site. Writing `per_class(..)?` puts the stages' failure
             // ahead of the stopper and loses exactly that — measured: with a stage stubbed to fail
             // on an arc class, the fence sees that stage's reason instead.
-            let staged = per_class(jd, wc, &edges);
+            //
+            // ★★ **The fences that pin the *name* are `bands.rs`'
+            // `a_boss_overhanging_the_plates_edge_is_still_refused` and
+            // `a_turned_boss_over_the_plates_corner_names_the_crossing_on_the_segment`** — read the
+            // probe there. `the_audit_and_the_boolean_agree_about_an_arc_class` compares the audit
+            // *with* the boolean, so it stays green when both slide to the same wrong name; asking
+            // it about interception measures the proposition next door.
+            let staged = per_class(jd, kind, wc, &edges);
             arc_stopper(jd, wc, &edges, split, circles)?;
             let Staged {
-                cells,
-                nesting,
-                labels,
+                faces, disk_labels, ..
             } = staged?;
-            Ok(timed!(
-                C_EMIT,
-                emit_faces(kind, &labels, &cells, &edges, jd, wc, &nesting.holes)
-            ))
+            Ok((faces, disk_labels))
         };
         // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
         // its vertices falls back to arranging, so this can lose the shortcut but never the answer.
@@ -3820,6 +3838,33 @@ pub(crate) struct ClassAudit {
     /// something else, which is exactly the blame this stage was split to isolate. `None` when the
     /// class stopped before that stage ran.
     pub produced: Option<Produced>,
+    /// **Every emitted face's outer ring, as coordinates** — one `Vec` per emitted face whose outer
+    /// bound is a polygon ring (a face bounded by an uncut circle has no nodes and contributes
+    /// nothing), sorted by their rotation-normalized first coordinate. `None` when the class
+    /// stopped before `emit_faces`.
+    ///
+    /// ★★★★★ **Coordinates, not node identities, and the reason is that the lock must not be
+    /// circular.** A node name is `ThreePlane([0, 2, 5])` — plane **class** indices, which no
+    /// fixture derives; writing the expected value means running the engine and copying what it
+    /// said, and a test whose oracle is its subject measures nothing. Coordinates come from the
+    /// fixture's own numbers.
+    ///
+    /// ★★★★★ **Rotation is normalized, reversal deliberately is not.** The walk tries both
+    /// handednesses and pushes cells in its own order, so *which* vertex a ring starts at is not a
+    /// fact about the geometry — the minimum coordinate goes first. Reversal *is* a fact: it is
+    /// what a wrong `sense` on a split segment produces, and it is invisible in every
+    /// order-independent summary the previous rungs measured (cell counts, nesting, sorted
+    /// labels). Folding it here would delete the one thing this field exists to see.
+    ///
+    /// ★★★ **And rotation-normalization is itself reversal-blind at `n <= 2`**: reversing a
+    /// two-cycle *is* a rotation of it. Such a ring cannot carry this lock at all — which is why
+    /// the fence's red probe is read on the turned boss (5- and 3-rings), not the straddling one
+    /// (6- and **2**-rings).
+    ///
+    /// ★ It is a sibling of [`Produced`] rather than a field in it because `[f64; 3]` is not `Eq`
+    /// (the derive would break) and one of these coordinates is irrational, so it needs `near()`
+    /// rather than `==` — the two could not ride the same `assert_eq!` regardless.
+    pub outer_rings: Option<Vec<Vec<[f64; 3]>>>,
 }
 
 /// The per-class arrangement's output, for [`ClassAudit`].
@@ -3838,6 +3883,73 @@ pub(crate) struct Produced {
     /// fence has to join them by index — a seam where they can drift. `PartialEq` stays, so the
     /// fence remains a single `assert_eq!` against a value derived from the geometry.
     pub pos_labels: Vec<Label>,
+}
+
+/// Lexicographic order on realized coordinates. `total_cmp` rather than `partial_cmp`: a node that
+/// failed to realize comes through as `NaN` below, and this must still be a total order.
+#[cfg(test)]
+fn cmp_pt(a: &[f64; 3], b: &[f64; 3]) -> std::cmp::Ordering {
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| x.total_cmp(y))
+        .find(|o| o.is_ne())
+        .unwrap_or(std::cmp::Ordering::Equal)
+}
+
+/// Every emitted face's outer ring as coordinates, for [`ClassAudit::outer_rings`] — that field
+/// carries the argument for coordinates, for normalizing rotation, and for leaving reversal alone.
+///
+/// ★★ **There are two roads to a coordinate, and a ring can need both.** A three-plane node is the
+/// meet of its three classes' planes; a branch node is `a + b√c` and only
+/// [`combinatorics::branch_point`] answers it, by re-solving from the name. The mixed ring this
+/// exists to see has three of one and two of the other. The next cell's seam table calls the same
+/// two — that is when this is worth extracting; one consumer is not.
+///
+/// ★ A node that cannot be realized becomes `NaN`, not a dropped element: the ring keeps its
+/// length, so the fence reads "this vertex had no coordinate" instead of "the ring is short".
+#[cfg(test)]
+fn face_ring_coords(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[LocalFace],
+) -> Vec<Vec<[f64; 3]>> {
+    let point = |n: NodeId| -> [f64; 3] {
+        match n {
+            NodeId::ThreePlane(t) => three_planes(
+                &jd.planes[t[0]].plane,
+                &jd.planes[t[1]].plane,
+                &jd.planes[t[2]].plane,
+            )
+            .map(|p| p.as_array()),
+            NodeId::Branch { cyl, .. } => combinatorics::branch_point(jd, cyl, &cyls[cyl].def, n),
+        }
+        .unwrap_or([f64::NAN; 3])
+    };
+    let mut out: Vec<Vec<[f64; 3]>> = faces
+        .iter()
+        .filter_map(|f| f.outer.ring())
+        .map(|r| {
+            let pts: Vec<[f64; 3]> = r.nodes.iter().map(|&n| point(n)).collect();
+            // Rotation only. Where the walk started is not a fact about the geometry; which way it
+            // went is, and it is the one this instrument was added to see.
+            match pts
+                .iter()
+                .enumerate()
+                .min_by(|(_, a), (_, b)| cmp_pt(a, b))
+                .map(|(i, _)| i)
+            {
+                Some(i) => pts[i..].iter().chain(&pts[..i]).copied().collect(),
+                None => pts,
+            }
+        })
+        .collect();
+    // Between faces the order *is* the walk's, so it is normalized: sort by the (already rotated)
+    // first coordinate.
+    out.sort_by(|a, b| match (a.first(), b.first()) {
+        (Some(x), Some(y)) => cmp_pt(x, y),
+        _ => a.len().cmp(&b.len()),
+    });
+    out
 }
 
 /// Audit every plane class of one boolean input pair. Runs the same per-class pipeline as
@@ -3917,12 +4029,14 @@ pub(crate) fn frame_audit(
             declined: tr.declined.clone(),
             failed_at: None,
             produced: None,
+            outer_rings: None,
         };
         // Run the rest of the per-class pipeline, recording where it stops.
         audit.failed_at = if let Some(&(fp, kind)) = audit.declined.first() {
             Some(decline_to_reject(kind, faces_tab[fp].face()))
         } else {
             let mut produced = None;
+            let mut outer_rings = None;
             let mut run = || -> Result<(), BoolError> {
                 // A copy, so one class's split discoveries cannot leak into the next class's
                 // audit — the fixpoint above already holds everything the boolean would know.
@@ -3937,11 +4051,9 @@ pub(crate) fn frame_audit(
                 // refuses — *"the worst possible time to be lying"* (`decline_to_reject`). The
                 // arc fence in `bands.rs` locks the two together.
                 let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
-                // ★ Both stages, then the stopper, then the `?`s — the same order the boolean
-                // runs, and the arc fence locks that the two agree.
                 // ★ The same stages, the same order, the same stopper the boolean runs — the arc
                 // fence in `bands.rs` locks that the two agree.
-                let staged = per_class(&jd, wc, &edges);
+                let staged = per_class(&jd, kind, wc, &edges);
                 if let Ok(s) = &staged {
                     let mut pos_labels: Vec<Label> = s
                         .cells
@@ -3958,14 +4070,10 @@ pub(crate) fn frame_audit(
                         holes: s.nesting.holes.len(),
                         pos_labels,
                     });
+                    outer_rings = Some(face_ring_coords(&jd, &cyls, &s.faces));
                 }
                 arc_stopper(&jd, wc, &edges, &split, &circles)?;
-                let Staged {
-                    cells,
-                    nesting,
-                    labels,
-                } = staged?;
-                let _ = emit_faces(kind, &labels, &cells, &edges, &jd, wc, &nesting.holes);
+                let _ = staged?;
                 Ok(())
             };
             let stopped = run().err().and_then(|e| match e {
@@ -3974,6 +4082,7 @@ pub(crate) fn frame_audit(
                 BoolError::InputNotLive => None,
             });
             audit.produced = produced;
+            audit.outer_rings = outer_rings;
             stopped
         };
         out.push(audit);
