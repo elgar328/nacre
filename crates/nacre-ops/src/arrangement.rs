@@ -250,10 +250,9 @@ pub(crate) struct MergedArc {
     /// Inherited whole from the circle: an arc is a piece of the same trace, so it carries the same
     /// `(solid, kind)` contributions and `edge_mask` reads it unchanged.
     ///
-    /// ★ Unread until the stopper moves: its consumer is `label_cells`' `edge_mask`, which sits
-    /// past `extract_cells`' return. Carried now because the split is the only place that knows
-    /// which circle an arc came from.
-    #[allow(dead_code)]
+    /// ★ Read by `label_cells`' `mask_of`: crossing an arc flips the same bits crossing its circle
+    /// would, which is what "a piece of the same trace" means. (It was carried before that consumer
+    /// existed, because the split is the only place that knows which circle an arc came from.)
     pub merged: Vec<(SolidSide, SegKind)>,
 }
 
@@ -3524,15 +3523,22 @@ fn trace_result_faces(
             // makes that structural instead of a promise. (`frame_audit` runs its own copy of this
             // pipeline and must build it the same way; the arc fence locks that they agree.)
             let edges = ClassEdges::of(jd, wc, split, circles)?;
-            let (cells, face_of) = timed!(C_EXTRACT, walk_cells(jd, wc, &edges))?;
-            // ★★ **The nesting is computed, then the stopper, then the `?`.** The stopper
-            // *intercepts*: an arc class must carry the same name out however far the pipeline
-            // got, or the fences' `ArcBoundNotYet` + witness would become whatever nesting said
-            // and the reject census would gain a raise site. What nesting answered is not thrown
-            // away though — the audit carries it (`ClassAudit`), which is what keeps this stage
-            // from being rediscovered.
-            let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, &edges));
+            // ★★★ **Both stages run, then the stopper, then the `?`s.** The stopper *intercepts*:
+            // an arc class must carry the same name out **however far the pipeline got**, or the
+            // fences' `ArcBoundNotYet` + witness would become whatever the walk or the nesting
+            // said and the reject census would gain a raise site. Writing `walk_cells(..)?` puts
+            // the walk's failure ahead of the stopper and loses exactly that — measured: with the
+            // walk stubbed to fail on an arc class, the fence sees `RingOrientation`.
+            //
+            // ★ What the stages answered is not thrown away: the audit carries it
+            // (`ClassAudit::produced`), which is what keeps this stage from being rediscovered.
+            let walked = timed!(C_EXTRACT, walk_cells(jd, wc, &edges));
+            let nesting = walked
+                .as_ref()
+                .map_err(|&e| e)
+                .and_then(|(cells, _)| timed!(C_NEST, nest_cells(jd, wc, cells, &edges)));
             arc_stopper(jd, wc, &edges, split, circles)?;
+            let (cells, face_of) = walked?;
             let nesting = nesting?;
             // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
             // arrangement covers all of space, so its unbounded cells reach infinity, where neither
@@ -3871,9 +3877,14 @@ pub(crate) fn frame_audit(
                 // refuses — *"the worst possible time to be lying"* (`decline_to_reject`). The
                 // arc fence in `bands.rs` locks the two together.
                 let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
-                let (cells, face_of) = walk_cells(&jd, wc, &edges)?;
-                let nesting = nest_cells(&jd, wc, &cells, &edges);
-                if let Ok(n) = &nesting {
+                // ★ Both stages, then the stopper, then the `?`s — the same order the boolean
+                // runs, and the arc fence locks that the two agree.
+                let walked = walk_cells(&jd, wc, &edges);
+                let nesting = walked
+                    .as_ref()
+                    .map_err(|&e| e)
+                    .and_then(|(cells, _)| nest_cells(&jd, wc, cells, &edges));
+                if let (Ok((cells, _)), Ok(n)) = (&walked, &nesting) {
                     produced = Some(Produced {
                         cells: cells.len(),
                         arcs: edges.arcs.len(),
@@ -3882,6 +3893,7 @@ pub(crate) fn frame_audit(
                     });
                 }
                 arc_stopper(&jd, wc, &edges, &split, &circles)?;
+                let (cells, face_of) = walked?;
                 let nesting = nesting?;
                 let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4])?;
                 let _ = emit_faces(kind, &labels, &cells, &edges, &jd, wc, &nesting.holes);
@@ -4957,8 +4969,8 @@ mod tests {
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
 
-        let (cells, face_of) =
-            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &[]).unwrap()).unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &[]).unwrap();
+        let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
 
         // ★★★ **An independent reading of every winding: the shoelace sign.**
         //
@@ -5087,23 +5099,10 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) =
-            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &[]).unwrap()).unwrap();
-        let nesting = nest_cells(
-            &jd,
-            wc,
-            &cells,
-            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
-        )
-        .unwrap();
-        let labels = label_cells(
-            &cells,
-            &face_of,
-            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
-            &nesting,
-            [false; 4],
-        )
-        .unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &[]).unwrap();
+        let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
+        let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
 
         for (i, c) in cells.iter().enumerate() {
             if c.winding == -1 {
@@ -5175,23 +5174,10 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) =
-            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &[]).unwrap()).unwrap();
-        let nesting = nest_cells(
-            &jd,
-            wc,
-            &cells,
-            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
-        )
-        .unwrap();
-        let labels = label_cells(
-            &cells,
-            &face_of,
-            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
-            &nesting,
-            [false; 4],
-        )
-        .unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &[]).unwrap();
+        let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
+        let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
 
         assert_eq!(cells.len(), 2, "one square: inner + unbounded");
         let inner = cells.iter().position(|c| c.winding == 1).unwrap();
@@ -5242,23 +5228,10 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let (cells, face_of) =
-            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &[]).unwrap()).unwrap();
-        let nesting = nest_cells(
-            &jd,
-            wc,
-            &cells,
-            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
-        )
-        .unwrap();
-        let labels = label_cells(
-            &cells,
-            &face_of,
-            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
-            &nesting,
-            [false; 4],
-        )
-        .unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &[]).unwrap();
+        let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
+        let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
 
         // Centroid of a face's ring (convex cells here).
         let centroid = |f: &LocalFace| -> [f64; 2] {
@@ -5275,7 +5248,7 @@ mod tests {
             BoolKind::Fuse,
             &labels,
             &cells,
-            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
+            &edges,
             &jd,
             wc,
             &nesting.holes,
@@ -5286,7 +5259,7 @@ mod tests {
             BoolKind::Cut,
             &labels,
             &cells,
-            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
+            &edges,
             &jd,
             wc,
             &nesting.holes,
@@ -5302,7 +5275,7 @@ mod tests {
             BoolKind::Common,
             &labels,
             &cells,
-            &ClassEdges::of(&jd, wc, &split, &[]).unwrap(),
+            &edges,
             &jd,
             wc,
             &nesting.holes,
@@ -6319,8 +6292,8 @@ mod tests {
         );
 
         let circles = merge_circles(&tr.circles, &cyls).unwrap();
-        let (cells, face_of) =
-            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &[], &circles).unwrap()).unwrap();
+        let edges = ClassEdges::of(&jd, wc, &[], &circles).unwrap();
+        let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
         // Pseudo-half-edges 0 and 1 (no segments): the disk (+1) and its contour (−1).
         assert_eq!(cells.len(), 2, "{cells:?}");
         assert_eq!(
@@ -6331,27 +6304,14 @@ mod tests {
             (cells[1].half_edges.as_slice(), cells[1].winding),
             (&[1][..], -1)
         );
-        let nesting = nest_cells(
-            &jd,
-            wc,
-            &cells,
-            &ClassEdges::of(&jd, wc, &[], &circles).unwrap(),
-        )
-        .unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
         assert_eq!(
             nesting.root_groups,
             vec![1],
             "the contour bounds the unbounded region"
         );
         assert!(nesting.holes.is_empty());
-        let labels = label_cells(
-            &cells,
-            &face_of,
-            &ClassEdges::of(&jd, wc, &[], &circles).unwrap(),
-            &nesting,
-            [false; 4],
-        )
-        .unwrap();
+        let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
         assert_eq!(labels[1], [false; 4]);
         assert_eq!(
             labels[0],
@@ -6364,7 +6324,7 @@ mod tests {
             BoolKind::Fuse,
             &labels,
             &cells,
-            &ClassEdges::of(&jd, wc, &[], &circles).unwrap(),
+            &edges,
             &jd,
             wc,
             &nesting.holes,
@@ -6428,8 +6388,8 @@ mod tests {
             "the cap ring alone — the circle owes the splitter nothing"
         );
 
-        let (cells, face_of) =
-            walk_cells(&jd, wc, &ClassEdges::of(&jd, wc, &split, &circles).unwrap()).unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &circles).unwrap();
+        let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
         assert_eq!(cells.len(), 4, "cap ±1 and circle ±1: {cells:?}");
         let at = |he: usize| cells.iter().position(|c| c.half_edges == [he]).unwrap();
         let (disk, contour) = (at(2 * split.len()), at(2 * split.len() + 1));
@@ -6438,27 +6398,14 @@ mod tests {
             .position(|c| c.winding == 1 && c.half_edges.len() == 4)
             .unwrap();
 
-        let nesting = nest_cells(
-            &jd,
-            wc,
-            &cells,
-            &ClassEdges::of(&jd, wc, &split, &circles).unwrap(),
-        )
-        .unwrap();
+        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
         assert_eq!(
             nesting.holes.get(&cap).map(Vec::as_slice),
             Some(&[contour][..]),
             "the circle contour is the cap cell's hole"
         );
 
-        let labels = label_cells(
-            &cells,
-            &face_of,
-            &ClassEdges::of(&jd, wc, &split, &circles).unwrap(),
-            &nesting,
-            [false; 4],
-        )
-        .unwrap();
+        let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
         // The class is the box's **bottom** cap, so which of `W`'s two sides carries the box is
         // read off the class normal rather than assumed: the box occupies z>0.
         let up = planes[wc].plane.normal().as_array()[2] > 0.0;
@@ -6485,7 +6432,7 @@ mod tests {
             BoolKind::Cut,
             &labels,
             &cells,
-            &ClassEdges::of(&jd, wc, &split, &circles).unwrap(),
+            &edges,
             &jd,
             wc,
             &nesting.holes,
