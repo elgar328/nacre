@@ -2388,6 +2388,46 @@ fn arc_stopper(
     })
 }
 
+/// **What one plane class's arrangement produced, before anything refuses it.**
+///
+/// ★ Only what crosses the boundary. `face_of` is deliberately absent: the one thing that reads it
+/// is `label_cells`, and once that stage moves inside [`per_class`] it is purely internal.
+struct Staged {
+    cells: Vec<Cell>,
+    face_of: HashMap<usize, usize>,
+    nesting: Nesting,
+}
+
+/// **The per-class stages, in one place** — the walk and the nesting.
+///
+/// ★★★★ **It exists because the sequence was written twice.** `trace_result_faces`' `arrange` and
+/// `frame_audit`'s replay ran the same stages against the same edges, and the second is what makes
+/// a reject debuggable — so a drift between them is, in `decline_to_reject`'s words, *"the worst
+/// possible time to be lying"*. One copy, and the audit is auditing what the boolean ran.
+///
+/// ★★★ **And it puts every stage behind one `Result`, which is the failure this shape is really
+/// for.** The caller must run [`arc_stopper`] before unwrapping, so an arc class carries the same
+/// name out however far the pipeline got. With the stages held separately that order had to be
+/// repeated per stage, and getting it wrong is silent — the suite stays green and only the reject's
+/// *name* changes, which is exactly what happened once (`f8eb935`). One `Result` leaves one place
+/// to put the `?`, and it is after the stopper.
+///
+/// ★ The *other* failure — skipping the stopper entirely — needs no machinery here: an arc ring
+/// then reaches `emit_faces`, where `bound_of`'s assertion says so (verified to fire).
+fn per_class(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    edges: &ClassEdges<'_>,
+) -> Result<Staged, BoolError> {
+    let (cells, face_of) = timed!(C_EXTRACT, walk_cells(jd, wc, edges))?;
+    let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, edges))?;
+    Ok(Staged {
+        cells,
+        face_of,
+        nesting,
+    })
+}
+
 /// **One plane class's edges, after the arc split — and the only thing that knows the half-edge
 /// numbering.**
 ///
@@ -3537,23 +3577,19 @@ fn trace_result_faces(
             // makes that structural instead of a promise. (`frame_audit` runs its own copy of this
             // pipeline and must build it the same way; the arc fence locks that they agree.)
             let edges = timed!(C_SPLIT, ClassEdges::of(jd, wc, split, circles))?;
-            // ★★★ **Both stages run, then the stopper, then the `?`s.** The stopper *intercepts*:
+            // ★★★ **The stages run, then the stopper, then the `?`.** The stopper *intercepts*:
             // an arc class must carry the same name out **however far the pipeline got**, or the
-            // fences' `ArcBoundNotYet` + witness would become whatever the walk or the nesting
-            // said and the reject census would gain a raise site. Writing `walk_cells(..)?` puts
-            // the walk's failure ahead of the stopper and loses exactly that — measured: with the
-            // walk stubbed to fail on an arc class, the fence sees `RingOrientation`.
-            //
-            // ★ What the stages answered is not thrown away: the audit carries it
-            // (`ClassAudit::produced`), which is what keeps this stage from being rediscovered.
-            let walked = timed!(C_EXTRACT, walk_cells(jd, wc, &edges));
-            let nesting = walked
-                .as_ref()
-                .map_err(|&e| e)
-                .and_then(|(cells, _)| timed!(C_NEST, nest_cells(jd, wc, cells, &edges)));
+            // fences' `ArcBoundNotYet` + witness would become whatever a stage said and the reject
+            // census would gain a raise site. Writing `per_class(..)?` puts the stages' failure
+            // ahead of the stopper and loses exactly that — measured: with a stage stubbed to fail
+            // on an arc class, the fence sees that stage's reason instead.
+            let staged = per_class(jd, wc, &edges);
             arc_stopper(jd, wc, &edges, split, circles)?;
-            let (cells, face_of) = walked?;
-            let nesting = nesting?;
+            let Staged {
+                cells,
+                face_of,
+                nesting,
+            } = staged?;
             // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
             // arrangement covers all of space, so its unbounded cells reach infinity, where neither
             // solid is. That is a fact about arranging the *whole* model — restrict the input to a
@@ -3893,22 +3929,23 @@ pub(crate) fn frame_audit(
                 let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
                 // ★ Both stages, then the stopper, then the `?`s — the same order the boolean
                 // runs, and the arc fence locks that the two agree.
-                let walked = walk_cells(&jd, wc, &edges);
-                let nesting = walked
-                    .as_ref()
-                    .map_err(|&e| e)
-                    .and_then(|(cells, _)| nest_cells(&jd, wc, cells, &edges));
-                if let (Ok((cells, _)), Ok(n)) = (&walked, &nesting) {
+                // ★ The same stages, the same order, the same stopper the boolean runs — the arc
+                // fence in `bands.rs` locks that the two agree.
+                let staged = per_class(&jd, wc, &edges);
+                if let Ok(s) = &staged {
                     produced = Some(Produced {
-                        cells: cells.len(),
+                        cells: s.cells.len(),
                         arcs: edges.arcs.len(),
-                        roots: n.root_groups.len(),
-                        holes: n.holes.len(),
+                        roots: s.nesting.root_groups.len(),
+                        holes: s.nesting.holes.len(),
                     });
                 }
                 arc_stopper(&jd, wc, &edges, &split, &circles)?;
-                let (cells, face_of) = walked?;
-                let nesting = nesting?;
+                let Staged {
+                    cells,
+                    face_of,
+                    nesting,
+                } = staged?;
                 let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4])?;
                 let _ = emit_faces(kind, &labels, &cells, &edges, &jd, wc, &nesting.holes);
                 Ok(())
