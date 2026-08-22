@@ -802,6 +802,7 @@ impl LocalFace {
 /// to know whether it stood before or after its arm's copy. Hoisting it here makes "a reject leaves
 /// the model alone" true of the *shape* of this function rather than of a fact about where the
 /// rejects happen to sit today. [`reconstruct`] does the work and never touches the live set.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn assemble_fuse_cut(
     model: &mut Model,
     a: Handle<Solid>,
@@ -810,8 +811,9 @@ pub(crate) fn assemble_fuse_cut(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
+    deferred: Option<BoolError>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let out = reconstruct(model, jd, seam, faces, cyls)?;
+    let out = reconstruct(model, jd, seam, faces, cyls, deferred)?;
     model.live_solids.retain(|&s| s != a && s != b);
     Ok(out)
 }
@@ -983,17 +985,33 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// one: the deferred arc stopper will stand right after this and intercepts everything, so no
 /// reject name can testify that the naming completed — only a fence that calls it directly on the
 /// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
-struct Named {
-    /// The grouping, **held** — raised where the old code raised it, deep in the minting.
-    grouping: Result<Grouping, BoolError>,
-    group_of: Vec<usize>,
-    /// The per-solid dissolve's product; `None` when the result is one body (the caller's list
-    /// stands).
-    per_solid: Option<Vec<LocalFace>>,
-    defs: HashMap<(usize, NodeId), [usize; 3]>,
+/// **A result vertex's definition, in class space** — what the minting turns into a `VertexDef`.
+///
+/// ★ `Three` is the derived triple the pre-pass has always built. `Branch` is a **declaration,
+/// not a derivation**: `NodeId::Branch` already names two result plane classes and the cylinder,
+/// so its def is the name's own payload (the class→handle mapping and `QuadRoot::canonical`'s
+/// second answer belong to the minting, which the deferred stopper still stands in front of).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Def {
+    Three([usize; 3]),
+    Branch {
+        planes: [usize; 2],
+        cyl: usize,
+        root: nacre_topo::QuadRoot,
+    },
 }
 
-fn name_result_vertices(
+pub(crate) struct Named {
+    /// The grouping, **held** — raised where the old code raised it, deep in the minting.
+    grouping: Result<Grouping, BoolError>,
+    pub(crate) group_of: Vec<usize>,
+    /// The per-solid dissolve's product; `None` when the result is one body (the caller's list
+    /// stands).
+    pub(crate) per_solid: Option<Vec<LocalFace>>,
+    pub(crate) defs: HashMap<(usize, NodeId), Def>,
+}
+
+pub(crate) fn name_result_vertices(
     jd: &Judge<'_, WorkingPlane>,
     seam: &[SeamVertex],
     faces: &[LocalFace],
@@ -1091,7 +1109,7 @@ fn name_result_vertices(
         let o = others.next()?;
         others.all(|x| x == o).then_some(o)
     };
-    let mut def_triple: HashMap<(usize, NodeId), [usize; 3]> = HashMap::new();
+    let mut def_triple: HashMap<(usize, NodeId), Def> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
         for ring in lf.poly_rings() {
@@ -1099,6 +1117,20 @@ fn name_result_vertices(
             for t in 0..k {
                 let node = ring[t];
                 if def_triple.contains_key(&(g, node)) {
+                    continue;
+                }
+                // ★ A branch vertex's def is a **declaration, not a derivation** — the name
+                // already carries its two result plane classes and its cylinder, so the far-plane
+                // road (which can only ever answer in planes) is not asked.
+                if let Some((planes2, cyl, root)) = combinatorics::branch_name(node) {
+                    def_triple.insert(
+                        (g, node),
+                        Def::Branch {
+                            planes: planes2,
+                            cyl,
+                            root,
+                        },
+                    );
                     continue;
                 }
                 let (Some(prev), Some(next)) = (
@@ -1127,8 +1159,51 @@ fn name_result_vertices(
                 }
                 let mut tri = [lf.surf.plane(), prev, next];
                 tri.sort_unstable();
-                def_triple.insert((g, node), tri);
+                def_triple.insert((g, node), Def::Three(tri));
             }
+        }
+    }
+    // ★★ **The walls-fallback, for nodes the far-plane road starved on every incident face** —
+    // the arc population's bitten corner (a disk eating a plate corner leaves all three of its
+    // faces with an edge whose twin is subdivided, folded, or a band; measured, exactly one such
+    // node in the corpus). The carried walls of the node's own rings know the answer, under the
+    // same two guards the derivation above uses. The old comment's four-plane hazard — a wall
+    // that *carries* the edge's line without bounding the solid here — is why this runs strictly
+    // second and demands that **every deriving face agree**: where faces could disagree is
+    // exactly where the walls stop being trustworthy, so a split vote stays def-less rather than
+    // picking a winner. (For a planar input this widens honestly: a genuinely straight corner is
+    // still refused by the guards and keeps its `StraightAngle`; today's planar population never
+    // reaches here at all — the census is the proof.)
+    let mut fallback: HashMap<(usize, NodeId), Option<[usize; 3]>> = HashMap::new();
+    for (fi, lf) in faces.iter().enumerate() {
+        let g = group_of[fi];
+        for ring in lf.poly_rings() {
+            let k = ring.len();
+            for t in 0..k {
+                let node = ring[t];
+                if def_triple.contains_key(&(g, node)) {
+                    continue;
+                }
+                let (prev, next) = (ring.walls[(t + k - 1) % k], ring.walls[t]);
+                // An arc edge's wall is the carrier sentinel — no plane to name.
+                if prev == usize::MAX || next == usize::MAX || prev == next {
+                    continue;
+                }
+                if jd.plane_pair_dir_sign(lf.surf.plane(), prev, next) == 0 {
+                    continue;
+                }
+                let mut tri = [lf.surf.plane(), prev, next];
+                tri.sort_unstable();
+                let vote = fallback.entry((g, node)).or_insert(Some(tri));
+                if matches!(vote, Some(seen) if *seen != tri) {
+                    *vote = None; // a split vote stays def-less
+                }
+            }
+        }
+    }
+    for ((g, node), tri) in fallback {
+        if let Some(tri) = tri {
+            def_triple.insert((g, node), Def::Three(tri));
         }
     }
 
@@ -1148,6 +1223,7 @@ fn reconstruct(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
+    deferred: Option<BoolError>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes = jd.planes;
     // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
@@ -1157,12 +1233,21 @@ fn reconstruct(
     if faces.is_empty() {
         return Ok(Vec::new());
     }
+    let named = name_result_vertices(jd, seam, faces, cyls);
+    // ★★★ **The deferred arc stopper's raise, and the last place it can stand.** Everything above
+    // is model-immutable by signature; the rim table two screens down starts pushing vertices and
+    // edges. The interception is the same shape at its third layer: the naming runs — that is the
+    // point, its arms are exercised — and then the stopper's reject wins over whatever it said,
+    // `Ok` or `Err`, so an arc population's name never depends on how far the pipeline got.
+    if let Some(d) = deferred {
+        return Err(d);
+    }
     let Named {
         grouping,
         group_of,
         per_solid,
         defs: def_triple,
-    } = name_result_vertices(jd, seam, faces, cyls)?;
+    } = named?;
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
 
     // Vertices (deterministic: first appearance across faces in order).
@@ -1187,10 +1272,17 @@ fn reconstruct(
                 // A vertex that is a corner of no face at all has no name in the result's own
                 // planes — a degeneracy, and the honest answer is the one this reason already
                 // carries ("a corner with no turn").
-                let tri = def_triple
-                    .get(&(g, node))
-                    .copied()
-                    .ok_or_else(|| reject(RejectReason::StraightAngle))?;
+                let tri = match def_triple.get(&(g, node)).copied() {
+                    Some(Def::Three(t)) => t,
+                    // ★ A backstop, not a road: the deferred stopper stands before this minting
+                    // for every arc input, and only arc inputs put a branch def here. If it is
+                    // ever reached, the population's own name is the honest answer — same
+                    // (reason, file) as the stopper, so the reject census reads one row.
+                    Some(Def::Branch { .. }) => {
+                        return Err(reject(RejectReason::ArcBoundNotYet));
+                    }
+                    None => return Err(reject(RejectReason::StraightAngle)),
+                };
                 let def = VertexDef::ThreePlane([
                     planes[tri[0]].surf,
                     planes[tri[1]].surf,

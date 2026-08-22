@@ -1451,6 +1451,130 @@ mod tests {
         }
     }
 
+    /// **Every ring node of the arc population's result faces earns a definition — measured
+    /// through the door production uses.**
+    ///
+    /// ★★★ Same instrument shape as the seam fence, same reason: the deferred stopper stands
+    /// right after `name_result_vertices` and intercepts everything, so no reject name can
+    /// testify the naming completed — a direct second consumer is the only witness. This walks
+    /// production's road (trace → clean → bands → seam → naming) and asserts on its product.
+    ///
+    /// ★★ The fixture division *is* the instrument: the straddling boss's nodes complete with
+    /// the branch arm alone, while the turned boss also needs the walls-fallback for the corner
+    /// the disk bites — so disabling the branch arm reddens both, disabling the fallback reddens
+    /// the turned one only.
+    #[test]
+    fn every_result_vertex_of_the_arc_population_is_named() {
+        for (origin, axis, bites_corner) in [
+            ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0], false),
+            ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0], true),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array(origin),
+                Vector3::from_array(axis),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            let setup = plane_index_setup(&m, plate, boss).unwrap();
+            let PlaneSetup {
+                planes: faces_tab,
+                geom,
+                surf_ix,
+                inc_a,
+                inc_b,
+                plane_ix,
+                class_owner,
+                n_a,
+                standard,
+                notes,
+                cyls,
+                ..
+            } = &setup;
+            let jd = Judge::new(geom, *standard, notes);
+            let trace_in = crate::combinatorics::trace_input(
+                &m,
+                [(plate, inc_a), (boss, inc_b)],
+                surf_ix,
+                faces_tab.len(),
+                &jd,
+                plane_ix,
+            );
+            let (plane_faces, disk_labels, _) =
+                crate::arrangement::trace_result_faces_full_for_test(
+                    &m,
+                    BoolKind::Fuse,
+                    plate,
+                    boss,
+                    &jd,
+                    faces_tab,
+                    plane_ix,
+                    cyls,
+                    *n_a,
+                    class_owner,
+                    &trace_in,
+                )
+                .expect("the arc population traces");
+            let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
+            let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
+            let mut faces = faces;
+            faces.extend(
+                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &disk_labels).expect("bands"),
+            );
+            let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
+            let named = crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls)
+                .expect("the naming stages run");
+            let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
+            // Completeness: every ring node has a definition.
+            let mut missing = Vec::new();
+            let mut branch = 0;
+            for (fi, lf) in live.iter().enumerate() {
+                for ring in lf.poly_rings() {
+                    for &n in ring.iter() {
+                        match named.defs.get(&(named.group_of[fi], n)) {
+                            None => missing.push(n),
+                            Some(crate::boolean::Def::Branch { .. }) => branch += 1,
+                            Some(crate::boolean::Def::Three(_)) => {}
+                        }
+                    }
+                }
+            }
+            assert!(missing.is_empty(), "def-less nodes: {missing:?}");
+            // (branch counts each APPEARANCE; dedupe via the defs map instead)
+            let branch_defs = named
+                .defs
+                .values()
+                .filter(|d| matches!(d, crate::boolean::Def::Branch { .. }))
+                .count();
+            assert_eq!(branch_defs, 2, "both crossings are declared, once each");
+            let _ = branch;
+            // The bitten corner's def names the right point: realize its three planes and land
+            // on (4, 0, 2) — the fixture's own number, no class index copied.
+            if bites_corner {
+                let hit = named.defs.values().any(|d| {
+                    let crate::boolean::Def::Three(t) = d else {
+                        return false;
+                    };
+                    nacre_geom::intersect::three_planes(
+                        &geom[t[0]].plane,
+                        &geom[t[1]].plane,
+                        &geom[t[2]].plane,
+                    )
+                    .is_some_and(|p| {
+                        let c = p.as_array();
+                        (0..3).all(|i| (c[i] - [4.0, 0.0, 2.0][i]).abs() < 1e-9)
+                    })
+                });
+                assert!(hit, "the bitten corner's def realizes to (4, 0, 2)");
+            }
+        }
+    }
+
     /// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in
     /// the same two planes, which is what once made them look like a seating problem; what was
     /// actually hard was classifying **two curved bodies**, and both are now probed from a cap

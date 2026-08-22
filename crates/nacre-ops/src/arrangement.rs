@@ -3691,8 +3691,9 @@ fn trace_result_faces(
         // The per-class product: the faces, the disk labels the band pass reads (empty for a
         // class with no circles — and for a reused class, which is why cylinders switch reuse
         // off), and the arc stopper's **deferred** reject — made here, where the class-level fact
-        // ("this class has arcs") lives, and raised by the caller after the seam stretch, so the
-        // seam's branch arm actually runs before the population is refused.
+        // ("this class has arcs") lives, and raised inside `reconstruct`, after the vertex naming
+        // and before any minting, so the seam's branch arm and the naming pre-pass actually run
+        // before the population is refused.
         type ClassOut = (Vec<LocalFace>, Vec<(usize, Label)>, Option<BoolError>);
         let arrange = |wc: usize| -> Result<ClassOut, BoolError> {
             watch!(CELLS);
@@ -3703,8 +3704,9 @@ fn trace_result_faces(
             let edges = timed!(C_SPLIT, ClassEdges::of(jd, wc, split, circles))?;
             // ★★★ **The stages run, then the stopper is *made* — and only made.** The reject an
             // arc class earns is built here, where "this class has arcs" is a plain fact, but it
-            // is **raised by the caller after the seam stretch**, so the seam's branch arm runs
-            // before the population is refused. The stopper still *intercepts*: an arc class must
+            // is **raised inside `reconstruct`, after the vertex naming and before any minting**,
+            // so the seam's branch arm and the naming pre-pass run before the population is
+            // refused. The stopper still *intercepts*: an arc class must
             // carry the same name out **however far the pipeline got**, or the fences'
             // `ArcBoundNotYet` + witness would become whatever a stage said and the reject census
             // would gain a raise site — that is the `deferred.unwrap_or(e)` below (measured: with
@@ -4166,7 +4168,8 @@ pub(crate) fn frame_audit(
                 let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
                 // ★ The same stages and the same stopper the boolean runs — the arc fence in
                 // `bands.rs` locks that the two agree. One deliberate difference: the boolean
-                // *defers* the stopper's reject past the seam stretch, while this audit raises it
+                // *defers* the stopper's reject into the assembly (past the seam stretch and the
+                // vertex naming), while this audit raises it
                 // here — its proposition is per class ("where does this class stop"), and the
                 // deferral changes where the reject surfaces, never which classes earn it or what
                 // it is named. The agreement fence compares the names, which is exactly the part
@@ -4390,15 +4393,17 @@ pub(crate) fn boolean(
             let seam = seam_table(&faces, &cyls, &jd)?;
             Ok((faces, seam))
         };
-        let stretch = stretch();
-        if let Some(d) = deferred {
-            return Err(d);
-        }
-        let (faces, seam) = stretch?;
+        // ★ The raise moved into `reconstruct` (after the vertex naming, before any minting);
+        // what stays here is the interception — a stretch failure on an arc input still carries
+        // the stopper's name out, not its own.
+        let (faces, seam) = match stretch() {
+            Ok(x) => x,
+            Err(e) => return Err(deferred.unwrap_or(e)),
+        };
 
         timed!(
             ASSEMBLE,
-            assemble_fuse_cut(model, a, b, &jd, &seam, &faces, &cyls)
+            assemble_fuse_cut(model, a, b, &jd, &seam, &faces, &cyls, deferred)
         )
     };
     let out = run(model);

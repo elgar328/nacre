@@ -478,11 +478,24 @@ const CORPUS: [Fixture; 14] = [
         // The circle is **split** there now; what stops is the assembly of an arc-bounded loop.
         expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment,
-        raised: &[(
-            "arc_bound_not_yet",
-            None,
-            "crates/nacre-ops/src/arrangement.rs",
-        )],
+        // ★ Two guards ring, one surfaces. The stopper now stands past the vertex naming, so the
+        // grouping's component walk runs on arc faces first — its ring naming meets a branch node
+        // and rings `branch_vertex_unnamed` (`ring_edges_with_walls`). That error is *held* (the
+        // grouping's own discipline) and the deferred stopper supersedes it before the held raise,
+        // so the population's name never moves; the census records the ringing because a swallowed
+        // guard is still a guard that fired.
+        raised: &[
+            (
+                "arc_bound_not_yet",
+                None,
+                "crates/nacre-ops/src/arrangement.rs",
+            ),
+            (
+                "branch_vertex_unnamed",
+                None,
+                "crates/nacre-ops/src/combinatorics.rs",
+            ),
+        ],
         surfaced: &[("arc_bound_not_yet", None)],
     },
     Fixture {
@@ -491,11 +504,24 @@ const CORPUS: [Fixture; 14] = [
         // runs — the first non-`+Z` cylinder in the corpus.
         expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment_turned,
-        raised: &[(
-            "arc_bound_not_yet",
-            None,
-            "crates/nacre-ops/src/arrangement.rs",
-        )],
+        // ★ Two guards ring, one surfaces. The stopper now stands past the vertex naming, so the
+        // grouping's component walk runs on arc faces first — its ring naming meets a branch node
+        // and rings `branch_vertex_unnamed` (`ring_edges_with_walls`). That error is *held* (the
+        // grouping's own discipline) and the deferred stopper supersedes it before the held raise,
+        // so the population's name never moves; the census records the ringing because a swallowed
+        // guard is still a guard that fired.
+        raised: &[
+            (
+                "arc_bound_not_yet",
+                None,
+                "crates/nacre-ops/src/arrangement.rs",
+            ),
+            (
+                "branch_vertex_unnamed",
+                None,
+                "crates/nacre-ops/src/combinatorics.rs",
+            ),
+        ],
         surfaced: &[("arc_bound_not_yet", None)],
     },
     Fixture {
