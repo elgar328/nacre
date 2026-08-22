@@ -12244,3 +12244,59 @@ kit 72 · 앱 142 + tsc + wasm clippy. 전부 cargo 자신의 `$?`.
 하나로 접힘)과 `Bound::Band` 의 `[v,v]` 닫힌 rim 주조 — 를 같이 본다. 그 뒤: `VertexDef::Branch`
 주조(클래스→핸들, `QuadRoot::canonical` 의 둘째 답) · `Ring.walls` → 담체 · 밴드 패스(잘린 원의
 디스크 라벨) · rim 표의 호 행 · tess · validate · reuse 의 `CanonNode::Circle`.
+
+---
+
+## 모든 결과 정점이 이름을 얻는다 — 주조 직전까지 (2026-08-22)
+
+커밋 둘: `2b5d952`(① `name_result_vertices` 순수 추출 — census 비트 동일이 증명) ·
+`e32f6a5`(② 두 def 팔 + 정지판이 `reconstruct` 안으로 + 완전성 울타리).
+
+def 의 그릇이 `Def { Three, Branch }` 로 넓어지고 두 팔이 선다: **분기 def 는 선언**(이름의
+payload 그대로 — 유도 불필요, 조사가 확정), **물린 코너는 fallback**(자기 링의 carried walls,
+기존 가드 + 「모든 유도 면의 일치」 — 갈리면 결손으로 남아 네-평면 함정을 안 연다). 정지판의
+raise 는 `reconstruct` 안 「이름 뒤·rim 주조 앞」 — 앞의 전부가 **시그니처로** 모델 무변이라
+호 인구의 거절은 여전히 모델을 한 번도 안 건드린다. 가로채기는 셋째 층으로 같은 모양.
+
+### reject census 가 계획에 없던 사실을 잡았다 — 그리고 계획의 한 문장을 반증했다
+
+★★★★ 게이트가 빨개졌다: 호 행의 「울린 가드」 집합에 `branch_vertex_unnamed`(combinatorics)가
+**새로 들어왔다**. 추적(reject 훅에 env-가드 eprintln 한 줄): `ring_edges_with_walls` —
+**grouping 의 성분 기계**가 호 면의 링을 이름 짓다 분기 노드에서 울린다. 그 `Err` 는 grouping 의
+기존 규율대로 **held** 됐다가 deferred 가 이긴다 — 최종 이름은 안 움직이고, census 는 「삼켜진
+가드도 울린 가드」라서 본 것이다. 두 행에 이유 주석과 함께 blessed. **계획 세 회의 검토가 못
+보고 census 가 봤다** — 계측이 검토보다 넓다.
+
+★★★ **그 결과 계획의 「self_touch 포함 이름 단계들이 호 입력에서 돈다」는 절반 거짓이었다** —
+grouping 이 held-Err 이므로 `if let Ok(g)` 가 self_touch 를 **건너뛴다**. 정확한 문장: def
+pre-pass 는 전부 돌고(울타리가 직접 증명), 성분 기계는 「돌긴 하나 분기 노드를 아직 모른다」.
+성분 기계의 분기 팔은 모서리 칸 이후의 몫이다.
+
+### red 프로브 셋 — 분업 그대로
+
+| 프로브 | 결과 |
+|---|---|
+| A: 분기 def 팔 끄기 | 완전성 울타리 빨강, 결손이 정확히 분기 노드들. **fallback 은 못 구한다**(호 모서리의 MAX-wall 가드 — 설계 그대로) |
+| B: fallback 끄기 | **돌린 보스만** 빨강, 결손이 정확히 물린 코너. 걸터앉은 보스는 통과 — 예측된 픽스처별 분업 |
+| C: 이름 단계를 호 입력에서 실패시키기 | 이름 울타리 초록 유지 — 셋째 층 가로채기 |
+
+### 배관·주변
+
+`assemble_fuse_cut`/`reconstruct` 가 deferred 를 받고(호출자 하나), 불리언 층 가로채기는 남는다.
+raise 자리를 말하던 주석 넷 일괄 갱신(grep-0 확인). `node_handle` 의 `Def::Branch` 팔 =
+`ArcBoundNotYet` 백스톱(같은 reason·파일 — census 행 불변). 새 울타리
+`every_result_vertex_of_the_arc_population_is_named`: 결손 0 · 분기 선언 둘 · 물린 코너의 def 가
+픽스처 자신의 `(4,0,2)` 로 realize(클래스 인덱스 안 베낌).
+
+### 관문
+
+53타깃 **1105**(+1) · nodef 25타깃 584 · clippy 0 · fmt · **census 두 프로파일 동일**(두 커밋 다) ·
+reject census(두 행에 새 ringer blessed) · 스윕 53타깃 127 · perf release 2 · kit 72 · 앱 142.
+
+### 다음 — 모서리 칸
+
+`far_plane` 실패의 셋째 원인(**쪼개진 쌍둥이 / T-정션** — 이웃 클래스는 분기점을 «알 수 없음»이
+실측: 원통이 그 평면에 평행이라 원도 어휘도 없다 ⇒ 주조 쪽에서 이웃 면의 모서리를 갈라야 한다) ·
+호 키 접힘(현+호+호가 순서 없는 정점 쌍 하나 — 직선은 순서 없이, 원은 순서 있게 + 담체) ·
+`Ring.walls` → 담체(소비자 여섯) · rim `[v,v]` 의 잘린 판. 그 뒤 `VertexDef::Branch` 주조 +
+클래스→핸들 정준화(둘째 답) · 밴드 패스 · rim 호 행 · tess · validate · reuse.
