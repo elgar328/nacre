@@ -786,19 +786,23 @@ pub enum RejectReason {
     /// branch arm), the split-twin subdivision cuts every neighbouring edge at the branch points
     /// its own class could never discover, the naming pre-pass gives every vertex its definition,
     /// and **every vertex is minted** — `VertexDef::Branch` included, canonical in handle order.
-    /// So the refusal stands **after the vertex materialization and before any edge**: everything
-    /// up to there runs, is measured, and is then not handed on.
+    /// The edges follow: `boolean::Ring` carries each edge's carrier (`Wall`), the arc edges of
+    /// every plane face are minted with the ordered circle key (`[A, B]` = CCW about the axis,
+    /// so the two complementary arcs between one branch pair are distinct edges), the rim table
+    /// skips a cut circle rather than minting a false closed `[v, v]` edge, and the plane faces
+    /// assemble whole. So the refusal stands **after the face loop and before the shell guard**:
+    /// everything up to there runs, is measured, and is then not handed on.
     ///
-    /// ★★ **A refusal here therefore leaves its minted vertices in the store** — garbage cells
-    /// outside every live solid, the same class of residue a late reject's arena cells have
-    /// always been. The live-set is restored as ever; a session that keeps recording after a
-    /// reject rebuilds from the log (`replay`'s discipline).
+    /// ★★ **A refusal here therefore leaves minted vertices, edges and faces in the store** —
+    /// garbage cells outside every live solid, the same class of residue a late reject's arena
+    /// cells have always been. The live-set is restored as ever; a session that keeps recording
+    /// after a reject rebuilds from the log (`replay`'s discipline).
     ///
-    /// What is still missing is the **edges**: `boolean::Ring` has no carrier for an arc (its
-    /// walls are plane classes, and an arc edge carries the `usize::MAX` sentinel the reader
-    /// guards), the chord and the two arcs between one pair of branch points fold into a single
-    /// unordered edge key, the rim table mints a cut circle as one closed `[v, v]` edge, a band
-    /// face contributes no node edges, and a cut circle leaves the band pass with no disk label.
+    /// What is still missing is the **band**: a cut rim's curved bounds refuse in the face loop
+    /// (the cut check in `circle_loop`/`band_loop` — a band's boundary is arcs joined by seam
+    /// edges, an assembly that does not exist yet), the grouping's component machinery still
+    /// reads rings through the legacy names-road (`Ring::edges`'s shim), and a cut circle leaves
+    /// the band pass with no disk label — so the closing never runs.
     ///
     /// ★ It intercepts **every** failure behind it — the per-class stages, the seam stretch, the
     /// naming and the materialization each hold the same shape (the stages run, the deferred

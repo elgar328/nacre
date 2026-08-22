@@ -1455,13 +1455,13 @@ mod tests {
     /// through the door production uses.**
     ///
     /// ★★★ Same instrument shape as the seam fence, same reason: the deferred stopper stands
-    /// behind `name_result_vertices` (past the vertex materialization now) and intercepts
+    /// behind `name_result_vertices` (past the face loop now) and intercepts
     /// everything, so no reject name can testify the naming completed — a direct second consumer
     /// is the only witness. This walks production's road (trace → clean → bands → seam → naming)
     /// and asserts on its product.
     ///
     /// ★★ Disabling the branch arm reddens both fixtures (and the walls-fallback cannot fake a
-    /// branch def past its MAX-wall guard). ★ The fallback itself went **zero-population** when
+    /// branch def past its arc-carrier guard). ★ The fallback itself went **zero-population** when
     /// the split-twin subdivision landed — the bitten corner's twins match now, so its def comes
     /// down the far-plane road and no probe reddens on the fallback alone; the subdivision has
     /// its own fence (`a_subdivided_twin_matches_its_neighbour_edge_for_edge`).
@@ -1578,15 +1578,17 @@ mod tests {
     /// rescues the bitten corner whether or not the twins match, so that fence is green either
     /// way. What the subdivision actually changes is the **edge-key census**: a neighbour's whole
     /// edge and the arc class's subdivided pieces share `norm_edge` keys only once the whole edge
-    /// is cut at the same branch nodes. So the proposition, with its exceptions stated exactly:
+    /// is cut at the same branch nodes. So the proposition, with its one exception stated:
     ///
-    /// > every segment ring edge (a `Wall::Plane` carrier) whose two ends are **not both branch
-    /// > nodes** has its key used by exactly two faces.
+    /// > every segment ring edge (a `Wall::Plane` carrier) has its key used by exactly two
+    /// > faces.
     ///
-    /// Both-ends-branch keys are excluded because they are the chord+arc folds (their welding is
-    /// the carrier cell's item) — and the subdivision itself mints one more such piece on the
-    /// straddling boss (the middle of the `x = 4` wall's top edge, whose true twin is the chord).
     /// Arc edges are excluded because their far side is the band, which contributes no ring.
+    /// ★ Both-ends-branch keys used to be excluded too — the chord and the two arcs between one
+    /// branch pair folded into a single `norm_edge` key — but the carrier gave arcs their own
+    /// ordered key, so the chord's line key counts exactly its two coplanar faces now (measured:
+    /// the exclusion removed, both fixtures stay green — the tightening the carrier cell's plan
+    /// predicted).
     ///
     /// red: with the subdivision disabled, the pre-split single-use keys come back.
     #[test]
@@ -1672,9 +1674,7 @@ mod tests {
                         }
                         let key = crate::boolean::norm_edge(a, b);
                         *uses.entry(key).or_insert(0) += 1;
-                        let both_branch = crate::combinatorics::branch_name(a).is_some()
-                            && crate::combinatorics::branch_name(b).is_some();
-                        if !both_branch && !plain.contains(&key) {
+                        if !plain.contains(&key) {
                             plain.push(key);
                         }
                     }
@@ -1691,7 +1691,7 @@ mod tests {
 
     /// **The refusal now leaves the branch vertices behind — minted, canonical, and measured.**
     ///
-    /// ★★ The deferred stopper stands past the vertex materialization, so an arc reject's model
+    /// ★★ The deferred stopper stands past the face loop, so an arc reject's model
     /// carries its minted vertices as garbage cells outside every live solid — the deliberate
     /// trade recorded at the raise site. That is also what makes the minting *observable*: no
     /// reject name can see past the interception, but the store can be read directly. Before the
@@ -1766,6 +1766,126 @@ mod tests {
                     .expect("a discovered vertex carries its tol");
                 assert!(tol < 1e-12, "measured against what defines it: {tol}");
             }
+        }
+    }
+
+    /// **The two complementary arcs are two edges, and the cut rim is none.**
+    ///
+    /// ★★★ The observable form of the `[A, B]`-CCW convention (`derive_edge_curve`'s circle
+    /// arm): between one pair of branch vertices a circle offers two pieces, the endpoints
+    /// alone cannot tell them apart, and the *vertex order* is the bit that does — so the store
+    /// must hold **two** circle-carrier edges whose vertex pairs are each other's reverse.
+    /// Erase the order from the welding key and they fold into one edge (the red probe this
+    /// fence was built against).
+    ///
+    /// ★★ The rim skip's two sides, on one store: the **cut** circle mints no closed `[v, v]`
+    /// edge (before the skip, both fixtures minted one that only the reject discarded), while
+    /// the **uncut** far rim still mints exactly one — the skip's negative control, pinned to
+    /// the far cap's axis coordinate so a skip that turned into "skip every rim" reddens here.
+    ///
+    /// ★ The two populations differ on the chord, deliberately: the straddling boss's branch
+    /// pair is joined by the plate-top chord (welded with the subdivided middle piece into
+    /// **one** line edge used by both coplanar faces — the subdivision cell's promise realized
+    /// in the store), while the turned boss's pair sits across the plate corner, joined through
+    /// it by split boundary edges — no chord at all. Scoped to the edges the boolean minted
+    /// (a snapshot, not a whole-store filter: the input cylinder's own rims are `[v, v]` too).
+    #[test]
+    fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
+        let s = 2.0 - 3.0f64.sqrt() / 4.0;
+        for (origin, axis, height, crossings, chord_edges) in [
+            (
+                [4.0, 2.0, 2.0],
+                [0.0, 0.0, 1.0],
+                1.0,
+                [[4.0, 1.5, 2.0], [4.0, 2.5, 2.0]],
+                1usize,
+            ),
+            (
+                [4.0, 0.25, 2.0],
+                [1.0, 0.0, 0.0],
+                1.0,
+                [[4.0, 0.75, 2.0], [4.0, 0.0, s]],
+                0usize,
+            ),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array(origin),
+                Vector3::from_array(axis),
+                0.5,
+                height,
+            );
+            m.rebuild_adjacency();
+            let minted_from = m.edges.len();
+            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect_err("the arc population is still refused");
+            assert!(
+                matches!(
+                    &err,
+                    BoolError::Rejected {
+                        reason: RejectReason::ArcBoundNotYet,
+                        ..
+                    }
+                ),
+                "{err:?}"
+            );
+            let minted: Vec<_> = m.edges.iter().skip(minted_from).collect();
+            let is_cyl = |sh| matches!(m.surface(sh), nacre_geom::Surface::Cylinder(_));
+            let on_circle = |e: &nacre_topo::Edge| e.surfaces.iter().any(|&sh| is_cyl(sh));
+
+            // The cut circle's pieces: exactly two, endpoints both branch vertices on the
+            // derived crossings, vertex pairs mutually reversed.
+            let arcs: Vec<_> = minted
+                .iter()
+                .filter(|(_, e)| on_circle(e) && e.vertices[0] != e.vertices[1])
+                .collect();
+            assert_eq!(arcs.len(), 2, "two complementary arcs, two edges: {arcs:?}");
+            let ([a0, b0], [a1, b1]) = (arcs[0].1.vertices, arcs[1].1.vertices);
+            assert_eq!((a0, b0), (b1, a1), "the two orders of one vertex pair");
+            for v in [a0, b0] {
+                assert!(
+                    matches!(m.vertices.get(v).def, nacre_topo::VertexDef::Branch { .. }),
+                    "an arc ends on a branch vertex"
+                );
+                let p = m.vertex_point(v);
+                assert!(
+                    crossings
+                        .iter()
+                        .any(|c| (0..3).all(|i| (p.as_array()[i] - c[i]).abs() < 1e-9)),
+                    "an arc endpoint sits on a derived crossing: {p:?}"
+                );
+            }
+
+            // The rim skip's two sides: no closed edge on the cut circle, exactly one on the
+            // uncut far rim (its axis coordinate is the far cap's, derived from the fixture).
+            let closed: Vec<_> = minted
+                .iter()
+                .filter(|(_, e)| e.vertices[0] == e.vertices[1])
+                .collect();
+            assert_eq!(closed.len(), 1, "one uncut rim, no cut one: {closed:?}");
+            let far = (0..3)
+                .map(|i| (origin[i] + axis[i] * height) * axis[i])
+                .sum::<f64>();
+            let p = m.vertex_point(closed[0].1.vertices[0]).as_array();
+            let along = (0..3).map(|i| p[i] * axis[i]).sum::<f64>();
+            assert!(
+                (along - far).abs() < 1e-12,
+                "the closed rim is the far cap's: {along} vs {far}"
+            );
+
+            // The chord: welded into one line edge on the straddling boss, absent across the
+            // turned boss's corner.
+            let chords = minted
+                .iter()
+                .filter(|(_, e)| {
+                    !on_circle(e) && (e.vertices == [a0, b0] || e.vertices == [b0, a0])
+                })
+                .count();
+            assert_eq!(chords, chord_edges, "the branch pair's line edges");
         }
     }
 

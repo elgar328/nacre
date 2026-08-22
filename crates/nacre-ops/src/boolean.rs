@@ -664,6 +664,21 @@ pub(crate) enum Wall {
     Arc { cyl: usize, ccw: bool },
 }
 
+/// **The edge-welding key** — the key half of "a line is unordered, a circle is ordered"
+/// (`Wall` is the type half).
+///
+/// Keys live in *handle* space, the space `edge_of` always keyed. A line is its unordered
+/// endpoint pair, as before. Between one pair of branch vertices a circle offers **two**
+/// complementary pieces, so the endpoints alone cannot name an arc — the key carries them **in
+/// CCW order about the axis** (`from → to`), and the two complementary arcs get the two orders.
+/// The minted edge stores its vertices in that same order, which is what the `[A, B]`-CCW
+/// convention means downstream (`Model::derive_edge_curve`'s circle arm).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+enum EdgeKey {
+    Line((usize, usize)),
+    Arc { cyl: usize, from: usize, to: usize },
+}
+
 impl Ring {
     /// A ring whose walls are **derived from the node names** — for hand-built fixtures, where
     /// every vertex is a clean three-plane point so "the class the two names share besides `p`" is
@@ -1015,7 +1030,7 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// every ring node's defining triple.
 ///
 /// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
-/// one: the deferred arc stopper stands behind it (past the vertex materialization now) and
+/// one: the deferred arc stopper stands behind it (past the face loop now) and
 /// intercepts everything, so no
 /// reject name can testify that the naming completed — only a fence that calls it directly on the
 /// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
@@ -1340,7 +1355,7 @@ fn reconstruct(
     }
     let named = name_result_vertices(jd, seam, faces, cyls);
     // The naming's failure yields to the deferred stopper like every stage before it; the raise
-    // itself now stands after the vertex materialization below.
+    // itself now stands after the face loop below.
     let Named {
         grouping,
         group_of,
@@ -1351,6 +1366,22 @@ fn reconstruct(
         Err(e) => return Err(deferred.unwrap_or(e)),
     };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
+
+    // ★ **Which rims are cut** — read off the branch declarations, per group: a branch vertex
+    // names its cylinder and two result planes, so every `(cylinder, plane)` pair it lies on is
+    // a circle that no longer closes. The set over-approximates harmlessly (the branch's *wall*
+    // plane pairs with the cylinder too, but no rim is ever keyed by it): only real rim keys are
+    // tested against it, by the rim table's skip and by the curved arms' checks below.
+    let mut cut: HashSet<(usize, usize, usize)> = HashSet::new();
+    for (&(g, _), def) in &def_triple {
+        if let Def::Branch {
+            planes: p2, cyl, ..
+        } = def
+        {
+            cut.insert((g, *cyl, p2[0]));
+            cut.insert((g, *cyl, p2[1]));
+        }
+    }
 
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<(usize, NodeId), Handle<Vertex>> = HashMap::new();
@@ -1463,21 +1494,11 @@ fn reconstruct(
             }
         }
     }
-    // ★★★ **The deferred arc stopper's raise — after the vertices, before everything else.** The
-    // rim table below starts minting edges; the interception is the same shape at its fourth
-    // layer (the loop ran, the stopper's reject wins over whatever it said), so an arc
-    // population's name never depends on how far the pipeline got.
-    //
-    // ★★ **An arc reject therefore leaves its minted vertices in the store — deliberately.** They
-    // are garbage cells outside every live solid, the same class of residue a late reject's arena
-    // cells have always been: the live-set fences stay green, and a session that keeps recording
-    // after a reject rebuilds from the log (`replay`'s discipline, stated in `docs/design.md`).
-    // Holding the raise any earlier would put the branch minting behind an interception nothing
-    // can see past — the unreachable-machinery trap this ladder keeps refusing.
-    if let Some(d) = deferred {
-        return Err(d);
+    // The materialization's failure yields to the deferred stopper like the naming's above; the
+    // raise itself now stands after the face loop below.
+    if let Err(e) = materialized {
+        return Err(deferred.unwrap_or(e));
     }
-    materialized?;
 
     // ★★ **The rim table** (M6-2a C4b): a curved bound has no node and no triple, so it is not
     // welded through the seam table at all — it is minted here, once per `(group, cylinder class,
@@ -1488,45 +1509,60 @@ fn reconstruct(
     // The group is in the key for the reason it is in `vh`'s: two result solids must not share a
     // handle.
     let mut rim: RimTable = HashMap::new();
-    for (fi, lf) in faces.iter().enumerate() {
-        let g = group_of[fi];
-        let keys: Vec<(usize, usize)> = std::iter::once(&lf.outer)
-            .chain(lf.inner.iter())
-            .flat_map(|b| match (b, lf.surf) {
-                (Bound::Circle { cyl }, ClassIx::Plane(c)) => vec![(*cyl, c)],
-                (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => vec![(k, *lo), (k, *hi)],
-                _ => Vec::new(),
-            })
-            .collect();
-        for (k, c) in keys {
-            if rim.contains_key(&(g, k, c)) {
-                continue;
+    let rims_built = (|| -> Result<(), BoolError> {
+        for (fi, lf) in faces.iter().enumerate() {
+            let g = group_of[fi];
+            let keys: Vec<(usize, usize)> = std::iter::once(&lf.outer)
+                .chain(lf.inner.iter())
+                .flat_map(|b| match (b, lf.surf) {
+                    (Bound::Circle { cyl }, ClassIx::Plane(c)) => vec![(*cyl, c)],
+                    (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => vec![(k, *lo), (k, *hi)],
+                    _ => Vec::new(),
+                })
+                .collect();
+            for (k, c) in keys {
+                if rim.contains_key(&(g, k, c)) {
+                    continue;
+                }
+                // ★★ **A cut circle mints no rim.** The rim edge is the closed `[v, v]` spelling,
+                // and for a cut circle that spelling is false — measured before this skip, both arc
+                // fixtures minted a `[v, v]` on a cut rim that only the reject then discarded. The
+                // curved arms below check the same set *before* they look the rim up, and answer
+                // with the population's own name rather than `MissingSeam`.
+                if cut.contains(&(g, k, c)) {
+                    continue;
+                }
+                let (lat, plane) = (cyls[k].surf, planes[c].surf);
+                // The seam point of this rim, spelled as `add_cylinder` spells one: the axis meets the
+                // plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
+                let cache = cyls[k].cache;
+                let centre = nacre_geom::intersect::line_plane(
+                    &cache.axis(),
+                    match model.surface(plane) {
+                        nacre_geom::Surface::Plane(p) => p,
+                        _ => return Err(reject(RejectReason::ThreePlanes)),
+                    },
+                )
+                .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
+                let point = centre + cache.ref_dir() * cache.radius();
+                // The tolerance is measured, not assumed — the same rule the three-plane vertices
+                // above follow: how far the realized point sits from each surface that defines it.
+                let tol = model
+                    .surface(lat)
+                    .distance(point)
+                    .max(model.surface(plane).distance(point));
+                let v = model.push_vertex(VertexDef::OnSeam([lat, plane]), point, Some(tol));
+                let e = model
+                    .push_edge(Edge::carrier_pair(lat, plane), [v, v])
+                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+                rim.insert((g, k, c), (v, e));
             }
-            let (lat, plane) = (cyls[k].surf, planes[c].surf);
-            // The seam point of this rim, spelled as `add_cylinder` spells one: the axis meets the
-            // plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
-            let cache = cyls[k].cache;
-            let centre = nacre_geom::intersect::line_plane(
-                &cache.axis(),
-                match model.surface(plane) {
-                    nacre_geom::Surface::Plane(p) => p,
-                    _ => return Err(reject(RejectReason::ThreePlanes)),
-                },
-            )
-            .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
-            let point = centre + cache.ref_dir() * cache.radius();
-            // The tolerance is measured, not assumed — the same rule the three-plane vertices
-            // above follow: how far the realized point sits from each surface that defines it.
-            let tol = model
-                .surface(lat)
-                .distance(point)
-                .max(model.surface(plane).distance(point));
-            let v = model.push_vertex(VertexDef::OnSeam([lat, plane]), point, Some(tol));
-            let e = model
-                .push_edge(Edge::carrier_pair(lat, plane), [v, v])
-                .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
-            rim.insert((g, k, c), (v, e));
         }
+        Ok(())
+    })();
+    // A rim's failure yields to the deferred stopper like every stage before it.
+    if let Err(e) = rims_built {
+        return Err(deferred.unwrap_or(e));
     }
 
     // ★ **An edge's carriers are the two faces that use it — read off the whole result, not
@@ -1549,6 +1585,13 @@ fn reconstruct(
         for r in lf.poly_rings() {
             let k = r.nodes.len();
             for t in 0..k {
+                // ★ Only plane-carried edges feed the scan. An arc edge shares its vertex pair
+                // with the chord between the same branch vertices, and pushing this face's plane
+                // here would pollute the chord's line-key entry into the fallback arm — the arc
+                // states its carriers directly instead (`edge_for`'s arc arm).
+                if !matches!(r.walls[t], Wall::Plane(_)) {
+                    continue;
+                }
                 let (va, vb) = (vh[&(g, r.nodes[t])], vh[&(g, r.nodes[(t + 1) % k])]);
                 pair_surfs
                     .entry(unordered(va.index() as usize, vb.index() as usize))
@@ -1558,8 +1601,8 @@ fn reconstruct(
         }
     }
 
-    // Edges keyed by unordered handle-index pair (lookup only).
-    let mut edge_of: HashMap<(usize, usize), Handle<Edge>> = HashMap::new();
+    // Edges keyed by `EdgeKey` (lookup only).
+    let mut edge_of: HashMap<EdgeKey, Handle<Edge>> = HashMap::new();
     // A ring's two consecutive nodes are distinct arrangement vertices, so their points differ and
     // the line through them exists. Reject rather than panic if it does not: an aborting kernel is
     // below the floor (`overview.md`: out-of-coverage input declines honestly). `SEAM_ALIAS`
@@ -1568,29 +1611,59 @@ fn reconstruct(
     let mut edge_for = |model: &mut Model,
                         va: Handle<Vertex>,
                         vb: Handle<Vertex>,
-                        fallback: [Handle<Surface>; 2]|
+                        wall: Wall,
+                        face_surf: Handle<Surface>|
      -> Result<Handle<Edge>, BoolError> {
-        let key = unordered(va.index() as usize, vb.index() as usize);
-        if let Some(&e) = edge_of.get(&key) {
-            return Ok(e);
+        match wall {
+            Wall::Plane(w) => {
+                let pair = unordered(va.index() as usize, vb.index() as usize);
+                let key = EdgeKey::Line(pair);
+                if let Some(&e) = edge_of.get(&key) {
+                    return Ok(e);
+                }
+                // Manifold edges (everything a green result contains) have exactly two uses. Any
+                // other count is on its way to the existing non-manifold reject — the fallback
+                // (this face's wall + plane) keeps construction deterministic until that reject
+                // fires, deciding nothing new.
+                let surfaces = match pair_surfs[&pair][..] {
+                    [a, b] => Edge::carrier_pair(a, b),
+                    _ => Edge::carrier_pair(planes[w].surf, face_surf),
+                };
+                let e = model
+                    .push_edge(surfaces, [va, vb])
+                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+                edge_of.insert(key, e);
+                Ok(e)
+            }
+            Wall::Arc { cyl, ccw } => {
+                // ★★★ **An arc edge is minted in CCW order** — `[A, B]` is the piece from A to
+                // B counter-clockwise about the axis, so the two complementary arcs between one
+                // branch pair are `[A, B]` and `[B, A]`: the vertex order is the last bit the
+                // endpoints alone cannot give (`EdgeKey`'s note). The carriers are stated
+                // directly — the two faces using an arc edge are this cap and the cylinder's
+                // side, so there is nothing for the scan to read — which also keeps the chord's
+                // line key clean (`pair_surfs` skips arc edges for the same reason).
+                let (from, to) = if ccw { (va, vb) } else { (vb, va) };
+                let key = EdgeKey::Arc {
+                    cyl,
+                    from: from.index() as usize,
+                    to: to.index() as usize,
+                };
+                if let Some(&e) = edge_of.get(&key) {
+                    return Ok(e);
+                }
+                let e = model
+                    .push_edge(Edge::carrier_pair(cyls[cyl].surf, face_surf), [from, to])
+                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+                edge_of.insert(key, e);
+                Ok(e)
+            }
         }
-        // Manifold edges (everything a green result contains) have exactly two uses. Any other
-        // count is on its way to the existing non-manifold reject — the fallback (this face's
-        // wall + plane) keeps construction deterministic until that reject fires, deciding
-        // nothing new.
-        let surfaces = match pair_surfs[&key][..] {
-            [a, b] => Edge::carrier_pair(a, b),
-            _ => Edge::carrier_pair(fallback[0], fallback[1]),
-        };
-        let e = model
-            .push_edge(surfaces, [va, vb])
-            .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
-        edge_of.insert(key, e);
-        Ok(e)
     };
 
     let mut face_handles = Vec::new();
-    for (fi, lf) in faces.iter().enumerate() {
+    let mut assembled: Result<(), BoolError> = Ok(());
+    'faces: for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
         let face_surf = match lf.surf {
             ClassIx::Plane(c) => planes[c].surf,
@@ -1602,19 +1675,9 @@ fn reconstruct(
             let half_edges: Vec<HalfEdge> = (0..k)
                 .map(|t| {
                     let (va, vb) = (handles[t], handles[(t + 1) % k]);
-                    // ★ The commit that gave `Ring` its carrier keeps this arm a named refusal
-                    // for one more commit: the arc *key* and the arc edge's minting are the next
-                    // change, and until then reaching here with an arc carrier is the stopper's
-                    // own population — its name, not a panic (the old `usize::MAX` sentinel
-                    // indexed the class table and died; the type now makes the honest arm
-                    // spellable).
-                    let w = match r.walls[t] {
-                        Wall::Plane(w) => w,
-                        Wall::Arc { .. } => {
-                            return Err(reject(RejectReason::ArcBoundNotYet));
-                        }
-                    };
-                    let e = edge_for(model, va, vb, [planes[w].surf, face_surf])?;
+                    let e = edge_for(model, va, vb, r.walls[t], face_surf)?;
+                    // For an arc edge the stored order is CCW, so this reads back exactly the
+                    // `ccw` bit the wall carried in.
                     let forward = model.edges.get(e).vertices[0] == va;
                     Ok(HalfEdge { edge: e, forward })
                 })
@@ -1645,6 +1708,14 @@ fn reconstruct(
         };
         let circle_loop =
             |model: &mut Model, cyl: usize, cls: usize, hole: bool| -> Result<Loop, BoolError> {
+                // ★★ **The cut check comes before the rim lookup, and answers with the
+                // population's own name.** A cut circle has no rim (the table skipped it), but
+                // reaching for one is not a dropped crossing — `MissingSeam` would misdiagnose a
+                // `SuspectedDefect` — it is the arc population's honest boundary: nothing
+                // downstream can assemble this bound from arcs yet.
+                if cut.contains(&(g, cyl, cls)) {
+                    return Err(reject(RejectReason::ArcBoundNotYet));
+                }
                 let (_, e) = *rim
                     .get(&(g, cyl, cls))
                     .ok_or_else(|| reject(RejectReason::MissingSeam))?;
@@ -1661,6 +1732,10 @@ fn reconstruct(
         // seam, which the one face uses twice in opposite senses.
         let band_loop =
             |model: &mut Model, k: usize, lo: usize, hi: usize| -> Result<Loop, BoolError> {
+                // Same check as `circle_loop`'s, for both rims, before either lookup.
+                if cut.contains(&(g, k, lo)) || cut.contains(&(g, k, hi)) {
+                    return Err(reject(RejectReason::ArcBoundNotYet));
+                }
                 let (v_lo, e_lo) = *rim
                     .get(&(g, k, lo))
                     .ok_or_else(|| reject(RejectReason::MissingSeam))?;
@@ -1717,12 +1792,25 @@ fn reconstruct(
             }
             Ok(lp)
         };
-        let outer = ring_of(&lf.outer, false)?;
-        let inner: Vec<Loop> = lf
+        let outer = match ring_of(&lf.outer, false) {
+            Ok(lp) => lp,
+            Err(e) => {
+                assembled = Err(e);
+                break 'faces;
+            }
+        };
+        let inner: Vec<Loop> = match lf
             .inner
             .iter()
             .map(|b| ring_of(b, true))
-            .collect::<Result<Vec<_>, BoolError>>()?;
+            .collect::<Result<Vec<_>, BoolError>>()
+        {
+            Ok(v) => v,
+            Err(e) => {
+                assembled = Err(e);
+                break 'faces;
+            }
+        };
         // The plane's frame *is* the root face's orientation: `frame_sign` carries that face's
         // `Forward`/`Reversed` as a sign (read off the stored flag since the cutover). Reading it
         // here is what used to be `planes[plane_idx].orient` — a face field indexed by a plane,
@@ -1750,6 +1838,23 @@ fn reconstruct(
             orientation,
         }));
     }
+    // ★★★ **The deferred arc stopper's raise — after the face loop, before the shell guard.**
+    // The interception is the same shape at its fifth layer (per-class → seam stretch → naming →
+    // vertex materialization → face loop): the stages ran, their result is in hand, and the
+    // stopper's reject wins over whatever they said, so an arc population's name never depends
+    // on how far the pipeline got.
+    //
+    // ★★ **An arc reject therefore leaves minted vertices, edges and faces in the store —
+    // deliberately.** They are garbage cells outside every live solid, the same class of residue
+    // a late reject's arena cells have always been: the live-set fences stay green, and a session
+    // that keeps recording after a reject rebuilds from the log (`replay`'s discipline, stated in
+    // `docs/design.md`). Holding the raise any earlier would put the arc edge minting behind an
+    // interception nothing can see past — the unreachable-machinery trap this ladder keeps
+    // refusing.
+    if let Some(d) = deferred {
+        return Err(d);
+    }
+    assembled?;
     // Closed-shell guard: a 2-manifold b-rep uses every edge exactly twice (once from each of the
     // two faces that share it). A reconstruction that emits a face set with a dangling edge (use
     // count 1) or a pinched one (>2) is not a solid — `validate` would call it `NonManifoldEdge`,

@@ -12368,3 +12368,77 @@ perf release 2 · kit 72 · 앱 142.
 **순서** — `derive_edge_curve` 의 (Plane,Cylinder)→Circle 팔 확인됨) · sentinel 가드 은퇴.
 그 뒤 rim 잘린 판 · Band 팔 · grouping 분기 팔(면 루프 뒤 held-raise) · 밴드 패스(디스크 라벨) ·
 위상 봉합 — 「걸친 보스가 빌드」는 그 끝.
+
+## 링이 담체를 들고, 호가 모서리로 주조된다 (2026-08-23)
+
+**커밋 둘** — ① `Wall` 타입(순수 넓힘), ② 담체-키 주조 + rim 스킵 + 정직한 팔 + raise 이동.
+새 규약 하나가 태어났다: **원-담체 모서리의 정점 순서가 «어느 호인지» 다** — `[A,B]` = A→B
+CCW(축 기준), 상보 호 = 역순 쌍. `derive_edge_curve` 의 (Plane,Cylinder) 팔에 문서화, tess
+(`sample_edge` 0..τ)·validate 의 미인지는 빚으로 같은 자리에 적었다.
+
+### ① `Wall { Plane(usize), Arc { cyl, ccw } }` — census 비트 동일
+
+`Ring.walls: Vec<usize>` → `Vec<Wall>`. `bound_of` 가 `edge_at` 의 규약(짝수 반모서리 = CCW)을
+**인용해 나르고**(새 유도 없음), 소비자 전부 `Wall::Plane` 매치, `Ring::edges` 는 legacy shim
+(names-road 무변화 — 담체화는 grouping-팔 칸의 몫), 면 루프 sentinel debug_assert 는 정직한
+`ArcBoundNotYet` 팔로 은퇴. 공짜 수확: dissolve 의 `MAX==MAX` 위험(기록돼 있던 것)이 파생
+동등성으로 **구조 사멸**. mid-ring `Circle` 반모서리는 `origin` 과 같은 unreachable 명제로 거울.
+
+### ② 주조 — store 가 직접 답했다
+
+`EdgeKey { Line(무순서 핸들쌍) | Arc{cyl, from, to} }`(핸들 공간). 호 팔은 담체 직접 진술
+(`[cyls[k].surf, face_surf]` — 호 모서리를 쓰는 두 면은 스캔 없이 확정), `pair_surfs` 는
+`Wall::Plane` 만 읽는다(호를 밀면 현의 선-키가 fallback 으로 오염 — 계획의 함정 3). rim 표는
+cut 집합(분기 def 의 `(cyl, plane)` 쌍, 그룹別)을 건너뛰고, Circle/Band 팔은 rim 조회 **앞**의
+cut 검사로 `ArcBoundNotYet` 거절(`MissingSeam` = SuspectedDefect 오진 방지). raise 는 면 루프
+뒤 — **가로채기 5층째 같은 모양**(클래스 → 스트레치 → 이름 → 실체화 → 면 루프), 실체화·rim 의
+실패도 `deferred.unwrap_or` 로 양보. garbage 가 정점에서 **모서리·면**까지 늘었다(같은 부류,
+같은 규율 — doc 갱신).
+
+프로브가 거절 후 store 를 그대로 보여줬다(fence 의 산수가 여기서 나왔다):
+
+| | straddling | turned |
+|---|---|---|
+| 상보 호 | `[PC]` 둘, `v16↔v17` **역순 쌍** | `[PC]` 둘, `v16↔v19` 역순 쌍 |
+| 현 | `[PP]` **하나**(현+가운데조각 용접 — 분할 칸의 약속) | **없음**(분기쌍이 판 모서리를 경유) |
+| `[v,v]` | 잘린 원 0 · 안 잘린 위 rim 하나 | 잘린 원 0 · 먼 cap rim 하나 |
+
+새 울타리 `an_arc_and_its_complement_are_minted_as_two_ordered_edges` 가 이 표를 단언한다
+(호 둘·역순·분기 정점·유도 교차점 위 · `[v,v]` 하나뿐 = 먼 cap 축좌표 · 현 개수 1/0).
+
+### red 프로브 — 셋 다 예측대로
+
+| 프로브 | 결과 |
+|---|---|
+| 호 키의 순서 지움 | 상보 호가 **한 모서리로 접힘** — 울타리 빨강 (2≠1) |
+| rim 스킵 끔 | 잘린 원의 `[v,v]` 복귀 — 울타리 빨강 (closed 2) |
+| 호 팔을 다른 이유로 스텁 | 두 픽스처 **이름 유지** — 5층 가로채기 |
+
+### 공짜 수확 둘째 — 쌍둥이 울타리가 조여졌다
+
+「양-끝-분기 제외」를 빼고 돌리니 **초록**(호가 자기 키를 가지면서 현의 선-키가 정확히 두 면) —
+계획이 예측한 조임을 실측으로 확정하고 제외를 삭제했다. 명제가 「모든 `Wall::Plane` 링 모서리의
+키는 정확히 두 면이 쓴다」로 단순해졌다.
+
+### reject census — 세 번째 울림이 blessed
+
+잘린-rim 팔(`boolean.rs`)의 `arc_bound_not_yet` 이 면 루프에서 울리고 raise 에 삼켜진다 — 두 호
+행의 raised-set 에 추가(삼켜져도 울림은 기록된다는 규율 그대로). surfaced 무변화.
+
+★ raise 이동 → 그 자리를 말하는 주석 **다섯**을 계획이 미리 이름 붙였고 전부 갱신, grep-0 확인
+(규율의 네 번째 적용 — 이번엔 재발 전에 잡았다).
+
+★ 실수 하나: 프로브 정리 중 명령 조합에 `git checkout -p` 가 섞여 들어가 인터랙티브 프롬프트에서
+타임아웃 — 답을 안 해 버려진 헝크 0 을 확인했다. 프로브 되돌림은 python 패치(assert 안전망)로만.
+
+### 관문
+
+53타깃 **1108**(+1 새 울타리) · nodef 25타깃 587 · clippy 0 · fmt · **census 두 프로파일 비트
+동일(두 커밋 다, t2 기준선과도 동일)** · reject census(두 행 raised +1 blessed) · 스윕 53타깃
+127 · perf release · kit 72 · 앱 142.
+
+### 다음 — 밴드 칸
+
+`band_loop` 가 잘린 rim 에서 호 모서리들 + 씸으로 루프를 **조립** · grouping 분기 팔
+(`Ring::edges` shim 은퇴) · 잘린 원의 디스크 라벨(밴드 출력은 아직 못 믿는다) · 셸/봉합 ⇒
+**「걸친 보스가 빌드」**. tess 의 호 팔 · validate 의 혼합 루프도 그 여정.

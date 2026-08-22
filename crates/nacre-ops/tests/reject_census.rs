@@ -478,18 +478,21 @@ const CORPUS: [Fixture; 14] = [
         // The circle is **split** there now; what stops is the assembly of an arc-bounded loop.
         expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment,
-        // ★ Two guards ring, one surfaces. The stopper now stands past the vertex naming, so the
-        // grouping's component walk runs on arc faces first — its ring naming meets a branch node
-        // and rings `branch_vertex_unnamed` (`ring_edges_with_walls`). That error is *held* (the
-        // grouping's own discipline) and the deferred stopper supersedes it before the held raise,
-        // so the population's name never moves; the census records the ringing because a swallowed
-        // guard is still a guard that fired.
+        // ★ Three guards ring, one surfaces. The grouping's component walk runs on arc faces
+        // first — its ring naming meets a branch node and rings `branch_vertex_unnamed`
+        // (`ring_edges_with_walls`); that error is *held* (the grouping's own discipline). The
+        // face loop then reaches a curved bound on a cut rim and its cut check rings
+        // `arc_bound_not_yet` from `boolean.rs` — captured, not propagated, so the deferred
+        // stopper's raise (after the face loop) supersedes both and the population's name never
+        // moves; the census records each ringing because a swallowed guard is still a guard that
+        // fired.
         raised: &[
             (
                 "arc_bound_not_yet",
                 None,
                 "crates/nacre-ops/src/arrangement.rs",
             ),
+            ("arc_bound_not_yet", None, "crates/nacre-ops/src/boolean.rs"),
             (
                 "branch_vertex_unnamed",
                 None,
@@ -504,18 +507,21 @@ const CORPUS: [Fixture; 14] = [
         // runs — the first non-`+Z` cylinder in the corpus.
         expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment_turned,
-        // ★ Two guards ring, one surfaces. The stopper now stands past the vertex naming, so the
-        // grouping's component walk runs on arc faces first — its ring naming meets a branch node
-        // and rings `branch_vertex_unnamed` (`ring_edges_with_walls`). That error is *held* (the
-        // grouping's own discipline) and the deferred stopper supersedes it before the held raise,
-        // so the population's name never moves; the census records the ringing because a swallowed
-        // guard is still a guard that fired.
+        // ★ Three guards ring, one surfaces. The grouping's component walk runs on arc faces
+        // first — its ring naming meets a branch node and rings `branch_vertex_unnamed`
+        // (`ring_edges_with_walls`); that error is *held* (the grouping's own discipline). The
+        // face loop then reaches a curved bound on a cut rim and its cut check rings
+        // `arc_bound_not_yet` from `boolean.rs` — captured, not propagated, so the deferred
+        // stopper's raise (after the face loop) supersedes both and the population's name never
+        // moves; the census records each ringing because a swallowed guard is still a guard that
+        // fired.
         raised: &[
             (
                 "arc_bound_not_yet",
                 None,
                 "crates/nacre-ops/src/arrangement.rs",
             ),
+            ("arc_bound_not_yet", None, "crates/nacre-ops/src/boolean.rs"),
             (
                 "branch_vertex_unnamed",
                 None,

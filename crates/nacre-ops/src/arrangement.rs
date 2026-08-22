@@ -3712,8 +3712,8 @@ fn trace_result_faces(
             let edges = timed!(C_SPLIT, ClassEdges::of(jd, wc, split, circles))?;
             // ★★★ **The stages run, then the stopper is *made* — and only made.** The reject an
             // arc class earns is built here, where "this class has arcs" is a plain fact, but it
-            // is **raised inside `reconstruct`, after the vertex materialization and before any
-            // edge** — so everything down to the branch minting runs before the population is
+            // is **raised inside `reconstruct`, after the face loop and before the shell
+            // guard** — so everything down to the arc edge minting runs before the population is
             // refused. The stopper still *intercepts*: an arc class must
             // carry the same name out **however far the pipeline got**, or the fences'
             // `ArcBoundNotYet` + witness would become whatever a stage said and the reject census
@@ -4177,7 +4177,8 @@ pub(crate) fn frame_audit(
                 // ★ The same stages and the same stopper the boolean runs — the arc fence in
                 // `bands.rs` locks that the two agree. One deliberate difference: the boolean
                 // *defers* the stopper's reject into the assembly (past the seam stretch, the
-                // vertex naming and the vertex materialization), while this audit raises it
+                // vertex naming, the vertex materialization and the face loop), while this audit
+                // raises it
                 // here — its proposition is per class ("where does this class stop"), and the
                 // deferral changes where the reject surfaces, never which classes earn it or what
                 // it is named. The agreement fence compares the names, which is exactly the part

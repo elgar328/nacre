@@ -1500,11 +1500,21 @@ impl Model {
     ///   endpoint coordinates — the very expression every producer used to build the stored
     ///   curve, so the derivation is bit-identical, and an endpoint pair that coincides is the
     ///   `None` (a degenerate line — the check lives in this arm only).
-    /// * **Plane × Cylinder** (a rim): the circle centred where the cylinder's axis crosses the
-    ///   cap plane, with the **cylinder's** frame (`axis direction`, `ref_dir`, `radius`) — the
-    ///   same parameters `add_cylinder` builds the stored rims from, so tessellation's `θ`
-    ///   parameterization is preserved. The endpoints are not read: a rim is a closed edge
-    ///   (`[v, v]`), which is not a degeneracy.
+    /// * **Plane × Cylinder** (a rim, or an arc of one): the circle centred where the cylinder's
+    ///   axis crosses the cap plane, with the **cylinder's** frame (`axis direction`, `ref_dir`,
+    ///   `radius`) — the same parameters `add_cylinder` builds the stored rims from, so
+    ///   tessellation's `θ` parameterization is preserved. The endpoints are not read: a full rim
+    ///   is a closed edge (`[v, v]`), which is not a degeneracy.
+    ///
+    ///   ★★ **On a circle carrier, the vertex *order* says which arc** (M6-2b): two distinct
+    ///   endpoints cut a circle into two pieces the endpoints alone cannot tell apart, so
+    ///   `[A, B]` means the piece from A to B **counter-clockwise about the axis direction**,
+    ///   and the two complementary arcs between one vertex pair are the two orders. Producers
+    ///   uphold this (`boolean`'s edge welding keys arcs in CCW order); the curve stored here is
+    ///   the whole circle either way. ★ Two consumers do **not** know the convention yet:
+    ///   tessellation's `sample_edge` walks the full `0..τ`, and `validate`'s loop closure treats
+    ///   a circle edge as closed — both are the band/tess cells' debt, and no green result
+    ///   contains an arc edge until those cells land.
     /// * **Cylinder × Cylinder**: no producer builds one before M6 — `None`, honestly.
     ///
     /// ★ The M3 rim population is axis-perpendicular by construction; a *tilted* plane over a
