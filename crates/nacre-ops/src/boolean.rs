@@ -975,23 +975,30 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
     lf.poly_rings()
 }
 
-/// Rebuild the result solids from the arrangement's faces. Pushes into the arena; it does not take
-/// the operands at all, which is the point — the live set is its caller's to move.
-fn reconstruct(
-    model: &mut Model,
+/// **Everything `reconstruct` decides before a single handle is minted** — the grouping (held,
+/// not raised), the per-solid straight-angle dissolve, the whole-result self-touch judgement, and
+/// every ring node's defining triple.
+///
+/// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
+/// one: the deferred arc stopper will stand right after this and intercepts everything, so no
+/// reject name can testify that the naming completed — only a fence that calls it directly on the
+/// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
+struct Named {
+    /// The grouping, **held** — raised where the old code raised it, deep in the minting.
+    grouping: Result<Grouping, BoolError>,
+    group_of: Vec<usize>,
+    /// The per-solid dissolve's product; `None` when the result is one body (the caller's list
+    /// stands).
+    per_solid: Option<Vec<LocalFace>>,
+    defs: HashMap<(usize, NodeId), [usize; 3]>,
+}
+
+fn name_result_vertices(
     jd: &Judge<'_, WorkingPlane>,
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let planes = jd.planes;
-    // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
-    // is wholly inside what cuts it. That is an answer, not a failure: a solid is bounded by faces,
-    // so a non-empty result cannot have none. The inputs are still consumed, exactly as they are on
-    // any other successful boolean — this returns `Ok`, so the caller's retire runs.
-    if faces.is_empty() {
-        return Ok(Vec::new());
-    }
+) -> Result<Named, BoolError> {
     // ★ **Which faces make one solid, decided before a single handle exists** — see [`Grouping`].
     // Everything derived below (an edge's far plane, a vertex's defining triple, the handles
     // themselves) is scoped to one group, so no result solid can be named by — or share a handle
@@ -1124,6 +1131,39 @@ fn reconstruct(
             }
         }
     }
+
+    Ok(Named {
+        grouping,
+        group_of,
+        per_solid,
+        defs: def_triple,
+    })
+}
+
+/// Rebuild the result solids from the arrangement's faces. Pushes into the arena; it does not take
+/// the operands at all, which is the point — the live set is its caller's to move.
+fn reconstruct(
+    model: &mut Model,
+    jd: &Judge<'_, WorkingPlane>,
+    seam: &[SeamVertex],
+    faces: &[LocalFace],
+    cyls: &[crate::planes::WorkingCyl],
+) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let planes = jd.planes;
+    // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
+    // is wholly inside what cuts it. That is an answer, not a failure: a solid is bounded by faces,
+    // so a non-empty result cannot have none. The inputs are still consumed, exactly as they are on
+    // any other successful boolean — this returns `Ok`, so the caller's retire runs.
+    if faces.is_empty() {
+        return Ok(Vec::new());
+    }
+    let Named {
+        grouping,
+        group_of,
+        per_solid,
+        defs: def_triple,
+    } = name_result_vertices(jd, seam, faces, cyls)?;
+    let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
 
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<(usize, NodeId), Handle<Vertex>> = HashMap::new();
