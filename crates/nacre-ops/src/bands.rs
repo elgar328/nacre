@@ -1532,27 +1532,22 @@ mod tests {
             let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
             // Completeness: every ring node has a definition.
             let mut missing = Vec::new();
-            let mut branch = 0;
             for (fi, lf) in live.iter().enumerate() {
                 for ring in lf.poly_rings() {
                     for &n in ring.iter() {
-                        match named.defs.get(&(named.group_of[fi], n)) {
-                            None => missing.push(n),
-                            Some(crate::boolean::Def::Branch { .. }) => branch += 1,
-                            Some(crate::boolean::Def::Three(_)) => {}
+                        if !named.defs.contains_key(&(named.group_of[fi], n)) {
+                            missing.push(n);
                         }
                     }
                 }
             }
             assert!(missing.is_empty(), "def-less nodes: {missing:?}");
-            // (branch counts each APPEARANCE; dedupe via the defs map instead)
             let branch_defs = named
                 .defs
                 .values()
                 .filter(|d| matches!(d, crate::boolean::Def::Branch { .. }))
                 .count();
             assert_eq!(branch_defs, 2, "both crossings are declared, once each");
-            let _ = branch;
             // The bitten corner's def names the right point: realize its three planes and land
             // on (4, 0, 2) — the fixture's own number, no class index copied.
             if bites_corner {
