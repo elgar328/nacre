@@ -12041,6 +12041,33 @@ Context 줄이 5회차 이전 문장에 멈춰 있었다. ★★★ 이 계획�
 `a_turned_boss_over_the_plates_corner_names_the_crossing_on_the_segment` 이고, 그 사실을 코드
 주석에 적어 뒀다.
 
+### 자체 점검이 잡은 것 — 문서로만 있던 게이트가 썩어 있었다
+
+★★★★★ **`three_plane_name` 의 doc 이 「비어 있어야 한다」고 적어 둔 게이트를 내가 깼다.**
+
+```text
+rg 'NodeId::(ThreePlane|Branch)' crates/ -g '!**/combinatorics.rs' -g '!**/reuse.rs' | grep -vE ':\s*//'
+```
+
+`face_ring_coords` 의 좌표 도로가 두 변형을 `arrangement.rs` 에서 직접 헤집었다 — **스위트는 전부
+초록인 채로**, 그 doc 이 예고한 그대로다(그 게이트가 지난 칸에 우회 열다섯을 그렇게 찾았다).
+⇒ 그 `match` 는 형제 둘(`node_coords_rat`·`branch_point`)이 사는 곳으로 옮겨
+**`combinatorics::node_point_f64`** 가 됐다. 옮긴 뒤 `sense` red 프로브를 **다시 재서** 여전히
+빨개지는 것을 확인했다.
+
+★★★ **그런데 게이트는 내 커밋 이전에 이미 더러웠다** — `arrangement.rs:1885·1935·1999` 셋이
+`448a4f1` 에도 있다. 원인은 **문이 한쪽뿐**이라는 것: `three_plane_name` 은 세-평면 이름을 주는데
+`Branch` 의 페이로드(근이 `Double` 인가 · 어느 원통인가)를 묻는 짝이 없어서, 그게 필요한 자리가
+전부 변형을 직접 연다. 셋 다 작은 door 세 개로 닫히지만(「분리하는가」·「접점인가」·「어느
+원통인가」) 그것은 이 칸이 아니라 **문의 설계**라 여기서 손대지 않고 적어 둔다.
+★ 그리고 이 게이트는 **자동화돼 있지 않다** — 이번 세션의 깨진 intra-doc 링크 32개와 같은 모양
+(`cargo doc` 도 게이트 밖이었다). 소스 스캔 테스트로 만들 선례는 이미 있다
+(`rotation_sweep.rs` 의 `side_of` 가드).
+
+★★ **울타리 안에서 내가 한 줄 위에 적어 둔 경계를 정작 안 지켰다**: `produced` 와 `outer_rings` 는
+한 `cut[0]` 에서 읽게 해 인덱스 조인을 없애 놓고, `stopped[0]`(어느 클래스가 멈췄나)과는 아무것도
+안 이어 뒀다 — 둘이 다른 클래스여도 초록이다. `assert_eq!(stopped[0].wc, cut[0].wc)` 한 줄로 닫았다.
+
 ### 계측 자신의 실수 — 파이프가 exit code 를 삼켰다
 
 `cargo test ... | tail -80` 의 exit code 는 **`tail` 의 것**이다. 스윕이 「exit 0」으로 끝났다고

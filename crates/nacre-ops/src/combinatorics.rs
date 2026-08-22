@@ -2767,6 +2767,34 @@ pub(crate) fn node_coords_rat(
     }
 }
 
+/// **A node's realized coordinate, whichever kind of name it is** — the `f64` sibling of
+/// [`node_coords_rat`] and [`branch_point`], which each answer for one variant only.
+///
+/// ★★ **It lives here because the `match` does.** Reaching into a [`NodeId`] variant outside this
+/// file (and `reuse`) is what [`three_plane_name`]'s gate forbids, and the first draft of this
+/// function sat in `arrangement` and broke it — with the whole suite green, exactly as that gate's
+/// doc predicts. The two roads it dispatches between are already both here, so this is where the
+/// third question about the same name belongs.
+///
+/// ★ `cfg(test)` only while the audit is its one consumer. The seam table's `VertexDef` minting
+/// asks for the same pair of roads and will want it in production.
+#[cfg(test)]
+pub(crate) fn node_point_f64(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    n: NodeId,
+) -> Option<[f64; 3]> {
+    match n {
+        NodeId::ThreePlane(t) => nacre_geom::intersect::three_planes(
+            &jd.planes[t[0]].plane,
+            &jd.planes[t[1]].plane,
+            &jd.planes[t[2]].plane,
+        )
+        .map(|p| p.as_array()),
+        NodeId::Branch { cyl, .. } => branch_point(jd, cyl, &cyls[cyl].def, n),
+    }
+}
+
 /// **A branch node's realized coordinate, derived from the name.**
 ///
 /// The sibling of [`node_coords_rat`] for the other variant, and the two return types *are* the

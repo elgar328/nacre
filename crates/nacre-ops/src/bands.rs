@@ -1258,6 +1258,13 @@ mod tests {
                 .filter(|a| a.produced.as_ref().is_some_and(|p| p.arcs > 0))
                 .collect();
             assert_eq!(cut.len(), 1, "exactly one class has its circle cut");
+            // ★ And it is the class that stopped. Without this the two filtered lists are joined by
+            // nothing, and the assertions above and below could be about different classes while
+            // the fence stays green — the same seam the line above avoids inside `cut`.
+            assert_eq!(
+                stopped[0].wc, cut[0].wc,
+                "the class that carries the arcs is the one that stopped"
+            );
             assert_eq!(
                 *cut[0].produced.as_ref().unwrap(),
                 crate::arrangement::Produced {

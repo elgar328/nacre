@@ -3899,11 +3899,11 @@ fn cmp_pt(a: &[f64; 3], b: &[f64; 3]) -> std::cmp::Ordering {
 /// Every emitted face's outer ring as coordinates, for [`ClassAudit::outer_rings`] — that field
 /// carries the argument for coordinates, for normalizing rotation, and for leaving reversal alone.
 ///
-/// ★★ **There are two roads to a coordinate, and a ring can need both.** A three-plane node is the
-/// meet of its three classes' planes; a branch node is `a + b√c` and only
-/// [`combinatorics::branch_point`] answers it, by re-solving from the name. The mixed ring this
-/// exists to see has three of one and two of the other. The next cell's seam table calls the same
-/// two — that is when this is worth extracting; one consumer is not.
+/// ★★ **A ring here can need both roads to a coordinate** — three of its nodes are plane triples
+/// and two are branch points — and the dispatch between them lives in
+/// [`combinatorics::node_point_f64`], not here: spelling a [`combinatorics::NodeId`] variant
+/// outside that file is what `three_plane_name`'s gate forbids, and the first draft of this
+/// function broke it with the suite green.
 ///
 /// ★ A node that cannot be realized becomes `NaN`, not a dropped element: the ring keeps its
 /// length, so the fence reads "this vertex had no coordinate" instead of "the ring is short".
@@ -3913,18 +3913,7 @@ fn face_ring_coords(
     cyls: &[crate::planes::WorkingCyl],
     faces: &[LocalFace],
 ) -> Vec<Vec<[f64; 3]>> {
-    let point = |n: NodeId| -> [f64; 3] {
-        match n {
-            NodeId::ThreePlane(t) => three_planes(
-                &jd.planes[t[0]].plane,
-                &jd.planes[t[1]].plane,
-                &jd.planes[t[2]].plane,
-            )
-            .map(|p| p.as_array()),
-            NodeId::Branch { cyl, .. } => combinatorics::branch_point(jd, cyl, &cyls[cyl].def, n),
-        }
-        .unwrap_or([f64::NAN; 3])
-    };
+    let point = |n: NodeId| combinatorics::node_point_f64(jd, cyls, n).unwrap_or([f64::NAN; 3]);
     let mut out: Vec<Vec<[f64; 3]>> = faces
         .iter()
         .filter_map(|f| f.outer.ring())
@@ -3943,11 +3932,20 @@ fn face_ring_coords(
             }
         })
         .collect();
-    // Between faces the order *is* the walk's, so it is normalized: sort by the (already rotated)
-    // first coordinate.
-    out.sort_by(|a, b| match (a.first(), b.first()) {
-        (Some(x), Some(y)) => cmp_pt(x, y),
-        _ => a.len().cmp(&b.len()),
+    // Between faces the order *is* the walk's, so it is normalized — lexicographically over the
+    // whole (already rotated) sequence.
+    //
+    // ★ **Total on purpose, not just "by the first vertex".** Two faces of one class can share
+    // their minimum vertex — they meet there — and ordering on that alone would leave such a pair
+    // in walk order, which is a handedness coin flip inside an instrument whose whole job is to be
+    // stable. Today's two fixtures have distinct minima, so this costs nothing and removes the
+    // class of flake rather than relying on the fixture to avoid it.
+    out.sort_by(|a, b| {
+        a.iter()
+            .zip(b)
+            .map(|(x, y)| cmp_pt(x, y))
+            .find(|o| o.is_ne())
+            .unwrap_or_else(|| a.len().cmp(&b.len()))
     });
     out
 }

@@ -780,19 +780,22 @@ pub enum RejectReason {
     WitnessNotRational,
     /// **A circle was cut into arcs, and nothing downstream can build one yet.**
     ///
-    /// The arrangement splits a circle a segment crosses, **and now walks the result**: the DCEL
-    /// orbit spans the arc range, the turn atom answers for a curved carrier, and the winding is
-    /// read at a branch point. What is still missing is the *assembly* — `nest_cells`' `circle_of`,
-    /// `label_cells`' `mask_of`, `emit_faces`' `bound_of` and the circle-cell append all split
-    /// half-edge kinds at `2·segs.len()`, which an arc range walks straight through, and the rim
-    /// table has no arc row. So the refusal stands in the per-class pipeline **after the walk and
-    /// the nesting**: those two are built and measured (the class audit carries their counts), and
-    /// then not handed on.
+    /// The arrangement splits a circle a segment crosses **and now finishes the whole per-class
+    /// road**: the DCEL orbit spans the arc range, the cells are nested and labelled, and the
+    /// result faces are emitted with their arcs. So the refusal stands **after every arrangement
+    /// stage** — all of it is built and measured (the class audit carries the counts, the labels
+    /// and the emitted rings) and then not handed on.
     ///
-    /// ★ It intercepts **both** of their failures, so the population's name does not depend on how
+    /// What is still missing is the *assembly*: the seam table cannot mint a
+    /// `VertexDef::Branch` for a branch vertex, `boolean::Ring` has no carrier for an arc (its
+    /// walls are plane classes), `edge_for` keys an edge by an unordered vertex pair so the chord
+    /// and the two arcs between one pair of branch points fold into one, the rim table has no arc
+    /// row, and a cut circle leaves the band pass with no disk label.
+    ///
+    /// ★ It intercepts **every** stage's failure, so the population's name does not depend on how
     /// far the pipeline got — which is what keeps this row of the reject census reading one thing.
-    /// Spelling either stage with a `?` ahead of the stopper loses that, silently while they
-    /// succeed; the order is commented where it is written.
+    /// Spelling a stage with a `?` ahead of the stopper loses that, silently while they succeed;
+    /// the order is commented where it is written.
     ///
     /// ★ A stopper of the shape `CylinderBooleanNotYet` had in M6-2a: it names what is missing, it
     /// is measured by the fixtures it holds, and the commit that finishes the road removes it.
