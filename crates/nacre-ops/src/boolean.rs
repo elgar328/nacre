@@ -1686,8 +1686,12 @@ fn reconstruct(
             let Some(cr) = cut_rims.get(&(k, c)) else {
                 continue; // an uncut rim's boundary is its closed edge, no chain to build
             };
+            // The rim table ran this very enumeration, so the entry exists whenever this loop
+            // reaches the key — the arm is a backstop, not a population (cf. the ring closure's
+            // `MissingSeam`, which *is* reachable: a cap ring's arc steps do not put the key in
+            // either enumeration, only a curved bound does).
             let Some(&(sv, _)) = rim.get(&(g, k, c)) else {
-                continue; // no seam vertex ⇒ no face in this group names the rim; nothing to chain
+                continue;
             };
             let mut vs: Vec<Handle<Vertex>> = Vec::with_capacity(cr.nodes.len() + 1);
             if !cr.seam_is_node {
