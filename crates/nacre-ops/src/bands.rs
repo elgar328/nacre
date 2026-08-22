@@ -1209,21 +1209,33 @@ mod tests {
                 Some(reason),
                 "the audit reports the reject the boolean raised"
             );
+            // ★ By reference: `Produced` carries the labels now, so it is no longer `Copy`.
             let cut: Vec<_> = audits
                 .iter()
-                .filter_map(|a| a.produced)
+                .filter_map(|a| a.produced.as_ref())
                 .filter(|p| p.arcs > 0)
                 .collect();
             assert_eq!(cut.len(), 1, "exactly one class has its circle cut");
             assert_eq!(
-                cut[0],
+                *cut[0],
                 crate::arrangement::Produced {
                     cells: 4,
                     arcs: 2,
                     roots: 1,
                     holes: 0,
+                    // ★★ **Derived from the geometry, not read back.** `[A_above, A_below,
+                    // B_above, B_below]` for the three `+1` regions, sorted: the boss stands *on*
+                    // the plate, so plate-minus-disk has the plate below it and nothing above;
+                    // disk-minus-plate — the overhang's underside — has the boss above it and
+                    // nothing below; and their intersection has both. The outside cell winds `-1`
+                    // and is not here.
+                    pos_labels: vec![
+                        [false, false, true, false],
+                        [false, true, false, false],
+                        [false, true, true, false],
+                    ],
                 },
-                "the arrangement walked the arcs and nested them"
+                "the arrangement walked the arcs, nested them, and labelled them"
             );
         }
     }

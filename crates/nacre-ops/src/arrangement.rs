@@ -2390,12 +2390,14 @@ fn arc_stopper(
 
 /// **What one plane class's arrangement produced, before anything refuses it.**
 ///
-/// ★ Only what crosses the boundary. `face_of` is deliberately absent: the one thing that reads it
-/// is `label_cells`, and once that stage moves inside [`per_class`] it is purely internal.
+/// ★★ **Only what crosses the boundary — and taking a stage in *narrowed* it.** `face_of` used to
+/// be here; the one thing that reads it is `label_cells`, so pulling that stage inside made it
+/// purely internal. A stage moving in and the interface getting *smaller* is the sign the boundary
+/// was drawn in the right place.
 struct Staged {
     cells: Vec<Cell>,
-    face_of: HashMap<usize, usize>,
     nesting: Nesting,
+    labels: Vec<Label>,
 }
 
 /// **The per-class stages, in one place** — the walk and the nesting.
@@ -2421,10 +2423,19 @@ fn per_class(
 ) -> Result<Staged, BoolError> {
     let (cells, face_of) = timed!(C_EXTRACT, walk_cells(jd, wc, edges))?;
     let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, edges))?;
+    // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
+    // arrangement covers all of space, so its unbounded cells reach infinity, where neither solid
+    // is. That is a fact about arranging the *whole* model — restrict the input to a region of
+    // space and the unbounded cells become an artifact of the restriction, which is what the
+    // parameter records.
+    let labels = timed!(
+        C_LABEL,
+        label_cells(&cells, &face_of, edges, &nesting, [false; 4])
+    )?;
     Ok(Staged {
         cells,
-        face_of,
         nesting,
+        labels,
     })
 }
 
@@ -3587,18 +3598,9 @@ fn trace_result_faces(
             arc_stopper(jd, wc, &edges, split, circles)?;
             let Staged {
                 cells,
-                face_of,
                 nesting,
+                labels,
             } = staged?;
-            // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
-            // arrangement covers all of space, so its unbounded cells reach infinity, where neither
-            // solid is. That is a fact about arranging the *whole* model — restrict the input to a
-            // region of space and the unbounded cells become an artifact of the restriction, which
-            // is what the parameter records.
-            let labels = timed!(
-                C_LABEL,
-                label_cells(&cells, &face_of, &edges, &nesting, [false; 4])
-            )?;
             Ok(timed!(
                 C_EMIT,
                 emit_faces(kind, &labels, &cells, &edges, jd, wc, &nesting.holes)
@@ -3822,12 +3824,20 @@ pub(crate) struct ClassAudit {
 
 /// The per-class arrangement's output, for [`ClassAudit`].
 #[cfg(test)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct Produced {
     pub cells: usize,
     pub arcs: usize,
     pub roots: usize,
     pub holes: usize,
+    /// Every `+1` cell's label, **sorted** — the labelling stage's answer, in a form the walk's
+    /// handedness cannot reorder.
+    ///
+    /// ★★ `Copy` goes with this, and that was the choice rather than the discovery: a sibling field
+    /// on [`ClassAudit`] would keep it, but then one class's two facts live in two places and the
+    /// fence has to join them by index — a seam where they can drift. `PartialEq` stays, so the
+    /// fence remains a single `assert_eq!` against a value derived from the geometry.
+    pub pos_labels: Vec<Label>,
 }
 
 /// Audit every plane class of one boolean input pair. Runs the same per-class pipeline as
@@ -3933,20 +3943,28 @@ pub(crate) fn frame_audit(
                 // fence in `bands.rs` locks that the two agree.
                 let staged = per_class(&jd, wc, &edges);
                 if let Ok(s) = &staged {
+                    let mut pos_labels: Vec<Label> = s
+                        .cells
+                        .iter()
+                        .zip(&s.labels)
+                        .filter(|(c, _)| c.winding == 1)
+                        .map(|(_, &l)| l)
+                        .collect();
+                    pos_labels.sort_unstable();
                     produced = Some(Produced {
                         cells: s.cells.len(),
                         arcs: edges.arcs.len(),
                         roots: s.nesting.root_groups.len(),
                         holes: s.nesting.holes.len(),
+                        pos_labels,
                     });
                 }
                 arc_stopper(&jd, wc, &edges, &split, &circles)?;
                 let Staged {
                     cells,
-                    face_of,
                     nesting,
+                    labels,
                 } = staged?;
-                let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4])?;
                 let _ = emit_faces(kind, &labels, &cells, &edges, &jd, wc, &nesting.holes);
                 Ok(())
             };
