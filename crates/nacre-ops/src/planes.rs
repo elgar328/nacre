@@ -715,6 +715,12 @@ pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
 /// the radial part of that error; the meet line is also exactly the line the point is defined on
 /// (`combinatorics::branch_point` realizes from `(line, s)`), so its residual is the first-class
 /// question about the realization.
+///
+/// ★ **The meet-line term is unexercised in today's corpus, measured** — with it removed, every
+/// assertion stays green. Both fixtures' branch planes are perpendicular, and for a
+/// perpendicular pair the line residual never exceeds `√2 ×` the larger plane residual, so the
+/// `max` cannot turn on it. It earns its keep the day a branch pair meets **obliquely** (a
+/// turned wall), where the line residual outgrows both plane residuals near the line.
 pub(crate) fn branch_vertex_tol(
     p: Point3,
     a: &Plane,

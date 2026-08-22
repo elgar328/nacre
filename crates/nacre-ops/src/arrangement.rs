@@ -3455,7 +3455,7 @@ pub(crate) type DiskLabels = HashMap<(usize, usize), Label>;
 /// calls it on the very faces production feeds it. The deferred stopper intercepts the whole
 /// stretch this runs in, so a failure *here* never reaches an arc population's caller — which
 /// means no reject name can testify that the branch arm works, and only a direct second consumer
-/// can ([[watch-the-lock-go-red]]: with the arm disabled, every boolean-level fence stays green).
+/// can (measured: with the arm disabled wholesale, every boolean-level fence stays green).
 pub(crate) fn seam_table(
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
@@ -3484,7 +3484,7 @@ pub(crate) fn seam_table(
                 // ★ What is still missing past this table is the **vertex minting**:
                 // `boolean`'s `def_triple`/`node_handle` cannot name a branch vertex in
                 // the result's surfaces yet (its `edge_faces` cannot even see a band
-                // face), which is where the deferred stopper below draws the line.
+                // face), which is where the caller's deferred stopper draws the line.
                 if let Some(([p0, p1], cyl, _)) = combinatorics::branch_name(node) {
                     let wcy = &cyls[cyl];
                     let arr = combinatorics::branch_point(jd, cyl, &wcy.def, node)
@@ -4164,8 +4164,13 @@ pub(crate) fn frame_audit(
                 // refuses — *"the worst possible time to be lying"* (`decline_to_reject`). The
                 // arc fence in `bands.rs` locks the two together.
                 let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
-                // ★ The same stages, the same order, the same stopper the boolean runs — the arc
-                // fence in `bands.rs` locks that the two agree.
+                // ★ The same stages and the same stopper the boolean runs — the arc fence in
+                // `bands.rs` locks that the two agree. One deliberate difference: the boolean
+                // *defers* the stopper's reject past the seam stretch, while this audit raises it
+                // here — its proposition is per class ("where does this class stop"), and the
+                // deferral changes where the reject surfaces, never which classes earn it or what
+                // it is named. The agreement fence compares the names, which is exactly the part
+                // that must not drift.
                 let staged = per_class(&jd, kind, wc, &edges);
                 if let Ok(s) = &staged {
                     let mut pos_labels: Vec<Label> = s
@@ -4362,8 +4367,6 @@ pub(crate) fn boolean(
             // chainable solid — a second boolean on it then sees no redundant coplanar planes.
             let faces = timed!(UNIFY, crate::boolean::unify_coplanar_faces(faces, &jd))?;
 
-            // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
-            // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
             // ★ **The lateral bands, appended after the differential above** (M6-2a C4b): reuse can
             // only change what the *plane* arrangement emits, so the two routes are compared on that
             // list; the bands are a separate pass over the same operands and belong to neither route.

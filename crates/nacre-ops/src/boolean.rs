@@ -1848,6 +1848,14 @@ fn merge_component(
 ///
 /// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
 /// (degree > 2), which is what stops a T-junction from opening.
+///
+/// ★★ **Arc-bearing rings flow through here now, and equal walls lie for them** (2026-08-22).
+/// An arc half-edge's wall is the `usize::MAX` sentinel, so two *consecutive arcs* compare as
+/// "same wall" and the branch vertex between them would dissolve — silently, since the deferred
+/// arc stopper discards this pass's output anyway. Unfired today, measured: in both arc fixtures
+/// a chord or a segment always sits between two arcs, so no arc–arc adjacency exists. The day a
+/// circle is cut into arcs that meet each other (two chords through one circle), this test must
+/// learn the carrier — the same cell that widens `Ring.walls`.
 fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
     // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of
