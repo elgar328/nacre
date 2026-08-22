@@ -1288,6 +1288,12 @@ mod tests {
                     // disk-minus-plate — the overhang's underside — has the boss above it and
                     // nothing below; and their intersection has both. The outside cell winds `-1`
                     // and is not here.
+                    //
+                    // ★ **The same three come out for the turned boss, and the story is the same
+                    // one in its own frame** — this assertion is inside the two-fixture loop, so
+                    // reading it as a sentence about the straddling boss alone would be reading
+                    // half of what it checks. There the class is `x = 4`: the plate lies on the
+                    // `−x` side, the boss's base cap outside it on `+x`, and the overlap has both.
                     pos_labels: vec![
                         [false, false, true, false],
                         [false, true, false, false],

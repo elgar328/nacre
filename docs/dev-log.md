@@ -12101,6 +12101,30 @@ rg 'NodeId::(ThreePlane|Branch)' crates/ -g '!**/combinatorics.rs' -g '!**/reuse
 다음 사람이 세 히트를 보고 게이트를 무의미하다고 읽거나 셋 다 우회라고 오해한다. 「오늘은 셋이
 남아 있고 그 이유는 문이 한쪽뿐이기 때문」을 doc 에 적었다.
 
+### 3회차 점검 — 적지 않은 «의도적 생략» 과, 계측기의 셋째 함정
+
+★★★ **일부러 뺀 둘이 코드 어디에도 없었다.** `outer_rings` 는 `flip` 과 inner ring 을 안 나르는데,
+그 결정(=`flip` 은 `keep_above == (frame_sign>0)` 이라 **클래스의 저장 법선 방향**에 달린 구현
+사실이지 픽스처의 숫자가 아니다)은 계획서에만 있었고 계획서는 저장소 밖이다. **적지 않은 생략은
+다음 사람에게 누락으로 읽힌다** ⇒ 둘 다 필드 doc 에 이유와 함께 적었다(호 클래스에 hole 이
+생기는 날이 inner 를 넓히는 날이라는 것까지).
+
+★★ **`spike_where_the_boolean_spends_it` 의 doc 이 「틀릴 수 있는 두 가지」만 적고 있었다 —
+셋째가 있다.** `phase::` 는 프로세스 전역 atomic 이고 `cargo test` 는 같은 바이너리를 **병렬**로
+도므로 `reset()` 이 아무것도 막지 못한다. `--ignored` 패스에서는 **다른 spike 둘과 회전 stress
+둘**이 같은 버킷에 더하는데 `whole` 은 이 스레드의 벽시계라, 지분 퍼센트가 코드와 무관한 이유로
+100 을 넘을 수 있다([[nondeterministic-fixtures-and-instruments]]). 단독 실행 명령을 doc 에 넣었다.
+★ **이건 내 변경이 넓힌 게 아니다**(울타리는 일반 `#[test]`, spike 는 `#[ignore]` — 같은 패스에서
+안 만난다). 그 구분까지 적었다.
+
+★ **`pos_labels` 유도 주석이 걸터앉은 보스만 설명하는데 단언은 루프 안이라 둘 다 덮는다** —
+돌린 보스에서도 같은 셋이 같은 이유로 나온다는 문장을 붙였다(클래스가 `x=4` 이고 평판이 `−x`,
+보스 밑면이 `+x`).
+
+★ **반증된 가설 하나**: 「클래스 법선이 raw 외적이라 `n_out` 단언이 운으로 통과한 것 아닌가」 —
+아니다. `nacre_geom::Plane` 의 doc 이 *"Invariant: `normal` is **unit** length … every constructor
+normalizes"* 다. `reuse.rs` 의 「raw 외적」 주석은 `tri_n_out()` 얘기였다.
+
 ### 계측 자신의 실수 — 파이프가 exit code 를 삼켰다
 
 `cargo test ... | tail -80` 의 exit code 는 **`tail` 의 것**이다. 스윕이 「exit 0」으로 끝났다고

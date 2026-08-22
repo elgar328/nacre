@@ -3864,6 +3864,16 @@ pub(crate) struct ClassAudit {
     /// ★ It is a sibling of [`Produced`] rather than a field in it because `[f64; 3]` is not `Eq`
     /// (the derive would break) and one of these coordinates is irrational, so it needs `near()`
     /// rather than `==` — the two could not ride the same `assert_eq!` regardless.
+    ///
+    /// ★★★ **Two things are left out on purpose, and saying so is the point** — a silent omission
+    /// reads as an oversight to whoever comes next:
+    /// - **`flip`.** It is `keep_above == (frame_sign > 0)`, so it turns on the *class's stored
+    ///   normal direction* — an implementation fact, not one of the fixture's numbers. Carrying it
+    ///   would put one bit in here that a fence could only fill by copying a run, and reversal —
+    ///   the thing this field exists for — is already caught by the sequence itself.
+    /// - **Inner rings.** A face's holes are not carried. Today's arc classes have none
+    ///   (`nesting.holes` is empty, measured), so there is nothing to lose *yet*; an arc class with
+    ///   a hole would go unchecked here, and that is the day this grows.
     pub outer_rings: Option<Vec<Vec<[f64; 3]>>>,
 }
 
@@ -7107,6 +7117,15 @@ mod tests {
     ///    `--no-default-features`**, where every phase and the total are the same clock.
     /// 2. **Phases that do not add up.** The sum is printed against the measured whole, so anything
     ///    unaccounted for shows as a gap rather than hiding inside a phase's share.
+    /// 3. ★★★ **Another test adding to the same counters.** `phase::` are process-global atomics
+    ///    and `cargo test` runs this binary's tests on parallel threads, so `reset()` here does not
+    ///    fence anything: every concurrently running test that calls `boolean` — and in an
+    ///    `--ignored` pass that is the *other* spikes and the two rotation stress tests — lands in
+    ///    the same buckets, while `whole` below is this thread's wall clock alone. The share
+    ///    percentages then exceed 100 for reasons that have nothing to do with the code.
+    ///    **Run it alone**: `cargo test -p nacre-ops --no-default-features spike_where -- --ignored
+    ///    --nocapture --test-threads=1`. (Found 2026-08-22 while auditing an unrelated change; the
+    ///    numbers already printed were taken that way, so they stand — but nothing said so.)
     ///
     /// Timers live on the production path (`phase::` in this module), not in a replica of it.
     #[test]
