@@ -177,23 +177,33 @@ impl NodeId {
 /// answering — the same gate found **fifteen** of those in the previous cell with the whole suite
 /// already green, and it costs nothing and does not break on a rename.
 ///
-/// ★★★ **It is not empty today, and saying so is the point** (2026-08-22). Three sites in
-/// `arrangement` — `arc_split_witness`' `separates` closure, and two inside `split_circles` (the
-/// tangency skip when gathering crossings, and the destructure that sorts a segment's nodes along
-/// its meet line) — ask a **branch** node for its payload: is this root a tangency, which cylinder
-/// is it on. There is no door that answers that. This one is `three_plane_name`; its twin,
-/// `branch_name(n) -> Option<([usize; 2], usize, QuadRoot)>`, does not exist yet, so those three
-/// open the variant because nothing else can. **One function closes all three**, and until it is
-/// written the gate returns three known hits rather than zero.
+/// ★★★ **Empty again since [`branch_name`] exists** (2026-08-22). Three sites in `arrangement`
+/// used to open the `Branch` variant directly — `arc_split_witness`' `separates` closure and two
+/// inside `split_circles` — because this door answers only the three-plane half and its twin did
+/// not exist. The seam table becoming a fourth consumer is what finally paid for the twin; all
+/// four go through it now.
 ///
-/// ★ Not automated, and that is how it rotted: those three arrived a cell ago and nothing ran the
-/// check, then a fourth was added on top of them with the suite green (`e091885` moved it back
-/// here). `tests/rotation_sweep.rs`' `side_of` guard is the precedent for making a source scan a
-/// test — an allow-list of the three, so a *fourth* is what goes red.
+/// ★ Not automated, and that is how it rotted: the three arrived a cell ago and nothing ran the
+/// check, then a fourth was nearly added with the suite green. `tests/rotation_sweep.rs`'
+/// `side_of` guard is the precedent for making a source scan a test.
 pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
     match n {
         NodeId::ThreePlane(t) => Some(t),
         NodeId::Branch { .. } => None,
+    }
+}
+
+/// [`three_plane_name`]'s twin — the payload of a **branch** name, `None` for a three-plane one.
+///
+/// The three questions its consumers ask are all payload reads: does this root *separate* (a
+/// tangency's `Double` does not), which cylinder is the point on, where does it sort along the
+/// meet line. Spelling the variant at those sites instead is what the gate above forbids — the
+/// door is total over the enum, so a third variant becomes a compile error here rather than a
+/// silent fall-through at four call sites.
+pub(crate) fn branch_name(n: NodeId) -> Option<([usize; 2], usize, nacre_topo::QuadRoot)> {
+    match n {
+        NodeId::ThreePlane(_) => None,
+        NodeId::Branch { planes, cyl, root } => Some((planes, cyl, root)),
     }
 }
 

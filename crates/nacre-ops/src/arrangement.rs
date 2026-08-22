@@ -1881,8 +1881,8 @@ fn arc_split_witness(
     // So the test is the crossing's own name: a `Lo`/`Hi` root separates, anything else does not.
     let separates = |b: &Break| {
         matches!(
-            b.key.3,
-            Some(NodeId::Branch { root, .. }) if root != nacre_topo::QuadRoot::Double
+            b.key.3.and_then(combinatorics::branch_name),
+            Some((_, _, root)) if root != nacre_topo::QuadRoot::Double
         )
     };
     if !breaks.iter().any(separates) {
@@ -1931,11 +1931,8 @@ fn split_circles(
                 // A tangency touches without separating — `separates` above already let that
                 // shape through, and cutting there would make a zero-length arc.
                 if matches!(
-                    n,
-                    NodeId::Branch {
-                        root: nacre_topo::QuadRoot::Double,
-                        ..
-                    }
+                    combinatorics::branch_name(n),
+                    Some((_, _, nacre_topo::QuadRoot::Double))
                 ) {
                     continue;
                 }
@@ -1996,7 +1993,7 @@ fn split_circles(
         let mut line: Option<nacre_scalar::quad::MeetLine> = None;
         let mut keyed: Vec<(QuadVal, NodeId, combinatorics::EndPin)> = Vec::new();
         for &n in &nodes {
-            let NodeId::Branch { cyl, .. } = n else {
+            let Some((_, cyl, _)) = combinatorics::branch_name(n) else {
                 return Err(reject(RejectReason::RingNaming));
             };
             let def = def_of.get(&cyl).ok_or_else(undecided)?;
@@ -3427,7 +3424,7 @@ pub(crate) fn trace_result_faces_full_for_test(
     n_a: usize,
     class_owner: &[Option<SolidSide>],
     trace_in: &combinatorics::TraceInput,
-) -> Result<(Vec<LocalFace>, DiskLabels), BoolError> {
+) -> Result<(Vec<LocalFace>, DiskLabels, Option<BoolError>), BoolError> {
     trace_result_faces(
         model,
         kind,
@@ -3449,6 +3446,103 @@ pub(crate) fn trace_result_faces_full_for_test(
 /// it, and a cylinder cuts only some classes.
 pub(crate) type DiskLabels = HashMap<(usize, usize), Label>;
 
+/// **The seam table — every node the result faces reference, realized to a coordinate and a
+/// measured tolerance.** The weld table `assemble_fuse_cut` reads; built directly from the
+/// emitted rings (no `build_seam`: that is raw-index and pierce-only), rejecting rather than
+/// panicking on a degenerate meet.
+///
+/// ★ A named function rather than a block for the same reason `per_class` is one: the arc fence
+/// calls it on the very faces production feeds it. The deferred stopper intercepts the whole
+/// stretch this runs in, so a failure *here* never reaches an arc population's caller — which
+/// means no reject name can testify that the branch arm works, and only a direct second consumer
+/// can ([[watch-the-lock-go-red]]: with the arm disabled, every boolean-level fence stays green).
+pub(crate) fn seam_table(
+    faces: &[LocalFace],
+    cyls: &[crate::planes::WorkingCyl],
+    jd: &Judge<'_, WorkingPlane>,
+) -> Result<Vec<SeamVertex>, BoolError> {
+    watch!(SEAM);
+    let geom = jd.planes;
+    let mut seam: Vec<SeamVertex> = Vec::new();
+    let mut seen: HashMap<NodeId, ()> = HashMap::new();
+    for f in faces {
+        for loop_ in f.poly_rings() {
+            for &node in loop_.iter() {
+                if seen.insert(node, ()).is_some() {
+                    continue;
+                }
+                // ★★ **A branch node is realized from its name, like everything else
+                // here: the truth is the definition, the coordinate its cache.** The
+                // coordinate is `a + b√c` — `branch_point` re-solves it from the name's
+                // `(line, s)`; a rational road cannot hold it (`node_coords_rat`'s doc
+                // calls that a type fact, not a width decline). The tolerance is the same
+                // rule as the three-plane arm below: how far the realized point sits from
+                // each surface that defines it, plus the closed-form pairwise meet
+                // (`branch_vertex_tol` carries the argument for which pairwise curves are
+                // in and out).
+                //
+                // ★ What is still missing past this table is the **vertex minting**:
+                // `boolean`'s `def_triple`/`node_handle` cannot name a branch vertex in
+                // the result's surfaces yet (its `edge_faces` cannot even see a band
+                // face), which is where the deferred stopper below draws the line.
+                if let Some(([p0, p1], cyl, _)) = combinatorics::branch_name(node) {
+                    let wcy = &cyls[cyl];
+                    let arr = combinatorics::branch_point(jd, cyl, &wcy.def, node)
+                        .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
+                    let point = nacre_math::Point3::from_array(arr);
+                    seam.push(SeamVertex {
+                        point,
+                        triple: node,
+                        tol: crate::planes::branch_vertex_tol(
+                            point,
+                            &geom[p0].plane,
+                            &geom[p1].plane,
+                            &wcy.cache,
+                        ),
+                    });
+                    continue;
+                }
+                // Declining, never `continue`: a skipped seam entry surfaces downstream as
+                // `MissingSeam`, whose class is `SuspectedDefect` and whose sentence is
+                // "a reconstruction dropped a crossing" — a wrong diagnosis for an input
+                // the kernel simply does not build yet.
+                let t = three_plane_name(node)
+                    .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
+                let point = three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
+                    .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
+                seam.push(SeamVertex {
+                    point,
+                    triple: node,
+                    tol: vertex_tol(
+                        point,
+                        &geom[t[0]].plane,
+                        &geom[t[1]].plane,
+                        &geom[t[2]].plane,
+                    ),
+                });
+            }
+        }
+    }
+    // **Two names, one point.** Every arrangement vertex is a distinct plane triple, and the
+    // materialized coordinate is only its cache — so two *different* triples landing on the same
+    // coordinate means the exact substrate and the f64 cache disagree about how many vertices
+    // there are. Downstream that becomes a zero-length edge, so catch it here, where both triples
+    // are still in hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line.
+    //
+    // The usual cause is a **split plane table**: one geometric plane carried by two classes, whose
+    // triples then name one point twice (measured 2026-07-22 — two `add_cuboid` walls at the same
+    // x that `planes_coplanar` could not prove coplanar because their un-normalized coefficients
+    // are not exactly proportional). A genuine 4-plane concurrency does the same.
+    for (i, u) in seam.iter().enumerate() {
+        for v in &seam[i + 1..] {
+            if u.point == v.point {
+                return Err(reject(RejectReason::SeamAlias));
+            }
+        }
+    }
+    Ok(seam)
+}
+
 /// Every result face across all plane classes, before assembly (the driver's risky half, testable
 /// by face count without mutating the model). A declining class aborts the whole boolean.
 ///
@@ -3468,7 +3562,7 @@ fn trace_result_faces(
     class_owner: &[Option<SolidSide>],
     reuse: crate::reuse::ClassReuse,
     trace_in: &combinatorics::TraceInput,
-) -> Result<(Vec<LocalFace>, DiskLabels), BoolError> {
+) -> Result<(Vec<LocalFace>, DiskLabels, Option<BoolError>), BoolError> {
     let planes = jd.planes;
     let mut local_faces: Vec<LocalFace> = Vec::new();
 
@@ -3594,9 +3688,12 @@ fn trace_result_faces(
     let per_class = crate::par::try_map_range(splits.len(), |k| {
         let wc = work[k];
         let (split, circles) = &splits[k];
-        // The per-class product: the faces, and the disk labels the band pass reads (empty for a
-        // class with no circles — and for a reused class, which is why cylinders switch reuse off).
-        type ClassOut = (Vec<LocalFace>, Vec<(usize, Label)>);
+        // The per-class product: the faces, the disk labels the band pass reads (empty for a
+        // class with no circles — and for a reused class, which is why cylinders switch reuse
+        // off), and the arc stopper's **deferred** reject — made here, where the class-level fact
+        // ("this class has arcs") lives, and raised by the caller after the seam stretch, so the
+        // seam's branch arm actually runs before the population is refused.
+        type ClassOut = (Vec<LocalFace>, Vec<(usize, Label)>, Option<BoolError>);
         let arrange = |wc: usize| -> Result<ClassOut, BoolError> {
             watch!(CELLS);
             // ★★ **One `ClassEdges` for the whole pipeline.** The split renumbers half-edges, so
@@ -3604,12 +3701,15 @@ fn trace_result_faces(
             // makes that structural instead of a promise. (`frame_audit` runs its own copy of this
             // pipeline and must build it the same way; the arc fence locks that they agree.)
             let edges = timed!(C_SPLIT, ClassEdges::of(jd, wc, split, circles))?;
-            // ★★★ **The stages run, then the stopper, then the `?`.** The stopper *intercepts*:
-            // an arc class must carry the same name out **however far the pipeline got**, or the
-            // fences' `ArcBoundNotYet` + witness would become whatever a stage said and the reject
-            // census would gain a raise site. Writing `per_class(..)?` puts the stages' failure
-            // ahead of the stopper and loses exactly that — measured: with a stage stubbed to fail
-            // on an arc class, the fence sees that stage's reason instead.
+            // ★★★ **The stages run, then the stopper is *made* — and only made.** The reject an
+            // arc class earns is built here, where "this class has arcs" is a plain fact, but it
+            // is **raised by the caller after the seam stretch**, so the seam's branch arm runs
+            // before the population is refused. The stopper still *intercepts*: an arc class must
+            // carry the same name out **however far the pipeline got**, or the fences'
+            // `ArcBoundNotYet` + witness would become whatever a stage said and the reject census
+            // would gain a raise site — that is the `deferred.unwrap_or(e)` below (measured: with
+            // a stage stubbed to fail on an arc class, the fence sees that stage's reason without
+            // it). The caller holds the second copy of the same shape over the whole stretch.
             //
             // ★★ **The fences that pin the *name* are `bands.rs`'
             // `a_boss_overhanging_the_plates_edge_is_still_refused` and
@@ -3618,11 +3718,12 @@ fn trace_result_faces(
             // *with* the boolean, so it stays green when both slide to the same wrong name; asking
             // it about interception measures the proposition next door.
             let staged = per_class(jd, kind, wc, &edges);
-            arc_stopper(jd, wc, &edges, split, circles)?;
-            let Staged {
-                faces, disk_labels, ..
-            } = staged?;
-            Ok((faces, disk_labels))
+            let deferred = arc_stopper(jd, wc, &edges, split, circles).err();
+            let s = match staged {
+                Ok(s) => s,
+                Err(e) => return Err(deferred.unwrap_or(e)),
+            };
+            Ok((s.faces, s.disk_labels, deferred))
         };
         // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
         // its vertices falls back to arranging, so this can lose the shortcut but never the answer.
@@ -3650,18 +3751,22 @@ fn trace_result_faces(
             }
         };
         match reused {
-            Some(f) => Ok((f, Vec::new())),
+            Some(f) => Ok((f, Vec::new(), None)),
             None => arrange(wc),
         }
     })?;
     let mut disk_labels: DiskLabels = HashMap::new();
-    for (k, (faces, labels)) in per_class.into_iter().enumerate() {
+    // The first arc class's deferred reject, in `work` order — the map above may run its classes
+    // in parallel, but this fold reads the vec in order, so the choice is deterministic.
+    let mut deferred: Option<BoolError> = None;
+    for (k, (faces, labels, d)) in per_class.into_iter().enumerate() {
         local_faces.extend(faces);
         for (cyl, label) in labels {
             disk_labels.insert((cyl, work[k]), label);
         }
+        deferred = deferred.or(d);
     }
-    Ok((local_faces, disk_labels))
+    Ok((local_faces, disk_labels, deferred))
 }
 
 /// One arrangement vertex a boolean named, with **every** plane through it.
@@ -4174,7 +4279,9 @@ pub(crate) fn boolean(
         );
         // `disk_labels`: per (cylinder class, plane class), the four bits of that circle's disk
         // cell — what the band pass reads instead of casting a witness ray (M6-2a K1).
-        let (faces, disk_labels) = trace_result_faces(
+        // `deferred`: an arc class's stopper reject, made per class and raised below **after** the
+        // seam stretch, so the seam's branch arm runs before the population is refused.
+        let (faces, disk_labels, deferred) = trace_result_faces(
             model,
             kind,
             a,
@@ -4228,7 +4335,7 @@ pub(crate) fn boolean(
                 // ★ **Faces only.** The disk labels are the same arrangement's product, so
                 // comparing them would widen this differential's proposition ("reuse does not
                 // change the faces") into one it was not built to make.
-                Ok((p, _)) => assert_eq!(
+                Ok((p, _, _)) => assert_eq!(
                     crate::reuse::canonical(&faces),
                     crate::reuse::canonical(p),
                     "reuse changed the faces this boolean emits"
@@ -4239,91 +4346,52 @@ pub(crate) fn boolean(
                 Err(e) => panic!("reuse turned a {e:?} into a result"),
             }
         }
-        // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
-        // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
-        // chainable solid — a second boolean on it then sees no redundant coplanar planes.
-        let faces = timed!(UNIFY, crate::boolean::unify_coplanar_faces(faces, &jd))?;
+        // ★★★ **The seam stretch, held as one closed result — the deferred stopper's second
+        // interception layer.** Everything from the cleaning pass to the seam table runs even for
+        // an arc input (that is the point: the seam's branch arm is exercised), and then the
+        // deferred reject wins over whatever the stretch produced, `Ok` *or* `Err`. Without the
+        // `Err` half, an arc input would carry out whichever of the stretch's five fallible
+        // steps — `unify_coplanar_faces`, `cyl_rows`, `band_faces`, the seam fill, the
+        // `SeamAlias` scan — happened to fail first, and the population's name would depend on
+        // how far the pipeline got: the same property the per-class `deferred.unwrap_or(e)` in
+        // `arrange` protects, one level down. (`SeamAlias` is the sharp case: its class says
+        // "report a bug", and its own doc records having mis-named a population once before.)
+        let stretch = || -> Result<(Vec<LocalFace>, Vec<SeamVertex>), BoolError> {
+            // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
+            // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
+            // chainable solid — a second boolean on it then sees no redundant coplanar planes.
+            let faces = timed!(UNIFY, crate::boolean::unify_coplanar_faces(faces, &jd))?;
 
-        // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
-        // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
-        // ★ **The lateral bands, appended after the differential above** (M6-2a C4b): reuse can
-        // only change what the *plane* arrangement emits, so the two routes are compared on that
-        // list; the bands are a separate pass over the same operands and belong to neither route.
-        // From here on there is one face list — the grouping, the closed-shell guard and the
-        // assembly all read it.
-        let faces = if cyls.is_empty() {
-            faces
-        } else {
-            let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
-            let mut faces = faces;
-            faces.extend(crate::bands::band_faces(
-                kind,
-                &faces,
-                &rows,
-                &jd,
-                &disk_labels,
-            )?);
-            faces
-        };
+            // Build the SeamVertex weld table directly from the emitted triples (no `build_seam`: that is
+            // raw-index and pierce-only). Reject rather than panic on a degenerate meet.
+            // ★ **The lateral bands, appended after the differential above** (M6-2a C4b): reuse can
+            // only change what the *plane* arrangement emits, so the two routes are compared on that
+            // list; the bands are a separate pass over the same operands and belong to neither route.
+            // From here on there is one face list — the grouping, the closed-shell guard and the
+            // assembly all read it.
+            let faces = if cyls.is_empty() {
+                faces
+            } else {
+                let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
+                let mut faces = faces;
+                faces.extend(crate::bands::band_faces(
+                    kind,
+                    &faces,
+                    &rows,
+                    &jd,
+                    &disk_labels,
+                )?);
+                faces
+            };
 
-        let seam = {
-            watch!(SEAM);
-            let mut seam: Vec<SeamVertex> = Vec::new();
-            let mut seen: HashMap<NodeId, ()> = HashMap::new();
-            for f in &faces {
-                for loop_ in f.poly_rings() {
-                    for &node in loop_.iter() {
-                        if seen.insert(node, ()).is_some() {
-                            continue;
-                        }
-                        // ★ **The one site behind the door that materializes a coordinate and
-                        // mints a `VertexDef`** — so this is where the next rung starts minting
-                        // `VertexDef::Branch`, and where the class-order/handle-order
-                        // correspondence has to be established a *second* time
-                        // (`NodeId::Branch` is canonical in plane **classes**, `VertexDef::Branch`
-                        // in `Handle<Surface>` index, and the class→surf map is not monotone).
-                        //
-                        // Declining, never `continue`: a skipped seam entry surfaces downstream as
-                        // `MissingSeam`, whose class is `SuspectedDefect` and whose sentence is
-                        // "a reconstruction dropped a crossing" — a wrong diagnosis for an input
-                        // the kernel simply does not build yet.
-                        let t = three_plane_name(node)
-                            .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
-                        let point =
-                            three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
-                                .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
-                        seam.push(SeamVertex {
-                            point,
-                            triple: node,
-                            tol: vertex_tol(
-                                point,
-                                &geom[t[0]].plane,
-                                &geom[t[1]].plane,
-                                &geom[t[2]].plane,
-                            ),
-                        });
-                    }
-                }
-            }
-            // **Two names, one point.** Every arrangement vertex is a distinct plane triple, and the
-            // materialized coordinate is only its cache — so two *different* triples landing on the same
-            // coordinate means the exact substrate and the f64 cache disagree about how many vertices
-            // there are. Downstream that becomes a zero-length edge, so catch it here, where both triples
-            // are still in hand, instead of letting `assemble_fuse_cut` discover it as a degenerate line.
-            //
-            // The usual cause is a **split plane table**: one geometric plane carried by two classes, whose
-            // triples then name one point twice (measured 2026-07-22 — two `add_cuboid` walls at the same
-            // x that `planes_coplanar` could not prove coplanar because their un-normalized coefficients
-            // are not exactly proportional). A genuine 4-plane concurrency does the same.
-            for (i, u) in seam.iter().enumerate() {
-                for v in &seam[i + 1..] {
-                    if u.point == v.point {
-                        return Err(reject(RejectReason::SeamAlias));
-                    }
-                }
-            }
-            seam
+            let seam = seam_table(&faces, &cyls, &jd)?;
+            Ok((faces, seam))
         };
+        let stretch = stretch();
+        if let Some(d) = deferred {
+            return Err(d);
+        }
+        let (faces, seam) = stretch?;
 
         timed!(
             ASSEMBLE,
@@ -5585,7 +5653,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let (faces, _) = trace_result_faces(
+        let (faces, _, _) = trace_result_faces(
             &m,
             BoolKind::Fuse,
             a,
@@ -5794,7 +5862,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let (faces, _) = trace_result_faces(
+        let (faces, _, _) = trace_result_faces(
             &m,
             BoolKind::Cut,
             a,
@@ -5902,7 +5970,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let (faces, _) = trace_result_faces(
+        let (faces, _, _) = trace_result_faces(
             &m,
             BoolKind::Fuse,
             u,
@@ -6184,7 +6252,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let (faces, _) = trace_result_faces(
+        let (faces, _, _) = trace_result_faces(
             &m,
             BoolKind::Cut,
             a,
@@ -6355,7 +6423,7 @@ mod tests {
             &jd,
             &plane_ix,
         );
-        let (faces, _) = trace_result_faces(
+        let (faces, _, _) = trace_result_faces(
             &m,
             BoolKind::Cut,
             a,

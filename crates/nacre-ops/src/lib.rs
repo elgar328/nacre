@@ -780,22 +780,27 @@ pub enum RejectReason {
     WitnessNotRational,
     /// **A circle was cut into arcs, and nothing downstream can build one yet.**
     ///
-    /// The arrangement splits a circle a segment crosses **and now finishes the whole per-class
-    /// road**: the DCEL orbit spans the arc range, the cells are nested and labelled, and the
-    /// result faces are emitted with their arcs. So the refusal stands **after every arrangement
-    /// stage** — all of it is built and measured (the class audit carries the counts, the labels
-    /// and the emitted rings) and then not handed on.
+    /// The arrangement splits a circle a segment crosses and finishes the whole per-class road —
+    /// the cells are walked, nested, labelled, and emitted as faces with their arcs — and the
+    /// **seam table realizes every vertex of the result**, branch vertices included
+    /// (`arrangement::seam_table`'s branch arm: coordinate from the name, tolerance measured
+    /// against everything that defines it). So the refusal stands **after the seam stretch**:
+    /// the cleaning pass, the band pass and the seam all run, are measured, and are then not
+    /// handed to the assembly.
     ///
-    /// What is still missing is the *assembly*: the seam table cannot mint a
-    /// `VertexDef::Branch` for a branch vertex, `boolean::Ring` has no carrier for an arc (its
-    /// walls are plane classes), `edge_for` keys an edge by an unordered vertex pair so the chord
-    /// and the two arcs between one pair of branch points fold into one, the rim table has no arc
-    /// row, and a cut circle leaves the band pass with no disk label.
+    /// What is still missing **is** the assembly: the vertex minting (`boolean`'s `def_triple`
+    /// derives a corner's planes from its edges' neighbouring faces, and a band face has no ring
+    /// to be a neighbour with), `boolean::Ring` has no carrier for an arc (its walls are plane
+    /// classes), `edge_for` keys an edge by an unordered vertex pair so the chord and the two
+    /// arcs between one pair of branch points fold into one, the rim table has no arc row, and a
+    /// cut circle leaves the band pass with no disk label.
     ///
-    /// ★ It intercepts **every** stage's failure, so the population's name does not depend on how
-    /// far the pipeline got — which is what keeps this row of the reject census reading one thing.
-    /// Spelling a stage with a `?` ahead of the stopper loses that, silently while they succeed;
-    /// the order is commented where it is written.
+    /// ★ It intercepts **every** failure behind it — the per-class stages and the seam stretch
+    /// each hold the same shape (the stages run, the deferred stopper wins over whatever they
+    /// said) — so the population's name does not depend on how far the pipeline got, which is
+    /// what keeps this row of the reject census reading one thing. The price of that interception
+    /// is that no reject can testify the seam's branch arm works; a direct fence on `seam_table`
+    /// (`bands`' `the_seam_realizes_a_branch_vertex_and_measures_it`) is that witness.
     ///
     /// ★ A stopper of the shape `CylinderBooleanNotYet` had in M6-2a: it names what is missing, it
     /// is measured by the fixtures it holds, and the commit that finishes the road removes it.

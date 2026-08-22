@@ -702,6 +702,32 @@ pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
     tol
 }
 
+/// [`vertex_tol`]'s branch sibling — the measured tolerance of a realized `plane ∩ plane ∩
+/// cylinder` vertex: max distance of `p` to its two planes, the cylinder **surface**, and the
+/// planes' meet line.
+///
+/// ★★ **The meet line is the one pairwise curve this covers, on purpose.** The seam's tolerance
+/// means "surfaces *and* pairwise meets" — `boolean`'s vertex minting says the pairwise part "is
+/// a real part of what this number means", and [`vertex_tol`] above covers all three of its
+/// lines. Here only `a ∩ b` has a closed form that is always a line: a branch plane can be
+/// **parallel to the axis**, where `plane ∩ cylinder` is a pair of ruling lines — a per-case
+/// curve family this deliberately does not chase. The cylinder-*surface* distance already bounds
+/// the radial part of that error; the meet line is also exactly the line the point is defined on
+/// (`combinatorics::branch_point` realizes from `(line, s)`), so its residual is the first-class
+/// question about the realization.
+pub(crate) fn branch_vertex_tol(
+    p: Point3,
+    a: &Plane,
+    b: &Plane,
+    cyl: &nacre_geom::Cylinder,
+) -> f64 {
+    let mut tol = a.distance(p).max(b.distance(p)).max(cyl.distance(p));
+    if let Some(line) = plane_plane(a, b) {
+        tol = tol.max(line.distance(p));
+    }
+    tol
+}
+
 /// Which operand a face or segment came from — the boolean's per-cell label needs both solids'
 /// material above and below, so provenance cannot be merged away.
 ///
@@ -779,7 +805,8 @@ pub(crate) struct WorkingCyl {
     #[allow(dead_code)] // the arrangement's circle elements read these from C3 on
     pub(crate) surf: Handle<Surface>,
     pub(crate) def: nacre_topo::CylinderDef,
-    #[allow(dead_code)]
+    /// The f64 twin of `def` — what a *measurement* reads (`branch_vertex_tol` measures a branch
+    /// realization against this surface), while every decision reads `def`.
     pub(crate) cache: nacre_geom::Cylinder,
 }
 
@@ -1989,6 +2016,56 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
 mod tests {
     use super::*;
     use nacre_scalar::{Angle, Axis, Rat};
+
+    /// **The branch tolerance is a measurement, and each of its terms can move.**
+    ///
+    /// Hand geometry — no class indices, so nothing here is copied from an engine run: the turned
+    /// boss's second crossing, where the meet line of `y = 0` and `x = 4` pierces a cylinder of
+    /// radius `0.5` about the `+X` axis through `(y, z) = (0.25, 2)`. The true point is
+    /// `(4, 0, 2 − √3/4)` (irrational on purpose — every term sees real rounding, not exact zeros).
+    ///
+    /// ★ The second probe moves **along the meet line**: both planes and the line stay at zero, so
+    /// only the cylinder-surface term can see it — which is how this asserts that term is
+    /// *exercised*, not merely present ([[instrument-decides-the-answer]]'s negative control).
+    #[test]
+    fn branch_vertex_tol_measures_and_each_term_moves() {
+        let pa = Plane::from_point_normal(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
+        )
+        .unwrap();
+        let pb = Plane::from_point_normal(
+            Point3::from_array([4.0, 0.0, 0.0]),
+            nacre_math::Vector3::from_array([1.0, 0.0, 0.0]),
+        )
+        .unwrap();
+        let cyl = nacre_geom::Cylinder::from_axis(
+            Point3::from_array([0.0, 0.25, 2.0]),
+            nacre_math::Vector3::from_array([1.0, 0.0, 0.0]),
+            nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
+            0.5,
+        )
+        .unwrap();
+        let s = 2.0 - 3.0f64.sqrt() / 4.0;
+        let p = Point3::from_array([4.0, 0.0, s]);
+        assert!(
+            branch_vertex_tol(p, &pa, &pb, &cyl) < 1e-12,
+            "the true crossing measures at rounding scale: {}",
+            branch_vertex_tol(p, &pa, &pb, &cyl)
+        );
+        // Along the meet line: planes and line stay zero, the cylinder term alone answers.
+        let along = Point3::from_array([4.0, 0.0, s - 1e-6]);
+        assert!(
+            branch_vertex_tol(along, &pa, &pb, &cyl) > 1e-7,
+            "the cylinder-surface term is exercised"
+        );
+        // Off a plane: the instrument moves by the full offset.
+        let off = Point3::from_array([4.0, 1e-6, s]);
+        assert!(
+            branch_vertex_tol(off, &pa, &pb, &cyl) > 0.9e-6,
+            "a plane term is exercised"
+        );
+    }
 
     /// **A loop with points that do not turn still states its own outward direction.**
     ///

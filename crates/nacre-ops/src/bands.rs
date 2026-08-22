@@ -351,7 +351,7 @@ mod tests {
             &jd,
             plane_ix,
         );
-        let (plane_faces, disk_labels) = crate::arrangement::trace_result_faces_full_for_test(
+        let (plane_faces, disk_labels, _) = crate::arrangement::trace_result_faces_full_for_test(
             m,
             kind,
             a,
@@ -1339,6 +1339,113 @@ mod tests {
                         .zip(w)
                         .all(|(p, q)| (0..3).all(|i| (p[i] - q[i]).abs() < 1e-9)),
                     "ring: got {g:?}, want {w:?}"
+                );
+            }
+        }
+    }
+
+    /// **The seam realizes a branch vertex and measures it — seen through the door production
+    /// uses, because nothing else can see it at all.**
+    ///
+    /// ★★★ The deferred stopper intercepts the whole seam stretch, so with the branch arm
+    /// deleted the seam fails `BranchVertexUnnamed`, the interception swallows it, and **every
+    /// boolean-level fence stays green** (measured — that probe is what forced this test). The
+    /// arm's only witness is a direct second consumer of `seam_table` on the very faces
+    /// production feeds it, so this walks production's stretch step for step: trace, clean,
+    /// append the bands, build the seam.
+    ///
+    /// ★ The tolerance is asserted as a **bound**, never a copied value; the branch coordinates
+    /// themselves are pinned by `ClassAudit::outer_rings` through the same `branch_point` road,
+    /// so re-asserting them here would be a second copy of an existing lock — and a `Lo`/`Hi`
+    /// mix-up cannot hide behind the bound either, because both crossings lie on every defining
+    /// surface and `outer_rings` is what tells them apart.
+    #[test]
+    fn the_seam_realizes_a_branch_vertex_and_measures_it() {
+        for (origin, axis) in [
+            ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
+            ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array(origin),
+                Vector3::from_array(axis),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            let setup = plane_index_setup(&m, plate, boss).unwrap();
+            let PlaneSetup {
+                planes: faces_tab,
+                geom,
+                surf_ix,
+                inc_a,
+                inc_b,
+                plane_ix,
+                class_owner,
+                n_a,
+                standard,
+                notes,
+                cyls,
+                ..
+            } = &setup;
+            let jd = Judge::new(geom, *standard, notes);
+            let trace_in = crate::combinatorics::trace_input(
+                &m,
+                [(plate, inc_a), (boss, inc_b)],
+                surf_ix,
+                faces_tab.len(),
+                &jd,
+                plane_ix,
+            );
+            let (plane_faces, disk_labels, deferred) =
+                crate::arrangement::trace_result_faces_full_for_test(
+                    &m,
+                    BoolKind::Fuse,
+                    plate,
+                    boss,
+                    &jd,
+                    faces_tab,
+                    plane_ix,
+                    cyls,
+                    *n_a,
+                    class_owner,
+                    &trace_in,
+                )
+                .expect("the arc population traces");
+            // The deferred reject is **made** at the class level — the stopper's own name,
+            // before anything downstream has a chance to rename it.
+            assert!(
+                matches!(
+                    &deferred,
+                    Some(BoolError::Rejected {
+                        reason: RejectReason::ArcBoundNotYet,
+                        ..
+                    })
+                ),
+                "{deferred:?}"
+            );
+            let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
+            let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
+            let mut faces = faces;
+            faces.extend(
+                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &disk_labels).expect("bands"),
+            );
+            let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
+                .expect("the seam realizes branch nodes");
+            let branch: Vec<_> = seam
+                .iter()
+                .filter(|sv| crate::combinatorics::branch_name(sv.triple).is_some())
+                .collect();
+            assert_eq!(branch.len(), 2, "both crossings reach the seam, once each");
+            for sv in branch {
+                assert!(
+                    sv.tol < 1e-12,
+                    "a branch realization sits on everything that defines it: tol {}",
+                    sv.tol
                 );
             }
         }
