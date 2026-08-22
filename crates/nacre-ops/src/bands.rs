@@ -1459,10 +1459,11 @@ mod tests {
     /// testify the naming completed — a direct second consumer is the only witness. This walks
     /// production's road (trace → clean → bands → seam → naming) and asserts on its product.
     ///
-    /// ★★ The fixture division *is* the instrument: the straddling boss's nodes complete with
-    /// the branch arm alone, while the turned boss also needs the walls-fallback for the corner
-    /// the disk bites — so disabling the branch arm reddens both, disabling the fallback reddens
-    /// the turned one only.
+    /// ★★ Disabling the branch arm reddens both fixtures (and the walls-fallback cannot fake a
+    /// branch def past its MAX-wall guard). ★ The fallback itself went **zero-population** when
+    /// the split-twin subdivision landed — the bitten corner's twins match now, so its def comes
+    /// down the far-plane road and no probe reddens on the fallback alone; the subdivision has
+    /// its own fence (`a_subdivided_twin_matches_its_neighbour_edge_for_edge`).
     #[test]
     fn every_result_vertex_of_the_arc_population_is_named() {
         for (origin, axis, bites_corner) in [
@@ -1567,6 +1568,123 @@ mod tests {
                 });
                 assert!(hit, "the bitten corner's def realizes to (4, 0, 2)");
             }
+        }
+    }
+
+    /// **After the split-twin subdivision, every segment edge has exactly one twin.**
+    ///
+    /// ★★★ The subdivision cannot be locked through the naming fence — the walls-fallback
+    /// rescues the bitten corner whether or not the twins match, so that fence is green either
+    /// way. What the subdivision actually changes is the **edge-key census**: a neighbour's whole
+    /// edge and the arc class's subdivided pieces share `norm_edge` keys only once the whole edge
+    /// is cut at the same branch nodes. So the proposition, with its exceptions stated exactly:
+    ///
+    /// > every segment ring edge (`wall != usize::MAX`) whose two ends are **not both branch
+    /// > nodes** has its key used by exactly two faces.
+    ///
+    /// Both-ends-branch keys are excluded because they are the chord+arc folds (their welding is
+    /// the carrier cell's item) — and the subdivision itself mints one more such piece on the
+    /// straddling boss (the middle of the `x = 4` wall's top edge, whose true twin is the chord).
+    /// Arc edges are excluded because their far side is the band, which contributes no ring.
+    ///
+    /// red: with the subdivision disabled, the pre-split single-use keys come back.
+    #[test]
+    fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
+        for (origin, axis) in [
+            ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
+            ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array(origin),
+                Vector3::from_array(axis),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            let setup = plane_index_setup(&m, plate, boss).unwrap();
+            let PlaneSetup {
+                planes: faces_tab,
+                geom,
+                surf_ix,
+                inc_a,
+                inc_b,
+                plane_ix,
+                class_owner,
+                n_a,
+                standard,
+                notes,
+                cyls,
+                ..
+            } = &setup;
+            let jd = Judge::new(geom, *standard, notes);
+            let trace_in = crate::combinatorics::trace_input(
+                &m,
+                [(plate, inc_a), (boss, inc_b)],
+                surf_ix,
+                faces_tab.len(),
+                &jd,
+                plane_ix,
+            );
+            let (plane_faces, disk_labels, _) =
+                crate::arrangement::trace_result_faces_full_for_test(
+                    &m,
+                    BoolKind::Fuse,
+                    plate,
+                    boss,
+                    &jd,
+                    faces_tab,
+                    plane_ix,
+                    cyls,
+                    *n_a,
+                    class_owner,
+                    &trace_in,
+                )
+                .expect("the arc population traces");
+            let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
+            let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
+            let mut faces = faces;
+            faces.extend(
+                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &disk_labels).expect("bands"),
+            );
+            let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
+            let named = crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls)
+                .expect("the naming stages run");
+            let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
+            let mut uses: std::collections::HashMap<
+                (crate::combinatorics::NodeId, crate::combinatorics::NodeId),
+                usize,
+            > = std::collections::HashMap::new();
+            let mut plain: Vec<(crate::combinatorics::NodeId, crate::combinatorics::NodeId)> =
+                Vec::new();
+            for lf in live {
+                for ring in lf.poly_rings() {
+                    let k = ring.nodes.len();
+                    for t in 0..k {
+                        let (a, b) = (ring.nodes[t], ring.nodes[(t + 1) % k]);
+                        if ring.walls[t] == usize::MAX {
+                            continue;
+                        }
+                        let key = crate::boolean::norm_edge(a, b);
+                        *uses.entry(key).or_insert(0) += 1;
+                        let both_branch = crate::combinatorics::branch_name(a).is_some()
+                            && crate::combinatorics::branch_name(b).is_some();
+                        if !both_branch && !plain.contains(&key) {
+                            plain.push(key);
+                        }
+                    }
+                }
+            }
+            let odd: Vec<_> = plain
+                .iter()
+                .filter(|k| uses[*k] != 2)
+                .map(|k| (*k, uses[k]))
+                .collect();
+            assert!(odd.is_empty(), "edges without exactly one twin: {odd:?}");
         }
     }
 

@@ -2536,6 +2536,71 @@ fn cmp_key(
     })
 }
 
+/// **The branch nodes lying strictly between two ring nodes, in ring order** — the exact half of
+/// the split-twin subdivision (`boolean::name_result_vertices`' opening pass). The caller has
+/// already matched the candidates' plane pair to the edge's `{own, wall}`, so by name every
+/// candidate lies on the edge's own carrier line and single-axis order *is* order along it.
+///
+/// ★ **The axis is "wherever the endpoints differ", not the line's direction.** Two distinct
+/// points of one line differ on some axis, the line is strictly monotone on that axis, and
+/// betweenness is direction-blind — so no direction vector is read at all, and the choice is
+/// deterministic (first differing axis). This is [`cmp_key`]'s vocabulary end to end; nothing new
+/// is exact here.
+///
+/// `None` when an order cannot be formed (a coordinate outside the rational vessel, an
+/// escalation, a class with no coefficients). The caller leaves such an edge **unsplit**, which
+/// is today's behaviour exactly — the far-plane road starves there and the walls-fallback net
+/// answers — so the conservative arm degrades to the state this pass was built to improve, never
+/// to something new.
+pub(crate) fn branch_between(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    a: NodeId,
+    b: NodeId,
+    candidates: &[NodeId],
+) -> Option<Vec<NodeId>> {
+    let key = |n: NodeId| -> Option<CoordKey> {
+        match n {
+            NodeId::ThreePlane(t) => Some(CoordKey::Three(t)),
+            NodeId::Branch { cyl, .. } => {
+                let (line, s) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
+                Some(CoordKey::Branch(Box::new((line, s))))
+            }
+        }
+    };
+    let (ka, kb) = (key(a)?, key(b)?);
+    let axis = (0..3).find(|&ax| matches!(cmp_key(jd, &ka, &kb, ax), Ok(s) if s != 0))?;
+    // `+1` = "the first is larger" (`cmp_key`), so `dir` is the a→b slope's sign on this axis and
+    // "strictly between" is both hops running the same way.
+    let dir = cmp_key(jd, &ka, &kb, axis).ok()?;
+    let mut mid: Vec<(NodeId, CoordKey)> = Vec::new();
+    for &c in candidates {
+        if c == a || c == b {
+            continue;
+        }
+        let kc = key(c)?;
+        if cmp_key(jd, &ka, &kc, axis).ok()? == dir && cmp_key(jd, &kc, &kb, axis).ok()? == dir {
+            mid.push((c, kc));
+        }
+    }
+    // Ring order: nearer to `a` first — along `dir`, the larger-toward-`a` side leads. A pair
+    // this cannot strictly order (an escalation, or two distinct nodes at one coordinate — which
+    // on a shared line would be two names for one point) makes the whole edge unsplittable.
+    let mut sortable = true;
+    mid.sort_by(|(_, x), (_, y)| match cmp_key(jd, x, y, axis) {
+        Ok(s) if s == dir => std::cmp::Ordering::Less,
+        Ok(s) if s == -dir => std::cmp::Ordering::Greater,
+        _ => {
+            sortable = false;
+            std::cmp::Ordering::Equal
+        }
+    });
+    if !sortable {
+        return None;
+    }
+    Some(mid.into_iter().map(|(n, _)| n).collect())
+}
+
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
 ///

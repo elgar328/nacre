@@ -1005,8 +1005,8 @@ pub(crate) struct Named {
     /// The grouping, **held** — raised where the old code raised it, deep in the minting.
     grouping: Result<Grouping, BoolError>,
     pub(crate) group_of: Vec<usize>,
-    /// The per-solid dissolve's product; `None` when the result is one body (the caller's list
-    /// stands).
+    /// The working face list where it differs from the caller's — the split-twin subdivision
+    /// and/or the per-solid dissolve rewrote rings. `None` = the caller's list stands.
     pub(crate) per_solid: Option<Vec<LocalFace>>,
     pub(crate) defs: HashMap<(usize, NodeId), Def>,
 }
@@ -1017,6 +1017,71 @@ pub(crate) fn name_result_vertices(
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Named, BoolError> {
+    // ★★★ **The split-twin subdivision — every branch node is cut into every edge it lies on.**
+    // The arrangement cannot do this: a branch point needs the cylinder, and the neighbouring
+    // plane class has no circle (the cylinder is parallel to it), so no vocabulary for the point
+    // — measured, the T-junction finding. Only here, where every class's rings are in one hand,
+    // can the plate-top's whole edge learn that the arc class subdivided its twin. Without this,
+    // `norm_edge` keys never match across such a pair, `far_plane` starves, and the future edge
+    // welding has no twins to weld.
+    //
+    // A branch node lies on an edge's carrier line exactly when its plane pair *is* the edge's
+    // `{own, wall}` — a name fact, no geometry — and betweenness is `branch_between`'s exact
+    // half. An edge whose order cannot be formed is left unsplit, which is precisely today's
+    // behaviour (starved `far_plane`, the walls-fallback net); the conservative arm degrades to
+    // the state this pass improves, never to something new. Identity for every non-arc input:
+    // no branch nodes, no pairs, no rewrite.
+    let mut by_pair: HashMap<[usize; 2], Vec<NodeId>> = HashMap::new();
+    for lf in faces {
+        for ring in lf.poly_rings() {
+            for &n in ring.iter() {
+                if let Some((pair, _, _)) = combinatorics::branch_name(n) {
+                    let v = by_pair.entry(pair).or_default();
+                    if !v.contains(&n) {
+                        v.push(n);
+                    }
+                }
+            }
+        }
+    }
+    let subdivided: Option<Vec<LocalFace>> = if by_pair.is_empty() {
+        None
+    } else {
+        let mut v = faces.to_vec();
+        for lf in &mut v {
+            let ClassIx::Plane(own) = lf.surf else {
+                continue;
+            };
+            for ring in lf.poly_rings_mut() {
+                let k = ring.nodes.len();
+                let mut nodes = Vec::with_capacity(k);
+                let mut walls = Vec::with_capacity(k);
+                for t in 0..k {
+                    let (a, b, w) = (ring.nodes[t], ring.nodes[(t + 1) % k], ring.walls[t]);
+                    nodes.push(a);
+                    walls.push(w);
+                    if w == usize::MAX {
+                        continue; // an arc edge: the arrangement's own split made it
+                    }
+                    let mut pair = [own, w];
+                    pair.sort_unstable();
+                    let Some(cands) = by_pair.get(&pair) else {
+                        continue;
+                    };
+                    if let Some(bet) = combinatorics::branch_between(jd, cyls, a, b, cands) {
+                        for x in bet {
+                            nodes.push(x);
+                            walls.push(w);
+                        }
+                    }
+                }
+                ring.nodes = nodes;
+                ring.walls = walls;
+            }
+        }
+        Some(v)
+    };
+    let faces: &[LocalFace] = subdivided.as_deref().unwrap_or(faces);
     // ★ **Which faces make one solid, decided before a single handle exists** — see [`Grouping`].
     // Everything derived below (an edge's far plane, a vertex's defining triple, the handles
     // themselves) is scoped to one group, so no result solid can be named by — or share a handle
@@ -1163,17 +1228,17 @@ pub(crate) fn name_result_vertices(
             }
         }
     }
-    // ★★ **The walls-fallback, for nodes the far-plane road starved on every incident face** —
-    // the arc population's bitten corner (a disk eating a plate corner leaves all three of its
-    // faces with an edge whose twin is subdivided, folded, or a band; measured, exactly one such
-    // node in the corpus). The carried walls of the node's own rings know the answer, under the
-    // same two guards the derivation above uses. The old comment's four-plane hazard — a wall
-    // that *carries* the edge's line without bounding the solid here — is why this runs strictly
-    // second and demands that **every deriving face agree**: where faces could disagree is
-    // exactly where the walls stop being trustworthy, so a split vote stays def-less rather than
-    // picking a winner. (For a planar input this widens honestly: a genuinely straight corner is
-    // still refused by the guards and keeps its `StraightAngle`; today's planar population never
-    // reaches here at all — the census is the proof.)
+    // ★★ **The walls-fallback — a zero-population net since the split-twin subdivision.** It was
+    // built for the arc population's bitten corner (a disk eating a plate corner starved every
+    // incident face's far-plane road — measured, exactly one such node); the subdivision above
+    // now matches those twins, so the corner derives on the main road and nothing reaches here
+    // today. Kept as the net for any future input whose far-plane road starves in a way the
+    // subdivision does not repair (an unsplittable edge takes exactly that path), under the same
+    // two guards as the derivation above plus one more: **every deriving face must agree** — the
+    // four-plane hazard (a wall that carries the edge's line without bounding the solid) is
+    // exactly where faces could disagree, so a split vote stays def-less rather than picking a
+    // winner. A genuinely straight corner is still refused by the guards and keeps its
+    // `StraightAngle`.
     let mut fallback: HashMap<(usize, NodeId), Option<[usize; 3]>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
@@ -1210,7 +1275,9 @@ pub(crate) fn name_result_vertices(
     Ok(Named {
         grouping,
         group_of,
-        per_solid,
+        // The dissolve's product already derives from the subdivided list (it cloned `faces`
+        // after the rebinding above), so the later layer wins and the earlier one backs it up.
+        per_solid: per_solid.or(subdivided),
         defs: def_triple,
     })
 }
@@ -1707,7 +1774,8 @@ fn reconstruct(
 }
 
 /// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.
-fn norm_edge(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
+/// (`pub(crate)` for the twin-match fence, which counts exactly these keys.)
+pub(crate) fn norm_edge(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
     if a <= b { (a, b) } else { (b, a) }
 }
 
