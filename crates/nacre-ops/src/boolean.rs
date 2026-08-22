@@ -1301,20 +1301,17 @@ fn reconstruct(
         return Ok(Vec::new());
     }
     let named = name_result_vertices(jd, seam, faces, cyls);
-    // ★★★ **The deferred arc stopper's raise, and the last place it can stand.** Everything above
-    // is model-immutable by signature; the rim table two screens down starts pushing vertices and
-    // edges. The interception is the same shape at its third layer: the naming runs — that is the
-    // point, its arms are exercised — and then the stopper's reject wins over whatever it said,
-    // `Ok` or `Err`, so an arc population's name never depends on how far the pipeline got.
-    if let Some(d) = deferred {
-        return Err(d);
-    }
+    // The naming's failure yields to the deferred stopper like every stage before it; the raise
+    // itself now stands after the vertex materialization below.
     let Named {
         grouping,
         group_of,
         per_solid,
         defs: def_triple,
-    } = named?;
+    } = match named {
+        Ok(n) => n,
+        Err(e) => return Err(deferred.unwrap_or(e)),
+    };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
 
     // Vertices (deterministic: first appearance across faces in order).
@@ -1341,12 +1338,46 @@ fn reconstruct(
                 // carries ("a corner with no turn").
                 let tri = match def_triple.get(&(g, node)).copied() {
                     Some(Def::Three(t)) => t,
-                    // ★ A backstop, not a road: the deferred stopper stands before this minting
-                    // for every arc input, and only arc inputs put a branch def here. If it is
-                    // ever reached, the population's own name is the honest answer — same
-                    // (reason, file) as the stopper, so the reject census reads one row.
-                    Some(Def::Branch { .. }) => {
-                        return Err(reject(RejectReason::ArcBoundNotYet));
+                    // ★★★ **A branch vertex is minted from its declaration** — the def already
+                    // names two result plane classes and the cylinder, so this is the class→handle
+                    // mapping and nothing else. That mapping is where `QuadRoot::canonical`
+                    // answers a **second** time: `NodeId::Branch` is canonical in *class* order,
+                    // `VertexDef::Branch` in *handle* order, and the class→handle map is not
+                    // monotone in general — a re-sort must carry the root through
+                    // (`transform`'s remap already locks the same rule on the way back out).
+                    // ★ The flip is **unexercised in today's corpus, measured** — dropping the
+                    // canonical call leaves every fence green, because both fixtures' class
+                    // order happens to match their handle order. The rule itself is pinned by
+                    // `QuadRoot::canonical`'s own locks in `nacre-topo` (the +X-axis fixtures
+                    // that forced `Lo|Hi|Double`); the population that turns this call red is a
+                    // boss whose cylinder classes arrive in the other order, and it gets its
+                    // fixture when it arrives rather than a contorted one now.
+                    // The tolerance is the Three arm's rule below, one surface swapped: measured
+                    // against the very `model.surface` objects `validate` reads, maxed with
+                    // `sv.tol` (which `branch_vertex_tol` built, meet-line term included).
+                    Some(Def::Branch {
+                        planes: p2,
+                        cyl,
+                        root,
+                    }) => {
+                        let (pair, root) = nacre_topo::QuadRoot::canonical(
+                            [planes[p2[0]].surf, planes[p2[1]].surf],
+                            root,
+                        );
+                        let cylinder = cyls[cyl].surf;
+                        let tol = pair
+                            .iter()
+                            .chain(std::iter::once(&cylinder))
+                            .map(|&s| model.surface(s).distance(sv.point))
+                            .fold(sv.tol, f64::max);
+                        let def = VertexDef::Branch {
+                            planes: pair,
+                            cylinder,
+                            root,
+                        };
+                        let h = model.push_vertex(def, sv.point, Some(tol));
+                        vh.insert((g, node), h);
+                        return Ok(h);
                     }
                     None => return Err(reject(RejectReason::StraightAngle)),
                 };
@@ -1385,11 +1416,30 @@ fn reconstruct(
         };
     // Materialize all vertex handles first. Outer then inner, rings in order: `vh`'s
     // first-appearance order fixes the vertex handles, and replay depends on it.
-    for (fi, lf) in faces.iter().enumerate() {
+    let mut materialized = Ok(());
+    'mat: for (fi, lf) in faces.iter().enumerate() {
         for &node in lf.poly_rings().flat_map(|r| r.iter()) {
-            node_handle(model, group_of[fi], node)?;
+            if let Err(e) = node_handle(model, group_of[fi], node) {
+                materialized = Err(e);
+                break 'mat;
+            }
         }
     }
+    // ★★★ **The deferred arc stopper's raise — after the vertices, before everything else.** The
+    // rim table below starts minting edges; the interception is the same shape at its fourth
+    // layer (the loop ran, the stopper's reject wins over whatever it said), so an arc
+    // population's name never depends on how far the pipeline got.
+    //
+    // ★★ **An arc reject therefore leaves its minted vertices in the store — deliberately.** They
+    // are garbage cells outside every live solid, the same class of residue a late reject's arena
+    // cells have always been: the live-set fences stay green, and a session that keeps recording
+    // after a reject rebuilds from the log (`replay`'s discipline, stated in `docs/design.md`).
+    // Holding the raise any earlier would put the branch minting behind an interception nothing
+    // can see past — the unreachable-machinery trap this ladder keeps refusing.
+    if let Some(d) = deferred {
+        return Err(d);
+    }
+    materialized?;
 
     // ★★ **The rim table** (M6-2a C4b): a curved bound has no node and no triple, so it is not
     // welded through the seam table at all — it is minted here, once per `(group, cylinder class,

@@ -1688,6 +1688,86 @@ mod tests {
         }
     }
 
+    /// **The refusal now leaves the branch vertices behind — minted, canonical, and measured.**
+    ///
+    /// ★★ The deferred stopper stands past the vertex materialization, so an arc reject's model
+    /// carries its minted vertices as garbage cells outside every live solid — the deliberate
+    /// trade recorded at the raise site. That is also what makes the minting *observable*: no
+    /// reject name can see past the interception, but the store can be read directly. Before the
+    /// boolean no `VertexDef::Branch` exists anywhere in the model, so a whole-store filter is
+    /// position-independent.
+    ///
+    /// ★ The coordinates are the fixtures' own crossing derivations (the same numbers the ring
+    /// and seam fences pin) — nothing here is copied from a run. The tolerance is a bound, and
+    /// ascending handle order is `VertexDef::Branch`'s own contract, minted through
+    /// `QuadRoot::canonical`'s second answer.
+    #[test]
+    fn a_branch_vertex_is_minted_before_the_refusal() {
+        let s = 2.0 - 3.0f64.sqrt() / 4.0;
+        for (origin, axis, crossings) in [
+            (
+                [4.0, 2.0, 2.0],
+                [0.0, 0.0, 1.0],
+                [[4.0, 1.5, 2.0], [4.0, 2.5, 2.0]],
+            ),
+            (
+                [4.0, 0.25, 2.0],
+                [1.0, 0.0, 0.0],
+                [[4.0, 0.75, 2.0], [4.0, 0.0, s]],
+            ),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array(origin),
+                Vector3::from_array(axis),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            let before = m.live_solids.clone();
+            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect_err("the arc population is still refused");
+            assert!(
+                matches!(
+                    &err,
+                    BoolError::Rejected {
+                        reason: RejectReason::ArcBoundNotYet,
+                        ..
+                    }
+                ),
+                "{err:?}"
+            );
+            assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+            let branch: Vec<_> = m
+                .vertices
+                .iter()
+                .filter(|(_, v)| matches!(v.def, nacre_topo::VertexDef::Branch { .. }))
+                .collect();
+            assert_eq!(branch.len(), 2, "both crossings minted, once each");
+            for (h, v) in branch {
+                let nacre_topo::VertexDef::Branch { planes: [a, b], .. } = v.def else {
+                    unreachable!("filtered above");
+                };
+                assert!(a < b, "planes in ascending handle order: {a:?} vs {b:?}");
+                let p = m.vertex_point(h);
+                assert!(
+                    crossings
+                        .iter()
+                        .any(|c| (0..3).all(|i| (p.as_array()[i] - c[i]).abs() < 1e-9)),
+                    "a minted branch vertex sits on a derived crossing: {p:?}"
+                );
+                let tol = m
+                    .vertex_tol(h)
+                    .expect("a discovered vertex carries its tol");
+                assert!(tol < 1e-12, "measured against what defines it: {tol}");
+            }
+        }
+    }
+
     /// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in
     /// the same two planes, which is what once made them look like a seating problem; what was
     /// actually hard was classifying **two curved bodies**, and both are now probed from a cap

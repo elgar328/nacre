@@ -781,29 +781,32 @@ pub enum RejectReason {
     /// **A circle was cut into arcs, and nothing downstream can build one yet.**
     ///
     /// The arrangement splits a circle a segment crosses and finishes the whole per-class road —
-    /// the cells are walked, nested, labelled, and emitted as faces with their arcs — the **seam
-    /// table realizes every vertex of the result**, branch vertices included
-    /// (`arrangement::seam_table`'s branch arm), and the assembly's naming pre-pass gives **every
-    /// vertex its definition** (`boolean::name_result_vertices` — a branch def is the name's own
-    /// payload, and a corner every neighbour starved of is named from its rings' carried walls).
-    /// So the refusal stands **after the vertex naming and before any minting**: everything up to
-    /// there runs, is measured, and is then not handed on.
+    /// the cells are walked, nested, labelled, and emitted as faces with their arcs. The assembly
+    /// then gets further still: the seam table realizes every vertex (`arrangement::seam_table`'s
+    /// branch arm), the split-twin subdivision cuts every neighbouring edge at the branch points
+    /// its own class could never discover, the naming pre-pass gives every vertex its definition,
+    /// and **every vertex is minted** — `VertexDef::Branch` included, canonical in handle order.
+    /// So the refusal stands **after the vertex materialization and before any edge**: everything
+    /// up to there runs, is measured, and is then not handed on.
     ///
-    /// What is still missing is the **minting**: three measured holes make an arc face's edges
-    /// unbuildable — a neighbouring face's twin edge is *subdivided* at a branch point the
-    /// neighbour's own arrangement cannot know (a T-junction: the cylinder is parallel to that
-    /// plane, so it has no circle there and no vocabulary for the point), the chord and the two
-    /// arcs between one pair of branch points fold into a single unordered edge key, and a band
-    /// face contributes no node edges at all. Behind those: `boolean::Ring` has no carrier for an
-    /// arc, the rim table mints a cut circle as one closed `[v, v]` edge, and a cut circle leaves
-    /// the band pass with no disk label.
+    /// ★★ **A refusal here therefore leaves its minted vertices in the store** — garbage cells
+    /// outside every live solid, the same class of residue a late reject's arena cells have
+    /// always been. The live-set is restored as ever; a session that keeps recording after a
+    /// reject rebuilds from the log (`replay`'s discipline).
     ///
-    /// ★ It intercepts **every** failure behind it — the per-class stages, the seam stretch and
-    /// the naming each hold the same shape (the stages run, the deferred stopper wins over
-    /// whatever they said) — so the population's name does not depend on how far the pipeline
-    /// got, which is what keeps this row of the reject census reading one thing. The price of
-    /// that interception is that no reject can testify the intercepted stages work; the direct
-    /// fences on `seam_table` and `name_result_vertices` (in `bands`) are those witnesses.
+    /// What is still missing is the **edges**: `boolean::Ring` has no carrier for an arc (its
+    /// walls are plane classes, and an arc edge carries the `usize::MAX` sentinel the reader
+    /// guards), the chord and the two arcs between one pair of branch points fold into a single
+    /// unordered edge key, the rim table mints a cut circle as one closed `[v, v]` edge, a band
+    /// face contributes no node edges, and a cut circle leaves the band pass with no disk label.
+    ///
+    /// ★ It intercepts **every** failure behind it — the per-class stages, the seam stretch, the
+    /// naming and the materialization each hold the same shape (the stages run, the deferred
+    /// stopper wins over whatever they said) — so the population's name does not depend on how
+    /// far the pipeline got, which is what keeps this row of the reject census reading one thing.
+    /// The price of that interception is that no reject can testify the intercepted stages work;
+    /// the direct fences in `bands` (on `seam_table`, `name_result_vertices`, the edge-key census
+    /// and the minted-vertex store) are those witnesses.
     ///
     /// ★ A stopper of the shape `CylinderBooleanNotYet` had in M6-2a: it names what is missing, it
     /// is measured by the fixtures it holds, and the commit that finishes the road removes it.
