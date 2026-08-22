@@ -1580,7 +1580,7 @@ mod tests {
     /// edge and the arc class's subdivided pieces share `norm_edge` keys only once the whole edge
     /// is cut at the same branch nodes. So the proposition, with its exceptions stated exactly:
     ///
-    /// > every segment ring edge (`wall != usize::MAX`) whose two ends are **not both branch
+    /// > every segment ring edge (a `Wall::Plane` carrier) whose two ends are **not both branch
     /// > nodes** has its key used by exactly two faces.
     ///
     /// Both-ends-branch keys are excluded because they are the chord+arc folds (their welding is
@@ -1667,7 +1667,7 @@ mod tests {
                     let k = ring.nodes.len();
                     for t in 0..k {
                         let (a, b) = (ring.nodes[t], ring.nodes[(t + 1) % k]);
-                        if ring.walls[t] == usize::MAX {
+                        if matches!(ring.walls[t], crate::boolean::Wall::Arc { .. }) {
                             continue;
                         }
                         let key = crate::boolean::norm_edge(a, b);

@@ -415,10 +415,10 @@ pub(crate) fn pass_through(
                 .collect::<Option<_>>()?;
             // ★ The wall of the edge leaving vertex `i` is the plane of the face on the other side
             // of that edge — carried, not derived (see `boolean::Ring`).
-            let mut walls: Vec<usize> = lp
+            let mut walls: Vec<crate::boolean::Wall> = lp
                 .half_edges
                 .iter()
-                .map(|he| vc.wall(he.edge, wc))
+                .map(|he| Some(crate::boolean::Wall::Plane(vc.wall(he.edge, wc)?)))
                 .collect::<Option<_>>()?;
             // Rings are emitted CCW about the *class*'s outward normal (`emit_faces`), and `flip`
             // alone carries which chamber is material. A face wound against the class frame is

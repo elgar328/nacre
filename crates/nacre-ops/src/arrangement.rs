@@ -3313,20 +3313,27 @@ fn emit_faces(
                 cyl: edges.circles[i].cyl,
             };
         }
-        // ★★ **`Ring` has no carrier for an arc, and this is where that runs out.** A ring's walls
-        // are plane classes and `assemble_fuse_cut` indexes the class table with them, so an arc
-        // half-edge has nothing true to put here; widening `Ring` to a carrier is the next cell's
-        // own item. Until then the sentinel goes in and is checked **where it is read**
-        // (`boolean::edge_for`), not here: this is the producer, and the true proposition is not
-        // "no arc reaches me" — an arc class reaches this function on every run now that the
-        // stopper stands behind it — but "nobody indexes the class table with `usize::MAX`".
+        // ★★ `Ring.walls` is a carrier now (`boolean::Wall`), so an arc half-edge has something
+        // true to put here at last: its cylinder class and which way this side travels. What is
+        // still missing is downstream — `edge_for` refuses an arc carrier by the population's
+        // name until the arc-casting cell teaches it the ordered circle key.
         crate::boolean::Bound::Ring(crate::boolean::Ring::new(
             cell.half_edges.iter().map(|&he| edges.origin(he)).collect(),
             cell.half_edges
                 .iter()
                 .map(|&he| match edges.kind(he) {
-                    HalfEdgeKind::Seg(i) => edges.segs[i].wall,
-                    _ => usize::MAX,
+                    HalfEdgeKind::Seg(i) => crate::boolean::Wall::Plane(edges.segs[i].wall),
+                    // `edge_at`'s own convention, carried not re-derived: `MergedArc::end` runs
+                    // counter-clockwise about the axis, so the even half-edge travels that way
+                    // and its twin the other.
+                    HalfEdgeKind::Arc(i) => crate::boolean::Wall::Arc {
+                        cyl: edges.arcs[i].cyl,
+                        ccw: he % 2 == 0,
+                    },
+                    // Mirrors `origin`'s statement: the nodes map above already refused it.
+                    HalfEdgeKind::Circle(_) => {
+                        unreachable!("a circle's pseudo-half-edge has no vertex to leave")
+                    }
                 })
                 .collect(),
         ))

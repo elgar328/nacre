@@ -642,8 +642,26 @@ pub(crate) struct SeamVertex {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Ring {
     pub(crate) nodes: Vec<NodeId>,
-    /// `walls[i]` is the plane class the edge `nodes[i] -> nodes[i+1]` rides.
-    pub(crate) walls: Vec<usize>,
+    /// `walls[i]` is the carrier of the edge `nodes[i] -> nodes[i+1]`.
+    pub(crate) walls: Vec<Wall>,
+}
+
+/// **A ring edge's carrier** — the type half of "a line is unordered, a circle is ordered".
+///
+/// A plane-carried edge rides one wall class, as `Ring.walls` always said. An arc rides a
+/// cylinder, and for it the ring additionally remembers **which way around the axis this edge
+/// runs**: `ccw` restates `ClassEdges::edge_at`'s own convention (*"`MergedArc::end` runs
+/// counter-clockwise about the axis"* — the even half-edge travels that way, its twin the other),
+/// carried rather than re-derived. That bit is what will let `edge_for` tell the two
+/// complementary arcs between one pair of branch vertices apart.
+///
+/// ★ Replacing the `usize::MAX` sentinel with a variant also kills a recorded hazard for free:
+/// `dissolve_straight_angles` folds on wall *equality*, and two arcs of different circles — or
+/// of one circle in different directions — now compare unequal instead of `MAX == MAX`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum Wall {
+    Plane(usize),
+    Arc { cyl: usize, ccw: bool },
 }
 
 impl Ring {
@@ -661,10 +679,12 @@ impl Ring {
                     combinatorics::three_plane_name(n).expect("a clean fixture ring names triples")
                 };
                 let (a, b) = (name(nodes[i]), name(nodes[(i + 1) % k]));
-                a.iter()
-                    .copied()
-                    .find(|&c| c != p && b.contains(&c))
-                    .expect("a clean fixture ring edge rides one wall")
+                Wall::Plane(
+                    a.iter()
+                        .copied()
+                        .find(|&c| c != p && b.contains(&c))
+                        .expect("a clean fixture ring edge rides one wall"),
+                )
             })
             .collect();
         Ring { nodes, walls }
@@ -679,7 +699,7 @@ impl std::ops::Deref for Ring {
 }
 
 impl Ring {
-    pub(crate) fn new(nodes: Vec<NodeId>, walls: Vec<usize>) -> Ring {
+    pub(crate) fn new(nodes: Vec<NodeId>, walls: Vec<Wall>) -> Ring {
         debug_assert_eq!(nodes.len(), walls.len(), "one wall per edge");
         Ring { nodes, walls }
     }
@@ -690,7 +710,20 @@ impl Ring {
         jd: &Judge<'_, WorkingPlane>,
         p: usize,
     ) -> Result<Vec<combinatorics::RingEdge>, BoolError> {
-        combinatorics::ring_edges_with_walls(jd, p, &self.nodes, &self.walls)
+        // ★ **A legacy shim, on purpose.** This is the names-road (the grouping's component
+        // machinery and `self_touch` build their edges here), and its carrier-ization is the
+        // grouping-arm cell's own item — today it must behave exactly as it always has, so an arc
+        // carrier maps back to the sentinel it used to be and the road's own branch-node guard
+        // stays the thing that answers.
+        let legacy: Vec<usize> = self
+            .walls
+            .iter()
+            .map(|w| match w {
+                Wall::Plane(c) => *c,
+                Wall::Arc { .. } => usize::MAX,
+            })
+            .collect();
+        combinatorics::ring_edges_with_walls(jd, p, &self.nodes, &legacy)
     }
 }
 
@@ -1061,9 +1094,9 @@ pub(crate) fn name_result_vertices(
                     let (a, b, w) = (ring.nodes[t], ring.nodes[(t + 1) % k], ring.walls[t]);
                     nodes.push(a);
                     walls.push(w);
-                    if w == usize::MAX {
+                    let Wall::Plane(w) = w else {
                         continue; // an arc edge: the arrangement's own split made it
-                    }
+                    };
                     let mut pair = [own, w];
                     pair.sort_unstable();
                     let Some(cands) = by_pair.get(&pair) else {
@@ -1072,7 +1105,7 @@ pub(crate) fn name_result_vertices(
                     if let Some(bet) = combinatorics::branch_between(jd, cyls, a, b, cands) {
                         for x in bet {
                             nodes.push(x);
-                            walls.push(w);
+                            walls.push(Wall::Plane(w));
                         }
                     }
                 }
@@ -1250,9 +1283,13 @@ pub(crate) fn name_result_vertices(
                 if def_triple.contains_key(&(g, node)) {
                     continue;
                 }
-                let (prev, next) = (ring.walls[(t + k - 1) % k], ring.walls[t]);
-                // An arc edge's wall is the carrier sentinel — no plane to name.
-                if prev == usize::MAX || next == usize::MAX || prev == next {
+                // An arc edge carries a cylinder, not a plane — no wall to name a triple with.
+                let (Wall::Plane(prev), Wall::Plane(next)) =
+                    (ring.walls[(t + k - 1) % k], ring.walls[t])
+                else {
+                    continue;
+                };
+                if prev == next {
                     continue;
                 }
                 if jd.plane_pair_dir_sign(lf.surf.plane(), prev, next) == 0 {
@@ -1565,19 +1602,19 @@ fn reconstruct(
             let half_edges: Vec<HalfEdge> = (0..k)
                 .map(|t| {
                     let (va, vb) = (handles[t], handles[(t + 1) % k]);
-                    // ★★ **The sentinel is checked where it is read.** `arrangement::emit_faces`
-                    // puts `usize::MAX` in `walls[t]` for an arc half-edge, because a ring's walls
-                    // are plane classes and an arc rides a cylinder. The producer cannot promise
-                    // "no arc" — arc classes reach it — so the proposition that *is* true lives
-                    // here: nothing indexes the class table with the sentinel. Today the stopper
-                    // stands in front of assembly and this never fires; the day it does is the day
-                    // `Ring` owes a carrier.
-                    debug_assert_ne!(
-                        r.walls[t],
-                        usize::MAX,
-                        "an arc half-edge's wall sentinel reached the class table"
-                    );
-                    let e = edge_for(model, va, vb, [planes[r.walls[t]].surf, face_surf])?;
+                    // ★ The commit that gave `Ring` its carrier keeps this arm a named refusal
+                    // for one more commit: the arc *key* and the arc edge's minting are the next
+                    // change, and until then reaching here with an arc carrier is the stopper's
+                    // own population — its name, not a panic (the old `usize::MAX` sentinel
+                    // indexed the class table and died; the type now makes the honest arm
+                    // spellable).
+                    let w = match r.walls[t] {
+                        Wall::Plane(w) => w,
+                        Wall::Arc { .. } => {
+                            return Err(reject(RejectReason::ArcBoundNotYet));
+                        }
+                    };
+                    let e = edge_for(model, va, vb, [planes[w].surf, face_surf])?;
                     let forward = model.edges.get(e).vertices[0] == va;
                     Ok(HalfEdge { edge: e, forward })
                 })
@@ -1950,8 +1987,8 @@ fn ring_edges(ring: &[NodeId]) -> impl Iterator<Item = (NodeId, NodeId)> + '_ {
     (0..ring.len()).map(move |i| (ring[i], ring[(i + 1) % ring.len()]))
 }
 
-/// A ring's directed edges **with the wall each rides**.
-fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((NodeId, NodeId), usize)> + '_ {
+/// A ring's directed edges **with the carrier each rides**.
+fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((NodeId, NodeId), Wall)> + '_ {
     (0..ring.len()).map(move |i| {
         (
             (ring.nodes[i], ring.nodes[(i + 1) % ring.len()]),
@@ -1980,7 +2017,7 @@ fn merge_component(
     // 1. Collect directed edges **with their walls**. A repeat in the same direction means two
     //    faces claim the same side.
     // One map, `(count, wall)` — the wall rides along rather than in a second table.
-    let mut dirs: HashMap<(NodeId, NodeId), (usize, usize)> = HashMap::new();
+    let mut dirs: HashMap<(NodeId, NodeId), (usize, Wall)> = HashMap::new();
     for lf in group {
         for ring in lf.poly_rings() {
             for (e, wall) in ring_edges_walled(ring) {
@@ -2100,13 +2137,12 @@ fn merge_component(
 /// Dropping from every incident ring at once keeps a vertex that is a real corner somewhere
 /// (degree > 2), which is what stops a T-junction from opening.
 ///
-/// ★★ **Arc-bearing rings flow through here now, and equal walls lie for them** (2026-08-22).
-/// An arc half-edge's wall is the `usize::MAX` sentinel, so two *consecutive arcs* compare as
-/// "same wall" and the branch vertex between them would dissolve — silently, since the deferred
-/// arc stopper discards this pass's output anyway. Unfired today, measured: in both arc fixtures
-/// a chord or a segment always sits between two arcs, so no arc–arc adjacency exists. The day a
-/// circle is cut into arcs that meet each other (two chords through one circle), this test must
-/// learn the carrier — the same cell that widens `Ring.walls`.
+/// ★★ **Arc-bearing rings flow through here, and the carrier keeps equality honest** (2026-08-23).
+/// While the wall was the `usize::MAX` sentinel, two *consecutive arcs* compared as "same wall"
+/// and the branch vertex between them would have dissolved — a recorded hazard, unfired only
+/// because in both arc fixtures a chord or a segment sits between any two arcs. `Wall`'s derived
+/// equality killed it structurally: arcs of different circles, or of one circle in different
+/// directions, now compare unequal.
 fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
     // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of
@@ -2116,7 +2152,7 @@ fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // per `(node, face)` and `bent` records the first disagreement — flat maps, because a nested
     // one per node costs more than the whole pass is worth (measured: 4% of a fold).
     let mut nbrs: HashMap<NodeId, HashSet<NodeId>> = HashMap::new();
-    let mut first_wall: HashMap<(NodeId, usize), usize> = HashMap::new();
+    let mut first_wall: HashMap<(NodeId, usize), Wall> = HashMap::new();
     let mut bent: HashSet<NodeId> = HashSet::new();
     for &fi in which {
         let lf = &out[fi];
