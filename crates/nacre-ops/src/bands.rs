@@ -1455,9 +1455,10 @@ mod tests {
     /// through the door production uses.**
     ///
     /// ★★★ Same instrument shape as the seam fence, same reason: the deferred stopper stands
-    /// right after `name_result_vertices` and intercepts everything, so no reject name can
-    /// testify the naming completed — a direct second consumer is the only witness. This walks
-    /// production's road (trace → clean → bands → seam → naming) and asserts on its product.
+    /// behind `name_result_vertices` (past the vertex materialization now) and intercepts
+    /// everything, so no reject name can testify the naming completed — a direct second consumer
+    /// is the only witness. This walks production's road (trace → clean → bands → seam → naming)
+    /// and asserts on its product.
     ///
     /// ★★ Disabling the branch arm reddens both fixtures (and the walls-fallback cannot fake a
     /// branch def past its MAX-wall guard). ★ The fallback itself went **zero-population** when

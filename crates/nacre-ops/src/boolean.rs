@@ -982,7 +982,8 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// every ring node's defining triple.
 ///
 /// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
-/// one: the deferred arc stopper will stand right after this and intercepts everything, so no
+/// one: the deferred arc stopper stands behind it (past the vertex materialization now) and
+/// intercepts everything, so no
 /// reject name can testify that the naming completed — only a fence that calls it directly on the
 /// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
 /// **A result vertex's definition, in class space** — what the minting turns into a `VertexDef`.
