@@ -1528,8 +1528,9 @@ mod tests {
                 band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
-            let named = crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls)
-                .expect("the naming stages run");
+            let named =
+                crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
+                    .expect("the naming stages run");
             let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
             // Completeness: every ring node has a definition.
             let mut missing = Vec::new();
@@ -1653,8 +1654,9 @@ mod tests {
                 band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
-            let named = crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls)
-                .expect("the naming stages run");
+            let named =
+                crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
+                    .expect("the naming stages run");
             let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
             let mut uses: std::collections::HashMap<
                 (crate::combinatorics::NodeId, crate::combinatorics::NodeId),
@@ -2045,6 +2047,94 @@ mod tests {
             let twice: Vec<_> = seen.values().filter(|v| v.len() == 2).collect();
             assert_eq!(twice.len(), 1, "exactly one edge is walked twice: the seam");
             assert_ne!(twice[0][0], twice[0][1], "once in each sense");
+        }
+    }
+
+    /// **The grouping joins across a cut rim — through the door production uses.**
+    ///
+    /// ★★★ A cut circle bounds no whole disk, so the rim-key rule cannot see it, and the
+    /// unordered node rule cannot either: on a 2-node circle the chord and both complementary
+    /// arcs fold into one `norm_edge` pair (six users where each piece has two). The `JoinKey`'s
+    /// ordered arc pairs — "a line is unordered, a circle is ordered", third appearance — give
+    /// every piece exactly its cap and the band, so the result comes back as **one** component.
+    ///
+    /// ★ Asserted on `name_result_vertices`' own product (the subdivision must run first for the
+    /// chord's line key to match), across all three fixtures. red: the band's registration
+    /// removed → n == 2 and the held grouping is the old `BranchVertexUnnamed`.
+    #[test]
+    fn the_grouping_joins_across_a_cut_rim() {
+        for (origin, axis) in [
+            ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
+            ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
+            ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0]),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array(origin),
+                Vector3::from_array(axis),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            let setup = plane_index_setup(&m, plate, boss).unwrap();
+            let PlaneSetup {
+                planes: faces_tab,
+                geom,
+                surf_ix,
+                inc_a,
+                inc_b,
+                plane_ix,
+                class_owner,
+                n_a,
+                standard,
+                notes,
+                cyls,
+                ..
+            } = &setup;
+            let jd = Judge::new(geom, *standard, notes);
+            let trace_in = crate::combinatorics::trace_input(
+                &m,
+                [(plate, inc_a), (boss, inc_b)],
+                surf_ix,
+                faces_tab.len(),
+                &jd,
+                plane_ix,
+            );
+            let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
+                &m,
+                BoolKind::Fuse,
+                plate,
+                boss,
+                &jd,
+                faces_tab,
+                plane_ix,
+                cyls,
+                *n_a,
+                class_owner,
+                &trace_in,
+            )
+            .expect("the arc population traces");
+            let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
+            let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
+            let mut faces = faces;
+            faces.extend(
+                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
+            );
+            let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
+                .expect("the seam realizes branch nodes");
+            let named =
+                crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
+                    .expect("the naming runs");
+            let g = named
+                .grouping
+                .as_ref()
+                .expect("the grouping joins across the cut rim");
+            assert_eq!(g.n, 1, "one component");
+            assert_eq!(g.positives, vec![0], "one material piece, no cavity");
         }
     }
 

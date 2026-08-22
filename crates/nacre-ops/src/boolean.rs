@@ -272,7 +272,10 @@ fn check_result_topology(
 /// faces that merely lie on the same plane without touching must each survive on their own".
 ///
 /// An enclosed void is its own component, as before — its boundary shares no edge with the outer.
-fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
+fn face_components(
+    faces: &[LocalFace],
+    cut_rims: &crate::arrangement::CutRims,
+) -> (Vec<usize>, usize) {
     fn find(p: &mut [usize], mut x: usize) -> usize {
         while p[x] != x {
             p[x] = p[p[x]];
@@ -280,18 +283,65 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
         }
         x
     }
+    /// The joining key — the third appearance of "a line is unordered, a circle is ordered"
+    /// (`Wall` is the type half, `EdgeKey` the handle-space half; this is the node-space half).
+    /// A 2-node circle folds its chord and both complementary arcs into one `norm_edge` pair, so
+    /// an unordered key counts six users where each piece really has two — the CCW order is the
+    /// bit that keeps them apart, exactly as it is in the edge welding.
+    #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+    enum JoinKey {
+        Line((NodeId, NodeId)),
+        Arc {
+            cyl: usize,
+            from: NodeId,
+            to: NodeId,
+        },
+    }
     let mut parent: Vec<usize> = (0..faces.len()).collect();
     // Which faces use each ring edge. A count other than two is not a contact between neighbours:
     // one is a dangling edge and more is a pinch, and both are the edge-use guard's to name.
-    let mut users: HashMap<(NodeId, NodeId), Vec<usize>> = HashMap::new();
+    let mut users: HashMap<JoinKey, Vec<usize>> = HashMap::new();
     for (i, lf) in faces.iter().enumerate() {
         for ring in rings_of(lf) {
             let k = ring.len();
             for t in 0..k {
-                users
-                    .entry(norm_edge(ring[t], ring[(t + 1) % k]))
-                    .or_default()
-                    .push(i);
+                let (a, b) = (ring[t], ring[(t + 1) % k]);
+                let key = match ring.walls[t] {
+                    Wall::Plane(_) => JoinKey::Line(norm_edge(a, b)),
+                    Wall::Arc { cyl, ccw } => {
+                        let (from, to) = if ccw { (a, b) } else { (b, a) };
+                        JoinKey::Arc { cyl, from, to }
+                    }
+                };
+                users.entry(key).or_default().push(i);
+            }
+        }
+    }
+    // ★★ **A band whose rim is cut joins by its arcs, not by a rim key.** The cut circle bounds
+    // no whole disk, so the second rule below cannot see it — and the cap side of each arc is a
+    // *ring step*, so the join lands in the node rule instead: the band registers the same CCW
+    // pairs its chain is assembled from (`CutRim.nodes`, cyclic — carried from the split, the one
+    // source), and every arc meets exactly its cap face there. The wrap arc is one node pair
+    // here even where the seam vertex splits it into two edges — S is a handle, not a node.
+    for (i, lf) in faces.iter().enumerate() {
+        let ClassIx::Cyl(k) = lf.surf else { continue };
+        for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
+            let Bound::Band { lo, hi } = b else { continue };
+            for c in [*lo, *hi] {
+                let Some(cr) = cut_rims.get(&(k, c)) else {
+                    continue;
+                };
+                let m = cr.nodes.len();
+                for j in 0..m {
+                    users
+                        .entry(JoinKey::Arc {
+                            cyl: k,
+                            from: cr.nodes[j],
+                            to: cr.nodes[(j + 1) % m],
+                        })
+                        .or_default()
+                        .push(i);
+                }
             }
         }
     }
@@ -349,13 +399,14 @@ fn face_components(faces: &[LocalFace]) -> (Vec<usize>, usize) {
 /// `validate`): split the handles there and the defect stops being visible while the model keeps
 /// its zero-thickness material. Grouping keeps a cavity with its host, so that case still reaches
 /// the reject it deserves.
-struct Grouping {
+pub(crate) struct Grouping {
     /// Connected-component label per face, dense `0..n`.
     labels: Vec<usize>,
-    /// Component count.
-    n: usize,
+    /// Component count. (`pub(crate)`: the grouping fence in `bands` asserts a cut-rim result
+    /// joins into one component through the door production uses.)
+    pub(crate) n: usize,
     /// The material components (even nesting depth), ascending.
-    positives: Vec<usize>,
+    pub(crate) positives: Vec<usize>,
     /// Per material component, the components its solid is made of: itself first, then its
     /// cavities in ascending order.
     comps_of: HashMap<usize, Vec<usize>>,
@@ -375,8 +426,9 @@ fn group_faces(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
+    cut_rims: &crate::arrangement::CutRims,
 ) -> Result<Grouping, BoolError> {
-    let (labels, n) = face_components(faces);
+    let (labels, n) = face_components(faces, cut_rims);
     let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];
     for (i, lf) in faces.iter().enumerate() {
         by_comp_lf[labels[i]].push(lf);
@@ -1055,7 +1107,8 @@ pub(crate) enum Def {
 
 pub(crate) struct Named {
     /// The grouping, **held** — raised where the old code raised it, deep in the minting.
-    grouping: Result<Grouping, BoolError>,
+    /// (`pub(crate)`: the grouping fence reads the held result directly.)
+    pub(crate) grouping: Result<Grouping, BoolError>,
     pub(crate) group_of: Vec<usize>,
     /// The working face list where it differs from the caller's — the split-twin subdivision
     /// and/or the per-solid dissolve rewrote rings. `None` = the caller's list stands.
@@ -1068,6 +1121,7 @@ pub(crate) fn name_result_vertices(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
+    cut_rims: &crate::arrangement::CutRims,
 ) -> Result<Named, BoolError> {
     // ★★★ **The split-twin subdivision — every branch node is cut into every edge it lies on.**
     // The arrangement cannot do this: a branch point needs the cylinder, and the neighbouring
@@ -1143,7 +1197,7 @@ pub(crate) fn name_result_vertices(
     // reported it, and until then every face is one group — which is exactly the keying this
     // function used before groups existed. So a boolean that declines pushes the arena cells it
     // always did (`replay::a_late_reject_is_not_index_neutral` measures that).
-    let grouping = group_faces(jd, faces, cyls);
+    let grouping = group_faces(jd, faces, cyls, cut_rims);
     let group_of: Vec<usize> = match &grouping {
         Ok(g) => g.group_of.clone(),
         Err(_) => vec![0; faces.len()],
@@ -1357,7 +1411,7 @@ fn reconstruct(
     if faces.is_empty() {
         return Ok(Vec::new());
     }
-    let named = name_result_vertices(jd, seam, faces, cyls);
+    let named = name_result_vertices(jd, seam, faces, cyls, cut_rims);
     // The naming's failure yields to the deferred stopper like every stage before it; the raise
     // itself now stands after the shell guard below.
     let Named {

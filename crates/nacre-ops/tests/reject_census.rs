@@ -478,25 +478,19 @@ const CORPUS: [Fixture; 14] = [
         // The circle is **split** there now; what stops is the assembly of an arc-bounded loop.
         expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment,
-        // ★ Two guards ring, one surfaces. The grouping's component walk runs on arc faces
-        // first — its ring naming meets a branch node and rings `branch_vertex_unnamed`
-        // (`ring_edges_with_walls`); that error is *held* (the grouping's own discipline) and
-        // the deferred stopper's raise (after the shell guard now) supersedes it. The face loop
-        // no longer rings anything: the band assembles its cut rim from the arc chain and the
-        // shell guard counts a closed garbage shell — that silence is itself part of this row's
-        // assertion.
-        raised: &[
-            (
-                "arc_bound_not_yet",
-                None,
-                "crates/nacre-ops/src/arrangement.rs",
-            ),
-            (
-                "branch_vertex_unnamed",
-                None,
-                "crates/nacre-ops/src/combinatorics.rs",
-            ),
-        ],
+        // ★ One guard rings, and it surfaces. The grouping joins across the cut rim now
+        // (`JoinKey`'s ordered arc pairs), so the single-component result never builds the
+        // component machinery whose ring naming used to ring `branch_vertex_unnamed` — and
+        // `self_touch_reject` runs for the first time on an arc input and abstains *silently*
+        // by its own documented rule (an edge with a branch endpoint has no three-plane name
+        // for the plane-membership sieve). The assembly rings nothing either: the band builds,
+        // the shell guard counts a closed garbage shell. All that silence is part of this
+        // row's assertion.
+        raised: &[(
+            "arc_bound_not_yet",
+            None,
+            "crates/nacre-ops/src/arrangement.rs",
+        )],
         surfaced: &[("arc_bound_not_yet", None)],
     },
     Fixture {
@@ -505,25 +499,19 @@ const CORPUS: [Fixture; 14] = [
         // runs — the first non-`+Z` cylinder in the corpus.
         expect: Some(RejectReason::ArcBoundNotYet),
         run: circle_meets_segment_turned,
-        // ★ Two guards ring, one surfaces. The grouping's component walk runs on arc faces
-        // first — its ring naming meets a branch node and rings `branch_vertex_unnamed`
-        // (`ring_edges_with_walls`); that error is *held* (the grouping's own discipline) and
-        // the deferred stopper's raise (after the shell guard now) supersedes it. The face loop
-        // no longer rings anything: the band assembles its cut rim from the arc chain and the
-        // shell guard counts a closed garbage shell — that silence is itself part of this row's
-        // assertion.
-        raised: &[
-            (
-                "arc_bound_not_yet",
-                None,
-                "crates/nacre-ops/src/arrangement.rs",
-            ),
-            (
-                "branch_vertex_unnamed",
-                None,
-                "crates/nacre-ops/src/combinatorics.rs",
-            ),
-        ],
+        // ★ One guard rings, and it surfaces. The grouping joins across the cut rim now
+        // (`JoinKey`'s ordered arc pairs), so the single-component result never builds the
+        // component machinery whose ring naming used to ring `branch_vertex_unnamed` — and
+        // `self_touch_reject` runs for the first time on an arc input and abstains *silently*
+        // by its own documented rule (an edge with a branch endpoint has no three-plane name
+        // for the plane-membership sieve). The assembly rings nothing either: the band builds,
+        // the shell guard counts a closed garbage shell. All that silence is part of this
+        // row's assertion.
+        raised: &[(
+            "arc_bound_not_yet",
+            None,
+            "crates/nacre-ops/src/arrangement.rs",
+        )],
         surfaced: &[("arc_bound_not_yet", None)],
     },
     Fixture {
