@@ -12165,3 +12165,69 @@ kit 72 · 앱(wasm 두 벌 + tsc + vitest 142 + wasm clippy). 전부 cargo 자�
 보고(`Bound::Circle|Band` 만 매치) 후자는 `edge_for` 와 **같은 키 충돌**을 갖는다(조사가 찾은
 일곱째, 같은 사실의 두 얼굴). 그 뒤 **밴드 패스** · rim 표의 호 행 · tess 의 호 팔 ·
 validate 의 혼합 루프 · `reuse.rs` 의 `CanonNode::Circle` · 「한 점 두 이름」 접기.
+
+---
+
+## 씸 표가 분기 정점을 realize 하고, 정지판이 배열을 떠난다 (2026-08-22)
+
+정지판이 씸 스트레치(unify → 밴드 → 씸) 뒤로 내려갔고, 씸 표가 분기 노드를 realize 한다:
+좌표는 `branch_point`(이름에서 재해석), tol 은 `branch_vertex_tol` — 평면 둘 + 원통면 +
+**meet line**(분기점이 정의상 그 위에 있는 직선; 축-평행 평면 ∩ 원통은 자오선 둘이라 닫힌 형식이
+없으므로 나머지 쌍별 곡선 둘은 기록하고 뺐다 — 원통면 거리가 그 방향을 묶는다). 가로채기는
+**두 층에서 같은 모양**이다: 단계들이 돌고, deferred 가 그들의 답 위에서 이긴다(`Ok` 든 `Err` 든).
+
+### 구현 중 발견 — 3회차의 가로채기가 2회차의 「공짜 잠금」을 죽였다
+
+★★★★★ 계획의 잠금 절: 「씸이 분기 팔을 탔다는 것은 기존 이름 울타리가 공짜로 잠근다 — 팔이
+없으면 `BranchVertexUnnamed` 가 deferred 보다 먼저 나가 빨개진다」. **거짓이 됐다** — 3회차가
+스트레치 전체를 가로채기로 덮으면서 그 `BranchVertexUnnamed` 도 삼켜진다. red 로 확인: 분기 팔을
+통째로 꺼도(`if false &&`) 모든 불리언-층 울타리가 초록이다. **두 회차의 수정이 각각 옳았는데
+상호작용이 셋째 구멍을 만들었다** — 검토 셋이 못 보고 구현의 red 프로브가 봤다.
+([[watch-the-lock-go-red]] — 초록을 믿기 전에 잠그려는 것을 꺼 본다)
+
+⇒ 씸 채움을 **`seam_table`** 로 추출(소비자 둘 = 정당한 추출)하고, 새 울타리
+`the_seam_realizes_a_branch_vertex_and_measures_it` 가 **프로덕션이 먹는 바로 그 면 목록**으로
+직접 부른다: trace 의 deferred 가 `ArcBoundNotYet` 인 것 → unify → 밴드 append → `seam_table` →
+분기 엔트리 **둘**, 각 `tol < 1e-12`. 좌표 재단언은 안 한다 — 같은 `branch_point` road 를
+`outer_rings` 가 이미 잠그고, Lo/Hi 혼동도 그쪽이 가른다(두 교차 모두 모든 정의면 위에 있어
+tol 로는 구별 불가).
+
+### 게이트를 지키다 게이트에 걸렸다 — 문의 나머지 반쪽이 생겼다
+
+★★★★ 씸 팔 초안이 `NodeId::Branch` 를 `arrangement.rs` 에서 직접 철자했다 — **이번 세션에 내가
+문서화한 그 문 게이트 위반**(2회차 점검이 「자동화 안 돼서 썩었다」고 적은 바로 그것: 규칙을 적은
+손이 다음 날 그 규칙을 어겼다). 문서가 예고한 쌍둥이
+`branch_name(n) -> Option<([usize;2], usize, QuadRoot)>` 에 드디어 실소비자가 생겼으므로 문을
+만들었고, **기존 위반 셋도 같은 문으로 이행**했다(`arc_split_witness` 의 `separates` ·
+`split_circles` 안의 둘). 게이트는 다시 **0 히트**다.
+
+### red 프로브 넷 — 넷 다 봤다
+
+| 프로브 | 결과 |
+|---|---|
+| tol 형제에서 원통 항 제거 | 단위 테스트의 **정확히 그 단언**(음성 대조군)이 빨개짐 — 항이 행사된다 |
+| A: 씸 분기 팔 끄기 | 이름 울타리 **초록**(가로채기가 이름을 지킴) · **새 울타리만 빨강** — 예측된 분업 |
+| B: 호 클래스에서 `per_class` 실패 | 이름 `ArcBoundNotYet` **유지** (클래스 층) |
+| C: 씸 팔을 `Err` 로 | 이름 **유지** (스트레치 층) — 2회차 설계였다면 그 `Err` 의 이름이 그대로 나갔다 |
+
+### 배관
+
+`trace_result_faces` 반환에 deferred(`Option<BoolError>`) 셋째 칸 — 호출자 아홉 전부 기계적.
+reuse 차등은 면만 비교(무변화; 원통이 있으면 reuse 가 꺼져 두 route 동일). `ArcBoundNotYet` 의
+doc 재작성(「씸 스트레치 뒤에 선다」 + 없는 것 목록에서 씸을 **정점 주조로 좁힘**).
+`WorkingCyl::cache` 의 `#[allow(dead_code)]` 소멸 — 측정 소비자가 생겼다.
+
+### 관문
+
+53타깃 **1104**(+2: tol 단위 · 씸 울타리) · `--no-default-features` 25타깃 583 · clippy 0 · fmt ·
+**census 두 프로파일 동일** · reject census 무변화 · 스윕 53타깃 127(새 절차) · perf release 2 ·
+kit 72 · 앱 142 + tsc + wasm clippy. 전부 cargo 자신의 `$?`.
+
+### 다음
+
+**정점 주조** — `edge_faces` 가 밴드 면을 못 본다(`poly_rings()` 만 읽고 밴드는 링이 없다) ⇒
+「반대편이 측면인 모서리」 전부가 이웃을 잃고 `def_triple` 이 비어 `StraightAngle`(거짓 문장)로
+나온다. 같은 사실의 두 얼굴 — `edge_for` 의 키 충돌(현·안쪽 호·바깥쪽 호가 순서 없는 정점 쌍
+하나로 접힘)과 `Bound::Band` 의 `[v,v]` 닫힌 rim 주조 — 를 같이 본다. 그 뒤: `VertexDef::Branch`
+주조(클래스→핸들, `QuadRoot::canonical` 의 둘째 답) · `Ring.walls` → 담체 · 밴드 패스(잘린 원의
+디스크 라벨) · rim 표의 호 행 · tess · validate · reuse 의 `CanonNode::Circle`.
