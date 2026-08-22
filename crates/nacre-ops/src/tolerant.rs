@@ -1,5 +1,6 @@
 //! The b-rep side of the toleranced predicates: `nacre-ops`'s arrangement tables
-//! ([`WorkingPlane`], [`FaceInfo`]) implement the [`Witness`]/[`PlaneWitness`] ports so the
+//! ([`WorkingPlane`], [`crate::planes::FaceInfo`]) implement the [`Witness`]/[`PlaneWitness`]
+//! ports so the
 //! rotation-general sign predicates in [`nacre_cip::predicate`] can run over them.
 //!
 //! The tables are **pure description** — geometry and provenance, nothing about how this

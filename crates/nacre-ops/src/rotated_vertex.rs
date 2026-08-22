@@ -115,8 +115,9 @@ pub(crate) fn surface_witness_triangle(
 /// what was validated and what gets framed cannot drift.
 ///
 /// Per vertex: **pure** (its three carriers share one motion, and the solve fits `Rat`) becomes
-/// [`JudgedPoint::Pure`] — 16-1's whole population; anything else that is still a well-defined
-/// three-plane meet becomes [`JudgedPoint::Meet`] of its carriers' witness triangles — the
+/// [`nacre_cip::JudgedPoint::Pure`] — 16-1's whole population; anything else that is still a
+/// well-defined
+/// three-plane meet becomes [`nacre_cip::JudgedPoint::Meet`] of its carriers' witness triangles — the
 /// straddling population (16-2), **and** the pure-but-too-wide one, which a meet represents
 /// without ever asking the coordinate to fit anything.
 ///

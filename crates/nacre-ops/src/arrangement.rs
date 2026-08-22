@@ -144,7 +144,8 @@ macro_rules! timed {
     }};
 }
 
-/// A [`phase::Watch`] over the rest of the enclosing scope, and nothing at all in a release build.
+/// A `phase::Watch` over the rest of the enclosing scope, and nothing at all in a release build.
+/// (The module is `cfg(test)`, so there is nothing to link to in a doc build.)
 macro_rules! watch {
     ($c:ident) => {
         #[cfg(test)]
@@ -211,7 +212,7 @@ pub(crate) struct Seg {
 /// ★★ **That it is *full* is checked, not inherited.** The population gate's wall rule used to
 /// keep this as a side effect — every ∥ wall face stands clear of the lateral, and a segment on
 /// this class is that face's own trace, so it inherited the clearance — which made a promise about
-/// *circles* rest on a rule about *walls*. [`circles_meet_no_segment`] asks it of the segments
+/// *circles* rest on a rule about *walls*. [`arc_split_witness`] asks it of the segments
 /// themselves now, so a crossed circle is **split into arcs** rather than treated as the
 /// closed cell it is not, and the wall rule is free to become precise about its own question.
 #[derive(Clone, Copy, Debug)]
@@ -2252,7 +2253,8 @@ fn realize(p: &[nacre_scalar::Rat; 3]) -> Point3 {
 /// **Where a segment crosses a circle**, exactly — the points a `VertexDef::Branch` names.
 ///
 /// The segment rides `wc ∩ sg.wall` and the circle is `cylinder ∩ wc`, so a crossing is
-/// `plane ∩ plane ∩ cylinder` — the very shape [`nacre_scalar::plane_plane_cylinder`] answers and
+/// `plane ∩ plane ∩ cylinder` — the very shape [`nacre_scalar::quad::plane_plane_cylinder`]
+/// answers and
 /// [`nacre_topo::VertexDef::Branch`] names. Solving along the segment instead would be shorter and
 /// would yield a point with **no name**, which the next rung (splitting the circle into arcs)
 /// would have to re-derive.

@@ -11816,3 +11816,26 @@ perf 작업이 이 버킷들 위에서 도는 저장소에서 **계측이 조용
 ★ 그리고 재 보니 **워크스페이스 전체에 깨진 링크가 29개 더 있다** — 이 칸 이전부터 있던 빚이다.
 이 칸에서는 **내가 만든 셋만** 갚고, 나머지는 숫자와 함께 여기 적는다: 고치는 것과 **게이트에
 `cargo doc` 을 넣는 것**은 별개의 청소다(넣지 않으면 다음에 또 조용히 는다).
+
+### 깨진 doc 링크 29개를 갚았다 — 게이트에는 넣지 않는다 (2026-08-22)
+
+앞 항목이 「워크스페이스에 29개가 더 있고, 고치는 것과 게이트에 `cargo doc` 을 넣는 것은 별개」
+라고 적어 뒀다. **고치는 쪽만** 했다: 29 → **0**.
+
+무엇이 깨져 있었나 — 세 종류다.
+
+1. **사라지거나 이름이 바뀐 것**: `circles_meet_no_segment`(→ `arc_split_witness`) ·
+   `parallel_axes_clear`(→ `cylinders_clear`) · `translation_is_exact`(어디에도 없음) ·
+   `crate::frame2`(은퇴한 모듈 — dev-log 가 그 리네임을 적어 뒀다).
+2. **경로가 모자란 것**: `crate::WorkingPlane` → `crate::planes::WorkingPlane`,
+   `nacre_scalar::plane_plane_cylinder` → `…::quad::…`, `JudgedPoint::*` → `nacre_cip::…`,
+   `frame_sign` → `PlaneWitness::frame_sign`, `rotate_about`/`hp_coord` → `Self::…`.
+3. **doc 빌드가 볼 수 없는 것**: `#[cfg(test)]` 항목(`phase::Watch`, `ring_from_names`)과 남의
+   모듈의 private fn. 링크를 떼고 백틱만 남겼다 — 이름은 산문에 남는다.
+
+★ **이름이 바뀐 자리가 이 청소의 값이다.** `parallel_axes_clear` 는 함수가 `cylinders_clear` 로
+바뀐 뒤에도 doc 이 옛 이름을 가리키고 있었다 — 링크가 죽은 것보다 **읽는 사람이 없는 함수를
+찾으러 가는 것**이 비싸다.
+
+★ 게이트에는 **안 넣는다**(사용자 결정). 그러면 다음에 또 는다는 것을 알고 두는 것이고, 그래서
+이 문단이 있다: **늘었을 때 「원래 0이었다」는 기준선**이 여기 적혀 있다.

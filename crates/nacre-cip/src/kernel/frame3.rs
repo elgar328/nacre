@@ -516,7 +516,7 @@ pub struct WitnessPoint {
     /// definition-point dozens of times per boolean (`plane_def` clones `tri_pt3` per call);
     /// without this each escalation replays the rotation's cos/sin at 200 bits, which dominates
     /// the rotated-boolean cost. `base`/`chain` never change after construction except through
-    /// [`rotate_about`], which resets this cell, so the cached value always matches the
+    /// [`Self::rotate_about`], which resets this cell, so the cached value always matches the
     /// definition (a pure, path-independent function). See [`HpCell`] for the
     /// `Arc<OnceLock>` (parallel) vs `Rc<OnceCell>` (serial) choice.
     hp: HpCell,
@@ -1008,7 +1008,7 @@ impl WitnessPoint {
         self.compute_hp(prec)
     }
 
-    /// The uncached realization (the body of [`hp_coord`]), **with the error it carries**.
+    /// The uncached realization (the body of [`Self::hp_coord`]), **with the error it carries**.
     ///
     /// This is the same walk as [`rotate_about`](Self::rotate_about)'s tol propagation, one level
     /// up: the definition is exact, the realization is not, and the radius is what the realization
@@ -1552,7 +1552,9 @@ fn prod_err(va: f64, ta: f64, vb: f64, tb: f64, vc: f64, tc: f64) -> f64 {
 /// each entry `(a−d)[k]` carries tol `tol_a[k] + tol_d[k]`. The bound sums the six
 /// product radii (input-tol propagation, triangle-inequality worst case) plus a term
 /// for the f64 rounding of the determinant's own arithmetic. The 3D analogue of
-/// [`crate::frame2`]'s 2D `det_bound`. Validated in exact3d (H-a).
+/// the 2D `det_bound` the retired `frame2` module carried (the name is kept because the
+/// derivation is the same one; nothing links to it — that module is gone). Validated in
+/// exact3d (H-a).
 fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
     let r = rows(p[0], p[1], p[2], p[3]);
     let td = t[3]; // apex tol adds to every edge on subtraction
@@ -2034,7 +2036,7 @@ fn combine(dsign: Option<bool>, msign: Option<bool>) -> Option<Orient> {
 
 /// The interval Cramer parts of an implicit point `V = ∩(planes)`: `D = det(normals)`
 /// and the numerator vector `Dvec` (column `j` replaced by `h = −d`), so `V[j] =
-/// Dvec[j]/D` (no division taken here). Shared by [`indirect_filter`] (orient3d) and
+/// Dvec[j]/D` (no division taken here). Shared by `indirect_filter` (orient3d) and
 /// [`cmp_filter`] (cmp_coord).
 pub(crate) fn cramer_iv(planes: [[Approx; 4]; 3]) -> (Approx, [Approx; 3]) {
     let n = |k: usize| [planes[k][0], planes[k][1], planes[k][2]];
@@ -2100,7 +2102,7 @@ fn indirect_filter(
     filter_from_cramer(cramer_iv(planes), q, r, s)
 }
 
-/// [`indirect_filter`] with the implicit point's Cramer parts **already in hand**.
+/// `indirect_filter` with the implicit point's Cramer parts **already in hand**.
 ///
 /// ★ **The split exists because `(D, Dvec)` *is* the point** — it does not mention `q, r, s`, so a
 /// caller asking about one point against several query triangles pays for it once. The arrangement's
@@ -2134,7 +2136,7 @@ fn filter_from_cramer(
 
 /// The Cramer parts of `V = ∩(planes)` at `prec` bits: `(D, Dvec)` — the determinant and its
 /// numerator vector, each carrying the error radius accumulated along the way. Shared by
-/// [`indirect_hp`] (orient3d) and [`cmp_hp`] (cmp_coord).
+/// `indirect_hp` (orient3d) and `cmp_hp_with_gap` (cmp_coord).
 ///
 /// The magnitude bounds these used to return alongside are gone: the radius rides *with* the
 /// value now, so there is nothing left for a caller to forget to use — which is exactly how the

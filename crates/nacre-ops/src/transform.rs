@@ -160,7 +160,7 @@ pub(crate) fn mirror(
 /// A node is *omitted* only when the motion changes nothing the definition needs to say: a zero
 /// translation is the identity (`copy` is `transform_solid` under one), a 90°-family rotation of
 /// an exact datum keeps it exact, and a translation that lands every coordinate back on an exact
-/// `f64` does too (`exact_translate`, from [`translation_is_exact`]).
+/// `f64` does too (`exact_translate`, which asks whether the translation is exact).
 ///
 /// **Both exceptions lapse once the datum already has a history.** "This motion kept the
 /// coordinates exact" is a statement about *this step*; it says nothing about the chain, and a

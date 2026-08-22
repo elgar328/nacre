@@ -727,7 +727,7 @@ pub fn segment_meets_cylinder(p0: &V3, p1: &V3, origin: &V3, dir: &V3, radius: R
 }
 
 /// [`cylinder_radial_side`]'s body, with the radius given as **parts to be summed** — one part
-/// for the point-vs-cylinder question, two for [`parallel_axes_clear`], where the comparison is
+/// for the point-vs-cylinder question, two for [`cylinders_clear`], where the comparison is
 /// against `r₁ + r₂` and forming that sum in `Rat` first would reintroduce the ceiling this
 /// function exists to remove.
 fn radial_side_int(p: &V3, origin: &V3, dir: &V3, radii: &[Rat]) -> Orient {

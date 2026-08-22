@@ -832,7 +832,8 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
 /// Six of [`Operation`]'s variants name a cell by `Handle`, and those handles belong to the
 /// model the log was *recorded* against — a different arena from the one being built here. A
 /// `Handle`'s identity is its index (`Store`'s manual `Eq`/`Hash` use nothing else), so the
-/// index is the part that carries meaning across models, and [`Store::handle_at`] turns it back
+/// index is the part that carries meaning across models, and [`nacre_store::Store::handle_at`]
+/// turns it back
 /// into a handle of *this* model, one operation at a time.
 ///
 /// **Why one operation at a time, and not a pre-pass**: operation *N*'s handle names a cell
@@ -1531,7 +1532,7 @@ fn swept_profile(
 ///
 /// No vertex carries a measured tolerance. Returns the solid and its faces: `faces[0]` = base cap
 /// (at the ring, normal `−ŝ`), `faces[1]` = far cap, then the outer walls, then each hole's walls.
-/// Shared by [`extrude`] (a boss) and the pocket (`sweep = −n`).
+/// Shared by [`extrude_on_frame`] (a boss) and the pocket (`sweep = −n`).
 pub(crate) fn build_prism(
     model: &mut Model,
     outer_ring: Swept,

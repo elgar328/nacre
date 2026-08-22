@@ -14,7 +14,7 @@
 //!
 //! **The radius is a [`Mag`], not an `f64`.** At a deep rung `2⁻ᵖʳᵉᶜ` underflows an `f64` to
 //! zero, and a zero radius claims exactness — the same failure in new clothes. See
-//! [`nacre_scalar::bound`].
+//! [`nacre_scalar::Mag`]'s own doc.
 
 use astro_float::BigFloat;
 use nacre_scalar::{Mag, Rat};

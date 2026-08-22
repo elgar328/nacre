@@ -199,7 +199,7 @@ impl Mag {
         )
     }
 
-    /// Round the mantissa toward zero by one relative step — the mirror of [`inflate`], for the
+    /// Round the mantissa toward zero by one relative step — the mirror of [`Mag::inflate`], for the
     /// lower-bound direction.
     fn deflate(self) -> Mag {
         if self.m == 0.0 {

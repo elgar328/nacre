@@ -176,7 +176,8 @@ pub trait Witness {
 /// A witness that additionally carries its plane's exact coefficients — what the plane-class
 /// predicates ([`Judge::orient3d`], [`Judge::cmp_coord`], [`Judge::plane_pair_dir_sign`]) need on the exact
 /// path. (The stored↔outward `frame_sign` [`Judge::plane_pair_dir_sign`] also uses is *derived* from
-/// `coeffs` + `tri` by [`frame_sign`], not required from the impl.) A single face (which never
+/// `coeffs` + `tri` by [`PlaneWitness::frame_sign`], not required from the impl.) A single face
+/// (which never
 /// plays a plane-class role) implements only [`Witness`].
 pub trait PlaneWitness: Witness {
     /// The plane's (un-normalized) coefficients `[a, b, c, d]` (`n·x + d = 0`) — **raw**.
@@ -451,7 +452,8 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// - `!rotated`: the exact path — the implicit-point `orient3d` (Attene) on the stored plane
     ///   coefficients and `tri` coordinates.
     /// - `rotated`: each of `p, q, r` and the explicit triangle `j` is taken as its three exact
-    ///   [`WitnessPoint`] ([`plane_def`]), and [`indirect_orient3d_judge`] decides the sign from the
+    ///   [`WitnessPoint`] ([`plane_def`]), and [`crate::indirect_orient3d_judge`] decides the sign
+    ///   from the
     ///   definitions — never materializing `V` or reading the rounded `tri`.
     ///
     /// Winding-invariant. A query plane `j` equal to one of `p, q, r` means the point lies on `j`,
@@ -467,7 +469,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     /// Every route of [`Judge::orient3d`] **except** the certified one, or `None` when only that one
     /// is left.
     ///
-    /// ★ **The routing lives here and nowhere else.** [`Judge::orient3d_pair`] needs to know whether
+    /// ★ **The routing lives here and nowhere else.** `Judge::orient3d_pair` needs to know whether
     /// two questions will both reach the certified path — that is the only branch with anything to
     /// share — and asking it by re-testing `any_rotated`/`shared_motion` would put the route
     /// selection in two places, free to drift into two different answers for one question.
@@ -689,7 +691,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
     ///
     /// `!rotated` → `det3_sign` of the stored (un-normalized) normals. `rotated` → the kernel `D`
     /// (det of the *outward* `tri` normals, [`dir_sign_judge`]) bridged to the *stored*-normal
-    /// convention by the per-plane [`frame_sign`]: `det(stored) =
+    /// convention by the per-plane [`PlaneWitness::frame_sign`]: `det(stored) =
     /// frame_sign(p)·frame_sign(a)·frame_sign(b)·det(outward)`.
     pub fn plane_pair_dir_sign(&self, p: usize, a: usize, b: usize) -> i8 {
         let planes = self.planes;

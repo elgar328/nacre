@@ -19,7 +19,7 @@
 //! that read "different plane" for two faces of one plane and answered from rounding noise.
 //!
 //! That used to be held by a naming convention (`fp` / `fc`) and a debug-time net. It is now the
-//! type: the predicates here take [`crate::WorkingPlane`], which has no face geometry to offer, and
+//! type: the predicates here take [`crate::planes::WorkingPlane`], which has no face geometry to offer, and
 //! `plane_ix` is the one place a face index becomes a plane index (in [`loop_triples`]).
 //!
 //! **Exception:** the code that *defines* the classes (`crate::fill_classes` →
@@ -294,7 +294,7 @@ impl Carrier {
 /// corpus, not an invariant: let four planes meet at a point, give the point one canonical name, and
 /// the shared class is **some other plane than the one the edge rides**, silently. So the walker
 /// that knows the edge — the DCEL half-edge, which was told its wall — hands the geometry over
-/// instead, and only rings whose provenance is *names alone* go through [`ring_from_names`].
+/// instead, and only rings whose provenance is *names alone* go through `ring_from_names` (test-only).
 #[derive(Clone, Debug)]
 pub(crate) struct RingEdge {
     /// Identity of the vertex this edge leaves.
@@ -354,7 +354,7 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 
 /// A ring's edges from its nodes and the **carried** wall of each edge.
 ///
-/// ★ **This is the sound twin of [`ring_from_names`].** That one reads an edge's supporting plane
+/// ★ **This is the sound twin of `ring_from_names`.** That one reads an edge's supporting plane
 /// back out of its two endpoint names — "the class they share besides `P`" — which works only while
 /// every vertex lies on exactly three planes. Let four meet at a point, give it one canonical name,
 /// and the name need not mention the plane the edge rides at all; the two names can even share
@@ -1298,7 +1298,8 @@ fn loop_triples(
 /// ★ **That is not the frame the arrangement's labels are stated in.** A plane class's
 /// `[*_above, *_below]` labels are about the class root's **stored surface normal** — the convention
 /// `SegKind::Seated{body_above}` and `emit_faces`' `flip` are written against — and the two frames
-/// differ by [`orient_sign`], which is `-1` exactly when the root face is `Reversed`. No
+/// differ by [`crate::planes::FaceInfo::orient_sign`], which is `-1` exactly when the root face
+/// is `Reversed`. No
 /// `add_cuboid` face ever is, but a face an earlier boolean re-emitted flipped is (a pocket wall),
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
@@ -1328,7 +1329,7 @@ pub(crate) enum Feature {
 
 /// Read a ring against one plane: where it meets the line, and whether it crosses or only touches.
 ///
-/// ★ **One walk, two consumers.** [`trace_transversal_face`] clips a face's ring against a cut
+/// ★ **One walk, two consumers.** `arrangement::trace_transversal_face` clips a face's ring against a cut
 /// plane and [`every_ray`] casts a parity ray along `P ∩ Q_a`; both must answer the same question
 /// first — *does the boundary cross this line here?* — and a node sitting **on** the line is the
 /// only hard part of it. The tracer had the rule (look at the node's two off-line neighbours:
@@ -1442,7 +1443,7 @@ pub(crate) fn point_in_ring(
 /// that lives in a caller is resilience the next caller does not have.
 ///
 /// The probes are tried in order, so the answer is deterministic. Callers decide what *adjacency*
-/// means for them (see [`arrangement::nest_cells`] and `innermost_host`, which disagree) and ask
+/// means for them (see `arrangement`'s `nest_cells` and `innermost_host`, which disagree) and ask
 /// this only about rings they have already established are disjoint.
 pub(crate) fn ring_in_ring(
     jd: &Judge<'_, WorkingPlane>,
