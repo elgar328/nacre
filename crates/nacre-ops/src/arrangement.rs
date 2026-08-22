@@ -64,8 +64,9 @@ pub(crate) mod phase {
         COLLECT    = "    (1) collect crossings",
         SORT       = "    (2) sort + flush groups",
         COVER      = "    (3) cover sub-intervals",
-        CELLS      = "  cells + nest + label + emit",
-        C_EXTRACT  = "    extract_cells",
+        CELLS      = "  split + cells + nest + label + emit",
+        C_SPLIT    = "    split_circles (ClassEdges::of)",
+        C_EXTRACT  = "    walk_cells",
         E_ORDER    = "      per-half-edge order_along",
         E_ANGULAR  = "      angular_order",
         E_WALK     = "      the rest (walk + cells)",
@@ -235,7 +236,7 @@ pub(crate) struct MergedCircle {
 ///
 /// ★★ **A circle leaves the parallel road here.** An uncut circle is a one-edge closed cell that
 /// the orbit walk cannot express (orbits need ≥ 2 half-edges and a vertex to turn at), which is why
-/// [`extract_cells`] appends it *after* the walk on pseudo-half-edges. Cut, it has endpoints and is
+/// [`walk_cells`] appends it *after* the walk on pseudo-half-edges. Cut, it has endpoints and is
 /// an ordinary edge — so the machinery it used to stand beside is the machinery it now uses.
 ///
 /// ★ `end` is in the arc's **own travel order**, `end[0]` → `end[1]` counter-clockwise about the
@@ -1759,7 +1760,7 @@ fn component_count(segs: &[MergedSeg], arcs: &[MergedArc]) -> usize {
 
 /// **The premise the circle shortcut below rests on, checked.**
 ///
-/// [`extract_cells`] appends each circle as a **one-edge closed cell** (`2n + 2i` and its twin),
+/// [`walk_cells`] appends each circle as a **one-edge closed cell**, on the pseudo-half-edges past
 /// which is only a cell at all while the circle meets no segment: a crossed circle is arcs with
 /// endpoints, and those belong in the segment machinery. That premise used to be kept as a side
 /// effect of the population gate's wall rule — a rule about something else — so this asks it
@@ -1771,7 +1772,7 @@ fn component_count(segs: &[MergedSeg], arcs: &[MergedArc]) -> usize {
 /// corpus have a line within `r` whose nearest approach lies off the segment).
 ///
 /// ★ Both copies of the per-class pipeline — the boolean's and the audit's replay — reach the
-/// cells through [`extract_cells`], so living here is what keeps the two from disagreeing about
+/// cells through [`walk_cells`], so living here is what keeps the two from disagreeing about
 /// where a class stopped.
 ///
 /// ★★ **It says where, and the where is the durable half.** [`circle_crossings`] locates what this
@@ -1809,7 +1810,7 @@ fn arc_split_witness(
             };
             // ★ A collapsed edge is a *point*, and «is this point inside the disk» is still a
             // real question — skipping it would let the one case it can express slip through.
-            // (`extract_cells`' `CoincidentNodes` owns the malformed-edge story; this only avoids
+            // (the split's own `CoincidentNodes` owns the malformed-edge story; this only avoids
             // asking a segment predicate about something that is not a segment.)
             let collapsed = p0 == p1;
             let hit = if collapsed {
@@ -2360,7 +2361,8 @@ fn circle_crossings(
 /// an unordered vertex pair, which would fold a chord and its two complementary arcs into one.
 ///
 /// ★★ **It reads `has_arcs`, and the condition used to be "was split".** That stricter reading was
-/// right while `extract_cells` split *inside* itself: the cells it returned were numbered against a
+/// right while the cells were extracted by a function that split *inside* itself: what it returned
+/// was numbered against a
 /// slice the caller did not have, so any `Ok` from a split arrangement was unusable whether or not
 /// arcs came out of it. The caller holds the `ClassEdges` now and hands the same one to everything
 /// below, so that mismatch cannot arise and the condition is the stopper's own sentence again.
@@ -3201,7 +3203,7 @@ pub(crate) fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
 /// Emit the result faces on plane class `wc` for a boolean `kind`. A `+1` cell is a face of the
 /// result iff its two chambers disagree under `keep` (material on one side of W, void on the
 /// other); its `-1` holes (`nesting.holes`) ride along as inner rings. The DCEL cell ring is
-/// already CCW about `n_out(wc)` (extract_cells stored `winding == +1`) and a hole cell is CW
+/// already CCW about `n_out(wc)` (the walk stored `winding == +1`) and a hole cell is CW
 /// (`winding == -1`) — exactly the `LocalFace.inner` contract ("kept material on the loop's left"),
 /// so both are emitted verbatim; `flip` alone carries the chamber and `assemble_fuse_cut` reverses
 /// outer and inner together, making the result normal point out of the kept solid:
@@ -3522,7 +3524,7 @@ fn trace_result_faces(
             // everything below must read the *same* edges the walk did — building it here is what
             // makes that structural instead of a promise. (`frame_audit` runs its own copy of this
             // pipeline and must build it the same way; the arc fence locks that they agree.)
-            let edges = ClassEdges::of(jd, wc, split, circles)?;
+            let edges = timed!(C_SPLIT, ClassEdges::of(jd, wc, split, circles))?;
             // ★★★ **Both stages run, then the stopper, then the `?`s.** The stopper *intercepts*:
             // an arc class must carry the same name out **however far the pipeline got**, or the
             // fences' `ArcBoundNotYet` + witness would become whatever the walk or the nesting

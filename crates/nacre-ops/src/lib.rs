@@ -785,11 +785,14 @@ pub enum RejectReason {
     /// read at a branch point. What is still missing is the *assembly* — `nest_cells`' `circle_of`,
     /// `label_cells`' `mask_of`, `emit_faces`' `bound_of` and the circle-cell append all split
     /// half-edge kinds at `2·segs.len()`, which an arc range walks straight through, and the rim
-    /// table has no arc row. So the refusal stands at `extract_cells`' **return**: the cells are
-    /// built and measured, and then not handed on.
+    /// table has no arc row. So the refusal stands in the per-class pipeline **after the walk and
+    /// the nesting**: those two are built and measured (the class audit carries their counts), and
+    /// then not handed on.
     ///
-    /// ★ It intercepts the walk's own failure too, so the population's name does not depend on how
-    /// far the walk got — which is what keeps this row of the reject census reading one thing.
+    /// ★ It intercepts **both** of their failures, so the population's name does not depend on how
+    /// far the pipeline got — which is what keeps this row of the reject census reading one thing.
+    /// Spelling either stage with a `?` ahead of the stopper loses that, silently while they
+    /// succeed; the order is commented where it is written.
     ///
     /// ★ A stopper of the shape `CylinderBooleanNotYet` had in M6-2a: it names what is missing, it
     /// is measured by the fixtures it holds, and the commit that finishes the road removes it.
