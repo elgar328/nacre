@@ -3244,8 +3244,18 @@ fn emit_faces(
                 cyl: edges.circles[i].cyl,
             };
         }
-        // ★ An arc-bearing cell reaches here and `Ring::new` has no carrier for it — the stopper
-        // stands between, and widening `Ring` is the assembly cell's own item.
+        // ★★ **`Ring` has no carrier for an arc, and this is where that runs out.** A ring's walls
+        // are plane classes and `assemble_fuse_cut` indexes the class table with them, so an arc
+        // half-edge has nothing true to put here. The stopper stands between (an arc class never
+        // reaches this function), and widening `Ring` to a carrier is the assembly cell's own item;
+        // until then the sentinel is *checked* rather than trusted, because reaching it means an
+        // out-of-bounds index into that table and this file exists to keep those honest.
+        debug_assert!(
+            cell.half_edges
+                .iter()
+                .all(|&he| matches!(edges.kind(he), HalfEdgeKind::Seg(_))),
+            "an arc-bearing ring reached `emit_faces` — the stopper is in the wrong place"
+        );
         crate::boolean::Bound::Ring(crate::boolean::Ring::new(
             cell.half_edges.iter().map(|&he| edges.origin(he)).collect(),
             cell.half_edges
