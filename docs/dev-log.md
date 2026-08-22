@@ -12115,6 +12115,21 @@ rg 'NodeId::(ThreePlane|Branch)' crates/ -g '!**/combinatorics.rs' -g '!**/reuse
 무변화**(166줄, dev·release 동일) · reject census 무변화 · **`--ignored` 스윕 53타깃 129** ·
 kit 72 · 앱(wasm 두 벌 + tsc + vitest 142 + wasm clippy). 전부 cargo 자신의 `$?` 로 확인.
 
+### 관문이 30분이던 이유 — 93%가 한 파일이었다
+
+★★★ 실측: `--ignored` 스윕 **1802초 중 1673초(93%)가 `tests/perf.rs` 의 테스트 «둘»** 이고,
+`target/debug/deps/perf-…` — **성능 측정이 최적화 없이** 돌고 있었다. 나머지 51타깃은 다 합쳐 129초다.
+
+★★ **그런데 그냥 빼면 안 됐다.** 그 doc 은 *"it asserts nothing about time"* 이라 하지만 본문은
+`.expect("fuse")` 로 큰 **회전** fold 를 수십 번 쌓는다 — 시간 단언이 없을 뿐 **깨지면 패닉하는
+커버리지**이고, 그 규모의 회전 fold 를 도는 것은 스위트에서 이것뿐이다
+([[apparent-cruft-encodes-invariants]]: 「정리 후보」가 불변식을 지고 있는 그 모양이다).
+
+⇒ **release 로 분리**한다(실측 셋 중 셋째): 스윕 2분 10초 + perf 4분 8초 = **6분 20초**.
+잃는 것은 그 fold 들의 **`debug_assert!`**(release 에선 꺼진다)이므로 **가끔 debug 로도 한 번**
+돌린다(28분). ★ 그리고 **관문 명령 목록이 지금까지 어느 문서에도 없었다** — 칸마다 결과만 적고
+명령은 매번 다시 세웠다. `docs/overview.md` 의 「관문」이 이제 **유일한 원본**이다.
+
 ### 다음
 
 **씸 표의 `VertexDef::Branch` 주조** — 조사가 잰 첫 벽이다. 재료는 다 있으니 다시 찾지 말 것:

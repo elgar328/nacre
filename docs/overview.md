@@ -66,3 +66,34 @@ M1 뼈대(Store/Handle, Plane/Line, 정육면체, validate, OBJ덤프·STEP출�
 - 커밋은 작게, 의미 단위로.
 - 기하 코드 버그는 눈으로 잡는다 — 애매하면 OBJ 덤프해서 확인.
 - **셀별 진행 기록은 `docs/dev-log.md`에 append한다** — 설계 규칙·불변은 `design.md`, 오른 사다리·반증된 예측 등 셀 단위 로그는 dev-log로 분리(design.md 재비대 방지).
+
+### 관문 (칸을 닫기 전에 도는 것) — **여기가 유일한 원본이다**
+
+★ 이 목록은 지금까지 칸마다 dev-log에 다시 적혀 왔고, 그래서 표류했다. 절차는 여기서 고치고
+dev-log에는 **결과**만 적는다.
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace --no-fail-fast
+cargo test -p nacre-ops --no-default-features
+cargo test -p nacre-ops --test census -- --ignored --nocapture | grep '^c '          # 두 프로파일 diff
+cargo test -p nacre-ops --release --test census -- --ignored --nocapture | grep '^c '
+cargo test -p nacre-ops --test reject_census
+cargo test --workspace --no-fail-fast -- --ignored \
+    --skip boolean_wall_clock --skip profile_check_wall_clock
+cargo test -p nacre-ops --release --test perf -- --ignored --nocapture   # 성능은 release로 따로
+```
+그리고 kit(`../nacre-kit`: fmt·clippy·test)과 앱(`../nacre-playground/web`: `npm run wasm:all`
++ `npx tsc --noEmit` + `npx vitest run`, 그리고 `wasm/`에 clippy).
+
+★★ **`perf.rs`는 스윕에서 빠지고 release로 따로 돈다** (2026-08-22 실측). 스윕 **1802초 중
+1673초(93%)가 그 파일의 테스트 둘**이었고, 그나마 debug 빌드라 시간 숫자는 의미가 없었다.
+release로 옮기면 30분 → **6분 20초**(스윕 2분 10초 + perf 4분 8초).
+★ **그런데 그 둘은 시간을 단언하지 않을 뿐 «커버리지»다** — `.expect("fuse")`로 큰 회전 fold를
+수십 번 쌓으므로 깨지면 패닉한다. release로 옮기면서 잃는 것은 그 fold들의 **`debug_assert!`**
+(release에선 꺼진다)이므로, **가끔은 debug로도 한 번 돌린다**:
+`cargo test -p nacre-ops --test perf -- --ignored` (28분).
+
+★ **관문 명령은 파이프로 감싸지 말고 파일로 받아 cargo 자신의 `$?`를 읽는다** — `| tail -N`의
+exit code는 `tail`의 것이고, 잘린 출력에는 읽을 것도 안 남는다(2026-08-22에 두 번 당했다).
