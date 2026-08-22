@@ -12505,3 +12505,58 @@ rim 표의 cut 팔이 **정점을 세운다**: 씸≡분기면 **별칭**(분기
 validate 혼합 루프 + tess 호 팔(`sample_edge` debug_assert가 첫 하류) + **정지판 제거** —
 census 새 행(부피 유도값: straddling fuse = 32 + π/4), reject census 두 행이 초록으로 이동,
 kit/app. **「걸친 보스가 빌드」**.
+
+## 거절이 solid를 다 짓고 나서야 말한다 — grouping이 잘린 rim을 건너 잇는다 (2026-08-23)
+
+**커밋 둘** — ① `JoinKey` 결합 + 직접 울타리, ② raise 7층(조립의 맨 끝). 초록 칸 조사가 벽
+넷을 실측했고(W1 grouping · W2 validate · W3 props · W4 tess — 정지판 리프트 프로브), 이 칸이
+W1을 열었다. **남은 것은 소비자 셋뿐이다.**
+
+### 조사 — 정지판을 들어 벽을 쟀다
+
+정지판을 들면 세 픽스처 다 `BranchVertexUnnamed` — grouping의 held-Err는 진짜 벽. grouping을
+강제로 이으면 **셋 다 빌드**: validate는 straddling·hung **0 이슈**(sense 대향 통과 — 밴드
+칸의 보류 항목이 초록 판정), turned만 `FaceMisoriented cos=-1`인데 **커널은 무죄** — 초승달의
+flip·감김을 손계산 검산(재료 +x 위 ⇒ 바깥 −x ⇒ Reversed 옳음), 원인은 `loop_winding`의
+현-Newell이 호-지배 루프를 반대로 읽는 것이고 **그 함수 doc이 「M6-2b 혼합 루프가 오면
+여기」라고 예약**해 뒀다. props는 `UnsupportedBoundary`, tess는 `sample_edge`의 debug_assert
+발화(자기 doc의 「첫 하류」 그대로).
+
+### ① `JoinKey` — 「직선은 무순서, 원은 CCW 순서」의 세 번째 등장
+
+수리 후보 둘이 반증됐다(계획 검토): rim-키 확장은 캡 둘+밴드=3 사용자로 exactly-two가 거절;
+**무순서 노드쌍은 2-노드 원에서 현+호1+호2가 한 `norm_edge` 키로 접혀**(오늘 이미 4, 밴드
+부으면 6) 결합 불발 — 담체 칸이 핸들 공간에서 푼 키-접힘의 노드-공간 재현. `JoinKey { Line
+(무순서) | Arc { cyl, from, to } (CCW) }`: 캡 링 걸음은 자기 `Wall::Arc{ccw}`로, 밴드는
+`CutRim.nodes`의 순환 CCW쌍으로 — 조각마다 정확히 캡+밴드=2, **현 키도 2가 되어 캡↔캡
+결합이 처음 열렸다**(디곤은 그 접힘 때문에 고립돼 있었다). wrap 조각은 노드 공간에서 한 쌍
+(S는 핸들 전용). 비-호 = Line = 항등(census 비트 동일).
+
+★ **예측 반증 하나가 ①의 수확**: 「bvu 울림이 self_touch로 이동」 예측이 틀렸다 —
+self_touch는 처음으로 호 입력에서 돌지만 **자기 doc의 규칙**(분기 끝점 모서리는 세-평면
+이름이 없어 skip)대로 **무울림 기권**한다. reject census 두 행이 예측보다 깨끗하게 **한
+사이트로 줄었다**(`arc_bound_not_yet`@arrangement만 — 조립 전체가 침묵). 직접 울타리
+`the_grouping_joins_across_a_cut_rim`(n==1 ×3; red: 밴드 등록 off → n==2 → 옛 이름).
+
+### ② raise 7층 — 완전한 garbage solid
+
+`grouping?`이 `deferred.unwrap_or`로 양보하고 raise는 `Ok(out)` 직전 —
+`defs_are_remappable` debug_assert가 garbage solid에서 **성립함을 실측**한 뒤 그 뒤에 뒀다.
+garbage가 정점·모서리·면·셸·**솔리드**까지(전부 live-set 밖 — retire는 Ok에서만). 새 울타리
+`the_refusal_leaves_a_complete_solid`(픽스처 셋): 솔리드 하나 · cavities 0 · outer 셸 == 주조
+면 집합 · live-set 불변 · **`mass_props` == `UnsupportedBoundary`**(다음 벽의 정직한 기록 —
+부피 오라클 32+π/4는 props 팔과 함께). red: grouping을 외래 이유로 스텁 → 이름 유지(7층).
+낡은 위치 주석 여덟 곳 grep-0(일곱째 적용).
+
+### 관문
+
+53타깃 **1111**(+2: 결합·완전한-솔리드 울타리) · nodef 25타깃 590 · clippy 0 · fmt · census
+두 프로파일 비트 동일(두 커밋 다, t2 기준선과도) · reject census(두 행이 한 사이트로 축소
+blessed) · 스윕 53타깃 127 · perf release · kit 72 · 앱 142.
+
+### 다음 — 초록 칸 (소비자 셋 + 정지판 제거)
+
+validate `loop_winding`의 혼합-루프 팔(자기 doc이 예약 — 호 = 온-rim 같은 증인; digon 포함) ·
+tess `sample_edge`의 θ 부분구간 · props `face_props`의 원호 세그먼트 적분 · **정지판 제거** —
+reject census 두 행 → 초록 픽스처(부피 32+π/4), bit census 새 행, 거절-후-store 울타리들의
+초록 전환, kit/앱 ⇒ **「걸친 보스가 빌드」**.

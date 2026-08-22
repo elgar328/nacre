@@ -3764,9 +3764,9 @@ fn trace_result_faces(
             let edges = timed!(C_SPLIT, ClassEdges::of(jd, wc, split, circles))?;
             // ★★★ **The stages run, then the stopper is *made* — and only made.** The reject an
             // arc class earns is built here, where "this class has arcs" is a plain fact, but it
-            // is **raised inside `reconstruct`, after the shell guard and before the
-            // grouping's raise** — so everything down to the band assembly runs, and the guard
-            // counts a closed shell, before the population is refused. The stopper still *intercepts*: an arc class must
+            // is **raised inside `reconstruct`, at the assembly's very end** — so everything
+            // down to the solid itself is built, and the guard counts a closed shell, before
+            // the population is refused. The stopper still *intercepts*: an arc class must
             // carry the same name out **however far the pipeline got**, or the fences'
             // `ArcBoundNotYet` + witness would become whatever a stage said and the reject census
             // would gain a raise site — that is the `deferred.unwrap_or(e)` below (measured: with
@@ -4236,8 +4236,8 @@ pub(crate) fn frame_audit(
                 let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
                 // ★ The same stages and the same stopper the boolean runs — the arc fence in
                 // `bands.rs` locks that the two agree. One deliberate difference: the boolean
-                // *defers* the stopper's reject into the assembly (past the seam stretch, the
-                // vertex naming, the materialization, the face loop and the shell guard), while
+                // *defers* the stopper's reject into the assembly (past every stage down to
+                // the solid itself — the raise stands at the assembly's very end), while
                 // this audit raises it
                 // here — its proposition is per class ("where does this class stop"), and the
                 // deferral changes where the reject surfaces, never which classes earn it or what

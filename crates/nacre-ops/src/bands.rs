@@ -1455,7 +1455,7 @@ mod tests {
     /// through the door production uses.**
     ///
     /// ★★★ Same instrument shape as the seam fence, same reason: the deferred stopper stands
-    /// behind `name_result_vertices` (past the shell guard now) and intercepts
+    /// behind `name_result_vertices` (at the assembly's very end now) and intercepts
     /// everything, so no reject name can testify the naming completed — a direct second consumer
     /// is the only witness. This walks production's road (trace → clean → bands → seam → naming)
     /// and asserts on its product.
@@ -1691,7 +1691,7 @@ mod tests {
 
     /// **The refusal now leaves the branch vertices behind — minted, canonical, and measured.**
     ///
-    /// ★★ The deferred stopper stands past the shell guard, so an arc reject's model
+    /// ★★ The deferred stopper stands at the assembly's very end, so an arc reject's model
     /// carries its minted vertices as garbage cells outside every live solid — the deliberate
     /// trade recorded at the raise site. That is also what makes the minting *observable*: no
     /// reject name can see past the interception, but the store can be read directly. Before the
@@ -2135,6 +2135,75 @@ mod tests {
                 .expect("the grouping joins across the cut rim");
             assert_eq!(g.n, 1, "one component");
             assert_eq!(g.positives, vec![0], "one material piece, no cavity");
+        }
+    }
+
+    /// **The refusal leaves a complete solid.**
+    ///
+    /// ★★★ The deferred stopper stands at the very end of the assembly now: for an arc input
+    /// the grouping joins (one component), the shells and the solid are pushed, and only then is
+    /// the population refused by name — so the store holds a **complete garbage solid** whose
+    /// outer shell is exactly the boolean's minted faces, unreachable from the live set. What
+    /// still refuses on it is measured here too: `mass_props` answers `UnsupportedBoundary`
+    /// (the arc integrals are the green cell's door), recorded rather than assumed away.
+    #[test]
+    fn the_refusal_leaves_a_complete_solid() {
+        for (origin, axis) in [
+            ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
+            ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
+            ([4.0, 2.0, -1.0], [0.0, 0.0, 1.0]),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array(origin),
+                Vector3::from_array(axis),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            let (faces_from, solids_from) = (m.faces.len(), m.solids.len());
+            let before = m.live_solids.clone();
+            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect_err("the arc population is still refused");
+            assert!(
+                matches!(
+                    &err,
+                    BoolError::Rejected {
+                        reason: RejectReason::ArcBoundNotYet,
+                        ..
+                    }
+                ),
+                "{err:?}"
+            );
+            assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+            let garbage: Vec<_> = m.solids.iter().skip(solids_from).collect();
+            let [(sh, solid)] = garbage[..] else {
+                panic!("one garbage solid, got {}", garbage.len());
+            };
+            assert!(
+                !m.live_solids.contains(&sh),
+                "the garbage solid is outside the live set"
+            );
+            assert!(solid.cavities.is_empty(), "one material piece, no cavity");
+            let shell_faces: std::collections::HashSet<_> =
+                m.shells.get(solid.outer).faces.iter().copied().collect();
+            let minted: std::collections::HashSet<_> =
+                m.faces.iter().skip(faces_from).map(|(h, _)| h).collect();
+            assert_eq!(
+                shell_faces, minted,
+                "the outer shell is exactly the boolean's minted faces"
+            );
+            assert!(
+                matches!(
+                    nacre_props::mass_props(&m, sh),
+                    Err(nacre_props::PropsError::UnsupportedBoundary)
+                ),
+                "the arc integrals are the green cell's door — recorded here"
+            );
         }
     }
 

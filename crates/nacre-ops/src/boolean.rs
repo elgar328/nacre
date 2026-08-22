@@ -1085,7 +1085,7 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// every ring node's defining triple.
 ///
 /// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
-/// one: the deferred arc stopper stands behind it (past the shell guard now) and
+/// one: the deferred arc stopper stands behind it (at the assembly's very end now) and
 /// intercepts everything, so no
 /// reject name can testify that the naming completed — only a fence that calls it directly on the
 /// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
@@ -1413,7 +1413,7 @@ fn reconstruct(
     }
     let named = name_result_vertices(jd, seam, faces, cyls, cut_rims);
     // The naming's failure yields to the deferred stopper like every stage before it; the raise
-    // itself now stands after the shell guard below.
+    // itself now stands at the assembly's very end below.
     let Named {
         grouping,
         group_of,
@@ -1537,7 +1537,7 @@ fn reconstruct(
         }
     }
     // The materialization's failure yields to the deferred stopper like the naming's above; the
-    // raise itself now stands after the shell guard below.
+    // raise itself now stands at the assembly's very end below.
     if let Err(e) = materialized {
         return Err(deferred.unwrap_or(e));
     }
@@ -1997,8 +1997,8 @@ fn reconstruct(
         }));
     }
     // The face loop's failure yields to the deferred stopper like every stage before it; the
-    // raise itself now stands after the shell guard below (an incomplete face set has no shell
-    // to count, so an assembly failure still stops here).
+    // raise itself now stands at the assembly's very end below (an incomplete face set has no
+    // shell to count, so an assembly failure still stops here).
     if let Err(e) = assembled {
         return Err(deferred.unwrap_or(e));
     }
@@ -2039,37 +2039,24 @@ fn reconstruct(
             return Err(deferred.unwrap_or(reject(RejectReason::OpenResultShell)));
         }
     }
-    // ★★★ **The deferred arc stopper's raise — after the shell guard, before the grouping's.**
-    // The interception is the same shape at its sixth layer (per-class → seam stretch → naming →
-    // vertex materialization → face loop → shell guard): the stages ran, the guard counted, and
-    // the stopper's reject wins over whatever they said, so an arc population's name never
-    // depends on how far the pipeline got. That the guard passes silently here is itself a
-    // measured fact — the reject census records any ringing, and the garbage-shell fence in
-    // `bands` counts the same closure directly.
-    //
-    // ★★ **An arc reject therefore leaves minted vertices, edges and faces in the store —
-    // deliberately.** They are garbage cells outside every live solid, the same class of residue
-    // a late reject's arena cells have always been: the live-set fences stay green, and a session
-    // that keeps recording after a reject rebuilds from the log (`replay`'s discipline, stated in
-    // `docs/design.md`). Holding the raise any earlier would put the band assembly behind an
-    // interception nothing can see past — the unreachable-machinery trap this ladder keeps
-    // refusing.
-    if let Some(d) = deferred {
-        return Err(d);
-    }
     // ★ **The grouping decided at the top of this function, raised here** — where the old code
     // decided it, so a boolean that declines leaves the arena cells it always left. What it says:
     // one component is the whole result; several mean either an enclosed void (a cavity, an
     // inward-oriented shell) or a severed operand (two or more material-enclosing shells), and a
     // surviving cavity belongs to the piece whose outer shell nests it. See [`group_faces`] — and
     // for why the *group*, not the component, is the unit the handles above were minted per.
+    // The grouping's failure yields to the deferred stopper like every stage before it; the
+    // raise itself now stands at the very end, past the solid assembly below.
     let Grouping {
         labels,
         n,
         positives,
         mut comps_of,
         ..
-    } = grouping?;
+    } = match grouping {
+        Ok(g) => g,
+        Err(e) => return Err(deferred.unwrap_or(e)),
+    };
     let mut by_comp: Vec<Vec<Handle<Face>>> = vec![Vec::new(); n];
     for (i, &fh) in face_handles.iter().enumerate() {
         by_comp[labels[i]].push(fh);
@@ -2128,6 +2115,24 @@ fn reconstruct(
             || out.is_err(),
         "a result vertex names a surface this solid has no face on — see the def derivation above"
     );
+    // ★★★ **The deferred arc stopper's raise — the very end of the assembly.** The interception
+    // is the same shape at its seventh layer (per-class → seam stretch → naming → vertex
+    // materialization → face loop → shell guard → grouping and the solid assembly): everything
+    // ran — the shells and solids stand in the store — and the stopper's reject wins over
+    // whatever any stage said, so an arc population's name never depends on how far the
+    // pipeline got.
+    //
+    // ★★ **An arc reject therefore leaves a complete garbage solid in the store —
+    // deliberately.** Vertices, edges, faces, shells and the solid itself: cells outside the
+    // live set (`assemble_fuse_cut` retires operands only on `Ok`, and nothing pushed here is
+    // reachable from a live solid), the same class of residue a late reject's arena cells have
+    // always been. The live-set fences stay green, and a session that keeps recording after a
+    // reject rebuilds from the log (`replay`'s discipline, stated in `docs/design.md`). Holding
+    // the raise any earlier would put the solid assembly behind an interception nothing can see
+    // past — the unreachable-machinery trap this ladder keeps refusing.
+    if let Some(d) = deferred {
+        return Err(d);
+    }
     out
 }
 
