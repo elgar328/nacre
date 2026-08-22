@@ -1143,7 +1143,7 @@ mod tests {
     /// **The audit and the boolean say the same thing about an arc class — and it says what the
     /// arrangement produced.**
     ///
-    /// ★★★★ Two things are pinned here and neither had a fence before.
+    /// ★★★★ Three things are pinned here and none had a fence before.
     ///
     /// **One: the two copies of the per-class pipeline agree.** `frame_audit` re-runs pass A and B
     /// inline rather than calling `arrange`, so a split hoisted into one and not the other compiles
@@ -1152,9 +1152,10 @@ mod tests {
     /// guard (`the_audit_does_not_invent_failures`) cannot see it: its fixture is deliberately one
     /// that fails **outside** the class pipeline.
     ///
-    /// **Two: what the arrangement produced on an arc class.** The stopper stands after the nesting
-    /// and swallows its answer, so without this the whole arc population is measured by a probe and
-    /// the probe is deleted before the commit. The numbers are **derived, not read back**: the
+    /// **Two: what the arrangement produced on an arc class.** The stopper stands after every
+    /// arrangement stage and swallows their answer, so without this the whole arc population is
+    /// measured by a probe and the probe is deleted before the commit. The numbers are **derived,
+    /// not read back**: the
     /// boss's rim crosses one edge of the plate's top face twice, cutting the circle into **2**
     /// arcs and the plane into **4** cells — `rect−disk`, `rect∩disk`, `disk−rect` and the outside.
     /// Only the outside winds `−1`, so there is **1** root group; and it shares nodes with all
@@ -1162,11 +1163,20 @@ mod tests {
     /// comparable" every time and there are **0** holes. Exactly **one** class is cut: the boss
     /// stands *on* the top face, so only its base circle lies in a plane of the plate.
     ///
-    /// ★★ **What it does *not* see, derived and then confirmed.** Flipping the sense the split
-    /// carries onto its sub-segments attaches the arcs to the **wrong cells** and swaps two
-    /// windings — and every number above stays put (the earlier probe read
-    /// `[(5,−1),(5,1),(3,1),(3,1)]`: four cells, one `−1`). Measured: this fence is green with that
-    /// flip. Its first reader is `label_cells`' keep decision, one stage further down.
+    /// **Three: the faces it emitted, as coordinates** — and this is the one that sees a wrong
+    /// `sense`. Flipping the sense the split carries onto its sub-segments attaches the arcs to
+    /// the wrong cells, and **every number in part Two stays put** (the cells still read four with
+    /// one `−1`, the roots one, the holes zero, the sorted labels identical) — that blindness was
+    /// derived before it was measured, and it held for four rungs. The emitted ring is where it
+    /// finally shows, as the **exact reverse**, which is why rotation is normalized here and
+    /// reversal is not. See `ClassAudit::outer_rings` for both arguments and for why the red probe
+    /// is read on the **turned** boss: the straddling one is blind to the flip *and* its 2-node
+    /// ring cannot express a reversal at all.
+    ///
+    /// ★ **Two earlier claims here were wrong and are recorded rather than quietly dropped**: that
+    /// this fence is *green* under that flip (it is red — measured, three times), and that the
+    /// flip's first reader is `label_cells`' keep decision (refuted a rung earlier: every
+    /// order-independent summary of the labels is identical; it is `emit_faces`).
     #[test]
     fn the_audit_and_the_boolean_agree_about_an_arc_class() {
         // `y = 0` meets the turned boss's circle (centre `(y,z) = (0.25, 2)`, `r = 0.5`) at

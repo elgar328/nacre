@@ -3833,10 +3833,10 @@ pub(crate) struct ClassAudit {
     /// split cut, and the nesting's two counts.
     ///
     /// ★★★ Without this the arc population is measured and thrown away: the stopper stands after
-    /// the nesting and swallows its answer, so a probe is the only way to see it — and a probe is
-    /// deleted before the commit. Then the next cell rediscovers a break here while debugging
-    /// something else, which is exactly the blame this stage was split to isolate. `None` when the
-    /// class stopped before that stage ran.
+    /// every arrangement stage and swallows their answer, so a probe is the only way to see it —
+    /// and a probe is deleted before the commit. Then the next cell rediscovers a break here while
+    /// debugging something else, which is exactly the blame this stage was split to isolate.
+    /// `None` when the class stopped before those stages ran.
     pub produced: Option<Produced>,
     /// **Every emitted face's outer ring, as coordinates** — one `Vec` per emitted face whose outer
     /// bound is a polygon ring (a face bounded by an uncut circle has no nodes and contributes

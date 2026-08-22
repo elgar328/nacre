@@ -176,6 +176,20 @@ impl NodeId {
 /// It must be empty. Spelling a variant anywhere else means a site went around the door instead of
 /// answering — the same gate found **fifteen** of those in the previous cell with the whole suite
 /// already green, and it costs nothing and does not break on a rename.
+///
+/// ★★★ **It is not empty today, and saying so is the point** (2026-08-22). Three sites in
+/// `arrangement` — `arc_split_witness`' `separates` closure, and two inside `split_circles` (the
+/// tangency skip when gathering crossings, and the destructure that sorts a segment's nodes along
+/// its meet line) — ask a **branch** node for its payload: is this root a tangency, which cylinder
+/// is it on. There is no door that answers that. This one is `three_plane_name`; its twin,
+/// `branch_name(n) -> Option<([usize; 2], usize, QuadRoot)>`, does not exist yet, so those three
+/// open the variant because nothing else can. **One function closes all three**, and until it is
+/// written the gate returns three known hits rather than zero.
+///
+/// ★ Not automated, and that is how it rotted: those three arrived a cell ago and nothing ran the
+/// check, then a fourth was added on top of them with the suite green (`e091885` moved it back
+/// here). `tests/rotation_sweep.rs`' `side_of` guard is the precedent for making a source scan a
+/// test — an allow-list of the three, so a *fourth* is what goes red.
 pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
     match n {
         NodeId::ThreePlane(t) => Some(t),
@@ -974,11 +988,16 @@ pub(crate) fn turn(
 /// stored normal opposes its outward one, or a cylinder pointing the other way, is what would
 /// close them.
 ///
-/// ★ **One gap is still open and named**: flipping the *sense* a split carries onto its
-/// sub-segments (`Carrier::Plane::sense`) attaches the arcs to the wrong cells and swaps two
-/// windings — and **nothing in the walk sees it**, because the cell count is unchanged and the
-/// contour count still comes out right. Its first reader is the assembly: `nest_cells` picks the
-/// root from the `-1` contours, and a swapped winding is what that would name.
+/// ★★★ **The `sense` gap that used to be named here is CLOSED** (2026-08-22). Flipping the sense a
+/// split carries onto its sub-segments (`Carrier::Plane::sense`) attaches the arcs to the wrong
+/// cells, and nothing in the walk sees it — the cell count and the contour count both come out
+/// right. Two guesses at its first reader were wrong in turn (`nest_cells`' root choice, then
+/// `label_cells`' keep decision: every order-independent summary of the labels is identical
+/// because the two 3-cells *swap* labels). It is `emit_faces`, where the ring comes out the exact
+/// reverse, and `bands`' arc fence pins it there through `ClassAudit::outer_rings`.
+///
+/// ★ The table's first row was re-measured against that new lock and still holds: negating the
+/// whole result leaves the whole crate green. A global flip really is absorbed.
 fn arc_side(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
