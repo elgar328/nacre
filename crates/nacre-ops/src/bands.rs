@@ -351,7 +351,7 @@ mod tests {
             &jd,
             plane_ix,
         );
-        let (plane_faces, disk_labels, _) = crate::arrangement::trace_result_faces_full_for_test(
+        let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
             m,
             kind,
             a,
@@ -366,7 +366,7 @@ mod tests {
         )
         .expect("the drill population traces");
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("cylinder rows");
-        let out = band_faces(kind, &plane_faces, &rows, &jd, &disk_labels).expect("bands");
+        let out = band_faces(kind, &plane_faces, &rows, &jd, &curved.disk_labels).expect("bands");
         // The classes' **z**, not their axis parameter: `t` is measured from the cylinder's own
         // origin along its raw `dir`, so a drill starting at z=−1 puts the box's cap at t=1. The
         // assertions read in world z, which is the vocabulary the fixtures are written in.
@@ -1401,7 +1401,7 @@ mod tests {
                 &jd,
                 plane_ix,
             );
-            let (plane_faces, disk_labels, deferred) =
+            let (plane_faces, curved, deferred) =
                 crate::arrangement::trace_result_faces_full_for_test(
                     &m,
                     BoolKind::Fuse,
@@ -1432,7 +1432,7 @@ mod tests {
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &disk_labels).expect("bands"),
+                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
                 .expect("the seam realizes branch nodes");
@@ -1507,26 +1507,25 @@ mod tests {
                 &jd,
                 plane_ix,
             );
-            let (plane_faces, disk_labels, _) =
-                crate::arrangement::trace_result_faces_full_for_test(
-                    &m,
-                    BoolKind::Fuse,
-                    plate,
-                    boss,
-                    &jd,
-                    faces_tab,
-                    plane_ix,
-                    cyls,
-                    *n_a,
-                    class_owner,
-                    &trace_in,
-                )
-                .expect("the arc population traces");
+            let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
+                &m,
+                BoolKind::Fuse,
+                plate,
+                boss,
+                &jd,
+                faces_tab,
+                plane_ix,
+                cyls,
+                *n_a,
+                class_owner,
+                &trace_in,
+            )
+            .expect("the arc population traces");
             let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &disk_labels).expect("bands"),
+                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
             let named = crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls)
@@ -1633,26 +1632,25 @@ mod tests {
                 &jd,
                 plane_ix,
             );
-            let (plane_faces, disk_labels, _) =
-                crate::arrangement::trace_result_faces_full_for_test(
-                    &m,
-                    BoolKind::Fuse,
-                    plate,
-                    boss,
-                    &jd,
-                    faces_tab,
-                    plane_ix,
-                    cyls,
-                    *n_a,
-                    class_owner,
-                    &trace_in,
-                )
-                .expect("the arc population traces");
+            let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
+                &m,
+                BoolKind::Fuse,
+                plate,
+                boss,
+                &jd,
+                faces_tab,
+                plane_ix,
+                cyls,
+                *n_a,
+                class_owner,
+                &trace_in,
+            )
+            .expect("the arc population traces");
             let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &disk_labels).expect("bands"),
+                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
             let named = crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls)
@@ -1792,13 +1790,18 @@ mod tests {
     #[test]
     fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
         let s = 2.0 - 3.0f64.sqrt() / 4.0;
-        for (origin, axis, height, crossings, chord_edges) in [
+        // `seam_split`: where θ = 0 sits. `None` = a branch vertex lies on the seam generator
+        // (the straddling boss — the split's own `SeamIncident` case), so no piece splits;
+        // `Some(p)` = the seam vertex S is minted at `p` (centre + ref_dir·r, derived) and the
+        // wrap arc is cut there into two pieces.
+        for (origin, axis, height, crossings, chord_edges, seam_split) in [
             (
                 [4.0, 2.0, 2.0],
                 [0.0, 0.0, 1.0],
                 1.0,
                 [[4.0, 1.5, 2.0], [4.0, 2.5, 2.0]],
                 1usize,
+                None,
             ),
             (
                 [4.0, 0.25, 2.0],
@@ -1806,6 +1809,7 @@ mod tests {
                 1.0,
                 [[4.0, 0.75, 2.0], [4.0, 0.0, s]],
                 0usize,
+                Some([4.0, 0.25, 1.5]),
             ),
         ] {
             let mut m = Model::new();
@@ -1821,6 +1825,7 @@ mod tests {
             );
             m.rebuild_adjacency();
             let minted_from = m.edges.len();
+            let vertices_from = m.vertices.len();
             let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
                 .expect_err("the arc population is still refused");
             assert!(
@@ -1837,20 +1842,48 @@ mod tests {
             let is_cyl = |sh| matches!(m.surface(sh), nacre_geom::Surface::Cylinder(_));
             let on_circle = |e: &nacre_topo::Edge| e.surfaces.iter().any(|&sh| is_cyl(sh));
 
-            // The cut circle's pieces: exactly two, endpoints both branch vertices on the
-            // derived crossings, vertex pairs mutually reversed.
+            // The cut circle's pieces: their directed vertex pairs chain into **one** cycle —
+            // the observable of the `[A, B]`-CCW convention (for two pieces the cycle *is* the
+            // mutually-reversed pair the first version of this fence asserted), and of the seam
+            // split (three pieces when S stands, still one circle).
             let arcs: Vec<_> = minted
                 .iter()
                 .filter(|(_, e)| on_circle(e) && e.vertices[0] != e.vertices[1])
                 .collect();
-            assert_eq!(arcs.len(), 2, "two complementary arcs, two edges: {arcs:?}");
-            let ([a0, b0], [a1, b1]) = (arcs[0].1.vertices, arcs[1].1.vertices);
-            assert_eq!((a0, b0), (b1, a1), "the two orders of one vertex pair");
-            for v in [a0, b0] {
-                assert!(
-                    matches!(m.vertices.get(v).def, nacre_topo::VertexDef::Branch { .. }),
-                    "an arc ends on a branch vertex"
-                );
+            let expect_pieces = 2 + usize::from(seam_split.is_some());
+            assert_eq!(
+                arcs.len(),
+                expect_pieces,
+                "the cut circle's pieces: {arcs:?}"
+            );
+            let mut succ: std::collections::HashMap<_, _> = std::collections::HashMap::new();
+            for (_, e) in &arcs {
+                let prev = succ.insert(e.vertices[0], e.vertices[1]);
+                assert!(prev.is_none(), "two pieces leave one vertex CCW: {arcs:?}");
+            }
+            let start = arcs[0].1.vertices[0];
+            let (mut cur, mut steps) = (start, 0usize);
+            loop {
+                cur = succ[&cur];
+                steps += 1;
+                if cur == start || steps > expect_pieces {
+                    break;
+                }
+            }
+            assert_eq!(steps, expect_pieces, "the pieces close one circle");
+            // Endpoints: exactly two branch vertices on the derived crossings, plus — when the
+            // seam splits an arc — one OnSeam vertex at the derived seam point, with its
+            // tolerance measured.
+            let (mut branch, mut on_seam) = (Vec::new(), Vec::new());
+            for &v in succ.keys() {
+                match m.vertices.get(v).def {
+                    nacre_topo::VertexDef::Branch { .. } => branch.push(v),
+                    nacre_topo::VertexDef::OnSeam(_) => on_seam.push(v),
+                    ref d => panic!("an arc endpoint is neither branch nor seam: {d:?}"),
+                }
+            }
+            assert_eq!(branch.len(), 2, "one branch pair");
+            for &v in &branch {
                 let p = m.vertex_point(v);
                 assert!(
                     crossings
@@ -1859,6 +1892,32 @@ mod tests {
                     "an arc endpoint sits on a derived crossing: {p:?}"
                 );
             }
+            match seam_split {
+                None => assert!(on_seam.is_empty(), "the seam is the branch vertex itself"),
+                Some(sp) => {
+                    assert_eq!(on_seam.len(), 1, "one seam vertex on the cut circle");
+                    let p = m.vertex_point(on_seam[0]);
+                    assert!(
+                        (0..3).all(|i| (p.as_array()[i] - sp[i]).abs() < 1e-12),
+                        "S sits on the derived seam point: {p:?}"
+                    );
+                    let tol = m.vertex_tol(on_seam[0]).expect("S is discovered");
+                    assert!(tol < 1e-12, "measured against what defines it: {tol}");
+                }
+            }
+            // The minted OnSeam census: the uncut far rim's vertex, plus S when it stands —
+            // and nothing else (a duplicate S at a seam-incident branch vertex would show here).
+            let minted_on_seam = m
+                .vertices
+                .iter()
+                .skip(vertices_from)
+                .filter(|(_, v)| matches!(v.def, nacre_topo::VertexDef::OnSeam(_)))
+                .count();
+            assert_eq!(
+                minted_on_seam,
+                1 + on_seam.len(),
+                "far rim + S, nothing else"
+            );
 
             // The rim skip's two sides: no closed edge on the cut circle, exactly one on the
             // uncut far rim (its axis coordinate is the far cap's, derived from the fixture).
@@ -1879,10 +1938,11 @@ mod tests {
 
             // The chord: welded into one line edge on the straddling boss, absent across the
             // turned boss's corner.
+            let (ba, bb) = (branch[0], branch[1]);
             let chords = minted
                 .iter()
                 .filter(|(_, e)| {
-                    !on_circle(e) && (e.vertices == [a0, b0] || e.vertices == [b0, a0])
+                    !on_circle(e) && (e.vertices == [ba, bb] || e.vertices == [bb, ba])
                 })
                 .count();
             assert_eq!(chords, chord_edges, "the branch pair's line edges");

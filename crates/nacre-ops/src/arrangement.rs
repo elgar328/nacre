@@ -1891,6 +1891,15 @@ fn arc_split_witness(
     witness(breaks)
 }
 
+/// `split_circles`' product: `None` when nothing crossed (the caller keeps its slices), else the
+/// split segments, the still-whole circles, the arcs, and each cut circle's [`CutRim`].
+type SplitCircles = Option<(
+    Vec<MergedSeg>,
+    Vec<MergedCircle>,
+    Vec<MergedArc>,
+    Vec<(usize, CutRim)>,
+)>;
+
 /// **Cut every circle a segment crosses into arcs, and the segments with it.**
 ///
 /// ★★★ This is the arc split. What it does *not* do is find the crossings — [`circle_crossings`]
@@ -1900,13 +1909,12 @@ fn arc_split_witness(
 ///
 /// ★ A circle nothing crosses is returned **whole**, on the road it has always taken. The parallel
 /// road shrinks to the population it is actually about.
-#[allow(clippy::type_complexity)]
 fn split_circles(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     segs: &[MergedSeg],
     circles: &[MergedCircle],
-) -> Result<Option<(Vec<MergedSeg>, Vec<MergedCircle>, Vec<MergedArc>)>, BoolError> {
+) -> Result<SplitCircles, BoolError> {
     use nacre_scalar::quad::QuadVal;
     let undecided = || reject(RejectReason::WitnessNotRational);
     // Which nodes land on each circle, and which on each segment. Collected together because one
@@ -1954,6 +1962,7 @@ fn split_circles(
     let mut out_segs = Vec::with_capacity(segs.len());
     let mut out_circles = Vec::new();
     let mut arcs = Vec::new();
+    let mut cut_rims: Vec<(usize, CutRim)> = Vec::new();
 
     // ★★ **The segment split runs first: the sharper question before the vaguer one.** Both halves
     // refuse a point wearing two names, and the segment side sees the case the circle side cannot —
@@ -2126,6 +2135,7 @@ fn split_circles(
         if bad_theta {
             return Err(undecided());
         }
+        let seam_is_node = !seam.is_empty();
         let order: Vec<usize> = seam.into_iter().chain(chart).collect();
         // ★ **Two names for one point, on the circle side.** Two walls crossing the circle at one
         // point are two *different* branch names — `dedup` cannot see it, and the θ sort puts them
@@ -2156,9 +2166,16 @@ fn split_circles(
                 merged: circ.merged.clone(),
             });
         }
+        cut_rims.push((
+            circ.cyl,
+            CutRim {
+                nodes: order.iter().map(|&k| nodes[k]).collect(),
+                seam_is_node,
+            },
+        ));
     }
 
-    Ok(Some((out_segs, out_circles, arcs)))
+    Ok(Some((out_segs, out_circles, arcs, cut_rims)))
 }
 
 /// **Where a point sits along a line**, as the one parameter both kinds of point can state: a
@@ -2485,6 +2502,9 @@ struct ClassEdges<'a> {
     circles: std::borrow::Cow<'a, [MergedCircle]>,
     /// Whether [`split_circles`] cut anything. Equal to `!arcs.is_empty()` — see [`Self::of`].
     split: bool,
+    /// Each cut circle's seam datum, `(cylinder class, rim)` — carried out to the assembly
+    /// (keyed by plane class where the per-class products are aggregated).
+    cut_rims: Vec<(usize, CutRim)>,
 }
 
 /// Which of the three ranges a half-edge is in, and its index within that range.
@@ -2505,7 +2525,7 @@ impl<'a> ClassEdges<'a> {
     ) -> Result<Self, BoolError> {
         use std::borrow::Cow;
         Ok(match split_circles(jd, wc, segs, circles)? {
-            Some((s, c, a)) => {
+            Some((s, c, a, r)) => {
                 // ★ The names below rest on this: `split_circles` answers `Some` only when some
                 // circle collected a crossing, and a crossing yields at least one arc (a tangency
                 // is skipped before it is collected). So "was split" and "has arcs" are one fact.
@@ -2515,6 +2535,7 @@ impl<'a> ClassEdges<'a> {
                     arcs: Cow::Owned(a),
                     circles: Cow::Owned(c),
                     split: true,
+                    cut_rims: r,
                 }
             }
             None => ClassEdges {
@@ -2522,6 +2543,7 @@ impl<'a> ClassEdges<'a> {
                 arcs: Cow::Borrowed(&[]),
                 circles: Cow::Borrowed(circles),
                 split: false,
+                cut_rims: Vec::new(),
             },
         })
     }
@@ -3431,7 +3453,7 @@ pub(crate) fn trace_result_faces_full_for_test(
     n_a: usize,
     class_owner: &[Option<SolidSide>],
     trace_in: &combinatorics::TraceInput,
-) -> Result<(Vec<LocalFace>, DiskLabels, Option<BoolError>), BoolError> {
+) -> Result<(Vec<LocalFace>, Curved, Option<BoolError>), BoolError> {
     trace_result_faces(
         model,
         kind,
@@ -3452,6 +3474,31 @@ pub(crate) fn trace_result_faces_full_for_test(
 /// pass. Keyed rather than positional because a class carries a circle only when a cylinder cuts
 /// it, and a cylinder cuts only some classes.
 pub(crate) type DiskLabels = HashMap<(usize, usize), Label>;
+
+/// **A cut circle's seam datum — carried from the split, never re-derived.** `split_circles`
+/// already orders a cut circle's branch nodes by θ about the seam and classifies a seam-incident
+/// node by name (`circular_order_about_seam`), so the one fact the assembly cannot re-derive
+/// cheaply — *where θ = 0 sits among the arcs* — travels from the place that computed it.
+#[derive(Clone, Debug)]
+pub(crate) struct CutRim {
+    /// The circle's branch nodes in θ order (CCW about the axis). When `seam_is_node`, the
+    /// seam-incident node is first; otherwise θ = 0 lies inside the wrap arc
+    /// `nodes.last() → nodes[0]`.
+    pub(crate) nodes: Vec<combinatorics::NodeId>,
+    pub(crate) seam_is_node: bool,
+}
+
+/// Per `(cylinder class, plane class)`, the cut circles — presence in this map **is** the one
+/// source of "this rim is cut" (the assembly's rim skip and curved arms all read it).
+pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
+
+/// What the arrangement learned about the curved boundary, bundled: the band pass reads
+/// `disk_labels`, the assembly reads `cut_rims`. One struct so the trace's return does not grow
+/// element by element (it was widened once already, for `deferred`).
+pub(crate) struct Curved {
+    pub(crate) disk_labels: DiskLabels,
+    pub(crate) cut_rims: CutRims,
+}
 
 /// **The seam table — every node the result faces reference, realized to a coordinate and a
 /// measured tolerance.** The weld table `assemble_fuse_cut` reads; built directly from the
@@ -3569,7 +3616,7 @@ fn trace_result_faces(
     class_owner: &[Option<SolidSide>],
     reuse: crate::reuse::ClassReuse,
     trace_in: &combinatorics::TraceInput,
-) -> Result<(Vec<LocalFace>, DiskLabels, Option<BoolError>), BoolError> {
+) -> Result<(Vec<LocalFace>, Curved, Option<BoolError>), BoolError> {
     let planes = jd.planes;
     let mut local_faces: Vec<LocalFace> = Vec::new();
 
@@ -3702,7 +3749,12 @@ fn trace_result_faces(
         // materialization and before any edge — so the seam's branch arm, the split-twin
         // subdivision, the naming pre-pass and the branch minting all run before the population
         // is refused.
-        type ClassOut = (Vec<LocalFace>, Vec<(usize, Label)>, Option<BoolError>);
+        type ClassOut = (
+            Vec<LocalFace>,
+            Vec<(usize, Label)>,
+            Vec<(usize, CutRim)>,
+            Option<BoolError>,
+        );
         let arrange = |wc: usize| -> Result<ClassOut, BoolError> {
             watch!(CELLS);
             // ★★ **One `ClassEdges` for the whole pipeline.** The split renumbers half-edges, so
@@ -3733,7 +3785,7 @@ fn trace_result_faces(
                 Ok(s) => s,
                 Err(e) => return Err(deferred.unwrap_or(e)),
             };
-            Ok((s.faces, s.disk_labels, deferred))
+            Ok((s.faces, s.disk_labels, edges.cut_rims.clone(), deferred))
         };
         // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
         // its vertices falls back to arranging, so this can lose the shortcut but never the answer.
@@ -3761,22 +3813,30 @@ fn trace_result_faces(
             }
         };
         match reused {
-            Some(f) => Ok((f, Vec::new(), None)),
+            Some(f) => Ok((f, Vec::new(), Vec::new(), None)),
             None => arrange(wc),
         }
     })?;
-    let mut disk_labels: DiskLabels = HashMap::new();
+    let mut curved = Curved {
+        disk_labels: HashMap::new(),
+        cut_rims: HashMap::new(),
+    };
     // The first arc class's deferred reject, in `work` order — the map above may run its classes
     // in parallel, but this fold reads the vec in order, so the choice is deterministic.
     let mut deferred: Option<BoolError> = None;
-    for (k, (faces, labels, d)) in per_class.into_iter().enumerate() {
+    for (k, (faces, labels, rims, d)) in per_class.into_iter().enumerate() {
         local_faces.extend(faces);
+        // ★ `work[k]` is the translation from this arrangement's k-th class to the global plane
+        // class index — both curved maps are keyed in the global space the assembly speaks.
         for (cyl, label) in labels {
-            disk_labels.insert((cyl, work[k]), label);
+            curved.disk_labels.insert((cyl, work[k]), label);
+        }
+        for (cyl, rim) in rims {
+            curved.cut_rims.insert((cyl, work[k]), rim);
         }
         deferred = deferred.or(d);
     }
-    Ok((local_faces, disk_labels, deferred))
+    Ok((local_faces, curved, deferred))
 }
 
 /// One arrangement vertex a boolean named, with **every** plane through it.
@@ -4298,7 +4358,7 @@ pub(crate) fn boolean(
         // cell — what the band pass reads instead of casting a witness ray (M6-2a K1).
         // `deferred`: an arc class's stopper reject, made per class and raised below **after** the
         // seam stretch, so the seam's branch arm runs before the population is refused.
-        let (faces, disk_labels, deferred) = trace_result_faces(
+        let (faces, curved, deferred) = trace_result_faces(
             model,
             kind,
             a,
@@ -4394,7 +4454,7 @@ pub(crate) fn boolean(
                     &faces,
                     &rows,
                     &jd,
-                    &disk_labels,
+                    &curved.disk_labels,
                 )?);
                 faces
             };
@@ -4412,7 +4472,17 @@ pub(crate) fn boolean(
 
         timed!(
             ASSEMBLE,
-            assemble_fuse_cut(model, a, b, &jd, &seam, &faces, &cyls, deferred)
+            assemble_fuse_cut(
+                model,
+                a,
+                b,
+                &jd,
+                &seam,
+                &faces,
+                &cyls,
+                &curved.cut_rims,
+                deferred
+            )
         )
     };
     let out = run(model);

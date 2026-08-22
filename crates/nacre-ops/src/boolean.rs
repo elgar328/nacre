@@ -794,8 +794,10 @@ impl Bound {
 /// The rim a curved bound is assembled on: `(group, cylinder class, plane class) → (seam vertex,
 /// rim edge)`. The group is in the key for the reason it is in the seam vertices' — two result
 /// solids never share a handle — and the rest is what makes a cap face and the band that meets it
-/// pick up the *same* edge.
-type RimTable = HashMap<(usize, usize, usize), (Handle<Vertex>, Handle<Edge>)>;
+/// pick up the *same* edge. A **cut** circle's entry carries its seam vertex and `None`: the
+/// closed `[v, v]` edge spelling is false for it, and its boundary is assembled from arc pieces
+/// instead.
+type RimTable = HashMap<(usize, usize, usize), (Handle<Vertex>, Option<Handle<Edge>>)>;
 
 /// A reconstructed result face: which combined plane it is on, its boundaries, and whether to
 /// flip it (cut's inside-A B-pieces).
@@ -859,9 +861,10 @@ pub(crate) fn assemble_fuse_cut(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
+    cut_rims: &crate::arrangement::CutRims,
     deferred: Option<BoolError>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let out = reconstruct(model, jd, seam, faces, cyls, deferred)?;
+    let out = reconstruct(model, jd, seam, faces, cyls, cut_rims, deferred)?;
     model.live_solids.retain(|&s| s != a && s != b);
     Ok(out)
 }
@@ -1343,6 +1346,7 @@ fn reconstruct(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
+    cut_rims: &crate::arrangement::CutRims,
     deferred: Option<BoolError>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes = jd.planes;
@@ -1366,22 +1370,6 @@ fn reconstruct(
         Err(e) => return Err(deferred.unwrap_or(e)),
     };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
-
-    // ★ **Which rims are cut** — read off the branch declarations, per group: a branch vertex
-    // names its cylinder and two result planes, so every `(cylinder, plane)` pair it lies on is
-    // a circle that no longer closes. The set over-approximates harmlessly (the branch's *wall*
-    // plane pairs with the cylinder too, but no rim is ever keyed by it): only real rim keys are
-    // tested against it, by the rim table's skip and by the curved arms' checks below.
-    let mut cut: HashSet<(usize, usize, usize)> = HashSet::new();
-    for (&(g, _), def) in &def_triple {
-        if let Def::Branch {
-            planes: p2, cyl, ..
-        } = def
-        {
-            cut.insert((g, *cyl, p2[0]));
-            cut.insert((g, *cyl, p2[1]));
-        }
-    }
 
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<(usize, NodeId), Handle<Vertex>> = HashMap::new();
@@ -1524,14 +1512,7 @@ fn reconstruct(
                 if rim.contains_key(&(g, k, c)) {
                     continue;
                 }
-                // ★★ **A cut circle mints no rim.** The rim edge is the closed `[v, v]` spelling,
-                // and for a cut circle that spelling is false — measured before this skip, both arc
-                // fixtures minted a `[v, v]` on a cut rim that only the reject then discarded. The
-                // curved arms below check the same set *before* they look the rim up, and answer
-                // with the population's own name rather than `MissingSeam`.
-                if cut.contains(&(g, k, c)) {
-                    continue;
-                }
+                let cut = cut_rims.get(&(k, c));
                 let (lat, plane) = (cyls[k].surf, planes[c].surf);
                 // The seam point of this rim, spelled as `add_cylinder` spells one: the axis meets the
                 // plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
@@ -1551,10 +1532,28 @@ fn reconstruct(
                     .surface(lat)
                     .distance(point)
                     .max(model.surface(plane).distance(point));
-                let v = model.push_vertex(VertexDef::OnSeam([lat, plane]), point, Some(tol));
-                let e = model
-                    .push_edge(Edge::carrier_pair(lat, plane), [v, v])
-                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+                // ★★ **A cut circle mints no closed rim edge — but its seam vertex stands.**
+                // The `[v, v]` spelling is false for a cut circle (measured: both arc fixtures
+                // minted one that only the reject then discarded), while θ = 0 is still where the
+                // band's joint must sit (a `[lat, lat]` seam edge derives a line from its
+                // endpoints, so both must share one θ — and the seam is model geometry, fixed at
+                // `+ref_dir`). Degenerate case first: when a branch vertex lies **on** the seam
+                // generator — the split's own `SeamIncident` classification, carried in
+                // `CutRim::seam_is_node`, never re-derived from coordinates — that vertex *is*
+                // the seam point and minting another would stand a second handle on the same
+                // point (a zero-length arc piece nothing downstream could see).
+                let v = match cut {
+                    Some(cr) if cr.seam_is_node => vh[&(g, cr.nodes[0])],
+                    _ => model.push_vertex(VertexDef::OnSeam([lat, plane]), point, Some(tol)),
+                };
+                let e = match cut {
+                    Some(_) => None,
+                    None => Some(
+                        model
+                            .push_edge(Edge::carrier_pair(lat, plane), [v, v])
+                            .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?,
+                    ),
+                };
                 rim.insert((g, k, c), (v, e));
             }
         }
@@ -1672,16 +1671,52 @@ fn reconstruct(
         let mut ring = |model: &mut Model, r: &Ring| -> Result<Loop, BoolError> {
             let handles: Vec<Handle<Vertex>> = r.nodes.iter().map(|nd| vh[&(g, *nd)]).collect();
             let k = handles.len();
-            let half_edges: Vec<HalfEdge> = (0..k)
-                .map(|t| {
-                    let (va, vb) = (handles[t], handles[(t + 1) % k]);
-                    let e = edge_for(model, va, vb, r.walls[t], face_surf)?;
+            let mut half_edges: Vec<HalfEdge> = Vec::with_capacity(k);
+            for t in 0..k {
+                let (va, vb) = (handles[t], handles[(t + 1) % k]);
+                // ★★ **The wrap arc is minted as two pieces, split at the seam vertex.** θ = 0
+                // lies inside exactly one arc of a cut circle (unless a branch vertex sits on the
+                // seam — `CutRim::seam_is_node`, in which case nothing splits), and the band's
+                // seam edge must end there; splitting on the *cap* side is what hands the band
+                // the same two edges and keeps the shell guard's use count at two.
+                //
+                // ★ The wrap test is **directed**: with two branch nodes the two complementary
+                // arcs share one unordered endpoint pair, so the match orients the ring step by
+                // the `ccw` bit the wall carries and compares against the split's own θ order
+                // (`nodes.last() → nodes[0]` is the piece that wraps past θ = 0).
+                let split_at = if let Wall::Arc { cyl, ccw } = r.walls[t] {
+                    let c = lf.surf.plane();
+                    match cut_rims.get(&(cyl, c)) {
+                        Some(cr) if !cr.seam_is_node => {
+                            let (a, b) = (r.nodes[t], r.nodes[(t + 1) % k]);
+                            let ccw_pair = if ccw { (a, b) } else { (b, a) };
+                            let last = *cr.nodes.last().expect("a cut circle has branch nodes");
+                            if ccw_pair == (last, cr.nodes[0]) {
+                                let &(v, _) = rim
+                                    .get(&(g, cyl, c))
+                                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                                Some(v)
+                            } else {
+                                None
+                            }
+                        }
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
+                let legs = match split_at {
+                    Some(s) => vec![[va, s], [s, vb]],
+                    None => vec![[va, vb]],
+                };
+                for [u, v] in legs {
+                    let e = edge_for(model, u, v, r.walls[t], face_surf)?;
                     // For an arc edge the stored order is CCW, so this reads back exactly the
                     // `ccw` bit the wall carried in.
-                    let forward = model.edges.get(e).vertices[0] == va;
-                    Ok(HalfEdge { edge: e, forward })
-                })
-                .collect::<Result<Vec<_>, BoolError>>()?;
+                    let forward = model.edges.get(e).vertices[0] == u;
+                    half_edges.push(HalfEdge { edge: e, forward });
+                }
+            }
             Ok(Loop { half_edges })
         };
         // ★★ **Which way a rim circle is walked.** `derive_edge_curve` builds it as
@@ -1709,16 +1744,19 @@ fn reconstruct(
         let circle_loop =
             |model: &mut Model, cyl: usize, cls: usize, hole: bool| -> Result<Loop, BoolError> {
                 // ★★ **The cut check comes before the rim lookup, and answers with the
-                // population's own name.** A cut circle has no rim (the table skipped it), but
-                // reaching for one is not a dropped crossing — `MissingSeam` would misdiagnose a
-                // `SuspectedDefect` — it is the arc population's honest boundary: nothing
-                // downstream can assemble this bound from arcs yet.
-                if cut.contains(&(g, cyl, cls)) {
+                // population's own name.** A cut circle cannot bound a whole disk — the trace
+                // subdivides that disk into cells — so reaching here with one is a producer
+                // inconsistency this backstop names honestly rather than as a dropped crossing
+                // (`MissingSeam` would misdiagnose a `SuspectedDefect`).
+                if cut_rims.contains_key(&(cyl, cls)) {
                     return Err(reject(RejectReason::ArcBoundNotYet));
                 }
                 let (_, e) = *rim
                     .get(&(g, cyl, cls))
                     .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                // An uncut circle's rim always carries its closed edge; the cut arm was refused
+                // one line above, so `None` here is the same dropped-crossing shape.
+                let e = e.ok_or_else(|| reject(RejectReason::MissingSeam))?;
                 let _ = model;
                 let mut forward = axis_sign(cyl) > 0.0;
                 if hole {
@@ -1732,16 +1770,19 @@ fn reconstruct(
         // seam, which the one face uses twice in opposite senses.
         let band_loop =
             |model: &mut Model, k: usize, lo: usize, hi: usize| -> Result<Loop, BoolError> {
-                // Same check as `circle_loop`'s, for both rims, before either lookup.
-                if cut.contains(&(g, k, lo)) || cut.contains(&(g, k, hi)) {
+                // Same shape as `circle_loop`'s check, for both rims, before either lookup —
+                // the assembly of a cut rim's boundary from its arc pieces is the next commit.
+                if cut_rims.contains_key(&(k, lo)) || cut_rims.contains_key(&(k, hi)) {
                     return Err(reject(RejectReason::ArcBoundNotYet));
                 }
                 let (v_lo, e_lo) = *rim
                     .get(&(g, k, lo))
                     .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                let e_lo = e_lo.ok_or_else(|| reject(RejectReason::MissingSeam))?;
                 let (v_hi, e_hi) = *rim
                     .get(&(g, k, hi))
                     .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                let e_hi = e_hi.ok_or_else(|| reject(RejectReason::MissingSeam))?;
                 let lat = cyls[k].surf;
                 let seam_edge = model
                     .push_edge(Edge::carrier_pair(lat, lat), [v_lo, v_hi])
