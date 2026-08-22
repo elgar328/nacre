@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 56ad1add4db7f87eb5b549a83145e6295a874131015a0d7415274d074a831f57 # shrinks to s = NurbsSurface { degree_u: 2, degree_v: 2, control_points: [[Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }], [Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }], [Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 0.0] }, Point { coords: [0.0, 0.0, 5.536607612601326] }]], weights: [[0.5, 0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5, 0.5], [0.5, 0.5, 0.5, 0.5, 0.5]], knots_u: [0.0, 0.0, 0.0, 1.0, 1.0, 1.0], knots_v: [0.0, 0.0, 0.0, 0.3333333333333333, 0.6666666666666666, 1.0, 1.0, 1.0] }, su = 0.6296698595157583, sv = 0.6666667897800985

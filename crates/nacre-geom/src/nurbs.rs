@@ -758,12 +758,35 @@ mod tests {
         })
     }
 
+    /// **Is `t` far enough from every interior knot for a central difference to be second-order?**
+    ///
+    /// ★★★ **The oracle, not the surface, is what a knot breaks.** A central difference is
+    /// second-order only where the function is C²; at a simple interior knot a degree-`p` spline is
+    /// only C^(p−1), so a sample within `h` of one differences *across* the break and the error
+    /// degrades to O(h) — larger than these tests' tolerance, while `derivative`/`du`/`dv`
+    /// themselves are perfectly correct there (the curve is still C¹).
+    ///
+    /// Measured, and the reason this is written down rather than absorbed into a looser tolerance:
+    /// proptest found `v = 0.66666679` against a knot at `2/3` — `1.2e-7` away with `h = 1e-6`. The
+    /// window is `2h` wide out of a unit domain, so roughly one sample in `10⁵` lands in it; that is
+    /// the shape a fixed corpus never finds and a proptest eventually does. Loosening the tolerance
+    /// instead would blind the check everywhere to buy nothing here.
+    ///
+    /// ★ Both derivative oracles read this. The curve one had the same latent flaw and had simply
+    /// not been hit — one rule, one place.
+    fn clear_of_knots(t: f64, knots: &[f64], degree: usize, h: f64) -> bool {
+        knots[degree + 1..knots.len() - degree - 1]
+            .iter()
+            .all(|k| (t - k).abs() > 2.0 * h)
+    }
+
     proptest! {
         #[test]
         fn derivative_matches_central_difference(c in nurbs(), s in 0.05f64..0.95) {
             let (lo, hi) = c.domain();
             let u = lo + s * (hi - lo);
             let h = 1e-6;
+            prop_assume!(clear_of_knots(u, c.knots(), c.degree(), h));
             let central = (c.point_at(u + h) - c.point_at(u - h)) / (2.0 * h);
             let extent: f64 = c
                 .control_points()
@@ -801,6 +824,8 @@ mod tests {
             let ((u0, u1), (v0, v1)) = s.domain();
             let (u, v) = (u0 + su * (u1 - u0), v0 + sv * (v1 - v0));
             let h = 1e-6;
+            prop_assume!(clear_of_knots(u, s.knots_u(), s.degree_u(), h));
+            prop_assume!(clear_of_knots(v, s.knots_v(), s.degree_v(), h));
             let cu = (s.point_at(u + h, v) - s.point_at(u - h, v)) / (2.0 * h);
             let cv = (s.point_at(u, v + h) - s.point_at(u, v - h)) / (2.0 * h);
             let extent: f64 = s.control_points().iter().flatten()
