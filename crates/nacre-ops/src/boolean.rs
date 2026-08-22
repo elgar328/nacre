@@ -2247,7 +2247,10 @@ fn merge_component(
 /// and the branch vertex between them would have dissolved — a recorded hazard, unfired only
 /// because in both arc fixtures a chord or a segment sits between any two arcs. `Wall`'s derived
 /// equality killed it structurally: arcs of different circles, or of one circle in different
-/// directions, now compare unequal.
+/// directions, now compare unequal. The one pair still equal — two *same-direction* arcs of one
+/// circle — is the pair for which "no turn" is geometrically true on this face, so equality
+/// answers right there too; a crossing at such a vertex is kept by the other faces' rings
+/// (degree > 2), the function's own rule. No population produces that consecutive pair today.
 fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
     // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of

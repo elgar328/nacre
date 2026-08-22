@@ -789,9 +789,10 @@ pub enum RejectReason {
     /// The edges follow: `boolean::Ring` carries each edge's carrier (`Wall`), the arc edges of
     /// every plane face are minted with the ordered circle key (`[A, B]` = CCW about the axis,
     /// so the two complementary arcs between one branch pair are distinct edges), the rim table
-    /// skips a cut circle rather than minting a false closed `[v, v]` edge, and the plane faces
-    /// assemble whole. So the refusal stands **after the face loop and before the shell guard**:
-    /// everything up to there runs, is measured, and is then not handed on.
+    /// skips a cut circle rather than minting a false closed `[v, v]` edge, and the face loop
+    /// assembles faces until it meets a cut rim's curved bound (measured: in both fixtures every
+    /// plane face assembles before that). So the refusal stands **after the face loop and before
+    /// the shell guard**: what ran is measured, and is then not handed on.
     ///
     /// ★★ **A refusal here therefore leaves minted vertices, edges and faces in the store** —
     /// garbage cells outside every live solid, the same class of residue a late reject's arena

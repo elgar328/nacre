@@ -12382,7 +12382,8 @@ CCW(축 기준), 상보 호 = 역순 쌍. `derive_edge_curve` 의 (Plane,Cylinde
 **인용해 나르고**(새 유도 없음), 소비자 전부 `Wall::Plane` 매치, `Ring::edges` 는 legacy shim
 (names-road 무변화 — 담체화는 grouping-팔 칸의 몫), 면 루프 sentinel debug_assert 는 정직한
 `ArcBoundNotYet` 팔로 은퇴. 공짜 수확: dissolve 의 `MAX==MAX` 위험(기록돼 있던 것)이 파생
-동등성으로 **구조 사멸**. mid-ring `Circle` 반모서리는 `origin` 과 같은 unreachable 명제로 거울.
+동등성으로 **구조 사멸** — 다른 원·다른 방향은 부등이 되고, 여전히 동등한 유일한 쌍(같은 원·같은 방향의 연속 호)은 이 면에서 「꺾임 없음」이 기하적으로 참이라 동등이 곧 정답이다(자체
+점검이 잡은 반쪽 기록 — doc 에 명시). mid-ring `Circle` 반모서리는 `origin` 과 같은 unreachable 명제로 거울.
 
 ### ② 주조 — store 가 직접 답했다
 
