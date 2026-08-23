@@ -142,10 +142,11 @@ pub(crate) fn band_faces(
     rows: &[CylRow],
     jd: &Judge<'_, WorkingPlane>,
     labels: &crate::arrangement::DiskLabels,
+    cut_rims: &crate::arrangement::CutRims,
 ) -> Result<Vec<LocalFace>, BoolError> {
     let mut out = Vec::new();
     for row in rows {
-        for (lo, hi) in bands_of(row, plane_faces, jd)? {
+        for (lo, hi) in bands_of(row, plane_faces, jd, cut_rims)? {
             let (in_own_inside, in_other) = chamber(jd, row, lo, hi, labels)?;
             // ★ **The wall is a boundary face of its own solid, so that solid's membership flips
             // across it** — read inside from the label, and outside is its negation. The
@@ -185,10 +186,11 @@ pub(crate) fn band_faces(
 /// ★ Circles are gathered per *class*, so a sibling face's boundaries are collected here too — and
 /// then clipped away by this face's span. That clip is what keeps two faces of one surface from
 /// borrowing each other's cuts.
-fn bands_of(
+pub(crate) fn bands_of(
     row: &CylRow,
     plane_faces: &[LocalFace],
     jd: &Judge<'_, WorkingPlane>,
+    cut_rims: &crate::arrangement::CutRims,
 ) -> Result<Vec<(usize, usize)>, BoolError> {
     let k = row.class;
     let mut classes: Vec<usize> = Vec::new();
@@ -206,13 +208,26 @@ fn bands_of(
             push(c, &mut classes);
         }
     }
+    // ★ A **cut** circle is a band boundary too (the rulings ladder): it emits no `Circle`
+    // bound — its boundary is arc pieces — so the walk above cannot see it, and before this arm
+    // the band pass emitted one full-height band straight across it (measured on the lifted
+    // through-boss). The arrangement's own record of every cut circle is `cut_rims`, keyed by
+    // `(cylinder class, plane class)`; a rim-cut circle (straddle/hung) names the same class the
+    // span-end rule below finds, and `push`'s dedup folds them. The final interval list is
+    // sorted by axis parameter, so the map's iteration order decides nothing.
+    for (&(kk, c), _) in cut_rims.iter() {
+        if kk == k {
+            push(c, &mut classes);
+        }
+    }
     for c in 0..jd.planes.len() {
         // ★ A class ⊥ to the axis is a **potential band boundary**, so failing to place it is a
         // refusal, not a skip: silently missing one would merge two bands whose membership
         // differs and hand back a closed, wrong solid. Classes that are not ⊥ cannot bound a
-        // band at all (the gate proved the ∥ ones clear of **every band** — its wall rule reads a
-        // footprint rectangle per lateral face, so a wall it passed misses each of them), so
-        // those are skipped for cause.
+        // band at all — a ∥ wall meets the lateral along **rulings**, which cut bands in θ, not
+        // in the axis (the panel road's job; while a pair sits behind the gate's `crossings`
+        // record the wall rule has proven it clear of every band) — so those are skipped for
+        // cause.
         let Some(coeffs) = combinatorics::class_coeffs_rat(jd, c) else {
             continue;
         };
@@ -266,7 +281,7 @@ fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Option<Rat
 /// membership is read from the label too, and the wall's other side follows from what the wall
 /// *is*: a boundary face of that solid, so its own membership flips across it while the
 /// counterpart's (by the slab theorem) does not.
-fn chamber(
+pub(crate) fn chamber(
     jd: &Judge<'_, WorkingPlane>,
     row: &CylRow,
     lo: usize,
@@ -367,7 +382,15 @@ mod tests {
         )
         .expect("the drill population traces");
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("cylinder rows");
-        let out = band_faces(kind, &plane_faces, &rows, &jd, &curved.disk_labels).expect("bands");
+        let out = band_faces(
+            kind,
+            &plane_faces,
+            &rows,
+            &jd,
+            &curved.disk_labels,
+            &curved.cut_rims,
+        )
+        .expect("bands");
         // The classes' **z**, not their axis parameter: `t` is measured from the cylinder's own
         // origin along its raw `dir`, so a drill starting at z=−1 puts the box's cap at t=1. The
         // assertions read in world z, which is the vocabulary the fixtures are written in.
@@ -1388,7 +1411,15 @@ mod tests {
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
+                band_faces(
+                    BoolKind::Fuse,
+                    &faces,
+                    &rows,
+                    &jd,
+                    &curved.disk_labels,
+                    &curved.cut_rims,
+                )
+                .expect("bands"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
                 .expect("the seam realizes branch nodes");
@@ -1482,7 +1513,15 @@ mod tests {
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
+                band_faces(
+                    BoolKind::Fuse,
+                    &faces,
+                    &rows,
+                    &jd,
+                    &curved.disk_labels,
+                    &curved.cut_rims,
+                )
+                .expect("bands"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
             let named =
@@ -1609,7 +1648,15 @@ mod tests {
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
+                band_faces(
+                    BoolKind::Fuse,
+                    &faces,
+                    &rows,
+                    &jd,
+                    &curved.disk_labels,
+                    &curved.cut_rims,
+                )
+                .expect("bands"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
             let named =
@@ -2052,7 +2099,15 @@ mod tests {
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(BoolKind::Fuse, &faces, &rows, &jd, &curved.disk_labels).expect("bands"),
+                band_faces(
+                    BoolKind::Fuse,
+                    &faces,
+                    &rows,
+                    &jd,
+                    &curved.disk_labels,
+                    &curved.cut_rims,
+                )
+                .expect("bands"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
                 .expect("the seam realizes branch nodes");

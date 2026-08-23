@@ -5259,6 +5259,7 @@ pub(crate) fn boolean(
                     &rows,
                     &jd,
                     &curved.disk_labels,
+                    &curved.cut_rims,
                 )?);
                 faces
             };
@@ -7623,6 +7624,106 @@ mod tests {
             1,
             "one connected skeleton, one outer contour"
         );
+    }
+
+    /// One armed class's arrangement, through the production bricks (the chain
+    /// `the_armed_wall_class_walks_to_closed_cells` spells out) — for the locks that need
+    /// several classes' products at once.
+    fn armed_class_edges<'a>(
+        m: &Model,
+        plate: Handle<Solid>,
+        boss: Handle<Solid>,
+        setup: &'a crate::planes::PlaneSetup,
+        jd: &Judge<'a, WorkingPlane>,
+        wc: usize,
+        crossings: &std::collections::HashSet<(usize, usize)>,
+    ) -> ClassEdges<'static> {
+        let tr = trace_on_class_of(
+            m,
+            plate,
+            boss,
+            wc,
+            jd,
+            &setup.planes,
+            &setup.surf_ix,
+            &setup.inc_a,
+            &setup.inc_b,
+            &setup.plane_ix,
+            crossings.clone(),
+        );
+        assert!(tr.declined.is_empty(), "{:?}", tr.declined);
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let split = split_at_crossings(jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = drop_newsless(split).unwrap();
+        let circles = merge_circles(&tr.circles, &setup.cyls).unwrap();
+        let rulings = merge_rulings(&tr.rulings, &setup.cyls);
+        let chords = chords_to_segs(&tr.chords, jd, wc, &setup.cyls).unwrap();
+        let e = ClassEdges::of(jd, wc, &split, &circles, &rulings, chords).unwrap();
+        // Owned copies so the borrows above may end — a test convenience, not a production shape.
+        ClassEdges {
+            segs: std::borrow::Cow::Owned(e.segs.into_owned()),
+            arcs: std::borrow::Cow::Owned(e.arcs.into_owned()),
+            rulings: std::borrow::Cow::Owned(e.rulings.into_owned()),
+            circles: std::borrow::Cow::Owned(e.circles.into_owned()),
+            cut_rims: e.cut_rims,
+        }
+    }
+
+    /// ★ **A cut circle is a band boundary** (rulings ladder, cell 2 — commit ①). On the armed
+    /// through-boss, the per-class products of the four ⊥ classes are collected the production
+    /// way (`per_class` on each), and `bands_of` must break the lateral at the two **cut**
+    /// circles (z = 0, z = 20) as well as the rims: three intervals, not one full-height band.
+    /// The middle interval is both-cut, and `chamber` still refuses it honestly (both ends
+    /// carry no disk cell — `CylinderGateUndecided`, the recorded backstop this cell's commit ②
+    /// opens); the outer intervals are one-side-cut and `chamber` answers from the cap end.
+    #[test]
+    fn a_cut_circle_bounds_the_bands() {
+        let (m, plate, boss, setup, _wc, crossings) = armed_through_boss();
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let z_class = |z: f64| -> usize {
+            setup
+                .geom
+                .iter()
+                .position(|p| p.tri.iter().all(|q| (q.as_array()[2] - z).abs() < 1e-12))
+                .unwrap_or_else(|| panic!("a class at z = {z}"))
+        };
+        let (z0, z20, cap_lo, cap_hi) =
+            (z_class(0.0), z_class(20.0), z_class(-10.0), z_class(40.0));
+        // The production carriers: disk labels from every ⊥ class, cut rims from the cut ones.
+        let mut disk_labels: crate::arrangement::DiskLabels = HashMap::new();
+        let mut cut_rims: CutRims = HashMap::new();
+        let mut plane_faces: Vec<LocalFace> = Vec::new();
+        for c in [z0, z20, cap_lo, cap_hi] {
+            let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c, &crossings);
+            let staged = per_class(&jd, BoolKind::Fuse, c, &edges).unwrap();
+            for (cyl, label) in &staged.disk_labels {
+                disk_labels.insert((*cyl, c), *label);
+            }
+            for (cyl, rim) in &edges.cut_rims {
+                cut_rims.insert((*cyl, c), rim.clone());
+            }
+            plane_faces.extend(staged.faces);
+        }
+        assert!(cut_rims.contains_key(&(0, z0)) && cut_rims.contains_key(&(0, z20)));
+        assert!(disk_labels.contains_key(&(0, cap_lo)) && disk_labels.contains_key(&(0, cap_hi)));
+        let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
+        assert_eq!(rows.len(), 1);
+        let bands = crate::bands::bands_of(&rows[0], &plane_faces, &jd, &cut_rims).unwrap();
+        assert_eq!(
+            bands,
+            vec![(cap_lo, z0), (z0, z20), (z20, cap_hi)],
+            "three intervals, cut circles included"
+        );
+        // One-side-cut intervals answer from their cap end; the both-cut middle still refuses.
+        assert!(crate::bands::chamber(&jd, &rows[0], cap_lo, z0, &disk_labels).is_ok());
+        assert!(crate::bands::chamber(&jd, &rows[0], z20, cap_hi, &disk_labels).is_ok());
+        assert!(matches!(
+            crate::bands::chamber(&jd, &rows[0], z0, z20, &disk_labels),
+            Err(BoolError::Rejected {
+                reason: RejectReason::CylinderGateUndecided,
+                ..
+            })
+        ));
     }
 
     /// **The mixed parity reads a bitten ring — exactly, on the production pieces.**
