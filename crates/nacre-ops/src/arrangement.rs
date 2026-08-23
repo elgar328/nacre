@@ -394,6 +394,9 @@ fn chords_to_segs(
         // made against stored frames, and the canonical name opposes it on half the classes
         // (measured: the z = −10 cap's chord flipped its overhang's winding while the z = 40
         // cap's was right — the very half-and-half the `stored_coeffs_rat` lesson names).
+        // ★ The `wc` factor below is exercised only on classes whose stored spelling agrees
+        // with the canonical one (the armed fixture's x = 40 does); a wall class where they
+        // oppose has no fixture yet — the gate-opening cell's notch population widens this.
         let v = combinatorics::stored_coeffs_rat(jd, c.wall).ok_or_else(undecided)?;
         let (line, _) = combinatorics::branch_meet(jd, c.cyl, &cyls[c.cyl].def, c.end[0])
             .ok_or_else(undecided)?;

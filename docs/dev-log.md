@@ -12739,3 +12739,11 @@ validate [] · watertight · 피연산자 은퇴. hung 미러(아랫모서리에
 53타깃 **1120** · nodef 25타깃 598 · clippy 0 · fmt · census **t4(175+3) 두 프로파일 비트
 동일** · reject census 12 · 스윕 53타깃 128 · perf release · kit 72 · 앱 142(wasm:all + tsc +
 vitest + wasm clippy).
+
+★ 자체 점검 추가분 (2026-08-24): (a) `ruling_line_turn`의 전체 부호는 **오늘 코퍼스에서
+미실측** — 뒤집어도 599 전부 초록(걷기가 양 손대칭을 시도해 전역 플립을 흡수; `arc_side` 표
+1행과 같은 기전, 무장 잠금의 감김 극점은 현 코너에 앉음). BAC-CAB 유도만이 근거 — fn doc에
+기록(패널 방출 칸이 읽는 날 실측된다). (b) 현 sense의 `wc` 인자도 stored=canonical인
+클래스에서만 실측(무장 픽스처의 x=40) — 반대 클래스는 노치 인구가 넓힌다(주석 기록). (c) 위
+「부호 수업 셋」 중 (a) Euler는 부호가 아니라 개수 — docs 커밋 제목("two sign lessons")이
+본문과 어긋났던 것을 여기서 정정.
