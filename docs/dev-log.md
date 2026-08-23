@@ -12546,7 +12546,7 @@ garbage가 정점·모서리·면·셸·**솔리드**까지(전부 live-set 밖 
 `the_refusal_leaves_a_complete_solid`(픽스처 셋): 솔리드 하나 · cavities 0 · outer 셸 == 주조
 면 집합 · live-set 불변 · **`mass_props` == `UnsupportedBoundary`**(다음 벽의 정직한 기록 —
 부피 오라클 32+π/4는 props 팔과 함께). red: grouping을 외래 이유로 스텁 → 이름 유지(7층).
-낡은 위치 주석 여덟 곳 grep-0(일곱째 적용).
+낡은 위치 주석 아홉 곳 grep-0(여섯째 적용 — 자체 점검이 「여덟·일곱째」로 잘못 센 것을 정정).
 
 ### 관문
 
