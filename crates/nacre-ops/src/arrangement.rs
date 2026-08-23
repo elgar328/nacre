@@ -2686,6 +2686,202 @@ fn nest_cells(
     })
 }
 
+/// **Parity of a rational point against a ring with branch corners and arc steps** — the mixed
+/// sibling of the chart road, asked only when `node_coords_rat` cannot name every corner.
+///
+/// The ray runs along the chart's own first axis (`Chart2dRat::axes` — one decision rule, not a
+/// second basis spelling): in chart coordinates it is `{ y = q.y, x > q.x }`. Each ring step
+/// answers by its carrier:
+///
+/// * a **line step** compares in ℚ(√c): the corners' chart coordinates are `QuadVal`s (a
+///   rational corner lifted by `from_rat`, a branch corner evaluated along its canonical meet
+///   line — [`combinatorics::branch_meet`]), the y-straddle is two signs, and "right of the
+///   probe" is the 2-D orientation `(b−a) × (q−a)` — products stay in one radical because a
+///   step carries at most one circle's corners; two *different* circles' corners on one step
+///   make `checked_mul` refuse the radical mismatch and the whole answer abstains honestly;
+/// * an **arc step** solves ray × circle exactly — the ray's plane `{ e2·p = q.y }` against the
+///   class plane and the cylinder is [`nacre_scalar::quad::plane_plane_cylinder`], the branch
+///   shape — and asks each root: right of the probe (chart-x as a `QuadVal`), and inside the
+///   arc's CCW span (`circular_order_about_seam` on the carrier's own `end` pair, cyclic with
+///   the wrap arm).
+///
+/// `None` is an honest abstention — every tie (a corner or root on the ray, a tangent ray, a
+/// seam-incident root, a radical mismatch, checked-`Rat` overflow) — and the caller keeps its
+/// `WitnessNotRational`.
+fn point_in_mixed_ring(
+    jd: &Judge<'_, WorkingPlane>,
+    wc_coeffs: &[Rat; 4],
+    probe: &[Rat; 3],
+    ring: &[combinatorics::RingEdge],
+) -> Option<bool> {
+    use core::cmp::Ordering;
+    use nacre_scalar::Orient;
+    use nacre_scalar::quad::{CylinderMeet, QuadVal, SeamOrder, circular_order_about_seam};
+    let n = [wc_coeffs[0], wc_coeffs[1], wc_coeffs[2]];
+    let chart = combinatorics::Chart2dRat::of_normal(&n)?;
+    let (e1, e2) = chart.axes();
+    let q = chart.project(probe)?;
+    let (qx, qy) = (q[0], q[1]);
+    // The ring's cylinders, for evaluating branch corners.
+    let def_of = |cyl: usize| {
+        ring.iter().find_map(|e| match &e.carrier {
+            combinatorics::Carrier::Arc(arc) if arc.cyl == cyl => Some(&arc.def),
+            _ => None,
+        })
+    };
+    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
+    };
+    // A corner's chart coordinates, as `QuadVal`s.
+    let corner = |nd: NodeId| -> Option<[QuadVal; 2]> {
+        if let Some((_, cyl, _)) = combinatorics::branch_name(nd) {
+            let def = def_of(cyl)?;
+            let (line, s) = combinatorics::branch_meet(jd, cyl, def, nd)?;
+            let (b, d) = (line.base(), line.dir());
+            let coord = |e: &[Rat; 3]| -> Option<QuadVal> {
+                QuadVal::from_rat(dot(&b, e)?).checked_add(&s.checked_mul_rat(dot(&d, e)?)?)
+            };
+            Some([coord(e1)?, coord(e2)?])
+        } else {
+            let p = combinatorics::node_coords_rat(jd, nd)?;
+            let pr = chart.project(&p)?;
+            Some([QuadVal::from_rat(pr[0]), QuadVal::from_rat(pr[1])])
+        }
+    };
+    let k = ring.len();
+    let mut inside = false;
+    for i in 0..k {
+        let (na, nb) = (ring[i].node, ring[(i + 1) % k].node);
+        match &ring[i].carrier {
+            combinatorics::Carrier::Plane { .. } => {
+                let a = corner(na)?;
+                let b = corner(nb)?;
+                let ya = a[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
+                let yb = b[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
+                let (up, down) = match (ya, yb) {
+                    (Orient::Zero, _) | (_, Orient::Zero) => return None, // corner on the ray
+                    (Orient::Negative, Orient::Positive) => (true, false),
+                    (Orient::Positive, Orient::Negative) => (false, true),
+                    _ => continue, // both one side: no crossing
+                };
+                // orient2d(a, b, q) = (b−a) × (q−a), all in one radical (or an honest None).
+                let (qxv, qyv) = (QuadVal::from_rat(qx), QuadVal::from_rat(qy));
+                let o = b[0]
+                    .checked_sub(&a[0])?
+                    .checked_mul(&qyv.checked_sub(&a[1])?)?
+                    .checked_sub(
+                        &b[1]
+                            .checked_sub(&a[1])?
+                            .checked_mul(&qxv.checked_sub(&a[0])?)?,
+                    )?;
+                match (o.sign(), up, down) {
+                    (Orient::Zero, ..) => return None, // probe on the step's line
+                    (Orient::Positive, true, _) | (Orient::Negative, _, true) => {
+                        inside = !inside;
+                    }
+                    _ => {}
+                }
+            }
+            combinatorics::Carrier::Arc(arc) => {
+                // The ray's own plane: e2·p − qy = 0 (rational).
+                let ray_plane = [e2[0], e2[1], e2[2], Rat::from_int(0).checked_sub(qy)?];
+                let (o, m, r) = (arc.def.origin(), arc.def.dir(), arc.def.radius());
+                let roots = match nacre_scalar::quad::plane_plane_cylinder(
+                    wc_coeffs, &ray_plane, &o, &m, r,
+                )? {
+                    CylinderMeet::Pair { line, s } => Some((line, s)),
+                    CylinderMeet::Miss(_) | CylinderMeet::AxisParallelMiss(_) => None,
+                    // A tangent ray, a ruling, or degenerate planes: ties and shapes the parity
+                    // cannot count — abstain.
+                    _ => return None,
+                };
+                let Some((line, s)) = roots else { continue };
+                // The arc's CCW span: the step's ends oriented by the carried `ccw` bit — the
+                // same convention every arc consumer reads (membership is direction-agnostic,
+                // so the *set* is what the CCW pair names).
+                let (lo_nd, hi_nd) = if arc.ccw { (na, nb) } else { (nb, na) };
+                let e_lo = combinatorics::branch_meet(jd, arc.cyl, &arc.def, lo_nd)?;
+                let e_hi = combinatorics::branch_meet(jd, arc.cyl, &arc.def, hi_nd)?;
+                for root in s {
+                    // Right of the probe along the ray: chart-x of the root.
+                    let (bse, dir) = (line.base(), line.dir());
+                    let x = QuadVal::from_rat(dot(&bse, e1)?)
+                        .checked_add(&root.checked_mul_rat(dot(&dir, e1)?)?)?;
+                    let xsign = x.checked_sub(&QuadVal::from_rat(qx))?.sign();
+                    match xsign {
+                        Orient::Zero => return None, // root exactly at the probe
+                        Orient::Negative => continue,
+                        Orient::Positive => {}
+                    }
+                    // Inside the CCW span end[0] → end[1]? Cyclic in the seam chart. A
+                    // seam-incident **end** is information, not a tie (the straddling boss's
+                    // alias corner sits exactly there): its θ is the chart boundary, so the
+                    // span test collapses to one comparison against the other end. Only a
+                    // seam-incident **root** — the crossing at the joint itself — abstains.
+                    let rootp = (line.clone(), root);
+                    let on_seam = |p: &(nacre_scalar::quad::MeetLine, QuadVal)| -> Option<bool> {
+                        match circular_order_about_seam(
+                            &o,
+                            &m,
+                            &arc.def.ref_dir(),
+                            (&p.0, &p.1),
+                            (&p.0, &p.1),
+                        )? {
+                            SeamOrder::SeamIncident { first, .. } => Some(first),
+                            SeamOrder::Ordered(_) => Some(false),
+                        }
+                    };
+                    let ord = |p: &(nacre_scalar::quad::MeetLine, QuadVal),
+                               qq: &(nacre_scalar::quad::MeetLine, QuadVal)|
+                     -> Option<Ordering> {
+                        match circular_order_about_seam(
+                            &o,
+                            &m,
+                            &arc.def.ref_dir(),
+                            (&p.0, &p.1),
+                            (&qq.0, &qq.1),
+                        )? {
+                            SeamOrder::Ordered(o) => Some(o),
+                            SeamOrder::SeamIncident { .. } => None,
+                        }
+                    };
+                    if on_seam(&rootp)? {
+                        return None; // the root is the joint itself — a tie
+                    }
+                    let contained = match (on_seam(&e_lo)?, on_seam(&e_hi)?) {
+                        // Two seam ends would be one point twice — upstream refuses it.
+                        (true, true) => return None,
+                        // From the seam CCW to `hi`: chart order θ ∈ (0, θ_hi).
+                        (true, false) => ord(&rootp, &e_hi)? == Ordering::Less,
+                        // From `lo` CCW back to the seam: θ ∈ (θ_lo, 2π).
+                        (false, true) => ord(&rootp, &e_lo)? == Ordering::Greater,
+                        (false, false) => {
+                            let x0 = ord(&rootp, &e_lo)?;
+                            let x1 = ord(&rootp, &e_hi)?;
+                            if x0 == Ordering::Equal || x1 == Ordering::Equal {
+                                return None; // root at an arc end
+                            }
+                            match ord(&e_lo, &e_hi)? {
+                                Ordering::Less => x0 == Ordering::Greater && x1 == Ordering::Less,
+                                Ordering::Greater => {
+                                    x0 == Ordering::Greater || x1 == Ordering::Less
+                                }
+                                Ordering::Equal => return None, // zero-span arc cannot stand
+                            }
+                        }
+                    };
+                    if contained {
+                        inside = !inside;
+                    }
+                }
+            }
+        }
+    }
+    Some(inside)
+}
+
 /// Whether a circle's **center** lies inside a polygon ring of the class — the containment
 /// witness `nest_cells` uses for a circle contour (the loops are disjoint by the gate's
 /// clearance proof, so one point decides). Exact: the center is `axis ∩ W` (rational), the
@@ -2727,6 +2923,18 @@ fn circle_center_in_ring(
     .ok_or_else(undecided)?;
     // The class's rational chart — the one copy of that rule ([`combinatorics::Chart2dRat`]);
     // parity is affine-invariant, so the basis need not be orthonormal.
+    // ★ **A ring the chart road cannot name takes the mixed road** (M6-2b chaining ladder,
+    // wall 3): branch corners have no rational coordinates and arc steps no straight chart
+    // image, so the parity walks the ring step by step in ℚ(√c) instead. Rings the old road
+    // could always name still take it — the mixed arm activates on exactly the population the
+    // old road refused, which is what keeps every green census row bit-identical.
+    let mixed = ring.iter().any(|e| {
+        matches!(e.carrier, combinatorics::Carrier::Arc(_))
+            || combinatorics::branch_name(e.node).is_some()
+    });
+    if mixed {
+        return point_in_mixed_ring(jd, &coeffs, &center, ring).ok_or_else(undecided);
+    }
     let chart = combinatorics::Chart2dRat::of_normal(&n).ok_or_else(undecided)?;
     let p2 = chart.project(&center).ok_or_else(undecided)?;
     let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
@@ -2748,8 +2956,14 @@ fn node_in_circle(
     circle: &MergedCircle,
 ) -> Result<bool, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
-    let node = ring.first().ok_or_else(undecided)?.node;
-    let p = combinatorics::node_coords_rat(jd, node).ok_or_else(undecided)?;
+    // Any node decides (disjoint loops put every node on one side), so take the first
+    // *rational* one — a bitten ring's branch corners have none, but its wall-meet corners
+    // do. An all-branch ring (no rational corner at all) still refuses; no measured
+    // population reaches here with one.
+    let p = ring
+        .iter()
+        .find_map(|e| combinatorics::node_coords_rat(jd, e.node))
+        .ok_or_else(undecided)?;
     match nacre_scalar::cylinder_radial_side(
         &p,
         &circle.def.origin(),
@@ -6313,6 +6527,148 @@ mod tests {
             })
             .count();
         assert_eq!(holed, 2, "both caps are drilled: {faces:?}");
+    }
+
+    /// **The mixed parity reads a bitten ring — exactly, on the production pieces.**
+    ///
+    /// The straddling boss cuts the plate-top ring at `(40, 15)` and `(40, 25)`, so that ring
+    /// carries two branch corners and one arc step; the overhang digon is chord + outer arc.
+    /// Probes are derived, not read back: the chart for `n = +z` picks `e1 = [0, −1, 0]`, so
+    /// the ray runs toward −y at fixed x. `[37, 30]` is inside and its ray crosses the **arc
+    /// twice** (`(37−40)² + (y−20)² = 25` → y = 16, 24) before the bottom edge — the arc arm is
+    /// what that probe measures, and a chord-minded parity would answer it wrong. `[37, 18]`
+    /// sits inside the bite (outside the face), `[50, 20]` outside everything; `[43, 20]` is
+    /// inside the overhang (one arc crossing at y = 16). Cells are identified structurally,
+    /// not by size: the outside cell (winding −1) owns the outer arc piece's twin, so that
+    /// piece's forward cell is the overhang digon; the other digon is the bite.
+    #[test]
+    fn the_mixed_parity_reads_a_bitten_ring() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 40.0, 20.0]),
+        );
+        let b = m.add_cylinder(
+            Point3::from_array([40.0, 20.0, 20.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            5.0,
+            10.0,
+        );
+        m.rebuild_adjacency();
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            plane_ix,
+            standard,
+            notes,
+            cyls,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
+        // The one class whose circle is cut: find it by running the split everywhere.
+        let mut found = None;
+        for wc in 0..planes.len() {
+            if !matches!(plane_ix.get(wc), Some(ClassIx::Plane(_)) | None) && wc < plane_ix.len() {
+                continue;
+            }
+            if combinatorics::class_coeffs_rat(&jd, wc).is_none() {
+                continue;
+            }
+            let tr = trace_on_class_of(
+                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            );
+            let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+            let Ok(split) = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()) else {
+                continue;
+            };
+            let Ok(circles) = merge_circles(&tr.circles, &cyls) else {
+                continue;
+            };
+            let Ok(edges) = ClassEdges::of(&jd, wc, &split, &circles) else {
+                continue;
+            };
+            if edges.arcs.is_empty() {
+                continue;
+            }
+            let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
+            let ns = edges.segs.len();
+            let na = edges.arcs.len();
+            // Four cells share this class: the bitten plate-top face (+1, many steps), the
+            // outside (−1 — it also borders the arc, via the outer bulge), and two digons
+            // (chord + arc): the overhang (disk minus plate) and the bite (disk ∩ plate).
+            // Tell them apart structurally: the outside owns the outer piece's twin, so the
+            // outer piece's forward cell is the overhang; the remaining digon is the bite.
+            let outside = cells
+                .iter()
+                .position(|c| c.winding == -1)
+                .expect("the outside cell");
+            let big_ix = cells
+                .iter()
+                .position(|c| c.winding == 1 && c.half_edges.len() > 2)
+                .expect("the bitten top ring");
+            let outer_ai = (0..na)
+                .find(|ai| face_of[&(2 * (ns + ai) + 1)] == outside)
+                .expect("the outer piece borders the outside");
+            let overhang_ix = face_of[&(2 * (ns + outer_ai))];
+            assert_eq!(
+                cells[overhang_ix].half_edges.len(),
+                2,
+                "overhang is a digon"
+            );
+            let bite_ix = cells
+                .iter()
+                .enumerate()
+                .position(|(i, c)| c.half_edges.len() == 2 && i != overhang_ix)
+                .expect("the bite digon");
+            let ring = |ix: usize| -> Vec<combinatorics::RingEdge> {
+                cells[ix]
+                    .half_edges
+                    .iter()
+                    .map(|&he| edges.edge_at(he))
+                    .collect()
+            };
+            found = Some((wc, ring(big_ix), ring(overhang_ix), ring(bite_ix)));
+            break;
+        }
+        let (wc, big, overhang, bite) = found.expect("one class carries the cut circle");
+        let coeffs = combinatorics::class_coeffs_rat(&jd, wc).unwrap();
+        let rat = |x: i128, y: i128| {
+            [
+                nacre_scalar::Rat::from_int(x),
+                nacre_scalar::Rat::from_int(y),
+                nacre_scalar::Rat::from_int(20),
+            ]
+        };
+        let ask = |ring: &[combinatorics::RingEdge], p: [nacre_scalar::Rat; 3]| {
+            point_in_mixed_ring(&jd, &coeffs, &p, ring)
+        };
+        assert_eq!(ask(&big, rat(12, 12)), Some(true), "plain interior");
+        assert_eq!(
+            ask(&big, rat(37, 30)),
+            Some(true),
+            "interior whose ray crosses the inner arc twice"
+        );
+        assert_eq!(ask(&big, rat(37, 18)), Some(false), "inside the bite");
+        assert_eq!(ask(&big, rat(50, 20)), Some(false), "outside everything");
+        assert_eq!(
+            ask(&overhang, rat(43, 20)),
+            Some(true),
+            "inside the overhang"
+        );
+        assert_eq!(
+            ask(&overhang, rat(37, 18)),
+            Some(false),
+            "the bite is not the overhang"
+        );
+        assert_eq!(ask(&bite, rat(37, 18)), Some(true), "inside the bite digon");
+        assert_eq!(
+            ask(&bite, rat(43, 20)),
+            Some(false),
+            "the overhang is not the bite"
+        );
     }
 
     /// The gated drill population's fixture: a `[0,2]³` box and an axis-aligned cylinder at

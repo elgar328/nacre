@@ -3019,6 +3019,12 @@ impl Chart2dRat {
         Some([dot3_rat(p, &self.e1)?, dot3_rat(p, &self.e2)?])
     }
 
+    /// The chart's two in-plane axes — the mixed-ring parity walks its ray along `e1` (one
+    /// decision rule with this chart, not a second spelling of a basis).
+    pub(crate) fn axes(&self) -> (&[nacre_scalar::Rat; 3], &[nacre_scalar::Rat; 3]) {
+        (&self.e1, &self.e2)
+    }
+
     /// A ring of nodes in chart coordinates.
     pub(crate) fn ring(
         &self,
