@@ -12617,3 +12617,65 @@ reject census(두 호 행 삭제, CORPUS 12) · 스윕 53타깃 127 · perf rele
 아님). (b) 미실행이던 tess red 프로브 완료: 호 팔을 온원 걷기로 되돌리면 마일스톤 울타리가
 빨강. (c) OBJ 덤프 테스트가 스윕(--ignored)에서 무조건 /tmp에 쓰던 부작용을 OBJ_OUT 요청제로
 게이트.
+
+## 보어 있는 판이 걸친 보스를 받는다 — 체이닝 사다리 벽 3 (2026-08-23)
+
+**커밋 셋** — ① 혼합 파리티+배선(`999b1da`), ② 접촉-절단의 정직 거절(`4db51c4` — 발견 수습),
+③ 초록 픽스처+census(`9af79ee`). 앱 실험이 드러낸 체이닝 사다리(reject-trace 실측 벽 1~4)의
+**벽 3**이 열렸다: 중첩의 유리 도로(`circle_center_in_ring`·`node_in_circle`)가 분기 코너
+링에서 `WitnessNotRational`로 기권하던 것. 리프트 프로브(f64 근사 파리티)가 「B 인구는 벽 3만
+밟는다」를 구현 첫걸음으로 확정했고(부피 32000−70π 정확), 실제로 그 뒤에 벽이 없었다.
+
+### ① 혼합 파리티 — 링을 ℚ(√c)로 걸음별로 걷는다
+
+`point_in_mixed_ring`(arrangement — 비교자들이 사는 층; 플랜의 combinatorics 예정에서 이동):
+광선 = 차트 첫 축(`Chart2dRat::axes` 접근자 — 두 번째 기저 스펠링 금지). 직선 걸음 = 코너의
+차트 좌표를 QuadVal로(유리 코너는 lift, 분기 코너는 `branch_meet`의 meet line 위 평가) —
+y-스트래들 두 부호 + orient2d, 서로 다른 √c는 `checked_mul`이 거부(정직 기권). 호 걸음 =
+광선 평면(e2·p=qy) × 클래스 × 원통 = `plane_plane_cylinder` 근 → 오른쪽 여부(차트-x 부호) +
+CCW 스팬 소속(`circular_order_about_seam`). **씸-접한 끝은 정보다**: straddling의 별칭
+코너(씸≡분기)에서 스팬 검사가 「다른 끝과의 한 비교」로 붕괴 — 씸 위의 **근**만 동률로 기권.
+배선: 링에 호/분기가 있을 때만 혼합 도로(없으면 옛 차트 도로 = census 비트 동일의 기전).
+`node_in_circle`은 첫 **유리** 노드 스캔(전부 분기면 오늘의 거절 유지).
+
+잠금 `the_mixed_parity_reads_a_bitten_ring`: 프로덕션 조각(trace→split→walk_cells)에서 셀을
+**구조로** 특정 — 바깥 셀(-1 감김)이 외호 조각의 twin을 소유 → 그 forward 셀 = 오버행 디곤,
+나머지 디곤 = 물림. 세 링 × 8 단언(호를 두 번 건너는 광선, 물림/오버행 교차 검증 포함).
+★ 디버깅의 교훈: 씸-끝 수정 후 파리티는 내내 옳았다 — `max_by_key(len)`이 동률에서 **바깥
+링**(역시 6걸음 혼합!)을 집어 그 링에 대한 옳은 답을 버그로 읽었다. 틀린 건 울타리의 링 선택.
+
+### ② 발견 — 체인 접촉-절단이 debug_assert를 반증했다 (수습: 정직 거절 승격)
+
+census에 체인 가족을 넣자 **cut이 dev에서 패닉**: 조립 끝의 `defs_are_remappable`
+debug_assert(「result vertex가 자기 솔리드에 없는 표면을 명명」). release는 **부피는
+정확(32−π/2)하지만 명명이 깨진 솔리드를 조용히 내보냈다** — ①이 이 인구를 정직 거절(t3의
+unbored `arc straddle cut` = `CoplanarMerge`)에서 그 상태로 후퇴시킨 것(보어가 혼합 파리티의
+길을 열어 조립 끝까지 진행). 기전: 접촉-절단은 재료를 안 없애지만 배열이 판-모서리×보스-rim
+분기 정점을 민팅했고, 조립이 그 정점들을 보스 면이 전부 사라진 결과에 남겼다 — def가 `wall ∩
+boss cylinder`를 말하는데 그 원통 면이 없다(transform·replay가 서는 성질).
+
+수습(바닥 = 정직 거절): `RejectReason::VertexNamesAbsentSurface`(NotSupported) +
+`transform::foreign_named_vertex`(remappability의 witness 자매 — 한 걷기가 두 스펠링,
+최소-핸들 결정성) + 조립 끝 debug_assert를 **런타임 검사 + `reject_at`(위반 코너 witness)**로
+승격(deferred 우선 유지 — 원인이 증상에 앞선다). 잠금
+`a_chained_contact_cut_names_its_refusal`: 이유·witness(분기 코너)·live-set 복원. 접촉-절단을
+**빌드**하는 것은 핸드오버의 다음 칸 후보 그대로.
+
+### ③ 초록 — `a_bored_plate_takes_a_straddling_boss`
+
+판 40·40·20 − 관통 보어(r4, (12,12)) 후 걸친 보스(r5 h10) fuse: **부피 32000−70π(1e-9)** ·
+validate [] · watertight · 피연산자 은퇴. hung 미러(아랫모서리에 매달림) 동일 부피 — 둘 다 첫
+시도 초록. red: 혼합 도로 스텁 → `WitnessNotRational` 복귀(원복 후 HEAD와 diff 0). census:
+`arc bored straddle` × KINDS — fuse 빌드 · cut 새 거절+witness · common EMPTY(옳음).
+
+### 사다리의 남은 벽 — 체이닝은 아직 거절이다
+
+호-모서리 **피연산자**(체이닝)는 여전히 `DegenerateFace`: 벽 1(`outer_tri` 디곤/초승달) →
+벽 2(`face_clears_footprint`의 quad 꼭짓점 걷기) → 벽 4(`trace_input` 트리플 어휘) → 벽 5+
+(미측정). reject census에 체이닝 행은 추가하지 않음(다음 칸이 곧 옮길 행 — 여기 기록으로 갈음).
+
+### 관문
+
+53타깃 **1116** · nodef 25타깃 594 · clippy 0 · fmt · census **기존 175행 두 프로파일 비트
+동일 + 새 3행 = 178**(t4 스냅숏) · reject census 12 · 스윕 53타깃 128 · perf release · kit 72
+· 앱 142(wasm:all + tsc + vitest + wasm clippy).
