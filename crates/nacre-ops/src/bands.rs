@@ -2186,6 +2186,122 @@ mod tests {
         }
     }
 
+    /// The chained bore-then-boss body: `cut` a through-bore at `(12,12)`, then `fuse` a boss
+    /// whose rim the plate's edge cuts. The chain is what the milestone fence could not ask:
+    /// nesting must place the bore's rim circle inside a **bitten** top ring — two branch
+    /// corners and an arc step — where the chart road's parity had no rational corners to read
+    /// (`WitnessNotRational`, chaining wall 3) and the mixed parity answers in ℚ(√c).
+    fn a_bored_plate_with_a_boss(boss_base: [f64; 3]) -> f64 {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 40.0, 20.0]),
+        );
+        let bore = m.add_cylinder(
+            Point3::from_array([12.0, 12.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            4.0,
+            20.0,
+        );
+        m.rebuild_adjacency();
+        let bored = crate::boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+        let boss = m.add_cylinder(
+            Point3::from_array(boss_base),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            5.0,
+            10.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Fuse, bored, boss).expect("the boss fuses");
+        assert_eq!(out.len(), 1, "one solid");
+        m.rebuild_adjacency();
+        assert_eq!(m.live_solids, out, "the operands retired, the result lives");
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{issues:?}");
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+            .expect("the arcs tessellate");
+        let mut uses: std::collections::HashMap<(u32, u32), usize> =
+            std::collections::HashMap::new();
+        for (_, tri) in mesh.triangles.iter() {
+            for k in 0..3 {
+                let (a, b) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+                *uses.entry((a.min(b), a.max(b))).or_default() += 1;
+            }
+        }
+        let open = uses.values().filter(|&&n| n != 2).count();
+        assert_eq!(open, 0, "the mesh is watertight");
+        nacre_props::mass_props(&m, out[0]).expect("props").volume
+    }
+
+    /// ★ **A bored plate takes a straddling boss — the first two-boolean chain through the arc
+    /// population is green.** Volume `40·40·20 − π·4²·20 + π·5²·10 = 32000 − 70π` (the boss
+    /// stands wholly above the plate top, so fuse adds its full cylinder).
+    #[test]
+    fn a_bored_plate_takes_a_straddling_boss() {
+        let v = a_bored_plate_with_a_boss([40.0, 20.0, 20.0]);
+        let want = 32000.0 - 70.0 * std::f64::consts::PI;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// The mirror: the boss hangs under the plate's bottom edge — same chain, same volume, the
+    /// cut circle at the band's hi end instead of lo.
+    #[test]
+    fn a_bored_plate_hangs_a_straddling_boss() {
+        let v = a_bored_plate_with_a_boss([40.0, 20.0, -10.0]);
+        let want = 32000.0 - 70.0 * std::f64::consts::PI;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// ★ **The chained contact-cut names its refusal.** Cut the same chain instead of fusing:
+    /// the boss only *touches* the bored plate's top, so the cut removes nothing — but the
+    /// assembly still keeps the top ring's branch vertices, whose definitions name the boss's
+    /// cylinder that the result has no face on. That used to be a debug_assert (dev panic,
+    /// release shipped the mis-named solid silently); the floor is now an honest reject with
+    /// the offending corner as its witness, and the operands stay live.
+    #[test]
+    fn a_chained_contact_cut_names_its_refusal() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 40.0, 20.0]),
+        );
+        let bore = m.add_cylinder(
+            Point3::from_array([12.0, 12.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            4.0,
+            20.0,
+        );
+        m.rebuild_adjacency();
+        let bored = crate::boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+        let boss = m.add_cylinder(
+            Point3::from_array([40.0, 20.0, 20.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            5.0,
+            10.0,
+        );
+        m.rebuild_adjacency();
+        let live_before = m.live_solids.clone();
+        let err = crate::boolean(&mut m, BoolKind::Cut, bored, boss).expect_err("contact-cut");
+        let BoolError::Rejected { reason, at } = err else {
+            panic!("{err:?}");
+        };
+        assert_eq!(reason, RejectReason::VertexNamesAbsentSurface);
+        // The witness is one of the two branch corners where the boss's rim crosses the
+        // plate's edge: (40, 20±√(25−0), 20) → y = 15 or 25 (approximate-only assert).
+        let Some(crate::RejectWhere::Point(p)) = at else {
+            panic!("{at:?}");
+        };
+        let p = p.as_array();
+        assert!(
+            (p[0] - 40.0).abs() < 1e-9
+                && (p[2] - 20.0).abs() < 1e-9
+                && ((p[1] - 15.0).abs() < 1e-9 || (p[1] - 25.0).abs() < 1e-9),
+            "{p:?}"
+        );
+        m.rebuild_adjacency();
+        assert_eq!(m.live_solids, live_before, "a reject restores the live set");
+    }
+
     /// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in
     /// the same two planes, which is what once made them look like a seating problem; what was
     /// actually hard was classifying **two curved bodies**, and both are now probed from a cap
