@@ -12679,3 +12679,63 @@ validate [] · watertight · 피연산자 은퇴. hung 미러(아랫모서리에
 53타깃 **1116** · nodef 25타깃 594 · clippy 0 · fmt · census **기존 175행 두 프로파일 비트
 동일 + 새 3행 = 178**(t4 스냅숏) · reject census 12 · 스윕 53타깃 128 · perf release · kit 72
 · 앱 142(wasm:all + tsc + vitest + wasm clippy).
+
+## 룰링 사다리의 첫 칸 — 배열이 룰링을 배우고, 발화는 게이트의 기록 뒤에서 기다린다 (2026-08-24)
+
+**커밋 둘** — ① `4813c7b`(종·소화 팔 — 생산자 없는 죽은 코드), ② `7bcfebf`(기록·기여·분할·
+잠금·픽스처). 관통 보스(`WallMeetsLateral`)를 여는 사다리의 기초 공사: **사용자 가시 변화
+0**(프로덕션 발화 0이 구조), 전부 어휘·배관·계측.
+
+### 두 번의 반증 (계획이 두 번 다시 그려졌다)
+
+1. **「Seg.wall 확장」은 틀린 층** — `split_at_crossings`는 스스로 plane-only를 선언하고 Branch
+   끝점을 거절한다. 원의 전례(별도 종 + 호-분할 확장)가 옳은 층 → ①.
+2. **「축-통과면 무조건 기여」는 호 가족 14 테스트를 빨강으로** — 걸친 보스 인구 자체가 d=0
+   가족(보스 축이 판 벽 평면 위에 있는 것이 걸침의 기하)이고, 동일평면 바닥 캡의 현이 판이
+   이미 그린 같은 선 위에 겹쳐 `UnorderedEdges`. 더 깊은 결론: 게이트가 서 있는 한 통과한
+   모든 쌍은 비킴이 증명된 쌍 — 직사각형 기여는 무용하거나 유해하다. 해소 = **게이트의 답을
+   기록으로 운반**(`PlaneSetup`/`TraceInput`의 `crossings` — 「비킴 증명 없이 통과한 (클래스,
+   원통) 쌍」, 오늘은 구조적으로 ∅; 규칙 복제가 아니라 답의 운반), tracer 팔은 기록의 쌍에만
+   발화. 칸4는 게이트에 「기록하고 통과」 팔 하나로 열린다.
+
+### ① — 배열이 「룰링」을 말할 수 있다 (`4813c7b`)
+
+`MergedRuling`(`end[0]→end[1]` = +축, side = 평행 룰링 ±) · ClassEdges 4번째 구간 ·
+`Carrier::Ruling`/`EdgeDir::Ruling`(직선과의 turn은 BAC-CAB로 `sign(m·n_wall)`로 붕괴) ·
+`Wall::Ruling` + `edge_for` 정직 거절(`RulingBoundNotYet` — `ArcBoundNotYet`의 직선 자매) ·
+`JoinKey::Ruling{(cyl, side)}`. census 비트 동일.
+
+### ② — 기록·기여·분할·잠금 (`7bcfebf`)
+
+- **기록**: `cylinder_gate` → `(cyls, crossings)`(오늘 ∅), `PlaneSetup`→`TraceInput` 운반
+  (boolean당 1회 유도 자리). frame_audit·debug 차동도 같은 기록(거울 유지).
+- **tracer 팔 둘**: ∥ lateral → 룰링 2(`rulings_on_class` — 축-통과 정확 검사는 정확성 전제,
+  진술 불가면 `DeclineKind::Ruling`으로 **통째** decline — 반쪽 직사각형 금지); 디스크 캡 →
+  현(`chord_on_class`, birth-branch `MergedSeg`로 plane-only 오버레이 **뒤** 합류).
+- **분할**: `lateral_crossings`(`circle_crossings`의 ∥ 자매 — 같은 fence·같은 이름; ∥에서만
+  닿는 Tangent/OnRuling 팔은 사다리 이름으로) + `split_rulings`(호-분할의 관용구: 축좌표
+  `cmp_along`, T-접합 같은-이름 검사, `CoincidentNodes`) + `ClassEdges::of` 확장(현 주입·룰링
+  분할·교차-축 혼합 가드).
+- **부호 수업 셋** (전부 잠금이 실측으로 가르침): (a) walk의 Euler 간선 수가 룰링을
+  **빠뜨림** — match가 아닌 산술이라 컴파일러가 못 짚는 자리(V−E+F가 양방향 모두 어긋나
+  `RingOrientation`); (b) `ruling_line_turn`: frame 인자 + canonical → **stored** 계수
+  (`arc_side`의 실측-잠금 규약); (c) **현의 sense**: wall 계수를 canonical로 읽으면 z=−10
+  캡(stored가 canonical과 반대)의 현이 아래 오버행 감김만 뒤집는다(위는 정상 — 절반의 클래스
+  함정 세 번째 실측). wall → `stored_coeffs_rat`(한-스펠링 문 승격).
+- **잠금 둘** (`armed_through_boss` 하네스 — `plane_index_setup_inner` 승격 + WorkingCyl 직접
+  조립 + 기록 명시 등록): trace 잠금(룰링 2 ±측·Branch 끝·segs 0 + 현 2·캡 클래스 확인; 음성
+  대조 = 기록 ∅ → 0) · 배열 잠금(end-to-end 걷기: 룰링 T-접합 3조각×2 = 6, 셀 6, 감김 −1
+  정확히 1).
+- **리프트 프로브** (커밋 안 함): 게이트를 「기록하고 통과」로 패치(칸4의 실제 변경 모양) → 관통
+  fuse: **배열이 직사각형을 소화**(더는 `OpenResultShell` 아님), 다음 벽 =
+  `RulingBoundNotYet`(①의 백스톱이 제 이름으로; 삼켜진 `branch_vertex_unnamed` 1회 — 그루핑의
+  기지 가족). **칸2 재료 = 패널 방출·엣지 민팅.**
+- **d=0 초록 픽스처 둘**: `a_boss_whose_wall_plane_holds_the_bores_axis_still_fuses` ·
+  `a_capped_tool_on_the_plates_wall_plane_fuses_as_two_bodies`(두 몸체) — 「빈 기록은 아무것도
+  안 바꾼다」의 잠금 + 코퍼스에 없던 d=0 기하.
+
+### 관문
+
+53타깃 **1120** · nodef 25타깃 598 · clippy 0 · fmt · census **t4(175+3) 두 프로파일 비트
+동일** · reject census 12 · 스윕 53타깃 128 · perf release · kit 72 · 앱 142(wasm:all + tsc +
+vitest + wasm clippy).
