@@ -296,6 +296,15 @@ fn face_components(
             from: NodeId,
             to: NodeId,
         },
+        /// A ruling piece: straight, so the pair is unordered like a line's — but keyed apart
+        /// from plane edges by `(cyl, side)`, because a key that forgets its carrier is the fold
+        /// this enum exists to prevent (a plane edge collinear with a ruling is a refused
+        /// degeneracy, not a legal share).
+        Ruling {
+            cyl: usize,
+            side: i8,
+            pair: (NodeId, NodeId),
+        },
     }
     let mut parent: Vec<usize> = (0..faces.len()).collect();
     // Which faces use each ring edge. A count other than two is not a contact between neighbours:
@@ -312,6 +321,11 @@ fn face_components(
                         let (from, to) = if ccw { (a, b) } else { (b, a) };
                         JoinKey::Arc { cyl, from, to }
                     }
+                    Wall::Ruling { cyl, side, .. } => JoinKey::Ruling {
+                        cyl,
+                        side,
+                        pair: norm_edge(a, b),
+                    },
                 };
                 users.entry(key).or_default().push(i);
             }
@@ -713,7 +727,20 @@ pub(crate) struct Ring {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Wall {
     Plane(usize),
-    Arc { cyl: usize, ccw: bool },
+    Arc {
+        cyl: usize,
+        ccw: bool,
+    },
+    /// A ruling piece (M6-2 rulings ladder): straight on the lateral, so like a line its ends
+    /// order it — but its carrier is the cylinder, and `(cyl, side)` names which of the two
+    /// parallel rulings ([`combinatorics::RulingCarrier::side`]). `up` restates
+    /// `ClassEdges::edge_at`'s convention (`MergedRuling::end` ascends the axis; the even
+    /// half-edge travels up, its twin down), carried like `Arc::ccw`.
+    Ruling {
+        cyl: usize,
+        side: i8,
+        up: bool,
+    },
 }
 
 /// **The edge-welding key** — the key half of "a line is unordered, a circle is ordered"
@@ -787,7 +814,7 @@ impl Ring {
             .iter()
             .map(|w| match w {
                 Wall::Plane(c) => *c,
-                Wall::Arc { .. } => usize::MAX,
+                Wall::Arc { .. } | Wall::Ruling { .. } => usize::MAX,
             })
             .collect();
         combinatorics::ring_edges_with_walls(jd, p, &self.nodes, &legacy)
@@ -1167,7 +1194,9 @@ pub(crate) fn name_result_vertices(
                     nodes.push(a);
                     walls.push(w);
                     let Wall::Plane(w) = w else {
-                        continue; // an arc edge: the arrangement's own split made it
+                        // An arc or ruling edge: the arrangement's own split made it, branch
+                        // points and all — there is no whole twin to subdivide.
+                        continue;
                     };
                     let mut pair = [own, w];
                     pair.sort_unstable();
@@ -1687,6 +1716,12 @@ fn reconstruct(
                     .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
                 edge_of.insert(key, e);
                 Ok(e)
+            }
+            Wall::Ruling { .. } => {
+                // The panel cell's vocabulary: a ruling edge bounds a θ-partial lateral face,
+                // which is not built yet — refusing by the population's name is the floor.
+                // Unreachable while the wall gate stands (no emitted ring carries a ruling).
+                Err(reject(RejectReason::RulingBoundNotYet))
             }
             Wall::Arc { cyl, ccw } => {
                 // ★★★ **An arc edge is minted in CCW order** — `[A, B]` is the piece from A to

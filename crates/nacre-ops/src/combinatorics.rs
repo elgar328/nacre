@@ -279,6 +279,9 @@ pub(crate) enum Carrier {
         sense: Option<i8>,
     },
     Arc(Box<ArcCarrier>),
+    /// A straight edge on the **lateral surface** — see [`RulingCarrier`]. Like an arc it must
+    /// carry the cylinder itself; unlike an arc its direction (`±m`) is the same at both ends.
+    Ruling(Box<RulingCarrier>),
 }
 
 /// The circle an arc rides, and which way around it the arc runs.
@@ -293,18 +296,39 @@ pub(crate) struct ArcCarrier {
     pub ccw: bool,
 }
 
+/// The **ruling** a straight lateral edge rides (the M6-2 rulings ladder): a wall plane parallel
+/// to a cylinder's axis meets the lateral surface in up to two axis-parallel lines, and
+/// `(cyl, side)` names which of the two this is.
+///
+/// `side` is the sign of `(x − o) · (m × n̂)` for any point `x` on the ruling, with `o`/`m` the
+/// cylinder's origin/axis and `n̂` the class's **canonical** coefficients
+/// ([`class_coeffs_rat`] — one spelling; the stored normal opposes the canonical one on half the
+/// classes, which is the `stored_coeffs_rat` lesson).
+#[derive(Clone, Debug)]
+pub(crate) struct RulingCarrier {
+    /// The cylinder class — the ruling's identity, with `side`.
+    pub cyl: usize,
+    pub def: nacre_topo::CylinderDef,
+    /// Which of the two parallel rulings, by the sign convention above.
+    pub side: i8,
+    /// `true` when travel runs along `+m` — the sense the ruling split builds every
+    /// `MergedRuling` in (`end[0] → end[1]` ascends the axis), inverted for the twin half-edge.
+    pub up: bool,
+}
+
 impl Carrier {
     /// A plane carrier whose sense its endpoints still supply — every edge outside a split.
     pub(crate) fn plane(wall: usize) -> Carrier {
         Carrier::Plane { wall, sense: None }
     }
 
-    /// The carrying plane class, `None` for an arc. The named-road consumers (the ray casts, the
-    /// on-ring test) speak plane classes and nothing else, so this is where they decline.
+    /// The carrying plane class, `None` for an arc or a ruling. The named-road consumers (the ray
+    /// casts, the on-ring test) speak plane classes and nothing else, so this is where they
+    /// decline.
     pub(crate) fn wall(&self) -> Option<usize> {
         match self {
             Carrier::Plane { wall, .. } => Some(*wall),
-            Carrier::Arc(_) => None,
+            Carrier::Arc(_) | Carrier::Ruling(_) => None,
         }
     }
 }
@@ -463,6 +487,23 @@ pub(crate) enum EdgeDir {
     /// order of magnitude wider than a line's two words, and every direction on the hot path is a
     /// line.
     Arc(Box<ArcDir>),
+    /// A ruling: travel along `±m`, the cylinder's axis — the same at both ends, like a line, but
+    /// with no plane-class carrier to name a `(carrier, sense)` pair by. Boxed for the axis
+    /// vector's width.
+    Ruling(Box<RulingDir>),
+}
+
+/// The payload of [`EdgeDir::Ruling`] — private fields like [`ArcDir`]'s, for the same reason.
+#[derive(Clone, Debug)]
+pub(crate) struct RulingDir {
+    cyl: usize,
+    /// Which of the two parallel rulings ([`RulingCarrier::side`]) — read by [`antiparallel`] and
+    /// [`continuation`], where "one carrier" means one line, not one cylinder.
+    side: i8,
+    /// The axis direction `m`, rational — the one geometric fact [`turn`] needs.
+    axis: [nacre_scalar::Rat; 3],
+    /// Travel runs along `+m`.
+    up: bool,
 }
 
 /// The payload of [`EdgeDir::Arc`] — private fields for the same reason the enum has them: every
@@ -495,11 +536,12 @@ impl EdgeDir {
     }
 
     /// The travel sense of a straight direction — `None` for an arc, whose direction is not a sign
-    /// against a fixed carrier. Read by the split, which carries a sub-segment's sense forward.
+    /// against a fixed carrier, and for a ruling, whose carrier is not a plane class (the one
+    /// reader carries **plane** sub-segment senses forward).
     pub(crate) fn sense(&self) -> Option<i8> {
         match self {
             EdgeDir::Line { sense, .. } => Some(*sense),
-            EdgeDir::Arc(_) => None,
+            EdgeDir::Arc(_) | EdgeDir::Ruling(_) => None,
         }
     }
 }
@@ -589,6 +631,14 @@ pub(crate) fn dir_at(
         } => Ok(EdgeDir::new(*wall, *s)),
         Carrier::Plane { wall, sense: None } => edge_dir(jd, p, *wall, e.from_h, e.to_h),
         Carrier::Arc(a) => arc_at(jd, p, a, node),
+        // A ruling's direction is `±m` at both ends — the carrier states the travel, no endpoint
+        // order is asked (its ends are branch points, which have no third plane to order by).
+        Carrier::Ruling(r) => Ok(EdgeDir::Ruling(Box::new(RulingDir {
+            cyl: r.cyl,
+            side: r.side,
+            axis: r.def.dir(),
+            up: r.up,
+        }))),
     }
 }
 
@@ -769,11 +819,19 @@ pub(crate) fn antiparallel(a: &EdgeDir, b: &EdgeDir) -> bool {
         // positions (an earlier attempt used the sign of `s` as a stand-in for "same node", and
         // two different nodes can share it).
         (EdgeDir::Arc(x), EdgeDir::Arc(y)) => x.cyl == y.cyl && x.ccw != y.ccw,
+        // One ruling, opposite travel — the straight reading of the arc arm above. Two *different*
+        // rulings are parallel lines and share no node, so `(cyl, side)` identity is the "one
+        // carrier" premise, same as `ca == cb` for lines.
+        (EdgeDir::Ruling(x), EdgeDir::Ruling(y)) => {
+            x.cyl == y.cyl && x.side == y.side && x.up != y.up
+        }
         // ★★ **A line and an arc are never the π pole here, and the reason is upstream**: this is
         // asked only where the turn already came back `0`, and a `0` turn against an arc means the
         // segment is *tangent* at that node — while the split cuts only at **transversal**
         // crossings. So `false` is not a shrug: it sends the pair to the `0` bucket, where
-        // `angular_order`'s `UnorderedEdges` names the surprise rather than ranking it.
+        // `angular_order`'s `UnorderedEdges` names the surprise rather than ranking it. The same
+        // sentence covers a line against a ruling (their `0` is a parallel-concurrency
+        // degeneracy) and a ruling against an arc (they cannot share a node at all).
         _ => false,
     }
 }
@@ -834,6 +892,15 @@ pub(crate) fn continuation(
         // caller refuses.
         (EdgeDir::Arc(e), EdgeDir::Arc(l)) if e.cyl == l.cyl => {
             if e.ccw == l.ccw {
+                Continuation::Straight
+            } else {
+                Continuation::DoublesBack
+            }
+        }
+        // One ruling continuing through a node — the straight reading again, keyed like
+        // `antiparallel`'s arm: `(cyl, side)` is the line's identity.
+        (EdgeDir::Ruling(e), EdgeDir::Ruling(l)) if e.cyl == l.cyl && e.side == l.side => {
+            if e.up == l.up {
                 Continuation::Straight
             } else {
                 Continuation::DoublesBack
@@ -972,6 +1039,63 @@ pub(crate) fn turn(
         // Two arcs of one circle at one node are tangent: no turn to read. (Two *different*
         // circles cannot meet at a node — `cylinders_clear` keeps them `r₁+r₂` apart.)
         (EdgeDir::Arc(_), EdgeDir::Arc(_)) => 0,
+        // ★★ **A segment against a ruling collapses the same way the arc arm did.** The ruling's
+        // direction is `±m` and it lies *in* the class (`m · n_P = 0`), so BAC-CAB leaves
+        //
+        //   (d × m) · n_P = ((n_P × n_ca) × m) · n_P = (n_ca (m·n_P) − n_P (m·n_ca)) · n_P
+        //                 = −|n_P|² (m · n_ca)
+        //
+        // — one rational dot sign. `n_P` appears twice, so the answer is invariant to its sign
+        // convention; `n_ca` appears once *and* once inside the sense's own definition
+        // (`d = sense · (n_P × n_ca)`), so those two flips cancel too — the arm is convention-free
+        // as long as `sense` and the coefficients here read the **same** `n_ca`, which they do
+        // ([`class_coeffs_rat`], the canonical spelling `dir_sign` speaks).
+        (EdgeDir::Line { carrier, sense }, EdgeDir::Ruling(r)) => {
+            sense * ruling_line_turn(jd, p, *carrier, r)?
+        }
+        (EdgeDir::Ruling(r), EdgeDir::Line { carrier, sense }) => {
+            -sense * ruling_line_turn(jd, p, *carrier, r)?
+        }
+        // All rulings on one class run along `±m`: parallel, no turn — the `0` bucket, where
+        // `antiparallel` separates the π pole (same ruling, opposite travel).
+        (EdgeDir::Ruling(_), EdgeDir::Ruling(_)) => 0,
+        // A ruling and an arc cannot meet at a node: their classes demand the axis parallel and
+        // perpendicular to `P` respectively, so the node would lie on two distinct cylinders —
+        // which `cylinders_clear` keeps `r₁+r₂` apart. `0` sends a surprise to the bucket whose
+        // walk names it (`UnorderedEdges`) rather than ranking it.
+        (EdgeDir::Ruling(_), EdgeDir::Arc(_)) | (EdgeDir::Arc(_), EdgeDir::Ruling(_)) => 0,
+    })
+}
+
+/// `turn(line, ruling)` with the line's sense factored out — the `−sign(m · n_carrier)` the
+/// derivation above collapses to, times the ruling's travel.
+fn ruling_line_turn(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    carrier: usize,
+    r: &RulingDir,
+) -> Result<i8, BoolError> {
+    debug_assert!(
+        class_coeffs_rat(jd, p)
+            .map(|n| {
+                nacre_scalar::dot_sign_rat(&[n[0], n[1], n[2]], &r.axis)
+                    == nacre_scalar::Orient::Zero
+            })
+            .unwrap_or(true),
+        "a ruling direction on a class its axis does not lie in"
+    );
+    let Some(n) = class_coeffs_rat(jd, carrier) else {
+        return Err(reject(RejectReason::WitnessNotRational));
+    };
+    let dot = nacre_scalar::dot_sign_rat(&[n[0], n[1], n[2]], &r.axis);
+    let up = if r.up { 1 } else { -1 };
+    Ok(match dot {
+        nacre_scalar::Orient::Positive => -up,
+        nacre_scalar::Orient::Negative => up,
+        // `m · n_carrier = 0` means the segment's line is parallel to the ruling — no crossing
+        // could have put them at one node, so a `0` here is the degenerate concurrency the
+        // walk's `UnorderedEdges` bucket names.
+        nacre_scalar::Orient::Zero => 0,
     })
 }
 
@@ -2488,7 +2612,8 @@ fn coord_key(
         .iter()
         .find_map(|e| match &e.carrier {
             Carrier::Arc(a) if a.cyl == cyl => Some(&a.def),
-            _ => None,
+            Carrier::Ruling(r) if r.cyl == cyl => Some(&r.def),
+            Carrier::Plane { .. } | Carrier::Arc(_) | Carrier::Ruling(_) => None,
         })
         .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
     let (line, s) =

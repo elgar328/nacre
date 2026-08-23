@@ -258,6 +258,27 @@ pub(crate) struct MergedArc {
     pub merged: Vec<(SolidSide, SegKind)>,
 }
 
+/// **One ruling piece of the class's arrangement** — the straight sibling of [`MergedArc`], for a
+/// class **parallel** to a cylinder's axis (the M6-2 rulings ladder): the wall plane meets the
+/// lateral surface in up to two axis-parallel lines, and a piece of one is an ordinary two-ended
+/// edge whose carrier is the cylinder, not a plane pair.
+///
+/// ★ `end` is in the piece's **own travel order**: `end[0]` → `end[1]` runs along `+m` (the
+/// cylinder's axis direction) — the straight reading of [`MergedArc`]'s CCW convention, read the
+/// same way (`edge_at`: the even half-edge travels the stated way, its twin the other).
+///
+/// `side` names which of the two parallel rulings ([`combinatorics::RulingCarrier::side`] — the
+/// sign of `(x − o) · (m × n̂)` against the class's canonical coefficients).
+#[derive(Clone, Debug)]
+pub(crate) struct MergedRuling {
+    pub cyl: usize,
+    pub def: nacre_topo::CylinderDef,
+    pub side: i8,
+    pub end: [NodeId; 2],
+    /// The `(solid, kind)` contributions, like a segment's — `edge_mask` reads it unchanged.
+    pub merged: Vec<(SolidSide, SegKind)>,
+}
+
 /// Group a class's circle traces by cylinder class, in ascending class order (deterministic —
 /// replay mints handles from this order). The def comes from the class table, which a
 /// `ClassIx::Cyl` index indexes directly.
@@ -1726,8 +1747,8 @@ pub(crate) struct Cell {
 }
 
 /// Number of connected components of the 1-skeleton (union-find over vertex names joined by each
-/// edge — segment or arc). The `-1`-winding face count must equal this.
-fn component_count(segs: &[MergedSeg], arcs: &[MergedArc]) -> usize {
+/// edge — segment, arc, or ruling). The `-1`-winding face count must equal this.
+fn component_count(segs: &[MergedSeg], arcs: &[MergedArc], rulings: &[MergedRuling]) -> usize {
     let mut idx: HashMap<NodeId, usize> = HashMap::new();
     let mut id = |t: NodeId, parent: &mut Vec<usize>| -> usize {
         let n = idx.len();
@@ -1748,7 +1769,11 @@ fn component_count(segs: &[MergedSeg], arcs: &[MergedArc]) -> usize {
     // 1-skeleton's components, and an arc is an edge of that skeleton like any other — leaving them
     // out would make a crossed circle look like a component of its own and the walk's check would
     // then be off by one wherever a circle was cut.
-    let ends = segs.iter().map(|s| s.end).chain(arcs.iter().map(|a| a.end));
+    let ends = segs
+        .iter()
+        .map(|s| s.end)
+        .chain(arcs.iter().map(|a| a.end))
+        .chain(rulings.iter().map(|r| r.end));
     for e in ends {
         let (a, b) = (id(e[0], &mut parent), id(e[1], &mut parent));
         let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
@@ -2289,17 +2314,21 @@ fn per_class(
 struct ClassEdges<'a> {
     segs: std::borrow::Cow<'a, [MergedSeg]>,
     arcs: std::borrow::Cow<'a, [MergedArc]>,
+    /// Ruling pieces (M6-2 rulings ladder) — a fourth range, empty until a tracer contributes
+    /// rulings on a ∥ class.
+    rulings: std::borrow::Cow<'a, [MergedRuling]>,
     circles: std::borrow::Cow<'a, [MergedCircle]>,
     /// Each cut circle's seam datum, `(cylinder class, rim)` — carried out to the assembly
     /// (keyed by plane class where the per-class products are aggregated).
     cut_rims: Vec<(usize, CutRim)>,
 }
 
-/// Which of the three ranges a half-edge is in, and its index within that range.
+/// Which of the four ranges a half-edge is in, and its index within that range.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum HalfEdgeKind {
     Seg(usize),
     Arc(usize),
+    Ruling(usize),
     Circle(usize),
 }
 
@@ -2321,6 +2350,7 @@ impl<'a> ClassEdges<'a> {
                 ClassEdges {
                     segs: Cow::Owned(s),
                     arcs: Cow::Owned(a),
+                    rulings: Cow::Borrowed(&[]),
                     circles: Cow::Owned(c),
                     cut_rims: r,
                 }
@@ -2328,6 +2358,7 @@ impl<'a> ClassEdges<'a> {
             None => ClassEdges {
                 segs: Cow::Borrowed(segs),
                 arcs: Cow::Borrowed(&[]),
+                rulings: Cow::Borrowed(&[]),
                 circles: Cow::Borrowed(circles),
                 cut_rims: Vec::new(),
             },
@@ -2336,26 +2367,30 @@ impl<'a> ClassEdges<'a> {
 
     /// Where the walk's half-edges end and the circles' pseudo-half-edges begin.
     fn he_count(&self) -> usize {
-        2 * (self.segs.len() + self.arcs.len())
+        2 * (self.segs.len() + self.arcs.len() + self.rulings.len())
     }
 
     /// **The one classifier.** Everything that used to compare against `2 * segs.len()` asks this.
     fn kind(&self, he: usize) -> HalfEdgeKind {
         let ns = self.segs.len();
+        let na = self.arcs.len();
         if he < 2 * ns {
             HalfEdgeKind::Seg(he / 2)
-        } else if he < self.he_count() {
+        } else if he < 2 * (ns + na) {
             HalfEdgeKind::Arc((he - 2 * ns) / 2)
+        } else if he < self.he_count() {
+            HalfEdgeKind::Ruling((he - 2 * (ns + na)) / 2)
         } else {
             HalfEdgeKind::Circle((he - self.he_count()) / 2)
         }
     }
 
-    /// The vertex a half-edge leaves. `he % 2 == 0` takes `end[0]` — one rule, both ranges.
+    /// The vertex a half-edge leaves. `he % 2 == 0` takes `end[0]` — one rule, all ranges.
     fn origin(&self, he: usize) -> NodeId {
         match self.kind(he) {
             HalfEdgeKind::Seg(i) => self.segs[i].end[he % 2],
             HalfEdgeKind::Arc(i) => self.arcs[i].end[he % 2],
+            HalfEdgeKind::Ruling(i) => self.rulings[i].end[he % 2],
             HalfEdgeKind::Circle(_) => {
                 unreachable!("a circle's pseudo-half-edge has no vertex to leave")
             }
@@ -2386,17 +2421,28 @@ impl<'a> ClassEdges<'a> {
                 wall: self.segs[i].wall,
                 sense: self.segs[i].sense.map(|s| if he % 2 == 0 { s } else { -s }),
             },
+            // ★ `MergedRuling::end` runs along `+m`, so the even half-edge travels up and its
+            // twin down — the straight reading of the arc convention above.
+            HalfEdgeKind::Ruling(i) => {
+                let r = &self.rulings[i];
+                combinatorics::Carrier::Ruling(Box::new(combinatorics::RulingCarrier {
+                    cyl: r.cyl,
+                    def: r.def.clone(),
+                    side: r.side,
+                    up: he % 2 == 0,
+                }))
+            }
             HalfEdgeKind::Circle(_) => {
                 unreachable!("a circle's pseudo-half-edge is not a ring edge")
             }
         };
         // The endpoints as handles on this edge's line, carried by the producer. Not recovered from
         // the names: a canonical name need not mention `wc` or the wall (see
-        // `combinatorics::RingEdge`). ★ An arc's ends are branch points by construction, which is
-        // what `EndPin::Cylinder` says.
+        // `combinatorics::RingEdge`). ★ An arc's ends are branch points by construction — and a
+        // ruling's too — which is what `EndPin::Cylinder` says.
         let (from_h, to_h) = match self.kind(he) {
             HalfEdgeKind::Seg(i) => (self.segs[i].end_h[he % 2], self.segs[i].end_h[1 - he % 2]),
-            _ => (
+            HalfEdgeKind::Arc(_) | HalfEdgeKind::Ruling(_) | HalfEdgeKind::Circle(_) => (
                 combinatorics::EndPin::Cylinder,
                 combinatorics::EndPin::Cylinder,
             ),
@@ -2458,7 +2504,7 @@ fn walk_cells(
     }
 
     watch!(E_WALK);
-    let components = component_count(segs, arcs);
+    let components = component_count(segs, arcs, &edges.rulings);
 
     // Try both step directions (predecessor / successor); keep the one whose bounded/outer split
     // is right. Handedness is fixed by `orient_sign(w)` and unknown up front.
@@ -2621,7 +2667,7 @@ fn nest_cells(
     let circle_of = |c: &Cell| -> Option<usize> {
         match edges.kind(*c.half_edges.first()?) {
             HalfEdgeKind::Circle(i) => Some(i),
-            HalfEdgeKind::Seg(_) | HalfEdgeKind::Arc(_) => None,
+            HalfEdgeKind::Seg(_) | HalfEdgeKind::Arc(_) | HalfEdgeKind::Ruling(_) => None,
         }
     };
     // The walk knows each edge's carrier and both handles, so the ring carries them instead of
@@ -2722,11 +2768,14 @@ fn point_in_mixed_ring(
     let (e1, e2) = chart.axes();
     let q = chart.project(probe)?;
     let (qx, qy) = (q[0], q[1]);
-    // The ring's cylinders, for evaluating branch corners.
+    // The ring's cylinders, for evaluating branch corners — an arc or a ruling both carry theirs.
     let def_of = |cyl: usize| {
         ring.iter().find_map(|e| match &e.carrier {
             combinatorics::Carrier::Arc(arc) if arc.cyl == cyl => Some(&arc.def),
-            _ => None,
+            combinatorics::Carrier::Ruling(r) if r.cyl == cyl => Some(&r.def),
+            combinatorics::Carrier::Plane { .. }
+            | combinatorics::Carrier::Arc(_)
+            | combinatorics::Carrier::Ruling(_) => None,
         })
     };
     let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
@@ -2755,7 +2804,9 @@ fn point_in_mixed_ring(
     for i in 0..k {
         let (na, nb) = (ring[i].node, ring[(i + 1) % k].node);
         match &ring[i].carrier {
-            combinatorics::Carrier::Plane { .. } => {
+            // A ruling is a straight step like a plane step — same y-straddle, same orient2d;
+            // its corners are branch points, which `corner` already evaluates exactly.
+            combinatorics::Carrier::Plane { .. } | combinatorics::Carrier::Ruling(_) => {
                 let a = corner(na)?;
                 let b = corner(nb)?;
                 let ya = a[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
@@ -3224,8 +3275,10 @@ fn label_cells(
     let mask_of = |he: usize| -> Result<Label, BoolError> {
         match edges.kind(he) {
             HalfEdgeKind::Seg(i) => edge_mask(&edges.segs[i].merged),
-            // An arc is a piece of its circle's trace, so it carries the same contributions.
+            // An arc is a piece of its circle's trace, so it carries the same contributions —
+            // and a ruling piece is a piece of the lateral's trace, likewise.
             HalfEdgeKind::Arc(i) => edge_mask(&edges.arcs[i].merged),
+            HalfEdgeKind::Ruling(i) => edge_mask(&edges.rulings[i].merged),
             HalfEdgeKind::Circle(i) => edge_mask(&edges.circles[i].merged),
         }
     };
@@ -3347,6 +3400,17 @@ fn emit_faces(
                         cyl: edges.arcs[i].cyl,
                         ccw: he % 2 == 0,
                     },
+                    // Same shape for a ruling: `MergedRuling::end` ascends the axis, the even
+                    // half-edge travels up. `edge_for` refuses this wall by the population's
+                    // name (`RulingBoundNotYet`) until the panel cell teaches it the key.
+                    HalfEdgeKind::Ruling(i) => {
+                        let r = &edges.rulings[i];
+                        crate::boolean::Wall::Ruling {
+                            cyl: r.cyl,
+                            side: r.side,
+                            up: he % 2 == 0,
+                        }
+                    }
                     // Mirrors `origin`'s statement: the nodes map above already refused it.
                     HalfEdgeKind::Circle(_) => {
                         unreachable!("a circle's pseudo-half-edge has no vertex to leave")

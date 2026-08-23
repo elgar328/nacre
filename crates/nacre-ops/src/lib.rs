@@ -805,6 +805,14 @@ pub enum RejectReason {
     ///
     /// "Not yet" is still the literal truth for both.
     ArcBoundNotYet,
+    /// A **ruling** — the straight edge a wall parallel to a cylinder's axis cuts on its lateral
+    /// surface (the M6-2 rulings ladder) — reached the assembly: an emitted ring carries a ruling
+    /// wall, and the θ-partial lateral faces such an edge would bound are not built yet.
+    /// [`Self::ArcBoundNotYet`]'s straight sibling, for the same reason: the arrangement
+    /// downstairs speaks the vocabulary, the assembly upstairs does not yet. Unreachable while
+    /// the population gate ([`Self::WallMeetsLateral`]) stands; the backstop exists so lifting
+    /// the gate meets an honest name instead of a mis-carried edge.
+    RulingBoundNotYet,
     /// **A loop's winding had to be read across a *curved* straight stretch.**
     ///
     /// `loop_winding` reads the turn at the ring's extreme node, walking back past nodes the loop
@@ -977,6 +985,7 @@ impl RejectReason {
             Self::NoClearRay => "no_clear_ray",
             Self::WitnessNotRational => "witness_not_rational",
             Self::ArcBoundNotYet => "arc_bound_not_yet",
+            Self::RulingBoundNotYet => "ruling_bound_not_yet",
             Self::CurvedStraightRun => "curved_straight_run",
             Self::PointOnRing => "point_on_ring",
             Self::HoleDepth => "hole_depth",
@@ -1032,6 +1041,7 @@ impl RejectReason {
             | Self::NoClearRay
             | Self::WitnessNotRational
             | Self::ArcBoundNotYet
+            | Self::RulingBoundNotYet
             | Self::CurvedStraightRun
             | Self::PointOnRing
             | Self::HoleDepth
