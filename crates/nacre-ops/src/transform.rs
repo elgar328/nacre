@@ -89,6 +89,14 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
 /// suite is the corpus for "every producer writes definitions from its own face surfaces" rather
 /// than this gate being the first to find out.
 pub(crate) fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
+    foreign_named_vertex(model, solid).is_none()
+}
+
+/// The offending vertex behind a [`defs_are_remappable`] refusal — the lowest-handle vertex
+/// whose definition names a surface the solid keeps no face on (`min` so the witness is the
+/// same whatever order the face walk visits it in), `None` when every definition re-solves.
+/// One walk answers both spellings so the two cannot drift.
+pub(crate) fn foreign_named_vertex(model: &Model, solid: Handle<Solid>) -> Option<Handle<Vertex>> {
     let src = model.solids.get(solid);
     let shells: Vec<Handle<Shell>> = std::iter::once(src.outer)
         .chain(src.cavities.iter().copied())
@@ -100,6 +108,7 @@ pub(crate) fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
         }
     }
     let named = |def: &VertexDef| def.carriers().all(|s| surfs.contains(&s));
+    let mut worst: Option<Handle<Vertex>> = None;
     for &sh in &shells {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
@@ -107,15 +116,17 @@ pub(crate) fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
                 for he in &lp.half_edges {
                     let edge = model.edges.get(he.edge);
                     for vh in edge.vertices.iter() {
-                        if !named(&model.vertices.get(*vh).def) {
-                            return false;
+                        if !named(&model.vertices.get(*vh).def)
+                            && worst.is_none_or(|w| vh.index() < w.index())
+                        {
+                            worst = Some(*vh);
                         }
                     }
                 }
             }
         }
     }
-    true
+    worst
 }
 
 /// Supersede `solid` by its reflection in the coordinate plane `axis = offset`.

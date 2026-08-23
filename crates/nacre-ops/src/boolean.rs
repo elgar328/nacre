@@ -2108,13 +2108,6 @@ fn reconstruct(
             })
         })
         .collect());
-    debug_assert!(
-        out.as_ref().is_ok_and(|solids| solids
-            .iter()
-            .all(|&s| crate::transform::defs_are_remappable(model, s)))
-            || out.is_err(),
-        "a result vertex names a surface this solid has no face on — see the def derivation above"
-    );
     // ★★★ **The deferred stopper's raise — the very end of the assembly.** The socket is empty
     // since M6-2b went green, but the interception ladder it crowns is architecture: seven
     // layers (per-class → seam stretch → naming → vertex materialization → face loop → shell
@@ -2132,6 +2125,23 @@ fn reconstruct(
     // past — the unreachable-machinery trap this ladder keeps refusing.
     if let Some(d) = deferred {
         return Err(d);
+    }
+    // ★★ **Every result vertex must re-solve from the result's own faces** — the property
+    // transform and replay stand on. This was a debug_assert until the chained contact-cut
+    // refuted it (2026-08-23): a bored plate cut by a boss that only touches its top kept the
+    // top ring's branch vertices, defs still naming the boss's cylinder with every boss face
+    // gone — right volume, wrong names, and release builds shipped it silently. Refusing here
+    // is the floor until the assembly learns to shed the stale corners; the garbage-solid
+    // residue is the same class every late reject leaves (see the raise above).
+    if let Ok(solids) = &out {
+        for &s in solids {
+            if let Some(vh) = crate::transform::foreign_named_vertex(model, s) {
+                return Err(crate::reject_at(
+                    RejectReason::VertexNamesAbsentSurface,
+                    crate::RejectWhere::Point(model.vertex_point(vh)),
+                ));
+            }
+        }
     }
     out
 }

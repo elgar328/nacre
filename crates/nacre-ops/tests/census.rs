@@ -709,6 +709,36 @@ fn dump() {
                 record(&format!("arc {pn} {kn}"), &m, &inputs, &out);
             }
         }
+        // ── **A bored plate, then a straddling boss** (chaining wall 3): the second boolean's
+        // nesting reads a bitten top ring — branch corners and an arc step — so the containment
+        // parity runs the mixed road instead of the rational chart. The first boolean is fixed
+        // (`cut` the through-bore); the second varies by kind.
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let bore = m.add_cylinder(
+                Point3::from_array([1.0, 1.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                4.0,
+            );
+            m.rebuild_adjacency();
+            let bored = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+            let boss = m.add_cylinder(
+                Point3::from_array([4.0, 2.0, 2.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            let inputs = operands(&m, bored, boss);
+            let out = boolean(&mut m, k, bored, boss);
+            m.rebuild_adjacency();
+            record(&format!("arc bored straddle {kn}"), &m, &inputs, &out);
+        }
     }
     // ── **A datum through a turned solid's corners, and a boolean over it** (`dt`).
     //
