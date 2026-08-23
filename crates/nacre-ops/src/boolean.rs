@@ -1085,8 +1085,8 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// every ring node's defining triple.
 ///
 /// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
-/// one: the deferred arc stopper stands behind it (at the assembly's very end now) and
-/// intercepts everything, so no
+/// one: the deferred-stopper socket stands behind it (at the assembly's very end) and
+/// intercepts everything a plugged stopper would, so no
 /// reject name can testify that the naming completed — only a fence that calls it directly on the
 /// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
 /// **A result vertex's definition, in class space** — what the minting turns into a `VertexDef`.
@@ -2115,12 +2115,12 @@ fn reconstruct(
             || out.is_err(),
         "a result vertex names a surface this solid has no face on — see the def derivation above"
     );
-    // ★★★ **The deferred arc stopper's raise — the very end of the assembly.** The interception
-    // is the same shape at its seventh layer (per-class → seam stretch → naming → vertex
-    // materialization → face loop → shell guard → grouping and the solid assembly): everything
-    // ran — the shells and solids stand in the store — and the stopper's reject wins over
-    // whatever any stage said, so an arc population's name never depends on how far the
-    // pipeline got.
+    // ★★★ **The deferred stopper's raise — the very end of the assembly.** The socket is empty
+    // since M6-2b went green, but the interception ladder it crowns is architecture: seven
+    // layers (per-class → seam stretch → naming → vertex materialization → face loop → shell
+    // guard → grouping and the solid assembly) all yield to `deferred`, so the next
+    // out-of-coverage class that plugs a stopper into `arrange`'s socket carries one name out
+    // however far this pipeline gets.
     //
     // ★★ **An arc reject therefore leaves a complete garbage solid in the store —
     // deliberately.** Vertices, edges, faces, shells and the solid itself: cells outside the

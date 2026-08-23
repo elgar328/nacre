@@ -681,6 +681,34 @@ fn dump() {
             m.rebuild_adjacency();
             record(&format!("cyl {kn}"), &m, &inputs, &out);
         }
+        // ── **Cut rims** (M6-2b green): a boss whose circle a boundary segment cuts — the arc
+        // population. Three placements: straddling the plate's top edge (seam ≡ branch), turned
+        // over the corner (the seam splits the wrap arc), and hung under the bottom edge (the
+        // cut circle is the band's hi end).
+        for (pn, origin, axis) in [
+            ("straddle", [4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
+            ("turned", [4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
+            ("hung", [4.0, 2.0, -1.0], [0.0, 0.0, 1.0]),
+        ] {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let a = m.add_cuboid(
+                    Point3::from_array([0.0; 3]),
+                    Point3::from_array([4.0, 4.0, 2.0]),
+                );
+                let b = m.add_cylinder(
+                    Point3::from_array(origin),
+                    Vector3::from_array(axis),
+                    0.5,
+                    1.0,
+                );
+                m.rebuild_adjacency();
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("arc {pn} {kn}"), &m, &inputs, &out);
+            }
+        }
     }
     // ── **A datum through a turned solid's corners, and a boolean over it** (`dt`).
     //

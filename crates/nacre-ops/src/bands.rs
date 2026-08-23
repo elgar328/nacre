@@ -806,23 +806,18 @@ mod tests {
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
-    /// **The fence: a boss hanging over the plate's edge is still refused — and the refusal moved
-    /// to the name that is true.**
+    /// **The straddling boss builds.** The M6-2b milestone fence: a boss hanging over the
+    /// plate's edge — its rim circle cut by the plate top's boundary segment — fuses into one
+    /// valid solid. The ladder this closes, in the names its rungs wore: `WallMeetsLateral`
+    /// (the wall rule read the closed span) → `CircleMeetsSegment` → `ArcBoundNotYet` (the
+    /// stopper, walked from the class arrangement to the very end of the assembly) → built.
     ///
-    /// It used to be `WallMeetsLateral`, because the plate's `x = 4` wall is parallel to the boss's
-    /// axis and the wall rule judged the whole infinite band across that plane. But the wall lies
-    /// *below* the boss (`t ∈ [−2, 0]` against the boss's span `[0, 1]`), touching only the plane
-    /// its base sits in — "the wall meets the lateral surface" was simply false. Reading the span
-    /// as the **open** interval the uniform-slab theorem asks for lets the wall through, and the
-    /// real obstruction then names itself where it lives: the boss's rim circle crosses the plate
-    /// top's boundary segment. ★ Since 2026-08-21 that crossing is **split** — the circle becomes
-    /// arcs and the witness below is the split point — and what still stops is assembling an
-    /// arc-bounded loop ([`RejectReason::ArcBoundNotYet`]).
-    ///
-    /// ★ **Measured, not reasoned:** with the span read as closed instead, this comes back to
-    /// `WallMeetsLateral` — that is the whole difference the open reading makes here.
+    /// The volume and the mixed-loop integrals are pinned by
+    /// [`Self::a_cut_rim_boolean_builds_a_complete_solid`]; here the result answers the two
+    /// whole-model judges: `validate` (whose winding check reads the arcs as witnesses now) and
+    /// the tessellation (watertight, arcs sampled as sub-arcs).
     #[test]
-    fn a_boss_overhanging_the_plates_edge_is_still_refused() {
+    fn a_boss_overhanging_the_plates_edge_builds() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -835,36 +830,24 @@ mod tests {
             1.0,
         );
         m.rebuild_adjacency();
-        let before = m.live_solids.clone();
-        let err =
-            crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect_err("overhanging boss");
-        assert!(
-            matches!(
-                err,
-                BoolError::Rejected {
-                    reason: RejectReason::ArcBoundNotYet,
-                    ..
-                }
-            ),
-            "{err:?}"
-        );
-        // ★ **And it says where.** The rim (centre `(4,2,2)`, `r = 0.5`) meets the plate's edge
-        // `x = 4` at `(4, 2 ± 0.5, 2)` — solved from the fixture's own numbers, not read back off
-        // the engine. The deterministic choice among the two is by name, so the assertion names
-        // both and demands one of them.
-        let BoolError::Rejected { at: Some(at), .. } = &err else {
-            panic!("the refusal should carry a witness: {err:?}");
-        };
-        let crate::RejectWhere::Point(p) = at else {
-            panic!("a crossing's witness is a point: {at:?}");
-        };
-        let c = p.as_array();
-        let near = |q: [f64; 3]| (0..3).all(|i| (c[i] - q[i]).abs() < 1e-9);
-        assert!(
-            near([4.0, 1.5, 2.0]) || near([4.0, 2.5, 2.0]),
-            "witness {p:?} is neither crossing"
-        );
-        assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+        let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
+        assert_eq!(out.len(), 1, "one fused solid");
+        m.rebuild_adjacency();
+        assert_eq!(m.live_solids, out, "the operands retired, the result lives");
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{issues:?}");
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+            .expect("the arcs tessellate");
+        let mut uses: std::collections::HashMap<(u32, u32), usize> =
+            std::collections::HashMap::new();
+        for (_, tri) in mesh.triangles.iter() {
+            for k in 0..3 {
+                let (a, b) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+                *uses.entry((a.min(b), a.max(b))).or_default() += 1;
+            }
+        }
+        let open = uses.values().filter(|&&n| n != 2).count();
+        assert_eq!(open, 0, "the mesh is watertight");
     }
 
     /// ★★ **A boss standing over a bore, its whole outline *inside* the rim.** No segment crosses
@@ -1098,21 +1081,17 @@ mod tests {
         );
     }
 
-    /// ★★★ **The same turn, one genuine crossing — the lock the toggle can fail.**
+    /// **The turned boss builds — and its crescent is the winding witness's red switch.**
     ///
-    /// ★★ **Why the boss sits at the corner rather than mid-edge.** With *both* crossings admitted,
-    /// a missing toggle is invisible: the two breaks trade names, the witness is chosen as the
-    /// smallest name and its coordinate is derived from that same name, so the naming error and
-    /// the realization error cancel exactly at the break that gets reported. Derived, then built
-    /// around: put the rim so the segment admits **one** root and there is no partner to cancel
-    /// with.
-    ///
-    /// The rim (`x = 4`, centre `(4, 0.25, 2)`, `r = 0.5`) meets `z = 2` at `y = −0.25` and
-    /// `y = 0.75`; the plate's top edge runs `y ∈ [0, 4]`, so only `y = 0.75` is on the segment.
-    /// A root that failed to follow its pair through the sort names the *other* crossing — still
-    /// on the circle, but off the segment — and this assertion sees it move.
+    /// The near cap's circle is cut by two different plate edges (top and corner), so this
+    /// result carries the arc-dominated crescent face whose chord Newell reads **backwards**
+    /// (`cos = −1`, the measured wall) — `validate == []` here is what pins `loop_winding`'s
+    /// segment witnesses. ★ The old fence's proposition — a root that fails to follow its pair
+    /// through the sort names the wrong crossing — did not retire with the reject: the mint
+    /// fence asserts the branch vertices sit **on the derived crossings**, and a wrong root
+    /// moves the minted point itself.
     #[test]
-    fn a_turned_boss_over_the_plates_corner_names_the_crossing_on_the_segment() {
+    fn a_turned_boss_over_the_plates_corner_builds() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -1125,18 +1104,19 @@ mod tests {
             1.0,
         );
         m.rebuild_adjacency();
-        let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect_err("turned boss");
-        let BoolError::Rejected {
-            reason: RejectReason::ArcBoundNotYet,
-            at: Some(crate::RejectWhere::Point(p)),
-        } = &err
-        else {
-            panic!("a crossing's witness is a point: {err:?}");
-        };
-        let c = p.as_array();
-        assert!(
-            (0..3).all(|i| (c[i] - [4.0, 0.75, 2.0][i]).abs() < 1e-9),
-            "the one crossing that lies on the plate's top edge: {c:?}"
+        let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
+        assert_eq!(out.len(), 1, "one fused solid");
+        m.rebuild_adjacency();
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{issues:?}");
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 32.0 + std::f64::consts::PI * 0.25;
+        assert!((v - want).abs() < 1e-12, "{v} vs {want}");
+        let (v_n, e_n, f_n, l_n) = euler_counts(&m, out[0]);
+        assert_eq!(
+            v_n - e_n + f_n - l_n,
+            2,
+            "genus 0: V{v_n} E{e_n} F{f_n} L{l_n}"
         );
     }
 
@@ -1242,24 +1222,13 @@ mod tests {
                 (m, plate, boss)
             };
             let (mut m, plate, boss) = build();
-            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
-                .expect_err("an arc-bounded cell is not assembled yet");
-            let BoolError::Rejected { reason, .. } = err else {
-                panic!("{err:?}");
-            };
+            crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the arc class assembles");
             let (m, plate, boss) = build();
             let audits = crate::arrangement::frame_audit(&m, BoolKind::Fuse, plate, boss).unwrap();
+            // The agreement, now that the population is green: the boolean built, and the audit's
+            // replay of the same pipeline stops nowhere either.
             let stopped: Vec<_> = audits.iter().filter(|a| a.failed_at.is_some()).collect();
-            assert_eq!(
-                stopped.len(),
-                1,
-                "exactly one class carries the crossing, and the audit sees it"
-            );
-            assert_eq!(
-                stopped[0].failed_at,
-                Some(reason),
-                "the audit reports the reject the boolean raised"
-            );
+            assert!(stopped.is_empty(), "no class stops: {stopped:?}");
             // ★ The whole audit, not just `produced`: the ring coordinates are a sibling field, and
             // joining two filtered lists by index is the seam where they could come from different
             // classes. ★ By reference: `Produced` carries the labels now, so it is no longer `Copy`.
@@ -1268,13 +1237,7 @@ mod tests {
                 .filter(|a| a.produced.as_ref().is_some_and(|p| p.arcs > 0))
                 .collect();
             assert_eq!(cut.len(), 1, "exactly one class has its circle cut");
-            // ★ And it is the class that stopped. Without this the two filtered lists are joined by
-            // nothing, and the assertions above and below could be about different classes while
-            // the fence stays green — the same seam the line above avoids inside `cut`.
-            assert_eq!(
-                stopped[0].wc, cut[0].wc,
-                "the class that carries the arcs is the one that stopped"
-            );
+
             assert_eq!(
                 *cut[0].produced.as_ref().unwrap(),
                 crate::arrangement::Produced {
@@ -1326,7 +1289,7 @@ mod tests {
             let got = cut[0]
                 .outer_rings
                 .as_ref()
-                .expect("the stopper is behind `emit_faces`, so the rings are there");
+                .expect("the per-class road emits the rings");
             assert_eq!(
                 got.len(),
                 want_rings.len(),
@@ -1416,18 +1379,8 @@ mod tests {
                     &trace_in,
                 )
                 .expect("the arc population traces");
-            // The deferred reject is **made** at the class level — the stopper's own name,
-            // before anything downstream has a chance to rename it.
-            assert!(
-                matches!(
-                    &deferred,
-                    Some(BoolError::Rejected {
-                        reason: RejectReason::ArcBoundNotYet,
-                        ..
-                    })
-                ),
-                "{deferred:?}"
-            );
+            // The stopper socket is empty since the population went green — nothing defers.
+            assert!(deferred.is_none(), "{deferred:?}");
             let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
@@ -1689,21 +1642,19 @@ mod tests {
         }
     }
 
-    /// **The refusal now leaves the branch vertices behind — minted, canonical, and measured.**
+    /// **The branch vertices are minted — canonical, measured, on the derived crossings.**
     ///
-    /// ★★ The deferred stopper stands at the assembly's very end, so an arc reject's model
-    /// carries its minted vertices as garbage cells outside every live solid — the deliberate
-    /// trade recorded at the raise site. That is also what makes the minting *observable*: no
-    /// reject name can see past the interception, but the store can be read directly. Before the
-    /// boolean no `VertexDef::Branch` exists anywhere in the model, so a whole-store filter is
-    /// position-independent.
+    /// Before the boolean no `VertexDef::Branch` exists anywhere in the model, so a whole-store
+    /// filter is position-independent; a wrong `QuadRoot` canonicalization moves the minted
+    /// point itself, which is what keeps the old toggle-lock alive now that the reject (whose
+    /// witness once carried it) is gone.
     ///
     /// ★ The coordinates are the fixtures' own crossing derivations (the same numbers the ring
     /// and seam fences pin) — nothing here is copied from a run. The tolerance is a bound, and
     /// ascending handle order is `VertexDef::Branch`'s own contract, minted through
     /// `QuadRoot::canonical`'s second answer.
     #[test]
-    fn a_branch_vertex_is_minted_before_the_refusal() {
+    fn a_branch_vertex_is_minted_and_measured() {
         let s = 2.0 - 3.0f64.sqrt() / 4.0;
         for (origin, axis, crossings) in [
             (
@@ -1730,19 +1681,11 @@ mod tests {
             );
             m.rebuild_adjacency();
             let before = m.live_solids.clone();
-            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
-                .expect_err("the arc population is still refused");
-            assert!(
-                matches!(
-                    &err,
-                    BoolError::Rejected {
-                        reason: RejectReason::ArcBoundNotYet,
-                        ..
-                    }
-                ),
-                "{err:?}"
-            );
-            assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+            let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect("the cut-rim boolean builds");
+            assert_eq!(out.len(), 1, "one fused solid");
+            assert_ne!(m.live_solids, before, "the operands retired");
+            assert_eq!(m.live_solids, out, "the result lives");
             let branch: Vec<_> = m
                 .vertices
                 .iter()
@@ -1828,18 +1771,9 @@ mod tests {
             m.rebuild_adjacency();
             let minted_from = m.edges.len();
             let vertices_from = m.vertices.len();
-            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
-                .expect_err("the arc population is still refused");
-            assert!(
-                matches!(
-                    &err,
-                    BoolError::Rejected {
-                        reason: RejectReason::ArcBoundNotYet,
-                        ..
-                    }
-                ),
-                "{err:?}"
-            );
+            let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect("the cut-rim boolean builds");
+            assert_eq!(out.len(), 1, "one fused solid");
             let minted: Vec<_> = m.edges.iter().skip(minted_from).collect();
             let is_cyl = |sh| matches!(m.surface(sh), nacre_geom::Surface::Cylinder(_));
             // A circle-carrier edge is a **mixed** pair (the cap plane and the lateral); the
@@ -1954,13 +1888,11 @@ mod tests {
         }
     }
 
-    /// **The refusal's garbage is already a closed shell.**
+    /// **The band's loop is one continuous cycle, and the shell closes over it.**
     ///
-    /// ★★★ The band assembles its cut rim from the arc chain now, and the deferred stopper
-    /// stands **after** the closed-shell guard — so for an arc input the guard runs, counts, and
-    /// passes in silence before the population is refused by name. This fence counts the same
-    /// closure directly on the store: every edge the rejected boolean minted is used exactly
-    /// twice across its garbage faces, and the band face's outer loop is one vertex-continuous
+    /// ★★★ The band assembles its cut rim from the arc chain; this fence counts the closure
+    /// directly on the store beside the production guard: every edge the boolean minted is used
+    /// exactly twice across its faces, and the band face's outer loop is one vertex-continuous
     /// cycle of the derived length, with the seam edge traversed once in each sense.
     ///
     /// ★ Three fixtures: the straddling boss (lo rim cut, seam ≡ branch), the turned boss
@@ -1970,7 +1902,7 @@ mod tests {
     /// The hi-cut *and* seam-split combination has no fixture yet — the chain logic is shared,
     /// and its population brings one when it arrives.
     #[test]
-    fn the_refusals_garbage_is_already_a_closed_shell() {
+    fn the_bands_loop_is_one_continuous_cycle() {
         for (origin, axis, band_len) in [
             ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0], 5usize),
             ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0], 6usize),
@@ -1990,19 +1922,11 @@ mod tests {
             m.rebuild_adjacency();
             let faces_from = m.faces.len();
             let before = m.live_solids.clone();
-            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
-                .expect_err("the arc population is still refused");
-            assert!(
-                matches!(
-                    &err,
-                    BoolError::Rejected {
-                        reason: RejectReason::ArcBoundNotYet,
-                        ..
-                    }
-                ),
-                "{err:?}"
-            );
-            assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+            let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect("the cut-rim boolean builds");
+            assert_eq!(out.len(), 1, "one fused solid");
+            assert_ne!(m.live_solids, before, "the operands retired");
+            assert_eq!(m.live_solids, out, "the result lives");
             let garbage: Vec<_> = m.faces.iter().skip(faces_from).collect();
             assert!(!garbage.is_empty(), "the face loop ran to completion");
 
@@ -2138,16 +2062,16 @@ mod tests {
         }
     }
 
-    /// **The refusal leaves a complete solid.**
+    /// **A cut-rim boolean builds a complete solid, and the integrals pin it exactly.**
     ///
-    /// ★★★ The deferred stopper stands at the very end of the assembly now: for an arc input
-    /// the grouping joins (one component), the shells and the solid are pushed, and only then is
-    /// the population refused by name — so the store holds a **complete garbage solid** whose
-    /// outer shell is exactly the boolean's minted faces, unreachable from the live set. What
-    /// still refuses on it is measured here too: `mass_props` answers `UnsupportedBoundary`
-    /// (the arc integrals are the green cell's door), recorded rather than assumed away.
+    /// ★★★ The volume is derived (plate 4·4·2 = 32, boss π·0.25·1, zero overlap — every fixture
+    /// is a contact), so a wrong segment sign or scale moves an exact number; and because all
+    /// three fixtures share that one number, the straddling boss's two z = 2 faces additionally
+    /// split the segment **signs** (the plate top loses its half-disk bite, the digon *is* the
+    /// bite). The structure is pinned beside it: one solid, no cavities, its outer shell exactly
+    /// the boolean's minted faces.
     #[test]
-    fn the_refusal_leaves_a_complete_solid() {
+    fn a_cut_rim_boolean_builds_a_complete_solid() {
         for (origin, axis) in [
             ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
             ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
@@ -2167,27 +2091,16 @@ mod tests {
             m.rebuild_adjacency();
             let (faces_from, solids_from) = (m.faces.len(), m.solids.len());
             let before = m.live_solids.clone();
-            let err = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
-                .expect_err("the arc population is still refused");
-            assert!(
-                matches!(
-                    &err,
-                    BoolError::Rejected {
-                        reason: RejectReason::ArcBoundNotYet,
-                        ..
-                    }
-                ),
-                "{err:?}"
-            );
-            assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
-            let garbage: Vec<_> = m.solids.iter().skip(solids_from).collect();
-            let [(sh, solid)] = garbage[..] else {
-                panic!("one garbage solid, got {}", garbage.len());
+            let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect("the cut-rim boolean builds");
+            assert_eq!(out.len(), 1, "one fused solid");
+            assert_ne!(m.live_solids, before, "the operands retired");
+            assert_eq!(m.live_solids, out, "the result lives");
+            let pushed: Vec<_> = m.solids.iter().skip(solids_from).collect();
+            let [(sh, solid)] = pushed[..] else {
+                panic!("one result solid, got {}", pushed.len());
             };
-            assert!(
-                !m.live_solids.contains(&sh),
-                "the garbage solid is outside the live set"
-            );
+            assert_eq!(sh, out[0], "the pushed solid is the returned one");
             assert!(solid.cavities.is_empty(), "one material piece, no cavity");
             let shell_faces: std::collections::HashSet<_> =
                 m.shells.get(solid.outer).faces.iter().copied().collect();
@@ -2197,7 +2110,7 @@ mod tests {
                 shell_faces, minted,
                 "the outer shell is exactly the boolean's minted faces"
             );
-            // ★★ **The arc integrals answer, on the garbage solid, with the stopper still up** —
+            // ★★ **The arc integrals answer exactly** —
             // the volume is derived (plate 4·4·2 = 32, boss π·0.25·1, zero overlap: every
             // fixture is a contact), so a wrong segment sign or scale moves an exact number.
             let props = nacre_props::mass_props(&m, sh).expect("the mixed loops integrate");
@@ -2239,6 +2152,31 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    #[ignore = "scratch OBJ dump for eyeballing — run on demand"]
+    fn dump_straddling_boss_obj() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array([4.0, 2.0, 2.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            1.0,
+        );
+        m.rebuild_adjacency();
+        crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("builds");
+        m.rebuild_adjacency();
+        let obj = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+            .expect("tessellates")
+            .to_obj();
+        let path = std::env::var("OBJ_OUT").unwrap_or_else(|_| "/tmp/straddling_boss.obj".into());
+        std::fs::write(&path, obj).expect("write");
+        println!("wrote {path}");
     }
 
     /// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in

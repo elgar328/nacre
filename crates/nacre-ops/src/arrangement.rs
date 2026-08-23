@@ -1759,138 +1759,6 @@ fn component_count(segs: &[MergedSeg], arcs: &[MergedArc]) -> usize {
         .count()
 }
 
-/// **The premise the circle shortcut below rests on, checked.**
-///
-/// [`walk_cells`] appends each circle as a **one-edge closed cell**, on the pseudo-half-edges past
-/// which is only a cell at all while the circle meets no segment: a crossed circle is arcs with
-/// endpoints, and those belong in the segment machinery. That premise used to be kept as a side
-/// effect of the population gate's wall rule — a rule about something else — so this asks it
-/// directly, of the very segments the cells are about to be built from.
-///
-/// ★ **The segments, not the faces they came from.** A face-level question would be a proxy: what
-/// must hold is a fact about the objects the cell/label machinery consumes, and asking anything
-/// wider refuses shapes whose segments never come near the circle (measured: ten edges in today's
-/// corpus have a line within `r` whose nearest approach lies off the segment).
-///
-/// ★ Both copies of the per-class pipeline — the boolean's and the audit's replay — reach the
-/// cells through [`walk_cells`], so living here is what keeps the two from disagreeing about
-/// where a class stopped.
-///
-/// ★★ **It says where, and the where is the durable half.** [`circle_crossings`] locates what this
-/// rejects on: the points where a segment crosses the circle, which are `plane ∩ plane ∩ cylinder`
-/// — the shape [`nacre_topo::VertexDef::Branch`] names, and the points the *next* rung will split
-/// the circle into arcs at. When that lands, this rejection goes away and the locator stays. The
-/// witness is today's reachable consumer of it, not its purpose.
-///
-/// ★ **A trap left named for that next rung.** `Branch`'s `root` (`Lo`/`Hi`) is defined against
-/// the meet line of the two planes taken in **ascending handle order**, and its own doc warns that
-/// anything re-sorting the pair must toggle `root`. The arrangement works in *class indices*, so
-/// the roots recorded here are ordered by **this function's call order** (`wc`, then the
-/// segment's wall). Minting a `Branch` from one means establishing that correspondence, not
-/// assuming it.
-fn arc_split_witness(
-    jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
-    segs: &[MergedSeg],
-    circles: &[MergedCircle],
-) -> Option<RejectWhere> {
-    // ★ **Collected, not returned at the first hit.** The verdict does not care which pair came
-    // first, but the *witness* would: reporting whichever the loops reached first makes the
-    // location depend on iteration order. Gathering them all lets the witness be chosen by name
-    // (`Break::key`), the rule `NonManifoldResultEdge` established. Only the failing path pays,
-    // and that path is a rejection.
-    let mut breaks: Vec<Break> = Vec::new();
-    for circ in circles {
-        let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
-        for sg in segs {
-            let ends = sg.end.map(|t| combinatorics::node_coords_rat(jd, t));
-            // A node whose coordinates do not fit the road's vessel has no witness to give; the
-            // split above already declined for the same reason, so this only shapes the message.
-            let [Some(p0), Some(p1)] = ends else {
-                return None;
-            };
-            // ★ A collapsed edge is a *point*, and «is this point inside the disk» is still a
-            // real question — skipping it would let the one case it can express slip through.
-            // (the split's own `CoincidentNodes` owns the malformed-edge story; this only avoids
-            // asking a segment predicate about something that is not a segment.)
-            let collapsed = p0 == p1;
-            let hit = if collapsed {
-                nacre_scalar::cylinder_radial_side(&p0, &o, &m, r) != nacre_scalar::Orient::Positive
-            } else {
-                nacre_scalar::segment_meets_cylinder(&p0, &p1, &o, &m, r)
-            };
-            if !hit {
-                continue;
-            }
-            // ★★ **The verdict above is not re-asked below.** "Does a segment meet the solid
-            // cylinder" and "where does it cross the circle" are different questions — a segment
-            // lying wholly *inside* the disk answers yes to the first and has no crossing at all,
-            // and it still breaks the closed-cell premise. So the locator only decides the
-            // witness's shape; `hit` alone decides the rejection.
-            if collapsed {
-                // The line through a collapsed edge is not where the point is; its own coordinate
-                // is. Running the locator here would name a place the geometry never visits — the
-                // trap is that a collapsed edge still *has* a wall and a line, so the locator
-                // would answer, plausibly and wrongly.
-                //
-                // ★ **Unmeasured, and said so.** A probe across the whole ops suite reaches this
-                // branch **zero** times; it is defensive (as it already was before it had a
-                // witness to choose). So this rule is *chosen*, not measured — which is why it is
-                // written out rather than left to whatever the locator would have returned.
-                breaks.push(Break {
-                    key: (circ.cyl, sg.wall, sg.end, None),
-                    crossing: false,
-                    at: RejectWhere::Point(realize(&p0)),
-                });
-                continue;
-            }
-            match circle_crossings(jd, wc, circ, sg, [&p0, &p1]) {
-                // Overflow in the locator leaves the rejection witnessless rather than turning it
-                // into a different rejection — this pass only ever *adds* a place.
-                None => {}
-                Some(xs) if xs.is_empty() => breaks.push(Break {
-                    key: (circ.cyl, sg.wall, sg.end, None),
-                    crossing: false,
-                    at: RejectWhere::Segment([realize(&p0), realize(&p1)]),
-                }),
-                // ★ **The place comes from the name**, not from the solve that found it — so a
-                // name whose root did not follow its pair through canonical order points here at
-                // the other crossing, visibly. A realization that overflows drops that one break
-                // (the same rule the `None` arm above follows) rather than moving the rejection.
-                Some(xs) => breaks.extend(xs.into_iter().filter_map(|n| {
-                    let at = combinatorics::branch_point(jd, circ.cyl, &circ.def, n)?;
-                    Some(Break {
-                        key: (circ.cyl, sg.wall, sg.end, Some(n)),
-                        crossing: true,
-                        at: RejectWhere::Point(Point3::from_array(at)),
-                    })
-                })),
-            }
-        }
-    }
-    // ★★★ **Only what *separates* the circle is a break.** The premise above is that a circle
-    // stays a *closed cell*, and exactly one kind of contact costs it that — a **transversal
-    // crossing**, which cuts the loop into arcs. The other two leave it closed:
-    //
-    // - a **tangency** meets it at one point (`QuadRoot::Double`, the variant that exists because
-    //   "the two roots coincide" had to be sayable);
-    // - a **containment** — a segment wholly inside the disk — never meets the circle at all
-    //   (no root, so no name), it only puts a polygon in the disk cell. `nest_cells` hosts that
-    //   now, which is what let this arm widen.
-    //
-    // So the test is the crossing's own name: a `Lo`/`Hi` root separates, anything else does not.
-    let separates = |b: &Break| {
-        matches!(
-            b.key.3.and_then(combinatorics::branch_name),
-            Some((_, _, root)) if root != nacre_topo::QuadRoot::Double
-        )
-    };
-    if !breaks.iter().any(separates) {
-        return None;
-    }
-    witness(breaks)
-}
-
 /// `split_circles`' product: `None` when nothing crossed (the caller keeps its slices), else the
 /// split segments, the still-whole circles, the arcs, and each cut circle's [`CutRim`].
 type SplitCircles = Option<(
@@ -2229,41 +2097,6 @@ fn cmp_along(
     })
 }
 
-/// One place a circle's closed-cell premise is broken, carrying where.
-struct Break {
-    /// **The identity the witness is chosen by** — the circle's cylinder class, the segment's
-    /// wall and canonical endpoint names, and the crossing's own name (`None` where there is no
-    /// crossing: a containment has no root, and spelling that `0` was a small lie the type now
-    /// refuses). Never the coordinate: choosing the
-    /// smallest `f64` would let rounding pick what the user is shown, and never the `Vec`
-    /// position, which is the array spelling of the "map's first hit" `NonManifoldResultEdge`
-    /// warns about.
-    ///
-    /// ★ **The wall is in the key so the key is total.** Segments merge by wall *and* endpoint
-    /// set, so two of them can carry the same endpoints on different walls; without the wall the
-    /// two would tie, and a stable sort would hand the choice straight back to the `Vec` order
-    /// this key exists to escape.
-    /// ★ The **name**, not its root alone: extracting the root would need a second door out of
-    /// the identity, which is exactly what this design has one of. The derived `Ord` does the work
-    /// and the order is unchanged — within a `(cyl, wall, ends)` tie the name's `planes` and `cyl`
-    /// are fixed, so it discriminates on `root`, and `Lo < Hi` reproduces the old `0 < 1`.
-    key: (usize, usize, [NodeId; 2], Option<NodeId>),
-    /// A crossing outranks a containment: it names a point of the geometry, where a containment
-    /// can only point at the edge that sits inside.
-    crossing: bool,
-    at: RejectWhere,
-}
-
-/// The witness of the whole class — `None` when nothing broke.
-fn witness(mut breaks: Vec<Break>) -> Option<RejectWhere> {
-    breaks.sort_by_key(|b| (!b.crossing, b.key));
-    breaks.into_iter().next().map(|b| b.at)
-}
-
-fn realize(p: &[nacre_scalar::Rat; 3]) -> Point3 {
-    Point3::from_array([p[0].to_f64(), p[1].to_f64(), p[2].to_f64()])
-}
-
 /// **Where a segment crosses a circle**, exactly — the points a `VertexDef::Branch` names.
 ///
 /// The segment rides `wc ∩ sg.wall` and the circle is `cylinder ∩ wc`, so a crossing is
@@ -2359,49 +2192,6 @@ fn circle_crossings(
     Some(out)
 }
 
-/// Extract the arrangement's cells (faces) from the split 1-skeleton by a DCEL face-walk. Returns
-/// the cells plus `face_of[he] = cell index`, which the label brick uses to reach a neighbour cell
-/// across an edge as `face_of[twin(he)]`.
-///
-/// Half-edge encoding: edge `i` gives `he = 2i` (forward, `end[0]→end[1]`) and `2i+1` (reverse);
-/// `twin(he) = he ^ 1`. Segments are numbered first and the arcs a split made after them, so `he`
-/// alone says which kind it is — see [`walk_cells`]. `next` is set per vertex from `angular_order`: a half-edge arriving at `v`
-/// leaves as `twin`, and `next` is `twin`'s **one-step** neighbour in the cyclic order. The step
-/// direction (predecessor vs successor) is `angular_order`'s handedness — unknown up front, so both
-/// are tried and the one giving exactly `component_count` faces of winding `-1` is kept.
-/// **The stopper**: an arc-bounded cell is walked, and then refused.
-///
-/// ★★★ Everything above it is live — the split, the walk over three half-edge ranges, the winding
-/// read at a branch point — and what is still missing is the *assembly*: `Ring` has no carrier for
-/// an arc, the rim table keys one closed edge per `(cylinder, plane)`, and `edge_for` keys edges by
-/// an unordered vertex pair, which would fold a chord and its two complementary arcs into one.
-///
-/// ★★ **It reads `has_arcs`, and the condition used to be "was split".** That stricter reading was
-/// right while the cells were extracted by a function that split *inside* itself: what it returned
-/// was numbered against a
-/// slice the caller did not have, so any `Ok` from a split arrangement was unusable whether or not
-/// arcs came out of it. The caller holds the `ClassEdges` now and hands the same one to everything
-/// below, so that mismatch cannot arise and the condition is the stopper's own sentence again.
-/// (`ClassEdges::of` still asserts the two coincide.)
-///
-/// ★ The witness is read from the **uncut** edges — `arc_split_witness` finds the crossing that
-/// made the split, and after the split there is nothing left crossing.
-fn arc_stopper(
-    jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
-    edges: &ClassEdges<'_>,
-    segs: &[MergedSeg],
-    circles: &[MergedCircle],
-) -> Result<(), BoolError> {
-    if !edges.has_arcs() {
-        return Ok(());
-    }
-    Err(match arc_split_witness(jd, wc, segs, circles) {
-        Some(w) => crate::reject_at(RejectReason::ArcBoundNotYet, w),
-        None => reject(RejectReason::ArcBoundNotYet),
-    })
-}
-
 /// **What one plane class's arrangement produced, before anything refuses it.**
 ///
 /// ★★★ **Taking `emit_faces` in made this *wider*, and "a stage moving in shrinks the interface"
@@ -2431,16 +2221,16 @@ struct Staged {
 /// possible time to be lying"*. One copy, and the audit is auditing what the boolean ran.
 ///
 /// ★★★ **And it puts every stage behind one `Result`, which is the failure this shape is really
-/// for.** The caller must run [`arc_stopper`] before unwrapping, so an arc class carries the same
-/// name out however far the pipeline got. With the stages held separately that order had to be
-/// repeated per stage, and getting it wrong is silent — the suite stays green and only the reject's
-/// *name* changes, which is exactly what happened once (`f8eb935`). One `Result` leaves one place
-/// to put the `?`, and it is after the stopper.
+/// for.** While a stopper occupies the caller's socket, it must run before this `Result` is
+/// unwrapped, so an out-of-coverage class carries the same name out however far the pipeline
+/// got. With the stages held separately that order had to be repeated per stage, and getting it
+/// wrong is silent — the suite stays green and only the reject's *name* changes, which is
+/// exactly what happened once (`f8eb935`). One `Result` leaves one place to put the `?`, and it
+/// is after the socket.
 ///
-/// ★ **`emit_faces` is the last stage, and it cannot fail.** Every other stage returns a `Result`,
-/// so the stopper's interception is what decides the reject's *name*; this one returns its product
-/// outright. That is worth reading precisely — it means "the stopper still intercepts" cannot be
-/// probed from outside by making this stage fail, and the probe has to be planted here instead.
+/// ★ **`emit_faces` is the last stage, and it cannot fail.** Every other stage returns a
+/// `Result`; this one returns its product outright — so a probe of the socket's interception
+/// cannot be planted from outside by failing this stage.
 fn per_class(
     jd: &Judge<'_, WorkingPlane>,
     kind: BoolKind,
@@ -2500,8 +2290,6 @@ struct ClassEdges<'a> {
     segs: std::borrow::Cow<'a, [MergedSeg]>,
     arcs: std::borrow::Cow<'a, [MergedArc]>,
     circles: std::borrow::Cow<'a, [MergedCircle]>,
-    /// Whether [`split_circles`] cut anything. Equal to `!arcs.is_empty()` — see [`Self::of`].
-    split: bool,
     /// Each cut circle's seam datum, `(cylinder class, rim)` — carried out to the assembly
     /// (keyed by plane class where the per-class products are aggregated).
     cut_rims: Vec<(usize, CutRim)>,
@@ -2534,7 +2322,6 @@ impl<'a> ClassEdges<'a> {
                     segs: Cow::Owned(s),
                     arcs: Cow::Owned(a),
                     circles: Cow::Owned(c),
-                    split: true,
                     cut_rims: r,
                 }
             }
@@ -2542,7 +2329,6 @@ impl<'a> ClassEdges<'a> {
                 segs: Cow::Borrowed(segs),
                 arcs: Cow::Borrowed(&[]),
                 circles: Cow::Borrowed(circles),
-                split: false,
                 cut_rims: Vec::new(),
             },
         })
@@ -2551,11 +2337,6 @@ impl<'a> ClassEdges<'a> {
     /// Where the walk's half-edges end and the circles' pseudo-half-edges begin.
     fn he_count(&self) -> usize {
         2 * (self.segs.len() + self.arcs.len())
-    }
-
-    fn has_arcs(&self) -> bool {
-        debug_assert_eq!(self.split, !self.arcs.is_empty(), "see `of`");
-        !self.arcs.is_empty()
     }
 
     /// **The one classifier.** Everything that used to compare against `2 * segs.len()` asks this.
@@ -3744,11 +3525,8 @@ fn trace_result_faces(
         let (split, circles) = &splits[k];
         // The per-class product: the faces, the disk labels the band pass reads (empty for a
         // class with no circles — and for a reused class, which is why cylinders switch reuse
-        // off), and the arc stopper's **deferred** reject — made here, where the class-level fact
-        // ("this class has arcs") lives, and raised inside `reconstruct`, after the vertex
-        // materialization and before any edge — so the seam's branch arm, the split-twin
-        // subdivision, the naming pre-pass and the branch minting all run before the population
-        // is refused.
+        // off), the cut rims, and the **stopper socket's** deferred reject (empty since M6-2b
+        // went green — see the socket note below).
         type ClassOut = (
             Vec<LocalFace>,
             Vec<(usize, Label)>,
@@ -3762,27 +3540,29 @@ fn trace_result_faces(
             // makes that structural instead of a promise. (`frame_audit` runs its own copy of this
             // pipeline and must build it the same way; the arc fence locks that they agree.)
             let edges = timed!(C_SPLIT, ClassEdges::of(jd, wc, split, circles))?;
-            // ★★★ **The stages run, then the stopper is *made* — and only made.** The reject an
-            // arc class earns is built here, where "this class has arcs" is a plain fact, but it
-            // is **raised inside `reconstruct`, at the assembly's very end** — so everything
-            // down to the solid itself is built, and the guard counts a closed shell, before
-            // the population is refused. The stopper still *intercepts*: an arc class must
-            // carry the same name out **however far the pipeline got**, or the fences'
-            // `ArcBoundNotYet` + witness would become whatever a stage said and the reject census
-            // would gain a raise site — that is the `deferred.unwrap_or(e)` below (measured: with
-            // a stage stubbed to fail on an arc class, the fence sees that stage's reason without
-            // it). The caller holds the second copy of the same shape over the whole stretch.
+            // ★★★ **A stopper is *made* here — and only made.** M6-2b's arc stopper lived in
+            // this socket: built where the class-level fact lives, raised inside `reconstruct`
+            // at the assembly's very end, intercepting every stage between via the
+            // `deferred.unwrap_or(e)` below — so a refused population carried one name out
+            // however far the pipeline got. The population went green and the socket holds
+            // `None`; the ladder stays for the next out-of-coverage class (M6-3's ellipses).
             //
-            // ★★ **The fences that pin the *name* are `bands.rs`'
-            // `a_boss_overhanging_the_plates_edge_is_still_refused` and
-            // `a_turned_boss_over_the_plates_corner_names_the_crossing_on_the_segment`** — read the
-            // probe there. `the_audit_and_the_boolean_agree_about_an_arc_class` compares the audit
+            // ★★ `the_audit_and_the_boolean_agree_about_an_arc_class` compares the audit
             // *with* the boolean, so it stays green when both slide to the same wrong name; asking
             // it about interception measures the proposition next door.
             let staged = per_class(jd, kind, wc, &edges);
-            let deferred = arc_stopper(jd, wc, &edges, split, circles).err();
+            // ★ **The stopper socket.** M6-2b's arc stopper was made here — per class, raised at
+            // the assembly's very end, intercepting every stage between (seven layers of
+            // `deferred.unwrap_or` down the whole pipeline). The arc population is supported
+            // now, so the socket holds `None`; the next out-of-coverage class (M6-3's ellipses,
+            // say) plugs its own deferred reject in here and inherits the entire interception
+            // ladder instead of re-plumbing it.
+            let deferred: Option<BoolError> = None;
             let s = match staged {
                 Ok(s) => s,
+                // The socket is empty, so clippy sees a literal `None` being unwrapped — the
+                // yield's *shape* is the point (a plugged stopper wins here), kept as is.
+                #[allow(clippy::unnecessary_literal_unwrap)]
                 Err(e) => return Err(deferred.unwrap_or(e)),
             };
             Ok((s.faces, s.disk_labels, edges.cut_rims.clone(), deferred))
@@ -4007,11 +3787,10 @@ pub(crate) struct ClassAudit {
     /// **What the arrangement produced, before anything refused it** — cells walked, arcs the
     /// split cut, and the nesting's two counts.
     ///
-    /// ★★★ Without this the arc population is measured and thrown away: the stopper stands after
-    /// every arrangement stage and swallows their answer, so a probe is the only way to see it —
-    /// and a probe is deleted before the commit. Then the next cell rediscovers a break here while
-    /// debugging something else, which is exactly the blame this stage was split to isolate.
-    /// `None` when the class stopped before those stages ran.
+    /// ★★★ Born while the arc stopper swallowed every arrangement stage's answer (a probe was
+    /// the only way to see the population, and a probe is deleted before the commit); the
+    /// population is green now, and this stays as the audit's direct read of what a class
+    /// produced. `None` when the class stopped before those stages ran.
     pub produced: Option<Produced>,
     /// **Every emitted face's outer ring, as coordinates** — one `Vec` per emitted face whose outer
     /// bound is a polygon ring (a face bounded by an uncut circle has no nodes and contributes
@@ -4228,21 +4007,14 @@ pub(crate) fn frame_audit(
                 let split = split_at_crossings(&jd, wc, &merged, &mut local)?;
                 let split = drop_newsless(split)?;
                 let circles = merge_circles(&tr.circles, &cyls)?;
-                // ★★★★ **The same edges and the same stopper the boolean uses.** This copy of the
-                // pipeline is what makes the audit an instrument; feeding it un-split edges would
-                // let it run to the end and report `failed_at: None` for an input the boolean
-                // refuses — *"the worst possible time to be lying"* (`decline_to_reject`). The
-                // arc fence in `bands.rs` locks the two together.
+                // ★★★★ **The same edges the boolean uses.** This copy of the pipeline is what
+                // makes the audit an instrument; feeding it un-split edges would let it run to
+                // the end and report `failed_at: None` for an input the boolean refuses —
+                // *"the worst possible time to be lying"* (`decline_to_reject`). The arc fence
+                // in `bands.rs` locks the two together — since M6-2b went green, as «both
+                // succeed» (a stopper plugged into the socket would raise here per class while
+                // the boolean defers it to the assembly's end; same classes, same name).
                 let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
-                // ★ The same stages and the same stopper the boolean runs — the arc fence in
-                // `bands.rs` locks that the two agree. One deliberate difference: the boolean
-                // *defers* the stopper's reject into the assembly (past every stage down to
-                // the solid itself — the raise stands at the assembly's very end), while
-                // this audit raises it
-                // here — its proposition is per class ("where does this class stop"), and the
-                // deferral changes where the reject surfaces, never which classes earn it or what
-                // it is named. The agreement fence compares the names, which is exactly the part
-                // that must not drift.
                 let staged = per_class(&jd, kind, wc, &edges);
                 if let Ok(s) = &staged {
                     let mut pos_labels: Vec<Label> = s
@@ -4262,7 +4034,6 @@ pub(crate) fn frame_audit(
                     });
                     outer_rings = Some(face_ring_coords(&jd, &cyls, &s.faces));
                 }
-                arc_stopper(&jd, wc, &edges, &split, &circles)?;
                 let _ = staged?;
                 Ok(())
             };

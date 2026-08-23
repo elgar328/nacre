@@ -381,14 +381,12 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
             let t0 = c.angle_of(model.vertex_point(va));
             let t1 = c.angle_of(model.vertex_point(vb));
             let dt = (t1 - t0).rem_euclid(std::f64::consts::TAU);
-            let seg = 0.5 * c.radius() * c.radius() * (dt - dt.sin());
+            let seg = c.segment_area(dt);
             if seg <= 0.0 {
                 continue; // a degenerate (closed or zero) span contributes nothing
             }
             let sign = if he.forward { 1.0 } else { -1.0 } * c.normal().dot(n_ref).signum();
-            let dist = 4.0 * c.radius() * (0.5 * dt).sin().powi(3) / (3.0 * (dt - dt.sin()));
-            let dir = (c.point_at(t0 + 0.5 * dt) - c.center()) * (1.0 / c.radius());
-            let c_seg = c.center() + dir * dist;
+            let c_seg = c.segment_centroid(t0, dt);
             area += sign * seg;
             moment += (c_seg - base) * (sign * seg);
         }

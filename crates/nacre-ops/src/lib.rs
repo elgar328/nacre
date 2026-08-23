@@ -778,43 +778,22 @@ pub enum RejectReason {
     /// surface contact. This one means the arithmetic: the wall a wide model meets after the gate
     /// has already said yes. Sharing one name would put a width limit inside a geometric verdict.
     WitnessNotRational,
-    /// **A circle was cut into arcs, and nothing downstream can build one yet.**
+    /// **An arc-bounded boundary this assembly cannot spell yet** — a backstop, no longer a
+    /// stopper.
     ///
-    /// The arrangement splits a circle a segment crosses and finishes the whole per-class road —
-    /// the cells are walked, nested, labelled, and emitted as faces with their arcs. The assembly
-    /// then gets further still: the seam table realizes every vertex (`arrangement::seam_table`'s
-    /// branch arm), the split-twin subdivision cuts every neighbouring edge at the branch points
-    /// its own class could never discover, the naming pre-pass gives every vertex its definition,
-    /// and **every vertex is minted** — `VertexDef::Branch` included, canonical in handle order.
-    /// Everything follows: the edges (ordered circle keys, the seam vertex where θ = 0 sits),
-    /// the band's assembled boundary, the closed-shell guard's silent pass, the grouping joined
-    /// across the cut rim (`JoinKey`'s ordered arc pairs), the shells and **the solid itself**.
-    /// The refusal stands at the assembly's **very end**: the whole result is built, measured,
-    /// and then not handed on.
+    /// M6-2b's arc stopper carried this name while the assembly was being built, one cell at a
+    /// time, behind a deferred raise that walked from the class arrangement to the assembly's
+    /// very end; the population went green (the straddling boss builds — `bands`' fences) and
+    /// the stopper was removed. What keeps the name alive are its two honest backstops:
     ///
-    /// ★★ **A refusal here therefore leaves a complete garbage solid in the store** — vertices,
-    /// edges, faces, shells and the solid, outside the live set (the operands retire only on
-    /// `Ok`), the same class of residue a late reject's arena cells have always been. The
-    /// live-set is restored as ever; a session that keeps recording after a reject rebuilds from
-    /// the log (`replay`'s discipline).
+    /// * a **band with both rims cut** — unreachable today (`chamber` finds no disk label at
+    ///   either end and refuses as `CylinderGateUndecided` before the band is emitted), spelled
+    ///   in `band_loop` rather than assumed away;
+    /// * a **whole-disk bound on a cut circle** (`circle_loop`) — a producer inconsistency (the
+    ///   trace subdivides a cut disk into cells), named honestly rather than as a dropped
+    ///   crossing.
     ///
-    /// What is still missing is **only the consumers**: `validate`'s loop rules and `tess`'s
-    /// `sample_edge` do not know the arc convention yet, and `props`' face integrals refuse an
-    /// arc boundary (`UnsupportedBoundary`) — each says so in place. The green cell teaches
-    /// those three and retires this stopper. (A band with **both** rims cut still has no disk
-    /// label — `chamber` refuses it earlier — and the grouping's component machinery keeps the
-    /// legacy names-road shim; both wait for their populations.)
-    ///
-    /// ★ It intercepts **every** failure behind it — the per-class stages, the seam stretch, the
-    /// naming and the materialization each hold the same shape (the stages run, the deferred
-    /// stopper wins over whatever they said) — so the population's name does not depend on how
-    /// far the pipeline got, which is what keeps this row of the reject census reading one thing.
-    /// The price of that interception is that no reject can testify the intercepted stages work;
-    /// the direct fences in `bands` (on `seam_table`, `name_result_vertices`, the edge-key census
-    /// and the minted-vertex store) are those witnesses.
-    ///
-    /// ★ A stopper of the shape `CylinderBooleanNotYet` had in M6-2a: it names what is missing, it
-    /// is measured by the fixtures it holds, and the commit that finishes the road removes it.
+    /// "Not yet" is still the literal truth for both.
     ArcBoundNotYet,
     /// **A loop's winding had to be read across a *curved* straight stretch.**
     ///

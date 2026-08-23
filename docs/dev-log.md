@@ -12560,3 +12560,53 @@ validate `loop_winding`의 혼합-루프 팔(자기 doc이 예약 — 호 = 온-
 tess `sample_edge`의 θ 부분구간 · props `face_props`의 원호 세그먼트 적분 · **정지판 제거** —
 reject census 두 행 → 초록 픽스처(부피 32+π/4), bit census 새 행, 거절-후-store 울타리들의
 초록 전환, kit/앱 ⇒ **「걸친 보스가 빌드」**.
+
+## 걸친 보스가 빌드된다 — M6-2b 초록 (2026-08-23)
+
+**커밋 둘** — ① `Circle::angle_of` + props 혼합 팔(garbage 솔리드 위에서 정확 잠금), ② 플립:
+tess·validate + **정지판 제거** + 울타리 전환 + census 코퍼스. `ArcBoundNotYet`은 백스톱
+둘(양끝-잘림·Circle 백스톱)로 남고 정지판·`arc_split_witness` 가족(5항목)·`ClassEdges.split`은
+삭제됐다. **deferred 배관은 「정지판 소켓」으로 유지** — 7층 가로채기 사다리는 M6-3의 타원
+인구가 꽂을 아키텍처다(소켓 주석 명시).
+
+### ① 적분 — 정지판이 서 있는 채로 잠겼다
+
+`Circle::angle_of`(atan2 — `point_at`의 역, 규약을 숫자로 바꾸는 한 철자) + `planar_face` 혼합
+팔: 현-부채꼴 합 + 호마다 원호 세그먼트(넓이 `r²(Δθ−sinΔθ)/2`·무게중심 닫힌 형식·부호 = 순회
+방향). **F3가 뒤집혀 garbage 솔리드의 부피 = 32+π/4 정확**(픽스처 셋), 한-숫자 오라클의
+사각지대는 straddling의 두 z=2 면(판-윗면 16−π/8·디곤 π/8 — 세그먼트 부호 양방향)이 가른다.
+red: 보정 끄기 → 정확 숫자 이동. ② 초입에 세그먼트 공식을 `Circle::segment_area/centroid`로
+승격해 props·validate가 **같은 스펠링**을 쓴다(F3가 무손실 증명).
+
+### ② 플립
+
+- **tess**: `sample_edge` 부분호(온원 예산 × 호 분율, 끝점 공유 — crack-free) +
+  `triangulate_cylinder` **θ-병합 걷기**(rim 폴리라인들을 핸들 일치로 사슬화 → θ로 두 링을
+  병합하며 스트립 방출; 닫힌×닫힌은 동률-hi-전진이 옛 quad 분할의 삼각형 집합·감김을 재현 —
+  tess 30/30 무변화로 실측). placeholder assert 하나를 쓰다 잡아 진짜 명제(사슬 닫힘)로 교체.
+- **validate**: `loop_winding`이 doc이 예약한 그 자리에서 호를 증인으로 — 현-Newell(2×면적)에
+  세그먼트 벡터 ×2를 더한다. digon은 <3점 조기-None을 지나게. red: 팔 끄기 → turned만
+  cos=-1 복귀(digon 절반은 트리오의 validate==[]가 잰다 — 예측 그대로).
+- **정지판 제거**: 소켓 주석 + 낡은 「stopper stands」 주석 일곱 곳 재작성(per_class doc의
+  죽은 `arc_stopper` 링크 포함), `ArcBoundNotYet` doc은 백스톱-전용으로.
+- **울타리 전환**: 이름 울타리 둘 → **`a_boss_overhanging_the_plates_edge_builds`**(마일스톤 —
+  validate [] + watertight)·`a_turned_boss_over_the_plates_corner_builds`(부피 32+π/4·오일러
+  genus 0 — 초승달이 winding 팔의 red 스위치; 옛 토글 명제는 mint 울타리의 「유도 교차점 위」가
+  계승). audit 울타리 = 「둘 다 성공」. F2→`the_bands_loop_is_one_continuous_cycle`,
+  F3→`a_cut_rim_boolean_builds_a_complete_solid`, mint→`a_branch_vertex_is_minted_and_measured`
+  — **구조 단언은 전부 유지**, 진입만 Ok + 피연산자 은퇴 확인으로. reject census 두 호 행 삭제
+  (CORPUS 14→12).
+- **census 코퍼스**: 트리오 × KINDS 추가 — 기존 163행 **비트 동일**, 새 행 9개뿐(t3 스냅숏).
+  ★ 새 행이 새 사실을 기록했다: **접촉-절단(cut)은 정직 거절**(straddle/hung `CoplanarMerge` ·
+  turned `BranchVertexUnnamed` — fuse만 이 칸의 청구 범위; 접촉-절단 인구는 자기 칸을 기다린다),
+  common은 EMPTY(옳음 — 접촉의 교집합은 부피 0).
+
+### 관문
+
+53타깃 **1112** · nodef 25타깃 590 · clippy 0(소켓의 리터럴-None yield에 사유 있는 allow 하나
+— 모양이 의도) · fmt · census **기존 166행 두 프로파일 비트 동일 + 새 9행**(t3 스냅숏) ·
+reject census(두 호 행 삭제, CORPUS 12) · 스윕 53타깃 127 · perf release · kit 72 · 앱 142 ·
+**OBJ 덤프**(`dump_straddling_boss_obj`, ignored — Quick Look 확인용, 사용자 전달).
+
+★ 계측 하나 정정: OBJ는 옛 `to_obj(model)` 경로가 digon에서 `DegenerateRing`을 내
+`tessellate(..).to_obj()`(진짜 도로)로 — 옛 경로의 그 한계도 실측으로 기록된 셈.

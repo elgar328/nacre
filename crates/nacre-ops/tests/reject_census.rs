@@ -272,38 +272,6 @@ fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
-/// A boss standing on a plate's edge, its circle hanging over the side. The wall below it is
-/// parallel to the axis but lies entirely *under* the boss's span, so the footprint's axis along
-/// the cylinder clears it — and the real obstruction names itself where the circles and segments
-/// are: the rim crosses the top face's boundary.
-fn circle_meets_segment(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0; 3], [4.0, 4.0, 2.0]);
-    let boss = m.add_cylinder(
-        Point3::from_array([4.0, 2.0, 2.0]),
-        Vector3::from_array([0.0, 0.0, 1.0]),
-        0.5,
-        1.0,
-    );
-    m.rebuild_adjacency();
-    boolean(m, BoolKind::Fuse, a, boss)
-}
-
-/// The same rejection from the **swapped** population: a `+X`-axis boss over the plate's corner.
-/// A `+Z` cylinder's circle always lives on a class interned before the wall that crosses it (face
-/// push order), so every shape that reaches the locator today hands it an ascending pair. Turning
-/// the boss inverts that, which is the only way the branch name's canonicalization runs at all.
-fn circle_meets_segment_turned(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let a = cub(m, [0.0; 3], [4.0, 4.0, 2.0]);
-    let boss = m.add_cylinder(
-        Point3::from_array([4.0, 0.25, 2.0]),
-        Vector3::from_array([1.0, 0.0, 0.0]),
-        0.5,
-        1.0,
-    );
-    m.rebuild_adjacency();
-    boolean(m, BoolKind::Fuse, a, boss)
-}
-
 fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     // A tilted rational axis against an axis-aligned box: the box's planes are neither ⊥ nor
     // ∥ to (0,1,1), and — unlike rotating the box — every description stays world-rational,
@@ -385,7 +353,7 @@ fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 const BOOLEAN: &str = "crates/nacre-ops/src/boolean.rs";
 
-const CORPUS: [Fixture; 14] = [
+const CORPUS: [Fixture; 12] = [
     Fixture {
         name: "pinched-vertex",
         expect: Some(RejectReason::NonManifoldVertex),
@@ -470,49 +438,6 @@ const CORPUS: [Fixture; 14] = [
         run: cylinder_wall_contact,
         raised: &[("wall_meets_lateral", None, "crates/nacre-ops/src/planes.rs")],
         surfaced: &[("wall_meets_lateral", None)],
-    },
-    Fixture {
-        name: "arc-bound-not-yet",
-        // A boss overhanging the plate's edge: its rim crosses the top face's boundary segment.
-        // The wall below it clears, the footprint's axis along the cylinder having let it past.
-        // The circle is **split** there now; what stops is the assembly of an arc-bounded loop.
-        expect: Some(RejectReason::ArcBoundNotYet),
-        run: circle_meets_segment,
-        // ★ One guard rings, and it surfaces. The grouping joins across the cut rim now
-        // (`JoinKey`'s ordered arc pairs), so the single-component result never builds the
-        // component machinery whose ring naming used to ring `branch_vertex_unnamed` — and
-        // `self_touch_reject` runs for the first time on an arc input and abstains *silently*
-        // by its own documented rule (an edge with a branch endpoint has no three-plane name
-        // for the plane-membership sieve). The assembly rings nothing either: the band builds,
-        // the shell guard counts a closed garbage shell. All that silence is part of this
-        // row's assertion.
-        raised: &[(
-            "arc_bound_not_yet",
-            None,
-            "crates/nacre-ops/src/arrangement.rs",
-        )],
-        surfaced: &[("arc_bound_not_yet", None)],
-    },
-    Fixture {
-        name: "arc-bound-not-yet-turned",
-        // The same reason from the population where the branch name's canonicalization actually
-        // runs — the first non-`+Z` cylinder in the corpus.
-        expect: Some(RejectReason::ArcBoundNotYet),
-        run: circle_meets_segment_turned,
-        // ★ One guard rings, and it surfaces. The grouping joins across the cut rim now
-        // (`JoinKey`'s ordered arc pairs), so the single-component result never builds the
-        // component machinery whose ring naming used to ring `branch_vertex_unnamed` — and
-        // `self_touch_reject` runs for the first time on an arc input and abstains *silently*
-        // by its own documented rule (an edge with a branch endpoint has no three-plane name
-        // for the plane-membership sieve). The assembly rings nothing either: the band builds,
-        // the shell guard counts a closed garbage shell. All that silence is part of this
-        // row's assertion.
-        raised: &[(
-            "arc_bound_not_yet",
-            None,
-            "crates/nacre-ops/src/arrangement.rs",
-        )],
-        surfaced: &[("arc_bound_not_yet", None)],
     },
     Fixture {
         name: "cylinder-oblique",

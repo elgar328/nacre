@@ -284,30 +284,46 @@ fn sample_edge(
     match model.edge_curve(eh) {
         Curve::Line(_) => vec![vertex_of(t, vmap, model, v0), vertex_of(t, vmap, model, v1)],
         Curve::Circle(c) => {
-            // Full-circle rim (v0 == v1 = seam): point 0 is the seam vertex at
-            // angle 0 (= centre + r·ref_dir), the rest are interior edge points.
-            //
-            // ★★★ **This walks 0..τ without looking at `v1`, so an *arc* would come out a whole
-            // circle — silently.** `design.md` fixes an arc as a `Curve::Circle` edge whose two
-            // vertices differ (a closed edge being the full circle), so the two are told apart by
-            // `v0 == v1` and nothing here asks. There is no producer yet (the arrangement refuses
-            // an arc-bounded loop, `RejectReason::ArcBoundNotYet`), which is why this is written
-            // down rather than fixed: when the arc split lands, this is the first place downstream
-            // that answers wrongly instead of declining. The test note at the bottom of this file
-            // already knew — the walking code did not say so.
-            debug_assert_eq!(v0, v1, "an arc reaches this walk as a whole circle (M6-2b)");
-            let n = circle_segments(cfg, c.radius());
-            let mut ring = Vec::with_capacity(n);
-            ring.push(vertex_of(t, vmap, model, v0));
-            for i in 1..n {
-                let theta = std::f64::consts::TAU * (i as f64) / (n as f64);
-                let h = t.vertices.push(TessVertex {
-                    pos: c.point_at(theta),
-                    origin: TessOrigin::OnEdge { edge: eh, t: theta },
-                });
-                ring.push(h);
+            if v0 == v1 {
+                // Full-circle rim (v0 == v1 = seam): point 0 is the seam vertex at
+                // angle 0 (= centre + r·ref_dir), the rest are interior edge points.
+                let n = circle_segments(cfg, c.radius());
+                let mut ring = Vec::with_capacity(n);
+                ring.push(vertex_of(t, vmap, model, v0));
+                for i in 1..n {
+                    let theta = std::f64::consts::TAU * (i as f64) / (n as f64);
+                    let h = t.vertices.push(TessVertex {
+                        pos: c.point_at(theta),
+                        origin: TessOrigin::OnEdge { edge: eh, t: theta },
+                    });
+                    ring.push(h);
+                }
+                ring
+            } else {
+                // ★ **An arc** (M6-2b): the stored `[v0, v1]` order is CCW about the axis — the
+                // convention `derive_edge_curve`'s circle arm states — so the polyline walks
+                // θ(v0) → θ(v0) + Δθ with `Circle::angle_of` as the one spelling of θ. The
+                // segment count is the full circle's budget scaled by the arc's fraction (at
+                // least one), and both endpoints are shared mesh vertices (crack-free with the
+                // neighbouring faces' rings).
+                let t0 = c.angle_of(model.vertex_point(v0));
+                let dt =
+                    (c.angle_of(model.vertex_point(v1)) - t0).rem_euclid(std::f64::consts::TAU);
+                let n_full = circle_segments(cfg, c.radius()) as f64;
+                let n = ((n_full * dt / std::f64::consts::TAU).ceil() as usize).max(1);
+                let mut poly = Vec::with_capacity(n + 1);
+                poly.push(vertex_of(t, vmap, model, v0));
+                for i in 1..n {
+                    let theta = t0 + dt * (i as f64) / (n as f64);
+                    let h = t.vertices.push(TessVertex {
+                        pos: c.point_at(theta),
+                        origin: TessOrigin::OnEdge { edge: eh, t: theta },
+                    });
+                    poly.push(h);
+                }
+                poly.push(vertex_of(t, vmap, model, v1));
+                poly
             }
-            ring
         }
     }
 }
@@ -417,17 +433,16 @@ fn triangulate_planar(
     Ok(())
 }
 
-/// The centroid's projection onto `axis` (for ordering the two rims).
-fn axial_centroid(t: &Tessellation, ring: &[Handle<TessVertex>], axis: nacre_math::Vector3) -> f64 {
-    let sum: f64 = ring
-        .iter()
-        .map(|&h| (t.vertices.get(h).pos - Point3::origin()).dot(axis))
-        .sum();
-    sum / ring.len() as f64
-}
-
-/// Tessellate a cylindrical face as a ruled band between its two circular rims
-/// (no interior samples — the surface is straight along the axis).
+/// Tessellate a cylindrical face as a ruled band between its two rims — each either a single
+/// closed circle edge or (M6-2b) a **chain of arc edges** — by a θ-merge walk over the rims'
+/// shared polylines (no interior samples — the surface is straight along the axis).
+///
+/// ★ The walk generalizes the old equal-count quad pairing: with two closed rims the two rings
+/// carry the same θs, every step is a tie, and the tie rule (advance the upper rim first)
+/// reproduces the old quads' triangle set and windings — only the emission order inside each
+/// quad swaps. With a chained rim the counts differ and the merge simply spends whichever ring's
+/// next θ comes sooner; `n + m` triangles either way, every ring vertex consumed (crack-free
+/// with the caps, which read the same polylines).
 fn triangulate_cylinder(
     t: &mut Tessellation,
     model: &Model,
@@ -435,33 +450,123 @@ fn triangulate_cylinder(
     face: &Face,
     cyl: &Cylinder,
 ) {
-    // The two distinct circular rim edges in the loop (seam lines excluded).
-    let mut rim_edges: Vec<Handle<Edge>> = Vec::new();
+    let axis = cyl.axis().direction();
+    // Group the loop's circle-curve edges into the two rims by their circles' axial station.
+    let mut rims: Vec<(f64, nacre_geom::Circle, Vec<Handle<Edge>>)> = Vec::new();
     for he in &face.outer.half_edges {
-        let is_circle = matches!(model.edge_curve(he.edge), Curve::Circle(_));
-        if is_circle && !rim_edges.contains(&he.edge) {
-            rim_edges.push(he.edge);
+        let Curve::Circle(c) = model.edge_curve(he.edge) else {
+            continue; // the seam (and, chained, nothing else) is straight
+        };
+        let key = (c.center() - Point3::origin()).dot(axis);
+        match rims.iter_mut().find(|(k, ..)| (*k - key).abs() < 1e-9) {
+            Some((.., edges)) => {
+                if !edges.contains(&he.edge) {
+                    edges.push(he.edge);
+                }
+            }
+            None => rims.push((key, *c, vec![he.edge])),
         }
     }
-    debug_assert_eq!(rim_edges.len(), 2, "cylinder lateral face needs two rims");
+    debug_assert_eq!(rims.len(), 2, "cylinder lateral face needs two rims");
+    rims.sort_by(|x, y| x.0.partial_cmp(&y.0).expect("finite axial stations"));
 
-    // Order by axial position so `a` is the lower rim → outward (radial) winding.
-    let ring0 = t.by_edge[&rim_edges[0]].clone();
-    let ring1 = t.by_edge[&rim_edges[1]].clone();
-    let axis = cyl.axis().direction();
-    let (a, b) = if axial_centroid(t, &ring0, axis) <= axial_centroid(t, &ring1, axis) {
-        (ring0, ring1)
-    } else {
-        (ring1, ring0)
+    // One rim as a CCW ring with an ascending θ per vertex, anchored at its θ-minimal vertex.
+    // A near-seam angle that rounds to just under τ is folded to just under 0 first, so the
+    // seam vertex anchors the ring whichever side of θ = 0 it realized on.
+    let ring_of = |t: &Tessellation, c: &nacre_geom::Circle, edges: &[Handle<Edge>]| {
+        let mut ring: Vec<Handle<TessVertex>> = Vec::new();
+        if edges.len() == 1
+            && model.edges.get(edges[0]).vertices[0] == model.edges.get(edges[0]).vertices[1]
+        {
+            ring = t.by_edge[&edges[0]].clone(); // a closed rim: the polyline is the ring
+        } else {
+            // Chain the arc polylines end-to-start by shared mesh vertices (the welding
+            // guarantees each junction is one handle).
+            let mut by_start: HashMap<Handle<TessVertex>, &Vec<Handle<TessVertex>>> =
+                HashMap::new();
+            for e in edges {
+                let poly = &t.by_edge[e];
+                by_start.insert(poly[0], poly);
+            }
+            let mut cur = *by_start.keys().next().expect("a rim has arcs");
+            // Deterministic start: the handle-minimal polyline start.
+            for &s in by_start.keys() {
+                if s.index() < cur.index() {
+                    cur = s;
+                }
+            }
+            let chain_start = cur;
+            for _ in 0..edges.len() {
+                let poly = by_start[&cur];
+                ring.extend(&poly[..poly.len() - 1]);
+                cur = *poly.last().expect("arc polylines have two ends");
+            }
+            debug_assert_eq!(
+                cur, chain_start,
+                "the rim's arcs chain into one closed ring"
+            );
+        }
+        let mut with_theta: Vec<(f64, Handle<TessVertex>)> = ring
+            .iter()
+            .map(|&h| {
+                let raw = c.angle_of(t.vertices.get(h).pos);
+                let th = if raw > std::f64::consts::TAU - 1e-9 {
+                    raw - std::f64::consts::TAU
+                } else {
+                    raw
+                };
+                (th, h)
+            })
+            .collect();
+        // Rotate to the θ-minimal vertex, then unwrap so θ ascends along the ring.
+        let start = with_theta
+            .iter()
+            .enumerate()
+            .min_by(|a, b| a.1.0.partial_cmp(&b.1.0).expect("finite angles"))
+            .map(|(i, _)| i)
+            .expect("a rim has vertices");
+        with_theta.rotate_left(start);
+        for i in 1..with_theta.len() {
+            if with_theta[i].0 < with_theta[i - 1].0 {
+                with_theta[i].0 += std::f64::consts::TAU;
+            }
+        }
+        with_theta
     };
+    let (_, ref c_lo, ref e_lo) = rims[0];
+    let (_, ref c_hi, ref e_hi) = rims[1];
+    let a = ring_of(t, c_lo, e_lo);
+    let b = ring_of(t, c_hi, e_hi);
 
-    let n = a.len();
-    debug_assert_eq!(b.len(), n, "rims sampled with matching segment counts");
-    for i in 0..n {
-        let j = (i + 1) % n;
-        // Quad (a_i, a_j, b_j, b_i) split into two outward triangles.
-        push_tri(t, fh, [a[i], a[j], b[j]]);
-        push_tri(t, fh, [a[i], b[j], b[i]]);
+    // The merge: from corner (aᵢ, bⱼ), spend whichever ring's next vertex comes first in θ
+    // (the upper rim on a tie — the old quad split's diagonal), wrapping each ring once.
+    let (n, m) = (a.len(), b.len());
+    let theta_at = |ring: &[(f64, Handle<TessVertex>)], k: usize| {
+        let (th, _) = ring[k % ring.len()];
+        th + if k >= ring.len() {
+            std::f64::consts::TAU
+        } else {
+            0.0
+        }
+    };
+    let (mut i, mut j) = (0usize, 0usize);
+    while i < n || j < m {
+        let ai = a[i % n].1;
+        let bj = b[j % m].1;
+        let advance_b = if i >= n {
+            true
+        } else if j >= m {
+            false
+        } else {
+            theta_at(&b, j + 1) <= theta_at(&a, i + 1)
+        };
+        if advance_b {
+            push_tri(t, fh, [ai, b[(j + 1) % m].1, bj]);
+            j += 1;
+        } else {
+            push_tri(t, fh, [ai, a[(i + 1) % n].1, bj]);
+            i += 1;
+        }
     }
 }
 

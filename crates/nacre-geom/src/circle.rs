@@ -122,6 +122,33 @@ impl Circle {
         theta.rem_euclid(std::f64::consts::TAU)
     }
 
+    /// The area of the **circular segment** spanned by a CCW angle `dtheta` ∈ [0, 2π] — the
+    /// region between the chord and the arc: `r²(Δθ − sin Δθ)/2`. This is the one spelling of
+    /// the number every arc consumer adds to a chord polygon (props' integrals, validate's
+    /// winding witness); the sign — does this traversal add or remove the bulge — is the
+    /// caller's, read from the M6-2b `[from, to]`-CCW convention.
+    #[inline]
+    pub fn segment_area(self, dtheta: f64) -> f64 {
+        0.5 * self.radius * self.radius * (dtheta - dtheta.sin())
+    }
+
+    /// The centroid of that circular segment, for the segment starting at angle `theta0` and
+    /// spanning CCW `dtheta`: on the bisector, `4r·sin³(Δθ/2) / (3(Δθ − sin Δθ))` from the
+    /// center. A degenerate span (`Δθ − sin Δθ` ≈ 0) returns the chord midpoint's direction at
+    /// distance `r` (the limit), rather than dividing by zero — its weight is zero anyway.
+    #[inline]
+    pub fn segment_centroid(self, theta0: f64, dtheta: f64) -> Point3 {
+        let denom = 3.0 * (dtheta - dtheta.sin());
+        let dist = if denom > 0.0 {
+            4.0 * self.radius * (0.5 * dtheta).sin().powi(3) / denom
+        } else {
+            self.radius
+        };
+        let mid = self.point_at(theta0 + 0.5 * dtheta);
+        let dir = (mid - self.center) * (1.0 / self.radius);
+        self.center + dir * dist
+    }
+
     /// The parametric derivative `dP/dθ` at `theta`:
     /// `r·(−sin θ · ref_dir + cos θ · (normal × ref_dir))`.
     ///
