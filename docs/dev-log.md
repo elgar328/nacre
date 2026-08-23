@@ -12610,3 +12610,10 @@ reject census(두 호 행 삭제, CORPUS 12) · 스윕 53타깃 127 · perf rele
 
 ★ 계측 하나 정정: OBJ는 옛 `to_obj(model)` 경로가 digon에서 `DegenerateRing`을 내
 `tessellate(..).to_obj()`(진짜 도로)로 — 옛 경로의 그 한계도 실측으로 기록된 셈.
+
+★ 자체 점검 추가분: (a) 플랜의 확인 항목 — validate의 winding 외 혼합-루프 소비자는
+`shell_signed_volume`(공동-방향 검사)뿐이고, **자기 doc대로 곡면 면에서 통째로 기권**한다
+(「a curved void is simply not checked」 — 원통 시대부터의 문서화된 행동; 호가 새 구멍을 낸 것
+아님). (b) 미실행이던 tess red 프로브 완료: 호 팔을 온원 걷기로 되돌리면 마일스톤 울타리가
+빨강. (c) OBJ 덤프 테스트가 스윕(--ignored)에서 무조건 /tmp에 쓰던 부작용을 OBJ_OUT 요청제로
+게이트.

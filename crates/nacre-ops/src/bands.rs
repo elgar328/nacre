@@ -1036,8 +1036,9 @@ mod tests {
     /// ★ **A tangency, so there is exactly one root** — and since 2026-08-21 that also means the
     /// circle is not separated, so this **builds** rather than refusing. The single root is still
     /// what makes the naming rule visible here (it is what the fixture was written for), and the
-    /// witness it once asserted is now the *split point that never happens*. That matters: [`a_boss_overhanging_the_plates_edge_is_still_refused`] deliberately
-    /// accepts either of its two crossings, and a fixture copied from that template would be green
+    /// witness it once asserted is now the *split point that never happens*. That matters: the
+    /// straddling fixtures deliberately
+    /// accept either of their two crossings, and a fixture copied from that template would be green
     /// whether or not the root rule is right. Here `disc = 0` — the rim (`x = 4`, centre
     /// `(4, 2, 1.5)`, `r = 0.5`) touches `z = 2` at the single point `(4, 2, 2)`, solved from the
     /// fixture's own numbers — and the name it must take is `QuadRoot::Double`, which a swap must
@@ -2174,9 +2175,15 @@ mod tests {
         let obj = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
             .expect("tessellates")
             .to_obj();
-        let path = std::env::var("OBJ_OUT").unwrap_or_else(|_| "/tmp/straddling_boss.obj".into());
-        std::fs::write(&path, obj).expect("write");
-        println!("wrote {path}");
+        // Written only on request — the `--ignored` sweep runs this test too, and a test that
+        // writes outside the workspace on every sweep is a side effect nobody asked for.
+        match std::env::var("OBJ_OUT") {
+            Ok(path) => {
+                std::fs::write(&path, obj).expect("write");
+                println!("wrote {path}");
+            }
+            Err(_) => println!("set OBJ_OUT=<path> to write the OBJ ({} bytes)", obj.len()),
+        }
     }
 
     /// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in
