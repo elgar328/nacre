@@ -910,6 +910,11 @@ pub enum DeclineKind {
     /// A cylinder face could not answer a circle question exactly — its rim span is
     /// underivable or a plane class lacks the exact description a circle test needs (M6-2a).
     CylSpan,
+    /// A class runs **through a lateral's axis** and the ruling trace could not be stated
+    /// exactly — a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`
+    /// (M6-2 rulings ladder). Declined whole rather than contributed partially: a
+    /// half-contributed rectangle leaves the class's 1-skeleton dangling.
+    Ruling,
 }
 
 impl DeclineKind {
@@ -928,6 +933,7 @@ impl DeclineKind {
             Self::OddParity => "odd-parity",
             Self::SeatedEdgeNaming => "seated-edge-naming",
             Self::CylSpan => "cyl-span",
+            Self::Ruling => "ruling",
         }
     }
 }

@@ -836,13 +836,14 @@ pub(crate) struct WorkingCyl {
 /// Per cylinder pair: axes clear of each other (`dist > r₁+r₂`, whatever their orientation)
 /// pass; a pair that touches or overlaps is [`RejectReason::CylinderPairContact`] (M6b, where
 /// the quartic intersection curve lives).
+#[allow(clippy::type_complexity)]
 pub(crate) fn cylinder_gate(
     model: &Model,
     cyl_surfs: &[Handle<Surface>],
     geom: &[WorkingPlane],
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
-) -> Result<Vec<WorkingCyl>, BoolError> {
+) -> Result<(Vec<WorkingCyl>, std::collections::HashSet<(usize, usize)>), BoolError> {
     // ★ Every question below is a **sign**, and the scalar layer answers signs totally: the
     // local checked-`Rat` closures this used to carry declined on overflow, which put a width
     // limit inside `CylinderGateUndecided` and made that name say less than it claimed.
@@ -967,7 +968,10 @@ pub(crate) fn cylinder_gate(
             }
         }
     }
-    Ok(cyls)
+    // ★ The rulings road's record rides out beside the table — empty until the gate-opening
+    // cell adds the arm that puts a not-proven-clear pair here instead of refusing it
+    // (`PlaneSetup::crossings`).
+    Ok((cyls, std::collections::HashSet::new()))
 }
 
 /// **Does every face on plane class `c` provably miss this cylinder?** — the boundary question
@@ -1196,6 +1200,11 @@ pub(crate) struct PlaneSetup {
     /// boolean. Filled by the population gate, which is also what refuses the interactions this
     /// milestone does not build.
     pub(crate) cyls: Vec<WorkingCyl>,
+    /// The gate's carried answer for the rulings road (M6-2): `(plane class, cylinder class)`
+    /// pairs allowed through **without** a clearance proof — see
+    /// [`combinatorics::TraceInput::crossings`]. Always empty while the wall rule refuses that
+    /// population; the gate-opening cell fills it.
+    pub(crate) crossings: std::collections::HashSet<(usize, usize)>,
     /// How this operation judges, and where its evidence goes — the two facts that belong to the
     /// operation rather than to any one plane. The caller pairs them with a table to make a
     /// [`Judge`].
@@ -1256,7 +1265,7 @@ pub(crate) fn plane_index_setup(
     // goes on to be arranged. The `CylinderBooleanNotYet` stopper that stood here from C2 to
     // C4b-2 is gone — the bands and the assembly that serve this population landed.
     if !cyl_surfs.is_empty() {
-        let cyls = cylinder_gate(
+        let (cyls, crossings) = cylinder_gate(
             model,
             &cyl_surfs,
             &setup.geom,
@@ -1264,11 +1273,12 @@ pub(crate) fn plane_index_setup(
             &setup.plane_ix,
         )?;
         setup.cyls = cyls;
+        setup.crossings = crossings;
     }
     Ok(setup)
 }
 
-fn plane_index_setup_inner(
+pub(crate) fn plane_index_setup_inner(
     model: &Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
@@ -1318,6 +1328,7 @@ fn plane_index_setup_inner(
             plane_ix,
             class_owner,
             cyls: Vec::new(),
+            crossings: std::collections::HashSet::new(),
             standard,
             notes,
         },

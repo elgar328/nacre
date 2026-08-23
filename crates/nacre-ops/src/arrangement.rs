@@ -310,6 +310,118 @@ fn merge_circles(
     Ok(out)
 }
 
+/// **A whole ruling of a solid's trace on a ∥ class** (M6-2 rulings ladder): a lateral face's
+/// mark on a plane class that contains the cylinder's axis — one of the two axis-parallel lines,
+/// spanning the face's own rims. The ruling sibling of [`CircleTrace`], with ends because a
+/// ruling is not closed: `end[0]` → `end[1]` ascends the axis, and both are Branch names
+/// (`{wc, rim plane, cyl, root}` — the rim planes are real classes, found by the tracer).
+#[derive(Clone, Debug)]
+pub(crate) struct RulingTrace {
+    /// The cylinder class, with `side` the ruling's identity
+    /// ([`combinatorics::RulingCarrier::side`]).
+    pub cyl: usize,
+    pub side: i8,
+    pub end: [NodeId; 2],
+    pub solid: SolidSide,
+    pub kind: SegKind,
+}
+
+/// **A disk cap's chord on a through-axis class**: the cap face (a full disk ⊥ to the axis)
+/// crossed by a plane class through its centre leaves the diameter — an ordinary straight
+/// segment on the cap's own plane class, except both its ends are Branch names (the two roots of
+/// `{wc, cap plane, cyl}`), so it cannot ride [`Seg`] (whose `end_h` are third *planes*) and
+/// joins the arrangement as a birth-branch [`MergedSeg`] instead, after the plane-only overlay.
+#[derive(Clone, Debug)]
+pub(crate) struct ChordTrace {
+    /// The cap's plane class — the chord's wall (its line is `wc ∩ wall`, rational).
+    pub wall: usize,
+    pub cyl: usize,
+    /// `end[0]` is the `Lo` root along the canonical meet line, `end[1]` the `Hi`.
+    pub end: [NodeId; 2],
+    pub solid: SolidSide,
+    pub kind: SegKind,
+}
+
+/// Group the class's ruling traces into [`MergedRuling`]s — the ruling twin of
+/// [`merge_circles`]: dedupe identical rulings (two operands stating one), collect their
+/// contributions, def from the class table. Deterministic order: `(cyl, side descending)` — a
+/// fixed rule, ascending cyl with the `+1` ruling first.
+fn merge_rulings(rulings: &[RulingTrace], cyls: &[crate::planes::WorkingCyl]) -> Vec<MergedRuling> {
+    let mut out: Vec<MergedRuling> = Vec::new();
+    let mut sorted: Vec<&RulingTrace> = rulings.iter().collect();
+    sorted.sort_by_key(|r| (r.cyl, -r.side));
+    for r in sorted {
+        if let Some(last) = out.last_mut() {
+            if last.cyl == r.cyl && last.side == r.side && last.end == r.end {
+                last.merged.push((r.solid, r.kind));
+                continue;
+            }
+        }
+        out.push(MergedRuling {
+            cyl: r.cyl,
+            def: cyls[r.cyl].def.clone(),
+            side: r.side,
+            end: r.end,
+            merged: vec![(r.solid, r.kind)],
+        });
+    }
+    out
+}
+
+/// Turn the class's chord traces into birth-branch [`MergedSeg`]s — they join **after** the
+/// plane-only overlay (their ends have no third plane for it), carrying the sense the endpoints
+/// cannot supply: `end[0] → end[1]` is `Lo → Hi` along the canonical meet line, and the sense is
+/// that direction's sign against the edge convention `n_wc × n_wall`.
+fn chords_to_segs(
+    chords: &[ChordTrace],
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    cyls: &[crate::planes::WorkingCyl],
+) -> Result<Vec<MergedSeg>, BoolError> {
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    let mut out: Vec<MergedSeg> = Vec::new();
+    let mut sorted: Vec<&ChordTrace> = chords.iter().collect();
+    sorted.sort_by_key(|c| (c.wall, c.cyl));
+    for c in sorted {
+        if let Some(last) = out.last_mut() {
+            if last.wall == c.wall && last.end == c.end {
+                last.merged.push((c.solid, c.kind));
+                continue;
+            }
+        }
+        let w = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+        // ★ The **stored** spelling for the wall — the sense convention every consumer reads is
+        // made against stored frames, and the canonical name opposes it on half the classes
+        // (measured: the z = −10 cap's chord flipped its overhang's winding while the z = 40
+        // cap's was right — the very half-and-half the `stored_coeffs_rat` lesson names).
+        let v = combinatorics::stored_coeffs_rat(jd, c.wall).ok_or_else(undecided)?;
+        let (line, _) = combinatorics::branch_meet(jd, c.cyl, &cyls[c.cyl].def, c.end[0])
+            .ok_or_else(undecided)?;
+        let d_edge = combinatorics::cross3_rat(&[w[0], w[1], w[2]], &[v[0], v[1], v[2]])
+            .ok_or_else(undecided)?;
+        let d_can = line.dir();
+        let mut dot = Rat::from_int(0);
+        for k in 0..3 {
+            dot = dot
+                .checked_add(d_can[k].checked_mul(d_edge[k]).ok_or_else(undecided)?)
+                .ok_or_else(undecided)?;
+        }
+        let sense = match dot.numer().signum() {
+            1 => 1i8,
+            -1 => -1,
+            _ => return Err(undecided()), // the meet line ⊥ its own edge direction: degenerate
+        };
+        out.push(MergedSeg {
+            wall: c.wall,
+            end: c.end,
+            end_h: [combinatorics::EndPin::Cylinder; 2],
+            merged: vec![(c.solid, c.kind)],
+            sense: Some(sense),
+        });
+    }
+    Ok(out)
+}
+
 /// A solid's trace on one plane class. `declined` non-empty ⇒ incomplete: a consumer must not
 /// read "no segments" as "the plane misses the solid".
 #[derive(Default, Debug)]
@@ -317,6 +429,10 @@ pub(crate) struct Trace {
     pub segs: Vec<Seg>,
     /// The closed circle elements beside the segments (M6-2a) — see [`CircleTrace`].
     pub circles: Vec<CircleTrace>,
+    /// The rulings beside them (M6-2 rulings ladder) — see [`RulingTrace`].
+    pub rulings: Vec<RulingTrace>,
+    /// Disk-cap chords — see [`ChordTrace`].
+    pub chords: Vec<ChordTrace>,
     /// Names this trace found to denote one feature — see [`Aliases`].
     pub aliases: Aliases,
     /// Single-point tangential contacts — real arrangement vertices, but not segments (a
@@ -584,6 +700,7 @@ fn trace_transversal_face(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
+    crossings: &std::collections::HashSet<(usize, usize)>,
     out: &mut Trace,
 ) {
     // `fp` names a *face* (`n_out`, `orient`, the declined log); `fc` names the *plane class* it
@@ -601,18 +718,30 @@ fn trace_transversal_face(
                 return;
             }
         },
-        // ★ A **circular outer is a disk face, and it misses this class by proof** — the same
-        // clearance the circular-hole arm below rests on. Two classes can carry `W`: another ⊥
-        // class, which is parallel to the disk's own and meets it nowhere; or a ∥-axis wall,
-        // which the population gate proved farther from the axis than r, so the disk (radius r
-        // about that axis) does not reach the line `W ∩ fc`. Either way the face contributes no
-        // chord — a miss, like a parallel plane, not a decline.
+        // ★ A **circular outer is a disk face**. A through-axis wall class cuts it in its
+        // diameter — the chord contribution the rulings road needs to close its rectangle
+        // ([`ChordTrace`]); any other class misses or is left silent: another ⊥ class is
+        // parallel to the disk's own and meets it nowhere, and a ∥-axis wall off the axis
+        // either clears the disk (the gate's plane test) or cuts an **irrational** chord this
+        // road cannot state yet (the face-cleared family — its wrongly-silent trace lands in
+        // cells no face reaches, today's recorded state).
         //
         // `None` is also how an *unnamed* ring arrives, but not for a face the tracer reaches:
         // the only loops `loop_triples` leaves unnamed are the ones it rejects for, and those
         // are `Err` at the source. A circle is the one `None` that means "named, and not a
         // polygon".
-        None if matches!(loops.outer, Some(combinatorics::LoopRing::Circle { .. })) => return,
+        None if matches!(loops.outer, Some(combinatorics::LoopRing::Circle { .. })) => {
+            let Some(combinatorics::LoopRing::Circle { cyl }) = loops.outer else {
+                unreachable!("the guard just matched a circle outer");
+            };
+            let mat = faces[fp].plane().orient_sign;
+            match chord_on_class(jd, faces, plane_ix, fc, cyl, wc, which, mat, crossings) {
+                Ok(Some(ch)) => out.chords.push(ch),
+                Ok(None) => {}
+                Err(kind) => out.declined.push((fp, kind)),
+            }
+            return;
+        }
         None => {
             out.declined.push((fp, DeclineKind::OuterRing));
             return;
@@ -939,6 +1068,7 @@ fn trace_one(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
+    crossings: &std::collections::HashSet<(usize, usize)>,
     out: &mut Trace,
 ) {
     let planes = jd.planes;
@@ -965,13 +1095,20 @@ fn trace_one(
                         CylOnClass::Grazes { body_above } => SegKind::Graze { body_above },
                     },
                 }),
-                Ok(None) => {}
+                // No circle: a class **through the axis** leaves two rulings instead (the M6-2
+                // rulings road); any other non-⊥ class still leaves nothing, silently — the
+                // population gate names those interactions.
+                Ok(None) => match rulings_on_class(jd, cf, wc, k, which, crossings) {
+                    Ok(Some(pair)) => out.rulings.extend(pair),
+                    Ok(None) => {}
+                    Err(kind) => out.declined.push((fp, kind)),
+                },
                 Err(kind) => out.declined.push((fp, kind)),
             }
             continue;
         }
         if plane_ix[fp].plane() != wc {
-            trace_transversal_face(fp, fl, which, wc, jd, faces, plane_ix, out);
+            trace_transversal_face(fp, fl, which, wc, jd, faces, plane_ix, crossings, out);
             continue;
         }
         // Seated: the face lies in W, so its whole boundary is trace. The body lies on one
@@ -1147,6 +1284,213 @@ fn circle_on_class(
     Ok(None)
 }
 
+/// **A disk cap's chord on a through-axis class** — the diameter the class `wc` cuts on the cap
+/// face lying in class `fc`, or `Ok(None)` when `wc` does not run exactly through the disk's
+/// axis (today's silence). Declines whole on an unstatable piece, like [`rulings_on_class`].
+#[allow(clippy::too_many_arguments)]
+fn chord_on_class(
+    jd: &Judge<'_, WorkingPlane>,
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    fc: usize,
+    cyl: usize,
+    wc: usize,
+    which: SolidSide,
+    mat: i8,
+    crossings: &std::collections::HashSet<(usize, usize)>,
+) -> Result<Option<ChordTrace>, DeclineKind> {
+    use nacre_scalar::quad::CylinderMeet;
+    // The gate's answer first — the same trigger as [`rulings_on_class`], same reason.
+    if !crossings.contains(&(wc, cyl)) {
+        return Ok(None);
+    }
+    let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
+        return Ok(None);
+    };
+    // The cylinder's statement, from any face row on its class — the same table
+    // `merge_circles` indexes.
+    let Some(cf) = faces
+        .iter()
+        .zip(plane_ix)
+        .find_map(|(row, ix)| match (row, ix) {
+            (FaceRow::Cylinder(cf), ClassIx::Cyl(k)) if *k == cyl => Some(cf),
+            _ => None,
+        })
+    else {
+        return Err(DeclineKind::Ruling);
+    };
+    match class_through_axis(&w, &cf.def) {
+        Some(true) => {}
+        Some(false) => return Ok(None),
+        None => return Err(DeclineKind::Ruling),
+    }
+    let Some(v) = combinatorics::class_coeffs_rat(jd, fc) else {
+        return Err(DeclineKind::Ruling);
+    };
+    let (o, m, r) = (cf.def.origin(), cf.def.dir(), cf.def.radius());
+    let Some(CylinderMeet::Pair { .. }) =
+        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
+    else {
+        return Err(DeclineKind::Ruling);
+    };
+    Ok(Some(ChordTrace {
+        wall: fc,
+        cyl,
+        end: [
+            combinatorics::NodeId::branch(wc, fc, cyl, nacre_topo::QuadRoot::Lo),
+            combinatorics::NodeId::branch(wc, fc, cyl, nacre_topo::QuadRoot::Hi),
+        ],
+        solid: which,
+        kind: SegKind::Transversal { mat },
+    }))
+}
+
+/// Which of the two rulings a point of the lateral lies on: the sign of `(x − o) · (m × n̂)`,
+/// with `n̂` the class's **canonical** coefficients ([`combinatorics::RulingCarrier::side`] — the
+/// one spelling). The point arrives as `(line, s)` from [`nacre_scalar::quad::plane_plane_cylinder`],
+/// so the sign is one [`nacre_scalar::quad::plane_side`] against the plane through `o` with
+/// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
+/// tangent shape, which no caller feeds).
+fn ruling_side(
+    w: &[Rat; 4],
+    def: &nacre_topo::CylinderDef,
+    at: (&nacre_scalar::quad::MeetLine, &nacre_scalar::quad::QuadVal),
+) -> Option<i8> {
+    let (o, m) = (def.origin(), def.dir());
+    let n = [w[0], w[1], w[2]];
+    let c = combinatorics::cross3_rat(&m, &n)?;
+    let mut d = Rat::from_int(0);
+    for k in 0..3 {
+        d = d.checked_sub(c[k].checked_mul(o[k])?)?;
+    }
+    match nacre_scalar::quad::plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
+        nacre_scalar::Orient::Positive => Some(1),
+        nacre_scalar::Orient::Negative => Some(-1),
+        nacre_scalar::Orient::Zero => None,
+    }
+}
+
+/// Is plane class `wc` exactly **through** this cylinder's axis: parallel to it (`n · m = 0`)
+/// with the axis origin on the plane. Total on a rational row (`None` = overflow only).
+fn class_through_axis(w: &[Rat; 4], def: &nacre_topo::CylinderDef) -> Option<bool> {
+    let (o, m) = (def.origin(), def.dir());
+    let n = [w[0], w[1], w[2]];
+    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
+    };
+    if dot3(&n, &m)? != Rat::from_int(0) {
+        return Some(false);
+    }
+    let residual = dot3(&n, &o)?.checked_add(w[3])?;
+    Some(residual == Rat::from_int(0))
+}
+
+/// The plane class carrying this cylinder's rim at axis parameter `t`: ⊥ to the axis with the
+/// matching parameter. `None` when no class holds that rim — a population this road declines
+/// rather than serves (an axis-aligned solid's rims always adjoin ⊥ faces, whose classes exist).
+fn rim_class_at(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    t: &Rat,
+) -> Option<usize> {
+    let m = def.dir();
+    jd.planes.iter().position(|wp| {
+        let Some(coeffs) = wp.base_rat else {
+            return false;
+        };
+        let n = [coeffs[0], coeffs[1], coeffs[2]];
+        nacre_scalar::parallel_rat(&n, &m)
+            && crate::planes::axis_param_of_plane(&coeffs, def).as_ref() == Some(t)
+    })
+}
+
+/// **The two rulings a through-axis class cuts on a lateral face**, as traces — the ∥ sibling of
+/// [`circle_on_class`]'s transversal circle. Asked only after that road answered "no circle";
+/// answers `Ok(None)` (silently, today's state) unless the class runs **exactly through the
+/// axis**, and declines rather than contributing *partially* when it does but a piece cannot be
+/// stated — a half-contributed rectangle would leave the class's 1-skeleton dangling, which is a
+/// worse lie than an honest incomplete-trace mark.
+#[allow(clippy::too_many_arguments)]
+fn rulings_on_class(
+    jd: &Judge<'_, WorkingPlane>,
+    cf: &crate::planes::CylFaceInfo,
+    wc: usize,
+    k: usize,
+    which: SolidSide,
+    crossings: &std::collections::HashSet<(usize, usize)>,
+) -> Result<Option<[RulingTrace; 2]>, DeclineKind> {
+    use nacre_scalar::quad::CylinderMeet;
+    // ★ **The gate's answer, first** — see [`combinatorics::TraceInput::crossings`]. A pair not
+    // listed there was proven clear (or never in question), and contributing its rectangle
+    // anyway is what broke the straddling family: the boss's own wall class is a d=0 pair, and
+    // its coplanar bottom cap's chord lands on a line the plate already traces. Silence for
+    // unlisted pairs is today's exact behavior; the gate-opening cell lists exactly the pairs
+    // that need the rectangle.
+    if !crossings.contains(&(wc, k)) {
+        return Ok(None);
+    }
+    let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
+        return Ok(None); // no exact description: the circle road's own decline covers ⊥ classes
+    };
+    match class_through_axis(&w, &cf.def) {
+        Some(true) => {}
+        Some(false) => return Ok(None),
+        None => return Err(DeclineKind::Ruling),
+    }
+    let Some(span) = cf.span else {
+        return Err(DeclineKind::Ruling);
+    };
+    let (o, m, r) = (cf.def.origin(), cf.def.dir(), cf.def.radius());
+    // One rim end at a time: the ⊥ class holding the rim, and the two branch points the class
+    // pair `{wc, rim}` cuts on the cylinder — each assigned to its ruling by side.
+    let mut ends: Vec<[(i8, NodeId); 2]> = Vec::with_capacity(2);
+    for t in [&span[0], &span[1]] {
+        let Some(rc) = rim_class_at(jd, &cf.def, t) else {
+            return Err(DeclineKind::Ruling);
+        };
+        let Some(v) = combinatorics::class_coeffs_rat(jd, rc) else {
+            return Err(DeclineKind::Ruling);
+        };
+        let Some(CylinderMeet::Pair { line, s }) =
+            nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
+        else {
+            return Err(DeclineKind::Ruling);
+        };
+        let mut pair = Vec::with_capacity(2);
+        for (root, sv) in [
+            (nacre_topo::QuadRoot::Lo, &s[0]),
+            (nacre_topo::QuadRoot::Hi, &s[1]),
+        ] {
+            let Some(side) = ruling_side(&w, &cf.def, (&line, sv)) else {
+                return Err(DeclineKind::Ruling);
+            };
+            pair.push((side, combinatorics::NodeId::branch(wc, rc, k, root)));
+        }
+        let [a, b] = pair[..] else { unreachable!() };
+        if a.0 == b.0 {
+            return Err(DeclineKind::Ruling); // two roots on one side: not a through-axis pair
+        }
+        ends.push([a, b]);
+    }
+    let node_at = |ei: usize, side: i8| -> NodeId {
+        let [a, b] = ends[ei];
+        if a.0 == side { a.1 } else { b.1 }
+    };
+    let kind = SegKind::Transversal {
+        mat: cf.orient_sign,
+    };
+    // `end[0]` is the low rim: `axis_param_of_plane` ascends `+m`, the `MergedRuling` convention.
+    Ok(Some([1i8, -1i8].map(|side| RulingTrace {
+        cyl: k,
+        side,
+        end: [node_at(0, side), node_at(1, side)],
+        solid: which,
+        kind,
+    })))
+}
+
 /// Both operands' traces on plane class `wc`, merged into one `Trace` (segments keep their
 /// `solid` tag).
 fn trace_on_class(
@@ -1158,7 +1502,16 @@ fn trace_on_class(
 ) -> Trace {
     let mut out = Trace::default();
     for (side, which) in [SolidSide::A, SolidSide::B].into_iter().enumerate() {
-        trace_one(&input.faces[side], which, wc, jd, faces, plane_ix, &mut out);
+        trace_one(
+            &input.faces[side],
+            which,
+            wc,
+            jd,
+            faces,
+            plane_ix,
+            &input.crossings,
+            &mut out,
+        );
     }
     out
 }
@@ -1179,6 +1532,7 @@ fn trace_on_class_of(
     inc_a: &combinatorics::EdgeFaces,
     inc_b: &combinatorics::EdgeFaces,
     plane_ix: &[ClassIx],
+    crossings: std::collections::HashSet<(usize, usize)>,
 ) -> Trace {
     let input = combinatorics::trace_input(
         model,
@@ -1187,6 +1541,7 @@ fn trace_on_class_of(
         faces.len(),
         jd,
         plane_ix,
+        crossings,
     );
     trace_on_class(&input, wc, jd, faces, plane_ix)
 }
@@ -1205,6 +1560,7 @@ fn trace_one_of(
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc: &combinatorics::EdgeFaces,
     plane_ix: &[ClassIx],
+    crossings: std::collections::HashSet<(usize, usize)>,
     out: &mut Trace,
 ) {
     let input = combinatorics::trace_input(
@@ -1214,8 +1570,18 @@ fn trace_one_of(
         faces.len(),
         jd,
         plane_ix,
+        crossings,
     );
-    trace_one(&input.faces[0], which, wc, jd, faces, plane_ix, out);
+    trace_one(
+        &input.faces[0],
+        which,
+        wc,
+        jd,
+        faces,
+        plane_ix,
+        &input.crossings,
+        out,
+    );
 }
 
 /// A coincident-merged arrangement edge on a plane class. When the cut plane is a solid's **cap
@@ -2217,6 +2583,349 @@ fn circle_crossings(
     Some(out)
 }
 
+/// **Where a segment crosses a cylinder's rulings on a ∥ class** — the straight sibling of
+/// [`circle_crossings`], same machinery ([`nacre_scalar::quad::plane_plane_cylinder`], the same
+/// fences, the same names), different reachable arms: on a class **parallel** to the axis the
+/// meet can be tangent to or lie on the lateral, and those are refused by the ladder's name
+/// rather than reasoned unreachable.
+///
+/// Returns each crossing with the exact point it was solved at (`(line, s)` — the side and
+/// extent tests below read it without re-solving). `None` is overflow.
+fn lateral_crossings(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    w: &[Rat; 4],
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    sg: &MergedSeg,
+    ends: [&[Rat; 3]; 2],
+) -> Result<Option<Vec<LateralCrossing>>, BoolError> {
+    use nacre_scalar::quad::CylinderMeet;
+    use nacre_topo::QuadRoot;
+    let Some(v) = combinatorics::class_coeffs_rat(jd, sg.wall) else {
+        return Ok(None);
+    };
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (line, roots) = match nacre_scalar::quad::plane_plane_cylinder(w, &v, &o, &m, r) {
+        Some(CylinderMeet::Pair { line, s }) => {
+            (line, vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])])
+        }
+        // A tangent line touches without separating; cutting there would make a zero-length
+        // piece — the same skip the circle side's `Double` arm makes.
+        Some(CylinderMeet::Tangent { .. }) => return Ok(Some(Vec::new())),
+        Some(CylinderMeet::Miss(_)) | Some(CylinderMeet::AxisParallelMiss(_)) => {
+            return Ok(Some(Vec::new()));
+        }
+        // The segment's line lies on the lateral (a wall meeting the cylinder exactly along a
+        // ruling), or the planes degenerate: shapes this ladder does not arrange yet.
+        Some(CylinderMeet::OnRuling(_))
+        | Some(CylinderMeet::CoincidentPlanes)
+        | Some(CylinderMeet::ParallelPlanes) => {
+            return Err(reject(RejectReason::RulingBoundNotYet));
+        }
+        None => return Ok(None),
+    };
+    // The fences: the planes pinning the segment's ends, "inside" read off the opposite
+    // endpoint — the same rule `circle_crossings` states.
+    let mut fences = Vec::with_capacity(2);
+    for k in 0..2 {
+        let Some(cls) = sg.end_h[k].class() else {
+            return Ok(None);
+        };
+        let Some(e) = combinatorics::class_coeffs_rat(jd, cls) else {
+            return Ok(None);
+        };
+        let far = ends[1 - k];
+        let mut at_far = e[3];
+        for i in 0..3 {
+            let Some(t) = e[i].checked_mul(far[i]).and_then(|x| at_far.checked_add(x)) else {
+                return Ok(None);
+            };
+            at_far = t;
+        }
+        fences.push((e, at_far.numer().signum()));
+    }
+    let mut out = Vec::new();
+    for (root, s) in roots {
+        let mut inside = true;
+        for (e, want) in &fences {
+            let side = nacre_scalar::quad::plane_side(e, &line, &s);
+            let got = match side {
+                nacre_scalar::Orient::Positive => 1,
+                nacre_scalar::Orient::Negative => -1,
+                nacre_scalar::Orient::Zero => 0,
+            };
+            if got != 0 && got != *want {
+                inside = false;
+                break;
+            }
+        }
+        if !inside {
+            continue;
+        }
+        out.push((
+            combinatorics::NodeId::branch(wc, sg.wall, cyl, root),
+            line.clone(),
+            s,
+        ));
+    }
+    Ok(Some(out))
+}
+
+/// One crossing [`lateral_crossings`] found: its Branch name, and the exact `(line, s)` it was
+/// solved at (the side and extent tests read it without re-solving).
+type LateralCrossing = (
+    combinatorics::NodeId,
+    nacre_scalar::quad::MeetLine,
+    nacre_scalar::quad::QuadVal,
+);
+
+/// `split_rulings`' product — `None` when nothing crossed.
+type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
+
+/// **Cut every ruling a segment crosses into pieces, and the segments with it** — the straight
+/// twin of [`split_circles`], run after it (the two populations share no class today: a class is
+/// ∥ or ⊥ to one cylinder's axis, and the mixed cross-axis case is refused before this).
+///
+/// The ordering vocabulary is the established one: along a segment, [`cmp_along`] on the
+/// canonical meet line; along a ruling, the same comparator on the **axis coordinate**
+/// (`m · x`, evaluated exactly from each node's re-solved name).
+fn split_rulings(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    segs: &[MergedSeg],
+    rulings: &[MergedRuling],
+) -> Result<SplitRulings, BoolError> {
+    use nacre_scalar::quad::QuadVal;
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    if rulings.is_empty() {
+        return Ok(None);
+    }
+    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
+    };
+    // A point's axis coordinate, from the exact `(line, s)` it was solved at.
+    let coord_at = |def: &nacre_topo::CylinderDef,
+                    line: &nacre_scalar::quad::MeetLine,
+                    s: &QuadVal|
+     -> Option<QuadVal> {
+        let m = def.dir();
+        let (b, d) = (line.base(), line.dir());
+        QuadVal::from_rat(dot(&b, &m)?).checked_add(&s.checked_mul_rat(dot(&d, &m)?)?)
+    };
+    // Each ruling's end coordinates, re-solved from the names once.
+    let ruling_ends: Vec<[QuadVal; 2]> = rulings
+        .iter()
+        .map(|r| {
+            let coord = |n| {
+                let (line, s) = combinatorics::branch_meet(jd, r.cyl, &r.def, n)?;
+                coord_at(&r.def, &line, &s)
+            };
+            match (coord(r.end[0]), coord(r.end[1])) {
+                (Some(a), Some(b)) => Ok([a, b]),
+                _ => Err(undecided()),
+            }
+        })
+        .collect::<Result<_, BoolError>>()?;
+    // Distinct cylinders carrying rulings here, each solved once per segment.
+    let mut cyl_list: Vec<(usize, &nacre_topo::CylinderDef)> = Vec::new();
+    for r in rulings {
+        if !cyl_list.iter().any(|&(c, _)| c == r.cyl) {
+            cyl_list.push((r.cyl, &r.def));
+        }
+    }
+    let mut on_ruling: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); rulings.len()];
+    let mut on_seg: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); segs.len()];
+    for (si, sg) in segs.iter().enumerate() {
+        // A birth-branch segment (a cap chord) or a cut sub-segment shares only **endpoints**
+        // with a ruling — the rectangle's corners — and carries no fence planes to test extent
+        // with. Skipping computes nothing wrong: an endpoint is not a split point.
+        if sg.end_h.iter().any(|h| h.class().is_none()) {
+            continue;
+        }
+        let ends = sg.end.map(|t| combinatorics::node_coords_rat(jd, t));
+        let [Some(p0), Some(p1)] = ends else {
+            return Err(undecided());
+        };
+        if p0 == p1 {
+            continue;
+        }
+        for &(cyl, def) in &cyl_list {
+            let Some(xs) = lateral_crossings(jd, wc, &w, cyl, def, sg, [&p0, &p1])? else {
+                return Err(undecided());
+            };
+            for (n, line, s) in xs {
+                let Some(side) = ruling_side(&w, def, (&line, &s)) else {
+                    return Err(undecided());
+                };
+                let Some(c) = coord_at(def, &line, &s) else {
+                    return Err(undecided());
+                };
+                // Which piece of that ruling (several faces of one solid can put several
+                // pieces on one side): closed-extent test on the axis coordinate.
+                for (ri, r) in rulings.iter().enumerate() {
+                    if r.cyl != cyl || r.side != side {
+                        continue;
+                    }
+                    let [lo, hi] = &ruling_ends[ri];
+                    let (a, b) = (
+                        cmp_along(&c, lo).ok_or_else(undecided)?,
+                        cmp_along(&c, hi).ok_or_else(undecided)?,
+                    );
+                    use core::cmp::Ordering::*;
+                    match (a, b) {
+                        (Greater, Less) => {
+                            // Strictly inside: the ruling splits here, and the segment with it.
+                            on_ruling[ri].push(n);
+                            on_seg[si].push(n);
+                        }
+                        (Equal, _) | (_, Equal) => {
+                            // On an end: the T-junction. One point, and it must wear **one**
+                            // name — the crossing's `{wc, wall}` pair must be the very pair
+                            // that named the ruling's end, else two names share the point.
+                            let end_n = if a == Equal { r.end[0] } else { r.end[1] };
+                            if end_n != n {
+                                return Err(reject(RejectReason::CoincidentNodes));
+                            }
+                            on_seg[si].push(n);
+                        }
+                        _ => {} // beyond this piece: the surface continues, the face does not
+                    }
+                }
+            }
+        }
+    }
+    if on_ruling.iter().all(|v| v.is_empty()) && on_seg.iter().all(|v| v.is_empty()) {
+        return Ok(None);
+    }
+    // ---- segments → sub-segments, the arc split's own idiom ----
+    let def_of: HashMap<usize, &nacre_topo::CylinderDef> = cyl_list.iter().copied().collect();
+    let mut out_segs = Vec::with_capacity(segs.len());
+    for (si, sg) in segs.iter().cloned().enumerate() {
+        let mut nodes = std::mem::take(&mut on_seg[si]);
+        if nodes.is_empty() {
+            out_segs.push(sg);
+            continue;
+        }
+        nodes.sort_unstable();
+        nodes.dedup();
+        let mut line: Option<nacre_scalar::quad::MeetLine> = None;
+        let mut keyed: Vec<(QuadVal, combinatorics::NodeId, combinatorics::EndPin)> = Vec::new();
+        for &n in &nodes {
+            let Some((_, cyl, _)) = combinatorics::branch_name(n) else {
+                return Err(reject(RejectReason::RingNaming));
+            };
+            let def = def_of.get(&cyl).ok_or_else(undecided)?;
+            let (l, s) = combinatorics::branch_meet(jd, cyl, def, n).ok_or_else(undecided)?;
+            if let Some(first) = &line {
+                if first.base() != l.base() || first.dir() != l.dir() {
+                    return Err(reject(RejectReason::RingNaming));
+                }
+            }
+            keyed.push((s, n, combinatorics::EndPin::Cylinder));
+            line = Some(l);
+        }
+        let line = line.ok_or_else(undecided)?;
+        for k in 0..2 {
+            let p = combinatorics::node_coords_rat(jd, sg.end[k]).ok_or_else(undecided)?;
+            keyed.push((
+                along(&line, &p).ok_or_else(undecided)?,
+                sg.end[k],
+                sg.end_h[k],
+            ));
+        }
+        let mut order: Vec<usize> = (0..keyed.len()).collect();
+        let mut bad = false;
+        order.sort_by(|&i, &j| match cmp_along(&keyed[i].0, &keyed[j].0) {
+            Some(o) => o,
+            None => {
+                bad = true;
+                core::cmp::Ordering::Equal
+            }
+        });
+        if bad {
+            return Err(undecided());
+        }
+        for pair in order.windows(2) {
+            if cmp_along(&keyed[pair[0]].0, &keyed[pair[1]].0) == Some(core::cmp::Ordering::Equal) {
+                return Err(reject(RejectReason::CoincidentNodes));
+            }
+        }
+        let ends = (keyed.len() - 2, keyed.len() - 1);
+        let forward = match cmp_along(&keyed[ends.0].0, &keyed[ends.1].0) {
+            Some(core::cmp::Ordering::Less) => true,
+            Some(core::cmp::Ordering::Greater) => false,
+            _ => return Err(undecided()),
+        };
+        let whole = combinatorics::edge_dir(jd, wc, sg.wall, sg.end_h[0], sg.end_h[1])?
+            .sense()
+            .ok_or_else(undecided)?;
+        let sense = if forward { whole } else { -whole };
+        for pair in order.windows(2) {
+            let (a, b) = (&keyed[pair[0]], &keyed[pair[1]]);
+            out_segs.push(MergedSeg {
+                wall: sg.wall,
+                end: [a.1, b.1],
+                end_h: [a.2, b.2],
+                merged: sg.merged.clone(),
+                sense: Some(sense),
+            });
+        }
+    }
+    // ---- rulings → pieces, in axis order ----
+    let mut out_rulings = Vec::with_capacity(rulings.len());
+    for (ri, r) in rulings.iter().cloned().enumerate() {
+        let mut nodes = std::mem::take(&mut on_ruling[ri]);
+        if nodes.is_empty() {
+            out_rulings.push(r);
+            continue;
+        }
+        nodes.sort_unstable();
+        nodes.dedup();
+        let mut keyed: Vec<(QuadVal, combinatorics::NodeId)> = Vec::new();
+        for &n in &nodes {
+            let (line, s) =
+                combinatorics::branch_meet(jd, r.cyl, &r.def, n).ok_or_else(undecided)?;
+            keyed.push((coord_at(&r.def, &line, &s).ok_or_else(undecided)?, n));
+        }
+        let [lo, hi] = ruling_ends[ri];
+        keyed.push((lo, r.end[0]));
+        keyed.push((hi, r.end[1]));
+        let mut order: Vec<usize> = (0..keyed.len()).collect();
+        let mut bad = false;
+        order.sort_by(|&i, &j| match cmp_along(&keyed[i].0, &keyed[j].0) {
+            Some(o) => o,
+            None => {
+                bad = true;
+                core::cmp::Ordering::Equal
+            }
+        });
+        if bad {
+            return Err(undecided());
+        }
+        for pair in order.windows(2) {
+            if cmp_along(&keyed[pair[0]].0, &keyed[pair[1]].0) == Some(core::cmp::Ordering::Equal) {
+                return Err(reject(RejectReason::CoincidentNodes));
+            }
+        }
+        // Ascending axis coordinate **is** the stored convention (`end[0] → end[1]` ascends
+        // `+m`), so each window is already a well-formed piece.
+        for pair in order.windows(2) {
+            out_rulings.push(MergedRuling {
+                cyl: r.cyl,
+                def: r.def.clone(),
+                side: r.side,
+                end: [keyed[pair[0]].1, keyed[pair[1]].1],
+                merged: r.merged.clone(),
+            });
+        }
+    }
+    Ok(Some((out_segs, out_rulings)))
+}
+
 /// **What one plane class's arrangement produced, before anything refuses it.**
 ///
 /// ★★★ **Taking `emit_faces` in made this *wider*, and "a stage moving in shrinks the interface"
@@ -2333,35 +3042,58 @@ enum HalfEdgeKind {
 }
 
 impl<'a> ClassEdges<'a> {
-    /// Run the arc split and hold its result — **the one place a class's edges are assembled.**
+    /// Run the arc split — and, when the class carries them, the chord injection and the ruling
+    /// split — and hold the result: **the one place a class's edges are assembled.**
     fn of(
         jd: &Judge<'_, WorkingPlane>,
         wc: usize,
         segs: &'a [MergedSeg],
         circles: &'a [MergedCircle],
+        rulings: &'a [MergedRuling],
+        chords: Vec<MergedSeg>,
     ) -> Result<Self, BoolError> {
         use std::borrow::Cow;
-        Ok(match split_circles(jd, wc, segs, circles)? {
-            Some((s, c, a, r)) => {
-                // ★ The names below rest on this: `split_circles` answers `Some` only when some
-                // circle collected a crossing, and a crossing yields at least one arc (a tangency
-                // is skipped before it is collected). So "was split" and "has arcs" are one fact.
-                debug_assert!(!a.is_empty(), "a split that cut no circle into arcs");
-                ClassEdges {
-                    segs: Cow::Owned(s),
-                    arcs: Cow::Owned(a),
-                    rulings: Cow::Borrowed(&[]),
-                    circles: Cow::Owned(c),
-                    cut_rims: r,
+        // A class carrying both a circle (⊥ one cylinder's axis) and rulings (∥ another's) is
+        // the cross-axis pair population — arrangeable by neither split alone, refused by the
+        // ladder's name until its cell.
+        if !rulings.is_empty() && !circles.is_empty() {
+            return Err(reject(RejectReason::RulingBoundNotYet));
+        }
+        type AfterCircles<'a> = (
+            Cow<'a, [MergedSeg]>,
+            Cow<'a, [MergedArc]>,
+            Cow<'a, [MergedCircle]>,
+            Vec<(usize, CutRim)>,
+        );
+        let (mut segs2, arcs, circles2, cut_rims): AfterCircles<'a> =
+            match split_circles(jd, wc, segs, circles)? {
+                Some((s, c, a, r)) => {
+                    // ★ The names below rest on this: `split_circles` answers `Some` only when some
+                    // circle collected a crossing, and a crossing yields at least one arc (a tangency
+                    // is skipped before it is collected). So "was split" and "has arcs" are one fact.
+                    debug_assert!(!a.is_empty(), "a split that cut no circle into arcs");
+                    (Cow::Owned(s), Cow::Owned(a), Cow::Owned(c), r)
                 }
-            }
-            None => ClassEdges {
-                segs: Cow::Borrowed(segs),
-                arcs: Cow::Borrowed(&[]),
-                rulings: Cow::Borrowed(&[]),
-                circles: Cow::Borrowed(circles),
-                cut_rims: Vec::new(),
-            },
+                None => (
+                    Cow::Borrowed(segs),
+                    Cow::Borrowed(&[][..]),
+                    Cow::Borrowed(circles),
+                    Vec::new(),
+                ),
+            };
+        if !chords.is_empty() {
+            segs2.to_mut().extend(chords);
+        }
+        let (segs3, rulings2) = match split_rulings(jd, wc, &segs2, rulings)? {
+            Some((s, r)) => (Cow::Owned(s), Cow::Owned(r)),
+            None => (segs2, Cow::Borrowed(rulings)),
+        };
+        Ok(ClassEdges {
+            segs: segs3,
+            arcs,
+            rulings: rulings2,
+            circles: circles2,
+            cut_rims,
         })
     }
 
@@ -2582,7 +3314,7 @@ fn walk_cells(
         let subdivides = |cells: &[Cell]| -> bool {
             let (v, e, f) = (
                 outgoing.len() as i64,
-                (n + arcs.len()) as i64,
+                (n + arcs.len() + edges.rulings.len()) as i64,
                 cells.len() as i64,
             );
             v - e + f == 2 * components as i64
@@ -3728,7 +4460,13 @@ fn trace_result_faces(
         c
     };
     let mut aliases = Aliases::default();
-    let mut splits: Vec<(Vec<MergedSeg>, Vec<MergedCircle>)> = Vec::new();
+    #[allow(clippy::type_complexity)]
+    let mut splits: Vec<(
+        Vec<MergedSeg>,
+        Vec<MergedCircle>,
+        Vec<MergedRuling>,
+        Vec<MergedSeg>,
+    )> = Vec::new();
     loop {
         let before = aliases.len();
         // **Every class in the round sees the table as it stood when the round began**, and
@@ -3771,7 +4509,9 @@ fn trace_result_faces(
             let split = timed!(SPLIT, split_at_crossings(jd, wc, &merged, &mut local))?;
             let split = drop_newsless(split)?;
             let circles = merge_circles(&tr.circles, cyls)?;
-            Ok(((split, circles), local))
+            let rulings = merge_rulings(&tr.rulings, cyls);
+            let chords = chords_to_segs(&tr.chords, jd, wc, cyls)?;
+            Ok(((split, circles, rulings, chords), local))
         })?;
         splits.clear();
         for (split, local) in round {
@@ -3800,7 +4540,7 @@ fn trace_result_faces(
 
     let per_class = crate::par::try_map_range(splits.len(), |k| {
         let wc = work[k];
-        let (split, circles) = &splits[k];
+        let (split, circles, rulings, chords) = &splits[k];
         // The per-class product: the faces, the disk labels the band pass reads (empty for a
         // class with no circles — and for a reused class, which is why cylinders switch reuse
         // off), the cut rims, and the **stopper socket's** deferred reject (empty since M6-2b
@@ -3817,7 +4557,10 @@ fn trace_result_faces(
             // everything below must read the *same* edges the walk did — building it here is what
             // makes that structural instead of a promise. (`frame_audit` runs its own copy of this
             // pipeline and must build it the same way; the arc fence locks that they agree.)
-            let edges = timed!(C_SPLIT, ClassEdges::of(jd, wc, split, circles))?;
+            let edges = timed!(
+                C_SPLIT,
+                ClassEdges::of(jd, wc, split, circles, rulings, chords.clone())
+            )?;
             // ★★★ **A stopper is *made* here — and only made.** M6-2b's arc stopper lived in
             // this socket: built where the class-level fact lives, raised inside `reconstruct`
             // at the assembly's very end, intercepting every stage between via the
@@ -3936,6 +4679,7 @@ pub(crate) fn concurrency_audit(
         inc_b,
         geom,
         plane_ix,
+        crossings,
         standard,
         notes,
         ..
@@ -3948,6 +4692,7 @@ pub(crate) fn concurrency_audit(
         faces_tab.len(),
         &jd,
         &plane_ix,
+        crossings.clone(),
     );
     let mut out = Vec::new();
     #[allow(clippy::needless_range_loop)]
@@ -4209,6 +4954,7 @@ pub(crate) fn frame_audit(
         geom,
         plane_ix,
         cyls,
+        crossings,
         standard,
         notes,
         ..
@@ -4221,6 +4967,7 @@ pub(crate) fn frame_audit(
         faces_tab.len(),
         &jd,
         &plane_ix,
+        crossings.clone(),
     );
     // The alias fixpoint, exactly as the boolean runs it (sequentially): classes discover names
     // for one another's features, so auditing each class against an empty table is auditing a
@@ -4285,6 +5032,8 @@ pub(crate) fn frame_audit(
                 let split = split_at_crossings(&jd, wc, &merged, &mut local)?;
                 let split = drop_newsless(split)?;
                 let circles = merge_circles(&tr.circles, &cyls)?;
+                let rulings = merge_rulings(&tr.rulings, &cyls);
+                let chords = chords_to_segs(&tr.chords, &jd, wc, &cyls)?;
                 // ★★★★ **The same edges the boolean uses.** This copy of the pipeline is what
                 // makes the audit an instrument; feeding it un-split edges would let it run to
                 // the end and report `failed_at: None` for an input the boolean refuses —
@@ -4292,7 +5041,7 @@ pub(crate) fn frame_audit(
                 // in `bands.rs` locks the two together — since M6-2b went green, as «both
                 // succeed» (a stopper plugged into the socket would raise here per class while
                 // the boolean defers it to the assembly's end; same classes, same name).
-                let edges = ClassEdges::of(&jd, wc, &split, &circles)?;
+                let edges = ClassEdges::of(&jd, wc, &split, &circles, &rulings, chords)?;
                 let staged = per_class(&jd, kind, wc, &edges);
                 if let Ok(s) = &staged {
                     let mut pos_labels: Vec<Label> = s
@@ -4360,6 +5109,7 @@ pub(crate) fn boolean(
         plane_ix,
         class_owner,
         cyls,
+        crossings,
         standard,
         notes,
         ..
@@ -4401,6 +5151,7 @@ pub(crate) fn boolean(
                 faces_tab.len(),
                 &jd,
                 &plane_ix,
+                crossings.clone(),
             )
         );
         // `disk_labels`: per (cylinder class, plane class), the four bits of that circle's disk
@@ -4442,6 +5193,7 @@ pub(crate) fn boolean(
                 faces_tab.len(),
                 &plain_jd,
                 &plane_ix,
+                crossings.clone(),
             );
             let plain = trace_result_faces(
                 model,
@@ -4668,7 +5420,17 @@ mod tests {
             .expect("a shared cap class");
 
         let tr = trace_on_class_of(
-            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
         );
         // Two seated caps × 4 edges each. (The side walls only *graze* z=1 — each cube's body is
         // entirely on one side — so they trace as `Graze` chords, not `Transversal`; the two far
@@ -4792,6 +5554,7 @@ mod tests {
             &surf_ix,
             &inc_a,
             &plane_ix,
+            Default::default(),
             &mut out,
         );
 
@@ -4906,6 +5669,7 @@ mod tests {
             &surf_ix,
             &inc_a,
             &plane_ix,
+            Default::default(),
             &mut out,
         );
 
@@ -5100,7 +5864,17 @@ mod tests {
             let jd = Judge::new(&planes, standard, &notes);
             let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
             let tr = trace_on_class_of(
-                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+                &m,
+                a,
+                b,
+                wc,
+                &jd,
+                &faces_tab,
+                &surf_ix,
+                &inc_a,
+                &inc_b,
+                &plane_ix,
+                Default::default(),
             );
             let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
             assert_eq!(merged.len(), 4, "one merged edge per rim edge: {merged:#?}");
@@ -5140,7 +5914,17 @@ mod tests {
             let jd = Judge::new(&planes, standard, &notes);
             let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
             let tr = trace_on_class_of(
-                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+                &m,
+                a,
+                b,
+                wc,
+                &jd,
+                &faces_tab,
+                &surf_ix,
+                &inc_a,
+                &inc_b,
+                &plane_ix,
+                Default::default(),
             );
             let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
             assert_eq!(
@@ -5188,7 +5972,17 @@ mod tests {
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class_of(
-            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         assert_eq!(merged.len(), 8, "8 merged edges before split");
@@ -5288,7 +6082,17 @@ mod tests {
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class_of(
-            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
@@ -5354,12 +6158,22 @@ mod tests {
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class_of(
-            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
 
-        let edges = ClassEdges::of(&jd, wc, &split, &[]).unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &[], &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
 
         // ★★★ **An independent reading of every winding: the shoelace sign.**
@@ -5485,11 +6299,21 @@ mod tests {
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class_of(
-            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let edges = ClassEdges::of(&jd, wc, &split, &[]).unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &[], &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
         let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
         let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
@@ -5560,11 +6384,21 @@ mod tests {
             })
             .expect("b's z=1 cap class");
         let tr = trace_on_class_of(
-            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let edges = ClassEdges::of(&jd, wc, &split, &[]).unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &[], &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
         let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
         let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
@@ -5614,11 +6448,21 @@ mod tests {
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class_of(
-            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
-        let edges = ClassEdges::of(&jd, wc, &split, &[]).unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &[], &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
         let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
         let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
@@ -5788,6 +6632,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
             &m,
@@ -5997,6 +6842,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
             &m,
@@ -6105,6 +6951,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
             &m,
@@ -6387,6 +7234,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
             &m,
@@ -6483,7 +7331,17 @@ mod tests {
         let jd = Judge::new(&planes, standard, &notes);
         for wc in 0..planes.len() {
             let tr = trace_on_class_of(
-                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+                &m,
+                a,
+                b,
+                wc,
+                &jd,
+                &faces_tab,
+                &surf_ix,
+                &inc_a,
+                &inc_b,
+                &plane_ix,
+                Default::default(),
             );
             assert!(
                 tr.declined.is_empty(),
@@ -6558,6 +7416,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
             &m,
@@ -6591,6 +7450,176 @@ mod tests {
             })
             .count();
         assert_eq!(holed, 2, "both caps are drilled: {faces:?}");
+    }
+
+    /// The rulings-road harness (M6-2 rulings ladder, first cell): the through-boss geometry
+    /// the ladder will open — a plate and a cylinder overlapping its full height, axis exactly
+    /// on the `x = 40` wall plane — assembled **past the standing gate** from production parts:
+    /// `plane_index_setup_inner` (the gate-free half) plus the cylinder table built the way the
+    /// gate builds it. Returns everything the two locks below read, and the record the
+    /// gate-opening cell will produce: `(wall class, cylinder)` marked not-proven-clear.
+    #[allow(clippy::type_complexity)]
+    fn armed_through_boss() -> (
+        Model,
+        Handle<Solid>,
+        Handle<Solid>,
+        crate::planes::PlaneSetup,
+        usize,
+        std::collections::HashSet<(usize, usize)>,
+    ) {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 40.0, 20.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array([40.0, 20.0, -10.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            5.0,
+            50.0,
+        );
+        m.rebuild_adjacency();
+        let (mut setup, cyl_surfs) =
+            crate::planes::plane_index_setup_inner(&m, plate, boss).unwrap();
+        for &surf in &cyl_surfs {
+            let nacre_topo::SurfaceTruth::Cylinder { def, .. } = m.surface_truth(surf) else {
+                unreachable!("a cylinder row carries a cylinder truth")
+            };
+            let nacre_geom::Surface::Cylinder(cache) = m.surface(surf) else {
+                unreachable!("a cylinder truth carries a cylinder cache")
+            };
+            setup.cyls.push(crate::planes::WorkingCyl {
+                surf,
+                def: def.clone(),
+                cache: *cache,
+            });
+        }
+        let wc = setup
+            .geom
+            .iter()
+            .position(|p| p.tri.iter().all(|q| (q.as_array()[0] - 40.0).abs() < 1e-12))
+            .expect("the x = 40 wall class");
+        let crossings: std::collections::HashSet<(usize, usize)> = [(wc, 0)].into_iter().collect();
+        (m, plate, boss, setup, wc, crossings)
+    }
+
+    /// ★ **The gate's record arms the rulings road — and only the record.** With the
+    /// through-boss pair listed, the boss's trace on the wall class is the rectangle: two
+    /// rulings (one per side, Branch-named ends, no plain segments) and two cap chords
+    /// (`Lo`/`Hi` roots on the cap classes). With the record empty — every production call
+    /// today — the same trace is empty: the negative control that pins "an empty record
+    /// changes nothing", which is the very population an unconditionally-firing arm broke
+    /// (14 arc-family tests red, measured).
+    #[test]
+    fn the_gates_record_arms_the_ruling_trace() {
+        let (m, _plate, boss, setup, wc, crossings) = armed_through_boss();
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let mut tr = Trace::default();
+        trace_one_of(
+            &m,
+            boss,
+            SolidSide::B,
+            wc,
+            &jd,
+            &setup.planes,
+            &setup.surf_ix,
+            &setup.inc_b,
+            &setup.plane_ix,
+            crossings.clone(),
+            &mut tr,
+        );
+        assert!(tr.declined.is_empty(), "{:?}", tr.declined);
+        assert!(tr.segs.is_empty(), "a boss leaves no plain segments here");
+        let mut sides: Vec<i8> = tr.rulings.iter().map(|r| r.side).collect();
+        sides.sort_unstable();
+        assert_eq!(sides, [-1, 1], "one ruling per side");
+        for r in &tr.rulings {
+            for nd in r.end {
+                let (_, cyl, _) = combinatorics::branch_name(nd).expect("a Branch end");
+                assert_eq!(cyl, 0);
+            }
+            assert!(matches!(r.kind, SegKind::Transversal { .. }));
+        }
+        assert_eq!(tr.chords.len(), 2, "one chord per cap");
+        for c in &tr.chords {
+            // The chord rides the cap's own class — a ⊥ plane at z = −10 or z = 40.
+            let z = setup.geom[c.wall].tri[0].as_array()[2];
+            assert!(
+                setup.geom[c.wall]
+                    .tri
+                    .iter()
+                    .all(|q| (q.as_array()[2] - z).abs() < 1e-12)
+                    && ((z + 10.0).abs() < 1e-12 || (z - 40.0).abs() < 1e-12),
+                "cap class at z = {z}"
+            );
+        }
+        // The negative control: today's record.
+        let mut tr0 = Trace::default();
+        trace_one_of(
+            &m,
+            boss,
+            SolidSide::B,
+            wc,
+            &jd,
+            &setup.planes,
+            &setup.surf_ix,
+            &setup.inc_b,
+            &setup.plane_ix,
+            Default::default(),
+            &mut tr0,
+        );
+        assert!(
+            tr0.rulings.is_empty() && tr0.chords.is_empty(),
+            "empty record, empty road"
+        );
+    }
+
+    /// ★ **The armed arrangement digests the rectangle** — production bricks end to end on the
+    /// wall class. Each ruling is cut at its T-junctions with the plate's `z = 0` and `z = 20`
+    /// lines (three pieces each), those lines split at the same Branch nodes, the chords close
+    /// the far ends, and the walk closes the subdivision: one unbounded contour and five
+    /// bounded cells — plate-left, plate-right, the overlap band, and the rectangle's two
+    /// overhangs.
+    #[test]
+    fn the_armed_wall_class_walks_to_closed_cells() {
+        let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let tr = trace_on_class_of(
+            &m,
+            plate,
+            boss,
+            wc,
+            &jd,
+            &setup.planes,
+            &setup.surf_ix,
+            &setup.inc_a,
+            &setup.inc_b,
+            &setup.plane_ix,
+            crossings,
+        );
+        assert!(tr.declined.is_empty(), "{:?}", tr.declined);
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = drop_newsless(split).unwrap();
+        let circles = merge_circles(&tr.circles, &setup.cyls).unwrap();
+        assert!(circles.is_empty(), "a ∥ class carries no circles");
+        let rulings = merge_rulings(&tr.rulings, &setup.cyls);
+        assert_eq!(rulings.len(), 2);
+        let chords = chords_to_segs(&tr.chords, &jd, wc, &setup.cyls).unwrap();
+        assert_eq!(chords.len(), 2);
+        let edges = ClassEdges::of(&jd, wc, &split, &circles, &rulings, chords).unwrap();
+        assert_eq!(
+            edges.rulings.len(),
+            6,
+            "each ruling cut at z = 0 and z = 20"
+        );
+        let (cells, _face_of) = walk_cells(&jd, wc, &edges).unwrap();
+        assert_eq!(cells.len(), 6, "five bounded cells and the outer");
+        assert_eq!(
+            cells.iter().filter(|c| c.winding == -1).count(),
+            1,
+            "one connected skeleton, one outer contour"
+        );
     }
 
     /// **The mixed parity reads a bitten ring — exactly, on the production pieces.**
@@ -6642,7 +7671,17 @@ mod tests {
                 continue;
             }
             let tr = trace_on_class_of(
-                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+                &m,
+                a,
+                b,
+                wc,
+                &jd,
+                &faces_tab,
+                &surf_ix,
+                &inc_a,
+                &inc_b,
+                &plane_ix,
+                Default::default(),
             );
             let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
             let Ok(split) = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()) else {
@@ -6651,7 +7690,7 @@ mod tests {
             let Ok(circles) = merge_circles(&tr.circles, &cyls) else {
                 continue;
             };
-            let Ok(edges) = ClassEdges::of(&jd, wc, &split, &circles) else {
+            let Ok(edges) = ClassEdges::of(&jd, wc, &split, &circles, &[], Vec::new()) else {
                 continue;
             };
             if edges.arcs.is_empty() {
@@ -6793,6 +7832,7 @@ mod tests {
             &surf_ix,
             &inc_b,
             &plane_ix,
+            Default::default(),
             &mut tr,
         );
         assert!(
@@ -6824,7 +7864,7 @@ mod tests {
         );
 
         let circles = merge_circles(&tr.circles, &cyls).unwrap();
-        let edges = ClassEdges::of(&jd, wc, &[], &circles).unwrap();
+        let edges = ClassEdges::of(&jd, wc, &[], &circles, &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
         // Pseudo-half-edges 0 and 1 (no segments): the disk (+1) and its contour (−1).
         assert_eq!(cells.len(), 2, "{cells:?}");
@@ -6895,7 +7935,17 @@ mod tests {
         let wc = class_at_z(&planes, 0.0);
 
         let tr = trace_on_class_of(
-            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
         assert!(
@@ -6920,7 +7970,7 @@ mod tests {
             "the cap ring alone — the circle owes the splitter nothing"
         );
 
-        let edges = ClassEdges::of(&jd, wc, &split, &circles).unwrap();
+        let edges = ClassEdges::of(&jd, wc, &split, &circles, &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, wc, &edges).unwrap();
         assert_eq!(cells.len(), 4, "cap ±1 and circle ±1: {cells:?}");
         let at = |he: usize| cells.iter().position(|c| c.half_edges == [he]).unwrap();
@@ -7007,6 +8057,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            Default::default(),
         );
         let (fp, fl) = input.faces[0]
             .iter()
@@ -7024,6 +8075,7 @@ mod tests {
             &jd,
             &faces_tab,
             &plane_ix,
+            &Default::default(),
             &mut tr,
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
@@ -7076,6 +8128,7 @@ mod tests {
             &inc_a,
             &inc_b,
             &plane_ix,
+            Default::default(),
         );
         assert!(top.circles.is_empty(), "{:?}", top.circles);
         assert!(top.declined.is_empty(), "{:?}", top.declined);
@@ -7092,6 +8145,7 @@ mod tests {
             &inc_a,
             &inc_b,
             &plane_ix,
+            Default::default(),
         );
         assert_eq!(
             bottom
@@ -7121,6 +8175,7 @@ mod tests {
             &inc_a,
             &inc_b,
             &plane_ix,
+            Default::default(),
         );
         assert!(cap.declined.is_empty(), "{:?}", cap.declined);
         let sides: Vec<(bool, bool)> = cap
@@ -7193,6 +8248,7 @@ mod tests {
             &inc_a,
             &inc_b,
             &plane_ix,
+            Default::default(),
         );
         let seated: Vec<bool> = tr
             .circles
@@ -7255,7 +8311,17 @@ mod tests {
         let jd = Judge::new(&planes, standard, &notes);
         let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
         let tr = trace_on_class_of(
-            &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
         );
         // The y=1 wall class hosts a's chord x∈[0,2] and b's chord x∈[1,3]: same wall, different
         // endpoints. After merge they remain two distinct MergedSegs (each still merging its own
@@ -7317,7 +8383,17 @@ mod tests {
         let jd = Judge::new(&planes, standard, &notes);
         for wc in 0..planes.len() {
             let tr = trace_on_class_of(
-                &m, a, b, wc, &jd, &faces_tab, &surf_ix, &inc_a, &inc_b, &plane_ix,
+                &m,
+                a,
+                b,
+                wc,
+                &jd,
+                &faces_tab,
+                &surf_ix,
+                &inc_a,
+                &inc_b,
+                &plane_ix,
+                Default::default(),
             );
             assert!(tr.declined.is_empty(), "class {wc} declined: {tr:?}");
         }
@@ -7402,6 +8478,7 @@ mod tests {
                     setup.planes.len(),
                     &jd,
                     &setup.plane_ix,
+                    Default::default(),
                 );
                 for wc in 0..setup.geom.len() {
                     let tr = trace_on_class(&trace_in, wc, &jd, &setup.planes, &setup.plane_ix);

@@ -350,6 +350,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             plane_ix,
+            Default::default(),
         );
         let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
             m,
@@ -1364,6 +1365,7 @@ mod tests {
                 faces_tab.len(),
                 &jd,
                 plane_ix,
+                Default::default(),
             );
             let (plane_faces, curved, deferred) =
                 crate::arrangement::trace_result_faces_full_for_test(
@@ -1460,6 +1462,7 @@ mod tests {
                 faces_tab.len(),
                 &jd,
                 plane_ix,
+                Default::default(),
             );
             let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
                 &m,
@@ -1586,6 +1589,7 @@ mod tests {
                 faces_tab.len(),
                 &jd,
                 plane_ix,
+                Default::default(),
             );
             let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
                 &m,
@@ -2028,6 +2032,7 @@ mod tests {
                 faces_tab.len(),
                 &jd,
                 plane_ix,
+                Default::default(),
             );
             let (plane_faces, curved, _) = crate::arrangement::trace_result_faces_full_for_test(
                 &m,
@@ -2421,6 +2426,65 @@ mod tests {
         let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
         let want = 4000.0 - std::f64::consts::PI * 9.0 * 5.0 + 8.0 * 8.0 * 3.0;
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// ★ **The d = 0 member of the family: the wall plane runs exactly through the bore's
+    /// axis** (M6-2 rulings ladder). The gate passes it the same way (the boss's face clears the
+    /// footprint along the span), and the rulings road stays **silent** — its trigger is the
+    /// gate's carried `crossings` record, which is empty for every gate-passed pair. This
+    /// geometry had no corpus row (its siblings are all d = 2), and it is the population an
+    /// unconditionally-firing contribution arm broke — measured, 14 arc tests red — so it locks
+    /// "an empty record changes nothing".
+    #[test]
+    fn a_boss_whose_wall_plane_holds_the_bores_axis_still_fuses() {
+        let (mut m, holed, boss) = plate_bore_and_boss(12.0, 5.0);
+        let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("the boss fuses");
+        assert_eq!(out.len(), 1, "one body");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 4000.0 - std::f64::consts::PI * 9.0 * 5.0 + 8.0 * 8.0 * 3.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// The d = 0 member with **caps in play**: a cylinder tool standing clear of the plate, its
+    /// axis exactly on the plate's `x = 40` wall plane and its caps strictly inside the plate's
+    /// height (no coplanar contact anywhere). Two disjoint bodies is the valid fuse answer, and
+    /// the chord arm — like the ruling arm — stays silent behind the empty record.
+    #[test]
+    fn a_capped_tool_on_the_plates_wall_plane_fuses_as_two_bodies() {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 20.0, 5.0]),
+        );
+        let tool = m.add_cylinder(
+            Point3::from_array([40.0, 30.0, 1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            3.0,
+            3.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, BoolKind::Fuse, plate, tool).expect("a distant fuse");
+        assert_eq!(out.len(), 2, "two disjoint bodies");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let mut vols: Vec<f64> = out
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+            .collect();
+        vols.sort_by(|x, y| x.partial_cmp(y).expect("finite"));
+        let want = [std::f64::consts::PI * 9.0 * 3.0, 4000.0];
+        assert!(
+            (0..2).all(|i| (vols[i] - want[i]).abs() < 1e-9),
+            "{vols:?} vs {want:?}"
+        );
     }
 
     /// The `Cut` twin — the same wall planes reach the gate whichever way the operation runs.

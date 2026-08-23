@@ -707,7 +707,10 @@ fn arc_at(
 /// ★ **And it is cross-checked against that integer fold.** `nacre_cip::predicate::name_stored_ints`
 /// does the same turn exactly, in integers, on the classes it can (`None` for a wide name or a
 /// witness that speaks another frame) — so where it answers, the two must agree.
-fn stored_coeffs_rat(jd: &Judge<'_, WorkingPlane>, c: usize) -> Option<[nacre_scalar::Rat; 4]> {
+pub(crate) fn stored_coeffs_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    c: usize,
+) -> Option<[nacre_scalar::Rat; 4]> {
     let coeffs = class_coeffs_rat(jd, c)?;
     let n = nacre_math::Vector3::from_array([
         coeffs[0].to_f64(),
@@ -1042,19 +1045,21 @@ pub(crate) fn turn(
         // ★★ **A segment against a ruling collapses the same way the arc arm did.** The ruling's
         // direction is `±m` and it lies *in* the class (`m · n_P = 0`), so BAC-CAB leaves
         //
-        //   (d × m) · n_P = ((n_P × n_ca) × m) · n_P = (n_ca (m·n_P) − n_P (m·n_ca)) · n_P
-        //                 = −|n_P|² (m · n_ca)
+        //   (d × m) · n_out = ((n_P × n_ca) × m) · n_out = (n_ca (m·n_P) − n_P (m·n_ca)) · n_out
+        //                   = −(m · n_ca) (n_P · n_out)
         //
-        // — one rational dot sign. `n_P` appears twice, so the answer is invariant to its sign
-        // convention; `n_ca` appears once *and* once inside the sense's own definition
-        // (`d = sense · (n_P × n_ca)`), so those two flips cancel too — the arm is convention-free
-        // as long as `sense` and the coefficients here read the **same** `n_ca`, which they do
-        // ([`class_coeffs_rat`], the canonical spelling `dir_sign` speaks).
+        // — one rational dot sign, times the same `frame` factor the line×line arm carries
+        // (`n_P` here is the canonical spelling and the turn's reference is the face's outward
+        // normal; their sign relation is `frame_sign`, entering **once** because `n_P` appears
+        // once). `n_ca` appears once *and* once inside the sense's own definition
+        // (`d = sense · (n_P × n_ca)`), so those two flips cancel — the arm needs only that
+        // `sense` and the coefficients read the **same** `n_ca` ([`class_coeffs_rat`], the
+        // canonical spelling `dir_sign` speaks).
         (EdgeDir::Line { carrier, sense }, EdgeDir::Ruling(r)) => {
-            sense * ruling_line_turn(jd, p, *carrier, r)?
+            sense * ruling_line_turn(jd, p, *carrier, r)? * frame
         }
         (EdgeDir::Ruling(r), EdgeDir::Line { carrier, sense }) => {
-            -sense * ruling_line_turn(jd, p, *carrier, r)?
+            -sense * ruling_line_turn(jd, p, *carrier, r)? * frame
         }
         // All rulings on one class run along `±m`: parallel, no turn — the `0` bucket, where
         // `antiparallel` separates the π pole (same ruling, opposite travel).
@@ -1084,7 +1089,11 @@ fn ruling_line_turn(
             .unwrap_or(true),
         "a ruling direction on a class its axis does not lie in"
     );
-    let Some(n) = class_coeffs_rat(jd, carrier) else {
+    // ★ The **stored** spelling, like every factor the walk's atoms read (`arc_side`'s
+    // canonical→stored turn is measured-locked): `sense` is made against the stored frame, so
+    // the carrier coefficients here must be too — the canonical name opposes it on half the
+    // classes.
+    let Some(n) = stored_coeffs_rat(jd, carrier) else {
         return Err(reject(RejectReason::WitnessNotRational));
     };
     let dot = nacre_scalar::dot_sign_rat(&[n[0], n[1], n[2]], &r.axis);
@@ -1256,6 +1265,13 @@ pub(crate) struct TraceInput {
     /// its loops makes the length the number of faces actually traced, which is what lets a caller
     /// hand the tracer a *subset* without the table's size leaking into the cost.
     pub faces: [Vec<(usize, FaceLoops)>; 2],
+    /// **The population gate's own answer, carried — never re-derived** (M6-2 rulings ladder):
+    /// the `(plane class, cylinder class)` pairs the gate let through **without** proving the
+    /// class's faces clear of the lateral. The tracer's ruling and chord arms fire only on pairs
+    /// listed here. Today's gate refuses every such pair, so this is **always empty** in
+    /// production — the ladder's gate-opening cell fills it, and this field is the plumbing that
+    /// makes that a one-arm change rather than a second spelling of the wall rule.
+    pub crossings: std::collections::HashSet<(usize, usize)>,
 }
 
 /// Derive [`TraceInput`] for one boolean, once.
@@ -1263,6 +1279,7 @@ pub(crate) struct TraceInput {
 /// Walked exactly as the tracer walked: shell by shell, `surf_ix` naming each face's slot. That is
 /// what keeps the table's index space the `planes` one — a face missing from `surf_ix` cannot
 /// happen, since `surf_ix` was built from the same two solids.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn trace_input(
     model: &Model,
     operands: [(Handle<Solid>, &EdgeFaces); 2],
@@ -1270,6 +1287,7 @@ pub(crate) fn trace_input(
     n_faces: usize,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
+    crossings: std::collections::HashSet<(usize, usize)>,
 ) -> TraceInput {
     let _ = n_faces;
     let mut faces = [Vec::new(), Vec::new()];
@@ -1294,7 +1312,7 @@ pub(crate) fn trace_input(
             }
         }
     }
-    TraceInput { faces }
+    TraceInput { faces, crossings }
 }
 
 /// Each hole ring of face `f`, as three-plane triples.
@@ -3096,7 +3114,7 @@ fn dot3_rat(x: &[nacre_scalar::Rat; 3], y: &[nacre_scalar::Rat; 3]) -> Option<na
         .checked_add(x[2].checked_mul(y[2])?)
 }
 
-fn cross3_rat(
+pub(crate) fn cross3_rat(
     x: &[nacre_scalar::Rat; 3],
     y: &[nacre_scalar::Rat; 3],
 ) -> Option<[nacre_scalar::Rat; 3]> {
