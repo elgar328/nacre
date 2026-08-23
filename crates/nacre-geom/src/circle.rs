@@ -105,6 +105,23 @@ impl Circle {
         self.center + self.ref_dir * (self.radius * cos) + self.binormal() * (self.radius * sin)
     }
 
+    /// The angle θ ∈ [0, 2π) of `p`'s direction from the center — the inverse of
+    /// [`point_at`](Circle::point_at)'s parameterization (`atan2` of the projections onto the
+    /// two in-plane axes). `p` need not lie on the circle: the answer is the angle of its
+    /// in-plane direction, and a point on the axis (both projections zero) returns `0.0` by
+    /// `atan2`'s own convention rather than refusing — callers pass realized edge endpoints,
+    /// which the store guarantees off-axis.
+    ///
+    /// ★ This is what turns the arc convention (M6-2b: an edge's stored `[from, to]` order is
+    /// CCW about the axis) into numbers: consumers take `Δθ = (θ_to − θ_from).rem_euclid(τ)`
+    /// and never re-derive direction from anything else.
+    #[inline]
+    pub fn angle_of(self, p: Point3) -> f64 {
+        let w = p - self.center;
+        let theta = w.dot(self.binormal()).atan2(w.dot(self.ref_dir));
+        theta.rem_euclid(std::f64::consts::TAU)
+    }
+
     /// The parametric derivative `dP/dθ` at `theta`:
     /// `r·(−sin θ · ref_dir + cos θ · (normal × ref_dir))`.
     ///
@@ -160,6 +177,34 @@ mod tests {
     }
 
     // --- golden ---
+
+    /// `angle_of` is `point_at`'s inverse, on all four quadrants and on the seam — and it
+    /// answers for a point off the circle by its in-plane direction (a scaled point maps to the
+    /// same angle), which is how the arc consumers ask it about realized endpoints.
+    #[test]
+    fn angle_of_inverts_point_at() {
+        let c = Circle::from_center_normal(
+            Point3::from_array([1.0, -2.0, 0.5]),
+            Vector3::from_array([0.0, 3.0, 4.0]),
+            Vector3::from_array([1.0, 0.0, 0.0]),
+            2.5,
+        )
+        .unwrap();
+        for k in 0..8 {
+            let theta = std::f64::consts::TAU * (k as f64) / 8.0;
+            let back = c.angle_of(c.point_at(theta));
+            let diff = (back - theta).abs();
+            assert!(
+                diff < 1e-12 || (std::f64::consts::TAU - diff) < 1e-12,
+                "theta {theta} came back as {back}"
+            );
+        }
+        // Off-circle: the direction speaks, not the distance.
+        let p = c.center() + (c.point_at(1.0) - c.center()) * 0.25;
+        assert!((c.angle_of(p) - 1.0).abs() < 1e-12);
+        // The seam itself is angle zero, not 2π.
+        assert!(c.angle_of(c.point_at(0.0)) < 1e-15);
+    }
 
     #[test]
     fn unit_circle_basics() {

@@ -2197,13 +2197,47 @@ mod tests {
                 shell_faces, minted,
                 "the outer shell is exactly the boolean's minted faces"
             );
+            // ★★ **The arc integrals answer, on the garbage solid, with the stopper still up** —
+            // the volume is derived (plate 4·4·2 = 32, boss π·0.25·1, zero overlap: every
+            // fixture is a contact), so a wrong segment sign or scale moves an exact number.
+            let props = nacre_props::mass_props(&m, sh).expect("the mixed loops integrate");
+            let expect = 32.0 + std::f64::consts::PI / 4.0;
             assert!(
-                matches!(
-                    nacre_props::mass_props(&m, sh),
-                    Err(nacre_props::PropsError::UnsupportedBoundary)
-                ),
-                "the arc integrals are the green cell's door — recorded here"
+                (props.volume - expect).abs() < 1e-12,
+                "volume {} vs derived {expect}",
+                props.volume
             );
+            // ★ All three fixtures share that one number, so a global scale error fools them
+            // together — the straddling boss's two z = 2 faces split the segment **signs**: the
+            // plate top loses its half-disk bite (16 − π/8), the overhang digon *is* the other
+            // half-disk (π/8).
+            if origin == [4.0, 2.0, 2.0] {
+                let (mut top, mut digon) = (None, None);
+                for (h, f) in m.faces.iter().skip(faces_from) {
+                    let nacre_geom::Surface::Plane(p) = m.surface(f.surface) else {
+                        continue;
+                    };
+                    if (p.normal().as_array()[2] - 1.0).abs() > 1e-9 {
+                        continue;
+                    }
+                    match f.outer.half_edges.len() {
+                        2 => digon = Some(h),
+                        6 => top = Some(h),
+                        1 => {} // the boss's closed top cap
+                        n => panic!("an unexpected z-normal face with {n} half-edges"),
+                    }
+                }
+                let area = |h| nacre_props::face_props(&m, h).expect("planar").area;
+                let bite = std::f64::consts::PI / 8.0;
+                assert!(
+                    (area(top.expect("plate top")) - (16.0 - bite)).abs() < 1e-12,
+                    "the plate top loses its bite"
+                );
+                assert!(
+                    (area(digon.expect("overhang digon")) - bite).abs() < 1e-12,
+                    "the digon is the bite"
+                );
+            }
         }
     }
 

@@ -341,7 +341,62 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
             _ => Err(PropsError::UnsupportedBoundary),
         }
     } else {
-        Err(PropsError::UnsupportedBoundary)
+        // ★ **The mixed arm** (M6-2b): a loop of chords and circular arcs. The chord polygon is
+        // a signed fan from the first vertex; each arc half-edge then adds or removes its
+        // **circular segment** — area `r²(Δθ − sin Δθ)/2`, centroid `4r·sin³(Δθ/2) /
+        // (3(Δθ − sin Δθ))` out along the bisector — with Δθ read from the edge's stored
+        // `[from, to]` order (**CCW about the axis**, the M6-2b convention;
+        // [`Circle::angle_of`] is the one spelling of the angle) and the sign from which way
+        // this traversal walks it. A digon (chord + arc) is the degenerate case the fan
+        // contributes nothing to: one segment is the whole answer.
+        //
+        // Every contribution is scalarized on one reference normal — the first arc's circle
+        // normal, which is the cylinder axis and so collinear with the cap plane's normal
+        // either way up — so segments and fan combine by plain signs, and the signs cancel out
+        // of `moment / area` (the centroid is winding-independent, like the polygon road's).
+        let points = loop_points(model, outer)?;
+        let n_ref = outer
+            .half_edges
+            .iter()
+            .find_map(|&he| match edge_curve(model, he) {
+                Curve::Circle(c) => Some(c.normal()),
+                _ => None,
+            })
+            .ok_or(PropsError::UnsupportedBoundary)?;
+        let base = points[0];
+        let mut area = 0.0;
+        let mut moment = Vector3::zero(); // Σ aᵢ·(cᵢ − base)
+        for i in 1..points.len().saturating_sub(1) {
+            let (u, v) = (points[i] - base, points[i + 1] - base);
+            let a = 0.5 * u.cross(v).dot(n_ref);
+            area += a;
+            // (base + pᵢ + pᵢ₊₁)/3 − base = (u + v)/3.
+            moment += (u + v) * (a / 3.0);
+        }
+        for he in &outer.half_edges {
+            let Curve::Circle(c) = edge_curve(model, *he) else {
+                continue;
+            };
+            let [va, vb] = model.edges.get(he.edge).vertices;
+            let t0 = c.angle_of(model.vertex_point(va));
+            let t1 = c.angle_of(model.vertex_point(vb));
+            let dt = (t1 - t0).rem_euclid(std::f64::consts::TAU);
+            let seg = 0.5 * c.radius() * c.radius() * (dt - dt.sin());
+            if seg <= 0.0 {
+                continue; // a degenerate (closed or zero) span contributes nothing
+            }
+            let sign = if he.forward { 1.0 } else { -1.0 } * c.normal().dot(n_ref).signum();
+            let dist = 4.0 * c.radius() * (0.5 * dt).sin().powi(3) / (3.0 * (dt - dt.sin()));
+            let dir = (c.point_at(t0 + 0.5 * dt) - c.center()) * (1.0 / c.radius());
+            let c_seg = c.center() + dir * dist;
+            area += sign * seg;
+            moment += (c_seg - base) * (sign * seg);
+        }
+        if area == 0.0 {
+            return Err(PropsError::UnsupportedBoundary);
+        }
+        let centroid = base + moment * (1.0 / area);
+        Ok((area.abs(), centroid))
     }
 }
 
