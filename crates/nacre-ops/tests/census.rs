@@ -934,6 +934,108 @@ fn dump() {
             record(&format!("trc onaxis {kn}"), &m, &inputs, &out);
         }
     }
+    // ── **A grid built in two generations** (`xy`): an array joined along x, then joined again
+    // along y. What makes this its own population is not the second axis but the second
+    // *generation* — a row is a body whose surfaces come from two provenances, so moving it puts
+    // carriers with different chains on one corner, and the corner road answers those in the
+    // world (no shared frame exists to answer them in). The `ct2` family above never reaches it:
+    // there each cell is *built* at its place, so nothing carries a chain at all.
+    //
+    // The cells are deliberately feature-poor (one bore) — this table runs twice at every gate,
+    // and the user-scale cell costs tens of seconds. What the rows have to pin is the road, and
+    // one bore already puts a cylinder gate on a twice-moved wall.
+    {
+        let cell = |m: &mut Model| {
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([20.0, 20.0, 10.0]),
+            );
+            let bore = m.add_cylinder(
+                Point3::from_array([6.3, 6.3, -1.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                2.1,
+                12.0,
+            );
+            m.rebuild_adjacency();
+            let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+            m.rebuild_adjacency();
+            out
+        };
+        let row = |m: &mut Model, n: usize, step: [f64; 3]| {
+            let mut acc = cell(m);
+            for i in 1..n {
+                let c = cell(m);
+                let c = xf(
+                    m,
+                    c,
+                    Isometry::translation(
+                        step.map(|v| Rat::try_from_f64(v * i as f64).expect("rational")),
+                    ),
+                );
+                acc = boolean(m, BoolKind::Fuse, acc, c).expect("the row fuses")[0];
+                m.rebuild_adjacency();
+            }
+            acc
+        };
+        // x-then-y and y-then-x: the same grid by two routes. The second row is a *moved result*,
+        // which is the shape the third door exists for.
+        for (an, first, second) in [
+            ("grid", [20.0, 0.0, 0.0], [0.0, 20.0, 0.0]),
+            ("yx", [0.0, 20.0, 0.0], [20.0, 0.0, 0.0]),
+        ] {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let a = row(&mut m, 2, first);
+                let b = row(&mut m, 2, first);
+                let b = xf(
+                    &mut m,
+                    b,
+                    Isometry::translation(second.map(|v| Rat::try_from_f64(v).expect("rational"))),
+                );
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("xy {an} {kn}"), &m, &inputs, &out);
+            }
+        }
+        // Three in x, then y: the moved row carries three chains, not two.
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let a = row(&mut m, 3, [20.0, 0.0, 0.0]);
+            let b = row(&mut m, 3, [20.0, 0.0, 0.0]);
+            let b = xf(
+                &mut m,
+                b,
+                Isometry::translation(
+                    [0.0, 20.0, 0.0].map(|v: f64| Rat::try_from_f64(v).expect("rational")),
+                ),
+            );
+            let inputs = operands(&m, a, b);
+            let out = boolean(&mut m, k, a, b);
+            m.rebuild_adjacency();
+            record(&format!("xy three {kn}"), &m, &inputs, &out);
+        }
+        // The negative control: a turned row has no world statement, so it must keep taking the
+        // old roads — a rotation does not fold into a translation and this door never opens for it.
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let a = row(&mut m, 2, [20.0, 0.0, 0.0]);
+            let b = row(&mut m, 2, [20.0, 0.0, 0.0]);
+            let b = xf(
+                &mut m,
+                b,
+                Isometry::rotation(Rotation {
+                    axis: Axis::Z,
+                    point: [Rat::from_int(0); 3],
+                    angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
+                }),
+            );
+            let inputs = operands(&m, a, b);
+            let out = boolean(&mut m, k, a, b);
+            m.rebuild_adjacency();
+            record(&format!("xy turned {kn}"), &m, &inputs, &out);
+        }
+    }
     // ── **A datum through a turned solid's corners, and a boolean over it** (`dt`).
     //
     // ★★★★★ **This family exists because its absence hid a regression for 169 commits.** Every
