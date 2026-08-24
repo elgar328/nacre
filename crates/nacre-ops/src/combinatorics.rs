@@ -1075,12 +1075,10 @@ pub(crate) fn turn(
 /// `turn(line, ruling)` with the line's sense factored out — the `−sign(m · n_carrier)` the
 /// derivation above collapses to, times the ruling's travel.
 ///
-/// ★ **The overall sign is measured-invisible today** (2026-08-24 self-check): negating it
-/// leaves the whole crate green — the walk tries both handednesses and absorbs a global flip
-/// (`arc_side`'s first table row, same mechanism), and the armed lock's winding extreme lands
-/// on chord corners rather than ruling ones. Until a panel population reads it (the ladder's
-/// emission cell), the sign stands on the BAC-CAB derivation alone — recorded rather than
-/// hidden, the `DegenerateWitness` precedent.
+/// ★ **The overall sign is measured** (cell 4): negating it turns the through-boss volume
+/// oracles red (all five production fixtures) — the watcher the 2026-08-24 self-check said was
+/// missing. It stood on the BAC-CAB derivation alone while the walk's both-handedness try
+/// absorbed a global flip; the panel population reads it for real now.
 fn ruling_line_turn(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,

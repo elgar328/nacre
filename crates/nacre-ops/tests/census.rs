@@ -739,6 +739,39 @@ fn dump() {
             m.rebuild_adjacency();
             record(&format!("arc bored straddle {kn}"), &m, &inputs, &out);
         }
+        // ── **The rulings road** (cell 4, the gate's record-and-pass arm): a boss whose axis
+        // lies exactly on the plate's wall plane builds (through, the corner's two walls, an
+        // asymmetric station); the arm's deliberate exclusions record their refusals — offset
+        // (`0 < d < r`) and tangent (`d = r`) keep `WallMeetsLateral` at the gate, the
+        // half-height and flush-cap variants walk to the ladder's own refusals.
+        for (pn, base, h) in [
+            ("through", [40.0, 20.0, -10.0], 50.0),
+            ("corner", [40.0, 40.0, -10.0], 50.0),
+            ("offmid", [40.0, 10.0, -10.0], 50.0),
+            ("offset", [38.0, 20.0, -10.0], 50.0),
+            ("tangent", [35.0, 20.0, -10.0], 50.0),
+            ("half", [40.0, 20.0, -10.0], 20.0),
+            ("flush", [40.0, 20.0, 0.0], 20.0),
+        ] {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let a = m.add_cuboid(
+                    Point3::from_array([0.0; 3]),
+                    Point3::from_array([40.0, 40.0, 20.0]),
+                );
+                let b = m.add_cylinder(
+                    Point3::from_array(base),
+                    Vector3::from_array([0.0, 0.0, 1.0]),
+                    5.0,
+                    h,
+                );
+                m.rebuild_adjacency();
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("rul {pn} {kn}"), &m, &inputs, &out);
+            }
+        }
     }
     // ── **A datum through a turned solid's corners, and a boolean over it** (`dt`).
     //

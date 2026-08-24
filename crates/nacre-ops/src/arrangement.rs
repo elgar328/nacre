@@ -394,9 +394,11 @@ fn chords_to_segs(
         // made against stored frames, and the canonical name opposes it on half the classes
         // (measured: the z = −10 cap's chord flipped its overhang's winding while the z = 40
         // cap's was right — the very half-and-half the `stored_coeffs_rat` lesson names).
-        // ★ The `wc` factor below is exercised only on classes whose stored spelling agrees
-        // with the canonical one (the armed fixture's x = 40 does); a wall class where they
-        // oppose has no fixture yet — the gate-opening cell's notch population widens this.
+        // ★ The global sense flip is watched (cell 4: it turns the through-boss volume
+        // oracles red); the `wc` **half** alone is still lock-invisible — substituting the
+        // stored spelling for the canonical one here leaves all five fixtures green (probed,
+        // cell 4) — so that half stands on the convention argument, recorded rather than
+        // assumed.
         let v = combinatorics::stored_coeffs_rat(jd, c.wall).ok_or_else(undecided)?;
         let (line, _) = combinatorics::branch_meet(jd, c.cyl, &cyls[c.cyl].def, c.end[0])
             .ok_or_else(undecided)?;
@@ -4211,9 +4213,9 @@ fn emit_faces(
     // ★ **What that measurement pinned, and what still watches it.** The rule was set by label
     // *content* (only the disk-side cell carries the cylinder solid's own material bits), which
     // is an absolute check — but the standing lock's sector assertions are relative (fuse/cut
-    // complementary), so a *global* flip of this selector passes them (probed: it does). Like
-    // the panel ring's winding and the ruling turn's sign, the absolute side is the
-    // gate-opening cell's volume oracles' to watch.
+    // complementary), so a *global* flip of this selector passes them (probed: it does). The
+    // absolute side is watched now (cell 4): flipping this selector turns the through-boss
+    // volume oracles red — like the panel ring's winding and the ruling turn's sign.
     let ns_arcs = 2 * edges.segs.len();
     let arc_labels = edges
         .arcs

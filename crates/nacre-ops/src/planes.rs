@@ -829,8 +829,9 @@ pub(crate) struct WorkingCyl {
 ///   cylinder occupies in that plane. The infinite plane clearing the axis by more than `r`
 ///   (`(n·o + d)² > r²·|n|²`) settles it outright and decides most inputs; otherwise each face on
 ///   the class answers for itself, across the strip or along a lateral face's span
-///   ([`face_clears_footprint`]). A face not shown to miss is
-///   [`RejectReason::WallMeetsLateral`] (M6-2b's rulings and arcs).
+///   ([`face_clears_footprint`]). A face not shown to miss either rides the rulings road — the
+///   axis lies exactly on the wall's plane, the pair **recorded and passed** — or is
+///   [`RejectReason::WallMeetsLateral`] (tangency, offset crossings, the unproven).
 /// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3).
 ///
 /// Per cylinder pair: axes clear of each other (`dist > r₁+r₂`, whatever their orientation)
@@ -850,6 +851,7 @@ pub(crate) fn cylinder_gate(
     use nacre_scalar::Orient;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
 
+    let mut crossings = std::collections::HashSet::new();
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
     for &surf in cyl_surfs {
         let nacre_topo::SurfaceTruth::Cylinder { def, motion } = model.surface_truth(surf) else {
@@ -880,7 +882,7 @@ pub(crate) fn cylinder_gate(
         "the cylinder class table is index-aligned with the class numbering"
     );
 
-    for cyl in cyls.iter() {
+    for (ci, cyl) in cyls.iter().enumerate() {
         let (o, m, r) = (cyl.def.origin(), cyl.def.dir(), cyl.def.radius());
         // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
         // not depend on the plane class the loop below walks, but almost no boolean ever asks for
@@ -940,7 +942,32 @@ pub(crate) fn cylinder_gate(
                     }
                     let spans = spans.get_or_insert_with(|| lateral_spans(faces, cyl.surf));
                     if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r, spans)? {
-                        return Err(reject(RejectReason::WallMeetsLateral));
+                        // ★ **The record-and-pass arm** (rulings ladder, cell 4): a wall whose
+                        // axis lies exactly *on* it (`n·o + d = 0` — clearance against a zero
+                        // radius, the same total spelling as the test above) is the population
+                        // the rulings machinery serves, measured end to end: through, corner
+                        // (two walls), asymmetric — all assemble, validate clean, and answer
+                        // the exact volume oracles. It passes with the pair recorded; the
+                        // tracer's ruling/chord arms fire only on recorded pairs.
+                        //
+                        // Everything else keeps this refusal, each measured lifted: a
+                        // **tangent** wall (distance exactly r) *assembles* a volume-correct
+                        // solid whose lateral touches the wall along a ruling — zero-thickness
+                        // contact validate cannot see (its pinch detectors abstain on
+                        // cylinders), so the honest place to stop it is here, by its name; an
+                        // **offset** crossing (0 < distance < r, cell D's irrational rulings)
+                        // walks to the assembly's closed-shell guard and comes back
+                        // `OpenResultShell` — a SuspectedDefect label an honest input must not
+                        // wear.
+                        if nacre_scalar::point_plane_clearance_rat(
+                            &coeffs,
+                            &o,
+                            nacre_scalar::Rat::from_int(0),
+                        ) != Orient::Zero
+                        {
+                            return Err(reject(RejectReason::WallMeetsLateral));
+                        }
+                        crossings.insert((c, ci));
                     }
                 }
             }
@@ -968,10 +995,10 @@ pub(crate) fn cylinder_gate(
             }
         }
     }
-    // ★ The rulings road's record rides out beside the table — empty until the gate-opening
-    // cell adds the arm that puts a not-proven-clear pair here instead of refusing it
-    // (`PlaneSetup::crossings`).
-    Ok((cyls, std::collections::HashSet::new()))
+    // The rulings road's record rides out beside the table (`PlaneSetup::crossings`): the
+    // pairs the record-and-pass arm above admitted without a clearance proof. Empty for every
+    // population outside the rulings road.
+    Ok((cyls, crossings))
 }
 
 /// **Does every face on plane class `c` provably miss this cylinder?** — the boundary question

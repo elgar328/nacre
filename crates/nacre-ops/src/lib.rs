@@ -637,9 +637,13 @@ pub enum RejectReason {
     /// rational construction (`crate::exact`) left it exactly where it was.
     FourPlane,
     /// A wall parallel to a cylinder's axis **could not be shown to stand clear** of its lateral
-    /// surface. Where a wall really does cross it, the crossing makes Branch vertices and
-    /// angular-partial faces — M6-2b's machinery (rulings, arcs, the chart arrangement) — and the
-    /// M6-2a population gate holds that by name until then.
+    /// surface — and is not the one crossing the rulings road builds. A wall whose axis lies
+    /// exactly on it is recorded and passed (the rulings ladder: Branch vertices, θ-panels,
+    /// the through-boss family — assembled, validated, and volume-exact). What keeps this name:
+    /// a **tangent** wall (distance exactly `r` — lifting it assembles a volume-correct solid
+    /// whose lateral touches the wall along a ruling, zero-thickness contact `validate` cannot
+    /// see, so the gate is the honest stop), an **offset** crossing (`0 <` distance `< r`,
+    /// cell D's irrational ruling lines), and a face no sufficient condition cleared.
     ///
     /// ★ **"Could not be shown", not "touches or pierces".** The gate's tests are *sufficient*
     /// conditions for clearance, so failing them is not evidence of a meeting: a face may miss the
@@ -807,12 +811,14 @@ pub enum RejectReason {
     ArcBoundNotYet,
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
     /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and
-    /// carriers), so what remains under this name are the ladder's standing guards: a class
+    /// carriers) and the gate's record-and-pass arm opened (cell 4), so this name is now
+    /// **reachable from production**; its measured population is a boss whose **cap sits
+    /// inside the other body's material** (the half-height and seated variants — the chamber
+    /// has no sector answer for such an end). The other standing guards keep it too: a class
     /// carrying both circles and rulings (the cross-axis pair), rims cut by different walls
     /// (no `(wall, root)` pairing), sector labels missing or disagreeing, a segment lying *on*
     /// the lateral, and end names that share no single plane. [`Self::ArcBoundNotYet`]'s
-    /// straight sibling; unreachable while the population gate
-    /// ([`Self::WallMeetsLateral`]) stands.
+    /// straight sibling.
     RulingBoundNotYet,
     /// **A loop's winding had to be read across a *curved* straight stretch.**
     ///

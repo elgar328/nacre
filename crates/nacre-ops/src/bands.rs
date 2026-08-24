@@ -310,10 +310,9 @@ fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Option<Rat
 /// ruling]` (`Wall::Arc`/`Wall::Ruling`) — not a `Band`: a band's boundary is two whole
 /// circles, a panel's is four pieces.
 ///
-/// ★ **The ring's absolute winding is unmeasured here** (the node order below is one fixed
-/// deterministic convention): like the ruling turn's global sign, the assembly and the volume
-/// oracles of the gate-opening cell are the instruments that can see it — recorded rather than
-/// assumed.
+/// ★ **The ring's absolute winding is measured** (cell 4): flipping the emitted orientation
+/// (`flip`) turns the through-boss volume oracles red — the watcher this note used to say was
+/// still to come.
 #[allow(clippy::too_many_arguments)]
 fn panel_faces(
     kind: BoolKind,
@@ -978,6 +977,118 @@ mod tests {
         let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
         let want = 216.0 - 64.0 - std::f64::consts::PI * 0.25;
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+    }
+
+    /// One rulings-road boolean on the 40×40×20 plate, end to end on the production road:
+    /// build, retire the operands, validate clean, answer the exact volume, tessellate
+    /// watertight. The volume oracle is what finally *measures* the ladder's sign roster —
+    /// a flipped panel winding, disk-side selector, ruling turn or chord sense moves it.
+    fn through_boss_builds(kind: BoolKind, base: [f64; 3], want: f64) {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 40.0, 20.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array(base),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            5.0,
+            50.0,
+        );
+        m.rebuild_adjacency();
+        let out = crate::boolean(&mut m, kind, plate, boss).expect("the rulings road builds");
+        assert_eq!(out.len(), 1, "one solid");
+        m.rebuild_adjacency();
+        assert_eq!(m.live_solids, out, "the operands retired, the result lives");
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{issues:?}");
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+            .expect("the panels tessellate");
+        let mut uses: std::collections::HashMap<(u32, u32), usize> =
+            std::collections::HashMap::new();
+        for (_, tri) in mesh.triangles.iter() {
+            for k in 0..3 {
+                let (a, b) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+                *uses.entry((a.min(b), a.max(b))).or_default() += 1;
+            }
+        }
+        assert_eq!(
+            uses.values().filter(|&&n| n != 2).count(),
+            0,
+            "the mesh is watertight"
+        );
+    }
+
+    /// ★ **The through-boss builds** — the rulings ladder's milestone: a boss standing through
+    /// the plate's wall (axis exactly on the `x = 40` plane), the app-measured refusal that
+    /// opened M6-2's remainder. Fuse keeps the outer half (plate + the boss outside it), cut
+    /// carves the notch, common keeps the inner half-cylinder — each an exact closed form, and
+    /// the three exercise both complementary θ-sectors.
+    #[test]
+    fn a_through_boss_fuses() {
+        let pi = std::f64::consts::PI;
+        through_boss_builds(BoolKind::Fuse, [40.0, 20.0, -10.0], 32000.0 + 1000.0 * pi);
+    }
+
+    #[test]
+    fn a_through_boss_cuts_a_notch() {
+        let pi = std::f64::consts::PI;
+        through_boss_builds(BoolKind::Cut, [40.0, 20.0, -10.0], 32000.0 - 250.0 * pi);
+    }
+
+    #[test]
+    fn a_through_boss_common_is_the_inner_half() {
+        let pi = std::f64::consts::PI;
+        through_boss_builds(BoolKind::Common, [40.0, 20.0, -10.0], 250.0 * pi);
+    }
+
+    /// ★ A boss on the plate's **corner** — its axis on *two* wall planes, both recorded, each
+    /// circle cut by both walls: the rim pairing (`(wall class, root)`) and the θ-panel
+    /// machinery quarter the lateral. Measured to assemble in the lift probe; the volume pins
+    /// it (plate + three quarters of the cylinder outside).
+    #[test]
+    fn a_corner_boss_fuses() {
+        let pi = std::f64::consts::PI;
+        through_boss_builds(BoolKind::Fuse, [40.0, 40.0, -10.0], 32000.0 + 1125.0 * pi);
+    }
+
+    /// ★ The populations the record-and-pass arm deliberately keeps out, refusing by today's
+    /// names — each measured lifted before the arm was shaped: a **tangent** wall (distance
+    /// exactly `r`) assembles a volume-correct zero-thickness pinch `validate` cannot see; an
+    /// **offset** crossing (`0 <` distance `< r`) walks to `OpenResultShell`, a
+    /// SuspectedDefect label an honest input must not wear; a **half-height** boss's upper cap
+    /// sits inside the plate's material, which the chamber has no sector answer for — the
+    /// ladder's own name. The live set survives every refusal.
+    #[test]
+    fn the_gate_still_refuses_what_the_road_does_not_serve() {
+        for (base, h, want) in [
+            ([38.0, 20.0, -10.0], 50.0, RejectReason::WallMeetsLateral),
+            ([35.0, 20.0, -10.0], 50.0, RejectReason::WallMeetsLateral),
+            ([40.0, 20.0, -10.0], 20.0, RejectReason::RulingBoundNotYet),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([40.0, 40.0, 20.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array(base),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                5.0,
+                h,
+            );
+            m.rebuild_adjacency();
+            let live = m.live_solids.clone();
+            let err =
+                crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect_err("outside the road");
+            let BoolError::Rejected { reason, .. } = err else {
+                panic!("a rejection, not {err:?}");
+            };
+            assert_eq!(reason, want, "{base:?} h {h}");
+            assert_eq!(m.live_solids, live, "the live set survives the refusal");
+        }
     }
 
     /// **The straddling boss builds.** The M6-2b milestone fence: a boss hanging over the
