@@ -472,9 +472,14 @@ fn triangulate_cylinder(
 
     // One rim as a CCW ring with an ascending θ per vertex, anchored at its θ-minimal vertex.
     // A near-seam angle that rounds to just under τ is folded to just under 0 first, so the
-    // seam vertex anchors the ring whichever side of θ = 0 it realized on.
+    // seam vertex anchors the ring whichever side of θ = 0 it realized on. An **open** chain
+    // (a θ-panel's rim — the rulings ladder) comes back `(ring, false)`: walked from its one
+    // loose start in chain order, θ unwrapped **along the chain** rather than anchored — a
+    // panel's sector may cross the seam (the through-boss's outer panel does), and rotating to
+    // the θ-minimal vertex would tear such a chain in two.
     let ring_of = |t: &Tessellation, c: &nacre_geom::Circle, edges: &[Handle<Edge>]| {
         let mut ring: Vec<Handle<TessVertex>> = Vec::new();
+        let mut closed = true;
         if edges.len() == 1
             && model.edges.get(edges[0]).vertices[0] == model.edges.get(edges[0]).vertices[1]
         {
@@ -488,23 +493,40 @@ fn triangulate_cylinder(
                 let poly = &t.by_edge[e];
                 by_start.insert(poly[0], poly);
             }
-            let mut cur = *by_start.keys().next().expect("a rim has arcs");
-            // Deterministic start: the handle-minimal polyline start.
-            for &s in by_start.keys() {
-                if s.index() < cur.index() {
-                    cur = s;
+            let is_end = |h: Handle<TessVertex>| {
+                edges
+                    .iter()
+                    .any(|e| *t.by_edge[e].last().expect("arc polylines have two ends") == h)
+            };
+            // The chain's loose start — a polyline start no polyline ends on. None: the rim
+            // is closed, walk from the handle-minimal start (deterministic). One: an open
+            // sector, walk from it and keep the final endpoint.
+            let loose: Vec<_> = by_start.keys().copied().filter(|&s| !is_end(s)).collect();
+            let mut cur = match loose.as_slice() {
+                [] => *by_start
+                    .keys()
+                    .min_by_key(|h| h.index())
+                    .expect("a rim has arcs"),
+                [s] => {
+                    closed = false;
+                    *s
                 }
-            }
+                _ => unreachable!("a rim is one closed or one open chain"),
+            };
             let chain_start = cur;
             for _ in 0..edges.len() {
                 let poly = by_start[&cur];
                 ring.extend(&poly[..poly.len() - 1]);
                 cur = *poly.last().expect("arc polylines have two ends");
             }
-            debug_assert_eq!(
-                cur, chain_start,
-                "the rim's arcs chain into one closed ring"
-            );
+            if closed {
+                debug_assert_eq!(
+                    cur, chain_start,
+                    "the rim's arcs chain into one closed ring"
+                );
+            } else {
+                ring.push(cur); // an open chain keeps its final endpoint
+            }
         }
         let mut with_theta: Vec<(f64, Handle<TessVertex>)> = ring
             .iter()
@@ -518,25 +540,54 @@ fn triangulate_cylinder(
                 (th, h)
             })
             .collect();
-        // Rotate to the θ-minimal vertex, then unwrap so θ ascends along the ring.
-        let start = with_theta
-            .iter()
-            .enumerate()
-            .min_by(|a, b| a.1.0.partial_cmp(&b.1.0).expect("finite angles"))
-            .map(|(i, _)| i)
-            .expect("a rim has vertices");
-        with_theta.rotate_left(start);
+        if closed {
+            // Rotate to the θ-minimal vertex, then unwrap so θ ascends along the ring.
+            let start = with_theta
+                .iter()
+                .enumerate()
+                .min_by(|a, b| a.1.0.partial_cmp(&b.1.0).expect("finite angles"))
+                .map(|(i, _)| i)
+                .expect("a rim has vertices");
+            with_theta.rotate_left(start);
+        }
         for i in 1..with_theta.len() {
             if with_theta[i].0 < with_theta[i - 1].0 {
                 with_theta[i].0 += std::f64::consts::TAU;
             }
         }
-        with_theta
+        (with_theta, closed)
     };
     let (_, ref c_lo, ref e_lo) = rims[0];
     let (_, ref c_hi, ref e_hi) = rims[1];
-    let a = ring_of(t, c_lo, e_lo);
-    let b = ring_of(t, c_hi, e_hi);
+    let (a, a_closed) = ring_of(t, c_lo, e_lo);
+    let (b, b_closed) = ring_of(t, c_hi, e_hi);
+    debug_assert_eq!(a_closed, b_closed, "a lateral face's rims agree in kind");
+
+    if !a_closed {
+        // ★ The **open** merge (a θ-panel): the same θ-race, but neither chain wraps — the
+        // strip ends at the last pair, whose side (like the first pair's) is the ruling edge's
+        // own two-point polyline, so the boundary is crack-free by shared handles.
+        let (n, m) = (a.len(), b.len());
+        let (mut i, mut j) = (0usize, 0usize);
+        while i < n - 1 || j < m - 1 {
+            let (ai, bj) = (a[i].1, b[j].1);
+            let advance_b = if i >= n - 1 {
+                true
+            } else if j >= m - 1 {
+                false
+            } else {
+                b[j + 1].0 <= a[i + 1].0
+            };
+            if advance_b {
+                push_tri(t, fh, [ai, b[j + 1].1, bj]);
+                j += 1;
+            } else {
+                push_tri(t, fh, [ai, a[i + 1].1, bj]);
+                i += 1;
+            }
+        }
+        return;
+    }
 
     // The merge: from corner (aᵢ, bⱼ), spend whichever ring's next vertex comes first in θ
     // (the upper rim on a tie — the old quad split's diagonal), wrapping each ring once.

@@ -7994,6 +7994,26 @@ mod tests {
         );
     }
 
+    /// ★ **The armed solid tessellates watertight** (rulings ladder, cell 4 — the tess
+    /// instrument): the open-rim merge triangulates the θ-panels of the assembled through-boss
+    /// fuse — the outer panel's rims are two arcs split at the seam vertex, so this one solid
+    /// exercises the multi-polyline open chain *and* the seam-crossing unwrap — and every
+    /// undirected triangle edge is used exactly twice.
+    #[test]
+    fn the_armed_solid_tessellates_watertight() {
+        let (m, _setup, _wc) = armed_assembled_through_boss();
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).unwrap();
+        let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
+        for (_, tri) in mesh.triangles.iter() {
+            for k in 0..3 {
+                let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+                *uses.entry((x.min(y), x.max(y))).or_default() += 1;
+            }
+        }
+        let open = uses.values().filter(|&&n| n != 2).count();
+        assert_eq!(open, 0, "the mesh is watertight");
+    }
+
     /// **The mixed parity reads a bitten ring — exactly, on the production pieces.**
     ///
     /// The straddling boss cuts the plate-top ring at `(40, 15)` and `(40, 25)`, so that ring
