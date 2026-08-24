@@ -941,6 +941,40 @@ impl Model {
         self.chain_fixes(leaf, coeffs, false)
     }
 
+    /// **The single rational translation `leaf`'s whole chain amounts to**, or `None` when the
+    /// chain is anything else — the third question of this family, and the one that lets a
+    /// *moved* statement be restated in the world exactly.
+    ///
+    /// A rational translation maps a rational statement to a rational statement, so a chain made
+    /// only of [`Motion::Translate`] nodes loses nothing: a plane's `d` shifts by `−n·t`
+    /// ([`nacre_scalar::Isometry::plane_coeffs`]), a cylinder's origin by `+t`. What such a move
+    /// *does* lose is the exactness of the `f64` **cache** — which is why the producer still
+    /// records the node (`transform`'s `motion_is_exact`, and `nacre-ops`' reuse road reads a
+    /// world-stated carrier's coordinate as the statement itself). So this answers a question
+    /// about *descriptions*, for the per-operation mirrors that carry them; it does not license
+    /// dropping the history.
+    ///
+    /// ★ **The parent chain is walked raw, so a [`Motion::Frame`] node refuses outright.** A
+    /// frame's expansion can come back as translations, and a statement written *under* a frame
+    /// is in that frame's coordinates — folding those as world translations is a different
+    /// question. Translations commute and compose by addition, so no order is implied here.
+    /// `None` on overflow too (checked throughout).
+    pub fn chain_translation(&self, leaf: Handle<MotionNode>) -> Option<[nacre_scalar::Rat; 3]> {
+        let mut total = [nacre_scalar::Rat::from_int(0); 3];
+        let mut cur = Some(leaf);
+        while let Some(h) = cur {
+            let node = self.motion(h);
+            let Motion::Translate { offset } = node.motion else {
+                return None;
+            };
+            for (o, t) in total.iter_mut().zip(offset) {
+                *o = o.checked_add(t)?;
+            }
+            cur = node.parent;
+        }
+        Some(total)
+    }
+
     /// The strict twin: every node carries the plane's **coefficient row verbatim**, not merely
     /// the set. The one place they part is a mirror whose plane is the carrier itself (`n ∥ axis`,
     /// on-plane): the set maps to itself but the row comes back negated — harmless to a Cramer

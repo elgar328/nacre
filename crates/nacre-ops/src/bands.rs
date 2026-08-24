@@ -107,9 +107,17 @@ pub(crate) fn cyl_rows(
                 face: cf.face,
             }));
         };
+        // A lateral with no world statement declines the same way a missing span does — the
+        // band pass compares against world planes throughout.
+        let Some(def) = cf.def.clone() else {
+            return Err(reject(RejectReason::TraceDeclined {
+                kind: crate::DeclineKind::CylSpan,
+                face: cf.face,
+            }));
+        };
         out.push(CylRow {
             class: k,
-            def: cf.def.clone(),
+            def,
             span,
             side: if i < n_a { SolidSide::A } else { SolidSide::B },
         });

@@ -1250,8 +1250,13 @@ fn circle_on_class(
     if wp.rotated {
         return Err(DeclineKind::CylSpan);
     }
+    // No world statement for this lateral (a rotated or frame-borne truth): the same decline
+    // the class side makes — both sides of this comparison have to speak about the world.
+    let Some(def) = cf.def.as_ref() else {
+        return Err(DeclineKind::CylSpan);
+    };
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let m = cf.def.dir();
+    let m = def.dir();
     // ⊥ to the axis, decided **totally** (`parallel_rat` clears denominators and answers in
     // integers, so this cannot decline for want of bits). A non-⊥ class carries no circle at
     // all — a miss, like a parallel plane, not a decline.
@@ -1261,7 +1266,7 @@ fn circle_on_class(
     let Some(span) = cf.span else {
         return Err(DeclineKind::CylSpan);
     };
-    let Some(t) = crate::planes::axis_param_of_plane(&coeffs, &cf.def) else {
+    let Some(t) = crate::planes::axis_param_of_plane(&coeffs, def) else {
         return Err(DeclineKind::CylSpan);
     };
     if span[0] < t && t < span[1] {
@@ -1279,7 +1284,7 @@ fn circle_on_class(
     //
     // Which side the body is on: the face runs from `span[0]` toward `span[1]`, so at the low rim
     // it lies toward `+t` and at the high rim toward `−t`.
-    let up = crate::planes::plus_t_is_above(wp, &cf.def);
+    let up = crate::planes::plus_t_is_above(wp, def);
     if t == span[0] {
         return Ok(Some(CylOnClass::Grazes { body_above: up }));
     }
@@ -1324,7 +1329,10 @@ fn chord_on_class(
     else {
         return Err(DeclineKind::Ruling);
     };
-    match class_through_axis(&w, &cf.def) {
+    let Some(def) = cf.def.as_ref() else {
+        return Err(DeclineKind::Ruling);
+    };
+    match class_through_axis(&w, def) {
         Some(true) => {}
         Some(false) => return Ok(None),
         None => return Err(DeclineKind::Ruling),
@@ -1332,7 +1340,7 @@ fn chord_on_class(
     let Some(v) = combinatorics::class_coeffs_rat(jd, fc) else {
         return Err(DeclineKind::Ruling);
     };
-    let (o, m, r) = (cf.def.origin(), cf.def.dir(), cf.def.radius());
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
     let Some(CylinderMeet::Pair { .. }) =
         nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
     else {
@@ -1439,7 +1447,10 @@ fn rulings_on_class(
     let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
         return Ok(None); // no exact description: the circle road's own decline covers ⊥ classes
     };
-    match class_through_axis(&w, &cf.def) {
+    let Some(def) = cf.def.as_ref() else {
+        return Err(DeclineKind::Ruling);
+    };
+    match class_through_axis(&w, def) {
         Some(true) => {}
         Some(false) => return Ok(None),
         None => return Err(DeclineKind::Ruling),
@@ -1447,12 +1458,12 @@ fn rulings_on_class(
     let Some(span) = cf.span else {
         return Err(DeclineKind::Ruling);
     };
-    let (o, m, r) = (cf.def.origin(), cf.def.dir(), cf.def.radius());
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
     // One rim end at a time: the ⊥ class holding the rim, and the two branch points the class
     // pair `{wc, rim}` cuts on the cylinder — each assigned to its ruling by side.
     let mut ends: Vec<[(i8, NodeId); 2]> = Vec::with_capacity(2);
     for t in [&span[0], &span[1]] {
-        let Some(rc) = rim_class_at(jd, &cf.def, t) else {
+        let Some(rc) = rim_class_at(jd, def, t) else {
             return Err(DeclineKind::Ruling);
         };
         let Some(v) = combinatorics::class_coeffs_rat(jd, rc) else {
@@ -1468,7 +1479,7 @@ fn rulings_on_class(
             (nacre_topo::QuadRoot::Lo, &s[0]),
             (nacre_topo::QuadRoot::Hi, &s[1]),
         ] {
-            let Some(side) = ruling_side(&w, &cf.def, (&line, sv)) else {
+            let Some(side) = ruling_side(&w, def, (&line, sv)) else {
                 return Err(DeclineKind::Ruling);
             };
             pair.push((side, combinatorics::NodeId::branch(wc, rc, k, root)));

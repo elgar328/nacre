@@ -89,9 +89,12 @@ pub(crate) struct CylFaceInfo {
     pub(crate) orient_sign: i8,
     /// The motion-history leaf of the cylinder's truth, `None` for a constructed one.
     pub(crate) motion: Option<Handle<nacre_topo::MotionNode>>,
-    /// The cylinder's exact statement — cloned here so the tracer (which works off the face
-    /// table, never the `Model`) can ask ⊥-ness and axis parameters.
-    pub(crate) def: nacre_topo::CylinderDef,
+    /// The cylinder's exact statement **in the world** — cloned here so the tracer (which works
+    /// off the face table, never the `Model`) can ask ⊥-ness and axis parameters. `None` when the
+    /// truth is written in a frame this table cannot carry out exactly (a rotation, a frame node,
+    /// or overflow); consumers decline by their own names, and the population gate refuses such a
+    /// boolean before the arrangement runs. See [`world_cylinder_def`].
+    pub(crate) def: Option<nacre_topo::CylinderDef>,
     /// This lateral **face**'s span in the axis parameter `t` (of the raw `def.dir()`), read
     /// off its two rim carrier planes: `t = −(n·o + d)/(n·m)` per rim plane, ordered. `None`
     /// when a rim carrier has no narrow rational name — the transversal-circle producer then
@@ -173,18 +176,29 @@ pub(crate) fn collect_planes(
                 // vocabulary. Whether it may *flow* is the population gate's question, asked
                 // in `plane_index_setup`, not a door slam here.
                 Surface::Cylinder(_) => {
-                    let nacre_topo::SurfaceTruth::Cylinder { def, motion } =
+                    let nacre_topo::SurfaceTruth::Cylinder { motion, .. } =
                         model.surface_truth(face.surface)
                     else {
                         unreachable!("a cylinder cache carries a cylinder truth")
                     };
+                    // ★ **The world statement, not the stated frame's** — a translated cylinder's
+                    // truth is written before its motion, and every consumer of this row (the
+                    // gate's clearance arithmetic, the arrangement's circles and rulings) compares
+                    // it against *world* planes. A row whose statement cannot be carried out to
+                    // the world keeps none: the gate then refuses by its own name rather than
+                    // measuring across two frames.
+                    let def = world_cylinder_def(model, face.surface);
                     out.push(FaceRow::Cylinder(CylFaceInfo {
                         surf: face.surface,
                         face: Some(fh),
                         orient_sign: face.orientation.sign(),
-                        motion: *motion,
-                        span: lateral_axis_span(model, face, def),
-                        def: def.clone(),
+                        // ★ **The frame this row's description stands in**, which is the world
+                        // once the statement has been carried out to it — not the provenance of
+                        // the surface. The one reader is the restatement mirror below, whose
+                        // question is exactly "which frames are in play here".
+                        motion: motion.filter(|_| def.is_none()),
+                        span: def.as_ref().and_then(|d| lateral_axis_span(model, face, d)),
+                        def,
                     }));
                     continue;
                 }
@@ -542,6 +556,58 @@ pub(crate) fn collect_planes(
     Ok(out)
 }
 
+/// **A cylinder's exact statement in the world** — the one door between a cylinder's truth
+/// (written in the frame its motion names) and every consumer that compares it against world
+/// planes: the population gate's clearance arithmetic, the arrangement's circles and rulings,
+/// the band pass.
+///
+/// Unmoved: the statement itself. Moved by a chain that is a pure rational translation
+/// ([`nacre_topo::Model::chain_translation`]): the same statement with its origin shifted —
+/// exact, because a rational translation maps a rational statement to a rational one, and the
+/// axis direction, the seam reference and the radius are all invariant under it. Anything else
+/// (a rotation, a frame, overflow): `None`, and the caller refuses rather than measuring across
+/// two frames.
+///
+/// ★ **The postcondition is checked, not assumed.** The surface's `f64` cache is already the
+/// *realized* world cylinder, so it is an independent second description of the very thing this
+/// function claims to produce — a fold with the wrong sign, or one that walked the chain the
+/// wrong way, disagrees with it by twice the offset. Consumer-side net, in the shape this kernel
+/// keeps arriving at: check the postcondition rather than trusting the derivation.
+pub(crate) fn world_cylinder_def(
+    model: &Model,
+    surf: Handle<Surface>,
+) -> Option<nacre_topo::CylinderDef> {
+    let nacre_topo::SurfaceTruth::Cylinder { def, motion } = model.surface_truth(surf) else {
+        unreachable!("a cylinder surface carries a cylinder truth")
+    };
+    let out = match motion {
+        None => def.clone(),
+        Some(leaf) => {
+            let t = model.chain_translation(*leaf)?;
+            let mut o = def.origin();
+            for (c, d) in o.iter_mut().zip(t) {
+                *c = c.checked_add(d)?;
+            }
+            // The three invariants of a translation, so `new`'s checks cannot newly fail here —
+            // it is called rather than bypassed because the type's constructor is the only way in.
+            nacre_topo::CylinderDef::new(o, def.dir(), def.ref_dir(), def.radius())?
+        }
+    };
+    debug_assert!(
+        {
+            let Surface::Cylinder(cache) = model.surface(surf) else {
+                unreachable!("a cylinder truth carries a cylinder cache")
+            };
+            let o = Point3::from_array(out.origin().map(|r| r.to_f64()));
+            let scale = 1.0 + o.as_array().iter().fold(0.0, |m: f64, c| m.max(c.abs()));
+            cache.axis().distance(o) <= 1e-9 * scale
+                && (cache.radius() - out.radius().to_f64()).abs() <= 1e-9 * scale
+        },
+        "the world statement and the realized cache describe one cylinder"
+    );
+    Some(out)
+}
+
 /// A lateral face's axis-parameter span, read off its rim carrier planes (M6-2a).
 ///
 /// Each rim edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis
@@ -611,7 +677,17 @@ fn lateral_axis_span(
         if cap == face.surface {
             continue; // the seam edge is self-adjacent — not a rim
         }
+        // ★ **The cap's world coefficients** — a plane's name is stated in the frame its own
+        // motion names, and this parameter is read against a *world* axis. A cap the same
+        // translation carried is restated here by that translation; one whose chain does not
+        // fold has no world description and the face declines (`None`), which is the same
+        // answer the whole row already gives for a rim with no narrow name.
         let coeffs = *model.surface_name.get(&cap)?.narrow()?;
+        let coeffs = match model.plane_motion(cap) {
+            None => coeffs,
+            Some(leaf) => nacre_scalar::Isometry::translation(model.chain_translation(leaf)?)
+                .plane_coeffs(coeffs)?,
+        };
         // `None` here is a rim carrier parallel to the axis (or overflow) — outside this
         // vocabulary either way.
         let t = axis_param_of_plane(&coeffs, def)?;
@@ -854,21 +930,20 @@ pub(crate) fn cylinder_gate(
     let mut crossings = std::collections::HashSet::new();
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
     for &surf in cyl_surfs {
-        let nacre_topo::SurfaceTruth::Cylinder { def, motion } = model.surface_truth(surf) else {
-            unreachable!("a cylinder row carries a cylinder truth")
-        };
-        // A moved cylinder's def is stated before its motion; the gate compares world
-        // geometry, and realizing a def through its chain is machinery this population
-        // does not have yet.
-        if motion.is_some() {
+        // ★ **The world statement or nothing.** A moved cylinder's def is written before its
+        // motion, and every test below compares it against world planes. A chain that is a pure
+        // rational translation carries it out exactly ([`world_cylinder_def`] — the same door the
+        // face rows take); anything else (a rotation, a frame node, overflow) has no world
+        // description here and is refused rather than measured across two frames.
+        let Some(def) = world_cylinder_def(model, surf) else {
             return Err(undecided());
-        }
+        };
         let Surface::Cylinder(cache) = model.surface(surf) else {
             unreachable!("a cylinder truth carries a cylinder cache")
         };
         cyls.push(WorkingCyl {
             surf,
-            def: def.clone(),
+            def,
             cache: *cache,
         });
     }
