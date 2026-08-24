@@ -7867,6 +7867,97 @@ mod tests {
         ));
     }
 
+    /// ★ **The armed assembly welds the panels** (rulings ladder, cell 3 — the lock): the whole
+    /// through-boss fuse, from production parts past the standing gate — every class's
+    /// arrangement, the coplanar unify, the band/panel pass, the seam table, and
+    /// `reconstruct` — comes back one solid with a clean `validate`. The ruling edges are
+    /// pinned structurally: exactly two straight lateral edges (the kept outer panel's), each
+    /// used exactly twice, carriers stated as **the edge's own fact** — the cylinder and the
+    /// wall plane — and the outer panel's seam-holding arc is split at an `OnSeam` vertex
+    /// (the panel road runs the wrap-arc split the Band road already had).
+    #[test]
+    fn the_armed_assembly_welds_the_panels() {
+        let (mut m, plate, boss, setup, wc, crossings) = armed_through_boss();
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let mut faces: Vec<LocalFace> = Vec::new();
+        let mut disk_labels: crate::arrangement::DiskLabels = HashMap::new();
+        let mut arc_labels: crate::arrangement::ArcLabels = HashMap::new();
+        let mut cut_rims: CutRims = HashMap::new();
+        for c in 0..setup.geom.len() {
+            let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c, &crossings);
+            let staged = per_class(&jd, BoolKind::Fuse, c, &edges).unwrap();
+            for (cyl, label) in &staged.disk_labels {
+                disk_labels.insert((*cyl, c), *label);
+            }
+            for (cyl, ends, label) in &staged.arc_labels {
+                arc_labels
+                    .entry((*cyl, c))
+                    .or_default()
+                    .push((*ends, *label));
+            }
+            for (cyl, rim) in &edges.cut_rims {
+                cut_rims.insert((*cyl, c), rim.clone());
+            }
+            faces.extend(staged.faces);
+        }
+        let faces = crate::boolean::unify_coplanar_faces(faces, &jd).unwrap();
+        let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
+        let mut faces = faces;
+        faces.extend(
+            crate::bands::band_faces(
+                BoolKind::Fuse,
+                &faces,
+                &rows,
+                &jd,
+                &disk_labels,
+                &cut_rims,
+                &arc_labels,
+            )
+            .unwrap(),
+        );
+        let seam = seam_table(&faces, &setup.cyls, &jd).unwrap();
+        let out =
+            crate::boolean::reconstruct(&mut m, &jd, &seam, &faces, &setup.cyls, &cut_rims, None)
+                .unwrap();
+        assert_eq!(out.len(), 1, "one welded solid");
+        m.live_solids = out.clone();
+        m.rebuild_adjacency();
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{issues:?}");
+        // The ruling edges, structurally: straight lateral edges = carriers {cylinder, a plane}
+        // with a Line curve (the seam's [cyl, cyl] spelling is excluded by the mixed pair).
+        let cyl_surf = setup.cyls[0].surf;
+        let wall_surf = setup.geom[wc].surf;
+        let reach = m.reachable();
+        let mut rulings = 0;
+        for (eh, e) in m.edges.iter() {
+            if !reach.edges.contains(&eh) {
+                continue;
+            }
+            let mixed = (e.surfaces[0] == cyl_surf) != (e.surfaces[1] == cyl_surf);
+            if !mixed {
+                continue;
+            }
+            let curve = m.derive_edge_curve(e.surfaces, e.vertices).unwrap();
+            if matches!(curve, nacre_geom::Curve::Line(_)) {
+                rulings += 1;
+                assert!(
+                    e.surfaces.contains(&wall_surf),
+                    "a ruling's plane carrier is the wall: {:?}",
+                    e.surfaces
+                );
+            }
+        }
+        assert_eq!(rulings, 2, "the kept outer panel's two rulings");
+        // The seam split ran on the panel: an OnSeam vertex is reachable.
+        let on_seam = reach
+            .vertices
+            .iter()
+            .filter(|&&v| matches!(m.vertices.get(v).def, nacre_topo::VertexDef::OnSeam(_)))
+            .count();
+        assert!(on_seam >= 1, "the outer panel's wrap arc split at the seam");
+    }
+
     /// **The mixed parity reads a bitten ring — exactly, on the production pieces.**
     ///
     /// The straddling boss cuts the plate-top ring at `(40, 15)` and `(40, 25)`, so that ring

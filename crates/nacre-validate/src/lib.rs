@@ -484,8 +484,14 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
                     faces: [uses[0].0, uses[1].0],
                 });
             }
-            // S8: the stated carrier pair must be the two using faces' surfaces (as a
-            // multiset), and `[s, s]` on a plane is a spelling reserved for cylinder seams.
+            // S8: the stated carriers must agree with adjacency. Two different using
+            // surfaces must *be* the stated pair (as a multiset — the original rule). Two
+            // using faces on **one** surface (a cylinder panel and its neighbouring band
+            // sharing an arc — the rulings ladder's first such population) cannot spell the
+            // carrier pair between them: the shared surface must be one of the stated two,
+            // and the *other* stated carrier is what the curve derivation crosses it with —
+            // which is the whole purpose of the check (wrong carriers ⇒ a silently wrong
+            // curve cache). `[s, s]` on a plane stays reserved for cylinder seams.
             let stated = _edge.surfaces;
             let mut observed = [
                 m.faces.get(uses[0].0).surface,
@@ -496,7 +502,12 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
             }
             let plane_self_pair = stated[0] == stated[1]
                 && matches!(m.surface(stated[0]), nacre_geom::Surface::Plane(_));
-            if stated != observed || plane_self_pair {
+            let agrees = if observed[0] == observed[1] {
+                stated.contains(&observed[0])
+            } else {
+                stated == observed
+            };
+            if !agrees || plane_self_pair {
                 out.push(Violation::EdgeCarrierMismatch {
                     edge: eh,
                     stated: [stated[0].index(), stated[1].index()],
@@ -1406,6 +1417,97 @@ mod tests {
         assert!(
             vs.iter()
                 .any(|x| matches!(x, Violation::NonManifoldEdge { .. }))
+        );
+    }
+
+    /// ★ The S8 same-surface arm (the rulings ladder's panel population): two faces on **one**
+    /// surface sharing an edge cannot spell the carrier pair between them, so the rule there is
+    /// membership — the shared surface must be one of the stated two (the *other* stated
+    /// carrier is what the curve derivation crosses it with). Both directions: membership
+    /// passes, non-membership is still flagged.
+    #[test]
+    fn same_surface_users_check_membership_not_equality() {
+        // The arena is append-only, so each direction builds its own model.
+        let build = |stated_second_is_sc: bool| {
+            let mut m = nacre_topo::Model::new();
+            let r = nacre_scalar::Rat::from_int;
+            let plane = |m: &mut nacre_topo::Model, n: [f64; 3], pts: [[i128; 3]; 3]| {
+                m.push_plane(
+                    Plane::from_point_normal(Point3::origin(), Vector3::from_array(n)).unwrap(),
+                    pts.map(|p| p.map(r)),
+                    None,
+                )
+                .0
+            };
+            let sa = plane(&mut m, [0.0, 0.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, 0]]);
+            let sb = plane(&mut m, [0.0, 1.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, -1]]);
+            let sc = plane(&mut m, [1.0, 0.0, 1.0], [[0, 0, 0], [0, 1, 0], [1, 0, -1]]);
+            let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
+                m.push_vertex(
+                    VertexDef::ThreePlane([sa, sb, sc]),
+                    Point3::from_array(p),
+                    None,
+                )
+            };
+            let v0 = v(&mut m, [0.0, 0.0, 0.0]);
+            let v1 = v(&mut m, [1.0, 0.0, 0.0]);
+            let v2 = v(&mut m, [0.0, 1.0, 0.0]);
+            let v3 = v(&mut m, [0.0, -1.0, 0.0]);
+            // Both users of the shared edge sit on `sa`; the stated pair either contains it
+            // ([sa, sc] — legal) or does not ([sb, sc] — a mismatch).
+            let stated = if stated_second_is_sc {
+                [sa, sc]
+            } else {
+                [sb, sc]
+            };
+            let e_shared = m.push_edge(stated, [v0, v1]).unwrap();
+            let ea1 = m.push_edge([sa, sb], [v1, v2]).unwrap();
+            let ea2 = m.push_edge([sa, sb], [v2, v0]).unwrap();
+            let eb1 = m.push_edge([sa, sb], [v1, v3]).unwrap();
+            let eb2 = m.push_edge([sa, sb], [v3, v0]).unwrap();
+            let he = |edge, forward| HalfEdge { edge, forward };
+            let face = |m: &mut nacre_topo::Model, surface, hes: Vec<HalfEdge>| {
+                m.faces.push(Face {
+                    surface,
+                    outer: Loop { half_edges: hes },
+                    inner: vec![],
+                    orientation: Orientation::Forward,
+                })
+            };
+            let fa = face(
+                &mut m,
+                sa,
+                vec![he(e_shared, true), he(ea1, true), he(ea2, true)],
+            );
+            let fb = face(
+                &mut m,
+                sa,
+                vec![he(e_shared, false), he(eb2, false), he(eb1, false)],
+            );
+            let shell = m.shells.push(Shell {
+                faces: vec![fa, fb],
+            });
+            m.push_solid(Solid {
+                outer: shell,
+                cavities: vec![],
+            });
+            (m, e_shared)
+        };
+        let (m, e_shared) = build(true);
+        let vs = validate(&m);
+        assert!(
+            !vs.iter().any(
+                |x| matches!(x, Violation::EdgeCarrierMismatch { edge, .. } if *edge == e_shared)
+            ),
+            "same-surface users on a stated carrier are legal: {vs:?}"
+        );
+        let (m, e_shared) = build(false);
+        let vs = validate(&m);
+        assert!(
+            vs.iter().any(
+                |x| matches!(x, Violation::EdgeCarrierMismatch { edge, .. } if *edge == e_shared)
+            ),
+            "same-surface users off both stated carriers must be flagged: {vs:?}"
         );
     }
 
