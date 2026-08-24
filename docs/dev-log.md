@@ -12747,3 +12747,46 @@ vitest + wasm clippy).
 클래스에서만 실측(무장 픽스처의 x=40) — 반대 클래스는 노치 인구가 넓힌다(주석 기록). (c) 위
 「부호 수업 셋」 중 (a) Euler는 부호가 아니라 개수 — docs 커밋 제목("two sign lessons")이
 본문과 어긋났던 것을 여기서 정정.
+
+## 룰링 사다리 칸2 — 밴드가 잘린 원에서 끊기고, 사이 구간은 θ-패널로 갈라진다 (2026-08-24)
+
+**커밋 둘** — ① `2a2ce14`(z-절단), ② `3c1fa56`(θ-패널). 프로덕션 발화 0(패널 도로는 both-cut
+구간을 요구하고, 그 구간은 게이트의 기록을 요구), census t4 두 프로파일 비트 동일.
+
+### ① z-절단 — 잘린 원이 밴드 경계다 (`2a2ce14`)
+
+리프트 실측: `bands_of`의 경계 규칙(Circle-bound 클래스 + 스팬 끝)이 잘린 원을 못 봐 관통
+보스에 **전-높이 전-2π 밴드 하나**를 방출하고 있었다. `cut_rims`(per-class가 이미 올리는
+잘린-원 기록)를 셋째 경계원으로 — rim-잘림(straddle/hung)은 스팬-끝 규칙과 같은 클래스라
+dedup 합류(기존 초록 무변). 한쪽-잘림 구간은 기존 기계가 끝까지(chamber는 잘린 끝을 넘기고
+캡 끝이 말함 — hung이 그 실측). 리프트 전이: `RulingBoundNotYet` → `CylinderGateUndecided`
+(밴드가 처음으로 진실을 물음 — ②가 전진시킴). 잠금 `a_cut_circle_bounds_the_bands`:
+armed 하네스(기록 명시)로 구간 3개·한쪽-잘림 chamber Ok·both-cut 거절.
+
+### ② θ-패널 (`3c1fa56`)
+
+- **운반 `ArcLabels`** — disk label의 섹터 자매: 잘린 원의 호마다 「디스크-쪽 셀」의 4비트
+  라벨을 per-class에서 뽑아 `Curved`로(같은 운반 모양, 옵션 — 추출 실패는 항목 비움, 요구는
+  소비자만: 초록 인구 후퇴 방지).
+- ★ **디스크-쪽 half-edge는 실측이 규칙을 정했다**: 후보 「fwd(CCW)가 디스크-쪽」은 stored
+  법선이 축과 **같은 방향일 때만** 참(`ArcDir::axis_up`의 그 인자) — straddle의 윗면(+z)은
+  fwd, 관통 보스의 바닥 클래스(−z)는 **twin**이 디스크-쪽(첫 실행에서 섹터 라벨이
+  [F,F,F,F]=바깥으로 잡혀 즉시 반증). 판별식 = stored 법선 · 축 f64 내적(평행/반평행 단위
+  벡터 — 부호 경계에서 1 거리).
+- **패널 조립**: 위·아래 CutRim 노드를 (벽 클래스, root)로 짝지어(다른 벽이 자른 기하는
+  사다리 이름으로 거절) 섹터별 챔버(양끝 일치 요구 — chamber의 규율; `read_bits`/`keep_for`로
+  비트·keep 규칙을 한 스펠링 공유). 방출 = `Ring{[호, 룰링, 호, 룰링]}`(칸1 어휘 — Band
+  아님), 룰링 side는 `ruling_side` 재호출. **링의 절대 감김은 미실측**(fn doc에 기록 — 조립·
+  부피가 잰다).
+- **잠금 확장**: 패널 kind당 정확 1 + **fuse/cut 보완 섹터**(상대 단언 — 절대 방향은 칸3-4의
+  것) + walls 구조 절대 단언 + 음성 대조(빈 arc_labels → `RulingBoundNotYet`).
+- **리프트 실측(②-상태의 다음 벽)**: 관통 인구가 밴드 패스를 **지나** 조립 초입에서 멈춘다 —
+  `name_result_vertices`의 edge_faces 수집이 패널 면의 `surf.plane()`을 물어 감지기-패닉
+  ("a plane-only path got cylinder class") — 기대(`RulingBoundNotYet`)보다 **이른 자리**가
+  진짜 칸3의 첫 항목(패널 면의 정점 명명/edge_faces 소화). 리프트에서만 도달(커밋 트리는
+  게이트가 막음).
+
+### 관문
+
+53타깃 **1121** · nodef 25타깃 599 · clippy 0 · fmt · census **t4 두 프로파일 비트 동일** ·
+reject census 12 · 스윕 128 · perf release · kit 72 · 앱 142.
