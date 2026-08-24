@@ -4207,6 +4207,13 @@ fn emit_faces(
     // the through-boss's bottom class (stored −z) puts the **outside** there — the twin is the
     // disk side. The f64 dot is two parallel-or-antiparallel unit vectors, a full unit from the
     // sign boundary.
+    //
+    // ★ **What that measurement pinned, and what still watches it.** The rule was set by label
+    // *content* (only the disk-side cell carries the cylinder solid's own material bits), which
+    // is an absolute check — but the standing lock's sector assertions are relative (fuse/cut
+    // complementary), so a *global* flip of this selector passes them (probed: it does). Like
+    // the panel ring's winding and the ruling turn's sign, the absolute side is the
+    // gate-opening cell's volume oracles' to watch.
     let ns_arcs = 2 * edges.segs.len();
     let arc_labels = edges
         .arcs
