@@ -1261,10 +1261,24 @@ fn face_clears_footprint(
         let Some((p, frame)) = model.vertex_meet(he_start(model, *he)) else {
             return Err(undecided());
         };
-        // The point is stated in `frame`; the cylinder and the coefficients are world.
-        if frame.is_some() {
-            return Err(undecided());
-        }
+        // ★ The point is stated in `frame`; the cylinder and the coefficients are world. A chain
+        // that folds to a rational translation carries it out exactly — the same move the class
+        // descriptions and the cylinder statements make, so this test sees a translated body the
+        // way every other reader does. A `Wide` meet has no narrow vessel to shift and declines,
+        // as does any other chain: honest, never a comparison across two frames.
+        let p = match frame {
+            None => p,
+            Some(leaf) => {
+                let (Some(t), Some(q)) = (model.chain_translation(leaf), p.narrow()) else {
+                    return Err(undecided());
+                };
+                let mut w = *q;
+                for (c, d) in w.iter_mut().zip(t) {
+                    *c = c.checked_add(d).ok_or_else(undecided)?;
+                }
+                nacre_scalar::MeetPoint::Narrow(w)
+            }
+        };
         // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
         // on three exact witnesses, one of which compares *rounded* coefficients — so a face can
         // sit in a class whose exact name its own vertices do not satisfy (the two-descriptions

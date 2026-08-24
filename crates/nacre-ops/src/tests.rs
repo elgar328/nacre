@@ -2957,6 +2957,68 @@ fn a_translated_bored_body_fuses() {
     assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
 }
 
+/// ★ **A wall whose plane passes near a hole, on a body that moved** — the face-level clearance
+/// test's own frame question. The infinite plane `y = 47.8` clears the bore at `(17.1, 48.6)`
+/// by 0.8 with `r = 2.12`, so the cheap test fails and each face on that class has to answer for
+/// itself; the pocket wall that carries it sits at `x ∈ [60.3, 73.2]`, nowhere near the bore, and
+/// says so — but only if its corners are read in the same frame as the axis. The user's 12-up
+/// array is this shape, and it stopped here after the class descriptions were carried out.
+#[test]
+fn a_moved_face_answers_the_clearance_test() {
+    use nacre_scalar::Rat;
+    let cell = |m: &mut Model| {
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([86.0, 86.0, 71.5]),
+        );
+        let pocket = m.add_cuboid(
+            Point3::from_array([60.3, 47.8, 0.0]),
+            Point3::from_array([73.2, 64.5, 68.5]),
+        );
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Cut, plate, pocket).expect("the pocket cuts")[0];
+        m.rebuild_adjacency();
+        let bore = m.add_cylinder(
+            Point3::from_array([17.1, 48.6, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.12,
+            80.0,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
+        m.rebuild_adjacency();
+        out
+    };
+    let mut m = Model::new();
+    let a = cell(&mut m);
+    let b = cell(&mut m);
+    let b = transform(
+        &mut m,
+        b,
+        &nacre_scalar::Isometry::translation([
+            Rat::try_from_f64(100.3).unwrap(),
+            Rat::from_int(0),
+            Rat::from_int(0),
+        ]),
+    )
+    .unwrap();
+    m.rebuild_adjacency();
+    assert!(carries_motion(&m, b), "the move records a chain");
+    // The cells stand clear of each other (a *touching* pair is the contact family, another
+    // cell), so this is an ordinary two-body result — what it pins is that the gate **decided**
+    // at all, rather than declining because a corner was stated in another frame.
+    let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the moved cell is judged");
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty());
+    let pi = std::f64::consts::PI;
+    let one = 86.0 * 86.0 * 71.5 - 12.9 * 16.7 * 68.5 - pi * 2.12 * 2.12 * 71.5;
+    let v: f64 = out
+        .iter()
+        .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+        .sum();
+    assert!((v - 2.0 * one).abs() <= 1e-9 * one, "{v} vs {}", 2.0 * one);
+}
+
 /// ★ The negative control: a **rotated** cylinder has no exact world description, and the gate
 /// says so by its own name rather than measuring across two frames. (A 90°-family turn keeps a
 /// datum exact and records nothing, so the angle here is one that does record.)
