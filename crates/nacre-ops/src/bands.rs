@@ -1054,13 +1054,14 @@ mod tests {
         through_boss_builds(BoolKind::Fuse, [40.0, 40.0, -10.0], 32000.0 + 1125.0 * pi);
     }
 
-    /// ★ The populations the record-and-pass arm deliberately keeps out, refusing by today's
-    /// names — each measured lifted before the arm was shaped: a **tangent** wall (distance
-    /// exactly `r`) assembles a volume-correct zero-thickness pinch `validate` cannot see; an
+    /// ★ The populations this cell keeps refusing, each measured lifted before the arm was
+    /// shaped. Two the gate's arm deliberately keeps out: a **tangent** wall (distance exactly
+    /// `r`) assembles a volume-correct zero-thickness pinch `validate` cannot see; an
     /// **offset** crossing (`0 <` distance `< r`) walks to `OpenResultShell`, a
-    /// SuspectedDefect label an honest input must not wear; a **half-height** boss's upper cap
-    /// sits inside the plate's material, which the chamber has no sector answer for — the
-    /// ladder's own name. The live set survives every refusal.
+    /// SuspectedDefect label an honest input must not wear. One the gate records and passes —
+    /// a **half-height** boss's upper cap sits inside the plate's material, which the chamber
+    /// has no sector answer for, so the refusal downstream wears the ladder's own name. The
+    /// live set survives every refusal.
     #[test]
     fn the_gate_still_refuses_what_the_road_does_not_serve() {
         for (base, h, want) in [
