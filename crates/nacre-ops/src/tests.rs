@@ -2256,6 +2256,7 @@ fn shares_or_coplanar_uses_the_handle_branch() {
         crate::planes::FaceRow::Plane(FaceInfo {
             // Unmoved and hand-built: nothing to record, and the base frame is unused anyway.
             base_rat: None,
+            world_rat: None,
             name: None,
             motion: None,
             surf: shared,
@@ -2812,6 +2813,193 @@ fn test_iso() -> (nacre_scalar::Isometry, [f64; 3]) {
         ]),
         [3.5, -4.0, 11.0],
     )
+}
+
+/// Does any surface of this solid record a motion? **The premise every fixture below asserts
+/// first**: a translation whose `f64` landing happens to be exact records nothing, and a fixture
+/// that silently took that road would prove the opposite of what it claims (measured — a boss
+/// fixture did exactly that while the road under test was still shut).
+fn carries_motion(m: &Model, s: Handle<Solid>) -> bool {
+    crate::planes::solid_shell_handles(m, s)
+        .into_iter()
+        .flat_map(|sh| m.shells.get(sh).faces.clone())
+        .any(|fh| m.plane_motion(m.faces.get(fh).surface).is_some())
+}
+
+/// A cylinder tool translated onto a plate, then cutting it — **the hole-pattern idiom**, and
+/// the smallest shape the moved-cylinder road serves. The offset is non-dyadic on purpose, so
+/// the move records a chain (asserted) and the boolean has to carry the statement out to the
+/// world itself.
+#[test]
+fn a_translated_tool_cuts() {
+    use nacre_scalar::Rat;
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([40.0, 40.0, 10.0]),
+    );
+    let tool = m.add_cylinder(
+        Point3::from_array([7.3, 7.3, -5.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        2.1,
+        30.0,
+    );
+    m.rebuild_adjacency();
+    let tool = transform(
+        &mut m,
+        tool,
+        &nacre_scalar::Isometry::translation([
+            Rat::try_from_f64(10.7).unwrap(),
+            Rat::from_int(0),
+            Rat::from_int(0),
+        ]),
+    )
+    .unwrap();
+    m.rebuild_adjacency();
+    assert!(carries_motion(&m, tool), "the move records a chain");
+    let out = boolean(&mut m, BoolKind::Cut, plate, tool).expect("the moved tool cuts");
+    assert_eq!(out.len(), 1);
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty());
+    let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+    let want = 40.0 * 40.0 * 10.0 - std::f64::consts::PI * 2.1 * 2.1 * 10.0;
+    assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
+}
+
+/// The same total move **split in two** — the chain is walked and folded, not read one node
+/// deep. Same solid, so the same volume: the two roads must agree to the tolerance the oracle
+/// is stated at.
+#[test]
+fn a_chained_translation_folds() {
+    use nacre_scalar::Rat;
+    let shift = |m: &mut Model, s, x: f64| {
+        let s = transform(
+            m,
+            s,
+            &nacre_scalar::Isometry::translation([
+                Rat::try_from_f64(x).unwrap(),
+                Rat::from_int(0),
+                Rat::from_int(0),
+            ]),
+        )
+        .unwrap();
+        m.rebuild_adjacency();
+        s
+    };
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([40.0, 40.0, 10.0]),
+    );
+    let tool = m.add_cylinder(
+        Point3::from_array([7.3, 7.3, -5.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        2.1,
+        30.0,
+    );
+    m.rebuild_adjacency();
+    let tool = shift(&mut m, tool, 5.2);
+    let tool = shift(&mut m, tool, 5.5);
+    assert!(carries_motion(&m, tool), "the moves record a chain");
+    let out = boolean(&mut m, BoolKind::Cut, plate, tool).expect("the chained tool cuts");
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty());
+    let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+    let want = 40.0 * 40.0 * 10.0 - std::f64::consts::PI * 2.1 * 2.1 * 10.0;
+    assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
+}
+
+/// A **bored body** translated and fused onto its twin: the plane side of the same fact — the
+/// walls perpendicular to the move carry the chain, and the cylinder roads need their world
+/// coefficients. The offset moves all three axes, so no wall of either body is shared (a shared
+/// wall is the contact family, another cell).
+#[test]
+fn a_translated_bored_body_fuses() {
+    use nacre_scalar::Rat;
+    let bored = |m: &mut Model| {
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([40.0, 40.0, 10.0]),
+        );
+        let bore = m.add_cylinder(
+            Point3::from_array([7.3, 7.3, -5.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.1,
+            30.0,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+        m.rebuild_adjacency();
+        out
+    };
+    let mut m = Model::new();
+    let a = bored(&mut m);
+    let b = bored(&mut m);
+    let b = transform(
+        &mut m,
+        b,
+        &nacre_scalar::Isometry::translation(
+            [25.7, 3.3, 2.0].map(|c| Rat::try_from_f64(c).unwrap()),
+        ),
+    )
+    .unwrap();
+    m.rebuild_adjacency();
+    assert!(carries_motion(&m, b), "the move records a chain");
+    let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the moved body fuses");
+    assert_eq!(out.len(), 1);
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty());
+    // Two bored plates, their overlap counted once, and the part of b's bore that a fills back.
+    let pi = std::f64::consts::PI;
+    let bore = pi * 2.1 * 2.1;
+    let want = 2.0 * (16000.0 - bore * 10.0) - (14.3 * 36.7 * 8.0) + bore * 8.0;
+    let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+    assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
+}
+
+/// ★ The negative control: a **rotated** cylinder has no exact world description, and the gate
+/// says so by its own name rather than measuring across two frames. (A 90°-family turn keeps a
+/// datum exact and records nothing, so the angle here is one that does record.)
+#[test]
+fn a_rotated_cylinder_is_still_undecided() {
+    use nacre_scalar::{Angle, Rat, Rotation};
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([40.0, 40.0, 10.0]),
+    );
+    let tool = m.add_cylinder(
+        Point3::from_array([18.0, 7.3, -5.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        2.1,
+        30.0,
+    );
+    m.rebuild_adjacency();
+    let tool = transform(
+        &mut m,
+        tool,
+        &nacre_scalar::Isometry::rotation(Rotation {
+            axis: Axis::Z,
+            point: [Rat::from_int(20), Rat::from_int(20), Rat::from_int(0)],
+            angle: Angle::from_deg(Rat::from_int(31)).unwrap(),
+        }),
+    )
+    .unwrap();
+    m.rebuild_adjacency();
+    assert!(carries_motion(&m, tool), "the turn records a chain");
+    let live = m.live_solids.clone();
+    let err = boolean(&mut m, BoolKind::Cut, plate, tool).expect_err("no world description");
+    assert!(
+        matches!(
+            err,
+            BoolError::Rejected {
+                reason: RejectReason::CylinderGateUndecided,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(m.live_solids, live, "the live set survives the refusal");
 }
 
 /// A rational translation supersedes a cuboid: rigid, so volume/area are
@@ -4198,6 +4386,7 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
         // A hand-built table has no recorded coefficients; the composed-rotation route
         // declines and the fixture takes the same escalating path it always did.
         base_rat: None,
+        world_rat: None,
         name_ints: None,
         base: crate::planes::BaseFrame::none(),
         surf,

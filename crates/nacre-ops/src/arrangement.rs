@@ -1244,12 +1244,11 @@ fn circle_on_class(
     cf: &crate::planes::CylFaceInfo,
     wp: &WorkingPlane,
 ) -> Result<Option<CylOnClass>, DeclineKind> {
-    let Some(coeffs) = wp.base_rat else {
+    // The world description — the cylinder's statement is world, and a comparison across two
+    // frames is a silently wrong answer, not a slow one.
+    let Some(coeffs) = wp.world_rat else {
         return Err(DeclineKind::CylSpan);
     };
-    if wp.rotated {
-        return Err(DeclineKind::CylSpan);
-    }
     // No world statement for this lateral (a rotated or frame-borne truth): the same decline
     // the class side makes — both sides of this comparison have to speak about the world.
     let Some(def) = cf.def.as_ref() else {
@@ -1410,7 +1409,10 @@ fn rim_class_at(
 ) -> Option<usize> {
     let m = def.dir();
     jd.planes.iter().position(|wp| {
-        let Some(coeffs) = wp.base_rat else {
+        // ★ The world description, like every other reader that meets a cylinder's `def` — this
+        // one read `base_rat` unfiltered, which was a pre-motion row compared against a world
+        // axis the day a moved class could reach it.
+        let Some(coeffs) = wp.world_rat else {
             return false;
         };
         let n = [coeffs[0], coeffs[1], coeffs[2]];

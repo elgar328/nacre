@@ -634,7 +634,7 @@ fn dump() {
         let mut m = Model::new();
         let c = m.add_cylinder(
             Point3::from_array([0.5, -1.25, 2.0]),
-            Vector3::from_array([0.0, 0.0, 1.0]),
+            nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
             1.5,
             2.5,
         );
@@ -671,7 +671,7 @@ fn dump() {
             );
             let b = m.add_cylinder(
                 Point3::from_array([1.0, 1.0, -1.0]),
-                Vector3::from_array([0.0, 0.0, 1.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 0.5,
                 4.0,
             );
@@ -721,7 +721,7 @@ fn dump() {
             );
             let bore = m.add_cylinder(
                 Point3::from_array([1.0, 1.0, -1.0]),
-                Vector3::from_array([0.0, 0.0, 1.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 0.5,
                 4.0,
             );
@@ -729,7 +729,7 @@ fn dump() {
             let bored = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
             let boss = m.add_cylinder(
                 Point3::from_array([4.0, 2.0, 2.0]),
-                Vector3::from_array([0.0, 0.0, 1.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                 0.5,
                 1.0,
             );
@@ -761,7 +761,7 @@ fn dump() {
                 );
                 let b = m.add_cylinder(
                     Point3::from_array(base),
-                    Vector3::from_array([0.0, 0.0, 1.0]),
+                    nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
                     5.0,
                     h,
                 );
@@ -771,6 +771,110 @@ fn dump() {
                 m.rebuild_adjacency();
                 record(&format!("rul {pn} {kn}"), &m, &inputs, &out);
             }
+        }
+    }
+    // ── **Translated cylinders** (`trc`): the population the moved-cylinder road opened. A
+    // non-dyadic offset records a chain, so each of these carries one (the dyadic twin records
+    // nothing and is the same corpus row the `cyl` family already holds). Four placements: a
+    // tool cutting, a boss fusing, a bored body fused onto its twin (the plane side), and a
+    // bore translated **onto** another bore — whose axes then coincide, which the cylinder-pair
+    // rule refuses by name (`CylinderPairContact`); before the road opened it never got that
+    // far and said `CylinderGateUndecided` instead.
+    {
+        let off = |x: f64, y: f64, z: f64| {
+            Isometry::translation([x, y, z].map(|c| Rat::try_from_f64(c).expect("rational")))
+        };
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([40.0, 40.0, 10.0]),
+            );
+            let tool = m.add_cylinder(
+                Point3::from_array([7.3, 7.3, -5.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                2.1,
+                30.0,
+            );
+            m.rebuild_adjacency();
+            let tool = xf(&mut m, tool, off(10.7, 0.0, 0.0));
+            let inputs = operands(&m, plate, tool);
+            let out = boolean(&mut m, k, plate, tool);
+            m.rebuild_adjacency();
+            record(&format!("trc tool {kn}"), &m, &inputs, &out);
+        }
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([40.0, 40.0, 10.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array([10.0, 20.0, 5.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                3.0,
+                8.0,
+            );
+            m.rebuild_adjacency();
+            let boss = xf(&mut m, boss, off(15.3, 0.1, 0.0));
+            let inputs = operands(&m, plate, boss);
+            let out = boolean(&mut m, k, plate, boss);
+            m.rebuild_adjacency();
+            record(&format!("trc boss {kn}"), &m, &inputs, &out);
+        }
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let bored = |m: &mut Model| {
+                let plate = m.add_cuboid(
+                    Point3::from_array([0.0; 3]),
+                    Point3::from_array([40.0, 40.0, 10.0]),
+                );
+                let bore = m.add_cylinder(
+                    Point3::from_array([7.3, 7.3, -5.0]),
+                    nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                    2.1,
+                    30.0,
+                );
+                m.rebuild_adjacency();
+                let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+                m.rebuild_adjacency();
+                out
+            };
+            let a = bored(&mut m);
+            let b = bored(&mut m);
+            let b = xf(&mut m, b, off(25.7, 3.3, 2.0));
+            let inputs = operands(&m, a, b);
+            let out = boolean(&mut m, k, a, b);
+            m.rebuild_adjacency();
+            record(&format!("trc body {kn}"), &m, &inputs, &out);
+        }
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([40.0, 40.0, 10.0]),
+            );
+            let bore = m.add_cylinder(
+                Point3::from_array([18.0, 20.0, -5.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                2.1,
+                30.0,
+            );
+            m.rebuild_adjacency();
+            let holed = boolean(&mut m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+            m.rebuild_adjacency();
+            let twin = m.add_cylinder(
+                Point3::from_array([7.3, 20.0, -5.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                2.1,
+                30.0,
+            );
+            m.rebuild_adjacency();
+            let twin = xf(&mut m, twin, off(10.7, 0.0, 0.0)); // lands on the bore's own axis
+            let inputs = operands(&m, holed, twin);
+            let out = boolean(&mut m, k, holed, twin);
+            m.rebuild_adjacency();
+            record(&format!("trc onaxis {kn}"), &m, &inputs, &out);
         }
     }
     // ── **A datum through a turned solid's corners, and a boolean over it** (`dt`).

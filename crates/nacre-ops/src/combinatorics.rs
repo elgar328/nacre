@@ -2974,7 +2974,7 @@ pub(crate) fn class_coeffs_rat(
     jd: &Judge<'_, WorkingPlane>,
     c: usize,
 ) -> Option<[nacre_scalar::Rat; 4]> {
-    jd.planes[c].base_rat.filter(|_| !jd.planes[c].rotated)
+    jd.planes[c].world_rat
 }
 
 /// A node's exact coordinates: the rational meet of its three classes' descriptions. `None` when

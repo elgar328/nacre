@@ -144,6 +144,12 @@ pub(crate) struct FaceInfo {
     /// `None` when the producer had no rational description. Read by [`BaseFrame`], which would
     /// otherwise re-derive a moved plane from its pre-motion triangle and round `d`.
     pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
+    /// The same plane as **exact rational coefficients in the world**, whatever frame the truth
+    /// is written in — see [`world_plane_coeffs`]. `None` when no exact world description exists
+    /// (a rotation, a frame, a wide name, an overflow). This is what the cylinder roads compare
+    /// against a world axis; `base_rat` above answers the *other* question (the description in
+    /// the frame the provenance names, which is what `BaseFrame` cancels).
+    pub(crate) world_rat: Option<[nacre_scalar::Rat; 4]>,
     /// The surface's full canonical name (`Model::surface_name`), **any width** — what
     /// [`WorkingPlane::name_ints`] is folded from. `base_rat` above is its narrow projection,
     /// kept beside it because the narrow consumers (`BaseFrame`, the composed-rotation route)
@@ -472,6 +478,7 @@ pub(crate) fn collect_planes(
             let name = model.surface_name.get(&face.surface).cloned();
             out.push(FaceRow::Plane(FaceInfo {
                 base_rat: name.as_ref().and_then(|n| n.narrow()).copied(),
+                world_rat: world_plane_coeffs(model, face.surface),
                 name,
                 surf: face.surface,
                 face: Some(fh),
@@ -554,6 +561,35 @@ pub(crate) fn collect_planes(
         }
     }
     Ok(out)
+}
+
+/// **A plane's exact rational coefficients in the world** — the plane twin of
+/// [`world_cylinder_def`], and the description every road that compares a plane against a
+/// *world* cylinder needs ([`crate::combinatorics::class_coeffs_rat`] is the door).
+///
+/// Unmoved: the name itself, which is already world. Moved by a chain that folds to a rational
+/// translation: that name carried out exactly (`d' = d − n·t`,
+/// [`nacre_scalar::Isometry::plane_coeffs`]). Anything else — a rotation, a frame, a
+/// [`nacre_scalar::PlaneName::Wide`] name with no narrow vessel to carry, an overflow — `None`,
+/// and the caller declines.
+///
+/// ★★★ **This is deliberately *not* a restatement of the row.** A moved plane's `rotated` flag
+/// says two things at once, and only one of them is about descriptions: it also says the row's
+/// `tri` is a *realized* triangle rather than the truth, which is what routes
+/// `Judge::planes_coplanar` to the high-precision road. Measured, by breaking it: two unit cubes
+/// shifted by `7/11` and `18/11` share a wall exactly, their f64 images differ in the last place,
+/// and flipping such a plane to unrotated sent the merge through the exact-f64 triangle test,
+/// which answered "two planes" — one body became two. So the world description rides *beside*
+/// the flag, and the judging road is left alone.
+fn world_plane_coeffs(model: &Model, surf: Handle<Surface>) -> Option<[nacre_scalar::Rat; 4]> {
+    let c = *model.surface_name.get(&surf)?.narrow()?;
+    match model.plane_motion(surf) {
+        None => Some(c),
+        Some(leaf) => {
+            let t = model.chain_translation(leaf)?;
+            nacre_scalar::Isometry::translation(t).plane_coeffs(c)
+        }
+    }
 }
 
 /// **A cylinder's exact statement in the world** — the one door between a cylinder's truth
@@ -966,10 +1002,12 @@ pub(crate) fn cylinder_gate(
         // shape `wall_faces_clear` warns about two doc comments below.
         let mut spans: Option<Vec<[nacre_scalar::Rat; 2]>> = None;
         for (c, wp) in geom.iter().enumerate() {
-            if wp.rotated {
-                return Err(undecided());
-            }
-            let Some(coeffs) = wp.base_rat else {
+            // ★ **A world description or nothing** — the question this loop asks is geometric
+            // (does this class's plane clear that cylinder), and both sides have to speak about
+            // the world. `rotated` is not that question: a plane whose truth carries a
+            // translation is *judged* through its chain and still has exact world coefficients,
+            // and that is the population the rulings road serves.
+            let Some(coeffs) = wp.world_rat else {
                 return Err(undecided());
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];
@@ -1008,13 +1046,11 @@ pub(crate) fn cylinder_gate(
                 // occupies in that plane: the strip across, the lateral face's span along. See
                 // [`face_clears_footprint`].
                 if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) != Orient::Positive {
-                    // ★ The class's coefficients come from its root's *name*, which is the world
-                    // only while that plane carries no motion; the cylinder's `def` is world by
-                    // the check above. Comparing across those two frames would be a silent wrong
-                    // answer, so a moved class is refused rather than measured.
-                    if model.plane_motion(wp.surf).is_some() {
-                        return Err(undecided());
-                    }
+                    // ★ The face-level test reads each face's own vertices, which are realized
+                    // world coordinates — so it needs no frame guard of its own; `coeffs` above is
+                    // already the world description (a class without one never reaches here). The
+                    // guard this replaces refused every moved class outright, which is what kept a
+                    // translated body out of the cylinder roads.
                     let spans = spans.get_or_insert_with(|| lateral_spans(faces, cyl.surf));
                     if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r, spans)? {
                         // ★ **The record-and-pass arm** (rulings ladder, cell 4): a wall whose
@@ -1790,6 +1826,10 @@ pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,
     /// The class root's exact rational coefficients — see [`FaceInfo::base_rat`].
     pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
+    /// The class root's exact rational coefficients **in the world** — see
+    /// [`FaceInfo::world_rat`]. The one description the cylinder roads may compare against a
+    /// world axis, and the one [`crate::combinatorics::class_coeffs_rat`] hands out.
+    pub(crate) world_rat: Option<[nacre_scalar::Rat; 4]>,
     /// The class's representative surface — what `assemble_fuse_cut` records in a
     /// `VertexDef::ThreePlane`.
     pub(crate) surf: Handle<Surface>,
@@ -1921,6 +1961,7 @@ pub(crate) fn dense_planes(
                 WorkingPlane::reconcile(&pi.plane, pi.tri, pi.rotated);
             WorkingPlane {
                 base_rat: pi.base_rat,
+                world_rat: pi.world_rat,
                 base: BaseFrame::of(&pi.tri_pt3, pi.motion, pi.orient_sign, pi.base_rat),
                 name_ints: nacre_cip::predicate::name_stored_ints(
                     pi.name.as_ref(),
