@@ -2370,11 +2370,6 @@ pub(crate) fn unify_coplanar_faces(
         if mem.len() < 2 {
             continue; // nothing to merge; the face (if any) is emitted as-is below
         }
-        // ★ A circle-bounded face never merges (M6-2a): `merge_component` rebuilds a
-        // component's boundary from node rings alone, so a member's circle hole would
-        // silently vanish from the rebuilt face — the exact "quiet pass-through" the
-        // integration survey flagged. Skipping keeps a drilled cap's coplanar neighbours as
-        // separate faces: a tidiness loss, never a correctness one (this pass's own charter).
         // ★ A face whose **outer** bound is curved never merges: a cap disk contributes no node
         // edge at all, so the re-threading below has nothing of it to thread. Its *inner* circles
         // do ride through (`merge_component` carries them), which is what makes two bored plates
@@ -2438,12 +2433,22 @@ fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((NodeId, NodeId), Wal
 type RegionRings = (Ring, Vec<Bound>);
 
 /// One edge-connected group → its faces after erasing the interior boundary: each outer ring with
-/// the holes that belong to it. `Ok(None)` is **abstention**: the group's pieces meet at a point,
-/// the merged contour would be a figure-8, and there is no cycle set to re-thread — the caller
-/// emits the group as-is. Merging is a tidiness pass, not a correctness one, so a merge that
-/// cannot merge passes through; the whole-result judgement such a shape is headed for
-/// ([`self_touch_reject`], which runs before any cell is minted) is not this function's to
-/// pre-empt. (It used to reject `CoplanarPinch` here — a capability-limit name for what is, on
+/// the bounds that belong to it — ring holes re-threaded, circle holes carried.
+///
+/// `Ok(None)` is **abstention**, and two shapes take it: the group's pieces meet at a point (the
+/// merged contour would be a figure-8, so there is no cycle set to re-thread), or two of them
+/// claim the same directed edge (they overlap rather than tile). Either way the caller emits the
+/// group as-is.
+///
+/// ★ **Why abstaining is safe is not "merging is only tidiness"** — that was this pass's old
+/// charter and the contact fuse refuted it: unmerged coplanar faces leave the corners on a
+/// dropped wall naming a plane the result has no face on, and the assembly refuses the whole
+/// boolean. What makes abstention safe is narrower: emitting the group as-is puts the pipeline
+/// exactly where it stood *before this pass ran*, so nothing can come out of it that would not
+/// have come out without the pass at all. The whole-result judgements ([`self_touch_reject`],
+/// the closed-shell guard, the every-vertex-re-solves check) then name the shape with their own
+/// sentences — and with a witness, which a capability name raised from here has none of.
+/// (It used to reject `CoplanarPinch` here — a capability-limit name for what is, on
 /// every input that reaches it, a self-touching result; the detour of naming it from here was
 /// measured and declined twice before the abstention landed, dev-log 2026-08-16/17.)
 fn merge_component(
