@@ -1354,7 +1354,7 @@ fn chord_on_class(
 /// so the sign is one [`nacre_scalar::quad::plane_side`] against the plane through `o` with
 /// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
 /// tangent shape, which no caller feeds).
-fn ruling_side(
+pub(crate) fn ruling_side(
     w: &[Rat; 4],
     def: &nacre_topo::CylinderDef,
     at: (&nacre_scalar::quad::MeetLine, &nacre_scalar::quad::QuadVal),
@@ -2948,6 +2948,7 @@ struct Staged {
     labels: Vec<Label>,
     faces: Vec<LocalFace>,
     disk_labels: Vec<(usize, Label)>,
+    arc_labels: Vec<(usize, [NodeId; 2], Label)>,
 }
 
 /// **The per-class stages, in one place** — the walk and the nesting.
@@ -2985,7 +2986,7 @@ fn per_class(
         C_LABEL,
         label_cells(&cells, &face_of, edges, &nesting, [false; 4])
     )?;
-    let (faces, disk_labels) = timed!(
+    let (faces, disk_labels, arc_labels) = timed!(
         C_EMIT,
         emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
     );
@@ -2998,6 +2999,7 @@ fn per_class(
         labels,
         faces,
         disk_labels,
+        arc_labels,
     })
 }
 
@@ -3883,7 +3885,7 @@ fn innermost_host(
 /// rational name (that points the other way on half the classes) and not the root face's outward
 /// (`frame_sign` relates the two, and `emit`'s `flip` is what folds it back in). The absence of
 /// this sentence is what let a lateral face's rim contribution be written in the wrong frame.
-type Label = [bool; 4];
+pub(crate) type Label = [bool; 4];
 
 /// The flip mask an edge applies when crossed, grouping its `merged` contributions **per solid**.
 /// Crossing the edge XORs this into the cell label.
@@ -4101,7 +4103,7 @@ fn emit_faces(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     holes: &HashMap<usize, Vec<usize>>,
-) -> (Vec<LocalFace>, Vec<(usize, Label)>) {
+) -> EmitOut {
     let planes = jd.planes;
     // [`combinatorics::NodeId`] is the vertex-identity enum; the local `Node` (this module's
     // three-valued-scan struct, a *different* type that happens to share the word) shadows the
@@ -4196,8 +4198,42 @@ fn emit_faces(
             Some((mc.cyl, labels[c]))
         })
         .collect();
-    (out, disk_labels)
+    // ★ **A cut circle's labels, per arc** ([`ArcLabels`]) — same discipline as the disk labels
+    // above: collected from the cells, outside the keep filter. Which half-edge borders the
+    // disk side depends on how the axis meets this class's **stored** normal: `end[0] → end[1]`
+    // is CCW about the *axis*, which reads as interior-on-the-forward-side in the class's own
+    // frame only when the two agree (`ArcDir::axis_up`'s very factor). Measured both ways: the
+    // straddle's top class (stored +z, axis +z) puts each arc's digon on the forward cell, and
+    // the through-boss's bottom class (stored −z) puts the **outside** there — the twin is the
+    // disk side. The f64 dot is two parallel-or-antiparallel unit vectors, a full unit from the
+    // sign boundary.
+    let ns_arcs = 2 * edges.segs.len();
+    let arc_labels = edges
+        .arcs
+        .iter()
+        .enumerate()
+        .filter_map(|(i, ma)| {
+            let md = ma.def.dir();
+            let mf =
+                nacre_math::Vector3::from_array([md[0].to_f64(), md[1].to_f64(), md[2].to_f64()]);
+            let axis_up = jd.planes[wc].plane.normal().dot(mf) > 0.0;
+            let he = ns_arcs + 2 * i + usize::from(!axis_up);
+            let c = cells
+                .iter()
+                .position(|cell| cell.half_edges.contains(&he))?;
+            Some((ma.cyl, ma.end, labels[c]))
+        })
+        .collect();
+    (out, disk_labels, arc_labels)
 }
+
+/// [`emit_faces`]' product: the kept faces, the disk labels, and the cut circles' per-arc
+/// disk-side labels.
+type EmitOut = (
+    Vec<LocalFace>,
+    Vec<(usize, Label)>,
+    Vec<(usize, [NodeId; 2], Label)>,
+);
 
 /// A face's box, from its vertices' cached coordinates.
 ///
@@ -4269,6 +4305,13 @@ pub(crate) fn trace_result_faces_full_for_test(
 /// it, and a cylinder cuts only some classes.
 pub(crate) type DiskLabels = HashMap<(usize, usize), Label>;
 
+/// **A cut circle's per-arc disk-side labels** — the sector sibling of [`DiskLabels`] (the
+/// rulings ladder): a cut circle bounds no whole disk, so "the material immediately above and
+/// below this plane inside the circle" is answered **per arc**, by the label of the cell on the
+/// arc's disk side. Keyed like `DiskLabels`; each entry lists `(arc's end pair, label)` in the
+/// split's own arc order. The frame is the disk labels' (the class's stored normal).
+pub(crate) type ArcLabels = HashMap<(usize, usize), Vec<([NodeId; 2], Label)>>;
+
 /// **A cut circle's seam datum — carried from the split, never re-derived.** `split_circles`
 /// already orders a cut circle's branch nodes by θ about the seam and classifies a seam-incident
 /// node by name (`circular_order_about_seam`), so the one fact the assembly cannot re-derive
@@ -4291,6 +4334,7 @@ pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 /// element by element (it was widened once already, for `deferred`).
 pub(crate) struct Curved {
     pub(crate) disk_labels: DiskLabels,
+    pub(crate) arc_labels: ArcLabels,
     pub(crate) cut_rims: CutRims,
 }
 
@@ -4551,6 +4595,7 @@ fn trace_result_faces(
         type ClassOut = (
             Vec<LocalFace>,
             Vec<(usize, Label)>,
+            Vec<(usize, [NodeId; 2], Label)>,
             Vec<(usize, CutRim)>,
             Option<BoolError>,
         );
@@ -4589,7 +4634,13 @@ fn trace_result_faces(
                 #[allow(clippy::unnecessary_literal_unwrap)]
                 Err(e) => return Err(deferred.unwrap_or(e)),
             };
-            Ok((s.faces, s.disk_labels, edges.cut_rims.clone(), deferred))
+            Ok((
+                s.faces,
+                s.disk_labels,
+                s.arc_labels,
+                edges.cut_rims.clone(),
+                deferred,
+            ))
         };
         // **The plan decides, and only ever downwards.** A `PassThrough` that cannot name one of
         // its vertices falls back to arranging, so this can lose the shortcut but never the answer.
@@ -4617,23 +4668,31 @@ fn trace_result_faces(
             }
         };
         match reused {
-            Some(f) => Ok((f, Vec::new(), Vec::new(), None)),
+            Some(f) => Ok((f, Vec::new(), Vec::new(), Vec::new(), None)),
             None => arrange(wc),
         }
     })?;
     let mut curved = Curved {
         disk_labels: HashMap::new(),
+        arc_labels: HashMap::new(),
         cut_rims: HashMap::new(),
     };
     // The first arc class's deferred reject, in `work` order — the map above may run its classes
     // in parallel, but this fold reads the vec in order, so the choice is deterministic.
     let mut deferred: Option<BoolError> = None;
-    for (k, (faces, labels, rims, d)) in per_class.into_iter().enumerate() {
+    for (k, (faces, labels, arcs, rims, d)) in per_class.into_iter().enumerate() {
         local_faces.extend(faces);
         // ★ `work[k]` is the translation from this arrangement's k-th class to the global plane
-        // class index — both curved maps are keyed in the global space the assembly speaks.
+        // class index — the curved maps are keyed in the global space the assembly speaks.
         for (cyl, label) in labels {
             curved.disk_labels.insert((cyl, work[k]), label);
+        }
+        for (cyl, ends, label) in arcs {
+            curved
+                .arc_labels
+                .entry((cyl, work[k]))
+                .or_default()
+                .push((ends, label));
         }
         for (cyl, rim) in rims {
             curved.cut_rims.insert((cyl, work[k]), rim);
@@ -5260,6 +5319,7 @@ pub(crate) fn boolean(
                     &jd,
                     &curved.disk_labels,
                     &curved.cut_rims,
+                    &curved.arc_labels,
                 )?);
                 faces
             };
@@ -6482,7 +6542,7 @@ mod tests {
         let near = |c: [f64; 2], x: f64, y: f64| (c[0] - x).abs() < 1e-9 && (c[1] - y).abs() < 1e-9;
 
         // Fuse: all 5 bounded cells (the plus cap).
-        let (fuse, _) = emit_faces(
+        let (fuse, _, _) = emit_faces(
             BoolKind::Fuse,
             &labels,
             &cells,
@@ -6493,7 +6553,7 @@ mod tests {
         );
         assert_eq!(fuse.len(), 5, "Fuse keeps the whole plus cap");
         // Cut a−b: exactly the two a-arms.
-        let (cut, _) = emit_faces(
+        let (cut, _, _) = emit_faces(
             BoolKind::Cut,
             &labels,
             &cells,
@@ -6509,7 +6569,7 @@ mod tests {
             "the two survivors are the a-arms at (0.5,1.5),(2.5,1.5): {cut_c:?}"
         );
         // Common: exactly the center square.
-        let (common, _) = emit_faces(
+        let (common, _, _) = emit_faces(
             BoolKind::Common,
             &labels,
             &cells,
@@ -7693,11 +7753,18 @@ mod tests {
         let mut disk_labels: crate::arrangement::DiskLabels = HashMap::new();
         let mut cut_rims: CutRims = HashMap::new();
         let mut plane_faces: Vec<LocalFace> = Vec::new();
+        let mut arc_labels: crate::arrangement::ArcLabels = HashMap::new();
         for c in [z0, z20, cap_lo, cap_hi] {
             let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c, &crossings);
             let staged = per_class(&jd, BoolKind::Fuse, c, &edges).unwrap();
             for (cyl, label) in &staged.disk_labels {
                 disk_labels.insert((*cyl, c), *label);
+            }
+            for (cyl, ends, label) in &staged.arc_labels {
+                arc_labels
+                    .entry((*cyl, c))
+                    .or_default()
+                    .push((*ends, *label));
             }
             for (cyl, rim) in &edges.cut_rims {
                 cut_rims.insert((*cyl, c), rim.clone());
@@ -7706,6 +7773,8 @@ mod tests {
         }
         assert!(cut_rims.contains_key(&(0, z0)) && cut_rims.contains_key(&(0, z20)));
         assert!(disk_labels.contains_key(&(0, cap_lo)) && disk_labels.contains_key(&(0, cap_hi)));
+        assert_eq!(arc_labels[&(0, z0)].len(), 2, "two arcs, two sector labels");
+        assert_eq!(arc_labels[&(0, z20)].len(), 2);
         let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
         assert_eq!(rows.len(), 1);
         let bands = crate::bands::bands_of(&rows[0], &plane_faces, &jd, &cut_rims).unwrap();
@@ -7714,13 +7783,78 @@ mod tests {
             vec![(cap_lo, z0), (z0, z20), (z20, cap_hi)],
             "three intervals, cut circles included"
         );
-        // One-side-cut intervals answer from their cap end; the both-cut middle still refuses.
+        // One-side-cut intervals answer from their cap end; the both-cut middle carries no disk
+        // cell at either end — the whole-disk road still refuses it (the panel road below is
+        // what answers).
         assert!(crate::bands::chamber(&jd, &rows[0], cap_lo, z0, &disk_labels).is_ok());
         assert!(crate::bands::chamber(&jd, &rows[0], z20, cap_hi, &disk_labels).is_ok());
         assert!(matches!(
             crate::bands::chamber(&jd, &rows[0], z0, z20, &disk_labels),
             Err(BoolError::Rejected {
                 reason: RejectReason::CylinderGateUndecided,
+                ..
+            })
+        ));
+        // ★ The panel road: `band_faces` answers the both-cut middle per θ-sector. Exactly one
+        // panel per kind here (the wall splits the lateral into two sectors; one side's chambers
+        // agree under `keep`, the other's differ), and **fuse and cut keep complementary
+        // sectors** — a relative assertion: which sector is the outer one is the assembly's and
+        // the volume oracle's to measure (the gate-opening cell), not this harness's to
+        // re-derive. Structure is absolute: `[arc, ruling, arc, ruling]` walls on the sector's
+        // own rim nodes.
+        let faces_for = |kind: BoolKind| -> Vec<LocalFace> {
+            crate::bands::band_faces(
+                kind,
+                &plane_faces,
+                &rows,
+                &jd,
+                &disk_labels,
+                &cut_rims,
+                &arc_labels,
+            )
+            .unwrap()
+            .into_iter()
+            .filter(|f| matches!(f.outer, crate::boolean::Bound::Ring(_)))
+            .collect()
+        };
+        let (fuse, cut) = (faces_for(BoolKind::Fuse), faces_for(BoolKind::Cut));
+        assert_eq!(fuse.len(), 1, "one kept sector panel for fuse");
+        assert_eq!(cut.len(), 1, "one kept sector panel for cut");
+        let arc_pair = |f: &LocalFace| -> [NodeId; 2] {
+            let crate::boolean::Bound::Ring(r) = &f.outer else {
+                unreachable!("filtered to rings")
+            };
+            assert_eq!(r.nodes.len(), 4);
+            assert!(matches!(
+                r.walls[..],
+                [
+                    crate::boolean::Wall::Arc { ccw: true, .. },
+                    crate::boolean::Wall::Ruling { up: true, .. },
+                    crate::boolean::Wall::Arc { ccw: false, .. },
+                    crate::boolean::Wall::Ruling { up: false, .. },
+                ]
+            ));
+            [r.nodes[0], r.nodes[1]]
+        };
+        let (pf, pc) = (arc_pair(&fuse[0]), arc_pair(&cut[0]));
+        let rim = &cut_rims[&(0, z0)];
+        assert!(rim.nodes.contains(&pf[0]) && rim.nodes.contains(&pc[0]));
+        assert_ne!(pf, pc, "fuse and cut keep complementary sectors");
+        // Negative control: without the sector labels the both-cut interval refuses by the
+        // ladder's name.
+        let empty: crate::arrangement::ArcLabels = HashMap::new();
+        assert!(matches!(
+            crate::bands::band_faces(
+                BoolKind::Fuse,
+                &plane_faces,
+                &rows,
+                &jd,
+                &disk_labels,
+                &cut_rims,
+                &empty,
+            ),
+            Err(BoolError::Rejected {
+                reason: RejectReason::RulingBoundNotYet,
                 ..
             })
         ));
@@ -7996,7 +8130,7 @@ mod tests {
         );
         // Fuse keeps below and not above across the disk → the disk is a result face, and its
         // outer boundary is the circle — no ring, no nodes.
-        let (out, _) = emit_faces(
+        let (out, _, _) = emit_faces(
             BoolKind::Fuse,
             &labels,
             &cells,
@@ -8114,7 +8248,7 @@ mod tests {
             "inside the circle the cylinder straddles W, the box side is unchanged"
         );
 
-        let (out, _) = emit_faces(
+        let (out, _, _) = emit_faces(
             BoolKind::Cut,
             &labels,
             &cells,

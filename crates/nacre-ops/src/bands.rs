@@ -143,20 +143,35 @@ pub(crate) fn band_faces(
     jd: &Judge<'_, WorkingPlane>,
     labels: &crate::arrangement::DiskLabels,
     cut_rims: &crate::arrangement::CutRims,
+    arc_labels: &crate::arrangement::ArcLabels,
 ) -> Result<Vec<LocalFace>, BoolError> {
     let mut out = Vec::new();
     for row in rows {
         for (lo, hi) in bands_of(row, plane_faces, jd, cut_rims)? {
+            // ★ A **both-cut** interval has a disk cell at neither end — its chambers are per
+            // θ-sector, read from the cut circles' arc labels: the panel road (rulings ladder).
+            if let (Some(lo_rim), Some(hi_rim)) = (
+                cut_rims.get(&(row.class, lo)),
+                cut_rims.get(&(row.class, hi)),
+            ) {
+                panel_faces(
+                    kind,
+                    row,
+                    (lo, lo_rim),
+                    (hi, hi_rim),
+                    jd,
+                    arc_labels,
+                    &mut out,
+                )?;
+                continue;
+            }
             let (in_own_inside, in_other) = chamber(jd, row, lo, hi, labels)?;
             // ★ **The wall is a boundary face of its own solid, so that solid's membership flips
             // across it** — read inside from the label, and outside is its negation. The
             // counterpart does *not* flip: the gate keeps its boundary faces clear of the lateral, so
             // the slab theorem covers both sides. The face survives exactly when the two chambers
             // disagree under `keep`.
-            let keep_side = |in_own: bool| match row.side {
-                SolidSide::A => crate::arrangement::keep(kind, in_own, in_other),
-                SolidSide::B => crate::arrangement::keep(kind, in_other, in_own),
-            };
+            let keep_side = |in_own: bool| keep_for(kind, row.side, in_own, in_other);
             let (keep_in, keep_out) = (keep_side(in_own_inside), keep_side(!in_own_inside));
             if keep_in == keep_out {
                 continue;
@@ -281,6 +296,145 @@ fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Option<Rat
 /// membership is read from the label too, and the wall's other side follows from what the wall
 /// *is*: a boundary face of that solid, so its own membership flips across it while the
 /// counterpart's (by the slab theorem) does not.
+/// **The θ-panels of a both-cut interval** — the rulings ladder's sector road. Both bounding
+/// circles are cut, so the interval's lateral is divided by the rulings at the cut nodes'
+/// angles into sectors, and each sector is its own chamber question, answered by the cut
+/// circles' per-arc labels ([`crate::arrangement::ArcLabels`]).
+///
+/// The two rims' nodes must correspond one-to-one by `(wall class, root)` — the same wall
+/// cutting both circles puts a branch node at the same angle on each. A geometry whose upper
+/// and lower circles are cut by *different* walls has no such pairing and is refused by the
+/// ladder's name (its cell has not arrived).
+///
+/// A kept sector is emitted as a **ring** of the ladder's own vocabulary — `[arc, ruling, arc,
+/// ruling]` (`Wall::Arc`/`Wall::Ruling`) — not a `Band`: a band's boundary is two whole
+/// circles, a panel's is four pieces.
+///
+/// ★ **The ring's absolute winding is unmeasured here** (the node order below is one fixed
+/// deterministic convention): like the ruling turn's global sign, the assembly and the volume
+/// oracles of the gate-opening cell are the instruments that can see it — recorded rather than
+/// assumed.
+#[allow(clippy::too_many_arguments)]
+fn panel_faces(
+    kind: BoolKind,
+    row: &CylRow,
+    (lo, lo_rim): (usize, &crate::arrangement::CutRim),
+    (hi, hi_rim): (usize, &crate::arrangement::CutRim),
+    jd: &Judge<'_, WorkingPlane>,
+    arc_labels: &crate::arrangement::ArcLabels,
+    out: &mut Vec<LocalFace>,
+) -> Result<(), BoolError> {
+    use crate::boolean::{Ring, Wall};
+    let ladder = || reject(RejectReason::RulingBoundNotYet);
+    let k = row.class;
+    // A node's `(wall class, root)` — the identity that pairs the two rims' nodes. The wall is
+    // the Branch name's plane that is not the rim's own class.
+    let name_on = |rim_class: usize,
+                   n: combinatorics::NodeId|
+     -> Result<(usize, nacre_topo::QuadRoot), BoolError> {
+        let (pair, _, root) = combinatorics::branch_name(n).ok_or_else(ladder)?;
+        let wall = if pair[0] == rim_class {
+            pair[1]
+        } else if pair[1] == rim_class {
+            pair[0]
+        } else {
+            return Err(ladder());
+        };
+        Ok((wall, root))
+    };
+    let m = lo_rim.nodes.len();
+    if m != hi_rim.nodes.len() || m < 2 {
+        return Err(ladder());
+    }
+    let mut hi_of: std::collections::HashMap<(usize, nacre_topo::QuadRoot), combinatorics::NodeId> =
+        std::collections::HashMap::new();
+    for &n in &hi_rim.nodes {
+        if hi_of.insert(name_on(hi, n)?, n).is_some() {
+            return Err(ladder()); // two nodes with one name: not this ladder's geometry
+        }
+    }
+    let labels_at = |c: usize, a: combinatorics::NodeId, b: combinatorics::NodeId| {
+        arc_labels
+            .get(&(k, c))
+            .and_then(|v| v.iter().find(|(e, _)| *e == [a, b]))
+            .map(|(_, l)| *l)
+            .ok_or_else(ladder)
+    };
+    let toward_hi = |c: usize| -> bool { crate::planes::plus_t_is_above(&jd.planes[c], &row.def) };
+    for j in 0..m {
+        let (a_lo, b_lo) = (lo_rim.nodes[j], lo_rim.nodes[(j + 1) % m]);
+        let a_hi = *hi_of.get(&name_on(lo, a_lo)?).ok_or_else(ladder)?;
+        let b_hi = *hi_of.get(&name_on(lo, b_lo)?).ok_or_else(ladder)?;
+        // The sector's chamber, from both rims — the same both-ends-agree discipline as
+        // `chamber`'s, on the per-arc labels. The hi arc runs `[a_hi, b_hi]` too: the pairing
+        // preserves angle, so the CCW adjacency is the same on both circles.
+        let l_lo = labels_at(lo, a_lo, b_lo)?;
+        let l_hi = labels_at(hi, a_hi, b_hi)?;
+        let (own_lo, other_lo) = read_bits(&l_lo, row.side, toward_hi(lo));
+        let (own_hi, other_hi) = read_bits(&l_hi, row.side, !toward_hi(hi));
+        if (own_lo, other_lo) != (own_hi, other_hi) {
+            return Err(ladder());
+        }
+        let keep_side = |in_own: bool| keep_for(kind, row.side, in_own, other_lo);
+        let (keep_in, keep_out) = (keep_side(own_lo), keep_side(!own_lo));
+        if keep_in == keep_out {
+            continue;
+        }
+        // The ruling identity at each cut angle, from the one spelling
+        // (`arrangement::ruling_side` against the wall class's canonical coefficients).
+        let side_at = |n: combinatorics::NodeId| -> Result<i8, BoolError> {
+            let (wall, _) = name_on(lo, n)?;
+            let w = combinatorics::class_coeffs_rat(jd, wall).ok_or_else(ladder)?;
+            let (line, s) = combinatorics::branch_meet(jd, k, &row.def, n).ok_or_else(ladder)?;
+            crate::arrangement::ruling_side(&w, &row.def, (&line, &s)).ok_or_else(ladder)
+        };
+        out.push(LocalFace {
+            surf: ClassIx::Cyl(k),
+            outer: Bound::Ring(Ring::new(
+                vec![a_lo, b_lo, b_hi, a_hi],
+                vec![
+                    Wall::Arc { cyl: k, ccw: true },
+                    Wall::Ruling {
+                        cyl: k,
+                        side: side_at(b_lo)?,
+                        up: true,
+                    },
+                    Wall::Arc { cyl: k, ccw: false },
+                    Wall::Ruling {
+                        cyl: k,
+                        side: side_at(a_lo)?,
+                        up: false,
+                    },
+                ],
+            )),
+            inner: Vec::new(),
+            flip: !keep_in,
+        });
+    }
+    Ok(())
+}
+
+/// The one spelling of "which two bits of a label are this band's chamber": the row's own
+/// solid's bit and the counterpart's, on the side of the plane the band occupies. Shared by the
+/// whole-disk road ([`chamber`]) and the per-sector panel road, so the two cannot drift.
+fn read_bits(l: &crate::arrangement::Label, side: SolidSide, band_is_above: bool) -> (bool, bool) {
+    let (cyl_bit, other_bit) = match side {
+        SolidSide::A => (0usize, 2usize), // [A above, A below, B above, B below]
+        SolidSide::B => (2usize, 0usize),
+    };
+    let i = usize::from(!band_is_above);
+    (l[cyl_bit + i], l[other_bit + i])
+}
+
+/// The one spelling of the band's keep decision — the wall is a boundary face of its own solid,
+/// so that solid's membership flips across it while the counterpart's does not.
+fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: bool) -> bool {
+    match side {
+        SolidSide::A => crate::arrangement::keep(kind, in_own, in_other),
+        SolidSide::B => crate::arrangement::keep(kind, in_other, in_own),
+    }
+}
+
 pub(crate) fn chamber(
     jd: &Judge<'_, WorkingPlane>,
     row: &CylRow,
@@ -289,18 +443,13 @@ pub(crate) fn chamber(
     labels: &crate::arrangement::DiskLabels,
 ) -> Result<(bool, bool), BoolError> {
     let k = row.class;
-    let (cyl_bit, other_bit) = match row.side {
-        SolidSide::A => (0usize, 2usize), // [A above, A below, B above, B below]
-        SolidSide::B => (2usize, 0usize),
-    };
     // `above` in the label is the class's **stored** normal side; the band leaves `lo` toward
     // `hi`, i.e. toward increasing axis parameter — which `plus_t_is_above` answers (and where the
     // f64 dot's exactness argument lives).
     let toward_hi = |c: usize| -> bool { crate::planes::plus_t_is_above(&jd.planes[c], &row.def) };
     let read = |c: usize, band_is_above: bool| -> Option<(bool, bool)> {
         let l = labels.get(&(k, c))?;
-        let i = usize::from(!band_is_above);
-        Some((l[cyl_bit + i], l[other_bit + i]))
+        Some(read_bits(l, row.side, band_is_above))
     };
     let ends = [(lo, toward_hi(lo)), (hi, !toward_hi(hi))];
     let mut answer: Option<(bool, bool)> = None;
@@ -389,6 +538,7 @@ mod tests {
             &jd,
             &curved.disk_labels,
             &curved.cut_rims,
+            &curved.arc_labels,
         )
         .expect("bands");
         // The classes' **z**, not their axis parameter: `t` is measured from the cylinder's own
@@ -1418,6 +1568,7 @@ mod tests {
                     &jd,
                     &curved.disk_labels,
                     &curved.cut_rims,
+                    &curved.arc_labels,
                 )
                 .expect("bands"),
             );
@@ -1520,6 +1671,7 @@ mod tests {
                     &jd,
                     &curved.disk_labels,
                     &curved.cut_rims,
+                    &curved.arc_labels,
                 )
                 .expect("bands"),
             );
@@ -1655,6 +1807,7 @@ mod tests {
                     &jd,
                     &curved.disk_labels,
                     &curved.cut_rims,
+                    &curved.arc_labels,
                 )
                 .expect("bands"),
             );
@@ -2106,6 +2259,7 @@ mod tests {
                     &jd,
                     &curved.disk_labels,
                     &curved.cut_rims,
+                    &curved.arc_labels,
                 )
                 .expect("bands"),
             );
