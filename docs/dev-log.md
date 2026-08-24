@@ -13257,3 +13257,13 @@ t12와 비트 동일).
 **남은 것**: rung 4(`Ring::edges`의 담체화) → 그 위에 digon 키 재적용 → rung 1·2(벽 위 동일평면
 캡, 사용자 첫 스크립트의 `UnorderedEdges`) · `RulingBoundNotYet`(캡이 재료 안에 앉은 보스) ·
 `WallMeetsLateral`(offset·tangent) · M6b · 회전.
+
+★ 자체 점검 추가분 (칸 ④): (a) **계획이 요구한 watertight 단언이 잠금에서 빠져 있었다** —
+`validate`는 위상 저장소를 읽지, 이 패스가 다시 쓴 경계를 메셔가 흘리는 것은 못 본다. 네 케이스
+전부에 넣었다(초록). (b) **새 규칙이 조용히 틀릴 수 있는 형상 둘을 직접 쳤다** — 구멍에 정확히
+들어맞는 «동전»(판+보어 ∪ 같은 반지름 핀)과 자기 보어 위에 선 보스. 둘 다 **내 규칙에 닿기 전에**
+`CylinderPairContact`(원통 둘이 닿는 M6b 인구)로 막힌다 ⇒ 「원 하나에 outer가 둘」·「hole이 둘」
+기권 분기는 **오늘 생산자가 없다**(그래서 픽스처도 없다 — `DegenerateWitness` 선례대로 숨기지
+않고 적는다). (c) 커밋된 코드를 다시 읽어 union의 `group_key` 검사·스킵·erase의 범위가 서로
+어긋나지 않는지, `faces.is_empty()` 가드가 hole 배정 루프보다 **뒤에** 있어도 되는지(빈 성분은
+hole도 없으므로 안전) 확인했다.

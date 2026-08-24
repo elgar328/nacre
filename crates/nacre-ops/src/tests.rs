@@ -3230,6 +3230,21 @@ fn a_disk_merges_into_the_face_it_lies_in() {
         assert_eq!(out.len(), 1, "one solid");
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
+        // ★ The merged face has to survive tessellation too: `validate` reads the topology store,
+        // and a boundary this pass rewrote is exactly the kind a mesher can drop a piece of.
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
+        let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
+        for (_, tri) in mesh.triangles.iter() {
+            for k in 0..3 {
+                let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+                *uses.entry((x.min(y), x.max(y))).or_default() += 1;
+            }
+        }
+        assert_eq!(
+            uses.values().filter(|&&n| n != 2).count(),
+            0,
+            "the mesh is watertight"
+        );
         (
             nacre_props::mass_props(&m, out[0]).unwrap().volume,
             faces_of(&m, out[0]),
