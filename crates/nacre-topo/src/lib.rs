@@ -975,6 +975,33 @@ impl Model {
         Some(total)
     }
 
+    /// **A plane's canonical name in the world**, whatever frame its truth is written in — the
+    /// door between "how this surface got here" and "where it is".
+    ///
+    /// Unmoved: the name itself, which is already world. Moved by a chain that folds to a
+    /// rational translation ([`Model::chain_translation`]): that name carried out exactly
+    /// (`d' = d − n·t`, [`nacre_scalar::Isometry::plane_coeffs`], canonicalized). `None` for
+    /// anything else — a rotation, a frame node, a **moved** [`nacre_scalar::PlaneName::Wide`]
+    /// (no narrow vessel for the transport to take), or an overflow — and the caller declines
+    /// rather than guessing. An *unmoved* `Wide` name comes back verbatim: it is already world,
+    /// and refusing it would switch off a capability that is locked elsewhere.
+    ///
+    /// **Planes only.** A cylinder surface has no entry in `surface_name`, so it answers `None`;
+    /// its own world statement is `nacre-ops`' `world_cylinder_def`.
+    pub fn world_plane_name(&self, surf: Handle<Surface>) -> Option<nacre_scalar::PlaneName> {
+        let name = self.surface_name.get(&surf)?;
+        match self.plane_motion(surf) {
+            None => Some(name.clone()),
+            Some(leaf) => {
+                let t = self.chain_translation(leaf)?;
+                let c = name.narrow()?;
+                Some(nacre_scalar::PlaneName::Narrow(
+                    nacre_scalar::Isometry::translation(t).plane_coeffs(*c)?,
+                ))
+            }
+        }
+    }
+
     /// The strict twin: every node carries the plane's **coefficient row verbatim**, not merely
     /// the set. The one place they part is a mirror whose plane is the carrier itself (`n ∥ axis`,
     /// on-plane): the set maps to itself but the row comes back negated — harmless to a Cramer
@@ -1258,6 +1285,29 @@ impl Model {
             // variant is a compile error, not a silent fall-through).
             VertexDef::OnSeam(_) | VertexDef::Branch { .. } => return None,
         };
+        // ★★★ **The third door — solve in the world** (2026-08-24). The two below want *one*
+        // frame: the world (nothing moved) or one shared chain. A second-generation array breaks
+        // both — an array fused in x and then moved in y puts carriers with chains `T2` and
+        // `T1·T2` on one corner — and yet every one of those planes states the world exactly,
+        // because a rational translation carries a rational name ([`Model::world_plane_name`]).
+        // So when the shared-frame roads decline, the triple is solved from the **world names**
+        // and the answer carries no leaf: the caller must not replay anything.
+        //
+        // ★ **It is a fallback, deliberately.** Running it first would re-spell points the two
+        // doors already answer, and those spellings are what the corpus is pinned on. Reached
+        // only where today's answer is `None`, it can open a population and cannot move one.
+        //
+        // ★ It transports the **name**, never the point: `world_plane_name` moves each carrier's
+        // equation into the world, and `three_planes_big` then meets three world planes. Nothing
+        // here realizes a coordinate and shifts it.
+        let world_road = || -> Option<nacre_scalar::MeetPoint> {
+            let (a, b, c) = (
+                self.world_plane_name(tri[0])?,
+                self.world_plane_name(tri[1])?,
+                self.world_plane_name(tri[2])?,
+            );
+            nacre_scalar::three_planes_big([&a, &b, &c])
+        };
         let motions = tri.map(|h| self.plane_motion(h));
         // One shared leaf among the **moved** carriers; no moved carrier means the world.
         let mut leaf = None;
@@ -1265,7 +1315,8 @@ impl Model {
             match leaf {
                 None => leaf = Some(*m),
                 Some(l) if l == *m => {}
-                Some(_) => return None, // two histories — no shared frame
+                // Two histories — no shared frame, so ask whether both state the world.
+                Some(_) => return world_road().map(|p| (p, None)),
             }
         }
         let names = tri.map(|h| self.surface_name.get(&h));
@@ -1287,7 +1338,8 @@ impl Model {
         if let Some(leaf) = leaf {
             for (n, m) in [a, b, c].iter().zip(&motions) {
                 if m.is_none() && !n.narrow().is_some_and(|c| self.chain_fixes_plane(leaf, c)) {
-                    return None; // this vertex's carriers straddle frames
+                    // The carriers straddle frames — the world road is the remaining question.
+                    return world_road().map(|p| (p, None));
                 }
             }
         }
@@ -2257,6 +2309,112 @@ mod tests {
             "the rationals have no scale to disagree about"
         );
         assert!(rat(2.2).is_some());
+    }
+
+    /// ★★★ **The third door: a corner whose carriers came by different roads still solves.**
+    ///
+    /// Built synthetically — three planes, two of them carrying **different** translation chains —
+    /// because waiting for a boolean to produce the shape would measure "what passed" rather than
+    /// "what was fixed". The two older doors want one frame (all-world, or one shared chain) and
+    /// neither holds here; the world road transports each carrier's *name* and meets the three in
+    /// the world, so the answer carries no leaf and the caller replays nothing.
+    ///
+    /// Negative controls, both load-bearing: a **rotated** carrier has no rational world name and
+    /// still declines, and a corner the shared-chain door can answer keeps answering **through
+    /// that door** (`leaf = Some`) — which is what says the new road is a fallback and not a
+    /// re-spelling of what already worked.
+    #[test]
+    fn a_corner_of_two_translation_chains_solves_in_the_world() {
+        use nacre_scalar::{Angle, Axis, Rat};
+        let mut m = Model::new();
+        let r = Rat::from_int;
+        // Three axis planes through the origin, pushed as their own statements.
+        let plane = |m: &mut Model, n: [f64; 3], pts: [[i128; 3]; 3]| {
+            m.push_plane(
+                nacre_geom::Plane::from_point_normal(
+                    Point3::origin(),
+                    nacre_math::Vector3::from_array(n),
+                )
+                .expect("unit normal"),
+                pts.map(|p| p.map(r)),
+                None,
+            )
+            .0
+        };
+        let px = plane(&mut m, [1.0, 0.0, 0.0], [[0, 0, 0], [0, 1, 0], [0, 0, 1]]);
+        let py = plane(&mut m, [0.0, 1.0, 0.0], [[0, 0, 0], [1, 0, 0], [0, 0, 1]]);
+        let pz = plane(&mut m, [0.0, 0.0, 1.0], [[0, 0, 0], [1, 0, 0], [0, 1, 0]]);
+        // Two different translation chains, and a third carrier that stays in the world.
+        let t = |m: &mut Model, o: [i128; 3]| {
+            m.push_motion(Motion::Translate { offset: o.map(r) }, None)
+        };
+        let t1 = t(&mut m, [2, 0, 0]);
+        let t2 = t(&mut m, [0, 3, 0]);
+        let moved = |m: &mut Model, src: Handle<Surface>, leaf: Handle<MotionNode>| {
+            let SurfaceTruth::Plane {
+                points: PlanePoints::Known(pts),
+                ..
+            } = m.surface_truth(src).clone()
+            else {
+                unreachable!("an axis plane states points")
+            };
+            let Surface::Plane(cache) = *m.surface(src) else {
+                unreachable!("a plane truth carries a plane cache")
+            };
+            m.push_plane(cache, pts, Some(leaf)).0
+        };
+        // x = 0 moved by (2,0,0) → the world plane x = 2; y = 0 moved by (0,3,0) → y = 3.
+        let mx = moved(&mut m, px, t1);
+        let my = moved(&mut m, py, t2);
+        let v = m.push_vertex(
+            VertexDef::ThreePlane([mx, my, pz]),
+            Point3::from_array([2.0, 3.0, 0.0]),
+            None,
+        );
+        let (p, frame) = m
+            .vertex_meet(v)
+            .expect("two translation chains still state the world");
+        assert_eq!(frame, None, "a world answer carries no chain to replay");
+        assert_eq!(
+            p.narrow().map(|c| c.map(|x| x.to_f64())),
+            Some([2.0, 3.0, 0.0]),
+            "the corner is where the two moved planes and the world plane meet"
+        );
+
+        // ① A rotated carrier has no rational world name — the road declines, honestly.
+        let spin = m.push_motion(
+            Motion::Rotate {
+                axis: Axis::Z,
+                point: [r(0); 3],
+                angle: Angle::from_deg(r(31)).expect("angle"),
+            },
+            None,
+        );
+        let turned = moved(&mut m, px, spin);
+        let v_turned = m.push_vertex(
+            VertexDef::ThreePlane([turned, my, pz]),
+            Point3::from_array([2.0, 3.0, 0.0]),
+            None,
+        );
+        assert!(
+            m.vertex_meet(v_turned).is_none(),
+            "a rotated carrier has no world name to meet with"
+        );
+
+        // ② The shared-chain door still answers through itself: same leaf on both moved carriers.
+        let mx2 = moved(&mut m, px, t1);
+        let my2 = moved(&mut m, py, t1);
+        let v_shared = m.push_vertex(
+            VertexDef::ThreePlane([mx2, my2, pz]),
+            Point3::from_array([2.0, 0.0, 0.0]),
+            None,
+        );
+        let (_, frame) = m.vertex_meet(v_shared).expect("one chain, one frame");
+        assert_eq!(
+            frame,
+            Some(t1),
+            "a corner the shared-chain door answers keeps taking that door"
+        );
     }
 
     /// ★ **Two doors, one fact.** `through_meets` used to solve each vertex inline; that body is

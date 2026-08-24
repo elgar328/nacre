@@ -3021,6 +3021,101 @@ fn two_bored_plates_fuse_face_to_face() {
     );
 }
 
+/// ★★★ **A 2×2 grid: an array fused in x, then moved in y and fused again.** The second
+/// generation is what makes this hard — the first fuse leaves a body whose surfaces come from
+/// *two* provenances (the original cell, and the one that moved), so moving that result puts
+/// carriers with different chains on one corner. The exact-corner road used to want one shared
+/// frame and declined, and the population gate's face test then could not judge the face at all
+/// (`CylinderGateUndecided`, measured on the user's script). Each carrier states the world, so
+/// the corner solves there.
+///
+/// The oracle is **proportionality**: n cells of one part must weigh exactly n times one cell.
+/// That is what says nothing was lost or double-counted at the joins.
+#[test]
+fn a_two_by_two_grid_fuses() {
+    use nacre_scalar::Rat;
+    let cell = |m: &mut Model, at: [f64; 3]| {
+        let plate = m.add_cuboid(
+            Point3::from_array(at),
+            Point3::from_array([at[0] + 20.0, at[1] + 20.0, at[2] + 10.0]),
+        );
+        m.rebuild_adjacency();
+        let bore = m.add_cylinder(
+            Point3::from_array([at[0] + 6.3, at[1] + 6.3, at[2] - 1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.1,
+            12.0,
+        );
+        m.rebuild_adjacency();
+        let bore2 = m.add_cylinder(
+            Point3::from_array([at[0] + 13.7, at[1] + 12.5, at[2] - 1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            1.7,
+            12.0,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Cut, plate, bore).expect("bore 1")[0];
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Cut, out, bore2).expect("bore 2")[0];
+        m.rebuild_adjacency();
+        out
+    };
+    let shift = |m: &mut Model, s, o: [f64; 3]| {
+        let s = transform(
+            m,
+            s,
+            &nacre_scalar::Isometry::translation(o.map(|c| Rat::try_from_f64(c).unwrap())),
+        )
+        .unwrap();
+        m.rebuild_adjacency();
+        s
+    };
+    // One cell, for the oracle.
+    let one = {
+        let mut m = Model::new();
+        let c = cell(&mut m, [0.0; 3]);
+        nacre_props::mass_props(&m, c).unwrap().volume
+    };
+    // The grid: (uc ∪ uc→x) ∪ (that ∪ →y).
+    let mut m = Model::new();
+    let a = cell(&mut m, [0.0; 3]);
+    let b = cell(&mut m, [0.0; 3]);
+    let b = shift(&mut m, b, [20.0, 0.0, 0.0]);
+    let row = boolean(&mut m, BoolKind::Fuse, a, b).expect("the x pair fuses")[0];
+    m.rebuild_adjacency();
+    let c = cell(&mut m, [0.0; 3]);
+    let d = cell(&mut m, [0.0; 3]);
+    let d = shift(&mut m, d, [20.0, 0.0, 0.0]);
+    let row2 = boolean(&mut m, BoolKind::Fuse, c, d).expect("the second row fuses")[0];
+    m.rebuild_adjacency();
+    // ★ The second generation: a row that already mixes two provenances, moved again.
+    let row2 = shift(&mut m, row2, [0.0, 20.0, 0.0]);
+    assert!(carries_motion(&m, row2), "the move records a chain");
+    let out = boolean(&mut m, BoolKind::Fuse, row, row2).expect("the grid fuses");
+    assert_eq!(out.len(), 1, "one solid");
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty());
+    let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+    assert!(
+        (v - 4.0 * one).abs() <= 1e-9 * one,
+        "{v} vs {} (4 x {one})",
+        4.0 * one
+    );
+    let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
+    let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
+    for (_, tri) in mesh.triangles.iter() {
+        for k in 0..3 {
+            let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+            *uses.entry((x.min(y), x.max(y))).or_default() += 1;
+        }
+    }
+    assert_eq!(
+        uses.values().filter(|&&n| n != 2).count(),
+        0,
+        "the mesh is watertight"
+    );
+}
+
 /// ★ **A wall whose plane passes near a hole, on a body that moved** — the face-level clearance
 /// test's own frame question. The infinite plane `y = 47.8` clears the bore at `(17.1, 48.6)`
 /// by 0.8 with `r = 2.12`, so the cheap test fails and each face on that class has to answer for

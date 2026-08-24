@@ -563,33 +563,18 @@ pub(crate) fn collect_planes(
     Ok(out)
 }
 
-/// **A plane's exact rational coefficients in the world** — the plane twin of
-/// [`world_cylinder_def`], and the description every road that compares a plane against a
-/// *world* cylinder needs ([`crate::combinatorics::class_coeffs_rat`] is the door).
+/// **A plane's exact rational coefficients in the world** — the narrow projection of
+/// [`nacre_topo::Model::world_plane_name`], which is the one place the rule lives.
 ///
-/// Unmoved: the name itself, which is already world. Moved by a chain that folds to a rational
-/// translation: that name carried out exactly (`d' = d − n·t`,
-/// [`nacre_scalar::Isometry::plane_coeffs`]). Anything else — a rotation, a frame, a
-/// [`nacre_scalar::PlaneName::Wide`] name with no narrow vessel to carry, an overflow — `None`,
-/// and the caller declines.
-///
-/// ★★★ **This is deliberately *not* a restatement of the row.** A moved plane's `rotated` flag
-/// says two things at once, and only one of them is about descriptions: it also says the row's
-/// `tri` is a *realized* triangle rather than the truth, which is what routes
-/// `Judge::planes_coplanar` to the high-precision road. Measured, by breaking it: two unit cubes
-/// shifted by `7/11` and `18/11` share a wall exactly, their f64 images differ in the last place,
-/// and flipping such a plane to unrotated sent the merge through the exact-f64 triangle test,
-/// which answered "two planes" — one body became two. So the world description rides *beside*
-/// the flag, and the judging road is left alone.
+/// ★★★ **Not a restatement of the row.** A moved plane's `rotated` flag says two things at once,
+/// and only one of them is about descriptions: it also says the row's `tri` is a *realized*
+/// triangle rather than the truth, which is what routes `Judge::planes_coplanar` to the
+/// high-precision road. Measured, by breaking it: two unit cubes shifted by `7/11` and `18/11`
+/// share a wall whose two f64 images differ in the last place, and flipping such a plane to
+/// unrotated sent the merge through the exact-f64 triangle test — one body came back as two. So
+/// the world description rides *beside* the flag, and the judging road is left alone.
 fn world_plane_coeffs(model: &Model, surf: Handle<Surface>) -> Option<[nacre_scalar::Rat; 4]> {
-    let c = *model.surface_name.get(&surf)?.narrow()?;
-    match model.plane_motion(surf) {
-        None => Some(c),
-        Some(leaf) => {
-            let t = model.chain_translation(leaf)?;
-            nacre_scalar::Isometry::translation(t).plane_coeffs(c)
-        }
-    }
+    model.world_plane_name(surf)?.narrow().copied()
 }
 
 /// **A cylinder's exact statement in the world** — the one door between a cylinder's truth
