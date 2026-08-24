@@ -163,16 +163,21 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsE
                 return Err(PropsError::UnsupportedInnerLoop);
             }
             let axis = cyl.axis().direction();
+            let ext = lateral_extent(model, &face.outer, cyl)?;
             let (lo, hi) = axial_range(model, &face.outer, axis)?;
             let base = loop_points(model, &face.outer)?[0];
-            // Rotational symmetry puts the band's centroid on the axis, half way
-            // along it. `axial_range` measures from `base`, so drop `base` onto
-            // the axis (subtract its radial part) and slide by (lo + hi)/2.
+            // The centroid sits at the sector's angular mean, half way along the
+            // axis: mean of `a₀ + z·axis + r·n̂(θ)` over the patch is the axis
+            // point plus `r·∫n̂dθ / Δθ` radially (zero for a full band — the old
+            // on-axis answer). `axial_range` measures from `base`, so drop `base`
+            // onto the axis (subtract its radial part) and slide by (lo + hi)/2.
             let line = cyl.axis();
             let radial = (base - line.origin()) - axis * (base - line.origin()).dot(axis);
             Ok(FaceProps {
-                area: 2.0 * PI * cyl.radius() * (hi - lo),
-                centroid: base - radial + axis * (0.5 * (lo + hi)),
+                area: cyl.radius() * ext.dtheta * (hi - lo),
+                centroid: base - radial
+                    + axis * (0.5 * (lo + hi))
+                    + ext.int_n * (cyl.radius() / ext.dtheta),
                 normal: None,
             })
         }
@@ -283,14 +288,20 @@ fn face_contribution(
             if !face.inner.is_empty() {
                 return Err(PropsError::UnsupportedInnerLoop);
             }
-            // Full 2π lateral band (seam model A, design §9). Area = 2πr·h; the
-            // flux integral ∮(r−R)·n̂ over the full band is 2πr²·h (the axial and
-            // off-axis terms cancel over the closed angle), so it needs no R.
+            // A lateral face is a (θ, z) rectangle on the cylinder: a full band
+            // (Δθ = 2π) or a θ-panel (the rulings ladder). Area = r·Δθ·h; the
+            // flux, with `p = a₀ + z·axis + r·n̂(θ)` and outward `±n̂`, is
+            //   ∮(p−R)·n̂ dA = r·h·( r·Δθ + (a₀−R)·∫n̂dθ )
+            // — the axial term drops (`axis·n̂ = 0`), and over a closed angle
+            // `∫n̂dθ = 0`, which is why the full band never needed `R`.
             let radius = cyl.radius();
             let axis = cyl.axis().direction();
+            let ext = lateral_extent(model, &face.outer, cyl)?;
             let height = axial_span(model, &face.outer, axis)?;
-            let area = 2.0 * PI * radius * height;
-            let flux = sign * 2.0 * PI * radius * radius * height;
+            let area = radius * ext.dtheta * height;
+            let a0 = cyl.axis().origin();
+            let flux =
+                sign * radius * height * (radius * ext.dtheta + (a0 - reference).dot(ext.int_n));
             Ok((area, flux))
         }
     }
@@ -396,6 +407,117 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
         let centroid = base + moment * (1.0 / area);
         Ok((area.abs(), centroid))
     }
+}
+
+/// The angular extent of a lateral face's sector.
+struct LateralExtent {
+    /// The sector's angle: `2π` for a full band, the arc span for a θ-panel.
+    dtheta: f64,
+    /// `∫ n̂ dθ` over the sector, in world coordinates — exactly zero for a
+    /// closed angle, which is what reduces every formula to the full-band one.
+    int_n: Vector3,
+}
+
+/// Read a lateral face's θ-extent off its rim arcs.
+///
+/// The loop's circle-curve edges group into two rims by axial station (the same
+/// derivation `nacre-tess` uses); each rim's arcs chain by their stored `[from,
+/// to]` **CCW** vertex order (the M6-2b convention). The chain's *shape* decides:
+/// no loose end means a closed rim — `Δθ` is exactly `2π` and `∫n̂dθ` exactly
+/// zero, no angle is ever measured, so the full-band populations keep their old
+/// numbers to the bit — while one loose start and one loose end mean an open
+/// sector, and the **chain-end angles alone** determine both quantities
+/// (`sin`/`cos` are periodic, so a chain wrapping past the seam needs no
+/// unwrapping; only `Δθ` folds by `rem_euclid`). Angles are read in the
+/// cylinder's own frame (`ref_dir`, `axis × ref_dir`) — one frame for both rims,
+/// independent of each rim circle's private `ref_dir`.
+///
+/// Honest declines (`UnsupportedBoundary`): no rims, more than two, a rim that
+/// is neither closed nor a single open chain, or a degenerate span.
+fn lateral_extent(
+    model: &Model,
+    outer: &Loop,
+    cyl: &nacre_geom::Cylinder,
+) -> Result<LateralExtent, PropsError> {
+    let axis = cyl.axis().direction();
+    let a0 = cyl.axis().origin();
+    let u = cyl.ref_dir();
+    let w = axis.cross(u);
+    let theta_of = |p: Point3| -> f64 {
+        let rel = p - a0;
+        let q = rel - axis * rel.dot(axis);
+        q.dot(w).atan2(q.dot(u))
+    };
+    // Group the loop's circle edges into rims by axial station.
+    let mut rims: Vec<(f64, Vec<nacre_topo::HalfEdge>)> = Vec::new();
+    for &he in &outer.half_edges {
+        let Curve::Circle(c) = edge_curve(model, he) else {
+            continue; // rulings and seam edges are straight
+        };
+        let key = (c.center() - a0).dot(axis);
+        match rims.iter_mut().find(|(k, _)| (*k - key).abs() < 1e-9) {
+            Some((_, hes)) => hes.push(he),
+            None => rims.push((key, vec![he])),
+        }
+    }
+    if rims.len() != 2 {
+        return Err(PropsError::UnsupportedBoundary);
+    }
+    let mut spans = Vec::with_capacity(2);
+    for (_, hes) in &rims {
+        // The chain's loose ends, in the stored CCW order: a vertex that starts
+        // an arc without ending one opens the sector; none at all closes it.
+        let mut starts: Vec<_> = Vec::new();
+        let mut ends: Vec<_> = Vec::new();
+        for he in hes {
+            let [va, vb] = model.edges.get(he.edge).vertices;
+            starts.push(va);
+            ends.push(vb);
+        }
+        let open_start: Vec<_> = starts
+            .iter()
+            .copied()
+            .filter(|v| !ends.contains(v))
+            .collect();
+        let open_end: Vec<_> = ends
+            .iter()
+            .copied()
+            .filter(|v| !starts.contains(v))
+            .collect();
+        match (open_start.as_slice(), open_end.as_slice()) {
+            ([], []) => spans.push(None),
+            ([s], [e]) => {
+                let (t0, t1) = (
+                    theta_of(model.vertex_point(*s)),
+                    theta_of(model.vertex_point(*e)),
+                );
+                let dtheta = (t1 - t0).rem_euclid(std::f64::consts::TAU);
+                if !dtheta.is_finite() || dtheta <= 0.0 {
+                    return Err(PropsError::UnsupportedBoundary);
+                }
+                spans.push(Some((dtheta, t0, t1)));
+            }
+            _ => return Err(PropsError::UnsupportedBoundary),
+        }
+    }
+    debug_assert!(
+        match (&spans[0], &spans[1]) {
+            (None, None) => true,
+            (Some((d0, ..)), Some((d1, ..))) => (d0 - d1).abs() < 1e-9,
+            _ => false,
+        },
+        "a lateral face's two rims span the same sector: {spans:?}"
+    );
+    Ok(match spans[0] {
+        None => LateralExtent {
+            dtheta: std::f64::consts::TAU,
+            int_n: Vector3::zero(),
+        },
+        Some((dtheta, t0, t1)) => LateralExtent {
+            dtheta,
+            int_n: u * (t1.sin() - t0.sin()) - w * (t1.cos() - t0.cos()),
+        },
+    })
 }
 
 /// Axial extent of a face's loop: the span of its vertices projected on `axis`

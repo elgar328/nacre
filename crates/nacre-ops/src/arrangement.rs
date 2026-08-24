@@ -7867,16 +7867,12 @@ mod tests {
         ));
     }
 
-    /// ★ **The armed assembly welds the panels** (rulings ladder, cell 3 — the lock): the whole
-    /// through-boss fuse, from production parts past the standing gate — every class's
-    /// arrangement, the coplanar unify, the band/panel pass, the seam table, and
-    /// `reconstruct` — comes back one solid with a clean `validate`. The ruling edges are
-    /// pinned structurally: exactly two straight lateral edges (the kept outer panel's), each
-    /// used exactly twice, carriers stated as **the edge's own fact** — the cylinder and the
-    /// wall plane — and the outer panel's seam-holding arc is split at an `OnSeam` vertex
-    /// (the panel road runs the wrap-arc split the Band road already had).
-    #[test]
-    fn the_armed_assembly_welds_the_panels() {
+    /// The armed through-boss fuse **assembled to the end of the road** — the pipeline the
+    /// cell-3 lock walks, extracted so the consumer locks (props' θ-range integrals, tess's
+    /// open-rim merge) measure the very same solid through one spelling: every class's
+    /// arrangement, the coplanar unify, the band/panel pass, the seam table, `reconstruct`.
+    /// Returns the model with the one welded solid live, plus the setup and the wall class.
+    fn armed_assembled_through_boss() -> (Model, crate::planes::PlaneSetup, usize) {
         let (mut m, plate, boss, setup, wc, crossings) = armed_through_boss();
         let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
         let mut faces: Vec<LocalFace> = Vec::new();
@@ -7920,8 +7916,22 @@ mod tests {
             crate::boolean::reconstruct(&mut m, &jd, &seam, &faces, &setup.cyls, &cut_rims, None)
                 .unwrap();
         assert_eq!(out.len(), 1, "one welded solid");
-        m.live_solids = out.clone();
+        m.live_solids = out;
         m.rebuild_adjacency();
+        (m, setup, wc)
+    }
+
+    /// ★ **The armed assembly welds the panels** (rulings ladder, cell 3 — the lock): the whole
+    /// through-boss fuse, from production parts past the standing gate — every class's
+    /// arrangement, the coplanar unify, the band/panel pass, the seam table, and
+    /// `reconstruct` — comes back one solid with a clean `validate`. The ruling edges are
+    /// pinned structurally: exactly two straight lateral edges (the kept outer panel's), each
+    /// used exactly twice, carriers stated as **the edge's own fact** — the cylinder and the
+    /// wall plane — and the outer panel's seam-holding arc is split at an `OnSeam` vertex
+    /// (the panel road runs the wrap-arc split the Band road already had).
+    #[test]
+    fn the_armed_assembly_welds_the_panels() {
+        let (m, setup, wc) = armed_assembled_through_boss();
         let issues = nacre_validate::validate(&m);
         assert!(issues.is_empty(), "{issues:?}");
         // The ruling edges, structurally: straight lateral edges = carriers {cylinder, a plane}
@@ -7956,6 +7966,32 @@ mod tests {
             .filter(|&&v| matches!(m.vertices.get(v).def, nacre_topo::VertexDef::OnSeam(_)))
             .count();
         assert!(on_seam >= 1, "the outer panel's wrap arc split at the seam");
+    }
+
+    /// ★ **The armed solid's mass properties are exact** (rulings ladder, cell 4 — the props
+    /// instrument): `mass_props` on the assembled through-boss fuse, with the θ-range lateral
+    /// integrals live, answers the derived closed forms — volume `32000 + 1000π` (plate plus
+    /// the boss outside it), area `6200 + 425π` (walls 3000 + split x = 40 wall 600, caps
+    /// bitten `3200 − 25π`, boss disks `50π`, full bands `300π`, the outer half-panel `100π`).
+    /// The lifted probe's full-2π mis-answer (7849.34 = truth + the panel counted whole,
+    /// `+100π`) cross-checks the area derivation. This is the volume oracle standing while the
+    /// gate still refuses production input.
+    #[test]
+    fn the_armed_solids_mass_properties_are_exact() {
+        let (m, _setup, _wc) = armed_assembled_through_boss();
+        let props = nacre_props::mass_props(&m, m.live_solids[0]).unwrap();
+        let volume = 32000.0 + 1000.0 * std::f64::consts::PI;
+        let area = 6200.0 + 425.0 * std::f64::consts::PI;
+        assert!(
+            (props.volume - volume).abs() <= 1e-9 * volume,
+            "volume {} != {volume}",
+            props.volume
+        );
+        assert!(
+            (props.area - area).abs() <= 1e-9 * area,
+            "area {} != {area}",
+            props.area
+        );
     }
 
     /// **The mixed parity reads a bitten ring — exactly, on the production pieces.**
