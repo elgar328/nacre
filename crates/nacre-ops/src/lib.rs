@@ -805,13 +805,14 @@ pub enum RejectReason {
     ///
     /// "Not yet" is still the literal truth for both.
     ArcBoundNotYet,
-    /// A **ruling** — the straight edge a wall parallel to a cylinder's axis cuts on its lateral
-    /// surface (the M6-2 rulings ladder) — reached the assembly: an emitted ring carries a ruling
-    /// wall, and the θ-partial lateral faces such an edge would bound are not built yet.
-    /// [`Self::ArcBoundNotYet`]'s straight sibling, for the same reason: the arrangement
-    /// downstairs speaks the vocabulary, the assembly upstairs does not yet. Unreachable while
-    /// the population gate ([`Self::WallMeetsLateral`]) stands; the backstop exists so lifting
-    /// the gate meets an honest name instead of a mis-carried edge.
+    /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
+    /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and
+    /// carriers), so what remains under this name are the ladder's standing guards: a class
+    /// carrying both circles and rulings (the cross-axis pair), rims cut by different walls
+    /// (no `(wall, root)` pairing), sector labels missing or disagreeing, a segment lying *on*
+    /// the lateral, and end names that share no single plane. [`Self::ArcBoundNotYet`]'s
+    /// straight sibling; unreachable while the population gate
+    /// ([`Self::WallMeetsLateral`]) stands.
     RulingBoundNotYet,
     /// **A loop's winding had to be read across a *curved* straight stretch.**
     ///

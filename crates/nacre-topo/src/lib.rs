@@ -1538,13 +1538,25 @@ impl Model {
             (Surface::Plane(p), Surface::Cylinder(c))
             | (Surface::Cylinder(c), Surface::Plane(p)) => {
                 let axis = c.axis();
+                // A plane **parallel** to the axis meets the lateral along rulings — straight,
+                // so the endpoints decide, exactly like the seam arm above (the rulings
+                // ladder). Same scale convention as the ⊥ assertion below, so the band between
+                // the two tests is symmetric and only a genuinely tilted plane (an ellipse)
+                // falls through to it.
+                {
+                    let n = p.normal();
+                    let d = axis.direction();
+                    if n.dot(d).powi(2) <= 1e-18 * n.norm_squared() * d.norm_squared() {
+                        return endpoints_line();
+                    }
+                }
                 debug_assert!(
                     {
                         let n = p.normal();
                         let d = axis.direction();
                         n.cross(d).norm_squared() <= 1e-18 * n.norm_squared()
                     },
-                    "a tilted plane over a cylinder crosses in an ellipse — M6, no producer yet"
+                    "a tilted plane over a cylinder crosses in an ellipse — M6-3, no producer yet"
                 );
                 let center = nacre_geom::intersect::line_plane(&axis, p)?;
                 Some(Curve::Circle(Circle::from_center_normal(

@@ -755,7 +755,19 @@ pub(crate) enum Wall {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 enum EdgeKey {
     Line((usize, usize)),
-    Arc { cyl: usize, from: usize, to: usize },
+    Arc {
+        cyl: usize,
+        from: usize,
+        to: usize,
+    },
+    /// A ruling piece: straight, so the pair is unordered like a line's — keyed apart from
+    /// plane edges by `(cyl, side)`, mirroring [`Wall::Ruling`]'s identity (a plane edge
+    /// collinear with a ruling is a refused degeneracy, not a legal share).
+    Ruling {
+        cyl: usize,
+        side: i8,
+        pair: (usize, usize),
+    },
 }
 
 impl Ring {
@@ -1290,10 +1302,17 @@ pub(crate) fn name_result_vertices(
         for ring in lf.poly_rings() {
             let k = ring.len();
             for t in 0..k {
-                edge_faces
-                    .entry((group_of[fi], norm_edge(ring[t], ring[(t + 1) % k])))
-                    .or_default()
-                    .push(lf.surf.plane());
+                // ★ Plane faces only (the rulings ladder): this table serves `far_plane`,
+                // whose one consumer is the three-plane def derivation — and a panel (a ring
+                // face on a cylinder class) can neither offer a far *plane* nor needs to: every
+                // vertex of a panel ring is Branch-named already. The ruling edge's plane side
+                // (the wall face) still contributes here.
+                if let crate::planes::ClassIx::Plane(pc) = lf.surf {
+                    edge_faces
+                        .entry((group_of[fi], norm_edge(ring[t], ring[(t + 1) % k])))
+                        .or_default()
+                        .push(pc);
+                }
             }
         }
     }
@@ -1423,7 +1442,7 @@ pub(crate) fn name_result_vertices(
 
 /// Rebuild the result solids from the arrangement's faces. Pushes into the arena; it does not take
 /// the operands at all, which is the point — the live set is its caller's to move.
-fn reconstruct(
+pub(crate) fn reconstruct(
     model: &mut Model,
     jd: &Judge<'_, WorkingPlane>,
     seam: &[SeamVertex],
@@ -1693,6 +1712,10 @@ fn reconstruct(
     let mut edge_for = |model: &mut Model,
                         va: Handle<Vertex>,
                         vb: Handle<Vertex>,
+                        // The two ends' names — `Some` wherever the caller walks a ring of
+                        // named nodes; the band chain passes `None` (its seam vertex has no
+                        // name), and only the ruling arm requires them.
+                        ends: Option<(NodeId, NodeId)>,
                         wall: Wall,
                         face_surf: Handle<Surface>|
      -> Result<Handle<Edge>, BoolError> {
@@ -1717,11 +1740,34 @@ fn reconstruct(
                 edge_of.insert(key, e);
                 Ok(e)
             }
-            Wall::Ruling { .. } => {
-                // The panel cell's vocabulary: a ruling edge bounds a θ-partial lateral face,
-                // which is not built yet — refusing by the population's name is the floor.
-                // Unreachable while the wall gate stands (no emitted ring carries a ruling).
-                Err(reject(RejectReason::RulingBoundNotYet))
+            Wall::Ruling { cyl, side, .. } => {
+                // ★ A ruling edge is straight, so the unordered pair orders it (no complementary
+                // pieces — the arc's problem does not arise); `(cyl, side)` keys it apart from
+                // plane edges. The carriers are **the edge's own fact**, stated from its end
+                // names (the shared wall plane) and the cylinder — never from `face_surf`, whose
+                // value depends on which face minted first (the wall face or the panel), and a
+                // carrier that depends on mint order is exactly the kind of drift
+                // `EdgeCarrierMismatch` exists to catch.
+                let pair = unordered(va.index() as usize, vb.index() as usize);
+                let key = EdgeKey::Ruling { cyl, side, pair };
+                if let Some(&e) = edge_of.get(&key) {
+                    return Ok(e);
+                }
+                let wall = ends
+                    .and_then(|(a, b)| shared_branch_plane(a, b))
+                    .ok_or_else(|| {
+                        // Two Branch ends that share no single wall plane: a naming this ladder
+                        // does not arrange yet.
+                        reject(RejectReason::RulingBoundNotYet)
+                    })?;
+                let e = model
+                    .push_edge(
+                        Edge::carrier_pair(cyls[cyl].surf, planes[wall].surf),
+                        [va, vb],
+                    )
+                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
+                edge_of.insert(key, e);
+                Ok(e)
             }
             Wall::Arc { cyl, ccw } => {
                 // ★★★ **An arc edge is minted in CCW order** — `[A, B]` is the piece from A to
@@ -1792,7 +1838,14 @@ fn reconstruct(
             let mut chain = Vec::with_capacity(m);
             for i in 0..m {
                 let (u, v) = (vs[i], vs[(i + 1) % m]);
-                let e = edge_for(model, u, v, Wall::Arc { cyl: k, ccw: true }, planes[c].surf)?;
+                let e = edge_for(
+                    model,
+                    u,
+                    v,
+                    None,
+                    Wall::Arc { cyl: k, ccw: true },
+                    planes[c].surf,
+                )?;
                 let forward = model.edges.get(e).vertices[0] == u;
                 chain.push(HalfEdge { edge: e, forward });
             }
@@ -1825,7 +1878,39 @@ fn reconstruct(
                 // the `ccw` bit the wall carries and compares against the split's own θ order
                 // (`nodes.last() → nodes[0]` is the piece that wraps past θ = 0).
                 let split_at = if let Wall::Arc { cyl, ccw } = r.walls[t] {
-                    let c = lf.surf.plane();
+                    // ★ Which circle's plane this arc lies in: a **plane** face's own class (a
+                    // cap — today's road), or, for a **panel** (a ring face on the cylinder
+                    // class), the plane its two end names share — the fact the face's surf
+                    // cannot give. This is what lets the seam split run on a panel's arc too
+                    // (the through-boss's outer panel holds θ = 0).
+                    let c = match lf.surf {
+                        ClassIx::Plane(c) => c,
+                        // A panel arc's two ends may share **both** planes (one wall cuts the
+                        // circle twice, so each end is named {wall, circle-plane}), so the
+                        // unique-share rule the ruling edge uses cannot apply — the circle's
+                        // plane is the shared candidate that carries a cut-rim record.
+                        ClassIx::Cyl(_) => {
+                            let (na, nb) = (r.nodes[t], r.nodes[(t + 1) % k]);
+                            let shared = |x| {
+                                let (pa, _, _) = combinatorics::branch_name(na)?;
+                                let (pb, _, _) = combinatorics::branch_name(nb)?;
+                                (pa.contains(&x) && pb.contains(&x)).then_some(x)
+                            };
+                            let mut hits = combinatorics::branch_name(na)
+                                .map(|(pa, _, _)| pa)
+                                .into_iter()
+                                .flatten()
+                                .filter_map(shared)
+                                .filter(|&c| cut_rims.contains_key(&(cyl, c)));
+                            let c = hits
+                                .next()
+                                .ok_or_else(|| reject(RejectReason::RulingBoundNotYet))?;
+                            if hits.next().is_some() {
+                                return Err(reject(RejectReason::RulingBoundNotYet));
+                            }
+                            c
+                        }
+                    };
                     match cut_rims.get(&(cyl, c)) {
                         Some(cr) if !cr.seam_is_node => {
                             let (a, b) = (r.nodes[t], r.nodes[(t + 1) % k]);
@@ -1850,7 +1935,14 @@ fn reconstruct(
                     None => vec![[va, vb]],
                 };
                 for [u, v] in legs {
-                    let e = edge_for(model, u, v, r.walls[t], face_surf)?;
+                    let e = edge_for(
+                        model,
+                        u,
+                        v,
+                        Some((r.nodes[t], r.nodes[(t + 1) % k])),
+                        r.walls[t],
+                        face_surf,
+                    )?;
                     // For an arc edge the stored order is CCW, so this reads back exactly the
                     // `ccw` bit the wall carried in.
                     let forward = model.edges.get(e).vertices[0] == u;
@@ -2179,6 +2271,19 @@ fn reconstruct(
         }
     }
     out
+}
+
+/// The one plane class two **Branch** end names share — the fact a curved-face ring cannot
+/// read off its own surface (a panel's `surf` is the cylinder): an arc's two ends share the
+/// class of the circle's plane, a ruling's two ends share the wall's. `None` is the honest
+/// answer for a pair that shares none or both (a degenerate naming this ladder does not
+/// arrange) — callers refuse by the ladder's name rather than unwrap.
+fn shared_branch_plane(a: NodeId, b: NodeId) -> Option<usize> {
+    let (pa, _, _) = combinatorics::branch_name(a)?;
+    let (pb, _, _) = combinatorics::branch_name(b)?;
+    let mut shared = pa.iter().filter(|x| pb.contains(x));
+    let c = *shared.next()?;
+    shared.next().is_none().then_some(c)
 }
 
 /// An unordered edge key: the two nodes in a fixed order, so `{a,b}` and `{b,a}` collide.
