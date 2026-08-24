@@ -3132,6 +3132,55 @@ fn a_two_by_two_grid_fuses() {
         0,
         "the mesh is watertight"
     );
+
+    // ★★ **The corners this opened are a datum's carriers too, so the ledger says so here.**
+    // The grid's vertices split: some answer in the world (their carriers each state it), some in
+    // a shared frame — both must be present, or the fixture is not the mixed body it claims to be.
+    // A datum through three of the world-answered ones then gets a **name**, which is the road
+    // `ThroughStatement` takes when the three meets agree on a frame. Before this cell the whole
+    // grid could not be built, so this capability has no earlier behaviour to change — it is new,
+    // and cheap to hold here on a model that is already standing.
+    let mut world: Vec<Handle<nacre_topo::Vertex>> = Vec::new();
+    let mut framed = 0usize;
+    {
+        let sol = m.solids.get(out[0]).clone();
+        let mut seen: Vec<Handle<nacre_topo::Vertex>> = Vec::new();
+        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+            for &fh in &m.shells.get(sh).faces {
+                for he in &m.faces.get(fh).outer.half_edges {
+                    let vh = m.he_start(*he);
+                    if seen.contains(&vh) {
+                        continue;
+                    }
+                    seen.push(vh);
+                    match m.vertex_meet(vh) {
+                        Some((_, None)) => world.push(vh),
+                        Some((_, Some(_))) => framed += 1,
+                        None => {}
+                    }
+                }
+            }
+        }
+    }
+    world.sort_by_key(|v| v.index());
+    assert!(
+        world.len() >= 3 && framed > 0,
+        "a two-generation grid answers some corners in the world and some in a frame \
+         (world {}, framed {framed})",
+        world.len()
+    );
+    let Ok(OpOutput::DatumPlane { plane, .. }) = apply(
+        &mut m,
+        &Operation::DatumPlane {
+            def: DatumDef::ThroughVertices([world[0], world[1], world[2]]),
+        },
+    ) else {
+        panic!("a datum through three world-answered corners")
+    };
+    assert!(
+        m.surface_name.contains_key(&plane),
+        "the datum is named, not judged"
+    );
 }
 
 /// ★ **A wall whose plane passes near a hole, on a body that moved** — the face-level clearance
