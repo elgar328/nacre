@@ -3031,30 +3031,47 @@ fn two_bored_plates_fuse_face_to_face() {
 ///
 /// The oracle is **proportionality**: n cells of one part must weigh exactly n times one cell.
 /// That is what says nothing was lost or double-counted at the joins.
+///
+/// ★★★★★ **The cell's features are not decoration — they are what makes this fixture go red.**
+/// A plain plate, or a plate with a bore or two, fuses into a 2×2 grid *without* the world road:
+/// its second-generation corners never land where the population gate has to judge them. The
+/// first fixture written for this lock was exactly that, and it passed with the road switched
+/// off — measuring nothing. These three features (one pocket, two through-bores, taken from the
+/// user's own part) are the smallest set measured to refuse `CylinderGateUndecided` with the road
+/// off and build with it on. The relation is **not monotone** — c1+c2+h1..h4 builds, c2+h4+h7
+/// refuses — so treat the numbers as pinned: changing one moves the fixture out of the
+/// population it exists to hold.
 #[test]
 fn a_two_by_two_grid_fuses() {
     use nacre_scalar::Rat;
     let cell = |m: &mut Model, at: [f64; 3]| {
         let plate = m.add_cuboid(
             Point3::from_array(at),
-            Point3::from_array([at[0] + 20.0, at[1] + 20.0, at[2] + 10.0]),
+            Point3::from_array([at[0] + 86.0, at[1] + 86.0, at[2] + 71.5]),
         );
+        m.rebuild_adjacency();
+        let pocket = m.add_cuboid(
+            Point3::from_array([at[0] + 1.0, at[1] + 38.6, at[2]]),
+            Point3::from_array([at[0] + 33.2, at[1] + 58.6, at[2] + 68.5]),
+        );
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Cut, plate, pocket).expect("the pocket cuts")[0];
         m.rebuild_adjacency();
         let bore = m.add_cylinder(
-            Point3::from_array([at[0] + 6.3, at[1] + 6.3, at[2] - 1.0]),
+            Point3::from_array([at[0] + 17.1, at[1] + 8.9, at[2]]),
             Vector3::from_array([0.0, 0.0, 1.0]),
-            2.1,
-            12.0,
+            2.22,
+            143.0,
         );
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Cut, out, bore).expect("bore 1")[0];
         m.rebuild_adjacency();
         let bore2 = m.add_cylinder(
-            Point3::from_array([at[0] + 13.7, at[1] + 12.5, at[2] - 1.0]),
+            Point3::from_array([at[0] + 46.75, at[1] + 37.35, at[2]]),
             Vector3::from_array([0.0, 0.0, 1.0]),
-            1.7,
-            12.0,
+            2.34,
+            143.0,
         );
-        m.rebuild_adjacency();
-        let out = boolean(m, BoolKind::Cut, plate, bore).expect("bore 1")[0];
         m.rebuild_adjacency();
         let out = boolean(m, BoolKind::Cut, out, bore2).expect("bore 2")[0];
         m.rebuild_adjacency();
@@ -3080,16 +3097,16 @@ fn a_two_by_two_grid_fuses() {
     let mut m = Model::new();
     let a = cell(&mut m, [0.0; 3]);
     let b = cell(&mut m, [0.0; 3]);
-    let b = shift(&mut m, b, [20.0, 0.0, 0.0]);
+    let b = shift(&mut m, b, [86.0, 0.0, 0.0]);
     let row = boolean(&mut m, BoolKind::Fuse, a, b).expect("the x pair fuses")[0];
     m.rebuild_adjacency();
     let c = cell(&mut m, [0.0; 3]);
     let d = cell(&mut m, [0.0; 3]);
-    let d = shift(&mut m, d, [20.0, 0.0, 0.0]);
+    let d = shift(&mut m, d, [86.0, 0.0, 0.0]);
     let row2 = boolean(&mut m, BoolKind::Fuse, c, d).expect("the second row fuses")[0];
     m.rebuild_adjacency();
     // ★ The second generation: a row that already mixes two provenances, moved again.
-    let row2 = shift(&mut m, row2, [0.0, 20.0, 0.0]);
+    let row2 = shift(&mut m, row2, [0.0, 86.0, 0.0]);
     assert!(carries_motion(&m, row2), "the move records a chain");
     let out = boolean(&mut m, BoolKind::Fuse, row, row2).expect("the grid fuses");
     assert_eq!(out.len(), 1, "one solid");

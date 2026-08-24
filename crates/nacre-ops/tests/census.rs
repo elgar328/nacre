@@ -1015,6 +1015,72 @@ fn dump() {
             m.rebuild_adjacency();
             record(&format!("xy three {kn}"), &m, &inputs, &out);
         }
+        // ★★ **The row that actually needs the world road.** Everything above builds whether or
+        // not the third door exists — measured, by switching the door off and watching these rows
+        // come back byte-identical. A grid only reaches a corner the population gate must judge
+        // when the cell carries enough features, and the relation is **not monotone** (one pocket
+        // with bores 1–4 builds; the same pocket with bores 4 and 7 does not). So this row holds
+        // the smallest configuration measured to refuse `CylinderGateUndecided` with the door off,
+        // taken from the user's own part: one pocket and two through-bores in an 86 mm cell.
+        // Treat the numbers as pinned — nudging one moves the row out of its population.
+        {
+            let featured = |m: &mut Model| {
+                let plate = m.add_cuboid(
+                    Point3::from_array([0.0; 3]),
+                    Point3::from_array([86.0, 86.0, 71.5]),
+                );
+                let pocket = m.add_cuboid(
+                    Point3::from_array([1.0, 38.6, 0.0]),
+                    Point3::from_array([33.2, 58.6, 68.5]),
+                );
+                m.rebuild_adjacency();
+                let out = boolean(m, BoolKind::Cut, plate, pocket).expect("the pocket cuts")[0];
+                m.rebuild_adjacency();
+                let mut out = out;
+                for (c, r) in [([17.1, 8.9], 2.22), ([46.75, 37.35], 2.34)] {
+                    let bore = m.add_cylinder(
+                        Point3::from_array([c[0], c[1], 0.0]),
+                        nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                        r,
+                        143.0,
+                    );
+                    m.rebuild_adjacency();
+                    out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
+                    m.rebuild_adjacency();
+                }
+                out
+            };
+            let featured_row = |m: &mut Model| {
+                let a = featured(m);
+                let b = featured(m);
+                let b = xf(
+                    m,
+                    b,
+                    Isometry::translation(
+                        [86.0, 0.0, 0.0].map(|v: f64| Rat::try_from_f64(v).expect("rational")),
+                    ),
+                );
+                let out = boolean(m, BoolKind::Fuse, a, b).expect("the row fuses")[0];
+                m.rebuild_adjacency();
+                out
+            };
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let a = featured_row(&mut m);
+                let b = featured_row(&mut m);
+                let b = xf(
+                    &mut m,
+                    b,
+                    Isometry::translation(
+                        [0.0, 86.0, 0.0].map(|v: f64| Rat::try_from_f64(v).expect("rational")),
+                    ),
+                );
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("xy needsworld {kn}"), &m, &inputs, &out);
+            }
+        }
         // The negative control: a turned row has no world statement, so it must keep taking the
         // old roads — a rotation does not fold into a translation and this door never opens for it.
         for (kn, k) in KINDS {
