@@ -2350,7 +2350,14 @@ mod tests {
         };
         let t1 = t(&mut m, [2, 0, 0]);
         let t2 = t(&mut m, [0, 3, 0]);
-        let moved = |m: &mut Model, src: Handle<Surface>, leaf: Handle<MotionNode>| {
+        // ★ The cache is the **realized world** surface and the truth (points + leaf) stays in the
+        // pre-motion frame — that is what `transform` writes, so the fixture writes it too. Giving
+        // a moved plane its pre-motion cache would model a state the kernel never builds.
+        let moved = |m: &mut Model,
+                     src: Handle<Surface>,
+                     leaf: Handle<MotionNode>,
+                     n: [f64; 3],
+                     at: [f64; 3]| {
             let SurfaceTruth::Plane {
                 points: PlanePoints::Known(pts),
                 ..
@@ -2358,14 +2365,16 @@ mod tests {
             else {
                 unreachable!("an axis plane states points")
             };
-            let Surface::Plane(cache) = *m.surface(src) else {
-                unreachable!("a plane truth carries a plane cache")
-            };
-            m.push_plane(cache, pts, Some(leaf)).0
+            let world = nacre_geom::Plane::from_point_normal(
+                Point3::from_array(at),
+                nacre_math::Vector3::from_array(n),
+            )
+            .expect("unit normal");
+            m.push_plane(world, pts, Some(leaf)).0
         };
         // x = 0 moved by (2,0,0) → the world plane x = 2; y = 0 moved by (0,3,0) → y = 3.
-        let mx = moved(&mut m, px, t1);
-        let my = moved(&mut m, py, t2);
+        let mx = moved(&mut m, px, t1, [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+        let my = moved(&mut m, py, t2, [0.0, 1.0, 0.0], [0.0, 3.0, 0.0]);
         let v = m.push_vertex(
             VertexDef::ThreePlane([mx, my, pz]),
             Point3::from_array([2.0, 3.0, 0.0]),
@@ -2381,19 +2390,22 @@ mod tests {
             "the corner is where the two moved planes and the world plane meet"
         );
 
-        // ① A rotated carrier has no rational world name — the road declines, honestly.
+        // ① A rotated carrier has no rational world name — the road declines, honestly. A quarter
+        // turn carries x = 0 to y = 0, so the cache is exact, and pairing it with the *translated*
+        // x = 2 wall and z = 0 keeps the triple a proper three-plane point: what declines here is
+        // the rotation, not a degeneracy.
         let spin = m.push_motion(
             Motion::Rotate {
                 axis: Axis::Z,
                 point: [r(0); 3],
-                angle: Angle::from_deg(r(31)).expect("angle"),
+                angle: Angle::from_deg(r(90)).expect("angle"),
             },
             None,
         );
-        let turned = moved(&mut m, px, spin);
+        let turned = moved(&mut m, px, spin, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]);
         let v_turned = m.push_vertex(
-            VertexDef::ThreePlane([turned, my, pz]),
-            Point3::from_array([2.0, 3.0, 0.0]),
+            VertexDef::ThreePlane([turned, mx, pz]),
+            Point3::from_array([2.0, 0.0, 0.0]),
             None,
         );
         assert!(
@@ -2402,8 +2414,8 @@ mod tests {
         );
 
         // ② The shared-chain door still answers through itself: same leaf on both moved carriers.
-        let mx2 = moved(&mut m, px, t1);
-        let my2 = moved(&mut m, py, t1);
+        let mx2 = moved(&mut m, px, t1, [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
+        let my2 = moved(&mut m, py, t1, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]);
         let v_shared = m.push_vertex(
             VertexDef::ThreePlane([mx2, my2, pz]),
             Point3::from_array([2.0, 0.0, 0.0]),

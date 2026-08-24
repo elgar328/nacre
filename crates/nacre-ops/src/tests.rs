@@ -3038,8 +3038,9 @@ fn two_bored_plates_fuse_face_to_face() {
 /// first fixture written for this lock was exactly that, and it passed with the road switched
 /// off — measuring nothing. These three features (one pocket, two through-bores, taken from the
 /// user's own part) are the smallest set measured to refuse `CylinderGateUndecided` with the road
-/// off and build with it on. The relation is **not monotone** — c1+c2+h1..h4 builds, c2+h4+h7
-/// refuses — so treat the numbers as pinned: changing one moves the fixture out of the
+/// off and build with it on. The relation is **not monotone** — the user's cell cut down to two
+/// pockets and four bores *builds*, while one of those pockets with two of the other bores (the
+/// pair here) refuses — so treat the numbers as pinned: changing one moves the fixture out of the
 /// population it exists to hold.
 #[test]
 fn a_two_by_two_grid_fuses() {

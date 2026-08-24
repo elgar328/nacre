@@ -1018,8 +1018,8 @@ fn dump() {
         // ★★ **The row that actually needs the world road.** Everything above builds whether or
         // not the third door exists — measured, by switching the door off and watching these rows
         // come back byte-identical. A grid only reaches a corner the population gate must judge
-        // when the cell carries enough features, and the relation is **not monotone** (one pocket
-        // with bores 1–4 builds; the same pocket with bores 4 and 7 does not). So this row holds
+        // when the cell carries enough features, and the relation is **not monotone** (two pockets
+        // with four bores build; one of those pockets with two *other* bores does not). So this row holds
         // the smallest configuration measured to refuse `CylinderGateUndecided` with the door off,
         // taken from the user's own part: one pocket and two through-bores in an 86 mm cell.
         // Treat the numbers as pinned — nudging one moves the row out of its population.
