@@ -934,6 +934,42 @@ fn dump() {
             record(&format!("trc onaxis {kn}"), &m, &inputs, &out);
         }
     }
+    // ── **A cap that lies in another face's plane** (`cap`): the population where a *disk* is a
+    // face of the result and the face around it holds the same circle as a hole. The two are
+    // adjacent across that circle and nothing else — a disk has no nodes — so before the merge
+    // learned to read circles, this table could not have held the answer: every row here either
+    // was refused outright or came back with a plane split in two.
+    //
+    // ★ **Why the census had nothing to say about that change**: it contained no such fixture at
+    // all (measured — the diff over the whole table was empty), which is the same lesson three
+    // cells running: **the corpus does not contain the population a cell opens until the cell
+    // adds it.** These rows are that addition. The bore row is the negative control: its circle
+    // is shared with a *cylinder* face, which is not in the plane's group, so it must stay a hole.
+    for (pn, base, h) in [
+        ("ontop", [2.0, 2.0, 2.0], 1.0), // a boss standing on the top face (contact)
+        ("sunk", [2.0, 2.0, 1.0], 1.0),  // a boss whose cap is flush with the top, inside
+        ("through", [2.0, 2.0, 0.0], 3.0), // a boss whose cap is flush with the bottom
+        ("bore", [2.0, 2.0, -1.0], 4.0), // the negative control: a real hole
+    ] {
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let a = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let b = m.add_cylinder(
+                Point3::from_array(base),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                h,
+            );
+            m.rebuild_adjacency();
+            let inputs = operands(&m, a, b);
+            let out = boolean(&mut m, k, a, b);
+            m.rebuild_adjacency();
+            record(&format!("cap {pn} {kn}"), &m, &inputs, &out);
+        }
+    }
     // ── **A grid built in two generations** (`xy`): an array joined along x, then joined again
     // along y. What makes this its own population is not the second axis but the second
     // *generation* — a row is a body whose surfaces come from two provenances, so moving it puts

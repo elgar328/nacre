@@ -3183,6 +3183,94 @@ fn a_two_by_two_grid_fuses() {
     );
 }
 
+/// ★★★ **A circle can be an interior boundary, and then the merge erases it.**
+///
+/// A tool that only *touches* removes nothing, and the planar engine has always said so plainly:
+/// a plate cut by a box resting on its top face comes back as the plate — same volume, **six
+/// faces**, no imprint left behind (measured, both for face contact and for a box straddling an
+/// edge). That measurement is the oracle here; there is no sentence in the design documents that
+/// decides it.
+///
+/// The cylinder twin used to refuse. Its result was already right — exact volume, `validate`
+/// clean — but the top plane came back as **two** faces: the plate's top with a circular hole, and
+/// the disk filling it. Nothing joined them, because a disk's boundary is a `Bound::Circle` with
+/// no nodes at all, so the merge's edge table could not see it; the corners left on that circle
+/// went on naming the tool's cylinder after every face of it was gone, and the assembly refused
+/// the whole boolean (`VertexNamesAbsentSurface`).
+///
+/// What connects them is that the other face holds **the same cylinder class** as a hole — and one
+/// plane class with one cylinder class names one circle, so that coincidence *is* adjacency.
+#[test]
+fn a_disk_merges_into_the_face_it_lies_in() {
+    let plate_and_boss = |m: &mut Model, base: [f64; 3], h: f64| {
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let b = m.add_cylinder(
+            Point3::from_array(base),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            h,
+        );
+        m.rebuild_adjacency();
+        (a, b)
+    };
+    let faces_of = |m: &Model, s: Handle<Solid>| -> usize {
+        let sol = m.solids.get(s).clone();
+        std::iter::once(&sol.outer)
+            .chain(sol.cavities.iter())
+            .map(|&sh| m.shells.get(sh).faces.len())
+            .sum()
+    };
+    let run = |base: [f64; 3], h: f64, kind: BoolKind| -> (f64, usize) {
+        let mut m = Model::new();
+        let (a, b) = plate_and_boss(&mut m, base, h);
+        let out = boolean(&mut m, kind, a, b).expect("the boolean builds");
+        assert_eq!(out.len(), 1, "one solid");
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        (
+            nacre_props::mass_props(&m, out[0]).unwrap().volume,
+            faces_of(&m, out[0]),
+        )
+    };
+
+    // ① A boss standing on the top face, cut: the plate, untouched — the planar twin's answer.
+    assert_eq!(run([2.0, 2.0, 2.0], 1.0, BoolKind::Cut), (32.0, 6));
+    // ② A boss sunk to the top face and fused: it adds nothing, so likewise.
+    assert_eq!(run([2.0, 2.0, 1.0], 1.0, BoolKind::Fuse), (32.0, 6));
+    // ③ A boss through the plate whose cap is flush with the bottom, fused. The bottom is **one**
+    //    face (plate bottom + the boss's cap): 6 plate faces, of which the bottom absorbed the
+    //    disk, plus the lateral and the boss's top cap = 8. This is the seam the user could see.
+    let (v, f) = run([2.0, 2.0, 0.0], 3.0, BoolKind::Fuse);
+    assert_eq!(f, 8, "the bottom is one face");
+    // The boss spans z ∈ [0, 3] and the plate z ∈ [0, 2], so only its last millimetre of height
+    // adds material.
+    assert!(
+        (v - (32.0 + std::f64::consts::PI * 0.25)).abs() < 1e-12,
+        "{v}"
+    );
+
+    // ★ Negative controls — a circle that separates *material from void* must survive.
+    // ④ A through bore: its circle is shared with the cylinder, which is not in the plane's group,
+    //    so nothing joins and the hole stays a hole.
+    let (v, f) = run([2.0, 2.0, -1.0], 4.0, BoolKind::Cut);
+    assert_eq!(f, 7, "plate faces with two mouths, plus the bore's lateral");
+    assert!(
+        (v - (32.0 - std::f64::consts::PI * 0.25 * 2.0)).abs() < 1e-12,
+        "{v}"
+    );
+    // ⑤ A boss standing on the top face, **fused**: the contact disk is interior and never was a
+    //    face, so this pass has nothing to do and the answer must not move.
+    let (v, f) = run([2.0, 2.0, 2.0], 1.0, BoolKind::Fuse);
+    assert_eq!(f, 8, "annulus + 5 plate faces + lateral + cap");
+    assert!(
+        (v - (32.0 + std::f64::consts::PI * 0.25)).abs() < 1e-12,
+        "{v}"
+    );
+}
+
 /// ★ **A wall whose plane passes near a hole, on a body that moved** — the face-level clearance
 /// test's own frame question. The infinite plane `y = 47.8` clears the bore at `(17.1, 48.6)`
 /// by 0.8 with `r = 2.12`, so the cheap test fails and each face on that class has to answer for

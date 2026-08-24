@@ -920,21 +920,6 @@ impl LocalFace {
             .chain(self.inner.iter_mut())
             .filter_map(Bound::ring_mut)
     }
-
-    /// Whether any boundary is **curved** — the unify partition reads this (a face with a
-    /// curved bound is never a merge candidate: `merge_component` rebuilds a boundary from node
-    /// rings, and a bound with no nodes would vanish from the rebuilt face).
-    ///
-    /// ★ Bands are covered as well as circles, even though a band reaches the merge path only if
-    /// something else changes: it has no node ring, so it joins no edge-connected component and
-    /// is emitted as a singleton. Stating the property is what keeps that an *invariant* rather
-    /// than an accident of today's component rule.
-    /// Whether this face's **outer** bound is curved — a cap disk or a lateral band, neither of
-    /// which contributes a node edge for the coplanar merge to re-thread. Its inner circles are a
-    /// different question: those ride through the merge.
-    pub(crate) fn outer_is_curved(&self) -> bool {
-        matches!(self.outer, Bound::Circle { .. } | Bound::Band { .. })
-    }
 }
 
 /// Push the reconstructed result and supersede the inputs.
@@ -2356,6 +2341,38 @@ pub(crate) fn unify_coplanar_faces(
             }
         }
     }
+    // ★★ **A circle joins two faces too, and it is the only fact that says so.** A cap disk's
+    // boundary is a `Bound::Circle` with **no nodes at all** (the arrangement's `bound_of`: "a
+    // circle cell has no nodes — its boundary is the cylinder class itself"), so the edge table
+    // above cannot see it and the disk sits alone in its own component. What connects it to the
+    // face it lies in is that the other one holds *the same cylinder class* as a hole — and one
+    // plane class with one cylinder class names **one circle**, so that coincidence is adjacency.
+    // No position test is needed, which is why this is a table lookup and not a predicate.
+    let mut circle_outer: HashMap<usize, Vec<usize>> = HashMap::new();
+    let mut circle_hole: HashMap<usize, Vec<usize>> = HashMap::new();
+    for (fi, lf) in faces.iter().enumerate() {
+        if let Bound::Circle { cyl } = lf.outer {
+            circle_outer.entry(cyl).or_default().push(fi);
+        }
+        for b in &lf.inner {
+            if let Bound::Circle { cyl } = b {
+                circle_hole.entry(*cyl).or_default().push(fi);
+            }
+        }
+    }
+    for (cyl, outs) in &circle_outer {
+        let Some(ins) = circle_hole.get(cyl) else {
+            continue; // a disk whose circle no member holds as a hole: nothing to join
+        };
+        for (&o, &i) in outs.iter().flat_map(|o| ins.iter().map(move |i| (o, i))) {
+            if group_key(&faces[o]) == group_key(&faces[i]) {
+                let (ri, rj) = (uf_find(&mut comp, o), uf_find(&mut comp, i));
+                if ri != rj {
+                    comp[ri] = rj;
+                }
+            }
+        }
+    }
 
     // Group members by component, in face order so the result is replay-stable.
     let mut members: Vec<Vec<usize>> = vec![Vec::new(); n];
@@ -2370,17 +2387,35 @@ pub(crate) fn unify_coplanar_faces(
         if mem.len() < 2 {
             continue; // nothing to merge; the face (if any) is emitted as-is below
         }
-        // ★ A face whose **outer** bound is curved never merges: a cap disk contributes no node
-        // edge at all, so the re-threading below has nothing of it to thread. Its *inner* circles
-        // do ride through (`merge_component` carries them), which is what makes two bored plates
-        // meeting face to face merge — and merging them is a **correctness** matter, not the
-        // tidiness this pass once claimed: unmerged, the corners on their shared wall stay corners,
-        // keep naming a plane the result drops, and the assembly refuses the whole boolean
-        // (`VertexNamesAbsentSurface`, measured on the contact fuse).
-        if mem
-            .iter()
-            .any(|&fi| kept[fi].as_ref().is_some_and(LocalFace::outer_is_curved))
-        {
+        // ★ A face whose **outer** bound is curved contributes no node edge, so the re-threading
+        // below has nothing of it to thread — but that is only fatal when the curve is a *boundary*
+        // of the merged region. A **disk whose circle another member holds as a hole** is the other
+        // case: the circle is an interior seam, `merge_component` erases it, and the disk brings
+        // only its own inner bounds. So the skip narrows to the two shapes that really cannot be
+        // threaded — a band (no producer today) and a circle with no hole partner here.
+        //
+        // Merging is a **correctness** matter, not the tidiness this pass once claimed: unmerged,
+        // the corners on the erased boundary stay corners, keep naming a surface the result drops,
+        // and the assembly refuses the whole boolean (`VertexNamesAbsentSurface`, measured on both
+        // the contact fuse and the contact cut).
+        if mem.iter().any(|&fi| {
+            kept[fi].as_ref().is_some_and(|lf| match lf.outer {
+                Bound::Ring(_) => false,
+                // ★ A band is spelled out even though nothing produces one on this road: it has
+                // no node ring either, so saying so keeps "a band never merges" an *invariant*
+                // rather than an accident of which producer exists today.
+                Bound::Band { .. } => true,
+                Bound::Circle { cyl } => !mem.iter().any(|&fj| {
+                    fj != fi
+                        && kept[fj].as_ref().is_some_and(|other| {
+                            other
+                                .inner
+                                .iter()
+                                .any(|b| matches!(b, Bound::Circle { cyl: c } if *c == cyl))
+                        })
+                }),
+            })
+        }) {
             continue;
         }
         let group: Vec<&LocalFace> = mem
@@ -2575,6 +2610,43 @@ fn merge_component(
             .1
             .push(Bound::Ring(hole));
     }
+    // ★ **A group of nothing but curved outers has no region to hold anything.** Unreachable while
+    // the caller's skip is what it is, and spelled rather than assumed because narrowing that skip
+    // is exactly what made this function see disks: without it the circle loop below would answer
+    // "no owner" and refuse (`CoplanarMerge`) where the honest answer is that this pass has nothing
+    // to say. Abstaining puts the pipeline back where it stood before the pass ran.
+    if faces.is_empty() {
+        return Ok(None);
+    }
+    // ★★ **A circle another member holds as its own outer bound is not a hole — it is the seam
+    // between the two, and merging erases it.** That is the disk-into-face case: the face around
+    // it holds the circle as a hole, the disk *is* the circle, and the merged region is simply the
+    // face without it. Erasing here rather than in the caller keeps one rule in one place, and
+    // costs the owner search below one question fewer.
+    //
+    // Exactly one on each side, or this abstains: two disks on one circle (coincident faces) or a
+    // circle claimed as an outer bound twice is a shape this pass does not arrange, and the
+    // whole-result judgements name it with their own sentences.
+    let mut erased: Vec<usize> = Vec::new();
+    {
+        let mut outer_of: HashMap<usize, usize> = HashMap::new();
+        for lf in group {
+            if let Bound::Circle { cyl } = lf.outer {
+                *outer_of.entry(cyl).or_insert(0) += 1;
+            }
+        }
+        for (&cyl, &outers) in &outer_of {
+            let holes = group
+                .iter()
+                .flat_map(|lf| lf.inner.iter())
+                .filter(|b| matches!(b, Bound::Circle { cyl: c } if *c == cyl))
+                .count();
+            if outers != 1 || holes != 1 {
+                return Ok(None);
+            }
+            erased.push(cyl);
+        }
+    }
     // ★★ **The members' circle holes ride through.** A circle has no nodes, so the re-threading
     // above cannot see it — which is why this pass used to skip such a component altogether, and
     // why lifting that skip without this loop drops the hole and opens the shell (measured).
@@ -2593,6 +2665,7 @@ fn merge_component(
     circles.sort_unstable();
     // One rim belongs to one face; a duplicate would make the mint count one face twice.
     circles.dedup();
+    circles.retain(|c| !erased.contains(c));
     for cyl in circles {
         let def = &cyls[cyl].def;
         let mut owner = None;
