@@ -3690,10 +3690,14 @@ fn point_in_mixed_ring(
 /// clearance proof, so one point decides). Exact: the center is `axis ∩ W` (rational), the
 /// ring corners are rational meets, and the parity runs in a rational 2D basis of `W`
 /// (`point_in_ring_2d_rat` — parity is invariant under the affine projection).
-fn circle_center_in_ring(
+///
+/// ★ It takes the cylinder's **statement**, not an arrangement element: the coplanar merge asks
+/// the same question of a `Bound::Circle` it is carrying into a merged region, and one spelling
+/// serves both.
+pub(crate) fn circle_center_in_ring(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
-    circle: &MergedCircle,
+    def: &nacre_topo::CylinderDef,
     ring: &[combinatorics::RingEdge],
 ) -> Result<bool, BoolError> {
     use nacre_scalar::Rat;
@@ -3705,7 +3709,7 @@ fn circle_center_in_ring(
     let zero = Rat::from_int(0);
     let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let (o, m) = (circle.def.origin(), circle.def.dir());
+    let (o, m) = (def.origin(), def.dir());
     let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
         x[0].checked_mul(y[0])?
             .checked_add(x[1].checked_mul(y[1])?)?
@@ -3819,7 +3823,7 @@ fn cell_in_cell(
     match (circle_ix[a], circle_ix[b]) {
         (Some(_), Some(_)) => Ok(None),
         (Some(ci), None) => Ok(Some(
-            circle_center_in_ring(jd, wc, &circles[ci], &rings[b])?
+            circle_center_in_ring(jd, wc, &circles[ci].def, &rings[b])?
                 && !node_in_circle(jd, &rings[b], &circles[ci])?,
         )),
         (None, Some(ri)) => node_in_circle(jd, &rings[a], &circles[ri]).map(Some),
@@ -5322,7 +5326,10 @@ pub(crate) fn boolean(
             // Clean the raw arrangement output: merge coplanar, same-normal faces that share a full edge
             // (e.g. the split side walls a fused coincident interface leaves) so the result is a minimal,
             // chainable solid — a second boolean on it then sees no redundant coplanar planes.
-            let faces = timed!(UNIFY, crate::boolean::unify_coplanar_faces(faces, &jd))?;
+            let faces = timed!(
+                UNIFY,
+                crate::boolean::unify_coplanar_faces(faces, &jd, &cyls)
+            )?;
 
             // ★ **The lateral bands, appended after the differential above** (M6-2a C4b): reuse can
             // only change what the *plane* arrangement emits, so the two routes are compared on that
@@ -7911,7 +7918,7 @@ mod tests {
             }
             faces.extend(staged.faces);
         }
-        let faces = crate::boolean::unify_coplanar_faces(faces, &jd).unwrap();
+        let faces = crate::boolean::unify_coplanar_faces(faces, &jd, &setup.cyls).unwrap();
         let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
         let mut faces = faces;
         faces.extend(

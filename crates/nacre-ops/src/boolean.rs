@@ -929,10 +929,11 @@ impl LocalFace {
     /// something else changes: it has no node ring, so it joins no edge-connected component and
     /// is emitted as a singleton. Stating the property is what keeps that an *invariant* rather
     /// than an accident of today's component rule.
-    pub(crate) fn has_curved_bound(&self) -> bool {
-        std::iter::once(&self.outer)
-            .chain(self.inner.iter())
-            .any(|b| matches!(b, Bound::Circle { .. } | Bound::Band { .. }))
+    /// Whether this face's **outer** bound is curved — a cap disk or a lateral band, neither of
+    /// which contributes a node edge for the coplanar merge to re-thread. Its inner circles are a
+    /// different question: those ride through the merge.
+    pub(crate) fn outer_is_curved(&self) -> bool {
+        matches!(self.outer, Bound::Circle { .. } | Bound::Band { .. })
     }
 }
 
@@ -2320,6 +2321,7 @@ pub(crate) fn norm_edge(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
 pub(crate) fn unify_coplanar_faces(
     faces: Vec<LocalFace>,
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Vec<LocalFace>, BoolError> {
     let n = faces.len();
     // One plane class, one flip.
@@ -2373,9 +2375,16 @@ pub(crate) fn unify_coplanar_faces(
         // silently vanish from the rebuilt face — the exact "quiet pass-through" the
         // integration survey flagged. Skipping keeps a drilled cap's coplanar neighbours as
         // separate faces: a tidiness loss, never a correctness one (this pass's own charter).
+        // ★ A face whose **outer** bound is curved never merges: a cap disk contributes no node
+        // edge at all, so the re-threading below has nothing of it to thread. Its *inner* circles
+        // do ride through (`merge_component` carries them), which is what makes two bored plates
+        // meeting face to face merge — and merging them is a **correctness** matter, not the
+        // tidiness this pass once claimed: unmerged, the corners on their shared wall stay corners,
+        // keep naming a plane the result drops, and the assembly refuses the whole boolean
+        // (`VertexNamesAbsentSurface`, measured on the contact fuse).
         if mem
             .iter()
-            .any(|&fi| kept[fi].as_ref().is_some_and(LocalFace::has_curved_bound))
+            .any(|&fi| kept[fi].as_ref().is_some_and(LocalFace::outer_is_curved))
         {
             continue;
         }
@@ -2386,14 +2395,14 @@ pub(crate) fn unify_coplanar_faces(
         // Abstention: the group pinches at a point, so its faces are emitted as-is — the
         // whole-result judgement (`self_touch_reject`, run before any cell is minted) owns
         // what this shape is about to be named for.
-        let Some(rings) = merge_component(&group, jd)? else {
+        let Some(rings) = merge_component(&group, jd, cyls)? else {
             continue;
         };
         let (plane_idx, flip) = (group[0].surf.plane(), group[0].flip);
         merged.extend(rings.into_iter().map(|(outer, inner)| LocalFace {
             surf: crate::planes::ClassIx::Plane(plane_idx),
             outer: Bound::Ring(outer),
-            inner: inner.into_iter().map(Bound::Ring).collect(),
+            inner,
             flip,
         }));
         for &fi in mem {
@@ -2422,9 +2431,11 @@ fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((NodeId, NodeId), Wal
     })
 }
 
-/// An outer ring with the holes that belong to it — what one merged region looks like before it
-/// becomes a `LocalFace`.
-type RegionRings = (Ring, Vec<Ring>);
+/// An outer ring with the bounds that belong to it — what one merged region looks like before it
+/// becomes a `LocalFace`. The inner side is [`Bound`] rather than [`Ring`] because a member's
+/// **circle** hole rides through the merge (a bore under a plate the merge is unifying); it has
+/// no nodes, so it is carried rather than re-threaded.
+type RegionRings = (Ring, Vec<Bound>);
 
 /// One edge-connected group → its faces after erasing the interior boundary: each outer ring with
 /// the holes that belong to it. `Ok(None)` is **abstention**: the group's pieces meet at a point,
@@ -2438,6 +2449,7 @@ type RegionRings = (Ring, Vec<Ring>);
 fn merge_component(
     group: &[&LocalFace],
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Option<Vec<RegionRings>>, BoolError> {
     // 1. Collect directed edges **with their walls**. A repeat in the same direction means two
     //    faces claim the same side.
@@ -2451,8 +2463,18 @@ fn merge_component(
             }
         }
     }
+    // ★★ **Two faces claiming one side is an abstention, not a refusal** — the same shape the
+    // figure-8 case takes, and for the same reason: this guard protects *the merge*, not the
+    // result. Emitting the group as-is puts the pipeline back exactly where it stood before this
+    // cleaning pass ran, so nothing can come out of it that would not have come out without the
+    // pass at all, and the whole-result judgements (`self_touch_reject`, the closed-shell guard,
+    // the every-vertex-re-solves check) name the shape with their own sentences — and with a
+    // witness. Measured: the contact-cut population used to answer here with a capability name
+    // and no location, while its *bored* twin — where this pass was skipped outright — walked to
+    // the end and came back `VertexNamesAbsentSurface` at the offending corner. One population,
+    // one answer.
     if dirs.values().any(|&(c, _)| c > 1) {
-        return Err(reject(RejectReason::CoplanarMerge));
+        return Ok(None);
     }
     // 2. An edge carried in both directions is interior — it separates nothing. Anything carried
     //    three or more times (either direction) is non-manifold in the plane.
@@ -2546,7 +2568,51 @@ fn merge_component(
         }
         faces[owner.ok_or_else(|| reject(RejectReason::CoplanarMerge))?]
             .1
-            .push(hole);
+            .push(Bound::Ring(hole));
+    }
+    // ★★ **The members' circle holes ride through.** A circle has no nodes, so the re-threading
+    // above cannot see it — which is why this pass used to skip such a component altogether, and
+    // why lifting that skip without this loop drops the hole and opens the shell (measured).
+    // Which merged region owns a circle is a **question, not a fact about counts**: the group can
+    // come apart into several outer rings, so the centre is tested against each
+    // ([`crate::arrangement::circle_center_in_ring`] — the same predicate the arrangement's own
+    // nesting asks). None, or more than one, is refused rather than guessed.
+    let mut circles: Vec<usize> = group
+        .iter()
+        .flat_map(|lf| lf.inner.iter())
+        .filter_map(|b| match b {
+            Bound::Circle { cyl } => Some(*cyl),
+            _ => None,
+        })
+        .collect();
+    circles.sort_unstable();
+    // One rim belongs to one face; a duplicate would make the mint count one face twice.
+    circles.dedup();
+    for cyl in circles {
+        let def = &cyls[cyl].def;
+        let mut owner = None;
+        for (i, (outer, _)) in faces.iter().enumerate() {
+            let ring = outer.edges(jd, wc)?;
+            if crate::arrangement::circle_center_in_ring(jd, wc, def, &ring)? {
+                if owner.is_some() {
+                    return Err(reject(RejectReason::CoplanarMerge));
+                }
+                owner = Some(i);
+            }
+        }
+        let owner = owner.ok_or_else(|| reject(RejectReason::CoplanarMerge))?;
+        // ★ …and it must be in the region's **material**, not in one of its holes. No producer
+        // makes a hole inside a hole today; asking is one call, and assuming is the shape that
+        // answers about geometry that is not there.
+        for hole in faces[owner].1.iter() {
+            if let Some(h) = hole.ring() {
+                let ring = h.edges(jd, wc)?;
+                if crate::arrangement::circle_center_in_ring(jd, wc, def, &ring)? {
+                    return Err(reject(RejectReason::CoplanarMerge));
+                }
+            }
+        }
+        faces[owner].1.push(Bound::Circle { cyl });
     }
     Ok(Some(faces))
 }

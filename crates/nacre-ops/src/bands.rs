@@ -1677,7 +1677,8 @@ mod tests {
                 .expect("the arc population traces");
             // The stopper socket is empty since the population went green — nothing defers.
             assert!(deferred.is_none(), "{deferred:?}");
-            let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
+            let faces =
+                crate::boolean::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
@@ -1780,7 +1781,8 @@ mod tests {
                 &trace_in,
             )
             .expect("the arc population traces");
-            let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
+            let faces =
+                crate::boolean::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
@@ -1916,7 +1918,8 @@ mod tests {
                 &trace_in,
             )
             .expect("the arc population traces");
-            let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
+            let faces =
+                crate::boolean::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
@@ -2368,7 +2371,8 @@ mod tests {
                 &trace_in,
             )
             .expect("the arc population traces");
-            let faces = crate::boolean::unify_coplanar_faces(plane_faces, &jd).expect("unify");
+            let faces =
+                crate::boolean::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(

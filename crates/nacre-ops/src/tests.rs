@@ -2957,6 +2957,70 @@ fn a_translated_bored_body_fuses() {
     assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
 }
 
+/// ★★ **Two bored plates meeting face to face fuse.** The shared wall is interior, so the result
+/// keeps no face on it — and the corners that sat on it have to *dissolve*, which they can only do
+/// once each cell's bottom (and top) become **one** face. That merge used to be skipped outright
+/// whenever a member carried a circle hole, so the corners stayed corners, kept naming the dropped
+/// wall, and the assembly refused the whole boolean (`VertexNamesAbsentSurface` at the corner —
+/// measured). The merge now carries the circles through, and this pins the result the same way the
+/// pass's own charter should have: right volume, clean `validate`, watertight mesh.
+///
+/// ★ **The merged face holds two circle holes** (one bore per cell), so the owner-assignment loop
+/// actually runs rather than falling out on a single candidate.
+#[test]
+fn two_bored_plates_fuse_face_to_face() {
+    let cell = |m: &mut Model, x0: f64| {
+        let plate = m.add_cuboid(
+            Point3::from_array([x0, 0.0, 0.0]),
+            Point3::from_array([x0 + 20.0, 20.0, 10.0]),
+        );
+        m.rebuild_adjacency();
+        let bore = m.add_cylinder(
+            Point3::from_array([x0 + 14.0, 14.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.0,
+            12.0,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+        m.rebuild_adjacency();
+        out
+    };
+    let mut m = Model::new();
+    let a = cell(&mut m, 0.0);
+    let b = cell(&mut m, 20.0);
+    let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the plates fuse");
+    assert_eq!(out.len(), 1, "one solid");
+    m.rebuild_adjacency();
+    assert!(nacre_validate::validate(&m).is_empty());
+    let want = 2.0 * (20.0 * 20.0 * 10.0 - std::f64::consts::PI * 4.0 * 10.0);
+    let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+    assert!((v - want).abs() <= 1e-9 * want, "{v} vs {want}");
+    // The corner on the dropped wall is gone: no result vertex sits at (20, 20, 0).
+    let reach = m.reachable();
+    assert!(
+        !reach.vertices.iter().any(|&vh| {
+            let p = m.vertex_point(vh).as_array();
+            (p[0] - 20.0).abs() < 1e-9 && (p[1] - 20.0).abs() < 1e-9 && p[2].abs() < 1e-9
+        }),
+        "the straight-angle corner on the shared wall dissolved"
+    );
+    // And the two bores' rims both survived as holes of the merged caps.
+    let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
+    let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
+    for (_, tri) in mesh.triangles.iter() {
+        for k in 0..3 {
+            let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+            *uses.entry((x.min(y), x.max(y))).or_default() += 1;
+        }
+    }
+    assert_eq!(
+        uses.values().filter(|&&n| n != 2).count(),
+        0,
+        "the mesh is watertight"
+    );
+}
+
 /// ★ **A wall whose plane passes near a hole, on a body that moved** — the face-level clearance
 /// test's own frame question. The infinite plane `y = 47.8` clears the bore at `(17.1, 48.6)`
 /// by 0.8 with `r = 2.12`, so the cheap test fails and each face on that class has to answer for
@@ -4508,7 +4572,7 @@ fn unify_merges_a_coplanar_chain() {
         face(0, vec![c10, c20, c21, c11], vec![]),
         face(0, vec![c20, c30, c31, c21], vec![]),
     ];
-    let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p)).unwrap();
+    let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p), &[]).unwrap();
     assert_eq!(out.len(), 1, "three coplanar faces fuse into one");
     let l = &out[0].outer.expect_ring();
     assert_eq!(l.len(), 4, "straight-angle mid vertices dissolved: {l:?}");
@@ -4596,7 +4660,7 @@ fn a_hole_filled_by_two_faces_still_merges() {
         face(0, vec![h11, m11, m12, h12], vec![]), // left filler
         face(0, vec![m11, h21, h22, m12], vec![]), // right filler
     ];
-    let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p)).unwrap();
+    let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p), &[]).unwrap();
     assert_eq!(out.len(), 1, "the hole is filled, so one face remains");
     assert!(out[0].inner.is_empty(), "and it has no hole left");
     assert_eq!(out[0].outer.expect_ring().len(), 4, "just the outer square");
@@ -4641,7 +4705,7 @@ fn unify_keeps_a_vertex_that_is_a_corner_elsewhere() {
         face(0, vec![v100, v200, v210, v110], vec![]),
         face(4, vec![v200, v100, v101, v201], vec![]), // perpendicular, not coplanar
     ];
-    let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p)).unwrap();
+    let out = unify_coplanar_faces(faces, &crate::planes::test_judge(&p), &[]).unwrap();
     assert_eq!(out.len(), 2, "z=0 pair merges; G stays");
     let merged = out.iter().find(|lf| lf.surf.plane() == 0).unwrap();
     assert!(
