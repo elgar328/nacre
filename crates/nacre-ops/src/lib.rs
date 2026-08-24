@@ -675,13 +675,20 @@ pub enum RejectReason {
     BranchVertexUnnamed,
     /// A **result** vertex's definition names a surface the finished solid keeps no face on, so
     /// the point could not be re-solved from the solid's own geometry — the property transform
-    /// and replay stand on (`defs_are_remappable`). Measured population: the chained
-    /// **contact-cut** — a bored plate cut by a boss that only touches its top face. The cut
+    /// and replay stand on (`defs_are_remappable`). Measured population: the
+    /// **contact-cut** — a plate cut by a boss that only touches its top face. The cut
     /// removes no material, but the arrangement minted branch vertices where the boss's rim
     /// crossed the plate's edge, and the assembly kept them with definitions still saying
     /// `wall ∩ boss cylinder` after every boss face was gone. The volume was already right; the
     /// names were not. Promoted from a debug_assert this population refuted (2026-08-23) —
     /// until the assembly learns to shed the stale corners, refusing is the floor.
+    ///
+    /// ★ **Its other half is gone** (2026-08-24): two bodies meeting on a full wall landed here
+    /// too, for a different reason — the wall is interior, so the result keeps no face on it, and
+    /// the corners that sat on it stayed corners because the coplanar merge skipped any component
+    /// holding a circle hole. The merge carries those holes now, the corners dissolve, and that
+    /// population builds. What is left under this name is the contact-cut: a definition naming a
+    /// surface the result has **no face on at all**, which no amount of merging repairs.
     VertexNamesAbsentSurface,
     /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
     /// intersection is an ellipse (M6-3's vocabulary).

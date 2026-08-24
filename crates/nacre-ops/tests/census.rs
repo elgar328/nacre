@@ -773,6 +773,63 @@ fn dump() {
             }
         }
     }
+    // ── **Face-to-face contact** (`ct2`): two cells meeting on a full wall, which is what a
+    // pattern of parts is made of. The shared wall is interior, so the corners on it must
+    // dissolve — and they only can once each cell's caps merge, which is what the coplanar
+    // merge's circle carry opened. Bored, pocketed+bored, and a three-cell chain (the second
+    // fuse meets a result that already carries merged caps).
+    {
+        let cell = |m: &mut Model, x0: f64, pocket: bool| {
+            let plate = m.add_cuboid(
+                Point3::from_array([x0, 0.0, 0.0]),
+                Point3::from_array([x0 + 20.0, 20.0, 10.0]),
+            );
+            m.rebuild_adjacency();
+            let mut out = plate;
+            if pocket {
+                let p = m.add_cuboid(
+                    Point3::from_array([x0 + 2.0, 2.0, 4.0]),
+                    Point3::from_array([x0 + 8.0, 8.0, 10.0]),
+                );
+                m.rebuild_adjacency();
+                out = boolean(m, BoolKind::Cut, out, p).expect("the pocket cuts")[0];
+                m.rebuild_adjacency();
+            }
+            let bore = m.add_cylinder(
+                Point3::from_array([x0 + 14.0, 14.0, -1.0]),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                2.0,
+                12.0,
+            );
+            m.rebuild_adjacency();
+            out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
+            m.rebuild_adjacency();
+            out
+        };
+        for (pn, pocket) in [("bored", false), ("pocketed", true)] {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let a = cell(&mut m, 0.0, pocket);
+                let b = cell(&mut m, 20.0, pocket);
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("ct2 {pn} {kn}"), &m, &inputs, &out);
+            }
+        }
+        for (kn, k) in KINDS {
+            let mut m = Model::new();
+            let a = cell(&mut m, 0.0, false);
+            let b = cell(&mut m, 20.0, false);
+            let ab = boolean(&mut m, BoolKind::Fuse, a, b).expect("the first pair fuses")[0];
+            m.rebuild_adjacency();
+            let c = cell(&mut m, 40.0, false);
+            let inputs = operands(&m, ab, c);
+            let out = boolean(&mut m, k, ab, c);
+            m.rebuild_adjacency();
+            record(&format!("ct2 chain {kn}"), &m, &inputs, &out);
+        }
+    }
     // ── **Translated cylinders** (`trc`): the population the moved-cylinder road opened. A
     // non-dyadic offset records a chain, so each of these carries one (the dyadic twin records
     // nothing and is the same corpus row the `cyl` family already holds). Four placements: a
