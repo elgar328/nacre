@@ -3241,24 +3241,35 @@ fn a_boss_on_any_wall_weighs_the_same() {
             .sum();
         (nacre_props::mass_props(&m, out[0]).unwrap().volume, faces)
     };
-    for base in [
-        [0.0, 2.0, -1.0], // -x wall
-        [4.0, 2.0, -1.0], // +x
-        [2.0, 0.0, -1.0], // -y
-        [2.0, 4.0, -1.0], // +y — cut and common are a different population (`MissingSeam`)
+    let mut fuse_faces: Vec<usize> = Vec::new();
+    for (base, all_kinds) in [
+        ([0.0, 2.0, -1.0], true), // -x wall
+        ([4.0, 2.0, -1.0], true), // +x
+        ([2.0, 0.0, -1.0], true), // -y
+        // ★ `+y` fuse builds but its cut and common answer `MissingSeam` — a different
+        // population (the census `wal` rows say so), which this cell did not move.
+        ([2.0, 4.0, -1.0], false),
     ] {
-        let (v, _) = run(base, BoolKind::Fuse);
+        let (v, f) = run(base, BoolKind::Fuse);
         assert!(
             (v - (plate + boss - shared)).abs() < 1e-12,
             "fuse {base:?}: {v}"
         );
-        if base[1] != 4.0 {
+        fuse_faces.push(f);
+        if all_kinds {
             let (v, _) = run(base, BoolKind::Cut);
             assert!((v - (plate - shared)).abs() < 1e-12, "cut {base:?}: {v}");
             let (v, _) = run(base, BoolKind::Common);
             assert!((v - shared).abs() < 1e-12, "common {base:?}: {v}");
         }
     }
+    // ★★ **The mirror invariant a volume cannot state.** Four congruent solids must also be built
+    // out of the same number of faces: a volume can come out right while a face is split or merged
+    // away, and a face wound the wrong way is exactly the shape of what went wrong here.
+    assert!(
+        fuse_faces.windows(2).all(|w| w[0] == w[1]),
+        "the four walls give congruent solids, so their face counts must agree: {fuse_faces:?}"
+    );
     // ★ The control that says the defect needed the cylinder: the same straddle with a box tool
     // built on every wall before this fix and must go on doing so.
     for (lo, hi) in [
