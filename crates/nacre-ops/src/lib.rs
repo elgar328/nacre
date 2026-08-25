@@ -931,6 +931,15 @@ pub enum DeclineKind {
     /// planes coincide", which is simply not what happened here. The census keys its `detail` on
     /// this name, so reusing the other would put a false cause in the ledger.
     BranchNode,
+    /// An edge of the ring **rides a cylinder** — an arc or a ruling — where the tracer's ring
+    /// machinery carries a plane class beside every edge.
+    ///
+    /// ★ Distinct from [`Self::BranchNode`], which is about a *corner*. The two travel together on
+    /// the population that produced them (a ruling's ends lie on the cylinder, so they are branch
+    /// points), but they are different sentences, and a ring whose names are perfectly good while a
+    /// **carrier** is curved is a fact worth seeing on its own — its edge would have to end at seam
+    /// vertices instead.
+    CurvedRingWall,
     /// The face's outer ring could not be named as plane triples.
     OuterRing,
     /// One of the face's hole rings could not be named. Not "no hole": swallowing it would trace
@@ -973,6 +982,7 @@ impl DeclineKind {
         match self {
             Self::CollapsedTriple => "collapsed-triple",
             Self::BranchNode => "branch-node",
+            Self::CurvedRingWall => "curved-ring-wall",
             Self::OuterRing => "outer-ring",
             Self::HoleRing => "hole-ring",
             Self::AllOnPlane => "all-on-plane",

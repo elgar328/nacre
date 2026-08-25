@@ -653,6 +653,10 @@ enum RingFail {
     Collapsed,
     /// A branch point: named exactly, but not by three planes.
     Branch,
+    /// An edge of the ring rides a **cylinder** rather than a plane — an arc or a ruling. Its own
+    /// proposition, not a fallback: the ring's *names* may be perfectly good and this still be
+    /// true, and then what the plane road cannot use is the carrier, not the corner.
+    CurvedWall,
 }
 
 /// The decline kind for a [`RingFail`] at a caller that has no finer fact to add.
@@ -663,6 +667,9 @@ fn decline_of(f: RingFail) -> DeclineKind {
     match f {
         RingFail::Collapsed => DeclineKind::CollapsedTriple,
         RingFail::Branch => DeclineKind::BranchNode,
+        // The ring's carrier, not its corner — see [`RingFail::CurvedWall`]. It keeps its own name
+        // at every caller for the same reason a branch node does: the cause is the finer fact.
+        RingFail::CurvedWall => DeclineKind::CurvedRingWall,
     }
 }
 
@@ -670,8 +677,10 @@ fn decline_of(f: RingFail) -> DeclineKind {
 /// only "which side, which wall, which third plane" of each vertex. The sort that used to stand
 /// here is gone — [`NodeId`]'s only constructor sorts — so what remains is the collapse check, and
 /// that is the whole reason this function exists.
-fn plane_ring(ts: &[NodeId]) -> Result<Vec<[usize; 3]>, RingFail> {
-    ts.iter()
+fn plane_ring(nr: &combinatorics::NamedRing) -> Result<(Vec<[usize; 3]>, Vec<usize>), RingFail> {
+    let ts: Vec<[usize; 3]> = nr
+        .triples
+        .iter()
         .map(|&n| {
             let c = three_plane_name(n).ok_or(RingFail::Branch)?;
             // Sorted by construction, so equal neighbours catch every duplicate.
@@ -680,7 +689,22 @@ fn plane_ring(ts: &[NodeId]) -> Result<Vec<[usize; 3]>, RingFail> {
             }
             Ok(c)
         })
-        .collect()
+        .collect::<Result<_, _>>()?;
+    // ★★ **The names go first, deliberately.** A ring with a curved wall almost always has branch
+    // corners too — a ruling's ends lie on the cylinder — and of the two causes `Branch` is the one
+    // that says more. A ring that names cleanly and *still* has a curved wall is a different fact
+    // (its ends would be seam vertices), and `CurvedWall` is that fact rather than a fallback.
+    let walls = nr
+        .walls
+        .iter()
+        .map(|w| match w {
+            crate::boolean::Wall::Plane(c) => Ok(*c),
+            crate::boolean::Wall::Arc { .. } | crate::boolean::Wall::Ruling { .. } => {
+                Err(RingFail::CurvedWall)
+            }
+        })
+        .collect::<Result<_, _>>()?;
+    Ok((ts, walls))
 }
 
 /// One feature node on the line `L = W ∩ fp`: a point named by its third plane `r` (raw index).
@@ -733,8 +757,8 @@ fn trace_transversal_face(
     // the model's edges (`NamedRing`) — the Crossing arm below names an edge's wall from the
     // ride, never from the two endpoint names.
     let outer = match loops.outer.as_ref().and_then(|r| r.poly()) {
-        Some(nr) => match plane_ring(&nr.triples) {
-            Ok(ts) => (ts, nr.walls.as_slice()),
+        Some(nr) => match plane_ring(nr) {
+            Ok(pair) => pair,
             Err(f) => {
                 out.declined.push((fp, decline_of(f)));
                 return;
@@ -769,7 +793,7 @@ fn trace_transversal_face(
             return;
         }
     };
-    let mut holes: Vec<(Vec<[usize; 3]>, &[usize])> = Vec::new();
+    let mut holes: Vec<(Vec<[usize; 3]>, Vec<usize>)> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
     let Some(raw_holes) = &loops.holes else {
@@ -783,8 +807,8 @@ fn trace_transversal_face(
             // this trace's line `L = W ∩ fc` lies in such a wall — so the circle cannot meet
             // `L`, and a disjoint hole contributes no crossings to the 3-valued scan.
             combinatorics::LoopRing::Circle { .. } => continue,
-            combinatorics::LoopRing::Poly(r) => match plane_ring(&r.triples) {
-                Ok(ts) => holes.push((ts, r.walls.as_slice())),
+            combinatorics::LoopRing::Poly(r) => match plane_ring(r) {
+                Ok(pair) => holes.push(pair),
                 Err(f) => {
                     out.declined.push((fp, decline_of(f)));
                     return;
@@ -1146,17 +1170,17 @@ fn trace_one(
         // closed trace element ([`CircleTrace`]) rather than a segment ring.
         let mut rings = Vec::new();
         match &fl.outer {
-            Some(combinatorics::LoopRing::Poly(nr)) => match plane_ring(&nr.triples) {
-                Ok(ts) => rings.push(ts),
+            Some(combinatorics::LoopRing::Poly(nr)) => match plane_ring(nr) {
+                Ok((ts, _)) => rings.push(ts),
                 // ★ `OuterRing` here, not `CollapsedTriple`: this caller reports *which loop*
                 // failed, which is the finer fact when a face has several. A branch node is a
-                // different cause and keeps its own name either way.
+                // different cause and keeps its own name either way — and so is a curved carrier.
                 Err(RingFail::Collapsed) => {
                     out.declined.push((fp, DeclineKind::OuterRing));
                     continue;
                 }
-                Err(RingFail::Branch) => {
-                    out.declined.push((fp, DeclineKind::BranchNode));
+                Err(f @ (RingFail::Branch | RingFail::CurvedWall)) => {
+                    out.declined.push((fp, decline_of(f)));
                     continue;
                 }
             },
@@ -1185,8 +1209,8 @@ fn trace_one(
                     solid: which,
                     kind,
                 }),
-                combinatorics::LoopRing::Poly(nr) => match plane_ring(&nr.triples) {
-                    Ok(r) => rings.push(r),
+                combinatorics::LoopRing::Poly(nr) => match plane_ring(nr) {
+                    Ok((ts, _)) => rings.push(ts),
                     Err(f) => failed = Some(decline_of(f)),
                 },
             }

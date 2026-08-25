@@ -1213,10 +1213,16 @@ pub(crate) fn face_vertex_triples(
 /// same trust model as the merge's `Ring { nodes, walls }`: deriving a wall from two names is
 /// sound only while every vertex lies on exactly three planes, and the carried value is total
 /// even where the *names* degenerate (the fallback-named vertices still know their edges).
+///
+/// ★★★★★ **A wall is a *carrier*, not a plane index** — the same [`crate::boolean::Wall`] the
+/// result side's `Ring` uses, and deliberately not a second vocabulary. An operand can be a
+/// previous boolean's result, and then a face's ring runs along a cylinder: a boss on a wall bites
+/// an arc out of the plate's caps and splits the wall with its rulings. `usize` had nowhere to
+/// write that, which is why the ring was declined there rather than described.
 #[derive(Clone, Debug)]
 pub(crate) struct NamedRing {
     pub triples: Vec<NodeId>,
-    pub walls: Vec<usize>,
+    pub walls: Vec<crate::boolean::Wall>,
 }
 
 /// One loop of a face, in the vocabulary the tracer speaks (M6-2a): a polygon of three-plane
@@ -1410,7 +1416,7 @@ fn loop_triples(
         };
         // Edge `i`'s carried wall: the far face's class, read off `inc` — total even where the
         // vertex *names* below have to fall back or decline (see [`NamedRing`]).
-        walls.push(wall);
+        walls.push(crate::boolean::Wall::Plane(wall));
         // `inc` names faces, so `other` matches by face — but the triple names *planes*, and a
         // consumer's `==` on it must mean "same plane". Canonize here, once, at the source.
         let mut t = [near, far, wall];
