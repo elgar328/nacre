@@ -33,10 +33,16 @@
 //! two, so some angle is below `0.57°`. The measured worst is `0.457°`: at the floor,
 //! not short of it.
 //!
-//! Getting a fat triangle out of a 315-gon therefore needs a vertex *inside* it, and
-//! adding vertices is what the crack-free contract forbids at this layer (design §5).
-//! Delaunay refinement is not the step missing from this file — it is a different
-//! layer's decision.
+//! Getting a fat triangle out of a 315-gon therefore needs a vertex *inside* it, and on a **cap**
+//! the only reason to want one is quality — the cap's boundary already samples all the curvature
+//! there is. Delaunay refinement is not the step missing from this file; it is a different layer's
+//! decision.
+//!
+//! ★ **What the crack-free contract forbids is a vertex on the *boundary*, not one inside.** The
+//! chart above does add interior points where a face's own boundary fails to sample its curvature
+//! (design §5), and [`super::insert_interior`] places them — never splitting a constrained edge.
+//! This file still creates and removes nothing; it runs after those points have arrived, and their
+//! arrival is what gives it something to flip.
 
 use super::P2;
 use nacre_predicates::{incircle, orient2d};
