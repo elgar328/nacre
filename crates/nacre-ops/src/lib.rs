@@ -831,12 +831,26 @@ pub enum RejectReason {
     /// names an operand the trace cannot **read**. Sharing either would put an input-side coverage
     /// limit under an output-side name, and the census keys on these.
     ///
-    /// ★★ Today it is raised where it is **swallowed** — `trace_input` maps a loop it cannot name
-    /// to `None` and the tracer reports which *loop* failed ([`DeclineKind::OuterRing`] /
-    /// [`DeclineKind::HoleRing`]), which is the finer fact when a face has several. The reject
-    /// census records the raise, so the cause is in the ledger even where the surfaced label is
-    /// the loop's. It stands in production the moment the population gate lets such an operand
-    /// through — and until then it is what keeps `loop_triples` from **panicking** on it.
+    /// ★★ **Two sites, and only one of them surfaces today.**
+    ///
+    /// * `planes::face_clears_footprint` — the population **gate**, which is what a caller
+    ///   actually meets: it refuses such an operand before the tracer ever runs, and this is the
+    ///   name it refuses under. The answer is the gate's own, unchanged; what this variant fixed is
+    ///   that the answer used to wear [`Self::CylinderGateUndecided`], whose sentence ("the gate
+    ///   could not decide exactly") is false here — the gate decides, and the road behind it is
+    ///   what has no vocabulary.
+    /// * [`combinatorics::loop_triples`] — the road itself, **swallowed**: `trace_input` maps a
+    ///   loop it cannot name to `None` and the tracer reports which *loop* failed
+    ///   ([`DeclineKind::OuterRing`] / [`DeclineKind::HoleRing`]), which is the finer fact when a
+    ///   face has several. The reject census still records the raise, so the cause is in the ledger
+    ///   even where the surfaced label is the loop's. Unreachable in production while the gate
+    ///   stands in front of it — and that is exactly its job: it is what keeps `loop_triples` from
+    ///   **panicking** the day the gate opens.
+    ///
+    /// ★ The two ask the same question of a face in two vocabularies — the gate reads the edge's
+    /// **carriers** from the model, the road reads the far face's **class** — and they are measured
+    /// to pick the same faces (`an_operand_bounded_by_a_cylinder_declines_instead_of_panicking`,
+    /// and a face-by-face probe over wall, corner, bore and top-boss operands).
     CurvedOperandBoundary,
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
     /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and
