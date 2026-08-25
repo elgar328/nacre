@@ -1196,6 +1196,7 @@ fn arc_side(
 /// An original vertex is as implicit a point as a seam node, so a cycle's ring — which mixes
 /// them — is one uniform list and [`point_in_ring`] need not know the difference. Two
 /// adjacent edges on one neighbour plane would be a straight angle, and it rejects.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn face_vertex_triples(
     model: &Model,
     f: Handle<Face>,
@@ -1203,8 +1204,9 @@ pub(crate) fn face_vertex_triples(
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
+    cyls: &[crate::planes::WorkingCyl],
 ) -> Result<LoopRing, BoolError> {
-    loop_triples(&model.faces.get(f).outer, p, inc, jd, plane_ix)
+    loop_triples(model, &model.faces.get(f).outer, p, inc, jd, plane_ix, cyls)
 }
 
 /// One loop in class form with each edge's **carried wall** beside it: `walls[i]` is the plane
@@ -1298,6 +1300,7 @@ pub(crate) fn trace_input(
     n_faces: usize,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
+    cyls: &[crate::planes::WorkingCyl],
     crossings: std::collections::HashSet<(usize, usize)>,
 ) -> TraceInput {
     let _ = n_faces;
@@ -1315,8 +1318,8 @@ pub(crate) fn trace_input(
                     FaceLoops::default()
                 } else {
                     FaceLoops {
-                        outer: face_vertex_triples(model, fh, fp, inc, jd, plane_ix).ok(),
-                        holes: hole_rings(model, fh, fp, inc, jd, plane_ix).ok(),
+                        outer: face_vertex_triples(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
+                        holes: hole_rings(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
                     }
                 };
                 faces[side].push((fp, loops));
@@ -1332,6 +1335,7 @@ pub(crate) fn trace_input(
 /// side of the rim — the same construction as an outer vertex, and the same rejection of a
 /// straight angle. The ring keeps its stored direction: clockwise about `f`'s outward
 /// normal, which is what makes it a hole.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn hole_rings(
     model: &Model,
     f: Handle<Face>,
@@ -1339,13 +1343,14 @@ pub(crate) fn hole_rings(
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
+    cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Vec<LoopRing>, BoolError> {
     model
         .faces
         .get(f)
         .inner
         .iter()
-        .map(|l| loop_triples(l, p, inc, jd, plane_ix))
+        .map(|l| loop_triples(model, l, p, inc, jd, plane_ix, cyls))
         .collect()
 }
 
@@ -1368,12 +1373,15 @@ pub(crate) fn hole_rings(
 /// un-normalized coefficients the consumer does).
 ///
 /// The common case is untouched, so no existing name moves.
+#[allow(clippy::too_many_arguments)]
 fn loop_triples(
+    model: &Model,
     l: &Loop,
     p: usize,
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
+    cyls: &[crate::planes::WorkingCyl],
 ) -> Result<LoopRing, BoolError> {
     let hes = &l.half_edges;
     let edge = |he: &nacre_topo::HalfEdge| -> Result<([Handle<Vertex>; 2], [usize; 2]), BoolError> {
@@ -1409,14 +1417,46 @@ fn loop_triples(
         // honest answer is to decline the ring rather than to name it wrongly or to abort.
         //
         // The one curved loop this road *does* speak is the full circle handled above.
-        let (ClassIx::Plane(wall), ClassIx::Plane(near), ClassIx::Plane(far)) =
-            (plane_ix[b], plane_ix[p], plane_ix[a])
-        else {
-            return Err(reject(RejectReason::CurvedOperandBoundary));
+        // ★★★★★ **A curved neighbour is described now, not declined.** The two questions are
+        // **independent**: edge `i`'s carrier is `b`'s business, and the corner's name is both
+        // neighbours' — a ruling can arrive at this corner and a plane leave it. What this road
+        // lacked was the vertex's restatement into class space ([`branch_name_from_def`] — the
+        // vertex already carries its own name) and somewhere to write a curved carrier
+        // ([`NamedRing`]'s `Wall`). The one curved loop answered before this point is the circle.
+        let ClassIx::Plane(near) = plane_ix[p] else {
+            unreachable!("a cylinder face's loops are not walked here — `trace_input` skips them")
+        };
+        let branch = match (plane_ix[a], plane_ix[b]) {
+            (ClassIx::Cyl(k), ClassIx::Plane(far)) | (ClassIx::Plane(far), ClassIx::Cyl(k)) => {
+                let corner = shared_vertex(in_bounds, out_bounds)
+                    .ok_or_else(|| reject(RejectReason::AmbiguousCorner))?;
+                Some(
+                    branch_name_from_def(model, jd, corner, k, [near, far])
+                        .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
+                )
+            }
+            // Two laterals meeting at one corner is M6b's cylinder pair, not this road's.
+            (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
+                return Err(reject(RejectReason::CurvedOperandBoundary));
+            }
+            (ClassIx::Plane(_), ClassIx::Plane(_)) => None,
         };
         // Edge `i`'s carried wall: the far face's class, read off `inc` — total even where the
         // vertex *names* below have to fall back or decline (see [`NamedRing`]).
-        walls.push(crate::boolean::Wall::Plane(wall));
+        walls.push(match plane_ix[b] {
+            ClassIx::Plane(w) => crate::boolean::Wall::Plane(w),
+            ClassIx::Cyl(k) => {
+                let end = branch.expect("a curved edge's corner is a branch point");
+                curved_wall(model, jd, cyls, &hes[i], k, near, end)?
+            }
+        });
+        if let Some(n) = branch {
+            out.push(n);
+            continue;
+        }
+        let (ClassIx::Plane(wall), ClassIx::Plane(far)) = (plane_ix[b], plane_ix[a]) else {
+            unreachable!("the curved arms are handled above")
+        };
         // `inc` names faces, so `other` matches by face — but the triple names *planes*, and a
         // consumer's `==` on it must mean "same plane". Canonize here, once, at the source.
         let mut t = [near, far, wall];
@@ -1427,14 +1467,8 @@ fn loop_triples(
         }
         // Both neighbours are one plane. The vertex is the two edges' shared endpoint — and only
         // if that is unambiguous (a two-gon or a self-bounded rim would give two, or none).
-        let shared: Vec<Handle<Vertex>> = in_bounds
-            .iter()
-            .copied()
-            .filter(|v| out_bounds.contains(v))
-            .collect();
-        let [vh] = shared[..] else {
-            return Err(reject(RejectReason::AmbiguousCorner));
-        };
+        let vh = shared_vertex(in_bounds, out_bounds)
+            .ok_or_else(|| reject(RejectReason::AmbiguousCorner))?;
         let mut classes: Vec<usize> = vertex_face_indices(vh, inc)
             .into_iter()
             .map(|k| plane_ix[k].plane())
@@ -2987,6 +3021,157 @@ pub(crate) fn dir_sign(jd: &Judge<'_, WorkingPlane>, p: usize, q: usize, r: usiz
 
 /// A plane class's exact description, or `None` where it has none to give (a rotated class'
 /// realized coefficients are not its truth, so they are refused rather than read).
+/// **The carrier of a ring edge that rides a cylinder** — an arc or a ruling, filled or refused.
+///
+/// ★★ **The direction bits do not come from `edge_at`.** That convention ("even half-edge = CCW /
+/// up") is the *arrangement's* edge indexing, and an operand's face loop has no such index. What is
+/// true here is the model's own:
+///
+/// * an **arc** has a stated convention — `derive_edge_curve`'s (Plane, Cylinder) arm: "on a circle
+///   carrier the vertex *order* says which arc; `[A, B]` is A to B **counter-clockwise about the
+///   axis**". So walking the edge `forward` is walking it CCW.
+/// * a **ruling** has none — the same arm says a plane parallel to the axis meets the lateral along
+///   rulings and "the endpoints decide". `MergedRuling::end` ascending the axis is the
+///   *arrangement's* convention, so `up` is **derived** here from the two endpoints' axial
+///   coordinate rather than read off a rule.
+///
+/// `side` is [`crate::arrangement::ruling_side`]'s one spelling, and it needs a point on the ruling
+/// *exactly* — which is why the branch name comes in: [`branch_meet`] realizes it as the `(line, s)`
+/// that function takes. A ruling whose end is not a branch point (a seam end) has no such point and
+/// is refused rather than guessed.
+fn curved_wall(
+    model: &Model,
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    he: &nacre_topo::HalfEdge,
+    cyl: usize,
+    near: usize,
+    end: NodeId,
+) -> Result<crate::boolean::Wall, BoolError> {
+    let curved = || reject(RejectReason::CurvedOperandBoundary);
+    match model.edge_curve(he.edge) {
+        nacre_geom::Curve::Circle(_) => Ok(crate::boolean::Wall::Arc {
+            cyl,
+            ccw: he.forward,
+        }),
+        nacre_geom::Curve::Line(_) => {
+            let def = cyls.get(cyl).ok_or_else(curved)?.def.clone();
+            let at = branch_meet(jd, cyl, &def, end).ok_or_else(curved)?;
+            let w = class_coeffs_rat(jd, near).ok_or_else(curved)?;
+            let side =
+                crate::arrangement::ruling_side(&w, &def, (&at.0, &at.1)).ok_or_else(curved)?;
+            // Which way travel runs along the axis: the stored edge ascends when its second
+            // endpoint does, and `forward` says whether this half-edge walks it that way.
+            let (m, o) = (def.dir(), def.origin());
+            let axial = |v: Handle<Vertex>| {
+                let q = model.vertex_point(v).as_array();
+                (0..3)
+                    .map(|k| m[k].to_f64() * (q[k] - o[k].to_f64()))
+                    .sum::<f64>()
+            };
+            let [v0, v1] = model.edges.get(he.edge).vertices;
+            let ascends = axial(v1) > axial(v0);
+            Ok(crate::boolean::Wall::Ruling {
+                cyl,
+                side,
+                up: ascends == he.forward,
+            })
+        }
+    }
+}
+
+/// **The corner two consecutive ring edges share** — `None` when that is not exactly one vertex.
+///
+/// A two-gon or a self-bounded rim gives two or none, and picking one of those would put a corner
+/// where the ring has none. Two callers ask it now (the degenerate-triple fallback and the branch
+/// corner), so it is spelled once.
+fn shared_vertex(a: [Handle<Vertex>; 2], b: [Handle<Vertex>; 2]) -> Option<Handle<Vertex>> {
+    let shared: Vec<Handle<Vertex>> = a.iter().copied().filter(|v| b.contains(v)).collect();
+    match shared[..] {
+        [v] => Some(v),
+        _ => None,
+    }
+}
+
+/// **Do these two exact 4-vectors describe one plane, and does `b`'s normal point the same way?**
+///
+/// `Some(+1)` same plane same sense, `Some(-1)` same plane opposite sense, `None` different planes
+/// (or overflow). The comparison is cross-multiplication against a nonzero component — the idiom
+/// [`nacre_scalar::quad::plane_plane_cylinder`]'s parallel arm already uses ("coincident iff the
+/// full 4-vectors are proportional"), spelled once here because a *second* caller now needs it.
+fn plane_sense(a: &[nacre_scalar::Rat; 4], b: &[nacre_scalar::Rat; 4]) -> Option<i8> {
+    let zero = nacre_scalar::Rat::from_int(0);
+    let i = (0..3).find(|&k| a[k] != zero)?;
+    if b[i] == zero {
+        return None;
+    }
+    for j in 0..4 {
+        if b[j].checked_mul(a[i])? != a[j].checked_mul(b[i])? {
+            return None;
+        }
+    }
+    Some(if (a[i] > zero) == (b[i] > zero) {
+        1
+    } else {
+        -1
+    })
+}
+
+/// **An operand vertex's own branch name, restated in this arrangement's class space.**
+///
+/// ★★★★★ **The second half of a correspondence the forward direction gets for free.** When a
+/// boolean *mints* a [`nacre_topo::VertexDef::Branch`] it writes the two planes as **its own
+/// classes' representative surfaces**, so restating class order as handle order is the only
+/// correction it needs ([`nacre_topo::QuadRoot::canonical`], which `assemble` calls). Coming back
+/// the other way the handles are **given**, and they may be a surface that merged into a class
+/// under a different representative — and, because a class holds faces whose normals oppose, under
+/// the **opposite sign**. `VertexDef::Branch`'s own doc says this correspondence "has to be
+/// established a second time"; this is that time.
+///
+/// ★★ **Both corrections are the same rule.** `Lo`/`Hi` are the order along `ℓ = n₁ × n₂`, and
+/// `plane_plane_cylinder` fixes the base by `{n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0}` — a condition
+/// `−ℓ` satisfies identically. So negating **either** normal leaves the two planes, and the base,
+/// exactly where they were and only reverses `ℓ`: the two roots trade places, which is what
+/// `flipped` says. Swapping the pair reverses `ℓ` too (the derivation `canonical` already carries).
+/// ⇒ **flip once per reversal, and an even number of reversals is no flip at all.** The swap is
+/// [`NodeId::branch`]'s to count; the two signs are this function's.
+/// ☑ The cylinder needs no correction: negating its axis direction does not move the surface, so
+/// the two roots are the same two points in the same order.
+pub(crate) fn branch_name_from_def(
+    model: &Model,
+    jd: &Judge<'_, WorkingPlane>,
+    v: Handle<Vertex>,
+    cyl: usize,
+    candidates: [usize; 2],
+) -> Option<NodeId> {
+    let nacre_topo::VertexDef::Branch { planes, root, .. } = model.vertices.get(v).def else {
+        return None;
+    };
+    // Which candidate class each stored handle *is*, and with which sense. The match decides the
+    // correspondence and the sign in one comparison — asking them separately would be two chances
+    // to disagree.
+    let mut seen: [Option<(usize, i8)>; 2] = [None, None];
+    for (i, &h) in planes.iter().enumerate() {
+        let name = model.world_plane_name(h)?;
+        let c = name.narrow()?;
+        for &k in &candidates {
+            let Some(sense) = plane_sense(c, &class_coeffs_rat(jd, k)?) else {
+                continue;
+            };
+            if seen[i].is_some() {
+                return None; // one handle answering to both classes is not a correspondence
+            }
+            seen[i] = Some((k, sense));
+        }
+    }
+    let ((k0, s0), (k1, s1)) = (seen[0]?, seen[1]?);
+    if k0 == k1 {
+        return None;
+    }
+    let root = if s0 == s1 { root } else { root.flipped() };
+    Some(NodeId::branch(k0, k1, cyl, root))
+}
+
 pub(crate) fn class_coeffs_rat(
     jd: &Judge<'_, WorkingPlane>,
     c: usize,

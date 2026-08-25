@@ -648,6 +648,7 @@ impl Aliases {
 /// degenerate, versus a vertex that has no triple at all — and the four callers of [`plane_ring`]
 /// already map the old single failure onto *three* different [`DeclineKind`]s, so the label is the
 /// caller's to choose and this only says which cause it was.
+#[derive(Debug)]
 enum RingFail {
     /// Two of a vertex's three planes coincide, so the name denotes no point.
     Collapsed,
@@ -1600,6 +1601,7 @@ fn trace_on_class_of(
         faces.len(),
         jd,
         plane_ix,
+        &[],
         crossings,
     );
     trace_on_class(&input, wc, jd, faces, plane_ix)
@@ -1629,6 +1631,7 @@ fn trace_one_of(
         faces.len(),
         jd,
         plane_ix,
+        &[],
         crossings,
     );
     trace_one(
@@ -4809,6 +4812,7 @@ pub(crate) fn concurrency_audit(
         geom,
         plane_ix,
         crossings,
+        cyls,
         standard,
         notes,
         ..
@@ -4821,6 +4825,7 @@ pub(crate) fn concurrency_audit(
         faces_tab.len(),
         &jd,
         &plane_ix,
+        &cyls,
         crossings.clone(),
     );
     let mut out = Vec::new();
@@ -4853,11 +4858,11 @@ pub(crate) fn concurrency_audit(
                     continue;
                 };
                 let mut rings =
-                    combinatorics::face_vertex_triples(model, fh, fp, inc, &jd, &plane_ix)
+                    combinatorics::face_vertex_triples(model, fh, fp, inc, &jd, &plane_ix, &cyls)
                         .map(|lr| lr.poly().map(|nr| nr.triples.clone()).unwrap_or_default())
                         .unwrap_or_default();
                 rings.extend(
-                    combinatorics::hole_rings(model, fh, fp, inc, &jd, &plane_ix)
+                    combinatorics::hole_rings(model, fh, fp, inc, &jd, &plane_ix, &cyls)
                         .unwrap_or_default()
                         .into_iter()
                         .filter_map(|lr| lr.poly().map(|nr| nr.triples.clone()))
@@ -5096,6 +5101,7 @@ pub(crate) fn frame_audit(
         faces_tab.len(),
         &jd,
         &plane_ix,
+        &cyls,
         crossings.clone(),
     );
     // The alias fixpoint, exactly as the boolean runs it (sequentially): classes discover names
@@ -5280,6 +5286,7 @@ pub(crate) fn boolean(
                 faces_tab.len(),
                 &jd,
                 &plane_ix,
+                &cyls,
                 crossings.clone(),
             )
         );
@@ -5322,6 +5329,7 @@ pub(crate) fn boolean(
                 faces_tab.len(),
                 &plain_jd,
                 &plane_ix,
+                &cyls,
                 crossings.clone(),
             );
             let plain = trace_result_faces(
@@ -5457,6 +5465,54 @@ mod tests {
     use super::*;
     use crate::SketchFrame;
     use nacre_scalar::Axis;
+
+    /// ★★★ **Where a named curved ring stops, and under which name.**
+    ///
+    /// The operand road now *describes* a ring that runs along a cylinder — branch corners and an
+    /// arc or ruling carrier — instead of declining to name it. What cannot use such a ring is the
+    /// plane road behind it, and this is the one place that says so. Without a lock here the claim
+    /// "the wall moved one stage deeper" would be untested: the population gate refuses these
+    /// operands long before a boolean reaches the tracer, and the naming lock next door stops at
+    /// `face_vertex_triples`.
+    ///
+    /// ★ The two causes are checked apart. A ring whose *corner* has no three-plane name is
+    /// `Branch`; a ring that names cleanly and still rides a cylinder is `CurvedWall` — a shape
+    /// whose ends would have to be seam vertices, which is why it gets its own sentence rather
+    /// than sharing one.
+    #[test]
+    fn a_named_curved_ring_stops_at_the_plane_road_by_name() {
+        let three = |a, b, c| combinatorics::NodeId::three_planes([a, b, c]);
+        let branch = combinatorics::NodeId::branch(0, 1, 0, nacre_topo::QuadRoot::Lo);
+        let plane = |c| crate::boolean::Wall::Plane(c);
+        let ruling = crate::boolean::Wall::Ruling {
+            cyl: 0,
+            side: 1,
+            up: true,
+        };
+        // Names good, one carrier curved.
+        let curved_carrier = combinatorics::NamedRing {
+            triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],
+            walls: vec![plane(1), ruling, plane(3)],
+        };
+        assert!(matches!(
+            plane_ring(&curved_carrier),
+            Err(RingFail::CurvedWall)
+        ));
+        // A branch corner, whatever the carriers — the corner is the finer fact and goes first.
+        let curved_corner = combinatorics::NamedRing {
+            triples: vec![three(0, 1, 2), branch, three(0, 1, 3)],
+            walls: vec![plane(1), ruling, plane(3)],
+        };
+        assert!(matches!(plane_ring(&curved_corner), Err(RingFail::Branch)));
+        // And the plane-only ring still comes back with both halves.
+        let plain = combinatorics::NamedRing {
+            triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],
+            walls: vec![plane(1), plane(2), plane(3)],
+        };
+        let (ts, walls) = plane_ring(&plain).expect("a plane ring");
+        assert_eq!(ts.len(), 3);
+        assert_eq!(walls, vec![1, 2, 3]);
+    }
 
     /// The graze rows of `edge_mask`'s algebra, one by one. The missing row was the
     /// same-side pair: a knife edge's two faces both leave `W` upward, the material
@@ -6770,6 +6826,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            &cyls,
             Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
@@ -6980,6 +7037,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            &cyls,
             Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
@@ -7089,6 +7147,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            &cyls,
             Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
@@ -7372,6 +7431,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            &cyls,
             Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
@@ -7554,6 +7614,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            &cyls,
             Default::default(),
         );
         let (faces, _, _) = trace_result_faces(
@@ -8516,6 +8577,7 @@ mod tests {
             faces_tab.len(),
             &jd,
             &plane_ix,
+            &[],
             Default::default(),
         );
         let (fp, fl) = input.faces[0]
@@ -8937,6 +8999,7 @@ mod tests {
                     setup.planes.len(),
                     &jd,
                     &setup.plane_ix,
+                    &setup.cyls,
                     Default::default(),
                 );
                 for wc in 0..setup.geom.len() {

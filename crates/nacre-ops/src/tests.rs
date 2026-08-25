@@ -1487,6 +1487,7 @@ fn holed_face_rings_of(
             &inc,
             &crate::planes::test_judge(&planes),
             &plane_ix,
+            &[],
         )
         .unwrap();
         if let Some(hole) = holes.into_iter().next() {
@@ -1497,6 +1498,7 @@ fn holed_face_rings_of(
                 &inc,
                 &crate::planes::test_judge(&planes),
                 &plane_ix,
+                &[],
             )
             .unwrap();
             return (
@@ -3671,20 +3673,30 @@ fn a_chained_cylinder_bounded_by_the_first_is_refused_by_name() {
 /// The untouched walls are the negative control: they are still named, so the filter is a filter
 /// and not a blanket refusal.
 #[test]
-fn an_operand_bounded_by_a_cylinder_declines_instead_of_panicking() {
+fn an_operand_bounded_by_a_cylinder_is_named_in_class_space() {
+    // ★★ **The corner boss is here because the wall boss is symmetric.** Its axis lies *on* the
+    // wall, so the two rulings sit either side of that plane and a root read the wrong way round
+    // lands on a mirror-image point — a lock that only ever saw this fixture could pass with the
+    // restatement inverted. The corner's two walls break that symmetry.
+    for at in [[2.0, 0.0, -1.0], [12.0, 0.0, -1.0]] {
+        named_in_class_space(at);
+    }
+}
+
+fn named_in_class_space(at: [f64; 3]) {
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
         Point3::from_array([12.0, 4.0, 2.0]),
     );
     let boss = m.add_cylinder(
-        Point3::from_array([2.0, 0.0, -1.0]),
+        Point3::from_array(at),
         Vector3::from_array([0.0, 0.0, 1.0]),
         0.5,
         4.0,
     );
     m.rebuild_adjacency();
-    let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
+    let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
     m.rebuild_adjacency();
     let r = out[0];
 
@@ -3696,41 +3708,95 @@ fn an_operand_bounded_by_a_cylinder_declines_instead_of_panicking() {
         }
     }
     let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
-    let (planes, plane_ix, _cyls) = dense_planes(&faces_tab, &canon);
+    let (planes, plane_ix, cyl_surfs) = dense_planes(&faces_tab, &canon);
     let inc = combinatorics::edge_faces(&m, r, &surf_ix).expect("edge incidence");
+    // The cylinder table the tracer would hold, built the way `cylinder_gate` builds it — the gate
+    // itself cannot be asked here, because refusing this very operand is its job.
+    let cyls: Vec<crate::planes::WorkingCyl> = cyl_surfs
+        .iter()
+        .map(|&surf| {
+            let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
+            let nacre_geom::Surface::Cylinder(cache) = m.surface(surf) else {
+                unreachable!("a cylinder class names a cylinder")
+            };
+            crate::planes::WorkingCyl {
+                surf,
+                def,
+                cache: *cache,
+            }
+        })
+        .collect();
 
-    let (mut named, mut declined) = (0usize, 0usize);
+    let jd = crate::planes::test_judge(&planes);
+    let (mut curved_walls, mut branch_names) = (0usize, 0usize);
     for &fh in &m.shells.get(m.solids.get(r).outer).faces {
         let fp = surf_ix[&fh];
         if matches!(plane_ix[fp], crate::planes::ClassIx::Cyl(_)) {
             continue; // the tracer skips a lateral face; its loops are the rims
         }
-        match combinatorics::face_vertex_triples(
-            &m,
-            fh,
-            fp,
-            &inc,
-            &crate::planes::test_judge(&planes),
-            &plane_ix,
-        ) {
-            Ok(_) => named += 1,
-            Err(BoolError::Rejected { reason, .. }) => {
-                assert_eq!(
-                    reason,
-                    RejectReason::CurvedOperandBoundary,
-                    "face {:?} declined for the wrong reason",
-                    fh.index()
-                );
-                declined += 1;
+        let ring = combinatorics::face_vertex_triples(&m, fh, fp, &inc, &jd, &plane_ix, &cyls)
+            .unwrap_or_else(|e| panic!("face {:?}: {e:?}", fh.index()));
+        let Some(nr) = ring.poly() else { continue };
+        let hes = &m.faces.get(fh).outer.half_edges;
+        let n = hes.len();
+        assert_eq!(
+            nr.triples.len(),
+            n,
+            "face {:?}: one name per corner",
+            fh.index()
+        );
+        for (i, &node) in nr.triples.iter().enumerate() {
+            // The carrier and the corner are independent facts, and both are asserted: a curved
+            // wall must be an arc or a ruling of the cylinder its far face is on, never a plane.
+            match nr.walls[i] {
+                crate::boolean::Wall::Plane(_) => {}
+                crate::boolean::Wall::Arc { .. } | crate::boolean::Wall::Ruling { .. } => {
+                    let straight = matches!(m.edge_curve(hes[i].edge), nacre_geom::Curve::Line(_));
+                    let arc = matches!(nr.walls[i], crate::boolean::Wall::Arc { .. });
+                    assert_eq!(
+                        straight,
+                        !arc,
+                        "face {:?} edge {i}: the carrier disagrees with the curve",
+                        fh.index()
+                    );
+                    curved_walls += 1;
+                }
             }
-            Err(e) => panic!("face {:?}: {e:?}", fh.index()),
+            let Some((_, cyl, _)) = combinatorics::branch_name(node) else {
+                continue;
+            };
+            branch_names += 1;
+            // ★★★★★ **Two roads, one point.** The name is this boolean's classes; the coordinate is
+            // what the *previous* boolean realized from *its* classes. Realizing the one and
+            // measuring it against the other is what says the restatement — the pair's order and
+            // each normal's sign — came out right: get either wrong and the name designates the
+            // **other root**, a visibly different point on the far ruling.
+            let got = combinatorics::branch_point(&jd, cyl, &cyls[cyl].def, node)
+                .expect("the name realizes");
+            let ends = |k: usize| m.edges.get(hes[k].edge).vertices;
+            let (a, b) = (ends((i + n - 1) % n), ends(i));
+            let v = *a
+                .iter()
+                .find(|x| b.contains(x))
+                .expect("consecutive edges share a corner");
+            let want = m.vertex_point(v).as_array();
+            let d: f64 = (0..3)
+                .map(|k| (got[k] - want[k]).powi(2))
+                .sum::<f64>()
+                .sqrt();
+            assert!(
+                d < 1e-9,
+                "face {:?} corner {i}: the name realizes at {got:?}, the vertex is at {want:?}",
+                fh.index()
+            );
         }
     }
-    // Four faces run along the boss: the two plate caps it bit an arc out of, and the two halves
-    // its rulings split the wall into. The boss's own caps are full circles — the one curved loop
-    // this road already speaks — and the three untouched walls are plain.
-    assert_eq!(declined, 4, "faces bounded by the boss");
-    assert!(named >= 5, "the untouched faces are still named: {named}");
+    // Four faces run along the boss — the two plate caps it bit an arc out of, and the two halves
+    // its rulings split the wall into — and each contributes two curved edges and two branch
+    // corners. The boss's own caps are full circles (the one curved loop this road already spoke)
+    // and the three untouched walls are plain.
+    assert_eq!(curved_walls, 4, "edges riding the boss");
+    assert_eq!(branch_names, 8, "corners named as branch points");
 }
 
 /// ★★★ **A circle can be an interior boundary, and then the merge erases it.**
@@ -6046,7 +6112,7 @@ fn a_vertex_is_named_by_the_planes_that_touch_it() {
     for sh in solid_shell_handles(&m, overhung) {
         for &fh in &m.shells.get(sh).faces {
             let p = surf_ix[&fh];
-            let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix)
+            let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix, &[])
                 .unwrap()
                 .poly()
                 .expect("a poly outer")
@@ -6179,7 +6245,7 @@ fn plane_triples_are_always_canon() {
         for &fh in &m.shells.get(sh).faces {
             let p = surf_ix[&fh];
             let mut rings = vec![
-                combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix)
+                combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix, &[])
                     .unwrap()
                     .poly()
                     .expect("a poly outer")
@@ -6187,7 +6253,7 @@ fn plane_triples_are_always_canon() {
                     .clone(),
             ];
             rings.extend(
-                combinatorics::hole_rings(&m, fh, p, &inc_a, &jd, &plane_ix)
+                combinatorics::hole_rings(&m, fh, p, &inc_a, &jd, &plane_ix, &[])
                     .unwrap()
                     .into_iter()
                     .filter_map(|lr| lr.poly().map(|nr| nr.triples.clone())),
@@ -6251,7 +6317,7 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
     for sh in solid_shell_handles(&m, chained) {
         for &fh in &m.shells.get(sh).faces {
             let p = surf_ix[&fh];
-            let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix)
+            let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix, &[])
                 .unwrap()
                 .poly()
                 .expect("a poly outer")
