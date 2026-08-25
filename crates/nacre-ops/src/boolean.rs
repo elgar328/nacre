@@ -1549,13 +1549,15 @@ pub(crate) fn reconstruct(
                     // `VertexDef::Branch` in *handle* order, and the class→handle map is not
                     // monotone in general — a re-sort must carry the root through
                     // (`transform`'s remap already locks the same rule on the way back out).
-                    // ★ The flip is **unexercised in today's corpus, measured** — dropping the
-                    // canonical call leaves every fence green, because both fixtures' class
-                    // order happens to match their handle order. The rule itself is pinned by
-                    // `QuadRoot::canonical`'s own locks in `nacre-topo` (the +X-axis fixtures
-                    // that forced `Lo|Hi|Double`); the population that turns this call red is a
-                    // boss whose cylinder classes arrive in the other order, and it gets its
-                    // fixture when it arrives rather than a contorted one now.
+                    // ★ The flip is unexercised **at this call**: dropping it leaves every fence
+                    // green, because both fixtures' class order happens to match their handle
+                    // order. ★★★★★ **The rule is not unexercised any more, though — its inverse
+                    // is red (2026-08-26).** The population this note was waiting for is a
+                    // boolean's *result used as the next operand*, where a second boolean builds
+                    // its classes afresh and their order is not the handles': dropping the same
+                    // restatement in `combinatorics::branch_name_from_def` turns
+                    // `an_operand_bounded_by_a_cylinder_is_named_in_class_space` red. So what is
+                    // still owed here is only a fixture that reaches *this* line, not the rule.
                     // The tolerance is the Three arm's rule below, one surface swapped: measured
                     // against the very `model.surface` objects `validate` reads, maxed with
                     // `sv.tol` (which `branch_vertex_tol` built, meet-line term included).

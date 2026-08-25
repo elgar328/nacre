@@ -139,6 +139,22 @@ impl QuadRoot {
     /// ★ **Generic over the index space on purpose.** `Handle<Surface>` orders by its `index` and
     /// the arrangement names planes by bare `usize` **class** indices; both must answer the same
     /// way, and one function answering both is what keeps a second copy from being written.
+    ///
+    /// ★★★★★ **The rule this states is not about swapping — it is about `ℓ`.** `Lo`/`Hi` are the
+    /// order along `ℓ = n₁ × n₂`, so *anything* that reverses `ℓ` trades the two names, and the
+    /// swap is only the case this function can see. **Negating either normal is another**: the
+    /// plane is the same set, and `plane_plane_cylinder` fixes the base by
+    /// `{n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0}` — a condition `−ℓ` satisfies identically — so the base
+    /// does not move and `ℓ` alone reverses. ⇒ **flip once per reversal; an even number is no flip
+    /// at all.** A caller restating a name across two *spellings* of the same planes (rather than
+    /// two orders of them) owes the sign half — `nacre-ops`' `branch_name_from_def` is the one that
+    /// does, coming back from handle space into class space.
+    ///
+    /// ☑ **The swap half is measured at last (2026-08-26).** It was recorded as unexercised where
+    /// `assemble_fuse_cut` calls it, with a note that the population turning it red would be a boss
+    /// whose classes arrive in the other order. That population is a boolean's **result used as the
+    /// next operand** — a second boolean builds its classes afresh — and dropping the call there
+    /// turns `an_operand_bounded_by_a_cylinder_is_named_in_class_space` red.
     #[inline]
     pub fn canonical<T: Ord>(pair: [T; 2], root: QuadRoot) -> ([T; 2], QuadRoot) {
         let [first, second] = pair;
