@@ -934,6 +934,69 @@ fn dump() {
             record(&format!("trc onaxis {kn}"), &m, &inputs, &out);
         }
     }
+    // ── **The same boss, on each of the four walls** (`wal`). A part does not care which side of
+    // itself a boss sits on, and neither should the kernel — but the rulings road was built and
+    // measured on the `+x` wall alone, and the corpus inherited that: every `rul` row above puts
+    // the axis on a max-side wall. These rows put the same solid on all four, so the table can
+    // see a rule that holds on one side and not the other.
+    //
+    // ★ **Recorded before the fix, deliberately.** As this family lands, six of these rows are
+    // refusals (`RingOrientation` on the min-side walls, and `MissingSeam` for `+y` cut/common)
+    // and the corner pair splits too (`OpenResultShell` on the min corner). Writing them down
+    // first is what makes the next commit's diff the evidence: without it the rows would be born
+    // green and the corpus could not say what changed.
+    //
+    // The box twins are the control that says the defect is about **arcs**: the same straddle
+    // with a cuboid tool builds on every wall, measured.
+    {
+        let plate = |m: &mut Model| {
+            let a = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            m.rebuild_adjacency();
+            a
+        };
+        for (pn, base) in [
+            ("xlo", [0.0, 2.0, -1.0]),
+            ("xhi", [4.0, 2.0, -1.0]),
+            ("ylo", [2.0, 0.0, -1.0]),
+            ("yhi", [2.0, 4.0, -1.0]),
+            ("corner-lo", [0.0, 0.0, -1.0]),
+            ("corner-hi", [4.0, 4.0, -1.0]),
+        ] {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let a = plate(&mut m);
+                let b = m.add_cylinder(
+                    Point3::from_array(base),
+                    nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                    0.5,
+                    4.0,
+                );
+                m.rebuild_adjacency();
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("wal {pn} {kn}"), &m, &inputs, &out);
+            }
+        }
+        for (pn, lo, hi) in [
+            ("box-xlo", [-0.5, 1.5, -1.0], [0.5, 2.5, 3.0]),
+            ("box-xhi", [3.5, 1.5, -1.0], [4.5, 2.5, 3.0]),
+            ("box-ylo", [1.5, -0.5, -1.0], [2.5, 0.5, 3.0]),
+            ("box-yhi", [1.5, 3.5, -1.0], [2.5, 4.5, 3.0]),
+        ] {
+            let mut m = Model::new();
+            let a = plate(&mut m);
+            let b = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+            m.rebuild_adjacency();
+            let inputs = operands(&m, a, b);
+            let out = boolean(&mut m, BoolKind::Fuse, a, b);
+            m.rebuild_adjacency();
+            record(&format!("wal {pn} fuse"), &m, &inputs, &out);
+        }
+    }
     // ── **A cap that lies in another face's plane** (`cap`): the population where a *disk* is a
     // face of the result and the face around it holds the same circle as a hole. The two are
     // adjacent across that circle and nothing else — a disk has no nodes — so before the merge
