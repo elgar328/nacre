@@ -2035,96 +2035,194 @@ pub(crate) fn reconstruct(
                     half_edges: vec![HalfEdge { edge: e, forward }],
                 })
             };
-        // A band's boundary is the lateral face `add_cylinder` builds: two rims joined by the
-        // seam, which the one face uses twice in opposite senses.
-        let band_loop =
-            |model: &mut Model, k: usize, lo: usize, hi: usize| -> Result<Loop, BoolError> {
-                // ★ Both rims cut is unreachable today — `chamber` finds no disk label at either
-                // end and refuses the band before it is emitted — so no chain code is written
-                // for a population nothing can reach; the honest name stands in its place.
-                if cut_rims.contains_key(&(k, lo)) && cut_rims.contains_key(&(k, hi)) {
-                    return Err(reject(RejectReason::ArcBoundNotYet));
-                }
-                let (v_lo, e_lo) = *rim
-                    .get(&(g, k, lo))
-                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                let (v_hi, e_hi) = *rim
-                    .get(&(g, k, hi))
-                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                let lat = cyls[k].surf;
-                let seam_edge = model
-                    .push_edge(Edge::carrier_pair(lat, lat), [v_lo, v_hi])
-                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
-                // ★★ **A rim's traversal: the closed edge, or the pre-minted chain.** Both walk
-                // the circle CCW; the `lo` rim is walked forward and the `hi` rim backward
-                // (reverse the pieces and flip each sense — one rule for the closed edge and the
-                // chain alike), exactly the senses the four-half-edge spelling always had.
-                let walk =
-                    |c: usize, closed: Option<Handle<Edge>>| -> Result<Vec<HalfEdge>, BoolError> {
-                        match closed {
-                            Some(e) => Ok(vec![HalfEdge {
-                                edge: e,
-                                forward: true,
-                            }]),
-                            None => band_chains
-                                .get(&(g, k, c))
-                                .cloned()
-                                .ok_or_else(|| reject(RejectReason::MissingSeam)),
-                        }
+        // **A periodic face's outer boundary: its loops, joined along the seam generator.**
+        //
+        // The four-half-edge spelling `add_cylinder` builds — two rims and the seam used twice in
+        // opposite senses — is the case where **nothing is in the seam's way**. When a hole meets
+        // the seam, that same generator is *interrupted* by it: the slit runs from the `lo` rim up
+        // to the hole, the hole's own boundary carries the walk across, and a second slit finishes
+        // the climb to the `hi` rim; coming back down uses each piece the other way. One rule,
+        // whose no-hole case is exactly today's four half-edges.
+        //
+        // ★★★★★ **Which of the hole's two runs the climb takes is forced, not chosen.** Arriving
+        // at the lower contact the walk must leave along an edge that keeps material on its left,
+        // and the hole is *already* wound that way (it is this face's hole) — so the climb takes
+        // the run leaving that contact **in the hole's own direction**, and the descent takes the
+        // other. No side test, no sign. It is also what keeps the `seam_is_node` shape honest:
+        // there the seam segment *is* the hole's own ruling, and it lands in the climb as a single
+        // hole edge used **once**, rather than being minted again as a slit and used a third time.
+        //
+        // The hole is **consumed** — it stops being an inner loop, because it is now part of the
+        // outer walk. A hole that does not meet the seam is left alone.
+        let band_loop = |model: &mut Model,
+                         k: usize,
+                         lo: usize,
+                         hi: usize,
+                         holes: &mut Vec<Loop>|
+         -> Result<Loop, BoolError> {
+            // ★ Both rims cut is unreachable today — `chamber` finds no disk label at either
+            // end and refuses the band before it is emitted — so no chain code is written
+            // for a population nothing can reach; the honest name stands in its place.
+            if cut_rims.contains_key(&(k, lo)) && cut_rims.contains_key(&(k, hi)) {
+                return Err(reject(RejectReason::ArcBoundNotYet));
+            }
+            let (v_lo, e_lo) = *rim
+                .get(&(g, k, lo))
+                .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+            let (v_hi, e_hi) = *rim
+                .get(&(g, k, hi))
+                .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+            let lat = cyls[k].surf;
+            // ★★ **Where the seam generator meets this cylinder's cut circles** — the only
+            // points a hole can touch it at. One rule, two spellings, both carried rather
+            // than re-derived: a branch vertex sitting **on** the seam *is* the contact
+            // (`CutRim::seam_is_node` — the split's own classification), and otherwise it is
+            // the `OnSeam` vertex the rim table minted for that circle.
+            let contacts: Vec<Handle<Vertex>> = cut_rims
+                .iter()
+                .filter(|((kk, _), _)| *kk == k)
+                .filter_map(|(&(_, c), cr)| {
+                    if cr.seam_is_node {
+                        cr.nodes.first().and_then(|n| vh.get(&(g, *n)).copied())
+                    } else {
+                        rim.get(&(g, k, c)).map(|&(v, _)| v)
+                    }
+                })
+                .collect();
+            let is_contact = |v: Handle<Vertex>| contacts.contains(&v);
+            let taken = holes.iter().position(|lp| {
+                lp.half_edges
+                    .iter()
+                    .any(|&he| is_contact(model.he_start(he)))
+            });
+            let cut = match taken {
+                None => None,
+                Some(idx) => {
+                    let lp = holes.remove(idx);
+                    let hits: Vec<usize> = (0..lp.half_edges.len())
+                        .filter(|&i| is_contact(model.he_start(lp.half_edges[i])))
+                        .collect();
+                    // Two contacts, or this is a shape the walk does not arrange. The merge
+                    // that produces such a hole abstains on the same count, so a face reaching
+                    // here with any other number is a producer inconsistency, not an input.
+                    let [i, j] = hits[..] else {
+                        return Err(reject(RejectReason::ArcBoundNotYet));
                     };
-                let mut half_edges = walk(lo, e_lo)?;
+                    let (pi, pj) = (
+                        model.he_start(lp.half_edges[i]),
+                        model.he_start(lp.half_edges[j]),
+                    );
+                    let run_i = lp.half_edges[i..j].to_vec();
+                    let mut run_j = lp.half_edges[j..].to_vec();
+                    run_j.extend_from_slice(&lp.half_edges[..i]);
+                    // ★ Which contact the **lower** slit reaches: the one nearer the `lo` rim
+                    // along the axis. The two sit on different rim circles, so this is a
+                    // comparison of well-separated stations, and it is the only thing here
+                    // read off realized geometry — the loop builder's own currency.
+                    let axis = cyls[k].cache.axis();
+                    let station = |v: Handle<Vertex>| {
+                        (model.vertex_point(v) - axis.origin()).dot(axis.direction())
+                    };
+                    Some(if station(pi) <= station(pj) {
+                        (run_i, run_j, pi, pj)
+                    } else {
+                        (run_j, run_i, pj, pi)
+                    })
+                }
+            };
+            let slit = |model: &mut Model, a, b| {
+                model
+                    .push_edge(Edge::carrier_pair(lat, lat), [a, b])
+                    .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))
+            };
+            let (seam_edge, seam_hi, up, down) = match cut {
+                None => {
+                    let e = slit(model, v_lo, v_hi)?;
+                    (e, e, Vec::new(), Vec::new())
+                }
+                Some((up, down, lower, upper)) => {
+                    let a = slit(model, v_lo, lower)?;
+                    let b = slit(model, upper, v_hi)?;
+                    (a, b, up, down)
+                }
+            };
+            let bridged = seam_edge != seam_hi;
+            // ★★ **A rim's traversal: the closed edge, or the pre-minted chain.** Both walk
+            // the circle CCW; the `lo` rim is walked forward and the `hi` rim backward
+            // (reverse the pieces and flip each sense — one rule for the closed edge and the
+            // chain alike), exactly the senses the four-half-edge spelling always had.
+            let walk =
+                |c: usize, closed: Option<Handle<Edge>>| -> Result<Vec<HalfEdge>, BoolError> {
+                    match closed {
+                        Some(e) => Ok(vec![HalfEdge {
+                            edge: e,
+                            forward: true,
+                        }]),
+                        None => band_chains
+                            .get(&(g, k, c))
+                            .cloned()
+                            .ok_or_else(|| reject(RejectReason::MissingSeam)),
+                    }
+                };
+            let mut half_edges = walk(lo, e_lo)?;
+            half_edges.push(HalfEdge {
+                edge: seam_edge,
+                forward: true,
+            });
+            half_edges.extend(up);
+            if bridged {
                 half_edges.push(HalfEdge {
-                    edge: seam_edge,
+                    edge: seam_hi,
                     forward: true,
                 });
-                let mut hi_hes = walk(hi, e_hi)?;
-                hi_hes.reverse();
-                for he in &mut hi_hes {
-                    he.forward = !he.forward;
-                }
-                half_edges.extend(hi_hes);
+            }
+            let mut hi_hes = walk(hi, e_hi)?;
+            hi_hes.reverse();
+            for he in &mut hi_hes {
+                he.forward = !he.forward;
+            }
+            half_edges.extend(hi_hes);
+            if bridged {
                 half_edges.push(HalfEdge {
-                    edge: seam_edge,
+                    edge: seam_hi,
                     forward: false,
                 });
-                Ok(Loop { half_edges })
-            };
-        let mut ring_of = |b: &Bound, hole: bool| -> Result<Loop, BoolError> {
-            let mut lp = match b {
-                Bound::Ring(r) => ring(model, r)?,
-                Bound::Circle { cyl } => circle_loop(model, *cyl, lf.surf.plane(), hole)?,
+            }
+            half_edges.extend(down);
+            half_edges.push(HalfEdge {
+                edge: seam_edge,
+                forward: false,
+            });
+            Ok(Loop { half_edges })
+        };
+        // ★★★★★ **The inner loops are built first, and `flip` is applied to none of them yet.**
+        // A band whose hole meets the seam splices that hole's *own half-edges* into its outer
+        // walk, so it has to be handed them in the sense every bound is written in — the
+        // unflipped one. Reversing per bound as they were built (the old shape) would splice a
+        // reversed run into an unreversed walk, and the result is a closed loop that is quietly
+        // wound wrong: watertight, right triangle count, wrong solid.
+        let mut build = |model: &mut Model,
+                         holes: &mut Vec<Loop>,
+                         b: &Bound,
+                         hole: bool|
+         -> Result<Loop, BoolError> {
+            match b {
+                Bound::Ring(r) => ring(model, r),
+                Bound::Circle { cyl } => circle_loop(model, *cyl, lf.surf.plane(), hole),
                 Bound::Band { lo, hi } => {
                     let k = lf
                         .surf
                         .cyl()
                         .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                    band_loop(model, k, *lo, *hi)?
-                }
-            };
-            if lf.flip {
-                // Cut's inside-A B-pieces, and a bore's wall: reverse every loop and toggle the
-                // orientation below, so the outward normal points into the removed region and
-                // each loop still keeps material on its left. ★ One place for every bound kind —
-                // a curved loop reversed only by its own builder was how the first drilled box
-                // came out with its rim used twice in the same sense (`NonOpposedEdge`).
-                lp.half_edges.reverse();
-                for he in &mut lp.half_edges {
-                    he.forward = !he.forward;
+                    band_loop(model, k, *lo, *hi, holes)
                 }
             }
-            Ok(lp)
         };
-        let outer = match ring_of(&lf.outer, false) {
-            Ok(lp) => lp,
-            Err(e) => {
-                assembled = Err(e);
-                break 'faces;
-            }
-        };
-        let inner: Vec<Loop> = match lf
+        let mut none: Vec<Loop> = Vec::new();
+        let mut inner: Vec<Loop> = match lf
             .inner
             .iter()
-            .map(|b| ring_of(b, true))
+            .map(|b| build(model, &mut none, b, true))
             .collect::<Result<Vec<_>, BoolError>>()
         {
             Ok(v) => v,
@@ -2133,6 +2231,30 @@ pub(crate) fn reconstruct(
                 break 'faces;
             }
         };
+        let mut outer = match build(model, &mut inner, &lf.outer, false) {
+            Ok(lp) => lp,
+            Err(e) => {
+                assembled = Err(e);
+                break 'faces;
+            }
+        };
+        if lf.flip {
+            // Cut's inside-A B-pieces, and a bore's wall: reverse every loop and toggle the
+            // orientation below, so the outward normal points into the removed region and
+            // each loop still keeps material on its left. ★ One place for every bound kind —
+            // a curved loop reversed only by its own builder was how the first drilled box
+            // came out with its rim used twice in the same sense (`NonOpposedEdge`).
+            for lp in std::iter::once(&mut outer).chain(inner.iter_mut()) {
+                lp.half_edges.reverse();
+                for he in &mut lp.half_edges {
+                    he.forward = !he.forward;
+                }
+            }
+        }
+        debug_assert!(
+            none.is_empty(),
+            "only the outer bound bridges, and only a band does"
+        );
         // The plane's frame *is* the root face's orientation: `frame_sign` carries that face's
         // `Forward`/`Reversed` as a sign (read off the stored flag since the cutover). Reading it
         // here is what used to be `planes[plane_idx].orient` — a face field indexed by a plane,
@@ -2327,6 +2449,309 @@ fn shared_branch_plane(a: NodeId, b: NodeId) -> Option<usize> {
 /// (`pub(crate)` for the twin-match fence, which counts exactly these keys.)
 pub(crate) fn norm_edge(a: NodeId, b: NodeId) -> (NodeId, NodeId) {
     if a <= b { (a, b) } else { (b, a) }
+}
+
+/// One directed piece of a curved face's boundary — the key the two faces that share it agree on.
+///
+/// ★ **The key names a point set, not a traversal.** An arc's ends are stored **CCW about the
+/// axis** and the walker's own sense rides beside the key, so the two faces meeting on one arc
+/// spell it identically and differ in exactly that bit — which is what makes "carried both ways ⇒
+/// interior" decidable. It is [`EdgeKey`]'s discipline ("a line is unordered, a circle is
+/// ordered") one layer up, in **node** space instead of handle space.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+enum CurvedKey {
+    /// The arc running CCW from `from` to `to`.
+    Arc { from: NodeId, to: NodeId },
+    /// A ruling piece: straight, so its ends are unordered like a line's, and `side` names which
+    /// of the two parallel rulings it is ([`Wall::Ruling`]).
+    Ruling { side: i8, pair: (NodeId, NodeId) },
+    /// A **whole** rim circle, by the plane class it sits on — the one boundary piece that
+    /// carries no nodes at all, so nothing but the class can name it.
+    Rim { plane: usize },
+}
+
+/// One boundary piece of one member of a curved group, as [`unify_curved_faces`] reads it.
+struct CurvedSeg {
+    key: CurvedKey,
+    /// The walk runs the key's own way: CCW for an arc, up for a ruling, `lo`-side for a rim.
+    fwd: bool,
+    /// Carried, never re-derived — the same rule [`Ring`] states about its walls.
+    wall: Wall,
+    /// The piece's ends **in walk order**; `None` for a whole rim, which has no nodes to thread.
+    ends: Option<(NodeId, NodeId)>,
+}
+
+/// **The curved sibling of [`unify_coplanar_faces`]: erase the phantom seams inside one lateral
+/// surface.** A boss standing on a plate's wall comes out of the band pass in three pieces — the
+/// band below the plate, the half-band beside it, the band above — and the two circles between
+/// them are *not* boundaries of the solid: the surface runs smooth across them. Unmerged they are
+/// drawn as edges, which is the line a user sees ringing a boss that has none.
+///
+/// The road is the planar pass's, with one preprocessing step that the plane never needs: **a
+/// band's rim is refined by the nodes the group already placed on it** (`CutRims`, carried from
+/// the split — the assembly's arc-join rule reads the very same table for the very same reason).
+/// After that every boundary piece is a keyed segment, "claimed both ways ⇒ interior" decides
+/// erasure exactly as in the plane, and the survivors re-thread into loops.
+///
+/// **It only ever abstains.** Every shape it does not arrange leaves the group exactly as it
+/// stood, which puts the pipeline where it was before this pass ran — the same charter
+/// [`merge_component`] records, and the reason no reject name is raised from here.
+pub(crate) fn unify_curved_faces(
+    faces: Vec<LocalFace>,
+    cut_rims: &crate::arrangement::CutRims,
+) -> Vec<LocalFace> {
+    // One lateral surface, one facing — the curved twin of the planar `group_key`. `flip` matters
+    // for the same reason it does there: it is what `assemble_fuse_cut` turns into the face's
+    // `Orientation`, so two faces sharing it face the same way by construction.
+    let mut groups: HashMap<(usize, bool), Vec<usize>> = HashMap::new();
+    for (i, lf) in faces.iter().enumerate() {
+        if let ClassIx::Cyl(k) = lf.surf {
+            groups.entry((k, lf.flip)).or_default().push(i);
+        }
+    }
+    let mut gkeys: Vec<(usize, bool)> = groups.keys().copied().collect();
+    gkeys.sort_unstable(); // replay-stable: a HashMap's order is not
+    let mut kept: Vec<Option<LocalFace>> = faces.into_iter().map(Some).collect();
+    let mut merged: Vec<LocalFace> = Vec::new();
+    for gk in gkeys {
+        let mem = &groups[&gk];
+        if mem.len() < 2 {
+            continue;
+        }
+        let Some(face) = merge_curved_group(gk, mem, &kept, cut_rims) else {
+            continue;
+        };
+        for &i in mem {
+            kept[i] = None;
+        }
+        merged.push(face);
+    }
+    let mut out: Vec<LocalFace> = kept.into_iter().flatten().collect();
+    out.extend(merged);
+    out
+}
+
+/// One curved group → the single face it should be, or `None` to leave it alone.
+fn merge_curved_group(
+    (k, flip): (usize, bool),
+    mem: &[usize],
+    kept: &[Option<LocalFace>],
+    cut_rims: &crate::arrangement::CutRims,
+) -> Option<LocalFace> {
+    // 1. Every member's boundary, as keyed directed segments.
+    let mut segs: Vec<CurvedSeg> = Vec::new();
+    for &i in mem {
+        let lf = kept[i].as_ref()?;
+        for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
+            match b {
+                Bound::Ring(r) => {
+                    let n = r.nodes.len();
+                    for j in 0..n {
+                        let (a, b) = (r.nodes[j], r.nodes[(j + 1) % n]);
+                        let wall = r.walls[j];
+                        let (key, fwd) = match wall {
+                            Wall::Arc { cyl, ccw } if cyl == k => (
+                                CurvedKey::Arc {
+                                    from: if ccw { a } else { b },
+                                    to: if ccw { b } else { a },
+                                },
+                                ccw,
+                            ),
+                            Wall::Ruling { cyl, side, up } if cyl == k => (
+                                CurvedKey::Ruling {
+                                    side,
+                                    pair: norm_edge(a, b),
+                                },
+                                up,
+                            ),
+                            // A plane wall on a lateral face, or a piece of *another* cylinder:
+                            // a shape this pass has nothing to say about.
+                            _ => return None,
+                        };
+                        segs.push(CurvedSeg {
+                            key,
+                            fwd,
+                            wall,
+                            ends: Some((a, b)),
+                        });
+                    }
+                }
+                // ★★ **Which way a rim is walked, and where that is written down.** `band_loop`
+                // spells the convention this pass must match: *"Both walk the circle CCW; the
+                // `lo` rim is walked forward and the `hi` rim backward."* `flip` does **not**
+                // enter — it is applied once, to every loop of every kind, after the bound is
+                // built (`ring_of`), so every `Bound` in this list is written unflipped and the
+                // group's members are mutually consistent whatever their shared facing.
+                Bound::Band { lo, hi } => {
+                    for (c, fwd) in [(*lo, true), (*hi, false)] {
+                        let Some(cr) = cut_rims.get(&(k, c)) else {
+                            segs.push(CurvedSeg {
+                                key: CurvedKey::Rim { plane: c },
+                                fwd,
+                                wall: Wall::Arc { cyl: k, ccw: fwd },
+                                ends: None,
+                            });
+                            continue;
+                        };
+                        if cr.nodes.len() < 2 {
+                            return None;
+                        }
+                        let m = cr.nodes.len();
+                        for j in 0..m {
+                            let (p, q) = (cr.nodes[j], cr.nodes[(j + 1) % m]);
+                            segs.push(CurvedSeg {
+                                key: CurvedKey::Arc { from: p, to: q },
+                                fwd,
+                                wall: Wall::Arc { cyl: k, ccw: fwd },
+                                ends: Some(if fwd { (p, q) } else { (q, p) }),
+                            });
+                        }
+                    }
+                }
+                // A whole circle is a *planar* face's bound; a lateral face bounded by one would
+                // be a shape with no producer.
+                Bound::Circle { .. } => return None,
+            }
+        }
+    }
+
+    // 2. Erase what is claimed both ways. Two claims of one side means the pieces overlap rather
+    //    than tile, and three of anything is non-manifold on the surface — both are the planar
+    //    pass's abstentions, for its reasons.
+    let mut by_key: HashMap<CurvedKey, Vec<usize>> = HashMap::new();
+    for (i, s) in segs.iter().enumerate() {
+        by_key.entry(s.key).or_default().push(i);
+    }
+    let mut live: Vec<usize> = Vec::new();
+    let mut interior = 0usize;
+    for is in by_key.values() {
+        match is[..] {
+            [a] => live.push(a),
+            [a, b] if segs[a].fwd != segs[b].fwd => interior += 1,
+            _ => return None,
+        }
+    }
+    // Nothing was erased: the members do not touch (two bosses on one axis, a bore's two ends),
+    // so they are two faces and merging them would be a lie.
+    if interior == 0 {
+        return None;
+    }
+    live.sort_unstable(); // `by_key` is a HashMap; the walk below must not inherit its order
+
+    // 3. The rims that survive are the merged band's own. Exactly one of each sense or this pass
+    //    abstains: a lateral region bounded by one rim and a chain of arcs is a real shape, but
+    //    no `Bound` spells it, and inventing one is not this pass's business.
+    let mut rims_lo: Vec<usize> = Vec::new();
+    let mut rims_hi: Vec<usize> = Vec::new();
+    for &i in &live {
+        if let CurvedKey::Rim { plane } = segs[i].key {
+            if segs[i].fwd {
+                &mut rims_lo
+            } else {
+                &mut rims_hi
+            }
+            .push(plane);
+        }
+    }
+    let ([lo], [hi]) = (&rims_lo[..], &rims_hi[..]) else {
+        return None;
+    };
+
+    // 4. Re-thread the rest. Two pieces leaving one node means the region pinches there and the
+    //    cycles are not determined — the planar pass's figure-8, on a cylinder.
+    let mut next: HashMap<NodeId, usize> = HashMap::new();
+    let mut threadable = 0usize;
+    for &i in &live {
+        if let Some((a, _)) = segs[i].ends {
+            threadable += 1;
+            if next.insert(a, i).is_some() {
+                return None;
+            }
+        }
+    }
+    let mut seen: HashSet<NodeId> = HashSet::new();
+    let mut rings: Vec<Ring> = Vec::new();
+    let starts: Vec<NodeId> = live
+        .iter()
+        .filter_map(|&i| segs[i].ends.map(|(a, _)| a))
+        .collect();
+    for start in starts {
+        if seen.contains(&start) {
+            continue;
+        }
+        let (mut nodes, mut walls) = (Vec::new(), Vec::new());
+        let mut cur = start;
+        loop {
+            if !seen.insert(cur) {
+                return None; // the walk re-entered another cycle
+            }
+            let s = &segs[*next.get(&cur)?];
+            let (_, b) = s.ends?;
+            nodes.push(cur);
+            walls.push(s.wall);
+            cur = b;
+            if cur == start {
+                break;
+            }
+        }
+        if nodes.len() < 3 {
+            return None;
+        }
+        rings.push(Ring::new(nodes, walls));
+    }
+    // Every threadable piece landed in a cycle, or the boundary this pass computed is not the one
+    // the members actually had.
+    if rings.iter().map(|r| r.nodes.len()).sum::<usize>() != threadable {
+        return None;
+    }
+    // ★★ **Only shapes the outer walk can bridge.** A hole that meets the seam generator is
+    // spliced into the band's outer boundary (`band_loop`), and that splice is written for
+    // **two** contacts on **at most one** hole. Anything else abstains here rather than reaching
+    // the honest reject there — this pass protects the pass, and the whole-result judgements keep
+    // their witnesses (the charter `merge_component` records).
+    //
+    // A contact is a node the split put *on* the seam (`CutRim::seam_is_node`) or an arc that
+    // wraps past it (the loop builder splits that one at the rim's seam vertex) — the two
+    // spellings are exclusive by `wrapping_rim`'s own guard, so neither is counted twice.
+    let contacts = |r: &Ring| -> usize {
+        let n = r.nodes.len();
+        (0..n)
+            .filter(|&t| {
+                let on_seam = cut_rims.iter().any(|(&(kk, _), cr)| {
+                    kk == k && cr.seam_is_node && cr.nodes.first() == Some(&r.nodes[t])
+                });
+                on_seam
+                    || matches!(
+                        wrapping_rim(
+                            ClassIx::Cyl(k),
+                            r.nodes[t],
+                            r.nodes[(t + 1) % n],
+                            r.walls[t],
+                            cut_rims,
+                        ),
+                        Ok(Some(_))
+                    )
+            })
+            .count()
+    };
+    let mut bridging = 0usize;
+    for r in &rings {
+        match contacts(r) {
+            0 => {}
+            2 => bridging += 1,
+            _ => return None,
+        }
+    }
+    if bridging > 1 {
+        return None;
+    }
+
+    Some(LocalFace {
+        surf: ClassIx::Cyl(k),
+        outer: Bound::Band { lo: *lo, hi: *hi },
+        inner: rings.into_iter().map(Bound::Ring).collect(),
+        flip,
+    })
 }
 
 /// Merge every group of coplanar, same-facing result faces into one face per connected piece, then
