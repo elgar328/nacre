@@ -102,6 +102,11 @@ pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
 /// consulting its surface. Returns `V + 2H − 2` triangles for `V` ring vertices and `H`
 /// holes — a topological count, so it does not depend on how they were found.
 ///
+/// ★ It offers [`triangulate_uv`] **no candidates**, and `back` is the reason it may not start to:
+/// that map covers the ring vertices only, so a placed interior point would index past its end.
+/// Loudly — an out-of-range index, not a wrong triangle — but a caller who wants interior points
+/// here has to grow `back` alongside `uv`.
+///
 /// **This used to bridge each hole into the outer ring and clip ears.** The bridge
 /// repeats a vertex, which makes the ring non-simple, which is the hypothesis Meisters'
 /// two-ears theorem needs — so a bridged ring can have no ear at all, and 27.6% of
@@ -237,12 +242,25 @@ fn strictly_between(a: P2, b: P2, p: P2) -> bool {
 
 /// Place each candidate the sweep will accept, and drop the rest.
 ///
-/// ★★★★★ **Two places, and the second one is where they actually land.** A candidate may fall
-/// **strictly inside** a triangle, which splits it in three; or **on an interior edge**, which
-/// splits that edge — and with it both triangles sharing it — in two. The second case is not the
-/// exotic one: the caller's points sit on the lines where the face's shape changes, and a
-/// triangulation naturally already has edges running along those lines. Measured on the face this
-/// machinery exists for, **every** placed candidate arrived by the second road.
+/// ★★★★★ **Two places, and which one is used depends on how the face is spelled.** A candidate may
+/// fall **strictly inside** a triangle, which splits it in three; or **on an interior edge**, which
+/// splits that edge — and with it both triangles sharing it — in two. The second is not the exotic
+/// one: the caller's points sit on the lines where the face's shape changes, and a triangulation
+/// naturally already has edges running along those lines.
+///
+/// **Both roads are live in production**, and the split is not gradual — measured over the five
+/// merged lateral faces (a boss on each of four congruent walls, and on the corner):
+///
+/// | face | inside | on an edge | dropped |
+/// |---|---|---|---|
+/// | `−x`, `+x`, `+y` walls | **0** | 180 | 180 |
+/// | corner | **0** | 270 | 90 |
+/// | `−y` wall | **102** | 76 | 182 |
+///
+/// The odd one out is the wall where `ref_dir` puts θ = 0 *inside* the notch, so the notch stays an
+/// honest **hole** instead of being bridged into the outer walk — and a hole's neighbourhood has no
+/// long diagonal for the points to land on. So neither branch may be deleted as unreachable: which
+/// one runs is decided by the seam's accident, not by the shape the user drew.
 ///
 /// ★★ **A constrained edge is never split.** A point the neighbouring face does not know about is
 /// a T-vertex, and a T-vertex is a crack — the one thing this layer may not produce. A candidate

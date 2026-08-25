@@ -643,8 +643,11 @@ fn cylinder_chart(
 /// * **along** (`u`): the axial coordinate of each boundary **circle's centre**. Read from the
 ///   curve, never from the sampled points: one rim's points agree on that coordinate mathematically
 ///   and differ by ulps in `f64`, so deduplicating *those* would turn one rim into 181 stations.
-///   Two arcs on one circle share a centre exactly, so the count is the number of planes the face
-///   actually crosses.
+///   ★ Two arcs of one circle share a centre **bitwise**, and that is a guarantee rather than luck:
+///   [`Model::push_edge`] derives the curve from the **canonicalized carrier pair alone** — the
+///   circle arm never reads the endpoints — so two edges cut from the same circle by the same two
+///   surfaces are handed identical inputs. The station count is therefore the number of planes the
+///   face actually crosses, which is why `dedup` may compare `f64` with `==` here.
 ///
 /// ★★ **The lowest and highest stations are dropped** — they are the face's own two rims (a
 /// ruling's ends lie on arcs, so the arcs bound the `u` range), and a point there is a 1-ulp
