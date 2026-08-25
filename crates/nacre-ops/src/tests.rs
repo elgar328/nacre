@@ -3183,6 +3183,104 @@ fn a_two_by_two_grid_fuses() {
     );
 }
 
+/// ★★★★ **A part does not care which side of itself a boss sits on.**
+///
+/// With the axis exactly on a wall, the `+x` and `+y` walls built and the `-x` and `-y` walls
+/// answered `RingOrientation` — a **SuspectedDefect** name, on an input a script writes by
+/// accident. The cause was one cross product reading two spellings of the same fact: the chord's
+/// sense is made against **stored** frames, and the class's *canonical* name opposes it on half
+/// the classes, so the product was right only where the two agreed. On the other half the chord's
+/// sense flipped, one cell of six (the overhang below the plate) came back wound the other way,
+/// and the walk found two outer contours where a one-component class has one.
+///
+/// ★ **The lock the code asked for.** That site's own comment said the `wc` half "is still
+/// lock-invisible … so that half stands on the convention argument, recorded rather than
+/// assumed". This is the fixture that sees it: the four walls have to weigh the same, and the
+/// value is hand-derived rather than copied from a run.
+#[test]
+fn a_boss_on_any_wall_weighs_the_same() {
+    // plate 4×4×2 = 32; the boss (r = 0.5, h = 4) runs clear through it, half of it inside the
+    // material, so the shared part is half a cylinder of the plate's height.
+    let plate = 32.0;
+    let boss = std::f64::consts::PI * 0.25 * 4.0;
+    let shared = 0.5 * std::f64::consts::PI * 0.25 * 2.0;
+    let run = |base: [f64; 3], kind: BoolKind| -> (f64, usize) {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let b = m.add_cylinder(
+            Point3::from_array(base),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            4.0,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, kind, a, b).expect("a boss on a wall builds");
+        assert_eq!(out.len(), 1, "one solid");
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty());
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
+        let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
+        for (_, tri) in mesh.triangles.iter() {
+            for k in 0..3 {
+                let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+                *uses.entry((x.min(y), x.max(y))).or_default() += 1;
+            }
+        }
+        assert_eq!(
+            uses.values().filter(|&&n| n != 2).count(),
+            0,
+            "the mesh is watertight"
+        );
+        let sol = m.solids.get(out[0]).clone();
+        let faces = std::iter::once(&sol.outer)
+            .chain(sol.cavities.iter())
+            .map(|&sh| m.shells.get(sh).faces.len())
+            .sum();
+        (nacre_props::mass_props(&m, out[0]).unwrap().volume, faces)
+    };
+    for base in [
+        [0.0, 2.0, -1.0], // -x wall
+        [4.0, 2.0, -1.0], // +x
+        [2.0, 0.0, -1.0], // -y
+        [2.0, 4.0, -1.0], // +y — cut and common are a different population (`MissingSeam`)
+    ] {
+        let (v, _) = run(base, BoolKind::Fuse);
+        assert!(
+            (v - (plate + boss - shared)).abs() < 1e-12,
+            "fuse {base:?}: {v}"
+        );
+        if base[1] != 4.0 {
+            let (v, _) = run(base, BoolKind::Cut);
+            assert!((v - (plate - shared)).abs() < 1e-12, "cut {base:?}: {v}");
+            let (v, _) = run(base, BoolKind::Common);
+            assert!((v - shared).abs() < 1e-12, "common {base:?}: {v}");
+        }
+    }
+    // ★ The control that says the defect needed the cylinder: the same straddle with a box tool
+    // built on every wall before this fix and must go on doing so.
+    for (lo, hi) in [
+        ([-0.5, 1.5, -1.0], [0.5, 2.5, 3.0]),
+        ([3.5, 1.5, -1.0], [4.5, 2.5, 3.0]),
+        ([1.5, -0.5, -1.0], [2.5, 0.5, 3.0]),
+        ([1.5, 3.5, -1.0], [2.5, 4.5, 3.0]),
+    ] {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let b = m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi));
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the box straddle builds");
+        m.rebuild_adjacency();
+        let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+        assert!((v - 35.0).abs() < 1e-12, "box {lo:?}: {v}");
+    }
+}
+
 /// ★★★ **A circle can be an interior boundary, and then the merge erases it.**
 ///
 /// A tool that only *touches* removes nothing, and the planar engine has always said so plainly:

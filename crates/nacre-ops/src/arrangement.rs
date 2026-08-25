@@ -389,16 +389,33 @@ fn chords_to_segs(
                 continue;
             }
         }
-        let w = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
-        // ★ The **stored** spelling for the wall — the sense convention every consumer reads is
-        // made against stored frames, and the canonical name opposes it on half the classes
-        // (measured: the z = −10 cap's chord flipped its overhang's winding while the z = 40
-        // cap's was right — the very half-and-half the `stored_coeffs_rat` lesson names).
-        // ★ The global sense flip is watched (cell 4: it turns the through-boss volume
-        // oracles red); the `wc` **half** alone is still lock-invisible — substituting the
-        // stored spelling for the canonical one here leaves all five fixtures green (probed,
-        // cell 4) — so that half stands on the convention argument, recorded rather than
-        // assumed.
+        // ★★ **Both factors in the **stored** spelling — one door, not two.** The sense convention
+        // every consumer reads is made against stored frames, and the canonical name opposes it on
+        // **half the classes**, so a cross product that mixes the two is right only where the two
+        // agree. The wall half was fixed when a `z = −10` cap's chord flipped its overhang's
+        // winding while the `z = 40` cap's was right; the `wc` half stood on the convention
+        // argument for one more cell, with its own comment recording that no lock could see it.
+        //
+        // ★★★★ **A boss on a min-side wall is the population that sees it** — and it saw it as a
+        // refusal, not as a wrong number: `wc`'s two spellings disagree exactly on the walls whose
+        // outward normal runs against the axis, the chord's sense flips there, and **one cell of
+        // six** (the overhang below the plate) comes back wound the other way. The walk then finds
+        // two outer contours where a one-component class has one, and says `RingOrientation` two
+        // layers from here. Measured: with this spelling the `−x`/`−y` walls build and weigh
+        // exactly what their `+x`/`+y` mirrors weigh, **to the bit**, and the census moves by
+        // exactly those six rows.
+        // ★★ **The rule this settles is not "always stored".** A class's canonical name differs
+        // from its stored one only by a sign, so the spelling is free wherever that sign cannot
+        // survive into the answer — and the siblings were read to say which is which:
+        // a **zero test** (`class_through_axis`, the axis-parallel check in `bands`) and a
+        // **parameter or ratio** (`axis_param_of_plane`, the circle centre's parameter, the
+        // residual/`n·dir` quotient) both cancel it and rightly stay canonical, with the
+        // cancellation argued where it is used. Only where a sign **survives into a direction or
+        // a turn** must the spelling be the stored one, and that is here. The one other surviving
+        // sign is `ruling_side`'s `side` label (`bands`, stated as canonical on both ends): it
+        // names *which* of two parallel rulings, never a turn, and nothing compares it across
+        // classes — the pair to revisit if something ever does.
+        let w = combinatorics::stored_coeffs_rat(jd, wc).ok_or_else(undecided)?;
         let v = combinatorics::stored_coeffs_rat(jd, c.wall).ok_or_else(undecided)?;
         let (line, _) = combinatorics::branch_meet(jd, c.cyl, &cyls[c.cyl].def, c.end[0])
             .ok_or_else(undecided)?;
