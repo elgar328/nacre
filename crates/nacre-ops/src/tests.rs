@@ -3242,13 +3242,16 @@ fn a_boss_on_any_wall_weighs_the_same() {
         (nacre_props::mass_props(&m, out[0]).unwrap().volume, faces)
     };
     let mut fuse_faces: Vec<usize> = Vec::new();
-    for (base, all_kinds) in [
-        ([0.0, 2.0, -1.0], true), // -x wall
-        ([4.0, 2.0, -1.0], true), // +x
-        ([2.0, 0.0, -1.0], true), // -y
-        // ★ `+y` fuse builds but its cut and common answer `MissingSeam` — a different
-        // population (the census `wal` rows say so), which this cell did not move.
-        ([2.0, 4.0, -1.0], false),
+    // ★★ **All four walls, all three kinds.** `+y`'s cut and common used to answer `MissingSeam`
+    // and stood here as an exception: the cap's wrap arc had to be split at its rim's seam
+    // vertex, and that vertex existed only when a *band* happened to claim the same rim — which
+    // on this wall nothing does. Registering a rim from the arc that needs it (`wrapping_rim`)
+    // retired the exception; the two rows are exact against the same closed forms as the others.
+    for base in [
+        [0.0, 2.0, -1.0], // -x wall
+        [4.0, 2.0, -1.0], // +x
+        [2.0, 0.0, -1.0], // -y
+        [2.0, 4.0, -1.0], // +y
     ] {
         let (v, f) = run(base, BoolKind::Fuse);
         assert!(
@@ -3256,12 +3259,10 @@ fn a_boss_on_any_wall_weighs_the_same() {
             "fuse {base:?}: {v}"
         );
         fuse_faces.push(f);
-        if all_kinds {
-            let (v, _) = run(base, BoolKind::Cut);
-            assert!((v - (plate - shared)).abs() < 1e-12, "cut {base:?}: {v}");
-            let (v, _) = run(base, BoolKind::Common);
-            assert!((v - shared).abs() < 1e-12, "common {base:?}: {v}");
-        }
+        let (v, _) = run(base, BoolKind::Cut);
+        assert!((v - (plate - shared)).abs() < 1e-12, "cut {base:?}: {v}");
+        let (v, _) = run(base, BoolKind::Common);
+        assert!((v - shared).abs() < 1e-12, "common {base:?}: {v}");
     }
     // ★★ **The mirror invariant a volume cannot state.** Four congruent solids must also be built
     // out of the same number of faces: a volume can come out right while a face is split or merged

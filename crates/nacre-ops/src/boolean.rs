@@ -922,6 +922,65 @@ impl LocalFace {
     }
 }
 
+/// **The cut rim a ring edge wraps past θ = 0 on**, `None` if it does not.
+///
+/// One rule in one place, because two callers need the same answer: the loop builder splits such
+/// an edge at the rim's seam vertex, and the rim table has to have minted that vertex first.
+/// It is the composition of two facts neither caller should re-derive:
+///
+/// - **which circle's plane the arc rides** — a *plane* face's own class (a cap), or, for a face
+///   on the cylinder class (a panel), the plane its two end names share. A panel arc's ends may
+///   share **both** planes (one wall cuts a circle twice, so each end is named
+///   {wall, circle-plane}), so the unique-share rule a ruling edge uses cannot apply: the circle's
+///   plane is the shared candidate that carries a cut-rim record. Two such candidates is a naming
+///   this ladder does not arrange (`RulingBoundNotYet`).
+/// - **the directed wrap test** — with two branch nodes the two complementary arcs share one
+///   unordered endpoint pair, so the step is oriented by the `ccw` bit the wall carries and
+///   compared against the split's own θ order (`nodes.last() → nodes[0]` is the piece holding
+///   θ = 0). A rim whose seam **is** a node splits nothing, so it answers `None`.
+fn wrapping_rim(
+    surf: ClassIx,
+    a: NodeId,
+    b: NodeId,
+    wall: Wall,
+    cut_rims: &crate::arrangement::CutRims,
+) -> Result<Option<(usize, usize)>, BoolError> {
+    let Wall::Arc { cyl, ccw } = wall else {
+        return Ok(None);
+    };
+    let c = match surf {
+        ClassIx::Plane(c) => c,
+        ClassIx::Cyl(_) => {
+            let shared = |x| {
+                let (pa, _, _) = combinatorics::branch_name(a)?;
+                let (pb, _, _) = combinatorics::branch_name(b)?;
+                (pa.contains(&x) && pb.contains(&x)).then_some(x)
+            };
+            let mut hits = combinatorics::branch_name(a)
+                .map(|(pa, _, _)| pa)
+                .into_iter()
+                .flatten()
+                .filter_map(shared)
+                .filter(|&c| cut_rims.contains_key(&(cyl, c)));
+            let c = hits
+                .next()
+                .ok_or_else(|| reject(RejectReason::RulingBoundNotYet))?;
+            if hits.next().is_some() {
+                return Err(reject(RejectReason::RulingBoundNotYet));
+            }
+            c
+        }
+    };
+    match cut_rims.get(&(cyl, c)) {
+        Some(cr) if !cr.seam_is_node => {
+            let ccw_pair = if ccw { (a, b) } else { (b, a) };
+            let last = *cr.nodes.last().expect("a cut circle has branch nodes");
+            Ok((ccw_pair == (last, cr.nodes[0])).then_some((cyl, c)))
+        }
+        _ => Ok(None),
+    }
+}
+
 /// Push the reconstructed result and supersede the inputs.
 ///
 /// ★ **The operands retire in exactly one place, and it is after the result is accepted.** The
@@ -1588,7 +1647,7 @@ pub(crate) fn reconstruct(
     let rims_built = (|| -> Result<(), BoolError> {
         for (fi, lf) in faces.iter().enumerate() {
             let g = group_of[fi];
-            let keys: Vec<(usize, usize)> = std::iter::once(&lf.outer)
+            let mut keys: Vec<(usize, usize)> = std::iter::once(&lf.outer)
                 .chain(lf.inner.iter())
                 .flat_map(|b| match (b, lf.surf) {
                     (Bound::Circle { cyl }, ClassIx::Plane(c)) => vec![(*cyl, c)],
@@ -1596,6 +1655,36 @@ pub(crate) fn reconstruct(
                     _ => Vec::new(),
                 })
                 .collect();
+            // ★★ **And every rim some ring's *wrap arc* rides.** The loop builder splits such an
+            // arc at that rim's seam vertex, so the vertex has to exist — and until now it existed
+            // only because a **band** happened to claim the same rim. That is a coupling, not a
+            // rule: a cap's arc is split for the cap's own reason, and the merged lateral face
+            // this ladder is heading for keeps only its outermost rims, so nothing would register
+            // the cut ones at all (measured: the notch's wrap arc dies `MissingSeam`).
+            //
+            // ★ **Only a wrap arc**, never every arc: a rim nothing splits would gain an orphan
+            // seam vertex. And **appended**, never prepended, so a key a band also names is still
+            // minted in the old order — the values are identical either way, but the vertex
+            // handles are not, and a renumbering is exactly what the census cannot see.
+            //
+            // The ambiguous-naming decline is swallowed here on purpose: this table *offers*
+            // keys, it does not judge. `ring` runs the same derivation and raises the same name
+            // when it reaches that face, which keeps the honest reject where its witness is.
+            for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
+                let Some(r) = b.ring() else { continue };
+                let n = r.nodes.len();
+                for t in 0..n {
+                    if let Ok(Some(key)) = wrapping_rim(
+                        lf.surf,
+                        r.nodes[t],
+                        r.nodes[(t + 1) % n],
+                        r.walls[t],
+                        cut_rims,
+                    ) {
+                        keys.push(key);
+                    }
+                }
+            }
             for (k, c) in keys {
                 if rim.contains_key(&(g, k, c)) {
                     continue;
@@ -1863,58 +1952,20 @@ pub(crate) fn reconstruct(
                 // arcs share one unordered endpoint pair, so the match orients the ring step by
                 // the `ccw` bit the wall carries and compares against the split's own θ order
                 // (`nodes.last() → nodes[0]` is the piece that wraps past θ = 0).
-                let split_at = if let Wall::Arc { cyl, ccw } = r.walls[t] {
-                    // ★ Which circle's plane this arc lies in: a **plane** face's own class (a
-                    // cap — today's road), or, for a **panel** (a ring face on the cylinder
-                    // class), the plane its two end names share — the fact the face's surf
-                    // cannot give. This is what lets the seam split run on a panel's arc too
-                    // (the through-boss's outer panel holds θ = 0).
-                    let c = match lf.surf {
-                        ClassIx::Plane(c) => c,
-                        // A panel arc's two ends may share **both** planes (one wall cuts the
-                        // circle twice, so each end is named {wall, circle-plane}), so the
-                        // unique-share rule the ruling edge uses cannot apply — the circle's
-                        // plane is the shared candidate that carries a cut-rim record.
-                        ClassIx::Cyl(_) => {
-                            let (na, nb) = (r.nodes[t], r.nodes[(t + 1) % k]);
-                            let shared = |x| {
-                                let (pa, _, _) = combinatorics::branch_name(na)?;
-                                let (pb, _, _) = combinatorics::branch_name(nb)?;
-                                (pa.contains(&x) && pb.contains(&x)).then_some(x)
-                            };
-                            let mut hits = combinatorics::branch_name(na)
-                                .map(|(pa, _, _)| pa)
-                                .into_iter()
-                                .flatten()
-                                .filter_map(shared)
-                                .filter(|&c| cut_rims.contains_key(&(cyl, c)));
-                            let c = hits
-                                .next()
-                                .ok_or_else(|| reject(RejectReason::RulingBoundNotYet))?;
-                            if hits.next().is_some() {
-                                return Err(reject(RejectReason::RulingBoundNotYet));
-                            }
-                            c
-                        }
-                    };
-                    match cut_rims.get(&(cyl, c)) {
-                        Some(cr) if !cr.seam_is_node => {
-                            let (a, b) = (r.nodes[t], r.nodes[(t + 1) % k]);
-                            let ccw_pair = if ccw { (a, b) } else { (b, a) };
-                            let last = *cr.nodes.last().expect("a cut circle has branch nodes");
-                            if ccw_pair == (last, cr.nodes[0]) {
-                                let &(v, _) = rim
-                                    .get(&(g, cyl, c))
-                                    .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                                Some(v)
-                            } else {
-                                None
-                            }
-                        }
-                        _ => None,
+                let split_at = match wrapping_rim(
+                    lf.surf,
+                    r.nodes[t],
+                    r.nodes[(t + 1) % k],
+                    r.walls[t],
+                    cut_rims,
+                )? {
+                    Some(key) => {
+                        let &(v, _) = rim
+                            .get(&(g, key.0, key.1))
+                            .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+                        Some(v)
                     }
-                } else {
-                    None
+                    None => None,
                 };
                 let legs = match split_at {
                     Some(s) => vec![[va, s], [s, vb]],
