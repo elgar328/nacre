@@ -3293,6 +3293,118 @@ fn a_boss_on_any_wall_weighs_the_same() {
     }
 }
 
+/// ★★★★★ **The eye that was missing: does the mesh actually cover the face it approximates?**
+///
+/// A boolean result was once shipped whose lateral mesh lost **16% of its area** — four triangles
+/// spanned half a turn of the cylinder as flat chords, and the boss rendered as two cones. Every
+/// standing instrument was green at the time: `validate` clean, the mesh watertight, the **exact**
+/// volume right (`mass_props` integrates the b-rep, not the mesh), the face counts as predicted.
+/// Nothing asked the one question that mattered — whether the triangles lie on the surface they
+/// claim — so nothing answered it.
+///
+/// Two readings, and **neither is derived from the other**: a face's triangles against
+/// [`nacre_props::face_props`] (an exact boundary integral) and the whole solid's triangles against
+/// [`nacre_props::mass_props`] (the divergence theorem on the b-rep).
+///
+/// **The budget is derived, not chosen.** A circle sampled into `n` chords is approximated by the
+/// inscribed regular `n`-gon, whose area is `sinc(2π/n) = 1 − (2π/n)²/6` of the true one; a
+/// cylinder's lateral loses the arc-versus-chord ratio `sinc(π/n) = 1 − (π/n)²/6`, four times
+/// less. Both have `n ≥ 360°/Δθ = 180` (`circle_segments`' angular term holds whatever the
+/// radius), so the worst is the disk's **2.0e-4**, and a **relative 1e-3** leaves five times that
+/// while sitting two hundred times below the defect this exists to catch. The error takes
+/// **either sign**: a plate whose circular bite is inscribed comes out slightly *larger*.
+#[test]
+fn the_mesh_covers_the_faces_it_approximates() {
+    // 5 × the derived worst case (2.0e-4, a full disk at the angular budget).
+    const BUDGET: f64 = 1e-3;
+    let check = |name: &str, m: &Model, solids: &[Handle<Solid>]| {
+        let mesh = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()).expect("tess");
+        for &s in solids {
+            let sol = m.solids.get(s).clone();
+            let mut mesh_volume = 0.0f64;
+            for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
+                for fh in m.shells.get(sh).faces.clone() {
+                    let exact = nacre_props::face_props(m, fh)
+                        .unwrap_or_else(|e| panic!("{name}: face_props {e:?}"))
+                        .area;
+                    let mut area = 0.0f64;
+                    for &th in mesh.by_face.get(&fh).map(|v| v.as_slice()).unwrap_or(&[]) {
+                        let t = mesh.triangles.get(th);
+                        let p: Vec<_> = t
+                            .vertices
+                            .iter()
+                            .map(|&h| mesh.vertices.get(h).pos)
+                            .collect();
+                        area += (p[1] - p[0]).cross(p[2] - p[0]).norm() * 0.5;
+                        // The signed volume of the tetrahedron on the origin; summed over an
+                        // outward-oriented closed mesh it is the volume that mesh encloses.
+                        let (a, b, c) = (p[0].as_array(), p[1].as_array(), p[2].as_array());
+                        mesh_volume += (a[0] * (b[1] * c[2] - b[2] * c[1])
+                            - a[1] * (b[0] * c[2] - b[2] * c[0])
+                            + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                            / 6.0;
+                    }
+                    assert!(
+                        (area - exact).abs() <= BUDGET * exact,
+                        "{name}: a face's mesh area {area} is not its own {exact}"
+                    );
+                }
+            }
+            let exact = nacre_props::mass_props(m, s).expect("mass_props").volume;
+            assert!(
+                (mesh_volume - exact).abs() <= BUDGET * exact,
+                "{name}: the mesh encloses {mesh_volume}, the solid is {exact}"
+            );
+        }
+    };
+    let plate = |m: &mut Model| {
+        m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        )
+    };
+    // The plate alone is the instrument's own control: nothing is curved, so both readings are
+    // exact to rounding and a failure here would be the instrument's, not the mesh's.
+    {
+        let mut m = Model::new();
+        let a = plate(&mut m);
+        m.rebuild_adjacency();
+        check("plate", &m, &[a]);
+    }
+    for (name, base, h) in [
+        ("wall -x", [0.0, 2.0, -1.0], 4.0),
+        ("wall +x", [4.0, 2.0, -1.0], 4.0),
+        ("wall -y", [2.0, 0.0, -1.0], 4.0),
+        ("wall +y", [2.0, 4.0, -1.0], 4.0),
+        ("corner", [4.0, 4.0, -1.0], 4.0),
+        ("through", [2.0, 2.0, -1.0], 4.0),
+        ("on top", [2.0, 2.0, 2.0], 1.0),
+        ("flush", [2.0, 2.0, 0.0], 3.0),
+    ] {
+        for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            let mut m = Model::new();
+            let a = plate(&mut m);
+            let b = m.add_cylinder(
+                Point3::from_array(base),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                h,
+            );
+            m.rebuild_adjacency();
+            // A population this ladder does not build yet is not this test's business; what it
+            // *does* build has to be drawn correctly.
+            let Ok(out) = boolean(&mut m, kind, a, b) else {
+                continue;
+            };
+            if out.is_empty() {
+                continue;
+            }
+            m.rebuild_adjacency();
+            check(&format!("{name} {kind:?}"), &m, &out);
+        }
+    }
+}
+
 /// ★★★ **A circle can be an interior boundary, and then the merge erases it.**
 ///
 /// A tool that only *touches* removes nothing, and the planar engine has always said so plainly:
