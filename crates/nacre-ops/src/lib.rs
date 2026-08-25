@@ -816,6 +816,28 @@ pub enum RejectReason {
     ///
     /// "Not yet" is still the literal truth for both.
     ArcBoundNotYet,
+    /// **An *operand* face is bounded by a cylinder, and the tracer names rings by planes.**
+    ///
+    /// The tracer reads each operand face's loops as three-plane triples with a carried wall
+    /// class beside each edge ([`combinatorics::loop_triples`]). Both of those are plane-only,
+    /// and both are total until a boolean's *result* is fed back in as an operand: a boss standing
+    /// on a wall leaves the plate's caps bitten by an arc and the wall split by two rulings, so
+    /// those faces' rings run along the boss's lateral surface. There is exactly one such loop the
+    /// road already speaks — a **full circle**, one rim edge whose far face is the cylinder, which
+    /// is named by that cylinder's class — and everything else lands here.
+    ///
+    /// ★ **Distinct from [`Self::ArcBoundNotYet`] and [`Self::RulingBoundNotYet`], which are the
+    /// *assembly's*.** Those two name configurations the result side cannot **spell**; this one
+    /// names an operand the trace cannot **read**. Sharing either would put an input-side coverage
+    /// limit under an output-side name, and the census keys on these.
+    ///
+    /// ★★ Today it is raised where it is **swallowed** — `trace_input` maps a loop it cannot name
+    /// to `None` and the tracer reports which *loop* failed ([`DeclineKind::OuterRing`] /
+    /// [`DeclineKind::HoleRing`]), which is the finer fact when a face has several. The reject
+    /// census records the raise, so the cause is in the ledger even where the surfaced label is
+    /// the loop's. It stands in production the moment the population gate lets such an operand
+    /// through — and until then it is what keeps `loop_triples` from **panicking** on it.
+    CurvedOperandBoundary,
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
     /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and
     /// carriers) and the gate's record-and-pass arm opened (cell 4), so this name is now
@@ -1005,6 +1027,7 @@ impl RejectReason {
             Self::NoClearRay => "no_clear_ray",
             Self::WitnessNotRational => "witness_not_rational",
             Self::ArcBoundNotYet => "arc_bound_not_yet",
+            Self::CurvedOperandBoundary => "curved_operand_boundary",
             Self::RulingBoundNotYet => "ruling_bound_not_yet",
             Self::CurvedStraightRun => "curved_straight_run",
             Self::PointOnRing => "point_on_ring",
@@ -1062,6 +1085,7 @@ impl RejectReason {
             | Self::WitnessNotRational
             | Self::ArcBoundNotYet
             | Self::RulingBoundNotYet
+            | Self::CurvedOperandBoundary
             | Self::CurvedStraightRun
             | Self::PointOnRing
             | Self::HoleDepth

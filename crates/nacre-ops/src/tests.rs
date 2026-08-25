@@ -3516,6 +3516,87 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
     }
 }
 
+/// ★★★★★ **A boolean's result carries names the tracer's plane-only road cannot read — and it
+/// says so instead of aborting.**
+///
+/// A boss standing on a wall leaves the plate's caps bitten by an **arc** and the wall split in two
+/// by the boss's **rulings**, so those faces' rings run along a cylinder. [`combinatorics`]'s ring
+/// naming asks two plane-only questions of every edge — the carried wall class and the vertex's
+/// three-plane name — and both go through `ClassIx::plane`, which **panics** on a cylinder. That
+/// accessor is right to: for its forty-odd other callers a cylinder there is an upstream filter
+/// bug. This is the caller whose input is an *operand*, so this is where the filter belongs.
+///
+/// ★ **Measured before the filter existed: this very call panicked** ("a plane-only path got
+/// cylinder class 0"). The population gate refuses such an operand long before the tracer sees it,
+/// so nothing in production reaches this today — which is exactly why the lock calls the function
+/// **directly**, the same way the ring-naming goldens next door do. The gate opens in the cell that
+/// builds the road; this is the net that has to be under it first.
+///
+/// The untouched walls are the negative control: they are still named, so the filter is a filter
+/// and not a blanket refusal.
+#[test]
+fn an_operand_bounded_by_a_cylinder_declines_instead_of_panicking() {
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([12.0, 4.0, 2.0]),
+    );
+    let boss = m.add_cylinder(
+        Point3::from_array([2.0, 0.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.5,
+        4.0,
+    );
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
+    m.rebuild_adjacency();
+    let r = out[0];
+
+    let faces_tab = collect_planes(&m, r).expect("the result's face table");
+    let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+    for (i, pi) in faces_tab.iter().enumerate() {
+        if let Some(fh) = pi.face() {
+            surf_ix.insert(fh, i);
+        }
+    }
+    let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
+    let (planes, plane_ix, _cyls) = dense_planes(&faces_tab, &canon);
+    let inc = combinatorics::edge_faces(&m, r, &surf_ix).expect("edge incidence");
+
+    let (mut named, mut declined) = (0usize, 0usize);
+    for &fh in &m.shells.get(m.solids.get(r).outer).faces {
+        let fp = surf_ix[&fh];
+        if matches!(plane_ix[fp], crate::planes::ClassIx::Cyl(_)) {
+            continue; // the tracer skips a lateral face; its loops are the rims
+        }
+        match combinatorics::face_vertex_triples(
+            &m,
+            fh,
+            fp,
+            &inc,
+            &crate::planes::test_judge(&planes),
+            &plane_ix,
+        ) {
+            Ok(_) => named += 1,
+            Err(BoolError::Rejected { reason, .. }) => {
+                assert_eq!(
+                    reason,
+                    RejectReason::CurvedOperandBoundary,
+                    "face {:?} declined for the wrong reason",
+                    fh.index()
+                );
+                declined += 1;
+            }
+            Err(e) => panic!("face {:?}: {e:?}", fh.index()),
+        }
+    }
+    // Four faces run along the boss: the two plate caps it bit an arc out of, and the two halves
+    // its rulings split the wall into. The boss's own caps are full circles — the one curved loop
+    // this road already speaks — and the three untouched walls are plain.
+    assert_eq!(declined, 4, "faces bounded by the boss");
+    assert!(named >= 5, "the untouched faces are still named: {named}");
+}
+
 /// ★★★ **A circle can be an interior boundary, and then the merge erases it.**
 ///
 /// A tool that only *touches* removes nothing, and the planar engine has always said so plainly:

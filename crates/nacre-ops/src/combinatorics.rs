@@ -1393,16 +1393,27 @@ fn loop_triples(
         let (in_bounds, in_pair) = edge(&hes[(i + n - 1) % n])?;
         let (out_bounds, out_pair) = edge(&hes[i])?;
         let (a, b) = (other(in_pair), other(out_pair));
+        // ★★★★★ **The filter [`crate::planes::ClassIx::plane`] asks its callers for.** That
+        // accessor panics on a cylinder — "a loud panic beats a silently wrong plane" — and it is
+        // right to, for the forty-odd callers whose upstream really does filter. This is the one
+        // that has to *do* the filtering, because its input is an **operand**, and an operand can
+        // be a previous boolean's result: a boss on a wall leaves the plate's caps bitten by an
+        // arc and the wall split by two rulings, so those rings run along a cylinder. Both things
+        // read below are plane-only — the carried wall and the vertex's three-plane name — so the
+        // honest answer is to decline the ring rather than to name it wrongly or to abort.
+        //
+        // The one curved loop this road *does* speak is the full circle handled above.
+        let (ClassIx::Plane(wall), ClassIx::Plane(near), ClassIx::Plane(far)) =
+            (plane_ix[b], plane_ix[p], plane_ix[a])
+        else {
+            return Err(reject(RejectReason::CurvedOperandBoundary));
+        };
         // Edge `i`'s carried wall: the far face's class, read off `inc` — total even where the
         // vertex *names* below have to fall back or decline (see [`NamedRing`]).
-        walls.push(plane_ix[b].plane());
+        walls.push(wall);
         // `inc` names faces, so `other` matches by face — but the triple names *planes*, and a
         // consumer's `==` on it must mean "same plane". Canonize here, once, at the source.
-        let mut t = [
-            plane_ix[p].plane(),
-            plane_ix[a].plane(),
-            plane_ix[b].plane(),
-        ];
+        let mut t = [near, far, wall];
         t.sort_unstable();
         if t[0] != t[1] && t[1] != t[2] {
             out.push(NodeId::three_planes(t));
