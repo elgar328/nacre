@@ -16,13 +16,13 @@ use nacre_math::{Point3, Vector3};
 use std::collections::HashMap;
 
 /// A point in the plane's projected frame.
-type P2 = [f64; 2];
+pub(crate) type P2 = [f64; 2];
 
 /// The ring's own normal (Newell): robust for a non-planar-ish polygon and, more
 /// to the point, **independent of the surface**. A `Reversed` face's loop still
 /// winds CCW about its outward normal, so asking the ring rather than the surface
 /// removes the "`Orientation::Forward` only" assumption entirely.
-fn newell(pts: &[Point3], ring: &[usize]) -> Vector3 {
+pub(crate) fn newell(pts: &[Point3], ring: &[usize]) -> Vector3 {
     let mut n = [0.0f64; 3];
     for w in 0..ring.len() {
         let a = pts[ring[w]].as_array();
@@ -42,7 +42,7 @@ fn newell(pts: &[Point3], ring: &[usize]) -> Vector3 {
 /// be (`if a[k] >= 0.0 { .. } else { swap }`), which put the whole frame on an `f64`
 /// sign computed by summing `n` cross products. [`ring_orientation`] settles the same
 /// question afterwards with one exact predicate, on the ring itself.
-fn drop_axis(n: Vector3) -> (usize, usize) {
+pub(crate) fn drop_axis(n: Vector3) -> (usize, usize) {
     let a = n.as_array();
     let k = (0..3)
         .max_by(|&i, &j| a[i].abs().total_cmp(&a[j].abs()))
@@ -70,7 +70,7 @@ fn lex_less(a: P2, b: P2) -> bool {
 /// `orient2d` there therefore decides the whole ring — where a shoelace sum would need
 /// the exact addition of `n` products to say the same thing, and `f64` addition does
 /// not give it.
-fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
+pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
     let n = ring.len();
     let mut m = 0;
     for i in 1..n {

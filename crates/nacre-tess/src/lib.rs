@@ -243,10 +243,7 @@ pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessE
         if !reach.faces.contains(&fh) {
             continue;
         }
-        match model.surface(face.surface) {
-            Surface::Plane(_) => triangulate_planar(&mut t, fh, face)?,
-            Surface::Cylinder(cyl) => triangulate_cylinder(&mut t, model, fh, face, cyl),
-        }
+        triangulate_face(&mut t, model, fh, face)?;
     }
 
     Ok(t)
@@ -397,228 +394,152 @@ fn push_tri(t: &mut Tessellation, fh: Handle<Face>, vertices: [Handle<TessVertex
     t.by_face.entry(fh).or_default().push(th);
 }
 
-/// Triangulate a planar face: its outer ring, minus its holes.
+/// A face's boundary in the **chart its surface is meshed in**: `uv[i]` is where `handles[i]`
+/// sits, and `rings` indexes into both — the outer ring first, then the holes.
 ///
-/// The rings are shared edge polylines, and [`polygon::triangulate_polygon`] adds no
-/// vertices — the sweep cuts along diagonals between existing ones, and the flip pass
-/// only moves those — so adjacent faces still meet exactly (design §5).
-fn triangulate_planar(
-    t: &mut Tessellation,
-    fh: Handle<Face>,
-    face: &Face,
-) -> Result<(), TessError> {
-    let outer_h = boundary_ring(t, &face.outer);
-    let holes_h: Vec<Vec<Handle<TessVertex>>> =
-        face.inner.iter().map(|lp| boundary_ring(t, lp)).collect();
-
-    // `triangulate_polygon` indexes a flat point slice; map the mesh handles onto one.
-    let mut handles: Vec<Handle<TessVertex>> = outer_h.clone();
-    handles.extend(holes_h.iter().flatten().copied());
-    let pts: Vec<Point3> = handles.iter().map(|&h| t.vertices.get(h).pos).collect();
-    let outer: Vec<usize> = (0..outer_h.len()).collect();
-    let mut cut = outer_h.len();
-    let holes: Vec<Vec<usize>> = holes_h
-        .iter()
-        .map(|h| {
-            let r = (cut..cut + h.len()).collect();
-            cut += h.len();
-            r
-        })
-        .collect();
-    let holes: Vec<&[usize]> = holes.iter().map(|h| h.as_slice()).collect();
-
-    for tri in polygon::triangulate_polygon(&pts, &outer, &holes)? {
-        push_tri(t, fh, tri.map(|i| handles[i]));
-    }
-    Ok(())
+/// ★★★★ **One road, one chart per surface.** Every face — planar or curved — is triangulated by
+/// the same sweep ([`polygon::triangulate_uv`], design §5); what differs per surface is only how
+/// its boundary is laid flat. A plane drops an axis; a cylinder unrolls to `(z, r·θ)`. When a
+/// cone or a sphere arrives it adds a chart here and nothing else.
+struct Chart {
+    uv: Vec<polygon::P2>,
+    handles: Vec<Handle<TessVertex>>,
+    rings: Vec<Vec<usize>>,
 }
 
-/// Tessellate a cylindrical face as a ruled band between its two rims — each either a single
-/// closed circle edge or (M6-2b) a **chain of arc edges** — by a θ-merge walk over the rims'
-/// shared polylines (no interior samples — the surface is straight along the axis).
+/// The face's loops as shared mesh vertices, with `outer ++ holes` numbered in that order.
+fn face_rings(t: &Tessellation, face: &Face) -> (Vec<Handle<TessVertex>>, Vec<Vec<usize>>) {
+    let mut handles = boundary_ring(t, &face.outer);
+    let mut rings = vec![(0..handles.len()).collect::<Vec<usize>>()];
+    for lp in &face.inner {
+        let h = boundary_ring(t, lp);
+        rings.push((handles.len()..handles.len() + h.len()).collect());
+        handles.extend(h);
+    }
+    (handles, rings)
+}
+
+/// A planar face's chart: drop the axis the face's own Newell normal is largest along.
 ///
-/// ★ The walk generalizes the old equal-count quad pairing: with two closed rims the two rings
-/// carry the same θs, every step is a tie, and the tie rule (advance the upper rim first)
-/// reproduces the old quads' triangle set and windings — only the emission order inside each
-/// quad swaps. With a chained rim the counts differ and the merge simply spends whichever ring's
-/// next θ comes sooner; `n + m` triangles either way, every ring vertex consumed (crack-free
-/// with the caps, which read the same polylines).
-fn triangulate_cylinder(
+/// The handedness repair is a **swap** of `u` and `v`: a plane's two axes are interchangeable, so
+/// mirroring the frame costs nothing (a curved chart cannot do this — see [`cylinder_chart`]).
+fn planar_chart(t: &Tessellation, face: &Face) -> Result<Chart, TessError> {
+    let (handles, rings) = face_rings(t, face);
+    let pts: Vec<Point3> = handles.iter().map(|&h| t.vertices.get(h).pos).collect();
+    let n = polygon::newell(&pts, &rings[0]);
+    if n.norm() <= 0.0 {
+        return Err(TessError::DegenerateRing);
+    }
+    let (iu, iv) = polygon::drop_axis(n);
+    let mut uv: Vec<polygon::P2> = pts
+        .iter()
+        .map(|p| {
+            let c = p.as_array();
+            [c[iu], c[iv]]
+        })
+        .collect();
+    match polygon::ring_orientation(&rings[0], &uv) {
+        1 => {}
+        -1 => {
+            for p in &mut uv {
+                p.swap(0, 1);
+            }
+        }
+        _ => return Err(TessError::DegenerateRing),
+    }
+    Ok(Chart { uv, handles, rings })
+}
+
+/// A cylindrical face's chart: unroll to `(u, v) = (z, r·θ)` about the axis.
+///
+/// ★★ **`r·θ`, not `θ`.** A cylinder is developable, so scaling the angle by the radius makes
+/// this an **isometry** — lengths and angles in the chart are lengths and angles on the surface.
+/// That is what lets the Lawson pass ([`polygon`]'s flip) improve the mesh *on the surface* and
+/// not merely in a distorted picture of it.
+///
+/// ★★ **`v` is the sweep axis, so the handedness repair negates `u` instead of swapping.**
+/// Swapping would send the sweep along the axis instead of around it, and its diagonals would
+/// then span wide arcs — chords that leave the surface. Negating `u` mirrors the frame just as
+/// well and leaves the sweep going around.
+///
+/// ★ **θ is unwrapped along each loop, never taken absolutely.** A band's boundary walks its seam
+/// **twice** — the same mesh vertices at `θ = 0` and at `θ = 2π` — and that is exactly what makes
+/// the unrolled band a rectangle rather than a degenerate line. Holes are then shifted by whole
+/// turns into the outer ring's range so they lie inside it.
+fn cylinder_chart(t: &Tessellation, face: &Face, cyl: &Cylinder) -> Result<Chart, TessError> {
+    let (handles, rings) = face_rings(t, face);
+    let axis = cyl.axis();
+    let (o, w_dir) = (axis.origin(), axis.direction());
+    let x_dir = cyl.ref_dir();
+    let y_dir = w_dir.cross(x_dir);
+    let r = cyl.radius();
+    let mut uv: Vec<polygon::P2> = vec![[0.0, 0.0]; handles.len()];
+    let mut spans: Vec<(f64, f64)> = Vec::new();
+    for ring in &rings {
+        let mut prev_raw = 0.0;
+        let mut theta = 0.0;
+        let (mut lo, mut hi) = (f64::MAX, f64::MIN);
+        for (k, &i) in ring.iter().enumerate() {
+            let w = t.vertices.get(handles[i]).pos - o;
+            let raw = w.dot(y_dir).atan2(w.dot(x_dir));
+            if k == 0 {
+                theta = raw;
+            } else {
+                let mut step = raw - prev_raw;
+                while step > std::f64::consts::PI {
+                    step -= std::f64::consts::TAU;
+                }
+                while step <= -std::f64::consts::PI {
+                    step += std::f64::consts::TAU;
+                }
+                theta += step;
+            }
+            prev_raw = raw;
+            uv[i] = [w.dot(w_dir), r * theta];
+            lo = lo.min(uv[i][1]);
+            hi = hi.max(uv[i][1]);
+        }
+        spans.push((lo, hi));
+    }
+    // Holes ride whole turns into the outer ring's window — an inner loop unwrapped on its own
+    // may land a turn away from the material it is a hole in.
+    let turn = std::f64::consts::TAU * r;
+    for (ri, ring) in rings.iter().enumerate().skip(1) {
+        let shift = ((spans[0].0 - spans[ri].0) / turn).ceil() * turn;
+        if shift != 0.0 {
+            for &i in ring {
+                uv[i][1] += shift;
+            }
+        }
+    }
+    match polygon::ring_orientation(&rings[0], &uv) {
+        1 => {}
+        -1 => {
+            for p in &mut uv {
+                p[0] = -p[0];
+            }
+        }
+        _ => return Err(TessError::DegenerateRing),
+    }
+    Ok(Chart { uv, handles, rings })
+}
+
+/// Triangulate one face: lay its boundary flat in the surface's chart, then run the one sweep.
+fn triangulate_face(
     t: &mut Tessellation,
     model: &Model,
     fh: Handle<Face>,
     face: &Face,
-    cyl: &Cylinder,
-) {
-    let axis = cyl.axis().direction();
-    // Group the loop's circle-curve edges into the two rims by their circles' axial station.
-    let mut rims: Vec<(f64, nacre_geom::Circle, Vec<Handle<Edge>>)> = Vec::new();
-    for he in &face.outer.half_edges {
-        let Curve::Circle(c) = model.edge_curve(he.edge) else {
-            continue; // the seam (and, chained, nothing else) is straight
-        };
-        let key = (c.center() - Point3::origin()).dot(axis);
-        match rims.iter_mut().find(|(k, ..)| (*k - key).abs() < 1e-9) {
-            Some((.., edges)) => {
-                if !edges.contains(&he.edge) {
-                    edges.push(he.edge);
-                }
-            }
-            None => rims.push((key, *c, vec![he.edge])),
-        }
-    }
-    debug_assert_eq!(rims.len(), 2, "cylinder lateral face needs two rims");
-    rims.sort_by(|x, y| x.0.partial_cmp(&y.0).expect("finite axial stations"));
-
-    // One rim as a CCW ring with an ascending θ per vertex, anchored at its θ-minimal vertex.
-    // A near-seam angle that rounds to just under τ is folded to just under 0 first, so the
-    // seam vertex anchors the ring whichever side of θ = 0 it realized on. An **open** chain
-    // (a θ-panel's rim — the rulings ladder) comes back `(ring, false)`: walked from its one
-    // loose start in chain order, θ unwrapped **along the chain** rather than anchored — a
-    // panel's sector may cross the seam (the through-boss's outer panel does), and rotating to
-    // the θ-minimal vertex would tear such a chain in two.
-    let ring_of = |t: &Tessellation, c: &nacre_geom::Circle, edges: &[Handle<Edge>]| {
-        let mut ring: Vec<Handle<TessVertex>> = Vec::new();
-        let mut closed = true;
-        if edges.len() == 1
-            && model.edges.get(edges[0]).vertices[0] == model.edges.get(edges[0]).vertices[1]
-        {
-            ring = t.by_edge[&edges[0]].clone(); // a closed rim: the polyline is the ring
-        } else {
-            // Chain the arc polylines end-to-start by shared mesh vertices (the welding
-            // guarantees each junction is one handle).
-            let mut by_start: HashMap<Handle<TessVertex>, &Vec<Handle<TessVertex>>> =
-                HashMap::new();
-            for e in edges {
-                let poly = &t.by_edge[e];
-                by_start.insert(poly[0], poly);
-            }
-            let is_end = |h: Handle<TessVertex>| {
-                edges
-                    .iter()
-                    .any(|e| *t.by_edge[e].last().expect("arc polylines have two ends") == h)
-            };
-            // The chain's loose start — a polyline start no polyline ends on. None: the rim
-            // is closed, walk from the handle-minimal start (deterministic). One: an open
-            // sector, walk from it and keep the final endpoint.
-            let loose: Vec<_> = by_start.keys().copied().filter(|&s| !is_end(s)).collect();
-            let mut cur = match loose.as_slice() {
-                [] => *by_start
-                    .keys()
-                    .min_by_key(|h| h.index())
-                    .expect("a rim has arcs"),
-                [s] => {
-                    closed = false;
-                    *s
-                }
-                _ => unreachable!("a rim is one closed or one open chain"),
-            };
-            let chain_start = cur;
-            for _ in 0..edges.len() {
-                let poly = by_start[&cur];
-                ring.extend(&poly[..poly.len() - 1]);
-                cur = *poly.last().expect("arc polylines have two ends");
-            }
-            if closed {
-                debug_assert_eq!(
-                    cur, chain_start,
-                    "the rim's arcs chain into one closed ring"
-                );
-            } else {
-                ring.push(cur); // an open chain keeps its final endpoint
-            }
-        }
-        let mut with_theta: Vec<(f64, Handle<TessVertex>)> = ring
-            .iter()
-            .map(|&h| {
-                let raw = c.angle_of(t.vertices.get(h).pos);
-                let th = if raw > std::f64::consts::TAU - 1e-9 {
-                    raw - std::f64::consts::TAU
-                } else {
-                    raw
-                };
-                (th, h)
-            })
-            .collect();
-        if closed {
-            // Rotate to the θ-minimal vertex, then unwrap so θ ascends along the ring.
-            let start = with_theta
-                .iter()
-                .enumerate()
-                .min_by(|a, b| a.1.0.partial_cmp(&b.1.0).expect("finite angles"))
-                .map(|(i, _)| i)
-                .expect("a rim has vertices");
-            with_theta.rotate_left(start);
-        }
-        for i in 1..with_theta.len() {
-            if with_theta[i].0 < with_theta[i - 1].0 {
-                with_theta[i].0 += std::f64::consts::TAU;
-            }
-        }
-        (with_theta, closed)
+) -> Result<(), TessError> {
+    let chart = match model.surface(face.surface) {
+        Surface::Plane(_) => planar_chart(t, face)?,
+        Surface::Cylinder(cyl) => cylinder_chart(t, face, cyl)?,
     };
-    let (_, ref c_lo, ref e_lo) = rims[0];
-    let (_, ref c_hi, ref e_hi) = rims[1];
-    let (a, a_closed) = ring_of(t, c_lo, e_lo);
-    let (b, b_closed) = ring_of(t, c_hi, e_hi);
-    debug_assert_eq!(a_closed, b_closed, "a lateral face's rims agree in kind");
-
-    if !a_closed {
-        // ★ The **open** merge (a θ-panel): the same θ-race, but neither chain wraps — the
-        // strip ends at the last pair, whose side (like the first pair's) is the ruling edge's
-        // own two-point polyline, so the boundary is crack-free by shared handles.
-        let (n, m) = (a.len(), b.len());
-        let (mut i, mut j) = (0usize, 0usize);
-        while i < n - 1 || j < m - 1 {
-            let (ai, bj) = (a[i].1, b[j].1);
-            let advance_b = if i >= n - 1 {
-                true
-            } else if j >= m - 1 {
-                false
-            } else {
-                b[j + 1].0 <= a[i + 1].0
-            };
-            if advance_b {
-                push_tri(t, fh, [ai, b[j + 1].1, bj]);
-                j += 1;
-            } else {
-                push_tri(t, fh, [ai, a[i + 1].1, bj]);
-                i += 1;
-            }
-        }
-        return;
+    let refs: Vec<&[usize]> = chart.rings.iter().map(|r| r.as_slice()).collect();
+    for tri in polygon::triangulate_uv(&chart.uv, &refs)? {
+        push_tri(t, fh, tri.map(|i| chart.handles[i]));
     }
-
-    // The merge: from corner (aᵢ, bⱼ), spend whichever ring's next vertex comes first in θ
-    // (the upper rim on a tie — the old quad split's diagonal), wrapping each ring once.
-    let (n, m) = (a.len(), b.len());
-    let theta_at = |ring: &[(f64, Handle<TessVertex>)], k: usize| {
-        let (th, _) = ring[k % ring.len()];
-        th + if k >= ring.len() {
-            std::f64::consts::TAU
-        } else {
-            0.0
-        }
-    };
-    let (mut i, mut j) = (0usize, 0usize);
-    while i < n || j < m {
-        let ai = a[i % n].1;
-        let bj = b[j % m].1;
-        let advance_b = if i >= n {
-            true
-        } else if j >= m {
-            false
-        } else {
-            theta_at(&b, j + 1) <= theta_at(&a, i + 1)
-        };
-        if advance_b {
-            push_tri(t, fh, [ai, b[(j + 1) % m].1, bj]);
-            j += 1;
-        } else {
-            push_tri(t, fh, [ai, a[(i + 1) % n].1, bj]);
-            i += 1;
-        }
-    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -806,6 +727,57 @@ mod tests {
                         turn <= cfg.max_angle_deg + 1e-9,
                         "r={r}: a chord turned {turn}°, past the {}° budget",
                         cfg.max_angle_deg
+                    );
+                }
+            }
+        }
+    }
+
+    /// ★★★★ **No triangle may leave the surface it approximates.**
+    ///
+    /// Watertightness cannot see this: a mesh whose triangles cut *through* the cylinder still
+    /// uses every edge twice and still counts right. What bounds it is the **sag** — how far a
+    /// chord spanning `Δθ` falls inside the surface, `r(1 − cos(Δθ/2))` — and the budget is the
+    /// one the edge sampler already works to, so a face may not undo with a diagonal what the
+    /// boundary paid for.
+    ///
+    /// ★ This is the assertion the *chart* road owes. The sweep is free to draw a diagonal
+    /// between any two boundary vertices, and if the chart were laid out with the sweep running
+    /// **along the axis** instead of around it (the handedness repair swapping `u` and `v` would
+    /// do exactly that), the diagonals would span wide arcs and every other check here would
+    /// still pass.
+    #[test]
+    fn no_triangle_leaves_the_cylinder() {
+        let cfg = TessConfig::default();
+        for r in [0.1, 0.5, 3.0, 20.0] {
+            let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r, 5.0);
+            let t = tessellate(&m, &cfg).unwrap();
+            let step = std::f64::consts::TAU / circle_segments(&cfg, r) as f64;
+            let budget = r * (1.0 - (step / 2.0).cos());
+            for (_, tri) in t.triangles.iter() {
+                let f = m.faces.get(tri.face);
+                let Surface::Cylinder(cy) = m.surface(f.surface) else {
+                    continue;
+                };
+                let (o, w) = (cy.axis().origin(), cy.axis().direction());
+                let x = cy.ref_dir();
+                let y = w.cross(x);
+                let ang = |h: Handle<TessVertex>| {
+                    let d = t.vertices.get(h).pos - o;
+                    d.dot(y).atan2(d.dot(x))
+                };
+                for k in 0..3 {
+                    let (a, b) = (ang(tri.vertices[k]), ang(tri.vertices[(k + 1) % 3]));
+                    let mut d = (a - b).abs();
+                    if d > std::f64::consts::PI {
+                        d = std::f64::consts::TAU - d;
+                    }
+                    let sag = r * (1.0 - (d / 2.0).cos());
+                    assert!(
+                        sag <= budget + 1e-12,
+                        "r={r}: a chord spanning {}° sags {sag}, past the {budget} the boundary \
+                         is sampled to",
+                        d.to_degrees()
                     );
                 }
             }
