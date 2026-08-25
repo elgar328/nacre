@@ -940,14 +940,18 @@ fn dump() {
     // the axis on a max-side wall. These rows put the same solid on all four, so the table can
     // see a rule that holds on one side and not the other.
     //
-    // ★ **Recorded before the fix, deliberately.** As this family lands, six of these rows are
-    // refusals (`RingOrientation` on the min-side walls, and `MissingSeam` for `+y` cut/common)
-    // and the corner pair splits too (`OpenResultShell` on the min corner). Writing them down
-    // first is what makes the next commit's diff the evidence: without it the rows would be born
-    // green and the corpus could not say what changed.
+    // ★ **Recorded before the fix, deliberately.** As this family lands, **eleven** of these
+    // twenty-two rows are refusals: six `RingOrientation` (the min-side walls, all three kinds),
+    // two `MissingSeam` (`+y` cut and common, where `+y` fuse builds), and three
+    // `OpenResultShell` (the min corner). Writing them down first is what makes the next commit's
+    // diff the evidence: without it the rows would be born green and the corpus could not say
+    // what changed.
     //
-    // The box twins are the control that says the defect is about **arcs**: the same straddle
-    // with a cuboid tool builds on every wall, measured.
+    // The box twins are the control that says what breaks needs the **cylinder's** edges: the
+    // same straddle with a cuboid tool builds on every wall, volume 35 exactly. ★ Which *kind* of
+    // cylinder edge it is, is not something this table can say — measured later, the wrong turn
+    // is read on a **ruling**, and `turn` itself is correct. A population fact is not a code fact.
+    // Fuse alone for the twins: the control only has to say that the planar straddle builds.
     {
         let plate = |m: &mut Model| {
             let a = m.add_cuboid(
