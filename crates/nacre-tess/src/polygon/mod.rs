@@ -161,14 +161,31 @@ pub(crate) fn triangulate_polygon(
         }
         _ => return Err(TessError::DegenerateRing),
     }
-    if rings[1..].iter().any(|h| ring_orientation(h, &uv) != -1) {
+    let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
+    let out = triangulate_uv(&uv, &refs)?;
+    Ok(out.into_iter().map(|t| t.map(|i| back[i])).collect())
+}
+
+/// Triangulate rings that are **already in a chart** — the chart-free core of this layer's one
+/// triangulation road (design §5): monotone decomposition, then the Lawson pass.
+///
+/// ★★ **Precondition: the outer ring is CCW and every hole is CW, in `uv`.** The repair is the
+/// *caller's* because charts differ in what a repair costs. A planar face's two axes are
+/// interchangeable, so swapping them mirrors the frame for free — that is what
+/// [`triangulate_polygon`] does. A curved face's are not: `v` is the sweep axis, and swapping it
+/// would send the sweep the wrong way across the surface, which is how a triangulation grows
+/// diagonals that leave the surface. Such a caller negates one axis instead. Both repairs are
+/// checked here rather than trusted.
+pub(crate) fn triangulate_uv(uv: &[P2], rings: &[&[usize]]) -> Result<Vec<[usize; 3]>, TessError> {
+    if ring_orientation(rings[0], uv) != 1 {
+        return Err(TessError::DegenerateRing);
+    }
+    if rings[1..].iter().any(|h| ring_orientation(h, uv) != -1) {
         return Err(TessError::HoleWinding);
     }
-
-    let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
     let mut out = Vec::new();
-    for piece in monotone::decompose(&uv, &refs)? {
-        monotone::triangulate_monotone(&uv, &piece, &mut out)?;
+    for piece in monotone::decompose(uv, rings)? {
+        monotone::triangulate_monotone(uv, &piece, &mut out)?;
     }
     // The decomposition answers *whether* the face meshes; this answers *how well*.
     // It moves diagonals only — never the rings — so the count, the area and the
@@ -182,8 +199,8 @@ pub(crate) fn triangulate_polygon(
             })
         })
         .collect();
-    delaunay::refine(&uv, &mut out, &constrained);
-    Ok(out.into_iter().map(|t| t.map(|i| back[i])).collect())
+    delaunay::refine(uv, &mut out, &constrained);
+    Ok(out)
 }
 
 #[cfg(test)]
