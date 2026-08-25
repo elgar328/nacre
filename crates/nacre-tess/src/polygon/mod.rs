@@ -13,7 +13,8 @@ mod monotone;
 
 use crate::TessError;
 use nacre_math::{Point3, Vector3};
-use std::collections::HashMap;
+use nacre_predicates::orient2d;
+use std::collections::{HashMap, HashSet};
 
 /// A point in the plane's projected frame.
 pub(crate) type P2 = [f64; 2];
@@ -83,7 +84,7 @@ pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
         uv[ring[m]],
         uv[ring[(m + 1) % n]],
     );
-    match nacre_predicates::orient2d(p, c, q) {
+    match orient2d(p, c, q) {
         d if d > 0.0 => 1,
         d if d < 0.0 => -1,
         _ => 0,
@@ -162,7 +163,7 @@ pub(crate) fn triangulate_polygon(
         _ => return Err(TessError::DegenerateRing),
     }
     let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
-    let out = triangulate_uv(&uv, &refs)?;
+    let out = triangulate_uv(&mut uv, &refs, &[])?;
     Ok(out.into_iter().map(|t| t.map(|i| back[i])).collect())
 }
 
@@ -176,7 +177,15 @@ pub(crate) fn triangulate_polygon(
 /// would send the sweep the wrong way across the surface, which is how a triangulation grows
 /// diagonals that leave the surface. Such a caller negates one axis instead. Both repairs are
 /// checked here rather than trusted.
-pub(crate) fn triangulate_uv(uv: &[P2], rings: &[&[usize]]) -> Result<Vec<[usize; 3]>, TessError> {
+///
+/// ★★ **`candidates` are points the caller offers the interior**, in its own order; `uv` grows by
+/// the ones that were taken, in that same order, so a caller can map the tail back through its
+/// chart. A candidate with nowhere to go is **dropped, not forced** — see [`insert_interior`].
+pub(crate) fn triangulate_uv(
+    uv: &mut Vec<P2>,
+    rings: &[&[usize]],
+    candidates: &[P2],
+) -> Result<Vec<[usize; 3]>, TessError> {
     if ring_orientation(rings[0], uv) != 1 {
         return Err(TessError::DegenerateRing);
     }
@@ -190,7 +199,7 @@ pub(crate) fn triangulate_uv(uv: &[P2], rings: &[&[usize]]) -> Result<Vec<[usize
     // The decomposition answers *whether* the face meshes; this answers *how well*.
     // It moves diagonals only — never the rings — so the count, the area and the
     // boundary are the same on both sides of it.
-    let constrained = rings
+    let constrained: HashSet<(usize, usize)> = rings
         .iter()
         .flat_map(|r| {
             (0..r.len()).map(move |k| {
@@ -200,7 +209,94 @@ pub(crate) fn triangulate_uv(uv: &[P2], rings: &[&[usize]]) -> Result<Vec<[usize
         })
         .collect();
     delaunay::refine(uv, &mut out, &constrained);
+    if !candidates.is_empty() {
+        insert_interior(uv, &mut out, &constrained, candidates);
+        // The insertions are what make the flip pass able to do anything here: a long edge stays
+        // Delaunay while nothing sits inside its circumcircle, and these points are what sit there.
+        delaunay::refine(uv, &mut out, &constrained);
+    }
     Ok(out)
+}
+
+/// Whether `p` is **strictly** inside the counter-clockwise triangle `t` — exactly.
+///
+/// Strict on purpose: a point on an edge or at a corner would make a zero-area triangle if fanned
+/// from there, so it is handled as an edge split or dropped instead.
+fn strictly_inside(uv: &[P2], t: [usize; 3], p: P2) -> bool {
+    (0..3).all(|k| orient2d(uv[t[k]], uv[t[(k + 1) % 3]], p) > 0.0)
+}
+
+/// Whether `p`, already known collinear with `a`–`b`, lies strictly between them — exactly.
+///
+/// Compares one coordinate, the one the segment actually varies along, so the answer is a pair of
+/// `<` on stored `f64`s rather than a rounded dot product that a near-endpoint could flip.
+fn strictly_between(a: P2, b: P2, p: P2) -> bool {
+    let k = usize::from(a[0] == b[0]);
+    (a[k] < p[k] && p[k] < b[k]) || (b[k] < p[k] && p[k] < a[k])
+}
+
+/// Place each candidate the sweep will accept, and drop the rest.
+///
+/// ★★★★★ **Two places, and the second one is where they actually land.** A candidate may fall
+/// **strictly inside** a triangle, which splits it in three; or **on an interior edge**, which
+/// splits that edge — and with it both triangles sharing it — in two. The second case is not the
+/// exotic one: the caller's points sit on the lines where the face's shape changes, and a
+/// triangulation naturally already has edges running along those lines. Measured on the face this
+/// machinery exists for, **every** placed candidate arrived by the second road.
+///
+/// ★★ **A constrained edge is never split.** A point the neighbouring face does not know about is
+/// a T-vertex, and a T-vertex is a crack — the one thing this layer may not produce. A candidate
+/// that lands on the boundary, or outside the rings entirely, is simply dropped: the caller offers
+/// points, it does not get to place them.
+fn insert_interior(
+    uv: &mut Vec<P2>,
+    tris: &mut Vec<[usize; 3]>,
+    constrained: &HashSet<(usize, usize)>,
+    candidates: &[P2],
+) {
+    for &p in candidates {
+        if let Some(k) = tris.iter().position(|&t| strictly_inside(uv, t, p)) {
+            let t = tris.remove(k);
+            let m = uv.len();
+            uv.push(p);
+            for e in 0..3 {
+                tris.push([t[e], t[(e + 1) % 3], m]);
+            }
+            continue;
+        }
+        // On an interior edge? Find it once, then split every triangle that owns it.
+        let mut edge = None;
+        'search: for t in tris.iter() {
+            for e in 0..3 {
+                let (a, b) = (t[e], t[(e + 1) % 3]);
+                if constrained.contains(&(a.min(b), a.max(b))) {
+                    continue;
+                }
+                if orient2d(uv[a], uv[b], p) == 0.0 && strictly_between(uv[a], uv[b], p) {
+                    edge = Some((a, b));
+                    break 'search;
+                }
+            }
+        }
+        let Some((a, b)) = edge else { continue };
+        let m = uv.len();
+        uv.push(p);
+        let mut fresh: Vec<[usize; 3]> = Vec::new();
+        tris.retain(|t| {
+            for e in 0..3 {
+                // ★ Each owner meets the edge in its **own** direction — the two sharing it run
+                // opposite ways — so the split is written from that rotation, never from `(a, b)`.
+                let (x, y, c) = (t[e], t[(e + 1) % 3], t[(e + 2) % 3]);
+                if (x == a && y == b) || (x == b && y == a) {
+                    fresh.push([x, m, c]);
+                    fresh.push([m, y, c]);
+                    return false;
+                }
+            }
+            true
+        });
+        tris.extend(fresh);
+    }
 }
 
 #[cfg(test)]
@@ -478,6 +574,63 @@ mod tests {
             samples += 1;
         }
         assert!(samples > 1500, "only {samples} samples reached the gate");
+    }
+
+    /// ★★★★ **Offered points, and the two places they can land.**
+    ///
+    /// A lattice over a square: the ones on the diagonal the sweep already drew arrive by the
+    /// **edge split** (this is the road the real face uses — every placed candidate on a merged
+    /// lateral face came in this way), the rest by the three-way split. The triangle count is the
+    /// arithmetic of both roads at once — `2I + V − 2` holds however each point got in — and
+    /// `check_partition` is what says nothing cracked: the once-used directed edges must still be
+    /// exactly the input ring, so no interior point leaked onto the boundary.
+    #[test]
+    fn offered_points_land_inside_and_on_interior_edges() {
+        let ring = [0, 1, 2, 3];
+        let mut uv: Vec<P2> = vec![[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]];
+        let lattice: Vec<P2> = (1..4)
+            .flat_map(|i| (1..4).map(move |j| [f64::from(i), f64::from(j)]))
+            .collect();
+        let t = triangulate_uv(&mut uv, &[&ring], &lattice).unwrap();
+        assert_eq!(uv.len(), 4 + 9, "every offered point was placed");
+        assert_eq!(t.len(), 2 * 9 + 4 - 2);
+        check_partition(&t, &ring, &[]);
+        let area: f64 = t
+            .iter()
+            .map(|t| {
+                let (a, b, c) = (uv[t[0]], uv[t[1]], uv[t[2]]);
+                0.5 * ((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]))
+            })
+            .sum();
+        assert!((area - 16.0).abs() < 1e-12, "area {area}");
+        assert!(t.iter().all(|t| {
+            let (a, b, c) = (uv[t[0]], uv[t[1]], uv[t[2]]);
+            (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]) > 0.0
+        }));
+    }
+
+    /// ★★★★★ **A candidate on the boundary, or outside it, is dropped — never forced.**
+    ///
+    /// The boundary polyline is *shared* with the neighbouring face, so a vertex added to it that
+    /// the neighbour does not know about is a T-vertex, and a T-vertex is a crack. That is the one
+    /// thing this layer may not produce, so the sweep declines the point instead: the caller offers
+    /// candidates, it does not place them.
+    #[test]
+    fn a_candidate_on_the_boundary_or_outside_is_declined() {
+        let ring = [0, 1, 2, 3];
+        let base: Vec<P2> = vec![[0.0, 0.0], [4.0, 0.0], [4.0, 4.0], [0.0, 4.0]];
+        for p in [
+            [2.0, 0.0],  // on a boundary edge
+            [0.0, 0.0],  // on a boundary vertex
+            [5.0, 5.0],  // outside the ring
+            [-1.0, 2.0], // outside, and level with the interior
+        ] {
+            let mut uv = base.clone();
+            let t = triangulate_uv(&mut uv, &[&ring], &[p]).unwrap();
+            assert_eq!(uv.len(), 4, "{p:?} was placed");
+            assert_eq!(t.len(), 2, "{p:?} changed the mesh");
+            check_partition(&t, &ring, &[]);
+        }
     }
 
     #[test]

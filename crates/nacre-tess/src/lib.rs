@@ -410,6 +410,69 @@ struct Chart {
     uv: Vec<polygon::P2>,
     handles: Vec<Handle<TessVertex>>,
     rings: Vec<Vec<usize>>,
+    /// The way back — see [`ChartMap`].
+    map: ChartMap,
+    /// Points this chart offers the sweep's **interior**, in a fixed order. Empty for a plane,
+    /// which needs none: a plane's chords lie on it.
+    interior: Vec<polygon::P2>,
+}
+
+/// **A chart is a bijection, and this is the other direction** — from a point in the chart to the
+/// surface parameters that name it and the position they evaluate to.
+///
+/// It exists because the chart is now allowed to *invent* a point ([`Chart::interior`]), and an
+/// invented point has no model vertex to read a position off. Both arms therefore have to undo the
+/// same handedness repair their forward direction applied, which is the one thing here that can be
+/// silently wrong: the round-trip is measured on the boundary, where the forward answer is known.
+enum ChartMap {
+    /// Two world coordinates kept, one dropped — the dropped one is whatever the plane's own
+    /// equation says it must be. `swapped` records the handedness repair.
+    Plane {
+        plane: nacre_geom::Plane,
+        iu: usize,
+        iv: usize,
+        swapped: bool,
+    },
+    /// `(u, v) = (height, r·θ)`, with `negated` recording that the repair flipped the height.
+    Cylinder { cyl: Cylinder, negated: bool },
+}
+
+impl ChartMap {
+    /// The surface parameters at `uv`, and the point they name.
+    ///
+    /// For a cylinder the parameters are [`Cylinder::point_at`]'s own `(angle, height)`. For a
+    /// plane they are the chart's two kept world coordinates — the plane has no parameterisation of
+    /// its own, and the chart's is a perfectly good one.
+    fn invert(&self, uv: polygon::P2) -> ([f64; 2], Point3) {
+        match self {
+            ChartMap::Plane {
+                plane,
+                iu,
+                iv,
+                swapped,
+            } => {
+                let (cu, cv) = if *swapped {
+                    (uv[1], uv[0])
+                } else {
+                    (uv[0], uv[1])
+                };
+                let k = 3 - iu - iv;
+                let n = plane.normal().as_array();
+                let o = plane.origin().as_array();
+                let mut c = [0.0; 3];
+                c[*iu] = cu;
+                c[*iv] = cv;
+                // `n[k]` is the component the projection dropped, i.e. the largest — never zero.
+                c[k] = o[k] - (n[*iu] * (cu - o[*iu]) + n[*iv] * (cv - o[*iv])) / n[k];
+                ([cu, cv], Point3::from_array(c))
+            }
+            ChartMap::Cylinder { cyl, negated } => {
+                let h = if *negated { -uv[0] } else { uv[0] };
+                let theta = uv[1] / cyl.radius();
+                ([theta, h], cyl.point_at(theta, h))
+            }
+        }
+    }
 }
 
 /// The face's loops as shared mesh vertices, with `outer ++ holes` numbered in that order.
@@ -428,7 +491,11 @@ fn face_rings(t: &Tessellation, face: &Face) -> (Vec<Handle<TessVertex>>, Vec<Ve
 ///
 /// The handedness repair is a **swap** of `u` and `v`: a plane's two axes are interchangeable, so
 /// mirroring the frame costs nothing (a curved chart cannot do this — see [`cylinder_chart`]).
-fn planar_chart(t: &Tessellation, face: &Face) -> Result<Chart, TessError> {
+fn planar_chart(
+    t: &Tessellation,
+    face: &Face,
+    plane: &nacre_geom::Plane,
+) -> Result<Chart, TessError> {
     let (handles, rings) = face_rings(t, face);
     let pts: Vec<Point3> = handles.iter().map(|&h| t.vertices.get(h).pos).collect();
     let n = polygon::newell(&pts, &rings[0]);
@@ -443,16 +510,29 @@ fn planar_chart(t: &Tessellation, face: &Face) -> Result<Chart, TessError> {
             [c[iu], c[iv]]
         })
         .collect();
+    let mut swapped = false;
     match polygon::ring_orientation(&rings[0], &uv) {
         1 => {}
         -1 => {
             for p in &mut uv {
                 p.swap(0, 1);
             }
+            swapped = true;
         }
         _ => return Err(TessError::DegenerateRing),
     }
-    Ok(Chart { uv, handles, rings })
+    Ok(Chart {
+        uv,
+        handles,
+        rings,
+        map: ChartMap::Plane {
+            plane: *plane,
+            iu,
+            iv,
+            swapped,
+        },
+        interior: Vec::new(),
+    })
 }
 
 /// A cylindrical face's chart: unroll to `(u, v) = (z, r·θ)` about the axis.
@@ -471,7 +551,13 @@ fn planar_chart(t: &Tessellation, face: &Face) -> Result<Chart, TessError> {
 /// **twice** — the same mesh vertices at `θ = 0` and at `θ = 2π` — and that is exactly what makes
 /// the unrolled band a rectangle rather than a degenerate line. Holes are then shifted by whole
 /// turns into the outer ring's range so they lie inside it.
-fn cylinder_chart(t: &Tessellation, face: &Face, cyl: &Cylinder) -> Result<Chart, TessError> {
+fn cylinder_chart(
+    t: &Tessellation,
+    model: &Model,
+    cfg: &TessConfig,
+    face: &Face,
+    cyl: &Cylinder,
+) -> Result<Chart, TessError> {
     let (handles, rings) = face_rings(t, face);
     let axis = cyl.axis();
     let (o, w_dir) = (axis.origin(), axis.direction());
@@ -517,16 +603,90 @@ fn cylinder_chart(t: &Tessellation, face: &Face, cyl: &Cylinder) -> Result<Chart
             }
         }
     }
+    let mut negated = false;
     match polygon::ring_orientation(&rings[0], &uv) {
         1 => {}
         -1 => {
             for p in &mut uv {
                 p[0] = -p[0];
             }
+            negated = true;
         }
         _ => return Err(TessError::DegenerateRing),
     }
-    Ok(Chart { uv, handles, rings })
+    let interior = interior_nodes(model, cfg, face, cyl, &uv, negated);
+    Ok(Chart {
+        uv,
+        handles,
+        rings,
+        map: ChartMap::Cylinder { cyl: *cyl, negated },
+        interior,
+    })
+}
+
+/// ★★★★★ **The points a cylindrical face's boundary does not supply, and the mesh needs.**
+///
+/// A band's rims sample θ finely, and every diagonal the sweep draws between them lands on a
+/// closely-sampled arc, so the interior was fine for free. It stops being free the moment a face's
+/// boundary stops covering its θ range with arcs — a merged lateral face, whose erased phantom
+/// seams had been the only arcs over one stretch, was meshed with chords spanning half a turn.
+/// Nothing about the sweep was wrong there; it had no points to work with.
+///
+/// So the chart — the layer that knows the surface — supplies them, on a **lattice with no free
+/// parameter in it**:
+///
+/// * **around** (`v`): the sampler's own step, `2πr / circle_segments`. Taken from that function
+///   rather than re-derived from the budget, so the lattice lines up with every arc the boundary
+///   already laid down instead of landing an ulp beside them. `i` covers the chart's whole `v`
+///   range, because a chart's θ is *unwrapped* — a hole rides whole turns from the outer ring, and
+///   a single turn's worth of lattice would miss it entirely.
+/// * **along** (`u`): the axial coordinate of each boundary **circle's centre**. Read from the
+///   curve, never from the sampled points: one rim's points agree on that coordinate mathematically
+///   and differ by ulps in `f64`, so deduplicating *those* would turn one rim into 181 stations.
+///   Two arcs on one circle share a centre exactly, so the count is the number of planes the face
+///   actually crosses.
+///
+/// ★★ **The lowest and highest stations are dropped** — they are the face's own two rims (a
+/// ruling's ends lie on arcs, so the arcs bound the `u` range), and a point there is a 1-ulp
+/// duplicate of a boundary point rather than a new one. Measured: without this, an ordinary band
+/// gained vertices and its triangle count moved.
+fn interior_nodes(
+    model: &Model,
+    cfg: &TessConfig,
+    face: &Face,
+    cyl: &Cylinder,
+    uv: &[polygon::P2],
+    negated: bool,
+) -> Vec<polygon::P2> {
+    let (o, w_dir) = (cyl.axis().origin(), cyl.axis().direction());
+    let mut stations: Vec<f64> = Vec::new();
+    for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+        for he in &lp.half_edges {
+            if let Curve::Circle(c) = model.edge_curve(he.edge) {
+                stations.push((c.center() - o).dot(w_dir));
+            }
+        }
+    }
+    stations.sort_by(f64::total_cmp);
+    stations.dedup();
+    if stations.len() <= 2 {
+        return Vec::new();
+    }
+    let step = std::f64::consts::TAU * cyl.radius() / circle_segments(cfg, cyl.radius()) as f64;
+    let (lo, hi) = uv.iter().fold((f64::MAX, f64::MIN), |(lo, hi), p| {
+        (lo.min(p[1]), hi.max(p[1]))
+    });
+    let (i0, i1) = ((lo / step).ceil(), (hi / step).floor());
+    let mut out = Vec::new();
+    for &s in &stations[1..stations.len() - 1] {
+        let u = if negated { -s } else { s };
+        let mut i = i0;
+        while i <= i1 {
+            out.push([u, i * step]);
+            i += 1.0;
+        }
+    }
+    out
 }
 
 /// Triangulate one face: lay its boundary flat in the surface's chart, then run the one sweep.
@@ -538,15 +698,34 @@ fn triangulate_face(
     face: &Face,
 ) -> Result<(), TessError> {
     let surface = model.surface(face.surface);
-    let chart = match surface {
-        Surface::Plane(_) => planar_chart(t, face)?,
-        Surface::Cylinder(cyl) => cylinder_chart(t, face, cyl)?,
+    let Chart {
+        mut uv,
+        mut handles,
+        rings,
+        map,
+        interior,
+    } = match surface {
+        Surface::Plane(plane) => planar_chart(t, face, plane)?,
+        Surface::Cylinder(cyl) => cylinder_chart(t, model, cfg, face, cyl)?,
     };
-    let refs: Vec<&[usize]> = chart.rings.iter().map(|r| r.as_slice()).collect();
-    let tris = polygon::triangulate_uv(&chart.uv, &refs)?;
-    within_budget(t, cfg, surface, &chart, &tris)?;
+    let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
+    let boundary = handles.len();
+    let tris = polygon::triangulate_uv(&mut uv, &refs, &interior)?;
+    // The tail is exactly the candidates the sweep took, in the order it took them — the chart's
+    // first minted vertices. Everything before it was already a shared boundary vertex.
+    for &p in &uv[boundary..] {
+        let (params, pos) = map.invert(p);
+        handles.push(t.vertices.push(TessVertex {
+            pos,
+            origin: TessOrigin::OnFace {
+                face: fh,
+                uv: params,
+            },
+        }));
+    }
+    within_budget(t, cfg, surface, &handles, &rings, &tris)?;
     for tri in tris {
-        push_tri(t, fh, tri.map(|i| chart.handles[i]));
+        push_tri(t, fh, tri.map(|i| handles[i]));
     }
     Ok(())
 }
@@ -580,11 +759,11 @@ fn within_budget(
     t: &Tessellation,
     cfg: &TessConfig,
     surface: &Surface,
-    chart: &Chart,
+    handles: &[Handle<TessVertex>],
+    rings: &[Vec<usize>],
     tris: &[[usize; 3]],
 ) -> Result<(), TessError> {
-    let boundary: std::collections::HashSet<(usize, usize)> = chart
-        .rings
+    let boundary: std::collections::HashSet<(usize, usize)> = rings
         .iter()
         .flat_map(|r| {
             (0..r.len()).map(move |k| {
@@ -606,8 +785,8 @@ fn within_budget(
                 continue;
             }
             let (a, b) = (
-                t.vertices.get(chart.handles[i]).pos,
-                t.vertices.get(chart.handles[j]).pos,
+                t.vertices.get(handles[i]).pos,
+                t.vertices.get(handles[j]).pos,
             );
             if surface.distance(a + (b - a) * 0.5) > max_sag {
                 return Err(TessError::OverBudget);
@@ -862,6 +1041,94 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    /// Build the chart `triangulate_face` would build, for one face.
+    fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> Chart {
+        let face = m.faces.get(fh);
+        match m.surface(face.surface) {
+            Surface::Plane(p) => planar_chart(t, face, p).unwrap(),
+            Surface::Cylinder(c) => cylinder_chart(t, m, cfg, face, c).unwrap(),
+        }
+    }
+
+    /// ★★★★★ **A chart is a bijection, and the way back has to be the way back.**
+    ///
+    /// The chart may now invent an interior point, and an invented point's position comes from
+    /// nowhere else — so [`ChartMap`] is load-bearing. Both arms undo a **handedness repair**, and
+    /// that is exactly the sort of thing that is silently wrong: a plane swaps its two axes, a
+    /// cylinder negates its height, and either undone in the wrong direction still produces a
+    /// plausible mesh in the wrong place. Measured where the answer is independently known — on the
+    /// boundary, whose points came from the model rather than from this function.
+    #[test]
+    fn a_chart_maps_back_to_the_point_it_flattened() {
+        let cfg = TessConfig::default();
+        for (name, m) in [
+            ("cube", cube([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0])),
+            (
+                "cylinder",
+                cylinder([1.0, -2.0, 0.5], [0.0, 0.0, 1.0], 2.0, 5.0),
+            ),
+            (
+                "tilted cylinder",
+                cylinder([1.0, -2.0, 0.5], [1.0, 2.0, 3.0], 2.0, 5.0),
+            ),
+        ] {
+            let t = tessellate(&m, &cfg).unwrap();
+            let reach = m.reachable();
+            for (fh, _) in m.faces.iter() {
+                if !reach.faces.contains(&fh) {
+                    continue;
+                }
+                let chart = chart_of(&t, &m, &cfg, fh);
+                for (i, &h) in chart.handles.iter().enumerate() {
+                    let (params, back) = chart.map.invert(chart.uv[i]);
+                    let want = t.vertices.get(h).pos;
+                    assert!(
+                        (back - want).norm() <= 1e-9,
+                        "{name}: chart {:?} came back {back:?}, not {want:?}",
+                        chart.uv[i]
+                    );
+                    // And the parameters name the same point through the surface's own evaluator.
+                    if let Surface::Cylinder(c) = m.surface(m.faces.get(fh).surface) {
+                        assert!((c.point_at(params[0], params[1]) - want).norm() <= 1e-9);
+                    }
+                }
+            }
+        }
+    }
+
+    /// ★★★★ **A band's rims already sample its curvature, so the chart offers nothing.**
+    ///
+    /// Which is a claim about *stations*, and stations are where this can go wrong quietly: they
+    /// are read from each boundary circle's **centre** precisely because one rim's sampled points
+    /// disagree on that coordinate by ulps, and reading those instead would turn one rim into 181
+    /// stations and the lattice into 180 × 181 points. The lowest and highest are the face's own
+    /// rims and are dropped. An ordinary cylinder has exactly those two — so: zero.
+    #[test]
+    fn an_ordinary_band_is_offered_no_interior_points() {
+        let cfg = TessConfig::default();
+        for axis in [[0.0, 0.0, 1.0], [1.0, 2.0, 3.0]] {
+            let m = cylinder([1.0, -2.0, 0.5], axis, 2.0, 5.0);
+            let t = tessellate(&m, &cfg).unwrap();
+            for (fh, face) in m.faces.iter() {
+                if !matches!(m.surface(face.surface), Surface::Cylinder(_)) {
+                    continue;
+                }
+                let chart = chart_of(&t, &m, &cfg, fh);
+                assert!(
+                    chart.interior.is_empty(),
+                    "axis {axis:?}: a plain band was offered {} points",
+                    chart.interior.len()
+                );
+            }
+            // …and none was minted, which is the same claim read off the output.
+            assert!(
+                !t.vertices
+                    .iter()
+                    .any(|(_, v)| matches!(v.origin, TessOrigin::OnFace { .. }))
+            );
         }
     }
 
