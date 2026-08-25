@@ -5367,7 +5367,11 @@ pub(crate) fn boolean(
                     &curved.cut_rims,
                     &curved.arc_labels,
                 )?);
-                faces
+                // ★ **And now the curved cleaning pass**, the coplanar one's sibling: a lateral
+                // surface arrives in as many pieces as the arrangement cut it into, and the
+                // circles between them bound nothing. It runs here rather than beside `unify`
+                // because its input is exactly what the line above just appended.
+                crate::boolean::unify_curved_faces(faces, &curved.cut_rims)
             };
 
             let seam = seam_table(&faces, &cyls, &jd)?;

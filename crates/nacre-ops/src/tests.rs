@@ -3293,6 +3293,117 @@ fn a_boss_on_any_wall_weighs_the_same() {
     }
 }
 
+/// ★★★ **A boss standing on a wall has ONE lateral face, not three.**
+///
+/// The band pass emits a lateral surface in as many pieces as the arrangement cut it into: the
+/// band under the plate, the half-band beside it, the band above. The two circles between those
+/// pieces bound **nothing** — the surface runs smooth across them — so drawn they are a line
+/// ringing a boss that has none, which is what a user reported seeing. `unify_curved_faces` erases
+/// them, and what is left is a band with one notch punched out of its side.
+///
+/// The negative controls are the point of the test: a boss standing on the middle of the plate
+/// really *is* two lateral faces (the plate interrupts it), and a bore really is one. Both must
+/// come out with their face counts untouched, or the pass is erasing boundaries that exist.
+#[test]
+fn a_boss_on_a_wall_has_one_lateral_face() {
+    let run = |base: [f64; 3], h: f64, kind: BoolKind| -> (f64, usize, usize, Vec<usize>) {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let b = m.add_cylinder(
+            Point3::from_array(base),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            h,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, kind, a, b).expect("the boss builds");
+        assert_eq!(out.len(), 1, "one solid");
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty(), "validate {base:?}");
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).expect("tess");
+        let mut uses: HashMap<(u32, u32), usize> = HashMap::new();
+        for (_, tri) in mesh.triangles.iter() {
+            for k in 0..3 {
+                let (x, y) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+                *uses.entry((x.min(y), x.max(y))).or_default() += 1;
+            }
+        }
+        assert_eq!(
+            uses.values().filter(|&&n| n != 2).count(),
+            0,
+            "the mesh is watertight {base:?}"
+        );
+        let sol = m.solids.get(out[0]).clone();
+        let (mut total, mut lateral, mut holes) = (0usize, 0usize, Vec::new());
+        for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
+            for fh in m.shells.get(sh).faces.clone() {
+                total += 1;
+                let f = m.faces.get(fh);
+                if matches!(m.surface(f.surface), nacre_geom::Surface::Cylinder(_)) {
+                    lateral += 1;
+                    holes.push(f.inner.len());
+                }
+            }
+        }
+        (
+            nacre_props::mass_props(&m, out[0]).unwrap().volume,
+            total,
+            lateral,
+            holes,
+        )
+    };
+    // The plate is 32; the boss (r = 0.5, h = 4) runs clear through it with half its section
+    // buried, so a wall boss weighs `32 + π/4·4 − ½·π/4·2` and a corner one buries a quarter.
+    let quarter = std::f64::consts::PI * 0.25;
+    // ★★ **The notch is spelled one of two ways, and which one is not a choice.** Where it meets
+    // the seam generator the outer walk bridges it in (`band_loop`) and the face carries **no**
+    // inner loop; where it misses the seam it stays an honest hole. `ref_dir` is a function of the
+    // axis alone, so four congruent walls stand in four different relations to θ = 0 — and that
+    // asymmetry has to show up **nowhere else**, which is what the rest of this loop pins: one
+    // lateral face and exactly two faces fewer, on every one of them.
+    for (name, base, faces, notch_holes) in [
+        ("-x", [0.0, 2.0, -1.0], 10, 0),
+        ("+x", [4.0, 2.0, -1.0], 10, 0),
+        ("-y", [2.0, 0.0, -1.0], 10, 1),
+        ("+y", [2.0, 4.0, -1.0], 10, 0),
+    ] {
+        let (v, total, lateral, holes) = run(base, 4.0, BoolKind::Fuse);
+        assert!(
+            (v - (32.0 + quarter * 4.0 - 0.5 * quarter * 2.0)).abs() < 1e-12,
+            "{name}: {v}"
+        );
+        assert_eq!(lateral, 1, "{name}: one lateral face");
+        assert_eq!(holes, vec![notch_holes], "{name}: the notch's spelling");
+        assert_eq!(
+            total, faces,
+            "{name}: exactly two faces fewer than the three pieces"
+        );
+    }
+    // The corner: two walls cut the cylinder, so the surviving panel's four corners name **two
+    // different** wall classes — and the merge is the same one.
+    let (v, total, lateral, holes) = run([4.0, 4.0, -1.0], 4.0, BoolKind::Fuse);
+    assert!(
+        (v - (32.0 + quarter * 4.0 - 0.25 * quarter * 2.0)).abs() < 1e-12,
+        "corner: {v}"
+    );
+    assert_eq!((lateral, holes, total), (1, vec![0], 9), "corner");
+    // ★★ **The negative controls — seams that are real must survive untouched.**
+    for (name, base, h, kind, lateral, total) in [
+        // The plate genuinely interrupts this one: two lateral faces, and neither has a hole.
+        ("through boss", [2.0, 2.0, -1.0], 4.0, BoolKind::Fuse, 2, 10),
+        ("bore", [2.0, 2.0, -1.0], 4.0, BoolKind::Cut, 1, 7),
+        ("boss on top", [2.0, 2.0, 2.0], 1.0, BoolKind::Fuse, 1, 8),
+        ("flush boss", [2.0, 2.0, 0.0], 3.0, BoolKind::Fuse, 1, 8),
+    ] {
+        let (_, t, l, holes) = run(base, h, kind);
+        assert_eq!((l, t), (lateral, total), "{name} must not move");
+        assert!(holes.iter().all(|&n| n == 0), "{name}: no notch");
+    }
+}
+
 /// ★★★ **A circle can be an interior boundary, and then the merge erases it.**
 ///
 /// A tool that only *touches* removes nothing, and the planar engine has always said so plainly:
