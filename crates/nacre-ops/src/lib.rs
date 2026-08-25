@@ -843,9 +843,18 @@ pub enum RejectReason {
     ///   loop it cannot name to `None` and the tracer reports which *loop* failed
     ///   ([`DeclineKind::OuterRing`] / [`DeclineKind::HoleRing`]), which is the finer fact when a
     ///   face has several. The reject census still records the raise, so the cause is in the ledger
-    ///   even where the surfaced label is the loop's. Unreachable in production while the gate
-    ///   stands in front of it — and that is exactly its job: it is what keeps `loop_triples` from
-    ///   **panicking** the day the gate opens.
+    ///   even where the surfaced label is the loop's.
+    ///
+    ///   ★★ **That second site is now a backstop with no firings, and deliberately so.** Once the
+    ///   ring naming learned to restate an operand's branch corner
+    ///   (`combinatorics::branch_name_from_def`) and to write a curved carrier, the curved rings of
+    ///   today's population are **described** rather than declined — measured, zero raises from
+    ///   this site across the whole suite. What can still reach it: a corner whose def is not
+    ///   `Branch` (a seam end), a plane with no *narrow* world description (a wide or rotated
+    ///   chain), a handle that answers to both candidate classes or to neither, and two laterals
+    ///   meeting at one corner (M6b's). ★ Measured with the restatement switched off: the ring
+    ///   **declines by this name** and nothing panics, which is the whole reason the backstop is
+    ///   under the road rather than trusted away.
     ///
     /// ★ The two ask the same question of a face in two vocabularies — the gate reads the edge's
     /// **carriers** from the model, the road reads the far face's **class** — and they are measured
