@@ -108,6 +108,24 @@ impl Surface {
         }
     }
 
+    /// The surface's **natural** unit normal at `p` — the one its own definition names, before any
+    /// face's `Orientation` has a say.
+    ///
+    /// `p` is taken on trust: it should lie on the surface, and a mesh corner or a sampled point
+    /// does. `None` only where the direction genuinely has no name — a point on a cylinder's own
+    /// axis. A plane's answer does not read `p` at all, which is exactly why callers that ask
+    /// "how much does this surface turn between two points" get zero from a plane for free.
+    ///
+    /// ★ Sibling of [`distance`](Surface::distance), and exhaustive over the enum for the same
+    /// reason: a new surface kind is a compile error here rather than a silently missing case.
+    #[inline]
+    pub fn normal_at(&self, p: Point3) -> Option<Vector3> {
+        match self {
+            Surface::Plane(s) => Some(s.normal()),
+            Surface::Cylinder(s) => s.normal_toward(p),
+        }
+    }
+
     /// **The rounding [`distance`](Surface::distance) itself contributes**, for a caller comparing
     /// that residual against a tolerance that describes only where `p` came from. See
     /// `Plane::distance_eps`.

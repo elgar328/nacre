@@ -138,11 +138,7 @@ pub struct FaceProps {
 pub fn face_normal_at(model: &Model, face: Handle<Face>, p: Point3) -> Option<Vector3> {
     let f = model.faces.get(face);
     let sign = f64::from(f.orientation.sign());
-    let natural = match model.surface(f.surface) {
-        Surface::Plane(plane) => plane.normal(),
-        Surface::Cylinder(cyl) => cyl.normal_toward(p)?,
-    };
-    Some(natural * sign)
+    Some(model.surface(f.surface).normal_at(p)? * sign)
 }
 
 /// [`FaceProps`] of one face.
