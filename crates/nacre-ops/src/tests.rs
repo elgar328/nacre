@@ -3516,6 +3516,142 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
     }
 }
 
+/// A plate, one cylinder op, then a second — the population the corpus did not have.
+fn chained(
+    first: ([f64; 3], f64, BoolKind),
+    second: ([f64; 3], f64, BoolKind),
+) -> (Model, Result<Vec<Handle<Solid>>, BoolError>) {
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([12.0, 4.0, 2.0]),
+    );
+    let up = Vector3::from_array([0.0, 0.0, 1.0]);
+    let a = m.add_cylinder(Point3::from_array(first.0), up, 0.5, first.1);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, first.2, plate, a).expect("the first op builds");
+    assert_eq!(out.len(), 1, "the first op is one solid");
+    m.rebuild_adjacency();
+    let b = m.add_cylinder(Point3::from_array(second.0), up, 0.5, second.1);
+    m.rebuild_adjacency();
+    let r = boolean(&mut m, second.2, out[0], b);
+    (m, r)
+}
+
+/// ★★★★ **Two cylinder operations in a row — measured for the first time.**
+///
+/// The corpus had **no chained-cylinder fixture at all**: every boss and bore stood on a plain
+/// plate. So "a plate takes a second cylinder" was neither locked nor known, and it turned out to
+/// be *half* true — which is what this pins, both halves.
+///
+/// A bore or a boss standing on the plate's face leaves the operand's rings plane-named (a hole is
+/// a full circle, the one curved loop the tracer's road speaks), so the next cylinder is business
+/// as usual. A boss standing on a **wall** does not: it bites an arc out of the plate's caps and
+/// splits the wall in two with its rulings, and those rings run along the boss. See
+/// [`a_chained_cylinder_bounded_by_the_first_is_refused_by_name`] for that half.
+///
+/// The volumes are derived, not copied: the plate is 96, a bore through it removes `π/4·2`, a boss
+/// on top adds `π/4·1`, and a wall boss adds `π/4·4` with half its section buried (`−½·π/4·2`).
+#[test]
+fn chained_cylinder_operations_that_build_today_still_build() {
+    let quarter = std::f64::consts::PI * 0.25;
+    let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
+    let bore = ([2.0, 2.0, -1.0], 4.0, BoolKind::Cut);
+    let top_boss = ([2.0, 2.0, 2.0], 1.0, BoolKind::Fuse);
+    for (name, first, second, volume) in [
+        (
+            "bore then bore",
+            bore,
+            ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut),
+            96.0 - 2.0 * quarter * 2.0,
+        ),
+        (
+            "bore then top boss",
+            bore,
+            ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse),
+            96.0 - quarter * 2.0 + quarter,
+        ),
+        (
+            "top boss then top boss",
+            top_boss,
+            ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse),
+            96.0 + 2.0 * quarter,
+        ),
+        (
+            "top boss then wall boss",
+            top_boss,
+            ([6.0, 0.0, -1.0], 4.0, BoolKind::Fuse),
+            96.0 + quarter + (quarter * 4.0 - 0.5 * quarter * 2.0),
+        ),
+        (
+            "bore then wall boss",
+            bore,
+            ([6.0, 0.0, -1.0], 4.0, BoolKind::Fuse),
+            96.0 - quarter * 2.0 + (quarter * 4.0 - 0.5 * quarter * 2.0),
+        ),
+    ] {
+        let (mut m, r) = chained(first, second);
+        let out = r.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        assert_eq!(out.len(), 1, "{name}: one solid");
+        m.rebuild_adjacency();
+        assert!(nacre_validate::validate(&m).is_empty(), "{name}: validate");
+        let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
+        assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
+    }
+    // ★ The one that does not: a wall boss cannot be a *middle* operation.
+    let (_, r) = chained(wall_boss, ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse));
+    assert!(r.is_err(), "a wall boss is still the end of the road");
+}
+
+/// ★★★★ **After a wall boss the refusal names the tracer, not the gate — and it is the same
+/// sentence a face of that operand answers.**
+///
+/// Every second cylinder operation on such a plate is refused, whatever it is and wherever it
+/// stands: the refusal is about the *operand*, not about the two bodies meeting. It used to wear
+/// `CylinderGateUndecided`, whose sentence is "the gate could not decide exactly" — false here,
+/// because the gate decides fine and the road behind it is what has no vocabulary. See
+/// [`an_operand_bounded_by_a_cylinder_declines_instead_of_panicking`] for the road's own answer.
+///
+/// ★ **The name is deliberately not the point of this lock** — the cell that teaches the tracer
+/// this operand will move it. What must hold either way is that the refusal is honest and total:
+/// an error, and the live set exactly as it was.
+#[test]
+fn a_chained_cylinder_bounded_by_the_first_is_refused_by_name() {
+    let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
+    for (name, second) in [
+        ("bore", ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut)),
+        ("boss on top", ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse)),
+        ("another wall boss", ([6.0, 0.0, -1.0], 4.0, BoolKind::Fuse)),
+        (
+            "a bore on the same wall",
+            ([6.0, 0.0, -1.0], 4.0, BoolKind::Cut),
+        ),
+    ] {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([12.0, 4.0, 2.0]),
+        );
+        let up = Vector3::from_array([0.0, 0.0, 1.0]);
+        let a = m.add_cylinder(Point3::from_array(wall_boss.0), up, 0.5, wall_boss.1);
+        m.rebuild_adjacency();
+        let first = boolean(&mut m, wall_boss.2, plate, a).expect("the wall boss builds")[0];
+        m.rebuild_adjacency();
+        let b = m.add_cylinder(Point3::from_array(second.0), up, 0.5, second.1);
+        m.rebuild_adjacency();
+        let live = m.live_solids.clone();
+        match boolean(&mut m, second.2, first, b) {
+            Err(BoolError::Rejected { reason, .. }) => assert_eq!(
+                reason,
+                RejectReason::CurvedOperandBoundary,
+                "{name}: the refusal's name"
+            ),
+            other => panic!("{name}: {other:?}"),
+        }
+        assert_eq!(m.live_solids, live, "{name}: the live set survives");
+    }
+}
+
 /// ★★★★★ **A boolean's result carries names the tracer's plane-only road cannot read — and it
 /// says so instead of aborting.**
 ///

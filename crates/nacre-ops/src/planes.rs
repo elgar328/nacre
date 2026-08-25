@@ -1232,7 +1232,41 @@ fn face_clears_footprint(
     spans: &[[nacre_scalar::Rat; 2]],
 ) -> Result<bool, BoolError> {
     use nacre_scalar::{Orient, StripSide};
-    let undecided = || reject(RejectReason::CylinderGateUndecided);
+    // ★★★★★ **Which refusal this is, decided once — the answer is not touched.**
+    //
+    // Every abstention below turns into a refusal at the caller, and until now they all wore
+    // `CylinderGateUndecided`, whose sentence is "the gate could not decide exactly". For a face
+    // whose ring runs along a cylinder that sentence is **false**: the gate can decide, and what
+    // cannot read the shape is the road behind it — `combinatorics::loop_triples` declines such a
+    // ring by name (`CurvedOperandBoundary`). This population is a boolean's result fed back in as
+    // an operand, which is why a *gate* was the first thing to meet it.
+    //
+    // ★★ **An edge's carriers are the adjacency answer** — [`nacre_topo::Edge::surfaces`] says so
+    // in its own doc ("the two faces that use the edge"), so a cylinder among them is exactly "the
+    // face across this edge is a lateral". That is the same fact `loop_triples` reads through
+    // classes, spelled here from the model because this side has no class table for the operand.
+    //
+    // ★★★ **And it carries that road's exception with it — a *single-edge* loop is a full circle,
+    // which the road does speak** (`LoopRing::Circle`, named by the cylinder's class). Measured:
+    // without the `len() > 1`, the crosswise bore's cap face — one arc and one seam vertex — took
+    // the new name, and for that face the new name's sentence is simply false. The two conditions
+    // have to agree, or this one is claiming a limit the other does not have.
+    let curved = face.outer.half_edges.len() > 1
+        && face.outer.half_edges.iter().any(|he| {
+            model
+                .edges
+                .get(he.edge)
+                .surfaces
+                .iter()
+                .any(|&s| matches!(model.surface(s), nacre_geom::Surface::Cylinder(_)))
+        });
+    let undecided = || {
+        reject(if curved {
+            RejectReason::CurvedOperandBoundary
+        } else {
+            RejectReason::CylinderGateUndecided
+        })
+    };
     let mut side: Option<StripSide> = None;
     let mut across = true;
     // Per span, whether every vertex so far has stayed at or below its start, and at or above its
