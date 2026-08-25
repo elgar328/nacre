@@ -41,6 +41,11 @@ pub enum TessError {
     /// The bootstrap OBJ writer met a curved face. It used to fan the face's edge
     /// endpoints and emit nonsense; `tessellate` is the path that handles those.
     NonPlanarFace,
+    /// A face's **interior** triangulation left an edge outside the declared budget — the mesh
+    /// would misrepresent the surface there. See [`within_budget`]: the boundary is sampled to the
+    /// budget by construction, so this only ever reports what the sweep chose, and it reports it
+    /// rather than drawing a face that is quietly the wrong shape.
+    OverBudget,
 }
 
 /// Export a model to Wavefront OBJ text (vertices shared; each face fan-
@@ -243,7 +248,7 @@ pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessE
         if !reach.faces.contains(&fh) {
             continue;
         }
-        triangulate_face(&mut t, model, fh, face)?;
+        triangulate_face(&mut t, model, cfg, fh, face)?;
     }
 
     Ok(t)
@@ -528,16 +533,92 @@ fn cylinder_chart(t: &Tessellation, face: &Face, cyl: &Cylinder) -> Result<Chart
 fn triangulate_face(
     t: &mut Tessellation,
     model: &Model,
+    cfg: &TessConfig,
     fh: Handle<Face>,
     face: &Face,
 ) -> Result<(), TessError> {
-    let chart = match model.surface(face.surface) {
+    let surface = model.surface(face.surface);
+    let chart = match surface {
         Surface::Plane(_) => planar_chart(t, face)?,
         Surface::Cylinder(cyl) => cylinder_chart(t, face, cyl)?,
     };
     let refs: Vec<&[usize]> = chart.rings.iter().map(|r| r.as_slice()).collect();
-    for tri in polygon::triangulate_uv(&chart.uv, &refs)? {
+    let tris = polygon::triangulate_uv(&chart.uv, &refs)?;
+    within_budget(t, cfg, surface, &chart, &tris)?;
+    for tri in tris {
         push_tri(t, fh, tri.map(|i| chart.handles[i]));
+    }
+    Ok(())
+}
+
+/// ★★★★★ **The mesh's one rule, asked of the face's *interior* — where it was never asked.**
+///
+/// `TessConfig` declares two budgets and [`circle_segments`] enforces **both** on every boundary
+/// polyline. Nothing enforced them inside a face, which simply inherited whatever sampling its
+/// boundary happened to supply: fine while the boundary samples the curvature (a band's rims do),
+/// and silently wrong when it does not. A merged lateral face — whose erased phantom seams had
+/// been the only thing sampling θ over one stretch — came out with four triangles spanning half a
+/// turn as flat chords, losing a sixth of its area while `validate`, watertightness, the exact
+/// volume and the face counts were all green.
+///
+/// So the same two questions are asked of every interior edge:
+/// * **linear** — how far the surface strays from the chord, measured at its midpoint;
+/// * **angular** — how far the surface *turns* between the ends, measured on its own normals.
+///
+/// Both come from [`nacre_geom::Surface`] and are exhaustive over the surface kinds, so a plane
+/// answers zero to both without anyone declaring that a plane is flat, and a new surface kind is a
+/// compile error rather than a missing case.
+///
+/// ★★ **A boundary edge cannot fail, so it is not asked.** An arc is cut into `circle_segments`
+/// pieces, which is the *larger* of the two budgets' demands; a straight edge (a ruling, the seam,
+/// a plane's side) strays zero and its ends share one normal. The two halves of the sentence meet
+/// there — which is why this checks only what the sweep chose, never what the sampler laid down.
+///
+/// A violation is an error, not a repair: this layer's charter (see [`TessError`]) is that a wrong
+/// cache is worse than none, and the defect above is exactly what a quiet one looks like.
+fn within_budget(
+    t: &Tessellation,
+    cfg: &TessConfig,
+    surface: &Surface,
+    chart: &Chart,
+    tris: &[[usize; 3]],
+) -> Result<(), TessError> {
+    let boundary: std::collections::HashSet<(usize, usize)> = chart
+        .rings
+        .iter()
+        .flat_map(|r| {
+            (0..r.len()).map(move |k| {
+                let (a, b) = (r[k], r[(k + 1) % r.len()]);
+                (a.min(b), a.max(b))
+            })
+        })
+        .collect();
+    // Today's populations sit **exactly** on the angular budget — an interior diagonal spanning one
+    // sample turns by precisely the sampler's own step — so a bare `>` would be decided by the last
+    // bit of two differently-rounded routes to the same number.
+    let slack = 1.0 + 1e-9;
+    let max_turn = cfg.max_angle_deg.to_radians() * slack;
+    let max_sag = cfg.tol * slack;
+    for tri in tris {
+        for k in 0..3 {
+            let (i, j) = (tri[k], tri[(k + 1) % 3]);
+            if boundary.contains(&(i.min(j), i.max(j))) {
+                continue;
+            }
+            let (a, b) = (
+                t.vertices.get(chart.handles[i]).pos,
+                t.vertices.get(chart.handles[j]).pos,
+            );
+            if surface.distance(a + (b - a) * 0.5) > max_sag {
+                return Err(TessError::OverBudget);
+            }
+            let (Some(na), Some(nb)) = (surface.normal_at(a), surface.normal_at(b)) else {
+                continue; // a normal with no name (a point on the axis) is not a budget failure
+            };
+            if na.dot(nb).clamp(-1.0, 1.0).acos() > max_turn {
+                return Err(TessError::OverBudget);
+            }
+        }
     }
     Ok(())
 }
