@@ -812,9 +812,13 @@ pub enum RejectReason {
     ///   in `band_loop` rather than assumed away;
     /// * a **whole-disk bound on a cut circle** (`circle_loop`) — a producer inconsistency (the
     ///   trace subdivides a cut disk into cells), named honestly rather than as a dropped
-    ///   crossing.
+    ///   crossing;
+    /// * a **contact whose cut circle has no world description** — `band_loop` orders the two
+    ///   contacts by their circles' exact axial parameters, and the population gate demanded a
+    ///   world description of every plane class long before a band could be emitted, so this too
+    ///   is spelled rather than assumed away.
     ///
-    /// "Not yet" is still the literal truth for both.
+    /// "Not yet" is still the literal truth for all three.
     ArcBoundNotYet,
     /// **An *operand* face is bounded by a cylinder, and the tracer names rings by planes.**
     ///

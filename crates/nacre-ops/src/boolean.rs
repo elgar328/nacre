@@ -2080,18 +2080,21 @@ pub(crate) fn reconstruct(
             // than re-derived: a branch vertex sitting **on** the seam *is* the contact
             // (`CutRim::seam_is_node` — the split's own classification), and otherwise it is
             // the `OnSeam` vertex the rim table minted for that circle.
-            let contacts: Vec<Handle<Vertex>> = cut_rims
+            let contacts: Vec<(Handle<Vertex>, usize)> = cut_rims
                 .iter()
                 .filter(|((kk, _), _)| *kk == k)
                 .filter_map(|(&(_, c), cr)| {
-                    if cr.seam_is_node {
+                    let v = if cr.seam_is_node {
                         cr.nodes.first().and_then(|n| vh.get(&(g, *n)).copied())
                     } else {
                         rim.get(&(g, k, c)).map(|&(v, _)| v)
-                    }
+                    };
+                    v.map(|v| (v, c))
                 })
                 .collect();
-            let is_contact = |v: Handle<Vertex>| contacts.contains(&v);
+            let is_contact = |v: Handle<Vertex>| contacts.iter().any(|&(x, _)| x == v);
+            let circle_of =
+                |v: Handle<Vertex>| contacts.iter().find(|&&(x, _)| x == v).map(|&(_, c)| c);
             let taken = holes.iter().position(|lp| {
                 lp.half_edges
                     .iter()
@@ -2117,15 +2120,33 @@ pub(crate) fn reconstruct(
                     let run_i = lp.half_edges[i..j].to_vec();
                     let mut run_j = lp.half_edges[j..].to_vec();
                     run_j.extend_from_slice(&lp.half_edges[..i]);
-                    // ★ Which contact the **lower** slit reaches: the one nearer the `lo` rim
-                    // along the axis. The two sit on different rim circles, so this is a
-                    // comparison of well-separated stations, and it is the only thing here
-                    // read off realized geometry — the loop builder's own currency.
-                    let axis = cyls[k].cache.axis();
-                    let station = |v: Handle<Vertex>| {
-                        (model.vertex_point(v) - axis.origin()).dot(axis.direction())
+                    // ★★ Which contact the **lower** slit reaches: the one nearer the `lo` rim
+                    // along the axis. A contact sits on a cut circle, and a cut circle's station
+                    // *is* the axial parameter of the plane that cut it — a rational question,
+                    // asked of the class the contact table is already carrying beside it.
+                    // [`crate::planes::WorkingCyl::cache`] states the rule this follows: the f64
+                    // twin is what a measurement reads, and every decision reads `def`.
+                    //
+                    // ☑ **The two stations cannot tie**, so the `<=` restates the comparison it
+                    // replaces rather than growing a case: `cut_rims` is keyed by `(k, c)`, so a
+                    // circle offers at most one contact and two contacts are two distinct
+                    // circles — and a cut circle's plane is perpendicular to the axis, so equal
+                    // stations would be the same plane, hence one class and one `c`.
+                    let station = |v: Handle<Vertex>| -> Option<nacre_scalar::Rat> {
+                        let c = circle_of(v)?;
+                        crate::planes::axis_param_of_plane(
+                            &crate::combinatorics::class_coeffs_rat(jd, c)?,
+                            &cyls[k].def,
+                        )
                     };
-                    Some(if station(pi) <= station(pj) {
+                    let (si, sj) = match (station(pi), station(pj)) {
+                        (Some(a), Some(b)) => (a, b),
+                        // The gate already required a world description of every plane class
+                        // before a band could be emitted, so this is spelled rather than assumed
+                        // away — the same discipline the both-rims-cut arm above follows.
+                        _ => return Err(reject(RejectReason::ArcBoundNotYet)),
+                    };
+                    Some(if si <= sj {
                         (run_i, run_j, pi, pj)
                     } else {
                         (run_j, run_i, pj, pi)
