@@ -3062,6 +3062,17 @@ fn curved_wall(
                 crate::arrangement::ruling_side(&w, &def, (&at.0, &at.1)).ok_or_else(curved)?;
             // Which way travel runs along the axis: the stored edge ascends when its second
             // endpoint does, and `forward` says whether this half-edge walks it that way.
+            //
+            // ★★★ **There is nothing to read, so it is measured — and in `f64`, which is the one
+            // realization this bridge trusts.** A ruling edge's stored pair carries no order:
+            // `edge_for` keys it `unordered(va, vb)` ("a ruling edge is straight, so the unordered
+            // pair orders it"), unlike an arc, whose `[A, B]` *is* the CCW convention. So the two
+            // ends have to be compared, and the comparison is safe for a structural reason rather
+            // than a lucky one: a ruling whose ends share an axial coordinate has zero length, and
+            // `push_edge` refuses to mint one (`ZeroLengthEdge`). Every ruling that exists is
+            // separated along the axis by the material it spans, which is not a distance `f64`
+            // confuses. ☑ The exact route, if a population ever needs it: both ends are branch
+            // points, and their *other* carrier planes order along `m` rationally.
             let (m, o) = (def.dir(), def.origin());
             let axial = |v: Handle<Vertex>| {
                 let q = model.vertex_point(v).as_array();
