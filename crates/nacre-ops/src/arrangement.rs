@@ -842,6 +842,8 @@ fn trace_transversal_face(
                 return Ok((n, combinatorics::EndPin::Cylinder));
             };
             let (mut offs, mut has_fp, mut has_w) = (Vec::<usize>::new(), false, false);
+            // `offs` counts the off-line classes; **which** one pins the point is
+            // [`combinatorics::pin_on_line`]'s to say, in both arms below.
             for &x in &t {
                 if x == fc {
                     has_fp = true;
@@ -854,7 +856,14 @@ fn trace_transversal_face(
             match (has_fp, has_w, offs.len()) {
                 // The ordinary point: `t` carries both of this line's planes, and the third both pins
                 // and names it.
-                (true, true, 1) => Ok((n, combinatorics::EndPin::Class(offs[0]))),
+                // ★ It goes through [`combinatorics::pin_on_line`] like the arm below, though with
+                // one candidate there is nothing to choose. What the shared rule adds here is the
+                // **cut test** this arm used to skip — measured **0 of 1,622,692** calls where the
+                // lone off-line class fails it, so folding the two changes no answer and closes a
+                // difference between two arms of one function.
+                (true, true, 1) => combinatorics::pin_on_line(jd, wc, fc, t)
+                    .map(|r| (n, combinatorics::EndPin::Class(r)))
+                    .ok_or(DeclineKind::NoPinOnLine),
                 // On `wc` (this is a run vertex) yet `wc` does not name it. `t`'s classes are distinct
                 // (`plane_ring`) and `fc != wc` here, so `wc` is a **fourth** plane through the point.
                 (_, false, _) => {
@@ -863,14 +872,12 @@ fn trace_transversal_face(
                     set.sort_unstable();
                     set.dedup();
                     out.aliases.record(jd, &set);
-                    // ★ A handle has a duty the identity does not: it must **cut** `L`. One parallel
-                    // to it names no point there, and `order_along` — being `orient3d × dir_sign` —
-                    // would read 0 against everything, fabricating a coincidence rather than missing
-                    // one.
-                    offs.sort_unstable();
-                    offs.iter()
-                        .copied()
-                        .find(|&r| jd.plane_pair_dir_sign(wc, fc, r) != 0)
+                    // ★ A handle has a duty the identity does not: it must **cut** `L` — see
+                    // [`combinatorics::pin_on_line`], where that rule and its reason live.
+                    // ★ `FourPlane` and not `NoPinOnLine`: this arm has already established that
+                    // `wc` is a fourth plane through the point, so the substrate limit is the cause
+                    // and a missing pin is its symptom.
+                    combinatorics::pin_on_line(jd, wc, fc, t)
                         .ok_or(DeclineKind::FourPlane)
                         // ★ The alias case names the point by **this line's** triple, not the ring's:
                         // `wc` is a fourth plane through it, and `{wc, fc, r}` is the canonical name

@@ -998,6 +998,16 @@ pub enum DeclineKind {
     OddParity,
     /// A seated (on-plane) edge has no unique wall plane, so its segment cannot be named.
     SeatedEdgeNaming,
+    /// **A point's name carries no plane that cuts the line it sits on**, so nothing in that name
+    /// pins it there — see [`combinatorics::pin_on_line`].
+    ///
+    /// ★ Distinct from [`Self::FourPlane`], which `third_on_l`'s alias arm raises for the same
+    /// missing pin: there the arm has *already* established a fourth plane through the point, so
+    /// the substrate limit is the cause and the missing pin only its symptom. Where no such fact is
+    /// in hand, saying the symptom is the honest answer.
+    ///
+    /// ☑ Measured unexercised: **0 of 1,622,692** ordinary-arm calls fail the cut test.
+    NoPinOnLine,
     /// A cylinder face could not answer a circle question exactly — its rim span is
     /// underivable or a plane class lacks the exact description a circle test needs (M6-2a).
     CylSpan,
@@ -1024,6 +1034,7 @@ impl DeclineKind {
             Self::RunSplit => "run-split",
             Self::OddParity => "odd-parity",
             Self::SeatedEdgeNaming => "seated-edge-naming",
+            Self::NoPinOnLine => "no-pin-on-line",
             Self::CylSpan => "cyl-span",
             Self::Ruling => "ruling",
         }

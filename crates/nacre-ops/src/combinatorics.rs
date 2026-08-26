@@ -490,6 +490,44 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 
 /// A ring's edges from its nodes and the **carried** wall of each edge.
 ///
+/// **Which plane of a point's name pins it on the line `a ∩ b`** — the one place that rule lives.
+///
+/// ★★★★★ **It was written five times before it was written once.** `ring_edges_with_walls`, the ray
+/// caster's namer, and *both* arms of `arrangement::third_on_l` each spelled it, and the tracer's
+/// seated road spelled a **reduced** version — no cut test, no smallest rule, a `panic` where this
+/// returns `None`. That is this codebase's dominant defect shape: the correct rule inlined in a
+/// sibling while a second site uses a smaller one. So it lives here now and they all call it.
+///
+/// **The rule, and why each half of it.** A handle only has to be *some* plane through the node
+/// that **cuts** `a ∩ b` — that is all [`order_along`] asks of it, since it reads the handle through
+/// `orient3d × dir_sign`. One *parallel* to the line names no point on it and would read `0` against
+/// everything, fabricating a coincidence rather than missing one; hence
+/// [`Judge::plane_pair_dir_sign`] `!= 0`. Under a concurrency several qualify and **any will do**,
+/// so the **smallest** is taken and replay stays stable. `None` is "this name pins nothing here",
+/// which each caller turns into its own vocabulary rather than sharing one label.
+///
+/// ★ `t` comes in sorted ([`NodeId::three_planes`] is the only constructor and it sorts), so
+/// "smallest qualifying" is the first that qualifies — the two spellings the call sites used are
+/// the same value.
+///
+/// ★★★★★ **Which half of this rule decides an answer, measured by breaking each.** Candidates
+/// number `2` on 9,348 calls across the suite, so "smallest" is not vacuous *as a choice* — yet
+/// taking the **largest** instead leaves the bit census **identical**. That is not a limp
+/// instrument: it is the first measurement of the invariant this rule rests on, *"under a
+/// concurrency several qualify and any will do"*, which until now was only asserted. What does
+/// decide is the **cut test**: invert it and the census collapses from 269 rows to 5. So the
+/// smallest rule buys replay stability, and the cut test buys correctness.
+pub(crate) fn pin_on_line(
+    jd: &Judge<'_, WorkingPlane>,
+    a: usize,
+    b: usize,
+    t: [usize; 3],
+) -> Option<usize> {
+    t.iter()
+        .copied()
+        .find(|&c| c != a && c != b && jd.plane_pair_dir_sign(a, b, c) != 0)
+}
+
 /// ★ **This is the sound twin of `ring_from_names`.** That one reads an edge's supporting plane
 /// back out of its two endpoint names — "the class they share besides `P`" — which works only while
 /// every vertex lies on exactly three planes. Let four meet at a point, give it one canonical name,
@@ -497,10 +535,7 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 /// nothing but `P`. Measured (2026-07, `docs/dev-log.md`): a boolean whose fourth plane fell on an
 /// arrangement vertex produced exactly that, and `ring_from_names` declined `RingNaming`.
 ///
-/// The **handle** is still derived, and soundly: it only has to be *some* plane through the node
-/// that cuts the line `P ∩ wall`, which is what `order_along` asks of it. Under a concurrency there
-/// are several and any will do, so the smallest is taken and the answer stays replay-stable. This is
-/// the same rule `trace_transversal_face`'s `third_on_l` uses.
+/// The **handle** is still derived, and soundly — see [`pin_on_line`], where that rule now lives.
 pub(crate) fn ring_edges_with_walls(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
@@ -519,15 +554,7 @@ pub(crate) fn ring_edges_with_walls(
         .map(|&n| three_plane_name(n))
         .collect::<Option<_>>()
         .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
-    let handle = |t: [usize; 3], wall: usize| -> Option<usize> {
-        let mut cs: Vec<usize> = t
-            .iter()
-            .copied()
-            .filter(|&c| c != p && c != wall && jd.plane_pair_dir_sign(p, wall, c) != 0)
-            .collect();
-        cs.sort_unstable();
-        cs.first().copied()
-    };
+    let handle = |t: [usize; 3], wall: usize| pin_on_line(jd, p, wall, t);
     (0..nodes.len())
         .map(|i| {
             let j = (i + 1) % nodes.len();
@@ -1922,12 +1949,7 @@ pub(crate) fn every_ray(
         // same way, and for the same reason — one parallel to the line names no point on it.)
         // ★ The projection is safe *here* and nowhere earlier: the walk answered `Met`, which it
         // only does when every node is three planes.
-        let namer = |i: usize| {
-            three_plane_name(nodes[i])?
-                .iter()
-                .copied()
-                .find(|&x| x != p && x != qa && jd.plane_pair_dir_sign(p, qa, x) != 0)
-        };
+        let namer = |i: usize| pin_on_line(jd, p, qa, three_plane_name(nodes[i])?);
         // Which side of `v` each run sits on, and whether the ring crossed the line there at all.
         // A run is one interval of the line and the ring is simple, so it cannot double back
         // inside itself: its two ends bracket it, and ends that disagree mean `v` is *between*
