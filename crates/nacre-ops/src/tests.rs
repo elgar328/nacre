@@ -3678,12 +3678,30 @@ fn an_operand_bounded_by_a_cylinder_is_named_in_class_space() {
     // wall, so the two rulings sit either side of that plane and a root read the wrong way round
     // lands on a mirror-image point — a lock that only ever saw this fixture could pass with the
     // restatement inverted. The corner's two walls break that symmetry.
+    let (mut ups, mut sides): (Vec<bool>, Vec<i8>) = (Vec::new(), Vec::new());
     for at in [[2.0, 0.0, -1.0], [12.0, 0.0, -1.0]] {
-        named_in_class_space(at);
+        let (u, s) = named_in_class_space(at);
+        ups.extend(u);
+        sides.extend(s);
     }
+    // ★★ **The direction assertions inside are only worth their ink if the fixtures move them** —
+    // a boss whose rulings all climbed, or all sat one side, would let a constant pass for a
+    // derivation. It takes **both** fixtures to move both bits, and that is the geometry rather
+    // than a gap: the wall boss is symmetric about its wall, so its two rulings straddle that
+    // plane and `side` takes both values; the corner boss keeps **one** ruling per wall (the
+    // other is buried), and those two are measured against *different* planes, so nothing says
+    // they should oppose. Measured — the corner run alone gives `[1, 1]`.
+    assert!(
+        ups.contains(&true) && ups.contains(&false),
+        "the fixtures exercise both senses of `up`: {ups:?}"
+    );
+    assert!(
+        sides.contains(&1) && sides.contains(&-1),
+        "the fixtures exercise both sides of the axis plane: {sides:?}"
+    );
 }
 
-fn named_in_class_space(at: [f64; 3]) {
+fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -3729,6 +3747,7 @@ fn named_in_class_space(at: [f64; 3]) {
 
     let jd = crate::planes::test_judge(&planes);
     let (mut curved_walls, mut branch_names) = (0usize, 0usize);
+    let (mut ups, mut sides): (Vec<bool>, Vec<i8>) = (Vec::new(), Vec::new());
     for &fh in &m.shells.get(m.solids.get(r).outer).faces {
         let fp = surf_ix[&fh];
         if matches!(plane_ix[fp], crate::planes::ClassIx::Cyl(_)) {
@@ -3745,20 +3764,79 @@ fn named_in_class_space(at: [f64; 3]) {
             "face {:?}: one name per corner",
             fh.index()
         );
+        let ends = |k: usize| m.edges.get(hes[k].edge).vertices;
+        // The corner the walk stands on when it starts edge `k` — the vertex edge `k-1` and edge
+        // `k` share. Read off the ring rather than off either edge's stored pair, because a
+        // ruling's pair carries no order (`edge_for` keys it unordered) and this is the walk.
+        let corner = |k: usize| {
+            let (a, b) = (ends((k + n - 1) % n), ends(k));
+            *a.iter()
+                .find(|x| b.contains(x))
+                .expect("consecutive edges share a corner")
+        };
         for (i, &node) in nr.triples.iter().enumerate() {
             // The carrier and the corner are independent facts, and both are asserted: a curved
             // wall must be an arc or a ruling of the cylinder its far face is on, never a plane.
+            let straight = matches!(m.edge_curve(hes[i].edge), nacre_geom::Curve::Line(_));
             match nr.walls[i] {
                 crate::boolean::Wall::Plane(_) => {}
-                crate::boolean::Wall::Arc { .. } | crate::boolean::Wall::Ruling { .. } => {
-                    let straight = matches!(m.edge_curve(hes[i].edge), nacre_geom::Curve::Line(_));
-                    let arc = matches!(nr.walls[i], crate::boolean::Wall::Arc { .. });
-                    assert_eq!(
-                        straight,
-                        !arc,
-                        "face {:?} edge {i}: the carrier disagrees with the curve",
+                crate::boolean::Wall::Arc { .. } => {
+                    assert!(
+                        !straight,
+                        "face {:?} edge {i}: an arc carrier on a straight curve",
                         fh.index()
                     );
+                    curved_walls += 1;
+                }
+                // ★★★★★ **The direction bits, against the walk and against the geometry.** The
+                // carrier alone says *which surface*; `up` and `side` say *which way* and *which
+                // of the two rulings*, and a consumer that reads them wrong builds a face wound
+                // backwards or seated on the far side of the cylinder. Both are measured off
+                // realized coordinates on purpose — the code derives them without any (`side`
+                // exactly through `quad::plane_side`, `up` from the cutting planes' axial
+                // parameters), so the coordinate is a genuinely second road to the same bit.
+                crate::boolean::Wall::Ruling { cyl: k, side, up } => {
+                    assert!(
+                        straight,
+                        "face {:?} edge {i}: a ruling carrier on a curved curve",
+                        fh.index()
+                    );
+                    let crate::planes::ClassIx::Plane(near) = plane_ix[fp] else {
+                        unreachable!("a lateral face was skipped above")
+                    };
+                    let axis = cyls[k].cache.axis();
+                    let axial = |p: Point3| (p - axis.origin()).dot(axis.direction());
+                    assert_eq!(
+                        up,
+                        axial(m.vertex_point(corner((i + 1) % n)))
+                            > axial(m.vertex_point(corner(i))),
+                        "face {:?} edge {i}: `up` disagrees with the walk",
+                        fh.index()
+                    );
+                    // `side` is the sign of `(x − o) · (m × n̂)`. ★★ **`n̂` has to be the class's
+                    // `world_rat` normal, and no other spelling of the class's plane will do** —
+                    // measured, by writing `plane.normal()` here first and watching it come out
+                    // opposed (`[0,-1,0]` against `[0,1,0]`, and `frame_sign` is `+1`, so that is
+                    // not the reconciliation either). A class has no outward normal to agree on:
+                    // `world_rat` is the plane's *name*, whose sign is its own, while `plane` is a
+                    // stored surface's. `side` is a **label** telling the two rulings apart, so it
+                    // is well defined exactly as long as every road spells `n̂` the one way.
+                    // Sharing that input leaves the two roads independent where it counts — the
+                    // code decides in exact `quad::plane_side` on the branch meet, this in `f64`
+                    // on the realized vertex.
+                    let wr = combinatorics::class_coeffs_rat(&jd, near).expect("a named class");
+                    let n_hat =
+                        Vector3::from_array([wr[0].to_f64(), wr[1].to_f64(), wr[2].to_f64()]);
+                    let cross = axis.direction().cross(n_hat);
+                    let s = (m.vertex_point(corner(i)) - axis.origin()).dot(cross);
+                    assert_eq!(
+                        side,
+                        if s > 0.0 { 1 } else { -1 },
+                        "face {:?} edge {i}: `side` disagrees with the geometry ({s})",
+                        fh.index()
+                    );
+                    ups.push(up);
+                    sides.push(side);
                     curved_walls += 1;
                 }
             }
@@ -3773,13 +3851,7 @@ fn named_in_class_space(at: [f64; 3]) {
             // **other root**, a visibly different point on the far ruling.
             let got = combinatorics::branch_point(&jd, cyl, &cyls[cyl].def, node)
                 .expect("the name realizes");
-            let ends = |k: usize| m.edges.get(hes[k].edge).vertices;
-            let (a, b) = (ends((i + n - 1) % n), ends(i));
-            let v = *a
-                .iter()
-                .find(|x| b.contains(x))
-                .expect("consecutive edges share a corner");
-            let want = m.vertex_point(v).as_array();
+            let want = m.vertex_point(corner(i)).as_array();
             let d: f64 = (0..3)
                 .map(|k| (got[k] - want[k]).powi(2))
                 .sum::<f64>()
@@ -3797,6 +3869,7 @@ fn named_in_class_space(at: [f64; 3]) {
     // and the three untouched walls are plain.
     assert_eq!(curved_walls, 4, "edges riding the boss");
     assert_eq!(branch_names, 8, "corners named as branch points");
+    (ups, sides)
 }
 
 /// ★★★ **A circle can be an interior boundary, and then the merge erases it.**
