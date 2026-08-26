@@ -1221,6 +1221,92 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
 /// a single point and would pass a disk that crosses the strip. Today `vertex_meet` happens to
 /// decline that vertex, but relying on the coincidence would leave the barrier to vanish silently
 /// the day seam coordinates become solvable.
+/// **A face corner, in whichever exact spelling it has** — the footprint test's currency.
+///
+/// Three plane-carried corners have rational coordinates; a corner a cylinder made does not, and
+/// is `line.base() + s·line.dir()` with `s` quadratic-irrational. The two spellings answer the
+/// same three questions, so they are asked through one type rather than branched at each call.
+enum Corner {
+    Rational(nacre_scalar::MeetPoint),
+    Branch(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+}
+
+impl Corner {
+    /// Does this corner lie on the plane the class names? — [`cylinder_strip_side`]'s precondition.
+    fn on_plane(&self, coeffs: &[nacre_scalar::Rat; 4]) -> bool {
+        match self {
+            Self::Rational(p) => nacre_scalar::point_on_plane_exact(coeffs, p),
+            Self::Branch(line, s) => {
+                nacre_scalar::quad::plane_side(coeffs, line, s) == nacre_scalar::Orient::Zero
+            }
+        }
+    }
+
+    fn strip_side(
+        &self,
+        coeffs: &[nacre_scalar::Rat; 4],
+        o: &[nacre_scalar::Rat; 3],
+        m: &[nacre_scalar::Rat; 3],
+        r: nacre_scalar::Rat,
+    ) -> nacre_scalar::StripSide {
+        match self {
+            Self::Rational(p) => nacre_scalar::cylinder_strip_side(coeffs, p, o, m, r),
+            Self::Branch(line, s) => {
+                nacre_scalar::cylinder_strip_side_branch(coeffs, line, s, o, m, r)
+            }
+        }
+    }
+
+    fn axis_side(
+        &self,
+        o: &[nacre_scalar::Rat; 3],
+        m: &[nacre_scalar::Rat; 3],
+        t: nacre_scalar::Rat,
+    ) -> nacre_scalar::Orient {
+        match self {
+            Self::Rational(p) => nacre_scalar::point_axis_side(p, o, m, t),
+            Self::Branch(line, s) => nacre_scalar::point_axis_side_branch(line, s, o, m, t),
+        }
+    }
+}
+
+/// **A branch vertex's exact point, solved from its own definition.**
+///
+/// ★★★ **No restatement is owed here.** `QuadRoot` is written about the canonical direction of the
+/// meet line of *the two planes the definition names, in the order it names them* — and this reads
+/// exactly those, in that order, so the root applies directly. (The `ℓ` correction
+/// `combinatorics::branch_name_from_def` carries is the price of crossing from handle space into a
+/// class table's order; this side has no class table for the operand at all.)
+///
+/// `None` where a description is missing rather than where the shape is hard: a plane whose world
+/// name is not narrow, a cylinder with no world statement, a root the meet does not offer.
+fn branch_corner(model: &Model, v: Handle<nacre_topo::Vertex>) -> Option<Corner> {
+    use nacre_scalar::quad::{CylinderMeet, QuadVal};
+    use nacre_topo::QuadRoot;
+    let nacre_topo::VertexDef::Branch {
+        planes,
+        cylinder,
+        root,
+    } = model.vertices.get(v).def
+    else {
+        return None;
+    };
+    let p1 = *model.world_plane_name(planes[0])?.narrow()?;
+    let p2 = *model.world_plane_name(planes[1])?.narrow()?;
+    let def = world_cylinder_def(model, cylinder)?;
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (line, s) = match (
+        nacre_scalar::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r)?,
+        root,
+    ) {
+        (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => (line, s[0]),
+        (CylinderMeet::Pair { line, s }, QuadRoot::Hi) => (line, s[1]),
+        (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => (line, QuadVal::from_rat(s)),
+        _ => return None,
+    };
+    Some(Corner::Branch(line, s))
+}
+
 #[allow(clippy::too_many_arguments)]
 fn face_clears_footprint(
     model: &Model,
@@ -1260,13 +1346,22 @@ fn face_clears_footprint(
                 .iter()
                 .any(|&s| matches!(model.surface(s), nacre_geom::Surface::Cylinder(_)))
         });
-    let undecided = || {
+    // ★★★★★ **Two refusals, split by cause rather than by the flag.** `unreadable` is for a shape
+    // this road cannot spell at all — an arc edge, a seam vertex — and there
+    // `CurvedOperandBoundary`'s sentence ("the road behind cannot read this ring") is true.
+    // `arithmetic` is for the gate's own description running out: a chain that will not fold, a
+    // name that is not narrow, a class whose coefficients miss its own face. Those are
+    // [`RejectReason::CylinderGateUndecided`] whatever the boundary looks like, because the road
+    // behind has nothing to do with them — and since a **branch corner is now readable**, calling
+    // them "curved" would put a false sentence on a true refusal.
+    let unreadable = || {
         reject(if curved {
             RejectReason::CurvedOperandBoundary
         } else {
             RejectReason::CylinderGateUndecided
         })
     };
+    let arithmetic = || reject(RejectReason::CylinderGateUndecided);
     let mut side: Option<StripSide> = None;
     let mut across = true;
     // Per span, whether every vertex so far has stayed at or below its start, and at or above its
@@ -1274,29 +1369,42 @@ fn face_clears_footprint(
     let mut along: Vec<(bool, bool)> = vec![(true, true); spans.len()];
     let mut vertices = 0usize;
     for he in &face.outer.half_edges {
+        // ★ An **arc** edge stays unreadable, and deliberately: the sound-ness argument below
+        // ("a face is contained in the convex hull of its outer loop's vertices") holds because
+        // every edge is straight. An arc bulges past its endpoints' hull, so admitting one would
+        // need the hull statement fixed first — a different cell's first job.
         if !matches!(model.edge_curve(he.edge), nacre_geom::Curve::Line(_)) {
-            return Err(undecided());
+            return Err(unreadable());
         }
-        let Some((p, frame)) = model.vertex_meet(he_start(model, *he)) else {
-            return Err(undecided());
-        };
-        // ★ The point is stated in `frame`; the cylinder and the coefficients are world. A chain
-        // that folds to a rational translation carries it out exactly — the same move the class
-        // descriptions and the cylinder statements make, so this test sees a translated body the
-        // way every other reader does. A `Wide` meet has no narrow vessel to shift and declines,
-        // as does any other chain: honest, never a comparison across two frames.
-        let p = match frame {
-            None => p,
-            Some(leaf) => {
+        let vh = he_start(model, *he);
+        // ★★★★ **The corner's description is chosen once, here** — the three questions below then
+        // ask it the same things whichever spelling it wears. Splitting per question would put one
+        // decision in three places.
+        let corner = match model.vertex_meet(vh) {
+            // ★ The point is stated in `frame`; the cylinder and the coefficients are world. A
+            // chain that folds to a rational translation carries it out exactly — the same move
+            // the class descriptions and the cylinder statements make, so this test sees a
+            // translated body the way every other reader does. A `Wide` meet has no narrow vessel
+            // to shift and declines, as does any other chain: honest, never a comparison across
+            // two frames.
+            Some((p, None)) => Corner::Rational(p),
+            Some((p, Some(leaf))) => {
                 let (Some(t), Some(q)) = (model.chain_translation(leaf), p.narrow()) else {
-                    return Err(undecided());
+                    return Err(arithmetic());
                 };
                 let mut w = *q;
                 for (c, d) in w.iter_mut().zip(t) {
-                    *c = c.checked_add(d).ok_or_else(undecided)?;
+                    *c = c.checked_add(d).ok_or_else(arithmetic)?;
                 }
-                nacre_scalar::MeetPoint::Narrow(w)
+                Corner::Rational(nacre_scalar::MeetPoint::Narrow(w))
             }
+            // ★★★★★ **A corner a cylinder made has no rational meet — and does not need one.**
+            // `vertex_meet` declines a `Branch` because its coordinates are quadratic-irrational,
+            // which is a statement about *rationals*, not about knowability: the point is exactly
+            // `line.base() + s·line.dir()`, and the two questions below read that spelling
+            // directly. An `OnSeam` vertex is a different matter — it pins a curve, not a point —
+            // so it stays unreadable.
+            None => branch_corner(model, vh).ok_or_else(unreadable)?,
         };
         // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
         // on three exact witnesses, one of which compares *rounded* coefficients — so a face can
@@ -1304,13 +1412,14 @@ fn face_clears_footprint(
         // hazard `FaceInfo::exact_coeffs` documents). The strip decomposition takes the plane's
         // distance from the axis as the point's, so judging a point against a plane it is not on
         // would answer about geometry that is not there. Checked, not assumed: a `debug_assert`
-        // would say nothing in the build that ships.
-        if !nacre_scalar::point_on_plane_exact(coeffs, &p) {
-            return Err(undecided());
+        // would say nothing in the build that ships. ★ It is also `cylinder_strip_side`'s own
+        // precondition, so it comes first.
+        if !corner.on_plane(coeffs) {
+            return Err(arithmetic());
         }
         vertices += 1;
         // The axis across the strip.
-        match nacre_scalar::cylinder_strip_side(coeffs, &p, o, m, r) {
+        match corner.strip_side(coeffs, o, m, r) {
             StripSide::Inside => across = false,
             s => match side {
                 None => side = Some(s),
@@ -1320,10 +1429,10 @@ fn face_clears_footprint(
         }
         // The axis along it — one rectangle per lateral face, and the span is open at both ends.
         for (i, span) in spans.iter().enumerate() {
-            if nacre_scalar::point_axis_side(&p, o, m, span[0]) == Orient::Positive {
+            if corner.axis_side(o, m, span[0]) == Orient::Positive {
                 along[i].0 = false;
             }
-            if nacre_scalar::point_axis_side(&p, o, m, span[1]) == Orient::Negative {
+            if corner.axis_side(o, m, span[1]) == Orient::Negative {
                 along[i].1 = false;
             }
         }

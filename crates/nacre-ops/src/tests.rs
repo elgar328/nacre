@@ -3605,20 +3605,79 @@ fn chained_cylinder_operations_that_build_today_still_build() {
     assert!(r.is_err(), "a wall boss is still the end of the road");
 }
 
-/// ★★★★ **After a wall boss the refusal names the tracer, not the gate — and it is the same
-/// sentence a face of that operand answers.**
+/// ★★★★★ **The gate decides a boss-seated wall, and records the pair — and nothing else in the
+/// crate would notice if it stopped.**
 ///
-/// Every second cylinder operation on such a plate is refused, whatever it is and wherever it
-/// stands: the refusal is about the *operand*, not about the two bodies meeting. It used to wear
-/// `CylinderGateUndecided`, whose sentence is "the gate could not decide exactly" — false here,
-/// because the gate decides fine and the road behind it is what has no vocabulary. See
-/// [`an_operand_bounded_by_a_cylinder_declines_instead_of_panicking`] for the road's own answer.
+/// The clearance test's whole content is a `bool`, and on a chained operand its answer travels
+/// exactly one place: a `false` sends the seated pair to the `d = 0` record-and-pass arm, which
+/// puts it in `crossings`, which is what makes the tracer's ruling and chord arms fire at all. A
+/// wrong `true` would refuse nothing, panic nowhere and change no output — today's population
+/// declines a step later either way (`BranchNode`, the lock below) — so **the suite would stay
+/// green with the branch corner's answer thrown away entirely**. Measured, by throwing it away:
+/// 316 green. This is the lock that sees it.
 ///
-/// ★ **The name is deliberately not the point of this lock** — the cell that teaches the tracer
-/// this operand will move it. What must hold either way is that the refusal is honest and total:
-/// an error, and the live set exactly as it was.
+/// ★★ **What it sees is that the corner is *readable*, not what it says** — recorded rather than
+/// claimed. Forcing every branch corner to one strip side leaves even this lock green, because the
+/// verdict here is settled on the *other* separating axis: the wall's plate corners already sit
+/// inside the boss's axial span, so `along` fails whatever the strip half answers. The corner's
+/// side becomes decisive only for a face that clears along the axis and has to be judged across
+/// it, and no fixture builds one yet. Removing the read itself is what turns this red
+/// (`CurvedOperandBoundary`, measured).
 #[test]
-fn a_chained_cylinder_bounded_by_the_first_is_refused_by_name() {
+fn the_gate_records_a_wall_the_boss_is_seated_on() {
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([12.0, 4.0, 2.0]),
+    );
+    let up = Vector3::from_array([0.0, 0.0, 1.0]);
+    let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    m.rebuild_adjacency();
+    let first = boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")[0];
+    m.rebuild_adjacency();
+    let b = m.add_cylinder(Point3::from_array([6.0, 2.0, -1.0]), up, 0.5, 4.0);
+    m.rebuild_adjacency();
+    // ★ The gate *deciding* is half the claim — it used to stop at the first corner the boss made.
+    let setup = crate::planes::plane_index_setup(&m, first, b).expect("the gate decides");
+    // ★★ And recording is the other half. The boss sits **on** `y = 0`, so those faces are not
+    // clear of it; that is what the record-and-pass arm is for, and a missing entry here means the
+    // clearance test answered "clear" about a wall a cylinder is standing in.
+    //
+    // ★ The pair is checked by **what it means**, not by its indices: the arm records exactly the
+    // classes whose plane the cylinder's axis lies *on*, so that is the assertion — renumbering
+    // the classes cannot make it pass or fail for the wrong reason.
+    assert_eq!(setup.crossings.len(), 1, "one seated pair, not more");
+    for &(c, ci) in &setup.crossings {
+        let coeffs = setup.geom[c].world_rat.expect("a named wall class");
+        assert_eq!(
+            nacre_scalar::point_plane_clearance_rat(
+                &coeffs,
+                &setup.cyls[ci].def.origin(),
+                nacre_scalar::Rat::from_int(0)
+            ),
+            nacre_scalar::Orient::Zero,
+            "the recorded pair is a cylinder seated exactly on that class's plane"
+        );
+    }
+}
+
+/// ★★★★★ **The gate now decides, and the wall has moved to the ring road.**
+///
+/// Every second cylinder operation on such a plate is still refused, whatever it is and wherever
+/// it stands — the refusal is about the *operand*, not about the two bodies meeting. What changed
+/// is **which layer says so**. The gate's clearance test used to stop at the first corner a
+/// cylinder made (`vertex_meet` has no rational point for one); now it reads that corner exactly,
+/// finds the wall faces genuinely **not clear** of the boss seated on them, and hands the pair to
+/// the `d = 0` record-and-pass arm — the population the rulings machinery serves. The refusal that
+/// survives is the tracer's own: a ring corner it cannot name as three planes.
+///
+/// ★ **That name is this lock's map, not its point.** When the ring road learns a branch corner
+/// this assertion goes red and names the next wall — which is exactly what it is for. What must
+/// hold either way is that the refusal is honest and total: an error, and the live set exactly as
+/// it was. See [`an_operand_bounded_by_a_cylinder_is_named_in_class_space`] for the naming the
+/// road already has.
+#[test]
+fn a_chained_cylinder_bounded_by_the_first_stops_at_the_ring_road() {
     let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
     for (name, second) in [
         ("bore", ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut)),
@@ -3643,10 +3702,15 @@ fn a_chained_cylinder_bounded_by_the_first_is_refused_by_name() {
         m.rebuild_adjacency();
         let live = m.live_solids.clone();
         match boolean(&mut m, second.2, first, b) {
-            Err(BoolError::Rejected { reason, .. }) => assert_eq!(
-                reason,
-                RejectReason::CurvedOperandBoundary,
-                "{name}: the refusal's name"
+            Err(BoolError::Rejected { reason, .. }) => assert!(
+                matches!(
+                    reason,
+                    RejectReason::TraceDeclined {
+                        kind: crate::DeclineKind::BranchNode,
+                        ..
+                    }
+                ),
+                "{name}: the refusal's layer and cause: {reason:?}"
             ),
             other => panic!("{name}: {other:?}"),
         }
