@@ -813,12 +813,14 @@ pub enum RejectReason {
     /// * a **whole-disk bound on a cut circle** (`circle_loop`) — a producer inconsistency (the
     ///   trace subdivides a cut disk into cells), named honestly rather than as a dropped
     ///   crossing;
+    /// * a **hole meeting the seam at other than two contacts** — the merge that produces such a
+    ///   hole abstains on the same count, so this is a producer inconsistency too;
     /// * a **contact whose cut circle has no world description** — `band_loop` orders the two
     ///   contacts by their circles' exact axial parameters, and the population gate demanded a
     ///   world description of every plane class long before a band could be emitted, so this too
     ///   is spelled rather than assumed away.
     ///
-    /// "Not yet" is still the literal truth for all three.
+    /// "Not yet" is still the literal truth for all four.
     ArcBoundNotYet,
     /// **An *operand* face is bounded by a cylinder, and the tracer names rings by planes.**
     ///

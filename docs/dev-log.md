@@ -13757,9 +13757,10 @@ thing as *the* plane's outward normal」. 클래스가 가진 유일한 방향 �
 
 ### 관문·계측
 
-커밋 ⑪a·⑪b·⑪c·⑪d 각각: fmt/clippy 0 · workspace · nodef · census **비트 동일**
-(`4f94b59e…`, 두 프로파일, 네 커밋 내내) · reject census · 스윕 · perf(`ring 80` 1.55/1.02s — 변화
-없음). kit(fmt·clippy·test)과 앱(`wasm:all` · tsc · vitest 142 · wasm clippy) 초록.
+커밋 ⑪a·⑪b·⑪c 각각 전량: fmt/clippy 0 · workspace · nodef · census **비트 동일**
+(`4f94b59e…`, 두 프로파일, **세 번 다**) · reject census · 스윕 · perf(`ring 80` 1.55/1.02s — 변화
+없음). **⑪d는 주석뿐이므로**(추가 줄이 전부 `//`임을 기계로 확인) fmt·clippy·workspace만 돌렸다.
+kit(fmt·clippy·test)과 앱(`wasm:all` · tsc · vitest 142 · wasm clippy) 초록.
 ★ **⑪c는 이 칸의 유일한 live 커밋인데 census가 안 움직였다 — 그게 성공이다**: 「잘 떨어진 station」
 이라는 주석의 주장을 **처음으로 «잰» 것**이지 무의미한 리팩터가 아니다.
 
