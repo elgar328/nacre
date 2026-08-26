@@ -1740,6 +1740,13 @@ pub(crate) fn every_ray(
     if ring.len() < 3 {
         return Err(reject(RejectReason::DegenerateRing));
     }
+    // ★★ **The unnameable check is the walk's now, so it is asked per `qa` rather than once up
+    // front.** That is a real shift and it is spelled rather than glossed: a ring carrying a node
+    // the walk cannot read used to be refused here even when no ray was cast, and is now refused
+    // by the first ray that actually asks. The two differ only when *every* `qa` answers `AllOn`
+    // — a ring lying in both cut planes — and that pairs with a branch node nothing produces here
+    // yet, so the difference is unreachable twice over. Recorded because it will stop being.
+    //
     // ★ A **ring**, not a probe list: `ring_against_plane` reads it as a cyclic sign sequence, so
     // a dropped member would be a different polygon answered about confidently — which is why the
     // walk is handed the ring **whole** and answers `Unnameable` for the ring rather than letting
