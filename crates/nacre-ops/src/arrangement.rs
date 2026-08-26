@@ -642,22 +642,20 @@ impl Aliases {
     }
 }
 
-/// Why a ring of names could not become a ring of plane data.
+/// Why a ring of names could not be carried.
 ///
-/// ★ **It is not one label.** The two causes are different propositions — a triple that came out
-/// degenerate, versus a vertex that has no triple at all — and the four callers of [`plane_ring`]
-/// already map the old single failure onto *three* different [`DeclineKind`]s, so the label is the
-/// caller's to choose and this only says which cause it was.
+/// ★★★★★ **It had three variants and now has one, and that is the shape of what changed.** The
+/// other two — a corner with no three-plane name, a carrier riding a cylinder — were never
+/// *decisions*: the ring came out as plane ids and a curved ring could not be **described** in it,
+/// so the type ran out and the refusal was dressed up as a cause. Two rungs widened the vessel and
+/// both refusals went with the projections they were standing in for.
+///
+/// What is left is a name that is degenerate **as a name**, which is a fact about the triple and
+/// has nothing to do with cylinders — so it survives, alone, and says only itself.
 #[derive(Debug)]
 enum RingFail {
     /// Two of a vertex's three planes coincide, so the name denotes no point.
     Collapsed,
-    /// A branch point: named exactly, but not by three planes.
-    Branch,
-    /// An edge of the ring rides a **cylinder** rather than a plane — an arc or a ruling. Its own
-    /// proposition, not a fallback: the ring's *names* may be perfectly good and this still be
-    /// true, and then what the plane road cannot use is the carrier, not the corner.
-    CurvedWall,
 }
 
 /// The decline kind for a [`RingFail`] at a caller that has no finer fact to add.
@@ -667,10 +665,6 @@ enum RingFail {
 fn decline_of(f: RingFail) -> DeclineKind {
     match f {
         RingFail::Collapsed => DeclineKind::CollapsedTriple,
-        RingFail::Branch => DeclineKind::BranchNode,
-        // The ring's carrier, not its corner — see [`RingFail::CurvedWall`]. It keeps its own name
-        // at every caller for the same reason a branch node does: the cause is the finer fact.
-        RingFail::CurvedWall => DeclineKind::CurvedRingWall,
     }
 }
 
@@ -690,21 +684,16 @@ fn plane_ring(
         .triples
         .iter()
         .map(|&n| {
-            let c = three_plane_name(n).ok_or(RingFail::Branch)?;
-            // Sorted by construction, so equal neighbours catch every duplicate.
-            if c[0] == c[1] || c[1] == c[2] {
-                return Err(RingFail::Collapsed);
+            // A collapsed name is still a collapsed name — but only a three-plane one can be.
+            if let Some(c) = three_plane_name(n) {
+                // Sorted by construction, so equal neighbours catch every duplicate.
+                if c[0] == c[1] || c[1] == c[2] {
+                    return Err(RingFail::Collapsed);
+                }
             }
             Ok(n)
         })
         .collect::<Result<_, _>>()?;
-    if nr
-        .walls
-        .iter()
-        .any(|w| !matches!(w, crate::boolean::Wall::Plane(_)))
-    {
-        return Err(RingFail::CurvedWall);
-    }
     Ok((ts, nr.walls.clone()))
 }
 
@@ -1248,14 +1237,10 @@ fn trace_one(
             Some(combinatorics::LoopRing::Poly(nr)) => match plane_ring(nr) {
                 Ok((ts, _)) => rings.push(ts),
                 // ★ `OuterRing` here, not `CollapsedTriple`: this caller reports *which loop*
-                // failed, which is the finer fact when a face has several. A branch node is a
-                // different cause and keeps its own name either way — and so is a curved carrier.
+                // failed, which is the finer fact when a face has several. The two causes that
+                // used to keep their own names here were the vessel's, and went with it.
                 Err(RingFail::Collapsed) => {
                     out.declined.push((fp, DeclineKind::OuterRing));
-                    continue;
-                }
-                Err(f @ (RingFail::Branch | RingFail::CurvedWall)) => {
-                    out.declined.push((fp, decline_of(f)));
                     continue;
                 }
             },
@@ -5570,19 +5555,18 @@ mod tests {
 
     /// ★★★ **Where a named curved ring stops, and under which name.**
     ///
-    /// The operand road now *describes* a ring that runs along a cylinder — branch corners and an
-    /// arc or ruling carrier — instead of declining to name it. What cannot use such a ring is the
-    /// plane road behind it, and this is the one place that says so. Without a lock here the claim
-    /// "the wall moved one stage deeper" would be untested: the population gate refuses these
-    /// operands long before a boolean reaches the tracer, and the naming lock next door stops at
-    /// `face_vertex_triples`.
+    /// ★★★★★ **The vessel carries a curved ring through, and only a *collapsed* name is refused.**
     ///
-    /// ★ The two causes are checked apart. A ring whose *corner* has no three-plane name is
-    /// `Branch`; a ring that names cleanly and still rides a cylinder is `CurvedWall` — a shape
-    /// whose ends would have to be seam vertices, which is why it gets its own sentence rather
-    /// than sharing one.
+    /// This used to assert the opposite: a branch corner was `RingFail::Branch` and a curved
+    /// carrier `RingFail::CurvedWall`, because the ring came out as plane ids and could not hold
+    /// either. Both refusals were the type running out rather than a decision, and they are gone
+    /// with the projections. What still stops here is a name that is degenerate *as a name* — two
+    /// of its three planes equal — which is a fact about the triple and not about cylinders.
+    ///
+    /// ★ Rewritten rather than patched: the old proposition ("the plane road cannot use such a
+    /// ring") became false, and a lock whose sentence is false is worse than no lock.
     #[test]
-    fn a_named_curved_ring_stops_at_the_plane_road_by_name() {
+    fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
         let three = |a, b, c| combinatorics::NodeId::three_planes([a, b, c]);
         let branch = combinatorics::NodeId::branch(0, 1, 0, nacre_topo::QuadRoot::Lo);
         let plane = |c| crate::boolean::Wall::Plane(c);
@@ -5591,21 +5575,29 @@ mod tests {
             side: 1,
             up: true,
         };
-        // Names good, one carrier curved.
+        // A curved carrier rides through, carried as itself.
         let curved_carrier = combinatorics::NamedRing {
             triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],
             walls: vec![plane(1), ruling, plane(3)],
         };
-        assert!(matches!(
-            plane_ring(&curved_carrier),
-            Err(RingFail::CurvedWall)
-        ));
-        // A branch corner, whatever the carriers — the corner is the finer fact and goes first.
+        let (_, walls) = plane_ring(&curved_carrier).expect("a curved carrier is describable");
+        assert_eq!(
+            walls[1], ruling,
+            "the carrier is the producer's, unflattened"
+        );
+        // So does a branch corner, as its own name.
         let curved_corner = combinatorics::NamedRing {
             triples: vec![three(0, 1, 2), branch, three(0, 1, 3)],
             walls: vec![plane(1), ruling, plane(3)],
         };
-        assert!(matches!(plane_ring(&curved_corner), Err(RingFail::Branch)));
+        let (ts, _) = plane_ring(&curved_corner).expect("a branch corner is describable");
+        assert_eq!(ts[1], branch, "the corner is the producer's, unflattened");
+        // ★ What is still refused, and for a reason that has nothing to do with cylinders.
+        let collapsed = combinatorics::NamedRing {
+            triples: vec![three(0, 1, 2), three(0, 0, 3), three(0, 1, 3)],
+            walls: vec![plane(1), plane(2), plane(3)],
+        };
+        assert!(matches!(plane_ring(&collapsed), Err(RingFail::Collapsed)));
         // And the plane-only ring still comes back with both halves.
         let plain = combinatorics::NamedRing {
             triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],

@@ -1644,11 +1644,31 @@ pub(crate) fn side_of(
         NodeId::Branch { cyl, .. } => {
             let (line, sv) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
             let co = class_coeffs_rat(jd, q)?;
-            Some(match nacre_scalar::quad::plane_side(&co, &line, &sv) {
-                nacre_scalar::Orient::Positive => 1,
-                nacre_scalar::Orient::Negative => -1,
-                nacre_scalar::Orient::Zero => 0,
-            })
+            let raw = jd.planes[q].plane.coefficients();
+            // ★★★★★ **`world_rat` is the plane's *name*, not an oriented normal.** `orient3d`
+            // answers against the class's **outward** normal, and `world_rat` may be any nonzero
+            // multiple of the stored one — including a negative. Both describe one plane, so they
+            // are proportional; the sign of that constant is read off the first component
+            // `world_rat` makes nonzero, and `frame_sign` carries stored → outward.
+            // ★ Both must be nonzero, not just the rational one: they are proportional so their
+            // zero sets agree *exactly*, but `raw` is `f64` and a component it rounds to zero would
+            // make `raw[i] > 0.0` false and hand back a sign with nothing behind it. Requiring both
+            // turns that into a refusal.
+            let zero = nacre_scalar::Rat::from_int(0);
+            let i = (0..4).find(|&i| co[i] != zero && raw[i] != 0.0)?;
+            let k = if (co[i] > zero) == (raw[i] > 0.0) {
+                1
+            } else {
+                -1
+            };
+            let fix = k * jd.planes[q].frame_sign;
+            Some(
+                fix * match nacre_scalar::quad::plane_side(&co, &line, &sv) {
+                    nacre_scalar::Orient::Positive => 1,
+                    nacre_scalar::Orient::Negative => -1,
+                    nacre_scalar::Orient::Zero => 0,
+                },
+            )
         }
     }
 }
