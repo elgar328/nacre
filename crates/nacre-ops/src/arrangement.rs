@@ -4987,15 +4987,26 @@ pub(crate) fn concurrency_audit(
                 //
                 // ★ The re-canonicalization that used to stand on both sides of this filter is
                 // gone: a ring's nodes are `NodeId`s, and the only constructor sorts.
-                // ★★ **The projection here was an `expect`, and it is gone with it.** `side_of`
-                // takes a node now, so a corner a cylinder made is *excluded* — which is the
-                // honest answer for a four-plane concurrency hunt — instead of panicking.
+                // ★★ **The projection here was an `expect`, and it is gone with it.** A corner a
+                // cylinder made is *excluded* — the honest answer for a four-plane concurrency
+                // hunt — instead of panicking.
+                // ★★★★★ **And the exclusion is said, not left to an argument value.** It used to
+                // happen only because `side_of` was handed an empty cylinder table and so declined
+                // a branch node; give that call a real table one day "for consistency" and the
+                // `expect` below turns into a panic. A concurrency is a fact about plane triples,
+                // so scope is the reason and it belongs in the filter — after which `&[]` is
+                // provably never read, which is what the other two sites say by wrapping their own
+                // triple.
+                // ☑ Measured: it drops **0** nodes across the workspace suite — this audit's own
+                // corpus is plane-only, so the filter is a precondition made explicit, not a
+                // behaviour change.
                 // ★ The call is one line because the source-text meta-test
                 // `no_production_code_walks_a_ring_past_the_shared_walk` allow-lists this site by
                 // its argument text, and it reads line by line.
                 names.extend(
                     rings
                         .into_iter()
+                        .filter(|&n| three_plane_name(n).is_some())
                         .filter(|&n| combinatorics::side_of(&jd, &[], n, wc) == Some(0)),
                 );
             }
