@@ -717,10 +717,18 @@ fn plane_ring(
     Ok((ts, nr.walls.clone()))
 }
 
-/// One feature node on the line `L = W ∩ fp`: a point named by its third plane `r` (raw index).
+/// One feature node on the line `L = W ∩ fp` — **its own name, and what pins it there**.
+///
+/// ★★ It used to be a bare third plane (`r`), which is the shape a three-plane point has and no
+/// other. The name is now carried whole ([`NodeId`], so a corner a cylinder made can be one) and
+/// the pin says **which kind** it is ([`combinatorics::EndPin`]) — the same pair a segment's ends
+/// already travel as. Today every producer here writes `ThreePlane`/`Class`; the rung that lets a
+/// curved ring through is what writes the other arm.
 struct Node {
-    /// Third plane naming this point on `L` (the point is `{W, fp, r}`).
-    r: usize,
+    /// The point's own name — what the arrangement calls it, and what a segment's end records.
+    id: NodeId,
+    /// What pins it on `L`: the third plane class, or the cylinder whose crossing it is.
+    pin: combinatorics::EndPin,
     /// Whether crossing this node toggles inside/outside. Strict crossings and single-vertex runs
     /// set it in Phase A; a two-vertex run's *hi* node has it set after the sort.
     flip: bool,
@@ -924,7 +932,8 @@ fn trace_transversal_face(
                         break 'rings;
                     };
                     nodes.push(Node {
-                        r: w,
+                        id: NodeId::three_planes([wc, fc, w]),
+                        pin: combinatorics::EndPin::Class(w),
                         flip: true,
                         run: None,
                         flanks_differ: false,
@@ -948,7 +957,8 @@ fn trace_transversal_face(
                     if m == 1 {
                         match name(0, out) {
                             Ok(r) => nodes.push(Node {
-                                r,
+                                id: NodeId::three_planes([wc, fc, r]),
+                                pin: combinatorics::EndPin::Class(r),
                                 flip: flanks_differ,
                                 run: None,
                                 flanks_differ,
@@ -978,7 +988,8 @@ fn trace_transversal_face(
                                 let graze_above = Some(run_body_above(jd, faces, wc, fc, fp, &rs));
                                 for r in rs {
                                     nodes.push(Node {
-                                        r,
+                                        id: NodeId::three_planes([wc, fc, r]),
+                                        pin: combinatorics::EndPin::Class(r),
                                         flip: false,
                                         run: Some(id),
                                         flanks_differ,
@@ -1003,15 +1014,28 @@ fn trace_transversal_face(
     }
 
     // Phase B — order the nodes along L and fix run structure.
-    nodes.sort_by(
-        |a, b| match combinatorics::order_along(jd, wc, fc, a.r, b.r) {
+    // ★ A node with no third plane cannot be ordered by the integer road, and a comparator
+    // cannot decline — so it raises a flag the caller reads. Unreachable today (every pin here is
+    // `Class`); the rung that writes the other arm brings the second road with it.
+    let mut unordered = false;
+    let order = |a: &Node, b: &Node, unordered: &mut bool| -> std::cmp::Ordering {
+        let (Some(i), Some(j)) = (a.pin.class(), b.pin.class()) else {
+            *unordered = true;
+            return std::cmp::Ordering::Equal;
+        };
+        match combinatorics::order_along(jd, wc, fc, i, j) {
             -1 => std::cmp::Ordering::Less,
             1 => std::cmp::Ordering::Greater,
             _ => std::cmp::Ordering::Equal,
-        },
-    );
+        }
+    };
+    nodes.sort_by(|a, b| order(a, b, &mut unordered));
+    if unordered {
+        out.declined.push((fp, DeclineKind::BranchNode));
+        return;
+    }
     for w in nodes.windows(2) {
-        if combinatorics::order_along(jd, wc, fc, w[0].r, w[1].r) == 0 {
+        if order(&w[0], &w[1], &mut unordered) == std::cmp::Ordering::Equal {
             out.declined.push((fp, DeclineKind::CoincidentFeatures));
             return;
         }
@@ -1036,18 +1060,15 @@ fn trace_transversal_face(
     let mut parity = 0i8;
     // `seg_start` also carries the graze side of the segment being built: `Some(ba)` when the
     // segment is a pure graze gap (opened by a forced run while outside material), else `None`.
-    let mut seg_start: Option<(usize, Option<bool>)> = None;
-    let emit = |a: usize, b: usize, graze: Option<bool>, out: &mut Trace| {
+    let mut seg_start: Option<((NodeId, combinatorics::EndPin), Option<bool>)> = None;
+    let emit = |a: (NodeId, combinatorics::EndPin),
+                b: (NodeId, combinatorics::EndPin),
+                graze: Option<bool>,
+                out: &mut Trace| {
         out.segs.push(Seg {
             wall: plane_ix[fp].plane(),
-            end: [
-                NodeId::three_planes([wc, fc, a]),
-                NodeId::three_planes([wc, fc, b]),
-            ],
-            end_h: [
-                combinatorics::EndPin::Class(a),
-                combinatorics::EndPin::Class(b),
-            ],
+            end: [a.0, b.0],
+            end_h: [a.1, b.1],
             solid: which,
             kind: match graze {
                 Some(body_above) => SegKind::Graze { body_above },
@@ -1059,7 +1080,7 @@ fn trace_transversal_face(
     };
     for k in 0..nodes.len() {
         if nodes[k].single_touch && parity == 0 {
-            out.touches.push(NodeId::three_planes([wc, fc, nodes[k].r]));
+            out.touches.push(nodes[k].id);
         }
         if nodes[k].flip {
             parity ^= 1;
@@ -1077,15 +1098,15 @@ fn trace_transversal_face(
                 .expect("every run node carries its occupied side")
         });
         match (seg_start, covered) {
-            (None, true) => seg_start = Some((nodes[k].r, gap_graze)),
+            (None, true) => seg_start = Some(((nodes[k].id, nodes[k].pin), gap_graze)),
             // The kind changes here, so close and reopen: a segment must be homogeneous, because
             // `split_at_crossings` subdivides it later and every piece inherits its kind.
             (Some((a, graze)), true) if graze != gap_graze => {
-                emit(a, nodes[k].r, graze, out);
-                seg_start = Some((nodes[k].r, gap_graze));
+                emit(a, (nodes[k].id, nodes[k].pin), graze, out);
+                seg_start = Some(((nodes[k].id, nodes[k].pin), gap_graze));
             }
             (Some((a, graze)), false) => {
-                emit(a, nodes[k].r, graze, out);
+                emit(a, (nodes[k].id, nodes[k].pin), graze, out);
                 seg_start = None;
             }
             _ => {}
