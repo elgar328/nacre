@@ -2003,6 +2003,20 @@ pub(crate) fn reconstruct(
         // read off `frame_sign` and `flip` here rather than carried in from anywhere.
         // The **unflipped** face normal against the axis: `flip` is applied once, to every kind of
         // bound, right below — reading it here too would toggle the winding twice.
+        //
+        // ★★★★★ **This `f64` stays, and `world_rat` cannot replace it.** Every other axial
+        // decision on this road was moved onto exact descriptions, because they all ask *where* a
+        // plane crosses the axis — a question about the plane, whose answer does not depend on
+        // which way its coefficients are written. This one asks something else: which way this
+        // class's **frame** points relative to the axis. A class has no outward normal at all
+        // ([`crate::planes::WorkingPlane`]'s own words — it holds faces from both operands and two
+        // of them can oppose); what it has is the frame, and `plane.normal()` with `frame_sign`
+        // *is* that frame. `world_rat` is the plane's **name**, canonicalised, and carries no
+        // frame direction: measured over the suite, `world_rat · m` came out positive on all 436
+        // calls while this sign varied, so substituting it would have inverted the winding on 203
+        // of them. There is no precision to gain either — a plane bounding a circle is
+        // perpendicular to the axis, so `|n · m|` is maximal, as far from a close call as the
+        // quantity gets.
         let axis_sign = |k: usize| -> f64 {
             let c = lf.surf.plane();
             let s = if planes[c].frame_sign > 0 { 1.0 } else { -1.0 };
