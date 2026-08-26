@@ -1278,19 +1278,19 @@ impl Corner {
 /// `combinatorics::branch_name_from_def` carries is the price of crossing from handle space into a
 /// class table's order; this side has no class table for the operand at all.)
 ///
-/// `None` where a description is missing rather than where the shape is hard: a plane whose world
-/// name is not narrow, a cylinder with no world statement, a root the meet does not offer.
-fn branch_corner(model: &Model, v: Handle<nacre_topo::Vertex>) -> Option<Corner> {
+/// ★★ **`None` is only ever a missing *description***, never a shape this road cannot spell — the
+/// caller has already established that the vertex is a `Branch`, so the two refusals stay apart:
+/// a plane whose world name is not narrow, a cylinder with no world statement, or a root the meet
+/// does not offer are the gate's own arithmetic running out (`CylinderGateUndecided`), while a
+/// seam vertex never reaches here at all.
+fn branch_corner(
+    model: &Model,
+    planes: [Handle<Surface>; 2],
+    cylinder: Handle<Surface>,
+    root: nacre_topo::QuadRoot,
+) -> Option<Corner> {
     use nacre_scalar::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
-    let nacre_topo::VertexDef::Branch {
-        planes,
-        cylinder,
-        root,
-    } = model.vertices.get(v).def
-    else {
-        return None;
-    };
     let p1 = *model.world_plane_name(planes[0])?.narrow()?;
     let p2 = *model.world_plane_name(planes[1])?.narrow()?;
     let def = world_cylinder_def(model, cylinder)?;
@@ -1401,10 +1401,24 @@ fn face_clears_footprint(
             // ★★★★★ **A corner a cylinder made has no rational meet — and does not need one.**
             // `vertex_meet` declines a `Branch` because its coordinates are quadratic-irrational,
             // which is a statement about *rationals*, not about knowability: the point is exactly
-            // `line.base() + s·line.dir()`, and the two questions below read that spelling
+            // `line.base() + s·line.dir()`, and the three questions below read that spelling
             // directly. An `OnSeam` vertex is a different matter — it pins a curve, not a point —
             // so it stays unreadable.
-            None => branch_corner(model, vh).ok_or_else(unreadable)?,
+            //
+            // ★ **The shape test stands here and the solve stands in the helper**, so the two
+            // refusals do not merge back together: this arm decides *unreadable*, and everything
+            // past it is the gate's own description running out.
+            None => {
+                let nacre_topo::VertexDef::Branch {
+                    planes,
+                    cylinder,
+                    root,
+                } = model.vertices.get(vh).def
+                else {
+                    return Err(unreadable());
+                };
+                branch_corner(model, planes, cylinder, root).ok_or_else(arithmetic)?
+            }
         };
         // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
         // on three exact witnesses, one of which compares *rounded* coefficients — so a face can
