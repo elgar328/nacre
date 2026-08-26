@@ -790,8 +790,9 @@ pub enum RejectReason {
     ///
     /// Raised where the cylinder work needs a number rather than a sign: a plane's axis parameter
     /// against a cylinder (`planes::axis_param_of_plane`, read by the band pass and the
-    /// transversal-circle test) and the rational chart the circle nesting projects a ring into
-    /// (`arrangement::circle_center_in_ring`).
+    /// transversal-circle test), the rational chart the circle nesting projects a ring into
+    /// (`arrangement::circle_center_in_ring`), and the order of two points on a meet line when one
+    /// of them has no exact description (`combinatorics::order_pinned`, through `edge_dir`).
     ///
     /// ★ **Distinct from the gate's own name on purpose.** The population gate asks *signs*, and
     /// those were made total (they clear denominators and answer in `BigInt`), so

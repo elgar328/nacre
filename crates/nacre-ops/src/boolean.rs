@@ -3094,7 +3094,7 @@ fn merge_component(
         // four-plane concurrency used to break the merge: a canonical name need not mention the
         // plane its edge rides, and two names can share nothing but `wc`.
         let ring = cyc.edges(jd, wc)?;
-        match combinatorics::loop_winding(jd, wc, &ring)? {
+        match combinatorics::loop_winding(jd, cyls, wc, &ring)? {
             1 => outers.push(cyc),
             -1 => holes.push(cyc),
             _ => return Err(reject(RejectReason::CoplanarMerge)),

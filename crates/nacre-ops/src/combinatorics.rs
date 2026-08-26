@@ -653,24 +653,31 @@ impl EdgeDir {
 /// coincidence the same way (`CoincidentNodes`). Where two consumers want *different* answers —
 /// the turn's zero, which is a rejection to one and a bucket to the other — the policy stays with
 /// them and only the sign is shared (see [`turn`]).
+///
+/// ★★ **Both ends arrive as a name *and* a pin, because a cylinder-pinned one needs both.** The
+/// pin says which kind of thing holds the point on `L`; the name says which point. A plane pin
+/// carries its own name in its payload, so the two used to be one argument — but
+/// [`EndPin::Cylinder`] has no payload by design ("the name is read from beside it"), and beside it
+/// is here. [`order_pinned`] then picks the road.
 pub(crate) fn edge_dir(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     p: usize,
     wall: usize,
-    from_h: EndPin,
-    to_h: EndPin,
+    from: (NodeId, EndPin),
+    to: (NodeId, EndPin),
 ) -> Result<EdgeDir, BoolError> {
-    // ★ Plane-pinned ends order through the integer predicates. A cylinder-pinned one is the arc
-    // split's endpoint and orders through the `a + b√c` tower instead — the arm is owed, and until
-    // it lands saying so by name is the honest answer (`RingNaming`: "a node has no third plane to
-    // be named by").
-    let (Some(i), Some(j)) = (from_h.class(), to_h.class()) else {
-        return Err(reject(RejectReason::RingNaming));
-    };
-    let sense = match order_along(jd, p, wall, i, j) {
-        -1 => 1,
-        1 => -1,
-        _ => return Err(reject(RejectReason::CoincidentNodes)), // two nodes coincide
+    // ★★ **`None` is `WitnessNotRational`, and the change of name is the change of proposition.**
+    // This arm used to be `RingNaming` because the one thing it caught was a cylinder-pinned end —
+    // a node with no third plane, which is genuinely a naming fact. That case is answered now, and
+    // what is left is [`order_pinned`]'s own `None`: a class with no narrow rational description,
+    // a coordinate past `Rat`. The names chain perfectly; the *value* could not be formed. That is
+    // the sentence `arc_at` next door already uses for the same cause.
+    let sense = match order_pinned(jd, cyls, p, wall, from, to) {
+        Some(-1) => 1,
+        Some(1) => -1,
+        Some(_) => return Err(reject(RejectReason::CoincidentNodes)), // two nodes coincide
+        None => return Err(reject(RejectReason::WitnessNotRational)),
     };
     Ok(EdgeDir::new(wall, sense))
 }
@@ -697,6 +704,7 @@ pub(crate) fn edge_dir(
 /// `end_ds`: "1.5M `dir_sign` calls where 113k are distinct").
 pub(crate) fn dir_at(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     p: usize,
     e: &RingEdge,
     node: NodeId,
@@ -707,9 +715,11 @@ pub(crate) fn dir_at(
          or the caller paired two edges that do not meet"
     );
     match &e.carrier {
-        // ★ The carried sense first, and only then the endpoints. Where a split supplied one, the
-        // endpoints *cannot* answer (a cut end is a branch point with no third plane), so this is
-        // not a shortcut around a road that works — it is the only road there is.
+        // ★ The carried sense first, and only then the endpoints. This used to say the endpoints
+        // *cannot* answer a cut end — that was true while a branch point had no order, and
+        // [`order_pinned`] has since given it one. What is left is the better reason: the sense is
+        // the **splitter's own statement** about a piece it made, taken once for the whole segment
+        // and handed to every sub-segment, rather than re-derived per piece from two names.
         // ★ The coincident-endpoint check `edge_dir` makes is not lost with it: the split refuses
         // two crossings at one parameter (`CoincidentNodes`) before any sub-segment is built, which
         // is the only way a carried sense can exist at all.
@@ -717,7 +727,9 @@ pub(crate) fn dir_at(
             wall,
             sense: Some(s),
         } => Ok(EdgeDir::new(*wall, *s)),
-        Carrier::Plane { wall, sense: None } => edge_dir(jd, p, *wall, e.from_h, e.to_h),
+        Carrier::Plane { wall, sense: None } => {
+            edge_dir(jd, cyls, p, *wall, (e.node, e.from_h), (e.to, e.to_h))
+        }
         Carrier::Arc(a) => arc_at(jd, p, a, node),
         // A ruling's direction is `±m` at both ends — the carrier states the travel, no endpoint
         // order is asked (its ends are branch points, which have no third plane to order by).
@@ -851,6 +863,7 @@ pub(crate) fn stored_coeffs_rat(
 #[cfg_attr(not(test), allow(dead_code))]
 pub(crate) fn turn_at(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     p: usize,
     ring: &[RingEdge],
     i: usize,
@@ -858,8 +871,8 @@ pub(crate) fn turn_at(
     let n = ring.len();
     // ★ Both read **at this node** — the one they share. For a straight edge that is today's
     // answer either way; naming it is what makes an arc's two ends tellable apart.
-    let arriving = dir_at(jd, p, &ring[(i + n - 1) % n], ring[i].node)?;
-    let leaving = dir_at(jd, p, &ring[i], ring[i].node)?;
+    let arriving = dir_at(jd, cyls, p, &ring[(i + n - 1) % n], ring[i].node)?;
+    let leaving = dir_at(jd, cyls, p, &ring[i], ring[i].node)?;
     turn_between(jd, p, &arriving, &leaving)
 }
 
@@ -3011,6 +3024,7 @@ pub(crate) fn branch_between(
 /// a `LOOP_ORIENT_MISMATCH`, decided by exact equality rather than by a tolerance.
 pub(crate) fn loop_winding(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     p: usize,
     ring: &[RingEdge],
 ) -> Result<i8, BoolError> {
@@ -3127,15 +3141,15 @@ pub(crate) fn loop_winding(
     // *arrives* came back `−1`). Where the stretch is curved the equality that licenses stepping at
     // all fails, and the walk refuses by name rather than reading a winding from the wrong place.
     let n = ring.len();
-    let leaving = dir_at(jd, p, &ring[lo], ring[lo].node)?;
+    let leaving = dir_at(jd, cyls, p, &ring[lo], ring[lo].node)?;
     let mut back = (lo + n - 1) % n;
     // ★ The direction the loop arrives on, carried out of the walk — the edge that ends it is the
     // one the turn is read against, and its direction is already in hand.
     let arriving = loop {
         let ahead = (back + 1) % n;
         let shared = ring[ahead].node;
-        let earlier = dir_at(jd, p, &ring[back], shared)?;
-        let later = dir_at(jd, p, &ring[ahead], shared)?;
+        let earlier = dir_at(jd, cyls, p, &ring[back], shared)?;
+        let later = dir_at(jd, cyls, p, &ring[ahead], shared)?;
         match continuation(jd, p, &earlier, &later) {
             // ★★★★ **`earlier`, and not `ring[back]`'s direction at its own start.** The two are
             // the same value for a straight edge — a line's tangent does not change along it — and

@@ -25,6 +25,11 @@ use nacre_topo::{Loop, Orientation, VertexDef};
 use proptest::prelude::*;
 use std::collections::HashMap;
 
+/// ★ **A fixture with no cylinders, said as a fact rather than left as a hole.** The table is how
+/// a `NodeId::Branch` reaches its definition, so an all-plane fixture has nothing to put in it —
+/// and a bare `&[]` at a call site reads like something forgotten.
+const NO_CYLS: &[crate::planes::WorkingCyl] = &[];
+
 /// Test shim: a boolean whose result is exactly one solid. Most tests operate on a single
 /// body; this asserts that and returns the lone handle, so call sites read as before while
 /// `boolean` itself returns the full `Vec` (cell 0.4 multi-solid).
@@ -1261,6 +1266,7 @@ fn a_hole_winds_clockwise_and_an_island_counter_clockwise() {
     assert_eq!(
         combinatorics::loop_winding(
             &crate::planes::test_judge(&planes),
+            NO_CYLS,
             p,
             &combinatorics::ring_from_names(p, &outer).unwrap()
         )
@@ -1270,6 +1276,7 @@ fn a_hole_winds_clockwise_and_an_island_counter_clockwise() {
     assert_eq!(
         combinatorics::loop_winding(
             &crate::planes::test_judge(&planes),
+            NO_CYLS,
             p,
             &combinatorics::ring_from_names(p, &hole).unwrap()
         )
@@ -1284,6 +1291,7 @@ fn a_hole_winds_clockwise_and_an_island_counter_clockwise() {
         assert_eq!(
             combinatorics::loop_winding(
                 &crate::planes::test_judge(&planes),
+                NO_CYLS,
                 p,
                 &combinatorics::ring_from_names(p, &reversed).unwrap()
             )
@@ -1308,6 +1316,7 @@ fn a_reflex_node_turns_against_its_ring() {
     assert_eq!(
         combinatorics::turn_at(
             &crate::planes::test_judge(&planes),
+            NO_CYLS,
             p,
             &combinatorics::ring_from_names(p, &outer).unwrap(),
             reflex
@@ -1319,6 +1328,7 @@ fn a_reflex_node_turns_against_its_ring() {
         .map(|i| {
             combinatorics::turn_at(
                 &crate::planes::test_judge(&planes),
+                NO_CYLS,
                 p,
                 &combinatorics::ring_from_names(p, &outer).unwrap(),
                 i,
@@ -1342,6 +1352,7 @@ fn a_reflex_node_turns_against_its_ring() {
     assert_eq!(
         combinatorics::turn_at(
             &crate::planes::test_judge(&planes),
+            NO_CYLS,
             p,
             &combinatorics::ring_from_names(p, &outer).unwrap(),
             lo
@@ -1359,6 +1370,7 @@ fn a_reflex_node_turns_against_its_ring() {
     assert_eq!(
         combinatorics::turn_at(
             &crate::planes::test_judge(&planes),
+            NO_CYLS,
             p,
             &combinatorics::ring_from_names(p, &rotated).unwrap(),
             0
@@ -1369,6 +1381,7 @@ fn a_reflex_node_turns_against_its_ring() {
     assert_eq!(
         combinatorics::loop_winding(
             &crate::planes::test_judge(&planes),
+            NO_CYLS,
             p,
             &combinatorics::ring_from_names(p, &rotated).unwrap()
         )
@@ -3934,6 +3947,157 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
     assert_eq!(curved_walls, 4, "edges riding the boss");
     assert_eq!(branch_names, 8, "corners named as branch points");
     (ups, sides)
+}
+
+/// ★★★★★ **A cylinder-pinned end is ordered, not refused — and the sense is the geometry's.**
+///
+/// `edge_dir` is the one place a direction is made, and its cylinder arm used to say `RingNaming`
+/// by name: a branch point has no third plane, and the integer predicate wants one. Measured
+/// before this landed — every one of the 40 pins below came back refused. Now they order through
+/// the `a + b√c` tower, and this fixes what the answer must be.
+///
+/// ★★★ **The oracle is a second road, and only the half that matters is second.** The direction
+/// `n_p × n_q` is read from the same raw coefficients the code reads — deliberately, the way the
+/// ruling lock next door shares `world_rat`: a *label*'s reference frame has to be one spelling or
+/// the two roads are not comparing the same thing. What is independent is the part under test —
+/// the **order of the two points on that line**: the code decides it exactly (a rational meet
+/// against a branch root, or two roots against each other), the oracle realizes both points in
+/// `f64` and subtracts. Measured `|t|` from 1.5 to 456, so nothing here is decided in the noise.
+///
+/// ★★ **The population is one-sided and that is a fact, not a blind instrument.** All 40 order
+/// `-1`: a face's outer ring travels counter-clockwise about that face's own outward normal, which
+/// is the direction `order_along` sorts by, so agreement is structural — three boss positions, a
+/// reversed axis and three `Cut` notches do not move it. What moves is **swapping the two ends**,
+/// and the oracle swaps with it, so both signs are measured against something that could disagree.
+#[test]
+fn a_cylinder_pinned_end_orders_through_the_tower() {
+    let mut pins = 0usize;
+    for (at, dir, kind) in [
+        ([2.0, 0.0, -1.0], [0.0, 0.0, 1.0], BoolKind::Fuse),
+        ([12.0, 0.0, -1.0], [0.0, 0.0, 1.0], BoolKind::Fuse),
+        ([2.0, 0.0, 3.0], [0.0, 0.0, -1.0], BoolKind::Fuse),
+        ([2.0, 0.0, -1.0], [0.0, 0.0, 1.0], BoolKind::Cut),
+        ([12.0, 0.0, -1.0], [0.0, 0.0, 1.0], BoolKind::Cut),
+        ([6.0, 4.0, -1.0], [0.0, 0.0, 1.0], BoolKind::Cut),
+    ] {
+        pins += pinned_ends_ordered(at, dir, kind);
+    }
+    // ★ The count is the lock on the *population*: let the fixtures stop producing branch-pinned
+    // ends and every assertion below would pass vacuously.
+    assert_eq!(pins, 40, "cylinder-pinned ring ends exercised");
+}
+
+fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([12.0, 4.0, 2.0]),
+    );
+    let boss = m.add_cylinder(Point3::from_array(at), Vector3::from_array(dir), 0.5, 4.0);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, kind, plate, boss).expect("the boss builds");
+    m.rebuild_adjacency();
+    let r = out[0];
+    let faces_tab = collect_planes(&m, r).expect("the result's face table");
+    let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+    for (i, pi) in faces_tab.iter().enumerate() {
+        if let Some(fh) = pi.face() {
+            surf_ix.insert(fh, i);
+        }
+    }
+    let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
+    let (planes, plane_ix, cyl_surfs) = dense_planes(&faces_tab, &canon);
+    let inc = combinatorics::edge_faces(&m, r, &surf_ix).expect("edge incidence");
+    let cyls: Vec<crate::planes::WorkingCyl> = cyl_surfs
+        .iter()
+        .map(|&surf| {
+            let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
+            let nacre_geom::Surface::Cylinder(cache) = m.surface(surf) else {
+                unreachable!()
+            };
+            crate::planes::WorkingCyl {
+                surf,
+                def,
+                cache: *cache,
+            }
+        })
+        .collect();
+    let jd = crate::planes::test_judge(&planes);
+    let mut pins = 0usize;
+    for &fh in &m.shells.get(m.solids.get(r).outer).faces {
+        let fp = surf_ix[&fh];
+        let crate::planes::ClassIx::Plane(p) = plane_ix[fp] else {
+            continue;
+        };
+        let Ok(ring) = combinatorics::face_vertex_triples(&m, fh, fp, &inc, &jd, &plane_ix, &cyls)
+        else {
+            continue;
+        };
+        let Some(nr) = ring.poly() else { continue };
+        let n = nr.triples.len();
+        for i in 0..n {
+            let crate::boolean::Wall::Plane(q) = nr.walls[i] else {
+                continue;
+            };
+            let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
+            let pin = |x: combinatorics::NodeId| match combinatorics::three_plane_name(x) {
+                Some(t) => t
+                    .iter()
+                    .copied()
+                    .find(|&c| c != p && c != q)
+                    .map(combinatorics::EndPin::Class),
+                None => Some(combinatorics::EndPin::Cylinder),
+            };
+            let (Some(pa), Some(pb)) = (pin(a), pin(b)) else {
+                continue;
+            };
+            if matches!(pa, combinatorics::EndPin::Class(_))
+                && matches!(pb, combinatorics::EndPin::Class(_))
+            {
+                continue;
+            }
+            pins += 1;
+            // The f64 road: realize both points and dot the difference with `n_p × n_q` taken
+            // from the raw coefficients — the same direction `plane_pair_dir_sign` reads.
+            let xyz = |x: combinatorics::NodeId| -> [f64; 3] {
+                match combinatorics::branch_name(x) {
+                    Some((_, cyl, _)) => {
+                        combinatorics::branch_point(&jd, cyl, &cyls[cyl].def, x).expect("realizes")
+                    }
+                    None => {
+                        let c = combinatorics::node_coords_rat(&jd, x).expect("coords");
+                        [c[0].to_f64(), c[1].to_f64(), c[2].to_f64()]
+                    }
+                }
+            };
+            let nv = |c: usize| {
+                let k = jd.planes[c].plane.coefficients();
+                Vector3::from_array([k[0], k[1], k[2]])
+            };
+            let d = nv(p).cross(nv(q));
+            let (xa, xb) = (xyz(a), xyz(b));
+            let t: f64 = (0..3).map(|k| (xa[k] - xb[k]) * d.as_array()[k]).sum();
+            assert!(t.abs() > 1e-6, "the oracle decides in the noise: {t}");
+            let want = if t > 0.0 { 1i8 } else { -1 };
+            for (x, y, w) in [((a, pa), (b, pb), want), ((b, pb), (a, pa), -want)] {
+                assert_eq!(
+                    combinatorics::order_pinned(&jd, &cyls, p, q, x, y),
+                    Some(w),
+                    "p={p} q={q} {x:?} vs {y:?}"
+                );
+                // ★ `edge_dir` inverts the order to get the travel sense, and it is the carrier
+                // it pairs with — not a bare `i8` — that the walk consumes.
+                let dir = combinatorics::edge_dir(&jd, &cyls, p, q, x, y)
+                    .unwrap_or_else(|e| panic!("p={p} q={q}: {e:?}"));
+                assert!(
+                    matches!(dir, combinatorics::EdgeDir::Line { carrier, sense }
+                             if carrier == q && sense == -w),
+                    "p={p} q={q}: {dir:?}"
+                );
+            }
+        }
+    }
+    pins
 }
 
 /// ★★★ **A circle can be an interior boundary, and then the merge erases it.**
