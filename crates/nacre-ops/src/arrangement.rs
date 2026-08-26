@@ -1246,10 +1246,12 @@ fn trace_one(
         // deciding that before the emitting closure exists keeps the two borrows apart.
         // A **circular** boundary — a disk face's outer, or a circular drill hole — is a
         // closed trace element ([`CircleTrace`]) rather than a segment ring.
-        let mut rings = Vec::new();
+        // ★ The **walls travel with the triples**. `plane_ring` has handed both back since the
+        // vessel widened, and this caller dropped one of them on the floor.
+        let mut rings: Vec<(Vec<NodeId>, Vec<crate::boolean::Wall>)> = Vec::new();
         match &fl.outer {
             Some(combinatorics::LoopRing::Poly(nr)) => match plane_ring(nr) {
-                Ok((ts, _)) => rings.push(ts),
+                Ok(r) => rings.push(r),
                 // ★ `OuterRing` here, not `CollapsedTriple`: this caller reports *which loop*
                 // failed, which is the finer fact when a face has several. The two causes that
                 // used to keep their own names here were the vessel's, and went with it.
@@ -1284,7 +1286,7 @@ fn trace_one(
                     kind,
                 }),
                 combinatorics::LoopRing::Poly(nr) => match plane_ring(nr) {
-                    Ok((ts, _)) => rings.push(ts),
+                    Ok(r) => rings.push(r),
                     Err(f) => failed = Some(decline_of(f)),
                 },
             }
@@ -1294,16 +1296,20 @@ fn trace_one(
             continue;
         }
         let fc = plane_ix[fp].plane();
-        let mut emit_ring = |ns: &[combinatorics::NodeId]| {
-            // ★ This road still spells an edge from its two endpoints' planes, so it needs the
-            // triples — the projection stays here, where it is used, rather than in the vessel.
-            // ★★★★★ **It used to say "unexercised — `plane_ring` refuses such a ring first", and
-            // that stopped being true the moment `plane_ring`'s checks came out.** This is now the
-            // wall: measured, the four chained-cylinder fixtures all reach here, four faces each,
-            // and every one of their `BranchNode` refusals is this line. The scan road beside it
-            // carries the same rings through. What is owed is not a name — the ring has one — but
-            // this road's habit of deriving an edge's *carrier* from two corners' plane sets
-            // instead of taking the wall the producer already carried.
+        let mut emit_ring = |ns: &[combinatorics::NodeId], ws: &[crate::boolean::Wall]| {
+            // ★★★★★ **The carrier is taken, not derived.** It used to be re-read out of the two
+            // endpoint *names* — "the class they share besides `fc`" — which is sound only while
+            // every vertex lies on exactly three planes, and at a four-plane concurrency can hand
+            // back a plane the edge does not ride. The tracer's scan road stopped doing that on
+            // 2026-08-17 and this road, its sibling, was left on the old derivation.
+            // `NamedRing.walls` is what the producer read off the **edge's own two faces**, total
+            // even where the vertex names fall back. Measured across the suite before the swap:
+            // the two agree 810,925 times and differ 0, and the carried one additionally answers
+            // 40 edges the derivation cannot name at all.
+            //
+            // ★ The corner keeps its own name too: `NodeId::three_planes(t)` was a round trip
+            // through a projection, and `three_plane_name` is pure extraction of an already-sorted
+            // triple, so the two are the same value.
             let Some(tris) = ns
                 .iter()
                 .map(|&n| three_plane_name(n))
@@ -1314,45 +1320,55 @@ fn trace_one(
             };
             let n = tris.len();
             for i in 0..n {
-                // Edge i runs vertex i → vertex i+1; the wall it rides is the plane the two
-                // endpoint triples share besides `fc`. The triples are already dense plane ids
-                // (`face_vertex_triples` mapped them through `plane_ix`), so this is a plain set
-                // intersection — no second remap, which under a non-idempotent `plane_ix` would
-                // index the table with a value that is already an index.
-                let (t0, t1) = (tris[i], tris[(i + 1) % n]);
-                let mut shared: Vec<usize> = t0
-                    .iter()
-                    .copied()
-                    .filter(|&c| c != fc && t1.contains(&c))
-                    .collect();
-                shared.sort_unstable();
-                shared.dedup();
-                let [wall] = shared[..] else {
-                    out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
+                // ☑ Unexercised: a curved carrier's two ends are branch corners (measured, every
+                // shape in the corpus), so the `BranchNode` decline above has already fired.
+                // Spelled rather than assumed away — and the next rung replaces it with silence,
+                // because such an element is already on the class from the cylinder's own face.
+                let crate::boolean::Wall::Plane(wall) = ws[i] else {
+                    out.declined.push((fp, DeclineKind::CurvedRingWall));
                     continue;
                 };
-                // The handle on `wc ∩ wall` is what the triple carries besides those two. A
-                // seated face lies in `wc`, so `fc == wc` here and `shared` being a singleton
-                // is the same fact as there being exactly one such element.
-                let handle = |t: [usize; 3]| {
-                    t.into_iter()
-                        .find(|&c| c != fc && c != wall)
-                        .expect("a seated edge's endpoint has a third plane")
+                // ★★★★★ **This test comes first, and the order is what keeps two causes apart.**
+                // A carrier that *is* this face's own class makes `fc ∩ wall` not a line, and
+                // `plane_pair_dir_sign(fc, fc, ·)` is a determinant with two equal rows — zero
+                // against every candidate. Ask the pin first and the pencil case arrives wearing
+                // `NoPinOnLine`, which is the wrong sentence for it.
+                // ☑ Measured 0 in the corpus. The derivation this replaced could not produce it
+                // (it filtered `c != fc`), so the guard is what carries that property across.
+                // ☑ All three arms of this loop were made `unreachable!()` and the workspace suite
+                // and the ignored sweep both stayed green — that is what "unexercised" means here,
+                // rather than an argument that they cannot fire.
+                if wall == fc {
+                    out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
+                    continue;
+                }
+                let (t0, t1) = (tris[i], tris[(i + 1) % n]);
+                // The handle on `fc ∩ wall` — [`combinatorics::pin_on_line`], the same rule the
+                // scan road and the ray caster ask. This site used to spell a reduced version with
+                // no cut test and an `expect`; measured over 1,624,361 calls, the old pin never
+                // failed the cut test and the sound rule never picked a different class, so the
+                // swap moves no answer — it removes a way to be silently wrong.
+                let (Some(h0), Some(h1)) = (
+                    combinatorics::pin_on_line(jd, fc, wall, t0),
+                    combinatorics::pin_on_line(jd, fc, wall, t1),
+                ) else {
+                    out.declined.push((fp, DeclineKind::NoPinOnLine));
+                    continue;
                 };
                 out.segs.push(Seg {
                     wall,
-                    end: [NodeId::three_planes(t0), NodeId::three_planes(t1)],
+                    end: [ns[i], ns[(i + 1) % n]],
                     end_h: [
-                        combinatorics::EndPin::Class(handle(t0)),
-                        combinatorics::EndPin::Class(handle(t1)),
+                        combinatorics::EndPin::Class(h0),
+                        combinatorics::EndPin::Class(h1),
                     ],
                     solid: which,
                     kind,
                 });
             }
         };
-        for ring in &rings {
-            emit_ring(ring);
+        for (ring, walls) in &rings {
+            emit_ring(ring, walls);
         }
     }
 }
