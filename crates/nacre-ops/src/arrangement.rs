@@ -199,7 +199,7 @@ pub(crate) struct Seg {
     /// The same two endpoints as **handles on this segment's own line**: the third plane pinning
     /// each on `wc ∩ wall`. Carried, not recovered from `end`, because a canonical name need not
     /// mention either of this line's planes.
-    pub end_h: [usize; 2],
+    pub end_h: [combinatorics::EndPin; 2],
     pub solid: SolidSide,
     pub kind: SegKind,
 }
@@ -1044,7 +1044,10 @@ fn trace_transversal_face(
                 NodeId::three_planes([wc, fc, a]),
                 NodeId::three_planes([wc, fc, b]),
             ],
-            end_h: [a, b],
+            end_h: [
+                combinatorics::EndPin::Class(a),
+                combinatorics::EndPin::Class(b),
+            ],
             solid: which,
             kind: match graze {
                 Some(body_above) => SegKind::Graze { body_above },
@@ -1298,7 +1301,10 @@ fn trace_one(
                 out.segs.push(Seg {
                     wall,
                     end: [NodeId::three_planes(t0), NodeId::three_planes(t1)],
-                    end_h: [handle(t0), handle(t1)],
+                    end_h: [
+                        combinatorics::EndPin::Class(handle(t0)),
+                        combinatorics::EndPin::Class(handle(t1)),
+                    ],
                     solid: which,
                     kind,
                 });
@@ -1748,7 +1754,7 @@ fn merge_coincident(segs: &[Seg], wc: usize, aliases: &Aliases) -> Vec<MergedSeg
                     // pinned an endpoint there still pins it here.
                     wall: aliases.canon_wall(wc, s.wall),
                     end: [aliases.canon_point(s.end[0]), aliases.canon_point(s.end[1])],
-                    end_h: s.end_h.map(combinatorics::EndPin::Class),
+                    end_h: s.end_h,
                     merged: Vec::new(),
                     sense: None,
                 }
