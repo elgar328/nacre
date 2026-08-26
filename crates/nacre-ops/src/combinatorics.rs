@@ -1531,8 +1531,30 @@ fn loop_triples(
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
 /// *difference* (does this edge cross `W`?) is frame-free and needs no correction.
-pub(crate) fn side_of(jd: &Judge<'_, WorkingPlane>, t: [usize; 3], q: usize) -> i8 {
-    jd.orient3d(t[0], t[1], t[2], q)
+/// ★★ **`None` where the node is not three planes.** A [`NodeId::Branch`] *is* a point, but its
+/// coordinates are quadratic-irrational and `orient3d` is the plane-triple judge — so this says
+/// "not mine to answer" rather than guessing. Callers turn that into their own vocabulary (the
+/// tracer a [`crate::DeclineKind`], the ray caster a reject), which is why it is not a reject here.
+pub(crate) fn side_of(jd: &Judge<'_, WorkingPlane>, n: NodeId, q: usize) -> Option<i8> {
+    match n {
+        NodeId::ThreePlane(t) => Some(jd.orient3d(t[0], t[1], t[2], q)),
+        NodeId::Branch { .. } => None,
+    }
+}
+
+/// **What [`ring_against_plane`] found** — three outcomes, and they are three because collapsing
+/// any two would put one name on unlike facts.
+///
+/// ★ `AllOn` used to be the walk's `None`, and a node it cannot read would have had to share it.
+/// One says *the ring lies in the plane* (a shape), the other *this walk has no vocabulary for a
+/// node* (a road) — and the three callers do different things with each.
+pub(crate) enum RingWalk {
+    /// Where the ring meets the line, in ring order from the first off-`q` node.
+    Met(Vec<Feature>),
+    /// Every node lies on `q`: a ring in the plane has no flanks to be decided by.
+    AllOn,
+    /// A node whose side this walk cannot answer — a [`NodeId::Branch`] today.
+    Unnameable,
 }
 
 /// Where a ring meets the line that `q` cuts its plane along — see [`ring_against_plane`].
@@ -1576,12 +1598,19 @@ pub(crate) enum Feature {
 /// order is contract, not incident.
 pub(crate) fn ring_against_plane(
     jd: &Judge<'_, WorkingPlane>,
-    nodes: &[[usize; 3]],
+    nodes: &[NodeId],
     q: usize,
-) -> Option<Vec<Feature>> {
+) -> RingWalk {
     let n = nodes.len();
-    let side: Vec<i8> = (0..n).map(|i| side_of(jd, nodes[i], q)).collect();
-    let start = side.iter().position(|&s| s != 0)?;
+    let Some(side) = (0..n)
+        .map(|i| side_of(jd, nodes[i], q))
+        .collect::<Option<Vec<i8>>>()
+    else {
+        return RingWalk::Unnameable;
+    };
+    let Some(start) = side.iter().position(|&s| s != 0) else {
+        return RingWalk::AllOn;
+    };
     let mut out = Vec::new();
     let mut j = 0;
     while j < n {
@@ -1611,7 +1640,7 @@ pub(crate) fn ring_against_plane(
             });
         }
     }
-    Some(out)
+    RingWalk::Met(out)
 }
 
 /// Is the implicit point `v` inside the simple ring `ring`, both on face plane `p`?
@@ -1703,13 +1732,10 @@ pub(crate) fn every_ray(
         return Err(reject(RejectReason::DegenerateRing));
     }
     // ★ A **ring**, not a probe list: `ring_against_plane` reads it as a cyclic sign sequence, so
-    // a dropped member would be a different polygon answered about confidently. `Option<Vec<_>>`
-    // is what makes dropping one unspellable here (see [`three_plane_probes`]).
-    let nodes: Vec<[usize; 3]> = ring
-        .iter()
-        .map(|e| three_plane_name(e.node))
-        .collect::<Option<_>>()
-        .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
+    // a dropped member would be a different polygon answered about confidently — which is why the
+    // walk is handed the ring **whole** and answers `Unnameable` for the ring rather than letting
+    // a caller drop a node (see [`three_plane_probes`], where dropping *is* honest).
+    let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
     let mut out = Vec::new();
     for &qa in v.iter().filter(|&&x| x != p) {
         // Where the ring meets the line — the walk `trace_transversal_face` reads too.
@@ -1720,8 +1746,10 @@ pub(crate) fn every_ray(
         // on the same line, so `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a` — which
         // is what the walk already knows from their sides. The parallel guard goes with it: an edge
         // whose line is parallel to `P ∩ Q_a` has both endpoints on one side and is not a crossing.
-        let Some(features) = ring_against_plane(jd, &nodes, qa) else {
-            continue; // the whole ring lies on `Q_a`
+        let features = match ring_against_plane(jd, &nodes, qa) {
+            RingWalk::Met(f) => f,
+            RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
+            RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
         };
         let qb = *v
             .iter()
@@ -1730,8 +1758,10 @@ pub(crate) fn every_ray(
         // A node on the line is a crossing point in its own right, so it must be nameable as one:
         // some plane of its own, off the line, pins it there. (`third_on_l` picks a handle the
         // same way, and for the same reason — one parallel to the line names no point on it.)
+        // ★ The projection is safe *here* and nowhere earlier: the walk answered `Met`, which it
+        // only does when every node is three planes.
         let namer = |i: usize| {
-            nodes[i]
+            three_plane_name(nodes[i])?
                 .iter()
                 .copied()
                 .find(|&x| x != p && x != qa && jd.plane_pair_dir_sign(p, qa, x) != 0)
@@ -1838,16 +1868,15 @@ pub(crate) fn segment_meets_face(
     // whether passing it flips inside/outside.
     let mut events: Vec<([usize; 2], bool)> = Vec::new();
     for ring in rings {
-        // ★ A ring, so `Option<Vec<_>>` rather than a filter — see [`three_plane_probes`].
-        let nodes: Vec<[usize; 3]> = ring
-            .iter()
-            .map(|e| three_plane_name(e.node))
-            .collect::<Option<_>>()
-            .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
-        let Some(features) = ring_against_plane(jd, &nodes, w) else {
+        // ★ A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
+        // for where dropping a node *is* honest.
+        let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
+        let features = match ring_against_plane(jd, &nodes, w) {
+            RingWalk::Met(f) => f,
+            RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
             // The whole ring lies on `w`: this face's boundary is the line itself, and the
             // alternation has no crossings to read. Refusing to guess.
-            return Err(reject(RejectReason::PointOnRing));
+            RingWalk::AllOn => return Err(reject(RejectReason::PointOnRing)),
         };
         for f in &features {
             match *f {
@@ -1864,8 +1893,10 @@ pub(crate) fn segment_meets_face(
                     flanks_differ,
                 } => {
                     let ends = [first, (first + len - 1) % nodes.len()];
-                    let (Some(a), Some(b)) = (handle(nodes[ends[0]]), handle(nodes[ends[1]]))
-                    else {
+                    // ★ The projection is safe *here*: the walk answered `Met`, which it only does
+                    // when every node is three planes.
+                    let name = |i: usize| -> Option<usize> { handle(three_plane_name(nodes[i])?) };
+                    let (Some(a), Some(b)) = (name(ends[0]), name(ends[1])) else {
                         return Err(reject(RejectReason::RingNaming));
                     };
                     let lo_first = order_along(jd, p, w, a, b) <= 0;
@@ -1951,7 +1982,7 @@ fn point_on_ring(
             .carrier
             .wall()
             .ok_or_else(|| reject(RejectReason::RingNaming))?;
-        if side_of(jd, v, r) != 0 {
+        if side_of(jd, NodeId::three_planes(v), r) != Some(0) {
             continue; // `v` is not even on the edge's line
         }
         // Name `v` as a point of that line: `{p, r, s}` for one of its own planes `s` off the line.
@@ -2598,7 +2629,9 @@ pub(crate) fn point_in_component(
                 // here because the sentence is true, not because a fixture is red.
                 let mut vq = [query[0], query[1], query[2]];
                 vq.sort_unstable();
-                if side_of(jd, vq, q) == 0 && material(vq)? != Some(false) {
+                if side_of(jd, NodeId::three_planes(vq), q) == Some(0)
+                    && material(vq)? != Some(false)
+                {
                     return Ok(None);
                 }
                 continue;

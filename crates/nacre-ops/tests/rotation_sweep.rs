@@ -417,14 +417,19 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
         }
     }
     // The walk itself, plus the three places that ask about a **single point** rather than a ring:
-    // `point_on_ring` ("is `v` on this edge's line"), the alias seed ("does this vertex lie on that
-    // class"), and the ray probe's parallel arm ("is the query on the plane the ray lies in").
+    // `point_on_ring` ("is `v` on this edge's line"), the ray probe's parallel arm ("is the query on
+    // the plane the ray lies in"), and the alias seed ("does this vertex lie on that class").
     // None reads a sign sequence, so none is a walk.
+    //
+    // ★ **The text now says which is which.** `side_of` takes a `NodeId`, so a *point* question
+    // wraps its own triple (`NodeId::three_planes(..)`) while the walk hands over a ring member it
+    // was given — the seed reads `n` straight from a ring of `NodeId`s and is a point question only
+    // because it asks one node at a time, never a sequence.
     offenders.retain(|o| {
         !o.contains("side_of(jd, nodes[i], q)")
-            && !o.contains("side_of(jd, v, r)")
-            && !o.contains("side_of(&jd, name, wc)")
-            && !o.contains("side_of(jd, vq, q)")
+            && !o.contains("side_of(jd, NodeId::three_planes(v), r)")
+            && !o.contains("side_of(jd, NodeId::three_planes(vq), q)")
+            && !o.contains("side_of(&jd, n, wc)")
     });
     assert_eq!(
         offenders,

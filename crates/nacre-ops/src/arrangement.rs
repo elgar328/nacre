@@ -678,8 +678,16 @@ fn decline_of(f: RingFail) -> DeclineKind {
 /// only "which side, which wall, which third plane" of each vertex. The sort that used to stand
 /// here is gone — [`NodeId`]'s only constructor sorts — so what remains is the collapse check, and
 /// that is the whole reason this function exists.
-fn plane_ring(nr: &combinatorics::NamedRing) -> Result<(Vec<[usize; 3]>, Vec<usize>), RingFail> {
-    let ts: Vec<[usize; 3]> = nr
+fn plane_ring(
+    nr: &combinatorics::NamedRing,
+) -> Result<(Vec<combinatorics::NodeId>, Vec<usize>), RingFail> {
+    // ★★ **The corner is carried, not projected.** It used to come out as a bare `[usize; 3]`,
+    // which is the shape a *three-plane* corner has and no other — so a ring with a corner a
+    // cylinder made could not even be described, let alone declined for a reason. The check below
+    // is unchanged (a branch corner is still refused here); what changed is that the vessel now
+    // holds what the engine already names, so the refusal is a **decision** rather than the type
+    // running out. The next rung takes the check away, not the vessel.
+    let ts: Vec<combinatorics::NodeId> = nr
         .triples
         .iter()
         .map(|&n| {
@@ -688,7 +696,7 @@ fn plane_ring(nr: &combinatorics::NamedRing) -> Result<(Vec<[usize; 3]>, Vec<usi
             if c[0] == c[1] || c[1] == c[2] {
                 return Err(RingFail::Collapsed);
             }
-            Ok(c)
+            Ok(n)
         })
         .collect::<Result<_, _>>()?;
     // ★★ **The names go first, deliberately.** A ring with a curved wall almost always has branch
@@ -794,7 +802,7 @@ fn trace_transversal_face(
             return;
         }
     };
-    let mut holes: Vec<(Vec<[usize; 3]>, Vec<usize>)> = Vec::new();
+    let mut holes: Vec<(Vec<combinatorics::NodeId>, Vec<usize>)> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
     let Some(raw_holes) = &loops.holes else {
@@ -884,10 +892,19 @@ fn trace_transversal_face(
         // Where this ring meets `L`, and whether it crosses or only touches — the walk the ray
         // caster shares (`combinatorics::ring_against_plane`). What is done with a feature is this
         // function's own business: naming it, recording a four-plane alias, deciding occupancy.
-        let Some(features) = combinatorics::ring_against_plane(jd, ring, wc) else {
+        let features = match combinatorics::ring_against_plane(jd, ring, wc) {
+            combinatorics::RingWalk::Met(f) => f,
             // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
-            declined = Some(DeclineKind::AllOnPlane);
-            break;
+            combinatorics::RingWalk::AllOn => {
+                declined = Some(DeclineKind::AllOnPlane);
+                break;
+            }
+            // A corner a cylinder made: the walk has no side for it, and this road has the name
+            // for that already.
+            combinatorics::RingWalk::Unnameable => {
+                declined = Some(DeclineKind::BranchNode);
+                break;
+            }
         };
         for feature in features {
             match feature {
@@ -910,7 +927,14 @@ fn trace_transversal_face(
                     len: m,
                     flanks_differ,
                 } => {
-                    let name = |k: usize, out: &mut Trace| third_on_l(ring[(first + k) % n], out);
+                    // ★ Safe here: the walk answered `Met`, so every node is three planes.
+                    let name = |k: usize, out: &mut Trace| {
+                        third_on_l(
+                            three_plane_name(ring[(first + k) % n])
+                                .ok_or(DeclineKind::BranchNode)?,
+                            out,
+                        )
+                    };
                     if m == 1 {
                         match name(0, out) {
                             Ok(r) => nodes.push(Node {
@@ -1221,7 +1245,17 @@ fn trace_one(
             continue;
         }
         let fc = plane_ix[fp].plane();
-        let mut emit_ring = |tris: &[[usize; 3]]| {
+        let mut emit_ring = |ns: &[combinatorics::NodeId]| {
+            // ★ This road still spells an edge from its two endpoints' planes, so it needs the
+            // triples — the projection stays here, where it is used, rather than in the vessel.
+            let Some(tris) = ns
+                .iter()
+                .map(|&n| three_plane_name(n))
+                .collect::<Option<Vec<[usize; 3]>>>()
+            else {
+                out.declined.push((fp, DeclineKind::BranchNode));
+                return;
+            };
             let n = tris.len();
             for i in 0..n {
                 // Edge i runs vertex i → vertex i+1; the wall it rides is the plane the two
@@ -4873,13 +4907,17 @@ pub(crate) fn concurrency_audit(
                 //
                 // ★ The re-canonicalization that used to stand on both sides of this filter is
                 // gone: a ring's nodes are `NodeId`s, and the only constructor sorts.
-                names.extend(rings.into_iter().filter(|&n| {
-                    // The name is hoisted so the call stays on one line: the source-text meta-test
-                    // `no_production_code_walks_a_ring_past_the_shared_walk` allow-lists this site
-                    // by its argument text, and it reads line by line.
-                    let name = three_plane_name(n).expect("a three-plane node");
-                    combinatorics::side_of(&jd, name, wc) == 0
-                }));
+                // ★★ **The projection here was an `expect`, and it is gone with it.** `side_of`
+                // takes a node now, so a corner a cylinder made is *excluded* — which is the
+                // honest answer for a four-plane concurrency hunt — instead of panicking.
+                // ★ The call is one line because the source-text meta-test
+                // `no_production_code_walks_a_ring_past_the_shared_walk` allow-lists this site by
+                // its argument text, and it reads line by line.
+                names.extend(
+                    rings
+                        .into_iter()
+                        .filter(|&n| combinatorics::side_of(&jd, n, wc) == Some(0)),
+                );
             }
         }
         names.sort_unstable();

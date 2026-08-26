@@ -6465,8 +6465,8 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
                 // The vertex lies on exactly its three defining planes; each must read 0.
                 for &q in t {
                     assert_eq!(
-                        combinatorics::side_of(&jd, *t, q),
-                        0,
+                        combinatorics::side_of(&jd, combinatorics::NodeId::three_planes(*t), q),
+                        Some(0),
                         "vertex {t:?} lies on plane {q} but does not read 0"
                     );
                     on_plane += 1;
