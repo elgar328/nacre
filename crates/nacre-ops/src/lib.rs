@@ -837,14 +837,19 @@ pub enum RejectReason {
     /// names an operand the trace cannot **read**. Sharing either would put an input-side coverage
     /// limit under an output-side name, and the census keys on these.
     ///
-    /// ★★ **Two sites, and only one of them surfaces today.**
+    /// ★★★★★ **Two sites, and neither of them fires today** — measured over the whole suite
+    /// (`--features reject-trace`: 86 raises across 15 reasons, this one **absent**). What a caller
+    /// meets on a chained operand is now [`Self::TraceDeclined`] with [`DeclineKind::BranchNode`],
+    /// one layer on: the ring road's corner naming, and the most common raise in that ledger.
     ///
-    /// * `planes::face_clears_footprint` — the population **gate**, which is what a caller
-    ///   actually meets: it refuses such an operand before the tracer ever runs, and this is the
-    ///   name it refuses under. The answer is the gate's own, unchanged; what this variant fixed is
-    ///   that the answer used to wear [`Self::CylinderGateUndecided`], whose sentence ("the gate
-    ///   could not decide exactly") is false here — the gate decides, and the road behind it is
-    ///   what has no vocabulary.
+    /// * `planes::face_clears_footprint` — the population **gate**. It used to refuse the whole
+    ///   chained population here, because its clearance scan stopped at the first corner a
+    ///   cylinder made. That corner is now **read exactly** (a branch point carries one radicand
+    ///   and everything it is measured against is rational), so what is left under this name is
+    ///   only what the scan genuinely cannot spell: an **arc** edge — whose bulge breaks the
+    ///   convex-hull argument the scan rests on — and an `OnSeam` vertex, which pins a curve
+    ///   rather than a point. The gate's *arithmetic* failures are not this name: they wear
+    ///   [`Self::CylinderGateUndecided`], whose sentence is true of them and false of these.
     /// * [`combinatorics::loop_triples`] — the road itself, **swallowed**: `trace_input` maps a
     ///   loop it cannot name to `None` and the tracer reports which *loop* failed
     ///   ([`DeclineKind::OuterRing`] / [`DeclineKind::HoleRing`]), which is the finer fact when a
@@ -863,9 +868,11 @@ pub enum RejectReason {
     ///   under the road rather than trusted away.
     ///
     /// ★ The two ask the same question of a face in two vocabularies — the gate reads the edge's
-    /// **carriers** from the model, the road reads the far face's **class** — and they are measured
-    /// to pick the same faces (`an_operand_bounded_by_a_cylinder_declines_instead_of_panicking`,
-    /// and a face-by-face probe over wall, corner, bore and top-boss operands).
+    /// **carriers** from the model, the road reads the far face's **class** — and they were
+    /// measured to pick the same faces (a face-by-face probe over wall, corner, bore and top-boss
+    /// operands). The road's side of that is now
+    /// `an_operand_bounded_by_a_cylinder_is_named_in_class_space`, which locks the naming rather
+    /// than the decline.
     CurvedOperandBoundary,
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
     /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and

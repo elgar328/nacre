@@ -13865,6 +13865,13 @@ branch 코너가 **읽히게 된 순간** `CurvedOperandBoundary`의 문장(「�
 ★ **사용자 눈에 열리는 것은 아직 없다** — 연쇄는 여전히 거절된다. 이 칸은 두 관문 중 첫째를 치우고
 다음 벽의 정체를 **확정**한 사다리의 한 단이다.
 
+★★★★★ **전체 스윕이 그 이동을 수치로 보여 준다**(`--features reject-trace`, 사후 감사에서 측정):
+**86 raises / 15 reasons**인데 **`curved_operand_boundary`가 아예 없다** — 게이트 자리도 도로
+백스톱도 **0회**다. 대신 **`trace_declined(branch-node)`가 40회로 최다**다. ⇒ 그 변종의 doc이
+「Two sites, and **only one of them surfaces** today … the gate … **is what a caller actually
+meets**」라고 말하고 있었는데 **거짓이 됐고**, 감사에서 고쳤다(같은 doc이 칸 ⑩에서 개명된 테스트를
+아직 가리키고 있던 것도 함께).
+
 ### 관문·계측
 
 커밋 ⑫a·⑫b 각각 전량: fmt/clippy 0 · workspace · nodef · census **비트 동일**(`4f94b59e…`,
