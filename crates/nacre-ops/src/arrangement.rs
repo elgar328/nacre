@@ -680,7 +680,7 @@ fn decline_of(f: RingFail) -> DeclineKind {
 /// that is the whole reason this function exists.
 fn plane_ring(
     nr: &combinatorics::NamedRing,
-) -> Result<(Vec<combinatorics::NodeId>, Vec<usize>), RingFail> {
+) -> Result<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>), RingFail> {
     // ★★ **The corner is carried, not projected.** It used to come out as a bare `[usize; 3]`,
     // which is the shape a *three-plane* corner has and no other — so a ring with a corner a
     // cylinder made could not even be described, let alone declined for a reason. The check below
@@ -703,17 +703,18 @@ fn plane_ring(
     // corners too — a ruling's ends lie on the cylinder — and of the two causes `Branch` is the one
     // that says more. A ring that names cleanly and *still* has a curved wall is a different fact
     // (its ends would be seam vertices), and `CurvedWall` is that fact rather than a fallback.
-    let walls = nr
+    //
+    // ★ **The carrier is carried too.** Same move as the corner above: the check stays, the
+    // flattening goes. `Wall::Plane(c) → c` was the second place this vessel could only hold the
+    // planar half of what the producer wrote.
+    if nr
         .walls
         .iter()
-        .map(|w| match w {
-            crate::boolean::Wall::Plane(c) => Ok(*c),
-            crate::boolean::Wall::Arc { .. } | crate::boolean::Wall::Ruling { .. } => {
-                Err(RingFail::CurvedWall)
-            }
-        })
-        .collect::<Result<_, _>>()?;
-    Ok((ts, walls))
+        .any(|w| !matches!(w, crate::boolean::Wall::Plane(_)))
+    {
+        return Err(RingFail::CurvedWall);
+    }
+    Ok((ts, nr.walls.clone()))
 }
 
 /// One feature node on the line `L = W ∩ fp`: a point named by its third plane `r` (raw index).
@@ -802,7 +803,7 @@ fn trace_transversal_face(
             return;
         }
     };
-    let mut holes: Vec<(Vec<combinatorics::NodeId>, Vec<usize>)> = Vec::new();
+    let mut holes: Vec<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>)> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
     let Some(raw_holes) = &loops.holes else {
@@ -913,8 +914,17 @@ fn trace_transversal_face(
                     // re-derived from the two endpoint names (`ring_from_names`), which is
                     // sound only while every vertex lies on exactly three planes and could
                     // hand back a plane the edge does not ride at a concurrency.
+                    //
+                    // ★ A crossing on a **curved** carrier is a point on a cylinder, which
+                    // `Node.r` (a plane class) cannot name — the rung that widens it is the one
+                    // that lets such a ring through at all, and until then `plane_ring` refuses
+                    // the ring, so this arm is unreachable rather than wrong.
+                    let crate::boolean::Wall::Plane(w) = walls[edge] else {
+                        declined = Some(DeclineKind::CurvedRingWall);
+                        break 'rings;
+                    };
                     nodes.push(Node {
-                        r: walls[edge],
+                        r: w,
                         flip: true,
                         run: None,
                         flanks_differ: false,
@@ -5549,7 +5559,7 @@ mod tests {
         };
         let (ts, walls) = plane_ring(&plain).expect("a plane ring");
         assert_eq!(ts.len(), 3);
-        assert_eq!(walls, vec![1, 2, 3]);
+        assert_eq!(walls, vec![plane(1), plane(2), plane(3)]);
     }
 
     /// The graze rows of `edge_mask`'s algebra, one by one. The missing row was the
