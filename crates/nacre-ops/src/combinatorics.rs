@@ -3063,25 +3063,44 @@ fn curved_wall(
             // Which way travel runs along the axis: the stored edge ascends when its second
             // endpoint does, and `forward` says whether this half-edge walks it that way.
             //
-            // ★★★ **There is nothing to read, so it is measured — and in `f64`, which is the one
-            // realization this bridge trusts.** A ruling edge's stored pair carries no order:
+            // ★★★ **There is nothing to read, so it is derived — from the two ends' definitions,
+            // never from their realizations.** A ruling edge's stored pair carries no order:
             // `edge_for` keys it `unordered(va, vb)` ("a ruling edge is straight, so the unordered
             // pair orders it"), unlike an arc, whose `[A, B]` *is* the CCW convention. So the two
-            // ends have to be compared, and the comparison is safe for a structural reason rather
-            // than a lucky one: a ruling whose ends share an axial coordinate has zero length, and
-            // `push_edge` refuses to mint one (`ZeroLengthEdge`). Every ruling that exists is
-            // separated along the axis by the material it spans, which is not a distance `f64`
-            // confuses. ☑ The exact route, if a population ever needs it: both ends are branch
-            // points, and their *other* carrier planes order along `m` rationally.
-            let (m, o) = (def.dir(), def.origin());
-            let axial = |v: Handle<Vertex>| {
-                let q = model.vertex_point(v).as_array();
-                (0..3)
-                    .map(|k| m[k].to_f64() * (q[k] - o[k].to_f64()))
-                    .sum::<f64>()
+            // ends have to be compared — and each end is a branch point of `near`, the cylinder,
+            // and **one other plane**. `near` *holds* the ruling, so it is that other plane that
+            // **cuts** it, and where it crosses the axis is a rational question
+            // ([`crate::planes::axis_param_of_plane`]).
+            //
+            // ☑ **The two parameters cannot tie**: the gate admits a plane that meets this
+            // cylinder only parallel to the axis or perpendicular to it (anything between is
+            // `ObliqueCylinderCut`), and a parallel one cannot cut a ruling — so both cutting
+            // planes are caps, distinct caps cross the axis at distinct parameters. The strict
+            // `>` therefore restates the comparison it replaces exactly, rather than growing a
+            // decline for a case that has none.
+            let other_param = |v: Handle<Vertex>| -> Option<nacre_scalar::Rat> {
+                let nacre_topo::VertexDef::Branch { planes, .. } = model.vertices.get(v).def else {
+                    return None;
+                };
+                let mut cut = None;
+                for &h in &planes {
+                    let c = *model.world_plane_name(h)?.narrow()?;
+                    // `near`'s own class, in whichever of the two spellings this vertex carries.
+                    if plane_sense(&c, &w).is_some() {
+                        continue;
+                    }
+                    if cut.replace(c).is_some() {
+                        return None;
+                    }
+                }
+                crate::planes::axis_param_of_plane(&cut?, &def)
             };
             let [v0, v1] = model.edges.get(he.edge).vertices;
-            let ascends = axial(v1) > axial(v0);
+            let (t0, t1) = (
+                other_param(v0).ok_or_else(curved)?,
+                other_param(v1).ok_or_else(curved)?,
+            );
+            let ascends = t1 > t0;
             Ok(crate::boolean::Wall::Ruling {
                 cyl,
                 side,
