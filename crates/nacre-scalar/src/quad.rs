@@ -334,7 +334,7 @@ fn orient_mul(x: Orient, y: Orient) -> Orient {
 /// - opposite signs → `sign(A) · sign(A² − B²·C)`: the comparison alone does not carry the
 ///   answer's sign (A < 0, B > 0, A² < B²C is a *positive* value while A² − B²C is negative —
 ///   the product is what points the right way).
-fn sign1_int(a: &BigInt, b: &BigInt, c: &BigInt) -> Orient {
+pub(crate) fn sign1_int(a: &BigInt, b: &BigInt, c: &BigInt) -> Orient {
     use num_bigint::Sign::NoSign;
     debug_assert!(c.sign() != num_bigint::Sign::Minus, "radicand must be ≥ 0");
     if c.sign() == NoSign || b.sign() == NoSign {

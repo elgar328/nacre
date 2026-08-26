@@ -1029,3 +1029,118 @@ fn an_axis_the_line_does_not_move_along_is_rational() {
         Orient::Zero
     );
 }
+
+/// ★★★★★ **The footprint predicates asked of a branch point — the same questions, a wider
+/// vocabulary for the point.**
+///
+/// The gate's clearance test walks a face's corners and asks each one two things: which side of a
+/// cylinder's strip it stands on, and where it stands along that cylinder's axis. A corner a
+/// cylinder made has **no rational coordinates** (`VertexDef::Branch` is quadratic-irrational), so
+/// the rational spellings decline it — and the whole face with it.
+///
+/// The first instrument is **inclusion**: a rational point, handed in as a degenerate branch
+/// (`s` rational, so `base + s·dir` is rational), must get the same answer from both spellings.
+/// A new road that did not reproduce the old one on the old road's own inputs would be a second
+/// rule, not a wider one.
+#[test]
+fn the_branch_footprint_predicates_include_the_rational_ones() {
+    let (o, m, _) = zcyl();
+    let radius = r(3, 2);
+    // A line whose points stay rational: `base + s·dir` with `s` rational.
+    let line = MeetLine {
+        base: [ri(0), ri(0), ri(0)],
+        dir: [ri(1), ri(0), ri(1)],
+    };
+    // The plane the strip lives on has to hold the point and be parallel to the axis, so the
+    // sweep rides `y = 0` and moves the point along `x` (across the strip) and `z` (along it).
+    let coeffs = plane(0, 1, 0, 0);
+    let (mut sides, mut orients) = (Vec::new(), Vec::new());
+    for k in [-7, -3, -1, 0, 1, 3, 7] {
+        let s = QuadVal::from_rat(r(k, 4));
+        let p = crate::MeetPoint::Narrow([r(k, 4), ri(0), r(k, 4)]);
+        let got = crate::cylinder_strip_side_branch(&coeffs, &line, &s, &o, &m, radius);
+        assert_eq!(
+            got,
+            crate::cylinder_strip_side(&coeffs, &p, &o, &m, radius),
+            "strip side at k = {k}"
+        );
+        sides.push(got);
+        for t in [ri(-2), r(k, 4), ri(2)] {
+            let got = crate::point_axis_side_branch(&line, &s, &o, &m, t);
+            assert_eq!(
+                got,
+                crate::point_axis_side(&p, &o, &m, t),
+                "axis side at k = {k}, t = {t:?}"
+            );
+            orients.push(got);
+        }
+    }
+    // ★ A sweep that only ever produced one answer would agree with anything.
+    for want in [
+        crate::StripSide::Inside,
+        crate::StripSide::Plus,
+        crate::StripSide::Minus,
+    ] {
+        assert!(
+            sides.contains(&want),
+            "the sweep reaches {want:?}: {sides:?}"
+        );
+    }
+    for want in [Orient::Positive, Orient::Negative, Orient::Zero] {
+        assert!(orients.contains(&want), "the sweep reaches {want:?}");
+    }
+}
+
+/// ★★★★ **And on a point that is genuinely irrational** — where the rational spelling has nothing
+/// to say at all.
+///
+/// Cylinder `A` (`z` axis, radius 1) cut by `y = 1/2` gives the two branch points
+/// `(±√3/2, 1/2, 3)`, and the question is asked about a **second** cylinder `B` whose axis runs
+/// through `x = 1`. Its strip on that plane is `|x − 1| ≤ √3/2`, so the two roots — born of one
+/// line, differing only in the radical — land on **opposite verdicts**: `+√3/2` inside it,
+/// `−√3/2` clear of it on the minus side. An answer that ignored the radical could not tell them
+/// apart, which is what makes this the negative control the inclusion sweep cannot be.
+#[test]
+fn a_branch_points_two_roots_can_straddle_a_strip() {
+    let (o, m, radius) = zcyl();
+    let cut = [ri(0), ri(1), ri(0), ri(0).checked_sub(r(1, 2)).unwrap()];
+    let cap = plane(0, 0, 1, -3);
+    let CylinderMeet::Pair { line, s } = plane_plane_cylinder(&cut, &cap, &o, &m, radius).unwrap()
+    else {
+        panic!("a plane through the interior meets the cylinder twice")
+    };
+    // `s[0]`/`s[1]` are the roots in the line's own order; name them by the coordinate that
+    // separates them rather than by index.
+    let (pos, neg) = if line.point_f64(&s[0])[0] > 0.0 {
+        (s[0], s[1])
+    } else {
+        (s[1], s[0])
+    };
+    let b_axis = [ri(1), ri(0), ri(0)];
+    assert_eq!(
+        crate::cylinder_strip_side_branch(&cut, &line, &pos, &b_axis, &m, radius),
+        crate::StripSide::Inside,
+        "+√3/2 sits inside the second cylinder's strip"
+    );
+    assert_eq!(
+        crate::cylinder_strip_side_branch(&cut, &line, &neg, &b_axis, &m, radius),
+        crate::StripSide::Minus,
+        "−√3/2 clears it"
+    );
+    // Along the axis both roots share `z = 3`, so the second axis separates neither — which is
+    // the rectangle's other side answering honestly rather than the same fact twice.
+    for sv in [pos, neg] {
+        assert_eq!(
+            crate::point_axis_side_branch(&line, &sv, &b_axis, &m, ri(2)),
+            Orient::Positive
+        );
+        assert_eq!(
+            crate::point_axis_side_branch(&line, &sv, &b_axis, &m, ri(3)),
+            Orient::Zero
+        );
+        assert_eq!(
+            crate::point_axis_side_branch(&line, &sv, &b_axis, &m, ri(4)),
+            Orient::Negative
+        );
+    }
+}

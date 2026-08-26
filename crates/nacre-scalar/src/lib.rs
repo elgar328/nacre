@@ -1084,6 +1084,131 @@ pub fn point_axis_side(p: &MeetPoint, o: &[Rat; 3], m: &[Rat; 3], t: Rat) -> Ori
     }
 }
 
+/// **A branch point's coordinates as `(A + B√C) / D`** — integer throughout, `D > 0`, `C ≥ 0`.
+///
+/// The two footprint predicates below are the same questions [`cylinder_strip_side`] and
+/// [`point_axis_side`] ask; only the point's *description* differs. A `VertexDef::Branch` has no
+/// rational coordinates at all — it is `line.base() + s·line.dir()` with `s` quadratic-irrational
+/// — so its coordinates live in `ℚ(√c)`, and every quantity those predicates form from a point is
+/// a polynomial in them, hence of the shape `X + Y√C` whose sign the tower already answers.
+///
+/// ★ **The radicand is integerised here, once.** `√(p/q) = √(p·q)/q`, so `s` is rewritten over a
+/// single positive denominator with an **integer** radicand `C = p·q`; every sum downstream then
+/// carries one `C` and never has to reconcile two spellings of the same surd.
+fn lift_branch(
+    line: &quad::MeetLine,
+    s: &quad::QuadVal,
+) -> (
+    [num_bigint::BigInt; 3],
+    [num_bigint::BigInt; 3],
+    num_bigint::BigInt,
+    num_bigint::BigInt,
+) {
+    use num_bigint::BigInt;
+    // `s = (Sa + Sb√C) / Ds`, integer and `Ds > 0`: fold the radical's denominator into the
+    // rational part (`√(cp/cq) = √(cp·cq)/cq`), then clear both coefficients' denominators.
+    let (cp, cq) = (BigInt::from(s.c().numer()), BigInt::from(s.c().denom()));
+    let big_c = &cp * &cq;
+    let (san, sad) = (BigInt::from(s.a().numer()), BigInt::from(s.a().denom()));
+    let (sbn, sbd) = (BigInt::from(s.b().numer()), BigInt::from(s.b().denom()));
+    let s_a = &san * &cq * &sbd;
+    let s_b = &sbn * &sad;
+    let d_s = &cq * &sad * &sbd;
+    // `p = base + s·dir` over `db·Ds·dd`, which is positive because every factor is.
+    let (bb, db) = lift3(&line.base());
+    let (dd, d_d) = lift3(&line.dir());
+    let den = &db * &d_s * &d_d;
+    let a: [BigInt; 3] = core::array::from_fn(|i| &bb[i] * &d_s * &d_d + &s_a * &dd[i] * &db);
+    let b: [BigInt; 3] = core::array::from_fn(|i| &s_b * &dd[i] * &db);
+    (a, b, den, big_c)
+}
+
+/// **[`cylinder_strip_side`] asked of a branch point** — the same three-way answer, the same
+/// expression, and **total** for the same reason: a sign has no width, so the road to it runs in
+/// `BigInt` rather than checked `Rat` (the discipline [`quad::cylinder_radial_side`] states).
+///
+/// **Preconditions** are that function's, and the on-plane one is the caller's to establish —
+/// `quad::plane_side(coeffs, line, s) == Orient::Zero` is the branch spelling of it.
+pub fn cylinder_strip_side_branch(
+    coeffs: &[Rat; 4],
+    line: &quad::MeetLine,
+    s: &quad::QuadVal,
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    r: Rat,
+) -> StripSide {
+    use num_bigint::BigInt;
+    debug_assert!(r >= Rat::from_int(0), "a radius is not negative");
+    debug_assert!(
+        dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], m) == Orient::Zero,
+        "the strip only exists on a plane parallel to the axis"
+    );
+    let (c, _dc) = lift4(coeffs);
+    let (oo, d_o) = lift3(o);
+    let (mm, _dm) = lift3(m);
+    let (pa, pb, dp, big_c) = lift_branch(line, s);
+    let (rn, rd) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
+    let n = [c[0].clone(), c[1].clone(), c[2].clone()];
+    let dot = |x: &[BigInt; 3], y: &[BigInt; 3]| -> BigInt {
+        (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
+    };
+    // Exactly the rational road's `e` and `w`, with `w` now a **pair**: the point's rational part
+    // and its `√C` part travel together through every linear step.
+    let e: [BigInt; 3] = core::array::from_fn(|i| {
+        let (j, k) = ((i + 1) % 3, (i + 2) % 3);
+        &n[j] * &mm[k] - &n[k] * &mm[j]
+    });
+    let wa: [BigInt; 3] = core::array::from_fn(|i| &pa[i] * &d_o - &oo[i] * &dp);
+    let wb: [BigInt; 3] = core::array::from_fn(|i| &pb[i] * &d_o);
+    let (ua, ub) = (dot(&wa, &e), dot(&wb, &e));
+    let u_sign = quad::sign1_int(&ua, &ub, &big_c);
+    if u_sign == Orient::Zero {
+        return StripSide::Inside;
+    }
+    let g = dot(&n, &oo) + &c[3] * &d_o;
+    let nn = dot(&n, &n);
+    let m2 = dot(&mm, &mm);
+    // `U² = (Ua² + Ub²C) + 2·Ua·Ub·√C`, and the right-hand side is rational — so the difference
+    // is one `X + Y√C` and the tower reads its sign.
+    let rd2 = &rd * &rd;
+    let rhs = (&rn * &rn * &nn * (&d_o * &d_o) - &g * &g * &rd2) * &m2 * (&dp * &dp);
+    let x = (&ua * &ua + &ub * &ub * &big_c) * &rd2 - rhs;
+    let y = BigInt::from(2) * &ua * &ub * &rd2;
+    match quad::sign1_int(&x, &y, &big_c) {
+        Orient::Positive if u_sign == Orient::Positive => StripSide::Plus,
+        Orient::Positive => StripSide::Minus,
+        _ => StripSide::Inside,
+    }
+}
+
+/// **[`point_axis_side`] asked of a branch point** — same expression, same total contract.
+pub fn point_axis_side_branch(
+    line: &quad::MeetLine,
+    s: &quad::QuadVal,
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    t: Rat,
+) -> Orient {
+    use num_bigint::BigInt;
+    let (oo, d_o) = lift3(o);
+    let (mm, d_m) = lift3(m);
+    let (pa, pb, dp, big_c) = lift_branch(line, s);
+    let (tn, td) = (BigInt::from(t.numer()), BigInt::from(t.denom()));
+    let dot = |x: &[BigInt; 3], y: &[BigInt; 3]| -> BigInt {
+        (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
+    };
+    let m2 = dot(&mm, &mm);
+    debug_assert!(
+        m2 != BigInt::from(0),
+        "a zero direction names no axis, so no parameter along it"
+    );
+    let wa: [BigInt; 3] = core::array::from_fn(|i| &pa[i] * &d_o - &oo[i] * &dp);
+    let wb: [BigInt; 3] = core::array::from_fn(|i| &pb[i] * &d_o);
+    let x = dot(&wa, &mm) * &d_m * &td - &tn * &m2 * &dp * &d_o;
+    let y = dot(&wb, &mm) * &d_m * &td;
+    quad::sign1_int(&x, &y, &big_c)
+}
+
 /// A rational 4-vector (plane coefficients) as **(integer components, positive denominator)**.
 fn lift4(v: &[Rat; 4]) -> ([num_bigint::BigInt; 4], num_bigint::BigInt) {
     use num_bigint::BigInt;
