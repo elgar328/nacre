@@ -13660,7 +13660,8 @@ kit 14 · 앱 142(tsc·vitest·wasm 두 빌드·wasm clippy).
   pair orders it」). 아크의 `[A,B]`처럼 방향을 말하는 저장 순서가 **없으므로 재야 한다**. 안전한
   이유는 운이 아니라 구조다 — 축 좌표가 같은 룰링은 길이 0이고 `push_edge`가 그런 간선을 안 만든다
   (`ZeroLengthEdge`). 정확 경로(양 끝의 «다른 쪽» 담체 평면을 `m`을 따라 유리수로 비교)도 함께
-  적어 뒀다.
+  적어 뒀다. **★ 칸 ⑪에서 그 정확 경로로 갔다** — 이 줄은 그 시점의 기록이고, 다리에는 이제
+  realization이 없다.
 
 ### 관문·계측
 
@@ -13685,8 +13686,10 @@ Wall::Ruling { .. }`로 **변종만** 봤고 `..`가 방향 비트를 통째로 
 ### ★★★★★ 「자리가 셋」은 훑어서 얻었다 — 계획은 「둘」이라고 썼다
 
 사용자의 「`band_loop`도 같이 고치냐」가 두 번째를 열었고, **그때서야 전수로 훑었더니** 세 번째가
-나왔다. `WorkingCyl`의 f64 쌍둥이를 읽는 자리는 **넷뿐**이고(`WorkingCyl`은 `nacre-ops` 밖으로
-안 나가므로 전수다) 분류가 이 칸의 절반이다:
+나왔다. ★ **훑은 대상은 `WorkingCyl`의 f64 쌍둥이(`.cache`)이고, 다리는 그 표에 없다** — 다리는
+쌍둥이가 아니라 **정점의 realized 좌표**(`vertex_point`)를 읽었다. 즉 「realization으로 축 방향
+**결정**을 내리는 자리」가 셋이고, 그중 둘이 `.cache`를 읽는다. 쌍둥이를 읽는 자리는 **넷뿐**이며
+(`WorkingCyl`은 `nacre-ops` 밖으로 안 나가므로 전수다) 분류가 이 칸의 절반이다:
 
 | 자리 | 무엇을 하는가 | 판정 |
 |---|---|---|
@@ -13754,6 +13757,11 @@ thing as *the* plane's outward normal」. 클래스가 가진 유일한 방향 �
   코드도 테스트도 `vertex_point`를 읽는 **동어반복**이었다. `side`는 ⑪a에서도 이미 두 도로였다).
 - ⑪c: 출하한 비교 뒤집음 → **6개 빨강**(`a_corner_boss_fuses`·`a_through_boss_fuses` 등).
 - ☑ 룰링 팔에 `to_f64`·`vertex_point`가 **하나도 안 남았다**(기계로 확인).
+- ★★ **⑪a가 «아직 참이 아닌» 주석을 출하했다**(사후 감사에서 발견). 잠금의 주석이 「the code derives
+  them without any realized coordinates … `up` from the cutting planes' axial parameters」라고
+  적었는데 그 커밋 시점의 `up`은 아직 `axial(v1) > axial(v0)`였다 — ⑪b에서야 참이 됐다. 커밋
+  **메시지**는 「once the next commit lands」로 조심했는데 **코드 주석**이 그러지 못했다.
+  ⇒ 규칙: **주석은 그 커밋 시점의 코드를 서술한다**. 다음 커밋의 계획을 현재형으로 쓰지 않는다.
 
 ### 관문·계측
 
