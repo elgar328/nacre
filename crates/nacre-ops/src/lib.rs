@@ -947,15 +947,24 @@ pub enum RejectReason {
 pub enum DeclineKind {
     /// A ring vertex's plane triple collapses (two of its planes coincide), so it names no point.
     CollapsedTriple,
-    /// A ring vertex is a `plane ∩ plane ∩ cylinder` **branch point**, which the tracer's ring
-    /// machinery has no name to carry (the arc split is M6-2b's).
+    /// A ring vertex is a `plane ∩ plane ∩ cylinder` **branch point**, and something on the
+    /// tracer's road could not take it.
+    ///
+    /// ★★★ **The something has narrowed, and the remainder is one line.** The ring machinery
+    /// carries such a name now, reads its side, and orders it — four places could still raise
+    /// this and, measured across the workspace suite, exactly one does (20 raises): the seated
+    /// road's `emit_ring`, which spells an edge's **carrier** from its two corners' plane sets
+    /// instead of taking the wall the producer already carried. The other three (a walk with no
+    /// exact side, a run whose body it cannot place, an order it cannot form) are spelled and
+    /// unexercised.
     ///
     /// ★ Distinct from [`Self::CollapsedTriple`] on purpose: that one's sentence is "two of its
     /// planes coincide", which is simply not what happened here. The census keys its `detail` on
     /// this name, so reusing the other would put a false cause in the ledger.
     BranchNode,
-    /// An edge of the ring **rides a cylinder** — an arc or a ruling — where the tracer's ring
-    /// machinery carries a plane class beside every edge.
+    /// An edge of the ring **rides a cylinder** — an arc or a ruling — at the one place left that
+    /// needs a plane class beside an edge: the scan's crossing arm, whose vertex name is a plane
+    /// triple. (The ring itself carries curved carriers unflattened since the vessel widened.)
     ///
     /// ★ Distinct from [`Self::BranchNode`], which is about a *corner*. The two travel together on
     /// the population that produced them (a ruling's ends lie on the cylinder, so they are branch

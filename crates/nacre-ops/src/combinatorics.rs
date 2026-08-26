@@ -1637,10 +1637,13 @@ fn loop_triples(
 /// "not mine to answer" rather than guessing. Callers turn that into their own vocabulary (the
 /// tracer a [`crate::DeclineKind`], the ray caster a reject), which is why it is not a reject here.
 ///
-/// ☑ **That arm is unexercised today, and recorded as such rather than assumed away** — measured
-/// by making it `unreachable!()` and running the suite green. Nothing reaches it because
-/// `arrangement::plane_ring` still refuses a branch corner before the walk sees the ring, and the
-/// result side has none; the rung that takes that check away is what fires it.
+/// ★★★★★ **That arm used to be unexercised, and the rung that took `plane_ring`'s checks away
+/// fired it — with a wrong sign.** The scan road now walks rings whose corners a cylinder made,
+/// and the first thing that came back was a branch corner on the *opposite* side of its own face's
+/// plane from its four plane-named neighbours (measured: `sides = [1, -1, -1, -1, -1, 1]`, the two
+/// `1`s being the branch nodes). The scan read those as crossings that are not there and named one
+/// with a plane triple that never met, and `orient3d` answered `D = 0`. ★ I reported that panic as
+/// a hole upstream in the naming; every ring name measured correct and the fault was here.
 pub(crate) fn side_of(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -1697,11 +1700,12 @@ pub(crate) enum RingWalk {
     Met(Vec<Feature>),
     /// Every node lies on `q`: a ring in the plane has no flanks to be decided by.
     AllOn,
-    /// A node whose side this walk cannot answer — a [`NodeId::Branch`] today.
+    /// A node whose side this walk cannot answer.
     ///
-    /// ☑ **Never produced today**, because [`side_of`]'s branch arm is not reached (see there).
-    /// The three callers still spell what they would do with it, which is what makes the next
-    /// rung's diff the answers and not the plumbing.
+    /// ★★ **It used to mean "a [`NodeId::Branch`]", and it does not any more.** [`side_of`]'s
+    /// branch arm answers, so a cylinder's corner is read like any other; what is left here is
+    /// that arm's own `None` — a class with no narrow rational description, a cylinder missing
+    /// from the table. ☑ Still never produced: measured **0** across the workspace suite.
     Unnameable,
 }
 

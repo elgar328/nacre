@@ -907,8 +907,9 @@ fn trace_transversal_face(
                 declined = Some(DeclineKind::AllOnPlane);
                 break;
             }
-            // A corner a cylinder made: the walk has no side for it, and this road has the name
-            // for that already.
+            // ★ Not "a corner a cylinder made" any more — the walk reads those. This is the
+            // walk's own `None`: a side it could not form exactly. ☑ Measured 0 raises across
+            // the workspace suite; the name is kept because the walk can still say it.
             combinatorics::RingWalk::Unnameable => {
                 declined = Some(DeclineKind::BranchNode);
                 break;
@@ -922,10 +923,15 @@ fn trace_transversal_face(
                     // sound only while every vertex lies on exactly three planes and could
                     // hand back a plane the edge does not ride at a concurrency.
                     //
-                    // ★ A crossing on a **curved** carrier is a point on a cylinder, which
-                    // `Node.r` (a plane class) cannot name — the rung that widens it is the one
-                    // that lets such a ring through at all, and until then `plane_ring` refuses
-                    // the ring, so this arm is unreachable rather than wrong.
+                    // ★ A crossing on a **curved** carrier is a point on a cylinder, and the
+                    // name built below is a three-plane one, so it cannot be spelled here.
+                    // ★★ **The reason it is unreachable changed, so the sentence did too.** It
+                    // used to be "`plane_ring` refuses such a ring first" — and that stopped
+                    // being true when those checks came out. What holds now is narrower and
+                    // measured: the population produces no crossing *on* a curved carrier
+                    // (0 hits across the workspace suite and the census corpus). The ring itself
+                    // rides through; it is a crossing on one of its arcs or rulings that does not
+                    // occur yet.
                     let crate::boolean::Wall::Plane(w) = walls[edge] else {
                         declined = Some(DeclineKind::CurvedRingWall);
                         break 'rings;
