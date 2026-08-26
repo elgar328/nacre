@@ -1535,6 +1535,11 @@ fn loop_triples(
 /// coordinates are quadratic-irrational and `orient3d` is the plane-triple judge — so this says
 /// "not mine to answer" rather than guessing. Callers turn that into their own vocabulary (the
 /// tracer a [`crate::DeclineKind`], the ray caster a reject), which is why it is not a reject here.
+///
+/// ☑ **That arm is unexercised today, and recorded as such rather than assumed away** — measured
+/// by making it `unreachable!()` and running the suite green. Nothing reaches it because
+/// `arrangement::plane_ring` still refuses a branch corner before the walk sees the ring, and the
+/// result side has none; the rung that takes that check away is what fires it.
 pub(crate) fn side_of(jd: &Judge<'_, WorkingPlane>, n: NodeId, q: usize) -> Option<i8> {
     match n {
         NodeId::ThreePlane(t) => Some(jd.orient3d(t[0], t[1], t[2], q)),
@@ -1554,6 +1559,10 @@ pub(crate) enum RingWalk {
     /// Every node lies on `q`: a ring in the plane has no flanks to be decided by.
     AllOn,
     /// A node whose side this walk cannot answer — a [`NodeId::Branch`] today.
+    ///
+    /// ☑ **Never produced today**, because [`side_of`]'s branch arm is not reached (see there).
+    /// The three callers still spell what they would do with it, which is what makes the next
+    /// rung's diff the answers and not the plumbing.
     Unnameable,
 }
 

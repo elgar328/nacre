@@ -1258,6 +1258,8 @@ fn trace_one(
         let mut emit_ring = |ns: &[combinatorics::NodeId]| {
             // ★ This road still spells an edge from its two endpoints' planes, so it needs the
             // triples — the projection stays here, where it is used, rather than in the vessel.
+            // ☑ Unexercised today (measured: `unreachable!()` here leaves the suite green) —
+            // `plane_ring` refuses such a ring first. Spelled rather than assumed away.
             let Some(tris) = ns
                 .iter()
                 .map(|&n| three_plane_name(n))
