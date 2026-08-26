@@ -681,12 +681,11 @@ fn decline_of(f: RingFail) -> DeclineKind {
 fn plane_ring(
     nr: &combinatorics::NamedRing,
 ) -> Result<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>), RingFail> {
-    // ★★ **The corner is carried, not projected.** It used to come out as a bare `[usize; 3]`,
-    // which is the shape a *three-plane* corner has and no other — so a ring with a corner a
-    // cylinder made could not even be described, let alone declined for a reason. The check below
-    // is unchanged (a branch corner is still refused here); what changed is that the vessel now
-    // holds what the engine already names, so the refusal is a **decision** rather than the type
-    // running out. The next rung takes the check away, not the vessel.
+    // ★★★★★ **Both refusals are gone, and the vessel is why they could go.** The corner used to
+    // be projected to `[usize; 3]` and the carrier to a plane class, so a ring a cylinder touched
+    // could not be *described* — the refusals here were the type running out, dressed as
+    // decisions. Two rungs widened the vessel; this one stops asking. What a curved ring now meets
+    // is the roads themselves, which answer or decline on their own terms.
     let ts: Vec<combinatorics::NodeId> = nr
         .triples
         .iter()
@@ -699,14 +698,6 @@ fn plane_ring(
             Ok(n)
         })
         .collect::<Result<_, _>>()?;
-    // ★★ **The names go first, deliberately.** A ring with a curved wall almost always has branch
-    // corners too — a ruling's ends lie on the cylinder — and of the two causes `Branch` is the one
-    // that says more. A ring that names cleanly and *still* has a curved wall is a different fact
-    // (its ends would be seam vertices), and `CurvedWall` is that fact rather than a fallback.
-    //
-    // ★ **The carrier is carried too.** Same move as the corner above: the check stays, the
-    // flattening goes. `Wall::Plane(c) → c` was the second place this vessel could only hold the
-    // planar half of what the producer wrote.
     if nr
         .walls
         .iter()
@@ -852,42 +843,60 @@ fn trace_transversal_face(
     // Counting to the end rather than returning early matters: a four-plane vertex has *two*
     // off-plane classes, so an early "two off-planes" bail would exit before `wc`'s absence is
     // ever noticed and report every such point as `RunName`.
-    let third_on_l = |t: [usize; 3], out: &mut Trace| -> Result<usize, DeclineKind> {
-        let (mut offs, mut has_fp, mut has_w) = (Vec::<usize>::new(), false, false);
-        for &x in &t {
-            if x == fc {
-                has_fp = true;
-            } else if x == wc {
-                has_w = true;
-            } else {
-                offs.push(x);
+    let third_on_l =
+        |n: NodeId, out: &mut Trace| -> Result<(NodeId, combinatorics::EndPin), DeclineKind> {
+            // ★★ **A corner a cylinder made needs no third plane, and has none.** It is already the
+            // point's own name, and what pins it on `L` is the quadric — measured, every such corner
+            // that lands on a cut line is pinned by that very cut plane (`far == wc`), so `wc` is in
+            // its name and there is no fourth-plane alias to record either.
+            let Some(t) = three_plane_name(n) else {
+                return Ok((n, combinatorics::EndPin::Cylinder));
+            };
+            let (mut offs, mut has_fp, mut has_w) = (Vec::<usize>::new(), false, false);
+            for &x in &t {
+                if x == fc {
+                    has_fp = true;
+                } else if x == wc {
+                    has_w = true;
+                } else {
+                    offs.push(x);
+                }
             }
-        }
-        match (has_fp, has_w, offs.len()) {
-            // The ordinary point: `t` carries both of this line's planes, and the third both pins
-            // and names it.
-            (true, true, 1) => Ok(offs[0]),
-            // On `wc` (this is a run vertex) yet `wc` does not name it. `t`'s classes are distinct
-            // (`plane_ring`) and `fc != wc` here, so `wc` is a **fourth** plane through the point.
-            (_, false, _) => {
-                let mut set = t.to_vec();
-                set.push(wc);
-                set.sort_unstable();
-                set.dedup();
-                out.aliases.record(jd, &set);
-                // ★ A handle has a duty the identity does not: it must **cut** `L`. One parallel
-                // to it names no point there, and `order_along` — being `orient3d × dir_sign` —
-                // would read 0 against everything, fabricating a coincidence rather than missing
-                // one.
-                offs.sort_unstable();
-                offs.iter()
-                    .copied()
-                    .find(|&r| jd.plane_pair_dir_sign(wc, fc, r) != 0)
-                    .ok_or(DeclineKind::FourPlane)
+            match (has_fp, has_w, offs.len()) {
+                // The ordinary point: `t` carries both of this line's planes, and the third both pins
+                // and names it.
+                (true, true, 1) => Ok((n, combinatorics::EndPin::Class(offs[0]))),
+                // On `wc` (this is a run vertex) yet `wc` does not name it. `t`'s classes are distinct
+                // (`plane_ring`) and `fc != wc` here, so `wc` is a **fourth** plane through the point.
+                (_, false, _) => {
+                    let mut set = t.to_vec();
+                    set.push(wc);
+                    set.sort_unstable();
+                    set.dedup();
+                    out.aliases.record(jd, &set);
+                    // ★ A handle has a duty the identity does not: it must **cut** `L`. One parallel
+                    // to it names no point there, and `order_along` — being `orient3d × dir_sign` —
+                    // would read 0 against everything, fabricating a coincidence rather than missing
+                    // one.
+                    offs.sort_unstable();
+                    offs.iter()
+                        .copied()
+                        .find(|&r| jd.plane_pair_dir_sign(wc, fc, r) != 0)
+                        .ok_or(DeclineKind::FourPlane)
+                        // ★ The alias case names the point by **this line's** triple, not the ring's:
+                        // `wc` is a fourth plane through it, and `{wc, fc, r}` is the canonical name
+                        // the arrangement uses. That is why the name is rebuilt here while the
+                        // ordinary case simply carries the one it was given.
+                        .map(|r| {
+                            (
+                                NodeId::three_planes([wc, fc, r]),
+                                combinatorics::EndPin::Class(r),
+                            )
+                        })
+                }
+                _ => Err(DeclineKind::RunName),
             }
-            _ => Err(DeclineKind::RunName),
-        }
-    };
+        };
 
     // Phase A — scan the outer ring and every hole ring, collecting feature nodes into ONE list.
     // A hole ring keeps its stored CW winding, but the Phase-A predicates are winding-agnostic; the
@@ -948,18 +957,12 @@ fn trace_transversal_face(
                     flanks_differ,
                 } => {
                     // ★ Safe here: the walk answered `Met`, so every node is three planes.
-                    let name = |k: usize, out: &mut Trace| {
-                        third_on_l(
-                            three_plane_name(ring[(first + k) % n])
-                                .ok_or(DeclineKind::BranchNode)?,
-                            out,
-                        )
-                    };
+                    let name = |k: usize, out: &mut Trace| third_on_l(ring[(first + k) % n], out);
                     if m == 1 {
                         match name(0, out) {
-                            Ok(r) => nodes.push(Node {
-                                id: NodeId::three_planes([wc, fc, r]),
-                                pin: combinatorics::EndPin::Class(r),
+                            Ok((id, pin)) => nodes.push(Node {
+                                id,
+                                pin,
                                 flip: flanks_differ,
                                 run: None,
                                 flanks_differ,
@@ -976,7 +979,7 @@ fn trace_transversal_face(
                         // anything; the interior points are names the arrangement may split at.
                         let id = run_counter;
                         run_counter += 1;
-                        let names: Result<Vec<usize>, DeclineKind> =
+                        let names: Result<Vec<(NodeId, combinatorics::EndPin)>, DeclineKind> =
                             (0..m).map(|k| name(k, out)).collect();
                         match names {
                             Ok(rs) => {
@@ -986,11 +989,16 @@ fn trace_transversal_face(
                                 // (Phase B gives it to `flip`) — it is not an occupancy fact, and
                                 // gating the side on it left a crossing run classified as a
                                 // straddling transversal.
-                                let graze_above = Some(run_body_above(jd, faces, wc, fc, fp, &rs));
-                                for r in rs {
+                                let Some(ba) = run_body_above(jd, cyls, faces, wc, fc, fp, &rs)
+                                else {
+                                    declined = Some(DeclineKind::BranchNode);
+                                    break 'rings;
+                                };
+                                let graze_above = Some(ba);
+                                for (nid, pin) in rs {
                                     nodes.push(Node {
-                                        id: NodeId::three_planes([wc, fc, r]),
-                                        pin: combinatorics::EndPin::Class(r),
+                                        id: nid,
+                                        pin,
                                         flip: false,
                                         run: Some(id),
                                         flanks_differ,
@@ -1147,18 +1155,23 @@ fn trace_transversal_face(
 /// `σ` is an f64 dot of two **parallel** unit vectors (`fp` and `fc` are the same plane class), so
 /// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`FaceInfo::orient_sign`] and
 /// `trace_seated_face` already rely on. Everything else here is exact.
+#[allow(clippy::too_many_arguments)]
 fn run_body_above(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
     wc: usize,
     fc: usize,
     fp: usize,
-    rs: &[usize],
-) -> bool {
+    rs: &[(NodeId, combinatorics::EndPin)],
+) -> Option<bool> {
     let planes = jd.planes;
-    let t = combinatorics::order_along(jd, wc, fc, rs[0], rs[rs.len() - 1]);
+    // ★ The run's own direction along `L`, through the one rule both roads share — a run whose
+    // ends a cylinder pinned orders by the `a + b√c` tower, and by the integer predicates
+    // otherwise. `None` is a missing description, which the caller turns into its own decline.
+    let t = combinatorics::order_pinned(jd, cyls, wc, fc, rs[0], rs[rs.len() - 1])?;
     let sigma = faces[fp].plane().n_out.dot(planes[fc].plane.normal());
-    (t < 0) == (sigma > 0.0)
+    Some((t < 0) == (sigma > 0.0))
 }
 
 /// Trace one solid on plane class `wc` (a canon root, i.e. an index into `planes`). This brick:
