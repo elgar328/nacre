@@ -14055,6 +14055,11 @@ side)가 그것을 반증했다.
 
 ### 관문·계측
 
-⑭a·⑭b·⑭c·⑭d 각각 전량: fmt/clippy 0 · workspace · nodef · census **두 프로파일 비트 동일**
-(`78b06e50…`) · `reject_census` 초록 · 스윕 · perf 불변(`ring 80` 1.56/1.03s).
-kit(fmt·clippy·test)과 앱(두 wasm 빌드 · tsc 0 · vitest **142** · `wasm/` clippy 0) 초록.
+★ **커밋마다 무엇이 attest 됐는지 갈라 적는다**(자체 점검에서 처음 「각각 전량」이라 적었다가
+커밋 메시지와 대조해 고쳤다 — 기록이 계측보다 앞서면 안 된다):
+
+- **⑭a·⑭b**: 훅의 `cargo test --workspace` · census **두 프로파일 비트 동일** · `reject_census` ·
+  perf. (nodef와 `--ignored` 스윕은 이 둘에서 **따로 돌리지 않았다**.)
+- **⑭c·⑭d 및 이후 커밋**: **전량** — fmt/clippy 0 · workspace · nodef · census 두 프로파일
+  비트 동일(`78b06e50…`) · `reject_census` · 스윕 · perf 불변(`ring 80` 1.56/1.03s).
+- kit(fmt·clippy·test)과 앱(두 wasm 빌드 · tsc 0 · vitest **142** · `wasm/` clippy 0) 초록.

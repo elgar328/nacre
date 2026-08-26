@@ -3966,8 +3966,8 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
 ///
 /// ★★ **The population is one-sided and that is a fact, not a blind instrument.** All 40 order
 /// `-1`: a face's outer ring travels counter-clockwise about that face's own outward normal, which
-/// is the direction `order_along` sorts by, so agreement is structural — three boss positions, a
-/// reversed axis and three `Cut` notches do not move it. What moves is **swapping the two ends**,
+/// is the direction `order_along` sorts by, so agreement is structural — two boss positions, one
+/// of them with its axis reversed, and three `Cut` notches do not move it. What moves is **swapping the two ends**,
 /// and the oracle swaps with it, so both signs are measured against something that could disagree.
 #[test]
 fn a_cylinder_pinned_end_orders_through_the_tower() {
