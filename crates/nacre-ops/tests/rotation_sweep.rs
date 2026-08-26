@@ -421,15 +421,16 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
     // the plane the ray lies in"), and the alias seed ("does this vertex lie on that class").
     // None reads a sign sequence, so none is a walk.
     //
-    // ★ **The text now says which is which.** `side_of` takes a `NodeId`, so a *point* question
-    // wraps its own triple (`NodeId::three_planes(..)`) while the walk hands over a ring member it
-    // was given — the seed reads `n` straight from a ring of `NodeId`s and is a point question only
-    // because it asks one node at a time, never a sequence.
+    // ★ **The text now says which is which, twice over.** `side_of` takes a `NodeId`, so a *point*
+    // question wraps its own triple (`NodeId::three_planes(..)`) while the walk hands over a ring
+    // member it was given; and it takes a cylinder table, so a road that has none passes `&[]` —
+    // which is exactly the three that ask about a point or about a **result** cell's ring, where a
+    // branch node declines as it always did. The one call with a real table is the walk.
     offenders.retain(|o| {
-        !o.contains("side_of(jd, nodes[i], q)")
-            && !o.contains("side_of(jd, NodeId::three_planes(v), r)")
-            && !o.contains("side_of(jd, NodeId::three_planes(vq), q)")
-            && !o.contains("side_of(&jd, n, wc)")
+        !o.contains("side_of(jd, cyls, nodes[i], q)")
+            && !o.contains("side_of(jd, &[], NodeId::three_planes(v), r)")
+            && !o.contains("side_of(jd, &[], NodeId::three_planes(vq), q)")
+            && !o.contains("side_of(&jd, &[], n, wc)")
     });
     assert_eq!(
         offenders,

@@ -78,6 +78,94 @@ pub(crate) fn order_along(
     jd.orient3d(p, q, i, j) * dir_sign(jd, p, q, j)
 }
 
+/// **The order of two points along `L = P ∩ Q`, whatever pins them** — the one place that rule
+/// lives, and both its consumers (the tracer's node sort and [`edge_dir`]) call it.
+///
+/// ★★★★★ **Which direction is `order_along`'s, derived rather than matched.** [`Judge::orient3d`]
+/// is *not* a four-plane determinant — it is the point `V = {p, q, i}` against the **triangle** `j`,
+/// so it is symmetric in its first three. With `Vᵢ − Vⱼ = t·(n_p × n_q)` (both lie on `L`),
+///
+/// ```text
+/// order_along = sign((Vᵢ−Vⱼ)·N_out(j)) · sign((n_p×n_q)·N_out(j)) = sign(t·(…)²) = sign(t)
+/// ```
+///
+/// — so it orders along **`n_p × n_q` taken from the raw coefficients**, and `j`'s own orientation
+/// cancels as a square. That is why the second road below asks
+/// [`nacre_geom::intersect::plane_pair_dir_sign`] — the *same* primitive — for the sign of a
+/// component of that direction, instead of forming a cross product of its own. (A cross product of
+/// the classes' `world_rat` normals is **not** it: those may oppose the raw ones per plane, which
+/// flips the direction. Measured: the derived road agrees with `order_along` 160/160 where a
+/// `world_rat` cross agreed 80/160.)
+///
+/// **Two roads, one rule.** Plane-pinned pairs keep the integer predicates; anything a cylinder
+/// pinned has no third plane to be ordered by, and goes through the `a + b√c` tower on one
+/// coordinate axis. `None` is a missing description (a rational endpoint with no exact coordinates,
+/// a cylinder with no world statement), never a shape this cannot order.
+pub(crate) fn order_pinned(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    p: usize,
+    q: usize,
+    a: (NodeId, EndPin),
+    b: (NodeId, EndPin),
+) -> Option<i8> {
+    use nacre_scalar::quad::{MeetLine, QuadVal, cmp_coord_branch, cmp_coord_meet_branch};
+    use nacre_scalar::{MeetPoint, Orient};
+    if let (EndPin::Class(i), EndPin::Class(j)) = (a.1, b.1) {
+        return Some(order_along(jd, p, q, i, j));
+    }
+    let axis = |k: usize| {
+        let mut n = [0.0; 3];
+        n[k] = 1.0;
+        nacre_geom::Plane::from_point_normal(
+            nacre_math::Point3::from_array([0.0; 3]),
+            nacre_math::Vector3::from_array(n),
+        )
+    };
+    let (k, dsign) = (0..3).find_map(|k| {
+        let s = nacre_geom::intersect::plane_pair_dir_sign(
+            &jd.planes[p].plane,
+            &jd.planes[q].plane,
+            &axis(k)?,
+        );
+        (s != 0).then_some((k, s))
+    })?;
+    enum Pt {
+        Rat(MeetPoint),
+        Branch(MeetLine, QuadVal),
+    }
+    let pt = |n: NodeId, pin: EndPin| -> Option<Pt> {
+        match pin {
+            EndPin::Class(_) => node_coords_rat(jd, n).map(|c| Pt::Rat(MeetPoint::Narrow(c))),
+            EndPin::Cylinder => {
+                let NodeId::Branch { cyl, .. } = n else {
+                    return None;
+                };
+                let (l, s) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
+                Some(Pt::Branch(l, s))
+            }
+        }
+    };
+    let sign = |o: Orient| -> i8 {
+        match o {
+            Orient::Positive => 1,
+            Orient::Negative => -1,
+            Orient::Zero => 0,
+        }
+    };
+    let cmp = match (pt(a.0, a.1)?, pt(b.0, b.1)?) {
+        // ☑ Unreachable — two plane-pinned ends returned through the integer road above. Spelled
+        // as a decline rather than a panic or a second rational comparison nobody would exercise.
+        (Pt::Rat(_), Pt::Rat(_)) => return None,
+        (Pt::Rat(x), Pt::Branch(l, s)) => sign(cmp_coord_meet_branch(&x, &l, &s, k)),
+        (Pt::Branch(l, s), Pt::Rat(y)) => -sign(cmp_coord_meet_branch(&y, &l, &s, k)),
+        (Pt::Branch(l1, s1), Pt::Branch(l2, s2)) => {
+            sign(cmp_coord_branch((&l1, &s1), (&l2, &s2), k))
+        }
+    };
+    Some(cmp * dsign)
+}
+
 /// **A vertex's identity** — the sorted plane triple that names it.
 ///
 /// `Eq`/`Hash` give identity dedup so an A-piece and a B-piece that meet at a seam node share one
@@ -1540,10 +1628,28 @@ fn loop_triples(
 /// by making it `unreachable!()` and running the suite green. Nothing reaches it because
 /// `arrangement::plane_ring` still refuses a branch corner before the walk sees the ring, and the
 /// result side has none; the rung that takes that check away is what fires it.
-pub(crate) fn side_of(jd: &Judge<'_, WorkingPlane>, n: NodeId, q: usize) -> Option<i8> {
+pub(crate) fn side_of(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    n: NodeId,
+    q: usize,
+) -> Option<i8> {
     match n {
         NodeId::ThreePlane(t) => Some(jd.orient3d(t[0], t[1], t[2], q)),
-        NodeId::Branch { .. } => None,
+        // ★★ **A branch point's side of a plane is one `a + b√c` sign.** The point is
+        // `line.base() + s·line.dir()`, the plane's coefficients are rational, and
+        // `quad::plane_side` is that sign — the same predicate `ruling_side` reads. `None` is a
+        // missing description (a class with no world name, a cylinder with no world statement),
+        // never a shape this cannot answer.
+        NodeId::Branch { cyl, .. } => {
+            let (line, sv) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
+            let co = class_coeffs_rat(jd, q)?;
+            Some(match nacre_scalar::quad::plane_side(&co, &line, &sv) {
+                nacre_scalar::Orient::Positive => 1,
+                nacre_scalar::Orient::Negative => -1,
+                nacre_scalar::Orient::Zero => 0,
+            })
+        }
     }
 }
 
@@ -1607,12 +1713,13 @@ pub(crate) enum Feature {
 /// order is contract, not incident.
 pub(crate) fn ring_against_plane(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     nodes: &[NodeId],
     q: usize,
 ) -> RingWalk {
     let n = nodes.len();
     let Some(side) = (0..n)
-        .map(|i| side_of(jd, nodes[i], q))
+        .map(|i| side_of(jd, cyls, nodes[i], q))
         .collect::<Option<Vec<i8>>>()
     else {
         return RingWalk::Unnameable;
@@ -1762,7 +1869,9 @@ pub(crate) fn every_ray(
         // on the same line, so `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a` — which
         // is what the walk already knows from their sides. The parallel guard goes with it: an edge
         // whose line is parallel to `P ∩ Q_a` has both endpoints on one side and is not a crossing.
-        let features = match ring_against_plane(jd, &nodes, qa) {
+        // ★ No cylinder table on this road: a branch node in a **result** cell's ring
+        // declines here exactly as it did before, and threading one is the arc road's business.
+        let features = match ring_against_plane(jd, &[], &nodes, qa) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
             RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
@@ -1887,7 +1996,7 @@ pub(crate) fn segment_meets_face(
         // ★ A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
-        let features = match ring_against_plane(jd, &nodes, w) {
+        let features = match ring_against_plane(jd, &[], &nodes, w) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
             // The whole ring lies on `w`: this face's boundary is the line itself, and the
@@ -1998,7 +2107,9 @@ fn point_on_ring(
             .carrier
             .wall()
             .ok_or_else(|| reject(RejectReason::RingNaming))?;
-        if side_of(jd, NodeId::three_planes(v), r) != Some(0) {
+        // ☑ A literal triple, so `side_of`'s branch arm is unreachable here and the empty
+        // cylinder table is never consulted — this asks about a *point*, not a ring.
+        if side_of(jd, &[], NodeId::three_planes(v), r) != Some(0) {
             continue; // `v` is not even on the edge's line
         }
         // Name `v` as a point of that line: `{p, r, s}` for one of its own planes `s` off the line.
@@ -2645,7 +2756,7 @@ pub(crate) fn point_in_component(
                 // here because the sentence is true, not because a fixture is red.
                 let mut vq = [query[0], query[1], query[2]];
                 vq.sort_unstable();
-                if side_of(jd, NodeId::three_planes(vq), q) == Some(0)
+                if side_of(jd, &[], NodeId::three_planes(vq), q) == Some(0)
                     && material(vq)? != Some(false)
                 {
                     return Ok(None);

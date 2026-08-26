@@ -762,6 +762,7 @@ fn trace_transversal_face(
     which: SolidSide,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
     crossings: &std::collections::HashSet<(usize, usize)>,
@@ -901,7 +902,7 @@ fn trace_transversal_face(
         // Where this ring meets `L`, and whether it crosses or only touches — the walk the ray
         // caster shares (`combinatorics::ring_against_plane`). What is done with a feature is this
         // function's own business: naming it, recording a four-plane alias, deciding occupancy.
-        let features = match combinatorics::ring_against_plane(jd, ring, wc) {
+        let features = match combinatorics::ring_against_plane(jd, cyls, ring, wc) {
             combinatorics::RingWalk::Met(f) => f,
             // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
             combinatorics::RingWalk::AllOn => {
@@ -1019,11 +1020,12 @@ fn trace_transversal_face(
     // `Class`); the rung that writes the other arm brings the second road with it.
     let mut unordered = false;
     let order = |a: &Node, b: &Node, unordered: &mut bool| -> std::cmp::Ordering {
-        let (Some(i), Some(j)) = (a.pin.class(), b.pin.class()) else {
+        let Some(o) = combinatorics::order_pinned(jd, cyls, wc, fc, (a.id, a.pin), (b.id, b.pin))
+        else {
             *unordered = true;
             return std::cmp::Ordering::Equal;
         };
-        match combinatorics::order_along(jd, wc, fc, i, j) {
+        match o {
             -1 => std::cmp::Ordering::Less,
             1 => std::cmp::Ordering::Greater,
             _ => std::cmp::Ordering::Equal,
@@ -1171,6 +1173,7 @@ fn trace_one(
     which: SolidSide,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
     crossings: &std::collections::HashSet<(usize, usize)>,
@@ -1213,7 +1216,7 @@ fn trace_one(
             continue;
         }
         if plane_ix[fp].plane() != wc {
-            trace_transversal_face(fp, fl, which, wc, jd, faces, plane_ix, crossings, out);
+            trace_transversal_face(fp, fl, which, wc, jd, cyls, faces, plane_ix, crossings, out);
             continue;
         }
         // Seated: the face lies in W, so its whole boundary is trace. The body lies on one
@@ -1630,6 +1633,7 @@ fn trace_on_class(
     input: &combinatorics::TraceInput,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
 ) -> Trace {
@@ -1640,6 +1644,7 @@ fn trace_on_class(
             which,
             wc,
             jd,
+            cyls,
             faces,
             plane_ix,
             &input.crossings,
@@ -1660,6 +1665,7 @@ fn trace_on_class_of(
     b: Handle<Solid>,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc_a: &combinatorics::EdgeFaces,
@@ -1677,7 +1683,7 @@ fn trace_on_class_of(
         &[],
         crossings,
     );
-    trace_on_class(&input, wc, jd, faces, plane_ix)
+    trace_on_class(&input, wc, jd, cyls, faces, plane_ix)
 }
 
 /// One solid only — the second operand slot is filled with the same solid, whose loops are
@@ -1712,6 +1718,9 @@ fn trace_one_of(
         which,
         wc,
         jd,
+        // ★ This shim builds its input with no cylinder surfaces (`&[]` above), so there is no
+        // table to hand on and no branch node to want one.
+        &[],
         faces,
         plane_ix,
         &input.crossings,
@@ -4682,7 +4691,10 @@ fn trace_result_faces(
             // Nothing in the code stopped that; it simply needed a model with a concurrency in a
             // region the other operand cannot reach, and the corpus has none. The cheap repair is
             // to keep the fallback a real one, which is what this does.
-            let mut tr = timed!(TRACE_ON, trace_on_class(trace_in, wc, jd, faces, plane_ix));
+            let mut tr = timed!(
+                TRACE_ON,
+                trace_on_class(trace_in, wc, jd, cyls, faces, plane_ix)
+            );
             let mut local = snapshot.clone();
             local.absorb(&std::mem::take(&mut tr.aliases));
             // An incomplete trace ⇒ honest reject, naming what the tracer could not do and on
@@ -4904,7 +4916,7 @@ pub(crate) fn concurrency_audit(
     let mut out = Vec::new();
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
-        let tr = trace_on_class(&trace_in, wc, &jd, &faces_tab, &plane_ix);
+        let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix);
         // Names this class used: segment endpoints, single-point touches, and — since a crossing
         // the arrangement mints is a vertex too — the split's endpoints where it got that far.
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
@@ -4955,7 +4967,7 @@ pub(crate) fn concurrency_audit(
                 names.extend(
                     rings
                         .into_iter()
-                        .filter(|&n| combinatorics::side_of(&jd, n, wc) == Some(0)),
+                        .filter(|&n| combinatorics::side_of(&jd, &[], n, wc) == Some(0)),
                 );
             }
         }
@@ -5189,7 +5201,7 @@ pub(crate) fn frame_audit(
     loop {
         let before = aliases.len();
         for wc in 0..geom.len() {
-            let mut tr = trace_on_class(&trace_in, wc, &jd, &faces_tab, &plane_ix);
+            let mut tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix);
             aliases.absorb(&std::mem::take(&mut tr.aliases));
             if tr.declined.is_empty() {
                 let merged = merge_coincident(&tr.segs, wc, &aliases);
@@ -5203,7 +5215,7 @@ pub(crate) fn frame_audit(
     let mut out = Vec::new();
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
-        let tr = trace_on_class(&trace_in, wc, &jd, &faces_tab, &plane_ix);
+        let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix);
         let side = |f: fn(&SegKind) -> Option<bool>| -> Vec<bool> {
             tr.segs.iter().filter_map(|s| f(&s.kind)).collect()
         };
@@ -5696,6 +5708,7 @@ mod tests {
             b,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -6140,6 +6153,7 @@ mod tests {
                 b,
                 wc,
                 &jd,
+                &[],
                 &faces_tab,
                 &surf_ix,
                 &inc_a,
@@ -6190,6 +6204,7 @@ mod tests {
                 b,
                 wc,
                 &jd,
+                &[],
                 &faces_tab,
                 &surf_ix,
                 &inc_a,
@@ -6248,6 +6263,7 @@ mod tests {
             b,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -6358,6 +6374,7 @@ mod tests {
             b,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -6434,6 +6451,7 @@ mod tests {
             b,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -6575,6 +6593,7 @@ mod tests {
             b,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -6660,6 +6679,7 @@ mod tests {
             b,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -6724,6 +6744,7 @@ mod tests {
             b,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -7611,6 +7632,7 @@ mod tests {
                 b,
                 wc,
                 &jd,
+                &[],
                 &faces_tab,
                 &surf_ix,
                 &inc_a,
@@ -7866,6 +7888,7 @@ mod tests {
             boss,
             wc,
             &jd,
+            &setup.cyls,
             &setup.planes,
             &setup.surf_ix,
             &setup.inc_a,
@@ -7916,6 +7939,7 @@ mod tests {
             boss,
             wc,
             jd,
+            &setup.cyls,
             &setup.planes,
             &setup.surf_ix,
             &setup.inc_a,
@@ -8273,6 +8297,7 @@ mod tests {
                 b,
                 wc,
                 &jd,
+                &[],
                 &faces_tab,
                 &surf_ix,
                 &inc_a,
@@ -8537,6 +8562,7 @@ mod tests {
             b,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -8671,6 +8697,7 @@ mod tests {
             SolidSide::A,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &plane_ix,
             &Default::default(),
@@ -8721,6 +8748,7 @@ mod tests {
             b,
             class_at_z(&planes, 2.0),
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -8738,6 +8766,7 @@ mod tests {
             b,
             class_at_z(&planes, 0.0),
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -8768,6 +8797,7 @@ mod tests {
             b,
             class_at_z(&planes, 1.5),
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -8841,6 +8871,7 @@ mod tests {
             boss,
             class_at_z(&planes, 3.0), // the bore's ceiling
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -8914,6 +8945,7 @@ mod tests {
             b,
             wc,
             &jd,
+            &[],
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -8986,6 +9018,7 @@ mod tests {
                 b,
                 wc,
                 &jd,
+                &[],
                 &faces_tab,
                 &surf_ix,
                 &inc_a,
@@ -9080,7 +9113,14 @@ mod tests {
                     Default::default(),
                 );
                 for wc in 0..setup.geom.len() {
-                    let tr = trace_on_class(&trace_in, wc, &jd, &setup.planes, &setup.plane_ix);
+                    let tr = trace_on_class(
+                        &trace_in,
+                        wc,
+                        &jd,
+                        &setup.cyls,
+                        &setup.planes,
+                        &setup.plane_ix,
+                    );
                     let mut walls: Vec<usize> = Vec::new();
                     for s in &tr.segs {
                         if !walls.contains(&s.wall) {
