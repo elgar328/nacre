@@ -101,6 +101,7 @@ pub(crate) fn order_along(
 /// pinned has no third plane to be ordered by, and goes through the `a + b√c` tower on one
 /// coordinate axis. `None` is a missing description (a rational endpoint with no exact coordinates,
 /// a cylinder with no world statement), never a shape this cannot order.
+#[inline]
 pub(crate) fn order_pinned(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -109,8 +110,49 @@ pub(crate) fn order_pinned(
     a: (NodeId, EndPin),
     b: (NodeId, EndPin),
 ) -> Option<i8> {
+    order_on(jd, cyls, p, q, PointOn::of(a)?, PointOn::of(b)?)
+}
+
+/// [`order_pinned`] for callers that already hold the points in [`PointOn`] form.
+#[inline]
+pub(crate) fn order_on(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    p: usize,
+    q: usize,
+    a: PointOn,
+    b: PointOn,
+) -> Option<i8> {
     let (a, b) = (locate(jd, cyls, p, q, a)?, on_line(jd, cyls, p, q, b)?);
     order_located(jd, p, q, &a, &b)
+}
+
+/// **What a point on `L = P ∩ Q` is given as** — the input [`locate`] and [`on_line`] take.
+///
+/// ★★★★ **A plane pin brings no name, and that is the point.** `{p, q, pin}` *is* the name, so
+/// asking a caller for one means building a `NodeId` — a sorted triple — that both constructors
+/// then ignore. The arrangement's split-point sort does that twice per comparison, and it showed:
+/// the sort phase ran 29% longer with the name in the signature than without it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum PointOn {
+    Class(usize),
+    /// Must be a [`NodeId::Branch`]; the quadric road reads its cylinder and root.
+    Branch(NodeId),
+}
+
+impl PointOn {
+    /// ★ A cylinder pin whose name is not a branch is a wiring failure, not a shape — the two
+    /// halves of one point disagree, and there is nothing to compare.
+    #[inline]
+    fn of(pt: (NodeId, EndPin)) -> Option<PointOn> {
+        match pt.1 {
+            EndPin::Class(r) => Some(PointOn::Class(r)),
+            EndPin::Cylinder => match pt.0 {
+                NodeId::Branch { .. } => Some(PointOn::Branch(pt.0)),
+                NodeId::ThreePlane(_) => None,
+            },
+        }
+    }
 }
 
 /// **A point on `L = P ∩ Q` with the parts a comparison needs already computed** — the form
@@ -230,20 +272,20 @@ pub(crate) fn on_line(
     cyls: &[crate::planes::WorkingCyl],
     p: usize,
     q: usize,
-    pt: (NodeId, EndPin),
+    pt: PointOn,
 ) -> Option<OnLine> {
-    match pt.1 {
-        EndPin::Class(pin) => Some(OnLine::Class {
+    match pt {
+        PointOn::Class(pin) => Some(OnLine::Class {
             pin,
             ds: dir_sign(jd, p, q, pin),
         }),
-        EndPin::Cylinder => {
-            let NodeId::Branch { cyl, .. } = pt.0 else {
+        PointOn::Branch(name) => {
+            let NodeId::Branch { cyl, .. } = name else {
                 return None;
             };
-            let meet = branch_meet(jd, cyl, &cyls.get(cyl)?.def, pt.0)?;
+            let meet = branch_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
             Some(OnLine::Branch {
-                name: pt.0,
+                name,
                 meet: Box::new(meet),
             })
         }
@@ -260,20 +302,20 @@ pub(crate) fn locate<'j>(
     cyls: &[crate::planes::WorkingCyl],
     p: usize,
     q: usize,
-    pt: (NodeId, EndPin),
+    pt: PointOn,
 ) -> Option<Located<'j>> {
-    match pt.1 {
-        EndPin::Class(pin) => Some(Located::Class {
+    match pt {
+        PointOn::Class(pin) => Some(Located::Class {
             pin,
             at: jd.point(p, q, pin),
         }),
-        EndPin::Cylinder => {
-            let NodeId::Branch { cyl, .. } = pt.0 else {
+        PointOn::Branch(name) => {
+            let NodeId::Branch { cyl, .. } = name else {
                 return None;
             };
-            let meet = branch_meet(jd, cyl, &cyls.get(cyl)?.def, pt.0)?;
+            let meet = branch_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
             Some(Located::Branch {
-                name: pt.0,
+                name,
                 meet: Box::new(meet),
             })
         }

@@ -1902,6 +1902,73 @@ struct Wall {
     segs: Vec<usize>,
 }
 
+/// **A split point on one wall's line, named by what is common to every point there.**
+///
+/// The line is `wc ∩ w`, so those two planes are the same for all of them and only the third thing
+/// differs: a plane class that cuts the line, or which root of which cylinder. The full
+/// [`NodeId`] is derived by [`Split::pt`] where it is needed — the same trade
+/// [`combinatorics::OnLine::Class`] makes, and for the same measured reason: these vectors are
+/// rebuilt once per wall and a rotated fold spends most of itself allocating.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+enum Split {
+    /// ★ First, so `Ord` still runs ascending in the class — the tie groups below hand
+    /// `group.first()` to the output as the point's name, and that is the "smallest name wins"
+    /// rule the arrangement replays on.
+    Class(usize),
+    Branch {
+        cyl: usize,
+        root: nacre_topo::QuadRoot,
+    },
+}
+
+impl Split {
+    /// ★ **The branch arm keeps the root the producer wrote, not a re-canonicalized one.** A
+    /// segment on `w` in class `wc` has branch ends whose plane pair *is* `{wc, w}`, so the stored
+    /// name is already canonical for it and [`Split::pt`] can put it back verbatim. Restating it
+    /// through `NodeId::branch` would re-run the pair ordering and could flip the root — the trap
+    /// cell ⑩ recorded.
+    fn of(name: NodeId, pin: combinatorics::EndPin) -> Result<Split, BoolError> {
+        match (name, pin) {
+            (_, combinatorics::EndPin::Class(r)) => Ok(Split::Class(r)),
+            (NodeId::Branch { cyl, root, .. }, combinatorics::EndPin::Cylinder) => {
+                Ok(Split::Branch { cyl, root })
+            }
+            // A cylinder pin whose name is not a branch: the two disagree, which is a wiring
+            // failure rather than a shape, and the honest answer is the naming sentence.
+            (_, combinatorics::EndPin::Cylinder) => Err(reject(RejectReason::BranchVertexUnnamed)),
+        }
+    }
+
+    /// The point in the form the ordering rule takes, on the line `p ∩ q` it was collected for.
+    /// ★ A plane split point costs nothing here — its name *is* its pin, and the rule reads the pin.
+    fn on(self, p: usize, q: usize) -> combinatorics::PointOn {
+        match self {
+            Split::Class(r) => combinatorics::PointOn::Class(r),
+            Split::Branch { .. } => combinatorics::PointOn::Branch(self.name(p, q)),
+        }
+    }
+
+    /// The name this point ships under.
+    fn name(self, p: usize, q: usize) -> NodeId {
+        match self {
+            Split::Class(r) => NodeId::three_planes([p, q, r]),
+            Split::Branch { cyl, root } => {
+                let mut planes = [p, q];
+                planes.sort_unstable();
+                NodeId::Branch { planes, cyl, root }
+            }
+        }
+    }
+
+    /// What pins it — the arrangement ships this beside the name.
+    fn pin(self) -> combinatorics::EndPin {
+        match self {
+            Split::Class(r) => combinatorics::EndPin::Class(r),
+            Split::Branch { .. } => combinatorics::EndPin::Cylinder,
+        }
+    }
+}
+
 fn split_at_crossings(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -1934,15 +2001,10 @@ fn split_at_crossings(
     let end_l: Vec<[combinatorics::OnLine; 2]> = segs
         .iter()
         .map(|s| {
-            // ★ The capability is **not** open in this commit: `locate` would answer a
-            // cylinder-pinned end perfectly well, and letting it would mix a representation change
-            // with a behaviour change in one measurement. The next rung takes this guard out.
-            if s.end_h.iter().any(|h| h.class().is_none()) {
-                return Err(reject(RejectReason::BranchVertexUnnamed));
-            }
             let mut it = (0..2).map(|k| {
-                combinatorics::on_line(jd, cyls, wc, s.wall, (s.end[k], s.end_h[k]))
-                    .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))
+                let on = Split::of(s.end[k], s.end_h[k])?.on(wc, s.wall);
+                combinatorics::on_line(jd, cyls, wc, s.wall, on)
+                    .ok_or_else(|| reject(RejectReason::WitnessNotRational))
             });
             Ok([it.next().unwrap()?, it.next().unwrap()?])
         })
@@ -2037,20 +2099,28 @@ fn split_at_crossings(
     let mut out = Vec::new();
     for wall in &walls {
         let w = wall.class;
-        // Split-point plane classes on W's line: every W-segment endpoint, plus every real
-        // different-wall crossing (a segment on `o.wall` whose closed extent reaches W's line).
-        let mut pts: Vec<usize> = Vec::new();
+        // Split points on W's line: every W-segment endpoint, plus every real different-wall
+        // crossing (a segment on `o.wall` whose closed extent reaches W's line).
+        // ★★★★★ **A point, not a plane class.** These used to be `usize` — the third plane naming
+        // the point — which cannot say "a cylinder pins this one", and a `Vec<usize>` silently
+        // dropped such an endpoint: the two pieces either side of a boss then covered no interval
+        // and vanished, leaving the class's boundary open. Measured that way before it was fixed.
+        //
+        // ★★★★ **`Split`, not a `NodeId` — the name is derived.** On *this* line a point is either
+        // a third plane or a root of a cylinder, so `{wc, w}` is common to every one of them and
+        // storing it 114k–134k times is waste. Carrying the full name instead cost the collecting
+        // loop 36% on a rotated fold (75.8→103.5ms, same trip counts): these vectors are rebuilt
+        // per wall, and allocation is where that fixture spends most of its time. The same lesson
+        // as [`combinatorics::OnLine::Class`] dropping its `name`, one file over.
+        let mut pts: Vec<Split> = Vec::new();
         {
             watch!(COLLECT);
             #[cfg(test)]
             phase::scale::add(&phase::scale::COLLECT_TRIPS, segs.len());
-            // ★ A segment's own endpoints are split points on its line. They come from the
-            // located pair, whose `Class` arm carries the very pin `end_c` used to hold.
+            // ★ A segment's own endpoints are split points on its line — whatever pins them.
             for &i in &wall.segs {
-                for l in &end_l[i] {
-                    if let combinatorics::OnLine::Class { pin, .. } = l {
-                        pts.push(*pin);
-                    }
+                for k in 0..2 {
+                    pts.push(Split::of(segs[i].end[k], segs[i].end_h[k])?);
                 }
             }
             // ★ **Wall-major, because the question is about walls.** What lands in `pts` is a *wall*
@@ -2068,17 +2138,8 @@ fn split_at_crossings(
                 let r = other.class;
                 // ★ One handle per wall pair — `r`'s segments all ask about this same crossing,
                 // and they all ride `r`'s line, which is the pair this point is located for.
-                let at = combinatorics::locate(
-                    jd,
-                    cyls,
-                    wc,
-                    r,
-                    (
-                        NodeId::three_planes([wc, r, w]),
-                        combinatorics::EndPin::Class(w),
-                    ),
-                )
-                .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+                let at = combinatorics::locate(jd, cyls, wc, r, combinatorics::PointOn::Class(w))
+                    .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
                 let mut reaches = false;
                 for &i in &other.segs {
                     match closed_contains(i, &at, r) {
@@ -2091,32 +2152,70 @@ fn split_at_crossings(
                     }
                 }
                 if reaches {
-                    pts.push(r);
+                    // ★ A crossing of two plane lines is a three-plane point; only a segment's own
+                    // endpoint can be one a cylinder pins.
+                    pts.push(Split::Class(r));
                 }
             }
         }
         let pts = {
             watch!(SORT);
-            // Distinct classes (same class = same point), then ordered along the line.
+            // Distinct names (same name = same point), then ordered along the line.
+            // ★ Sorting by `NodeId` first keeps the old key's order: `{wc, w, r}`'s sorted triple
+            // is monotone in `r`, so a group of tied points still hands its **smallest class** to
+            // `group.first()` below, which is the representative and so the emitted name.
             pts.sort_unstable();
             pts.dedup();
-            pts.sort_by(|&x, &y| match combinatorics::order_along(jd, wc, w, x, y) {
-                -1 => std::cmp::Ordering::Less,
-                1 => std::cmp::Ordering::Greater,
-                _ => std::cmp::Ordering::Equal,
+            let mut bad = false;
+            pts.sort_by(|&x, &y| {
+                match combinatorics::order_on(jd, cyls, wc, w, x.on(wc, w), y.on(wc, w)) {
+                    Some(-1) => std::cmp::Ordering::Less,
+                    Some(1) => std::cmp::Ordering::Greater,
+                    Some(_) => std::cmp::Ordering::Equal,
+                    // ★ A comparator cannot decline, so it raises a flag the caller reads — the
+                    // idiom `split_circles` uses for the same reason.
+                    None => {
+                        bad = true;
+                        std::cmp::Ordering::Equal
+                    }
+                }
             });
-            // ★ Two DISTINCT classes ordering equal are one point wearing two handles — a four-plane
+            if bad {
+                return Err(reject(RejectReason::WitnessNotRational));
+            }
+            // ★ Two DISTINCT points ordering equal are one point wearing two names — a four-plane
             // concurrency `{wc, w, ·, ·}`. Record it, and keep one representative as a split point:
             // splitting at both would emit a zero-length piece between them.
-            let mut reps: Vec<usize> = Vec::with_capacity(pts.len());
-            let mut group: Vec<usize> = Vec::new();
-            let flush = |group: &mut Vec<usize>, reps: &mut Vec<usize>, al: &mut Aliases| {
+            // ★★★★ **A tie that involves a cylinder-pinned point is refused, not folded.** The
+            // fold is a statement about *plane classes* — it hands `Aliases` a set of them — and a
+            // branch name has none to contribute. Worse, folding would leave one point wearing a
+            // `ThreePlane` name and a `Branch` name, and the DCEL keys vertices by name, so the
+            // walk would see two vertices where there is one. `split_circles` refuses exactly this
+            // shape by the same reasoning; the fold is its own step.
+            // ☑ Measured unexercised — this arm and the three other new refusals in this function
+            // (the sort's flag, and the two containment `None`s) were each made `unreachable!()`
+            // with the workspace suite and the ignored sweep green.
+            let mut reps: Vec<Split> = Vec::with_capacity(pts.len());
+            let mut group: Vec<Split> = Vec::new();
+            let mut tied_branch = false;
+            let flush = |group: &mut Vec<Split>,
+                         reps: &mut Vec<Split>,
+                         al: &mut Aliases,
+                         tied_branch: &mut bool| {
                 if let Some(&rep) = group.first() {
                     reps.push(rep);
                 }
                 if group.len() > 1 {
+                    if group.iter().any(|s| matches!(s, Split::Branch { .. })) {
+                        *tied_branch = true;
+                        group.clear();
+                        return;
+                    }
                     let mut set: Vec<usize> = vec![wc, w];
-                    set.extend(group.iter().copied());
+                    set.extend(group.iter().filter_map(|s| match s {
+                        Split::Class(r) => Some(*r),
+                        Split::Branch { .. } => None,
+                    }));
                     set.sort_unstable();
                     set.dedup();
                     al.record(jd, &set);
@@ -2124,15 +2223,18 @@ fn split_at_crossings(
                 group.clear();
             };
             for &r in &pts {
-                let same = group
-                    .first()
-                    .is_some_and(|&g| combinatorics::order_along(jd, wc, w, g, r) == 0);
+                let same = group.first().is_some_and(|&g| {
+                    combinatorics::order_on(jd, cyls, wc, w, g.on(wc, w), r.on(wc, w)) == Some(0)
+                });
                 if !same {
-                    flush(&mut group, &mut reps, aliases);
+                    flush(&mut group, &mut reps, aliases, &mut tied_branch);
                 }
                 group.push(r);
             }
-            flush(&mut group, &mut reps, aliases);
+            flush(&mut group, &mut reps, aliases, &mut tied_branch);
+            if tied_branch {
+                return Err(reject(RejectReason::CoincidentNodes));
+            }
             reps
         };
         // ★★ **The fourth plane that *carries* this line, rather than crossing it.**
@@ -2155,7 +2257,12 @@ fn split_at_crossings(
         {
             let family = aliases.wall_family(wc, w);
             if family.len() > 1 {
-                for &r in &pts {
+                // ★ Only a point three planes name joins a plane-class fold — a branch name has
+                // no third class to contribute to the set.
+                for r in pts.iter().filter_map(|s| match s {
+                    Split::Class(r) => Some(*r),
+                    Split::Branch { .. } => None,
+                }) {
                     let mut set: Vec<usize> = vec![wc, r];
                     set.extend(family.iter().copied());
                     set.sort_unstable();
@@ -2164,11 +2271,14 @@ fn split_at_crossings(
                 }
             }
         }
-        // A split point is named `{wc, w, third}` — then folded, because this rebuilds the name
-        // from a handle and so would otherwise re-introduce the very alias `merge_coincident` just
-        // removed. Canonicalizing here and in the merge means every name **downstream** is already
-        // the canonical one, and no later stage has to know the table exists.
-        let sorted = |r: usize, al: &Aliases| al.canon_point(NodeId::three_planes([wc, w, r]));
+        // A split point carries its own name — folded, because a point rebuilt from a handle would
+        // otherwise re-introduce the very alias `merge_coincident` just removed. Canonicalizing
+        // here and in the merge means every name **downstream** is already the canonical one, and
+        // no later stage has to know the table exists.
+        // ★ The **raw** name is what `dedup` and the tie groups above key on, and the canonical one
+        // is what ships: fold first and a four-plane concurrency would collapse before it is
+        // recorded, and the symptom surfaces much later as `SeamAlias`.
+        let sorted = |s: Split, al: &Aliases| al.canon_point(s.name(wc, w));
         // Each sub-interval [p, q] carries the union of the W-segments that cover it. Every segment
         // endpoint is itself a split point, so "covers both ends" means "spans the whole interval".
         watch!(COVER);
@@ -2185,18 +2295,9 @@ fn split_at_crossings(
             let mut merged: Vec<(SolidSide, SegKind)> = Vec::new();
             // The same hoist as the collector: every `w`-segment asks about these two points, and
             // they all ride `w`'s line.
-            let loc = |r: usize| {
-                combinatorics::locate(
-                    jd,
-                    cyls,
-                    wc,
-                    w,
-                    (
-                        NodeId::three_planes([wc, w, r]),
-                        combinatorics::EndPin::Class(r),
-                    ),
-                )
-                .ok_or_else(|| reject(RejectReason::WitnessNotRational))
+            let loc = |s: Split| {
+                combinatorics::locate(jd, cyls, wc, w, s.on(wc, w))
+                    .ok_or_else(|| reject(RejectReason::WitnessNotRational))
             };
             let (at_p, at_q) = (loc(p)?, loc(q)?);
             for &i in &wall.segs {
@@ -2217,10 +2318,7 @@ fn split_at_crossings(
                 out.push(MergedSeg {
                     wall: w,
                     end: [sorted(p, aliases), sorted(q, aliases)],
-                    end_h: [
-                        combinatorics::EndPin::Class(p),
-                        combinatorics::EndPin::Class(q),
-                    ],
+                    end_h: [p.pin(), q.pin()],
                     merged,
                     sense: None,
                 });

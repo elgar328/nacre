@@ -3683,17 +3683,17 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
 /// tracer names them now, orders them, and hands the arrangement segments whose ends a cylinder
 /// pins — and the next stage is the one that cannot take them.
 ///
-/// `split_at_crossings` overlays each wall's line in **plane-class space**: split points are class
-/// ids, and its containment test compares a point with an endpoint by integer identity of those
-/// ids. A branch-pinned end has no class, so it says `BranchVertexUnnamed` — a *hard* reject
-/// rather than a per-face decline, which is why this assertion changed shape and not just its
-/// name. ☑ Measured: all four fixtures, three classes each, and every raise is that one `end_c`.
+/// The overlay learned a branch-pinned endpoint, so the wall moved again — one stage on, to the
+/// **arc split**. `split_circles` asks every segment for its two ends' exact coordinates before it
+/// can cut a circle, and a point a cylinder pins has none: it says `WitnessNotRational`, the
+/// sentence that file already uses for a description it cannot form. ☑ Measured: all four
+/// fixtures stop in that one `undecided`.
 ///
-/// ★ **That name is this lock's map, not its point.** When the overlay learns a branch endpoint
-/// this goes red and names the next wall — which is exactly what it is for. What must hold either
-/// way is that the refusal is honest and total: an error, and the live set exactly as it was.
+/// ★ **That name is this lock's map, not its point.** When the arc split learns such an end this
+/// goes red and names the next wall — which is exactly what it is for. What must hold either way
+/// is that the refusal is honest and total: an error, and the live set exactly as it was.
 #[test]
-fn a_chained_cylinder_bounded_by_the_first_stops_at_the_overlay() {
+fn a_chained_cylinder_bounded_by_the_first_stops_at_the_arc_split() {
     let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
     for (name, second) in [
         ("bore", ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut)),
@@ -3719,7 +3719,7 @@ fn a_chained_cylinder_bounded_by_the_first_stops_at_the_overlay() {
         let live = m.live_solids.clone();
         match boolean(&mut m, second.2, first, b) {
             Err(BoolError::Rejected { reason, .. }) => assert!(
-                matches!(reason, RejectReason::BranchVertexUnnamed),
+                matches!(reason, RejectReason::WitnessNotRational),
                 "{name}: the refusal's layer and cause: {reason:?}"
             ),
             other => panic!("{name}: {other:?}"),
