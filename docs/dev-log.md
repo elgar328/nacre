@@ -14246,6 +14246,27 @@ kit(fmt·clippy·test)과 앱(두 wasm 빌드 · tsc 0 · vitest **142** · `was
 **같은 세션 A/B**: 축 fold **867 → 880ms(약 1.4%)**, 회전은 잡음 안. 남은 비용은 점 공간이 넓어진 것
 (8B → 24B)과 비교자 한 겹이다. **더 쫓지 않고 기록한다.**
 
+### ★★★★★ 자체 점검 2회차 — 거절 이름이 「거짓 문장」이었다
+
+1회차가 doc 둘(`CurvedOperandBoundary`·`WitnessNotRational`)과 **늦게 온 거절 팔 둘의 계측 누락**을
+잡았다. 2회차가 그 둘을 더 봤더니 **이름 자체가 틀렸다**:
+
+`Split::of`/`PointOn::of`는 「핀은 원통인데 이름은 세 평면」에 **`BranchVertexUnnamed`**를 냈는데,
+그 이름의 doc은 *「점은 **정확히 이름 지어져 있고**, 없는 것은 이 경로들이 그걸 나를 다른 이름이
+없다는 것」*이다. 내 케이스는 **정반대** — 점의 **두 반쪽이 모순**이다. 우산의 명제가 거짓이다.
+[[is-the-umbrellas-claim-true-here]]
+
+★★★★ **그리고 이건 입력의 성질이 아니라 «생산자 불변식»이다** — `EndPin::Cylinder`를 쓰는 자리는
+전부(seated 걷기 · 호 분할 · chord 패스) `NodeId::Branch`를 **함께** 쓴다. 둘이 어긋나면 **이 커널의
+결함**이지 모델의 성질이 아니다. ⇒ 이 크레이트가 이미 적어 둔 규칙을 따랐다 — `ClassIx::plane`:
+*「a loud panic beats a silently wrong plane」*. **거짓 문장을 단 거절보다 큰 소리로 멈추는 편이
+낫다.** 둘 다 미실행으로 계측한 뒤 `unreachable!`로 바꿨고, 부수적으로 두 함수가 무오류가 되어
+호출부의 `?`가 사라졌다.
+
+☑ 그 밖에 확인하고 문제없던 것: 잔여물 0 · **4평면 대표 규칙이 구조적으로 보존**(`Split::Class(usize)`의
+derive `Ord`가 `r` 오름차순이라 옛 `Vec<usize>`와 같은 순서) · `sorted()`·`end_h`가 옛 표현과 값 동일 ·
+「1.4%」의 근거가 **A/B 두 쌍**(+1.5%/+1.4%)이지 한 쌍이 아님.
+
 ### 관문·계측
 
 ⑯a·⑯b·⑯c 각각 전량: fmt/clippy 0 · workspace · nodef · census **두 프로파일 비트 동일**

@@ -1927,16 +1927,26 @@ impl Split {
     /// name is already canonical for it and [`Split::pt`] can put it back verbatim. Restating it
     /// through `NodeId::branch` would re-run the pair ordering and could flip the root — the trap
     /// cell ⑩ recorded.
-    fn of(name: NodeId, pin: combinatorics::EndPin) -> Result<Split, BoolError> {
+    /// ★★★★ **A cylinder pin arrives with a branch name, and that is a producer's invariant, so
+    /// this panics rather than naming a refusal.** Every site that writes an `EndPin::Cylinder`
+    /// writes the `NodeId::Branch` beside it — the seated walk, the arc split, the chord pass — so
+    /// the two disagreeing is a defect in *this* kernel, not a property of the model. The
+    /// alternative was `BranchVertexUnnamed`, and its sentence is the mirror image of this case:
+    /// *"the point is exactly named; what is missing is that these paths have no other name to
+    /// carry it by."* Here the point is **not** exactly named — its two halves contradict. A false
+    /// sentence in a reject is worse than a loud stop, which is what `ClassIx::plane` says one
+    /// door over: *"a loud panic beats a silently wrong plane."*
+    /// ☑ Measured unexercised over the whole suite and the ignored sweep before it was made loud.
+    fn of(name: NodeId, pin: combinatorics::EndPin) -> Split {
         match (name, pin) {
-            (_, combinatorics::EndPin::Class(r)) => Ok(Split::Class(r)),
+            (_, combinatorics::EndPin::Class(r)) => Split::Class(r),
             (NodeId::Branch { cyl, root, .. }, combinatorics::EndPin::Cylinder) => {
-                Ok(Split::Branch { cyl, root })
+                Split::Branch { cyl, root }
             }
-            // A cylinder pin whose name is not a branch: the two disagree, which is a wiring
-            // failure rather than a shape, and the honest answer is the naming sentence.
-            // ☑ Measured unexercised (`unreachable!()`, whole suite and ignored sweep green).
-            (_, combinatorics::EndPin::Cylinder) => Err(reject(RejectReason::BranchVertexUnnamed)),
+            (n, combinatorics::EndPin::Cylinder) => unreachable!(
+                "a cylinder pin was written beside a three-plane name: {n:?} — the producer that \
+                 made this segment set its two halves apart"
+            ),
         }
     }
 
@@ -2003,7 +2013,7 @@ fn split_at_crossings(
         .iter()
         .map(|s| {
             let mut it = (0..2).map(|k| {
-                let on = Split::of(s.end[k], s.end_h[k])?.on(wc, s.wall);
+                let on = Split::of(s.end[k], s.end_h[k]).on(wc, s.wall);
                 combinatorics::on_line(jd, cyls, wc, s.wall, on)
                     .ok_or_else(|| reject(RejectReason::WitnessNotRational))
             });
@@ -2121,7 +2131,7 @@ fn split_at_crossings(
             // ★ A segment's own endpoints are split points on its line — whatever pins them.
             for &i in &wall.segs {
                 for k in 0..2 {
-                    pts.push(Split::of(segs[i].end[k], segs[i].end_h[k])?);
+                    pts.push(Split::of(segs[i].end[k], segs[i].end_h[k]));
                 }
             }
             // ★ **Wall-major, because the question is about walls.** What lands in `pts` is a *wall*

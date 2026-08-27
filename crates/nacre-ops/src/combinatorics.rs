@@ -110,7 +110,7 @@ pub(crate) fn order_pinned(
     a: (NodeId, EndPin),
     b: (NodeId, EndPin),
 ) -> Option<i8> {
-    order_on(jd, cyls, p, q, PointOn::of(a)?, PointOn::of(b)?)
+    order_on(jd, cyls, p, q, PointOn::of(a), PointOn::of(b))
 }
 
 /// [`order_pinned`] for callers that already hold the points in [`PointOn`] form.
@@ -141,16 +141,23 @@ pub(crate) enum PointOn {
 }
 
 impl PointOn {
-    /// ★ A cylinder pin whose name is not a branch is a wiring failure, not a shape — the two
-    /// halves of one point disagree, and there is nothing to compare.
-    /// ☑ Measured unexercised (`unreachable!()`, whole suite and ignored sweep green).
+    /// ★★★★ **A cylinder pin arrives with a branch name — a producer's invariant, so this stops
+    /// loudly rather than naming a refusal.** Every site that writes `EndPin::Cylinder` writes the
+    /// `NodeId::Branch` beside it, so the two disagreeing is a defect in this kernel rather than a
+    /// property of the model, and [`RejectReason::BranchVertexUnnamed`] would be a false sentence
+    /// for it: that one says the point *is* exactly named and only the path lacks a way to carry
+    /// it. The rule is `crate::planes::ClassIx::plane`'s — *"a loud panic beats a silently wrong
+    /// plane."*
+    /// ☑ Measured unexercised over the whole suite and the ignored sweep before it was made loud.
     #[inline]
-    fn of(pt: (NodeId, EndPin)) -> Option<PointOn> {
+    fn of(pt: (NodeId, EndPin)) -> PointOn {
         match pt.1 {
-            EndPin::Class(r) => Some(PointOn::Class(r)),
+            EndPin::Class(r) => PointOn::Class(r),
             EndPin::Cylinder => match pt.0 {
-                NodeId::Branch { .. } => Some(PointOn::Branch(pt.0)),
-                NodeId::ThreePlane(_) => None,
+                NodeId::Branch { .. } => PointOn::Branch(pt.0),
+                n @ NodeId::ThreePlane(_) => {
+                    unreachable!("a cylinder pin was written beside a three-plane name: {n:?}")
+                }
             },
         }
     }
