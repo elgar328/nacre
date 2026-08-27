@@ -1052,6 +1052,22 @@ pub enum DeclineKind {
     /// A cylinder face could not answer a circle question exactly — its rim span is
     /// underivable or a plane class lacks the exact description a circle test needs (M6-2a).
     CylSpan,
+    /// **A lateral face has a hole where this class meets it, and the trace can only speak in
+    /// whole circles.**
+    ///
+    /// A fuse can bury part of a lateral in the other body — a boss straddling a plate's edge keeps
+    /// its band but loses the angles inside the plate — and what is left is a band with a hole in
+    /// the `(t, θ)` chart. `circle_on_class` reads the face's **outer** span, so it answers
+    /// "the class cuts a full circle" and that is **false for the angles inside the hole**.
+    ///
+    /// ★★★★★ **This name exists because the alternative was being silently wrong.** The false
+    /// circle does not fail here: it flows on, and two stages later `label_cells` finds the flip
+    /// relation broken and says [`RejectReason::LabelConflict`] — a symptom, not the cause. The
+    /// refusal belongs where the false sentence is made.
+    ///
+    /// Lifting it is the arc-extent trace: walk the face's inner loops against the class the way a
+    /// plane face's loops are walked, and answer per angular interval.
+    CylFaceHole,
     /// A class runs **through a lateral's axis** and the ruling trace could not be stated
     /// exactly — a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`
     /// (M6-2 rulings ladder). Declined whole rather than contributed partially: a
@@ -1078,6 +1094,7 @@ impl DeclineKind {
             Self::NoPinOnLine => "no-pin-on-line",
             Self::SeatedCurveUnbacked => "seated-curve-unbacked",
             Self::CylSpan => "cyl-span",
+            Self::CylFaceHole => "cyl-face-hole",
             Self::Ruling => "ruling",
         }
     }

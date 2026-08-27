@@ -1454,6 +1454,29 @@ fn circle_on_class(
     let Some(t) = crate::planes::axis_param_of_plane(&coeffs, def) else {
         return Err(DeclineKind::CylSpan);
     };
+    // ★★★★★ **A hole in the band makes "the whole circle" a false sentence, and this is where it
+    // is said.** The span above is the **outer** loop's, so it reports the band whole; a fuse can
+    // have buried part of the lateral in the other body, and for those angles this face is not a
+    // boundary at all. Answering `Crosses` there is not a decline waiting to happen — it flows on
+    // and `label_cells` finds the flip relation broken two stages later, which names the symptom.
+    // ★ The test is narrow on purpose: a hole this class does not meet changes nothing, and
+    // refusing for it would take back operations that work today.
+    // ★★★★★ **`None` here is not "no holes" — it is "I could not describe them", and letting it
+    // fall through would re-plant the very silence this arm removes.** (Measured: 2 of 287 lateral
+    // rows in the suite answer `None`, and the first draft of this check waved them past.)
+    let Some(holes) = &cf.holes else {
+        return Err(DeclineKind::CylFaceHole);
+    };
+    for h in holes {
+        let mut ts = h.iter().filter_map(|e| e.at.as_ref());
+        let (Some(a), Some(b)) = (ts.next(), ts.next()) else {
+            continue; // no ⊥ rim: this hole bounds nothing in the axis parameter
+        };
+        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+        if *lo <= t && t <= *hi {
+            return Err(DeclineKind::CylFaceHole);
+        }
+    }
     if span[0] < t && t < span[1] {
         return Ok(Some(CylOnClass::Crosses));
     }

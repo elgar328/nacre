@@ -99,7 +99,44 @@ pub(crate) struct CylFaceInfo {
     /// off its two rim carrier planes: `t = −(n·o + d)/(n·m)` per rim plane, ordered. `None`
     /// when a rim carrier has no narrow rational name — the transversal-circle producer then
     /// declines the face rather than guessing.
+    ///
+    /// ★★ **It is the OUTER loop's span and says nothing about holes** — see [`Self::holes`].
     pub(crate) span: Option<[nacre_scalar::Rat; 2]>,
+    /// **The face's inner loops — the holes another body burned into this band.**
+    ///
+    /// ★★★★★ **A fuse can put a hole in a lateral face, and [`Self::span`] cannot say so.** A boss
+    /// straddling a plate's edge has half its lateral buried in the plate for the plate's own
+    /// height; what survives is a band with a **rectangular hole** in the `(t, θ)` chart. The span
+    /// is read off the *outer* loop, so it reports the whole band and every reader concludes the
+    /// class cuts a full circle — false for the angles inside the hole. This field is what lets a
+    /// reader ask.
+    ///
+    /// ★★ **Only the inner loops, and that is not laziness.** The outer loop's seam edges are
+    /// self-adjacent (not material boundaries) and dropping them **breaks its ring** — what is left
+    /// is two separate rim circles, which is exactly what `span` already states. An inner loop has
+    /// no seam edge unless the hole wraps the seam, and that face is declined ([`CylLoopEdge`]).
+    ///
+    /// `None` when the loops could not be described exactly — the same answer `span` gives for a
+    /// rim with no narrow name, and readers decline by their own names rather than guessing.
+    pub(crate) holes: Option<Vec<Vec<CylLoopEdge>>>,
+}
+
+/// One edge of a lateral face's loop, classified against the cylinder's axis.
+///
+/// ★ **No class index and no name.** `collect_planes` runs before the class table exists
+/// (`plane_index_setup_inner` builds the table *from* its output), so a row can only carry world
+/// geometry — the same constraint [`CylFaceInfo::span`] lives under.
+///
+/// ★ **The carrier plane itself is not here yet**, because nothing reads it yet: the only consumer
+/// today asks *where* the hole is along the axis, not *which class* bounds it in angle. The rung
+/// that names those bounds is the one that adds it.
+#[derive(Clone, Debug)]
+pub(crate) struct CylLoopEdge {
+    /// `Some(t)` when the carrier is **⊥ to the axis** — the edge is an arc lying at that one axis
+    /// parameter. `None` when it is **∥** — the edge is a ruling, and a ⊥ class crosses it at a
+    /// point. A plane that is neither (a tilted cut, whose meet is an ellipse) has no row: the face
+    /// declines, and today the population gate refuses such an operand long before this.
+    pub(crate) at: Option<nacre_scalar::Rat>,
 }
 
 #[derive(Clone)]
@@ -204,6 +241,9 @@ pub(crate) fn collect_planes(
                         // question is exactly "which frames are in play here".
                         motion: motion.filter(|_| def.is_none()),
                         span: def.as_ref().and_then(|d| lateral_axis_span(model, face, d)),
+                        holes: def
+                            .as_ref()
+                            .and_then(|d| lateral_inner_loops(model, face, d)),
                         def,
                     }));
                     continue;
@@ -682,6 +722,75 @@ pub(crate) fn axis_param_of_plane(
     Rat::from_int(0)
         .checked_sub(no_d)?
         .checked_mul(Rat::new(nm.denom(), nm.numer())?)
+}
+
+/// The world plane of the face on the **other** side of `he`, or `None` for the seam (self-adjacent)
+/// — the rule [`lateral_axis_span`] states: *the seam edge is self-adjacent — not a rim*.
+///
+/// `Err(())` is "there is a rim here but it has no exact world description": the caller declines
+/// the face rather than describing it wrongly.
+#[allow(clippy::result_unit_err)]
+fn edge_carrier_world(
+    model: &Model,
+    face: &nacre_topo::Face,
+    he: &nacre_topo::HalfEdge,
+) -> Result<Option<[nacre_scalar::Rat; 4]>, ()> {
+    let e = model.edges.get(he.edge);
+    let [a, b] = e.surfaces;
+    let cap = if a == face.surface { b } else { a };
+    if cap == face.surface {
+        return Ok(None); // the seam: a chart cut, not a material boundary
+    }
+    let coeffs = *model.surface_name.get(&cap).ok_or(())?.narrow().ok_or(())?;
+    Ok(Some(match model.plane_motion(cap) {
+        None => coeffs,
+        Some(leaf) => nacre_scalar::Isometry::translation(model.chain_translation(leaf).ok_or(())?)
+            .plane_coeffs(coeffs)
+            .ok_or(())?,
+    }))
+}
+
+/// **The face's inner loops, as carriers** — see [`CylFaceInfo::holes`].
+///
+/// ★ A loop is kept only if **every** edge's carrier is ⊥ or ∥ to the axis. Anything else is a
+/// tilted cut, whose meet with the lateral is an ellipse this vocabulary cannot state; the face
+/// declines rather than describing part of itself. Same for a hole that touches the **seam** — its
+/// corner is not a plane∩plane∩cylinder point, so it has no name to be traced by.
+fn lateral_inner_loops(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+) -> Option<Vec<Vec<CylLoopEdge>>> {
+    let m = def.dir();
+    let mut out = Vec::with_capacity(face.inner.len());
+    for lp in &face.inner {
+        let mut edges = Vec::with_capacity(lp.half_edges.len());
+        for he in &lp.half_edges {
+            // A seam edge inside a hole means the hole wraps the chart's cut: its corner has no
+            // three-surface name, so the whole face is undescribable here.
+            let coeffs = edge_carrier_world(model, face, he).ok()??;
+            let n = [coeffs[0], coeffs[1], coeffs[2]];
+            let at = if nacre_scalar::parallel_rat(&n, &m) {
+                Some(axis_param_of_plane(&coeffs, def)?)
+            } else if dot3_rat_local(&n, &m)? == nacre_scalar::Rat::from_int(0) {
+                None
+            } else {
+                return None; // neither ⊥ nor ∥: an ellipse, outside this vocabulary
+            };
+            edges.push(CylLoopEdge { at });
+        }
+        out.push(edges);
+    }
+    Some(out)
+}
+
+fn dot3_rat_local(
+    x: &[nacre_scalar::Rat; 3],
+    y: &[nacre_scalar::Rat; 3],
+) -> Option<nacre_scalar::Rat> {
+    x[0].checked_mul(y[0])?
+        .checked_add(x[1].checked_mul(y[1])?)?
+        .checked_add(x[2].checked_mul(y[2])?)
 }
 
 fn lateral_axis_span(

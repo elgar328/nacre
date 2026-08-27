@@ -3788,29 +3788,29 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
     let _ = (WC_ABOVE_WALL.load(Relaxed), WC_BELOW_WALL.load(Relaxed));
 }
 
-/// ★★★★★ **The wall is past the arc split now: the winding walk.**
+/// ★★★★★ **The wall is back at the trace, and for the first time it names the thing that is
+/// actually wrong.**
 ///
 /// Every second cylinder operation on such a plate is still refused, whatever it is and wherever it
 /// stands — the refusal is about the *operand*, not about the two bodies meeting. What keeps
 /// changing is **which layer says so**, and this lock is the map of that. It has read
 /// `TraceDeclined { BranchNode }` (the tracer could not name a ring corner a cylinder made), then
-/// `WitnessNotRational` (the arc split asked every segment for its two ends' exact coordinates, and
-/// a point a cylinder pins has none).
+/// `WitnessNotRational` (the arc split asked every segment for its two ends' coordinates), then
+/// [`RejectReason::CurvedStraightRun`] (`loop_winding` had no turn to read where a ring runs
+/// smooth through its extreme node).
 ///
-/// The arc split stopped asking for coordinates, so the wall moved one stage on. All four now read
-/// [`RejectReason::CurvedStraightRun`], and that name is the whole finding: it is a guard whose own
-/// doc said it was **unfired by construction** — "in this cell's population every extreme node is a
-/// real corner … it fires the day that stops being true". Today is that day. `loop_winding` reads
-/// the turn at a ring's extreme node by walking back past nodes the loop runs *straight* through,
-/// and two arcs of one circle are tangent-continuous, so the walk steps past them and would read the
-/// turn at some other point of the ring. The rings that reach it now have exactly that shape,
-/// because circles are being cut into arcs on a population that never produced them before.
+/// ★★★★★ **Every one of those was downstream of a false sentence.** The first fuse buries half the
+/// boss's lateral in the plate, leaving that face a band with a **hole**; the face table describes a
+/// lateral by its outer axis span alone, so the trace answered "the class cuts a full circle" — true
+/// for half the angles and false for the other half. The winding walk and the labelling were both
+/// reading a subdivision built on that. It now reads
+/// `TraceDeclined { CylFaceHole, face }` **and names the face**.
 ///
 /// ★ **That name is this lock's map, not its point.** What must hold either way is that the refusal
-/// is honest and total: an error, and the live set exactly as it was. When the winding walk learns
-/// the general extreme-point rule its doc names, this goes red and names the next wall.
+/// is honest and total: an error, and the live set exactly as it was. When the trace learns to walk
+/// that face's loops and answer per angular interval, this goes red and names the next wall.
 #[test]
-fn a_chained_cylinder_bounded_by_the_first_stops_at_the_winding_walk() {
+fn a_chained_cylinder_bounded_by_the_first_stops_at_the_trace() {
     let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
     for (name, second) in [
         ("bore", ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut)),
@@ -3836,7 +3836,13 @@ fn a_chained_cylinder_bounded_by_the_first_stops_at_the_winding_walk() {
         let live = m.live_solids.clone();
         match boolean(&mut m, second.2, first, b) {
             Err(BoolError::Rejected { reason, .. }) => assert!(
-                matches!(reason, RejectReason::CurvedStraightRun),
+                matches!(
+                    reason,
+                    RejectReason::TraceDeclined {
+                        kind: crate::DeclineKind::CylFaceHole,
+                        ..
+                    }
+                ),
                 "{name}: the refusal's layer and cause: {reason:?}"
             ),
             other => panic!("{name}: {other:?}"),
