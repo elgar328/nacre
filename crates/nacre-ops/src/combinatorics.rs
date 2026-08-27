@@ -3739,11 +3739,14 @@ pub(crate) fn class_coeffs_rat(
 /// tangency because *its* coordinate happens to be rational: a function right for one root and not
 /// the other is the "sometimes right" trap.
 ///
-/// ★★★ **And the one live caller names that `None` wrongly for this cause.**
-/// `arrangement::circles_meet_no_segment` turns it into `WitnessNotRational`, whose sentence is
-/// "a wider rational would lift this" — **false** for a branch point. It is unreachable today
-/// (that caller passes segment *endpoints*, always three-plane), so it is recorded rather than
-/// fixed: when a segment endpoint can be a branch node, that caller owes a second reason.
+/// ★★★ **And the live caller names that `None` wrongly for this cause — reachably, now.**
+/// `arrangement::split_circles` asks it of both ends of every segment and turns `None` into
+/// `WitnessNotRational`, whose sentence is "a wider rational would lift this" — **false** for a
+/// branch point, which has no rational coordinate at any width. This is where every chained-cylinder
+/// operand stops today, so the wrong sentence is the one a user meets. The fix is structural rather
+/// than a rename: that caller is being taught to ask for an **order** instead of a coordinate, and
+/// then it will not ask this at all. (The predecessor this paragraph used to name,
+/// `circles_meet_no_segment`, no longer exists.)
 pub(crate) fn node_coords_rat(
     jd: &Judge<'_, WorkingPlane>,
     n: NodeId,

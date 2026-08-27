@@ -2543,6 +2543,33 @@ fn split_circles(
 ) -> Result<SplitCircles, BoolError> {
     use nacre_scalar::quad::QuadVal;
     let undecided = || reject(RejectReason::WitnessNotRational);
+    // ★ Nothing to cross. This used to be answered further down, after the loop had asked every
+    // segment for nothing; the ends below are built for the whole slice at once, so the empty case
+    // has to be answered before them or an empty class would start declining. `split_rulings`
+    // opens with the same line.
+    if circles.is_empty() {
+        return Ok(None);
+    }
+    // ★★ **Both ends of every segment, located on that segment's own line, once** — the hoist
+    // `split_at_crossings` makes, for the same reason and with the same obligation: each pair is
+    // located for `(wc, sg.wall)`, which is the pair [`combinatorics::closed_contains`] must be
+    // called with below.
+    let seg_ends: Vec<[combinatorics::OnLine; 2]> = segs
+        .iter()
+        .map(|s| {
+            let mut it = (0..2).map(|k| {
+                combinatorics::on_line(
+                    jd,
+                    cyls,
+                    wc,
+                    s.wall,
+                    Split::of(s.end[k], s.end_h[k]).on(wc, s.wall),
+                )
+                .ok_or_else(undecided)
+            });
+            Ok([it.next().unwrap()?, it.next().unwrap()?])
+        })
+        .collect::<Result<_, BoolError>>()?;
     // Which nodes land on each circle, and which on each segment. Collected together because one
     // crossing is a point of both — splitting only one of them would leave the other's edge running
     // through a vertex it does not have.
@@ -2558,16 +2585,39 @@ fn split_circles(
             if p0 == p1 || !nacre_scalar::segment_meets_cylinder(&p0, &p1, &o, &m, r) {
                 continue;
             }
-            let Some(xs) = circle_crossings(jd, wc, circ, sg, [&p0, &p1]) else {
+            let Some(xs) = circle_crossings(jd, wc, circ, sg) else {
                 return Err(undecided());
             };
             for n in xs {
-                // A tangency touches without separating — `separates` above already let that
-                // shape through, and cutting there would make a zero-length arc.
+                // A tangency touches without separating — `segment_meets_cylinder` above already
+                // let that shape through, and cutting there would make a zero-length arc.
                 if matches!(
                     combinatorics::branch_name(n),
                     Some((_, _, nacre_topo::QuadRoot::Double))
                 ) {
+                    continue;
+                }
+                // ★★★★★ **Whether the crossing is on this segment is asked here, in the one
+                // vocabulary that can answer it for both kinds of end.** It used to be two plane
+                // fences inside `circle_crossings`, which needed a *plane* through each endpoint
+                // and so could only be built where every end was three-plane named.
+                let at =
+                    combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Branch(n))
+                        .ok_or_else(undecided)?;
+                #[cfg(test)]
+                extent_probe::against_the_fences(
+                    jd,
+                    sg,
+                    [&p0, &p1],
+                    n,
+                    &circ.def,
+                    &at,
+                    &seg_ends[si],
+                    wc,
+                );
+                if !combinatorics::closed_contains(jd, wc, sg.wall, &at, &seg_ends[si])
+                    .ok_or_else(undecided)?
+                {
                     continue;
                 }
                 on_circle[ci].push(n);
@@ -2602,11 +2652,10 @@ fn split_circles(
     //
     // ★★ **And it is why a one-node circle needs no name of its own here.** A circle cut at
     // exactly one point is *slit*, not divided, and the arc below comes out `[n, n]` — the closed
-    // form a rim has. Measured: the only fixture that reaches it is
-    // `a_crossing_on_a_segments_endpoint`, where the single crossing **is** the two-names case and
-    // the segment half now refuses it first. A genuine slit (a segment ending strictly inside the
-    // disk) would fall through to the walk, whose orbit-length rule refuses a one-edge cycle by
-    // name — loudly, and where the sentence is true.
+    // form a rim has. A genuine slit (a segment ending strictly inside the disk) would fall through
+    // to the walk, whose orbit-length rule refuses a one-edge cycle by name — loudly, and where the
+    // sentence is true. (This used to cite a fixture by name as the only one that reaches it. That
+    // fixture is gone and the claim went unmeasured with it, so it is stated as the argument it is.)
     // ---- segments → sub-segments, in line order ----
     for (si, sg) in segs.iter().cloned().enumerate() {
         let mut nodes = std::mem::take(&mut on_seg[si]);
@@ -2889,22 +2938,27 @@ fn cmp_along(
 /// Solving in ascending order instead would make the correspondence true by construction and leave
 /// the canonicalization unexercised, which is where a wrong rule hides; the next mint site (the arc
 /// split, walking segments in DCEL order) will not have that luxury either.
+/// ★★★★★ **It names where the *line* crosses, and the caller says which of those are on the
+/// segment.** Both roots come back; two plane fences through the endpoints used to drop the ones
+/// outside, and a fence is a *plane*, which an end a cylinder pinned does not have. Extent is an
+/// ordering question, so it belongs with the rule that answers ordering for both kinds of end
+/// ([`combinatorics::closed_contains`]) — and the caller already post-filters here anyway, for the
+/// tangency.
 fn circle_crossings(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     circ: &MergedCircle,
     sg: &MergedSeg,
-    ends: [&[nacre_scalar::Rat; 3]; 2],
 ) -> Option<Vec<combinatorics::NodeId>> {
     use nacre_scalar::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
     let w = combinatorics::class_coeffs_rat(jd, wc)?;
     let v = combinatorics::class_coeffs_rat(jd, sg.wall)?;
     let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
-    let (line, roots) = match nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)? {
-        CylinderMeet::Pair { line, s } => (line, vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])]),
+    let roots = match nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)? {
+        CylinderMeet::Pair { s, .. } => vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])],
         // ★ `Double`, not `Lo`: the two roots coincide, so a re-sort must leave the name alone.
-        CylinderMeet::Tangent { line, s } => (line, vec![(QuadRoot::Double, QuadVal::from_rat(s))]),
+        CylinderMeet::Tangent { s, .. } => vec![(QuadRoot::Double, QuadVal::from_rat(s))],
         // ★ Unreachable while the caller's `hit` holds — a segment that meets the solid
         // cylinder has a line that meets its surface, and this line is ⊥ to the axis so it
         // cannot pass inside without crossing. Left returning "no crossings" rather than made
@@ -2916,45 +2970,89 @@ fn circle_crossings(
              can only miss, touch or cross the cylinder — got {other:?}"
         ),
     };
-    // The two planes pinning the segment's ends on this line. ★ Which side of each is "inside"
-    // is read off the **opposite endpoint**, never assumed: the sign conventions of a class's
-    // stored coefficients are not this function's to guess.
-    let mut fences = Vec::with_capacity(2);
-    for k in 0..2 {
-        // ★ The fence is a **plane** through the segment's end. An end the arc split pinned with a
-        // cylinder has none, and this locator answers `None` — the caller's own policy for a
-        // witness it cannot form (it drops the witness, never the verdict).
-        let e = combinatorics::class_coeffs_rat(jd, sg.end_h[k].class()?)?;
-        let far = ends[1 - k];
-        let mut at_far = e[3];
-        for i in 0..3 {
-            at_far = at_far.checked_add(e[i].checked_mul(far[i])?)?;
-        }
-        fences.push((e, at_far.numer().signum()));
-    }
-    let mut out = Vec::new();
-    for (root, s) in roots {
-        let mut inside = true;
-        for (e, want) in &fences {
-            // An endpoint-coincident crossing (`Zero`) counts as inside: it is a real point of
-            // both the circle and the segment, and the arc split will need it.
-            let side = nacre_scalar::quad::plane_side(e, &line, &s);
-            let got = match side {
+    Some(
+        roots
+            .into_iter()
+            .map(|(root, _)| combinatorics::NodeId::branch(wc, sg.wall, circ.cyl, root))
+            .collect(),
+    )
+}
+
+/// The retired plane-fence extent test, kept for one commit so the rule that replaced it can be
+/// **differenced against it** rather than argued equal to it.
+///
+/// The two are the same predicate wherever the fence is well posed: the fence plane is the class
+/// that pins one end, so it crosses the line exactly *at* that end, and "the side the far endpoint
+/// is on" is the half-line from there. Where it is **not** well posed — the far endpoint sitting on
+/// the fence plane, so `want == 0` and every nonzero side is read as outside — the two disagree, and
+/// that is what the counters below are for.
+///
+/// ☑ It expires with the gate: it needs both endpoints' rational coordinates, which is the very
+/// demand this cell is removing.
+#[cfg(test)]
+pub(crate) mod extent_probe {
+    use super::{Judge, MergedSeg, WorkingPlane, combinatorics};
+    use core::sync::atomic::{AtomicUsize, Ordering};
+
+    pub(crate) static ASKED: AtomicUsize = AtomicUsize::new(0);
+    pub(crate) static DISAGREED: AtomicUsize = AtomicUsize::new(0);
+
+    fn by_fences(
+        jd: &Judge<'_, WorkingPlane>,
+        sg: &MergedSeg,
+        ends: [&[nacre_scalar::Rat; 3]; 2],
+        meet: &(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    ) -> Option<bool> {
+        for k in 0..2 {
+            let e = combinatorics::class_coeffs_rat(jd, sg.end_h[k].class()?)?;
+            let far = ends[1 - k];
+            let mut at_far = e[3];
+            for i in 0..3 {
+                at_far = at_far.checked_add(e[i].checked_mul(far[i])?)?;
+            }
+            let want = at_far.numer().signum();
+            let got = match nacre_scalar::quad::plane_side(&e, &meet.0, &meet.1) {
                 nacre_scalar::Orient::Positive => 1,
                 nacre_scalar::Orient::Negative => -1,
                 nacre_scalar::Orient::Zero => 0,
             };
-            if got != 0 && got != *want {
-                inside = false;
-                break;
+            if got != 0 && got != want {
+                return Some(false);
             }
         }
-        if !inside {
-            continue;
-        }
-        out.push(combinatorics::NodeId::branch(wc, sg.wall, circ.cyl, root));
+        Some(true)
     }
-    Some(out)
+
+    /// Both verdicts for one crossing, counted. `None` from either side is not a disagreement —
+    /// it is a description that could not be formed, and the two roads decline for different causes.
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn against_the_fences(
+        jd: &Judge<'_, WorkingPlane>,
+        sg: &MergedSeg,
+        ends: [&[nacre_scalar::Rat; 3]; 2],
+        n: combinatorics::NodeId,
+        def: &nacre_topo::CylinderDef,
+        at: &combinatorics::Located<'_>,
+        seg_ends: &[combinatorics::OnLine; 2],
+        wc: usize,
+    ) {
+        let Some((_, cyl, _)) = combinatorics::branch_name(n) else {
+            return;
+        };
+        let Some(meet) = combinatorics::branch_meet(jd, cyl, def, n) else {
+            return;
+        };
+        let (a, b) = (
+            by_fences(jd, sg, ends, &meet),
+            combinatorics::closed_contains(jd, wc, sg.wall, at, seg_ends),
+        );
+        if let (Some(a), Some(b)) = (a, b) {
+            ASKED.fetch_add(1, Ordering::Relaxed);
+            if a != b {
+                DISAGREED.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
 }
 
 /// **Where a segment crosses a cylinder's rulings on a ∥ class** — the straight sibling of
@@ -2972,7 +3070,6 @@ fn lateral_crossings(
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     sg: &MergedSeg,
-    ends: [&[Rat; 3]; 2],
 ) -> Result<Option<Vec<LateralCrossing>>, BoolError> {
     use nacre_scalar::quad::CylinderMeet;
     use nacre_topo::QuadRoot;
@@ -2999,51 +3096,20 @@ fn lateral_crossings(
         }
         None => return Ok(None),
     };
-    // The fences: the planes pinning the segment's ends, "inside" read off the opposite
-    // endpoint — the same rule `circle_crossings` states.
-    let mut fences = Vec::with_capacity(2);
-    for k in 0..2 {
-        let Some(cls) = sg.end_h[k].class() else {
-            return Ok(None);
-        };
-        let Some(e) = combinatorics::class_coeffs_rat(jd, cls) else {
-            return Ok(None);
-        };
-        let far = ends[1 - k];
-        let mut at_far = e[3];
-        for i in 0..3 {
-            let Some(t) = e[i].checked_mul(far[i]).and_then(|x| at_far.checked_add(x)) else {
-                return Ok(None);
-            };
-            at_far = t;
-        }
-        fences.push((e, at_far.numer().signum()));
-    }
-    let mut out = Vec::new();
-    for (root, s) in roots {
-        let mut inside = true;
-        for (e, want) in &fences {
-            let side = nacre_scalar::quad::plane_side(e, &line, &s);
-            let got = match side {
-                nacre_scalar::Orient::Positive => 1,
-                nacre_scalar::Orient::Negative => -1,
-                nacre_scalar::Orient::Zero => 0,
-            };
-            if got != 0 && got != *want {
-                inside = false;
-                break;
-            }
-        }
-        if !inside {
-            continue;
-        }
-        out.push((
-            combinatorics::NodeId::branch(wc, sg.wall, cyl, root),
-            line.clone(),
-            s,
-        ));
-    }
-    Ok(Some(out))
+    // ★ Whether a crossing is **on this segment** is the caller's question now, asked in the one
+    // vocabulary that answers it for both kinds of end — the same move the circle side makes.
+    Ok(Some(
+        roots
+            .into_iter()
+            .map(|(root, s)| {
+                (
+                    combinatorics::NodeId::branch(wc, sg.wall, cyl, root),
+                    line.clone(),
+                    s,
+                )
+            })
+            .collect(),
+    ))
 }
 
 /// One crossing [`lateral_crossings`] found: its Branch name, and the exact `(line, s)` it was
@@ -3128,11 +3194,33 @@ fn split_rulings(
         if p0 == p1 {
             continue;
         }
+        // Both ends on this segment's own line, once — the pair `closed_contains` is asked with.
+        let mut it = (0..2).map(|k| {
+            combinatorics::on_line(
+                jd,
+                cyls,
+                wc,
+                sg.wall,
+                Split::of(sg.end[k], sg.end_h[k]).on(wc, sg.wall),
+            )
+            .ok_or_else(undecided)
+        });
+        let seg_ends = [it.next().unwrap()?, it.next().unwrap()?];
         for &(cyl, def) in &cyl_list {
-            let Some(xs) = lateral_crossings(jd, wc, &w, cyl, def, sg, [&p0, &p1])? else {
+            let Some(xs) = lateral_crossings(jd, wc, &w, cyl, def, sg)? else {
                 return Err(undecided());
             };
             for (n, line, s) in xs {
+                // ★ On this segment? The caller's question since the fences went — same rule, same
+                // vocabulary as the circle side.
+                let at =
+                    combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Branch(n))
+                        .ok_or_else(undecided)?;
+                if !combinatorics::closed_contains(jd, wc, sg.wall, &at, &seg_ends)
+                    .ok_or_else(undecided)?
+                {
+                    continue;
+                }
                 let Some(side) = ruling_side(&w, def, (&line, &s)) else {
                     return Err(undecided());
                 };

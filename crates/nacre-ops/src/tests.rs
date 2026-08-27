@@ -3674,6 +3674,59 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     }
 }
 
+/// ★★★★★ **The rule that replaced the two plane fences is *differenced* against them, not argued
+/// equal to them.**
+///
+/// They are the same predicate wherever the fence is well posed — the fence plane is the class that
+/// pins one end, so it crosses the line exactly at that end and "the side the far endpoint is on" is
+/// the half-line from there. That argument has a hole: where the far endpoint sits *on* the fence
+/// plane, `want` is `0` and every nonzero side reads as outside. So the arc split computes both
+/// verdicts for every crossing it examines and counts the disagreements, and this reads the counter.
+///
+/// ★★★★★ **Three negative controls, and one of them says the green is thinner than it looks.**
+/// ☑ Inverting `closed_contains`' verdict inside the probe: **red, 8 of 8** — both roads are really
+/// read. ☑ Letting the fence side check only *one* of its two fences: **still green**. ☑ Letting it
+/// check **neither**, so it answers "inside" unconditionally: **still green** — which says that on
+/// this fixture *no crossing is out of extent*, so the two predicates agree by both saying yes. The
+/// case that would separate them — a segment ending strictly inside the disk, whose line's far
+/// crossing lies past its end — is what a **chained** operand produces, and that population is still
+/// behind the gate. So: this locks that the roads are wired to the same question, and the census is
+/// what locks the answers.
+///
+/// ★ The disagreement half is asserted **globally**, not as a delta: any fixture anywhere in this
+/// binary that does reach an out-of-extent crossing has to agree too, whatever order it runs in.
+///
+/// ★ It expires with the gate: the fences need both endpoints' rational coordinates, which is the
+/// demand the next rung removes.
+#[test]
+fn the_extent_rule_agrees_with_the_fences_it_replaced() {
+    use crate::arrangement::extent_probe::{ASKED, DISAGREED};
+    use core::sync::atomic::Ordering::Relaxed;
+    let before = (ASKED.load(Relaxed), DISAGREED.load(Relaxed));
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([12.0, 4.0, 2.0]),
+    );
+    let up = Vector3::from_array([0.0, 0.0, 1.0]);
+    let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    m.rebuild_adjacency();
+    boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
+    let after = (ASKED.load(Relaxed), DISAGREED.load(Relaxed));
+    assert!(
+        after.0 > before.0,
+        "the probe never ran, so it measured nothing: asked {} -> {}",
+        before.0,
+        after.0
+    );
+    assert_eq!(
+        after.1, 0,
+        "the line-order rule and the plane fences disagreed on {} of the {} crossings this binary \
+         has examined",
+        after.1, after.0
+    );
+}
+
 /// ★★★★★ **The wall is past the overlay now: the arc split.**
 ///
 /// Every second cylinder operation on such a plate is still refused, whatever it is and wherever
