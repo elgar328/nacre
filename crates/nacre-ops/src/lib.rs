@@ -851,9 +851,11 @@ pub enum RejectReason {
     /// here has had to move with it four times: [`DeclineKind::BranchNode`] at the tracer's ring
     /// naming, then [`Self::BranchVertexUnnamed`] at the arrangement's then-plane-only overlay,
     /// then [`Self::WitnessNotRational`] at the arc split, which asked every segment for its two
-    /// ends' exact coordinates — and now [`Self::CurvedStraightRun`], **outside the arrangement
-    /// altogether**: the arrangement takes a cylinder-pinned end everywhere, so a chained operand
-    /// reaches `loop_winding`, whose extreme-node walk steps past two tangent arcs of one circle.
+    /// ends' exact coordinates — and now [`Self::CurvedStraightRun`], **one stage further into the
+    /// arrangement**: its split passes all take a cylinder-pinned end, so a chained operand reaches
+    /// the *cell* stage, where `arrangement::walk_cells` asks `combinatorics::loop_winding` for a
+    /// ring's winding and its extreme-node walk steps past two tangent arcs of one circle.
+    /// ☑ Measured by backtrace, not inferred: the raise arrives through `walk_cells`/`per_class`.
     ///
     /// * `planes::face_clears_footprint` — the population **gate**. It used to refuse the whole
     ///   chained population here, because its clearance scan stopped at the first corner a
