@@ -2575,14 +2575,30 @@ fn split_circles(
     // through a vertex it does not have.
     let mut on_circle: Vec<Vec<NodeId>> = vec![Vec::new(); circles.len()];
     let mut on_seg: Vec<Vec<NodeId>> = vec![Vec::new(); segs.len()];
+    // ★★★★★ **Where a segment's ends are, asked once per segment — and a missing one is no longer
+    // fatal.** This used to sit inside the circle loop, re-solving the same two points once per
+    // circle, and it *stopped* the whole class when either end was a branch point, which has no
+    // rational coordinate at any width. Nothing below needs a coordinate to decide anything now;
+    // the one thing left that reads it is a **filter**.
+    let seg_coords: Vec<[Option<[Rat; 3]>; 2]> = segs
+        .iter()
+        .map(|s| s.end.map(|t| combinatorics::node_coords_rat(jd, t)))
+        .collect();
     for (ci, circ) in circles.iter().enumerate() {
         let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
         for (si, sg) in segs.iter().enumerate() {
-            let ends = sg.end.map(|t| combinatorics::node_coords_rat(jd, t));
-            let [Some(p0), Some(p1)] = ends else {
-                return Err(undecided());
-            };
-            if p0 == p1 || !nacre_scalar::segment_meets_cylinder(&p0, &p1, &o, &m, r) {
+            // A segment whose two ends are one point cuts nothing. Asked by **name**, which is the
+            // identity: two spellings of one point are refused upstream, not tolerated here.
+            if sg.end[0] == sg.end[1] {
+                continue;
+            }
+            // ★★★★★ **The cheap rejection runs where it can be formed, and skipping it asks
+            // *more*, not less.** `segment_meets_cylinder` needs both endpoints' coordinates; where
+            // one is a branch point the question goes straight to `circle_crossings`, which answers
+            // `Miss` exactly when the line misses. Losing the filter costs a solve, never an answer.
+            if let [Some(p0), Some(p1)] = &seg_coords[si]
+                && (p0 == p1 || !nacre_scalar::segment_meets_cylinder(p0, p1, &o, &m, r))
+            {
                 continue;
             }
             let Some(xs) = circle_crossings(jd, wc, circ, sg) else {
@@ -2605,16 +2621,18 @@ fn split_circles(
                     combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Branch(n))
                         .ok_or_else(undecided)?;
                 #[cfg(test)]
-                extent_probe::against_the_fences(
-                    jd,
-                    sg,
-                    [&p0, &p1],
-                    n,
-                    &circ.def,
-                    &at,
-                    &seg_ends[si],
-                    wc,
-                );
+                if let [Some(p0), Some(p1)] = &seg_coords[si] {
+                    extent_probe::against_the_fences(
+                        jd,
+                        sg,
+                        [p0, p1],
+                        n,
+                        &circ.def,
+                        &at,
+                        &seg_ends[si],
+                        wc,
+                    );
+                }
                 if !combinatorics::closed_contains(jd, wc, sg.wall, &at, &seg_ends[si])
                     .ok_or_else(undecided)?
                 {
@@ -2822,15 +2840,39 @@ fn split_segments_at(
                 combinatorics::EndPin::Cylinder,
             ));
         }
-        // ★ The two ends, and **where they landed is remembered** rather than recovered from the
-        // tail of the vector: the next rung stops pushing an end that a crossing already named.
-        let ends = (keyed.len(), keyed.len() + 1);
+        // ★★★★★ **A crossing that *is* an endpoint is one point with one name, so it is deduped
+        // rather than refused.** The old sentence here — "one point wearing two names, a three-plane
+        // one and a branch one" — is still true and still refused, but only for the case it
+        // describes: a crossing at a *three-plane* end really does carry a second name, and the
+        // equality check below catches it. Where the end was pinned by a cylinder, its name **is**
+        // the crossing's `Branch{planes, cyl, root}` — the same vertex, arrived at twice — and
+        // shipping it twice would put a zero-length piece between a point and itself.
+        //
+        // ★ This is why the ends' indices are remembered instead of read off the tail of the
+        // vector: after a dedup the last two entries are no longer the two ends.
+        // ☑ Measured over the suite: the dedup fires **400** times and the equality check below
+        // still refuses **1** — the two cases are separated by `NodeId`, and both happen.
+        let mut ends = (0usize, 0usize);
         for k in 0..2 {
-            keyed.push((
-                Split::of(sg.end[k], sg.end_h[k]).on(wc, sg.wall),
-                sg.end[k],
-                sg.end_h[k],
-            ));
+            let slot = match keyed.iter().position(|e| e.1 == sg.end[k]) {
+                Some(ix) => ix,
+                None => {
+                    keyed.push((
+                        Split::of(sg.end[k], sg.end_h[k]).on(wc, sg.wall),
+                        sg.end[k],
+                        sg.end_h[k],
+                    ));
+                    keyed.len() - 1
+                }
+            };
+            if k == 0 { ends.0 = slot } else { ends.1 = slot }
+        }
+        // ★★ **Nothing between them: every crossing was an end, so the segment is not cut.** It goes
+        // back whole rather than being re-emitted as a single piece — which would recompute a sense
+        // it already carries, and could decline where the untouched segment does not.
+        if keyed.len() == 2 {
+            out_segs.push(sg);
+            continue;
         }
         // The comparison's **second**-argument form, once per point — the hoist `Located`'s own doc
         // measured: a first argument is built a few times, a second is stored and asked repeatedly.
@@ -3009,11 +3051,12 @@ fn circle_crossings(
         CylinderMeet::Pair { s, .. } => vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])],
         // ★ `Double`, not `Lo`: the two roots coincide, so a re-sort must leave the name alone.
         CylinderMeet::Tangent { s, .. } => vec![(QuadRoot::Double, QuadVal::from_rat(s))],
-        // ★ Unreachable while the caller's `hit` holds — a segment that meets the solid
-        // cylinder has a line that meets its surface, and this line is ⊥ to the axis so it
-        // cannot pass inside without crossing. Left returning "no crossings" rather than made
-        // loud: the cost of being wrong here is a witness of the wrong shape, and the cost of
-        // being wrong the other way is a panic on a valid model.
+        // ★★ **Reachable, and it always was the honest answer.** It used to be unreachable behind
+        // the caller's `segment_meets_cylinder` — a segment that meets the solid cylinder has a line
+        // that meets its surface. That filter needs both endpoints' coordinates, so it is skipped
+        // where one end is a branch point, and the line genuinely can miss. "No crossings" is what
+        // a miss means; nothing about the arm changes but the sentence above it.
+        // ☑ Measured: **6** times over the suite, where the doc used to say never.
         CylinderMeet::Miss(_) => return Some(Vec::new()),
         other => unreachable!(
             "a circle's class is ⊥ to the axis, so its meet with any wall is ⊥ to the axis and \
@@ -3373,17 +3416,20 @@ fn split_rulings(
     let mut on_ruling: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); rulings.len()];
     let mut on_seg: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); segs.len()];
     for (si, sg) in segs.iter().enumerate() {
-        // A birth-branch segment (a cap chord) or a cut sub-segment shares only **endpoints**
-        // with a ruling — the rectangle's corners — and carries no fence planes to test extent
-        // with. Skipping computes nothing wrong: an endpoint is not a split point.
-        if sg.end_h.iter().any(|h| h.class().is_none()) {
-            continue;
-        }
-        let ends = sg.end.map(|t| combinatorics::node_coords_rat(jd, t));
-        let [Some(p0), Some(p1)] = ends else {
-            return Err(undecided());
-        };
-        if p0 == p1 {
+        // ★★★★★ **The skip is gone with the reason it gave.** It said a segment whose end a
+        // cylinder pinned "carries no fence planes to test extent with" — true of the fences, which
+        // are retired; the extent question is `closed_contains` now and it answers for both kinds of
+        // end. The rest of that sentence ("such a segment shares only endpoints with a ruling") was
+        // an argument about one narrow population, never a measurement, and it is exactly the sort
+        // of claim that goes quietly false when the population widens. So it is asked instead of
+        // assumed.
+        // ☑ Measured: **200** segments now reach here that the skip dropped, and **392** crossings
+        // on them are examined. The census is bit-identical, so the skip's *conclusion* held — none
+        // of those crossings splits a ruling. It is a measurement now rather than an argument.
+        //
+        // A segment whose two ends are one point cuts nothing — asked by **name**, the identity,
+        // rather than by a coordinate a branch end does not have.
+        if sg.end[0] == sg.end[1] {
             continue;
         }
         // Both ends on this segment's own line, once — the pair `closed_contains` is asked with.
