@@ -329,8 +329,15 @@ pub(crate) struct RulingTrace {
 /// **A disk cap's chord on a through-axis class**: the cap face (a full disk ⊥ to the axis)
 /// crossed by a plane class through its centre leaves the diameter — an ordinary straight
 /// segment on the cap's own plane class, except both its ends are Branch names (the two roots of
-/// `{wc, cap plane, cyl}`), so it cannot ride [`Seg`] (whose `end_h` are third *planes*) and
-/// joins the arrangement as a birth-branch [`MergedSeg`] instead, after the plane-only overlay.
+/// `{wc, cap plane, cyl}`), so it joins the arrangement as a birth-branch [`MergedSeg`] **after**
+/// the plane-only overlay.
+///
+/// ★ It used to say the reason was that such ends "cannot ride [`Seg`], whose `end_h` are third
+/// *planes*". That stopped being true when the pins widened — a `Seg` carries an
+/// [`combinatorics::EndPin`] now and the seated road builds cylinder-pinned ones. The reason that
+/// survives is the one about the **overlay**: `split_at_crossings` indexes split points by plane
+/// class and compares an endpoint by integer identity of that id, so an end with no class has
+/// nothing to be compared by.
 #[derive(Clone, Debug)]
 pub(crate) struct ChordTrace {
     /// The cap's plane class — the chord's wall (its line is `wc ∩ wall`, rational).
