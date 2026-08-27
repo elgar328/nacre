@@ -109,10 +109,108 @@ pub(crate) fn order_pinned(
     a: (NodeId, EndPin),
     b: (NodeId, EndPin),
 ) -> Option<i8> {
-    use nacre_scalar::quad::{MeetLine, QuadVal, cmp_coord_branch, cmp_coord_meet_branch};
-    use nacre_scalar::{MeetPoint, Orient};
-    if let (EndPin::Class(i), EndPin::Class(j)) = (a.1, b.1) {
-        return Some(order_along(jd, p, q, i, j));
+    let (a, b) = (locate(jd, cyls, p, q, a)?, locate(jd, cyls, p, q, b)?);
+    order_located(jd, p, q, &a, &b)
+}
+
+/// **A point on `L = P ∩ Q` with the parts a comparison needs already computed** — the form
+/// [`order_located`] takes.
+///
+/// ★★★★★ **This exists so the rule can have one implementation *and* keep its hoists.** The
+/// arrangement's interval overlay is the boolean's hottest named phase (12–24% of it, 1.4–3.2M
+/// containment questions per 60-fin fold), and its speed comes from building a point's Cramer
+/// parts **once per wall pair** and its `dir_sign` **once per segment endpoint**, then asking many
+/// questions of them. A rule that takes bare `(name, pin)` throws both away on every call. The
+/// alternative — a fast inlined copy beside the general one — is the defect shape this codebase
+/// keeps finding in itself, so the hoist becomes an *argument* instead of a second spelling.
+///
+/// ★★ **Both sides are `Located`, and the symmetry is load-bearing.** A draft took one side bare
+/// plus a separate `b_ds: Option<i8>`, which is a value that has to match arguments it cannot see
+/// — the same shape as a bug this cell's review caught (passing the wrong `q`). Built here, `ds`
+/// cannot disagree with the `(p, q)` it was built for. And the symmetry pays again: a segment
+/// endpoint's `Located` is built once per segment, so a branch end's [`branch_meet`] is never
+/// re-solved per (split point × segment).
+pub(crate) enum Located<'a> {
+    /// A point three planes name. `at` is `{p, q, pin}` with its Cramer parts cached; `ds` is
+    /// `dir_sign(p, q, pin)`.
+    ///
+    /// ★ `ds` is read when this point is the **second** argument — the formula is
+    /// `at_a.orient3d(b.pin) × ds_b`, which is [`order_along`] with `a`'s half hoisted.
+    Class {
+        pin: usize,
+        name: NodeId,
+        at: crate::tolerant::ImplicitPoint<'a, WorkingPlane>,
+        ds: i8,
+    },
+    /// A point a cylinder pins: the meet line of its two planes and the root along it.
+    Branch {
+        name: NodeId,
+        line: nacre_scalar::quad::MeetLine,
+        s: nacre_scalar::quad::QuadVal,
+    },
+}
+
+impl Located<'_> {
+    /// The name this point is known by — what the rational road realizes coordinates from.
+    fn name(&self) -> NodeId {
+        match self {
+            Located::Class { name, .. } | Located::Branch { name, .. } => *name,
+        }
+    }
+}
+
+/// Put a point on `L = P ∩ Q` into the form [`order_located`] takes.
+///
+/// ☑ **Infallible for a plane pin** — `Judge::point` and [`dir_sign`] are total — which is what
+/// keeps [`order_pinned`] total on the plane/plane pair its two older callers ask about.
+pub(crate) fn locate<'j>(
+    jd: &'j Judge<'j, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    p: usize,
+    q: usize,
+    pt: (NodeId, EndPin),
+) -> Option<Located<'j>> {
+    match pt.1 {
+        EndPin::Class(pin) => Some(Located::Class {
+            pin,
+            name: pt.0,
+            at: jd.point(p, q, pin),
+            ds: dir_sign(jd, p, q, pin),
+        }),
+        EndPin::Cylinder => {
+            let NodeId::Branch { cyl, .. } = pt.0 else {
+                return None;
+            };
+            let (line, s) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, pt.0)?;
+            Some(Located::Branch {
+                name: pt.0,
+                line,
+                s,
+            })
+        }
+    }
+}
+
+/// **The order of two located points along `L = P ∩ Q`** — [`order_pinned`]'s body, with the
+/// hoists handed in rather than rebuilt.
+///
+/// ★★★★★ The plane/plane test is the **first statement** on purpose: everything after it computes
+/// the axis component `(k, dsign)` with three `plane_pair_dir_sign` calls, and the overlay asks
+/// this millions of times on pairs that never reach there.
+pub(crate) fn order_located(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    q: usize,
+    a: &Located<'_>,
+    b: &Located<'_>,
+) -> Option<i8> {
+    use nacre_scalar::Orient;
+    use nacre_scalar::quad::{cmp_coord_branch, cmp_coord_meet_branch};
+    // ☑ `order_along(jd, p, q, i, j)` exactly: `ImplicitPoint::orient3d(j)` is
+    // `Judge::orient3d(p, q, pin, j)` on the same four planes with the Cramer parts cached, and
+    // `ds` is that call's `dir_sign` factor.
+    if let (Located::Class { at, .. }, Located::Class { pin: j, ds, .. }) = (a, b) {
+        return Some(at.orient3d(*j) * ds);
     }
     let axis = |k: usize| {
         let mut n = [0.0; 3];
@@ -130,22 +228,6 @@ pub(crate) fn order_pinned(
         );
         (s != 0).then_some((k, s))
     })?;
-    enum Pt {
-        Rat(MeetPoint),
-        Branch(MeetLine, QuadVal),
-    }
-    let pt = |n: NodeId, pin: EndPin| -> Option<Pt> {
-        match pin {
-            EndPin::Class(_) => node_coords_rat(jd, n).map(|c| Pt::Rat(MeetPoint::Narrow(c))),
-            EndPin::Cylinder => {
-                let NodeId::Branch { cyl, .. } = n else {
-                    return None;
-                };
-                let (l, s) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
-                Some(Pt::Branch(l, s))
-            }
-        }
-    };
     let sign = |o: Orient| -> i8 {
         match o {
             Orient::Positive => 1,
@@ -153,15 +235,27 @@ pub(crate) fn order_pinned(
             Orient::Zero => 0,
         }
     };
-    let cmp = match (pt(a.0, a.1)?, pt(b.0, b.1)?) {
-        // ☑ Unreachable — two plane-pinned ends returned through the integer road above. Spelled
+    let rat = |l: &Located<'_>| -> Option<nacre_scalar::MeetPoint> {
+        node_coords_rat(jd, l.name()).map(nacre_scalar::MeetPoint::Narrow)
+    };
+    let cmp = match (a, b) {
+        // ☑ Unreachable — two plane-pinned points returned through the integer road above. Spelled
         // as a decline rather than a panic or a second rational comparison nobody would exercise.
-        (Pt::Rat(_), Pt::Rat(_)) => return None,
-        (Pt::Rat(x), Pt::Branch(l, s)) => sign(cmp_coord_meet_branch(&x, &l, &s, k)),
-        (Pt::Branch(l, s), Pt::Rat(y)) => -sign(cmp_coord_meet_branch(&y, &l, &s, k)),
-        (Pt::Branch(l1, s1), Pt::Branch(l2, s2)) => {
-            sign(cmp_coord_branch((&l1, &s1), (&l2, &s2), k))
+        (Located::Class { .. }, Located::Class { .. }) => return None,
+        (Located::Class { .. }, Located::Branch { line, s, .. }) => {
+            sign(cmp_coord_meet_branch(&rat(a)?, line, s, k))
         }
+        (Located::Branch { line, s, .. }, Located::Class { .. }) => {
+            -sign(cmp_coord_meet_branch(&rat(b)?, line, s, k))
+        }
+        (
+            Located::Branch {
+                line: l1, s: s1, ..
+            },
+            Located::Branch {
+                line: l2, s: s2, ..
+            },
+        ) => sign(cmp_coord_branch((l1, s1), (l2, s2), k)),
     };
     Some(cmp * dsign)
 }
