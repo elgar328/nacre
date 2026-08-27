@@ -2631,7 +2631,6 @@ fn split_circles(
     if on_circle.iter().all(|v| v.is_empty()) {
         return Ok(None);
     }
-    let mut out_segs = Vec::with_capacity(segs.len());
     let mut out_circles = Vec::new();
     let mut arcs = Vec::new();
     let mut cut_rims: Vec<(usize, CutRim)> = Vec::new();
@@ -2653,134 +2652,7 @@ fn split_circles(
     // sentence is true. (This used to cite a fixture by name as the only one that reaches it. That
     // fixture is gone and the claim went unmeasured with it, so it is stated as the argument it is.)
     // ---- segments → sub-segments, in line order ----
-    for (si, sg) in segs.iter().cloned().enumerate() {
-        let mut nodes = std::mem::take(&mut on_seg[si]);
-        if nodes.is_empty() {
-            out_segs.push(sg);
-            continue;
-        }
-        nodes.sort_unstable();
-        nodes.dedup();
-        // ★★★★★ **The ruler is gone; the points are ordered by the rule, not by a parameter.**
-        // This used to solve every crossing's `(line, s)`, put both endpoints on that same line with
-        // `along`, and sort the parameters — which is why an end a cylinder pinned stopped it: it
-        // has no rational coordinate for `along` to take. [`combinatorics::order_located`] answers
-        // the same question from the pair `{wc, sg.wall}` and the points' own names, so there is no
-        // ruler to lay and nothing to convert.
-        //
-        // ★★ **The pair is the sorted one, and that is not cosmetic.** The retired ruler was
-        // `branch_meet`'s canonical line, whose direction is `n_min × n_max`; asking in call order
-        // would flip every comparison on a class where `wc > wall`, taking the emitted pieces and
-        // the sense with it. ☑ Differenced against the ruler below.
-        //
-        // ★★ **The guard that checked all crossings share one line becomes a check on their
-        // *names*.** It was there because the sort silently mixed two rulers if it stopped holding;
-        // there is no ruler now, but the proposition it stood for — every crossing on this segment
-        // is a point of `wc ∩ sg.wall` — still has to hold, and the name says so more cheaply than
-        // two `MeetLine` comparisons did.
-        let pair = {
-            let mut p = [wc, sg.wall];
-            p.sort_unstable();
-            p
-        };
-        let mut keyed: Vec<(combinatorics::PointOn, NodeId, combinatorics::EndPin)> = Vec::new();
-        for &n in &nodes {
-            let Some((planes, _, _)) = combinatorics::branch_name(n) else {
-                return Err(reject(RejectReason::RingNaming));
-            };
-            if planes != pair {
-                return Err(reject(RejectReason::RingNaming));
-            }
-            keyed.push((
-                combinatorics::PointOn::Branch(n),
-                n,
-                combinatorics::EndPin::Cylinder,
-            ));
-        }
-        // ★ The two ends, and **where they landed is remembered** rather than recovered from the
-        // tail of the vector: the next rung stops pushing an end that a crossing already named.
-        let ends = (keyed.len(), keyed.len() + 1);
-        for k in 0..2 {
-            keyed.push((
-                Split::of(sg.end[k], sg.end_h[k]).on(wc, sg.wall),
-                sg.end[k],
-                sg.end_h[k],
-            ));
-        }
-        // The comparison's **second**-argument form, once per point — the hoist `Located`'s own doc
-        // measured: a first argument is built a few times, a second is stored and asked repeatedly.
-        let on: Vec<combinatorics::OnLine> = keyed
-            .iter()
-            .map(|k| combinatorics::on_line(jd, cyls, pair[0], pair[1], k.0).ok_or_else(undecided))
-            .collect::<Result<_, BoolError>>()?;
-        let mut bad = false;
-        let cmp = |i: usize, j: usize| -> Option<core::cmp::Ordering> {
-            let a = combinatorics::locate(jd, cyls, pair[0], pair[1], keyed[i].0)?;
-            Some(
-                match combinatorics::order_located(jd, pair[0], pair[1], &a, &on[j])? {
-                    -1 => core::cmp::Ordering::Less,
-                    1 => core::cmp::Ordering::Greater,
-                    _ => core::cmp::Ordering::Equal,
-                },
-            )
-        };
-        let mut order: Vec<usize> = (0..keyed.len()).collect();
-        order.sort_by(|&i, &j| match cmp(i, j) {
-            Some(o) => o,
-            None => {
-                bad = true;
-                core::cmp::Ordering::Equal
-            }
-        });
-        if bad {
-            return Err(undecided());
-        }
-        #[cfg(test)]
-        order_probe::against_the_ruler(jd, cyls, circles, wc, &sg, &keyed, pair);
-        // ★ A crossing that lands **on** an endpoint is one point wearing two names — a three-plane
-        // one and a branch one — and the DCEL keys vertices by name, so shipping both would make
-        // two vertices where there is one. Refusing is honest; folding them is its own step.
-        for w in order.windows(2) {
-            if cmp(w[0], w[1]) == Some(core::cmp::Ordering::Equal) {
-                return Err(reject(RejectReason::CoincidentNodes));
-            }
-        }
-        // ★★★ **The sub-segments' travel sense, taken from the whole segment's own two named
-        // ends — exactly, with no frame arithmetic at all.** Every sub-segment runs the way the
-        // segment ran, and the pieces below are emitted in **ascending** order; so the only
-        // question is whether ascending *is* the segment's direction, and the two ends answer it.
-        // (The alternative — turning a meet line's `dir` into an `EdgeDir` sense — needs the
-        // canonical-vs-stored turn on two classes and an `f64` dot to decide it. This needs
-        // neither: `edge_dir` is still the one place a sense is made.)
-        let forward = match cmp(ends.0, ends.1) {
-            Some(core::cmp::Ordering::Less) => true,
-            Some(core::cmp::Ordering::Greater) => false,
-            // Equal is the coincident-endpoint case the windows check above already refused, and
-            // `None` is a width decline.
-            _ => return Err(undecided()),
-        };
-        let whole = combinatorics::edge_dir(
-            jd,
-            cyls,
-            wc,
-            sg.wall,
-            (sg.end[0], sg.end_h[0]),
-            (sg.end[1], sg.end_h[1]),
-        )?
-        .sense()
-        .ok_or_else(undecided)?;
-        let sense = if forward { whole } else { -whole };
-        for w in order.windows(2) {
-            let (a, b) = (&keyed[w[0]], &keyed[w[1]]);
-            out_segs.push(MergedSeg {
-                wall: sg.wall,
-                end: [a.1, b.1],
-                end_h: [a.2, b.2],
-                merged: sg.merged.clone(),
-                sense: Some(sense),
-            });
-        }
-    }
+    let out_segs = split_segments_at(jd, cyls, wc, segs, &mut on_seg)?;
     // ---- circles → arcs, in θ order about the seam ----
     for (ci, circ) in circles.iter().cloned().enumerate() {
         let mut nodes = std::mem::take(&mut on_circle[ci]);
@@ -2885,12 +2757,165 @@ fn split_circles(
     Ok(Some((out_segs, out_circles, arcs, cut_rims)))
 }
 
-/// **Where a point sits along a line**, as the one parameter both kinds of point can state: a
-/// three-plane end is rational, a branch end is `a + b√c`.
+/// **Cut every segment at the points collected on it** — the one emitter the arc split and the
+/// ruling split share.
 ///
-/// ★ The line is the **canonical** one — [`combinatorics::branch_meet`] re-solves from the name, so
-/// every crossing on one `(class, wall)` pair shares a `base`/`dir` whatever cylinder made it. That
-/// is what lets the two kinds be sorted into one sequence at all.
+/// ★★★★★ **It was written twice, almost to the character.** Both roads collect crossings onto their
+/// segments and then have to put them in order, refuse the ones that coincide, and hand each piece
+/// the sense the whole segment ran in; the two copies drifted only in the names of their locals. One
+/// consequence of joining them is that the arc split's rung is the ruling split's rung too — an end
+/// a cylinder pins passes both or neither, rather than one road being taught and the other
+/// forgotten, which is the shape of defect this file has already had.
+///
+/// `on_seg[si]` is drained: a segment nobody crossed is passed through untouched, and the common
+/// case copies nothing.
+fn split_segments_at(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    segs: &[MergedSeg],
+    on_seg: &mut [Vec<NodeId>],
+) -> Result<Vec<MergedSeg>, BoolError> {
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    let mut out_segs = Vec::with_capacity(segs.len());
+    for (si, sg) in segs.iter().cloned().enumerate() {
+        let mut nodes = std::mem::take(&mut on_seg[si]);
+        if nodes.is_empty() {
+            out_segs.push(sg);
+            continue;
+        }
+        nodes.sort_unstable();
+        nodes.dedup();
+        // ★★★★★ **The ruler is gone; the points are ordered by the rule, not by a parameter.**
+        // This used to solve every crossing's `(line, s)`, put both endpoints on that same line with
+        // `along`, and sort the parameters — which is why an end a cylinder pinned stopped it: it
+        // has no rational coordinate for `along` to take. [`combinatorics::order_located`] answers
+        // the same question from the pair `{wc, sg.wall}` and the points' own names, so there is no
+        // ruler to lay and nothing to convert.
+        //
+        // ★★ **The pair is the sorted one, and that is not cosmetic.** The retired ruler was
+        // `branch_meet`'s canonical line, whose direction is `n_min × n_max`; asking in call order
+        // would flip every comparison on a class where `wc > wall`, taking the emitted pieces and
+        // the sense with it. ☑ Differenced against the ruler below.
+        //
+        // ★★ **The guard that checked all crossings share one line becomes a check on their
+        // *names*.** It was there because the sort silently mixed two rulers if it stopped holding;
+        // there is no ruler now, but the proposition it stood for — every crossing on this segment
+        // is a point of `wc ∩ sg.wall` — still has to hold, and the name says so more cheaply than
+        // two `MeetLine` comparisons did.
+        let pair = {
+            let mut p = [wc, sg.wall];
+            p.sort_unstable();
+            p
+        };
+        let mut keyed: Vec<(combinatorics::PointOn, NodeId, combinatorics::EndPin)> = Vec::new();
+        for &n in &nodes {
+            let Some((planes, _, _)) = combinatorics::branch_name(n) else {
+                return Err(reject(RejectReason::RingNaming));
+            };
+            if planes != pair {
+                return Err(reject(RejectReason::RingNaming));
+            }
+            keyed.push((
+                combinatorics::PointOn::Branch(n),
+                n,
+                combinatorics::EndPin::Cylinder,
+            ));
+        }
+        // ★ The two ends, and **where they landed is remembered** rather than recovered from the
+        // tail of the vector: the next rung stops pushing an end that a crossing already named.
+        let ends = (keyed.len(), keyed.len() + 1);
+        for k in 0..2 {
+            keyed.push((
+                Split::of(sg.end[k], sg.end_h[k]).on(wc, sg.wall),
+                sg.end[k],
+                sg.end_h[k],
+            ));
+        }
+        // The comparison's **second**-argument form, once per point — the hoist `Located`'s own doc
+        // measured: a first argument is built a few times, a second is stored and asked repeatedly.
+        let on: Vec<combinatorics::OnLine> = keyed
+            .iter()
+            .map(|k| combinatorics::on_line(jd, cyls, pair[0], pair[1], k.0).ok_or_else(undecided))
+            .collect::<Result<_, BoolError>>()?;
+        let mut bad = false;
+        let cmp = |i: usize, j: usize| -> Option<core::cmp::Ordering> {
+            let a = combinatorics::locate(jd, cyls, pair[0], pair[1], keyed[i].0)?;
+            Some(
+                match combinatorics::order_located(jd, pair[0], pair[1], &a, &on[j])? {
+                    -1 => core::cmp::Ordering::Less,
+                    1 => core::cmp::Ordering::Greater,
+                    _ => core::cmp::Ordering::Equal,
+                },
+            )
+        };
+        let mut order: Vec<usize> = (0..keyed.len()).collect();
+        order.sort_by(|&i, &j| match cmp(i, j) {
+            Some(o) => o,
+            None => {
+                bad = true;
+                core::cmp::Ordering::Equal
+            }
+        });
+        if bad {
+            return Err(undecided());
+        }
+        #[cfg(test)]
+        order_probe::against_the_ruler(jd, cyls, wc, &sg, &keyed, pair);
+        // ★ A crossing that lands **on** an endpoint is one point wearing two names — a three-plane
+        // one and a branch one — and the DCEL keys vertices by name, so shipping both would make
+        // two vertices where there is one. Refusing is honest; folding them is its own step.
+        for w in order.windows(2) {
+            if cmp(w[0], w[1]) == Some(core::cmp::Ordering::Equal) {
+                return Err(reject(RejectReason::CoincidentNodes));
+            }
+        }
+        // ★★★ **The sub-segments' travel sense, taken from the whole segment's own two named
+        // ends — exactly, with no frame arithmetic at all.** Every sub-segment runs the way the
+        // segment ran, and the pieces below are emitted in **ascending** order; so the only
+        // question is whether ascending *is* the segment's direction, and the two ends answer it.
+        // (The alternative — turning a meet line's `dir` into an `EdgeDir` sense — needs the
+        // canonical-vs-stored turn on two classes and an `f64` dot to decide it. This needs
+        // neither: `edge_dir` is still the one place a sense is made.)
+        let forward = match cmp(ends.0, ends.1) {
+            Some(core::cmp::Ordering::Less) => true,
+            Some(core::cmp::Ordering::Greater) => false,
+            // Equal is the coincident-endpoint case the windows check above already refused, and
+            // `None` is a width decline.
+            _ => return Err(undecided()),
+        };
+        let whole = combinatorics::edge_dir(
+            jd,
+            cyls,
+            wc,
+            sg.wall,
+            (sg.end[0], sg.end_h[0]),
+            (sg.end[1], sg.end_h[1]),
+        )?
+        .sense()
+        .ok_or_else(undecided)?;
+        let sense = if forward { whole } else { -whole };
+        for w in order.windows(2) {
+            let (a, b) = (&keyed[w[0]], &keyed[w[1]]);
+            out_segs.push(MergedSeg {
+                wall: sg.wall,
+                end: [a.1, b.1],
+                end_h: [a.2, b.2],
+                merged: sg.merged.clone(),
+                sense: Some(sense),
+            });
+        }
+    }
+    Ok(out_segs)
+}
+
+/// **Where a rational point sits along a line** — the retired ruler's half for a three-plane end
+/// (a branch end brought its own parameter from [`combinatorics::branch_meet`]).
+///
+/// ★★ **Production does not lay a ruler any more**, so this survives only inside
+/// [`order_probe`], which differences the order rule against what it used to compute. That it needs
+/// a *rational* point is the whole reason it had to go: an end a cylinder pins has none.
+#[cfg(test)]
 fn along(line: &nacre_scalar::quad::MeetLine, p: &[Rat; 3]) -> Option<nacre_scalar::quad::QuadVal> {
     use nacre_scalar::quad::QuadVal;
     let (base, dir) = (line.base(), line.dir());
@@ -3025,9 +3050,7 @@ fn circle_crossings(
 /// turn "same" into "reversed" for a whole segment at once.
 #[cfg(test)]
 pub(crate) mod order_probe {
-    use super::{
-        Judge, MergedCircle, MergedSeg, NodeId, WorkingPlane, along, cmp_along, combinatorics,
-    };
+    use super::{Judge, MergedSeg, NodeId, WorkingPlane, along, cmp_along, combinatorics};
     use core::sync::atomic::{AtomicUsize, Ordering};
 
     /// Segments where the ruler could be laid and every point compared.
@@ -3051,7 +3074,7 @@ pub(crate) mod order_probe {
     /// removing, so it is skipped rather than counted.
     fn ruler_keys(
         jd: &Judge<'_, WorkingPlane>,
-        circles: &[MergedCircle],
+        cyls: &[crate::planes::WorkingCyl],
         keyed: &[(combinatorics::PointOn, NodeId, combinatorics::EndPin)],
     ) -> Option<Vec<nacre_scalar::quad::QuadVal>> {
         let mut line = None;
@@ -3063,7 +3086,7 @@ pub(crate) mod order_probe {
             let Some((_, cyl, _)) = combinatorics::branch_name(k.1) else {
                 continue;
             };
-            let def = &circles.iter().find(|c| c.cyl == cyl)?.def;
+            let def = &cyls.get(cyl)?.def;
             let (l, s) = combinatorics::branch_meet(jd, cyl, def, k.1)?;
             line = Some(l);
             out[i] = Some(s);
@@ -3080,7 +3103,6 @@ pub(crate) mod order_probe {
     pub(crate) fn against_the_ruler(
         jd: &Judge<'_, WorkingPlane>,
         cyls: &[crate::planes::WorkingCyl],
-        circles: &[MergedCircle],
         wc: usize,
         sg: &MergedSeg,
         keyed: &[(combinatorics::PointOn, NodeId, combinatorics::EndPin)],
@@ -3091,7 +3113,7 @@ pub(crate) mod order_probe {
         } else {
             WC_ABOVE_WALL.fetch_add(1, Ordering::Relaxed);
         }
-        let Some(keys) = ruler_keys(jd, circles, keyed) else {
+        let Some(keys) = ruler_keys(jd, cyls, keyed) else {
             return;
         };
         let rule = |p: [usize; 2], i: usize, j: usize| -> Option<core::cmp::Ordering> {
@@ -3435,86 +3457,7 @@ fn split_rulings(
         return Ok(None);
     }
     // ---- segments → sub-segments, the arc split's own idiom ----
-    let def_of: HashMap<usize, &nacre_topo::CylinderDef> = cyl_list.iter().copied().collect();
-    let mut out_segs = Vec::with_capacity(segs.len());
-    for (si, sg) in segs.iter().cloned().enumerate() {
-        let mut nodes = std::mem::take(&mut on_seg[si]);
-        if nodes.is_empty() {
-            out_segs.push(sg);
-            continue;
-        }
-        nodes.sort_unstable();
-        nodes.dedup();
-        let mut line: Option<nacre_scalar::quad::MeetLine> = None;
-        let mut keyed: Vec<(QuadVal, combinatorics::NodeId, combinatorics::EndPin)> = Vec::new();
-        for &n in &nodes {
-            let Some((_, cyl, _)) = combinatorics::branch_name(n) else {
-                return Err(reject(RejectReason::RingNaming));
-            };
-            let def = def_of.get(&cyl).ok_or_else(undecided)?;
-            let (l, s) = combinatorics::branch_meet(jd, cyl, def, n).ok_or_else(undecided)?;
-            if let Some(first) = &line {
-                if first.base() != l.base() || first.dir() != l.dir() {
-                    return Err(reject(RejectReason::RingNaming));
-                }
-            }
-            keyed.push((s, n, combinatorics::EndPin::Cylinder));
-            line = Some(l);
-        }
-        let line = line.ok_or_else(undecided)?;
-        for k in 0..2 {
-            let p = combinatorics::node_coords_rat(jd, sg.end[k]).ok_or_else(undecided)?;
-            keyed.push((
-                along(&line, &p).ok_or_else(undecided)?,
-                sg.end[k],
-                sg.end_h[k],
-            ));
-        }
-        let mut order: Vec<usize> = (0..keyed.len()).collect();
-        let mut bad = false;
-        order.sort_by(|&i, &j| match cmp_along(&keyed[i].0, &keyed[j].0) {
-            Some(o) => o,
-            None => {
-                bad = true;
-                core::cmp::Ordering::Equal
-            }
-        });
-        if bad {
-            return Err(undecided());
-        }
-        for pair in order.windows(2) {
-            if cmp_along(&keyed[pair[0]].0, &keyed[pair[1]].0) == Some(core::cmp::Ordering::Equal) {
-                return Err(reject(RejectReason::CoincidentNodes));
-            }
-        }
-        let ends = (keyed.len() - 2, keyed.len() - 1);
-        let forward = match cmp_along(&keyed[ends.0].0, &keyed[ends.1].0) {
-            Some(core::cmp::Ordering::Less) => true,
-            Some(core::cmp::Ordering::Greater) => false,
-            _ => return Err(undecided()),
-        };
-        let whole = combinatorics::edge_dir(
-            jd,
-            cyls,
-            wc,
-            sg.wall,
-            (sg.end[0], sg.end_h[0]),
-            (sg.end[1], sg.end_h[1]),
-        )?
-        .sense()
-        .ok_or_else(undecided)?;
-        let sense = if forward { whole } else { -whole };
-        for pair in order.windows(2) {
-            let (a, b) = (&keyed[pair[0]], &keyed[pair[1]]);
-            out_segs.push(MergedSeg {
-                wall: sg.wall,
-                end: [a.1, b.1],
-                end_h: [a.2, b.2],
-                merged: sg.merged.clone(),
-                sense: Some(sense),
-            });
-        }
-    }
+    let out_segs = split_segments_at(jd, cyls, wc, segs, &mut on_seg)?;
     // ---- rulings → pieces, in axis order ----
     let mut out_rulings = Vec::with_capacity(rulings.len());
     for (ri, r) in rulings.iter().cloned().enumerate() {
