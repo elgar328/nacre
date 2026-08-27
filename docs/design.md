@@ -1006,17 +1006,19 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
 
   | 능력 | 오늘 닫혀 있는 것 | 상태 |
   |---|---|---|
-  | **A. 입력 어휘 = 출력 어휘** | 연쇄 전부(이제 **`WitnessNotRational` at `split_circles`** — 배열의 **호 분할**이 말한다) | 칸 ⑨(그물)·⑩(이름·담체)·⑪(정확화)·⑫(게이트)·⑬(링이 사영을 그만둠)·⑭(`EndPin`·검사 둘)·**⑮(seated 도로가 담체를 받는다)** 완료. ★★★★★ **트레이서는 이제 굽은 피연산자를 통과시킨다** — 스캔·seated 두 도로 다. `emit_ring`은 담체를 `NamedRing.walls`에서 받고(유도 폐기), branch 코너를 `EndPin::Cylinder`로 고정하며, 굽은 간선은 **내지 않는다**(그 원소는 원통 면이 이미 냈고, `SeatedCurveUnbacked` 그물이 그것을 확인한다). ★★★★★ **벽은 배열의 «평면 전용 overlay»로 옮겨갔다** — 아래 지도 |
+  | **A. 입력 어휘 = 출력 어휘** | ✅ **배열까지 닫혔다**(칸 ⑰). 벽은 배열 **밖**으로 나가 `loop_winding`의 **`CurvedStraightRun`** 이다 — 네 픽스처 전부 | 칸 ⑨(그물)·⑩(이름·담체)·⑪(정확화)·⑫(게이트)·⑬(링이 사영을 그만둠)·⑭(`EndPin`·검사 둘)·⑮(seated 도로가 담체를 받는다)·⑯(overlay)·**⑰(호 분할·룰링 분할)** 완료. ★★★★★ **트레이서는 굽은 피연산자를 통과시키고, 배열의 세 패스가 전부 그것을 받는다.** |
 
-  ★★★★★ **하류 세 패스의 지도 (2026-08-27 실측).** 트레이서가 branch 끝 세그먼트를 내보내기 시작하면 그것을 받는 쪽은 셋이고, 준비 상태가 **다르다**:
+  ★★★★★ **하류 세 패스의 지도 — 셋 다 닫혔다 (2026-08-27).**
 
-  | 패스 | branch 끝을 오늘 어떻게 보나 | 크기 |
-  |---|---|---|
-  | `split_at_crossings` (평면 전용 overlay) | ✅ **칸 ⑯ 완료** — 분할점이 `Split`(이 선을 자르는 평면 클래스 **또는** 어느 원통의 어느 근)이 되고 이름은 유도한다. 순서는 `order_located` 한 규칙 |
-  | `split_circles` | 두 끝의 `node_coords_rat`를 요구 ⇒ **`WitnessNotRational`** ← **지금 벽**(네 픽스처 전부 그 한 `undecided`) | 작은 팔 + 건전성 논증 |
-  | `split_rulings` | ★ **이미 팔이 있다** — 「an endpoint is not a split point」 | 없음 |
+  | 패스 | 상태 |
+  |---|---|
+  | `split_at_crossings` (옛 「평면 전용」 overlay) | ✅ **칸 ⑯** — 분할점이 `Split`(평면 클래스 **또는** 어느 원통의 어느 근), 순서는 `order_located` 한 규칙 |
+  | `split_circles` (호 분할) | ✅ **칸 ⑰** — 구간 판정은 `closed_contains`, 정렬은 `order_located`. 좌표를 읽는 것은 `segment_meets_cylinder` **필터** 하나뿐이고 양 끝에 좌표가 있을 때만 돈다 |
+  | `split_rulings` (룰링 분할) | ✅ **칸 ⑰** — 방출부는 `split_segments_at`으로 호 분할과 **한 함수**이고, branch 끝 세그먼트를 건너뛰던 자리가 사라졌다(☑ 세그먼트 200·교차 392가 새로 검사되고 census는 비트 동일 — 옛 논증의 **결론**은 맞았다) |
 
-  ☑ 그 칸이 딛은 사실은 ⑮에서 미리 쟀다: seated 링의 branch 코너 이름과 `circle_crossings`가 같은 점에 붙일 이름이 **같은 `NodeId`다**(32/32, 실현 거리 0).
+  ☑ 그 칸이 딛은 사실은 ⑮에서 미리 쟀다: seated 링의 branch 코너 이름과 `circle_crossings`가 같은 점에 붙일 이름이 **같은 `NodeId`다**(32/32, 실현 거리 0). ☑ 칸 ⑰이 그것을 인구로 확인했다 — 끝점 중복 제거 **400회**, 그와 갈라지는 옛 거절(`CoincidentNodes`, 세 평면 이름의 끝점) **1회**.
+
+  ★★★★★ **칸 ⑰이 만난 새 벽은 「미실행이라고 스스로 적어 둔 가드」다.** `RejectReason::CurvedStraightRun`의 doc이 *"an unfired guard by construction … it fires the day that stops being true"* 라고 쓴다. `loop_winding`은 링이 **직진하는** 노드를 지나쳐 걸어 극점의 회전을 읽는데, **한 원의 두 호는 접선 연속**이라 걷기가 그것도 지나친다. 원이 호로 잘리는 인구가 생긴 것이 그날을 만들었고, 그 doc이 답까지 적어 뒀다 — **이 걷기의 확장이 아니라 「영역의 극점에서 회전을 읽는」 일반 규칙**.
 
   ★★★★★ **칸 ⑯이 성능을 처음으로 «축»으로 삼았다.** `split_at_crossings`는 불리언의 **12~24%**
   (회전 fold에서 24%, collect 320만 trip)이고, 그 속도는 hoist 둘(`ImplicitPoint`의 Cramer 캐시 ·
