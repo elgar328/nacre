@@ -17,7 +17,7 @@ use super::*;
 use crate::boolean::*;
 use crate::combinatorics::{NodeId, three_plane_name};
 use crate::planes::*;
-use crate::tolerant::{ImplicitPoint, Judge};
+use crate::tolerant::Judge;
 #[cfg(test)]
 use crate::transform::transform;
 use nacre_cip::Decision;
@@ -1904,6 +1904,7 @@ struct Wall {
 
 fn split_at_crossings(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     segs: &[MergedSeg],
     aliases: &mut Aliases,
@@ -1925,50 +1926,59 @@ fn split_at_crossings(
     // `RingNaming` ("these names do not chain"), which is a fact about a three-plane naming that
     // came out degenerate. `ring_edges_with_walls` states that rule; this is the second site.
     // ☑ Measured: every chained-cylinder fixture stops here, three classes each.
-    let end_c: Vec<[usize; 2]> = segs
+    // ★★ **Both ends of every segment, located on that segment's own line, once.** This is where
+    // `end_c` (the endpoint pins) and `end_ds` (their `dir_sign`s) used to live separately; a
+    // [`combinatorics::Located`] carries both, built for the pair `(wc, s.wall)` it will be asked
+    // about. Building it here rather than per question is the hoist the containment loop below
+    // rests on — measured, that loop runs 1.4–3.2M times per 60-fin fold.
+    let end_l: Vec<[combinatorics::OnLine; 2]> = segs
         .iter()
         .map(|s| {
-            let [a, b] = s.end_h;
-            match (a.class(), b.class()) {
-                (Some(a), Some(b)) => Ok([a, b]),
-                _ => Err(reject(RejectReason::BranchVertexUnnamed)),
+            // ★ The capability is **not** open in this commit: `locate` would answer a
+            // cylinder-pinned end perfectly well, and letting it would mix a representation change
+            // with a behaviour change in one measurement. The next rung takes this guard out.
+            if s.end_h.iter().any(|h| h.class().is_none()) {
+                return Err(reject(RejectReason::BranchVertexUnnamed));
             }
+            let mut it = (0..2).map(|k| {
+                combinatorics::on_line(jd, cyls, wc, s.wall, (s.end[k], s.end_h[k]))
+                    .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))
+            });
+            Ok([it.next().unwrap()?, it.next().unwrap()?])
         })
         .collect::<Result<_, BoolError>>()?;
-    let end_ds: Vec<[i8; 2]> = segs
-        .iter()
-        .zip(&end_c)
-        .map(|(s, c)| {
-            [
-                combinatorics::dir_sign(jd, wc, s.wall, c[0]),
-                combinatorics::dir_sign(jd, wc, s.wall, c[1]),
-            ]
-        })
-        .collect();
 
-    // Is the point named by plane class `r` on segment `si`'s line within its CLOSED extent
-    // (endpoints included)? On an endpoint (`r` is one of the two endpoint classes) it is
-    // contained — checked by integer identity, because `order_along(x, x)` is not defined to return
-    // 0 (the old `strictly_inside` never compared a class with itself). Otherwise it is contained
-    // iff it is strictly between the two endpoints (opposite `order_along` signs).
-    // ★ **The point is a parameter, and that is what lets the caller hoist it.** `r` is the class
-    // naming the crossing, and the point asked about is `{wc, segs[si].wall, r}` — constant for every
-    // segment on one wall, so the caller makes the handle once per **wall pair** and every segment
-    // there shares its Cramer parts. Taking `r` instead would cap the sharing at one segment's two
-    // endpoints, which is what a `_pair` predicate did.
-    let closed_contains = |si: usize, at: &ImplicitPoint<'_, WorkingPlane>, r: usize| -> bool {
-        let [r0, r1] = end_c[si];
-        // ★ **Asked before the predicates, not after.** Integer identity is a *sufficient* condition
-        // for containment, so answering it first skips both orientations. It is not the whole test:
-        // where four planes meet, one point wears two handles, and `r` may be the group's
+    // Is the located point `at` on segment `si`'s line within its CLOSED extent (endpoints
+    // included)? On an endpoint it is contained — checked by identity, because `order_along(x, x)`
+    // is not defined to return 0 (the old `strictly_inside` never compared a class with itself).
+    // Otherwise it is contained iff it is strictly between the two endpoints (opposite order signs).
+    // ★ **The point is a parameter, and that is what lets the caller hoist it.** The point asked
+    // about is constant for every segment on one wall, so the caller locates it once per **wall
+    // pair** and every segment there shares its Cramer parts. Taking the bare class instead would
+    // cap the sharing at one segment's two endpoints, which is what a `_pair` predicate did.
+    // ★★★★★ **The line is `wc ∩ segs[si].wall`, not `wc ∩` the wall being processed.** The
+    // collector below asks *other* walls' segments about this wall's crossing, and each of those
+    // segments rides its own line — which is also the line `end_l[si]` was located on.
+    // ★ `None` is a description that could not be formed exactly, never a shape this cannot
+    // answer; the callers turn it into `WitnessNotRational`, the sentence `split_circles` uses for
+    // the same cause. ☑ Unexercised while every endpoint is plane-pinned.
+    // ★★★★★ `q` is a **call-site constant**, not a per-segment lookup: the collector asks one
+    // wall's crossing of every segment on **one other wall**, and the cover loop asks about
+    // segments on **this** wall. Reading `segs[si].wall` here instead cost a touch of a wide
+    // `MergedSeg` on a loop that runs millions of times — measured, and this is the fix.
+    let closed_contains = |si: usize, at: &combinatorics::Located<'_>, q: usize| -> Option<bool> {
+        let [l0, l1] = &end_l[si];
+        // ★ **Asked before the predicates, not after.** Identity is a *sufficient* condition for
+        // containment, so answering it first skips both orientations. It is not the whole test:
+        // where four planes meet, one point wears two pins, and `at` may be the group's
         // representative while the segment still remembers the other — which is what the `== 0`
         // arms below catch. Subsumed, not dropped; the order between them is free.
-        if r == r0 || r == r1 {
-            return true;
+        if combinatorics::same_point(at, l0) || combinatorics::same_point(at, l1) {
+            return Some(true);
         }
-        let ds = end_ds[si];
-        let (a, b) = (at.orient3d(r0) * ds[0], at.orient3d(r1) * ds[1]);
-        a == 0 || b == 0 || a != b
+        let a = combinatorics::order_located(jd, wc, q, at, l0)?;
+        let b = combinatorics::order_located(jd, wc, q, at, l1)?;
+        Some(a == 0 || b == 0 || a != b)
     };
 
     // The walls, in first-appearance order for deterministic output — each with its **direction
@@ -2034,8 +2044,14 @@ fn split_at_crossings(
             watch!(COLLECT);
             #[cfg(test)]
             phase::scale::add(&phase::scale::COLLECT_TRIPS, segs.len());
+            // ★ A segment's own endpoints are split points on its line. They come from the
+            // located pair, whose `Class` arm carries the very pin `end_c` used to hold.
             for &i in &wall.segs {
-                pts.extend(end_c[i]);
+                for l in &end_l[i] {
+                    if let combinatorics::OnLine::Class { pin, .. } = l {
+                        pts.push(*pin);
+                    }
+                }
             }
             // ★ **Wall-major, because the question is about walls.** What lands in `pts` is a *wall*
             // — the class naming the crossing — so the loop that used to sweep every segment asked
@@ -2050,9 +2066,31 @@ fn split_at_crossings(
                     continue;
                 }
                 let r = other.class;
-                // ★ One handle per wall pair — `r`'s segments all ask about this same crossing.
-                let at = jd.point(wc, r, w);
-                if other.segs.iter().any(|&i| closed_contains(i, &at, w)) {
+                // ★ One handle per wall pair — `r`'s segments all ask about this same crossing,
+                // and they all ride `r`'s line, which is the pair this point is located for.
+                let at = combinatorics::locate(
+                    jd,
+                    cyls,
+                    wc,
+                    r,
+                    (
+                        NodeId::three_planes([wc, r, w]),
+                        combinatorics::EndPin::Class(w),
+                    ),
+                )
+                .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+                let mut reaches = false;
+                for &i in &other.segs {
+                    match closed_contains(i, &at, r) {
+                        Some(true) => {
+                            reaches = true;
+                            break;
+                        }
+                        Some(false) => {}
+                        None => return Err(reject(RejectReason::WitnessNotRational)),
+                    }
+                }
+                if reaches {
                     pts.push(r);
                 }
             }
@@ -2145,10 +2183,33 @@ fn split_at_crossings(
         for pair in pts.windows(2) {
             let (p, q) = (pair[0], pair[1]);
             let mut merged: Vec<(SolidSide, SegKind)> = Vec::new();
-            // The same hoist as the collector: every `w`-segment asks about these two points.
-            let (at_p, at_q) = (jd.point(wc, w, p), jd.point(wc, w, q));
+            // The same hoist as the collector: every `w`-segment asks about these two points, and
+            // they all ride `w`'s line.
+            let loc = |r: usize| {
+                combinatorics::locate(
+                    jd,
+                    cyls,
+                    wc,
+                    w,
+                    (
+                        NodeId::three_planes([wc, w, r]),
+                        combinatorics::EndPin::Class(r),
+                    ),
+                )
+                .ok_or_else(|| reject(RejectReason::WitnessNotRational))
+            };
+            let (at_p, at_q) = (loc(p)?, loc(q)?);
             for &i in &wall.segs {
-                if closed_contains(i, &at_p, p) && closed_contains(i, &at_q, q) {
+                // ★★★★★ **Short-circuiting, deliberately.** `A && B` never asks the second
+                // question when the first says no, and this loop runs 1.6M times per fold —
+                // evaluating both eagerly doubled it (48.6→89.9ms, same trip counts). It also
+                // keeps the *declines* identical: a second question that cannot be formed is never
+                // reached when the first already ruled the segment out.
+                let undecided = || reject(RejectReason::WitnessNotRational);
+                if !closed_contains(i, &at_p, w).ok_or_else(undecided)? {
+                    continue;
+                }
+                if closed_contains(i, &at_q, w).ok_or_else(undecided)? {
                     merged.extend(segs[i].merged.iter().copied());
                 }
             }
@@ -4802,7 +4863,7 @@ fn trace_result_faces(
                 return Err(reject(decline_to_reject(kind, faces[fp].face())));
             }
             let merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
-            let split = timed!(SPLIT, split_at_crossings(jd, wc, &merged, &mut local))?;
+            let split = timed!(SPLIT, split_at_crossings(jd, cyls, wc, &merged, &mut local))?;
             let split = drop_newsless(split)?;
             let circles = merge_circles(&tr.circles, cyls)?;
             let rulings = merge_rulings(&tr.rulings, cyls);
@@ -5016,7 +5077,7 @@ pub(crate) fn concurrency_audit(
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let mut names: Vec<NodeId> = tr.touches.clone();
         for s in merged.iter().chain(
-            split_at_crossings(&jd, wc, &merged, &mut Aliases::default())
+            split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default())
                 .as_deref()
                 .unwrap_or(&[])
                 .iter(),
@@ -5310,7 +5371,7 @@ pub(crate) fn frame_audit(
             aliases.absorb(&std::mem::take(&mut tr.aliases));
             if tr.declined.is_empty() {
                 let merged = merge_coincident(&tr.segs, wc, &aliases);
-                let _ = split_at_crossings(&jd, wc, &merged, &mut aliases);
+                let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
             }
         }
         if aliases.len() == before {
@@ -5358,7 +5419,7 @@ pub(crate) fn frame_audit(
                 // audit — the fixpoint above already holds everything the boolean would know.
                 let mut local = aliases.clone();
                 let merged = merge_coincident(&tr.segs, wc, &local);
-                let split = split_at_crossings(&jd, wc, &merged, &mut local)?;
+                let split = split_at_crossings(&jd, &cyls, wc, &merged, &mut local)?;
                 let split = drop_newsless(split)?;
                 let circles = merge_circles(&tr.circles, &cyls)?;
                 let rulings = merge_rulings(&tr.rulings, &cyls);
@@ -6391,7 +6452,7 @@ mod tests {
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         assert_eq!(merged.len(), 8, "8 merged edges before split");
 
-        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
         // 4 chords crossed twice → 3 pieces each = 12; 4 outer walls uncrossed = 4; total 16.
         assert_eq!(split.len(), 16, "16 sub-segments: {}", split.len());
 
@@ -6500,7 +6561,7 @@ mod tests {
             Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
 
         // The shared y=1 wall (a face at y=1).
         let y1 = planes
@@ -6577,7 +6638,7 @@ mod tests {
             Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
 
         let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
@@ -6719,7 +6780,7 @@ mod tests {
             Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
         let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
         let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
@@ -6805,7 +6866,7 @@ mod tests {
             Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
         let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
         let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
@@ -6870,7 +6931,7 @@ mod tests {
             Default::default(),
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
         let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], Vec::new()).unwrap();
         let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
         let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
@@ -8016,7 +8077,8 @@ mod tests {
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split =
+            split_at_crossings(&jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
         let split = drop_newsless(split).unwrap();
         let circles = merge_circles(&tr.circles, &setup.cyls).unwrap();
         assert!(circles.is_empty(), "a ∥ class carries no circles");
@@ -8068,7 +8130,8 @@ mod tests {
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let split = split_at_crossings(jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split =
+            split_at_crossings(jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
         let split = drop_newsless(split).unwrap();
         let circles = merge_circles(&tr.circles, &setup.cyls).unwrap();
         let rulings = merge_rulings(&tr.rulings, &setup.cyls);
@@ -8425,7 +8488,8 @@ mod tests {
                 Default::default(),
             );
             let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-            let Ok(split) = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()) else {
+            let Ok(split) = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default())
+            else {
                 continue;
             };
             let Ok(circles) = merge_circles(&tr.circles, &cyls) else {
@@ -8706,7 +8770,7 @@ mod tests {
 
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let circles = merge_circles(&tr.circles, &cyls).unwrap();
-        let split = split_at_crossings(&jd, wc, &merged, &mut Aliases::default()).unwrap();
+        let split = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default()).unwrap();
         assert_eq!(
             split.len(),
             4,

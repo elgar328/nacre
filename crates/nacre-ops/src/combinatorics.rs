@@ -109,7 +109,7 @@ pub(crate) fn order_pinned(
     a: (NodeId, EndPin),
     b: (NodeId, EndPin),
 ) -> Option<i8> {
-    let (a, b) = (locate(jd, cyls, p, q, a)?, locate(jd, cyls, p, q, b)?);
+    let (a, b) = (locate(jd, cyls, p, q, a)?, on_line(jd, cyls, p, q, b)?);
     order_located(jd, p, q, &a, &b)
 }
 
@@ -130,32 +130,93 @@ pub(crate) fn order_pinned(
 /// cannot disagree with the `(p, q)` it was built for. And the symmetry pays again: a segment
 /// endpoint's `Located` is built once per segment, so a branch end's [`branch_meet`] is never
 /// re-solved per (split point × segment).
-pub(crate) enum Located<'a> {
-    /// A point three planes name. `at` is `{p, q, pin}` with its Cramer parts cached; `ds` is
-    /// `dir_sign(p, q, pin)`.
+pub(crate) enum OnLine {
+    /// A point three planes name. `ds` is `dir_sign(p, q, pin)`.
     ///
     /// ★ `ds` is read when this point is the **second** argument — the formula is
     /// `at_a.orient3d(b.pin) × ds_b`, which is [`order_along`] with `a`'s half hoisted.
-    Class {
-        pin: usize,
-        name: NodeId,
-        at: crate::tolerant::ImplicitPoint<'a, WorkingPlane>,
-        ds: i8,
-    },
+    /// ★ **No `name`.** A plane-pinned point on `L = P ∩ Q` *is* `{p, q, pin}`, so the name is
+    /// derivable and storing it put a 32-byte `NodeId` in a `Vec` the containment loop reads
+    /// millions of times. What it was for — the cold road's coordinates, and identity against the
+    /// other side — needs neither: coordinates come from the derived triple, and a plane-pinned
+    /// point can never *equal* a cylinder-pinned one, so cross-variant identity is `false` by type.
+    Class { pin: usize, ds: i8 },
     /// A point a cylinder pins: the meet line of its two planes and the root along it.
+    ///
+    /// ★★★★ **Boxed, and the profile is why** — the same reason [`EdgeDir::Arc`] is: a `MeetLine`
+    /// and a `QuadVal` are an order of magnitude wider than a plane pin's two words, and the
+    /// arrangement stores one of these **per segment endpoint** while every question on the hot
+    /// path is a plane pin. Unboxed it moved `split_at_crossings` from 23.2% of a rotated fold to
+    /// 28.2%, and 12.1% of an axis-aligned one to 19.0% — with the *same trip counts*, so the cost
+    /// was the width and nothing else. One allocation on the cold road buys that back.
     Branch {
         name: NodeId,
-        line: nacre_scalar::quad::MeetLine,
-        s: nacre_scalar::quad::QuadVal,
+        meet: Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>,
+    },
+}
+
+/// A point in the form a comparison's **first** argument needs: an [`OnLine`] plus the Cramer
+/// handle the plane road asks `orient3d` of.
+///
+/// ★★★★★ **The asymmetry is measured, not assumed.** A draft made both sides `Located` for the
+/// symmetry, and the profile refused it: an endpoint's handle is **never read** — the plane road is
+/// `at_a.orient3d(b.pin) × ds_b` — while `ImplicitPoint` is wide enough (a `OnceCell` of Cramer
+/// parts) that storing two per segment moved `split_at_crossings` from 23.2% of a rotated fold to
+/// 27.2%, and 12.1% of an axis-aligned one to 17.8%. First arguments are built a few times per
+/// wall; second arguments are stored per segment and asked millions of times.
+/// ★ What the symmetry was protecting against survives: `ds` is still built beside the `pin` it
+/// belongs to, by one constructor, so it cannot disagree with the `(p, q)` it was made for.
+pub(crate) enum Located<'a> {
+    /// ★ **No `ds` here, and that is the point.** The plane road is
+    /// `at_a.orient3d(b.pin) × ds_b` — a *first* argument's `dir_sign` is never read. Computing it
+    /// anyway cost a `plane_pair_dir_sign` per wall pair and per sub-interval: measured, the cover
+    /// loop went 48.6→90.8ms on an axis-aligned fold with the trip counts unchanged.
+    Class {
+        pin: usize,
+        at: crate::tolerant::ImplicitPoint<'a, WorkingPlane>,
+    },
+    Branch {
+        name: NodeId,
+        meet: Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>,
     },
 }
 
 impl Located<'_> {
-    /// The name this point is known by — what the rational road realizes coordinates from.
-    fn name(&self) -> NodeId {
+    /// The name this point is known by, given the line it sits on — derived for a plane pin.
+    pub(crate) fn name(&self, p: usize, q: usize) -> NodeId {
         match self {
-            Located::Class { name, .. } | Located::Branch { name, .. } => *name,
+            Located::Class { pin, .. } => NodeId::three_planes([p, q, *pin]),
+            Located::Branch { name, .. } => *name,
         }
+    }
+}
+
+impl OnLine {
+    /// The name this point is known by, given the line it sits on — derived for a plane pin.
+    pub(crate) fn name(&self, p: usize, q: usize) -> NodeId {
+        match self {
+            OnLine::Class { pin, .. } => NodeId::three_planes([p, q, *pin]),
+            OnLine::Branch { name, .. } => *name,
+        }
+    }
+}
+
+/// Whether two located points are **the same point by identity**, without asking a predicate.
+///
+/// ★ Two plane-pinned points compare by **pin**, which is the integer test the arrangement's
+/// overlay has always used: on one line `{p, q, pin}` is injective in `pin`, so equal pins are one
+/// point. It is a *sufficient* condition and not the whole test — where four planes meet, one point
+/// wears two pins — which is why callers still ask the order afterwards.
+/// ★ Anything a cylinder pins has no pin payload to compare, so those compare by **name**.
+#[inline]
+pub(crate) fn same_point(a: &Located<'_>, b: &OnLine) -> bool {
+    match (a, b) {
+        (Located::Class { pin: x, .. }, OnLine::Class { pin: y, .. }) => x == y,
+        (Located::Branch { name: x, .. }, OnLine::Branch { name: y, .. }) => x == y,
+        // ★ A point three planes name and a point a cylinder pins are never the same *name* — the
+        // two are different variants of `NodeId`. Whether they are the same **point** is a
+        // different question, and the order predicate below is what asks it.
+        _ => false,
     }
 }
 
@@ -163,6 +224,37 @@ impl Located<'_> {
 ///
 /// ☑ **Infallible for a plane pin** — `Judge::point` and [`dir_sign`] are total — which is what
 /// keeps [`order_pinned`] total on the plane/plane pair its two older callers ask about.
+#[inline]
+pub(crate) fn on_line(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    p: usize,
+    q: usize,
+    pt: (NodeId, EndPin),
+) -> Option<OnLine> {
+    match pt.1 {
+        EndPin::Class(pin) => Some(OnLine::Class {
+            pin,
+            ds: dir_sign(jd, p, q, pin),
+        }),
+        EndPin::Cylinder => {
+            let NodeId::Branch { cyl, .. } = pt.0 else {
+                return None;
+            };
+            let meet = branch_meet(jd, cyl, &cyls.get(cyl)?.def, pt.0)?;
+            Some(OnLine::Branch {
+                name: pt.0,
+                meet: Box::new(meet),
+            })
+        }
+    }
+}
+
+/// Put a point into the **first**-argument form — an [`on_line`] with the Cramer handle beside it.
+///
+/// ☑ **Infallible for a plane pin**, like [`on_line`], which is what keeps [`order_pinned`] total
+/// on the plane/plane pair its two older callers ask about.
+#[inline]
 pub(crate) fn locate<'j>(
     jd: &'j Judge<'j, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -173,19 +265,16 @@ pub(crate) fn locate<'j>(
     match pt.1 {
         EndPin::Class(pin) => Some(Located::Class {
             pin,
-            name: pt.0,
             at: jd.point(p, q, pin),
-            ds: dir_sign(jd, p, q, pin),
         }),
         EndPin::Cylinder => {
             let NodeId::Branch { cyl, .. } = pt.0 else {
                 return None;
             };
-            let (line, s) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, pt.0)?;
+            let meet = branch_meet(jd, cyl, &cyls.get(cyl)?.def, pt.0)?;
             Some(Located::Branch {
                 name: pt.0,
-                line,
-                s,
+                meet: Box::new(meet),
             })
         }
     }
@@ -197,21 +286,40 @@ pub(crate) fn locate<'j>(
 /// ★★★★★ The plane/plane test is the **first statement** on purpose: everything after it computes
 /// the axis component `(k, dsign)` with three `plane_pair_dir_sign` calls, and the overlay asks
 /// this millions of times on pairs that never reach there.
+/// ★★★★★ **Hot and cold are separate functions, and the profile is what says so.** With the
+/// quadratic road in the same body the plane road stopped being inlined, and the arrangement's two
+/// containment loops — 1.4M and 3.2M questions per 60-fin fold — **doubled**: collect 78→153ms
+/// rotated, cover 49→100ms axis-aligned, with the trip counts unchanged. The same shape
+/// `Judge::orient3d` uses for its own cheap route.
+#[inline(always)]
 pub(crate) fn order_located(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
     q: usize,
     a: &Located<'_>,
-    b: &Located<'_>,
+    b: &OnLine,
 ) -> Option<i8> {
-    use nacre_scalar::Orient;
-    use nacre_scalar::quad::{cmp_coord_branch, cmp_coord_meet_branch};
     // ☑ `order_along(jd, p, q, i, j)` exactly: `ImplicitPoint::orient3d(j)` is
     // `Judge::orient3d(p, q, pin, j)` on the same four planes with the Cramer parts cached, and
     // `ds` is that call's `dir_sign` factor.
-    if let (Located::Class { at, .. }, Located::Class { pin: j, ds, .. }) = (a, b) {
+    if let (Located::Class { at, .. }, OnLine::Class { pin: j, ds, .. }) = (a, b) {
         return Some(at.orient3d(*j) * ds);
     }
+    order_located_quad(jd, p, q, a, b)
+}
+
+/// [`order_located`]'s other road: anything a cylinder pins, compared on one coordinate axis
+/// through the `a + b√c` tower. Kept out of line so the plane road above stays small enough to be.
+#[inline(never)]
+fn order_located_quad(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    q: usize,
+    a: &Located<'_>,
+    b: &OnLine,
+) -> Option<i8> {
+    use nacre_scalar::Orient;
+    use nacre_scalar::quad::{cmp_coord_branch, cmp_coord_meet_branch};
     let axis = |k: usize| {
         let mut n = [0.0; 3];
         n[k] = 1.0;
@@ -235,27 +343,28 @@ pub(crate) fn order_located(
             Orient::Zero => 0,
         }
     };
-    let rat = |l: &Located<'_>| -> Option<nacre_scalar::MeetPoint> {
-        node_coords_rat(jd, l.name()).map(nacre_scalar::MeetPoint::Narrow)
+    let rat = |n: NodeId| -> Option<nacre_scalar::MeetPoint> {
+        node_coords_rat(jd, n).map(nacre_scalar::MeetPoint::Narrow)
     };
     let cmp = match (a, b) {
         // ☑ Unreachable — two plane-pinned points returned through the integer road above. Spelled
         // as a decline rather than a panic or a second rational comparison nobody would exercise.
-        (Located::Class { .. }, Located::Class { .. }) => return None,
-        (Located::Class { .. }, Located::Branch { line, s, .. }) => {
-            sign(cmp_coord_meet_branch(&rat(a)?, line, s, k))
+        (Located::Class { .. }, OnLine::Class { .. }) => return None,
+        (Located::Class { .. }, OnLine::Branch { meet, .. }) => sign(cmp_coord_meet_branch(
+            &rat(a.name(p, q))?,
+            &meet.0,
+            &meet.1,
+            k,
+        )),
+        (Located::Branch { meet, .. }, OnLine::Class { .. }) => -sign(cmp_coord_meet_branch(
+            &rat(b.name(p, q))?,
+            &meet.0,
+            &meet.1,
+            k,
+        )),
+        (Located::Branch { meet: m1, .. }, OnLine::Branch { meet: m2, .. }) => {
+            sign(cmp_coord_branch((&m1.0, &m1.1), (&m2.0, &m2.1), k))
         }
-        (Located::Branch { line, s, .. }, Located::Class { .. }) => {
-            -sign(cmp_coord_meet_branch(&rat(b)?, line, s, k))
-        }
-        (
-            Located::Branch {
-                line: l1, s: s1, ..
-            },
-            Located::Branch {
-                line: l2, s: s2, ..
-            },
-        ) => sign(cmp_coord_branch((l1, s1), (l2, s2), k)),
     };
     Some(cmp * dsign)
 }
