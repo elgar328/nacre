@@ -1935,6 +1935,7 @@ impl Split {
             }
             // A cylinder pin whose name is not a branch: the two disagree, which is a wiring
             // failure rather than a shape, and the honest answer is the naming sentence.
+            // ☑ Measured unexercised (`unreachable!()`, whole suite and ignored sweep green).
             (_, combinatorics::EndPin::Cylinder) => Err(reject(RejectReason::BranchVertexUnnamed)),
         }
     }

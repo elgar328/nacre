@@ -143,6 +143,7 @@ pub(crate) enum PointOn {
 impl PointOn {
     /// ★ A cylinder pin whose name is not a branch is a wiring failure, not a shape — the two
     /// halves of one point disagree, and there is nothing to compare.
+    /// ☑ Measured unexercised (`unreachable!()`, whole suite and ignored sweep green).
     #[inline]
     fn of(pt: (NodeId, EndPin)) -> Option<PointOn> {
         match pt.1 {
