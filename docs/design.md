@@ -1006,13 +1006,13 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
 
   | 능력 | 오늘 닫혀 있는 것 | 상태 |
   |---|---|---|
-  | **A. 입력 어휘 = 출력 어휘** | 연쇄 전부(이제 **`RejectReason::RingNaming`**, 트레이서가 아니라 **배열**이 말한다) | 칸 ⑨(그물)·⑩(이름·담체)·⑪(정확화)·⑫(게이트)·⑬(링이 사영을 그만둠)·⑭(`EndPin`·검사 둘)·**⑮(seated 도로가 담체를 받는다)** 완료. ★★★★★ **트레이서는 이제 굽은 피연산자를 통과시킨다** — 스캔·seated 두 도로 다. `emit_ring`은 담체를 `NamedRing.walls`에서 받고(유도 폐기), branch 코너를 `EndPin::Cylinder`로 고정하며, 굽은 간선은 **내지 않는다**(그 원소는 원통 면이 이미 냈고, `SeatedCurveUnbacked` 그물이 그것을 확인한다). ★★★★★ **벽은 배열의 «평면 전용 overlay»로 옮겨갔다** — 아래 지도 |
+  | **A. 입력 어휘 = 출력 어휘** | 연쇄 전부(이제 **`RejectReason::BranchVertexUnnamed`**, 트레이서가 아니라 **배열**이 말한다) | 칸 ⑨(그물)·⑩(이름·담체)·⑪(정확화)·⑫(게이트)·⑬(링이 사영을 그만둠)·⑭(`EndPin`·검사 둘)·**⑮(seated 도로가 담체를 받는다)** 완료. ★★★★★ **트레이서는 이제 굽은 피연산자를 통과시킨다** — 스캔·seated 두 도로 다. `emit_ring`은 담체를 `NamedRing.walls`에서 받고(유도 폐기), branch 코너를 `EndPin::Cylinder`로 고정하며, 굽은 간선은 **내지 않는다**(그 원소는 원통 면이 이미 냈고, `SeatedCurveUnbacked` 그물이 그것을 확인한다). ★★★★★ **벽은 배열의 «평면 전용 overlay»로 옮겨갔다** — 아래 지도 |
 
   ★★★★★ **하류 세 패스의 지도 (2026-08-27 실측).** 트레이서가 branch 끝 세그먼트를 내보내기 시작하면 그것을 받는 쪽은 셋이고, 준비 상태가 **다르다**:
 
   | 패스 | branch 끝을 오늘 어떻게 보나 | 크기 |
   |---|---|---|
-  | `split_at_crossings` (평면 전용 overlay) | `end_c`가 두 끝의 `.class()`를 요구 ⇒ **`RingNaming`**(하드 거절). **색인 공간이 통째로 평면 클래스**(`pts: Vec<usize>` · `closed_contains`의 `r == r0` 정수 동일성) | **재설계 — 자기 칸** |
+  | `split_at_crossings` (평면 전용 overlay) | `end_c`가 두 끝의 `.class()`를 요구 ⇒ **`BranchVertexUnnamed`**(하드 거절 — 옛 이름 `RingNaming`은 「원통 핀이 오면 배선 오류」라는 죽은 전제에서 왔고, 칸 ⑮ 자체 점검이 고쳤다). **색인 공간이 통째로 평면 클래스**(`pts: Vec<usize>` · `closed_contains`의 `r == r0` 정수 동일성) | **재설계 — 자기 칸** |
   | `split_circles` | 두 끝의 `node_coords_rat`를 요구 ⇒ `WitnessNotRational`. 팔이 없다 | 작은 팔 + 건전성 논증 |
   | `split_rulings` | ★ **이미 팔이 있다** — 「an endpoint is not a split point」 | 없음 |
 
