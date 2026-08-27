@@ -3727,6 +3727,67 @@ fn the_extent_rule_agrees_with_the_fences_it_replaced() {
     );
 }
 
+/// ★★★★★ **The order rule may read the retired ruler backwards, but it may never reshuffle it.**
+///
+/// The arc split used to sort its points by their parameter on `branch_meet`'s canonical meet line;
+/// it asks [`combinatorics::order_located`] now. The two do **not** agree pointwise — the ruler's
+/// direction comes from the classes' rational coefficients and the rule's axis sign from the judge's
+/// stored planes, and those two spellings name the same plane without naming the same side. A
+/// wholesale reversal is harmless: the pieces come out in the comparator's own ascending order and
+/// `forward` is taken with that same comparator, so the two cancel. A **partial** disagreement would
+/// not cancel — it would put sub-segments between the wrong pairs of points — and the bit census
+/// cannot see it, because it sorts before it hashes.
+///
+/// So the proposition is per segment: **the same order, or exactly its reverse, and never in
+/// between.** ☑ Flipping one comparison inside the probe turns this red.
+#[test]
+fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
+    use crate::arrangement::order_probe::{
+        EQUALITY_DISAGREED, REVERSED, SCRAMBLED, SEGMENTS, WC_ABOVE_WALL, WC_BELOW_WALL,
+    };
+    use core::sync::atomic::Ordering::Relaxed;
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([12.0, 4.0, 2.0]),
+    );
+    let up = Vector3::from_array([0.0, 0.0, 1.0]);
+    let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    m.rebuild_adjacency();
+    boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
+    assert!(
+        SEGMENTS.load(Relaxed) > 0,
+        "the probe never ran, so it measured nothing"
+    );
+    assert_eq!(
+        SCRAMBLED.load(Relaxed),
+        0,
+        "{} of the {} segments this binary split came out neither in the ruler's order nor exactly \
+         reversed ({} were reversed)",
+        SCRAMBLED.load(Relaxed),
+        SEGMENTS.load(Relaxed),
+        REVERSED.load(Relaxed)
+    );
+    assert_eq!(
+        EQUALITY_DISAGREED.load(Relaxed),
+        0,
+        "the two roads disagreed {} times about whether two split points are the same place — the \
+         `CoincidentNodes` refusal is reachable from one and not the other",
+        EQUALITY_DISAGREED.load(Relaxed)
+    );
+    // ★★★ **Both plane orders are exercised, and the invariant above is why neither is "the right
+    // one".** ☑ Measured over the whole binary: **36 of 256** segments have `wc > wall`, where the
+    // sorted pair and the call-order pair are opposite calls. Swapping the pair flips *every*
+    // comparison on a segment, so it can only turn "same" into "reversed" — which the assertion
+    // above already says is harmless. The sorted pair is chosen for agreeing with
+    // `NodeId::Branch`'s convention, not because a fixture prefers it.
+    //
+    // ★ That count is **recorded, not asserted**: these counters accumulate across the binary, and
+    // this test cannot know what has run before it. Only the two "never" claims above are safe to
+    // assert from here. The relation is read off `wc` and `wall`, which nothing in this cell moves.
+    let _ = (WC_ABOVE_WALL.load(Relaxed), WC_BELOW_WALL.load(Relaxed));
+}
+
 /// ★★★★★ **The wall is past the overlay now: the arc split.**
 ///
 /// Every second cylinder operation on such a plate is still refused, whatever it is and wherever
