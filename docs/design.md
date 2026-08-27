@@ -1006,17 +1006,24 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
 
   | 능력 | 오늘 닫혀 있는 것 | 상태 |
   |---|---|---|
-  | **A. 입력 어휘 = 출력 어휘** | 연쇄 전부(이제 **`RejectReason::BranchVertexUnnamed`**, 트레이서가 아니라 **배열**이 말한다) | 칸 ⑨(그물)·⑩(이름·담체)·⑪(정확화)·⑫(게이트)·⑬(링이 사영을 그만둠)·⑭(`EndPin`·검사 둘)·**⑮(seated 도로가 담체를 받는다)** 완료. ★★★★★ **트레이서는 이제 굽은 피연산자를 통과시킨다** — 스캔·seated 두 도로 다. `emit_ring`은 담체를 `NamedRing.walls`에서 받고(유도 폐기), branch 코너를 `EndPin::Cylinder`로 고정하며, 굽은 간선은 **내지 않는다**(그 원소는 원통 면이 이미 냈고, `SeatedCurveUnbacked` 그물이 그것을 확인한다). ★★★★★ **벽은 배열의 «평면 전용 overlay»로 옮겨갔다** — 아래 지도 |
+  | **A. 입력 어휘 = 출력 어휘** | 연쇄 전부(이제 **`WitnessNotRational` at `split_circles`** — 배열의 **호 분할**이 말한다) | 칸 ⑨(그물)·⑩(이름·담체)·⑪(정확화)·⑫(게이트)·⑬(링이 사영을 그만둠)·⑭(`EndPin`·검사 둘)·**⑮(seated 도로가 담체를 받는다)** 완료. ★★★★★ **트레이서는 이제 굽은 피연산자를 통과시킨다** — 스캔·seated 두 도로 다. `emit_ring`은 담체를 `NamedRing.walls`에서 받고(유도 폐기), branch 코너를 `EndPin::Cylinder`로 고정하며, 굽은 간선은 **내지 않는다**(그 원소는 원통 면이 이미 냈고, `SeatedCurveUnbacked` 그물이 그것을 확인한다). ★★★★★ **벽은 배열의 «평면 전용 overlay»로 옮겨갔다** — 아래 지도 |
 
   ★★★★★ **하류 세 패스의 지도 (2026-08-27 실측).** 트레이서가 branch 끝 세그먼트를 내보내기 시작하면 그것을 받는 쪽은 셋이고, 준비 상태가 **다르다**:
 
   | 패스 | branch 끝을 오늘 어떻게 보나 | 크기 |
   |---|---|---|
-  | `split_at_crossings` (평면 전용 overlay) | `end_c`가 두 끝의 `.class()`를 요구 ⇒ **`BranchVertexUnnamed`**(하드 거절 — 옛 이름 `RingNaming`은 「원통 핀이 오면 배선 오류」라는 죽은 전제에서 왔고, 칸 ⑮ 자체 점검이 고쳤다). **색인 공간이 통째로 평면 클래스**(`pts: Vec<usize>` · `closed_contains`의 `r == r0` 정수 동일성) | **재설계 — 자기 칸** |
-  | `split_circles` | 두 끝의 `node_coords_rat`를 요구 ⇒ `WitnessNotRational`. 팔이 없다 | 작은 팔 + 건전성 논증 |
+  | `split_at_crossings` (평면 전용 overlay) | ✅ **칸 ⑯ 완료** — 분할점이 `Split`(이 선을 자르는 평면 클래스 **또는** 어느 원통의 어느 근)이 되고 이름은 유도한다. 순서는 `order_located` 한 규칙 |
+  | `split_circles` | 두 끝의 `node_coords_rat`를 요구 ⇒ **`WitnessNotRational`** ← **지금 벽**(네 픽스처 전부 그 한 `undecided`) | 작은 팔 + 건전성 논증 |
   | `split_rulings` | ★ **이미 팔이 있다** — 「an endpoint is not a split point」 | 없음 |
 
-  ☑ 그리고 다음 칸이 딛는 사실을 미리 쟀다: seated 링의 branch 코너 이름과 `circle_crossings`가 같은 점에 붙일 이름이 **같은 `NodeId`다**(32/32, 실현 거리 0). 한 점이 두 정점이 되지 않는다.
+  ☑ 그 칸이 딛은 사실은 ⑮에서 미리 쟀다: seated 링의 branch 코너 이름과 `circle_crossings`가 같은 점에 붙일 이름이 **같은 `NodeId`다**(32/32, 실현 거리 0).
+
+  ★★★★★ **칸 ⑯이 성능을 처음으로 «축»으로 삼았다.** `split_at_crossings`는 불리언의 **12~24%**
+  (회전 fold에서 24%, collect 320만 trip)이고, 그 속도는 hoist 둘(`ImplicitPoint`의 Cramer 캐시 ·
+  `dir_sign`)에서 나온다. 그래서 순서 규칙의 hoist를 **두 번째 구현이 아니라 인자**로 만들었다
+  (`Located`/`OnLine`/`order_located`). 능력을 연 값은 **불리언의 약 1.4%**로 실측·기록.
+  ☑ 계기 규율: **trip 수는 결정적이라 날카롭고, 시간은 세션 간에 표류하므로 A/B는 같은 세션에서**
+  (`git stash`). 아침 기준선을 몇 시간 뒤 비교에 쓰면 안 된다 — 안 건드린 단계가 +9% 움직였다.
   | **B. 벽∩측면은 «한 이차식»이다** | 오프셋 `0<d<r` · 접선 `d=r`(`WallMeetsLateral`) | ★ 두 칸이 아니라 **한 칸**이다 — `Lo/Hi/Double` |
   | **C. validate의 비다양체 판정이 곡면을 본다** | 접선의 두께-0 접촉 | 불리언이 아니라 **계측**의 일반화 |
   | **D. 원통도 자기 차트에서 arrangement를 돈다** | 손으로 쓴 `band_loop`·`merge_curved_group` | 아래 항목 |

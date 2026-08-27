@@ -791,8 +791,13 @@ pub enum RejectReason {
     /// Raised where the cylinder work needs a number rather than a sign: a plane's axis parameter
     /// against a cylinder (`planes::axis_param_of_plane`, read by the band pass and the
     /// transversal-circle test), the rational chart the circle nesting projects a ring into
-    /// (`arrangement::circle_center_in_ring`), and the order of two points on a meet line when one
-    /// of them has no exact description (`combinatorics::order_pinned`, through `edge_dir`).
+    /// (`arrangement::circle_center_in_ring`), the order of two points on a meet line when one of
+    /// them has no exact description (`combinatorics::order_pinned` and the interval overlay that
+    /// calls it), and the **arc split**, which needs both ends of a segment as coordinates before
+    /// it can cut a circle.
+    ///
+    /// ★ That last one is where a chained cylinder operand stops today — the first of these sites a
+    /// real input reaches, rather than a guard nothing has exercised.
     ///
     /// ★ **Distinct from the gate's own name on purpose.** The population gate asks *signs*, and
     /// those were made total (they clear denominators and answer in `BigInt`), so
@@ -840,10 +845,11 @@ pub enum RejectReason {
     ///
     /// ★★★★★ **Two sites, and neither of them fires today** — measured over the whole suite
     /// (`--features reject-trace`: 86 raises across 15 reasons, this one **absent**). What a caller
-    /// meets on a chained operand has kept moving outward as the rungs went in: it was
-    /// [`DeclineKind::BranchNode`] at the tracer's ring naming, and since the seated road learned
-    /// to carry a cylinder-pinned end it is [`Self::BranchVertexUnnamed`], raised one layer on
-    /// again — by the arrangement's plane-only overlay, whose split points are plane classes.
+    /// meets on a chained operand has kept moving outward as the rungs went in, and the sentence
+    /// here has had to move with it three times: [`DeclineKind::BranchNode`] at the tracer's ring
+    /// naming, then [`Self::BranchVertexUnnamed`] at the arrangement's plane-only overlay, and now
+    /// [`Self::WitnessNotRational`] at the **arc split**, which asks every segment for its two
+    /// ends' exact coordinates before it can cut a circle.
     ///
     /// * `planes::face_clears_footprint` — the population **gate**. It used to refuse the whole
     ///   chained population here, because its clearance scan stopped at the first corner a
