@@ -270,6 +270,50 @@ pub(crate) fn same_point(a: &Located<'_>, b: &OnLine) -> bool {
     }
 }
 
+/// **Is `at` within the closed extent an edge's two ends mark out on `L = P ∩ Q`?** — endpoints
+/// included.
+///
+/// On an endpoint it is contained, checked by **identity**, because `order_along(x, x)` is not
+/// defined to return 0 (the old `strictly_inside` never compared a class with itself). Otherwise it
+/// is contained iff it lies between the two — opposite order signs — or a `0` says it *is* one of
+/// them by a second name.
+///
+/// ★ **Asked before the predicates, not after.** Identity is a *sufficient* condition for
+/// containment, so answering it first skips both orientations. It is not the whole test: where four
+/// planes meet, one point wears two pins, and `at` may be the group's representative while the edge
+/// still remembers the other — which is what the `== 0` arms catch. Subsumed, not dropped; the
+/// order between them is free.
+///
+/// ★★★★★ **`ends` must have been located for the very `(p, q)` handed in here.** Each [`OnLine`]
+/// carries a `dir_sign` — or a `(line, s)` — made for one plane pair, and asking about a point
+/// located for a *different* pair silently compares two different lines. The type does not say so:
+/// `OnLine` records no pair, and giving it one widens the vector the overlay's cover loop reads
+/// millions of times. **Callers hold the pair beside the ends.**
+///
+/// ★ **The point is a parameter, and that is what lets a caller hoist it.** The point asked about
+/// is constant for every edge on one wall, so a caller locates it once per **wall pair** and every
+/// edge there shares its Cramer parts. Taking a bare class instead would cap the sharing at one
+/// edge's two endpoints, which is what a `_pair` predicate did.
+///
+/// ★ `None` is a description that could not be formed exactly, never a shape this cannot answer;
+/// the callers turn it into [`crate::RejectReason::WitnessNotRational`].
+#[inline]
+pub(crate) fn closed_contains(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    q: usize,
+    at: &Located<'_>,
+    ends: &[OnLine; 2],
+) -> Option<bool> {
+    let [l0, l1] = ends;
+    if same_point(at, l0) || same_point(at, l1) {
+        return Some(true);
+    }
+    let a = order_located(jd, p, q, at, l0)?;
+    let b = order_located(jd, p, q, at, l1)?;
+    Some(a == 0 || b == 0 || a != b)
+}
+
 /// Put a point on `L = P ∩ Q` into the form [`order_located`] takes.
 ///
 /// ☑ **Infallible for a plane pin** — `Judge::point` and [`dir_sign`] are total — which is what

@@ -2017,37 +2017,18 @@ fn split_at_crossings(
         })
         .collect::<Result<_, BoolError>>()?;
 
-    // Is the located point `at` on segment `si`'s line within its CLOSED extent (endpoints
-    // included)? On an endpoint it is contained — checked by identity, because `order_along(x, x)`
-    // is not defined to return 0 (the old `strictly_inside` never compared a class with itself).
-    // Otherwise it is contained iff it is strictly between the two endpoints (opposite order signs).
-    // ★ **The point is a parameter, and that is what lets the caller hoist it.** The point asked
-    // about is constant for every segment on one wall, so the caller locates it once per **wall
-    // pair** and every segment there shares its Cramer parts. Taking the bare class instead would
-    // cap the sharing at one segment's two endpoints, which is what a `_pair` predicate did.
+    // The extent question is [`combinatorics::closed_contains`]; what stays here is *which* pair to
+    // ask it for.
     // ★★★★★ **The line is `wc ∩ segs[si].wall`, not `wc ∩` the wall being processed.** The
     // collector below asks *other* walls' segments about this wall's crossing, and each of those
-    // segments rides its own line — which is also the line `end_l[si]` was located on.
-    // ★ `None` is a description that could not be formed exactly, never a shape this cannot
-    // answer; the callers turn it into `WitnessNotRational`, the sentence `split_circles` uses for
-    // the same cause. ☑ Unexercised while every endpoint is plane-pinned.
+    // segments rides its own line — which is also the line `end_l[si]` was located on, and which
+    // the rule requires the pair to be.
     // ★★★★★ `q` is a **call-site constant**, not a per-segment lookup: the collector asks one
     // wall's crossing of every segment on **one other wall**, and the cover loop asks about
-    // segments on **this** wall. Reading `segs[si].wall` here instead cost a touch of a wide
-    // `MergedSeg` on a loop that runs millions of times — measured, and this is the fix.
+    // segments on **this** wall. Reading `segs[si].wall` at the question instead cost a touch of a
+    // wide `MergedSeg` on a loop that runs millions of times — measured, and this is the fix.
     let closed_contains = |si: usize, at: &combinatorics::Located<'_>, q: usize| -> Option<bool> {
-        let [l0, l1] = &end_l[si];
-        // ★ **Asked before the predicates, not after.** Identity is a *sufficient* condition for
-        // containment, so answering it first skips both orientations. It is not the whole test:
-        // where four planes meet, one point wears two pins, and `at` may be the group's
-        // representative while the segment still remembers the other — which is what the `== 0`
-        // arms below catch. Subsumed, not dropped; the order between them is free.
-        if combinatorics::same_point(at, l0) || combinatorics::same_point(at, l1) {
-            return Some(true);
-        }
-        let a = combinatorics::order_located(jd, wc, q, at, l0)?;
-        let b = combinatorics::order_located(jd, wc, q, at, l1)?;
-        Some(a == 0 || b == 0 || a != b)
+        combinatorics::closed_contains(jd, wc, q, at, &end_l[si])
     };
 
     // The walls, in first-appearance order for deterministic output — each with its **direction
