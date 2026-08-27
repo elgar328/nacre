@@ -831,7 +831,7 @@ pub enum RejectReason {
     /// **An *operand* face is bounded by a cylinder, and the tracer names rings by planes.**
     ///
     /// The tracer reads each operand face's loops as three-plane triples with a carried wall
-    /// class beside each edge ([`combinatorics::loop_triples`]). Both of those are plane-only,
+    /// class beside each edge (`combinatorics::loop_triples`). Both of those are plane-only,
     /// and both are total until a boolean's *result* is fed back in as an operand: a boss standing
     /// on a wall leaves the plate's caps bitten by an arc and the wall split by two rulings, so
     /// those faces' rings run along the boss's lateral surface. There is exactly one such loop the
@@ -859,7 +859,7 @@ pub enum RejectReason {
     ///   convex-hull argument the scan rests on — and an `OnSeam` vertex, which pins a curve
     ///   rather than a point. The gate's *arithmetic* failures are not this name: they wear
     ///   [`Self::CylinderGateUndecided`], whose sentence is true of them and false of these.
-    /// * [`combinatorics::loop_triples`] — the road itself, **swallowed**: `trace_input` maps a
+    /// * `combinatorics::loop_triples` — the road itself, **swallowed**: `trace_input` maps a
     ///   loop it cannot name to `None` and the tracer reports which *loop* failed
     ///   ([`DeclineKind::OuterRing`] / [`DeclineKind::HoleRing`]), which is the finer fact when a
     ///   face has several. The reject census still records the raise, so the cause is in the ledger

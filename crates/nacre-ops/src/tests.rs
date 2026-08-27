@@ -3674,7 +3674,7 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     }
 }
 
-/// ★★★★★ **The wall is past the tracer now: the arrangement's plane-only overlay.**
+/// ★★★★★ **The wall is past the overlay now: the arc split.**
 ///
 /// Every second cylinder operation on such a plate is still refused, whatever it is and wherever
 /// it stands — the refusal is about the *operand*, not about the two bodies meeting. What keeps

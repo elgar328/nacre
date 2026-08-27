@@ -212,7 +212,7 @@ pub(crate) struct Seg {
 /// ★★ **That it is *full* is checked, not inherited.** The population gate's wall rule used to
 /// keep this as a side effect — every ∥ wall face stands clear of the lateral, and a segment on
 /// this class is that face's own trace, so it inherited the clearance — which made a promise about
-/// *circles* rest on a rule about *walls*. [`arc_split_witness`] asks it of the segments
+/// *circles* rest on a rule about *walls*. [`split_circles`] asks it of the segments
 /// themselves now, so a crossed circle is **split into arcs** rather than treated as the
 /// closed cell it is not, and the wall rule is free to become precise about its own question.
 #[derive(Clone, Copy, Debug)]
@@ -330,14 +330,14 @@ pub(crate) struct RulingTrace {
 /// crossed by a plane class through its centre leaves the diameter — an ordinary straight
 /// segment on the cap's own plane class, except both its ends are Branch names (the two roots of
 /// `{wc, cap plane, cyl}`), so it joins the arrangement as a birth-branch [`MergedSeg`] **after**
-/// the plane-only overlay.
+/// [`split_at_crossings`].
 ///
-/// ★ It used to say the reason was that such ends "cannot ride [`Seg`], whose `end_h` are third
-/// *planes*". That stopped being true when the pins widened — a `Seg` carries an
-/// [`combinatorics::EndPin`] now and the seated road builds cylinder-pinned ones. The reason that
-/// survives is the one about the **overlay**: `split_at_crossings` indexes split points by plane
-/// class and compares an endpoint by integer identity of that id, so an end with no class has
-/// nothing to be compared by.
+/// ★★ **Both reasons this used to give have died, and the placement is what is left.** The first
+/// was that such ends "cannot ride [`Seg`], whose `end_h` are third *planes*" — untrue once the
+/// pins widened to [`combinatorics::EndPin`]. The second was that the overlay was plane-only —
+/// untrue since it started taking [`Split`]. Joining after is therefore a fact about where the
+/// code puts them today, **not** a constraint: whether they should be overlaid with the rest is
+/// unmeasured, and that is the honest state of it.
 #[derive(Clone, Debug)]
 pub(crate) struct ChordTrace {
     /// The cap's plane class — the chord's wall (its line is `wc ∩ wall`, rational).
@@ -375,8 +375,8 @@ fn merge_rulings(rulings: &[RulingTrace], cyls: &[crate::planes::WorkingCyl]) ->
     out
 }
 
-/// Turn the class's chord traces into birth-branch [`MergedSeg`]s — they join **after** the
-/// plane-only overlay (their ends have no third plane for it), carrying a sense their own
+/// Turn the class's chord traces into birth-branch [`MergedSeg`]s — they join **after**
+/// [`split_at_crossings`] (see [`ChordTrace`]: where, not why), carrying a sense their own
 /// construction states: `end[0] → end[1]` is `Lo → Hi` along the canonical meet line, and the
 /// sense is that direction's sign against the edge convention `n_wc × n_wall`.
 fn chords_to_segs(
@@ -1906,7 +1906,7 @@ struct Wall {
 ///
 /// The line is `wc ∩ w`, so those two planes are the same for all of them and only the third thing
 /// differs: a plane class that cuts the line, or which root of which cylinder. The full
-/// [`NodeId`] is derived by [`Split::pt`] where it is needed — the same trade
+/// [`NodeId`] is derived by [`Split::name`] where it is needed — the same trade
 /// [`combinatorics::OnLine::Class`] makes, and for the same measured reason: these vectors are
 /// rebuilt once per wall and a rotated fold spends most of itself allocating.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -1924,7 +1924,7 @@ enum Split {
 impl Split {
     /// ★ **The branch arm keeps the root the producer wrote, not a re-canonicalized one.** A
     /// segment on `w` in class `wc` has branch ends whose plane pair *is* `{wc, w}`, so the stored
-    /// name is already canonical for it and [`Split::pt`] can put it back verbatim. Restating it
+    /// name is already canonical for it and [`Split::name`] can put it back verbatim. Restating it
     /// through `NodeId::branch` would re-run the pair ordering and could flip the root — the trap
     /// cell ⑩ recorded.
     /// ★★★★ **A cylinder pin arrives with a branch name, and that is a producer's invariant, so
@@ -1992,18 +1992,14 @@ fn split_at_crossings(
     // **not** mention `i` — for a segment's endpoints it is a property of the segment alone. The
     // containment test below sweeps `i` over every wall, so leaving it inside asked the same
     // question `|walls|` times over. (Measured: 1.5M `dir_sign` calls where 113k are distinct.)
-    // ★★★★★ **This pass is plane-only, and that is now a wall rather than a precondition.** Its
-    // whole index space is plane classes — split points are class ids and `closed_contains`
-    // compares an endpoint by integer identity of one — so an end a cylinder pinned has no id to
-    // be compared by. Reading the classes up front keeps the body below in the one vocabulary it
-    // can answer in, rather than threading an `Option` it has no arm for.
-    // ★★★★★ **The name changed with the fact.** It used to say `RingNaming` on the grounds that a
-    // cylinder-pinned end here would be a *wiring failure*; the tracer emits them on purpose now,
-    // so this is a real input shape and takes the sentence its sibling already uses for exactly
-    // it: a vertex with no three-plane name is [`RejectReason::BranchVertexUnnamed`], never
-    // `RingNaming` ("these names do not chain"), which is a fact about a three-plane naming that
-    // came out degenerate. `ring_edges_with_walls` states that rule; this is the second site.
-    // ☑ Measured: every chained-cylinder fixture stops here, three classes each.
+    // ★★★★★ **This pass is not plane-only, and the wall that said so is gone.** A split point is
+    // a [`Split`] — a plane class **or** which root of which cylinder — and the order comes from
+    // [`combinatorics::order_located`], which takes both. The endpoints are not read as class ids
+    // up front either: they are located as [`combinatorics::OnLine`]s, so an end a cylinder pinned
+    // has a form to be compared by. The refusal that used to stand here
+    // (`RejectReason::BranchVertexUnnamed`) went with it — [`Split::of`] and
+    // `combinatorics::PointOn::of` **panic** on a cylinder pin beside a three-plane name, because
+    // those two halves disagreeing is this kernel's defect and not a shape a model can have.
     // ★★ **Both ends of every segment, located on that segment's own line, once.** This is where
     // `end_c` (the endpoint pins) and `end_ds` (their `dir_sign`s) used to live separately; a
     // [`combinatorics::Located`] carries both, built for the pair `(wc, s.wall)` it will be asked

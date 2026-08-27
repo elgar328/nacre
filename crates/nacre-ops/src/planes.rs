@@ -1232,7 +1232,7 @@ enum Corner {
 }
 
 impl Corner {
-    /// Does this corner lie on the plane the class names? — [`cylinder_strip_side`]'s precondition.
+    /// Does this corner lie on the plane the class names? — [`nacre_scalar::cylinder_strip_side`]'s precondition.
     fn on_plane(&self, coeffs: &[nacre_scalar::Rat; 4]) -> bool {
         match self {
             Self::Rational(p) => nacre_scalar::point_on_plane_exact(coeffs, p),
