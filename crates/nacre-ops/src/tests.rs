@@ -3674,23 +3674,26 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     }
 }
 
-/// ★★★★★ **The gate now decides, and the wall has moved to the ring road.**
+/// ★★★★★ **The wall is past the tracer now: the arrangement's plane-only overlay.**
 ///
 /// Every second cylinder operation on such a plate is still refused, whatever it is and wherever
-/// it stands — the refusal is about the *operand*, not about the two bodies meeting. What changed
-/// is **which layer says so**. The gate's clearance test used to stop at the first corner a
-/// cylinder made (`vertex_meet` has no rational point for one); now it reads that corner exactly,
-/// finds the wall faces genuinely **not clear** of the boss seated on them, and hands the pair to
-/// the `d = 0` record-and-pass arm — the population the rulings machinery serves. The refusal that
-/// survives is the tracer's own: a ring corner it cannot name as three planes.
+/// it stands — the refusal is about the *operand*, not about the two bodies meeting. What keeps
+/// changing is **which layer says so**, and this lock is the map of that. Its previous reading was
+/// `TraceDeclined { BranchNode }`: the tracer could not name a ring corner a cylinder made. The
+/// tracer names them now, orders them, and hands the arrangement segments whose ends a cylinder
+/// pins — and the next stage is the one that cannot take them.
 ///
-/// ★ **That name is this lock's map, not its point.** When the ring road learns a branch corner
-/// this assertion goes red and names the next wall — which is exactly what it is for. What must
-/// hold either way is that the refusal is honest and total: an error, and the live set exactly as
-/// it was. See [`an_operand_bounded_by_a_cylinder_is_named_in_class_space`] for the naming the
-/// road already has.
+/// `split_at_crossings` overlays each wall's line in **plane-class space**: split points are class
+/// ids, and its containment test compares a point with an endpoint by integer identity of those
+/// ids. A branch-pinned end has no class, so it says `RingNaming` — a *hard* reject rather than a
+/// per-face decline, which is why this assertion changed shape and not just its name. ☑ Measured:
+/// all four fixtures, three classes each, and every raise is that one `end_c`.
+///
+/// ★ **That name is this lock's map, not its point.** When the overlay learns a branch endpoint
+/// this goes red and names the next wall — which is exactly what it is for. What must hold either
+/// way is that the refusal is honest and total: an error, and the live set exactly as it was.
 #[test]
-fn a_chained_cylinder_bounded_by_the_first_stops_at_the_ring_road() {
+fn a_chained_cylinder_bounded_by_the_first_stops_at_the_overlay() {
     let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
     for (name, second) in [
         ("bore", ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut)),
@@ -3716,13 +3719,7 @@ fn a_chained_cylinder_bounded_by_the_first_stops_at_the_ring_road() {
         let live = m.live_solids.clone();
         match boolean(&mut m, second.2, first, b) {
             Err(BoolError::Rejected { reason, .. }) => assert!(
-                matches!(
-                    reason,
-                    RejectReason::TraceDeclined {
-                        kind: crate::DeclineKind::BranchNode,
-                        ..
-                    }
-                ),
+                matches!(reason, RejectReason::RingNaming),
                 "{name}: the refusal's layer and cause: {reason:?}"
             ),
             other => panic!("{name}: {other:?}"),

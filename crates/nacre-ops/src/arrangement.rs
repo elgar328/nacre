@@ -1197,6 +1197,10 @@ fn trace_one(
 ) {
     let planes = jd.planes;
     let w_normal = planes[wc].plane.normal();
+    // ★ Every curved carrier a seated ring rode and this walk declined to re-emit, with the face
+    // that rode it. Checked once at the end — a lateral face may be visited after the seated one,
+    // so the question is only answerable when the solid's whole contribution is in.
+    let mut curves_owed: Vec<(usize, crate::boolean::Wall)> = Vec::new();
     for (fp, fl) in faces_in {
         let fp = *fp;
         // A **lateral face** (a cylinder row): what it leaves on a ⊥ class is a **transversal**
@@ -1310,22 +1314,20 @@ fn trace_one(
             // ★ The corner keeps its own name too: `NodeId::three_planes(t)` was a round trip
             // through a projection, and `three_plane_name` is pure extraction of an already-sorted
             // triple, so the two are the same value.
-            let Some(tris) = ns
-                .iter()
-                .map(|&n| three_plane_name(n))
-                .collect::<Option<Vec<[usize; 3]>>>()
-            else {
-                out.declined.push((fp, DeclineKind::BranchNode));
-                return;
-            };
-            let n = tris.len();
+            let n = ns.len();
             for i in 0..n {
-                // ☑ Unexercised: a curved carrier's two ends are branch corners (measured, every
-                // shape in the corpus), so the `BranchNode` decline above has already fired.
-                // Spelled rather than assumed away — and the next rung replaces it with silence,
-                // because such an element is already on the class from the cylinder's own face.
+                // ★★★★★ **A curved edge emits nothing, and that is a refusal to say a thing
+                // twice rather than a hole.** A [`Seg`] is a straight edge on `wc`; an arc or a
+                // ruling is not that species. The element it needs is already on this class,
+                // contributed by the **cylinder's own lateral face** of this same solid — the
+                // circle where a ⊥ class cuts it, the two rulings where a class carries its axis.
+                // Measured on every class where this fires: `circles = 1` on the cap classes and
+                // `rulings = 2` on the wall class, all present before the seated face is reached.
+                // ★ The claim is checked at the end of this walk rather than trusted — see
+                // `curves_owed` — because an element silently missing does not decline, it
+                // corrupts every label on the class.
                 let crate::boolean::Wall::Plane(wall) = ws[i] else {
-                    out.declined.push((fp, DeclineKind::CurvedRingWall));
+                    curves_owed.push((fp, ws[i]));
                     continue;
                 };
                 // ★★★★★ **This test comes first, and the order is what keeps two causes apart.**
@@ -1342,26 +1344,26 @@ fn trace_one(
                     out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
                     continue;
                 }
-                let (t0, t1) = (tris[i], tris[(i + 1) % n]);
-                // The handle on `fc ∩ wall` — [`combinatorics::pin_on_line`], the same rule the
-                // scan road and the ray caster ask. This site used to spell a reduced version with
-                // no cut test and an `expect`; measured over 1,624,361 calls, the old pin never
-                // failed the cut test and the sound rule never picked a different class, so the
-                // swap moves no answer — it removes a way to be silently wrong.
-                let (Some(h0), Some(h1)) = (
-                    combinatorics::pin_on_line(jd, fc, wall, t0),
-                    combinatorics::pin_on_line(jd, fc, wall, t1),
-                ) else {
+                // ★★ **What pins each end, in the vocabulary that names it.** A three-plane
+                // corner is pinned by a plane — [`combinatorics::pin_on_line`], the same rule the
+                // scan road and the ray caster ask. A corner a cylinder made has no third plane
+                // and needs none: the quadric pins it, and [`combinatorics::EndPin::Cylinder`]
+                // says so while the name beside it says which point.
+                let pin = |k: usize| -> Option<combinatorics::EndPin> {
+                    match three_plane_name(ns[k]) {
+                        Some(t) => combinatorics::pin_on_line(jd, fc, wall, t)
+                            .map(combinatorics::EndPin::Class),
+                        None => Some(combinatorics::EndPin::Cylinder),
+                    }
+                };
+                let (Some(h0), Some(h1)) = (pin(i), pin((i + 1) % n)) else {
                     out.declined.push((fp, DeclineKind::NoPinOnLine));
                     continue;
                 };
                 out.segs.push(Seg {
                     wall,
                     end: [ns[i], ns[(i + 1) % n]],
-                    end_h: [
-                        combinatorics::EndPin::Class(h0),
-                        combinatorics::EndPin::Class(h1),
-                    ],
+                    end_h: [h0, h1],
                     solid: which,
                     kind,
                 });
@@ -1369,6 +1371,31 @@ fn trace_one(
         };
         for (ring, walls) in &rings {
             emit_ring(ring, walls);
+        }
+    }
+    // ★★★★ **The seated walk's silence over a curved edge, checked rather than argued.** It emits
+    // no segment there because the cylinder's own lateral face already put the element on this
+    // class. That follows from the population gate — a class meeting a cylinder is ⊥ to its axis
+    // (a circle), carries its axis (two rulings), or was refused long before here — but an
+    // argument is not a measurement, and an element that goes missing does not raise: it silently
+    // relabels the class.
+    //
+    // ★ Asked as narrowly as the carrier speaks. A `(cylinder, class)` pair has **two** rulings and
+    // a ring rides one of them, so the side is part of the question; a plane meets a cylinder in
+    // one circle, so there the cylinder alone names it.
+    for (fp, w) in curves_owed {
+        let backed = match w {
+            crate::boolean::Wall::Ruling { cyl, side, .. } => out
+                .rulings
+                .iter()
+                .any(|r| r.cyl == cyl && r.side == side && r.solid == which),
+            crate::boolean::Wall::Arc { cyl, .. } => {
+                out.circles.iter().any(|c| c.cyl == cyl && c.solid == which)
+            }
+            crate::boolean::Wall::Plane(_) => unreachable!("only curved carriers are collected"),
+        };
+        if !backed {
+            out.declined.push((fp, DeclineKind::SeatedCurveUnbacked));
         }
     }
 }

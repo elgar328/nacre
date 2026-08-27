@@ -998,6 +998,16 @@ pub enum DeclineKind {
     OddParity,
     /// A seated (on-plane) edge has no unique wall plane, so its segment cannot be named.
     SeatedEdgeNaming,
+    /// **A seated face's ring rode a cylinder this class never received an element for.**
+    ///
+    /// The seated walk emits no segment for an arc or a ruling — a [`Seg`](crate::arrangement) is
+    /// a straight edge on the class, and that element is already there, contributed by the
+    /// cylinder's own lateral face of the same solid. This is the net under that sentence: a
+    /// missing element does not decline anywhere, it silently relabels every cell on the class.
+    ///
+    /// ☑ Measured unexercised — the population gate leaves only the two shapes that do produce
+    /// one (a ⊥ class cuts a circle, a class through the axis leaves two rulings).
+    SeatedCurveUnbacked,
     /// **A point's name carries no plane that cuts the line it sits on**, so nothing in that name
     /// pins it there — see [`combinatorics::pin_on_line`].
     ///
@@ -1035,6 +1045,7 @@ impl DeclineKind {
             Self::OddParity => "odd-parity",
             Self::SeatedEdgeNaming => "seated-edge-naming",
             Self::NoPinOnLine => "no-pin-on-line",
+            Self::SeatedCurveUnbacked => "seated-curve-unbacked",
             Self::CylSpan => "cyl-span",
             Self::Ruling => "ruling",
         }
