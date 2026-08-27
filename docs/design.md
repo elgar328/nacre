@@ -1018,6 +1018,13 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
 
   ☑ 그 칸이 딛은 사실은 ⑮에서 미리 쟀다: seated 링의 branch 코너 이름과 `circle_crossings`가 같은 점에 붙일 이름이 **같은 `NodeId`다**(32/32, 실현 거리 0). ☑ 칸 ⑰이 그것을 인구로 확인했다 — 끝점 중복 제거 **400회**, 그와 갈라지는 옛 거절(`CoincidentNodes`, 세 평면 이름의 끝점) **1회**.
 
+  ★★★★★ **셀 단계에 남은 「평면 전용」 자리 — 다음 칸의 지도 (2026-08-27 grep 실측).** `CurvedStraightRun`
+  이 먼저 막고 있어 대부분 아직 안 닿지만, 능력 A를 셀 단계까지 밀면 이 다섯이 차례로 나온다:
+  `combinatorics::point_on_ring`(양 끝의 `.class()`를 요구 → `RingNaming`) ·
+  `combinatorics::point_in_component`·`cmp_key`·`Chart::ring`(전부 `node_coords_rat`) ·
+  `arrangement::point_in_mixed_ring`·`node_in_circle`(같음). ☑ 분할 단계에는 **하나도 안 남았다** —
+  거기서 좌표를 읽는 유일한 자리는 `segment_meets_cylinder` 필터이고 그것도 선택적이다.
+
   ★★★★★ **칸 ⑰이 만난 새 벽은 「미실행이라고 스스로 적어 둔 가드」다.** `RejectReason::CurvedStraightRun`의 doc이 *"an unfired guard by construction … it fires the day that stops being true"* 라고 쓴다. `loop_winding`은 링이 **직진하는** 노드를 지나쳐 걸어 극점의 회전을 읽는데, **한 원의 두 호는 접선 연속**이라 걷기가 그것도 지나친다. 원이 호로 잘리는 인구가 생긴 것이 그날을 만들었고, 그 doc이 답까지 적어 뒀다 — **이 걷기의 확장이 아니라 「영역의 극점에서 회전을 읽는」 일반 규칙**.
 
   ★★★★★ **칸 ⑯이 성능을 처음으로 «축»으로 삼았다.** `split_at_crossings`는 불리언의 **12~24%**

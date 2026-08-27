@@ -14351,6 +14351,19 @@ fixture stops here**"* — **⑰f가 「어디까지 갔나」를 읽을 때 믿
 **존재하지 않았고**, 진짜 호출자는 `split_circles`이며 **도달 가능**했다 — 즉 연쇄 픽스처가 만나던
 `WitnessNotRational`은 **문장이 틀린 거절**이었다. ⑰e가 그 질문 자체를 없애 **구조로** 갚았다.
 
+### ★★★★ 「거절이 정직한가」를 재고 나서 믿었다 (점검 2회차)
+
+칸 ⑭의 교훈이 「걷은 직후의 거절은 재기 전까지 내 것」이다. 그래서 `CurvedStraightRun`이 터진
+**링을 찍어 봤다**: `n = 2`, 두 항목 모두 `EndPin::Cylinder`, `earlier`/`later` 둘 다 **같은 실린더
+같은 중심의 `Arc`**, 노드는 `Branch{planes:[1,2], cyl:0, root:Lo/Hi}`. **한 원이 두 점에서 잘려 호
+둘이 된 링**이고, 가드가 쓰인 바로 그 모양이다 — 내 방출부가 만든 쓰레기가 아니다.
+★ 그 링은 **모든 노드가 호–호 접점**이라 걷기가 코너를 영영 못 찾는다. 그 doc이 적어 둔 답(영역의
+극점에서 회전을 읽기)이 바로 이 경우를 위한 것이다.
+
+★ 그리고 셀 단계에 남은 「평면 전용」 자리를 grep으로 셌다(design.md에 지도로 기록): `point_on_ring` ·
+`point_in_component` · `cmp_key` · `Chart::ring` · `point_in_mixed_ring` · `node_in_circle`.
+**분할 단계에는 하나도 안 남았다.**
+
 ### 관문·계측
 
 ⑰0~⑰e 각각 전량: fmt/clippy 0 · workspace · nodef · census **두 프로파일 비트 동일**(`78b06e50…`,
