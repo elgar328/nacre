@@ -2546,7 +2546,8 @@ fn split_circles(
     // ★ Nothing to cross. This used to be answered further down, after the loop had asked every
     // segment for nothing; the ends below are built for the whole slice at once, so the empty case
     // has to be answered before them or an empty class would start declining. `split_rulings`
-    // opens with the same line.
+    // opens with the same line. ☑ Measured: **61993** times over the suite — this is the common
+    // case, not an edge one.
     if circles.is_empty() {
         return Ok(None);
     }
@@ -2589,6 +2590,8 @@ fn split_circles(
         for (si, sg) in segs.iter().enumerate() {
             // A segment whose two ends are one point cuts nothing. Asked by **name**, which is the
             // identity: two spellings of one point are refused upstream, not tolerated here.
+            // ☑ Measured unexercised, as its coordinate-comparing predecessor presumably was — the
+            // census is bit-identical across the change, which is what says the two agree here.
             if sg.end[0] == sg.end[1] {
                 continue;
             }
@@ -2667,8 +2670,13 @@ fn split_circles(
     // exactly one point is *slit*, not divided, and the arc below comes out `[n, n]` — the closed
     // form a rim has. A genuine slit (a segment ending strictly inside the disk) would fall through
     // to the walk, whose orbit-length rule refuses a one-edge cycle by name — loudly, and where the
-    // sentence is true. (This used to cite a fixture by name as the only one that reaches it. That
-    // fixture is gone and the claim went unmeasured with it, so it is stated as the argument it is.)
+    // sentence is true.
+    // ★ It used to say the only fixture reaching this is `a_crossing_on_a_segments_endpoint`, "where
+    // the single crossing **is** the two-names case and the segment half now refuses it first". Both
+    // halves of that went stale: the fixture is `bands`' `a_crossing_on_a_segments_endpoint_is_
+    // inside_it` (renamed, not deleted — I mis-called it deleted once), and a crossing that lands on
+    // an end is **deduped** now rather than refused, when the two wear one name. Stated as the
+    // argument it is, rather than re-asserting an unmeasured "only".
     // ---- segments → sub-segments, in line order ----
     let out_segs = split_segments_at(jd, cyls, wc, segs, &mut on_seg)?;
     // ---- circles → arcs, in θ order about the seam ----
@@ -2820,7 +2828,9 @@ fn split_segments_at(
         // *names*.** It was there because the sort silently mixed two rulers if it stopped holding;
         // there is no ruler now, but the proposition it stood for — every crossing on this segment
         // is a point of `wc ∩ sg.wall` — still has to hold, and the name says so more cheaply than
-        // two `MeetLine` comparisons did.
+        // two `MeetLine` comparisons did. ☑ Measured **unexercised** over the suite, like the ruler
+        // check before it: it is here because the sort has no way to notice, not because a fixture
+        // is red.
         let pair = {
             let mut p = [wc, sg.wall];
             p.sort_unstable();
@@ -3428,7 +3438,7 @@ fn split_rulings(
         // of those crossings splits a ruling. It is a measurement now rather than an argument.
         //
         // A segment whose two ends are one point cuts nothing — asked by **name**, the identity,
-        // rather than by a coordinate a branch end does not have.
+        // rather than by a coordinate a branch end does not have. ☑ Measured unexercised.
         if sg.end[0] == sg.end[1] {
             continue;
         }

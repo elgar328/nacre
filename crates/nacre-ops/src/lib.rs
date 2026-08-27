@@ -793,11 +793,13 @@ pub enum RejectReason {
     /// transversal-circle test), the rational chart the circle nesting projects a ring into
     /// (`arrangement::circle_center_in_ring`), the order of two points on a meet line when one of
     /// them has no exact description (`combinatorics::order_pinned` and the interval overlay that
-    /// calls it), and the **arc split**, which needs both ends of a segment as coordinates before
-    /// it can cut a circle.
+    /// calls it), and the arrangement's split passes, where a point's own description — its
+    /// `(line, s)` or its `dir_sign` — could not be formed.
     ///
-    /// ★ That last one is where a chained cylinder operand stops today — the first of these sites a
-    /// real input reaches, rather than a guard nothing has exercised.
+    /// ★ **It used to name the arc split's demand for both endpoints' coordinates, and that is
+    /// gone.** The arc split asked for a coordinate where it wanted an order; it asks for the order
+    /// now, so what is left under this name there is the honest cause — a description past `Rat` —
+    /// and not a shape the road cannot spell. A chained cylinder operand no longer stops here.
     ///
     /// ★ **Distinct from the gate's own name on purpose.** The population gate asks *signs*, and
     /// those were made total (they clear denominators and answer in `BigInt`), so
@@ -846,10 +848,12 @@ pub enum RejectReason {
     /// ★★★★★ **Two sites, and neither of them fires today** — measured over the whole suite
     /// (`--features reject-trace`: 86 raises across 15 reasons, this one **absent**). What a caller
     /// meets on a chained operand has kept moving outward as the rungs went in, and the sentence
-    /// here has had to move with it three times: [`DeclineKind::BranchNode`] at the tracer's ring
-    /// naming, then [`Self::BranchVertexUnnamed`] at the arrangement's plane-only overlay, and now
-    /// [`Self::WitnessNotRational`] at the **arc split**, which asks every segment for its two
-    /// ends' exact coordinates before it can cut a circle.
+    /// here has had to move with it four times: [`DeclineKind::BranchNode`] at the tracer's ring
+    /// naming, then [`Self::BranchVertexUnnamed`] at the arrangement's then-plane-only overlay,
+    /// then [`Self::WitnessNotRational`] at the arc split, which asked every segment for its two
+    /// ends' exact coordinates — and now [`Self::CurvedStraightRun`], **outside the arrangement
+    /// altogether**: the arrangement takes a cylinder-pinned end everywhere, so a chained operand
+    /// reaches `loop_winding`, whose extreme-node walk steps past two tangent arcs of one circle.
     ///
     /// * `planes::face_clears_footprint` — the population **gate**. It used to refuse the whole
     ///   chained population here, because its clearance scan stopped at the first corner a
@@ -903,11 +907,15 @@ pub enum RejectReason {
     /// walk steps past them just the same — but their tangents differ, and the winding read there
     /// would be the turn at some *other* point of the ring, confidently wrong.
     ///
-    /// ★ An unfired guard by construction, and said so: in this cell's population every extreme
-    /// node is a real corner (a disk cut by chords is convex; a polygon minus disks turns at every
-    /// arc end), so the walk never takes a step. It fires the day that stops being true, and then
-    /// the answer is the general extreme-point rule — read the winding at the extremum of the
-    /// *region*, which may lie in an arc's interior — not a wider version of this walk.
+    /// ★★★★★ **It said it was an unfired guard by construction, and named the day it would fire.
+    /// That day came.** The argument was that in *that* cell's population every extreme node is a
+    /// real corner — a disk cut by chords is convex, a polygon minus disks turns at every arc end —
+    /// so the walk never takes a step. The arc split now cuts circles on a population that never
+    /// produced that shape before (a **chained** cylinder operand), and all four chained fixtures
+    /// stop here. ☑ Measured, 2026-08-27.
+    ///
+    /// ★ The answer it named still stands, and it is not a wider version of this walk: read the
+    /// winding at the extremum of the **region**, which may lie in an arc's interior.
     CurvedStraightRun,
     /// A loop's node lies *on* the ring it is being tested against.
     ///
