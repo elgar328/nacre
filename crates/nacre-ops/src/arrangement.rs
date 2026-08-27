@@ -1344,9 +1344,10 @@ fn trace_one(
                 // `NoPinOnLine`, which is the wrong sentence for it.
                 // ☑ Measured 0 in the corpus. The derivation this replaced could not produce it
                 // (it filtered `c != fc`), so the guard is what carries that property across.
-                // ☑ All three arms of this loop were made `unreachable!()` and the workspace suite
-                // and the ignored sweep both stayed green — that is what "unexercised" means here,
-                // rather than an argument that they cannot fire.
+                // ☑ This arm and the pin's below were both made `unreachable!()` with the workspace
+                // suite and the ignored sweep green — that is what "unexercised" means here, rather
+                // than an argument that they cannot fire. (The curved arm above is *not* in that
+                // set: it fires, 20 times, and `curves_owed` is what checks it.)
                 if wall == fc {
                     out.declined.push((fp, DeclineKind::SeatedEdgeNaming));
                     continue;
@@ -1912,18 +1913,25 @@ fn split_at_crossings(
     // **not** mention `i` — for a segment's endpoints it is a property of the segment alone. The
     // containment test below sweeps `i` over every wall, so leaving it inside asked the same
     // question `|walls|` times over. (Measured: 1.5M `dir_sign` calls where 113k are distinct.)
-    // ★ **This pass is plane-only, and says so once.** It runs *before* the arc split, so every
-    // endpoint is still pinned by a third plane; a cylinder-pinned one here would be a wiring
-    // failure, and `RingNaming` is already the sentence for it ("a node has no third plane to be
-    // named by"). Reading the classes up front keeps the body below in the one vocabulary it can
-    // answer in, rather than threading an `Option` it has no arm for.
+    // ★★★★★ **This pass is plane-only, and that is now a wall rather than a precondition.** Its
+    // whole index space is plane classes — split points are class ids and `closed_contains`
+    // compares an endpoint by integer identity of one — so an end a cylinder pinned has no id to
+    // be compared by. Reading the classes up front keeps the body below in the one vocabulary it
+    // can answer in, rather than threading an `Option` it has no arm for.
+    // ★★★★★ **The name changed with the fact.** It used to say `RingNaming` on the grounds that a
+    // cylinder-pinned end here would be a *wiring failure*; the tracer emits them on purpose now,
+    // so this is a real input shape and takes the sentence its sibling already uses for exactly
+    // it: a vertex with no three-plane name is [`RejectReason::BranchVertexUnnamed`], never
+    // `RingNaming` ("these names do not chain"), which is a fact about a three-plane naming that
+    // came out degenerate. `ring_edges_with_walls` states that rule; this is the second site.
+    // ☑ Measured: every chained-cylinder fixture stops here, three classes each.
     let end_c: Vec<[usize; 2]> = segs
         .iter()
         .map(|s| {
             let [a, b] = s.end_h;
             match (a.class(), b.class()) {
                 (Some(a), Some(b)) => Ok([a, b]),
-                _ => Err(reject(RejectReason::RingNaming)),
+                _ => Err(reject(RejectReason::BranchVertexUnnamed)),
             }
         })
         .collect::<Result<_, BoolError>>()?;

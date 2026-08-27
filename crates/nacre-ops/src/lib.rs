@@ -840,8 +840,10 @@ pub enum RejectReason {
     ///
     /// ★★★★★ **Two sites, and neither of them fires today** — measured over the whole suite
     /// (`--features reject-trace`: 86 raises across 15 reasons, this one **absent**). What a caller
-    /// meets on a chained operand is now [`Self::TraceDeclined`] with [`DeclineKind::BranchNode`],
-    /// one layer on: the ring road's corner naming, and the most common raise in that ledger.
+    /// meets on a chained operand has kept moving outward as the rungs went in: it was
+    /// [`DeclineKind::BranchNode`] at the tracer's ring naming, and since the seated road learned
+    /// to carry a cylinder-pinned end it is [`Self::BranchVertexUnnamed`], raised one layer on
+    /// again — by the arrangement's plane-only overlay, whose split points are plane classes.
     ///
     /// * `planes::face_clears_footprint` — the population **gate**. It used to refuse the whole
     ///   chained population here, because its clearance scan stopped at the first corner a
@@ -950,13 +952,13 @@ pub enum DeclineKind {
     /// A ring vertex is a `plane ∩ plane ∩ cylinder` **branch point**, and something on the
     /// tracer's road could not take it.
     ///
-    /// ★★★ **The something has narrowed, and the remainder is one line.** The ring machinery
-    /// carries such a name now, reads its side, and orders it — four places could still raise
-    /// this and, measured across the workspace suite, exactly one does (20 raises): the seated
-    /// road's `emit_ring`, which spells an edge's **carrier** from its two corners' plane sets
-    /// instead of taking the wall the producer already carried. The other three (a walk with no
-    /// exact side, a run whose body it cannot place, an order it cannot form) are spelled and
-    /// unexercised.
+    /// ★★★★★ **It has narrowed to nothing, and that is the shape of two rungs.** Last cell this
+    /// read "four places could raise it and exactly one does, 20 raises — the seated road's
+    /// `emit_ring`". That road stopped deriving an edge's carrier from its corners' plane sets and
+    /// the raise went with it, leaving **three** sites: a walk with no exact side, a run whose body
+    /// it cannot place, an order it cannot form. ☑ Measured **0** across the workspace suite and
+    /// the ignored sweep — the name is now entirely unexercised, kept because each of those three
+    /// can still say it.
     ///
     /// ★ Distinct from [`Self::CollapsedTriple`] on purpose: that one's sentence is "two of its
     /// planes coincide", which is simply not what happened here. The census keys its `detail` on
@@ -996,7 +998,18 @@ pub enum DeclineKind {
     /// The sweep along the class line entered and left unequally (an unbalanced parity), which a
     /// closed boundary cannot do.
     OddParity,
-    /// A seated (on-plane) edge has no unique wall plane, so its segment cannot be named.
+    /// **A seated edge's carrier is the face's own plane class**, so `fc ∩ wall` is not a line and
+    /// the segment cannot be named on it.
+    ///
+    /// ★★ **Its sentence changed when the road stopped guessing.** It used to mean "the two
+    /// endpoint names share no single plane besides `fc`" — an artefact of *deriving* the carrier,
+    /// measured **0** and gone with the derivation. What replaces it is a fact about the carrier
+    /// the producer hands over: the face across this edge is in the same class as the face itself,
+    /// which the coplanar merge should have folded. One name, one proposition.
+    ///
+    /// ☑ Measured unexercised (`unreachable!()`, whole suite and ignored sweep green). The guard
+    /// exists because the derivation it replaced could not produce this case — it filtered
+    /// `c != fc` — and taking the carrier is what makes the case spellable at all.
     SeatedEdgeNaming,
     /// **A seated face's ring rode a cylinder this class never received an element for.**
     ///
@@ -1016,7 +1029,9 @@ pub enum DeclineKind {
     /// the substrate limit is the cause and the missing pin only its symptom. Where no such fact is
     /// in hand, saying the symptom is the honest answer.
     ///
-    /// ☑ Measured unexercised: **0 of 1,622,692** ordinary-arm calls fail the cut test.
+    /// ☑ Measured unexercised at **both** its sites: `third_on_l`'s ordinary arm, 0 of 1,622,692
+    /// calls where the lone off-line class fails the cut test; and the seated road's, by
+    /// `unreachable!()` with the whole suite and the ignored sweep green.
     NoPinOnLine,
     /// A cylinder face could not answer a circle question exactly — its rim span is
     /// underivable or a plane class lacks the exact description a circle test needs (M6-2a).

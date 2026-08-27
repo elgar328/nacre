@@ -3685,9 +3685,9 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
 ///
 /// `split_at_crossings` overlays each wall's line in **plane-class space**: split points are class
 /// ids, and its containment test compares a point with an endpoint by integer identity of those
-/// ids. A branch-pinned end has no class, so it says `RingNaming` — a *hard* reject rather than a
-/// per-face decline, which is why this assertion changed shape and not just its name. ☑ Measured:
-/// all four fixtures, three classes each, and every raise is that one `end_c`.
+/// ids. A branch-pinned end has no class, so it says `BranchVertexUnnamed` — a *hard* reject
+/// rather than a per-face decline, which is why this assertion changed shape and not just its
+/// name. ☑ Measured: all four fixtures, three classes each, and every raise is that one `end_c`.
 ///
 /// ★ **That name is this lock's map, not its point.** When the overlay learns a branch endpoint
 /// this goes red and names the next wall — which is exactly what it is for. What must hold either
@@ -3719,7 +3719,7 @@ fn a_chained_cylinder_bounded_by_the_first_stops_at_the_overlay() {
         let live = m.live_solids.clone();
         match boolean(&mut m, second.2, first, b) {
             Err(BoolError::Rejected { reason, .. }) => assert!(
-                matches!(reason, RejectReason::RingNaming),
+                matches!(reason, RejectReason::BranchVertexUnnamed),
                 "{name}: the refusal's layer and cause: {reason:?}"
             ),
             other => panic!("{name}: {other:?}"),
