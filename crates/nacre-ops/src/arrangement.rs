@@ -4439,7 +4439,7 @@ struct Staged {
     labels: Vec<Label>,
     faces: Vec<LocalFace>,
     disk_labels: Vec<(usize, Label)>,
-    arc_labels: Vec<(usize, [NodeId; 2], Label)>,
+    arc_labels: Vec<(usize, ArcLabel)>,
 }
 
 /// **The per-class stages, in one place** — the walk and the nesting.
@@ -5726,7 +5726,16 @@ fn emit_faces(
             let c = cells
                 .iter()
                 .position(|cell| cell.half_edges.contains(&he))?;
-            Some((ma.cyl, ma.end, labels[c]))
+            // ★ The label and the trace that made it, **from one visit to one arc** — see
+            // [`ArcLabel`] for why they may not become two maps.
+            Some((
+                ma.cyl,
+                ArcLabel {
+                    ends: ma.end,
+                    label: labels[c],
+                    marks: ma.merged.clone(),
+                },
+            ))
         })
         .collect();
     (out, disk_labels, arc_labels)
@@ -5734,11 +5743,7 @@ fn emit_faces(
 
 /// [`emit_faces`]' product: the kept faces, the disk labels, and the cut circles' per-arc
 /// disk-side labels.
-type EmitOut = (
-    Vec<LocalFace>,
-    Vec<(usize, Label)>,
-    Vec<(usize, [NodeId; 2], Label)>,
-);
+type EmitOut = (Vec<LocalFace>, Vec<(usize, Label)>, Vec<(usize, ArcLabel)>);
 
 /// A face's box, from its vertices' cached coordinates.
 ///
@@ -5813,9 +5818,39 @@ pub(crate) type DiskLabels = HashMap<(usize, usize), Label>;
 /// **A cut circle's per-arc disk-side labels** — the sector sibling of [`DiskLabels`] (the
 /// rulings ladder): a cut circle bounds no whole disk, so "the material immediately above and
 /// below this plane inside the circle" is answered **per arc**, by the label of the cell on the
-/// arc's disk side. Keyed like `DiskLabels`; each entry lists `(arc's end pair, label)` in the
+/// arc's disk side. Keyed like `DiskLabels`; each entry lists one [`ArcLabel`] per arc in the
 /// split's own arc order. The frame is the disk labels' (the class's stored normal).
-pub(crate) type ArcLabels = HashMap<(usize, usize), Vec<([NodeId; 2], Label)>>;
+pub(crate) type ArcLabels = HashMap<(usize, usize), Vec<ArcLabel>>;
+
+/// One arc's row in [`ArcLabels`] — what the arc bounds, and **who traced it**.
+///
+/// ★★★★★ **Two different questions live here and they are not one question.** `label` answers
+/// *membership* — "is this side material" — and that is all a label can say. Whether this lateral
+/// face is even **here** to bound it is a different proposition, and the trace answers that one:
+/// `marks` is the contribution list that covered this arc ([`MergedArc::merged`]), where a face
+/// running through says `Transversal` and one whose boundary stops at the arc says `Graze`.
+/// A **holed** lateral re-entering a boolean makes the difference visible — its two sectors can
+/// carry a literally identical label, and only the kind says which one is a face at all.
+///
+/// ★ The two are set together, in one pass over one arc, for the reason `tri_pt3` and `rotated`
+/// are: split into two maps they could disagree, and then nothing could say which was the truth.
+#[derive(Clone, Debug)]
+pub(crate) struct ArcLabel {
+    /// The arc's end pair, in the split's own arc order.
+    pub(crate) ends: [NodeId; 2],
+    /// The four bits of the cell on the arc's disk side, in the class's stored frame.
+    pub(crate) label: Label,
+    /// The `(solid, kind)` contributions covering this arc — [`MergedArc::merged`] verbatim.
+    ///
+    /// ★★★ **A lateral face's mark here is never `Seated`, and the type already says so.** The
+    /// circle arm of [`trace_one`] builds its kind from [`CylOnClass`], whose only two answers are
+    /// `Crosses` and `Grazes` — there is no `Seated` arm to take, because a cylinder's lateral
+    /// surface cannot lie *in* a plane. `Seated` circle contributions come from the seated arm one
+    /// branch further down, which a face enters only when its own class **is** this class: a
+    /// planar face's rim. So "skip `Seated`" is not a guess about producers — it reads the one
+    /// thing on this list that a lateral could not have written.
+    pub(crate) marks: Vec<(SolidSide, SegKind)>,
+}
 
 /// **A cut circle's seam datum — carried from the split, never re-derived.** `split_circles`
 /// already orders a cut circle's branch nodes by θ about the seam and classifies a seam-incident
@@ -6103,7 +6138,7 @@ fn trace_result_faces(
         type ClassOut = (
             Vec<LocalFace>,
             Vec<(usize, Label)>,
-            Vec<(usize, [NodeId; 2], Label)>,
+            Vec<(usize, ArcLabel)>,
             Vec<(usize, CutRim)>,
             Option<BoolError>,
         );
@@ -6195,12 +6230,12 @@ fn trace_result_faces(
         for (cyl, label) in labels {
             curved.disk_labels.insert((cyl, work[k]), label);
         }
-        for (cyl, ends, label) in arcs {
+        for (cyl, al) in arcs {
             curved
                 .arc_labels
                 .entry((cyl, work[k]))
                 .or_default()
-                .push((ends, label));
+                .push(al);
         }
         for (cyl, rim) in rims {
             curved.cut_rims.insert((cyl, work[k]), rim);
@@ -9376,11 +9411,11 @@ mod tests {
             for (cyl, label) in &staged.disk_labels {
                 disk_labels.insert((*cyl, c), *label);
             }
-            for (cyl, ends, label) in &staged.arc_labels {
-                arc_labels
-                    .entry((*cyl, c))
-                    .or_default()
-                    .push((*ends, *label));
+            // ★ This mirrors production's fold by hand (`trace_result_faces`' accumulation). A
+            // drift between them is not caught by anything: the test would simply start measuring
+            // a map the boolean never builds.
+            for (cyl, al) in &staged.arc_labels {
+                arc_labels.entry((*cyl, c)).or_default().push(al.clone());
             }
             for (cyl, rim) in &edges.cut_rims {
                 cut_rims.insert((*cyl, c), rim.clone());
@@ -9494,11 +9529,11 @@ mod tests {
             for (cyl, label) in &staged.disk_labels {
                 disk_labels.insert((*cyl, c), *label);
             }
-            for (cyl, ends, label) in &staged.arc_labels {
-                arc_labels
-                    .entry((*cyl, c))
-                    .or_default()
-                    .push((*ends, *label));
+            // ★ This mirrors production's fold by hand (`trace_result_faces`' accumulation). A
+            // drift between them is not caught by anything: the test would simply start measuring
+            // a map the boolean never builds.
+            for (cyl, al) in &staged.arc_labels {
+                arc_labels.entry((*cyl, c)).or_default().push(al.clone());
             }
             for (cyl, rim) in &edges.cut_rims {
                 cut_rims.insert((*cyl, c), rim.clone());

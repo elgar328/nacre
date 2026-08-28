@@ -720,6 +720,24 @@ pub enum RejectReason {
     /// with no narrow rational description, a rotated class, a moved cylinder (its def is
     /// pre-motion), or checked-`Rat` overflow. Conservative honest refusal, never a guess.
     CylinderGateUndecided,
+    /// **The trace does not determine whether a lateral face is present over a sector.**
+    ///
+    /// A cell label says where *material* is; whether the cylinder's own face bounds it there is a
+    /// different proposition, answered by the contributions covering the rim arc (`bands`'
+    /// `face_spans`). This name is what that answer being *contradictory* is called, and it has
+    /// two spellings — both of them "the evidence points both ways", which is why they share one
+    /// name rather than reporting the shape that produced it:
+    ///
+    /// - The interval's **two rims disagree.** Every cut rim is a band boundary, so a sector
+    ///   exists over an interval's whole height or over none of it; ends that disagree mean that
+    ///   is false here, and choosing an end to believe is a guess.
+    /// - **Two faces of one solid** cover the same arc and disagree about reaching in. That takes
+    ///   one cylinder class holding several faces which share a rim; the eventual answer is
+    ///   likely "any of them is enough", but it has never been measured.
+    ///
+    /// ★ Not [`Self::CylinderGateUndecided`]: nothing here failed to be *computed*. The
+    /// arrangement decided every piece exactly and the pieces contradict each other.
+    CylinderFaceUndecided,
     /// An operand face has no three non-collinear outer-loop points, so it spans no plane.
     /// (Its sibling `DegenerateNormal` — a zero-length triangle normal — died when `n_out`
     /// moved to the stored orientation: no triangle cross is taken, so there is nothing
@@ -1184,6 +1202,7 @@ impl RejectReason {
             Self::ObliqueCylinderCut => "oblique_cylinder_cut",
             Self::CylinderPairContact => "cylinder_pair_contact",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
+            Self::CylinderFaceUndecided => "cylinder_face_undecided",
             Self::DegenerateFace => "degenerate_face",
             Self::FrameOutOfRange => "frame_out_of_range",
             Self::PrecisionBudget { .. } => "precision_budget",
@@ -1248,6 +1267,9 @@ impl RejectReason {
             | Self::AmbiguousCorner
             | Self::UnorderedEdges
             | Self::EdgeOccupancyConflict
+            // Two exact facts about one lateral face's presence, pointing opposite ways: the
+            // configuration is outside what this road covers, not a broken arrangement.
+            | Self::CylinderFaceUndecided
             | Self::NoClearRay
             | Self::WitnessNotRational
             | Self::ArcBoundNotYet

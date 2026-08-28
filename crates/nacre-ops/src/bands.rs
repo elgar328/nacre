@@ -360,11 +360,10 @@ fn panel_faces(
             return Err(ladder()); // two nodes with one name: not this ladder's geometry
         }
     }
-    let labels_at = |c: usize, a: combinatorics::NodeId, b: combinatorics::NodeId| {
+    let arc_at = |c: usize, a: combinatorics::NodeId, b: combinatorics::NodeId| {
         arc_labels
             .get(&(k, c))
-            .and_then(|v| v.iter().find(|(e, _)| *e == [a, b]))
-            .map(|(_, l)| *l)
+            .and_then(|v| v.iter().find(|r| r.ends == [a, b]))
             .ok_or_else(ladder)
     };
     let toward_hi = |c: usize| -> bool { crate::planes::plus_t_is_above(&jd.planes[c], &row.def) };
@@ -375,18 +374,40 @@ fn panel_faces(
         // The sector's chamber, from both rims — the same both-ends-agree discipline as
         // `chamber`'s, on the per-arc labels. The hi arc runs `[a_hi, b_hi]` too: the pairing
         // preserves angle, so the CCW adjacency is the same on both circles.
-        let l_lo = labels_at(lo, a_lo, b_lo)?;
-        let l_hi = labels_at(hi, a_hi, b_hi)?;
-        let (own_lo, other_lo) = read_bits(&l_lo, row.side, toward_hi(lo));
-        let (own_hi, other_hi) = read_bits(&l_hi, row.side, !toward_hi(hi));
+        let r_lo = arc_at(lo, a_lo, b_lo)?;
+        let r_hi = arc_at(hi, a_hi, b_hi)?;
+        // ★★★★★ **Existence, before membership.** A label says where *material* is; it does not
+        // say whether this lateral face is here to bound it, and a holed lateral coming back in
+        // as an operand makes the two sectors' labels literally identical. So the trace is asked
+        // first — and where the face is absent there is no membership question to ask.
+        let spans_lo = face_spans(r_lo, row.side, toward_hi(lo))?;
+        let spans_hi = face_spans(r_hi, row.side, !toward_hi(hi))?;
+        if spans_lo != spans_hi {
+            // The rims of a hole are themselves band boundaries (`bands_of` pushes every cut
+            // rim), so within one interval a sector either exists over its whole height or not
+            // at all. Two ends disagreeing means that is false here, and picking an end to
+            // believe is the guess `chamber` refuses to make one screenful down.
+            return Err(reject(RejectReason::CylinderFaceUndecided));
+        }
+        if !spans_lo {
+            #[cfg(test)]
+            panel_probe::sector(false, false);
+            continue;
+        }
+        let (own_lo, other_lo) = read_bits(&r_lo.label, row.side, toward_hi(lo));
+        let (own_hi, other_hi) = read_bits(&r_hi.label, row.side, !toward_hi(hi));
         if (own_lo, other_lo) != (own_hi, other_hi) {
             return Err(ladder());
         }
         let keep_side = |in_own: bool| keep_for(kind, row.side, in_own, other_lo);
         let (keep_in, keep_out) = (keep_side(own_lo), keep_side(!own_lo));
         if keep_in == keep_out {
+            #[cfg(test)]
+            panel_probe::sector(true, false);
             continue;
         }
+        #[cfg(test)]
+        panel_probe::sector(true, true);
         // The ruling identity at each cut angle, from the one spelling
         // (`arrangement::ruling_side` against the wall class's canonical coefficients).
         let side_at = |n: combinatorics::NodeId| -> Result<i8, BoolError> {
@@ -421,6 +442,102 @@ fn panel_faces(
     Ok(())
 }
 
+/// **Does this row's lateral face reach into the interval, at this arc?** — the *existence*
+/// question, which no label answers.
+///
+/// A label states where material is. It is written about a **cell**, and it stays the same whether
+/// the cylinder's own face bounds that cell or some other face does. That is enough while a
+/// lateral marks a class over its whole circle; it stops being enough the moment a **holed**
+/// lateral comes back in as an operand, because then two sectors of one rim can carry a literally
+/// identical label and differ only in whether the face is there at all.
+///
+/// The trace already said which. One rule, no shapes counted:
+///
+/// | this face's mark on the arc | reaches into the interval |
+/// |---|---|
+/// | [`SegKind::Transversal`] | **yes** — the face passes through the plane here |
+/// | [`SegKind::Graze`] | only when `body_above` names the interval's side |
+/// | nothing | **no** — the face stops short of this arc |
+///
+/// `band_is_above` is the interval's side of this rim's plane in that plane's **stored** frame —
+/// the very argument [`read_bits`] takes, and produced by the same `toward_hi` the caller already
+/// holds. There is no second derivation of "which way is the band" here, deliberately: this
+/// ladder has been bitten four times by a sign re-derived one call away from its twin.
+///
+/// ★ [`SegKind::Seated`] is skipped because it is a *planar* face's word — see [`ArcLabel::marks`],
+/// where the type is what rules a lateral out, not a convention.
+///
+/// ★★ **The rule is not about holes.** An outer rim grazes too (`circle_on_class` says
+/// `Grazes { body_above: up }` at the face's own end), and there the interval on the face's side
+/// gets `true` from this same test — one sentence about every rim. It is untested here all the
+/// same: an *uncut* rim never reaches [`ArcLabels`], so today only cut rims ask.
+fn face_spans(
+    r: &crate::arrangement::ArcLabel,
+    side: SolidSide,
+    band_is_above: bool,
+) -> Result<bool, BoolError> {
+    use crate::arrangement::SegKind;
+    #[cfg(test)]
+    {
+        let lateral = |k: &SegKind| !matches!(k, SegKind::Seated { .. });
+        let mine = || r.marks.iter().filter(|(s, _)| *s == side);
+        panel_probe::marks(
+            mine().filter(|(_, k)| lateral(k)).count(),
+            mine().filter(|(_, k)| !lateral(k)).count(),
+        );
+    }
+    let mut answer: Option<bool> = None;
+    for (_, kind) in r.marks.iter().filter(|(s, _)| *s == side) {
+        let reaches = match *kind {
+            SegKind::Seated { .. } => continue, // a planar face's word — see `ArcLabel::marks`
+            SegKind::Transversal { .. } => true,
+            SegKind::Graze { body_above } => body_above == band_is_above,
+        };
+        // ★★★ **Two of this solid's faces meeting at one arc and *disagreeing*: refused, and the
+        // refusal is a placeholder.** It takes one cylinder class carrying several faces that
+        // share a rim — reachable geometry (a split bore whose two bands touch), just not
+        // reachable today. The answer that day is almost certainly `.any()`: if any of the
+        // solid's faces reaches into the interval, a face is there. It is not written that way
+        // now because it cannot be measured, and this ladder has twice shipped an unmeasured rule
+        // that turned out wrong. Marks that **agree** decide nothing by themselves, so they are
+        // taken: refusing there would be refusing a case with no guess in it.
+        if answer.replace(reaches).is_some_and(|prev| prev != reaches) {
+            return Err(reject(RejectReason::CylinderFaceUndecided));
+        }
+    }
+    Ok(answer.unwrap_or(false))
+}
+
+/// What the panel road decided, at the layer that decides it — [`panel_faces`]' lock.
+///
+/// ★ The operation this cell is for refuses further down for its own reasons, so a face count on
+/// a finished solid cannot hold the claim. The decision itself is the thing to hold; it stands
+/// whether or not the assembly gets to the end (`ruling_probe` is here for the same reason).
+#[cfg(test)]
+pub(crate) mod panel_probe {
+    use std::sync::Mutex;
+
+    /// One entry per sector considered: `(the face reaches this interval, the sector was emitted)`.
+    pub(crate) static SECTORS: Mutex<Vec<(bool, bool)>> = Mutex::new(Vec::new());
+
+    /// One entry per rim visit: `(this solid's lateral marks on the arc, its `Seated` marks)`.
+    pub(crate) static MARKS: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
+
+    pub(crate) fn sector(spans: bool, kept: bool) {
+        SECTORS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .push((spans, kept));
+    }
+
+    pub(crate) fn marks(lateral: usize, seated: usize) {
+        MARKS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .push((lateral, seated));
+    }
+}
+
 /// The one spelling of "which two bits of a label are this band's chamber": the row's own
 /// solid's bit and the counterpart's, on the side of the plane the band occupies. Shared by the
 /// whole-disk road ([`chamber`]) and the per-sector panel road, so the two cannot drift.
@@ -442,6 +559,19 @@ fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: bool) -> bo
     }
 }
 
+/// **The whole-disk chamber** — both bounding circles uncut, so one question answers the interval.
+///
+/// ★★★ **This road reads only the label, and that is safe here for a reason worth writing down.**
+/// The sector road one screenful up had to ask the *trace* whether the lateral face is even
+/// present ([`face_spans`]), because a hole in the face makes two sectors with identical labels.
+/// No hole reaches this road: a hole's rims are inside the face (a rim at the face's own end is
+/// not an inner loop), they are cut circles, and `bands_of` makes **every** cut rim a band
+/// boundary — so an interval a hole passes through has cut ends and goes to the panels. Break
+/// that and this function starts answering a question it cannot see.
+///
+/// ★ So the two roads treat existence differently on purpose, and only one of them has to. They
+/// become one question when the lateral gets its own cell complex on its own chart, which is the
+/// body of this capability and not this rung.
 pub(crate) fn chamber(
     jd: &Judge<'_, WorkingPlane>,
     row: &CylRow,
@@ -489,6 +619,70 @@ mod tests {
     use nacre_math::{Point3, Vector3};
     use nacre_store::Handle;
     use nacre_topo::{Model, Solid};
+
+    /// **The existence rule's whole truth table** — [`face_spans`] against marks written by hand.
+    ///
+    /// The production lock reaches this through an entire boolean, and a boolean exercises two of
+    /// the rows below: a `Transversal` that reaches and a `Graze` pointing away. The rule is one
+    /// sentence about every rim, not a description of that fixture, so the rest are stated here —
+    /// including the two that can only be reached from geometry the road does not build yet.
+    #[test]
+    fn face_spans_reads_the_trace_not_the_label() {
+        use crate::arrangement::{ArcLabel, SegKind};
+        let n = combinatorics::NodeId::ThreePlane([0, 1, 2]);
+        let row = |marks: Vec<(SolidSide, SegKind)>| ArcLabel {
+            ends: [n, n],
+            // Deliberately the label that says "material everywhere": nothing below may read it.
+            label: [true; 4],
+            marks,
+        };
+        let (a, b) = (SolidSide::A, SolidSide::B);
+        let spans = |marks, above| face_spans(&row(marks), a, above);
+        // A face running through the plane is on both sides of it.
+        for above in [true, false] {
+            assert!(spans(vec![(a, SegKind::Transversal { mat: 1 })], above).unwrap());
+        }
+        // A face whose boundary stops at the arc is on exactly the side it occupies.
+        for body_above in [true, false] {
+            for above in [true, false] {
+                assert_eq!(
+                    spans(vec![(a, SegKind::Graze { body_above })], above).unwrap(),
+                    body_above == above,
+                    "graze body_above={body_above} against band above={above}"
+                );
+            }
+        }
+        // The counterpart's marks are not this row's face, whatever they say.
+        assert!(!spans(vec![(b, SegKind::Transversal { mat: 1 })], true).unwrap());
+        // A planar face's seated rim says nothing about the lateral — see `ArcLabel::marks`.
+        assert!(!spans(vec![(a, SegKind::Seated { body_above: true })], true).unwrap());
+        // No mark at all: the face stops short of this arc.
+        assert!(!spans(Vec::new(), true).unwrap());
+        // Two of this solid's faces on one arc: agreeing decides, disagreeing refuses by name.
+        assert!(
+            spans(
+                vec![
+                    (a, SegKind::Graze { body_above: true }),
+                    (a, SegKind::Transversal { mat: 1 }),
+                ],
+                true,
+            )
+            .unwrap()
+        );
+        assert!(matches!(
+            spans(
+                vec![
+                    (a, SegKind::Graze { body_above: false }),
+                    (a, SegKind::Transversal { mat: 1 }),
+                ],
+                true,
+            ),
+            Err(BoolError::Rejected {
+                reason: RejectReason::CylinderFaceUndecided,
+                ..
+            })
+        ));
+    }
 
     /// Run the plane arrangement past the C2 stopper and hand the band pass what it needs.
     /// Returns `(band faces, the plane classes' axis parameters keyed by class)`.

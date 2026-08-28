@@ -3557,20 +3557,18 @@ fn chained(
 ///
 /// The corpus had **no chained-cylinder fixture at all**: every boss and bore stood on a plain
 /// plate. So "a plate takes a second cylinder" was neither locked nor known, and it turned out to
-/// be *half* true — which is what this pins, both halves.
+/// be *half* true — this is the half that always built, kept as its own regression guard.
 ///
 /// A bore or a boss standing on the plate's face leaves the operand's rings plane-named (a hole is
 /// a full circle, the one curved loop the tracer's road speaks), so the next cylinder is business
-/// as usual. A boss standing on a **wall** does not: it bites an arc out of the plate's caps and
-/// splits the wall in two with its rulings, and those rings run along the boss. See
-/// [`a_chained_cylinder_bounded_by_the_first_is_refused_by_name`] for that half.
+/// as usual. A boss standing on a **wall** did not, for six wall-names running; it builds now, and
+/// [`a_chained_cylinder_bounded_by_the_first_builds`] holds that half.
 ///
 /// The volumes are derived, not copied: the plate is 96, a bore through it removes `π/4·2`, a boss
 /// on top adds `π/4·1`, and a wall boss adds `π/4·4` with half its section buried (`−½·π/4·2`).
 #[test]
 fn chained_cylinder_operations_that_build_today_still_build() {
     let quarter = std::f64::consts::PI * 0.25;
-    let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
     let bore = ([2.0, 2.0, -1.0], 4.0, BoolKind::Cut);
     let top_boss = ([2.0, 2.0, 2.0], 1.0, BoolKind::Fuse);
     for (name, first, second, volume) in [
@@ -3613,9 +3611,9 @@ fn chained_cylinder_operations_that_build_today_still_build() {
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
     }
-    // ★ The one that does not: a wall boss cannot be a *middle* operation.
-    let (_, r) = chained(wall_boss, ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse));
-    assert!(r.is_err(), "a wall boss is still the end of the road");
+    // ★ A wall boss as a *middle* operation used to be the one that could not follow. It builds
+    // now; its volumes live in `a_chained_cylinder_bounded_by_the_first_builds`, beside the
+    // mechanism that opened it.
 }
 
 /// ★★★★★ **The gate decides a boss-seated wall, and records the pair — and nothing else in the
@@ -3924,78 +3922,79 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
     );
 }
 
-/// ★★★★★ **The wall is back at the trace, and for the first time it names the thing that is
-/// actually wrong.**
+/// ★★★★★ **A boolean's own result takes a second cylinder — the whole road, end to end.**
 ///
-/// Every second cylinder operation on such a plate is still refused, whatever it is and wherever it
-/// stands — the refusal is about the *operand*, not about the two bodies meeting. What keeps
-/// changing is **which layer says so**, and this lock is the map of that. It has read
-/// `TraceDeclined { BranchNode }` (the tracer could not name a ring corner a cylinder made), then
-/// `WitnessNotRational` (the arc split asked every segment for its two ends' coordinates), then
-/// [`RejectReason::CurvedStraightRun`] (`loop_winding` had no turn to read where a ring runs
-/// smooth through its extreme node), then [`RejectReason::OpenResultShell`] — out of the
-/// arrangement entirely — then [`RejectReason::LabelConflict`] when one of two cancelling
-/// falsehoods was fixed, and now **`OpenResultShell` again with the arrangement whole**.
+/// A boss standing on a **wall** was the one chained operand that did not build. It buries half the
+/// boss's lateral in the plate, so that face comes back as a band with a **hole**, and every layer
+/// downstream had a sentence that was false about it. The wall moved through six names as those
+/// were closed one at a time — `TraceDeclined { BranchNode }`, `WitnessNotRational`,
+/// [`RejectReason::CurvedStraightRun`], [`RejectReason::OpenResultShell`],
+/// [`RejectReason::LabelConflict`] when one of two cancelling falsehoods was fixed, then
+/// `OpenResultShell` again with the arrangement whole — and this lock was the map of that walk.
+/// It is now the map of the far side.
 ///
-/// ★★★★★ **Every one of those was downstream of a false sentence.** The first fuse buries half the
-/// boss's lateral in the plate, leaving that face a band with a **hole**; the face table described a
-/// lateral by its outer axis span alone, so the trace answered "the class cuts a full circle" — true
-/// for half the angles and false for the other half. The winding walk and the labelling were both
-/// reading a subdivision built on that. The trace named it (`TraceDeclined { CylFaceHole, face }`),
-/// then learned to **walk the hole** and answer per angular interval; the winding walk then learned
-/// to read a **smooth** extremum by curvature. So the arrangement is through: the walk closes, the
-/// labels agree, and the refusal now comes from the **assembly**.
+/// ★★★★★ **The last false sentence was that a label answers two questions.** A label says where
+/// *material* is; the panel road also read it as saying whether the lateral face is **there**. On
+/// the first fusion the two sectors of the holed rim carry different labels (the buried one is
+/// inside the *other* solid) and the road happened to be right; on a second operation the plate is
+/// already own material, the two sectors' labels are **literally identical**, and both survived —
+/// filling the hole in and leaving its four boundary edges claimed once each. The trace had said
+/// which sector was a face all along, per arc, since the hole taught it to mark by angular extent:
+/// `Graze` where the face ends, `Transversal` where it runs through. `bands::face_spans` asks it.
 ///
-/// ★★★★★ **Two falsehoods were cancelling, and both are gone now.** The ruling road stated a
-/// full-height crossing where a holed lateral only *grazes* the wall; the shared ring walk called
-/// an on-line run continuous across an arc that leaves the line and comes back. Fixing the first
-/// alone made the class's labels stop closing ([`RejectReason::LabelConflict`] — an honest report
-/// that the trace was incomplete); fixing the second closed them again. ☑ Measured: **18** runs
-/// split at a departure, all of length 4 with one curved edge, none of them needing a flip.
+/// ☑ Measured across these four fixtures: **four** sectors dropped for existence, exactly one per
+/// operation — the buried half — and the volumes below are what says that count is right.
 ///
-/// ☑ **So the arrangement is whole and the refusal is the assembly's own.** What remains is the
-/// panel road's keep decision: it reads one bit ("is my own material inside this wall") and derives
-/// the far side by negating it, which assumes the lateral *separates* own-inside from own-outside —
-/// false over a hole, where own material is on both sides. Measured on the first fusion the buried
-/// sector is dropped because it is inside the **other** solid; on the second the plate is already
-/// *own*, so both sectors survive and the hole is filled in. That is the next rung.
-///
-/// ★ **That name is this lock's map, not its point.** What must hold either way is that the refusal
-/// is honest and total: an error, and the live set exactly as it was.
+/// ★ The volumes are derived, not copied: the plate is 96, the wall boss adds `π/4·4` with half its
+/// section buried (`−½·π/4·2`), a through bore removes `π/4·2`, a boss on top adds `π/4·1`, and a
+/// bore *on the wall* removes only the half-section the plate holds (`−½·π/4·2`).
 #[test]
-fn a_chained_cylinder_bounded_by_the_first_stops_at_the_assembly() {
+fn a_chained_cylinder_bounded_by_the_first_builds() {
+    let q = std::f64::consts::PI * 0.25;
     let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
-    for (name, second) in [
-        ("bore", ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut)),
-        ("boss on top", ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse)),
-        ("another wall boss", ([6.0, 0.0, -1.0], 4.0, BoolKind::Fuse)),
+    for (name, second, volume) in [
+        (
+            "bore",
+            ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut),
+            96.0 + 3.0 * q - 2.0 * q,
+        ),
+        (
+            "boss on top",
+            ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse),
+            96.0 + 3.0 * q + q,
+        ),
+        (
+            "another wall boss",
+            ([6.0, 0.0, -1.0], 4.0, BoolKind::Fuse),
+            96.0 + 3.0 * q + 3.0 * q,
+        ),
         (
             "a bore on the same wall",
             ([6.0, 0.0, -1.0], 4.0, BoolKind::Cut),
+            96.0 + 3.0 * q - q,
         ),
     ] {
-        let mut m = Model::new();
-        let plate = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([12.0, 4.0, 2.0]),
-        );
-        let up = Vector3::from_array([0.0, 0.0, 1.0]);
-        let a = m.add_cylinder(Point3::from_array(wall_boss.0), up, 0.5, wall_boss.1);
+        let (mut m, r) = chained(wall_boss, second);
+        let out = r.unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        assert_eq!(out.len(), 1, "{name}: one solid");
         m.rebuild_adjacency();
-        let first = boolean(&mut m, wall_boss.2, plate, a).expect("the wall boss builds")[0];
-        m.rebuild_adjacency();
-        let b = m.add_cylinder(Point3::from_array(second.0), up, 0.5, second.1);
-        m.rebuild_adjacency();
-        let live = m.live_solids.clone();
-        match boolean(&mut m, second.2, first, b) {
-            Err(BoolError::Rejected { reason, .. }) => assert!(
-                matches!(reason, RejectReason::OpenResultShell),
-                "{name}: the refusal's layer and cause: {reason:?}"
-            ),
-            other => panic!("{name}: {other:?}"),
-        }
-        assert_eq!(m.live_solids, live, "{name}: the live set survives");
+        assert!(nacre_validate::validate(&m).is_empty(), "{name}: validate");
+        let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
+        assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
     }
+    // ★★★ **And that the existence gate is what did it.** The probe accumulates over the whole
+    // binary, so the exact count is not assertable here (tests share it, and they run in
+    // parallel) — the volumes above are what pin "one per operation". What this holds is that the
+    // gate is **live**: a sector was dropped because the face was not there, not because of a
+    // label. Turning the gate off turns this red before the volumes are even reached.
+    let sectors = crate::bands::panel_probe::SECTORS
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .clone();
+    assert!(
+        sectors.iter().any(|&(spans, _)| !spans),
+        "no panel sector was ever dropped for existence: {sectors:?}"
+    );
 }
 
 /// ★★★★★ **A boolean's result carries names the tracer's plane-only road cannot read — and it
