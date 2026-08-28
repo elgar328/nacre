@@ -1288,9 +1288,8 @@ fn trace_one(
                 // No circle: a class **through the axis** leaves two rulings instead (the M6-2
                 // rulings road); any other non-⊥ class still leaves nothing, silently — the
                 // population gate names those interactions.
-                Ok(_) => match rulings_on_class(jd, cf, wc, k, which, crossings) {
-                    Ok(Some(pair)) => out.rulings.extend(pair),
-                    Ok(None) => {}
+                Ok(_) => match rulings_on_class(jd, cyls, cf, fl, wc, k, which, crossings) {
+                    Ok(v) => out.rulings.extend(v),
                     Err(kind) => out.declined.push((fp, kind)),
                 },
                 Err(kind) => out.declined.push((fp, kind)),
@@ -1742,6 +1741,52 @@ fn assemble_spans(
     Ok(out)
 }
 
+/// **Which way round a lateral face's material lies, for a boundary edge travelling along the
+/// axis** — the one place that sign is made, and the third application of one convention.
+///
+/// *Material is on the left of the ring's direction of travel* — the sentence [`run_body_above`]
+/// states for a planar face's on-line run. On a lateral face, with `r̂` the outward radial
+/// direction, `m̂` the axis and `θ̂` increasing θ (counter-clockwise about `m̂`), cylindrical
+/// coordinates are right-handed so `r̂ × θ̂ = m̂` and `r̂ × m̂ = −θ̂`. The face's outward is `σ·r̂`
+/// with `σ = ` [`crate::planes::CylFaceInfo::orient_sign`], travel is `τ·m̂`, and left of travel is
+///
+/// ```text
+///   n_out × travel = (σ·r̂) × (τ·m̂) = σ·τ·(r̂ × m̂) = −σ·τ·θ̂
+/// ```
+///
+/// so the answer is `−σ·τ`: the θ direction the face occupies. Two readers need it — the ⊥ road,
+/// where a ruling edge crossing the circle puts the **hole** in the opposite θ direction, and the
+/// ∥ road, where a ruling edge lying on the class puts the **face** to one side of the wall — and
+/// they must not spell it twice.
+fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
+    -(orient_sign * travel_up)
+}
+
+/// **How the class's rational name is oriented against its stored normal** — `+1` when
+/// [`combinatorics::class_coeffs_rat`] points the same way as `jd.planes[c].plane`, `-1` when it
+/// opposes.
+///
+/// ★★★ **`world_rat` is a *name*, not an oriented normal** — it may be any nonzero multiple of the
+/// stored one, negative included. A predicate built on it answers about *identity* (which of two
+/// rulings, which side of a pair) frame-freely, because the same spelling is used on both sides of
+/// the comparison; a **label** is different, because "above" is defined by the stored normal. This
+/// is the correction [`combinatorics::side_of`]'s branch arm makes inline, lifted so the ∥ ruling
+/// road can make the same one without spelling it a second time.
+fn world_rat_sense(jd: &Judge<'_, WorkingPlane>, c: usize) -> Option<i8> {
+    let co = combinatorics::class_coeffs_rat(jd, c)?;
+    let raw = jd.planes[c].plane.coefficients();
+    let zero = nacre_scalar::Rat::from_int(0);
+    // Both must be nonzero, not just the rational one: they are proportional so their zero sets
+    // agree exactly, but `raw` is `f64` and a component it rounds to zero would hand back a sign
+    // with nothing behind it.
+    let i = (0..4).find(|&i| co[i] != zero && raw[i] != 0.0)?;
+    Some(if (co[i] > zero) == (raw[i] > 0.0) {
+        1
+    } else {
+        -1
+    })
+}
+
 /// **One hole ring, read against one ⊥ class** — the walk's features turned into extents.
 ///
 /// ★★★★★ **Which way round is decided by the ring's own winding, and by nothing else.** A plane
@@ -1913,7 +1958,9 @@ fn hole_on_class(
                 // flank does.
                 let s0 = i32::from(from);
                 let tau = axis_of(if s0 * fs < 0 { 1 } else { -1 });
-                cuts.push((cut, sigma * tau > 0));
+                // The face occupies `material_theta_sign`; the hole is the other way.
+                let hole_ccw = material_theta_sign(cf.orient_sign, tau as i8) < 0;
+                cuts.push((cut, hole_ccw));
             }
         }
     }
@@ -2084,12 +2131,14 @@ fn rim_class_at(
 #[allow(clippy::too_many_arguments)]
 fn rulings_on_class(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     cf: &crate::planes::CylFaceInfo,
+    fl: &combinatorics::FaceLoops,
     wc: usize,
     k: usize,
     which: SolidSide,
     crossings: &std::collections::HashSet<(usize, usize)>,
-) -> Result<Option<[RulingTrace; 2]>, DeclineKind> {
+) -> Result<Vec<RulingTrace>, DeclineKind> {
     use nacre_scalar::quad::CylinderMeet;
     // ★ **The gate's answer, first** — see [`combinatorics::TraceInput::crossings`]. A pair not
     // listed there was proven clear (or never in question), and contributing its rectangle
@@ -2098,17 +2147,17 @@ fn rulings_on_class(
     // unlisted pairs is today's exact behavior; the gate-opening cell lists exactly the pairs
     // that need the rectangle.
     if !crossings.contains(&(wc, k)) {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
-        return Ok(None); // no exact description: the circle road's own decline covers ⊥ classes
+        return Ok(Vec::new()); // no exact description: the circle road's decline covers ⊥ classes
     };
     let Some(def) = cf.def.as_ref() else {
         return Err(DeclineKind::Ruling);
     };
     match class_through_axis(&w, def) {
         Some(true) => {}
-        Some(false) => return Ok(None),
+        Some(false) => return Ok(Vec::new()),
         None => return Err(DeclineKind::Ruling),
     }
     let Some(span) = cf.span else {
@@ -2153,14 +2202,257 @@ fn rulings_on_class(
     let kind = SegKind::Transversal {
         mat: cf.orient_sign,
     };
-    // `end[0]` is the low rim: `axis_param_of_plane` ascends `+m`, the `MergedRuling` convention.
-    Ok(Some([1i8, -1i8].map(|side| RulingTrace {
-        cyl: k,
-        side,
-        end: [node_at(0, side), node_at(1, side)],
-        solid: which,
-        kind,
-    })))
+    // ★★★★★ **`None` is not "no holes" — it is "I could not describe them".** The ⊥ road learned
+    // this the hard way (its first draft waved such a face past and re-planted the silence it was
+    // removing); the ∥ road refuses on the same terms rather than repeating it.
+    let Some(holes) = &fl.holes else {
+        return Err(DeclineKind::CylFaceHole);
+    };
+    let _ = cyls;
+    let mut out = Vec::with_capacity(2);
+    for side in [1i8, -1i8] {
+        // `end[0]` is the low rim: `axis_param_of_plane` ascends `+m`, the `MergedRuling`
+        // convention.
+        let outer = [node_at(0, side), node_at(1, side)];
+        let carved = ruling_grazes(jd, cf, def, &w, holes, wc, side)?;
+        if carved.is_empty() {
+            out.push(RulingTrace {
+                cyl: k,
+                side,
+                end: outer,
+                solid: which,
+                kind,
+            });
+            continue;
+        }
+        let pieces = assemble_ruling(jd, def, wc, outer, span, &carved, kind)?;
+        #[cfg(test)]
+        ruling_probe::CARVED
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .push(pieces.iter().map(|&(_, k)| k).collect());
+        for (end, kind) in pieces {
+            out.push(RulingTrace {
+                cyl: k,
+                side,
+                end,
+                solid: which,
+                kind,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// **What a holed lateral's ruling actually came out as** — the lock for [`ruling_grazes`].
+///
+/// ★ This cell's result lives *inside* an operation that still refuses further down, so there is no
+/// solid to open and count faces on. The trace's own answer is the thing to hold, the way
+/// `arrangement`'s `sides == [-1, 1]` lock already holds the hole-free one.
+#[cfg(test)]
+pub(crate) mod ruling_probe {
+    use super::SegKind;
+    use std::sync::Mutex;
+
+    /// One entry per ruling whose extent a hole carved, in emission order: the kinds of its pieces.
+    pub(crate) static CARVED: Mutex<Vec<Vec<SegKind>>> = Mutex::new(Vec::new());
+
+    /// One entry per graze: the stated `body_above`, beside the **realized** stored normal of the
+    /// wall class it is stated against.
+    ///
+    /// ★★★★★ **The sign has no oracle downstream yet** — the operation this exercises refuses at
+    /// the labelling for an unrelated incompleteness, so flipping any factor of `body_above`
+    /// changes nothing a test can see (☑ measured: all four controls green). So the claim is
+    /// checked against the fixture's own geometry instead: the buried half of the boss lies at
+    /// `y < 0` of the wall, so the face is on the stored-normal side exactly when that normal
+    /// points at `−y`.
+    pub(crate) static GRAZE_SIDE: Mutex<Vec<(bool, f64)>> = Mutex::new(Vec::new());
+}
+
+/// A hole's own edge lying **on** one ruling of a through-axis class: the extent, and the side of
+/// the wall the face occupies along it.
+struct RulingGraze {
+    /// `[low t, high t]` — the ruling's own ascending order.
+    end: [NodeId; 2],
+    body_above: bool,
+}
+
+/// **Where a lateral face's holes touch one ruling of a through-axis class.**
+///
+/// ★★★★★ **The shared ring walk cannot answer here, and the reason is the geometry, not an
+/// oversight.** [`combinatorics::ring_against_plane`] decides each node by
+/// [`combinatorics::side_of`], which answers about a **plane**. A ⊥ class meets the cylinder in one
+/// circle, so "which side of the plane" separates the ring cleanly and the walk works (that is what
+/// [`hole_on_class`] uses). A **∥** class meets it in **two** rulings that both lie *in* the plane,
+/// so every corner of a hole bounded by that wall answers `0` and the walk comes back
+/// [`combinatorics::RingWalk::AllOn`] — ☑ measured, 13 of 13 over the suite. So the edges are found
+/// by their **carrier** instead: an edge of the hole lying on this class is one the class itself
+/// carries, and which of the two rulings it lies on is [`ruling_side`]'s question.
+///
+/// **The side of the wall the face occupies** is [`material_theta_sign`] read against the class's
+/// **stored** normal:
+///
+/// ```text
+///   ruling_side = sign((x − o) · (m × n_w)) = −sign(θ̂ · n_w)      (x − o is radial here)
+///   body_above  = sign( material_theta_sign(σ, τ) · (θ̂ · n_stored) )
+///               = σ · τ · κ · side                                  (κ = world_rat_sense)
+/// ```
+///
+/// ★ `κ` and `side` are both computed from `world_rat`, so if that name flips sign **both** flip
+/// and their product does not — the label is frame-free while the identity stays a plain
+/// comparison. That is the whole reason `κ` appears.
+fn ruling_grazes(
+    jd: &Judge<'_, WorkingPlane>,
+    cf: &crate::planes::CylFaceInfo,
+    def: &nacre_topo::CylinderDef,
+    w: &[nacre_scalar::Rat; 4],
+    holes: &[combinatorics::LoopRing],
+    wc: usize,
+    side: i8,
+) -> Result<Vec<RulingGraze>, DeclineKind> {
+    let kappa = world_rat_sense(jd, wc).ok_or(DeclineKind::Ruling)?;
+    let mut out = Vec::new();
+    for h in holes {
+        // A one-edge hole loop whose far face is a cylinder is two laterals meeting: M6b's pair,
+        // not this road's. It has no ring to read, so it declines rather than passing unread.
+        let Some(nr) = h.poly() else {
+            return Err(DeclineKind::CylFaceHole);
+        };
+        let n = nr.triples.len();
+        for i in 0..n {
+            if nr.walls[i] != crate::boolean::Wall::Plane(wc) {
+                continue;
+            }
+            let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
+            let (Some(sa), Some(sb)) = (
+                node_ruling_side(jd, def, w, a),
+                node_ruling_side(jd, def, w, b),
+            ) else {
+                return Err(DeclineKind::Ruling);
+            };
+            // An edge whose two ends answer differently is not a ruling at all — it would have to
+            // cross the plane through the axis. Named rather than silently mis-placed.
+            if sa != sb {
+                return Err(DeclineKind::CylHoleFeature);
+            }
+            if sa != side {
+                continue;
+            }
+            let (Some(ta), Some(tb)) = (
+                node_axis_param(jd, def, wc, a),
+                node_axis_param(jd, def, wc, b),
+            ) else {
+                return Err(DeclineKind::Ruling);
+            };
+            if ta == tb {
+                return Err(DeclineKind::CylHoleFeature); // an extent of no length
+            }
+            let tau: i8 = if tb > ta { 1 } else { -1 };
+            // `ruling_side` is `−sign(θ̂ · n_w)` (below), and `κ` carries `n_w` to the stored
+            // normal — so this is `sign(θ̂ · n_stored)`, the frame a label is written in.
+            let theta_dot_stored = -(kappa * side);
+            let body_above = i32::from(material_theta_sign(cf.orient_sign, tau))
+                * i32::from(theta_dot_stored)
+                > 0;
+            #[cfg(test)]
+            ruling_probe::GRAZE_SIDE
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .push((body_above, jd.planes[wc].plane.normal().as_array()[1]));
+            out.push(RulingGraze {
+                end: if tau > 0 { [a, b] } else { [b, a] },
+                body_above,
+            });
+        }
+    }
+    Ok(out)
+}
+
+/// Which of the two rulings of `w` this branch node sits on — [`ruling_side`] asked of a name.
+fn node_ruling_side(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    w: &[nacre_scalar::Rat; 4],
+    n: NodeId,
+) -> Option<i8> {
+    let (_, cyl, _) = combinatorics::branch_name(n)?;
+    let (line, s) = combinatorics::branch_meet(jd, cyl, def, n)?;
+    ruling_side(w, def, (&line, &s))
+}
+
+/// A hole corner's axis parameter: the corner names `wc` and one ⊥ rim class, and **that class's**
+/// parameter is the corner's — a rational, so the ordering along a ruling needs no quadratic
+/// comparison at all.
+fn node_axis_param(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    wc: usize,
+    n: NodeId,
+) -> Option<nacre_scalar::Rat> {
+    let (planes, _, _) = combinatorics::branch_name(n)?;
+    let perp = planes.iter().copied().find(|&c| c != wc)?;
+    if !planes.contains(&wc) {
+        return None;
+    }
+    crate::planes::axis_param_of_plane(&combinatorics::class_coeffs_rat(jd, perp)?, def)
+}
+
+/// **Lay the grazes over the ruling's outer answer and hand back exclusive pieces** — the ∥ twin of
+/// [`assemble_spans`].
+///
+/// ★★ **It is a twin and not the same function, because the topology differs**: a circle is cyclic
+/// and its pieces wrap, a ruling is a segment with two ends the face's rims fix. The shared part is
+/// the *rule* — cut at every boundary, one answer per piece, merge adjacent equals so a boundary
+/// where nothing changes leaves no vertex behind — and that rule is stated in both docs rather than
+/// abstracted over a cyclic/linear parameter, which would have made both harder to read than the
+/// twenty lines it saves.
+fn assemble_ruling(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    wc: usize,
+    outer: [NodeId; 2],
+    span: [nacre_scalar::Rat; 2],
+    carved: &[RulingGraze],
+    outer_kind: SegKind,
+) -> Result<Vec<([NodeId; 2], SegKind)>, DeclineKind> {
+    // Every station along the ruling, by rational axis parameter: the two rims, and each graze's
+    // ends.
+    let mut stations: Vec<(nacre_scalar::Rat, NodeId)> =
+        vec![(span[0], outer[0]), (span[1], outer[1])];
+    for g in carved {
+        for e in g.end {
+            let t = node_axis_param(jd, def, wc, e).ok_or(DeclineKind::Ruling)?;
+            stations.push((t, e));
+        }
+    }
+    stations.sort_by_key(|s| s.0);
+    stations.dedup_by(|a, b| a.1 == b.1);
+    for w in stations.windows(2) {
+        if w[0].0 == w[1].0 {
+            return Err(DeclineKind::CylHoleFeature); // two names for one station
+        }
+    }
+    // A graze that reaches past a rim is a hole touching the face's own boundary, which is not an
+    // inner loop at all.
+    if stations.first().map(|s| s.0) != Some(span[0])
+        || stations.last().map(|s| s.0) != Some(span[1])
+    {
+        return Err(DeclineKind::CylHoleFeature);
+    }
+    let mut pieces: Vec<([NodeId; 2], SegKind)> = Vec::new();
+    for w in stations.windows(2) {
+        let kind = carved
+            .iter()
+            .find(|g| g.end[0] == w[0].1 && g.end[1] == w[1].1)
+            .map_or(outer_kind, |g| SegKind::Graze {
+                body_above: g.body_above,
+            });
+        match pieces.last_mut() {
+            Some((end, k)) if *k == kind => end[1] = w[1].1,
+            _ => pieces.push(([w[0].1, w[1].1], kind)),
+        }
+    }
+    Ok(pieces)
 }
 
 /// Both operands' traces on plane class `wc`, merged into one `Trace` (segments keep their

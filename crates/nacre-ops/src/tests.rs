@@ -3788,6 +3788,79 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
     let _ = (WC_ABOVE_WALL.load(Relaxed), WC_BELOW_WALL.load(Relaxed));
 }
 
+/// ★★★★★ **A holed lateral's ruling comes out in three pieces, and the middle one grazes.**
+///
+/// A wall through the boss's axis meets its lateral in two rulings, and where the boss is buried in
+/// the plate the lateral does not *cross* that wall — it ends at it. So the mark is
+/// `Transversal · Graze · Transversal` along the axis, not one full-height crossing.
+///
+/// ★★ **Held at the trace, because there is no result to open**: the operation this exercises still
+/// refuses further down (the assembly's own incompleteness), so the face count that would show the
+/// ghost wall face gone cannot be read. The trace's own answer is what survives, the way
+/// `arrangement`'s `sides == [-1, 1]` lock already holds the hole-free case.
+///
+/// ★ The claim is over **every** carved ruling this binary produces, in whatever order the tests
+/// ran — all of them come from the wall-boss family.
+#[test]
+fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([12.0, 4.0, 2.0]),
+    );
+    let up = Vector3::from_array([0.0, 0.0, 1.0]);
+    let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    m.rebuild_adjacency();
+    let first = boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")[0];
+    m.rebuild_adjacency();
+    let b = m.add_cylinder(Point3::from_array([6.0, 2.0, -1.0]), up, 0.5, 4.0);
+    m.rebuild_adjacency();
+    let _ = boolean(&mut m, BoolKind::Cut, first, b);
+    let carved = crate::arrangement::ruling_probe::CARVED
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .clone();
+    assert!(
+        !carved.is_empty(),
+        "the probe never ran, so it measured nothing"
+    );
+    for kinds in &carved {
+        assert!(
+            matches!(
+                kinds[..],
+                [
+                    crate::arrangement::SegKind::Transversal { .. },
+                    crate::arrangement::SegKind::Graze { .. },
+                    crate::arrangement::SegKind::Transversal { .. }
+                ]
+            ),
+            "a carved ruling came out as {kinds:?}"
+        );
+    }
+    // ★ Both rulings are carved, not just one: the hole has a vertical edge on each.
+    assert!(carved.len() >= 2, "only {} ruling carved", carved.len());
+    // ★★★★★ **And which side the face occupies, against the fixture's own geometry.** The buried
+    // half of the boss is the `y > 0` one, so along the hole's vertical edges the lateral survives
+    // at `y < 0` — the stored-normal side exactly when that normal points at `−y`. ☑ Flipping any
+    // factor of the derivation turns this red; nothing downstream does, yet.
+    let sides = crate::arrangement::ruling_probe::GRAZE_SIDE
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .clone();
+    assert!(!sides.is_empty(), "the side probe never ran");
+    for &(body_above, ny) in &sides {
+        assert!(
+            ny.abs() > 0.5,
+            "the wall's stored normal is not axis-aligned: {ny}"
+        );
+        assert_eq!(
+            body_above,
+            ny < 0.0,
+            "a hole's ruling graze states the wrong side of the wall: {body_above} against ny={ny}"
+        );
+    }
+}
+
 /// ★★★★★ **Which of the two arcs is the hole — measured, not argued.**
 ///
 /// A plane cuts a circle in two points, and the whole difficulty of a lateral face's hole is which
@@ -3860,8 +3933,8 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// `TraceDeclined { BranchNode }` (the tracer could not name a ring corner a cylinder made), then
 /// `WitnessNotRational` (the arc split asked every segment for its two ends' coordinates), then
 /// [`RejectReason::CurvedStraightRun`] (`loop_winding` had no turn to read where a ring runs
-/// smooth through its extreme node), and now [`RejectReason::OpenResultShell`] — **out of the
-/// arrangement entirely**, in the assembly.
+/// smooth through its extreme node), then [`RejectReason::OpenResultShell`] — out of the
+/// arrangement entirely, in the assembly — and now [`RejectReason::LabelConflict`], back inside it.
 ///
 /// ★★★★★ **Every one of those was downstream of a false sentence.** The first fuse buries half the
 /// boss's lateral in the plate, leaving that face a band with a **hole**; the face table described a
@@ -3872,23 +3945,26 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// to read a **smooth** extremum by curvature. So the arrangement is through: the walk closes, the
 /// labels agree, and the refusal now comes from the **assembly**.
 ///
-/// ★★ **Where it is, measured; *why*, not yet.** ☑ The dangling edges are exactly the hole's two
-/// rim arcs (`z = 0` and `z = 2`, through `y > 0`) and their chords in the wall plane — used
-/// **once**, because only the plate's notched cap claims them. So the assembly is not re-emitting
-/// the lateral piece that should claim their other side.
+/// ★★★★★ **And the wall is *earlier* now than it was, because two falsehoods were cancelling.**
+/// The ruling road used to state a full-height crossing where a holed lateral only *grazes* the
+/// wall; fixing that (`ruling_grazes`) leaves the class's labels unable to close, and the reject
+/// moved from the assembly's [`RejectReason::OpenResultShell`] back to
+/// [`RejectReason::LabelConflict`] — an honest report that the trace is **incomplete**, where
+/// before two errors summed to a consistent-looking labelling.
 ///
-/// ★★★★★ **A first reading of that was wrong and is recorded so it is not repeated.** It said the
-/// band pass "re-emits the band whole and never cuts the hole out of it", on the strength of
-/// `bands.rs` writing `inner: Vec::new()` at both its producers. Both halves fail: a holed lateral
-/// is threaded by `boolean.rs`' `merge_curved_group`, which *does* write inner rings, and ☑ for
-/// this very operation the **panel** road fires alongside the band road (12 panels and 8 bands on
-/// the boss's class across the four fixtures). The assembly is cutting sectors; which piece it
-/// drops is the next cell's question, and it starts here rather than at a guess.
+/// ☑ **What is still missing, measured.** `trace_transversal_face`'s on-line **run** treats
+/// consecutive on-line nodes as an on-line interval, and that inference — sound for a straight
+/// edge, since two points fix a line — is **false for a curved one**: the plate's cap boundary runs
+/// `… → (1.5,0,0) → arc through y>0 → (2.5,0,0) → …`, whose middle edge leaves the line and comes
+/// back. Measured: one run of length 4 spanning **one** curved edge, twice. So the cap states a
+/// graze over a chord that is not its boundary — the same "both ends on the class is not the edge
+/// on the class" the ⊥ road was taught in `hole_on_class`, still unlearned on the planar road.
+/// That is the next rung, and it is the third cause of this fixture's refusal, not the second.
 ///
 /// ★ **That name is this lock's map, not its point.** What must hold either way is that the refusal
 /// is honest and total: an error, and the live set exactly as it was.
 #[test]
-fn a_chained_cylinder_bounded_by_the_first_stops_at_the_band_pass() {
+fn a_chained_cylinder_bounded_by_the_first_stops_at_the_labelling() {
     let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
     for (name, second) in [
         ("bore", ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut)),
@@ -3914,7 +3990,7 @@ fn a_chained_cylinder_bounded_by_the_first_stops_at_the_band_pass() {
         let live = m.live_solids.clone();
         match boolean(&mut m, second.2, first, b) {
             Err(BoolError::Rejected { reason, .. }) => assert!(
-                matches!(reason, RejectReason::OpenResultShell),
+                matches!(reason, RejectReason::LabelConflict),
                 "{name}: the refusal's layer and cause: {reason:?}"
             ),
             other => panic!("{name}: {other:?}"),
