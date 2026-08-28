@@ -971,7 +971,7 @@ fn trace_transversal_face(
         // Where this ring meets `L`, and whether it crosses or only touches — the walk the ray
         // caster shares (`combinatorics::ring_against_plane`). What is done with a feature is this
         // function's own business: naming it, recording a four-plane alias, deciding occupancy.
-        let features = match combinatorics::ring_against_plane(jd, cyls, ring, wc) {
+        let features = match combinatorics::ring_against_plane(jd, cyls, ring, wc, |_| true) {
             combinatorics::RingWalk::Met(f) => f,
             // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
             combinatorics::RingWalk::AllOn => {
@@ -1833,7 +1833,7 @@ fn hole_on_class(
     nr: &combinatorics::NamedRing,
     out: &mut Vec<Carved>,
 ) -> Result<(), DeclineKind> {
-    let features = match combinatorics::ring_against_plane(jd, cyls, &nr.triples, wc) {
+    let features = match combinatorics::ring_against_plane(jd, cyls, &nr.triples, wc, |_| true) {
         combinatorics::RingWalk::Met(f) => f,
         // A hole ring lying wholly in the class has no thickness to bound anything with, and a
         // node the walk cannot name is the same refusal every other consumer makes of it.
