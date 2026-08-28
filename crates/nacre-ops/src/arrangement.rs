@@ -387,12 +387,27 @@ pub(crate) struct ChordTrace {
 
 /// Group the class's ruling traces into [`MergedRuling`]s — the ruling twin of
 /// [`merge_circles`]: dedupe identical rulings (two operands stating one), collect their
-/// contributions, def from the class table. Deterministic order: `(cyl, side descending)` — a
-/// fixed rule, ascending cyl with the `+1` ruling first.
+/// contributions, def from the class table. Deterministic order: `(cyl, side descending, extent)` —
+/// a fixed rule, ascending cyl with the `+1` ruling first.
+///
+/// ★★★★★ **The extent is part of the key, and leaving it out is a silent duplicate waiting for a
+/// population.** The fold below is *adjacency*-based: it merges a trace into the previous one when
+/// the two name the same edge. While each `(cyl, side)` carries exactly one trace per operand, the
+/// sort puts those two side by side and the fold works. The moment one ruling comes in **pieces** —
+/// a lateral face with a hole grazes part of its own ruling instead of crossing it — a stable sort
+/// on `(cyl, side)` alone leaves operand A's pieces before operand B's, so the two statements of one
+/// piece are **not adjacent** and each becomes its own `MergedRuling`: one edge appearing twice,
+/// with half its contributions each. Sorting by the extent too puts identical pieces together
+/// whatever order the tracer emitted them in.
+///
+/// ☑ Measured over the suite: **no `(cyl, side)` group carries more than one trace today**, so the
+/// fold below never actually fires and this key change moves nothing. Both facts are written for
+/// the population that has not arrived yet — a cylinder belongs to one operand, so two statements
+/// of one ruling need a shape nothing builds so far.
 fn merge_rulings(rulings: &[RulingTrace], cyls: &[crate::planes::WorkingCyl]) -> Vec<MergedRuling> {
     let mut out: Vec<MergedRuling> = Vec::new();
     let mut sorted: Vec<&RulingTrace> = rulings.iter().collect();
-    sorted.sort_by_key(|r| (r.cyl, -r.side));
+    sorted.sort_by_key(|r| (r.cyl, -r.side, r.end));
     for r in sorted {
         if let Some(last) = out.last_mut() {
             if last.cyl == r.cyl && last.side == r.side && last.end == r.end {
