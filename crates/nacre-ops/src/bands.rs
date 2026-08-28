@@ -473,8 +473,14 @@ fn panel_faces(
 ///
 /// ★★ **The rule is not about holes.** An outer rim grazes too (`circle_on_class` says
 /// `Grazes { body_above: up }` at the face's own end), and there the interval on the face's side
-/// gets `true` from this same test — one sentence about every rim. It is untested here all the
-/// same: an *uncut* rim never reaches [`ArcLabels`], so today only cut rims ask.
+/// gets `true` from this same test — one sentence about every rim. What is out of reach is only
+/// an **uncut** outer rim: it never becomes an [`ArcLabels`] entry at all (a whole circle goes to
+/// `DiskLabels` and the band road), so today only cut rims ask here.
+///
+/// ☑ **How often each row actually fires** (whole binary, production calls only): `Transversal`
+/// **265** · `Graze` **13**, of which **1** reaches and **12** do not · nothing at all **0**.
+/// The twelve are the six dropped sectors read at both rims, which is the cross-check that the
+/// sector census and this one describe the same events.
 fn face_spans(
     r: &crate::arrangement::ArcLabel,
     side: SolidSide,
@@ -511,10 +517,11 @@ fn face_spans(
 /// sector dropped by a label. It also survives the day some other refusal moves in front of the
 /// assembly again, which is how `ruling_probe` came to exist.
 ///
-/// ★★ **Only [`panel_faces`] records here, never [`face_spans`] itself.** The unit test feeds
-/// that function hand-written marks — including the `Seated` and multi-mark rows production has
-/// never produced — and recording them would make the census describe the test suite instead of
-/// the kernel.
+/// ★★ **Only [`panel_faces`] records here, never [`face_spans`] itself.** The unit test feeds that
+/// function hand-written marks — rows chosen to state the rule, not to describe any geometry — and
+/// recording them would make the census describe the test suite instead of the kernel. (That
+/// distinction is not academic: this census, once it read production, **refuted** what the cell
+/// had written about which rows were unexercised.)
 #[cfg(test)]
 pub(crate) mod panel_probe {
     use super::SolidSide;
@@ -525,8 +532,12 @@ pub(crate) mod panel_probe {
     pub(crate) static SECTORS: Mutex<Vec<(bool, bool)>> = Mutex::new(Vec::new());
 
     /// One entry per rim the panel road read: how many marks of this row's own solid the arc
-    /// carried, as `(lateral, seated)`. Both halves are claims the cell measured as **zero**
-    /// populations and locked that way — see the lock.
+    /// carried, as `(lateral, seated)`.
+    ///
+    /// ☑ Measured over the whole binary: 278 reads, `lateral` **always 1**, `seated` **1 once**.
+    /// So only the `lateral` half is a zero-population claim and only it is locked; the `Seated`
+    /// skip fires for real and is load-bearing. The cell wrote the opposite first, from the four
+    /// fixtures it was opening — see the lock.
     pub(crate) static MARKS: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
 
     pub(crate) fn sector(spans: bool, kept: bool) {
