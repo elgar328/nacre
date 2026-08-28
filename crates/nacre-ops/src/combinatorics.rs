@@ -2074,17 +2074,30 @@ pub(crate) enum RingWalk {
 pub(crate) enum Feature {
     /// Edge `edge` (node `edge` → node `edge + 1`) crosses the line strictly inside: both its
     /// endpoints are off `q` and on opposite sides of it.
-    Crossing { edge: usize },
+    ///
+    /// `from` is the side the edge **leaves**, in [`side_of`]'s frame — never `0`, since a crossing
+    /// has both ends off the line. See [`Self::Run`]'s `flank` for why a side travels with a
+    /// feature at all.
+    Crossing { edge: usize, from: i8 },
     /// `len` consecutive nodes from `first` lie *on* `q`. `len >= 2` means the edges between them
     /// lie on the line too — an on-line interval rather than a point.
     ///
     /// `flanks_differ` is the whole decision: the two off-line neighbours bracketing the run sit on
     /// **opposite** sides, so the ring genuinely crosses the line here; equal sides mean it touched
     /// and turned back, and nothing crossed.
+    ///
+    /// ★★★ **`flank` is the side itself, and it travels here because asking again is a second
+    /// walk.** A consumer that needs *which* side (not just whether the two agree) would otherwise
+    /// call [`side_of`] over a ring member of its own — which is exactly the shape this walk exists
+    /// to prevent, and a source-level lock says so
+    /// (`rotation_sweep`'s `no_production_code_walks_a_ring_past_the_shared_walk`). It is the side
+    /// of the off-line neighbour **before** the run; with `flanks_differ` false the one after is the
+    /// same, and with it true the other is its negation, so one number carries both. Never `0`.
     Run {
         first: usize,
         len: usize,
         flanks_differ: bool,
+        flank: i8,
     },
 }
 
@@ -2131,7 +2144,10 @@ pub(crate) fn ring_against_plane(
         if side[i] != 0 {
             let ni = (i + 1) % n;
             if side[ni] != 0 && side[ni] != side[i] {
-                out.push(Feature::Crossing { edge: i });
+                out.push(Feature::Crossing {
+                    edge: i,
+                    from: side[i],
+                });
             }
             j += 1;
         } else {
@@ -2150,6 +2166,7 @@ pub(crate) fn ring_against_plane(
                 first,
                 len,
                 flanks_differ: before != after,
+                flank: before,
             });
         }
     }
@@ -2294,6 +2311,7 @@ pub(crate) fn every_ray(
                 first,
                 len,
                 flanks_differ,
+                ..
             } = *f
             else {
                 continue;
@@ -2318,7 +2336,7 @@ pub(crate) fn every_ray(
         for dir in [1i8, -1] {
             let mut crossings = run_hits.iter().filter(|&&o| o == dir).count();
             for f in &features {
-                let Feature::Crossing { edge } = *f else {
+                let Feature::Crossing { edge, .. } = *f else {
                     continue; // runs are counted above
                 };
                 // Strictly ahead of `v` along `dir · (n_P × n_Qa)`?
@@ -2397,7 +2415,7 @@ pub(crate) fn segment_meets_face(
         };
         for f in &features {
             match *f {
-                Feature::Crossing { edge } => {
+                Feature::Crossing { edge, .. } => {
                     let h = ring[edge]
                         .carrier
                         .wall()
@@ -2408,6 +2426,7 @@ pub(crate) fn segment_meets_face(
                     first,
                     len,
                     flanks_differ,
+                    ..
                 } => {
                     let ends = [first, (first + len - 1) % nodes.len()];
                     // ★ The projection is safe *here*: the walk answered `Met`, which it only does
@@ -3901,7 +3920,10 @@ pub(crate) fn branch_meet(
     Some((line, s))
 }
 
-fn dot3_rat(x: &[nacre_scalar::Rat; 3], y: &[nacre_scalar::Rat; 3]) -> Option<nacre_scalar::Rat> {
+pub(crate) fn dot3_rat(
+    x: &[nacre_scalar::Rat; 3],
+    y: &[nacre_scalar::Rat; 3],
+) -> Option<nacre_scalar::Rat> {
     x[0].checked_mul(y[0])?
         .checked_add(x[1].checked_mul(y[1])?)?
         .checked_add(x[2].checked_mul(y[2])?)

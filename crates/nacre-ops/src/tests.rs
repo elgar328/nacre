@@ -3788,6 +3788,69 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
     let _ = (WC_ABOVE_WALL.load(Relaxed), WC_BELOW_WALL.load(Relaxed));
 }
 
+/// ★★★★★ **Which of the two arcs is the hole — measured, not argued.**
+///
+/// A plane cuts a circle in two points, and the whole difficulty of a lateral face's hole is which
+/// of the two arcs it is: the hole's two ruling edges lie on **one** plane here, so that plane's
+/// sides cannot tell them apart. `hole_on_class` answers from the ring's own winding (material is
+/// on the left of the ring's travel), and gets there through three signs — the face's
+/// `orient_sign`, the class's `frame_sign`, and whether the class's stored normal points along the
+/// axis. Reversed, the answer is not approximate but **exactly opposite**: the graze would sit on
+/// the band and the crossing inside the hole.
+///
+/// ★★ **Nothing downstream notices yet** — these fixtures stop at `loop_winding` before
+/// `label_cells` could judge a label — so the arc is realized and judged here instead. The kernel
+/// reads no coordinate to choose it; this reads one afterwards.
+///
+/// ☑ **Which factors this actually sees.** Turning each one off in turn: reversing either arm's
+/// winding is **red**, dropping `plus_t_is_above` is **red**, and dropping the root restatement
+/// (the ruling named for a different ⊥ plane) is **red**. Dropping `frame_sign` or the face's
+/// `orient_sign` is **green** — both are `+1` everywhere in today's holed population (an
+/// `add_cuboid` face is never `Reversed`, and a boss's lateral faces outward), so this lock cannot
+/// see them and their reasons stand on the derivation alone. A **bore** with a hole in its lateral
+/// is what would exercise them.
+///
+/// ★ The claim is over **every** arc this binary carves, in whatever order the tests ran: all of
+/// them come from the wall-boss family, where the plate stands on `y > 0` and the boss is centred
+/// on the wall `y = 0`, so the buried half — the hole — is the `y > 0` one. A fixture that buries
+/// a lateral somewhere else would need its own reading of "which side is the hole", and this
+/// assertion is where that would show up.
+#[test]
+fn a_holes_arcs_run_the_way_the_hole_lies() {
+    // ★ Two second operands, because they reach **different arms** of the walk. A cylinder rising
+    // from `z = −1` puts its cap on `z = 0`, which is the hole's own low rim — an on-line *run*.
+    // One rising from `z = 1` puts a cap **strictly inside** the hole's `z ∈ (0, 2)`, where the
+    // ring crosses the class on its two ruling edges instead — the *crossing* arm, whose extra
+    // step is restating the ruling's root for a different ⊥ plane.
+    for base in [-1.0, 1.0] {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([12.0, 4.0, 2.0]),
+        );
+        let up = Vector3::from_array([0.0, 0.0, 1.0]);
+        let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+        m.rebuild_adjacency();
+        let first = boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds")[0];
+        m.rebuild_adjacency();
+        let b = m.add_cylinder(Point3::from_array([6.0, 2.0, base]), up, 0.5, 4.0);
+        m.rebuild_adjacency();
+        let _ = boolean(&mut m, BoolKind::Cut, first, b);
+    }
+    let mids = crate::arrangement::arc_probe::MIDS
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .clone();
+    assert!(
+        !mids.is_empty(),
+        "the probe never ran, so it measured nothing"
+    );
+    assert!(
+        mids.iter().all(|d| d[1] > 0.0),
+        "a hole's arc was stated running the wrong way round: midpoints {mids:?}"
+    );
+}
+
 /// ★★★★★ **The wall is back at the trace, and for the first time it names the thing that is
 /// actually wrong.**
 ///
@@ -3800,15 +3863,18 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
 /// smooth through its extreme node).
 ///
 /// ★★★★★ **Every one of those was downstream of a false sentence.** The first fuse buries half the
-/// boss's lateral in the plate, leaving that face a band with a **hole**; the face table describes a
+/// boss's lateral in the plate, leaving that face a band with a **hole**; the face table described a
 /// lateral by its outer axis span alone, so the trace answered "the class cuts a full circle" — true
 /// for half the angles and false for the other half. The winding walk and the labelling were both
-/// reading a subdivision built on that. It now reads
-/// `TraceDeclined { CylFaceHole, face }` **and names the face**.
+/// reading a subdivision built on that. The trace named it (`TraceDeclined { CylFaceHole, face }`),
+/// and then learned to **walk the hole** and answer per angular interval — so the false sentence is
+/// gone and the wall is back at [`RejectReason::CurvedStraightRun`], which it had reached once
+/// before **over a subdivision that was wrong**. This time the subdivision under it is right, and
+/// the question is the real one: `loop_winding` has no turn to read where a ring runs smooth
+/// through its extreme node, because two arcs of one circle meet there tangentially.
 ///
 /// ★ **That name is this lock's map, not its point.** What must hold either way is that the refusal
-/// is honest and total: an error, and the live set exactly as it was. When the trace learns to walk
-/// that face's loops and answer per angular interval, this goes red and names the next wall.
+/// is honest and total: an error, and the live set exactly as it was.
 #[test]
 fn a_chained_cylinder_bounded_by_the_first_stops_at_the_trace() {
     let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
@@ -3836,13 +3902,7 @@ fn a_chained_cylinder_bounded_by_the_first_stops_at_the_trace() {
         let live = m.live_solids.clone();
         match boolean(&mut m, second.2, first, b) {
             Err(BoolError::Rejected { reason, .. }) => assert!(
-                matches!(
-                    reason,
-                    RejectReason::TraceDeclined {
-                        kind: crate::DeclineKind::CylFaceHole,
-                        ..
-                    }
-                ),
+                matches!(reason, RejectReason::CurvedStraightRun),
                 "{name}: the refusal's layer and cause: {reason:?}"
             ),
             other => panic!("{name}: {other:?}"),

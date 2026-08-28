@@ -221,6 +221,16 @@ pub(crate) struct CircleTrace {
     pub cyl: usize,
     pub solid: SolidSide,
     pub kind: SegKind,
+    /// **The angular extent this contribution covers**, counter-clockwise `[from, to]` about the
+    /// cylinder's axis — `None` for the whole circle.
+    ///
+    /// ★★ A lateral face with a **hole** contributes over part of its circle and nothing over the
+    /// rest, and a rim of that hole contributes a *different* kind from the band around it. The
+    /// straight sibling [`RulingTrace`] has carried ends since it was written, for the same
+    /// reason; a circle carried none because before holes there was no partial circle to state.
+    /// [`split_circles`] cuts at these ends and hands each arc only the contributions that cover
+    /// it.
+    pub arc: Option<[NodeId; 2]>,
 }
 
 /// One circle of the class's arrangement after merging: both operands' contributions on one
@@ -230,7 +240,28 @@ pub(crate) struct CircleTrace {
 pub(crate) struct MergedCircle {
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
-    pub merged: Vec<(SolidSide, SegKind)>,
+    /// Each contribution with the **angular extent** it covers — see [`CircleTrace::arc`]. `None`
+    /// is the whole circle, which is what every contribution was before a lateral face could have
+    /// a hole.
+    pub merged: Vec<(SolidSide, SegKind, Option<[NodeId; 2]>)>,
+}
+
+impl MergedCircle {
+    /// The contributions as `edge_mask` reads them.
+    ///
+    /// ★ A circle only reaches a mask **uncut**, and a partial contribution forces its own cut
+    /// ([`split_circles`] feeds every extent end into the split), so every extent here is `None`.
+    /// A `Some` would mean a whole-circle mask was about to be built from a partial trace — the
+    /// silently wrong answer this vessel exists to prevent — so it is refused by name.
+    fn whole_marks(&self) -> Result<Vec<(SolidSide, SegKind)>, BoolError> {
+        self.merged
+            .iter()
+            .map(|&(s, k, arc)| match arc {
+                None => Ok((s, k)),
+                Some(_) => Err(reject(RejectReason::PartialCircleUncut)),
+            })
+            .collect()
+    }
 }
 
 /// **One arc of a circle a segment cut** — the DCEL edge a crossed circle becomes.
@@ -292,7 +323,7 @@ fn merge_circles(
     for c in sorted {
         if let Some(last) = out.last_mut() {
             if last.cyl == c.cyl {
-                last.merged.push((c.solid, c.kind));
+                last.merged.push((c.solid, c.kind, c.arc));
                 continue;
             }
         }
@@ -304,7 +335,7 @@ fn merge_circles(
         out.push(MergedCircle {
             cyl: c.cyl,
             def,
-            merged: vec![(c.solid, c.kind)],
+            merged: vec![(c.solid, c.kind, c.arc)],
         });
     }
     Ok(out)
@@ -931,7 +962,7 @@ fn trace_transversal_face(
         };
         for feature in features {
             match feature {
-                combinatorics::Feature::Crossing { edge } => {
+                combinatorics::Feature::Crossing { edge, .. } => {
                     // The crossed edge's wall, **carried** from the producer — it used to be
                     // re-derived from the two endpoint names (`ring_from_names`), which is
                     // sound only while every vertex lies on exactly three planes and could
@@ -964,6 +995,7 @@ fn trace_transversal_face(
                     first,
                     len: m,
                     flanks_differ,
+                    ..
                 } => {
                     // ★ Safe here: the walk answered `Met`, so every node is three planes.
                     let name = |k: usize, out: &mut Trace| third_on_l(ring[(first + k) % n], out);
@@ -1219,21 +1251,24 @@ fn trace_one(
                 FaceRow::Cylinder(cf) => cf,
                 FaceRow::Plane(_) => unreachable!("ClassIx::Cyl marks a cylinder row"),
             };
-            match circle_on_class(jd, cyls, cf, fl, wc) {
-                Ok(Some(on)) => out.circles.push(CircleTrace {
-                    cyl: k,
-                    solid: which,
-                    kind: match on {
-                        CylOnClass::Crosses => SegKind::Transversal {
-                            mat: cf.orient_sign,
+            match circle_on_class(jd, cyls, cf, fl, wc, k) {
+                Ok(spans) if !spans.is_empty() => {
+                    out.circles.extend(spans.into_iter().map(|s| CircleTrace {
+                        cyl: k,
+                        solid: which,
+                        kind: match s.on {
+                            CylOnClass::Crosses => SegKind::Transversal {
+                                mat: cf.orient_sign,
+                            },
+                            CylOnClass::Grazes { body_above } => SegKind::Graze { body_above },
                         },
-                        CylOnClass::Grazes { body_above } => SegKind::Graze { body_above },
-                    },
-                }),
+                        arc: s.arc,
+                    }));
+                }
                 // No circle: a class **through the axis** leaves two rulings instead (the M6-2
                 // rulings road); any other non-⊥ class still leaves nothing, silently — the
                 // population gate names those interactions.
-                Ok(None) => match rulings_on_class(jd, cf, wc, k, which, crossings) {
+                Ok(_) => match rulings_on_class(jd, cf, wc, k, which, crossings) {
                     Ok(Some(pair)) => out.rulings.extend(pair),
                     Ok(None) => {}
                     Err(kind) => out.declined.push((fp, kind)),
@@ -1276,6 +1311,9 @@ fn trace_one(
                     cyl: *cyl,
                     solid: which,
                     kind,
+                    // A seated circle is a whole loop of the face lying in the class: the disk
+                    // cap's own rim, or a circular hole through it. It has no partial extent.
+                    arc: None,
                 });
             }
             None => {
@@ -1295,6 +1333,7 @@ fn trace_one(
                     cyl: *cyl,
                     solid: which,
                     kind,
+                    arc: None,
                 }),
                 combinatorics::LoopRing::Poly(nr) => match plane_ring(nr) {
                     Ok(r) => rings.push(r),
@@ -1417,6 +1456,7 @@ fn trace_one(
 /// or the class has no exact description the gate would already have refused); declining
 /// beats a silently missing circle, which would corrupt every label on the class.
 /// What a lateral face leaves on a ⊥ plane class — see [`circle_on_class`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CylOnClass {
     /// The class cuts the face in two: the solid straddles it here.
     Crosses,
@@ -1432,7 +1472,8 @@ fn circle_on_class(
     cf: &crate::planes::CylFaceInfo,
     fl: &combinatorics::FaceLoops,
     wc: usize,
-) -> Result<Option<CylOnClass>, DeclineKind> {
+    cyl: usize,
+) -> Result<Vec<CircleSpan>, DeclineKind> {
     let wp = &jd.planes[wc];
     // The world description — the cylinder's statement is world, and a comparison across two
     // frames is a silently wrong answer, not a slow one.
@@ -1450,7 +1491,7 @@ fn circle_on_class(
     // integers, so this cannot decline for want of bits). A non-⊥ class carries no circle at
     // all — a miss, like a parallel plane, not a decline.
     if !nacre_scalar::parallel_rat(&n, &m) {
-        return Ok(None);
+        return Ok(Vec::new());
     }
     let Some(span) = cf.span else {
         return Err(DeclineKind::CylSpan);
@@ -1458,38 +1499,9 @@ fn circle_on_class(
     let Some(t) = crate::planes::axis_param_of_plane(&coeffs, def) else {
         return Err(DeclineKind::CylSpan);
     };
-    // ★★★★★ **A hole in the band makes "the whole circle" a false sentence, and this is where it
-    // is said.** The span above is the **outer** loop's, so it reports the band whole; a fuse can
-    // have buried part of the lateral in the other body, and for those angles this face is not a
-    // boundary at all. Answering `Crosses` there is not a decline waiting to happen — it flows on
-    // and `label_cells` finds the flip relation broken two stages later, which names the symptom.
-    // ★ The test is narrow on purpose: a hole this class does not meet changes nothing, and
-    // refusing for it would take back operations that work today.
-    // ★★★★★ **`None` here is not "no holes" — it is "I could not describe them", and letting it
-    // fall through would re-plant the very silence this arm removes.**
-    let Some(holes) = &fl.holes else {
-        return Err(DeclineKind::CylFaceHole);
-    };
-    // ★★★★★ **The hole is read by the walk every other face's boundary is read by** — the face's
-    // own loop, against this class, through [`combinatorics::ring_against_plane`]. It used to be an
-    // interval derived from the loop's ⊥ carriers, which is exact for a chart rectangle and a
-    // *premise* for anything else; the walk asks the ring instead and needs no premise about the
-    // hole's shape. Any feature at all — a crossing, or a run along one of the hole's rims — means
-    // this class meets the hole and "the whole circle" is a false sentence.
-    for h in holes {
-        // A one-edge hole loop whose far face is a cylinder is two laterals meeting: M6b's pair,
-        // not this road's. It has no ring to walk, so it declines rather than passing unread.
-        let Some(nr) = h.poly() else {
-            return Err(DeclineKind::CylFaceHole);
-        };
-        match combinatorics::ring_against_plane(jd, cyls, &nr.triples, wc) {
-            combinatorics::RingWalk::Met(f) if f.is_empty() => {}
-            _ => return Err(DeclineKind::CylFaceHole),
-        }
-    }
-    if span[0] < t && t < span[1] {
-        return Ok(Some(CylOnClass::Crosses));
-    }
+    // The **outer** answer, which the holes below carve out of. Unchanged from when it was the
+    // whole answer:
+    //
     // ★★ **A rim is a graze, not a miss.** This used to answer "the lateral does not reach this
     // plane", on the premise that coplanarity would have folded a rim into a seated class — but a
     // *cylinder* face never becomes seated on a plane class, so the touch was simply dropped.
@@ -1503,13 +1515,397 @@ fn circle_on_class(
     // Which side the body is on: the face runs from `span[0]` toward `span[1]`, so at the low rim
     // it lies toward `+t` and at the high rim toward `−t`.
     let up = crate::planes::plus_t_is_above(wp, def);
-    if t == span[0] {
-        return Ok(Some(CylOnClass::Grazes { body_above: up }));
+    let outer = if span[0] < t && t < span[1] {
+        CylOnClass::Crosses
+    } else if t == span[0] {
+        CylOnClass::Grazes { body_above: up }
+    } else if t == span[1] {
+        CylOnClass::Grazes { body_above: !up }
+    } else {
+        // Beyond both rims: this class does not meet the face at all, and a hole lives inside the
+        // span, so there is nothing for the walk below to find either.
+        return Ok(Vec::new());
+    };
+    // ★★★★★ **`None` here is not "no holes" — it is "I could not describe them", and letting it
+    // fall through would re-plant the very silence this arm removes.**
+    let Some(holes) = &fl.holes else {
+        return Err(DeclineKind::CylFaceHole);
+    };
+    // ★★★★★ **The hole is read by the walk every other face's boundary is read by** — the face's
+    // own loop, against this class, through [`combinatorics::ring_against_plane`]. It used to be an
+    // interval derived from the loop's ⊥ carriers, which is exact for a chart rectangle and a
+    // *premise* for anything else; the walk asks the ring instead and needs no premise about the
+    // hole's shape.
+    let mut carved: Vec<Carved> = Vec::new();
+    for h in holes {
+        // A one-edge hole loop whose far face is a cylinder is two laterals meeting: M6b's pair,
+        // not this road's. It has no ring to walk, so it declines rather than passing unread.
+        let Some(nr) = h.poly() else {
+            return Err(DeclineKind::CylFaceHole);
+        };
+        hole_on_class(jd, cyls, cf, def, wc, cyl, up, nr, &mut carved)?;
     }
-    if t == span[1] {
-        return Ok(Some(CylOnClass::Grazes { body_above: !up }));
+    if carved.is_empty() {
+        return Ok(vec![CircleSpan {
+            arc: None,
+            on: outer,
+        }]);
     }
-    Ok(None)
+    assemble_spans(jd, cyl, &cyls[cyl].def, &carved, outer)
+}
+
+/// One angular extent of a lateral face's mark on a ⊥ plane class — see [`circle_on_class`].
+///
+/// ★ `arc` is `None` for the whole circle, and `Some([a, b])` runs **counter-clockwise** from `a`
+/// to `b` about the cylinder's axis direction — [`MergedArc::end`]'s convention, because these are
+/// what that becomes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CircleSpan {
+    pub arc: Option<[NodeId; 2]>,
+    pub on: CylOnClass,
+}
+
+/// What one hole ring takes away from the circle: an extent, and what is left there.
+struct Carved {
+    /// CCW `[from, to]`.
+    arc: [NodeId; 2],
+    /// `None` — the face is **absent** over this extent (the class runs through the hole's
+    /// interior). `Some(g)` — the extent is one of the hole's own rims, so the face grazes.
+    on: Option<CylOnClass>,
+}
+
+/// **Which way a hole's arcs actually run, realized** — the independent oracle for
+/// [`hole_on_class`]'s winding rule.
+///
+/// ★★★★★ **The rule is derived from signs and nothing downstream reads it yet.** A reversed arc
+/// would put the band's answer inside the hole and the hole's on the band — the exactly-opposite
+/// answer — and today's fixtures stop at `loop_winding` before `label_cells` could notice. So every
+/// extent a hole carves is **realized here** and a lock judges it against the fixture's own
+/// geometry. The kernel reads no coordinate to choose an arc; this reads one afterwards, to check.
+#[cfg(test)]
+pub(crate) mod arc_probe {
+    use super::{Judge, NodeId, WorkingPlane, combinatorics};
+    use std::sync::Mutex;
+
+    /// The direction, from the circle's centre, of the **midpoint of the stated counter-clockwise
+    /// arc** — one entry per extent a hole has carved out of a circle in this binary, whether the
+    /// face grazes there (the hole's own rim) or is absent (the hole's interior).
+    pub(crate) static MIDS: Mutex<Vec<[f64; 3]>> = Mutex::new(Vec::new());
+
+    pub(crate) fn record(
+        jd: &Judge<'_, WorkingPlane>,
+        cyl: usize,
+        def: &nacre_topo::CylinderDef,
+        arc: [NodeId; 2],
+    ) {
+        let (Some(pa), Some(pb)) = (
+            combinatorics::branch_point(jd, cyl, def, arc[0]),
+            combinatorics::branch_point(jd, cyl, def, arc[1]),
+        ) else {
+            return;
+        };
+        let o = def.origin().map(|x| x.to_f64());
+        let raw = def.dir().map(|x| x.to_f64());
+        let ml = (raw[0] * raw[0] + raw[1] * raw[1] + raw[2] * raw[2]).sqrt();
+        let m: [f64; 3] = core::array::from_fn(|i| raw[i] / ml);
+        // The circle's centre is not `origin` — that is a point on the axis — so the axial part
+        // comes off first.
+        let perp = |p: [f64; 3]| -> [f64; 3] {
+            let v: [f64; 3] = core::array::from_fn(|i| p[i] - o[i]);
+            let h = v[0] * m[0] + v[1] * m[1] + v[2] * m[2];
+            core::array::from_fn(|i| v[i] - h * m[i])
+        };
+        let va = perp(pa);
+        let vb = perp(pb);
+        let ra = (va[0] * va[0] + va[1] * va[1] + va[2] * va[2]).sqrt();
+        let u: [f64; 3] = core::array::from_fn(|i| va[i] / ra);
+        // `w` completes a right-handed frame with `u` about `m`, so +90° about `m` takes `u` to
+        // `w` — which is the direction θ increases in.
+        let w = [
+            m[1] * u[2] - m[2] * u[1],
+            m[2] * u[0] - m[0] * u[2],
+            m[0] * u[1] - m[1] * u[0],
+        ];
+        // The counter-clockwise sweep from `a` to `b`, then half of it. Written as a rotation
+        // rather than as `va + vb`, which vanishes when the arc is exactly a half — and the hole
+        // this measures **is** exactly a half.
+        let mut phi = (vb[0] * w[0] + vb[1] * w[1] + vb[2] * w[2])
+            .atan2(vb[0] * u[0] + vb[1] * u[1] + vb[2] * u[2]);
+        if phi <= 0.0 {
+            phi += core::f64::consts::TAU;
+        }
+        let (c, s) = ((phi / 2.0).cos(), (phi / 2.0).sin());
+        MIDS.lock()
+            .expect("the probe's lock is never held across a panic")
+            .push(core::array::from_fn(|i| c * u[i] + s * w[i]));
+    }
+}
+
+/// **Lay the carved extents over the outer answer and hand back *exclusive* spans.**
+///
+/// ★★★★★ **Exclusive, not "the whole circle plus overrides".** The cheaper spelling would emit the
+/// outer answer over the whole circle and let the hole's arcs sit on top, leaning on `edge_mask`'s
+/// `Graze > Transversal` precedence to pick the winner. That precedence is for **different faces
+/// meeting on one edge**, not for one face's own extent — borrowing it would be a category error,
+/// and it cannot express "absent" at all. So the circle is cut at every boundary and each piece
+/// carries exactly one answer.
+///
+/// Adjacent pieces with the same answer are **merged**, so a boundary where nothing changes leaves
+/// no cut behind: an extra split point would be a degree-2 vertex the winding walk has to have a
+/// turn for.
+fn assemble_spans(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    carved: &[Carved],
+    outer: CylOnClass,
+) -> Result<Vec<CircleSpan>, DeclineKind> {
+    let mut nodes: Vec<NodeId> = carved.iter().flat_map(|c| c.arc).collect();
+    nodes.sort_unstable();
+    nodes.dedup();
+    let (order, _) = circular_order(jd, cyl, def, &nodes).map_err(|e| match e {
+        CircleOrderFail::Undecided => DeclineKind::CylSpan,
+        CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
+    })?;
+    let n = order.len();
+    // θ position of each node, keyed by its index in the sorted `nodes`.
+    let mut at = vec![0usize; n];
+    for (k, &i) in order.iter().enumerate() {
+        at[i] = k;
+    }
+    let place = |x: NodeId| {
+        at[nodes
+            .binary_search(&x)
+            .expect("every boundary node is in the set")]
+    };
+    // The answer over elementary arc `k` (from `order[k]` to `order[k+1]`), or `None` where no
+    // hole reaches: there the outer answer stands.
+    let mut ans: Vec<Option<Option<CylOnClass>>> = vec![None; n];
+    for c in carved {
+        let (a, b) = (place(c.arc[0]), place(c.arc[1]));
+        if a == b {
+            return Err(DeclineKind::CylHoleFeature); // an extent of no length, or of the whole circle
+        }
+        let mut k = a;
+        while k != b {
+            if ans[k].is_some() {
+                return Err(DeclineKind::CylHoleFeature); // two holes claiming one extent
+            }
+            ans[k] = Some(c.on);
+            k = (k + 1) % n;
+        }
+    }
+    let answer = |k: usize| ans[k].unwrap_or(Some(outer));
+    // One answer everywhere: the circle was never divided, whatever the holes touched.
+    let Some(start) = (0..n).find(|&k| answer(k) != answer((k + n - 1) % n)) else {
+        return Ok(match answer(0) {
+            Some(on) => vec![CircleSpan { arc: None, on }],
+            None => Vec::new(),
+        });
+    };
+    let mut out = Vec::new();
+    let mut k = 0;
+    while k < n {
+        let i = (start + k) % n;
+        let a = nodes[order[i]];
+        let this = answer(i);
+        let mut len = 1;
+        while k + len < n && answer((start + k + len) % n) == this {
+            len += 1;
+        }
+        if let Some(on) = this {
+            out.push(CircleSpan {
+                arc: Some([a, nodes[order[(start + k + len) % n]]]),
+                on,
+            });
+        }
+        k += len;
+    }
+    Ok(out)
+}
+
+/// **One hole ring, read against one ⊥ class** — the walk's features turned into extents.
+///
+/// ★★★★★ **Which way round is decided by the ring's own winding, and by nothing else.** A plane
+/// cuts a circle in two points, and "which of the two arcs is the hole" is the whole difficulty:
+/// a hole whose two ruling edges lie on **one** plane cannot be told apart by that plane's sides.
+/// The universal boundary convention answers it locally instead — *material is on the left of the
+/// ring's direction of travel* — the same sentence [`run_body_above`] states for a planar face's
+/// on-line run, and it holds for an outer ring, a hole ring, a notch and a reflex corner alike.
+///
+/// **Derivation.** Write `r̂` for the cylinder's outward radial direction, `m̂` for its axis and `θ̂`
+/// for increasing θ (counter-clockwise about `m̂`, which is what
+/// `nacre_scalar::quad::circular_order_about_seam` ranks and what [`MergedArc::end`] runs along).
+/// Cylindrical coordinates are right-handed, so `r̂ × θ̂ = m̂` and `r̂ × m̂ = −θ̂`. The face's outward
+/// is `σ·r̂` with `σ = ` [`crate::planes::CylFaceInfo::orient_sign`], and "left of travel" is
+/// `n_out × travel`.
+///
+/// - **A ruling edge crossing the class** travels `τ·m̂`. Material lies along
+///   `(σ·r̂) × (τ·m̂) = −σ·τ·θ̂`, so the **hole** lies along `+σ·τ·θ̂`: the hole runs counter-clockwise
+///   from the crossing exactly when `σ·τ = +1`.
+/// - **An arc edge lying on the class** (one of the hole's own rims) travels `ν·θ̂`. Material lies
+///   along `(σ·r̂) × (ν·θ̂) = σ·ν·m̂`, so `ν = σ·μ` where `μ` is the axis direction the face occupies
+///   — which is the opposite of the side the run's flanks sit on. That fixes the rim arc's CCW
+///   orientation without reading a coordinate.
+///
+/// `up` is `plus_t_is_above`: whether the class's **stored** normal points along `+m̂`. It is the
+/// bridge between the two frames here, because [`combinatorics::side_of`] answers in the class
+/// root's **outward** frame and a label's "above" is the stored one — the correction is
+/// [`crate::planes::WorkingPlane::frame_sign`], and forgetting it is a silently mirrored answer.
+#[allow(clippy::too_many_arguments)]
+fn hole_on_class(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    cf: &crate::planes::CylFaceInfo,
+    def: &nacre_topo::CylinderDef,
+    wc: usize,
+    cyl: usize,
+    up: bool,
+    nr: &combinatorics::NamedRing,
+    out: &mut Vec<Carved>,
+) -> Result<(), DeclineKind> {
+    let features = match combinatorics::ring_against_plane(jd, cyls, &nr.triples, wc) {
+        combinatorics::RingWalk::Met(f) => f,
+        // A hole ring lying wholly in the class has no thickness to bound anything with, and a
+        // node the walk cannot name is the same refusal every other consumer makes of it.
+        combinatorics::RingWalk::AllOn | combinatorics::RingWalk::Unnameable => {
+            return Err(DeclineKind::CylFaceHole);
+        }
+    };
+    let ring = &nr.triples;
+    let n = ring.len();
+    let m = def.dir();
+    let sigma = i32::from(cf.orient_sign);
+    let fs = i32::from(jd.planes[wc].frame_sign);
+    let axis_of = |stored_side: i32| if up { stored_side } else { -stored_side };
+    // Crossings, each with the direction the hole runs in from it. Paired below, after the θ sort.
+    let mut cuts: Vec<(NodeId, bool)> = Vec::new();
+    for f in features {
+        match f {
+            combinatorics::Feature::Run {
+                first,
+                len,
+                flanks_differ,
+                flank,
+            } => {
+                // A run whose flanks differ is a rim the hole continues *through* — it is both an
+                // extent and a parity toggle, and no fixture makes one. Declined and counted
+                // rather than guessed at.
+                if flanks_differ {
+                    return Err(DeclineKind::CylHoleFeature);
+                }
+                // A single on-line vertex with equal flanks is the hole's corner touching the
+                // circle at a point. A point takes no extent away, so there is nothing to carve.
+                if len < 2 {
+                    continue;
+                }
+                // The hole sits on the flanks' side; the face occupies the other one. `flank`
+                // is in the outward frame, a label's "above" in the stored one — and the walk
+                // hands it over rather than this asking again
+                // (see [`combinatorics::Feature::Run`]).
+                let side = i32::from(flank);
+                let hole_stored = side * fs;
+                let graze = CylOnClass::Grazes {
+                    body_above: hole_stored < 0,
+                };
+                let ccw = sigma * axis_of(-hole_stored) > 0;
+                for k in 0..len - 1 {
+                    let a = ring[(first + k) % n];
+                    let b = ring[(first + k + 1) % n];
+                    let arc = if ccw { [a, b] } else { [b, a] };
+                    #[cfg(test)]
+                    arc_probe::record(jd, cyl, def, arc);
+                    out.push(Carved {
+                        arc,
+                        on: Some(graze),
+                    });
+                }
+            }
+            combinatorics::Feature::Crossing { edge, from } => {
+                // The crossed edge's carrier, **carried** from the producer rather than re-derived
+                // from the two endpoint names.
+                let crate::boolean::Wall::Plane(j) = nr.walls[edge] else {
+                    return Err(DeclineKind::CylHoleFeature);
+                };
+                let start = ring[edge];
+                let Some((planes, ncyl, root)) = combinatorics::branch_name(start) else {
+                    return Err(DeclineKind::CylHoleFeature);
+                };
+                let Some(perp) = planes.iter().copied().find(|&c| c != j) else {
+                    return Err(DeclineKind::CylHoleFeature);
+                };
+                if !planes.contains(&j) {
+                    return Err(DeclineKind::CylHoleFeature);
+                }
+                // ★★★★★ **The crossing is the *same ruling*, restated for this class.** The two
+                // roots of `{plane, plane, cylinder}` are ordered along `ℓ = n₀ × n₁` over the
+                // index-sorted pair (`combinatorics::branch_meet`), and a ⊥ plane's normal is
+                // `k·m̂`, so `ℓ ∝ ε·sign(k)·(m̂ × n_j)` with `ε = +1` when the ⊥ class sorts first.
+                // Two ⊥ planes cut the *same* ruling of `j` in the same order exactly when their
+                // `ε·sign(k)` agree — flip once per reversal, which is
+                // [`combinatorics::branch_name_from_def`]'s rule read on the other axis.
+                let sense = |perp: usize| -> Option<i32> {
+                    let c = combinatorics::class_coeffs_rat(jd, perp)?;
+                    let d = combinatorics::dot3_rat(&[c[0], c[1], c[2]], &m)?;
+                    let zero = nacre_scalar::Rat::from_int(0);
+                    if d == zero {
+                        return None; // not ⊥ to the axis: this edge is no ruling of ours
+                    }
+                    let e = if perp < j { 1 } else { -1 };
+                    Some(e * if d > zero { 1 } else { -1 })
+                };
+                let (Some(s_perp), Some(s_wc)) = (sense(perp), sense(wc)) else {
+                    return Err(DeclineKind::CylHoleFeature);
+                };
+                // `j` must be a **ruling** carrier — parallel to the axis — or the edge is an
+                // ellipse arc and its meet with this circle is not the point named below.
+                let cj = combinatorics::class_coeffs_rat(jd, j).ok_or(DeclineKind::CylSpan)?;
+                if combinatorics::dot3_rat(&[cj[0], cj[1], cj[2]], &m)
+                    .ok_or(DeclineKind::CylSpan)?
+                    != nacre_scalar::Rat::from_int(0)
+                {
+                    return Err(DeclineKind::CylHoleFeature);
+                }
+                let root = if s_perp == s_wc { root } else { root.flipped() };
+                let (lo, hi) = if wc < j { (wc, j) } else { (j, wc) };
+                let cut = combinatorics::NodeId::branch(lo, hi, ncyl, root);
+                // Which way the hole runs from here: the travel's axis sense, then the winding.
+                // The side the edge leaves comes from the walk, for the same reason the run's
+                // flank does.
+                let s0 = i32::from(from);
+                let tau = axis_of(if s0 * fs < 0 { 1 } else { -1 });
+                cuts.push((cut, sigma * tau > 0));
+            }
+        }
+    }
+    // A closed ring enters and leaves the circle equally often.
+    if cuts.len() % 2 != 0 {
+        return Err(DeclineKind::CylHoleFeature);
+    }
+    // The crossings alternate in θ, so sorting them and pairing each "hole ahead" with the next
+    // boundary is the whole assignment — the circle twin of the parity sweep
+    // `trace_transversal_face` runs along a line.
+    if !cuts.is_empty() {
+        let nodes: Vec<NodeId> = cuts.iter().map(|c| c.0).collect();
+        let (order, _) = circular_order(jd, cyl, def, &nodes).map_err(|e| match e {
+            CircleOrderFail::Undecided => DeclineKind::CylSpan,
+            CircleOrderFail::Coincident => DeclineKind::CylHoleFeature,
+        })?;
+        for k in 0..order.len() {
+            let (a, ahead) = cuts[order[k]];
+            let (b, next_ahead) = cuts[order[(k + 1) % order.len()]];
+            if ahead == next_ahead {
+                return Err(DeclineKind::CylHoleFeature); // the boundaries did not alternate
+            }
+            if ahead {
+                let arc = [a, b];
+                #[cfg(test)]
+                arc_probe::record(jd, cyl, def, arc);
+                out.push(Carved { arc, on: None });
+            }
+        }
+    }
+    Ok(())
 }
 
 /// **A disk cap's chord on a through-axis class** — the diameter the class `wc` cuts on the cap
@@ -2574,7 +2970,6 @@ fn split_circles(
     segs: &[MergedSeg],
     circles: &[MergedCircle],
 ) -> Result<SplitCircles, BoolError> {
-    use nacre_scalar::quad::QuadVal;
     let undecided = || reject(RejectReason::WitnessNotRational);
     // ★ Nothing to cross. This used to be answered further down, after the loop had asked every
     // segment for nothing; the ends below are built for the whole slice at once, so the empty case
@@ -2609,6 +3004,18 @@ fn split_circles(
     // through a vertex it does not have.
     let mut on_circle: Vec<Vec<NodeId>> = vec![Vec::new(); circles.len()];
     let mut on_seg: Vec<Vec<NodeId>> = vec![Vec::new(); segs.len()];
+    // ★★★★★ **A contribution's own ends are cut points, and that is a rule rather than a hope.**
+    // Where a lateral face's hole starts is where the material a class sees changes, and the
+    // arrangement's own principle is that such a place is a vertex. Feeding both ends of every
+    // extent in here is what makes it one — after which no arc straddles a boundary and the
+    // distribution below is a containment test with no partial case to arbitrate.
+    for (ci, circ) in circles.iter().enumerate() {
+        for &(_, _, arc) in &circ.merged {
+            if let Some(ends) = arc {
+                on_circle[ci].extend(ends);
+            }
+        }
+    }
     // ★★★★★ **Where a segment's ends are, asked once per segment — and a missing one is no longer
     // fatal.** This used to sit inside the circle loop, re-solving the same two points once per
     // circle, and it *stopped* the whole class when either end was a branch point, which has no
@@ -2721,87 +3128,52 @@ fn split_circles(
         }
         nodes.sort_unstable();
         nodes.dedup();
-        let meets: Vec<(nacre_scalar::quad::MeetLine, QuadVal)> = nodes
-            .iter()
-            .map(|&n| combinatorics::branch_meet(jd, circ.cyl, &circ.def, n).ok_or_else(undecided))
-            .collect::<Result<_, BoolError>>()?;
-        // ★★★ **A crossing on the seam is ordered, not refused — it is the cut point.**
-        // `circular_order_about_seam` ranks θ ∈ (0, 2π) and answers `SeamIncident` **by name** for
-        // a point at θ = 0, because that point is outside the chart's *total* order. But what arcs
-        // need is the **cyclic** order, and a cyclic order tolerates one cut anywhere: the seam
-        // point is simply first. (Measured: the very first fixture puts a crossing there — a boss
-        // on a plate's edge cuts its own rim exactly on the seam generator, so this is the common
-        // case, not an exotic one.)
-        //
-        // ★ At most one node can be seam-incident: two would be the same point, and a crossing
-        // that coincides with another is refused below as the two-names-for-one-point it is.
-        let mut seam: Vec<usize> = Vec::new();
-        let mut chart: Vec<usize> = Vec::new();
-        for (i, meet) in meets.iter().enumerate() {
-            let on_seam = match nacre_scalar::quad::circular_order_about_seam(
-                &circ.def.origin(),
-                &circ.def.dir(),
-                &circ.def.ref_dir(),
-                (&meet.0, &meet.1),
-                (&meet.0, &meet.1),
-            ) {
-                Some(nacre_scalar::quad::SeamOrder::SeamIncident { first, .. }) => first,
-                Some(nacre_scalar::quad::SeamOrder::Ordered(_)) => false,
-                None => return Err(undecided()),
-            };
-            if on_seam { seam.push(i) } else { chart.push(i) }
-        }
-        if seam.len() > 1 {
-            return Err(reject(RejectReason::CoincidentNodes));
-        }
-        let mut bad_theta = false;
-        chart.sort_by(|&i, &j| {
-            match nacre_scalar::quad::circular_order_about_seam(
-                &circ.def.origin(),
-                &circ.def.dir(),
-                &circ.def.ref_dir(),
-                (&meets[i].0, &meets[i].1),
-                (&meets[j].0, &meets[j].1),
-            ) {
-                Some(nacre_scalar::quad::SeamOrder::Ordered(o)) => o,
-                _ => {
-                    bad_theta = true;
-                    core::cmp::Ordering::Equal
-                }
-            }
-        });
-        if bad_theta {
-            return Err(undecided());
-        }
-        let seam_is_node = !seam.is_empty();
-        let order: Vec<usize> = seam.into_iter().chain(chart).collect();
-        // ★ **Two names for one point, on the circle side.** Two walls crossing the circle at one
-        // point are two *different* branch names — `dedup` cannot see it, and the θ sort puts them
-        // adjacent — so an arc of zero length would follow. The segment side asks this question
-        // already; asking it here too is what keeps the two sides from disagreeing about what
-        // "one point" means.
-        for w in order.windows(2) {
-            if matches!(
-                nacre_scalar::quad::circular_order_about_seam(
-                    &circ.def.origin(),
-                    &circ.def.dir(),
-                    &circ.def.ref_dir(),
-                    (&meets[w[0]].0, &meets[w[0]].1),
-                    (&meets[w[1]].0, &meets[w[1]].1),
-                ),
-                Some(nacre_scalar::quad::SeamOrder::Ordered(
-                    core::cmp::Ordering::Equal
-                ))
-            ) {
+        let (order, seam_is_node) = match circular_order(jd, circ.cyl, &circ.def, &nodes) {
+            Ok(o) => o,
+            Err(CircleOrderFail::Undecided) => return Err(undecided()),
+            Err(CircleOrderFail::Coincident) => {
                 return Err(reject(RejectReason::CoincidentNodes));
             }
+        };
+        // θ position of each node, so an extent can be tested against an arc by rank alone.
+        let mut at = vec![0usize; order.len()];
+        for (k, &i) in order.iter().enumerate() {
+            at[i] = k;
         }
+        let place = |x: NodeId| {
+            nodes
+                .binary_search(&x)
+                .map(|i| at[i])
+                .expect("an extent's ends were fed into this very split")
+        };
         for k in 0..order.len() {
+            // ★★★★★ **Each arc takes only the contributions that cover it.** A lateral face with a
+            // hole marks its class over an *arc*, and the arc inside the hole is a piece of circle
+            // that face does not bound at all — copying the circle's whole contribution list onto
+            // it would flip the bits of a face that is not there. Cyclic containment by rank:
+            // `[p, q)` runs counter-clockwise from `p`, so arc `k` is inside it exactly when `k`
+            // sits between their ranks the same way round.
+            let merged = circ
+                .merged
+                .iter()
+                .filter(|&&(_, _, arc)| match arc {
+                    None => true,
+                    Some([p, q]) => {
+                        let (a, b) = (place(p), place(q));
+                        if a <= b {
+                            a <= k && k < b
+                        } else {
+                            a <= k || k < b
+                        }
+                    }
+                })
+                .map(|&(s, kind, _)| (s, kind))
+                .collect();
             arcs.push(MergedArc {
                 cyl: circ.cyl,
                 def: circ.def.clone(),
                 end: [nodes[order[k]], nodes[order[(k + 1) % order.len()]]],
-                merged: circ.merged.clone(),
+                merged,
             });
         }
         cut_rims.push((
@@ -2814,6 +3186,92 @@ fn split_circles(
     }
 
     Ok(Some((out_segs, out_circles, arcs, cut_rims)))
+}
+
+/// Why an order around a circle could not be formed — two causes, because two callers turn them
+/// into different words (the split into a reject, the tracer into a decline), the same split
+/// [`RingFail`]/`decline_of` makes on the segment side.
+enum CircleOrderFail {
+    /// A θ comparison could not be formed exactly (checked-`Rat` overflow, a missing description).
+    Undecided,
+    /// Two of the nodes are one point wearing two names.
+    Coincident,
+}
+
+/// **Order nodes around one circle by θ, the seam first** — the one place that order is decided.
+///
+/// ★★★ **A crossing on the seam is ordered, not refused — it is the cut point.**
+/// `circular_order_about_seam` ranks θ ∈ (0, 2π) and answers `SeamIncident` **by name** for a point
+/// at θ = 0, because that point is outside the chart's *total* order. But what arcs need is the
+/// **cyclic** order, and a cyclic order tolerates one cut anywhere: the seam point is simply first.
+/// (Measured: the very first fixture puts a crossing there — a boss on a plate's edge cuts its own
+/// rim exactly on the seam generator, so this is the common case, not an exotic one.)
+///
+/// ★ At most one node can be seam-incident: two would be the same point, which the adjacency check
+/// below refuses as the two-names-for-one-point it is.
+///
+/// ★★ **Two names for one point.** Two walls crossing the circle at one point are two *different*
+/// branch names — a `dedup` cannot see it, and the θ sort puts them adjacent — so an arc of zero
+/// length would follow. The segment side asks this question already; asking it here too is what
+/// keeps the two sides from disagreeing about what "one point" means.
+///
+/// Returns the permutation of `nodes` in θ order and whether the first of them is the seam point.
+/// `nodes` must already be deduped by name.
+fn circular_order(
+    jd: &Judge<'_, WorkingPlane>,
+    cyl: usize,
+    def: &nacre_topo::CylinderDef,
+    nodes: &[NodeId],
+) -> Result<(Vec<usize>, bool), CircleOrderFail> {
+    use nacre_scalar::quad::{SeamOrder, circular_order_about_seam};
+    let meets = nodes
+        .iter()
+        .map(|&n| combinatorics::branch_meet(jd, cyl, def, n).ok_or(CircleOrderFail::Undecided))
+        .collect::<Result<Vec<_>, _>>()?;
+    let cmp = |i: usize, j: usize| {
+        circular_order_about_seam(
+            &def.origin(),
+            &def.dir(),
+            &def.ref_dir(),
+            (&meets[i].0, &meets[i].1),
+            (&meets[j].0, &meets[j].1),
+        )
+    };
+    let mut seam: Vec<usize> = Vec::new();
+    let mut chart: Vec<usize> = Vec::new();
+    for i in 0..meets.len() {
+        let on_seam = match cmp(i, i) {
+            Some(SeamOrder::SeamIncident { first, .. }) => first,
+            Some(SeamOrder::Ordered(_)) => false,
+            None => return Err(CircleOrderFail::Undecided),
+        };
+        if on_seam { seam.push(i) } else { chart.push(i) }
+    }
+    if seam.len() > 1 {
+        return Err(CircleOrderFail::Coincident);
+    }
+    let mut bad_theta = false;
+    chart.sort_by(|&i, &j| match cmp(i, j) {
+        Some(SeamOrder::Ordered(o)) => o,
+        _ => {
+            bad_theta = true;
+            core::cmp::Ordering::Equal
+        }
+    });
+    if bad_theta {
+        return Err(CircleOrderFail::Undecided);
+    }
+    let seam_is_node = !seam.is_empty();
+    let order: Vec<usize> = seam.into_iter().chain(chart).collect();
+    for w in order.windows(2) {
+        if matches!(
+            cmp(w[0], w[1]),
+            Some(SeamOrder::Ordered(core::cmp::Ordering::Equal))
+        ) {
+            return Err(CircleOrderFail::Coincident);
+        }
+    }
+    Ok((order, seam_is_node))
 }
 
 /// **Cut every segment at the points collected on it** — the one emitter the arc split and the
@@ -4692,7 +5150,7 @@ fn label_cells(
             // and a ruling piece is a piece of the lateral's trace, likewise.
             HalfEdgeKind::Arc(i) => edge_mask(&edges.arcs[i].merged),
             HalfEdgeKind::Ruling(i) => edge_mask(&edges.rulings[i].merged),
-            HalfEdgeKind::Circle(i) => edge_mask(&edges.circles[i].merged),
+            HalfEdgeKind::Circle(i) => edge_mask(&edges.circles[i].whole_marks()?),
         }
     };
     // A face-with-holes is one region: label its group as a unit. Group representative → members.
@@ -9138,6 +9596,8 @@ mod tests {
                     cyl: 0,
                     solid: SolidSide::B,
                     kind: SegKind::Transversal { .. },
+                    // No hole in this band, so the mark is the whole circle.
+                    arc: None,
                 }]
             ),
             "{:?}",
@@ -9271,7 +9731,12 @@ mod tests {
         assert!(
             matches!(
                 tr.circles[..],
-                [CircleTrace { cyl: 0, solid: SolidSide::A, kind: SegKind::Seated { body_above: ba } }]
+                [CircleTrace {
+                    cyl: 0,
+                    solid: SolidSide::A,
+                    kind: SegKind::Seated { body_above: ba },
+                    arc: None
+                }]
                 if ba == body_above
             ),
             "the hole circle inherits the face's body side: {:?}",

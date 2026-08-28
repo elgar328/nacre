@@ -513,6 +513,14 @@ pub enum RejectReason {
     /// seated faces claiming opposite sides, or one solid crossing the same edge twice. Whichever
     /// is right, nothing on that edge says which.
     EdgeOccupancyConflict,
+    /// **A circle carrying a contribution over only part of it was never cut.**
+    ///
+    /// A lateral face with a hole marks a class over an *arc*, and `split_circles` feeds both ends
+    /// of every such extent into the split — so a partial contribution forces its own cut and this
+    /// cannot arise. It is checked where a whole-circle mask would otherwise be built from a
+    /// partial trace, because that mask is wrong in silence: the arc inside the hole would flip the
+    /// bits of a face that is not there.
+    PartialCircleUncut,
     /// **Neither traversal of the class's rings produced a subdivision.** Two things must hold and
     /// both are checked: exactly one outer boundary per component, and `V − E + F = 2C` — the
     /// Euler relation the walk's own cell count must satisfy.
@@ -1072,6 +1080,16 @@ pub enum DeclineKind {
     /// is the answer itself: split the circle at those features and speak per angular interval,
     /// which is what a plane face's tracer already does with the same walk's output.
     CylFaceHole,
+    /// **A hole's boundary met this class in a shape the arc road has no extent for.**
+    ///
+    /// Distinct from [`Self::CylFaceHole`], whose proposition is "the hole could not be *read*":
+    /// here the ring walked and its features came back, and it is turning one of them into a
+    /// counter-clockwise extent that fails — a rim run the hole continues straight through
+    /// (an extent and a parity toggle at once), a crossing on a carrier that is not a ruling, an
+    /// odd number of crossings, two holes claiming one extent, or boundaries that do not alternate
+    /// around the circle. Every one of them is a fact about the *shape*, and none is produced by
+    /// today's population; the name is what will say so when one is.
+    CylHoleFeature,
     /// A class runs **through a lateral's axis** and the ruling trace could not be stated
     /// exactly — a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`
     /// (M6-2 rulings ladder). Declined whole rather than contributed partially: a
@@ -1099,6 +1117,7 @@ impl DeclineKind {
             Self::SeatedCurveUnbacked => "seated-curve-unbacked",
             Self::CylSpan => "cyl-span",
             Self::CylFaceHole => "cyl-face-hole",
+            Self::CylHoleFeature => "cyl-hole-feature",
             Self::Ruling => "ruling",
         }
     }
@@ -1165,6 +1184,7 @@ impl RejectReason {
             Self::HoleRoots => "hole_roots",
             Self::MissingSeam => "missing_seam",
             Self::CoplanarMerge => "coplanar_merge",
+            Self::PartialCircleUncut => "partial_circle_uncut",
         }
     }
 
@@ -1236,6 +1256,7 @@ impl RejectReason {
             | Self::UnreachedCell
             | Self::LabelConflict
             | Self::HoleRoots
+            | Self::PartialCircleUncut
             | Self::MissingSeam => RejectClass::SuspectedDefect,
         }
     }
