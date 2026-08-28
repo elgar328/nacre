@@ -3872,14 +3872,18 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// to read a **smooth** extremum by curvature. So the arrangement is through: the walk closes, the
 /// labels agree, and the refusal now comes from the **assembly**.
 ///
-/// ★★★★★ **And it is the same false sentence, on the other side.** `bands::CylRow` describes a
-/// lateral face by its outer axis span too, so the band pass re-emits the band **whole** and never
-/// cuts the hole out of it — ☑ in the code, every lateral it emits is
-/// `LocalFace { outer: Bound::Band { .. }, inner: Vec::new() }`, with no producer of an inner loop
-/// anywhere. ☑ Measured: the dangling edges are exactly the hole's two rim arcs (`z = 0` and
-/// `z = 2`, through `y > 0`) and their chords in the wall plane — used **once**, because only the
-/// plate's notched cap claims them. That is the output twin of what the trace side has just been
-/// taught, and it is the next rung.
+/// ★★ **Where it is, measured; *why*, not yet.** ☑ The dangling edges are exactly the hole's two
+/// rim arcs (`z = 0` and `z = 2`, through `y > 0`) and their chords in the wall plane — used
+/// **once**, because only the plate's notched cap claims them. So the assembly is not re-emitting
+/// the lateral piece that should claim their other side.
+///
+/// ★★★★★ **A first reading of that was wrong and is recorded so it is not repeated.** It said the
+/// band pass "re-emits the band whole and never cuts the hole out of it", on the strength of
+/// `bands.rs` writing `inner: Vec::new()` at both its producers. Both halves fail: a holed lateral
+/// is threaded by `boolean.rs`' `merge_curved_group`, which *does* write inner rings, and ☑ for
+/// this very operation the **panel** road fires alongside the band road (12 panels and 8 bands on
+/// the boss's class across the four fixtures). The assembly is cutting sectors; which piece it
+/// drops is the next cell's question, and it starts here rather than at a guess.
 ///
 /// ★ **That name is this lock's map, not its point.** What must hold either way is that the refusal
 /// is honest and total: an error, and the live set exactly as it was.

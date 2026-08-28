@@ -1813,6 +1813,19 @@ fn hole_on_class(
                 };
                 let ccw = sigma * axis_of(-hole_stored) > 0;
                 for k in 0..len - 1 {
+                    // ★★★★★ **"Both ends on the class" is not "the edge is on the circle."** The
+                    // walk answers about *nodes*; on a plane the edge between two on-line nodes
+                    // follows, and on a **cylinder** it does not — a tilted carrier meets the
+                    // lateral in an ellipse, which can cross this class at both ends without
+                    // lying on it. Taking that for a rim arc would state an extent along a curve
+                    // that is not there. The carrier says it directly: an edge on the circle
+                    // `wc ∩ cylinder` lies in `wc`, so its far face is of that class.
+                    // ★ This is the check `lateral_inner_loops` used to make from the row
+                    // ("neither ⊥ nor ∥: an ellipse, outside this vocabulary") and that went with
+                    // it; it belongs here, per edge, where the answer is actually used.
+                    if nr.walls[(first + k) % n] != crate::boolean::Wall::Plane(wc) {
+                        return Err(DeclineKind::CylHoleFeature);
+                    }
                     let a = ring[(first + k) % n];
                     let b = ring[(first + k + 1) % n];
                     let arc = if ccw { [a, b] } else { [b, a] };
@@ -1849,10 +1862,18 @@ fn hole_on_class(
                 // [`combinatorics::branch_name_from_def`]'s rule read on the other axis.
                 let sense = |perp: usize| -> Option<i32> {
                     let c = combinatorics::class_coeffs_rat(jd, perp)?;
-                    let d = combinatorics::dot3_rat(&[c[0], c[1], c[2]], &m)?;
+                    let nc = [c[0], c[1], c[2]];
+                    // ★ **⊥ is `n ∥ m`, not `n · m ≠ 0`.** A *tilted* plane also has a nonzero dot,
+                    // and the derivation above needs `n = k·m` exactly — with a tilt the two roots
+                    // are not ordered along `±(m × n_j)` at all and the restatement below would be
+                    // a wrong point, silently. `parallel_rat` decides it in integers.
+                    if !nacre_scalar::parallel_rat(&nc, &m) {
+                        return None;
+                    }
+                    let d = combinatorics::dot3_rat(&nc, &m)?;
                     let zero = nacre_scalar::Rat::from_int(0);
                     if d == zero {
-                        return None; // not ⊥ to the axis: this edge is no ruling of ours
+                        return None; // a ⊥ plane's normal cannot be ⊥ to the axis
                     }
                     let e = if perp < j { 1 } else { -1 };
                     Some(e * if d > zero { 1 } else { -1 })
