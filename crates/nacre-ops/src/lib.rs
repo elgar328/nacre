@@ -521,6 +521,11 @@ pub enum RejectReason {
     /// partial trace, because that mask is wrong in silence: the arc inside the hole would flip the
     /// bits of a face that is not there.
     PartialCircleUncut,
+    /// **A ring the ray caster walks leaves the cut line along a curved edge**, and which side it
+    /// left to is not a question the shared walk answers — see `DeclineKind::CurvedDeparture` for
+    /// the whole sentence. The two roads name it separately because one declines a *face* and the
+    /// other refuses a *query*.
+    CurvedDeparture,
     /// **Neither traversal of the class's rings produced a subdivision.** Two things must hold and
     /// both are checked: exactly one outer boundary per component, and `V − E + F = 2C` — the
     /// Euler relation the walk's own cell count must satisfy.
@@ -1090,6 +1095,16 @@ pub enum DeclineKind {
     /// around the circle. Every one of them is a fact about the *shape*, and none is produced by
     /// today's population; the name is what will say so when one is.
     CylHoleFeature,
+    /// **A ring leaves the class's meet between two nodes that are on it, and which side it left to
+    /// is not a question the shared walk can answer.**
+    ///
+    /// Two on-meet nodes do not put the edge between them on the meet: two points fix a straight
+    /// line, so a straight edge is on it and a **curved** one departs and returns. Splitting the
+    /// run at the departure settles the **extent**; what it does not settle is where along the run
+    /// the parity flip belongs, because that depends on the side the arc bulges to. Raised for a
+    /// departing run that must flip, a stretch with a departure on both sides, and a ring whose
+    /// every node is on the class while an edge departs. See `combinatorics::RingWalk`.
+    CurvedDeparture,
     /// A class runs **through a lateral's axis** and the ruling trace could not be stated
     /// exactly — a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`
     /// (M6-2 rulings ladder). Declined whole rather than contributed partially: a
@@ -1118,6 +1133,7 @@ impl DeclineKind {
             Self::CylSpan => "cyl-span",
             Self::CylFaceHole => "cyl-face-hole",
             Self::CylHoleFeature => "cyl-hole-feature",
+            Self::CurvedDeparture => "curved-departure",
             Self::Ruling => "ruling",
         }
     }
@@ -1185,6 +1201,7 @@ impl RejectReason {
             Self::MissingSeam => "missing_seam",
             Self::CoplanarMerge => "coplanar_merge",
             Self::PartialCircleUncut => "partial_circle_uncut",
+            Self::CurvedDeparture => "curved_departure",
         }
     }
 
@@ -1257,6 +1274,7 @@ impl RejectReason {
             | Self::LabelConflict
             | Self::HoleRoots
             | Self::PartialCircleUncut
+            | Self::CurvedDeparture
             | Self::MissingSeam => RejectClass::SuspectedDefect,
         }
     }

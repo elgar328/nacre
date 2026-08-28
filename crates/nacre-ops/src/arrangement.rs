@@ -971,7 +971,12 @@ fn trace_transversal_face(
         // Where this ring meets `L`, and whether it crosses or only touches — the walk the ray
         // caster shares (`combinatorics::ring_against_plane`). What is done with a feature is this
         // function's own business: naming it, recording a four-plane alias, deciding occupancy.
-        let features = match combinatorics::ring_against_plane(jd, cyls, ring, wc, |_| true) {
+        // ★ **What "on the meet" means here**: `W` cuts this *planar* face in a straight **line**,
+        // and two points fix a line — so a straight edge between two on-line nodes is on it and a
+        // curved one is not. (The lateral road's meet is a **circle**, where an arc *can* lie on it,
+        // so it tests the carrier instead — see `hole_on_class`.)
+        let on_meet = |i: usize| !matches!(walls[i], crate::boolean::Wall::Arc { .. });
+        let features = match combinatorics::ring_against_plane(jd, cyls, ring, wc, on_meet) {
             combinatorics::RingWalk::Met(f) => f,
             // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
             combinatorics::RingWalk::AllOn => {
@@ -983,6 +988,12 @@ fn trace_transversal_face(
             // the workspace suite; the name is kept because the walk can still say it.
             combinatorics::RingWalk::Unnameable => {
                 declined = Some(DeclineKind::BranchNode);
+                break;
+            }
+            // ★ The ring departs the cut line along a curved edge and this walk will not guess
+            // which side it went to — see [`combinatorics::RingWalk::CurvedDeparture`].
+            combinatorics::RingWalk::CurvedDeparture => {
+                declined = Some(DeclineKind::CurvedDeparture);
                 break;
             }
         };
@@ -1840,6 +1851,9 @@ fn hole_on_class(
         combinatorics::RingWalk::AllOn | combinatorics::RingWalk::Unnameable => {
             return Err(DeclineKind::CylFaceHole);
         }
+        combinatorics::RingWalk::CurvedDeparture => {
+            return Err(DeclineKind::CurvedDeparture);
+        }
     };
     let ring = &nr.triples;
     let n = ring.len();
@@ -1872,7 +1886,9 @@ fn hole_on_class(
                 // is in the outward frame, a label's "above" in the stored one — and the walk
                 // hands it over rather than this asking again
                 // (see [`combinatorics::Feature::Run`]).
-                let side = i32::from(flank);
+                // ★ `None` is "the neighbour across is a departure, and its side is σ" — the
+                // value this road would need and does not have.
+                let side = i32::from(flank.ok_or(DeclineKind::CurvedDeparture)?);
                 let hole_stored = side * fs;
                 let graze = CylOnClass::Grazes {
                     body_above: hole_stored < 0,

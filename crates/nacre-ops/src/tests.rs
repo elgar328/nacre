@@ -3934,7 +3934,8 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// `WitnessNotRational` (the arc split asked every segment for its two ends' coordinates), then
 /// [`RejectReason::CurvedStraightRun`] (`loop_winding` had no turn to read where a ring runs
 /// smooth through its extreme node), then [`RejectReason::OpenResultShell`] — out of the
-/// arrangement entirely, in the assembly — and now [`RejectReason::LabelConflict`], back inside it.
+/// arrangement entirely — then [`RejectReason::LabelConflict`] when one of two cancelling
+/// falsehoods was fixed, and now **`OpenResultShell` again with the arrangement whole**.
 ///
 /// ★★★★★ **Every one of those was downstream of a false sentence.** The first fuse buries half the
 /// boss's lateral in the plate, leaving that face a band with a **hole**; the face table described a
@@ -3945,26 +3946,24 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// to read a **smooth** extremum by curvature. So the arrangement is through: the walk closes, the
 /// labels agree, and the refusal now comes from the **assembly**.
 ///
-/// ★★★★★ **And the wall is *earlier* now than it was, because two falsehoods were cancelling.**
-/// The ruling road used to state a full-height crossing where a holed lateral only *grazes* the
-/// wall; fixing that (`ruling_grazes`) leaves the class's labels unable to close, and the reject
-/// moved from the assembly's [`RejectReason::OpenResultShell`] back to
-/// [`RejectReason::LabelConflict`] — an honest report that the trace is **incomplete**, where
-/// before two errors summed to a consistent-looking labelling.
+/// ★★★★★ **Two falsehoods were cancelling, and both are gone now.** The ruling road stated a
+/// full-height crossing where a holed lateral only *grazes* the wall; the shared ring walk called
+/// an on-line run continuous across an arc that leaves the line and comes back. Fixing the first
+/// alone made the class's labels stop closing ([`RejectReason::LabelConflict`] — an honest report
+/// that the trace was incomplete); fixing the second closed them again. ☑ Measured: **18** runs
+/// split at a departure, all of length 4 with one curved edge, none of them needing a flip.
 ///
-/// ☑ **What is still missing, measured.** `trace_transversal_face`'s on-line **run** treats
-/// consecutive on-line nodes as an on-line interval, and that inference — sound for a straight
-/// edge, since two points fix a line — is **false for a curved one**: the plate's cap boundary runs
-/// `… → (1.5,0,0) → arc through y>0 → (2.5,0,0) → …`, whose middle edge leaves the line and comes
-/// back. Measured: one run of length 4 spanning **one** curved edge, twice. So the cap states a
-/// graze over a chord that is not its boundary — the same "both ends on the class is not the edge
-/// on the class" the ⊥ road was taught in `hole_on_class`, still unlearned on the planar road.
-/// That is the next rung, and it is the third cause of this fixture's refusal, not the second.
+/// ☑ **So the arrangement is whole and the refusal is the assembly's own.** What remains is the
+/// panel road's keep decision: it reads one bit ("is my own material inside this wall") and derives
+/// the far side by negating it, which assumes the lateral *separates* own-inside from own-outside —
+/// false over a hole, where own material is on both sides. Measured on the first fusion the buried
+/// sector is dropped because it is inside the **other** solid; on the second the plate is already
+/// *own*, so both sectors survive and the hole is filled in. That is the next rung.
 ///
 /// ★ **That name is this lock's map, not its point.** What must hold either way is that the refusal
 /// is honest and total: an error, and the live set exactly as it was.
 #[test]
-fn a_chained_cylinder_bounded_by_the_first_stops_at_the_labelling() {
+fn a_chained_cylinder_bounded_by_the_first_stops_at_the_assembly() {
     let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
     for (name, second) in [
         ("bore", ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut)),
@@ -3990,7 +3989,7 @@ fn a_chained_cylinder_bounded_by_the_first_stops_at_the_labelling() {
         let live = m.live_solids.clone();
         match boolean(&mut m, second.2, first, b) {
             Err(BoolError::Rejected { reason, .. }) => assert!(
-                matches!(reason, RejectReason::LabelConflict),
+                matches!(reason, RejectReason::OpenResultShell),
                 "{name}: the refusal's layer and cause: {reason:?}"
             ),
             other => panic!("{name}: {other:?}"),

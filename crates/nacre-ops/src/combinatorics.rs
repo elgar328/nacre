@@ -2068,6 +2068,22 @@ pub(crate) enum RingWalk {
     Met(Vec<Feature>),
     /// Every node lies on `q`: a ring in the plane has no flanks to be decided by.
     AllOn,
+    /// **The ring leaves the meet between two on-meet nodes, and which side it leaves to is not a
+    /// question this walk can answer.**
+    ///
+    /// ★★★★★ Two nodes on `q` do not put the edge between them on `q`: two points fix a straight
+    /// line, so a straight edge is on it and a **curved** one departs and returns. Where that
+    /// happens the run is cut into on-meet stretches, which is enough for **extent** — but not for
+    /// **parity's position**. The count of crossings over such a run is `flanks_differ` whichever
+    /// side the arc bulges to (a circle meets a plane twice, so the departure is entirely on one
+    /// side, and `(s_a ≠ σ) + (σ ≠ s_b)` has the parity of `s_a ≠ s_b` either way) — but *which* of
+    /// the two ends carries it does depend on σ. So a departing run that must flip, a stretch with
+    /// an arc on both sides, and a ring whose every node is on `q` while an edge departs are all
+    /// answered by name rather than guessed.
+    ///
+    /// ★ The value it wants exists in pieces (`arc_side` beside `ccw` and the axis sense); it is
+    /// not built because nothing asks yet, and an unmeasured sign is worse than an honest refusal.
+    CurvedDeparture,
     /// A node whose side this walk cannot answer.
     ///
     /// ★★ **It used to mean "a [`NodeId::Branch`]", and it does not any more.** [`side_of`]'s
@@ -2101,11 +2117,16 @@ pub(crate) enum Feature {
     /// (`rotation_sweep`'s `no_production_code_walks_a_ring_past_the_shared_walk`). It is the side
     /// of the off-line neighbour **before** the run; with `flanks_differ` false the one after is the
     /// same, and with it true the other is its negation, so one number carries both. Never `0`.
+    ///
+    /// ★★★★★ **`None` where there is no such neighbour** — a stretch that begins where the ring
+    /// *returned* to the meet is preceded by the departure itself, and that side is σ
+    /// ([`RingWalk::CurvedDeparture`]). The type says so rather than carrying a plausible number:
+    /// the one reader today refuses on it, and the next one must face the same choice.
     Run {
         first: usize,
         len: usize,
         flanks_differ: bool,
-        flank: i8,
+        flank: Option<i8>,
     },
 }
 
@@ -2146,7 +2167,6 @@ pub(crate) fn ring_against_plane(
     q: usize,
     on_meet: impl Fn(usize) -> bool,
 ) -> RingWalk {
-    let _ = &on_meet;
     let n = nodes.len();
     let Some(side) = (0..n)
         .map(|i| side_of(jd, cyls, nodes[i], q))
@@ -2155,7 +2175,13 @@ pub(crate) fn ring_against_plane(
         return RingWalk::Unnameable;
     };
     let Some(start) = side.iter().position(|&s| s != 0) else {
-        return RingWalk::AllOn;
+        // ★ Every *node* on `q` is not "the ring lies in `q`": an edge may still depart. Only when
+        // every edge stays does `AllOn`'s sentence hold.
+        return if (0..n).all(&on_meet) {
+            RingWalk::AllOn
+        } else {
+            RingWalk::CurvedDeparture
+        };
     };
     let mut out = Vec::new();
     let mut j = 0;
@@ -2175,19 +2201,49 @@ pub(crate) fn ring_against_plane(
             // had to be taken from its touching planes (`loop_triples`) stays in the ring even
             // when the loop runs straight through it, so a run can be longer.
             let first = i;
-            let mut len = 0;
+            let mut len = 0usize;
             while j < n && side[(start + j) % n] == 0 {
                 len += 1;
                 j += 1;
             }
             let before = side[(first + n - 1) % n];
             let after = side[(start + j) % n];
-            out.push(Feature::Run {
-                first,
-                len,
-                flanks_differ: before != after,
-                flank: before,
-            });
+            let flanks_differ = before != after;
+            // ★★★★★ **The run is cut where the ring leaves the meet.** `len` on-`q` nodes give
+            // `len - 1` edges; each that departs breaks the on-meet interval in two. A run with no
+            // break is the whole thing, exactly as before.
+            let mut breaks: Vec<usize> = (0..len.saturating_sub(1))
+                .filter(|&k| !on_meet((first + k) % n))
+                .collect();
+            if breaks.is_empty() {
+                out.push(Feature::Run {
+                    first,
+                    len,
+                    flanks_differ,
+                    flank: Some(before),
+                });
+                continue;
+            }
+            // A break makes parity's *position* σ's question (see `CurvedDeparture`), and a stretch
+            // with a departure on both sides has no flank of its own for the same reason.
+            if flanks_differ {
+                return RingWalk::CurvedDeparture;
+            }
+            breaks.push(len - 1);
+            let mut from = 0usize;
+            for cut in breaks {
+                let stretch = cut + 1 - from;
+                if stretch < 2 {
+                    return RingWalk::CurvedDeparture;
+                }
+                out.push(Feature::Run {
+                    first: (first + from) % n,
+                    len: stretch,
+                    flanks_differ: false,
+                    flank: (from == 0).then_some(before),
+                });
+                from = cut + 1;
+            }
         }
     }
     RingWalk::Met(out)
@@ -2309,6 +2365,7 @@ pub(crate) fn every_ray(
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
             RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
+            RingWalk::CurvedDeparture => return Err(reject(RejectReason::CurvedDeparture)),
         };
         let qb = *v
             .iter()
@@ -2432,6 +2489,7 @@ pub(crate) fn segment_meets_face(
             // The whole ring lies on `w`: this face's boundary is the line itself, and the
             // alternation has no crossings to read. Refusing to guess.
             RingWalk::AllOn => return Err(reject(RejectReason::PointOnRing)),
+            RingWalk::CurvedDeparture => return Err(reject(RejectReason::CurvedDeparture)),
         };
         for f in &features {
             match *f {
