@@ -3874,10 +3874,12 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 ///
 /// ★★★★★ **And it is the same false sentence, on the other side.** `bands::CylRow` describes a
 /// lateral face by its outer axis span too, so the band pass re-emits the band **whole** and never
-/// cuts the hole out of it. ☑ Measured: the dangling edges are exactly the hole's two rim arcs
-/// (`z = 0` and `z = 2`, through `y > 0`) and their chords in the wall plane — used **once**,
-/// because only the plate's notched cap claims them. That is the output twin of what the trace side
-/// has just been taught, and it is the next rung.
+/// cuts the hole out of it — ☑ in the code, every lateral it emits is
+/// `LocalFace { outer: Bound::Band { .. }, inner: Vec::new() }`, with no producer of an inner loop
+/// anywhere. ☑ Measured: the dangling edges are exactly the hole's two rim arcs (`z = 0` and
+/// `z = 2`, through `y > 0`) and their chords in the wall plane — used **once**, because only the
+/// plate's notched cap claims them. That is the output twin of what the trace side has just been
+/// taught, and it is the next rung.
 ///
 /// ★ **That name is this lock's map, not its point.** What must hold either way is that the refusal
 /// is honest and total: an error, and the live set exactly as it was.

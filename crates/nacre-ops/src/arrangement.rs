@@ -280,8 +280,13 @@ pub(crate) struct MergedArc {
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
     pub end: [NodeId; 2],
-    /// Inherited whole from the circle: an arc is a piece of the same trace, so it carries the same
-    /// `(solid, kind)` contributions and `edge_mask` reads it unchanged.
+    /// The contributions that **cover this arc** — no longer the circle's list entire.
+    ///
+    /// ★★ It used to read "inherited whole from the circle: an arc is a piece of the same trace,
+    /// so it carries the same contributions". That was true while a lateral face could only mark a
+    /// class over its whole circle, and a face with a **hole** makes it false: over the hole the
+    /// face is not there at all, and along the hole's rim it grazes where the band around it
+    /// crosses. [`split_circles`] selects per arc; `edge_mask` still reads the result unchanged.
     ///
     /// ★ Read by `label_cells`' `mask_of`: crossing an arc flips the same bits crossing its circle
     /// would, which is what "a piece of the same trace" means. (It was carried before that consumer
@@ -1447,15 +1452,13 @@ fn trace_one(
     }
 }
 
-/// Whether a lateral face crosses the plane class `wp` in a full circle (M6-2a).
+/// What a lateral face leaves on a ⊥ plane class — see [`circle_on_class`], which answers it
+/// **per angular extent** ([`CircleSpan`]) rather than once for the whole circle.
 ///
-/// `Ok(Some(()))` — the class is ⊥ this cylinder's axis and its axis parameter lies strictly
-/// inside the face's rim span. `Ok(None)` — no circle (a non-⊥ class carries none, and a ⊥
-/// class outside the span never meets this face; a rim-coincident plane would have been one
-/// class with the rim's cap and traced seated). `Err` — the face cannot answer (no rim span,
-/// or the class has no exact description the gate would already have refused); declining
+/// The empty answer is "this class leaves nothing here": a non-⊥ class carries no circle at all,
+/// and a ⊥ class beyond both rims never meets the face. `Err` is "the face cannot answer" (no rim
+/// span, or a class with no exact description the gate would already have refused) — declining
 /// beats a silently missing circle, which would corrupt every label on the class.
-/// What a lateral face leaves on a ⊥ plane class — see [`circle_on_class`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CylOnClass {
     /// The class cuts the face in two: the solid straddles it here.

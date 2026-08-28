@@ -1060,25 +1060,25 @@ pub enum DeclineKind {
     /// A cylinder face could not answer a circle question exactly — its rim span is
     /// underivable or a plane class lacks the exact description a circle test needs (M6-2a).
     CylSpan,
-    /// **A lateral face has a hole where this class meets it, and the trace can only speak in
-    /// whole circles.**
+    /// **A lateral face has a hole here and this road could not *read* it.**
     ///
     /// A fuse can bury part of a lateral in the other body — a boss straddling a plate's edge keeps
     /// its band but loses the angles inside the plate — and what is left is a band with a hole in
-    /// the `(t, θ)` chart. `circle_on_class` reads the face's **outer** span, so it answers
-    /// "the class cuts a full circle" and that is **false for the angles inside the hole**.
+    /// the `(t, θ)` chart. The trace **speaks in arcs** now (`circle_on_class` walks the hole and
+    /// answers per angular extent), so what this name is left saying is narrower than it was: the
+    /// hole's loop could not be named at all, or a corner of it lies on a second cylinder, or the
+    /// ring walk could not decide a node's side.
     ///
-    /// ★★★★★ **This name exists because the alternative was being silently wrong.** The false
-    /// circle does not fail here: it flows on, and two stages later `label_cells` finds the flip
-    /// relation broken and says [`RejectReason::LabelConflict`] — a symptom, not the cause. The
-    /// refusal belongs where the false sentence is made.
+    /// ★★★★★ **The name exists because the alternative was being silently wrong.** The face table
+    /// describes a lateral by its **outer** span, so the trace used to answer "the class cuts a full
+    /// circle" — false for the angles inside the hole. That falsehood did not fail here: it flowed
+    /// on, and two stages later `label_cells` found the flip relation broken and said
+    /// [`RejectReason::LabelConflict`] — a symptom, not the cause. The refusal belongs where the
+    /// false sentence is made, and once the road could state the truth the refusal shrank to what
+    /// it still cannot describe.
     ///
-    /// ★★ **The hole is now read by the one ring walk**
-    /// ([`combinatorics::ring_against_plane`]) rather than by an interval derived from the loop's
-    /// ⊥ carriers, so this fires on *any* feature the walk finds — a crossing, or a run along one
-    /// of the hole's own rims — and needs no premise about the hole's shape. What is left to lift
-    /// is the answer itself: split the circle at those features and speak per angular interval,
-    /// which is what a plane face's tracer already does with the same walk's output.
+    /// ★ A feature the walk *found* but the arc road has no extent for is
+    /// [`Self::CylHoleFeature`], not this — the two say different things about the same face.
     CylFaceHole,
     /// **A hole's boundary met this class in a shape the arc road has no extent for.**
     ///
