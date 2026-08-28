@@ -382,6 +382,10 @@ fn panel_faces(
         // first — and where the face is absent there is no membership question to ask.
         let spans_lo = face_spans(r_lo, row.side, toward_hi(lo))?;
         let spans_hi = face_spans(r_hi, row.side, !toward_hi(hi))?;
+        #[cfg(test)]
+        for r in [r_lo, r_hi] {
+            panel_probe::marks(r, row.side);
+        }
         if spans_lo != spans_hi {
             // The rims of a hole are themselves band boundaries (`bands_of` pushes every cut
             // rim), so within one interval a sector either exists over its whole height or not
@@ -477,15 +481,6 @@ fn face_spans(
     band_is_above: bool,
 ) -> Result<bool, BoolError> {
     use crate::arrangement::SegKind;
-    #[cfg(test)]
-    {
-        let lateral = |k: &SegKind| !matches!(k, SegKind::Seated { .. });
-        let mine = || r.marks.iter().filter(|(s, _)| *s == side);
-        panel_probe::marks(
-            mine().filter(|(_, k)| lateral(k)).count(),
-            mine().filter(|(_, k)| !lateral(k)).count(),
-        );
-    }
     let mut answer: Option<bool> = None;
     for (_, kind) in r.marks.iter().filter(|(s, _)| *s == side) {
         let reaches = match *kind {
@@ -508,19 +503,30 @@ fn face_spans(
     Ok(answer.unwrap_or(false))
 }
 
-/// What the panel road decided, at the layer that decides it — [`panel_faces`]' lock.
+/// **What the panel road decided, at the layer that decides it** — [`panel_faces`]' instrument.
 ///
-/// ★ The operation this cell is for refuses further down for its own reasons, so a face count on
-/// a finished solid cannot hold the claim. The decision itself is the thing to hold; it stands
-/// whether or not the assembly gets to the end (`ruling_probe` is here for the same reason).
+/// ★ The result oracles (volume, `validate`) are the stronger evidence now that the chained
+/// operation builds, and they are what pin the *count*. This holds the mechanism instead: that a
+/// sector was dropped because the **face was not there**, which no volume can distinguish from a
+/// sector dropped by a label. It also survives the day some other refusal moves in front of the
+/// assembly again, which is how `ruling_probe` came to exist.
+///
+/// ★★ **Only [`panel_faces`] records here, never [`face_spans`] itself.** The unit test feeds
+/// that function hand-written marks — including the `Seated` and multi-mark rows production has
+/// never produced — and recording them would make the census describe the test suite instead of
+/// the kernel.
 #[cfg(test)]
 pub(crate) mod panel_probe {
+    use super::SolidSide;
+    use crate::arrangement::{ArcLabel, SegKind};
     use std::sync::Mutex;
 
     /// One entry per sector considered: `(the face reaches this interval, the sector was emitted)`.
     pub(crate) static SECTORS: Mutex<Vec<(bool, bool)>> = Mutex::new(Vec::new());
 
-    /// One entry per rim visit: `(this solid's lateral marks on the arc, its `Seated` marks)`.
+    /// One entry per rim the panel road read: how many marks of this row's own solid the arc
+    /// carried, as `(lateral, seated)`. Both halves are claims the cell measured as **zero**
+    /// populations and locked that way — see the lock.
     pub(crate) static MARKS: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
 
     pub(crate) fn sector(spans: bool, kept: bool) {
@@ -530,11 +536,15 @@ pub(crate) mod panel_probe {
             .push((spans, kept));
     }
 
-    pub(crate) fn marks(lateral: usize, seated: usize) {
+    pub(crate) fn marks(r: &ArcLabel, side: SolidSide) {
+        let mine = || r.marks.iter().filter(|(s, _)| *s == side);
+        let seated = mine()
+            .filter(|(_, k)| matches!(k, SegKind::Seated { .. }))
+            .count();
         MARKS
             .lock()
             .expect("the probe's lock is never held across a panic")
-            .push((lateral, seated));
+            .push((mine().count() - seated, seated));
     }
 }
 

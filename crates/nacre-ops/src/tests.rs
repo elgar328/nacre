@@ -3995,6 +3995,29 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
         sectors.iter().any(|&(spans, _)| !spans),
         "no panel sector was ever dropped for existence: {sectors:?}"
     );
+    // ★★★ **And the two rows of the rule production has never walked, kept audible.** Over the
+    // whole binary (☑ 278 rim reads) every arc carried **exactly one** lateral mark of its own
+    // solid: never none, never two. Those are the two rows `face_spans` answers without a fixture
+    // behind them — "no mark" and the deferred `.any()`. The day this fires it is a **population
+    // arriving**, not a defect: the function answers both correctly (its unit test says how), and
+    // what has expired is the doc calling them unexercised.
+    //
+    // ★ The `Seated` skip is **not** in that list — it fires, once, in
+    // `bands::tests::the_gate_still_refuses_what_the_road_does_not_serve` (☑ measured, one arc of
+    // 278 carrying both a lateral mark and a planar face's seated rim). It is load-bearing, not
+    // defensive: without it that arc's answer would come from the wrong face.
+    let marks = crate::bands::panel_probe::MARKS
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .clone();
+    assert!(!marks.is_empty(), "the mark census never ran");
+    for &(lateral, _seated) in &marks {
+        assert_eq!(
+            lateral, 1,
+            "an arc carried {lateral} lateral marks of its own solid — a population this cell \
+             measured as empty has arrived; re-read `face_spans`' doc"
+        );
+    }
 }
 
 /// ★★★★★ **A boolean's result carries names the tracer's plane-only road cannot read — and it
