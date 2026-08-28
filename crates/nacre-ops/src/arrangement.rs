@@ -1844,6 +1844,10 @@ fn hole_on_class(
     nr: &combinatorics::NamedRing,
     out: &mut Vec<Carved>,
 ) -> Result<(), DeclineKind> {
+    // ★★ **`true` here is not a shrug — the meet on this road is a *circle*, and an arc can lie on
+    // one.** A rim arc of the hole at this very axis parameter *is* the class's meet, so "not an
+    // arc" would cut runs that are genuinely continuous. What decides it is the carrier, and the
+    // `Run` arm below asks that directly (declining, rather than splitting, is this road's scope).
     let features = match combinatorics::ring_against_plane(jd, cyls, &nr.triples, wc, |_| true) {
         combinatorics::RingWalk::Met(f) => f,
         // A hole ring lying wholly in the class has no thickness to bound anything with, and a

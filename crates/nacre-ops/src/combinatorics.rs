@@ -2066,7 +2066,14 @@ pub(crate) fn side_of(
 pub(crate) enum RingWalk {
     /// Where the ring meets the line, in ring order from the first off-`q` node.
     Met(Vec<Feature>),
-    /// Every node lies on `q`: a ring in the plane has no flanks to be decided by.
+    /// Every node **and every edge** lies on `q`: a ring in the plane has no flanks to be decided
+    /// by.
+    ///
+    /// ★★ **The second half is new and it is not pedantry.** This used to fire on "every node lies
+    /// on `q`", which a ring with a curved edge satisfies while *leaving* the plane — and one
+    /// consumer ([`every_ray`]) skips such a ring entirely, dropping its crossings from a parity
+    /// count. A ring whose nodes are all on `q` while an edge departs is
+    /// [`RingWalk::CurvedDeparture`] instead.
     AllOn,
     /// **The ring leaves the meet between two on-meet nodes, and which side it leaves to is not a
     /// question this walk can answer.**
@@ -2103,8 +2110,17 @@ pub(crate) enum Feature {
     /// has both ends off the line. See [`Self::Run`]'s `flank` for why a side travels with a
     /// feature at all.
     Crossing { edge: usize, from: i8 },
-    /// `len` consecutive nodes from `first` lie *on* `q`. `len >= 2` means the edges between them
-    /// lie on the line too — an on-line interval rather than a point.
+    /// `len` consecutive nodes from `first` lie *on* `q`, **and so do the edges between them** —
+    /// an on-line interval rather than a point.
+    ///
+    /// ★★★★★ **That second half is a fact the walk now establishes, not one it used to assume.**
+    /// It read "`len >= 2` means the edges between them lie on the line too", which is a claim about
+    /// *nodes* being enough: two points fix a straight line, so a straight edge between two on-`q`
+    /// nodes is on it — and a **curved** one departs and comes back, touching `q` only at its ends.
+    /// A face's boundary that runs `… → node → arc → node → …` was read as one interval and stated
+    /// a graze over ground it does not bound. The run is cut at each departure now
+    /// ([`RingWalk::CurvedDeparture`] for what cutting cannot settle), so the sentence above is
+    /// true again.
     ///
     /// `flanks_differ` is the whole decision: the two off-line neighbours bracketing the run sit on
     /// **opposite** sides, so the ring genuinely crosses the line here; equal sides mean it touched
@@ -2145,7 +2161,8 @@ pub(crate) enum Feature {
 /// point** (four-plane aliases, `DeclineKind`, occupancy), the ray caster into one bit ("ahead of
 /// `v`?"). That is where the sharing stops.
 ///
-/// `None` when every node lies on `q` — a ring in the plane has no flanks to be decided by.
+/// `AllOn` when every node **and edge** lies on `q` — a ring in the plane has no flanks to be
+/// decided by.
 ///
 /// **Features come out in ring order from the first off-`q` node.** That is the order the tracer's
 /// scan produced them in, and its naming step records aliases into a union-find as it goes, so the
@@ -2361,7 +2378,11 @@ pub(crate) fn every_ray(
         // whose line is parallel to `P ∩ Q_a` has both endpoints on one side and is not a crossing.
         // ★ No cylinder table on this road: a branch node in a **result** cell's ring
         // declines here exactly as it did before, and threading one is the arc road's business.
-        let features = match ring_against_plane(jd, &[], &nodes, qa, |_| true) {
+        // ★ The meet here is a **line** (`p ∩ Q_a`), and two points fix a line — so a straight
+        // edge between two on-line nodes is on it and a curved one is not. Same reading as
+        // `arrangement::trace_transversal_face`'s, which walks the same kind of ring.
+        let on_meet = |i: usize| !matches!(ring[i].carrier, Carrier::Arc(_));
+        let features = match ring_against_plane(jd, &[], &nodes, qa, on_meet) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
             RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
@@ -2483,7 +2504,8 @@ pub(crate) fn segment_meets_face(
         // ★ A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
-        let features = match ring_against_plane(jd, &[], &nodes, w, |_| true) {
+        let on_meet = |i: usize| !matches!(ring[i].carrier, Carrier::Arc(_));
+        let features = match ring_against_plane(jd, &[], &nodes, w, on_meet) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
             // The whole ring lies on `w`: this face's boundary is the line itself, and the
