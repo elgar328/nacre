@@ -1467,12 +1467,27 @@ fn circle_on_class(
     let Some(holes) = &cf.holes else {
         return Err(DeclineKind::CylFaceHole);
     };
+    // ★★ **Every ⊥ edge, not the first two.** A rectangular hole has exactly two and either
+    // reading gives the same answer, but a **staircase** hole has more, and taking the first pair
+    // yields a *narrower* interval — a decline that quietly stops declining, which is the very
+    // shape this arm exists to remove. The min/max is the conservative reading and needs no
+    // premise about the hole's shape. ☑ Measured: every inner loop this binary builds (10 of them)
+    // is a chart rectangle — 4 edges, 2 of them ⊥ — so the two readings agree today and this is
+    // written for the population that has not arrived yet.
     for h in holes {
-        let mut ts = h.iter().filter_map(|e| e.at.as_ref());
-        let (Some(a), Some(b)) = (ts.next(), ts.next()) else {
+        let mut lo: Option<&nacre_scalar::Rat> = None;
+        let mut hi: Option<&nacre_scalar::Rat> = None;
+        for at in h.iter().filter_map(|e| e.at.as_ref()) {
+            if lo.is_none_or(|l| at < l) {
+                lo = Some(at);
+            }
+            if hi.is_none_or(|h| at > h) {
+                hi = Some(at);
+            }
+        }
+        let (Some(lo), Some(hi)) = (lo, hi) else {
             continue; // no ⊥ rim: this hole bounds nothing in the axis parameter
         };
-        let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
         if *lo <= t && t <= *hi {
             return Err(DeclineKind::CylFaceHole);
         }
