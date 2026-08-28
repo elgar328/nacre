@@ -3860,23 +3860,29 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// `TraceDeclined { BranchNode }` (the tracer could not name a ring corner a cylinder made), then
 /// `WitnessNotRational` (the arc split asked every segment for its two ends' coordinates), then
 /// [`RejectReason::CurvedStraightRun`] (`loop_winding` had no turn to read where a ring runs
-/// smooth through its extreme node).
+/// smooth through its extreme node), and now [`RejectReason::OpenResultShell`] — **out of the
+/// arrangement entirely**, in the assembly.
 ///
 /// ★★★★★ **Every one of those was downstream of a false sentence.** The first fuse buries half the
 /// boss's lateral in the plate, leaving that face a band with a **hole**; the face table described a
 /// lateral by its outer axis span alone, so the trace answered "the class cuts a full circle" — true
 /// for half the angles and false for the other half. The winding walk and the labelling were both
 /// reading a subdivision built on that. The trace named it (`TraceDeclined { CylFaceHole, face }`),
-/// and then learned to **walk the hole** and answer per angular interval — so the false sentence is
-/// gone and the wall is back at [`RejectReason::CurvedStraightRun`], which it had reached once
-/// before **over a subdivision that was wrong**. This time the subdivision under it is right, and
-/// the question is the real one: `loop_winding` has no turn to read where a ring runs smooth
-/// through its extreme node, because two arcs of one circle meet there tangentially.
+/// then learned to **walk the hole** and answer per angular interval; the winding walk then learned
+/// to read a **smooth** extremum by curvature. So the arrangement is through: the walk closes, the
+/// labels agree, and the refusal now comes from the **assembly**.
+///
+/// ★★★★★ **And it is the same false sentence, on the other side.** `bands::CylRow` describes a
+/// lateral face by its outer axis span too, so the band pass re-emits the band **whole** and never
+/// cuts the hole out of it. ☑ Measured: the dangling edges are exactly the hole's two rim arcs
+/// (`z = 0` and `z = 2`, through `y > 0`) and their chords in the wall plane — used **once**,
+/// because only the plate's notched cap claims them. That is the output twin of what the trace side
+/// has just been taught, and it is the next rung.
 ///
 /// ★ **That name is this lock's map, not its point.** What must hold either way is that the refusal
 /// is honest and total: an error, and the live set exactly as it was.
 #[test]
-fn a_chained_cylinder_bounded_by_the_first_stops_at_the_trace() {
+fn a_chained_cylinder_bounded_by_the_first_stops_at_the_band_pass() {
     let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
     for (name, second) in [
         ("bore", ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut)),
@@ -3902,7 +3908,7 @@ fn a_chained_cylinder_bounded_by_the_first_stops_at_the_trace() {
         let live = m.live_solids.clone();
         match boolean(&mut m, second.2, first, b) {
             Err(BoolError::Rejected { reason, .. }) => assert!(
-                matches!(reason, RejectReason::CurvedStraightRun),
+                matches!(reason, RejectReason::OpenResultShell),
                 "{name}: the refusal's layer and cause: {reason:?}"
             ),
             other => panic!("{name}: {other:?}"),

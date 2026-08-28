@@ -929,9 +929,12 @@ pub(crate) struct ArcDir {
     centre: [nacre_scalar::Rat; 3],
     /// `n_P · m > 0`: the class's **stored** normal against the cylinder's axis.
     ///
-    /// ★ Measured **unexercised**: `true` on every class the corpus reaches, so a red probe that
-    /// drops it changes nothing. It is here because the algebra puts it here, not because a fixture
-    /// forced it — [`arc_side`] records which factors the population does lock.
+    /// ★★ **It used to say "measured unexercised, `true` on every class the corpus reaches", and
+    /// that went stale the moment a new population arrived.** ☑ Re-measured with the hole trace in:
+    /// [`smooth_extremum_winding`] reads it `false` on half its firings, and dropping it there moves
+    /// the chained fixtures' wall. What the old note still gets right is that no *fixture* forced
+    /// the factor into being — the algebra did — and [`arc_side`] records which factors its own
+    /// population locks.
     axis_up: bool,
     /// Travel runs counter-clockwise about the circle's own normal (the axis).
     ///
@@ -3543,6 +3546,19 @@ pub(crate) fn loop_winding(
             // direction only because a line's tangent is the same everywhere on it. Two arcs of one
             // circle are tangent-continuous, so `continuation` answers `Straight` for them too —
             // and stepping there would read the winding from a different point of the ring.
+            // ★★★★★ **At `lo` itself a smooth boundary still states a winding — by curvature.**
+            // The step past a straight run is licensed by the stretch being a *line*, and two arcs
+            // of one circle are tangent-continuous without being one; stepping there would read the
+            // winding from a different point of the ring. But at `lo` there is nothing to step
+            // past: the loop **is** smooth at the extreme node, and a smooth extremum's winding is
+            // the arc's own rotation. See [`smooth_extremum_winding`].
+            // Not curved here: an ordinary straight run through `lo`, walked back as before.
+            Continuation::Straight
+                if ahead == lo
+                    && let (EdgeDir::Arc(e), EdgeDir::Arc(l)) = (&earlier, &later) =>
+            {
+                return smooth_extremum_winding(jd, p, e, l);
+            }
             Continuation::Straight
                 if matches!(earlier, EdgeDir::Arc(_)) || matches!(later, EdgeDir::Arc(_)) =>
             {
@@ -3559,6 +3575,55 @@ pub(crate) fn loop_winding(
         }
     };
     turn_between(jd, p, &arriving, &leaving)
+}
+
+/// **The winding of a ring that runs *smooth* through its extreme node** — curvature, not a turn.
+///
+/// ★★★★★ **This is not [`turn`]'s question, and that is why it is not [`turn`]'s arm.** `turn`
+/// answers "how much does the direction rotate at this node", and for two arcs of one circle the
+/// honest answer is `0`: they are tangent-continuous, nothing rotates *at* the node. What
+/// [`loop_winding`] needs there is a different fact — which way the boundary **curves** — and it is
+/// available only because the node is the ring's lexicographic minimum.
+///
+/// **Why the minimum makes it answerable.** `lo` is a hull vertex: the whole ring lies on one side
+/// of a supporting line through it. The boundary there is an arc, so the arc curves off that line
+/// into the side the ring is on — the region is locally convex at `lo`, and a locally convex point's
+/// turn carries the ring's orientation. For an arc that "turn" is spread along the arc rather than
+/// concentrated at a vertex, but its **sign** is the arc's own rotation, which is exactly the
+/// winding.
+///
+/// **The sign, in three factors.** Travel rotates about `s·m`, `s = +1` when `ccw`. The turn's
+/// reference is the face's **outward** normal, `n_out = frame_sign · n_P`, and `n_P · m > 0` is
+/// `axis_up`. So
+///
+/// ```text
+///   (s·m) · n_out = s · frame_sign · (n_P · m)
+///     ⇒  winding = ccw · axis_up · frame_sign
+/// ```
+///
+/// — no coordinate, no predicate, three signs the directions already carry.
+///
+/// The two arcs come from [`Continuation::Straight`], which for arcs means *one cylinder and the
+/// same travel sense*, so both agree on every factor; they are re-checked here rather than assumed,
+/// because this function's answer is a sign and a wrong one is silent.
+///
+/// ☑ **Which factors the population locks.** Negating the product, dropping `ccw`, and dropping
+/// `axis_up` each move the chained fixtures' wall (to `NonManifoldResultEdge`,
+/// [`RejectReason::RingOrientation`] and [`RejectReason::RulingBoundNotYet`] respectively), so the
+/// lock names them. Dropping `frame_sign` changes nothing: it is `+1` on every class that reaches
+/// this rule today, which is the same shape [`turn`]'s own note records for its factor — the
+/// difference being that `turn`'s corpus does reach `Reversed` faces and this rule's does not yet.
+fn smooth_extremum_winding(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    earlier: &ArcDir,
+    later: &ArcDir,
+) -> Result<i8, BoolError> {
+    if earlier.cyl != later.cyl || earlier.ccw != later.ccw || earlier.axis_up != later.axis_up {
+        return Err(reject(RejectReason::CurvedStraightRun));
+    }
+    let sign = |b: bool| if b { 1i8 } else { -1 };
+    Ok(sign(later.ccw) * sign(later.axis_up) * jd.planes[p].frame_sign)
 }
 
 /// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.
