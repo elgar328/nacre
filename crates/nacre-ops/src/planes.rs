@@ -1506,8 +1506,9 @@ pub(crate) struct PlaneSetup {
     pub(crate) cyls: Vec<WorkingCyl>,
     /// The gate's carried answer for the rulings road (M6-2): `(plane class, cylinder class)`
     /// pairs allowed through **without** a clearance proof — see
-    /// [`combinatorics::TraceInput::crossings`]. Always empty while the wall rule refuses that
-    /// population; the gate-opening cell fills it.
+    /// [`combinatorics::TraceInput::crossings`]. ★ It used to say "always empty while the wall rule
+    /// refuses that population" — the gate-opening cell arrived, and the `crossings.insert` below
+    /// fills it for a wall whose plane holds the axis exactly.
     pub(crate) crossings: std::collections::HashSet<(usize, usize)>,
     /// How this operation judges, and where its evidence goes — the two facts that belong to the
     /// operation rather than to any one plane. The caller pairs them with a table to make a

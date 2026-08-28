@@ -1712,9 +1712,14 @@ pub(crate) struct TraceInput {
     /// **The population gate's own answer, carried — never re-derived** (M6-2 rulings ladder):
     /// the `(plane class, cylinder class)` pairs the gate let through **without** proving the
     /// class's faces clear of the lateral. The tracer's ruling and chord arms fire only on pairs
-    /// listed here. Today's gate refuses every such pair, so this is **always empty** in
-    /// production — the ladder's gate-opening cell fills it, and this field is the plumbing that
-    /// makes that a one-arm change rather than a second spelling of the wall rule.
+    /// listed here.
+    ///
+    /// ★★ **It said "always empty in production" and that went stale** — the gate-opening cell
+    /// arrived and the record-and-pass arm fills it for a wall whose plane holds the axis exactly
+    /// (`planes.rs`, `crossings.insert`). ☑ Re-measured: listed for the wall/boss pair 2 times in
+    /// a plate-and-wall-boss fuse and 16 in the operation after it. A note that says what a
+    /// population *is* expires when the population changes; this one is dated by its measurement
+    /// instead.
     pub crossings: std::collections::HashSet<(usize, usize)>,
 }
 
