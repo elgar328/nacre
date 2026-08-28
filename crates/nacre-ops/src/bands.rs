@@ -1485,6 +1485,10 @@ mod tests {
         // of a pinched region exists in this decomposition. That is a statement about the
         // *tessellator*, not about this solid — `validate` is clean above and the volume is
         // exact — and `TessError`'s own doc draws that line.
+        // ★ Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
+        // census that only agreed with itself would be measuring when it looks rather than what
+        // came out. Both spellings say the same thing here.
+        m.rebuild_adjacency();
         let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default());
         assert!(
             matches!(mesh, Err(nacre_tess::TessError::SelfTouchingBoundary)),
@@ -1607,6 +1611,10 @@ mod tests {
         // `x = 4` face's hole touches its own outer ring at one point and the face's interior is
         // pinched there. `validate` is clean above and the volume is exact: this names what the
         // tessellator cannot draw, not a defect in the solid.
+        // ★ Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
+        // census that only agreed with itself would be measuring when it looks rather than what
+        // came out. Both spellings say the same thing here.
+        m.rebuild_adjacency();
         let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default());
         assert!(
             matches!(mesh, Err(nacre_tess::TessError::SelfTouchingBoundary)),

@@ -9147,3 +9147,26 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
         "a tunnel through the bore is a cylinder pair that meets"
     );
 }
+
+/// **The mesh census is live** — the invariant itself is asserted where the fact is made.
+///
+/// `boolean::tess_census::record` checks every result as it is produced ("undrawable only for a
+/// named reason"), because a test reading the vector afterwards sees only the booleans that ran
+/// before it. What is left for a test is that the census is **running at all**: a hook that
+/// silently stopped recording would take the whole guarantee with it and nothing would go red.
+///
+/// ★ The count is deliberately not asserted. It is whatever the suite happened to run before this
+/// test, and it moves with every fixture added — the population's *size* is pinned where the two
+/// known members are, beside their own geometry (`bands::tests`' two tangency fixtures).
+#[test]
+fn the_mesh_census_is_running() {
+    let seen = crate::boolean::tess_census::MESHED
+        .lock()
+        .expect("the census lock is never held across a panic")
+        .clone();
+    assert!(!seen.is_empty(), "the census never ran");
+    assert!(
+        seen.iter().any(|r| r.is_ok()),
+        "the census recorded no mesh at all"
+    );
+}

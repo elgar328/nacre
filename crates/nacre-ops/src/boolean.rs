@@ -79,7 +79,58 @@ pub fn boolean_with_report(
             None => reject(t),
         }));
     }
+    #[cfg(test)]
+    tess_census::record(model);
     Ok((result, BoolReport::of(&notes)))
+}
+
+/// **Can the kernel's own output be drawn?** — asked here because nowhere else asked it.
+///
+/// Every other census in this crate watches a decision the boolean makes ([`crate::reject_census`],
+/// `ruling_probe`, `bands::panel_probe`). None watched whether the solid that comes out can be
+/// meshed, and the answer was **no, twice in 2129** — a tangency whose face interior pinches — with
+/// nothing in the suite tessellating those two fixtures, so nobody saw it. This hook sits on the
+/// single success exit above, which is the one place both public entry points pass through.
+///
+/// ★★ **It runs before `rebuild_adjacency`, deliberately measured**: the failures reproduce on a
+/// rebuilt model too, so this is watching the result and not an artifact of when it looks.
+///
+/// ★ **Scope, plainly**: `#[cfg(test)]` is this crate's *unit* tests. `tests/*.rs` — the frozen
+/// census corpus, `perf`, `pipeline` — do **not** carry this hook, so "2129 booleans" is the lib
+/// suite's number and not the workspace's.
+///
+/// ★ A panic inside `tessellate` is left to escape. Swallowing it would make the census say
+/// "meshed" about a model that killed the mesher.
+///
+/// ★★★ The **invariant** is checked in [`tess_census::record`] rather than in a test that reads
+/// the vector afterwards — see the note there. The test's job is only to say the census ran and
+/// that the known population is still in it.
+#[cfg(test)]
+pub(crate) mod tess_census {
+    use nacre_tess::TessError;
+    use nacre_topo::Model;
+    use std::sync::Mutex;
+
+    /// One entry per boolean that returned a solid: the triangle count, or why not.
+    pub(crate) static MESHED: Mutex<Vec<Result<usize, TessError>>> = Mutex::new(Vec::new());
+
+    pub(crate) fn record(model: &Model) {
+        let r = nacre_tess::tessellate(model, &nacre_tess::TessConfig::default())
+            .map(|t| t.triangles.len());
+        // ★★★★★ **The claim is asserted here, where the fact exists — not in a later test.**
+        // A `#[test]` that reads this vector sees only the booleans that ran *before* it (☑
+        // measured: 764 of them, under `--test-threads=1`, because the suite runs in name order),
+        // so a solid built by any later test would go unchecked. Asserting at the record makes the
+        // coverage total and names the offending test in the panic instead of a distant census.
+        assert!(
+            !matches!(&r, Err(e) if *e != TessError::SelfTouchingBoundary),
+            "a boolean built a solid the mesher refuses for an unnamed reason: {r:?}"
+        );
+        MESHED
+            .lock()
+            .expect("the census lock is never held across a panic")
+            .push(r);
+    }
 }
 
 /// Record that `e` is leaving the kernel — the *surfaced* column of [`crate::reject_census`].
