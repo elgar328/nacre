@@ -124,15 +124,18 @@ fn a_donut_prism_is_a_valid_genus_one_solid() {
     assert!((volume(&m, d) - 12.0).abs() < 1e-12, "{}", volume(&m, d));
 }
 
-/// A hole is only a hole if the mesh and the exchange format agree it is one. Tessellation
-/// bridges cap holes, and STEP writes them as inner face bounds.
+/// A hole is only a hole if the mesh and the exchange format agree it is one. The tessellator
+/// sweeps the cap with its hole as a sibling ring, and STEP writes it as an inner face bound.
+///
+/// ★ This used to say tessellation *"bridges"* cap holes. It does not, and has not since the
+/// monotone sweep landed — bridging is exactly what that sweep exists to avoid.
 #[test]
 fn a_donut_prism_tessellates_and_exports() {
     let mut m = Model::new();
     extrude(&mut m, donut_profile(), 1.0);
 
     assert!(
-        nacre_tess::to_obj(&m).is_ok(),
+        nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).is_ok(),
         "caps triangulate with holes"
     );
     let step = nacre_step::to_step(&m).unwrap();

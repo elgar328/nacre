@@ -9,9 +9,12 @@
 //! STEP in step-loupe (its report flags dropped/orphan entities) or FreeCAD (an
 //! independent OCCT reader — cross-check face orientation), and the OBJ in Quick Look.
 //!
-//! A regular hexagon, for no reason but familiarity: `nacre_tess::to_obj` ear-clips
-//! planar faces and bridges their holes, so a concave profile would mesh correctly
-//! too. That was not true before the triangulator landed.
+//! A regular hexagon, for no reason but familiarity: the tessellator sweeps every face, holes
+//! and all, so a concave profile would mesh correctly too.
+//!
+//! ★ This used to read *"`to_obj` ear-clips planar faces and bridges their holes"* — both halves
+//! died when the monotone sweep replaced ear clipping (it **never merges rings**, which is the
+//! whole reason bridging went), and the comment outlived them by two cells.
 
 use nacre_math::Point2;
 use nacre_ops::SketchFrame;
@@ -51,7 +54,9 @@ fn main() {
     let step_path = format!("{prefix}.step");
     std::fs::write(&step_path, step).expect("write STEP file");
 
-    let obj = nacre_tess::to_obj(&model).expect("planar model meshes");
+    let obj = nacre_tess::tessellate(&model, &nacre_tess::TessConfig::default())
+        .expect("the model meshes")
+        .to_obj();
     let obj_path = format!("{prefix}.obj");
     std::fs::write(&obj_path, obj).expect("write OBJ file");
 

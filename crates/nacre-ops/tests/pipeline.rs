@@ -41,7 +41,9 @@ fn hexagon_extrude_exports_to_step_and_obj() {
     assert!(step.contains("MANIFOLD_SOLID_BREP"));
 
     // ops model → an OBJ mesh: 12 vertices (2n for a hexagon prism) plus faces.
-    let obj = nacre_tess::to_obj(&model).expect("planar model meshes");
+    let obj = tessellate(&model, &TessConfig::default())
+        .expect("the model meshes")
+        .to_obj();
     let v_lines = obj.lines().filter(|l| l.starts_with("v ")).count();
     let f_lines = obj.lines().filter(|l| l.starts_with("f ")).count();
     assert_eq!(v_lines, 12);
@@ -577,17 +579,17 @@ fn a_pocket_lid_carries_its_hole() {
     assert_agrees(&g, "pocketed cube");
 }
 
-#[test]
-fn the_bootstrap_obj_carries_holes_too() {
-    // The OBJ a user actually looks at comes from `to_obj(&Model)`, not from
-    // `tessellate`. It was a second fan with the same two bugs. Both now share one
-    // triangulator, so the lid's hole survives to Quick Look: `f` lines match the
-    // tessellation's triangles, and no triangle references a superseded vertex.
-    let (m, s) = pocketed_cube();
-    let obj = nacre_tess::to_obj(&m).expect("planar model meshes");
-    let f_lines = obj.lines().filter(|l| l.starts_with("f ")).count();
-    assert_eq!(f_lines, mesh_vs_props(&m, s).tris);
-}
+// ★★★★★ **`the_bootstrap_obj_carries_holes_too` lived here, and it had to go.**
+//
+// It compared the bootstrap `to_obj(&Model)`'s `f` lines against `tessellate`'s triangle count —
+// a real check while those were two roads, and its comment said so: *"Both now share one
+// triangulator, so the lid's hole survives to Quick Look."* The bootstrap is deleted, `to_obj` is
+// the tessellation's own writer, and the two sides of that `assert_eq!` became **the same
+// expression**. A test that compares `f(x)` with `f(x)` measures nothing while still looking like
+// a gate, which is a defect this repository has shipped before.
+//
+// What survives of it is a claim about the *writer* — one `f` line per triangle — and that is
+// asserted where the writer lives (`nacre-tess`' `unit_cube_obj_shape`).
 
 #[test]
 fn a_boolean_result_carries_its_hole() {

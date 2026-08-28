@@ -1,12 +1,17 @@
 //! Mesh export for the nacre kernel.
 //!
-//! Two paths coexist during M3:
-//! - [`to_obj`] — the M1 **bootstrap**: fan-triangulates a model's planar faces
-//!   from edge endpoints (convex, planar only; panics on closed edges). Kept for
-//!   the existing planar callers until they migrate.
-//! - [`tessellate`] → [`Tessellation`] — the provenance-tagged layer (design §5):
-//!   samples edges into shared polylines and triangulates faces (planar fans +
-//!   ruled cylinder bands) crack-free, tagging every vertex with its origin.
+//! **One path**: [`tessellate`] → [`Tessellation`] (design §5). Edges are sampled once into shared
+//! polylines and every face is triangulated in a chart of its own surface — a plane drops an axis,
+//! a cylinder unrolls to `(z, r·θ)` — so adjacent faces meet crack-free and every mesh vertex
+//! carries its origin ([`TessOrigin`]). OBJ text comes from [`Tessellation::to_obj`].
+//!
+//! ★★★★★ **There used to be two, and the second one lied.** An M1 bootstrap `to_obj(&Model)`
+//! fan-triangulated planar faces **from half-edge start vertices**, which silently turns an arc
+//! into a chord; this header promised it was "kept until the existing planar callers migrate"
+//! (during M3). The migration landed in M6 instead, three milestones late, after that writer had
+//! produced a wrong answer a third time — twice recorded in the dev-log and stepped in again. The
+//! projection rule it carried (Newell → drop axis → repair handedness) lives once now, in
+//! `planar_chart`; the sweep below it was always shared.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod polygon;
@@ -38,79 +43,11 @@ pub enum TessError {
     /// A hole wound the same way as its outer ring: the b-rep does not keep
     /// material on every loop's left. A broken solid, not a repairable mesh.
     HoleWinding,
-    /// The bootstrap OBJ writer met a curved face. It used to fan the face's edge
-    /// endpoints and emit nonsense; `tessellate` is the path that handles those.
-    NonPlanarFace,
     /// A face's **interior** triangulation left an edge outside the declared budget — the mesh
     /// would misrepresent the surface there. See [`within_budget`]: the boundary is sampled to the
     /// budget by construction, so this only ever reports what the sweep chose, and it reports it
     /// rather than drawing a face that is quietly the wrong shape.
     OverBudget,
-}
-
-/// Export a model to Wavefront OBJ text (vertices shared; each face fan-
-/// triangulated). Bootstrap — see the crate docs for the scope.
-///
-/// Only faces **reachable from `live_solids`** are emitted. `Store` is append-only
-/// and `boolean`/`pocket`/`pad` supersede rather than delete, so iterating the face
-/// store would mesh the operands alongside the result.
-///
-/// Every model vertex is still written, in store order, so an OBJ index stays a
-/// vertex handle's index; a superseded vertex simply goes unreferenced.
-///
-/// Every edge is bounded by type (S8); a boundless standalone circle would
-/// panic. Faces are emitted in their loop winding, which for M1's outward-wound
-/// `Orientation::Forward` faces yields outward-facing triangles.
-pub fn to_obj(model: &Model) -> Result<String, TessError> {
-    let mut out = String::new();
-    // Writing to a String is infallible; unwrap keeps `unused_must_use` quiet.
-    writeln!(
-        out,
-        "# nacre OBJ export (bootstrap: direct planar triangulation)"
-    )
-    .unwrap();
-
-    // Vertices in store order → OBJ indices 1..=n (matches each handle's index).
-    let pts: Vec<Point3> = model
-        .vertices
-        .iter()
-        .map(|(vh, _)| model.vertex_point(vh))
-        .collect();
-    for p in &pts {
-        let [x, y, z] = p.as_array();
-        writeln!(out, "v {} {} {}", x, y, z).unwrap();
-    }
-
-    /// A loop's start vertices, as indices into the vertex store.
-    fn ring(model: &Model, lp: &Loop) -> Vec<usize> {
-        lp.half_edges
-            .iter()
-            .map(|he| {
-                let bounds = model.edges.get(he.edge).vertices;
-                let start = if he.forward { bounds[0] } else { bounds[1] };
-                start.index() as usize
-            })
-            .collect()
-    }
-
-    let reach = model.reachable();
-    // Store order, not `HashSet` order: the OBJ must be reproducible.
-    for (fh, face) in model.faces.iter() {
-        if !reach.faces.contains(&fh) {
-            continue;
-        }
-        if !matches!(model.surface(face.surface), Surface::Plane(_)) {
-            return Err(TessError::NonPlanarFace);
-        }
-        let outer = ring(model, &face.outer);
-        let holes: Vec<Vec<usize>> = face.inner.iter().map(|lp| ring(model, lp)).collect();
-        let holes: Vec<&[usize]> = holes.iter().map(|h| h.as_slice()).collect();
-        for t in polygon::triangulate_polygon(&pts, &outer, &holes)? {
-            writeln!(out, "f {} {} {}", t[0] + 1, t[1] + 1, t[2] + 1).unwrap();
-        }
-    }
-
-    Ok(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -217,12 +154,15 @@ impl Tessellation {
 
 /// Tessellate a model into a provenance-tagged, crack-free triangle mesh.
 ///
-/// **Specialized, not general**: planar faces are fan-triangulated (convex
-/// only), cylindrical faces are sampled as a ruled band between their two
-/// circular rims. Edge polylines are sampled once and shared, so adjacent faces
+/// **One road for every face**: each is laid flat in a chart of its own surface ([`Chart`]) and
+/// triangulated by the same sweep. Edge polylines are sampled once and shared, so adjacent faces
 /// meet watertight (design §5). Reads the loop winding, not the `Orientation`
 /// flag — every producer winds loops outward, `Reversed` faces included
 /// (booleans emit both), and `validate` holds the two in agreement.
+///
+/// ★ This sentence used to read *"planar faces are fan-triangulated (convex only), cylindrical
+/// faces are sampled as a ruled band between their two rims"* — both halves died with the chart
+/// cell, and the doc outlived them.
 ///
 /// Only cells **reachable from `live_solids`** are meshed. `Store` is append-only
 /// and `boolean`/`pocket`/`pad` supersede rather than delete, so iterating the
@@ -851,9 +791,24 @@ mod tests {
             .collect()
     }
 
+    /// **What the OBJ writer owes, now that it is the only one.**
+    ///
+    /// ★ This used to run the bootstrap `to_obj(&Model)`, whose contract was *"every model vertex
+    /// is written in store order, so an OBJ index stays a vertex handle's index"*. That writer is
+    /// gone and the contract with it — an index is now a **mesh** vertex, and a mesh vertex says
+    /// far more than a handle did ([`TessOrigin`] names the vertex, edge or face it came from).
+    /// What is left to check here is the text: one `v` per mesh vertex, one `f` per triangle,
+    /// 1-based, and nothing referenced that was not written.
     #[test]
     fn unit_cube_obj_shape() {
-        let obj = to_obj(&cube([0.0, 0.0, 0.0], [1.0, 1.0, 1.0])).unwrap();
+        let t = tessellate(
+            &cube([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]),
+            &TessConfig::default(),
+        )
+        .unwrap();
+        let obj = t.to_obj();
+        assert_eq!(v_lines(&obj).len(), t.vertices.len());
+        assert_eq!(f_lines(&obj).len(), t.triangles.len());
         assert!(obj.lines().next().unwrap().starts_with('#'));
         assert_eq!(v_lines(&obj).len(), 8);
 
@@ -871,9 +826,21 @@ mod tests {
         assert_eq!(used.len(), 8); // every vertex referenced
     }
 
+    /// The eight corners come back as text — **as a set**.
+    ///
+    /// ★ Ordered comparison would pass today (☑ measured: the mesh's vertices come out in the
+    /// model's order for a cuboid, because `sample_edge` walks the edge store and dedups on first
+    /// sight). It is not a contract, though — nothing promises that traversal — so asserting it
+    /// would pin an artifact. The old test could compare ordered because the bootstrap writer
+    /// emitted the vertex *store*; that writer is gone.
     #[test]
     fn vertices_round_trip() {
-        let obj = to_obj(&cube([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0])).unwrap();
+        let obj = tessellate(
+            &cube([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]),
+            &TessConfig::default(),
+        )
+        .unwrap()
+        .to_obj();
         let got: Vec<[f64; 3]> = v_lines(&obj)
             .into_iter()
             .map(|l| {
@@ -881,7 +848,9 @@ mod tests {
                 [c[0], c[1], c[2]]
             })
             .collect();
-        let expected = vec![
+        let mut got = got;
+        got.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        let mut expected = vec![
             [-2.0, 1.0, 0.0],
             [3.0, 1.0, 0.0],
             [3.0, 4.0, 0.0],
@@ -891,6 +860,7 @@ mod tests {
             [3.0, 4.0, 10.0],
             [-2.0, 4.0, 10.0],
         ];
+        expected.sort_by(|a, b| a.partial_cmp(b).unwrap());
         assert_eq!(got, expected);
     }
 
@@ -1056,6 +1026,61 @@ mod tests {
         }
     }
 
+    /// ★★★★ **The chart follows the ring's own normal, on every plane — and the triangles follow
+    /// the ring.**
+    ///
+    /// Two goldens used to say this one layer down, against `triangulate_polygon`: a square on
+    /// `x = 5` wound CCW about `−x` (*"the projector must follow the ring's own normal, not a
+    /// coordinate convention"*), and the same square handed both ways round (*"reversing the ring
+    /// flips the Newell normal, and the same triangles come out with the opposite winding"*).
+    /// That function is gone — the projection rule lives once now, in [`planar_chart`] — so the
+    /// claims move here, where a cube states them **six times at once**, one per axis-aligned
+    /// plane, with `drop_axis` returning each of its three answers.
+    ///
+    /// ★ Stronger than what it replaces: the old test compared a ring against its own reversal
+    /// and could only say the two disagreed. This says which way is right — every face's
+    /// triangles wind about the face's **outward** normal, which is the property the mesh's
+    /// consumers actually rely on.
+    #[test]
+    fn every_planar_face_meshes_about_its_own_normal() {
+        let cfg = TessConfig::default();
+        let m = cube([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
+        let t = tessellate(&m, &cfg).unwrap();
+        let reach = m.reachable();
+        let mut faces = 0;
+        for (fh, face) in m.faces.iter() {
+            if !reach.faces.contains(&fh) {
+                continue;
+            }
+            let Surface::Plane(plane) = m.surface(face.surface) else {
+                continue;
+            };
+            let tris = &t.by_face[&fh];
+            assert_eq!(tris.len(), 2, "a rectangle is two triangles");
+            let sign = match face.orientation {
+                nacre_topo::Orientation::Forward => 1.0,
+                nacre_topo::Orientation::Reversed => -1.0,
+            };
+            let mut area = 0.0;
+            for &th in tris {
+                let [a, b, c] = t.triangles.get(th).vertices.map(|h| t.vertices.get(h).pos);
+                let cr = (b - a).cross(c - a);
+                assert!(
+                    cr.dot(plane.normal()) * sign > 0.0,
+                    "a triangle winds against its face's outward normal"
+                );
+                area += 0.5 * cr.norm();
+            }
+            // 5 × 3 × 10: two faces of each of the three rectangle shapes.
+            assert!(
+                [15.0, 50.0, 30.0].iter().any(|w| (area - w).abs() < 1e-12),
+                "face area {area}"
+            );
+            faces += 1;
+        }
+        assert_eq!(faces, 6, "all six planes, so all three `drop_axis` answers");
+    }
+
     /// ★★★★★ **A chart is a bijection, and the way back has to be the way back.**
     ///
     /// The chart may now invent an interior point, and an invented point's position comes from
@@ -1157,7 +1182,7 @@ mod tests {
             ext in prop::array::uniform3(1e-2f64..1e3),
         ) {
             let max = [min[0] + ext[0], min[1] + ext[1], min[2] + ext[2]];
-            let obj = to_obj(&cube(min, max)).unwrap();
+            let obj = tessellate(&cube(min, max), &TessConfig::default()).unwrap().to_obj();
             prop_assert_eq!(v_lines(&obj).len(), 8);
             let faces = f_lines(&obj);
             prop_assert_eq!(faces.len(), 12);

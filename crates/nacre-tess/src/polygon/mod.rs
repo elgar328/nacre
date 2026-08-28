@@ -14,7 +14,7 @@ mod monotone;
 use crate::TessError;
 use nacre_math::{Point3, Vector3};
 use nacre_predicates::orient2d;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 /// A point in the plane's projected frame.
 pub(crate) type P2 = [f64; 2];
@@ -91,94 +91,13 @@ pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
     }
 }
 
-/// Triangulate a planar polygon with holes, indices into `pts`.
-///
-/// Each hole must wind **opposite** to `outer` — the b-rep invariant that every loop
-/// keeps material on its left. A ring that violates it is a broken solid, not
-/// something to quietly repair.
-///
-/// Which side is "out" is the caller's to know, and it is never asked: the frame comes
-/// from the ring's own Newell normal, which lets a `Reversed` face mesh without anyone
-/// consulting its surface. Returns `V + 2H − 2` triangles for `V` ring vertices and `H`
-/// holes — a topological count, so it does not depend on how they were found.
-///
-/// ★ It offers [`triangulate_uv`] **no candidates**, and `back` is the reason it may not start to:
-/// that map covers the ring vertices only, so a placed interior point would index past its end.
-/// Loudly — an out-of-range index, not a wrong triangle — but a caller who wants interior points
-/// here has to grow `back` alongside `uv`.
-///
-/// **This used to bridge each hole into the outer ring and clip ears.** The bridge
-/// repeats a vertex, which makes the ring non-simple, which is the hypothesis Meisters'
-/// two-ears theorem needs — so a bridged ring can have no ear at all, and 27.6% of
-/// random rectilinear faces with two to four holes hit that. The sweep in
-/// [`monotone`] never merges rings, so the question does not arise.
-pub(crate) fn triangulate_polygon(
-    pts: &[Point3],
-    outer: &[usize],
-    holes: &[&[usize]],
-) -> Result<Vec<[usize; 3]>, TessError> {
-    if outer.len() < 3 || holes.iter().any(|h| h.len() < 3) {
-        return Err(TessError::DegenerateRing);
-    }
-    let n = newell(pts, outer);
-    if n.norm() <= 0.0 {
-        return Err(TessError::DegenerateRing);
-    }
-    let (iu, iv) = drop_axis(n);
-
-    // **Only the ring vertices are projected.** `to_obj` hands over the whole vertex
-    // store — indices there are handles, so it has to — and projecting all of it once
-    // per face was already waste. It would have become worse here, where the sweep
-    // allocates per-vertex state: `faces × store` instead of `faces × ring`.
-    let mut back: Vec<usize> = Vec::new();
-    let mut local: HashMap<usize, usize> = HashMap::new();
-    let mut rings: Vec<Vec<usize>> = Vec::new();
-    for r in std::iter::once(outer).chain(holes.iter().copied()) {
-        rings.push(
-            r.iter()
-                .map(|&i| {
-                    *local.entry(i).or_insert_with(|| {
-                        back.push(i);
-                        back.len() - 1
-                    })
-                })
-                .collect(),
-        );
-    }
-    let mut uv: Vec<P2> = back
-        .iter()
-        .map(|&i| {
-            let c = pts[i].as_array();
-            [c[iu], c[iv]]
-        })
-        .collect();
-
-    // **The frame's handedness is measured, not asserted.** The outer ring is CCW about
-    // its own Newell normal by construction, so if it comes out CW here the projection
-    // reversed orientation, and swapping `u` and `v` mirrors it back. This used to be a
-    // `debug_assert` over a shoelace sum, which meant that in release nobody checked and
-    // a near-edge-on face could run the whole triangulation in a flipped frame.
-    match ring_orientation(&rings[0], &uv) {
-        1 => {}
-        -1 => {
-            for p in &mut uv {
-                p.swap(0, 1);
-            }
-        }
-        _ => return Err(TessError::DegenerateRing),
-    }
-    let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
-    let out = triangulate_uv(&mut uv, &refs, &[])?;
-    Ok(out.into_iter().map(|t| t.map(|i| back[i])).collect())
-}
-
 /// Triangulate rings that are **already in a chart** — the chart-free core of this layer's one
 /// triangulation road (design §5): monotone decomposition, then the Lawson pass.
 ///
 /// ★★ **Precondition: the outer ring is CCW and every hole is CW, in `uv`.** The repair is the
 /// *caller's* because charts differ in what a repair costs. A planar face's two axes are
 /// interchangeable, so swapping them mirrors the frame for free — that is what
-/// [`triangulate_polygon`] does. A curved face's are not: `v` is the sweep axis, and swapping it
+/// `planar_chart` does. A curved face's are not: `v` is the sweep axis, and swapping it
 /// would send the sweep the wrong way across the surface, which is how a triangulation grows
 /// diagonals that leave the surface. Such a caller negates one axis instead. Both repairs are
 /// checked here rather than trusted.
@@ -342,24 +261,38 @@ mod tests {
     use super::*;
     use std::collections::HashSet;
 
-    fn pts(v: &[[f64; 2]]) -> Vec<Point3> {
-        v.iter()
-            .map(|p| Point3::from_array([p[0], p[1], 0.0]))
-            .collect()
+    /// The goldens below are written **as a chart** — the numbers are `uv` already.
+    ///
+    /// ★ They used to be lifted to `z = 0` and handed to `triangulate_polygon`, the projection
+    /// wrapper the bootstrap OBJ writer needed. That wrapper is gone (the projection rule lives
+    /// once, in `planar_chart`), and for a `z = 0` ring its projection was the identity — so no
+    /// coordinate here changes.
+    fn pts(v: &[[f64; 2]]) -> Vec<P2> {
+        v.to_vec()
+    }
+
+    /// The one road, given a golden's rings — a slice adapter, not a second rule: no projection,
+    /// no handedness repair, no candidates.
+    fn tri(uv: &[P2], outer: &[usize], holes: &[&[usize]]) -> Result<Vec<[usize; 3]>, TessError> {
+        let mut v = uv.to_vec();
+        let refs: Vec<&[usize]> = std::iter::once(outer)
+            .chain(holes.iter().copied())
+            .collect();
+        triangulate_uv(&mut v, &refs, &[])
     }
 
     /// The checks every golden gets, each catching a different fault: the count pins
     /// the triangulation's identity, the **unsigned** area sum pins that no triangle
     /// escaped the polygon (a signed sum cancels and shoelace agrees), and all-CCW
     /// pins that none is folded.
-    fn check(p: &[Point3], tris: &[[usize; 3]], want_n: usize, want_area: f64) {
+    fn check(p: &[P2], tris: &[[usize; 3]], want_n: usize, want_area: f64) {
         assert_eq!(tris.len(), want_n, "triangle count");
         let mut sum = 0.0;
         for t in tris {
             let (a, b, c) = (p[t[0]], p[t[1]], p[t[2]]);
-            let cr = (b - a).cross(c - a);
-            assert!(cr[2] > 0.0, "triangle {t:?} is not CCW");
-            sum += 0.5 * cr.norm();
+            let cr = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+            assert!(cr > 0.0, "triangle {t:?} is not CCW");
+            sum += 0.5 * cr.abs();
         }
         assert!((sum - want_area).abs() < 1e-12, "area {sum} vs {want_area}");
     }
@@ -410,7 +343,7 @@ mod tests {
     #[test]
     fn a_square_is_two_triangles() {
         let p = pts(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
-        let t = triangulate_polygon(&p, &[0, 1, 2, 3], &[]).unwrap();
+        let t = tri(&p, &[0, 1, 2, 3], &[]).unwrap();
         check(&p, &t, 2, 1.0);
         check_partition(&t, &[0, 1, 2, 3], &[]);
     }
@@ -431,7 +364,7 @@ mod tests {
             [0.0, 2.0],
         ]);
         let ring: Vec<usize> = (0..8).collect();
-        let t = triangulate_polygon(&p, &ring, &[]).unwrap();
+        let t = tri(&p, &ring, &[]).unwrap();
         // Bar 3×1, left prong 1×1, right prong 1×1.3.
         check(&p, &t, 6, 3.0 + 1.0 + 1.3);
         check_partition(&t, &ring, &[]);
@@ -450,7 +383,7 @@ mod tests {
             [0.0, 2.0],
         ]);
         let ring: Vec<usize> = (0..6).collect();
-        let t = triangulate_polygon(&p, &ring, &[]).unwrap();
+        let t = tri(&p, &ring, &[]).unwrap();
         check(&p, &t, 4, 3.0);
         check_partition(&t, &ring, &[]);
     }
@@ -470,7 +403,7 @@ mod tests {
             [0.7, 0.3],
         ]);
         let hole = [4, 5, 6, 7];
-        let t = triangulate_polygon(&p, &[0, 1, 2, 3], &[&hole]).unwrap();
+        let t = tri(&p, &[0, 1, 2, 3], &[&hole]).unwrap();
         check(&p, &t, 8, 1.0 - 0.16);
         check_partition(&t, &[0, 1, 2, 3], &[&hole]);
     }
@@ -492,7 +425,7 @@ mod tests {
             [2.8, 0.2],
         ]);
         let (h0, h1) = ([4, 5, 6, 7], [8, 9, 10, 11]);
-        let t = triangulate_polygon(&p, &[0, 1, 2, 3], &[&h0, &h1]).unwrap();
+        let t = tri(&p, &[0, 1, 2, 3], &[&h0, &h1]).unwrap();
         check(&p, &t, 12 + 4 - 2, 3.0 - 2.0 * 0.36);
         check_partition(&t, &[0, 1, 2, 3], &[&h0, &h1]);
     }
@@ -529,8 +462,8 @@ mod tests {
             [2.0, -0.703557871642477],
         ]);
         let (upper, lower) = ([4, 5, 6, 7], [8, 9, 10, 11]);
-        let t = triangulate_polygon(&p, &[0, 1, 2, 3], &[&upper, &lower]).unwrap();
-        let window = |a: usize, b: usize| p[b].as_array()[1] - p[a].as_array()[1];
+        let t = tri(&p, &[0, 1, 2, 3], &[&upper, &lower]).unwrap();
+        let window = |a: usize, b: usize| p[b][1] - p[a][1];
         check(
             &p,
             &t,
@@ -601,7 +534,7 @@ mod tests {
             }
             let p = pts(&flat);
             let hs: Vec<&[usize]> = holes.iter().map(|v| v.as_slice()).collect();
-            let t = triangulate_polygon(&p, &[0, 1, 2, 3], &hs).expect("meshes");
+            let t = tri(&p, &[0, 1, 2, 3], &hs).expect("meshes");
             check(
                 &p,
                 &t,
@@ -672,49 +605,17 @@ mod tests {
     }
 
     #[test]
-    fn a_plane_other_than_xy() {
-        // Same square, on x = 5, wound CCW about −x. The projector must follow the
-        // ring's own normal, not a coordinate convention.
-        let p: Vec<Point3> = [[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0]]
-            .iter()
-            .map(|c| Point3::from_array([5.0, c[0], c[1]]))
-            .collect();
-        let t = triangulate_polygon(&p, &[0, 1, 2, 3], &[]).unwrap();
-        assert_eq!(t.len(), 2);
-        let area: f64 = t
-            .iter()
-            .map(|t| 0.5 * (p[t[1]] - p[t[0]]).cross(p[t[2]] - p[t[0]]).norm())
-            .sum();
-        assert!((area - 1.0).abs() < 1e-12);
-    }
-
-    #[test]
     fn degenerate_rings_are_errors() {
-        let p = pts(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
+        let two = pts(&[[0.0, 0.0], [1.0, 0.0]]);
         assert!(matches!(
-            triangulate_polygon(&p, &[0, 1], &[]),
+            tri(&two, &[0, 1], &[]),
             Err(TessError::DegenerateRing)
         ));
-        // Collinear points have no normal.
         let line = pts(&[[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]);
         assert!(matches!(
-            triangulate_polygon(&line, &[0, 1, 2], &[]),
+            tri(&line, &[0, 1, 2], &[]),
             Err(TessError::DegenerateRing)
         ));
-    }
-
-    #[test]
-    fn a_ring_is_always_ccw_about_its_own_normal() {
-        // Reversing the outer ring does not make it "clockwise" — it flips the Newell
-        // normal, and the same triangles come out with the opposite winding. This
-        // function cannot know which side is out, and does not pretend to.
-        let p = pts(&[[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]);
-        let fwd = triangulate_polygon(&p, &[0, 1, 2, 3], &[]).unwrap();
-        let rev = triangulate_polygon(&p, &[3, 2, 1, 0], &[]).unwrap();
-        assert_eq!(fwd.len(), rev.len());
-        let z = |t: &[usize; 3]| (p[t[1]] - p[t[0]]).cross(p[t[2]] - p[t[0]])[2];
-        assert!(fwd.iter().all(|t| z(t) > 0.0));
-        assert!(rev.iter().all(|t| z(t) < 0.0));
     }
 
     #[test]
@@ -733,7 +634,7 @@ mod tests {
         ]);
         let ccw_hole = [4, 5, 6, 7];
         assert!(matches!(
-            triangulate_polygon(&p, &[0, 1, 2, 3], &[&ccw_hole]),
+            tri(&p, &[0, 1, 2, 3], &[&ccw_hole]),
             Err(TessError::HoleWinding)
         ));
     }

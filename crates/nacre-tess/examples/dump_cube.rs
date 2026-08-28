@@ -4,7 +4,7 @@
 //! then open the file in MeshLab / f3d / any OBJ viewer.
 
 use nacre_math::Point3;
-use nacre_tess::to_obj;
+use nacre_tess::{TessConfig, tessellate};
 use nacre_topo::Model;
 
 fn main() {
@@ -17,7 +17,9 @@ fn main() {
     let path = std::env::args()
         .nth(1)
         .unwrap_or_else(|| "cube.obj".to_string());
-    let obj = to_obj(&model).expect("planar model meshes");
+    let obj = tessellate(&model, &TessConfig::default())
+        .expect("the model meshes")
+        .to_obj();
     std::fs::write(&path, obj).expect("write OBJ file");
     println!("wrote {path} — open in MeshLab / f3d / any OBJ viewer");
 }

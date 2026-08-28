@@ -4631,7 +4631,10 @@ fn transform_translate_cuboid() {
             "bbox shifted by offset"
         );
     }
-    assert!(nacre_tess::to_obj(&m).is_ok(), "moved solid tessellates");
+    assert!(
+        nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).is_ok(),
+        "moved solid tessellates"
+    );
     assert!(
         nacre_step::to_step(&m)
             .unwrap()
@@ -4846,7 +4849,10 @@ fn transform_rotate_cuboid_tilts_and_cuts() {
         "volume invariant"
     );
     assert!((after.area - before.area).abs() < 1e-9, "area invariant");
-    assert!(nacre_tess::to_obj(&m).is_ok(), "rotated solid tessellates");
+    assert!(
+        nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).is_ok(),
+        "rotated solid tessellates"
+    );
     assert!(
         nacre_step::to_step(&m)
             .unwrap()
@@ -5424,7 +5430,7 @@ fn rerotate_same_axis_chains() {
         "volume invariant"
     );
     assert!((after.area - before.area).abs() < 1e-9, "area invariant");
-    assert!(nacre_tess::to_obj(&m).is_ok());
+    assert!(nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).is_ok());
     assert!(
         nacre_step::to_step(&m)
             .unwrap()
