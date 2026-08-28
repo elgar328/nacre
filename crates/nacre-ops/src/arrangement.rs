@@ -1219,7 +1219,7 @@ fn trace_one(
                 FaceRow::Cylinder(cf) => cf,
                 FaceRow::Plane(_) => unreachable!("ClassIx::Cyl marks a cylinder row"),
             };
-            match circle_on_class(cf, &planes[wc]) {
+            match circle_on_class(jd, cyls, cf, fl, wc) {
                 Ok(Some(on)) => out.circles.push(CircleTrace {
                     cyl: k,
                     solid: which,
@@ -1427,9 +1427,13 @@ pub(crate) enum CylOnClass {
 }
 
 fn circle_on_class(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     cf: &crate::planes::CylFaceInfo,
-    wp: &WorkingPlane,
+    fl: &combinatorics::FaceLoops,
+    wc: usize,
 ) -> Result<Option<CylOnClass>, DeclineKind> {
+    let wp = &jd.planes[wc];
     // The world description — the cylinder's statement is world, and a comparison across two
     // frames is a silently wrong answer, not a slow one.
     let Some(coeffs) = wp.world_rat else {
@@ -1462,34 +1466,25 @@ fn circle_on_class(
     // ★ The test is narrow on purpose: a hole this class does not meet changes nothing, and
     // refusing for it would take back operations that work today.
     // ★★★★★ **`None` here is not "no holes" — it is "I could not describe them", and letting it
-    // fall through would re-plant the very silence this arm removes.** (Measured: 2 of 287 lateral
-    // rows in the suite answer `None`, and the first draft of this check waved them past.)
-    let Some(holes) = &cf.holes else {
+    // fall through would re-plant the very silence this arm removes.**
+    let Some(holes) = &fl.holes else {
         return Err(DeclineKind::CylFaceHole);
     };
-    // ★★ **Every ⊥ edge, not the first two.** A rectangular hole has exactly two and either
-    // reading gives the same answer, but a **staircase** hole has more, and taking the first pair
-    // yields a *narrower* interval — a decline that quietly stops declining, which is the very
-    // shape this arm exists to remove. The min/max is the conservative reading and needs no
-    // premise about the hole's shape. ☑ Measured: every inner loop this binary builds (10 of them)
-    // is a chart rectangle — 4 edges, 2 of them ⊥ — so the two readings agree today and this is
-    // written for the population that has not arrived yet.
+    // ★★★★★ **The hole is read by the walk every other face's boundary is read by** — the face's
+    // own loop, against this class, through [`combinatorics::ring_against_plane`]. It used to be an
+    // interval derived from the loop's ⊥ carriers, which is exact for a chart rectangle and a
+    // *premise* for anything else; the walk asks the ring instead and needs no premise about the
+    // hole's shape. Any feature at all — a crossing, or a run along one of the hole's rims — means
+    // this class meets the hole and "the whole circle" is a false sentence.
     for h in holes {
-        let mut lo: Option<&nacre_scalar::Rat> = None;
-        let mut hi: Option<&nacre_scalar::Rat> = None;
-        for at in h.iter().filter_map(|e| e.at.as_ref()) {
-            if lo.is_none_or(|l| at < l) {
-                lo = Some(at);
-            }
-            if hi.is_none_or(|h| at > h) {
-                hi = Some(at);
-            }
-        }
-        let (Some(lo), Some(hi)) = (lo, hi) else {
-            continue; // no ⊥ rim: this hole bounds nothing in the axis parameter
-        };
-        if *lo <= t && t <= *hi {
+        // A one-edge hole loop whose far face is a cylinder is two laterals meeting: M6b's pair,
+        // not this road's. It has no ring to walk, so it declines rather than passing unread.
+        let Some(nr) = h.poly() else {
             return Err(DeclineKind::CylFaceHole);
+        };
+        match combinatorics::ring_against_plane(jd, cyls, &nr.triples, wc) {
+            combinatorics::RingWalk::Met(f) if f.is_empty() => {}
+            _ => return Err(DeclineKind::CylFaceHole),
         }
     }
     if span[0] < t && t < span[1] {

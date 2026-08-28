@@ -1679,7 +1679,10 @@ impl LoopRing {
 /// tracer's to say, not this table's.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct FaceLoops {
-    /// The outer loop, or `None` if [`face_vertex_triples`] declined.
+    /// The outer loop, or `None` if [`face_vertex_triples`] declined — and always `None` for a
+    /// **lateral** face, whose outer loop is the two rims joined by a self-adjacent seam edge that
+    /// no triple names (`crate::planes::CylFaceInfo::span` states that loop instead). Its `holes`
+    /// beside it are named like any other face's.
     pub outer: Option<LoopRing>,
     /// One entry per hole ring, or `None` if [`hole_rings`] declined for **any** of them — a hole
     /// that cannot be named is not "no hole".
@@ -1734,13 +1737,24 @@ pub(crate) fn trace_input(
         for sh in crate::planes::solid_shell_handles(model, solid) {
             for &fh in &model.shells.get(sh).faces {
                 let fp = surf_ix[&fh];
-                // ★ A **lateral face** is not named here (M6-2a): its loops are the two rims,
-                // which no triple describes, and the tracer reads the face's cylinder row
-                // rather than its loops. The empty `FaceLoops` is never looked at — the
-                // tracer's cylinder arm returns before touching it — so this is a skip, not a
+                // ★ A **lateral face's outer loop** is not named (M6-2a): it is the two rims joined
+                // by the chart's seam, the seam edge is self-adjacent, and no triple describes its
+                // corners — `CylFaceInfo::span` states that loop instead, and the tracer's cylinder
+                // arm reads the row for it. So `outer` stays `None` here; it is a skip, not a
                 // decline.
+                //
+                // ★★★★★ **Its holes are named like every other face's.** A fuse can burn a hole
+                // into a band (a boss straddling a plate's wall), and that loop is an ordinary
+                // closed ring whose corners are `plane ∩ plane ∩ cylinder` — the shape
+                // [`branch_name_from_def`] restates. The tracer needs it to answer *per angle*
+                // instead of claiming the whole circle, and naming it here is what puts the lateral
+                // on the same road as everything else: one walk ([`ring_against_plane`]), not a
+                // second description of the same loop.
                 let loops = if matches!(plane_ix[fp], ClassIx::Cyl(_)) {
-                    FaceLoops::default()
+                    FaceLoops {
+                        outer: None,
+                        holes: hole_rings(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
+                    }
                 } else {
                     FaceLoops {
                         outer: face_vertex_triples(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
@@ -1779,7 +1793,8 @@ pub(crate) fn hole_rings(
         .collect()
 }
 
-/// A loop's vertices as three-plane triples.
+/// A loop's vertices as names — a three-plane triple, or a branch point where a cylinder is one of
+/// the three surfaces (the face's own, or a neighbour's).
 ///
 /// The name normally comes from the loop itself — the face's own plane and the two neighbours the
 /// meeting edges carry. **That fails when both neighbours lie on one plane**: an earlier boolean can
@@ -1848,38 +1863,59 @@ fn loop_triples(
         // lacked was the vertex's restatement into class space ([`branch_name_from_def`] — the
         // vertex already carries its own name) and somewhere to write a curved carrier
         // ([`NamedRing`]'s `Wall`). The one curved loop answered before this point is the circle.
-        let ClassIx::Plane(near) = plane_ix[p] else {
-            unreachable!("a cylinder face's loops are not walked here — `trace_input` skips them")
+        //
+        // ★★★★★ **And the face itself may be the cylinder now.** A lateral face's *hole* is a loop
+        // like any other — a rectangle of two arcs and two rulings in the chart — and its corners
+        // are `plane ∩ plane ∩ cylinder`, the very shape [`branch_name_from_def`] restates. The
+        // only loop of a lateral face this road still cannot walk is its **outer** one, whose seam
+        // edge is self-adjacent (`other` gives back `p`) and whose corners are therefore not
+        // three-surface points; `CylFaceInfo::span` states that loop instead.
+        let corner = || {
+            shared_vertex(in_bounds, out_bounds)
+                .ok_or_else(|| reject(RejectReason::AmbiguousCorner))
         };
-        let branch = match (plane_ix[a], plane_ix[b]) {
-            (ClassIx::Cyl(k), ClassIx::Plane(far)) | (ClassIx::Plane(far), ClassIx::Cyl(k)) => {
-                let corner = shared_vertex(in_bounds, out_bounds)
-                    .ok_or_else(|| reject(RejectReason::AmbiguousCorner))?;
-                Some(
-                    branch_name_from_def(model, jd, corner, k, [near, far])
+        let branch = match plane_ix[p] {
+            ClassIx::Plane(near) => match (plane_ix[a], plane_ix[b]) {
+                (ClassIx::Cyl(k), ClassIx::Plane(far)) | (ClassIx::Plane(far), ClassIx::Cyl(k)) => {
+                    Some(
+                        branch_name_from_def(model, jd, corner()?, k, [near, far])
+                            .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
+                    )
+                }
+                // Two laterals meeting at one corner is M6b's cylinder pair, not this road's.
+                (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
+                    return Err(reject(RejectReason::CurvedOperandBoundary));
+                }
+                (ClassIx::Plane(_), ClassIx::Plane(_)) => None,
+            },
+            ClassIx::Cyl(k) => match (plane_ix[a], plane_ix[b]) {
+                (ClassIx::Plane(x), ClassIx::Plane(y)) => Some(
+                    branch_name_from_def(model, jd, corner()?, k, [x, y])
                         .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
-                )
-            }
-            // Two laterals meeting at one corner is M6b's cylinder pair, not this road's.
-            (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
-                return Err(reject(RejectReason::CurvedOperandBoundary));
-            }
-            (ClassIx::Plane(_), ClassIx::Plane(_)) => None,
+                ),
+                // A lateral's loop running along a second lateral is M6b's cylinder pair too.
+                _ => return Err(reject(RejectReason::CurvedOperandBoundary)),
+            },
         };
         // Edge `i`'s carried wall: the far face's class, read off `inc` — total even where the
         // vertex *names* below have to fall back or decline (see [`NamedRing`]).
-        walls.push(match plane_ix[b] {
-            ClassIx::Plane(w) => crate::boolean::Wall::Plane(w),
-            ClassIx::Cyl(k) => {
+        walls.push(match (plane_ix[b], plane_ix[p]) {
+            (ClassIx::Plane(w), _) => crate::boolean::Wall::Plane(w),
+            (ClassIx::Cyl(k), ClassIx::Plane(near)) => {
                 let end = branch.expect("a curved edge's corner is a branch point");
                 curved_wall(model, jd, cyls, &hes[i], k, near, end)?
+            }
+            (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
+                unreachable!("a lateral face beside a lateral neighbour was rejected above")
             }
         });
         if let Some(n) = branch {
             out.push(n);
             continue;
         }
-        let (ClassIx::Plane(wall), ClassIx::Plane(far)) = (plane_ix[b], plane_ix[a]) else {
+        let (ClassIx::Plane(near), ClassIx::Plane(wall), ClassIx::Plane(far)) =
+            (plane_ix[p], plane_ix[b], plane_ix[a])
+        else {
             unreachable!("the curved arms are handled above")
         };
         // `inc` names faces, so `other` matches by face — but the triple names *planes*, and a

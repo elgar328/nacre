@@ -1065,8 +1065,12 @@ pub enum DeclineKind {
     /// relation broken and says [`RejectReason::LabelConflict`] — a symptom, not the cause. The
     /// refusal belongs where the false sentence is made.
     ///
-    /// Lifting it is the arc-extent trace: walk the face's inner loops against the class the way a
-    /// plane face's loops are walked, and answer per angular interval.
+    /// ★★ **The hole is now read by the one ring walk**
+    /// ([`combinatorics::ring_against_plane`]) rather than by an interval derived from the loop's
+    /// ⊥ carriers, so this fires on *any* feature the walk finds — a crossing, or a run along one
+    /// of the hole's own rims — and needs no premise about the hole's shape. What is left to lift
+    /// is the answer itself: split the circle at those features and speak per angular interval,
+    /// which is what a plane face's tracer already does with the same walk's output.
     CylFaceHole,
     /// A class runs **through a lateral's axis** and the ruling trace could not be stated
     /// exactly — a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`
