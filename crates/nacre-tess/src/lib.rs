@@ -32,14 +32,37 @@ use std::fmt::Write;
 pub enum TessError {
     /// The rings are not a polygon with sibling holes, so no triangulation of them
     /// exists: fewer than three vertices, a zero-area ring, a vertex used by two rings
-    /// or repeated within one, two vertices at the same point, a spike, or a boundary
-    /// that crosses itself.
+    /// **by index** or repeated within one, a spike, or two segments crossing with no
+    /// vertex at the crossing.
+    ///
+    /// ★ **The cases where two vertices meet in *coordinates* moved out**, to
+    /// [`Self::SelfTouchingBoundary`] — this doc used to list them here, and they are a different
+    /// proposition: those rings are exactly what the b-rep asked for, and it is this decomposition
+    /// that has no answer for them.
     ///
     /// **The sweep detects these, where ear clipping used to notice them by accident**
     /// (it stalled, and that stall was reported as `NoEar`). It is checked rather than
     /// assumed because the b-rep guarantees it and this layer cannot: a decomposition
     /// handed a self-crossing ring would otherwise return a confident, wrong mesh.
     DegenerateRing,
+    /// **The face's boundary touches itself**: some vertex lies on the boundary somewhere other
+    /// than at its own two edges — on another ring, or on a non-adjacent part of its own. The
+    /// region is pinched there, so it is not a disk with sibling holes and this decomposition has
+    /// no triangulation of it.
+    ///
+    /// ★★★★★ **This does not say the solid is wrong.** The measured population is an exact
+    /// **tangency** — a hole touching another ring at one point, where a sampled circle vertex
+    /// lands on the touch — and both fixtures that produce it are `validate`-clean with volumes
+    /// exact to `1e-9`. Whether a face whose *interior* pinches is a non-manifold point on the
+    /// surface is a real question, and `validate` cannot see it (there is no topology vertex
+    /// there); it belongs to the capability that teaches the non-manifold test about tangential
+    /// contact, not to this layer. So this name states only what this layer knows.
+    ///
+    /// ★ The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier,
+    /// by `monotone`'s `link`, and comes back as [`Self::DegenerateRing`]. That check has been
+    /// there all along and calls the same thing a *pinch*; this is the spelling a chart actually
+    /// produces, since `face_rings` gives every ring its own index range.
+    SelfTouchingBoundary,
     /// A hole wound the same way as its outer ring: the b-rep does not keep
     /// material on every loop's left. A broken solid, not a repairable mesh.
     HoleWinding,

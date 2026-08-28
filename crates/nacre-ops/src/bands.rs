@@ -1479,6 +1479,18 @@ mod tests {
             0,
             "genus 1: V{v_n} E{e_n} F{f_n} L{l_n}"
         );
+        // ★★★★★ **And the solid cannot be meshed — say so here, where the geometry is.**
+        // The boss's footprint touches the bore's rim at exactly one point, so the plate's top
+        // face has two inner loops meeting there: its interior is pinched, and no triangulation
+        // of a pinched region exists in this decomposition. That is a statement about the
+        // *tessellator*, not about this solid — `validate` is clean above and the volume is
+        // exact — and `TessError`'s own doc draws that line.
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default());
+        assert!(
+            matches!(mesh, Err(nacre_tess::TessError::SelfTouchingBoundary)),
+            "the tangency's mesh: {:?}",
+            mesh.map(|t| t.triangles.len())
+        );
     }
 
     /// ★★ **The fence post: a crossing that lands exactly on a segment's endpoint.** The boss's
@@ -1589,6 +1601,17 @@ mod tests {
             v_n - e_n + f_n - l_n,
             2,
             "genus 0: V{v_n} E{e_n} F{f_n} L{l_n}"
+        );
+        // ★★★★★ **And the solid cannot be meshed — the same pinch, spelled inner-to-outer.**
+        // The boss's base circle is tangent to the plate's `z = 2` edge at `(4, 2, 2)`, so the
+        // `x = 4` face's hole touches its own outer ring at one point and the face's interior is
+        // pinched there. `validate` is clean above and the volume is exact: this names what the
+        // tessellator cannot draw, not a defect in the solid.
+        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default());
+        assert!(
+            matches!(mesh, Err(nacre_tess::TessError::SelfTouchingBoundary)),
+            "the tangency's mesh: {:?}",
+            mesh.map(|t| t.triangles.len())
         );
     }
 

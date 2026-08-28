@@ -18,7 +18,7 @@
 //! ones) and which side of a line a point falls on (`orient2d`, Shewchuk adaptive).
 //! There is no tolerance anywhere in this file.
 
-use super::{P2, lex_less};
+use super::{P2, lex_less, strictly_between};
 use crate::TessError;
 use nacre_predicates::orient2d;
 
@@ -65,6 +65,9 @@ enum Kind {
 pub(super) fn decompose(uv: &[P2], rings: &[&[usize]]) -> Result<Vec<Vec<usize>>, TessError> {
     let n = uv.len();
     let (prev, next) = link(n, rings)?;
+    if self_touch(uv, &next).is_some() {
+        return Err(TessError::SelfTouchingBoundary);
+    }
 
     let kinds = classify(uv, &prev, &next)?;
     let diagonals = sweep(uv, &prev, &next, &kinds)?;
@@ -92,6 +95,48 @@ fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usize>), TessEr
         return Err(TessError::DegenerateRing);
     }
     Ok((prev, next))
+}
+
+/// **Does any vertex lie on the boundary somewhere other than at its own two edges?**
+///
+/// The geometric twin of [`link`]'s check one function up. That one refuses two rings that share
+/// an **index** — *"a pinch, and the sweep would have no way to know which chain it was on"* — and
+/// this one refuses the same pinch spelled in **coordinates**, which is the spelling a chart
+/// actually produces: `face_rings` gives every ring its own index range, so two rings that touch
+/// do it with distinct indices at one point.
+///
+/// One rule over every boundary segment, rings not distinguished: a vertex may sit on a segment's
+/// interior (`strictly_between`) or coincide with one of its ends, and either way the region is
+/// pinched there. The two segments incident to the vertex are skipped — every vertex touches
+/// those. Exact throughout: `orient2d` decides collinearity and the rest is `f64` comparison on
+/// stored coordinates, like everything else in this file.
+///
+/// ★ **Not caught here**: two segments *crossing* with no vertex at the crossing. That stays
+/// [`TessError::DegenerateRing`] from further down. It is not the measured population — a tangency
+/// always lands a sampled vertex on the touch — and naming what this does not see beats leaving
+/// the gap unstated.
+fn self_touch(uv: &[P2], next: &[usize]) -> Option<(usize, usize)> {
+    for (i, &p) in uv.iter().enumerate() {
+        for a in 0..uv.len() {
+            let b = next[a];
+            if a == i || b == i {
+                continue;
+            }
+            let (u, v) = (uv[a], uv[b]);
+            // The segment's box first: four comparisons instead of an exact predicate.
+            if p[0] < u[0].min(v[0])
+                || p[0] > u[0].max(v[0])
+                || p[1] < u[1].min(v[1])
+                || p[1] > u[1].max(v[1])
+            {
+                continue;
+            }
+            if orient2d(u, v, p) == 0.0 && (strictly_between(u, v, p) || p == u || p == v) {
+                return Some((i, a));
+            }
+        }
+    }
+    None
 }
 
 fn classify(uv: &[P2], prev: &[usize], next: &[usize]) -> Result<Vec<Kind>, TessError> {
