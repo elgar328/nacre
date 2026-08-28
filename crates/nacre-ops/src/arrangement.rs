@@ -346,11 +346,17 @@ fn merge_circles(
     Ok(out)
 }
 
-/// **A whole ruling of a solid's trace on a ∥ class** (M6-2 rulings ladder): a lateral face's
-/// mark on a plane class that contains the cylinder's axis — one of the two axis-parallel lines,
-/// spanning the face's own rims. The ruling sibling of [`CircleTrace`], with ends because a
-/// ruling is not closed: `end[0]` → `end[1]` ascends the axis, and both are Branch names
-/// (`{wc, rim plane, cyl, root}` — the rim planes are real classes, found by the tracer).
+/// **One piece of a solid's ruling trace on a ∥ class** (M6-2 rulings ladder): a lateral face's
+/// mark on a plane class that contains the cylinder's axis, along one of the two axis-parallel
+/// lines. The ruling sibling of [`CircleTrace`], with ends because a ruling is not closed:
+/// `end[0]` → `end[1]` ascends the axis, and both are Branch names (`{wc, ⊥ plane, cyl, root}` —
+/// real classes, found by the tracer).
+///
+/// ★★ **It used to say "spanning the face's own rims", and a hole makes that false.** Where the
+/// face is buried in the other body it does not *cross* the wall its hole's vertical edges lie on
+/// — it ends at it — so one ruling comes in pieces of different [`SegKind`]s and each is its own
+/// trace. See [`ruling_grazes`]. A face with no hole still yields exactly one piece per ruling,
+/// rim to rim.
 #[derive(Clone, Debug)]
 pub(crate) struct RulingTrace {
     /// The cylinder class, with `side` the ruling's identity
@@ -2122,12 +2128,19 @@ fn rim_class_at(
     })
 }
 
-/// **The two rulings a through-axis class cuts on a lateral face**, as traces — the ∥ sibling of
-/// [`circle_on_class`]'s transversal circle. Asked only after that road answered "no circle";
-/// answers `Ok(None)` (silently, today's state) unless the class runs **exactly through the
-/// axis**, and declines rather than contributing *partially* when it does but a piece cannot be
-/// stated — a half-contributed rectangle would leave the class's 1-skeleton dangling, which is a
-/// worse lie than an honest incomplete-trace mark.
+/// **What a lateral face leaves on a through-axis class** — the ∥ sibling of [`circle_on_class`],
+/// and like it, an answer **per extent** rather than one for the whole ruling.
+///
+/// Asked only after the circle road answered "no circle"; **empty** (silently, today's state)
+/// unless the class runs **exactly through the axis**, and declining rather than contributing
+/// *partially* when it does but a piece cannot be stated — a half-contributed rectangle would
+/// leave the class's 1-skeleton dangling, which is a worse lie than an honest incomplete-trace
+/// mark.
+///
+/// The class cuts **two** rulings; each is stated whole (`Transversal`, the solid straddling the
+/// wall along it) except where one of the face's holes has a vertical edge on it, and there the
+/// face ends at the wall instead of crossing it — a `Graze`. [`ruling_grazes`] finds those, and
+/// says why the shared ring walk cannot.
 #[allow(clippy::too_many_arguments)]
 fn rulings_on_class(
     jd: &Judge<'_, WorkingPlane>,
