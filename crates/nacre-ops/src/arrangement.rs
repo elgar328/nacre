@@ -4500,7 +4500,6 @@ fn per_class(
                 r.cyl,
                 RulingExtent {
                     wall: wc,
-                    side: r.side,
                     end: r.end,
                     z,
                 },
@@ -5895,8 +5894,8 @@ pub(crate) struct CutRim {
 /// source of "this rim is cut" (the assembly's rim skip and curved arms all read it).
 pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 
-/// **One ruling piece, as the cylinder's own chart needs it** — the wall it rides, which of the
-/// two parallel rulings, and the **axis interval** it spans.
+/// **One ruling piece, as the cylinder's own chart needs it** — the wall it rides and the
+/// **axis interval** it spans.
 ///
 /// ★★★★★ **Carried out rather than recomputed.** `rulings_on_class` already decides this extent
 /// (the rulings ladder), and a chart that worked it out again would be a **second source of one
@@ -5910,14 +5909,20 @@ pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 /// ☑ Measured over the whole suite: **826 ruling pieces, every one with both ends named** — so a
 /// piece whose ends have no ⊥ partner (which would have no `z` at all) is not a population today.
 ///
-/// ★ `#[allow(dead_code)]` because the reader is **the next rung**: `cyl_chart` builds the line set
-/// from these today and the cells that consume them are D1b. `Bound::Band` carried the same note
-/// while its producer was still a cell away — the allow names the consumer rather than hiding it.
-#[allow(dead_code)]
+/// ★★★★ **There is no `side` here, and that is the point.** The first spelling carried one, and
+/// when the cells arrived (D1b) nothing read it: a ruling's identity is `(wall class, root)`, and
+/// which of the two parallel rulings that is derives from it through the one production spelling
+/// ([`ruling_side`], which is how `panel_faces` gets it at emission time). A carried copy of a
+/// derived value is the second spelling this ladder keeps being bitten by.
+///
+/// ★★★★★ **`cfg_attr(not(test), ...)`, not a blanket allow.** The only reader is `cyl_chart`,
+/// which is `#[cfg(test)]`, so outside a test build these fields have none — but *inside* one they
+/// must genuinely be read, and that is what caught `side`. A plain `#[allow(dead_code)]` would
+/// have kept carrying it silently, which is how the field survived a whole rung.
+#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Debug)]
 pub(crate) struct RulingExtent {
     pub(crate) wall: usize,
-    pub(crate) side: i8,
     pub(crate) end: [NodeId; 2],
     pub(crate) z: [nacre_scalar::Rat; 2],
 }

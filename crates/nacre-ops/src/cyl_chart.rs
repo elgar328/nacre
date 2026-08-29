@@ -33,10 +33,12 @@
 //! only an order, so nothing here would break. That is plausible and **unmeasured**; it is not
 //! a reason this module leans on.
 //!
-//! ## What is not here
+//! ## What is here, and what is not
 //!
-//! The **cells**, the labels, and any cutover. The two roads this will one day replace are not
-//! touched, because the census below has to measure what they answer *today*.
+//! The two axes (D1a) and the **cells** they cut (D1b), beside a census that counts how today's
+//! emitted lateral faces cover those cells. The **labels** and any cutover are not: the two roads
+//! this will one day replace are untouched, because the census has to measure what they answer
+//! *today*.
 
 use crate::arrangement::{Curved, RulingExtent};
 use crate::boolean::{Bound, LocalFace};
@@ -62,13 +64,11 @@ pub(crate) struct ZLine {
 /// Carried straight from [`RulingExtent`] — the plane pass decides this and the chart must not
 /// decide it again.
 ///
-/// ★ `#[allow(dead_code)]` for the same reason [`RulingExtent`] carries it: this rung *builds* the
-/// line set and measures it; the cells that read `wall`/`side`/`end`/`z` are the next one.
-#[allow(dead_code)]
+/// ★ No `side`: a ruling is named `(wall class, root)` and the side derives from that — see
+/// [`RulingExtent`], which dropped its own copy for the same reason.
 #[derive(Clone, Debug)]
 pub(crate) struct ThetaSeg {
     pub(crate) wall: usize,
-    pub(crate) side: i8,
     /// The piece's own two branch nodes: the θ **order** is asked of these
     /// (`circular_order_about_seam` via `arrangement::circular_order`), never of a coordinate.
     pub(crate) end: [combinatorics::NodeId; 2],
@@ -256,7 +256,6 @@ pub(crate) fn chart_of(
                     };
                     ThetaSeg {
                         wall: r.wall,
-                        side: r.side,
                         end: r.end,
                         z: [lo, hi],
                     }

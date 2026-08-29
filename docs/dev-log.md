@@ -15125,11 +15125,26 @@ faces clear of the lateral」*에 기대는데, 게이트의 **기록-하고-통
 `add_cylinder_exact`에서는 *「the tilted case is not the irrational case」* — 그 doc의 말 그대로다.
 ★ **재고 나서 적는다**를 계획에 못 박아 둔 덕에 틀린 결론이 문서에 안 들어갔다.
 
+### ★★★★★ 자체 점검: **내가 지은 것이 doc 셋을 만료시켰고, allow 하나는 «진짜»였다**
+
+칸을 닫고 훑으니 셋이 낡아 있었다 — 모듈 헤더의 *「What is not here: the **cells**」*(셀이 여기
+있다) · `ThetaSeg`의 *「the cells that read `wall`/`side`/`end`/`z` are the next one」* ·
+`RulingExtent`의 allow 근거 *「the reader is **the next rung** … D1b」*(그 D1b가 왔다).
+☑ 그리고 재 보니 **`side`만 아무도 안 읽는다** — 그건 `(wall, root)`에서 **파생**되는 값이고
+(`ruling_side`, `panel_faces`가 방출 때 쓰는 그 한 철자), 파생값의 사본은 이 사다리를 계속 물어 온
+**두 번째 철자**다. ⇒ `RulingExtent`·`ThetaSeg` 양쪽에서 **지웠다**.
+
+★★★★★ **그런데 allow를 통째로 걷었더니 clippy가 빨개졌다 — 그 allow는 «진짜»였다.**
+비-test 빌드에는 `end`/`z`의 독자도 없다(유일한 독자 `cyl_chart`가 `#[cfg(test)]`). 다만 되돌릴 때
+**더 조인 철자**로 갔다: `#[cfg_attr(not(test), allow(dead_code))]` — **test 빌드에선 진짜로 읽혀야
+한다.** ☑ 부정 대조: 안 읽는 필드를 하나 넣으니 즉시 빨강. ★ 통짜 `#[allow(dead_code)]`였기 때문에
+`side`가 **한 계단을 통째로** 조용히 실려 왔다.
+
 ### 관문
 
 전량 초록: fmt/clippy 0 · workspace · nodef · census **두 프로파일 비트 동일**(`78b06e50…`, 269줄) ·
-`reject_census` · 스윕 · perf **253.2s**(`ring 80` 1.60/1.05s, 잡음 대역) · kit · 앱(wasm·tsc·vitest·
-wasm clippy).
+`reject_census` · 스윕 · perf **253.2s** / 자체 점검 뒤 **253.5s**(`ring 80` 1.60/1.05 → 1.61/1.06s,
+잡음 대역) · kit · 앱(wasm·tsc·vitest·wasm clippy).
 ★ census 해시는 **정렬 후** md5다 — 정렬 없이 재고 「달라졌다」고 볼 뻔했고, HEAD와 같은 세션에서
 A/B 해서 갈랐다.
 
