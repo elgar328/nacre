@@ -105,6 +105,9 @@ pub(crate) struct Chart {
 /// the key `name_on` already builds there.
 type RulingName = (usize, i8);
 
+/// A partial run as the census records it: its first and last ruling, and its chamber.
+type Run = (RulingName, RulingName, Option<(bool, bool)>);
+
 /// **Which of a wall's two rulings a branch node lies on** — `arrangement::ruling_side`, the one
 /// spelling the assembly's `Wall::Ruling { side }` and `panel_faces`' `side_at` already read.
 ///
@@ -225,6 +228,63 @@ impl Chart {
     }
 }
 
+/// **The plane classes where this cylinder's rim is a boundary the arrangement already made**:
+/// (i) the circles a plane face emitted as a `Bound::Circle`, and (ii) the cut rims, which emit
+/// arcs instead and so are invisible to (i). `bands_of` reads both for the same reason, and the
+/// chart's line set, its boundary rule and its census all read this one list.
+pub(crate) fn rim_classes(k: usize, plane_faces: &[LocalFace], curved: &Curved) -> Vec<usize> {
+    let mut classes: Vec<usize> = Vec::new();
+    let mut push = |c: usize| {
+        if !classes.contains(&c) {
+            classes.push(c);
+        }
+    };
+    for lf in plane_faces {
+        let ClassIx::Plane(c) = lf.surf else { continue };
+        if std::iter::once(&lf.outer)
+            .chain(lf.inner.iter())
+            .any(|b| matches!(b, Bound::Circle { cyl } if *cyl == k))
+        {
+            push(c);
+        }
+    }
+    let mut cut: Vec<usize> = curved
+        .cut_rims
+        .keys()
+        .filter(|&&(kk, _)| kk == k)
+        .map(|&(_, c)| c)
+        .collect();
+    cut.sort_unstable(); // a HashMap's order decides nothing downstream, but the list is stated once
+    for c in cut {
+        push(c);
+    }
+    classes
+}
+
+/// **The lines a lateral face's band may not run across** — `bands_of`'s three boundary sources,
+/// as axis parameters: the rim classes ([`rim_classes`]) and every row's own span ends. A
+/// band-shaped emission that continues across any other line is what `bands_of` never cut, so
+/// the chart merges there and nowhere else.
+pub(crate) fn boundary_lines(
+    jd: &Judge<'_, WorkingPlane>,
+    k: usize,
+    def: &nacre_topo::CylinderDef,
+    plane_faces: &[LocalFace],
+    curved: &Curved,
+    rows: &[crate::bands::CylRow],
+) -> Result<Vec<Rat>, BoolError> {
+    let mut out: Vec<Rat> = rim_classes(k, plane_faces, curved)
+        .into_iter()
+        .map(|c| crate::bands::axis_param(jd, c, def))
+        .collect::<Result<_, _>>()?;
+    for r in rows.iter().filter(|r| r.class == k) {
+        out.extend(r.span);
+    }
+    out.sort();
+    out.dedup();
+    Ok(out)
+}
+
 /// **Every ⊥ class that cuts this cylinder, and every ruling on it** — per cylinder *class*.
 ///
 /// ★★★★★ **The sources are `bands_of`'s, and one thing it does is deliberately *not* done here.**
@@ -249,28 +309,12 @@ pub(crate) fn chart_of(
     curved: &Curved,
 ) -> Result<Chart, BoolError> {
     let def = &cyls[k].def;
-    let mut classes: Vec<usize> = Vec::new();
+    let mut classes: Vec<usize> = rim_classes(k, plane_faces, curved);
     let push = |c: usize, v: &mut Vec<usize>| {
         if !v.contains(&c) {
             v.push(c);
         }
     };
-    // (i) the circles the plane arrangement actually emitted, and (ii) the cut rims, which emit
-    // arcs instead and so are invisible to (i). `bands_of` reads both for the same reason.
-    for lf in plane_faces {
-        let ClassIx::Plane(c) = lf.surf else { continue };
-        if std::iter::once(&lf.outer)
-            .chain(lf.inner.iter())
-            .any(|b| matches!(b, Bound::Circle { cyl } if *cyl == k))
-        {
-            push(c, &mut classes);
-        }
-    }
-    for &(kk, c) in curved.cut_rims.keys() {
-        if kk == k {
-            push(c, &mut classes);
-        }
-    }
     // (iii) every ⊥ class, full stop. `bands_of` only takes the ones that land on a face's rim
     // because it is answering about a face; a chart covers the whole axis.
     for c in 0..jd.planes.len() {
@@ -701,6 +745,10 @@ pub(crate) fn census(
         // is. ★ One class is one solid's surface — `planes.rs` interns cylinders by handle and
         // two solids share none — asserted where it is relied on rather than assumed.
         let lines = Lines::of(jd, k, &cyls[k].def, curved);
+        // `bands_of`'s boundaries, for the merge counters; a refusal is a skip, as for the chart.
+        let Ok(boundary) = boundary_lines(jd, k, &cyls[k].def, plane_faces, curved, rows) else {
+            continue;
+        };
         let side = mine.first().map(|r| r.side);
         assert!(
             mine.iter().all(|r| Some(r.side) == side),
@@ -955,8 +1003,153 @@ pub(crate) fn census(
                 }
             }
         }
+        // ── What the cutover would emit per interval, measured before it is built (D2b-1 census). ──
+        //
+        // A run = a maximal circular stretch of emitted sectors with one chamber. An interval that
+        // is one chamber all the way round is **band-shaped** (today's `Band`); any other run is a
+        // panel ring `[a_lo, b_lo, b_hi, a_hi]`, which needs the run's two boundary rulings to
+        // have a **node on each cut rim** — a cut rim without that node has no vertex to close the
+        // ring on. "Cut" is one spelling throughout: a `cut_rims` key at that line.
+        let is_cut = |t: Rat| {
+            lines
+                .classes(t)
+                .iter()
+                .any(|&c| curved.cut_rims.contains_key(&(k, c)))
+        };
+        let is_boundary = |t: Rat| boundary.binary_search(&t).is_ok();
+        // Per interval: the chamber if band-shaped (every cell emitted, one chamber), else `None`.
+        let mut bandlike: Vec<Option<(bool, bool)>> = vec![None; n_int];
+        // Per interval: its partial runs as `(first ruling name, last ruling name, chamber)`.
+        let mut runs: Vec<Vec<Run>> = vec![Vec::new(); n_int];
+        for i in 0..n_int {
+            let idx = idx_of(i);
+            let n = idx.len();
+            if n == 0 {
+                continue;
+            }
+            let cut_end = |ci: usize, e: usize| matches!(reads[ci].ends[e], End::Exact(_));
+            let (t_lo, t_hi) = (chart.z_lines[i].t, chart.z_lines[i + 1].t);
+            // A whole-circle cell is a `Band`, which `band_loop` refuses when both rims are cut.
+            if n == 1 && cells[idx[0]].walls.is_none() {
+                if emitted(idx[0]) {
+                    d2b.whole_emitted += 1;
+                    bandlike[i] = reads[idx[0]].chamber;
+                    if is_cut(t_lo) && is_cut(t_hi) {
+                        d2b.whole_both_cut += 1;
+                    }
+                }
+                continue;
+            }
+            let em: Vec<bool> = idx.iter().map(|&ci| emitted(ci)).collect();
+            if em.iter().all(|&e| e) && (1..n).all(|s| same_chamber(idx[0], idx[s])) {
+                d2b.full_runs += 1; // one chamber all the way round: a `Band`
+                bandlike[i] = reads[idx[0]].chamber;
+                // …unless both rims are cut: today's road sends that interval to the panel road
+                // (`band_faces`' dispatch), and a `Band` there would be refused by `band_loop`.
+                if is_cut(t_lo) && is_cut(t_hi) {
+                    d2b.full_run_both_cut += 1;
+                }
+                continue;
+            }
+            // Runs, circularly, starting where a run cannot begin mid-way.
+            let start = (0..n)
+                .find(|&s| !em[s] || !same_chamber(idx[s], idx[(s + n - 1) % n]))
+                .unwrap_or(0);
+            let mut s = 0;
+            while s < n {
+                let at = (start + s) % n;
+                if !em[at] {
+                    s += 1;
+                    continue;
+                }
+                let mut len = 1;
+                while s + len < n {
+                    let nx = (start + s + len) % n;
+                    if em[nx] && same_chamber(idx[at], idx[nx]) {
+                        len += 1;
+                    } else {
+                        break;
+                    }
+                }
+                d2b.partial_runs += 1;
+                // The same run, counted again as the panel road would cut it: a ruling with a node
+                // on a cut rim ends a panel there even when the chamber continues past it.
+                for j in 1..len {
+                    let ci = idx[(start + s + j) % n];
+                    if let Some([x, _]) = cells[ci].walls
+                        && [(0, t_lo), (1, t_hi)]
+                            .iter()
+                            .any(|&(e, t)| cut_end(ci, e) && chart.node_on(x, t).is_some())
+                    {
+                        d2b.run_split_at_node += 1;
+                    }
+                }
+                let first = idx[at];
+                let last = idx[(start + s + len - 1) % n];
+                match (cells[first].walls, cells[last].walls) {
+                    (Some([x, _]), Some([_, y])) => {
+                        for (ci, r) in [(first, x), (last, y)] {
+                            for (e, t) in [(0, t_lo), (1, t_hi)] {
+                                if cut_end(ci, e) && chart.node_on(r, t).is_none() {
+                                    d2b.run_boundary_no_node += 1;
+                                }
+                            }
+                        }
+                        if let (Some(na), Some(nb)) = (
+                            chart.ruling_name(jd, k, def, x),
+                            chart.ruling_name(jd, k, def, y),
+                        ) {
+                            runs[i].push((na, nb, reads[first].chamber));
+                        }
+                    }
+                    _ => d2b.run_boundary_no_node += 1,
+                }
+                s += len;
+            }
+            if runs[i].len() > 1 {
+                d2b.intervals_multi_run += 1;
+            }
+        }
+        // ── Across a z-line: what the cutover would merge at the chart, and what it may not. ──
+        //
+        // Two band-shaped neighbours with one chamber merge across their shared line **unless** it
+        // is one of `bands_of`'s boundaries (`boundary_lines`). The sub-count across a line a
+        // plane face emitted as a `Bound::Circle` is asserted 0 where it is made: a whole circle
+        // through a present band with the same chamber on both sides is a T-junction, which the
+        // arrangement does not produce.
+        let mut z_merge_bandlike_circle = 0usize;
+        for i in 1..n_int {
+            let t = chart.z_lines[i].t;
+            if let (Some(p), Some(q)) = (bandlike[i - 1], bandlike[i])
+                && p == q
+            {
+                if !is_boundary(t) {
+                    d2b.z_merge_bandlike += 1;
+                } else if rim_classes(k, plane_faces, curved).iter().any(|&c| {
+                    lines.classes(t).contains(&c) && !curved.cut_rims.contains_key(&(k, c))
+                }) {
+                    z_merge_bandlike_circle += 1;
+                }
+            }
+            // Two partial runs with the same boundary rulings and chamber across a non-boundary
+            // line: a ring the cutover would have to stretch across z — no arm is written for it
+            // until this counts one.
+            if !is_boundary(t) {
+                for a in &runs[i - 1] {
+                    for b in &runs[i] {
+                        if a.0 == b.0 && a.1 == b.1 && a.2 == b.2 {
+                            d2b.run_run_nonboundary += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            z_merge_bandlike_circle, 0,
+            "two band-shaped cells with one chamber meet across an emitted circle: cyl {k}"
+        );
         // z-neighbours: the same sector (by ruling *names* — indices differ per interval) in
-        // consecutive intervals.
+        // consecutive intervals — the cell-level count, kept as the finer view.
         let sector_name = |ci: usize| -> Option<[Option<RulingName>; 2]> {
             match cells[ci].walls {
                 None => Some([None, None]),
@@ -1109,6 +1302,12 @@ pub(crate) fn census(
             continue;
         };
         let mut claims = vec![0usize; cells.len()];
+        let mut ref_band_merges = 0usize;
+        let mut ref_merge_over_boundary = 0usize;
+        // The order today's road emits faces in, as the first cell each claims — the chart's
+        // cells are in `(interval, sector)` order, so a descent here is an order the cutover
+        // would change (handles are minted in face order: the replay contract).
+        let mut first_claim: Vec<usize> = Vec::new();
         let mut unnamed = 0usize;
         let mut reversed = 0usize;
         let mut band_multi = 0usize;
@@ -1153,10 +1352,22 @@ pub(crate) fn census(
                         unnamed += 1;
                         continue;
                     }
+                    // The merges today's road made inside this band: one per interior line. Each
+                    // must be a line the chart's boundary rule lets a band-shaped pair cross.
+                    ref_band_merges += b - a - 1;
+                    for i in (a + 1)..b {
+                        let t = chart.z_lines[i].t;
+                        if is_boundary(t) {
+                            ref_merge_over_boundary += 1;
+                        }
+                    }
                     let mut hit = 0usize;
                     let mut sectors = 0usize;
                     for (ci, c) in cells.iter().enumerate() {
                         if c.interval >= a && c.interval < b {
+                            if hit == 0 {
+                                first_claim.push(ci);
+                            }
                             claims[ci] += 1;
                             hit += 1;
                             sectors = sectors.max(c.sector + 1);
@@ -1251,7 +1462,7 @@ pub(crate) fn census(
                     // sectors. D1b's join asked for the one cell whose two rulings *are* the
                     // panel's, claimed it, and counted the other two as unclaimed gaps. The sweep
                     // below claims from the sector leaving `na` round to the one arriving at `nb`.
-                    let sweep =
+                    let mut sweep =
                         |claims: &mut Vec<usize>, from: RulingName, to: RulingName| -> bool {
                             let ring: Vec<usize> = (0..cells.len())
                                 .filter(|&ci| cells[ci].interval == i)
@@ -1268,6 +1479,9 @@ pub(crate) fn census(
                                 let ci = ring[(start + step) % n];
                                 hit.push(ci);
                                 if named(&cells[ci]).is_some_and(|w| w[1] == to) {
+                                    // The run's *first* sector — the statistic the emitter
+                                    // orders runs by (a wrap run's minimum is the adjacent one).
+                                    first_claim.push(ring[start]);
                                     for ci in hit {
                                         claims[ci] += 1;
                                     }
@@ -1354,6 +1568,28 @@ pub(crate) fn census(
         assert_eq!(
             d2b.emit_mismatch, 0,
             "the cell reader disagrees with today's emitted lateral faces: cyl {k}"
+        );
+        d2b.ref_band_merges = ref_band_merges;
+        d2b.ref_merge_over_boundary = ref_merge_over_boundary;
+        // ★★★★★ **The chart's boundary rule is today's, asserted where it is made.** Every line a
+        // band of the reference road runs across is one the chart lets a band-shaped pair cross,
+        // and the chart makes exactly the merges the reference made — so the cutover's raw
+        // emission is today's, band for band (☑ measured 47 = 47 over the suite first).
+        assert_eq!(
+            ref_merge_over_boundary, 0,
+            "a reference band runs across a line the chart calls a boundary: cyl {k}"
+        );
+        assert_eq!(
+            d2b.z_merge_bandlike, ref_band_merges,
+            "the chart would merge more or fewer band-shaped intervals than the reference road \
+             did: cyl {k}"
+        );
+        d2b.order_descents = first_claim.windows(2).filter(|w| w[1] < w[0]).count();
+        // ★ Asserted where it is made: today's emission order is the chart's cell order, so the
+        // cutover renumbers no handle (☑ measured 0 first).
+        assert_eq!(
+            d2b.order_descents, 0,
+            "today's lateral faces are not emitted in the chart's cell order: cyl {k}"
         );
         d2b.band_over_rulings = band_over_rulings;
         probe::d2b::push(d2b);
@@ -1504,6 +1740,32 @@ pub(crate) mod probe {
             pub(crate) z_merge_pairs: usize,
             /// Disk-ended intervals whose emitted sectors do not close into one whole circle.
             pub(crate) partial_theta_in_disk_interval: usize,
+            /// D2b-1: what the cutover would emit. Intervals that are one chamber round (`Band`),
+            /// partial runs (panel rings), runs whose boundary ruling has no node on a cut rim,
+            /// emitted whole-circle cells with **both** rims cut (`band_loop` refuses those), and
+            /// descents in today's emission order against the chart's cell order.
+            pub(crate) full_runs: usize,
+            pub(crate) partial_runs: usize,
+            pub(crate) run_boundary_no_node: usize,
+            pub(crate) whole_both_cut: usize,
+            pub(crate) order_descents: usize,
+            /// Emitted whole-circle cells (`Band`s over intervals with no ruling), and runs the
+            /// panel road would cut further because an interior ruling has a node on a cut rim.
+            pub(crate) whole_emitted: usize,
+            pub(crate) run_split_at_node: usize,
+            /// Band-shaped intervals with both rims cut (today's road sends those to the panel
+            /// road); intervals with more than one partial run; and partial-run pairs that would
+            /// have to merge across a non-boundary z-line.
+            pub(crate) full_run_both_cut: usize,
+            pub(crate) intervals_multi_run: usize,
+            pub(crate) run_run_nonboundary: usize,
+            /// Consecutive band-shaped intervals with one chamber across a line `bands_of` never
+            /// cut — the merges the cutover makes at the chart.
+            pub(crate) z_merge_bandlike: usize,
+            /// The merges the reference road made (interior lines of its bands), and how many of
+            /// those lines the chart's boundary rule would refuse to cross.
+            pub(crate) ref_band_merges: usize,
+            pub(crate) ref_merge_over_boundary: usize,
         }
 
         pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
@@ -1784,6 +2046,10 @@ mod tests {
         for second in [
             ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut),
             ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse),
+            // A short boss whose cap (z = 2.5) is a ⊥ line strictly inside the wall boss's span:
+            // the wall boss's circle is traced there but bounds no face, so the line is one
+            // `bands_of` never cuts — the band-shaped merge population.
+            ([6.0, 2.0, 2.0], 0.5, BoolKind::Fuse),
             ([6.0, 0.0, -1.0], 4.0, BoolKind::Fuse),
             ([6.0, 0.0, -1.0], 4.0, BoolKind::Cut),
         ] {
@@ -1855,8 +2121,32 @@ mod tests {
                 );
             }
         }
+        // ── D2b-1: what the cutover would emit, held as counts (their production twins are
+        // honest rejects, so they are not asserted where the fact is made).
+        for r in &rows {
+            assert_eq!(
+                r.run_boundary_no_node, 0,
+                "a run's boundary ruling has no rim node: {r:?}"
+            );
+            assert_eq!(
+                r.whole_both_cut, 0,
+                "an emitted whole circle has both rims cut: {r:?}"
+            );
+            assert_eq!(
+                r.run_split_at_node, 0,
+                "a run passes a ruling with a rim node: {r:?}"
+            );
+            assert_eq!(
+                r.full_run_both_cut, 0,
+                "a band-shaped interval has both rims cut: {r:?}"
+            );
+            assert_eq!(
+                r.run_run_nonboundary, 0,
+                "a panel would have to stretch across z: {r:?}"
+            );
+        }
         // ★★★★ Non-vacuity — a zero above must mean "the population is empty", never "nothing
-        // was looked at". `end_other` is deliberately not in this list.
+        // was looked at". `end_other` and `intervals_multi_run` are deliberately not in this list.
         assert!(sum(&rows, |r| r.end_disk) > 0, "no disk end was ever read");
         assert!(
             sum(&rows, |r| r.end_exact) > 0,
@@ -1877,6 +2167,22 @@ mod tests {
         assert!(
             sum(&rows, |r| r.z_merge_pairs) > 0,
             "no z-merge was ever seen"
+        );
+        assert!(
+            sum(&rows, |r| r.full_runs) > 0,
+            "no band-shaped interval with rulings"
+        );
+        assert!(
+            sum(&rows, |r| r.partial_runs) > 0,
+            "no partial run was ever seen"
+        );
+        assert!(
+            sum(&rows, |r| r.whole_emitted) > 0,
+            "no whole-circle cell was ever emitted"
+        );
+        assert!(
+            sum(&rows, |r| r.z_merge_bandlike) > 0,
+            "no band-shaped merge was ever seen"
         );
         // The chained pairs above drop exactly one sector per operation for existence (four),
         // and other tests may add theirs in between — so what is held is the growth.

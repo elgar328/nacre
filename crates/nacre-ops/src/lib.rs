@@ -1410,7 +1410,10 @@ mod zzz_ledger {
              end_other {} end_nocircle {} other_present {} src2_disagree {} src0_present {} exist_disagree {} \
              exist_conflict {} exist_marks_false {} emit {} emit_unknown {} emit_mismatch {} \
              split_flip {} split_nocircle {} theta_merge_pairs {} z_merge_pairs {} \
-             partial_theta_in_disk_interval {} band_over_rulings {}",
+             partial_theta_in_disk_interval {} band_over_rulings {} full_runs {} partial_runs {} \
+             run_boundary_no_node {} whole_both_cut {} order_descents {} whole_emitted {} \
+             run_split_at_node {} full_run_both_cut {} intervals_multi_run {} \
+             run_run_nonboundary {} z_merge_bandlike {} ref_band_merges {} ref_merge_over_boundary {}",
             d2b.len(),
             d2b.iter().filter(|r| r.no_faces).count(),
             s(|r| r.cells),
@@ -1434,6 +1437,19 @@ mod zzz_ledger {
             s(|r| r.z_merge_pairs),
             s(|r| r.partial_theta_in_disk_interval),
             s(|r| r.band_over_rulings),
+            s(|r| r.full_runs),
+            s(|r| r.partial_runs),
+            s(|r| r.run_boundary_no_node),
+            s(|r| r.whole_both_cut),
+            s(|r| r.order_descents),
+            s(|r| r.whole_emitted),
+            s(|r| r.run_split_at_node),
+            s(|r| r.full_run_both_cut),
+            s(|r| r.intervals_multi_run),
+            s(|r| r.run_run_nonboundary),
+            s(|r| r.z_merge_bandlike),
+            s(|r| r.ref_band_merges),
+            s(|r| r.ref_merge_over_boundary),
         );
     }
 }
