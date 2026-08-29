@@ -15511,3 +15511,65 @@ cyl_chart로. 그다음 **D4** 청소(`unify_curved_faces` — 반높이 보스�
 3. 성능의 「종단 +1~3%」는 유도값인데 실측처럼 읽혔고, 계획의 종단 A/B는 안 돼 있었다 — 점검에서 A/B를 실제로 돌려
    (같은 바이너리, env 스위치, 2라운드) 잡음 대역임을 쟀고 위에 그 수로 바꿨다.
 
+
+---
+
+## 능력 D, 여섯째 계단 — D3: 참조 도로를 지우고, census는 차트를 자기 규칙에 대고 잰다
+
+커밋 둘: ``80c2863``(코드 — 삭제·재지향·대체 불변·코퍼스 인구) · 문서. **프로덕션 무변**(census 두 프로파일 = HEAD `5f937a65…`,
+reject_census 무변) — 바뀐 프로덕션 코드는 `CylRow.def` 필드 제거(독자 전무)뿐.
+
+### 지운 것
+`bands::{band_faces, bands_of, param, panel_faces, chamber, panel_probe}`(test 빌드의 참조 도로, D2b가 남긴 것)와 census의
+참조 의존 절반 — 그림자 zip · `bands_of` ⊇ 검사와 `intervals_split` · claims 걷기(`claimed/unclaimed/reversed/band_multi/
+band_over_rulings/band_split_*/bands_seen/panels_seen`) · `emit_mismatch`·`ref_*`·`order_descents`. 원장 `probe::Row`는
+`z_lines/theta/rows/refused/cells/whole_circle/odd_k`만 남고 `d2`의 `band_split_*`, `d2b`의 참조 필드 열이 사라졌다.
+`bands.rs` 4042 → 3591줄(판정 도로 ~430줄), `census` ≈945 → 577줄. `arrangement.rs`의 통합 지점은
+`emit_lateral` 한 줄 + `census(.., &lateral)` 한 줄.
+
+### 재지향한 테스트 — 단언은 그대로, 입구만 `emit_lateral`
+`bands()` 헬퍼(띠 span/flip 잠금 6)와 `band_faces` 직접 호출 4(seam·이름·간선 홀짝·그룹 잠금)는 면 목록만 필요해 그대로.
+`arrangement.rs`의 둘은 `per_class`를 손으로 접던 것이라 **`ruling_extents`까지 접은 `Curved`**가 필요했고
+(`a_cut_circle_bounds_the_bands`는 ⊥ 클래스 넷만 돌려 룰링이 없었다 — 벽 클래스를 넣음), 그 테스트의 `bands_of` 구간 셋 →
+`boundary_lines == chart_of.z_lines == [cap_lo, z0, z20, cap_hi]`, `chamber` 호출 셋 → 삭제, 빈 `ArcLabels` 부정 대조 →
+`emit_lateral`이 `CylinderGateUndecided`(예측 그대로; census를 거치지 않는 직접 호출 — 이 대조는 `src0_present` 전제를 일부러
+어긴다). `tests.rs`의 `panel_probe` 소비 둘 → census의 `exist_marks_false`(≥4 성장)와 `arcs_*`.
+
+### 남긴 불변과 그 후계
+| 잃은 드라이버 | 후계 | 실측 |
+|---|---|---|
+| z-선 ⊇ `bands_of` 경계 | **z-선 ⊇ `boundary_lines`**(림 클래스 ∪ 행의 span 끝 — span은 트레이서의 다른 철자라 항진명제 아님), 기록 자리 | 전 스위트 통과 |
+| `split_flip` | **`z_flip_nonboundary`**(띠형 이웃의 챔버가 비경계 선에서 바뀜) — 계수, 보고 테스트 0 | **0**(1099 셀 / 코퍼스 포함 1525) |
+| `split_nocircle` | **`nocircle_present`**(면 있는 셀의 `NoCircle` 끝), 기록 자리 0 | **0** |
+| `order_descents` | 없음 — 순서는 방출기의 루프 순서(구조) | — |
+| 그림자 「차트는 참조가 내는 것을 거절하지 않는다」 | **`emitted_faces == whole_emitted + full_runs − z_merge_bandlike + partial_runs`**(방출기의 면 수를 census의 독립 걷기가 예측; 전제 `full_run_both_cut == whole_both_cut == 0`) | **407 = 254 + 113 − 47 + 87**(lib), 코퍼스 포함 590(거절 3행 제외) — 실측 후 **기록 자리로 승격** |
+| `panel_probe` MARKS | **`arcs_read`·`arcs_no_mark`·`arcs_multi_mark`**(census에서, `read_cell` 안이 아니라 — 두 번 읽히므로) | `arcs_read` **756 = end_exact 756**(코퍼스 포함 828 = 828) · `no_mark` **0** · `multi_mark` **0** — 분모가 옛 계약(278 림 읽기)과 달라도 0 ⇒ 보고 테스트에 단언 |
+
+### ★★★★★ 단언의 명제를 고쳤다 — `wal corner-lo`가 lib에 들어왔다
+Step 0(코퍼스 가족 12를 lib census에 임시 통과): 발화는 corner-lo 하나, 그것도 그림자 zip이었다. 그림자를 지운 뒤 다시 재니
+**`src2_disagree == 0`(기록 자리)만** 터졌다 — XOR 닫힘·`src0_present`·끝 합은 초록(예측대로: 세로 딱지는 벽 클래스의 것).
+그 0은 lib 스위트의 artifact였다(census는 integration 코퍼스에서 돈 적이 없다). 인구가 있는 단언을 픽스처를 빼서 지키지
+않는다 — **명제를 참인 것으로 바꿨다**: `src2_disagree == 0 || emission.is_err()` 「두 끝이 갈린 셀 위로 방출기는 면을 내지
+않는다」(보고 테스트의 `emit_unknown`도 같은 가드). 가드는 결함을 감추지 않는다 — (0,0) 코너의 arrangement 딱지 결함은 그대로
+다음 인구이고, 이제 census가 그 차트를 매 스위트 본다.
+
+### ☑ 코퍼스 인구 — lib에 없던 가족 12가 들어왔다
+`census_corpus_cylinder_families_build_or_refuse_by_name`(offmid·flush·corner-lo·cap sunk·trc boss·onaxis·ct2 pocketed·chain) ·
+`census_corpus_xy_generations_build_or_refuse_by_name`(grid·yx·three·turned). 결과만 잠금(빌드/거절 이름 — census.rs 행과
+동일), 기하는 다이제스트의 것. 시간 ≈8 s(debug).
+
+### ☑ 실측 — 예측 vs 결과
+| 수 | 예측 | 실측 |
+|---|---|---|
+| ①a 원장(삭제만) vs HEAD(별도 worktree에서 잰 기준선) | (C) 수 동일 | **동일** — 290 차트·1099 셀·end_disk 1284·end_exact 756·full_runs 113·partial_runs 87·z_merge_bandlike 47·exist_marks_false 11. ★ 계획의 기준선(1074 셀…)은 ③a 시점의 낡은 수였다 — 기준선은 **HEAD에서 잰다** |
+| ①b 원장(코퍼스 제외 / 포함) | 동일 / 더 큼 | **동일**(290/1099/…, `emitted_faces` 407) / **더 큼**: 503 차트·1525 셀·end_disk 2058·end_exact 828·`src2_disagree` **24**(= corner-lo 3행 × 8, `refused_booleans` 3, `emit_unknown` 24)·full_runs 115·partial_runs 93·z_merge_bandlike 56·`emitted_faces` 590 |
+| workspace | 1168 | lib 332(= 330 + 2) · workspace **1168**(예측 그대로: 1166 + 코퍼스 테스트 2) |
+| census 다이제스트 · reject_census | 무변 | **무변** — census 269줄, HEAD worktree 실행과 **0줄 diff**(두 프로파일 md5 `02f856e3…`; D2b 기록의 `5f937a65…`는 다른 다이제스트 방식이라 diff가 진실) · reject_census 초록 |
+| 부정 대조 | (1) `face_spans` 항상 참 → ≥4 성장 빨강 (2) `Seated` 제외를 빼면 `arcs_multi_mark>0` (3) `chart_of`(iii)에서 클래스 하나를 빼면 ⊇ 빨강 | (1) **빨강, 예측한 자리보다 앞** — `exist_marks_false` 성장이 아니라 기록 자리의 `emitted_faces` 등식이 먼저 터짐(6셀 차트에서 방출기의 면 수와 census 걷기의 예측이 갈렸다 — 그 원인까지는 안 캤다) (2) **빨강** — 단 첫 시도는 `cyl_chart` 필터만 돌려 초록이었다(자국 둘인 픽스처는 `bands::a_half_height_boss_builds`·mesh 오라클 — **부정 대조는 인구가 있는 테스트를 돌려야 한다**); 승격 후 전 스위트에서 그 둘이 기록 자리 panic (3) **빨강** — 단 첫 시도(`c != 3`, 그리고 `rim_classes` 결과에서 pop)는 초록: (iii) 루프가 모든 ⊥ 클래스를 다시 넣으므로 **루프 뒤에서** 첫 원소(림)를 빼야 「차트가 자기 경계 규칙의 선을 잃음, t=1」로 넷 다 빨강 |
+
+### 관문
+전량 초록: fmt/clippy 0 · workspace **1168** · nodef · census 두 프로파일 269줄, HEAD와 0줄 diff · reject_census · 스윕 129 · perf release(fold 80 407면 237.2116 · ring fins 1.61 s · hub 1.06 s · small 559 µs) · kit 72. 원장 단일 스레드 두 번(위 표). ★ 관문 뒤 승격 하나(`arcs` 한-자국 단언)를 더 넣었고 커밋 훅의 관문(fmt·clippy·workspace)이 다시 돌았다.
+
+### 다음
+**D4 — 청소**(`unify_curved_faces`; 반높이 보스의 «림 하나 + 호 사슬»이 첫 인구). 별도 항목: (0,0) 코너의 arrangement 딱지 결함 ·
+방출 단계의 `branch_meet` 캐시.
