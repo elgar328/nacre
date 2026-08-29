@@ -721,6 +721,12 @@ pub enum RejectReason {
     /// The population gate could not decide a (plane, cylinder) pair **exactly** — a plane
     /// with no narrow rational description, a rotated class, a moved cylinder (its def is
     /// pre-motion), or checked-`Rat` overflow. Conservative honest refusal, never a guess.
+    ///
+    /// ★ Since the D2b cutover the chart's emitter raises it too, for the band road's old
+    /// `chamber` sentence: a lateral cell whose two ends **disagree** about its chamber (☑ the
+    /// (0,0)-corner boss, where the plate classes' disk cells carry no B material while the
+    /// caps do — an arrangement label defect refused here instead of assembling an open shell),
+    /// and a cylinder class with no row or rows of both solids.
     CylinderGateUndecided,
     /// **The trace does not determine whether a lateral face is present over a sector.**
     ///
@@ -925,13 +931,14 @@ pub enum RejectReason {
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
     /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and
     /// carriers) and the gate's record-and-pass arm opened (cell 4), so this name is now
-    /// **reachable from production**; its measured population is a boss whose **cap sits
-    /// inside the other body's material** (the half-height and seated variants — the chamber
-    /// has no sector answer for such an end). The other standing guards keep it too: a class
-    /// carrying both circles and rulings (the cross-axis pair), rims cut by different walls
-    /// (no `(wall, root)` pairing), sector labels missing or disagreeing, a segment lying *on*
-    /// the lateral, and end names that share no single plane. [`Self::ArcBoundNotYet`]'s
-    /// straight sibling.
+    /// **reachable from production**. ★ Its first measured population — a boss whose **cap sits
+    /// inside the other body's material** (the half-height variant), which the band road's
+    /// `chamber` had no sector answer for — **builds since the D2b cutover** (the chart reads the
+    /// cell). What raises it today: the chart's emitter, for a run whose boundary ruling has no
+    /// node on a cut rim, a partial run with an uncut end, or an adjacent rim pair with no arc
+    /// row; and the assembly's standing guards — a class carrying both circles and rulings (the
+    /// cross-axis pair), a segment lying *on* the lateral, and ruling end names that share no
+    /// single plane. [`Self::ArcBoundNotYet`]'s straight sibling.
     RulingBoundNotYet,
     /// **A loop's winding had to be read across a *curved* straight stretch.**
     ///

@@ -15454,7 +15454,7 @@ zip으로 대조한다(면 수·순서·`flip`·Band는 선의 `t`·Ring은 노�
 | 반높이 Fuse / Cut / Common | 32000+375π / 32000−125π / 125π · 옆면 2/1/1 | **셋 다 그대로**, validate 0, watertight, 메시 넓이 오라클(4×4 판의 반높이 벽 보스, 세 연산) 초록 |
 | census | `rul half *` 세 줄만 | **여섯 줄** — `rul half fuse/cut/common` ERR→빌드(예측) **+ `wal corner-lo fuse/cut/common`** `OpenResultShell`→`CylinderGateUndecided`(예측 밖, 아래) · 두 프로파일 동일(md5 `5f937a65…`) |
 | reject_census · workspace · 스윕 · kit | 무변 · 초록 | **무변 · 1166 · 129 · 72** |
-| 방출 단계 A/B(release, 같은 입력 ×200 중앙값) | ≤ 2× | **반증** — 1.3×~5×, 코너 보스 **28×**(13.7 → 389 µs); 종단 부울은 8.6 ms(관통)·14.1 ms(코너)라 **+1~3%** — 조사 임계(+10%) 안. 비용은 `arc_around`/`cells`의 `circular_order`(`branch_meet` 재계산). 최적화(차트당 `branch_meet` 캐시)는 별도 항목 |
+| 방출 단계 A/B(release, 같은 입력 ×200 중앙값) | ≤ 2× | **반증** — 1.3×~5×, 코너 보스 **28×**(13.7 → 389 µs); 종단 부울은 8.6 ms(관통)·14.1 ms(코너)라 단계 차이를 나누면 **+1~3%** — 조사 임계(+10%) 안. ★ 종단 A/B(release, 같은 바이너리에서 test 전용 env 스위치로 두 도로, ×30 중앙값, 2라운드): 관통 8.05/8.02 vs 7.98/8.58 ms · 코너 13.48/13.69 vs 14.01/13.51 ms · 보어 1.02/1.16 vs 1.02/1.04 ms — **잡음 대역(±5%, 양방향)**. 비용은 `arc_around`/`cells`의 `circular_order`(`branch_meet` 재계산). 최적화(차트당 `branch_meet` 캐시)는 별도 항목 |
 
 ### ★★★ 짓다가 배운 것
 
@@ -15501,3 +15501,13 @@ lib에도 있어야 한다(D3의 항목).
 방출로), `tests.rs`의 `panel_probe` 소비(→ d2b `exist_marks_false`). `face_spans`·`read_bits`·`keep_for`·`axis_param`은
 cyl_chart로. 그다음 **D4** 청소(`unify_curved_faces` — 반높이 보스의 «림 하나 + 호 사슬» 모양이 첫 인구).
 ★ 별도 항목: 방출 단계의 `circular_order` 재계산(차트당 `branch_meet` 캐시).
+
+### 자체 점검 (닫은 뒤, 사용자 요청)
+
+1. `RejectReason::RulingBoundNotYet`의 doc이 「측정된 인구 = 반높이 보스」라 적고 있었다 — 이 칸이 그 인구를 열었으니
+   명제가 거짓이 된 자리. 오늘 그 이름을 내는 자리(방출기의 셋 + 조립 가드)로 다시 적었다. `CylinderGateUndecided`에도
+   방출기의 두 문장(두 끝 불일치·행 없음)을 적었다.
+2. `Bound::Band`의 `allow(dead_code)`와 「생산자는 C4b-2의 띠 도로」 주석이 낡았다 — 생산자는 `emit_lateral`. 지웠다.
+3. 성능의 「종단 +1~3%」는 유도값인데 실측처럼 읽혔고, 계획의 종단 A/B는 안 돼 있었다 — 점검에서 A/B를 실제로 돌려
+   (같은 바이너리, env 스위치, 2라운드) 잡음 대역임을 쟀고 위에 그 수로 바꿨다.
+

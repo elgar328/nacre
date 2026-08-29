@@ -897,7 +897,6 @@ pub(crate) enum Bound {
     /// A lateral band's whole boundary: the two plane classes its rims sit on, `lo` the one with
     /// the smaller axis parameter. The face it bounds is the cylinder itself, so the class is on
     /// [`LocalFace::surf`] rather than repeated here.
-    #[allow(dead_code)] // the producer is C4b-2's band pass
     Band {
         lo: usize,
         hi: usize,
