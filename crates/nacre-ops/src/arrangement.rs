@@ -2290,6 +2290,23 @@ pub(crate) mod ruling_probe {
     /// One entry per ruling whose extent a hole carved, in emission order: the kinds of its pieces.
     pub(crate) static CARVED: Mutex<Vec<Vec<SegKind>>> = Mutex::new(Vec::new());
 
+    /// **The ruling label's postcondition, one entry per ruling piece** (capability D, D2a).
+    ///
+    /// ★★★★★ **A second, independent description of the side the derivation picked.**
+    /// [`super::ruling_interior_is_even`] derives it from `side · κ`; the check asks the *content*
+    /// instead — inside the cylinder the lateral's own solid has material, outside it does not.
+    /// The two share no step, so a disagreement is real. (`ArcLabels`' doc set its own side by
+    /// this same content rule, measured.)
+    ///
+    /// `Some(true)` the two agree · `Some(false)` they contradict · `None` the content does not
+    /// distinguish, so the check is **blind** there and only the derivation speaks. A boss whose
+    /// own plate surrounds it is exactly such a case, which is why this is recorded rather than
+    /// asserted.
+    pub(crate) static SIDE_CHECK: Mutex<Vec<Option<bool>>> = Mutex::new(Vec::new());
+
+    /// One entry per ruling piece: whether it got a label at all (`world_rat_sense` may decline).
+    pub(crate) static LABELLED: Mutex<Vec<bool>> = Mutex::new(Vec::new());
+
     /// One entry per graze: the stated `body_above`, beside the **realized** stored normal of the
     /// wall class it is stated against.
     ///
@@ -4488,20 +4505,79 @@ fn per_class(
     // ends carry an axis parameter or the piece is not stated: a ruling whose end has no ⊥ partner
     // has no place on a chart's `z` axis, and inventing one would be worse than leaving it out —
     // so it is dropped here and **counted** by the chart's own census rather than guessed at.
+    // ★ `i` is read only by the `#[cfg(test)]` label block below.
+    #[cfg_attr(not(test), allow(unused_variables))]
     let ruling_extents: Vec<(usize, RulingExtent)> = edges
         .rulings
         .iter()
-        .filter_map(|r| {
+        .enumerate()
+        .filter_map(|(i, r)| {
             let z = [
                 node_axis_param(jd, &r.def, wc, r.end[0])?,
                 node_axis_param(jd, &r.def, wc, r.end[1])?,
             ];
+            // ★★ The chart's vertical answer — see [`RulingExtent::label`]. It is an `Option`
+            // rather than a `?` deliberately: dropping the piece here would make the recorded
+            // population differ between a test build and a release one, and then the census would
+            // be measuring a corpus production never sees.
+            #[cfg(test)]
+            let label = {
+                let base = 2 * (edges.segs.len() + edges.arcs.len());
+                let cell_at = |even: bool| -> Option<Label> {
+                    Some(labels[*face_of.get(&(base + 2 * i + usize::from(!even)))?])
+                };
+                let inside = ruling_interior_is_even(jd, wc, r.side);
+                let out = inside.and_then(cell_at);
+                // ★ The postcondition, checked rather than assumed — see `ruling_probe::SIDE_CHECK`.
+                // ★★ It asks whether a **cell** carries the lateral's solid, not whether the two
+                // cells *differ*: crossing a ruling on this wall crosses the **lateral**, so they
+                // differ always (☑ measured 838/838) and that says nothing about the side.
+                // ★ Recorded only where a label was formed, so `None` means one thing — the content
+                // did not distinguish — and never "there was nothing to check".
+                if let (Some(inside), Some(s)) = (inside, r.merged.first().map(|m| m.0)) {
+                    let has = |l: Label| {
+                        let b = match s {
+                            crate::planes::SolidSide::A => 0,
+                            crate::planes::SolidSide::B => 2,
+                        };
+                        l[b] || l[b + 1]
+                    };
+                    if let (Some(i_l), Some(e_l)) = (cell_at(inside), cell_at(!inside)) {
+                        let verdict = match (has(i_l), has(e_l)) {
+                            (true, false) => Some(true),
+                            (false, true) => Some(false),
+                            _ => None,
+                        };
+                        // ★★★★★ **Asserted where the fact is made**, so the coverage is total and
+                        // the panic names the offending test — a test reading the ledger afterwards
+                        // sees only what ran before it (this ladder measured that hole twice).
+                        assert_ne!(
+                            verdict,
+                            Some(false),
+                            "the ruling label took the wrong side of the wall: class {wc}, \
+                             side {}",
+                            r.side
+                        );
+                        ruling_probe::SIDE_CHECK
+                            .lock()
+                            .expect("the probe's lock is never held across a panic")
+                            .push(verdict);
+                    }
+                }
+                ruling_probe::LABELLED
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
+                    .push(out.is_some());
+                out
+            };
             Some((
                 r.cyl,
                 RulingExtent {
                     wall: wc,
                     end: r.end,
                     z,
+                    #[cfg(test)]
+                    label,
                 },
             ))
         })
@@ -5925,6 +6001,52 @@ pub(crate) struct RulingExtent {
     pub(crate) wall: usize,
     pub(crate) end: [NodeId; 2],
     pub(crate) z: [nacre_scalar::Rat; 2],
+    /// **The chart's vertical answer** (capability D, third rung): the label of the cell this
+    /// ruling borders **inside** the cylinder, on the wall class this ruling lies on.
+    ///
+    /// ★★★★★ **This is the half `disk_labels`/`arc_labels` do not carry.** A [`Label`] holds the
+    /// material on **both** sides of its plane, so a ⊥ class's disk label already answers the
+    /// chart's *horizontal* crossings entire — which is why [`crate::bands::chamber`] reads two of
+    /// them and asks them to agree. Crossing a *vertical* line is crossing the **wall**, and the
+    /// cell inside the strip is where that plane's two sides are stated at the lateral.
+    ///
+    /// `None` when the wall's rational name and its stored normal cannot be related
+    /// ([`world_rat_sense`]) — the ruling is then left without an answer and **counted**, never
+    /// guessed at.
+    ///
+    /// ★ `#[cfg(test)]`, like `Staged`'s `cells`/`nesting`/`labels`: the only reader is the
+    /// `cyl_chart` instrument, and a release build should not pay for it. The day the labels
+    /// become the *truth* (D3) is the day this loses the attribute.
+    #[cfg(test)]
+    pub(crate) label: Option<Label>,
+}
+
+/// **Which of a ruling's two half-edges borders the cell inside the cylinder** — `true` for the
+/// even one (the piece's own `end[0] → end[1]`, ascending the axis).
+///
+/// ★★★★★ **Derived from the definitions, not re-spelled.** Three sentences already in this file
+/// compose to the answer, and none of them is written a second time here:
+///
+/// * [`combinatorics::RulingCarrier::side`] is `sign((x − o) · (m̂ × n̂))` against the class's
+///   **canonical rational** name, so the strip's interior lies along `−side · (m̂ × n̂)`.
+/// * A cell keeps its material **on the left of its boundary's travel** (the universal convention
+///   [`run_body_above`] and [`material_theta_sign`] both state), and the even half-edge travels
+///   `+m̂` ([`MergedRuling::end`]) — so its cell lies along `n̂ × m̂ = −(m̂ × n̂)`.
+/// * Those two are written against *different* normals, and [`world_rat_sense`] (`κ`) is the
+///   lift that relates them — the correction its own doc says was raised **so the ∥ ruling road
+///   would not spell it a second time**.
+///
+/// ```text
+///   even half-edge's cell is interior  ⟺  −(m̂ × n̂_stored) ∥₊ −side·κ·(m̂ × n̂_stored)
+///                                      ⟺  side · κ = +1
+/// ```
+///
+/// ★ `side · κ` is exactly the frame-free product [`ruling_grazes`] names: both factors read
+/// `world_rat`, so flipping that name flips both and the product stands — which it must, because
+/// *which cell is inside the cylinder* cannot depend on how the plane was named.
+#[cfg(test)]
+fn ruling_interior_is_even(jd: &Judge<'_, WorkingPlane>, wc: usize, side: i8) -> Option<bool> {
+    Some(side * world_rat_sense(jd, wc)? == 1)
 }
 
 /// What the arrangement learned about the curved boundary, bundled: the band pass reads

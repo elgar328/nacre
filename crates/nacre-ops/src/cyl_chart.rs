@@ -74,6 +74,10 @@ pub(crate) struct ThetaSeg {
     pub(crate) end: [combinatorics::NodeId; 2],
     /// `[lower, upper]` on the axis.
     pub(crate) z: [Rat; 2],
+    /// **The chart's vertical answer** — the label of the cell this ruling borders inside the
+    /// cylinder, carried straight from [`RulingExtent::label`]. The horizontal lines' answers are
+    /// `DiskLabels`/`ArcLabels`; this is the half they never had.
+    pub(crate) label: Option<crate::arrangement::Label>,
 }
 
 /// One cylinder class's chart: the two axes, and the cells they cut.
@@ -258,6 +262,7 @@ pub(crate) fn chart_of(
                         wall: r.wall,
                         end: r.end,
                         z: [lo, hi],
+                        label: r.label,
                     }
                 })
                 .collect()
@@ -349,6 +354,18 @@ pub(crate) fn census(
                     }
                 }
             }
+        }
+
+        // ★★★★★ **Every vertical line carries an answer** (capability D, D2a). A ruling without
+        // one is a chart that can state where a wall crosses but not what changes across it — and
+        // the census below would then be comparing a partial chart. ☑ Measured 838/838 across the
+        // suite; `world_rat_sense` declines none of them.
+        for t in &chart.theta {
+            assert!(
+                t.label.is_some(),
+                "a ruling reached the chart with no label: cyl {k}, wall {}",
+                t.wall
+            );
         }
 
         // ★★★★★ **The premise `cells()` is built on, checked where the fact is made.** That

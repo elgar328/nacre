@@ -9170,3 +9170,73 @@ fn the_mesh_census_is_running() {
         "the census recorded no mesh at all"
     );
 }
+
+/// **A ruling carries the label of the cell inside the cylinder** — capability D's vertical answer.
+///
+/// The chart's horizontal lines have had their answer since the band pass: a ⊥ class's
+/// [`crate::arrangement::Label`] holds the material on **both** sides of its plane, which is why
+/// `bands::chamber` reads two disk labels and asks them to agree. The vertical lines had none, and
+/// this is it — the label of the cell a ruling borders on the axis side of its wall.
+///
+/// ★★★★★ **The side is derived, and an independent description checks it.**
+/// `ruling_interior_is_even` composes three sentences already in the file (`RulingCarrier::side`,
+/// the material-on-the-left convention, and `world_rat_sense`'s lift between the rational name and
+/// the stored normal) into `side · κ`. The check shares no step with that: **inside the cylinder
+/// the lateral's own solid has material and outside it does not**, which is the same content rule
+/// `ArcLabels`' doc set its own side by. It is asserted at the record, in `per_class`.
+///
+/// ★★★★ **And the check is what watches this sign — the volume oracle cannot.** Everywhere else in
+/// this ladder a side selector is guarded by the through-boss volume (a global flip passes the
+/// relative locks), but that only works for a sign production *reads*. This label is
+/// `#[cfg(test)]`, so no volume moves whatever it says. ☑ Flipping `side · κ` turns the check from
+/// 814 agreeing to 814 contradicting — it has eyes on 97% of the population.
+///
+/// ☑ Measured over the whole binary: **838 ruling pieces, 838 labelled** (`world_rat_sense`
+/// declines none) · **814 agree, 0 contradict, 24 blind**. The blind ones are real and expected —
+/// a boss surrounded by its own plate has that solid's material on *both* sides of the ruling, so
+/// the content cannot tell, and only the derivation speaks there.
+#[test]
+fn a_ruling_labels_the_cell_inside_the_cylinder() {
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([12.0, 4.0, 2.0]),
+    );
+    let up = Vector3::from_array([0.0, 0.0, 1.0]);
+    let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+    m.rebuild_adjacency();
+    boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds");
+    let lab = crate::arrangement::ruling_probe::LABELLED
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .clone();
+    let chk = crate::arrangement::ruling_probe::SIDE_CHECK
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .clone();
+    assert!(
+        !lab.is_empty(),
+        "the probe never ran, so it measured nothing"
+    );
+    // ★ Universal over every recorded piece, which no interleaving can break — a filtered or
+    // parallel run may bring more entries, never different ones.
+    assert!(
+        lab.iter().all(|&b| b),
+        "a ruling piece got no label: {} of {} unlabelled",
+        lab.iter().filter(|b| !**b).count(),
+        lab.len()
+    );
+    assert!(
+        !chk.is_empty(),
+        "the side check never ran beside the labels"
+    );
+    assert!(
+        chk.iter().all(|c| *c != Some(false)),
+        "a ruling label contradicted the content check"
+    );
+    // ★ And the check is not vacuous: it decides for most of the population, not none of it.
+    assert!(
+        chk.contains(&Some(true)),
+        "the content check decided nothing at all"
+    );
+}
