@@ -531,10 +531,14 @@ impl Chart {
             for &c in lines.classes(t[e]) {
                 // The band leaves the low line toward `+t` and arrives at the high line from
                 // `−t` — `chamber`'s `toward_hi(lo)` / `!toward_hi(hi)`.
+                // ★ Bound to the class whose label is read, not to whichever class the loop
+                // visited last: one `t` is one plane and so one class today, but the sign and
+                // the label must come from the same row the day that stops being true.
                 let up = crate::planes::plus_t_is_above(&jd.planes[c], def);
-                above[e] = if e == 0 { up } else { !up };
+                let band_is_above = if e == 0 { up } else { !up };
                 if let Some(l) = curved.disk_labels.get(&(k, c)) {
                     saw_disk = true;
+                    above[e] = band_is_above;
                     end = End::Disk(*l);
                     continue;
                 }
@@ -544,6 +548,7 @@ impl Chart {
                     continue;
                 };
                 saw_arc = true;
+                above[e] = band_is_above;
                 end = match cell.walls {
                     None => {
                         // The whole circle is one cell here; every arc must read the same for
@@ -897,6 +902,21 @@ pub(crate) fn census(
         assert_eq!(
             d2b.src0_present, 0,
             "a cell with a face has no label at either end: cyl {k}"
+        );
+        // ★ Promoted from counts to record-site assertions once the suite measured them 0
+        // (D1b's `unnamed == 0` discipline): a reporting test sees only the rows recorded before
+        // it, an assertion here sees every chart and names the offending test.
+        assert_eq!(
+            d2b.end_swapped, 0,
+            "a ruling arrived with z descending: cyl {k}"
+        );
+        assert_eq!(
+            d2b.src2_disagree, 0,
+            "a cell's two ends disagree about its chamber: cyl {k}"
+        );
+        assert_eq!(
+            d2b.split_nocircle, 0,
+            "a line inside a band has no circle of this cylinder: cyl {k}"
         );
 
         // ── Neighbours with one chamber: where the cutover would have to merge. ──
@@ -1330,6 +1350,11 @@ pub(crate) fn census(
                 d2b.emit_mismatch += 1;
             }
         }
+        // ★ The headline, asserted where it is made (☑ measured 0 over 1056 cells first).
+        assert_eq!(
+            d2b.emit_mismatch, 0,
+            "the cell reader disagrees with today's emitted lateral faces: cyl {k}"
+        );
         d2b.band_over_rulings = band_over_rulings;
         probe::d2b::push(d2b);
     }
