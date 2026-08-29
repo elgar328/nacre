@@ -144,6 +144,10 @@ pub(crate) fn chart_of(
         .map(|class| crate::bands::axis_param(jd, class, def).map(|t| ZLine { class, t }))
         .collect::<Result<_, BoolError>>()?;
     z_lines.sort_by_key(|l| l.t);
+    // ★ Deduped by **parameter**, and that is exact rather than lucky: two classes ⊥ to this axis
+    // at one `t` are the *same plane*, which is `bands_of`'s own words for why it matches span ends
+    // against `t` without a tolerance. So one of the two indices survives arbitrarily — which is
+    // why everything downstream compares `t`, never the class index.
     z_lines.dedup_by_key(|l| l.t);
 
     let theta: Vec<ThetaSeg> = curved
@@ -204,18 +208,40 @@ pub(crate) fn census(
         // or not a face reaches it, while a row's band boundaries are clipped to that face. So
         // what is checked is *cover*, and the surplus is what the chart gains — the gaps a row
         // cannot describe at all.
-        let covers_rows = mine.iter().all(|r| {
-            [r.span[0], r.span[1]]
-                .iter()
-                .all(|t| chart.z_lines.iter().any(|l| l.t == *t))
-        });
-        assert!(
-            covers_rows,
-            "a chart lost a band boundary its own class's row had: cyl {k}, \
-             z-lines {:?}, row spans {:?}",
-            chart.z_lines.iter().map(|l| l.class).collect::<Vec<_>>(),
-            mine.iter().map(|r| r.span).collect::<Vec<_>>()
-        );
+        //
+        // ★★★★★ **The comparison asks `bands_of` itself, not the row's two ends.** The first
+        // spelling checked `r.span[0]`/`r.span[1]` and the message still claimed "a band
+        // boundary" — a weak check wearing a strong claim, which is the shape this session kept
+        // catching. A row's boundaries come from three sources (emitted circle carriers, cut rims,
+        // span ends), so only that function can say what they are.
+        //
+        // ★★ **Compared by `t`, never by class index.** The chart dedups its z-lines by axis
+        // parameter, which is sound because two ⊥ classes at one `t` *are* one plane (`bands_of`
+        // says so in its own words) — but it means the surviving line may carry the other class's
+        // index. Matching on the index would fail for a reason that is not a lost boundary.
+        //
+        // ★★★★ **A refusal here is skipped, never a panic.** `bands_of` runs for real a few lines
+        // below and may honestly refuse (a class whose axis parameter is too wide for `Rat`);
+        // this census sits *before* it, so panicking would turn a legitimate reject into a crash
+        // — an instrument changing the answer it came to watch. ☑ Measured 0 either way.
+        for r in &mine {
+            let Ok(bands) = crate::bands::bands_of(r, plane_faces, jd, &curved.cut_rims) else {
+                continue;
+            };
+            for (lo, hi) in bands {
+                for c in [lo, hi] {
+                    let Ok(t) = crate::bands::axis_param(jd, c, &r.def) else {
+                        continue;
+                    };
+                    assert!(
+                        chart.z_lines.iter().any(|l| l.t == t),
+                        "a chart lost a band boundary its own class's row had: cyl {k}, \
+                         class {c}, z-lines {:?}",
+                        chart.z_lines.iter().map(|l| l.class).collect::<Vec<_>>()
+                    );
+                }
+            }
+        }
         probe::push(probe::Row {
             z_lines: chart.z_lines.len(),
             theta: chart.theta.len(),
