@@ -78,6 +78,9 @@ pub(crate) struct ThetaSeg {
     /// cylinder, carried straight from [`RulingExtent::label`]. The horizontal lines' answers are
     /// `DiskLabels`/`ArcLabels`; this is the half they never had.
     pub(crate) label: Option<crate::arrangement::Label>,
+    /// Who traced this line — [`RulingExtent::marks`]. Membership is `label`'s question; whether
+    /// this lateral face is even here is this one's.
+    pub(crate) marks: Vec<(crate::planes::SolidSide, crate::arrangement::SegKind)>,
 }
 
 /// One cylinder class's chart: the two axes, and the cells they cut.
@@ -110,9 +113,15 @@ pub(crate) struct Cell {
     pub(crate) interval: usize,
     /// Which sector of that interval, in the interval's own θ order.
     pub(crate) sector: usize,
-    /// The sector's two bounding rulings, `None` when the interval carries none and the cell is
-    /// the whole circle. For a single cut the circle opens at one point and both are that ruling.
-    pub(crate) walls: Option<[RulingName; 2]>,
+    /// The sector's two bounding rulings **as indices into [`Chart::theta`]**, `None` when the
+    /// interval carries none and the cell is the whole circle. For a single cut the circle opens
+    /// at one point and both are that ruling.
+    ///
+    /// ★★★ **Indices, not names.** The first spelling kept the `(wall, root)` names here because
+    /// that is the key `panel_faces` joins on — but then the ruling's *label* (D2a) could not be
+    /// reached from a cell without searching for it, and a second copy of one identity is what
+    /// this ladder keeps being bitten by. The name is one call away ([`Chart::ruling_name`]).
+    pub(crate) walls: Option<[usize; 2]>,
 }
 
 impl Chart {
@@ -135,19 +144,13 @@ impl Chart {
         k: usize,
         def: &nacre_topo::CylinderDef,
     ) -> Option<Vec<Cell>> {
-        let name = |t: &ThetaSeg| -> Option<RulingName> {
-            let (_, _, root) = combinatorics::branch_name(t.end[0])?;
-            Some((t.wall, root))
-        };
         let mut out = Vec::new();
         for i in 0..self.z_lines.len().saturating_sub(1) {
             let (lo, hi) = (self.z_lines[i].t, self.z_lines[i + 1].t);
             // Alive over the *whole* interval: a ruling that stopped inside one would mean an
             // endpoint that is not an axis line, which is the premise above.
-            let alive: Vec<&ThetaSeg> = self
-                .theta
-                .iter()
-                .filter(|t| t.z[0] <= lo && hi <= t.z[1])
+            let alive: Vec<usize> = (0..self.theta.len())
+                .filter(|&j| self.theta[j].z[0] <= lo && hi <= self.theta[j].z[1])
                 .collect();
             if alive.is_empty() {
                 out.push(Cell {
@@ -161,22 +164,29 @@ impl Chart {
             // handing both to `circular_order` asks it to rank one point twice, and it honestly
             // refuses that as the two-names-for-one-point it checks for. The order is a property
             // of the *segment*, and one endpoint states it.
-            let nodes: Vec<combinatorics::NodeId> = alive.iter().map(|t| t.end[0]).collect();
+            let nodes: Vec<combinatorics::NodeId> =
+                alive.iter().map(|&j| self.theta[j].end[0]).collect();
             let (order, _) = crate::arrangement::circular_order(jd, k, def, &nodes).ok()?;
             let n = order.len();
             for s in 0..n {
                 // `k` cuts make `k` sectors, and one cut makes one: the circle opens at that point
                 // and closes at it again.
-                let a = name(alive[order[s]])?;
-                let b = name(alive[order[(s + 1) % n]])?;
                 out.push(Cell {
                     interval: i,
                     sector: s,
-                    walls: Some([a, b]),
+                    walls: Some([alive[order[s]], alive[order[(s + 1) % n]]]),
                 });
             }
         }
         Some(out)
+    }
+
+    /// A ruling's **name** — `(wall class, root)`, the key `panel_faces::name_on` builds on the
+    /// other side of the census's join. Derived from the segment rather than stored beside it.
+    pub(crate) fn ruling_name(&self, i: usize) -> Option<RulingName> {
+        let t = self.theta.get(i)?;
+        let (_, _, root) = combinatorics::branch_name(t.end[0])?;
+        Some((t.wall, root))
     }
 }
 
@@ -263,6 +273,7 @@ pub(crate) fn chart_of(
                         end: r.end,
                         z: [lo, hi],
                         label: r.label,
+                        marks: r.marks.clone(),
                     }
                 })
                 .collect()
@@ -403,17 +414,103 @@ pub(crate) fn census(
         // makes **one** cell, and an odd `k` is the only way to reach that branch.
         let mut whole_circle = 0usize;
         let mut odd_k = 0usize;
+        // ── The vertical answer, read (D2a). ──
+        //
+        // ★★★★★ **The consistency check is «sign-free», and deliberately so.** Asking "which side
+        // of the wall is this sector" would need a third sign beside the two D2a-a already
+        // composes, and this ladder's defect shape is a sign spelled a second time. A ruling's
+        // label states the chamber on **both** sides of its wall, so what each ruling contributes
+        // to a walk around the interval is just *whether the two differ* — and going all the way
+        // round must come back to where it started. That is `label_cells`' final verification,
+        // stated on the chart with no orientation at all.
+        let mut rulings = 0usize;
+        let mut wall_flips = 0usize;
+        let mut intervals_with_flip = 0usize;
+        let mut closes = 0usize;
+        let mut does_not_close = 0usize;
+        let mut grazing_rulings = 0usize;
         for i in 0..chart.z_lines.len().saturating_sub(1) {
             let (lo, hi) = (chart.z_lines[i].t, chart.z_lines[i + 1].t);
-            let n = chart
+            let alive: Vec<&ThetaSeg> = chart
                 .theta
                 .iter()
                 .filter(|t| t.z[0] <= lo && hi <= t.z[1])
-                .count();
+                .collect();
+            let n = alive.len();
             if n == 0 {
                 whole_circle += 1;
-            } else if n % 2 == 1 {
+                continue;
+            }
+            if n % 2 == 1 {
                 odd_k += 1;
+            }
+            rulings += n;
+            // Does crossing this wall change the material at the lateral? `Label` is
+            // `[A_above, A_below, B_above, B_below]`, so the two sides are the even/odd halves.
+            let flip = |l: crate::arrangement::Label| [l[0] != l[1], l[2] != l[3]];
+            let mut acc = [false; 2];
+            let mut all_known = true;
+            let mut any_flip = false;
+            for t in &alive {
+                // ★★ **Existence before membership** — cell ㉒'s split, on the vertical axis. The
+                // chart holds every wall's ruling, whether or not *this* lateral face reaches it,
+                // and a label only ever answers membership. `face_spans` is the one spelling of
+                // the rule and it reads exactly this list.
+                // ★★★★★ **The first spelling of this was vacuous.** It asked whether the mark
+                // list was *empty*, and a `MergedRuling` exists only because a lateral traced it —
+                // so the answer was `0` because nothing was being looked at, not because the
+                // population is empty. The signal `face_spans` actually reads is the **kind**: a
+                // face running through says `Transversal`, one whose boundary stops at the line
+                // says `Graze` and may not reach the interval at all.
+                // ☑ Measured over the suite: 412 `Transversal`, **12 `Graze`** — not empty.
+                if t.marks
+                    .iter()
+                    .all(|(_, k)| matches!(k, crate::arrangement::SegKind::Graze { .. }))
+                {
+                    grazing_rulings += 1;
+                }
+                match t.label {
+                    Some(l) => {
+                        let f = flip(l);
+                        any_flip |= f[0] || f[1];
+                        acc = [acc[0] ^ f[0], acc[1] ^ f[1]];
+                    }
+                    None => all_known = false,
+                }
+            }
+            if any_flip {
+                intervals_with_flip += 1;
+            }
+            wall_flips += alive
+                .iter()
+                .filter(|t| t.label.is_some_and(|l| flip(l)[0] || flip(l)[1]))
+                .count();
+            if all_known {
+                if acc == [false; 2] {
+                    closes += 1;
+                } else {
+                    does_not_close += 1;
+                }
+                // ★★★★★ **`label_cells`' final verification, on the cylinder chart.** The plane
+                // side ends its labelling by checking every edge's flip relation and calling a
+                // failure `LabelConflict`; this is that check, stated where no orientation is
+                // needed — walk the circle, XOR what each wall changes, and come back to where you
+                // started. ☑ Measured 195 intervals, **none** failing to close.
+                // ★ It is asserted (not merely counted) because a failure would mean the chart's
+                // own labels contradict each other, which is a defect on this side and not a
+                // disagreement with today's road.
+                //
+                // ★★★★★ **What it cannot see, measured rather than assumed.** A walk that XORs is
+                // blind to any error appearing an **even** number of times around the circle — and
+                // every interval here carries an even count of rulings (`odd_k`, measured 0), so a
+                // *per-ruling* systematic flip cancels itself and passes. ☑ Probed both ways:
+                // adding one flip per ruling stays green, seeding the accumulator wrong goes red.
+                // So this holds the labels against each other; what holds their absolute sense is
+                // `ruling_probe::SIDE_CHECK`, which compares against content and is not a walk.
+                assert!(
+                    acc == [false; 2],
+                    "the chart's labels do not close around an interval: cyl {k}, interval {i}"
+                );
             }
         }
 
@@ -442,6 +539,11 @@ pub(crate) fn census(
         let mut reversed = 0usize;
         let mut band_multi = 0usize;
         let mut band_over_rulings = 0usize;
+        // The 80's three answers: the ruling is not on this face · it is and the chamber changes
+        // across it (a boundary the band road misses) · it is and nothing changes (harmless).
+        let mut band_split_absent = 0usize;
+        let mut band_split_missed = 0usize;
+        let mut band_split_harmless = 0usize;
         // ★★★★ Counted because a green `unnamed == 0` says nothing if an arm was never walked —
         // the "is the zero a population or an untravelled road" question this ladder has already
         // been caught by once.
@@ -499,6 +601,35 @@ pub(crate) fn census(
                     // calling a wall-crossed strip uniform.
                     if sectors > 1 {
                         band_over_rulings += 1;
+                        // ★★★★★ **The three-way split D1b could not make.** That rung asked
+                        // whether the chart cuts finer than the band and had no way to say what
+                        // the extra line *was*. With a vertical answer there are three, and the
+                        // third is cell ㉒'s: the ruling may not be on this face at all.
+                        // ★ "May not be on this face" is the **graze** kind, not an empty mark
+                        // list — a `MergedRuling` is never traceless, so asking that measured
+                        // nothing (caught while running this rung).
+                        let mut absent = true;
+                        let mut flips = false;
+                        for t in chart.theta.iter().filter(|t| {
+                            line_at(t.z[0]).is_some_and(|x| x < b)
+                                && line_at(t.z[1]).is_some_and(|y| y > a)
+                        }) {
+                            if !t.marks.iter().all(|(_, k)| {
+                                matches!(k, crate::arrangement::SegKind::Graze { .. })
+                            }) {
+                                absent = false;
+                            }
+                            if t.label.is_some_and(|l| l[0] != l[1] || l[2] != l[3]) {
+                                flips = true;
+                            }
+                        }
+                        if absent {
+                            band_split_absent += 1;
+                        } else if flips {
+                            band_split_missed += 1;
+                        } else {
+                            band_split_harmless += 1;
+                        }
                     }
                 }
                 Bound::Ring(ring) => {
@@ -528,15 +659,21 @@ pub(crate) fn census(
                         continue;
                     };
                     let (i, na, nb) = cell;
+                    // ★ The cell's rulings are indices; the panel names them. `ruling_name` is the
+                    // one derivation of that name, so the join stays a single spelling.
+                    let named = |c: &Cell| -> Option<[RulingName; 2]> {
+                        let [x, y] = c.walls?;
+                        Some([chart.ruling_name(x)?, chart.ruling_name(y)?])
+                    };
                     let exact = cells
                         .iter()
-                        .position(|c| c.interval == i && c.walls == Some([na, nb]));
+                        .position(|c| c.interval == i && named(c) == Some([na, nb]));
                     let ci = match exact {
                         Some(ci) => Some(ci),
                         None => {
                             let r = cells
                                 .iter()
-                                .position(|c| c.interval == i && c.walls == Some([nb, na]));
+                                .position(|c| c.interval == i && named(c) == Some([nb, na]));
                             if r.is_some() {
                                 reversed += 1;
                             }
@@ -591,6 +728,17 @@ pub(crate) fn census(
             bands_seen,
             panels_seen,
         });
+        probe::d2::push(probe::d2::Row {
+            rulings,
+            wall_flips,
+            intervals_with_flip,
+            closes,
+            does_not_close,
+            grazing_rulings,
+            band_split_absent,
+            band_split_missed,
+            band_split_harmless,
+        });
     }
 }
 
@@ -643,6 +791,46 @@ pub(crate) mod probe {
     }
 
     pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+
+    /// **Capability D's third rung has its own ledger**, deliberately not more fields on [`Row`].
+    /// That one is already fourteen wide, and every field of it needs a reader or `dead_code`
+    /// stops the build — which is how a table nobody can read grows contrived invariants to feed
+    /// it. One instrument per rung.
+    pub(crate) mod d2 {
+        use std::sync::Mutex;
+
+        /// One chart's vertical answers.
+        #[derive(Clone, Copy, Debug, Default)]
+        pub(crate) struct Row {
+            /// Alive-ruling observations across all of this chart's intervals — the denominator
+            /// the two counts below are subsets of. Kept so a ratio is never read against a
+            /// denominator that lives in another table.
+            pub(crate) rulings: usize,
+            /// Rulings whose wall changes the material at the lateral.
+            pub(crate) wall_flips: usize,
+            pub(crate) intervals_with_flip: usize,
+            /// Intervals whose walk around the circle returns to where it started, and those whose
+            /// does not — `label_cells`' final verification, stated on the chart.
+            pub(crate) closes: usize,
+            pub(crate) does_not_close: usize,
+            /// Rulings whose every mark is a **graze** — the face stops at the line rather than
+            /// crossing it, so whether it reaches the interval is `face_spans`' question and not a
+            /// label's. Existence, not membership (cell ㉒'s split, on the vertical axis).
+            pub(crate) grazing_rulings: usize,
+            /// D1b's 80, split three ways.
+            pub(crate) band_split_absent: usize,
+            pub(crate) band_split_missed: usize,
+            pub(crate) band_split_harmless: usize,
+        }
+
+        pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+
+        pub(crate) fn push(r: Row) {
+            ROWS.lock()
+                .expect("the probe's lock is never held across a panic")
+                .push(r);
+        }
+    }
 
     pub(crate) fn push(r: Row) {
         ROWS.lock()
@@ -770,6 +958,91 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// **The chart's vertical answers are read, and they close** (capability D, D2a).
+    ///
+    /// The real claims are asserted in `census`, where the facts are made — every ruling reaches
+    /// the chart with a label, and the walk around each interval returns to where it started.
+    /// What this holds is that the reading is **live** and that its counters are not vacuous.
+    ///
+    /// ★★★★★ **What the vertical answer settled, which no label alone could.** D1b handed on 82
+    /// emitted bands that span more than one θ-sector and could not say what the extra line was.
+    /// With a label on the vertical lines there are three answers, and the third is cell ㉒'s —
+    /// the ruling may not be on this face at all. ☑ Measured over the suite: **absent 0 · a
+    /// boundary the band road misses 0 · harmless 82**. The band road is calling those strips
+    /// uniform and the chart agrees they *are*: the walls crossing them change nothing at the
+    /// lateral there.
+    ///
+    /// ☑ Beside it: **118 rulings whose wall does change the material** (so the counter has a
+    /// population), **59 intervals** carrying at least one, **12 rulings whose every mark is a
+    /// graze** — the existence question is not empty either — and **195 intervals closing, 0 not**.
+    ///
+    /// ★★ **The first spelling of the existence counter was vacuous**: it asked whether a ruling's
+    /// mark list was *empty*, and a `MergedRuling` exists only because a lateral traced it. It
+    /// measured `0` because nothing was being looked at. The signal `face_spans` actually reads is
+    /// the **kind** (`Graze` = the face stops here), and that has 12.
+    #[test]
+    fn the_charts_vertical_answers_close() {
+        let before = super::probe::d2::ROWS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .len();
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([12.0, 4.0, 2.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array([2.0, 0.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            4.0,
+        );
+        m.rebuild_adjacency();
+        crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
+        let rows = super::probe::d2::ROWS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .clone();
+        assert!(
+            rows.len() > before,
+            "a boolean recorded no vertical answers"
+        );
+        // ★ Universal over every recorded chart, so no interleaving can break it.
+        for r in &rows {
+            assert_eq!(r.does_not_close, 0, "an interval did not close: {r:?}");
+            // Both counts are subsets of the same denominator, in the same table.
+            assert!(r.wall_flips <= r.rulings, "more flips than rulings: {r:?}");
+            assert!(
+                r.grazing_rulings <= r.rulings,
+                "more grazes than rulings: {r:?}"
+            );
+            assert!(
+                r.intervals_with_flip <= r.closes + r.does_not_close,
+                "more flipping intervals than walked ones: {r:?}"
+            );
+            assert_eq!(
+                r.band_split_missed, 0,
+                "a band spans a wall that changes the material: {r:?}"
+            );
+            assert_eq!(
+                r.band_split_absent, 0,
+                "a band spans a ruling no face traced: {r:?}"
+            );
+        }
+        // ★★★★ And the counters are not vacuous — a zero above must mean "the population is
+        // empty here", never "nothing was looked at". That is the mistake this rung made once.
+        let sum = |f: fn(&super::probe::d2::Row) -> usize| rows.iter().map(f).sum::<usize>();
+        assert!(sum(|r| r.closes) > 0, "no interval was ever walked");
+        assert!(
+            sum(|r| r.wall_flips) > 0,
+            "no wall ever changed the material, so the check saw nothing"
+        );
+        assert!(
+            sum(|r| r.band_split_harmless) > 0,
+            "no band ever spanned a sector, so the three-way split saw nothing"
+        );
     }
 
     /// **The derivation, on an axis that is not `+z`** — both roads, on a genuinely tilted one.

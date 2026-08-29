@@ -4578,6 +4578,8 @@ fn per_class(
                     z,
                     #[cfg(test)]
                     label,
+                    #[cfg(test)]
+                    marks: r.merged.clone(),
                 },
             ))
         })
@@ -6019,6 +6021,17 @@ pub(crate) struct RulingExtent {
     /// become the *truth* (D3) is the day this loses the attribute.
     #[cfg(test)]
     pub(crate) label: Option<Label>,
+    /// The `(solid, kind)` contributions that covered this piece — [`MergedRuling::merged`], the
+    /// same list [`ArcLabel::marks`] carries for an arc.
+    ///
+    /// ★★★★★ **A label answers *membership*; this answers *existence*.** Cell ㉒ named that split
+    /// on the ⊥ side: the chart collects **every** perpendicular class, and a ruling's extent is
+    /// set by its *wall*, not by this lateral face — so a vertical line can be in the chart while
+    /// the face is not there at all. `bands::face_spans` already states the rule for exactly this
+    /// list, and it is carried beside the label for the reason `ArcLabel` carries both: split into
+    /// two maps they could disagree, and then nothing could say which was the truth.
+    #[cfg(test)]
+    pub(crate) marks: Vec<(crate::planes::SolidSide, SegKind)>,
 }
 
 /// **Which of a ruling's two half-edges borders the cell inside the cylinder** — `true` for the
