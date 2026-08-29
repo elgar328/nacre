@@ -1363,6 +1363,12 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
     원). 커토버 결정: θ-병합은 차트, z-병합은 `unify_curved_faces` · 존재는 잘린 끝 = marks / 디스크 끝 = span
     (`cyl_rows` 유지) · 룰링 identity는 `Branch` root가 아니라 `ruling_side`. D4 삭제 목록과 실측은 dev-log
     「능력 D, 넷째 계단」. 그다음 D2b(커토버) · D3 · D4(청소).
+  ★★ **다섯째 계단(D2b, 2026-08-30) — 커토버 완료.** 프로덕션은 `cyl_chart::emit_lateral`이 옆면을 방출하고,
+    `bands::band_faces`는 test 빌드의 **참조 도로**(census가 두 방출을 면 단위로 zip)로 D3까지 남는다. 규칙 넷:
+    `Band` iff 띠형 ∧ 양끝 다 잘리지 않음 · 띠는 `bands_of`의 경계(림 클래스 ∪ span 끝)가 아닌 선만 건넌다 · 런은
+    림 노드 룰링에서 갈린다 · 런 순서는 첫 섹터. 열린 것: 반높이 보스(Fuse 32000+375π). 바뀐 이름: (0,0) 코너 보스가
+    `OpenResultShell` 대신 `CylinderGateUndecided` — 판 클래스의 원판 셀이 B를 잃는 **arrangement 딱지 결함**(발견,
+    다음 인구). 실측·부정 대조·A/B는 dev-log 「능력 D, 다섯째 계단」.
   - ★★★★★ **D3의 전제조건 — 여기서 계기 넷이 눈이 멀었던 적이 있다.** 칸 ⑦이 옆면의 면 구조를 바꾸고
     **메시가 조용히 틀린 채** `validate`·watertight·정확 부피·면 수가 **전부 초록**이었다(넓이 7.873 vs
     9.425). 그걸 잡은 눈은 칸 ⑧의 **메시 넓이 ≈ 정확 넓이**다. ⇒ 갈아타기 **전에** 원통 코퍼스에 그

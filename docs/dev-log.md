@@ -15412,3 +15412,92 @@ D2a 는 「이 섹터가 벽의 어느 쪽인가」 부호를 일부러 안 만�
 비트 동일, 면 수 잠금 초록. 그다음 D3(방출 확정·`bands.rs` 판정부 삭제) · D4(청소).
 ★ D3 전제조건(메시 넓이 오라클)은 `tests.rs::the_mesh_covers_the_faces_it_approximates` 가 이미 원통 코퍼스에
 서 있다 — 새로 짓지 말고 인구(연쇄·보어·패널)를 넓힌다.
+
+---
+
+## 능력 D, 다섯째 계단 — 커토버 (D2b): 옆면이 차트 셀에서 방출된다
+
+커밋 넷 + 문서: `7259a57`(① D2b-1 계수기) · `af315c0`(② 판독기가 패닉 대신 이름으로 거절) ·
+`c19e5d2`(③a 그림자 — 방출기를 참조 도로 옆에서 면 단위로 대조) · `6b9fda0`(③b 전환) · 문서.
+**프로덕션이 바뀐 것은 ③b 하나**이고, 바뀐 출력은 census 코퍼스의 `rul half fuse|cut|common` 세 행뿐이다.
+
+### 무엇이 서 있나
+
+`arrangement::boolean`(arrangement.rs, 옛 `band_faces` 자리)은 이제 **`cyl_chart::emit_lateral`**을 부른다: 원통
+클래스마다 `chart_of` → `cells` → `read_cell`(D2b-0의 판독기) → 구간마다 «띠형»(모든 셀 방출·한 챔버·양끝이 다 잘리진
+않음)이면 `Bound::Band`, 아니면 부분 런마다 오늘의 패널 링 `[a_lo, b_lo, b_hi, a_hi]`(`Arc ccw, Ruling up, Arc cw, Ruling
+down`, `flip: !keep_in`). 규칙 넷 — 전부 옛 도로의 것을 차트에 다시 쓴 것이고 짓기 전에 쟀다(①):
+- `Band` iff 띠형 ∧ 양끝 다 잘리지 않음(`band_faces`의 분기). 온전한 원 셀은 양끝이 잘려도 `Band` → `band_loop`가 이름으로
+  거절(`ArcBoundNotYet`; 오늘은 `chamber`의 `CylinderGateUndecided` — 이름이 바뀌는 인구, 실측 0).
+- 띠는 `bands_of`가 자르지 않는 선만 건넌다: 경계 = 림 클래스(방출된 원 ∪ cut rim, `rim_classes`) ∪ 행의 span 끝
+  (`boundary_lines`). ☑ 차트의 띠형 병합 **47 = 47** 참조 도로의 병합, 경계 위 병합 0 — 기록 자리 단언.
+- 런은 림 노드가 있는 룰링에서 갈린다(오늘 패널 = 인접 림 노드 쌍). ☑ 오늘 인구에서 바뀌는 것 0.
+- 런은 첫 섹터 순(= `lo_rim.nodes`의 `j` 순, 둘 다 `circular_order` seam-first). ☑ 오늘의 방출 순서 대 차트 셀 순서 역전 0
+  — 기록 자리 단언(replay 계약: 면 순서 = 핸들 순서).
+부호 유도 0: 챔버는 `read_cell`, keep은 `bands::keep_for`, 룰링 identity는 `ruling_side`, 노드는 `Chart::node_on`.
+
+`band_faces`·`bands_of`·`chamber`·`panel_faces`는 **test 빌드의 참조 도로**로 남았다(`#[cfg(test)]`): census가 두 방출을
+zip으로 대조한다(면 수·순서·`flip`·Band는 선의 `t`·Ring은 노드와 벽). D3에서 지운다. `cyl_rows`/`CylRow`는 프로덕션
+(span = 디스크 끝의 존재 진실). `cfg(test)`를 벗은 것: `mod cyl_chart`, `RulingExtent`의 `cfg_attr`, `Curved.rulings`의
+`allow`. 남은 것: `RulingExtent.{label,marks}`·`ThetaSeg.{label,marks}`·`ruling_interior_is_even`·`census`·`probe`.
+
+### ☑ 실측 — 예측 vs 결과
+
+| 수 | 예측 | 실측 |
+|---|---|---|
+| ① `z_merge_bandlike` / `ref_band_merges` / 경계 위 | 47 / — / 0 | **47 / 47 / 0** |
+| ① `run_boundary_no_node` · `whole_both_cut` · `run_split_at_node` · `full_run_both_cut` · `run_run_nonboundary` · `order_descents` | 0 | **전부 0** |
+| ① `intervals_multi_run` | 예측 없음 | **0** ⇒ 런 순서 규칙 **미실행** |
+| ② 원장 | ①과 동일 | **동일**, `read_refused` 0 |
+| ③a 면 대조 | 399 동일 · `opened` 1 · `(Some, Err)` 0 | **399 · 1 · 0** (첫 실행) |
+| ③b 스위트 | 반높이 행만 빨강 | **328/329, 그 행만** |
+| 반높이 Fuse / Cut / Common | 32000+375π / 32000−125π / 125π · 옆면 2/1/1 | **셋 다 그대로**, validate 0, watertight, 메시 넓이 오라클(4×4 판의 반높이 벽 보스, 세 연산) 초록 |
+| census | `rul half *` 세 줄만 | **여섯 줄** — `rul half fuse/cut/common` ERR→빌드(예측) **+ `wal corner-lo fuse/cut/common`** `OpenResultShell`→`CylinderGateUndecided`(예측 밖, 아래) · 두 프로파일 동일(md5 `5f937a65…`) |
+| reject_census · workspace · 스윕 · kit | 무변 · 초록 | **무변 · 1166 · 129 · 72** |
+| 방출 단계 A/B(release, 같은 입력 ×200 중앙값) | ≤ 2× | **반증** — 1.3×~5×, 코너 보스 **28×**(13.7 → 389 µs); 종단 부울은 8.6 ms(관통)·14.1 ms(코너)라 **+1~3%** — 조사 임계(+10%) 안. 비용은 `arc_around`/`cells`의 `circular_order`(`branch_meet` 재계산). 최적화(차트당 `branch_meet` 캐시)는 별도 항목 |
+
+### ★★★ 짓다가 배운 것
+
+- **`End::Disk`는 «안 잘림»이 아니다** — 잘린 원이라도 모든 호가 같은 답이면 판독기는 `Disk`를 낸다. 계획 검토가 잡았고,
+  «잘림»의 한 철자는 `cut_rims.contains_key`다(①의 계수기와 방출기가 같은 철자).
+- 313 = 253 + 107 − 47 − **1**: 마지막 1은 참조 도로에 면이 없는 차트(반높이 보스)의 띠형 구간 — 분모가 다른 두 수를
+  한 등식에 넣을 땐 그런 항을 먼저 찾는다.
+- 임시 A/B 하네스가 `trace_input`에 게이트 기록(`crossings`) 없이 `Default::default()`를 넣어 방출기가 `CylinderGateUndecided`를
+  냈다 — 계측은 **프로덕션과 같은 입력**에서 해야 한다(census 자리에 임시 스위치로 다시 쟀다).
+
+### ☑ 부정 대조 (③a, 하나씩 실행·되돌림)
+| 뒤집은 것 | 빨간 자리 |
+|---|---|
+| 두 `Ruling` 벽의 `up` 교환 | 면 대조: walls 다름 |
+| `flip: keep_in` | 면 대조: flip 다름 |
+| z-병합 제거 | 면 대조: 면 수 3 vs 1 |
+| `read_cell` hi 끝을 `up`으로 | 차트 도로가 참조가 내는 것을 거절(`CylinderGateUndecided`) — 기록 자리 panic |
+| `present` 항상 참 | 면 대조: 면 수 다름 |
+| 런 순서 역전 | **미실행**(`intervals_multi_run` 0) — 대조를 주장하지 않는다 |
+공허한 것도 그렇게 적는다: `carries_circle` 경계 조항(구조적으로 빈 인구), 림-노드 분할(`run_split_at_node` 0), 양끝-잘림
+조항(`full_run_both_cut` 0).
+
+### ★★★★★ 중단 조건이 울렸다 — 그리고 차트가 옳았다
+
+census diff가 예측 3줄이 아니라 **6줄**이었다. `wal corner-lo`(4×4×2 판의 **(0,0) 코너**에 선 보스, `tests/census.rs`
+코퍼스에만 있고 lib 스위트에는 없어 그림자 대조를 안 거친 픽스처)가 `OpenResultShell`에서 `CylinderGateUndecided`로
+바뀌었다. 덤프해 읽으니: 판 바닥/윗면 클래스의 원판 셀 딱지가 **B를 잃었다**(호 딱지 전부 `[F,F,F,F]`; (4,4) 코너의 같은
+자리는 `[F,F,T,T]`로 정상). 옛 도로는 그 모순된 딱지로 면을 내고 조립의 닫힘 가드가 `OpenResultShell`(SuspectedDefect)을
+냈고, 차트는 두 끝(캡 원판 «B 있음» vs 판 호 «B 없음»)의 불일치를 `chamber`의 그 이름으로 **방출 전에** 거절한다.
+⇒ 능력은 무변, 이름은 더 정직해졌다. **낮은 코너에서 판 클래스의 원판 셀이 B를 잃는 arrangement 딱지 결함**은 이 칸의
+발견이자 다음 인구다(`label_cells`/`edge_mask` 쪽, 이 칸에서 쫓지 않는다).
+★ 교훈: **census 코퍼스 ⊋ lib 스위트** — 그림자 대조의 인구는 lib 스위트였다. 코퍼스 전체를 그림자에 넣으려면 census 픽스처가
+lib에도 있어야 한다(D3의 항목).
+
+### 관문
+
+전량 초록: fmt/clippy 0 · workspace **1166** · nodef · census 두 프로파일 269줄 동일(md5 `5f937a65…`), HEAD 대비 위 6줄 ·
+`reject_census` 무변 · 스윕 129 · `--features reject-trace`에서 `cyl_chart.rs` 발화 **0** · perf release 답 동일(`ring 80`
+1.60 / 1.05s · `small` 552.6µs — 같은 대역; 원통 없는 코퍼스) · kit 72. 훅과 겹친 cargo 작업 없음.
+
+### 다음
+**D3** — 참조 도로 삭제: `bands::{band_faces, bands_of, chamber, panel_faces, panel_probe}`와 census의 「참조 vs 차트」 대조
+(항진명제가 됨), `arrangement.rs::a_cut_circle_bounds_the_bands`, `bands.rs`의 `band_faces` 직접 호출 테스트(단언은 차트
+방출로), `tests.rs`의 `panel_probe` 소비(→ d2b `exist_marks_false`). `face_spans`·`read_bits`·`keep_for`·`axis_param`은
+cyl_chart로. 그다음 **D4** 청소(`unify_curved_faces` — 반높이 보스의 «림 하나 + 호 사슬» 모양이 첫 인구).
+★ 별도 항목: 방출 단계의 `circular_order` 재계산(차트당 `branch_meet` 캐시).

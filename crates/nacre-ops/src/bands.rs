@@ -1,5 +1,12 @@
 //! **Which parts of a cylinder's lateral surface survive a boolean** (M6-2a C4b).
 //!
+//! ★★ **Since the D2b cutover (2026-08-30) production does not read this file's decision roads.**
+//! The lateral faces are emitted by `cyl_chart::emit_lateral` from the chart's cells; `band_faces`,
+//! `bands_of`, `chamber` and `panel_faces` are `#[cfg(test)]` — the **reference road** the census
+//! compares that emission against, face by face, until D3 deletes them. What production still
+//! reads here: `cyl_rows` (a face's span is the existence truth at an uncut end), `face_spans`,
+//! `read_bits`, `keep_for` and `axis_param` — one spelling each, called from the chart.
+//!
 //! The plane arrangement decides one plane class at a time; a cylinder's wall is not a plane, so
 //! it is decided here instead — and it is decided *coarsely*, because in this population it can
 //! be. The M6-2a gate admits only ⊥ cuts and ∥ walls whose **faces** stand clear of the lateral

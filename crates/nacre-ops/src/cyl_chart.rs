@@ -35,12 +35,13 @@
 //!
 //! ## What is here, and what is not
 //!
-//! The two axes (D1a), the **cells** they cut (D1b), the vertical lines' answers (D2a), and the
-//! **cell reader** (D2b-0, [`Chart::read_cell`]) — the function the cutover will call, which reads
-//! a cell's chamber and existence off the *horizontal* lines alone (`DiskLabels`/`ArcLabels`
-//! through `bands::read_bits`/`face_spans`) and is measured, cell by cell, against what the two
-//! hand-written roads emit today. The cutover itself is not: those roads are untouched, because
-//! the census has to measure what they answer *today*.
+//! The two axes (D1a), the **cells** they cut (D1b), the vertical lines' answers (D2a), the
+//! **cell reader** ([`Chart::read_cell`], D2b-0), which reads a cell's chamber and existence off
+//! the *horizontal* lines alone (`DiskLabels`/`ArcLabels` through `bands::read_bits`/`face_spans`),
+//! and — since the D2b cutover — the **emitter** ([`emit_lateral`]): production's lateral faces
+//! come from here, in the band road's own vocabulary and by its own four rules (see the fn doc).
+//! The band road (`bands::band_faces`) survives in test builds as the **reference** the census
+//! zips this emission against, face by face, until D3 deletes it.
 
 use crate::arrangement::{ArcLabel, Curved, Label, RulingExtent};
 use crate::boolean::{Bound, LocalFace};
