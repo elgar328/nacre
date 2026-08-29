@@ -1413,7 +1413,8 @@ mod zzz_ledger {
              partial_theta_in_disk_interval {} band_over_rulings {} full_runs {} partial_runs {} \
              run_boundary_no_node {} whole_both_cut {} order_descents {} whole_emitted {} \
              run_split_at_node {} full_run_both_cut {} intervals_multi_run {} \
-             run_run_nonboundary {} z_merge_bandlike {} ref_band_merges {} ref_merge_over_boundary {}",
+             run_run_nonboundary {} z_merge_bandlike {} ref_band_merges {} ref_merge_over_boundary {} \
+             compared {} opened {} both_refused {}",
             d2b.len(),
             d2b.iter().filter(|r| r.no_faces).count(),
             s(|r| r.cells),
@@ -1450,6 +1451,9 @@ mod zzz_ledger {
             s(|r| r.z_merge_bandlike),
             s(|r| r.ref_band_merges),
             s(|r| r.ref_merge_over_boundary),
+            s(|r| r.compared),
+            s(|r| r.opened),
+            s(|r| r.both_refused),
         );
     }
 }

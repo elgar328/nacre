@@ -704,6 +704,213 @@ impl Chart {
     }
 }
 
+/// **The lateral faces of every cylinder class, emitted from the chart** — the cutover's road.
+///
+/// The vocabulary is the band road's own: a band-shaped interval (every cell kept, one chamber)
+/// is a [`Bound::Band`] between two lines, and a partial run of kept sectors is a panel ring
+/// `[a_lo, b_lo, b_hi, a_hi]` walled `[Arc ccw, Ruling up, Arc cw, Ruling down]` — the ring
+/// `bands::panel_faces` emits, node for node. Four rules, each the band road's, restated on the
+/// chart and measured against it before this was written (D2b-1):
+///
+/// * **`Band` iff band-shaped and not both rims cut** — `band_faces`' dispatch. A whole-circle
+///   cell with both rims cut is still a `Band`; `band_loop` refuses that one by name.
+/// * **A band runs across a line only where `bands_of` never cut**: not a rim class (an emitted
+///   circle or a cut rim) and not a row's span end ([`boundary_lines`]). ☑ 47 = 47 merges.
+/// * **Runs split at a ruling with a node on a cut rim** — one ring per adjacent node pair, as
+///   the panel road walks `CutRim.nodes`, so every ring arc is one edge. ☑ 0 changed today.
+/// * **Runs are emitted by first sector** — `lo_rim.nodes` order, since both come from
+///   `circular_order` seam-first; a wrap run sorts last, as today's `j = m − 1`.
+///
+/// No sign is derived here: chambers come from [`Chart::read_cell`], the keep rule is
+/// `bands::keep_for`, the ruling identity is [`Chart::ruling_name`] (`ruling_side`), and the
+/// nodes are the rulings' own ([`Chart::node_on`]).
+pub(crate) fn emit_lateral(
+    kind: crate::BoolKind,
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[WorkingCyl],
+    plane_faces: &[LocalFace],
+    curved: &Curved,
+    rows: &[crate::bands::CylRow],
+) -> Result<Vec<LocalFace>, BoolError> {
+    use crate::boolean::{Ring, Wall};
+    let mut out: Vec<LocalFace> = Vec::new();
+    for k in 0..cyls.len() {
+        let def = &cyls[k].def;
+        // One class is one solid's surface (`cyl_rows` refuses a class with no row; two solids
+        // share no handles) — stated as the refusal `cyl_rows` names for the wiring failure.
+        let mut sides = rows.iter().filter(|r| r.class == k).map(|r| r.side);
+        let Some(side) = sides.next() else {
+            return Err(reject(RejectReason::CylinderGateUndecided));
+        };
+        if sides.any(|s| s != side) {
+            return Err(reject(RejectReason::CylinderGateUndecided));
+        }
+        let chart = chart_of(jd, cyls, k, plane_faces, curved)?;
+        let lines = Lines::of(jd, k, def, curved)?;
+        // The θ order the split already formed cannot fail to form again; if it does, the point's
+        // own `(line, s)` could not be stated — that name's sentence.
+        let cells = chart
+            .cells(jd, k, def)
+            .ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+        let reads: Vec<CellRead<'_>> = cells
+            .iter()
+            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, &lines, rows))
+            .collect::<Result<_, _>>()?;
+        let boundary = boundary_lines(jd, k, def, plane_faces, curved, rows)?;
+        let is_cut = |t: Rat| {
+            lines
+                .classes(t)
+                .iter()
+                .any(|&c| curved.cut_rims.contains_key(&(k, c)))
+        };
+        let is_boundary = |t: Rat| boundary.binary_search(&t).is_ok();
+        let ladder = || reject(RejectReason::RulingBoundNotYet);
+        let keep = |own: bool, other: bool| crate::bands::keep_for(kind, side, own, other);
+
+        // A band-shaped stretch not yet flushed: `(first line, last line, chamber, flip)`.
+        let mut pending: Option<(usize, usize, (bool, bool), bool)> = None;
+        let flush = |pending: &mut Option<(usize, usize, (bool, bool), bool)>,
+                     out: &mut Vec<LocalFace>| {
+            if let Some((lo, hi, _, flip)) = pending.take() {
+                out.push(LocalFace {
+                    surf: ClassIx::Cyl(k),
+                    outer: Bound::Band {
+                        lo: chart.z_lines[lo].class,
+                        hi: chart.z_lines[hi].class,
+                    },
+                    inner: Vec::new(),
+                    flip,
+                });
+            }
+        };
+        let n_int = chart.z_lines.len().saturating_sub(1);
+        for i in 0..n_int {
+            let idx: Vec<usize> = (0..cells.len())
+                .filter(|&ci| cells[ci].interval == i)
+                .collect();
+            let (t_lo, t_hi) = (chart.z_lines[i].t, chart.z_lines[i + 1].t);
+            // A present cell whose chamber could not be read: the two ends disagreed, which is
+            // `chamber`'s own refusal.
+            if idx
+                .iter()
+                .any(|&ci| reads[ci].present && reads[ci].emit.is_none())
+            {
+                return Err(reject(RejectReason::CylinderGateUndecided));
+            }
+            let em: Vec<bool> = idx.iter().map(|&ci| reads[ci].emit == Some(true)).collect();
+            if !em.iter().any(|&e| e) {
+                flush(&mut pending, &mut out);
+                continue;
+            }
+            let n = idx.len();
+            let chamber0 = reads[idx[0]].chamber;
+            let all_kept = em.iter().all(|&e| e);
+            let one_chamber = idx.iter().all(|&ci| reads[ci].chamber == chamber0);
+            let whole = n == 1 && cells[idx[0]].walls.is_none();
+            // `band_faces`' dispatch: a both-cut interval is the panel road's, whatever its
+            // chambers say — except the whole circle, which has no sectors to be panels of and
+            // goes to `band_loop` to be refused by name there.
+            let bandlike = all_kept && one_chamber && (whole || !(is_cut(t_lo) && is_cut(t_hi)));
+            if bandlike {
+                let (own, other) =
+                    chamber0.ok_or_else(|| reject(RejectReason::CylinderGateUndecided))?;
+                let flip = !keep(own, other);
+                match pending {
+                    Some((lo, hi, ch, fl))
+                        if hi == i && ch == (own, other) && fl == flip && !is_boundary(t_lo) =>
+                    {
+                        pending = Some((lo, i + 1, ch, fl));
+                    }
+                    _ => {
+                        flush(&mut pending, &mut out);
+                        pending = Some((i, i + 1, (own, other), flip));
+                    }
+                }
+                continue;
+            }
+            flush(&mut pending, &mut out);
+            // Sectors: both rims must be cut, or the chamber has no sector answer for an end.
+            if !(is_cut(t_lo) && is_cut(t_hi)) {
+                return Err(ladder());
+            }
+            // A run breaks between sector `s − 1` and `s` where either is dropped, the chamber
+            // changes, or the shared ruling has a node on a rim (today's panel boundary).
+            let breaks = |s: usize| -> bool {
+                let (p, c) = (idx[(s + n - 1) % n], idx[s]);
+                !em[s]
+                    || !em[(s + n - 1) % n]
+                    || reads[p].chamber != reads[c].chamber
+                    || cells[c].walls.is_none_or(|[x, _]| {
+                        chart.node_on(x, t_lo).is_some() || chart.node_on(x, t_hi).is_some()
+                    })
+            };
+            let Some(start) = (0..n).find(|&s| breaks(s)) else {
+                // Every sector kept, one chamber, no ruling with a rim node — but both rims are
+                // cut, so a node exists on some ruling; a circle that breaks nowhere has none.
+                return Err(ladder());
+            };
+            // Runs as `(first sector, first cell, last cell)`, then in first-sector order.
+            let mut runs: Vec<(usize, usize, usize)> = Vec::new();
+            let mut s = 0;
+            while s < n {
+                let at = (start + s) % n;
+                if !em[at] {
+                    s += 1;
+                    continue;
+                }
+                let mut len = 1;
+                while s + len < n && !breaks((start + s + len) % n) {
+                    len += 1;
+                }
+                runs.push((
+                    cells[idx[at]].sector,
+                    idx[at],
+                    idx[(start + s + len - 1) % n],
+                ));
+                s += len;
+            }
+            runs.sort_unstable_by_key(|&(sector, _, _)| sector);
+            for (_, f, l) in runs {
+                let (Some([a, _]), Some([_, b])) = (cells[f].walls, cells[l].walls) else {
+                    return Err(ladder());
+                };
+                let node = |r: usize, t: Rat| chart.node_on(r, t).ok_or_else(ladder);
+                let (a_lo, a_hi) = (node(a, t_lo)?, node(a, t_hi)?);
+                let (b_lo, b_hi) = (node(b, t_lo)?, node(b, t_hi)?);
+                let side_a = chart.ruling_name(jd, k, def, a).ok_or_else(ladder)?.1;
+                let side_b = chart.ruling_name(jd, k, def, b).ok_or_else(ladder)?.1;
+                let (own, other) = reads[f]
+                    .chamber
+                    .ok_or_else(|| reject(RejectReason::CylinderGateUndecided))?;
+                out.push(LocalFace {
+                    surf: ClassIx::Cyl(k),
+                    outer: Bound::Ring(Ring::new(
+                        vec![a_lo, b_lo, b_hi, a_hi],
+                        vec![
+                            Wall::Arc { cyl: k, ccw: true },
+                            Wall::Ruling {
+                                cyl: k,
+                                side: side_b,
+                                up: true,
+                            },
+                            Wall::Arc { cyl: k, ccw: false },
+                            Wall::Ruling {
+                                cyl: k,
+                                side: side_a,
+                                up: false,
+                            },
+                        ],
+                    )),
+                    inner: Vec::new(),
+                    flip: !keep(own, other),
+                });
+            }
+        }
+        flush(&mut pending, &mut out);
+    }
+    Ok(out)
+}
+
 /// **What the chart's line set looks like, beside what the hand-written roads answer today.**
 ///
 /// The first rung of capability D ships no capability: it builds the two axes and *measures* them.
@@ -721,6 +928,7 @@ pub(crate) fn census(
     curved: &Curved,
     rows: &[crate::bands::CylRow],
     lateral: Option<&[LocalFace]>,
+    emitted: &Result<Vec<LocalFace>, BoolError>,
 ) {
     for (k, _) in cyls.iter().enumerate() {
         // ★ A class whose axis parameter cannot be stated is skipped, not recorded: `bands_of`
@@ -742,6 +950,59 @@ pub(crate) fn census(
         let Ok(boundary) = boundary_lines(jd, k, &cyls[k].def, plane_faces, curved, rows) else {
             continue;
         };
+        // ── The cutover's emitter against the reference road, face by face (D2b shadow). ──
+        //
+        // The zip is the claim: same faces, same order (handles are minted in face order — the
+        // replay contract), bands compared by their lines' parameters and rings node for node.
+        // A refusal on the chart side where the reference emitted is the one outcome that must
+        // never happen; a refusal on the reference side where the chart emits is a capability
+        // opening, counted.
+        let of_k = |faces: &[LocalFace]| -> Vec<LocalFace> {
+            faces
+                .iter()
+                .filter(|f| matches!(f.surf, ClassIx::Cyl(c) if c == k))
+                .cloned()
+                .collect()
+        };
+        let mut shadow = (0usize, 0usize, 0usize); // (compared, opened, both_refused)
+        match (lateral.map(of_k), emitted.as_ref().ok().map(|v| of_k(v))) {
+            (Some(r), Some(n)) => {
+                assert_eq!(
+                    r.len(),
+                    n.len(),
+                    "the chart emits a different number of lateral faces than the band road: \
+                     cyl {k}"
+                );
+                for (fi, (a, b)) in r.iter().zip(n.iter()).enumerate() {
+                    assert_eq!(a.flip, b.flip, "face {fi} of cyl {k}: flip differs");
+                    assert!(
+                        a.inner.is_empty() && b.inner.is_empty(),
+                        "face {fi} of cyl {k}: a lateral face with inner bounds"
+                    );
+                    let t_of = |c: usize| crate::bands::axis_param(jd, c, &cyls[k].def).ok();
+                    match (&a.outer, &b.outer) {
+                        (Bound::Band { lo, hi }, Bound::Band { lo: l2, hi: h2 }) => {
+                            assert!(
+                                t_of(*lo) == t_of(*l2) && t_of(*hi) == t_of(*h2),
+                                "face {fi} of cyl {k}: bands on different lines"
+                            );
+                        }
+                        (Bound::Ring(x), Bound::Ring(y)) => {
+                            assert_eq!(x.nodes, y.nodes, "face {fi} of cyl {k}: ring nodes differ");
+                            assert_eq!(x.walls, y.walls, "face {fi} of cyl {k}: ring walls differ");
+                        }
+                        (x, y) => panic!("face {fi} of cyl {k}: shapes differ: {x:?} vs {y:?}"),
+                    }
+                }
+                shadow.0 = r.len();
+            }
+            (None, Some(_)) => shadow.1 = 1,
+            (Some(_), None) => panic!(
+                "the chart road refuses what the band road emits: cyl {k}: {:?}",
+                emitted.as_ref().err()
+            ),
+            (None, None) => shadow.2 = 1,
+        }
         let side = mine.first().map(|r| r.side);
         assert!(
             mine.iter().all(|r| Some(r.side) == side),
@@ -904,6 +1165,9 @@ pub(crate) fn census(
         };
         let mut d2b = probe::d2b::Row {
             cells: cells.len(),
+            compared: shadow.0,
+            opened: shadow.1,
+            both_refused: shadow.2,
             end_swapped: chart.end_swapped,
             split_flip,
             split_nocircle,
@@ -1774,6 +2038,11 @@ pub(crate) mod probe {
             /// those lines the chart's boundary rule would refuse to cross.
             pub(crate) ref_band_merges: usize,
             pub(crate) ref_merge_over_boundary: usize,
+            /// The shadow comparison: faces compared equal to the reference road's; charts the
+            /// chart road emits where the reference refused; charts both refused.
+            pub(crate) compared: usize,
+            pub(crate) opened: usize,
+            pub(crate) both_refused: usize,
         }
 
         pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
@@ -2092,6 +2361,8 @@ mod tests {
                 r.read_refused, 0,
                 "the reader refused a cell by name: {r:?}"
             );
+            assert!(r.opened <= 1, "opened is per chart: {r:?}");
+            assert_eq!(r.both_refused, 0, "both roads refused a chart: {r:?}");
             assert_eq!(
                 r.split_flip, 0,
                 "a line inside a band changes the chamber: {r:?}"
@@ -2191,6 +2462,10 @@ mod tests {
         assert!(
             sum(&rows, |r| r.z_merge_bandlike) > 0,
             "no band-shaped merge was ever seen"
+        );
+        assert!(
+            sum(&rows, |r| r.compared) > 0,
+            "the shadow comparison never ran"
         );
         // The chained pairs above drop exactly one sector per operation for existence (four),
         // and other tests may add theirs in between — so what is held is the growth.

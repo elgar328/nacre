@@ -7109,16 +7109,24 @@ pub(crate) fn boolean(
                 // first spelling wrote `band_faces(..)?` and lost a whole chart to it (measured:
                 // 263 recorded charts became 262) — a chart is a property of the *arrangement*,
                 // and it must not vanish because a different pass declined to emit faces from it.
+                // ★ **D2b shadow**: the chart emitter runs beside the band road in test builds,
+                // and the census holds the two emissions equal face by face. Production still
+                // reads `lateral` below; the cutover is the commit that swaps the two.
                 #[cfg(test)]
-                crate::cyl_chart::census(
-                    &jd,
-                    &cyls,
-                    kind,
-                    &faces,
-                    &curved,
-                    &rows,
-                    lateral.as_deref().ok(),
-                );
+                {
+                    let emitted =
+                        crate::cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows);
+                    crate::cyl_chart::census(
+                        &jd,
+                        &cyls,
+                        kind,
+                        &faces,
+                        &curved,
+                        &rows,
+                        lateral.as_deref().ok(),
+                        &emitted,
+                    );
+                }
                 let mut faces = faces;
                 faces.extend(lateral?);
                 // ★ **And now the curved cleaning pass**, the coplanar one's sibling: a lateral
