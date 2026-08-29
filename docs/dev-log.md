@@ -15272,3 +15272,126 @@ band_over_rulings 82)는 처음부터 HEAD와 **정확히 일치**하고 있었�
 ★★★★★ **D3의 전제조건**: 칸 ⑦이 여기서 **계기 넷을 눈멀게** 했다(넓이 7.873 vs 9.425인데
 `validate`·watertight·정확 부피·면 수가 전부 초록). 갈아타기 **전에** 원통 코퍼스에 칸 ⑧의
 **메시 넓이 ≈ 정확 넓이** 오라클을 세운다.
+
+---
+
+## 능력 D, 넷째 계단 — 셀을 «읽는 함수», 그리고 오늘의 방출과의 셀별 대조 (D2b-0)
+
+커밋 둘: `622e2ad`(D2b-0, 계기 + 부정 대조) · 문서(이 절). 여전히 `#[cfg(test)]`, **커토버 없음** — 프로덕션 비트 동일(census 두 프로파일,
+HEAD 해시와도 동일).
+
+### 이 칸이 지은 것 — 커토버가 그대로 쓸 함수 하나
+
+D2a 는 「이 섹터가 벽의 어느 쪽인가」 부호를 일부러 안 만들었고, 커토버가 그 부호를 필요로 하는지는 미측정이었다.
+계획 검토에서 코드가 답했다: **`circle_on_class`(arrangement.rs)는 면 span 안의 모든 ⊥ 클래스에 원을 남기고**
+(`span[0] ≤ t ≤ span[1]` ⇒ Crosses/Grazes), `emit_faces` 는 keep 필터 밖에서 모든 원 셀·호에 딱지를 쓴다. ⇒
+**면이 있는 셀은 양끝에 반드시 딱지가 있다** — 세로 딱지(룰링)를 챔버에 쓸 일이 없고, 셋째 부호는 구조적으로
+불필요하다. 이 칸은 그것을 기록 자리 단언 하나(`src0_present == 0`)로 확인했다.
+
+`Chart::read_cell`(cyl_chart.rs) — 셀 `(interval, sector)` 의 양끝 z-선에서 챔버·존재·방출 여부를 읽는다.
+새 술어 0: `bands::read_bits`·`bands::face_spans`·`bands::keep_for`(가시성만 넓힘)·`planes::plus_t_is_above`
+(`lo` 끝 `toward_hi`, `hi` 끝 `!toward_hi` — `chamber`/`panel_faces` 의 그 호출 모양)·`arrangement::circular_order`·
+`arrangement::ruling_side` 만 부른다. 끝의 종류 넷: `Disk`(안 잘린 원, 또는 잘렸지만 모든 호가 이 구간 쪽으로 같은
+답) · `Exact`(셀의 두 룰링 노드가 잘린 원의 인접쌍 — `panel_faces::arc_at` 의 조인) · `Other` · `NoCircle`(이
+원통의 자국이 없는 ⊥ 클래스 = span 밖).
+
+### ★★★★★ 짓다가 반증된 것 넷 — 전부 픽스처가 잡았다
+
+1. **`Other` 는 실재 인구였고, 그 자리에서 지었다.** 계획은 「`Other > 0` 이면 그때 θ 배치를 짓는다」였는데 첫 실행이
+   코너 보스에서 3 셀을 냈다: 두 벽의 현이 **판의 코너(발자국 안)에서 끝나** 잘린 원의 노드는 **둘**인데 차트의
+   룰링은 **넷**이다(벽 *면*이 안 닿는 룰링은 원에 노드를 안 남긴다). 그래서 긴 호 하나가 섹터 셋을 품는다.
+   ⇒ `Chart::arc_around`: 룰링의 θ 를 자기 노드(있으면) 또는 다른 선의 끝 노드(같은 θ)로 `circular_order` 에
+   넣어 섹터를 품는 호를 찾는다. 림 노드가 섹터 안에 있거나 순서를 못 만들면 `Other` 로 남긴다.
+   ★ 플랜 에이전트의 1차 설계가 정확히 이 모양(`Contained`)을 예측했고 내가 «추측»이라 지웠다 — 반증됨.
+2. **`Chart::ruling_name` 의 root 는 identity 가 아니었다.** 같은 물리 룰링이 노드의 짝이 `[wall, 판 윗면]` 이면
+   `Hi`, `[wall, 보스 캡]` 이면 `Lo` — 짝 순서와 ⊥ 법선의 방향이 ℓ 을 뒤집는다(`QuadRoot::canonical` doc 의
+   그 문장). D1b 의 패널 조인은 두 림의 짝 순서가 우연히 같아서 통과했고, 코너 보스에서는 **한 벽의 두 룰링이 한
+   이름**을 받아 조인이 엉뚱한 셀을 지목했다. ⇒ identity 를 조립이 이미 쓰는 한 철자 **`ruling_side`**(점의 기하)로
+   바꿨다(`ruling_side_of`). 이름은 `(wall, side)`.
+3. **D1b 의 패널 조인은 패널이 덮는 셀 «하나»만 지목했다.** 패널의 호는 림 노드 사이인데 차트의 섹터는 살아있는
+   모든 룰링으로 잘리므로 한 패널이 여러 셀을 덮는다. D1b 는 나머지를 「미지목 gap」으로 셌다. ⇒ 지목을 «`na` 에서
+   떠나 `nb` 에 닿는 섹터까지의 스윕»으로 고쳤다. D1b 의 `unclaimed` 는 그만큼 과대였다.
+4. **「marks 와 span 이 일치한다」는 인접 명제였다.** span 은 구멍을 못 보는 «더 굵은» 진실이라, 구멍 난 옆면에서
+   marks=없음·span=있음은 결함이 아니라 **칸 ㉒의 인구**(패널 도로가 존재로 떨어뜨리는 그 섹터)다. 결함인 방향은
+   반대(marks=있음·span=없음)뿐이고 그것만 `exist_disagree` 로 센다. 그리고 면이 없는 셀은 챔버 없이도
+   `emit = false` 다(`NoCircle` 양끝 셀이 `emit_unknown` 으로 새던 것을 잡았다).
+
+### ☑ 실측 — 예측 vs 결과 (전 lib 스위트 단일 스레드, 이 칸의 픽스처 15 차트 포함 / 제외)
+
+| 수 | 예측 | 포함(282 차트·1056 셀) | 제외(267·970) |
+|---|---|---|---|
+| `end_swapped` | 0 | **0** | 0 |
+| `src0_present` (S1) | 0 | **0** | 0 |
+| `emit_mismatch` (S2, 표제) | 0 | **0** | 0 |
+| `partial_theta_in_disk_interval` (S3) | 0 | **0** | 0 |
+| `split_flip` / `split_nocircle` (S4, 44건) | 0 / 0 | **0 / 0** | 0 / 0 (`intervals_split` 44) |
+| `src2_disagree` · `exist_disagree` · `exist_conflict` · `emit_unknown` | 0 | **0 · 0 · 0 · 0** | 0 |
+| `end_disk` · `end_exact` · `end_other` · `end_nocircle` | — | 1258 · 710 · **18** · 126 | 1194 · 606 · 18 · 122 |
+| `other_present` | — | **0** | 0 |
+| `exist_marks_false` | 이 칸 픽스처에서 4 | 10 (이 칸 픽스처만: **4**) | 6 |
+| `theta_merge_pairs` ≥ `band_over_rulings` | ≥ 84 | **155 ≥ 106** | 125 ≥ 84 |
+| `z_merge_pairs` | > 0 | 177 | 151 |
+| `emit` | — | 583 | 518 |
+| 띠 · 패널 (D1b) | 불변 | 313 · 79 | 288 · 67 |
+
+- **S1~S4 전부 0** ⇒ 커토버는 가로 딱지만으로 셀을 읽고, 오늘의 코퍼스에서 **한 면도 바꾸지 않으며**, 디스크 끝
+  구간은 통째 `Band` 로, 44건은 무해한 세분으로 방출된다.
+- **`end_other` 18 은 전부 면이 없는 셀**(`other_present` 0) — span 밖에서 `arc_around` 가 못 배치한 끝이고 읽을
+  필요가 없다. ⇒ θ 배치가 **면이 있는** 셀에서 필요했던 적은 0. 미실행으로 적는다.
+- 44건 = 전부 원이 있는 선(`split_nocircle` 0) — 계획 검토가 「NoCircle 이 아니라 Disk/Arc」라 고친 그대로.
+- 스위트 시간: 병렬 53.2s(HEAD 대비 잡음 대역) · 단일 스레드 125s.
+
+### ☑ 부정 대조 — 여섯, 전부 빨강 (커밋 전 하나씩 실행·되돌림)
+
+| 뒤집은 것 | 빨간 자리 |
+|---|---|
+| `end` 를 무조건 swap | 기록 자리 `src0_present` = 2 |
+| hi 끝을 `up` 으로(`!` 제거) | `emit_unknown` 4 (두 끝 불일치) |
+| `face_spans` → 항상 참 | `emit_mismatch` 1 |
+| `keep(own)` 만으로 방출 | `emit_mismatch` 1 |
+| 이웃 챔버 비교를 부정으로 | `partial_theta_in_disk_interval` 2 |
+| `present` → 항상 참 | 기록 자리 `src0_present` = 1 |
+
+### 커토버(D2b) 설계 결정 — 숫자로 확정
+
+- **θ-병합은 차트 단계, z-병합은 `unify_curved_faces`.** 한 구간의 방출 섹터가 전부 같은 챔버면 `Band{lo,hi}` 그대로
+  (S3 = 0 이 보증), 아니면 오늘의 패널 Ring. 그러면 날것 방출 = 오늘의 띠·패널이고 면 수 잠금
+  (`tests.rs::a_boss_on_a_wall_has_one_lateral_face`, `bands.rs` 의 `lateral_face_counts` 셋, 관통 구멍 면 7)은
+  초록 예측이다.
+- 존재: 잘린 끝 = `face_spans`(marks), 디스크 끝 = 행의 `span`. `DiskLabels` 는 marks 를 안 나르므로(`emit_faces`
+  가 `MergedCircle.merged` 를 버림) **`cyl_rows`/`CylRow.span` 은 남는다.**
+- 룰링 identity 는 `(wall, ruling_side)` — `Branch` 이름의 root 를 identity 로 쓰지 말 것(위 2).
+
+### D4 삭제 목록 (확정)
+
+- **삭제**: `bands::{band_faces, bands_of, chamber, panel_faces, panel_probe}` · census 의 「옛 도로 vs 차트」 계수기
+  (`claimed/unclaimed/bands_seen/panels_seen/band_over_rulings/reversed/intervals_split/band_split_*`, `probe::Row`
+  의 그 필드들과 D2b-0 의 `emit_mismatch`) · 옛 도로 전용 테스트 `arrangement.rs::a_cut_circle_bounds_the_bands` ·
+  `bands.rs` 의 `band_faces` 직접 호출 넷(단언은 차트 방출로 옮김) · `RejectReason::CylinderFaceUndecided`(조건부:
+  `face_spans` 의 불일치 거절이 남으면 유지).
+- **옮김**: `face_spans`·`read_bits`·`keep_for`·`axis_param` → cyl_chart(한 철자) · `bands.rs` 의 부정 대조 둘
+  (`no_band_is_invented…`, `a_cylinder_in_the_notch_keeps_no_band`) → 차트 도로 · `tests.rs` 의 `panel_probe` 소비
+  → d2b `exist_marks_false` · `panel_faces` 의 `name_on`/`arc_at`/`side_at` 조인 → `read_cell`.
+- **유지**: `cyl_rows`/`CylRow`(span) · `Bound::Band`+`band_loop`+림 표/`band_chains` · `Ring`/`Wall` · `CutRims` ·
+  `DiskLabels`/`ArcLabels`(독자만 바뀜) · `unify_curved_faces`(D4 본체) · `SIDE_CHECK` · 차트 자체 불변(룰링 끝 = z-선 ·
+  룰링마다 딱지 · XOR 닫힘 · `theta % 2 == 0` · `!refused` · `src0_present == 0`) · `ArcBoundNotYet`(명제 재검).
+- **속성 제거**(커토버 순간): `RulingExtent.{label, marks}`·`ruling_interior_is_even`·`read_cell` 의 `cfg(test)` ·
+  `Curved.rulings` 의 `allow(dead_code)` · `lib.rs` 의 `cfg(test) mod cyl_chart`.
+- **표기 정리**: 80/82/84 는 같은 인구(HEAD 84) · 949/955/970 은 분모가 다른 셀 수(D1b 표 / d2 원장 / 오늘의 코퍼스)
+  — 이후 d2b 의 Σcells 하나로 말한다.
+
+### 관문
+
+전량 초록: fmt/clippy 0 · workspace 1165 · nodef · census **두 프로파일 269줄 비트 동일이고 HEAD 해시
+`78b06e50…` 과 동일**(프로덕션 무변화의 증거) · `reject_census` · 스윕 129 · perf release(답 동일 — fold 80
+407면·237.211567, `ring 80` 1.62 / 1.06s, `small` 552µs — 원통 없는 코퍼스라 이 변경의 증거는 아니다) · kit 72
+(fmt·clippy·test). 원장 합계는 `lib.rs::zzz_ledger::dump_the_d_ladder_ledgers`(`#[ignore]`, 단일 스레드로 마지막에
+찍는다)로 뽑았다 — 위 표의 「포함/제외」가 그 두 실행이다.
+
+### 다음
+
+**D2b — 커토버.** `read_cell` 의 `cfg(test)` 를 벗기고 `band_faces` 자리에서 셀을 방출한다: 구간의 방출 섹터가
+전부 같은 챔버면 `Band`, 아니면 패널 Ring(오늘의 `panel_faces` 조립 어휘 그대로). 예측: 띠·패널 수 불변, census
+비트 동일, 면 수 잠금 초록. 그다음 D3(방출 확정·`bands.rs` 판정부 삭제) · D4(청소).
+★ D3 전제조건(메시 넓이 오라클)은 `tests.rs::the_mesh_covers_the_faces_it_approximates` 가 이미 원통 코퍼스에
+서 있다 — 새로 짓지 말고 인구(연쇄·보어·패널)를 넓힌다.
