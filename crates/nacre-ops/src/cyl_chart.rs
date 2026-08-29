@@ -1144,15 +1144,18 @@ pub(crate) fn census(
             d2b.end_swapped, 0,
             "a ruling arrived with z descending: cyl {k}"
         );
-        // ★★★★★ **Where two ends disagree, the emitter emits nothing** — the true proposition. The
-        // plain `== 0` was promoted on a lib-suite zero that turned out to be the suite's, not the
-        // corpus's: the (0,0)-corner boss (`wal corner-lo`) has plate-class disk cells with no B
-        // material while its caps carry it (an arrangement label defect, D2b's finding), so its
-        // cells' ends disagree — and the emitter refuses the class by name rather than reading
-        // either end. The guard does not hide the defect; it says no face is built over it.
+        // ★★★★★ **Over a present cell whose chamber could not be read, the emitter emits
+        // nothing** — the true proposition. The plain `src2_disagree == 0` was promoted on a
+        // lib-suite zero that turned out to be the suite's, not the corpus's: the (0,0)-corner
+        // boss (`wal corner-lo`) has plate-class disk cells with no B material while its caps
+        // carry it (an arrangement label defect, D2b's finding), so its cells' ends disagree — and
+        // the emitter refuses the class by name rather than reading either end. The guard does
+        // not hide the defect; it says no face is built over it. ★ Stated on `emit_unknown`
+        // (present cells only), not on `src2_disagree`, which also counts absent cells the
+        // emitter rightly ignores — that stays a ledger column (D3 self-check).
         assert!(
-            d2b.src2_disagree == 0 || emission.is_err(),
-            "a cell's two ends disagree about its chamber, yet the emitter emitted: cyl {k}"
+            d2b.emit_unknown == 0 || emission.is_err(),
+            "a present cell's chamber could not be read, yet the emitter emitted: cyl {k}"
         );
         // ★ The premise at one end: a present cell never meets a line with no circle of its own
         // cylinder (`circle_on_class` marks every ⊥ class within a face's span).
@@ -1862,9 +1865,9 @@ mod tests {
     /// * `emitted_faces == whole_emitted + full_runs − z_merge_bandlike + partial_runs` — the
     ///   headline since D3: the emitter's face count per class is what the census's own walk of
     ///   the chart predicts (vacuous where the emitter refused).
-    /// * `src2_disagree == 0 || emitter_refused`, `emit_unknown == 0 || emitter_refused` — the
-    ///   emitter never puts a face over a cell whose two ends contradict (the `wal corner-lo`
-    ///   corpus family has such cells, and is refused by name).
+    /// * `emit_unknown == 0 || emitter_refused` — the emitter never puts a face over a present
+    ///   cell it could not read, e.g. one whose two ends contradict (the `wal corner-lo` corpus
+    ///   family has such cells — `src2_disagree` 8 per row — and is refused by name).
     /// * `exist_disagree == 0`, `read_refused == 0` — the trace and the span tell the same
     ///   existence story wherever both speak.
     /// * `nocircle_present == 0`, `z_flip_nonboundary == 0` — a present cell has a circle at both
@@ -1935,12 +1938,6 @@ mod tests {
             assert!(
                 r.emit_unknown == 0 || r.emitter_refused,
                 "a cell's chamber could not be read, yet the emitter emitted: {r:?}"
-            );
-            // Gated like the record-site assertion: the (0,0)-corner boss's ends disagree (an
-            // arrangement label defect), and what is held is that the emitter refused there.
-            assert!(
-                r.src2_disagree == 0 || r.emitter_refused,
-                "a cell's two ends disagree, yet the emitter emitted: {r:?}"
             );
             assert_eq!(
                 r.src0_present, 0,

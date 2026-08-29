@@ -1372,8 +1372,8 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
   ★★ **여섯째 계단(D3, 2026-08-30) — 참조 도로 삭제.** `bands::{band_faces, bands_of, chamber, panel_faces, panel_probe}`와
     census의 「참조 vs 차트」 대조(항진명제)를 지웠다(프로덕션 무변). 남은 눈: z-선 ⊇ `boundary_lines` ·
     `emitted_faces == whole_emitted + full_runs − z_merge_bandlike + partial_runs`(기록 자리) · `arcs_*`(옛 MARKS 계약).
-    ★ `src2_disagree == 0`은 lib 스위트의 artifact였다 — 코퍼스 가족 12를 lib에 넣으며 명제를 「갈린 셀 위로 면을 내지
-    않는다」(`|| emitter_refused`)로 고쳤다. `bands.rs` 4042 → 3591줄. 실측은 dev-log 「능력 D, 여섯째 계단」.
+    ★ `src2_disagree == 0`은 lib 스위트의 artifact였다 — 코퍼스 가족 12를 lib에 넣으며 명제를 「읽지 못한 present 셀 위로 면을
+    내지 않는다」(`emit_unknown == 0 || refused`)로 고쳤다. `bands.rs` 4042 → 3591줄. 실측은 dev-log 「능력 D, 여섯째 계단」.
   - ★★★★★ **D3의 전제조건 — 여기서 계기 넷이 눈이 멀었던 적이 있다.** 칸 ⑦이 옆면의 면 구조를 바꾸고
     **메시가 조용히 틀린 채** `validate`·watertight·정확 부피·면 수가 **전부 초록**이었다(넓이 7.873 vs
     9.425). 그걸 잡은 눈은 칸 ⑧의 **메시 넓이 ≈ 정확 넓이**다. ⇒ 갈아타기 **전에** 원통 코퍼스에 그

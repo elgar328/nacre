@@ -15556,7 +15556,7 @@ Step 0(코퍼스 가족 12를 lib census에 임시 통과): 발화는 corner-lo 
 ### ☑ 코퍼스 인구 — lib에 없던 가족 12가 들어왔다
 `census_corpus_cylinder_families_build_or_refuse_by_name`(offmid·flush·corner-lo·cap sunk·trc boss·onaxis·ct2 pocketed·chain) ·
 `census_corpus_xy_generations_build_or_refuse_by_name`(grid·yx·three·turned). 결과만 잠금(빌드/거절 이름 — census.rs 행과
-동일), 기하는 다이제스트의 것. 시간 ≈8 s(debug).
+동일), 기하는 다이제스트의 것. 시간 **4.8 s**(debug, 둘 병렬; 처음엔 계획의 추정 ≈8 s를 실측처럼 적었다 — 자체 점검에서 재서 고침).
 
 ### ☑ 실측 — 예측 vs 결과
 | 수 | 예측 | 실측 |
@@ -15569,6 +15569,17 @@ Step 0(코퍼스 가족 12를 lib census에 임시 통과): 발화는 corner-lo 
 
 ### 관문
 전량 초록: fmt/clippy 0 · workspace **1168** · nodef · census 두 프로파일 269줄, HEAD와 0줄 diff · reject_census · 스윕 129 · perf release(fold 80 407면 237.2116 · ring fins 1.61 s · hub 1.06 s · small 559 µs) · kit 72. 원장 단일 스레드 두 번(위 표). ★ 관문 뒤 승격 하나(`arcs` 한-자국 단언)를 더 넣었고 커밋 훅의 관문(fmt·clippy·workspace)이 다시 돌았다.
+
+### ☑ 자체 점검 (사용자 요청) — 셋을 고쳤다
+- ★★★ **가드가 명제보다 셌다.** `src2_disagree`는 `read_cell`이 존재와 무관하게 세므로(부재 셀의 갈린 끝도 센다),
+  「갈린 셀 위로 면을 내지 않는다」의 정확한 철자는 **`emit_unknown == 0 || refused`**(present 셀만)다. 옛 철자는 부재-갈림
+  셀이 생기는 날 방출기가 옳게 무시한 셀 때문에 빨개졌을 것 — 오늘 인구 0(corner-lo의 8은 전부 present)이라 실측은 같다.
+  기록 자리·보고 테스트 둘 다 바꿨고 `src2_disagree`는 원장 열로만 남는다.
+- ★ bands.rs 두 문장이 «갭에 띠가 없는» 이유를 경계에 돌렸다 — 갭의 셀은 **존재**(row span)가 없어서 안 나오는 것이고 경계는
+  병합만 막는다. 고침.
+- ★ 코퍼스 테스트 시간을 계획의 추정(≈8 s)으로 적었다 — 실측 4.8 s.
+확인한 것: census 두 프로파일·reject_census 무변은 HEAD worktree 직접 diff로 확인 · 부정 대조 셋의 «첫 설계 실패»는 이미 적혀 있음 ·
+보고 테스트가 기록 자리 단언(`arcs`·`emitted_faces`)을 다시 단언하는 것은 `src0_present`와 같은 기존 꼴이라 둠.
 
 ### 다음
 **D4 — 청소**(`unify_curved_faces`; 반높이 보스의 «림 하나 + 호 사슬»이 첫 인구). 별도 항목: (0,0) 코너의 arrangement 딱지 결함 ·

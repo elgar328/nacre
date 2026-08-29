@@ -30,9 +30,10 @@
 //! lateral face's axis-parameter span along. So the gate reads two separating axes, and a wall
 //! clear on either one misses the rectangle (`planes.rs`' `face_clears_footprint`). With several
 //! lateral faces there are several rectangles, and that is exactly the granularity the theorem
-//! needs: a row's span ends are band boundaries (`cyl_chart::boundary_lines`), so no band is ever built in the gap
-//! between two of them, and a wall sitting in such a gap breaks no premise — there is none there
-//! to break. Reading the spans as one `min..max` would invent both the band and the refusal.
+//! needs: a row's span is the existence truth at an uncut end and its ends are band boundaries
+//! (`cyl_chart::boundary_lines`), so no band is ever built in the gap between two of them, and a
+//! wall sitting in such a gap breaks no premise — there is none there to break. Reading the spans
+//! as one `min..max` would invent both the band and the refusal.
 //!
 //! ★ The theorem replaced a wrong one. "The band is in the other solid iff its z-range is" reads
 //! plausibly and is **false**: an L-notch's inner corner is clear of every wall by more than `r`
@@ -3093,8 +3094,8 @@ mod tests {
     //
     // ★ With several lateral faces there are several rectangles: the strip is shared, the spans
     // are not. That is why the gap between two bands is passable at all, and it is not a special
-    // case bolted on — a row's span ends are band boundaries, so no band is ever built in a gap
-    // and there is no premise there for a wall to break.
+    // case bolted on — a row's span is the existence truth at an uncut end, so no band is ever
+    // built in a gap and there is no premise there for a wall to break.
 
     /// **The case this opened.** The two-banded bore of `plate_with_a_split_bore` has bands at
     /// `z ∈ [0,4]` and `[6,10]` — `t ∈ [1,5]` and `[7,11]`. A tool whose `y = 6` wall stands only 1
