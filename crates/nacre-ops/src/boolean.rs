@@ -87,7 +87,7 @@ pub fn boolean_with_report(
 /// **Can the kernel's own output be drawn?** — asked here because nowhere else asked it.
 ///
 /// Every other census in this crate watches a decision the boolean makes ([`crate::reject_census`],
-/// `ruling_probe`, `bands::panel_probe`). None watched whether the solid that comes out can be
+/// `ruling_probe`, `cyl_chart::probe`). None watched whether the solid that comes out can be
 /// meshed, and the answer was **no, twice in 2129** — a tangency whose face interior pinches — with
 /// nothing in the suite tessellating those two fixtures, so nobody saw it. This hook sits on the
 /// single success exit above, which is the one place both public entry points pass through.
@@ -2126,9 +2126,10 @@ pub(crate) fn reconstruct(
                          hi: usize,
                          holes: &mut Vec<Loop>|
          -> Result<Loop, BoolError> {
-            // ★ Both rims cut is unreachable today — `chamber` finds no disk label at either
-            // end and refuses the band before it is emitted — so no chain code is written
-            // for a population nothing can reach; the honest name stands in its place.
+            // ★ Both rims cut reaches here only as a whole-circle cell (`emit_lateral` sends every
+            // other both-cut interval to the panel rings), and that population is measured 0
+            // (`whole_both_cut`) — so no chain code is written for it; the honest name stands in
+            // its place.
             if cut_rims.contains_key(&(k, lo)) && cut_rims.contains_key(&(k, hi)) {
                 return Err(reject(RejectReason::ArcBoundNotYet));
             }

@@ -5990,7 +5990,7 @@ pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 /// ★★★★ **There is no `side` here, and that is the point.** The first spelling carried one, and
 /// when the cells arrived (D1b) nothing read it: a ruling's identity is `(wall class, root)`, and
 /// which of the two parallel rulings that is derives from it through the one production spelling
-/// ([`ruling_side`], which is how `panel_faces` gets it at emission time). A carried copy of a
+/// ([`ruling_side`], which is how `cyl_chart::emit_lateral` gets it at emission time). A carried copy of a
 /// derived value is the second spelling this ladder keeps being bitten by.
 ///
 /// ★★★★★ **`cfg_attr(not(test), ...)`, not a blanket allow.** The only reader is `cyl_chart`,
@@ -6007,8 +6007,8 @@ pub(crate) struct RulingExtent {
     ///
     /// ★★★★★ **This is the half `disk_labels`/`arc_labels` do not carry.** A [`Label`] holds the
     /// material on **both** sides of its plane, so a ⊥ class's disk label already answers the
-    /// chart's *horizontal* crossings entire — which is why [`crate::bands::chamber`] reads two of
-    /// them and asks them to agree. Crossing a *vertical* line is crossing the **wall**, and the
+    /// chart's *horizontal* crossings entire — which is why `cyl_chart::Chart::read_cell` reads two
+    /// of them and asks them to agree. Crossing a *vertical* line is crossing the **wall**, and the
     /// cell inside the strip is where that plane's two sides are stated at the lateral.
     ///
     /// `None` when the wall's rational name and its stored normal cannot be related
@@ -6016,8 +6016,9 @@ pub(crate) struct RulingExtent {
     /// guessed at.
     ///
     /// ★ `#[cfg(test)]`, like `Staged`'s `cells`/`nesting`/`labels`: the only reader is the
-    /// `cyl_chart` instrument, and a release build should not pay for it. The day the labels
-    /// become the *truth* (D3) is the day this loses the attribute.
+    /// `cyl_chart` census, and a release build should not pay for it. The emitter reads the
+    /// horizontal lines only (a face has a circle at both ends), so this stayed an instrument
+    /// through D3; the day a vertical answer decides a face is the day this loses the attribute.
     #[cfg(test)]
     pub(crate) label: Option<Label>,
     /// The `(solid, kind)` contributions that covered this piece — [`MergedRuling::merged`], the
@@ -6071,10 +6072,10 @@ pub(crate) struct Curved {
     /// Per cylinder class, the ruling pieces on it — the **vertical** lines of that cylinder's
     /// chart, where `disk_labels`/`arc_labels` carry the horizontal ones' answers.
     ///
-    /// ★ **Its consumer is `cyl_chart`, which is an instrument today** (capability D's first
-    /// rung: build the chart's line set and measure it against the two hand-written roads). The
-    /// `allow` says so rather than hiding it — the same shape `Bound::Band` carried while its
-    /// producer was still a rung away.
+    /// ★ **Its consumer is `cyl_chart`** — production since the D2b cutover: `emit_lateral` names
+    /// every ruling from these (`Chart::node_on`, `Chart::ruling_name`), and the census reads their
+    /// `label`/`marks`. Built as an instrument on capability D's first rung, measured against the
+    /// two hand-written roads, then promoted.
     pub(crate) rulings: HashMap<usize, Vec<RulingExtent>>,
 }
 
@@ -7063,7 +7064,7 @@ pub(crate) fn boolean(
         // an arc input (that is the point: the seam's branch arm is exercised), and then the
         // deferred reject wins over whatever the stretch produced, `Ok` *or* `Err`. Without the
         // `Err` half, an arc input would carry out whichever of the stretch's five fallible
-        // steps — `unify_coplanar_faces`, `cyl_rows`, `band_faces`, the seam fill, the
+        // steps — `unify_coplanar_faces`, `cyl_rows`, `emit_lateral`, the seam fill, the
         // `SeamAlias` scan — happened to fail first, and the population's name would depend on
         // how far the pipeline got: the same property the per-class `deferred.unwrap_or(e)` in
         // `arrange` protects, one level down. (`SeamAlias` is the sharp case: its class says
@@ -7088,38 +7089,16 @@ pub(crate) fn boolean(
                 let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
                 // ★ **The lateral faces come from the chart** (D2b cutover): every cylinder
                 // class's cells, read off the plane arrangement's own labels and emitted in the
-                // band road's vocabulary. The band road itself is the test-build **reference**
-                // below until D3 deletes it.
+                // band road's vocabulary (the road itself was deleted in D3).
                 let lateral =
                     crate::cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows);
                 // ★★ The census sits *before* the curved cleaning pass on purpose: the cleaning
                 // merges pieces, which would blur the face-by-face question being asked.
-                // ★ **The reference road, test builds only (until D3).** `band_faces` is what
-                // the hand-written roads emit; the census zips the two emissions and holds them
-                // equal face by face, and counts the charts the chart road opens where the band
-                // road refused. Either refusal is handed to the census before `?` decides.
+                // ★ The census holds the chart against its own rules (and the emitter against
+                // the census's independent count), in test builds; the emitter's refusal is
+                // handed to it before `?` decides, so a refused class is still recorded.
                 #[cfg(test)]
-                {
-                    let reference = crate::bands::band_faces(
-                        kind,
-                        &faces,
-                        &rows,
-                        &jd,
-                        &curved.disk_labels,
-                        &curved.cut_rims,
-                        &curved.arc_labels,
-                    );
-                    crate::cyl_chart::census(
-                        &jd,
-                        &cyls,
-                        kind,
-                        &faces,
-                        &curved,
-                        &rows,
-                        reference.as_deref().ok(),
-                        &lateral,
-                    );
-                }
+                crate::cyl_chart::census(&jd, &cyls, kind, &faces, &curved, &rows, &lateral);
                 let mut faces = faces;
                 faces.extend(lateral?);
                 // ★ **And now the curved cleaning pass**, the coplanar one's sibling: a lateral
@@ -9617,14 +9596,14 @@ mod tests {
 
     /// ★ **A cut circle is a band boundary** (rulings ladder, cell 2 — commit ①). On the armed
     /// through-boss, the per-class products of the four ⊥ classes are collected the production
-    /// way (`per_class` on each), and `bands_of` must break the lateral at the two **cut**
-    /// circles (z = 0, z = 20) as well as the rims: three intervals, not one full-height band.
-    /// The middle interval is both-cut, and `chamber` still refuses it honestly (both ends
-    /// carry no disk cell — `CylinderGateUndecided`, the recorded backstop this cell's commit ②
-    /// opens); the outer intervals are one-side-cut and `chamber` answers from the cap end.
+    /// way (`per_class` on each), and the chart must break the lateral at the two **cut**
+    /// circles (z = 0, z = 20) as well as the rims: three intervals, not one full-height band
+    /// (`boundary_lines` and `chart_of`'s z-lines agree on the four). The middle interval is
+    /// both-cut and is emitted as panel rings; without the arc labels the reader has no answer
+    /// there and `emit_lateral` refuses by name (`CylinderGateUndecided`).
     #[test]
     fn a_cut_circle_bounds_the_bands() {
-        let (m, plate, boss, setup, _wc, crossings) = armed_through_boss();
+        let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
         let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
         let z_class = |z: f64| -> usize {
             setup
@@ -9640,7 +9619,10 @@ mod tests {
         let mut cut_rims: CutRims = HashMap::new();
         let mut plane_faces: Vec<LocalFace> = Vec::new();
         let mut arc_labels: crate::arrangement::ArcLabels = HashMap::new();
-        for c in [z0, z20, cap_lo, cap_hi] {
+        // ★ The wall class too: the chart's rulings are the wall's pieces, and without them the
+        // both-cut middle is one whole-circle cell the emitter cannot read per sector.
+        let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
+        for c in [z0, z20, cap_lo, cap_hi, wc] {
             let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c, &crossings);
             let staged = per_class(&jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
             for (cyl, label) in &staged.disk_labels {
@@ -9655,33 +9637,42 @@ mod tests {
             for (cyl, rim) in &edges.cut_rims {
                 cut_rims.insert((*cyl, c), rim.clone());
             }
+            for (cyl, r) in staged.ruling_extents {
+                rulings.entry(cyl).or_default().push(r);
+            }
             plane_faces.extend(staged.faces);
         }
+        let curved = Curved {
+            disk_labels,
+            arc_labels,
+            cut_rims,
+            rulings,
+        };
+        let (disk_labels, arc_labels, cut_rims) =
+            (&curved.disk_labels, &curved.arc_labels, &curved.cut_rims);
         assert!(cut_rims.contains_key(&(0, z0)) && cut_rims.contains_key(&(0, z20)));
         assert!(disk_labels.contains_key(&(0, cap_lo)) && disk_labels.contains_key(&(0, cap_hi)));
         assert_eq!(arc_labels[&(0, z0)].len(), 2, "two arcs, two sector labels");
         assert_eq!(arc_labels[&(0, z20)].len(), 2);
         let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
         assert_eq!(rows.len(), 1);
-        let bands = crate::bands::bands_of(&rows[0], &plane_faces, &jd, &cut_rims).unwrap();
+        // ★ A cut circle is a band boundary (the rulings ladder): the chart's boundary rule names
+        // the two cut rims beside the caps, and the chart's own lines are exactly those four.
+        let def = &setup.cyls[0].def;
+        let t_of = |c: usize| crate::bands::axis_param(&jd, c, def).unwrap();
+        let expect: Vec<Rat> = [cap_lo, z0, z20, cap_hi].map(t_of).to_vec();
         assert_eq!(
-            bands,
-            vec![(cap_lo, z0), (z0, z20), (z20, cap_hi)],
+            crate::cyl_chart::boundary_lines(&jd, 0, def, &plane_faces, &curved, &rows).unwrap(),
+            expect,
             "three intervals, cut circles included"
         );
-        // One-side-cut intervals answer from their cap end; the both-cut middle carries no disk
-        // cell at either end — the whole-disk road still refuses it (the panel road below is
-        // what answers).
-        assert!(crate::bands::chamber(&jd, &rows[0], cap_lo, z0, &disk_labels).is_ok());
-        assert!(crate::bands::chamber(&jd, &rows[0], z20, cap_hi, &disk_labels).is_ok());
-        assert!(matches!(
-            crate::bands::chamber(&jd, &rows[0], z0, z20, &disk_labels),
-            Err(BoolError::Rejected {
-                reason: RejectReason::CylinderGateUndecided,
-                ..
-            })
-        ));
-        // ★ The panel road: `band_faces` answers the both-cut middle per θ-sector. Exactly one
+        let chart = crate::cyl_chart::chart_of(&jd, &setup.cyls, 0, &plane_faces, &curved).unwrap();
+        assert_eq!(
+            chart.z_lines.iter().map(|l| l.t).collect::<Vec<_>>(),
+            expect,
+            "the chart's lines are the boundaries and nothing else here"
+        );
+        // ★ The emitter answers the both-cut middle per θ-sector as a panel ring. Exactly one
         // panel per kind here (the wall splits the lateral into two sectors; one side's chambers
         // agree under `keep`, the other's differ), and **fuse and cut keep complementary
         // sectors** — a relative assertion: which sector is the outer one is the assembly's and
@@ -9689,19 +9680,11 @@ mod tests {
         // re-derive. Structure is absolute: `[arc, ruling, arc, ruling]` walls on the sector's
         // own rim nodes.
         let faces_for = |kind: BoolKind| -> Vec<LocalFace> {
-            crate::bands::band_faces(
-                kind,
-                &plane_faces,
-                &rows,
-                &jd,
-                &disk_labels,
-                &cut_rims,
-                &arc_labels,
-            )
-            .unwrap()
-            .into_iter()
-            .filter(|f| matches!(f.outer, crate::boolean::Bound::Ring(_)))
-            .collect()
+            crate::cyl_chart::emit_lateral(kind, &jd, &setup.cyls, &plane_faces, &curved, &rows)
+                .unwrap()
+                .into_iter()
+                .filter(|f| matches!(f.outer, crate::boolean::Bound::Ring(_)))
+                .collect()
         };
         let (fuse, cut) = (faces_for(BoolKind::Fuse), faces_for(BoolKind::Cut));
         assert_eq!(fuse.len(), 1, "one kept sector panel for fuse");
@@ -9726,21 +9709,28 @@ mod tests {
         let rim = &cut_rims[&(0, z0)];
         assert!(rim.nodes.contains(&pf[0]) && rim.nodes.contains(&pc[0]));
         assert_ne!(pf, pc, "fuse and cut keep complementary sectors");
-        // Negative control: without the sector labels the both-cut interval refuses by the
-        // ladder's name.
-        let empty: crate::arrangement::ArcLabels = HashMap::new();
+        // Negative control: without the sector labels the both-cut interval's cells have no
+        // speaking end, and the emitter refuses the class rather than guess a chamber. Called
+        // directly, not through the census — this hand-broken input violates the very premise
+        // (`src0_present == 0`) the census asserts where the fact is made.
+        let mut blind = Curved {
+            disk_labels: curved.disk_labels.clone(),
+            arc_labels: HashMap::new(),
+            cut_rims: curved.cut_rims.clone(),
+            rulings: curved.rulings.clone(),
+        };
+        blind.arc_labels.clear();
         assert!(matches!(
-            crate::bands::band_faces(
+            crate::cyl_chart::emit_lateral(
                 BoolKind::Fuse,
-                &plane_faces,
-                &rows,
                 &jd,
-                &disk_labels,
-                &cut_rims,
-                &empty,
+                &setup.cyls,
+                &plane_faces,
+                &blind,
+                &rows
             ),
             Err(BoolError::Rejected {
-                reason: RejectReason::RulingBoundNotYet,
+                reason: RejectReason::CylinderGateUndecided,
                 ..
             })
         ));
@@ -9758,6 +9748,7 @@ mod tests {
         let mut disk_labels: crate::arrangement::DiskLabels = HashMap::new();
         let mut arc_labels: crate::arrangement::ArcLabels = HashMap::new();
         let mut cut_rims: CutRims = HashMap::new();
+        let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
         for c in 0..setup.geom.len() {
             let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c, &crossings);
             let staged = per_class(&jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
@@ -9773,27 +9764,42 @@ mod tests {
             for (cyl, rim) in &edges.cut_rims {
                 cut_rims.insert((*cyl, c), rim.clone());
             }
+            for (cyl, r) in staged.ruling_extents {
+                rulings.entry(cyl).or_default().push(r);
+            }
             faces.extend(staged.faces);
         }
+        let curved = Curved {
+            disk_labels,
+            arc_labels,
+            cut_rims,
+            rulings,
+        };
         let faces = crate::boolean::unify_coplanar_faces(faces, &jd, &setup.cyls).unwrap();
         let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
         let mut faces = faces;
         faces.extend(
-            crate::bands::band_faces(
+            crate::cyl_chart::emit_lateral(
                 BoolKind::Fuse,
-                &faces,
-                &rows,
                 &jd,
-                &disk_labels,
-                &cut_rims,
-                &arc_labels,
+                &setup.cyls,
+                &faces,
+                &curved,
+                &rows,
             )
             .unwrap(),
         );
         let seam = seam_table(&faces, &setup.cyls, &jd).unwrap();
-        let out =
-            crate::boolean::reconstruct(&mut m, &jd, &seam, &faces, &setup.cyls, &cut_rims, None)
-                .unwrap();
+        let out = crate::boolean::reconstruct(
+            &mut m,
+            &jd,
+            &seam,
+            &faces,
+            &setup.cyls,
+            &curved.cut_rims,
+            None,
+        )
+        .unwrap();
         assert_eq!(out.len(), 1, "one welded solid");
         m.live_solids = out;
         m.rebuild_adjacency();

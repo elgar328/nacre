@@ -3984,42 +3984,12 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
     }
-    // ★★★ **And that the existence gate is what did it.** The probe accumulates over the whole
-    // binary, so the exact count is not assertable here (tests share it, and they run in
-    // parallel) — the volumes above are what pin "one per operation". What this holds is that the
-    // gate is **live**: a sector was dropped because the face was not there, not because of a
-    // label. Turning the gate off turns this red before the volumes are even reached.
-    let sectors = crate::bands::panel_probe::SECTORS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
-    assert!(
-        sectors.iter().any(|&(spans, _)| !spans),
-        "no panel sector was ever dropped for existence: {sectors:?}"
-    );
-    // ★★★ **And the two rows of the rule production has never walked, kept audible.** Over the
-    // whole binary (☑ 278 rim reads) every arc carried **exactly one** lateral mark of its own
-    // solid: never none, never two. Those are the two rows `face_spans` answers without a fixture
-    // behind them — "no mark" and the deferred `.any()`. The day this fires it is a **population
-    // arriving**, not a defect: the function answers both correctly (its unit test says how), and
-    // what has expired is the doc calling them unexercised.
-    //
-    // ★ The `Seated` skip is **not** in that list — it fires, once, in
-    // `bands::tests::the_gate_still_refuses_what_the_road_does_not_serve` (☑ measured, one arc of
-    // 278 carrying both a lateral mark and a planar face's seated rim). It is load-bearing, not
-    // defensive: without it that arc's answer would come from the wrong face.
-    let marks = crate::bands::panel_probe::MARKS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
-    assert!(!marks.is_empty(), "the mark census never ran");
-    for &(lateral, _seated) in &marks {
-        assert_eq!(
-            lateral, 1,
-            "an arc carried {lateral} lateral marks of its own solid — a population this cell \
-             measured as empty has arrived; re-read `face_spans`' doc"
-        );
-    }
+    // ★★★ **And that the existence gate is what did it.** The band road's `panel_probe` used to
+    // record it here; since D3 the chart's census holds it where the cells are read:
+    // `exist_marks_false` (a sector dropped because the face is not there — the four above, held
+    // as growth ≥ 4 in `cyl_chart::tests::the_cells_read_their_chamber_from_the_horizontal_lines`)
+    // and `arcs_no_mark`/`arcs_multi_mark` (every cut end read carries exactly one lateral mark of
+    // its own solid — the doc that says why the `Seated` skip is load-bearing lives on `face_spans`).
 }
 
 /// ★★★★★ **A boolean's result carries names the tracer's plane-only road cannot read — and it
@@ -9177,7 +9147,7 @@ fn the_mesh_census_is_running() {
 ///
 /// The chart's horizontal lines have had their answer since the band pass: a ⊥ class's
 /// [`crate::arrangement::Label`] holds the material on **both** sides of its plane, which is why
-/// `bands::chamber` reads two disk labels and asks them to agree. The vertical lines had none, and
+/// the cell reader reads two disk labels and asks them to agree. The vertical lines had none, and
 /// this is it — the label of the cell a ruling borders on the axis side of its wall.
 ///
 /// ★★★★★ **The side is derived, and an independent description checks it.**
@@ -9241,4 +9211,298 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
         chk.contains(&Some(true)),
         "the content check decided nothing at all"
     );
+}
+
+/// **The census's cylinder corpus, in the lib suite** (D3). `tests/census.rs` records these
+/// families' digests, but it is an integration test and the lib is compiled without `cfg(test)`
+/// there — so the chart's census, which asserts where the facts are made, had never seen them.
+/// D2b learned that the hard way: `wal corner-lo` slipped past the shadow comparison. What these
+/// lock is only the **outcome** (built, or the refusal's name); the geometry stays the digest's.
+/// Fixtures copied from `tests/census.rs` (`rul`, `wal`, `cap`, `ct2`, `trc` families).
+///
+/// ★ `wal corner-lo` refuses `CylinderGateUndecided` from the chart's emitter: the plate classes'
+/// disk cells carry no B material at the (0,0) corner while the caps do (an arrangement label
+/// defect, D2b's finding) — the cells' ends disagree and the emitter refuses rather than read
+/// either. The census's guard for exactly that shape is `src2_disagree == 0 || emitted.is_err()`.
+#[test]
+fn census_corpus_cylinder_families_build_or_refuse_by_name() {
+    fn tr(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {
+        let s = transform(
+            m,
+            s,
+            &nacre_scalar::Isometry::translation(v.map(|x| Rat::try_from_f64(x).unwrap())),
+        )
+        .unwrap();
+        m.rebuild_adjacency();
+        s
+    }
+    fn plate(m: &mut Model, hi: [f64; 3]) -> Handle<Solid> {
+        m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(hi))
+    }
+    fn cyl(m: &mut Model, base: [f64; 3], r: f64, h: f64) -> Handle<Solid> {
+        m.add_cylinder(
+            Point3::from_array(base),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            r,
+            h,
+        )
+    }
+    /// A `20 × 20 × 10` cell at `x0`, optionally pocketed, then bored (`ct2`).
+    fn ct2cell(m: &mut Model, x0: f64, pocket: bool) -> Handle<Solid> {
+        let plate = m.add_cuboid(
+            Point3::from_array([x0, 0.0, 0.0]),
+            Point3::from_array([x0 + 20.0, 20.0, 10.0]),
+        );
+        m.rebuild_adjacency();
+        let mut out = plate;
+        if pocket {
+            let p = m.add_cuboid(
+                Point3::from_array([x0 + 2.0, 2.0, 4.0]),
+                Point3::from_array([x0 + 8.0, 8.0, 10.0]),
+            );
+            m.rebuild_adjacency();
+            out = boolean(m, BoolKind::Cut, out, p).expect("the pocket cuts")[0];
+            m.rebuild_adjacency();
+        }
+        let bore = cyl(m, [x0 + 14.0, 14.0, -1.0], 2.0, 12.0);
+        m.rebuild_adjacency();
+        out = boolean(m, BoolKind::Cut, out, bore).expect("the bore cuts")[0];
+        m.rebuild_adjacency();
+        out
+    }
+    type Fx = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
+    /// A family: its name, its two operands, and the outcome per kind (fuse, cut, common).
+    type Family = (&'static str, Fx, [Result<usize, RejectReason>; 3]);
+    let ok = |n: usize| Ok::<usize, RejectReason>(n);
+    let fams: Vec<Family> = vec![
+        (
+            "rul offmid",
+            |m| {
+                let a = plate(m, [40.0, 40.0, 20.0]);
+                let b = cyl(m, [40.0, 10.0, -10.0], 5.0, 50.0);
+                m.rebuild_adjacency();
+                (a, b)
+            },
+            [ok(1), ok(1), ok(1)],
+        ),
+        (
+            "rul flush",
+            |m| {
+                let a = plate(m, [40.0, 40.0, 20.0]);
+                let b = cyl(m, [40.0, 20.0, 0.0], 5.0, 20.0);
+                m.rebuild_adjacency();
+                (a, b)
+            },
+            [Err(RejectReason::UnorderedEdges); 3],
+        ),
+        (
+            "wal corner-lo",
+            |m| {
+                let a = plate(m, [4.0, 4.0, 2.0]);
+                let b = cyl(m, [0.0, 0.0, -1.0], 0.5, 4.0);
+                m.rebuild_adjacency();
+                (a, b)
+            },
+            [Err(RejectReason::CylinderGateUndecided); 3],
+        ),
+        (
+            "cap sunk",
+            |m| {
+                let a = plate(m, [4.0, 4.0, 2.0]);
+                let b = cyl(m, [2.0, 2.0, 1.0], 0.5, 1.0);
+                m.rebuild_adjacency();
+                (a, b)
+            },
+            [ok(1), ok(1), ok(1)],
+        ),
+        (
+            "trc boss",
+            |m| {
+                let a = plate(m, [40.0, 40.0, 10.0]);
+                let b = cyl(m, [10.0, 20.0, 5.0], 3.0, 8.0);
+                m.rebuild_adjacency();
+                let b = tr(m, b, [15.3, 0.1, 0.0]);
+                (a, b)
+            },
+            [ok(1), ok(1), ok(1)],
+        ),
+        (
+            "trc onaxis",
+            |m| {
+                let p = plate(m, [40.0, 40.0, 10.0]);
+                let bore = cyl(m, [18.0, 20.0, -5.0], 2.1, 30.0);
+                m.rebuild_adjacency();
+                let holed = boolean(m, BoolKind::Cut, p, bore).expect("the bore cuts")[0];
+                m.rebuild_adjacency();
+                let twin = cyl(m, [7.3, 20.0, -5.0], 2.1, 30.0);
+                m.rebuild_adjacency();
+                let twin = tr(m, twin, [10.7, 0.0, 0.0]);
+                (holed, twin)
+            },
+            [Err(RejectReason::CylinderPairContact); 3],
+        ),
+        (
+            "ct2 pocketed",
+            |m| {
+                let a = ct2cell(m, 0.0, true);
+                let b = ct2cell(m, 20.0, true);
+                (a, b)
+            },
+            [ok(1), ok(1), ok(0)],
+        ),
+        (
+            "ct2 chain",
+            |m| {
+                let a = ct2cell(m, 0.0, false);
+                let b = ct2cell(m, 20.0, false);
+                let ab = boolean(m, BoolKind::Fuse, a, b).expect("the first pair fuses")[0];
+                m.rebuild_adjacency();
+                let c = ct2cell(m, 40.0, false);
+                (ab, c)
+            },
+            [ok(1), ok(1), ok(0)],
+        ),
+    ];
+    for (name, fx, want) in &fams {
+        for (kind, want) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+            .into_iter()
+            .zip(want)
+        {
+            let mut m = Model::new();
+            let (a, b) = fx(&mut m);
+            match (boolean(&mut m, kind, a, b), want) {
+                (Ok(out), Ok(n)) => {
+                    assert_eq!(out.len(), *n, "{name} {kind:?}: solids");
+                    m.rebuild_adjacency();
+                    let issues = nacre_validate::validate(&m);
+                    assert!(issues.is_empty(), "{name} {kind:?}: {issues:?}");
+                }
+                (Err(BoolError::Rejected { reason, .. }), Err(r)) => {
+                    assert_eq!(&reason, r, "{name} {kind:?}: the refusal's name");
+                }
+                (got, _) => panic!("{name} {kind:?}: {got:?}, wanted {want:?}"),
+            }
+        }
+    }
+}
+
+/// The `xy` families of the census corpus (rows of bored cells fused in two generations, and the
+/// turned negative control), in the lib suite for the same reason as
+/// [`census_corpus_cylinder_families_build_or_refuse_by_name`].
+#[test]
+fn census_corpus_xy_generations_build_or_refuse_by_name() {
+    use nacre_scalar::{Angle, Isometry, Rotation};
+    fn tr(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {
+        let s = transform(
+            m,
+            s,
+            &Isometry::translation(v.map(|x| Rat::try_from_f64(x).unwrap())),
+        )
+        .unwrap();
+        m.rebuild_adjacency();
+        s
+    }
+    fn cell(m: &mut Model) -> Handle<Solid> {
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([20.0, 20.0, 10.0]),
+        );
+        let bore = m.add_cylinder(
+            Point3::from_array([6.3, 6.3, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            2.1,
+            12.0,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Cut, plate, bore).expect("the bore cuts")[0];
+        m.rebuild_adjacency();
+        out
+    }
+    fn row(m: &mut Model, n: usize, step: [f64; 3]) -> Handle<Solid> {
+        let mut acc = cell(m);
+        for i in 1..n {
+            let c = cell(m);
+            let c = tr(m, c, step.map(|v| v * i as f64));
+            acc = boolean(m, BoolKind::Fuse, acc, c).expect("the row fuses")[0];
+            m.rebuild_adjacency();
+        }
+        acc
+    }
+    type Fx = fn(&mut Model) -> (Handle<Solid>, Handle<Solid>);
+    /// A family: its name, its two operands, and the outcome per kind (fuse, cut, common).
+    type Family = (&'static str, Fx, [Result<usize, RejectReason>; 3]);
+    let ok = |n: usize| Ok::<usize, RejectReason>(n);
+    let fams: Vec<Family> = vec![
+        (
+            "xy grid",
+            |m| {
+                let a = row(m, 2, [20.0, 0.0, 0.0]);
+                let b = row(m, 2, [20.0, 0.0, 0.0]);
+                let b = tr(m, b, [0.0, 20.0, 0.0]);
+                (a, b)
+            },
+            [ok(1), ok(1), ok(0)],
+        ),
+        (
+            "xy yx",
+            |m| {
+                let a = row(m, 2, [0.0, 20.0, 0.0]);
+                let b = row(m, 2, [0.0, 20.0, 0.0]);
+                let b = tr(m, b, [20.0, 0.0, 0.0]);
+                (a, b)
+            },
+            [ok(1), ok(1), ok(0)],
+        ),
+        (
+            "xy three",
+            |m| {
+                let a = row(m, 3, [20.0, 0.0, 0.0]);
+                let b = row(m, 3, [20.0, 0.0, 0.0]);
+                let b = tr(m, b, [0.0, 20.0, 0.0]);
+                (a, b)
+            },
+            [ok(1), ok(1), ok(0)],
+        ),
+        (
+            "xy turned",
+            |m| {
+                let a = row(m, 2, [20.0, 0.0, 0.0]);
+                let b = row(m, 2, [20.0, 0.0, 0.0]);
+                let b = transform(
+                    m,
+                    b,
+                    &Isometry::rotation(Rotation {
+                        axis: Axis::Z,
+                        point: [Rat::from_int(0); 3],
+                        angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
+                    }),
+                )
+                .unwrap();
+                m.rebuild_adjacency();
+                (a, b)
+            },
+            [Err(RejectReason::CylinderGateUndecided); 3],
+        ),
+    ];
+    for (name, fx, want) in &fams {
+        for (kind, want) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+            .into_iter()
+            .zip(want)
+        {
+            let mut m = Model::new();
+            let (a, b) = fx(&mut m);
+            match (boolean(&mut m, kind, a, b), want) {
+                (Ok(out), Ok(n)) => {
+                    assert_eq!(out.len(), *n, "{name} {kind:?}: solids");
+                    m.rebuild_adjacency();
+                    let issues = nacre_validate::validate(&m);
+                    assert!(issues.is_empty(), "{name} {kind:?}: {issues:?}");
+                }
+                (Err(BoolError::Rejected { reason, .. }), Err(r)) => {
+                    assert_eq!(&reason, r, "{name} {kind:?}: the refusal's name");
+                }
+                (got, _) => panic!("{name} {kind:?}: {got:?}, wanted {want:?}"),
+            }
+        }
+    }
 }

@@ -854,9 +854,9 @@ pub enum RejectReason {
     /// very end; the population went green (the straddling boss builds — `bands`' fences) and
     /// the stopper was removed. What keeps the name alive are its two honest backstops:
     ///
-    /// * a **band with both rims cut** — unreachable today (`chamber` finds no disk label at
-    ///   either end and refuses as `CylinderGateUndecided` before the band is emitted), spelled
-    ///   in `band_loop` rather than assumed away;
+    /// * a **band with both rims cut** — only a whole-circle cell can arrive so (`emit_lateral`
+    ///   sends every other both-cut interval to the panel rings), a population measured 0
+    ///   (`whole_both_cut`), spelled in `band_loop` rather than assumed away;
     /// * a **whole-disk bound on a cut circle** (`circle_loop`) — a producer inconsistency (the
     ///   trace subdivides a cut disk into cells), named honestly rather than as a dropped
     ///   crossing;
@@ -1401,29 +1401,23 @@ mod zzz_ledger {
         let s =
             |f: fn(&crate::cyl_chart::probe::d2b::Row) -> usize| d2b.iter().map(f).sum::<usize>();
         eprintln!(
-            "ledger D1b: charts {} refused {} no_faces {} cells {} bands_seen {} panels_seen {} \
-             band_over_rulings {} intervals_split {}",
+            "ledger D1b: charts {} refused {} cells {}",
             d1.len(),
             d1.iter().filter(|r| r.refused).count(),
-            d1.iter().filter(|r| r.no_faces).count(),
             s1(|r| r.cells),
-            s1(|r| r.bands_seen),
-            s1(|r| r.panels_seen),
-            s1(|r| r.band_over_rulings),
-            s1(|r| r.intervals_split),
         );
         eprintln!(
-            "ledger D2b-0: rows {} no_faces {} cells {} end_swapped {} end_disk {} end_exact {} \
+            "ledger D2b: rows {} refused_booleans {} cells {} end_swapped {} end_disk {} end_exact {} \
              end_other {} end_nocircle {} other_present {} src2_disagree {} src0_present {} exist_disagree {} \
-             read_refused {} exist_marks_false {} emit {} emit_unknown {} emit_mismatch {} \
-             split_flip {} split_nocircle {} theta_merge_pairs {} z_merge_pairs {} \
-             partial_theta_in_disk_interval {} band_over_rulings {} full_runs {} partial_runs {} \
-             run_boundary_no_node {} whole_both_cut {} order_descents {} whole_emitted {} \
+             read_refused {} exist_marks_false {} emit {} emit_unknown {} \
+             theta_merge_pairs {} z_merge_pairs {} \
+             partial_theta_in_disk_interval {} full_runs {} partial_runs {} \
+             run_boundary_no_node {} whole_both_cut {} whole_emitted {} \
              run_split_at_node {} full_run_both_cut {} intervals_multi_run {} \
-             run_run_nonboundary {} z_merge_bandlike {} ref_band_merges {} ref_merge_over_boundary {} \
-             compared {} opened {} both_refused {}",
+             run_run_nonboundary {} z_merge_bandlike {} nocircle_present {} z_flip_nonboundary {} \
+             arcs_read {} arcs_no_mark {} arcs_multi_mark {} emitted_faces {}",
             d2b.len(),
-            d2b.iter().filter(|r| r.no_faces).count(),
+            d2b.iter().filter(|r| r.emitter_refused).count(),
             s(|r| r.cells),
             s(|r| r.end_swapped),
             s(|r| r.end_disk),
@@ -1438,29 +1432,25 @@ mod zzz_ledger {
             s(|r| r.exist_marks_false),
             s(|r| r.emit),
             s(|r| r.emit_unknown),
-            s(|r| r.emit_mismatch),
-            s(|r| r.split_flip),
-            s(|r| r.split_nocircle),
             s(|r| r.theta_merge_pairs),
             s(|r| r.z_merge_pairs),
             s(|r| r.partial_theta_in_disk_interval),
-            s(|r| r.band_over_rulings),
             s(|r| r.full_runs),
             s(|r| r.partial_runs),
             s(|r| r.run_boundary_no_node),
             s(|r| r.whole_both_cut),
-            s(|r| r.order_descents),
             s(|r| r.whole_emitted),
             s(|r| r.run_split_at_node),
             s(|r| r.full_run_both_cut),
             s(|r| r.intervals_multi_run),
             s(|r| r.run_run_nonboundary),
             s(|r| r.z_merge_bandlike),
-            s(|r| r.ref_band_merges),
-            s(|r| r.ref_merge_over_boundary),
-            s(|r| r.compared),
-            s(|r| r.opened),
-            s(|r| r.both_refused),
+            s(|r| r.nocircle_present),
+            s(|r| r.z_flip_nonboundary),
+            s(|r| r.arcs_read),
+            s(|r| r.arcs_no_mark),
+            s(|r| r.arcs_multi_mark),
+            s(|r| r.emitted_faces),
         );
     }
 }

@@ -1,11 +1,14 @@
-//! **Which parts of a cylinder's lateral surface survive a boolean** (M6-2a C4b).
+//! **The lateral face's row, and the vocabulary the chart reads it with.**
 //!
-//! ★★ **Since the D2b cutover (2026-08-30) production does not read this file's decision roads.**
-//! The lateral faces are emitted by `cyl_chart::emit_lateral` from the chart's cells; `band_faces`,
-//! `bands_of`, `chamber` and `panel_faces` are `#[cfg(test)]` — the **reference road** the census
-//! compares that emission against, face by face, until D3 deletes them. What production still
-//! reads here: `cyl_rows` (a face's span is the existence truth at an uncut end), `face_spans`,
-//! `read_bits`, `keep_for` and `axis_param` — one spelling each, called from the chart.
+//! This file used to *decide* which parts of a cylinder's lateral surface survive a boolean (the
+//! band road, M6-2a C4b → M6-2's rulings ladder). Since the D2b cutover (2026-08-30) that decision
+//! is `cyl_chart::emit_lateral`'s, cell by cell; D3 deleted the band road (`band_faces`, `bands_of`,
+//! `chamber`, `panel_faces`) once the census had held the two emissions equal face by face. What
+//! stays here is what the chart reads, one spelling each: [`cyl_rows`]/[`CylRow`] (a face's span
+//! is the existence truth at an uncut end), [`face_spans`] (existence at a cut end), [`read_bits`]
+//! (which two bits of a label are a cell's chamber), [`keep_for`] (the wall is a boundary of its
+//! own solid) and [`axis_param`]. The prose below is the theory those spellings state — the
+//! uniform-slab theorem and why the chamber is *read* off the arrangement rather than measured.
 //!
 //! The plane arrangement decides one plane class at a time; a cylinder's wall is not a plane, so
 //! it is decided here instead — and it is decided *coarsely*, because in this population it can
@@ -27,7 +30,7 @@
 //! lateral face's axis-parameter span along. So the gate reads two separating axes, and a wall
 //! clear on either one misses the rectangle (`planes.rs`' `face_clears_footprint`). With several
 //! lateral faces there are several rectangles, and that is exactly the granularity the theorem
-//! needs: `bands_of` clips every cut to its own row's span, so no band is ever built in the gap
+//! needs: a row's span ends are band boundaries (`cyl_chart::boundary_lines`), so no band is ever built in the gap
 //! between two of them, and a wall sitting in such a gap breaks no premise — there is none there
 //! to break. Reading the spans as one `min..max` would invent both the band and the refusal.
 //!
@@ -67,8 +70,9 @@ use nacre_scalar::Rat;
 /// surface that face lies on.
 ///
 /// This used to be one row per class, with the first face speaking for the rest. The others' spans
-/// were then clipped away in [`bands_of`] and their bands never emitted, which left the result
+/// were then clipped away by the band road and their bands never emitted, which left the result
 /// shell open — the boolean came back `OpenResultShell`, naming a symptom of our own omission.
+/// The chart reads the same span as the cell's existence at an uncut end (`Chart::read_cell`).
 ///
 /// ★ **Merging the spans into one `min..max` is not the fix either**: it would invent a band across
 /// the gap where the solid has no face at all.
@@ -76,9 +80,6 @@ pub(crate) struct CylRow {
     /// The [`ClassIx::Cyl`] payload — which lateral surface this face lies on. Several rows may
     /// share it.
     pub(crate) class: usize,
-    /// Read by the reference road (test builds); the chart reads `cyls[k].def`, the same value.
-    #[cfg_attr(not(test), allow(dead_code))]
-    pub(crate) def: nacre_topo::CylinderDef,
     /// **This face's** own extent in the axis parameter (its two rims).
     pub(crate) span: [Rat; 2],
     /// Which operand this face belongs to.
@@ -87,7 +88,8 @@ pub(crate) struct CylRow {
 
 /// One row per lateral **face**, ordered by `(class, lower t)`.
 ///
-/// ★ That order is [`band_faces`]' replay contract stated at the row level. A class's faces have
+/// ★ That order was the band road's replay contract stated at the row level, and the chart's
+/// emitter keeps it (classes ascending, then lines ascending). A class's faces have
 /// disjoint spans, so sorting by `(class, span[0])` keeps each class's bands in ascending `t` —
 /// the contract generalizes rather than bends. With one face per class it *is* the old class-index
 /// order, which is why existing results do not move.
@@ -118,16 +120,15 @@ pub(crate) fn cyl_rows(
             }));
         };
         // A lateral with no world statement declines the same way a missing span does — the
-        // band pass compares against world planes throughout.
-        let Some(def) = cf.def.clone() else {
+        // chart states every axis parameter against world planes (`axis_param`).
+        if cf.def.is_none() {
             return Err(reject(RejectReason::TraceDeclined {
                 kind: crate::DeclineKind::CylSpan,
                 face: cf.face,
             }));
-        };
+        }
         out.push(CylRow {
             class: k,
-            def,
             span,
             side: if i < n_a { SolidSide::A } else { SolidSide::B },
         });
@@ -144,154 +145,6 @@ pub(crate) fn cyl_rows(
     Ok(out)
 }
 
-/// **The surviving lateral bands, as result faces.**
-///
-/// `plane_faces` is the plane arrangement's output: its circle bounds are where the cuts are, and
-/// taking the boundaries from *there* (rather than from every ⊥ class) is what makes each rim
-/// shared by exactly the cap face and the band that meet on it.
-///
-/// Emitted in `(cylinder class, lower t)` order — `reconstruct` mints handles in face order, so
-/// this ordering is the replay contract.
-/// `labels` is the arrangement's own answer per `(cylinder class, plane class)` — see the module
-/// docs. Cylinders may sit on **both** operands: nothing here asks a solid to describe itself.
-#[cfg(test)]
-pub(crate) fn band_faces(
-    kind: BoolKind,
-    plane_faces: &[LocalFace],
-    rows: &[CylRow],
-    jd: &Judge<'_, WorkingPlane>,
-    labels: &crate::arrangement::DiskLabels,
-    cut_rims: &crate::arrangement::CutRims,
-    arc_labels: &crate::arrangement::ArcLabels,
-) -> Result<Vec<LocalFace>, BoolError> {
-    let mut out = Vec::new();
-    for row in rows {
-        for (lo, hi) in bands_of(row, plane_faces, jd, cut_rims)? {
-            // ★ A **both-cut** interval has a disk cell at neither end — its chambers are per
-            // θ-sector, read from the cut circles' arc labels: the panel road (rulings ladder).
-            if let (Some(lo_rim), Some(hi_rim)) = (
-                cut_rims.get(&(row.class, lo)),
-                cut_rims.get(&(row.class, hi)),
-            ) {
-                panel_faces(
-                    kind,
-                    row,
-                    (lo, lo_rim),
-                    (hi, hi_rim),
-                    jd,
-                    arc_labels,
-                    &mut out,
-                )?;
-                continue;
-            }
-            let (in_own_inside, in_other) = chamber(jd, row, lo, hi, labels)?;
-            // ★ **The wall is a boundary face of its own solid, so that solid's membership flips
-            // across it** — read inside from the label, and outside is its negation. The
-            // counterpart does *not* flip: the gate keeps its boundary faces clear of the lateral, so
-            // the slab theorem covers both sides. The face survives exactly when the two chambers
-            // disagree under `keep`.
-            let keep_side = |in_own: bool| keep_for(kind, row.side, in_own, in_other);
-            let (keep_in, keep_out) = (keep_side(in_own_inside), keep_side(!in_own_inside));
-            if keep_in == keep_out {
-                continue;
-            }
-            // The stored cylinder normal points **away from the axis**. It is the result face's
-            // outward normal when the kept material is inside the wall (a boss), and must be
-            // flipped when the material is outside it (a hole). `keep_in` is that question
-            // directly, whichever solid the wall came from.
-            out.push(LocalFace {
-                surf: ClassIx::Cyl(row.class),
-                outer: Bound::Band { lo, hi },
-                inner: Vec::new(),
-                flip: !keep_in,
-            });
-        }
-    }
-    Ok(out)
-}
-
-/// The plane classes bounding **this face's** bands, as consecutive `(lo, hi)` pairs ordered by
-/// axis parameter.
-///
-/// The boundaries are the classes that **emitted a circle** for this face's cylinder, plus the
-/// classes this face's own rims sit on (found by matching the span's parameters — two ⊥ planes
-/// with the same axis parameter *are* one plane, so the match is exact, not a tolerance).
-///
-/// ★ Circles are gathered per *class*, so a sibling face's boundaries are collected here too — and
-/// then clipped away by this face's span. That clip is what keeps two faces of one surface from
-/// borrowing each other's cuts.
-#[cfg(test)]
-pub(crate) fn bands_of(
-    row: &CylRow,
-    plane_faces: &[LocalFace],
-    jd: &Judge<'_, WorkingPlane>,
-    cut_rims: &crate::arrangement::CutRims,
-) -> Result<Vec<(usize, usize)>, BoolError> {
-    let k = row.class;
-    let mut classes: Vec<usize> = Vec::new();
-    let push = |c: usize, classes: &mut Vec<usize>| {
-        if !classes.contains(&c) {
-            classes.push(c);
-        }
-    };
-    for lf in plane_faces {
-        let ClassIx::Plane(c) = lf.surf else { continue };
-        let carries = std::iter::once(&lf.outer)
-            .chain(lf.inner.iter())
-            .any(|b| matches!(b, Bound::Circle { cyl } if *cyl == k));
-        if carries {
-            push(c, &mut classes);
-        }
-    }
-    // ★ A **cut** circle is a band boundary too (the rulings ladder): it emits no `Circle`
-    // bound — its boundary is arc pieces — so the walk above cannot see it, and before this arm
-    // the band pass emitted one full-height band straight across it (measured on the lifted
-    // through-boss). The arrangement's own record of every cut circle is `cut_rims`, keyed by
-    // `(cylinder class, plane class)`; a rim-cut circle (straddle/hung) names the same class the
-    // span-end rule below finds, and `push`'s dedup folds them. The final interval list is
-    // sorted by axis parameter, so the map's iteration order decides nothing.
-    for (&(kk, c), _) in cut_rims.iter() {
-        if kk == k {
-            push(c, &mut classes);
-        }
-    }
-    for c in 0..jd.planes.len() {
-        // ★ A class ⊥ to the axis is a **potential band boundary**, so failing to place it is a
-        // refusal, not a skip: silently missing one would merge two bands whose membership
-        // differs and hand back a closed, wrong solid. Classes that are not ⊥ cannot bound a
-        // band at all — a ∥ wall meets the lateral along **rulings**, which cut bands in θ, not
-        // in the axis (the panel road's job; while a pair sits behind the gate's `crossings`
-        // record the wall rule has proven it clear of every band) — so those are skipped for
-        // cause.
-        let Some(coeffs) = combinatorics::class_coeffs_rat(jd, c) else {
-            continue;
-        };
-        let n = [coeffs[0], coeffs[1], coeffs[2]];
-        if !nacre_scalar::parallel_rat(&n, &row.def.dir()) {
-            continue;
-        }
-        let t = param(jd, c, row)?;
-        if t == row.span[0] || t == row.span[1] {
-            push(c, &mut classes);
-        }
-    }
-    let mut keyed: Vec<(Rat, usize)> = classes
-        .into_iter()
-        .map(|c| Ok((param(jd, c, row)?, c)))
-        .collect::<Result<_, BoolError>>()?;
-    keyed.retain(|(t, _)| *t >= row.span[0] && *t <= row.span[1]);
-    keyed.sort_by_key(|(t, _)| *t);
-    Ok(keyed.windows(2).map(|w| (w[0].1, w[1].1)).collect())
-}
-
-/// The axis parameter of a plane class, or the honest refusal earned by a class with no exact
-/// description — and by one whose parameter is a **value** too wide for `Rat` (the road's own
-/// name: the gate's questions are signs and were made total, this one is not).
-#[cfg(test)]
-fn param(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Result<Rat, BoolError> {
-    axis_param(jd, c, &row.def)
-}
-
 /// The same question asked of a **cylinder** rather than one of its faces — the chart road
 /// (`crate::cyl_chart`) has a class and a def but no row, and this rule may not be spelled twice.
 pub(crate) fn axis_param(
@@ -305,169 +158,6 @@ pub(crate) fn axis_param(
 fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, def: &nacre_topo::CylinderDef) -> Option<Rat> {
     let coeffs = combinatorics::class_coeffs_rat(jd, c)?;
     axis_param_of_plane(&coeffs, def)
-}
-
-/// **Which chamber the band sits in, read off the arrangement.**
-///
-/// The disk cell on a boundary class carries `[inA_above, inA_below, inB_above, inB_below]` — the
-/// material immediately above and below that plane *inside the circle*. The band leaves `lo`
-/// going up in the axis parameter, so which of "above"/"below" faces it is decided by the class
-/// normal against the axis (`sign(n · m)`); at `hi` the band is on the other side.
-///
-/// ★ **Both ends are read, and they must agree.** The uniform-slab theorem says the counterpart's
-/// membership is constant across the open slab; two ends disagreeing means the theorem's premise
-/// broke (a ∥ wall crossed the slab — the gate's clearance proof failing), and that is refused
-/// rather than resolved by picking one. Free, because both labels are already in hand.
-///
-/// ★★ **Both solids' bits are data, not a control — and assuming one of them was a real bug.**
-/// The first spelling asserted "the band lies inside its own cylinder, so its own solid's bit is
-/// true". That holds for a *tool* (a drill solid fills its own cylinder) and is **false for a wall
-/// inherited from an earlier bore**: inside that circle the plate has no material — the bore is a
-/// hole. Both are ordinary inputs the moment a cylinder may sit on either operand, so the own-solid
-/// membership is read from the label too, and the wall's other side follows from what the wall
-/// *is*: a boundary face of that solid, so its own membership flips across it while the
-/// counterpart's (by the slab theorem) does not.
-/// **The θ-panels of a both-cut interval** — the rulings ladder's sector road. Both bounding
-/// circles are cut, so the interval's lateral is divided by the rulings at the cut nodes'
-/// angles into sectors, and each sector is its own chamber question, answered by the cut
-/// circles' per-arc labels ([`crate::arrangement::ArcLabels`]).
-///
-/// The two rims' nodes must correspond one-to-one by `(wall class, root)` — the same wall
-/// cutting both circles puts a branch node at the same angle on each. A geometry whose upper
-/// and lower circles are cut by *different* walls has no such pairing and is refused by the
-/// ladder's name (its cell has not arrived).
-///
-/// A kept sector is emitted as a **ring** of the ladder's own vocabulary — `[arc, ruling, arc,
-/// ruling]` (`Wall::Arc`/`Wall::Ruling`) — not a `Band`: a band's boundary is two whole
-/// circles, a panel's is four pieces.
-///
-/// ★ **The ring's absolute winding is measured** (cell 4): flipping the emitted orientation
-/// (`flip`) turns the through-boss volume oracles red — the watcher this note used to say was
-/// still to come.
-#[cfg(test)]
-#[allow(clippy::too_many_arguments)]
-fn panel_faces(
-    kind: BoolKind,
-    row: &CylRow,
-    (lo, lo_rim): (usize, &crate::arrangement::CutRim),
-    (hi, hi_rim): (usize, &crate::arrangement::CutRim),
-    jd: &Judge<'_, WorkingPlane>,
-    arc_labels: &crate::arrangement::ArcLabels,
-    out: &mut Vec<LocalFace>,
-) -> Result<(), BoolError> {
-    use crate::boolean::{Ring, Wall};
-    let ladder = || reject(RejectReason::RulingBoundNotYet);
-    let k = row.class;
-    // A node's `(wall class, root)` — the identity that pairs the two rims' nodes. The wall is
-    // the Branch name's plane that is not the rim's own class.
-    let name_on = |rim_class: usize,
-                   n: combinatorics::NodeId|
-     -> Result<(usize, nacre_topo::QuadRoot), BoolError> {
-        let (pair, _, root) = combinatorics::branch_name(n).ok_or_else(ladder)?;
-        let wall = if pair[0] == rim_class {
-            pair[1]
-        } else if pair[1] == rim_class {
-            pair[0]
-        } else {
-            return Err(ladder());
-        };
-        Ok((wall, root))
-    };
-    let m = lo_rim.nodes.len();
-    if m != hi_rim.nodes.len() || m < 2 {
-        return Err(ladder());
-    }
-    let mut hi_of: std::collections::HashMap<(usize, nacre_topo::QuadRoot), combinatorics::NodeId> =
-        std::collections::HashMap::new();
-    for &n in &hi_rim.nodes {
-        if hi_of.insert(name_on(hi, n)?, n).is_some() {
-            return Err(ladder()); // two nodes with one name: not this ladder's geometry
-        }
-    }
-    let arc_at = |c: usize, a: combinatorics::NodeId, b: combinatorics::NodeId| {
-        arc_labels
-            .get(&(k, c))
-            .and_then(|v| v.iter().find(|r| r.ends == [a, b]))
-            .ok_or_else(ladder)
-    };
-    let toward_hi = |c: usize| -> bool { crate::planes::plus_t_is_above(&jd.planes[c], &row.def) };
-    for j in 0..m {
-        let (a_lo, b_lo) = (lo_rim.nodes[j], lo_rim.nodes[(j + 1) % m]);
-        let a_hi = *hi_of.get(&name_on(lo, a_lo)?).ok_or_else(ladder)?;
-        let b_hi = *hi_of.get(&name_on(lo, b_lo)?).ok_or_else(ladder)?;
-        // The sector's chamber, from both rims — the same both-ends-agree discipline as
-        // `chamber`'s, on the per-arc labels. The hi arc runs `[a_hi, b_hi]` too: the pairing
-        // preserves angle, so the CCW adjacency is the same on both circles.
-        let r_lo = arc_at(lo, a_lo, b_lo)?;
-        let r_hi = arc_at(hi, a_hi, b_hi)?;
-        // ★★★★★ **Existence, before membership.** A label says where *material* is; it does not
-        // say whether this lateral face is here to bound it, and a holed lateral coming back in
-        // as an operand makes the two sectors' labels literally identical. So the trace is asked
-        // first — and where the face is absent there is no membership question to ask.
-        let spans_lo = face_spans(r_lo, row.side, toward_hi(lo))?;
-        let spans_hi = face_spans(r_hi, row.side, !toward_hi(hi))?;
-        #[cfg(test)]
-        for r in [r_lo, r_hi] {
-            panel_probe::marks(r, row.side);
-        }
-        if spans_lo != spans_hi {
-            // The rims of a hole are themselves band boundaries (`bands_of` pushes every cut
-            // rim), so within one interval a sector either exists over its whole height or not
-            // at all. Two ends disagreeing means that is false here, and picking an end to
-            // believe is the guess `chamber` refuses to make one screenful down.
-            return Err(reject(RejectReason::CylinderFaceUndecided));
-        }
-        if !spans_lo {
-            #[cfg(test)]
-            panel_probe::sector(false, false);
-            continue;
-        }
-        let (own_lo, other_lo) = read_bits(&r_lo.label, row.side, toward_hi(lo));
-        let (own_hi, other_hi) = read_bits(&r_hi.label, row.side, !toward_hi(hi));
-        if (own_lo, other_lo) != (own_hi, other_hi) {
-            return Err(ladder());
-        }
-        let keep_side = |in_own: bool| keep_for(kind, row.side, in_own, other_lo);
-        let (keep_in, keep_out) = (keep_side(own_lo), keep_side(!own_lo));
-        if keep_in == keep_out {
-            #[cfg(test)]
-            panel_probe::sector(true, false);
-            continue;
-        }
-        #[cfg(test)]
-        panel_probe::sector(true, true);
-        // The ruling identity at each cut angle, from the one spelling
-        // (`arrangement::ruling_side` against the wall class's canonical coefficients).
-        let side_at = |n: combinatorics::NodeId| -> Result<i8, BoolError> {
-            let (wall, _) = name_on(lo, n)?;
-            let w = combinatorics::class_coeffs_rat(jd, wall).ok_or_else(ladder)?;
-            let (line, s) = combinatorics::branch_meet(jd, k, &row.def, n).ok_or_else(ladder)?;
-            crate::arrangement::ruling_side(&w, &row.def, (&line, &s)).ok_or_else(ladder)
-        };
-        out.push(LocalFace {
-            surf: ClassIx::Cyl(k),
-            outer: Bound::Ring(Ring::new(
-                vec![a_lo, b_lo, b_hi, a_hi],
-                vec![
-                    Wall::Arc { cyl: k, ccw: true },
-                    Wall::Ruling {
-                        cyl: k,
-                        side: side_at(b_lo)?,
-                        up: true,
-                    },
-                    Wall::Arc { cyl: k, ccw: false },
-                    Wall::Ruling {
-                        cyl: k,
-                        side: side_at(a_lo)?,
-                        up: false,
-                    },
-                ],
-            )),
-            inner: Vec::new(),
-            flip: !keep_in,
-        });
-    }
-    Ok(())
 }
 
 /// **Does this row's lateral face reach into the interval, at this arc?** — the *existence*
@@ -501,8 +191,10 @@ fn panel_faces(
 /// an **uncut** outer rim: it never becomes an [`ArcLabels`] entry at all (a whole circle goes to
 /// `DiskLabels` and the band road), so today only cut rims ask here.
 ///
-/// ☑ **How often each row actually fires** (whole binary, production calls only): `Transversal`
-/// **265** · `Graze` **13**, of which **1** reaches and **12** do not · nothing at all **0**.
+/// ☑ **How often each row actually fires** (whole binary, production calls only, measured on the
+/// band road 2026-08-29): `Transversal` **265** · `Graze` **13**, of which **1** reaches and **12**
+/// do not · nothing at all **0**. The chart reads it once per cut end (`cyl_chart::census`'s
+/// `arcs_read`, 756 over the lib suite in D3).
 /// The twelve are the six dropped sectors read at both rims, which is the cross-check that the
 /// sector census and this one describe the same events.
 pub(crate) fn face_spans(
@@ -533,59 +225,9 @@ pub(crate) fn face_spans(
     Ok(answer.unwrap_or(false))
 }
 
-/// **What the panel road decided, at the layer that decides it** — [`panel_faces`]' instrument.
-///
-/// ★ The result oracles (volume, `validate`) are the stronger evidence now that the chained
-/// operation builds, and they are what pin the *count*. This holds the mechanism instead: that a
-/// sector was dropped because the **face was not there**, which no volume can distinguish from a
-/// sector dropped by a label. It also survives the day some other refusal moves in front of the
-/// assembly again, which is how `ruling_probe` came to exist.
-///
-/// ★★ **Only [`panel_faces`] records here, never [`face_spans`] itself.** The unit test feeds that
-/// function hand-written marks — rows chosen to state the rule, not to describe any geometry — and
-/// recording them would make the census describe the test suite instead of the kernel. (That
-/// distinction is not academic: this census, once it read production, **refuted** what the cell
-/// had written about which rows were unexercised.)
-#[cfg(test)]
-pub(crate) mod panel_probe {
-    use super::SolidSide;
-    use crate::arrangement::{ArcLabel, SegKind};
-    use std::sync::Mutex;
-
-    /// One entry per sector considered: `(the face reaches this interval, the sector was emitted)`.
-    pub(crate) static SECTORS: Mutex<Vec<(bool, bool)>> = Mutex::new(Vec::new());
-
-    /// One entry per rim the panel road read: how many marks of this row's own solid the arc
-    /// carried, as `(lateral, seated)`.
-    ///
-    /// ☑ Measured over the whole binary: 278 reads, `lateral` **always 1**, `seated` **1 once**.
-    /// So only the `lateral` half is a zero-population claim and only it is locked; the `Seated`
-    /// skip fires for real and is load-bearing. The cell wrote the opposite first, from the four
-    /// fixtures it was opening — see the lock.
-    pub(crate) static MARKS: Mutex<Vec<(usize, usize)>> = Mutex::new(Vec::new());
-
-    pub(crate) fn sector(spans: bool, kept: bool) {
-        SECTORS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .push((spans, kept));
-    }
-
-    pub(crate) fn marks(r: &ArcLabel, side: SolidSide) {
-        let mine = || r.marks.iter().filter(|(s, _)| *s == side);
-        let seated = mine()
-            .filter(|(_, k)| matches!(k, SegKind::Seated { .. }))
-            .count();
-        MARKS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .push((mine().count() - seated, seated));
-    }
-}
-
-/// The one spelling of "which two bits of a label are this band's chamber": the row's own
-/// solid's bit and the counterpart's, on the side of the plane the band occupies. Shared by the
-/// whole-disk road ([`chamber`]) and the per-sector panel road, so the two cannot drift.
+/// The one spelling of "which two bits of a label are this cell's chamber": the row's own
+/// solid's bit and the counterpart's, on the side of the plane the cell occupies. Read for a disk
+/// end and an arc end alike (`Chart::read_cell`), so the two cannot drift.
 pub(crate) fn read_bits(
     l: &crate::arrangement::Label,
     side: SolidSide,
@@ -606,60 +248,6 @@ pub(crate) fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: 
         SolidSide::A => crate::arrangement::keep(kind, in_own, in_other),
         SolidSide::B => crate::arrangement::keep(kind, in_other, in_own),
     }
-}
-
-/// **The whole-disk chamber** — both bounding circles uncut, so one question answers the interval.
-///
-/// ★★★ **This road reads only the label, and that is safe here for a reason worth writing down.**
-/// The sector road one screenful up had to ask the *trace* whether the lateral face is even
-/// present ([`face_spans`]), because a hole in the face makes two sectors with identical labels.
-/// No hole reaches this road: a hole's rims are inside the face (a rim at the face's own end is
-/// not an inner loop), they are cut circles, and `bands_of` makes **every** cut rim a band
-/// boundary — so an interval a hole passes through has cut ends and goes to the panels. Break
-/// that and this function starts answering a question it cannot see.
-///
-/// ★ So the two roads treat existence differently on purpose, and only one of them has to. They
-/// become one question when the lateral gets its own cell complex on its own chart, which is the
-/// body of this capability and not this rung.
-#[cfg(test)]
-pub(crate) fn chamber(
-    jd: &Judge<'_, WorkingPlane>,
-    row: &CylRow,
-    lo: usize,
-    hi: usize,
-    labels: &crate::arrangement::DiskLabels,
-) -> Result<(bool, bool), BoolError> {
-    let k = row.class;
-    // `above` in the label is the class's **stored** normal side; the band leaves `lo` toward
-    // `hi`, i.e. toward increasing axis parameter — which `plus_t_is_above` answers (and where the
-    // f64 dot's exactness argument lives).
-    let toward_hi = |c: usize| -> bool { crate::planes::plus_t_is_above(&jd.planes[c], &row.def) };
-    let read = |c: usize, band_is_above: bool| -> Option<(bool, bool)> {
-        let l = labels.get(&(k, c))?;
-        Some(read_bits(l, row.side, band_is_above))
-    };
-    let ends = [(lo, toward_hi(lo)), (hi, !toward_hi(hi))];
-    let mut answer: Option<(bool, bool)> = None;
-    for (c, band_is_above) in ends {
-        let Some(pair) = read(c, band_is_above) else {
-            continue; // this end carries no disk cell — the other end speaks
-        };
-        match answer {
-            None => answer = Some(pair),
-            // ★ The slab is uniform by the gate's clearance proof — **both** bits must agree at
-            // the two ends. Ends disagreeing means that proof failed (something crossed the open
-            // slab), and guessing which end to believe is exactly what this kernel does not do.
-            // This is also where a flipped side selection surfaces: the two ends read opposite
-            // sides, so getting the sign wrong makes them contradict.
-            Some(prev) if prev != pair => {
-                return Err(reject(RejectReason::CylinderGateUndecided));
-            }
-            Some(_) => {}
-        }
-    }
-    // Every boundary class of a band carries a disk cell (the emitted circles put them there, and
-    // the cylinder's own caps are always arranged) — so this is a wiring failure, not an input.
-    answer.ok_or_else(|| reject(RejectReason::CylinderGateUndecided))
 }
 
 #[cfg(test)]
@@ -783,24 +371,17 @@ mod tests {
         )
         .expect("the drill population traces");
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("cylinder rows");
-        let out = band_faces(
-            kind,
-            &plane_faces,
-            &rows,
-            &jd,
-            &curved.disk_labels,
-            &curved.cut_rims,
-            &curved.arc_labels,
-        )
-        .expect("bands");
+        let out = crate::cyl_chart::emit_lateral(kind, &jd, cyls, &plane_faces, &curved, &rows)
+            .expect("the lateral faces emit");
         // The classes' **z**, not their axis parameter: `t` is measured from the cylinder's own
         // origin along its raw `dir`, so a drill starting at z=−1 puts the box's cap at t=1. The
         // assertions read in world z, which is the vocabulary the fixtures are written in.
         let ts = (0..geom.len())
             .filter_map(|c| {
-                let t = param_opt(&jd, c, &rows[0].def)?;
+                let def = &cyls[0].def;
+                let t = param_opt(&jd, c, def)?;
                 // The class's world z, via the axis point at that parameter.
-                let (o, m) = (rows[0].def.origin(), rows[0].def.dir());
+                let (o, m) = (def.origin(), def.dir());
                 let z = o[2].checked_add(t.checked_mul(m[2])?)?;
                 Some((c, z.to_f64()))
             })
@@ -2024,16 +1605,8 @@ mod tests {
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(
-                    BoolKind::Fuse,
-                    &faces,
-                    &rows,
-                    &jd,
-                    &curved.disk_labels,
-                    &curved.cut_rims,
-                    &curved.arc_labels,
-                )
-                .expect("bands"),
+                crate::cyl_chart::emit_lateral(BoolKind::Fuse, &jd, cyls, &faces, &curved, &rows)
+                    .expect("the lateral faces emit"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
                 .expect("the seam realizes branch nodes");
@@ -2129,16 +1702,8 @@ mod tests {
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(
-                    BoolKind::Fuse,
-                    &faces,
-                    &rows,
-                    &jd,
-                    &curved.disk_labels,
-                    &curved.cut_rims,
-                    &curved.arc_labels,
-                )
-                .expect("bands"),
+                crate::cyl_chart::emit_lateral(BoolKind::Fuse, &jd, cyls, &faces, &curved, &rows)
+                    .expect("the lateral faces emit"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
             let named =
@@ -2267,16 +1832,8 @@ mod tests {
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(
-                    BoolKind::Fuse,
-                    &faces,
-                    &rows,
-                    &jd,
-                    &curved.disk_labels,
-                    &curved.cut_rims,
-                    &curved.arc_labels,
-                )
-                .expect("bands"),
+                crate::cyl_chart::emit_lateral(BoolKind::Fuse, &jd, cyls, &faces, &curved, &rows)
+                    .expect("the lateral faces emit"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
             let named =
@@ -2721,16 +2278,8 @@ mod tests {
             let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
             let mut faces = faces;
             faces.extend(
-                band_faces(
-                    BoolKind::Fuse,
-                    &faces,
-                    &rows,
-                    &jd,
-                    &curved.disk_labels,
-                    &curved.cut_rims,
-                    &curved.arc_labels,
-                )
-                .expect("bands"),
+                crate::cyl_chart::emit_lateral(BoolKind::Fuse, &jd, cyls, &faces, &curved, &rows)
+                    .expect("the lateral faces emit"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
                 .expect("the seam realizes branch nodes");
@@ -3544,8 +3093,8 @@ mod tests {
     //
     // ★ With several lateral faces there are several rectangles: the strip is shared, the spans
     // are not. That is why the gap between two bands is passable at all, and it is not a special
-    // case bolted on — `bands_of` clips every cut to its own row's span, so no band is ever built
-    // in a gap and there is no premise there for a wall to break.
+    // case bolted on — a row's span ends are band boundaries, so no band is ever built in a gap
+    // and there is no premise there for a wall to break.
 
     /// **The case this opened.** The two-banded bore of `plate_with_a_split_bore` has bands at
     /// `z ∈ [0,4]` and `[6,10]` — `t ∈ [1,5]` and `[7,11]`. A tool whose `y = 6` wall stands only 1
