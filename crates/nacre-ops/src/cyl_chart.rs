@@ -46,7 +46,7 @@ use crate::arrangement::{ArcLabel, Curved, Label, RulingExtent};
 use crate::boolean::{Bound, LocalFace};
 use crate::planes::{ClassIx, WorkingCyl, WorkingPlane};
 use crate::tolerant::Judge;
-use crate::{BoolError, combinatorics};
+use crate::{BoolError, RejectReason, combinatorics, reject};
 use nacre_scalar::Rat;
 
 /// One **horizontal** line: a ⊥ plane class, and where it crosses the axis.
@@ -417,9 +417,6 @@ pub(crate) struct CellRead<'a> {
     /// The trace says the face is here while no row's span covers the cell — the one direction
     /// of disagreement that is a defect (the other is a hole in a spanned face).
     pub(crate) exist_disagree: bool,
-    /// `face_spans` refused (two of this solid's faces disagreeing on one arc) or two cut ends
-    /// disagreed with each other — the span answered instead.
-    pub(crate) exist_conflict: bool,
     /// Would the cell be a result face: present, with a chamber, and `keep` differing across the
     /// wall. `None` when the chamber is unknown.
     pub(crate) emit: Option<bool>,
@@ -439,7 +436,7 @@ impl Lines {
         k: usize,
         def: &nacre_topo::CylinderDef,
         curved: &Curved,
-    ) -> Self {
+    ) -> Result<Self, BoolError> {
         let mut by_t: std::collections::HashMap<Rat, Vec<usize>> = std::collections::HashMap::new();
         let keys = curved
             .disk_labels
@@ -450,16 +447,17 @@ impl Lines {
             if kk != k {
                 continue;
             }
-            // A class whose parameter cannot be stated is skipped, as `census` skips it everywhere.
-            let Ok(t) = crate::bands::axis_param(jd, c, def) else {
-                continue;
-            };
+            // ★ Not swallowed: `axis_param` refuses through `reject()`, which the reject census
+            // records at the raise whether or not the caller looks. `chart_of` (iii) already asked
+            // this of every ⊥ class, so a refusal here cannot be reached after a chart was built —
+            // the `?` removes a silent arm rather than adding a population.
+            let t = crate::bands::axis_param(jd, c, def)?;
             let v = by_t.entry(t).or_default();
             if !v.contains(&c) {
                 v.push(c);
             }
         }
-        Self { by_t }
+        Ok(Self { by_t })
     }
 
     /// The classes carrying a label of this cylinder at `t`.
@@ -561,7 +559,7 @@ impl Chart {
         curved: &'a Curved,
         lines: &Lines,
         rows: &[crate::bands::CylRow],
-    ) -> CellRead<'a> {
+    ) -> Result<CellRead<'a>, BoolError> {
         let t = [
             self.z_lines[cell.interval].t,
             self.z_lines[cell.interval + 1].t,
@@ -616,17 +614,12 @@ impl Chart {
                         };
                         match nodes {
                             (Some(nx), Some(ny)) if adjacent(nx, ny) => {
-                                // ★ Asserted where the fact is made: the split's arc order and
-                                // the rim's node order are one table read twice (`emit_faces`
-                                // copies `ma.end`), so a missing row is a defect between two
-                                // arrangement tables, not a chart shape.
-                                let arc =
-                                    arcs.iter().find(|a| a.ends == [nx, ny]).unwrap_or_else(|| {
-                                        panic!(
-                                            "a cut rim's adjacent node pair has no arc label: \
-                                             cyl {k}, class {c}"
-                                        )
-                                    });
+                                // The split's arc order and the rim's node order are one table
+                                // read twice (`emit_faces` copies `ma.end`); a missing row is the
+                                // "sector labels missing" this name states (`panel_faces::arc_at`).
+                                let Some(arc) = arcs.iter().find(|a| a.ends == [nx, ny]) else {
+                                    return Err(reject(RejectReason::RulingBoundNotYet));
+                                };
                                 End::Exact(arc)
                             }
                             _ => self
@@ -636,11 +629,11 @@ impl Chart {
                     }
                 };
             }
-            assert!(
-                !(saw_disk && saw_arc),
-                "one z-line carries both a disk and arcs of one cylinder: cyl {k}, t {:?}",
-                t[e]
-            );
+            // A whole-disk label and arcs of one cylinder on one line is a producer inconsistency
+            // (`ArcBoundNotYet`'s own sentence), not a chart shape.
+            if saw_disk && saw_arc {
+                return Err(reject(RejectReason::ArcBoundNotYet));
+            }
             ends.push(end);
         }
         let ends: [End<'a>; 2] = match <[End<'a>; 2]>::try_from(ends) {
@@ -670,25 +663,24 @@ impl Chart {
             r.class == k && r.span[0].min(r.span[1]) <= lo && hi <= r.span[0].max(r.span[1])
         });
         let mut by_marks: Option<bool> = None;
-        let mut exist_conflict = false;
         for e in 0..2 {
             let End::Exact(arc) = &ends[e] else { continue };
-            match crate::bands::face_spans(arc, side, above[e]) {
-                Ok(v) => {
-                    if by_marks.replace(v).is_some_and(|p| p != v) {
-                        exist_conflict = true;
-                    }
-                }
-                Err(_) => exist_conflict = true,
+            // `face_spans` refuses by name (two of this solid's faces disagreeing on one arc), and
+            // two cut ends disagreeing with each other is `panel_faces`' `CylinderFaceUndecided`:
+            // the rims of a hole are band boundaries, so a sector exists over its whole height or
+            // not at all, and picking an end to believe is the guess this kernel does not make.
+            let v = crate::bands::face_spans(arc, side, above[e])?;
+            if by_marks.replace(v).is_some_and(|p| p != v) {
+                return Err(reject(RejectReason::CylinderFaceUndecided));
             }
         }
         // ★ The span is the coarser truth: a holed lateral's row spans the hole, and the trace is
         // what says the face is *not* there (cell ㉒'s population — `exist_marks_false`). So the
         // disagreement that would be a defect is only the other direction: the trace claiming a
         // face where no row spans.
-        let (present, exist_disagree) = match (by_marks, exist_conflict) {
-            (Some(v), false) => (v, v && !by_span),
-            _ => (by_span, false),
+        let (present, exist_disagree) = match by_marks {
+            Some(v) => (v, v && !by_span),
+            None => (by_span, false),
         };
 
         // A cell the face is not in emits nothing, chamber or no chamber — a cell outside every
@@ -701,15 +693,14 @@ impl Chart {
                 keep(own) != keep(!own)
             })
         };
-        CellRead {
+        Ok(CellRead {
             ends,
             chamber,
             src2_disagree,
             present,
             exist_disagree,
-            exist_conflict,
             emit,
-        }
+        })
     }
 }
 
@@ -744,7 +735,9 @@ pub(crate) fn census(
         // The cell reader's inputs (D2b-0): the lines by parameter, and whose solid this class
         // is. ★ One class is one solid's surface — `planes.rs` interns cylinders by handle and
         // two solids share none — asserted where it is relied on rather than assumed.
-        let lines = Lines::of(jd, k, &cyls[k].def, curved);
+        let Ok(lines) = Lines::of(jd, k, &cyls[k].def, curved) else {
+            continue;
+        };
         // `bands_of`'s boundaries, for the merge counters; a refusal is a skip, as for the chart.
         let Ok(boundary) = boundary_lines(jd, k, &cyls[k].def, plane_faces, curved, rows) else {
             continue;
@@ -891,10 +884,24 @@ pub(crate) fn census(
         let Some(side) = side else {
             panic!("a cylinder class reached the chart with no row: cyl {k}");
         };
-        let reads: Vec<CellRead<'_>> = cells
+        // A cell the reader refuses is a refusal of the whole class (the emitter's `?`); the
+        // chart is still recorded, with the comparison empty and the refusal counted.
+        let reads: Vec<CellRead<'_>> = match cells
             .iter()
             .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, &lines, rows))
-            .collect();
+            .collect::<Result<Vec<_>, BoolError>>()
+        {
+            Ok(v) => v,
+            Err(_) => {
+                probe::d2b::push(probe::d2b::Row {
+                    cells: cells.len(),
+                    no_faces: true,
+                    read_refused: 1,
+                    ..probe::d2b::Row::default()
+                });
+                continue;
+            }
+        };
         let mut d2b = probe::d2b::Row {
             cells: cells.len(),
             end_swapped: chart.end_swapped,
@@ -924,7 +931,6 @@ pub(crate) fn census(
             }
             d2b.src2_disagree += usize::from(r.src2_disagree);
             d2b.exist_disagree += usize::from(r.exist_disagree);
-            d2b.exist_conflict += usize::from(r.exist_conflict);
             // Both ends cut is exactly the panel road's population, where today `face_spans`
             // drops a sector for existence — the one count with a twin on the other side.
             if r.ends.iter().all(|e| matches!(e, End::Exact(_))) && !r.present {
@@ -1723,7 +1729,9 @@ pub(crate) mod probe {
             /// so the reporting test can say the assertion was live.
             pub(crate) src0_present: usize,
             pub(crate) exist_disagree: usize,
-            pub(crate) exist_conflict: usize,
+            /// The reader refused a cell of this chart by name (`face_spans`' or `panel_faces`'
+            /// refusals, or an arrangement-table inconsistency) — the whole class is refused.
+            pub(crate) read_refused: usize,
             /// Both-cut cells the trace says the face is not in — the panel road's dropped sectors.
             pub(crate) exist_marks_false: usize,
             /// Cells the reader would emit, cells it could not decide, and — the headline — cells
@@ -1998,7 +2006,7 @@ mod tests {
     ///   disagree. The cutover would change **no** face of today's corpus.
     /// * `src2_disagree == 0` — a cell's two ends never contradict (the two-end agreement
     ///   `bands::chamber` demands, on every cell).
-    /// * `exist_disagree == 0`, `exist_conflict == 0` — the trace and the span tell the same
+    /// * `exist_disagree == 0`, `read_refused == 0` — the trace and the span tell the same
     ///   existence story wherever both speak.
     /// * `split_flip == 0`, `split_nocircle == 0` — D1b's 44 extra lines are harmless: each has a
     ///   circle and nothing changes across it.
@@ -2081,8 +2089,8 @@ mod tests {
                 "trace and span disagree on existence: {r:?}"
             );
             assert_eq!(
-                r.exist_conflict, 0,
-                "the trace refused an existence question: {r:?}"
+                r.read_refused, 0,
+                "the reader refused a cell by name: {r:?}"
             );
             assert_eq!(
                 r.split_flip, 0,

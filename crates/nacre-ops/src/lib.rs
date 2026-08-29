@@ -1408,7 +1408,7 @@ mod zzz_ledger {
         eprintln!(
             "ledger D2b-0: rows {} no_faces {} cells {} end_swapped {} end_disk {} end_exact {} \
              end_other {} end_nocircle {} other_present {} src2_disagree {} src0_present {} exist_disagree {} \
-             exist_conflict {} exist_marks_false {} emit {} emit_unknown {} emit_mismatch {} \
+             read_refused {} exist_marks_false {} emit {} emit_unknown {} emit_mismatch {} \
              split_flip {} split_nocircle {} theta_merge_pairs {} z_merge_pairs {} \
              partial_theta_in_disk_interval {} band_over_rulings {} full_runs {} partial_runs {} \
              run_boundary_no_node {} whole_both_cut {} order_descents {} whole_emitted {} \
@@ -1426,7 +1426,7 @@ mod zzz_ledger {
             s(|r| r.src2_disagree),
             s(|r| r.src0_present),
             s(|r| r.exist_disagree),
-            s(|r| r.exist_conflict),
+            s(|r| r.read_refused),
             s(|r| r.exist_marks_false),
             s(|r| r.emit),
             s(|r| r.emit_unknown),
