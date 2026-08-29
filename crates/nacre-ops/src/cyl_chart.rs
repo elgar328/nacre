@@ -76,11 +76,104 @@ pub(crate) struct ThetaSeg {
     pub(crate) z: [Rat; 2],
 }
 
-/// One cylinder class's chart: the two axes, and nothing else yet.
+/// One cylinder class's chart: the two axes, and the cells they cut.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Chart {
     pub(crate) z_lines: Vec<ZLine>,
     pub(crate) theta: Vec<ThetaSeg>,
+}
+
+/// A ruling's **name**: the wall class that cut it, and which of the two roots it is.
+///
+/// ★ One name, not two. `RulingExtent` also carries a `side`, but that is *derived* from the same
+/// pair (`arrangement::ruling_side`), and a second spelling of one identity is how this ladder
+/// has been bitten before. The join against `panel_faces`' rings uses this key because that is
+/// the key `name_on` already builds there.
+type RulingName = (usize, nacre_topo::QuadRoot);
+
+/// **One cell of the chart** — an axis interval crossed with a θ-sector.
+///
+/// ★★★ Addressed by `(interval, sector)` rather than kept as a flat list, because the next rung
+/// asks for **neighbours**: crossing a horizontal line moves to the interval above or below,
+/// crossing a ruling to the sector beside. That adjacency is *derivable* from this address, and
+/// deriving it is D2's job — building it here would be a field with no consumer.
+///
+/// ☑ The adjacency is not 1:1 and the address already says so: an interval carrying one cell sits
+/// against every sector of a neighbour that carries six.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Cell {
+    /// The interval between `z_lines[interval]` and `z_lines[interval + 1]`.
+    pub(crate) interval: usize,
+    /// Which sector of that interval, in the interval's own θ order.
+    pub(crate) sector: usize,
+    /// The sector's two bounding rulings, `None` when the interval carries none and the cell is
+    /// the whole circle. For a single cut the circle opens at one point and both are that ruling.
+    pub(crate) walls: Option<[RulingName; 2]>,
+}
+
+impl Chart {
+    /// **The cells the two axes cut** — `None` if any θ order could not be formed.
+    ///
+    /// ★★★★★ **Every ruling's axis endpoints are themselves z-lines** — measured across the suite
+    /// (263 charts, 0 exceptions) and structural besides: a ruling's node is named
+    /// `[wall, other plane]`, and a plane that meets the lateral while the wall holds the axis can
+    /// only be ⊥ to it, which is exactly what `chart_of` collects. So the arrangement **splits at
+    /// every axis interval**, and inside one interval a cell is just a θ-sector: no face walk, no
+    /// angular order at a vertex.
+    ///
+    /// ★★★★ **A refusal loses the whole chart, not one interval.** Skipping the interval that
+    /// refused would leave a *partial* chart that the census then compares as if it were whole —
+    /// the exact shape in which a counting claim goes blind. ☑ Measured 0 refusals; the shape is
+    /// not left to that.
+    pub(crate) fn cells(
+        &self,
+        jd: &Judge<'_, WorkingPlane>,
+        k: usize,
+        def: &nacre_topo::CylinderDef,
+    ) -> Option<Vec<Cell>> {
+        let name = |t: &ThetaSeg| -> Option<RulingName> {
+            let (_, _, root) = combinatorics::branch_name(t.end[0])?;
+            Some((t.wall, root))
+        };
+        let mut out = Vec::new();
+        for i in 0..self.z_lines.len().saturating_sub(1) {
+            let (lo, hi) = (self.z_lines[i].t, self.z_lines[i + 1].t);
+            // Alive over the *whole* interval: a ruling that stopped inside one would mean an
+            // endpoint that is not an axis line, which is the premise above.
+            let alive: Vec<&ThetaSeg> = self
+                .theta
+                .iter()
+                .filter(|t| t.z[0] <= lo && hi <= t.z[1])
+                .collect();
+            if alive.is_empty() {
+                out.push(Cell {
+                    interval: i,
+                    sector: 0,
+                    walls: None,
+                });
+                continue;
+            }
+            // ★★★★★ **One node per ruling.** A ruling is vertical, so its two ends share a θ —
+            // handing both to `circular_order` asks it to rank one point twice, and it honestly
+            // refuses that as the two-names-for-one-point it checks for. The order is a property
+            // of the *segment*, and one endpoint states it.
+            let nodes: Vec<combinatorics::NodeId> = alive.iter().map(|t| t.end[0]).collect();
+            let (order, _) = crate::arrangement::circular_order(jd, k, def, &nodes).ok()?;
+            let n = order.len();
+            for s in 0..n {
+                // `k` cuts make `k` sectors, and one cut makes one: the circle opens at that point
+                // and closes at it again.
+                let a = name(alive[order[s]])?;
+                let b = name(alive[order[(s + 1) % n]])?;
+                out.push(Cell {
+                    interval: i,
+                    sector: s,
+                    walls: Some([a, b]),
+                });
+            }
+        }
+        Some(out)
+    }
 }
 
 /// **Every ⊥ class that cuts this cylinder, and every ruling on it** — per cylinder *class*.
@@ -188,6 +281,7 @@ pub(crate) fn census(
     plane_faces: &[LocalFace],
     curved: &Curved,
     rows: &[crate::bands::CylRow],
+    lateral: Option<&[LocalFace]>,
 ) {
     for (k, _) in cyls.iter().enumerate() {
         // ★ A class whose axis parameter cannot be stated is skipped, not recorded: `bands_of`
@@ -224,6 +318,8 @@ pub(crate) fn census(
         // below and may honestly refuse (a class whose axis parameter is too wide for `Rat`);
         // this census sits *before* it, so panicking would turn a legitimate reject into a crash
         // — an instrument changing the answer it came to watch. ☑ Measured 0 either way.
+        let mut intervals = 0usize;
+        let mut intervals_split = 0usize;
         for r in &mine {
             let Ok(bands) = crate::bands::bands_of(r, plane_faces, jd, &curved.cut_rims) else {
                 continue;
@@ -240,12 +336,217 @@ pub(crate) fn census(
                         chart.z_lines.iter().map(|l| l.class).collect::<Vec<_>>()
                     );
                 }
+                // How much finer the chart sees this same interval — the `545 → 1/2/3` split the
+                // rung's design was chosen on, recounted here in the committed code.
+                intervals += 1;
+                if let (Ok(a), Ok(b)) = (
+                    crate::bands::axis_param(jd, lo, &r.def),
+                    crate::bands::axis_param(jd, hi, &r.def),
+                ) {
+                    let (a, b) = if a <= b { (a, b) } else { (b, a) };
+                    let inside = chart.z_lines.iter().filter(|l| l.t > a && l.t < b).count();
+                    if inside > 0 {
+                        intervals_split += 1;
+                    }
+                }
             }
         }
+
+        let def = &cyls[k].def;
+        let Some(cells) = chart.cells(jd, k, def) else {
+            probe::push(probe::Row {
+                z_lines: chart.z_lines.len(),
+                theta: chart.theta.len(),
+                rows: mine.len(),
+                refused: true,
+                ..probe::Row::empty()
+            });
+            continue;
+        };
+
+        // How many rulings live over each interval — `k = 1` opens the circle at one point and
+        // makes **one** cell, and an odd `k` is the only way to reach that branch.
+        let mut whole_circle = 0usize;
+        let mut odd_k = 0usize;
+        for i in 0..chart.z_lines.len().saturating_sub(1) {
+            let (lo, hi) = (chart.z_lines[i].t, chart.z_lines[i + 1].t);
+            let n = chart
+                .theta
+                .iter()
+                .filter(|t| t.z[0] <= lo && hi <= t.z[1])
+                .count();
+            if n == 0 {
+                whole_circle += 1;
+            } else if n % 2 == 1 {
+                odd_k += 1;
+            }
+        }
+
+        // ── The comparison: today's **emitted** lateral faces against the chart's cells. ──
+        //
+        // ★ `None` means the band pass declined for this operand pair. The chart is still recorded
+        // — it is the arrangement's property, not that pass's — but there is nothing to compare it
+        // against, and the row says so by leaving the comparison counters at zero.
+        let Some(lateral) = lateral else {
+            probe::push(probe::Row {
+                z_lines: chart.z_lines.len(),
+                theta: chart.theta.len(),
+                rows: mine.len(),
+                cells: cells.len(),
+                whole_circle,
+                odd_k,
+                intervals,
+                intervals_split,
+                no_faces: true,
+                ..probe::Row::empty()
+            });
+            continue;
+        };
+        let mut claims = vec![0usize; cells.len()];
+        let mut unnamed = 0usize;
+        let mut reversed = 0usize;
+        let mut band_multi = 0usize;
+        let mut band_over_rulings = 0usize;
+        // ★★★★ Counted because a green `unnamed == 0` says nothing if an arm was never walked —
+        // the "is the zero a population or an untravelled road" question this ladder has already
+        // been caught by once.
+        let mut bands_seen = 0usize;
+        let mut panels_seen = 0usize;
+        let line_at = |t: Rat| chart.z_lines.iter().position(|l| l.t == t);
+        for lf in lateral
+            .iter()
+            .filter(|f| matches!(f.surf, ClassIx::Cyl(c) if c == k))
+        {
+            match &lf.outer {
+                Bound::Band { lo, hi } => {
+                    bands_seen += 1;
+                    // A band names its two rim classes; its cells are every interval between them,
+                    // whole circle by whole circle.
+                    let (Ok(a), Ok(b)) = (
+                        crate::bands::axis_param(jd, *lo, def),
+                        crate::bands::axis_param(jd, *hi, def),
+                    ) else {
+                        unnamed += 1;
+                        continue;
+                    };
+                    let (Some(a), Some(b)) = (line_at(a), line_at(b)) else {
+                        unnamed += 1;
+                        continue;
+                    };
+                    let (a, b) = if a <= b { (a, b) } else { (b, a) };
+                    let mut hit = 0usize;
+                    let mut sectors = 0usize;
+                    for (ci, c) in cells.iter().enumerate() {
+                        if c.interval >= a && c.interval < b {
+                            claims[ci] += 1;
+                            hit += 1;
+                            sectors = sectors.max(c.sector + 1);
+                        }
+                    }
+                    if hit > 1 {
+                        band_multi += 1;
+                    }
+                    // ★★★★★ **The one thing this census can newly find.** `band_faces` takes the
+                    // band road whenever the interval's two rims are not both cut — and then emits
+                    // a **whole circle**, even where a wall holding the axis has cut rulings across
+                    // it. Its own comment leans on "the gate keeps its boundary faces clear of the
+                    // lateral", which the record-and-pass arm (`d = 0`) does not satisfy. So this
+                    // counts the bands that span more than one sector: not predicted, because a
+                    // zero means the population is empty and a non-zero means today's road is
+                    // calling a wall-crossed strip uniform.
+                    if sectors > 1 {
+                        band_over_rulings += 1;
+                    }
+                }
+                Bound::Ring(ring) => {
+                    panels_seen += 1;
+                    // A panel ring is `[a_lo, b_lo, b_hi, a_hi]`: the two rim classes and the two
+                    // ruling names come out of the nodes' own `Branch` names, which is the key
+                    // `panel_faces::name_on` already builds.
+                    let nodes = &ring.nodes;
+                    let Some(cell) = (|| {
+                        let [a_lo, b_lo, _, a_hi] =
+                            *<&[combinatorics::NodeId; 4]>::try_from(nodes.get(..4)?).ok()?;
+                        let (pa, _, ra) = combinatorics::branch_name(a_lo)?;
+                        let (pb, _, rb) = combinatorics::branch_name(b_lo)?;
+                        let (ph, _, _) = combinatorics::branch_name(a_hi)?;
+                        // The wall is the class `a_lo` and `a_hi` share; the rims are the others.
+                        let wall = *pa.iter().find(|c| ph.contains(c))?;
+                        let rim_lo = *pa.iter().find(|c| **c != wall)?;
+                        let rim_hi = *ph.iter().find(|c| **c != wall)?;
+                        let wall_b = *pb.iter().find(|c| **c != rim_lo)?;
+                        let i = line_at(crate::bands::axis_param(jd, rim_lo, def).ok()?)?;
+                        let j = line_at(crate::bands::axis_param(jd, rim_hi, def).ok()?)?;
+                        let lo = i.min(j);
+                        let (na, nb) = ((wall, ra), (wall_b, rb));
+                        Some((lo, na, nb))
+                    })() else {
+                        unnamed += 1;
+                        continue;
+                    };
+                    let (i, na, nb) = cell;
+                    let exact = cells
+                        .iter()
+                        .position(|c| c.interval == i && c.walls == Some([na, nb]));
+                    let ci = match exact {
+                        Some(ci) => Some(ci),
+                        None => {
+                            let r = cells
+                                .iter()
+                                .position(|c| c.interval == i && c.walls == Some([nb, na]));
+                            if r.is_some() {
+                                reversed += 1;
+                            }
+                            r
+                        }
+                    };
+                    match ci {
+                        Some(ci) => claims[ci] += 1,
+                        None => unnamed += 1,
+                    }
+                }
+                Bound::Circle { .. } => {}
+            }
+        }
+
+        // ★★★★★ **The absolute claim comes first, and the counting one is only support.**
+        // "every cell is claimed exactly once" stays true under a *consistently* wrong mapping —
+        // `3c1fa56` measured exactly that (a global `axis_up` inversion satisfied its relative
+        // locks). So what is asserted is that every emitted face's **own name** finds a cell in
+        // the chart: the chart is what has to contain it, and a chart missing a cell goes red.
+        assert_eq!(
+            unnamed,
+            0,
+            "an emitted lateral face names a cell the chart does not have: cyl {k}, \
+             {} z-lines, {} rulings, {} cells",
+            chart.z_lines.len(),
+            chart.theta.len(),
+            cells.len()
+        );
+        // Two faces claiming one cell is a defect on either side; a cell nobody claims is a gap,
+        // and counting those is this rung's output.
+        assert!(
+            claims.iter().all(|&n| n <= 1),
+            "two emitted faces claim one cell: cyl {k}, claims {claims:?}"
+        );
         probe::push(probe::Row {
             z_lines: chart.z_lines.len(),
             theta: chart.theta.len(),
             rows: mine.len(),
+            refused: false,
+            cells: cells.len(),
+            whole_circle,
+            odd_k,
+            claimed: claims.iter().filter(|&&n| n == 1).count(),
+            unclaimed: claims.iter().filter(|&&n| n == 0).count(),
+            reversed,
+            band_multi,
+            band_over_rulings,
+            intervals,
+            intervals_split,
+            no_faces: false,
+            bands_seen,
+            panels_seen,
         });
     }
 }
@@ -255,13 +556,47 @@ pub(crate) fn census(
 pub(crate) mod probe {
     use std::sync::Mutex;
 
-    /// One chart's shape: how many horizontal lines, how many vertical segments, and how many
-    /// **rows** the hand-written road split the same class into.
-    #[derive(Clone, Copy, Debug)]
+    /// One chart's shape, and how today's emitted lateral faces cover its cells.
+    #[derive(Clone, Copy, Debug, Default)]
     pub(crate) struct Row {
         pub(crate) z_lines: usize,
         pub(crate) theta: usize,
+        /// How many **rows** the hand-written road split the same class into.
         pub(crate) rows: usize,
+        /// The θ order could not be formed, so this chart has **no** cells — recorded rather than
+        /// silently dropped, because a partial chart compared as a whole one is how a counting
+        /// claim goes blind.
+        pub(crate) refused: bool,
+        pub(crate) cells: usize,
+        /// Intervals with no ruling over them: the cell is the whole circle.
+        pub(crate) whole_circle: usize,
+        /// Intervals crossed by an **odd** number of rulings — the only way to reach the
+        /// one-cut-one-cell branch. ★ A zero here means that branch is *unexercised*, not verified.
+        pub(crate) odd_k: usize,
+        pub(crate) claimed: usize,
+        pub(crate) unclaimed: usize,
+        /// Panel rings whose sector matched only with its two rulings **swapped**.
+        pub(crate) reversed: usize,
+        /// Emitted bands covering more than one cell.
+        pub(crate) band_multi: usize,
+        /// Emitted bands spanning more than one θ-**sector** — a whole circle where the chart sees
+        /// a wall crossing. ★ Not predicted; see the census.
+        pub(crate) band_over_rulings: usize,
+        /// `bands_of` intervals, and how many of them the chart cuts further.
+        pub(crate) intervals: usize,
+        pub(crate) intervals_split: usize,
+        /// The band pass declined, so this chart has no emitted faces to be compared against —
+        /// recorded rather than dropped, because a chart belongs to the arrangement.
+        pub(crate) no_faces: bool,
+        /// How many emitted faces of each shape the comparison actually walked.
+        pub(crate) bands_seen: usize,
+        pub(crate) panels_seen: usize,
+    }
+
+    impl Row {
+        pub(crate) fn empty() -> Self {
+            Self::default()
+        }
     }
 
     pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
@@ -299,6 +634,17 @@ mod tests {
     /// * `theta` is **even** — a plane holding the axis cuts the lateral in *two* rulings
     ///   (`QuadRoot::{Lo, Hi}`), and nothing else contributes a vertical line. ☑ Measured: 0, 4,
     ///   6, 8.
+    ///
+    /// And the same for the cells (D1b), again universally:
+    ///
+    /// * `refused` is never set — a chart's θ orders can always be formed. ☑ Measured 0 across the
+    ///   suite; asserted rather than merely counted, so the day a population appears it says so.
+    /// * `cells >= 1` — `z_lines >= 2` is one interval, and an interval with no ruling is still one
+    ///   cell (the whole circle).
+    /// * every cell is claimed at most once, and `claimed + unclaimed == cells` — the partition is
+    ///   total, so a cell can neither be lost nor counted twice by the comparison.
+    /// * `reversed` is never set: a panel ring's two rulings always match the sector's own order.
+    ///   ☑ Measured 0 over 65 panels, which is what makes the exact-order join sound.
     #[test]
     fn the_chart_census_is_running() {
         let before = ROWS
@@ -331,6 +677,13 @@ mod tests {
                 z_lines,
                 theta,
                 rows: n,
+                refused,
+                cells,
+                claimed,
+                unclaimed,
+                reversed,
+                no_faces,
+                ..
             } = *r;
             assert!(n >= 1, "a class with no row: {r:?}");
             assert!(z_lines >= 2, "a band needs two boundaries: {r:?}");
@@ -338,6 +691,41 @@ mod tests {
                 theta % 2 == 0,
                 "a wall cuts two rulings, not {theta}: {r:?}"
             );
+            assert!(!refused, "a chart's theta order could not be formed: {r:?}");
+            assert!(cells >= 1, "two z-lines are one interval: {r:?}");
+            assert_eq!(reversed, 0, "a panel matched only reversed: {r:?}");
+            // A chart has `z_lines - 1` intervals, and an interval carries either no ruling or
+            // some number of them — so these two counts are disjoint subsets of that many.
+            assert!(
+                r.whole_circle + r.odd_k < z_lines,
+                "more intervals than the chart has: {r:?}"
+            );
+            assert!(
+                r.intervals_split <= r.intervals,
+                "an interval the chart cuts further is one of them: {r:?}"
+            );
+            // Spanning two sectors means spanning two cells, so the finding is a subset of the
+            // coarser count — and if it ever were not, one of the two is being counted wrong.
+            assert!(
+                r.band_over_rulings <= r.band_multi,
+                "a band over a wall covers more than one cell: {r:?}"
+            );
+            if !no_faces {
+                assert_eq!(
+                    claimed + unclaimed,
+                    cells,
+                    "the claim count must partition the cells: {r:?}"
+                );
+                // ★★★★ **Is the zero a population, or a road nobody walked?** A green
+                // `unnamed == 0` in `census` says nothing about an arm that was never entered, so
+                // the two are tied together here: cells get claimed only by faces the comparison
+                // actually saw. ☑ Measured over the suite: 284 bands and 65 panels walked.
+                assert_eq!(
+                    r.bands_seen + r.panels_seen == 0,
+                    claimed == 0,
+                    "cells are claimed exactly when a face was walked: {r:?}"
+                );
+            }
         }
     }
 

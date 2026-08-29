@@ -3555,7 +3555,7 @@ fn split_circles(
 /// Why an order around a circle could not be formed — two causes, because two callers turn them
 /// into different words (the split into a reject, the tracer into a decline), the same split
 /// [`RingFail`]/`decline_of` makes on the segment side.
-enum CircleOrderFail {
+pub(crate) enum CircleOrderFail {
     /// A θ comparison could not be formed exactly (checked-`Rat` overflow, a missing description).
     Undecided,
     /// Two of the nodes are one point wearing two names.
@@ -3581,7 +3581,7 @@ enum CircleOrderFail {
 ///
 /// Returns the permutation of `nodes` in θ order and whether the first of them is the seam point.
 /// `nodes` must already be deduped by name.
-fn circular_order(
+pub(crate) fn circular_order(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,
     def: &nacre_topo::CylinderDef,
@@ -6948,13 +6948,7 @@ pub(crate) fn boolean(
                 faces
             } else {
                 let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
-                // ★ **Capability D's first rung reads here** — the one place both the plane
-                // arrangement's faces and `curved` are in hand, which is what a chart is made of.
-                // It only measures; nothing below reads what it builds.
-                #[cfg(test)]
-                crate::cyl_chart::census(&jd, &cyls, &faces, &curved, &rows);
-                let mut faces = faces;
-                faces.extend(crate::bands::band_faces(
+                let lateral = crate::bands::band_faces(
                     kind,
                     &faces,
                     &rows,
@@ -6962,7 +6956,30 @@ pub(crate) fn boolean(
                     &curved.disk_labels,
                     &curved.cut_rims,
                     &curved.arc_labels,
-                )?);
+                );
+                // ★ **Capability D reads here** — the one place the plane arrangement's faces,
+                // `curved`, and the lateral faces the hand-written roads just decided are all in
+                // hand. It only measures; nothing below reads what it builds.
+                //
+                // ★★ It sits *after* `band_faces` and *before* the curved cleaning pass on
+                // purpose: the census's left-hand side is what today's roads **emit**, and the
+                // cleaning merges pieces, which would blur the very 1:1 question being asked.
+                //
+                // ★★★★★ **A refusal from that pass is handed over, not propagated first.** The
+                // first spelling wrote `band_faces(..)?` and lost a whole chart to it (measured:
+                // 263 recorded charts became 262) — a chart is a property of the *arrangement*,
+                // and it must not vanish because a different pass declined to emit faces from it.
+                #[cfg(test)]
+                crate::cyl_chart::census(
+                    &jd,
+                    &cyls,
+                    &faces,
+                    &curved,
+                    &rows,
+                    lateral.as_deref().ok(),
+                );
+                let mut faces = faces;
+                faces.extend(lateral?);
                 // ★ **And now the curved cleaning pass**, the coplanar one's sibling: a lateral
                 // surface arrives in as many pieces as the arrangement cut it into, and the
                 // circles between them bound nothing. It runs here rather than beside `unify`
