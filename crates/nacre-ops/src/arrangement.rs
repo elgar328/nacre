@@ -4440,6 +4440,8 @@ struct Staged {
     faces: Vec<LocalFace>,
     disk_labels: Vec<(usize, Label)>,
     arc_labels: Vec<(usize, ArcLabel)>,
+    /// This class's ruling pieces, keyed by cylinder class — see [`RulingExtent`].
+    ruling_extents: Vec<(usize, RulingExtent)>,
 }
 
 /// **The per-class stages, in one place** — the walk and the nesting.
@@ -4482,6 +4484,29 @@ fn per_class(
         C_EMIT,
         emit_faces(kind, &labels, &cells, edges, jd, wc, &nesting.holes)
     );
+    // The cylinder chart's **vertical** lines, read off the pieces this class already made. Both
+    // ends carry an axis parameter or the piece is not stated: a ruling whose end has no ⊥ partner
+    // has no place on a chart's `z` axis, and inventing one would be worse than leaving it out —
+    // so it is dropped here and **counted** by the chart's own census rather than guessed at.
+    let ruling_extents: Vec<(usize, RulingExtent)> = edges
+        .rulings
+        .iter()
+        .filter_map(|r| {
+            let z = [
+                node_axis_param(jd, &r.def, wc, r.end[0])?,
+                node_axis_param(jd, &r.def, wc, r.end[1])?,
+            ];
+            Some((
+                r.cyl,
+                RulingExtent {
+                    wall: wc,
+                    side: r.side,
+                    end: r.end,
+                    z,
+                },
+            ))
+        })
+        .collect();
     Ok(Staged {
         #[cfg(test)]
         cells,
@@ -4492,6 +4517,7 @@ fn per_class(
         faces,
         disk_labels,
         arc_labels,
+        ruling_extents,
     })
 }
 
@@ -5869,6 +5895,33 @@ pub(crate) struct CutRim {
 /// source of "this rim is cut" (the assembly's rim skip and curved arms all read it).
 pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 
+/// **One ruling piece, as the cylinder's own chart needs it** — the wall it rides, which of the
+/// two parallel rulings, and the **axis interval** it spans.
+///
+/// ★★★★★ **Carried out rather than recomputed.** `rulings_on_class` already decides this extent
+/// (the rulings ladder), and a chart that worked it out again would be a **second source of one
+/// fact** — the defect shape this repository names first. So the value leaves by the road
+/// [`CutRims`] already takes: made per class, folded once, keyed in the global class space.
+///
+/// ★ `end` is the piece's own two branch nodes and `z` their axis parameters
+/// ([`node_axis_param`]). Both are carried because the chart needs the **order** (from the node's
+/// `(MeetLine, QuadVal)` name, via `circular_order_about_seam`) and the **position** (`z`), and
+/// deriving one from the other twice is how a name loses a sign.
+/// ☑ Measured over the whole suite: **826 ruling pieces, every one with both ends named** — so a
+/// piece whose ends have no ⊥ partner (which would have no `z` at all) is not a population today.
+///
+/// ★ `#[allow(dead_code)]` because the reader is **the next rung**: `cyl_chart` builds the line set
+/// from these today and the cells that consume them are D1b. `Bound::Band` carried the same note
+/// while its producer was still a cell away — the allow names the consumer rather than hiding it.
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub(crate) struct RulingExtent {
+    pub(crate) wall: usize,
+    pub(crate) side: i8,
+    pub(crate) end: [NodeId; 2],
+    pub(crate) z: [nacre_scalar::Rat; 2],
+}
+
 /// What the arrangement learned about the curved boundary, bundled: the band pass reads
 /// `disk_labels`, the assembly reads `cut_rims`. One struct so the trace's return does not grow
 /// element by element (it was widened once already, for `deferred`).
@@ -5876,6 +5929,15 @@ pub(crate) struct Curved {
     pub(crate) disk_labels: DiskLabels,
     pub(crate) arc_labels: ArcLabels,
     pub(crate) cut_rims: CutRims,
+    /// Per cylinder class, the ruling pieces on it — the **vertical** lines of that cylinder's
+    /// chart, where `disk_labels`/`arc_labels` carry the horizontal ones' answers.
+    ///
+    /// ★ **Its consumer is `cyl_chart`, which is an instrument today** (capability D's first
+    /// rung: build the chart's line set and measure it against the two hand-written roads). The
+    /// `allow` says so rather than hiding it — the same shape `Bound::Band` carried while its
+    /// producer was still a rung away.
+    #[allow(dead_code)]
+    pub(crate) rulings: HashMap<usize, Vec<RulingExtent>>,
 }
 
 /// **The seam table — every node the result faces reference, realized to a coordinate and a
@@ -6140,6 +6202,7 @@ fn trace_result_faces(
             Vec<(usize, Label)>,
             Vec<(usize, ArcLabel)>,
             Vec<(usize, CutRim)>,
+            Vec<(usize, RulingExtent)>,
             Option<BoolError>,
         );
         let arrange = |wc: usize| -> Result<ClassOut, BoolError> {
@@ -6182,6 +6245,7 @@ fn trace_result_faces(
                 s.disk_labels,
                 s.arc_labels,
                 edges.cut_rims.clone(),
+                s.ruling_extents,
                 deferred,
             ))
         };
@@ -6211,7 +6275,7 @@ fn trace_result_faces(
             }
         };
         match reused {
-            Some(f) => Ok((f, Vec::new(), Vec::new(), Vec::new(), None)),
+            Some(f) => Ok((f, Vec::new(), Vec::new(), Vec::new(), Vec::new(), None)),
             None => arrange(wc),
         }
     })?;
@@ -6219,11 +6283,12 @@ fn trace_result_faces(
         disk_labels: HashMap::new(),
         arc_labels: HashMap::new(),
         cut_rims: HashMap::new(),
+        rulings: HashMap::new(),
     };
     // The first arc class's deferred reject, in `work` order — the map above may run its classes
     // in parallel, but this fold reads the vec in order, so the choice is deterministic.
     let mut deferred: Option<BoolError> = None;
-    for (k, (faces, labels, arcs, rims, d)) in per_class.into_iter().enumerate() {
+    for (k, (faces, labels, arcs, rims, ruls, d)) in per_class.into_iter().enumerate() {
         local_faces.extend(faces);
         // ★ `work[k]` is the translation from this arrangement's k-th class to the global plane
         // class index — the curved maps are keyed in the global space the assembly speaks.
@@ -6239,6 +6304,12 @@ fn trace_result_faces(
         }
         for (cyl, rim) in rims {
             curved.cut_rims.insert((cyl, work[k]), rim);
+        }
+        // ★ `wall` was this arrangement's k-th class; restate it in the global space the rest of
+        // the map already speaks, exactly as the three keys above do.
+        for (cyl, mut r) in ruls {
+            r.wall = work[k];
+            curved.rulings.entry(cyl).or_default().push(r);
         }
         deferred = deferred.or(d);
     }
@@ -6877,6 +6948,11 @@ pub(crate) fn boolean(
                 faces
             } else {
                 let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
+                // ★ **Capability D's first rung reads here** — the one place both the plane
+                // arrangement's faces and `curved` are in hand, which is what a chart is made of.
+                // It only measures; nothing below reads what it builds.
+                #[cfg(test)]
+                crate::cyl_chart::census(&jd, &cyls, &faces, &curved, &rows);
                 let mut faces = faces;
                 faces.extend(crate::bands::band_faces(
                     kind,

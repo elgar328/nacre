@@ -18,6 +18,8 @@ mod arrangement;
 mod bands;
 mod boolean;
 mod combinatorics;
+#[cfg(test)]
+mod cyl_chart;
 mod exact;
 mod ops;
 mod par;

@@ -276,12 +276,22 @@ pub(crate) fn bands_of(
 /// description — and by one whose parameter is a **value** too wide for `Rat` (the road's own
 /// name: the gate's questions are signs and were made total, this one is not).
 fn param(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Result<Rat, BoolError> {
-    param_opt(jd, c, row).ok_or_else(|| reject(RejectReason::WitnessNotRational))
+    axis_param(jd, c, &row.def)
 }
 
-fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Option<Rat> {
+/// The same question asked of a **cylinder** rather than one of its faces — the chart road
+/// (`crate::cyl_chart`) has a class and a def but no row, and this rule may not be spelled twice.
+pub(crate) fn axis_param(
+    jd: &Judge<'_, WorkingPlane>,
+    c: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Result<Rat, BoolError> {
+    param_opt(jd, c, def).ok_or_else(|| reject(RejectReason::WitnessNotRational))
+}
+
+fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, def: &nacre_topo::CylinderDef) -> Option<Rat> {
     let coeffs = combinatorics::class_coeffs_rat(jd, c)?;
-    axis_param_of_plane(&coeffs, &row.def)
+    axis_param_of_plane(&coeffs, def)
 }
 
 /// **Which chamber the band sits in, read off the arrangement.**
@@ -769,7 +779,7 @@ mod tests {
         // assertions read in world z, which is the vocabulary the fixtures are written in.
         let ts = (0..geom.len())
             .filter_map(|c| {
-                let t = param_opt(&jd, c, &rows[0])?;
+                let t = param_opt(&jd, c, &rows[0].def)?;
                 // The class's world z, via the axis point at that parameter.
                 let (o, m) = (rows[0].def.origin(), rows[0].def.dir());
                 let z = o[2].checked_add(t.checked_mul(m[2])?)?;
