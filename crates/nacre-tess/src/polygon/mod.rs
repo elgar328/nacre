@@ -618,6 +618,56 @@ mod tests {
         ));
     }
 
+    /// ★★★★★ **A boundary that meets itself, and the two different sentences that says.**
+    ///
+    /// A **touch** — a vertex on the boundary elsewhere — is a boundary the b-rep legitimately
+    /// asked for (an exact tangency), and only this decomposition has no answer for it. A
+    /// **crossing** is the b-rep's own invariant broken. Different claims, different names.
+    ///
+    /// ☑ **The crossing branch exists because the gap was measured.** A bow-tie already came back
+    /// `DegenerateRing` from the sweep, but the hole below — crossing the outer ring with no
+    /// vertex at either crossing — came back **`Ok` with eight confident, wrong triangles**. That
+    /// is the one thing this layer may not do.
+    #[test]
+    fn a_boundary_that_meets_itself_is_named_by_how() {
+        // A hole's apex exactly on an outer edge: a touch.
+        let touch = pts(&[
+            [0.0, 0.0],
+            [4.0, 0.0],
+            [4.0, 4.0],
+            [0.0, 4.0],
+            [2.0, 0.0],
+            [1.0, 2.0],
+            [3.0, 2.0],
+        ]);
+        assert!(matches!(
+            tri(&touch, &[0, 1, 2, 3], &[&[4, 5, 6]]),
+            Err(TessError::SelfTouchingBoundary)
+        ));
+        // A hole hanging out through the outer ring's right edge: two crossings, no vertex at
+        // either. This used to mesh.
+        let cross = pts(&[
+            [0.0, 0.0],
+            [4.0, 0.0],
+            [4.0, 4.0],
+            [0.0, 4.0],
+            [3.0, 1.0],
+            [3.0, 3.0],
+            [5.0, 3.0],
+            [5.0, 1.0],
+        ]);
+        assert!(matches!(
+            tri(&cross, &[0, 1, 2, 3], &[&[4, 5, 6, 7]]),
+            Err(TessError::DegenerateRing)
+        ));
+        // And a single ring crossing itself — the sweep caught this one all along.
+        let bowtie = pts(&[[0.0, 0.0], [2.0, 2.0], [2.0, 0.0], [0.0, 2.0]]);
+        assert!(matches!(
+            tri(&bowtie, &[0, 1, 2, 3], &[]),
+            Err(TessError::DegenerateRing)
+        ));
+    }
+
     #[test]
     fn a_hole_wound_the_wrong_way_is_an_error() {
         // A CCW hole means the b-rep does not keep material on the left. That is a

@@ -32,13 +32,18 @@ use std::fmt::Write;
 pub enum TessError {
     /// The rings are not a polygon with sibling holes, so no triangulation of them
     /// exists: fewer than three vertices, a zero-area ring, a vertex used by two rings
-    /// **by index** or repeated within one, a spike, or two segments crossing with no
-    /// vertex at the crossing.
+    /// **by index** or repeated within one, a spike, or **two segments passing through each
+    /// other**.
     ///
     /// ★ **The cases where two vertices meet in *coordinates* moved out**, to
     /// [`Self::SelfTouchingBoundary`] — this doc used to list them here, and they are a different
     /// proposition: those rings are exactly what the b-rep asked for, and it is this decomposition
     /// that has no answer for them.
+    ///
+    /// ☑ **The crossing clause is now true, and was not.** This doc has always claimed "a boundary
+    /// that crosses itself", and for a single self-crossing ring the sweep did catch it. A **hole
+    /// crossing its outer ring** did not: it came back `Ok` with eight confident, wrong triangles,
+    /// measured. `monotone`'s `self_touch` closes that.
     ///
     /// **The sweep detects these, where ear clipping used to notice them by accident**
     /// (it stalled, and that stall was reported as `NoEar`). It is checked rather than

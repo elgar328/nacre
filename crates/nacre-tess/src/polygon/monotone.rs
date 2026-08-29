@@ -65,8 +65,10 @@ enum Kind {
 pub(super) fn decompose(uv: &[P2], rings: &[&[usize]]) -> Result<Vec<Vec<usize>>, TessError> {
     let n = uv.len();
     let (prev, next) = link(n, rings)?;
-    if self_touch(uv, &next).is_some() {
-        return Err(TessError::SelfTouchingBoundary);
+    match self_touch(uv, &next) {
+        Some((Meet::Touch, ..)) => return Err(TessError::SelfTouchingBoundary),
+        Some((Meet::Cross, ..)) => return Err(TessError::DegenerateRing),
+        None => {}
     }
 
     let kinds = classify(uv, &prev, &next)?;
@@ -111,11 +113,30 @@ fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usize>), TessEr
 /// those. Exact throughout: `orient2d` decides collinearity and the rest is `f64` comparison on
 /// stored coordinates, like everything else in this file.
 ///
-/// ★ **Not caught here**: two segments *crossing* with no vertex at the crossing. That stays
-/// [`TessError::DegenerateRing`] from further down. It is not the measured population — a tangency
-/// always lands a sampled vertex on the touch — and naming what this does not see beats leaving
-/// the gap unstated.
-fn self_touch(uv: &[P2], next: &[usize]) -> Option<(usize, usize)> {
+/// ★ **Why a vertex is enough for the touching case.** A tangency is one point, and the sampled
+/// boundary reproduces it only when a sample happens to land there — which both measured fixtures
+/// do, their seams sitting on the touch. A tangency whose sampling *misses* the point produces a
+/// boundary that is genuinely separated, meshes, and is wrong only by the sampling error it was
+/// always allowed. So this looks for the vertex, not for the tangency.
+///
+/// ★★★★★ **A *crossing* is the other answer, and it is a different sentence.** Two segments that
+/// pass through each other with no vertex at the crossing make the ring set not a polygon at all —
+/// [`TessError::DegenerateRing`], the b-rep's own invariant broken — where a touch is a boundary
+/// the b-rep legitimately asked for. So this returns which one it found.
+///
+/// ☑ **That branch is here because the gap was measured, not imagined.** A self-crossing single
+/// ring (a bow-tie) already came back `DegenerateRing` from the sweep, but a **hole crossing its
+/// outer ring** came back `Ok` — eight confident, wrong triangles. This file's charter is that a
+/// wrong cache is worse than none, so the check that was going to *document* that gap closes it
+/// instead.
+fn self_touch(uv: &[P2], next: &[usize]) -> Option<(Meet, usize, usize)> {
+    let box_misses = |p: P2, u: P2, v: P2| {
+        p[0] < u[0].min(v[0])
+            || p[0] > u[0].max(v[0])
+            || p[1] < u[1].min(v[1])
+            || p[1] > u[1].max(v[1])
+    };
+    // A vertex sitting on a segment it does not belong to — the touch.
     for (i, &p) in uv.iter().enumerate() {
         for a in 0..uv.len() {
             let b = next[a];
@@ -124,19 +145,51 @@ fn self_touch(uv: &[P2], next: &[usize]) -> Option<(usize, usize)> {
             }
             let (u, v) = (uv[a], uv[b]);
             // The segment's box first: four comparisons instead of an exact predicate.
-            if p[0] < u[0].min(v[0])
-                || p[0] > u[0].max(v[0])
-                || p[1] < u[1].min(v[1])
-                || p[1] > u[1].max(v[1])
-            {
+            if box_misses(p, u, v) {
                 continue;
             }
             if orient2d(u, v, p) == 0.0 && (strictly_between(u, v, p) || p == u || p == v) {
-                return Some((i, a));
+                return Some((Meet::Touch, i, a));
+            }
+        }
+    }
+    // No vertex meets the boundary anywhere, so any remaining meeting is a proper crossing:
+    // each segment's ends strictly straddle the other's line.
+    for a in 0..uv.len() {
+        let (b, c_lo) = (next[a], uv[a]);
+        let c_hi = uv[b];
+        for c in (a + 1)..uv.len() {
+            let d = next[c];
+            if c == a || c == b || d == a || d == b {
+                continue;
+            }
+            let (e, f) = (uv[c], uv[d]);
+            if c_lo[0].max(c_hi[0]) < e[0].min(f[0])
+                || e[0].max(f[0]) < c_lo[0].min(c_hi[0])
+                || c_lo[1].max(c_hi[1]) < e[1].min(f[1])
+                || e[1].max(f[1]) < c_lo[1].min(c_hi[1])
+            {
+                continue;
+            }
+            let straddles =
+                |p: P2, q: P2, r: P2, s: P2| (orient2d(p, q, r) > 0.0) != (orient2d(p, q, s) > 0.0);
+            if straddles(c_lo, c_hi, e, f) && straddles(e, f, c_lo, c_hi) {
+                return Some((Meet::Cross, a, c));
             }
         }
     }
     None
+}
+
+/// How the boundary met itself — see [`self_touch`]. The two are different claims about the input,
+/// so they leave under different names.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum Meet {
+    /// A vertex lies on the boundary elsewhere. The rings are what the b-rep asked for; the
+    /// region is pinched and this decomposition has no triangulation of it.
+    Touch,
+    /// Two segments pass through each other. The rings are not a polygon with sibling holes.
+    Cross,
 }
 
 fn classify(uv: &[P2], prev: &[usize], next: &[usize]) -> Result<Vec<Kind>, TessError> {
