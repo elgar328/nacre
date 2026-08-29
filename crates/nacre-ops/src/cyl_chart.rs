@@ -79,9 +79,11 @@ pub(crate) struct ThetaSeg {
     /// **The chart's vertical answer** — the label of the cell this ruling borders inside the
     /// cylinder, carried straight from [`RulingExtent::label`]. The horizontal lines' answers are
     /// `DiskLabels`/`ArcLabels`; this is the half they never had.
+    #[cfg(test)]
     pub(crate) label: Option<crate::arrangement::Label>,
     /// Who traced this line — [`RulingExtent::marks`]. Membership is `label`'s question; whether
     /// this lateral face is even here is this one's.
+    #[cfg(test)]
     pub(crate) marks: Vec<(crate::planes::SolidSide, crate::arrangement::SegKind)>,
 }
 
@@ -94,6 +96,7 @@ pub(crate) struct Chart {
     /// alongside `z` to keep `end[e] ↔ z[e]` true. ☑ Predicted 0 (`MergedRuling::end` is stated
     /// in ascending axis order); counted rather than assumed, and promoted to an assertion the
     /// day the count is in.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) end_swapped: usize,
 }
 
@@ -106,6 +109,7 @@ pub(crate) struct Chart {
 type RulingName = (usize, i8);
 
 /// A partial run as the census records it: its first and last ruling, and its chamber.
+#[cfg(test)]
 type Run = (RulingName, RulingName, Option<(bool, bool)>);
 
 /// **Which of a wall's two rulings a branch node lies on** — `arrangement::ruling_side`, the one
@@ -357,7 +361,9 @@ pub(crate) fn chart_of(
                         wall: r.wall,
                         end,
                         z,
+                        #[cfg(test)]
                         label: r.label,
+                        #[cfg(test)]
                         marks: r.marks.clone(),
                     }
                 })
@@ -405,6 +411,9 @@ impl End<'_> {
 }
 
 /// One cell, read.
+/// `ends`, `src2_disagree` and `exist_disagree` are the census's readers; production reads
+/// `chamber`, `present` and `emit` (the emitter) and pays for the rest only as a copy.
+#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct CellRead<'a> {
     pub(crate) ends: [End<'a>; 2],
     /// `(in_own, in_other)` on the cylinder's inside, agreed by every end that could speak.
@@ -919,6 +928,7 @@ pub(crate) fn emit_lateral(
 ///
 /// ★ Called from the one place the plane arrangement's faces and [`Curved`] are both in hand. It
 /// reads; nothing downstream reads it.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn census(
     jd: &Judge<'_, WorkingPlane>,
@@ -1868,6 +1878,7 @@ pub(crate) fn census(
 
 /// The census's ledger — the same shape as `ruling_probe`/`panel_probe`: filled where the fact is
 /// made, read by one test that reports it.
+#[cfg(test)]
 pub(crate) mod probe {
     use std::sync::Mutex;
 

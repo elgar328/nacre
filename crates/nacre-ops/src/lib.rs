@@ -18,7 +18,7 @@ mod arrangement;
 mod bands;
 mod boolean;
 mod combinatorics;
-#[cfg(test)]
+/// The cylinder chart: the lateral faces' arrangement, emitted from cells (capability D).
 mod cyl_chart;
 mod exact;
 mod ops;

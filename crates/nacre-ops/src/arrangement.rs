@@ -5997,7 +5997,6 @@ pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 /// which is `#[cfg(test)]`, so outside a test build these fields have none — but *inside* one they
 /// must genuinely be read, and that is what caught `side`. A plain `#[allow(dead_code)]` would
 /// have kept carrying it silently, which is how the field survived a whole rung.
-#[cfg_attr(not(test), allow(dead_code))]
 #[derive(Clone, Debug)]
 pub(crate) struct RulingExtent {
     pub(crate) wall: usize,
@@ -6076,7 +6075,6 @@ pub(crate) struct Curved {
     /// rung: build the chart's line set and measure it against the two hand-written roads). The
     /// `allow` says so rather than hiding it — the same shape `Bound::Band` carried while its
     /// producer was still a rung away.
-    #[allow(dead_code)]
     pub(crate) rulings: HashMap<usize, Vec<RulingExtent>>,
 }
 
@@ -7088,34 +7086,29 @@ pub(crate) fn boolean(
                 faces
             } else {
                 let rows = crate::bands::cyl_rows(&faces_tab, &plane_ix, n_a)?;
-                let lateral = crate::bands::band_faces(
-                    kind,
-                    &faces,
-                    &rows,
-                    &jd,
-                    &curved.disk_labels,
-                    &curved.cut_rims,
-                    &curved.arc_labels,
-                );
-                // ★ **Capability D reads here** — the one place the plane arrangement's faces,
-                // `curved`, and the lateral faces the hand-written roads just decided are all in
-                // hand. It only measures; nothing below reads what it builds.
-                //
-                // ★★ It sits *after* `band_faces` and *before* the curved cleaning pass on
-                // purpose: the census's left-hand side is what today's roads **emit**, and the
-                // cleaning merges pieces, which would blur the very 1:1 question being asked.
-                //
-                // ★★★★★ **A refusal from that pass is handed over, not propagated first.** The
-                // first spelling wrote `band_faces(..)?` and lost a whole chart to it (measured:
-                // 263 recorded charts became 262) — a chart is a property of the *arrangement*,
-                // and it must not vanish because a different pass declined to emit faces from it.
-                // ★ **D2b shadow**: the chart emitter runs beside the band road in test builds,
-                // and the census holds the two emissions equal face by face. Production still
-                // reads `lateral` below; the cutover is the commit that swaps the two.
+                // ★ **The lateral faces come from the chart** (D2b cutover): every cylinder
+                // class's cells, read off the plane arrangement's own labels and emitted in the
+                // band road's vocabulary. The band road itself is the test-build **reference**
+                // below until D3 deletes it.
+                let lateral =
+                    crate::cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows);
+                // ★★ The census sits *before* the curved cleaning pass on purpose: the cleaning
+                // merges pieces, which would blur the face-by-face question being asked.
+                // ★ **The reference road, test builds only (until D3).** `band_faces` is what
+                // the hand-written roads emit; the census zips the two emissions and holds them
+                // equal face by face, and counts the charts the chart road opens where the band
+                // road refused. Either refusal is handed to the census before `?` decides.
                 #[cfg(test)]
                 {
-                    let emitted =
-                        crate::cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows);
+                    let reference = crate::bands::band_faces(
+                        kind,
+                        &faces,
+                        &rows,
+                        &jd,
+                        &curved.disk_labels,
+                        &curved.cut_rims,
+                        &curved.arc_labels,
+                    );
                     crate::cyl_chart::census(
                         &jd,
                         &cyls,
@@ -7123,8 +7116,8 @@ pub(crate) fn boolean(
                         &faces,
                         &curved,
                         &rows,
-                        lateral.as_deref().ok(),
-                        &emitted,
+                        reference.as_deref().ok(),
+                        &lateral,
                     );
                 }
                 let mut faces = faces;

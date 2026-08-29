@@ -3395,6 +3395,8 @@ fn the_mesh_covers_the_faces_it_approximates() {
         ("through", [2.0, 2.0, -1.0], 4.0),
         ("on top", [2.0, 2.0, 2.0], 1.0),
         ("flush", [2.0, 2.0, 0.0], 3.0),
+        // The half-height wall boss: its upper cap sits inside the plate (D2b opened it).
+        ("half wall", [2.0, 0.0, -1.0], 2.0),
     ] {
         for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
             let mut m = Model::new();

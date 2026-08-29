@@ -42,6 +42,7 @@
 //! the label needs no coordinates, no ray direction, no abstention retry, and has no width
 //! ceiling, and it is why a cylinder may now stand on either side of the boolean.
 
+#[cfg(test)]
 use crate::boolean::{Bound, LocalFace};
 use crate::combinatorics;
 use crate::planes::SolidSide;
@@ -68,6 +69,8 @@ pub(crate) struct CylRow {
     /// The [`ClassIx::Cyl`] payload — which lateral surface this face lies on. Several rows may
     /// share it.
     pub(crate) class: usize,
+    /// Read by the reference road (test builds); the chart reads `cyls[k].def`, the same value.
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) def: nacre_topo::CylinderDef,
     /// **This face's** own extent in the axis parameter (its two rims).
     pub(crate) span: [Rat; 2],
@@ -144,6 +147,7 @@ pub(crate) fn cyl_rows(
 /// this ordering is the replay contract.
 /// `labels` is the arrangement's own answer per `(cylinder class, plane class)` — see the module
 /// docs. Cylinders may sit on **both** operands: nothing here asks a solid to describe itself.
+#[cfg(test)]
 pub(crate) fn band_faces(
     kind: BoolKind,
     plane_faces: &[LocalFace],
@@ -209,6 +213,7 @@ pub(crate) fn band_faces(
 /// ★ Circles are gathered per *class*, so a sibling face's boundaries are collected here too — and
 /// then clipped away by this face's span. That clip is what keeps two faces of one surface from
 /// borrowing each other's cuts.
+#[cfg(test)]
 pub(crate) fn bands_of(
     row: &CylRow,
     plane_faces: &[LocalFace],
@@ -275,6 +280,7 @@ pub(crate) fn bands_of(
 /// The axis parameter of a plane class, or the honest refusal earned by a class with no exact
 /// description — and by one whose parameter is a **value** too wide for `Rat` (the road's own
 /// name: the gate's questions are signs and were made total, this one is not).
+#[cfg(test)]
 fn param(jd: &Judge<'_, WorkingPlane>, c: usize, row: &CylRow) -> Result<Rat, BoolError> {
     axis_param(jd, c, &row.def)
 }
@@ -331,6 +337,7 @@ fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, def: &nacre_topo::CylinderD
 /// ★ **The ring's absolute winding is measured** (cell 4): flipping the emitted orientation
 /// (`flip`) turns the through-boss volume oracles red — the watcher this note used to say was
 /// still to come.
+#[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn panel_faces(
     kind: BoolKind,
@@ -607,6 +614,7 @@ pub(crate) fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: 
 /// ★ So the two roads treat existence differently on purpose, and only one of them has to. They
 /// become one question when the lateral gets its own cell complex on its own chart, which is the
 /// body of this capability and not this rung.
+#[cfg(test)]
 pub(crate) fn chamber(
     jd: &Judge<'_, WorkingPlane>,
     row: &CylRow,
@@ -1292,20 +1300,21 @@ mod tests {
         through_boss_builds(BoolKind::Fuse, [40.0, 40.0, -10.0], 32000.0 + 1125.0 * pi);
     }
 
-    /// ★ The populations this cell keeps refusing, each measured lifted before the arm was
-    /// shaped. Two the gate's arm deliberately keeps out: a **tangent** wall (distance exactly
-    /// `r`) assembles a volume-correct zero-thickness pinch `validate` cannot see; an
-    /// **offset** crossing (`0 <` distance `< r`) walks to `OpenResultShell`, a
-    /// SuspectedDefect label an honest input must not wear. One the gate records and passes —
-    /// a **half-height** boss's upper cap sits inside the plate's material, which the chamber
-    /// has no sector answer for, so the refusal downstream wears the ladder's own name. The
+    /// ★ The populations the gate's arm deliberately keeps out, each measured lifted before the
+    /// arm was shaped: a **tangent** wall (distance exactly `r`) assembles a volume-correct
+    /// zero-thickness pinch `validate` cannot see; an **offset** crossing (`0 <` distance `< r`)
+    /// walks to `OpenResultShell`, a SuspectedDefect label an honest input must not wear. The
     /// live set survives every refusal.
+    ///
+    /// ★ A third row lived here until the D2b cutover: the **half-height** boss, whose upper cap
+    /// sits inside the plate's material — the band road's `chamber` had no sector answer for that
+    /// end and refused it `RulingBoundNotYet`. The chart reads it (a band below the plate, the
+    /// outer sector beside it), so it builds now — [`Self::a_half_height_boss_builds`].
     #[test]
     fn the_gate_still_refuses_what_the_road_does_not_serve() {
         for (base, h, want) in [
             ([38.0, 20.0, -10.0], 50.0, RejectReason::WallMeetsLateral),
             ([35.0, 20.0, -10.0], 50.0, RejectReason::WallMeetsLateral),
-            ([40.0, 20.0, -10.0], 20.0, RejectReason::RulingBoundNotYet),
         ] {
             let mut m = Model::new();
             let plate = m.add_cuboid(
@@ -1327,6 +1336,70 @@ mod tests {
             };
             assert_eq!(reason, want, "{base:?} h {h}");
             assert_eq!(m.live_solids, live, "the live set survives the refusal");
+        }
+    }
+
+    /// ★★★★★ **The half-height boss builds — the capability the D2b cutover opened.** A boss
+    /// through the plate's wall whose upper cap (z = 10) sits inside the plate: below the plate
+    /// the lateral is a whole band, beside it only the outer sector survives, and the cap is a
+    /// half-disk. The band road refused this end (`RulingBoundNotYet`); the chart's cells read
+    /// it off the same labels. Volumes derived, not copied: the boss outside the plate is the
+    /// outer half-cylinder over the full height (`π·25·20/2 = 250π`) plus the inner half below
+    /// the plate (`π·25·10/2 = 125π`); the boss inside the plate is the inner half over
+    /// `z ∈ [0, 10]` (`125π`).
+    ///
+    /// The lateral stays **two** faces (band + outer ring): `merge_curved_group` abstains when
+    /// a group has a rim of only one sense (the cut rim at z = 0 is refined to arcs, the outer
+    /// ring's lower arc erases one, and no `Bound` spells "one rim and a chain of arcs").
+    #[test]
+    fn a_half_height_boss_builds() {
+        let pi = std::f64::consts::PI;
+        for (kind, want, lateral) in [
+            (BoolKind::Fuse, 32000.0 + 375.0 * pi, vec![2]),
+            (BoolKind::Cut, 32000.0 - 125.0 * pi, vec![1]),
+            (BoolKind::Common, 125.0 * pi, vec![1]),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([40.0, 40.0, 20.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array([40.0, 20.0, -10.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                5.0,
+                20.0,
+            );
+            m.rebuild_adjacency();
+            let out = crate::boolean(&mut m, kind, plate, boss)
+                .unwrap_or_else(|e| panic!("{kind:?}: the half-height boss builds: {e:?}"));
+            assert_eq!(out.len(), 1, "{kind:?}: one solid");
+            m.rebuild_adjacency();
+            assert_eq!(m.live_solids, out, "{kind:?}: the operands retired");
+            let issues = nacre_validate::validate(&m);
+            assert!(issues.is_empty(), "{kind:?}: {issues:?}");
+            let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+            assert!((v - want).abs() <= 1e-9 * want, "{kind:?}: {v} vs {want}");
+            assert_eq!(
+                lateral_face_counts(&m, out[0]),
+                lateral,
+                "{kind:?}: lateral faces"
+            );
+            let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
+                .expect("the half-height boss tessellates");
+            let mut uses: std::collections::HashMap<(u32, u32), usize> =
+                std::collections::HashMap::new();
+            for (_, tri) in mesh.triangles.iter() {
+                for k in 0..3 {
+                    let (a, b) = (tri.vertices[k].index(), tri.vertices[(k + 1) % 3].index());
+                    *uses.entry((a.min(b), a.max(b))).or_default() += 1;
+                }
+            }
+            assert_eq!(
+                uses.values().filter(|&&n| n != 2).count(),
+                0,
+                "{kind:?}: the mesh is watertight"
+            );
         }
     }
 
