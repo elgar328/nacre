@@ -369,7 +369,7 @@ pub(crate) fn census(
 
         // ★★★★★ **Every vertical line carries an answer** (capability D, D2a). A ruling without
         // one is a chart that can state where a wall crosses but not what changes across it — and
-        // the census below would then be comparing a partial chart. ☑ Measured 838/838 across the
+        // the census below would then be comparing a partial chart. ☑ Measured 862/862 across the
         // suite; `world_rat_sense` declines none of them.
         for t in &chart.theta {
             assert!(
@@ -495,7 +495,7 @@ pub(crate) fn census(
                 // side ends its labelling by checking every edge's flip relation and calling a
                 // failure `LabelConflict`; this is that check, stated where no orientation is
                 // needed — walk the circle, XOR what each wall changes, and come back to where you
-                // started. ☑ Measured 195 intervals, **none** failing to close.
+                // started. ☑ Measured 201 intervals, **none** failing to close.
                 // ★ It is asserted (not merely counted) because a failure would mean the chart's
                 // own labels contradict each other, which is a defect on this side and not a
                 // disagreement with today's road.
@@ -970,13 +970,15 @@ mod tests {
     /// emitted bands that span more than one θ-sector and could not say what the extra line was.
     /// With a label on the vertical lines there are three answers, and the third is cell ㉒'s —
     /// the ruling may not be on this face at all. ☑ Measured over the suite: **absent 0 · a
-    /// boundary the band road misses 0 · harmless 82**. The band road is calling those strips
+    /// boundary the band road misses 0 · harmless 84**. The band road is calling those strips
     /// uniform and the chart agrees they *are*: the walls crossing them change nothing at the
     /// lateral there.
     ///
-    /// ☑ Beside it: **118 rulings whose wall does change the material** (so the counter has a
-    /// population), **59 intervals** carrying at least one, **12 rulings whose every mark is a
-    /// graze** — the existence question is not empty either — and **195 intervals closing, 0 not**.
+    /// ☑ Beside it, over **450 alive-ruling observations** — a piece counts once per interval it
+    /// spans, so this is **not** the 862-piece denominator above: **122 whose wall does change the
+    /// material** (so the counter has a population), **61 intervals** carrying at least one, **12
+    /// whose every mark is a graze** — the existence question is not empty either — and **201
+    /// intervals closing, 0 not**.
     ///
     /// ★★ **The first spelling of the existence counter was vacuous**: it asked whether a ruling's
     /// mark list was *empty*, and a `MergedRuling` exists only because a lateral traced it. It

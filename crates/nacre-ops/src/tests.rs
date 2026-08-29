@@ -9189,10 +9189,10 @@ fn the_mesh_census_is_running() {
 /// this ladder a side selector is guarded by the through-boss volume (a global flip passes the
 /// relative locks), but that only works for a sign production *reads*. This label is
 /// `#[cfg(test)]`, so no volume moves whatever it says. ☑ Flipping `side · κ` turns the check from
-/// 814 agreeing to 814 contradicting — it has eyes on 97% of the population.
+/// every agreement into a contradiction — it has eyes on 97% of the population.
 ///
-/// ☑ Measured over the whole binary: **838 ruling pieces, 838 labelled** (`world_rat_sense`
-/// declines none) · **814 agree, 0 contradict, 24 blind**. The blind ones are real and expected —
+/// ☑ Measured over the whole binary: **862 ruling pieces, 862 labelled** (`world_rat_sense`
+/// declines none) · **838 agree, 0 contradict, 24 blind**. The blind ones are real and expected —
 /// a boss surrounded by its own plate has that solid's material on *both* sides of the ruling, so
 /// the content cannot tell, and only the derivation speaks there.
 #[test]

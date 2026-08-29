@@ -4505,13 +4505,12 @@ fn per_class(
     // ends carry an axis parameter or the piece is not stated: a ruling whose end has no ⊥ partner
     // has no place on a chart's `z` axis, and inventing one would be worse than leaving it out —
     // so it is dropped here and **counted** by the chart's own census rather than guessed at.
-    // ★ `i` is read only by the `#[cfg(test)]` label block below.
-    #[cfg_attr(not(test), allow(unused_variables))]
-    let ruling_extents: Vec<(usize, RulingExtent)> = edges
-        .rulings
-        .iter()
-        .enumerate()
-        .filter_map(|(i, r)| {
+    // ★ Walked by index rather than `enumerate`: the half-edge number below is `2·(ns+na) + 2i`,
+    // and indexing keeps `i` used in every build (a discarded `enumerate` index is a lint, and an
+    // `allow` for it would be a second thing to keep true).
+    let ruling_extents: Vec<(usize, RulingExtent)> = (0..edges.rulings.len())
+        .filter_map(|i| {
+            let r = &edges.rulings[i];
             let z = [
                 node_axis_param(jd, &r.def, wc, r.end[0])?,
                 node_axis_param(jd, &r.def, wc, r.end[1])?,
@@ -4531,7 +4530,8 @@ fn per_class(
                 // ★ The postcondition, checked rather than assumed — see `ruling_probe::SIDE_CHECK`.
                 // ★★ It asks whether a **cell** carries the lateral's solid, not whether the two
                 // cells *differ*: crossing a ruling on this wall crosses the **lateral**, so they
-                // differ always (☑ measured 838/838) and that says nothing about the side.
+                // differ always (☑ measured while designing this rung: every piece, without
+                // exception) and that says nothing about the side.
                 // ★ Recorded only where a label was formed, so `None` means one thing — the content
                 // did not distinguish — and never "there was nothing to check".
                 if let (Some(inside), Some(s)) = (inside, r.merged.first().map(|m| m.0)) {
