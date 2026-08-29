@@ -46,7 +46,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 **편의 레이어 `nacre-kit` (워크스페이스 밖, 별도 리포 — 2026-07-26 결정, 미착수).** 코드-CAD 스크립트와 커널 사이의 층: 다중 솔리드 값(compound), 값 의미론(재사용 시 `Copy` 자동 삽입), 다인수 fuse/cut/common(fold), 프로파일 헬퍼와 섬-분해 호출, 패턴·미러, 에러의 사람용 매핑, 표시 메타데이터(색·투명도 — 커널 비목표라 여기가 제자리). **Rust로 두는 이유:** 헤드리스 `cargo test`가 되고, 술어 인접 로직이 exactness 도구가 있는 쪽에 남고, 프론트엔드를 교체해도 살아남고, wasm 경계가 함수 하나로 유지된다. 경계 규칙은 overview.md의 "설탕 vs 커널 판별 기준"이고, **문법·의미론과 그 결정 이유는 `nacre-kit` 리포의 `docs/syntax.md`·`docs/decisions.md`에 있다**(여기에 복사하지 않는다 — 두 곳에 같은 내용이 있으면 어긋난다). **전제였던 것 — ✅ 2026-07-27 해소:** 파사드 `nacre`가 채워져 소비자가 **한 줄**로 매단다(아래 §파사드).
 
 **공개 표면 조사 (2026-07-26, 코드 실측 — 다시 조사하지 말 것).** 외부 소비자 관점에서 무엇이 막혀 있는지 훑은 결과.
-- **이미 열려 있다(막혀 있다고 오해했던 것들):** `Model`의 모든 필드와 `Vertex/Edge/Face/Shell/Solid`의 모든 필드가 `pub`이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.vertices → vertex.point`). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Vertex::def`(=`VertexDef{ThreePlane|OnSeam}`)·`Model::{vertex_point, vertex_tol}`·`Model::motions`(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개. 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
+- **이미 열려 있다(막혀 있다고 오해했던 것들):** `Model`의 모든 필드와 `Vertex/Edge/Face/Shell/Solid`의 모든 필드가 `pub`이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.vertices → vertex.point`). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Vertex::def`(=`VertexDef{ThreePlane|OnSeam}`)·`Model::{vertex_point, vertex_tol}`·`Model::motions`(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`Tessellation::to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개(★ 자유 함수 `to_obj(&Model)`은 **칸 ㉓에서 삭제** — 아래). 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
 - **파생 값과 에러 표면 — ✅ 2026-07-26 공개.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. §6의 거절 이유는 그 앞에 끝났다. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 미래.
   - **`bounds`는 곡선을 인지한다.** 원통 옆면은 솔기 정점보다 바깥으로 볼록하므로 꼭짓점 min/max는 **조용히 작은 상자**를 준다. 반지름 `r`·법선 `n̂`인 원은 축 `e` 방향으로 `±r·√(1−(n̂·e)²)`만큼 뻗는다(정확). OCCT `bounding`이 심판하되 **등호로 비교하지 않는다** — DRAWEXE는 상자를 보수적으로 부풀린다(실측 ~1e-7).
   - **`centroid`는 새 적분이 아니다.** 솔리드는 기준점에서 각 평면 면으로 뻗은 **원뿔들의 부호합**이고, 원뿔의 중심은 밑면 모양과 무관하게 꼭짓점→밑면중심의 **3/4** 지점이다. 즉 `mass_props`가 이미 계산하는 `(Aᵢ, cᵢ, n̂ᵢ)`만으로 `C = R + Σ Vᵢ·¾(cᵢ−R)/ΣVᵢ`가 나온다. 곡면은 그 논증이 깨지므로 **이름 달고 거절**하고, 그래서 `MassProps`의 필드가 아니라 별도 함수다(곡면 솔리드의 부피·넓이는 계속 살아 있어야 한다).
@@ -1212,7 +1212,7 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
   ☑ 계기 규율: **trip 수는 결정적이라 날카롭고, 시간은 세션 간에 표류하므로 A/B는 같은 세션에서**
   (`git stash`). 아침 기준선을 몇 시간 뒤 비교에 쓰면 안 된다 — 안 건드린 단계가 +9% 움직였다.
   | **B. 벽∩측면은 «한 이차식»이다** | 오프셋 `0<d<r` · 접선 `d=r`(`WallMeetsLateral`) | ★★★★★ **독립 항목이 아니다 — 아래 「B가 쪼개지는 곳」을 먼저 읽을 것** |
-  | **C. validate의 비다양체 판정이 곡면을 본다** | 접선의 두께-0 접촉 | 불리언이 아니라 **계측**의 일반화. ★ **B의 접선을 막고 있는 것이 바로 이것이다** |
+  | **C. validate의 비다양체 판정이 곡면을 본다** | 접선의 두께-0 접촉 | 불리언이 아니라 **계측**의 일반화. ★ **B의 접선을 막고 있는 것이 바로 이것이다** · ★★ **칸 ㉓이 물음 하나를 걸어 두었다**(아래) |
   | **D. 원통도 자기 차트에서 arrangement를 돈다** | 손으로 쓴 `band_loop`(`boolean.rs`의 **클로저**)·`merge_curved_group` | ★ 평면 쪽은 셀 복합체로 케이스워크를 없앴는데 **원통은 아직 손으로 쓴 walk다** — 아래 항목 |
   | ─ 실린더 쌍(`CylinderPairContact`) | | **진짜 새 기하**(quartic) = M6b 마일스톤 |
   | ─ 스케치 원·호 어휘(`Curve2d`는 `Line`뿐) | | 기능, 엔진과 직교 |
@@ -1227,6 +1227,32 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
     옛 칸 레터링**(offset = D · tangent = E)이고 **이 표의 「D. 원통 차트 arrangement」와 다른 D다.**
     레터링이 두 벌 섞여 있으니 코드에서 「cell X」를 읽으면 어느 벌인지 먼저 확인할 것.
   - 게이트가 못 치운 면 — 충분조건이 약한 것. 별개.
+
+  ★★★★★ **칸 ㉓ — 삼각분할 도로가 «둘»이었고, 살아남은 도로가 2174 중 2를 못 그린다
+  (2026-08-29, `b19aebd`·`fe835a1`·`27baaac`).**
+
+  - **부트스트랩을 지웠다.** `to_obj(&Model)`은 M1 작성기이고 반쪽 간선의 **시작 정점만** 읽어
+    **호를 현으로 바꿨다**. 크레이트 헤더가 스스로 *「Two paths coexist **during M3** … kept until
+    the existing planar callers migrate」*라 적어 둔 임시 상태였고, 이행이 **M6에 세 마일스톤 늦게**
+    왔다. ☑ 지운 것 셋(자유 `to_obj`·`triangulate_polygon`·`TessError::NonPlanarFace`) · 호출자
+    **9곳**이 `tessellate(..)?.to_obj()`로 · 평면 차트 규칙(newell → drop_axis → 방향 복구)이
+    **한 벌**만 남음(`planar_chart`). census 두 프로파일 **비트 동일**.
+    ★ **경고는 dev-log에 두 번 적혀 있었는데도 세 번째로 밟혔다** — 문서로는 못 막았고, 함수를
+    지우니 막혔다.
+  - **`TessError::SelfTouchingBoundary`.** 어떤 정점도 자기와 무관한 경계 조각 위에 있으면 안
+    된다 — `monotone::link`가 이미 거절하는 «조합적» pinch(인덱스 공유)의 **기하학적 쌍둥이**이고,
+    `link` 바로 다음에 선다(`prev`/`next`가 인접 제외를 공짜로 준다). **새 술어 0 · tolerance 0.**
+  - **계기**: `boolean_with_report`의 유일한 성공 출구에서 결과를 메싱해 본다. ☑ **2174건 중 2건**
+    실패, 둘 다 접선 — 보스 발자국이 보어 rim에 접하고(`a_segment_tangent_to_the_rim_builds`),
+    보스 rim이 판 윗모서리에 접한다(`a_turned_boss_tangent_to_the_plate_top_builds`). 그 면의
+    **내부가 한 점에서 집힌다.**
+  - ★★★★ **그 둘이 «유효한 솔리드인가»는 이 칸이 답하지 않는다 — 능력 C의 물음이다.** `validate`는
+    초록이고 부피도 1e-9 안에서 정확하지만, 면의 내부가 한 점에서 집힌다는 것은 그 점에서 면의 두
+    쪽이 만난다는 뜻이고 **표면의 비다양체 점일 수 있다**. `validate`는 못 본다 — 거기엔 위상 정점이
+    없다. ⇒ 이름은 「이 분해가 못 그린다」까지만 말한다.
+  - ★★ **남은 능력**: 「집힌 경계를 그린다」. ☑ 싼 철자가 없음이 실측됐다 — 정점 공유 · 간선 위 ·
+    쪼갠 간선 · 반복 인덱스 병합 · 쌍둥이 정점 병합 **다섯 전부** `DegenerateRing`. 교과서 스윕에
+    좌표가 겹치는 정점의 일관된 기호적 순서(SoS 계열)를 넣는 일이고, **이 칸의 계기가 그 안전망**이다.
 
   ★ **「D를 하면 오프셋이 떨어져 나온다」는 그럴듯하지만 미측정이다.** 오프셋의 어려움은 룰링 위치가
   무리수(`√(r²−d²)`)라는 것이고 그 산술(`QuadVal`·근호 하나)은 배열이 **이미** 갖고 있다. D 위에서는
