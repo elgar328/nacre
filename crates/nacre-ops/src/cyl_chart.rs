@@ -254,13 +254,24 @@ mod tests {
     use nacre_math::{Point3, Vector3};
     use nacre_topo::Model;
 
-    /// **The chart census is live** — the claim itself is asserted where the fact is made
-    /// (`census`, "a chart covers its own class's rows"), because a test that reads the ledger
-    /// sees only the booleans that ran before it.
+    /// **The chart census is live, and every chart it records has the shape a chart must have.**
     ///
-    /// ★ So this builds its **own** cylinder boolean rather than leaning on the suite's order:
-    /// a test that passes only when something else ran first is a test that fails under a filter,
-    /// and this session has already left one of those behind.
+    /// The real claim — "a chart covers its own class's rows" — is asserted in `census`, where the
+    /// fact is made, because a test that reads the ledger sees only what ran before it.
+    ///
+    /// ★★★★★ **And it may not read its *own* row out of that ledger.** The first spelling did
+    /// (`rows.last()`), which is only its own under `--test-threads=1`; the workspace gate runs
+    /// **parallel**, and a filtered run caught it immediately — the last row belonged to a
+    /// `bands::tests` fixture (θ = 6 where a bore has 0). So what is asserted here is **universal
+    /// over every recorded chart**, which no interleaving can break:
+    ///
+    /// * `rows >= 1` — a cylinder class exists because a face made it (`cyl_rows` refuses
+    ///   otherwise), so the hand-written road always has at least one row for it.
+    /// * `z_lines >= 2` — a band needs two boundaries; a lateral face's own two rims are ⊥ classes
+    ///   and both are in the set. ☑ Measured minimum across the suite: exactly 2.
+    /// * `theta` is **even** — a plane holding the axis cuts the lateral in *two* rulings
+    ///   (`QuadRoot::{Lo, Hi}`), and nothing else contributes a vertical line. ☑ Measured: 0, 4,
+    ///   6, 8.
     #[test]
     fn the_chart_census_is_running() {
         let before = ROWS
@@ -288,15 +299,18 @@ mod tests {
             rows.len() > before,
             "a boolean with a cylinder recorded no chart"
         );
-        // A through bore: the plate's two caps and the drill's own two rims are the ⊥ classes it
-        // meets, and **no wall holds its axis** — so the chart is all horizontal, which is the
-        // shape 198 of the suite's 263 charts have (☑ measured). One row, because one lateral face.
-        let Row {
-            z_lines,
-            theta,
-            rows: n,
-        } = *rows.last().expect("the census recorded a chart");
-        assert_eq!((theta, n), (0, 1), "a plain bore's chart");
-        assert!(z_lines >= 2, "a band needs two boundaries, got {z_lines}");
+        for r in &rows {
+            let Row {
+                z_lines,
+                theta,
+                rows: n,
+            } = *r;
+            assert!(n >= 1, "a class with no row: {r:?}");
+            assert!(z_lines >= 2, "a band needs two boundaries: {r:?}");
+            assert!(
+                theta % 2 == 0,
+                "a wall cuts two rulings, not {theta}: {r:?}"
+            );
+        }
     }
 }
