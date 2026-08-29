@@ -278,6 +278,7 @@ mod tests {
     use super::probe::{ROWS, Row};
     use crate::BoolKind;
     use nacre_math::{Point3, Vector3};
+    use nacre_scalar::Rat;
     use nacre_topo::Model;
 
     /// **The chart census is live, and every chart it records has the shape a chart must have.**
@@ -336,6 +337,158 @@ mod tests {
             assert!(
                 theta % 2 == 0,
                 "a wall cuts two rulings, not {theta}: {r:?}"
+            );
+        }
+    }
+
+    /// **The derivation, on an axis that is not `+z`** — both roads, on a genuinely tilted one.
+    ///
+    /// ★★★★★ **Why this fixture had to be built.** Everything above is derived from the gate's
+    /// branch table and depends on no axis direction, but every number beside it was measured on
+    /// a corpus that is effectively axis-aligned: the kit builder raises cylinders on world XY
+    /// (`+z` only), the ops corpus is `+z`/`+x`/`+y`, and all three *tilted* cylinders in it are
+    /// **reject** fixtures — so no tilted axis had ever reached the chart. On `+z` against an
+    /// axis-aligned box a class's axis parameter is just a `z` coordinate and the division in
+    /// `bands::axis_param` is trivial; tilted, it is a real rational one.
+    ///
+    /// ★★★★ **Both halves are stated on the exact road, and that is the whole trick.**
+    /// A *Pythagorean frame* — `u = (0.6, 0.8, 0)`, `v = (−0.48, 0.36, 0.8)` — lifts to axes that
+    /// are exactly orthonormal in the rationals, so `SketchPlane::from_axes` takes the
+    /// world-rational path and every face of the prism raised on it states narrow coefficients
+    /// (asserted below, small integers). Its normal `(0.64, −0.48, 0.6)` is the cylinder's axis,
+    /// and the frame's own `u` is a **unit rational perpendicular** to it — exactly the `ref_dir`
+    /// `Model::add_cylinder_exact` requires.
+    ///
+    /// ★★★★★ **`Model::add_cylinder` cannot state this, and that is not a kernel limit.** That
+    /// entry normalizes an `f64` axis and lifts its cap points back out of `any_perpendicular`'s
+    /// computed floats, so on a tilted axis the caps land outside the narrow window and the
+    /// population gate honestly declines (`CylinderGateUndecided` — measured while building this).
+    /// Its own doc calls it *the test entry*; the production road is `add_cylinder_exact`, and on
+    /// that road the tilted case is not the irrational case.
+    ///
+    /// ☑ What this establishes: the chart's two axes are built, and D1a's universal claims hold,
+    /// on an axis with no zero component — through-bore (circles only) **and** a wall holding the
+    /// axis (rulings).
+    #[test]
+    fn the_chart_stands_on_a_tilted_axis() {
+        // Two runs of one fixture: the bore centred inside the prism (⊥ classes only), then
+        // centred **on** a wall, which puts that wall through the axis and cuts rulings.
+        // The prism is 2 x 2 x 1 and the bore has r = 1/2, so the removed volume is `pi/4`
+        // whole and half of that when the axis lies in a wall.
+        let bore = std::f64::consts::FRAC_PI_4;
+        for (name, base, want_rulings, want_vol) in [
+            ("through bore", [-0.52, 1.64, 0.2], false, 4.0 - bore),
+            (
+                "half bore on a wall",
+                [0.08, 2.44, 0.2],
+                true,
+                4.0 - bore / 2.0,
+            ),
+        ] {
+            let before = ROWS
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .len();
+            let mut m = Model::new();
+            let plane = crate::SketchPlane::from_axes(
+                Point3::from_array([0.0; 3]),
+                Vector3::from_array([0.6, 0.8, 0.0]),
+                Vector3::from_array([-0.48, 0.36, 0.8]),
+            );
+            let frame = match crate::apply(
+                &mut m,
+                &crate::Operation::DatumPlane {
+                    def: crate::DatumDef::Stated(plane),
+                },
+            ) {
+                Ok(crate::OpOutput::DatumPlane { frame, .. }) => frame,
+                other => panic!("stating the tilted plane: {other:?}"),
+            };
+            let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+            let crate::OpOutput::Extrude { solid, faces, .. } = crate::apply(
+                &mut m,
+                &crate::Operation::Extrude {
+                    frame,
+                    profile: crate::Profile2d::polygon(vec![
+                        p(0.0, 0.0),
+                        p(2.0, 0.0),
+                        p(2.0, 2.0),
+                        p(0.0, 2.0),
+                    ])
+                    .expect("a square"),
+                    dist: 1.0,
+                },
+            )
+            .expect("the tilted prism") else {
+                unreachable!()
+            };
+            // ★★★★ **The fixture qualifies its own population** (the S2 census lesson, which this
+            // file's neighbours keep citing): every face must state narrow world coefficients, and
+            // each must be either ⊥ or ∥ to the axis **exactly** — otherwise the gate would be
+            // answering the oblique branch and the chart would never be reached.
+            let axis = [0.64, -0.48, 0.6].map(|x| Rat::from_decimal(x).expect("a short decimal"));
+            for &f in &faces {
+                let n = m
+                    .surface_name
+                    .get(&m.faces.get(f).surface)
+                    .and_then(|nm| nm.narrow())
+                    .copied()
+                    .expect("a tilted prism's face states itself");
+                let n = [n[0], n[1], n[2]];
+                let dot = nacre_scalar::dot_sign_rat(&n, &axis);
+                assert!(
+                    dot == nacre_scalar::Orient::Zero || nacre_scalar::parallel_rat(&n, &axis),
+                    "a face neither ⊥ nor ∥ to the axis would be the oblique branch"
+                );
+            }
+            let q = |x: f64| Rat::from_decimal(x).expect("a short decimal");
+            let (cyl, _) = m
+                .add_cylinder_exact(
+                    base.map(q),
+                    axis,
+                    // ★ The frame's own `u`: unit, and `u · axis = 0.384 − 0.384 = 0` exactly.
+                    [q(0.6), q(0.8), q(0.0)],
+                    q(0.5),
+                    q(3.0),
+                    None,
+                )
+                .expect("the exact road states a tilted cylinder");
+            m.rebuild_adjacency();
+            let out = crate::boolean(&mut m, BoolKind::Cut, solid, cyl)
+                .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "{name}: the tilted result must be sound"
+            );
+            // ★★★★★ **The oracle is on this model, derived from the inputs.** Green plus a clean
+            // `validate` would say only that *some* solid was built; the volume says the tilted
+            // boolean removed the right material, and it is computed from the prism's and bore's
+            // own dimensions rather than from anything the kernel answered.
+            let [s] = out[..] else {
+                panic!("{name}: one solid")
+            };
+            let got = nacre_props::mass_props(&m, s).expect("mass props").volume;
+            assert!(
+                (got - want_vol).abs() < 1e-9,
+                "{name}: volume {got} vs {want_vol}"
+            );
+            let rows = ROWS
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .clone();
+            assert!(rows.len() > before, "{name}: no chart was recorded");
+            // ★★★ Read as a **set difference**, not `last()` (a `rows.last()` spelling had to be
+            // corrected in D1a — the gate runs this suite in parallel). ★ And it stays an
+            // *existential* claim over a **shared** ledger, so it can be diluted by a concurrent
+            // test but never carries the weight alone: what proves this fixture right is the
+            // volume above, on this model.
+            let want = if want_rulings { 6 } else { 0 };
+            assert!(
+                rows[before..]
+                    .iter()
+                    .any(|r| r.z_lines == 4 && r.theta == want),
+                "{name}: expected a chart with {want} rulings, got {:?}",
+                &rows[before..]
             );
         }
     }
