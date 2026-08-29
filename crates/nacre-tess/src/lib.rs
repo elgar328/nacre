@@ -177,7 +177,7 @@ impl Tessellation {
 
 /// Tessellate a model into a provenance-tagged, crack-free triangle mesh.
 ///
-/// **One road for every face**: each is laid flat in a chart of its own surface ([`Chart`]) and
+/// **One road for every face**: each is laid flat in a chart of its own surface (`Chart`) and
 /// triangulated by the same sweep. Edge polylines are sampled once and shared, so adjacent faces
 /// meet watertight (design §5). Reads the loop winding, not the `Orientation`
 /// flag — every producer winds loops outward, `Reversed` faces included
