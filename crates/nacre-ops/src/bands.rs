@@ -491,7 +491,7 @@ fn panel_faces(
 /// **265** · `Graze` **13**, of which **1** reaches and **12** do not · nothing at all **0**.
 /// The twelve are the six dropped sectors read at both rims, which is the cross-check that the
 /// sector census and this one describe the same events.
-fn face_spans(
+pub(crate) fn face_spans(
     r: &crate::arrangement::ArcLabel,
     side: SolidSide,
     band_is_above: bool,
@@ -572,7 +572,11 @@ pub(crate) mod panel_probe {
 /// The one spelling of "which two bits of a label are this band's chamber": the row's own
 /// solid's bit and the counterpart's, on the side of the plane the band occupies. Shared by the
 /// whole-disk road ([`chamber`]) and the per-sector panel road, so the two cannot drift.
-fn read_bits(l: &crate::arrangement::Label, side: SolidSide, band_is_above: bool) -> (bool, bool) {
+pub(crate) fn read_bits(
+    l: &crate::arrangement::Label,
+    side: SolidSide,
+    band_is_above: bool,
+) -> (bool, bool) {
     let (cyl_bit, other_bit) = match side {
         SolidSide::A => (0usize, 2usize), // [A above, A below, B above, B below]
         SolidSide::B => (2usize, 0usize),
@@ -583,7 +587,7 @@ fn read_bits(l: &crate::arrangement::Label, side: SolidSide, band_is_above: bool
 
 /// The one spelling of the band's keep decision — the wall is a boundary face of its own solid,
 /// so that solid's membership flips across it while the counterpart's does not.
-fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: bool) -> bool {
+pub(crate) fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: bool) -> bool {
     match side {
         SolidSide::A => crate::arrangement::keep(kind, in_own, in_other),
         SolidSide::B => crate::arrangement::keep(kind, in_other, in_own),

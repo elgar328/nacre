@@ -35,12 +35,14 @@
 //!
 //! ## What is here, and what is not
 //!
-//! The two axes (D1a) and the **cells** they cut (D1b), beside a census that counts how today's
-//! emitted lateral faces cover those cells. The **labels** and any cutover are not: the two roads
-//! this will one day replace are untouched, because the census has to measure what they answer
-//! *today*.
+//! The two axes (D1a), the **cells** they cut (D1b), the vertical lines' answers (D2a), and the
+//! **cell reader** (D2b-0, [`Chart::read_cell`]) — the function the cutover will call, which reads
+//! a cell's chamber and existence off the *horizontal* lines alone (`DiskLabels`/`ArcLabels`
+//! through `bands::read_bits`/`face_spans`) and is measured, cell by cell, against what the two
+//! hand-written roads emit today. The cutover itself is not: those roads are untouched, because
+//! the census has to measure what they answer *today*.
 
-use crate::arrangement::{Curved, RulingExtent};
+use crate::arrangement::{ArcLabel, Curved, Label, RulingExtent};
 use crate::boolean::{Bound, LocalFace};
 use crate::planes::{ClassIx, WorkingCyl, WorkingPlane};
 use crate::tolerant::Judge;
@@ -64,7 +66,7 @@ pub(crate) struct ZLine {
 /// Carried straight from [`RulingExtent`] — the plane pass decides this and the chart must not
 /// decide it again.
 ///
-/// ★ No `side`: a ruling is named `(wall class, root)` and the side derives from that — see
+/// ★ No `side` stored: a ruling is named `(wall class, side)` by [`Chart::ruling_name`] — see
 /// [`RulingExtent`], which dropped its own copy for the same reason.
 #[derive(Clone, Debug)]
 pub(crate) struct ThetaSeg {
@@ -88,6 +90,11 @@ pub(crate) struct ThetaSeg {
 pub(crate) struct Chart {
     pub(crate) z_lines: Vec<ZLine>,
     pub(crate) theta: Vec<ThetaSeg>,
+    /// How many rulings arrived with `z` descending, so that [`chart_of`] had to swap `end`
+    /// alongside `z` to keep `end[e] ↔ z[e]` true. ☑ Predicted 0 (`MergedRuling::end` is stated
+    /// in ascending axis order); counted rather than assumed, and promoted to an assertion the
+    /// day the count is in.
+    pub(crate) end_swapped: usize,
 }
 
 /// A ruling's **name**: the wall class that cut it, and which of the two roots it is.
@@ -96,7 +103,29 @@ pub(crate) struct Chart {
 /// pair (`arrangement::ruling_side`), and a second spelling of one identity is how this ladder
 /// has been bitten before. The join against `panel_faces`' rings uses this key because that is
 /// the key `name_on` already builds there.
-type RulingName = (usize, nacre_topo::QuadRoot);
+type RulingName = (usize, i8);
+
+/// **Which of a wall's two rulings a branch node lies on** — `arrangement::ruling_side`, the one
+/// spelling the assembly's `Wall::Ruling { side }` and `panel_faces`' `side_at` already read.
+///
+/// ★★★★★ **Not the node's `QuadRoot`.** A `Branch` name's root is `Lo`/`Hi` along
+/// `ℓ = n₁ × n₂` of *its own* plane pair, so the same physical ruling reads `Hi` where its node
+/// pairs the wall with the plate's top and `Lo` where it pairs it with the boss's cap (the pair
+/// order and the ⊥ normal's sense both reverse `ℓ` — `QuadRoot::canonical`'s doc). ☑ Measured on
+/// the corner boss while building D2b-0: two different rulings of one wall carried one name and
+/// the panel join claimed the wrong sectors. The side is a fact about the *point*, so every piece
+/// of one ruling answers alike, whatever its end nodes pair it with.
+fn ruling_side_of(
+    jd: &Judge<'_, WorkingPlane>,
+    k: usize,
+    def: &nacre_topo::CylinderDef,
+    wall: usize,
+    n: combinatorics::NodeId,
+) -> Option<i8> {
+    let w = combinatorics::class_coeffs_rat(jd, wall)?;
+    let (line, s) = combinatorics::branch_meet(jd, k, def, n)?;
+    crate::arrangement::ruling_side(&w, def, (&line, &s))
+}
 
 /// **One cell of the chart** — an axis interval crossed with a θ-sector.
 ///
@@ -117,7 +146,7 @@ pub(crate) struct Cell {
     /// interval carries none and the cell is the whole circle. For a single cut the circle opens
     /// at one point and both are that ruling.
     ///
-    /// ★★★ **Indices, not names.** The first spelling kept the `(wall, root)` names here because
+    /// ★★★ **Indices, not names.** The first spelling kept the `(wall, side)` names here because
     /// that is the key `panel_faces` joins on — but then the ruling's *label* (D2a) could not be
     /// reached from a cell without searching for it, and a second copy of one identity is what
     /// this ladder keeps being bitten by. The name is one call away ([`Chart::ruling_name`]).
@@ -181,12 +210,18 @@ impl Chart {
         Some(out)
     }
 
-    /// A ruling's **name** — `(wall class, root)`, the key `panel_faces::name_on` builds on the
-    /// other side of the census's join. Derived from the segment rather than stored beside it.
-    pub(crate) fn ruling_name(&self, i: usize) -> Option<RulingName> {
+    /// A ruling's **name** — `(wall class, side)`, the key the panel join on the other side of
+    /// the census builds the same way ([`ruling_side_of`]). Derived from the segment rather than
+    /// stored beside it.
+    pub(crate) fn ruling_name(
+        &self,
+        jd: &Judge<'_, WorkingPlane>,
+        k: usize,
+        def: &nacre_topo::CylinderDef,
+        i: usize,
+    ) -> Option<RulingName> {
         let t = self.theta.get(i)?;
-        let (_, _, root) = combinatorics::branch_name(t.end[0])?;
-        Some((t.wall, root))
+        Some((t.wall, ruling_side_of(jd, k, def, t.wall, t.end[0])?))
     }
 }
 
@@ -257,21 +292,27 @@ pub(crate) fn chart_of(
     // why everything downstream compares `t`, never the class index.
     z_lines.dedup_by_key(|l| l.t);
 
+    // ★★ **`end` travels with `z`.** `per_class` states `z[e]` as the axis parameter of `end[e]`,
+    // so sorting `z` alone would silently break that pairing — and the cell reader (D2b-0) asks
+    // "this ruling's node *on this z-line*" of exactly that pairing. Swapping both keeps it a
+    // carried fact rather than a rule spelled a second time (`node_axis_param` is not re-asked).
+    let mut end_swapped = 0usize;
     let theta: Vec<ThetaSeg> = curved
         .rulings
         .get(&k)
         .map(|v| {
             v.iter()
                 .map(|r: &RulingExtent| {
-                    let (lo, hi) = if r.z[0] <= r.z[1] {
-                        (r.z[0], r.z[1])
+                    let (z, end) = if r.z[0] <= r.z[1] {
+                        (r.z, r.end)
                     } else {
-                        (r.z[1], r.z[0])
+                        end_swapped += 1;
+                        ([r.z[1], r.z[0]], [r.end[1], r.end[0]])
                     };
                     ThetaSeg {
                         wall: r.wall,
-                        end: r.end,
-                        z: [lo, hi],
+                        end,
+                        z,
                         label: r.label,
                         marks: r.marks.clone(),
                     }
@@ -279,7 +320,348 @@ pub(crate) fn chart_of(
                 .collect()
         })
         .unwrap_or_default();
-    Ok(Chart { z_lines, theta })
+    Ok(Chart {
+        z_lines,
+        theta,
+        end_swapped,
+    })
+}
+
+/// **What one z-line says to one cell** — the horizontal line's answer, as the cell reads it.
+///
+/// The plane arrangement wrote a label on every circle a cylinder leaves on a ⊥ class, whether or
+/// not a face was kept there (`emit_faces`' `disk_labels`/`arc_labels`, collected outside the keep
+/// filter). So a cell's chamber is not *decided* here; it is **read** off the line at either end,
+/// exactly as `bands::chamber` reads a disk and `bands::panel_faces` reads an arc.
+pub(crate) enum End<'a> {
+    /// The circle on this line is uncut (or cut, but every arc reads the same for this cell): one
+    /// label for the whole disk, whatever the sector.
+    Disk(Label),
+    /// The circle is cut, and the cell's two rulings are an **adjacent pair** of its branch nodes:
+    /// this is the arc between them, the very row `panel_faces::arc_at` joins on.
+    Exact(&'a ArcLabel),
+    /// The circle is cut but the cell's rulings are not an adjacent node pair on it (the sector
+    /// lies inside one arc, or spans several, or a ruling has no node here) — a shape that needs
+    /// a θ placement this rung does not build. ☑ Counted; the population decides whether it is
+    /// built (`end_other`).
+    Other,
+    /// No circle of this cylinder on this line at all: the line is a ⊥ class outside every
+    /// lateral face's span (`circle_on_class` leaves a circle on every class *within* a span).
+    NoCircle,
+}
+
+impl End<'_> {
+    fn label(&self) -> Option<Label> {
+        match self {
+            End::Disk(l) => Some(*l),
+            End::Exact(a) => Some(a.label),
+            End::Other | End::NoCircle => None,
+        }
+    }
+}
+
+/// One cell, read.
+pub(crate) struct CellRead<'a> {
+    pub(crate) ends: [End<'a>; 2],
+    /// `(in_own, in_other)` on the cylinder's inside, agreed by every end that could speak.
+    /// `None` when no end could, or when two ends disagreed (`src2_disagree`).
+    pub(crate) chamber: Option<(bool, bool)>,
+    pub(crate) src2_disagree: bool,
+    /// Is this lateral face here at all — the existence question (cell ㉒), answered by the trace
+    /// where an end is cut (`bands::face_spans`) and by the row's span where none is.
+    pub(crate) present: bool,
+    /// The trace says the face is here while no row's span covers the cell — the one direction
+    /// of disagreement that is a defect (the other is a hole in a spanned face).
+    pub(crate) exist_disagree: bool,
+    /// `face_spans` refused (two of this solid's faces disagreeing on one arc) or two cut ends
+    /// disagreed with each other — the span answered instead.
+    pub(crate) exist_conflict: bool,
+    /// Would the cell be a result face: present, with a chamber, and `keep` differing across the
+    /// wall. `None` when the chamber is unknown.
+    pub(crate) emit: Option<bool>,
+}
+
+/// The lines of one chart, looked up **by axis parameter** — never by class index. Two ⊥ classes
+/// at one `t` are one plane, and `chart_of` keeps an arbitrary one of their indices, so the label
+/// tables (keyed by class) are joined through `t`. Built once per chart; the cells then pay no
+/// rational arithmetic per lookup.
+pub(crate) struct Lines {
+    by_t: std::collections::HashMap<Rat, Vec<usize>>,
+}
+
+impl Lines {
+    pub(crate) fn of(
+        jd: &Judge<'_, WorkingPlane>,
+        k: usize,
+        def: &nacre_topo::CylinderDef,
+        curved: &Curved,
+    ) -> Self {
+        let mut by_t: std::collections::HashMap<Rat, Vec<usize>> = std::collections::HashMap::new();
+        let keys = curved
+            .disk_labels
+            .keys()
+            .chain(curved.arc_labels.keys())
+            .chain(curved.cut_rims.keys());
+        for &(kk, c) in keys {
+            if kk != k {
+                continue;
+            }
+            // A class whose parameter cannot be stated is skipped, as `census` skips it everywhere.
+            let Ok(t) = crate::bands::axis_param(jd, c, def) else {
+                continue;
+            };
+            let v = by_t.entry(t).or_default();
+            if !v.contains(&c) {
+                v.push(c);
+            }
+        }
+        Self { by_t }
+    }
+
+    /// The classes carrying a label of this cylinder at `t`.
+    fn classes(&self, t: Rat) -> &[usize] {
+        self.by_t.get(&t).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
+
+impl Chart {
+    /// The node of ruling `i` **on** the z-line `t`, from the carried `end ↔ z` pairing — or
+    /// `None` when the ruling merely passes `t` without a node there.
+    fn node_on(&self, i: usize, t: Rat) -> Option<combinatorics::NodeId> {
+        let s = &self.theta[i];
+        (0..2).find(|&e| s.z[e] == t).map(|e| s.end[e])
+    }
+
+    /// **The arc of a cut rim that contains the sector `[x, y)`** when the sector's rulings are not
+    /// themselves an adjacent node pair of that rim — a wall whose *face* stops short of this
+    /// line leaves a ruling on the chart but no node on the circle (☑ the corner boss: two chords
+    /// end at the plate's corner inside the footprint, so the rim has two nodes while the chart
+    /// has four rulings, and three sectors lie inside the long arc).
+    ///
+    /// The θ order is asked of `arrangement::circular_order`, the one spelling the cells' own
+    /// order comes from — never of a coordinate. A ruling with no node here is placed by its end
+    /// node on another line (a ruling is vertical, so the θ is the same); a ruling *with* a node
+    /// here is that node, so no point is handed to the order twice. `None` when a rim node lies
+    /// strictly inside the sector (the cell would span two arcs — no single label), when the
+    /// sector is the whole circle less one ruling, or when the order cannot be formed.
+    #[allow(clippy::too_many_arguments)]
+    fn arc_around<'a>(
+        &self,
+        jd: &Judge<'_, WorkingPlane>,
+        k: usize,
+        def: &nacre_topo::CylinderDef,
+        t: Rat,
+        x: usize,
+        y: usize,
+        rim: &crate::arrangement::CutRim,
+        arcs: &'a [ArcLabel],
+    ) -> Option<&'a ArcLabel> {
+        let m = rim.nodes.len();
+        if x == y && m >= 2 {
+            return None;
+        }
+        let mut list: Vec<combinatorics::NodeId> = rim.nodes.clone();
+        let mut index_of = |i: usize| -> Option<usize> {
+            match self.node_on(i, t) {
+                Some(n) => rim.nodes.iter().position(|&r| r == n),
+                None => {
+                    list.push(self.theta[i].end[0]);
+                    Some(list.len() - 1)
+                }
+            }
+        };
+        let ix = index_of(x)?;
+        let iy = if x == y { ix } else { index_of(y)? };
+        let (order, _) = crate::arrangement::circular_order(jd, k, def, &list).ok()?;
+        let n = order.len();
+        let pos = |li: usize| order.iter().position(|&o| o == li);
+        let (px, py) = (pos(ix)?, pos(iy)?);
+        let is_rim = |p: usize| order[p] < m;
+        // No rim node strictly inside the sector, walking CCW from x to y.
+        let mut q = (px + 1) % n;
+        while q != py {
+            if is_rim(q) {
+                return None;
+            }
+            q = (q + 1) % n;
+        }
+        // The arc's ends: the nearest rim node at or before `x` (clockwise), and at or after `y`.
+        let (mut a, mut b) = (px, py);
+        while !is_rim(a) {
+            a = (a + n - 1) % n;
+        }
+        while !is_rim(b) {
+            b = (b + 1) % n;
+        }
+        let (na, nb) = (list[order[a]], list[order[b]]);
+        arcs.iter().find(|arc| arc.ends == [na, nb])
+    }
+
+    /// **Read one cell off the horizontal lines** — the function the cutover will call, measured
+    /// first against what the hand-written roads emit today.
+    ///
+    /// No sign is derived here: `band_is_above` is `planes::plus_t_is_above` at the low end and
+    /// its negation at the high end — the one spelling `bands::chamber` and `bands::panel_faces`
+    /// both use — and the bits come out through `bands::read_bits`. The ruling labels (the
+    /// vertical lines) are not consulted: a face that is here has a circle at both its ends, so
+    /// the horizontal lines always speak, and `census` asserts that (`src0_present`).
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn read_cell<'a>(
+        &self,
+        jd: &Judge<'_, WorkingPlane>,
+        k: usize,
+        def: &nacre_topo::CylinderDef,
+        kind: crate::BoolKind,
+        side: crate::planes::SolidSide,
+        cell: &Cell,
+        curved: &'a Curved,
+        lines: &Lines,
+        rows: &[crate::bands::CylRow],
+    ) -> CellRead<'a> {
+        let t = [
+            self.z_lines[cell.interval].t,
+            self.z_lines[cell.interval + 1].t,
+        ];
+        let mut ends: Vec<End<'a>> = Vec::with_capacity(2);
+        let mut above: [bool; 2] = [false; 2];
+        for e in 0..2 {
+            let mut end = End::NoCircle;
+            let mut saw_disk = false;
+            let mut saw_arc = false;
+            for &c in lines.classes(t[e]) {
+                // The band leaves the low line toward `+t` and arrives at the high line from
+                // `−t` — `chamber`'s `toward_hi(lo)` / `!toward_hi(hi)`.
+                let up = crate::planes::plus_t_is_above(&jd.planes[c], def);
+                above[e] = if e == 0 { up } else { !up };
+                if let Some(l) = curved.disk_labels.get(&(k, c)) {
+                    saw_disk = true;
+                    end = End::Disk(*l);
+                    continue;
+                }
+                let (Some(arcs), Some(rim)) =
+                    (curved.arc_labels.get(&(k, c)), curved.cut_rims.get(&(k, c)))
+                else {
+                    continue;
+                };
+                saw_arc = true;
+                end = match cell.walls {
+                    None => {
+                        // The whole circle is one cell here; every arc must read the same for
+                        // *this* interval's side (the other half of a label is the neighbour's).
+                        let mut bits: Option<(bool, bool)> = None;
+                        let mut same = true;
+                        for a in arcs {
+                            let b = crate::bands::read_bits(&a.label, side, above[e]);
+                            same &= bits.replace(b).is_none_or(|p| p == b);
+                        }
+                        match (same, arcs.first()) {
+                            (true, Some(a)) => End::Disk(a.label),
+                            _ => End::Other,
+                        }
+                    }
+                    Some([x, y]) => {
+                        let nodes = (self.node_on(x, t[e]), self.node_on(y, t[e]));
+                        let m = rim.nodes.len();
+                        let adjacent = |nx, ny| {
+                            (0..m).any(|j| rim.nodes[j] == nx && rim.nodes[(j + 1) % m] == ny)
+                        };
+                        match nodes {
+                            (Some(nx), Some(ny)) if adjacent(nx, ny) => {
+                                // ★ Asserted where the fact is made: the split's arc order and
+                                // the rim's node order are one table read twice (`emit_faces`
+                                // copies `ma.end`), so a missing row is a defect between two
+                                // arrangement tables, not a chart shape.
+                                let arc =
+                                    arcs.iter().find(|a| a.ends == [nx, ny]).unwrap_or_else(|| {
+                                        panic!(
+                                            "a cut rim's adjacent node pair has no arc label: \
+                                             cyl {k}, class {c}"
+                                        )
+                                    });
+                                End::Exact(arc)
+                            }
+                            _ => self
+                                .arc_around(jd, k, def, t[e], x, y, rim, arcs)
+                                .map_or(End::Other, End::Exact),
+                        }
+                    }
+                };
+            }
+            assert!(
+                !(saw_disk && saw_arc),
+                "one z-line carries both a disk and arcs of one cylinder: cyl {k}, t {:?}",
+                t[e]
+            );
+            ends.push(end);
+        }
+        let ends: [End<'a>; 2] = match <[End<'a>; 2]>::try_from(ends) {
+            Ok(a) => a,
+            Err(_) => unreachable!("two ends are pushed, one per line"),
+        };
+
+        // ── Membership: every end that speaks must say the same. ──
+        let mut chamber: Option<(bool, bool)> = None;
+        let mut src2_disagree = false;
+        for e in 0..2 {
+            let Some(l) = ends[e].label() else { continue };
+            let bits = crate::bands::read_bits(&l, side, above[e]);
+            match chamber {
+                None => chamber = Some(bits),
+                Some(prev) if prev != bits => src2_disagree = true,
+                Some(_) => {}
+            }
+        }
+        if src2_disagree {
+            chamber = None;
+        }
+
+        // ── Existence: the trace where an end is cut, the span where none is. ──
+        let (lo, hi) = (t[0].min(t[1]), t[0].max(t[1]));
+        let by_span = rows.iter().any(|r| {
+            r.class == k && r.span[0].min(r.span[1]) <= lo && hi <= r.span[0].max(r.span[1])
+        });
+        let mut by_marks: Option<bool> = None;
+        let mut exist_conflict = false;
+        for e in 0..2 {
+            let End::Exact(arc) = &ends[e] else { continue };
+            match crate::bands::face_spans(arc, side, above[e]) {
+                Ok(v) => {
+                    if by_marks.replace(v).is_some_and(|p| p != v) {
+                        exist_conflict = true;
+                    }
+                }
+                Err(_) => exist_conflict = true,
+            }
+        }
+        // ★ The span is the coarser truth: a holed lateral's row spans the hole, and the trace is
+        // what says the face is *not* there (cell ㉒'s population — `exist_marks_false`). So the
+        // disagreement that would be a defect is only the other direction: the trace claiming a
+        // face where no row spans.
+        let (present, exist_disagree) = match (by_marks, exist_conflict) {
+            (Some(v), false) => (v, v && !by_span),
+            _ => (by_span, false),
+        };
+
+        // A cell the face is not in emits nothing, chamber or no chamber — a cell outside every
+        // span has no circle at either end and no question to answer.
+        let emit = if !present {
+            Some(false)
+        } else {
+            chamber.map(|(own, other)| {
+                let keep = |in_own: bool| crate::bands::keep_for(kind, side, in_own, other);
+                keep(own) != keep(!own)
+            })
+        };
+        CellRead {
+            ends,
+            chamber,
+            src2_disagree,
+            present,
+            exist_disagree,
+            exist_conflict,
+            emit,
+        }
+    }
 }
 
 /// **What the chart's line set looks like, beside what the hand-written roads answer today.**
@@ -290,9 +672,11 @@ pub(crate) fn chart_of(
 ///
 /// ★ Called from the one place the plane arrangement's faces and [`Curved`] are both in hand. It
 /// reads; nothing downstream reads it.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn census(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
+    kind: crate::BoolKind,
     plane_faces: &[LocalFace],
     curved: &Curved,
     rows: &[crate::bands::CylRow],
@@ -308,6 +692,17 @@ pub(crate) fn census(
         // How today's road sees the same cylinder: one row per lateral *face*, each with its own
         // clipped span. The chart has one line set for the whole class.
         let mine: Vec<&crate::bands::CylRow> = rows.iter().filter(|r| r.class == k).collect();
+        // The cell reader's inputs (D2b-0): the lines by parameter, and whose solid this class
+        // is. ★ One class is one solid's surface — `planes.rs` interns cylinders by handle and
+        // two solids share none — asserted where it is relied on rather than assumed.
+        let lines = Lines::of(jd, k, &cyls[k].def, curved);
+        let side = mine.first().map(|r| r.side);
+        assert!(
+            mine.iter().all(|r| Some(r.side) == side),
+            "one cylinder class carries rows of both solids: cyl {k}"
+        );
+        let mut split_flip = 0usize;
+        let mut split_nocircle = 0usize;
         // ★★★★★ **The claim is asserted here, where the fact is made.** A test that reads the
         // ledger afterwards sees only what ran before it — this session measured that exact hole
         // (a census reported 764 of 2174 because it sat mid-suite). Asserting at the record makes
@@ -363,6 +758,32 @@ pub(crate) fn census(
                     if inside > 0 {
                         intervals_split += 1;
                     }
+                    // ★★★★★ **D1b's 44, judged (D2b-0).** A line the chart sees inside a band
+                    // is not asked what *kind* it is but whether **crossing it changes the
+                    // chamber** — the label's two halves differ for either solid. A line with a
+                    // circle but no flip is a harmless subdivision; one with no circle at all is
+                    // a line inside a face's span that `circle_on_class` did not mark, which its
+                    // own contract says cannot happen (☑ predicted 0, counted).
+                    for l in chart.z_lines.iter().filter(|l| l.t > a && l.t < b) {
+                        let mut seen = false;
+                        let mut flips = false;
+                        for &c in lines.classes(l.t) {
+                            let flip = |l: &crate::arrangement::Label| l[0] != l[1] || l[2] != l[3];
+                            if let Some(d) = curved.disk_labels.get(&(k, c)) {
+                                seen = true;
+                                flips |= flip(d);
+                            }
+                            if let Some(arcs) = curved.arc_labels.get(&(k, c)) {
+                                seen = true;
+                                flips |= arcs.iter().any(|a| flip(&a.label));
+                            }
+                        }
+                        if !seen {
+                            split_nocircle += 1;
+                        } else if flips {
+                            split_flip += 1;
+                        }
+                    }
                 }
             }
         }
@@ -409,6 +830,135 @@ pub(crate) fn census(
             });
             continue;
         };
+
+        // ── The cells, read off the horizontal lines (D2b-0). ──
+        //
+        // ★ `cyl_rows` refuses a class with no row before this census runs, so a class here always
+        // has a side; stated as a check rather than an `unwrap` so the message names the class.
+        let Some(side) = side else {
+            panic!("a cylinder class reached the chart with no row: cyl {k}");
+        };
+        let reads: Vec<CellRead<'_>> = cells
+            .iter()
+            .map(|c| chart.read_cell(jd, k, def, kind, side, c, curved, &lines, rows))
+            .collect();
+        let mut d2b = probe::d2b::Row {
+            cells: cells.len(),
+            end_swapped: chart.end_swapped,
+            split_flip,
+            split_nocircle,
+            ..probe::d2b::Row::default()
+        };
+        for r in &reads {
+            for e in &r.ends {
+                match e {
+                    End::Disk(_) => d2b.end_disk += 1,
+                    End::Exact(_) => d2b.end_exact += 1,
+                    End::Other => d2b.end_other += 1,
+                    End::NoCircle => d2b.end_nocircle += 1,
+                }
+            }
+            let sources = r
+                .ends
+                .iter()
+                .filter(|e| matches!(e, End::Disk(_) | End::Exact(_)))
+                .count();
+            if sources == 0 && r.present {
+                d2b.src0_present += 1;
+            }
+            if r.present && r.ends.iter().any(|e| matches!(e, End::Other)) {
+                d2b.other_present += 1;
+            }
+            d2b.src2_disagree += usize::from(r.src2_disagree);
+            d2b.exist_disagree += usize::from(r.exist_disagree);
+            d2b.exist_conflict += usize::from(r.exist_conflict);
+            // Both ends cut is exactly the panel road's population, where today `face_spans`
+            // drops a sector for existence — the one count with a twin on the other side.
+            if r.ends.iter().all(|e| matches!(e, End::Exact(_))) && !r.present {
+                d2b.exist_marks_false += 1;
+            }
+            match r.emit {
+                Some(true) => d2b.emit += 1,
+                None => d2b.emit_unknown += 1,
+                Some(false) => {}
+            }
+        }
+        assert_eq!(
+            d2b.end_disk + d2b.end_exact + d2b.end_other + d2b.end_nocircle,
+            2 * cells.len(),
+            "every cell has two ends: cyl {k}"
+        );
+        // ★★★★★ **The horizontal lines always speak for a face that is there** — asserted where
+        // the fact is made, and structural rather than measured: `circle_on_class` leaves a circle
+        // on every ⊥ class within a lateral face's span (Crosses inside, Grazes at the rims), and
+        // `emit_faces` labels every circle cell and arc outside the keep filter. So a present cell
+        // with no label at either end is a broken premise upstream, not a chart shape — and it is
+        // why no "which side of the wall" sign is needed to read a cell.
+        assert_eq!(
+            d2b.src0_present, 0,
+            "a cell with a face has no label at either end: cyl {k}"
+        );
+
+        // ── Neighbours with one chamber: where the cutover would have to merge. ──
+        let n_int = chart.z_lines.len().saturating_sub(1);
+        let idx_of = |i: usize| -> Vec<usize> {
+            (0..cells.len())
+                .filter(|&ci| cells[ci].interval == i)
+                .collect()
+        };
+        let emitted = |ci: usize| reads[ci].emit == Some(true);
+        let same_chamber = |a: usize, b: usize| reads[a].chamber == reads[b].chamber;
+        for i in 0..n_int {
+            let idx = idx_of(i);
+            let n = idx.len();
+            // θ-neighbours: sectors are in circular order, and two sectors make one pair.
+            if n >= 2 {
+                let pairs = if n == 2 { 1 } else { n };
+                for s in 0..pairs {
+                    let (a, b) = (idx[s], idx[(s + 1) % n]);
+                    if emitted(a) && emitted(b) && same_chamber(a, b) {
+                        d2b.theta_merge_pairs += 1;
+                    }
+                }
+            }
+            // A disk-ended interval whose emitted sectors do not close into one whole circle
+            // would need a ring with arcs on an *uncut* circle — no `Bound` spells that today.
+            let disk_ended = idx
+                .iter()
+                .any(|&ci| reads[ci].ends.iter().any(|e| matches!(e, End::Disk(_))));
+            if disk_ended && n >= 2 {
+                let em: Vec<usize> = idx.iter().copied().filter(|&ci| emitted(ci)).collect();
+                if let Some(&first) = em.first()
+                    && (em.len() != n || em.iter().any(|&ci| !same_chamber(ci, first)))
+                {
+                    d2b.partial_theta_in_disk_interval += 1;
+                }
+            }
+        }
+        // z-neighbours: the same sector (by ruling *names* — indices differ per interval) in
+        // consecutive intervals.
+        let sector_name = |ci: usize| -> Option<[Option<RulingName>; 2]> {
+            match cells[ci].walls {
+                None => Some([None, None]),
+                Some([x, y]) => Some([
+                    Some(chart.ruling_name(jd, k, def, x)?),
+                    Some(chart.ruling_name(jd, k, def, y)?),
+                ]),
+            }
+        };
+        for i in 1..n_int {
+            for &a in &idx_of(i - 1) {
+                for &b in &idx_of(i) {
+                    let same = match (sector_name(a), sector_name(b)) {
+                        (Some(p), Some(q)) => p == q,
+                        _ => false,
+                    };
+                    if same && emitted(a) && emitted(b) && same_chamber(a, b) {
+                        d2b.z_merge_pairs += 1;
+                    }
+                }
+            }
+        }
 
         // How many rulings live over each interval — `k = 1` opens the circle at one point and
         // makes **one** cell, and an odd `k` is the only way to reach that branch.
@@ -532,6 +1082,10 @@ pub(crate) fn census(
                 no_faces: true,
                 ..probe::Row::empty()
             });
+            // The reads stand on their own (they need no emitted face); only the comparison
+            // against today's emission is empty here, and the row says so.
+            d2b.no_faces = true;
+            probe::d2b::push(d2b);
             continue;
         };
         let mut claims = vec![0usize; cells.len()];
@@ -641,8 +1195,8 @@ pub(crate) fn census(
                     let Some(cell) = (|| {
                         let [a_lo, b_lo, _, a_hi] =
                             *<&[combinatorics::NodeId; 4]>::try_from(nodes.get(..4)?).ok()?;
-                        let (pa, _, ra) = combinatorics::branch_name(a_lo)?;
-                        let (pb, _, rb) = combinatorics::branch_name(b_lo)?;
+                        let (pa, _, _) = combinatorics::branch_name(a_lo)?;
+                        let (pb, _, _) = combinatorics::branch_name(b_lo)?;
                         let (ph, _, _) = combinatorics::branch_name(a_hi)?;
                         // The wall is the class `a_lo` and `a_hi` share; the rims are the others.
                         let wall = *pa.iter().find(|c| ph.contains(c))?;
@@ -652,7 +1206,8 @@ pub(crate) fn census(
                         let i = line_at(crate::bands::axis_param(jd, rim_lo, def).ok()?)?;
                         let j = line_at(crate::bands::axis_param(jd, rim_hi, def).ok()?)?;
                         let lo = i.min(j);
-                        let (na, nb) = ((wall, ra), (wall_b, rb));
+                        let na = (wall, ruling_side_of(jd, k, def, wall, a_lo)?);
+                        let nb = (wall_b, ruling_side_of(jd, k, def, wall_b, b_lo)?);
                         Some((lo, na, nb))
                     })() else {
                         unnamed += 1;
@@ -663,26 +1218,49 @@ pub(crate) fn census(
                     // one derivation of that name, so the join stays a single spelling.
                     let named = |c: &Cell| -> Option<[RulingName; 2]> {
                         let [x, y] = c.walls?;
-                        Some([chart.ruling_name(x)?, chart.ruling_name(y)?])
+                        Some([
+                            chart.ruling_name(jd, k, def, x)?,
+                            chart.ruling_name(jd, k, def, y)?,
+                        ])
                     };
-                    let exact = cells
-                        .iter()
-                        .position(|c| c.interval == i && named(c) == Some([na, nb]));
-                    let ci = match exact {
-                        Some(ci) => Some(ci),
-                        None => {
-                            let r = cells
+                    // ★★★★ **A panel claims every sector it covers, not one** (corrected in
+                    // D2b-0). A panel's arc runs between two *rim nodes*, but the chart's sectors
+                    // are cut by every ruling alive over the interval — including rulings of walls
+                    // whose face stops short of this rim and so leave no node on it. The corner
+                    // boss is the population: its long arc is one panel over **three** chart
+                    // sectors. D1b's join asked for the one cell whose two rulings *are* the
+                    // panel's, claimed it, and counted the other two as unclaimed gaps. The sweep
+                    // below claims from the sector leaving `na` round to the one arriving at `nb`.
+                    let sweep =
+                        |claims: &mut Vec<usize>, from: RulingName, to: RulingName| -> bool {
+                            let ring: Vec<usize> = (0..cells.len())
+                                .filter(|&ci| cells[ci].interval == i)
+                                .collect();
+                            let n = ring.len();
+                            let Some(start) = ring
                                 .iter()
-                                .position(|c| c.interval == i && named(c) == Some([nb, na]));
-                            if r.is_some() {
-                                reversed += 1;
+                                .position(|&ci| named(&cells[ci]).is_some_and(|w| w[0] == from))
+                            else {
+                                return false;
+                            };
+                            let mut hit = Vec::new();
+                            for step in 0..n {
+                                let ci = ring[(start + step) % n];
+                                hit.push(ci);
+                                if named(&cells[ci]).is_some_and(|w| w[1] == to) {
+                                    for ci in hit {
+                                        claims[ci] += 1;
+                                    }
+                                    return true;
+                                }
                             }
-                            r
-                        }
-                    };
-                    match ci {
-                        Some(ci) => claims[ci] += 1,
-                        None => unnamed += 1,
+                            false
+                        };
+                    if sweep(&mut claims, na, nb) {
+                    } else if sweep(&mut claims, nb, na) {
+                        reversed += 1;
+                    } else {
+                        unnamed += 1;
                     }
                 }
                 Bound::Circle { .. } => {}
@@ -739,6 +1317,21 @@ pub(crate) fn census(
             band_split_missed,
             band_split_harmless,
         });
+        // ── The headline (D2b-0): does the cell reader agree with today's roads, cell by cell? ──
+        //
+        // `claims[ci] == 1` is "an emitted band or panel names this cell"; `emit` is what the
+        // reader would emit. Every disagreement is a cell the cutover would change — a forecast
+        // the vertical answer (D2a) could not make without a third sign, and the horizontal one
+        // makes without any.
+        for (ci, r) in reads.iter().enumerate() {
+            if let Some(e) = r.emit
+                && e != (claims[ci] == 1)
+            {
+                d2b.emit_mismatch += 1;
+            }
+        }
+        d2b.band_over_rulings = band_over_rulings;
+        probe::d2b::push(d2b);
     }
 }
 
@@ -836,6 +1429,65 @@ pub(crate) mod probe {
         ROWS.lock()
             .expect("the probe's lock is never held across a panic")
             .push(r);
+    }
+
+    /// **The fourth rung's ledger (D2b-0)**: what the cell reader read, and how it compares to
+    /// what the hand-written roads emitted. One row per chart with cells, `no_faces` included —
+    /// the reads need no emitted face, only the comparison does.
+    ///
+    /// ★ Compared **within a row** (`cells`, `band_over_rulings` are copied in), never row-by-row
+    /// against another ledger: tests run in parallel and the ledgers interleave independently.
+    pub(crate) mod d2b {
+        use std::sync::Mutex;
+
+        #[derive(Clone, Copy, Debug, Default)]
+        pub(crate) struct Row {
+            pub(crate) cells: usize,
+            pub(crate) no_faces: bool,
+            /// Copied from the D1b row of the same chart, for the merge check below.
+            pub(crate) band_over_rulings: usize,
+            /// Rulings whose `end` had to be swapped alongside `z` — predicted 0.
+            pub(crate) end_swapped: usize,
+            /// Every cell's two ends, by what they said.
+            pub(crate) end_disk: usize,
+            pub(crate) end_exact: usize,
+            pub(crate) end_other: usize,
+            pub(crate) end_nocircle: usize,
+            /// Present cells with an `Other` end — read from their other end alone. The
+            /// population a θ-placement finer than [`Chart::arc_around`] would serve.
+            pub(crate) other_present: usize,
+            /// Cells whose two speaking ends disagreed — `chamber`'s two-end refusal, on the chart.
+            pub(crate) src2_disagree: usize,
+            /// Cells with a face and no speaking end. Asserted 0 at the record; here as a count
+            /// so the reporting test can say the assertion was live.
+            pub(crate) src0_present: usize,
+            pub(crate) exist_disagree: usize,
+            pub(crate) exist_conflict: usize,
+            /// Both-cut cells the trace says the face is not in — the panel road's dropped sectors.
+            pub(crate) exist_marks_false: usize,
+            /// Cells the reader would emit, cells it could not decide, and — the headline — cells
+            /// where it disagrees with what was emitted today.
+            pub(crate) emit: usize,
+            pub(crate) emit_unknown: usize,
+            pub(crate) emit_mismatch: usize,
+            /// D1b's 44, judged: lines inside a band whose label changes across them, and lines
+            /// inside a band with no circle at all.
+            pub(crate) split_flip: usize,
+            pub(crate) split_nocircle: usize,
+            /// Emitted neighbours with one chamber, across a ruling and across a z-line.
+            pub(crate) theta_merge_pairs: usize,
+            pub(crate) z_merge_pairs: usize,
+            /// Disk-ended intervals whose emitted sectors do not close into one whole circle.
+            pub(crate) partial_theta_in_disk_interval: usize,
+        }
+
+        pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+
+        pub(crate) fn push(r: Row) {
+            ROWS.lock()
+                .expect("the probe's lock is never held across a panic")
+                .push(r);
+        }
     }
 }
 
@@ -1044,6 +1696,168 @@ mod tests {
         assert!(
             sum(|r| r.band_split_harmless) > 0,
             "no band ever spanned a sector, so the three-way split saw nothing"
+        );
+    }
+
+    /// **The cells read their chamber off the horizontal lines, and the reader agrees with today's
+    /// roads cell by cell** (capability D, D2b-0).
+    ///
+    /// The absolute claims are asserted in `census`, where the facts are made: a present cell
+    /// always has a speaking end (`src0_present == 0`, the reason no wall-side sign is needed),
+    /// and the ends' bookkeeping is total. What this holds, universally over every recorded row
+    /// so no interleaving can break it, is the rest of the forecast:
+    ///
+    /// * `emit_mismatch == 0` — the headline: no cell where the reader and the emitted faces
+    ///   disagree. The cutover would change **no** face of today's corpus.
+    /// * `src2_disagree == 0` — a cell's two ends never contradict (the two-end agreement
+    ///   `bands::chamber` demands, on every cell).
+    /// * `exist_disagree == 0`, `exist_conflict == 0` — the trace and the span tell the same
+    ///   existence story wherever both speak.
+    /// * `split_flip == 0`, `split_nocircle == 0` — D1b's 44 extra lines are harmless: each has a
+    ///   circle and nothing changes across it.
+    /// * `partial_theta_in_disk_interval == 0` — a disk-ended interval's kept sectors always close
+    ///   into a whole circle, so the cutover can emit it as today's `Band` verbatim.
+    /// * `theta_merge_pairs >= band_over_rulings` — every band that spans a wall is, on the chart,
+    ///   emitted sectors with one chamber (the merge the cutover must do at the chart).
+    ///
+    /// And the counters are not vacuous: the fixtures below put every end kind but `Other` on the
+    /// ledger, the chained ones drop sectors for existence (**≥ 4**, the panel road's own count,
+    /// `tests::a_chained_cylinder_bounded_by_the_first_builds`), and both merge directions are
+    /// seen. `end_other` is **unmeasured** if it stays 0 — the θ-placement it would need is not
+    /// built, and a zero here is a population claim only once a fixture reaches it.
+    #[test]
+    fn the_cells_read_their_chamber_from_the_horizontal_lines() {
+        use super::probe::d2b::ROWS as D2B;
+        let snapshot = || -> Vec<super::probe::d2b::Row> {
+            D2B.lock()
+                .expect("the probe's lock is never held across a panic")
+                .clone()
+        };
+        let sum = |rows: &[super::probe::d2b::Row], f: fn(&super::probe::d2b::Row) -> usize| {
+            rows.iter().map(f).sum::<usize>()
+        };
+        let before = snapshot();
+        // A wall boss (exact arcs, θ- and z-merges), a corner boss and a boss on top (a line with
+        // no circle of this cylinder, cells outside the face), and the chained pairs (sectors
+        // dropped for existence).
+        let up = Vector3::from_array([0.0, 0.0, 1.0]);
+        for (base, h) in [
+            ([2.0, 0.0, -1.0], 4.0),
+            ([4.0, 4.0, -1.0], 4.0),
+            ([2.0, 2.0, 2.0], 1.0),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(Point3::from_array(base), up, 0.5, h);
+            m.rebuild_adjacency();
+            crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
+        }
+        let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
+        for second in [
+            ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut),
+            ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse),
+            ([6.0, 0.0, -1.0], 4.0, BoolKind::Fuse),
+            ([6.0, 0.0, -1.0], 4.0, BoolKind::Cut),
+        ] {
+            let (_, r) = crate::tests::chained(wall_boss, second);
+            r.expect("the chained pair builds");
+        }
+        let rows = snapshot();
+        assert!(
+            rows.len() > before.len(),
+            "a boolean recorded no cell reads"
+        );
+
+        for r in &rows {
+            assert_eq!(
+                r.emit_mismatch, 0,
+                "the reader disagrees with today's road: {r:?}"
+            );
+            assert_eq!(
+                r.emit_unknown, 0,
+                "a cell's chamber could not be read: {r:?}"
+            );
+            assert_eq!(r.src2_disagree, 0, "a cell's two ends disagree: {r:?}");
+            assert_eq!(
+                r.src0_present, 0,
+                "the record-site assertion was not live: {r:?}"
+            );
+            assert_eq!(
+                r.exist_disagree, 0,
+                "trace and span disagree on existence: {r:?}"
+            );
+            assert_eq!(
+                r.exist_conflict, 0,
+                "the trace refused an existence question: {r:?}"
+            );
+            assert_eq!(
+                r.split_flip, 0,
+                "a line inside a band changes the chamber: {r:?}"
+            );
+            assert_eq!(
+                r.split_nocircle, 0,
+                "a line inside a band has no circle: {r:?}"
+            );
+            assert_eq!(
+                r.end_swapped, 0,
+                "a ruling arrived with z descending: {r:?}"
+            );
+            assert_eq!(
+                r.partial_theta_in_disk_interval, 0,
+                "a disk-ended interval's sectors do not close into a circle: {r:?}"
+            );
+            assert_eq!(
+                r.end_disk + r.end_exact + r.end_other + r.end_nocircle,
+                2 * r.cells,
+                "two ends per cell: {r:?}"
+            );
+            assert!(r.emit <= r.cells, "more emitted cells than cells: {r:?}");
+            assert!(
+                r.other_present <= r.cells,
+                "more other-ended cells than cells: {r:?}"
+            );
+            assert!(
+                r.exist_marks_false <= r.cells,
+                "more dropped cells than cells: {r:?}"
+            );
+            if !r.no_faces {
+                assert!(
+                    r.theta_merge_pairs >= r.band_over_rulings,
+                    "a band over a wall is not same-chamber sectors on the chart: {r:?}"
+                );
+            }
+        }
+        // ★★★★ Non-vacuity — a zero above must mean "the population is empty", never "nothing
+        // was looked at". `end_other` is deliberately not in this list.
+        assert!(sum(&rows, |r| r.end_disk) > 0, "no disk end was ever read");
+        assert!(
+            sum(&rows, |r| r.end_exact) > 0,
+            "no exact arc end was ever read"
+        );
+        assert!(
+            sum(&rows, |r| r.end_nocircle) > 0,
+            "no line without a circle was ever seen"
+        );
+        assert!(
+            sum(&rows, |r| r.emit) > 0,
+            "the reader never emitted a cell"
+        );
+        assert!(
+            sum(&rows, |r| r.theta_merge_pairs) > 0,
+            "no θ-merge was ever seen"
+        );
+        assert!(
+            sum(&rows, |r| r.z_merge_pairs) > 0,
+            "no z-merge was ever seen"
+        );
+        // The chained pairs above drop exactly one sector per operation for existence (four),
+        // and other tests may add theirs in between — so what is held is the growth.
+        assert!(
+            sum(&rows, |r| r.exist_marks_false) >= sum(&before, |r| r.exist_marks_false) + 4,
+            "the chained pairs dropped fewer than four sectors for existence"
         );
     }
 

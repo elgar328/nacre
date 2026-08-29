@@ -3532,7 +3532,7 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
 }
 
 /// A plate, one cylinder op, then a second — the population the corpus did not have.
-fn chained(
+pub(crate) fn chained(
     first: ([f64; 3], f64, BoolKind),
     second: ([f64; 3], f64, BoolKind),
 ) -> (Model, Result<Vec<Handle<Solid>>, BoolError>) {

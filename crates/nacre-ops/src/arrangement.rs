@@ -7113,6 +7113,7 @@ pub(crate) fn boolean(
                 crate::cyl_chart::census(
                     &jd,
                     &cyls,
+                    kind,
                     &faces,
                     &curved,
                     &rows,

@@ -1370,3 +1370,70 @@ fn unordered(a: usize, b: usize) -> (usize, usize) {
 
 #[cfg(test)]
 pub mod tests;
+
+/// **Ledger totals, printed** — a measurement, not an assertion. Run last, single-threaded, so
+/// the sums cover the whole lib suite:
+/// `cargo test -p nacre-ops --lib -- --include-ignored --test-threads=1 --nocapture zzz_ledger`
+/// is *not* it (a filter runs only this); the whole-suite run is
+/// `cargo test -p nacre-ops --lib -- --include-ignored --test-threads=1 --nocapture --skip stress --skip spike --skip direction_families`.
+#[cfg(test)]
+mod zzz_ledger {
+    /// The D-ladder ledgers' column sums (`cyl_chart::probe`), for the dev-log.
+    #[test]
+    #[ignore = "measurement — prints the D-ladder ledger sums; run last, single-threaded"]
+    fn dump_the_d_ladder_ledgers() {
+        let d1 = crate::cyl_chart::probe::ROWS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .clone();
+        let d2b = crate::cyl_chart::probe::d2b::ROWS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .clone();
+        let s1 = |f: fn(&crate::cyl_chart::probe::Row) -> usize| d1.iter().map(f).sum::<usize>();
+        let s =
+            |f: fn(&crate::cyl_chart::probe::d2b::Row) -> usize| d2b.iter().map(f).sum::<usize>();
+        eprintln!(
+            "ledger D1b: charts {} refused {} no_faces {} cells {} bands_seen {} panels_seen {} \
+             band_over_rulings {} intervals_split {}",
+            d1.len(),
+            d1.iter().filter(|r| r.refused).count(),
+            d1.iter().filter(|r| r.no_faces).count(),
+            s1(|r| r.cells),
+            s1(|r| r.bands_seen),
+            s1(|r| r.panels_seen),
+            s1(|r| r.band_over_rulings),
+            s1(|r| r.intervals_split),
+        );
+        eprintln!(
+            "ledger D2b-0: rows {} no_faces {} cells {} end_swapped {} end_disk {} end_exact {} \
+             end_other {} end_nocircle {} other_present {} src2_disagree {} src0_present {} exist_disagree {} \
+             exist_conflict {} exist_marks_false {} emit {} emit_unknown {} emit_mismatch {} \
+             split_flip {} split_nocircle {} theta_merge_pairs {} z_merge_pairs {} \
+             partial_theta_in_disk_interval {} band_over_rulings {}",
+            d2b.len(),
+            d2b.iter().filter(|r| r.no_faces).count(),
+            s(|r| r.cells),
+            s(|r| r.end_swapped),
+            s(|r| r.end_disk),
+            s(|r| r.end_exact),
+            s(|r| r.end_other),
+            s(|r| r.end_nocircle),
+            s(|r| r.other_present),
+            s(|r| r.src2_disagree),
+            s(|r| r.src0_present),
+            s(|r| r.exist_disagree),
+            s(|r| r.exist_conflict),
+            s(|r| r.exist_marks_false),
+            s(|r| r.emit),
+            s(|r| r.emit_unknown),
+            s(|r| r.emit_mismatch),
+            s(|r| r.split_flip),
+            s(|r| r.split_nocircle),
+            s(|r| r.theta_merge_pairs),
+            s(|r| r.z_merge_pairs),
+            s(|r| r.partial_theta_in_disk_interval),
+            s(|r| r.band_over_rulings),
+        );
+    }
+}
