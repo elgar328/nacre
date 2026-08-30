@@ -15945,3 +15945,13 @@ reject_census · 스윕 129 · perf release(fold 80 407면 237.2116 · ring fins
 **E3-b 호 교차**(스캔의 `Arc` 팔 → `crossing_on_arc`, `theta_between` 재사용; 축 통과 벽 `CurvedRingWall` 27) · **E3-c 이탈**(`CurvedDeparture` 102 — 2-간선 캡의 현 클래스;
 재연산 17행) · 그룹핑 팔 캐리어화(`Ring::edges` shim, 가운데 슬랩 `BranchVertexUnnamed` 14) · `coord_key`에 원통 표(현 셀) · `read_cell`의 `End::Other`(corner) ·
 계단식 사슬(`flanks_differ` 런 → 교차 짝짓기) · `cycle_against_line` 한 걷기·두 조립기(정리) · D5 · `ChainContacts`.
+
+### ☑ 자체 점검 (사용자 요청) — 하나를 고쳤다
+- ★ **원장 잠금의 필터가 한 겹 모자랐다**: `a_holes_arcs_run_the_way_the_hole_lies`의 `GRAZE_SIDE` 읽기는 «원점 (2,0,−1) · 런 길이 2»로 걸렀는데, census의
+  **wall −y Cut**(같은 보스의 패널, 같은 벽·같은 구간)도 그 필터에 들어간다. 재 보니 패널의 `body_above=false`(ny=−1 → 면은 +y 쪽, 노치의 벽이니 **옳다**) vs 구멍의
+  `true` — 스위트가 초록이었던 것은 병렬 순서의 우연(잠금이 census보다 먼저 읽음). 원장에 사이클 종류를 싣고 잠금이 `Hole`만 읽게 고침. 스윕의 부호 자체는 두 경우 모두
+  정확했다(측정으로 확인 — 계획의 중단 조건 «패널에서 부호 반전»은 실현되지 않았다).
+- 확인한 것: `lateral_shape`의 range와 `t_range`의 두 유도 단언이 전 스위트에서 발화 0 · `assemble_spans`의 전부-None 경로(빈 답) · 스윕의 같은-station 이벤트 순서
+  (GrazeEnd → Toggle → GrazeStart, 림에 닿는 구멍이 그 순서를 요구) · `CARVED`/사슬 잠금의 필터는 span으로 Cut 패널을 걸러낸다([1,3]·[1,2] ≠ [0,4]·[0,2]) ·
+  `crossing_on_ruling`의 세 호출자 모두 `def`를 자기 자리에서 가짐. 남긴 것(인구 0): 두 사이클이 같은 station에 같은 이름으로 토글하면 상쇄된다 — 두 사이클이 한
+  점에서 만나는 모양은 게이트가 먼저 거절.

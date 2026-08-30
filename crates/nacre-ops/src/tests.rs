@@ -3857,7 +3857,14 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
         .lock()
         .expect("the probe's lock is never held across a panic")
         .iter()
-        .filter(|g| g.origin == [2.0, 0.0, -1.0] && g.span[1] - g.span[0] == 2.0)
+        // ★ Only the **hole's** runs: the same boss's Cut result (the census's) puts a *panel* on
+        // the same wall and span, and its face lies on the other side — measured (`body_above`
+        // false against the hole's true), which is exactly what a filter by origin alone let in.
+        .filter(|g| {
+            g.kind == combinatorics::CycleKind::Hole
+                && g.origin == [2.0, 0.0, -1.0]
+                && g.span[1] - g.span[0] == 2.0
+        })
         .map(|g| (g.body_above, g.ny))
         .collect();
     assert!(!sides.is_empty(), "the side probe never ran");

@@ -2625,12 +2625,14 @@ fn ruling_sweep(
     for &(t, c) in rims {
         stations.push((t, Event::Toggle, on_ruling(c)?));
     }
-    for (_, ring) in cycles {
+    for (kind, ring) in cycles {
         // A one-edge loop whose far face is a cylinder is two laterals meeting: M6b's pair.
         let Some(nr) = ring.poly() else {
             return Err(DeclineKind::CylFaceHole);
         };
         let n = nr.triples.len();
+        #[cfg(not(test))]
+        let _ = kind;
         // Which edges lie on this ruling: a straight edge (no arc sense) carried by `wc`, with both
         // ends on this side of the axis.
         let mut on = vec![false; n];
@@ -2696,6 +2698,7 @@ fn ruling_sweep(
                 .lock()
                 .expect("the probe's lock is never held across a panic")
                 .push(ruling_probe::GrazeSide {
+                    kind: *kind,
                     body_above,
                     ny: jd.planes[wc].plane.normal().as_array()[1],
                     origin: def.origin().map(|x| x.to_f64()),
@@ -2795,7 +2798,7 @@ fn ruling_sweep(
 /// `arrangement`'s `sides == [-1, 1]` lock already holds the hole-free one.
 #[cfg(test)]
 pub(crate) mod ruling_probe {
-    use super::SegKind;
+    use super::{SegKind, combinatorics};
     use std::sync::Mutex;
 
     /// One entry per ruling a cycle grazed, in emission order: the kinds of its pieces, beside
@@ -2844,6 +2847,9 @@ pub(crate) mod ruling_probe {
 
     #[derive(Clone, Copy, Debug)]
     pub(crate) struct GrazeSide {
+        /// The cycle whose run this is — a hole's face lies on one side of the wall, a panel's on
+        /// the other, so a reader must say which it is asking about.
+        pub kind: combinatorics::CycleKind,
         pub body_above: bool,
         /// The realized stored normal's `y` component of the wall class.
         pub ny: f64,
