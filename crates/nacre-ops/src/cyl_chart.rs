@@ -971,7 +971,7 @@ pub(crate) fn census(
         };
         // ★★★★★ **The chart's lines cover its own boundary rule, asserted where the fact is made.**
         // The rim half is shared with `chart_of` by construction; the load-bearing half is the
-        // rows' span ends — a *different spelling* of the axis parameter (the tracer's `cf.span`)
+        // rows' span ends — a *different spelling* of the axis parameter (the tracer's `t_range`)
         // than the classes' `axis_param` — so this says every lateral face's rim lands, with exact
         // `Rat` equality, on a ⊥ class the chart collected. Not a tautology: a rim on a class
         // `chart_of` skipped (no rational coefficients) or a span end the two spellings disagree on

@@ -95,12 +95,14 @@ pub(crate) struct CylRow {
 /// the contract generalizes rather than bends. With one face per class it *is* the old class-index
 /// order, which is why existing results do not move.
 ///
-/// ★★ **That disjointness holds because every lateral face is a full 2π band today.** M6-2b's
-/// θ-partial faces will put two faces at the *same* `t`, and the tie then falls to the stable
-/// sort's face order — still deterministic, but the sentence above stops being the reason. Naming
-/// the premise here so the day it expires is a thing a reader can check, not a surprise.
+/// ★★ **That disjointness holds because every lateral face that reaches here is a band** — two
+/// whole rims and holes: the tracer's two lateral roads decline a panel or a chain rim by name
+/// (`band_shape`, E2) before the arrangement runs, and this row is built after the traces. The
+/// day those shapes pass (E2-2), two faces can share a `t` and the tie falls to the stable sort's
+/// face order — still deterministic, but the sentence above stops being the reason. Naming the
+/// premise here so the day it expires is a thing a reader can check, not a surprise.
 ///
-/// A face whose rim span cannot be stated declines by name (`DeclineKind::CylSpan`) — the tracer
+/// A face whose ⊥ range cannot be stated declines by name (`DeclineKind::CylSpan`) — the tracer
 /// declines it for the same reason.
 pub(crate) fn cyl_rows(
     faces: &[FaceRow],
@@ -114,7 +116,7 @@ pub(crate) fn cyl_rows(
             continue;
         };
         n_class = n_class.max(k + 1);
-        let Some(span) = cf.span else {
+        let Some(span) = cf.t_range else {
             return Err(reject(RejectReason::TraceDeclined {
                 kind: crate::DeclineKind::CylSpan,
                 face: cf.face,

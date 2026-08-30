@@ -95,31 +95,24 @@ pub(crate) struct CylFaceInfo {
     /// or overflow); consumers decline by their own names, and the population gate refuses such a
     /// boolean before the arrangement runs. See [`world_cylinder_def`].
     pub(crate) def: Option<nacre_topo::CylinderDef>,
-    /// This lateral **face**'s span in the axis parameter `t` (of the raw `def.dir()`), read
-    /// off its two rim carrier planes: `t = −(n·o + d)/(n·m)` per rim plane, ordered. `None`
-    /// when a rim carrier has no narrow rational name — the transversal-circle producer then
-    /// declines the face rather than guessing.
+    /// This lateral **face**'s extent in the axis parameter `t` (of the raw `def.dir()`): the
+    /// least and greatest `t` of the ⊥ carriers on its outer loop — `t = −(n·o + d)/(n·m)` per cap
+    /// plane. `None` when a ⊥ carrier has no narrow rational name, or the loop has fewer than two
+    /// distinct ⊥ stations.
     ///
-    /// ★★ **It is the OUTER loop's span, and the outer loop is all it can be.** The seam edge that
-    /// joins the two rims is self-adjacent, so its corners are not three-surface points and no
-    /// name describes them; what this row can state about the face's extent is the two rims.
+    /// ★★★★★ **This is a range, not a promise about the loop's shape.** Whether the face is a
+    /// band — two whole rims and holes — is `combinatorics::FaceLoops::cycles`' question
+    /// (`band_shape`), and the two lateral roads ask it there before they read anything; a face
+    /// that is not a band (a panel, a chain rim) declines by name (`CylSpan`) until the chart can
+    /// hold it (E2-2). The range is what the population gate's rectangle reads
+    /// (`lateral_spans`) — a wider rectangle only refuses more — and what the chart's rows carry
+    /// once the tracer has cut every circle the face covers only partly.
     ///
-    /// ★★★★★ **`Some` promises that the outer loop is two whole rims (and the seam) — keep it.**
-    /// `arrangement`'s `circle_on_class` reads this span as "the whole circle is this face's at
-    /// every ⊥ class between the rims" and carves only the *holes* out of that answer. A face
-    /// whose outer loop carries a ruling — a panel ring, a band whose rim is a wrapping chain
-    /// (D4), a band with a hole spliced into its outer walk — covers only part of some circles,
-    /// so widening this to `[min t, max t]` would plant whole circles where the face is not and
-    /// turn today's honest `CylSpan` decline into a silent wrong answer. Such a face declines
-    /// here (`lateral_axis_span` finds a ∥ carrier or more than two `t`) until the tracer reads
-    /// the outer loop's angular extent itself.
-    ///
-    /// ★★★★★ **A face's *holes* are therefore not here** — a fuse can burn one into a band (a boss
-    /// straddling a plate's wall), and this field reports the band whole. They are named where
-    /// every other face's loops are named, in `combinatorics::trace_input`, and read by the one
-    /// ring walk (`combinatorics::ring_against_plane`). A row built by `collect_planes` could not
-    /// carry them anyway: it runs *before* the class table exists.
-    pub(crate) span: Option<[nacre_scalar::Rat; 2]>,
+    /// ★★ It used to be the two rims of an outer loop that had to be exactly two rims and the
+    /// seam (`lateral_axis_span`); a hole spliced into the outer walk, a panel or a chain rim had
+    /// none, and `circle_on_class` planted whole circles inside a `Some` — which is why the
+    /// widening waited for the cycles.
+    pub(crate) t_range: Option<[nacre_scalar::Rat; 2]>,
 }
 
 #[derive(Clone)]
@@ -223,7 +216,7 @@ pub(crate) fn collect_planes(
                         // the surface. The one reader is the restatement mirror below, whose
                         // question is exactly "which frames are in play here".
                         motion: motion.filter(|_| def.is_none()),
-                        span: def.as_ref().and_then(|d| lateral_axis_span(model, face, d)),
+                        t_range: def.as_ref().and_then(|d| lateral_t_range(model, face, d)),
                         def,
                     }));
                     continue;
@@ -705,19 +698,20 @@ pub(crate) fn axis_param_of_plane(
         .checked_mul(Rat::new(nm.denom(), nm.numer())?)
 }
 
-fn lateral_axis_span(
+fn lateral_t_range(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
 ) -> Option<[nacre_scalar::Rat; 2]> {
     use nacre_scalar::Rat;
+    let m = def.dir();
     let mut ts: Vec<Rat> = Vec::new();
     for he in &face.outer.half_edges {
         let e = model.edges.get(he.edge);
         let [a, b] = e.surfaces;
         let cap = if a == face.surface { b } else { a };
         if cap == face.surface {
-            continue; // the seam edge is self-adjacent — not a rim
+            continue; // a slit edge is self-adjacent — not a carrier
         }
         // ★ **The cap's world coefficients** — a plane's name is stated in the frame its own
         // motion names, and this parameter is read against a *world* axis. A cap the same
@@ -730,15 +724,18 @@ fn lateral_axis_span(
             Some(leaf) => nacre_scalar::Isometry::translation(model.chain_translation(leaf)?)
                 .plane_coeffs(coeffs)?,
         };
-        // `None` here is a rim carrier parallel to the axis (or overflow) — outside this
-        // vocabulary either way.
+        // A carrier parallel to the axis is a ruling's wall: it has no station and is not one.
+        // Only a ⊥ carrier — an arc's cap plane — speaks here; `None` past that is overflow.
+        if !nacre_scalar::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
+            continue;
+        }
         let t = axis_param_of_plane(&coeffs, def)?;
         if !ts.contains(&t) {
             ts.push(t);
         }
     }
-    let [a, b] = ts[..] else { return None };
-    Some(if a < b { [a, b] } else { [b, a] })
+    let (lo, hi) = (ts.iter().min()?, ts.iter().max()?);
+    (lo < hi).then_some([*lo, *hi])
 }
 
 /// All shells of a solid — outer first, then cavities. The boolean seam
@@ -1188,13 +1185,13 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
         if cf.surf != surf {
             continue;
         }
-        let Some(span) = cf.span else {
+        let Some(span) = cf.t_range else {
             return Vec::new();
         };
         // ★ The reader below asks "every vertex at or below `span[0]`, or every one at or above
         // `span[1]`", which is only the interval's outside while the pair is ordered — reversed,
         // that same phrasing reads "outside the *union* of two half-lines" and would clear a face
-        // sitting squarely in the band. `lateral_axis_span` orders it; this is where that is
+        // sitting squarely in the band. `lateral_t_range` orders it; this is where that is
         // relied on, so this is where it is said.
         debug_assert!(span[0] <= span[1], "a span is stated low end first");
         out.push(span);

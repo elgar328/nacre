@@ -1645,6 +1645,23 @@ pub(crate) fn face_vertex_triples(
     )
 }
 
+/// **Is this lateral a band — two whole rims and holes?** The shape the two tracer roads read
+/// today (E2): the rims' planes, unordered, and the hole rings. `None` for a chain rim or a panel,
+/// which the roads decline by name until the chart can hold them (E2-2).
+pub(crate) fn band_shape(cycles: &[(CycleKind, LoopRing)]) -> Option<([usize; 2], Vec<LoopRing>)> {
+    let mut rims: Vec<usize> = Vec::new();
+    let mut holes: Vec<LoopRing> = Vec::new();
+    for (kind, ring) in cycles {
+        match (kind, ring) {
+            (CycleKind::Rim, LoopRing::Rim { plane }) => rims.push(*plane),
+            (CycleKind::Hole, ring) => holes.push(ring.clone()),
+            _ => return None,
+        }
+    }
+    let [a, b] = rims[..] else { return None };
+    Some(([a, b], holes))
+}
+
 /// **A lateral face's boundary cycles** (E2-0): the outer loop cut at its slit edges — the
 /// self-adjacent `[lateral, lateral]` edges the assembly's outer walk climbs and descends the seam
 /// on — into the pieces that walk was made of, then the pieces read back as cycles: a piece that
@@ -1781,13 +1798,8 @@ pub(crate) struct NamedRing {
 #[derive(Clone, Debug)]
 pub(crate) enum LoopRing {
     Poly(NamedRing),
-    Circle {
-        cyl: usize,
-    },
-    Rim {
-        #[allow(dead_code)] // E2-0: the road that reads a rim arrives with E2
-        plane: usize,
-    },
+    Circle { cyl: usize },
+    Rim { plane: usize },
 }
 
 impl LoopRing {
@@ -1826,9 +1838,9 @@ pub(crate) enum CycleKind {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct FaceLoops {
     /// The outer loop, or `None` if [`face_vertex_triples`] declined — and always `None` for a
-    /// **lateral** face, whose outer loop is the two rims joined by a self-adjacent seam edge that
-    /// no triple names (`crate::planes::CylFaceInfo::span` states that loop instead). Its `holes`
-    /// beside it are named like any other face's.
+    /// **lateral** face, whose outer loop is rims joined by self-adjacent slit edges that no
+    /// triple names: `cycles` carries it cut into its rims and holes instead. Its `holes` beside
+    /// it are named like any other face's.
     pub outer: Option<LoopRing>,
     /// One entry per hole ring, or `None` if [`hole_rings`] declined for **any** of them — a hole
     /// that cannot be named is not "no hole".
@@ -1836,8 +1848,7 @@ pub(crate) struct FaceLoops {
     /// A **lateral** face's every boundary cycle ([`lateral_cycles`]): its rims, chains and
     /// panel, with the holes after them (the spliced ones recovered) — or `None` when the outer
     /// loop could not be cut into cycles or a cycle could not be named. `None` on a plane row.
-    /// ★ E2-0 names them; the roads that read them arrive with E2.
-    #[allow(dead_code)]
+    /// The two lateral roads read these ([`band_shape`]) and nothing else of a lateral's loops.
     pub cycles: Option<Vec<(CycleKind, LoopRing)>>,
 }
 
@@ -1894,11 +1905,11 @@ pub(crate) fn trace_input(
         for sh in crate::planes::solid_shell_handles(model, solid) {
             for &fh in &model.shells.get(sh).faces {
                 let fp = surf_ix[&fh];
-                // ★ A **lateral face's outer loop** is not named (M6-2a): it is the two rims joined
-                // by the chart's seam, the seam edge is self-adjacent, and no triple describes its
-                // corners — `CylFaceInfo::span` states that loop instead, and the tracer's cylinder
-                // arm reads the row for it. So `outer` stays `None` here; it is a skip, not a
-                // decline.
+                // ★ A **lateral face's outer loop** is not named as one loop: it is rims joined
+                // by the chart's seam, the slit edges are self-adjacent, and no triple describes
+                // their corners. `cycles` carries it cut at the slits into its rims and holes
+                // (E2), and the tracer's cylinder roads read those. So `outer` stays `None`
+                // here; it is a skip, not a decline.
                 //
                 // ★★★★★ **Its holes are named like every other face's.** A fuse can burn a hole
                 // into a band (a boss straddling a plate's wall), and that loop is an ordinary
@@ -2030,9 +2041,9 @@ fn loop_triples(
         // ★★★★★ **And the face itself may be the cylinder now.** A lateral face's *hole* is a loop
         // like any other — a rectangle of two arcs and two rulings in the chart — and its corners
         // are `plane ∩ plane ∩ cylinder`, the very shape [`branch_name_from_def`] restates. The
-        // only loop of a lateral face this road still cannot walk is its **outer** one, whose seam
-        // edge is self-adjacent (`other` gives back `p`) and whose corners are therefore not
-        // three-surface points; `CylFaceInfo::span` states that loop instead.
+        // only loop of a lateral face this road cannot walk *whole* is its **outer** one, whose
+        // slit edges are self-adjacent (`other` gives back `p`) and whose corners are therefore
+        // not three-surface points; `lateral_cycles` cuts it at the slits first.
         // ★★ **The corner is where half-edge `i` starts.** It used to be "the one vertex the two
         // edges share", which is the same vertex wherever that is unique — a loop's edge `i`
         // starts where edge `i − 1` ends (validate's `OpenLoop`) — and no vertex at all for a

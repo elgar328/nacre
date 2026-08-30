@@ -1536,9 +1536,13 @@ fn circle_on_class(
     if !nacre_scalar::parallel_rat(&n, &m) {
         return Ok(Vec::new());
     }
-    let Some(span) = cf.span else {
-        return Err(DeclineKind::CylSpan);
-    };
+    // ★★★★★ **The face's boundary as the tracer names it — its cycles — and nothing else.** A
+    // band's two rims and its holes come from the outer loop cut at its slits
+    // (`combinatorics::lateral_cycles`), so a hole the assembly spliced into the outer walk is
+    // a hole here like any other. A face that is not a band (a panel, a chain rim) declines by
+    // name: the chart cannot hold one yet, and the range alone would plant whole circles where
+    // the face covers part of one.
+    let (span, holes) = band_span(jd, cf, fl, def)?;
     let Some(t) = crate::planes::axis_param_of_plane(&coeffs, def) else {
         return Err(DeclineKind::CylSpan);
     };
@@ -1569,18 +1573,13 @@ fn circle_on_class(
         // span, so there is nothing for the walk below to find either.
         return Ok(Vec::new());
     };
-    // ★★★★★ **`None` here is not "no holes" — it is "I could not describe them", and letting it
-    // fall through would re-plant the very silence this arm removes.**
-    let Some(holes) = &fl.holes else {
-        return Err(DeclineKind::CylFaceHole);
-    };
     // ★★★★★ **The hole is read by the walk every other face's boundary is read by** — the face's
     // own loop, against this class, through [`combinatorics::ring_against_plane`]. It used to be an
     // interval derived from the loop's ⊥ carriers, which is exact for a chart rectangle and a
     // *premise* for anything else; the walk asks the ring instead and needs no premise about the
     // hole's shape.
     let mut carved: Vec<Carved> = Vec::new();
-    for h in holes {
+    for h in &holes {
         // A one-edge hole loop whose far face is a cylinder is two laterals meeting: M6b's pair,
         // not this road's. It has no ring to walk, so it declines rather than passing unread.
         let Some(nr) = h.poly() else {
@@ -1595,6 +1594,41 @@ fn circle_on_class(
         }]);
     }
     assemble_spans(jd, cyl, &cyls[cyl].def, &carved, outer)
+}
+
+/// **A band's span and holes, from its cycles** — what both lateral roads read of a lateral's
+/// loops (E2). The rims' stations are read from their planes' world coefficients, so this is a
+/// second derivation of `CylFaceInfo::t_range` (the model side's), and the two are held equal
+/// where they meet. `None` cycles (the outer loop could not be cut or named), a non-band shape,
+/// a rim with no exact station, or two rims at one station all decline by the one name.
+fn band_span(
+    jd: &Judge<'_, WorkingPlane>,
+    cf: &crate::planes::CylFaceInfo,
+    fl: &combinatorics::FaceLoops,
+    def: &nacre_topo::CylinderDef,
+) -> Result<([Rat; 2], Vec<combinatorics::LoopRing>), DeclineKind> {
+    let Some(cycles) = &fl.cycles else {
+        return Err(DeclineKind::CylSpan);
+    };
+    let Some((rims, holes)) = combinatorics::band_shape(cycles) else {
+        return Err(DeclineKind::CylSpan);
+    };
+    let station = |c: usize| -> Option<Rat> {
+        crate::planes::axis_param_of_plane(&combinatorics::class_coeffs_rat(jd, c)?, def)
+    };
+    let (Some(a), Some(b)) = (station(rims[0]), station(rims[1])) else {
+        return Err(DeclineKind::CylSpan);
+    };
+    if a == b {
+        return Err(DeclineKind::CylSpan);
+    }
+    let span = if a < b { [a, b] } else { [b, a] };
+    debug_assert_eq!(
+        Some(span),
+        cf.t_range,
+        "the rims' stations by name and the face's range by model disagree"
+    );
+    Ok((span, holes))
 }
 
 /// One angular extent of a lateral face's mark on a ⊥ plane class — see [`circle_on_class`].
@@ -2207,9 +2241,9 @@ fn rulings_on_class(
         Some(false) => return Ok(Vec::new()),
         None => return Err(DeclineKind::Ruling),
     }
-    let Some(span) = cf.span else {
-        return Err(DeclineKind::Ruling);
-    };
+    // The band's rims and holes from its cycles — the same reading the ⊥ road makes, so a face
+    // that is not a band declines by the same name here.
+    let (span, holes) = band_span(jd, cf, fl, def)?;
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
     // One rim end at a time: the ⊥ class holding the rim, and the two branch points the class
     // pair `{wc, rim}` cuts on the cylinder — each assigned to its ruling by side.
@@ -2249,19 +2283,13 @@ fn rulings_on_class(
     let kind = SegKind::Transversal {
         mat: cf.orient_sign,
     };
-    // ★★★★★ **`None` is not "no holes" — it is "I could not describe them".** The ⊥ road learned
-    // this the hard way (its first draft waved such a face past and re-planted the silence it was
-    // removing); the ∥ road refuses on the same terms rather than repeating it.
-    let Some(holes) = &fl.holes else {
-        return Err(DeclineKind::CylFaceHole);
-    };
     let _ = cyls;
     let mut out = Vec::with_capacity(2);
     for side in [1i8, -1i8] {
         // `end[0]` is the low rim: `axis_param_of_plane` ascends `+m`, the `MergedRuling`
         // convention.
         let outer = [node_at(0, side), node_at(1, side)];
-        let carved = ruling_grazes(jd, cf, def, &w, holes, wc, side)?;
+        let carved = ruling_grazes(jd, cf, def, &w, &holes, wc, side)?;
         if carved.is_empty() {
             out.push(RulingTrace {
                 cyl: k,

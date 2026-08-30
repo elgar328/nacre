@@ -9513,6 +9513,92 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
     }
 }
 
+/// ★★★★★ **A tool that reaches the recovered band — the lock the far cube cannot be.** The
+/// re-operation census cuts each result with a cube far outside it, so a wrong band would pass
+/// it unseen. Here the wall +x boss's result (a band whose notch met the seam and was spliced
+/// into the outer walk; E2 reads it back as a hole) is cut by a cuboid whose walls clear the
+/// boss's strip and whose ⊥ caps meet the lateral. Volumes derived, not copied: the plate is
+/// 4·4·2 = 32; the boss `r = 0.5` on the wall `x = 4` adds its outer half over its height 4
+/// (`½·π/4·4 = π/2`) and its inner half outside the plate, below and above (`½·π/4·2 = π/4`) —
+/// the inner half inside the plate is plate already — so the fuse is `32 + 3π/4`.
+///
+/// * A cuboid `[3, 6] × [−1, 5] × [2.5, 4]`: its lower cap crosses the band above the plate,
+///   where the circle is whole (the band's rims and holes are read from its cycles, and the
+///   notch below carves nothing here), and its upper cap is beyond the band. It removes the boss
+///   over `z ∈ [2.5, 3]`, both halves: `π/8`. (A lower cap **on** the plate's top, `z = 2`,
+///   refuses `NoClearRay` today — a coplanar-contact containment question, not this road's.)
+/// * A cuboid `[3, 6] × [−1, 5] × [0.5, 1.5]`: its caps run **through** the notch, where the
+///   band's circle is only the outer half (the Crossing arm) — and through the plate's wall face
+///   `x = 4`, whose ring carries the boss's **rulings**; the planar scan's crossing arm has no
+///   plane class beside a curved carrier and declines `CurvedRingWall` (E3's wall). Locked as
+///   the honest refusal it is today, so the day E3 opens it this test says so.
+#[test]
+fn a_spliced_band_is_cut_across_its_notch() {
+    let pi = std::f64::consts::PI;
+    let build = || {
+        let mut m = Model::new();
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array([4.0, 2.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            4.0,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
+        m.rebuild_adjacency();
+        let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        assert!(
+            (v0 - (32.0 + 3.0 * pi / 4.0)).abs() < 1e-9,
+            "the first op's volume: {v0}"
+        );
+        (m, out[0], v0)
+    };
+    // (a) caps across the band above the plate and beyond it.
+    {
+        let (mut m, r0, v0) = build();
+        let tool = m.add_cuboid(
+            Point3::from_array([3.0, -1.0, 2.5]),
+            Point3::from_array([6.0, 5.0, 4.0]),
+        );
+        m.rebuild_adjacency();
+        let r = boolean(&mut m, BoolKind::Cut, r0, tool)
+            .unwrap_or_else(|e| panic!("the band is cut above the plate: {e:?}"));
+        assert_eq!(r.len(), 1, "one solid");
+        m.rebuild_adjacency();
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{issues:?}");
+        let v = nacre_props::mass_props(&m, r[0]).expect("props").volume;
+        assert!(
+            (v - (v0 - pi / 8.0)).abs() < 1e-9,
+            "{v} vs {}",
+            v0 - pi / 8.0
+        );
+    }
+    // (b) caps through the notch: the plate's wall face, carrying the boss's rulings, is what
+    // the planar scan cannot cross yet — E3's wall, named.
+    {
+        let (mut m, r0, _) = build();
+        let tool = m.add_cuboid(
+            Point3::from_array([3.0, -1.0, 0.5]),
+            Point3::from_array([6.0, 5.0, 1.5]),
+        );
+        m.rebuild_adjacency();
+        let err = boolean(&mut m, BoolKind::Cut, r0, tool).expect_err("E3's wall stands");
+        let BoolError::Rejected {
+            reason: RejectReason::TraceDeclined { kind, .. },
+            ..
+        } = err
+        else {
+            panic!("a trace decline, not {err:?}");
+        };
+        assert_eq!(kind, DeclineKind::CurvedRingWall);
+    }
+}
+
 /// A result's lateral faces' boundary cycles by kind — (rims, chains, panels, holes) summed
 /// over the laterals; an unnamed cycle panics (the census locks that none is). The tracer's
 /// inputs are set up as `pinned_ends_ordered` does.
@@ -9585,6 +9671,11 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
 ///   lateral's outer walk; the half walls' laterals are chains); Ok 9 unchanged. After E1 no
 ///   row is `OuterRing`/`HoleRing`/`CylFaceHole`/`DegenerateFace`: every ring of a result face
 ///   has a name, and what remains is the lateral's outer loop (E2).
+/// * E2 ②b: the tracer reads a lateral's boundary cycles (`FaceLoops::cycles`) instead of its
+///   span — a band's rims and holes, the spliced hole recovered — and declines a panel or a
+///   chain rim by name until the chart can hold them: the five Fuse rows whose hole met the seam
+///   (wall +y/−x/+x, corner, offmid) become **Ok**; `CylSpan` 29 → 24 (every Cut/Common row is a
+///   panel, every half row a chain or a panel); Ok 9 → 14.
 ///
 /// ★ The probe beside it counts the loops carrying an `OnSeam` joint at any vertex — outer loops
 /// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
@@ -9651,7 +9742,11 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             "wall +y",
             [2.0, 4.0, -1.0],
             4.0,
-            [Declined(DeclineKind::CylSpan); 3],
+            [
+                Ok,
+                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CylSpan),
+            ],
             [RIMS_HOLE, PANEL, PANEL],
         ),
         (
@@ -9659,7 +9754,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [0.0, 2.0, -1.0],
             4.0,
             [
-                Declined(DeclineKind::CylSpan),
+                Ok,
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
@@ -9670,7 +9765,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [4.0, 2.0, -1.0],
             4.0,
             [
-                Declined(DeclineKind::CylSpan),
+                Ok,
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
@@ -9680,7 +9775,11 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             "corner",
             [4.0, 4.0, -1.0],
             4.0,
-            [Declined(DeclineKind::CylSpan); 3],
+            [
+                Ok,
+                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CylSpan),
+            ],
             [RIMS_HOLE, PANEL, PANEL],
         ),
         (
@@ -9695,7 +9794,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [4.0, 1.0, -1.0],
             5.0,
             [
-                Declined(DeclineKind::CylSpan),
+                Ok,
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
@@ -9844,13 +9943,13 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             .filter(|r| p(r))
             .count()
     };
-    assert_eq!(count(|r| *r == Ok), 9, "{table:?}");
+    assert_eq!(count(|r| *r == Ok), 14, "{table:?}");
     assert_eq!(
         count(|r| *r == Rejected(RejectReason::DegenerateFace)),
         0,
         "a circle-bounded face is never degenerate"
     );
-    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 29);
+    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 24);
     assert_eq!(
         count(|r| *r == Declined(DeclineKind::OuterRing)),
         0,
