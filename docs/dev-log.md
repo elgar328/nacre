@@ -15955,3 +15955,83 @@ reject_census · 스윕 129 · perf release(fold 80 407면 237.2116 · ring fins
   (GrazeEnd → Toggle → GrazeStart, 림에 닿는 구멍이 그 순서를 요구) · `CARVED`/사슬 잠금의 필터는 span으로 Cut 패널을 걸러낸다([1,3]·[1,2] ≠ [0,4]·[0,2]) ·
   `crossing_on_ruling`의 세 호출자 모두 `def`를 자기 자리에서 가짐. 남긴 것(인구 0): 두 사이클이 같은 station에 같은 이름으로 토글하면 상쇄된다 — 두 사이클이 한
   점에서 만나는 모양은 게이트가 먼저 거절.
+
+---
+
+## 재연산 사다리 E, 셋째 계단의 나머지 — E3-b/c: 호가 클래스의 선을 떠나고 가로지른다
+
+커밋: `83b920e`(① 걷기가 이탈 쪽을 안다) · `ed00a38`(②③ 스캔의 호 교차 · 현의 overlay 합류 · 현 셀의 원통 표 · 원 구멍의 현과 게이트 · 결과 전체 판정) · 문서.
+
+### 하나의 모양, 세 반쪽 (조사, 정확)
+재연산 census의 `CurvedDeparture` 17행·가로지르는 85셀·raise 102는 픽스처마다 **2노드 반원판 캡 하나**(호 + 현)가 **자기 현의 클래스**(판의 벽, 축 통과)에서 «호가 어느
+쪽으로 떠나는가»를 걷기(`ring_against_plane`)가 못 답한 것이었다(모든 클래스 트레이스 탐침: half wall Fuse 면 7 @ y=0 등, 다른 클래스는 전부 통과). 축 통과 **도구** 벽에서는 판의
+위/아래 면(물린 호)이 호에서 **교차**해 스캔이 `CurvedRingWall`(10셀). 그 뒤엔 현만으로 둘러싸인 셀의 `coord_key`가 링 안에서 원통을 못 찾는 `BranchVertexUnnamed`(8셀).
+
+### ① 걷기가 이탈 쪽을 안다 (E3-c)
+- **유도**(좌표 없이): 시작 노드 a에서 CCW 접선 `t = m̂×(a−c)`; `(a−o)·(m×n_q) = −n_q·t`(축 방향 성분은 m에 대해 사라짐) ⇒ **sign(n_q·t_ccw) = −ruling_side(a)** — 옆면의 점이 어느
+  룰링에 있는지 말하던 바로 그 술어. 이탈 쪽 = ν ? −rs : +rs, 그 뒤 `side_of`와 같은 canonical→outward 다리(`outward_fix`, 두 함수가 한 철자). 모든 평면에 성립(축 통과면 현이 지름).
+  기존 `arc_side`는 «선에 대한 호의 회전»(감김 걷기, 저장 프레임 2D) — 다른 물음, doc에 관계 명시.
+- **걷기**: `on_meet: Fn(usize) -> Option<EdgeMeet { On, Departs(σ) }>`; 떠나는 간선은 **σ 쪽의 가상 노드**로 부호열에 끼워 넣는다 — 그러면 걷기의 두 규칙(이웃 부호 변화 = 교차,
+  0의 최대 런 = 이웃이 flank인 구간)이 그대로 적용된다: 런은 이탈에서 잘리고 조각의 flank는 옆의 이탈, 반원판(모든 노드가 선 위)은 자기 호가 양쪽 flank인 런. `CurvedDeparture`
+  변종·`DeclineKind`·`RejectReason` **삭제**(`Unnameable`이 구조적 뒷문 — 접선·표 없음). `Feature::Run.flank`는 항상 있으므로 `i8`. 호출자 넷: 스캔은 `Wall::Arc{cyl, ccw}`에서 σ,
+  `cycle_on_class`는 `On`(원 위의 호), `every_ray`/`segment_meets_face`는 `cyls=&[]`라 호에 `None`(오늘과 같은 `BranchVertexUnnamed`).
+- **스캔에 새 어휘 없음**(탐색 보고가 미리 확인): 런 끝의 branch 노드는 `third_on_l`의 첫 문장이 `EndPin::Cylinder`로 짓고, `run_body_above`는 진행 방향 + `orient_sign`에서(σ는 점유가
+  아니라 패리티에만), 정렬·`Split`·`merge_coincident`·솔기 표 민팅 전부 핀 무관. seated 벽 면의 현과 캡의 Graze 런은 같은 끝·같은 벽이라 한 세그먼트 — `Graze > Seated`가 그 자리의 설계.
+- **실측 = 예측(검토가 정정한 것 포함)**: 재연산 census **17행 중 13행 Ok**(half Fuse 4 · 벽/offmid Common 5 · half Common 4 — 사슬·반원판의 재연산이 조립까지 간다), half **Cut** 4행 →
+  `CylinderGateUndecided`(차트의 방출기가 못 읽는 셀 — `End::Other`, E2-2의 남은 항목); 오늘의 Ok 21행 **무변** ⇒ **Ok 21 → 34**, `CurvedDeparture` 17 → 0(이름 자체가 없음). 가로지르는
+  census: half Fuse 4행은 예측표와 **완전 일치**(위/아래/벽 슬랩 Ok(1)+정확 부피, 가운데 그룹핑 shim, 축 통과 `CurvedRingWall`); Common 행 × 슬랩 → **`NoClearRay`**(청소 패스의 구멍
+  중첩 `ring_in_ring`이 평면 전용 광선 — E3가 `cell_in_cell`에 연 혼합 팔의 다른 호출자, 그룹핑 shim의 이웃) · half Cut × 슬랩 → `CylinderGateUndecided`. Ok 69 → 81, `CurvedDeparture` 85 → 0.
+  프로덕션 census 비트 동일(첫 연산의 캡은 온전한 원판; split-run 30조각은 σ가 옳으면 오늘과 같은 false/false).
+- **잠금**: 걷기 단위 잠금 `the_walk_cuts_a_run_at_a_departure`(단위 정육면체의 6노드 링, 2–3 사이 `Departs(σ)` — 두 조각이 «σ가 반대쪽일 때만 교차», σ 반전이 둘을 맞바꿈; On이면 len-4 런
+  하나). 계획의 (ii) 원장 잠금은 뺐다 — census의 half Fuse 행이 **부피까지** 잠근다.
+- **부정 대조**(역치환·md5): σ 반전 → 벽 보스 Fuse 재연산 행 `LabelConflict`(유도대로 — 판 윗면의 len-4 런 두 조각이 true/true로 뒤집혀 유령 Transversal), Cut 행 `BranchVertexUnnamed`,
+  half Fuse `LabelConflict` — 계획의 예측 그대로. 2노드 링에선 σ가 점유에 안 보인다(`run_body_above`가 진행 방향에서) — 대조는 split-run 인구가 맡았다.
+
+### ② 스캔이 호 위의 교차를 이름 짓는다 (E3-b)
+- `crossing_on_arc`(`crossing_on_ruling` 옆): `{wc, fc}`의 두 근 중 CCW 호(ν?[a,b]:[b,a]) 안에 **엄격히** 있는 것(`theta_between`, E2-2의 순서 술어 재사용) — 정확히 하나
+  아니면 `CurvedRingWall`. 스캔의 `Wall::Arc{cyl, ccw}` 팔이 `Node{pin: Cylinder, flip: true}`를 민다. 이름은 옆면 스윕의 station과 같은 정규 이름이라 `merge_coincident`가 접는다.
+  `crossing_probe`에 ruling/arc 종류를 실어 호 교차의 실현점도 f64로 검사(side 검사는 룰링만).
+- **현이 overlay에 합류한다**: `chords_to_segs`가 `split_at_crossings` **앞**으로 — 이전 위치의 doc 스스로 «a fact about the code, not a constraint … unmeasured»였고, 축 통과
+  **도구** 벽의 관통 세그먼트가 캡의 현을 못 잘라 비평면 세분 → `RingOrientation`(실측). `ClassEdges::of`의 `chords` 파라미터 삭제(합류 뒤 별도 주입 불필요).
+- **현의 sense는 canonical 근에서**: `chord_on_class`의 `end`는 SOLVE의 Lo/Hi인데 정규화가 wc>fc 쌍에서 뒤집는다 — 첫 인구(재연산 도구 클래스 번호 > 캡 클래스)가 «end[0]→end[1] ∥
+  +d_can» 가정을 반증(`RingOrientation`, shoelace로 손 검산). 고침: `end[0]` 이름의 canonical root로 순서를 읽는다(`ordered = (end[0] is Lo)`).
+- **부정 대조**(역치환·md5): 다른 근 선택(`!theta_between`) → 가로지르는 census 빨강, 복원 초록.
+
+### ③ 현 셀의 원통은 표에서, 원 구멍의 현은 게이트가 답한 곳에만
+- `coord_key`·`point_in_mixed_ring`의 `def_of`가 «링 자신의 호/룰링 캐리어»에서 원통을 찾던 것 → **클래스 표 `cyls[cyl].def`**(이름이 원통을 말한다). «branch 노드는 호의
+  끝점이므로 링에 호가 있다»는 전제를 **현**(평면 캐리어, branch 끝)이 반증 — `nest_cells`/`cell_in_cell`/`circle_center_in_ring`/청소 패스 호출자까지 `cyls` 배선.
+- **원 구멍의 현 flip 노드는 게이트 뒤에서만**: `LoopRing::Circle` 구멍 팔이 `class_through_axis(true)`에서 두 근을 flip 노드로 민다 — 단 **게이트의 `crossings` 기록에 실린
+  쌍에만**(룰링 도로의 첫 관문과 같은 한 규칙). ★ 첫 철자는 게이트 없이 심었다가 d=0 보스(벽 평면이 보어의 축을 품음)에서 반증됐다: 게이트가 clearance를 증명한 쌍은 룰링이
+  (옳게) 침묵하는데 노드만 심으니 스퍼가 왕복 → `loop_winding`의 `DoublesBack`(`StraightAngle`) — 그 테스트의 자기 doc이 이미 답을 들고 있었다(«the rulings road stays silent —
+  its trigger is the gate's carried crossings record»). 노드가 서는 조건과 룰링이 서는 조건이 이제 **같은 기록**이다.
+
+### rul flush — 기권이 하중을 받치고 있었다, 그리고 결과 전체 판정
+- ③이 열리자 `rul flush`(양쪽 판 평면에 캡이 flush인 걸침 보스)가 조립까지 갔다: Cut·Common은 **깨끗하게 빌드**, Fuse는 두 캡 현이 남았다 — 반원판 2-곤의 현과 호가 병합의
+  노드쌍 키에서 충돌해 `merge_component`가 기권(`Ok(None)`), 방출된 쌍이 stated **평면-자기 간선**(validate의 producer bug 철자, raise 0).
+- **병합 키 확장을 지었다가 철회했다**: 키를 (방향쌍, 벽)으로, 내부 판정을 «반대쌍+뒤집힌 벽»(`Wall::reversed`)으로 — 탐침으로 **병합 자체는 옳았다**(진짜 솔기만 지워지고 온전한
+  사이클이 짜임). 그러나 병합된 혼합 링이 이름-도로(`Ring::edges`의 legacy 평면 독자 — 코드가 «carrier-ization is the grouping-arm cell's own item»이라고 적어 둔 그 자리)로 흘러
+  **초록 3 인구가 BVU로 퇴행**(spliced band Cut · wall×wall-slab Fuse census 3셀 · chained contact의 거절 이름). «오늘 초록 무변» 예측 반증 ⇒ 역치환 A/B로 갈라 철회.
+  **기권은 그 도로가 읽을 수 있는 모양을 지키는 하중벽이었다** — 확장은 그룹핑 팔 캐리어화 칸의 입구로 기록.
+- 이 칸의 정직한 닫음은 **결과 전체 판정**: `check_result_topology`(malformed solid 불반환의 그 자리)에 «간선의 stated 표면 쌍이 한 평면 둘이면 `CoplanarMerge` + 현 모서리
+  증인» — validate의 명제 **그대로, 더 넓지 않게**(★ 두 번 좁혔다: 슬릿(한 면이 두 번 걷는 합법 철자)과 호로 갈라진 동일평면 쌍(오늘 설계상 방출)이 첫 두 철자에 걸렸다).
+  부정 대조: 가드 제거 → 코퍼스 행 빨강(Fuse가 validate-red 모델을 조용히 방출), 복원 초록·md5 동일.
+- 코퍼스 `rul flush`: `[Err(UnorderedEdges); 3]` → **`[Err(CoplanarMerge), Ok(1), Ok(1)]`**.
+
+### ★ 실수·반증 (이 칸)
+- **«오늘 초록 무변» 예측이 병합 키 확장에서 반증** — 기권(`Ok(None)`)이 이름-도로가 읽을 수 있는 모양을 지키는 하중벽이었다. 역치환 A/B(테스트 4개)로 갈라 철회했다.
+- **구멍 flip 노드의 첫 철자가 게이트를 안 읽었다** — d=0 보스의 자기 doc(«룰링 도로는 crossings 기록이 비면 침묵»)이 이미 답이었다. 기록을 먼저 읽어라의 재발.
+- **결과 전체 가드를 두 번 좁혔다** — 슬릿(한 면이 두 번 걷는 합법 철자), 호로 갈라진 동일평면 쌍(오늘 설계상 방출)이 걸렸다. validate의 명제 **그대로**(stated 쌍)가 옳은 폭.
+- **캡처된 테스트 출력의 귀속 오판** — `--nocapture` 없는 탐침 출력은 실패 덤프에만 나와 앞 테스트 것으로 읽었다. 탐침 실행은 `--nocapture`+`--test-threads 1`로.
+- clippy `too_many_arguments` 3곳을 게이트가 잡았다(관례: allow).
+
+### 관문
+전량 초록: fmt/clippy 0(★ `too_many_arguments` 3곳을 게이트가 잡음 — 관례대로 allow) · workspace **1175** · nodef · census 두 프로파일 동일(269행) · reject_census ·
+스윕 129 · perf release(fold 80 407면 237.2116 · ring fins 1.61 s · hub 1.03 s · small 541.6 µs — 같은 대역) · kit 72 · reject-trace: `curved-departure`·`curved-ring-wall`
+**소멸**, `no_clear_ray` 60+2 · `cylinder_gate_undecided` 70+5 · `branch_vertex_unnamed` :853 **18**(그룹핑 shim — 가로지르는 census의 가운데 슬랩 인구가 자람) ·
+`self_touching_result` 9 등. **HEAD census diff = 정확히 `rul flush` 3행**(worktree 기준선): Fuse `UnorderedEdges` → `CoplanarMerge` + 증인 `(40, 25, 0)`(현의 모서리),
+Cut/Common 거절 → **빌드**(digest 신규).
+
+### 다음
+그룹핑 팔 캐리어화(`Ring::edges`의 legacy 이름-도로 — 이번에 철회한 병합 키 확장(벽을 키에, `Wall::reversed`)이 그 칸의 입구; BVU 18) · `read_cell`의 `End::Other`
+(CGU 75) · 청소 패스의 평면 전용 광선(`NoClearRay` 62) · 계단식 사슬(`flanks_differ` 런 → 교차 짝짓기) · O3(호의 이중 교차 — 게이트 밖) · `cycle_against_line` 정리 ·
+D5 · `ChainContacts`.
