@@ -1843,7 +1843,8 @@ pub(crate) struct FaceLoops {
     /// it are named like any other face's.
     pub outer: Option<LoopRing>,
     /// One entry per hole ring, or `None` if [`hole_rings`] declined for **any** of them — a hole
-    /// that cannot be named is not "no hole".
+    /// that cannot be named is not "no hole". Not filled for a **lateral** face (always `None`
+    /// there): its holes are among its `cycles`, and the lateral roads read only those.
     pub holes: Option<Vec<LoopRing>>,
     /// A **lateral** face's every boundary cycle ([`lateral_cycles`]): its rims, chains and
     /// panel, with the holes after them (the spliced ones recovered) — or `None` when the outer
@@ -1919,9 +1920,11 @@ pub(crate) fn trace_input(
                 // on the same road as everything else: one walk ([`ring_against_plane`]), not a
                 // second description of the same loop.
                 let loops = if matches!(plane_ix[fp], ClassIx::Cyl(_)) {
+                    // A lateral's holes are among its cycles; naming them twice would ring
+                    // every reject twice and read the same loop by two spellings.
                     FaceLoops {
                         outer: None,
-                        holes: hole_rings(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
+                        holes: None,
                         cycles: lateral_cycles(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
                     }
                 } else {

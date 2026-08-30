@@ -15800,4 +15800,14 @@ Run 팔이 ν = `arc_ccw[edge]`를 읽는다: 재료는 `σ·ν·m̂` 쪽 ⇒ `b
 **E2-2 사슬·패널**(census `CylSpan` 24): `band_shape` 게이트 삭제 · `assemble_spans`의 `outer: Option`(극단 클래스에서 부재, run만 말함) · 룰링
 t-스윕(룰링 side마다 station = 룰링의 θ를 품는 각 사이클의 호 — `circular_order`로 {a, b, `NodeId::branch(wc, 호의 평면, k, root)`}; side = σ·ν) +
 오늘의 `ruling_grazes` · `read_cell`의 `End::Other`(벽 없는 잘린 끝) · 반높이 잠금. **E3** `CurvedRingWall`(곡선 간선을 든 평면 면의 교차 팔 — 노치
-안을 가르는 잠금이 이것에 막혀 있다)·`CurvedDeparture`(2-간선 캡의 현 클래스). 정리: `rim_class_at`(림 평면을 아는데 다시 찾음). · D5 · `ChainContacts`.
+안을 가르는 잠금이 이것에 막혀 있다)·`CurvedDeparture`(2-간선 캡의 현 클래스). · D5 · `ChainContacts`.
+
+### ☑ 자체 점검 (사용자 요청) — 셋을 고쳤다
+- ★ **원통 행에서 안쪽 루프를 두 번 이름 짓고 있었다** — `trace_input`이 `hole_rings`와 `lateral_cycles`를 둘 다 돌렸고 옆면 도로는 `cycles`만
+  읽는다: 낭비이자 거절 raise 중복. 원통 행은 `holes: None`(해당 없음 — doc에 명시).
+- ★ `rulings_on_class`가 림 평면을 이미 알면서 `rim_class_at`으로 다시 찾았다 — `band_span`이 `BandSpan { span, rims, holes }`(림 평면을 station
+  순서로)를 돌려주고 `rim_class_at`을 지웠다(②b가 «정리 항목»이라 적었던 것을 바로 함).
+- `CylFaceHole` doc의 «outer span» 문장을 «사이클»로.
+- 확인한 것: 슬릿 판별(`inc` pair `[p,p]` — 자기인접 간선은 외곽 루프에 두 번 나타나 pidx가 둘 다 `p`) · 조각 짝짓기의 유일성 · `band_span`의
+  두 유도 단언이 스윕에서 발화 0 · 관문 수(1171/129/72)와 로그 일치 · reject-trace의 `ruling` 0은 «룰링 도로가 안 돈다»가 아니라 «띠 게이트가
+  먼저 `CylSpan`으로 이름 짓는다»는 뜻(위에 그렇게 적음).

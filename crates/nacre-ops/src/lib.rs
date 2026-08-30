@@ -1106,7 +1106,7 @@ pub enum DeclineKind {
     /// ring walk could not decide a node's side.
     ///
     /// ★★★★★ **The name exists because the alternative was being silently wrong.** The face table
-    /// describes a lateral by its **outer** span, so the trace used to answer "the class cuts a full
+    /// described a lateral by its **outer** span (by its cycles since E2), so the trace used to answer "the class cuts a full
     /// circle" — false for the angles inside the hole. That falsehood did not fail here: it flowed
     /// on, and two stages later `label_cells` found the flip relation broken and said
     /// [`RejectReason::LabelConflict`] — a symptom, not the cause. The refusal belongs where the

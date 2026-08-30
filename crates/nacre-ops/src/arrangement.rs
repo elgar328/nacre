@@ -1542,7 +1542,7 @@ fn circle_on_class(
     // a hole here like any other. A face that is not a band (a panel, a chain rim) declines by
     // name: the chart cannot hold one yet, and the range alone would plant whole circles where
     // the face covers part of one.
-    let (span, holes) = band_span(jd, cf, fl, def)?;
+    let BandSpan { span, holes, .. } = band_span(jd, cf, fl, def)?;
     let Some(t) = crate::planes::axis_param_of_plane(&coeffs, def) else {
         return Err(DeclineKind::CylSpan);
     };
@@ -1606,7 +1606,7 @@ fn band_span(
     cf: &crate::planes::CylFaceInfo,
     fl: &combinatorics::FaceLoops,
     def: &nacre_topo::CylinderDef,
-) -> Result<([Rat; 2], Vec<combinatorics::LoopRing>), DeclineKind> {
+) -> Result<BandSpan, DeclineKind> {
     let Some(cycles) = &fl.cycles else {
         return Err(DeclineKind::CylSpan);
     };
@@ -1622,13 +1622,25 @@ fn band_span(
     if a == b {
         return Err(DeclineKind::CylSpan);
     }
-    let span = if a < b { [a, b] } else { [b, a] };
+    let (span, rims) = if a < b {
+        ([a, b], rims)
+    } else {
+        ([b, a], [rims[1], rims[0]])
+    };
     debug_assert_eq!(
         Some(span),
         cf.t_range,
         "the rims' stations by name and the face's range by model disagree"
     );
-    Ok((span, holes))
+    Ok(BandSpan { span, rims, holes })
+}
+
+/// A band as its cycles state it: the rims' stations `[lo, hi]`, their plane classes in that
+/// order, and its hole rings.
+struct BandSpan {
+    span: [Rat; 2],
+    rims: [usize; 2],
+    holes: Vec<combinatorics::LoopRing>,
 }
 
 /// One angular extent of a lateral face's mark on a ⊥ plane class — see [`circle_on_class`].
@@ -2174,28 +2186,6 @@ fn class_through_axis(w: &[Rat; 4], def: &nacre_topo::CylinderDef) -> Option<boo
     Some(residual == Rat::from_int(0))
 }
 
-/// The plane class carrying this cylinder's rim at axis parameter `t`: ⊥ to the axis with the
-/// matching parameter. `None` when no class holds that rim — a population this road declines
-/// rather than serves (an axis-aligned solid's rims always adjoin ⊥ faces, whose classes exist).
-fn rim_class_at(
-    jd: &Judge<'_, WorkingPlane>,
-    def: &nacre_topo::CylinderDef,
-    t: &Rat,
-) -> Option<usize> {
-    let m = def.dir();
-    jd.planes.iter().position(|wp| {
-        // ★ The world description, like every other reader that meets a cylinder's `def` — this
-        // one read `base_rat` unfiltered, which was a pre-motion row compared against a world
-        // axis the day a moved class could reach it.
-        let Some(coeffs) = wp.world_rat else {
-            return false;
-        };
-        let n = [coeffs[0], coeffs[1], coeffs[2]];
-        nacre_scalar::parallel_rat(&n, &m)
-            && crate::planes::axis_param_of_plane(&coeffs, def).as_ref() == Some(t)
-    })
-}
-
 /// **What a lateral face leaves on a through-axis class** — the ∥ sibling of [`circle_on_class`],
 /// and like it, an answer **per extent** rather than one for the whole ruling.
 ///
@@ -2243,15 +2233,13 @@ fn rulings_on_class(
     }
     // The band's rims and holes from its cycles — the same reading the ⊥ road makes, so a face
     // that is not a band declines by the same name here.
-    let (span, holes) = band_span(jd, cf, fl, def)?;
+    let BandSpan { span, rims, holes } = band_span(jd, cf, fl, def)?;
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
-    // One rim end at a time: the ⊥ class holding the rim, and the two branch points the class
-    // pair `{wc, rim}` cuts on the cylinder — each assigned to its ruling by side.
+    // One rim end at a time: the ⊥ class holding the rim — the rim cycle's own plane, no search —
+    // and the two branch points the class pair `{wc, rim}` cuts on the cylinder, each assigned to
+    // its ruling by side.
     let mut ends: Vec<[(i8, NodeId); 2]> = Vec::with_capacity(2);
-    for t in [&span[0], &span[1]] {
-        let Some(rc) = rim_class_at(jd, def, t) else {
-            return Err(DeclineKind::Ruling);
-        };
+    for rc in rims {
         let Some(v) = combinatorics::class_coeffs_rat(jd, rc) else {
             return Err(DeclineKind::Ruling);
         };
