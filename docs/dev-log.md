@@ -15736,3 +15736,68 @@ census**를 세웠다: 4×4×2 판 + r0.5 보스 14가족 × Fuse/Cut/Common = 4
 - reject-trace 기준선 표기를 「HEAD」에서 「① 시점(census 테스트 포함)」으로 — 그 히스토그램은 새 census 테스트가 돌던 스윕의 것.
 - 확인한 것: ③의 이음 건너뛰기에서 첫 다리의 벽이 앞 인덱스에서 이미 push됨(이음이 `i=0`이면 `hes[n−1]`) · `debug_assert`의 이전 끝
   계산(`forward`면 `[1]`) · census의 `Reop`가 `Copy`(`RejectReason: Copy`) · 관문 수(1170/129/72)가 로그와 일치.
+
+---
+
+## 재연산 사다리 E, 둘째 계단 — E2: 옆면의 외곽 루프가 «경계 사이클들»이 되어 트레이서가 읽는다 (원 도로)
+
+커밋 넷: `f82526a`(① E2-0 사이클 계기) · `49f9508`(②a Run 팔의 방향은 생산자의 것) · `cecc798`(②b 사이클이 span을 대신) · 문서.
+**프로덕션 census(첫 연산뿐) 비트 동일**, reject_census 무변.
+
+### 왜 — `CylSpan` 29행은 한 원인이었다
+E1 뒤 재연산 census의 거절은 전부 옆면 행의 `span`(«림 둘 + 자기인접 슬릿»일 때만 `Some`)에서 났다: 끼워진 구멍(솔기에 닿는 노치)·패널(Cut/
+Common의 노치 벽)·사슬 림(D4). `span`을 넓히는 것은 조용한 오답(D4 검토). 답은 **외곽 루프를 조각으로 읽는 것** — 조립(`band_loop`)의 철자
+«lo 걷기·슬릿·[구멍 런·슬릿·]hi 걷기·[슬릿·구멍 런·]슬릿»를 거꾸로: 슬릿(`carrier_pair(lat, lat)`, `inc` pair `[p,p]`)에서 자르고, 스스로 닫히는
+조각은 림 원(`LoopRing::Rim{plane}` — 한 간선 `[v,v]`, 먼 면 = 캡 평면) 또는 사슬, 열린 두 조각은 끝→시작으로 이어 구멍(끼워진 것이 복원됨),
+슬릿이 없으면 패널. `lateral_cycles`가 `(CycleKind, LoopRing)` 목록을 내고 `FaceLoops.cycles`에 실린다(원통 행만).
+
+### ① 실측 — 사이클 census (가족 × 연산, 옆면들의 (림, 사슬, 패널, 구멍) 합)
+| 예측 | 실측 |
+|---|---|
+| through Fuse 옆면 2개 (4,0,0,0) · Cut/Common (2,0,0,0) · flush ×3 (2,0,0,0) · on top Fuse (2,0,0,0) | **그대로** |
+| on top Cut (2,0,0,0) | **(0,0,0,0)** — 판 위에 선 보스는 Cut이 아무것도 안 깎아 옆면이 없다(예측 착오, 표 정정) |
+| wall −y Fuse (2,0,0,1) · 끼워진 띠 Fuse 5가족 (2,0,0,1) | **그대로** — 끼워진 구멍이 구멍으로 복원됨 |
+| half* Fuse (1,1,0,0) · 모든 Cut/Common 패널 (0,0,1,0) · 미명명 0 | **그대로** |
+★ **Run 팔의 방향 유도를 쟀다**: `hole_on_class`의 Run 팔은 클래스 위 호의 진행 방향 ν를 **flank**(링 안쪽 이웃의 위/아래)에서 유도한다 — 설계
+검토가 «볼록한 구멍에선 맞지만(우연) 사슬의 극대 호·패널의 위아래 호에선 뒤집힌다»고 짚었다. 생산자의 규약(`derive_edge_curve`: 원 캐리어의
+`[A,B]`는 CCW ⇒ `he.forward` = CCW)을 `NamedRing.arc_ccw`에 싣고 두 유도를 나란히 셌다(`arc_probe::SENSE`): 오늘의 구멍 인구에서 **일치 50 · 불일치 0**(census 안에서 그리고 단일 스레드 원장 전체에서). ⇒ ②a의 면허.
+
+### ②a — 클래스 위 호의 방향은 생산자의 것
+Run 팔이 ν = `arc_ccw[edge]`를 읽는다: 재료는 `σ·ν·m̂` 쪽 ⇒ `body_above = ((σ·ν > 0) == up)`, 깎는 호 = ν ? `[a,b]` : `[b,a]`. flank는
+`flanks_differ` 가드에만 남고, ν 없는 클래스 위 호는 `CylHoleFeature`로 거절. ①의 실측(50/50)이 동치의 증거; 그 계수기는 flank 유도와 함께
+걷었다. 잠금 `a_holes_arcs_run_the_way_the_hole_lies`(base −1이 Run 팔) 초록 · 프로덕션 census 비트 동일 · 재연산 표 무변 · lib 334.
+**부정 대조**: `arc_ccw`를 `!forward`로 ⇒ 그 잠금과 census 둘 다 빨강.
+
+### ②b — 사이클이 span을 대신한다
+- `planes::CylFaceInfo::span` → **`t_range`**(`lateral_t_range`: ⊥ 캐리어의 t만 모아 `[min, max]`; ∥ 캐리어(룰링)는 건너뜀; 슬릿 건너뜀).
+  doc의 전제가 바뀌었다: «범위이지 루프 모양의 약속이 아니다 — 띠인지는 `cycles`의 물음».
+- `combinatorics::band_shape(cycles)`: 정확히 `Rim` 둘 + 나머지 `Hole`이면 (림 평면 둘, 구멍 링들), 아니면 `None`. `arrangement::band_span`
+  (두 도로가 공유): cycles None·비-띠·림 station 없음·두 림이 한 station ⇒ **`CylSpan`** 한 이름; 림 station은 클래스의 세계 계수에서
+  (`class_coeffs_rat` → `axis_param_of_plane`) — 모델 쪽 `t_range`와 **두 유도**라 `debug_assert_eq!`로 맞댐(발화 0).
+- `circle_on_class`·`rulings_on_class`가 `band_span`을 읽는다: 바깥 답은 오늘 그대로(두 림에서), 구멍은 사이클의 것(끼워진 구멍이 복원됨) —
+  `hole_on_class`/`ruling_grazes`는 그대로. `cyl_rows`·게이트 `lateral_spans`는 `t_range`. `rim_class_at`은 아직 룰링 도로에 남았다(림 평면을
+  이미 아는데 다시 찾는 것 — 정리 항목).
+- **재연산 census**: 끼워진 구멍의 Fuse **5행이 Ok**(wall +y/−x/+x·corner·offmid; 부피 동일·validate 0) ⇒ **Ok 9 → 14**, `CylSpan` 29 → 24.
+  Common/half 행은 `CurvedDeparture`가 아니라 여전히 `CylSpan`(옆면 행이 먼저) — 예측의 «일 수 있음»은 «아니다»로.
+- **잠금 `a_spliced_band_is_cut_across_its_notch`**(먼 정육면체가 못 보는 것): wall +x 보스 결과를 (a) `[3,6]×[−1,5]×[2.5,4]`로 Cut → 판 위 온전한
+  원 구간을 캡이 가로지름, 제거 **π/8**, validate 0 · (b) `[3,6]×[−1,5]×[0.5,1.5]`(캡이 노치 안) → **`CurvedRingWall`**로 정직 거절을 잠금 —
+  판의 벽 면 x=4가 보스의 **룰링 간선**을 들고 있어 평면 스캔의 교차 팔이 못 지남(E3의 벽). ★ 계획의 «Crossing 팔을 가로지르는 잠금»은
+  그래서 E3 뒤에나 가능하고, 캡을 판 꼭대기 z=2에 맞춘 변형은 `NoClearRay`(공면 접촉의 포함 판정)로 거절됐다 — 기록만. 첫 연산 부피를
+  `32 + π/2 + π/8`로 잘못 유도했다가 실측 `32 + 3π/4`(판 아래의 안쪽 반 π/8을 빼먹음)로 고쳤다.
+- **부정 대조**(하나씩, 역치환 되돌림·md5 전후):
+  | 뒤집은 것 | 빨간 자리 |
+  |---|---|
+  | 아래 림의 graze를 빈 답으로 | census: through/on top Fuse `CylinderGateUndecided`, half wall(cap below) **첫 연산**부터 `CylinderFaceUndecided` — 프로덕션이 움직인다 |
+  | `band_shape` 게이트 제거(범위 + 모든 Poly 사이클을 구멍으로) | Cut 행(패널) **`LabelConflict`** — 온전한 원을 심은 거짓이 두 단계 뒤 딱지 검사에서 터짐(게이트가 막는 바로 그 오답); Common 행 `CurvedDeparture` |
+  | `t_range`를 옛 두-림 규칙으로 | census 5행 + 가로지르는 잠금(a) 빨강 |
+  ★ 게이트 제거 대조가 계획의 «먼 정육면체는 틀린 띠를 못 본다»를 **좁혔다**: 도구의 클래스는 안 가르지만 피연산자 **자신의** 클래스(판의 위·아래)가
+  그 옆면을 트레이스하므로 심어진 온전한 원은 `LabelConflict`로 드러난다 — 맹점은 «다른 클래스가 없는 t»뿐.
+
+### 관문
+전량 초록(②b 커밋 후): fmt/clippy 0 · workspace **1171**(1170 + 잠금 1) · nodef · census 두 프로파일 동일, HEAD와 0줄 diff · reject_census · 스윕 129(`band_span`의 «이름 쪽 vs 모델 쪽» station 단언 발화 0) · perf release(fold 80 407면 237.2116 · ring fins 1.63 s · hub 1.07 s · small 555 µs — 같은 대역) · kit 72 · reject-trace `cyl-span` 138→117 · `ruling` 15→**0**(띠 게이트가 룰링 도로보다 먼저 이름 짓는다) · `curved-departure` 17 그대로. 커밋마다 훅이 fmt·clippy·workspace를 다시 돌렸다.
+
+### 다음
+**E2-2 사슬·패널**(census `CylSpan` 24): `band_shape` 게이트 삭제 · `assemble_spans`의 `outer: Option`(극단 클래스에서 부재, run만 말함) · 룰링
+t-스윕(룰링 side마다 station = 룰링의 θ를 품는 각 사이클의 호 — `circular_order`로 {a, b, `NodeId::branch(wc, 호의 평면, k, root)`}; side = σ·ν) +
+오늘의 `ruling_grazes` · `read_cell`의 `End::Other`(벽 없는 잘린 끝) · 반높이 잠금. **E3** `CurvedRingWall`(곡선 간선을 든 평면 면의 교차 팔 — 노치
+안을 가르는 잠금이 이것에 막혀 있다)·`CurvedDeparture`(2-간선 캡의 현 클래스). 정리: `rim_class_at`(림 평면을 아는데 다시 찾음). · D5 · `ChainContacts`.
