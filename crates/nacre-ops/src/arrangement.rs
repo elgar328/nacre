@@ -766,8 +766,8 @@ fn plane_ring(
 /// ★★ It used to be a bare third plane (`r`), which is the shape a three-plane point has and no
 /// other. The name is now carried whole ([`NodeId`], so a corner a cylinder made can be one) and
 /// the pin says **which kind** it is ([`combinatorics::EndPin`]) — the same pair a segment's ends
-/// already travel as. Today every producer here writes `ThreePlane`/`Class`; the rung that lets a
-/// curved ring through is what writes the other arm.
+/// already travel as. The crossing arm writes the other pair — `Branch`/`Cylinder` — where the
+/// ring crosses the class line on a ruling ([`crossing_on_ruling`]).
 struct Node {
     /// The point's own name — what the arrangement calls it, and what a segment's end records.
     id: NodeId,
@@ -1012,22 +1012,41 @@ fn trace_transversal_face(
                     // sound only while every vertex lies on exactly three planes and could
                     // hand back a plane the edge does not ride at a concurrency.
                     //
-                    // ★ A crossing on a **curved** carrier is a point on a cylinder, and the
-                    // name built below is a three-plane one, so it cannot be spelled here.
-                    // ★★ **The reason it is unreachable changed, so the sentence did too.** It
-                    // used to be "`plane_ring` refuses such a ring first" — and that stopped
-                    // being true when those checks came out. What holds now is narrower and
-                    // measured: the population produces no crossing *on* a curved carrier
-                    // (0 hits across the workspace suite and the census corpus). The ring itself
-                    // rides through; it is a crossing on one of its arcs or rulings that does not
-                    // occur yet.
-                    let crate::boolean::Wall::Plane(w) = walls[edge] else {
-                        declined = Some(DeclineKind::CurvedRingWall);
-                        break 'rings;
+                    //
+                    // ★ A crossing on a **ruling** is a point on the cylinder — a branch node
+                    // `wc ∩ fc ∩ cyl`, pinned by the quadric ([`crossing_on_ruling`]); the second
+                    // operation on a wall boss makes one wherever a ⊥ cap crosses the plate's
+                    // wall face along the boss's rulings (the crossing census's mid slab). A
+                    // crossing on an **arc** still declines: the lateral's ruling road cannot
+                    // yet cut a ruling at a hole it does not carry on the class (E2-2's sweep),
+                    // so naming the arc's crossing here would meet a phantom ruling there.
+                    let (id, pin) = match walls[edge] {
+                        crate::boolean::Wall::Plane(w) => (
+                            NodeId::three_planes([wc, fc, w]),
+                            combinatorics::EndPin::Class(w),
+                        ),
+                        crate::boolean::Wall::Ruling { cyl, side, .. } => {
+                            match crossing_on_ruling(jd, cyls, wc, fc, cyl, side) {
+                                Ok(id) => {
+                                    crossing_probe::record(jd, cyls, cyl, wc, fc, side, id);
+                                    (id, combinatorics::EndPin::Cylinder)
+                                }
+                                Err(d) => {
+                                    declined = Some(d);
+                                    break 'rings;
+                                }
+                            }
+                        }
+                        crate::boolean::Wall::Arc { .. } => {
+                            declined = Some(DeclineKind::CurvedRingWall);
+                            break 'rings;
+                        }
                     };
+                    // A crossing is strict on both ends and its carrier is a line or a ruling —
+                    // straight either way — so it is met exactly once: parity flips.
                     nodes.push(Node {
-                        id: NodeId::three_planes([wc, fc, w]),
-                        pin: combinatorics::EndPin::Class(w),
+                        id,
+                        pin,
                         flip: true,
                         run: None,
                         flanks_differ: false,
@@ -2184,6 +2203,148 @@ fn class_through_axis(w: &[Rat; 4], def: &nacre_topo::CylinderDef) -> Option<boo
     }
     let residual = dot3(&n, &o)?.checked_add(w[3])?;
     Some(residual == Rat::from_int(0))
+}
+
+/// **The planar scan's crossing on a ruling** — the point where the class line `L = wc ∩ fc`
+/// leaves the face across an edge riding a cylinder's ruling, named as the branch node
+/// `wc ∩ fc ∩ cyl` at the root that *is* this ruling.
+///
+/// A ruling edge lies in the face's own plane `fc` (a plane holding a ruling runs through the
+/// axis — or is tangent, which the gate refuses), so the pair `{wc, fc}` cuts the cylinder in two
+/// points, one on each of `fc`'s two rulings, and `(cyl, side)` — the identity
+/// [`crate::boolean::Wall::Ruling`] carries, measured by [`ruling_side`] against `fc` when the
+/// ring was named — says which. The same predicate asked of each root picks it. `wc` must be ⊥
+/// to the axis for the class to cross a ruling in a point at all (∥ contains it; a tilt is
+/// refused at the gate).
+///
+/// ★ Solved in the caller's order `(wc, fc)`, as [`rulings_on_class`] and [`chord_on_class`]
+/// spell it — [`NodeId::branch`] canonicalizes the pair and the root together, so this is the one
+/// name every road gives the point. The lateral face names the same point when its hole ring
+/// crosses the class ([`hole_on_class`]'s crossing arm restates the hole corner's own root to
+/// `wc` by the axis senses of the two ⊥ classes); the two spellings agree because the roots of
+/// `{⊥, wall}` are ordered along `ε·k·(m̂ × n_wall)`, so «which root» and «which side of `wall`»
+/// are the same question — a derivation the exact-volume rows of the crossing census check.
+///
+/// `Err(CurvedRingWall)` is every shape this does not state: no exact description, a class that
+/// is not ⊥, a plane not through the axis, no pair of roots, or both roots on one side.
+pub(crate) fn crossing_on_ruling(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    fc: usize,
+    cyl: usize,
+    side: i8,
+) -> Result<NodeId, DeclineKind> {
+    use nacre_scalar::quad::CylinderMeet;
+    let no = DeclineKind::CurvedRingWall;
+    let def = &cyls.get(cyl).ok_or(no)?.def;
+    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
+    let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    if !nacre_scalar::parallel_rat(&[w[0], w[1], w[2]], &m)
+        || class_through_axis(&v, def) != Some(true)
+    {
+        return Err(no);
+    }
+    let Some(CylinderMeet::Pair { line, s }) =
+        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
+    else {
+        return Err(no);
+    };
+    let mut found = None;
+    for (root, sv) in [
+        (nacre_topo::QuadRoot::Lo, &s[0]),
+        (nacre_topo::QuadRoot::Hi, &s[1]),
+    ] {
+        if ruling_side(&v, def, (&line, sv)) == Some(side) {
+            if found.is_some() {
+                return Err(no); // both roots on one side: not a through-axis pair
+            }
+            found = Some(root);
+        }
+    }
+    Ok(NodeId::branch(wc, fc, cyl, found.ok_or(no)?))
+}
+
+/// The scan's crossings on rulings, realized — the second road to the sign
+/// [`crossing_on_ruling`] chooses by. One entry per crossing named in this binary: the point,
+/// how far it sits from the class plane, the face plane and the cylinder (all should be 0), and
+/// the ruling side read off the realization beside the side the ring carried.
+pub(crate) mod crossing_probe {
+    use super::{Judge, NodeId, WorkingPlane, combinatorics};
+    use std::sync::Mutex;
+
+    #[derive(Clone, Copy, Debug)]
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) struct Hit {
+        /// Read through `Debug` in the probe's messages.
+        #[allow(dead_code)]
+        pub point: [f64; 3],
+        /// Distances to the class plane, the face plane, and the cylinder's surface.
+        pub off: [f64; 3],
+        /// `sign((x − o) · (m̂ × n_fc))` of the realized point — the f64 twin of
+        /// [`super::ruling_side`].
+        pub side_f64: i8,
+        /// The side the ring's edge carried.
+        pub side: i8,
+    }
+
+    pub(crate) static HITS: Mutex<Vec<Hit>> = Mutex::new(Vec::new());
+
+    pub(crate) fn record(
+        jd: &Judge<'_, WorkingPlane>,
+        cyls: &[crate::planes::WorkingCyl],
+        cyl: usize,
+        wc: usize,
+        fc: usize,
+        side: i8,
+        id: NodeId,
+    ) {
+        let def = &cyls[cyl].def;
+        let Some(p) = combinatorics::branch_point(jd, cyl, def, id) else {
+            return;
+        };
+        let coeffs = |c: usize| -> Option<[f64; 4]> {
+            combinatorics::class_coeffs_rat(jd, c).map(|w| w.map(|x| x.to_f64()))
+        };
+        let (Some(w), Some(v)) = (coeffs(wc), coeffs(fc)) else {
+            return;
+        };
+        let plane_off = |w: [f64; 4]| -> f64 {
+            let n = (w[0] * w[0] + w[1] * w[1] + w[2] * w[2]).sqrt();
+            (w[0] * p[0] + w[1] * p[1] + w[2] * p[2] + w[3]).abs() / n
+        };
+        let o = def.origin().map(|x| x.to_f64());
+        let raw = def.dir().map(|x| x.to_f64());
+        let ml = (raw[0] * raw[0] + raw[1] * raw[1] + raw[2] * raw[2]).sqrt();
+        let m: [f64; 3] = core::array::from_fn(|i| raw[i] / ml);
+        let d: [f64; 3] = core::array::from_fn(|i| p[i] - o[i]);
+        let h = d[0] * m[0] + d[1] * m[1] + d[2] * m[2];
+        let perp: [f64; 3] = core::array::from_fn(|i| d[i] - h * m[i]);
+        let rho = (perp[0] * perp[0] + perp[1] * perp[1] + perp[2] * perp[2]).sqrt();
+        let cyl_off = (rho - def.radius().to_f64()).abs();
+        let c = [
+            m[1] * v[2] - m[2] * v[1],
+            m[2] * v[0] - m[0] * v[2],
+            m[0] * v[1] - m[1] * v[0],
+        ];
+        let dot = c[0] * d[0] + c[1] * d[1] + c[2] * d[2];
+        let side_f64 = if dot > 0.0 {
+            1
+        } else if dot < 0.0 {
+            -1
+        } else {
+            0
+        };
+        HITS.lock()
+            .expect("the probe's lock is never held across a panic")
+            .push(Hit {
+                point: p,
+                off: [plane_off(w), plane_off(v), cyl_off],
+                side_f64,
+                side,
+            });
+    }
 }
 
 /// **What a lateral face leaves on a through-axis class** — the ∥ sibling of [`circle_on_class`],
@@ -5347,11 +5508,7 @@ pub(crate) fn circle_center_in_ring(
     // image, so the parity walks the ring step by step in ℚ(√c) instead. Rings the old road
     // could always name still take it — the mixed arm activates on exactly the population the
     // old road refused, which is what keeps every green census row bit-identical.
-    let mixed = ring.iter().any(|e| {
-        matches!(e.carrier, combinatorics::Carrier::Arc(_))
-            || combinatorics::branch_name(e.node).is_some()
-    });
-    if mixed {
+    if ring_is_mixed(ring) {
         return point_in_mixed_ring(jd, &coeffs, &center, ring).ok_or_else(undecided);
     }
     let chart = combinatorics::Chart2dRat::of_normal(&n).ok_or_else(undecided)?;
@@ -5364,6 +5521,17 @@ pub(crate) fn circle_center_in_ring(
         // On the boundary is the gate-impossible contact; refusing is the honest answer.
         nacre_geom::intersect::RingSide::OnBoundary => Err(undecided()),
     }
+}
+
+/// A ring the rational chart road cannot name: a branch corner (no rational coordinates) or an
+/// arc step (no straight chart image). Such a ring takes [`point_in_mixed_ring`], which walks it
+/// step by step in ℚ(√c) — the one predicate, asked by the circle arm of [`cell_in_cell`] of a
+/// centre and by its polygon arm of a node.
+fn ring_is_mixed(ring: &[combinatorics::RingEdge]) -> bool {
+    ring.iter().any(|e| {
+        matches!(e.carrier, combinatorics::Carrier::Arc(_))
+            || combinatorics::branch_name(e.node).is_some()
+    })
 }
 
 /// Whether a polygon contour lies inside a disk — population-impossible (its edges ride wall
@@ -5422,7 +5590,12 @@ fn node_in_circle(
 /// - **polygon in circle** — one node's radial side ([`node_in_circle`]), decisive on its own:
 ///   disjoint loops put every node on one side;
 /// - **polygon in polygon** — a ray from each of `a`'s nodes until one is clear
-///   ([`combinatorics::ring_in_ring`]).
+///   ([`combinatorics::ring_in_ring`]); when `b` is a **mixed** ring (branch corners, arc steps —
+///   a plate's section bitten by a boss, once the scan names crossings on rulings), the ray is
+///   [`point_in_mixed_ring`]'s from each of `a`'s rational nodes, the predicate the circle arm
+///   already asks of a centre. ★ The old road *always* exhausts on a mixed `b` (every ray answers
+///   `Unnameable` at the first branch corner), so this arm activates on exactly the population it
+///   refused — every other row stays bit-identical.
 fn cell_in_cell(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
@@ -5445,6 +5618,22 @@ fn cell_in_cell(
                 .any(|e| rings[b].iter().any(|f| f.node == e.node))
             {
                 return Ok(None);
+            }
+            if ring_is_mixed(&rings[b]) {
+                let undecided = || reject(RejectReason::WitnessNotRational);
+                let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+                // From each rational node of `a` until one ray is clear (`None` is a tie: a
+                // corner or a root on the ray, the probe on a step's line); an exhausted ring
+                // is the same degeneracy `ring_in_ring` names.
+                for p in rings[a]
+                    .iter()
+                    .filter_map(|e| combinatorics::node_coords_rat(jd, e.node))
+                {
+                    if let Some(hit) = point_in_mixed_ring(jd, &coeffs, &p, &rings[b]) {
+                        return Ok(Some(hit));
+                    }
+                }
+                return Err(reject(RejectReason::NoClearRay));
             }
             // ★ `ring_in_ring` casts from each of `a`'s nodes until one gives a clear ray; an
             // exhausted ring is the genuine degeneracy it rejects for — which is also why
@@ -6144,10 +6333,10 @@ pub(crate) fn seam_table(
                 // (`branch_vertex_tol` carries the argument for which pairwise curves are
                 // in and out).
                 //
-                // ★ What is still missing past this table is the **vertex minting**:
-                // `boolean`'s `def_triple`/`node_handle` cannot name a branch vertex in
-                // the result's surfaces yet (its `edge_faces` cannot even see a band
-                // face), which is where the caller's deferred stopper draws the line.
+                // ★ The **vertex minting** past this table is `boolean`'s
+                // `def_triple`/`node_handle`, which names a branch node's vertex as
+                // `VertexDef::Branch` — a cut rim's node and the scan's crossing on a
+                // ruling both travel that road.
                 if let Some(([p0, p1], cyl, _)) = combinatorics::branch_name(node) {
                     let wcy = &cyls[cyl];
                     let arr = combinatorics::branch_point(jd, cyl, &wcy.def, node)

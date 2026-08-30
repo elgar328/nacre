@@ -1106,9 +1106,18 @@ pub(crate) fn census(
                     _ => d2b.arcs_multi_mark += 1,
                 }
                 // ☑ Measured 0/0 over 756 reads (lib) and 828 (corpus) before promotion (D3).
-                assert_eq!(
-                    lateral, 1,
+                // ★ **Refuted once the scan named crossings on rulings (E3):** a ⊥ cap through
+                // a wall boss's notch cuts the circle *inside the lateral's hole*, and the arc
+                // there carries **no** mark — the face is absent along it, and the cell reads
+                // absent. So the contract is «at most one, and none exactly where the cell is
+                // not there»; the population that measured 0/0 had no cut through a hole.
+                assert!(
+                    lateral <= 1,
                     "a cut end read carries {lateral} lateral marks of its own solid: {arc:?}"
+                );
+                assert!(
+                    lateral == 1 || !r.present,
+                    "a cut end read with no lateral mark of its own solid reads present: {arc:?}"
                 );
             }
             d2b.src2_disagree += usize::from(r.src2_disagree);
@@ -1130,14 +1139,17 @@ pub(crate) fn census(
             "every cell has two ends: cyl {k}"
         );
         // ★★★★★ **The horizontal lines always speak for a face that is there** — asserted where
-        // the fact is made, and structural rather than measured: `circle_on_class` leaves a circle
-        // on every ⊥ class within a lateral face's span (Crosses inside, Grazes at the rims), and
-        // `emit_faces` labels every circle cell and arc outside the keep filter. So a present cell
-        // with no label at either end is a broken premise upstream, not a chart shape — and it is
-        // why no "which side of the wall" sign is needed to read a cell.
-        assert_eq!(
-            d2b.src0_present, 0,
-            "a cell with a face has no label at either end: cyl {k}"
+        // the fact is made: `circle_on_class` leaves a circle on every ⊥ class within a lateral
+        // face's span (Crosses inside, Grazes at the rims), and `emit_faces` labels every circle
+        // cell and arc outside the keep filter — which is why no "which side of the wall" sign is
+        // needed to read a cell. ★ **Refuted as a bare zero by the corner boss × a mid slab
+        // (E3):** the circle is there, but a cut end the reader cannot pair with its rim
+        // (`End::Other`, E2-2's item) leaves *no* end speaking and `present` falls back to the
+        // row's span — which cannot see the hole. The true proposition is the `src2_disagree`
+        // guard's: over such a cell the emitter builds nothing, it refuses the class by name.
+        assert!(
+            d2b.src0_present == 0 || emission.is_err(),
+            "a cell with a face has no label at either end and the emitter read it: cyl {k}"
         );
         // ★ Promoted from counts to record-site assertions once the suite measured them 0
         // (D1b's `unnamed == 0` discipline): a reporting test sees only the rows recorded before
@@ -1962,10 +1974,9 @@ mod tests {
                 r.z_flip_nonboundary, 0,
                 "the chamber changes across a line that is no boundary: {r:?}"
             );
-            assert_eq!(
-                r.arcs_no_mark, 0,
-                "a cut end read carries no lateral mark: {r:?}"
-            );
+            // ★ `arcs_no_mark` is no longer held at 0 here: a ⊥ cap through a wall boss's notch
+            // reads cut ends inside the lateral's hole, and those carry no mark by right (E3).
+            // The record site asserts the true proposition — none only where the cell is absent.
             assert_eq!(
                 r.arcs_multi_mark, 0,
                 "a cut end read carries two lateral marks of one solid: {r:?}"

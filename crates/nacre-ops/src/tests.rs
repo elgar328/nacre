@@ -9578,24 +9578,47 @@ fn a_spliced_band_is_cut_across_its_notch() {
             v0 - pi / 8.0
         );
     }
-    // (b) caps through the notch: the plate's wall face, carrying the boss's rulings, is what
-    // the planar scan cannot cross yet — E3's wall, named.
+    // (b) caps through the notch: the plate's wall face carries the boss's rulings, and the
+    // caps' classes cross it there — the scan names each crossing as a branch node (E3). The
+    // tool takes the plate's `x ∈ [3, 4]` slab (4) and the boss's outer half over the slab's
+    // height (π/8); its wall `x = 3` clears the boss (1 > r). Beside the volume, the probe: every
+    // crossing named in this binary lies on its class, its face plane and the cylinder, on the
+    // ruling side the ring carried — the f64 road to the sign `crossing_on_ruling` chose by.
     {
-        let (mut m, r0, _) = build();
+        let (mut m, r0, v0) = build();
         let tool = m.add_cuboid(
             Point3::from_array([3.0, -1.0, 0.5]),
             Point3::from_array([6.0, 5.0, 1.5]),
         );
         m.rebuild_adjacency();
-        let err = boolean(&mut m, BoolKind::Cut, r0, tool).expect_err("E3's wall stands");
-        let BoolError::Rejected {
-            reason: RejectReason::TraceDeclined { kind, .. },
-            ..
-        } = err
-        else {
-            panic!("a trace decline, not {err:?}");
-        };
-        assert_eq!(kind, DeclineKind::CurvedRingWall);
+        let r = boolean(&mut m, BoolKind::Cut, r0, tool)
+            .unwrap_or_else(|e| panic!("the notch is cut across its rulings: {e:?}"));
+        assert_eq!(r.len(), 1, "one solid");
+        m.rebuild_adjacency();
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{issues:?}");
+        let v = nacre_props::mass_props(&m, r[0]).expect("props").volume;
+        assert!(
+            (v - (v0 - (4.0 + pi / 8.0))).abs() < 1e-9,
+            "{v} vs {}",
+            v0 - (4.0 + pi / 8.0)
+        );
+        let hits = crate::arrangement::crossing_probe::HITS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .clone();
+        // Two cap classes × the wall face's two halves, one ruling each.
+        assert!(hits.len() >= 4, "the probe saw {} crossings", hits.len());
+        for h in &hits {
+            assert!(
+                h.off.iter().all(|&d| d <= 1e-9),
+                "a named crossing sits off its surfaces: {h:?}"
+            );
+            assert_eq!(
+                h.side_f64, h.side,
+                "a named crossing lies on the other ruling: {h:?}"
+            );
+        }
     }
 }
 
@@ -10015,7 +10038,17 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 /// (5: the wall crosses the bitten cap's arc) · `CylSpan` 96 (panel and chain laterals, E2-2) ·
 /// `NoClearRay` 8 (an interior boss × through-axis wall: the wall halves the cap's circular hole;
 /// corner × its coplanar wall) · `BranchVertexUnnamed` 1 (offmid Fuse × top slab) · first op
-/// refused 12 · empty 4. The rungs that follow move this table one named cause at a time.
+/// refused 12 · empty 4. The rungs that follow move this table one named cause at a time:
+///
+/// * E3 ②: the scan names a crossing on a ruling as a branch node, and a cell's nesting reads a
+///   mixed ring. The **wall slab** column (added here, 210 cells) is the rung's own population:
+///   wall ±x/±y and offmid Fuse × wall slab are **Ok(1)** with their exact volumes. The mid slab
+///   crosses the same rulings and then splits the result in two, where the grouping road's
+///   plane-walls shim refuses the mixed rings — `CurvedRingWall` 6 → `BranchVertexUnnamed` 5 +
+///   `RulingBoundNotYet` 1 (corner: the chart's `End::Other`, E2-2); the through-axis wall's
+///   `NoClearRay` 8 → `BranchVertexUnnamed` 6 (the chord's cell has no cylinder for its corners,
+///   `coord_key`) + 2 (Common). Ok 49 · `CurvedRingWall` 5 (arc crossings) · `CylSpan` 120 ·
+///   `BranchVertexUnnamed` 12 · `RulingBoundNotYet` 2 · `NoClearRay` 2 · first 15 · empty 5.
 #[test]
 fn crossing_census_slabs_and_through_axis_walls_by_name() {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -10039,51 +10072,82 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
             [[b[0] - 3.0, b[1], -2.0], [b[0] + 3.0, b[1] + 3.0, 6.0]]
         }
     };
-    const TOOLS: [&str; 4] = ["mid", "top", "bottom", "axis wall"];
-    // Per family, per kind: the four tools' outcomes, in `TOOLS` order.
+    // The wall slab: the mid slab's height, but only past the line one unit inside the wall the
+    // boss stands on — its cap classes cross that wall face on the boss's rulings while the plate
+    // stays one solid (E3-a's own question, apart from the mid slab's second one: splitting the
+    // result). For an interior boss it clears the boss and is a control.
+    let wall_slab = |b: [f64; 3]| -> [[f64; 3]; 2] {
+        if b[0] == 4.0 {
+            [[3.0, -1.0, 0.5], [6.0, 5.0, 1.5]]
+        } else if b[0] == 0.0 {
+            [[-2.0, -1.0, 0.5], [1.0, 5.0, 1.5]]
+        } else if b[1] == 4.0 {
+            [[-1.0, 3.0, 0.5], [5.0, 6.0, 1.5]]
+        } else if b[1] == 0.0 {
+            [[-1.0, -2.0, 0.5], [5.0, 1.0, 1.5]]
+        } else {
+            [[3.0, -1.0, 0.5], [6.0, 5.0, 1.5]]
+        }
+    };
+    const TOOLS: [&str; 5] = ["mid", "top", "bottom", "axis wall", "wall slab"];
+    // Per family, per kind: the five tools' outcomes, in `TOOLS` order.
+    use DeclineKind::{CurvedRingWall, CylSpan};
+    use RejectReason::{BranchVertexUnnamed, NoClearRay, RulingBoundNotYet};
     // A band result: the mid slab parts the plate into two solids, the top and bottom slabs cut
-    // the standing boss, and the through-axis wall halves the cap's circular hole — a point
-    // classification with no clear ray (the hole's diameter, not this cell's business).
-    const BAND: [Cross; 4] = [Ok(2), Ok(1), Ok(1), Rejected(RejectReason::NoClearRay)];
-    // A wall boss fused: the mid slab's caps cross the plate's wall face on the boss's
-    // **rulings** — E3's wall — and the through-axis wall crosses the bitten cap's **arc**.
-    const WALL_FUSE: [Cross; 4] = [
-        Declined(DeclineKind::CurvedRingWall),
+    // the standing boss, the wall slab clears the boss. The through-axis wall halves the cap's
+    // circular hole: a chord edge with branch ends rides the **plane** (`chord_on_class`), so a
+    // cell bounded by the chord alone carries no cylinder for its corners — `coord_key` refuses
+    // (`BranchVertexUnnamed`) — and for Common, whose result is the bore alone, the point
+    // classification has no clear ray at the hole's diameter.
+    const BAND: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(BranchVertexUnnamed), Ok(1)];
+    const BAND_COMMON: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(NoClearRay), Ok(1)];
+    // A wall boss fused: the wall slab's caps cross the plate's wall face on the boss's
+    // **rulings** — named as branch nodes since E3 — and the cut builds with its exact volume.
+    // The mid slab does the same and then splits the result in two, and the grouping road
+    // (`Ring::edges`, a legacy plane-walls shim) refuses the mixed rings by name; the through-axis
+    // wall crosses the bitten cap's **arc**, which waits on the lateral's ruling sweep.
+    const WALL_FUSE: [Cross; 5] = [
+        Rejected(BranchVertexUnnamed),
         Ok(1),
         Ok(1),
-        Declined(DeclineKind::CurvedRingWall),
+        Declined(CurvedRingWall),
+        Ok(1),
     ];
     // A panel or chain lateral: the row itself is not stated yet (E2-2), whatever the tool.
-    const SPAN: [Cross; 4] = [Declined(DeclineKind::CylSpan); 4];
-    let want: [[[Cross; 4]; 3]; 14] = [
-        [BAND, BAND, BAND],                               // through
-        [BAND, [Ok(2), Ok(1), Ok(1), Ok(1)], [Empty; 4]], // on top: the cut leaves the plate alone
-        [BAND, BAND, BAND],                               // flush
-        [WALL_FUSE, SPAN, SPAN],                          // wall -y
-        [WALL_FUSE, SPAN, SPAN],                          // wall +y
-        [WALL_FUSE, SPAN, SPAN],                          // wall -x
-        [WALL_FUSE, SPAN, SPAN],                          // wall +x
-        // corner: the through-axis tool's wall `y = 4` is the plate's own wall — coplanar
-        // contact, so the point classification has no clear ray there either.
+    const SPAN: [Cross; 5] = [Declined(CylSpan); 5];
+    let want: [[[Cross; 5]; 3]; 14] = [
+        [BAND, BAND, BAND_COMMON], // through
+        // on top: the cut leaves the plate alone.
+        [BAND, [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], [Empty; 5]],
+        [BAND, BAND, BAND_COMMON], // flush
+        [WALL_FUSE, SPAN, SPAN],   // wall -y
+        [WALL_FUSE, SPAN, SPAN],   // wall +y
+        [WALL_FUSE, SPAN, SPAN],   // wall -x
+        [WALL_FUSE, SPAN, SPAN],   // wall +x
+        // corner: either slab cuts the circle at four rulings (two walls), and the chart cannot
+        // pair a cut end with its rim (`End::Other`, E2-2) — the emitter refuses by name; the
+        // through-axis tool's wall `y = 4` is the plate's own wall (coplanar contact).
         [
             [
-                Declined(DeclineKind::CurvedRingWall),
+                Rejected(RulingBoundNotYet),
                 Ok(1),
                 Ok(1),
-                Rejected(RejectReason::NoClearRay),
+                Rejected(BranchVertexUnnamed),
+                Rejected(RulingBoundNotYet),
             ],
             SPAN,
             SPAN,
         ],
-        [[First; 4]; 3], // corner-lo: the first op is refused
+        [[First; 5]; 3], // corner-lo: the first op is refused
         // offmid: the top slab's cap at z = 2.5 meets the notch's rulings above the plate — a
         // branch vertex the result cannot name yet (outside this rung).
         [
             [
-                Declined(DeclineKind::CurvedRingWall),
-                Rejected(RejectReason::BranchVertexUnnamed),
+                Rejected(BranchVertexUnnamed),
+                Rejected(BranchVertexUnnamed),
                 Ok(1),
-                Declined(DeclineKind::CurvedRingWall),
+                Declined(CurvedRingWall),
+                Ok(1),
             ],
             SPAN,
             SPAN,
@@ -10101,7 +10165,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
             .into_iter()
             .zip(want)
         {
-            let tools = [mid, top, bottom, axis_wall(base)];
+            let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
             for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
                 let (mut m, plate, boss) = boss_family(base, h);
                 let got = match boolean(&mut m, kind, plate, boss) {
@@ -10167,18 +10231,16 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         "crossing table:\n{}\n\ntally: {tally:?}",
         table.join("\n")
     );
-    // The distribution the doc states, so a moved cell is read as a whole: 168 cells.
+    // The distribution the doc states, so a moved cell is read as a whole: 210 cells.
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 36, "{tally:?}");
-    assert_eq!(count(|c| *c == Declined(DeclineKind::CurvedRingWall)), 11);
-    assert_eq!(count(|c| *c == Declined(DeclineKind::CylSpan)), 96);
-    assert_eq!(count(|c| *c == Rejected(RejectReason::NoClearRay)), 8);
-    assert_eq!(
-        count(|c| *c == Rejected(RejectReason::BranchVertexUnnamed)),
-        1
-    );
-    assert_eq!(count(|c| *c == First), 12);
-    assert_eq!(count(|c| *c == Empty), 4);
+    assert_eq!(count(|c| matches!(c, Ok(_))), 49, "{tally:?}");
+    assert_eq!(count(|c| *c == Declined(CurvedRingWall)), 5);
+    assert_eq!(count(|c| *c == Declined(CylSpan)), 120);
+    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 2);
+    assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 12);
+    assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 2);
+    assert_eq!(count(|c| *c == First), 15);
+    assert_eq!(count(|c| *c == Empty), 5);
 }

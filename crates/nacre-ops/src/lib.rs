@@ -1022,15 +1022,16 @@ pub enum DeclineKind {
     /// planes coincide", which is simply not what happened here. The census keys its `detail` on
     /// this name, so reusing the other would put a false cause in the ledger.
     BranchNode,
-    /// An edge of the ring **rides a cylinder** — an arc or a ruling — at the one place left that
-    /// needs a plane class beside an edge: the scan's crossing arm, whose vertex name is a plane
-    /// triple. (The ring itself carries curved carriers unflattened since the vessel widened.)
+    /// The scan's crossing arm met an edge riding a cylinder that it cannot name a point on: an
+    /// **arc** (its crossing waits on the lateral's ruling sweep, E2-2 — see
+    /// `arrangement::crossing_on_ruling`), or a **ruling** whose crossing has no exact statement
+    /// (a class that is not ⊥ to the axis, a plane not through it, a tangency, both roots on one
+    /// side). A crossing on a ruling with a statement is named as a branch node and passes.
     ///
     /// ★ Distinct from [`Self::BranchNode`], which is about a *corner*. The two travel together on
     /// the population that produced them (a ruling's ends lie on the cylinder, so they are branch
     /// points), but they are different sentences, and a ring whose names are perfectly good while a
-    /// **carrier** is curved is a fact worth seeing on its own — its edge would have to end at seam
-    /// vertices instead.
+    /// **carrier** is curved is a fact worth seeing on its own.
     CurvedRingWall,
     /// The face's outer ring could not be named as plane triples.
     OuterRing,
@@ -1453,6 +1454,16 @@ mod zzz_ledger {
             s(|r| r.arcs_no_mark),
             s(|r| r.arcs_multi_mark),
             s(|r| r.emitted_faces),
+        );
+        let hits = crate::arrangement::crossing_probe::HITS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .clone();
+        eprintln!(
+            "ledger E3: ruling_crossings {} off_max {:e} side_disagree {}",
+            hits.len(),
+            hits.iter().flat_map(|h| h.off).fold(0.0_f64, f64::max),
+            hits.iter().filter(|h| h.side_f64 != h.side).count(),
         );
         let d4 = crate::boolean::probe::d4::ROWS
             .lock()
