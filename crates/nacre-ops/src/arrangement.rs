@@ -981,7 +981,7 @@ fn trace_transversal_face(
         // ★ **What "on the meet" means here**: `W` cuts this *planar* face in a straight **line**,
         // and two points fix a line — so a straight edge between two on-line nodes is on it and a
         // curved one is not. (The lateral road's meet is a **circle**, where an arc *can* lie on it,
-        // so it tests the carrier instead — see `hole_on_class`.)
+        // so it tests the carrier instead — see `cycle_on_class`.)
         let on_meet = |i: usize| !matches!(walls[i], crate::boolean::Wall::Arc { .. });
         let features = match combinatorics::ring_against_plane(jd, cyls, ring, wc, on_meet) {
             combinatorics::RingWalk::Met(f) => f,
@@ -1558,10 +1558,13 @@ fn circle_on_class(
     // ★★★★★ **The face's boundary as the tracer names it — its cycles — and nothing else.** A
     // band's two rims and its holes come from the outer loop cut at its slits
     // (`combinatorics::lateral_cycles`), so a hole the assembly spliced into the outer walk is
-    // a hole here like any other. A face that is not a band (a panel, a chain rim) declines by
-    // name: the chart cannot hold one yet, and the range alone would plant whole circles where
-    // the face covers part of one.
-    let BandSpan { span, holes, .. } = band_span(jd, cf, fl, def)?;
+    // a hole here like any other; a panel or a chain rim (E2-2) is a cycle like a hole, carved
+    // out of an outer answer that may be **absent** rather than out of a whole circle.
+    let LateralShape {
+        range,
+        rims,
+        cycles,
+    } = lateral_shape(jd, cf, fl, def)?;
     let Some(t) = crate::planes::axis_param_of_plane(&coeffs, def) else {
         return Err(DeclineKind::CylSpan);
     };
@@ -1581,16 +1584,28 @@ fn circle_on_class(
     // Which side the body is on: the face runs from `span[0]` toward `span[1]`, so at the low rim
     // it lies toward `+t` and at the high rim toward `−t`.
     let up = crate::planes::plus_t_is_above(wp, def);
-    let outer = if span[0] < t && t < span[1] {
-        CylOnClass::Crosses
-    } else if t == span[0] {
-        CylOnClass::Grazes { body_above: up }
-    } else if t == span[1] {
-        CylOnClass::Grazes { body_above: !up }
-    } else {
-        // Beyond both rims: this class does not meet the face at all, and a hole lives inside the
-        // span, so there is nothing for the walk below to find either.
+    if t < range[0] || range[1] < t {
+        // Beyond the face: this class does not meet it at all, and every cycle lives inside the
+        // range, so there is nothing for the walk below to find either.
         return Ok(Vec::new());
+    }
+    // ★★★★★ **The outer answer is optional (E2-2).** A whole rim at this station grazes as a
+    // whole circle; strictly inside the range the face crosses the class *somewhere* — a
+    // connected face covers every interior station at some θ — and the cycles below carve out
+    // where it does not; at an end of the range that is **no** rim (a panel's arc, a chain's top)
+    // nothing stands: only the runs the cycles lay on the class speak, and the rest is absent.
+    // ★ `Crosses` is exact only because a run whose flanks differ is declined below
+    // (`cycle_on_class`): such a run is a parity boundary in θ, and the face beyond it at this
+    // station would be absent with no crossing to carve it — a staircase chain, not today's
+    // population. Pairing run ends with crossings is that road's generalization, not this one.
+    let outer: Option<CylOnClass> = if rims.iter().any(|(s, _)| *s == t) {
+        Some(CylOnClass::Grazes {
+            body_above: if t == range[0] { up } else { !up },
+        })
+    } else if range[0] < t && t < range[1] {
+        Some(CylOnClass::Crosses)
+    } else {
+        None
     };
     // ★★★★★ **The hole is read by the walk every other face's boundary is read by** — the face's
     // own loop, against this class, through [`combinatorics::ring_against_plane`]. It used to be an
@@ -1598,68 +1613,165 @@ fn circle_on_class(
     // *premise* for anything else; the walk asks the ring instead and needs no premise about the
     // hole's shape.
     let mut carved: Vec<Carved> = Vec::new();
-    for h in &holes {
-        // A one-edge hole loop whose far face is a cylinder is two laterals meeting: M6b's pair,
-        // not this road's. It has no ring to walk, so it declines rather than passing unread.
-        let Some(nr) = h.poly() else {
+    for (kind, ring) in &cycles {
+        // A one-edge loop whose far face is a cylinder is two laterals meeting: M6b's pair, not
+        // this road's. It has no ring to walk, so it declines rather than passing unread.
+        let Some(nr) = ring.poly() else {
             return Err(DeclineKind::CylFaceHole);
         };
-        hole_on_class(jd, cyls, cf, def, wc, cyl, up, nr, &mut carved)?;
+        cycle_on_class(jd, cyls, cf, def, wc, cyl, up, *kind, nr, &mut carved)?;
     }
-    if carved.is_empty() {
-        return Ok(vec![CircleSpan {
-            arc: None,
-            on: outer,
-        }]);
-    }
-    assemble_spans(jd, cyl, &cyls[cyl].def, &carved, outer)
+    let spans = if carved.is_empty() {
+        match outer {
+            Some(on) => vec![CircleSpan { arc: None, on }],
+            None => Vec::new(),
+        }
+    } else {
+        assemble_spans(jd, cyl, &cyls[cyl].def, &carved, outer)?
+    };
+    cycle_probe::record(t, outer, rims.len(), &cycles, carved.len(), spans.len());
+    Ok(spans)
 }
 
-/// **A band's span and holes, from its cycles** — what both lateral roads read of a lateral's
-/// loops (E2). The rims' stations are read from their planes' world coefficients, so this is a
-/// second derivation of `CylFaceInfo::t_range` (the model side's), and the two are held equal
-/// where they meet. `None` cycles (the outer loop could not be cut or named), a non-band shape,
-/// a rim with no exact station, or two rims at one station all decline by the one name.
-fn band_span(
+/// The ⊥ road's answers, recorded: one entry per lateral face × ⊥ class it meets — the station,
+/// the outer answer, what kinds of cycles the face has, and how many extents were carved and how
+/// many spans came out. What says the road ran on a panel or a chain, and what it said there.
+pub(crate) mod cycle_probe {
+    use super::{CylOnClass, combinatorics};
+    use std::sync::Mutex;
+
+    #[derive(Clone, Copy, Debug)]
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) struct Hit {
+        /// The class's axis station, realized.
+        pub t: f64,
+        pub outer: Option<CylOnClass>,
+        /// `[rims, chains, panels, holes]` among the face's cycles (rims are not carved).
+        pub kinds: [usize; 4],
+        pub carved: usize,
+        pub spans: usize,
+    }
+
+    pub(crate) static HITS: Mutex<Vec<Hit>> = Mutex::new(Vec::new());
+
+    pub(crate) fn record(
+        t: nacre_scalar::Rat,
+        outer: Option<CylOnClass>,
+        rims: usize,
+        cycles: &[(combinatorics::CycleKind, combinatorics::LoopRing)],
+        carved: usize,
+        spans: usize,
+    ) {
+        let mut kinds = [rims, 0, 0, 0];
+        for (k, _) in cycles {
+            kinds[match k {
+                combinatorics::CycleKind::Rim => 0,
+                combinatorics::CycleKind::Chain => 1,
+                combinatorics::CycleKind::Panel => 2,
+                combinatorics::CycleKind::Hole => 3,
+            }] += 1;
+        }
+        HITS.lock()
+            .expect("the probe's lock is never held across a panic")
+            .push(Hit {
+                t: t.to_f64(),
+                outer,
+                kinds,
+                carved,
+                spans,
+            });
+    }
+}
+
+/// **A lateral face's shape as its cycles state it** (E2-2) — what both lateral roads read of a
+/// lateral's loops: its axial `range`, its whole rims (station and plane class, in station order),
+/// and every other cycle — a panel, a chain rim, a hole — with its kind. The stations are read
+/// from the planes' world coefficients, so `range` is a second derivation of
+/// `CylFaceInfo::t_range` (the model side's: the outer loop's ⊥ carriers), and the two are held
+/// equal where they meet.
+///
+/// Declines by the one name: `None` cycles (the outer loop could not be cut or named), a rim kind
+/// that is not a whole circle, a class with no exact station, more than two rims, two rims at one
+/// station, or a rim that is not at an end of the range — a whole circle bounds the face, so it is
+/// an extreme of it.
+fn lateral_shape(
     jd: &Judge<'_, WorkingPlane>,
     cf: &crate::planes::CylFaceInfo,
     fl: &combinatorics::FaceLoops,
     def: &nacre_topo::CylinderDef,
-) -> Result<BandSpan, DeclineKind> {
+) -> Result<LateralShape, DeclineKind> {
+    use combinatorics::{CycleKind, LoopRing};
     let Some(cycles) = &fl.cycles else {
         return Err(DeclineKind::CylSpan);
     };
-    let Some((rims, holes)) = combinatorics::band_shape(cycles) else {
+    // One spelling of "a class's axis station" (`bands::param_opt`), not a third.
+    let station = |c: usize| crate::bands::param_opt(jd, c, def).ok_or(DeclineKind::CylSpan);
+    let mut rims: Vec<(Rat, usize)> = Vec::new();
+    let mut rest: Vec<(CycleKind, LoopRing)> = Vec::new();
+    let mut range: Option<[Rat; 2]> = None;
+    let mut widen = |t: Rat| {
+        range = Some(match range {
+            None => [t, t],
+            Some([lo, hi]) => [if t < lo { t } else { lo }, if hi < t { t } else { hi }],
+        });
+    };
+    for (kind, ring) in cycles {
+        match (kind, ring) {
+            (CycleKind::Rim, LoopRing::Rim { plane }) => {
+                let t = station(*plane)?;
+                widen(t);
+                rims.push((t, *plane));
+            }
+            (CycleKind::Rim, _) => return Err(DeclineKind::CylSpan),
+            (_, ring) => {
+                // The cycle's arcs (an edge with a stated sense) each lie on a ⊥ class; its
+                // rulings have no station of their own.
+                if let Some(nr) = ring.poly() {
+                    for (i, w) in nr.walls.iter().enumerate() {
+                        if nr.arc_ccw[i].is_none() {
+                            continue;
+                        }
+                        let crate::boolean::Wall::Plane(c) = *w else {
+                            return Err(DeclineKind::CylSpan);
+                        };
+                        widen(station(c)?);
+                    }
+                }
+                rest.push((*kind, ring.clone()));
+            }
+        }
+    }
+    let Some(range) = range else {
         return Err(DeclineKind::CylSpan);
     };
-    let station = |c: usize| -> Option<Rat> {
-        crate::planes::axis_param_of_plane(&combinatorics::class_coeffs_rat(jd, c)?, def)
-    };
-    let (Some(a), Some(b)) = (station(rims[0]), station(rims[1])) else {
-        return Err(DeclineKind::CylSpan);
-    };
-    if a == b {
+    if range[0] == range[1] || rims.len() > 2 {
         return Err(DeclineKind::CylSpan);
     }
-    let (span, rims) = if a < b {
-        ([a, b], rims)
-    } else {
-        ([b, a], [rims[1], rims[0]])
-    };
+    rims.sort_by_key(|r| r.0);
+    if rims.windows(2).any(|w| w[0].0 == w[1].0)
+        || rims.iter().any(|(t, _)| *t != range[0] && *t != range[1])
+    {
+        return Err(DeclineKind::CylSpan);
+    }
     debug_assert_eq!(
-        Some(span),
+        Some(range),
         cf.t_range,
-        "the rims' stations by name and the face's range by model disagree"
+        "the cycles' stations by name and the face's range by model disagree"
     );
-    Ok(BandSpan { span, rims, holes })
+    Ok(LateralShape {
+        range,
+        rims,
+        cycles: rest,
+    })
 }
 
-/// A band as its cycles state it: the rims' stations `[lo, hi]`, their plane classes in that
-/// order, and its hole rings.
-struct BandSpan {
-    span: [Rat; 2],
-    rims: [usize; 2],
-    holes: Vec<combinatorics::LoopRing>,
+/// A lateral face as its cycles state it: its axial range `[lo, hi]`, its whole rims `(station,
+/// plane class)` in station order (0, 1 or 2 of them), and every other boundary cycle with its
+/// kind.
+struct LateralShape {
+    range: [Rat; 2],
+    rims: Vec<(Rat, usize)>,
+    cycles: Vec<(combinatorics::CycleKind, combinatorics::LoopRing)>,
 }
 
 /// One angular extent of a lateral face's mark on a ⊥ plane class — see [`circle_on_class`].
@@ -1683,7 +1795,7 @@ struct Carved {
 }
 
 /// **Which way a hole's arcs actually run, realized** — the independent oracle for
-/// [`hole_on_class`]'s winding rule.
+/// [`cycle_on_class`]'s winding rule.
 ///
 /// ★★★★★ **The rule is derived from signs and nothing downstream reads it yet.** A reversed arc
 /// would put the band's answer inside the hole and the hole's on the band — the exactly-opposite
@@ -1696,14 +1808,24 @@ pub(crate) mod arc_probe {
     use std::sync::Mutex;
 
     /// The direction, from the circle's centre, of the **midpoint of the stated counter-clockwise
-    /// arc** — one entry per extent a hole has carved out of a circle in this binary, whether the
-    /// face grazes there (the hole's own rim) or is absent (the hole's interior).
-    pub(crate) static MIDS: Mutex<Vec<[f64; 3]>> = Mutex::new(Vec::new());
+    /// arc** — one entry per extent a cycle has carved out of a circle in this binary, whether the
+    /// face grazes there (the cycle's own arc) or is absent (a hole's interior, a panel's outside).
+    /// Beside it the cycle's kind and the cylinder's origin, so a reader can pick **its own**
+    /// fixture's holes out of a ledger every test in the binary writes to.
+    pub(crate) static MIDS: Mutex<Vec<Mid>> = Mutex::new(Vec::new());
+
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct Mid {
+        pub dir: [f64; 3],
+        pub kind: combinatorics::CycleKind,
+        pub origin: [f64; 3],
+    }
 
     pub(crate) fn record(
         jd: &Judge<'_, WorkingPlane>,
         cyl: usize,
         def: &nacre_topo::CylinderDef,
+        kind: combinatorics::CycleKind,
         arc: [NodeId; 2],
     ) {
         let (Some(pa), Some(pb)) = (
@@ -1745,7 +1867,11 @@ pub(crate) mod arc_probe {
         let (c, s) = ((phi / 2.0).cos(), (phi / 2.0).sin());
         MIDS.lock()
             .expect("the probe's lock is never held across a panic")
-            .push(core::array::from_fn(|i| c * u[i] + s * w[i]));
+            .push(Mid {
+                dir: core::array::from_fn(|i| c * u[i] + s * w[i]),
+                kind,
+                origin: o,
+            });
     }
 }
 
@@ -1766,7 +1892,7 @@ fn assemble_spans(
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     carved: &[Carved],
-    outer: CylOnClass,
+    outer: Option<CylOnClass>,
 ) -> Result<Vec<CircleSpan>, DeclineKind> {
     let mut nodes: Vec<NodeId> = carved.iter().flat_map(|c| c.arc).collect();
     nodes.sort_unstable();
@@ -1787,7 +1913,7 @@ fn assemble_spans(
             .expect("every boundary node is in the set")]
     };
     // The answer over elementary arc `k` (from `order[k]` to `order[k+1]`), or `None` where no
-    // hole reaches: there the outer answer stands.
+    // cycle reaches: there the outer answer stands — which may itself be "absent" (E2-2).
     let mut ans: Vec<Option<Option<CylOnClass>>> = vec![None; n];
     for c in carved {
         let (a, b) = (place(c.arc[0]), place(c.arc[1]));
@@ -1797,13 +1923,13 @@ fn assemble_spans(
         let mut k = a;
         while k != b {
             if ans[k].is_some() {
-                return Err(DeclineKind::CylHoleFeature); // two holes claiming one extent
+                return Err(DeclineKind::CylHoleFeature); // two cycles claiming one extent
             }
             ans[k] = Some(c.on);
             k = (k + 1) % n;
         }
     }
-    let answer = |k: usize| ans[k].unwrap_or(Some(outer));
+    let answer = |k: usize| ans[k].unwrap_or(outer);
     // One answer everywhere: the circle was never divided, whatever the holes touched.
     let Some(start) = (0..n).find(|&k| answer(k) != answer((k + n - 1) % n)) else {
         return Ok(match answer(0) {
@@ -1878,7 +2004,10 @@ fn world_rat_sense(jd: &Judge<'_, WorkingPlane>, c: usize) -> Option<i8> {
     })
 }
 
-/// **One hole ring, read against one ⊥ class** — the walk's features turned into extents.
+/// **One boundary cycle — a hole, a panel, a chain rim — read against one ⊥ class**: the walk's
+/// features turned into extents. A hole is carved out of a whole-circle outer answer; a panel or a
+/// chain is carved out of one that may be absent (E2-2) — the same arms, because neither reads
+/// "inside" or "outside": only the ring's winding, below.
 ///
 /// ★★★★★ **Which way round is decided by the ring's own winding, and by nothing else.** A plane
 /// cuts a circle in two points, and "which of the two arcs is the hole" is the whole difficulty:
@@ -1907,7 +2036,7 @@ fn world_rat_sense(jd: &Judge<'_, WorkingPlane>, c: usize) -> Option<i8> {
 /// root's **outward** frame and a label's "above" is the stored one — the correction is
 /// [`crate::planes::WorkingPlane::frame_sign`], and forgetting it is a silently mirrored answer.
 #[allow(clippy::too_many_arguments)]
-fn hole_on_class(
+fn cycle_on_class(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     cf: &crate::planes::CylFaceInfo,
@@ -1915,9 +2044,11 @@ fn hole_on_class(
     wc: usize,
     cyl: usize,
     up: bool,
+    kind: combinatorics::CycleKind,
     nr: &combinatorics::NamedRing,
     out: &mut Vec<Carved>,
 ) -> Result<(), DeclineKind> {
+    let _ = kind; // the ledger's, under test
     // ★★ **`true` here is not a shrug — the meet on this road is a *circle*, and an arc can lie on
     // one.** A rim arc of the hole at this very axis parameter *is* the class's meet, so "not an
     // arc" would cut runs that are genuinely continuous. What decides it is the carrier, and the
@@ -1994,7 +2125,7 @@ fn hole_on_class(
                     let b = ring[(edge + 1) % n];
                     let arc = if nu { [a, b] } else { [b, a] };
                     #[cfg(test)]
-                    arc_probe::record(jd, cyl, def, arc);
+                    arc_probe::record(jd, cyl, def, kind, arc);
                     out.push(Carved {
                         arc,
                         on: Some(CylOnClass::Grazes { body_above }),
@@ -2062,7 +2193,7 @@ fn hole_on_class(
             if ahead {
                 let arc = [a, b];
                 #[cfg(test)]
-                arc_probe::record(jd, cyl, def, arc);
+                arc_probe::record(jd, cyl, def, kind, arc);
                 out.push(Carved { arc, on: None });
             }
         }
@@ -2191,7 +2322,7 @@ fn class_through_axis(w: &[Rat; 4], def: &nacre_topo::CylinderDef) -> Option<boo
 /// ★ Solved in the caller's order `(wc, fc)`, as [`rulings_on_class`] and [`chord_on_class`]
 /// spell it — [`NodeId::branch`] canonicalizes the pair and the root together, so this is the one
 /// name every road gives the point. The lateral face names the same point when its hole ring
-/// crosses the class ([`hole_on_class`]'s crossing arm restates the hole corner's own root to
+/// crosses the class ([`cycle_on_class`]'s crossing arm restates the hole corner's own root to
 /// `wc` by the axis senses of the two ⊥ classes); the two spellings agree because the roots of
 /// `{⊥, wall}` are ordered along `ε·k·(m̂ × n_wall)`, so «which root» and «which side of `wall`»
 /// are the same question — a derivation the exact-volume rows of the crossing census check.
@@ -2363,9 +2494,25 @@ fn rulings_on_class(
         Some(false) => return Ok(Vec::new()),
         None => return Err(DeclineKind::Ruling),
     }
-    // The band's rims and holes from its cycles — the same reading the ⊥ road makes, so a face
-    // that is not a band declines by the same name here.
-    let BandSpan { span, rims, holes } = band_span(jd, cf, fl, def)?;
+    // The face's shape from its cycles — the same reading the ⊥ road makes. ★ This road still
+    // states a **band** only (two rims and holes; the sweep over every cycle is E2-2's next
+    // rung), so a panel or a chain rim declines here by the name it always wore.
+    let LateralShape {
+        range: span,
+        rims,
+        cycles,
+    } = lateral_shape(jd, cf, fl, def)?;
+    let [(_, r0), (_, r1)] = rims[..] else {
+        return Err(DeclineKind::CylSpan);
+    };
+    if cycles
+        .iter()
+        .any(|(k, _)| *k != combinatorics::CycleKind::Hole)
+    {
+        return Err(DeclineKind::CylSpan);
+    }
+    let rims = [r0, r1];
+    let holes: Vec<combinatorics::LoopRing> = cycles.into_iter().map(|(_, r)| r).collect();
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
     // One rim end at a time: the ⊥ class holding the rim — the rim cycle's own plane, no search —
     // and the two branch points the class pair `{wc, rim}` cuts on the cylinder, each assigned to
@@ -2495,7 +2642,7 @@ struct RulingGraze {
 /// oversight.** [`combinatorics::ring_against_plane`] decides each node by
 /// [`combinatorics::side_of`], which answers about a **plane**. A ⊥ class meets the cylinder in one
 /// circle, so "which side of the plane" separates the ring cleanly and the walk works (that is what
-/// [`hole_on_class`] uses). A **∥** class meets it in **two** rulings that both lie *in* the plane,
+/// [`cycle_on_class`] uses). A **∥** class meets it in **two** rulings that both lie *in* the plane,
 /// so every corner of a hole bounded by that wall answers `0` and the walk comes back
 /// [`combinatorics::RingWalk::AllOn`] — ☑ measured, 13 of 13 over the suite. So the edges are found
 /// by their **carrier** instead: an edge of the hole lying on this class is one the class itself
@@ -6663,6 +6810,49 @@ pub(crate) struct Concurrency {
     /// second face of the same degeneracy, and what a line-identity rule would have to fold. Read
     /// off `planes`, which is why one discovery answers both questions.
     pub lines: Vec<[usize; 3]>,
+}
+
+/// **Trace every class of the two solids' arrangement, past any decline** — for the ledgers.
+///
+/// The production driver returns at the first declined class, and in serial mode (no default
+/// features) it never traces the classes after it; a lock that reads a road's ledger for a face
+/// whose boolean is still refused one road later would then see different records per traversal
+/// mode. This runs the tracer on every class, like [`concurrency_audit`], and keeps nothing but
+/// what the roads recorded on the way.
+#[cfg(test)]
+pub(crate) fn trace_every_class(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<(), BoolError> {
+    let PlaneSetup {
+        planes: faces_tab,
+        surf_ix,
+        inc_a,
+        inc_b,
+        geom,
+        plane_ix,
+        crossings,
+        cyls,
+        standard,
+        notes,
+        ..
+    } = plane_index_setup(model, a, b)?;
+    let jd = Judge::new(&geom, standard, &notes);
+    let trace_in = combinatorics::trace_input(
+        model,
+        [(a, &inc_a), (b, &inc_b)],
+        &surf_ix,
+        faces_tab.len(),
+        &jd,
+        &plane_ix,
+        &cyls,
+        crossings,
+    );
+    for wc in 0..geom.len() {
+        let _ = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix);
+    }
+    Ok(())
 }
 
 /// Every **concurrent** vertex (four or more planes) the two solids' arrangement would name.

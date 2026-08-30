@@ -102,7 +102,7 @@ pub(crate) struct CylFaceInfo {
     ///
     /// ★★★★★ **This is a range, not a promise about the loop's shape.** Whether the face is a
     /// band — two whole rims and holes — is `combinatorics::FaceLoops::cycles`' question
-    /// (`band_shape`), and the two lateral roads ask it there before they read anything; a face
+    /// (`arrangement::lateral_shape`), and the two lateral roads ask it there before they read anything; a face
     /// that is not a band (a panel, a chain rim) declines by name (`CylSpan`) until the chart can
     /// hold it (E2-2). The range is what the population gate's rectangle reads
     /// (`lateral_spans`) — a wider rectangle only refuses more — and what the chart's rows carry

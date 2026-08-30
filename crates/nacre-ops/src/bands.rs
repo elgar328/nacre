@@ -97,7 +97,7 @@ pub(crate) struct CylRow {
 ///
 /// ★★ **That disjointness holds because every lateral face that reaches here is a band** — two
 /// whole rims and holes: the tracer's two lateral roads decline a panel or a chain rim by name
-/// (`band_shape`, E2) before the arrangement runs, and this row is built after the traces. The
+/// (`arrangement::lateral_shape`, E2/E2-2) before the arrangement runs, and this row is built after the traces. The
 /// day those shapes pass (E2-2), two faces can share a `t` and the tie falls to the stable sort's
 /// face order — still deterministic, but the sentence above stops being the reason. Naming the
 /// premise here so the day it expires is a thing a reader can check, not a surprise.
@@ -158,7 +158,11 @@ pub(crate) fn axis_param(
     param_opt(jd, c, def).ok_or_else(|| reject(RejectReason::WitnessNotRational))
 }
 
-fn param_opt(jd: &Judge<'_, WorkingPlane>, c: usize, def: &nacre_topo::CylinderDef) -> Option<Rat> {
+pub(crate) fn param_opt(
+    jd: &Judge<'_, WorkingPlane>,
+    c: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Option<Rat> {
     let coeffs = combinatorics::class_coeffs_rat(jd, c)?;
     axis_param_of_plane(&coeffs, def)
 }

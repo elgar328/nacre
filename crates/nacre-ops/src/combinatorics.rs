@@ -1645,23 +1645,6 @@ pub(crate) fn face_vertex_triples(
     )
 }
 
-/// **Is this lateral a band — two whole rims and holes?** The shape the two tracer roads read
-/// today (E2): the rims' planes, unordered, and the hole rings. `None` for a chain rim or a panel,
-/// which the roads decline by name until the chart can hold them (E2-2).
-pub(crate) fn band_shape(cycles: &[(CycleKind, LoopRing)]) -> Option<([usize; 2], Vec<LoopRing>)> {
-    let mut rims: Vec<usize> = Vec::new();
-    let mut holes: Vec<LoopRing> = Vec::new();
-    for (kind, ring) in cycles {
-        match (kind, ring) {
-            (CycleKind::Rim, LoopRing::Rim { plane }) => rims.push(*plane),
-            (CycleKind::Hole, ring) => holes.push(ring.clone()),
-            _ => return None,
-        }
-    }
-    let [a, b] = rims[..] else { return None };
-    Some(([a, b], holes))
-}
-
 /// **A lateral face's boundary cycles** (E2-0): the outer loop cut at its slit edges — the
 /// self-adjacent `[lateral, lateral]` edges the assembly's outer walk climbs and descends the seam
 /// on — into the pieces that walk was made of, then the pieces read back as cycles: a piece that
@@ -1784,7 +1767,7 @@ pub(crate) struct NamedRing {
     /// half-edge as `curved_wall` reads it for a plane face's arc. `None` on a plane face's ring
     /// and on a ruling. ★ Carried because the flank of an on-class run says which side the ring's
     /// *interior* is, which is the arc's direction only for a convex hole; a wrapping rim has no
-    /// interior side. `hole_on_class`'s Run arm reads this (E2-0 measured it equal to the flank's
+    /// interior side. `cycle_on_class`'s Run arm reads this (E2-0 measured it equal to the flank's
     /// reading on every on-class arc of today's holes before the rule moved).
     pub arc_ccw: Vec<Option<bool>>,
 }
@@ -1849,7 +1832,7 @@ pub(crate) struct FaceLoops {
     /// A **lateral** face's every boundary cycle ([`lateral_cycles`]): its rims, chains and
     /// panel, with the holes after them (the spliced ones recovered) — or `None` when the outer
     /// loop could not be cut into cycles or a cycle could not be named. `None` on a plane row.
-    /// The two lateral roads read these ([`band_shape`]) and nothing else of a lateral's loops.
+    /// The two lateral roads read these (`arrangement::lateral_shape`) and nothing else of a lateral's loops.
     pub cycles: Option<Vec<(CycleKind, LoopRing)>>,
 }
 

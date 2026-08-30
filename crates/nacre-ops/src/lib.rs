@@ -1092,10 +1092,11 @@ pub enum DeclineKind {
     /// calls where the lone off-line class fails the cut test; and the seated road's, by
     /// `unreachable!()` with the whole suite and the ignored sweep green.
     NoPinOnLine,
-    /// A cylinder face could not answer a circle question exactly — its boundary cycles are
-    /// not two whole rims and holes (a panel or a chain rim, which the chart cannot hold yet;
-    /// or an outer loop that could not be cut at its slits), a rim has no exact station, or a
-    /// plane class lacks the exact description a circle test needs (M6-2a, E2).
+    /// A cylinder face could not answer a circle question exactly — its outer loop could not be
+    /// cut at its slits or named, a class has no exact station, its whole rims are more than two
+    /// or not at the ends of its range, or (on the rulings road, until its sweep lands) its
+    /// boundary cycles are not two whole rims and holes — a panel or a chain rim (M6-2a, E2,
+    /// E2-2).
     CylSpan,
     /// **A lateral face has a hole here and this road could not *read* it.**
     ///
@@ -1117,7 +1118,8 @@ pub enum DeclineKind {
     /// ★ A feature the walk *found* but the arc road has no extent for is
     /// [`Self::CylHoleFeature`], not this — the two say different things about the same face.
     CylFaceHole,
-    /// **A hole's boundary met this class in a shape the arc road has no extent for.**
+    /// **A cycle's boundary — a hole's, a panel's, a chain rim's — met this class in a shape the
+    /// arc road has no extent for.**
     ///
     /// Distinct from [`Self::CylFaceHole`], whose proposition is "the hole could not be *read*":
     /// here the ring walked and its features came back, and it is turning one of them into a

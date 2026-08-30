@@ -3869,7 +3869,7 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
 ///
 /// A plane cuts a circle in two points, and the whole difficulty of a lateral face's hole is which
 /// of the two arcs it is: the hole's two ruling edges lie on **one** plane here, so that plane's
-/// sides cannot tell them apart. `hole_on_class` answers from the ring's own winding (material is
+/// sides cannot tell them apart. `cycle_on_class` answers from the ring's own winding (material is
 /// on the left of the ring's travel), and gets there through three signs — the face's
 /// `orient_sign`, the class's `frame_sign`, and whether the class's stored normal points along the
 /// axis. Reversed, the answer is not approximate but **exactly opposite**: the graze would sit on
@@ -3914,10 +3914,16 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
         m.rebuild_adjacency();
         let _ = boolean(&mut m, BoolKind::Cut, first, b);
     }
-    let mids = crate::arrangement::arc_probe::MIDS
+    // ★ The ledger is the binary's, not this test's: every fixture that carves a cycle writes to
+    // it, and since E2-2 a panel's and a chain's arcs (which face any way) are carved too. Read
+    // only this fixture's boss (`(2, 0, −1)`) and only its **hole** — the sentence is about holes.
+    let mids: Vec<[f64; 3]> = crate::arrangement::arc_probe::MIDS
         .lock()
         .expect("the probe's lock is never held across a panic")
-        .clone();
+        .iter()
+        .filter(|m| m.kind == combinatorics::CycleKind::Hole && m.origin == [2.0, 0.0, -1.0])
+        .map(|m| m.dir)
+        .collect();
     assert!(
         !mids.is_empty(),
         "the probe never ran, so it measured nothing"
@@ -9737,6 +9743,12 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
 ///   chain rim by name until the chart can hold them: the five Fuse rows whose hole met the seam
 ///   (wall +y/−x/+x, corner, offmid) become **Ok**; `CylSpan` 29 → 24 (every Cut/Common row is a
 ///   panel, every half row a chain or a panel); Ok 9 → 14.
+/// * E2-2 ①: the circle road reads every cycle (a panel, a chain rim) with an optional outer
+///   answer, while the rulings road still states bands only. The reported reject is the lowest
+///   class's first declined face, and it moves: a panel's ⊥ classes no longer decline, so the
+///   wall/offmid Common rows and every half row surface the **two-edge cap** leaving its chord's
+///   class — `CurvedDeparture` 17 (E3-c's population); the Cut rows and corner Common (a three-node
+///   cap) stay `CylSpan` on the rulings road: 24 → 7. Ok 14 unchanged.
 ///
 /// ★ The probe beside it counts the loops carrying an `OnSeam` joint at any vertex — outer loops
 /// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
@@ -9775,7 +9787,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CurvedDeparture),
             ],
             [RIMS_HOLE, PANEL, PANEL],
         ),
@@ -9784,7 +9796,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CurvedDeparture),
             ],
             [RIMS_HOLE, PANEL, PANEL],
         ),
@@ -9793,7 +9805,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CurvedDeparture),
             ],
             [RIMS_HOLE, PANEL, PANEL],
         ),
@@ -9802,7 +9814,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CurvedDeparture),
             ],
             [RIMS_HOLE, PANEL, PANEL],
         ),
@@ -9825,36 +9837,28 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CurvedDeparture),
             ],
             [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "half wall",
-            [
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
-            ],
+            [Declined(DeclineKind::CurvedDeparture); 3],
             [CHAIN, PANEL, PANEL],
         ),
         (
             "half wall, cap below",
-            [
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
-            ],
+            [Declined(DeclineKind::CurvedDeparture); 3],
             [CHAIN, PANEL, PANEL],
         ),
         (
             "half +x",
-            [Declined(DeclineKind::CylSpan); 3],
+            [Declined(DeclineKind::CurvedDeparture); 3],
             [CHAIN, PANEL, PANEL],
         ),
         (
             "half +x, cap below",
-            [Declined(DeclineKind::CylSpan); 3],
+            [Declined(DeclineKind::CurvedDeparture); 3],
             [CHAIN, PANEL, PANEL],
         ),
     ];
@@ -9965,7 +9969,12 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         0,
         "a circle-bounded face is never degenerate"
     );
-    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 24);
+    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 7);
+    assert_eq!(
+        count(|r| *r == Declined(DeclineKind::CurvedDeparture)),
+        17,
+        "a two-edge cap departing its chord's class"
+    );
     assert_eq!(
         count(|r| *r == Declined(DeclineKind::OuterRing)),
         0,
@@ -10049,6 +10058,10 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   `NoClearRay` 8 → `BranchVertexUnnamed` 6 (the chord's cell has no cylinder for its corners,
 ///   `coord_key`) + 2 (Common). Ok 49 · `CurvedRingWall` 5 (arc crossings) · `CylSpan` 120 ·
 ///   `BranchVertexUnnamed` 12 · `RulingBoundNotYet` 2 · `NoClearRay` 2 · first 15 · empty 5.
+/// * E2-2 ①: the circle road reads panels and chains; the first reject moves off the ⊥ classes,
+///   and the rows whose result has a two-edge cap (wall/offmid Common, every half family) surface
+///   `CurvedDeparture` on every tool — 85; `CylSpan` 120 → 35 (the Cut rows and corner Common,
+///   still on the rulings road).
 #[test]
 fn crossing_census_slabs_and_through_axis_walls_by_name() {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -10113,17 +10126,20 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         Declined(CurvedRingWall),
         Ok(1),
     ];
-    // A panel or chain lateral: the row itself is not stated yet (E2-2), whatever the tool.
+    // A panel lateral: the rulings road does not state it yet (E2-2 ②), whatever the tool.
     const SPAN: [Cross; 5] = [Declined(CylSpan); 5];
+    // A result with a two-edge cap (arc + chord on the plate's wall): the cap's ring leaves its
+    // chord's class along the arc, which the walk cannot side (E3-c), whatever the tool.
+    const DEPART: [Cross; 5] = [Declined(DeclineKind::CurvedDeparture); 5];
     let want: [[[Cross; 5]; 3]; 14] = [
         [BAND, BAND, BAND_COMMON], // through
         // on top: the cut leaves the plate alone.
         [BAND, [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], [Empty; 5]],
         [BAND, BAND, BAND_COMMON], // flush
-        [WALL_FUSE, SPAN, SPAN],   // wall -y
-        [WALL_FUSE, SPAN, SPAN],   // wall +y
-        [WALL_FUSE, SPAN, SPAN],   // wall -x
-        [WALL_FUSE, SPAN, SPAN],   // wall +x
+        [WALL_FUSE, SPAN, DEPART], // wall -y
+        [WALL_FUSE, SPAN, DEPART], // wall +y
+        [WALL_FUSE, SPAN, DEPART], // wall -x
+        [WALL_FUSE, SPAN, DEPART], // wall +x
         // corner: either slab cuts the circle at four rulings (two walls), and the chart cannot
         // pair a cut end with its rim (`End::Other`, E2-2) — the emitter refuses by name; the
         // through-axis tool's wall `y = 4` is the plate's own wall (coplanar contact).
@@ -10150,12 +10166,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 Ok(1),
             ],
             SPAN,
-            SPAN,
+            DEPART,
         ],
-        [SPAN; 3], // half wall
-        [SPAN; 3], // half wall, cap below
-        [SPAN; 3], // half +x
-        [SPAN; 3], // half +x, cap below
+        [DEPART; 3], // half wall
+        [DEPART; 3], // half wall, cap below
+        [DEPART; 3], // half +x
+        [DEPART; 3], // half +x, cap below
     ];
     let mut table: Vec<String> = Vec::new();
     let mut mismatches = 0usize;
@@ -10237,10 +10253,86 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     };
     assert_eq!(count(|c| matches!(c, Ok(_))), 49, "{tally:?}");
     assert_eq!(count(|c| *c == Declined(CurvedRingWall)), 5);
-    assert_eq!(count(|c| *c == Declined(CylSpan)), 120);
+    assert_eq!(count(|c| *c == Declined(CylSpan)), 35);
+    assert_eq!(count(|c| *c == Declined(DeclineKind::CurvedDeparture)), 85);
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 2);
     assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 12);
     assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 2);
     assert_eq!(count(|c| *c == First), 15);
     assert_eq!(count(|c| *c == Empty), 5);
+}
+
+/// **The ⊥ road runs on a panel and on a chain, and says what the walk-through predicts** (E2-2 ①).
+/// Locked through the road's own ledger (`cycle_probe`) because neither face reaches a result yet:
+/// the panel is refused one road later (the rulings road still states bands only), the chain's
+/// re-operation is refused at its cap's chord (`CurvedDeparture`) — and every class is traced by
+/// hand (`trace_every_class`), since the production driver stops at the first decline and, in
+/// serial mode, would never reach the classes this reads. Stations are axis parameters from the
+/// boss's base (z = −1), so `t = z + 1`.
+///
+/// Panel (wall +x Cut, cut by the wall slab): at `z = 0.5` the class runs strictly inside the
+/// panel's range — outer `Crosses`, the two rulings crossed carve **one** extent (the outer half)
+/// away, one span left;
+/// at `z = 0` the class is the panel's own lower arc — no outer answer, one graze carved, one
+/// span. Chain (half wall Fuse, cut by the far cube): `z = −1` is the whole rim — a graze, nothing
+/// carved; `z = 0` is inside — `Crosses`, the plate-bottom arc carves a graze on the inner half,
+/// two spans; `z = 1` is the chain's top — no outer answer, the boss-top arc grazes, one span.
+#[test]
+fn a_cycle_is_carved_on_its_classes() {
+    {
+        let (mut m, plate, boss) = boss_family([4.0, 2.0, -1.0], 4.0);
+        let out = boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
+        m.rebuild_adjacency();
+        let t = m.add_cuboid(
+            Point3::from_array([3.0, -1.0, 0.5]),
+            Point3::from_array([6.0, 5.0, 1.5]),
+        );
+        m.rebuild_adjacency();
+        crate::arrangement::trace_every_class(&m, out[0], t).expect("the panel's classes trace");
+    }
+    {
+        let (mut m, plate, boss) = boss_family([2.0, 0.0, -1.0], 2.0);
+        let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the half boss builds");
+        m.rebuild_adjacency();
+        let far = m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
+        m.rebuild_adjacency();
+        crate::arrangement::trace_every_class(&m, out[0], far).expect("the chain's classes trace");
+    }
+    use crate::arrangement::CylOnClass;
+    let hits = crate::arrangement::cycle_probe::HITS
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .clone();
+    // `kinds = [rims, chains, panels, holes]`; every recorded entry of the shape at the station
+    // must read the same, and at least one must exist. A graze's `body_above` is written in the
+    // class's stored frame, so the rim check asks only for the kind of answer.
+    let check = |kinds: [usize; 4],
+                 t: f64,
+                 outer: fn(Option<CylOnClass>) -> bool,
+                 carved: usize,
+                 spans: usize| {
+        let rows: Vec<_> = hits
+            .iter()
+            .filter(|h| h.kinds == kinds && h.t == t)
+            .collect();
+        assert!(!rows.is_empty(), "no record for {kinds:?} at t = {t}");
+        for h in rows {
+            assert!(outer(h.outer), "{kinds:?} at t = {t}: {h:?}");
+            assert_eq!(
+                (h.carved, h.spans),
+                (carved, spans),
+                "{kinds:?} at t = {t}: {h:?}"
+            );
+        }
+    };
+    let crosses = |o: Option<CylOnClass>| o == Some(CylOnClass::Crosses);
+    let grazes = |o: Option<CylOnClass>| matches!(o, Some(CylOnClass::Grazes { .. }));
+    let absent = |o: Option<CylOnClass>| o.is_none();
+    let panel = [0, 0, 1, 0];
+    check(panel, 1.5, crosses, 1, 1);
+    check(panel, 1.0, absent, 1, 1);
+    let chain = [1, 1, 0, 0];
+    check(chain, 0.0, grazes, 0, 1);
+    check(chain, 1.0, crosses, 1, 2);
+    check(chain, 2.0, absent, 1, 1);
 }
