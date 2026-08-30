@@ -9741,9 +9741,6 @@ fn reop_census_families_reoperate_or_decline_by_name() {
     let mut seam_joints = (0usize, 0usize);
     let mut table: Vec<String> = Vec::new();
     let mut mismatches = 0usize;
-    let sense_before = *crate::arrangement::arc_probe::SENSE
-        .lock()
-        .expect("the probe's lock is never held across a panic");
     let mut cycle_mismatches: Vec<String> = Vec::new();
     for (name, base, h, want, want_cyc) in families {
         for ((kind, want), want_cyc) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
@@ -9839,18 +9836,6 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         "lateral cycles:\n{}",
         cycle_mismatches.join("\n")
     );
-    // E2-0: on every on-class arc of a hole the flank's reading of its direction and the
-    // producer's agree — the measurement that licenses the Run arm to read the producer's.
-    // Universal over the binary (the probe is global), and not vacuous: this census's holed
-    // bands put arcs on their cap classes.
-    let sense = *crate::arrangement::arc_probe::SENSE
-        .lock()
-        .expect("the probe's lock is never held across a panic");
-    assert_eq!(
-        sense.1, 0,
-        "an on-class arc the flank and the producer read differently"
-    );
-    assert!(sense.0 > sense_before.0, "no on-class arc was read");
     // The distribution the doc states, so a drift in the table is read as a whole.
     let count = |p: fn(&Reop) -> bool| -> usize {
         families

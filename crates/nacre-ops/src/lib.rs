@@ -1452,18 +1452,6 @@ mod zzz_ledger {
             s(|r| r.arcs_multi_mark),
             s(|r| r.emitted_faces),
         );
-        // E2-0: the on-class arcs whose direction the flank and the producer read alike / differently.
-        let sense = *crate::arrangement::arc_probe::SENSE
-            .lock()
-            .expect("the probe's lock is never held across a panic");
-        eprintln!(
-            "ledger E2-0: arc_sense agree {} disagree {}",
-            sense.0, sense.1
-        );
-        assert_eq!(
-            sense.1, 0,
-            "an on-class arc the flank and the producer read differently"
-        );
         let d4 = crate::boolean::probe::d4::ROWS
             .lock()
             .expect("the probe's lock is never held across a panic")

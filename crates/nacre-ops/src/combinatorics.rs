@@ -1767,9 +1767,8 @@ pub(crate) struct NamedRing {
     /// half-edge as `curved_wall` reads it for a plane face's arc. `None` on a plane face's ring
     /// and on a ruling. ★ Carried because the flank of an on-class run says which side the ring's
     /// *interior* is, which is the arc's direction only for a convex hole; a wrapping rim has no
-    /// interior side (E2-0 measures the two against each other before the rule moves).
-    #[cfg_attr(not(test), allow(dead_code))]
-    // E2-0: read by the census; the Run arm reads it with E2
+    /// interior side. `hole_on_class`'s Run arm reads this (E2-0 measured it equal to the flank's
+    /// reading on every on-class arc of today's holes before the rule moved).
     pub arc_ccw: Vec<Option<bool>>,
 }
 

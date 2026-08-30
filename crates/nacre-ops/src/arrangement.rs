@@ -1635,21 +1635,6 @@ pub(crate) mod arc_probe {
     /// face grazes there (the hole's own rim) or is absent (the hole's interior).
     pub(crate) static MIDS: Mutex<Vec<[f64; 3]>> = Mutex::new(Vec::new());
 
-    /// E2-0: on-class arcs whose direction the flank rule and the producer's `arc_ccw` state
-    /// the same way (`.0`) and differently (`.1`), over this binary.
-    pub(crate) static SENSE: Mutex<(usize, usize)> = Mutex::new((0, 0));
-
-    pub(crate) fn record_sense(agree: bool) {
-        let mut s = SENSE
-            .lock()
-            .expect("the probe's lock is never held across a panic");
-        if agree {
-            s.0 += 1;
-        } else {
-            s.1 += 1;
-        }
-    }
-
     pub(crate) fn record(
         jd: &Judge<'_, WorkingPlane>,
         cyl: usize,
@@ -1897,7 +1882,7 @@ fn hole_on_class(
                 first,
                 len,
                 flanks_differ,
-                flank,
+                ..
             } => {
                 // A run whose flanks differ is a rim the hole continues *through* — it is both an
                 // extent and a parity toggle, and no fixture makes one. Declined and counted
@@ -1910,18 +1895,17 @@ fn hole_on_class(
                 if len < 2 {
                     continue;
                 }
-                // The hole sits on the flanks' side; the face occupies the other one. `flank`
-                // is in the outward frame, a label's "above" in the stored one — and the walk
-                // hands it over rather than this asking again
-                // (see [`combinatorics::Feature::Run`]).
-                // ★ `None` is "the neighbour across is a departure, and its side is σ" — the
-                // value this road would need and does not have.
-                let side = i32::from(flank.ok_or(DeclineKind::CurvedDeparture)?);
-                let hole_stored = side * fs;
-                let graze = CylOnClass::Grazes {
-                    body_above: hole_stored < 0,
-                };
-                let ccw = sigma * axis_of(-hole_stored) > 0;
+                // ★★★★★ **Which way the arc runs, and so which side the face is on, is the
+                // producer's to say — not the flank's.** This used to read the flank (the side
+                // the ring's off-class neighbours sit on) and place the face opposite it, which
+                // is the ring's *interior* side — right for a convex hole and wrong for a
+                // wrapping rim, whose highest arc has both neighbours below it and the face
+                // below too. The arc's own direction about the axis (`NamedRing::arc_ccw`, the
+                // producer's convention) settles both: walked with sense `ν`, material lies
+                // along `σ·ν·m̂`, so the face is above the class exactly when that agrees with
+                // the class's stored normal (`up`), and the carved extent is the arc as walked.
+                // ☑ E2-0 measured the two readings equal on every on-class arc of today's holes
+                // (50 of 50) before this rule replaced the flank's.
                 for k in 0..len - 1 {
                     // ★★★★★ **"Both ends on the class" is not "the edge is on the circle."** The
                     // walk answers about *nodes*; on a plane the edge between two on-line nodes
@@ -1933,25 +1917,23 @@ fn hole_on_class(
                     // ★ This is the check `lateral_inner_loops` used to make from the row
                     // ("neither ⊥ nor ∥: an ellipse, outside this vocabulary") and that went with
                     // it; it belongs here, per edge, where the answer is actually used.
-                    if nr.walls[(first + k) % n] != crate::boolean::Wall::Plane(wc) {
+                    let edge = (first + k) % n;
+                    if nr.walls[edge] != crate::boolean::Wall::Plane(wc) {
                         return Err(DeclineKind::CylHoleFeature);
                     }
-                    let a = ring[(first + k) % n];
-                    let b = ring[(first + k + 1) % n];
-                    let arc = if ccw { [a, b] } else { [b, a] };
-                    // E2-0: the flank's reading of this arc against the producer's. Material
-                    // lies along `σ·ν·m̂` for an arc walked with sense `ν`, so the face is above
-                    // the class exactly when that agrees with the class's stored normal.
-                    #[cfg(test)]
-                    if let Some(nu) = nr.arc_ccw.get((first + k) % n).copied().flatten() {
-                        let nu_body_above = (sigma * if nu { 1 } else { -1 } > 0) == up;
-                        arc_probe::record_sense(nu == ccw && nu_body_above == (hole_stored < 0));
-                    }
+                    // An arc on the class with no stated sense is not a lateral's arc at all.
+                    let Some(nu) = nr.arc_ccw[edge] else {
+                        return Err(DeclineKind::CylHoleFeature);
+                    };
+                    let body_above = (sigma * if nu { 1 } else { -1 } > 0) == up;
+                    let a = ring[edge];
+                    let b = ring[(edge + 1) % n];
+                    let arc = if nu { [a, b] } else { [b, a] };
                     #[cfg(test)]
                     arc_probe::record(jd, cyl, def, arc);
                     out.push(Carved {
                         arc,
-                        on: Some(graze),
+                        on: Some(CylOnClass::Grazes { body_above }),
                     });
                 }
             }
