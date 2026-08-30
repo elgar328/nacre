@@ -3575,7 +3575,7 @@ enum CoordKey {
 /// def is a clone of. This used to search the ring's own arc/ruling carriers instead — "a branch
 /// node is an arc endpoint" — which a **chord** refuted (E3-b): a cell bounded by a cap's chord
 /// alone has branch corners and only plane carriers, and the search refused an honestly-named
-/// point (`BranchVertexUnnamed` on the rotated flush corpus, measured).
+/// point (`BranchVertexUnnamed` on the straddling flush corpus, measured).
 fn coord_key(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],

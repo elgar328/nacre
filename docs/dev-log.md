@@ -16035,3 +16035,11 @@ Cut/Common 거절 → **빌드**(digest 신규).
 그룹핑 팔 캐리어화(`Ring::edges`의 legacy 이름-도로 — 이번에 철회한 병합 키 확장(벽을 키에, `Wall::reversed`)이 그 칸의 입구; BVU 18) · `read_cell`의 `End::Other`
 (CGU 75) · 청소 패스의 평면 전용 광선(`NoClearRay` 62) · 계단식 사슬(`flanks_differ` 런 → 교차 짝짓기) · O3(호의 이중 교차 — 게이트 밖) · `cycle_against_line` 정리 ·
 D5 · `ChainContacts`.
+
+### ☑ 자체 점검 (사용자 요청) — 한 단어를 고쳤다
+- ★ **`coord_key` doc의 «rotated flush corpus»가 거짓** — 그 `BranchVertexUnnamed` 측정은 **무회전** `rul flush` 코퍼스에서였다(회전 탐침은 API 오타로 컴파일도 안 됐고 무회전으로
+  재탐침했었다). «straddling flush corpus»로 정정.
+- 확인한 것: 결과 전체 가드 최종본(stated 쌍만 묻고 증인은 최소 핸들 — 슬릿/호-분리 잔재 코드 없음) · `crossings` 키 방향(생산자 `planes.rs:1087`의 `(c, ci)` = 소비자 룰링
+  도로·구멍 arm의 `(wc, k)`, 두 소비자 모두 측정 초록) · ①이 «③으로» 넘긴 낡은 문장 셋 전부 해소(«the one reader today refuses» 삭제됨 · «three planes» 두 곳은 교체 사유의
+  역사 기록으로 정확 · `CylSpan` doc은 E2-2가 이미 갱신) · 재연산 census doc의 E3-c 불릿·수치(Ok 21→34, half Cut = `End::Other`) 일치 · HEAD census diff 3행의 정당성
+  (Fuse 이름 이동 + Cut/Common 신규 빌드) · 커밋 diff에 탐침 잔재 0(`zz_probe`/`PROBE`/`ZZPROBE` grep 0).
