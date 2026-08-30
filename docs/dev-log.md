@@ -15624,7 +15624,7 @@ hi 사슬 / 바닥이 판 안 = lo 사슬) 픽스처로 잠금: 옆면 **1**, �
 | 수 | 예측 | 실측 |
 |---|---|---|
 | Step 0 거울 픽스처(바닥이 판 안) | 오늘 빌드, Fuse 옆면 2 / Cut 1 / Common 1 | **그대로**(부피 정확·validate 0) |
-| Step 0 `group_faces` 잠재 패닉(빈 공간 판 + 반높이 보스) | 패닉 또는 게이트 거절 | **`NoClearRay`**(배열의 링 포함 판정이 먼저) — 패닉 팔 미도달, ②a가 total match로만 닫음 |
+| Step 0 `group_faces` 잠재 패닉(빈 공간 판 + 반높이 보스) | 패닉 또는 게이트 거절 | **`NoClearRay`**(포함 판정이 먼저 거절 — 어느 호출자인지는 안 캤다) — 패닉 팔 미도달, ②a가 total match로만 닫음 |
 | ① 원장(lib+코퍼스) | Merged 56 · NoTouch 14 · RimsNotOneEach 2 · holes_c2 16 · 나머지 0 | **56 · 14 · 3(= 2 + 보고 테스트 자신의 반높이 Fuse) · 16** · holes_c0 40 · plus=minus 59 · chain_rims 3(전부 −1, 접촉 2·교차 1) · 그 외 0 |
 | ②a 원장 / census | ①과 동일 / HEAD | **동일 / 동일** |
 | ②b 원장 | Merged 61(56+3+거울 2) · WrappingNotOneEach 0 · ChainContacts 0 · chain_rims 5 | **groups 75 · merged 61 · no_touch 14 · wrapping_not_one_each 0 · chain_contacts 0 · seam_unnamed 0 · winding 0 · 나머지 0 · plus=minus 61 · holes_c0 40 · holes_c2 16 · chain_rims 5 · max 접촉 2 · max 교차 1** — 예측 그대로 |
@@ -15648,6 +15648,13 @@ hi 사슬 / 바닥이 판 안 = lo 사슬) 픽스처로 잠금: 옆면 **1**, �
 
 ### 관문
 전량 초록(②b 커밋 후): fmt/clippy 0 · workspace **1169** · nodef · census 두 프로파일 269줄 동일, HEAD 대비 `rul half fuse` 1줄(넓이 1 ULP) · reject_census · 스윕 129 · perf release(fold 80 407면 237.2116 · ring fins 1.63 s · hub 1.07 s · small 554 µs — 같은 대역) · kit 72. 원장 단일 스레드(위 표). 커밋마다 훅이 fmt·clippy·workspace를 다시 돌렸다.
+
+### ☑ 자체 점검 (사용자 요청)
+- ★ **재지 않고 적은 수 하나를 쟀다**: 「half wall 사슬은 접촉 1」 — 메시 오라클만 돌린 원장에서 chain_rims 2 · max 접촉 **1** 확인(참).
+- `Bound`의 doc이 「곡면 경계는 노드가 없고 솔기 정점 표를 안 지난다」고 했다 — 사슬 림은 노드 링이라 둘 다 지난다. 고침.
+- Step 0의 `NoClearRay`를 「배열의 링 포함 판정」이라 적었는데 어느 호출자인지 캐지 않았다 — 표현을 좁혔다.
+- 확인한 것: 계획의 「`rul half` 세 줄」 착오는 ②b 절에 이미 기록 · 부정 대조 넷의 자리 이름 실측과 일치 · 관문 수(1169/129/72) 로그와
+  일치 · `ArcBoundNotYet` doc의 «다섯» backstop과 코드의 raise 자리 일치.
 
 ### 다음
 반원판 캡의 `outer_tri`(`DegenerateFace`) → 그 뒤 사슬 림 면의 재연산(트레이서가 외곽 루프의 θ-범위를 읽음) · D5:

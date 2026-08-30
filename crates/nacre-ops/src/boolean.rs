@@ -892,9 +892,10 @@ impl Ring {
 }
 
 /// One boundary of a result face (M6-2a): a polygon of seam nodes, a **full circle** of a
-/// cylinder class, or a lateral **band** between two of them. Neither curved bound has nodes or
-/// walls; both are assembled through the rim machinery (`push_edge([lateral, plane], [v, v])` +
-/// an `OnSeam` vertex), never through the seam-vertex table.
+/// cylinder class, or a lateral **band** between two rims. A circle has no nodes or walls and is
+/// assembled through the rim machinery (`push_edge([lateral, plane], [v, v])` + an `OnSeam`
+/// vertex), never through the seam-vertex table; so is a band's rim while it is a whole circle —
+/// a band's **chain** rim (D4) is a node ring like a polygon, and goes through both.
 #[derive(Clone, Debug)]
 pub(crate) enum Bound {
     Ring(Ring),
