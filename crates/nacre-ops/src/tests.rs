@@ -3820,10 +3820,16 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     let b = m.add_cylinder(Point3::from_array([6.0, 2.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
     let _ = boolean(&mut m, BoolKind::Cut, first, b);
-    let carved = crate::arrangement::ruling_probe::CARVED
+    // ★ The ledger is the binary's: since E2-2 a panel's ruling (one graze) and a chain's (a
+    // transversal then a graze) are recorded too. Read this fixture's boss — origin `(2, 0, −1)`,
+    // rulings spanning `t ∈ [0, 4]` — and nothing else.
+    let carved: Vec<Vec<crate::arrangement::SegKind>> = crate::arrangement::ruling_probe::CARVED
         .lock()
         .expect("the probe's lock is never held across a panic")
-        .clone();
+        .iter()
+        .filter(|c| c.origin == [2.0, 0.0, -1.0] && c.span == [0.0, 4.0])
+        .map(|c| c.kinds.clone())
+        .collect();
     assert!(
         !carved.is_empty(),
         "the probe never ran, so it measured nothing"
@@ -3847,10 +3853,13 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     // half of the boss is the `y > 0` one, so along the hole's vertical edges the lateral survives
     // at `y < 0` — the stored-normal side exactly when that normal points at `−y`. ☑ Flipping any
     // factor of the derivation turns this red; nothing downstream does, yet.
-    let sides = crate::arrangement::ruling_probe::GRAZE_SIDE
+    let sides: Vec<(bool, f64)> = crate::arrangement::ruling_probe::GRAZE_SIDE
         .lock()
         .expect("the probe's lock is never held across a panic")
-        .clone();
+        .iter()
+        .filter(|g| g.origin == [2.0, 0.0, -1.0] && g.span[1] - g.span[0] == 2.0)
+        .map(|g| (g.body_above, g.ny))
+        .collect();
     assert!(!sides.is_empty(), "the side probe never ran");
     for &(body_above, ny) in &sides {
         assert!(
@@ -9749,6 +9758,8 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
 ///   wall/offmid Common rows and every half row surface the **two-edge cap** leaving its chord's
 ///   class — `CurvedDeparture` 17 (E3-c's population); the Cut rows and corner Common (a three-node
 ///   cap) stay `CylSpan` on the rulings road: 24 → 7. Ok 14 unchanged.
+/// * E2-2 ②: the rulings road sweeps every cycle — the six Cut rows (a panel: the notch's wall)
+///   and corner Common become **Ok** with their volumes unchanged; `CylSpan` 7 → 0, Ok 14 → 21.
 ///
 /// ★ The probe beside it counts the loops carrying an `OnSeam` joint at any vertex — outer loops
 /// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
@@ -9784,49 +9795,25 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ("flush", [Ok, Ok, Ok], [RIMS, RIMS, RIMS]),
         (
             "wall -y",
-            [
-                Ok,
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CurvedDeparture),
-            ],
+            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
             [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "wall +y",
-            [
-                Ok,
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CurvedDeparture),
-            ],
+            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
             [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "wall -x",
-            [
-                Ok,
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CurvedDeparture),
-            ],
+            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
             [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "wall +x",
-            [
-                Ok,
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CurvedDeparture),
-            ],
+            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
             [RIMS_HOLE, PANEL, PANEL],
         ),
-        (
-            "corner",
-            [
-                Ok,
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CylSpan),
-            ],
-            [RIMS_HOLE, PANEL, PANEL],
-        ),
+        ("corner", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         (
             "corner-lo",
             [First(RejectReason::CylinderGateUndecided); 3],
@@ -9834,11 +9821,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ),
         (
             "offmid",
-            [
-                Ok,
-                Declined(DeclineKind::CylSpan),
-                Declined(DeclineKind::CurvedDeparture),
-            ],
+            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
             [RIMS_HOLE, PANEL, PANEL],
         ),
         (
@@ -9963,13 +9946,13 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             .filter(|r| p(r))
             .count()
     };
-    assert_eq!(count(|r| *r == Ok), 14, "{table:?}");
+    assert_eq!(count(|r| *r == Ok), 21, "{table:?}");
     assert_eq!(
         count(|r| *r == Rejected(RejectReason::DegenerateFace)),
         0,
         "a circle-bounded face is never degenerate"
     );
-    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 7);
+    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 0);
     assert_eq!(
         count(|r| *r == Declined(DeclineKind::CurvedDeparture)),
         17,
@@ -10062,6 +10045,13 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   and the rows whose result has a two-edge cap (wall/offmid Common, every half family) surface
 ///   `CurvedDeparture` on every tool — 85; `CylSpan` 120 → 35 (the Cut rows and corner Common,
 ///   still on the rulings road).
+/// * E2-2 ②: the rulings road sweeps every cycle, so a Cut result's panel is stated: the six wall
+///   Cut rows read like the Fuse rows (top/bottom Ok(1), the **wall slab Ok(1) with its exact
+///   volume**, the mid slab on the grouping road, the through-axis wall on the bite's arc) and the
+///   corner's coplanar tool reaches the chord's cell; corner Common (a quarter cylinder alone)
+///   builds under the top and bottom slabs and finds no clear ray once a slab parts it. `CylSpan`
+///   0 · Ok 69 · `BranchVertexUnnamed` 19 · `CurvedRingWall` 10 · `NoClearRay` 4 ·
+///   `CylinderGateUndecided` 1 (the chart's walk has an open end at a wall with one ruling).
 #[test]
 fn crossing_census_slabs_and_through_axis_walls_by_name() {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -10104,7 +10094,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     };
     const TOOLS: [&str; 5] = ["mid", "top", "bottom", "axis wall", "wall slab"];
     // Per family, per kind: the five tools' outcomes, in `TOOLS` order.
-    use DeclineKind::{CurvedRingWall, CylSpan};
+    use DeclineKind::CurvedRingWall;
     use RejectReason::{BranchVertexUnnamed, NoClearRay, RulingBoundNotYet};
     // A band result: the mid slab parts the plate into two solids, the top and bottom slabs cut
     // the standing boss, the wall slab clears the boss. The through-axis wall halves the cap's
@@ -10126,8 +10116,18 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         Declined(CurvedRingWall),
         Ok(1),
     ];
-    // A panel lateral: the rulings road does not state it yet (E2-2 ②), whatever the tool.
-    const SPAN: [Cross; 5] = [Declined(CylSpan); 5];
+    // A wall boss cut (its lateral a panel — the notch's wall): the top and bottom slabs miss
+    // the result (nothing of the boss stands outside the plate), the wall slab crosses the
+    // panel's rulings and builds with its exact volume (E2-2's own population), the mid slab
+    // splits the result and the grouping road refuses the mixed rings, and the through-axis wall
+    // crosses the bite's arcs.
+    const PANEL_CUT: [Cross; 5] = [
+        Rejected(BranchVertexUnnamed),
+        Ok(1),
+        Ok(1),
+        Declined(CurvedRingWall),
+        Ok(1),
+    ];
     // A result with a two-edge cap (arc + chord on the plate's wall): the cap's ring leaves its
     // chord's class along the arc, which the walk cannot side (E3-c), whatever the tool.
     const DEPART: [Cross; 5] = [Declined(DeclineKind::CurvedDeparture); 5];
@@ -10135,14 +10135,18 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         [BAND, BAND, BAND_COMMON], // through
         // on top: the cut leaves the plate alone.
         [BAND, [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], [Empty; 5]],
-        [BAND, BAND, BAND_COMMON], // flush
-        [WALL_FUSE, SPAN, DEPART], // wall -y
-        [WALL_FUSE, SPAN, DEPART], // wall +y
-        [WALL_FUSE, SPAN, DEPART], // wall -x
-        [WALL_FUSE, SPAN, DEPART], // wall +x
-        // corner: either slab cuts the circle at four rulings (two walls), and the chart cannot
-        // pair a cut end with its rim (`End::Other`, E2-2) — the emitter refuses by name; the
-        // through-axis tool's wall `y = 4` is the plate's own wall (coplanar contact).
+        [BAND, BAND, BAND_COMMON],      // flush
+        [WALL_FUSE, PANEL_CUT, DEPART], // wall -y
+        [WALL_FUSE, PANEL_CUT, DEPART], // wall +y
+        [WALL_FUSE, PANEL_CUT, DEPART], // wall -x
+        [WALL_FUSE, PANEL_CUT, DEPART], // wall +x
+        // corner: either slab cuts the Fuse's circle at four rulings (two walls), and the chart
+        // cannot pair a cut end with its rim (`End::Other`, E2-2) — the emitter refuses by name;
+        // the through-axis tool's wall `y = 4` is the plate's own wall (coplanar contact), which
+        // after E2-2 reaches the chord's cell (`coord_key`) for the Cut and a quarter lateral whose
+        // wall has one ruling in the interval for the Common (`CylinderGateUndecided`: the chart's
+        // walk has an open end there). The Common is a quarter cylinder alone, so a slab through
+        // it leaves two solids and the point classification finds no clear ray.
         [
             [
                 Rejected(RulingBoundNotYet),
@@ -10151,8 +10155,20 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 Rejected(BranchVertexUnnamed),
                 Rejected(RulingBoundNotYet),
             ],
-            SPAN,
-            SPAN,
+            [
+                Rejected(BranchVertexUnnamed),
+                Ok(1),
+                Ok(1),
+                Rejected(BranchVertexUnnamed),
+                Ok(1),
+            ],
+            [
+                Rejected(NoClearRay),
+                Ok(1),
+                Ok(1),
+                Rejected(RejectReason::CylinderGateUndecided),
+                Rejected(NoClearRay),
+            ],
         ],
         [[First; 5]; 3], // corner-lo: the first op is refused
         // offmid: the top slab's cap at z = 2.5 meets the notch's rulings above the plate — a
@@ -10165,7 +10181,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 Declined(CurvedRingWall),
                 Ok(1),
             ],
-            SPAN,
+            PANEL_CUT,
             DEPART,
         ],
         [DEPART; 3], // half wall
@@ -10251,13 +10267,16 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 49, "{tally:?}");
-    assert_eq!(count(|c| *c == Declined(CurvedRingWall)), 5);
-    assert_eq!(count(|c| *c == Declined(CylSpan)), 35);
+    assert_eq!(count(|c| matches!(c, Ok(_))), 69, "{tally:?}");
+    assert_eq!(count(|c| *c == Declined(CurvedRingWall)), 10);
     assert_eq!(count(|c| *c == Declined(DeclineKind::CurvedDeparture)), 85);
-    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 2);
-    assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 12);
+    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 4);
+    assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 19);
     assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 2);
+    assert_eq!(
+        count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
+        1
+    );
     assert_eq!(count(|c| *c == First), 15);
     assert_eq!(count(|c| *c == Empty), 5);
 }
@@ -10335,4 +10354,42 @@ fn a_cycle_is_carved_on_its_classes() {
     check(chain, 0.0, grazes, 0, 1);
     check(chain, 1.0, crosses, 1, 2);
     check(chain, 2.0, absent, 1, 1);
+}
+
+/// **The rulings road sweeps a chain rim** (E2-2 ②): on the half wall boss's wall class `y = 0`,
+/// each ruling is `Transversal` from the whole rim at `z = −1` up to the plate's bottom `z = 0`
+/// (both halves of the boss are there), then a `Graze` along the chain's own ruling edge up to
+/// the boss's top `z = 1` — the collinear run whose arcs arrive from the outer half and leave into
+/// the inner one toggles the face off above it. A lock of the **rule**, not of a result: every
+/// re-operation of a half boss is still refused at its cap's chord (`CurvedDeparture`, E3-c), so
+/// the classes are traced by hand and the road's ledger is read for this boss (`origin
+/// (2, 0, −1)`, rulings spanning `t ∈ [0, 2]`).
+#[test]
+fn a_chain_sweeps_its_rulings() {
+    let (mut m, plate, boss) = boss_family([2.0, 0.0, -1.0], 2.0);
+    let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the half boss builds");
+    m.rebuild_adjacency();
+    let far = m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
+    m.rebuild_adjacency();
+    crate::arrangement::trace_every_class(&m, out[0], far).expect("the chain's classes trace");
+    let rows: Vec<Vec<crate::arrangement::SegKind>> = crate::arrangement::ruling_probe::CARVED
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .iter()
+        .filter(|c| c.origin == [2.0, 0.0, -1.0] && c.span == [0.0, 2.0])
+        .map(|c| c.kinds.clone())
+        .collect();
+    assert!(rows.len() >= 2, "both rulings sweep: {rows:?}");
+    for kinds in &rows {
+        assert!(
+            matches!(
+                kinds[..],
+                [
+                    crate::arrangement::SegKind::Transversal { .. },
+                    crate::arrangement::SegKind::Graze { .. }
+                ]
+            ),
+            "a chain's ruling swept as {kinds:?}"
+        );
+    }
 }

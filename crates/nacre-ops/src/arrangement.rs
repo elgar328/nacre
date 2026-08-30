@@ -313,6 +313,10 @@ pub(crate) struct MergedRuling {
     pub end: [NodeId; 2],
     /// The `(solid, kind)` contributions, like a segment's — `edge_mask` reads it unchanged.
     pub merged: Vec<(SolidSide, SegKind)>,
+    /// The lateral's `orient_sign` (`+1` material inside the cylinder, `−1` outside — a boss or a
+    /// bore), for the vertical answer's content check; an instrument's field, like the label.
+    #[cfg(test)]
+    pub orient: i8,
 }
 
 /// Group a class's circle traces by cylinder class, in ascending class order (deterministic —
@@ -355,7 +359,7 @@ fn merge_circles(
 /// ★★ **It used to say "spanning the face's own rims", and a hole makes that false.** Where the
 /// face is buried in the other body it does not *cross* the wall its hole's vertical edges lie on
 /// — it ends at it — so one ruling comes in pieces of different [`SegKind`]s and each is its own
-/// trace. See [`ruling_grazes`]. A face with no hole still yields exactly one piece per ruling,
+/// trace. See [`ruling_sweep`]. A face with no hole still yields exactly one piece per ruling,
 /// rim to rim.
 #[derive(Clone, Debug)]
 pub(crate) struct RulingTrace {
@@ -366,6 +370,9 @@ pub(crate) struct RulingTrace {
     pub end: [NodeId; 2],
     pub solid: SolidSide,
     pub kind: SegKind,
+    /// The lateral's `orient_sign`, carried to [`MergedRuling::orient`].
+    #[cfg(test)]
+    pub orient: i8,
 }
 
 /// **A disk cap's chord on a through-axis class**: the cap face (a full disk ⊥ to the axis)
@@ -427,6 +434,8 @@ fn merge_rulings(rulings: &[RulingTrace], cyls: &[crate::planes::WorkingCyl]) ->
             side: r.side,
             end: r.end,
             merged: vec![(r.solid, r.kind)],
+            #[cfg(test)]
+            orient: r.orient,
         });
     }
     out
@@ -1026,9 +1035,13 @@ fn trace_transversal_face(
                             combinatorics::EndPin::Class(w),
                         ),
                         crate::boolean::Wall::Ruling { cyl, side, .. } => {
-                            match crossing_on_ruling(jd, cyls, wc, fc, cyl, side) {
+                            let Some(wcy) = cyls.get(cyl) else {
+                                declined = Some(DeclineKind::CurvedRingWall);
+                                break 'rings;
+                            };
+                            match crossing_on_ruling(jd, &wcy.def, wc, fc, cyl, side) {
                                 Ok(id) => {
-                                    crossing_probe::record(jd, cyls, cyl, wc, fc, side, id);
+                                    crossing_probe::record(jd, &wcy.def, cyl, wc, fc, side, id);
                                     (id, combinatorics::EndPin::Cylinder)
                                 }
                                 Err(d) => {
@@ -1331,7 +1344,7 @@ fn trace_one(
                 // No circle: a class **through the axis** leaves two rulings instead (the M6-2
                 // rulings road); any other non-⊥ class still leaves nothing, silently — the
                 // population gate names those interactions.
-                Ok(_) => match rulings_on_class(jd, cyls, cf, fl, wc, k, which, crossings) {
+                Ok(_) => match rulings_on_class(jd, cf, fl, wc, k, which, crossings) {
                     Ok(v) => out.rulings.extend(v),
                     Err(kind) => out.declined.push((fp, kind)),
                 },
@@ -2158,7 +2171,7 @@ fn cycle_on_class(
                 let wdef = &cyls.get(ncyl).ok_or(DeclineKind::CylHoleFeature)?.def;
                 let side =
                     node_ruling_side(jd, wdef, &cj, start).ok_or(DeclineKind::CylHoleFeature)?;
-                let cut = crossing_on_ruling(jd, cyls, wc, j, ncyl, side)
+                let cut = crossing_on_ruling(jd, wdef, wc, j, ncyl, side)
                     .map_err(|_| DeclineKind::CylHoleFeature)?;
                 // Which way the hole runs from here: the travel's axis sense, then the winding.
                 // The side the edge leaves comes from the walk, for the same reason the run's
@@ -2331,7 +2344,7 @@ fn class_through_axis(w: &[Rat; 4], def: &nacre_topo::CylinderDef) -> Option<boo
 /// is not ⊥, a plane not through the axis, no pair of roots, or both roots on one side.
 pub(crate) fn crossing_on_ruling(
     jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
+    def: &nacre_topo::CylinderDef,
     wc: usize,
     fc: usize,
     cyl: usize,
@@ -2339,7 +2352,6 @@ pub(crate) fn crossing_on_ruling(
 ) -> Result<NodeId, DeclineKind> {
     use nacre_scalar::quad::CylinderMeet;
     let no = DeclineKind::CurvedRingWall;
-    let def = &cyls.get(cyl).ok_or(no)?.def;
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
@@ -2395,14 +2407,13 @@ pub(crate) mod crossing_probe {
 
     pub(crate) fn record(
         jd: &Judge<'_, WorkingPlane>,
-        cyls: &[crate::planes::WorkingCyl],
+        def: &nacre_topo::CylinderDef,
         cyl: usize,
         wc: usize,
         fc: usize,
         side: i8,
         id: NodeId,
     ) {
-        let def = &cyls[cyl].def;
         let Some(p) = combinatorics::branch_point(jd, cyl, def, id) else {
             return;
         };
@@ -2458,14 +2469,13 @@ pub(crate) mod crossing_probe {
 /// leave the class's 1-skeleton dangling, which is a worse lie than an honest incomplete-trace
 /// mark.
 ///
-/// The class cuts **two** rulings; each is stated whole (`Transversal`, the solid straddling the
-/// wall along it) except where one of the face's holes has a vertical edge on it, and there the
-/// face ends at the wall instead of crossing it — a `Graze`. [`ruling_grazes`] finds those, and
-/// says why the shared ring walk cannot.
-#[allow(clippy::too_many_arguments)]
+/// The class cuts **two** rulings, and each is [`ruling_sweep`]'s: the face's boundary cycles
+/// against the line `θ = θ_side` of the `(θ, z)` chart, swept along the axis — `Transversal`
+/// where the solid straddles the wall, `Graze` where a cycle's own edge lies on the ruling, and
+/// nothing where the face is not there (E2-2: a panel, a chain rim, a band with holes, all by the
+/// one rule).
 fn rulings_on_class(
     jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
     cf: &crate::planes::CylFaceInfo,
     fl: &combinatorics::FaceLoops,
     wc: usize,
@@ -2473,7 +2483,6 @@ fn rulings_on_class(
     which: SolidSide,
     crossings: &std::collections::HashSet<(usize, usize)>,
 ) -> Result<Vec<RulingTrace>, DeclineKind> {
-    use nacre_scalar::quad::CylinderMeet;
     // ★ **The gate's answer, first** — see [`combinatorics::TraceInput::crossings`]. A pair not
     // listed there was proven clear (or never in question), and contributing its rectangle
     // anyway is what broke the straddling family: the boss's own wall class is a d=0 pair, and
@@ -2494,85 +2503,31 @@ fn rulings_on_class(
         Some(false) => return Ok(Vec::new()),
         None => return Err(DeclineKind::Ruling),
     }
-    // The face's shape from its cycles — the same reading the ⊥ road makes. ★ This road still
-    // states a **band** only (two rims and holes; the sweep over every cycle is E2-2's next
-    // rung), so a panel or a chain rim declines here by the name it always wore.
-    let LateralShape {
-        range: span,
-        rims,
-        cycles,
-    } = lateral_shape(jd, cf, fl, def)?;
-    let [(_, r0), (_, r1)] = rims[..] else {
-        return Err(DeclineKind::CylSpan);
-    };
-    if cycles
-        .iter()
-        .any(|(k, _)| *k != combinatorics::CycleKind::Hole)
-    {
-        return Err(DeclineKind::CylSpan);
-    }
-    let rims = [r0, r1];
-    let holes: Vec<combinatorics::LoopRing> = cycles.into_iter().map(|(_, r)| r).collect();
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
-    // One rim end at a time: the ⊥ class holding the rim — the rim cycle's own plane, no search —
-    // and the two branch points the class pair `{wc, rim}` cuts on the cylinder, each assigned to
-    // its ruling by side.
-    let mut ends: Vec<[(i8, NodeId); 2]> = Vec::with_capacity(2);
-    for rc in rims {
-        let Some(v) = combinatorics::class_coeffs_rat(jd, rc) else {
-            return Err(DeclineKind::Ruling);
-        };
-        let Some(CylinderMeet::Pair { line, s }) =
-            nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
-        else {
-            return Err(DeclineKind::Ruling);
-        };
-        let mut pair = Vec::with_capacity(2);
-        for (root, sv) in [
-            (nacre_topo::QuadRoot::Lo, &s[0]),
-            (nacre_topo::QuadRoot::Hi, &s[1]),
-        ] {
-            let Some(side) = ruling_side(&w, def, (&line, sv)) else {
-                return Err(DeclineKind::Ruling);
-            };
-            pair.push((side, combinatorics::NodeId::branch(wc, rc, k, root)));
-        }
-        let [a, b] = pair[..] else { unreachable!() };
-        if a.0 == b.0 {
-            return Err(DeclineKind::Ruling); // two roots on one side: not a through-axis pair
-        }
-        ends.push([a, b]);
-    }
-    let node_at = |ei: usize, side: i8| -> NodeId {
-        let [a, b] = ends[ei];
-        if a.0 == side { a.1 } else { b.1 }
-    };
-    let kind = SegKind::Transversal {
+    // The face's shape from its cycles — the same reading the ⊥ road makes.
+    let LateralShape { rims, cycles, .. } = lateral_shape(jd, cf, fl, def)?;
+    let kappa = world_rat_sense(jd, wc).ok_or(DeclineKind::Ruling)?;
+    let mat = SegKind::Transversal {
         mat: cf.orient_sign,
     };
-    let _ = cyls;
     let mut out = Vec::with_capacity(2);
     for side in [1i8, -1i8] {
-        // `end[0]` is the low rim: `axis_param_of_plane` ascends `+m`, the `MergedRuling`
-        // convention.
-        let outer = [node_at(0, side), node_at(1, side)];
-        let carved = ruling_grazes(jd, cf, def, &w, &holes, wc, side)?;
-        if carved.is_empty() {
-            out.push(RulingTrace {
-                cyl: k,
-                side,
-                end: outer,
-                solid: which,
-                kind,
-            });
-            continue;
-        }
-        let pieces = assemble_ruling(jd, def, wc, outer, span, &carved, kind)?;
+        let pieces = ruling_sweep(jd, cf, def, &w, wc, k, side, kappa, &rims, &cycles, mat)?;
         #[cfg(test)]
-        ruling_probe::CARVED
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .push(pieces.iter().map(|&(_, k)| k).collect());
+        if pieces
+            .iter()
+            .any(|(_, kind)| matches!(kind, SegKind::Graze { .. }))
+        {
+            let o = def.origin().map(|x| x.to_f64());
+            let at = |n: NodeId| node_axis_param(jd, def, wc, n).map_or(f64::NAN, |t| t.to_f64());
+            ruling_probe::CARVED
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .push(ruling_probe::Carved {
+                    origin: o,
+                    span: [at(pieces[0].0[0]), at(pieces[pieces.len() - 1].0[1])],
+                    kinds: pieces.iter().map(|&(_, k)| k).collect(),
+                });
+        }
         for (end, kind) in pieces {
             out.push(RulingTrace {
                 cyl: k,
@@ -2580,10 +2535,257 @@ fn rulings_on_class(
                 end,
                 solid: which,
                 kind,
+                #[cfg(test)]
+                orient: cf.orient_sign,
             });
         }
     }
     Ok(out)
+}
+
+/// The θ side a cycle's arc lies on, seen from the node where it meets a ruling: an arc arriving
+/// counter-clockwise came from smaller θ (`−1`), one departing counter-clockwise goes to larger θ
+/// (`+1`) — the flank of an on-line run, read from the arc's own sense (`arc_ccw`) rather than
+/// from a coordinate, because a global "side" does not exist on a cylinder.
+fn arc_flank(ccw: bool, arriving: bool) -> i8 {
+    if ccw == arriving { -1 } else { 1 }
+}
+
+/// **Is `node` strictly inside the counter-clockwise arc from `lo` to `hi`?** — cyclic order about
+/// the axis, by name ([`circular_order`]). `Err` when the order cannot be formed or two of the
+/// three are one point wearing two names — the caller's population, not a tie to shrug at.
+fn theta_between(
+    jd: &Judge<'_, WorkingPlane>,
+    k: usize,
+    def: &nacre_topo::CylinderDef,
+    lo: NodeId,
+    hi: NodeId,
+    node: NodeId,
+) -> Result<bool, DeclineKind> {
+    let nodes = [lo, hi, node];
+    let (order, _) = circular_order(jd, k, def, &nodes).map_err(|_| DeclineKind::Ruling)?;
+    let pos = |x: usize| {
+        order
+            .iter()
+            .position(|&i| i == x)
+            .expect("a permutation of the three")
+    };
+    let (p_lo, p_hi, p_n) = (pos(0), pos(1), pos(2));
+    Ok((p_n + 3 - p_lo) % 3 < (p_hi + 3 - p_lo) % 3)
+}
+
+/// **One ruling of a through-axis class against the face's boundary cycles, swept along the
+/// axis** (E2-2) — the ∥ twin of the circle road's carving, and the polygon-against-a-line rule
+/// of `ring_against_plane` stated on the `(θ, z)` chart for the line `θ = θ_side`.
+///
+/// Every cycle contributes **stations** on the ruling, each with an event:
+/// - a whole **rim** toggles the face (it starts or ends there);
+/// - an **arc** that strictly contains the ruling's θ ([`theta_between`]) toggles it — the boundary
+///   crosses the line there, at the branch node `{arc's plane, wc}` ([`crossing_on_ruling`], the
+///   one door every road names such a point through);
+/// - a **run** of the cycle's own edges lying on the ruling is a `Graze` over its extent, the side
+///   the face occupies along it `σ·τ·κ·side` (the rulings ladder's derivation, unchanged), and it
+///   toggles the face exactly when the arcs at its two ends lie on different θ flanks
+///   ([`arc_flank`]) — a collinear piece the boundary passes *through* rather than touches, the
+///   `flanks_differ` of an on-line run. A panel's arcs both lie on its own side (no toggle: absent
+///   above and below); a chain's arrive from the outer half and leave into the inner (toggle:
+///   transversal below, absent above); a band's notch hole has both on the hole's side (no toggle).
+///
+/// Then the sweep: absent below the first station, a piece per gap between stations — `Graze`
+/// inside a run, `Transversal` while the face is present, nothing while it is not — and adjacent
+/// equal pieces merged. Declined by name: a run whose neighbours are not arcs, an arc ending on the
+/// ruling where no run of its cycle sits (the boundary would cross at a vertex — a shape
+/// `loop_triples` does not produce), two names at one station, a run inside a run, a toggle inside
+/// a run (the successor of "a graze past a rim"), and a face still present past the last station.
+#[allow(clippy::too_many_arguments)]
+fn ruling_sweep(
+    jd: &Judge<'_, WorkingPlane>,
+    cf: &crate::planes::CylFaceInfo,
+    def: &nacre_topo::CylinderDef,
+    w: &[Rat; 4],
+    wc: usize,
+    k: usize,
+    side: i8,
+    kappa: i8,
+    rims: &[(Rat, usize)],
+    cycles: &[(combinatorics::CycleKind, combinatorics::LoopRing)],
+    mat: SegKind,
+) -> Result<Vec<([NodeId; 2], SegKind)>, DeclineKind> {
+    use crate::boolean::Wall;
+    #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+    enum Event {
+        // Ordered as they apply at one station: a run ends, the face toggles, a run starts.
+        GrazeEnd { toggle: bool },
+        Toggle,
+        GrazeStart { body_above: bool },
+    }
+    let on_ruling =
+        |c: usize| crossing_on_ruling(jd, def, c, wc, k, side).map_err(|_| DeclineKind::Ruling);
+    let mut stations: Vec<(Rat, Event, NodeId)> = Vec::new();
+    for &(t, c) in rims {
+        stations.push((t, Event::Toggle, on_ruling(c)?));
+    }
+    for (_, ring) in cycles {
+        // A one-edge loop whose far face is a cylinder is two laterals meeting: M6b's pair.
+        let Some(nr) = ring.poly() else {
+            return Err(DeclineKind::CylFaceHole);
+        };
+        let n = nr.triples.len();
+        // Which edges lie on this ruling: a straight edge (no arc sense) carried by `wc`, with both
+        // ends on this side of the axis.
+        let mut on = vec![false; n];
+        for (i, slot) in on.iter_mut().enumerate() {
+            if nr.arc_ccw[i].is_some() || nr.walls[i] != Wall::Plane(wc) {
+                continue;
+            }
+            let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
+            let (Some(sa), Some(sb)) = (
+                node_ruling_side(jd, def, w, a),
+                node_ruling_side(jd, def, w, b),
+            ) else {
+                return Err(DeclineKind::Ruling);
+            };
+            // An edge whose two ends answer differently is not a ruling at all — it would have to
+            // cross the plane through the axis. Named rather than silently mis-placed.
+            if sa != sb {
+                return Err(DeclineKind::CylHoleFeature);
+            }
+            *slot = sa == side;
+        }
+        if n > 0 && on.iter().all(|&x| x) {
+            return Err(DeclineKind::Ruling); // a cycle lying wholly on one ruling is no face
+        }
+        let mut run_nodes: Vec<NodeId> = Vec::new();
+        for i0 in 0..n {
+            if !on[i0] || on[(i0 + n - 1) % n] {
+                continue; // not the first edge of a run
+            }
+            let mut i1 = i0;
+            while on[(i1 + 1) % n] {
+                i1 = (i1 + 1) % n;
+            }
+            let (start, end) = (nr.triples[i0], nr.triples[(i1 + 1) % n]);
+            let (prev, next) = ((i0 + n - 1) % n, (i1 + 1) % n);
+            let (Some(nu_in), Some(nu_out)) = (nr.arc_ccw[prev], nr.arc_ccw[next]) else {
+                return Err(DeclineKind::Ruling); // a run's neighbours are arcs
+            };
+            let (Some(ta), Some(tb)) = (
+                node_axis_param(jd, def, wc, start),
+                node_axis_param(jd, def, wc, end),
+            ) else {
+                return Err(DeclineKind::Ruling);
+            };
+            if ta == tb {
+                return Err(DeclineKind::CylHoleFeature); // an extent of no length
+            }
+            let tau: i8 = if tb > ta { 1 } else { -1 };
+            // `ruling_side` is `−sign(θ̂ · n_w)`, and `κ` carries `n_w` to the stored normal — so
+            // this is `sign(θ̂ · n_stored)`, the frame a label is written in.
+            let theta_dot_stored = -(kappa * side);
+            let body_above = i32::from(material_theta_sign(cf.orient_sign, tau))
+                * i32::from(theta_dot_stored)
+                > 0;
+            let toggle = arc_flank(nu_in, true) != arc_flank(nu_out, false);
+            let ((t_lo, n_lo), (t_hi, n_hi)) = if tau > 0 {
+                ((ta, start), (tb, end))
+            } else {
+                ((tb, end), (ta, start))
+            };
+            #[cfg(test)]
+            ruling_probe::GRAZE_SIDE
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .push(ruling_probe::GrazeSide {
+                    body_above,
+                    ny: jd.planes[wc].plane.normal().as_array()[1],
+                    origin: def.origin().map(|x| x.to_f64()),
+                    span: [t_lo.to_f64(), t_hi.to_f64()],
+                });
+            stations.push((t_lo, Event::GrazeStart { body_above }, n_lo));
+            stations.push((t_hi, Event::GrazeEnd { toggle }, n_hi));
+            run_nodes.push(start);
+            run_nodes.push(end);
+        }
+        // Arcs strictly containing the ruling's θ: crossings of the line.
+        for i in 0..n {
+            let Some(nu) = nr.arc_ccw[i] else { continue };
+            let Wall::Plane(c) = nr.walls[i] else {
+                return Err(DeclineKind::Ruling);
+            };
+            let node = on_ruling(c)?;
+            let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
+            if node == a || node == b {
+                // The arc ends on this ruling: a run of this cycle must sit there, or the boundary
+                // crosses the ruling at a vertex — not a shape the ring producer makes, and not one
+                // to answer "no" to silently.
+                if !run_nodes.contains(&node) {
+                    return Err(DeclineKind::Ruling);
+                }
+                continue;
+            }
+            let (lo, hi) = if nu { (a, b) } else { (b, a) };
+            if theta_between(jd, k, def, lo, hi, node)? {
+                let t = crate::bands::param_opt(jd, c, def).ok_or(DeclineKind::Ruling)?;
+                stations.push((t, Event::Toggle, node));
+            }
+        }
+    }
+    stations.sort_by(|x, y| x.0.cmp(&y.0).then(x.1.cmp(&y.1)));
+    for pair in stations.windows(2) {
+        if pair[0].0 == pair[1].0 && pair[0].2 != pair[1].2 {
+            return Err(DeclineKind::CylHoleFeature); // two names for one station
+        }
+    }
+    let mut pieces: Vec<([NodeId; 2], SegKind)> = Vec::new();
+    let (mut present, mut graze): (bool, Option<bool>) = (false, None);
+    let mut i = 0;
+    while i < stations.len() {
+        let (t, _, node) = stations[i];
+        let mut j = i;
+        while j < stations.len() && stations[j].0 == t {
+            match stations[j].1 {
+                Event::GrazeEnd { toggle } => {
+                    if graze.take().is_none() {
+                        return Err(DeclineKind::CylHoleFeature);
+                    }
+                    if toggle {
+                        present = !present;
+                    }
+                }
+                Event::Toggle => {
+                    if graze.is_some() {
+                        return Err(DeclineKind::CylHoleFeature); // a toggle inside a run
+                    }
+                    present = !present;
+                }
+                Event::GrazeStart { body_above } => {
+                    if graze.replace(body_above).is_some() {
+                        return Err(DeclineKind::CylHoleFeature); // a run inside a run
+                    }
+                }
+            }
+            j += 1;
+        }
+        if j < stations.len() {
+            let next = stations[j].2;
+            let kind = match graze {
+                Some(body_above) => Some(SegKind::Graze { body_above }),
+                None if present => Some(mat),
+                None => None,
+            };
+            if let Some(kind) = kind {
+                match pieces.last_mut() {
+                    Some((end, k)) if *k == kind && end[1] == node => end[1] = next,
+                    _ => pieces.push(([node, next], kind)),
+                }
+            }
+        }
+        i = j;
+    }
+    if present || graze.is_some() {
+        return Err(DeclineKind::CylHoleFeature); // an open boundary
+    }
+    Ok(pieces)
 }
 
 /// **What a holed lateral's ruling actually came out as** — the lock for [`ruling_grazes`].
@@ -2596,14 +2798,26 @@ pub(crate) mod ruling_probe {
     use super::SegKind;
     use std::sync::Mutex;
 
-    /// One entry per ruling whose extent a hole carved, in emission order: the kinds of its pieces.
-    pub(crate) static CARVED: Mutex<Vec<Vec<SegKind>>> = Mutex::new(Vec::new());
+    /// One entry per ruling a cycle grazed, in emission order: the kinds of its pieces, beside
+    /// the cylinder's origin and the ruling's first and last station — so a reader can pick its
+    /// own fixture out of a ledger every test in the binary writes to (a panel's ruling is one
+    /// graze, a chain's a transversal then a graze).
+    pub(crate) static CARVED: Mutex<Vec<Carved>> = Mutex::new(Vec::new());
+
+    #[derive(Clone, Debug)]
+    pub(crate) struct Carved {
+        pub origin: [f64; 3],
+        pub span: [f64; 2],
+        pub kinds: Vec<SegKind>,
+    }
 
     /// **The ruling label's postcondition, one entry per ruling piece** (capability D, D2a).
     ///
     /// ★★★★★ **A second, independent description of the side the derivation picked.**
     /// [`super::ruling_interior_is_even`] derives it from `side · κ`; the check asks the *content*
-    /// instead — inside the cylinder the lateral's own solid has material, outside it does not.
+    /// instead — on the side of the surface the lateral's material lies (inside for a boss,
+    /// outside for a bore or a notch: `MergedRuling::orient`) its own solid has material, and on
+    /// the other side it does not.
     /// The two share no step, so a disagreement is real. (`ArcLabels`' doc set its own side by
     /// this same content rule, measured.)
     ///
@@ -2625,106 +2839,17 @@ pub(crate) mod ruling_probe {
     /// checked against the fixture's own geometry instead: the buried half of the boss lies at
     /// `y < 0` of the wall, so the face is on the stored-normal side exactly when that normal
     /// points at `−y`.
-    pub(crate) static GRAZE_SIDE: Mutex<Vec<(bool, f64)>> = Mutex::new(Vec::new());
-}
+    /// Beside them the cylinder's origin and the run's stations, the fixture's identity.
+    pub(crate) static GRAZE_SIDE: Mutex<Vec<GrazeSide>> = Mutex::new(Vec::new());
 
-/// A hole's own edge lying **on** one ruling of a through-axis class: the extent, and the side of
-/// the wall the face occupies along it.
-struct RulingGraze {
-    /// `[low t, high t]` — the ruling's own ascending order.
-    end: [NodeId; 2],
-    body_above: bool,
-}
-
-/// **Where a lateral face's holes touch one ruling of a through-axis class.**
-///
-/// ★★★★★ **The shared ring walk cannot answer here, and the reason is the geometry, not an
-/// oversight.** [`combinatorics::ring_against_plane`] decides each node by
-/// [`combinatorics::side_of`], which answers about a **plane**. A ⊥ class meets the cylinder in one
-/// circle, so "which side of the plane" separates the ring cleanly and the walk works (that is what
-/// [`cycle_on_class`] uses). A **∥** class meets it in **two** rulings that both lie *in* the plane,
-/// so every corner of a hole bounded by that wall answers `0` and the walk comes back
-/// [`combinatorics::RingWalk::AllOn`] — ☑ measured, 13 of 13 over the suite. So the edges are found
-/// by their **carrier** instead: an edge of the hole lying on this class is one the class itself
-/// carries, and which of the two rulings it lies on is [`ruling_side`]'s question.
-///
-/// **The side of the wall the face occupies** is [`material_theta_sign`] read against the class's
-/// **stored** normal:
-///
-/// ```text
-///   ruling_side = sign((x − o) · (m × n_w)) = −sign(θ̂ · n_w)      (x − o is radial here)
-///   body_above  = sign( material_theta_sign(σ, τ) · (θ̂ · n_stored) )
-///               = σ · τ · κ · side                                  (κ = world_rat_sense)
-/// ```
-///
-/// ★ `κ` and `side` are both computed from `world_rat`, so if that name flips sign **both** flip
-/// and their product does not — the label is frame-free while the identity stays a plain
-/// comparison. That is the whole reason `κ` appears.
-fn ruling_grazes(
-    jd: &Judge<'_, WorkingPlane>,
-    cf: &crate::planes::CylFaceInfo,
-    def: &nacre_topo::CylinderDef,
-    w: &[nacre_scalar::Rat; 4],
-    holes: &[combinatorics::LoopRing],
-    wc: usize,
-    side: i8,
-) -> Result<Vec<RulingGraze>, DeclineKind> {
-    let kappa = world_rat_sense(jd, wc).ok_or(DeclineKind::Ruling)?;
-    let mut out = Vec::new();
-    for h in holes {
-        // A one-edge hole loop whose far face is a cylinder is two laterals meeting: M6b's pair,
-        // not this road's. It has no ring to read, so it declines rather than passing unread.
-        let Some(nr) = h.poly() else {
-            return Err(DeclineKind::CylFaceHole);
-        };
-        let n = nr.triples.len();
-        for i in 0..n {
-            if nr.walls[i] != crate::boolean::Wall::Plane(wc) {
-                continue;
-            }
-            let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
-            let (Some(sa), Some(sb)) = (
-                node_ruling_side(jd, def, w, a),
-                node_ruling_side(jd, def, w, b),
-            ) else {
-                return Err(DeclineKind::Ruling);
-            };
-            // An edge whose two ends answer differently is not a ruling at all — it would have to
-            // cross the plane through the axis. Named rather than silently mis-placed.
-            if sa != sb {
-                return Err(DeclineKind::CylHoleFeature);
-            }
-            if sa != side {
-                continue;
-            }
-            let (Some(ta), Some(tb)) = (
-                node_axis_param(jd, def, wc, a),
-                node_axis_param(jd, def, wc, b),
-            ) else {
-                return Err(DeclineKind::Ruling);
-            };
-            if ta == tb {
-                return Err(DeclineKind::CylHoleFeature); // an extent of no length
-            }
-            let tau: i8 = if tb > ta { 1 } else { -1 };
-            // `ruling_side` is `−sign(θ̂ · n_w)` (below), and `κ` carries `n_w` to the stored
-            // normal — so this is `sign(θ̂ · n_stored)`, the frame a label is written in.
-            let theta_dot_stored = -(kappa * side);
-            let body_above = i32::from(material_theta_sign(cf.orient_sign, tau))
-                * i32::from(theta_dot_stored)
-                > 0;
-            #[cfg(test)]
-            ruling_probe::GRAZE_SIDE
-                .lock()
-                .expect("the probe's lock is never held across a panic")
-                .push((body_above, jd.planes[wc].plane.normal().as_array()[1]));
-            out.push(RulingGraze {
-                end: if tau > 0 { [a, b] } else { [b, a] },
-                body_above,
-            });
-        }
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct GrazeSide {
+        pub body_above: bool,
+        /// The realized stored normal's `y` component of the wall class.
+        pub ny: f64,
+        pub origin: [f64; 3],
+        pub span: [f64; 2],
     }
-    Ok(out)
 }
 
 /// Which of the two rulings of `w` this branch node sits on — [`ruling_side`] asked of a name.
@@ -2754,64 +2879,6 @@ fn node_axis_param(
         return None;
     }
     crate::planes::axis_param_of_plane(&combinatorics::class_coeffs_rat(jd, perp)?, def)
-}
-
-/// **Lay the grazes over the ruling's outer answer and hand back exclusive pieces** — the ∥ twin of
-/// [`assemble_spans`].
-///
-/// ★★ **It is a twin and not the same function, because the topology differs**: a circle is cyclic
-/// and its pieces wrap, a ruling is a segment with two ends the face's rims fix. The shared part is
-/// the *rule* — cut at every boundary, one answer per piece, merge adjacent equals so a boundary
-/// where nothing changes leaves no vertex behind — and that rule is stated in both docs rather than
-/// abstracted over a cyclic/linear parameter, which would have made both harder to read than the
-/// twenty lines it saves.
-fn assemble_ruling(
-    jd: &Judge<'_, WorkingPlane>,
-    def: &nacre_topo::CylinderDef,
-    wc: usize,
-    outer: [NodeId; 2],
-    span: [nacre_scalar::Rat; 2],
-    carved: &[RulingGraze],
-    outer_kind: SegKind,
-) -> Result<Vec<([NodeId; 2], SegKind)>, DeclineKind> {
-    // Every station along the ruling, by rational axis parameter: the two rims, and each graze's
-    // ends.
-    let mut stations: Vec<(nacre_scalar::Rat, NodeId)> =
-        vec![(span[0], outer[0]), (span[1], outer[1])];
-    for g in carved {
-        for e in g.end {
-            let t = node_axis_param(jd, def, wc, e).ok_or(DeclineKind::Ruling)?;
-            stations.push((t, e));
-        }
-    }
-    stations.sort_by_key(|s| s.0);
-    stations.dedup_by(|a, b| a.1 == b.1);
-    for w in stations.windows(2) {
-        if w[0].0 == w[1].0 {
-            return Err(DeclineKind::CylHoleFeature); // two names for one station
-        }
-    }
-    // A graze that reaches past a rim is a hole touching the face's own boundary, which is not an
-    // inner loop at all.
-    if stations.first().map(|s| s.0) != Some(span[0])
-        || stations.last().map(|s| s.0) != Some(span[1])
-    {
-        return Err(DeclineKind::CylHoleFeature);
-    }
-    let mut pieces: Vec<([NodeId; 2], SegKind)> = Vec::new();
-    for w in stations.windows(2) {
-        let kind = carved
-            .iter()
-            .find(|g| g.end[0] == w[0].1 && g.end[1] == w[1].1)
-            .map_or(outer_kind, |g| SegKind::Graze {
-                body_above: g.body_above,
-            });
-        match pieces.last_mut() {
-            Some((end, k)) if *k == kind => end[1] = w[1].1,
-            _ => pieces.push(([w[0].1, w[1].1], kind)),
-        }
-    }
-    Ok(pieces)
 }
 
 /// Both operands' traces on plane class `wc`, merged into one `Trace` (segments keep their
@@ -4740,6 +4807,8 @@ fn split_rulings(
                 side: r.side,
                 end: [keyed[pair[0]].1, keyed[pair[1]].1],
                 merged: r.merged.clone(),
+                #[cfg(test)]
+                orient: r.orient,
             });
         }
     }
@@ -4852,9 +4921,14 @@ fn per_class(
                         l[b] || l[b + 1]
                     };
                     if let (Some(i_l), Some(e_l)) = (cell_at(inside), cell_at(!inside)) {
+                        // ★ The lateral's material is inside the cylinder for a boss and
+                        // **outside** for a bore or a notch (`orient` — E2-2's re-operated Cut
+                        // results were the first such population on a through-axis class), so
+                        // the content agrees with the derivation when the cell on the material's
+                        // side has the solid and the other does not.
+                        let material_inside = r.orient > 0;
                         let verdict = match (has(i_l), has(e_l)) {
-                            (true, false) => Some(true),
-                            (false, true) => Some(false),
+                            (a, b) if a != b => Some(a == material_inside),
                             _ => None,
                         };
                         // ★★★★★ **Asserted where the fact is made**, so the coverage is total and

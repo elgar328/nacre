@@ -1411,6 +1411,7 @@ pub(crate) fn census(
         let mut closes = 0usize;
         let mut does_not_close = 0usize;
         let mut grazing_rulings = 0usize;
+        let mut unpaired = 0usize;
         for i in 0..chart.z_lines.len().saturating_sub(1) {
             let (lo, hi) = (chart.z_lines[i].t, chart.z_lines[i + 1].t);
             let alive: Vec<&ThetaSeg> = chart
@@ -1427,6 +1428,18 @@ pub(crate) fn census(
                 odd_k += 1;
             }
             rulings += n;
+            // ★ **A wall's rulings need not come in pairs any more (E2-2).** A band's lateral
+            // reaches both rulings of every through-axis wall, so the walk below crossed each
+            // wall twice; a panel's or a chain's boundary may run along one ruling of a wall
+            // while the other is no face's edge at all (a quarter boss on a corner). Around such
+            // an interval the walk crosses that wall once and cannot return to its start — not a
+            // contradiction, a walk with an open end — so the closure is asserted only where every
+            // wall is crossed an even number of times, and the rest are counted (`unpaired`).
+            let paired = {
+                let mut walls: Vec<usize> = alive.iter().map(|t| t.wall).collect();
+                walls.sort_unstable();
+                walls.chunk_by(|a, b| a == b).all(|c| c.len() % 2 == 0)
+            };
             // Does crossing this wall change the material at the lateral? `Label` is
             // `[A_above, A_below, B_above, B_below]`, so the two sides are the even/odd halves.
             let flip = |l: crate::arrangement::Label| [l[0] != l[1], l[2] != l[3]];
@@ -1467,7 +1480,10 @@ pub(crate) fn census(
                 .iter()
                 .filter(|t| t.label.is_some_and(|l| flip(l)[0] || flip(l)[1]))
                 .count();
-            if all_known {
+            if all_known && !paired {
+                unpaired += 1;
+            }
+            if all_known && paired {
                 if acc == [false; 2] {
                     closes += 1;
                 } else {
@@ -1484,8 +1500,9 @@ pub(crate) fn census(
                 //
                 // ★★★★★ **What it cannot see, measured rather than assumed.** A walk that XORs is
                 // blind to any error appearing an **even** number of times around the circle — and
-                // every interval here carries an even count of rulings (`odd_k`, measured 0), so a
-                // *per-ruling* systematic flip cancels itself and passes. ☑ Probed both ways:
+                // every interval asserted here carries an even count of rulings per wall (the
+                // `paired` guard above; `odd_k` counted 0 until E2-2's panels), so a *per-ruling*
+                // systematic flip cancels itself and passes. ☑ Probed both ways:
                 // adding one flip per ruling stays green, seeding the accumulator wrong goes red.
                 // So this holds the labels against each other; what holds their absolute sense is
                 // `ruling_probe::SIDE_CHECK`, which compares against content and is not a walk.
@@ -1511,6 +1528,7 @@ pub(crate) fn census(
             intervals_with_flip,
             closes,
             does_not_close,
+            unpaired,
             grazing_rulings,
         });
         // ── The emitter, seen from the census (D3): its face count per class is predicted by the
@@ -1592,6 +1610,10 @@ pub(crate) mod probe {
             /// does not — `label_cells`' final verification, stated on the chart.
             pub(crate) closes: usize,
             pub(crate) does_not_close: usize,
+            /// Intervals where some wall is crossed an odd number of times (a panel's or a
+            /// chain's wall with one ruling in the interval): the walk has an open end there and
+            /// the closure is not asserted (E2-2).
+            pub(crate) unpaired: usize,
             /// Rulings whose every mark is a **graze** — the face stops at the line rather than
             /// crossing it, so whether it reaches the interval is `face_spans`' question and not a
             /// label's. Existence, not membership (cell ㉒'s split, on the vertical axis).
@@ -1778,10 +1800,9 @@ mod tests {
             } = *r;
             assert!(n >= 1, "a class with no row: {r:?}");
             assert!(z_lines >= 2, "a band needs two boundaries: {r:?}");
-            assert!(
-                theta % 2 == 0,
-                "a wall cuts two rulings, not {theta}: {r:?}"
-            );
+            // ★ `theta % 2 == 0` ("a wall cuts two rulings") was asserted here until E2-2: a
+            // band's lateral reaches both rulings of a wall, a panel's or a chain's may reach one.
+            let _ = theta;
             assert!(!refused, "a chart's theta order could not be formed: {r:?}");
             assert!(cells >= 1, "two z-lines are one interval: {r:?}");
             // A chart has `z_lines - 1` intervals, and an interval carries either no ruling or
@@ -1854,7 +1875,7 @@ mod tests {
                 "more grazes than rulings: {r:?}"
             );
             assert!(
-                r.intervals_with_flip <= r.closes + r.does_not_close,
+                r.intervals_with_flip <= r.closes + r.does_not_close + r.unpaired,
                 "more flipping intervals than walked ones: {r:?}"
             );
         }
