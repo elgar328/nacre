@@ -991,7 +991,17 @@ fn trace_transversal_face(
         // and two points fix a line — so a straight edge between two on-line nodes is on it and a
         // curved one is not. (The lateral road's meet is a **circle**, where an arc *can* lie on it,
         // so it tests the carrier instead — see `cycle_on_class`.)
-        let on_meet = |i: usize| !matches!(walls[i], crate::boolean::Wall::Arc { .. });
+        // An arc between two on-line nodes leaves the line to the side its tangent points
+        // (E3-c, [`combinatorics::arc_departure_side`]); a straight edge stays on it.
+        let on_meet = |i: usize| match walls[i] {
+            crate::boolean::Wall::Arc { cyl, ccw } => {
+                combinatorics::arc_departure_side(jd, cyls, ring[i], wc, cyl, ccw)
+                    .map(combinatorics::EdgeMeet::Departs)
+            }
+            crate::boolean::Wall::Plane(_) | crate::boolean::Wall::Ruling { .. } => {
+                Some(combinatorics::EdgeMeet::On)
+            }
+        };
         let features = match combinatorics::ring_against_plane(jd, cyls, ring, wc, on_meet) {
             combinatorics::RingWalk::Met(f) => f,
             // Every vertex on `W`: a ring lying in the cut plane is degenerate here.
@@ -1000,16 +1010,11 @@ fn trace_transversal_face(
                 break;
             }
             // ★ Not "a corner a cylinder made" any more — the walk reads those. This is the
-            // walk's own `None`: a side it could not form exactly. ☑ Measured 0 raises across
-            // the workspace suite; the name is kept because the walk can still say it.
+            // walk's own `None`: a side it could not form exactly, or an arc tangent to the
+            // class at its end (E3-c). ☑ Measured 0 raises across the workspace suite; the name
+            // is kept because the walk can still say it.
             combinatorics::RingWalk::Unnameable => {
                 declined = Some(DeclineKind::BranchNode);
-                break;
-            }
-            // ★ The ring departs the cut line along a curved edge and this walk will not guess
-            // which side it went to — see [`combinatorics::RingWalk::CurvedDeparture`].
-            combinatorics::RingWalk::CurvedDeparture => {
-                declined = Some(DeclineKind::CurvedDeparture);
                 break;
             }
         };
@@ -1073,7 +1078,8 @@ fn trace_transversal_face(
                     flanks_differ,
                     ..
                 } => {
-                    // ★ Safe here: the walk answered `Met`, so every node is three planes.
+                    // ★ A run's end may be a corner a cylinder made (a half-disk cap's chord, E3-c);
+                    // `third_on_l` names that one by itself, pinned by the quadric.
                     let name = |k: usize, out: &mut Trace| third_on_l(ring[(first + k) % n], out);
                     if m == 1 {
                         match name(0, out) {
@@ -2066,15 +2072,14 @@ fn cycle_on_class(
     // one.** A rim arc of the hole at this very axis parameter *is* the class's meet, so "not an
     // arc" would cut runs that are genuinely continuous. What decides it is the carrier, and the
     // `Run` arm below asks that directly (declining, rather than splitting, is this road's scope).
-    let features = match combinatorics::ring_against_plane(jd, cyls, &nr.triples, wc, |_| true) {
+    let features = match combinatorics::ring_against_plane(jd, cyls, &nr.triples, wc, |_| {
+        Some(combinatorics::EdgeMeet::On)
+    }) {
         combinatorics::RingWalk::Met(f) => f,
         // A hole ring lying wholly in the class has no thickness to bound anything with, and a
         // node the walk cannot name is the same refusal every other consumer makes of it.
         combinatorics::RingWalk::AllOn | combinatorics::RingWalk::Unnameable => {
             return Err(DeclineKind::CylFaceHole);
-        }
-        combinatorics::RingWalk::CurvedDeparture => {
-            return Err(DeclineKind::CurvedDeparture);
         }
     };
     let ring = &nr.triples;

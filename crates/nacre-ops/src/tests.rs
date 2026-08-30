@@ -9767,6 +9767,11 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
 ///   cap) stay `CylSpan` on the rulings road: 24 → 7. Ok 14 unchanged.
 /// * E2-2 ②: the rulings road sweeps every cycle — the six Cut rows (a panel: the notch's wall)
 ///   and corner Common become **Ok** with their volumes unchanged; `CylSpan` 7 → 0, Ok 14 → 21.
+/// * E3-c: the ring walk names the side an arc departs to, so a half-disk cap is a graze along
+///   its chord — every half Fuse and Common row and the wall/offmid Common rows build with their
+///   volumes unchanged (13 rows); the half **Cut** rows (a notch with a half-disk ceiling) reach
+///   the chart and its emitter refuses a cell it cannot read (`CylinderGateUndecided`, `End::Other`
+///   — E2-2's remaining item); Ok 21 → 34, `CurvedDeparture` 17 → 0 (the name is gone).
 ///
 /// ★ The probe beside it counts the loops carrying an `OnSeam` joint at any vertex — outer loops
 /// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
@@ -9800,55 +9805,35 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         // A boss standing on the plate: the cut removes nothing and leaves no lateral at all.
         ("on top", [Ok, Ok, Empty], [RIMS, NONE, NONE]),
         ("flush", [Ok, Ok, Ok], [RIMS, RIMS, RIMS]),
-        (
-            "wall -y",
-            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
-            [RIMS_HOLE, PANEL, PANEL],
-        ),
-        (
-            "wall +y",
-            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
-            [RIMS_HOLE, PANEL, PANEL],
-        ),
-        (
-            "wall -x",
-            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
-            [RIMS_HOLE, PANEL, PANEL],
-        ),
-        (
-            "wall +x",
-            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
-            [RIMS_HOLE, PANEL, PANEL],
-        ),
+        ("wall -y", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
+        ("wall +y", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
+        ("wall -x", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
+        ("wall +x", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         ("corner", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         (
             "corner-lo",
             [First(RejectReason::CylinderGateUndecided); 3],
             [NONE, NONE, NONE],
         ),
-        (
-            "offmid",
-            [Ok, Ok, Declined(DeclineKind::CurvedDeparture)],
-            [RIMS_HOLE, PANEL, PANEL],
-        ),
+        ("offmid", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         (
             "half wall",
-            [Declined(DeclineKind::CurvedDeparture); 3],
+            [Ok, Rejected(RejectReason::CylinderGateUndecided), Ok],
             [CHAIN, PANEL, PANEL],
         ),
         (
             "half wall, cap below",
-            [Declined(DeclineKind::CurvedDeparture); 3],
+            [Ok, Rejected(RejectReason::CylinderGateUndecided), Ok],
             [CHAIN, PANEL, PANEL],
         ),
         (
             "half +x",
-            [Declined(DeclineKind::CurvedDeparture); 3],
+            [Ok, Rejected(RejectReason::CylinderGateUndecided), Ok],
             [CHAIN, PANEL, PANEL],
         ),
         (
             "half +x, cap below",
-            [Declined(DeclineKind::CurvedDeparture); 3],
+            [Ok, Rejected(RejectReason::CylinderGateUndecided), Ok],
             [CHAIN, PANEL, PANEL],
         ),
     ];
@@ -9953,18 +9938,18 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             .filter(|r| p(r))
             .count()
     };
-    assert_eq!(count(|r| *r == Ok), 21, "{table:?}");
+    assert_eq!(count(|r| *r == Ok), 34, "{table:?}");
+    assert_eq!(
+        count(|r| *r == Rejected(RejectReason::CylinderGateUndecided)),
+        4,
+        "a half boss's Cut: the notch's ceiling is a half-disk the chart cannot yet read"
+    );
     assert_eq!(
         count(|r| *r == Rejected(RejectReason::DegenerateFace)),
         0,
         "a circle-bounded face is never degenerate"
     );
     assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 0);
-    assert_eq!(
-        count(|r| *r == Declined(DeclineKind::CurvedDeparture)),
-        17,
-        "a two-edge cap departing its chord's class"
-    );
     assert_eq!(
         count(|r| *r == Declined(DeclineKind::OuterRing)),
         0,
@@ -10059,6 +10044,11 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   builds under the top and bottom slabs and finds no clear ray once a slab parts it. `CylSpan`
 ///   0 · Ok 69 · `BranchVertexUnnamed` 19 · `CurvedRingWall` 10 · `NoClearRay` 4 ·
 ///   `CylinderGateUndecided` 1 (the chart's walk has an open end at a wall with one ruling).
+/// * E3-c: the half-disk caps are traced, so `CurvedDeparture` 85 → 0: the half Fuse rows read
+///   like the wall Fuse rows (top/bottom/wall slab Ok(1) with exact volumes), the Common rows and
+///   the half Cut rows reach the next walls by name — the coplanar cleaning pass's plane-only ray
+///   (`NoClearRay` 4 → 40) and the chart's unreadable cell (`CylinderGateUndecided` 1 → 17); the
+///   through-axis wall still crosses the caps' arcs (`CurvedRingWall` 10 → 27, E3-b). Ok 69 → 81.
 #[test]
 fn crossing_census_slabs_and_through_axis_walls_by_name() {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -10135,18 +10125,45 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         Declined(CurvedRingWall),
         Ok(1),
     ];
-    // A result with a two-edge cap (arc + chord on the plate's wall): the cap's ring leaves its
-    // chord's class along the arc, which the walk cannot side (E3-c), whatever the tool.
-    const DEPART: [Cross; 5] = [Declined(DeclineKind::CurvedDeparture); 5];
+    // A half boss fused (its lateral a chain, its top cap a half-disk): since E3-c the cap's
+    // chord is a graze on the wall class and the result builds — the top and bottom slabs miss
+    // the boss, the wall slab crosses the chain's rulings with its exact volume, the mid slab
+    // splits the result (grouping road), the through-axis wall crosses the cap's arc.
+    const HALF_FUSE: [Cross; 5] = [
+        Rejected(BranchVertexUnnamed),
+        Ok(1),
+        Ok(1),
+        Declined(CurvedRingWall),
+        Ok(1),
+    ];
+    // A Common result — the inner half-cylinder alone, two half-disk caps and a flat side — under
+    // any slab: the coplanar cleaning pass nests its rings through the plane-only ray road, which
+    // has no clear ray from a branch corner (the grouping road's shim, the next wall by name).
+    const COMMON: [Cross; 5] = [
+        Rejected(NoClearRay),
+        Rejected(NoClearRay),
+        Rejected(NoClearRay),
+        Declined(CurvedRingWall),
+        Rejected(NoClearRay),
+    ];
+    // A half boss's Cut (a notch with a half-disk ceiling): the chart's emitter meets a cell it
+    // cannot read (`End::Other`), whatever the tool.
+    const HALF_CUT: [Cross; 5] = [
+        Rejected(RejectReason::CylinderGateUndecided),
+        Rejected(RejectReason::CylinderGateUndecided),
+        Rejected(RejectReason::CylinderGateUndecided),
+        Declined(CurvedRingWall),
+        Rejected(RejectReason::CylinderGateUndecided),
+    ];
     let want: [[[Cross; 5]; 3]; 14] = [
         [BAND, BAND, BAND_COMMON], // through
         // on top: the cut leaves the plate alone.
         [BAND, [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], [Empty; 5]],
         [BAND, BAND, BAND_COMMON],      // flush
-        [WALL_FUSE, PANEL_CUT, DEPART], // wall -y
-        [WALL_FUSE, PANEL_CUT, DEPART], // wall +y
-        [WALL_FUSE, PANEL_CUT, DEPART], // wall -x
-        [WALL_FUSE, PANEL_CUT, DEPART], // wall +x
+        [WALL_FUSE, PANEL_CUT, COMMON], // wall -y
+        [WALL_FUSE, PANEL_CUT, COMMON], // wall +y
+        [WALL_FUSE, PANEL_CUT, COMMON], // wall -x
+        [WALL_FUSE, PANEL_CUT, COMMON], // wall +x
         // corner: either slab cuts the Fuse's circle at four rulings (two walls), and the chart
         // cannot pair a cut end with its rim (`End::Other`, E2-2) — the emitter refuses by name;
         // the through-axis tool's wall `y = 4` is the plate's own wall (coplanar contact), which
@@ -10189,12 +10206,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 Ok(1),
             ],
             PANEL_CUT,
-            DEPART,
+            COMMON,
         ],
-        [DEPART; 3], // half wall
-        [DEPART; 3], // half wall, cap below
-        [DEPART; 3], // half +x
-        [DEPART; 3], // half +x, cap below
+        [HALF_FUSE, HALF_CUT, COMMON], // half wall
+        [HALF_FUSE, HALF_CUT, COMMON], // half wall, cap below
+        [HALF_FUSE, HALF_CUT, COMMON], // half +x
+        [HALF_FUSE, HALF_CUT, COMMON], // half +x, cap below
     ];
     let mut table: Vec<String> = Vec::new();
     let mut mismatches = 0usize;
@@ -10274,15 +10291,14 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 69, "{tally:?}");
-    assert_eq!(count(|c| *c == Declined(CurvedRingWall)), 10);
-    assert_eq!(count(|c| *c == Declined(DeclineKind::CurvedDeparture)), 85);
-    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 4);
-    assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 19);
+    assert_eq!(count(|c| matches!(c, Ok(_))), 81, "{tally:?}");
+    assert_eq!(count(|c| *c == Declined(CurvedRingWall)), 27);
+    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 40);
+    assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 23);
     assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 2);
     assert_eq!(
         count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
-        1
+        17
     );
     assert_eq!(count(|c| *c == First), 15);
     assert_eq!(count(|c| *c == Empty), 5);
@@ -10399,4 +10415,92 @@ fn a_chain_sweeps_its_rulings() {
             "a chain's ruling swept as {kinds:?}"
         );
     }
+}
+
+/// **The ring walk cuts a run where an arc departs, and the departure's side flanks the pieces**
+/// (E3-c). A hand-built ring on the unit cube's classes: `(0,0,0) → (1,0,0) → (1,1,0) → (1,1,1) →
+/// (1,0,1) → (0,0,1)`, read against the class `x = 1` — four nodes on the line between two off it
+/// (both on the `x < 1` side). With the edge `(1,1,0) → (1,1,1)` declared a departure to side σ,
+/// the line is met in two runs, `[(1,0,0),(1,1,0)]` and `[(1,1,1),(1,0,1)]`: the first is flanked
+/// by the off-line node and σ, the second by σ and the off-line node — so both pieces cross
+/// exactly when σ is the *other* side, and negating σ swaps the answer. With the edge on the line
+/// the four nodes are one run that touches and turns back. The closure supplies σ, so no
+/// cylinder is needed: this locks the walk's rule, and `arc_departure_side`'s sign is locked by
+/// the re-operation census (a wall boss's plate face is such a run with the arc's own σ).
+#[test]
+fn the_walk_cuts_a_run_at_a_departure() {
+    use crate::combinatorics::{EdgeMeet, Feature, RingWalk, ring_against_plane, side_of};
+    let mut m = Model::new();
+    let a = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([1.0, 1.0, 1.0]),
+    );
+    let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
+    m.rebuild_adjacency();
+    let setup = crate::planes::plane_index_setup(&m, a, b).expect("setup");
+    let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    // A class by the coordinate all three of its triangle's points share.
+    let class = |axis: usize, at: f64| {
+        (0..setup.geom.len())
+            .find(|&c| {
+                setup.geom[c]
+                    .tri
+                    .iter()
+                    .all(|p| (p.as_array()[axis] - at).abs() < 1e-12)
+            })
+            .expect("a class of the unit cube")
+    };
+    let (x0, x1, y0, y1, z0, z1) = (
+        class(0, 0.0),
+        class(0, 1.0),
+        class(1, 0.0),
+        class(1, 1.0),
+        class(2, 0.0),
+        class(2, 1.0),
+    );
+    let ring = [
+        NodeId::three_planes([x0, y0, z0]),
+        NodeId::three_planes([x1, y0, z0]),
+        NodeId::three_planes([x1, y1, z0]),
+        NodeId::three_planes([x1, y1, z1]),
+        NodeId::three_planes([x1, y0, z1]),
+        NodeId::three_planes([x0, y0, z1]),
+    ];
+    let off = side_of(&jd, &[], ring[0], x1).expect("a side");
+    assert_ne!(off, 0);
+    let runs = |walk: RingWalk| -> Vec<(usize, usize, bool, i8)> {
+        let RingWalk::Met(f) = walk else {
+            panic!("the ring meets the line")
+        };
+        f.into_iter()
+            .map(|f| match f {
+                Feature::Run {
+                    first,
+                    len,
+                    flanks_differ,
+                    flank,
+                } => (first, len, flanks_differ, flank),
+                Feature::Crossing { .. } => panic!("no edge crosses x = 1 strictly"),
+            })
+            .collect()
+    };
+    for sigma in [off, -off] {
+        let got = runs(ring_against_plane(&jd, &[], &ring, x1, |i| {
+            Some(if i == 2 {
+                EdgeMeet::Departs(sigma)
+            } else {
+                EdgeMeet::On
+            })
+        }));
+        let crosses = sigma != off;
+        assert_eq!(
+            got,
+            vec![(1, 2, crosses, off), (3, 2, crosses, sigma)],
+            "σ = {sigma}, off-line side {off}"
+        );
+    }
+    let got = runs(ring_against_plane(&jd, &[], &ring, x1, |_| {
+        Some(EdgeMeet::On)
+    }));
+    assert_eq!(got, vec![(1, 4, false, off)]);
 }

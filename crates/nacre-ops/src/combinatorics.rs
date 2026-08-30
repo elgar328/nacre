@@ -2185,6 +2185,60 @@ fn loop_triples(
     }))
 }
 
+/// **Canonical → outward**: the sign that carries a class's `world_rat` name to the frame
+/// `orient3d` answers in, for the predicates that read the name ([`side_of`]'s branch arm,
+/// [`arc_departure_side`]).
+///
+/// ★★★★★ **`world_rat` is the plane's *name*, not an oriented normal.** `orient3d` answers
+/// against the class's **outward** normal, and `world_rat` may be any nonzero multiple of the
+/// stored one — including a negative. Both describe one plane, so they are proportional; the sign
+/// of that constant is read off the first component `world_rat` makes nonzero, and `frame_sign`
+/// carries stored → outward.
+/// ★ Both must be nonzero, not just the rational one: they are proportional so their zero sets
+/// agree *exactly*, but `raw` is `f64` and a component it rounds to zero would make `raw[i] > 0.0`
+/// false and hand back a sign with nothing behind it. Requiring both turns that into a refusal.
+fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
+    let co = class_coeffs_rat(jd, q)?;
+    let raw = jd.planes[q].plane.coefficients();
+    let zero = nacre_scalar::Rat::from_int(0);
+    let i = (0..4).find(|&i| co[i] != zero && raw[i] != 0.0)?;
+    let k = if (co[i] > zero) == (raw[i] > 0.0) {
+        1
+    } else {
+        -1
+    };
+    Some(k * jd.planes[q].frame_sign)
+}
+
+/// **Which side of `q` an arc leaves to** (E3-c): the arc starts at `node` — a branch point of
+/// cylinder `cyl` on the line `q` cuts — and travels counter-clockwise about the axis when `ccw`.
+/// Its tangent there is `±m̂ × (a − c)`, and the side of `q` that points to is the side the whole
+/// excursion lies on (a circle meets a plane in two points).
+///
+/// Coordinate-free: `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))` (the axial part of `a − o` drops
+/// against `m`), so the counter-clockwise tangent's side is **minus** [`arrangement::ruling_side`]
+/// at `a` — the very predicate that names which ruling a lateral point lies on — and a clockwise
+/// arc's is plus. Then the same canonical → outward bridge as [`side_of`] ([`outward_fix`]), so
+/// the answer sits in the walk's frame. `None` when the arc is tangent to `q` at `a`
+/// (`ruling_side` reads zero) or a description is missing — the walk answers `Unnameable`.
+///
+/// ★ Not [`arc_side`], which is the *turn* of an arc against a segment in the face's own plane
+/// (the winding walk's question, in the stored frame); this is a half-space of `q`.
+pub(crate) fn arc_departure_side(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    node: NodeId,
+    q: usize,
+    cyl: usize,
+    ccw: bool,
+) -> Option<i8> {
+    let def = &cyls.get(cyl)?.def;
+    let w = class_coeffs_rat(jd, q)?;
+    let (line, sv) = branch_meet(jd, cyl, def, node)?;
+    let rs = crate::arrangement::ruling_side(&w, def, (&line, &sv))?;
+    Some(outward_fix(jd, q)? * if ccw { -rs } else { rs })
+}
+
 /// The exact side of plane `q` that the implicit point `t` lies on: `0` means *on* it.
 ///
 /// `+1` is the side the witness triangle's right-hand normal points to — that is `n_out(q)`, the face's
@@ -2227,24 +2281,7 @@ pub(crate) fn side_of(
         NodeId::Branch { cyl, .. } => {
             let (line, sv) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
             let co = class_coeffs_rat(jd, q)?;
-            let raw = jd.planes[q].plane.coefficients();
-            // ★★★★★ **`world_rat` is the plane's *name*, not an oriented normal.** `orient3d`
-            // answers against the class's **outward** normal, and `world_rat` may be any nonzero
-            // multiple of the stored one — including a negative. Both describe one plane, so they
-            // are proportional; the sign of that constant is read off the first component
-            // `world_rat` makes nonzero, and `frame_sign` carries stored → outward.
-            // ★ Both must be nonzero, not just the rational one: they are proportional so their
-            // zero sets agree *exactly*, but `raw` is `f64` and a component it rounds to zero would
-            // make `raw[i] > 0.0` false and hand back a sign with nothing behind it. Requiring both
-            // turns that into a refusal.
-            let zero = nacre_scalar::Rat::from_int(0);
-            let i = (0..4).find(|&i| co[i] != zero && raw[i] != 0.0)?;
-            let k = if (co[i] > zero) == (raw[i] > 0.0) {
-                1
-            } else {
-                -1
-            };
-            let fix = k * jd.planes[q].frame_sign;
+            let fix = outward_fix(jd, q)?;
             Some(
                 fix * match nacre_scalar::quad::plane_side(&co, &line, &sv) {
                     nacre_scalar::Orient::Positive => 1,
@@ -2261,7 +2298,11 @@ pub(crate) fn side_of(
 ///
 /// ★ `AllOn` used to be the walk's `None`, and a node it cannot read would have had to share it.
 /// One says *the ring lies in the plane* (a shape), the other *this walk has no vocabulary for a
-/// node* (a road) — and the three callers do different things with each.
+/// node* (a road) — and the four callers do different things with each.
+///
+/// ★ There used to be a fourth outcome, `CurvedDeparture`: a ring leaving the meet along a curved
+/// edge between two on-meet nodes, whose side the walk could not name. The caller names it now
+/// ([`EdgeMeet::Departs`], E3-c), and the walk reads the departure as one more off-line entry.
 pub(crate) enum RingWalk {
     /// Where the ring meets the line, in ring order from the first off-`q` node.
     Met(Vec<Feature>),
@@ -2271,25 +2312,9 @@ pub(crate) enum RingWalk {
     /// ★★ **The second half is new and it is not pedantry.** This used to fire on "every node lies
     /// on `q`", which a ring with a curved edge satisfies while *leaving* the plane — and one
     /// consumer ([`every_ray`]) skips such a ring entirely, dropping its crossings from a parity
-    /// count. A ring whose nodes are all on `q` while an edge departs is
-    /// [`RingWalk::CurvedDeparture`] instead.
+    /// count. A ring whose nodes are all on `q` while an edge departs is `Met` instead: the
+    /// departure is an off-line entry of its own side ([`EdgeMeet::Departs`]).
     AllOn,
-    /// **The ring leaves the meet between two on-meet nodes, and which side it leaves to is not a
-    /// question this walk can answer.**
-    ///
-    /// ★★★★★ Two nodes on `q` do not put the edge between them on `q`: two points fix a straight
-    /// line, so a straight edge is on it and a **curved** one departs and returns. Where that
-    /// happens the run is cut into on-meet stretches, which is enough for **extent** — but not for
-    /// **parity's position**. The count of crossings over such a run is `flanks_differ` whichever
-    /// side the arc bulges to (a circle meets a plane twice, so the departure is entirely on one
-    /// side, and `(s_a ≠ σ) + (σ ≠ s_b)` has the parity of `s_a ≠ s_b` either way) — but *which* of
-    /// the two ends carries it does depend on σ. So a departing run that must flip, a stretch with
-    /// an arc on both sides, and a ring whose every node is on `q` while an edge departs are all
-    /// answered by name rather than guessed.
-    ///
-    /// ★ The value it wants exists in pieces (`arc_side` beside `ccw` and the axis sense); it is
-    /// not built because nothing asks yet, and an unmeasured sign is worse than an honest refusal.
-    CurvedDeparture,
     /// A node whose side this walk cannot answer.
     ///
     /// ★★ **It used to mean "a [`NodeId::Branch`]", and it does not any more.** [`side_of`]'s
@@ -2317,8 +2342,8 @@ pub(crate) enum Feature {
     /// *nodes* being enough: two points fix a straight line, so a straight edge between two on-`q`
     /// nodes is on it — and a **curved** one departs and comes back, touching `q` only at its ends.
     /// A face's boundary that runs `… → node → arc → node → …` was read as one interval and stated
-    /// a graze over ground it does not bound. The run is cut at each departure now
-    /// ([`RingWalk::CurvedDeparture`] for what cutting cannot settle), so the sentence above is
+    /// a graze over ground it does not bound. The run is cut at each departure now, and the
+    /// departure's own side flanks the pieces ([`EdgeMeet::Departs`]), so the sentence above is
     /// true again.
     ///
     /// `flanks_differ` is the whole decision: the two off-line neighbours bracketing the run sit on
@@ -2333,28 +2358,40 @@ pub(crate) enum Feature {
     /// of the off-line neighbour **before** the run; with `flanks_differ` false the one after is the
     /// same, and with it true the other is its negation, so one number carries both. Never `0`.
     ///
-    /// ★★★★★ **`None` where there is no such neighbour** — a stretch that begins where the ring
-    /// *returned* to the meet is preceded by the departure itself, and that side is σ
-    /// ([`RingWalk::CurvedDeparture`]). The type says so rather than carrying a plausible number:
-    /// its readers refuse on it, and the next one must face the same choice.
+    /// ★ A stretch that begins where the ring *returned* to the meet is preceded by the departure
+    /// itself, and that side is the departure's σ ([`EdgeMeet::Departs`]) — so there is always a
+    /// neighbour to read, and the number is never a plausible stand-in (E3-c).
     Run {
         first: usize,
         len: usize,
         flanks_differ: bool,
-        flank: Option<i8>,
+        flank: i8,
     },
+}
+
+/// Whether ring edge `i` lies on what `q` cuts here, or leaves it — see [`ring_against_plane`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum EdgeMeet {
+    /// The edge lies on the meet: two on-`q` nodes joined by a straight edge, or — on the circle
+    /// road — an arc carried by `q` itself.
+    On,
+    /// The edge leaves the meet between two on-`q` nodes (a curved edge) and stays on this side of
+    /// `q`, in [`side_of`]'s frame, until it returns — a circle meets a plane in two points, so
+    /// the whole excursion lies on one side.
+    Departs(i8),
 }
 
 /// Read a ring against one plane: where it meets the line, and whether it crosses or only touches.
 ///
-/// ★ **One walk, two consumers.** `arrangement::trace_transversal_face` clips a face's ring against a cut
-/// plane and [`every_ray`] casts a parity ray along `P ∩ Q_a`; both must answer the same question
-/// first — *does the boundary cross this line here?* — and a node sitting **on** the line is the
-/// only hard part of it. The tracer had the rule (look at the node's two off-line neighbours:
-/// opposite sides is a crossing, equal sides a touch) inlined in its scan, entangled with naming,
-/// alias recording and decline kinds; the ray caster had no rule at all and threw such a candidate
-/// away. Resilience that lives in one consumer is resilience the other does not have — the same
-/// shape [`ring_in_ring`]'s retry was in.
+/// ★ **One walk, four consumers.** `arrangement::trace_transversal_face` clips a face's ring
+/// against a cut plane, `arrangement::cycle_on_class` reads a lateral's cycle against a circle,
+/// [`every_ray`] casts a parity ray along `P ∩ Q_a` and [`segment_meets_face`] alternates a
+/// segment against a face; all must answer the same question first — *does the boundary cross
+/// this line here?* — and a node sitting **on** the line is the only hard part of it. The tracer
+/// had the rule (look at the node's two off-line neighbours: opposite sides is a crossing, equal
+/// sides a touch) inlined in its scan, entangled with naming, alias recording and decline kinds;
+/// the ray caster had no rule at all and threw such a candidate away. Resilience that lives in one
+/// consumer is resilience the other does not have — the same shape [`ring_in_ring`]'s retry was in.
 ///
 /// What each consumer does *with* a feature stays its own: the tracer turns it into a **named
 /// point** (four-plane aliases, `DeclineKind`, occupancy), the ray caster into one bit ("ahead of
@@ -2363,25 +2400,33 @@ pub(crate) enum Feature {
 /// `AllOn` when every node **and edge** lies on `q` — a ring in the plane has no flanks to be
 /// decided by.
 ///
-/// **Features come out in ring order from the first off-`q` node.** That is the order the tracer's
+/// **Features come out in ring order from the first off-`q` entry.** That is the order the tracer's
 /// scan produced them in, and its naming step records aliases into a union-find as it goes, so the
 /// order is contract, not incident.
 ///
-/// ★★ **`on_meet(i)` answers "does ring edge `i` lie on what `q` cuts here?"** — edge `i` runs from
-/// `nodes[i]` to `nodes[i + 1]`. Two on-`q` nodes do **not** settle it: two points fix a straight
-/// line, so a straight edge between them is on it, and a **curved** one leaves and comes back. What
-/// counts as "the meet" is the caller's, because it differs by road — a plane class cuts a planar
-/// face in a **line** (so the test is "not an arc") and a lateral face in a **circle** (so the test
-/// is "carried by that very class", since an arc *can* lie on a circle).
+/// ★★ **`on_meet(i)` answers "does ring edge `i` lie on what `q` cuts here, and if not, which side
+/// does it leave to?"** — edge `i` runs from `nodes[i]` to `nodes[i + 1]`, and it is asked only
+/// where both ends are on `q`. Two on-`q` nodes do **not** settle it: two points fix a straight
+/// line, so a straight edge between them is on it, and a **curved** one leaves and comes back.
+/// What counts as "the meet" is the caller's, because it differs by road — a plane class cuts a
+/// planar face in a **line** (so a straight edge is `On` and an arc `Departs` to the side its
+/// tangent points, [`arc_departure_side`]) and a lateral face in a **circle** (so an arc carried
+/// by that very class is `On`). `None` is "no exact description" and answers [`RingWalk::Unnameable`].
 ///
-/// ★ Today every caller answers `true` for every edge, which is exactly the claim the walk has been
-/// making silently; the rung that reads it makes the claim honest.
+/// ★★★★★ **A departing edge is read as one more off-line entry, of the departure's side** (E3-c).
+/// The ring's sign sequence is then nodes and departures alike, and the two rules the walk has
+/// always had — a sign change between neighbours is a crossing, a maximal run of zeros is an
+/// on-line interval flanked by its neighbours — apply unchanged: a run is cut where the ring
+/// leaves, each piece's flanks are the departures beside it, and a ring whose every node is on
+/// `q` (a half-disk cap: its chord and its arc) is a run flanked by its own arc on both sides.
+/// Crossings are still only ever between two *nodes*: a departure sits between two on-`q` nodes,
+/// so it is never adjacent to an off-`q` one.
 pub(crate) fn ring_against_plane(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     nodes: &[NodeId],
     q: usize,
-    on_meet: impl Fn(usize) -> bool,
+    on_meet: impl Fn(usize) -> Option<EdgeMeet>,
 ) -> RingWalk {
     let n = nodes.len();
     let Some(side) = (0..n)
@@ -2390,76 +2435,60 @@ pub(crate) fn ring_against_plane(
     else {
         return RingWalk::Unnameable;
     };
-    let Some(start) = side.iter().position(|&s| s != 0) else {
-        // ★ Every *node* on `q` is not "the ring lies in `q`": an edge may still depart. Only when
-        // every edge stays does `AllOn`'s sentence hold.
-        return if (0..n).all(&on_meet) {
-            RingWalk::AllOn
-        } else {
-            RingWalk::CurvedDeparture
-        };
+    // The sign sequence: every node, and after node `i` its edge where that edge departs the
+    // meet between two on-`q` nodes — `(side, Some(node))` or `(σ, None)`.
+    let mut seq: Vec<(i8, Option<usize>)> = Vec::with_capacity(n);
+    for i in 0..n {
+        seq.push((side[i], Some(i)));
+        if side[i] == 0 && side[(i + 1) % n] == 0 {
+            match on_meet(i) {
+                None => return RingWalk::Unnameable,
+                Some(EdgeMeet::On) => {}
+                Some(EdgeMeet::Departs(s)) => seq.push((s, None)),
+            }
+        }
+    }
+    let m = seq.len();
+    let Some(start) = seq.iter().position(|e| e.0 != 0) else {
+        return RingWalk::AllOn;
     };
     let mut out = Vec::new();
     let mut j = 0;
-    while j < n {
-        let i = (start + j) % n;
-        if side[i] != 0 {
-            let ni = (i + 1) % n;
-            if side[ni] != 0 && side[ni] != side[i] {
+    while j < m {
+        let i = (start + j) % m;
+        if seq[i].0 != 0 {
+            let ni = (i + 1) % m;
+            if seq[ni].0 != 0 && seq[ni].0 != seq[i].0 {
+                let (Some(a), Some(_)) = (seq[i].1, seq[ni].1) else {
+                    unreachable!("a departure sits between two on-line nodes")
+                };
                 out.push(Feature::Crossing {
-                    edge: i,
-                    from: side[i],
+                    edge: a,
+                    from: seq[i].0,
                 });
             }
             j += 1;
         } else {
-            // A maximal run of on-line vertices. Two is the common case, but a vertex whose name
-            // had to be taken from its touching planes (`loop_triples`) stays in the ring even
-            // when the loop runs straight through it, so a run can be longer.
-            let first = i;
+            // A maximal run of on-line vertices, ended by an off-line node or by a departure. Two
+            // is the common case, but a vertex whose name had to be taken from its touching
+            // planes (`loop_triples`) stays in the ring even when the loop runs straight through
+            // it, so a run can be longer — and a run between two departures can be a single node.
+            let Some(first) = seq[i].1 else {
+                unreachable!("an on-line entry is a node")
+            };
             let mut len = 0usize;
-            while j < n && side[(start + j) % n] == 0 {
+            while j < m && seq[(start + j) % m].0 == 0 {
                 len += 1;
                 j += 1;
             }
-            let before = side[(first + n - 1) % n];
-            let after = side[(start + j) % n];
-            let flanks_differ = before != after;
-            // ★★★★★ **The run is cut where the ring leaves the meet.** `len` on-`q` nodes give
-            // `len - 1` edges; each that departs breaks the on-meet interval in two. A run with no
-            // break is the whole thing, exactly as before.
-            let mut breaks: Vec<usize> = (0..len.saturating_sub(1))
-                .filter(|&k| !on_meet((first + k) % n))
-                .collect();
-            if breaks.is_empty() {
-                out.push(Feature::Run {
-                    first,
-                    len,
-                    flanks_differ,
-                    flank: Some(before),
-                });
-                continue;
-            }
-            // A break makes parity's *position* σ's question (see `CurvedDeparture`), and a stretch
-            // with a departure on both sides has no flank of its own for the same reason.
-            if flanks_differ {
-                return RingWalk::CurvedDeparture;
-            }
-            breaks.push(len - 1);
-            let mut from = 0usize;
-            for cut in breaks {
-                let stretch = cut + 1 - from;
-                if stretch < 2 {
-                    return RingWalk::CurvedDeparture;
-                }
-                out.push(Feature::Run {
-                    first: (first + from) % n,
-                    len: stretch,
-                    flanks_differ: false,
-                    flank: (from == 0).then_some(before),
-                });
-                from = cut + 1;
-            }
+            let before = seq[(i + m - 1) % m].0;
+            let after = seq[(start + j) % m].0;
+            out.push(Feature::Run {
+                first,
+                len,
+                flanks_differ: before != after,
+                flank: before,
+            });
         }
     }
     RingWalk::Met(out)
@@ -2580,12 +2609,15 @@ pub(crate) fn every_ray(
         // ★ The meet here is a **line** (`p ∩ Q_a`), and two points fix a line — so a straight
         // edge between two on-line nodes is on it and a curved one is not. Same reading as
         // `arrangement::trace_transversal_face`'s, which walks the same kind of ring.
-        let on_meet = |i: usize| !matches!(ring[i].carrier, Carrier::Arc(_));
+        // ★ An arc between two on-line nodes would need a cylinder table to side (E3-c's
+        // `arc_departure_side`), and this road carries none — `None` is the honest answer,
+        // and the walk's `Unnameable` is the same refusal a branch node already meets here.
+        let on_meet =
+            |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
         let features = match ring_against_plane(jd, &[], &nodes, qa, on_meet) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
             RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
-            RingWalk::CurvedDeparture => return Err(reject(RejectReason::CurvedDeparture)),
         };
         let qb = *v
             .iter()
@@ -2703,14 +2735,15 @@ pub(crate) fn segment_meets_face(
         // ★ A ring, whole: the walk reads it as a cyclic sign sequence — see [`three_plane_probes`]
         // for where dropping a node *is* honest.
         let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
-        let on_meet = |i: usize| !matches!(ring[i].carrier, Carrier::Arc(_));
+        // No cylinder table on this road either (see `every_ray`): an arc answers `None`.
+        let on_meet =
+            |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
         let features = match ring_against_plane(jd, &[], &nodes, w, on_meet) {
             RingWalk::Met(f) => f,
             RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
             // The whole ring lies on `w`: this face's boundary is the line itself, and the
             // alternation has no crossings to read. Refusing to guess.
             RingWalk::AllOn => return Err(reject(RejectReason::PointOnRing)),
-            RingWalk::CurvedDeparture => return Err(reject(RejectReason::CurvedDeparture)),
         };
         for f in &features {
             match *f {
