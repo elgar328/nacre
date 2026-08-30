@@ -4248,8 +4248,10 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
         pins += pinned_ends_ordered(at, dir, kind);
     }
     // ★ The count is the lock on the *population*: let the fixtures stop producing branch-pinned
-    // ends and every assertion below would pass vacuously.
-    assert_eq!(pins, 40, "cylinder-pinned ring ends exercised");
+    // ends and every assertion below would pass vacuously. 40 while a ring split at a seam joint
+    // was declined; **48** since E1 ③ names it — the `[6, 4, −1]` boss sits on the +y wall, so
+    // its bite on the plate's caps wraps the seam (θ = 0 is at −y), and those rings' ends join.
+    assert_eq!(pins, 48, "cylinder-pinned ring ends exercised");
 }
 
 fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
@@ -9529,6 +9531,11 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
 ///   triangle from the plane — `DegenerateFace` 14 → 0, every one landing on the lateral row's
 ///   `CylSpan` (those caps sit beside a panel or chain lateral, which the tracer reaches first);
 ///   Ok 9 unchanged.
+/// * E1 ③: a seam joint is not a corner — the two legs of a wrap arc are one step — `OuterRing`
+///   5 → 0, all landing on `CylSpan` (wall +y's notch holds the seam and is spliced into the
+///   lateral's outer walk; the half walls' laterals are chains); Ok 9 unchanged. After E1 no
+///   row is `OuterRing`/`HoleRing`/`CylFaceHole`/`DegenerateFace`: every ring of a result face
+///   has a name, and what remains is the lateral's outer loop (E2).
 ///
 /// ★ The probe beside it counts the loops carrying an `OnSeam` joint at any vertex — outer loops
 /// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
@@ -9566,7 +9573,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             "wall +y",
             [2.0, 4.0, -1.0],
             4.0,
-            [Declined(DeclineKind::OuterRing); 3],
+            [Declined(DeclineKind::CylSpan); 3],
         ),
         (
             "wall -x",
@@ -9615,7 +9622,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [2.0, 0.0, -1.0],
             2.0,
             [
-                Declined(DeclineKind::OuterRing),
+                Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
@@ -9625,7 +9632,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [2.0, 0.0, 1.0],
             2.0,
             [
-                Declined(DeclineKind::OuterRing),
+                Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
@@ -9741,7 +9748,11 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         0,
         "a circle-bounded face is never degenerate"
     );
-    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 24);
-    assert_eq!(count(|r| *r == Declined(DeclineKind::OuterRing)), 5);
+    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 29);
+    assert_eq!(
+        count(|r| *r == Declined(DeclineKind::OuterRing)),
+        0,
+        "every ring of a result face has a name"
+    );
     assert_eq!(seam_joints, (8, 0), "seam-joint loops (outer, holes)");
 }

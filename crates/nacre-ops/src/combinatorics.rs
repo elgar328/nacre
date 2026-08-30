@@ -1895,6 +1895,26 @@ fn loop_triples(
             corner,
             "a loop's edge starts where the previous one ends (OpenLoop)"
         );
+        // ★★ **A seam joint is not a corner.** An `OnSeam` vertex lies on two surfaces only — a
+        // rim's θ = 0 point, where the loop builder split a wrap arc in two — so no third
+        // surface names it and the ring does not turn there. The two legs meeting at it are one
+        // step of the ring: no triple, and the step's wall was pushed with its first leg. Total
+        // over faces: a cap's bitten arc (legs on the cylinder) and a lateral hole's rim (legs on
+        // the cap plane) read the same way.
+        if matches!(
+            model.vertices.get(corner).def,
+            nacre_topo::VertexDef::OnSeam(_)
+        ) {
+            let prev = &hes[(i + n - 1) % n];
+            debug_assert!(
+                matches!(model.edge_curve(prev.edge), nacre_geom::Curve::Circle(_))
+                    && matches!(model.edge_curve(hes[i].edge), nacre_geom::Curve::Circle(_)),
+                "a seam joint joins two arc legs"
+            );
+            debug_assert_eq!(a, b, "one far face on both legs of a seam joint");
+            debug_assert_eq!(prev.forward, hes[i].forward, "one sense about the axis");
+            continue;
+        }
         let branch = match plane_ix[p] {
             ClassIx::Plane(near) => match (plane_ix[a], plane_ix[b]) {
                 (ClassIx::Cyl(k), ClassIx::Plane(far)) | (ClassIx::Plane(far), ClassIx::Cyl(k)) => {
@@ -1903,7 +1923,8 @@ fn loop_triples(
                             .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
                     )
                 }
-                // Two laterals meeting at one corner is M6b's cylinder pair, not this road's.
+                // Two laterals meeting at one corner is M6b's cylinder pair, not this road's
+                // (a seam joint between two legs of one arc was taken out above).
                 (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
                     return Err(reject(RejectReason::CurvedOperandBoundary));
                 }
@@ -1989,6 +2010,11 @@ fn loop_triples(
             return Err(reject(RejectReason::ThreePlanes)); // three planes through one line, not one point
         }
         out.push(NodeId::three_planes(t));
+    }
+    // Every joint was a seam joint: a one-edge cap rim seen from a lateral face's hole, which is
+    // the cylinder pair's shape — today's answer for it, kept as a backstop.
+    if out.is_empty() {
+        return Err(reject(RejectReason::CurvedOperandBoundary));
     }
     Ok(LoopRing::Poly(NamedRing {
         triples: out,
