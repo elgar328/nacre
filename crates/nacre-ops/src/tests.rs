@@ -9252,6 +9252,14 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 /// disk cells carry no B material at the (0,0) corner while the caps do (an arrangement label
 /// defect, D2b's finding) — the cells' ends disagree and the emitter refuses rather than read
 /// either. The census's guard for exactly that shape is `src2_disagree == 0 || emitted.is_err()`.
+///
+/// ★ `rul flush` (E3-b/c): a straddling boss whose caps sit flush with **both** plate planes. Cut
+/// and Common assemble clean and build; the Fuse's two cap chords are each an interior boundary
+/// between a half-disk 2-gon and its neighbour that the coplanar merge abstains on (the chord and
+/// its arcs collide in the node-pair edge key), and the shipped pair spelled a stated plane-self
+/// edge — validate's producer bug. The whole-result check refuses that shape by the cleaning's
+/// own name (`CoplanarMerge`, the chord's corner as witness) until the grouping-arm cell teaches
+/// the merge to thread mixed rings.
 #[test]
 fn census_corpus_cylinder_families_build_or_refuse_by_name() {
     fn tr(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {
@@ -9321,7 +9329,7 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
                 m.rebuild_adjacency();
                 (a, b)
             },
-            [Err(RejectReason::UnorderedEdges); 3],
+            [Err(RejectReason::CoplanarMerge), ok(1), ok(1)],
         ),
         (
             "wal corner-lo",
@@ -9636,10 +9644,12 @@ fn a_spliced_band_is_cut_across_its_notch() {
                 h.off.iter().all(|&d| d <= 1e-9),
                 "a named crossing sits off its surfaces: {h:?}"
             );
-            assert_eq!(
-                h.side_f64, h.side,
-                "a named crossing lies on the other ruling: {h:?}"
-            );
+            if !h.arc {
+                assert_eq!(
+                    h.side_f64, h.side,
+                    "a named crossing lies on the other ruling: {h:?}"
+                );
+            }
         }
     }
 }
@@ -10049,6 +10059,10 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   the half Cut rows reach the next walls by name — the coplanar cleaning pass's plane-only ray
 ///   (`NoClearRay` 4 → 40) and the chart's unreadable cell (`CylinderGateUndecided` 1 → 17); the
 ///   through-axis wall still crosses the caps' arcs (`CurvedRingWall` 10 → 27, E3-b). Ok 69 → 81.
+/// * E3-b: the scan names a crossing on an **arc**, the caps' chords join the overlay (so a
+///   through-axis tool wall splits them), and a chord's sense reads its canonical root — the
+///   whole through-axis wall column completes its trace and lands on the chart's unreadable cell:
+///   `CurvedRingWall` 27 → 0, `CylinderGateUndecided` 17 → 44. The name is gone from the corpus.
 #[test]
 fn crossing_census_slabs_and_through_axis_walls_by_name() {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -10091,7 +10105,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     };
     const TOOLS: [&str; 5] = ["mid", "top", "bottom", "axis wall", "wall slab"];
     // Per family, per kind: the five tools' outcomes, in `TOOLS` order.
-    use DeclineKind::CurvedRingWall;
     use RejectReason::{BranchVertexUnnamed, NoClearRay, RulingBoundNotYet};
     // A band result: the mid slab parts the plate into two solids, the top and bottom slabs cut
     // the standing boss, the wall slab clears the boss. The through-axis wall halves the cap's
@@ -10099,7 +10112,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // cell bounded by the chord alone carries no cylinder for its corners — `coord_key` refuses
     // (`BranchVertexUnnamed`) — and for Common, whose result is the bore alone, the point
     // classification has no clear ray at the hole's diameter.
-    const BAND: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(BranchVertexUnnamed), Ok(1)];
+    const BAND: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
     const BAND_COMMON: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(NoClearRay), Ok(1)];
     // A wall boss fused: the wall slab's caps cross the plate's wall face on the boss's
     // **rulings** — named as branch nodes since E3 — and the cut builds with its exact volume.
@@ -10110,7 +10123,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         Rejected(BranchVertexUnnamed),
         Ok(1),
         Ok(1),
-        Declined(CurvedRingWall),
+        Rejected(RejectReason::CylinderGateUndecided),
         Ok(1),
     ];
     // A wall boss cut (its lateral a panel — the notch's wall): the top and bottom slabs miss
@@ -10122,7 +10135,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         Rejected(BranchVertexUnnamed),
         Ok(1),
         Ok(1),
-        Declined(CurvedRingWall),
+        Rejected(RejectReason::CylinderGateUndecided),
         Ok(1),
     ];
     // A half boss fused (its lateral a chain, its top cap a half-disk): since E3-c the cap's
@@ -10133,7 +10146,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         Rejected(BranchVertexUnnamed),
         Ok(1),
         Ok(1),
-        Declined(CurvedRingWall),
+        Rejected(RejectReason::CylinderGateUndecided),
         Ok(1),
     ];
     // A Common result — the inner half-cylinder alone, two half-disk caps and a flat side — under
@@ -10143,7 +10156,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         Rejected(NoClearRay),
         Rejected(NoClearRay),
         Rejected(NoClearRay),
-        Declined(CurvedRingWall),
+        Rejected(RejectReason::CylinderGateUndecided),
         Rejected(NoClearRay),
     ];
     // A half boss's Cut (a notch with a half-disk ceiling): the chart's emitter meets a cell it
@@ -10152,7 +10165,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         Rejected(RejectReason::CylinderGateUndecided),
         Rejected(RejectReason::CylinderGateUndecided),
         Rejected(RejectReason::CylinderGateUndecided),
-        Declined(CurvedRingWall),
+        Rejected(RejectReason::CylinderGateUndecided),
         Rejected(RejectReason::CylinderGateUndecided),
     ];
     let want: [[[Cross; 5]; 3]; 14] = [
@@ -10202,7 +10215,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 Rejected(BranchVertexUnnamed),
                 Rejected(BranchVertexUnnamed),
                 Ok(1),
-                Declined(CurvedRingWall),
+                Rejected(RejectReason::CylinderGateUndecided),
                 Ok(1),
             ],
             PANEL_CUT,
@@ -10291,14 +10304,13 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 81, "{tally:?}");
-    assert_eq!(count(|c| *c == Declined(CurvedRingWall)), 27);
+    assert_eq!(count(|c| matches!(c, Ok(_))), 86, "{tally:?}");
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 40);
-    assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 23);
+    assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 18);
     assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 2);
     assert_eq!(
         count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
-        17
+        44
     );
     assert_eq!(count(|c| *c == First), 15);
     assert_eq!(count(|c| *c == Empty), 5);

@@ -443,8 +443,18 @@ fn merge_rulings(rulings: &[RulingTrace], cyls: &[crate::planes::WorkingCyl]) ->
 
 /// Turn the class's chord traces into birth-branch [`MergedSeg`]s — they join **after**
 /// [`split_at_crossings`] (see [`ChordTrace`]: where, not why), carrying a sense their own
-/// construction states: `end[0] → end[1]` is `Lo → Hi` along the canonical meet line, and the
-/// sense is that direction's sign against the edge convention `n_wc × n_wall`.
+/// construction states.
+///
+/// ★★★★★ **`end[0] → end[1]` is the *solve's* `Lo → Hi`, not the canonical line's.**
+/// `chord_on_class` solves `(wc, fc)` in that order and names its roots, but [`NodeId::branch`]
+/// canonicalizes the pair — and when `wc > fc` the sorted pair reverses the meet line, so the
+/// *canonical* root stored in `end[0]`'s name is `Hi`. The sense below is a sign against the
+/// canonical direction, so it must be read off the travel the ends actually make: the name
+/// carries the canonical root, and `end[0]` rooted `Hi` means the travel is `−d_can`. This
+/// sentence used to claim the ends were canonical-ordered; every first operation happened to
+/// solve `wc < fc` (a boss's wall class precedes its caps), so the flip had no population until a
+/// re-operation's tool supplied a through-axis class *above* the caps — and the flipped sense
+/// wound one cell backwards, two layers later `RingOrientation` (E3-b's first measured wall).
 fn chords_to_segs(
     chords: &[ChordTrace],
     jd: &Judge<'_, WorkingPlane>,
@@ -501,11 +511,19 @@ fn chords_to_segs(
                 .checked_add(d_can[k].checked_mul(d_edge[k]).ok_or_else(undecided)?)
                 .ok_or_else(undecided)?;
         }
-        let sense = match dot.numer().signum() {
+        let along_can = match dot.numer().signum() {
             1 => 1i8,
             -1 => -1,
             _ => return Err(undecided()), // the meet line ⊥ its own edge direction: degenerate
         };
+        // Whether `end[0] → end[1]` runs along `+d_can`: the canonical root in `end[0]`'s own
+        // name (see the doc above — a `Double` root is a tangency the producer refuses).
+        let ordered = match combinatorics::branch_name(c.end[0]) {
+            Some((_, _, nacre_topo::QuadRoot::Lo)) => true,
+            Some((_, _, nacre_topo::QuadRoot::Hi)) => false,
+            _ => return Err(undecided()),
+        };
+        let sense = if ordered { along_can } else { -along_can };
         out.push(MergedSeg {
             wall: c.wall,
             end: c.end,
@@ -866,6 +884,8 @@ fn trace_transversal_face(
         }
     };
     let mut holes: Vec<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>)> = Vec::new();
+    // A circular hole's diameter crossings (E3-b), joined to the scan's node list below.
+    let mut hole_chords: Vec<Node> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
     let Some(raw_holes) = &loops.holes else {
@@ -881,11 +901,54 @@ fn trace_transversal_face(
                 out.declined.push((fp, DeclineKind::HoleRing));
                 return;
             }
-            // ★ A **circular hole is skipped, by proof, not by hope**: the population gate
-            // established every ∥-axis wall clear of the circle's cylinder by more than r, and
-            // this trace's line `L = W ∩ fc` lies in such a wall — so the circle cannot meet
-            // `L`, and a disjoint hole contributes no crossings to the 3-valued scan.
-            combinatorics::LoopRing::Circle { .. } => continue,
+            // ★ A **circular hole meets the line only as a diameter, and then it flips parity
+            // twice** (E3-b). The population gate admits a ∥-axis wall only clear of the hole's
+            // cylinder (skip: the circle cannot meet `L`) or exactly **through its axis** — and
+            // there the line cuts the hole in its diameter's two branch points, which used to be
+            // skipped "by proof": the proof covered the clear half only, and the planted
+            // full-width chord surfaced as `LabelConflict` on the through-family × through-axis
+            // tool (measured). The two roots are pushed as flip nodes — the hole's own chord,
+            // named the same way a disk cap's is (`chord_on_class`).
+            combinatorics::LoopRing::Circle { cyl } => {
+                let Some(hd) = cyls.get(*cyl).map(|c| &c.def) else {
+                    out.declined.push((fp, DeclineKind::HoleRing));
+                    return;
+                };
+                let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
+                    out.declined.push((fp, DeclineKind::HoleRing));
+                    return;
+                };
+                match class_through_axis(&w, hd) {
+                    Some(false) => continue, // the gate's clearance proof: no meet
+                    Some(true) => {}
+                    None => {
+                        out.declined.push((fp, DeclineKind::HoleRing));
+                        return;
+                    }
+                }
+                // ★ **The gate's record, the same one the rulings road reads first.** A
+                // through-axis pair the gate did not list was proven clear — no emitted face
+                // reaches the hole's footprint on this class, and the rulings road is silent
+                // for it — so planting flip nodes would break the line against rulings that
+                // are (rightly) absent: measured, the d = 0 boss-and-bore fixture walked its
+                // spur out and back and refused `StraightAngle`. Listed pairs get the nodes;
+                // unlisted pairs keep today's skip, and the two roads stay one rule.
+                if !crossings.contains(&(wc, *cyl)) {
+                    continue;
+                }
+                for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+                    hole_chords.push(Node {
+                        id: NodeId::branch(wc, fc, *cyl, root),
+                        pin: combinatorics::EndPin::Cylinder,
+                        flip: true,
+                        run: None,
+                        flanks_differ: false,
+                        single_touch: false,
+                        graze_above: None,
+                    });
+                }
+                continue;
+            }
             combinatorics::LoopRing::Poly(r) => match plane_ring(r) {
                 Ok(pair) => holes.push(pair),
                 Err(f) => {
@@ -980,6 +1043,7 @@ fn trace_transversal_face(
     // back to void between them. A ring that does not meet `W` (every vertex one side) yields no
     // nodes; `run_counter` is shared so run ids stay unique across rings.
     let mut nodes: Vec<Node> = Vec::new();
+    nodes.append(&mut hole_chords);
     let mut run_counter = 0usize;
     let mut declined: Option<DeclineKind> = None;
     'rings: for (ring, walls) in std::iter::once(&outer).chain(holes.iter()) {
@@ -1046,7 +1110,9 @@ fn trace_transversal_face(
                             };
                             match crossing_on_ruling(jd, &wcy.def, wc, fc, cyl, side) {
                                 Ok(id) => {
-                                    crossing_probe::record(jd, &wcy.def, cyl, wc, fc, side, id);
+                                    crossing_probe::record(
+                                        jd, &wcy.def, cyl, wc, fc, side, false, id,
+                                    );
                                     (id, combinatorics::EndPin::Cylinder)
                                 }
                                 Err(d) => {
@@ -1055,9 +1121,22 @@ fn trace_transversal_face(
                                 }
                             }
                         }
-                        crate::boolean::Wall::Arc { .. } => {
-                            declined = Some(DeclineKind::CurvedRingWall);
-                            break 'rings;
+                        crate::boolean::Wall::Arc { cyl, ccw } => {
+                            let Some(wcy) = cyls.get(cyl) else {
+                                declined = Some(DeclineKind::CurvedRingWall);
+                                break 'rings;
+                            };
+                            let b = ring[(edge + 1) % ring.len()];
+                            match crossing_on_arc(jd, &wcy.def, wc, fc, cyl, ccw, ring[edge], b) {
+                                Ok(id) => {
+                                    crossing_probe::record(jd, &wcy.def, cyl, wc, fc, 0, true, id);
+                                    (id, combinatorics::EndPin::Cylinder)
+                                }
+                                Err(d) => {
+                                    declined = Some(d);
+                                    break 'rings;
+                                }
+                            }
                         }
                     };
                     // A crossing is strict on both ends and its carrier is a line or a ruling —
@@ -2385,6 +2464,56 @@ pub(crate) fn crossing_on_ruling(
     Ok(NodeId::branch(wc, fc, cyl, found.ok_or(no)?))
 }
 
+/// **The planar scan's crossing on an arc** (E3-b) — the point where the class line `L = wc ∩ fc`
+/// leaves the face across an edge riding a circle of `cyl`, named as the branch node
+/// `wc ∩ fc ∩ cyl` at the root that lies **inside** the arc.
+///
+/// The arc lies in the face's own plane `fc` (a cap's ⊥ plane), so the pair `{wc, fc}` cuts the
+/// cylinder in two points on the arc's circle, and the crossing is the one the travelled arc
+/// `a → b` strictly contains ([`theta_between`], the ruling sweep's containment — the arc's CCW
+/// pair is `ccw ? [a, b] : [b, a]`). Exactly one must: none is a crossing the walk mis-read, and
+/// both is an arc meeting the line twice — a shape the gate keeps out (a > π arc against its own
+/// diameter's class), refused rather than guessed.
+///
+/// ★ The same canonical name the lateral's ruling sweep gives this point as a station
+/// (`crossing_on_ruling(fc, wc, …)` — [`NodeId::branch`] folds the pair and root together), so
+/// [`merge_coincident`] reads one point, not two.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn crossing_on_arc(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    wc: usize,
+    fc: usize,
+    cyl: usize,
+    ccw: bool,
+    a: NodeId,
+    b: NodeId,
+) -> Result<NodeId, DeclineKind> {
+    use nacre_scalar::quad::CylinderMeet;
+    let no = DeclineKind::CurvedRingWall;
+    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
+    let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let Some(CylinderMeet::Pair { s, .. }) =
+        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
+    else {
+        return Err(no);
+    };
+    let _ = s;
+    let (lo, hi) = if ccw { (a, b) } else { (b, a) };
+    let mut found = None;
+    for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
+        let node = NodeId::branch(wc, fc, cyl, root);
+        if theta_between(jd, cyl, def, lo, hi, node).map_err(|_| no)? {
+            if found.is_some() {
+                return Err(no); // both roots inside: the arc meets the line twice
+            }
+            found = Some(node);
+        }
+    }
+    found.ok_or(no)
+}
+
 /// The scan's crossings on rulings, realized — the second road to the sign
 /// [`crossing_on_ruling`] chooses by. One entry per crossing named in this binary: the point,
 /// how far it sits from the class plane, the face plane and the cylinder (all should be 0), and
@@ -2406,10 +2535,14 @@ pub(crate) mod crossing_probe {
         pub side_f64: i8,
         /// The side the ring's edge carried.
         pub side: i8,
+        /// `true` for a crossing on an arc (E3-b), whose carried side is 0 — the ruling-side
+        /// twin check is the rulings' alone.
+        pub arc: bool,
     }
 
     pub(crate) static HITS: Mutex<Vec<Hit>> = Mutex::new(Vec::new());
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn record(
         jd: &Judge<'_, WorkingPlane>,
         def: &nacre_topo::CylinderDef,
@@ -2417,6 +2550,7 @@ pub(crate) mod crossing_probe {
         wc: usize,
         fc: usize,
         side: i8,
+        arc: bool,
         id: NodeId,
     ) {
         let Some(p) = combinatorics::branch_point(jd, cyl, def, id) else {
@@ -2461,6 +2595,7 @@ pub(crate) mod crossing_probe {
                 off: [plane_off(w), plane_off(v), cyl_off],
                 side_f64,
                 side,
+                arc,
             });
     }
 }
@@ -4876,7 +5011,7 @@ fn per_class(
     edges: &ClassEdges<'_>,
 ) -> Result<Staged, BoolError> {
     let (cells, face_of) = timed!(C_EXTRACT, walk_cells(jd, cyls, wc, edges))?;
-    let nesting = timed!(C_NEST, nest_cells(jd, wc, &cells, edges))?;
+    let nesting = timed!(C_NEST, nest_cells(jd, cyls, wc, &cells, edges))?;
     // ★ **The seed is `[false; 4]`, and the argument is why it stays an argument.** The
     // arrangement covers all of space, so its unbounded cells reach infinity, where neither solid
     // is. That is a fact about arranging the *whole* model — restrict the input to a region of
@@ -5045,7 +5180,6 @@ impl<'a> ClassEdges<'a> {
         segs: &'a [MergedSeg],
         circles: &'a [MergedCircle],
         rulings: &'a [MergedRuling],
-        chords: Vec<MergedSeg>,
     ) -> Result<Self, BoolError> {
         use std::borrow::Cow;
         // A class carrying both a circle (⊥ one cylinder's axis) and rulings (∥ another's) is
@@ -5060,7 +5194,7 @@ impl<'a> ClassEdges<'a> {
             Cow<'a, [MergedCircle]>,
             Vec<(usize, CutRim)>,
         );
-        let (mut segs2, arcs, circles2, cut_rims): AfterCircles<'a> =
+        let (segs2, arcs, circles2, cut_rims): AfterCircles<'a> =
             match split_circles(jd, cyls, wc, segs, circles)? {
                 Some((s, c, a, r)) => {
                     // ★ The names below rest on this: `split_circles` answers `Some` only when some
@@ -5076,9 +5210,7 @@ impl<'a> ClassEdges<'a> {
                     Vec::new(),
                 ),
             };
-        if !chords.is_empty() {
-            segs2.to_mut().extend(chords);
-        }
+
         let (segs3, rulings2) = match split_rulings(jd, cyls, wc, &segs2, rulings)? {
             Some((s, r)) => (Cow::Owned(s), Cow::Owned(r)),
             None => (segs2, Cow::Borrowed(rulings)),
@@ -5383,6 +5515,7 @@ struct Nesting {
 /// whose owner is not uniquely determined is `HOLE_DEPTH` (see [`innermost_host`]).
 fn nest_cells(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     cells: &[Cell],
     edges: &ClassEdges<'_>,
@@ -5426,7 +5559,7 @@ fn nest_cells(
     for c in (0..n).filter(|&i| cells[i].winding == -1) {
         let mut hosts: Vec<usize> = Vec::new();
         for &r in &pos {
-            if cell_in_cell(jd, wc, &rings, circles, &circle_ix, c, r)? == Some(true) {
+            if cell_in_cell(jd, cyls, wc, &rings, circles, &circle_ix, c, r)? == Some(true) {
                 hosts.push(r);
             }
         }
@@ -5440,7 +5573,7 @@ fn nest_cells(
             // *separating* breaks brings the population here, and dropping the host would send the
             // contour to `roots`, where `label_cells` seeds it **void** — the boss over a bore
             // would lose its base face and the shell would open.
-            let host = innermost_host(jd, wc, &rings, circles, &circle_ix, &hosts)?;
+            let host = innermost_host(jd, cyls, wc, &rings, circles, &circle_ix, &hosts)?;
             let (rc, rr) = (find(&mut parent, c), find(&mut parent, host));
             parent[rc] = rr;
             holes.entry(host).or_default().push(c);
@@ -5484,6 +5617,7 @@ fn nest_cells(
 /// `WitnessNotRational`.
 fn point_in_mixed_ring(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     wc_coeffs: &[Rat; 4],
     probe: &[Rat; 3],
     ring: &[combinatorics::RingEdge],
@@ -5497,15 +5631,9 @@ fn point_in_mixed_ring(
     let q = chart.project(probe)?;
     let (qx, qy) = (q[0], q[1]);
     // The ring's cylinders, for evaluating branch corners — an arc or a ruling both carry theirs.
-    let def_of = |cyl: usize| {
-        ring.iter().find_map(|e| match &e.carrier {
-            combinatorics::Carrier::Arc(arc) if arc.cyl == cyl => Some(&arc.def),
-            combinatorics::Carrier::Ruling(r) if r.cyl == cyl => Some(&r.def),
-            combinatorics::Carrier::Plane { .. }
-            | combinatorics::Carrier::Arc(_)
-            | combinatorics::Carrier::Ruling(_) => None,
-        })
-    };
+    // The class table is the identity's source; a chord-bounded ring carries no cylinder of its
+    // own (E3-b), so the ring's carriers cannot be the door.
+    let def_of = |cyl: usize| cyls.get(cyl).map(|c| &c.def);
     let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
         x[0].checked_mul(y[0])?
             .checked_add(x[1].checked_mul(y[1])?)?
@@ -5672,6 +5800,7 @@ fn point_in_mixed_ring(
 /// serves both.
 pub(crate) fn circle_center_in_ring(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     def: &nacre_topo::CylinderDef,
     ring: &[combinatorics::RingEdge],
@@ -5712,7 +5841,7 @@ pub(crate) fn circle_center_in_ring(
     // could always name still take it — the mixed arm activates on exactly the population the
     // old road refused, which is what keeps every green census row bit-identical.
     if ring_is_mixed(ring) {
-        return point_in_mixed_ring(jd, &coeffs, &center, ring).ok_or_else(undecided);
+        return point_in_mixed_ring(jd, cyls, &coeffs, &center, ring).ok_or_else(undecided);
     }
     let chart = combinatorics::Chart2dRat::of_normal(&n).ok_or_else(undecided)?;
     let p2 = chart.project(&center).ok_or_else(undecided)?;
@@ -5799,8 +5928,10 @@ fn node_in_circle(
 ///   already asks of a centre. ★ The old road *always* exhausts on a mixed `b` (every ray answers
 ///   `Unnameable` at the first branch corner), so this arm activates on exactly the population it
 ///   refused — every other row stays bit-identical.
+#[allow(clippy::too_many_arguments)]
 fn cell_in_cell(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     rings: &[Vec<combinatorics::RingEdge>],
     circles: &[MergedCircle],
@@ -5811,7 +5942,7 @@ fn cell_in_cell(
     match (circle_ix[a], circle_ix[b]) {
         (Some(_), Some(_)) => Ok(None),
         (Some(ci), None) => Ok(Some(
-            circle_center_in_ring(jd, wc, &circles[ci].def, &rings[b])?
+            circle_center_in_ring(jd, cyls, wc, &circles[ci].def, &rings[b])?
                 && !node_in_circle(jd, &rings[b], &circles[ci])?,
         )),
         (None, Some(ri)) => node_in_circle(jd, &rings[a], &circles[ri]).map(Some),
@@ -5832,7 +5963,7 @@ fn cell_in_cell(
                     .iter()
                     .filter_map(|e| combinatorics::node_coords_rat(jd, e.node))
                 {
-                    if let Some(hit) = point_in_mixed_ring(jd, &coeffs, &p, &rings[b]) {
+                    if let Some(hit) = point_in_mixed_ring(jd, cyls, &coeffs, &p, &rings[b]) {
                         return Ok(Some(hit));
                     }
                 }
@@ -5867,6 +5998,7 @@ fn cell_in_cell(
 /// they cannot be ordered and the honest answer is to reject.
 fn innermost_host(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     rings: &[Vec<combinatorics::RingEdge>],
     circles: &[MergedCircle],
@@ -5881,7 +6013,7 @@ fn innermost_host(
     // ★★ **A disk can be a host, so this asks the same four-way question `nest_cells` does** —
     // it used to hold a polygon-only copy of one arm, which was sound only while a disk was
     // filtered out before it got here. It is [`cell_in_cell`] now.
-    let inside = |a: usize, b: usize| cell_in_cell(jd, wc, rings, circles, circle_ix, a, b);
+    let inside = |a: usize, b: usize| cell_in_cell(jd, cyls, wc, rings, circles, circle_ix, a, b);
     let mut found = None;
     for &h in hosts {
         let mut wraps_all = true;
@@ -6671,12 +6803,7 @@ fn trace_result_faces(
     };
     let mut aliases = Aliases::default();
     #[allow(clippy::type_complexity)]
-    let mut splits: Vec<(
-        Vec<MergedSeg>,
-        Vec<MergedCircle>,
-        Vec<MergedRuling>,
-        Vec<MergedSeg>,
-    )> = Vec::new();
+    let mut splits: Vec<(Vec<MergedSeg>, Vec<MergedCircle>, Vec<MergedRuling>)> = Vec::new();
     loop {
         let before = aliases.len();
         // **Every class in the round sees the table as it stood when the round began**, and
@@ -6718,13 +6845,19 @@ fn trace_result_faces(
                 // plane row would abort where an honest reject belongs.
                 return Err(reject(decline_to_reject(kind, faces[fp].face())));
             }
-            let merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
+            let mut merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
+            // ★★★★★ **The chords join *before* the overlay** (E3-b). They used to be appended
+            // after `split_at_crossings` — "a fact about where the code puts them today, not a
+            // constraint" (`ChordTrace`'s own words) — which held only while nothing crossed a
+            // chord strictly inside: a re-operation's through-axis tool wall does, and an
+            // unsplit chord under a split segment is not a subdivision at all (`RingOrientation`
+            // two layers later, measured on the offmid family).
+            merged.extend(chords_to_segs(&tr.chords, jd, wc, cyls)?);
             let split = timed!(SPLIT, split_at_crossings(jd, cyls, wc, &merged, &mut local))?;
             let split = drop_newsless(split)?;
             let circles = merge_circles(&tr.circles, cyls)?;
             let rulings = merge_rulings(&tr.rulings, cyls);
-            let chords = chords_to_segs(&tr.chords, jd, wc, cyls)?;
-            Ok(((split, circles, rulings, chords), local))
+            Ok(((split, circles, rulings), local))
         })?;
         splits.clear();
         for (split, local) in round {
@@ -6753,7 +6886,7 @@ fn trace_result_faces(
 
     let per_class = crate::par::try_map_range(splits.len(), |k| {
         let wc = work[k];
-        let (split, circles, rulings, chords) = &splits[k];
+        let (split, circles, rulings) = &splits[k];
         // The per-class product: the faces, the disk labels the band pass reads (empty for a
         // class with no circles — and for a reused class, which is why cylinders switch reuse
         // off), the cut rims, and the **stopper socket's** deferred reject (empty since M6-2b
@@ -6774,7 +6907,7 @@ fn trace_result_faces(
             // pipeline and must build it the same way; the arc fence locks that they agree.)
             let edges = timed!(
                 C_SPLIT,
-                ClassEdges::of(jd, cyls, wc, split, circles, rulings, chords.clone())
+                ClassEdges::of(jd, cyls, wc, split, circles, rulings)
             )?;
             // ★★★ **A stopper is *made* here — and only made.** M6-2b's arc stopper lived in
             // this socket: built where the class-level fact lives, raised inside `reconstruct`
@@ -7326,12 +7459,13 @@ pub(crate) fn frame_audit(
                 // A copy, so one class's split discoveries cannot leak into the next class's
                 // audit — the fixpoint above already holds everything the boolean would know.
                 let mut local = aliases.clone();
-                let merged = merge_coincident(&tr.segs, wc, &local);
+                let mut merged = merge_coincident(&tr.segs, wc, &local);
+                // Chords before the overlay — the boolean's own order (see `trace_result_faces`).
+                merged.extend(chords_to_segs(&tr.chords, &jd, wc, &cyls)?);
                 let split = split_at_crossings(&jd, &cyls, wc, &merged, &mut local)?;
                 let split = drop_newsless(split)?;
                 let circles = merge_circles(&tr.circles, &cyls)?;
                 let rulings = merge_rulings(&tr.rulings, &cyls);
-                let chords = chords_to_segs(&tr.chords, &jd, wc, &cyls)?;
                 // ★★★★ **The same edges the boolean uses.** This copy of the pipeline is what
                 // makes the audit an instrument; feeding it un-split edges would let it run to
                 // the end and report `failed_at: None` for an input the boolean refuses —
@@ -7339,7 +7473,7 @@ pub(crate) fn frame_audit(
                 // in `bands.rs` locks the two together — since M6-2b went green, as «both
                 // succeed» (a stopper plugged into the socket would raise here per class while
                 // the boolean defers it to the assembly's end; same classes, same name).
-                let edges = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &rulings, chords)?;
+                let edges = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &rulings)?;
                 let staged = per_class(&jd, &cyls, kind, wc, &edges);
                 if let Ok(s) = &staged {
                     let mut pos_labels: Vec<Label> = s
@@ -8556,7 +8690,7 @@ mod tests {
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
 
-        let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], Vec::new()).unwrap();
+        let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[]).unwrap();
         let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
 
         // ★★★ **An independent reading of every winding: the shoelace sign.**
@@ -8697,9 +8831,9 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-        let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], Vec::new()).unwrap();
+        let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[]).unwrap();
         let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
-        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
+        let nesting = nest_cells(&jd, NO_CYLS, wc, &cells, &edges).unwrap();
         let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
 
         for (i, c) in cells.iter().enumerate() {
@@ -8783,9 +8917,9 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-        let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], Vec::new()).unwrap();
+        let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[]).unwrap();
         let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
-        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
+        let nesting = nest_cells(&jd, NO_CYLS, wc, &cells, &edges).unwrap();
         let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
 
         assert_eq!(cells.len(), 2, "one square: inner + unbounded");
@@ -8848,9 +8982,9 @@ mod tests {
         );
         let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-        let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[], Vec::new()).unwrap();
+        let edges = ClassEdges::of(&jd, NO_CYLS, wc, &split, &[], &[]).unwrap();
         let (cells, face_of) = walk_cells(&jd, NO_CYLS, wc, &edges).unwrap();
-        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
+        let nesting = nest_cells(&jd, NO_CYLS, wc, &cells, &edges).unwrap();
         let labels = label_cells(&cells, &face_of, &edges, &nesting, [false; 4]).unwrap();
 
         // Centroid of a face's ring (convex cells here).
@@ -9992,7 +10126,10 @@ mod tests {
             crossings,
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
-        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let mut merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let chords = chords_to_segs(&tr.chords, &jd, wc, &setup.cyls).unwrap();
+        assert_eq!(chords.len(), 2);
+        merged.extend(chords);
         let split =
             split_at_crossings(&jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
         let split = drop_newsless(split).unwrap();
@@ -10000,10 +10137,7 @@ mod tests {
         assert!(circles.is_empty(), "a ∥ class carries no circles");
         let rulings = merge_rulings(&tr.rulings, &setup.cyls);
         assert_eq!(rulings.len(), 2);
-        let chords = chords_to_segs(&tr.chords, &jd, wc, &setup.cyls).unwrap();
-        assert_eq!(chords.len(), 2);
-        let edges =
-            ClassEdges::of(&jd, &setup.cyls, wc, &split, &circles, &rulings, chords).unwrap();
+        let edges = ClassEdges::of(&jd, &setup.cyls, wc, &split, &circles, &rulings).unwrap();
         assert_eq!(
             edges.rulings.len(),
             6,
@@ -10045,14 +10179,14 @@ mod tests {
             crossings.clone(),
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
-        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        let mut merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+        merged.extend(chords_to_segs(&tr.chords, jd, wc, &setup.cyls).unwrap());
         let split =
             split_at_crossings(jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
         let split = drop_newsless(split).unwrap();
         let circles = merge_circles(&tr.circles, &setup.cyls).unwrap();
         let rulings = merge_rulings(&tr.rulings, &setup.cyls);
-        let chords = chords_to_segs(&tr.chords, jd, wc, &setup.cyls).unwrap();
-        let e = ClassEdges::of(jd, &setup.cyls, wc, &split, &circles, &rulings, chords).unwrap();
+        let e = ClassEdges::of(jd, &setup.cyls, wc, &split, &circles, &rulings).unwrap();
         // Owned copies so the borrows above may end — a test convenience, not a production shape.
         ClassEdges {
             segs: std::borrow::Cow::Owned(e.segs.into_owned()),
@@ -10438,8 +10572,7 @@ mod tests {
             let Ok(circles) = merge_circles(&tr.circles, &cyls) else {
                 continue;
             };
-            let Ok(edges) = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &[], Vec::new())
-            else {
+            let Ok(edges) = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &[]) else {
                 continue;
             };
             if edges.arcs.is_empty() {
@@ -10495,7 +10628,7 @@ mod tests {
             ]
         };
         let ask = |ring: &[combinatorics::RingEdge], p: [nacre_scalar::Rat; 3]| {
-            point_in_mixed_ring(&jd, &coeffs, &p, ring)
+            point_in_mixed_ring(&jd, &cyls, &coeffs, &p, ring)
         };
         assert_eq!(ask(&big, rat(12, 12)), Some(true), "plain interior");
         assert_eq!(
@@ -10613,7 +10746,7 @@ mod tests {
         );
 
         let circles = merge_circles(&tr.circles, &cyls).unwrap();
-        let edges = ClassEdges::of(&jd, &cyls, wc, &[], &circles, &[], Vec::new()).unwrap();
+        let edges = ClassEdges::of(&jd, &cyls, wc, &[], &circles, &[]).unwrap();
         let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
         // Pseudo-half-edges 0 and 1 (no segments): the disk (+1) and its contour (−1).
         assert_eq!(cells.len(), 2, "{cells:?}");
@@ -10625,7 +10758,7 @@ mod tests {
             (cells[1].half_edges.as_slice(), cells[1].winding),
             (&[1][..], -1)
         );
-        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
+        let nesting = nest_cells(&jd, &cyls, wc, &cells, &edges).unwrap();
         assert_eq!(
             nesting.root_groups,
             vec![1],
@@ -10722,7 +10855,7 @@ mod tests {
             "the cap ring alone — the circle owes the splitter nothing"
         );
 
-        let edges = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &[], Vec::new()).unwrap();
+        let edges = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &[]).unwrap();
         let (cells, face_of) = walk_cells(&jd, &cyls, wc, &edges).unwrap();
         assert_eq!(cells.len(), 4, "cap ±1 and circle ±1: {cells:?}");
         let at = |he: usize| cells.iter().position(|c| c.half_edges == [he]).unwrap();
@@ -10732,7 +10865,7 @@ mod tests {
             .position(|c| c.winding == 1 && c.half_edges.len() == 4)
             .unwrap();
 
-        let nesting = nest_cells(&jd, wc, &cells, &edges).unwrap();
+        let nesting = nest_cells(&jd, &cyls, wc, &cells, &edges).unwrap();
         assert_eq!(
             nesting.holes.get(&cap).map(Vec::as_slice),
             Some(&[contour][..]),

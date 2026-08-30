@@ -3570,13 +3570,15 @@ enum CoordKey {
 
 /// Build one ring node's key.
 ///
-/// ★ **The cylinder comes from the ring's own arcs, not from a class-table lookup.** A crossing
-/// node has *both* an arc and a segment on it, so "the edge at index `i`" is the wrong place to
-/// ask — the segment there names no cylinder. The name says which cylinder (`NodeId::Branch`
-/// carries the class), and the arc that rides it is somewhere in this ring by construction: a
-/// branch node is an arc endpoint.
+/// ★ **The cylinder comes from the class table.** The name says which cylinder
+/// (`NodeId::Branch` carries the class), and the table's def is the statement every carrier's
+/// def is a clone of. This used to search the ring's own arc/ruling carriers instead — "a branch
+/// node is an arc endpoint" — which a **chord** refuted (E3-b): a cell bounded by a cap's chord
+/// alone has branch corners and only plane carriers, and the search refused an honestly-named
+/// point (`BranchVertexUnnamed` on the rotated flush corpus, measured).
 fn coord_key(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     ring: &[RingEdge],
     i: usize,
 ) -> Result<CoordKey, BoolError> {
@@ -3589,14 +3591,10 @@ fn coord_key(
             NodeId::Branch { .. } => unreachable!("the let-else above took every branch node"),
         };
     };
-    let def = ring
-        .iter()
-        .find_map(|e| match &e.carrier {
-            Carrier::Arc(a) if a.cyl == cyl => Some(&a.def),
-            Carrier::Ruling(r) if r.cyl == cyl => Some(&r.def),
-            Carrier::Plane { .. } | Carrier::Arc(_) | Carrier::Ruling(_) => None,
-        })
-        .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
+    let def = &cyls
+        .get(cyl)
+        .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?
+        .def;
     let (line, s) =
         branch_meet(jd, cyl, def, node).ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
     Ok(CoordKey::Branch(Box::new((line, s))))
@@ -3768,7 +3766,7 @@ pub(crate) fn loop_winding(
     // each node's key on the order of six times, so re-solving per read would multiply the exact
     // work by that. One pass, one `Vec`.
     let keys: Vec<CoordKey> = (0..ring.len())
-        .map(|i| coord_key(jd, ring, i))
+        .map(|i| coord_key(jd, cyls, ring, i))
         .collect::<Result<_, BoolError>>()?;
     let key = |i: usize| &keys[i];
     // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with

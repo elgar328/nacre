@@ -291,6 +291,39 @@ fn check_result_topology(
                 Some(crate::RejectWhere::Point(model.vertex_point(vh))),
             ));
         }
+        // ★ **No edge may say it separates one plane from itself.** An edge whose *stated*
+        // surface pair is one plane twice is an interior boundary the coplanar cleaning was
+        // obliged to erase. When the merge abstains instead — a 2-node cap's chord and its
+        // arcs collide in the node-pair key, so the group ships as-is — the pair used to sail
+        // through here, and `validate` names the spelling a producer bug
+        // (`EdgeCarrierMismatch`: a self-adjacent pair is reserved for cylinder seams).
+        // Measured on the straddling flush boss (`rul flush` Fuse). The proposition is
+        // exactly validate's, no wider: an *arc*-carried boundary between two coplanar faces
+        // states a cylinder in its pair and ships today by design (the spliced band), and a
+        // cylinder seam is the reservation itself — both exempt because only a stated
+        // plane-self pair is asked. The reject is the cleaning's own name: an abstention that
+        // leaves this shape is a merge that was mandatory and did not happen. Witness: the
+        // offending edge's first vertex, smallest edge handle for replay determinism.
+        let mut same_plane: Vec<Handle<Edge>> = Vec::new();
+        for &eh in edge_uses.keys() {
+            let e = model.edges.get(eh);
+            let [s0, s1] = e.surfaces;
+            if s0 == s1
+                && matches!(
+                    model.surface_truth(s0),
+                    nacre_topo::SurfaceTruth::Plane { .. }
+                )
+            {
+                same_plane.push(eh);
+            }
+        }
+        if let Some(&eh) = same_plane.iter().min() {
+            let [va, _] = model.edges.get(eh).vertices;
+            return Some((
+                RejectReason::CoplanarMerge,
+                Some(crate::RejectWhere::Point(model.vertex_point(va))),
+            ));
+        }
         let (v, e, f) = (
             vertex_edges.len() as i64,
             edge_uses.len() as i64,
@@ -3689,7 +3722,7 @@ fn merge_component(
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
             let ring = outer.edges(jd, wc)?;
-            if crate::arrangement::circle_center_in_ring(jd, wc, def, &ring)? {
+            if crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge));
                 }
@@ -3703,7 +3736,7 @@ fn merge_component(
         for hole in faces[owner].1.iter() {
             if let Some(h) = hole.ring() {
                 let ring = h.edges(jd, wc)?;
-                if crate::arrangement::circle_center_in_ring(jd, wc, def, &ring)? {
+                if crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
                     return Err(reject(RejectReason::CoplanarMerge));
                 }
             }
