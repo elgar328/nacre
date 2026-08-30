@@ -45,7 +45,7 @@
 //! deleted it, and the census now holds the chart against its own rules ([`census`]).
 
 use crate::arrangement::{ArcLabel, Curved, Label, RulingExtent};
-use crate::boolean::{Bound, LocalFace};
+use crate::boolean::{Bound, LocalFace, Rim};
 use crate::planes::{ClassIx, WorkingCyl, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, combinatorics, reject};
@@ -792,8 +792,8 @@ pub(crate) fn emit_lateral(
                 out.push(LocalFace {
                     surf: ClassIx::Cyl(k),
                     outer: Bound::Band {
-                        lo: chart.z_lines[lo].class,
-                        hi: chart.z_lines[hi].class,
+                        lo: Rim::Circle(chart.z_lines[lo].class),
+                        hi: Rim::Circle(chart.z_lines[hi].class),
                     },
                     inner: Vec::new(),
                     flip,

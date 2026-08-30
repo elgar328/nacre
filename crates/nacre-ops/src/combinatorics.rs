@@ -2671,6 +2671,10 @@ pub(crate) enum BoundEdges {
     Circle(Box<nacre_topo::CylinderDef>),
     /// A lateral band's boundary: the two plane classes its rims sit on.
     Band { lo: usize, hi: usize },
+    /// A lateral face's boundary the ray does not count — a panel or hole ring on the cylinder,
+    /// or a band with a chain rim. Every consumer abstains on it (`Ok(None)`), by name rather
+    /// than by a projection the face does not have.
+    Lateral,
 }
 
 /// A component face's surface, as the ray needs it.
@@ -3019,7 +3023,7 @@ pub(crate) fn point_in_faces_rat(
                     })
                 }
                 BoundEdges::Circle(def) => Ok(point_in_disk(&x, def)),
-                BoundEdges::Band { .. } => Ok(None),
+                BoundEdges::Band { .. } | BoundEdges::Lateral => Ok(None),
             }
         };
         let Some(material) = material_of(f, inside)? else {
@@ -3247,7 +3251,7 @@ pub(crate) fn point_in_component(
                         BoundEdges::Circle(def) => Ok(node_coords_rat(jd, NodeId::three_planes(x))
                             .and_then(|p| point_in_disk(&p, def))),
                         // A band bounds a cylinder, never a plane — a producer error, not an input.
-                        BoundEdges::Band { .. } => Ok(None),
+                        BoundEdges::Band { .. } | BoundEdges::Lateral => Ok(None),
                     }
                 };
                 material_of(f, inside)

@@ -302,6 +302,14 @@ impl VertexClasses {
 /// used to be spelled with: those existed only because the vessel was a triple, which is the same
 /// defect one layer down. It separates strictly more than the sentinels did — a band with
 /// `lo == hi` used to collide with that class's circle.
+/// A band's rim in the canonical key: its plane class, or a chain (whose nodes follow).
+#[cfg(any(debug_assertions, test))]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub(crate) enum CanonRim {
+    Circle(usize),
+    Chain,
+}
+
 #[cfg(any(debug_assertions, test))]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub(crate) enum CanonNode {
@@ -316,7 +324,7 @@ pub(crate) enum CanonNode {
     /// A whole circle, by its cylinder class.
     Circle(usize),
     /// A band, by its two rim classes.
-    Band(usize, usize),
+    Band(CanonRim, CanonRim),
 }
 
 /// `(plane, flip, outer ring, hole rings)` — every field of a [`LocalFace`] but those freedoms.
@@ -352,10 +360,22 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
             // has none. The key still has to *separate* faces the two routes could disagree
             // about, so a circle contributes its cylinder class and a band its two rims —
             // spelled as one-element triples so they share the vessel with the node lists.
+            let canon_rim = |r: &crate::boolean::Rim| match r {
+                crate::boolean::Rim::Circle(c) => CanonRim::Circle(*c),
+                crate::boolean::Rim::Chain(_) => CanonRim::Chain,
+            };
             let ring_b = |b: &crate::boolean::Bound| match b {
                 crate::boolean::Bound::Ring(r) => ring(r),
                 crate::boolean::Bound::Circle { cyl } => vec![CanonNode::Circle(*cyl)],
-                crate::boolean::Bound::Band { lo, hi } => vec![CanonNode::Band(*lo, *hi)],
+                // A chain rim's nodes follow the marker, so two bands differing only in a
+                // chain still separate.
+                crate::boolean::Bound::Band { lo, hi } => {
+                    let mut v = vec![CanonNode::Band(canon_rim(lo), canon_rim(hi))];
+                    for r in [lo, hi].into_iter().filter_map(crate::boolean::Rim::ring) {
+                        v.extend(ring(r));
+                    }
+                    v
+                }
             };
             let mut inner: Vec<Vec<CanonNode>> = f.inner.iter().map(ring_b).collect();
             inner.sort();

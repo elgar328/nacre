@@ -392,8 +392,11 @@ mod tests {
 
     /// A band's two ends as world `z` — the assertion vocabulary.
     fn ends(lf: &LocalFace, ts: &[(usize, f64)]) -> (f64, f64) {
-        let Bound::Band { lo, hi } = lf.outer else {
+        let Bound::Band { lo, hi } = &lf.outer else {
             panic!("a band face bounds a band");
+        };
+        let (Some(lo), Some(hi)) = (lo.circle(), hi.circle()) else {
+            panic!("a band's rims are whole circles here");
         };
         let at = |c: usize| ts.iter().find(|(k, _)| *k == c).expect("a ⊥ class").1;
         (at(lo), at(hi))

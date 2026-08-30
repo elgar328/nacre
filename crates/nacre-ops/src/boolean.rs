@@ -392,7 +392,9 @@ fn face_components(
         let ClassIx::Cyl(k) = lf.surf else { continue };
         for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
             let Bound::Band { lo, hi } = b else { continue };
-            for c in [*lo, *hi] {
+            // A chain rim joins through the node rule above like any ring; only a whole circle
+            // has no node of its own to register.
+            for c in [lo, hi].into_iter().filter_map(Rim::circle) {
                 let Some(cr) = cut_rims.get(&(k, c)) else {
                     continue;
                 };
@@ -426,8 +428,9 @@ fn face_components(
                     rim_users.entry((*cyl, c)).or_default().push(i)
                 }
                 (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => {
-                    rim_users.entry((k, *lo)).or_default().push(i);
-                    rim_users.entry((k, *hi)).or_default().push(i);
+                    for c in [lo, hi].into_iter().filter_map(Rim::circle) {
+                        rim_users.entry((k, c)).or_default().push(i);
+                    }
                 }
                 _ => {}
             }
@@ -518,19 +521,23 @@ fn group_faces(
                     // refusal stood in for; carrying the bounds is the first half of what retired
                     // it, name and all.
                     let bound = |b: &Bound| -> Result<combinatorics::BoundEdges, BoolError> {
-                        Ok(match b {
-                            // `plane()` is the plane-only projection whose panic is the
-                            // upstream-filter-bug detector: a polygon bound on a cylinder face
-                            // would be a producer error, not an input.
-                            Bound::Ring(r) => {
-                                combinatorics::BoundEdges::Ring(r.edges(jd, lf.surf.plane())?)
+                        Ok(match (b, lf.surf) {
+                            (Bound::Ring(r), ClassIx::Plane(c)) => {
+                                combinatorics::BoundEdges::Ring(r.edges(jd, c)?)
                             }
-                            Bound::Circle { cyl } => {
+                            // ★ A lateral face bounded by a node ring (a panel, a hole) or by a
+                            // band with a chain rim is a shape the ray does not count — it
+                            // abstains on it by name rather than reaching for a plane class
+                            // the face does not have (which used to be `ClassIx::plane`'s
+                            // panic, reachable only in a multi-component result).
+                            (Bound::Ring(_), ClassIx::Cyl(_)) => combinatorics::BoundEdges::Lateral,
+                            (Bound::Circle { cyl }, _) => {
                                 combinatorics::BoundEdges::Circle(Box::new(cyls[*cyl].def.clone()))
                             }
-                            Bound::Band { lo, hi } => {
-                                combinatorics::BoundEdges::Band { lo: *lo, hi: *hi }
-                            }
+                            (Bound::Band { lo, hi }, _) => match (lo.circle(), hi.circle()) {
+                                (Some(lo), Some(hi)) => combinatorics::BoundEdges::Band { lo, hi },
+                                _ => combinatorics::BoundEdges::Lateral,
+                            },
                         })
                     };
                     let surf = match lf.surf {
@@ -894,17 +901,60 @@ pub(crate) enum Bound {
     Circle {
         cyl: usize,
     },
-    /// A lateral band's whole boundary: the two plane classes its rims sit on, `lo` the one with
-    /// the smaller axis parameter. The face it bounds is the cylinder itself, so the class is on
-    /// [`LocalFace::surf`] rather than repeated here.
+    /// A lateral band's whole boundary: its two rims, `lo` the one walked forward (winding `+1`
+    /// about the axis) and `hi` the one walked backward (`−1`) — for two whole circles, the one
+    /// with the smaller axis parameter and the larger. The face it bounds is the cylinder
+    /// itself, so the class is on [`LocalFace::surf`] rather than repeated here.
     Band {
-        lo: usize,
-        hi: usize,
+        lo: Rim,
+        hi: Rim,
     },
 }
 
+/// One rim of a lateral band: the **whole circle** of a plane class, or a **wrapping chain** —
+/// a closed ring of arcs and rulings going once around the cylinder, the shape the cleaning
+/// pass leaves when a band and a panel merge (a boss whose cap sits inside the other body). A
+/// chain is stored in the direction it is walked (a `lo` chain forward, a `hi` chain backward)
+/// and unflipped, like every bound; its nodes are polygon nodes ([`Bound::rings`]), so the seam
+/// table, the vertex minting and the node join all read it as they read a panel ring.
+#[derive(Clone, Debug)]
+pub(crate) enum Rim {
+    Circle(usize),
+    /// ★ Its producer is the cleaning pass's next rung (D4 ②b); until then every consumer is
+    /// total over it and the assembly refuses it by name — the same shape `Bound::Band` carried
+    /// while its producer was a rung away.
+    #[allow(dead_code)]
+    Chain(Ring),
+}
+
+impl Rim {
+    /// The plane class, `None` for a chain.
+    pub(crate) fn circle(&self) -> Option<usize> {
+        match self {
+            Rim::Circle(c) => Some(*c),
+            Rim::Chain(_) => None,
+        }
+    }
+
+    /// The chain's ring, `None` for a whole circle.
+    pub(crate) fn ring(&self) -> Option<&Ring> {
+        match self {
+            Rim::Circle(_) => None,
+            Rim::Chain(r) => Some(r),
+        }
+    }
+
+    fn ring_mut(&mut self) -> Option<&mut Ring> {
+        match self {
+            Rim::Circle(_) => None,
+            Rim::Chain(r) => Some(r),
+        }
+    }
+}
+
 impl Bound {
-    /// The polygon ring, `None` for a curved bound — the node-walking consumers' filter.
+    /// The polygon ring, `None` for a curved bound — the consumers that want a *polygon
+    /// boundary* (not merely nodes) filter on this; a band's chain rims are not one.
     pub(crate) fn ring(&self) -> Option<&Ring> {
         match self {
             Bound::Ring(r) => Some(r),
@@ -912,11 +962,26 @@ impl Bound {
         }
     }
 
-    pub(crate) fn ring_mut(&mut self) -> Option<&mut Ring> {
-        match self {
-            Bound::Ring(r) => Some(r),
-            Bound::Circle { .. } | Bound::Band { .. } => None,
-        }
+    /// Every **node ring** this bound carries: the polygon itself, or a band's chain rims (a
+    /// whole circle carries none). The node-level consumers — the seam table, vertex minting,
+    /// the node join, the naming tables — read this, so a chain's nodes exist wherever a panel
+    /// ring's do.
+    pub(crate) fn rings(&self) -> impl Iterator<Item = &Ring> {
+        let (a, b) = match self {
+            Bound::Ring(r) => (Some(r), None),
+            Bound::Band { lo, hi } => (lo.ring(), hi.ring()),
+            Bound::Circle { .. } => (None, None),
+        };
+        a.into_iter().chain(b)
+    }
+
+    pub(crate) fn rings_mut(&mut self) -> impl Iterator<Item = &mut Ring> {
+        let (a, b) = match self {
+            Bound::Ring(r) => (Some(r), None),
+            Bound::Band { lo, hi } => (lo.ring_mut(), hi.ring_mut()),
+            Bound::Circle { .. } => (None, None),
+        };
+        a.into_iter().chain(b)
     }
 
     /// The polygon ring, asserted — for consumers whose population cannot carry curved bounds
@@ -927,7 +992,9 @@ impl Bound {
         match self {
             Bound::Ring(r) => r,
             Bound::Circle { cyl } => panic!("a polygon-only path got a circle bound (cyl {cyl})"),
-            Bound::Band { lo, hi } => panic!("a polygon-only path got a band bound ({lo}..{hi})"),
+            Bound::Band { lo, hi } => {
+                panic!("a polygon-only path got a band bound ({lo:?}..{hi:?})")
+            }
         }
     }
 }
@@ -962,13 +1029,13 @@ impl LocalFace {
     pub(crate) fn poly_rings(&self) -> impl Iterator<Item = &Ring> {
         std::iter::once(&self.outer)
             .chain(self.inner.iter())
-            .filter_map(Bound::ring)
+            .flat_map(Bound::rings)
     }
 
     pub(crate) fn poly_rings_mut(&mut self) -> impl Iterator<Item = &mut Ring> {
         std::iter::once(&mut self.outer)
             .chain(self.inner.iter_mut())
-            .filter_map(Bound::ring_mut)
+            .flat_map(Bound::rings_mut)
     }
 }
 
@@ -1723,7 +1790,11 @@ pub(crate) fn reconstruct(
                 .chain(lf.inner.iter())
                 .flat_map(|b| match (b, lf.surf) {
                     (Bound::Circle { cyl }, ClassIx::Plane(c)) => vec![(*cyl, c)],
-                    (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => vec![(k, *lo), (k, *hi)],
+                    (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => [lo, hi]
+                        .into_iter()
+                        .filter_map(Rim::circle)
+                        .map(|c| (k, c))
+                        .collect(),
                     _ => Vec::new(),
                 })
                 .collect();
@@ -1743,17 +1814,18 @@ pub(crate) fn reconstruct(
             // keys, it does not judge. `ring` runs the same derivation and raises the same name
             // when it reaches that face, which keeps the honest reject where its witness is.
             for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
-                let Some(r) = b.ring() else { continue };
-                let n = r.nodes.len();
-                for t in 0..n {
-                    if let Ok(Some(key)) = wrapping_rim(
-                        lf.surf,
-                        r.nodes[t],
-                        r.nodes[(t + 1) % n],
-                        r.walls[t],
-                        cut_rims,
-                    ) {
-                        keys.push(key);
+                for r in b.rings() {
+                    let n = r.nodes.len();
+                    for t in 0..n {
+                        if let Ok(Some(key)) = wrapping_rim(
+                            lf.surf,
+                            r.nodes[t],
+                            r.nodes[(t + 1) % n],
+                            r.walls[t],
+                            cut_rims,
+                        ) {
+                            keys.push(key);
+                        }
                     }
                 }
             }
@@ -1957,7 +2029,11 @@ pub(crate) fn reconstruct(
             .chain(lf.inner.iter())
             .flat_map(|b| match (b, lf.surf) {
                 (Bound::Circle { cyl }, ClassIx::Plane(c)) => vec![(*cyl, c)],
-                (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => vec![(k, *lo), (k, *hi)],
+                (Bound::Band { lo, hi }, ClassIx::Cyl(k)) => [lo, hi]
+                    .into_iter()
+                    .filter_map(Rim::circle)
+                    .map(|c| (k, c))
+                    .collect(),
                 _ => Vec::new(),
             })
             .collect();
@@ -2322,7 +2398,12 @@ pub(crate) fn reconstruct(
                         .surf
                         .cyl()
                         .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                    band_loop(model, k, *lo, *hi, holes)
+                    // A chain rim has no producer yet: the walk that assembles one is the
+                    // cleaning pass's next rung, and until then the name stands in its place.
+                    let (Some(lo), Some(hi)) = (lo.circle(), hi.circle()) else {
+                        return Err(reject(RejectReason::ArcBoundNotYet));
+                    };
+                    band_loop(model, k, lo, hi, holes)
                 }
             }
         };
@@ -2714,42 +2795,45 @@ fn merge_curved_group(
 ) -> Result<LocalFace, CurvedAbstain> {
     // 1. Every member's boundary, as keyed directed segments.
     let mut segs: Vec<CurvedSeg> = Vec::new();
+    // A node ring's steps — a panel's, a hole's, or a chain rim's — keyed the walk's own way.
+    let ring_steps = |r: &Ring, segs: &mut Vec<CurvedSeg>| -> Result<(), CurvedAbstain> {
+        let n = r.nodes.len();
+        for j in 0..n {
+            let (a, b) = (r.nodes[j], r.nodes[(j + 1) % n]);
+            let wall = r.walls[j];
+            let (key, fwd) = match wall {
+                Wall::Arc { cyl, ccw } if cyl == k => (
+                    CurvedKey::Arc {
+                        from: if ccw { a } else { b },
+                        to: if ccw { b } else { a },
+                    },
+                    ccw,
+                ),
+                Wall::Ruling { cyl, side, up } if cyl == k => (
+                    CurvedKey::Ruling {
+                        side,
+                        pair: norm_edge(a, b),
+                    },
+                    up,
+                ),
+                // A plane wall on a lateral face, or a piece of *another* cylinder:
+                // a shape this pass has nothing to say about.
+                _ => return Err(CurvedAbstain::OtherWall),
+            };
+            segs.push(CurvedSeg {
+                key,
+                fwd,
+                wall,
+                ends: Some((a, b)),
+            });
+        }
+        Ok(())
+    };
     for &i in mem {
         let lf = kept[i].as_ref().ok_or(CurvedAbstain::OtherWall)?;
         for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
             match b {
-                Bound::Ring(r) => {
-                    let n = r.nodes.len();
-                    for j in 0..n {
-                        let (a, b) = (r.nodes[j], r.nodes[(j + 1) % n]);
-                        let wall = r.walls[j];
-                        let (key, fwd) = match wall {
-                            Wall::Arc { cyl, ccw } if cyl == k => (
-                                CurvedKey::Arc {
-                                    from: if ccw { a } else { b },
-                                    to: if ccw { b } else { a },
-                                },
-                                ccw,
-                            ),
-                            Wall::Ruling { cyl, side, up } if cyl == k => (
-                                CurvedKey::Ruling {
-                                    side,
-                                    pair: norm_edge(a, b),
-                                },
-                                up,
-                            ),
-                            // A plane wall on a lateral face, or a piece of *another* cylinder:
-                            // a shape this pass has nothing to say about.
-                            _ => return Err(CurvedAbstain::OtherWall),
-                        };
-                        segs.push(CurvedSeg {
-                            key,
-                            fwd,
-                            wall,
-                            ends: Some((a, b)),
-                        });
-                    }
-                }
+                Bound::Ring(r) => ring_steps(r, &mut segs)?,
                 // ★★ **Which way a rim is walked, and where that is written down.** `band_loop`
                 // spells the convention this pass must match: *"Both walk the circle CCW; the
                 // `lo` rim is walked forward and the `hi` rim backward."* `flip` does **not**
@@ -2757,7 +2841,15 @@ fn merge_curved_group(
                 // built (`ring_of`), so every `Bound` in this list is written unflipped and the
                 // group's members are mutually consistent whatever their shared facing.
                 Bound::Band { lo, hi } => {
-                    for (c, fwd) in [(*lo, true), (*hi, false)] {
+                    for (rim, fwd) in [(lo, true), (hi, false)] {
+                        let c = match rim {
+                            Rim::Circle(c) => *c,
+                            // A chain is walked as stored — its steps are a ring's.
+                            Rim::Chain(r) => {
+                                ring_steps(r, &mut segs)?;
+                                continue;
+                            }
+                        };
                         let Some(cr) = cut_rims.get(&(k, c)) else {
                             segs.push(CurvedSeg {
                                 key: CurvedKey::Rim { plane: c },
@@ -2980,7 +3072,10 @@ fn merge_curved_group(
 
     Ok(LocalFace {
         surf: ClassIx::Cyl(k),
-        outer: Bound::Band { lo: *lo, hi: *hi },
+        outer: Bound::Band {
+            lo: Rim::Circle(*lo),
+            hi: Rim::Circle(*hi),
+        },
         inner: rings.into_iter().map(Bound::Ring).collect(),
         flip,
     })
