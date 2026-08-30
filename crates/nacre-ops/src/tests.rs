@@ -9510,3 +9510,219 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
         }
     }
 }
+
+/// **The re-operation census** (E1-0): can a boolean's *result* be an operand again? For every
+/// family × kind on a 4×4×2 plate with an r = 0.5 boss, the result is cut with a cube that lies
+/// far outside it (`[20, 21]³`) — the geometry cannot change, so the second boolean exercises only
+/// what an operand needs: every face named as rings, every lateral row stated. What is locked is
+/// the **outcome by name** (`Ok` with the volume unchanged, or the refusal's name — a
+/// `TraceDeclined` by its `kind`, the face handle being a witness rather than a lock).
+///
+/// Today's table, measured before anything was built: **Ok 9 · `DegenerateFace` 14 (a two-edge
+/// cap: arc + chord, no three loop points to spread) · `CylSpan` 10 (a lateral whose outer loop is
+/// not two rims and the seam: a hole spliced into the outer walk, a panel, a chain rim) ·
+/// `OuterRing` 5 (a wrap arc split at its `OnSeam` vertex, whose two neighbours are arcs on one
+/// cylinder — no third surface names the joint) · first op refused 3 · empty 1**. The rungs that
+/// follow change this table one named cause at a time, and each predicts its cells.
+///
+/// ★ The probe beside it counts the loops whose start vertex is an `OnSeam` joint — outer loops
+/// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
+/// construction, so it is not counted). Today: **8 outer, 0 holes** — the population the
+/// seam-joint rung reads, and the zero that says a hole never carries one (a hole touching the
+/// seam is spliced into the outer walk).
+#[test]
+fn reop_census_families_reoperate_or_decline_by_name() {
+    #[derive(Debug, PartialEq, Eq, Clone, Copy)]
+    enum Reop {
+        Ok,
+        Empty,
+        First(RejectReason),
+        Rejected(RejectReason),
+        Declined(DeclineKind),
+    }
+    use Reop::*;
+    let up = Vector3::from_array([0.0, 0.0, 1.0]);
+    // (name, boss base, boss height, [Fuse, Cut, Common])
+    let families: [(&str, [f64; 3], f64, [Reop; 3]); 14] = [
+        ("through", [2.0, 2.0, -1.0], 4.0, [Ok, Ok, Ok]),
+        ("on top", [2.0, 2.0, 2.0], 1.0, [Ok, Ok, Empty]),
+        ("flush", [2.0, 2.0, 0.0], 3.0, [Ok, Ok, Ok]),
+        (
+            "wall -y",
+            [2.0, 0.0, -1.0],
+            4.0,
+            [
+                Ok,
+                Declined(DeclineKind::CylSpan),
+                Rejected(RejectReason::DegenerateFace),
+            ],
+        ),
+        (
+            "wall +y",
+            [2.0, 4.0, -1.0],
+            4.0,
+            [Declined(DeclineKind::OuterRing); 3],
+        ),
+        (
+            "wall -x",
+            [0.0, 2.0, -1.0],
+            4.0,
+            [
+                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CylSpan),
+                Rejected(RejectReason::DegenerateFace),
+            ],
+        ),
+        (
+            "wall +x",
+            [4.0, 2.0, -1.0],
+            4.0,
+            [
+                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CylSpan),
+                Rejected(RejectReason::DegenerateFace),
+            ],
+        ),
+        (
+            "corner",
+            [4.0, 4.0, -1.0],
+            4.0,
+            [Declined(DeclineKind::CylSpan); 3],
+        ),
+        (
+            "corner-lo",
+            [0.0, 0.0, -1.0],
+            4.0,
+            [First(RejectReason::CylinderGateUndecided); 3],
+        ),
+        (
+            "offmid",
+            [4.0, 1.0, -1.0],
+            5.0,
+            [
+                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CylSpan),
+                Rejected(RejectReason::DegenerateFace),
+            ],
+        ),
+        (
+            "half wall",
+            [2.0, 0.0, -1.0],
+            2.0,
+            [
+                Declined(DeclineKind::OuterRing),
+                Rejected(RejectReason::DegenerateFace),
+                Rejected(RejectReason::DegenerateFace),
+            ],
+        ),
+        (
+            "half wall, cap below",
+            [2.0, 0.0, 1.0],
+            2.0,
+            [
+                Declined(DeclineKind::OuterRing),
+                Rejected(RejectReason::DegenerateFace),
+                Rejected(RejectReason::DegenerateFace),
+            ],
+        ),
+        (
+            "half +x",
+            [4.0, 2.0, -1.0],
+            2.0,
+            [Rejected(RejectReason::DegenerateFace); 3],
+        ),
+        (
+            "half +x, cap below",
+            [4.0, 2.0, 1.0],
+            2.0,
+            [Rejected(RejectReason::DegenerateFace); 3],
+        ),
+    ];
+    let mut seam_joints = (0usize, 0usize);
+    let mut table: Vec<String> = Vec::new();
+    for (name, base, h, want) in families {
+        for (kind, want) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+            .into_iter()
+            .zip(want)
+        {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(Point3::from_array(base), up, 0.5, h);
+            m.rebuild_adjacency();
+            let got = match boolean(&mut m, kind, plate, boss) {
+                Err(BoolError::Rejected { reason, .. }) => First(reason),
+                Err(e) => panic!("{name} {kind:?}: first op {e:?}"),
+                Result::Ok(out) if out.is_empty() => Empty,
+                Result::Ok(out) => {
+                    m.rebuild_adjacency();
+                    // The seam-joint probe, over the result's faces.
+                    let solid = m.solids.get(out[0]);
+                    for sh in std::iter::once(solid.outer).chain(solid.cavities.iter().copied()) {
+                        for &fh in &m.shells.get(sh).faces {
+                            let face = m.faces.get(fh);
+                            let lateral = matches!(
+                                m.surface_truth(face.surface),
+                                nacre_topo::SurfaceTruth::Cylinder { .. }
+                            );
+                            let joint = |lp: &nacre_topo::Loop| {
+                                lp.half_edges.len() >= 2
+                                    && lp.half_edges.iter().any(|&he| {
+                                        matches!(
+                                            m.vertices.get(m.he_start(he)).def,
+                                            nacre_topo::VertexDef::OnSeam(_)
+                                        )
+                                    })
+                            };
+                            if !lateral && joint(&face.outer) {
+                                seam_joints.0 += 1;
+                            }
+                            seam_joints.1 += face.inner.iter().filter(|lp| joint(lp)).count();
+                        }
+                    }
+                    let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+                    let far =
+                        m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
+                    m.rebuild_adjacency();
+                    match boolean(&mut m, BoolKind::Cut, out[0], far) {
+                        Result::Ok(r) => {
+                            assert_eq!(r.len(), 1, "{name} {kind:?}: the far cut keeps one solid");
+                            m.rebuild_adjacency();
+                            let issues = nacre_validate::validate(&m);
+                            assert!(issues.is_empty(), "{name} {kind:?}: {issues:?}");
+                            let v = nacre_props::mass_props(&m, r[0]).expect("props").volume;
+                            assert!(
+                                (v - v0).abs() < 1e-9,
+                                "{name} {kind:?}: the far cut changed the volume {v0} → {v}"
+                            );
+                            Ok
+                        }
+                        Err(BoolError::Rejected {
+                            reason: RejectReason::TraceDeclined { kind, .. },
+                            ..
+                        }) => Declined(kind),
+                        Err(BoolError::Rejected { reason, .. }) => Rejected(reason),
+                        Err(e) => panic!("{name} {kind:?}: {e:?}"),
+                    }
+                }
+            };
+            table.push(format!("{name} {kind:?}: {got:?}"));
+            assert_eq!(got, want, "{name} {kind:?}");
+        }
+    }
+    // The distribution the doc states, so a drift in the table is read as a whole.
+    let count = |p: fn(&Reop) -> bool| -> usize {
+        families
+            .iter()
+            .flat_map(|(_, _, _, w)| w.iter())
+            .filter(|r| p(r))
+            .count()
+    };
+    assert_eq!(count(|r| *r == Ok), 9, "{table:?}");
+    assert_eq!(count(|r| *r == Rejected(RejectReason::DegenerateFace)), 14);
+    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 10);
+    assert_eq!(count(|r| *r == Declined(DeclineKind::OuterRing)), 5);
+    assert_eq!(seam_joints, (8, 0), "seam-joint loops (outer, holes)");
+}
