@@ -1452,5 +1452,47 @@ mod zzz_ledger {
             s(|r| r.arcs_multi_mark),
             s(|r| r.emitted_faces),
         );
+        let d4 = crate::boolean::probe::d4::ROWS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .clone();
+        let by =
+            |o: Option<crate::boolean::CurvedAbstain>| d4.iter().filter(|r| r.outcome == o).count();
+        use crate::boolean::CurvedAbstain as A;
+        let s4 = |f: fn(&crate::boolean::CurvedStats) -> usize| {
+            d4.iter().map(|r| f(&r.stats)).sum::<usize>()
+        };
+        let m4 = |f: fn(&crate::boolean::CurvedStats) -> usize| {
+            d4.iter().map(|r| f(&r.stats)).max().unwrap_or(0)
+        };
+        eprintln!(
+            "ledger D4: groups {} merged {} no_touch {} rims_not_one_each {} hole_contacts {} bridging {} \
+             other_wall {} rim_single_node {} circle_bound {} overlap_or_triple {} pinch {} reentered {} \
+             short_cycle {} unthreaded {} plus {} minus {} holes_c0 {} holes_c2 {} holes_other {} \
+             chain_rims {} max_chain_contacts {} max_chain_crossings {} unclassified {}",
+            d4.len(),
+            by(None),
+            by(Some(A::NoTouch)),
+            by(Some(A::RimsNotOneEach)),
+            by(Some(A::HoleContacts)),
+            by(Some(A::Bridging)),
+            by(Some(A::OtherWall)),
+            by(Some(A::RimSingleNode)),
+            by(Some(A::CircleBound)),
+            by(Some(A::OverlapOrTriple)),
+            by(Some(A::Pinch)),
+            by(Some(A::Reentered)),
+            by(Some(A::ShortCycle)),
+            by(Some(A::Unthreaded)),
+            s4(|s| s.plus),
+            s4(|s| s.minus),
+            s4(|s| s.holes_c0),
+            s4(|s| s.holes_c2),
+            s4(|s| s.holes_other),
+            s4(|s| s.chain_rims),
+            m4(|s| s.max_chain_contacts),
+            m4(|s| s.max_chain_crossings),
+            s4(|s| s.unclassified),
+        );
     }
 }

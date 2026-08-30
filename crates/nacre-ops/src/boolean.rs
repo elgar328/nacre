@@ -972,11 +972,12 @@ impl LocalFace {
     }
 }
 
-/// **The cut rim a ring edge wraps past θ = 0 on**, `None` if it does not.
+/// **A ring step's passage of θ = 0, signed** — the one seam predicate, from which both the
+/// loop builder's split rule ([`wrapping_rim`]) and the cleaning pass's winding count derive.
 ///
-/// One rule in one place, because two callers need the same answer: the loop builder splits such
-/// an edge at the rim's seam vertex, and the rim table has to have minted that vertex first.
-/// It is the composition of two facts neither caller should re-derive:
+/// `Some((cyl, plane, sign))` when the step is an arc on a **cut** rim whose CCW parametrization
+/// passes θ = 0 — `sign` is `+1` walked CCW, `−1` walked CW — and `None` for a ruling, a plane
+/// wall, or an arc that stays clear of the seam. Two facts, neither re-derived by a caller:
 ///
 /// - **which circle's plane the arc rides** — a *plane* face's own class (a cap), or, for a face
 ///   on the cylinder class (a panel), the plane its two end names share. A panel arc's ends may
@@ -984,17 +985,22 @@ impl LocalFace {
 ///   {wall, circle-plane}), so the unique-share rule a ruling edge uses cannot apply: the circle's
 ///   plane is the shared candidate that carries a cut-rim record. Two such candidates is a naming
 ///   this ladder does not arrange (`RulingBoundNotYet`).
-/// - **the directed wrap test** — with two branch nodes the two complementary arcs share one
+/// - **the directed passage test** — with two branch nodes the two complementary arcs share one
 ///   unordered endpoint pair, so the step is oriented by the `ccw` bit the wall carries and
-///   compared against the split's own θ order (`nodes.last() → nodes[0]` is the piece holding
-///   θ = 0). A rim whose seam **is** a node splits nothing, so it answers `None`.
-fn wrapping_rim(
+///   compared against the split's own θ order: the CCW arc `nodes.last() → nodes[0]` is the one
+///   holding θ = 0. ★ **Half-open.** When the seam *is* a node (`CutRim::seam_is_node`), that arc
+///   is the one **ending** at the seam node, and it passes θ = 0; the arc leaving the seam node
+///   does not. So a loop that runs *along* the seam ruling counts its arrival and its departure
+///   once between them, never twice — which is what makes Σ sign over a cycle its winding number
+///   about the axis (`+1` a lower boundary walked forward, `−1` an upper one walked backward, `0`
+///   a hole), read off the split's order table and no coordinate.
+fn seam_step(
     surf: ClassIx,
     a: NodeId,
     b: NodeId,
     wall: Wall,
     cut_rims: &crate::arrangement::CutRims,
-) -> Result<Option<(usize, usize)>, BoolError> {
+) -> Result<Option<(usize, usize, i8)>, BoolError> {
     let Wall::Arc { cyl, ccw } = wall else {
         return Ok(None);
     };
@@ -1021,14 +1027,28 @@ fn wrapping_rim(
             c
         }
     };
-    match cut_rims.get(&(cyl, c)) {
-        Some(cr) if !cr.seam_is_node => {
-            let ccw_pair = if ccw { (a, b) } else { (b, a) };
-            let last = *cr.nodes.last().expect("a cut circle has branch nodes");
-            Ok((ccw_pair == (last, cr.nodes[0])).then_some((cyl, c)))
-        }
-        _ => Ok(None),
-    }
+    let Some(cr) = cut_rims.get(&(cyl, c)) else {
+        return Ok(None);
+    };
+    let ccw_pair = if ccw { (a, b) } else { (b, a) };
+    let last = *cr.nodes.last().expect("a cut circle has branch nodes");
+    Ok((ccw_pair == (last, cr.nodes[0])).then_some((cyl, c, if ccw { 1 } else { -1 })))
+}
+
+/// **The cut rim a ring edge wraps past θ = 0 on**, `None` if it does not — [`seam_step`] for
+/// the loop builder, which splits such an edge at the rim's seam vertex (and the rim table has to
+/// have minted that vertex first). A rim whose seam **is** a node splits nothing, so it answers
+/// `None` here even though the step passes the seam.
+fn wrapping_rim(
+    surf: ClassIx,
+    a: NodeId,
+    b: NodeId,
+    wall: Wall,
+    cut_rims: &crate::arrangement::CutRims,
+) -> Result<Option<(usize, usize)>, BoolError> {
+    Ok(seam_step(surf, a, b, wall, cut_rims)?
+        .filter(|&(cyl, c, _)| !cut_rims[&(cyl, c)].seam_is_node)
+        .map(|(cyl, c, _)| (cyl, c)))
 }
 
 /// Push the reconstructed result and supersede the inputs.
@@ -2606,7 +2626,15 @@ pub(crate) fn unify_curved_faces(
         if mem.len() < 2 {
             continue;
         }
-        let Some(face) = merge_curved_group(gk, mem, &kept, cut_rims) else {
+        let mut stats = CurvedStats::default();
+        let merged_face = merge_curved_group(gk, mem, &kept, cut_rims, &mut stats);
+        #[cfg(test)]
+        probe::d4::push(probe::d4::Row {
+            members: mem.len(),
+            outcome: merged_face.as_ref().err().copied(),
+            stats,
+        });
+        let Ok(face) = merged_face else {
             continue;
         };
         for &i in mem {
@@ -2619,17 +2647,75 @@ pub(crate) fn unify_curved_faces(
     out
 }
 
-/// One curved group → the single face it should be, or `None` to leave it alone.
+/// Why the cleaning pass left a curved group as it was — every abstention by name, so the ledger
+/// can count each one and a zero can be told from "nothing reached here".
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CurvedAbstain {
+    /// A member carries a plane wall or a piece of another cylinder — a shape this pass has
+    /// nothing to say about.
+    OtherWall,
+    /// A cut rim with fewer than two branch nodes.
+    RimSingleNode,
+    /// A whole-circle bound on a lateral face — a shape with no producer.
+    CircleBound,
+    /// One side claimed twice (overlap) or a piece claimed three times (non-manifold).
+    OverlapOrTriple,
+    /// Nothing erased: the members do not touch (two bosses on one axis, a bore's two ends).
+    NoTouch,
+    /// Two pieces leave one node after erasure — the planar pass's figure-8, on a cylinder.
+    Pinch,
+    /// The re-threading walked into a cycle already closed.
+    Reentered,
+    /// A threaded cycle of fewer than three nodes.
+    ShortCycle,
+    /// Some threadable piece landed in no cycle.
+    Unthreaded,
+    /// The surviving whole rims are not exactly one of each sense — a region bounded by one rim
+    /// and a chain of arcs is a real shape, but no `Bound` spells it (capability D's fourth
+    /// rung, D4, is where it will).
+    RimsNotOneEach,
+    /// A hole meets the seam at other than zero or two contacts.
+    HoleContacts,
+    /// More than one hole meets the seam.
+    Bridging,
+}
+
+/// What the cleaning pass read off a group's re-threaded boundary — the ledger's columns, filled
+/// where the cycles are made. Zero-cost outside test builds: every field is filled under
+/// `cfg(test)` and the struct is a handful of counters.
+#[derive(Clone, Copy, Debug, Default)]
+#[cfg_attr(not(test), allow(dead_code))] // filled and read under `cfg(test)`; the columns are the ledger's
+pub(crate) struct CurvedStats {
+    /// Cycles with winding `+1` (a lower boundary walked forward), whole rims included.
+    pub(crate) plus: usize,
+    /// Cycles with winding `−1` (an upper boundary walked backward), whole rims included.
+    pub(crate) minus: usize,
+    /// Winding-0 cycles (holes) by their seam contacts: none, exactly two, anything else.
+    pub(crate) holes_c0: usize,
+    pub(crate) holes_c2: usize,
+    pub(crate) holes_other: usize,
+    /// Wrapping cycles that are node rings rather than whole rims — the chains no `Bound`
+    /// spells yet.
+    pub(crate) chain_rims: usize,
+    /// Over the chains: the most seam contacts on one, and the most passages of θ = 0 on one.
+    pub(crate) max_chain_contacts: usize,
+    pub(crate) max_chain_crossings: usize,
+    /// Cycles whose winding could not be read (a step [`seam_step`] declined to name).
+    pub(crate) unclassified: usize,
+}
+
+/// One curved group → the single face it should be, or why it is left alone.
 fn merge_curved_group(
     (k, flip): (usize, bool),
     mem: &[usize],
     kept: &[Option<LocalFace>],
     cut_rims: &crate::arrangement::CutRims,
-) -> Option<LocalFace> {
+    stats: &mut CurvedStats,
+) -> Result<LocalFace, CurvedAbstain> {
     // 1. Every member's boundary, as keyed directed segments.
     let mut segs: Vec<CurvedSeg> = Vec::new();
     for &i in mem {
-        let lf = kept[i].as_ref()?;
+        let lf = kept[i].as_ref().ok_or(CurvedAbstain::OtherWall)?;
         for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
             match b {
                 Bound::Ring(r) => {
@@ -2654,7 +2740,7 @@ fn merge_curved_group(
                             ),
                             // A plane wall on a lateral face, or a piece of *another* cylinder:
                             // a shape this pass has nothing to say about.
-                            _ => return None,
+                            _ => return Err(CurvedAbstain::OtherWall),
                         };
                         segs.push(CurvedSeg {
                             key,
@@ -2682,7 +2768,7 @@ fn merge_curved_group(
                             continue;
                         };
                         if cr.nodes.len() < 2 {
-                            return None;
+                            return Err(CurvedAbstain::RimSingleNode);
                         }
                         let m = cr.nodes.len();
                         for j in 0..m {
@@ -2698,7 +2784,7 @@ fn merge_curved_group(
                 }
                 // A whole circle is a *planar* face's bound; a lateral face bounded by one would
                 // be a shape with no producer.
-                Bound::Circle { .. } => return None,
+                Bound::Circle { .. } => return Err(CurvedAbstain::CircleBound),
             }
         }
     }
@@ -2716,36 +2802,17 @@ fn merge_curved_group(
         match is[..] {
             [a] => live.push(a),
             [a, b] if segs[a].fwd != segs[b].fwd => interior += 1,
-            _ => return None,
+            _ => return Err(CurvedAbstain::OverlapOrTriple),
         }
     }
     // Nothing was erased: the members do not touch (two bosses on one axis, a bore's two ends),
     // so they are two faces and merging them would be a lie.
     if interior == 0 {
-        return None;
+        return Err(CurvedAbstain::NoTouch);
     }
     live.sort_unstable(); // `by_key` is a HashMap; the walk below must not inherit its order
 
-    // 3. The rims that survive are the merged band's own. Exactly one of each sense or this pass
-    //    abstains: a lateral region bounded by one rim and a chain of arcs is a real shape, but
-    //    no `Bound` spells it, and inventing one is not this pass's business.
-    let mut rims_lo: Vec<usize> = Vec::new();
-    let mut rims_hi: Vec<usize> = Vec::new();
-    for &i in &live {
-        if let CurvedKey::Rim { plane } = segs[i].key {
-            if segs[i].fwd {
-                &mut rims_lo
-            } else {
-                &mut rims_hi
-            }
-            .push(plane);
-        }
-    }
-    let ([lo], [hi]) = (&rims_lo[..], &rims_hi[..]) else {
-        return None;
-    };
-
-    // 4. Re-thread the rest. Two pieces leaving one node means the region pinches there and the
+    // 3. Re-thread the rest. Two pieces leaving one node means the region pinches there and the
     //    cycles are not determined — the planar pass's figure-8, on a cylinder.
     let mut next: HashMap<NodeId, usize> = HashMap::new();
     let mut threadable = 0usize;
@@ -2753,7 +2820,7 @@ fn merge_curved_group(
         if let Some((a, _)) = segs[i].ends {
             threadable += 1;
             if next.insert(a, i).is_some() {
-                return None;
+                return Err(CurvedAbstain::Pinch);
             }
         }
     }
@@ -2771,10 +2838,10 @@ fn merge_curved_group(
         let mut cur = start;
         loop {
             if !seen.insert(cur) {
-                return None; // the walk re-entered another cycle
+                return Err(CurvedAbstain::Reentered); // the walk re-entered another cycle
             }
-            let s = &segs[*next.get(&cur)?];
-            let (_, b) = s.ends?;
+            let s = &segs[*next.get(&cur).ok_or(CurvedAbstain::Unthreaded)?];
+            let (_, b) = s.ends.ok_or(CurvedAbstain::Unthreaded)?;
             nodes.push(cur);
             walls.push(s.wall);
             cur = b;
@@ -2783,15 +2850,30 @@ fn merge_curved_group(
             }
         }
         if nodes.len() < 3 {
-            return None;
+            return Err(CurvedAbstain::ShortCycle);
         }
         rings.push(Ring::new(nodes, walls));
     }
     // Every threadable piece landed in a cycle, or the boundary this pass computed is not the one
     // the members actually had.
     if rings.iter().map(|r| r.nodes.len()).sum::<usize>() != threadable {
-        return None;
+        return Err(CurvedAbstain::Unthreaded);
     }
+
+    // 4. The rims that survive are the merged band's own.
+    let mut rims_lo: Vec<usize> = Vec::new();
+    let mut rims_hi: Vec<usize> = Vec::new();
+    for &i in &live {
+        if let CurvedKey::Rim { plane } = segs[i].key {
+            if segs[i].fwd {
+                &mut rims_lo
+            } else {
+                &mut rims_hi
+            }
+            .push(plane);
+        }
+    }
+
     // ★★ **Only shapes the outer walk can bridge.** A hole that meets the seam generator is
     // spliced into the band's outer boundary (`band_loop`), and that splice is written for
     // **two** contacts on **at most one** hole. Anything else abstains here rather than reaching
@@ -2822,24 +2904,194 @@ fn merge_curved_group(
             })
             .count()
     };
+
+    // ── The ledger's reading of the cycles (D4-0): each cycle's winding about the axis
+    // (`seam_step`, Σ sign), and for the wrapping ones their seam contacts and passages.
+    // Measured before the pass speaks a chain, so the day it does, the numbers were predicted.
+    #[cfg(test)]
+    {
+        stats.plus += rims_lo.len();
+        stats.minus += rims_hi.len();
+        for r in &rings {
+            let n = r.nodes.len();
+            let mut w: i32 = 0;
+            let mut crossings = 0usize;
+            let mut named = true;
+            for t in 0..n {
+                match seam_step(
+                    ClassIx::Cyl(k),
+                    r.nodes[t],
+                    r.nodes[(t + 1) % n],
+                    r.walls[t],
+                    cut_rims,
+                ) {
+                    Ok(Some((_, _, sign))) => {
+                        w += i32::from(sign);
+                        crossings += 1;
+                    }
+                    Ok(None) => {}
+                    Err(_) => named = false,
+                }
+            }
+            if !named {
+                stats.unclassified += 1;
+                continue;
+            }
+            match w {
+                0 => match contacts(r) {
+                    0 => stats.holes_c0 += 1,
+                    2 => stats.holes_c2 += 1,
+                    _ => stats.holes_other += 1,
+                },
+                1 | -1 => {
+                    if w == 1 {
+                        stats.plus += 1;
+                    } else {
+                        stats.minus += 1;
+                    }
+                    stats.chain_rims += 1;
+                    stats.max_chain_contacts = stats.max_chain_contacts.max(contacts(r));
+                    stats.max_chain_crossings = stats.max_chain_crossings.max(crossings);
+                }
+                _ => stats.unclassified += 1,
+            }
+        }
+    }
+    #[cfg(not(test))]
+    let _ = &mut *stats;
+
+    // 5. Exactly one rim of each sense or this pass abstains: a lateral region bounded by one
+    //    rim and a chain of arcs is a real shape, but no `Bound` spells it, and inventing one is
+    //    not this pass's business.
+    let ([lo], [hi]) = (&rims_lo[..], &rims_hi[..]) else {
+        return Err(CurvedAbstain::RimsNotOneEach);
+    };
     let mut bridging = 0usize;
     for r in &rings {
         match contacts(r) {
             0 => {}
             2 => bridging += 1,
-            _ => return None,
+            _ => return Err(CurvedAbstain::HoleContacts),
         }
     }
     if bridging > 1 {
-        return None;
+        return Err(CurvedAbstain::Bridging);
     }
 
-    Some(LocalFace {
+    Ok(LocalFace {
         surf: ClassIx::Cyl(k),
         outer: Bound::Band { lo: *lo, hi: *hi },
         inner: rings.into_iter().map(Bound::Ring).collect(),
         flip,
     })
+}
+
+/// The cleaning pass's ledger (capability D, D4-0): one row per curved group of two or more
+/// members, filled where the group is decided, read by one test that reports it and by
+/// `zzz_ledger` for the dev-log.
+#[cfg(test)]
+pub(crate) mod probe {
+    pub(crate) mod d4 {
+        use std::sync::Mutex;
+
+        #[derive(Clone, Copy, Debug)]
+        pub(crate) struct Row {
+            pub(crate) members: usize,
+            /// `None` when the group merged.
+            pub(crate) outcome: Option<super::super::CurvedAbstain>,
+            pub(crate) stats: super::super::CurvedStats,
+        }
+
+        pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+
+        pub(crate) fn push(r: Row) {
+            ROWS.lock()
+                .expect("the probe's lock is never held across a panic")
+                .push(r);
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::d4::{self, Row};
+        use crate::BoolKind;
+        use crate::boolean::CurvedAbstain;
+        use nacre_math::{Point3, Vector3};
+        use nacre_topo::Model;
+
+        /// **The cleaning ledger is running, and it reads what it will need.** Universal over
+        /// every recorded row (tests run in parallel, so a row is never assumed to be this
+        /// test's): a merged group has exactly one boundary of each sense and no chain; every
+        /// hole of a merged group met the seam at zero or two contacts. Then the one shape this
+        /// pass cannot speak yet, measured before it is built: the half-height boss's group
+        /// abstains `RimsNotOneEach` with one `+1` rim, one `−1` **chain** (two seam contacts,
+        /// one passage of θ = 0) — the exact population D4 opens.
+        #[test]
+        fn the_cleaning_ledger_is_running() {
+            let snapshot = || -> Vec<Row> {
+                d4::ROWS
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
+                    .clone()
+            };
+            let before = snapshot().len();
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([40.0, 40.0, 20.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array([40.0, 20.0, -10.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                5.0,
+                20.0,
+            );
+            m.rebuild_adjacency();
+            crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .expect("the half-height boss builds");
+            let rows = snapshot();
+            assert!(rows.len() > before, "the fuse recorded no curved group");
+            for r in &rows {
+                assert!(r.members >= 2, "a single face is not a group: {r:?}");
+                if r.outcome.is_none() {
+                    assert_eq!(
+                        (r.stats.plus, r.stats.minus),
+                        (1, 1),
+                        "a merged band: {r:?}"
+                    );
+                    assert_eq!(
+                        r.stats.chain_rims, 0,
+                        "a merged band has no chain yet: {r:?}"
+                    );
+                    assert_eq!(r.stats.holes_other, 0, "a merged band's holes: {r:?}");
+                }
+                assert_eq!(
+                    r.stats.unclassified, 0,
+                    "a cycle whose winding could not be read: {r:?}"
+                );
+            }
+            let chain_rows: Vec<&Row> = rows[before..]
+                .iter()
+                .filter(|r| r.outcome == Some(CurvedAbstain::RimsNotOneEach))
+                .collect();
+            assert_eq!(
+                chain_rows.len(),
+                1,
+                "the half-height boss abstains once: {rows:?}"
+            );
+            let s = chain_rows[0].stats;
+            assert_eq!(
+                (s.plus, s.minus, s.chain_rims),
+                (1, 1, 1),
+                "one rim, one chain: {s:?}"
+            );
+            assert_eq!(
+                (s.max_chain_contacts, s.max_chain_crossings),
+                (2, 1),
+                "{s:?}"
+            );
+        }
+    }
 }
 
 /// Merge every group of coplanar, same-facing result faces into one face per connected piece, then
