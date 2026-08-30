@@ -915,9 +915,11 @@ pub enum RejectReason {
     ///   (`combinatorics::branch_name_from_def`) and to write a curved carrier, the curved rings of
     ///   today's population are **described** rather than declined — measured, zero raises from
     ///   this site across the whole suite. What can still reach it: a corner whose def is not
-    ///   `Branch` (a seam end), a plane with no *narrow* world description (a wide or rotated
-    ///   chain), a handle that answers to both candidate classes or to neither, and two laterals
-    ///   meeting at one corner (M6b's). ★ Measured with the restatement switched off: the ring
+    ///   `Branch` (a ruling ending at a seam vertex — a seam *joint* between two legs of one
+    ///   arc is read as one step since E1, not as a corner), a plane with no *narrow* world
+    ///   description (a wide or rotated chain), a handle that answers to both candidate classes
+    ///   or to neither, two laterals meeting at one corner (M6b's), and a loop whose every joint
+    ///   is a seam. ★ Measured with the restatement switched off: the ring
     ///   **declines by this name** and nothing panics, which is the whole reason the backstop is
     ///   under the road rather than trusted away.
     ///

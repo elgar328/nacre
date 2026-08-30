@@ -15516,7 +15516,7 @@ cyl_chart로. 그다음 **D4** 청소(`unify_curved_faces` — 반높이 보스�
 
 ## 능력 D, 여섯째 계단 — D3: 참조 도로를 지우고, census는 차트를 자기 규칙에 대고 잰다
 
-커밋 둘: ``80c2863``(코드 — 삭제·재지향·대체 불변·코퍼스 인구) · 문서. **프로덕션 무변**(census 두 프로파일 = HEAD `5f937a65…`,
+커밋 둘: `80c2863`(코드 — 삭제·재지향·대체 불변·코퍼스 인구) · 문서. **프로덕션 무변**(census 두 프로파일 = HEAD `5f937a65…`,
 reject_census 무변) — 바뀐 프로덕션 코드는 `CylRow.def` 필드 제거(독자 전무)뿐.
 
 ### 지운 것
@@ -15664,7 +15664,7 @@ hi 사슬 / 바닥이 판 안 = lo 사슬) 픽스처로 잠금: 옆면 **1**, �
 
 ## 재연산 사다리 E, 첫 계단 — E1: 결과 면의 링이 전부 이름을 얻는다 (2-간선 모서리 · 솔기 이음)
 
-커밋 넷: `5c73b9a`(① 재연산 census) · `ac7a62a`(② 모서리 = 반간선의 시작 · 원-경계 면의 삼각형은 평면에서) · ``dfd26f8``(③ 솔기 이음은
+커밋 넷: `5c73b9a`(① 재연산 census) · `ac7a62a`(② 모서리 = 반간선의 시작 · 원-경계 면의 삼각형은 평면에서) · `dfd26f8`(③ 솔기 이음은
 모서리가 아니다) · 문서. **프로덕션 census·reject_census 무변**(오늘의 코퍼스는 첫 연산뿐이라 이름 짓기는 원시 도형의 루프만 읽는다).
 
 ### 왜 — 결과는 다시 피연산자가 못 됐다
@@ -15690,8 +15690,8 @@ census**를 세웠다: 4×4×2 판 + r0.5 보스 14가족 × Fuse/Cut/Common = 4
 ### 규칙 둘, 한 자리씩
 - **모서리는 반간선 `i`의 시작이다**(`he_start`). 「두 간선이 공유하는 하나의 정점」은 그것이 유일할 때 같은 값이고 — 루프의 간선 `i`는
   `i−1`이 끝나는 곳에서 시작한다(validate의 `OpenLoop`) — 2-간선 루프에선 없다. 두 번째 철자였다. `boolean`은 입력을 validate하지 않으므로
-  기대는 불변을 그 자리에 `debug_assert_eq!(prev의 끝, corner)`로 재진술. `shared_vertex`·`RejectReason::AmbiguousCorner` 은퇴(HEAD의
-  reject-trace에서 raise **0** — `DegenerateFace`가 `collect_planes`에서 먼저 막아 2-간선 루프가 거기 닿은 적이 없다).
+  기대는 불변을 그 자리에 `debug_assert_eq!(prev의 끝, corner)`로 재진술. `shared_vertex`·`RejectReason::AmbiguousCorner` 은퇴(① 시점의
+  reject-trace(census 테스트 포함)에서 raise **0** — `DegenerateFace`가 `collect_planes`에서 먼저 막아 2-간선 루프가 거기 닿은 적이 없다).
 - **원 곡선 간선이 경계에 있는 면은 넓이가 있다.** 루프 정점으로 세 점을 못 펴는 것(림 정점 하나·호+현)은 퇴화가 아니고, 평면의 진실 점
   (`PlanePoints::Known` — 캡 평면은 `intern_plane`에서 Known)이 삼각형을 말한다, 면의 stated outward로 감아서 — 원판이 이미 밟던 길.
   `outer_tri`의 정점 핸들은 프로덕션 소비자가 없다(doc이 「술어가 읽는다」고 낡게 말하고 있었다 — 고침).
@@ -15728,3 +15728,11 @@ census**를 세웠다: 4×4×2 판 + r0.5 보스 14가족 × Fuse/Cut/Common = 4
 원 위 스윕(모든 루프의 교차 룰링 노드 `NodeId::branch(wall, t, cyl, root)`를 `circular_order`로 정렬, 재료-왼쪽 규칙으로 패리티 →
 `CircleSpan`들), `rulings_on_class`는 룰링 위 z-스윕, 게이트 `lateral_spans`는 `[min,max]`(보수적), `cyl_rows`의 «온전한 2π 띠» 전제 갱신.
 **E3 `CurvedRingWall`**. · D5 · `ChainContacts`.
+
+### ☑ 자체 점검 (사용자 요청)
+- dev-log의 겹친 백틱 둘(이 칸 6행 · **D3 칸**의 `80c2863` — 그때 못 본 것) 고침.
+- `CurvedOperandBoundary` doc의 「닿을 수 있는 것」 목록이 «솔기 끝 모서리»를 아직 들고 있었다 — ③ 뒤 솔기 이음은 한 걸음이라 모서리가
+  아니고, 남는 것은 «솔기 정점에서 끝나는 룰링»과 «모든 이음이 솔기인 루프». 고침(④에서 하기로 하고 빠뜨렸던 항목).
+- reject-trace 기준선 표기를 「HEAD」에서 「① 시점(census 테스트 포함)」으로 — 그 히스토그램은 새 census 테스트가 돌던 스윕의 것.
+- 확인한 것: ③의 이음 건너뛰기에서 첫 다리의 벽이 앞 인덱스에서 이미 push됨(이음이 `i=0`이면 `hes[n−1]`) · `debug_assert`의 이전 끝
+  계산(`forward`면 `[1]`) · census의 `Reop`가 `Copy`(`RejectReason: Copy`) · 관문 수(1170/129/72)가 로그와 일치.
