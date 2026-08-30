@@ -15659,3 +15659,72 @@ hi 사슬 / 바닥이 판 안 = lo 사슬) 픽스처로 잠금: 옆면 **1**, �
 ### 다음
 반원판 캡의 `outer_tri`(`DegenerateFace`) → 그 뒤 사슬 림 면의 재연산(트레이서가 외곽 루프의 θ-범위를 읽음) · D5:
 `emit_lateral` 셀마다 방출(청소가 모든 병합) · `ChainContacts`(접촉 ≥3) · (0,0) 코너 딱지 결함 · `branch_meet` 캐시.
+
+---
+
+## 재연산 사다리 E, 첫 계단 — E1: 결과 면의 링이 전부 이름을 얻는다 (2-간선 모서리 · 솔기 이음)
+
+커밋 넷: `5c73b9a`(① 재연산 census) · `ac7a62a`(② 모서리 = 반간선의 시작 · 원-경계 면의 삼각형은 평면에서) · ``dfd26f8``(③ 솔기 이음은
+모서리가 아니다) · 문서. **프로덕션 census·reject_census 무변**(오늘의 코퍼스는 첫 연산뿐이라 이름 짓기는 원시 도형의 루프만 읽는다).
+
+### 왜 — 결과는 다시 피연산자가 못 됐다
+D2b~D4가 연 결과(반높이 보스·벽 보스의 노치·코너)는 앱이 늘 하듯 다음 부울의 피연산자가 되면 거절됐다. 그 벽을 세려고 **재연산
+census**를 세웠다: 4×4×2 판 + r0.5 보스 14가족 × Fuse/Cut/Common = 42 결과마다 «멀리 떨어진 정육면체 [20,21]³로 Cut» — 기하는 못
+바뀌고(부피 동일·validate 0이 `Ok`의 조건) 둘째 부울은 피연산자에게 필요한 것, 즉 **모든 면의 링 이름 짓기와 옆면 행**만 통과한다.
+결과는 이름으로 잠근다(`TraceDeclined`는 kind로 — face 핸들은 증인).
+
+| 표 | Ok | `DegenerateFace` | `CylSpan` | `OuterRing` | 첫 연산 거절 | EMPTY |
+|---|---|---|---|---|---|---|
+| ① HEAD | **9** | 14 | 10 | 5 | 3 | 1 |
+| ② 뒤 | 9 | **0** | 24 | 5 | 3 | 1 |
+| ③ 뒤 | 9 | 0 | **29** | **0** | 3 | 1 |
+
+벽 넷의 원인(전부 확정): ① **2-간선 루프**(반원판 캡: 호+현) — `outer_tri`가 정점 둘에서 `None`, 원판 폴백은 `len()==1`만 →
+`DegenerateFace`; 그 뒤에는 `loop_triples`의 `corner()`가 `shared_vertex(in, out)`인데 호와 현은 양 끝점을 다 공유 → `AmbiguousCorner`
+→ `.ok()`로 접혀 `OuterRing`. ② **솔기 이음** — `ring` 빌더가 감는 호를 OnSeam 정점에서 둘로 쪼개 두는데, 재연산에서 그 정점의 두 이웃이
+같은 원통의 호라 `(Cyl, Cyl)` → `CurvedOperandBoundary` → 미명명(`OuterRing`; HEAD reject-trace에 그 raise **12**). ③ **옆면 외곽 루프**
+— `trace_input`이 원통 행의 `outer: None`, `lateral_axis_span`은 «림 둘 + 솔기»만: 끼워진 구멍(`wall ±x`: −y 룰링이 곧 솔기라 노치가
+외곽 걷기에 끼움)·패널·사슬 림 전부 `None` → `CylSpan`(raise 자리 arrangement.rs:1531 실측). ④ **`CurvedRingWall`** — 곡선 간선을 든
+평면 면이 새 평면에 잘릴 때(census 밖). 이 칸은 ①·②; ③은 E2, ④는 E3.
+
+### 규칙 둘, 한 자리씩
+- **모서리는 반간선 `i`의 시작이다**(`he_start`). 「두 간선이 공유하는 하나의 정점」은 그것이 유일할 때 같은 값이고 — 루프의 간선 `i`는
+  `i−1`이 끝나는 곳에서 시작한다(validate의 `OpenLoop`) — 2-간선 루프에선 없다. 두 번째 철자였다. `boolean`은 입력을 validate하지 않으므로
+  기대는 불변을 그 자리에 `debug_assert_eq!(prev의 끝, corner)`로 재진술. `shared_vertex`·`RejectReason::AmbiguousCorner` 은퇴(HEAD의
+  reject-trace에서 raise **0** — `DegenerateFace`가 `collect_planes`에서 먼저 막아 2-간선 루프가 거기 닿은 적이 없다).
+- **원 곡선 간선이 경계에 있는 면은 넓이가 있다.** 루프 정점으로 세 점을 못 펴는 것(림 정점 하나·호+현)은 퇴화가 아니고, 평면의 진실 점
+  (`PlanePoints::Known` — 캡 평면은 `intern_plane`에서 Known)이 삼각형을 말한다, 면의 stated outward로 감아서 — 원판이 이미 밟던 길.
+  `outer_tri`의 정점 핸들은 프로덕션 소비자가 없다(doc이 「술어가 읽는다」고 낡게 말하고 있었다 — 고침).
+- **솔기 이음은 모서리가 아니다.** OnSeam 정점은 두 곡면 위의 점 — 세 번째 곡면이 이름 짓지 않고 링은 거기서 꺾이지 않는다. 그 정점에서
+  만나는 두 다리는 한 걸음: triple 없음, 벽은 첫 다리에서 이미(`curved_wall`의 호 팔 `Arc{cyl, ccw}`). 단언: 두 다리 다 `Circle`·같은 먼 면·
+  같은 `forward`. 모든 이음이 솔기인 루프(옆면 구멍에서 본 한 간선 캡 림)는 `CurvedOperandBoundary` backstop — 오늘의 답 그대로.
+
+### ☑ 실측 — 예측 vs 결과
+| 수 | 예측 | 실측 |
+|---|---|---|
+| ① census 표 | 메모의 42칸 | **동일**; 탐침(OnSeam 정점을 가진 루프: 평면 면 외곽, 모든 면 구멍) **(8, 0)** 예측 그대로 — 단 첫 탐침은 루프의 첫 정점만 봐 (0,0)을 냈다(이음은 루프 어디든 있다) |
+| ② `DegenerateFace` 14 | → 0, 착지 ∈ {`CurvedDeparture`, `CylSpan`, `Ruling`, `SeatedCurveUnbacked`} | **0**, 착지 **전부 `CylSpan`**(옆면 행이 캡의 자국보다 먼저 거절 — 클래스 순서) · Ok 9 · 패닉 0 |
+| ③ `OuterRing` 5 | → 0, 전부 `CylSpan` | **0, 전부 `CylSpan`** · Ok 9 · 탐침 8 루프 전부 이름 있음 |
+| census 두 프로파일 · reject_census | 무변 | **무변**(census 두 프로파일 269줄 동일·HEAD와 0줄 diff · reject_census 초록) · reject-trace 스윕: `ambiguous_corner` 0→0, `curved_operand_boundary` **12→0**, `degenerate_face` **14→0**, `curved-departure` 0→**17**(이름을 얻은 링이 처음 닿는 거절), `cyl-span` 48→138 |
+| lib / workspace | 333 / 1169 + 1 | lib 333 → **334**(census 1) · workspace **1170** |
+
+### ☑ 부정 대조 (하나씩 실행·되돌림)
+| 뒤집은 것 | 빨간 자리 |
+|---|---|
+| ② 모서리를 «공유 정점»으로 되돌림 | 14칸 `OuterRing` |
+| ② 폴백 가드를 `len()==1`로 되돌림 | 14칸 `DegenerateFace` — ★ 커밋 뒤에 쟀다: 첫 시도는 앵커가 rustfmt 서식과 어긋나 **무수정으로 초록**을 냈고 그걸 대조 결과로 읽을 뻔했다 |
+| ③ 이음 블록 삭제 | 5칸 `OuterRing`(wall +y ×3 · half wall Fuse ×2) |
+
+### ★ 실수 — `git checkout --`가 ②의 편집을 먹었다
+부정 대조 ②(a)를 `git checkout -- combinatorics.rs`로 되돌리다가 **커밋 전의 ② 편집 자체**를 지웠다(메모리 `probe-revert-ate-real-work`의
+바로 그 함정). md5 검사가 «되돌림 OK»를 안 찍은 것으로 알아채고 같은 스크립트로 재적용했다. 규칙: 대조의 되돌림은 **역치환**으로, 되돌리기
+전 md5는 편집본의 것.
+
+### 관문
+전량 초록(③ 커밋 후): fmt/clippy 0 · workspace **1170** · nodef · census 두 프로파일 동일 · reject_census · 스윕 129(`debug_assert_eq!(prev의 끝, corner)` 발화 0 — `OpenLoop`가 스윕 전체에서 성립) · perf release(fold 80 407면 237.2116 · ring fins 1.63 s · hub 1.07 s · small 556 µs) · kit 72 · reject-trace(위). 커밋마다 훅이 fmt·clippy·workspace를 다시 돌렸다. ★ 인구 잠금 `a_cylinder_pinned_end_orders_through_the_tower`의 `pins` **40 → 48**: +y 벽 보스(`[6,4,−1]` Cut)의 물린 캡 링이 ③으로 이름을 얻어 끝 8개가 합류 — 결함이 아니라 인구; 이유를 적고 올렸다.
+
+### 다음
+**E2 — 옆면 외곽 루프**(census의 `CylSpan` 29): `CylFaceInfo::span` 대신 **루프들**(lo 림·hi 림·구멍), `circle_on_class`가 ⊥ 클래스마다
+원 위 스윕(모든 루프의 교차 룰링 노드 `NodeId::branch(wall, t, cyl, root)`를 `circular_order`로 정렬, 재료-왼쪽 규칙으로 패리티 →
+`CircleSpan`들), `rulings_on_class`는 룰링 위 z-스윕, 게이트 `lateral_spans`는 `[min,max]`(보수적), `cyl_rows`의 «온전한 2π 띠» 전제 갱신.
+**E3 `CurvedRingWall`**. · D5 · `ChainContacts`.
