@@ -499,9 +499,6 @@ pub enum RejectReason {
     /// booleans, none declining**. Like [`Self::DegenerateWitness`] the check stays wired: it is the
     /// honest answer if a ring ever does run straight through a node, and a corpus is not a proof.
     StraightAngle,
-    /// Two ring edges meet at more than one vertex, or at none, so which vertex the corner *is*
-    /// cannot be decided (a two-gon, or a self-bounded rim).
-    AmbiguousCorner,
     /// **Two edges leave one arrangement vertex at the same angle**, so the cyclic order around
     /// that vertex has no answer — and the face walk is built from exactly that order.
     ///
@@ -1191,7 +1188,6 @@ impl RejectReason {
             Self::RingNaming => "ring_naming",
             Self::DegenerateRing => "degenerate_ring",
             Self::StraightAngle => "straight_angle",
-            Self::AmbiguousCorner => "ambiguous_corner",
             Self::UnorderedEdges => "unordered_edges",
             Self::EdgeOccupancyConflict => "edge_occupancy_conflict",
             Self::RingOrientation => "ring_orientation",
@@ -1276,7 +1272,6 @@ impl RejectReason {
             | Self::CoincidentNodes
             | Self::RingNaming
             | Self::StraightAngle
-            | Self::AmbiguousCorner
             | Self::UnorderedEdges
             | Self::EdgeOccupancyConflict
             // Two exact facts about one lateral face's presence, pointing opposite ways: the

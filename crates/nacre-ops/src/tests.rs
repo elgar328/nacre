@@ -9523,9 +9523,14 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
 /// not two rims and the seam: a hole spliced into the outer walk, a panel, a chain rim) ·
 /// `OuterRing` 5 (a wrap arc split at its `OnSeam` vertex, whose two neighbours are arcs on one
 /// cylinder — no third surface names the joint) · first op refused 3 · empty 1**. The rungs that
-/// follow change this table one named cause at a time, and each predicts its cells.
+/// follow change this table one named cause at a time, and each predicts its cells:
 ///
-/// ★ The probe beside it counts the loops whose start vertex is an `OnSeam` joint — outer loops
+/// * E1 ②: a loop's corner is its half-edge's start and a circle-bounded face states its
+///   triangle from the plane — `DegenerateFace` 14 → 0, every one landing on the lateral row's
+///   `CylSpan` (those caps sit beside a panel or chain lateral, which the tracer reaches first);
+///   Ok 9 unchanged.
+///
+/// ★ The probe beside it counts the loops carrying an `OnSeam` joint at any vertex — outer loops
 /// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
 /// construction, so it is not counted). Today: **8 outer, 0 holes** — the population the
 /// seam-joint rung reads, and the zero that says a hole never carries one (a hole touching the
@@ -9554,7 +9559,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
-                Rejected(RejectReason::DegenerateFace),
+                Declined(DeclineKind::CylSpan),
             ],
         ),
         (
@@ -9570,7 +9575,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
-                Rejected(RejectReason::DegenerateFace),
+                Declined(DeclineKind::CylSpan),
             ],
         ),
         (
@@ -9580,7 +9585,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
-                Rejected(RejectReason::DegenerateFace),
+                Declined(DeclineKind::CylSpan),
             ],
         ),
         (
@@ -9602,7 +9607,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
-                Rejected(RejectReason::DegenerateFace),
+                Declined(DeclineKind::CylSpan),
             ],
         ),
         (
@@ -9611,8 +9616,8 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             2.0,
             [
                 Declined(DeclineKind::OuterRing),
-                Rejected(RejectReason::DegenerateFace),
-                Rejected(RejectReason::DegenerateFace),
+                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CylSpan),
             ],
         ),
         (
@@ -9621,25 +9626,26 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             2.0,
             [
                 Declined(DeclineKind::OuterRing),
-                Rejected(RejectReason::DegenerateFace),
-                Rejected(RejectReason::DegenerateFace),
+                Declined(DeclineKind::CylSpan),
+                Declined(DeclineKind::CylSpan),
             ],
         ),
         (
             "half +x",
             [4.0, 2.0, -1.0],
             2.0,
-            [Rejected(RejectReason::DegenerateFace); 3],
+            [Declined(DeclineKind::CylSpan); 3],
         ),
         (
             "half +x, cap below",
             [4.0, 2.0, 1.0],
             2.0,
-            [Rejected(RejectReason::DegenerateFace); 3],
+            [Declined(DeclineKind::CylSpan); 3],
         ),
     ];
     let mut seam_joints = (0usize, 0usize);
     let mut table: Vec<String> = Vec::new();
+    let mut mismatches = 0usize;
     for (name, base, h, want) in families {
         for (kind, want) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
             .into_iter()
@@ -9708,10 +9714,19 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                     }
                 }
             };
-            table.push(format!("{name} {kind:?}: {got:?}"));
-            assert_eq!(got, want, "{name} {kind:?}");
+            table.push(format!(
+                "{name} {kind:?}: {got:?}{}",
+                if got == want { "" } else { "  ← want " }
+            ));
+            if got != want {
+                let last = table.len() - 1;
+                table[last].push_str(&format!("{want:?}"));
+                mismatches += 1;
+            }
         }
     }
+    // The whole table at once, so a moved cell is read beside its neighbours.
+    assert_eq!(mismatches, 0, "re-operation table:\n{}", table.join("\n"));
     // The distribution the doc states, so a drift in the table is read as a whole.
     let count = |p: fn(&Reop) -> bool| -> usize {
         families
@@ -9721,8 +9736,12 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             .count()
     };
     assert_eq!(count(|r| *r == Ok), 9, "{table:?}");
-    assert_eq!(count(|r| *r == Rejected(RejectReason::DegenerateFace)), 14);
-    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 10);
+    assert_eq!(
+        count(|r| *r == Rejected(RejectReason::DegenerateFace)),
+        0,
+        "a circle-bounded face is never degenerate"
+    );
+    assert_eq!(count(|r| *r == Declined(DeclineKind::CylSpan)), 24);
     assert_eq!(count(|r| *r == Declined(DeclineKind::OuterRing)), 5);
     assert_eq!(seam_joints, (8, 0), "seam-joint loops (outer, holes)");
 }

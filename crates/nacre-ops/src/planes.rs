@@ -240,15 +240,16 @@ pub(crate) fn collect_planes(
             let n_out = plane.normal() * f64::from(orient_sign);
             let tri = match outer_tri(model, face) {
                 Some((tri, _)) => tri,
-                // A **disk** face (a cylinder cap): its outer loop is one circle edge with a
-                // single seam vertex, so no three loop points exist — the plane's own truth
-                // points state the triangle instead (the cap's construction points,
-                // realized), wound to this face's outward like every other `tri`.
-                None if face.outer.half_edges.len() == 1
-                    && matches!(
-                        model.edge_curve(face.outer.half_edges[0].edge),
-                        nacre_geom::Curve::Circle(_)
-                    ) =>
+                // ★ **A face bounded by a circle-curve edge has area whatever its vertices do.**
+                // A disk cap's outer loop is one circle edge with a single seam vertex; a
+                // half-disk's is an arc and its chord with two. Neither spreads three loop
+                // points, and neither is degenerate — the plane's own truth points state the
+                // triangle instead (the cap's construction points, realized), wound to this
+                // face's stated outward like every other `tri`. A loop with no curved edge that
+                // spreads nothing is still `DegenerateFace`: it bounds no area.
+                None if face.outer.half_edges.iter().any(|he| {
+                    matches!(model.edge_curve(he.edge), nacre_geom::Curve::Circle(_))
+                }) =>
                 {
                     let nacre_topo::SurfaceTruth::Plane {
                         points: nacre_topo::PlanePoints::Known(pts),
@@ -752,8 +753,11 @@ pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Ha
 
 /// Three **well-spread** points of a face's outer loop — with the **vertex handle** each
 /// point came from — ordered so their right-hand normal points **out** of the solid.
-/// The handles let the toleranced predicates rebuild each point as a `WitnessPoint` (overhaul
-/// stage 3); the coordinates alone drive the axis-aligned path.
+/// ★ No production consumer reads the handles any more (the toleranced predicates take their
+/// witnesses from the surface truth, `tri_pt3`); every caller keeps the coordinates only, and
+/// the `None` of a loop that spreads no three points is answered by the caller — the plane's
+/// truth points for a circle-bounded face (`collect_planes`), "no evidence" for
+/// `find_face_coplanar_with`.
 ///
 /// "Well spread" rather than "non-collinear" is the whole contract: the triangle is what states
 /// this face's outward direction *and* what `WorkingPlane::tri` carries into the predicates, so a

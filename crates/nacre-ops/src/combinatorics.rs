@@ -1853,7 +1853,7 @@ fn loop_triples(
     for i in 0..n {
         // Vertex `i` starts edge `i` and ends edge `i - 1`.
         let (in_bounds, in_pair) = edge(&hes[(i + n - 1) % n])?;
-        let (out_bounds, out_pair) = edge(&hes[i])?;
+        let (_, out_pair) = edge(&hes[i])?;
         let (a, b) = (other(in_pair), other(out_pair));
         // ★★★★★ **The filter [`crate::planes::ClassIx::plane`] asks its callers for.** That
         // accessor panics on a cylinder — "a loud panic beats a silently wrong plane" — and it is
@@ -1878,15 +1878,28 @@ fn loop_triples(
         // only loop of a lateral face this road still cannot walk is its **outer** one, whose seam
         // edge is self-adjacent (`other` gives back `p`) and whose corners are therefore not
         // three-surface points; `CylFaceInfo::span` states that loop instead.
-        let corner = || {
-            shared_vertex(in_bounds, out_bounds)
-                .ok_or_else(|| reject(RejectReason::AmbiguousCorner))
-        };
+        // ★★ **The corner is where half-edge `i` starts.** It used to be "the one vertex the two
+        // edges share", which is the same vertex wherever that is unique — a loop's edge `i`
+        // starts where edge `i − 1` ends (validate's `OpenLoop`) — and no vertex at all for a
+        // two-gon (an arc and its chord share both ends). The half-edge already knows; asking the
+        // two edges' bounds instead was a second spelling that failed on the one shape where the
+        // first does not. `boolean` does not validate its inputs, so the invariant this leans on
+        // is restated here, where it is leaned on.
+        let corner = crate::he_start(model, hes[i]);
+        debug_assert_eq!(
+            if hes[(i + n - 1) % n].forward {
+                in_bounds[1]
+            } else {
+                in_bounds[0]
+            },
+            corner,
+            "a loop's edge starts where the previous one ends (OpenLoop)"
+        );
         let branch = match plane_ix[p] {
             ClassIx::Plane(near) => match (plane_ix[a], plane_ix[b]) {
                 (ClassIx::Cyl(k), ClassIx::Plane(far)) | (ClassIx::Plane(far), ClassIx::Cyl(k)) => {
                     Some(
-                        branch_name_from_def(model, jd, corner()?, k, [near, far])
+                        branch_name_from_def(model, jd, corner, k, [near, far])
                             .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
                     )
                 }
@@ -1898,7 +1911,7 @@ fn loop_triples(
             },
             ClassIx::Cyl(k) => match (plane_ix[a], plane_ix[b]) {
                 (ClassIx::Plane(x), ClassIx::Plane(y)) => Some(
-                    branch_name_from_def(model, jd, corner()?, k, [x, y])
+                    branch_name_from_def(model, jd, corner, k, [x, y])
                         .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
                 ),
                 // A lateral's loop running along a second lateral is M6b's cylinder pair too.
@@ -1934,11 +1947,8 @@ fn loop_triples(
             out.push(NodeId::three_planes(t));
             continue;
         }
-        // Both neighbours are one plane. The vertex is the two edges' shared endpoint — and only
-        // if that is unambiguous (a two-gon or a self-bounded rim would give two, or none).
-        let vh = shared_vertex(in_bounds, out_bounds)
-            .ok_or_else(|| reject(RejectReason::AmbiguousCorner))?;
-        let mut classes: Vec<usize> = vertex_face_indices(vh, inc)
+        // Both neighbours are one plane: the corner's own faces say what else names it.
+        let mut classes: Vec<usize> = vertex_face_indices(corner, inc)
             .into_iter()
             .map(|k| plane_ix[k].plane())
             .collect();
@@ -3845,19 +3855,6 @@ fn curved_wall(
                 up: ascends == he.forward,
             })
         }
-    }
-}
-
-/// **The corner two consecutive ring edges share** — `None` when that is not exactly one vertex.
-///
-/// A two-gon or a self-bounded rim gives two or none, and picking one of those would put a corner
-/// where the ring has none. Two callers ask it now (the degenerate-triple fallback and the branch
-/// corner), so it is spelled once.
-fn shared_vertex(a: [Handle<Vertex>; 2], b: [Handle<Vertex>; 2]) -> Option<Handle<Vertex>> {
-    let shared: Vec<Handle<Vertex>> = a.iter().copied().filter(|v| b.contains(v)).collect();
-    match shared[..] {
-        [v] => Some(v),
-        _ => None,
     }
 }
 
