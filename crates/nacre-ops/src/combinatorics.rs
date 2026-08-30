@@ -30,7 +30,7 @@ use crate::planes::{ClassIx, WorkingPlane, edge_incidence};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, reject};
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, Loop, Model, Solid, Vertex};
+use nacre_topo::{Edge, Face, Model, Solid, Vertex};
 use std::collections::HashMap;
 
 /// A solid's edges, each with its endpoints and **the indices of its two faces**.
@@ -1634,7 +1634,115 @@ pub(crate) fn face_vertex_triples(
     plane_ix: &[ClassIx],
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<LoopRing, BoolError> {
-    loop_triples(model, &model.faces.get(f).outer, p, inc, jd, plane_ix, cyls)
+    loop_triples(
+        model,
+        &model.faces.get(f).outer.half_edges,
+        p,
+        inc,
+        jd,
+        plane_ix,
+        cyls,
+    )
+}
+
+/// **A lateral face's boundary cycles** (E2-0): the outer loop cut at its slit edges — the
+/// self-adjacent `[lateral, lateral]` edges the assembly's outer walk climbs and descends the seam
+/// on — into the pieces that walk was made of, then the pieces read back as cycles: a piece that
+/// closes on itself is a rim circle or a wrapping chain; two open pieces that end where the other
+/// starts are a hole the walk had spliced in; a loop with no slit is a panel. The inner loops
+/// follow. Each cycle is named by [`loop_triples`] like every other loop.
+///
+/// The pairing is unique because a slit is never of zero length (`ZeroLengthEdge`) and at most
+/// one hole is spliced (`band_loop`'s own bound), so an unpaired or odd set of pieces is a shape
+/// the producer never makes — refused by the producer's own name for it.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn lateral_cycles(
+    model: &Model,
+    f: Handle<Face>,
+    p: usize,
+    inc: &EdgeFaces,
+    jd: &Judge<'_, WorkingPlane>,
+    plane_ix: &[ClassIx],
+    cyls: &[crate::planes::WorkingCyl],
+) -> Result<Vec<(CycleKind, LoopRing)>, BoolError> {
+    use nacre_topo::HalfEdge;
+    let face = model.faces.get(f);
+    let hes = &face.outer.half_edges;
+    let n = hes.len();
+    let is_slit = |he: &HalfEdge| -> Result<bool, BoolError> {
+        let (_, pair) = inc
+            .get(&he.edge)
+            .copied()
+            .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+        Ok(pair == [p, p])
+    };
+    let start_of = |piece: &[HalfEdge]| crate::he_start(model, piece[0]);
+    let end_of = |piece: &[HalfEdge]| {
+        let he = piece[piece.len() - 1];
+        let e = model.edges.get(he.edge);
+        if he.forward {
+            e.vertices[1]
+        } else {
+            e.vertices[0]
+        }
+    };
+    // Pieces between slits, in loop order from the first slit (from index 0 when there is none).
+    let mut slits = 0usize;
+    let mut first = 0usize;
+    for (i, he) in hes.iter().enumerate() {
+        if is_slit(he)? {
+            if slits == 0 {
+                first = i;
+            }
+            slits += 1;
+        }
+    }
+    let mut pieces: Vec<Vec<HalfEdge>> = Vec::new();
+    let mut cur: Vec<HalfEdge> = Vec::new();
+    for k in 0..n {
+        let he = hes[(first + k) % n];
+        if is_slit(&he)? {
+            if !cur.is_empty() {
+                pieces.push(std::mem::take(&mut cur));
+            }
+        } else {
+            cur.push(he);
+        }
+    }
+    if !cur.is_empty() {
+        pieces.push(cur);
+    }
+    let name = |hes: &[HalfEdge]| loop_triples(model, hes, p, inc, jd, plane_ix, cyls);
+    let mut out: Vec<(CycleKind, LoopRing)> = Vec::new();
+    let mut open: Vec<Vec<HalfEdge>> = Vec::new();
+    for piece in pieces {
+        if start_of(&piece) == end_of(&piece) {
+            let ring = name(&piece)?;
+            let kind = match (&ring, slits) {
+                (LoopRing::Rim { .. }, _) => CycleKind::Rim,
+                (_, 0) => CycleKind::Panel,
+                _ => CycleKind::Chain,
+            };
+            out.push((kind, ring));
+        } else {
+            open.push(piece);
+        }
+    }
+    while let Some(a) = open.pop() {
+        let Some(j) = open
+            .iter()
+            .position(|b| start_of(b) == end_of(&a) && end_of(b) == start_of(&a))
+        else {
+            return Err(reject(RejectReason::ArcBoundNotYet));
+        };
+        let b = open.remove(j);
+        let joined: Vec<HalfEdge> = a.into_iter().chain(b).collect();
+        out.push((CycleKind::Hole, name(&joined)?));
+    }
+    for l in &face.inner {
+        out.push((CycleKind::Hole, name(&l.half_edges)?));
+    }
+    Ok(out)
 }
 
 /// One loop in class form with each edge's **carried wall** beside it: `walls[i]` is the plane
@@ -1653,26 +1761,62 @@ pub(crate) fn face_vertex_triples(
 pub(crate) struct NamedRing {
     pub triples: Vec<NodeId>,
     pub walls: Vec<crate::boolean::Wall>,
+    /// For an arc edge of a **lateral** face's ring, which way it runs about the axis — the
+    /// producer's own convention (`derive_edge_curve`: a circle carrier's `[A, B]` is A to B
+    /// counter-clockwise, so walking the edge `forward` is walking it CCW), read off the
+    /// half-edge as `curved_wall` reads it for a plane face's arc. `None` on a plane face's ring
+    /// and on a ruling. ★ Carried because the flank of an on-class run says which side the ring's
+    /// *interior* is, which is the arc's direction only for a convex hole; a wrapping rim has no
+    /// interior side (E2-0 measures the two against each other before the rule moves).
+    #[cfg_attr(not(test), allow(dead_code))]
+    // E2-0: read by the census; the Run arm reads it with E2
+    pub arc_ccw: Vec<Option<bool>>,
 }
 
 /// One loop of a face, in the vocabulary the tracer speaks (M6-2a): a polygon of three-plane
-/// triples, or a **full circle** — one rim edge whose far face is a cylinder, named by that
-/// cylinder's class. A circle has no triples, no walls and no endpoints; forcing it through
-/// `NamedRing` was `RingNaming`'s job before the vocabulary existed.
+/// triples, a **full circle** — one rim edge whose far face is a cylinder, named by that
+/// cylinder's class — or, on a lateral face, a **rim** — one closed rim edge whose far face is
+/// a cap plane, named by that plane's class (E2). Neither closed loop has triples, walls or
+/// endpoints; forcing them through `NamedRing` was `RingNaming`'s job before the vocabulary
+/// existed.
 #[derive(Clone, Debug)]
 pub(crate) enum LoopRing {
     Poly(NamedRing),
-    Circle { cyl: usize },
+    Circle {
+        cyl: usize,
+    },
+    Rim {
+        #[allow(dead_code)] // E2-0: the road that reads a rim arrives with E2
+        plane: usize,
+    },
 }
 
 impl LoopRing {
-    /// The polygon ring, `None` for a circle — the poly-only consumers' filter.
+    /// The polygon ring, `None` for a closed circle or rim — the poly-only consumers' filter.
     pub(crate) fn poly(&self) -> Option<&NamedRing> {
         match self {
             LoopRing::Poly(nr) => Some(nr),
-            LoopRing::Circle { .. } => None,
+            LoopRing::Circle { .. } | LoopRing::Rim { .. } => None,
         }
     }
+}
+
+/// What a boundary cycle of a lateral face **is**, read off the structure of its outer loop
+/// rather than any angle: the loop is the assembly's own spelling — a `lo` walk, a slit, a `hi`
+/// walk, a slit, with a hole's two runs spliced in between further slits — and cutting it at the
+/// slits inverts that spelling exactly (`band_loop`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CycleKind {
+    /// A whole rim circle: one closed edge whose far face is a cap plane.
+    Rim,
+    /// A closed piece between two slits that is not a whole circle: a wrapping chain of arcs and
+    /// rulings (D4's chain rim).
+    Chain,
+    /// The whole outer loop with no slit at all: a face that does not wrap the cylinder.
+    Panel,
+    /// An inner loop, or two open pieces between slits joined end to start — a hole the
+    /// assembly spliced into the outer walk.
+    Hole,
 }
 
 /// Every loop of one face in class form — **the only thing the tracer needs from `Model`**.
@@ -1690,6 +1834,12 @@ pub(crate) struct FaceLoops {
     /// One entry per hole ring, or `None` if [`hole_rings`] declined for **any** of them — a hole
     /// that cannot be named is not "no hole".
     pub holes: Option<Vec<LoopRing>>,
+    /// A **lateral** face's every boundary cycle ([`lateral_cycles`]): its rims, chains and
+    /// panel, with the holes after them (the spliced ones recovered) — or `None` when the outer
+    /// loop could not be cut into cycles or a cycle could not be named. `None` on a plane row.
+    /// ★ E2-0 names them; the roads that read them arrive with E2.
+    #[allow(dead_code)]
+    pub cycles: Option<Vec<(CycleKind, LoopRing)>>,
 }
 
 /// What one boolean's tracer reads instead of the `Model`: every face's loops, plus which slots
@@ -1762,11 +1912,13 @@ pub(crate) fn trace_input(
                     FaceLoops {
                         outer: None,
                         holes: hole_rings(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
+                        cycles: lateral_cycles(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
                     }
                 } else {
                     FaceLoops {
                         outer: face_vertex_triples(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
                         holes: hole_rings(model, fh, fp, inc, jd, plane_ix, cyls).ok(),
+                        cycles: None,
                     }
                 };
                 faces[side].push((fp, loops));
@@ -1797,7 +1949,7 @@ pub(crate) fn hole_rings(
         .get(f)
         .inner
         .iter()
-        .map(|l| loop_triples(model, l, p, inc, jd, plane_ix, cyls))
+        .map(|l| loop_triples(model, &l.half_edges, p, inc, jd, plane_ix, cyls))
         .collect()
 }
 
@@ -1824,14 +1976,13 @@ pub(crate) fn hole_rings(
 #[allow(clippy::too_many_arguments)]
 fn loop_triples(
     model: &Model,
-    l: &Loop,
+    hes: &[nacre_topo::HalfEdge],
     p: usize,
     inc: &EdgeFaces,
     jd: &Judge<'_, WorkingPlane>,
     plane_ix: &[ClassIx],
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<LoopRing, BoolError> {
-    let hes = &l.half_edges;
     let edge = |he: &nacre_topo::HalfEdge| -> Result<([Handle<Vertex>; 2], [usize; 2]), BoolError> {
         inc.get(&he.edge)
             .copied()
@@ -1844,12 +1995,17 @@ fn loop_triples(
     // (`[v, v]` rims are the only single-edge loops a producer makes), so no curve is read.
     if n == 1 {
         let (_, pair) = edge(&hes[0])?;
-        if let ClassIx::Cyl(k) = plane_ix[other(pair)] {
-            return Ok(LoopRing::Circle { cyl: k });
+        match (plane_ix[p], plane_ix[other(pair)]) {
+            (_, ClassIx::Cyl(k)) => return Ok(LoopRing::Circle { cyl: k }),
+            // A lateral face's own whole rim: one closed edge whose far face is a cap plane —
+            // a cycle of its outer loop (E2), named by the plane it rides.
+            (ClassIx::Cyl(_), ClassIx::Plane(w)) => return Ok(LoopRing::Rim { plane: w }),
+            _ => {}
         }
     }
     let mut out = Vec::with_capacity(n);
     let mut walls = Vec::with_capacity(n);
+    let mut arc_ccw = Vec::with_capacity(n);
     for i in 0..n {
         // Vertex `i` starts edge `i` and ends edge `i - 1`.
         let (in_bounds, in_pair) = edge(&hes[(i + n - 1) % n])?;
@@ -1951,6 +2107,16 @@ fn loop_triples(
                 unreachable!("a lateral face beside a lateral neighbour was rejected above")
             }
         });
+        // A lateral face's own arc: its direction about the axis is the producer's (see
+        // [`NamedRing::arc_ccw`]).
+        arc_ccw.push(match (plane_ix[p], plane_ix[b]) {
+            (ClassIx::Cyl(_), ClassIx::Plane(_))
+                if matches!(model.edge_curve(hes[i].edge), nacre_geom::Curve::Circle(_)) =>
+            {
+                Some(hes[i].forward)
+            }
+            _ => None,
+        });
         if let Some(n) = branch {
             out.push(n);
             continue;
@@ -2019,6 +2185,7 @@ fn loop_triples(
     Ok(LoopRing::Poly(NamedRing {
         triples: out,
         walls,
+        arc_ccw,
     }))
 }
 

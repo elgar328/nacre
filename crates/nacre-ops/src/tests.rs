@@ -9513,6 +9513,55 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
     }
 }
 
+/// A result's lateral faces' boundary cycles by kind — (rims, chains, panels, holes) summed
+/// over the laterals; an unnamed cycle panics (the census locks that none is). The tracer's
+/// inputs are set up as `pinned_ends_ordered` does.
+fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
+    let faces_tab = collect_planes(m, r).expect("the result's face table");
+    let mut surf_ix: HashMap<Handle<Face>, usize> = HashMap::new();
+    for (i, pi) in faces_tab.iter().enumerate() {
+        if let Some(fh) = pi.face() {
+            surf_ix.insert(fh, i);
+        }
+    }
+    let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
+    let (planes, plane_ix, cyl_surfs) = dense_planes(&faces_tab, &canon);
+    let inc = combinatorics::edge_faces(m, r, &surf_ix).expect("edge incidence");
+    let cyls: Vec<crate::planes::WorkingCyl> = cyl_surfs
+        .iter()
+        .map(|&surf| {
+            let def = crate::planes::world_cylinder_def(m, surf).expect("a world cylinder");
+            let nacre_geom::Surface::Cylinder(cache) = m.surface(surf) else {
+                unreachable!()
+            };
+            crate::planes::WorkingCyl {
+                surf,
+                def,
+                cache: *cache,
+            }
+        })
+        .collect();
+    let jd = crate::planes::test_judge(&planes);
+    let mut tally = [0usize; 4];
+    for &fh in &m.shells.get(m.solids.get(r).outer).faces {
+        let fp = surf_ix[&fh];
+        if !matches!(plane_ix[fp], crate::planes::ClassIx::Cyl(_)) {
+            continue;
+        }
+        let cycles = combinatorics::lateral_cycles(m, fh, fp, &inc, &jd, &plane_ix, &cyls)
+            .unwrap_or_else(|e| panic!("a lateral's cycles could not be named: {e:?}"));
+        for (kind, _) in cycles {
+            tally[match kind {
+                combinatorics::CycleKind::Rim => 0,
+                combinatorics::CycleKind::Chain => 1,
+                combinatorics::CycleKind::Panel => 2,
+                combinatorics::CycleKind::Hole => 3,
+            }] += 1;
+        }
+    }
+    tally
+}
+
 /// **The re-operation census** (E1-0): can a boolean's *result* be an operand again? For every
 /// family × kind on a 4×4×2 plate with an r = 0.5 boss, the result is cut with a cube that lies
 /// far outside it (`[20, 21]³`) — the geometry cannot change, so the second boolean exercises only
@@ -9554,11 +9603,39 @@ fn reop_census_families_reoperate_or_decline_by_name() {
     }
     use Reop::*;
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
-    // (name, boss base, boss height, [Fuse, Cut, Common])
-    let families: [(&str, [f64; 3], f64, [Reop; 3]); 14] = [
-        ("through", [2.0, 2.0, -1.0], 4.0, [Ok, Ok, Ok]),
-        ("on top", [2.0, 2.0, 2.0], 1.0, [Ok, Ok, Empty]),
-        ("flush", [2.0, 2.0, 0.0], 3.0, [Ok, Ok, Ok]),
+    // A lateral's boundary cycles per kind, summed over the result's lateral faces:
+    // (rims, chains, panels, holes).
+    type Cyc = [usize; 4];
+    const RIMS: Cyc = [2, 0, 0, 0];
+    const RIMS_HOLE: Cyc = [2, 0, 0, 1];
+    const CHAIN: Cyc = [1, 1, 0, 0];
+    const PANEL: Cyc = [0, 0, 1, 0];
+    const NONE: Cyc = [0; 4];
+    // (name, boss base, boss height, [Fuse, Cut, Common], the cycles each result's laterals carry)
+    type Family = (&'static str, [f64; 3], f64, [Reop; 3], [Cyc; 3]);
+    let families: [Family; 14] = [
+        (
+            "through",
+            [2.0, 2.0, -1.0],
+            4.0,
+            [Ok, Ok, Ok],
+            [[4, 0, 0, 0], RIMS, RIMS],
+        ),
+        // A boss standing on the plate: the cut removes nothing and leaves no lateral at all.
+        (
+            "on top",
+            [2.0, 2.0, 2.0],
+            1.0,
+            [Ok, Ok, Empty],
+            [RIMS, NONE, NONE],
+        ),
+        (
+            "flush",
+            [2.0, 2.0, 0.0],
+            3.0,
+            [Ok, Ok, Ok],
+            [RIMS, RIMS, RIMS],
+        ),
         (
             "wall -y",
             [2.0, 0.0, -1.0],
@@ -9568,12 +9645,14 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
+            [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "wall +y",
             [2.0, 4.0, -1.0],
             4.0,
             [Declined(DeclineKind::CylSpan); 3],
+            [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "wall -x",
@@ -9584,6 +9663,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
+            [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "wall +x",
@@ -9594,18 +9674,21 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
+            [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "corner",
             [4.0, 4.0, -1.0],
             4.0,
             [Declined(DeclineKind::CylSpan); 3],
+            [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "corner-lo",
             [0.0, 0.0, -1.0],
             4.0,
             [First(RejectReason::CylinderGateUndecided); 3],
+            [NONE, NONE, NONE],
         ),
         (
             "offmid",
@@ -9616,6 +9699,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
+            [RIMS_HOLE, PANEL, PANEL],
         ),
         (
             "half wall",
@@ -9626,6 +9710,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
+            [CHAIN, PANEL, PANEL],
         ),
         (
             "half wall, cap below",
@@ -9636,27 +9721,35 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
             ],
+            [CHAIN, PANEL, PANEL],
         ),
         (
             "half +x",
             [4.0, 2.0, -1.0],
             2.0,
             [Declined(DeclineKind::CylSpan); 3],
+            [CHAIN, PANEL, PANEL],
         ),
         (
             "half +x, cap below",
             [4.0, 2.0, 1.0],
             2.0,
             [Declined(DeclineKind::CylSpan); 3],
+            [CHAIN, PANEL, PANEL],
         ),
     ];
     let mut seam_joints = (0usize, 0usize);
     let mut table: Vec<String> = Vec::new();
     let mut mismatches = 0usize;
-    for (name, base, h, want) in families {
-        for (kind, want) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+    let sense_before = *crate::arrangement::arc_probe::SENSE
+        .lock()
+        .expect("the probe's lock is never held across a panic");
+    let mut cycle_mismatches: Vec<String> = Vec::new();
+    for (name, base, h, want, want_cyc) in families {
+        for ((kind, want), want_cyc) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
             .into_iter()
             .zip(want)
+            .zip(want_cyc)
         {
             let mut m = Model::new();
             let plate = m.add_cuboid(
@@ -9694,6 +9787,13 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                             }
                             seam_joints.1 += face.inner.iter().filter(|lp| joint(lp)).count();
                         }
+                    }
+                    // E2-0: the lateral faces' boundary cycles, named as the tracer will read
+                    // them — the outer loop cut at its slits, the spliced hole recovered.
+                    let got_cyc = lateral_cycle_census(&m, out[0]);
+                    if got_cyc != want_cyc {
+                        cycle_mismatches
+                            .push(format!("{name} {kind:?}: {got_cyc:?} ← want {want_cyc:?}"));
                     }
                     let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
                     let far =
@@ -9734,11 +9834,28 @@ fn reop_census_families_reoperate_or_decline_by_name() {
     }
     // The whole table at once, so a moved cell is read beside its neighbours.
     assert_eq!(mismatches, 0, "re-operation table:\n{}", table.join("\n"));
+    assert!(
+        cycle_mismatches.is_empty(),
+        "lateral cycles:\n{}",
+        cycle_mismatches.join("\n")
+    );
+    // E2-0: on every on-class arc of a hole the flank's reading of its direction and the
+    // producer's agree — the measurement that licenses the Run arm to read the producer's.
+    // Universal over the binary (the probe is global), and not vacuous: this census's holed
+    // bands put arcs on their cap classes.
+    let sense = *crate::arrangement::arc_probe::SENSE
+        .lock()
+        .expect("the probe's lock is never held across a panic");
+    assert_eq!(
+        sense.1, 0,
+        "an on-class arc the flank and the producer read differently"
+    );
+    assert!(sense.0 > sense_before.0, "no on-class arc was read");
     // The distribution the doc states, so a drift in the table is read as a whole.
     let count = |p: fn(&Reop) -> bool| -> usize {
         families
             .iter()
-            .flat_map(|(_, _, _, w)| w.iter())
+            .flat_map(|(_, _, _, w, _)| w.iter())
             .filter(|r| p(r))
             .count()
     };

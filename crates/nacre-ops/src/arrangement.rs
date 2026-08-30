@@ -865,6 +865,13 @@ fn trace_transversal_face(
     };
     for r in raw_holes {
         match r {
+            // A lateral's own rim is a cycle of a lateral row (`FaceLoops::cycles`), never a
+            // plane face's hole: reaching here is a producer inconsistency, declined by the
+            // loop it arrived as.
+            combinatorics::LoopRing::Rim { .. } => {
+                out.declined.push((fp, DeclineKind::HoleRing));
+                return;
+            }
             // ★ A **circular hole is skipped, by proof, not by hope**: the population gate
             // established every ∥-axis wall clear of the circle's cylinder by more than r, and
             // this trace's line `L = W ∩ fc` lies in such a wall — so the circle cannot meet
@@ -1352,7 +1359,8 @@ fn trace_one(
                     arc: None,
                 });
             }
-            None => {
+            // A lateral's rim never names a plane face's outer loop (see `FaceLoops::cycles`).
+            Some(combinatorics::LoopRing::Rim { .. }) | None => {
                 out.declined.push((fp, DeclineKind::OuterRing));
                 continue;
             }
@@ -1371,6 +1379,7 @@ fn trace_one(
                     kind,
                     arc: None,
                 }),
+                combinatorics::LoopRing::Rim { .. } => failed = Some(DeclineKind::HoleRing),
                 combinatorics::LoopRing::Poly(nr) => match plane_ring(nr) {
                     Ok(r) => rings.push(r),
                     Err(f) => failed = Some(decline_of(f)),
@@ -1625,6 +1634,21 @@ pub(crate) mod arc_probe {
     /// arc** — one entry per extent a hole has carved out of a circle in this binary, whether the
     /// face grazes there (the hole's own rim) or is absent (the hole's interior).
     pub(crate) static MIDS: Mutex<Vec<[f64; 3]>> = Mutex::new(Vec::new());
+
+    /// E2-0: on-class arcs whose direction the flank rule and the producer's `arc_ccw` state
+    /// the same way (`.0`) and differently (`.1`), over this binary.
+    pub(crate) static SENSE: Mutex<(usize, usize)> = Mutex::new((0, 0));
+
+    pub(crate) fn record_sense(agree: bool) {
+        let mut s = SENSE
+            .lock()
+            .expect("the probe's lock is never held across a panic");
+        if agree {
+            s.0 += 1;
+        } else {
+            s.1 += 1;
+        }
+    }
 
     pub(crate) fn record(
         jd: &Judge<'_, WorkingPlane>,
@@ -1915,6 +1939,14 @@ fn hole_on_class(
                     let a = ring[(first + k) % n];
                     let b = ring[(first + k + 1) % n];
                     let arc = if ccw { [a, b] } else { [b, a] };
+                    // E2-0: the flank's reading of this arc against the producer's. Material
+                    // lies along `σ·ν·m̂` for an arc walked with sense `ν`, so the face is above
+                    // the class exactly when that agrees with the class's stored normal.
+                    #[cfg(test)]
+                    if let Some(nu) = nr.arc_ccw.get((first + k) % n).copied().flatten() {
+                        let nu_body_above = (sigma * if nu { 1 } else { -1 } > 0) == up;
+                        arc_probe::record_sense(nu == ccw && nu_body_above == (hole_stored < 0));
+                    }
                     #[cfg(test)]
                     arc_probe::record(jd, cyl, def, arc);
                     out.push(Carved {
@@ -7199,6 +7231,7 @@ mod tests {
         let curved_carrier = combinatorics::NamedRing {
             triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],
             walls: vec![plane(1), ruling, plane(3)],
+            arc_ccw: vec![None; 3],
         };
         let (_, walls) = plane_ring(&curved_carrier).expect("a curved carrier is describable");
         assert_eq!(
@@ -7209,6 +7242,7 @@ mod tests {
         let curved_corner = combinatorics::NamedRing {
             triples: vec![three(0, 1, 2), branch, three(0, 1, 3)],
             walls: vec![plane(1), ruling, plane(3)],
+            arc_ccw: vec![None; 3],
         };
         let (ts, _) = plane_ring(&curved_corner).expect("a branch corner is describable");
         assert_eq!(ts[1], branch, "the corner is the producer's, unflattened");
@@ -7216,12 +7250,14 @@ mod tests {
         let collapsed = combinatorics::NamedRing {
             triples: vec![three(0, 1, 2), three(0, 0, 3), three(0, 1, 3)],
             walls: vec![plane(1), plane(2), plane(3)],
+            arc_ccw: vec![None; 3],
         };
         assert!(matches!(plane_ring(&collapsed), Err(RingFail::Collapsed)));
         // And the plane-only ring still comes back with both halves.
         let plain = combinatorics::NamedRing {
             triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],
             walls: vec![plane(1), plane(2), plane(3)],
+            arc_ccw: vec![None; 3],
         };
         let (ts, walls) = plane_ring(&plain).expect("a plane ring");
         assert_eq!(ts.len(), 3);
@@ -10350,6 +10386,7 @@ mod tests {
         let doctored = combinatorics::FaceLoops {
             outer: fl.outer.clone(),
             holes: Some(vec![combinatorics::LoopRing::Circle { cyl: 0 }]),
+            cycles: None,
         };
         let mut tr = Trace::default();
         trace_one(
