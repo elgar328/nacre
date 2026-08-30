@@ -95,12 +95,12 @@ pub(crate) struct CylRow {
 /// the contract generalizes rather than bends. With one face per class it *is* the old class-index
 /// order, which is why existing results do not move.
 ///
-/// ★★ **That disjointness holds because every lateral face that reaches here is a band** — two
-/// whole rims and holes: the tracer's two lateral roads decline a panel or a chain rim by name
-/// (`arrangement::lateral_shape`, E2/E2-2) before the arrangement runs, and this row is built after the traces. The
-/// day those shapes pass (E2-2), two faces can share a `t` and the tie falls to the stable sort's
-/// face order — still deterministic, but the sentence above stops being the reason. Naming the
-/// premise here so the day it expires is a thing a reader can check, not a surprise.
+/// ★★ **That disjointness used to hold because every lateral face that reached here was a
+/// band** — two whole rims and holes. Since E2-2 the tracer states a panel and a chain rim too
+/// (`arrangement::lateral_shape`), so two faces of one class *can* share a `t`; the tie then
+/// falls to the stable sort's face order — still deterministic, and the corpus so far carries one
+/// lateral per class (the cleaning pass merged the pieces one operation earlier). Named here so
+/// the day it is exercised is a thing a reader can check, not a surprise.
 ///
 /// A face whose ⊥ range cannot be stated declines by name (`DeclineKind::CylSpan`) — the tracer
 /// declines it for the same reason.

@@ -1092,11 +1092,10 @@ pub enum DeclineKind {
     /// calls where the lone off-line class fails the cut test; and the seated road's, by
     /// `unreachable!()` with the whole suite and the ignored sweep green.
     NoPinOnLine,
-    /// A cylinder face could not answer a circle question exactly — its outer loop could not be
-    /// cut at its slits or named, a class has no exact station, its whole rims are more than two
-    /// or not at the ends of its range, or (on the rulings road, until its sweep lands) its
-    /// boundary cycles are not two whole rims and holes — a panel or a chain rim (M6-2a, E2,
-    /// E2-2).
+    /// A cylinder face could not state its shape exactly — its outer loop could not be cut at
+    /// its slits or named, a class has no exact station, or its whole rims are more than two or
+    /// not at the ends of its range (M6-2a, E2, E2-2: a panel and a chain rim are stated, not
+    /// declined).
     CylSpan,
     /// **A lateral face has a hole here and this road could not *read* it.**
     ///

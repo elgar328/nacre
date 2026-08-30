@@ -1396,6 +1396,10 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
     (`crossing_census_…`, 210셀·부품 합 부피 오라클): 벽 보스 Fuse × **벽 슬랩** Ok(1). 남은 것: 결과가 두 솔리드로 갈리면 그룹핑 도로
     (`Ring::edges`의 평면 벽 shim)가 혼합 링을 `BranchVertexUnnamed`로 거절 · `coord_key`에 원통 표(현 셀) · **E3-b** 호 교차(E2-2의 룰링 t-스윕 뒤) ·
     **E3-c** `CurvedDeparture`.
+  ★★ **E2-2 (2026-08-30): 옆면이 띠가 아니어도 트레이서가 읽는다.** `band_shape` 게이트 대신 `lateral_shape`(범위·림·사이클들); ⊥ 도로의 바깥 답은
+    **Option**(범위 엄격 안 Crosses · 림 station 온전한 Graze · 극단 None — run만 말함)이고 모든 사이클을 `cycle_on_class`(감김만 읽음)로 깎는다; ∥ 도로는
+    **`ruling_sweep`**(림·θ를 엄격히 품는 호 = 토글, 룰링 런 = Graze + 양끝 호의 θ-flank가 다르면 토글 — `flanks_differ`를 ν로 읽은 것). 재연산 Ok 14 → **21**,
+    `CylSpan` 0; 벽 Cut × 벽 슬랩 정확 부피. 계기 명제 셋(세로선 답의 σ·XOR 닫힘의 짝·shim의 표)을 재진술. 남은 것: E3-b 호 교차·E3-c 이탈·그룹핑 shim.
   - ★★★★★ **D3의 전제조건 — 여기서 계기 넷이 눈이 멀었던 적이 있다.** 칸 ⑦이 옆면의 면 구조를 바꾸고
     **메시가 조용히 틀린 채** `validate`·watertight·정확 부피·면 수가 **전부 초록**이었다(넓이 7.873 vs
     9.425). 그걸 잡은 눈은 칸 ⑧의 **메시 넓이 ≈ 정확 넓이**다. ⇒ 갈아타기 **전에** 원통 코퍼스에 그

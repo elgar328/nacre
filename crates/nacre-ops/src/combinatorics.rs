@@ -2336,7 +2336,7 @@ pub(crate) enum Feature {
     /// ★★★★★ **`None` where there is no such neighbour** — a stretch that begins where the ring
     /// *returned* to the meet is preceded by the departure itself, and that side is σ
     /// ([`RingWalk::CurvedDeparture`]). The type says so rather than carrying a plausible number:
-    /// the one reader today refuses on it, and the next one must face the same choice.
+    /// its readers refuse on it, and the next one must face the same choice.
     Run {
         first: usize,
         len: usize,

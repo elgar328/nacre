@@ -15877,3 +15877,71 @@ fins 1.59 s · hub 1.05 s · small 554 µs — 같은 대역) · kit 72 · rejec
 **E2-2 사슬·패널**(`CylSpan` 120/24; 룰링 t-스윕 → E3-b 호 교차의 전제; `read_cell`의 `End::Other` — corner의 `RulingBoundNotYet`) · **그룹핑 팔의 캐리어화**
 (`Ring::edges`의 legacy shim — 두 솔리드로 갈리는 결과의 혼합 링; 가운데 슬랩 5행) · `coord_key`에 원통 표(현 셀의 branch 모서리; 축 통과 벽 6행) ·
 **E3-b 호 교차** · **E3-c 이탈**(`CurvedDeparture`) · offmid × 위 슬랩 `BranchVertexUnnamed` · D5 · `ChainContacts`.
+
+---
+
+## 재연산 사다리 E, 둘째 계단의 둘째 반 — E2-2: 옆면이 띠가 아니어도 트레이서가 읽는다 (패널 · 사슬 림)
+
+커밋: `4a0f802`(① ⊥ 도로: 면의 모양이 띠 게이트를 대신하고 바깥 답이 Option) · `5932549`(② ∥ 도로: 룰링 t-스윕) · 문서.
+
+### 벽이 있던 자리 (조사, 정확)
+띠 전제는 셋에 박혀 있었다: `band_shape`(← `band_span` ← 두 소비자 `circle_on_class`·`rulings_on_class`), `assemble_spans`의 `ans[k].unwrap_or(Some(outer))`
+한 줄(바깥 답이 Option이 아님 = 패널이 표현 불가), `rulings_on_class`의 «양끝 = 두 림 클래스의 근» + `assemble_ruling`의 «첫/끝 station == span». `cyl_rows`·
+`lateral_spans`·`by_span`·`boundary_lines`는 E2부터 `t_range`를 읽어 이미 패널·사슬을 통과시킨다. **차트에는 새 어휘가 필요 없다**: `emit_lateral`은 띠와
+패널 링을 이미 짓고, 사슬 림은 D4의 청소 패스가 띠+패널을 합쳐 만든다(첫 연산의 반높이 보스가 그 인구). 링의 실제 모양(임시 덤프): 패널 = 4노드 (θ,z)
+직사각형 «룰링↑ · 호(z=2, ν=true) · 룰링↓ · 호(z=0, ν=false)»; 사슬 = 온전한 림 + «룰링↓ · 호(판 바닥, 안쪽 반) · 룰링↑ · 호(보스 꼭대기, 바깥 반)».
+
+### ① ⊥ 도로 — `lateral_shape`와 «없을 수도 있는» 바깥 답
+- `lateral_shape { range, rims: Vec<(station, class)>, cycles: Vec<(kind, ring)> }`가 `band_span`을 대신한다(station은 `bands::param_opt` 한 철자; range는
+  림 station ∪ 사이클 호들의 ⊥ station의 [min,max]이고 모델 쪽 `t_range`와 `debug_assert_eq!` — 오늘의 단언을 일반화). 거절 정책: 사이클 없음 · 림 kind가 온전한
+  원 아님 · station 없음 · 림 > 2 · 림 station 중복 · 림이 range 끝 아님 → `CylSpan`.
+- 바깥 답 `Option<CylOnClass>`: range 밖 → 빈 답 · 림 station → 온전한 원 Graze(오늘) · range **엄격히 안** → `Some(Crosses)` · 끝인데 림 아님 → **`None`**(run만
+  말함). 모든 사이클(패널·사슬·구멍)을 `cycle_on_class`(← `hole_on_class`, 감김에서만 유도하므로 안/밖을 안 읽는다)로 깎고 `assemble_spans(outer: Option)`.
+  ★ `Crosses`가 정확한 조건을 doc에 적었다: 틀릴 수 있는 길은 깎이지 않은 패리티뿐(클래스 위의 런이 `flanks_differ`인 계단식 사슬) — 그 런은 오늘처럼 거절.
+- **실측**: 원장 `cycle_probe`(클래스 station · 바깥 답 · 사이클 종류 · 깎인 extent 수 · 조각 수)로 잠금 `a_cycle_is_carved_on_its_classes` — 패널(wall +x Cut × 벽
+  슬랩) z=0.5: Crosses + extent 1(바깥 반 부재) → 조각 1, z=0: None + Graze 1 → 조각 1; 사슬(half wall Fuse × 먼 정육면체) z=−1: 림 Graze, z=0: Crosses + 안쪽 호 Graze →
+  조각 2, z=1: None + 바깥 호 Graze → 조각 1. **걷기 검산 그대로**(내 기대 «컷 둘 = extent 둘»만 틀렸다 — 교차 둘은 부재 extent **하나**).
+- **예측과 실측**: 검토가 «① 비트 동일»을 미리 정정했다 — 보고되는 거절은 가장 낮은 클래스의 첫 거절 면이고, 패널의 ⊥ 클래스가 더는 거절하지 않으니 첫 거절이 축 통과
+  클래스로 옮겨 가 거기서 **2-간선 캡**(호 + 판 벽 위의 현)이 `CurvedDeparture`로 먼저 난다: 재연산 census 벽/offmid Common 5 + half 12 = **17행 `CylSpan` →
+  `CurvedDeparture`**(E3-c의 인구, corner Common은 3노드 캡이라 무변), Cut 6 + corner Common은 ∥ 도로의 `CylSpan` 그대로(24 → 7) · 가로지르는 census 같은 행 × 5 =
+  85셀 이동(120 → 35). 프로덕션 census 비트 동일. 실측 = 예측.
+- **E2 잠금의 오염을 잡았다**: `a_holes_arcs_run_the_way_the_hole_lies`는 전역 원장 `arc_probe::MIDS` **전체**에 «중점 y>0»을 단언했다 — 병렬 테스트의 전역 원장
+  (`nondeterministic-fixtures-and-instruments`의 모양). 오늘까지는 다른 구멍의 중점 y가 ±6e−17이라 우연히 통과했고, 패널·사슬의 호가 기록되자 깨졌다. 원장에 사이클
+  종류·원통 원점을 싣고 잠금이 «자기 보스의 구멍»만 읽게 고침.
+- **부정 대조**(역치환·md5): 극단의 `None`을 옛 전제 `Some(Crosses)`로 → 원장 잠금 빨강(패널 z=0에 온전한 원이 심겨 조각 2); 재연산 census는 ①에선 ∥ 도로가 먼저
+  거절해 못 본다 — ②에서 `LabelConflict`로 보일 것.
+
+### ② ∥ 도로 — 룰링 t-스윕 (`ruling_sweep`)
+- `rulings_on_class`의 «양끝 = 두 림의 근» · `ruling_grazes` · `assemble_ruling`(첫/끝 == span 검사) 셋이 **한 스윕**이 됐다: side마다 (θ,z) 차트의 선 θ=θ_side에
+  사이클들이 놓는 station — **림**(토글; 노드는 `crossing_on_ruling(rim, wc)` — 스캔이 쓰는 같은 문, 이름 동일이 census로 확인됨) · θ_side를 **엄격히 품는 호**
+  (`theta_between`, `circular_order` 위; 토글) · 캐리어 `Plane(wc)`·같은 side의 **룰링 런**(Graze 구간, `body_above = σ·τ·κ·side` 그대로; 양끝 이웃 호의 θ-flank가 다르면 토글 —
+  `arc_flank(ν, arriving)`, 다각형-직선 규칙의 `flanks_differ`를 ν로 읽은 것). 스윕: 부재에서 시작, 조각마다 Graze/Transversal/없음, 인접 병합. 거절: 런 이웃이 호 아님 ·
+  룰링에서 끝나는 호에 그 사이클의 런이 없음(정점에서 가로지름) → `Ruling`; 같은 t 두 이름 · 런 안의 런 · 런 안의 토글 · 열린 경계 → `CylHoleFeature`.
+- 검산 = 실측: 패널 +θ/+θ → 토글 없음(룰링 전체 Graze, 위아래 부재) · 사슬 +θ/−θ → 토글(아래 Transversal, 위 부재 — 원장 잠금 `a_chain_sweeps_its_rulings`:
+  side마다 `[Transversal, Graze]`) · 띠의 노치 구멍 → 토글 없음(`Transversal·Graze·Transversal`, 오늘 그대로).
+- **실측 = 예측**: 재연산 census **Ok 14 → 21**(벽/corner/offmid Cut 6 + corner Common), `CylSpan` 24 → **0**, `CurvedDeparture` 17. 가로지르는 census: 벽 Cut 6행이
+  Fuse 행과 같은 모양 — 위/아래 Ok(1) · **벽 슬랩 Ok(1) + 정확 부피**(이 계단의 양성 인구) · 가운데 `BranchVertexUnnamed`(그룹핑 shim) · 축 통과 `CurvedRingWall`(물린 호);
+  corner 넷은 실측 이름(공면 벽 → `BranchVertexUnnamed` · 사분원 단독 결과를 슬랩이 가르면 `NoClearRay` · 짝 없는 벽의 차트 `CylinderGateUndecided`). `CylSpan` 120 → 0 ·
+  Ok 49 → 69. 프로덕션 census 비트 동일.
+- 그 길의 벽 셋 — 전부 `cfg(test)` 계기의 **명제**였다(프로덕션 무변):
+  1. 세로선의 답 사후조건(`SIDE_CHECK`, D2a): «원통 **안쪽** 셀에 옆면의 솔리드가 있다»는 보스(σ=+1)의 문장 — 재연산된 Cut 결과의 노치(σ=−1, 재료가 밖)가 축 통과
+     클래스에 처음 올라와 반증. `RulingTrace`/`MergedRuling`에 `#[cfg(test)] orient`를 실어 «재료가 놓인 쪽의 셀에 있다»로.
+  2. 차트 census의 **XOR 닫힘**: «벽마다 두 번 가로지른다»(`odd_k` 0, `theta % 2 == 0`)는 띠의 전제 — 패널/사분원은 벽의 룰링 하나에만 경계가 있고 다른 룰링은 어떤 면의
+     간선도 아니다(corner Common × 축 통과 벽에서 벽 3의 룰링 하나). 닫힘은 **벽마다 짝수인 구간에서만** 단언, 나머지는 `unpaired`로 센다; `theta % 2` 단언 삭제.
+  3. 테스트 shim `trace_one_of`의 «branch 노드가 원통 표를 원할 일이 없다»(`cyls = &[]`): 스윕이 림 노드를 `crossing_on_ruling`으로 짓자 표를 읽었다 → 함수가 표 대신
+     **`def`만** 받도록(호출자 셋 모두 def를 가짐) — 전제가 다시 참.
+- **부정 대조**(역치환·md5): 토글 규칙 제거 → 사슬 잠금 빨강(열린 경계로 거절, 원장 비어 있음) · 토글 항상 → 재연산 노치 행 `CylHoleFeature`(Fuse·Cut 10행) · ①의
+  «`None` → `Some(Crosses)`»는 ②에서는 재연산 census에 보인다(예측 `LabelConflict`; 실측은 관문 뒤 기록 안 함 — ①에서 잠금이 잡았다).
+- 남은 낡은 문장: `DeclineKind::CylSpan` doc의 룰링 도로 절 · `Feature::Run`의 «the one reader today refuses on it» · arrangement:1063 «every node is three planes» → ③.
+
+### 관문
+①·② 각각 전량 초록: fmt/clippy 0 · workspace **1174**(1172 + 원장 잠금 2) · nodef(①에서 한 번 빨강 — 직렬 모드는 첫 거절 클래스에서 멈추므로 원장 잠금이
+순회 모드에 의존했다; `trace_every_class`로 모든 클래스를 직접 트레이스해 모드 무관하게) · census 두 프로파일 동일이고 **HEAD와 동일**(269행, worktree 기준선) ·
+reject_census · 스윕 129 · perf release(fold 80 407면 237.2116 · ring fins 1.62 s · hub 1.07 s · small 552 µs — 같은 대역) · kit 72 · reject-trace: **`cyl-span` 702 → 0**,
+`curved-departure` 102, `curved-ring-wall` 27, `branch_vertex_unnamed` :853 7 → 14(Cut 행의 가운데 슬랩), `no_clear_ray` 6, `cylinder_gate_undecided` 23.
+★ 실수: 파이썬 패치의 앵커가 세 번 어긋났고(rustfmt · 상대 경로 · `ChordTrace`와 같은 꼬리) 매번 무수정 실행의 초록/빨강을 대조로 읽기 전에 잡았다 — «패치 뒤 `git diff --stat`».
+
+### 다음
+**E3-b 호 교차**(스캔의 `Arc` 팔 → `crossing_on_arc`, `theta_between` 재사용; 축 통과 벽 `CurvedRingWall` 27) · **E3-c 이탈**(`CurvedDeparture` 102 — 2-간선 캡의 현 클래스;
+재연산 17행) · 그룹핑 팔 캐리어화(`Ring::edges` shim, 가운데 슬랩 `BranchVertexUnnamed` 14) · `coord_key`에 원통 표(현 셀) · `read_cell`의 `End::Other`(corner) ·
+계단식 사슬(`flanks_differ` 런 → 교차 짝짓기) · `cycle_against_line` 한 걷기·두 조립기(정리) · D5 · `ChainContacts`.
