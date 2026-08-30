@@ -15584,3 +15584,71 @@ Step 0(코퍼스 가족 12를 lib census에 임시 통과): 발화는 corner-lo 
 ### 다음
 **D4 — 청소**(`unify_curved_faces`; 반높이 보스의 «림 하나 + 호 사슬»이 첫 인구). 별도 항목: (0,0) 코너의 arrangement 딱지 결함 ·
 방출 단계의 `branch_meet` 캐시.
+
+---
+
+## 능력 D, 일곱째 계단 — D4 청소: 곡면 병합 패스가 «모든 영역»을 말한다 (림 = 온전한 원 ∨ 감는 사슬)
+
+커밋 넷: `b259eeb`(① 원장) · `1fedba5`(②a 타입) · `82f5fc6`(②b 생산자+조립) · 문서. **프로덕션 출력이 바뀐 것은 ②b 하나**이고,
+바뀐 것은 반높이 보스 가족(옆면 2 → **1**)뿐 — census는 그 가족의 행 `rul half fuse` **한 줄**(넓이 마지막 비트 1 ULP)만 움직였고
+두 프로파일은 서로 동일.
+
+### 무엇이 서 있나
+`unify_curved_faces`/`merge_curved_group`(boolean.rs)은 평면 쪽 `unify_coplanar_faces`와 같은 «내부를 지우고 다시 꿴다»
+규칙이었는데, 꿴 사이클을 **온전한 림이 한 방향에 정확히 하나씩**일 때만 말할 수 있었다(`Bound::Band{lo,hi}`가 림을 평면
+클래스로만 철자). 이제:
+- **`Bound::Band { lo: Rim, hi: Rim }`, `Rim::{Circle(class), Chain(Ring)}`** — 사슬은 걷는 방향 그대로·unflipped로 저장된
+  감는 링. `Bound::rings()`가 모든 노드 링(다각형 ∨ 사슬 림)을 내고 `poly_rings`가 그 위에 서므로 정점 민팅·솔기 표·노드 조인·
+  이름 표가 사슬을 패널 링처럼 읽는다.
+- **감김수 w** = Σ_{호 걸음} `seam_step`의 부호(`+1` CCW·`−1` CW, «CCW 쌍 == (`nodes.last()`, `nodes[0]`)»일 때만) — θ=2π−ε를
+  지나는 횟수의 부호 합, `CutRim`의 순서 조회뿐 좌표 없음. `seam_is_node`면 반열림([0,2π)): 솔기 노드에서 **끝나는** 호만
+  지난다. 온전한 림은 w=±1인 사이클. **분류**: w=+1 하나(lo) ∧ w=−1 하나(hi) ⇒ Band, w=0 = 구멍. `wrapping_rim` = `seam_step`에
+  `!seam_is_node` 필터 — 술어 하나.
+- **접촉(A) ≠ 감김(B)** — 슬릿이 θ=0 자체에 놓이므로 θ=0 위의 모든 경계 정점(솔기 노드 ∪ 감는 호의 OnSeam 정점)이 슬릿을
+  끊어야 한다; 솔기 룰링에 한쪽으로 닿기만 하는 구멍은 w=0이지만 접촉 2. 구멍 끼움은 오늘 규칙 그대로(접촉 0/2, 끼움 ≤1).
+- **조립**(`reconstruct`): `contacts_of`·`station_of`·`rim_walk`를 면 스코프로 올리고, `build`의 `walk_of(rim, forward)`가 두 림의
+  걷기를 만들어 `band_loop(k, (lo_hes, v_lo), (hi_hes, v_hi), holes)`에 넘긴다. Circle: 오늘의 닫힌 간선/`band_chains`(hi 역방향).
+  Chain: `ring` 빌더의 반간선을 **접촉에서 시작하도록 회전**(lo는 station 최고, hi는 최저), 방향 그대로.
+- 기권은 전부 이름(`CurvedAbstain`): `NoTouch`·`Pinch`·`Reentered`·`ShortCycle`·`Unthreaded`·`OverlapOrTriple`·`OtherWall`·
+  `RimSingleNode`·`CircleBound`·`SeamUnnamed`·`Winding`·`WrappingNotOneEach`·`ChainContacts`(접촉 >2 ∨ 교차 ≠1 — 슬릿
+  논증이 거기까지만)·`HoleContacts`·`Bridging`. `group_faces`의 `bound`는 total(`BoundEdges::Lateral` — 원통 면의 노드 링·사슬
+  띠에 탐침이 이름으로 기권; 옛 `ClassIx::plane()` 패닉 팔).
+
+### ☑ 두 사슬 모양이 잠겼다 — 솔기가 어디 있느냐가 갈랐다
+`add_cylinder`의 솔기(θ=0)는 `ê_k × dir`, dir=+z면 **−y**. 그래서 (가) `bands::a_half_height_boss_builds`(벽 x=40): −y 룰링이
+곧 솔기 — 사슬이 **솔기 룰링을 품는다**(접촉 2: z=0·z=10 솔기 노드, 교차 1) · (나) `tests::the_mesh_covers…`의 «half wall»(벽
+y=0, 판 y>0): 솔기가 판 밖 — 사슬이 **감는 호로 θ=0을 지난다**(접촉 1: OnSeam 정점, 교차 1). 둘 다 **양방향**(캡이 판 안 =
+hi 사슬 / 바닥이 판 안 = lo 사슬) 픽스처로 잠금: 옆면 **1**, 부피(32000±…π, `π/4` 가족), validate 0, watertight, 메시 넓이 ≈ 정확.
+
+### ☑ 실측 — 예측 vs 결과
+| 수 | 예측 | 실측 |
+|---|---|---|
+| Step 0 거울 픽스처(바닥이 판 안) | 오늘 빌드, Fuse 옆면 2 / Cut 1 / Common 1 | **그대로**(부피 정확·validate 0) |
+| Step 0 `group_faces` 잠재 패닉(빈 공간 판 + 반높이 보스) | 패닉 또는 게이트 거절 | **`NoClearRay`**(배열의 링 포함 판정이 먼저) — 패닉 팔 미도달, ②a가 total match로만 닫음 |
+| ① 원장(lib+코퍼스) | Merged 56 · NoTouch 14 · RimsNotOneEach 2 · holes_c2 16 · 나머지 0 | **56 · 14 · 3(= 2 + 보고 테스트 자신의 반높이 Fuse) · 16** · holes_c0 40 · plus=minus 59 · chain_rims 3(전부 −1, 접촉 2·교차 1) · 그 외 0 |
+| ②a 원장 / census | ①과 동일 / HEAD | **동일 / 동일** |
+| ②b 원장 | Merged 61(56+3+거울 2) · WrappingNotOneEach 0 · ChainContacts 0 · chain_rims 5 | **groups 75 · merged 61 · no_touch 14 · wrapping_not_one_each 0 · chain_contacts 0 · seam_unnamed 0 · winding 0 · 나머지 0 · plus=minus 61 · holes_c0 40 · holes_c2 16 · chain_rims 5 · max 접촉 2 · max 교차 1** — 예측 그대로 |
+| ②b census · reject_census | HEAD · 무변 | census **`rul half fuse` 한 줄만** 이동 — 그 행의 부피 비트·정점 다이제스트(`v13h…`)는 동일하고 **넓이의 마지막 비트 1 ULP**(면 분해 2→1로 합산 반올림이 바뀜) · Cut/Common은 이미 1면이라 무변 · 두 프로파일 동일 · reject_census 무변. ★ 계획에 「`rul half` 세 줄이 움직이면 안 된다」고 적은 것은 착오 — `rul half`가 바로 반높이 가족이고 Fuse 한 줄이 움직이는 것이 예측이었다 |
+| lib / workspace | +픽스처 | lib **333**(무변 — 픽스처는 기존 테스트 안의 행으로 늘었다) · workspace **1169**(1168 + 보고 테스트 1) |
+
+### ☑ 부정 대조 (②b, 하나씩 실행·되돌림)
+| 뒤집은 것 | 빨간 자리 |
+|---|---|
+| `seam_step`의 부호 관례(CCW −1 / CW +1) | `WrappingNotOneEach`(plus 2 · minus 0) → 반높이 옆면 **2** 잠금 빨강 + 보고 테스트 빨강 |
+| 반열림 규칙 제거(`seam_is_node`면 `None`) | 사슬 w=0 → 접촉 2 «구멍»으로 분류(plus 1 · minus 0) → `WrappingNotOneEach` 빨강 |
+| hi 사슬을 **최고** 접촉에서 회전 | 슬릿이 솔기 룰링 위를 지남 → tess **`SelfTouchingBoundary`** 빨강 |
+| 림 표 규칙 2의 사슬 확장 생략 | **초록 — 공허**: 사슬의 감는 호는 언제나 어떤 캡 면의 링 호이기도 해서 캡의 규칙 2가 같은 정점을 민팅한다. 코드에 「totality로 적었다」고 명기 |
+
+### ★ 검토가 뺀 것 — `lateral_axis_span`의 일반화
+계획 초안은 사슬 림 면이 다시 피연산자가 되도록 `lateral_axis_span`을 `[min t, max t]`로 넓히려 했다. **뺐다**: `circle_on_class`
+(arrangement.rs)의 구조가 「바깥 답 = `span`의 온전한 원, 구멍이 거기서 깎는다」라, 그 전제(`span: Some ⇒ 외곽 루프 = 림 둘 +
+솔기)를 깨면 면이 반만 덮는 t에 온전한 원을 심어 **정직한 `CylSpan` 거절이 조용한 오답**이 된다. 그 일은 트레이서가 외곽
+루프의 θ-범위를 읽는 칸의 것. 반높이 결과의 재연산은 어차피 오늘 **반원판 캡**(외곽 루프 호+현 2정점 → `outer_tri` →
+`DegenerateFace`, planes.rs:257)이 막는다 — 평면 항목, 별도 칸.
+
+### 관문
+전량 초록(②b 커밋 후): fmt/clippy 0 · workspace **1169** · nodef · census 두 프로파일 269줄 동일, HEAD 대비 `rul half fuse` 1줄(넓이 1 ULP) · reject_census · 스윕 129 · perf release(fold 80 407면 237.2116 · ring fins 1.63 s · hub 1.07 s · small 554 µs — 같은 대역) · kit 72. 원장 단일 스레드(위 표). 커밋마다 훅이 fmt·clippy·workspace를 다시 돌렸다.
+
+### 다음
+반원판 캡의 `outer_tri`(`DegenerateFace`) → 그 뒤 사슬 림 면의 재연산(트레이서가 외곽 루프의 θ-범위를 읽음) · D5:
+`emit_lateral` 셀마다 방출(청소가 모든 병합) · `ChainContacts`(접촉 ≥3) · (0,0) 코너 딱지 결함 · `branch_meet` 캐시.

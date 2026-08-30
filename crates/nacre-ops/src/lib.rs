@@ -865,9 +865,12 @@ pub enum RejectReason {
     /// * a **contact whose cut circle has no world description** — `band_loop` orders the two
     ///   contacts by their circles' exact axial parameters, and the population gate demanded a
     ///   world description of every plane class long before a band could be emitted, so this too
-    ///   is spelled rather than assumed away.
+    ///   is spelled rather than assumed away;
+    /// * a **chain rim with no seam contact** (D4) — a chain winds once about the axis, so it
+    ///   passes the seam somewhere and the split named that point; a chain the assembly cannot
+    ///   attach its slit to is a producer inconsistency, named.
     ///
-    /// "Not yet" is still the literal truth for all four.
+    /// "Not yet" is still the literal truth for all five.
     ArcBoundNotYet,
     /// **An *operand* face is bounded by a cylinder, and the tracer names rings by planes.**
     ///

@@ -2,9 +2,11 @@
 //!
 //! The plane side long ago stopped walking faces by hand: each plane class gets a **cell complex**
 //! (`arrangement`'s `walk_cells → nest_cells → label_cells → emit_faces`) and the case-work went
-//! with it. The cylinder side did not. It still has three hand-written walks — `bands.rs`' band and
-//! panel roads, and `boolean.rs`' `band_loop` slit-leg and `merge_curved_group` — and the last four
-//! cells were each a falsehood inside one of them.
+//! with it. The cylinder side did not, when this module began: it had three hand-written walks —
+//! `bands.rs`' band and panel roads, and `boolean.rs`' `band_loop` slit-leg and
+//! `merge_curved_group` — and four cells in a row were each a falsehood inside one of them. The
+//! band and panel roads are gone (D2b/D3: this module emits), and the merge reads one rule (D4:
+//! a cycle's winding, `seam_step`); the slit-leg remains, generalized to a chain rim.
 //!
 //! `docs/design.md` names the way out: the lateral has an **isometric chart** `(z, r·θ)`, so the
 //! same engine can run there — the seam is only the chart's cut line, and notches, holes and

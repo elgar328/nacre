@@ -104,6 +104,16 @@ pub(crate) struct CylFaceInfo {
     /// joins the two rims is self-adjacent, so its corners are not three-surface points and no
     /// name describes them; what this row can state about the face's extent is the two rims.
     ///
+    /// ★★★★★ **`Some` promises that the outer loop is two whole rims (and the seam) — keep it.**
+    /// `arrangement`'s `circle_on_class` reads this span as "the whole circle is this face's at
+    /// every ⊥ class between the rims" and carves only the *holes* out of that answer. A face
+    /// whose outer loop carries a ruling — a panel ring, a band whose rim is a wrapping chain
+    /// (D4), a band with a hole spliced into its outer walk — covers only part of some circles,
+    /// so widening this to `[min t, max t]` would plant whole circles where the face is not and
+    /// turn today's honest `CylSpan` decline into a silent wrong answer. Such a face declines
+    /// here (`lateral_axis_span` finds a ∥ carrier or more than two `t`) until the tracer reads
+    /// the outer loop's angular extent itself.
+    ///
     /// ★★★★★ **A face's *holes* are therefore not here** — a fuse can burn one into a band (a boss
     /// straddling a plate's wall), and this field reports the band whole. They are named where
     /// every other face's loops are named, in `combinatorics::trace_input`, and read by the one
