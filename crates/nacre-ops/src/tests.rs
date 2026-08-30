@@ -9599,6 +9599,44 @@ fn a_spliced_band_is_cut_across_its_notch() {
     }
 }
 
+/// **The boss corpus** — a 4×4×2 plate at the origin and an r = 0.5 boss, `(name, base, height)`,
+/// one row per way a boss can sit on a plate: through it, standing on it, flush with its floor, on
+/// each wall, at a corner, off the wall's middle, and the half-height variants whose lateral is a
+/// chain. Shared by the re-operation census and the crossing census so the two read one corpus.
+const BOSS_FAMILIES: [(&str, [f64; 3], f64); 14] = [
+    ("through", [2.0, 2.0, -1.0], 4.0),
+    ("on top", [2.0, 2.0, 2.0], 1.0),
+    ("flush", [2.0, 2.0, 0.0], 3.0),
+    ("wall -y", [2.0, 0.0, -1.0], 4.0),
+    ("wall +y", [2.0, 4.0, -1.0], 4.0),
+    ("wall -x", [0.0, 2.0, -1.0], 4.0),
+    ("wall +x", [4.0, 2.0, -1.0], 4.0),
+    ("corner", [4.0, 4.0, -1.0], 4.0),
+    ("corner-lo", [0.0, 0.0, -1.0], 4.0),
+    ("offmid", [4.0, 1.0, -1.0], 5.0),
+    ("half wall", [2.0, 0.0, -1.0], 2.0),
+    ("half wall, cap below", [2.0, 0.0, 1.0], 2.0),
+    ("half +x", [4.0, 2.0, -1.0], 2.0),
+    ("half +x, cap below", [4.0, 2.0, 1.0], 2.0),
+];
+
+/// The plate and boss of a [`BOSS_FAMILIES`] row, adjacency rebuilt.
+fn boss_family(base: [f64; 3], h: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0; 3]),
+        Point3::from_array([4.0, 4.0, 2.0]),
+    );
+    let boss = m.add_cylinder(
+        Point3::from_array(base),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.5,
+        h,
+    );
+    m.rebuild_adjacency();
+    (m, plate, boss)
+}
+
 /// A result's lateral faces' boundary cycles by kind — (rims, chains, panels, holes) summed
 /// over the laterals; an unnamed cycle panics (the census locks that none is). The tracer's
 /// inputs are set up as `pinned_ends_ordered` does.
@@ -9693,7 +9731,6 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         Declined(DeclineKind),
     }
     use Reop::*;
-    let up = Vector3::from_array([0.0, 0.0, 1.0]);
     // A lateral's boundary cycles per kind, summed over the result's lateral faces:
     // (rims, chains, panels, holes).
     type Cyc = [usize; 4];
@@ -9702,35 +9739,16 @@ fn reop_census_families_reoperate_or_decline_by_name() {
     const CHAIN: Cyc = [1, 1, 0, 0];
     const PANEL: Cyc = [0, 0, 1, 0];
     const NONE: Cyc = [0; 4];
-    // (name, boss base, boss height, [Fuse, Cut, Common], the cycles each result's laterals carry)
-    type Family = (&'static str, [f64; 3], f64, [Reop; 3], [Cyc; 3]);
+    // (name, [Fuse, Cut, Common], the cycles each result's laterals carry) — one row per
+    // `BOSS_FAMILIES` entry, in its order.
+    type Family = (&'static str, [Reop; 3], [Cyc; 3]);
     let families: [Family; 14] = [
-        (
-            "through",
-            [2.0, 2.0, -1.0],
-            4.0,
-            [Ok, Ok, Ok],
-            [[4, 0, 0, 0], RIMS, RIMS],
-        ),
+        ("through", [Ok, Ok, Ok], [[4, 0, 0, 0], RIMS, RIMS]),
         // A boss standing on the plate: the cut removes nothing and leaves no lateral at all.
-        (
-            "on top",
-            [2.0, 2.0, 2.0],
-            1.0,
-            [Ok, Ok, Empty],
-            [RIMS, NONE, NONE],
-        ),
-        (
-            "flush",
-            [2.0, 2.0, 0.0],
-            3.0,
-            [Ok, Ok, Ok],
-            [RIMS, RIMS, RIMS],
-        ),
+        ("on top", [Ok, Ok, Empty], [RIMS, NONE, NONE]),
+        ("flush", [Ok, Ok, Ok], [RIMS, RIMS, RIMS]),
         (
             "wall -y",
-            [2.0, 0.0, -1.0],
-            4.0,
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
@@ -9740,8 +9758,6 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ),
         (
             "wall +y",
-            [2.0, 4.0, -1.0],
-            4.0,
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
@@ -9751,8 +9767,6 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ),
         (
             "wall -x",
-            [0.0, 2.0, -1.0],
-            4.0,
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
@@ -9762,8 +9776,6 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ),
         (
             "wall +x",
-            [4.0, 2.0, -1.0],
-            4.0,
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
@@ -9773,8 +9785,6 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ),
         (
             "corner",
-            [4.0, 4.0, -1.0],
-            4.0,
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
@@ -9784,15 +9794,11 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ),
         (
             "corner-lo",
-            [0.0, 0.0, -1.0],
-            4.0,
             [First(RejectReason::CylinderGateUndecided); 3],
             [NONE, NONE, NONE],
         ),
         (
             "offmid",
-            [4.0, 1.0, -1.0],
-            5.0,
             [
                 Ok,
                 Declined(DeclineKind::CylSpan),
@@ -9802,8 +9808,6 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ),
         (
             "half wall",
-            [2.0, 0.0, -1.0],
-            2.0,
             [
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
@@ -9813,8 +9817,6 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ),
         (
             "half wall, cap below",
-            [2.0, 0.0, 1.0],
-            2.0,
             [
                 Declined(DeclineKind::CylSpan),
                 Declined(DeclineKind::CylSpan),
@@ -9824,15 +9826,11 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ),
         (
             "half +x",
-            [4.0, 2.0, -1.0],
-            2.0,
             [Declined(DeclineKind::CylSpan); 3],
             [CHAIN, PANEL, PANEL],
         ),
         (
             "half +x, cap below",
-            [4.0, 2.0, 1.0],
-            2.0,
             [Declined(DeclineKind::CylSpan); 3],
             [CHAIN, PANEL, PANEL],
         ),
@@ -9841,19 +9839,14 @@ fn reop_census_families_reoperate_or_decline_by_name() {
     let mut table: Vec<String> = Vec::new();
     let mut mismatches = 0usize;
     let mut cycle_mismatches: Vec<String> = Vec::new();
-    for (name, base, h, want, want_cyc) in families {
+    for ((name, want, want_cyc), &(fam, base, h)) in families.into_iter().zip(&BOSS_FAMILIES) {
+        assert_eq!(name, fam, "the table's rows follow the corpus");
         for ((kind, want), want_cyc) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
             .into_iter()
             .zip(want)
             .zip(want_cyc)
         {
-            let mut m = Model::new();
-            let plate = m.add_cuboid(
-                Point3::from_array([0.0; 3]),
-                Point3::from_array([4.0, 4.0, 2.0]),
-            );
-            let boss = m.add_cylinder(Point3::from_array(base), up, 0.5, h);
-            m.rebuild_adjacency();
+            let (mut m, plate, boss) = boss_family(base, h);
             let got = match boolean(&mut m, kind, plate, boss) {
                 Err(BoolError::Rejected { reason, .. }) => First(reason),
                 Err(e) => panic!("{name} {kind:?}: first op {e:?}"),
@@ -9939,7 +9932,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
     let count = |p: fn(&Reop) -> bool| -> usize {
         families
             .iter()
-            .flat_map(|(_, _, _, w, _)| w.iter())
+            .flat_map(|(_, w, _)| w.iter())
             .filter(|r| p(r))
             .count()
     };
@@ -9956,4 +9949,236 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         "every ring of a result face has a name"
     );
     assert_eq!(seam_joints, (8, 0), "seam-joint loops (outer, holes)");
+}
+
+/// The volume a tool box removes from a family's **first** result, summed from parts: the plate's
+/// box ∩ tool, the boss's disk ∩ the tool's footprint times the axial overlap, and the doubly
+/// counted disk ∩ plate ∩ tool — `Fuse = plate + boss − both`, `Cut = plate − both`,
+/// `Common = both`. A disk clipped by a rectangle is `πr²/2ᵏ` where `k` counts the rectangle's
+/// edges through the disk's centre; an edge that cuts the disk anywhere else is not in this corpus
+/// and panics rather than approximating.
+fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f64 {
+    let seg = |a: [f64; 2], b: [f64; 2]| -> [f64; 2] { [a[0].max(b[0]), a[1].min(b[1])] };
+    let len = |a: [f64; 2]| (a[1] - a[0]).max(0.0);
+    let plate = [[0.0, 0.0, 0.0], [4.0, 4.0, 2.0]];
+    let axis = |b: [[f64; 3]; 2], i: usize| [b[0][i], b[1][i]];
+    let box_vol = |a: [[f64; 3]; 2], b: [[f64; 3]; 2]| -> f64 {
+        (0..3).map(|i| len(seg(axis(a, i), axis(b, i)))).product()
+    };
+    let disk_in_rect = |rect: [[f64; 2]; 2]| -> f64 {
+        let r = 0.5;
+        let mut halvings = 0;
+        for (i, c) in [base[0], base[1]].into_iter().enumerate() {
+            let (lo, hi) = (rect[i][0], rect[i][1]);
+            if hi <= lo {
+                return 0.0;
+            }
+            for (edge, inward) in [(lo, c - lo), (hi, hi - c)] {
+                if inward == 0.0 {
+                    halvings += 1;
+                } else if inward <= -r {
+                    return 0.0; // the disk lies wholly beyond this edge
+                } else if inward < r {
+                    panic!("the tool edge at {edge} cuts the disk off-centre (centre {c})");
+                }
+            }
+        }
+        std::f64::consts::PI * r * r / f64::from(1 << halvings)
+    };
+    let tool_xy = [axis(tool, 0), axis(tool, 1)];
+    let plate_xy = [seg(tool_xy[0], [0.0, 4.0]), seg(tool_xy[1], [0.0, 4.0])];
+    let boss_z = [base[2], base[2] + h];
+    let l_bt = len(seg(boss_z, axis(tool, 2)));
+    let l_pbt = len(seg(seg(boss_z, [0.0, 2.0]), axis(tool, 2)));
+    let plate_tool = box_vol(plate, tool);
+    let boss_tool = l_bt * disk_in_rect(tool_xy);
+    let both = l_pbt * disk_in_rect(plate_xy);
+    match kind {
+        BoolKind::Fuse => plate_tool + boss_tool - both,
+        BoolKind::Cut => plate_tool - both,
+        BoolKind::Common => both,
+    }
+}
+
+/// **The crossing census** (E3-0): a boolean's result cut by a tool whose faces actually **cross**
+/// the result's rings — where the far cube of the re-operation census could see only whether the
+/// rows are stated. Four tools per family × kind: a slab through the plate's middle
+/// (`z ∈ [0.5, 1.5]`, its ⊥ caps crossing the wall faces that carry a boss's rulings — E3's wall),
+/// a slab above it (`[2.5, 3.5]`, crossing the bands standing on the plate), a slab below
+/// (`[−1.5, −0.5]`), and a box whose wall passes **through the boss's axis** (so it crosses the
+/// caps' arcs and cuts the lateral along two rulings). What is locked is the outcome by name —
+/// `Ok(n)` with the volume equal to the first result's minus [`removed_by`] — and the counts.
+///
+/// Today's table, measured before anything was built (168 cells): **Ok 36** (every band result ×
+/// slab; the mid slab leaves two solids) · **`CurvedRingWall` 11** — the wall-boss Fuse rows × mid
+/// slab (6: the ⊥ caps cross the plate's wall face on the boss's rulings) and × through-axis wall
+/// (5: the wall crosses the bitten cap's arc) · `CylSpan` 96 (panel and chain laterals, E2-2) ·
+/// `NoClearRay` 8 (an interior boss × through-axis wall: the wall halves the cap's circular hole;
+/// corner × its coplanar wall) · `BranchVertexUnnamed` 1 (offmid Fuse × top slab) · first op
+/// refused 12 · empty 4. The rungs that follow move this table one named cause at a time.
+#[test]
+fn crossing_census_slabs_and_through_axis_walls_by_name() {
+    #[derive(Debug, PartialEq, Clone, Copy)]
+    enum Cross {
+        Ok(usize),
+        First,
+        Empty,
+        Rejected(RejectReason),
+        Declined(DeclineKind),
+    }
+    use Cross::*;
+    let mid = [[-1.0, -1.0, 0.5], [5.0, 5.0, 1.5]];
+    let top = [[-1.0, -1.0, 2.5], [5.0, 5.0, 3.5]];
+    let bottom = [[-1.0, -1.0, -1.5], [5.0, 5.0, -0.5]];
+    // The through-axis wall: `y = by` for a boss on an x-wall or in the interior, `x = bx` for one
+    // on a y-wall — the wall that is not the plate's own.
+    let axis_wall = |b: [f64; 3]| -> [[f64; 3]; 2] {
+        if b[1] == 0.0 || b[1] == 4.0 {
+            [[b[0], b[1] - 3.0, -2.0], [b[0] + 3.0, b[1] + 3.0, 6.0]]
+        } else {
+            [[b[0] - 3.0, b[1], -2.0], [b[0] + 3.0, b[1] + 3.0, 6.0]]
+        }
+    };
+    const TOOLS: [&str; 4] = ["mid", "top", "bottom", "axis wall"];
+    // Per family, per kind: the four tools' outcomes, in `TOOLS` order.
+    // A band result: the mid slab parts the plate into two solids, the top and bottom slabs cut
+    // the standing boss, and the through-axis wall halves the cap's circular hole — a point
+    // classification with no clear ray (the hole's diameter, not this cell's business).
+    const BAND: [Cross; 4] = [Ok(2), Ok(1), Ok(1), Rejected(RejectReason::NoClearRay)];
+    // A wall boss fused: the mid slab's caps cross the plate's wall face on the boss's
+    // **rulings** — E3's wall — and the through-axis wall crosses the bitten cap's **arc**.
+    const WALL_FUSE: [Cross; 4] = [
+        Declined(DeclineKind::CurvedRingWall),
+        Ok(1),
+        Ok(1),
+        Declined(DeclineKind::CurvedRingWall),
+    ];
+    // A panel or chain lateral: the row itself is not stated yet (E2-2), whatever the tool.
+    const SPAN: [Cross; 4] = [Declined(DeclineKind::CylSpan); 4];
+    let want: [[[Cross; 4]; 3]; 14] = [
+        [BAND, BAND, BAND],                               // through
+        [BAND, [Ok(2), Ok(1), Ok(1), Ok(1)], [Empty; 4]], // on top: the cut leaves the plate alone
+        [BAND, BAND, BAND],                               // flush
+        [WALL_FUSE, SPAN, SPAN],                          // wall -y
+        [WALL_FUSE, SPAN, SPAN],                          // wall +y
+        [WALL_FUSE, SPAN, SPAN],                          // wall -x
+        [WALL_FUSE, SPAN, SPAN],                          // wall +x
+        // corner: the through-axis tool's wall `y = 4` is the plate's own wall — coplanar
+        // contact, so the point classification has no clear ray there either.
+        [
+            [
+                Declined(DeclineKind::CurvedRingWall),
+                Ok(1),
+                Ok(1),
+                Rejected(RejectReason::NoClearRay),
+            ],
+            SPAN,
+            SPAN,
+        ],
+        [[First; 4]; 3], // corner-lo: the first op is refused
+        // offmid: the top slab's cap at z = 2.5 meets the notch's rulings above the plate — a
+        // branch vertex the result cannot name yet (outside this rung).
+        [
+            [
+                Declined(DeclineKind::CurvedRingWall),
+                Rejected(RejectReason::BranchVertexUnnamed),
+                Ok(1),
+                Declined(DeclineKind::CurvedRingWall),
+            ],
+            SPAN,
+            SPAN,
+        ],
+        [SPAN; 3], // half wall
+        [SPAN; 3], // half wall, cap below
+        [SPAN; 3], // half +x
+        [SPAN; 3], // half +x, cap below
+    ];
+    let mut table: Vec<String> = Vec::new();
+    let mut mismatches = 0usize;
+    let mut tally: Vec<(Cross, usize)> = Vec::new();
+    for (&(name, base, h), want) in BOSS_FAMILIES.iter().zip(want) {
+        for (kind, want) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+            .into_iter()
+            .zip(want)
+        {
+            let tools = [mid, top, bottom, axis_wall(base)];
+            for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
+                let (mut m, plate, boss) = boss_family(base, h);
+                let got = match boolean(&mut m, kind, plate, boss) {
+                    Err(BoolError::Rejected { .. }) => First,
+                    Err(e) => panic!("{name} {kind:?}: first op {e:?}"),
+                    Result::Ok(out) if out.is_empty() => Empty,
+                    Result::Ok(out) => {
+                        m.rebuild_adjacency();
+                        let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+                        let t =
+                            m.add_cuboid(Point3::from_array(tool[0]), Point3::from_array(tool[1]));
+                        m.rebuild_adjacency();
+                        match boolean(&mut m, BoolKind::Cut, out[0], t) {
+                            Result::Ok(r) => {
+                                m.rebuild_adjacency();
+                                let issues = nacre_validate::validate(&m);
+                                assert!(
+                                    issues.is_empty(),
+                                    "{name} {kind:?} × {tool_name}: {issues:?}"
+                                );
+                                let v: f64 = r
+                                    .iter()
+                                    .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                                    .sum();
+                                let expect = v0 - removed_by(kind, base, h, tool);
+                                assert!(
+                                    (v - expect).abs() < 1e-9,
+                                    "{name} {kind:?} × {tool_name}: volume {v} ≠ {v0} − removed = {expect}"
+                                );
+                                Ok(r.len())
+                            }
+                            Err(BoolError::Rejected {
+                                reason: RejectReason::TraceDeclined { kind, .. },
+                                ..
+                            }) => Declined(kind),
+                            Err(BoolError::Rejected { reason, .. }) => Rejected(reason),
+                            Err(e) => panic!("{name} {kind:?} × {tool_name}: {e:?}"),
+                        }
+                    }
+                };
+                match tally.iter_mut().find(|(c, _)| *c == got) {
+                    Some((_, n)) => *n += 1,
+                    None => tally.push((got, 1)),
+                }
+                let ok = want == got;
+                table.push(format!(
+                    "{name} {kind:?} × {tool_name}: {got:?}{}",
+                    if ok {
+                        String::new()
+                    } else {
+                        format!("  ← want {want:?}")
+                    }
+                ));
+                if !ok {
+                    mismatches += 1;
+                }
+            }
+        }
+    }
+    assert_eq!(
+        mismatches,
+        0,
+        "crossing table:\n{}\n\ntally: {tally:?}",
+        table.join("\n")
+    );
+    // The distribution the doc states, so a moved cell is read as a whole: 168 cells.
+    let count = |p: fn(&Cross) -> bool| -> usize {
+        want.iter().flatten().flatten().filter(|c| p(c)).count()
+    };
+    assert_eq!(count(|c| matches!(c, Ok(_))), 36, "{tally:?}");
+    assert_eq!(count(|c| *c == Declined(DeclineKind::CurvedRingWall)), 11);
+    assert_eq!(count(|c| *c == Declined(DeclineKind::CylSpan)), 96);
+    assert_eq!(count(|c| *c == Rejected(RejectReason::NoClearRay)), 8);
+    assert_eq!(
+        count(|c| *c == Rejected(RejectReason::BranchVertexUnnamed)),
+        1
+    );
+    assert_eq!(count(|c| *c == First), 12);
+    assert_eq!(count(|c| *c == Empty), 4);
 }
