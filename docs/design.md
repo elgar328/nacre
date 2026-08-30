@@ -1389,6 +1389,13 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
     차트가 아직 사슬·패널을 못 담는다)으로 `span` 대신 사이클을 읽는다(`CylFaceInfo::t_range`는 범위일 뿐). ★ `hole_on_class`의 Run 팔이
     호의 방향을 flank에서 유도하던 것(볼록 구멍에서만 맞음)을 생산자의 `arc_ccw`로 — 오늘의 구멍 50/50 동치를 재고 바꿨다. 재연산 Ok 9 → **14**
     (끼워진 구멍의 Fuse 5행). 남은 것: **E2-2** 사슬·패널(부재 바깥 답·룰링 t-스윕·차트 `End::Other`) · **E3** `CurvedDeparture`/`CurvedRingWall`.
+  ★★ **E3-a (2026-08-30): 평면 스캔이 룰링 위의 교차를 branch 노드로 이름 짓는다.** 곡선 캐리어를 든 링의 교차점 `fc ∩ wc ∩ cyl`은
+    `NodeId::branch(wc, fc, cyl, root)`이고, root는 룰링의 `side`를 두 근에 물어 고른다(`crossing_on_ruling` — 옆면의 구멍 재진술
+    `hole_on_class`도 같은 문을 쓴다, 한 철자). 그 뒤의 벽 둘도 열렸다: 셀 중첩이 혼합 링을 읽고(`cell_in_cell`이 `point_in_mixed_ring`으로),
+    차트 census의 «잘린 끝 = 자국 하나»·«면 있는 셀 = 딱지 있음»은 구멍 안을 지나는 컷에 반증되어 참 명제로 재진술. 가로지르는 census
+    (`crossing_census_…`, 210셀·부품 합 부피 오라클): 벽 보스 Fuse × **벽 슬랩** Ok(1). 남은 것: 결과가 두 솔리드로 갈리면 그룹핑 도로
+    (`Ring::edges`의 평면 벽 shim)가 혼합 링을 `BranchVertexUnnamed`로 거절 · `coord_key`에 원통 표(현 셀) · **E3-b** 호 교차(E2-2의 룰링 t-스윕 뒤) ·
+    **E3-c** `CurvedDeparture`.
   - ★★★★★ **D3의 전제조건 — 여기서 계기 넷이 눈이 멀었던 적이 있다.** 칸 ⑦이 옆면의 면 구조를 바꾸고
     **메시가 조용히 틀린 채** `validate`·watertight·정확 부피·면 수가 **전부 초록**이었다(넓이 7.873 vs
     9.425). 그걸 잡은 눈은 칸 ⑧의 **메시 넓이 ≈ 정확 넓이**다. ⇒ 갈아타기 **전에** 원통 코퍼스에 그
