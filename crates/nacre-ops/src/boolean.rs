@@ -920,10 +920,6 @@ pub(crate) enum Bound {
 #[derive(Clone, Debug)]
 pub(crate) enum Rim {
     Circle(usize),
-    /// ★ Its producer is the cleaning pass's next rung (D4 ②b); until then every consumer is
-    /// total over it and the assembly refuses it by name — the same shape `Bound::Band` carried
-    /// while its producer was a rung away.
-    #[allow(dead_code)]
     Chain(Ring),
 }
 
@@ -1814,6 +1810,10 @@ pub(crate) fn reconstruct(
             // keys, it does not judge. `ring` runs the same derivation and raises the same name
             // when it reaches that face, which keeps the honest reject where its witness is.
             for b in std::iter::once(&lf.outer).chain(lf.inner.iter()) {
+                // ★ `rings()`, so a band's chain rims offer their wrap arcs too — stated for
+                // totality rather than need: a chain's arc is where the lateral meets a plane
+                // face, so that face's ring offers the same rim (☑ dropping this arm changed
+                // nothing on the chain population; the control is vacuous by construction).
                 for r in b.rings() {
                     let n = r.nodes.len();
                     for t in 0..n {
@@ -2216,32 +2216,13 @@ pub(crate) fn reconstruct(
         //
         // The hole is **consumed** — it stops being an inner loop, because it is now part of the
         // outer walk. A hole that does not meet the seam is left alone.
-        let band_loop = |model: &mut Model,
-                         k: usize,
-                         lo: usize,
-                         hi: usize,
-                         holes: &mut Vec<Loop>|
-         -> Result<Loop, BoolError> {
-            // ★ Both rims cut reaches here only as a whole-circle cell (`emit_lateral` sends every
-            // other both-cut interval to the panel rings), and that population is measured 0
-            // (`whole_both_cut`) — so no chain code is written for it; the honest name stands in
-            // its place.
-            if cut_rims.contains_key(&(k, lo)) && cut_rims.contains_key(&(k, hi)) {
-                return Err(reject(RejectReason::ArcBoundNotYet));
-            }
-            let (v_lo, e_lo) = *rim
-                .get(&(g, k, lo))
-                .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-            let (v_hi, e_hi) = *rim
-                .get(&(g, k, hi))
-                .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-            let lat = cyls[k].surf;
-            // ★★ **Where the seam generator meets this cylinder's cut circles** — the only
-            // points a hole can touch it at. One rule, two spellings, both carried rather
-            // than re-derived: a branch vertex sitting **on** the seam *is* the contact
-            // (`CutRim::seam_is_node` — the split's own classification), and otherwise it is
-            // the `OnSeam` vertex the rim table minted for that circle.
-            let contacts: Vec<(Handle<Vertex>, usize)> = cut_rims
+        // ★★ **Where the seam generator meets a cylinder's cut circles** — the only points a
+        // hole or a chain rim can touch it at. One rule, two spellings, both carried rather
+        // than re-derived: a branch vertex sitting **on** the seam *is* the contact
+        // (`CutRim::seam_is_node` — the split's own classification), and otherwise it is the
+        // `OnSeam` vertex the rim table minted for that circle.
+        let contacts_of = |k: usize| -> Vec<(Handle<Vertex>, usize)> {
+            cut_rims
                 .iter()
                 .filter(|((kk, _), _)| *kk == k)
                 .filter_map(|(&(_, c), cr)| {
@@ -2252,10 +2233,55 @@ pub(crate) fn reconstruct(
                     };
                     v.map(|v| (v, c))
                 })
-                .collect();
+                .collect()
+        };
+        // ★★ A contact's **station**: the axial parameter of the cut circle it sits on. A cut
+        // circle's plane is perpendicular to the axis, so equal stations would be the same
+        // plane, hence one class — two contacts on distinct circles never tie. A rational
+        // question, asked of the class the contact table carries beside the vertex.
+        // [`crate::planes::WorkingCyl::cache`] states the rule this follows: the f64 twin is
+        // what a measurement reads, and every decision reads `def`.
+        let station_of = |k: usize,
+                          contacts: &[(Handle<Vertex>, usize)],
+                          v: Handle<Vertex>|
+         -> Option<nacre_scalar::Rat> {
+            let c = contacts.iter().find(|&&(x, _)| x == v).map(|&(_, c)| c)?;
+            crate::planes::axis_param_of_plane(
+                &crate::combinatorics::class_coeffs_rat(jd, c)?,
+                &cyls[k].def,
+            )
+        };
+        // ★★ **A whole rim's traversal: the closed edge, or the pre-minted chain.** Both walk
+        // the circle CCW from the seam vertex, which is where the slit attaches.
+        let rim_walk = |k: usize, c: usize| -> Result<(Vec<HalfEdge>, Handle<Vertex>), BoolError> {
+            let (v, closed) = *rim
+                .get(&(g, k, c))
+                .ok_or_else(|| reject(RejectReason::MissingSeam))?;
+            let hes = match closed {
+                Some(e) => vec![HalfEdge {
+                    edge: e,
+                    forward: true,
+                }],
+                None => band_chains
+                    .get(&(g, k, c))
+                    .cloned()
+                    .ok_or_else(|| reject(RejectReason::MissingSeam))?,
+            };
+            Ok((hes, v))
+        };
+        // **A periodic face's outer boundary from its two rim walks**, each already in walk
+        // order and starting at the vertex the slit attaches to: `lo` walked forward, `hi`
+        // backward — a whole circle's closed edge or chain, or a wrapping chain's ring
+        // rotated to its contact (`build` makes both).
+        let band_loop = |model: &mut Model,
+                         k: usize,
+                         (lo_hes, v_lo): (Vec<HalfEdge>, Handle<Vertex>),
+                         (hi_hes, v_hi): (Vec<HalfEdge>, Handle<Vertex>),
+                         holes: &mut Vec<Loop>|
+         -> Result<Loop, BoolError> {
+            let lat = cyls[k].surf;
+            let contacts = contacts_of(k);
             let is_contact = |v: Handle<Vertex>| contacts.iter().any(|&(x, _)| x == v);
-            let circle_of =
-                |v: Handle<Vertex>| contacts.iter().find(|&&(x, _)| x == v).map(|&(_, c)| c);
             let taken = holes.iter().position(|lp| {
                 lp.half_edges
                     .iter()
@@ -2293,13 +2319,7 @@ pub(crate) fn reconstruct(
                     // circle offers at most one contact and two contacts are two distinct
                     // circles — and a cut circle's plane is perpendicular to the axis, so equal
                     // stations would be the same plane, hence one class and one `c`.
-                    let station = |v: Handle<Vertex>| -> Option<nacre_scalar::Rat> {
-                        let c = circle_of(v)?;
-                        crate::planes::axis_param_of_plane(
-                            &crate::combinatorics::class_coeffs_rat(jd, c)?,
-                            &cyls[k].def,
-                        )
-                    };
+                    let station = |v: Handle<Vertex>| station_of(k, &contacts, v);
                     let (si, sj) = match (station(pi), station(pj)) {
                         (Some(a), Some(b)) => (a, b),
                         // The gate already required a world description of every plane class
@@ -2331,24 +2351,7 @@ pub(crate) fn reconstruct(
                 }
             };
             let bridged = seam_edge != seam_hi;
-            // ★★ **A rim's traversal: the closed edge, or the pre-minted chain.** Both walk
-            // the circle CCW; the `lo` rim is walked forward and the `hi` rim backward
-            // (reverse the pieces and flip each sense — one rule for the closed edge and the
-            // chain alike), exactly the senses the four-half-edge spelling always had.
-            let walk =
-                |c: usize, closed: Option<Handle<Edge>>| -> Result<Vec<HalfEdge>, BoolError> {
-                    match closed {
-                        Some(e) => Ok(vec![HalfEdge {
-                            edge: e,
-                            forward: true,
-                        }]),
-                        None => band_chains
-                            .get(&(g, k, c))
-                            .cloned()
-                            .ok_or_else(|| reject(RejectReason::MissingSeam)),
-                    }
-                };
-            let mut half_edges = walk(lo, e_lo)?;
+            let mut half_edges = lo_hes;
             half_edges.push(HalfEdge {
                 edge: seam_edge,
                 forward: true,
@@ -2359,11 +2362,6 @@ pub(crate) fn reconstruct(
                     edge: seam_hi,
                     forward: true,
                 });
-            }
-            let mut hi_hes = walk(hi, e_hi)?;
-            hi_hes.reverse();
-            for he in &mut hi_hes {
-                he.forward = !he.forward;
             }
             half_edges.extend(hi_hes);
             if bridged {
@@ -2398,12 +2396,79 @@ pub(crate) fn reconstruct(
                         .surf
                         .cyl()
                         .ok_or_else(|| reject(RejectReason::MissingSeam))?;
-                    // A chain rim has no producer yet: the walk that assembles one is the
-                    // cleaning pass's next rung, and until then the name stands in its place.
-                    let (Some(lo), Some(hi)) = (lo.circle(), hi.circle()) else {
-                        return Err(reject(RejectReason::ArcBoundNotYet));
+                    // ★ Both rims cut reaches here only as a whole-circle cell (`emit_lateral`
+                    // sends every other both-cut interval to the panel rings), and that
+                    // population is measured 0 (`whole_both_cut`) — so no chain code is
+                    // written for it; the honest name stands in its place.
+                    if let (Some(a), Some(b)) = (lo.circle(), hi.circle()) {
+                        if cut_rims.contains_key(&(k, a)) && cut_rims.contains_key(&(k, b)) {
+                            return Err(reject(RejectReason::ArcBoundNotYet));
+                        }
+                    }
+                    let contacts = contacts_of(k);
+                    // ★★ **A rim's walk, and where the slit attaches to it.** A whole circle:
+                    // the closed edge or the pre-minted chain, `lo` forward and `hi` backward
+                    // (reverse the pieces and flip each sense), from its seam vertex. A
+                    // wrapping chain: its own ring as the loop builder spells it (wrap arcs
+                    // split at the seam vertex), **rotated to start at its contact** and walked
+                    // as stored — the cleaning pass kept it in walk order. With several
+                    // contacts the slit takes the one nearest the other rim along the axis:
+                    // a `lo` chain's **highest** station, a `hi` chain's **lowest** — the
+                    // stretch of θ = 0 between them is then interior to the face, as a
+                    // spliced hole's contacts are ordered. ☑ Both senses measured (a boss
+                    // whose cap sits inside the other body, and its mirror).
+                    let mut walk_of = |model: &mut Model,
+                                       rim: &Rim,
+                                       forward: bool|
+                     -> Result<(Vec<HalfEdge>, Handle<Vertex>), BoolError> {
+                        match rim {
+                            Rim::Circle(c) => {
+                                let (mut hes, v) = rim_walk(k, *c)?;
+                                if !forward {
+                                    hes.reverse();
+                                    for he in &mut hes {
+                                        he.forward = !he.forward;
+                                    }
+                                }
+                                Ok((hes, v))
+                            }
+                            Rim::Chain(r) => {
+                                let mut hes = ring(model, r)?.half_edges;
+                                let mut best: Option<(usize, nacre_scalar::Rat)> = None;
+                                for (i, &he) in hes.iter().enumerate() {
+                                    let v = model.he_start(he);
+                                    if !contacts.iter().any(|&(x, _)| x == v) {
+                                        continue;
+                                    }
+                                    let s = station_of(k, &contacts, v)
+                                        .ok_or_else(|| reject(RejectReason::ArcBoundNotYet))?;
+                                    let better = match &best {
+                                        None => true,
+                                        Some((_, b)) => {
+                                            if forward {
+                                                s > *b
+                                            } else {
+                                                s < *b
+                                            }
+                                        }
+                                    };
+                                    if better {
+                                        best = Some((i, s));
+                                    }
+                                }
+                                // A chain winds once, so it passes the seam somewhere: a chain
+                                // with no contact is a producer inconsistency, named.
+                                let (i, _) =
+                                    best.ok_or_else(|| reject(RejectReason::ArcBoundNotYet))?;
+                                hes.rotate_left(i);
+                                let v = model.he_start(hes[0]);
+                                Ok((hes, v))
+                            }
+                        }
                     };
-                    band_loop(model, k, lo, hi, holes)
+                    let lo_walk = walk_of(model, lo, true)?;
+                    let hi_walk = walk_of(model, hi, false)?;
+                    band_loop(model, k, lo_walk, hi_walk, holes)
                 }
             }
         };
@@ -2751,10 +2816,15 @@ pub(crate) enum CurvedAbstain {
     ShortCycle,
     /// Some threadable piece landed in no cycle.
     Unthreaded,
-    /// The surviving whole rims are not exactly one of each sense — a region bounded by one rim
-    /// and a chain of arcs is a real shape, but no `Bound` spells it (capability D's fourth
-    /// rung, D4, is where it will).
-    RimsNotOneEach,
+    /// A step's passage of θ = 0 could not be named ([`seam_step`] declined).
+    SeamUnnamed,
+    /// A cycle winding more than once about the axis — not a simple boundary.
+    Winding,
+    /// The wrapping cycles are not exactly one of each sense (`+1` and `−1`).
+    WrappingNotOneEach,
+    /// A chain rim meeting the seam at more than two contacts, or passing θ = 0 other than
+    /// once — the slit walk is not written for it.
+    ChainContacts,
     /// A hole meets the seam at other than zero or two contacts.
     HoleContacts,
     /// More than one hole meets the seam.
@@ -2781,8 +2851,6 @@ pub(crate) struct CurvedStats {
     /// Over the chains: the most seam contacts on one, and the most passages of θ = 0 on one.
     pub(crate) max_chain_contacts: usize,
     pub(crate) max_chain_crossings: usize,
-    /// Cycles whose winding could not be read (a step [`seam_step`] declined to name).
-    pub(crate) unclassified: usize,
 }
 
 /// One curved group → the single face it should be, or why it is left alone.
@@ -2952,7 +3020,7 @@ fn merge_curved_group(
         return Err(CurvedAbstain::Unthreaded);
     }
 
-    // 4. The rims that survive are the merged band's own.
+    // 4. The rims that survive whole are the merged band's own — circles, keyed by class.
     let mut rims_lo: Vec<usize> = Vec::new();
     let mut rims_hi: Vec<usize> = Vec::new();
     for &i in &live {
@@ -2966,15 +3034,13 @@ fn merge_curved_group(
         }
     }
 
-    // ★★ **Only shapes the outer walk can bridge.** A hole that meets the seam generator is
-    // spliced into the band's outer boundary (`band_loop`), and that splice is written for
-    // **two** contacts on **at most one** hole. Anything else abstains here rather than reaching
-    // the honest reject there — this pass protects the pass, and the whole-result judgements keep
-    // their witnesses (the charter `merge_component` records).
-    //
-    // A contact is a node the split put *on* the seam (`CutRim::seam_is_node`) or an arc that
-    // wraps past it (the loop builder splits that one at the rim's seam vertex) — the two
-    // spellings are exclusive by `wrapping_rim`'s own guard, so neither is counted twice.
+    // A **contact** is a node the split put *on* the seam (`CutRim::seam_is_node`) or an arc
+    // that wraps past it (the loop builder splits that one at the rim's seam vertex) — the two
+    // spellings are exclusive by `wrapping_rim`'s own guard, so neither is counted twice. It is
+    // the slit's question — *which boundary vertices lie on θ = 0* — and not the winding's: a
+    // hole that touches the seam ruling from one side never passes θ = 0 (winding 0, no
+    // crossing) yet has two contacts, and the slit must still be spliced through it, or it
+    // would run on top of the hole's own ruling where no shell guard can see it.
     let contacts = |r: &Ring| -> usize {
         let n = r.nodes.len();
         (0..n)
@@ -2997,86 +3063,115 @@ fn merge_curved_group(
             .count()
     };
 
-    // ── The ledger's reading of the cycles (D4-0): each cycle's winding about the axis
-    // (`seam_step`, Σ sign), and for the wrapping ones their seam contacts and passages.
-    // Measured before the pass speaks a chain, so the day it does, the numbers were predicted.
+    // 5. Every threaded cycle, classified by its **winding about the axis** — Σ [`seam_step`]
+    //    over its arc steps, read off the split's order table and no coordinate. `+1` is a lower
+    //    boundary walked forward, `−1` an upper one walked backward, `0` a hole; a simple cycle
+    //    on the lateral cannot wind twice. So the region's two rims are the `+1` cycle and the
+    //    `−1` cycle, each a whole circle or a **chain** — and the "one rim of each sense" rule
+    //    the whole-circle pass used to abstain on is this rule with the chains left out.
+    struct Cycle {
+        ring: Ring,
+        w: i32,
+        contacts: usize,
+        crossings: usize,
+    }
+    let mut cycles: Vec<Cycle> = Vec::with_capacity(rings.len());
+    for r in rings {
+        let n = r.nodes.len();
+        let (mut w, mut crossings) = (0i32, 0usize);
+        for t in 0..n {
+            match seam_step(
+                ClassIx::Cyl(k),
+                r.nodes[t],
+                r.nodes[(t + 1) % n],
+                r.walls[t],
+                cut_rims,
+            ) {
+                Ok(Some((_, _, sign))) => {
+                    w += i32::from(sign);
+                    crossings += 1;
+                }
+                Ok(None) => {}
+                Err(_) => return Err(CurvedAbstain::SeamUnnamed),
+            }
+        }
+        if w.abs() > 1 {
+            return Err(CurvedAbstain::Winding);
+        }
+        let contacts = contacts(&r);
+        cycles.push(Cycle {
+            ring: r,
+            w,
+            contacts,
+            crossings,
+        });
+    }
     #[cfg(test)]
     {
-        stats.plus += rims_lo.len();
-        stats.minus += rims_hi.len();
-        for r in &rings {
-            let n = r.nodes.len();
-            let mut w: i32 = 0;
-            let mut crossings = 0usize;
-            let mut named = true;
-            for t in 0..n {
-                match seam_step(
-                    ClassIx::Cyl(k),
-                    r.nodes[t],
-                    r.nodes[(t + 1) % n],
-                    r.walls[t],
-                    cut_rims,
-                ) {
-                    Ok(Some((_, _, sign))) => {
-                        w += i32::from(sign);
-                        crossings += 1;
-                    }
-                    Ok(None) => {}
-                    Err(_) => named = false,
-                }
+        stats.plus = rims_lo.len() + cycles.iter().filter(|c| c.w == 1).count();
+        stats.minus = rims_hi.len() + cycles.iter().filter(|c| c.w == -1).count();
+        for c in cycles.iter().filter(|c| c.w == 0) {
+            match c.contacts {
+                0 => stats.holes_c0 += 1,
+                2 => stats.holes_c2 += 1,
+                _ => stats.holes_other += 1,
             }
-            if !named {
-                stats.unclassified += 1;
-                continue;
-            }
-            match w {
-                0 => match contacts(r) {
-                    0 => stats.holes_c0 += 1,
-                    2 => stats.holes_c2 += 1,
-                    _ => stats.holes_other += 1,
-                },
-                1 | -1 => {
-                    if w == 1 {
-                        stats.plus += 1;
-                    } else {
-                        stats.minus += 1;
-                    }
-                    stats.chain_rims += 1;
-                    stats.max_chain_contacts = stats.max_chain_contacts.max(contacts(r));
-                    stats.max_chain_crossings = stats.max_chain_crossings.max(crossings);
-                }
-                _ => stats.unclassified += 1,
-            }
+        }
+        for c in cycles.iter().filter(|c| c.w != 0) {
+            stats.chain_rims += 1;
+            stats.max_chain_contacts = stats.max_chain_contacts.max(c.contacts);
+            stats.max_chain_crossings = stats.max_chain_crossings.max(c.crossings);
         }
     }
     #[cfg(not(test))]
     let _ = &mut *stats;
 
-    // 5. Exactly one rim of each sense or this pass abstains: a lateral region bounded by one
-    //    rim and a chain of arcs is a real shape, but no `Bound` spells it, and inventing one is
-    //    not this pass's business.
-    let ([lo], [hi]) = (&rims_lo[..], &rims_hi[..]) else {
-        return Err(CurvedAbstain::RimsNotOneEach);
-    };
+    // 6. ★★ **Only shapes the outer walk can bridge.** A hole that meets the seam generator is
+    //    spliced into the band's outer boundary (`band_loop`), and that splice is written for
+    //    **two** contacts on **at most one** hole; a chain is walked from one contact, and the
+    //    slit's argument holds for a chain with at most two contacts and exactly one passage of
+    //    θ = 0 (the population measured; a chain that also crosses elsewhere is not arranged,
+    //    and no walk is written for it — the `band_loop` precedent). Anything else abstains
+    //    here rather than reaching the honest reject there — this pass protects the pass, and
+    //    the whole-result judgements keep their witnesses (the charter `merge_component`
+    //    records).
+    let mut lo: Vec<Rim> = rims_lo.into_iter().map(Rim::Circle).collect();
+    let mut hi: Vec<Rim> = rims_hi.into_iter().map(Rim::Circle).collect();
+    let mut holes: Vec<Ring> = Vec::new();
     let mut bridging = 0usize;
-    for r in &rings {
-        match contacts(r) {
-            0 => {}
-            2 => bridging += 1,
-            _ => return Err(CurvedAbstain::HoleContacts),
+    for c in cycles {
+        match c.w {
+            0 => {
+                match c.contacts {
+                    0 => {}
+                    2 => bridging += 1,
+                    _ => return Err(CurvedAbstain::HoleContacts),
+                }
+                holes.push(c.ring);
+            }
+            _ => {
+                if c.contacts > 2 || c.crossings != 1 {
+                    return Err(CurvedAbstain::ChainContacts);
+                }
+                if c.w == 1 {
+                    lo.push(Rim::Chain(c.ring));
+                } else {
+                    hi.push(Rim::Chain(c.ring));
+                }
+            }
         }
     }
     if bridging > 1 {
         return Err(CurvedAbstain::Bridging);
     }
+    let (Ok([lo]), Ok([hi])) = (<[Rim; 1]>::try_from(lo), <[Rim; 1]>::try_from(hi)) else {
+        return Err(CurvedAbstain::WrappingNotOneEach);
+    };
 
     Ok(LocalFace {
         surf: ClassIx::Cyl(k),
-        outer: Bound::Band {
-            lo: Rim::Circle(*lo),
-            hi: Rim::Circle(*hi),
-        },
-        inner: rings.into_iter().map(Bound::Ring).collect(),
+        outer: Bound::Band { lo, hi },
+        inner: holes.into_iter().map(Bound::Ring).collect(),
         flip,
     })
 }
@@ -3114,13 +3209,13 @@ pub(crate) mod probe {
         use nacre_math::{Point3, Vector3};
         use nacre_topo::Model;
 
-        /// **The cleaning ledger is running, and it reads what it will need.** Universal over
+        /// **The cleaning ledger is running, and the pass speaks a chain.** Universal over
         /// every recorded row (tests run in parallel, so a row is never assumed to be this
-        /// test's): a merged group has exactly one boundary of each sense and no chain; every
-        /// hole of a merged group met the seam at zero or two contacts. Then the one shape this
-        /// pass cannot speak yet, measured before it is built: the half-height boss's group
-        /// abstains `RimsNotOneEach` with one `+1` rim, one `−1` **chain** (two seam contacts,
-        /// one passage of θ = 0) — the exact population D4 opens.
+        /// test's): a merged group has exactly one boundary of each sense; every hole of a
+        /// merged group met the seam at zero or two contacts; a merged chain has at most two
+        /// contacts and one passage of θ = 0. Then the shape D4 opened, measured as the ledger
+        /// predicted before it was built: the half-height boss's group **merges** with one
+        /// rim and one **chain**, and so does every chain the suite records.
         #[test]
         fn the_cleaning_ledger_is_running() {
             let snapshot = || -> Vec<Row> {
@@ -3154,37 +3249,48 @@ pub(crate) mod probe {
                         (1, 1),
                         "a merged band: {r:?}"
                     );
-                    assert_eq!(
-                        r.stats.chain_rims, 0,
-                        "a merged band has no chain yet: {r:?}"
-                    );
                     assert_eq!(r.stats.holes_other, 0, "a merged band's holes: {r:?}");
+                    assert!(
+                        r.stats.max_chain_contacts <= 2,
+                        "a merged chain's contacts: {r:?}"
+                    );
+                    assert!(
+                        r.stats.max_chain_crossings <= 1,
+                        "a merged chain's passages: {r:?}"
+                    );
                 }
-                assert_eq!(
-                    r.stats.unclassified, 0,
-                    "a cycle whose winding could not be read: {r:?}"
+                assert_ne!(
+                    r.outcome,
+                    Some(CurvedAbstain::WrappingNotOneEach),
+                    "a group whose wrapping cycles are not one of each sense: {r:?}"
                 );
             }
-            let chain_rows: Vec<&Row> = rows[before..]
-                .iter()
-                .filter(|r| r.outcome == Some(CurvedAbstain::RimsNotOneEach))
-                .collect();
-            assert_eq!(
-                chain_rows.len(),
-                1,
-                "the half-height boss abstains once: {rows:?}"
+            // ★ Universal, not "this test's row": the suite runs in parallel and other fixtures
+            // (the mesh oracle's half walls) record chains too. Every merged chain is one rim
+            // of a band, passes θ = 0 exactly once, and touches the seam at one contact (a
+            // wrap arc's seam vertex) or two (a ruling along the seam).
+            let chain_rows: Vec<&Row> = rows.iter().filter(|r| r.stats.chain_rims > 0).collect();
+            assert!(
+                rows[before..].iter().any(|r| r.stats.chain_rims > 0),
+                "the half-height boss recorded no chain: {rows:?}"
             );
-            let s = chain_rows[0].stats;
-            assert_eq!(
-                (s.plus, s.minus, s.chain_rims),
-                (1, 1, 1),
-                "one rim, one chain: {s:?}"
-            );
-            assert_eq!(
-                (s.max_chain_contacts, s.max_chain_crossings),
-                (2, 1),
-                "{s:?}"
-            );
+            for r in chain_rows {
+                assert_eq!(r.outcome, None, "a chain merges: {r:?}");
+                let s = r.stats;
+                assert_eq!(
+                    (s.plus, s.minus, s.chain_rims),
+                    (1, 1, 1),
+                    "one rim, one chain: {s:?}"
+                );
+                assert_eq!(
+                    s.max_chain_crossings, 1,
+                    "a chain passes the seam once: {s:?}"
+                );
+                assert!(
+                    (1..=2).contains(&s.max_chain_contacts),
+                    "a chain touches the seam at one or two contacts: {s:?}"
+                );
+            }
         }
     }
 }

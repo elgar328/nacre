@@ -940,16 +940,22 @@ mod tests {
     /// the plate (`π·25·10/2 = 125π`); the boss inside the plate is the inner half over
     /// `z ∈ [0, 10]` (`125π`).
     ///
-    /// The lateral stays **two** faces (band + outer ring): `merge_curved_group` abstains when
-    /// a group has a rim of only one sense (the cut rim at z = 0 is refined to arcs, the outer
-    /// ring's lower arc erases one, and no `Bound` spells "one rim and a chain of arcs").
+    /// The lateral is **one** face (D4): the band and the outer panel merge into a band whose
+    /// upper rim is a **wrapping chain** (the z = 0 inner arc, a ruling, the z = 10 outer arc,
+    /// a ruling) — the cleaning pass used to abstain here, having no `Bound` for it. ★ Both
+    /// senses: the boss with its cap inside the plate (`z0 = −10`, a `hi` chain) and its mirror
+    /// with its base inside (`z0 = 10`, a `lo` chain) — the walk's rotation rule is measured
+    /// on each rather than assumed symmetric. Same volumes by symmetry.
     #[test]
     fn a_half_height_boss_builds() {
         let pi = std::f64::consts::PI;
-        for (kind, want, lateral) in [
-            (BoolKind::Fuse, 32000.0 + 375.0 * pi, vec![2]),
-            (BoolKind::Cut, 32000.0 - 125.0 * pi, vec![1]),
-            (BoolKind::Common, 125.0 * pi, vec![1]),
+        for (z0, kind, want, lateral) in [
+            (-10.0, BoolKind::Fuse, 32000.0 + 375.0 * pi, vec![1]),
+            (-10.0, BoolKind::Cut, 32000.0 - 125.0 * pi, vec![1]),
+            (-10.0, BoolKind::Common, 125.0 * pi, vec![1]),
+            (10.0, BoolKind::Fuse, 32000.0 + 375.0 * pi, vec![1]),
+            (10.0, BoolKind::Cut, 32000.0 - 125.0 * pi, vec![1]),
+            (10.0, BoolKind::Common, 125.0 * pi, vec![1]),
         ] {
             let mut m = Model::new();
             let plate = m.add_cuboid(
@@ -957,14 +963,14 @@ mod tests {
                 Point3::from_array([40.0, 40.0, 20.0]),
             );
             let boss = m.add_cylinder(
-                Point3::from_array([40.0, 20.0, -10.0]),
+                Point3::from_array([40.0, 20.0, z0]),
                 Vector3::from_array([0.0, 0.0, 1.0]),
                 5.0,
                 20.0,
             );
             m.rebuild_adjacency();
             let out = crate::boolean(&mut m, kind, plate, boss)
-                .unwrap_or_else(|e| panic!("{kind:?}: the half-height boss builds: {e:?}"));
+                .unwrap_or_else(|e| panic!("{kind:?} z0 {z0}: the half-height boss builds: {e:?}"));
             assert_eq!(out.len(), 1, "{kind:?}: one solid");
             m.rebuild_adjacency();
             assert_eq!(m.live_solids, out, "{kind:?}: the operands retired");

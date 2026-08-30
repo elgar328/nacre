@@ -1466,14 +1466,18 @@ mod zzz_ledger {
             d4.iter().map(|r| f(&r.stats)).max().unwrap_or(0)
         };
         eprintln!(
-            "ledger D4: groups {} merged {} no_touch {} rims_not_one_each {} hole_contacts {} bridging {} \
+            "ledger D4: groups {} merged {} no_touch {} wrapping_not_one_each {} chain_contacts {} \
+             seam_unnamed {} winding {} hole_contacts {} bridging {} \
              other_wall {} rim_single_node {} circle_bound {} overlap_or_triple {} pinch {} reentered {} \
              short_cycle {} unthreaded {} plus {} minus {} holes_c0 {} holes_c2 {} holes_other {} \
-             chain_rims {} max_chain_contacts {} max_chain_crossings {} unclassified {}",
+             chain_rims {} max_chain_contacts {} max_chain_crossings {}",
             d4.len(),
             by(None),
             by(Some(A::NoTouch)),
-            by(Some(A::RimsNotOneEach)),
+            by(Some(A::WrappingNotOneEach)),
+            by(Some(A::ChainContacts)),
+            by(Some(A::SeamUnnamed)),
+            by(Some(A::Winding)),
             by(Some(A::HoleContacts)),
             by(Some(A::Bridging)),
             by(Some(A::OtherWall)),
@@ -1492,7 +1496,6 @@ mod zzz_ledger {
             s4(|s| s.chain_rims),
             m4(|s| s.max_chain_contacts),
             m4(|s| s.max_chain_crossings),
-            s4(|s| s.unclassified),
         );
     }
 }

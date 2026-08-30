@@ -3395,8 +3395,12 @@ fn the_mesh_covers_the_faces_it_approximates() {
         ("through", [2.0, 2.0, -1.0], 4.0),
         ("on top", [2.0, 2.0, 2.0], 1.0),
         ("flush", [2.0, 2.0, 0.0], 3.0),
-        // The half-height wall boss: its upper cap sits inside the plate (D2b opened it).
+        // The half-height wall boss: its upper cap sits inside the plate (D2b opened it), and
+        // its mirror with the lower cap inside — one lateral face each since D4, whose chain
+        // rim passes the seam on a **wrap arc** here (the seam is at −y, outside the plate),
+        // where the boss on the x = 40 wall in `bands` runs *along* the seam ruling.
         ("half wall", [2.0, 0.0, -1.0], 2.0),
+        ("half wall, cap below", [2.0, 0.0, 1.0], 2.0),
     ] {
         for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
             let mut m = Model::new();
