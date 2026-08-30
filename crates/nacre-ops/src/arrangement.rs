@@ -1935,7 +1935,6 @@ fn hole_on_class(
     };
     let ring = &nr.triples;
     let n = ring.len();
-    let m = def.dir();
     let sigma = i32::from(cf.orient_sign);
     let fs = i32::from(jd.planes[wc].frame_sign);
     let axis_of = |stored_side: i32| if up { stored_side } else { -stored_side };
@@ -2009,55 +2008,27 @@ fn hole_on_class(
                     return Err(DeclineKind::CylHoleFeature);
                 };
                 let start = ring[edge];
-                let Some((planes, ncyl, root)) = combinatorics::branch_name(start) else {
-                    return Err(DeclineKind::CylHoleFeature);
-                };
-                let Some(perp) = planes.iter().copied().find(|&c| c != j) else {
+                let Some((planes, ncyl, _)) = combinatorics::branch_name(start) else {
                     return Err(DeclineKind::CylHoleFeature);
                 };
                 if !planes.contains(&j) {
                     return Err(DeclineKind::CylHoleFeature);
                 }
-                // ★★★★★ **The crossing is the *same ruling*, restated for this class.** The two
-                // roots of `{plane, plane, cylinder}` are ordered along `ℓ = n₀ × n₁` over the
-                // index-sorted pair (`combinatorics::branch_meet`), and a ⊥ plane's normal is
-                // `k·m̂`, so `ℓ ∝ ε·sign(k)·(m̂ × n_j)` with `ε = +1` when the ⊥ class sorts first.
-                // Two ⊥ planes cut the *same* ruling of `j` in the same order exactly when their
-                // `ε·sign(k)` agree — flip once per reversal, which is
-                // [`combinatorics::branch_name_from_def`]'s rule read on the other axis.
-                let sense = |perp: usize| -> Option<i32> {
-                    let c = combinatorics::class_coeffs_rat(jd, perp)?;
-                    let nc = [c[0], c[1], c[2]];
-                    // ★ **⊥ is `n ∥ m`, not `n · m ≠ 0`.** A *tilted* plane also has a nonzero dot,
-                    // and the derivation above needs `n = k·m` exactly — with a tilt the two roots
-                    // are not ordered along `±(m × n_j)` at all and the restatement below would be
-                    // a wrong point, silently. `parallel_rat` decides it in integers.
-                    if !nacre_scalar::parallel_rat(&nc, &m) {
-                        return None;
-                    }
-                    let d = combinatorics::dot3_rat(&nc, &m)?;
-                    let zero = nacre_scalar::Rat::from_int(0);
-                    if d == zero {
-                        return None; // a ⊥ plane's normal cannot be ⊥ to the axis
-                    }
-                    let e = if perp < j { 1 } else { -1 };
-                    Some(e * if d > zero { 1 } else { -1 })
-                };
-                let (Some(s_perp), Some(s_wc)) = (sense(perp), sense(wc)) else {
-                    return Err(DeclineKind::CylHoleFeature);
-                };
-                // `j` must be a **ruling** carrier — parallel to the axis — or the edge is an
-                // ellipse arc and its meet with this circle is not the point named below.
+                // ★★★★★ **The crossing is the *same ruling*, restated for this class — through
+                // the one door the planar scan uses** ([`crossing_on_ruling`]): the ruling's side,
+                // measured against the wall `j` at the hole's own corner ([`node_ruling_side`],
+                // the predicate `curved_wall` carries on a ruling edge), picks the root of
+                // `{wc, j}` on the cylinder. Its previous spelling restated the corner's *root* by
+                // the axis senses of the two ⊥ classes (`ε·sign(k)`, the order of the roots along
+                // `ℓ`) — the same point derived the other way round, and two spellings of one
+                // rule were one too many. `j` must hold a ruling (a plane through the axis) and
+                // `wc` be ⊥, which the door checks; anything else is not this feature.
                 let cj = combinatorics::class_coeffs_rat(jd, j).ok_or(DeclineKind::CylSpan)?;
-                if combinatorics::dot3_rat(&[cj[0], cj[1], cj[2]], &m)
-                    .ok_or(DeclineKind::CylSpan)?
-                    != nacre_scalar::Rat::from_int(0)
-                {
-                    return Err(DeclineKind::CylHoleFeature);
-                }
-                let root = if s_perp == s_wc { root } else { root.flipped() };
-                let (lo, hi) = if wc < j { (wc, j) } else { (j, wc) };
-                let cut = combinatorics::NodeId::branch(lo, hi, ncyl, root);
+                let wdef = &cyls.get(ncyl).ok_or(DeclineKind::CylHoleFeature)?.def;
+                let side =
+                    node_ruling_side(jd, wdef, &cj, start).ok_or(DeclineKind::CylHoleFeature)?;
+                let cut = crossing_on_ruling(jd, cyls, wc, j, ncyl, side)
+                    .map_err(|_| DeclineKind::CylHoleFeature)?;
                 // Which way the hole runs from here: the travel's axis sense, then the winding.
                 // The side the edge leaves comes from the walk, for the same reason the run's
                 // flank does.
