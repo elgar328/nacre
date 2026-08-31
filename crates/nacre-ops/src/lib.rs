@@ -1383,6 +1383,15 @@ mod zzz_ledger {
             .lock()
             .expect("the probe's lock is never held across a panic")
             .clone();
+        {
+            let g = *crate::combinatorics::hull_probe::ROWS.lock().unwrap();
+            eprintln!(
+                "HULL rings {} arc_rings {} below {} undecided {} broken {}",
+                g.0, g.1, g.2, g.3, g.4
+            );
+            let t = *crate::combinatorics::hull_probe::TILTED.lock().unwrap();
+            eprintln!("HULL tilted_arcs {t}");
+        }
         let s1 = |f: fn(&crate::cyl_chart::probe::Row) -> usize| d1.iter().map(f).sum::<usize>();
         let s =
             |f: fn(&crate::cyl_chart::probe::d2b::Row) -> usize| d2b.iter().map(f).sum::<usize>();

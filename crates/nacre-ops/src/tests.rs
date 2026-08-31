@@ -9248,10 +9248,17 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 /// lock is only the **outcome** (built, or the refusal's name); the geometry stays the digest's.
 /// Fixtures copied from `tests/census.rs` (`rul`, `wal`, `cap`, `ct2`, `trc` families).
 ///
-/// ★ `wal corner-lo` refuses `CylinderGateUndecided` from the chart's emitter: the plate classes'
-/// disk cells carry no B material at the (0,0) corner while the caps do (an arrangement label
-/// defect, D2b's finding) — the cells' ends disagree and the emitter refuses rather than read
-/// either. The census's guard for exactly that shape is `src2_disagree == 0 || emitted.is_err()`.
+/// ★★★★★ **`wal corner-lo` used to refuse here, and the reason written at this line was the
+/// symptom.** It read: *"the plate classes' disk cells carry no B material at the (0,0) corner
+/// while the caps do (an arrangement label defect) — the cells' ends disagree and the emitter
+/// refuses rather than read either."* The missing material was real, but it was not a labelling
+/// defect: that corner puts the boss's axis on **both** plate walls, so the chords through its
+/// circle are radii and the sector outside the plate is **reflex** at the centre. `loop_winding`
+/// read the turn at the lexicographically smallest **node** — the centre — which the arc bulges
+/// past, so the sign came back inverted, the void seed landed on a bounded sector, and one
+/// solid's material was flipped across the whole component. Reading the winding at the ring's own
+/// extremum (`combinatorics::arc_extremum_winding`) fixes it, and all three kinds build with
+/// their exact volumes.
 ///
 /// ★ `rul flush` (E3-b/c): a straddling boss whose caps sit flush with **both** plate planes. Cut
 /// and Common assemble clean and build; the Fuse's two cap chords are each an interior boundary
@@ -9339,7 +9346,7 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
                 m.rebuild_adjacency();
                 (a, b)
             },
-            [Err(RejectReason::CylinderGateUndecided); 3],
+            [ok(1), ok(1), ok(1)],
         ),
         (
             "cap sunk",
@@ -9824,11 +9831,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ("wall -x", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         ("wall +x", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         ("corner", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
-        (
-            "corner-lo",
-            [First(RejectReason::CylinderGateUndecided); 3],
-            [NONE, NONE, NONE],
-        ),
+        ("corner-lo", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         ("offmid", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         ("half wall", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
         ("half wall, cap below", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
@@ -9936,7 +9939,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             .filter(|r| p(r))
             .count()
     };
-    assert_eq!(count(|r| *r == Ok), 38, "{table:?}");
+    assert_eq!(count(|r| *r == Ok), 41, "{table:?}");
     // ★ The name is gone from this corpus (the arc-label cell): every family re-operates or is
     // refused at its first op. A new population must restate this zero.
     assert_eq!(
@@ -9958,6 +9961,58 @@ fn reop_census_families_reoperate_or_decline_by_name() {
     assert_eq!(seam_joints, (8, 0), "seam-joint loops (outer, holes)");
 }
 
+/// A radius-`0.5` disk centred on `base`'s `xy`, clipped by a rectangle: `πr²/2ᵏ` where `k` counts
+/// the rectangle's edges through the centre. An edge that cuts the disk anywhere else is not in
+/// this corpus and panics rather than approximating.
+///
+/// ★ One spelling, read by [`removed_by`] and [`first_volume`] alike — they ask the same question
+/// about the same disk, and two copies would be free to drift.
+fn disk_in_rect(base: [f64; 3], rect: [[f64; 2]; 2]) -> f64 {
+    let r = 0.5;
+    let mut halvings = 0;
+    for (i, c) in [base[0], base[1]].into_iter().enumerate() {
+        let (lo, hi) = (rect[i][0], rect[i][1]);
+        if hi <= lo {
+            return 0.0;
+        }
+        for (edge, inward) in [(lo, c - lo), (hi, hi - c)] {
+            if inward == 0.0 {
+                halvings += 1;
+            } else if inward <= -r {
+                return 0.0; // the disk lies wholly beyond this edge
+            } else if inward < r {
+                panic!("the tool edge at {edge} cuts the disk off-centre (centre {c})");
+            }
+        }
+    }
+    std::f64::consts::PI * r * r / f64::from(1 << halvings)
+}
+
+/// **The volume of a family's first result**, from the same closed form — the plate `4×4×2`, the
+/// boss `πr²h`, and their overlap (the disk clipped by the plate's footprint, times the axial
+/// overlap): `Fuse = plate + boss − both`, `Cut = plate − both`, `Common = both`.
+///
+/// ★★★★★ **`removed_by` never checked this.** It locks what a *tool* removes from the first
+/// result, taking that result's own volume as the baseline — so a first operation could be wrong
+/// by a whole feature and every row would still agree with itself. The day `corner-lo` opened is
+/// the day that mattered: a family that had only ever been refused arrived with no independent
+/// number of its own. ☑ Its three kinds land on 34.748893572 / 31.607300918 / 0.392699082, to
+/// 7e-15 or exactly.
+fn first_volume(kind: BoolKind, base: [f64; 3], h: f64) -> f64 {
+    let seg = |a: [f64; 2], b: [f64; 2]| -> [f64; 2] { [a[0].max(b[0]), a[1].min(b[1])] };
+    let len = |a: [f64; 2]| (a[1] - a[0]).max(0.0);
+    let r = 0.5;
+    let plate = 4.0 * 4.0 * 2.0;
+    let boss = std::f64::consts::PI * r * r * h;
+    let both =
+        disk_in_rect(base, [[0.0, 4.0], [0.0, 4.0]]) * len(seg([base[2], base[2] + h], [0.0, 2.0]));
+    match kind {
+        BoolKind::Fuse => plate + boss - both,
+        BoolKind::Cut => plate - both,
+        BoolKind::Common => both,
+    }
+}
+
 /// The volume a tool box removes from a family's **first** result, summed from parts: the plate's
 /// box ∩ tool, the boss's disk ∩ the tool's footprint times the axial overlap, and the doubly
 /// counted disk ∩ plate ∩ tool — `Fuse = plate + boss − both`, `Cut = plate − both`,
@@ -9972,26 +10027,7 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
     let box_vol = |a: [[f64; 3]; 2], b: [[f64; 3]; 2]| -> f64 {
         (0..3).map(|i| len(seg(axis(a, i), axis(b, i)))).product()
     };
-    let disk_in_rect = |rect: [[f64; 2]; 2]| -> f64 {
-        let r = 0.5;
-        let mut halvings = 0;
-        for (i, c) in [base[0], base[1]].into_iter().enumerate() {
-            let (lo, hi) = (rect[i][0], rect[i][1]);
-            if hi <= lo {
-                return 0.0;
-            }
-            for (edge, inward) in [(lo, c - lo), (hi, hi - c)] {
-                if inward == 0.0 {
-                    halvings += 1;
-                } else if inward <= -r {
-                    return 0.0; // the disk lies wholly beyond this edge
-                } else if inward < r {
-                    panic!("the tool edge at {edge} cuts the disk off-centre (centre {c})");
-                }
-            }
-        }
-        std::f64::consts::PI * r * r / f64::from(1 << halvings)
-    };
+    let disk_in_rect = |rect: [[f64; 2]; 2]| -> f64 { disk_in_rect(base, rect) };
     let tool_xy = [axis(tool, 0), axis(tool, 1)];
     let plate_xy = [seg(tool_xy[0], [0.0, 4.0]), seg(tool_xy[1], [0.0, 4.0])];
     let boss_z = [base[2], base[2] + h];
@@ -10217,7 +10253,28 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 Rejected(NoClearRay),
             ],
         ],
-        [[First; 5]; 3], // corner-lo: the first op is refused
+        // corner-lo: its axis sits on **both** plate walls, so the chords through the circle are
+        // radii and the sector outside the plate is reflex at the centre — the ring's true
+        // extremum is in an arc, not at a node. Since the winding is read there the first op
+        // builds (it was `First` for every tool), and the tools land on the roads the other
+        // corner family already sits on.
+        [
+            [
+                Rejected(RulingBoundNotYet),
+                Ok(1),
+                Ok(1),
+                Rejected(RulingBoundNotYet),
+                Rejected(RulingBoundNotYet),
+            ],
+            [Rejected(NoClearRay), Ok(1), Ok(1), Ok(1), Ok(1)],
+            [
+                Rejected(NoClearRay),
+                Ok(1),
+                Ok(1),
+                Ok(0),
+                Rejected(NoClearRay),
+            ],
+        ],
         // offmid: the top slab's cap at z = 2.5 meets the notch's rulings above the plate — the
         // severed top piece has no vertex, its coordinate probe forks the other component's
         // mixed ring to the rational walk, and the miss-first rays decide (the one moved cell
@@ -10250,6 +10307,15 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                     Result::Ok(out) => {
                         m.rebuild_adjacency();
                         let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+                        // ★ The first result's own volume against the closed form — the baseline
+                        // `removed_by` subtracts from was never itself checked.
+                        if out.len() == 1 {
+                            let w = first_volume(kind, base, h);
+                            assert!(
+                                (v0 - w).abs() < 1e-9,
+                                "{name} {kind:?}: first volume {v0} ≠ {w}"
+                            );
+                        }
                         let t =
                             m.add_cuboid(Point3::from_array(tool[0]), Point3::from_array(tool[1]));
                         m.rebuild_adjacency();
@@ -10310,12 +10376,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 137, "{tally:?}");
-    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 41);
+    assert_eq!(count(|c| matches!(c, Ok(_))), 146, "{tally:?}");
+    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 44);
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
     assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 0);
-    assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 12);
+    assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 15);
     // ★ The chart's own refusal is gone from this corpus: every sector it could not name as one
     // arc is now read as the run of arcs it spans. A new population must restate this 0 — it is
     // an emptiness of *this* corpus, not of the chart.
@@ -10323,7 +10389,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
         0
     );
-    assert_eq!(count(|c| *c == First), 15);
+    // ★ **No family's first operation is refused any more.** `corner-lo` was the whole of this
+    // count: its axis on the plate's corner made a reflex sector whose winding was read at a node
+    // the ring bulges past. A new population must restate this 0.
+    assert_eq!(count(|c| *c == First), 0);
     assert_eq!(count(|c| *c == Empty), 5);
 }
 
@@ -10600,5 +10669,39 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
     assert!(
         frame_neg > 0,
         "no class with frame_sign = -1 reached the rule — the factor is untested here"
+    );
+}
+
+/// **The ring's extremum road is walked, and it decides.** `combinatorics::arc_extremum_winding`
+/// answers only where an arc bulges past every node of its ring; a corpus that never makes that
+/// shape would leave the whole road dead and this file green.
+///
+/// ★ The population is built here rather than read off the ambient ledger: a lock that counts
+/// what other tests happened to run before it sees a different number every ordering (measured,
+/// twice in this crate's history).
+#[test]
+fn a_ring_whose_arc_bulges_past_its_nodes_reads_the_winding_there() {
+    use crate::combinatorics::hull_probe;
+    let before = *hull_probe::ROWS
+        .lock()
+        .expect("the probe's lock is never held across a panic");
+    // A boss whose axis sits exactly on the plate's corner: both plate walls cut its circle along
+    // **radii**, so the sector outside the plate is reflex at the centre and the centre is the
+    // ring's lexicographically smallest node — with the arc reaching further.
+    for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+        let (mut m, plate, boss) = boss_family([0.0, 0.0, -1.0], 4.0);
+        boolean(&mut m, kind, plate, boss).expect("the corner boss builds");
+    }
+    let after = *hull_probe::ROWS
+        .lock()
+        .expect("the probe's lock is never held across a panic");
+    assert!(
+        after.4 > before.4,
+        "no ring of the corner-boss corpus read its winding at an arc: {before:?} -> {after:?}"
+    );
+    // And the road is not the whole world: most rings with arcs still find their minimum at a node.
+    assert!(
+        after.1 - before.1 > after.4 - before.4,
+        "every arc ring took the extremum road — the node road would be dead: {before:?} -> {after:?}"
     );
 }

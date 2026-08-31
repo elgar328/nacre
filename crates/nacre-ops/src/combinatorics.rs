@@ -3948,6 +3948,250 @@ pub(crate) fn branch_between(
     Some(mid.into_iter().map(|(n, _)| n).collect())
 }
 
+/// **STAGE-0 (this cell): does the ring's lexicographic minimum node really support the ring?**
+/// `loop_winding` reads the turn there and its doc argues the node is a hull vertex — true for a
+/// polygon, and an open question the moment an edge is an arc. Counts only; removed or promoted
+/// when the cell closes.
+#[cfg(test)]
+pub(crate) mod hull_probe {
+    use std::sync::Mutex;
+
+    /// `(rings, arc_rings, circle_below_lo, undecided, PREMISE_BROKEN)` — the last is the
+    /// true count: `E` is lexicographically below `lo` **and** in an arc's interior.
+    pub(crate) static ROWS: Mutex<(usize, usize, usize, usize, usize)> =
+        Mutex::new((0, 0, 0, 0, 0));
+
+    /// Arcs whose axis is not ⊥ to both of the first two world axes — the extremum is then not
+    /// rational and this instrument says nothing about them.
+    pub(crate) static TILTED: Mutex<usize> = Mutex::new(0);
+
+    pub(crate) fn note(
+        _len: usize,
+        arcs: usize,
+        below: usize,
+        undecided: usize,
+        inside: usize,
+        tilted: usize,
+    ) {
+        *TILTED
+            .lock()
+            .expect("the probe's lock is never held across a panic") += tilted;
+        let mut g = ROWS
+            .lock()
+            .expect("the probe's lock is never held across a panic");
+        g.0 += 1;
+        g.1 += usize::from(arcs > 0);
+        g.2 += usize::from(below > 0);
+        g.3 += undecided;
+        g.4 += usize::from(inside > 0);
+    }
+}
+
+/// **The ring's own lexicographic minimum when it lies inside an arc**, and the winding read
+/// there — `None` when every arc's minimum is at a node (then [`loop_winding`]'s `lo` is the
+/// ring's minimum and its turn is the winding, as its doc argues).
+///
+/// ★★★★★ **Why this exists: `loop_winding`'s premise is about the *node set*, and a ring is not
+/// its nodes.** Its doc reads *"the lexicographically smallest node … is an extreme point of the
+/// node set, which is planar, so it is a vertex of the ring's hull"* — true for a polygon, and
+/// false the moment an edge is an **arc**, because the arc can bulge past every node. Then the
+/// turn at `lo` is read at a point the region does not support, and the sign comes back
+/// **confident**. ☑ Measured before this was built: over the lib suite, 1,465 of 9,102 rings with
+/// arcs have their true minimum inside an arc, and in **184** of them the turn read at `lo`
+/// disagrees with the arc's own answer — all 184 on one circle, the boss whose axis sits exactly
+/// on the plate's corner, whose booleans the kernel refused for it.
+///
+/// ★ **The answer was named three milestones ago** and is not a wider walk:
+/// [`RejectReason::CurvedStraightRun`](crate::RejectReason::CurvedStraightRun)'s doc says *"read
+/// the winding at the extremum of the **region**, which may lie in an arc's interior"*. This is
+/// that reading, and the winding there is [`smooth_extremum_winding`]'s product — the ring is
+/// smooth at an arc's interior point, so no turn is needed.
+///
+/// **What it can decide.** A circle's lexicographic minimum is its one leftmost point, and that
+/// point is `(c₀ − r, c₁, c₂)` exactly when ê₀ and ê₁ both lie in the circle's plane — i.e. when
+/// the axis is perpendicular to both. Otherwise the point is irrational and this says nothing,
+/// leaving today's path: ☑ 84 arcs over the suite, all tilted axes, and the premise is simply
+/// unverified for them (refusing there would be a wholesale regression, and nothing measured says
+/// they are wrong).
+fn arc_extremum_winding(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    p: usize,
+    ring: &[RingEdge],
+    keys: &[CoordKey],
+    lo: usize,
+) -> Result<Option<i8>, BoolError> {
+    use nacre_scalar::{Orient, Rat, quad};
+    let key = |i: usize| &keys[i];
+    // A rational coordinate against a ring node's key, through the same two comparators `cmp_key`
+    // dispatches to — so a branch node is decided too.
+    let cmp_rat = |ext: Rat, k: &CoordKey, a: usize| -> Option<std::cmp::Ordering> {
+        let ord = |o: Orient| match o {
+            Orient::Positive => std::cmp::Ordering::Greater,
+            Orient::Negative => std::cmp::Ordering::Less,
+            Orient::Zero => std::cmp::Ordering::Equal,
+        };
+        match k {
+            CoordKey::Three(t) => {
+                let q = node_coords_rat(jd, NodeId::three_planes(*t))?;
+                ext.partial_cmp(&q[a])
+            }
+            CoordKey::Branch(b) => Some(ord(quad::cmp_coord_meet_branch(
+                &nacre_scalar::MeetPoint::Narrow([ext, ext, ext]),
+                &b.0,
+                &b.1,
+                a,
+            ))),
+        }
+    };
+    let n = ring.len();
+    let zero = Rat::from_int(0);
+    let mut best: Option<([Rat; 3], i8)> = None;
+    #[cfg(test)]
+    let (mut arcs, mut below, mut interior, mut tilted, mut undecided) = (0, 0, 0, 0, 0);
+    for (i, e) in ring.iter().enumerate() {
+        let Carrier::Arc(ac) = &e.carrier else {
+            continue;
+        };
+        #[cfg(test)]
+        {
+            arcs += 1;
+        }
+        let (m, r) = (ac.def.dir(), ac.def.radius());
+        if m[0] != zero || m[1] != zero {
+            #[cfg(test)]
+            {
+                tilted += 1;
+                undecided += 1;
+            }
+            continue;
+        }
+        let Ok(EdgeDir::Arc(ad)) = dir_at(jd, cyls, p, e, e.node) else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        let c = ad.centre;
+        let Some(ex) = c[0].checked_sub(r) else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        // Is the circle's leftmost point lexicographically below `lo`? ★ Three answers, not two:
+        // running out of axes with every one equal means it **is** `lo`, and the premise holds.
+        let mut lower = Some(false);
+        for (a, v) in [(0usize, ex), (1, c[1]), (2, c[2])] {
+            match cmp_rat(v, key(lo), a) {
+                Some(std::cmp::Ordering::Less) => {
+                    lower = Some(true);
+                    break;
+                }
+                Some(std::cmp::Ordering::Greater) => break,
+                Some(std::cmp::Ordering::Equal) => {}
+                None => {
+                    lower = None;
+                    break;
+                }
+            }
+        }
+        let Some(true) = lower else {
+            #[cfg(test)]
+            if lower.is_none() {
+                undecided += 1;
+            }
+            continue;
+        };
+        #[cfg(test)]
+        {
+            below += 1;
+        }
+        // ★ **And is it in the arc's INTERIOR?** At an endpoint the arc's own minimum sits at a
+        // ring node, which is `lo` or above by definition — the premise holds. Not a corner case:
+        // a boss seated on a wall is cut by a **diameter**, and then this point is exactly a node.
+        let (ka, kb) = (key(i), key((i + 1) % n));
+        let ends_here = |k: &CoordKey| {
+            cmp_rat(c[1], k, 1) == Some(std::cmp::Ordering::Equal)
+                && cmp_rat(ex, k, 0) == Some(std::cmp::Ordering::Equal)
+        };
+        if ends_here(ka) || ends_here(kb) {
+            continue;
+        }
+        // CCW **as seen in the (ê₀, ê₁) plane**: travel is CCW about the axis, which may point
+        // the other way.
+        let seen_ccw = ac.ccw != (m[2] < zero);
+        let (ka, kb) = if seen_ccw { (ka, kb) } else { (kb, ka) };
+        // Halves about the circle's own horizontal: above the centre is θ ∈ (0°, 180°). ★ An end
+        // *on* that line is θ = 0° — θ = 180° is the leftmost point itself, taken out above — and
+        // it belongs to the half the walk is in beside it: a start leaves θ = 0° into the upper
+        // half, an end arrives at it from the lower.
+        let half = |k: &CoordKey, is_start: bool| match cmp_rat(c[1], k, 1) {
+            Some(std::cmp::Ordering::Less) => Some(true),
+            Some(std::cmp::Ordering::Greater) => Some(false),
+            Some(std::cmp::Ordering::Equal) => Some(is_start),
+            None => None,
+        };
+        let (Some(ha), Some(hb)) = (half(ka, true), half(kb, false)) else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        // Walking CCW from the start, θ = 180° is reached iff the walk leaves the upper half, or
+        // wraps the whole way round inside one half — and θ's order inside a half is read off the
+        // first coordinate: falling above the centre, rising below it.
+        let x_cmp = cmp_key(jd, ka, kb, 0)?;
+        let hit = match (ha, hb) {
+            (true, false) => true,
+            (false, true) => false,
+            (true, true) => x_cmp <= 0,
+            (false, false) => x_cmp >= 0,
+        };
+        if !hit {
+            continue;
+        }
+        #[cfg(test)]
+        {
+            interior += 1;
+        }
+        // The winding read **there**: the ring is smooth at an arc's interior point, so this is
+        // [`smooth_extremum_winding`]'s product — the one spelling.
+        let sg = |b: bool| if b { 1i8 } else { -1 };
+        let w = sg(ad.ccw) * sg(ad.axis_up) * jd.planes[p].frame_sign;
+        // ★ **The minimum, not the first.** Two arcs of one ring can each dip below `lo` only if
+        // they ride different circles; the ring is supported at the lower of the two, and reading
+        // the other would ask about a point the region is not extreme at.
+        let take = match &best {
+            None => true,
+            Some((b, _)) => {
+                let mut lt = false;
+                for a in 0..3 {
+                    let v = if a == 0 { ex } else { c[a] };
+                    match v.partial_cmp(&b[a]) {
+                        Some(std::cmp::Ordering::Less) => {
+                            lt = true;
+                            break;
+                        }
+                        Some(std::cmp::Ordering::Greater) => break,
+                        _ => {}
+                    }
+                }
+                lt
+            }
+        };
+        if take {
+            best = Some(([ex, c[1], c[2]], w));
+        }
+    }
+    #[cfg(test)]
+    hull_probe::note(ring.len(), arcs, below, undecided, interior, tilted);
+    Ok(best.map(|(_, w)| w))
+}
+
 /// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
 /// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
 ///
@@ -4063,6 +4307,13 @@ pub(crate) fn loop_winding(
         if same {
             return Err(reject(RejectReason::CoincidentNodes));
         }
+    }
+    // ★★★★★ **The ring's minimum may not be a node at all.** The scan above found the smallest
+    // **node**; an arc can bulge past it, and then `lo` is not a hull vertex and the turn read
+    // there is not the winding. [`arc_extremum_winding`] answers where that happens, from the arc
+    // itself — the reading `CurvedStraightRun`'s doc named.
+    if let Some(w) = arc_extremum_winding(jd, cyls, p, ring, &keys, lo)? {
+        return Ok(w);
     }
     // **A ring node need not be a corner.** The arrangement names a point wherever another feature
     // crosses an edge, and `loop_triples` keeps such a vertex even when the loop runs straight
