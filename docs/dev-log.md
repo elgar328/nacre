@@ -16087,3 +16087,10 @@ reject-trace: **`branch_vertex_unnamed`·`vertex_names_absent_surface` 소멸**(
 **라벨 광선 vs 패널/사슬 옆면**(`curved_count`의 Band(원,원) 한계 — mid 15의 `NoClearRay`, 이 칸이 이름 붙인 다음 문) · `read_cell`의 `End::Other`(CGU 46) ·
 청소 패스 nesting의 `NoClearRay` 40 · `segment_meets_face`의 호-교차 event(EndPin-event — 인구가 요구할 때) · 계단식 사슬 · O3(호의 이중 교차 — 게이트 밖) ·
 `cycle_against_line` 정리 · D5 · `ChainContacts`.
+
+### ☑ 자체 점검 (사용자 요청) — 서술 하나를 고쳤다
+- ★ **«접촉-컷 4행 = `VertexNamesAbsentSurface`의 그 인구»가 부정확** — `arc turned cut`은 커밋 2(개통)의 구성-시점 BVU가 연 행이고, 림-솔기 메커니즘(VNAS)은 3행이다. design.md·메모리
+  두 곳 정정(이 dev-log 본문은 커밋별로 옳게 적혀 있었다).
+- 확인한 것: 커밋 diff 넷에 탐침 잔재 0(`PROBE`/`zz_probe`/`dbg!` grep) · 병합 1패스의 visited 로직 재검산(min-짝, rk 선표시, 결정적) · 2패스의 erased 대칭성(방문 순서 무관) ·
+  dev-log 본문에 플레이스홀더 0 · reject-trace의 `witness_not_rational` 1은 청소 nesting(`circle_center_in_ring`)의 기존 이름(값-형성 실패 — 정직) · reject_census 얼린 코퍼스 무변 ·
+  `Ring::edges` 새 빌더의 순수-링 동일성 논거 재확인(`pin_on_line` 규칙·`RingNaming` 선후 동일).
