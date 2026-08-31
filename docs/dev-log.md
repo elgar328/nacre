@@ -16128,3 +16128,8 @@ ring fins 1.59 s · hub 1.04 s · small 557 µs — 같은 대역, «추가 풀�
 ### 다음
 **hit의 (z,θ) 소속**(corner Cut×mid — 사슬 림은 축 위치가 가변이라 진짜 차트-패리티 도로) · 뒤쪽-hit 중간 계단(half의 두 root가 안-세는 쪽이면 span 없이 0 — 기록만) ·
 Tangent 날카롭게(두 팔 공통) · `read_cell`의 `End::Other`(CGU 46) · 청소 패스 nesting의 `NoClearRay` 40 · 계단식 사슬 · O3 · D5 · `ChainContacts`.
+
+### ☑ 자체 점검 (사용자 요청) — 고칠 것이 없었다
+- 확인한 것: 커밋 diff 셋에 실험/대조 잔재 0(`EXPERIMENT`/`CONTROL`/`PROBE` grep) · `SpanAsk` fork의 위치(모든 조기-반환 팔 뒤 — Miss는 이미 0을 반환한 뒤라 MissOnly의 {0, 기권}이
+  구조적) · 두 호출부의 `_ =>` 팔이 옛 행동과 동치(Circle/Ring outer 기권 보존) · 카운트 잠금 실측치(101/41) · 메모리의 남은-벽 링크 보존 · dev-log 이음매 단일 · `:679` 18→3 산술
+  (15셀의 기권 소거) 정합. 이번 칸은 조사 단계의 종단 실험과 이중 검토(에이전트+자체)가 결함을 선제 소진한 첫 사례로 기록한다.
