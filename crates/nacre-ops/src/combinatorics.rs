@@ -2868,6 +2868,212 @@ fn point_on_ring(
     Ok(false)
 }
 
+/// A ring the rational chart road cannot name: a branch corner (no rational coordinates) or an
+/// arc step (no straight chart image). Such a ring takes [`point_in_mixed_ring`], which walks it
+/// step by step in ℚ(√c) — the one predicate, asked by the circle arm of the arrangement's `cell_in_cell` of a
+/// centre and by its polygon arm of a node.
+pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
+    ring.iter()
+        .any(|e| matches!(e.carrier, Carrier::Arc(_)) || branch_name(e.node).is_some())
+}
+
+/// **Parity of a rational point against a ring with branch corners and arc steps** — the mixed
+/// sibling of the chart road, asked only when `node_coords_rat` cannot name every corner.
+///
+/// The ray runs along the chart's own first axis (`Chart2dRat::axes` — one decision rule, not a
+/// second basis spelling): in chart coordinates it is `{ y = q.y, x > q.x }`. Each ring step
+/// answers by its carrier:
+///
+/// * a **line step** compares in ℚ(√c): the corners' chart coordinates are `QuadVal`s (a
+///   rational corner lifted by `from_rat`, a branch corner evaluated along its canonical meet
+///   line — [`branch_meet`]), the y-straddle is two signs, and "right of the
+///   probe" is the 2-D orientation `(b−a) × (q−a)` — products stay in one radical because a
+///   step carries at most one circle's corners; two *different* circles' corners on one step
+///   make `checked_mul` refuse the radical mismatch and the whole answer abstains honestly;
+/// * an **arc step** solves ray × circle exactly — the ray's plane `{ e2·p = q.y }` against the
+///   class plane and the cylinder is [`nacre_scalar::quad::plane_plane_cylinder`], the branch
+///   shape — and asks each root: right of the probe (chart-x as a `QuadVal`), and inside the
+///   arc's CCW span (`circular_order_about_seam` on the carrier's own `end` pair, cyclic with
+///   the wrap arm).
+///
+/// `None` is an honest abstention — every tie (a corner or root on the ray, a tangent ray, a
+/// seam-incident root, a radical mismatch, checked-`Rat` overflow) — and the caller keeps its
+/// `WitnessNotRational`.
+pub(crate) fn point_in_mixed_ring(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc_coeffs: &[nacre_scalar::Rat; 4],
+    probe: &[nacre_scalar::Rat; 3],
+    ring: &[RingEdge],
+) -> Option<bool> {
+    use core::cmp::Ordering;
+    use nacre_scalar::Orient;
+    use nacre_scalar::Rat;
+    use nacre_scalar::quad::{CylinderMeet, QuadVal, SeamOrder, circular_order_about_seam};
+    let n = [wc_coeffs[0], wc_coeffs[1], wc_coeffs[2]];
+    let chart = Chart2dRat::of_normal(&n)?;
+    let (e1, e2) = chart.axes();
+    let q = chart.project(probe)?;
+    let (qx, qy) = (q[0], q[1]);
+    // The ring's cylinders, for evaluating branch corners — an arc or a ruling both carry theirs.
+    // The class table is the identity's source; a chord-bounded ring carries no cylinder of its
+    // own (E3-b), so the ring's carriers cannot be the door.
+    let def_of = |cyl: usize| cyls.get(cyl).map(|c| &c.def);
+    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
+        x[0].checked_mul(y[0])?
+            .checked_add(x[1].checked_mul(y[1])?)?
+            .checked_add(x[2].checked_mul(y[2])?)
+    };
+    // A corner's chart coordinates, as `QuadVal`s.
+    let corner = |nd: NodeId| -> Option<[QuadVal; 2]> {
+        if let Some((_, cyl, _)) = branch_name(nd) {
+            let def = def_of(cyl)?;
+            let (line, s) = branch_meet(jd, cyl, def, nd)?;
+            let (b, d) = (line.base(), line.dir());
+            let coord = |e: &[Rat; 3]| -> Option<QuadVal> {
+                QuadVal::from_rat(dot(&b, e)?).checked_add(&s.checked_mul_rat(dot(&d, e)?)?)
+            };
+            Some([coord(e1)?, coord(e2)?])
+        } else {
+            let p = node_coords_rat(jd, nd)?;
+            let pr = chart.project(&p)?;
+            Some([QuadVal::from_rat(pr[0]), QuadVal::from_rat(pr[1])])
+        }
+    };
+    let k = ring.len();
+    let mut inside = false;
+    for i in 0..k {
+        let (na, nb) = (ring[i].node, ring[(i + 1) % k].node);
+        match &ring[i].carrier {
+            // A ruling is a straight step like a plane step — same y-straddle, same orient2d;
+            // its corners are branch points, which `corner` already evaluates exactly.
+            Carrier::Plane { .. } | Carrier::Ruling(_) => {
+                let a = corner(na)?;
+                let b = corner(nb)?;
+                let ya = a[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
+                let yb = b[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
+                let (up, down) = match (ya, yb) {
+                    (Orient::Zero, _) | (_, Orient::Zero) => return None, // corner on the ray
+                    (Orient::Negative, Orient::Positive) => (true, false),
+                    (Orient::Positive, Orient::Negative) => (false, true),
+                    _ => continue, // both one side: no crossing
+                };
+                // orient2d(a, b, q) = (b−a) × (q−a), all in one radical (or an honest None).
+                let (qxv, qyv) = (QuadVal::from_rat(qx), QuadVal::from_rat(qy));
+                let o = b[0]
+                    .checked_sub(&a[0])?
+                    .checked_mul(&qyv.checked_sub(&a[1])?)?
+                    .checked_sub(
+                        &b[1]
+                            .checked_sub(&a[1])?
+                            .checked_mul(&qxv.checked_sub(&a[0])?)?,
+                    )?;
+                match (o.sign(), up, down) {
+                    (Orient::Zero, ..) => return None, // probe on the step's line
+                    (Orient::Positive, true, _) | (Orient::Negative, _, true) => {
+                        inside = !inside;
+                    }
+                    _ => {}
+                }
+            }
+            Carrier::Arc(arc) => {
+                // The ray's own plane: e2·p − qy = 0 (rational).
+                let ray_plane = [e2[0], e2[1], e2[2], Rat::from_int(0).checked_sub(qy)?];
+                let (o, m, r) = (arc.def.origin(), arc.def.dir(), arc.def.radius());
+                let roots = match nacre_scalar::quad::plane_plane_cylinder(
+                    wc_coeffs, &ray_plane, &o, &m, r,
+                )? {
+                    CylinderMeet::Pair { line, s } => Some((line, s)),
+                    CylinderMeet::Miss(_) | CylinderMeet::AxisParallelMiss(_) => None,
+                    // A tangent ray, a ruling, or degenerate planes: ties and shapes the parity
+                    // cannot count — abstain.
+                    _ => return None,
+                };
+                let Some((line, s)) = roots else { continue };
+                // The arc's CCW span: the step's ends oriented by the carried `ccw` bit — the
+                // same convention every arc consumer reads (membership is direction-agnostic,
+                // so the *set* is what the CCW pair names).
+                let (lo_nd, hi_nd) = if arc.ccw { (na, nb) } else { (nb, na) };
+                let e_lo = branch_meet(jd, arc.cyl, &arc.def, lo_nd)?;
+                let e_hi = branch_meet(jd, arc.cyl, &arc.def, hi_nd)?;
+                for root in s {
+                    // Right of the probe along the ray: chart-x of the root.
+                    let (bse, dir) = (line.base(), line.dir());
+                    let x = QuadVal::from_rat(dot(&bse, e1)?)
+                        .checked_add(&root.checked_mul_rat(dot(&dir, e1)?)?)?;
+                    let xsign = x.checked_sub(&QuadVal::from_rat(qx))?.sign();
+                    match xsign {
+                        Orient::Zero => return None, // root exactly at the probe
+                        Orient::Negative => continue,
+                        Orient::Positive => {}
+                    }
+                    // Inside the CCW span end[0] → end[1]? Cyclic in the seam chart. A
+                    // seam-incident **end** is information, not a tie (the straddling boss's
+                    // alias corner sits exactly there): its θ is the chart boundary, so the
+                    // span test collapses to one comparison against the other end. Only a
+                    // seam-incident **root** — the crossing at the joint itself — abstains.
+                    let rootp = (line.clone(), root);
+                    let on_seam = |p: &(nacre_scalar::quad::MeetLine, QuadVal)| -> Option<bool> {
+                        match circular_order_about_seam(
+                            &o,
+                            &m,
+                            &arc.def.ref_dir(),
+                            (&p.0, &p.1),
+                            (&p.0, &p.1),
+                        )? {
+                            SeamOrder::SeamIncident { first, .. } => Some(first),
+                            SeamOrder::Ordered(_) => Some(false),
+                        }
+                    };
+                    let ord = |p: &(nacre_scalar::quad::MeetLine, QuadVal),
+                               qq: &(nacre_scalar::quad::MeetLine, QuadVal)|
+                     -> Option<Ordering> {
+                        match circular_order_about_seam(
+                            &o,
+                            &m,
+                            &arc.def.ref_dir(),
+                            (&p.0, &p.1),
+                            (&qq.0, &qq.1),
+                        )? {
+                            SeamOrder::Ordered(o) => Some(o),
+                            SeamOrder::SeamIncident { .. } => None,
+                        }
+                    };
+                    if on_seam(&rootp)? {
+                        return None; // the root is the joint itself — a tie
+                    }
+                    let contained = match (on_seam(&e_lo)?, on_seam(&e_hi)?) {
+                        // Two seam ends would be one point twice — upstream refuses it.
+                        (true, true) => return None,
+                        // From the seam CCW to `hi`: chart order θ ∈ (0, θ_hi).
+                        (true, false) => ord(&rootp, &e_hi)? == Ordering::Less,
+                        // From `lo` CCW back to the seam: θ ∈ (θ_lo, 2π).
+                        (false, true) => ord(&rootp, &e_lo)? == Ordering::Greater,
+                        (false, false) => {
+                            let x0 = ord(&rootp, &e_lo)?;
+                            let x1 = ord(&rootp, &e_hi)?;
+                            if x0 == Ordering::Equal || x1 == Ordering::Equal {
+                                return None; // root at an arc end
+                            }
+                            match ord(&e_lo, &e_hi)? {
+                                Ordering::Less => x0 == Ordering::Greater && x1 == Ordering::Less,
+                                Ordering::Greater => {
+                                    x0 == Ordering::Greater || x1 == Ordering::Less
+                                }
+                                Ordering::Equal => return None, // zero-span arc cannot stand
+                            }
+                        }
+                    };
+                    if contained {
+                        inside = !inside;
+                    }
+                }
+            }
+        }
+    }
+    Some(inside)
+}
+
 /// Whether the point named by plane triple `query` lies inside a connected component — the exact
 /// 3D lift of [`point_in_ring`]. A winding-parity ray whose line `L = a ∩ b` is built from two of
 /// the query's own planes (never an arbitrary direction): each crossing with a face on plane `q`
@@ -3006,11 +3212,12 @@ pub(crate) enum Probe {
 /// **Is this probe inside the component?** — the one door in front of the two roads.
 pub(crate) fn probe_in_component(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     probe: &Probe,
     faces: &[CompFace],
 ) -> Result<Option<bool>, BoolError> {
     match probe {
-        Probe::Named(x) => point_in_component(jd, *x, faces),
+        Probe::Named(x) => point_in_component(jd, cyls, *x, faces),
         Probe::Coord { p, dir } => point_in_faces_rat(jd, p, dir, faces),
     }
 }
@@ -3434,6 +3641,7 @@ pub(crate) type ComponentFaces = Vec<CompFace>;
 
 pub(crate) fn point_in_component(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     query: [usize; 3],
     faces: &[CompFace],
 ) -> Result<Option<bool>, BoolError> {
@@ -3475,6 +3683,21 @@ pub(crate) fn point_in_component(
                 let inside = |b: &BoundEdges| -> Result<Option<bool>, BoolError> {
                     match b {
                         BoundEdges::Ring(r) => {
+                            // A mixed ring (an arc step, a branch corner) takes the
+                            // rational road: the crossing X is a rational three-plane
+                            // point, the ring is walked by its carriers, and every tie
+                            // abstains for the next probe. The named walk cannot read a
+                            // branch corner at all - letting it try would answer
+                            // `RingNaming`, a false name for the cause.
+                            if ring_is_mixed(r) {
+                                let Some(coeffs) = class_coeffs_rat(jd, q) else {
+                                    return Ok(None); // no exact class statement: abstain
+                                };
+                                let Some(px) = node_coords_rat(jd, NodeId::three_planes(x)) else {
+                                    return Ok(None);
+                                };
+                                return Ok(point_in_mixed_ring(jd, cyls, &coeffs, &px, r));
+                            }
                             if point_on_ring(jd, q, x, r)? {
                                 return Ok(None);
                             }

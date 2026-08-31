@@ -668,7 +668,7 @@ fn group_faces(
         let depth = first_deciding(&probes_of(c), |x| {
             let mut d = 0usize;
             for other in (0..n).filter(|&o| o != c) {
-                match combinatorics::probe_in_component(jd, x, &comp_faces[other])? {
+                match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[other])? {
                     Some(true) => d += 1,
                     Some(false) => {}
                     None => return Ok(None), // grazed — this node abstains
@@ -705,7 +705,7 @@ fn group_faces(
                 let containers = first_deciding(&probes_of(d), |x| {
                     let mut cs = Vec::new();
                     for &m in &positives {
-                        match combinatorics::probe_in_component(jd, x, &comp_faces[m])? {
+                        match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[m])? {
                             Some(true) => cs.push(m),
                             Some(false) => {}
                             None => return Ok(None), // grazed against a material — abstain
@@ -732,7 +732,7 @@ fn group_faces(
                                     continue;
                                 }
                                 let v = first_deciding(&probes_of(c), |x| {
-                                    combinatorics::probe_in_component(jd, x, &comp_faces[o])
+                                    combinatorics::probe_in_component(jd, cyls, x, &comp_faces[o])
                                 })?
                                 .unwrap_or(false);
                                 inside.insert((c, o), v);
@@ -899,6 +899,18 @@ impl Ring {
     pub(crate) fn new(nodes: Vec<NodeId>, walls: Vec<Wall>) -> Ring {
         debug_assert_eq!(nodes.len(), walls.len(), "one wall per edge");
         Ring { nodes, walls }
+    }
+
+    /// The carrier-level reading of [`combinatorics::ring_is_mixed`], asked of the
+    /// **walls and nodes** rather than of derived edges - the legacy `edges()` below dies
+    /// on a mixed ring before any `RingEdge` exists, so a consumer that must pass such a
+    /// ring over has to ask the `Ring` itself.
+    pub(crate) fn is_mixed(&self) -> bool {
+        self.walls.iter().any(|w| !matches!(w, Wall::Plane(_)))
+            || self
+                .nodes
+                .iter()
+                .any(|&n| combinatorics::branch_name(n).is_some())
     }
 
     /// This ring's edges, ready for the exact predicates.
@@ -1290,6 +1302,15 @@ fn self_touch_reject(
                         })
                     });
                     if !in_box {
+                        continue;
+                    }
+                    // A face trimmed by a mixed ring joins the populations this sieve
+                    // already passes over (a lateral face, a branch-ended edge): the
+                    // named walk cannot read it, and an `Err` here would turn "cannot
+                    // check" into "model invalid". The net behind the skip stays what
+                    // it is for those: the edge-use guard, the non-manifold vertex
+                    // check, and `check_result_topology`'s plane-self edge guard.
+                    if rings_of(faces[j]).any(Ring::is_mixed) {
                         continue;
                     }
                     if let std::collections::hash_map::Entry::Vacant(slot) = rings_of_face.entry(j)
@@ -3650,7 +3671,31 @@ fn merge_component(
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
             let ring = outer.edges(jd, wc)?;
-            if combinatorics::ring_in_ring(jd, wc, &probes, &ring)? {
+            // A mixed outer takes the rational road - the (None, None) arm of the
+            // arrangement's `cell_in_cell`, mirrored: each rational node of the hole is
+            // a probe against the mixed walk, and an exhausted list is the same
+            // `NoClearRay` the named road raises.
+            let hit = if combinatorics::ring_is_mixed(&ring) {
+                let undecided = || reject(RejectReason::WitnessNotRational);
+                let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+                let mut ans = None;
+                for p in hole
+                    .nodes
+                    .iter()
+                    .filter_map(|&n| combinatorics::node_coords_rat(jd, n))
+                {
+                    if let Some(h) =
+                        combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, &ring)
+                    {
+                        ans = Some(h);
+                        break;
+                    }
+                }
+                ans.ok_or_else(|| reject(RejectReason::NoClearRay))?
+            } else {
+                combinatorics::ring_in_ring(jd, wc, &probes, &ring)?
+            };
+            if hit {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
                 }

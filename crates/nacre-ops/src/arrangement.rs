@@ -5593,202 +5593,6 @@ fn nest_cells(
     })
 }
 
-/// **Parity of a rational point against a ring with branch corners and arc steps** — the mixed
-/// sibling of the chart road, asked only when `node_coords_rat` cannot name every corner.
-///
-/// The ray runs along the chart's own first axis (`Chart2dRat::axes` — one decision rule, not a
-/// second basis spelling): in chart coordinates it is `{ y = q.y, x > q.x }`. Each ring step
-/// answers by its carrier:
-///
-/// * a **line step** compares in ℚ(√c): the corners' chart coordinates are `QuadVal`s (a
-///   rational corner lifted by `from_rat`, a branch corner evaluated along its canonical meet
-///   line — [`combinatorics::branch_meet`]), the y-straddle is two signs, and "right of the
-///   probe" is the 2-D orientation `(b−a) × (q−a)` — products stay in one radical because a
-///   step carries at most one circle's corners; two *different* circles' corners on one step
-///   make `checked_mul` refuse the radical mismatch and the whole answer abstains honestly;
-/// * an **arc step** solves ray × circle exactly — the ray's plane `{ e2·p = q.y }` against the
-///   class plane and the cylinder is [`nacre_scalar::quad::plane_plane_cylinder`], the branch
-///   shape — and asks each root: right of the probe (chart-x as a `QuadVal`), and inside the
-///   arc's CCW span (`circular_order_about_seam` on the carrier's own `end` pair, cyclic with
-///   the wrap arm).
-///
-/// `None` is an honest abstention — every tie (a corner or root on the ray, a tangent ray, a
-/// seam-incident root, a radical mismatch, checked-`Rat` overflow) — and the caller keeps its
-/// `WitnessNotRational`.
-fn point_in_mixed_ring(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    wc_coeffs: &[Rat; 4],
-    probe: &[Rat; 3],
-    ring: &[combinatorics::RingEdge],
-) -> Option<bool> {
-    use core::cmp::Ordering;
-    use nacre_scalar::Orient;
-    use nacre_scalar::quad::{CylinderMeet, QuadVal, SeamOrder, circular_order_about_seam};
-    let n = [wc_coeffs[0], wc_coeffs[1], wc_coeffs[2]];
-    let chart = combinatorics::Chart2dRat::of_normal(&n)?;
-    let (e1, e2) = chart.axes();
-    let q = chart.project(probe)?;
-    let (qx, qy) = (q[0], q[1]);
-    // The ring's cylinders, for evaluating branch corners — an arc or a ruling both carry theirs.
-    // The class table is the identity's source; a chord-bounded ring carries no cylinder of its
-    // own (E3-b), so the ring's carriers cannot be the door.
-    let def_of = |cyl: usize| cyls.get(cyl).map(|c| &c.def);
-    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
-    // A corner's chart coordinates, as `QuadVal`s.
-    let corner = |nd: NodeId| -> Option<[QuadVal; 2]> {
-        if let Some((_, cyl, _)) = combinatorics::branch_name(nd) {
-            let def = def_of(cyl)?;
-            let (line, s) = combinatorics::branch_meet(jd, cyl, def, nd)?;
-            let (b, d) = (line.base(), line.dir());
-            let coord = |e: &[Rat; 3]| -> Option<QuadVal> {
-                QuadVal::from_rat(dot(&b, e)?).checked_add(&s.checked_mul_rat(dot(&d, e)?)?)
-            };
-            Some([coord(e1)?, coord(e2)?])
-        } else {
-            let p = combinatorics::node_coords_rat(jd, nd)?;
-            let pr = chart.project(&p)?;
-            Some([QuadVal::from_rat(pr[0]), QuadVal::from_rat(pr[1])])
-        }
-    };
-    let k = ring.len();
-    let mut inside = false;
-    for i in 0..k {
-        let (na, nb) = (ring[i].node, ring[(i + 1) % k].node);
-        match &ring[i].carrier {
-            // A ruling is a straight step like a plane step — same y-straddle, same orient2d;
-            // its corners are branch points, which `corner` already evaluates exactly.
-            combinatorics::Carrier::Plane { .. } | combinatorics::Carrier::Ruling(_) => {
-                let a = corner(na)?;
-                let b = corner(nb)?;
-                let ya = a[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
-                let yb = b[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
-                let (up, down) = match (ya, yb) {
-                    (Orient::Zero, _) | (_, Orient::Zero) => return None, // corner on the ray
-                    (Orient::Negative, Orient::Positive) => (true, false),
-                    (Orient::Positive, Orient::Negative) => (false, true),
-                    _ => continue, // both one side: no crossing
-                };
-                // orient2d(a, b, q) = (b−a) × (q−a), all in one radical (or an honest None).
-                let (qxv, qyv) = (QuadVal::from_rat(qx), QuadVal::from_rat(qy));
-                let o = b[0]
-                    .checked_sub(&a[0])?
-                    .checked_mul(&qyv.checked_sub(&a[1])?)?
-                    .checked_sub(
-                        &b[1]
-                            .checked_sub(&a[1])?
-                            .checked_mul(&qxv.checked_sub(&a[0])?)?,
-                    )?;
-                match (o.sign(), up, down) {
-                    (Orient::Zero, ..) => return None, // probe on the step's line
-                    (Orient::Positive, true, _) | (Orient::Negative, _, true) => {
-                        inside = !inside;
-                    }
-                    _ => {}
-                }
-            }
-            combinatorics::Carrier::Arc(arc) => {
-                // The ray's own plane: e2·p − qy = 0 (rational).
-                let ray_plane = [e2[0], e2[1], e2[2], Rat::from_int(0).checked_sub(qy)?];
-                let (o, m, r) = (arc.def.origin(), arc.def.dir(), arc.def.radius());
-                let roots = match nacre_scalar::quad::plane_plane_cylinder(
-                    wc_coeffs, &ray_plane, &o, &m, r,
-                )? {
-                    CylinderMeet::Pair { line, s } => Some((line, s)),
-                    CylinderMeet::Miss(_) | CylinderMeet::AxisParallelMiss(_) => None,
-                    // A tangent ray, a ruling, or degenerate planes: ties and shapes the parity
-                    // cannot count — abstain.
-                    _ => return None,
-                };
-                let Some((line, s)) = roots else { continue };
-                // The arc's CCW span: the step's ends oriented by the carried `ccw` bit — the
-                // same convention every arc consumer reads (membership is direction-agnostic,
-                // so the *set* is what the CCW pair names).
-                let (lo_nd, hi_nd) = if arc.ccw { (na, nb) } else { (nb, na) };
-                let e_lo = combinatorics::branch_meet(jd, arc.cyl, &arc.def, lo_nd)?;
-                let e_hi = combinatorics::branch_meet(jd, arc.cyl, &arc.def, hi_nd)?;
-                for root in s {
-                    // Right of the probe along the ray: chart-x of the root.
-                    let (bse, dir) = (line.base(), line.dir());
-                    let x = QuadVal::from_rat(dot(&bse, e1)?)
-                        .checked_add(&root.checked_mul_rat(dot(&dir, e1)?)?)?;
-                    let xsign = x.checked_sub(&QuadVal::from_rat(qx))?.sign();
-                    match xsign {
-                        Orient::Zero => return None, // root exactly at the probe
-                        Orient::Negative => continue,
-                        Orient::Positive => {}
-                    }
-                    // Inside the CCW span end[0] → end[1]? Cyclic in the seam chart. A
-                    // seam-incident **end** is information, not a tie (the straddling boss's
-                    // alias corner sits exactly there): its θ is the chart boundary, so the
-                    // span test collapses to one comparison against the other end. Only a
-                    // seam-incident **root** — the crossing at the joint itself — abstains.
-                    let rootp = (line.clone(), root);
-                    let on_seam = |p: &(nacre_scalar::quad::MeetLine, QuadVal)| -> Option<bool> {
-                        match circular_order_about_seam(
-                            &o,
-                            &m,
-                            &arc.def.ref_dir(),
-                            (&p.0, &p.1),
-                            (&p.0, &p.1),
-                        )? {
-                            SeamOrder::SeamIncident { first, .. } => Some(first),
-                            SeamOrder::Ordered(_) => Some(false),
-                        }
-                    };
-                    let ord = |p: &(nacre_scalar::quad::MeetLine, QuadVal),
-                               qq: &(nacre_scalar::quad::MeetLine, QuadVal)|
-                     -> Option<Ordering> {
-                        match circular_order_about_seam(
-                            &o,
-                            &m,
-                            &arc.def.ref_dir(),
-                            (&p.0, &p.1),
-                            (&qq.0, &qq.1),
-                        )? {
-                            SeamOrder::Ordered(o) => Some(o),
-                            SeamOrder::SeamIncident { .. } => None,
-                        }
-                    };
-                    if on_seam(&rootp)? {
-                        return None; // the root is the joint itself — a tie
-                    }
-                    let contained = match (on_seam(&e_lo)?, on_seam(&e_hi)?) {
-                        // Two seam ends would be one point twice — upstream refuses it.
-                        (true, true) => return None,
-                        // From the seam CCW to `hi`: chart order θ ∈ (0, θ_hi).
-                        (true, false) => ord(&rootp, &e_hi)? == Ordering::Less,
-                        // From `lo` CCW back to the seam: θ ∈ (θ_lo, 2π).
-                        (false, true) => ord(&rootp, &e_lo)? == Ordering::Greater,
-                        (false, false) => {
-                            let x0 = ord(&rootp, &e_lo)?;
-                            let x1 = ord(&rootp, &e_hi)?;
-                            if x0 == Ordering::Equal || x1 == Ordering::Equal {
-                                return None; // root at an arc end
-                            }
-                            match ord(&e_lo, &e_hi)? {
-                                Ordering::Less => x0 == Ordering::Greater && x1 == Ordering::Less,
-                                Ordering::Greater => {
-                                    x0 == Ordering::Greater || x1 == Ordering::Less
-                                }
-                                Ordering::Equal => return None, // zero-span arc cannot stand
-                            }
-                        }
-                    };
-                    if contained {
-                        inside = !inside;
-                    }
-                }
-            }
-        }
-    }
-    Some(inside)
-}
-
 /// Whether a circle's **center** lies inside a polygon ring of the class — the containment
 /// witness `nest_cells` uses for a circle contour (the loops are disjoint by the gate's
 /// clearance proof, so one point decides). Exact: the center is `axis ∩ W` (rational), the
@@ -5840,8 +5644,9 @@ pub(crate) fn circle_center_in_ring(
     // image, so the parity walks the ring step by step in ℚ(√c) instead. Rings the old road
     // could always name still take it — the mixed arm activates on exactly the population the
     // old road refused, which is what keeps every green census row bit-identical.
-    if ring_is_mixed(ring) {
-        return point_in_mixed_ring(jd, cyls, &coeffs, &center, ring).ok_or_else(undecided);
+    if combinatorics::ring_is_mixed(ring) {
+        return combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &center, ring)
+            .ok_or_else(undecided);
     }
     let chart = combinatorics::Chart2dRat::of_normal(&n).ok_or_else(undecided)?;
     let p2 = chart.project(&center).ok_or_else(undecided)?;
@@ -5853,17 +5658,6 @@ pub(crate) fn circle_center_in_ring(
         // On the boundary is the gate-impossible contact; refusing is the honest answer.
         nacre_geom::intersect::RingSide::OnBoundary => Err(undecided()),
     }
-}
-
-/// A ring the rational chart road cannot name: a branch corner (no rational coordinates) or an
-/// arc step (no straight chart image). Such a ring takes [`point_in_mixed_ring`], which walks it
-/// step by step in ℚ(√c) — the one predicate, asked by the circle arm of [`cell_in_cell`] of a
-/// centre and by its polygon arm of a node.
-fn ring_is_mixed(ring: &[combinatorics::RingEdge]) -> bool {
-    ring.iter().any(|e| {
-        matches!(e.carrier, combinatorics::Carrier::Arc(_))
-            || combinatorics::branch_name(e.node).is_some()
-    })
 }
 
 /// Whether a polygon contour lies inside a disk — population-impossible (its edges ride wall
@@ -5924,7 +5718,7 @@ fn node_in_circle(
 /// - **polygon in polygon** — a ray from each of `a`'s nodes until one is clear
 ///   ([`combinatorics::ring_in_ring`]); when `b` is a **mixed** ring (branch corners, arc steps —
 ///   a plate's section bitten by a boss, once the scan names crossings on rulings), the ray is
-///   [`point_in_mixed_ring`]'s from each of `a`'s rational nodes, the predicate the circle arm
+///   [`combinatorics::point_in_mixed_ring`]'s from each of `a`'s rational nodes, the predicate the circle arm
 ///   already asks of a centre. ★ The old road *always* exhausts on a mixed `b` (every ray answers
 ///   `Unnameable` at the first branch corner), so this arm activates on exactly the population it
 ///   refused — every other row stays bit-identical.
@@ -5953,7 +5747,7 @@ fn cell_in_cell(
             {
                 return Ok(None);
             }
-            if ring_is_mixed(&rings[b]) {
+            if combinatorics::ring_is_mixed(&rings[b]) {
                 let undecided = || reject(RejectReason::WitnessNotRational);
                 let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
                 // From each rational node of `a` until one ray is clear (`None` is a tie: a
@@ -5963,7 +5757,9 @@ fn cell_in_cell(
                     .iter()
                     .filter_map(|e| combinatorics::node_coords_rat(jd, e.node))
                 {
-                    if let Some(hit) = point_in_mixed_ring(jd, cyls, &coeffs, &p, &rings[b]) {
+                    if let Some(hit) =
+                        combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, &rings[b])
+                    {
                         return Ok(Some(hit));
                     }
                 }
@@ -10628,7 +10424,7 @@ mod tests {
             ]
         };
         let ask = |ring: &[combinatorics::RingEdge], p: [nacre_scalar::Rat; 3]| {
-            point_in_mixed_ring(&jd, &cyls, &coeffs, &p, ring)
+            combinatorics::point_in_mixed_ring(&jd, &cyls, &coeffs, &p, ring)
         };
         assert_eq!(ask(&big, rat(12, 12)), Some(true), "plain interior");
         assert_eq!(
