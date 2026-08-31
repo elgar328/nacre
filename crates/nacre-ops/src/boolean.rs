@@ -3941,6 +3941,19 @@ fn merge_component(
 /// circle — is the pair for which "no turn" is geometrically true on this face, so equality
 /// answers right there too; a crossing at such a vertex is kept by the other faces' rings
 /// (degree > 2), the function's own rule. No population produces that consecutive pair today.
+///
+/// ★★ **Lateral faces participate, keyed by their own class** (the label's miss-first cell).
+/// The per-solid caller hands over every face of a group — laterals included — and the wall
+/// key is `(node, ClassIx)` rather than a plane index, so a curved face compares its walls
+/// in its own key space. The drop proposition is the same sentence there: two ruling edges
+/// on one wall are collinear exactly as two plane edges are, two same-direction arcs of one
+/// circle are smooth continuation, and a cusp (the `ccw` flip) lands in `bent`. Two risks
+/// are *recorded*, both with no population today: a rim circle divided only by another
+/// solid's T-nodes could dissolve to fewer than two nodes (`Ring::new` does not check —
+/// a comment rather than a debug_assert, because an assertion no population can fire is
+/// vacuous); and a merged arc can exceed a half circle, which the edge key's CCW twin rule,
+/// the seam predicate and `mass_props` all read — the crossing census's exact-volume
+/// assertions are the standing measurement of that contract.
 fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // ★ The walls are per `(node, face plane)`. Globally they cannot be: the two result faces
     // that share a 3D edge each ride *the other's* plane as their wall, so a node in the middle of
@@ -3950,7 +3963,7 @@ fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
     // per `(node, face)` and `bent` records the first disagreement — flat maps, because a nested
     // one per node costs more than the whole pass is worth (measured: 4% of a fold).
     let mut nbrs: HashMap<NodeId, HashSet<NodeId>> = HashMap::new();
-    let mut first_wall: HashMap<(NodeId, usize), Wall> = HashMap::new();
+    let mut first_wall: HashMap<(NodeId, ClassIx), Wall> = HashMap::new();
     let mut bent: HashSet<NodeId> = HashSet::new();
     for &fi in which {
         let lf = &out[fi];
@@ -3961,7 +3974,7 @@ fn dissolve_straight_angles(out: &mut [LocalFace], which: &[usize]) {
                 nbrs.entry(a).or_default().insert(b);
                 nbrs.entry(b).or_default().insert(a);
                 for nd in [a, b] {
-                    match first_wall.entry((nd, lf.surf.plane())) {
+                    match first_wall.entry((nd, lf.surf)) {
                         std::collections::hash_map::Entry::Occupied(e) => {
                             if *e.get() != ring.walls[i] {
                                 bent.insert(nd);
