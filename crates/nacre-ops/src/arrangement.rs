@@ -6208,22 +6208,26 @@ fn emit_faces(
             Some((mc.cyl, labels[c]))
         })
         .collect();
-    // ★ **A cut circle's labels, per arc** ([`ArcLabels`]) — same discipline as the disk labels
-    // above: collected from the cells, outside the keep filter. Which half-edge borders the
-    // disk side depends on how the axis meets this class's **stored** normal: `end[0] → end[1]`
-    // is CCW about the *axis*, which reads as interior-on-the-forward-side in the class's own
-    // frame only when the two agree (`ArcDir::axis_up`'s very factor). Measured both ways: the
-    // straddle's top class (stored +z, axis +z) puts each arc's digon on the forward cell, and
-    // the through-boss's bottom class (stored −z) puts the **outside** there — the twin is the
-    // disk side. The f64 dot is two parallel-or-antiparallel unit vectors, a full unit from the
-    // sign boundary.
+    // ★ **A cut circle's labels, per arc** ([`ArcLabel`]) — same discipline as the disk labels
+    // above: collected from the cells, outside the keep filter. Which half-edge borders the disk
+    // side is asked of **the cells**, by [`disk_side_probe`]'s rule below; the frame rule it
+    // replaced is kept only where the geometry declines to answer.
     //
-    // ★ **What that measurement pinned, and what still watches it.** The rule was set by label
-    // *content* (only the disk-side cell carries the cylinder solid's own material bits), which
-    // is an absolute check — but the standing lock's sector assertions are relative (fuse/cut
-    // complementary), so a *global* flip of this selector passes them (probed: it does). The
-    // absolute side is watched now (cell 4): flipping this selector turns the through-boss
-    // volume oracles red — like the panel ring's winding and the ruling turn's sign.
+    // ★★★★★ **The rule this replaced was two fixtures generalised, and a third refuted it.** It
+    // read the side off the class's **stored** normal against the axis (`axis_up`): `end[0] →
+    // end[1]` is CCW about the *axis*, which was taken to read interior-on-the-forward-side in
+    // the class's own frame exactly when the two agree. Two fixtures were measured — the
+    // straddle's top class and the through-boss's bottom class — and the rule was written from
+    // them. Measured 2026-08-31: a boss cutting a plate and the **notch it leaves** put the same
+    // plane (z = 1), the same stored normal, the same canonical coefficients and the same two
+    // arcs on **opposite** half-edges, and the label that came back was the annulus cell's — all
+    // four bits true, which no disk-side cell there can be. Over the lib suite the frame rule
+    // labelled **116** of some 4,486 arcs on the wrong side, silently: the only consumer is the
+    // chart's `read_cell`, which mostly refuses before reading a cut end, so nothing was red.
+    //
+    // ★ The old note also said a *global* flip of the selector is caught by the through-boss
+    // volume oracles. That stays true and is not what this was: the fix is per-arc, and the 116
+    // it moved changed no production census row at all (empty diff, 269 rows).
     let ns_arcs = 2 * edges.segs.len();
     let arc_labels = edges
         .arcs
