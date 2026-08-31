@@ -9782,6 +9782,10 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
 ///   volumes unchanged (13 rows); the half **Cut** rows (a notch with a half-disk ceiling) reach
 ///   the chart and its emitter refuses a cell it cannot read (`CylinderGateUndecided`, `End::Other`
 ///   — E2-2's remaining item); Ok 21 → 34, `CurvedDeparture` 17 → 0 (the name is gone).
+/// * the arc label carries its own side: the disk-side cell is asked of the cells (a rational
+///   corner's radial side) instead of derived from the class's stored frame, so a notch's
+///   half-disk ceiling reads its chamber and the four half **Cut** rows build with their volumes
+///   unchanged — Ok 34 → 38, `CylinderGateUndecided` 4 → 0.
 ///
 /// ★ The probe beside it counts the loops carrying an `OnSeam` joint at any vertex — outer loops
 /// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
@@ -9826,26 +9830,10 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             [NONE, NONE, NONE],
         ),
         ("offmid", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
-        (
-            "half wall",
-            [Ok, Rejected(RejectReason::CylinderGateUndecided), Ok],
-            [CHAIN, PANEL, PANEL],
-        ),
-        (
-            "half wall, cap below",
-            [Ok, Rejected(RejectReason::CylinderGateUndecided), Ok],
-            [CHAIN, PANEL, PANEL],
-        ),
-        (
-            "half +x",
-            [Ok, Rejected(RejectReason::CylinderGateUndecided), Ok],
-            [CHAIN, PANEL, PANEL],
-        ),
-        (
-            "half +x, cap below",
-            [Ok, Rejected(RejectReason::CylinderGateUndecided), Ok],
-            [CHAIN, PANEL, PANEL],
-        ),
+        ("half wall", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
+        ("half wall, cap below", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
+        ("half +x", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
+        ("half +x, cap below", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
     ];
     let mut seam_joints = (0usize, 0usize);
     let mut table: Vec<String> = Vec::new();
@@ -9948,11 +9936,13 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             .filter(|r| p(r))
             .count()
     };
-    assert_eq!(count(|r| *r == Ok), 34, "{table:?}");
+    assert_eq!(count(|r| *r == Ok), 38, "{table:?}");
+    // ★ The name is gone from this corpus (the arc-label cell): every family re-operates or is
+    // refused at its first op. A new population must restate this zero.
     assert_eq!(
         count(|r| *r == Rejected(RejectReason::CylinderGateUndecided)),
-        4,
-        "a half boss's Cut: the notch's ceiling is a half-disk the chart cannot yet read"
+        0,
+        "no row waits on the chart's reader any more"
     );
     assert_eq!(
         count(|r| *r == Rejected(RejectReason::DegenerateFace)),
@@ -10075,6 +10065,11 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   classify and build (`NoClearRay` 56 → 41, Ok 86 → 101); corner Cut × mid stays: its
 ///   rays genuinely hit the quarter boss, and a hit without an axial statement stays an
 ///   abstention (the (z, θ) membership road, next).
+/// * the arc label carries its own side: a cut circle's per-arc label is taken from the cell the
+///   arc's **disk** side actually bounds — asked of a rational corner's radial side, not derived
+///   from the class's stored frame, which two classes with identical normals were measured to
+///   disagree about. The four half **Cut** families re-cut under every tool but the through-axis
+///   one (`CylinderGateUndecided` 46 → 30, Ok 101 → 117).
 #[test]
 fn crossing_census_slabs_and_through_axis_walls_by_name() {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -10173,14 +10168,17 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         Rejected(RejectReason::CylinderGateUndecided),
         Rejected(NoClearRay),
     ];
-    // A half boss's Cut (a notch with a half-disk ceiling): the chart's emitter meets a cell it
-    // cannot read (`End::Other`), whatever the tool.
+    // A half boss's Cut (a notch with a half-disk ceiling): since the arc label carries its own
+    // side, the ceiling's two ends agree and the notch re-cuts — the mid slab parts it in two,
+    // the others take one solid, all with their exact volumes. The through-axis wall still meets
+    // a cell the chart cannot read (`End::Other`: a sector whose rulings are not an adjacent node
+    // pair of the rim).
     const HALF_CUT: [Cross; 5] = [
+        Ok(2),
+        Ok(1),
+        Ok(1),
         Rejected(RejectReason::CylinderGateUndecided),
-        Rejected(RejectReason::CylinderGateUndecided),
-        Rejected(RejectReason::CylinderGateUndecided),
-        Rejected(RejectReason::CylinderGateUndecided),
-        Rejected(RejectReason::CylinderGateUndecided),
+        Ok(1),
     ];
     let want: [[[Cross; 5]; 3]; 14] = [
         [BAND, BAND, BAND_COMMON], // through
@@ -10320,7 +10318,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 101, "{tally:?}");
+    assert_eq!(count(|c| matches!(c, Ok(_))), 117, "{tally:?}");
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 41);
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
@@ -10328,7 +10326,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 2);
     assert_eq!(
         count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
-        46
+        30
     );
     assert_eq!(count(|c| *c == First), 15);
     assert_eq!(count(|c| *c == Empty), 5);
@@ -10533,4 +10531,42 @@ fn the_walk_cuts_a_run_at_a_departure() {
         Some(EdgeMeet::On)
     }));
     assert_eq!(got, vec![(1, 4, false, off)]);
+}
+
+/// **The disk-side rule decides, and it is not deciding vacuously** — the counterpart of the
+/// premise assertions in `arrangement::disk_side_probe`, which fire where the fact is made and so
+/// see every chart in the binary. What a test can add is the other half: that the population is
+/// large, that the geometric answer carries nearly all of it, and that the frame-rule fallback is
+/// the rare shape it is claimed to be (two curved digons facing each other, with no rational
+/// corner anywhere on either).
+///
+/// ★ The numbers are read as **floors and shares**, not as literals: a filtered or parallel run
+/// brings fewer rows, never different ones, and a new fixture may add cells of any kind.
+#[test]
+fn the_disk_side_is_decided_by_the_cells_not_by_a_frame() {
+    let rows = crate::arrangement::disk_side_probe::ROWS
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .clone();
+    assert!(
+        rows.len() >= 100,
+        "the disk-side rule ran {} times — too few to say anything",
+        rows.len()
+    );
+    let decided = rows.iter().filter(|r| r.decided).count();
+    let both = rows.iter().filter(|r| r.both_spoke).count();
+    let fell_back = rows.iter().filter(|r| r.fell_back).count();
+    assert_eq!(decided + fell_back, rows.len(), "every arc took one road");
+    // The geometric answer carries the population; the frame rule is the tail.
+    assert!(
+        fell_back * 10 < rows.len(),
+        "the fallback answered {fell_back} of {} arcs — the rule is not the geometry's any more",
+        rows.len()
+    );
+    // And both sides speak often enough that the premise assertions above are not vacuous: an arc
+    // whose two cells both name a side is where "they are never the same side" is actually tested.
+    assert!(
+        both > 0,
+        "no arc had a witness on both sides — the premise check never ran"
+    );
 }
