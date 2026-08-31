@@ -10070,6 +10070,12 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   from the class's stored frame, which two classes with identical normals were measured to
 ///   disagree about. The four half **Cut** families re-cut under every tool but the through-axis
 ///   one (`CylinderGateUndecided` 46 → 30, Ok 101 → 117).
+/// * a ruling's θ station is placed whether or not the rim lists it: a wall whose face stops
+///   short of the line leaves a station the rim's own arcs do not hold, and reading that as
+///   "unnameable" left the sector `End::Other`. Eight through-axis cells now read their sectors
+///   and land one road later, on the emitter's own ladder (`RulingBoundNotYet` 2 → 10,
+///   `CylinderGateUndecided` 30 → 22): its sector road wants **both** rims cut, and there one of
+///   them is a whole circle — the rim-station rung, next.
 #[test]
 fn crossing_census_slabs_and_through_axis_walls_by_name() {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -10126,13 +10132,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // panel/chain lateral (miss-first), so both halves classify and build with their exact
     // volumes; the through-axis wall crosses the bitten cap's **arc**, which waits on the
     // lateral's ruling sweep.
-    const WALL_FUSE: [Cross; 5] = [
-        Ok(2),
-        Ok(1),
-        Ok(1),
-        Rejected(RejectReason::CylinderGateUndecided),
-        Ok(1),
-    ];
+    const WALL_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(RulingBoundNotYet), Ok(1)];
     // A wall boss cut (its lateral a panel — the notch's wall): the top and bottom slabs miss
     // the result (nothing of the boss stands outside the plate), the wall slab crosses the
     // panel's rulings and builds with its exact volume (E2-2's own population), the mid slab
@@ -10150,7 +10150,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // the boss, the wall slab crosses the chain's rulings with its exact volume, the mid slab
     // splits the result and both halves classify by miss-first rays (as WALL_FUSE), the
     // through-axis wall crosses the cap's arc.
-    const HALF_FUSE: [Cross; 5] = [
+    const HALF_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(RulingBoundNotYet), Ok(1)];
+    // ★ The **cap below** variants stop one wall earlier: their seated half-disk is the boss's
+    // *bottom* cap, so the through-axis wall's sectors are read but the chamber's two ends still
+    // disagree there (`CylinderGateUndecided`) rather than reaching the emitter's ladder. The two
+    // constants differ in exactly that one cell, and it is measured, not derived.
+    const HALF_FUSE_BELOW: [Cross; 5] = [
         Ok(2),
         Ok(1),
         Ok(1),
@@ -10201,7 +10206,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 Rejected(RulingBoundNotYet),
                 Ok(1),
                 Ok(1),
-                Rejected(RejectReason::CylinderGateUndecided),
+                Rejected(RulingBoundNotYet),
                 Rejected(RulingBoundNotYet),
             ],
             [
@@ -10225,20 +10230,14 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // mixed ring to the rational walk, and the miss-first rays decide (the one moved cell
         // outside the mid column).
         [
-            [
-                Ok(2),
-                Ok(2),
-                Ok(1),
-                Rejected(RejectReason::CylinderGateUndecided),
-                Ok(1),
-            ],
+            [Ok(2), Ok(2), Ok(1), Rejected(RulingBoundNotYet), Ok(1)],
             PANEL_CUT,
             COMMON,
         ],
-        [HALF_FUSE, HALF_CUT, COMMON], // half wall
-        [HALF_FUSE, HALF_CUT, COMMON], // half wall, cap below
-        [HALF_FUSE, HALF_CUT, COMMON], // half +x
-        [HALF_FUSE, HALF_CUT, COMMON], // half +x, cap below
+        [HALF_FUSE, HALF_CUT, COMMON],       // half wall
+        [HALF_FUSE_BELOW, HALF_CUT, COMMON], // half wall, cap below
+        [HALF_FUSE, HALF_CUT, COMMON],       // half +x
+        [HALF_FUSE_BELOW, HALF_CUT, COMMON], // half +x, cap below
     ];
     let mut table: Vec<String> = Vec::new();
     let mut mismatches = 0usize;
@@ -10323,10 +10322,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
     assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 0);
-    assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 2);
+    assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 10);
     assert_eq!(
         count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
-        30
+        22
     );
     assert_eq!(count(|c| *c == First), 15);
     assert_eq!(count(|c| *c == Empty), 5);

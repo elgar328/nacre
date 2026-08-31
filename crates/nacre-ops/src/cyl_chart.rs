@@ -520,8 +520,20 @@ impl Chart {
         }
         let mut list: Vec<combinatorics::NodeId> = rim.nodes.clone();
         let mut index_of = |i: usize| -> Option<usize> {
+            // ★ A ruling's station is placed by θ whether or not the rim's own arc decomposition
+            // happens to hold it. A ruling with a node **on this line** that the rim does not
+            // list is the same shape as one with no node here at all — the wall's face stops
+            // short of the rim — so it takes the same road: the station joins the order as
+            // itself, and the search below asks which arc contains it. Reading `position`'s
+            // `None` as "unnameable" was what left those sectors `End::Other`.
             match self.node_on(i, t) {
-                Some(n) => rim.nodes.iter().position(|&r| r == n),
+                Some(n) => match rim.nodes.iter().position(|&r| r == n) {
+                    Some(p) => Some(p),
+                    None => {
+                        list.push(n);
+                        Some(list.len() - 1)
+                    }
+                },
                 None => {
                     list.push(self.theta[i].end[0]);
                     Some(list.len() - 1)
