@@ -393,13 +393,16 @@ pub(crate) enum End<'a> {
     /// The circle on this line is uncut (or cut, but every arc reads the same for this cell): one
     /// label for the whole disk, whatever the sector.
     Disk(Label),
-    /// The circle is cut, and the cell's two rulings are an **adjacent pair** of its branch nodes:
-    /// this is the arc between them, the very row the band road's `arc_at` joined on.
-    Exact(&'a ArcLabel),
-    /// The circle is cut but the cell's rulings are not an adjacent node pair on it (the sector
-    /// lies inside one arc, or spans several, or a ruling has no node here) — a shape that needs
-    /// a θ placement this rung does not build. ☑ Counted; the population decides whether it is
-    /// built (`end_other`).
+    /// The circle is cut and the cell's sector is covered by **one or more** of its arcs: the
+    /// rows the band road's `arc_at` joined on. More than one means the sector spans a rim node
+    /// the chart has no vertical line for (see [`Chart::arc_around`]), and then every arc must
+    /// answer the same or this end says nothing — the rule the [`End::Disk`] arm of a cut circle
+    /// already follows.
+    Exact(Vec<&'a ArcLabel>),
+    /// The circle is cut and the sector still has no arcs to read: its two rulings are one node
+    /// of the rim (the sector is the whole circle less a ruling), or the rim's θ order cannot be
+    /// formed, or the cut arcs of a whole-circle cell disagree. ☑ Counted (`end_other`); a sector
+    /// that merely spans several arcs is no longer here — it is an [`End::Exact`] run.
     Other,
     /// No circle of this cylinder on this line at all: the line is a ⊥ class outside every
     /// lateral face's span (`circle_on_class` leaves a circle on every class *within* a span).
@@ -407,10 +410,25 @@ pub(crate) enum End<'a> {
 }
 
 impl End<'_> {
-    fn label(&self) -> Option<Label> {
+    /// **What this end says about the cell's chamber**, or `None` when it says nothing — which
+    /// now includes a run of arcs that do not agree. The read is `bands::read_bits`, the one
+    /// spelling, and it lives here so the two consumers below cannot drift into two.
+    ///
+    /// ☑ **Measured: the run case here is not exercised by the suite.** Making this answer `None`
+    /// whenever the run holds two or more arcs leaves all 340 lib tests green — because the cells
+    /// a run decides today are decided **absent** by the existence read below, and an absent cell
+    /// is never asked for its chamber. This stays the general rule rather than a written-out
+    /// refusal because it *is* the whole-circle arm's rule (see [`End::Disk`]'s site) with the
+    /// sector's own arcs in place of the circle's; narrowing it would be the second spelling.
+    fn chamber(&self, side: crate::planes::SolidSide, above: bool) -> Option<(bool, bool)> {
+        let one = |l: &Label| crate::bands::read_bits(l, side, above);
         match self {
-            End::Disk(l) => Some(*l),
-            End::Exact(a) => Some(a.label),
+            End::Disk(l) => Some(one(l)),
+            End::Exact(arcs) => {
+                let mut it = arcs.iter().map(|a| one(&a.label));
+                let first = it.next()?;
+                it.all(|b| b == first).then_some(first)
+            }
             End::Other | End::NoCircle => None,
         }
     }
@@ -489,8 +507,8 @@ impl Chart {
         (0..2).find(|&e| s.z[e] == t).map(|e| s.end[e])
     }
 
-    /// **The arc of a cut rim that contains the sector `[x, y)`** when the sector's rulings are not
-    /// themselves an adjacent node pair of that rim — a wall whose *face* stops short of this
+    /// **The run of arcs of a cut rim that covers the sector `[x, y)`** when the sector's rulings
+    /// are not themselves an adjacent node pair of that rim — a wall whose *face* stops short of this
     /// line leaves a ruling on the chart but no node on the circle (☑ the corner boss: two chords
     /// end at the plate's corner inside the footprint, so the rim has two nodes while the chart
     /// has four rulings, and three sectors lie inside the long arc).
@@ -498,9 +516,11 @@ impl Chart {
     /// The θ order is asked of `arrangement::circular_order`, the one spelling the cells' own
     /// order comes from — never of a coordinate. A ruling with no node here is placed by its end
     /// node on another line (a ruling is vertical, so the θ is the same); a ruling *with* a node
-    /// here is that node, so no point is handed to the order twice. `None` when a rim node lies
-    /// strictly inside the sector (the cell would span two arcs — no single label), when the
-    /// sector is the whole circle less one ruling, or when the order cannot be formed.
+    /// here is that node, so no point is handed to the order twice. The run is the rim nodes from
+    /// the nearest one at or before `x` to the nearest at or after `y`, walked CCW — one arc when
+    /// no rim node lies strictly inside the sector, and every arc it spans when some do. `None`
+    /// when that walk yields no arc at all: the sector is the whole circle less one ruling, or
+    /// the order cannot be formed.
     #[allow(clippy::too_many_arguments)]
     fn arc_around<'a>(
         &self,
@@ -512,7 +532,7 @@ impl Chart {
         y: usize,
         rim: &crate::arrangement::CutRim,
         arcs: &'a [ArcLabel],
-    ) -> Option<&'a ArcLabel> {
+    ) -> Option<Vec<&'a ArcLabel>> {
         let m = rim.nodes.len();
         if x == y && m >= 2 {
             return None;
@@ -546,15 +566,7 @@ impl Chart {
         let pos = |li: usize| order.iter().position(|&o| o == li);
         let (px, py) = (pos(ix)?, pos(iy)?);
         let is_rim = |p: usize| order[p] < m;
-        // No rim node strictly inside the sector, walking CCW from x to y.
-        let mut q = (px + 1) % n;
-        while q != py {
-            if is_rim(q) {
-                return None;
-            }
-            q = (q + 1) % n;
-        }
-        // The arc's ends: the nearest rim node at or before `x` (clockwise), and at or after `y`.
+        // The run's ends: the nearest rim node at or before `x` (clockwise), and at or after `y`.
         let (mut a, mut b) = (px, py);
         while !is_rim(a) {
             a = (a + n - 1) % n;
@@ -562,8 +574,32 @@ impl Chart {
         while !is_rim(b) {
             b = (b + 1) % n;
         }
-        let (na, nb) = (list[order[a]], list[order[b]]);
-        arcs.iter().find(|arc| arc.ends == [na, nb])
+        // ★★★★★ **A sector may span several arcs, and then the answer is all of them.** A rim node
+        // strictly inside the sector is a θ the *rim* knows and the chart does not — the chart's
+        // vertical lines come from `ruling_sweep`, which states a piece only where the lateral
+        // face is, so a wall's ruling on the side the face does not reach is absent and the cell
+        // is built across it. That is a defect of the **cell**, not of this lookup, and repairing
+        // the chart is its own rung; what this can do meanwhile is refuse to pretend the sector
+        // has one arc. It hands back the whole run — the rim nodes from `a` to `b`, walked CCW —
+        // and the caller answers only when they **agree**, which is exactly what the whole-circle
+        // arm of [`Chart::read_cell`] already does with a cut circle's arcs.
+        let mut run: Vec<&'a ArcLabel> = Vec::new();
+        let mut cur = a;
+        while cur != b {
+            let nxt = {
+                let mut q = (cur + 1) % n;
+                while !is_rim(q) {
+                    q = (q + 1) % n;
+                }
+                q
+            };
+            let (na, nb) = (list[order[cur]], list[order[nxt]]);
+            run.push(arcs.iter().find(|arc| arc.ends == [na, nb])?);
+            cur = nxt;
+        }
+        // `a == b` means the sector's ends land on one rim node: no arc separates them, and the
+        // caller has nothing to read here.
+        (!run.is_empty()).then_some(run)
     }
 
     /// **Read one cell off the horizontal lines** — the function the cutover will call, measured
@@ -648,6 +684,7 @@ impl Chart {
                                 let Some(arc) = arcs.iter().find(|a| a.ends == [nx, ny]) else {
                                     return Err(reject(RejectReason::RulingBoundNotYet));
                                 };
+                                let arc = vec![arc];
                                 End::Exact(arc)
                             }
                             _ => self
@@ -673,8 +710,9 @@ impl Chart {
         let mut chamber: Option<(bool, bool)> = None;
         let mut src2_disagree = false;
         for e in 0..2 {
-            let Some(l) = ends[e].label() else { continue };
-            let bits = crate::bands::read_bits(&l, side, above[e]);
+            let Some(bits) = ends[e].chamber(side, above[e]) else {
+                continue;
+            };
             match chamber {
                 None => chamber = Some(bits),
                 Some(prev) if prev != bits => src2_disagree = true,
@@ -741,13 +779,31 @@ impl Chart {
         });
         let mut by_marks: Option<bool> = None;
         for e in 0..2 {
-            let End::Exact(arc) = &ends[e] else { continue };
-            // `face_spans` refuses by name (two of this solid's faces disagreeing on one arc), and
-            // two cut ends disagreeing with each other is `CylinderFaceUndecided`, as the band
-            // road's `panel_faces` refused it:
-            // the rims of a hole are band boundaries, so a sector exists over its whole height or
-            // not at all, and picking an end to believe is the guess this kernel does not make.
-            let v = crate::bands::face_spans(arc, side, above[e])?;
+            let End::Exact(arcs) = &ends[e] else { continue };
+            // ★ **Existence asks the same run membership does.** A sector spanning several arcs
+            // is present only if every one of them says so; arcs that disagree mean the cell
+            // straddles a boundary the chart has no line for, and that is the refusal below.
+            //
+            // ☑ This is the half that moves results, and what it answers is **absent**: every run
+            // the crossing corpus builds is over arcs whose `marks` are empty, which is the
+            // geometry (the quadrant the chart could not name lies on the side the panel does not
+            // reach). Forcing the run's answer to `true` here trips the record-site assertion
+            // below with such an arc as its witness; forcing it to `false` changes nothing, which
+            // is the same fact from the other side. What this replaced was the `by_span`
+            // fallback — an axial span that knows no θ and so claimed every sector present.
+            let mut span: Option<bool> = None;
+            for arc in arcs {
+                // `face_spans` refuses by name (two of this solid's faces disagreeing on one arc), and
+                // two cut ends disagreeing with each other is `CylinderFaceUndecided`, as the band
+                // road's `panel_faces` refused it:
+                // the rims of a hole are band boundaries, so a sector exists over its whole height or
+                // not at all, and picking an end to believe is the guess this kernel does not make.
+                let v = crate::bands::face_spans(arc, side, above[e])?;
+                if span.replace(v).is_some_and(|p| p != v) {
+                    return Err(reject(RejectReason::CylinderFaceUndecided));
+                }
+            }
+            let Some(v) = span else { continue };
             if by_marks.replace(v).is_some_and(|p| p != v) {
                 return Err(reject(RejectReason::CylinderFaceUndecided));
             }
@@ -1125,7 +1181,10 @@ pub(crate) fn census(
             for e in &r.ends {
                 match e {
                     End::Disk(_) => d2b.end_disk += 1,
-                    End::Exact(_) => d2b.end_exact += 1,
+                    End::Exact(a) => {
+                        d2b.end_exact += 1;
+                        d2b.exact_run_arcs += a.len() - 1;
+                    }
                     End::Other => d2b.end_other += 1,
                     End::NoCircle => d2b.end_nocircle += 1,
                 }
@@ -1151,34 +1210,38 @@ pub(crate) fn census(
             // planar face's word — `face_spans` skips it for the same reason). Counted here, not
             // in `read_cell`, so the emitter's read and the census's read are not counted twice.
             for e in &r.ends {
-                let End::Exact(arc) = e else { continue };
-                let lateral = arc
-                    .marks
-                    .iter()
-                    .filter(|(s, kd)| {
-                        *s == side && !matches!(kd, crate::arrangement::SegKind::Seated { .. })
-                    })
-                    .count();
-                d2b.arcs_read += 1;
-                match lateral {
-                    0 => d2b.arcs_no_mark += 1,
-                    1 => {}
-                    _ => d2b.arcs_multi_mark += 1,
+                let End::Exact(arcs) = e else { continue };
+                // ★ Each arc of a run is read on its own — the contract is per arc, and a run
+                // that spans several is exactly where a violation would first show.
+                for arc in arcs {
+                    let lateral = arc
+                        .marks
+                        .iter()
+                        .filter(|(s, kd)| {
+                            *s == side && !matches!(kd, crate::arrangement::SegKind::Seated { .. })
+                        })
+                        .count();
+                    d2b.arcs_read += 1;
+                    match lateral {
+                        0 => d2b.arcs_no_mark += 1,
+                        1 => {}
+                        _ => d2b.arcs_multi_mark += 1,
+                    }
+                    // ☑ Measured 0/0 over 756 reads (lib) and 828 (corpus) before promotion (D3).
+                    // ★ **Refuted once the scan named crossings on rulings (E3):** a ⊥ cap through
+                    // a wall boss's notch cuts the circle *inside the lateral's hole*, and the arc
+                    // there carries **no** mark — the face is absent along it, and the cell reads
+                    // absent. So the contract is «at most one, and none exactly where the cell is
+                    // not there»; the population that measured 0/0 had no cut through a hole.
+                    assert!(
+                        lateral <= 1,
+                        "a cut end read carries {lateral} lateral marks of its own solid: {arc:?}"
+                    );
+                    assert!(
+                        lateral == 1 || !r.present,
+                        "a cut end read with no lateral mark of its own solid reads present: {arc:?}"
+                    );
                 }
-                // ☑ Measured 0/0 over 756 reads (lib) and 828 (corpus) before promotion (D3).
-                // ★ **Refuted once the scan named crossings on rulings (E3):** a ⊥ cap through
-                // a wall boss's notch cuts the circle *inside the lateral's hole*, and the arc
-                // there carries **no** mark — the face is absent along it, and the cell reads
-                // absent. So the contract is «at most one, and none exactly where the cell is
-                // not there»; the population that measured 0/0 had no cut through a hole.
-                assert!(
-                    lateral <= 1,
-                    "a cut end read carries {lateral} lateral marks of its own solid: {arc:?}"
-                );
-                assert!(
-                    lateral == 1 || !r.present,
-                    "a cut end read with no lateral mark of its own solid reads present: {arc:?}"
-                );
             }
             d2b.src2_disagree += usize::from(r.src2_disagree);
             d2b.exist_disagree += usize::from(r.exist_disagree);
@@ -1814,6 +1877,9 @@ pub(crate) mod probe {
             pub(crate) arcs_no_mark: usize,
             pub(crate) arcs_multi_mark: usize,
             /// The emitter's lateral faces of this class (0 when it refused).
+            /// Σ(len − 1) over `End::Exact` runs: the arcs an end reads **beyond its first**.
+            /// A sector that spans a rim node the chart has no line for reads the whole run.
+            pub(crate) exact_run_arcs: usize,
             pub(crate) emitted_faces: usize,
         }
 
@@ -2010,8 +2076,10 @@ mod tests {
     /// * `nocircle_present == 0`, `z_flip_nonboundary == 0` — a present cell has a circle at both
     ///   ends, and a band's chamber never flips across a line that is not a boundary (D1b's extra
     ///   lines are harmless).
-    /// * `arcs_read == end_exact`, `arcs_no_mark == 0`, `arcs_multi_mark == 0` — every cut-end
-    ///   read carries exactly one lateral mark of its own solid (the band road's MARKS contract).
+    /// * `arcs_read == end_exact + exact_run_arcs`, `arcs_multi_mark == 0` — every cut-end read
+    ///   carries at most one lateral mark of its own solid (the band road's MARKS contract), and
+    ///   an end that spans a run of the rim's arcs reads every one of them. (`arcs_no_mark` is no
+    ///   longer 0: a ⊥ cap through a notch reads cut ends inside the lateral's hole.)
     /// * `partial_theta_in_disk_interval == 0` — a disk-ended interval's kept sectors always close
     ///   into a whole circle, so it is emitted as one `Band`.
     ///
@@ -2050,6 +2118,30 @@ mod tests {
             let boss = m.add_cylinder(Point3::from_array(base), up, 0.5, h);
             m.rebuild_adjacency();
             crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
+        }
+        // ★ A **through-axis wall** on the wall boss: its plane holds the axis, so it cuts the
+        // lateral along two rulings — and the chart has a θ line for only the one the face
+        // reaches. The sector between them spans a rim node, which is the only shape that makes
+        // an end read a *run* of arcs. The **Cut** is the kind that builds through it (the wall
+        // boss's Fuse waits on the emitter's rim-station ladder — `RulingBoundNotYet`). Without this the run equality below is vacuous (measured:
+        // the population above produced `exact_run_arcs == 0`).
+        {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+            m.rebuild_adjacency();
+            let out = crate::boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
+            m.rebuild_adjacency();
+            let wall = m.add_cuboid(
+                Point3::from_array([2.0, -3.0, -2.0]),
+                Point3::from_array([5.0, 3.0, 6.0]),
+            );
+            m.rebuild_adjacency();
+            crate::boolean(&mut m, BoolKind::Cut, out[0], wall)
+                .expect("the through-axis wall cuts");
         }
         let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
         for second in [
@@ -2104,8 +2196,15 @@ mod tests {
                 r.arcs_multi_mark, 0,
                 "a cut end read carries two lateral marks of one solid: {r:?}"
             );
+            // ★★★★★ **A run expired the old equality.** This read `arcs_read == end_exact` until
+            // a sector was allowed to span several of the rim's arcs; the ledger then measured
+            // 4,370 against 4,312 over the whole suite while this assertion stayed green, because
+            // it sees only its own fixtures (the recorded trap: a lock in a `#[test]` watches what
+            // ran before it). The proposition that is still true — and still crosses the two loops
+            // that count these, which is what it is for — carries the run's extra arcs by name.
             assert_eq!(
-                r.arcs_read, r.end_exact,
+                r.arcs_read,
+                r.end_exact + r.exact_run_arcs,
                 "every exact end is a cut end read, and only those: {r:?}"
             );
             // ★ The emitter, predicted by the census's own walk (the successor of the shadow's
@@ -2181,6 +2280,10 @@ mod tests {
             "the reader never emitted a cell"
         );
         assert!(sum(&rows, |r| r.arcs_read) > 0, "no cut end was ever read");
+        assert!(
+            sum(&rows, |r| r.exact_run_arcs) > 0,
+            "no end ever read a run of the rim's arcs"
+        );
         assert!(
             sum(&rows, |r| r.emitted_faces) > 0,
             "the emitter never emitted a face"

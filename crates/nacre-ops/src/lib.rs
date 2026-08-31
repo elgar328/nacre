@@ -1401,7 +1401,7 @@ mod zzz_ledger {
              run_boundary_no_node {} whole_both_cut {} whole_emitted {} \
              run_split_at_node {} full_run_both_cut {} intervals_multi_run {} \
              run_run_nonboundary {} z_merge_bandlike {} nocircle_present {} z_flip_nonboundary {} \
-             arcs_read {} arcs_no_mark {} arcs_multi_mark {} emitted_faces {}",
+             arcs_read {} exact_run_arcs {} arcs_no_mark {} arcs_multi_mark {} emitted_faces {}",
             d2b.len(),
             d2b.iter().filter(|r| r.emitter_refused).count(),
             s(|r| r.cells),
@@ -1434,6 +1434,7 @@ mod zzz_ledger {
             s(|r| r.nocircle_present),
             s(|r| r.z_flip_nonboundary),
             s(|r| r.arcs_read),
+            s(|r| r.exact_run_arcs),
             s(|r| r.arcs_no_mark),
             s(|r| r.arcs_multi_mark),
             s(|r| r.emitted_faces),

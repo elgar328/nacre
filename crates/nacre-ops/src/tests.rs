@@ -10070,6 +10070,15 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   from the class's stored frame, which two classes with identical normals were measured to
 ///   disagree about. The four half **Cut** families re-cut under every tool but the through-axis
 ///   one (`CylinderGateUndecided` 46 → 30, Ok 101 → 117).
+/// * a sector that spans a rim node is read as the **run** of arcs between the nearest rim nodes
+///   at or outside it, and answers when they agree: the chart's θ lines come from the lateral's
+///   own sweep, so a wall's ruling on the side the face does not reach leaves no line and a cell
+///   is built across a station the rim knows. Twenty through-axis cells answer with their exact
+///   volumes and two reach the emitter's ladder (`CylinderGateUndecided` 22 → **0**,
+///   `RulingBoundNotYet` 10 → 12, Ok 117 → **137**). ★ The prediction said the **Common** rows
+///   would refuse like the band family's bore does; they answered — a bore's ray degeneracy does
+///   not transfer to a solid half-cylinder, and every moved cell is `Ok(1)`, so what the slabs
+///   refuse is the *severed* piece's nesting, not this cut.
 /// * a ruling's θ station is placed whether or not the rim lists it: a wall whose face stops
 ///   short of the line leaves a station the rim's own arcs do not hold, and reading that as
 ///   "unnameable" left the sector `End::Other`. Eight through-axis cells now read their sectors
@@ -10137,54 +10146,39 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // the result (nothing of the boss stands outside the plate), the wall slab crosses the
     // panel's rulings and builds with its exact volume (E2-2's own population), the mid slab
     // splits the result and both halves classify by miss-first rays (as WALL_FUSE), and
-    // the through-axis wall crosses the bite's arcs.
-    const PANEL_CUT: [Cross; 5] = [
-        Ok(2),
-        Ok(1),
-        Ok(1),
-        Rejected(RejectReason::CylinderGateUndecided),
-        Ok(1),
-    ];
+    // the through-axis wall crosses the bite's arcs and now reads its sectors as a **run** of the
+    // rim's arcs (this rung), so it builds with its exact volume too.
+    const PANEL_CUT: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
     // A half boss fused (its lateral a chain, its top cap a half-disk): since E3-c the cap's
     // chord is a graze on the wall class and the result builds — the top and bottom slabs miss
     // the boss, the wall slab crosses the chain's rulings with its exact volume, the mid slab
     // splits the result and both halves classify by miss-first rays (as WALL_FUSE), the
     // through-axis wall crosses the cap's arc.
     const HALF_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(RulingBoundNotYet), Ok(1)];
-    // ★ The **cap below** variants stop one wall earlier: their seated half-disk is the boss's
-    // *bottom* cap, so the through-axis wall's sectors are read but the chamber's two ends still
-    // disagree there (`CylinderGateUndecided`) rather than reaching the emitter's ladder. The two
-    // constants differ in exactly that one cell, and it is measured, not derived.
-    const HALF_FUSE_BELOW: [Cross; 5] = [
-        Ok(2),
-        Ok(1),
-        Ok(1),
-        Rejected(RejectReason::CylinderGateUndecided),
-        Ok(1),
-    ];
-    // A Common result — the inner half-cylinder alone, two half-disk caps and a flat side — under
-    // any slab: the coplanar cleaning pass nests its rings and no probe decides at the
-    // half-disk's branch corners (`NoClearRay` — the cleaning's own nesting road, a wall of
-    // its own beside the label's).
+    // ★ The **cap below** variants used to stop one wall earlier — their seated half-disk is the
+    // boss's *bottom* cap, and the through-axis wall's chamber ends disagreed there. Reading the
+    // sector as a run of arcs closed that gap, so the constant that existed only to name the one
+    // differing cell is gone: they take `HALF_FUSE` whole.
+    // A Common result — the inner half-cylinder alone, two half-disk caps and a flat side. Under a
+    // **slab** the cut severs it in two and the coplanar cleaning pass nests the pieces' rings,
+    // where no probe decides at the half-disk's branch corners (`NoClearRay` — the cleaning's own
+    // nesting road, a wall of its own beside the label's). The **through-axis wall** cuts the
+    // other way and leaves one solid, so it never reaches that road: since the sector reads as a
+    // run of arcs (this rung) it builds with its exact volume. ☑ Every cell this rung moved is
+    // `Ok(1)`, never `Ok(2)` — the vertical cut is the difference, measured.
     const COMMON: [Cross; 5] = [
         Rejected(NoClearRay),
         Rejected(NoClearRay),
         Rejected(NoClearRay),
-        Rejected(RejectReason::CylinderGateUndecided),
+        Ok(1),
         Rejected(NoClearRay),
     ];
     // A half boss's Cut (a notch with a half-disk ceiling): since the arc label carries its own
     // side, the ceiling's two ends agree and the notch re-cuts — the mid slab parts it in two,
-    // the others take one solid, all with their exact volumes. The through-axis wall still meets
-    // a cell the chart cannot read (`End::Other`: a sector whose rulings are not an adjacent node
-    // pair of the rim).
-    const HALF_CUT: [Cross; 5] = [
-        Ok(2),
-        Ok(1),
-        Ok(1),
-        Rejected(RejectReason::CylinderGateUndecided),
-        Ok(1),
-    ];
+    // the others take one solid, all with their exact volumes. The through-axis wall's sector is
+    // not an adjacent node pair of the rim, and reading it as the **run** between the nearest rim
+    // nodes (this rung) lets it answer as well.
+    const HALF_CUT: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
     let want: [[[Cross; 5]; 3]; 14] = [
         [BAND, BAND, BAND_COMMON], // through
         // on top: the cut leaves the plate alone.
@@ -10197,10 +10191,11 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // corner: either slab cuts the Fuse's circle at four rulings (two walls), and the chart
         // cannot pair a cut end with its rim (`End::Other`, E2-2) — the emitter refuses by name;
         // the through-axis tool's wall `y = 4` is the plate's own wall (coplanar contact) — the
-        // merge threads its mixed rings now (grouping-arm cell) and walks on to the chart's
-        // unreadable cell (`CylinderGateUndecided`, `End::Other`) for Fuse and Cut alike; the
-        // Common is a quarter cylinder alone, so a slab through it leaves two solids and the
-        // point classification finds no clear ray.
+        // merge threads its mixed rings now (grouping-arm cell), and since a sector reads as the
+        // run of rim arcs it spans (this rung) the Cut and the Common build there, while the Fuse
+        // still waits on the emitter's rim-station ladder; the Common is a quarter cylinder alone,
+        // so a **slab** through it leaves two solids and the point classification finds no clear
+        // ray — the through-axis wall cuts the other way and leaves one.
         [
             [
                 Rejected(RulingBoundNotYet),
@@ -10209,18 +10204,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 Rejected(RulingBoundNotYet),
                 Rejected(RulingBoundNotYet),
             ],
+            [Rejected(NoClearRay), Ok(1), Ok(1), Ok(1), Ok(1)],
             [
                 Rejected(NoClearRay),
                 Ok(1),
                 Ok(1),
-                Rejected(RejectReason::CylinderGateUndecided),
                 Ok(1),
-            ],
-            [
-                Rejected(NoClearRay),
-                Ok(1),
-                Ok(1),
-                Rejected(RejectReason::CylinderGateUndecided),
                 Rejected(NoClearRay),
             ],
         ],
@@ -10234,10 +10223,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
             PANEL_CUT,
             COMMON,
         ],
-        [HALF_FUSE, HALF_CUT, COMMON],       // half wall
-        [HALF_FUSE_BELOW, HALF_CUT, COMMON], // half wall, cap below
-        [HALF_FUSE, HALF_CUT, COMMON],       // half +x
-        [HALF_FUSE_BELOW, HALF_CUT, COMMON], // half +x, cap below
+        [HALF_FUSE, HALF_CUT, COMMON], // half wall
+        [HALF_FUSE, HALF_CUT, COMMON], // half wall, cap below
+        [HALF_FUSE, HALF_CUT, COMMON], // half +x
+        [HALF_FUSE, HALF_CUT, COMMON], // half +x, cap below
     ];
     let mut table: Vec<String> = Vec::new();
     let mut mismatches = 0usize;
@@ -10317,15 +10306,18 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 117, "{tally:?}");
+    assert_eq!(count(|c| matches!(c, Ok(_))), 137, "{tally:?}");
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 41);
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
     assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 0);
-    assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 10);
+    assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 12);
+    // ★ The chart's own refusal is gone from this corpus: every sector it could not name as one
+    // arc is now read as the run of arcs it spans. A new population must restate this 0 — it is
+    // an emptiness of *this* corpus, not of the chart.
     assert_eq!(
         count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
-        22
+        0
     );
     assert_eq!(count(|c| *c == First), 15);
     assert_eq!(count(|c| *c == Empty), 5);
