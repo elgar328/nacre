@@ -2087,6 +2087,23 @@ fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
 /// the comparison; a **label** is different, because "above" is defined by the stored normal. This
 /// is the correction [`combinatorics::side_of`]'s branch arm makes inline, lifted so the ∥ ruling
 /// road can make the same one without spelling it a second time.
+/// **Which way `+θ̂` points across a ∥ wall, in the frame a label is written in** — `+1` when
+/// leaving a ruling counter-clockwise about the axis enters the wall's **stored-normal** side.
+///
+/// ★★★ **One atom, three readers.** [`combinatorics::RulingCarrier::side`] is
+/// `sign((x − o) · (m̂ × n̂_r))` against the class's *rational* name, and the scalar triple product
+/// gives `(x − o) · (m̂ × n̂) = n̂ · ((x − o) × m̂) = −r·(n̂ · θ̂)`, so `sign(n̂_r · θ̂) = −side`;
+/// [`world_rat_sense`] (`κ`) carries that to the stored normal. The three consumers are the
+/// ruling sweep's graze side, [`ruling_interior_is_even`], and the chart's vertical read — and the
+/// whole point of naming it is that none of them spells the product a second time.
+pub(crate) fn plus_theta_is_above(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    side: i8,
+) -> Option<bool> {
+    Some(-(world_rat_sense(jd, wc)? * side) == 1)
+}
+
 fn world_rat_sense(jd: &Judge<'_, WorkingPlane>, c: usize) -> Option<i8> {
     let co = combinatorics::class_coeffs_rat(jd, c)?;
     let raw = jd.planes[c].plane.coefficients();
@@ -2744,13 +2761,12 @@ fn rulings_on_class(
     }
     // The face's shape from its cycles — the same reading the ⊥ road makes.
     let LateralShape { rims, cycles, .. } = lateral_shape(jd, cf, fl, def)?;
-    let kappa = world_rat_sense(jd, wc).ok_or(DeclineKind::Ruling)?;
     let mat = SegKind::Transversal {
         mat: cf.orient_sign,
     };
     let mut out = Vec::with_capacity(2);
     for side in [1i8, -1i8] {
-        let pieces = ruling_sweep(jd, cf, def, &w, wc, k, side, kappa, &rims, &cycles, mat)?;
+        let pieces = ruling_sweep(jd, cf, def, &w, wc, k, side, &rims, &cycles, mat)?;
         #[cfg(test)]
         if pieces
             .iter()
@@ -2845,7 +2861,6 @@ fn ruling_sweep(
     wc: usize,
     k: usize,
     side: i8,
-    kappa: i8,
     rims: &[(Rat, usize)],
     cycles: &[(combinatorics::CycleKind, combinatorics::LoopRing)],
     mat: SegKind,
@@ -2920,9 +2935,13 @@ fn ruling_sweep(
                 return Err(DeclineKind::CylHoleFeature); // an extent of no length
             }
             let tau: i8 = if tb > ta { 1 } else { -1 };
-            // `ruling_side` is `−sign(θ̂ · n_w)`, and `κ` carries `n_w` to the stored normal — so
-            // this is `sign(θ̂ · n_stored)`, the frame a label is written in.
-            let theta_dot_stored = -(kappa * side);
+            // See [`plus_theta_is_above`] — the one spelling of this product.
+            let theta_dot_stored: i8 =
+                if plus_theta_is_above(jd, wc, side).ok_or(DeclineKind::Ruling)? {
+                    1
+                } else {
+                    -1
+                };
             let body_above = i32::from(material_theta_sign(cf.orient_sign, tau))
                 * i32::from(theta_dot_stored)
                 > 0;
@@ -5142,7 +5161,6 @@ fn per_class(
             // rather than a `?` deliberately: dropping the piece here would make the recorded
             // population differ between a test build and a release one, and then the census would
             // be measuring a corpus production never sees.
-            #[cfg(test)]
             let label = {
                 let base = 2 * (edges.segs.len() + edges.arcs.len());
                 let cell_at = |even: bool| -> Option<Label> {
@@ -5150,52 +5168,55 @@ fn per_class(
                 };
                 let inside = ruling_interior_is_even(jd, wc, r.side);
                 let out = inside.and_then(cell_at);
-                // ★ The postcondition, checked rather than assumed — see `ruling_probe::SIDE_CHECK`.
-                // ★★ It asks whether a **cell** carries the lateral's solid, not whether the two
-                // cells *differ*: crossing a ruling on this wall crosses the **lateral**, so they
-                // differ always (☑ measured while designing this rung: every piece, without
-                // exception) and that says nothing about the side.
-                // ★ Recorded only where a label was formed, so `None` means one thing — the content
-                // did not distinguish — and never "there was nothing to check".
-                if let (Some(inside), Some(s)) = (inside, r.merged.first().map(|m| m.0)) {
-                    let has = |l: Label| {
-                        let b = match s {
-                            crate::planes::SolidSide::A => 0,
-                            crate::planes::SolidSide::B => 2,
+                #[cfg(test)]
+                {
+                    // ★ The postcondition, checked rather than assumed — see `ruling_probe::SIDE_CHECK`.
+                    // ★★ It asks whether a **cell** carries the lateral's solid, not whether the two
+                    // cells *differ*: crossing a ruling on this wall crosses the **lateral**, so they
+                    // differ always (☑ measured while designing this rung: every piece, without
+                    // exception) and that says nothing about the side.
+                    // ★ Recorded only where a label was formed, so `None` means one thing — the content
+                    // did not distinguish — and never "there was nothing to check".
+                    if let (Some(inside), Some(s)) = (inside, r.merged.first().map(|m| m.0)) {
+                        let has = |l: Label| {
+                            let b = match s {
+                                crate::planes::SolidSide::A => 0,
+                                crate::planes::SolidSide::B => 2,
+                            };
+                            l[b] || l[b + 1]
                         };
-                        l[b] || l[b + 1]
-                    };
-                    if let (Some(i_l), Some(e_l)) = (cell_at(inside), cell_at(!inside)) {
-                        // ★ The lateral's material is inside the cylinder for a boss and
-                        // **outside** for a bore or a notch (`orient` — E2-2's re-operated Cut
-                        // results were the first such population on a through-axis class), so
-                        // the content agrees with the derivation when the cell on the material's
-                        // side has the solid and the other does not.
-                        let material_inside = r.orient > 0;
-                        let verdict = match (has(i_l), has(e_l)) {
-                            (a, b) if a != b => Some(a == material_inside),
-                            _ => None,
-                        };
-                        // ★★★★★ **Asserted where the fact is made**, so the coverage is total and
-                        // the panic names the offending test — a test reading the ledger afterwards
-                        // sees only what ran before it (this ladder measured that hole twice).
-                        assert_ne!(
-                            verdict,
-                            Some(false),
-                            "the ruling label took the wrong side of the wall: class {wc}, \
+                        if let (Some(i_l), Some(e_l)) = (cell_at(inside), cell_at(!inside)) {
+                            // ★ The lateral's material is inside the cylinder for a boss and
+                            // **outside** for a bore or a notch (`orient` — E2-2's re-operated Cut
+                            // results were the first such population on a through-axis class), so
+                            // the content agrees with the derivation when the cell on the material's
+                            // side has the solid and the other does not.
+                            let material_inside = r.orient > 0;
+                            let verdict = match (has(i_l), has(e_l)) {
+                                (a, b) if a != b => Some(a == material_inside),
+                                _ => None,
+                            };
+                            // ★★★★★ **Asserted where the fact is made**, so the coverage is total and
+                            // the panic names the offending test — a test reading the ledger afterwards
+                            // sees only what ran before it (this ladder measured that hole twice).
+                            assert_ne!(
+                                verdict,
+                                Some(false),
+                                "the ruling label took the wrong side of the wall: class {wc}, \
                              side {}",
-                            r.side
-                        );
-                        ruling_probe::SIDE_CHECK
-                            .lock()
-                            .expect("the probe's lock is never held across a panic")
-                            .push(verdict);
+                                r.side
+                            );
+                            ruling_probe::SIDE_CHECK
+                                .lock()
+                                .expect("the probe's lock is never held across a panic")
+                                .push(verdict);
+                        }
                     }
+                    ruling_probe::LABELLED
+                        .lock()
+                        .expect("the probe's lock is never held across a panic")
+                        .push(out.is_some());
                 }
-                ruling_probe::LABELLED
-                    .lock()
-                    .expect("the probe's lock is never held across a panic")
-                    .push(out.is_some());
                 out
             };
             Some((
@@ -5204,7 +5225,6 @@ fn per_class(
                     wall: wc,
                     end: r.end,
                     z,
-                    #[cfg(test)]
                     label,
                     #[cfg(test)]
                     marks: r.merged.clone(),
@@ -6493,11 +6513,10 @@ pub(crate) struct RulingExtent {
     /// ([`world_rat_sense`]) — the ruling is then left without an answer and **counted**, never
     /// guessed at.
     ///
-    /// ★ `#[cfg(test)]`, like `Staged`'s `cells`/`nesting`/`labels`: the only reader is the
-    /// `cyl_chart` census, and a release build should not pay for it. The emitter reads the
-    /// horizontal lines only (a face has a circle at both ends), so this stayed an instrument
-    /// through D3; the day a vertical answer decides a face is the day this loses the attribute.
-    #[cfg(test)]
+    /// ★ It was `#[cfg(test)]` through D3 — an instrument, because *"the emitter reads the
+    /// horizontal lines only (a face has a circle at both ends)"*. **That day came**: a cut end
+    /// the reader cannot pair with its rim leaves a cell with no horizontal answer at all, and
+    /// this is what answers it ([`crate::cyl_chart::Chart::read_cell`]).
     pub(crate) label: Option<Label>,
     /// The `(solid, kind)` contributions that covered this piece — [`MergedRuling::merged`], the
     /// same list [`ArcLabel::marks`] carries for an arc.
@@ -6535,9 +6554,9 @@ pub(crate) struct RulingExtent {
 /// ★ `side · κ` is exactly the frame-free product [`ruling_grazes`] names: both factors read
 /// `world_rat`, so flipping that name flips both and the product stands — which it must, because
 /// *which cell is inside the cylinder* cannot depend on how the plane was named.
-#[cfg(test)]
 fn ruling_interior_is_even(jd: &Judge<'_, WorkingPlane>, wc: usize, side: i8) -> Option<bool> {
-    Some(side * world_rat_sense(jd, wc)? == 1)
+    // The strip's interior is the side `+θ̂` does **not** enter — [`plus_theta_is_above`].
+    Some(!plus_theta_is_above(jd, wc, side)?)
 }
 
 /// What the arrangement learned about the curved boundary, bundled: the band pass reads
@@ -10126,8 +10145,10 @@ mod tests {
     /// way (`per_class` on each), and the chart must break the lateral at the two **cut**
     /// circles (z = 0, z = 20) as well as the rims: three intervals, not one full-height band
     /// (`boundary_lines` and `chart_of`'s z-lines agree on the four). The middle interval is
-    /// both-cut and is emitted as panel rings; without the arc labels the reader has no answer
-    /// there and `emit_lateral` refuses by name (`CylinderGateUndecided`).
+    /// both-cut and is emitted as panel rings; blinding **both** of the chart's axes (the arc
+    /// labels and the rulings') leaves the reader no answer there and `emit_lateral` refuses by
+    /// name (`CylinderGateUndecided`) — blinding only the arcs does not, because the vertical
+    /// lines answer in their place.
     #[test]
     fn a_cut_circle_bounds_the_bands() {
         let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
@@ -10247,6 +10268,27 @@ mod tests {
             rulings: curved.rulings.clone(),
         };
         blind.arc_labels.clear();
+        // ★ **Blinding one axis is no longer blinding the reader** — the chart has two, and the
+        // rulings answer where the rims are silent (the vertical read's own cell). So this now
+        // says the weaker, truer thing: with the arcs gone the emitter still gets an answer, and
+        // it is only when **both** axes are blinded that it refuses by name.
+        assert!(
+            crate::cyl_chart::emit_lateral(
+                BoolKind::Fuse,
+                &jd,
+                &setup.cyls,
+                &plane_faces,
+                &blind,
+                &rows
+            )
+            .is_ok(),
+            "the vertical lines answer what the blinded rims cannot"
+        );
+        for v in blind.rulings.values_mut() {
+            for r in v.iter_mut() {
+                r.label = None;
+            }
+        }
         assert!(matches!(
             crate::cyl_chart::emit_lateral(
                 BoolKind::Fuse,

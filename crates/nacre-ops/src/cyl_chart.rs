@@ -82,8 +82,8 @@ pub(crate) struct ThetaSeg {
     pub(crate) z: [Rat; 2],
     /// **The chart's vertical answer** — the label of the cell this ruling borders inside the
     /// cylinder, carried straight from [`RulingExtent::label`]. The horizontal lines' answers are
-    /// `DiskLabels`/`ArcLabels`; this is the half they never had.
-    #[cfg(test)]
+    /// `DiskLabels`/`ArcLabels`; this is the half they never had, and [`Chart::read_cell`] reads
+    /// it where they are silent.
     pub(crate) label: Option<crate::arrangement::Label>,
     /// Who traced this line — [`RulingExtent::marks`]. Membership is `label`'s question; whether
     /// this lateral face is even here is this one's.
@@ -367,7 +367,6 @@ pub(crate) fn chart_of(
                         wall: r.wall,
                         end,
                         z,
-                        #[cfg(test)]
                         label: r.label,
                         #[cfg(test)]
                         marks: r.marks.clone(),
@@ -684,6 +683,72 @@ impl Chart {
         }
         if src2_disagree {
             chamber = None;
+        }
+
+        // ── The vertical answer: the chart's other axis, read the same way. ──
+        //
+        // ★★★★★ **A `Label` carries the material on both sides of its own plane**, so a
+        // **ruling**'s label answers the cells beside it exactly as a rim's answers the cells
+        // above and below — the chart's two axes are symmetric and only one of them was being
+        // read. A cut end the reader cannot pair with its rim (`End::Other`) leaves a cell with
+        // no horizontal answer at all, and that is the population this opens.
+        //
+        // ★★ **It fills in; it does not yet overrule.** Where the horizontal lines speak they
+        // stay the answer, and the disagreements are *counted* instead (`probe::shadow`):
+        // measured over the boss corpus, the two roads agree on 4,036 cells and disagree on 218
+        // — **all of them one family** (`corner Common`, whose axis lies on *two* walls), where
+        // both horizontal ends are arcs that agree with each other and the ruling dissents, in
+        // the `own` bit only. That family already carries a recorded arrangement label defect
+        // (D2b's `(0, 0)`-corner finding), so making the disagreement refuse would regress a
+        // defect that is already named rather than fix it. Cross-checking is what this becomes
+        // the day that corner is fixed.
+        {
+            let vertical = |i: usize, starts_here: bool| -> Option<(bool, bool)> {
+                let seg = self.theta.get(i)?;
+                let l = seg.label?;
+                let (wall, sd) = self.ruling_name(jd, k, def, i)?;
+                // The sector leaves `x` counter-clockwise and arrives at `y`, so the two walls
+                // are read from opposite sides of their own rulings.
+                let above = crate::arrangement::plus_theta_is_above(jd, wall, sd)? == starts_here;
+                Some(crate::bands::read_bits(&l, side, above))
+            };
+            // ★ A cell whose two walls are **one** ruling (a circle opened at a single point) lies
+            // on both sides of that wall, so the vertical line says nothing about it — the two
+            // readings would contradict by construction.
+            let vert: Vec<(bool, bool)> = match cell.walls {
+                Some([x, y]) if x != y => [vertical(x, true), vertical(y, false)]
+                    .into_iter()
+                    .flatten()
+                    .collect(),
+                _ => Vec::new(),
+            };
+            #[cfg(test)]
+            let per_end: Vec<(&'static str, (bool, bool))> = (0..2)
+                .filter_map(|e| {
+                    let l = ends[e].label()?;
+                    let kind = match &ends[e] {
+                        End::Disk(_) => "Disk",
+                        End::Exact(_) => "Exact",
+                        _ => "?",
+                    };
+                    Some((kind, crate::bands::read_bits(&l, side, above[e])))
+                })
+                .collect();
+            #[cfg(test)]
+            probe::shadow::record(
+                chamber,
+                &vert,
+                cell.walls.is_some_and(|[x, y]| x == y),
+                &per_end,
+            );
+            // The two walls must agree with each other before either may answer.
+            if chamber.is_none() && !src2_disagree {
+                chamber = match vert.as_slice() {
+                    [a] => Some(*a),
+                    [a, b] if a == b => Some(*a),
+                    _ => None,
+                };
+            }
         }
 
         // ── Existence: the trace where an end is cut, the span where none is. ──
@@ -1653,6 +1718,63 @@ pub(crate) mod probe {
     ///
     /// ★ Compared **within a row** (`cells` is copied in), never row-by-row against another
     /// ledger: tests run in parallel and the ledgers interleave independently.
+    /// **The vertical answer beside the horizontal one** — the shadow the cutover is measured
+    /// against (capability D's own pattern: a rung that ships no capability and *measures*).
+    ///
+    /// The chart's two axes are symmetric in principle, but only the horizontal ones have ever
+    /// decided a face, so the sign bridge on the vertical side ([`crate::arrangement::
+    /// plus_theta_is_above`]) is unexercised. These count what it would say.
+    pub(crate) mod shadow {
+        use std::sync::Mutex;
+
+        /// `(agree, disagree, vertical_only, horizontal_only, both_silent, one_ruling)`
+        pub(crate) static COUNTS: Mutex<(usize, usize, usize, usize, usize, usize)> =
+            Mutex::new((0, 0, 0, 0, 0, 0));
+
+        pub(crate) fn record(
+            horizontal: Option<(bool, bool)>,
+            vertical: &[(bool, bool)],
+            one_ruling: bool,
+            per_end: &[(&'static str, (bool, bool))],
+        ) {
+            let mut g = COUNTS
+                .lock()
+                .expect("the probe's lock is never held across a panic");
+            g.5 += usize::from(one_ruling);
+            // The vertical readings must agree with each other before they may agree with anyone.
+            let v = match vertical {
+                [] => None,
+                [a] => Some(*a),
+                [a, b] if a == b => Some(*a),
+                _ => {
+                    g.1 += 1; // two walls of one cell disagreeing is a disagreement of its own
+                    return;
+                }
+            };
+            match (horizontal, v) {
+                (Some(h), Some(x)) if h == x => g.0 += 1,
+                (Some(h), Some(x)) => {
+                    g.1 += 1;
+                    if std::env::var("NACRE_PROBE_SH").is_ok() {
+                        let who: Vec<String> = per_end
+                            .iter()
+                            .map(|(k, b)| format!("{k}{}", if *b == x { "=V" } else { "!V" }))
+                            .collect();
+                        eprintln!(
+                            "PROBE-SH|h {h:?} v {x:?}|flip {}{}|ends {}",
+                            u8::from(h.0 != x.0),
+                            u8::from(h.1 != x.1),
+                            who.join(",")
+                        );
+                    }
+                }
+                (None, Some(_)) => g.2 += 1,
+                (Some(_), None) => g.3 += 1,
+                (None, None) => g.4 += 1,
+            }
+        }
+    }
+
     pub(crate) mod d2b {
         use std::sync::Mutex;
 

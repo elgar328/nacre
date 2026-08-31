@@ -10260,6 +10260,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                         let t =
                             m.add_cuboid(Point3::from_array(tool[0]), Point3::from_array(tool[1]));
                         m.rebuild_adjacency();
+                        eprintln!("PROBE-CELL|{name}|{kind:?}|{tool_name}");
                         match boolean(&mut m, BoolKind::Cut, out[0], t) {
                             Result::Ok(r) => {
                                 m.rebuild_adjacency();
@@ -10579,6 +10580,11 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
     assert!(
         !rows.is_empty(),
         "the fixture produced no arc labels at all"
+    );
+    let sh = *crate::cyl_chart::probe::shadow::COUNTS.lock().unwrap();
+    eprintln!(
+        "SHADOW agree {} disagree {} vert_only {} horiz_only {} both_silent {} one_ruling {}",
+        sh.0, sh.1, sh.2, sh.3, sh.4, sh.5
     );
     let checked = rows.iter().filter(|r| r.checked).count();
     let both = rows.iter().filter(|r| r.both_spoke).count();
