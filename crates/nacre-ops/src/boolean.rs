@@ -556,7 +556,7 @@ fn group_faces(
                     let bound = |b: &Bound| -> Result<combinatorics::BoundEdges, BoolError> {
                         Ok(match (b, lf.surf) {
                             (Bound::Ring(r), ClassIx::Plane(c)) => {
-                                combinatorics::BoundEdges::Ring(r.edges(jd, c)?)
+                                combinatorics::BoundEdges::Ring(r.edges(jd, cyls, c)?)
                             }
                             // ★ A lateral face bounded by a node ring (a panel, a hole) or by a
                             // band with a chain rim is a shape the ray does not count — it
@@ -791,7 +791,7 @@ pub(crate) struct SeamVertex {
 ///
 /// ★ **The walls are carried, not derived.** Reading an edge's supporting plane back out of its two
 /// endpoint names is sound only while every vertex lies on exactly three planes — see
-/// [`combinatorics::ring_edges_with_walls`]. Every producer here knows the wall (the arrangement's
+/// [`Ring::edges`]. Every producer here knows the wall (the arrangement's
 /// half-edge was told it; a pass-through face reads it off the edge's other face), so it hands it
 /// over instead of leaving it to be guessed.
 ///
@@ -913,26 +913,81 @@ impl Ring {
                 .any(|&n| combinatorics::branch_name(n).is_some())
     }
 
-    /// This ring's edges, ready for the exact predicates.
+    /// This ring's edges, ready for the exact predicates - built from the walls the ring
+    /// carries, in the engine's own vocabulary.
+    ///
+    /// Until this cell the body was a legacy shim: walls flattened to plane indices (a curved
+    /// carrier to a sentinel) and handed to the plane-only derivation, whose branch-node guard
+    /// refused every mixed ring at construction time - before any consumer could even abstain.
+    /// Now a wall becomes its carrier (`Wall::Arc` an [`combinatorics::ArcCarrier`] with the
+    /// class table's def - the same clone convention every producer follows), a branch end is
+    /// pinned by its cylinder, and a three-plane end by `pin_on_line` exactly as the old road
+    /// pinned it - so a pure ring yields the same edges bit for bit, and a mixed ring yields
+    /// edges its consumers fork on (`ring_is_mixed`) instead of dying here.
     pub(crate) fn edges(
         &self,
         jd: &Judge<'_, WorkingPlane>,
+        cyls: &[crate::planes::WorkingCyl],
         p: usize,
     ) -> Result<Vec<combinatorics::RingEdge>, BoolError> {
-        // ★ **A legacy shim, on purpose.** This is the names-road (the grouping's component
-        // machinery and `self_touch` build their edges here), and its carrier-ization is the
-        // grouping-arm cell's own item — today it must behave exactly as it always has, so an arc
-        // carrier maps back to the sentinel it used to be and the road's own branch-node guard
-        // stays the thing that answers.
-        let legacy: Vec<usize> = self
-            .walls
-            .iter()
-            .map(|w| match w {
-                Wall::Plane(c) => *c,
-                Wall::Arc { .. } | Wall::Ruling { .. } => usize::MAX,
+        if self.nodes.len() != self.walls.len() {
+            return Err(reject(RejectReason::RingNaming));
+        }
+        let pin = |n: NodeId, wall: &Wall| -> Result<combinatorics::EndPin, BoolError> {
+            if combinatorics::branch_name(n).is_some() {
+                return Ok(combinatorics::EndPin::Cylinder);
+            }
+            let Some(t) = combinatorics::three_plane_name(n) else {
+                return Err(reject(RejectReason::RingNaming));
+            };
+            let Wall::Plane(c) = wall else {
+                // A three-plane point on a curved carrier has no third plane to pin it with -
+                // no producer builds the shape today, and it is refused by name rather than
+                // guessed at.
+                return Err(reject(RejectReason::RingNaming));
+            };
+            combinatorics::pin_on_line(jd, p, *c, t)
+                .map(combinatorics::EndPin::Class)
+                .ok_or_else(|| reject(RejectReason::RingNaming))
+        };
+        let def_of = |cyl: usize| -> Result<nacre_topo::CylinderDef, BoolError> {
+            Ok(cyls
+                .get(cyl)
+                .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?
+                .def
+                .clone())
+        };
+        (0..self.nodes.len())
+            .map(|i| {
+                let jn = (i + 1) % self.nodes.len();
+                let wall = &self.walls[i];
+                let carrier = match wall {
+                    Wall::Plane(c) => combinatorics::Carrier::plane(*c),
+                    Wall::Arc { cyl, ccw } => {
+                        combinatorics::Carrier::Arc(Box::new(combinatorics::ArcCarrier {
+                            cyl: *cyl,
+                            def: def_of(*cyl)?,
+                            ccw: *ccw,
+                        }))
+                    }
+                    Wall::Ruling { cyl, side, up } => {
+                        combinatorics::Carrier::Ruling(Box::new(combinatorics::RulingCarrier {
+                            cyl: *cyl,
+                            def: def_of(*cyl)?,
+                            side: *side,
+                            up: *up,
+                        }))
+                    }
+                };
+                Ok(combinatorics::RingEdge {
+                    node: self.nodes[i],
+                    to: self.nodes[jn],
+                    carrier,
+                    from_h: pin(self.nodes[i], wall)?,
+                    to_h: pin(self.nodes[jn], wall)?,
+                })
             })
-            .collect();
-        combinatorics::ring_edges_with_walls(jd, p, &self.nodes, &legacy)
+            .collect()
     }
 }
 
@@ -1226,6 +1281,7 @@ pub(crate) fn assemble_fuse_cut(
 /// that put 12x on the star when the void label did it.
 fn self_touch_reject(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     seam: &[SeamVertex],
     groups: &[Vec<usize>],
     by_comp_lf: &[Vec<&LocalFace>],
@@ -1317,7 +1373,7 @@ fn self_touch_reject(
                     {
                         slot.insert(
                             rings_of(faces[j])
-                                .map(|r| r.edges(jd, q))
+                                .map(|r| r.edges(jd, cyls, q))
                                 .collect::<Result<_, BoolError>>()?,
                         );
                     }
@@ -1513,7 +1569,7 @@ pub(crate) fn name_result_vertices(
         for (i, lf) in faces.iter().enumerate() {
             by_comp_lf[g.labels[i]].push(lf);
         }
-        self_touch_reject(jd, seam, &body_comps, &by_comp_lf)?;
+        self_touch_reject(jd, cyls, seam, &body_comps, &by_comp_lf)?;
     }
     // ★★ **A result vertex is named by the faces that meet it.**
     //
@@ -3652,7 +3708,7 @@ fn merge_component(
         // ★ Built from the walls the cycle carries, not from the node names. This is where a
         // four-plane concurrency used to break the merge: a canonical name need not mention the
         // plane its edge rides, and two names can share nothing but `wc`.
-        let ring = cyc.edges(jd, wc)?;
+        let ring = cyc.edges(jd, cyls, wc)?;
         match combinatorics::loop_winding(jd, cyls, wc, &ring)? {
             1 => outers.push(cyc),
             -1 => holes.push(cyc),
@@ -3670,7 +3726,7 @@ fn merge_component(
         let probes = combinatorics::three_plane_probes(hole.nodes.iter().copied());
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
-            let ring = outer.edges(jd, wc)?;
+            let ring = outer.edges(jd, cyls, wc)?;
             // A mixed outer takes the rational road - the (None, None) arm of the
             // arrangement's `cell_in_cell`, mirrored: each rational node of the hole is
             // a probe against the mixed walk, and an exhausted list is the same
@@ -3766,7 +3822,7 @@ fn merge_component(
         let def = &cyls[cyl].def;
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
-            let ring = outer.edges(jd, wc)?;
+            let ring = outer.edges(jd, cyls, wc)?;
             if crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge));
@@ -3780,7 +3836,7 @@ fn merge_component(
         // answers about geometry that is not there.
         for hole in faces[owner].1.iter() {
             if let Some(h) = hole.ring() {
-                let ring = h.edges(jd, wc)?;
+                let ring = h.edges(jd, cyls, wc)?;
                 if crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
                     return Err(reject(RejectReason::CoplanarMerge));
                 }

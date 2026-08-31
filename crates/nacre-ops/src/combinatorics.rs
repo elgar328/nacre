@@ -789,7 +789,7 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
 ///
 /// **Which plane of a point's name pins it on the line `a ∩ b`** — the one place that rule lives.
 ///
-/// ★★★★★ **It was written five times before it was written once.** `ring_edges_with_walls`, the ray
+/// ★★★★★ **It was written five times before it was written once.** the ring-edge derivation (now `Ring::edges` in `boolean`), the ray
 /// caster's namer, and *both* arms of `arrangement::third_on_l` each spelled it, and the tracer's
 /// seated road spelled a **reduced** version — no cut test, no smallest rule, a `panic` where this
 /// returns `None`. That is this codebase's dominant defect shape: the correct rule inlined in a
@@ -823,52 +823,6 @@ pub(crate) fn pin_on_line(
     t.iter()
         .copied()
         .find(|&c| c != a && c != b && jd.plane_pair_dir_sign(a, b, c) != 0)
-}
-
-/// ★ **This is the sound twin of `ring_from_names`.** That one reads an edge's supporting plane
-/// back out of its two endpoint names — "the class they share besides `P`" — which works only while
-/// every vertex lies on exactly three planes. Let four meet at a point, give it one canonical name,
-/// and the name need not mention the plane the edge rides at all; the two names can even share
-/// nothing but `P`. Measured (2026-07, `docs/dev-log.md`): a boolean whose fourth plane fell on an
-/// arrangement vertex produced exactly that, and `ring_from_names` declined `RingNaming`.
-///
-/// The **handle** is still derived, and soundly — see [`pin_on_line`], where that rule now lives.
-pub(crate) fn ring_edges_with_walls(
-    jd: &Judge<'_, WorkingPlane>,
-    p: usize,
-    nodes: &[NodeId],
-    walls: &[usize],
-) -> Result<Vec<RingEdge>, BoolError> {
-    if nodes.len() != walls.len() {
-        return Err(reject(RejectReason::RingNaming));
-    }
-    // ★ **The names are taken before the handles, and a branch node stops the ring here** — not
-    // inside `handle`. Letting it fall into that `None` would report `RingNaming` ("these names do
-    // not chain") for a vertex that has no three-plane name to chain in the first place: one label
-    // for two causes. Collected through `Option<Vec<_>>` so a member cannot be dropped instead.
-    let names: Vec<[usize; 3]> = nodes
-        .iter()
-        .map(|&n| three_plane_name(n))
-        .collect::<Option<_>>()
-        .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
-    let handle = |t: [usize; 3], wall: usize| pin_on_line(jd, p, wall, t);
-    (0..nodes.len())
-        .map(|i| {
-            let j = (i + 1) % nodes.len();
-            let wall = walls[i];
-            let (Some(from_h), Some(to_h)) = (handle(names[i], wall), handle(names[j], wall))
-            else {
-                return Err(reject(RejectReason::RingNaming));
-            };
-            Ok(RingEdge {
-                node: nodes[i],
-                to: nodes[j],
-                carrier: Carrier::plane(wall),
-                from_h: EndPin::Class(from_h),
-                to_h: EndPin::Class(to_h),
-            })
-        })
-        .collect()
 }
 
 /// **A direction on a working plane**: the carrier that supplies it, and which way along it.
@@ -3218,7 +3172,7 @@ pub(crate) fn probe_in_component(
 ) -> Result<Option<bool>, BoolError> {
     match probe {
         Probe::Named(x) => point_in_component(jd, cyls, *x, faces),
-        Probe::Coord { p, dir } => point_in_faces_rat(jd, p, dir, faces),
+        Probe::Coord { p, dir } => point_in_faces_rat(jd, cyls, p, dir, faces),
     }
 }
 
@@ -3357,6 +3311,7 @@ fn planes_through_line(
 /// `Ok(None)` = this ray grazed; the caller has other directions to try.
 pub(crate) fn point_in_faces_rat(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     p: &[nacre_scalar::Rat; 3],
     dir: &[nacre_scalar::Rat; 3],
     faces: &[CompFace],
@@ -3445,6 +3400,12 @@ pub(crate) fn point_in_faces_rat(
                     // loud. A face of a valid solid has no such ring, so saying so is free.
                     if r.len() < 3 {
                         return Err(reject(RejectReason::DegenerateRing));
+                    }
+                    // A mixed ring forks to the rational walk here exactly as the named
+                    // road forks: the crossing x is already rational, and the chart-ring
+                    // derivation below has no spelling for a branch corner or an arc step.
+                    if ring_is_mixed(r) {
+                        return Ok(point_in_mixed_ring(jd, cyls, &coeffs, &x, r));
                     }
                     // The branch check is spelled before the chart rather than left to
                     // `node_coords_rat`'s `None`, so an unnamed vertex is reported as itself and
