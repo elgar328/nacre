@@ -10260,7 +10260,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                         let t =
                             m.add_cuboid(Point3::from_array(tool[0]), Point3::from_array(tool[1]));
                         m.rebuild_adjacency();
-                        eprintln!("PROBE-CELL|{name}|{kind:?}|{tool_name}");
                         match boolean(&mut m, BoolKind::Cut, out[0], t) {
                             Result::Ok(r) => {
                                 m.rebuild_adjacency();
