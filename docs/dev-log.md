@@ -16094,3 +16094,37 @@ reject-trace: **`branch_vertex_unnamed`·`vertex_names_absent_surface` 소멸**(
 - 확인한 것: 커밋 diff 넷에 탐침 잔재 0(`PROBE`/`zz_probe`/`dbg!` grep) · 병합 1패스의 visited 로직 재검산(min-짝, rk 선표시, 결정적) · 2패스의 erased 대칭성(방문 순서 무관) ·
   dev-log 본문에 플레이스홀더 0 · reject-trace의 `witness_not_rational` 1은 청소 nesting(`circle_center_in_ring`)의 기존 이름(값-형성 실패 — 정직) · reject_census 얼린 코퍼스 무변 ·
   `Ring::edges` 새 빌더의 순수-링 동일성 논거 재확인(`pin_on_line` 규칙·`RingNaming` 선후 동일).
+---
+
+## 라벨 광선이 비켜간 원통을 0으로 센다 — miss-first · per-solid dissolve의 ClassIx 키
+
+커밋: `ba91885`(dissolve 키) · `26a3895`(miss-first, `SpanAsk`) · 문서.
+
+### 조사 = 실험 (설계가 실측으로 먼저 판정됐다)
+mid 컬럼 NoClearRay 15셀의 원인: 두 광선 도로가 원통 면에서 `BoundEdges::Band` 파괴자를 **풀이보다 먼저** 요구 — 패널/사슬 옆면(`Lateral`)이면 광선이 원통을 **비켜가도** attempt 전체 기권.
+공유 팔 `cylinder_face_crossings`는 Miss→`Counted(0)`을 이미 답한다 — **잘못된 것은 순서뿐**. 실험(역치환 복원): miss-first 심만으론 라벨이 뚫린 뒤 **:3964 패닉** —
+per-solid `dissolve_straight_angles`(n>1)의 `first_wall` 키가 `lf.surf.plane()`(옆면 포함 `which`의 첫 소비; unify 쪽은 밴드가 뒤에 append라 plane-only 무사고). 키를
+`(NodeId, ClassIx)`로 한 둘째 심까지: **15셀 전부 Ok(2), census 내부 부피·validate 단언 통과**, 전체 스위트 부작용 0. corner Cut×mid만 잔류(광선이 실제 hit — (z,θ) 소속은 다음 칸).
+
+### 커밋 1 — dissolve 키 `(NodeId, ClassIx)` (`ba91885`)
+단독 무변은 **구조 논증**: 오늘 스위트 초록 = (grouping Ok ∧ n>1 ∧ 그룹에 Cyl 면)인 입력 부재(있으면 오늘 이미 패닉); 평면 키 전단사·변이체 분리. drop 명제는 옆면에서도 같은 문장
+(`Wall` 동등성이 캐리어+방향 부호화 — 룰링 동일=공선·같은 방향 호=매끄러운 연속·커스프는 ccw로 bent). 인구 0의 위험 둘을 **주석으로** 기록(링 붕괴 — 인구 0 조건의 debug_assert는
+공허 위험; 병합 호의 하류 계약 — census의 정확-부피 단언이 그 상설 측정).
+
+### 커밋 2 — miss-first, 한 철자 `SpanAsk`
+`cylinder_face_crossings(jd, line, def, ask)`의 `SpanAsk{ Band{span, half} | MissOnly }` — half를 Band 팔에 태워 **MissOnly의 반환이 구조적으로 {Counted(0), Graze}**(Option-span의
+«rim 없음=전부 세라» 오독 차단); `curved_count`는 Band일 때만 cc·half 구성(**비이산 좌표에서 half 오버플로로 «miss인데 기권» 재발할 결 차단** — 검토 1차의 철자). 두 호출부 모두
+`Lateral`→MissOnly(두 도로가 같은 팔), 그 외 변이체 기존 기권. MissOnly의 `Counted(0)`은 «무한 실린더 miss ⊃ 모든 부분면 miss»라 Band 팔의 관통-보어 짝수-상쇄 가정보다 **약한
+(무가정) 문장**. 기존 `debug_assert`(게이트의 유리화)가 Lateral-만 attempt라는 새 인구에 노출되나 전제 동일(주석 명시).
+- 실측: 15셀 → **Ok(2)**(부피·validate ✓), NoClearRay 56→41 · count(Ok) 86→**101**(검토가 잡은 잠금 누락) · CGU 46 등 무변, 총 210 · 전체 스위트 339 초록.
+- 잔류가 잠금이다: **corner Cut×mid의 NoClearRay 유지** = «Pair를 세는 실수»의 검출기 · **COMMON 계열 무변** = 청소 도로(:2520) 소산이라 움직이면 누수.
+- 프로덕션 census: **공집합**(269행 비트 동일 — 행 단위 논증대로: 원통 가족 전부 1솔리드·라벨 이전 거절·Band+coord 탐침. «corpus는 셀이 인구를 추가하기 전엔 안 담는다»의 재판으로 기록) · reject_census 무변 · 부정 대조(역치환·md5): (i) MissOnly 차단 → **정확히 15셀** NoClearRay 복귀 · (ii) dissolve 키 역치환 → **:3977 패닉 재현**(«a plane-only path got cylinder class» — 키의 하중).
+
+### 관문
+전량 초록: fmt/clippy 0 · workspace **1175** · nodef · census 두 프로파일 동일(269행)·HEAD 동일 · reject_census · 스윕 129 · perf release(fold 80 407면 237.2116 ·
+ring fins 1.59 s · hub 1.04 s · small 557 µs — 같은 대역, «추가 풀이는 n>1 한정» 예측 적중) · kit 72 · reject-trace: **`no_clear_ray` :679 18 → 3**(라벨이 결정한다 — 15셀의
+기권이 사라진 자국), 청소 도로 :2520 60 무변 · 그 외 전부 무변.
+
+### 다음
+**hit의 (z,θ) 소속**(corner Cut×mid — 사슬 림은 축 위치가 가변이라 진짜 차트-패리티 도로) · 뒤쪽-hit 중간 계단(half의 두 root가 안-세는 쪽이면 span 없이 0 — 기록만) ·
+Tangent 날카롭게(두 팔 공통) · `read_cell`의 `End::Other`(CGU 46) · 청소 패스 nesting의 `NoClearRay` 40 · 계단식 사슬 · O3 · D5 · `ChainContacts`.

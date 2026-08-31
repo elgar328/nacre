@@ -1411,8 +1411,11 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
     철회(그룹핑 팔 캐리어화의 입구). 실측은 dev-log 「재연산 사다리 E, E3-b/c」.
   ★★ **그룹핑 팔 캐리어화 (2026-08-31): 이름-도로가 혼합 링을 읽는다.** `Ring::edges`가 walls에서 캐리어·핀을 직접 짓고(legacy shim과 구성-시점 `BranchVertexUnnamed` 사망), 격리·좌표
     도로는 `ring_is_mixed`로 갈라 유리 탐침 + `point_in_mixed_ring`(combinatorics로 승격, 한 철자)으로, 병합은 (방향쌍, 벽) 멀티셋의 **2-패스 지움**(정확 반대쌍+`Wall::reversed` →
-    평면-전용 1:1; 구성상 공허하던 ≥3 검사는 삭제)으로. 가로지르는 census BVU 18→**0**(mid 15는 라벨 광선의 패널/사슬 옆면 벽 — `NoClearRay`) · `rul flush` **[Ok×3]** · census의
+    평면-전용 1:1; 구성상 공허하던 ≥3 검사는 삭제)으로. 가로지르는 census BVU 18→**0**(mid 15는 라벨 광선의 패널/사슬 옆면 벽 — `NoClearRay`, ☑ miss-first 칸이 닫음) · `rul flush` **[Ok×3]** · census의
     접촉-컷 4행 **빌드**(부피 전부 해석값 정확 — `arc turned`는 개통이(구성-시점 BVU), VNAS 3행은 병합이 열었다: 림 솔기 호 쌍이 지워지자 없는 원통을 이름하던 branch 정점째 소멸). 실측은 dev-log 「그룹핑 팔 캐리어화」.
+  ★★ **miss-first (2026-08-31): 라벨 광선이 비켜간 원통을 0으로 센다.** 광선 도로가 원통 면의 `Band` 파괴자를 풀이보다 먼저 요구하던 순서를 뒤집어 — `SpanAsk{Band{span,half}|MissOnly}`
+    한 철자, MissOnly의 답은 구조적으로 {0, 기권} — 갈린 결과의 라벨이 보스를 비켜가는 광선으로 결정한다(전제: per-solid dissolve가 `(NodeId, ClassIx)` 키로 옆면을 받음). mid 15셀 →
+    **Ok(2) 정확 부피**(NoClearRay 56→41·Ok 86→101), corner Cut×mid 잔류 = hit-기권의 검출기, 프로덕션 census **공집합**. 실측은 dev-log 「miss-first」.
   - ★★★★★ **D3의 전제조건 — 여기서 계기 넷이 눈이 멀었던 적이 있다.** 칸 ⑦이 옆면의 면 구조를 바꾸고
     **메시가 조용히 틀린 채** `validate`·watertight·정확 부피·면 수가 **전부 초록**이었다(넓이 7.873 vs
     9.425). 그걸 잡은 눈은 칸 ⑧의 **메시 넓이 ≈ 정확 넓이**다. ⇒ 갈아타기 **전에** 원통 코퍼스에 그
