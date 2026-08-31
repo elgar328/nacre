@@ -3341,10 +3341,18 @@ pub(crate) fn point_in_faces_rat(
     for f in faces {
         let q = match &f.surf {
             CompSurf::Cylinder(def) => {
-                let BoundEdges::Band { lo, hi } = f.outer else {
-                    return Ok(None);
+                // Solve before asking for bounds — the same fork the named road makes: a
+                // `Lateral` face answers `0` for a ray that misses its cylinder outright,
+                // and abstains on anything more.
+                let ask = match &f.outer {
+                    BoundEdges::Band { lo, hi } => SpanAsk::Band {
+                        span: [*lo, *hi],
+                        half: &ahead,
+                    },
+                    BoundEdges::Lateral => SpanAsk::MissOnly,
+                    _ => return Ok(None),
                 };
-                match cylinder_face_crossings(jd, [&line[0], &line[1]], def, [lo, hi], &ahead) {
+                match cylinder_face_crossings(jd, [&line[0], &line[1]], def, ask) {
                     Some(CurvedHit::Counted(k)) => {
                         count += k;
                         continue;
@@ -3463,7 +3471,12 @@ fn point_in_disk(p: &[nacre_scalar::Rat; 3], def: &nacre_topo::CylinderDef) -> O
 }
 
 /// [`cylinder_face_crossings`] for a probe ray named by three plane classes: it states the ray's
-/// two planes and the "behind" cut plane from the class table and hands them over.
+/// two planes — and, when the face has an axial statement, the "behind" cut plane — from the
+/// class table and hands them over.
+///
+/// `span: None` is the **miss-only** ask (a face whose bounds carry no rim classes — a panel, a
+/// chain rim): only the ray's two planes are stated, so nothing built for the banded arm can
+/// overflow into "missed, but abstained" on a wide-coordinate model.
 ///
 /// `Ok(None)` — as `Some(None)` here — is the abandon-this-ray answer; `Err` never happens because
 /// every failure this can meet is arithmetic, and arithmetic that cannot answer is an abstention.
@@ -3473,37 +3486,72 @@ fn curved_count(
     b: usize,
     c: usize,
     def: &nacre_topo::CylinderDef,
-    span: [usize; 2],
+    span: Option<[usize; 2]>,
 ) -> Result<Option<usize>, BoolError> {
     // ★ The cylinder gate refuses any class that is rotated or has no narrow rational name
     // (`planes.rs`), so in a boolean that has a cylinder these are always `Some`. A `None` here
     // would mean that gate let something through — assert it, then abstain rather than guess.
-    let Some(((ca, cb), cc)) = class_coeffs_rat(jd, a)
-        .zip(class_coeffs_rat(jd, b))
-        .zip(class_coeffs_rat(jd, c))
-    else {
+    // ★ The miss-only ask exposes this assert to a new population (a Lateral-only attempt, which
+    // used to abstain before reaching it), but the premise is unchanged: the gate makes every
+    // class of a cylinder-holding boolean rational.
+    let Some((ca, cb)) = class_coeffs_rat(jd, a).zip(class_coeffs_rat(jd, b)) else {
         debug_assert!(
             false,
             "the cylinder gate is supposed to make these rational"
         );
         return Ok(None);
     };
-    // The cut plane through the ray's origin, normal `n_a × n_b` — the very direction
-    // `plane_plane_cylinder` gives its meet line, so "negative side" is "behind the query".
-    let Some(half) = (|| {
-        let d = cross3_rat(&[ca[0], ca[1], ca[2]], &[cb[0], cb[1], cb[2]])?;
-        let at = nacre_scalar::three_planes_rat([ca, cb, cc])?;
-        let d0 = nacre_scalar::Rat::from_int(0).checked_sub(dot3_rat(&d, &at)?)?;
-        Some([d[0], d[1], d[2], d0])
-    })() else {
-        return Ok(None);
+    let banded: Option<([usize; 2], [nacre_scalar::Rat; 4])> = match span {
+        None => None,
+        Some(sp) => {
+            let Some(cc) = class_coeffs_rat(jd, c) else {
+                debug_assert!(
+                    false,
+                    "the cylinder gate is supposed to make these rational"
+                );
+                return Ok(None);
+            };
+            // The cut plane through the ray's origin, normal `n_a × n_b` — the very direction
+            // `plane_plane_cylinder` gives its meet line, so "negative side" is "behind the
+            // query".
+            let Some(half) = (|| {
+                let d = cross3_rat(&[ca[0], ca[1], ca[2]], &[cb[0], cb[1], cb[2]])?;
+                let at = nacre_scalar::three_planes_rat([ca, cb, cc])?;
+                let d0 = nacre_scalar::Rat::from_int(0).checked_sub(dot3_rat(&d, &at)?)?;
+                Some([d[0], d[1], d[2], d0])
+            })() else {
+                return Ok(None);
+            };
+            Some((sp, half))
+        }
     };
-    Ok(
-        match cylinder_face_crossings(jd, [&ca, &cb], def, span, &half) {
-            Some(CurvedHit::Counted(k)) => Some(k),
-            Some(CurvedHit::Graze) | None => None,
-        },
-    )
+    let ask = match &banded {
+        Some((sp, half)) => SpanAsk::Band { span: *sp, half },
+        None => SpanAsk::MissOnly,
+    };
+    Ok(match cylinder_face_crossings(jd, [&ca, &cb], def, ask) {
+        Some(CurvedHit::Counted(k)) => Some(k),
+        Some(CurvedHit::Graze) | None => None,
+    })
+}
+
+/// What the caller can say about the face's extent, for [`cylinder_face_crossings`].
+///
+/// ★ An enum rather than an `Option` so the miss-only ask cannot be misread as "no rims — count
+/// every root": carrying `half` only in the [`SpanAsk::Band`] arm makes `MissOnly`'s answers
+/// **structurally** {`Counted(0)`, `Graze`} — a genuine hit has nowhere to be counted.
+enum SpanAsk<'a> {
+    /// A banded face: two rim classes for the axial span, and the caller's half-plane for
+    /// "which side of the origin counts".
+    Band {
+        span: [usize; 2],
+        half: &'a [nacre_scalar::Rat; 4],
+    },
+    /// No axial statement (a panel, a chain rim): answer only "the ray misses the cylinder
+    /// entirely" — `Counted(0)`, a sentence **weaker** than anything about the face's bounds
+    /// (the infinite cylinder missed implies every partial face missed) — and abstain on
+    /// everything else.
+    MissOnly,
 }
 
 /// **Where the line `line[0] ∩ line[1]` crosses one lateral band, and how many of those lie on
@@ -3513,7 +3561,7 @@ fn curved_count(
 /// state their ray as *two rational planes*, so both ask this. Writing the arms twice is how the
 /// two would come to disagree about a graze.
 ///
-/// `half` is a rational plane through the ray's origin, and a crossing counts exactly when it is
+/// A `Band`'s `half` is a rational plane through the ray's origin, and a crossing counts exactly when it is
 /// on that plane's **negative** side — so each road states its own half and nothing here has a
 /// front or a back:
 ///
@@ -3523,7 +3571,7 @@ fn curved_count(
 ///   probe's `fwd == 1` — measures against.
 /// - the coordinate road's normal is `−dir`, which counts **ahead** of the origin.
 ///
-/// `span` are the two rim plane classes. The test for "on this band" does **not** read their
+/// A [`SpanAsk::Band`]'s `span` are the two rim plane classes. The test for "on this band" does **not** read their
 /// stored normals: it takes each rim's axis parameter ([`crate::planes::axis_param_of_plane`]) and
 /// rebuilds a plane there with the **axis** as normal, so "between the rims" is simply "opposite
 /// sides of two planes that point the same way". Reading the stored normals is the mistake
@@ -3534,8 +3582,7 @@ fn cylinder_face_crossings(
     jd: &Judge<'_, WorkingPlane>,
     line: [&[nacre_scalar::Rat; 4]; 2],
     def: &nacre_topo::CylinderDef,
-    span: [usize; 2],
-    half: &[nacre_scalar::Rat; 4],
+    ask: SpanAsk<'_>,
 ) -> Option<CurvedHit> {
     use nacre_scalar::Orient;
     use nacre_scalar::quad::{CylinderMeet, QuadVal};
@@ -3559,6 +3606,11 @@ fn cylinder_face_crossings(
                 return Some(CurvedHit::Graze);
             }
         };
+    // A miss already returned `Counted(0)` above; whatever survives is a real meeting with
+    // the quadric, and without an axial statement the honest answer is abstention.
+    let SpanAsk::Band { span, half } = ask else {
+        return Some(CurvedHit::Graze);
+    };
     // The two rims, restated with the **axis** as their normal so "between" is a sign difference.
     let mut rim = Vec::with_capacity(2);
     for c in span {
@@ -3616,15 +3668,22 @@ pub(crate) fn point_in_component(
         let mut count = 0usize;
         for f in faces {
             // ★ A cylindrical face is counted by its own arm — the crossings are roots of a
-            // quadratic, not three-plane points, and "inside the face" is an axial span rather
-            // than a ring walk.
+            // quadratic, not three-plane points, and "inside the face" is an axial span when
+            // the face states one, a bare miss-oracle when it does not.
             if let CompSurf::Cylinder(def) = &f.surf {
-                let BoundEdges::Band { lo, hi } = f.outer else {
-                    // A cylinder face bounded by anything but a band has no producer; refusing to
-                    // guess costs the caller another node, never a wrong answer.
-                    return Ok(None);
+                // ★ Solve before asking for bounds: a face the axial arm cannot state (a
+                // panel, a chain rim — `Lateral`) still answers `0` when the ray misses its
+                // cylinder outright, and that weaker sentence is what lets a split result's
+                // label decide from a probe whose rays all run clear of the boss. A genuine
+                // hit on such a face stays an abstention — the next probe's business.
+                let span = match &f.outer {
+                    BoundEdges::Band { lo, hi } => Some([*lo, *hi]),
+                    BoundEdges::Lateral => None,
+                    // A circle or polygon outer on a cylinder face has no producer; refusing
+                    // to guess costs the caller another node, never a wrong answer.
+                    _ => return Ok(None),
                 };
-                match curved_count(jd, a, b, c, def, [lo, hi])? {
+                match curved_count(jd, a, b, c, def, span)? {
                     Some(k) => {
                         count += k;
                         continue;

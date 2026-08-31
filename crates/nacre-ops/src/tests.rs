@@ -10069,6 +10069,12 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   next wall (a split result's panel/chain lateral abstains the ray: `NoClearRay` 40 → 56),
 ///   the corner × through-axis cells thread their merge and meet the chart's unreadable cell
 ///   (`CylinderGateUndecided` 44 → 46). `BranchVertexUnnamed` 18 → 0.
+/// * miss-first: the label's ray solves before it asks for bounds, so a cylinder the ray
+///   runs clear of counts 0 even where the face is a panel or a chain (`SpanAsk::MissOnly`),
+///   and the per-solid dissolve keys walls by `ClassIx` — the mid column and offmid × top
+///   classify and build (`NoClearRay` 56 → 41, Ok 86 → 101); corner Cut × mid stays: its
+///   rays genuinely hit the quarter boss, and a hit without an axial statement stays an
+///   abstention (the (z, θ) membership road, next).
 #[test]
 fn crossing_census_slabs_and_through_axis_walls_by_name() {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -10120,13 +10126,13 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     const BAND_COMMON: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(NoClearRay), Ok(1)];
     // A wall boss fused: the wall slab's caps cross the plate's wall face on the boss's
     // **rulings** — named as branch nodes since E3 — and the cut builds with its exact volume.
-    // The mid slab does the same and then splits the result in two — the names-road builds the
-    // mixed rings' carriers now (grouping-arm cell), and the label's ray abstains one wall later,
-    // at the split boss's panel/chain lateral (`BoundEdges::Lateral` — the curved ray counts
-    // whole bands only, the next wall by name); the through-axis wall crosses the bitten cap's
-    // **arc**, which waits on the lateral's ruling sweep.
+    // The mid slab does the same and then splits the result in two — and the label decides:
+    // every deciding probe's rays run clear of the boss, and a miss now counts 0 against a
+    // panel/chain lateral (miss-first), so both halves classify and build with their exact
+    // volumes; the through-axis wall crosses the bitten cap's **arc**, which waits on the
+    // lateral's ruling sweep.
     const WALL_FUSE: [Cross; 5] = [
-        Rejected(NoClearRay),
+        Ok(2),
         Ok(1),
         Ok(1),
         Rejected(RejectReason::CylinderGateUndecided),
@@ -10135,10 +10141,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // A wall boss cut (its lateral a panel — the notch's wall): the top and bottom slabs miss
     // the result (nothing of the boss stands outside the plate), the wall slab crosses the
     // panel's rulings and builds with its exact volume (E2-2's own population), the mid slab
-    // splits the result and the label's ray abstains at the panel lateral (as WALL_FUSE), and
+    // splits the result and both halves classify by miss-first rays (as WALL_FUSE), and
     // the through-axis wall crosses the bite's arcs.
     const PANEL_CUT: [Cross; 5] = [
-        Rejected(NoClearRay),
+        Ok(2),
         Ok(1),
         Ok(1),
         Rejected(RejectReason::CylinderGateUndecided),
@@ -10147,10 +10153,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // A half boss fused (its lateral a chain, its top cap a half-disk): since E3-c the cap's
     // chord is a graze on the wall class and the result builds — the top and bottom slabs miss
     // the boss, the wall slab crosses the chain's rulings with its exact volume, the mid slab
-    // splits the result and the label's ray abstains at the chain lateral (as WALL_FUSE), the
+    // splits the result and both halves classify by miss-first rays (as WALL_FUSE), the
     // through-axis wall crosses the cap's arc.
     const HALF_FUSE: [Cross; 5] = [
-        Rejected(NoClearRay),
+        Ok(2),
         Ok(1),
         Ok(1),
         Rejected(RejectReason::CylinderGateUndecided),
@@ -10218,11 +10224,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         [[First; 5]; 3], // corner-lo: the first op is refused
         // offmid: the top slab's cap at z = 2.5 meets the notch's rulings above the plate — the
         // severed top piece has no vertex, its coordinate probe forks the other component's
-        // mixed ring to the rational walk, and no probe decides (`NoClearRay`, as the mid slab).
+        // mixed ring to the rational walk, and the miss-first rays decide (the one moved cell
+        // outside the mid column).
         [
             [
-                Rejected(NoClearRay),
-                Rejected(NoClearRay),
+                Ok(2),
+                Ok(2),
                 Ok(1),
                 Rejected(RejectReason::CylinderGateUndecided),
                 Ok(1),
@@ -10313,8 +10320,8 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 86, "{tally:?}");
-    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 56);
+    assert_eq!(count(|c| matches!(c, Ok(_))), 101, "{tally:?}");
+    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 41);
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
     assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 0);
