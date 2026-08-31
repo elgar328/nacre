@@ -10164,8 +10164,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // where no probe decides at the half-disk's branch corners (`NoClearRay` — the cleaning's own
     // nesting road, a wall of its own beside the label's). The **through-axis wall** cuts the
     // other way and leaves one solid, so it never reaches that road: since the sector reads as a
-    // run of arcs (this rung) it builds with its exact volume. ☑ Every cell this rung moved is
-    // `Ok(1)`, never `Ok(2)` — the vertical cut is the difference, measured.
+    // run of arcs (this rung) it builds with its exact volume. ☑ Of the nine families that take
+    // this constant the tool removes real volume in every one, and each leaves `Ok(1)` — the
+    // vertical cut is the difference, measured. (The corner row above is the exception to the
+    // *mechanism*, not to the outcome: there the box clears the plate entirely.)
     const COMMON: [Cross; 5] = [
         Rejected(NoClearRay),
         Rejected(NoClearRay),
@@ -10190,7 +10192,9 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         [WALL_FUSE, PANEL_CUT, COMMON], // wall +x
         // corner: either slab cuts the Fuse's circle at four rulings (two walls), and the chart
         // cannot pair a cut end with its rim (`End::Other`, E2-2) — the emitter refuses by name;
-        // the through-axis tool's wall `y = 4` is the plate's own wall (coplanar contact) — the
+        // the through-axis tool's wall `x = 4` is the plate's own wall (coplanar contact), and the
+        // box lies wholly outside the plate beyond it, so `removed_by` is 0 for both kinds and
+        // what the volume oracle locks there is that the result is **unchanged** — the
         // merge threads its mixed rings now (grouping-arm cell), and since a sector reads as the
         // run of rim arcs it spans (this rung) the Cut and the Common build there, while the Fuse
         // still waits on the emitter's rim-station ladder; the Common is a quarter cylinder alone,

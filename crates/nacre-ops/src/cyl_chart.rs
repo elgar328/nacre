@@ -399,10 +399,12 @@ pub(crate) enum End<'a> {
     /// answer the same or this end says nothing — the rule the [`End::Disk`] arm of a cut circle
     /// already follows.
     Exact(Vec<&'a ArcLabel>),
-    /// The circle is cut and the sector still has no arcs to read: its two rulings are one node
-    /// of the rim (the sector is the whole circle less a ruling), or the rim's θ order cannot be
-    /// formed, or the cut arcs of a whole-circle cell disagree. ☑ Counted (`end_other`); a sector
-    /// that merely spans several arcs is no longer here — it is an [`End::Exact`] run.
+    /// The circle is cut and the sector still has no arcs to read: its two rulings are one and the
+    /// same chart line (the sector is the whole circle less a ruling), or its two ends snap to a
+    /// single rim node, or the rim's θ order cannot be formed, or a row of the run is missing from
+    /// the split's arcs. A whole-circle cell whose arcs disagree lands here too. ☑ Counted
+    /// (`end_other`); a sector that merely spans several arcs is no longer here — it is an
+    /// [`End::Exact`] run.
     Other,
     /// No circle of this cylinder on this line at all: the line is a ⊥ class outside every
     /// lateral face's span (`circle_on_class` leaves a circle on every class *within* a span).
@@ -520,7 +522,10 @@ impl Chart {
     /// the nearest one at or before `x` to the nearest at or after `y`, walked CCW — one arc when
     /// no rim node lies strictly inside the sector, and every arc it spans when some do. `None`
     /// when that walk yields no arc at all: the sector is the whole circle less one ruling, or
-    /// the order cannot be formed.
+    /// the order cannot be formed, or a row of the run is not among `arcs`. ★ That last one is
+    /// **silent here and named at the adjacent-pair site** (`RulingBoundNotYet`): a `None` falls
+    /// back to the axial span, which is the conservative road, not a wrong answer — but the two
+    /// sites state the same missing row differently, and that is worth one road one day.
     #[allow(clippy::too_many_arguments)]
     fn arc_around<'a>(
         &self,
