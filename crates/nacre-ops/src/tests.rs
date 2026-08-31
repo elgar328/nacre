@@ -9329,7 +9329,7 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
                 m.rebuild_adjacency();
                 (a, b)
             },
-            [Err(RejectReason::CoplanarMerge), ok(1), ok(1)],
+            [ok(1), ok(1), ok(1)],
         ),
         (
             "wal corner-lo",

@@ -2500,14 +2500,16 @@ mod tests {
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
-    /// ★ **The chained contact-cut names its refusal.** Cut the same chain instead of fusing:
-    /// the boss only *touches* the bored plate's top, so the cut removes nothing — but the
-    /// assembly still keeps the top ring's branch vertices, whose definitions name the boss's
-    /// cylinder that the result has no face on. That used to be a debug_assert (dev panic,
-    /// release shipped the mis-named solid silently); the floor is now an honest reject with
-    /// the offending corner as its witness, and the operands stay live.
+    /// ★ **The chained contact-cut builds clean** (grouping-arm cell). Cut the same chain
+    /// instead of fusing: the boss only *touches* the bored plate's top, so the cut removes
+    /// nothing — and the result is the bored plate, exactly. It used to refuse
+    /// `VertexNamesAbsentSurface` here: the top ring's rim seam could not merge (the arc pair
+    /// collided in the merge's node-pair key), the unmerged ring kept branch vertices whose
+    /// definitions name the boss's cylinder, and the result has no face on it. The two-pass
+    /// erase removes the seam — and the vertices with it — so the honest refusal became the
+    /// honest build. Volume and validate lock that the build is *right*, not merely green.
     #[test]
-    fn a_chained_contact_cut_names_its_refusal() {
+    fn a_chained_contact_cut_builds_clean() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -2528,26 +2530,14 @@ mod tests {
             10.0,
         );
         m.rebuild_adjacency();
-        let live_before = m.live_solids.clone();
-        let err = crate::boolean(&mut m, BoolKind::Cut, bored, boss).expect_err("contact-cut");
-        let BoolError::Rejected { reason, at } = err else {
-            panic!("{err:?}");
-        };
-        assert_eq!(reason, RejectReason::VertexNamesAbsentSurface);
-        // The witness is one of the two branch corners where the boss's rim crosses the
-        // plate's edge: (40, 20±√(25−0), 20) → y = 15 or 25 (approximate-only assert).
-        let Some(crate::RejectWhere::Point(p)) = at else {
-            panic!("{at:?}");
-        };
-        let p = p.as_array();
-        assert!(
-            (p[0] - 40.0).abs() < 1e-9
-                && (p[2] - 20.0).abs() < 1e-9
-                && ((p[1] - 15.0).abs() < 1e-9 || (p[1] - 25.0).abs() < 1e-9),
-            "{p:?}"
-        );
+        let out = crate::boolean(&mut m, BoolKind::Cut, bored, boss).expect("the contact cut");
+        assert_eq!(out.len(), 1, "one body");
         m.rebuild_adjacency();
-        assert_eq!(m.live_solids, live_before, "a reject restores the live set");
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{issues:?}");
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 32000.0 - std::f64::consts::PI * 16.0 * 20.0;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
     /// **Two cylinders with coplanar caps fuse apart.** They stand `5` apart with their caps in

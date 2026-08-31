@@ -834,6 +834,20 @@ pub(crate) enum Wall {
     },
 }
 
+impl Wall {
+    /// The same carrier walked the other way: a plane wall is direction-blind, the same
+    /// arc walked back runs the other way about the axis, the same ruling piece descends.
+    /// The *complementary* arc between the same two nodes keeps its flag instead — which
+    /// is what lets a keyed lookup tell "this edge reversed" from "the other arc".
+    pub(crate) fn reversed(self) -> Self {
+        match self {
+            Wall::Plane(p) => Wall::Plane(p),
+            Wall::Arc { cyl, ccw } => Wall::Arc { cyl, ccw: !ccw },
+            Wall::Ruling { cyl, side, up } => Wall::Ruling { cyl, side, up: !up },
+        }
+    }
+}
+
 /// **The edge-welding key** — the key half of "a line is unordered, a circle is ordered"
 /// (`Wall` is the type half).
 ///
@@ -3619,50 +3633,105 @@ fn merge_component(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Option<Vec<RegionRings>>, BoolError> {
-    // 1. Collect directed edges **with their walls**. A repeat in the same direction means two
-    //    faces claim the same side.
-    // One map, `(count, wall)` — the wall rides along rather than in a second table.
-    let mut dirs: HashMap<(NodeId, NodeId), (usize, Wall)> = HashMap::new();
+    // 1. Collect directed edges **with their walls in the key**: between one pair of branch
+    //    vertices a chord and an arc — or two complementary arcs — are *different edges*, and
+    //    a node-pair key made them collide (measured: the flush half-disk pair abstained here
+    //    and shipped a stated plane-self edge for the whole-result guard to refuse).
+    let mut cnt: HashMap<((NodeId, NodeId), Wall), usize> = HashMap::new();
     for lf in group {
         for ring in lf.poly_rings() {
             for (e, wall) in ring_edges_walled(ring) {
-                let slot = dirs.entry(e).or_insert((0, wall));
-                slot.0 += 1;
+                *cnt.entry((e, wall)).or_insert(0) += 1;
+            }
+        }
+    }
+    // 2a. First pass: erase exact interior pairs — the same edge walked back with the
+    //     **reversed carrier** (`Wall::reversed`: the same arc back flips `ccw`, the
+    //     complementary arc keeps it, which is what tells the curved twins apart; a plane
+    //     wall is direction-blind). Erased 1:1 by `min` of the two multiplicities, never by
+    //     fiat.
+    let snapshot: Vec<((NodeId, NodeId), Wall)> = cnt.keys().copied().collect();
+    let mut visited: HashSet<((NodeId, NodeId), Wall)> = HashSet::new();
+    for k in snapshot {
+        if !visited.insert(k) {
+            continue;
+        }
+        let ((a, b), w) = k;
+        let rk = ((b, a), w.reversed());
+        visited.insert(rk);
+        let c1 = cnt.get(&k).copied().unwrap_or(0);
+        let c2 = cnt.get(&rk).copied().unwrap_or(0);
+        let m = c1.min(c2);
+        if m > 0 {
+            if c1 == m {
+                cnt.remove(&k);
+            } else {
+                cnt.insert(k, c1 - m);
+            }
+            if c2 == m {
+                cnt.remove(&rk);
+            } else {
+                cnt.insert(rk, c2 - m);
             }
         }
     }
     // ★★ **Two faces claiming one side is an abstention, not a refusal** — the same shape the
     // figure-8 case takes, and for the same reason: this guard protects *the merge*, not the
     // result. Emitting the group as-is puts the pipeline back exactly where it stood before this
-    // cleaning pass ran, so nothing can come out of it that would not have come out without the
-    // pass at all, and the whole-result judgements (`self_touch_reject`, the closed-shell guard,
-    // the every-vertex-re-solves check) name the shape with their own sentences — and with a
-    // witness. Measured: the contact-cut population used to answer here with a capability name
-    // and no location, while its *bored* twin — where this pass was skipped outright — walked to
-    // the end and came back `VertexNamesAbsentSurface` at the offending corner. One population,
-    // one answer.
-    if dirs.values().any(|&(c, _)| c > 1) {
+    // cleaning pass ran, and the whole-result judgements (`self_touch_reject`, the closed-shell
+    // guard, `check_result_topology`'s plane-self edge guard) name the shape with their own
+    // sentences — and with a witness. Asked **carrier-aware and after the exact erase**, so a
+    // chord and an arc sharing a direction (the flush pair — the population that used to abstain
+    // here into an invalid ship) are no longer a collision.
+    if cnt.values().any(|&c| c > 1) {
         return Ok(None);
     }
-    // 2. An edge carried in both directions is interior — it separates nothing. Anything carried
-    //    three or more times (either direction) is non-manifold in the plane.
-    let mut undirected: HashMap<(NodeId, NodeId), usize> = HashMap::new();
-    for &(a, b) in dirs.keys() {
-        *undirected.entry(norm_edge(a, b)).or_insert(0) += 1;
+    // (The old "carried three or more times is non-manifold" check is gone: it counted
+    // *distinct directed keys* per node pair, of which there are at most two, so it could
+    // never fire — a vacuous guard, measured vacuous by its own construction.)
+    //
+    // 2b. Second pass, wall-agnostic and **plane-only**: a pencil alias — one line under two
+    //     of its planes' names — arrives opposed with two different plane walls and stays
+    //     interior exactly as it always was. Only a 1:1 singleton pair may erase; an opposed
+    //     *curved* leftover is not the same edge (complementary arcs) and stays a boundary;
+    //     any multiplicity across an opposed pair is ambiguous and the merge abstains.
+    let mut by_dir: HashMap<(NodeId, NodeId), Vec<Wall>> = HashMap::new();
+    for k in cnt.keys() {
+        by_dir.entry(k.0).or_default().push(k.1);
     }
-    if undirected.values().any(|&c| c > 2) {
-        return Err(reject(RejectReason::CoplanarMerge));
+    let mut erased: HashSet<(NodeId, NodeId)> = HashSet::new();
+    for (&e, ws) in &by_dir {
+        let re = (e.1, e.0);
+        if erased.contains(&e) || erased.contains(&re) {
+            continue;
+        }
+        let Some(rws) = by_dir.get(&re) else {
+            continue;
+        };
+        if ws.len() == 1
+            && rws.len() == 1
+            && matches!(ws[0], Wall::Plane(_))
+            && matches!(rws[0], Wall::Plane(_))
+        {
+            erased.insert(e);
+            erased.insert(re);
+        } else if ws.len() != 1 || rws.len() != 1 {
+            return Ok(None); // multiplicity across an opposed pair: ambiguous
+        }
+        // An opposed 1:1 with a curved wall on either side is two different edges — both stay
+        // boundaries and thread below.
     }
     // 3. Re-thread what survives. Two outgoing edges at one node means the pieces meet at a
     //    point and the cycles are not determined — the merged contour would be a figure-8:
-    //    nothing to re-thread, so the merge abstains (see the function doc). Which node
-    //    collided is irrelevant to the outcome, so the first collision answers.
-    let mut next: HashMap<NodeId, NodeId> = HashMap::new();
-    for &(a, b) in dirs.keys() {
-        if dirs.contains_key(&(b, a)) {
-            continue; // interior
+    //    nothing to re-thread, so the merge abstains (see the function doc). The wall rides
+    //    with the step, so the threaded cycle never re-derives a carrier from node names.
+    let mut next: HashMap<NodeId, (NodeId, Wall)> = HashMap::new();
+    for k in cnt.keys() {
+        let (e, w) = (k.0, k.1);
+        if erased.contains(&e) {
+            continue;
         }
-        if next.insert(a, b).is_some() {
+        if next.insert(e.0, (e.1, w)).is_some() {
             return Ok(None);
         }
     }
@@ -3674,24 +3743,29 @@ fn merge_component(
         if seen.contains(&start) {
             continue;
         }
-        // ★ The threaded cycle keeps each surviving edge's own wall, so the merged ring never has
-        // to have it read back out of the node names.
+        let (mut cur, w0) = next[&start];
         let mut nodes = vec![start];
-        let mut walls = vec![dirs[&(start, next[&start])].1];
+        let mut walls = vec![w0];
         seen.insert(start);
-        let mut cur = next[&start];
         while cur != start {
             if !seen.insert(cur) {
                 return Err(reject(RejectReason::CoplanarMerge)); // walk re-entered another cycle
             }
-            let nx = *next
+            let &(nx, w) = next
                 .get(&cur)
                 .ok_or_else(|| reject(RejectReason::CoplanarMerge))?;
             nodes.push(cur);
-            walls.push(dirs[&(cur, nx)].1);
+            walls.push(w);
             cur = nx;
         }
-        if nodes.len() < 3 {
+        // A 2-gon closed by a curved wall is a legal ring (`loop_winding`'s own floor); a
+        // two-node polygon is not.
+        let floor = if walls.iter().any(|w| !matches!(w, Wall::Plane(_))) {
+            2
+        } else {
+            3
+        };
+        if nodes.len() < floor {
             return Err(reject(RejectReason::CoplanarMerge));
         }
         cycles.push(Ring::new(nodes, walls));
