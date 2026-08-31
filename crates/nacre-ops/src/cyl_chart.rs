@@ -723,24 +723,7 @@ impl Chart {
                 _ => Vec::new(),
             };
             #[cfg(test)]
-            let per_end: Vec<(&'static str, (bool, bool))> = (0..2)
-                .filter_map(|e| {
-                    let l = ends[e].label()?;
-                    let kind = match &ends[e] {
-                        End::Disk(_) => "Disk",
-                        End::Exact(_) => "Exact",
-                        _ => "?",
-                    };
-                    Some((kind, crate::bands::read_bits(&l, side, above[e])))
-                })
-                .collect();
-            #[cfg(test)]
-            probe::shadow::record(
-                chamber,
-                &vert,
-                cell.walls.is_some_and(|[x, y]| x == y),
-                &per_end,
-            );
+            probe::shadow::record(chamber, &vert, cell.walls.is_some_and(|[x, y]| x == y));
             // The two walls must agree with each other before either may answer.
             if chamber.is_none() && !src2_disagree {
                 chamber = match vert.as_slice() {
@@ -1735,7 +1718,6 @@ pub(crate) mod probe {
             horizontal: Option<(bool, bool)>,
             vertical: &[(bool, bool)],
             one_ruling: bool,
-            per_end: &[(&'static str, (bool, bool))],
         ) {
             let mut g = COUNTS
                 .lock()
@@ -1753,21 +1735,7 @@ pub(crate) mod probe {
             };
             match (horizontal, v) {
                 (Some(h), Some(x)) if h == x => g.0 += 1,
-                (Some(h), Some(x)) => {
-                    g.1 += 1;
-                    if std::env::var("NACRE_PROBE_SH").is_ok() {
-                        let who: Vec<String> = per_end
-                            .iter()
-                            .map(|(k, b)| format!("{k}{}", if *b == x { "=V" } else { "!V" }))
-                            .collect();
-                        eprintln!(
-                            "PROBE-SH|h {h:?} v {x:?}|flip {}{}|ends {}",
-                            u8::from(h.0 != x.0),
-                            u8::from(h.1 != x.1),
-                            who.join(",")
-                        );
-                    }
-                }
+                (Some(_), Some(_)) => g.1 += 1,
                 (None, Some(_)) => g.2 += 1,
                 (Some(_), None) => g.3 += 1,
                 (None, None) => g.4 += 1,
