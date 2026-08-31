@@ -1409,6 +1409,10 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
     원통을 클래스 표에서, 원 구멍의 현 flip 노드는 **게이트의 `crossings`에 실린 쌍에만**(룰링 도로와 한 규칙 — 없는 룰링에 노드만 심으면 스퍼, d=0 보스가 반증). 재연산 Ok 21→34 ·
     가로지르는 census Ok 69→86 · `rul flush` Cut/Common 빌드, Fuse는 결과 전체 판정의 새 가드(stated 평면-자기 간선 → `CoplanarMerge`)가 거절 — 병합 키 확장은 이름-도로 퇴행으로
     철회(그룹핑 팔 캐리어화의 입구). 실측은 dev-log 「재연산 사다리 E, E3-b/c」.
+  ★★ **그룹핑 팔 캐리어화 (2026-08-31): 이름-도로가 혼합 링을 읽는다.** `Ring::edges`가 walls에서 캐리어·핀을 직접 짓고(legacy shim과 구성-시점 `BranchVertexUnnamed` 사망), 격리·좌표
+    도로는 `ring_is_mixed`로 갈라 유리 탐침 + `point_in_mixed_ring`(combinatorics로 승격, 한 철자)으로, 병합은 (방향쌍, 벽) 멀티셋의 **2-패스 지움**(정확 반대쌍+`Wall::reversed` →
+    평면-전용 1:1; 구성상 공허하던 ≥3 검사는 삭제)으로. 가로지르는 census BVU 18→**0**(mid 15는 라벨 광선의 패널/사슬 옆면 벽 — `NoClearRay`) · `rul flush` **[Ok×3]** · census의
+    접촉-컷 4행 **빌드**(림 솔기 호 쌍이 지워지자 없는 원통을 이름하던 branch 정점째 소멸 — `VertexNamesAbsentSurface`의 그 인구, 부피 전부 해석값 정확). 실측은 dev-log 「그룹핑 팔 캐리어화」.
   - ★★★★★ **D3의 전제조건 — 여기서 계기 넷이 눈이 멀었던 적이 있다.** 칸 ⑦이 옆면의 면 구조를 바꾸고
     **메시가 조용히 틀린 채** `validate`·watertight·정확 부피·면 수가 **전부 초록**이었다(넓이 7.873 vs
     9.425). 그걸 잡은 눈은 칸 ⑧의 **메시 넓이 ≈ 정확 넓이**다. ⇒ 갈아타기 **전에** 원통 코퍼스에 그

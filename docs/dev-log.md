@@ -16043,3 +16043,47 @@ D5 · `ChainContacts`.
   도로·구멍 arm의 `(wc, k)`, 두 소비자 모두 측정 초록) · ①이 «③으로» 넘긴 낡은 문장 셋 전부 해소(«the one reader today refuses» 삭제됨 · «three planes» 두 곳은 교체 사유의
   역사 기록으로 정확 · `CylSpan` doc은 E2-2가 이미 갱신) · 재연산 census doc의 E3-c 불릿·수치(Ok 21→34, half Cut = `End::Other`) 일치 · HEAD census diff 3행의 정당성
   (Fuse 이름 이동 + Cut/Common 신규 빌드) · 커밋 diff에 탐침 잔재 0(`zz_probe`/`PROBE`/`ZZPROBE` grep 0).
+---
+
+## 그룹핑 팔 캐리어화 — 이름-도로가 혼합 링을 읽는다
+
+커밋: `104954b`(배관) · `92a855a`(개통 — `Ring::edges` 플립) · `44b42e5`(병합 2-패스) · 문서.
+
+### 단계 0 — BVU 18의 분해 (계기, 커밋 없음)
+raise 사이트는 전부 :853 하나라 소비자를 못 가른다 — 셀 이름 출력 + 소비자 마커 (a)(b)(c)를 임시로 심어 한 번 돌리고 역치환(md5 일치). 결과: **18 = (a) 격리 16 · (b) self_touch 0 · (c) 병합 2**.
+- (a) 16 = mid 컬럼 15(wall F/C 8 · half F 4 · offmid F/C 2 · corner Cut 1) + **offmid Fuse × top 1** — want 주석의 «outside this rung»(결과 정점 명명)은 낡았다: 실은 op1의 벽 노치 링이 격리에서 죽는 것.
+- (c) 2 = corner F/C × 축벽 — want 주석의 `coord_key` 귀속도 낡았다(E3-b/c ③이 표를 줬으므로): 실은 병합 4단계.
+- 계획의 «reject-trace :853=18과 census 18의 일치는 우연일 수 있다»는 기우로 판명 — 같은 18이 실측됐다.
+
+### 커밋 1 — 배관 (프로덕션 무변)
+- `point_in_mixed_ring`·`ring_is_mixed`를 arrangement → combinatorics로 이동·승격(의존이 이미 전부 그 모듈의 어휘 — `Chart2dRat`·`branch_meet`·`node_coords_rat`; 한 철자 유지, arrangement은 호출 전환).
+- `point_in_component`/`probe_in_component`가 `cyls`를 받고, `inside`의 Ring 팔에 **mixed 분기**: 혼합 링이면 교차점 X={a,b,q}(세-평면, 유리)를 실현해 mixed 도로로 — 동률·회전 클래스는 기권(다음 탐침). 순수 링은 오늘의 `point_on_ring`+`every_ray` 그대로(비트 동일의 구조적 근거). ★ 조사에서 계획이 줄었다: mixed 게이트가 혼합 링을 전부 우회시키므로 `every_ray`/`point_in_ring`/`segment_meets_face`의 시그니처·걷기 클로저는 **손대지 않는다**(계획 초안의 «cyls 전면 배선»은 과잉이었다).
+- `Ring::is_mixed`(벽·노드 수준 — legacy `edges()`가 죽기 «전에» 물어야 해서 RingEdge 수준 술어로는 못 묻는다) + self_touch 체 3의 **스킵 게이트**(거절 아님 — :1226 옆면 스킵과 같은 인구; 그물은 edge-use·비다양체·`check_result_topology`의 평면-자기 가드).
+- `merge_component` 5단계 구멍 중첩에 mixed 분기(= `cell_in_cell` (None,None) 팔의 미러; shim이 살아 있어 이 커밋에선 도달 불가).
+- 실측: 전체 lib 339 초록 · census 269행 비트 동일(HEAD 기준선 diff) · crossing census raise 탤리 무변.
+
+### 커밋 2 — 개통: `Ring::edges`가 walls에서 캐리어를 짓는다
+- 새 몸통: `edges(jd, cyls, p)` — `Wall::Plane(c)`→`Carrier::plane(c)`+`pin_on_line` 핀(옛 규칙 그대로 — 순수 링 비트 동일의 구조적 근거), branch 끝→`EndPin::Cylinder`, `Arc`/`Ruling`→클래스 표 def의 clone을 든 캐리어(coord_key와 같은 규약), 곡선 캐리어 위의 세-평면 끝은 `RingNaming` 정직 거절(생산자 없음). `ring_edges_with_walls` **은퇴**(호출자 0 — «다섯 번 철자» doc의 앵커만 재지향). 호출부 6곳+`self_touch_reject`에 cyls.
+- **실측 1차(17/18 이동)**: mid 15 전부 **NoClearRay**(예측 적중 — 라벨의 광선이 갈린 보스의 패널/사슬 옆면 `Lateral`에서 기권, boolean.rs:679) · corner F/C×축벽 2 → **CGU**(병합이 혼합 링을 꿰고 걸어나가 차트의 못 읽는 셀 — `End::Other`) · offmid Fuse×top만 BVU 잔류.
+- **잔류 1의 정체 = 좌표 도로의 같은 결함**: `point_in_faces_rat`의 Ring 팔이 세-평면 이름으로 차트 링을 지어 branch에서 BVU(:3410) — 잘린 보스 조각(정점 0)이 좌표 탐침을 쓰는 유일 인구라 여기서만 보였다. 같은 fork(혼합→`point_in_mixed_ring`, 유리 x는 이미 손안)를 앉히니 **NoClearRay**로 합류. ⇒ **BVU 18 → 0** (이름이 이 코퍼스에서 사라짐 — 승격된 0으로 잠금, 재진술 의무 명기).
+- 표·카운트 이동: NoClearRay 40→**56** · CGU 44→**46** · Ok 86 무변 · 낡은 주석 6곳 재작성(BAND의 coord_key 서사 · WALL/PANEL/HALF의 «grouping road refuses» · COMMON의 «shim» · corner의 coord_key 귀속 · offmid의 «outside this rung»).
+- 프로덕션 census: **1행 이동(비트 동일 예측 반증, 정당)** — `arc turned cut`(판 모서리를 감싸 솔기가 wrap arc를 가르는 누운 보스, x=4 벽에 공면 캡)이 BVU 거절 → **빌드**. 검증: 1 솔리드 · validate 0 · 부피 정확히 32(교집합 측도 0 — Cut은 아무것도 안 깎는 게 정답). 죽던 자리가 정확히 이 칸의 표적(구성-시점 BVU)이었다 · reop 무변(스위트) · 부정 대조: (ii) mixed fork 차단 → mid 셀들이 **RingNaming**으로 착지(①-단독-커밋 금지의 이유 그대로), 복원 md5 일치 · (iii) 스킵 제거 → 무변(하중은 커밋 3에서), 복원 md5 일치.
+
+### 커밋 3 — 병합 키 재확장, 2-패스 지움
+- E3-b/c 철회판((방향쌍,Wall) 단일 키)이 아니라 검토의 **2-패스**: 키는 `((방향쌍), Wall)` 멀티셋 — **1패스** 정확 내부 지움(반대쌍+`Wall::reversed`, min 배수만큼 — 현+상보 호를 가르는 유일한 필요처), 그 뒤 같은-쪽 중복 기권(**벽-인지, 지움 후** — flush의 현+호 공존이 풀리는 자리), **2패스** 벽-무관 1:1 **평면-전용** 지움(pencil 이명 보존; 반대편이 곡선이면 상보 호 = 서로 다른 간선이라 경계로 남김; 다중은 기권). 꿰기는 생존자에서 벽을 실어(threading 충돌 = 기권 그대로), 링 바닥은 `loop_winding`의 것과 같게(곡선 벽이 닫는 2-곤 허용).
+- ★ **옛 «≥3 non-manifold» 검사는 공허했다**: dirs가 방향키 dedup이라 norm쌍당 최대 2키 — c>2 불가능. 구성으로 증명되는 공허라 삭제하고 이 문장을 남김.
+- ★★ **예측 «철회 때의 초록 3 무변»이 한 인구에서 반증 — 그리고 그 반증이 정답이었다**: `a_chained_contact_cut_names_its_refusal`이 «빌드됨»으로 빨강. 옛 메커니즘은 병합 못 한 위 링의 branch 정점이 결과에 없는 원통을 이름하는 것(`VertexNamesAbsentSurface`)이었는데, 2-패스가 림 솔기 호 쌍을 지우자 **정점째 사라져** 정직 거절이 정직 빌드가 됐다. 검증: 1 솔리드 · validate 0 · 부피 **정확히** 32000−320π(접촉 컷은 아무것도 안 깎는다). 테스트를 빌드-잠금 `a_chained_contact_cut_builds_clean`으로 재작성(역사는 doc에).
+- `rul flush` 코퍼스 [Err(CoplanarMerge), Ok, Ok] → **[Ok(1)×3]**(결과 가드는 백스톱으로 잔류, 발화 0).
+- 프로덕션 census 이동: **5행, 전부 검증된 두 메커니즘** — `arc straddle/turned/hung cut` 3행(측도 0 접촉 컷: VNAS·BVU 거절 → 빌드, 기록 부피 32.0 = 판 그대로 32 정확) · `arc bored straddle cut`(VNAS → 빌드, 기록 부피 30.429204 = 32−π/2 = 30.429204 정확 — hex 디코드로 대조) · `rul flush fuse`(CoplanarMerge 가드 → 빌드, 기록 부피 32785.3982 = 32000+250π = 32785.3982 정확). 접촉-컷 3행은 `a_chained_contact_cut`과 같은 림-솔기 메커니즘(부피·validate 검증 완료), flush는 E3-b/c에서 병합만 되면 validate 0임을 실측해 둔 그 행. · 부정 대조 α(**코드만** 역적용 — 첫 시도는 want까지 같이 뒤집어 공허했다): flush Fuse가 `CoplanarMerge`+증인 (40,25,0)으로 복귀, 재적용 후 트리=패치 · β(스킵 차단 × **전체 스위트**): **339 초록 — 검토의 «스킵이 ③의 하중벽» 정적 추적(z=20 병합 링을 self_touch 후보가 밟는다)이 실측으로 반증됐다.** 체 1·2가 그 후보를 걸러낸다 — 스킵은 오늘 인구 0의 잠재 가드로 남긴다(옆면 스킵과 같은 면허, 인구가 생기는 날의 그물).
+
+### 관문
+전량 초록: fmt/clippy 0(★ `for_kv_map` 2곳은 커밋 훅이 잡음) · workspace **1175** · nodef · census 두 프로파일 동일(269행)·HEAD 동일 · reject_census · 스윕 129 ·
+perf release(fold 80 407면 237.2116 · ring fins 1.57 s · hub 1.04 s · small 545 µs — 같은 대역, «혼합 도로는 n>1∧혼합에서만이라 예산 무변» 예측 적중) · kit 72 ·
+reject-trace: **`branch_vertex_unnamed`·`vertex_names_absent_surface` 소멸**(워크스페이스 전체 — 두 이름의 인구가 이 칸으로 닫혔다) · `no_clear_ray` :679 **18**(라벨) ·
+`self_touching_result` **9 무변**(스킵이 기존 인구를 안 먹었다) · `cylinder_gate_undecided` 72+5 · `witness_not_rational` 1(청소 nesting). 프로덕션 census 이동은 칸 시작
+(`20a6920`) 대비 **5행**(§커밋 2·3 — 전부 부피 해석값 대조로 검증).
+
+### 다음
+**라벨 광선 vs 패널/사슬 옆면**(`curved_count`의 Band(원,원) 한계 — mid 15의 `NoClearRay`, 이 칸이 이름 붙인 다음 문) · `read_cell`의 `End::Other`(CGU 46) ·
+청소 패스 nesting의 `NoClearRay` 40 · `segment_meets_face`의 호-교차 event(EndPin-event — 인구가 요구할 때) · 계단식 사슬 · O3(호의 이중 교차 — 게이트 밖) ·
+`cycle_against_line` 정리 · D5 · `ChainContacts`.
