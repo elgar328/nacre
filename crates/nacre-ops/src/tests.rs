@@ -10532,40 +10532,72 @@ fn the_walk_cuts_a_run_at_a_departure() {
     assert_eq!(got, vec![(1, 4, false, off)]);
 }
 
-/// **The disk-side rule decides, and it is not deciding vacuously** — the counterpart of the
-/// premise assertions in `arrangement::disk_side_probe`, which fire where the fact is made and so
-/// see every chart in the binary. What a test can add is the other half: that the population is
-/// large, that the geometric answer carries nearly all of it, and that the frame-rule fallback is
-/// the rare shape it is claimed to be (two curved digons facing each other, with no rational
-/// corner anywhere on either).
+/// **The disk-side rule is derived, and the cells watch it** — the counterpart of the assertions
+/// in `arrangement::disk_side_probe`, which fire where the fact is made and so see every chart in
+/// the binary. Those say the geometry never contradicts the rule; what a test adds is the other
+/// half: that the population is large, that the geometry actually speaks for most of it, and —
+/// the one that would have caught the original defect — that the **`frame_sign` factor is
+/// exercised**. A rule whose deciding factor is constant over the corpus is a rule nothing has
+/// tested, which is exactly how it shipped wrong the first time.
 ///
-/// ★ The numbers are read as **floors and shares**, not as literals: a filtered or parallel run
-/// brings fewer rows, never different ones, and a new fixture may add cells of any kind.
+/// ★ Read as floors, not literals: a filtered or parallel run brings fewer rows, never different
+/// ones.
 #[test]
-fn the_disk_side_is_decided_by_the_cells_not_by_a_frame() {
-    let rows = crate::arrangement::disk_side_probe::ROWS
+fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
+    // ★ **The test builds the population it measures.** Reading the ambient rows would see only
+    // what happened to finish before it (a parallel run's order is not a fact about the kernel —
+    // the ledger lesson this crate has been bitten by twice), and the very row this needs is a
+    // `Reversed` root face: the **notch** a half boss leaves, whose ceiling class carries
+    // `frame_sign = -1`. So it runs the boss corpus itself (each family's first op, then a slab
+    // cut of the result) and reads the delta.
+    let before = crate::arrangement::disk_side_probe::ROWS
+        .lock()
+        .expect("the probe's lock is never held across a panic")
+        .len();
+    for (_, base, h) in BOSS_FAMILIES {
+        for kind in [BoolKind::Fuse, BoolKind::Cut] {
+            let (mut m, plate, boss) = boss_family(base, h);
+            let Result::Ok(out) = boolean(&mut m, kind, plate, boss) else {
+                continue;
+            };
+            // The second operation is what puts a `Reversed` root face on a cut circle's class
+            // (a notch's ceiling), which is where the frame factor decides.
+            m.rebuild_adjacency();
+            let t = m.add_cuboid(
+                Point3::from_array([-1.0, -1.0, 0.5]),
+                Point3::from_array([5.0, 5.0, 1.5]),
+            );
+            m.rebuild_adjacency();
+            let _ = boolean(&mut m, BoolKind::Cut, out[0], t);
+        }
+    }
+    let all = crate::arrangement::disk_side_probe::ROWS
         .lock()
         .expect("the probe's lock is never held across a panic")
         .clone();
+    let rows = &all[before..];
     assert!(
-        rows.len() >= 100,
-        "the disk-side rule ran {} times — too few to say anything",
-        rows.len()
+        !rows.is_empty(),
+        "the fixture produced no arc labels at all"
     );
-    let decided = rows.iter().filter(|r| r.decided).count();
+    let checked = rows.iter().filter(|r| r.checked).count();
     let both = rows.iter().filter(|r| r.both_spoke).count();
-    let fell_back = rows.iter().filter(|r| r.fell_back).count();
-    assert_eq!(decided + fell_back, rows.len(), "every arc took one road");
-    // The geometric answer carries the population; the frame rule is the tail.
+    let frame_neg = rows.iter().filter(|r| r.frame_negative).count();
+    // The geometry watches most of the population, so the agreement assertion is not a formality.
     assert!(
-        fell_back * 10 < rows.len(),
-        "the fallback answered {fell_back} of {} arcs — the rule is not the geometry's any more",
+        checked * 2 > rows.len(),
+        "the cells named the side for only {checked} of {} arcs",
         rows.len()
     );
-    // And both sides speak often enough that the premise assertions above are not vacuous: an arc
-    // whose two cells both name a side is where "they are never the same side" is actually tested.
+    // An arc whose two cells both name a side is where "never the same side" is really tested.
     assert!(
         both > 0,
-        "no arc had a witness on both sides — the premise check never ran"
+        "no arc had a witness on both sides — that premise check never ran"
+    );
+    // ★ The factor the original rule was missing must decide some arcs, or this corpus cannot
+    // tell the two rules apart.
+    assert!(
+        frame_neg > 0,
+        "no class with frame_sign = -1 reached the rule — the factor is untested here"
     );
 }

@@ -2532,47 +2532,87 @@ pub(crate) fn crossing_on_arc(
 /// with identical stored *and* canonical normals were measured to disagree about — the same plane,
 /// the same circle, the same two arcs, opposite half-edges. That rule had been set by measuring
 /// two fixtures and generalising; this one asks the geometry every time.
+/// **Which side of a circle a cell lies on, from its own corners** — the geometry that watches
+/// the disk-side rule. A cell cannot straddle the circle (the circle is an arrangement edge), so
+/// any rational corner with a definite radial side names the side the whole cell is on; a branch
+/// corner sits *on* the circle and says nothing, and so does a three-plane corner that happens to
+/// land there.
+#[cfg(test)]
+fn corner_sides<'a>(
+    jd: &'a Judge<'_, WorkingPlane>,
+    edges: &'a ClassEdges<'_>,
+    cell: &'a Cell,
+    def: &'a nacre_topo::CylinderDef,
+) -> impl Iterator<Item = bool> + 'a {
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    cell.half_edges.iter().filter_map(move |&h| {
+        let p = combinatorics::node_coords_rat(jd, edges.origin(h))?;
+        match nacre_scalar::cylinder_radial_side(&p, &o, &m, r) {
+            nacre_scalar::Orient::Negative => Some(true),
+            nacre_scalar::Orient::Positive => Some(false),
+            nacre_scalar::Orient::Zero => None,
+        }
+    })
+}
+
 #[cfg(test)]
 pub(crate) mod disk_side_probe {
     use std::sync::Mutex;
 
-    /// One entry per arc: how many corners of each side spoke, and which way.
+    /// One entry per arc.
     #[derive(Clone, Copy, Debug, Default)]
     pub(crate) struct Row {
-        /// The chosen side had a definite witness.
-        pub(crate) decided: bool,
-        /// Neither side offered a witness — the frame rule answered (two curved digons).
-        pub(crate) fell_back: bool,
-        /// Both sides spoke, and disagreed as they must.
+        /// A corner named the side, so the rule was checked against the geometry here.
+        pub(crate) checked: bool,
+        /// Both sides spoke — the strongest form of the check.
         pub(crate) both_spoke: bool,
+        /// The class's `frame_sign` was `-1`, so the factor decided this arc.
+        pub(crate) frame_negative: bool,
     }
 
     pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
 
-    /// Assert the premise and record the row. `None` = the cell was not found at all.
-    pub(crate) fn record(even: Option<Vec<bool>>, odd: Option<Vec<bool>>) {
-        let one = |v: &Option<Vec<bool>>| -> Option<bool> {
-            let v = v.as_ref()?;
-            let first = *v.first()?;
-            assert!(
-                v.iter().all(|&b| b == first),
-                "a cell has corners on both sides of a circle it cannot straddle"
-            );
-            Some(first)
-        };
-        let (a, b) = (one(&even), one(&odd));
+    /// Assert the premises **and** the rule, and record the row. Each side arrives as its
+    /// **first** corner that names a side (`None` = no corner spoke, or the cell was not found).
+    ///
+    /// Two propositions, where the fact is made: an arc's two cells are never on the same side of
+    /// its circle, and where the geometry speaks it **agrees with the derived rule**. The second
+    /// is what keeps the derivation honest — the rule was a guess once, and the guess was wrong
+    /// by one factor.
+    ///
+    /// ★ A third premise — *no cell has corners on both sides of a circle it cannot straddle* —
+    /// is what licenses taking the **first** corner as the cell's answer. Scanning every corner
+    /// to assert it costs a rational three-plane solve per corner per arc: the lib suite measured
+    /// **526 s** that way against **58 s** taking the first (one session, warm builds). It was
+    /// measured **0 violations** over the whole suite twice — when the geometric road was built
+    /// and again here — so it is recorded rather than re-proved on every run.
+    pub(crate) fn record(
+        even: Option<bool>,
+        odd: Option<bool>,
+        rule_says_even: bool,
+        frame_sign: i8,
+    ) {
+        let (a, b) = (even, odd);
         if let (Some(x), Some(y)) = (a, b) {
             assert!(
                 x != y,
                 "an arc's two cells landed on the same side of its circle"
             );
         }
+        // The geometry's verdict on which half-edge borders the disk, where it has one.
+        let witness = a.or_else(|| b.map(|inside| !inside));
+        if let Some(even_is_disk) = witness {
+            assert_eq!(
+                even_is_disk, rule_says_even,
+                "the disk-side rule and the cell's own corners disagree (frame_sign {frame_sign})"
+            );
+        }
         ROWS.lock()
             .expect("the probe's lock is never held across a panic")
             .push(Row {
-                decided: a.is_some() || b.is_some(),
-                fell_back: a.is_none() && b.is_none(),
+                checked: witness.is_some(),
                 both_spoke: a.is_some() && b.is_some(),
+                frame_negative: frame_sign < 0,
             });
     }
 }
@@ -6209,75 +6249,61 @@ fn emit_faces(
         })
         .collect();
     // ★ **A cut circle's labels, per arc** ([`ArcLabel`]) — same discipline as the disk labels
-    // above: collected from the cells, outside the keep filter. Which half-edge borders the disk
-    // side is asked of **the cells**, by [`disk_side_probe`]'s rule below; the frame rule it
-    // replaced is kept only where the geometry declines to answer.
+    // above: collected from the cells, outside the keep filter.
     //
-    // ★★★★★ **The rule this replaced was two fixtures generalised, and a third refuted it.** It
-    // read the side off the class's **stored** normal against the axis (`axis_up`): `end[0] →
-    // end[1]` is CCW about the *axis*, which was taken to read interior-on-the-forward-side in
-    // the class's own frame exactly when the two agree. Two fixtures were measured — the
-    // straddle's top class and the through-boss's bottom class — and the rule was written from
-    // them. Measured 2026-08-31: a boss cutting a plate and the **notch it leaves** put the same
-    // plane (z = 1), the same stored normal, the same canonical coefficients and the same two
-    // arcs on **opposite** half-edges, and the label that came back was the annulus cell's — all
-    // four bits true, which no disk-side cell there can be. Over the lib suite the frame rule
-    // labelled **116** of some 4,486 arcs on the wrong side, silently: the only consumer is the
-    // chart's `read_cell`, which mostly refuses before reading a cut end, so nothing was red.
+    // ★★★★★ **Which half-edge borders the disk side, derived — and the factor that was missing.**
+    // `MergedArc::end` runs counter-clockwise about the *axis*, so the even half-edge travels
+    // `+θ̂`. The walk keeps a cell on the **left of its travel in the root face's frame**, whose
+    // outward is `n_out = frame_sign · n_P` ([`crate::planes::WorkingPlane::frame_sign`]: *"this
+    // **is** the label frame"*), so
     //
-    // ★ The old note also said a *global* flip of the selector is caught by the through-boss
-    // volume oracles. That stays true and is not what this was: the fix is per-arc, and the 116
-    // it moved changed no production census row at all (empty diff, 269 rows).
+    // ```text
+    //   left = n_out × θ̂ = frame_sign·sign(n_P·m̂)·(m̂ × θ̂) = −frame_sign·axis_up·r̂
+    //   ⇒ the even half-edge borders the disk  ⟺  axis_up · frame_sign = +1
+    // ```
+    //
+    // The same product is already written one module over — `combinatorics`'s
+    // `smooth_extremum_winding` computes `winding = ccw · axis_up · frame_sign`, and a circle
+    // cell's boundary winds `+1` on the disk side, which is this statement rearranged.
+    //
+    // ★★★★★ **The rule this replaced was the same one missing `frame_sign`, and that is exactly
+    // what refuted it.** It read `axis_up` alone. Measured 2026-08-31: a boss cutting a plate and
+    // the **notch it leaves** put the same plane (z = 1), the same stored normal and the same two
+    // arcs on **opposite** half-edges — the boss's top cap is `Forward` there and the notch's
+    // ceiling is `Reversed`, so `frame_sign` is the one thing that differs. The label that came
+    // back was the annulus cell's, all four bits true, which no disk-side cell there can be.
+    // Over the lib suite the factor decides **112** of some 4,300 arcs, and it was wrong on every
+    // one of them, silently: the only consumer is the chart's `read_cell`, which mostly refuses
+    // before reading a cut end.
+    //
+    // ★★ **The geometry still watches it, on every arc** ([`disk_side_probe`]): a cell cannot
+    // straddle the circle, so a rational corner's radial side names the side that whole cell is
+    // on — and where a corner speaks it must agree with this rule. Measured 3,260 of 3,260 on the
+    // census corpus. That check is what makes this a *derivation* rather than a third guess.
     let ns_arcs = 2 * edges.segs.len();
     let arc_labels = edges
         .arcs
         .iter()
         .enumerate()
         .filter_map(|(i, ma)| {
-            let md = ma.def.dir();
-            let mf =
-                nacre_math::Vector3::from_array([md[0].to_f64(), md[1].to_f64(), md[2].to_f64()]);
-            let axis_up = jd.planes[wc].plane.normal().dot(mf) > 0.0;
-            // ★★★★★ **Which side is the disk is asked of the cells, not of a frame.** A cell
-            // cannot straddle the circle — the circle is an arrangement edge — so the first
-            // rational corner of a cell's orbit with a definite radial side names the side that
-            // whole cell is on; a branch corner sits *on* the circle and says nothing, and a
-            // three-plane corner that happens to land on it says nothing either (`Zero`).
-            // The frame rule below (`axis_up`) is kept only for the arcs where **neither** side
-            // offers such a corner — two curved digons face to face.
-            let (co, cm, cr) = (ma.def.origin(), ma.def.dir(), ma.def.radius());
-            // A cell's corners, as radial sides: `true` inside the circle, `false` outside,
-            // skipping the ones that say nothing (a branch corner is *on* the circle; so is a
-            // three-plane corner that happens to land there).
-            let corner_sides = |cx: usize| {
-                cells[cx].half_edges.iter().filter_map(move |&h| {
-                    let p = combinatorics::node_coords_rat(jd, edges.origin(h))?;
-                    match nacre_scalar::cylinder_radial_side(&p, &co, &cm, cr) {
-                        nacre_scalar::Orient::Negative => Some(true),
-                        nacre_scalar::Orient::Positive => Some(false),
-                        nacre_scalar::Orient::Zero => None,
-                    }
-                })
-            };
-            // The first witness is the answer, because the whole cell is on one side.
-            let inside = |cx: usize| -> Option<bool> { corner_sides(cx).next() };
+            // ★ `plus_t_is_above` and nothing spelled beside it: the inline `normal().dot(axis)`
+            // that used to stand here was that function's second spelling, letter for letter.
+            let axis_up = crate::planes::plus_t_is_above(&jd.planes[wc], &ma.def);
             let even = ns_arcs + 2 * i;
-            let cell_of = |h: usize| cells.iter().position(|q| q.half_edges.contains(&h));
-            let (ce, cod) = (cell_of(even), cell_of(even + 1));
+            let he = even + usize::from(axis_up != (jd.planes[wc].frame_sign > 0));
             #[cfg(test)]
             disk_side_probe::record(
-                ce.map(|cx| corner_sides(cx).collect()),
-                cod.map(|cx| corner_sides(cx).collect()),
+                cells
+                    .iter()
+                    .position(|q| q.half_edges.contains(&even))
+                    .and_then(|cx| corner_sides(jd, edges, &cells[cx], &ma.def).next()),
+                cells
+                    .iter()
+                    .position(|q| q.half_edges.contains(&(even + 1)))
+                    .and_then(|cx| corner_sides(jd, edges, &cells[cx], &ma.def).next()),
+                he == even,
+                jd.planes[wc].frame_sign,
             );
-            let he = match ce.and_then(inside) {
-                Some(true) => even,
-                Some(false) => even + 1,
-                None => match cod.and_then(inside) {
-                    Some(true) => even + 1,
-                    Some(false) => even,
-                    None => even + usize::from(!axis_up),
-                },
-            };
             let c = cells
                 .iter()
                 .position(|cell| cell.half_edges.contains(&he))?;
