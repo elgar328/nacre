@@ -813,7 +813,10 @@ pub enum RejectReason {
     /// instead: 122 of the whole suite's 151 raises were that guard being caught and swallowed by
     /// its own retry loop. What raises this reason today is the caller whose node supply is
     /// exhausted (the 3D depth/cavity classification in `boolean.rs`) — and, same shape one
-    /// dimension down, `point_in_ring`'s rayless case and `ring_in_ring`'s probe exhaustion.
+    /// dimension down, `point_in_ring`'s rayless case, `ring_in_ring`'s probe exhaustion, and the
+    /// coplanar cleaning pass's own mirror of that road (`boolean.rs`, which still calls both the
+    /// empty list and the exhausted one by this name — the split below reached the arrangement
+    /// only).
     ///
     /// ★★★★★ **That line used to end «with no firing population» for the last two, and that was
     /// the wrong half of the sentence.** The population was there and large; what it was not was
@@ -831,11 +834,13 @@ pub enum RejectReason {
     /// exactly», and this is «there was no witness to begin with». Reading the first for the
     /// third sent this cell's diagnosis to the wrong layer for a while.
     ///
-    /// ☑ What still raises it: a **wall panel** ring (two perpendicular traces and two rulings,
-    /// every corner a branch point and no circle to name a centre with). A ring that *is* a
-    /// circle no longer does — it is asked the circle's own question
-    /// (`arrangement::ring_own_circle`). The general remedy is to widen the probe's **type** so a
-    /// branch corner is itself a witness; until then this names what is missing.
+    /// ☑ **Nothing in today's corpus raises it.** A ring that *is* a circle is asked the circle's
+    /// own question (`arrangement::ring_own_circle`), and a ring with a **whole chord** for an edge
+    /// names that chord's midpoint (`arrangement::chord_midpoint_rat`) — between them the wall
+    /// panels that used to arrive here are all answered. What would still reach it is a ring with
+    /// neither: every edge a *piece* of a chord, or an arc run that does not close a circle. The
+    /// remedy for that shape is to widen the probe's **type** so a branch corner is itself a
+    /// witness; until such a population arrives, this names what would be missing.
     RingHasNoWitness,
     /// **An exact *value* could not be formed** — a class with no narrow rational description (a
     /// rotated one, say) or a coordinate past `Rat`'s ceiling.

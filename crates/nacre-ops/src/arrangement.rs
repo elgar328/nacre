@@ -5810,9 +5810,71 @@ pub(crate) fn circle_center_in_ring(
     // (The gate's own questions are signs and were made total; borrowing its name here pointed
     // at a layer that had already answered.)
     let undecided = || reject(RejectReason::WitnessNotRational);
+    let center = circle_centre_rat(jd, wc, def).ok_or_else(undecided)?;
+    rational_point_in_ring(jd, cyls, wc, &center, ring)?.ok_or_else(undecided)
+}
+
+/// **The midpoint of a ring edge whose two ends are one solve's two roots** — rational, exactly,
+/// and strictly between them.
+///
+/// ★★★★★ **A chord names its own middle.** `plane_plane_cylinder` builds the pair as
+/// `lo = (mid, −half, disc)` and `hi = (mid, +half, disc)` — **one `mid`, shared** — so a segment
+/// whose ends are that pair has `base + s.a()·dir` for its midpoint whichever end is asked, with
+/// no second solve and no approximation. `disc > 0` for a `Pair`, so it is strictly inside.
+///
+/// **Conjugacy is a question about names, not values**: the two ends must carry the same canonical
+/// plane pair, the same cylinder, and the two roots. That is also what keeps a *piece* of a chord
+/// out — an edge cut short by another feature has a different node at one end, and
+/// `split_at_crossings` states that "whether a crossing is on this segment is the caller's
+/// question", which this answers by refusing to guess.
+fn chord_midpoint_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    e: &combinatorics::RingEdge,
+) -> Option<[nacre_scalar::Rat; 3]> {
+    use nacre_topo::QuadRoot::{Hi, Lo};
+    let (pa, ca, ra) = combinatorics::branch_name(e.node)?;
+    let (pb, cb, rb) = combinatorics::branch_name(e.to)?;
+    if pa != pb || ca != cb || !matches!((ra, rb), (Lo, Hi) | (Hi, Lo)) {
+        return None;
+    }
+    let def = &cyls.get(ca)?.def;
+    let (line, s) = combinatorics::branch_meet(jd, ca, def, e.node)?;
+    let (b, d) = (line.base(), line.dir());
+    let t = s.a();
+    let mut p = [b[0], b[1], b[2]];
+    for k in 0..3 {
+        p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
+    }
+    Some(p)
+}
+
+/// **Is a rational point inside a ring?** — `Ok(None)` when *this point* cannot answer, `Err` when
+/// a **value** could not be formed exactly.
+///
+/// ★★★★★ **The two are different facts and the split is the point of this function.** The body
+/// below used to sit inside [`circle_center_in_ring`], where one witness is all there is, so a
+/// point that landed *on* the ring could be folded into the same refusal as a class with no
+/// rational description. A caller with **several** witnesses must not read them the same way: a
+/// point on the ring has the **next witness as its remedy**, a value that cannot be formed does
+/// not — the lesson `point_in_component`'s doc states for the road one dimension up.
+///
+/// ★ **And it dispatches to the strongest road it can.** A ring the rational chart can name takes
+/// [`nacre_geom::intersect::point_in_ring_2d_rat`], which is **half-open in y** and so decides
+/// even where a ring corner sits on the ray; only a ring with branch corners or arc steps falls
+/// to `point_in_mixed_ring`, which abstains there. Anything that hands this a witness gets the
+/// better answer for free.
+fn rational_point_in_ring(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    p: &[nacre_scalar::Rat; 3],
+    ring: &[combinatorics::RingEdge],
+) -> Result<Option<bool>, BoolError> {
+    let undecided = || reject(RejectReason::WitnessNotRational);
     let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let center = circle_centre_rat(jd, wc, def).ok_or_else(undecided)?;
+    let center = *p;
     // The class's rational chart — the one copy of that rule ([`combinatorics::Chart2dRat`]);
     // parity is affine-invariant, so the basis need not be orthonormal.
     // ★ **A ring the chart road cannot name takes the mixed road** (M6-2b chaining ladder,
@@ -5821,19 +5883,22 @@ pub(crate) fn circle_center_in_ring(
     // could always name still take it — the mixed arm activates on exactly the population the
     // old road refused, which is what keeps every green census row bit-identical.
     if combinatorics::ring_is_mixed(ring) {
-        return combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &center, ring)
-            .ok_or_else(undecided);
+        return Ok(combinatorics::point_in_mixed_ring(
+            jd, cyls, &coeffs, &center, ring,
+        ));
     }
     let chart = combinatorics::Chart2dRat::of_normal(&n).ok_or_else(undecided)?;
     let p2 = chart.project(&center).ok_or_else(undecided)?;
     let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
     let ring2 = chart.ring(jd, &nodes).ok_or_else(undecided)?;
-    match nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2) {
-        nacre_geom::intersect::RingSide::Inside => Ok(true),
-        nacre_geom::intersect::RingSide::Outside => Ok(false),
-        // On the boundary is the gate-impossible contact; refusing is the honest answer.
-        nacre_geom::intersect::RingSide::OnBoundary => Err(undecided()),
-    }
+    Ok(
+        match nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2) {
+            nacre_geom::intersect::RingSide::Inside => Some(true),
+            nacre_geom::intersect::RingSide::Outside => Some(false),
+            // On the boundary this witness says nothing — the caller's next one may.
+            nacre_geom::intersect::RingSide::OnBoundary => None,
+        },
+    )
 }
 
 /// Whether a polygon contour lies inside a disk — population-impossible (its edges ride wall
@@ -5984,6 +6049,29 @@ fn cell_in_cell(
                 // ★ And when it is not a circle either, say **that** — `ring_in_ring` below would
                 // report an exhausted probe list, which is a different fact and one that never
                 // happened here.
+                // ★★★★★ **And when the corners cannot name a witness, an edge can.** A ring edge
+                // whose two ends are one solve's two roots has a **rational midpoint**
+                // ([`chord_midpoint_rat`]) — the pair is built from a shared `mid`, so it costs one
+                // `branch_meet` and no approximation. That is the wall panel's case: four branch
+                // corners, no circle to take a centre from, and two perpendicular traces that are
+                // each a whole chord.
+                //
+                // ★ **`Ok(None)` is this witness's abstention, not the ring's** — the next edge's
+                // midpoint may still answer, which is why [`rational_point_in_ring`] hands the two
+                // apart. ☑ Measured before this was written: every ring here offers **two**
+                // midpoints and the two always agree, and none of them abstains.
+                //
+                // ★ It sits after [`ring_own_circle`] for the reader's sake only: the two supplies
+                // are **disjoint by construction** — that one needs every edge to be an arc, this
+                // one needs an edge that is not.
+                for e in &rings[a] {
+                    let Some(mid) = chord_midpoint_rat(jd, cyls, e) else {
+                        continue;
+                    };
+                    if let Some(hit) = rational_point_in_ring(jd, cyls, wc, &mid, &rings[b])? {
+                        return Ok(Some(hit));
+                    }
+                }
                 return Err(reject(RejectReason::RingHasNoWitness));
             }
             combinatorics::ring_in_ring(jd, wc, &probes, &rings[b]).map(Some)

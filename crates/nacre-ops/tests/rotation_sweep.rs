@@ -370,7 +370,18 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
     for file in src {
         let text = std::fs::read_to_string(file).expect("source file");
         for (n, line) in text.lines().enumerate() {
-            let calls = line.contains("point_in_ring(");
+            // ★ **On a word boundary, because the rule is about `point_in_ring` and not about any
+            // name ending in it.** A bare `contains` flagged `rational_point_in_ring` — the
+            // rational-witness road, which is not this predicate and whose caller carries its own
+            // retry over the ring's edges. A real offender still writes `point_in_ring(` after a
+            // `:` or a space, so nothing the doc above binds escapes.
+            let calls = line.match_indices("point_in_ring(").any(|(i, _)| {
+                i == 0
+                    || !line[..i]
+                        .chars()
+                        .next_back()
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            });
             let is_definition = line.contains("fn point_in_ring");
             let is_prose = line.trim_start().starts_with("//");
             if calls && !is_definition && !is_prose {

@@ -10166,10 +10166,15 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     use RejectReason::{BranchVertexUnnamed, NoClearRay, RingHasNoWitness, RulingBoundNotYet};
     // A band result: the mid slab parts the plate into two solids, the top and bottom slabs cut
     // the standing boss, the wall slab clears the boss. The through-axis wall builds since the
-    // chord's cell reads its cylinder from the class table (E3-b/c); for Common, whose result is
-    // the bore alone, the point classification has no clear ray at the hole's diameter.
+    // chord's cell reads its cylinder from the class table (E3-b/c). ★ The Common column used to
+    // differ here and no longer does — the note that stood at this line said the point
+    // classification finds no clear ray at the hole's diameter, but what actually refused was the
+    // nesting's **wall panel** ring, which now names its own chord midpoint.
     const BAND: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
-    const BAND_COMMON: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(RingHasNoWitness), Ok(1)];
+    // ★ It used to differ from `BAND` in exactly the through-axis cell, and the difference was a
+    // wall **panel** ring with no witness to name. A ring edge whose ends are one solve's two roots
+    // hands over its **midpoint** now, so the two constants have nothing left to tell apart.
+    const BAND_COMMON: [Cross; 5] = BAND;
     // A wall boss fused: the wall slab's caps cross the plate's wall face on the boss's
     // **rulings** — named as branch nodes since E3 — and the cut builds with its exact volume.
     // The mid slab does the same and then splits the result in two — and the label decides:
@@ -10204,23 +10209,16 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // this constant the tool removes real volume in every one, and each leaves `Ok(1)` — the
     // vertical cut is the difference, measured. (The corner row above is the exception to the
     // *mechanism*, not to the outcome: there the box clears the plate entirely.)
-    // ★ The **half** families' Common differs from the wall families' in exactly the two cells a
-    // slab severs it in: there the nesting question lands on a ring bounded by arcs alone, which
-    // is asked the circle's own question now (`arrangement::ring_own_circle`), so it decides and
-    // the cut builds with its exact volume. The wall families' Common still refuses in those two —
-    // ☑ measured, not derived: what is left there is a wall **panel** ring, which has no circle to
-    // name a witness with (`RingHasNoWitness`), and that is the next rung.
-    const HALF_COMMON: [Cross; 5] = [
-        Ok(1),
-        Rejected(RingHasNoWitness),
-        Rejected(RingHasNoWitness),
-        Ok(1),
-        Ok(1),
-    ];
+    // ★ The **half** families' Common now builds under every tool: the two cells a slab severs it
+    // in were opened by the circle's own question (`arrangement::ring_own_circle`), and the two a
+    // wall panel blocked by the chord's midpoint (`arrangement::chord_midpoint_rat`). The wall
+    // families keep `NoClearRay` in the two cells the *other* road owns — `boolean.rs`'s 3D depth
+    // classification, whose nodes really do run out.
+    const HALF_COMMON: [Cross; 5] = [Ok(1); 5];
     const COMMON: [Cross; 5] = [
         Rejected(NoClearRay),
-        Rejected(RingHasNoWitness),
-        Rejected(RingHasNoWitness),
+        Ok(1),
+        Ok(1),
         Ok(1),
         Rejected(NoClearRay),
     ];
@@ -10394,12 +10392,15 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 154, "{tally:?}");
+    assert_eq!(count(|c| matches!(c, Ok(_))), 174, "{tally:?}");
     // ★ `ring_in_ring`'s own refusals are **gone**: every one of them was a probe list that
     // started empty, and that fact now has its own name. What is left under this one is the other
     // road entirely — the 3D depth classification in `boolean.rs`, whose nodes really do run out.
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 16);
-    assert_eq!(count(|c| *c == Rejected(RingHasNoWitness)), 20);
+    // ★ The name is gone from this corpus: every ring that had no witness was a wall panel, and a
+    // panel's perpendicular traces are whole chords, which name their own midpoints. A new
+    // population must restate this 0 — it is an emptiness of *this* corpus, not of the rule.
+    assert_eq!(count(|c| *c == Rejected(RingHasNoWitness)), 0);
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
     assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 0);
