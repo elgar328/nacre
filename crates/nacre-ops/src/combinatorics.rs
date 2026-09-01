@@ -2851,8 +2851,12 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
 ///   the wrap arm).
 ///
 /// `None` is an honest abstention — every tie (a corner or root on the ray, a tangent ray, a
-/// seam-incident root, a radical mismatch, checked-`Rat` overflow) — and the caller keeps its
-/// `WitnessNotRational`.
+/// seam-incident root, checked-`Rat` overflow) — and the caller keeps its `WitnessNotRational`.
+///
+/// ★ **A radical mismatch is not among them, whatever the line above used to say.**
+/// `QuadVal::common_radical` returns `None` there, but only after a `debug_assert!(false)` — so in
+/// a test or debug build it **panics** rather than abstaining. The contract it states is
+/// same-radical arithmetic, and a caller that could mix two must not reach it.
 pub(crate) fn point_in_mixed_ring(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
