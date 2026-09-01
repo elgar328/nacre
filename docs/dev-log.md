@@ -16381,3 +16381,50 @@ M6-2에 남은 가장 큰 벽이 `NoClearRay`(가로지르는 census 44셀)였�
 ### 다음
 **탐침의 타입을 넓힌다** — `point_in_mixed_ring`의 탐침을 `(MeetLine, QuadVal)`로 받으면 **branch 코너 자체가 증인**이 되어 패널 20칸이 닫히고 **기울어진 축까지** 간다(위 ③의 한계를 넘는다). 그림자가 **공짜**다: 유리수 탐침은 `c = 0`인 `QuadVal`이라 넓힌 함수는 기존 인구에서 **비트 단위로 같은 답**을 내야 한다.
 그 밖: `point_in_ring`의 **기권과 오류를 타입에서 가르기** · `circle_of` 분류기를 넓혀 dispatch 표를 통째로 옳게(단 `ring_of`의 빈-링 계약을 옮기는 일) · `RulingBoundNotYet` 15 · `NoClearRay` 16(`boolean.rs`) · θ 축 벽 주도 · **강체 운동 불변 대조군** · Q2.
+
+---
+
+## 패널의 **간선**이 자기 중점을 준다 — 켤레근의 중점은 유리수다
+
+커밋: `997f0b5`(현의 중점) · `dec7e32`(라디칼 doc 정정) · 문서.
+
+### 증인은 코너가 아니라 간선이었다
+직전 칸이 남긴 `RingHasNoWitness` 20칸은 전부 **벽 패널** 링이다 — `[plane, ruling, plane, ruling]`, **코너 넷이 다 branch 이름**이라 중첩 판정에 댈 유리수 점이 없다. 그런데 값은 이미 손에 있었다: `plane_plane_cylinder`가 두 근을 **한 `mid`에서** 만든다(`lo=(mid,−half,disc)` · `hi=(mid,+half,disc)`) ⇒ 두 끝이 그 쌍인 간선의 **중점은 `base + s.a()·dir`**, 온전한 유리수이고 `disc > 0`이라 **엄격히 사이**다. `branch_meet` 한 번, 재풀이도 근사도 없다.
+★ **켤레성은 「확인할 조건」이 아니라 이름의 문제다**: 같은 canonical `planes` 쌍·같은 `cyl`·뿌리가 `{Lo,Hi}`. 그 판정이 **잘린 현**(다른 노드가 한쪽 끝에 있는 간선)을 자동으로 걸러 낸다.
+
+### ★★★★★ 「기권」과 「실패」를 가르지 않으면 둘째 증인이 죽는다
+`circle_center_in_ring`의 몸통이 `RingSide::OnBoundary`를 `Err(WitnessNotRational)`로 접고 있었다. **증인이 하나일 때는 옳고, 여럿을 시도하는 순간 틀린다** — 「이 점이 링 위에 있다」는 **다음 증인이 remedy**이고, 「값을 정확히 못 만들었다」는 아니다. `point_in_component`의 doc이 이미 적어 둔 교훈이다. ⇒ `rational_point_in_ring`으로 들어올리며 반환을 `Result<Option<bool>, _>`로 갈랐고, `circle_center_in_ring`은 `Ok(None)`을 옛 `Err`로 접어 **비트 동일**을 지킨다.
+★ **그리고 들어올린 문이 「가장 센 도로」로 디스패치한다** — 유리수 다각형은 `point_in_ring_2d_rat`(y에서 **half-open**)을 타서 코너가 광선 위여도 **판정한다**. 초안대로 탐침을 `QuadVal`로 넓혔으면 탐침 하나 때문에 질문 전체가 **기권하는 약한 도로**로 내려갈 뻔했다.
+
+### 실측
+- 가로지르는 census: **`RingHasNoWitness` 20 → 0** · **Ok 154 → 174** — 20칸이 **전부 빌드된다**. `NoClearRay` 16 · RBNY 15 · Empty 5 **무변** · `HoleRoots`/`HoleDepth` **0**. 재연산 census Ok 41.
+- 새로 `Ok`가 된 칸마다 오라클 셋(`v == v0 − removed_by` · `first_volume` · `validate`) 통과.
+- **프로덕션 census 무변**(269행, 두 프로파일 동일, HEAD와 동일).
+- 부정 대조: 중점 공급을 빼면 census 빨강. 20칸 전부 **중점 둘**을 내고 **둘이 항상 일치**하며 기권 0(공짜 둘째 기계).
+- reject-trace **site 집합**: `ring_has_no_witness arrangement.rs`가 **사라짐**, 구별 site 18 → **17**.
+
+### ★ 예측이 두 자리에서 빗나갔다 (둘 다 안전한 쪽으로)
+- **「빌드된다고 예측하지 않는다」고 명시했는데 20칸이 전부 빌드됐다.** 계획은 중첩 판정만 답하고 **다음 벽이 셋**(`NoClearRay`·`HoleDepth`·RBNY) 이름으로 나타날 것이라 적었는데 **셋 다 안 나왔다**. 벽을 과대평가한 쪽이라 해는 없지만, 「이 층 아래가 이미 답을 갖고 있었다」를 또 놓친 것이다.
+- **단계-0 그림자의 `true` 2 예측이 실측 1**(`false` 19). 라벨이 옮겨 가는 규모를 한 칸 크게 봤다.
+
+### ★ 관문에서 **0행을 초록으로 적을 뻔했다**
+두 프로파일 census를 대조하며 행 추출 패턴을 `^[a-z_]+ +[0-9a-f]{8}`로 썼는데 census 행은 **`c `로 시작**한다 ⇒ 양쪽 다 0행이 나왔고 `diff`가 통과해 **「two profiles identical (0 rows)」**를 관문 줄로 출력했다. 기록된 함정(「계기의 0은 인구 없음과 아무도 그 길을 안 감을 갈라야 한다」)의 **셋째 얼굴** — 0의 원인이 **내 필터**였다. 형식을 눈으로 확인하고 다시 재서 269행을 얻었다. ⇒ **행 수를 세는 관문 줄은 「0이 아님」을 함께 봐야 한다.**
+
+### ★ 소스 가드가 부분 문자열로 걸렸다
+`no_production_caller_reaches_past_the_shared_predicate`가 `point_in_ring(`을 `contains`로 찾아 **`rational_point_in_ring`을 위반으로 신고**했다(워크스페이스·nodef 빨강). 단어 경계로 좁히고, **진짜 위반을 주입해 여전히 빨강임을 확인**한 뒤 파일을 md5로 복원했다.
+
+### 이미 거짓이던 doc 셋
+① `point_in_mixed_ring`의 *"a radical mismatch … abstains honestly"* — `common_radical`은 **`debug_assert!(false)` 뒤에** `None`이라 debug/test에서 **패닉**한다. ② `NoClearRay`의 raise 자리 목록에 **청소 패스의 거울**이 빠져 있었다(그 자리는 「빈 리스트」와 「소진」을 아직 한 이름으로 부른다 — 직전 칸의 이름 가르기가 arrangement 쪽만 닿았다). ③ `RingHasNoWitness`의 정의역 — 이제 **워크스페이스에서 아무도 안 낸다**. 이름과 자리는 남기되 「무엇이 여전히 여기 닿는가」를 적었다: **간선이 전부 현의 «조각»인 링**, 또는 **원을 안 닫는 호 런**.
+
+### ★ 독립 설계 검토가 본안을 갈아 끼웠다
+초안(탐침을 `QuadVal`로 넓히기)이 **다섯 군데** 반증됐다: ① 20칸의 상대 링은 **유리수 4각형**이라 초안은 질문을 약한 도로로 내린다(내 계획 자신이 금지한 것) ② 「기울어진 축까지, 회전 클래스가 열린다」는 **거짓** — `point_in_mixed_ring`은 `[Rat;4]` 전용이라 회전 클래스에서 아예 못 돈다(**범주 오류**) ③ Vieta 중점을 「켤레일 때만」이라며 좁다고 적었는데 켤레는 **구성으로 참** ④ 청소 패스 인구 서술이 코드와 어긋남(그 `probes`는 루프 **밖에서** 만들어진다) ⑤ 커밋 2 초안의 `asked` 플래그가 뜻을 조용히 바꿔 직전 칸의 이름 가르기를 되감을 뻔했다.
+☑ 그대로 믿지 않고 넷을 코드로 확인했다.
+
+### 관문
+전량 초록: fmt/clippy 0(세 저장소) · workspace **1177** · nodef · census 두 프로파일 동일(**269행**)·**HEAD와 동일** · reject_census · 스윕 129 · perf release(fold 80 407면 237.211567 · ring fins 1.60 s · hub 1.05 s · small 556.7 µs — 같은 대역) · kit 72 · 앱(wasm:all·tsc·vitest 142·wasm clippy) · reject-trace site 집합 18 → 17 · 탐침 잔재 0.
+
+### 다음
+1. **mixed 도로에 half-open 규칙**을 준다 — 두 도로의 비대칭 원인은 그 한 줄(`(Orient::Zero, _) => return None`)이고 산술은 이미 정확하다.
+2. **`QuadVal` 탐침**(어휘의 셋째 서술) — 「간선이 온전한 현이 **아닌**」 링(더 잘린 패널)을 위해. 그림자는 공짜(유리수 탐침은 `c=0`이라 항등)이고, 가드는 **두 좌표 모두**에 걸어야 하며 조건은 「무리수」가 아니라 **「라디칼 철자」**다.
+3. **청소 패스의 거울**을 `cell_in_cell`과 같은 디스패치로 재구성 + 이름 가르기.
+그 밖: `point_in_ring`의 기권/오류를 **타입에서** 가르기 · `circle_of` 넓히기 · `RulingBoundNotYet` 15 · `NoClearRay` 16(`boolean.rs`) · θ 축 벽 주도 · 기울어진 축 84 arc의 껍질 전제 · **강체 운동 불변 대조군** · `corner Common` 코너 딱지 · Q2 · **`ObliqueCylinderCut`은 M6-3**.
