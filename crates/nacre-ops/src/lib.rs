@@ -818,6 +818,14 @@ pub enum RejectReason {
     /// empty list and the exhausted one by this name — the split below reached the arrangement
     /// only).
     ///
+    /// ☑ **Its 3D population halved when the caps learned to name a witness (2026-09-01).** Ten of
+    /// the crossing census's sixteen cells were a wall boss's Common parted by a slab: two
+    /// components of half-disc caps, a panel and a lateral, with no vertex among them, and
+    /// `coord_probes` knew only how to take a **whole** circle's centre. Reading a cut cap as the
+    /// disk it is (`combinatorics::face_circle`) gives every one of them a witness. What is left
+    /// under this name is the **corner** families, whose axis stands on the plate's corner edge:
+    /// there the probes exist and every one of them really is blocked.
+    ///
     /// ★★★★★ **That line used to end «with no firing population» for the last two, and that was
     /// the wrong half of the sentence.** The population was there and large; what it was not was
     /// *exhaustion*. Every one of those raises came from a probe list that started **empty** — a

@@ -613,7 +613,7 @@ fn group_faces(
         .map(combinatorics::Probe::Named)
         .collect();
         if named.is_empty() {
-            combinatorics::coord_probes(jd, &comp_faces[c])
+            combinatorics::coord_probes(jd, cyls, &comp_faces[c])
         } else {
             named
         }

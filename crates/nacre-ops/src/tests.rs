@@ -10211,17 +10211,16 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // *mechanism*, not to the outcome: there the box clears the plate entirely.)
     // ★ The **half** families' Common now builds under every tool: the two cells a slab severs it
     // in were opened by the circle's own question (`arrangement::ring_own_circle`), and the two a
-    // wall panel blocked by the chord's midpoint (`arrangement::chord_midpoint_rat`). The wall
-    // families keep `NoClearRay` in the two cells the *other* road owns — `boolean.rs`'s 3D depth
-    // classification, whose nodes really do run out.
+    // wall panel blocked by the chord's midpoint (`arrangement::chord_midpoint_rat`).
+    //
+    // ★★★★★ **And the two cells the other road owned are open too.** A wall boss's Common is a
+    // half cylinder, so a slab parts it into two components whose faces are half-disc caps, a
+    // panel and a lateral — not one vertex among them, and `coord_probes` only knew how to take a
+    // **whole** circle's centre. It now reads a cut cap as the disk it is
+    // (`combinatorics::face_circle`) and offers points of that disk's own plane for the ring to
+    // choose from, so the depth classification has a witness and both cells build.
     const HALF_COMMON: [Cross; 5] = [Ok(1); 5];
-    const COMMON: [Cross; 5] = [
-        Rejected(NoClearRay),
-        Ok(1),
-        Ok(1),
-        Ok(1),
-        Rejected(NoClearRay),
-    ];
+    const COMMON: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(2)];
     // A half boss's Cut (a notch with a half-disk ceiling): since the arc label carries its own
     // side, the ceiling's two ends agree and the notch re-cuts — the mid slab parts it in two,
     // the others take one solid, all with their exact volumes. The through-axis wall's sector is
@@ -10392,11 +10391,11 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 174, "{tally:?}");
+    assert_eq!(count(|c| matches!(c, Ok(_))), 184, "{tally:?}");
     // ★ `ring_in_ring`'s own refusals are **gone**: every one of them was a probe list that
     // started empty, and that fact now has its own name. What is left under this one is the other
     // road entirely — the 3D depth classification in `boolean.rs`, whose nodes really do run out.
-    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 16);
+    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 6);
     // ★ The name is gone from this corpus: every ring that had no witness was a wall panel, and a
     // panel's perpendicular traces are whole chords, which name their own midpoints. A new
     // population must restate this 0 — it is an emptiness of *this* corpus, not of the rule.

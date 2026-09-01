@@ -3211,6 +3211,113 @@ pub(crate) fn probe_in_component(
     }
 }
 
+/// **The circle a planar face's boundary rides**, when its ring has one.
+///
+/// ★★★★★ **The question `ring_own_circle` asks, minus the part that made it too narrow.** That one
+/// answers "is this ring *the whole* circle" — every edge an arc, chained the whole way round — and
+/// so says `None` for a **cut** cap, which is a disk just the same with a chord across it. What a
+/// face needs in order to name a point of its own interior is only *which circle bounds it*, and
+/// that is: the ring's **arcs all ride one cylinder**, and the face's plane is **perpendicular to
+/// that axis** (so the section really is a circle rather than an ellipse the M6-2 gate would have
+/// refused anyway). A ring with no arc at all has no circle — which is how a **wall panel**
+/// (`[plane, ruling, plane, ruling]`) is turned away here rather than guessed at.
+///
+/// `ring_own_circle` is the special case with no chords; the two are kept apart because they answer
+/// different questions — "is the ring a circle" versus "which circle bounds the face".
+fn face_circle<'a>(
+    jd: &Judge<'_, WorkingPlane>,
+    plane: usize,
+    ring: &'a [RingEdge],
+) -> Option<&'a nacre_topo::CylinderDef> {
+    let mut arcs = ring.iter().filter_map(|e| match &e.carrier {
+        Carrier::Arc(a) => Some(&**a),
+        _ => None,
+    });
+    let first = arcs.next()?;
+    if arcs.any(|a| a.cyl != first.cyl) {
+        return None;
+    }
+    // The face's plane must be perpendicular to the axis: its normal is parallel to `m`.
+    let coeffs = class_coeffs_rat(jd, plane)?;
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let c = cross3_rat(&n, &first.def.dir())?;
+    let zero = nacre_scalar::Rat::from_int(0);
+    if c.iter().any(|v| *v != zero) {
+        return None;
+    }
+    Some(&first.def)
+}
+
+/// **Points of the face's plane to offer the ring**, centre first — every one of them strictly
+/// inside the circle, by derivation rather than by search.
+///
+/// The steps run along the class chart's own rational axes ([`Chart2dRat::axes`], the one spelling
+/// for a rational basis of a plane) with `λ = r / (|e|² + 1)`. Then `λ²|e|² = r²·x/(x+1)²` for
+/// `x = |e|²`, and `x/(x+1)²` is at most `1/4` (at `x = 1`), so `|λe| < r` — one rational
+/// inequality, no magic constant and no halving loop. Which of them is inside the **face** is the
+/// ring's question, not this one's.
+fn ring_interior_candidates(
+    jd: &Judge<'_, WorkingPlane>,
+    plane: usize,
+    def: &nacre_topo::CylinderDef,
+    centre: &[nacre_scalar::Rat; 3],
+) -> Option<Vec<[nacre_scalar::Rat; 3]>> {
+    use nacre_scalar::Rat;
+    let coeffs = class_coeffs_rat(jd, plane)?;
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let chart = Chart2dRat::of_normal(&n)?;
+    let (e1, e2) = chart.axes();
+    let mut out = vec![*centre];
+    let r = def.radius();
+    let sum = |a: &[Rat; 3], b: &[Rat; 3], neg: bool| -> Option<[Rat; 3]> {
+        let mut v = [Rat::from_int(0); 3];
+        for i in 0..3 {
+            v[i] = if neg {
+                a[i].checked_sub(b[i])?
+            } else {
+                a[i].checked_add(b[i])?
+            };
+        }
+        Some(v)
+    };
+    // ★★★★★ **The chart's own lattice directions, not a search.** Two axes are not enough: a
+    // chord can lie *along* one of them (then that step stays on the boundary) while the other's
+    // ray crosses the circle exactly at the **seam**, where `circular_order_about_seam` has no
+    // order to give and the arc step abstains. ☑ Measured: with `{±e1, ±e2}` alone, sixteen cap
+    // faces answered `None` for every candidate, split exactly that way. The diagonals are off
+    // both, and they cost one more derivation of the same inequality rather than a new rule.
+    let diag: Vec<[Rat; 3]> = [false, true]
+        .into_iter()
+        .filter_map(|neg| sum(e1, e2, neg))
+        .collect();
+    let dirs: Vec<&[Rat; 3]> = [e1, e2].into_iter().chain(diag.iter()).collect();
+    for e in dirs {
+        let len2 = dot3_rat(e, e)?;
+        let lam = Rat::new(
+            r.numer().checked_mul(len2.denom())?,
+            r.denom()
+                .checked_mul(len2.numer().checked_add(len2.denom())?)?,
+        )?;
+        for sign in [
+            Rat::from_int(1),
+            Rat::from_int(0).checked_sub(Rat::from_int(1))?,
+        ] {
+            let k = lam.checked_mul(sign)?;
+            let mut p = *centre;
+            for i in 0..3 {
+                p[i] = p[i].checked_add(k.checked_mul(e[i])?)?;
+            }
+            debug_assert_eq!(
+                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r),
+                nacre_scalar::Orient::Negative,
+                "a step of r/(|e|^2+1) along a chart axis stays strictly inside the circle"
+            );
+            out.push(p);
+        }
+    }
+    Some(out)
+}
+
 /// **Coordinate probes of a component whose faces carry no vertex.**
 ///
 /// The witness is a **cap disk's centre**: the face is planar with a circular outer bound, so the
@@ -3225,7 +3332,11 @@ pub(crate) fn probe_in_component(
 ///
 /// Several directions per point, because one ray can graze and the remedy is another direction;
 /// the order is not load-bearing.
-pub(crate) fn coord_probes(jd: &Judge<'_, WorkingPlane>, faces: &[CompFace]) -> Vec<Probe> {
+pub(crate) fn coord_probes(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    faces: &[CompFace],
+) -> Vec<Probe> {
     use nacre_scalar::Rat;
     let zero = Rat::from_int(0);
     let nonzero = |v: &[Rat; 3]| v.iter().any(|c| *c != zero);
@@ -3238,13 +3349,27 @@ pub(crate) fn coord_probes(jd: &Judge<'_, WorkingPlane>, faces: &[CompFace]) -> 
     };
     let mut out = Vec::new();
     for f in faces {
-        let (CompSurf::Plane(q), BoundEdges::Circle(def)) = (&f.surf, &f.outer) else {
+        let CompSurf::Plane(q) = &f.surf else {
             continue;
         };
         if !f.inner.is_empty() {
             continue;
         }
-        let Some(p) = class_coeffs_rat(jd, *q)
+        // ★★★★★ **A cut cap is a disk too, and it names its own interior the same way.** The
+        // witness has always been the circle's centre; what was missing is that a face whose
+        // boundary a wall has cut still *has* a circle ([`face_circle`]), and its centre may then
+        // lie **on** the chord rather than inside the face — exactly what happens when the axis
+        // rides the wall, which makes the chord a diameter. So the centre is offered as one
+        // candidate among several and the **ring itself** says which one is inside.
+        let def = match &f.outer {
+            BoundEdges::Circle(def) => &**def,
+            BoundEdges::Ring(r) => match face_circle(jd, *q, r) {
+                Some(def) => def,
+                None => continue,
+            },
+            _ => continue,
+        };
+        let Some(centre) = class_coeffs_rat(jd, *q)
             .and_then(|coeffs| crate::planes::axis_param_of_plane(&coeffs, def))
             .and_then(|t| {
                 let (o, m) = (def.origin(), def.dir());
@@ -3256,6 +3381,40 @@ pub(crate) fn coord_probes(jd: &Judge<'_, WorkingPlane>, faces: &[CompFace]) -> 
             })
         else {
             continue;
+        };
+        let p = match &f.outer {
+            // A whole circle: the centre is strictly inside for any positive radius, and asking
+            // would only add a road where none is needed. Today's answer, unchanged.
+            BoundEdges::Circle(_) => centre,
+            // ★ **Derived, not searched.** Each step is `centre ± λ·e` along the class chart's own
+            // rational axes ([`Chart2dRat::axes`] — the one spelling for "a rational basis of this
+            // plane"), with `λ = r / (|e|² + 1)`. Then `λ²|e|² = r²·x/(x+1)²` for `x = |e|²`, and
+            // `x/(x+1)² ≤ 1/4` at its maximum, so every candidate is strictly inside the circle —
+            // a rational inequality, no magic constant and no halving loop.
+            //
+            // ★★★★★ **Which one is inside the *face* is asked, not derived.** Deriving it would
+            // mean spelling "the material side of the chord" in some frame, and this road has no
+            // oracle for that sign; the ring already answers the question exactly
+            // ([`point_in_mixed_ring`]), and an abstention just moves to the next candidate. The
+            // centre goes first, so a cap the wall cuts off-centre still answers with it.
+            _ => {
+                let Some(cand) = ring_interior_candidates(jd, *q, def, &centre) else {
+                    continue;
+                };
+                let Some(coeffs) = class_coeffs_rat(jd, *q) else {
+                    continue;
+                };
+                let BoundEdges::Ring(r) = &f.outer else {
+                    continue;
+                };
+                match cand
+                    .into_iter()
+                    .find(|c| point_in_mixed_ring(jd, cyls, &coeffs, c, r) == Some(true))
+                {
+                    Some(c) => c,
+                    None => continue,
+                }
+            }
         };
         let m = def.dir();
         let mut dirs = vec![m];
@@ -3438,17 +3597,25 @@ pub(crate) fn point_in_faces_rat(
         let inside = |b: &BoundEdges| -> Result<Option<bool>, BoolError> {
             match b {
                 BoundEdges::Ring(r) => {
-                    // ★ Under three nodes `point_in_ring_2d_rat` answers `Outside` by contract,
-                    // which would make a degenerate ring *invisible* to the parity instead of
-                    // loud. A face of a valid solid has no such ring, so saying so is free.
-                    if r.len() < 3 {
-                        return Err(reject(RejectReason::DegenerateRing));
-                    }
                     // A mixed ring forks to the rational walk here exactly as the named
                     // road forks: the crossing x is already rational, and the chart-ring
                     // derivation below has no spelling for a branch corner or an arc step.
                     if ring_is_mixed(r) {
                         return Ok(point_in_mixed_ring(jd, cyls, &coeffs, &x, r));
+                    }
+                    // ★ Under three nodes `point_in_ring_2d_rat` answers `Outside` by contract,
+                    // which would make a degenerate ring *invisible* to the parity instead of
+                    // loud. A **polygon** face of a valid solid has no such ring, so saying so is
+                    // free.
+                    //
+                    // ★★★★★ **It used to stand before the fork, and that read a curved face as
+                    // degenerate.** A half-disc cap's ring is two edges — an arc and its chord —
+                    // which is a perfectly good boundary and not a polygon at all; the sentence
+                    // "a face of a valid solid has no such ring" was only ever true of the road
+                    // *below*. Measured: the moment a wall boss's caps were given a witness, six
+                    // census cells came here and were refused by name for being what they are.
+                    if r.len() < 3 {
+                        return Err(reject(RejectReason::DegenerateRing));
                     }
                     // The branch check is spelled before the chart rather than left to
                     // `node_coords_rat`'s `None`, so an unnamed vertex is reported as itself and
