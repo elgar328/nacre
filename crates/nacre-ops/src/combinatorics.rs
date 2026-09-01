@@ -4109,17 +4109,13 @@ fn arc_extremum_winding(
         {
             below += 1;
         }
-        // ★ **And is it in the arc's INTERIOR?** At an endpoint the arc's own minimum sits at a
-        // ring node, which is `lo` or above by definition — the premise holds. Not a corner case:
-        // a boss seated on a wall is cut by a **diameter**, and then this point is exactly a node.
+        // ★ **And is it in the arc's INTERIOR?** It cannot be an endpoint: `lo` is the smallest
+        // ring **node** and this point is smaller still, so it is no node of this ring at all.
+        // (☑ Measured before the argument was trusted: a check for it fired **0** times over the
+        // suite. That is also why a boss seated on a wall needs nothing special here — its circle
+        // is cut by a **diameter**, so this point *is* a node, and the comparison above already
+        // answered "not below".)
         let (ka, kb) = (key(i), key((i + 1) % n));
-        let ends_here = |k: &CoordKey| {
-            cmp_rat(c[1], k, 1) == Some(std::cmp::Ordering::Equal)
-                && cmp_rat(ex, k, 0) == Some(std::cmp::Ordering::Equal)
-        };
-        if ends_here(ka) || ends_here(kb) {
-            continue;
-        }
         // CCW **as seen in the (ê₀, ê₁) plane**: travel is CCW about the axis, which may point
         // the other way.
         let seen_ccw = ac.ccw != (m[2] < zero);
@@ -4144,7 +4140,16 @@ fn arc_extremum_winding(
         // Walking CCW from the start, θ = 180° is reached iff the walk leaves the upper half, or
         // wraps the whole way round inside one half — and θ's order inside a half is read off the
         // first coordinate: falling above the centre, rising below it.
-        let x_cmp = cmp_key(jd, ka, kb, 0)?;
+        // ★ A declining comparison leaves today's road, exactly as every other thing this
+        // function cannot decide does — it must not become a **refusal**, which is what `?` here
+        // would have made of it (☑ measured 0 today; the shape is wrong all the same).
+        let Ok(x_cmp) = cmp_key(jd, ka, kb, 0) else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
         let hit = match (ha, hb) {
             (true, false) => true,
             (false, true) => false,

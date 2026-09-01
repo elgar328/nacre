@@ -10308,14 +10308,19 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                         m.rebuild_adjacency();
                         let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
                         // ★ The first result's own volume against the closed form — the baseline
-                        // `removed_by` subtracts from was never itself checked.
-                        if out.len() == 1 {
-                            let w = first_volume(kind, base, h);
-                            assert!(
-                                (v0 - w).abs() < 1e-9,
-                                "{name} {kind:?}: first volume {v0} ≠ {w}"
-                            );
-                        }
+                        // `removed_by` subtracts from was never itself checked. Summed over the
+                        // whole result rather than guarded on one solid: a guard is a branch that
+                        // can go quietly untaken (☑ it never was, over all 42 cells), and the sum
+                        // is right however many pieces a first operation leaves.
+                        let v_first: f64 = out
+                            .iter()
+                            .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                            .sum();
+                        let w = first_volume(kind, base, h);
+                        assert!(
+                            (v_first - w).abs() < 1e-9,
+                            "{name} {kind:?}: first volume {v_first} ≠ {w}"
+                        );
                         let t =
                             m.add_cuboid(Point3::from_array(tool[0]), Point3::from_array(tool[1]));
                         m.rebuild_adjacency();
