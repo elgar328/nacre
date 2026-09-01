@@ -16336,3 +16336,42 @@ corner 가족이 정확히 그 배치다. 축이 **벽 평면 위**에 있어 �
 ### 다음
 ★ **차트 CGU 1은 조사 끝**: `a_cut_circle_bounds_the_bands`가 독자를 일부러 가려 거절을 보이는 테스트다 — 코퍼스에서는 사실상 0.
 θ 축을 **벽 주도**로(2-A/2-B) · `corner Common`의 코너 딱지 결함 · 세로 **존재**(`ThetaSeg::marks`) · RBNY 15 · 청소 nesting `NoClearRay` 44 · Q2 · **기울어진 축 84 arc의 전제는 미검증**(극점이 무리수라 계기가 침묵 — 그 인구를 정확히 답하려면 quad 극점이 필요하다) · **강체 운동 불변 대조군**(검토가 제안한 그물: 코퍼스를 이동·회전시켜 답이 같이 따라오는지 — 좌표·사전식 규칙에 기댄 결함을 통째로 잡는다).
+
+---
+
+## 잘린 원의 셀은 온전한 원과 **같은 질문**을 받는다 — 증인이 «코너 이름»에만 있었다
+
+커밋: `d861571` · 문서.
+
+### 이름이 사건을 잘못 부르고 있었다
+M6-2에 남은 가장 큰 벽이 `NoClearRay`(가로지르는 census 44셀)였는데, 재 보니 `ring_in_ring`의 거절은 **전부 `probes.len() == 0`** 이었다. 「깨끗한 광선이 없었다」가 아니라 **「쏠 점이 하나도 없었다」**. 원인 한 줄: `three_plane_probes = nodes.filter_map(three_plane_name)`이 **branch 노드를 전부 버리고**, 유리수 도로인 `node_coords_rat`도 `Branch`면 **점을 보지도 않고 `None`** 이다. 두 도로 모두 증인을 **링의 노드**에서만 얻는데, 원통에서 잘려 나온 링은 코너가 전부 branch 이름이다.
+★ 그 자리 주석이 그것을 **미덕이라 적고 있었다** — *"dropping a branch node from the probe list here is honest"*.
+
+### 고침 — 새 기계 0개
+`cell_in_cell`은 **원 셀**을 이미 답한다(중심 + `!node_in_circle`). 그리고 **게이트의 정리**로 한 평면 위 두 원은 만날 수 없으므로(모든 쌍에 축 거리 > 반지름 합), **호로만 이루어져 머리-꼬리로 닫히고 sense가 같은 링은 «그 원 자체»** 다. 그러니 그 셀은 온전한 원과 **같은 질문**을 받아야 한다 — `ring_own_circle`이 그것을 말하고, 증인은 **중심**(축 방향과 무관하게 언제나 유리수)이다. `circle_centre_rat`를 `circle_center_in_ring`에서 들어올려 두 자리가 한 철자를 읽는다.
+★ **`node_in_circle`도 같은 규칙을 받았다** — 그 doc의 *"An all-branch ring … no measured population reaches here with one"* 을 이 고침이 **깨뜨리기 때문**이다. 코너가 못 주면 링 자신의 원이 중심을 준다.
+★ **가드는 «호 2개»가 아니라 «전부 호»** 다(오늘 인구가 2개일 뿐, 두 벽이 자르면 4개짜리가 나온다 — 개수 가드는 케이스-모양 분기다).
+
+### 이름을 갈랐다
+`RingHasNoWitness` — 「증인이 애초에 없었다」. 세 이름을 한 문장으로: `NoClearRay`는 「가진 증인이 전부 막혔다」, `WitnessNotRational`은 「필요한 값을 정확히 못 만들었다」, 이것은 「증인이 없었다」. **첫째를 셋째로 읽은 것이 이 칸의 진단을 한동안 엉뚱한 층으로 보냈다.**
+
+### 실측
+- 가로지르는 census: **`NoClearRay` 44 → 36 → (이름 가른 뒤) 16** · **`RingHasNoWitness` 20** · **Ok 146 → 154** · RBNY 15 · Empty 5.
+- ★ **`ring_in_ring`은 이제 워크스페이스에서 아무것도 안 낸다** — 그 자리의 거절은 **전부** 「증인 없음」이었다. 남은 `NoClearRay` 16은 **다른 도로**(`boolean.rs`의 성분 깊이 판정)다.
+- reject-trace를 **site 집합**으로 대조: `no_clear_ray combinatorics.rs` **사라지고** `ring_has_no_witness arrangement.rs` **들어옴**, 구별 site 수 18 → 18.
+- 프로덕션 census **무변**(269행) · `HoleRoots` **0** · perf 같은 대역.
+
+### ★ 예측이 두 번 빗나갔다 (그리고 그 자리가 다음 입구다)
+- 「대부분 열린다」 → **8칸**만 열렸다(half* 가족의 Common × mid·wall slab). 나머지는 **패널 링에도 막혀** 있었고, 고침 뒤 남은 empty-probe 거절은 **전부 패널**(len=4, arcs=0)이다.
+- 「패널 30 → 새 이름, boolean.rs 6은 그대로」 → 실제는 **20 / 16**이다. 「6」은 **워크스페이스 전체** raise를 census 셀 수로 읽은 것이었다 — reject_census의 doc이 *"Assert on sets and on distinct-site counts, **never on raise counts**"* 라고 **금지한** 혼동을 내가 그대로 했다.
+
+### ★ 독립 설계 검토가 내 계획을 크게 고쳤다
+초안은 «간선에서 유리수 증인을 짜낸다»였고 **네 군데가 반증**됐다: ① 새 소비자가 필요 없다(`circle_center_in_ring`이 이미 «유리수 점 × 다각형»을 답한다) ② 가드를 「유리수 증인 0」으로 두면 **회전 스윕의 초록이 샌다**(`world_rat`가 회전에서 `None`이라 이름은 있고 좌표는 없다) ③ **「유리수 중심의 원에는 유리수 점이 있다」는 거짓** — 중심 0·반지름 1·축 `(1,1,1)`이면 `X²+3Y²=2Z²`로 내려가 mod 3 무한강하(직접 검산) ⇒ 그 문장 위에 세운 설계는 전칭이 아니었다 ④ 「중심을 못 쓰는 이유」도 거짓(doc: *"asks about a ring, **not about the material it bounds**"*).
+★ **검토의 제안 하나는 내가 코드로 반박했다**: 「`ring_in_ring`이 `Err`를 삼키는 위장을 걷어라」 — 사실 관계는 맞지만 **그 재시도는 설계된 장치**이고(*"a fact about the probe … retried from the next node"*) `point_in_ring`이 **기권을 `Err`로** 돌려주므로, 여기서 전파시키면 회전 스윕이 빨강이 된다. 올바른 고침은 **반환 타입을 가르는 별도 칸**이다.
+
+### 관문
+전량 초록: fmt/clippy(세 저장소 `--all-targets --all-features`) 0 · workspace **1177** · nodef · census 두 프로파일 동일·**무변**(269행) · reject_census · 스윕 129 · perf(fold 80 407면 237.211567 · ring fins 1.63 s · hub 1.09 s · small 564 µs — 같은 대역) · kit 72 · 앱(vitest 142) · reject-trace **site 집합**으로 대조 · 탐침 잔재 0.
+
+### 다음
+**탐침의 타입을 넓힌다** — `point_in_mixed_ring`의 탐침을 `(MeetLine, QuadVal)`로 받으면 **branch 코너 자체가 증인**이 되어 패널 20칸이 닫히고 **기울어진 축까지** 간다(위 ③의 한계를 넘는다). 그림자가 **공짜**다: 유리수 탐침은 `c = 0`인 `QuadVal`이라 넓힌 함수는 기존 인구에서 **비트 단위로 같은 답**을 내야 한다.
+그 밖: `point_in_ring`의 **기권과 오류를 타입에서 가르기** · `circle_of` 분류기를 넓혀 dispatch 표를 통째로 옳게(단 `ring_of`의 빈-링 계약을 옮기는 일) · `RulingBoundNotYet` 15 · `NoClearRay` 16(`boolean.rs`) · θ 축 벽 주도 · **강체 운동 불변 대조군** · Q2.
