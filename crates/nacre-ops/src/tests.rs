@@ -10677,36 +10677,44 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
     );
 }
 
-/// **The ring's extremum road is walked, and it decides.** `combinatorics::arc_extremum_winding`
-/// answers only where an arc bulges past every node of its ring; a corpus that never makes that
-/// shape would leave the whole road dead and this file green.
+/// **The corner boss builds, and only the extremum road makes it.** Its axis sits exactly on
+/// **both** plate walls, so the chords through its circle are radii and the sector outside the
+/// plate is reflex at the centre — the ring's smallest **node**, with the arc reaching further.
+/// Reading the turn there inverted the sign, the void seed landed on a bounded sector, and one
+/// solid's material was flipped across the whole component; the emitter then refused every one of
+/// this family's booleans.
 ///
-/// ★ The population is built here rather than read off the ambient ledger: a lock that counts
-/// what other tests happened to run before it sees a different number every ordering (measured,
-/// twice in this crate's history).
+/// ★★★★ **The lock is the outcome, not a counter.** An earlier draft snapshotted
+/// `combinatorics::hull_probe`'s totals around this body and asserted the delta — which is not
+/// sound: that ledger is process-global and every other test's booleans write to it in parallel,
+/// so the delta is not this population's. The behaviour is the honest lock, and it is a real one:
+/// reverting `arc_extremum_winding`'s early return puts all three kinds back to
+/// `CylinderGateUndecided` here and in three censuses.
 #[test]
 fn a_ring_whose_arc_bulges_past_its_nodes_reads_the_winding_there() {
-    use crate::combinatorics::hull_probe;
-    let before = *hull_probe::ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic");
-    // A boss whose axis sits exactly on the plate's corner: both plate walls cut its circle along
-    // **radii**, so the sector outside the plate is reflex at the centre and the centre is the
-    // ring's lexicographically smallest node — with the arc reaching further.
-    for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+    for (kind, want) in [
+        (
+            BoolKind::Fuse,
+            first_volume(BoolKind::Fuse, [0.0, 0.0, -1.0], 4.0),
+        ),
+        (
+            BoolKind::Cut,
+            first_volume(BoolKind::Cut, [0.0, 0.0, -1.0], 4.0),
+        ),
+        (
+            BoolKind::Common,
+            first_volume(BoolKind::Common, [0.0, 0.0, -1.0], 4.0),
+        ),
+    ] {
         let (mut m, plate, boss) = boss_family([0.0, 0.0, -1.0], 4.0);
-        boolean(&mut m, kind, plate, boss).expect("the corner boss builds");
+        let out = boolean(&mut m, kind, plate, boss).expect("the corner boss builds");
+        m.rebuild_adjacency();
+        let issues = nacre_validate::validate(&m);
+        assert!(issues.is_empty(), "{kind:?}: {issues:?}");
+        let v: f64 = out
+            .iter()
+            .map(|&sh| nacre_props::mass_props(&m, sh).expect("props").volume)
+            .sum();
+        assert!((v - want).abs() < 1e-9, "{kind:?}: volume {v} ≠ {want}");
     }
-    let after = *hull_probe::ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic");
-    assert!(
-        after.4 > before.4,
-        "no ring of the corner-boss corpus read its winding at an arc: {before:?} -> {after:?}"
-    );
-    // And the road is not the whole world: most rings with arcs still find their minimum at a node.
-    assert!(
-        after.1 - before.1 > after.4 - before.4,
-        "every arc ring took the extremum road — the node road would be dead: {before:?} -> {after:?}"
-    );
 }

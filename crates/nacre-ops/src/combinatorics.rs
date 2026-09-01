@@ -3965,14 +3965,7 @@ pub(crate) mod hull_probe {
     /// rational and this instrument says nothing about them.
     pub(crate) static TILTED: Mutex<usize> = Mutex::new(0);
 
-    pub(crate) fn note(
-        _len: usize,
-        arcs: usize,
-        below: usize,
-        undecided: usize,
-        inside: usize,
-        tilted: usize,
-    ) {
+    pub(crate) fn note(arcs: usize, below: usize, undecided: usize, inside: usize, tilted: usize) {
         *TILTED
             .lock()
             .expect("the probe's lock is never held across a panic") += tilted;
@@ -4193,7 +4186,7 @@ fn arc_extremum_winding(
         }
     }
     #[cfg(test)]
-    hull_probe::note(ring.len(), arcs, below, undecided, interior, tilted);
+    hull_probe::note(arcs, below, undecided, interior, tilted);
     Ok(best.map(|(_, w)| w))
 }
 
