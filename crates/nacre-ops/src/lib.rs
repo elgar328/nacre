@@ -813,9 +813,30 @@ pub enum RejectReason {
     /// instead: 122 of the whole suite's 151 raises were that guard being caught and swallowed by
     /// its own retry loop. What raises this reason today is the caller whose node supply is
     /// exhausted (the 3D depth/cavity classification in `boolean.rs`) — and, same shape one
-    /// dimension down with no firing population, `point_in_ring`'s rayless case and
-    /// `ring_in_ring`'s probe exhaustion.
+    /// dimension down, `point_in_ring`'s rayless case and `ring_in_ring`'s probe exhaustion.
+    ///
+    /// ★★★★★ **That line used to end «with no firing population» for the last two, and that was
+    /// the wrong half of the sentence.** The population was there and large; what it was not was
+    /// *exhaustion*. Every one of those raises came from a probe list that started **empty** — a
+    /// ring cut out of a cylinder names its corners with the quadric and `three_plane_probes`
+    /// keeps only plane triples — so the road refused with a name about rays it had never cast.
+    /// That fact has its own name now ([`Self::RingHasNoWitness`]).
     NoClearRay,
+    /// **A ring offered no point to ask about** — not a ray that was blocked, and not a value
+    /// that could not be formed: the containment roads draw their witnesses from a ring's
+    /// *corners*, and a ring cut out of a cylinder has only branch-named ones.
+    ///
+    /// The three names beside each other, once: [`Self::NoClearRay`] is «every witness we had was
+    /// blocked», [`Self::WitnessNotRational`] is «a value we needed could not be formed
+    /// exactly», and this is «there was no witness to begin with». Reading the first for the
+    /// third sent this cell's diagnosis to the wrong layer for a while.
+    ///
+    /// ☑ What still raises it: a **wall panel** ring (two perpendicular traces and two rulings,
+    /// every corner a branch point and no circle to name a centre with). A ring that *is* a
+    /// circle no longer does — it is asked the circle's own question
+    /// (`arrangement::ring_own_circle`). The general remedy is to widen the probe's **type** so a
+    /// branch corner is itself a witness; until then this names what is missing.
+    RingHasNoWitness,
     /// **An exact *value* could not be formed** — a class with no narrow rational description (a
     /// rotated one, say) or a coordinate past `Rat`'s ceiling.
     ///
@@ -1207,6 +1228,7 @@ impl RejectReason {
             Self::JudgeExhausted => "judge_exhausted",
             Self::DegenerateWitness => "degenerate_witness",
             Self::NoClearRay => "no_clear_ray",
+            Self::RingHasNoWitness => "ring_has_no_witness",
             Self::WitnessNotRational => "witness_not_rational",
             Self::ArcBoundNotYet => "arc_bound_not_yet",
             Self::CurvedOperandBoundary => "curved_operand_boundary",
@@ -1267,6 +1289,7 @@ impl RejectReason {
             // configuration is outside what this road covers, not a broken arrangement.
             | Self::CylinderFaceUndecided
             | Self::NoClearRay
+            | Self::RingHasNoWitness
             | Self::WitnessNotRational
             | Self::ArcBoundNotYet
             | Self::RulingBoundNotYet

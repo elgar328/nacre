@@ -5721,21 +5721,18 @@ fn nest_cells(
 /// ★ It takes the cylinder's **statement**, not an arrangement element: the coplanar merge asks
 /// the same question of a `Bound::Circle` it is carrying into a merged region, and one spelling
 /// serves both.
-pub(crate) fn circle_center_in_ring(
+/// **Where a cylinder's axis meets this class** — the circle's centre on the plane, exact.
+///
+/// ★ It is rational **whatever way the axis points**: the class has rational coefficients or this
+/// says nothing, and the meet is one division. That is why a circle can always name a witness of
+/// its own where a *ring* cannot — a ring's corners are branch points and carry radicals.
+fn circle_centre_rat(
     jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     def: &nacre_topo::CylinderDef,
-    ring: &[combinatorics::RingEdge],
-) -> Result<bool, BoolError> {
+) -> Option<[nacre_scalar::Rat; 3]> {
     use nacre_scalar::Rat;
-    // ★ Every refusal below is a **value** that could not be formed exactly — a class with no
-    // narrow description, a coordinate past `Rat` — which is the road's name, not the gate's.
-    // (The gate's own questions are signs and were made total; borrowing its name here pointed
-    // at a layer that had already answered.)
-    let undecided = || reject(RejectReason::WitnessNotRational);
-    let zero = Rat::from_int(0);
-    let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+    let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let (o, m) = (def.origin(), def.dir());
     let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
@@ -5743,19 +5740,69 @@ pub(crate) fn circle_center_in_ring(
             .checked_add(x[1].checked_mul(y[1])?)?
             .checked_add(x[2].checked_mul(y[2])?)
     };
-    let center = (|| -> Option<[Rat; 3]> {
-        let nm = dot3(&n, &m)?;
-        let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
-        let t = zero
-            .checked_sub(no_d)?
-            .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
-        let mut p = o;
-        for k in 0..3 {
-            p[k] = p[k].checked_add(t.checked_mul(m[k])?)?;
+    let nm = dot3(&n, &m)?;
+    let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
+    let t = Rat::from_int(0)
+        .checked_sub(no_d)?
+        .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
+    let mut p = o;
+    for k in 0..3 {
+        p[k] = p[k].checked_add(t.checked_mul(m[k])?)?;
+    }
+    Some(p)
+}
+
+/// **The circle a ring *is***, when every one of its edges is an arc of one cylinder and they
+/// chain the whole way round — `None` otherwise.
+///
+/// ★★★★★ **A cut circle's cell is still a disk, and must be asked a disk's question.** The
+/// dispatch below reaches [`circle_center_in_ring`] only for a cell whose half-edge is literally a
+/// `Circle`; a circle a wall has **split into arcs** takes the polygon road instead, where the
+/// probes are plane-triple names and an arc's corners are branch points — so the list comes out
+/// **empty** and the road refuses with a name about rays it never cast. The shape is the same
+/// circle either way, and this is what says so.
+///
+/// **Why the chain is the whole circle.** The gate proves every pair of cylinders clear by more
+/// than the radius sum ([`crate::planes::cylinder_gate`], else `CylinderPairContact`), so two
+/// circles on one class **cannot meet** — arcs that chain head-to-tail therefore all ride the same
+/// circle, and running one way round (`ccw` all equal — a mixed pair would retrace one arc) closes
+/// it exactly once. ☑ Measured before this was written: every ring the road refused for an empty
+/// probe list is either such a chain (**44**, all answered by the circle's own centre) or a wall
+/// panel with no circle at all (**19**, still refused, and now by its own name).
+fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_topo::CylinderDef> {
+    let n = ring.len();
+    if n < 2 {
+        return None;
+    }
+    let arc = |e: &'a combinatorics::RingEdge| match &e.carrier {
+        combinatorics::Carrier::Arc(ac) => Some(&**ac),
+        _ => None,
+    };
+    let first = arc(&ring[0])?;
+    for (i, e) in ring.iter().enumerate() {
+        let a = arc(e)?;
+        if a.cyl != first.cyl || a.ccw != first.ccw || e.to != ring[(i + 1) % n].node {
+            return None;
         }
-        Some(p)
-    })()
-    .ok_or_else(undecided)?;
+    }
+    Some(&first.def)
+}
+
+pub(crate) fn circle_center_in_ring(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    def: &nacre_topo::CylinderDef,
+    ring: &[combinatorics::RingEdge],
+) -> Result<bool, BoolError> {
+    // ★ Every refusal below is a **value** that could not be formed exactly — a class with no
+    // narrow description, a coordinate past `Rat` — which is the road's name, not the gate's.
+    // (The gate's own questions are signs and were made total; borrowing its name here pointed
+    // at a layer that had already answered.)
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let center = circle_centre_rat(jd, wc, def).ok_or_else(undecided)?;
     // The class's rational chart — the one copy of that rule ([`combinatorics::Chart2dRat`]);
     // parity is affine-invariant, so the basis need not be orthonormal.
     // ★ **A ring the chart road cannot name takes the mixed road** (M6-2b chaining ladder,
@@ -5784,24 +5831,26 @@ pub(crate) fn circle_center_in_ring(
 /// radial side rather than assumed.
 fn node_in_circle(
     jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
     ring: &[combinatorics::RingEdge],
-    circle: &MergedCircle,
+    def: &nacre_topo::CylinderDef,
 ) -> Result<bool, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
     // Any node decides (disjoint loops put every node on one side), so take the first
-    // *rational* one — a bitten ring's branch corners have none, but its wall-meet corners
-    // do. An all-branch ring (no rational corner at all) still refuses; no measured
-    // population reaches here with one.
+    // *rational* one — a bitten ring's branch corners have none, but its wall-meet corners do.
+    //
+    // ★★★★★ **And when no corner speaks, the ring's own circle does.** This used to refuse there
+    // and its note read *"no measured population reaches here with one"* — true until the road
+    // above learned to keep a cut circle's contour alive, which is exactly a ring with no rational
+    // corner at all. The remedy is the same rule that revives it: a circle's centre is rational
+    // whatever way its axis points ([`circle_centre_rat`]), and it lies inside that circle, so it
+    // answers "is this ring inside that one" for a ring that **is** a circle.
     let p = ring
         .iter()
         .find_map(|e| combinatorics::node_coords_rat(jd, e.node))
+        .or_else(|| ring_own_circle(ring).and_then(|d| circle_centre_rat(jd, wc, d)))
         .ok_or_else(undecided)?;
-    match nacre_scalar::cylinder_radial_side(
-        &p,
-        &circle.def.origin(),
-        &circle.def.dir(),
-        circle.def.radius(),
-    ) {
+    match nacre_scalar::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()) {
         nacre_scalar::Orient::Negative => Ok(true),
         nacre_scalar::Orient::Positive => Ok(false),
         // On the surface: the gate-impossible contact — a *geometric* degeneracy, so it keeps
@@ -5856,9 +5905,9 @@ fn cell_in_cell(
         (Some(_), Some(_)) => Ok(None),
         (Some(ci), None) => Ok(Some(
             circle_center_in_ring(jd, cyls, wc, &circles[ci].def, &rings[b])?
-                && !node_in_circle(jd, &rings[b], &circles[ci])?,
+                && !node_in_circle(jd, wc, &rings[b], &circles[ci].def)?,
         )),
-        (None, Some(ri)) => node_in_circle(jd, &rings[a], &circles[ri]).map(Some),
+        (None, Some(ri)) => node_in_circle(jd, wc, &rings[a], &circles[ri].def).map(Some),
         (None, None) => {
             if rings[a]
                 .iter()
@@ -5872,22 +5921,60 @@ fn cell_in_cell(
                 // From each rational node of `a` until one ray is clear (`None` is a tie: a
                 // corner or a root on the ray, the probe on a step's line); an exhausted ring
                 // is the same degeneracy `ring_in_ring` names.
+                let mut asked = false;
                 for p in rings[a]
                     .iter()
                     .filter_map(|e| combinatorics::node_coords_rat(jd, e.node))
                 {
+                    asked = true;
                     if let Some(hit) =
                         combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, &rings[b])
                     {
                         return Ok(Some(hit));
                     }
                 }
-                return Err(reject(RejectReason::NoClearRay));
+                // ★ Same split as the named road below: a list that was **empty** is not a list
+                // that ran out. ☑ No population reaches this arm with either today; counted so a
+                // future one arrives under the right name.
+                return Err(reject(if asked {
+                    RejectReason::NoClearRay
+                } else {
+                    RejectReason::RingHasNoWitness
+                }));
             }
             // ★ `ring_in_ring` casts from each of `a`'s nodes until one gives a clear ray; an
-            // exhausted ring is the genuine degeneracy it rejects for — which is also why
-            // dropping a branch node from the probe list here is honest.
+            // exhausted ring is the genuine degeneracy it rejects for.
+            //
+            // ★★★★★ **This used to end «— which is also why dropping a branch node from the probe
+            // list here is honest», and that was the defect wearing the word.** Dropping them left
+            // *nothing*: measured, every refusal this road raised came from a list that was empty
+            // before the first cast. What is honest is to say so, which the two arms above now do.
             let probes = combinatorics::three_plane_probes(rings[a].iter().map(|e| e.node));
+            // ★★★★★ **A ring that *is* a circle is asked the circle's question.** The probe list
+            // above is plane-triple **names**, and a circle a wall has split into arcs has none —
+            // every corner is a branch point — so it comes out empty and `ring_in_ring` refuses
+            // with a name about rays it never cast. The cell is a disk either way, and the arm one
+            // match-arm up already answers disks exactly ([`circle_center_in_ring`], whose witness
+            // is the centre and so is rational whatever way the axis points).
+            //
+            // ★ **Only where the names run out.** Where they do not, today's road and today's
+            // order are untouched — a coordinate is not a name, and a rotated class has names but
+            // no rational coefficients (`WorkingPlane::world_rat` is `None` there), so keying this
+            // on "no rational witness" instead would divert the rotation sweep's own population.
+            // Asking the circle question *always* is the tidier end state and should be measured
+            // as an agreement first; this is the strict extension.
+            if probes.is_empty() {
+                if let Some(def) = ring_own_circle(&rings[a]) {
+                    return Ok(Some(
+                        circle_center_in_ring(jd, cyls, wc, def, &rings[b])?
+                            && !node_in_circle(jd, wc, &rings[b], def)?,
+                    ));
+                }
+                // ★ And when it is not a circle either, say **that** — `ring_in_ring` below would
+                // report an exhausted probe list, which is a different fact and one that never
+                // happened here.
+                return Err(reject(RejectReason::RingHasNoWitness));
+            }
             combinatorics::ring_in_ring(jd, wc, &probes, &rings[b]).map(Some)
         }
     }
