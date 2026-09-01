@@ -2853,6 +2853,14 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
 /// `None` is an honest abstention — every tie (a corner or root on the ray, a tangent ray, a
 /// seam-incident root, checked-`Rat` overflow) — and the caller keeps its `WitnessNotRational`.
 ///
+/// ☑ **The arc arm has never run.** Measured over the whole lib suite: `Carrier::Arc` is not
+/// entered here once — every ring that reaches this predicate is "mixed" by carrying **branch
+/// corners**, never by carrying an arc step. The reason is upstream: the components whose faces
+/// *are* arc-bounded (a wall boss's half-disc caps) offer no probe at all, so no ray is ever cast
+/// at them and `material_of` never asks. A supply that gives those components a witness is what
+/// will run this arm for the first time — which is why its ties are worth getting right **before**
+/// that day rather than after.
+///
 /// ★ **A radical mismatch is not among them, whatever the line above used to say.**
 /// `QuadVal::common_radical` returns `None` there, but only after a `debug_assert!(false)` — so in
 /// a test or debug build it **panics** rather than abstaining. The contract it states is
@@ -3004,9 +3012,32 @@ pub(crate) fn point_in_mixed_ring(
                         // Two seam ends would be one point twice — upstream refuses it.
                         (true, true) => return None,
                         // From the seam CCW to `hi`: chart order θ ∈ (0, θ_hi).
-                        (true, false) => ord(&rootp, &e_hi)? == Ordering::Less,
+                        //
+                        // ★★★★★ **`Equal` is a tie here too, and this arm used to answer it
+                        // `false`.** A root that lands exactly on the arc's own end is the same
+                        // event the `(false, false)` arm below abandons for — the crossing is at a
+                        // ring **corner**, where the parity belongs to exactly one of the two
+                        // steps and this one cannot say which. `== Ordering::Less` reads that
+                        // `Equal` as "outside the span" and counts nothing, silently: not an
+                        // abstention the caller can retry past, but a confident wrong answer.
+                        // Only the seam end is unreachable (a seam-incident `rootp` already
+                        // returned above), so the **other** end is exactly what can coincide, and
+                        // `ord` answers it totally. **Three arms, one convention.**
+                        (true, false) => {
+                            let c = ord(&rootp, &e_hi)?;
+                            if c == Ordering::Equal {
+                                return None; // root at an arc end
+                            }
+                            c == Ordering::Less
+                        }
                         // From `lo` CCW back to the seam: θ ∈ (θ_lo, 2π).
-                        (false, true) => ord(&rootp, &e_lo)? == Ordering::Greater,
+                        (false, true) => {
+                            let c = ord(&rootp, &e_lo)?;
+                            if c == Ordering::Equal {
+                                return None; // root at an arc end
+                            }
+                            c == Ordering::Greater
+                        }
                         (false, false) => {
                             let x0 = ord(&rootp, &e_lo)?;
                             let x1 = ord(&rootp, &e_hi)?;
