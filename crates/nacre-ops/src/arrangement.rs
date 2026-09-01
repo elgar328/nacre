@@ -10758,6 +10758,162 @@ mod tests {
     /// piece's forward cell is the overhang digon; the other digon is the bite.
     #[test]
     fn the_mixed_parity_reads_a_bitten_ring() {
+        with_bitten_rings(|jd, cyls, wc, big, overhang, bite| {
+            let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
+            let rat = |x: i128, y: i128| {
+                [
+                    nacre_scalar::Rat::from_int(x),
+                    nacre_scalar::Rat::from_int(y),
+                    nacre_scalar::Rat::from_int(20),
+                ]
+            };
+            let ask = |ring: &[combinatorics::RingEdge], p: [nacre_scalar::Rat; 3]| {
+                combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring)
+            };
+            assert_eq!(ask(big, rat(12, 12)), Some(true), "plain interior");
+            assert_eq!(
+                ask(big, rat(37, 30)),
+                Some(true),
+                "interior whose ray crosses the inner arc twice"
+            );
+            assert_eq!(ask(big, rat(37, 18)), Some(false), "inside the bite");
+            assert_eq!(ask(big, rat(50, 20)), Some(false), "outside everything");
+            assert_eq!(
+                ask(overhang, rat(43, 20)),
+                Some(true),
+                "inside the overhang"
+            );
+            assert_eq!(
+                ask(overhang, rat(37, 18)),
+                Some(false),
+                "the bite is not the overhang"
+            );
+            assert_eq!(ask(bite, rat(37, 18)), Some(true), "inside the bite digon");
+            assert_eq!(
+                ask(bite, rat(43, 20)),
+                Some(false),
+                "the overhang is not the bite"
+            );
+        });
+    }
+
+    /// ★★★★★ **The digon's truth is known independently, so the parity can be swept rather than
+    /// spot-checked.** A digon of a chord and an arc is `disk ∩ half-space`, and both halves are
+    /// exact rational predicates the arrangement already owns —
+    /// [`nacre_scalar::quad::cylinder_radial_side`] and the sign of the wall's plane equation. A
+    /// grid over the circle's neighbourhood therefore checks **every** answer, and it is the only
+    /// control here that crosses the straight arm, the arc arm **and their junction**: the
+    /// non-mixed road's oracle cannot see an arc, and a whole circle's arm collapses to
+    /// `Ordering::Equal` on a single step.
+    ///
+    /// ☑ **What it does and does not reach, measured by reverting each guard in turn.** Removing
+    /// either "root at an arc end" abstention — the one the `(false, false)` arm has always had or
+    /// the two seam arms' — leaves this sweep **green**. On this fixture the chord's ends *are* the
+    /// seam, so `on_seam(root)` abstains first and the arc-end comparison is never the one that
+    /// speaks. The sweep is therefore a strong oracle for the mixed road as a whole and **not** a
+    /// watch on those guards; that is recorded rather than assumed. A fixture whose seam misses the
+    /// chord's ends is what would watch them, and is owed.
+    #[test]
+    fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
+        use nacre_scalar::{Orient, Rat};
+        with_bitten_rings(|jd, cyls, wc, _big, overhang, bite| {
+            let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
+            let def = cyls
+                .iter()
+                .map(|c| &c.def)
+                .find(|d| d.radius() == Rat::from_int(5))
+                .expect("the bitten circle");
+            let two = Rat::from_int(2);
+            let (mut swept, mut on_boundary) = (0usize, 0usize);
+            let (mut abstained, mut inside_seen) = (0usize, 0usize);
+            let mut on_chord = 0usize;
+            for i in 60..=100 {
+                for j in 20..=60 {
+                    let p = [
+                        Rat::new(i.into(), 2).unwrap(),
+                        Rat::new(j.into(), 2).unwrap(),
+                        Rat::from_int(20),
+                    ];
+                    let radial = nacre_scalar::quad::cylinder_radial_side(
+                        &p,
+                        &def.origin(),
+                        &def.dir(),
+                        def.radius(),
+                    );
+                    // The chord is the plate's wall `x = 40`; the bite keeps `x < 40`.
+                    let wall = p[0].checked_sub(Rat::from_int(40)).unwrap();
+                    if radial == Orient::Zero || wall == Rat::from_int(0) {
+                        on_boundary += 1;
+                        // ★★★★★ **A point strictly inside the circle and *on* the chord is on
+                        // both digons' boundary, and "inside" has no answer there.** These are the
+                        // grid's sharpest points: the ray along the chart's first axis leaves such
+                        // a point straight through **both arc endpoints**, which is exactly the
+                        // crossing-at-a-corner the arc arm must abstain for rather than read as
+                        // "outside the span".
+                        if radial == Orient::Negative && wall == Rat::from_int(0) {
+                            for (ring, who) in [(bite, "bite"), (overhang, "overhang")] {
+                                assert_eq!(
+                                    combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring),
+                                    None,
+                                    "{who} must abstain on its own chord at {p:?}"
+                                );
+                            }
+                            on_chord += 1;
+                        }
+                        continue;
+                    }
+                    let inside_bite = radial == Orient::Negative && wall < Rat::from_int(0);
+                    let inside_over = radial == Orient::Negative && wall > Rat::from_int(0);
+                    for (ring, want, who) in [
+                        (bite, inside_bite, "bite"),
+                        (overhang, inside_over, "overhang"),
+                    ] {
+                        // ★ **An abstention is allowed and a wrong answer is not.** The ray runs
+                        // along the chart's first axis, so a grid point whose ray meets a ring
+                        // corner has no parity to report — the caller's remedy is another point,
+                        // which is exactly what `coord_probes` does with its candidate list. What
+                        // the sweep locks is that every answer it *does* give is the truth.
+                        match combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring) {
+                            Some(got) => {
+                                assert_eq!(got, want, "{who} at {p:?}");
+                                swept += 1;
+                                inside_seen += usize::from(want);
+                            }
+                            None => abstained += 1,
+                        }
+                    }
+                }
+            }
+            let _ = two;
+            // Neither vacuous nor all-outside: the grid straddles the circle and the chord, and
+            // the two digons between them own a real interior.
+            assert!(swept > 1_000, "answers swept: {swept}");
+            assert!(inside_seen > 100, "points inside a digon: {inside_seen}");
+            assert!(
+                on_boundary > 0,
+                "the grid meets the boundary: {on_boundary}"
+            );
+            // Recorded rather than bounded: an abstention is the ray meeting a ring corner, and
+            // its count is a property of this grid's arithmetic, not of the rule.
+            assert!(abstained > 0, "abstentions: {abstained}");
+            assert!(
+                on_chord > 0,
+                "points on the chord inside the circle: {on_chord}"
+            );
+        });
+    }
+
+    /// The bitten-plate fixture, handed to `f` as `(judge, cyls, class, big, overhang, bite)`.
+    fn with_bitten_rings(
+        f: impl FnOnce(
+            &Judge<'_, WorkingPlane>,
+            &[crate::planes::WorkingCyl],
+            usize,
+            &[combinatorics::RingEdge],
+            &[combinatorics::RingEdge],
+            &[combinatorics::RingEdge],
+        ),
+    ) {
         let mut m = Model::new();
         let a = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -10861,41 +11017,7 @@ mod tests {
             break;
         }
         let (wc, big, overhang, bite) = found.expect("one class carries the cut circle");
-        let coeffs = combinatorics::class_coeffs_rat(&jd, wc).unwrap();
-        let rat = |x: i128, y: i128| {
-            [
-                nacre_scalar::Rat::from_int(x),
-                nacre_scalar::Rat::from_int(y),
-                nacre_scalar::Rat::from_int(20),
-            ]
-        };
-        let ask = |ring: &[combinatorics::RingEdge], p: [nacre_scalar::Rat; 3]| {
-            combinatorics::point_in_mixed_ring(&jd, &cyls, &coeffs, &p, ring)
-        };
-        assert_eq!(ask(&big, rat(12, 12)), Some(true), "plain interior");
-        assert_eq!(
-            ask(&big, rat(37, 30)),
-            Some(true),
-            "interior whose ray crosses the inner arc twice"
-        );
-        assert_eq!(ask(&big, rat(37, 18)), Some(false), "inside the bite");
-        assert_eq!(ask(&big, rat(50, 20)), Some(false), "outside everything");
-        assert_eq!(
-            ask(&overhang, rat(43, 20)),
-            Some(true),
-            "inside the overhang"
-        );
-        assert_eq!(
-            ask(&overhang, rat(37, 18)),
-            Some(false),
-            "the bite is not the overhang"
-        );
-        assert_eq!(ask(&bite, rat(37, 18)), Some(true), "inside the bite digon");
-        assert_eq!(
-            ask(&bite, rat(43, 20)),
-            Some(false),
-            "the overhang is not the bite"
-        );
+        f(&jd, &cyls, wc, &big, &overhang, &bite);
     }
 
     /// The gated drill population's fixture: a `[0,2]³` box and an axis-aligned cylinder at
