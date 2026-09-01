@@ -16361,6 +16361,12 @@ M6-2에 남은 가장 큰 벽이 `NoClearRay`(가로지르는 census 44셀)였�
 - reject-trace를 **site 집합**으로 대조: `no_clear_ray combinatorics.rs` **사라지고** `ring_has_no_witness arrangement.rs` **들어옴**, 구별 site 수 18 → 18.
 - 프로덕션 census **무변**(269행) · `HoleRoots` **0** · perf 같은 대역.
 
+### ★ 자체 점검이 잡은 것 (커밋 뒤)
+- **`node_in_circle`에 넣은 폴백이 죽은 코드였고 그 doc이 거짓 이야기를 적고 있었다.** 「이 고침이 all-branch 링 인구를 만든다」고 썼는데 **0회 발화**다 — 살아난 윤곽은 **다각형**과 대 보게 되고 다각형은 유리수 코너를 갖는다. ⇒ 폴백을 지우고 원래 note를 되살렸으며, 「재서 0이면 지운다」는 이 칸 자신의 실행 노트를 그대로 적용했다.
+- **`ring_own_circle`의 나머지 절들은 0회 거절**(88 수락, 전부 `len=2`)이지만 **지우지 않았다** — 각 절이 다른 데서 증명된 명제(게이트의 분리·링은 사슬·sense 혼합은 되짚기)를 지키는 **가드**이고, 가드가 무너지는 것이 생산자 변경을 두 층 아래가 아니라 여기서 드러내는 방법이다. 대신 「0회」를 doc에 적었다.
+- **내가 방금 배운 함정을 doc에서 그대로 저질렀다** — `ring_own_circle`의 note가 「44 / 19」를 **인구처럼** 적고 있었다(그건 raise 수이고 debug는 두 번 돈다). **셀 단위**(8 건설 / 20 개명)로 고쳐 적었다.
+- `wc` 인자가 폴백과 함께 미사용이 되어 제거.
+
 ### ★ 예측이 두 번 빗나갔다 (그리고 그 자리가 다음 입구다)
 - 「대부분 열린다」 → **8칸**만 열렸다(half* 가족의 Common × mid·wall slab). 나머지는 **패널 링에도 막혀** 있었고, 고침 뒤 남은 empty-probe 거절은 **전부 패널**(len=4, arcs=0)이다.
 - 「패널 30 → 새 이름, boolean.rs 6은 그대로」 → 실제는 **20 / 16**이다. 「6」은 **워크스페이스 전체** raise를 census 셀 수로 읽은 것이었다 — reject_census의 doc이 *"Assert on sets and on distinct-site counts, **never on raise counts**"* 라고 **금지한** 혼동을 내가 그대로 했다.

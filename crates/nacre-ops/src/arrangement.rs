@@ -5755,6 +5755,12 @@ fn circle_centre_rat(
 /// **The circle a ring *is***, when every one of its edges is an arc of one cylinder and they
 /// chain the whole way round — `None` otherwise.
 ///
+/// ☑ **Its clauses beyond "the first edge is an arc" are guards, and none of them fired** over the
+/// suite (88 acceptances, 0 rejections past that first test). They are kept because each states a
+/// proposition proved somewhere else — two circles on one class cannot meet (the gate), a ring is
+/// a chain (measured over 153,798 rings), a mixed sense would retrace one arc — and a guard that
+/// stops holding is how a producer change is meant to surface here rather than two layers down.
+///
 /// ★★★★★ **A cut circle's cell is still a disk, and must be asked a disk's question.** The
 /// dispatch below reaches [`circle_center_in_ring`] only for a cell whose half-edge is literally a
 /// `Circle`; a circle a wall has **split into arcs** takes the polygon road instead, where the
@@ -5766,9 +5772,13 @@ fn circle_centre_rat(
 /// than the radius sum ([`crate::planes::cylinder_gate`], else `CylinderPairContact`), so two
 /// circles on one class **cannot meet** — arcs that chain head-to-tail therefore all ride the same
 /// circle, and running one way round (`ccw` all equal — a mixed pair would retrace one arc) closes
-/// it exactly once. ☑ Measured before this was written: every ring the road refused for an empty
-/// probe list is either such a chain (**44**, all answered by the circle's own centre) or a wall
-/// panel with no circle at all (**19**, still refused, and now by its own name).
+/// it exactly once. ☑ Measured before this was written: **every** ring the road refused for an
+/// empty probe list is either such a chain — and each of those the circle's own centre answers —
+/// or a wall panel with no circle at all, which still refuses and now by its own name
+/// ([`crate::RejectReason::RingHasNoWitness`]). In cells: the crossing census's `NoClearRay` 44
+/// became **8 built** and **20 renamed**, the rest being the other road's (`boolean.rs`).
+/// ★ Counted as *cells*, not as raises — a traced boolean runs twice in `debug`, and
+/// `reject_census`'s own note forbids reading raise counts as populations.
 fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_topo::CylinderDef> {
     let n = ring.len();
     if n < 2 {
@@ -5831,7 +5841,6 @@ pub(crate) fn circle_center_in_ring(
 /// radial side rather than assumed.
 fn node_in_circle(
     jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
     ring: &[combinatorics::RingEdge],
     def: &nacre_topo::CylinderDef,
 ) -> Result<bool, BoolError> {
@@ -5839,16 +5848,18 @@ fn node_in_circle(
     // Any node decides (disjoint loops put every node on one side), so take the first
     // *rational* one — a bitten ring's branch corners have none, but its wall-meet corners do.
     //
-    // ★★★★★ **And when no corner speaks, the ring's own circle does.** This used to refuse there
-    // and its note read *"no measured population reaches here with one"* — true until the road
-    // above learned to keep a cut circle's contour alive, which is exactly a ring with no rational
-    // corner at all. The remedy is the same rule that revives it: a circle's centre is rational
-    // whatever way its axis points ([`circle_centre_rat`]), and it lies inside that circle, so it
-    // answers "is this ring inside that one" for a ring that **is** a circle.
+    // An all-branch ring (no rational corner at all) still refuses.
+    //
+    // ★ **A fallback for that was written here and then measured away.** The plan for the road
+    // above predicted it would revive contours that arrive here with no rational corner, and the
+    // remedy looked free — a ring that *is* a circle can hand over its centre
+    // ([`ring_own_circle`] + [`circle_centre_rat`]). ☑ It fired **0** times over the suite: the
+    // contours that road revives are asked against *polygons*, which have rational corners. So the
+    // note above stands as it was, and the machinery is not here waiting for a population that
+    // does not exist.
     let p = ring
         .iter()
         .find_map(|e| combinatorics::node_coords_rat(jd, e.node))
-        .or_else(|| ring_own_circle(ring).and_then(|d| circle_centre_rat(jd, wc, d)))
         .ok_or_else(undecided)?;
     match nacre_scalar::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()) {
         nacre_scalar::Orient::Negative => Ok(true),
@@ -5905,9 +5916,9 @@ fn cell_in_cell(
         (Some(_), Some(_)) => Ok(None),
         (Some(ci), None) => Ok(Some(
             circle_center_in_ring(jd, cyls, wc, &circles[ci].def, &rings[b])?
-                && !node_in_circle(jd, wc, &rings[b], &circles[ci].def)?,
+                && !node_in_circle(jd, &rings[b], &circles[ci].def)?,
         )),
-        (None, Some(ri)) => node_in_circle(jd, wc, &rings[a], &circles[ri].def).map(Some),
+        (None, Some(ri)) => node_in_circle(jd, &rings[a], &circles[ri].def).map(Some),
         (None, None) => {
             if rings[a]
                 .iter()
@@ -5967,7 +5978,7 @@ fn cell_in_cell(
                 if let Some(def) = ring_own_circle(&rings[a]) {
                     return Ok(Some(
                         circle_center_in_ring(jd, cyls, wc, def, &rings[b])?
-                            && !node_in_circle(jd, wc, &rings[b], def)?,
+                            && !node_in_circle(jd, &rings[b], def)?,
                     ));
                 }
                 // ★ And when it is not a circle either, say **that** — `ring_in_ring` below would

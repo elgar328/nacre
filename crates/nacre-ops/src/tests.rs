@@ -10204,11 +10204,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // this constant the tool removes real volume in every one, and each leaves `Ok(1)` — the
     // vertical cut is the difference, measured. (The corner row above is the exception to the
     // *mechanism*, not to the outcome: there the box clears the plate entirely.)
-    // ★ The **half** families' Common differs in exactly the two cells a slab severs it in: their
-    // result's ⊥ classes carry a cut circle whose cell is bounded by arcs alone, and since such a
-    // ring is asked the circle's own question (`arrangement::ring_own_circle`) the nesting decides
-    // and the cut builds. The wall families' Common still refuses there — a wall **panel** ring
-    // has no circle to name a witness with, which is the next rung.
+    // ★ The **half** families' Common differs from the wall families' in exactly the two cells a
+    // slab severs it in: there the nesting question lands on a ring bounded by arcs alone, which
+    // is asked the circle's own question now (`arrangement::ring_own_circle`), so it decides and
+    // the cut builds with its exact volume. The wall families' Common still refuses in those two —
+    // ☑ measured, not derived: what is left there is a wall **panel** ring, which has no circle to
+    // name a witness with (`RingHasNoWitness`), and that is the next rung.
     const HALF_COMMON: [Cross; 5] = [
         Ok(1),
         Rejected(RingHasNoWitness),
