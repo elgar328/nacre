@@ -5838,6 +5838,19 @@ fn chord_midpoint_rat(
     if pa != pb || ca != cb || !matches!((ra, rb), (Lo, Hi) | (Hi, Lo)) {
         return None;
     }
+    // ★★★★★ **The edge must *be* the segment between its ends, and an arc is not.** Two ends can
+    // be one solve's two roots and still be joined by a **curve**: a plane cutting a circle names
+    // both crossings, and *either* arc between them carries that same pair of names. The chord's
+    // midpoint is then a point strictly inside the circle and **not on this ring at all** — and a
+    // point off the ring is not a witness for it, since containment is read from a point *of* `a`
+    // and a point in `a`'s interior answers a different question wherever `b` nests inside it.
+    // ☑ Measured over the whole lib suite: 120 acceptances, **not one** curved carrier — an
+    // all-arc ring is answered by `ring_own_circle` one arm up, and every ring that reaches here
+    // offered two straight chords. The guard states the precondition; it does not describe a
+    // population.
+    if matches!(e.carrier, combinatorics::Carrier::Arc(_)) {
+        return None;
+    }
     let def = &cyls.get(ca)?.def;
     let (line, s) = combinatorics::branch_meet(jd, ca, def, e.node)?;
     let (b, d) = (line.base(), line.dir());
@@ -5846,6 +5859,28 @@ fn chord_midpoint_rat(
     for k in 0..3 {
         p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
     }
+    // ★★★★★ **Asserted where the fact is made, not where it is consumed.** Both claims this
+    // function rests on are checkable here and nowhere cheaper: that `MeetLine`'s `base`/`dir`
+    // really do parameterize the two planes' meet (so `base + t·dir` is on both), and that the
+    // shared `a()` lands **strictly between** the two roots (so it is strictly inside the
+    // cylinder, which is what `disc > 0` buys). A producer change that broke either would
+    // otherwise surface as a wrong containment answer two layers up.
+    debug_assert!(
+        [pa[0], pa[1]].iter().all(|&k| {
+            combinatorics::class_coeffs_rat(jd, k).is_none_or(|c| {
+                let n = [c[0], c[1], c[2]];
+                combinatorics::dot3_rat(&n, &p)
+                    .and_then(|v| v.checked_add(c[3]))
+                    .is_none_or(|v| v == nacre_scalar::Rat::from_int(0))
+            })
+        }),
+        "a chord midpoint is on both of its planes"
+    );
+    debug_assert_eq!(
+        nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()),
+        nacre_scalar::Orient::Negative,
+        "a chord midpoint is strictly inside the cylinder"
+    );
     Some(p)
 }
 
@@ -6046,9 +6081,6 @@ fn cell_in_cell(
                             && !node_in_circle(jd, &rings[b], def)?,
                     ));
                 }
-                // ★ And when it is not a circle either, say **that** — `ring_in_ring` below would
-                // report an exhausted probe list, which is a different fact and one that never
-                // happened here.
                 // ★★★★★ **And when the corners cannot name a witness, an edge can.** A ring edge
                 // whose two ends are one solve's two roots has a **rational midpoint**
                 // ([`chord_midpoint_rat`]) — the pair is built from a shared `mid`, so it costs one
@@ -6072,6 +6104,9 @@ fn cell_in_cell(
                         return Ok(Some(hit));
                     }
                 }
+                // ★ And when neither a circle nor a chord names one, say **that** —
+                // `ring_in_ring` below would report an exhausted probe list, which is a different
+                // fact and one that never happened here.
                 return Err(reject(RejectReason::RingHasNoWitness));
             }
             combinatorics::ring_in_ring(jd, wc, &probes, &rings[b]).map(Some)
