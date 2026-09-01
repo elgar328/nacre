@@ -6056,6 +6056,45 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
     Ok(mask)
 }
 
+/// **The disk side of a cylinder's trace carries that cylinder's own solid** — `false` when it
+/// does not, which is a labelling that cannot be right whatever the frame conventions are.
+///
+/// ★★★★★ **The absolute claim the arrangement had none of.** `label_cells` seeds the unbounded
+/// contours void and flips per edge, then verifies **every** edge — and that verification is blind
+/// to a global flip of one solid's two bits, because `l ^ mask == l'` survives flipping both sides
+/// together. So a wrong seed inverts a whole component's material for one solid and every check
+/// passes. Nothing in the crate stated an *absolute* fact about a label until this.
+///
+/// The fact: where the mask sets **both** of a solid's bits from a lone transversal
+/// (`edge_mask`'s *"the solid straddles W, flip both"*), that solid's material is on the inside of
+/// the cylinder exactly when the lateral face's outward is radially outward —
+/// [`crate::planes::CylFaceInfo::orient_sign`] `= +1`, which is the `mat` the trace carries. So
+/// the disk-side cell has the solid on **both** sides for a boss and on **neither** for a bore.
+///
+/// ★ It reads `edge_mask` rather than re-deriving the branch, so graze and seated keep their
+/// priority; and it says nothing where both bits come from an **opposite graze pair** instead,
+/// which carries no `mat` to compare against.
+#[cfg(test)]
+fn disk_side_agrees(merged: &[(SolidSide, SegKind)], label: &Label) -> Result<bool, BoolError> {
+    let mask = edge_mask(merged)?;
+    for (solid, base) in [(SolidSide::A, 0usize), (SolidSide::B, 2)] {
+        if !(mask[base] && mask[base + 1]) {
+            continue;
+        }
+        let Some(mat) = merged.iter().find_map(|(s, k)| match k {
+            SegKind::Transversal { mat } if *s == solid => Some(*mat),
+            _ => None,
+        }) else {
+            continue;
+        };
+        let want = mat > 0;
+        if label[base] != want || label[base + 1] != want {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 /// Label every cell by propagating from the unbounded contours across edges, flipping per
 /// `edge_mask`. The cell interior cannot be point-queried (no plane-triple name), so propagation is
 /// the only route. After propagating, **every** edge's flip
@@ -6265,6 +6304,15 @@ fn emit_faces(
         .filter_map(|(i, mc)| {
             let he = edges.he_count() + 2 * i;
             let c = cells.iter().position(|cell| cell.half_edges == [he])?;
+            #[cfg(test)]
+            assert!(
+                mc.whole_marks()
+                    .ok()
+                    .and_then(|w| disk_side_agrees(&w, &labels[c]).ok())
+                    .unwrap_or(true),
+                "a whole circle's disk does not carry its own solid: {:?}",
+                labels[c]
+            );
             Some((mc.cyl, labels[c]))
         })
         .collect();
@@ -6327,6 +6375,13 @@ fn emit_faces(
             let c = cells
                 .iter()
                 .position(|cell| cell.half_edges.contains(&he))?;
+            #[cfg(test)]
+            assert!(
+                disk_side_agrees(&ma.merged, &labels[c]).unwrap_or(true),
+                "a cut circle's disk side does not carry its own solid: {:?} {:?}",
+                ma.merged,
+                labels[c]
+            );
             // ★ The label and the trace that made it, **from one visit to one arc** — see
             // [`ArcLabel`] for why they may not become two maps.
             Some((
