@@ -10823,7 +10823,6 @@ mod tests {
                 .map(|c| &c.def)
                 .find(|d| d.radius() == Rat::from_int(5))
                 .expect("the bitten circle");
-            let two = Rat::from_int(2);
             let (mut swept, mut on_boundary) = (0usize, 0usize);
             let (mut abstained, mut inside_seen) = (0usize, 0usize);
             let mut on_chord = 0usize;
@@ -10884,7 +10883,6 @@ mod tests {
                     }
                 }
             }
-            let _ = two;
             // Neither vacuous nor all-outside: the grid straddles the circle and the chord, and
             // the two digons between them own a real interior.
             assert!(swept > 1_000, "answers swept: {swept}");

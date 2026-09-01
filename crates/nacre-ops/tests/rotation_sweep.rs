@@ -407,6 +407,15 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
 /// places — the tracer had the flank rule, the ray caster threw such a candidate away — which is
 /// the same shape the retry above was in. It is `ring_against_plane` now. Reading `side_of` over a
 /// **ring** anywhere else is a second walk being born, so the source says so.
+///
+/// ★★★★★ **What it watches is a spelling, not the proposition — and one road is already outside
+/// it.** `point_in_mixed_ring` walks a ring against the ray's own plane and builds its sign
+/// sequence from `QuadVal` subtraction rather than from `side_of`, so this grep has never seen it;
+/// it also has no flank rule for a corner **on** the line and abstains there, which is the very
+/// gap `ring_against_plane` exists to close. That road cannot share this walk as it stands —
+/// `side_of` takes a **class index** and the ray's plane is not a class — so the honest scope of
+/// this test is "no *new* caller reads `side_of` over a ring", and the missing rule is owed its
+/// own rung rather than hidden by a green grep.
 #[test]
 fn no_production_code_walks_a_ring_past_the_shared_walk() {
     let src = [
