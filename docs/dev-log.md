@@ -16504,3 +16504,56 @@ M6-2에 남은 가장 큰 벽이 `NoClearRay`(가로지르는 census 44셀)였�
 
 ### 다음
 **`point_in_mixed_ring`에 「광선 위의 코너」 반열림 규칙**을 준다 — `nacre-geom::intersect`가 두 벌, `ring_against_plane`이 코너 중심 철자로 갖고 있는 그 규칙의 **다섯째 자리**다. 전제조건은 이 칸의 커밋 1(세 팔의 규약 통일)이고, `OnBoundary`를 잃지 않도록 **코너 대 유리수 비교**로 되찾아야 하며(코너끼리 빼면 라디칼이 섞여 debug 패닉), 가드는 **게을러야** 한다(`QuadVal::sign()`이 BigInt 경로).
+
+---
+
+## 옆면은 차트의 «영역»이다 — 셀 방출과 경계 사이클 (능력 D, 여덟째 계단 D5)
+
+커밋: `2fb7960`(단계 0 계기) · `938fdb5`(1a 정거장을 이름으로) · `b9333de`(1c D4 분리) · `c897e5b`(1b 그림자) · `f99095c`(커토버) · `d458730`(청소) · 문서.
+
+사용자 물음(「M6 기울어진 실린더 전에 남은 것을 땜빵이 아니라 단일 엔진으로」)에서 시작해, 남은 것 ①「능력 D의 마무리」를 잡은 칸이다. 플랜은 **독립 검토 둘 + 자체 검토 하나**를 거쳤고 그 셋이 본안을 네 군데 고쳤다(아래).
+
+### 뿌리 — 15칸이 «한 자리»에서 죽었고, 뿌리는 그 자리가 아니라 «어휘»였다
+가로지르는 census의 `RulingBoundNotYet` 15칸을 임시 계측(닫힘 `ladder`를 인라인으로 풀고 칸별 출력)으로 귀속시키니 **전부** `emit_lateral`의 한 자리 — 런 끝 룰링의 노드를 구간 경계 z-선에서 찾는 `node_on` — 였다. 단계 0의 탐침(P1)이 그 자리를 15칸 전부에서 쟀다: **벽 클래스에 노드 없음 15/15**, 그 z-선의 호는 이 솔리드의 자국이 `Transversal`뿐(경계가 아니라 관통) — 처음엔 9칸이 `Other`로 읽혀 못 쟀고 1a 뒤 15/15. 즉 방출기가 «구간마다 띠 아니면 네 노드 패널»로만 말해서, **구간을 넘어 이어지는 영역**(벽 보스 Fuse를 축 통과 벽으로 자르면 옆면은 z=0·z=2를 바깥 반쪽에서 관통하고 안쪽 반쪽에서 구멍 rim으로 만난다 — 8-간선 링 하나)의 코너로 **어느 클래스에도 없는 노드**를 요구했다. 만들어 넣으면 벽 면의 간선 하나에 옆면의 간선 둘이 대응해 closed-shell 가드가 dangling으로 거절한다(검토가 boolean.rs의 `EdgeKey` 용접으로 확인). ★ **dev-log가 적어 둔 2-A/2-B(θ축 트레이스 승격)는 뿌리가 아니었다** — 이 15칸에서 θ-선은 이미 있었다.
+
+### 원칙 — 평면 쪽이 이미 가는 길을 원통 차트에서
+셀 → 딱지(이웃 클래스에서 읽음) → 방출 셀 → **연결 성분** → 성분의 경계 → 경계의 런을 **이웃 클래스의 조각**(잘린 림의 `CutRim.nodes` 사이 호, 벽 클래스의 룰링 조각)으로 자름 → 사이클 → `Bound`. 띠·패널·사슬 림·구멍·노치 패널이 한 가지(성분과 그 경계 사이클)가 됐고, 방출기의 `bandlike`·«양 림 절단»·`breaks`·런·`ladder`가 사라졌다. ★ **«같은 엔진»은 같은 단계이지 같은 코드가 아니다** — 검토가 평면 DCEL(`walk_cells`의 각순서·`nest_cells`의 `point_in_ring`·`label_cells`의 비유계 루트) 이식을 코드로 반증했다. 차트는 환면이고 직교이며 딱지는 읽는다.
+★ **정점은 이웃 클래스가 가진 곳에만**: 림의 런은 `CutRim.nodes`에서, 룰링의 런은 벽 클래스의 조각 끝에서 갈리고, 경계가 직진하는 정거장에는 정점이 없다. 그것이 옆면의 간선을 옆 면들과 용접된 채로 두는 규칙이고, 거절되던 코너가 어긴 것이다.
+
+### 단계 0 — 전제 측정 (`2fb7960`)
+- P1 위. P2: D4 원장 `groups 275 · merged 189 · no_touch 69 · wrapping_not_one_each 17`, 그 밖 0 — **조립 한계로 인한 후퇴 인구 0**. WNOE 17을 테스트 이름으로 잡으니 가로지르는 census 11 · 디스크 쪽 규칙 5 · 스플라이스 띠 1이고 **전부 «한 (클래스, flip) 그룹 안의 성분 둘»**(멤버 4 · 감김 +2/−2 — 슬랩이 결과를 갈라 옆면이 둘)을 D4가 한꺼번에 꿰다 기권하는 것 — 검토가 짐작한 «룰링을 공유하는 패널 둘»이 아니었다.
+- P3: `other_present 60`·`src0_present 14`가 **전부** RBNY로 거절된 방출 안 ⇒ 1a는 초록 칸을 건드릴 수 없다. P4: 정거장 이름 5,674쌍 실패 0. P5: 면 수·핸들 잠금 없음.
+- `the_cleaning_ledger_is_running`의 «지금까지 기록된 모든 행» 단언은 그 뒤에 도는 테스트가 17행을 기록하므로 **순서로만 참**이었다(기록된 함정) — 자기 행으로 좁혔다.
+
+### 1a — 정거장을 이름으로 (`938fdb5`, 프로덕션 변경 단독)
+`arc_around`가 이 선에 노드 없는 룰링을 **다른 선의 노드**(`theta[i].end[0]`)로 대표해 넣어, 림이 그 정거장을 갖고 있으면 `circular_order`가 «한 점 두 이름»으로 거절하고 끝이 `Other`가 됐다 — dev-log Q2(128)의 뿌리, RBNY 열 전부의 읽기. 고침: 정거장의 이름은 `crossing_on_ruling(c, wall, k, side)`의 canonical `NodeId`(`ruling_sweep`가 조각 끝에, `split_circles`가 림 노드에 주는 **같은 이름**)이므로 «림에 있는가»는 이름 등식이고, 없으면 그 이름으로 순서에 든다. 대표-노드 팔은 삭제. `cyl_chart::ruling_side_of`가 `arrangement::node_ruling_side`의 사본이던 것을 합쳤다(검토가 잡은 둘째 철자).
+- 실측: `end_other 321 → 245` · `other_present 60 → 0` · `src0_present 14 → 0` · `end_exact 4914 → 4990` · 가로지르는 census·D4·P4 무변 · 프로덕션 census 269행 비트 동일.
+- ★ **예측 하나가 빗나갔다**: «남은 `end_other`는 한 절단 x == y뿐» — 실측 `single_cut 0`, 245 전부 **`WholeDisagree`**(면 span 밖 온전한 원 구간의 끝에서 림 호들이 다른 솔리드의 벽을 사이에 두고 `other` 비트만 다르게 말함). 그 셀은 전부 **부재**라 옳은 읽기다. 원인을 `OtherWhy`로 이름 붙여 두었고, «present 셀은 `Other` 끝을 갖지 않는다»를 기록 자리 단언으로 승격했다. 두 끝 침묵 present는 `CylinderGateUndecided` 가드(인구 0).
+- 관문에서 `run_boundary_no_node == 0` 잠금이 빨갛게 — 0이던 것은 그 끝이 `Other`라 걷기가 경계 룰링에 못 닿았기 때문. «그런 런은 방출되지 않는다»로 재진술(커토버에서 다시 지웠다 — 이제 방출된다).
+
+### 1c — D4를 네 단계로 (`b9333de`, 비트 동일) · 1b — 그림자 (`c897e5b`)
+`merge_curved_group` = `collect_pieces` + `erase_shared` + `thread` + `classify_cycles`. 그림자 `regions::emit_regions`를 census에서 오늘 방출(D4 뒤)과 서명으로 대조: **1075행 중 일치 1039 · 불일치 36 = 방출기 거절 19(그림자는 전부 방출 — 축 통과 벽 칸은 8-간선 링 하나) + WNOE 17(그림자 2면 vs 오늘 4면)** — 예측과 정확히 일치. 정합 주장 위반(런 끝≠조각 끝·룰링 미타일·핀치·미연결·분류 기권) **전부 0**.
+- ★ 첫 실행의 불일치 53 중 17은 **철자 차이**였다: 오늘 방출기는 잘린 림도 `Rim::Circle`로 내고(`rim_walk`가 호를 찾음) 그림자는 그 호들의 `Rim::Chain`으로(D4 병합 결과가 오늘도 쓰는 철자). 같은 간선·같은 노드. ⇒ 커토버는 잘린 림을 **한 철자**(Chain)로.
+
+### 커토버 (`f99095c`)
+`emit_lateral` = `regions::walk`. 위반은 생산자 불일치로 이름 붙은 거절(`RulingBoundNotYet`: 런 끝·타일·연결·외곽 없음 / `ArcBoundNotYet`: 미절단 림의 부분 런·`classify_cycles` 기권). 림 조각은 `arc_labels`를 안 보고 `CutRim.nodes`의 연속 쌍만(한 표) — 호 딱지를 지운 부정 대조가 오늘처럼 방출된다.
+- 가로지르는 census: **RBNY 15 → 0 · Ok 184 → 197 · NoClearRay 6 → 8** — 행별 예측 그대로(11칸 Ok(1), corner/corner-lo × mid → NoClearRay는 ±로 적었던 것, corner-lo × 축 통과 벽만 Ok(2) — 오라클 통과). 재연산·코퍼스 census 무변, **프로덕션 census 269행 비트 동일**(P2의 17 그룹이 lib 픽스처뿐이라는 예측대로).
+- 직렬 원장: 거절된 방출 19 → 0 · 면 1114 = 성분 1114(띠 730 · 링 384) · D4 `groups 275 → 92`(전부 `no_touch` — 예측 86의 차이 6은 옛 RBNY 방출 중 성분 둘인 여섯 자리) · `merged 0`.
+- 재진술한 잠금 셋: `a_cut_circle_bounds_the_bands`(Fuse는 버리는 섹터를 구멍으로 든 띠 하나, Cut은 그 섹터의 링 하나 — ★ 내 첫 재진술은 둘이 «상보»라 했는데 실측은 **같은 섹터**: Fuse의 구멍이 Cut의 패널) · `the_cleaning_ledger_is_running`(D4 행 없음 → 모델의 옆면 한 면·온전한 림 1·호 ≥1; «행 없음»은 자기 스레드 이름으로 — 병렬 함정) · census의 띠 어휘 수 등식.
+- `Edge`의 필드는 `bounds`가 아니라 `vertices`(design.md의 이름이 낡았다).
+
+### 청소 (`d458730`)
+D4 `unify_curved_faces`·`collect_pieces`·`erase_shared`·`thread`·`CurvedKey`·`CurvedSeg`·`CurvedStats`·기권 변종 아홉·`probe::d4`·호출부 삭제(`classify_cycles`만 방출기의 것으로 산다, `stats` 인자 제거) · census의 띠 어휘 열 열넷과 그 단언·비공허 검사 삭제(차트 열만 남음) · 단계 0 탐침 `probe::rbny` 삭제(자리가 사라짐) · `band_loop`의 «양 림 절단 → ArcBoundNotYet»을 «잘린 원 위의 `Rim::Circle`은 생산자 불일치»로 · 거절 이름 doc 셋 재진술.
+- 실측: 직렬 원장 `refused_booleans 0 · faces 1114 = components · other_present 0 · src0_present 0 · emit_unknown 0 · station_name_failures 0/5674 · end_other 245 = WholeDisagree`; 가로지르는 census 표 무변(Ok 197 · NCR 8 · Empty 5).
+
+### ★ 검토 둘이 본안을 바꾼 자리
+① 가는 격자(구간 × 모든 정거장) 반증 → 셀은 그대로, 전역 정거장 순서만 ② «정거장 정체 배치»의 술어를 새로 만들지 말고 `crossing_on_ruling`의 이름 등식으로 ③ D4의 꿰기(3단계)를 재사용하지 말고 걷기가 낸 사이클을 4~6단계에 직접 ④ 외곽 0-사이클은 부호 면적이 아니라 «최저 구간 아래변을 담은 사이클» ⑤ 1a를 그림자와 분리한 단독 커밋으로, D4 분리는 비트 동일 리팩터 커밋으로 ⑥ `perf.rs`에는 원통이 없다(내 A/B 주장이 틀렸다).
+
+### 남기는 항목
+`NoClearRay` 8(corner 가족 — 「광선 위의 코너」 반열림 규칙, 항목 ②) · `OtherWhy::SingleCut`·`EmptyRun`·`RowMissing`·`OrderFailed`·`Unplaced` 미실행(전부 0 — 인구 없음) · `classify_cycles`의 기권 인구 0 · 청소 패스 거울(`boolean.rs`의 `NoClearRay` 빈 목록/소진) · 강체 운동 불변 대조군 · `ObliqueCylinderCut`은 M6-3.
+
+### 관문
+매 커밋 전량 초록(단계 0·1a·1c·1b·커토버·청소, 여섯 번): fmt/clippy 0 · workspace **1178** · nodef · census 두 프로파일 동일·**269행 비트 동일**(sha `b7d60ade`, 여섯 번 전부) · reject_census · 스윕 129 · perf release 같은 대역(fold 80 407면 237.211567 · small 558 µs) · kit · 앱(wasm:all·tsc·vitest 142·wasm clippy) · 직렬 원장 350 초록. 1a의 첫 관문에서 잠금 하나가 빨강(위), 커토버의 첫 관문에서 clippy가 죽은 탐침을 잡음(삭제).
+
+### 다음
+**항목 ②**: `point_in_mixed_ring`의 「광선 위의 코너」 반열림 규칙(가로지르는 census `NoClearRay` 8 = corner 가족 전부; 기존 네 벌의 다섯째 자리를 만들지 말고 한 철자로) · 그다음 **③ 벽∩옆면의 한 이차식**(오프셋 `0<d<r`이 D 위에서 차트 셀의 경계로 떨어지는지 «재고», 접선 `d=r`은 능력 C = validate의 곡면 비다양체 검사) · 강체 운동 불변 대조군 · `ObliqueCylinderCut`은 M6-3.
