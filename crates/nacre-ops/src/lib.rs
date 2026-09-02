@@ -1494,6 +1494,21 @@ mod zzz_ledger {
             hits.iter().flat_map(|h| h.off).fold(0.0_f64, f64::max),
             hits.iter().filter(|h| h.side_f64 != h.side).count(),
         );
+        // D5 stage 0 — the populations this rung moves, attributed to fixtures.
+        eprintln!(
+            "ledger D5-P4: station_pairs {} station_name_failures {}",
+            s(|r| r.station_pairs),
+            s(|r| r.station_name_failures),
+        );
+        for r in d2b
+            .iter()
+            .filter(|r| r.other_present > 0 || r.src0_present > 0)
+        {
+            eprintln!(
+                "ledger D5-P3: {} other_present {} src0_present {} emitter {:?}",
+                r.test, r.other_present, r.src0_present, r.emission_reason
+            );
+        }
         let d4 = crate::boolean::probe::d4::ROWS
             .lock()
             .expect("the probe's lock is never held across a panic")
@@ -1501,6 +1516,41 @@ mod zzz_ledger {
         let by =
             |o: Option<crate::boolean::CurvedAbstain>| d4.iter().filter(|r| r.outcome == o).count();
         use crate::boolean::CurvedAbstain as A;
+        {
+            let mut wnoe: Vec<(&str, usize)> = Vec::new();
+            for r in d4
+                .iter()
+                .filter(|r| r.outcome == Some(A::WrappingNotOneEach))
+            {
+                match wnoe.iter_mut().find(|(t, _)| *t == r.test) {
+                    Some((_, n)) => *n += 1,
+                    None => wnoe.push((&r.test, 1)),
+                }
+            }
+            for (t, n) in wnoe {
+                eprintln!("ledger D5-P2: wrapping_not_one_each {n} in {t}");
+            }
+        }
+        for r in crate::cyl_chart::probe::rbny::ROWS
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .iter()
+        {
+            eprintln!(
+                "ledger D5-P1: {} cyl {} t {} end {} ruling {:?} kind {} transversal_only {:?} \
+                 graze {:?} wall_node {} rim_node {:?}",
+                r.test,
+                r.cyl,
+                r.t,
+                r.end,
+                r.ruling,
+                r.end_kind,
+                r.transversal_only,
+                r.any_graze,
+                r.wall_node,
+                r.rim_node
+            );
+        }
         let s4 = |f: fn(&crate::boolean::CurvedStats) -> usize| {
             d4.iter().map(|r| f(&r.stats)).sum::<usize>()
         };

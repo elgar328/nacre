@@ -2901,6 +2901,7 @@ pub(crate) fn unify_curved_faces(
         let merged_face = merge_curved_group(gk, mem, &kept, cut_rims, &mut stats);
         #[cfg(test)]
         probe::d4::push(probe::d4::Row {
+            test: std::thread::current().name().unwrap_or("?").to_string(),
             members: mem.len(),
             outcome: merged_face.as_ref().err().copied(),
             stats,
@@ -3309,8 +3310,11 @@ pub(crate) mod probe {
     pub(crate) mod d4 {
         use std::sync::Mutex;
 
-        #[derive(Clone, Copy, Debug)]
+        #[derive(Clone, Debug)]
         pub(crate) struct Row {
+            /// The test that ran the boolean (libtest names each test's thread) — D5's stage 0
+            /// attributes the ledger's abstentions to fixtures by this.
+            pub(crate) test: String,
             pub(crate) members: usize,
             /// `None` when the group merged.
             pub(crate) outcome: Option<super::super::CurvedAbstain>,
@@ -3384,6 +3388,14 @@ pub(crate) mod probe {
                         "a merged chain's passages: {r:?}"
                     );
                 }
+            }
+            // ★ **This test's own rows only** (D5, stage 0). The sentence used to be asserted
+            // over every recorded row, and the serial ledger records **17** such groups from
+            // other fixtures — same-chamber panels sharing a ruling, which erase to 0-winding
+            // cycles this pass has no `Bound::Ring` arm for. The universal claim was true only
+            // by test order (the recorded trap: a `#[test]` lock sees what ran before it); the
+            // honest range is the fixture this test builds.
+            for r in &rows[before..] {
                 assert_ne!(
                     r.outcome,
                     Some(CurvedAbstain::WrappingNotOneEach),

@@ -1014,9 +1014,28 @@ pub(crate) fn emit_lateral(
                 let (Some([a, _]), Some([_, b])) = (cells[f].walls, cells[l].walls) else {
                     return Err(ladder());
                 };
-                let node = |r: usize, t: Rat| chart.node_on(r, t).ok_or_else(ladder);
-                let (a_lo, a_hi) = (node(a, t_lo)?, node(a, t_hi)?);
-                let (b_lo, b_hi) = (node(b, t_lo)?, node(b, t_hi)?);
+                // ★ Stage-0 instrument (D5): the one site every `RulingBoundNotYet` of the
+                // crossing census dies at — a run-end ruling with no node on the interval's
+                // z-line. Recorded with what that z-line says under this sector, so the plan's
+                // diagnosis («the line is transversal there, so no class has a node») is
+                // measured rather than argued. Production behaviour is unchanged.
+                let node =
+                    |r: usize, t: Rat, e: usize| -> Result<combinatorics::NodeId, BoolError> {
+                        match chart.node_on(r, t) {
+                            Some(n) => Ok(n),
+                            None => {
+                                #[cfg(test)]
+                                probe::rbny::record(
+                                    jd, k, def, &chart, &lines, curved, side, &reads[f], r, t, e,
+                                );
+                                #[cfg(not(test))]
+                                let _ = e;
+                                Err(ladder())
+                            }
+                        }
+                    };
+                let (a_lo, a_hi) = (node(a, t_lo, 0)?, node(a, t_hi, 1)?);
+                let (b_lo, b_hi) = (node(b, t_lo, 0)?, node(b, t_hi, 1)?);
                 let side_a = chart.ruling_name(jd, k, def, a).ok_or_else(ladder)?.1;
                 let side_b = chart.ruling_name(jd, k, def, b).ok_or_else(ladder)?.1;
                 let (own, other) = reads[f]
@@ -1169,6 +1188,7 @@ pub(crate) fn census(
             Ok(v) => v,
             Err(_) => {
                 probe::d2b::push(probe::d2b::Row {
+                    test: std::thread::current().name().unwrap_or("?").to_string(),
                     cells: cells.len(),
                     read_refused: 1,
                     ..probe::d2b::Row::default()
@@ -1177,11 +1197,38 @@ pub(crate) fn census(
             }
         };
         let mut d2b = probe::d2b::Row {
+            test: std::thread::current().name().unwrap_or("?").to_string(),
+            emission_reason: match emission {
+                Err(BoolError::Rejected { reason, .. }) => Some(*reason),
+                _ => None,
+            },
             cells: cells.len(),
             emitter_refused: emission.is_err(),
             end_swapped: chart.end_swapped,
             ..probe::d2b::Row::default()
         };
+        // D5 stage 0 (P4): the premise of naming a station on a line — every (z-line, station)
+        // pair of this chart asked for the station's canonical name there.
+        {
+            let mut names: Vec<(usize, i8)> = Vec::new();
+            for j in 0..chart.theta.len() {
+                if let Some(n) = chart.ruling_name(jd, k, def, j) {
+                    if !names.contains(&n) {
+                        names.push(n);
+                    }
+                }
+            }
+            for l in &chart.z_lines {
+                for &(wall, sd) in &names {
+                    d2b.station_pairs += 1;
+                    if crate::arrangement::crossing_on_ruling(jd, def, l.class, wall, k, sd)
+                        .is_err()
+                    {
+                        d2b.station_name_failures += 1;
+                    }
+                }
+            }
+        }
         for r in &reads {
             for e in &r.ends {
                 match e {
@@ -1811,11 +1858,123 @@ pub(crate) mod probe {
         }
     }
 
+    /// **D5, stage 0 — the run-end refusal, attributed.** One row per `RulingBoundNotYet`
+    /// raised at `emit_lateral`'s run-end node lookup: which z-line, what that line's arc under
+    /// the run's first cell says for this solid, whether the wall class has a node there (a piece
+    /// of the same ruling ending at `t`), and whether the cut rim on that line carries the
+    /// station's canonical name.
+    pub(crate) mod rbny {
+        use std::sync::Mutex;
+
+        #[derive(Clone, Debug)]
+        pub(crate) struct Row {
+            /// The test that ran the boolean (libtest names each test's thread).
+            pub(crate) test: String,
+            pub(crate) cyl: usize,
+            pub(crate) t: f64,
+            /// `0` = the interval's low line, `1` = its high line.
+            pub(crate) end: usize,
+            pub(crate) ruling: Option<(usize, i8)>,
+            /// What the run's first cell's end on that line is: `disk` / `exact` / `other` /
+            /// `nocircle`.
+            pub(crate) end_kind: &'static str,
+            /// For an `exact` end: every arc of the run carries, for this solid, only
+            /// `Transversal` marks (the face passes through — the line is no boundary there).
+            pub(crate) transversal_only: Option<bool>,
+            /// For an `exact` end: some arc carries a `Graze` for this solid.
+            pub(crate) any_graze: Option<bool>,
+            /// A piece of the same `(wall, side)` ruling ends at `t` — the wall class's
+            /// arrangement has a node there.
+            pub(crate) wall_node: bool,
+            /// The cut rim on that line lists the station's canonical name; `None` when no rim
+            /// of this cylinder on that line is cut.
+            pub(crate) rim_node: Option<bool>,
+        }
+
+        pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+
+        #[allow(clippy::too_many_arguments)]
+        pub(crate) fn record(
+            jd: &crate::tolerant::Judge<'_, crate::planes::WorkingPlane>,
+            k: usize,
+            def: &nacre_topo::CylinderDef,
+            chart: &super::super::Chart,
+            lines: &super::super::Lines,
+            curved: &crate::arrangement::Curved,
+            side: crate::planes::SolidSide,
+            read: &super::super::CellRead<'_>,
+            r: usize,
+            t: nacre_scalar::Rat,
+            e: usize,
+        ) {
+            use super::super::End;
+            use crate::arrangement::SegKind;
+            let ruling = chart.ruling_name(jd, k, def, r);
+            let (end_kind, transversal_only, any_graze) = match &read.ends[e] {
+                End::Disk(_) => ("disk", None, None),
+                End::Other => ("other", None, None),
+                End::NoCircle => ("nocircle", None, None),
+                End::Exact(arcs) => {
+                    let mine = || {
+                        arcs.iter()
+                            .flat_map(|a| a.marks.iter())
+                            .filter(move |(s, _)| *s == side)
+                            .map(|(_, kind)| *kind)
+                    };
+                    let n = mine().count();
+                    (
+                        "exact",
+                        Some(n > 0 && mine().all(|k| matches!(k, SegKind::Transversal { .. }))),
+                        Some(mine().any(|k| matches!(k, SegKind::Graze { .. }))),
+                    )
+                }
+            };
+            let wall_node = ruling.is_some_and(|name| {
+                (0..chart.theta.len()).any(|j| {
+                    chart.ruling_name(jd, k, def, j) == Some(name) && chart.theta[j].z.contains(&t)
+                })
+            });
+            let rim_node = ruling.and_then(|(wall, sd)| {
+                let c = lines
+                    .classes(t)
+                    .iter()
+                    .copied()
+                    .find(|&c| curved.cut_rims.contains_key(&(k, c)))?;
+                let rim = &curved.cut_rims[&(k, c)];
+                let name = crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, sd).ok()?;
+                Some(rim.nodes.contains(&name))
+            });
+            ROWS.lock()
+                .expect("the probe's lock is never held across a panic")
+                .push(Row {
+                    test: std::thread::current().name().unwrap_or("?").to_string(),
+                    cyl: k,
+                    t: t.to_f64(),
+                    end: e,
+                    ruling,
+                    end_kind,
+                    transversal_only,
+                    any_graze,
+                    wall_node,
+                    rim_node,
+                });
+        }
+    }
+
     pub(crate) mod d2b {
         use std::sync::Mutex;
 
-        #[derive(Clone, Copy, Debug, Default)]
+        #[derive(Clone, Debug, Default)]
         pub(crate) struct Row {
+            /// The test that ran the boolean (libtest names each test's thread) — D5's stage 0
+            /// attributes the ledger's populations to fixtures by this.
+            pub(crate) test: String,
+            /// What the emitter refused this boolean with, when it did.
+            pub(crate) emission_reason: Option<crate::RejectReason>,
+            /// D5 stage 0 (P4): every (z-line, station) pair asked for the station's canonical
+            /// name on that line (`crossing_on_ruling`), and how many could not be named.
+            pub(crate) station_pairs: usize,
+            pub(crate) station_name_failures: usize,
             pub(crate) cells: usize,
             /// The emitter refused this boolean's lateral faces (some class's cells could not be
             /// read) — the census still records every chart of it.

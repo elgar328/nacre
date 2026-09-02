@@ -10309,6 +10309,16 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         {
             let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
             for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
+                // D5 stage 0 (P1/P2): the run-end refusal's rows and the cleaning pass's
+                // abstentions, attributed to this cell.
+                let rb0 = crate::cyl_chart::probe::rbny::ROWS
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
+                    .len();
+                let d40 = crate::boolean::probe::d4::ROWS
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
+                    .len();
                 let (mut m, plate, boss) = boss_family(base, h);
                 let got = match boolean(&mut m, kind, plate, boss) {
                     Err(BoolError::Rejected { .. }) => First,
@@ -10362,6 +10372,37 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                         }
                     }
                 };
+                {
+                    let rows = crate::cyl_chart::probe::rbny::ROWS
+                        .lock()
+                        .expect("the probe's lock is never held across a panic");
+                    for r in &rows[rb0..] {
+                        eprintln!(
+                            "P1 {name} {kind:?} x {tool_name}: cyl {} t {} end {} ruling {:?} \
+                             kind {} transversal_only {:?} graze {:?} wall_node {} rim_node {:?}",
+                            r.cyl,
+                            r.t,
+                            r.end,
+                            r.ruling,
+                            r.end_kind,
+                            r.transversal_only,
+                            r.any_graze,
+                            r.wall_node,
+                            r.rim_node
+                        );
+                    }
+                    let d4 = crate::boolean::probe::d4::ROWS
+                        .lock()
+                        .expect("the probe's lock is never held across a panic");
+                    for r in d4[d40..].iter().filter(|r| {
+                        r.outcome == Some(crate::boolean::CurvedAbstain::WrappingNotOneEach)
+                    }) {
+                        eprintln!(
+                            "P2 {name} {kind:?} x {tool_name}: members {} plus {} minus {}",
+                            r.members, r.stats.plus, r.stats.minus
+                        );
+                    }
+                }
                 match tally.iter_mut().find(|(c, _)| *c == got) {
                     Some((_, n)) => *n += 1,
                     None => tally.push((got, 1)),
