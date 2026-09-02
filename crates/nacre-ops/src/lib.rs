@@ -1573,19 +1573,36 @@ mod zzz_ledger {
                     r.0, r.2, r.4
                 );
             }
-            let hp = *crate::combinatorics::holes_probe::COUNTS
-                .lock()
-                .expect("the probe's lock is never held across a panic");
             eprintln!(
-                "ledger C2b-P3: cylinder faces asked {} with holes {}",
-                hp[0], hp[1]
+                "ledger C2b-P3: cylinder faces asked {}",
+                *crate::combinatorics::holes_probe::COUNT
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
             );
-            for r in crate::combinatorics::holes_probe::ROWS
-                .lock()
-                .expect("the probe's lock is never held across a panic")
-                .iter()
             {
-                eprintln!("ledger C2b-P3 holed: {r}");
+                use crate::boolean::probe::shadow::Kind;
+                let rows = crate::boolean::probe::shadow::ROWS
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
+                    .clone();
+                let count = |k: Kind| rows.iter().filter(|r| r.1 == k).count();
+                eprintln!(
+                    "ledger C2b-1a: shadow rows {} agree {} shadow_decides {} shadow_alone {} \
+                     both_abstain {} shadow_abstains {} disagree {}",
+                    rows.len(),
+                    count(Kind::Agree),
+                    count(Kind::ShadowDecides),
+                    count(Kind::ShadowAlone),
+                    count(Kind::BothAbstain),
+                    count(Kind::ShadowAbstains),
+                    count(Kind::Disagree)
+                );
+                for (t, k) in rows
+                    .iter()
+                    .filter(|r| matches!(r.1, Kind::Disagree | Kind::ShadowAbstains))
+                {
+                    eprintln!("ledger C2b-1a {k:?}: {t}");
+                }
             }
             eprintln!(
                 "ledger C2-P5: ring_in_ring swallowed non-abstention errors {}",

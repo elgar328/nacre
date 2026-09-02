@@ -516,6 +516,89 @@ pub(crate) struct Grouping {
     group_of: Vec<usize>,
 }
 
+/// **A result face as the ray reads it** — its surface's truth and every boundary in the
+/// engine's own vocabulary.
+///
+/// ★ **Every boundary travels.** This used to keep `poly_rings()` only, which silently dropped a
+/// face's circular and banded bounds — and a ray that counts an incomplete component answers
+/// confidently and wrongly. That drop is what the old `curved_component_depth` refusal stood in
+/// for; carrying the bounds is the first half of what retired it, name and all.
+///
+/// A **lateral** face's bounds become one list of loops on its cylinder's chart
+/// ([`combinatorics::LateralLoop`]): a band's rims (a whole circle by its class, a chain by its
+/// edges), a panel's ring, and the holes — outer and holes together, because on the chart's
+/// annulus a wrapping loop has no inside and the face is a parity over all of them (cell ②-b).
+/// A lateral ring's corners are branch names (the region walk's stations and rim nodes), so its
+/// edges need no plane class to pin a three-plane end and refuse one by name (`RingNaming`).
+pub(crate) fn comp_face(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    lf: &LocalFace,
+) -> Result<combinatorics::CompFace, BoolError> {
+    let circle = |cyl: usize| combinatorics::BoundEdges::Circle(Box::new(cyls[cyl].def.clone()));
+    match lf.surf {
+        ClassIx::Plane(c) => {
+            let bound = |b: &Bound| -> Result<combinatorics::BoundEdges, BoolError> {
+                Ok(match b {
+                    Bound::Ring(r) => {
+                        combinatorics::BoundEdges::Ring(r.edges(jd, cyls, Some(c))?)
+                    }
+                    Bound::Circle { cyl } => circle(*cyl),
+                    // Rims bound a cylinder, never a plane — a producer error the ray
+                    // abstains on by name.
+                    Bound::Band { .. } => combinatorics::BoundEdges::Lateral(Vec::new()),
+                })
+            };
+            Ok(combinatorics::CompFace {
+                surf: combinatorics::CompSurf::Plane(c),
+                outer: bound(&lf.outer)?,
+                inner: lf
+                    .inner
+                    .iter()
+                    .map(bound)
+                    .collect::<Result<Vec<_>, BoolError>>()?,
+            })
+        }
+        ClassIx::Cyl(k) => {
+            let ring_loop = |r: &Ring| -> Result<combinatorics::LateralLoop, BoolError> {
+                Ok(combinatorics::LateralLoop::Ring(r.edges(jd, cyls, None)?))
+            };
+            let rim_loop = |rim: &Rim| -> Result<combinatorics::LateralLoop, BoolError> {
+                Ok(match rim {
+                    Rim::Circle(c) => combinatorics::LateralLoop::Circle(*c),
+                    Rim::Chain(r) => ring_loop(r)?,
+                })
+            };
+            let mut loops = Vec::new();
+            for b in core::iter::once(&lf.outer).chain(lf.inner.iter()) {
+                match b {
+                    Bound::Ring(r) => loops.push(ring_loop(r)?),
+                    Bound::Band { lo, hi } => {
+                        loops.push(rim_loop(lo)?);
+                        loops.push(rim_loop(hi)?);
+                    }
+                    // A circle bound on a cylinder face has no producer; the ray abstains on
+                    // it by name rather than guess.
+                    Bound::Circle { cyl } => {
+                        return Ok(combinatorics::CompFace {
+                            surf: combinatorics::CompSurf::Cylinder(Box::new(cyls[k].def.clone())),
+                            outer: circle(*cyl),
+                            inner: Vec::new(),
+                        });
+                    }
+                }
+            }
+            Ok(combinatorics::CompFace {
+                // ★ The truth travels, not the index — the probe should not have to hold the
+                // class table to solve a crossing.
+                surf: combinatorics::CompSurf::Cylinder(Box::new(cyls[k].def.clone())),
+                outer: combinatorics::BoundEdges::Lateral(loops),
+                inner: Vec::new(),
+            })
+        }
+    }
+}
+
 /// Partition the faces into connected components, then into output solids. One component is the
 /// whole result; several mean either an enclosed void (a cavity — an inward-oriented shell) or a
 /// severed operand (two or more material-enclosing shells).
@@ -546,51 +629,7 @@ fn group_faces(
         .map(|c| {
             by_comp_lf[c]
                 .iter()
-                .map(|lf| {
-                    // ★ **Every boundary travels, in the engine's own vocabulary.** This used to
-                    // keep `poly_rings()` only, which silently dropped a face's circular and
-                    // banded bounds — and a ray that counts an incomplete component answers
-                    // confidently and wrongly. That drop is what the old `curved_component_depth`
-                    // refusal stood in for; carrying the bounds is the first half of what retired
-                    // it, name and all.
-                    let bound = |b: &Bound| -> Result<combinatorics::BoundEdges, BoolError> {
-                        Ok(match (b, lf.surf) {
-                            (Bound::Ring(r), ClassIx::Plane(c)) => {
-                                combinatorics::BoundEdges::Ring(r.edges(jd, cyls, c)?)
-                            }
-                            // ★ A lateral face bounded by a node ring (a panel, a hole) or by a
-                            // band with a chain rim is a shape the ray does not count — it
-                            // abstains on it by name rather than reaching for a plane class
-                            // the face does not have (which used to be `ClassIx::plane`'s
-                            // panic, reachable only in a multi-component result).
-                            (Bound::Ring(_), ClassIx::Cyl(_)) => combinatorics::BoundEdges::Lateral,
-                            (Bound::Circle { cyl }, _) => {
-                                combinatorics::BoundEdges::Circle(Box::new(cyls[*cyl].def.clone()))
-                            }
-                            (Bound::Band { lo, hi }, _) => match (lo.circle(), hi.circle()) {
-                                (Some(lo), Some(hi)) => combinatorics::BoundEdges::Band { lo, hi },
-                                _ => combinatorics::BoundEdges::Lateral,
-                            },
-                        })
-                    };
-                    let surf = match lf.surf {
-                        ClassIx::Plane(c) => combinatorics::CompSurf::Plane(c),
-                        // ★ The truth travels, not the index — the probe should not have to hold
-                        // the class table to solve a crossing.
-                        ClassIx::Cyl(k) => {
-                            combinatorics::CompSurf::Cylinder(Box::new(cyls[k].def.clone()))
-                        }
-                    };
-                    Ok(combinatorics::CompFace {
-                        surf,
-                        outer: bound(&lf.outer)?,
-                        inner: lf
-                            .inner
-                            .iter()
-                            .map(bound)
-                            .collect::<Result<Vec<_>, BoolError>>()?,
-                    })
-                })
+                .map(|lf| comp_face(jd, cyls, lf))
                 .collect::<Result<_, BoolError>>()
         })
         .collect::<Result<_, BoolError>>()?;
@@ -625,28 +664,52 @@ fn group_faces(
     // node` arms retried both, so a real cause could masquerade as `NoClearRay` once every node
     // hit it. `Ok(None)` here means every node abstained; that being a reject is the *caller's*
     // proposition to raise.
-    fn first_deciding<T>(
+    //
+    // ★ Cell ②-b, stage 1a: the closure takes the lateral reading, production passes `Today`,
+    // and under `cfg(test)` every probe is asked once more with `Loops` — the shadow. The rows
+    // `(production, shadow)` per probe, and the call's eventual decision, are what the ledger
+    // compares: by the cut-cap cell's proposition «every probe of one component has one depth»
+    // (components do not cross), a shadow answer on a probe that abstained today must equal the
+    // decision a later probe made.
+    fn first_deciding<T: Clone + PartialEq + core::fmt::Debug>(
         probes: &[combinatorics::Probe],
-        mut f: impl FnMut(&combinatorics::Probe) -> Result<Option<T>, BoolError>,
+        mut f: impl FnMut(
+            &combinatorics::Probe,
+            combinatorics::LateralRead,
+        ) -> Result<Option<T>, BoolError>,
     ) -> Result<Option<T>, BoolError> {
         #[cfg(test)]
         let tie0 = combinatorics::tie_probe::len();
+        #[cfg(test)]
+        let mut shadow: Vec<(Option<T>, Option<T>)> = Vec::new();
         for (tried, x) in probes.iter().enumerate() {
             #[cfg(not(test))]
             let _ = tried;
-            if let Some(v) = f(x)? {
+            let prod = f(x, combinatorics::LateralRead::Today)?;
+            #[cfg(test)]
+            {
+                let sh = f(x, combinatorics::LateralRead::Loops).ok().flatten();
+                shadow.push((prod.clone(), sh));
+            }
+            if let Some(v) = prod {
                 #[cfg(test)]
-                probe::deciding::record(tried + 1, probes.len(), true, Vec::new());
+                {
+                    probe::deciding::record(tried + 1, probes.len(), true, Vec::new());
+                    probe::shadow::record(&shadow, Some(&v));
+                }
                 return Ok(Some(v));
             }
         }
         #[cfg(test)]
-        probe::deciding::record(
-            probes.len(),
-            probes.len(),
-            false,
-            combinatorics::tie_probe::since(tie0),
-        );
+        {
+            probe::deciding::record(
+                probes.len(),
+                probes.len(),
+                false,
+                combinatorics::tie_probe::since(tie0),
+            );
+            probe::shadow::record(&shadow, None);
+        }
         Ok(None)
     }
     // ★★ **Material or void is a question about nesting, not about normals.**
@@ -678,10 +741,10 @@ fn group_faces(
         // component. Trying them in turn is what the cavity search does, and for the same reason —
         // a node that grazes one component's boundary is a fact about that node, not about the
         // components.
-        let depth = first_deciding(&probes_of(c), |x| {
+        let depth = first_deciding(&probes_of(c), |x, read| {
             let mut d = 0usize;
             for other in (0..n).filter(|&o| o != c) {
-                match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[other])? {
+                match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[other], read)? {
                     Some(true) => d += 1,
                     Some(false) => {}
                     None => return Ok(None), // grazed — this node abstains
@@ -715,10 +778,11 @@ fn group_faces(
             for d in (0..n).filter(|c| !positives.contains(c)) {
                 // A cavity node that classifies cleanly against *every* material (one shared origin
                 // keeps the nesting consistent); its `true` materials nest, so take the innermost.
-                let containers = first_deciding(&probes_of(d), |x| {
+                let containers = first_deciding(&probes_of(d), |x, read| {
                     let mut cs = Vec::new();
                     for &m in &positives {
-                        match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[m])? {
+                        match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[m], read)?
+                        {
                             Some(true) => cs.push(m),
                             Some(false) => {}
                             None => return Ok(None), // grazed against a material — abstain
@@ -744,8 +808,14 @@ fn group_faces(
                                 if o == c {
                                     continue;
                                 }
-                                let v = first_deciding(&probes_of(c), |x| {
-                                    combinatorics::probe_in_component(jd, cyls, x, &comp_faces[o])
+                                let v = first_deciding(&probes_of(c), |x, read| {
+                                    combinatorics::probe_in_component(
+                                        jd,
+                                        cyls,
+                                        x,
+                                        &comp_faces[o],
+                                        read,
+                                    )
                                 })?
                                 .unwrap_or(false);
                                 inside.insert((c, o), v);
@@ -951,11 +1021,15 @@ impl Ring {
     /// pinned by its cylinder, and a three-plane end by `pin_on_line` exactly as the old road
     /// pinned it - so a pure ring yields the same edges bit for bit, and a mixed ring yields
     /// edges its consumers fork on (`ring_is_mixed`) instead of dying here.
+    ///
+    /// `p` is the plane class the ring lies in, which pins a **three-plane** end on its edge's
+    /// line; a lateral ring (on a cylinder) has none — its corners are branch names — and passes
+    /// `None`, so a three-plane end there is refused by name rather than pinned by a guess.
     pub(crate) fn edges(
         &self,
         jd: &Judge<'_, WorkingPlane>,
         cyls: &[crate::planes::WorkingCyl],
-        p: usize,
+        p: Option<usize>,
     ) -> Result<Vec<combinatorics::RingEdge>, BoolError> {
         if self.nodes.len() != self.walls.len() {
             return Err(reject(RejectReason::RingNaming));
@@ -967,10 +1041,10 @@ impl Ring {
             let Some(t) = combinatorics::three_plane_name(n) else {
                 return Err(reject(RejectReason::RingNaming));
             };
-            let Wall::Plane(c) = wall else {
-                // A three-plane point on a curved carrier has no third plane to pin it with -
-                // no producer builds the shape today, and it is refused by name rather than
-                // guessed at.
+            let (Wall::Plane(c), Some(p)) = (wall, p) else {
+                // A three-plane point on a curved carrier, or on a lateral ring, has no third
+                // plane to pin it with - no producer builds the shape today, and it is refused
+                // by name rather than guessed at.
                 return Err(reject(RejectReason::RingNaming));
             };
             combinatorics::pin_on_line(jd, p, *c, t)
@@ -1400,7 +1474,7 @@ fn self_touch_reject(
                     {
                         slot.insert(
                             rings_of(faces[j])
-                                .map(|r| r.edges(jd, cyls, q))
+                                .map(|r| r.edges(jd, cyls, Some(q)))
                                 .collect::<Result<_, BoolError>>()?,
                         );
                     }
@@ -3004,6 +3078,48 @@ pub(crate) fn classify_cycles(
 /// where a tangent or boundary tie remains.
 #[cfg(test)]
 pub(crate) mod probe {
+    /// Cell ②-b stage 1a: the lateral loops road as a shadow of today's reading, per
+    /// classification call — `(test, kind, count)` where the kind is one of the five ways a
+    /// probe's two answers can relate to the call's decision.
+    pub(crate) mod shadow {
+        use std::sync::Mutex;
+        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+        pub(crate) enum Kind {
+            /// Both roads answered, alike.
+            Agree,
+            /// Today abstained, the loops road answered what the call later decided.
+            ShadowDecides,
+            /// Today abstained, the loops road answered, and the call never decided (an
+            /// exhausted list) — the four census cells' shape.
+            ShadowAlone,
+            /// Both abstained.
+            BothAbstain,
+            /// Today answered and the loops road abstained.
+            ShadowAbstains,
+            /// The loops road answered something else than today or than the decision.
+            Disagree,
+        }
+        pub(crate) static ROWS: Mutex<Vec<(String, Kind)>> = Mutex::new(Vec::new());
+        pub(crate) fn record<T: PartialEq>(rows: &[(Option<T>, Option<T>)], decided: Option<&T>) {
+            let me = std::thread::current().name().unwrap_or("?").to_string();
+            let mut out = ROWS
+                .lock()
+                .expect("the probe's lock is never held across a panic");
+            for (prod, sh) in rows {
+                let kind = match (prod, sh, decided) {
+                    (Some(p), Some(s), _) if p == s => Kind::Agree,
+                    (Some(_), Some(_), _) => Kind::Disagree,
+                    (Some(_), None, _) => Kind::ShadowAbstains,
+                    (None, Some(s), Some(d)) if s == d => Kind::ShadowDecides,
+                    (None, Some(_), Some(_)) => Kind::Disagree,
+                    (None, Some(_), None) => Kind::ShadowAlone,
+                    (None, None, _) => Kind::BothAbstain,
+                };
+                out.push((me.clone(), kind));
+            }
+        }
+    }
+
     pub(crate) mod deciding {
         use crate::combinatorics::tie_probe::Tie;
         use std::sync::Mutex;
@@ -3445,7 +3561,7 @@ fn merge_component(
         // ★ Built from the walls the cycle carries, not from the node names. This is where a
         // four-plane concurrency used to break the merge: a canonical name need not mention the
         // plane its edge rides, and two names can share nothing but `wc`.
-        let ring = cyc.edges(jd, cyls, wc)?;
+        let ring = cyc.edges(jd, cyls, Some(wc))?;
         match combinatorics::loop_winding(jd, cyls, wc, &ring)? {
             1 => outers.push(cyc),
             -1 => holes.push(cyc),
@@ -3463,7 +3579,7 @@ fn merge_component(
         let probes = combinatorics::three_plane_probes(hole.nodes.iter().copied());
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
-            let ring = outer.edges(jd, cyls, wc)?;
+            let ring = outer.edges(jd, cyls, Some(wc))?;
             // A mixed outer takes the rational road - the (None, None) arm of the
             // arrangement's `cell_in_cell`, mirrored: each rational node of the hole is
             // a probe against the mixed walk, and the vocabulary is that arm's — a list
@@ -3570,7 +3686,7 @@ fn merge_component(
         let def = &cyls[cyl].def;
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
-            let ring = outer.edges(jd, cyls, wc)?;
+            let ring = outer.edges(jd, cyls, Some(wc))?;
             if crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge));
@@ -3584,7 +3700,7 @@ fn merge_component(
         // answers about geometry that is not there.
         for hole in faces[owner].1.iter() {
             if let Some(h) = hole.ring() {
-                let ring = h.edges(jd, cyls, wc)?;
+                let ring = h.edges(jd, cyls, Some(wc))?;
                 if crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
                     return Err(reject(RejectReason::CoplanarMerge));
                 }

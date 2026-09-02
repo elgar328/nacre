@@ -2406,7 +2406,7 @@ pub(crate) fn ruling_side(
 
 /// Is plane class `wc` exactly **through** this cylinder's axis: parallel to it (`n · m = 0`)
 /// with the axis origin on the plane. Total on a rational row (`None` = overflow only).
-fn class_through_axis(w: &[Rat; 4], def: &nacre_topo::CylinderDef) -> Option<bool> {
+pub(crate) fn class_through_axis(w: &[Rat; 4], def: &nacre_topo::CylinderDef) -> Option<bool> {
     let (o, m) = (def.origin(), def.dir());
     let n = [w[0], w[1], w[2]];
     let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
@@ -10214,16 +10214,36 @@ mod tests {
         usize,
         std::collections::HashSet<(usize, usize)>,
     ) {
+        armed_through_boss_z(-10.0, 50.0)
+    }
+
+    /// [`armed_through_boss`] with the boss's axial extent chosen: `z_lo` and height `h`. The
+    /// default runs through the plate (`−10`, `50`); a boss whose lower cap sits **inside** the
+    /// plate (`10`, `30`) has a lateral whose lower boundary is a **chain** — arcs at z = 10
+    /// (outside the plate) and z = 20 (inside) joined by rulings — the staircase the corner
+    /// rule is watched on.
+    #[allow(clippy::type_complexity)]
+    fn armed_through_boss_z(
+        z_lo: f64,
+        h: f64,
+    ) -> (
+        Model,
+        Handle<Solid>,
+        Handle<Solid>,
+        crate::planes::PlaneSetup,
+        usize,
+        std::collections::HashSet<(usize, usize)>,
+    ) {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
             Point3::from_array([40.0, 40.0, 20.0]),
         );
         let boss = m.add_cylinder(
-            Point3::from_array([40.0, 20.0, -10.0]),
+            Point3::from_array([40.0, 20.0, z_lo]),
             Vector3::from_array([0.0, 0.0, 1.0]),
             5.0,
-            50.0,
+            h,
         );
         m.rebuild_adjacency();
         let (mut setup, cyl_surfs) =
@@ -10417,6 +10437,219 @@ mod tests {
         }
     }
 
+    /// **A lateral face answers the crossing question by the same parity, on its own chart**
+    /// (cell ②-b) — the digon oracle's lateral twin, on the through-boss Fuse's lateral. The
+    /// truth is known in world coordinates, so every crossing a rational ray makes with the
+    /// cylinder is checked: rays `{y = y₀, z = z₀}` over a half-step lattice (two roots each,
+    /// at x = 40 ± √(25 − (y₀ − 20)²) — irrational θ) and the **station column**
+    /// `{x = 40, z = z₀}`, whose roots are exactly the rulings' points (40, 15) and (40, 25):
+    /// on the ruling within the notch's z (a corner at its ends), on the face beyond it.
+    ///
+    /// Two builds. **Through** (caps at −10 and 40): a band between the caps' whole circles
+    /// with the plate's notch as its one hole (the plate-side half-circle × z ∈ (0, 20), two
+    /// arcs on the cut rims and two rulings on the wall x = 40). **Staircase** (caps at 10 and
+    /// 40, the lower cap inside the plate): the lower boundary is a chain — the arc at z = 10
+    /// outside the plate, the arc at z = 20 inside, the two rulings between — so at the
+    /// station (40, 25) one arc ends `hi` and the other starts `lo`: the corner rule's one
+    /// discriminating population. ☑ In a notch both arcs share their ends, and «both ends
+    /// count» is invisible there — measured; the staircase is why the second build exists.
+    /// The other station, (40, 15), is the seam (`add_cylinder`'s `ref_dir` is −y): a
+    /// seam-incident root with an arc above it is the one tie the loops road keeps.
+    ///
+    /// The through build's rays are also the **banded arm's shadow**: on the two whole-circle
+    /// rims alone, today's «opposite sides of the two rim planes» and the loops road's
+    /// «exactly one rim above» must agree on every ray — every root, the graze on a rim
+    /// included — which is what licenses deleting that arm at the cutover (the suite's own
+    /// band hits are 0: the gate refuses a wall inside the strip, so no probe ray crosses a
+    /// band there).
+    #[test]
+    fn the_lateral_parity_agrees_with_the_notch_it_bounds() {
+        for staircase in [false, true] {
+            lateral_lattice(staircase);
+        }
+    }
+
+    fn lateral_lattice(staircase: bool) {
+        use nacre_scalar::quad::{CylinderMeet, plane_plane_cylinder, plane_side};
+        use nacre_scalar::{Orient, Rat};
+        let caps = if staircase {
+            [10.0, 40.0]
+        } else {
+            [-10.0, 40.0]
+        };
+        let (m, plate, boss, setup, wc, crossings) =
+            armed_through_boss_z(caps[0], caps[1] - caps[0]);
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let (curved, plane_faces, rows, _) =
+            armed_curved(&m, plate, boss, &setup, &jd, wc, &crossings, caps);
+        let fuse = crate::cyl_chart::emit_lateral(
+            BoolKind::Fuse,
+            &jd,
+            &setup.cyls,
+            &plane_faces,
+            &curved,
+            &rows,
+        )
+        .unwrap();
+        assert_eq!(fuse.len(), 1);
+        let cf = crate::boolean::comp_face(&jd, &setup.cyls, &fuse[0]).unwrap();
+        let combinatorics::CompSurf::Cylinder(def) = &cf.surf else {
+            panic!("a lateral")
+        };
+        let combinatorics::BoundEdges::Lateral(loops) = &cf.outer else {
+            panic!("loops, got {:?}", cf.outer)
+        };
+        assert!(cf.inner.is_empty(), "a lateral's holes are among its loops");
+        let rims: Vec<usize> = loops
+            .iter()
+            .filter_map(|l| match l {
+                combinatorics::LateralLoop::Circle(c) => Some(*c),
+                combinatorics::LateralLoop::Ring(_) => None,
+            })
+            .collect();
+        if staircase {
+            assert_eq!(rims.len(), 1, "the upper cap's whole circle");
+            assert_eq!(loops.len(), 2, "and the chain below");
+        } else {
+            assert_eq!(rims.len(), 2, "the caps' two whole circles");
+            assert_eq!(loops.len(), 3, "and the notch as one ring");
+        }
+        let (o, mm, r) = (def.origin(), def.dir(), def.radius());
+        let rat = |k: i128| Rat::new(k, 2).unwrap();
+        let ri = Rat::from_int;
+        let zero = ri(0);
+        let neg = |v: Rat| zero.checked_sub(v).unwrap();
+        let x40 = [ri(1), zero, zero, neg(ri(40))];
+        let y20 = [zero, ri(1), zero, neg(ri(20))];
+        let (cap_lo, cap_hi) = (ri(caps[0] as i128), ri(caps[1] as i128));
+        // The notch's z range: the plate's own (0, 20) through the boss, or — with the lower
+        // cap inside the plate — the chain's step from the cap (10) to the plate's top (20).
+        let (n_lo, n_hi) = (if staircase { cap_lo } else { zero }, ri(20));
+        // The truth on the cylinder, by the root's side of the wall and the ray's z. `seam`:
+        // the root is the station (40, 15), the seam generator; a seam-incident root with an
+        // arc above it is the tie the loops road keeps (`arc_span`'s `SeamRoot`; z is asked
+        // first, so with no arc above the rims still decide).
+        let truth = |x_side: Orient, z0: Rat, seam: bool| -> Option<bool> {
+            if seam && z0 < n_hi {
+                return None;
+            }
+            if z0 >= cap_hi {
+                return if z0 == cap_hi { None } else { Some(false) };
+            }
+            if z0 < cap_lo {
+                return Some(false);
+            }
+            if z0 == cap_lo {
+                // The lower cap: through the plate a whole rim (a tie everywhere); in the
+                // staircase an arc outside the plate only — a tie there, a corner on the wall,
+                // and nothing inside, where the face starts at the plate's top.
+                return match (staircase, x_side) {
+                    (true, Orient::Negative) => Some(false),
+                    _ => None,
+                };
+            }
+            match x_side {
+                // Outside the plate: the band, whole.
+                Orient::Positive => Some(true),
+                // Inside the plate's footprint: the notch (a hole, or the chain's step), its
+                // arcs the boundary — both arcs through the plate, the upper one alone in the
+                // staircase (its lower boundary there is the cap, handled above).
+                Orient::Negative => {
+                    if (!staircase && z0 == n_lo) || z0 == n_hi {
+                        None
+                    } else {
+                        Some(!(z0 > n_lo && z0 < n_hi))
+                    }
+                }
+                // On the wall: a ruling for z within the notch (corners at its ends), the
+                // face beyond.
+                Orient::Zero => {
+                    if z0 >= n_lo && z0 <= n_hi {
+                        None
+                    } else {
+                        Some(true)
+                    }
+                }
+            }
+        };
+        // on face, off (hole), boundary, tangent, station on-ruling, station on-face, seam ties
+        let mut n = [0usize; 7];
+        let mut shadow_rays = 0usize;
+        let rim_loops: Vec<combinatorics::LateralLoop> = rims
+            .iter()
+            .map(|&c| combinatorics::LateralLoop::Circle(c))
+            .collect();
+        let mut ask = |pa: [Rat; 4], pb: [Rat; 4], z0: Rat, station: bool| {
+            let roots = match plane_plane_cylinder(&pa, &pb, &o, &mm, r).unwrap() {
+                CylinderMeet::Pair { line, s } => (line, s),
+                CylinderMeet::Tangent { .. } => {
+                    n[3] += 1;
+                    return;
+                }
+                other => panic!("an ordinary ray: {other:?}"),
+            };
+            let (line, s) = roots;
+            for root in &s {
+                let x_side = plane_side(&x40, &line, root);
+                let seam = station && plane_side(&y20, &line, root) == Orient::Negative;
+                let want = truth(x_side, z0, seam);
+                let got = combinatorics::loop_parity(&jd, def, loops, &line, root);
+                assert_eq!(
+                    got, want,
+                    "staircase {staircase} z0 {z0:?} side {x_side:?} station {station} seam {seam}"
+                );
+                match (got, station, seam) {
+                    (Some(true), false, _) => n[0] += 1,
+                    (Some(false), false, _) => n[1] += 1,
+                    (None, false, _) => n[2] += 1,
+                    (None, true, true) if z0 < n_lo || z0 > n_hi => n[6] += 1,
+                    (None, true, _) => n[4] += 1,
+                    (Some(_), true, _) => n[5] += 1,
+                }
+            }
+            // The banded arm's shadow (the through build — the staircase has one rim): the
+            // two rims alone, every root, the same half (behind the wall's plane, so one root
+            // counts when the band is crossed there).
+            if rims.len() == 2 {
+                let half = x40;
+                let old = combinatorics::cylinder_face_crossings(
+                    &jd,
+                    [&pa, &pb],
+                    def,
+                    combinatorics::SpanAsk::Band {
+                        span: [rims[0], rims[1]],
+                        half: &half,
+                    },
+                );
+                let new =
+                    combinatorics::lateral_face_crossings(&jd, [&pa, &pb], def, &rim_loops, &half);
+                assert_eq!(
+                    old, new,
+                    "the band as two circle loops, z0 {z0:?} station {station}"
+                );
+                shadow_rays += 1;
+            }
+        };
+        for k in 0..=108 {
+            let z0 = ri(-12).checked_add(rat(k)).unwrap();
+            let pz = [zero, zero, ri(1), neg(z0)];
+            for j in 0..=20 {
+                let y0 = ri(15).checked_add(rat(j)).unwrap();
+                ask([zero, ri(1), zero, neg(y0)], pz, z0, false);
+            }
+            ask(x40, pz, z0, true);
+        }
+        eprintln!(
+            "lateral lattice (staircase {staircase}): on {} hole {} boundary {} tangent {} \
+             station on-ruling {} station on-face {} seam ties {} shadow rays {shadow_rays}",
+            n[0], n[1], n[2], n[3], n[4], n[5], n[6]
+        );
+        assert!(
+            n.iter().all(|&c| c > 0),
+            "every arm has a population: {n:?}"
+        );
+    }
+
     /// ★ **A cut circle is a band boundary** (rulings ladder, cell 2 — commit ①). On the armed
     /// through-boss, the per-class products of the four ⊥ classes are collected the production
     /// way (`per_class` on each), and the chart must break the lateral at the two **cut**
@@ -10426,10 +10659,27 @@ mod tests {
     /// labels and the rulings') leaves the reader no answer there and `emit_lateral` refuses by
     /// name (`CylinderGateUndecided`) — blinding only the arcs does not, because the vertical
     /// lines answer in their place.
-    #[test]
-    fn a_cut_circle_bounds_the_bands() {
-        let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
-        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+    /// The through-boss's curved carriers and plane faces, collected the production way
+    /// (`per_class` on each of the four ⊥ classes and the wall class), with the cylinder's rows
+    /// and the four ⊥ classes `[z0, z20, cap_lo, cap_hi]`. ★ This mirrors production's fold by
+    /// hand (`trace_result_faces`' accumulation). A drift between them is not caught by
+    /// anything: a test would simply start measuring a map the boolean never builds.
+    #[allow(clippy::type_complexity, clippy::too_many_arguments)]
+    fn armed_curved(
+        m: &Model,
+        plate: Handle<Solid>,
+        boss: Handle<Solid>,
+        setup: &crate::planes::PlaneSetup,
+        jd: &Judge<'_, WorkingPlane>,
+        wc: usize,
+        crossings: &std::collections::HashSet<(usize, usize)>,
+        caps: [f64; 2],
+    ) -> (
+        Curved,
+        Vec<LocalFace>,
+        Vec<crate::bands::CylRow>,
+        [usize; 4],
+    ) {
         let z_class = |z: f64| -> usize {
             setup
                 .geom
@@ -10437,8 +10687,12 @@ mod tests {
                 .position(|p| p.tri.iter().all(|q| (q.as_array()[2] - z).abs() < 1e-12))
                 .unwrap_or_else(|| panic!("a class at z = {z}"))
         };
-        let (z0, z20, cap_lo, cap_hi) =
-            (z_class(0.0), z_class(20.0), z_class(-10.0), z_class(40.0));
+        let (z0, z20, cap_lo, cap_hi) = (
+            z_class(0.0),
+            z_class(20.0),
+            z_class(caps[0]),
+            z_class(caps[1]),
+        );
         // The production carriers: disk labels from every ⊥ class, cut rims from the cut ones.
         let mut disk_labels: crate::arrangement::DiskLabels = HashMap::new();
         let mut cut_rims: CutRims = HashMap::new();
@@ -10448,14 +10702,11 @@ mod tests {
         // both-cut middle is one whole-circle cell the emitter cannot read per sector.
         let mut rulings: HashMap<usize, Vec<RulingExtent>> = HashMap::new();
         for c in [z0, z20, cap_lo, cap_hi, wc] {
-            let edges = armed_class_edges(&m, plate, boss, &setup, &jd, c, &crossings);
-            let staged = per_class(&jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
+            let edges = armed_class_edges(m, plate, boss, setup, jd, c, crossings);
+            let staged = per_class(jd, &setup.cyls, BoolKind::Fuse, c, &edges).unwrap();
             for (cyl, label) in &staged.disk_labels {
                 disk_labels.insert((*cyl, c), *label);
             }
-            // ★ This mirrors production's fold by hand (`trace_result_faces`' accumulation). A
-            // drift between them is not caught by anything: the test would simply start measuring
-            // a map the boolean never builds.
             for (cyl, al) in &staged.arc_labels {
                 arc_labels.entry((*cyl, c)).or_default().push(al.clone());
             }
@@ -10473,13 +10724,22 @@ mod tests {
             cut_rims,
             rulings,
         };
+        let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
+        (curved, plane_faces, rows, [z0, z20, cap_lo, cap_hi])
+    }
+
+    #[test]
+    fn a_cut_circle_bounds_the_bands() {
+        let (m, plate, boss, setup, wc, crossings) = armed_through_boss();
+        let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
+        let (curved, plane_faces, rows, [z0, z20, cap_lo, cap_hi]) =
+            armed_curved(&m, plate, boss, &setup, &jd, wc, &crossings, [-10.0, 40.0]);
         let (disk_labels, arc_labels, cut_rims) =
             (&curved.disk_labels, &curved.arc_labels, &curved.cut_rims);
         assert!(cut_rims.contains_key(&(0, z0)) && cut_rims.contains_key(&(0, z20)));
         assert!(disk_labels.contains_key(&(0, cap_lo)) && disk_labels.contains_key(&(0, cap_hi)));
         assert_eq!(arc_labels[&(0, z0)].len(), 2, "two arcs, two sector labels");
         assert_eq!(arc_labels[&(0, z20)].len(), 2);
-        let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
         assert_eq!(rows.len(), 1);
         // ★ A cut circle is a band boundary (the rulings ladder): the chart's boundary rule names
         // the two cut rims beside the caps, and the chart's own lines are exactly those four.

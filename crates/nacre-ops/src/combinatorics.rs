@@ -2539,37 +2539,18 @@ pub(crate) fn ring_in_ring(
     Err(reject(RejectReason::NoClearRay))
 }
 
-/// Cell ②-b stage 0 (P3): how often the two roads ask a **cylinder** face — and how often that
-/// face carries holes its arms do not read (`f.inner` is never consulted for a cylinder face
-/// today). `(asked, with_holes)`; predicted `with_holes` 0 — a holed lateral lives in a
-/// one-component result, which asks nothing.
+/// Cell ②-b stage 0 (P3): how often the two roads ask a **cylinder** face. (The holes count it
+/// carried at stage 0 — a holed lateral asked **once**, in the crossing census — is recorded in
+/// the dev-log; since stage 1a a lateral's holes are among its loops and the count has no
+/// separate meaning.)
 #[cfg(test)]
 pub(crate) mod holes_probe {
     use std::sync::Mutex;
-    pub(crate) static COUNTS: Mutex<[usize; 2]> = Mutex::new([0; 2]);
-    /// The asks of a holed face, by test and outer/hole shape.
-    pub(crate) static ROWS: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    pub(crate) fn asked(f: &super::CompFace) {
-        let mut c = COUNTS
+    pub(crate) static COUNT: Mutex<usize> = Mutex::new(0);
+    pub(crate) fn asked(_f: &super::CompFace) {
+        *COUNT
             .lock()
-            .expect("the probe's lock is never held across a panic");
-        c[0] += 1;
-        if !f.inner.is_empty() {
-            c[1] += 1;
-            ROWS.lock()
-                .expect("the probe's lock is never held across a panic")
-                .push(format!(
-                    "{} outer {:?} holes {}",
-                    std::thread::current().name().unwrap_or("?"),
-                    match &f.outer {
-                        super::BoundEdges::Band { .. } => "band",
-                        super::BoundEdges::Lateral => "lateral",
-                        super::BoundEdges::Ring(_) => "ring",
-                        super::BoundEdges::Circle(_) => "circle",
-                    },
-                    f.inner.len()
-                ));
-        }
+            .expect("the probe's lock is never held across a panic") += 1;
     }
 }
 
@@ -2927,6 +2908,109 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
 /// `QuadVal::common_radical` returns `None` there, but only after a `debug_assert!(false)` — so in
 /// a test or debug build it **panics** rather than abstaining. The contract it states is
 /// same-radical arithmetic, and a caller that could mix two must not reach it.
+/// Where a point of an arc's circle sits against the arc's CCW span `lo → hi`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ArcSpan {
+    Inside,
+    Outside,
+    /// Exactly at the `lo` end — the end the arc leaves counter-clockwise.
+    AtLo,
+    /// Exactly at the `hi` end — the end the arc leaves clockwise.
+    AtHi,
+}
+
+/// **Is the circle point `root` in the arc's CCW span `lo → hi`, or at one of its ends?** — the
+/// one spelling of the span question, read by the planar ring parity (an arc step of a mixed
+/// ring, [`point_in_mixed_ring`]) and by the lateral face parity ([`loop_parity`]).
+///
+/// Cyclic in the seam chart. A seam-incident **end** is information, not a tie (the straddling
+/// boss's alias corner sits exactly there): its θ is the chart boundary, so the span test
+/// collapses to one comparison against the other end. Only a seam-incident **root** — the
+/// crossing at the joint itself — abstains, as do two seam ends (one point twice; upstream
+/// refuses it) and a zero-span arc. `None` for those and for checked arithmetic running out;
+/// `tie_probe` says which.
+pub(crate) fn arc_span(
+    def: &nacre_topo::CylinderDef,
+    e_lo: &(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    e_hi: &(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    root: &(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+) -> Option<ArcSpan> {
+    use core::cmp::Ordering;
+    use nacre_scalar::quad::{MeetLine, QuadVal, SeamOrder, circular_order_about_seam};
+    let (o, m, rd) = (def.origin(), def.dir(), def.ref_dir());
+    let on_seam = |p: &(MeetLine, QuadVal)| -> Option<bool> {
+        match circular_order_about_seam(&o, &m, &rd, (&p.0, &p.1), (&p.0, &p.1))? {
+            SeamOrder::SeamIncident { first, .. } => Some(first),
+            SeamOrder::Ordered(_) => Some(false),
+        }
+    };
+    let ord = |p: &(MeetLine, QuadVal), qq: &(MeetLine, QuadVal)| -> Option<Ordering> {
+        match circular_order_about_seam(&o, &m, &rd, (&p.0, &p.1), (&qq.0, &qq.1))? {
+            SeamOrder::Ordered(o) => Some(o),
+            SeamOrder::SeamIncident { .. } => None,
+        }
+    };
+    if on_seam(root)? {
+        // the root is the joint itself — a tie
+        #[cfg(test)]
+        tie_probe::mark(tie_probe::Tie::SeamRoot);
+        return None;
+    }
+    Some(match (on_seam(e_lo)?, on_seam(e_hi)?) {
+        // Two seam ends would be one point twice — upstream refuses it.
+        (true, true) => {
+            #[cfg(test)]
+            tie_probe::mark(tie_probe::Tie::TwoSeamEnds);
+            return None;
+        }
+        // From the seam CCW to `hi`: chart order θ ∈ (0, θ_hi). Only the seam end is unreachable
+        // (a seam-incident root already returned above), so the **other** end is exactly what
+        // can coincide, and `ord` answers it totally. **Three arms, one convention.**
+        (true, false) => match ord(root, e_hi)? {
+            Ordering::Equal => ArcSpan::AtHi,
+            Ordering::Less => ArcSpan::Inside,
+            Ordering::Greater => ArcSpan::Outside,
+        },
+        // From `lo` CCW back to the seam: θ ∈ (θ_lo, 2π).
+        (false, true) => match ord(root, e_lo)? {
+            Ordering::Equal => ArcSpan::AtLo,
+            Ordering::Greater => ArcSpan::Inside,
+            Ordering::Less => ArcSpan::Outside,
+        },
+        (false, false) => {
+            let x0 = ord(root, e_lo)?;
+            let x1 = ord(root, e_hi)?;
+            match (x0 == Ordering::Equal, x1 == Ordering::Equal) {
+                (true, true) => {
+                    // zero-span arc cannot stand
+                    #[cfg(test)]
+                    tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
+                    return None;
+                }
+                (true, false) => ArcSpan::AtLo,
+                (false, true) => ArcSpan::AtHi,
+                (false, false) => {
+                    let inside = match ord(e_lo, e_hi)? {
+                        Ordering::Less => x0 == Ordering::Greater && x1 == Ordering::Less,
+                        Ordering::Greater => x0 == Ordering::Greater || x1 == Ordering::Less,
+                        Ordering::Equal => {
+                            // zero-span arc cannot stand
+                            #[cfg(test)]
+                            tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
+                            return None;
+                        }
+                    };
+                    if inside {
+                        ArcSpan::Inside
+                    } else {
+                        ArcSpan::Outside
+                    }
+                }
+            }
+        }
+    })
+}
+
 pub(crate) fn point_in_mixed_ring(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -2967,6 +3051,15 @@ pub(crate) mod tie_probe {
         TangentAtEnd,
         ZeroSpanArc,
         Other,
+        /// The lateral road's abstentions (cell ②-b): the crossing on a whole-circle rim, on an
+        /// arc, on a ruling piece; an arc whose ends name no ⊥ class (a tilted cut, M6-3); a
+        /// loop edge the road cannot read (a plane carrier on a lateral, a corner without a
+        /// wall class).
+        OnRim,
+        OnArc,
+        OnRuling,
+        TiltedArc,
+        Producer,
     }
 
     pub(crate) static ROWS: Mutex<Vec<(String, Tie)>> = Mutex::new(Vec::new());
@@ -3005,6 +3098,13 @@ pub(crate) mod tie_probe {
         LAST.with(|c| c.set(Some(t)));
     }
 
+    /// A row recorded at once — the lateral road has no wrapper to flush `LAST`.
+    pub(crate) fn push(t: Tie) {
+        ROWS.lock()
+            .expect("the probe's lock is never held across a panic")
+            .push((std::thread::current().name().unwrap_or("?").to_string(), t));
+    }
+
     /// The rows recorded since `from` (a snapshot of `ROWS.len()`), as a histogram by kind.
     pub(crate) fn since(from: usize) -> Vec<(Tie, usize)> {
         let rows = ROWS
@@ -3041,13 +3141,10 @@ fn point_in_mixed_ring_inner(
     probe: &[nacre_scalar::Rat; 3],
     ring: &[RingEdge],
 ) -> Option<bool> {
-    use core::cmp::Ordering;
     use nacre_geom::intersect::{ray_step_crossing, ray_straddle};
     use nacre_scalar::Orient;
     use nacre_scalar::Rat;
-    use nacre_scalar::quad::{
-        CylinderMeet, MeetLine, QuadVal, SeamOrder, circular_order_about_seam,
-    };
+    use nacre_scalar::quad::{CylinderMeet, MeetLine, QuadVal};
     let n = [wc_coeffs[0], wc_coeffs[1], wc_coeffs[2]];
     let chart = Chart2dRat::of_normal(&n)?;
     let (e1, e2) = chart.axes();
@@ -3188,38 +3285,6 @@ fn point_in_mixed_ring_inner(
                     // span test collapses to one comparison against the other end. Only a
                     // seam-incident **root** — the crossing at the joint itself — abstains.
                     let rootp = (line.clone(), root);
-                    let on_seam = |p: &(nacre_scalar::quad::MeetLine, QuadVal)| -> Option<bool> {
-                        match circular_order_about_seam(
-                            &o,
-                            &m,
-                            &arc.def.ref_dir(),
-                            (&p.0, &p.1),
-                            (&p.0, &p.1),
-                        )? {
-                            SeamOrder::SeamIncident { first, .. } => Some(first),
-                            SeamOrder::Ordered(_) => Some(false),
-                        }
-                    };
-                    let ord = |p: &(nacre_scalar::quad::MeetLine, QuadVal),
-                               qq: &(nacre_scalar::quad::MeetLine, QuadVal)|
-                     -> Option<Ordering> {
-                        match circular_order_about_seam(
-                            &o,
-                            &m,
-                            &arc.def.ref_dir(),
-                            (&p.0, &p.1),
-                            (&qq.0, &qq.1),
-                        )? {
-                            SeamOrder::Ordered(o) => Some(o),
-                            SeamOrder::SeamIncident { .. } => None,
-                        }
-                    };
-                    if on_seam(&rootp)? {
-                        // the root is the joint itself — a tie
-                        #[cfg(test)]
-                        tie_probe::mark(tie_probe::Tie::SeamRoot);
-                        return None;
-                    }
                     // ★ **A root at the arc's own end is the corner on the ray in the arc's
                     // clothing**, and it takes the rule the line steps and the planar roads take
                     // (`ray_step_crossing`): the corner is counted by the step that leaves it
@@ -3247,67 +3312,16 @@ fn point_in_mixed_ring_inner(
                         tie_probe::arc_end_decided();
                         Some(ray_step_crossing(Orient::Zero, ty, ty) == Some(true))
                     };
-                    let contained = match (on_seam(&e_lo)?, on_seam(&e_hi)?) {
-                        // Two seam ends would be one point twice — upstream refuses it.
-                        (true, true) => {
-                            #[cfg(test)]
-                            tie_probe::mark(tie_probe::Tie::TwoSeamEnds);
-                            return None;
-                        }
-                        // From the seam CCW to `hi`: chart order θ ∈ (0, θ_hi).
-                        //
-                        // ★★★★★ **`Equal` used to be read as "outside the span"** — a root on
-                        // the arc's own end counted nothing, silently: a confident wrong answer,
-                        // not an abstention. Then the three arms abstained on it alike; now they
-                        // decide it alike (`departs_across`). Only the seam end is unreachable (a
-                        // seam-incident `rootp` already returned above), so the **other** end is
-                        // exactly what can coincide, and `ord` answers it totally. **Three arms,
-                        // one convention.**
-                        (true, false) => {
-                            let c = ord(&rootp, &e_hi)?;
-                            if c == Ordering::Equal {
-                                departs_across(&e_hi, false)?
-                            } else {
-                                c == Ordering::Less
-                            }
-                        }
-                        // From `lo` CCW back to the seam: θ ∈ (θ_lo, 2π).
-                        (false, true) => {
-                            let c = ord(&rootp, &e_lo)?;
-                            if c == Ordering::Equal {
-                                departs_across(&e_lo, true)?
-                            } else {
-                                c == Ordering::Greater
-                            }
-                        }
-                        (false, false) => {
-                            let x0 = ord(&rootp, &e_lo)?;
-                            let x1 = ord(&rootp, &e_hi)?;
-                            match (x0 == Ordering::Equal, x1 == Ordering::Equal) {
-                                (true, true) => {
-                                    // zero-span arc cannot stand
-                                    #[cfg(test)]
-                                    tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
-                                    return None;
-                                }
-                                (true, false) => departs_across(&e_lo, true)?,
-                                (false, true) => departs_across(&e_hi, false)?,
-                                (false, false) => match ord(&e_lo, &e_hi)? {
-                                    Ordering::Less => {
-                                        x0 == Ordering::Greater && x1 == Ordering::Less
-                                    }
-                                    Ordering::Greater => {
-                                        x0 == Ordering::Greater || x1 == Ordering::Less
-                                    }
-                                    Ordering::Equal => {
-                                        // zero-span arc cannot stand
-                                        #[cfg(test)]
-                                        tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
-                                        return None;
-                                    }
-                                },
-                            }
-                        }
+                    // ★★★★★ **`Equal` used to be read as "outside the span"** — a root on the
+                    // arc's own end counted nothing, silently: a confident wrong answer, not an
+                    // abstention. Then the three arms abstained on it alike; now they decide it
+                    // alike (`departs_across`), and the span itself is one spelling
+                    // (`arc_span`) the lateral road reads too.
+                    let contained = match arc_span(&arc.def, &e_lo, &e_hi, &rootp)? {
+                        ArcSpan::Inside => true,
+                        ArcSpan::Outside => false,
+                        ArcSpan::AtLo => departs_across(&e_lo, true)?,
+                        ArcSpan::AtHi => departs_across(&e_hi, false)?,
                     };
                     if contained {
                         inside = !inside;
@@ -3352,12 +3366,44 @@ pub(crate) enum BoundEdges {
     /// A whole circle, by the cylinder whose surface it rides — a disk face's outer bound, or a
     /// bored face's hole. Boxed for the same reason [`CompSurf::Cylinder`] is.
     Circle(Box<nacre_topo::CylinderDef>),
-    /// A lateral band's boundary: the two plane classes its rims sit on.
-    Band { lo: usize, hi: usize },
-    /// A lateral face's boundary the ray does not count — a panel or hole ring on the cylinder,
-    /// or a band with a chain rim. Every consumer abstains on it (`Ok(None)`), by name rather
-    /// than by a projection the face does not have.
-    Lateral,
+    /// A lateral face's **whole** boundary as loops on the cylinder's chart — a band's two rims,
+    /// a panel's ring, a chain rim, the holes — outer and holes alike in one list (cell ②-b).
+    ///
+    /// ★ One list and not «outer, then holes» because the chart is an annulus: a loop that
+    /// wraps the cylinder has no inside, and a face between two chain rims is emitted as
+    /// `Ring(outer)` + `inner = [the other chain]` by the region walk. What is true for every
+    /// shape is the parity: a point of the cylinder is on the face iff the ray up the axis from
+    /// it crosses the loops an odd number of times ([`loop_parity`]).
+    Lateral(Vec<LateralLoop>),
+}
+
+/// One boundary loop of a lateral face on the cylinder's chart `(θ, z)`.
+#[derive(Clone, Debug)]
+pub(crate) enum LateralLoop {
+    /// A whole-circle rim: the plane class it rides (⊥ to the axis).
+    Circle(usize),
+    /// A ring of arcs (on ⊥ classes) and rulings (on ∥ classes), its corners branch names.
+    Ring(Vec<RingEdge>),
+}
+
+/// **Which reading of a lateral face the ray takes** — cell ②-b's stage 1a switch, deleted at
+/// the cutover. `Today` reads a band's two whole-circle rims as an axial span and abstains on
+/// every other loop set (`SpanAsk::MissOnly`); `Loops` reads every loop set by
+/// [`loop_parity`]. Production passes `Today`; the classification's shadow passes `Loops`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LateralRead {
+    Today,
+    /// Constructed by the classification's shadow only (`cfg(test)`) until the cutover.
+    #[cfg_attr(not(test), allow(dead_code))]
+    Loops,
+}
+
+/// The two whole-circle rims of a band, when the loop set is exactly that — `Today`'s span.
+fn band_of(loops: &[LateralLoop]) -> Option<[usize; 2]> {
+    match loops {
+        [LateralLoop::Circle(lo), LateralLoop::Circle(hi)] => Some([*lo, *hi]),
+        _ => None,
+    }
 }
 
 /// A component face's surface, as the ray needs it.
@@ -3382,7 +3428,8 @@ pub(crate) struct CompFace {
 }
 
 /// How a ray met one cylindrical face.
-enum CurvedHit {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CurvedHit {
     /// This many crossings lie on the **counted half** of the ray. ★ Which half that is belongs to
     /// the caller, not here: it hands in the plane, and this counts that plane's negative side.
     /// The two roads pick opposite halves — the named one counts behind its query, the coordinate
@@ -3460,10 +3507,11 @@ pub(crate) fn probe_in_component(
     cyls: &[crate::planes::WorkingCyl],
     probe: &Probe,
     faces: &[CompFace],
+    read: LateralRead,
 ) -> Result<Option<bool>, BoolError> {
     match probe {
-        Probe::Named(x) => point_in_component(jd, cyls, *x, faces),
-        Probe::Coord { p, dir } => point_in_faces_rat(jd, cyls, p, dir, faces),
+        Probe::Named(x) => point_in_component(jd, cyls, *x, faces, read),
+        Probe::Coord { p, dir } => point_in_faces_rat(jd, cyls, p, dir, faces, read),
     }
 }
 
@@ -3777,6 +3825,7 @@ pub(crate) fn point_in_faces_rat(
     p: &[nacre_scalar::Rat; 3],
     dir: &[nacre_scalar::Rat; 3],
     faces: &[CompFace],
+    read: LateralRead,
 ) -> Result<Option<bool>, BoolError> {
     use nacre_geom::intersect::{RingSide, point_in_ring_2d_rat};
     use nacre_scalar::Rat;
@@ -3805,18 +3854,27 @@ pub(crate) fn point_in_faces_rat(
             CompSurf::Cylinder(def) => {
                 #[cfg(test)]
                 holes_probe::asked(f);
-                // Solve before asking for bounds — the same fork the named road makes: a
-                // `Lateral` face answers `0` for a ray that misses its cylinder outright,
-                // and abstains on anything more.
-                let ask = match &f.outer {
-                    BoundEdges::Band { lo, hi } => SpanAsk::Band {
-                        span: [*lo, *hi],
-                        half: &ahead,
-                    },
-                    BoundEdges::Lateral => SpanAsk::MissOnly,
-                    _ => return Ok(None),
+                // A circle or polygon outer on a cylinder face has no producer; refusing to
+                // guess costs the caller another direction, never a wrong answer.
+                let BoundEdges::Lateral(loops) = &f.outer else {
+                    return Ok(None);
                 };
-                match cylinder_face_crossings(jd, [&line[0], &line[1]], def, ask) {
+                let hit = match read {
+                    // Solve before asking for bounds — the same fork the named road makes: a
+                    // face with no axial statement answers `0` for a ray that misses its
+                    // cylinder outright, and abstains on anything more.
+                    LateralRead::Today => {
+                        let ask = match band_of(loops) {
+                            Some(span) => SpanAsk::Band { span, half: &ahead },
+                            None => SpanAsk::MissOnly,
+                        };
+                        cylinder_face_crossings(jd, [&line[0], &line[1]], def, ask)
+                    }
+                    LateralRead::Loops => {
+                        lateral_face_crossings(jd, [&line[0], &line[1]], def, loops, &ahead)
+                    }
+                };
+                match hit {
                     Some(CurvedHit::Counted(k)) => {
                         count += k;
                         continue;
@@ -3903,7 +3961,7 @@ pub(crate) fn point_in_faces_rat(
                     })
                 }
                 BoundEdges::Circle(def) => Ok(point_in_disk(&x, def)),
-                BoundEdges::Band { .. } | BoundEdges::Lateral => Ok(None),
+                BoundEdges::Lateral(_) => Ok(None),
             }
         };
         let Some(material) = material_of(f, inside)? else {
@@ -3958,8 +4016,15 @@ fn curved_count(
     b: usize,
     c: usize,
     def: &nacre_topo::CylinderDef,
-    span: Option<[usize; 2]>,
+    loops: &[LateralLoop],
+    read: LateralRead,
 ) -> Result<Option<usize>, BoolError> {
+    // `Today`'s span: a band's two whole-circle rims, or nothing (the miss-only ask).
+    let span = match read {
+        LateralRead::Today => band_of(loops),
+        // The loops road always states the counted half.
+        LateralRead::Loops => Some([0, 0]),
+    };
     // ★ The cylinder gate refuses any class that is rotated or has no narrow rational name
     // (`planes.rs`), so in a boolean that has a cylinder these are always `Some`. A `None` here
     // would mean that gate let something through — assert it, then abstain rather than guess.
@@ -3997,14 +4062,236 @@ fn curved_count(
             Some((sp, half))
         }
     };
-    let ask = match &banded {
-        Some((sp, half)) => SpanAsk::Band { span: *sp, half },
-        None => SpanAsk::MissOnly,
+    let hit = match (read, &banded) {
+        (LateralRead::Loops, Some((_, half))) => {
+            lateral_face_crossings(jd, [&ca, &cb], def, loops, half)
+        }
+        (LateralRead::Loops, None) => None,
+        (LateralRead::Today, Some((sp, half))) => {
+            cylinder_face_crossings(jd, [&ca, &cb], def, SpanAsk::Band { span: *sp, half })
+        }
+        (LateralRead::Today, None) => {
+            cylinder_face_crossings(jd, [&ca, &cb], def, SpanAsk::MissOnly)
+        }
     };
-    Ok(match cylinder_face_crossings(jd, [&ca, &cb], def, ask) {
+    Ok(match hit {
         Some(CurvedHit::Counted(k)) => Some(k),
         Some(CurvedHit::Graze) | None => None,
     })
+}
+
+/// A rim's plane restated with the **axis** as its normal — `[m, −m·(o + t·m)]`, so
+/// [`nacre_scalar::quad::plane_side`] at a point of the cylinder is the sign of `z − t` along
+/// the axis. The banded arm has always built it this way; the loops road builds it for every
+/// ⊥ class it meets.
+fn rim_plane(
+    def: &nacre_topo::CylinderDef,
+    t: nacre_scalar::Rat,
+) -> Option<[nacre_scalar::Rat; 4]> {
+    let (o, m) = (def.origin(), def.dir());
+    let mut d0 = nacre_scalar::Rat::from_int(0);
+    for k in 0..3 {
+        let at = o[k].checked_add(t.checked_mul(m[k])?)?;
+        d0 = d0.checked_sub(m[k].checked_mul(at)?)?;
+    }
+    Some([m[0], m[1], m[2], d0])
+}
+
+/// The axis parameter of the ⊥ class among a branch corner's two naming planes — the `z` of
+/// the arc that ends there, or of a ruling piece's end. Exactly one of the two is ⊥ in this
+/// population (two ⊥ planes never meet, and [`crate::planes::axis_param_of_plane`] answers only
+/// for `n · m ≠ 0`); `None` names a corner without one — a tilted cut (M6-3) or a three-plane
+/// name where a branch was expected.
+fn corner_axis_param(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    n: NodeId,
+) -> Option<nacre_scalar::Rat> {
+    let (planes, _, _) = branch_name(n)?;
+    planes
+        .iter()
+        .find_map(|&c| crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, c)?, def))
+}
+
+/// The ∥ (through-axis) class among a branch corner's naming planes — the wall a ruling piece
+/// ending there rides.
+fn corner_wall_class(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    n: NodeId,
+) -> Option<usize> {
+    let (planes, _, _) = branch_name(n)?;
+    planes.iter().copied().find(|&c| {
+        class_coeffs_rat(jd, c).and_then(|w| crate::arrangement::class_through_axis(&w, def))
+            == Some(true)
+    })
+}
+
+/// **Is the cylinder point `x` on the lateral face these loops bound?** — the parity of the
+/// ray up the axis from `x` against the boundary loops, on the chart `(θ, z)` (cell ②-b).
+///
+/// The rule is the planar rings' half-open rule read on this chart. A whole-circle rim is
+/// crossed iff it is above `x`. A ring's **arc** (z = const, a CCW span in θ) is crossed iff
+/// it is above `x` and `θ_x` is in its span — with a span end exactly at `θ_x` counted by the
+/// end the arc *leaves upward* (`+θ`): `lo` counts, `hi` does not
+/// ([`nacre_geom::intersect::ray_step_crossing`]`(Zero, ±, ±)`), and the ruling at that corner
+/// runs along the ray and never counts. A **ruling** piece is crossed by nothing; `x` on it is
+/// the boundary. Every comparison is one the arrangement already owns: `z` by
+/// [`nacre_scalar::quad::plane_side`] against [`rim_plane`], `θ` by [`arc_span`], a ruling by
+/// its own name (`plane_side(wall) == 0 ∧ ruling_side == side`, the predicate
+/// `crossing_on_ruling` names stations with).
+///
+/// `None` = `x` on the boundary (a rim, an arc, a ruling — `tie_probe` says which), a seam tie
+/// inside `arc_span`, a loop the road cannot read (a tilted arc, a plane carrier), or checked
+/// arithmetic running out. `z` is asked before `θ`: an arc below `x` needs no order, and that is
+/// what lets a ray whose seam-incident root has no arc above it answer.
+pub(crate) fn loop_parity(
+    jd: &Judge<'_, WorkingPlane>,
+    def: &nacre_topo::CylinderDef,
+    loops: &[LateralLoop],
+    meet: &nacre_scalar::quad::MeetLine,
+    s: &nacre_scalar::quad::QuadVal,
+) -> Option<bool> {
+    use nacre_scalar::Orient;
+    use nacre_scalar::quad::plane_side;
+    let above =
+        |t: nacre_scalar::Rat| -> Option<Orient> { Some(plane_side(&rim_plane(def, t)?, meet, s)) };
+    let mut crossings = 0usize;
+    for lp in loops {
+        match lp {
+            LateralLoop::Circle(c) => {
+                let t = crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, *c)?, def)?;
+                match above(t)? {
+                    // `z_x < t`: the rim is above the point, and the ray up the axis crosses it.
+                    Orient::Negative => crossings += 1,
+                    Orient::Positive => {}
+                    Orient::Zero => {
+                        #[cfg(test)]
+                        tie_probe::push(tie_probe::Tie::OnRim);
+                        return None;
+                    }
+                }
+            }
+            LateralLoop::Ring(edges) => {
+                for e in edges {
+                    match &e.carrier {
+                        Carrier::Arc(arc) => {
+                            let Some(t) = corner_axis_param(jd, def, e.node) else {
+                                #[cfg(test)]
+                                tie_probe::push(tie_probe::Tie::TiltedArc);
+                                return None;
+                            };
+                            let side = above(t)?;
+                            if side == Orient::Positive {
+                                continue; // the arc is below the point
+                            }
+                            let (lo_nd, hi_nd) = if arc.ccw {
+                                (e.node, e.to)
+                            } else {
+                                (e.to, e.node)
+                            };
+                            let e_lo = branch_meet(jd, arc.cyl, &arc.def, lo_nd)?;
+                            let e_hi = branch_meet(jd, arc.cyl, &arc.def, hi_nd)?;
+                            let span = arc_span(&arc.def, &e_lo, &e_hi, &(meet.clone(), *s))?;
+                            if side == Orient::Zero {
+                                // At the arc's own z: on the arc iff within its closed span.
+                                if span == ArcSpan::Outside {
+                                    continue;
+                                }
+                                #[cfg(test)]
+                                tie_probe::push(tie_probe::Tie::OnArc);
+                                return None;
+                            }
+                            if matches!(span, ArcSpan::Inside | ArcSpan::AtLo) {
+                                crossings += 1;
+                            }
+                        }
+                        Carrier::Ruling(rl) => {
+                            let (Some(t0), Some(t1)) = (
+                                corner_axis_param(jd, def, e.node),
+                                corner_axis_param(jd, def, e.to),
+                            ) else {
+                                #[cfg(test)]
+                                tie_probe::push(tie_probe::Tie::Producer);
+                                return None;
+                            };
+                            let (lo, hi) = if t0 <= t1 { (t0, t1) } else { (t1, t0) };
+                            // Outside the piece's closed axial range: not on it, whatever θ.
+                            if above(lo)? == Orient::Negative || above(hi)? == Orient::Positive {
+                                continue;
+                            }
+                            let Some(fc) = corner_wall_class(jd, def, e.node) else {
+                                #[cfg(test)]
+                                tie_probe::push(tie_probe::Tie::Producer);
+                                return None;
+                            };
+                            let w = class_coeffs_rat(jd, fc)?;
+                            if plane_side(&w, meet, s) == Orient::Zero
+                                && crate::arrangement::ruling_side(&w, def, (meet, s))
+                                    == Some(rl.side)
+                            {
+                                #[cfg(test)]
+                                tie_probe::push(tie_probe::Tie::OnRuling);
+                                return None;
+                            }
+                        }
+                        Carrier::Plane { .. } => {
+                            #[cfg(test)]
+                            tie_probe::push(tie_probe::Tie::Producer);
+                            return None;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Some(crossings % 2 == 1)
+}
+
+/// **Where the line `line[0] ∩ line[1]` crosses one lateral face, and how many of those lie on
+/// the half the caller is counting** — the loops road (cell ②-b), [`cylinder_face_crossings`]'
+/// successor. The solve and its non-generic arms are the same; each root then asks the face by
+/// [`loop_parity`] **before** the half — a root off the face is not a crossing whichever side
+/// it is on, and a root on the face at the ray's own origin is the query on the other
+/// component's surface (`Graze`), exactly the banded arm's order.
+pub(crate) fn lateral_face_crossings(
+    jd: &Judge<'_, WorkingPlane>,
+    line: [&[nacre_scalar::Rat; 4]; 2],
+    def: &nacre_topo::CylinderDef,
+    loops: &[LateralLoop],
+    half: &[nacre_scalar::Rat; 4],
+) -> Option<CurvedHit> {
+    use nacre_scalar::Orient;
+    use nacre_scalar::quad::{CylinderMeet, QuadVal};
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (meet, roots): (_, [QuadVal; 2]) =
+        match nacre_scalar::quad::plane_plane_cylinder(line[0], line[1], &o, &m, r)? {
+            CylinderMeet::Pair { line, s } => (line, s),
+            CylinderMeet::Tangent { .. } | CylinderMeet::OnRuling(_) => {
+                return Some(CurvedHit::Graze);
+            }
+            CylinderMeet::AxisParallelMiss(_) | CylinderMeet::Miss(_) => {
+                return Some(CurvedHit::Counted(0));
+            }
+            CylinderMeet::CoincidentPlanes | CylinderMeet::ParallelPlanes => {
+                return Some(CurvedHit::Graze);
+            }
+        };
+    let mut count = 0usize;
+    for s in &roots {
+        match loop_parity(jd, def, loops, &meet, s) {
+            // On the boundary, a seam tie, an unreadable loop, arithmetic out: this ray
+            // cannot count this face — the banded arm's `Graze` on a rim, generalized.
+            None => return Some(CurvedHit::Graze),
+            Some(false) => continue,
+            Some(true) => match nacre_scalar::quad::plane_side(half, &meet, s) {
+                Orient::Zero => return Some(CurvedHit::Graze),
+                Orient::Negative => count += 1,
+                Orient::Positive => {}
+            },
+        }
+    }
+    Some(CurvedHit::Counted(count))
 }
 
 /// What the caller can say about the face's extent, for [`cylinder_face_crossings`].
@@ -4012,7 +4299,7 @@ fn curved_count(
 /// ★ An enum rather than an `Option` so the miss-only ask cannot be misread as "no rims — count
 /// every root": carrying `half` only in the [`SpanAsk::Band`] arm makes `MissOnly`'s answers
 /// **structurally** {`Counted(0)`, `Graze`} — a genuine hit has nowhere to be counted.
-enum SpanAsk<'a> {
+pub(crate) enum SpanAsk<'a> {
     /// A banded face: two rim classes for the axial span, and the caller's half-plane for
     /// "which side of the origin counts".
     Band {
@@ -4050,7 +4337,7 @@ enum SpanAsk<'a> {
 /// `plus_t_is_above`'s doc records as having turned 36 tests red.
 ///
 /// `None` is checked-`Rat` arithmetic that could not answer — an honest decline, never a guess.
-fn cylinder_face_crossings(
+pub(crate) fn cylinder_face_crossings(
     jd: &Judge<'_, WorkingPlane>,
     line: [&[nacre_scalar::Rat; 4]; 2],
     def: &nacre_topo::CylinderDef,
@@ -4129,6 +4416,7 @@ pub(crate) fn point_in_component(
     cyls: &[crate::planes::WorkingCyl],
     query: [usize; 3],
     faces: &[CompFace],
+    read: LateralRead,
 ) -> Result<Option<bool>, BoolError> {
     let mut vplanes = query.to_vec();
     vplanes.sort_unstable();
@@ -4145,19 +4433,12 @@ pub(crate) fn point_in_component(
             if let CompSurf::Cylinder(def) = &f.surf {
                 #[cfg(test)]
                 holes_probe::asked(f);
-                // ★ Solve before asking for bounds: a face the axial arm cannot state (a
-                // panel, a chain rim — `Lateral`) still answers `0` when the ray misses its
-                // cylinder outright, and that weaker sentence is what lets a split result's
-                // label decide from a probe whose rays all run clear of the boss. A genuine
-                // hit on such a face stays an abstention — the next probe's business.
-                let span = match &f.outer {
-                    BoundEdges::Band { lo, hi } => Some([*lo, *hi]),
-                    BoundEdges::Lateral => None,
-                    // A circle or polygon outer on a cylinder face has no producer; refusing
-                    // to guess costs the caller another node, never a wrong answer.
-                    _ => return Ok(None),
+                // A circle or polygon outer on a cylinder face has no producer; refusing
+                // to guess costs the caller another node, never a wrong answer.
+                let BoundEdges::Lateral(loops) = &f.outer else {
+                    return Ok(None);
                 };
-                match curved_count(jd, a, b, c, def, span)? {
+                match curved_count(jd, a, b, c, def, loops, read)? {
                     Some(k) => {
                         count += k;
                         continue;
@@ -4199,8 +4480,8 @@ pub(crate) fn point_in_component(
                         }
                         BoundEdges::Circle(def) => Ok(node_coords_rat(jd, NodeId::three_planes(x))
                             .and_then(|p| point_in_disk(&p, def))),
-                        // A band bounds a cylinder, never a plane — a producer error, not an input.
-                        BoundEdges::Band { .. } | BoundEdges::Lateral => Ok(None),
+                        // Loops bound a cylinder, never a plane — a producer error, not an input.
+                        BoundEdges::Lateral(_) => Ok(None),
                     }
                 };
                 material_of(f, inside)
