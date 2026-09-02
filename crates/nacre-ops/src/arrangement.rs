@@ -10960,7 +10960,7 @@ mod tests {
             &[combinatorics::RingEdge],
         ),
     ) {
-        with_cut_rings([40.0, 40.0, 20.0], f);
+        with_cut_rings([40.0, 40.0, 20.0], false, f);
     }
 
     /// A plate `[0, plate]` with a z-cylinder (r = 5, h = 10) standing on its top at
@@ -10969,8 +10969,12 @@ mod tests {
     /// extent picks the cut: `[40, 40, 20]` bites with one wall (two digons); `[40, 24, 20]`
     /// with two — the corner `(40, 24)` sits inside the circle and both rings are trigons
     /// whose arc ends at the rational `(37, 24)`, off the seam and off the tangent columns.
+    /// `seam_off` states the cylinder exactly with `ref_dir = x`, so the seam sits at
+    /// `(45, 20)` — on no ring corner — instead of `add_cylinder`'s `−y`, which puts it on the
+    /// chord end `(40, 15)`.
     fn with_cut_rings(
         plate: [f64; 3],
+        seam_off: bool,
         f: impl FnOnce(
             &Judge<'_, WorkingPlane>,
             &[crate::planes::WorkingCyl],
@@ -10982,12 +10986,27 @@ mod tests {
     ) {
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(plate));
-        let b = m.add_cylinder(
-            Point3::from_array([40.0, 20.0, 20.0]),
-            Vector3::from_array([0.0, 0.0, 1.0]),
-            5.0,
-            10.0,
-        );
+        let b = if seam_off {
+            use nacre_scalar::Rat;
+            let r = Rat::from_int;
+            m.add_cylinder_exact(
+                [r(40), r(20), r(20)],
+                [r(0), r(0), r(1)],
+                [r(1), r(0), r(0)],
+                r(5),
+                r(10),
+                None,
+            )
+            .expect("an exact cylinder on an axis frame")
+            .0
+        } else {
+            m.add_cylinder(
+                Point3::from_array([40.0, 20.0, 20.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                5.0,
+                10.0,
+            )
+        };
         m.rebuild_adjacency();
         let PlaneSetup {
             planes: faces_tab,
@@ -11104,84 +11123,107 @@ mod tests {
     /// a global sign error cannot hide: two ends on one ray flip together and keep the parity
     /// (the bitten fixture's chord), one end on a ray does not. Every answer the sweep gives
     /// is the truth, the boundary abstains, and the arm decided the end exactly once per point
-    /// on the shooting side of that column, for both rings.
+    /// on the shooting side of that column, for both rings — under both seam placements, so
+    /// the seam-incident arms and the `(false, false)` arm each decide an end.
     #[test]
     fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
         use nacre_scalar::{Orient, Rat};
-        with_cut_rings([40.0, 24.0, 20.0], |jd, cyls, wc, _big, overhang, bite| {
-            let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
-            let def = cyls
-                .iter()
-                .map(|c| &c.def)
-                .find(|d| d.radius() == Rat::from_int(5))
-                .expect("the cut circle");
-            let decided0 = combinatorics::tie_probe::arc_end_decisions_here();
-            let (mut swept, mut abstained, mut inside_seen, mut boundary) = (0usize, 0, 0, 0);
-            let mut column = [0usize; 2];
-            let rat = |k: i128| Rat::new(k, 2).unwrap();
-            for i in 60..=100 {
-                for j in 20..=60 {
-                    let p = [rat(i), rat(j), Rat::from_int(20)];
-                    let radial = nacre_scalar::quad::cylinder_radial_side(
-                        &p,
-                        &def.origin(),
-                        &def.dir(),
-                        def.radius(),
-                    );
-                    let (x, y) = (p[0], p[1]);
-                    let (wx, wy) = (x == Rat::from_int(40), y == Rat::from_int(24));
-                    // Both rings' boundary: the circle and the two chords, `x = 40` for
-                    // `15 ≤ y ≤ 24` and `y = 24` for `37 ≤ x ≤ 40`, ends included.
-                    let on_chord = (wx && y >= Rat::from_int(15) && y <= Rat::from_int(24))
-                        || (wy && x >= Rat::from_int(37) && x <= Rat::from_int(40));
-                    if radial == Orient::Zero || on_chord {
-                        boundary += 1;
-                        for (ring, who) in [(bite, "bite"), (overhang, "overhang")] {
-                            assert_eq!(
-                                combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring),
-                                None,
-                                "{who} must abstain on its boundary at {p:?}"
+        for seam_off in [false, true] {
+            with_cut_rings(
+                [40.0, 24.0, 20.0],
+                seam_off,
+                |jd, cyls, wc, _big, overhang, bite| {
+                    let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
+                    let def = cyls
+                        .iter()
+                        .map(|c| &c.def)
+                        .find(|d| d.radius() == Rat::from_int(5))
+                        .expect("the cut circle");
+                    let decided0 = combinatorics::tie_probe::arc_end_decisions_here();
+                    let (mut swept, mut abstained, mut inside_seen, mut boundary) =
+                        (0usize, 0, 0, 0);
+                    let mut column = [0usize; 2];
+                    let rat = |k: i128| Rat::new(k, 2).unwrap();
+                    for i in 60..=100 {
+                        for j in 20..=60 {
+                            let p = [rat(i), rat(j), Rat::from_int(20)];
+                            let radial = nacre_scalar::quad::cylinder_radial_side(
+                                &p,
+                                &def.origin(),
+                                &def.dir(),
+                                def.radius(),
                             );
-                        }
-                        continue;
-                    }
-                    let in_disk = radial == Orient::Negative;
-                    let on_plate = x < Rat::from_int(40) && y < Rat::from_int(24);
-                    for (k, (ring, want, who)) in [
-                        (bite, in_disk && on_plate, "bite"),
-                        (overhang, in_disk && !on_plate, "overhang"),
-                    ]
-                    .into_iter()
-                    .enumerate()
-                    {
-                        match combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring) {
-                            Some(got) => {
-                                assert_eq!(got, want, "{who} at {p:?}");
-                                swept += 1;
-                                inside_seen += usize::from(want);
-                                if x == Rat::from_int(37) && radial == Orient::Positive {
-                                    column[k] += 1;
+                            let (x, y) = (p[0], p[1]);
+                            let (wx, wy) = (x == Rat::from_int(40), y == Rat::from_int(24));
+                            // Both rings' boundary: the circle and the two chords, `x = 40` for
+                            // `15 ≤ y ≤ 24` and `y = 24` for `37 ≤ x ≤ 40`, ends included.
+                            let on_chord = (wx && y >= Rat::from_int(15) && y <= Rat::from_int(24))
+                                || (wy && x >= Rat::from_int(37) && x <= Rat::from_int(40));
+                            if radial == Orient::Zero || on_chord {
+                                boundary += 1;
+                                for (ring, who) in [(bite, "bite"), (overhang, "overhang")] {
+                                    assert_eq!(
+                                        combinatorics::point_in_mixed_ring(
+                                            jd, cyls, &coeffs, &p, ring
+                                        ),
+                                        None,
+                                        "{who} must abstain on its boundary at {p:?}"
+                                    );
+                                }
+                                continue;
+                            }
+                            let in_disk = radial == Orient::Negative;
+                            let on_plate = x < Rat::from_int(40) && y < Rat::from_int(24);
+                            for (k, (ring, want, who)) in [
+                                (bite, in_disk && on_plate, "bite"),
+                                (overhang, in_disk && !on_plate, "overhang"),
+                            ]
+                            .into_iter()
+                            .enumerate()
+                            {
+                                match combinatorics::point_in_mixed_ring(
+                                    jd, cyls, &coeffs, &p, ring,
+                                ) {
+                                    Some(got) => {
+                                        assert_eq!(got, want, "{who} at {p:?}");
+                                        swept += 1;
+                                        inside_seen += usize::from(want);
+                                        if x == Rat::from_int(37) && radial == Orient::Positive {
+                                            column[k] += 1;
+                                        }
+                                    }
+                                    None => abstained += 1,
                                 }
                             }
-                            None => abstained += 1,
                         }
                     }
-                }
-            }
-            assert!(swept > 1_000, "answers swept: {swept}");
-            assert!(inside_seen > 100, "points inside a ring: {inside_seen}");
-            assert!(boundary > 0, "the grid meets the boundary: {boundary}");
-            // The `x = 37` column outside the circle: 24 lattice points, every one answered by
-            // both rings — the shooting side through the end, the other side by a miss — and
-            // the end decided exactly once per point on the shooting side: 12 × 2 rings.
-            assert_eq!(column, [24, 24], "the single-end column is answered");
-            assert_eq!(
-                combinatorics::tie_probe::arc_end_decisions_here() - decided0,
-                24,
-                "the arc-end arm decided the column's shooting side"
+                    assert!(swept > 1_000, "answers swept: {swept}");
+                    assert!(inside_seen > 100, "points inside a ring: {inside_seen}");
+                    assert!(boundary > 0, "the grid meets the boundary: {boundary}");
+                    // The `x = 37` column outside the circle: 24 lattice points, every one answered by
+                    // both rings — the shooting side through the end, the other side by a miss — and
+                    // the end decided exactly once per point on the shooting side: 12 × 2 rings.
+                    assert_eq!(column, [24, 24], "the single-end column is answered");
+                    let decided = combinatorics::tie_probe::arc_end_decisions_here() - decided0;
+                    eprintln!(
+                        "arc-end sweep (seam_off {seam_off}): swept {swept} abstained {abstained} \
+                 boundary {boundary} arc-end decisions {decided}"
+                    );
+                    // With the seam on the chord end `(40, 15)` (the `add_cylinder` build) the
+                    // `(true, false)` / `(false, true)` arms decide the `x = 37` column's shooting side:
+                    // 12 points × 2 rings. With the seam off every corner (`ref_dir = x`) both ends are
+                    // ordinary and the `(false, false)` arm decides — and the `x = 40` column's rays now
+                    // meet `(40, 15)` alone as well (its other root `(40, 25)` is the overhang's
+                    // interior), 12 more per ring, one of them a call that then abstains at the corner
+                    // `(40, 24)`; the column's seam-root abstentions are gone (182 → 160).
+                    assert_eq!(
+                        decided,
+                        if seam_off { 48 } else { 24 },
+                        "the arc-end arm decided the single-end rays (seam_off {seam_off})"
+                    );
+                },
             );
-            eprintln!("arc-end sweep: swept {swept} abstained {abstained} boundary {boundary}");
-        });
+        }
     }
 
     /// **On a ring whose every corner is rational, the mixed road and the chart road are one
