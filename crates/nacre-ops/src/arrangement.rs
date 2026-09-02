@@ -10836,13 +10836,14 @@ mod tests {
     /// non-mixed road's oracle cannot see an arc, and a whole circle's arm collapses to
     /// `Ordering::Equal` on a single step.
     ///
-    /// ☑ **What it does and does not reach, measured by reverting each guard in turn.** Removing
-    /// either "root at an arc end" abstention — the one the `(false, false)` arm has always had or
-    /// the two seam arms' — leaves this sweep **green**. On this fixture the chord's ends *are* the
-    /// seam, so `on_seam(root)` abstains first and the arc-end comparison is never the one that
-    /// speaks. The sweep is therefore a strong oracle for the mixed road as a whole and **not** a
-    /// watch on those guards; that is recorded rather than assumed. A fixture whose seam misses the
-    /// chord's ends is what would watch them, and is owed.
+    /// ☑ **What it does and does not reach, measured.** On this fixture the chord's ends are the
+    /// seam and the tangent columns, and a ray along the chord meets **both** arc ends at once —
+    /// so this sweep is green under a flipped arc-end departure sign (two ends on one ray flip
+    /// together and keep the parity) and green under the straight arm's old corner abstention
+    /// (cell ②'s negative controls, both measured). It is the oracle for the mixed road as a
+    /// whole — the straight arm, the arc arm and their junction on ordinary roots — and the
+    /// corner-bitten plate (`a_root_at_an_arc_end_is_a_corner_on_the_ray`) is the watch on the
+    /// arc-end arm, where a ray meets one end alone.
     #[test]
     fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
         use nacre_scalar::{Orient, Rat};
