@@ -7920,11 +7920,10 @@ pub(crate) fn boolean(
                 crate::cyl_chart::census(&jd, &cyls, kind, &faces, &curved, &rows, &lateral);
                 let mut faces = faces;
                 faces.extend(lateral?);
-                // ★ **And now the curved cleaning pass**, the coplanar one's sibling: a lateral
-                // surface arrives in as many pieces as the arrangement cut it into, and the
-                // circles between them bound nothing. It runs here rather than beside `unify`
-                // because its input is exactly what the line above just appended.
-                crate::boolean::unify_curved_faces(faces, &curved.cut_rims)
+                // ★ No curved cleaning pass follows (D5): the emitter's lateral faces are the
+                // regions of each chart already, so there is no phantom seam left to erase — the
+                // pass that used to run here measured `merged 0` over the suite and was deleted.
+                faces
             };
 
             let seam = seam_table(&faces, &cyls, &jd)?;

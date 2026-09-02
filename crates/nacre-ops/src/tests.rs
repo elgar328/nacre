@@ -3428,11 +3428,13 @@ fn the_mesh_covers_the_faces_it_approximates() {
 
 /// ★★★ **A boss standing on a wall has ONE lateral face, not three.**
 ///
-/// The band pass emits a lateral surface in as many pieces as the arrangement cut it into: the
-/// band under the plate, the half-band beside it, the band above. The two circles between those
-/// pieces bound **nothing** — the surface runs smooth across them — so drawn they are a line
-/// ringing a boss that has none, which is what a user reported seeing. `unify_curved_faces` erases
-/// them, and what is left is a band with one notch punched out of its side.
+/// The band pass used to emit a lateral surface in as many pieces as the arrangement cut it
+/// into: the band under the plate, the half-band beside it, the band above. The two circles
+/// between those pieces bound **nothing** — the surface runs smooth across them — so drawn they
+/// were a line ringing a boss that has none, which is what a user reported seeing. A cleaning
+/// pass (D4) erased them; since D5 the emitter builds the lateral as one **region** of its chart
+/// and there is nothing to erase — what comes out is a band with one notch punched out of its
+/// side.
 ///
 /// The negative controls are the point of the test: a boss standing on the middle of the plate
 /// really *is* two lateral faces (the plate interrupts it), and a bore really is one. Both must
@@ -10293,11 +10295,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         {
             let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
             for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
-                // D5 stage 0 (P2): the cleaning pass's abstentions, attributed to this cell.
-                let d40 = crate::boolean::probe::d4::ROWS
-                    .lock()
-                    .expect("the probe's lock is never held across a panic")
-                    .len();
                 let rg0 = crate::cyl_chart::probe::regions::ROWS
                     .lock()
                     .expect("the probe's lock is never held across a panic")
@@ -10356,17 +10353,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                     }
                 };
                 {
-                    let d4 = crate::boolean::probe::d4::ROWS
-                        .lock()
-                        .expect("the probe's lock is never held across a panic");
-                    for r in d4[d40..].iter().filter(|r| {
-                        r.outcome == Some(crate::boolean::CurvedAbstain::WrappingNotOneEach)
-                    }) {
-                        eprintln!(
-                            "P2 {name} {kind:?} x {tool_name}: members {} plus {} minus {}",
-                            r.members, r.stats.plus, r.stats.minus
-                        );
-                    }
                     let rg = crate::cyl_chart::probe::regions::ROWS
                         .lock()
                         .expect("the probe's lock is never held across a panic");

@@ -718,7 +718,9 @@ pub enum RejectReason {
     /// `chamber` sentence: a lateral cell whose two ends **disagree** about its chamber (☑ the
     /// (0,0)-corner boss, where the plate classes' disk cells carry no B material while the
     /// caps do — an arrangement label defect refused here instead of assembling an open shell),
-    /// and a cylinder class with no row or rows of both solids.
+    /// and a cylinder class with no row or rows of both solids. Since D5 (1a) the cell reader
+    /// raises it for a cell with a face whose **two ends both say nothing** — the span used to
+    /// answer «present» there, a guess; measured 0 once stations were placed by name.
     CylinderGateUndecided,
     /// **The trace does not determine whether a lateral face is present over a sector.**
     ///
@@ -880,9 +882,14 @@ pub enum RejectReason {
     /// very end; the population went green (the straddling boss builds — `bands`' fences) and
     /// the stopper was removed. What keeps the name alive are its two honest backstops:
     ///
-    /// * a **band with both rims cut** — only a whole-circle cell can arrive so (`emit_lateral`
-    ///   sends every other both-cut interval to the panel rings), a population measured 0
-    ///   (`whole_both_cut`), spelled in `band_loop` rather than assumed away;
+    /// * a **band rim spelled `Rim::Circle` on a cut circle** — since D5 the emitter spells a cut
+    ///   rim once, as the chain of its arcs, so `band_loop` reaching a whole-circle rim that the
+    ///   split cut is a producer inconsistency, spelled there rather than assumed away;
+    /// * the region walk's own two: a run along an **uncut** rim that is not the whole circle,
+    ///   and cycles whose winding does not classify into one lower and one upper rim with holes
+    ///   the assembly can bridge (`classify_cycles`' abstentions — a chain with more than two
+    ///   seam contacts, a hole meeting the seam at other than zero or two, two bridging holes;
+    ///   ☑ all measured 0 across the suite);
     /// * a **whole-disk bound on a cut circle** (`circle_loop`) — a producer inconsistency (the
     ///   trace subdivides a cut disk into cells), named honestly rather than as a dropped
     ///   crossing;
@@ -961,13 +968,19 @@ pub enum RejectReason {
     CurvedOperandBoundary,
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
     /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and
-    /// carriers) and the gate's record-and-pass arm opened (cell 4), so this name is now
+    /// carriers) and the gate's record-and-pass arm opened (cell 4), so this name is
     /// **reachable from production**. ★ Its first measured population — a boss whose **cap sits
-    /// inside the other body's material** (the half-height variant), which the band road's
-    /// `chamber` had no sector answer for — **builds since the D2b cutover** (the chart reads the
-    /// cell). What raises it today: the chart's emitter, for a run whose boundary ruling has no
-    /// node on a cut rim, a partial run with an uncut end, or an adjacent rim pair with no arc
-    /// row; and the assembly's standing guards — a class carrying both circles and rulings (the
+    /// inside the other body's material** (the half-height variant) — builds since the D2b
+    /// cutover, and its second — the crossing census's whole column of 15, a lateral region
+    /// that crosses a z-line transversally in one sector while ending on it in another, which
+    /// the band/panel vocabulary asked a corner node of that no class had — **builds since D5**
+    /// (the emitter walks regions of the chart; `cyl_chart::regions`).
+    ///
+    /// What raises it today is a **producer inconsistency**, never a shape: in the region walk,
+    /// a boundary run along a rim whose end is not one of the rim's nodes, a run along a ruling
+    /// the wall class's pieces do not tile, a cycle whose pieces do not chain end to end, or a
+    /// component with no outer cycle (☑ all measured 0 across the suite before the cutover);
+    /// and the assembly's standing guards — a class carrying both circles and rulings (the
     /// cross-axis pair), a segment lying *on* the lateral, and ruling end names that share no
     /// single plane. [`Self::ArcBoundNotYet`]'s straight sibling.
     RulingBoundNotYet,
@@ -1440,12 +1453,7 @@ mod zzz_ledger {
         eprintln!(
             "ledger D2b: rows {} refused_booleans {} cells {} end_swapped {} end_disk {} end_exact {} \
              end_other {} end_nocircle {} other_present {} src2_disagree {} src0_present {} exist_disagree {} \
-             read_refused {} exist_marks_false {} emit {} emit_unknown {} \
-             theta_merge_pairs {} z_merge_pairs {} \
-             partial_theta_in_disk_interval {} full_runs {} partial_runs {} \
-             run_boundary_no_node {} whole_both_cut {} whole_emitted {} \
-             run_split_at_node {} full_run_both_cut {} intervals_multi_run {} \
-             run_run_nonboundary {} z_merge_bandlike {} nocircle_present {} z_flip_nonboundary {} \
+             read_refused {} exist_marks_false {} emit {} emit_unknown {} nocircle_present {} \
              arcs_read {} exact_run_arcs {} arcs_no_mark {} arcs_multi_mark {} emitted_faces {}",
             d2b.len(),
             d2b.iter().filter(|r| r.emitter_refused).count(),
@@ -1463,21 +1471,7 @@ mod zzz_ledger {
             s(|r| r.exist_marks_false),
             s(|r| r.emit),
             s(|r| r.emit_unknown),
-            s(|r| r.theta_merge_pairs),
-            s(|r| r.z_merge_pairs),
-            s(|r| r.partial_theta_in_disk_interval),
-            s(|r| r.full_runs),
-            s(|r| r.partial_runs),
-            s(|r| r.run_boundary_no_node),
-            s(|r| r.whole_both_cut),
-            s(|r| r.whole_emitted),
-            s(|r| r.run_split_at_node),
-            s(|r| r.full_run_both_cut),
-            s(|r| r.intervals_multi_run),
-            s(|r| r.run_run_nonboundary),
-            s(|r| r.z_merge_bandlike),
             s(|r| r.nocircle_present),
-            s(|r| r.z_flip_nonboundary),
             s(|r| r.arcs_read),
             s(|r| r.exact_run_arcs),
             s(|r| r.arcs_no_mark),
@@ -1531,37 +1525,6 @@ mod zzz_ledger {
                 eprintln!("ledger D5-1a whole_disagree ×{n}: {k}");
             }
         }
-        for r in d2b
-            .iter()
-            .filter(|r| r.other_present > 0 || r.src0_present > 0)
-        {
-            eprintln!(
-                "ledger D5-P3: {} other_present {} src0_present {} emitter {:?}",
-                r.test, r.other_present, r.src0_present, r.emission_reason
-            );
-        }
-        let d4 = crate::boolean::probe::d4::ROWS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .clone();
-        let by =
-            |o: Option<crate::boolean::CurvedAbstain>| d4.iter().filter(|r| r.outcome == o).count();
-        use crate::boolean::CurvedAbstain as A;
-        {
-            let mut wnoe: Vec<(&str, usize)> = Vec::new();
-            for r in d4
-                .iter()
-                .filter(|r| r.outcome == Some(A::WrappingNotOneEach))
-            {
-                match wnoe.iter_mut().find(|(t, _)| *t == r.test) {
-                    Some((_, n)) => *n += 1,
-                    None => wnoe.push((&r.test, 1)),
-                }
-            }
-            for (t, n) in wnoe {
-                eprintln!("ledger D5-P2: wrapping_not_one_each {n} in {t}");
-            }
-        }
         {
             let rows = crate::cyl_chart::probe::regions::ROWS
                 .lock()
@@ -1584,43 +1547,5 @@ mod zzz_ledger {
                 eprintln!("ledger D5 refused: {} cyl {}", r.test, r.cyl);
             }
         }
-        let s4 = |f: fn(&crate::boolean::CurvedStats) -> usize| {
-            d4.iter().map(|r| f(&r.stats)).sum::<usize>()
-        };
-        let m4 = |f: fn(&crate::boolean::CurvedStats) -> usize| {
-            d4.iter().map(|r| f(&r.stats)).max().unwrap_or(0)
-        };
-        eprintln!(
-            "ledger D4: groups {} merged {} no_touch {} wrapping_not_one_each {} chain_contacts {} \
-             seam_unnamed {} winding {} hole_contacts {} bridging {} \
-             other_wall {} rim_single_node {} circle_bound {} overlap_or_triple {} pinch {} reentered {} \
-             short_cycle {} unthreaded {} plus {} minus {} holes_c0 {} holes_c2 {} holes_other {} \
-             chain_rims {} max_chain_contacts {} max_chain_crossings {}",
-            d4.len(),
-            by(None),
-            by(Some(A::NoTouch)),
-            by(Some(A::WrappingNotOneEach)),
-            by(Some(A::ChainContacts)),
-            by(Some(A::SeamUnnamed)),
-            by(Some(A::Winding)),
-            by(Some(A::HoleContacts)),
-            by(Some(A::Bridging)),
-            by(Some(A::OtherWall)),
-            by(Some(A::RimSingleNode)),
-            by(Some(A::CircleBound)),
-            by(Some(A::OverlapOrTriple)),
-            by(Some(A::Pinch)),
-            by(Some(A::Reentered)),
-            by(Some(A::ShortCycle)),
-            by(Some(A::Unthreaded)),
-            s4(|s| s.plus),
-            s4(|s| s.minus),
-            s4(|s| s.holes_c0),
-            s4(|s| s.holes_c2),
-            s4(|s| s.holes_other),
-            s4(|s| s.chain_rims),
-            m4(|s| s.max_chain_contacts),
-            m4(|s| s.max_chain_crossings),
-        );
     }
 }
