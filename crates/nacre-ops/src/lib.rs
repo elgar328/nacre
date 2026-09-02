@@ -829,12 +829,14 @@ pub enum RejectReason {
     /// there the probes existed and every one of them was blocked — by the mixed ring parity
     /// abstaining on a **corner on the ray**, which the planar roads had always decided (the
     /// half-open rule). Since that rule is spelled once and read by the mixed road too (cell ②,
-    /// 2026-09-02) the corner families' Fuse and Cut decide, and the crossing census raises this
-    /// reason in **four** cells: the corner Commons parted by a slab, a quarter cylinder whose
-    /// every witness (the axis point on the plate's corner edge, its wall edges' midpoints) lies
-    /// *on* a ring it is asked against — measured by kind, six probes of six at a corner. That
-    /// is the one abstention that is right, and its remedy is a witness strictly inside the
-    /// sector: the probe supply's rung, not the parity's.
+    /// 2026-09-02) the corner families' Fuse and Cut decide. The four cells left — the corner
+    /// Commons parted by a slab — were diagnosed «every witness on a ring», and that was wrong:
+    /// measured per attempt, two of each probe's three rays met the other half's **lateral**,
+    /// and a lateral bounded by anything but two whole circles could not say whether the
+    /// crossing was on it (the ray abstained by name). A lateral's boundary loops answer that on
+    /// the cylinder's own chart now (cell ②-b, 2026-09-03), and the crossing census raises this
+    /// reason nowhere; what can still exhaust a probe list is the probe on a ring, a tangent
+    /// ray, or a seam-incident root with an arc above it.
     ///
     /// ★★★★★ **That line used to end «with no firing population» for the last two, and that was
     /// the wrong half of the sentence.** The population was there and large; what it was not was
@@ -1579,31 +1581,6 @@ mod zzz_ledger {
                     .lock()
                     .expect("the probe's lock is never held across a panic")
             );
-            {
-                use crate::boolean::probe::shadow::Kind;
-                let rows = crate::boolean::probe::shadow::ROWS
-                    .lock()
-                    .expect("the probe's lock is never held across a panic")
-                    .clone();
-                let count = |k: Kind| rows.iter().filter(|r| r.1 == k).count();
-                eprintln!(
-                    "ledger C2b-1a: shadow rows {} agree {} shadow_decides {} shadow_alone {} \
-                     both_abstain {} shadow_abstains {} disagree {}",
-                    rows.len(),
-                    count(Kind::Agree),
-                    count(Kind::ShadowDecides),
-                    count(Kind::ShadowAlone),
-                    count(Kind::BothAbstain),
-                    count(Kind::ShadowAbstains),
-                    count(Kind::Disagree)
-                );
-                for (t, k) in rows
-                    .iter()
-                    .filter(|r| matches!(r.1, Kind::Disagree | Kind::ShadowAbstains))
-                {
-                    eprintln!("ledger C2b-1a {k:?}: {t}");
-                }
-            }
             eprintln!(
                 "ledger C2-P5: ring_in_ring swallowed non-abstention errors {}",
                 *crate::combinatorics::swallowed_probe::COUNT

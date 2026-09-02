@@ -664,52 +664,28 @@ fn group_faces(
     // node` arms retried both, so a real cause could masquerade as `NoClearRay` once every node
     // hit it. `Ok(None)` here means every node abstained; that being a reject is the *caller's*
     // proposition to raise.
-    //
-    // ★ Cell ②-b, stage 1a: the closure takes the lateral reading, production passes `Today`,
-    // and under `cfg(test)` every probe is asked once more with `Loops` — the shadow. The rows
-    // `(production, shadow)` per probe, and the call's eventual decision, are what the ledger
-    // compares: by the cut-cap cell's proposition «every probe of one component has one depth»
-    // (components do not cross), a shadow answer on a probe that abstained today must equal the
-    // decision a later probe made.
-    fn first_deciding<T: Clone + PartialEq + core::fmt::Debug>(
+    fn first_deciding<T>(
         probes: &[combinatorics::Probe],
-        mut f: impl FnMut(
-            &combinatorics::Probe,
-            combinatorics::LateralRead,
-        ) -> Result<Option<T>, BoolError>,
+        mut f: impl FnMut(&combinatorics::Probe) -> Result<Option<T>, BoolError>,
     ) -> Result<Option<T>, BoolError> {
         #[cfg(test)]
         let tie0 = combinatorics::tie_probe::len();
-        #[cfg(test)]
-        let mut shadow: Vec<(Option<T>, Option<T>)> = Vec::new();
         for (tried, x) in probes.iter().enumerate() {
             #[cfg(not(test))]
             let _ = tried;
-            let prod = f(x, combinatorics::LateralRead::Today)?;
-            #[cfg(test)]
-            {
-                let sh = f(x, combinatorics::LateralRead::Loops).ok().flatten();
-                shadow.push((prod.clone(), sh));
-            }
-            if let Some(v) = prod {
+            if let Some(v) = f(x)? {
                 #[cfg(test)]
-                {
-                    probe::deciding::record(tried + 1, probes.len(), true, Vec::new());
-                    probe::shadow::record(&shadow, Some(&v));
-                }
+                probe::deciding::record(tried + 1, probes.len(), true, Vec::new());
                 return Ok(Some(v));
             }
         }
         #[cfg(test)]
-        {
-            probe::deciding::record(
-                probes.len(),
-                probes.len(),
-                false,
-                combinatorics::tie_probe::since(tie0),
-            );
-            probe::shadow::record(&shadow, None);
-        }
+        probe::deciding::record(
+            probes.len(),
+            probes.len(),
+            false,
+            combinatorics::tie_probe::since(tie0),
+        );
         Ok(None)
     }
     // ★★ **Material or void is a question about nesting, not about normals.**
@@ -741,10 +717,10 @@ fn group_faces(
         // component. Trying them in turn is what the cavity search does, and for the same reason —
         // a node that grazes one component's boundary is a fact about that node, not about the
         // components.
-        let depth = first_deciding(&probes_of(c), |x, read| {
+        let depth = first_deciding(&probes_of(c), |x| {
             let mut d = 0usize;
             for other in (0..n).filter(|&o| o != c) {
-                match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[other], read)? {
+                match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[other])? {
                     Some(true) => d += 1,
                     Some(false) => {}
                     None => return Ok(None), // grazed — this node abstains
@@ -778,11 +754,10 @@ fn group_faces(
             for d in (0..n).filter(|c| !positives.contains(c)) {
                 // A cavity node that classifies cleanly against *every* material (one shared origin
                 // keeps the nesting consistent); its `true` materials nest, so take the innermost.
-                let containers = first_deciding(&probes_of(d), |x, read| {
+                let containers = first_deciding(&probes_of(d), |x| {
                     let mut cs = Vec::new();
                     for &m in &positives {
-                        match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[m], read)?
-                        {
+                        match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[m])? {
                             Some(true) => cs.push(m),
                             Some(false) => {}
                             None => return Ok(None), // grazed against a material — abstain
@@ -808,14 +783,8 @@ fn group_faces(
                                 if o == c {
                                     continue;
                                 }
-                                let v = first_deciding(&probes_of(c), |x, read| {
-                                    combinatorics::probe_in_component(
-                                        jd,
-                                        cyls,
-                                        x,
-                                        &comp_faces[o],
-                                        read,
-                                    )
+                                let v = first_deciding(&probes_of(c), |x| {
+                                    combinatorics::probe_in_component(jd, cyls, x, &comp_faces[o])
                                 })?
                                 .unwrap_or(false);
                                 inside.insert((c, o), v);
@@ -3078,48 +3047,6 @@ pub(crate) fn classify_cycles(
 /// where a tangent or boundary tie remains.
 #[cfg(test)]
 pub(crate) mod probe {
-    /// Cell ②-b stage 1a: the lateral loops road as a shadow of today's reading, per
-    /// classification call — `(test, kind, count)` where the kind is one of the five ways a
-    /// probe's two answers can relate to the call's decision.
-    pub(crate) mod shadow {
-        use std::sync::Mutex;
-        #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-        pub(crate) enum Kind {
-            /// Both roads answered, alike.
-            Agree,
-            /// Today abstained, the loops road answered what the call later decided.
-            ShadowDecides,
-            /// Today abstained, the loops road answered, and the call never decided (an
-            /// exhausted list) — the four census cells' shape.
-            ShadowAlone,
-            /// Both abstained.
-            BothAbstain,
-            /// Today answered and the loops road abstained.
-            ShadowAbstains,
-            /// The loops road answered something else than today or than the decision.
-            Disagree,
-        }
-        pub(crate) static ROWS: Mutex<Vec<(String, Kind)>> = Mutex::new(Vec::new());
-        pub(crate) fn record<T: PartialEq>(rows: &[(Option<T>, Option<T>)], decided: Option<&T>) {
-            let me = std::thread::current().name().unwrap_or("?").to_string();
-            let mut out = ROWS
-                .lock()
-                .expect("the probe's lock is never held across a panic");
-            for (prod, sh) in rows {
-                let kind = match (prod, sh, decided) {
-                    (Some(p), Some(s), _) if p == s => Kind::Agree,
-                    (Some(_), Some(_), _) => Kind::Disagree,
-                    (Some(_), None, _) => Kind::ShadowAbstains,
-                    (None, Some(s), Some(d)) if s == d => Kind::ShadowDecides,
-                    (None, Some(_), Some(_)) => Kind::Disagree,
-                    (None, Some(_), None) => Kind::ShadowAlone,
-                    (None, None, _) => Kind::BothAbstain,
-                };
-                out.push((me.clone(), kind));
-            }
-        }
-    }
-
     pub(crate) mod deciding {
         use crate::combinatorics::tie_probe::Tie;
         use std::sync::Mutex;

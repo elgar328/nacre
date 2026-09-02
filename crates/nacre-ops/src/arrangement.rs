@@ -10456,12 +10456,12 @@ mod tests {
     /// The other station, (40, 15), is the seam (`add_cylinder`'s `ref_dir` is −y): a
     /// seam-incident root with an arc above it is the one tie the loops road keeps.
     ///
-    /// The through build's rays are also the **banded arm's shadow**: on the two whole-circle
-    /// rims alone, today's «opposite sides of the two rim planes» and the loops road's
-    /// «exactly one rim above» must agree on every ray — every root, the graze on a rim
-    /// included — which is what licenses deleting that arm at the cutover (the suite's own
-    /// band hits are 0: the gate refuses a wall inside the strip, so no probe ray crosses a
-    /// band there).
+    /// ☑ The through build's rays were the **banded arm's shadow** before that arm was deleted
+    /// (cell ②-b, 1a): on the two whole-circle rims alone, its «opposite sides of the two rim
+    /// planes» and the loops road's «exactly one rim above» agreed on all 2,180 rays — every
+    /// root, the graze on a rim included. The suite's own band hits were 0 (the gate refuses a
+    /// wall inside the strip, so no probe ray crosses a band there); this lattice was the
+    /// only evidence, and is why the arm could go.
     #[test]
     fn the_lateral_parity_agrees_with_the_notch_it_bounds() {
         for staircase in [false, true] {
@@ -10574,11 +10574,6 @@ mod tests {
         };
         // on face, off (hole), boundary, tangent, station on-ruling, station on-face, seam ties
         let mut n = [0usize; 7];
-        let mut shadow_rays = 0usize;
-        let rim_loops: Vec<combinatorics::LateralLoop> = rims
-            .iter()
-            .map(|&c| combinatorics::LateralLoop::Circle(c))
-            .collect();
         let mut ask = |pa: [Rat; 4], pb: [Rat; 4], z0: Rat, station: bool| {
             let roots = match plane_plane_cylinder(&pa, &pb, &o, &mm, r).unwrap() {
                 CylinderMeet::Pair { line, s } => (line, s),
@@ -10607,28 +10602,6 @@ mod tests {
                     (Some(_), true, _) => n[5] += 1,
                 }
             }
-            // The banded arm's shadow (the through build — the staircase has one rim): the
-            // two rims alone, every root, the same half (behind the wall's plane, so one root
-            // counts when the band is crossed there).
-            if rims.len() == 2 {
-                let half = x40;
-                let old = combinatorics::cylinder_face_crossings(
-                    &jd,
-                    [&pa, &pb],
-                    def,
-                    combinatorics::SpanAsk::Band {
-                        span: [rims[0], rims[1]],
-                        half: &half,
-                    },
-                );
-                let new =
-                    combinatorics::lateral_face_crossings(&jd, [&pa, &pb], def, &rim_loops, &half);
-                assert_eq!(
-                    old, new,
-                    "the band as two circle loops, z0 {z0:?} station {station}"
-                );
-                shadow_rays += 1;
-            }
         };
         for k in 0..=108 {
             let z0 = ri(-12).checked_add(rat(k)).unwrap();
@@ -10641,7 +10614,7 @@ mod tests {
         }
         eprintln!(
             "lateral lattice (staircase {staircase}): on {} hole {} boundary {} tangent {} \
-             station on-ruling {} station on-face {} seam ties {} shadow rays {shadow_rays}",
+             station on-ruling {} station on-face {} seam ties {}",
             n[0], n[1], n[2], n[3], n[4], n[5], n[6]
         );
         assert!(

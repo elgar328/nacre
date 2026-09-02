@@ -10244,41 +10244,27 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // **unchanged**. The **mid** slab parts the Fuse and the Cut in two, and the severed
         // halves' depth classification casts its rays from the plate's corner — every ray met a
         // ring corner there, and the mixed parity abstained on it until a corner on the ray
-        // became a decision (cell ②): both build with two solids now. The Common is a quarter
-        // cylinder alone, and a **slab** through it still leaves two solids and no clear ray —
-        // not the corner rule any more but the **probe supply**: the quarter cylinder's own
-        // witnesses (the axis point on the plate's corner edge, its wall edges' midpoints) all
-        // lie *on* the plate's face rings, and a probe on the ring is the one abstention that is
-        // right. A witness strictly inside the sector is the next rung; the through-axis wall
-        // cuts the other way and leaves one solid.
+        // became a decision (cell ②). The Common is a quarter cylinder alone, and either slab
+        // (mid, or the wall slab — both z ∈ [½, 1½]) parts it in two; its halves' rays from the
+        // axis vertex crossed the *other* half's **lateral** — a panel the ray could not read
+        // («no axial statement», an abstention by name) — until a lateral's boundary loops
+        // answered the crossing question on the cylinder's own chart (cell ②-b): two solids,
+        // decided on the first attempt. The through-axis wall cuts the other way and leaves one.
         [
             [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
             [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
-            [
-                Rejected(NoClearRay),
-                Ok(1),
-                Ok(1),
-                Ok(1),
-                Rejected(NoClearRay),
-            ],
+            [Ok(2), Ok(1), Ok(1), Ok(1), Ok(2)],
         ],
         // corner-lo: its axis sits on **both** plate walls, so the chords through the circle are
         // radii and the sector outside the plate is reflex at the centre — the ring's true
         // extremum is in an arc, not at a node. Since the winding is read there the first op
         // builds (it was `First` for every tool), and the tools land on the roads the other
         // corner family sits on: the mid slab's Fuse and Cut decide at the corner (cell ②), the
-        // Common's witnesses are all the axis point — the corner of every ring they are asked
-        // against.
+        // Common's halves at the other half's lateral (cell ②-b).
         [
             [Ok(2), Ok(1), Ok(1), Ok(2), Ok(1)],
             [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
-            [
-                Rejected(NoClearRay),
-                Ok(1),
-                Ok(1),
-                Ok(0),
-                Rejected(NoClearRay),
-            ],
+            [Ok(2), Ok(1), Ok(1), Ok(0), Ok(2)],
         ],
         // offmid: the top slab's cap at z = 2.5 meets the notch's rulings above the plate — the
         // severed top piece has no vertex, its coordinate probe forks the other component's
@@ -10404,15 +10390,17 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 201, "{tally:?}");
+    assert_eq!(count(|c| matches!(c, Ok(_))), 205, "{tally:?}");
     // ★ `ring_in_ring`'s own refusals are **gone**: every one of them was a probe list that
     // started empty, and that fact now has its own name. What is left under this one is the other
     // road entirely — the 3D depth classification in `boolean.rs`, whose nodes really do run out.
     // ★ 8 → 4 (cell ②): the corner families' Fuse and Cut × mid decided once a corner on the
-    // ray stopped being a tie. The four left are the corner Commons parted by a slab, whose
-    // every witness lies on a ring (measured by kind: `ProbeOnStep` / `ProbeAtCorner`, six of
-    // six probes) — the probe supply's rung, not the parity's.
-    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 4);
+    // ray stopped being a tie. ★ 4 → 0 (cell ②-b): the corner Commons parted by a slab — the
+    // diagnosis «their witnesses lie on a ring» was wrong; measured per attempt, two of every
+    // probe's three rays met the other half's **lateral** and the face could not say whether the
+    // crossing was on it (`MissOnly`), and only the third met the cap's corner. The lateral reads
+    // its loops now. The name is gone from this corpus; a new population must restate this 0.
+    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 0);
     // ★ The name is gone from this corpus: every ring that had no witness was a wall panel, and a
     // panel's perpendicular traces are whole chords, which name their own midpoints. A new
     // population must restate this 0 — it is an emptiness of *this* corpus, not of the rule.
