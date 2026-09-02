@@ -16557,3 +16557,11 @@ D4 `unify_curved_faces`·`collect_pieces`·`erase_shared`·`thread`·`CurvedKey`
 
 ### 다음
 **항목 ②**: `point_in_mixed_ring`의 「광선 위의 코너」 반열림 규칙(가로지르는 census `NoClearRay` 8 = corner 가족 전부; 기존 네 벌의 다섯째 자리를 만들지 말고 한 철자로) · 그다음 **③ 벽∩옆면의 한 이차식**(오프셋 `0<d<r`이 D 위에서 차트 셀의 경계로 떨어지는지 «재고», 접선 `d=r`은 능력 C = validate의 곡면 비다양체 검사) · 강체 운동 불변 대조군 · `ObliqueCylinderCut`은 M6-3.
+
+### ☑ 자체 점검 (사용자 요청, 커밋 뒤) — 셋을 고쳤고 하나를 재서 확인했다
+- ★★★★ **관문 목록의 한 줄을 건너뛰었다**: 「reject-trace 사이트 집합 A/B(HEAD 기준선을 먼저 잰다)」를 커토버 뒤 한 번도 안 쟀다 — 플랜의 예측(«RBNY 사이트 소멸 외 무변»)이 미검증인 채로 문서까지 썼다. 이제 쟀다(`afc1c9c`를 임시 worktree에 두고 두 원장을 직렬 `--nocapture`로): `ruling_bound_not_yet@cyl_chart.rs` **15 → 0**(사이트 소멸) · `no_clear_ray@boolean.rs` 9 → 11(가로지르는 census의 corner Fuse × mid 두 칸 — 예측한 이름 이동 — 과 디스크 쪽 규칙 테스트 1) · 그 밖의 (사유, 파일) 집합과 카운트 **동일**. base의 `non_manifold_result_edge` 1건 차이는 `invariants::l_prism_cut_identity`(`proptest!`, 무작위 표본)의 잡음이라 D5와 무관.
+- ★★★★ **`--nocapture` 없는 원장 스윕이 0줄 — 세 번째 재발**(기록된 함정을 그대로 밟았다). 첫 A/B가 빈 표를 냈고, 빈 표를 «집합 동일»로 읽기 직전에 잡았다.
+- ★★★ 가로지르는 census에 «방출기가 거절하면 찍는» 출력이 남아 있었다 — 이제 절대 안 찍히는 죽은 계기. 지웠다.
+- ★★★ 보고 테스트 `the_cells_read_their_chamber_from_the_horizontal_lines`의 doc이 지운 등식 셋(`emitted_faces == whole_emitted + …`·`z_flip_nonboundary == 0`·`partial_theta_in_disk_interval == 0`)을 아직 불변으로 적고, `end_other`를 «미측정»이라 적고 있었다. 실측 문장(전부 `WholeDisagree`, 부재 셀; 한 절단 팔만 무인구)으로 고쳤다.
+- ☑ 걷기의 거절 자리 여덟(런 끝·타일·미연결·외곽 없음·미절단 림 부분 런·분류 기권)은 **전부 미실행**(그림자 원장 0·reject-trace에 사이트 없음) — 생산자 불일치 가드이므로 남긴다. `OtherWhy`의 다섯 팔(`SingleCut`·`Unplaced`·`OrderFailed`·`RowMissing`·`EmptyRun`)도 0 — 인구 없음으로 적어 둔다.
+- ☑ MEMORY.md가 한도(24.4 KB)를 넘어 일부만 로드되고 있었다 — 항목을 한 줄 105자로 깎아 23.9 KB. 옛 항목의 훅이 짧아졌다(내용은 각 파일에 있다).
