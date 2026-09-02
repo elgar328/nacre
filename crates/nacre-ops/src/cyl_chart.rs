@@ -116,8 +116,10 @@ type RulingName = (usize, i8);
 #[cfg(test)]
 type Run = (RulingName, RulingName, Option<(bool, bool)>);
 
-/// **Which of a wall's two rulings a branch node lies on** — `arrangement::ruling_side`, the one
-/// spelling the assembly's `Wall::Ruling { side }` reads (the band road's `side_at` read it too).
+/// **Which of a wall's two rulings a branch node lies on** — `arrangement::node_ruling_side`, the
+/// one spelling (`ruling_side` asked of a name) the assembly's `Wall::Ruling { side }` reads.
+/// ★ This used to be a second copy of that function's body (D5, 1a): the same `branch_meet` +
+/// `ruling_side`, spelled twice one module apart.
 ///
 /// ★★★★★ **Not the node's `QuadRoot`.** A `Branch` name's root is `Lo`/`Hi` along
 /// `ℓ = n₁ × n₂` of *its own* plane pair, so the same physical ruling reads `Hi` where its node
@@ -133,9 +135,14 @@ fn ruling_side_of(
     wall: usize,
     n: combinatorics::NodeId,
 ) -> Option<i8> {
+    // A ruling piece's node names this chart's own cylinder; a name of another cylinder has no
+    // side here (M6b's pair, which no piece carries today).
+    let (_, cyl, _) = combinatorics::branch_name(n)?;
+    if cyl != k {
+        return None;
+    }
     let w = combinatorics::class_coeffs_rat(jd, wall)?;
-    let (line, s) = combinatorics::branch_meet(jd, k, def, n)?;
-    crate::arrangement::ruling_side(&w, def, (&line, &s))
+    crate::arrangement::node_ruling_side(jd, def, &w, n)
 }
 
 /// **One cell of the chart** — an axis interval crossed with a θ-sector.
@@ -233,6 +240,30 @@ impl Chart {
     ) -> Option<RulingName> {
         let t = self.theta.get(i)?;
         Some((t.wall, ruling_side_of(jd, k, def, t.wall, t.end[0])?))
+    }
+
+    /// **A station's canonical name on a z-line** — `crossing_on_ruling(c, wall, k, side)`: the
+    /// very name `ruling_sweep` gives a piece ending on that line and `split_circles` gives a rim
+    /// node there (`NodeId::branch` folds the pair and the root), so «does this rim carry this
+    /// station» is **name equality**, and a station the rim does not carry joins the θ order under
+    /// the name a piece ending there would have worn.
+    ///
+    /// ★★★★★ **Not a node of another line** (D5, 1a). The chart used to place such a station by
+    /// its piece's `end[0]` — a node on a *different* z-line at the same θ — and where the rim did
+    /// carry the station (a tool wall crossing the circle there), `circular_order` was handed one
+    /// point under two names and refused it as the coincidence it checks for. Every one of those
+    /// ends read `End::Other` (dev-log's Q2 «한 점 두 이름»; ledger `end_other` 321), and the
+    /// crossing census's whole `RulingBoundNotYet` column read its rims that way.
+    fn station_on(
+        &self,
+        jd: &Judge<'_, WorkingPlane>,
+        k: usize,
+        def: &nacre_topo::CylinderDef,
+        c: usize,
+        i: usize,
+    ) -> Option<combinatorics::NodeId> {
+        let (wall, side) = self.ruling_name(jd, k, def, i)?;
+        crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, side).ok()
     }
 }
 
@@ -436,6 +467,41 @@ impl End<'_> {
     }
 }
 
+/// **Why an end reads `Other`** — one name per `None` site of [`Chart::arc_around`] and per
+/// `Other` arm of the whole-circle read, so the ledger's `end_other` is a table of causes rather
+/// than one number (D5, 1a). The enum lives outside the instrument because the sites that name a
+/// cause are production code; the counting is `cfg(test)` (`probe::other`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+// The whole-circle arms record only under `cfg(test)`, so two variants are built nowhere in a
+// release build — stated per build rather than blanket-allowed, the `RulingExtent` precedent.
+#[cfg_attr(not(test), allow(dead_code))]
+pub(crate) enum OtherWhy {
+    /// Both walls one ruling: the sector is the whole circle less that ruling.
+    SingleCut,
+    /// A wall's station could not be named or placed in the order.
+    Unplaced,
+    /// `circular_order` refused the rim nodes plus the stations.
+    OrderFailed,
+    /// A run arc between two adjacent rim nodes is not among the split's arcs.
+    RowMissing,
+    /// The sector's two ends land on one rim node — no arc between them.
+    EmptyRun,
+    /// A whole-circle cell over a cut rim whose arcs disagree for this side.
+    WholeDisagree,
+    /// A whole-circle cell over a cut rim with no arcs at all.
+    WholeNoArcs,
+}
+
+/// `arc_around`'s `None`, with its reason counted: every `End::Other` the suite still produces
+/// is named at the site that produced it, so «what is left» is a table and not a guess.
+fn other_none<'a>(why: OtherWhy) -> Option<Vec<&'a ArcLabel>> {
+    #[cfg(test)]
+    probe::other::record(why);
+    #[cfg(not(test))]
+    let _ = why;
+    None
+}
+
 /// One cell, read.
 /// `ends`, `src2_disagree` and `exist_disagree` are the census's readers; production reads
 /// `chamber`, `present` and `emit` (the emitter) and pays for the rest only as a copy.
@@ -516,60 +582,74 @@ impl Chart {
     /// has four rulings, and three sectors lie inside the long arc).
     ///
     /// The θ order is asked of `arrangement::circular_order`, the one spelling the cells' own
-    /// order comes from — never of a coordinate. A ruling with no node here is placed by its end
-    /// node on another line (a ruling is vertical, so the θ is the same); a ruling *with* a node
-    /// here is that node, so no point is handed to the order twice. The run is the rim nodes from
-    /// the nearest one at or before `x` to the nearest at or after `y`, walked CCW — one arc when
-    /// no rim node lies strictly inside the sector, and every arc it spans when some do. `None`
-    /// when that walk yields no arc at all: the sector is the whole circle less one ruling, or
-    /// the order cannot be formed, or a row of the run is not among `arcs`. ★ That last one is
-    /// **silent here and named at the adjacent-pair site** (`RulingBoundNotYet`): a `None` falls
-    /// back to the axial span, which is the conservative road, not a wrong answer — but the two
-    /// sites state the same missing row differently, and that is worth one road one day.
+    /// order comes from — never of a coordinate. A ruling's station on this line is its **name**
+    /// ([`Chart::station_on`]): a ruling with a piece ending here is that piece's node, one
+    /// without is the same canonical name a piece would have carried — and either way the rim
+    /// is searched by name equality, so no point is handed to the order twice. The run is the
+    /// rim nodes from the nearest one at or before `x` to the nearest at or after `y`, walked
+    /// CCW — one arc when no rim node lies strictly inside the sector, and every arc it spans
+    /// when some do. `None` when that walk yields no arc at all: the sector is the whole circle
+    /// less one ruling, or the order cannot be formed, or a row of the run is not among `arcs`.
+    /// ★ That last one is **silent here and named at the adjacent-pair site**
+    /// (`RulingBoundNotYet`): a `None` falls back to the axial span, which is the conservative
+    /// road, not a wrong answer — but the two sites state the same missing row differently, and
+    /// that is worth one road one day.
     #[allow(clippy::too_many_arguments)]
     fn arc_around<'a>(
         &self,
         jd: &Judge<'_, WorkingPlane>,
         k: usize,
         def: &nacre_topo::CylinderDef,
+        c: usize,
         t: Rat,
         x: usize,
         y: usize,
         rim: &crate::arrangement::CutRim,
         arcs: &'a [ArcLabel],
     ) -> Option<Vec<&'a ArcLabel>> {
+        use OtherWhy as Why;
         let m = rim.nodes.len();
         if x == y && m >= 2 {
-            return None;
+            return other_none(Why::SingleCut);
         }
         let mut list: Vec<combinatorics::NodeId> = rim.nodes.clone();
         let mut index_of = |i: usize| -> Option<usize> {
-            // ★ A ruling's station is placed by θ whether or not the rim's own arc decomposition
-            // happens to hold it. A ruling with a node **on this line** that the rim does not
-            // list is the same shape as one with no node here at all — the wall's face stops
-            // short of the rim — so it takes the same road: the station joins the order as
-            // itself, and the search below asks which arc contains it. Reading `position`'s
-            // `None` as "unnameable" was what left those sectors `End::Other`.
-            match self.node_on(i, t) {
-                Some(n) => match rim.nodes.iter().position(|&r| r == n) {
-                    Some(p) => Some(p),
-                    None => {
-                        list.push(n);
-                        Some(list.len() - 1)
-                    }
-                },
+            // A station the rim's own arc decomposition does not hold — the wall's face stops
+            // short of the rim — joins the order as itself, under its canonical name, and the
+            // search below asks which arc contains it. ★ It used to join under a node of
+            // *another* line ([`Chart::station_on`]'s note), which the order refused wherever
+            // the rim did hold the station.
+            let n = match self.node_on(i, t) {
+                Some(n) => n,
+                None => self.station_on(jd, k, def, c, i)?,
+            };
+            match rim.nodes.iter().position(|&r| r == n) {
+                Some(p) => Some(p),
                 None => {
-                    list.push(self.theta[i].end[0]);
+                    list.push(n);
                     Some(list.len() - 1)
                 }
             }
         };
-        let ix = index_of(x)?;
-        let iy = if x == y { ix } else { index_of(y)? };
-        let (order, _) = crate::arrangement::circular_order(jd, k, def, &list).ok()?;
+        let Some(ix) = index_of(x) else {
+            return other_none(Why::Unplaced);
+        };
+        let iy = if x == y {
+            ix
+        } else {
+            match index_of(y) {
+                Some(i) => i,
+                None => return other_none(Why::Unplaced),
+            }
+        };
+        let Ok((order, _)) = crate::arrangement::circular_order(jd, k, def, &list) else {
+            return other_none(Why::OrderFailed);
+        };
         let n = order.len();
         let pos = |li: usize| order.iter().position(|&o| o == li);
-        let (px, py) = (pos(ix)?, pos(iy)?);
+        let (Some(px), Some(py)) = (pos(ix), pos(iy)) else {
+            return other_none(Why::Unplaced);
+        };
         let is_rim = |p: usize| order[p] < m;
         // The run's ends: the nearest rim node at or before `x` (clockwise), and at or after `y`.
         let (mut a, mut b) = (px, py);
@@ -599,12 +679,18 @@ impl Chart {
                 q
             };
             let (na, nb) = (list[order[cur]], list[order[nxt]]);
-            run.push(arcs.iter().find(|arc| arc.ends == [na, nb])?);
+            let Some(arc) = arcs.iter().find(|arc| arc.ends == [na, nb]) else {
+                return other_none(Why::RowMissing);
+            };
+            run.push(arc);
             cur = nxt;
         }
         // `a == b` means the sector's ends land on one rim node: no arc separates them, and the
         // caller has nothing to read here.
-        (!run.is_empty()).then_some(run)
+        if run.is_empty() {
+            return other_none(Why::EmptyRun);
+        }
+        Some(run)
     }
 
     /// **Read one cell off the horizontal lines** — the function the cutover will call, measured
@@ -665,13 +751,26 @@ impl Chart {
                         // *this* interval's side (the other half of a label is the neighbour's).
                         let mut bits: Option<(bool, bool)> = None;
                         let mut same = true;
+                        #[cfg(test)]
+                        let mut seen: Vec<(bool, bool)> = Vec::new();
                         for a in arcs {
                             let b = crate::bands::read_bits(&a.label, side, above[e]);
                             same &= bits.replace(b).is_none_or(|p| p == b);
+                            #[cfg(test)]
+                            seen.push(b);
                         }
                         match (same, arcs.first()) {
                             (true, Some(a)) => End::Disk(a.label),
-                            _ => End::Other,
+                            (false, _) => {
+                                #[cfg(test)]
+                                probe::other::record_whole(k, t[e], e, above[e], seen);
+                                End::Other
+                            }
+                            (true, None) => {
+                                #[cfg(test)]
+                                probe::other::record(OtherWhy::WholeNoArcs);
+                                End::Other
+                            }
                         }
                     }
                     Some([x, y]) => {
@@ -693,7 +792,7 @@ impl Chart {
                                 End::Exact(arc)
                             }
                             _ => self
-                                .arc_around(jd, k, def, t[e], x, y, rim, arcs)
+                                .arc_around(jd, k, def, c, t[e], x, y, rim, arcs)
                                 .map_or(End::Other, End::Exact),
                         }
                     }
@@ -812,6 +911,17 @@ impl Chart {
             if by_marks.replace(v).is_some_and(|p| p != v) {
                 return Err(reject(RejectReason::CylinderFaceUndecided));
             }
+        }
+        // ★★★★★ **Two silent ends and a span that says «present» is not read as present** (D5,
+        // 1a). The span knows no θ, so over a cell whose both cut ends could not be paired with
+        // their rims it used to claim the face was there — the guess that put a face over a hole
+        // in the corner boss × mid slab, caught only because the emitter refused that class one
+        // step later. With stations placed by name (`station_on`) no cell in the suite reaches
+        // here (`src0_present` 14 → 0, the census's record-site assertion made structural), so
+        // this is a guard on the reader's premise and the name is the chart's own for a cell it
+        // cannot read.
+        if by_marks.is_none() && by_span && ends.iter().all(|e| matches!(e, End::Other)) {
+            return Err(reject(RejectReason::CylinderGateUndecided));
         }
         // ★ The span is the coarser truth: a holed lateral's row spans the hole, and the trace is
         // what says the face is *not* there (cell ㉒'s population — `exist_marks_false`). So the
@@ -1229,7 +1339,7 @@ pub(crate) fn census(
                 }
             }
         }
-        for r in &reads {
+        for (r, cell) in reads.iter().zip(&cells) {
             for e in &r.ends {
                 match e {
                     End::Disk(_) => d2b.end_disk += 1,
@@ -1237,7 +1347,15 @@ pub(crate) fn census(
                         d2b.end_exact += 1;
                         d2b.exact_run_arcs += a.len() - 1;
                     }
-                    End::Other => d2b.end_other += 1,
+                    End::Other => {
+                        d2b.end_other += 1;
+                        // D5, 1a: with stations placed by name the only `Other` left should be
+                        // the single-cut sector (both walls one ruling — `arc_around`'s first
+                        // return); anything else is counted apart so it can be named.
+                        if cell.walls.is_some_and(|[x, y]| x == y) {
+                            d2b.end_other_single_cut += 1;
+                        }
+                    }
                     End::NoCircle => d2b.end_nocircle += 1,
                 }
             }
@@ -1325,6 +1443,24 @@ pub(crate) fn census(
         assert!(
             d2b.src0_present == 0 || emission.is_err(),
             "a cell with a face has no label at either end and the emitter read it: cyl {k}"
+        );
+        // ★★★★★ **A cell with a face never has an end that says nothing** (D5, 1a) — promoted
+        // from a count the suite measured 60 → **0** once stations were placed by name. What
+        // `Other` still means is a whole-circle interval *beyond* a face's span whose cut rim's
+        // arcs disagree about the far side (the other solid stands on one side of its own wall
+        // there), and such a cell is absent. A present cell reading `Other` would be a chart with
+        // a θ boundary it has no line for — named here, at the fact, not read from the other end.
+        assert_eq!(
+            d2b.other_present, 0,
+            "a cell with a face has an end that says nothing: cyl {k}"
+        );
+        // ★ A run whose boundary ruling has no node on a cut rim is never built — it is the
+        // `RulingBoundNotYet` population (D5's), refused by the emitter at the run end. Asserted
+        // where the fact is made rather than only in the reporting test, whose rows depend on
+        // what ran before it.
+        assert!(
+            d2b.run_boundary_no_node == 0 || emission.is_err(),
+            "a run's boundary ruling has no rim node and the emitter built it: cyl {k}"
         );
         // ★ Promoted from counts to record-site assertions once the suite measured them 0
         // (D1b's `unnamed == 0` discipline): a reporting test sees only the rows recorded before
@@ -1858,6 +1994,58 @@ pub(crate) mod probe {
         }
     }
 
+    /// The counts behind [`super::OtherWhy`], and the whole-circle disagreements in full: which
+    /// test, which line, and the per-arc bits that disagreed.
+    pub(crate) mod other {
+        use super::super::OtherWhy;
+        use std::sync::Mutex;
+
+        pub(crate) static COUNTS: Mutex<Vec<(OtherWhy, usize)>> = Mutex::new(Vec::new());
+
+        #[derive(Clone, Debug)]
+        pub(crate) struct Whole {
+            pub(crate) test: String,
+            pub(crate) cyl: usize,
+            pub(crate) t: f64,
+            pub(crate) end: usize,
+            pub(crate) above: bool,
+            pub(crate) bits: Vec<(bool, bool)>,
+        }
+
+        pub(crate) static WHOLE: Mutex<Vec<Whole>> = Mutex::new(Vec::new());
+
+        pub(crate) fn record(why: OtherWhy) {
+            let mut c = COUNTS
+                .lock()
+                .expect("the probe's lock is never held across a panic");
+            match c.iter_mut().find(|(w, _)| *w == why) {
+                Some((_, n)) => *n += 1,
+                None => c.push((why, 1)),
+            }
+        }
+
+        pub(crate) fn record_whole(
+            cyl: usize,
+            t: nacre_scalar::Rat,
+            end: usize,
+            above: bool,
+            bits: Vec<(bool, bool)>,
+        ) {
+            record(OtherWhy::WholeDisagree);
+            WHOLE
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .push(Whole {
+                    test: std::thread::current().name().unwrap_or("?").to_string(),
+                    cyl,
+                    t: t.to_f64(),
+                    end,
+                    above,
+                    bits,
+                });
+        }
+    }
+
     /// **D5, stage 0 — the run-end refusal, attributed.** One row per `RulingBoundNotYet`
     /// raised at `emit_lateral`'s run-end node lookup: which z-line, what that line's arc under
     /// the run's first cell says for this solid, whether the wall class has a node there (a piece
@@ -1975,6 +2163,8 @@ pub(crate) mod probe {
             /// name on that line (`crossing_on_ruling`), and how many could not be named.
             pub(crate) station_pairs: usize,
             pub(crate) station_name_failures: usize,
+            /// Of `end_other`, the ends of a single-cut sector (both walls one ruling).
+            pub(crate) end_other_single_cut: usize,
             pub(crate) cells: usize,
             /// The emitter refused this boolean's lateral faces (some class's cells could not be
             /// read) — the census still records every chart of it.
@@ -2407,9 +2597,15 @@ mod tests {
         // ── D2b-1: what the cutover would emit, held as counts (their production twins are
         // honest rejects, so they are not asserted where the fact is made).
         for r in &rows {
-            assert_eq!(
-                r.run_boundary_no_node, 0,
-                "a run's boundary ruling has no rim node: {r:?}"
+            // ★ Restated (D5, 1a): the bare 0 was true only while those run ends read `Other`
+            // — a station placed under another line's name that the θ order refused — so the
+            // census's own walk never reached the boundary ruling. Placed by name the ends read
+            // `Exact`, the walk sees a boundary ruling with no rim node (the crossing census's
+            // whole `RulingBoundNotYet` column), and what is true of it is that the emitter
+            // refuses such a run rather than building it. Asserted at the fact too (`census`).
+            assert!(
+                r.run_boundary_no_node == 0 || r.emitter_refused,
+                "a run's boundary ruling has no rim node and the emitter built it: {r:?}"
             );
             assert_eq!(
                 r.whole_both_cut, 0,

@@ -1500,6 +1500,37 @@ mod zzz_ledger {
             s(|r| r.station_pairs),
             s(|r| r.station_name_failures),
         );
+        eprintln!(
+            "ledger D5-1a: end_other {} of which single_cut {} — by cause {:?}",
+            s(|r| r.end_other),
+            s(|r| r.end_other_single_cut),
+            crate::cyl_chart::probe::other::COUNTS
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .clone(),
+        );
+        {
+            // The whole-circle disagreements, one line per (test, cyl, t, end, above, bits)
+            // shape with its count — the population 1a leaves under `Other`.
+            let whole = crate::cyl_chart::probe::other::WHOLE
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .clone();
+            let mut shapes: Vec<(String, usize)> = Vec::new();
+            for w in &whole {
+                let key = format!(
+                    "{} cyl {} t {} end {} above {} bits {:?}",
+                    w.test, w.cyl, w.t, w.end, w.above, w.bits
+                );
+                match shapes.iter_mut().find(|(k, _)| *k == key) {
+                    Some((_, n)) => *n += 1,
+                    None => shapes.push((key, 1)),
+                }
+            }
+            for (k, n) in shapes {
+                eprintln!("ledger D5-1a whole_disagree ×{n}: {k}");
+            }
+        }
         for r in d2b
             .iter()
             .filter(|r| r.other_present > 0 || r.src0_present > 0)

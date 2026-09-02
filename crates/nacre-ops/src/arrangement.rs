@@ -3117,7 +3117,8 @@ pub(crate) mod ruling_probe {
 }
 
 /// Which of the two rulings of `w` this branch node sits on — [`ruling_side`] asked of a name.
-fn node_ruling_side(
+/// The one spelling: the chart's `ruling_name` reads it too (D5, 1a — it used to carry a twin).
+pub(crate) fn node_ruling_side(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     w: &[nacre_scalar::Rat; 4],
