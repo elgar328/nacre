@@ -5927,14 +5927,18 @@ fn rational_point_in_ring(
     let p2 = chart.project(&center).ok_or_else(undecided)?;
     let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
     let ring2 = chart.ring(jd, &nodes).ok_or_else(undecided)?;
-    Ok(
-        match nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2) {
-            nacre_geom::intersect::RingSide::Inside => Some(true),
-            nacre_geom::intersect::RingSide::Outside => Some(false),
-            // On the boundary this witness says nothing — the caller's next one may.
-            nacre_geom::intersect::RingSide::OnBoundary => None,
-        },
-    )
+    let side = nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2);
+    #[cfg(test)]
+    combinatorics::shadow_probe::record(
+        &side,
+        combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &center, ring),
+    );
+    Ok(match side {
+        nacre_geom::intersect::RingSide::Inside => Some(true),
+        nacre_geom::intersect::RingSide::Outside => Some(false),
+        // On the boundary this witness says nothing — the caller's next one may.
+        nacre_geom::intersect::RingSide::OnBoundary => None,
+    })
 }
 
 /// Whether a polygon contour lies inside a disk — population-impossible (its edges ride wall
@@ -10923,6 +10927,21 @@ mod tests {
             // Recorded rather than bounded: an abstention is the ray meeting a ring corner, and
             // its count is a property of this grid's arithmetic, not of the rule.
             assert!(abstained > 0, "abstentions: {abstained}");
+            // Cell ② stage 0 (P2): what those abstentions were, by kind.
+            {
+                let rows = combinatorics::tie_probe::ROWS
+                    .lock()
+                    .expect("the probe's lock is never held across a panic");
+                let me = std::thread::current().name().unwrap_or("?").to_string();
+                let mut hist: Vec<(combinatorics::tie_probe::Tie, usize)> = Vec::new();
+                for (_, t) in rows.iter().filter(|(n, _)| *n == me) {
+                    match hist.iter_mut().find(|(k, _)| k == t) {
+                        Some((_, c)) => *c += 1,
+                        None => hist.push((*t, 1)),
+                    }
+                }
+                eprintln!("P2 digon abstained {abstained} on_chord {on_chord} kinds {hist:?}");
+            }
             assert!(
                 on_chord > 0,
                 "points on the chord inside the circle: {on_chord}"

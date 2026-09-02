@@ -10295,6 +10295,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         {
             let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
             for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
+                // Cell ② stage 0 (P1): the mixed road's abstentions, attributed to this cell.
+                let tie0 = crate::combinatorics::tie_probe::len();
+                let dec0 = crate::boolean::probe::deciding::ROWS
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
+                    .len();
                 let (mut m, plate, boss) = boss_family(base, h);
                 let got = match boolean(&mut m, kind, plate, boss) {
                     Err(BoolError::Rejected { .. }) => First,
@@ -10348,6 +10354,22 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                         }
                     }
                 };
+                if got == Rejected(NoClearRay) {
+                    let hist = crate::combinatorics::tie_probe::since(tie0);
+                    eprintln!("P1 {name} {kind:?} x {tool_name}: {hist:?}");
+                    let dec = crate::boolean::probe::deciding::ROWS
+                        .lock()
+                        .expect("the probe's lock is never held across a panic");
+                    for r in dec[dec0..].iter().filter(|r| !r.3) {
+                        eprintln!(
+                            "P4 {name} {kind:?} x {tool_name}: exhausted offered {} ties {:?}",
+                            r.2, r.4
+                        );
+                    }
+                    let decided: Vec<usize> =
+                        dec[dec0..].iter().filter(|r| r.3).map(|r| r.1).collect();
+                    eprintln!("P4 {name} {kind:?} x {tool_name}: decided tried {decided:?}");
+                }
                 match tally.iter_mut().find(|(c, _)| *c == got) {
                     Some((_, n)) => *n += 1,
                     None => tally.push((got, 1)),

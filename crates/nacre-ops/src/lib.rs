@@ -1526,6 +1526,61 @@ mod zzz_ledger {
             }
         }
         {
+            // Cell ② stage 0.
+            let ties = crate::combinatorics::tie_probe::ROWS
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .clone();
+            let mut hist: Vec<(crate::combinatorics::tie_probe::Tie, usize)> = Vec::new();
+            for (_, t) in &ties {
+                match hist.iter_mut().find(|(k, _)| k == t) {
+                    Some((_, c)) => *c += 1,
+                    None => hist.push((*t, 1)),
+                }
+            }
+            eprintln!(
+                "ledger C2-P1: mixed abstentions {} by kind {hist:?}",
+                ties.len()
+            );
+            let sh = *crate::combinatorics::shadow_probe::COUNTS
+                .lock()
+                .expect("the probe's lock is never held across a panic");
+            eprintln!(
+                "ledger C2-P3: two roads on rational rings — agree {} plane_some_mixed_none {} \
+                 plane_boundary_mixed_none {} plane_boundary_mixed_some {} disagree_some {}",
+                sh[0], sh[1], sh[2], sh[3], sh[4]
+            );
+            let dec = crate::boolean::probe::deciding::ROWS
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .clone();
+            let mut tried: Vec<(usize, usize)> = Vec::new();
+            for (_, t, ..) in dec.iter().filter(|r| r.3) {
+                match tried.iter_mut().find(|(k, _)| *k == *t) {
+                    Some((_, c)) => *c += 1,
+                    None => tried.push((*t, 1)),
+                }
+            }
+            tried.sort_unstable();
+            eprintln!(
+                "ledger C2-P4: deciding calls {} exhausted {} probes_tried histogram {tried:?}",
+                dec.iter().filter(|r| r.3).count(),
+                dec.iter().filter(|r| !r.3).count()
+            );
+            for r in dec.iter().filter(|r| !r.3) {
+                eprintln!(
+                    "ledger C2-P4 exhausted: {} offered {} ties {:?}",
+                    r.0, r.2, r.4
+                );
+            }
+            eprintln!(
+                "ledger C2-P5: ring_in_ring swallowed non-abstention errors {}",
+                *crate::combinatorics::swallowed_probe::COUNT
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
+            );
+        }
+        {
             let rows = crate::cyl_chart::probe::regions::ROWS
                 .lock()
                 .expect("the probe's lock is never held across a panic")

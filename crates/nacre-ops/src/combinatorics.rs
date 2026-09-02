@@ -2513,11 +2513,37 @@ pub(crate) fn ring_in_ring(
     outer: &[RingEdge],
 ) -> Result<bool, BoolError> {
     for &v in probes {
-        if let Ok(hit) = point_in_ring(jd, p, v, outer) {
-            return Ok(hit);
+        match point_in_ring(jd, p, v, outer) {
+            Ok(hit) => return Ok(hit),
+            // ★ Cell ② stage 0: an `Err` that is *not* the no-clear-ray abstention is a failed
+            // judgement this retry swallows — counted, so the split the doc above asks for is
+            // opened on a measured population or left alone on a measured 0.
+            Err(e) => {
+                #[cfg(test)]
+                if !matches!(
+                    e,
+                    BoolError::Rejected {
+                        reason: RejectReason::NoClearRay,
+                        ..
+                    }
+                ) {
+                    *swallowed_probe::COUNT
+                        .lock()
+                        .expect("the probe's lock is never held across a panic") += 1;
+                }
+                #[cfg(not(test))]
+                let _ = e;
+            }
         }
     }
     Err(reject(RejectReason::NoClearRay))
+}
+
+/// Cell ② stage 0: how many failed judgements `ring_in_ring`'s retry swallowed (predicted 0).
+#[cfg(test)]
+pub(crate) mod swallowed_probe {
+    use std::sync::Mutex;
+    pub(crate) static COUNT: Mutex<usize> = Mutex::new(0);
 }
 
 /// The parity every clear ray reports. The ring is simple, so they must all agree; a golden
@@ -2872,6 +2898,119 @@ pub(crate) fn point_in_mixed_ring(
     probe: &[nacre_scalar::Rat; 3],
     ring: &[RingEdge],
 ) -> Option<bool> {
+    #[cfg(test)]
+    tie_probe::begin();
+    let out = point_in_mixed_ring_inner(jd, cyls, wc_coeffs, probe, ring);
+    #[cfg(test)]
+    if out.is_none() {
+        tie_probe::abstained();
+    }
+    out
+}
+
+/// **Cell ② stage 0 — why the mixed road abstains**, one row per `None`, by the site that said
+/// it: a corner on the ray (and whether the probe *is* that corner, and whether the corner's
+/// other step is an arc), the probe on a step's line, a tangent ray, a root at the probe, a
+/// seam-incident root, two seam ends, a root at an arc end, a zero-span arc — or `Other` for
+/// the silent `?` arms (no chart, overflow). Read by the crossing census (per cell) and the
+/// ledger (whole suite).
+#[cfg(test)]
+pub(crate) mod tie_probe {
+    use std::cell::Cell;
+    use std::sync::Mutex;
+
+    #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+    pub(crate) enum Tie {
+        CornerOnRay {
+            probe_is_corner: bool,
+            arc_neighbour: bool,
+        },
+        ProbeOnStep,
+        TangentRay,
+        ArcRootAtProbe,
+        SeamRoot,
+        TwoSeamEnds,
+        ArcRootAtEnd,
+        ZeroSpanArc,
+        Other,
+    }
+
+    pub(crate) static ROWS: Mutex<Vec<(String, Tie)>> = Mutex::new(Vec::new());
+
+    thread_local! {
+        static LAST: Cell<Option<Tie>> = const { Cell::new(None) };
+    }
+
+    pub(crate) fn begin() {
+        LAST.with(|c| c.set(None));
+    }
+
+    pub(crate) fn mark(t: Tie) {
+        LAST.with(|c| c.set(Some(t)));
+    }
+
+    /// The rows recorded since `from` (a snapshot of `ROWS.len()`), as a histogram by kind.
+    pub(crate) fn since(from: usize) -> Vec<(Tie, usize)> {
+        let rows = ROWS
+            .lock()
+            .expect("the probe's lock is never held across a panic");
+        let mut hist: Vec<(Tie, usize)> = Vec::new();
+        for (_, t) in rows.iter().skip(from) {
+            match hist.iter_mut().find(|(k, _)| k == t) {
+                Some((_, c)) => *c += 1,
+                None => hist.push((*t, 1)),
+            }
+        }
+        hist
+    }
+
+    pub(crate) fn len() -> usize {
+        ROWS.lock()
+            .expect("the probe's lock is never held across a panic")
+            .len()
+    }
+
+    pub(crate) fn abstained() {
+        let t = LAST.with(|c| c.take()).unwrap_or(Tie::Other);
+        ROWS.lock()
+            .expect("the probe's lock is never held across a panic")
+            .push((std::thread::current().name().unwrap_or("?").to_string(), t));
+    }
+}
+
+/// **Cell ② stage 0 — the two roads on one rational ring**, counted where the planar road
+/// answers (`point_in_faces_rat`, `arrangement::rational_point_in_ring`): the mixed road asked
+/// the same ring, and the four outcomes tallied. No assertion — a measurement of today's gap.
+#[cfg(test)]
+pub(crate) mod shadow_probe {
+    use nacre_geom::intersect::RingSide;
+    use std::sync::Mutex;
+
+    /// `(agree, plane_some_mixed_none, plane_boundary_mixed_none, plane_boundary_mixed_some,
+    /// disagree_some)`.
+    pub(crate) static COUNTS: Mutex<[usize; 5]> = Mutex::new([0; 5]);
+
+    pub(crate) fn record(plane: &RingSide, mixed: Option<bool>) {
+        let slot = match (plane, mixed) {
+            (RingSide::Inside, Some(true)) | (RingSide::Outside, Some(false)) => 0,
+            (RingSide::Inside | RingSide::Outside, None) => 1,
+            (RingSide::OnBoundary, None) => 2,
+            (RingSide::OnBoundary, Some(_)) => 3,
+            (RingSide::Inside, Some(false)) | (RingSide::Outside, Some(true)) => 4,
+        };
+        COUNTS
+            .lock()
+            .expect("the probe's lock is never held across a panic")[slot] += 1;
+    }
+}
+
+fn point_in_mixed_ring_inner(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc_coeffs: &[nacre_scalar::Rat; 4],
+    probe: &[nacre_scalar::Rat; 3],
+    ring: &[RingEdge],
+) -> Option<bool> {
     use core::cmp::Ordering;
     use nacre_scalar::Orient;
     use nacre_scalar::Rat;
@@ -2919,7 +3058,25 @@ pub(crate) fn point_in_mixed_ring(
                 let ya = a[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
                 let yb = b[1].checked_sub(&QuadVal::from_rat(qy))?.sign();
                 let (up, down) = match (ya, yb) {
-                    (Orient::Zero, _) | (_, Orient::Zero) => return None, // corner on the ray
+                    (Orient::Zero, _) | (_, Orient::Zero) => {
+                        // corner on the ray
+                        #[cfg(test)]
+                        {
+                            let (c, other) = if ya == Orient::Zero {
+                                (a, &ring[(i + k - 1) % k])
+                            } else {
+                                (b, &ring[(i + 1) % k])
+                            };
+                            let probe_is_corner = c[0]
+                                .checked_sub(&QuadVal::from_rat(qx))
+                                .is_some_and(|d| d.sign() == Orient::Zero);
+                            tie_probe::mark(tie_probe::Tie::CornerOnRay {
+                                probe_is_corner,
+                                arc_neighbour: matches!(other.carrier, Carrier::Arc(_)),
+                            });
+                        }
+                        return None;
+                    }
                     (Orient::Negative, Orient::Positive) => (true, false),
                     (Orient::Positive, Orient::Negative) => (false, true),
                     _ => continue, // both one side: no crossing
@@ -2935,7 +3092,12 @@ pub(crate) fn point_in_mixed_ring(
                             .checked_mul(&qxv.checked_sub(&a[0])?)?,
                     )?;
                 match (o.sign(), up, down) {
-                    (Orient::Zero, ..) => return None, // probe on the step's line
+                    (Orient::Zero, ..) => {
+                        // probe on the step's line
+                        #[cfg(test)]
+                        tie_probe::mark(tie_probe::Tie::ProbeOnStep);
+                        return None;
+                    }
                     (Orient::Positive, true, _) | (Orient::Negative, _, true) => {
                         inside = !inside;
                     }
@@ -2953,7 +3115,11 @@ pub(crate) fn point_in_mixed_ring(
                     CylinderMeet::Miss(_) | CylinderMeet::AxisParallelMiss(_) => None,
                     // A tangent ray, a ruling, or degenerate planes: ties and shapes the parity
                     // cannot count — abstain.
-                    _ => return None,
+                    _ => {
+                        #[cfg(test)]
+                        tie_probe::mark(tie_probe::Tie::TangentRay);
+                        return None;
+                    }
                 };
                 let Some((line, s)) = roots else { continue };
                 // The arc's CCW span: the step's ends oriented by the carried `ccw` bit — the
@@ -2969,7 +3135,12 @@ pub(crate) fn point_in_mixed_ring(
                         .checked_add(&root.checked_mul_rat(dot(&dir, e1)?)?)?;
                     let xsign = x.checked_sub(&QuadVal::from_rat(qx))?.sign();
                     match xsign {
-                        Orient::Zero => return None, // root exactly at the probe
+                        Orient::Zero => {
+                            // root exactly at the probe
+                            #[cfg(test)]
+                            tie_probe::mark(tie_probe::Tie::ArcRootAtProbe);
+                            return None;
+                        }
                         Orient::Negative => continue,
                         Orient::Positive => {}
                     }
@@ -3006,11 +3177,18 @@ pub(crate) fn point_in_mixed_ring(
                         }
                     };
                     if on_seam(&rootp)? {
-                        return None; // the root is the joint itself — a tie
+                        // the root is the joint itself — a tie
+                        #[cfg(test)]
+                        tie_probe::mark(tie_probe::Tie::SeamRoot);
+                        return None;
                     }
                     let contained = match (on_seam(&e_lo)?, on_seam(&e_hi)?) {
                         // Two seam ends would be one point twice — upstream refuses it.
-                        (true, true) => return None,
+                        (true, true) => {
+                            #[cfg(test)]
+                            tie_probe::mark(tie_probe::Tie::TwoSeamEnds);
+                            return None;
+                        }
                         // From the seam CCW to `hi`: chart order θ ∈ (0, θ_hi).
                         //
                         // ★★★★★ **`Equal` is a tie here too, and this arm used to answer it
@@ -3026,7 +3204,10 @@ pub(crate) fn point_in_mixed_ring(
                         (true, false) => {
                             let c = ord(&rootp, &e_hi)?;
                             if c == Ordering::Equal {
-                                return None; // root at an arc end
+                                // root at an arc end
+                                #[cfg(test)]
+                                tie_probe::mark(tie_probe::Tie::ArcRootAtEnd);
+                                return None;
                             }
                             c == Ordering::Less
                         }
@@ -3034,7 +3215,10 @@ pub(crate) fn point_in_mixed_ring(
                         (false, true) => {
                             let c = ord(&rootp, &e_lo)?;
                             if c == Ordering::Equal {
-                                return None; // root at an arc end
+                                // root at an arc end
+                                #[cfg(test)]
+                                tie_probe::mark(tie_probe::Tie::ArcRootAtEnd);
+                                return None;
                             }
                             c == Ordering::Greater
                         }
@@ -3042,14 +3226,22 @@ pub(crate) fn point_in_mixed_ring(
                             let x0 = ord(&rootp, &e_lo)?;
                             let x1 = ord(&rootp, &e_hi)?;
                             if x0 == Ordering::Equal || x1 == Ordering::Equal {
-                                return None; // root at an arc end
+                                // root at an arc end
+                                #[cfg(test)]
+                                tie_probe::mark(tie_probe::Tie::ArcRootAtEnd);
+                                return None;
                             }
                             match ord(&e_lo, &e_hi)? {
                                 Ordering::Less => x0 == Ordering::Greater && x1 == Ordering::Less,
                                 Ordering::Greater => {
                                     x0 == Ordering::Greater || x1 == Ordering::Less
                                 }
-                                Ordering::Equal => return None, // zero-span arc cannot stand
+                                Ordering::Equal => {
+                                    // zero-span arc cannot stand
+                                    #[cfg(test)]
+                                    tie_probe::mark(tie_probe::Tie::ZeroSpanArc);
+                                    return None;
+                                }
                             }
                         }
                     };
@@ -3638,7 +3830,13 @@ pub(crate) fn point_in_faces_rat(
                         .collect::<Option<_>>()
                         .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
                     let ring2 = chart.ring(jd, &nodes).ok_or_else(not_rational)?;
-                    Ok(match point_in_ring_2d_rat(x2, &ring2) {
+                    let side = point_in_ring_2d_rat(x2, &ring2);
+                    #[cfg(test)]
+                    shadow_probe::record(
+                        &side,
+                        point_in_mixed_ring_inner(jd, cyls, &coeffs, &x, r),
+                    );
+                    Ok(match side {
                         RingSide::Inside => Some(true),
                         RingSide::Outside => Some(false),
                         RingSide::OnBoundary => None,

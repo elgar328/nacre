@@ -629,11 +629,24 @@ fn group_faces(
         probes: &[combinatorics::Probe],
         mut f: impl FnMut(&combinatorics::Probe) -> Result<Option<T>, BoolError>,
     ) -> Result<Option<T>, BoolError> {
-        for x in probes {
+        #[cfg(test)]
+        let tie0 = combinatorics::tie_probe::len();
+        for (tried, x) in probes.iter().enumerate() {
+            #[cfg(not(test))]
+            let _ = tried;
             if let Some(v) = f(x)? {
+                #[cfg(test)]
+                probe::deciding::record(tried + 1, probes.len(), true, Vec::new());
                 return Ok(Some(v));
             }
         }
+        #[cfg(test)]
+        probe::deciding::record(
+            probes.len(),
+            probes.len(),
+            false,
+            combinatorics::tie_probe::since(tie0),
+        );
         Ok(None)
     }
     // ★★ **Material or void is a question about nesting, not about normals.**
@@ -2984,6 +2997,31 @@ pub(crate) fn classify_cycles(
         inner: holes.into_iter().map(Bound::Ring).collect(),
         flip,
     })
+}
+
+/// Cell ② stage 0 (P4): how many probes a component's depth classification tried before one
+/// decided — `(test, tried, offered, decided)`. Predicted 1 after the corner rule, more only
+/// where a tangent or boundary tie remains.
+#[cfg(test)]
+pub(crate) mod probe {
+    pub(crate) mod deciding {
+        use crate::combinatorics::tie_probe::Tie;
+        use std::sync::Mutex;
+        /// `(test, tried, offered, decided, ties of this call when exhausted)`.
+        pub(crate) type Row = (String, usize, usize, bool, Vec<(Tie, usize)>);
+        pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+        pub(crate) fn record(tried: usize, offered: usize, decided: bool, ties: Vec<(Tie, usize)>) {
+            ROWS.lock()
+                .expect("the probe's lock is never held across a panic")
+                .push((
+                    std::thread::current().name().unwrap_or("?").to_string(),
+                    tried,
+                    offered,
+                    decided,
+                    ties,
+                ));
+        }
+    }
 }
 
 /// **The half-height boss's lateral is one face** (D5) — a band with one whole rim and one
