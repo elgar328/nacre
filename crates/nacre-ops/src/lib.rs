@@ -816,9 +816,9 @@ pub enum RejectReason {
     /// its own retry loop. What raises this reason today is the caller whose node supply is
     /// exhausted (the 3D depth/cavity classification in `boolean.rs`) — and, same shape one
     /// dimension down, `point_in_ring`'s rayless case, `ring_in_ring`'s probe exhaustion, and the
-    /// coplanar cleaning pass's own mirror of that road (`boolean.rs`, which still calls both the
-    /// empty list and the exhausted one by this name — the split below reached the arrangement
-    /// only).
+    /// coplanar cleaning pass's own mirror of that road (`boolean.rs`, which names the empty
+    /// list [`Self::RingHasNoWitness`] and the exhausted one this, as the arrangement's
+    /// `cell_in_cell` does — cell ②; neither has a population there).
     ///
     /// ☑ **Its 3D population halved when the caps learned to name a witness (2026-09-01).** Ten of
     /// the crossing census's sixteen cells were a wall boss's Common parted by a slab: two

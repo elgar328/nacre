@@ -3466,17 +3466,22 @@ fn merge_component(
             let ring = outer.edges(jd, cyls, wc)?;
             // A mixed outer takes the rational road - the (None, None) arm of the
             // arrangement's `cell_in_cell`, mirrored: each rational node of the hole is
-            // a probe against the mixed walk, and an exhausted list is the same
-            // `NoClearRay` the named road raises.
+            // a probe against the mixed walk, and the vocabulary is that arm's — a list
+            // that ran out is `NoClearRay`, a list that was **empty** (a hole with no
+            // rational corner) is `RingHasNoWitness`. ☑ Neither has a population today
+            // (cell ②'s ledger: 0 raises at this site); named so the first arrives under
+            // the right word.
             let hit = if combinatorics::ring_is_mixed(&ring) {
                 let undecided = || reject(RejectReason::WitnessNotRational);
                 let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
                 let mut ans = None;
+                let mut asked = false;
                 for p in hole
                     .nodes
                     .iter()
                     .filter_map(|&n| combinatorics::node_coords_rat(jd, n))
                 {
+                    asked = true;
                     if let Some(h) =
                         combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, &ring)
                     {
@@ -3484,7 +3489,13 @@ fn merge_component(
                         break;
                     }
                 }
-                ans.ok_or_else(|| reject(RejectReason::NoClearRay))?
+                ans.ok_or_else(|| {
+                    reject(if asked {
+                        RejectReason::NoClearRay
+                    } else {
+                        RejectReason::RingHasNoWitness
+                    })
+                })?
             } else {
                 combinatorics::ring_in_ring(jd, wc, &probes, &ring)?
             };
