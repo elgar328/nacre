@@ -1573,6 +1573,20 @@ mod zzz_ledger {
                     r.0, r.2, r.4
                 );
             }
+            let hp = *crate::combinatorics::holes_probe::COUNTS
+                .lock()
+                .expect("the probe's lock is never held across a panic");
+            eprintln!(
+                "ledger C2b-P3: cylinder faces asked {} with holes {}",
+                hp[0], hp[1]
+            );
+            for r in crate::combinatorics::holes_probe::ROWS
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .iter()
+            {
+                eprintln!("ledger C2b-P3 holed: {r}");
+            }
             eprintln!(
                 "ledger C2-P5: ring_in_ring swallowed non-abstention errors {}",
                 *crate::combinatorics::swallowed_probe::COUNT

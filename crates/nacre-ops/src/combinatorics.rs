@@ -2539,6 +2539,40 @@ pub(crate) fn ring_in_ring(
     Err(reject(RejectReason::NoClearRay))
 }
 
+/// Cell ②-b stage 0 (P3): how often the two roads ask a **cylinder** face — and how often that
+/// face carries holes its arms do not read (`f.inner` is never consulted for a cylinder face
+/// today). `(asked, with_holes)`; predicted `with_holes` 0 — a holed lateral lives in a
+/// one-component result, which asks nothing.
+#[cfg(test)]
+pub(crate) mod holes_probe {
+    use std::sync::Mutex;
+    pub(crate) static COUNTS: Mutex<[usize; 2]> = Mutex::new([0; 2]);
+    /// The asks of a holed face, by test and outer/hole shape.
+    pub(crate) static ROWS: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    pub(crate) fn asked(f: &super::CompFace) {
+        let mut c = COUNTS
+            .lock()
+            .expect("the probe's lock is never held across a panic");
+        c[0] += 1;
+        if !f.inner.is_empty() {
+            c[1] += 1;
+            ROWS.lock()
+                .expect("the probe's lock is never held across a panic")
+                .push(format!(
+                    "{} outer {:?} holes {}",
+                    std::thread::current().name().unwrap_or("?"),
+                    match &f.outer {
+                        super::BoundEdges::Band { .. } => "band",
+                        super::BoundEdges::Lateral => "lateral",
+                        super::BoundEdges::Ring(_) => "ring",
+                        super::BoundEdges::Circle(_) => "circle",
+                    },
+                    f.inner.len()
+                ));
+        }
+    }
+}
+
 /// Cell ② stage 0: how many failed judgements `ring_in_ring`'s retry swallowed (predicted 0).
 #[cfg(test)]
 pub(crate) mod swallowed_probe {
@@ -3769,6 +3803,8 @@ pub(crate) fn point_in_faces_rat(
     for f in faces {
         let q = match &f.surf {
             CompSurf::Cylinder(def) => {
+                #[cfg(test)]
+                holes_probe::asked(f);
                 // Solve before asking for bounds — the same fork the named road makes: a
                 // `Lateral` face answers `0` for a ray that misses its cylinder outright,
                 // and abstains on anything more.
@@ -4107,6 +4143,8 @@ pub(crate) fn point_in_component(
             // quadratic, not three-plane points, and "inside the face" is an axial span when
             // the face states one, a bare miss-oracle when it does not.
             if let CompSurf::Cylinder(def) = &f.surf {
+                #[cfg(test)]
+                holes_probe::asked(f);
                 // ★ Solve before asking for bounds: a face the axial arm cannot state (a
                 // panel, a chain rim — `Lateral`) still answers `0` when the ray misses its
                 // cylinder outright, and that weaker sentence is what lets a split result's
