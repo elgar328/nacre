@@ -2979,7 +2979,9 @@ pub(crate) struct CurvedStats {
     pub(crate) max_chain_crossings: usize,
 }
 
-/// One curved group → the single face it should be, or why it is left alone.
+/// One curved group → the single face it should be, or why it is left alone — the composition
+/// of the steps below (D5, 1c: split so the chart's region emitter can hand its own walk's
+/// cycles to [`classify_cycles`] without re-threading them).
 fn merge_curved_group(
     (k, flip): (usize, bool),
     mem: &[usize],
@@ -2987,7 +2989,20 @@ fn merge_curved_group(
     cut_rims: &crate::arrangement::CutRims,
     stats: &mut CurvedStats,
 ) -> Result<LocalFace, CurvedAbstain> {
-    // 1. Every member's boundary, as keyed directed segments.
+    let segs = collect_pieces(k, mem, kept, cut_rims)?;
+    let live = erase_shared(&segs)?;
+    let rings = thread(&segs, &live)?;
+    let (rims_lo, rims_hi) = whole_rims(&segs, &live);
+    classify_cycles(k, flip, rings, rims_lo, rims_hi, cut_rims, stats)
+}
+
+/// **1.** Every member's boundary, as keyed directed segments.
+fn collect_pieces(
+    k: usize,
+    mem: &[usize],
+    kept: &[Option<LocalFace>],
+    cut_rims: &crate::arrangement::CutRims,
+) -> Result<Vec<CurvedSeg>, CurvedAbstain> {
     let mut segs: Vec<CurvedSeg> = Vec::new();
     // A node ring's steps — a panel's, a hole's, or a chain rim's — keyed the walk's own way.
     let ring_steps = |r: &Ring, segs: &mut Vec<CurvedSeg>| -> Result<(), CurvedAbstain> {
@@ -3074,10 +3089,13 @@ fn merge_curved_group(
             }
         }
     }
+    Ok(segs)
+}
 
-    // 2. Erase what is claimed both ways. Two claims of one side means the pieces overlap rather
-    //    than tile, and three of anything is non-manifold on the surface — both are the planar
-    //    pass's abstentions, for its reasons.
+/// **2.** Erase what is claimed both ways — the surviving pieces, as indices into `segs`. Two
+/// claims of one side means the pieces overlap rather than tile, and three of anything is
+/// non-manifold on the surface — both are the planar pass's abstentions, for its reasons.
+fn erase_shared(segs: &[CurvedSeg]) -> Result<Vec<usize>, CurvedAbstain> {
     let mut by_key: HashMap<CurvedKey, Vec<usize>> = HashMap::new();
     for (i, s) in segs.iter().enumerate() {
         by_key.entry(s.key).or_default().push(i);
@@ -3097,12 +3115,16 @@ fn merge_curved_group(
         return Err(CurvedAbstain::NoTouch);
     }
     live.sort_unstable(); // `by_key` is a HashMap; the walk below must not inherit its order
+    Ok(live)
+}
 
-    // 3. Re-thread the rest. Two pieces leaving one node means the region pinches there and the
-    //    cycles are not determined — the planar pass's figure-8, on a cylinder.
+/// **3.** Re-thread the surviving pieces into cycles. Two pieces leaving one node means the
+/// region pinches there and the cycles are not determined — the planar pass's figure-8, on a
+/// cylinder.
+fn thread(segs: &[CurvedSeg], live: &[usize]) -> Result<Vec<Ring>, CurvedAbstain> {
     let mut next: HashMap<NodeId, usize> = HashMap::new();
     let mut threadable = 0usize;
-    for &i in &live {
+    for &i in live {
         if let Some((a, _)) = segs[i].ends {
             threadable += 1;
             if next.insert(a, i).is_some() {
@@ -3145,11 +3167,15 @@ fn merge_curved_group(
     if rings.iter().map(|r| r.nodes.len()).sum::<usize>() != threadable {
         return Err(CurvedAbstain::Unthreaded);
     }
+    Ok(rings)
+}
 
-    // 4. The rims that survive whole are the merged band's own — circles, keyed by class.
+/// **4.** The rims that survive whole are the merged band's own — circles, keyed by class:
+/// `(lo, hi)` by the walk's sense.
+fn whole_rims(segs: &[CurvedSeg], live: &[usize]) -> (Vec<usize>, Vec<usize>) {
     let mut rims_lo: Vec<usize> = Vec::new();
     let mut rims_hi: Vec<usize> = Vec::new();
-    for &i in &live {
+    for &i in live {
         if let CurvedKey::Rim { plane } = segs[i].key {
             if segs[i].fwd {
                 &mut rims_lo
@@ -3159,7 +3185,21 @@ fn merge_curved_group(
             .push(plane);
         }
     }
+    (rims_lo, rims_hi)
+}
 
+/// **5–6.** Every threaded cycle classified by its winding about the axis, and the face they
+/// bound — `Band { lo, hi }` with holes. Takes the cycles as rings: the cleaning pass hands it
+/// what [`thread`] re-threaded, and the chart's region emitter hands it its own walk's cycles.
+pub(crate) fn classify_cycles(
+    k: usize,
+    flip: bool,
+    rings: Vec<Ring>,
+    rims_lo: Vec<usize>,
+    rims_hi: Vec<usize>,
+    cut_rims: &crate::arrangement::CutRims,
+    stats: &mut CurvedStats,
+) -> Result<LocalFace, CurvedAbstain> {
     // A **contact** is a node the split put *on* the seam (`CutRim::seam_is_node`) or an arc
     // that wraps past it (the loop builder splits that one at the rim's seam vertex) — the two
     // spellings are exclusive by `wrapping_rim`'s own guard, so neither is counted twice. It is
