@@ -1567,59 +1567,22 @@ mod zzz_ledger {
                 .lock()
                 .expect("the probe's lock is never held across a panic")
                 .clone();
-            let sum = |f: fn(&crate::cyl_chart::regions::Report) -> usize| {
-                rows.iter().map(|r| f(&r.rep)).sum::<usize>()
+            let sum = |f: fn(&crate::cyl_chart::probe::regions::Row) -> usize| {
+                rows.iter().map(f).sum::<usize>()
             };
             eprintln!(
-                "ledger D5-1b: rows {} agree {} disagree {} emitter_refused {} shadow_refused {} \
-                 shadow_emits_where_emitter_refused {} components {} faces {} band_faces {} \
-                 ring_faces {} run_end_not_piece_end {} ruling_run_not_tiled {} \
-                 rim_run_not_whole {} pinch_corners {} unchained {} classify_abstain {}",
+                "ledger D5: rows {} emitter_refused {} faces {} band_faces {} ring_faces {} \
+                 emitted_cells {}",
                 rows.len(),
-                rows.iter().filter(|r| r.agree).count(),
-                rows.iter().filter(|r| !r.agree).count(),
                 rows.iter().filter(|r| r.emitter_refused).count(),
-                rows.iter().filter(|r| r.shadow_refused).count(),
-                rows.iter()
-                    .filter(|r| r.emitter_refused && r.shadow_faces > 0)
-                    .count(),
-                sum(|r| r.components),
                 sum(|r| r.faces),
                 sum(|r| r.band_faces),
                 sum(|r| r.ring_faces),
-                sum(|r| r.run_end_not_piece_end),
-                sum(|r| r.ruling_run_not_tiled),
-                sum(|r| r.rim_run_not_whole),
-                sum(|r| r.pinch_corners),
-                sum(|r| r.unchained),
-                sum(|r| r.classify_abstain),
+                sum(|r| r.emitted_cells),
             );
-            for r in rows.iter().filter(|r| !r.agree) {
-                eprintln!(
-                    "ledger D5-1b disagree: {} cyl {} emitter_refused {} shadow {} today {} rep {:?}",
-                    r.test, r.cyl, r.emitter_refused, r.shadow_faces, r.today_faces, r.rep
-                );
+            for r in rows.iter().filter(|r| r.emitter_refused) {
+                eprintln!("ledger D5 refused: {} cyl {}", r.test, r.cyl);
             }
-        }
-        for r in crate::cyl_chart::probe::rbny::ROWS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .iter()
-        {
-            eprintln!(
-                "ledger D5-P1: {} cyl {} t {} end {} ruling {:?} kind {} transversal_only {:?} \
-                 graze {:?} wall_node {} rim_node {:?}",
-                r.test,
-                r.cyl,
-                r.t,
-                r.end,
-                r.ruling,
-                r.end_kind,
-                r.transversal_only,
-                r.any_graze,
-                r.wall_node,
-                r.rim_node
-            );
         }
         let s4 = |f: fn(&crate::boolean::CurvedStats) -> usize| {
             d4.iter().map(|r| f(&r.stats)).sum::<usize>()

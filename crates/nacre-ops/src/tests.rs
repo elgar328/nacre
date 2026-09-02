@@ -10182,7 +10182,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // panel/chain lateral (miss-first), so both halves classify and build with their exact
     // volumes; the through-axis wall crosses the bitten cap's **arc**, which waits on the
     // lateral's ruling sweep.
-    const WALL_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(RulingBoundNotYet), Ok(1)];
+    const WALL_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
     // A wall boss cut (its lateral a panel — the notch's wall): the top and bottom slabs miss
     // the result (nothing of the boss stands outside the plate), the wall slab crosses the
     // panel's rulings and builds with its exact volume (E2-2's own population), the mid slab
@@ -10195,7 +10195,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // the boss, the wall slab crosses the chain's rulings with its exact volume, the mid slab
     // splits the result and both halves classify by miss-first rays (as WALL_FUSE), the
     // through-axis wall crosses the cap's arc.
-    const HALF_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Rejected(RulingBoundNotYet), Ok(1)];
+    const HALF_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
     // ★ The **cap below** variants used to stop one wall earlier — their seated half-disk is the
     // boss's *bottom* cap, and the through-axis wall's chamber ends disagreed there. Reading the
     // sector as a run of arcs closed that gap, so the constant that existed only to name the one
@@ -10247,13 +10247,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // so a **slab** through it leaves two solids and the point classification finds no clear
         // ray — the through-axis wall cuts the other way and leaves one.
         [
-            [
-                Rejected(RulingBoundNotYet),
-                Ok(1),
-                Ok(1),
-                Rejected(RulingBoundNotYet),
-                Rejected(RulingBoundNotYet),
-            ],
+            [Rejected(NoClearRay), Ok(1), Ok(1), Ok(1), Ok(1)],
             [Rejected(NoClearRay), Ok(1), Ok(1), Ok(1), Ok(1)],
             [
                 Rejected(NoClearRay),
@@ -10269,13 +10263,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // builds (it was `First` for every tool), and the tools land on the roads the other
         // corner family already sits on.
         [
-            [
-                Rejected(RulingBoundNotYet),
-                Ok(1),
-                Ok(1),
-                Rejected(RulingBoundNotYet),
-                Rejected(RulingBoundNotYet),
-            ],
+            [Rejected(NoClearRay), Ok(1), Ok(1), Ok(2), Ok(1)],
             [Rejected(NoClearRay), Ok(1), Ok(1), Ok(1), Ok(1)],
             [
                 Rejected(NoClearRay),
@@ -10289,11 +10277,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // severed top piece has no vertex, its coordinate probe forks the other component's
         // mixed ring to the rational walk, and the miss-first rays decide (the one moved cell
         // outside the mid column).
-        [
-            [Ok(2), Ok(2), Ok(1), Rejected(RulingBoundNotYet), Ok(1)],
-            PANEL_CUT,
-            COMMON,
-        ],
+        [[Ok(2), Ok(2), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON],
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half wall
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half wall, cap below
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half +x
@@ -10309,12 +10293,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         {
             let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
             for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
-                // D5 stage 0 (P1/P2): the run-end refusal's rows and the cleaning pass's
-                // abstentions, attributed to this cell.
-                let rb0 = crate::cyl_chart::probe::rbny::ROWS
-                    .lock()
-                    .expect("the probe's lock is never held across a panic")
-                    .len();
+                // D5 stage 0 (P2): the cleaning pass's abstentions, attributed to this cell.
                 let d40 = crate::boolean::probe::d4::ROWS
                     .lock()
                     .expect("the probe's lock is never held across a panic")
@@ -10377,24 +10356,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                     }
                 };
                 {
-                    let rows = crate::cyl_chart::probe::rbny::ROWS
-                        .lock()
-                        .expect("the probe's lock is never held across a panic");
-                    for r in &rows[rb0..] {
-                        eprintln!(
-                            "P1 {name} {kind:?} x {tool_name}: cyl {} t {} end {} ruling {:?} \
-                             kind {} transversal_only {:?} graze {:?} wall_node {} rim_node {:?}",
-                            r.cyl,
-                            r.t,
-                            r.end,
-                            r.ruling,
-                            r.end_kind,
-                            r.transversal_only,
-                            r.any_graze,
-                            r.wall_node,
-                            r.rim_node
-                        );
-                    }
                     let d4 = crate::boolean::probe::d4::ROWS
                         .lock()
                         .expect("the probe's lock is never held across a panic");
@@ -10409,11 +10370,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                     let rg = crate::cyl_chart::probe::regions::ROWS
                         .lock()
                         .expect("the probe's lock is never held across a panic");
-                    for r in rg[rg0..].iter().filter(|r| !r.agree || r.emitter_refused) {
+                    for r in rg[rg0..].iter().filter(|r| r.emitter_refused) {
                         eprintln!(
-                            "1b {name} {kind:?} x {tool_name}: cyl {} emitter_refused {} shadow {} \
-                             today {} agree {} rep {:?}",
-                            r.cyl, r.emitter_refused, r.shadow_faces, r.today_faces, r.agree, r.rep
+                            "D5 {name} {kind:?} x {tool_name}: cyl {} refused; the walk made {} faces",
+                            r.cyl, r.faces
                         );
                     }
                 }
@@ -10446,11 +10406,14 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 184, "{tally:?}");
+    assert_eq!(count(|c| matches!(c, Ok(_))), 197, "{tally:?}");
     // ★ `ring_in_ring`'s own refusals are **gone**: every one of them was a probe list that
     // started empty, and that fact now has its own name. What is left under this one is the other
     // road entirely — the 3D depth classification in `boolean.rs`, whose nodes really do run out.
-    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 6);
+    // ★ Two more since D5: the corner families' Fuse × mid, where the region emitter builds
+    // the lateral and the slab parts the result — the severed halves' nesting is the same
+    // wall their Cut and Common siblings already stood on.
+    assert_eq!(count(|c| *c == Rejected(NoClearRay)), 8);
     // ★ The name is gone from this corpus: every ring that had no witness was a wall panel, and a
     // panel's perpendicular traces are whole chords, which name their own midpoints. A new
     // population must restate this 0 — it is an emptiness of *this* corpus, not of the rule.
@@ -10458,7 +10421,11 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
     assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 0);
-    assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 15);
+    // ★ The name is gone from this corpus (D5): every one of its 15 cells was a run whose
+    // boundary ruling had no node on the interval's z-line — a region crossing that line
+    // transversally in one sector while ending on it in another, which the band vocabulary
+    // could not spell and the region emitter walks. A new population must restate this 0.
+    assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 0);
     // ★ The chart's own refusal is gone from this corpus: every sector it could not name as one
     // arc is now read as the run of arcs it spans. A new population must restate this 0 — it is
     // an emptiness of *this* corpus, not of the chart.

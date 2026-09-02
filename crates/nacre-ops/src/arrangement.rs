@@ -10497,43 +10497,72 @@ mod tests {
             expect,
             "the chart's lines are the boundaries and nothing else here"
         );
-        // ★ The emitter answers the both-cut middle per θ-sector as a panel ring. Exactly one
-        // panel per kind here (the wall splits the lateral into two sectors; one side's chambers
-        // agree under `keep`, the other's differ), and **fuse and cut keep complementary
-        // sectors** — a relative assertion: which sector is the outer one is the assembly's and
-        // the volume oracle's to measure (the gate-opening cell), not this harness's to
-        // re-derive. Structure is absolute: `[arc, ruling, arc, ruling]` walls on the sector's
-        // own rim nodes.
+        // ★ **The emitter answers with regions (D5).** Under `keep` the wall splits the middle
+        // interval into two sectors, one kept and one not, and the kept one joins the whole
+        // bands above and below it: **fuse** emits one face — a `Band` between the two cap
+        // circles with the unkept sector as its one **hole** (a 4-node ring: two arcs on the
+        // cut rims' own nodes, two rulings); **cut** keeps the other sector alone — one 4-node
+        // `Ring` face. Which sector is the outer one is the assembly's and the volume oracle's to
+        // measure (the gate-opening cell), not this harness's to re-derive.
         let faces_for = |kind: BoolKind| -> Vec<LocalFace> {
             crate::cyl_chart::emit_lateral(kind, &jd, &setup.cyls, &plane_faces, &curved, &rows)
                 .unwrap()
-                .into_iter()
-                .filter(|f| matches!(f.outer, crate::boolean::Bound::Ring(_)))
-                .collect()
         };
         let (fuse, cut) = (faces_for(BoolKind::Fuse), faces_for(BoolKind::Cut));
-        assert_eq!(fuse.len(), 1, "one kept sector panel for fuse");
-        assert_eq!(cut.len(), 1, "one kept sector panel for cut");
-        let arc_pair = |f: &LocalFace| -> [NodeId; 2] {
-            let crate::boolean::Bound::Ring(r) = &f.outer else {
-                unreachable!("filtered to rings")
-            };
-            assert_eq!(r.nodes.len(), 4);
-            assert!(matches!(
-                r.walls[..],
-                [
-                    crate::boolean::Wall::Arc { ccw: true, .. },
-                    crate::boolean::Wall::Ruling { up: true, .. },
-                    crate::boolean::Wall::Arc { ccw: false, .. },
-                    crate::boolean::Wall::Ruling { up: false, .. },
-                ]
-            ));
-            [r.nodes[0], r.nodes[1]]
-        };
-        let (pf, pc) = (arc_pair(&fuse[0]), arc_pair(&cut[0]));
+        assert_eq!(fuse.len(), 1, "fuse: one lateral face, a band with a hole");
+        assert_eq!(cut.len(), 1, "cut: one lateral face, the kept sector");
         let rim = &cut_rims[&(0, z0)];
-        assert!(rim.nodes.contains(&pf[0]) && rim.nodes.contains(&pc[0]));
-        assert_ne!(pf, pc, "fuse and cut keep complementary sectors");
+        // The ccw arc a ring carries on the lower cut rim, as an ordered node pair.
+        let arc_on_z0 = |r: &crate::boolean::Ring| -> [NodeId; 2] {
+            let n = r.nodes.len();
+            assert_eq!(n, 4, "two arcs and two rulings");
+            let arcs = r
+                .walls
+                .iter()
+                .filter(|w| matches!(w, crate::boolean::Wall::Arc { .. }))
+                .count();
+            assert_eq!(arcs, 2);
+            for i in 0..n {
+                let (a, b) = (r.nodes[i], r.nodes[(i + 1) % n]);
+                if let crate::boolean::Wall::Arc { ccw, .. } = r.walls[i]
+                    && rim.nodes.contains(&a)
+                    && rim.nodes.contains(&b)
+                {
+                    return if ccw { [a, b] } else { [b, a] };
+                }
+            }
+            panic!("no arc on the lower cut rim");
+        };
+        let crate::boolean::Bound::Band { lo, hi } = &fuse[0].outer else {
+            panic!("fuse: a band between the caps, got {:?}", fuse[0].outer);
+        };
+        assert!(
+            matches!(
+                (lo, hi),
+                (
+                    crate::boolean::Rim::Circle(_),
+                    crate::boolean::Rim::Circle(_)
+                )
+            ),
+            "the caps' whole circles are the band's rims"
+        );
+        assert_eq!(
+            fuse[0].inner.len(),
+            1,
+            "the unkept sector is the band's one hole"
+        );
+        let crate::boolean::Bound::Ring(hole) = &fuse[0].inner[0] else {
+            panic!("a hole is a ring");
+        };
+        let crate::boolean::Bound::Ring(panel) = &cut[0].outer else {
+            panic!("cut: the kept sector is a ring, got {:?}", cut[0].outer);
+        };
+        assert!(cut[0].inner.is_empty());
+        // ★ **Fuse's hole is cut's panel**: the sector fuse drops (inside the plate) is exactly
+        // the sector cut keeps (the groove's wall), so the two rings carry the same ccw arc on
+        // the lower cut rim — the old «complementary panels» claim, restated for regions.
+        let (pf, pc) = (arc_on_z0(hole), arc_on_z0(panel));
+        assert_eq!(pf, pc, "fuse's hole is cut's panel");
         // Negative control: without the sector labels the both-cut interval's cells have no
         // speaking end, and the emitter refuses the class rather than guess a chamber. Called
         // directly, not through the census — this hand-broken input violates the very premise

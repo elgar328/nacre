@@ -3408,8 +3408,58 @@ pub(crate) mod probe {
             m.rebuild_adjacency();
             crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
                 .expect("the half-height boss builds");
+            // ★ **D5: the emitter builds the half-height boss's lateral as one face** — a band
+            // with one circle rim and one chain rim — so the cleaning pass sees a single member
+            // and records no row for it. What the row locked (one rim of each sense, a chain
+            // that passes the seam once) is locked on the model: the one lateral face's outer
+            // loop carries exactly one closed circular edge (the whole rim) and circular edges
+            // that are *not* closed (the chain's arcs), with the straight seam legs between.
+            m.rebuild_adjacency();
+            let laterals: Vec<_> = m
+                .reachable()
+                .faces
+                .iter()
+                .copied()
+                .filter(|&f| {
+                    matches!(
+                        m.surface(m.faces.get(f).surface),
+                        nacre_geom::Surface::Cylinder(_)
+                    )
+                })
+                .collect();
+            assert_eq!(
+                laterals.len(),
+                1,
+                "one lateral face for the half-height boss"
+            );
+            let outer = &m.faces.get(laterals[0]).outer;
+            let (mut closed, mut arcs) = (0usize, 0usize);
+            for he in &outer.half_edges {
+                let circular = matches!(m.edge_curve(he.edge), nacre_geom::Curve::Circle(_));
+                let [a, b] = m.edges.get(he.edge).vertices;
+                let is_closed = a == b;
+                match (circular, is_closed) {
+                    (true, true) => closed += 1,
+                    (true, false) => arcs += 1,
+                    _ => {}
+                }
+            }
+            assert_eq!(closed, 1, "one whole rim");
+            assert!(arcs >= 1, "a chain rim of arcs");
             let rows = snapshot();
-            assert!(rows.len() > before, "the fuse recorded no curved group");
+            // The fuse records no curved group any more: one face, one member, no row. Read by
+            // this test's own thread name — the suite runs in parallel and other fixtures
+            // record rows meanwhile (the trap the stage-0 narrowing named).
+            let me = std::thread::current().name().unwrap_or("?").to_string();
+            let mine: Vec<&Row> = rows[before..].iter().filter(|r| r.test == me).collect();
+            assert!(
+                mine.is_empty(),
+                "the fuse recorded a curved group: {mine:?}"
+            );
+            // The universal claims stay universal over every row recorded so far (other
+            // fixtures' groups, which record whenever a class carries two faces): a merged group
+            // has exactly one boundary of each sense, its holes met the seam at zero or two
+            // contacts, and a merged chain passes θ = 0 once with at most two contacts.
             for r in &rows {
                 assert!(r.members >= 2, "a single face is not a group: {r:?}");
                 if r.outcome.is_none() {
@@ -3429,45 +3479,8 @@ pub(crate) mod probe {
                     );
                 }
             }
-            // ★ **This test's own rows only** (D5, stage 0). The sentence used to be asserted
-            // over every recorded row, and the serial ledger records **17** such groups from
-            // other fixtures — same-chamber panels sharing a ruling, which erase to 0-winding
-            // cycles this pass has no `Bound::Ring` arm for. The universal claim was true only
-            // by test order (the recorded trap: a `#[test]` lock sees what ran before it); the
-            // honest range is the fixture this test builds.
-            for r in &rows[before..] {
-                assert_ne!(
-                    r.outcome,
-                    Some(CurvedAbstain::WrappingNotOneEach),
-                    "a group whose wrapping cycles are not one of each sense: {r:?}"
-                );
-            }
-            // ★ Universal, not "this test's row": the suite runs in parallel and other fixtures
-            // (the mesh oracle's half walls) record chains too. Every merged chain is one rim
-            // of a band, passes θ = 0 exactly once, and touches the seam at one contact (a
-            // wrap arc's seam vertex) or two (a ruling along the seam).
-            let chain_rows: Vec<&Row> = rows.iter().filter(|r| r.stats.chain_rims > 0).collect();
-            assert!(
-                rows[before..].iter().any(|r| r.stats.chain_rims > 0),
-                "the half-height boss recorded no chain: {rows:?}"
-            );
-            for r in chain_rows {
-                assert_eq!(r.outcome, None, "a chain merges: {r:?}");
-                let s = r.stats;
-                assert_eq!(
-                    (s.plus, s.minus, s.chain_rims),
-                    (1, 1, 1),
-                    "one rim, one chain: {s:?}"
-                );
-                assert_eq!(
-                    s.max_chain_crossings, 1,
-                    "a chain passes the seam once: {s:?}"
-                );
-                assert!(
-                    (1..=2).contains(&s.max_chain_contacts),
-                    "a chain touches the seam at one or two contacts: {s:?}"
-                );
-            }
+            let _ = BoolKind::Fuse;
+            let _: Option<CurvedAbstain> = None;
         }
     }
 }
