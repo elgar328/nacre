@@ -71,15 +71,18 @@ fn bigfloat_sign(val: &BigFloat) -> Orient {
 /// plan reviews had to correct on paper (c = 0 first; the opposite-sign arm is a *product*).
 #[test]
 fn the_sign_cases_are_exhaustive() {
-    let cases: [(Rat, Rat, Rat, Orient); 16] = [
+    let cases: [(Rat, Rat, Rat, Orient); 18] = [
         // c = 0 first — b√0 = 0 whatever b is (the spec trap: sign(b) here would be wrong).
         (ri(0), ri(5), ri(0), Orient::Zero),
         (ri(-3), ri(7), ri(0), Orient::Negative),
         (ri(2), ri(-9), ri(0), Orient::Positive),
-        // b = 0 / a = 0.
+        // b = 0 / a = 0 — the rational fast path, integer and fractional `a`, against the
+        // oracle below and (further down) against the BigInt road it short-circuits.
         (ri(3), ri(0), ri(2), Orient::Positive),
         (ri(-3), ri(0), ri(2), Orient::Negative),
         (ri(0), ri(0), ri(2), Orient::Zero),
+        (r(-3, 7), ri(0), r(2, 3), Orient::Negative),
+        (r(5, 11), ri(0), r(7, 5), Orient::Positive),
         (ri(0), ri(2), ri(2), Orient::Positive),
         (ri(0), ri(-2), ri(2), Orient::Negative),
         // Same sign.
@@ -104,6 +107,22 @@ fn the_sign_cases_are_exhaustive() {
     }
     // A rational radicand exercises the √(p/q) = √(pq)/q integerization: −1 + 2·√(1/4) = 0.
     assert_eq!(qv(ri(-1), ri(2), r(1, 4)).sign(), Orient::Zero);
+    // The `b == 0` fast path answers exactly what the BigInt road answers.
+    for (a, c) in [
+        (ri(0), ri(2)),
+        (ri(3), ri(0)),
+        (ri(-3), r(1, 4)),
+        (r(-3, 7), r(2, 3)),
+        (r(5, 11), r(7, 5)),
+        (r(-1, 1_000_000), ri(999_999)),
+    ] {
+        let (ba, bb, bc) = super::integerize(a, ri(0), c);
+        assert_eq!(
+            qv(a, ri(0), c).sign(),
+            super::sign1_int(&ba, &bb, &bc),
+            "{a:?} + 0√{c:?}"
+        );
+    }
 }
 
 /// One value, two spellings — within one radical (√4 beside a rational) and across two

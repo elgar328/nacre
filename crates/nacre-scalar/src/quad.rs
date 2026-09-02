@@ -158,6 +158,16 @@ impl QuadVal {
 
     /// The exact sign — total (the BigInt core cannot overflow and `c ≥ 0` by invariant).
     pub fn sign(&self) -> Orient {
+        // A rational value's sign is `a`'s — no radical, no BigInt. This is the common case
+        // (every plane-named corner the mixed-ring parity evaluates), and `integerize` would
+        // otherwise build four BigInts to learn that `b·√c` is zero.
+        if self.b == Rat::from_int(0) {
+            return match self.a.cmp(&Rat::from_int(0)) {
+                core::cmp::Ordering::Greater => Orient::Positive,
+                core::cmp::Ordering::Less => Orient::Negative,
+                core::cmp::Ordering::Equal => Orient::Zero,
+            };
+        }
         // Integerize the radical first: √(p/q) = √(p·q)/q, folding 1/q into b.
         let (big_a, big_b, big_c) = integerize(self.a, self.b, self.c);
         sign1_int(&big_a, &big_b, &big_c)

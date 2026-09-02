@@ -824,9 +824,17 @@ pub enum RejectReason {
     /// the crossing census's sixteen cells were a wall boss's Common parted by a slab: two
     /// components of half-disc caps, a panel and a lateral, with no vertex among them, and
     /// `coord_probes` knew only how to take a **whole** circle's centre. Reading a cut cap as the
-    /// disk it is (`combinatorics::face_circle`) gives every one of them a witness. What is left
-    /// under this name is the **corner** families, whose axis stands on the plate's corner edge:
-    /// there the probes exist and every one of them really is blocked.
+    /// disk it is (`combinatorics::face_circle`) gives every one of them a witness. What was left
+    /// under this name was the **corner** families, whose axis stands on the plate's corner edge:
+    /// there the probes existed and every one of them was blocked — by the mixed ring parity
+    /// abstaining on a **corner on the ray**, which the planar roads had always decided (the
+    /// half-open rule). Since that rule is spelled once and read by the mixed road too (cell ②,
+    /// 2026-09-02) the corner families' Fuse and Cut decide, and the crossing census raises this
+    /// reason in **four** cells: the corner Commons parted by a slab, a quarter cylinder whose
+    /// every witness (the axis point on the plate's corner edge, its wall edges' midpoints) lies
+    /// *on* a ring it is asked against — measured by kind, six probes of six at a corner. That
+    /// is the one abstention that is right, and its remedy is a witness strictly inside the
+    /// sector: the probe supply's rung, not the parity's.
     ///
     /// ★★★★★ **That line used to end «with no firing population» for the last two, and that was
     /// the wrong half of the sentence.** The population was there and large; what it was not was
@@ -1541,14 +1549,6 @@ mod zzz_ledger {
             eprintln!(
                 "ledger C2-P1: mixed abstentions {} by kind {hist:?}",
                 ties.len()
-            );
-            let sh = *crate::combinatorics::shadow_probe::COUNTS
-                .lock()
-                .expect("the probe's lock is never held across a panic");
-            eprintln!(
-                "ledger C2-P3: two roads on rational rings — agree {} plane_some_mixed_none {} \
-                 plane_boundary_mixed_none {} plane_boundary_mixed_some {} disagree_some {}",
-                sh[0], sh[1], sh[2], sh[3], sh[4]
             );
             let dec = crate::boolean::probe::deciding::ROWS
                 .lock()

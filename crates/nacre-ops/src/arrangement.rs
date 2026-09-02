@@ -5927,18 +5927,14 @@ fn rational_point_in_ring(
     let p2 = chart.project(&center).ok_or_else(undecided)?;
     let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
     let ring2 = chart.ring(jd, &nodes).ok_or_else(undecided)?;
-    let side = nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2);
-    #[cfg(test)]
-    combinatorics::shadow_probe::record(
-        &side,
-        combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &center, ring),
-    );
-    Ok(match side {
-        nacre_geom::intersect::RingSide::Inside => Some(true),
-        nacre_geom::intersect::RingSide::Outside => Some(false),
-        // On the boundary this witness says nothing — the caller's next one may.
-        nacre_geom::intersect::RingSide::OnBoundary => None,
-    })
+    Ok(
+        match nacre_geom::intersect::point_in_ring_2d_rat(p2, &ring2) {
+            nacre_geom::intersect::RingSide::Inside => Some(true),
+            nacre_geom::intersect::RingSide::Outside => Some(false),
+            // On the boundary this witness says nothing — the caller's next one may.
+            nacre_geom::intersect::RingSide::OnBoundary => None,
+        },
+    )
 }
 
 /// Whether a polygon contour lies inside a disk — population-impossible (its edges ride wall
@@ -6034,9 +6030,10 @@ fn cell_in_cell(
             if combinatorics::ring_is_mixed(&rings[b]) {
                 let undecided = || reject(RejectReason::WitnessNotRational);
                 let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
-                // From each rational node of `a` until one ray is clear (`None` is a tie: a
-                // corner or a root on the ray, the probe on a step's line); an exhausted ring
-                // is the same degeneracy `ring_in_ring` names.
+                // From each rational node of `a` until one ray is clear (`None` is the probe
+                // on the ring, a tangent ray, or a seam-incident root — a corner on the ray is
+                // decided, cell ②); an exhausted ring is the same degeneracy `ring_in_ring`
+                // names.
                 let mut asked = false;
                 for p in rings[a]
                     .iter()
@@ -10879,9 +10876,9 @@ mod tests {
                         // ★★★★★ **A point strictly inside the circle and *on* the chord is on
                         // both digons' boundary, and "inside" has no answer there.** These are the
                         // grid's sharpest points: the ray along the chart's first axis leaves such
-                        // a point straight through **both arc endpoints**, which is exactly the
-                        // crossing-at-a-corner the arc arm must abstain for rather than read as
-                        // "outside the span".
+                        // a point straight through **both arc endpoints** — the chord is a step
+                        // lying along the ray, and the straight arm names the probe between its
+                        // ends as the boundary before any arc is asked (cell ②).
                         if radial == Orient::Negative && wall == Rat::from_int(0) {
                             for (ring, who) in [(bite, "bite"), (overhang, "overhang")] {
                                 assert_eq!(
@@ -10924,10 +10921,11 @@ mod tests {
                 on_boundary > 0,
                 "the grid meets the boundary: {on_boundary}"
             );
-            // Recorded rather than bounded: an abstention is the ray meeting a ring corner, and
-            // its count is a property of this grid's arithmetic, not of the rule.
+            // Recorded rather than bounded: every abstention here is the tangent ray (the rows
+            // `y = 15, 25` graze the circle — measured, cell ②: 160 of 160, no corner among
+            // them), and its count is a property of this grid, not of the rule.
             assert!(abstained > 0, "abstentions: {abstained}");
-            // Cell ② stage 0 (P2): what those abstentions were, by kind.
+            // What those abstentions were, by kind.
             {
                 let rows = combinatorics::tie_probe::ROWS
                     .lock()
@@ -10950,6 +10948,7 @@ mod tests {
     }
 
     /// The bitten-plate fixture, handed to `f` as `(judge, cyls, class, big, overhang, bite)`.
+    /// The bitten fixture: one wall (`x = 40`) cuts the circle into two digons.
     fn with_bitten_rings(
         f: impl FnOnce(
             &Judge<'_, WorkingPlane>,
@@ -10960,11 +10959,28 @@ mod tests {
             &[combinatorics::RingEdge],
         ),
     ) {
+        with_cut_rings([40.0, 40.0, 20.0], f);
+    }
+
+    /// A plate `[0, plate]` with a z-cylinder (r = 5, h = 10) standing on its top at
+    /// `(40, 20)`: the class carrying the cut circle, its judge, and the three bounded rings —
+    /// the bitten top, the overhang (disk ∖ plate) and the bite (disk ∩ plate). The plate's
+    /// extent picks the cut: `[40, 40, 20]` bites with one wall (two digons); `[40, 24, 20]`
+    /// with two — the corner `(40, 24)` sits inside the circle and both rings are trigons
+    /// whose arc ends at the rational `(37, 24)`, off the seam and off the tangent columns.
+    fn with_cut_rings(
+        plate: [f64; 3],
+        f: impl FnOnce(
+            &Judge<'_, WorkingPlane>,
+            &[crate::planes::WorkingCyl],
+            usize,
+            &[combinatorics::RingEdge],
+            &[combinatorics::RingEdge],
+            &[combinatorics::RingEdge],
+        ),
+    ) {
         let mut m = Model::new();
-        let a = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([40.0, 40.0, 20.0]),
-        );
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(plate));
         let b = m.add_cylinder(
             Point3::from_array([40.0, 20.0, 20.0]),
             Vector3::from_array([0.0, 0.0, 1.0]),
@@ -11034,24 +11050,31 @@ mod tests {
                 .iter()
                 .position(|c| c.winding == -1)
                 .expect("the outside cell");
-            let big_ix = cells
+            let bounded: Vec<usize> = (0..cells.len())
+                .filter(|&i| cells[i].winding == 1)
+                .collect();
+            assert_eq!(
+                bounded.len(),
+                3,
+                "the bitten top, the overhang and the bite"
+            );
+            let big_ix = *bounded
                 .iter()
-                .position(|c| c.winding == 1 && c.half_edges.len() > 2)
+                .max_by_key(|&&i| cells[i].half_edges.len())
                 .expect("the bitten top ring");
             let outer_ai = (0..na)
                 .find(|ai| face_of[&(2 * (ns + ai) + 1)] == outside)
                 .expect("the outer piece borders the outside");
             let overhang_ix = face_of[&(2 * (ns + outer_ai))];
+            let bite_ix = *bounded
+                .iter()
+                .find(|&&i| i != big_ix && i != overhang_ix)
+                .expect("the bite");
             assert_eq!(
                 cells[overhang_ix].half_edges.len(),
-                2,
-                "overhang is a digon"
+                cells[bite_ix].half_edges.len(),
+                "the same walls cut the overhang and the bite"
             );
-            let bite_ix = cells
-                .iter()
-                .enumerate()
-                .position(|(i, c)| c.half_edges.len() == 2 && i != overhang_ix)
-                .expect("the bite digon");
             let ring = |ix: usize| -> Vec<combinatorics::RingEdge> {
                 cells[ix]
                     .half_edges
@@ -11064,6 +11087,248 @@ mod tests {
         }
         let (wc, big, overhang, bite) = found.expect("one class carries the cut circle");
         f(&jd, &cyls, wc, &big, &overhang, &bite);
+    }
+
+    /// **A root at an arc's own end is a corner on the ray, and the arc's tangent there says
+    /// whether the arc counts it** (cell ②) — the half-open rule in the arc arm, on the one
+    /// fixture that reaches it.
+    ///
+    /// The bitten fixture cannot: its chord's ends are the seam and the tangent columns, and
+    /// each abstains first (measured over the whole suite before this cell: `ArcRootAtEnd` 0
+    /// while the straight arm's corner tie spoke for the same corners). The plate's second wall
+    /// `y = 24` puts the corner `(40, 24)` inside the circle, so the bite's arc ends at
+    /// `(37, 24)` — a 3-4-5 point, rational, off the seam `(40, 15)` and off the tangent
+    /// columns `x = 35, 45` — and the lattice column `x = 37` sends its rays through that end
+    /// **alone**, beside an ordinary second root at `(37, 16)`. That is the single-end crossing
+    /// a global sign error cannot hide: two ends on one ray flip together and keep the parity
+    /// (the bitten fixture's chord), one end on a ray does not. Every answer the sweep gives
+    /// is the truth, the boundary abstains, and the arm decided the end exactly once per point
+    /// on the shooting side of that column, for both rings.
+    #[test]
+    fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
+        use nacre_scalar::{Orient, Rat};
+        with_cut_rings([40.0, 24.0, 20.0], |jd, cyls, wc, _big, overhang, bite| {
+            let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
+            let def = cyls
+                .iter()
+                .map(|c| &c.def)
+                .find(|d| d.radius() == Rat::from_int(5))
+                .expect("the cut circle");
+            let decided0 = combinatorics::tie_probe::arc_end_decisions_here();
+            let (mut swept, mut abstained, mut inside_seen, mut boundary) = (0usize, 0, 0, 0);
+            let mut column = [0usize; 2];
+            let rat = |k: i128| Rat::new(k, 2).unwrap();
+            for i in 60..=100 {
+                for j in 20..=60 {
+                    let p = [rat(i), rat(j), Rat::from_int(20)];
+                    let radial = nacre_scalar::quad::cylinder_radial_side(
+                        &p,
+                        &def.origin(),
+                        &def.dir(),
+                        def.radius(),
+                    );
+                    let (x, y) = (p[0], p[1]);
+                    let (wx, wy) = (x == Rat::from_int(40), y == Rat::from_int(24));
+                    // Both rings' boundary: the circle and the two chords, `x = 40` for
+                    // `15 ≤ y ≤ 24` and `y = 24` for `37 ≤ x ≤ 40`, ends included.
+                    let on_chord = (wx && y >= Rat::from_int(15) && y <= Rat::from_int(24))
+                        || (wy && x >= Rat::from_int(37) && x <= Rat::from_int(40));
+                    if radial == Orient::Zero || on_chord {
+                        boundary += 1;
+                        for (ring, who) in [(bite, "bite"), (overhang, "overhang")] {
+                            assert_eq!(
+                                combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring),
+                                None,
+                                "{who} must abstain on its boundary at {p:?}"
+                            );
+                        }
+                        continue;
+                    }
+                    let in_disk = radial == Orient::Negative;
+                    let on_plate = x < Rat::from_int(40) && y < Rat::from_int(24);
+                    for (k, (ring, want, who)) in [
+                        (bite, in_disk && on_plate, "bite"),
+                        (overhang, in_disk && !on_plate, "overhang"),
+                    ]
+                    .into_iter()
+                    .enumerate()
+                    {
+                        match combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring) {
+                            Some(got) => {
+                                assert_eq!(got, want, "{who} at {p:?}");
+                                swept += 1;
+                                inside_seen += usize::from(want);
+                                if x == Rat::from_int(37) && radial == Orient::Positive {
+                                    column[k] += 1;
+                                }
+                            }
+                            None => abstained += 1,
+                        }
+                    }
+                }
+            }
+            assert!(swept > 1_000, "answers swept: {swept}");
+            assert!(inside_seen > 100, "points inside a ring: {inside_seen}");
+            assert!(boundary > 0, "the grid meets the boundary: {boundary}");
+            // The `x = 37` column outside the circle: 24 lattice points, every one answered by
+            // both rings — the shooting side through the end, the other side by a miss — and
+            // the end decided exactly once per point on the shooting side: 12 × 2 rings.
+            assert_eq!(column, [24, 24], "the single-end column is answered");
+            assert_eq!(
+                combinatorics::tie_probe::arc_end_decisions_here() - decided0,
+                24,
+                "the arc-end arm decided the column's shooting side"
+            );
+            eprintln!("arc-end sweep: swept {swept} abstained {abstained} boundary {boundary}");
+        });
+    }
+
+    /// **On a ring whose every corner is rational, the mixed road and the chart road are one
+    /// rule** (cell ②): `point_in_ring_2d_rat` says Inside/Outside/OnBoundary and
+    /// `point_in_mixed_ring` `Some(true)`/`Some(false)`/`None`, and the pairs match at every
+    /// lattice point of every bounded ring of every class of two overlapping plates — squares
+    /// and L-shapes with reflex corners. A lattice at half steps shares a row with every corner
+    /// and every horizontal step, so every corner-on-the-ray configuration the half-open rule
+    /// distinguishes (both steps up, both down, one each, a step along the ray, the probe at
+    /// the corner) is on the sweep. Before this cell the mixed road abstained at every such
+    /// corner (5 abstentions where the chart road answered, over the whole suite's rational
+    /// rings; 0 disagreements — P3); a whole-suite shadow of the two roads cost 61 % of the
+    /// serial sweep and is not kept — this lattice is the lock.
+    #[test]
+    fn the_two_roads_agree_on_every_rational_ring() {
+        use nacre_geom::intersect::{RingSide, point_in_ring_2d_rat};
+        use nacre_scalar::Rat;
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([2.0, 2.0, 0.0]),
+            Point3::from_array([6.0, 6.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            plane_ix,
+            standard,
+            notes,
+            cyls,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
+        let (mut rings_swept, mut points, mut inside, mut boundary, mut reflex) =
+            (0usize, 0usize, 0usize, 0usize, 0usize);
+        for wc in 0..planes.len() {
+            let Some(coeffs) = combinatorics::class_coeffs_rat(&jd, wc) else {
+                continue;
+            };
+            let tr = trace_on_class_of(
+                &m,
+                a,
+                b,
+                wc,
+                &jd,
+                &[],
+                &faces_tab,
+                &surf_ix,
+                &inc_a,
+                &inc_b,
+                &plane_ix,
+                Default::default(),
+            );
+            let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
+            let Ok(split) = split_at_crossings(&jd, &cyls, wc, &merged, &mut Aliases::default())
+            else {
+                continue;
+            };
+            let Ok(circles) = merge_circles(&tr.circles, &cyls) else {
+                continue;
+            };
+            let Ok(edges) = ClassEdges::of(&jd, &cyls, wc, &split, &circles, &[]) else {
+                continue;
+            };
+            let Ok((cells, _)) = walk_cells(&jd, &cyls, wc, &edges) else {
+                continue;
+            };
+            let n = [coeffs[0], coeffs[1], coeffs[2]];
+            let chart = combinatorics::Chart2dRat::of_normal(&n).unwrap();
+            let (e1, e2) = chart.axes();
+            // Axis-aligned classes: unit chart axes and a unit normal, so a chart point
+            // `(X, Y)` lifts to `X·e1 + Y·e2 − d·n`.
+            for e in [e1, e2, &n] {
+                assert_eq!(combinatorics::dot3_rat(e, e), Some(Rat::from_int(1)));
+            }
+            let lift = |xy: [Rat; 2]| -> [Rat; 3] {
+                let mut p = [Rat::from_int(0); 3];
+                for k in 0..3 {
+                    p[k] = xy[0]
+                        .checked_mul(e1[k])
+                        .unwrap()
+                        .checked_add(xy[1].checked_mul(e2[k]).unwrap())
+                        .unwrap()
+                        .checked_sub(coeffs[3].checked_mul(n[k]).unwrap())
+                        .unwrap();
+                }
+                p
+            };
+            for c in cells.iter().filter(|c| c.winding == 1) {
+                let ring: Vec<combinatorics::RingEdge> =
+                    c.half_edges.iter().map(|&he| edges.edge_at(he)).collect();
+                assert!(!combinatorics::ring_is_mixed(&ring), "a planar fixture");
+                let nodes: Vec<NodeId> = ring.iter().map(|e| e.node).collect();
+                let ring2 = chart.ring(&jd, &nodes).expect("rational corners");
+                if ring2.len() > 4 {
+                    reflex += 1;
+                }
+                let bound = |k: usize, lo: bool| -> i128 {
+                    let it = ring2.iter().map(|q| {
+                        assert_eq!(q[k].denom(), 1, "integer corners");
+                        q[k].numer()
+                    });
+                    if lo {
+                        it.min().unwrap() - 1
+                    } else {
+                        it.max().unwrap() + 1
+                    }
+                };
+                for xi in 2 * bound(0, true)..=2 * bound(0, false) {
+                    for yi in 2 * bound(1, true)..=2 * bound(1, false) {
+                        let q = [Rat::new(xi, 2).unwrap(), Rat::new(yi, 2).unwrap()];
+                        let p = lift(q);
+                        assert_eq!(
+                            chart.project(&p),
+                            Some(q),
+                            "the lift is the chart's inverse"
+                        );
+                        let plane = point_in_ring_2d_rat(q, &ring2);
+                        let mixed =
+                            combinatorics::point_in_mixed_ring(&jd, &cyls, &coeffs, &p, &ring);
+                        match (plane, mixed) {
+                            (RingSide::Inside, Some(true)) => inside += 1,
+                            (RingSide::Outside, Some(false)) => {}
+                            (RingSide::OnBoundary, None) => boundary += 1,
+                            other => panic!("class {wc} ring {ring2:?} at {q:?}: {other:?}"),
+                        }
+                        points += 1;
+                    }
+                }
+                rings_swept += 1;
+            }
+        }
+        assert!(rings_swept >= 3, "rings swept: {rings_swept}");
+        assert!(reflex > 0, "an L-shaped ring: {reflex}");
+        assert!(
+            inside > 0 && boundary > 0,
+            "points {points} inside {inside} boundary {boundary}"
+        );
+        eprintln!(
+            "two roads: rings {rings_swept} points {points} inside {inside} boundary {boundary}"
+        );
     }
 
     /// The gated drill population's fixture: a `[0,2]³` box and an axis-aligned cylinder at

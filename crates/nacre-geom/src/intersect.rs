@@ -17,7 +17,7 @@ use nacre_math::{Point2, Point3, Vector3};
 pub use nacre_predicates::{RayCross, SegCross, orient2d};
 // Re-exported for the same reason: `nacre-ops` consumes the rational ring predicates below and
 // states their coordinates in `Rat` without needing its own view of the sign primitive.
-pub use nacre_scalar::{Rat, orient2d_rat};
+pub use nacre_scalar::{Orient, Rat, orient2d_rat};
 
 /// `sin²θ` below which two plane normals count as parallel. Unit normals make
 /// `‖n1 × n2‖² = sin²θ ∈ [0, 1]`, so this absolute cutoff is scale-free.
@@ -293,6 +293,15 @@ pub fn point_in_ring_2d(p: Point2, ring: &[Point2]) -> RingSide {
         return RingSide::Outside;
     }
     let pa = p.as_array();
+    let sgn = |v: f64, at: f64| {
+        if v > at {
+            Orient::Positive
+        } else if v < at {
+            Orient::Negative
+        } else {
+            Orient::Zero
+        }
+    };
     let mut inside = false;
     for i in 0..n {
         let (a, b) = (ring[i].as_array(), ring[(i + 1) % n].as_array());
@@ -300,19 +309,53 @@ pub fn point_in_ring_2d(p: Point2, ring: &[Point2]) -> RingSide {
         if side == 0.0 && on_segment_2d(a, b, pa) {
             return RingSide::OnBoundary;
         }
-        // Half-open in y so a vertex on the ray counts for exactly one of its two edges.
-        if (a[1] > pa[1]) != (b[1] > pa[1]) {
-            // Upward edge with `p` to its left, or downward edge with `p` to its right.
-            let upward = b[1] > a[1];
-            if (side > 0.0) == upward {
-                inside = !inside;
-            }
+        match ray_step_crossing(sgn(a[1], pa[1]), sgn(b[1], pa[1]), sgn(side, 0.0)) {
+            Some(true) => inside = !inside,
+            Some(false) => {}
+            // A straddling step through the probe is on the segment — already answered above;
+            // the rule's own word for it is the same.
+            None => return RingSide::OnBoundary,
         }
     }
     if inside {
         RingSide::Inside
     } else {
         RingSide::Outside
+    }
+}
+
+/// **The rightward ray's crossing rule, spelled once** — for [`point_in_ring_2d`],
+/// [`point_in_ring_2d_rat`], and the kernel's mixed (arc-bearing) ring parity above this crate,
+/// which reads it lazily through [`ray_straddle`].
+///
+/// A ring step `a → b` against the probe's ray `{y = p.y, x > p.x}`: `ya` and `yb` are the signs
+/// of `a.y − p.y` and `b.y − p.y`. The rule is **half-open in y**: an end *on* the ray is "not
+/// above", so the step straddles the ray iff exactly one end is strictly above. A corner on the
+/// ray is therefore counted by exactly one of its two steps — the one that leaves it upward — and
+/// a step lying along the ray by neither: two steps leaving a corner to opposite sides count
+/// once (a crossing), two leaving to the same side count twice or not at all (a touch). That is
+/// what makes a corner on the ray a decision and not a tie; only the probe *on* the boundary is
+/// left to the caller.
+///
+/// `None`: the step does not straddle. `Some(upward)`: it does, going up (`b` strictly above) or
+/// down.
+pub fn ray_straddle(ya: Orient, yb: Orient) -> Option<bool> {
+    let above = |y: Orient| y == Orient::Positive;
+    (above(ya) != above(yb)).then(|| above(yb))
+}
+
+/// Whether the step crosses the ray: a straddling step crosses iff the probe is to its left when
+/// it goes up and to its right when it goes down — `side` is the sign of `orient2d(a, b, p)`,
+/// which a caller may compute only once [`ray_straddle`] says the step straddles. `Some(false)`
+/// for a step that does not straddle; `None` when a straddling step has `side == Zero`: the probe
+/// is on the step, a boundary and not a crossing.
+pub fn ray_step_crossing(ya: Orient, yb: Orient, side: Orient) -> Option<bool> {
+    match ray_straddle(ya, yb) {
+        None => Some(false),
+        Some(upward) => match side {
+            Orient::Zero => None,
+            s => Some((s == Orient::Positive) == upward),
+        },
     }
 }
 
@@ -448,6 +491,11 @@ pub fn point_in_ring_2d_rat(p: [Rat; 2], ring: &[[Rat; 2]]) -> RingSide {
     if n < 3 {
         return RingSide::Outside;
     }
+    let sgn = |o: core::cmp::Ordering| match o {
+        core::cmp::Ordering::Greater => Orient::Positive,
+        core::cmp::Ordering::Less => Orient::Negative,
+        core::cmp::Ordering::Equal => Orient::Zero,
+    };
     let mut inside = false;
     for i in 0..n {
         let (a, b) = (ring[i], ring[(i + 1) % n]);
@@ -455,12 +503,14 @@ pub fn point_in_ring_2d_rat(p: [Rat; 2], ring: &[[Rat; 2]]) -> RingSide {
         if side == 0 && on_segment_2d_rat(a, b, p) {
             return RingSide::OnBoundary;
         }
-        // Half-open in y so a vertex on the ray counts for exactly one of its two edges.
-        if (a[1] > p[1]) != (b[1] > p[1]) {
-            let upward = b[1] > a[1];
-            if (side > 0) == upward {
-                inside = !inside;
-            }
+        match ray_step_crossing(
+            sgn(a[1].cmp(&p[1])),
+            sgn(b[1].cmp(&p[1])),
+            sgn(side.cmp(&0)),
+        ) {
+            Some(true) => inside = !inside,
+            Some(false) => {}
+            None => return RingSide::OnBoundary,
         }
     }
     if inside {
@@ -593,6 +643,60 @@ mod tests {
     use super::*;
     use nacre_math::Vector3;
     use proptest::prelude::*;
+
+    /// The half-open rule's whole table: a step straddles iff exactly one end is strictly
+    /// above (an end on the ray is not), a straddling step crosses iff the probe is left of it
+    /// going up or right of it going down, and a straddling step through the probe is `None`.
+    #[test]
+    fn the_ray_crossing_rule_is_half_open() {
+        use Orient::{Negative as N, Positive as P, Zero as Z};
+        for ya in [P, N, Z] {
+            for yb in [P, N, Z] {
+                let straddles = (ya == P) != (yb == P);
+                assert_eq!(
+                    ray_straddle(ya, yb),
+                    straddles.then_some(yb == P),
+                    "{ya:?} {yb:?}"
+                );
+                for side in [P, N, Z] {
+                    let want = match (straddles, side) {
+                        (false, _) => Some(false),
+                        (true, Z) => None,
+                        (true, s) => Some((s == P) == (yb == P)),
+                    };
+                    assert_eq!(
+                        ray_step_crossing(ya, yb, side),
+                        want,
+                        "{ya:?} {yb:?} {side:?}"
+                    );
+                }
+            }
+        }
+        // The corner on the ray, spelled out: the step leaving it upward counts when the corner
+        // is right of the probe (the probe left of the rising step) and not otherwise; the step
+        // leaving it downward never counts, nor does a step along the ray — so two steps
+        // leaving a corner to opposite sides count once and two leaving to the same side count
+        // twice or not at all.
+        let up = |side| ray_step_crossing(Z, P, side);
+        assert_eq!((up(P), up(N), up(Z)), (Some(true), Some(false), None));
+        for side in [P, N, Z] {
+            assert_eq!(
+                ray_step_crossing(Z, N, side),
+                Some(false),
+                "downward {side:?}"
+            );
+            assert_eq!(
+                ray_step_crossing(N, Z, side),
+                Some(false),
+                "arriving from below {side:?}"
+            );
+            assert_eq!(
+                ray_step_crossing(Z, Z, side),
+                Some(false),
+                "along the ray {side:?}"
+            );
+        }
+    }
 
     fn plane(origin: [f64; 3], normal: [f64; 3]) -> Plane {
         Plane::from_point_normal(Point3::from_array(origin), Vector3::from_array(normal)).unwrap()
