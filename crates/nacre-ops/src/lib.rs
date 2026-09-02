@@ -1562,6 +1562,45 @@ mod zzz_ledger {
                 eprintln!("ledger D5-P2: wrapping_not_one_each {n} in {t}");
             }
         }
+        {
+            let rows = crate::cyl_chart::probe::regions::ROWS
+                .lock()
+                .expect("the probe's lock is never held across a panic")
+                .clone();
+            let sum = |f: fn(&crate::cyl_chart::regions::Report) -> usize| {
+                rows.iter().map(|r| f(&r.rep)).sum::<usize>()
+            };
+            eprintln!(
+                "ledger D5-1b: rows {} agree {} disagree {} emitter_refused {} shadow_refused {} \
+                 shadow_emits_where_emitter_refused {} components {} faces {} band_faces {} \
+                 ring_faces {} run_end_not_piece_end {} ruling_run_not_tiled {} \
+                 rim_run_not_whole {} pinch_corners {} unchained {} classify_abstain {}",
+                rows.len(),
+                rows.iter().filter(|r| r.agree).count(),
+                rows.iter().filter(|r| !r.agree).count(),
+                rows.iter().filter(|r| r.emitter_refused).count(),
+                rows.iter().filter(|r| r.shadow_refused).count(),
+                rows.iter()
+                    .filter(|r| r.emitter_refused && r.shadow_faces > 0)
+                    .count(),
+                sum(|r| r.components),
+                sum(|r| r.faces),
+                sum(|r| r.band_faces),
+                sum(|r| r.ring_faces),
+                sum(|r| r.run_end_not_piece_end),
+                sum(|r| r.ruling_run_not_tiled),
+                sum(|r| r.rim_run_not_whole),
+                sum(|r| r.pinch_corners),
+                sum(|r| r.unchained),
+                sum(|r| r.classify_abstain),
+            );
+            for r in rows.iter().filter(|r| !r.agree) {
+                eprintln!(
+                    "ledger D5-1b disagree: {} cyl {} emitter_refused {} shadow {} today {} rep {:?}",
+                    r.test, r.cyl, r.emitter_refused, r.shadow_faces, r.today_faces, r.rep
+                );
+            }
+        }
         for r in crate::cyl_chart::probe::rbny::ROWS
             .lock()
             .expect("the probe's lock is never held across a panic")

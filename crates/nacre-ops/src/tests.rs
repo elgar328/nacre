@@ -10319,6 +10319,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                     .lock()
                     .expect("the probe's lock is never held across a panic")
                     .len();
+                let rg0 = crate::cyl_chart::probe::regions::ROWS
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
+                    .len();
                 let (mut m, plate, boss) = boss_family(base, h);
                 let got = match boolean(&mut m, kind, plate, boss) {
                     Err(BoolError::Rejected { .. }) => First,
@@ -10400,6 +10404,16 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                         eprintln!(
                             "P2 {name} {kind:?} x {tool_name}: members {} plus {} minus {}",
                             r.members, r.stats.plus, r.stats.minus
+                        );
+                    }
+                    let rg = crate::cyl_chart::probe::regions::ROWS
+                        .lock()
+                        .expect("the probe's lock is never held across a panic");
+                    for r in rg[rg0..].iter().filter(|r| !r.agree || r.emitter_refused) {
+                        eprintln!(
+                            "1b {name} {kind:?} x {tool_name}: cyl {} emitter_refused {} shadow {} \
+                             today {} agree {} rep {:?}",
+                            r.cyl, r.emitter_refused, r.shadow_faces, r.today_faces, r.agree, r.rep
                         );
                     }
                 }

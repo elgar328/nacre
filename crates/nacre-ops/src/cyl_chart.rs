@@ -1339,6 +1339,89 @@ pub(crate) fn census(
                 }
             }
         }
+        // ── D5, 1b — the shadow: the class's faces as regions of its chart, beside what today's
+        // road ships (its emission **after** the curved cleaning pass, which is the face set the
+        // assembly actually receives). Compared by signature, never by order.
+        {
+            let (shadow, rep, refused) = match regions::emit_regions(
+                jd, k, def, kind, side, &chart, &lines, &cells, &reads, curved,
+            ) {
+                Ok((f, r)) => (f, r, false),
+                Err(_) => (Vec::new(), regions::Report::default(), true),
+            };
+            let today: Vec<LocalFace> = match emission {
+                Ok(faces) => crate::boolean::unify_curved_faces(faces.clone(), &curved.cut_rims)
+                    .into_iter()
+                    .filter(|f| matches!(f.surf, ClassIx::Cyl(c) if c == k))
+                    .collect(),
+                Err(_) => Vec::new(),
+            };
+            // ★ Two spellings of one rim, read as one: today's emitter says `Rim::Circle(c)` of
+            // a **cut** rim (the assembly's `rim_walk` then walks its arcs), the cleaning pass
+            // and the shadow say the chain of those arcs. Same edges, same nodes — so a cut
+            // circle is signed as the chain it stands for, nodes included.
+            let sig = |f: &LocalFace| -> String {
+                let rim = |r: &Rim| match r {
+                    Rim::Circle(c) => match curved.cut_rims.get(&(k, *c)) {
+                        Some(cr) => format!("K{}", cr.nodes.len()),
+                        None => format!("C{c}"),
+                    },
+                    Rim::Chain(r) => format!("K{}", r.nodes.len()),
+                };
+                let bound = |b: &Bound| -> String {
+                    match b {
+                        Bound::Ring(r) => format!("ring{}", r.nodes.len()),
+                        Bound::Circle { cyl } => format!("circle{cyl}"),
+                        Bound::Band { lo, hi } => format!("band[{},{}]", rim(lo), rim(hi)),
+                    }
+                };
+                let mut nodes: Vec<String> = f
+                    .poly_rings()
+                    .flat_map(|r| r.nodes.iter().map(|n| format!("{n:?}")))
+                    .collect();
+                if let Bound::Band { lo, hi } = &f.outer {
+                    for r in [lo, hi] {
+                        if let Rim::Circle(c) = r {
+                            if let Some(cr) = curved.cut_rims.get(&(k, *c)) {
+                                nodes.extend(cr.nodes.iter().map(|n| format!("{n:?}")));
+                            }
+                        }
+                    }
+                }
+                nodes.sort();
+                nodes.dedup();
+                let mut inner: Vec<String> = f.inner.iter().map(bound).collect();
+                inner.sort();
+                format!(
+                    "{} flip{} inner[{}] nodes[{}]",
+                    bound(&f.outer),
+                    f.flip,
+                    inner.join(","),
+                    nodes.join(",")
+                )
+            };
+            let mut a: Vec<String> = shadow.iter().map(sig).collect();
+            a.sort();
+            let mut b: Vec<String> = today.iter().map(sig).collect();
+            b.sort();
+            if a != b && !emission.is_err() {
+                eprintln!(
+                    "1b-sig cyl {k}\n  shadow: {}\n  today:  {}",
+                    a.join(" | "),
+                    b.join(" | ")
+                );
+            }
+            probe::regions::push(probe::regions::Row {
+                test: std::thread::current().name().unwrap_or("?").to_string(),
+                cyl: k,
+                emitter_refused: emission.is_err(),
+                shadow_refused: refused,
+                shadow_faces: shadow.len(),
+                today_faces: today.len(),
+                agree: a == b,
+                rep,
+            });
+        }
         for (r, cell) in reads.iter().zip(&cells) {
             for e in &r.ends {
                 match e {
@@ -1869,6 +1952,592 @@ pub(crate) fn census(
 
 /// The census's ledger — the same shape as `ruling_probe`: filled where the fact is made, read by
 /// one test that reports it.
+/// **D5, 1b — a lateral's result faces as regions of its chart** (shadow, `cfg(test)`: built
+/// beside today's emission and compared by the census; production untouched).
+///
+/// The plane side's stages, on the chart: cells → labels (already read) → emitted cells →
+/// **connected components** → the boundary of each component → the boundary's runs cut into the
+/// **neighbouring class's pieces** (a rim's arcs, a wall's ruling pieces) → cycles → `Bound`.
+/// No band/panel dispatch, no both-rims-cut rule, no run ladder: a band, a panel, a chain rim, a
+/// hole and a notched panel are one thing here.
+#[cfg(test)]
+pub(crate) mod regions {
+    use super::{Cell, CellRead, Chart, Lines};
+    use crate::arrangement::Curved;
+    use crate::boolean::{Bound, LocalFace, Ring, Wall};
+    use crate::combinatorics::NodeId;
+    use crate::planes::{ClassIx, WorkingPlane};
+    use crate::tolerant::Judge;
+    use crate::{BoolError, RejectReason, reject};
+
+    /// What the walk found for one class.
+    #[derive(Clone, Debug, Default)]
+    pub(crate) struct Report {
+        pub(crate) components: usize,
+        pub(crate) faces: usize,
+        /// A boundary run along a rim whose end is not a rim node (the consistency claim's
+        /// violation — predicted 0).
+        pub(crate) run_end_not_piece_end: usize,
+        /// A boundary run along a ruling whose pieces do not tile it (predicted 0).
+        pub(crate) ruling_run_not_tiled: usize,
+        /// A run along an uncut rim that is not the whole circle.
+        pub(crate) rim_run_not_whole: usize,
+        /// Corners where a component's boundary passes twice (a hole touching the outer
+        /// boundary at a corner) — walked by the left-turn rule, counted.
+        pub(crate) pinch_corners: usize,
+        /// Cycles whose pieces did not chain end to end, or a component with no outer cycle.
+        pub(crate) unchained: usize,
+        /// `classify_cycles` abstained.
+        pub(crate) classify_abstain: usize,
+        pub(crate) ring_faces: usize,
+        pub(crate) band_faces: usize,
+    }
+
+    /// A corner of the chart's grid: `(z-line index, global station index)`.
+    type Corner = (usize, usize);
+
+    /// One directed boundary edge of the grid, with the region on its left.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum Edge {
+        /// Along z-line `line`, over unit sector `unit` (from station `unit` to `unit + 1`);
+        /// `ccw` when the region lies above the line.
+        Arc { line: usize, unit: usize, ccw: bool },
+        /// Along station `station`, over interval `interval`; `up` when the region lies on the
+        /// station's −θ side (the cell whose sector *ends* at the station).
+        Ruling {
+            interval: usize,
+            station: usize,
+            up: bool,
+        },
+    }
+
+    /// One boundary piece in travel order: a neighbouring class's own edge.
+    struct Piece {
+        wall: Wall,
+        ends: (NodeId, NodeId),
+    }
+
+    /// The regions of class `k`, as `LocalFace`s, and the report. `Err` only for what the
+    /// emitter would refuse by name (a chart whose stations cannot be ordered).
+    #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
+    pub(crate) fn emit_regions(
+        jd: &Judge<'_, WorkingPlane>,
+        k: usize,
+        def: &nacre_topo::CylinderDef,
+        kind: crate::BoolKind,
+        side: crate::planes::SolidSide,
+        chart: &Chart,
+        lines: &Lines,
+        cells: &[Cell],
+        reads: &[CellRead<'_>],
+        curved: &Curved,
+    ) -> Result<(Vec<LocalFace>, Report), BoolError> {
+        let mut rep = Report::default();
+        let undecided = || reject(RejectReason::WitnessNotRational);
+
+        // ── 1. Stations: one per (wall, side), in one global θ order. ──
+        let mut names: Vec<(usize, i8)> = Vec::new();
+        let mut reps: Vec<NodeId> = Vec::new();
+        let mut name_of_theta: Vec<usize> = Vec::with_capacity(chart.theta.len());
+        for j in 0..chart.theta.len() {
+            let n = chart.ruling_name(jd, k, def, j).ok_or_else(undecided)?;
+            let ni = match names.iter().position(|x| *x == n) {
+                Some(p) => p,
+                None => {
+                    names.push(n);
+                    reps.push(chart.theta[j].end[0]);
+                    names.len() - 1
+                }
+            };
+            name_of_theta.push(ni);
+        }
+        let ns = names.len();
+        let mut station_of_name = vec![0usize; ns];
+        if ns > 0 {
+            let (order, _) =
+                crate::arrangement::circular_order(jd, k, def, &reps).map_err(|_| undecided())?;
+            for (p, &ni) in order.iter().enumerate() {
+                station_of_name[ni] = p;
+            }
+        }
+        let name_at_station = |s: usize| -> (usize, i8) {
+            let ni = station_of_name
+                .iter()
+                .position(|&p| p == s)
+                .expect("a station index comes from this table");
+            names[ni]
+        };
+        let station_of_theta = |j: usize| station_of_name[name_of_theta[j]];
+        // A cell's sector in global stations: `None` is the whole circle.
+        let sector: Vec<Option<(usize, usize)>> = cells
+            .iter()
+            .map(|c| {
+                c.walls
+                    .map(|[x, y]| (station_of_theta(x), station_of_theta(y)))
+            })
+            .collect();
+        // Does the cell cover unit sector `u` (from station u to u + 1)?
+        let covers = |ci: usize, u: usize| -> bool {
+            match sector[ci] {
+                None => true,
+                Some((a, b)) if a == b => true, // one cut: the circle less a point
+                Some((a, b)) => (u + ns - a) % ns < (b + ns - a) % ns,
+            }
+        };
+        let n_int = chart.z_lines.len().saturating_sub(1);
+        // Cells by interval, in sector order (as `cells()` pushed them).
+        let mut by_int: Vec<Vec<usize>> = vec![Vec::new(); n_int];
+        for (ci, c) in cells.iter().enumerate() {
+            by_int[c.interval].push(ci);
+        }
+        let units = ns.max(1);
+
+        // ── 2. Emitted cells and their components (4-adjacency, θ-periodic). ──
+        let emitted: Vec<bool> = reads.iter().map(|r| r.emit == Some(true)).collect();
+        let neighbours = |ci: usize| -> Vec<usize> {
+            let c = &cells[ci];
+            let mut out = Vec::new();
+            let row = &by_int[c.interval];
+            if row.len() > 1 {
+                let s = c.sector;
+                out.push(row[(s + 1) % row.len()]);
+                out.push(row[(s + row.len() - 1) % row.len()]);
+            }
+            for i2 in [c.interval.wrapping_sub(1), c.interval + 1] {
+                if i2 >= n_int {
+                    continue;
+                }
+                for &cj in &by_int[i2] {
+                    let overlap = ns == 0 || (0..ns).any(|u| covers(ci, u) && covers(cj, u));
+                    if overlap {
+                        out.push(cj);
+                    }
+                }
+            }
+            out
+        };
+        let mut comp: Vec<Option<usize>> = vec![None; cells.len()];
+        let mut components: Vec<Vec<usize>> = Vec::new();
+        for ci in 0..cells.len() {
+            if !emitted[ci] || comp[ci].is_some() {
+                continue;
+            }
+            let id = components.len();
+            let mut stack = vec![ci];
+            let mut members = Vec::new();
+            comp[ci] = Some(id);
+            while let Some(x) = stack.pop() {
+                members.push(x);
+                for y in neighbours(x) {
+                    if emitted[y] && comp[y].is_none() {
+                        comp[y] = Some(id);
+                        stack.push(y);
+                    }
+                }
+            }
+            members.sort_unstable();
+            components.push(members);
+        }
+        rep.components = components.len();
+
+        // Endpoints (corners) of a directed edge, and its direction of travel
+        // (0 = +θ, 1 = +z, 2 = −θ, 3 = −z).
+        let ends = |e: Edge| -> (Corner, Corner) {
+            match e {
+                Edge::Arc { line, unit, ccw } => {
+                    let (a, b) = ((line, unit), (line, (unit + 1) % units));
+                    if ccw { (a, b) } else { (b, a) }
+                }
+                Edge::Ruling {
+                    interval,
+                    station,
+                    up,
+                } => {
+                    let (a, b) = ((interval, station), (interval + 1, station));
+                    if up { (a, b) } else { (b, a) }
+                }
+            }
+        };
+        let dir = |e: Edge| -> usize {
+            match e {
+                Edge::Arc { ccw: true, .. } => 0,
+                Edge::Arc { ccw: false, .. } => 2,
+                Edge::Ruling { up: true, .. } => 1,
+                Edge::Ruling { up: false, .. } => 3,
+            }
+        };
+        let same_run = |a: Edge, b: Edge| -> bool {
+            match (a, b) {
+                (
+                    Edge::Arc {
+                        line: l1, ccw: c1, ..
+                    },
+                    Edge::Arc {
+                        line: l2, ccw: c2, ..
+                    },
+                ) => l1 == l2 && c1 == c2,
+                (
+                    Edge::Ruling {
+                        station: s1,
+                        up: u1,
+                        ..
+                    },
+                    Edge::Ruling {
+                        station: s2,
+                        up: u2,
+                        ..
+                    },
+                ) => s1 == s2 && u1 == u2,
+                _ => false,
+            }
+        };
+        // The class of a z-line whose circle this cylinder marks — a cut rim first.
+        let class_on = |line: usize| -> Option<usize> {
+            let t = chart.z_lines[line].t;
+            let cs = lines.classes(t);
+            cs.iter()
+                .copied()
+                .find(|&c| curved.cut_rims.contains_key(&(k, c)))
+                .or_else(|| {
+                    cs.iter()
+                        .copied()
+                        .find(|&c| curved.disk_labels.contains_key(&(k, c)))
+                })
+        };
+        let station_name = |c: usize, s: usize| -> Option<NodeId> {
+            let (wall, sd) = name_at_station(s);
+            crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, sd).ok()
+        };
+
+        // ── 3–7. Per component: boundary edges → cycles → runs → pieces → rings → bound. ──
+        let mut faces: Vec<LocalFace> = Vec::new();
+        for (id, members) in components.iter().enumerate() {
+            let in_c = |ci: usize| comp[ci] == Some(id);
+            let cell_at = |i: usize, u: usize| -> Option<usize> {
+                by_int[i].iter().copied().find(|&cj| covers(cj, u))
+            };
+            let mut edges: Vec<Edge> = Vec::new();
+            for &ci in members {
+                let c = &cells[ci];
+                for u in 0..units {
+                    if ns > 0 && !covers(ci, u) {
+                        continue;
+                    }
+                    let below = if c.interval == 0 {
+                        None
+                    } else {
+                        cell_at(c.interval - 1, u)
+                    };
+                    if !below.is_some_and(in_c) {
+                        edges.push(Edge::Arc {
+                            line: c.interval,
+                            unit: u,
+                            ccw: true,
+                        });
+                    }
+                    let above = if c.interval + 1 >= n_int {
+                        None
+                    } else {
+                        cell_at(c.interval + 1, u)
+                    };
+                    if !above.is_some_and(in_c) {
+                        edges.push(Edge::Arc {
+                            line: c.interval + 1,
+                            unit: u,
+                            ccw: false,
+                        });
+                    }
+                }
+                if let Some((a, b)) = sector[ci] {
+                    if a != b {
+                        let row = &by_int[c.interval];
+                        let s = c.sector;
+                        let right = row[(s + 1) % row.len()];
+                        let left = row[(s + row.len() - 1) % row.len()];
+                        if !in_c(right) {
+                            edges.push(Edge::Ruling {
+                                interval: c.interval,
+                                station: b,
+                                up: true,
+                            });
+                        }
+                        if !in_c(left) {
+                            edges.push(Edge::Ruling {
+                                interval: c.interval,
+                                station: a,
+                                up: false,
+                            });
+                        }
+                    }
+                }
+            }
+            edges.sort_by_key(|e| match *e {
+                Edge::Arc { line, unit, ccw } => (0, line, unit, usize::from(ccw)),
+                Edge::Ruling {
+                    interval,
+                    station,
+                    up,
+                } => (1, interval, station, usize::from(up)),
+            });
+            edges.dedup();
+
+            // ── cycles, by the left-turn rule at a corner with two ways out ──
+            let mut used = vec![false; edges.len()];
+            let mut cycles: Vec<Vec<Edge>> = Vec::new();
+            for start in 0..edges.len() {
+                if used[start] {
+                    continue;
+                }
+                let mut cyc = vec![edges[start]];
+                used[start] = true;
+                let (first, mut at) = ends(edges[start]);
+                let mut prev = dir(edges[start]);
+                while at != first {
+                    let mut cands: Vec<(usize, usize)> = (0..edges.len())
+                        .filter(|&j| !used[j] && ends(edges[j]).0 == at)
+                        .map(|j| {
+                            let rel = (dir(edges[j]) + 4 - prev) % 4;
+                            // left turn first, then straight, then right, then back
+                            let rank = match rel {
+                                1 => 0,
+                                0 => 1,
+                                3 => 2,
+                                _ => 3,
+                            };
+                            (rank, j)
+                        })
+                        .collect();
+                    if cands.len() > 1 {
+                        rep.pinch_corners += 1;
+                    }
+                    cands.sort_unstable();
+                    let Some(&(_, j)) = cands.first() else {
+                        rep.unchained += 1;
+                        break;
+                    };
+                    used[j] = true;
+                    cyc.push(edges[j]);
+                    prev = dir(edges[j]);
+                    at = ends(edges[j]).1;
+                }
+                cycles.push(cyc);
+            }
+
+            // ── runs → pieces → rings ──
+            let mut rings: Vec<Ring> = Vec::new();
+            let mut rims_lo: Vec<usize> = Vec::new();
+            let mut rims_hi: Vec<usize> = Vec::new();
+            let mut outer: Option<usize> = None;
+            let lowest = cells[members[0]].interval;
+            let mut ok = true;
+            for cyc in &cycles {
+                let mut runs: Vec<Vec<Edge>> = Vec::new();
+                for &e in cyc {
+                    match runs.last_mut() {
+                        Some(r) if same_run(r[0], e) => r.push(e),
+                        _ => runs.push(vec![e]),
+                    }
+                }
+                if runs.len() > 1 && same_run(runs[0][0], runs[runs.len() - 1][0]) {
+                    let last = runs.pop().expect("two runs at least");
+                    let first = std::mem::take(&mut runs[0]);
+                    runs[0] = last.into_iter().chain(first).collect();
+                }
+                let mut pieces: Vec<Piece> = Vec::new();
+                let mut whole_rim: Option<(usize, bool)> = None;
+                for run in &runs {
+                    let (ca, _) = ends(run[0]);
+                    let (_, cb) = ends(*run.last().expect("a run has an edge"));
+                    match run[0] {
+                        Edge::Arc { line, ccw, .. } => {
+                            let Some(c) = class_on(line) else {
+                                rep.run_end_not_piece_end += 1;
+                                ok = false;
+                                continue;
+                            };
+                            let full = ns == 0 || run.len() == ns;
+                            let Some(rim) = curved.cut_rims.get(&(k, c)) else {
+                                if !full {
+                                    rep.rim_run_not_whole += 1;
+                                    ok = false;
+                                    continue;
+                                }
+                                whole_rim = Some((c, ccw));
+                                continue;
+                            };
+                            let arcs = &curved.arc_labels[&(k, c)];
+                            let m = rim.nodes.len();
+                            let (pa, pb) = if full {
+                                (0, 0)
+                            } else {
+                                let (Some(na), Some(nb)) =
+                                    (station_name(c, ca.1), station_name(c, cb.1))
+                                else {
+                                    rep.run_end_not_piece_end += 1;
+                                    ok = false;
+                                    continue;
+                                };
+                                let (Some(pa), Some(pb)) = (
+                                    rim.nodes.iter().position(|&n| n == na),
+                                    rim.nodes.iter().position(|&n| n == nb),
+                                ) else {
+                                    rep.run_end_not_piece_end += 1;
+                                    ok = false;
+                                    continue;
+                                };
+                                (pa, pb)
+                            };
+                            if m < 2 {
+                                rep.run_end_not_piece_end += 1;
+                                ok = false;
+                                continue;
+                            }
+                            let mut p = pa;
+                            loop {
+                                let q = if ccw { (p + 1) % m } else { (p + m - 1) % m };
+                                let (from, to) = if ccw {
+                                    (rim.nodes[p], rim.nodes[q])
+                                } else {
+                                    (rim.nodes[q], rim.nodes[p])
+                                };
+                                if !arcs.iter().any(|a| a.ends == [from, to]) {
+                                    rep.run_end_not_piece_end += 1;
+                                    ok = false;
+                                }
+                                pieces.push(Piece {
+                                    wall: Wall::Arc { cyl: k, ccw },
+                                    ends: if ccw { (from, to) } else { (to, from) },
+                                });
+                                p = q;
+                                if p == pb {
+                                    break;
+                                }
+                            }
+                        }
+                        Edge::Ruling { station, up, .. } => {
+                            let (i0, i1) = if up { (ca.0, cb.0) } else { (cb.0, ca.0) };
+                            let (t_lo, t_hi) = (chart.z_lines[i0].t, chart.z_lines[i1].t);
+                            let (wall, sd) = name_at_station(station);
+                            let ni = names
+                                .iter()
+                                .position(|&n| n == (wall, sd))
+                                .expect("a station has a name");
+                            let mut segs: Vec<usize> = (0..chart.theta.len())
+                                .filter(|&j| {
+                                    name_of_theta[j] == ni
+                                        && chart.theta[j].z[0] >= t_lo
+                                        && chart.theta[j].z[1] <= t_hi
+                                })
+                                .collect();
+                            segs.sort_by_key(|&j| chart.theta[j].z[0]);
+                            let tiled = !segs.is_empty()
+                                && chart.theta[segs[0]].z[0] == t_lo
+                                && chart.theta[*segs.last().expect("non-empty")].z[1] == t_hi
+                                && segs.windows(2).all(|w| {
+                                    chart.theta[w[0]].z[1] == chart.theta[w[1]].z[0]
+                                        && chart.theta[w[0]].end[1] == chart.theta[w[1]].end[0]
+                                });
+                            if !tiled {
+                                rep.ruling_run_not_tiled += 1;
+                                ok = false;
+                                continue;
+                            }
+                            let ordered: Vec<usize> = if up {
+                                segs
+                            } else {
+                                segs.into_iter().rev().collect()
+                            };
+                            for j in ordered {
+                                let [e0, e1] = chart.theta[j].end;
+                                pieces.push(Piece {
+                                    wall: Wall::Ruling {
+                                        cyl: k,
+                                        side: sd,
+                                        up,
+                                    },
+                                    ends: if up { (e0, e1) } else { (e1, e0) },
+                                });
+                            }
+                        }
+                    }
+                }
+                if let Some((c, ccw)) = whole_rim {
+                    if ccw {
+                        rims_lo.push(c)
+                    } else {
+                        rims_hi.push(c)
+                    }
+                    continue;
+                }
+                let n = pieces.len();
+                if n < 2 {
+                    rep.unchained += 1;
+                    ok = false;
+                    continue;
+                }
+                let mut nodes = Vec::with_capacity(n);
+                let mut walls = Vec::with_capacity(n);
+                for (p, piece) in pieces.iter().enumerate() {
+                    if piece.ends.1 != pieces[(p + 1) % n].ends.0 {
+                        rep.unchained += 1;
+                        ok = false;
+                    }
+                    nodes.push(piece.ends.0);
+                    walls.push(piece.wall);
+                }
+                let holds_lowest_bottom = cyc
+                    .iter()
+                    .any(|e| matches!(e, Edge::Arc { line, ccw: true, .. } if *line == lowest));
+                if holds_lowest_bottom && outer.is_none() {
+                    outer = Some(rings.len());
+                }
+                rings.push(Ring::new(nodes, walls));
+            }
+            if !ok {
+                continue;
+            }
+            let (own, other) = reads[members[0]]
+                .chamber
+                .expect("an emitted cell has a chamber");
+            let flip = !crate::bands::keep_for(kind, side, own, other);
+            if rims_lo.is_empty() && rims_hi.is_empty() {
+                let Some(o) = outer else {
+                    rep.unchained += 1;
+                    continue;
+                };
+                let mut rings = rings;
+                let outer = rings.remove(o);
+                faces.push(LocalFace {
+                    surf: ClassIx::Cyl(k),
+                    outer: Bound::Ring(outer),
+                    inner: rings.into_iter().map(Bound::Ring).collect(),
+                    flip,
+                });
+                rep.ring_faces += 1;
+            } else {
+                let mut stats = crate::boolean::CurvedStats::default();
+                match crate::boolean::classify_cycles(
+                    k,
+                    flip,
+                    rings,
+                    rims_lo,
+                    rims_hi,
+                    &curved.cut_rims,
+                    &mut stats,
+                ) {
+                    Ok(f) => {
+                        faces.push(f);
+                        rep.band_faces += 1;
+                    }
+                    Err(_) => rep.classify_abstain += 1,
+                }
+            }
+        }
+        rep.faces = faces.len();
+        Ok((faces, rep))
+    }
+}
+
 #[cfg(test)]
 pub(crate) mod probe {
     use std::sync::Mutex;
@@ -2043,6 +2712,32 @@ pub(crate) mod probe {
                     above,
                     bits,
                 });
+        }
+    }
+
+    /// **D5, 1b — the shadow beside today's road**, one row per class.
+    pub(crate) mod regions {
+        use std::sync::Mutex;
+
+        #[derive(Clone, Debug)]
+        pub(crate) struct Row {
+            pub(crate) test: String,
+            pub(crate) cyl: usize,
+            pub(crate) emitter_refused: bool,
+            pub(crate) shadow_refused: bool,
+            pub(crate) shadow_faces: usize,
+            pub(crate) today_faces: usize,
+            /// The two face sets agree by signature (bound kinds, flip, holes, node sets).
+            pub(crate) agree: bool,
+            pub(crate) rep: super::super::regions::Report,
+        }
+
+        pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+
+        pub(crate) fn push(r: Row) {
+            ROWS.lock()
+                .expect("the probe's lock is never held across a panic")
+                .push(r);
         }
     }
 
