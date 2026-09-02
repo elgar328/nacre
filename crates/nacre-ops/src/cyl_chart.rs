@@ -2514,38 +2514,33 @@ mod tests {
         );
     }
 
-    /// **The cells read their chamber off the horizontal lines, and the emitter is predicted by the
-    /// census's own walk** (capability D, D2b-0 → D3).
+    /// **The cells read their chamber off the lines at their ends, and the ledger's bookkeeping
+    /// is total** (capability D, D2b-0 → D5).
     ///
     /// The absolute claims are asserted in `census`, where the facts are made: a present cell
-    /// always has a speaking end (`src0_present == 0`, the reason no wall-side sign is needed),
-    /// and the ends' bookkeeping is total. What this holds, universally over every recorded row
-    /// so no interleaving can break it, is the rest of the forecast:
+    /// always has a speaking end (`src0_present == 0`, `other_present == 0` — the reason no
+    /// wall-side sign is needed), the emitter's faces cover exactly the emitted cells (D5's
+    /// cell→face assertions), and the ends' bookkeeping is total. What this holds, universally
+    /// over every recorded row so no interleaving can break it, is the rest:
     ///
-    /// * `emitted_faces == whole_emitted + full_runs − z_merge_bandlike + partial_runs` — the
-    ///   headline since D3: the emitter's face count per class is what the census's own walk of
-    ///   the chart predicts (vacuous where the emitter refused).
     /// * `emit_unknown == 0 || emitter_refused` — the emitter never puts a face over a present
     ///   cell it could not read, e.g. one whose two ends contradict (the `wal corner-lo` corpus
     ///   family has such cells — `src2_disagree` 8 per row — and is refused by name).
     /// * `exist_disagree == 0`, `read_refused == 0` — the trace and the span tell the same
     ///   existence story wherever both speak.
-    /// * `nocircle_present == 0`, `z_flip_nonboundary == 0` — a present cell has a circle at both
-    ///   ends, and a band's chamber never flips across a line that is not a boundary (D1b's extra
-    ///   lines are harmless).
+    /// * `nocircle_present == 0` — a present cell has a circle at both ends.
     /// * `arcs_read == end_exact + exact_run_arcs`, `arcs_multi_mark == 0` — every cut-end read
     ///   carries at most one lateral mark of its own solid (the band road's MARKS contract), and
     ///   an end that spans a run of the rim's arcs reads every one of them. (`arcs_no_mark` is no
     ///   longer 0: a ⊥ cap through a notch reads cut ends inside the lateral's hole.)
-    /// * `partial_theta_in_disk_interval == 0` — a disk-ended interval's kept sectors always close
-    ///   into a whole circle, so it is emitted as one `Band`.
     ///
-    /// And the counters are not vacuous: the fixtures below put every end kind but `Other` on the
-    /// ledger, the chained ones drop sectors for existence (**≥ 4**, the band road's own count,
-    /// `tests::a_chained_cylinder_bounded_by_the_first_builds`), both merge directions are seen,
-    /// arcs are read and faces are emitted. `end_other` is **unmeasured** if it stays 0 — the
-    /// θ-placement it would need is not built, and a zero here is a population claim only once a
-    /// fixture reaches it.
+    /// And the counters are not vacuous: the fixtures below put every end kind on the ledger,
+    /// the chained ones drop sectors for existence (**≥ 4**, the band road's own count,
+    /// `tests::a_chained_cylinder_bounded_by_the_first_builds`), arcs are read and faces are
+    /// emitted. `end_other` is **measured, not unexercised** (D5, 1a): every one of the suite's
+    /// is a whole-circle interval beyond a face's span whose cut rim's arcs disagree about the
+    /// far side (`OtherWhy::WholeDisagree`), on an absent cell; the single-cut arm is the one
+    /// still without a population.
     #[test]
     fn the_cells_read_their_chamber_from_the_horizontal_lines() {
         use super::probe::d2b::ROWS as D2B;

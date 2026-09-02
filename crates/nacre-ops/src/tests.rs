@@ -10295,10 +10295,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         {
             let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
             for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
-                let rg0 = crate::cyl_chart::probe::regions::ROWS
-                    .lock()
-                    .expect("the probe's lock is never held across a panic")
-                    .len();
                 let (mut m, plate, boss) = boss_family(base, h);
                 let got = match boolean(&mut m, kind, plate, boss) {
                     Err(BoolError::Rejected { .. }) => First,
@@ -10352,17 +10348,6 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                         }
                     }
                 };
-                {
-                    let rg = crate::cyl_chart::probe::regions::ROWS
-                        .lock()
-                        .expect("the probe's lock is never held across a panic");
-                    for r in rg[rg0..].iter().filter(|r| r.emitter_refused) {
-                        eprintln!(
-                            "D5 {name} {kind:?} x {tool_name}: cyl {} refused; the walk made {} faces",
-                            r.cyl, r.faces
-                        );
-                    }
-                }
                 match tally.iter_mut().find(|(c, _)| *c == got) {
                     Some((_, n)) => *n += 1,
                     None => tally.push((got, 1)),
