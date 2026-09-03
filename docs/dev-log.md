@@ -16659,3 +16659,8 @@ P1·P2 위. P3 구멍 있는 옆면을 물은 횟수 1(census, 띠+구멍 1). P4
 
 ### 다음
 **③ 벽∩옆면의 한 이차식**(오프셋 `0<d<r`은 D 위에서 «재고», 접선 `d=r`은 능력 C) · 강체 운동 불변 대조군 · `ObliqueCylinderCut`은 M6-3.
+
+### ☑ 자체 점검 (커밋 뒤) — 하나를 고쳤고 둘을 확인했다
+- ★★★ **옆면 도로의 seam 동률이 원장에 없었다.** `arc_span`은 동률을 혼합 도로의 thread-local(`tie_probe::mark`)에 표시하고 혼합 도로의 래퍼가 행으로 흘리는데, 옆면 도로엔 래퍼가 없어 격자 오라클의 seam 동률 70건(관통 25·계단 45)과 그 밖의 seam 근이 **행이 되지 않았다** — 원장의 옆면 종류가 `OnRim`·`OnArc`·`OnRuling`뿐이었다. `flush_or`로 표시를 행으로 흘린다: 격자만 돌리면 387 = `SeamRoot` 129 · `OnRim` 120 · `OnArc` 78 · `OnRuling` 60, 오라클의 경계·정거장·seam 카운트 합(114+76+84+43+25+45)과 **정확히 같다**. 계기의 «인구 0»이 «안 셈»이었던 경우 — 이 칸이 세 번째로 밟은 같은 함정.
+- ☑ 조사·대조의 임시 편집 잔재 0(`CONTROL`·`BEFORE-MEASURE`·`TMPA/L`), 삭제한 이름(`SpanAsk`·`cylinder_face_crossings`·`LateralRead`·`band_of`) 코드에 0 — 산문 한 줄(census doc의 miss-first 사다리)만 남아 «②-b가 걷은 물음»이라 적었다.
+- ☑ 1c의 «전» 측정을 `git stash`로 하려다 원장 하나만 돌려 0을 읽었다(stash는 되돌렸고 파일은 온전) — 역편집으로 다시 쟀다. 기록된 규칙(«A/B는 stash가 아니라 env-var/역편집»)을 한 번 어겼고 잡았다.

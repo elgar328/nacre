@@ -3098,6 +3098,13 @@ pub(crate) mod tie_probe {
         LAST.with(|c| c.set(Some(t)));
     }
 
+    /// The lateral road's reading of a mark: `arc_span` marks its ties into `LAST` for the
+    /// mixed road's wrapper to flush, and the lateral road — which has no wrapper — records
+    /// the mark as a row at once (or `or` when the abstention was arithmetic, unmarked).
+    pub(crate) fn flush_or(or: Tie) {
+        push(LAST.with(|c| c.take()).unwrap_or(or));
+    }
+
     /// A row recorded at once — the lateral road has no wrapper to flush `LAST`.
     pub(crate) fn push(t: Tie) {
         ROWS.lock()
@@ -4120,7 +4127,14 @@ pub(crate) fn loop_parity(
                             };
                             let e_lo = branch_meet(jd, arc.cyl, &arc.def, lo_nd)?;
                             let e_hi = branch_meet(jd, arc.cyl, &arc.def, hi_nd)?;
-                            let span = arc_span(&arc.def, &e_lo, &e_hi, &(meet.clone(), *s))?;
+                            let Some(span) = arc_span(&arc.def, &e_lo, &e_hi, &(meet.clone(), *s))
+                            else {
+                                // A seam tie (the root on the seam, two seam ends, a zero span)
+                                // or arithmetic out — the mark says which.
+                                #[cfg(test)]
+                                tie_probe::flush_or(tie_probe::Tie::Other);
+                                return None;
+                            };
                             if side == Orient::Zero {
                                 // At the arc's own z: on the arc iff within its closed span.
                                 if span == ArcSpan::Outside {

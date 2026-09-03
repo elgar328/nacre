@@ -10098,7 +10098,8 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   the corner × through-axis cells thread their merge and meet the chart's unreadable cell
 ///   (`CylinderGateUndecided` 44 → 46). `BranchVertexUnnamed` 18 → 0.
 /// * miss-first: the label's ray solves before it asks for bounds, so a cylinder the ray
-///   runs clear of counts 0 even where the face is a panel or a chain (`SpanAsk::MissOnly`),
+///   runs clear of counts 0 even where the face is a panel or a chain (`SpanAsk::MissOnly`,
+///   an ask cell ②-b retired when a lateral's loops became readable),
 ///   and the per-solid dissolve keys walls by `ClassIx` — the mid column and offmid × top
 ///   classify and build (`NoClearRay` 56 → 41, Ok 86 → 101); corner Cut × mid stays: its
 ///   rays genuinely hit the quarter boss, and a hit without an axial statement stays an
