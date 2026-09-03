@@ -4661,8 +4661,8 @@ pub(crate) mod hull_probe {
     pub(crate) static ROWS: Mutex<(usize, usize, usize, usize, usize)> =
         Mutex::new((0, 0, 0, 0, 0));
 
-    /// Arcs whose axis is not ⊥ to both of the first two world axes — the extremum is then not
-    /// rational and this instrument says nothing about them.
+    /// Arcs whose circle's minimum is irrational — the axis is not ⊥ to the first world axis the
+    /// circle spans — so this instrument says nothing about them (M6-3's population).
     pub(crate) static TILTED: Mutex<usize> = Mutex::new(0);
 
     pub(crate) fn note(arcs: usize, below: usize, undecided: usize, inside: usize, tilted: usize) {
@@ -4700,12 +4700,18 @@ pub(crate) mod hull_probe {
 /// that reading, and the winding there is [`smooth_extremum_winding`]'s product — the ring is
 /// smooth at an arc's interior point, so no turn is needed.
 ///
-/// **What it can decide.** A circle's lexicographic minimum is its one leftmost point, and that
-/// point is `(c₀ − r, c₁, c₂)` exactly when ê₀ and ê₁ both lie in the circle's plane — i.e. when
-/// the axis is perpendicular to both. Otherwise the point is irrational and this says nothing,
-/// leaving today's path: ☑ 84 arcs over the suite, all tilted axes, and the premise is simply
-/// unverified for them (refusing there would be a wholesale regression, and nothing measured says
-/// they are wrong).
+/// **What it can decide.** Let `ê_a` be the first world axis the circle **spans** (`ê₀`, unless
+/// the axis *is* `ê₀` — then every point shares `x` and the minimum is taken in `y`). The circle's
+/// lexicographic minimum is its point of least coordinate `a`, and that point is rational —
+/// `c − r·ê_a` — exactly when the axis is perpendicular to `ê_a` (`m[a] = 0`); otherwise it is
+/// irrational and this says nothing, leaving today's path (`hull_probe::TILTED` counts those —
+/// M6-3's population, the axis tilted *toward* `ê_a`). ★ It used to require the axis to be world
+/// **z**, and counted every other axis as tilted: 84 arcs over the suite were left to the
+/// node's turn that way, and the commuting oracle (cell ④) found the three cells where the turn
+/// was wrong — a boss on the plate's corner turned so its axis runs along −y, whose 270° arc
+/// bulges past the minimum node, took the unbounded cell for a bounded one and seeded the labels
+/// inside out (`NOT_OWN_SOLID`). The halves are the circle's own now (below), so nothing here
+/// depends on which world axis the cylinder stands along.
 fn arc_extremum_winding(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -4751,7 +4757,9 @@ fn arc_extremum_winding(
             arcs += 1;
         }
         let (m, r) = (ac.def.dir(), ac.def.radius());
-        if m[0] != zero || m[1] != zero {
+        // The first world axis the circle spans; the minimum is rational iff the axis is ⊥ to it.
+        let a = usize::from(m[1] == zero && m[2] == zero);
+        if m[a] != zero {
             #[cfg(test)]
             {
                 tilted += 1;
@@ -4767,18 +4775,20 @@ fn arc_extremum_winding(
             continue;
         };
         let c = ad.centre;
-        let Some(ex) = c[0].checked_sub(r) else {
+        let Some(ex) = c[a].checked_sub(r) else {
             #[cfg(test)]
             {
                 undecided += 1;
             }
             continue;
         };
-        // Is the circle's leftmost point lexicographically below `lo`? ★ Three answers, not two:
-        // running out of axes with every one equal means it **is** `lo`, and the premise holds.
+        let mut ext = c;
+        ext[a] = ex;
+        // Is the circle's minimum lexicographically below `lo`? ★ Three answers, not two: running
+        // out of axes with every one equal means it **is** `lo`, and the premise holds.
         let mut lower = Some(false);
-        for (a, v) in [(0usize, ex), (1, c[1]), (2, c[2])] {
-            match cmp_rat(v, key(lo), a) {
+        for (ax, v) in ext.iter().copied().enumerate() {
+            match cmp_rat(v, key(lo), ax) {
                 Some(std::cmp::Ordering::Less) => {
                     lower = Some(true);
                     break;
@@ -4809,19 +4819,56 @@ fn arc_extremum_winding(
         // is cut by a **diameter**, so this point *is* a node, and the comparison above already
         // answered "not below".)
         let (ka, kb) = (key(i), key((i + 1) % n));
-        // CCW **as seen in the (ê₀, ê₁) plane**: travel is CCW about the axis, which may point
-        // the other way.
-        let seen_ccw = ac.ccw != (m[2] < zero);
-        let (ka, kb) = if seen_ccw { (ka, kb) } else { (kb, ka) };
-        // Halves about the circle's own horizontal: above the centre is θ ∈ (0°, 180°). ★ An end
-        // *on* that line is θ = 0° — θ = 180° is the leftmost point itself, taken out above — and
-        // it belongs to the half the walk is in beside it: a start leaves θ = 0° into the upper
-        // half, an end arrives at it from the lower.
-        let half = |k: &CoordKey, is_start: bool| match cmp_rat(c[1], k, 1) {
-            Some(std::cmp::Ordering::Less) => Some(true),
-            Some(std::cmp::Ordering::Greater) => Some(false),
-            Some(std::cmp::Ordering::Equal) => Some(is_start),
-            None => None,
+        // The walk below runs counter-clockwise **about the axis** — the arc's own sense, so the
+        // ends are taken in that order whichever way the ring traverses it.
+        let (ka, kb) = if ac.ccw { (ka, kb) } else { (kb, ka) };
+        // ★★ **The halves are the circle's own.** Split the circle by the plane through its centre
+        // with normal `n_h = m × ê_a`: at θ = 0 (`c + r·ê_a`) counter-clockwise travel runs along
+        // `m × ê_a = +n_h`, so the `+n_h` half is θ ∈ (0°, 180°) — where coordinate `a` falls — and
+        // the minimum θ = 180° (`c − r·ê_a`) is where the walk **arrives from** the `+n_h` half and
+        // **leaves into** the `−n_h` one. Nothing here reads a world picture, so no «as seen in a
+        // plane» correction is needed whichever way the axis points. ★ An end *on* the plane is
+        // θ = 0° — θ = 180° is the minimum itself, taken out above — and it belongs to the half
+        // the walk is in beside it: a start leaves θ = 0° into the upper half, an end arrives at
+        // it from the lower.
+        let mut e_a = [zero; 3];
+        e_a[a] = Rat::from_int(1);
+        let Some(n_h) = cross3_rat(&m, &e_a) else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        let Some(h_plane) = dot3_rat(&n_h, &c)
+            .and_then(|d| zero.checked_sub(d))
+            .map(|d| [n_h[0], n_h[1], n_h[2], d])
+        else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        let half = |k: &CoordKey, is_start: bool| -> Option<bool> {
+            let o = match k {
+                CoordKey::Three(t) => {
+                    let q = node_coords_rat(jd, NodeId::three_planes(*t))?;
+                    let v = dot3_rat(&[h_plane[0], h_plane[1], h_plane[2]], &q)?
+                        .checked_add(h_plane[3])?;
+                    match v.partial_cmp(&zero)? {
+                        std::cmp::Ordering::Greater => Orient::Positive,
+                        std::cmp::Ordering::Less => Orient::Negative,
+                        std::cmp::Ordering::Equal => Orient::Zero,
+                    }
+                }
+                CoordKey::Branch(b) => quad::plane_side(&h_plane, &b.0, &b.1),
+            };
+            Some(match o {
+                Orient::Positive => true,
+                Orient::Negative => false,
+                Orient::Zero => is_start,
+            })
         };
         let (Some(ha), Some(hb)) = (half(ka, true), half(kb, false)) else {
             #[cfg(test)]
@@ -4831,12 +4878,12 @@ fn arc_extremum_winding(
             continue;
         };
         // Walking CCW from the start, θ = 180° is reached iff the walk leaves the upper half, or
-        // wraps the whole way round inside one half — and θ's order inside a half is read off the
-        // first coordinate: falling above the centre, rising below it.
+        // wraps the whole way round inside one half — and θ's order inside a half is read off
+        // coordinate `a`: falling in the upper half, rising in the lower.
         // ★ A declining comparison leaves today's road, exactly as every other thing this
         // function cannot decide does — it must not become a **refusal**, which is what `?` here
         // would have made of it (☑ measured 0 today; the shape is wrong all the same).
-        let Ok(x_cmp) = cmp_key(jd, ka, kb, 0) else {
+        let Ok(x_cmp) = cmp_key(jd, ka, kb, a) else {
             #[cfg(test)]
             {
                 undecided += 1;
@@ -4867,9 +4914,8 @@ fn arc_extremum_winding(
             None => true,
             Some((b, _)) => {
                 let mut lt = false;
-                for a in 0..3 {
-                    let v = if a == 0 { ex } else { c[a] };
-                    match v.partial_cmp(&b[a]) {
+                for ax in 0..3 {
+                    match ext[ax].partial_cmp(&b[ax]) {
                         Some(std::cmp::Ordering::Less) => {
                             lt = true;
                             break;
@@ -4882,7 +4928,7 @@ fn arc_extremum_winding(
             }
         };
         if take {
-            best = Some(([ex, c[1], c[2]], w));
+            best = Some((ext, w));
         }
     }
     #[cfg(test)]

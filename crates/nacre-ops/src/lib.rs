@@ -1453,7 +1453,7 @@ mod zzz_ledger {
                 g.0, g.1, g.2, g.3, g.4
             );
             let t = *crate::combinatorics::hull_probe::TILTED.lock().unwrap();
-            eprintln!("HULL tilted_arcs {t}");
+            eprintln!("HULL irrational_extremum_arcs {t}");
         }
         let s1 = |f: fn(&crate::cyl_chart::probe::Row) -> usize| d1.iter().map(f).sum::<usize>();
         let s =

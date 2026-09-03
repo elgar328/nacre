@@ -11327,12 +11327,12 @@ const DIVERGES: &str = "<diverges silently>";
 /// `t(−4,−4,−2)`, the walls and half walls under the z-rotations that put the wall on a seed
 /// plane, corner-lo under most rotations: 105 cells, all commuting since `ruling_interior_is_even`
 /// reads `frame_sign`), the arc extremum's world-z premise (`NOT_OWN_SOLID` — corner-lo where the
-/// axis turns to ±x/±y and its 270° arc bulges past the minimum node), and the transport's
+/// axis turns to ±x/±y and its 270° arc bulges past the minimum node: 9 cells, commuting since
+/// `arc_extremum_winding` takes the minimum along the first axis the circle spans), and the transport's
 /// half-recorded chain (`ONE_CYLINDER` — the offset bosses under every rigid motion, whose seam
 /// vertex rounds when translated after the turn; and **silently** on the planar pair, whose
 /// `0.4`/`1.6` box does the same with no cylinder postcondition to catch it).
 const KNOWN: &[(&str, &[&str], &[&str])] = &[
-    ("corner-lo", &["rx90", "ry270", "rx90+t"], &[NOT_OWN_SOLID]),
     (
         "offset-out",
         &["rx90+t", "ry90+t", "rz90+t"],
@@ -11352,8 +11352,9 @@ const KNOWN: &[(&str, &[&str], &[&str])] = &[
 ];
 
 /// The count lock: how many cells `KNOWN` names (three kinds per motion).
-/// Stage 0: 150 · stage 1 (the ∥ chart-frame factor): 45 — every `WRONG_SIDE` row commutes.
-const KNOWN_CELLS: usize = 45;
+/// Stage 0: 150 · stage 1 (the ∥ chart-frame factor): 45 — every `WRONG_SIDE` row commutes ·
+/// stage 2 (the arc extremum along the first spanned axis): 36 — the `NOT_OWN_SOLID` row too.
+const KNOWN_CELLS: usize = 36;
 
 fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
     KNOWN
@@ -11362,7 +11363,6 @@ fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
         .map(|k| k.2)
 }
 
-use crate::arrangement::disk_side_probe::NOT_OWN_SOLID;
 use crate::planes::ONE_CYLINDER;
 
 fn run_commuting_oracle(labels: &[&str]) {
