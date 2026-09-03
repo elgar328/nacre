@@ -1564,8 +1564,17 @@ mod zzz_ledger {
                 }
             }
             tried.sort_unstable();
+            let mut offered: Vec<(usize, usize)> = Vec::new();
+            for (_, _, o, ..) in &dec {
+                match offered.iter_mut().find(|(k, _)| *k == *o) {
+                    Some((_, c)) => *c += 1,
+                    None => offered.push((*o, 1)),
+                }
+            }
+            offered.sort_unstable();
             eprintln!(
-                "ledger C2-P4: deciding calls {} exhausted {} probes_tried histogram {tried:?}",
+                "ledger C2-P4: deciding calls {} exhausted {} probes_tried histogram {tried:?} \
+                 offered histogram {offered:?}",
                 dec.iter().filter(|r| r.3).count(),
                 dec.iter().filter(|r| !r.3).count()
             );
