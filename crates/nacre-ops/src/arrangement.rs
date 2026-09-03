@@ -490,7 +490,7 @@ fn chords_to_segs(
         // ★★ **The rule this settles is not "always stored".** A class's canonical name differs
         // from its stored one only by a sign, so the spelling is free wherever that sign cannot
         // survive into the answer — and the siblings were read to say which is which:
-        // a **zero test** (`class_through_axis`, the axis-parallel check in `bands`) and a
+        // a **zero test** (the axis-parallel check in `bands`, `parallel_rat`) and a
         // **parameter or ratio** (`axis_param_of_plane`, the circle centre's parameter, the
         // residual/`n·dir` quotient) both cancel it and rightly stay canonical, with the
         // cancellation argued where it is used. Only where a sign **survives into a direction or
@@ -918,14 +918,6 @@ fn trace_transversal_face(
                     out.declined.push((fp, DeclineKind::HoleRing));
                     return;
                 };
-                match class_through_axis(&w, hd) {
-                    Some(false) => continue, // the gate's clearance proof: no meet
-                    Some(true) => {}
-                    None => {
-                        out.declined.push((fp, DeclineKind::HoleRing));
-                        return;
-                    }
-                }
                 // ★ **The gate's record, the same one the rulings road reads first.** A
                 // through-axis pair the gate did not list was proven clear — no emitted face
                 // reaches the hole's footprint on this class, and the rulings road is silent
@@ -936,6 +928,15 @@ fn trace_transversal_face(
                 if !crossings.contains(&(wc, *cyl)) {
                     continue;
                 }
+                // ★ The record is the crossing statement (cell ③): a listed pair's plane runs
+                // within the radius, so `L` enters the hole at one root and leaves at the other —
+                // a chord, a diameter only when the wall runs through the axis. The premise is
+                // the gate's, asserted rather than re-derived.
+                debug_assert_eq!(
+                    nacre_scalar::point_plane_clearance_rat(&w, &hd.origin(), hd.radius()),
+                    nacre_scalar::Orient::Negative,
+                    "a recorded pair's plane runs within the radius"
+                );
                 for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
                     hole_chords.push(Node {
                         id: NodeId::branch(wc, fc, *cyl, root),
@@ -2315,9 +2316,10 @@ fn cycle_on_class(
     Ok(())
 }
 
-/// **A disk cap's chord on a through-axis class** — the diameter the class `wc` cuts on the cap
-/// face lying in class `fc`, or `Ok(None)` when `wc` does not run exactly through the disk's
-/// axis (today's silence). Declines whole on an unstatable piece, like [`rulings_on_class`].
+/// **A disk cap's chord on a recorded wall class** — the chord the class `wc` cuts on the cap
+/// face lying in class `fc` (a diameter when `wc` runs through the axis, any chord within the
+/// radius otherwise — cell ③), or `Ok(None)` for a pair the gate did not record (today's
+/// silence). Declines whole on an unstatable piece, like [`rulings_on_class`].
 #[allow(clippy::too_many_arguments)]
 fn chord_on_class(
     jd: &Judge<'_, WorkingPlane>,
@@ -2353,11 +2355,13 @@ fn chord_on_class(
     let Some(def) = cf.def.as_ref() else {
         return Err(DeclineKind::Ruling);
     };
-    match class_through_axis(&w, def) {
-        Some(true) => {}
-        Some(false) => return Ok(None),
-        None => return Err(DeclineKind::Ruling),
-    }
+    // ★ The record is the crossing statement (cell ③): a listed pair's plane runs within the
+    // radius, so the chord has two roots — a diameter only when the wall runs through the axis.
+    debug_assert_eq!(
+        nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.radius()),
+        nacre_scalar::Orient::Negative,
+        "a recorded pair's plane runs within the radius"
+    );
     let Some(v) = combinatorics::class_coeffs_rat(jd, fc) else {
         return Err(DeclineKind::Ruling);
     };
@@ -2404,23 +2408,6 @@ pub(crate) fn ruling_side(
     }
 }
 
-/// Is plane class `wc` exactly **through** this cylinder's axis: parallel to it (`n · m = 0`)
-/// with the axis origin on the plane. Total on a rational row (`None` = overflow only).
-pub(crate) fn class_through_axis(w: &[Rat; 4], def: &nacre_topo::CylinderDef) -> Option<bool> {
-    let (o, m) = (def.origin(), def.dir());
-    let n = [w[0], w[1], w[2]];
-    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
-    if dot3(&n, &m)? != Rat::from_int(0) {
-        return Some(false);
-    }
-    let residual = dot3(&n, &o)?.checked_add(w[3])?;
-    Some(residual == Rat::from_int(0))
-}
-
 /// **The planar scan's crossing on a ruling** — the point where the class line `L = wc ∩ fc`
 /// leaves the face across an edge riding a cylinder's ruling, named as the branch node
 /// `wc ∩ fc ∩ cyl` at the root that *is* this ruling.
@@ -2441,8 +2428,10 @@ pub(crate) fn class_through_axis(w: &[Rat; 4], def: &nacre_topo::CylinderDef) ->
 /// `{⊥, wall}` are ordered along `ε·k·(m̂ × n_wall)`, so «which root» and «which side of `wall`»
 /// are the same question — a derivation the exact-volume rows of the crossing census check.
 ///
-/// `Err(CurvedRingWall)` is every shape this does not state: no exact description, a class that
-/// is not ⊥, a plane not through the axis, no pair of roots, or both roots on one side.
+/// `Err(CurvedRingWall)` is every shape this does not state: no exact description, a wall that
+/// is not parallel to the axis, no pair of roots, or both roots on one side (the two rulings of
+/// a wall within the radius — through the axis or offset from it, cell ③ — are symmetric about
+/// the plane through the axis with normal `m × n̂`, so `ruling_side` tells them apart).
 pub(crate) fn crossing_on_ruling(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
@@ -2456,9 +2445,7 @@ pub(crate) fn crossing_on_ruling(
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
-    if !nacre_scalar::parallel_rat(&[w[0], w[1], w[2]], &m)
-        || class_through_axis(&v, def) != Some(true)
-    {
+    if !nacre_scalar::parallel_rat(&[w[0], w[1], w[2]], &m) {
         return Err(no);
     }
     let Some(CylinderMeet::Pair { line, s }) =
@@ -2473,7 +2460,7 @@ pub(crate) fn crossing_on_ruling(
     ] {
         if ruling_side(&v, def, (&line, sv)) == Some(side) {
             if found.is_some() {
-                return Err(no); // both roots on one side: not a through-axis pair
+                return Err(no); // both roots on one side: not a pair of rulings
             }
             found = Some(root);
         }
@@ -2754,11 +2741,14 @@ fn rulings_on_class(
     let Some(def) = cf.def.as_ref() else {
         return Err(DeclineKind::Ruling);
     };
-    match class_through_axis(&w, def) {
-        Some(true) => {}
-        Some(false) => return Ok(Vec::new()),
-        None => return Err(DeclineKind::Ruling),
-    }
+    // ★ The record is the crossing statement (cell ③): a listed pair's plane runs within the
+    // radius, so the wall meets the lateral in two rulings; the sweep reads the face's cycles
+    // and says where. The premise is the gate's, asserted rather than re-derived.
+    debug_assert_eq!(
+        nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.radius()),
+        nacre_scalar::Orient::Negative,
+        "a recorded pair's plane runs within the radius"
+    );
     // The face's shape from its cycles — the same reading the ⊥ road makes.
     let LateralShape { rims, cycles, .. } = lateral_shape(jd, cf, fl, def)?;
     let mat = SegKind::Transversal {

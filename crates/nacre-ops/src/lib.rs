@@ -643,21 +643,20 @@ pub enum RejectReason {
     /// concurrency — this was never an artefact of `f64` construction, which is why exact
     /// rational construction (`crate::exact`) left it exactly where it was.
     FourPlane,
-    /// A wall parallel to a cylinder's axis **could not be shown to stand clear** of its lateral
-    /// surface — and is not the one crossing the rulings road builds. A wall whose axis lies
-    /// exactly on it is recorded and passed (the rulings ladder: Branch vertices, θ-panels,
-    /// the through-boss family — assembled, validated, and volume-exact). What keeps this name:
-    /// a **tangent** wall (distance exactly `r` — lifting it assembles a volume-correct solid
-    /// whose lateral touches the wall along a ruling, zero-thickness contact `validate` cannot
-    /// see, so the gate is the honest stop), an **offset** crossing (`0 <` distance `< r`,
-    /// cell D's irrational ruling lines), and a face no sufficient condition cleared.
+    /// A wall parallel to a cylinder's axis stands **exactly `r`** from it — tangent to the
+    /// lateral surface. Lifting the refusal assembles a volume-correct solid whose lateral
+    /// touches the wall along one ruling, a zero-thickness contact `validate` cannot see (its
+    /// pinch detectors abstain on cylinders), so the gate is the honest stop — until validate
+    /// reads curved contacts (capability C).
     ///
-    /// ★ **"Could not be shown", not "touches or pierces".** The gate's tests are *sufficient*
-    /// conditions for clearance, so failing them is not evidence of a meeting: a face may miss the
-    /// lateral in a way no test here proves. The name used to make the stronger claim, and it was
-    /// false for a whole family — a boss standing far away whose wall *plane*, extended to
-    /// infinity, happened to pass through a hole. Stating what was verified keeps the sentence
-    /// true however far the tests are later widened.
+    /// ★ **Only the tangent, since cell ③.** A wall within the radius (`0 ≤ d < r`) is recorded
+    /// and passed — the through-axis wall since the rulings ladder, the offset wall since cell ③
+    /// (its refusal rested on a measurement made before the region emitter; measured again,
+    /// bosses and bores build exactly, rational and irrational rulings alike) — and the tracer
+    /// decides from the faces: a recorded face that misses the lateral contributes nothing.
+    /// «Could not be shown to stand clear» is therefore no longer a reason here: a plane within
+    /// the radius whose faces did not clear the strip is a pair that may meet, and that is what
+    /// the record says.
     WallMeetsLateral,
     /// A ring holds a vertex the arrangement names as a `plane ∩ plane ∩ cylinder` **branch
     /// point**, on a path that speaks only three-plane names — the ring walks, the wall-and-handle
@@ -845,22 +844,25 @@ pub enum RejectReason {
     /// keeps only plane triples — so the road refused with a name about rays it had never cast.
     /// That fact has its own name now ([`Self::RingHasNoWitness`]).
     NoClearRay,
-    /// **A ring offered no point to ask about** — not a ray that was blocked, and not a value
-    /// that could not be formed: the containment roads draw their witnesses from a ring's
-    /// *corners*, and a ring cut out of a cylinder has only branch-named ones.
+    /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
+    /// and not a value that could not be formed: the containment roads draw their witnesses from
+    /// a ring's *corners*, and a ring cut out of a cylinder has only branch-named ones; the 3D
+    /// depth classification draws them from a component's vertices and, failing those, from its
+    /// cut caps' interiors, and a thin segment of a disk can offer neither (cell ③).
     ///
     /// The three names beside each other, once: [`Self::NoClearRay`] is «every witness we had was
     /// blocked», [`Self::WitnessNotRational`] is «a value we needed could not be formed
     /// exactly», and this is «there was no witness to begin with». Reading the first for the
     /// third sent this cell's diagnosis to the wrong layer for a while.
     ///
-    /// ☑ **Nothing in today's corpus raises it.** A ring that *is* a circle is asked the circle's
-    /// own question (`arrangement::ring_own_circle`), and a ring with a **whole chord** for an edge
-    /// names that chord's midpoint (`arrangement::chord_midpoint_rat`) — between them the wall
-    /// panels that used to arrive here are all answered. What would still reach it is a ring with
-    /// neither: every edge a *piece* of a chord, or an arc run that does not close a circle. The
-    /// remedy for that shape is to widen the probe's **type** so a branch corner is itself a
-    /// witness; until such a population arrives, this names what would be missing.
+    /// ☑ **The rings raise it nowhere in today's corpus.** A ring that *is* a circle is asked the
+    /// circle's own question (`arrangement::ring_own_circle`), and a ring with a **whole chord**
+    /// for an edge names that chord's midpoint (`arrangement::chord_midpoint_rat`) — between them
+    /// the wall panels that used to arrive here are all answered. The **component** road raises
+    /// it in two crossing-census cells (cell ③): an offset boss's Common is a 0.2-deep segment
+    /// prism whose halves have branch-named corners only and no cap candidate inside — the
+    /// chord-derived candidate is that cell's next commit. The remedy for every such shape at
+    /// once is to widen the probe's **type** so a branch corner is itself a witness.
     RingHasNoWitness,
     /// **An exact *value* could not be formed** — a class with no narrow rational description (a
     /// rotated one, say) or a coordinate past `Rat`'s ceiling.

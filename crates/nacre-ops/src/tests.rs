@@ -9667,7 +9667,7 @@ fn a_spliced_band_is_cut_across_its_notch() {
 /// one row per way a boss can sit on a plate: through it, standing on it, flush with its floor, on
 /// each wall, at a corner, off the wall's middle, and the half-height variants whose lateral is a
 /// chain. Shared by the re-operation census and the crossing census so the two read one corpus.
-const BOSS_FAMILIES: [(&str, [f64; 3], f64); 14] = [
+const BOSS_FAMILIES: [(&str, [f64; 3], f64); 17] = [
     ("through", [2.0, 2.0, -1.0], 4.0),
     ("on top", [2.0, 2.0, 2.0], 1.0),
     ("flush", [2.0, 2.0, 0.0], 3.0),
@@ -9682,6 +9682,13 @@ const BOSS_FAMILIES: [(&str, [f64; 3], f64); 14] = [
     ("half wall, cap below", [2.0, 0.0, 1.0], 2.0),
     ("half +x", [4.0, 2.0, -1.0], 2.0),
     ("half +x, cap below", [4.0, 2.0, 1.0], 2.0),
+    // ★ Cell ③ — the offset wall: the boss's axis stands off the plate's wall `x = 4` by less
+    // than `r`, so the wall crosses the lateral in two rulings that are not a diameter's ends.
+    // Outside by 0.3 (rational rulings, `y = 2 ± 0.4`; the part inside the plate a 0.2-deep
+    // segment), inside by 0.3, outside by 0.2 (irrational rulings).
+    ("offset-out", [4.3, 2.0, -1.0], 4.0),
+    ("offset-in", [3.7, 2.0, -1.0], 4.0),
+    ("offset-irr", [4.2, 2.0, -1.0], 4.0),
 ];
 
 /// The plate and boss of a [`BOSS_FAMILIES`] row, adjacency rebuilt.
@@ -9823,7 +9830,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
     // (name, [Fuse, Cut, Common], the cycles each result's laterals carry) — one row per
     // `BOSS_FAMILIES` entry, in its order.
     type Family = (&'static str, [Reop; 3], [Cyc; 3]);
-    let families: [Family; 14] = [
+    let families: [Family; 17] = [
         ("through", [Ok, Ok, Ok], [[4, 0, 0, 0], RIMS, RIMS]),
         // A boss standing on the plate: the cut removes nothing and leaves no lateral at all.
         ("on top", [Ok, Ok, Empty], [RIMS, NONE, NONE]),
@@ -9839,6 +9846,11 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ("half wall, cap below", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
         ("half +x", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
         ("half +x, cap below", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
+        // The offset wall (cell ③): a notch hole in the band, a panel for the cut and the common
+        // — the wall families' shape, with the chord off the diameter.
+        ("offset-out", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
+        ("offset-in", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
+        ("offset-irr", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
     ];
     let mut seam_joints = (0usize, 0usize);
     let mut table: Vec<String> = Vec::new();
@@ -9941,7 +9953,8 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             .filter(|r| p(r))
             .count()
     };
-    assert_eq!(count(|r| *r == Ok), 41, "{table:?}");
+    // 41 → 50 (cell ③): the three offset families re-operate in every kind.
+    assert_eq!(count(|r| *r == Ok), 50, "{table:?}");
     // ★ The name is gone from this corpus (the arc-label cell): every family re-operates or is
     // refused at its first op. A new population must restate this zero.
     assert_eq!(
@@ -9960,34 +9973,158 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         0,
         "every ring of a result face has a name"
     );
-    assert_eq!(seam_joints, (8, 0), "seam-joint loops (outer, holes)");
+    // 8 → 14 (cell ③): each offset family's Fuse carries two whole-circle rims that pass the
+    // seam vertex — the wall families' seam sits on the wall itself (a chord end, a branch
+    // vertex), which is why they added none.
+    assert_eq!(seam_joints, (14, 0), "seam-joint loops (outer, holes)");
 }
 
-/// A radius-`0.5` disk centred on `base`'s `xy`, clipped by a rectangle: `πr²/2ᵏ` where `k` counts
-/// the rectangle's edges through the centre. An edge that cuts the disk anywhere else is not in
-/// this corpus and panics rather than approximating.
+/// **A radius-`0.5` disk centred on `base`'s `xy`, clipped by an axis-aligned rectangle — the
+/// closed form.** The chord length integrated over the rectangle's `x` span:
+/// `∫ [min(c₁, s) + min(c₀, s)] dt` with `s(t) = √(r² − t²)`, `c₁ = y₁ − cy`, `c₀ = cy − y₀`, over
+/// `t ∈ [x₀ − cx, x₁ − cx]` clipped to where the chord meets `[y₀, y₁]` (`|t| ≤ √(r² − d²)`, `d`
+/// the centre's distance to that span, 0 when the centre is inside it — there `min(c, s)` is
+/// never negative). `∫ min(c, s) dt` splits at `±√(r² − c²)`: `c` between, `s` outside, with
+/// `∫ s = (t·s + r²·asin(t/r))/2`. Exact in the sense the old `πr²/2ᵏ` was (a closed form in
+/// `π`, `asin`, `sqrt`), and it reads every rectangle — the edge through the centre (a halving),
+/// the edge off it (a segment, cell ③), two edges, a rectangle inside the disk.
 ///
 /// ★ One spelling, read by [`removed_by`] and [`first_volume`] alike — they ask the same question
-/// about the same disk, and two copies would be free to drift.
+/// about the same disk, and two copies would be free to drift. `disk_in_rect_is_the_closed_form`
+/// locks it against the known values and a numeric integration.
 fn disk_in_rect(base: [f64; 3], rect: [[f64; 2]; 2]) -> f64 {
     let r = 0.5;
-    let mut halvings = 0;
-    for (i, c) in [base[0], base[1]].into_iter().enumerate() {
-        let (lo, hi) = (rect[i][0], rect[i][1]);
-        if hi <= lo {
+    let (cx, cy) = (base[0], base[1]);
+    let (x0, x1) = (rect[0][0], rect[0][1]);
+    let (y0, y1) = (rect[1][0], rect[1][1]);
+    if x1 <= x0 || y1 <= y0 {
+        return 0.0;
+    }
+    // The chord at `t` meets the y span only where `|t| ≤ t_max`.
+    let d_out = (y0 - cy).max(cy - y1).max(0.0);
+    if d_out >= r {
+        return 0.0;
+    }
+    let t_max = (r * r - d_out * d_out).sqrt();
+    let a = (x0 - cx).max(-t_max);
+    let b = (x1 - cx).min(t_max);
+    if b <= a {
+        return 0.0;
+    }
+    // ∫ s(t) dt, the antiderivative.
+    let big_f = |t: f64| {
+        let t = t.clamp(-r, r);
+        (t * (r * r - t * t).max(0.0).sqrt() + r * r * (t / r).asin()) / 2.0
+    };
+    // ∫_a^b min(c, s(t)) dt.
+    let int_min = |c: f64| -> f64 {
+        if c >= r {
+            return big_f(b) - big_f(a);
+        }
+        if c <= 0.0 {
+            // The edge is on the far side of the centre: within the domain `s ≥ |c|`, so the
+            // minimum is the (non-positive) constant.
+            return c * (b - a);
+        }
+        let tc = (r * r - c * c).sqrt();
+        let (lo, hi) = (a.max(-tc), b.min(tc));
+        let flat = if hi > lo { c * (hi - lo) } else { 0.0 };
+        let left = if a < -tc {
+            big_f((-tc).min(b)) - big_f(a)
+        } else {
+            0.0
+        };
+        let right = if b > tc {
+            big_f(b) - big_f(tc.max(a))
+        } else {
+            0.0
+        };
+        flat + left + right
+    };
+    int_min(y1 - cy) + int_min(cy - y0)
+}
+
+/// [`disk_in_rect`] against the values the corpus has always used and the segments cell ③
+/// measured, then against a midpoint integration on rectangles of every shape (an oracle that
+/// shares nothing with the closed form).
+#[test]
+fn disk_in_rect_is_the_closed_form() {
+    use std::f64::consts::PI;
+    let (r, c) = (0.5, [1.0, 1.0, 0.0]);
+    let seg = |d: f64| r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+    let near = |a: f64, b: f64| (a - b).abs() < 1e-12;
+    let full = PI * r * r;
+    assert!(
+        near(disk_in_rect(c, [[0.0, 2.0], [0.0, 2.0]]), full),
+        "the whole disk"
+    );
+    assert!(
+        near(disk_in_rect(c, [[1.0, 2.0], [0.0, 2.0]]), full / 2.0),
+        "a halving"
+    );
+    assert!(
+        near(disk_in_rect(c, [[1.0, 2.0], [1.0, 2.0]]), full / 4.0),
+        "two halvings"
+    );
+    assert!(
+        near(disk_in_rect(c, [[1.3, 2.0], [0.0, 2.0]]), seg(0.3)),
+        "the segment beyond x = 1.3"
+    );
+    assert!(
+        near(disk_in_rect(c, [[0.0, 1.3], [0.0, 2.0]]), full - seg(0.3)),
+        "the disk less it"
+    );
+    assert!(
+        near(disk_in_rect(c, [[1.3, 2.0], [1.0, 2.0]]), seg(0.3) / 2.0),
+        "half a segment"
+    );
+    assert!(
+        near(disk_in_rect(c, [[0.0, 0.7], [0.0, 2.0]]), seg(0.3)),
+        "the far side's segment"
+    );
+    assert!(
+        near(disk_in_rect(c, [[0.9, 1.1], [0.9, 1.1]]), 0.04),
+        "a rectangle inside the disk"
+    );
+    assert!(
+        near(disk_in_rect(c, [[1.6, 2.0], [0.0, 2.0]]), 0.0),
+        "a rectangle beyond it"
+    );
+    assert!(
+        near(disk_in_rect(c, [[0.0, 2.0], [1.0, 1.0]]), 0.0),
+        "an empty span"
+    );
+    // The numeric oracle: the chord length sampled at midpoints.
+    let numeric = |rect: [[f64; 2]; 2]| -> f64 {
+        let n = 400_000;
+        let (x0, x1) = (rect[0][0].max(c[0] - r), rect[0][1].min(c[0] + r));
+        if x1 <= x0 {
             return 0.0;
         }
-        for (edge, inward) in [(lo, c - lo), (hi, hi - c)] {
-            if inward == 0.0 {
-                halvings += 1;
-            } else if inward <= -r {
-                return 0.0; // the disk lies wholly beyond this edge
-            } else if inward < r {
-                panic!("the tool edge at {edge} cuts the disk off-centre (centre {c})");
-            }
-        }
+        let h = (x1 - x0) / n as f64;
+        (0..n)
+            .map(|i| {
+                let t = x0 + (i as f64 + 0.5) * h - c[0];
+                let s = (r * r - t * t).max(0.0).sqrt();
+                let (lo, hi) = (rect[1][0].max(c[1] - s), rect[1][1].min(c[1] + s));
+                (hi - lo).max(0.0) * h
+            })
+            .sum()
+    };
+    for rect in [
+        [[0.0, 2.0], [0.8, 1.2]],
+        [[0.7, 1.3], [0.6, 1.1]],
+        [[1.1, 1.45], [0.55, 0.9]],
+        [[0.55, 1.2], [1.15, 2.0]],
+        [[1.2, 2.0], [1.3, 2.0]],
+        [[0.6, 1.4], [0.6, 1.4]],
+    ] {
+        let (a, b) = (disk_in_rect(c, rect), numeric(rect));
+        assert!(
+            (a - b).abs() < 1e-7,
+            "{rect:?}: closed form {a} vs numeric {b}"
+        );
     }
-    std::f64::consts::PI * r * r / f64::from(1 << halvings)
 }
 
 /// **The volume of a family's first result**, from the same closed form — the plate `4×4×2`, the
@@ -10018,8 +10155,8 @@ fn first_volume(kind: BoolKind, base: [f64; 3], h: f64) -> f64 {
 /// The volume a tool box removes from a family's **first** result, summed from parts: the plate's
 /// box ∩ tool, the boss's disk ∩ the tool's footprint times the axial overlap, and the doubly
 /// counted disk ∩ plate ∩ tool — `Fuse = plate + boss − both`, `Cut = plate − both`,
-/// `Common = both`. A disk clipped by a rectangle is `πr²/2ᵏ` where `k` counts the rectangle's
-/// edges through the disk's centre; an edge that cuts the disk anywhere else is not in this corpus
+/// `Common = both`. A disk clipped by a rectangle is [`disk_in_rect`]'s closed form — `πr²/2ᵏ`
+/// for `k` edges through the centre, a segment for an edge off it (cell ③), whatever the corpus
 /// and panics rather than approximating.
 fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f64 {
     let seg = |a: [f64; 2], b: [f64; 2]| -> [f64; 2] { [a[0].max(b[0]), a[1].min(b[1])] };
@@ -10230,7 +10367,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // not an adjacent node pair of the rim, and reading it as the **run** between the nearest rim
     // nodes (this rung) lets it answer as well.
     const HALF_CUT: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
-    let want: [[[Cross; 5]; 3]; 14] = [
+    let want: [[[Cross; 5]; 3]; 17] = [
         [BAND, BAND, BAND_COMMON], // through
         // on top: the cut leaves the plate alone.
         [BAND, [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], [Empty; 5]],
@@ -10276,6 +10413,25 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half wall, cap below
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half +x
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half +x, cap below
+        // ★ Cell ③ — the offset wall. Every tool builds as it does for the wall families: the
+        // mid slab parts the result, the through-axis wall (`y ≥ 2`, ⊥ to the plate's wall)
+        // halves the segment. `offset-out`'s Common is a 0.2-deep segment prism whose halves
+        // have **no witness**: its corners are branch names (dropped by the vertex probe) and no
+        // candidate of the cut cap's centre-and-steps lies inside a segment thinner than `r/2`
+        // — named as such (`RingHasNoWitness`), the chord-derived candidate is the next commit.
+        [
+            [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
+            [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
+            [
+                Rejected(RingHasNoWitness),
+                Ok(1),
+                Ok(1),
+                Ok(1),
+                Rejected(RingHasNoWitness),
+            ],
+        ],
+        [[Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON], // offset-in
+        [[Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON], // offset-irr
     ];
     let mut table: Vec<String> = Vec::new();
     let mut mismatches = 0usize;
@@ -10391,7 +10547,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 205, "{tally:?}");
+    assert_eq!(count(|c| matches!(c, Ok(_))), 248, "{tally:?}");
     // ★ `ring_in_ring`'s own refusals are **gone**: every one of them was a probe list that
     // started empty, and that fact now has its own name. What is left under this one is the other
     // road entirely — the 3D depth classification in `boolean.rs`, whose nodes really do run out.
@@ -10402,10 +10558,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // crossing was on it (`MissOnly`), and only the third met the cap's corner. The lateral reads
     // its loops now. The name is gone from this corpus; a new population must restate this 0.
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 0);
-    // ★ The name is gone from this corpus: every ring that had no witness was a wall panel, and a
-    // panel's perpendicular traces are whole chords, which name their own midpoints. A new
-    // population must restate this 0 — it is an emptiness of *this* corpus, not of the rule.
-    assert_eq!(count(|c| *c == Rejected(RingHasNoWitness)), 0);
+    // ★ The name was gone from this corpus (every ring that had no witness was a wall panel, and
+    // a panel's perpendicular traces are whole chords, which name their own midpoints) — and the
+    // offset wall brought it back (cell ③): a thin segment prism's halves have branch-named
+    // corners only and no cap candidate inside. Two cells, by the name that says «no witness at
+    // all» rather than «every witness blocked».
+    assert_eq!(count(|c| *c == Rejected(RingHasNoWitness)), 2);
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
     assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 0);

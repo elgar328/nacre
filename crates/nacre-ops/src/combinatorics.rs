@@ -4065,17 +4065,20 @@ fn corner_axis_param(
         .find_map(|&c| crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, c)?, def))
 }
 
-/// The ∥ (through-axis) class among a branch corner's naming planes — the wall a ruling piece
-/// ending there rides.
+/// The ∥ class among a branch corner's naming planes — the wall a ruling piece ending there
+/// rides: the one whose normal is ⊥ to the axis (`n · m = 0`), through the axis or offset from
+/// it (cell ③); the other name is the ⊥ class the arc rides.
 fn corner_wall_class(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
 ) -> Option<usize> {
     let (planes, _, _) = branch_name(n)?;
+    let m = def.dir();
     planes.iter().copied().find(|&c| {
-        class_coeffs_rat(jd, c).and_then(|w| crate::arrangement::class_through_axis(&w, def))
-            == Some(true)
+        class_coeffs_rat(jd, c).is_some_and(|w| {
+            dot3_rat(&[w[0], w[1], w[2]], &m) == Some(nacre_scalar::Rat::from_int(0))
+        })
     })
 }
 

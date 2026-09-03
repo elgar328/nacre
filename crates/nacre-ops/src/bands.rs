@@ -898,11 +898,11 @@ mod tests {
         through_boss_builds(BoolKind::Fuse, [40.0, 40.0, -10.0], 32000.0 + 1125.0 * pi);
     }
 
-    /// ★ The populations the gate's arm deliberately keeps out, each measured lifted before the
-    /// arm was shaped: a **tangent** wall (distance exactly `r`) assembles a volume-correct
-    /// zero-thickness pinch `validate` cannot see; an **offset** crossing (`0 <` distance `< r`)
-    /// walks to `OpenResultShell`, a SuspectedDefect label an honest input must not wear. The
-    /// live set survives every refusal.
+    /// ★ The population the gate's arm deliberately keeps out: a **tangent** wall (distance
+    /// exactly `r`) assembles a volume-correct zero-thickness pinch `validate` cannot see. The
+    /// live set survives the refusal. The **offset** crossing (`0 <` distance `< r`) stood here
+    /// beside it — «walks to `OpenResultShell`», a measurement from before the region emitter —
+    /// and builds exactly since cell ③: the same row, now the build it is.
     ///
     /// ★ A third row lived here until the D2b cutover: the **half-height** boss, whose upper cap
     /// sits inside the plate's material — the band road's `chamber` had no sector answer for that
@@ -910,9 +910,18 @@ mod tests {
     /// outer sector beside it), so it builds now — [`Self::a_half_height_boss_builds`].
     #[test]
     fn the_gate_still_refuses_what_the_road_does_not_serve() {
+        let seg = |d: f64, r: f64| r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+        let pi = std::f64::consts::PI;
+        // (base, h, the volume it builds — `None` for the refusal)
         for (base, h, want) in [
-            ([38.0, 20.0, -10.0], 50.0, RejectReason::WallMeetsLateral),
-            ([35.0, 20.0, -10.0], 50.0, RejectReason::WallMeetsLateral),
+            // The offset wall: the plate's `x = 40` stands 2 from the axis (r = 5); the boss's
+            // part inside the plate is the disk less the `x > 40` segment, over the plate's height.
+            (
+                [38.0, 20.0, -10.0],
+                50.0,
+                Some(32000.0 + 1250.0 * pi - (25.0 * pi - seg(2.0, 5.0)) * 20.0),
+            ),
+            ([35.0, 20.0, -10.0], 50.0, None),
         ] {
             let mut m = Model::new();
             let plate = m.add_cuboid(
@@ -927,13 +936,20 @@ mod tests {
             );
             m.rebuild_adjacency();
             let live = m.live_solids.clone();
-            let err =
-                crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect_err("outside the road");
-            let BoolError::Rejected { reason, .. } = err else {
-                panic!("a rejection, not {err:?}");
-            };
-            assert_eq!(reason, want, "{base:?} h {h}");
-            assert_eq!(m.live_solids, live, "the live set survives the refusal");
+            match (crate::boolean(&mut m, BoolKind::Fuse, plate, boss), want) {
+                (Ok(out), Some(want)) => {
+                    m.rebuild_adjacency();
+                    assert_eq!(out.len(), 1, "{base:?}");
+                    assert!(nacre_validate::validate(&m).is_empty(), "{base:?}");
+                    let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+                    assert!((v - want).abs() < 1e-9, "{base:?}: {v} vs {want}");
+                }
+                (Err(BoolError::Rejected { reason, .. }), None) => {
+                    assert_eq!(reason, RejectReason::WallMeetsLateral, "{base:?} h {h}");
+                    assert_eq!(m.live_solids, live, "the live set survives the refusal");
+                }
+                (other, _) => panic!("{base:?}: {other:?}"),
+            }
         }
     }
 
@@ -2777,11 +2793,13 @@ mod tests {
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
-    /// **The fence: a wall face that really does cross the bore.** The plate's own `y = 20` wall
-    /// would clear, so the tool here is a slab whose face runs right across the hole — the wall
-    /// rule's true population, and M6-2b's.
+    /// **A wall face that really does cross the bore builds** (cell ③). The plate's own `y = 20`
+    /// wall would clear, so the tool here is a slab whose face runs right across the hole — the
+    /// wall rule's true population, and M6-2b's. It used to be the fence (`WallMeetsLateral`);
+    /// the gate records the pair now and the tracer cuts the bore's lateral along two rulings
+    /// (2 from the axis, r = 3) and its caps along the chord: one body, the exact volume.
     #[test]
-    fn a_wall_face_that_really_crosses_the_bore_is_refused() {
+    fn a_wall_face_that_really_crosses_the_bore_builds() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -2801,19 +2819,17 @@ mod tests {
             Point3::from_array([40.0, 20.0, 5.0]),
         );
         m.rebuild_adjacency();
-        let before = m.live_solids.clone();
-        let err = crate::boolean(&mut m, BoolKind::Cut, holed, slab).expect_err("a real crossing");
-        assert!(
-            matches!(
-                err,
-                BoolError::Rejected {
-                    reason: RejectReason::WallMeetsLateral,
-                    ..
-                }
-            ),
-            "{err:?}"
-        );
-        assert_eq!(m.live_solids, before, "a refused boolean retires nothing");
+        let out =
+            crate::boolean(&mut m, BoolKind::Cut, holed, slab).expect("a real crossing builds");
+        m.rebuild_adjacency();
+        assert_eq!(out.len(), 1);
+        assert!(nacre_validate::validate(&m).is_empty());
+        // The slab's box less the bore's `y ≥ 12` segment (d = 2, r = 3), taken from the bored plate.
+        let seg = |d: f64, r: f64| r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+        let pi = std::f64::consts::PI;
+        let want = 4000.0 - 45.0 * pi - (1600.0 - 5.0 * seg(2.0, 3.0));
+        let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
     /// **The fence: exact tangency.** The slab's face stands exactly `r` from the axis, so it
@@ -3166,24 +3182,32 @@ mod tests {
         m.rebuild_adjacency();
         crate::boolean(&mut m, BoolKind::Cut, s, along).expect("clear along the axis");
 
-        // (c) Neither: full width *and* straddling both bands.
+        // (c) Neither: full width *and* straddling both bands — a genuine crossing of both
+        // laterals (`y = 6`, 1 from the axis, r = 2), which the gate used to refuse and records
+        // now (cell ③): two ruling pieces per band at `x = 5 ± √3`, the chord on the caps and on
+        // the middle cut's ceiling and floor. One body, the exact volume.
         let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
         let neither = m.add_cuboid(
             Point3::from_array([0.0, 0.0, 3.0]),
             Point3::from_array([10.0, 6.0, 7.0]),
         );
         m.rebuild_adjacency();
-        let err = crate::boolean(&mut m, BoolKind::Cut, s, neither).expect_err("crosses both");
-        assert!(
-            matches!(
-                err,
-                BoolError::Rejected {
-                    reason: RejectReason::WallMeetsLateral,
-                    ..
-                }
-            ),
-            "{err:?}"
-        );
+        let out = crate::boolean(&mut m, BoolKind::Cut, s, neither).expect("crosses both, builds");
+        m.rebuild_adjacency();
+        assert_eq!(out.len(), 1);
+        assert!(nacre_validate::validate(&m).is_empty());
+        let seg = |d: f64, r: f64| r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
+        let pi = std::f64::consts::PI;
+        // The plate less the bore, less the middle cut (less the bore inside it), less the tool's
+        // box (less the bore's `y ≤ 6` part over its height, less the middle cut inside it — which
+        // had already lost the bore's `y ≤ 6` part).
+        let disk_le6 = 4.0 * pi - seg(1.0, 2.0);
+        let want = 1000.0
+            - 40.0 * pi
+            - (72.0 - 8.0 * pi)
+            - (240.0 - 4.0 * disk_le6 - (48.0 - 2.0 * disk_le6));
+        let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
     // ---- A blind bore is usable, not just buildable ----

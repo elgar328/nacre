@@ -272,6 +272,20 @@ fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
+/// The tangent wall: the axis sits exactly `r = 0.5` from the `x = 0` wall, so the wall touches
+/// the lateral along one ruling — the one population `WallMeetsLateral` keeps (cell ③).
+fn cylinder_wall_tangent(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
+    let a = cub(m, [0.0; 3], [2.0; 3]);
+    let cyl = m.add_cylinder(
+        Point3::from_array([0.5, 1.0, -1.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        0.5,
+        4.0,
+    );
+    m.rebuild_adjacency();
+    boolean(m, BoolKind::Cut, a, cyl)
+}
+
 fn cylinder_oblique(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     // A tilted rational axis against an axis-aligned box: the box's planes are neither ⊥ nor
     // ∥ to (0,1,1), and — unlike rotating the box — every description stays world-rational,
@@ -353,7 +367,7 @@ fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 const BOOLEAN: &str = "crates/nacre-ops/src/boolean.rs";
 
-const CORPUS: [Fixture; 12] = [
+const CORPUS: [Fixture; 13] = [
     Fixture {
         name: "pinched-vertex",
         expect: Some(RejectReason::NonManifoldVertex),
@@ -433,9 +447,20 @@ const CORPUS: [Fixture; 12] = [
     Fixture {
         name: "cylinder-wall-contact",
         // The axis sits 0.3 from the x = 0 wall with r = 0.5 — the wall pierces the lateral
-        // surface (M6-2b's rulings).
-        expect: Some(RejectReason::WallMeetsLateral),
+        // surface in two rulings (`y = 1 ± 0.4`). ★ It **builds** since cell ③ (the offset wall):
+        // the gate records the pair and the tracer cuts the lateral along the rulings and the
+        // caps along the chord. The name it carried stays in the code for the tangent alone.
+        expect: None,
         run: cylinder_wall_contact,
+        raised: &[],
+        surfaced: &[],
+    },
+    Fixture {
+        name: "cylinder-wall-tangent",
+        // The axis exactly r from the wall: a zero-thickness contact along one ruling, which
+        // validate cannot see — the gate is the honest stop until capability C.
+        expect: Some(RejectReason::WallMeetsLateral),
+        run: cylinder_wall_tangent,
         raised: &[("wall_meets_lateral", None, "crates/nacre-ops/src/planes.rs")],
         surfaced: &[("wall_meets_lateral", None)],
     },
@@ -609,7 +634,7 @@ fn instrument_answers_for_itself() {
     // else in this file would notice if that attribute were dropped, and every row of the table
     // would silently collapse onto one line in `lib.rs`.
     let mut m = Model::new();
-    let _ = cylinder_wall_contact(&mut m);
+    let _ = cylinder_wall_tangent(&mut m);
     let c = reject_census::take();
     let site = c
         .raised

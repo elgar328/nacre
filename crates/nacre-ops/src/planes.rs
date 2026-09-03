@@ -1059,29 +1059,29 @@ pub(crate) fn cylinder_gate(
                     // translated body out of the cylinder roads.
                     let spans = spans.get_or_insert_with(|| lateral_spans(faces, cyl.surf));
                     if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r, spans)? {
-                        // ★ **The record-and-pass arm** (rulings ladder, cell 4): a wall whose
-                        // axis lies exactly *on* it (`n·o + d = 0` — clearance against a zero
-                        // radius, the same total spelling as the test above) is the population
-                        // the rulings machinery serves, measured end to end: through, corner
-                        // (two walls), asymmetric — all assemble, validate clean, and answer
-                        // the exact volume oracles. It passes with the pair recorded; the
-                        // tracer's ruling/chord arms fire only on recorded pairs.
+                        // ★ **The record-and-pass arm** (rulings ladder, cell 4; widened in
+                        // cell ③): a wall whose plane runs **within** the radius — any
+                        // `0 ≤ d < r`, the through-axis wall included — and whose faces did not
+                        // clear the strip is recorded and passed; the tracer's ruling/chord arms
+                        // fire only on recorded pairs and read the *faces* (a ruling piece comes
+                        // from a face's own cycles, a cap's chord is the true meet of that class's
+                        // plane with the disk), so a recorded face that misses the lateral
+                        // contributes nothing. The record is «may meet; the tracer decides».
                         //
-                        // Everything else keeps this refusal, each measured lifted: a
-                        // **tangent** wall (distance exactly r) *assembles* a volume-correct
+                        // ★ The offset (`0 < d < r`) used to keep this refusal on a measurement
+                        // made before the region emitter (D5) — «walks to `OpenResultShell`».
+                        // Measured again after it: bosses and bores, rational and irrational
+                        // rulings, axis inside or outside the plate, a split bore — every one
+                        // assembles, validates clean and answers the exact volume oracle. The
+                        // arithmetic (`plane_plane_cylinder`'s roots, `ruling_side`, the chart's
+                        // circular order) never assumed the diameter; only the vocabulary did.
+                        //
+                        // What keeps the refusal is the **tangent** wall alone (distance exactly
+                        // `r`, one clearance call, `Zero`): lifting it assembles a volume-correct
                         // solid whose lateral touches the wall along a ruling — zero-thickness
                         // contact validate cannot see (its pinch detectors abstain on
-                        // cylinders), so the honest place to stop it is here, by its name; an
-                        // **offset** crossing (0 < distance < r, cell D's irrational rulings)
-                        // walks to the assembly's closed-shell guard and comes back
-                        // `OpenResultShell` — a SuspectedDefect label an honest input must not
-                        // wear.
-                        if nacre_scalar::point_plane_clearance_rat(
-                            &coeffs,
-                            &o,
-                            nacre_scalar::Rat::from_int(0),
-                        ) != Orient::Zero
-                        {
+                        // cylinders), so the honest place to stop it is here, by its name.
+                        if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) == Orient::Zero {
                             return Err(reject(RejectReason::WallMeetsLateral));
                         }
                         crossings.insert((c, ci));

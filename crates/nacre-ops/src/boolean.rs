@@ -694,6 +694,17 @@ fn group_faces(
         );
         Ok(None)
     }
+    // ★ A list that **started empty** is not a list that ran out (cell ③): a component whose
+    // every corner is a branch name and whose caps offer no candidate their ring says is inside
+    // — a thin segment of a disk — has no witness at all, and says so by the name the rings use
+    // for the same proposition.
+    fn no_witness(probes: &[combinatorics::Probe]) -> RejectReason {
+        if probes.is_empty() {
+            RejectReason::RingHasNoWitness
+        } else {
+            RejectReason::NoClearRay
+        }
+    }
     // ★★ **Material or void is a question about nesting, not about normals.**
     //
     // It used to be answered at the component's lexicographically-minimal vertex `v*`: outward iff
@@ -723,7 +734,8 @@ fn group_faces(
         // component. Trying them in turn is what the cavity search does, and for the same reason —
         // a node that grazes one component's boundary is a fact about that node, not about the
         // components.
-        let depth = first_deciding(&probes_of(c), |x| {
+        let probes = probes_of(c);
+        let depth = first_deciding(&probes, |x| {
             let mut d = 0usize;
             for other in (0..n).filter(|&o| o != c) {
                 match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[other])? {
@@ -734,7 +746,7 @@ fn group_faces(
             }
             Ok(Some(d))
         })?
-        .ok_or_else(|| reject(RejectReason::NoClearRay))?;
+        .ok_or_else(|| reject(no_witness(&probes)))?;
         if depth % 2 == 0 {
             positives.push(c);
         }
@@ -760,7 +772,8 @@ fn group_faces(
             for d in (0..n).filter(|c| !positives.contains(c)) {
                 // A cavity node that classifies cleanly against *every* material (one shared origin
                 // keeps the nesting consistent); its `true` materials nest, so take the innermost.
-                let containers = first_deciding(&probes_of(d), |x| {
+                let probes = probes_of(d);
+                let containers = first_deciding(&probes, |x| {
                     let mut cs = Vec::new();
                     for &m in &positives {
                         match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[m])? {
@@ -771,7 +784,7 @@ fn group_faces(
                     }
                     Ok(Some(cs))
                 })?
-                .ok_or_else(|| reject(RejectReason::NoClearRay))?;
+                .ok_or_else(|| reject(no_witness(&probes)))?;
                 let owner = match containers.as_slice() {
                     [] => return Err(reject(RejectReason::CavityNoOwner)),
                     [only] => *only,
