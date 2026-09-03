@@ -16614,3 +16614,48 @@ D5 뒤 가로지르는 census의 거절은 `NoClearRay` **8**(corner·corner-lo�
 - ☑ 청소 패스 거울의 «인구 0»을 원장 포함(`--lib --include-ignored`) 트레이스에서 확인 — `boolean.rs`의 raise는 692(깊이 판정)·2712·78·1421뿐, 거울 줄(3487→3496) 0. (전체 타깃 `--include-ignored`는 perf 벤치까지 돌아 10분을 넘긴다 — 원장은 lib에 있으니 `--lib`로.)
 - ☑ 단계 0 커밋 메시지가 8칸의 동률을 «탐침 ≠ 코너, 이웃 직선»으로 뭉뚱그렸다 — 실측은 세 종류(위). dev-log·메모리에 세부가 있고 메시지는 안 고친다.
 - ☑ 관문(fmt/clippy/workspace 1181/nodef/census 두 프로파일 269행 비트 동일/reject_census/스윕/perf/kit/앱)·reject-trace A/B(사이트·surfaced 동일) 초록.
+
+## 옆면도 자기 차트에서 같은 패리티로 답한다 — `BoundEdges::Lateral`이 경계 루프를 든다 (M6-2 남은 것 ②-b)
+
+커밋: `3c7d3ed`(단계 0 계기) · `5a97a79`(1a 엔진을 그림자로) · `630b813`(1b 커토버·삭제) · `9ef2a3e`(1c 탐침 dedup) · 문서.
+
+**진단의 번복이 첫 줄이다.** 칸 ②는 남은 `NoClearRay` 4칸(corner·corner-lo × Common × mid·벽 슬랩)의 뿌리를 «탐침 공급 — 증인이 전부 링 위»라고 적었다. 이 칸의 조사가 `point_in_component`의 **시도마다** 기권 자리를 재니 거짓이었다: 탐침 6개(축 위 정점 둘이 링 셋에서 세 번씩) × 평면쌍 시도 3 = 18 중 **12는 다른 반쪽의 옆면에 부딪혀 기권**(`BoundEdges::Lateral` → `SpanAsk::MissOnly`: 광선이 사분 원통을 맞히는데 면이 «그 교차점이 내 면 위인가»를 모른다), 6만 캡 코너 동률(축 선 광선, 링 위 — 옳은 기권). 시도 순서가 (0,2)·(0,3)·(2,3)이라 옆면이 먼저, 코너가 마지막이었고, dev-log 「잘린 캡이」의 «MissOnly는 무관»은 소진 호출이 **마지막으로** 죽은 자리를 읽은 측정이었다. 스위트 전체: `cylinder_face_crossings`의 물음 187 = MissOnly-적중 69(전부 기권) · MissOnly-빗나감 93 · 띠 빗나감 25 · **띠 적중 0**.
+
+### 뿌리 — 어휘
+D5로 모든 옆면이 차트의 영역이 됐고 경계는 전부 철자돼 있다(`Bound::Ring`의 branch 정거장·`Wall::Arc`/`Wall::Ruling`, `Bound::Band{Rim, Rim}`, 구멍 링). 광선 도로의 `BoundEdges`가 그것을 버렸다: 링·사슬 rim은 `Lateral`(«세지 않는다»), 띠는 두 rim 클래스만, 구멍은 `inner`로 옮겨진 채 원통 팔이 **읽지 않았다**(단계 0의 계수: 구멍 있는 옆면을 물은 횟수 **1**, 가로지르는 census — 예측 0 반증).
+
+### 원칙 — 한 규칙, 원통 차트에서
+X = 광선 ∩ 원통(`plane_plane_cylinder`의 근, `(MeetLine, QuadVal)`)에서 **+z 광선**이 면의 경계 루프를 홀수 번 가르면 X는 면 위다. 온전한 원 rim: z_rim > z_X면 가른다. 호(z = const, CCW span): 위에 있고 θ_X가 span 안이면 가른다 — 끝이 정확히 θ_X면 **칸 ②의 코너 규칙**: 위(+θ)로 떠나는 끝(`lo`)이 센다(`ray_step_crossing(Zero, +, +)`), `hi`는 안 센다, 룰링은 광선을 따라 놓여 절대 안 센다. X가 rim·호·룰링 위면 경계(기권). 룰링 위 판정은 **룰링의 이름 그대로**(`plane_side(fc) == 0 ∧ ruling_side == side` — `crossing_on_ruling`이 정거장을 이름 짓는 술어; θ 비교도 seam 플래그도 없다). **띠 팔의 «두 rim 평면 반대쪽»은 이 규칙의 특수 경우**(두 원 루프 중 정확히 하나가 위). 한 철자: 호 팔의 span 판정을 `arc_span`(`Inside/Outside/AtLo/AtHi`; seam 근·seam 끝 둘·zero-span은 `None`)으로 뽑아 평면 도로(`point_in_mixed_ring`)와 옆면 도로(`loop_parity`)가 같은 함수를 부른다.
+- ★ **총 패리티이지 «외곽 안 ∧ 구멍 밖»이 아니다**(첫째 검토): 원통 차트는 환면이라 감싸는 루프에 «안»이 없고, 양 캡이 잘린 옆면(사슬 rim 둘)은 걷기가 `Ring(outer)` + `inner=[다른 사슬]`로 낸다 — `material_of`는 두 사슬 사이를 «구멍 안»으로 읽는다. 그래서 원통 면의 `outer`가 **모든 루프**(rim + 구멍)를 들고 `inner`는 빈다(`comp_face`, boolean.rs — 그룹핑에서 뽑아낸 함수).
+- ★ **면 소속 먼저, `half` 나중**(셋째 검토): 거꾸로면 «상대의 무한 원통 위·면 밖 탐침»이 0에서 Graze로 회귀한다.
+- z 비교(`plane_side`·`rim_plane`, 유리수 평면 하나)를 θ 비교(`circular_order_about_seam`, 근호 둘)보다 먼저 — 네 칸의 결정적 광선은 «위에 호가 없다»로 끝나 θ를 묻지 않는다(다른 반쪽은 z ∈ [0, ½], 광선은 z = 2; seam 근 (4, 3.5)는 `circular_order`에 닿지 않는다).
+
+### 단계 0 (`3c7d3ed`) — 계기만
+P1·P2 위. P3 구멍 있는 옆면을 물은 횟수 1(census, 띠+구멍 1). P4 픽스처 기하: 판 `[0,40]²×[0,20]`, 보스 `(40,20)` r 5 z ∈ [−10, 40], 벽 x = 40 — Fuse 옆면 = 띠 `[Circle(−10), Circle(40)]` + 구멍 링(판 쪽 반원 × z ∈ (0, 20): 잘린 rim의 호 둘·룰링 둘).
+
+### 1a (`5a97a79`) — 엔진을 그림자로, 프로덕션 무변
+`LateralLoop`·`BoundEdges::Lateral(loops)`·`comp_face`·`Ring::edges(p: Option)`·`arc_span` 추출·`rim_plane`·`loop_parity`·`lateral_face_crossings`; 두 도로에 `LateralRead{Today, Loops}`를 꿰고 `first_deciding`이 `cfg(test)`로 탐침마다 (프로덕션, 그림자) 답을 적어 결정과 대조.
+- **그림자 원장**: 행 238 = 일치 214 · **그림자만 답함 24**(네 칸의 탐침 전부, 답은 «밖» = 두 반쪽은 형제) · 불일치 **0** · 그림자 기권 0 · 둘 다 기권 0. P2의 나머지 21건은 뒤 시도로 결정되는 탐침 안의 것이라 행이 아니다.
+- **옆면 격자 오라클** `the_lateral_parity_agrees_with_the_notch_it_bounds`: 유리수 광선 `{y = y₀, z = z₀}` 반 걸음 격자 + 정거장 열 `{x = 40, z = z₀}`, 근마다 세계 좌표의 진리와 대조. 관통 빌드: 면 위 2,983 · 구멍 1,045 · 경계 114 · 접선 218 · 정거장 룰링 위 84 · 정거장 면 위 109 · seam 동률 25; **띠 팔 == 두 원 루프, 2,180 광선 전부**(근 전부·rim 위 Graze 포함). ★ 두 번 틀렸다: `lateral_face_crossings`가 `loop_parity`의 `None`을 산술 실패(`None`)로 흘려 Graze가 아니었다 — rim 위의 근(z₀ = −10)에서 띠 그림자가 잡았다; 정거장 (40,15)는 `add_cylinder`의 `ref_dir = −y`로 **seam**이라 위에 호가 있는 근은 오늘의 어휘대로 `SeamRoot` 기권(진리에 그 절을 넣었다 — 플랜이 적은 잔여 인구).
+- ★ **부정 대조가 플랜을 반증했다.** «`AtLo`/`AtHi` 맞바꾸기 → 빨강»은 **초록**이다 — 맞바꾸기는 반열림의 다른 관례(θ − ε의 광선)라 닫힌 루프의 패리티를 바꾸지 않는다(칸 ②에서 같은 뒤집기가 빨갰던 건 직선 스텝은 그대로 두고 호 끝만 뒤집어 **불일치**였기 때문). 분별력 있는 대조는 «**양 끝 다 세기**»인데 그것도 관통 빌드에선 초록이다: 노치의 두 호는 같은 정거장에서 둘 다 `lo`라 두 규칙이 같은 수를 낸다. 그래서 **계단 빌드**(`armed_through_boss_z(10, 30)`: 아래 캡이 판 안 → 아래 경계가 z = 10 바깥 반원 + 룰링 + z = 20 안쪽 반원의 사슬 rim)를 더했다 — 정거장 (40,25)에서 한 호는 `hi`, 다른 호는 `lo`: 면 위 1,862 · 구멍 2,204 · 경계 76 · 정거장 룰링 위 43 · 면 위 130 · seam 동률 45, «양 끝 다 세기» → (40,25)·z₀ = −12에서 **빨강**. 구멍 루프 제외 → 빨강.
+- 관문·A/B: census 269행 비트 동일 · 사이트 집합 동일(그림자).
+
+### 1b (`630b813`) — 커토버·삭제
+두 도로가 `lateral_face_crossings`를 부르고 `SpanAsk`·`cylinder_face_crossings`·`LateralRead`·`band_of`·그림자가 사라진다.
+- 가로지르는 census **`NoClearRay` 4 → 0 · Ok 201 → 205**(네 칸 → Ok(2), 두 도구 다 z ∈ [½, 1½] 슬랩). 원장: 판정 호출 222 전부 **첫 탐침**·소진 0, `ProbeAtCorner` 105 → **81**(−24: 첫 시도가 답하니 셋째 시도의 코너 동률이 안 돈다 — 예측대로), 원통 면 물음 197 → 137. 프로덕션 census 269행 비트 동일. reject-trace: `no_clear_ray@boolean.rs` 4 → **1**(surfaced 6 → 2; 남은 1은 얼린 코퍼스의 diamond-void — 평면 도로의 옳은 거절), 그 밖 동일.
+- 부정 대조: 링 루프를 «항상 기권»으로 → 정확히 네 칸 빨강.
+
+### 1c (`9ef2a3e`) — 탐침 이름 dedup
+`probes_of`가 한 이름을 링 셋에서 세 번 내던 것을 첫 등장 순서로 하나씩. 예측 무변(첫 결정 탐침이 같다), P4 offered 6 → 2가 증거 — 사이트 집합·surfaced 동일.
+
+### ★ 검토 셋이 본안을 바꾼 자리
+① 총 패리티(사슬 rim 둘의 면) ② 상자 공동 픽스처는 게이트가 거절(`face_clears_footprint`) → 띠 팔의 동일성은 격자 그림자로; «띠 적중 0»은 인구 없음이 아니라 게이트가 거절한 인구 ③ 그림자(1a) → 커토버(1b) ④ ⊥ 클래스 불변·`TiltedArc` ⑤ 룰링은 이름으로(θ 비교 삭제) ⑥ 계기는 `tie_probe` 하나 ⑦ 격자 그림자는 모든 근 ⑧ dedup은 자기 커밋 ⑨ 면 소속 먼저·`half` 나중 ⑩ `LateralRead` 인자 하나로 두 도로 ⑪ «코너 동률 24 잔존» 예측 정정. 검토가 반증하지 못하고 실측이 반증한 것: 부정 대조의 모양(위).
+
+### 남기는 항목
+`SeamRoot`(seam 위의 근 위에 호가 있는 광선 — 격자 25·45건, 코퍼스 0) · `TiltedArc`·`Producer` 인구 0(M6-3의 것) · 원통 안의 ∥ 벽(띠 팔 k = 1의 실제 탐침 인구)은 게이트에 빚짐 · `point_in_ring`의 기권/오류 타입 가르기 · 강체 운동 불변 대조군 · 벽∩옆면 한 이차식(항목 ③) · `ObliqueCylinderCut`은 M6-3.
+
+### 관문
+매 커밋 전량 초록(단계 0·1a·1b·1c) + reject-trace A/B(`ab.sh`) + 직렬 원장 `--nocapture`.
+
+### 다음
+**③ 벽∩옆면의 한 이차식**(오프셋 `0<d<r`은 D 위에서 «재고», 접선 `d=r`은 능력 C) · 강체 운동 불변 대조군 · `ObliqueCylinderCut`은 M6-3.

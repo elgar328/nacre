@@ -3786,16 +3786,17 @@ fn planes_through_line(
 /// fixture that makes this road say `true`, and it goes red if the road is stubbed to `false` —
 /// two *disjoint* bodies would not, since their answer is "outside" whatever the road does.
 ///
-/// ★ The **curved** arm, though, is barely loaded from here, and the counts say so: this road is
-/// entered **9 times** in the suite and **7 of those look at no cylinder face at all** (the other
-/// component is all planes — the void fixture's is a box). The two that do are
-/// `two_cylinders_with_coplanar_caps_fuse_apart`, and both are a **miss**. Nor can a fixture with
-/// parallel axes do better: `cylinders_clear` refuses any boolean whose two cylinders are within
-/// `r₁+r₂` of each other, so a ray from one cap's centre crosses the other band **0 or 2 times**
-/// and the parity is the same with the arm stubbed to zero (measured). Its `k ≠ 0` behaviour is
-/// load-bearing through [`point_in_component`], which is the reason it is *called* here rather
-/// than restated: one arm, measured once. A fixture that loads it from **this** caller wants
-/// **skew** axes and is owed.
+/// ★ The **curved** arm is barely loaded from here: this road is entered a handful of times in
+/// the suite and mostly looks at no cylinder face at all (the other component is all planes —
+/// the void fixture's is a box); where it does (`two_cylinders_with_coplanar_caps_fuse_apart`)
+/// the ray misses. Nor can a fixture with parallel axes do better: `cylinders_clear` refuses any
+/// boolean whose two cylinders are within `r₁+r₂` of each other, so a ray from one cap's centre
+/// crosses the other lateral **0 or 2 times** and the parity is the same. What loads the lateral
+/// road ([`lateral_face_crossings`], cell ②-b) is the **named** road's probes — the crossing
+/// census's corner Commons, whose vertex rays cross the other half's panel — and the lattice
+/// oracle on the through-boss; a real `k = 1` from a coordinate probe wants a ∥ wall inside the
+/// strip, which the cylinder gate refuses (`WallMeetsLateral`), so it is owed to that gate, not
+/// to a fixture.
 ///
 /// `Ok(None)` = this ray grazed; the caller has other directions to try.
 pub(crate) fn point_in_faces_rat(
