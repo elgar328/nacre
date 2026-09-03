@@ -965,7 +965,7 @@ impl Model {
     /// only of [`Motion::Translate`] nodes loses nothing: a plane's `d` shifts by `−n·t`
     /// ([`nacre_scalar::Isometry::plane_coeffs`]), a cylinder's origin by `+t`. What such a move
     /// *does* lose is the exactness of the `f64` **cache** — which is why the producer still
-    /// records the node (`transform`'s `motion_is_exact`, and `nacre-ops`' reuse road reads a
+    /// records the node (`transform`'s `carry_of`, and `nacre-ops`' reuse road reads a
     /// world-stated carrier's coordinate as the statement itself). So this answers a question
     /// about *descriptions*, for the per-operation mirrors that carry them; it does not license
     /// dropping the history.

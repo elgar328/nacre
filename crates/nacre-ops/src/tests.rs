@@ -11331,30 +11331,18 @@ const DIVERGES: &str = "<diverges silently>";
 /// `arc_extremum_winding` takes the minimum along the first axis the circle spans), and the transport's
 /// half-recorded chain (`ONE_CYLINDER` — the offset bosses under every rigid motion, whose seam
 /// vertex rounds when translated after the turn; and **silently** on the planar pair, whose
-/// `0.4`/`1.6` box does the same with no cylinder postcondition to catch it).
-const KNOWN: &[(&str, &[&str], &[&str])] = &[
-    (
-        "offset-out",
-        &["rx90+t", "ry90+t", "rz90+t"],
-        &[ONE_CYLINDER],
-    ),
-    (
-        "offset-in",
-        &["rx90+t", "ry90+t", "rz90+t"],
-        &[ONE_CYLINDER],
-    ),
-    (
-        "offset-irr",
-        &["rx90+t", "ry90+t", "rz90+t"],
-        &[ONE_CYLINDER],
-    ),
-    ("planar", &["rx90+t", "ry90+t", "rz90+t"], &[DIVERGES]),
-];
+/// `0.4`/`1.6` box does the same with no cylinder postcondition to catch it: 36 cells, commuting
+/// since `transform` carries the exact part of a motion and records the rest — the law
+/// `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)`). The ledger is empty; it stays here
+/// as the shape the next divergence is written in.
+const KNOWN: &[(&str, &[&str], &[&str])] = &[];
 
 /// The count lock: how many cells `KNOWN` names (three kinds per motion).
 /// Stage 0: 150 · stage 1 (the ∥ chart-frame factor): 45 — every `WRONG_SIDE` row commutes ·
-/// stage 2 (the arc extremum along the first spanned axis): 36 — the `NOT_OWN_SOLID` row too.
-const KNOWN_CELLS: usize = 36;
+/// stage 2 (the arc extremum along the first spanned axis): 36 — the `NOT_OWN_SOLID` row too ·
+/// stage 3 (the transport law): **0** — the `ONE_CYLINDER` rows and the planar pair's silent
+/// divergences commute.
+const KNOWN_CELLS: usize = 0;
 
 fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
     KNOWN
@@ -11362,8 +11350,6 @@ fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
         .find(|k| k.0 == fam && k.1.contains(&motion))
         .map(|k| k.2)
 }
-
-use crate::planes::ONE_CYLINDER;
 
 fn run_commuting_oracle(labels: &[&str]) {
     assert_eq!(
@@ -11512,4 +11498,118 @@ fn the_boolean_commutes_with_every_motion_of_the_group() {
     let group = motion_group();
     let labels: Vec<&str> = group.iter().map(|g| g.0.as_str()).collect();
     run_commuting_oracle(&labels);
+}
+
+/// **The transport law, as a lock**: `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)`.
+///
+/// The fixture is the counterexample to the old probe — a boss whose seam vertex `(4.8, 0.5)`
+/// is exact before the turn (`0.8`, `8.5` under `t = (−4, 8, 0)` alone) and rounds after it
+/// (`4.8 + 8 = 12.8` is not an f64): one rigid operation must leave the model the two operations
+/// leave — the turn absorbed into the statements, the translation recorded, the chain folding to
+/// the same world cylinder — and the boolean with a plate moved the same way must not be able to
+/// tell the roads apart.
+#[test]
+fn a_rigid_motion_behaves_as_its_two_operations() {
+    use nacre_scalar::{Angle, Isometry, Rat, Rotation};
+    let build = |m: &mut Model| -> (Handle<Solid>, Handle<Solid>) {
+        let plate = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([4.0, 4.0, 2.0]),
+        );
+        let boss = m.add_cylinder(
+            Point3::from_array([4.3, 0.5, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            4.0,
+        );
+        m.rebuild_adjacency();
+        (plate, boss)
+    };
+    let turn = Rotation {
+        axis: Axis::Z,
+        point: [Rat::from_int(0); 3],
+        angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
+    };
+    let shift = [Rat::from_int(-4), Rat::from_int(8), Rat::from_int(0)];
+    // Road A: one rigid operation.
+    let mut a = Model::new();
+    let (pa, ba) = build(&mut a);
+    let rigid = Isometry::rigid(turn, shift);
+    let pa = transform(&mut a, pa, &rigid).unwrap();
+    let ba = transform(&mut a, ba, &rigid).unwrap();
+    a.rebuild_adjacency();
+    // Road B: the turn, then the translation.
+    let mut b = Model::new();
+    let (pb, bb) = build(&mut b);
+    let (rot, tr) = (Isometry::rotation(turn), Isometry::translation(shift));
+    let pb = transform(&mut b, pb, &rot).unwrap();
+    let pb = transform(&mut b, pb, &tr).unwrap();
+    let bb = transform(&mut b, bb, &rot).unwrap();
+    let bb = transform(&mut b, bb, &tr).unwrap();
+    b.rebuild_adjacency();
+    // Both record the translation (the datum rounds after the turn — the old probe said
+    // «exact» here), and the chain folds to one world cylinder on both roads.
+    assert!(carries_motion(&a, ba) && carries_motion(&b, bb));
+    let lateral = |m: &Model, s: Handle<Solid>| -> nacre_topo::CylinderDef {
+        let sol = m.solids.get(s);
+        let surf = m
+            .shells
+            .get(sol.outer)
+            .faces
+            .iter()
+            .map(|&fh| m.faces.get(fh).surface)
+            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .expect("the boss has a lateral");
+        crate::planes::world_cylinder_def(m, surf).expect("the chain folds to a world cylinder")
+    };
+    let (da, db) = (lateral(&a, ba), lateral(&b, bb));
+    assert_eq!(da.origin(), db.origin());
+    assert_eq!(da.dir(), db.dir());
+    assert_eq!(
+        da.origin().map(|x| x.to_f64()),
+        [-4.5, 12.3, -1.0],
+        "the folded cylinder stands where the motion put it"
+    );
+    assert_eq!(sorted_vertex_bits(&a, &[ba]), sorted_vertex_bits(&b, &[bb]));
+    // The boolean cannot tell the roads apart.
+    let ra = boolean(&mut a, BoolKind::Cut, pa, ba).expect("road A cuts");
+    a.rebuild_adjacency();
+    let rb = boolean(&mut b, BoolKind::Cut, pb, bb).expect("road B cuts");
+    b.rebuild_adjacency();
+    assert_eq!(sorted_vertex_bits(&a, &ra), sorted_vertex_bits(&b, &rb));
+    assert!(nacre_validate::validate(&a).is_empty() && nacre_validate::validate(&b).is_empty());
+}
+
+/// **The half-recorded chain's own fixture**: the offset boss under `rz90 + t(5, −3, 2)`. Its
+/// seam vertex `4.8 + 5` rounds *before* the turn and is exact *after* it, so the whole motion
+/// carries and nothing is recorded — and `world_cylinder_def`'s postcondition (truth == cache),
+/// which used to fire here in debug while release answered «disjoint», holds.
+#[test]
+fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
+    let (mut m, plate, boss) = boss_family([4.3, 2.0, -1.0], 4.0);
+    let iso = rigid_iso(Axis::Z, 90, [5, -3, 2]);
+    let plate = transform(&mut m, plate, &iso).unwrap();
+    let boss = transform(&mut m, boss, &iso).unwrap();
+    m.rebuild_adjacency();
+    assert!(
+        !carries_motion(&m, boss),
+        "the whole motion is exact on this data"
+    );
+    let sol = m.solids.get(boss);
+    let surf = m
+        .shells
+        .get(sol.outer)
+        .faces
+        .iter()
+        .map(|&fh| m.faces.get(fh).surface)
+        .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+        .expect("the boss has a lateral");
+    let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
+    assert_eq!(def.origin().map(|x| x.to_f64()), [3.0, 1.3, 1.0]);
+    let out = boolean(&mut m, BoolKind::Cut, plate, boss).expect("the moved boss cuts");
+    m.rebuild_adjacency();
+    assert_eq!(out.len(), 1);
+    let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+    let want = 32.0 - 0.223648;
+    assert!((v - want).abs() < 1e-5, "{v} vs {want}");
 }

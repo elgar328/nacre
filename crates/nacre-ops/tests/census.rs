@@ -1009,12 +1009,11 @@ fn dump() {
     // plane by a translation; a wall turned onto one by rz90), ⊥ classes with `(axis_up, frame)`
     // `= (true, −1)` (corner-lo with the axis turned to −y) and `(false, −1)` (the top cap put on
     // z = 0), the transport's exactness boundary (the offset boss under a rigid motion) and the
-    // recorded path (a non-dyadic translation). ★ Rows are added only where **both** profiles
-    // dump them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) waits for the
-    // transport law (cell ④ stage 3), because `world_cylinder_def`'s postcondition is a
-    // `debug_assert` that takes the dev census down with it — measured with a temporary per-row
-    // catch: dev panics there, release answers «disjoint» (Fuse 2 bodies, Cut the plate
-    // untouched, Common empty), which is the silent wrong answer the law closes.
+    // recorded path (a non-dyadic translation). ★ Rows were added only where **both** profiles
+    // dump them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) came with the
+    // transport law (cell ④ stage 3) — before it, `world_cylinder_def`'s postcondition (a
+    // `debug_assert`) took the dev census down there while release answered «disjoint» (Fuse 2
+    // bodies, Cut the plate untouched, Common empty): the silent wrong answer the law closed.
     {
         let boss = |m: &mut Model, base: [f64; 3]| -> (Handle<Solid>, Handle<Solid>) {
             let plate = m.add_cuboid(
@@ -1045,6 +1044,18 @@ fn dump() {
             ("par wall-y rz90", [2.0, 0.0, -1.0], rot(Axis::Z, 90)),
             ("perp corner-lo rx90", [0.0, 0.0, -1.0], rot(Axis::X, 90)),
             ("perp wall+y t", [2.0, 4.0, -1.0], t(-4, -4, -2)),
+            (
+                "xport offset-out rz90+t",
+                [4.3, 2.0, -1.0],
+                Isometry::rigid(
+                    Rotation {
+                        axis: Axis::Z,
+                        point: [Rat::from_int(0); 3],
+                        angle: Angle::from_deg(Rat::from_int(90)).expect("angle"),
+                    },
+                    [Rat::from_int(5), Rat::from_int(-3), Rat::from_int(2)],
+                ),
+            ),
             (
                 "rec through t",
                 [2.0, 2.0, -1.0],
