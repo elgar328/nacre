@@ -2553,6 +2553,20 @@ pub(crate) mod cylinder_asks {
     }
 }
 
+/// Cell ③ stage 0 (P1): how often a cut cap's candidate list holds **no** point the ring says is
+/// inside — the fall-through `ring_interior_candidates`' doc calls a guard without a population.
+#[cfg(test)]
+pub(crate) mod witness_probe {
+    use std::sync::Mutex;
+    pub(crate) static NO_CANDIDATE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    pub(crate) fn no_candidate() {
+        NO_CANDIDATE
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .push(std::thread::current().name().unwrap_or("?").to_string());
+    }
+}
+
 /// Cell ② stage 0: how many failed judgements `ring_in_ring`'s retry swallowed (predicted 0).
 #[cfg(test)]
 pub(crate) mod swallowed_probe {
@@ -3713,7 +3727,11 @@ pub(crate) fn coord_probes(
                     .find(|c| point_in_mixed_ring(jd, cyls, &coeffs, c, r) == Some(true))
                 {
                     Some(c) => c,
-                    None => continue,
+                    None => {
+                        #[cfg(test)]
+                        witness_probe::no_candidate();
+                        continue;
+                    }
                 }
             }
         };

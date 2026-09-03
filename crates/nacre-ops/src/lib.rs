@@ -1584,6 +1584,19 @@ mod zzz_ledger {
                     r.0, r.2, r.4
                 );
             }
+            {
+                let rows = crate::combinatorics::witness_probe::NO_CANDIDATE
+                    .lock()
+                    .expect("the probe's lock is never held across a panic")
+                    .clone();
+                eprintln!(
+                    "ledger C3-P1: cut caps with no candidate inside {}",
+                    rows.len()
+                );
+                for r in &rows {
+                    eprintln!("ledger C3-P1 no-candidate: {r}");
+                }
+            }
             eprintln!(
                 "ledger C2b-P3: cylinder faces asked {}",
                 *crate::combinatorics::cylinder_asks::COUNT
