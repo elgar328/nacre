@@ -16741,7 +16741,7 @@ P1·P2 위. P3 구멍 있는 옆면을 물은 횟수 1(census, 띠+구멍 1). P4
 - `arc_side`의 frame_sign을 빼면 상시 오라클 396칸 중 **250 빨강**(원판-쪽 감시자 «the disk-side rule and the cell's own corners disagree»), `axis_up`을 빼면 옮기기 전 첫 불리언부터 같은 감시자에서 죽는다 — 표의 «unexercised» 두 행을 «locked»로. `smooth_extremum_winding`의 frame_sign은 **여전히 미행사**(빼도 초록 — 사전식 최소가 매끈한 호 노드인 링 + frame −1 클래스는 아직 인구 없음; 호 **안**의 최소는 `arc_extremum_winding`이 읽고 그것은 오라클이 행사한다) — 정직하게 재기록.
 
 ### ★ 검토가 본안을 바꾼 자리 (세 라운드, 여섯 검토)
-① 극점 조건·`lower` 세 축 ② 84건 첫 판정 실측(→ 5844건, undecided 5860 → 16) ③ offset 9칸은 탐침만으로(법칙 픽스처 별도) ④ 접두 = 탐침 캐스케이드(Through 잠재 결함 포함) ⑤ pass 1 verbatim 조건 ⑥ 원통 축 원점 탐침(→ `xy` 6행의 옛 거짓을 잡음) ⑦ census 무변은 검증 항목(→ 9행 반증·귀속) ⑧ frame −1 = 씨앗 평면, t(−4,−4,−2) ⑨ mot는 두 프로파일에서 dump되는 행만 ⑩ Known은 돌려서 자리 문장으로 ⑪ 원장 인구 ⑫ P2 셋 ⑬ 둘째-연산·공동 가족 ⑭ 실행 시간 ⑮ 예측에서 수 제거 ⑯ 반사 팔 한 철자 ⑰ 법칙 `T ∘ R`·두 길 동일 ⑱ 원자는 `frame_sign` 자체 ⑲ `KNOWN(&[Site])` + 메시지 상수 ⑳ digest → 정의 → 부피 ㉑ census 머리말 ㉒ digest 헬퍼 새로 ㉓ 비트 동일은 피벗 0 회전만 ㉔ 도구 빌더 자유 함수 ㉕ 예외 목록 + len ㉖ 솔리드 단위 ㉗ 단계별 단언 목록 ㉘ 원장 잠금 셋 ㉙ 낡은 문장 목록 ㉚ nodef 비용 실측(lib 105.7 → 116 s) ㉛ `cfg(debug_assertions)` ㉜ 순서 ∥ → 극점 → 수송 ㉝ 극점 일반형 지금 ㉞ `RulingCarrier::side` 차트화는 never ㉟ 안 옮긴 쪽 기대값 ㊱ mot 계급표 ㊲ 기계 대조 ㊳ 거절은 정의 팔 ㊴–㊻ 실행자의 타입·서명·명령 확정.
+① 극점 조건·`lower` 세 축 ② 84건 첫 판정 실측(→ 5844건, undecided 5860 → 16) ③ offset 9칸은 탐침만으로(법칙 픽스처 별도) ④ 접두 = 탐침 캐스케이드(Through 잠재 결함 포함) ⑤ pass 1 verbatim 조건 ⑥ 원통 축 원점 탐침(→ `xy` 6행의 옛 거짓을 잡음) ⑦ census 무변은 검증 항목(→ 9행 반증·귀속) ⑧ frame −1 = 씨앗 평면, t(−4,−4,−2) ⑨ mot는 두 프로파일에서 dump되는 행만 ⑩ Known은 돌려서 자리 문장으로 ⑪ 원장 인구 ⑫ P2 셋 ⑬ 둘째-연산·공동 가족 ⑭ 실행 시간 ⑮ 예측에서 수 제거 ⑯ 반사 팔 한 철자 ⑰ 법칙 `T ∘ R`·두 길 동일 ⑱ 원자는 `frame_sign` 자체 ⑲ `KNOWN(&[Site])` + 메시지 상수 ⑳ digest → 정의 → 부피 ㉑ census 머리말 ㉒ digest 헬퍼 새로 ㉓ 비트 동일은 피벗 0 회전만 ㉔ 도구 빌더 자유 함수 ㉕ 예외 목록 + len ㉖ 솔리드 단위 ㉗ 단계별 단언 목록 ㉘ 원장 잠금 셋 ㉙ 낡은 문장 목록 ㉚ nodef 비용 실측(lib 103.8 → 109.0 s, ws 60.3 → 67.5 s) ㉛ `cfg(debug_assertions)` ㉜ 순서 ∥ → 극점 → 수송 ㉝ 극점 일반형 지금 ㉞ `RulingCarrier::side` 차트화는 never ㉟ 안 옮긴 쪽 기대값 ㊱ mot 계급표 ㊲ 기계 대조 ㊳ 거절은 정의 팔 ㊴–㊻ 실행자의 타입·서명·명령 확정.
 
 ### 빗나간 예측
 - «ry90 계열은 뿌리 3 후보» → ∥ 고침만으로 전부 교환(뿌리 3은 corner-lo의 rx90·ry270·rx90+t 9칸뿐).
@@ -16753,7 +16753,13 @@ P1·P2 위. P3 구멍 있는 옆면을 물은 횟수 1(census, 띠+구멍 1). P4
 극점이 무리수인 축(`m[a] ≠ 0`, M6-3 첫 칸; x축 둘레 기울기는 덮임) · `rotated`(«옮긴 상이면 참»)의 재정의 후보 · 원통의 `Mirror`(`MirrorNotPlanar`) · `smooth_extremum_winding`의 frame_sign 인구 · bore Fuse의 `NoClearRay`(슬랩이 판의 다섯 평면을 공유 — 이름으로 잠김) · `corner Common`의 차트 두 도로 불일치.
 
 ### 관문
-매 커밋 전량 초록 + A/B + 직렬 원장; census sha `f991a783` → `f821147d`(s0, mot +15) → 무변(s1) → `88664ecb`(s2, corner-lo rx90 3행) → `63c18592`(s3, xport +3·rot Z 90 3·xy 6). lib 스위트 59.8 → 116 s(ws), 오라클 상시 42 s·전체군 98 s.
+매 커밋 전량 초록 + A/B + 직렬 원장; census sha `f991a783` → `f821147d`(s0, mot +15) → 무변(s1) → `88664ecb`(s2, corner-lo rx90 3행) → `63c18592`(s3, xport +3·rot Z 90 3·xy 6). lib 스위트 ws 60.3 → 67.5 s·nodef 103.8 → 109.0 s(칸 ③ 자체 점검 관문 대 단계 4 관문), 오라클 단독 상시 42 s·전체군 98 s.
 
 ### 다음
 스케치 원·호 어휘 · 접선 `d = r`은 C · `ObliqueCylinderCut`은 M6-3(첫 칸: 극점이 무리수인 축).
+
+### ☑ 자체 점검 (사용자 요청, 커밋 뒤) — 산문 둘·수치 둘을 고쳤고 나머지를 확인했다
+- ★ **바뀐 규칙의 옛 철자가 산문 두 자리에 남아 있었다**: `ruling_probe::SIDE_CHECK`의 doc과 룰링 잠금 테스트의 doc이 «derives it from `side · κ`»라고 적고 있었다 — `side · κ · frame_sign`으로 재진술(칸 ③ 자체 점검과 같은 교훈: 고친 규칙의 이름으로 소스를 훑되, **곱의 철자**(`side · κ`)까지 훑어야 한다 — `frame_sign`으로만 grep하면 안 잡힌다).
+- ★ **관문 시간 수치가 출처와 어긋났다**: dev-log에 «lib 59.8 → 116 s(ws)»·«nodef 105.7 → 116 s»라 적었는데 116 s는 관문 밖 단독 `--lib` 실행의 수였다. 관문 파일에서 다시 읽어 ws 60.3 → 67.5 s·nodef 103.8 → 109.0 s(칸 ③ 점검 관문 대 단계 4 관문)로 고침.
+- ☑ 코드 잔재 0(`zz_`·`TEMP`·`EXP_LABEL`·임시 통합 테스트·비교용 worktree 제거 확인), `cargo doc` 깨진 링크 0, 커밋 메시지 트레일러 없음, `motion_is_exact`·`seen_ccw`·`m[2] < zero`·«tilted_arcs» 철자 0, census sha 무변(`63c18592`), fmt·clippy·lib 349 초록(주석·문서만 바꾼 커밋이라 전량 관문은 다시 돌리지 않았다).
+- ☑ 법칙의 가장자리: 이동 0·회전 정확(copy·순수 사분 회전)은 full 후보가 통과해 오늘과 같은 «노드 없음»; `Through` 면은 두 후보를 다 떨어뜨려 [R]/[R,T] 기록(옛 코드의 «정확한 회전 + 이동 0 → 노드 없음» 잠재 결함 소멸); mirror는 후보가 full 하나.

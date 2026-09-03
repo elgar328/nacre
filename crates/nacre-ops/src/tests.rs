@@ -9181,16 +9181,17 @@ fn the_mesh_census_is_running() {
 /// this is it — the label of the cell a ruling borders on the axis side of its wall.
 ///
 /// ★★★★★ **The side is derived, and an independent description checks it.**
-/// `ruling_interior_is_even` composes three sentences already in the file (`RulingCarrier::side`,
-/// the material-on-the-left convention, and `world_rat_sense`'s lift between the rational name and
-/// the stored normal) into `side · κ`. The check shares no step with that: **inside the cylinder
+/// `ruling_interior_is_even` composes three sentences already in the crate (`RulingCarrier::side`,
+/// the material-on-the-left convention in the **root face's frame** — `frame_sign` — and
+/// `world_rat_sense`'s lift between the rational name and the stored normal) into
+/// `side · κ · frame_sign` (the frame factor since cell ④). The check shares no step with that: **inside the cylinder
 /// the lateral's own solid has material and outside it does not**, which is the same content rule
 /// `ArcLabels`' doc set its own side by. It is asserted at the record, in `per_class`.
 ///
 /// ★★★★ **And the check is what watches this sign — the volume oracle cannot.** Everywhere else in
 /// this ladder a side selector is guarded by the through-boss volume (a global flip passes the
 /// relative locks), but that only works for a sign production *reads*. This label is
-/// `#[cfg(test)]`, so no volume moves whatever it says. ☑ Flipping `side · κ` turns the check from
+/// `#[cfg(test)]`, so no volume moves whatever it says. ☑ Flipping the product turns the check from
 /// every agreement into a contradiction — it has eyes on 97% of the population.
 ///
 /// ☑ Measured over the whole binary: **862 ruling pieces, 862 labelled** (`world_rat_sense`

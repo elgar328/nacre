@@ -3082,7 +3082,7 @@ pub(crate) mod ruling_probe {
     /// **The ruling label's postcondition, one entry per ruling piece** (capability D, D2a).
     ///
     /// ★★★★★ **A second, independent description of the side the derivation picked.**
-    /// [`super::ruling_interior_is_even`] derives it from `side · κ`; the check asks the *content*
+    /// [`super::ruling_interior_is_even`] derives it from `side · κ · frame_sign`; the check asks the *content*
     /// instead — on the side of the surface the lateral's material lies (inside for a boss,
     /// outside for a bore or a notch: `MergedRuling::orient`) its own solid has material, and on
     /// the other side it does not.
