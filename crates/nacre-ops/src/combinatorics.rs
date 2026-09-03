@@ -2539,12 +2539,11 @@ pub(crate) fn ring_in_ring(
     Err(reject(RejectReason::NoClearRay))
 }
 
-/// Cell ②-b stage 0 (P3): how often the two roads ask a **cylinder** face. (The holes count it
-/// carried at stage 0 — a holed lateral asked **once**, in the crossing census — is recorded in
-/// the dev-log; since stage 1a a lateral's holes are among its loops and the count has no
-/// separate meaning.)
+/// How often the two roads ask a **cylinder** face (cell ②-b's ledger line). At stage 0 this
+/// also counted the holed laterals asked — **one**, in the crossing census — which the dev-log
+/// records; since 1a a lateral's holes are among its loops and that count has no meaning.
 #[cfg(test)]
-pub(crate) mod holes_probe {
+pub(crate) mod cylinder_asks {
     use std::sync::Mutex;
     pub(crate) static COUNT: Mutex<usize> = Mutex::new(0);
     pub(crate) fn asked(_f: &super::CompFace) {
@@ -3839,7 +3838,7 @@ pub(crate) fn point_in_faces_rat(
         let q = match &f.surf {
             CompSurf::Cylinder(def) => {
                 #[cfg(test)]
-                holes_probe::asked(f);
+                cylinder_asks::asked(f);
                 // A circle or polygon outer on a cylinder face has no producer; refusing to
                 // guess costs the caller another direction, never a wrong answer.
                 let BoundEdges::Lateral(loops) = &f.outer else {
@@ -4017,8 +4016,8 @@ fn curved_count(
 
 /// A rim's plane restated with the **axis** as its normal — `[m, −m·(o + t·m)]`, so
 /// [`nacre_scalar::quad::plane_side`] at a point of the cylinder is the sign of `z − t` along
-/// the axis. The banded arm has always built it this way; the loops road builds it for every
-/// ⊥ class it meets.
+/// the axis. The banded arm built it this way before the cutover; the loops road builds it for
+/// every ⊥ class it meets.
 fn rim_plane(
     def: &nacre_topo::CylinderDef,
     t: nacre_scalar::Rat,
@@ -4274,7 +4273,7 @@ pub(crate) fn point_in_component(
             // the face states one, a bare miss-oracle when it does not.
             if let CompSurf::Cylinder(def) = &f.surf {
                 #[cfg(test)]
-                holes_probe::asked(f);
+                cylinder_asks::asked(f);
                 // A circle or polygon outer on a cylinder face has no producer; refusing
                 // to guess costs the caller another node, never a wrong answer.
                 let BoundEdges::Lateral(loops) = &f.outer else {

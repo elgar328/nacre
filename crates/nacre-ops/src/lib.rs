@@ -1586,7 +1586,7 @@ mod zzz_ledger {
             }
             eprintln!(
                 "ledger C2b-P3: cylinder faces asked {}",
-                *crate::combinatorics::holes_probe::COUNT
+                *crate::combinatorics::cylinder_asks::COUNT
                     .lock()
                     .expect("the probe's lock is never held across a panic")
             );
