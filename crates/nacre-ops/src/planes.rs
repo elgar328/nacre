@@ -948,8 +948,9 @@ pub(crate) struct WorkingCyl {
 ///   (`(n·o + d)² > r²·|n|²`) settles it outright and decides most inputs; otherwise each face on
 ///   the class answers for itself, across the strip or along a lateral face's span
 ///   ([`face_clears_footprint`]). A face not shown to miss either rides the rulings road — the
-///   axis lies exactly on the wall's plane, the pair **recorded and passed** — or is
-///   [`RejectReason::WallMeetsLateral`] (tangency, offset crossings, the unproven).
+///   wall's plane within the radius (`0 ≤ d < r`, through the axis or offset from it), the
+///   pair **recorded and passed** — or, the plane exactly `r` from the axis, is
+///   [`RejectReason::WallMeetsLateral`] (the tangency, capability C's).
 /// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3).
 ///
 /// Per cylinder pair: axes clear of each other (`dist > r₁+r₂`, whatever their orientation)

@@ -3155,9 +3155,12 @@ mod tests {
 
     /// ★★ **The two axes are one judgement, measured as one.** The same tool three ways against
     /// the same two-banded bore, with only the numbers moved: clearing *either* axis is enough,
-    /// and clearing neither is the refusal. A rule that had merely gained a second, independent
-    /// test would pass (a) and (b) too — what this pins is (c), that the two are OR-ed rather
-    /// than each able to wave a face through on its own terms.
+    /// and clearing neither is the **record** (cell ③ — it used to be the refusal). A rule that
+    /// had merely gained a second, independent test would pass (a) and (b) too — what this pins
+    /// is (c), that the two are OR-ed rather than each able to wave a face through on its own
+    /// terms: a face waved through is an unlisted pair the tracer stays silent for, and the bore
+    /// would be left uncut where the face crosses it — (c)'s exact volume is what says the pair
+    /// was recorded.
     #[test]
     fn either_axis_clears_the_footprint_and_neither_does_not() {
         // (a) Across only: the `y = 6` face sits at `x ∈ [0, 2.5]`, clear of the strip

@@ -375,9 +375,10 @@ pub(crate) struct RulingTrace {
     pub orient: i8,
 }
 
-/// **A disk cap's chord on a through-axis class**: the cap face (a full disk ⊥ to the axis)
-/// crossed by a plane class through its centre leaves the diameter — an ordinary straight
-/// segment on the cap's own plane class, except both its ends are Branch names (the two roots of
+/// **A disk cap's chord on a recorded wall class**: the cap face (a full disk ⊥ to the axis)
+/// crossed by a plane class within the radius leaves a chord — a diameter when the class runs
+/// through the centre, any chord otherwise (cell ③) — an ordinary straight segment on the cap's
+/// own plane class, except both its ends are Branch names (the two roots of
 /// `{wc, cap plane, cyl}`), so it joins the arrangement as a birth-branch [`MergedSeg`] **after**
 /// [`split_at_crossings`].
 ///
@@ -854,10 +855,11 @@ fn trace_transversal_face(
                 return;
             }
         },
-        // ★ A **circular outer is a disk face**. A through-axis wall class cuts it in its
-        // diameter — the chord contribution the rulings road needs to close its rectangle
-        // ([`ChordTrace`]); any other class misses or is left silent: another ⊥ class is
-        // parallel to the disk's own and meets it nowhere, and a ∥-axis wall off the axis
+        // ★ A **circular outer is a disk face**. A recorded wall class cuts it in a chord
+        // (a diameter when it runs through the axis) — the chord contribution the rulings road
+        // needs to close its rectangle ([`ChordTrace`]); any other class misses or is left
+        // silent: another ⊥ class is parallel to the disk's own and meets it nowhere, and a
+        // ∥-axis wall the gate did not record
         // either clears the disk (the gate's plane test) or cuts an **irrational** chord this
         // road cannot state yet (the face-cleared family — its wrongly-silent trace lands in
         // cells no face reaches, today's recorded state).
@@ -884,7 +886,7 @@ fn trace_transversal_face(
         }
     };
     let mut holes: Vec<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>)> = Vec::new();
-    // A circular hole's diameter crossings (E3-b), joined to the scan's node list below.
+    // A circular hole's chord crossings (E3-b), joined to the scan's node list below.
     let mut hole_chords: Vec<Node> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
@@ -901,14 +903,15 @@ fn trace_transversal_face(
                 out.declined.push((fp, DeclineKind::HoleRing));
                 return;
             }
-            // ★ A **circular hole meets the line only as a diameter, and then it flips parity
-            // twice** (E3-b). The population gate admits a ∥-axis wall only clear of the hole's
-            // cylinder (skip: the circle cannot meet `L`) or exactly **through its axis** — and
-            // there the line cuts the hole in its diameter's two branch points, which used to be
-            // skipped "by proof": the proof covered the clear half only, and the planted
-            // full-width chord surfaced as `LabelConflict` on the through-family × through-axis
-            // tool (measured). The two roots are pushed as flip nodes — the hole's own chord,
-            // named the same way a disk cap's is (`chord_on_class`).
+            // ★ A **circular hole meets the line in a chord, and then it flips parity twice**
+            // (E3-b). The population gate admits a ∥-axis wall clear of the hole's cylinder
+            // (skip: the circle cannot meet `L`) or **recorded** — within the radius, through
+            // the axis or offset from it (cell ③) — and there the line cuts the hole in the
+            // chord's two branch points, which used to be skipped "by proof": the proof covered
+            // the clear half only, and the planted full-width chord surfaced as `LabelConflict`
+            // on the through-family × through-axis tool (measured). The two roots are pushed as
+            // flip nodes — the hole's own chord, named the same way a disk cap's is
+            // (`chord_on_class`).
             combinatorics::LoopRing::Circle { cyl } => {
                 let Some(hd) = cyls.get(*cyl).map(|c| &c.def) else {
                     out.declined.push((fp, DeclineKind::HoleRing));
@@ -919,7 +922,7 @@ fn trace_transversal_face(
                     return;
                 };
                 // ★ **The gate's record, the same one the rulings road reads first.** A
-                // through-axis pair the gate did not list was proven clear — no emitted face
+                // pair the gate did not list was proven clear — no emitted face
                 // reaches the hole's footprint on this class, and the rulings road is silent
                 // for it — so planting flip nodes would break the line against rulings that
                 // are (rightly) absent: measured, the d = 0 boss-and-bore fixture walked its
@@ -1427,9 +1430,9 @@ fn trace_one(
                         arc: s.arc,
                     }));
                 }
-                // No circle: a class **through the axis** leaves two rulings instead (the M6-2
-                // rulings road); any other non-⊥ class still leaves nothing, silently — the
-                // population gate names those interactions.
+                // No circle: a wall class **within the radius** leaves two rulings instead (the
+                // M6-2 rulings road, the offset wall since cell ③); any other non-⊥ class still
+                // leaves nothing, silently — the population gate names those interactions.
                 Ok(_) => match rulings_on_class(jd, cf, fl, wc, k, which, crossings) {
                     Ok(v) => out.rulings.extend(v),
                     Err(kind) => out.declined.push((fp, kind)),
@@ -2267,8 +2270,8 @@ fn cycle_on_class(
                 // `{wc, j}` on the cylinder. Its previous spelling restated the corner's *root* by
                 // the axis senses of the two ⊥ classes (`ε·sign(k)`, the order of the roots along
                 // `ℓ`) — the same point derived the other way round, and two spellings of one
-                // rule were one too many. `j` must hold a ruling (a plane through the axis) and
-                // `wc` be ⊥, which the door checks; anything else is not this feature.
+                // rule were one too many. `j` must hold a ruling (a wall plane within the radius)
+                // and `wc` be ⊥, which the door checks; anything else is not this feature.
                 let cj = combinatorics::class_coeffs_rat(jd, j).ok_or(DeclineKind::CylSpan)?;
                 let wdef = &cyls.get(ncyl).ok_or(DeclineKind::CylHoleFeature)?.def;
                 let side =
@@ -2703,11 +2706,13 @@ pub(crate) mod crossing_probe {
     }
 }
 
-/// **What a lateral face leaves on a through-axis class** — the ∥ sibling of [`circle_on_class`],
-/// and like it, an answer **per extent** rather than one for the whole ruling.
+/// **What a lateral face leaves on a recorded wall class** — the ∥ sibling of
+/// [`circle_on_class`], and like it, an answer **per extent** rather than one for the whole
+/// ruling.
 ///
 /// Asked only after the circle road answered "no circle"; **empty** (silently, today's state)
-/// unless the class runs **exactly through the axis**, and declining rather than contributing
+/// unless the gate **recorded** the pair (the wall within the radius — through the axis or
+/// offset from it, cell ③), and declining rather than contributing
 /// *partially* when it does but a piece cannot be stated — a half-contributed rectangle would
 /// leave the class's 1-skeleton dangling, which is a worse lie than an honest incomplete-trace
 /// mark.

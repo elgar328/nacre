@@ -16701,3 +16701,8 @@ P1·P2 위. P3 구멍 있는 옆면을 물은 횟수 1(census, 띠+구멍 1). P4
 
 ### 다음
 강체 운동 불변 대조군 · 스케치 원·호 어휘 · 접선은 C · `ObliqueCylinderCut`은 M6-3.
+
+### ☑ 자체 점검 (사용자 요청, 커밋 뒤) — 산문 아홉 자리를 고쳤고 셋을 확인했다
+- ★★★ **삭제한 전제를 산문 아홉 자리가 아직 말하고 있었다**: 게이트 함수의 doc(«tangency, offset crossings, the unproven»), `ChordTrace` doc(«through-axis class … the diameter»), 스캔의 원 외곽 주석·구멍-원 팔 주석(«meets the line only as a diameter … exactly through its axis»), 기록 주석(«a through-axis pair the gate did not list»), 「No circle」 주석, `cycle_on_class`의 «a plane through the axis», `rulings_on_class` doc(«unless the class runs exactly through the axis»), bands의 `either_axis…` doc(«clearing neither is the refusal» — 이제 «기록»이고, (c)의 정확 부피가 «기록됐다»를 잠근다: 안 기록되면 추적자가 침묵해 보어가 안 잘린다). 코드는 이미 «기록만 믿는다»로 바뀌었는데 doc이 옛 조건을 들고 있었다 — 규칙을 고친 이름으로 소스를 훑는 일을 자리마다 하지 않았다.
+- ☑ 코드 잔재 0(`class_through_axis`·`class_crosses_lateral`·`EXPERIMENT`·`CONTROL`), `cargo doc` 깨진 링크 0, dev-log 자리표시 0, 프로덕션 census 무변(sha `f991a783`), A/B: `non_manifold_result_edge` surfaced ±1은 proptest 잡음(D5 점검 때와 같은 자리).
+- ☑ 1b의 «중심이 답한 횟수 0»: 잘린 캡의 중심은 지름 현 위(경계)이고 온전한 원은 묻지 않는다 — 계기의 0이 «안 돎»이 아니라 기하의 사실.
