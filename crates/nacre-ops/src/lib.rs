@@ -855,14 +855,16 @@ pub enum RejectReason {
     /// exactly», and this is «there was no witness to begin with». Reading the first for the
     /// third sent this cell's diagnosis to the wrong layer for a while.
     ///
-    /// ☑ **The rings raise it nowhere in today's corpus.** A ring that *is* a circle is asked the
-    /// circle's own question (`arrangement::ring_own_circle`), and a ring with a **whole chord**
-    /// for an edge names that chord's midpoint (`arrangement::chord_midpoint_rat`) — between them
-    /// the wall panels that used to arrive here are all answered. The **component** road raises
-    /// it in two crossing-census cells (cell ③): an offset boss's Common is a 0.2-deep segment
-    /// prism whose halves have branch-named corners only and no cap candidate inside — the
-    /// chord-derived candidate is that cell's next commit. The remedy for every such shape at
-    /// once is to widen the probe's **type** so a branch corner is itself a witness.
+    /// ☑ **Nothing in today's corpus raises it.** A ring that *is* a circle is asked the circle's
+    /// own question (`arrangement::ring_own_circle`), and a ring with a **whole chord** for an
+    /// edge names that chord's midpoint (`arrangement::chord_midpoint_rat`) — between them the
+    /// wall panels that used to arrive here are all answered. The **component** road raised it
+    /// for one commit (cell ③): an offset boss's Common is a 0.2-deep segment prism whose halves
+    /// have branch-named corners only and no cap candidate from the centre inside — until the
+    /// cut cap offered two points per **chord** (`ring_interior_candidates`). What would still
+    /// reach it is a segment cut again along its chord's normal line, in a multi-body result.
+    /// The remedy for every such shape at once is to widen the probe's **type** so a branch
+    /// corner is itself a witness.
     RingHasNoWitness,
     /// **An exact *value* could not be formed** — a class with no narrow rational description (a
     /// rotated one, say) or a coordinate past `Rat`'s ceiling.
@@ -1591,9 +1593,16 @@ mod zzz_ledger {
                     .lock()
                     .expect("the probe's lock is never held across a panic")
                     .clone();
+                let ans = *crate::combinatorics::witness_probe::ANSWERED
+                    .lock()
+                    .expect("the probe's lock is never held across a panic");
                 eprintln!(
-                    "ledger C3-P1: cut caps with no candidate inside {}",
-                    rows.len()
+                    "ledger C3-P1: cut caps with no candidate inside {} — answered by centre {} \
+                     axis step {} chord point {}",
+                    rows.len(),
+                    ans[0],
+                    ans[1],
+                    ans[2]
                 );
                 for r in &rows {
                     eprintln!("ledger C3-P1 no-candidate: {r}");

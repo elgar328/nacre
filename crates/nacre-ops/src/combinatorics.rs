@@ -2559,6 +2559,19 @@ pub(crate) mod cylinder_asks {
 pub(crate) mod witness_probe {
     use std::sync::Mutex;
     pub(crate) static NO_CANDIDATE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    /// Which candidate the ring accepted: `[centre, an axis step, a chord point]` — the axis
+    /// steps are the eight after the centre, the chord points follow (cell ③, 1b).
+    pub(crate) static ANSWERED: Mutex<[usize; 3]> = Mutex::new([0; 3]);
+    pub(crate) fn answered(i: usize) {
+        let k = match i {
+            0 => 0,
+            1..=8 => 1,
+            _ => 2,
+        };
+        ANSWERED
+            .lock()
+            .expect("the probe's lock is never held across a panic")[k] += 1;
+    }
     pub(crate) fn no_candidate() {
         NO_CANDIDATE
             .lock()
@@ -3567,11 +3580,25 @@ fn face_circle<'a>(
 /// `x = |e|²`, and `x/(x+1)²` is at most `1/4` (at `x = 1`), so `|λe| < r` — one rational
 /// inequality, no magic constant and no halving loop. Which of them is inside the **face** is the
 /// ring's question, not this one's.
+///
+/// ★ **And two points per chord** (cell ③): a cap the wall cuts *off* the diameter can be a
+/// segment thinner than any step from the centre reaches (an offset boss's Common, 0.2 deep
+/// against `r/2 = 0.25`), and its corners are branch names the vertex probe drops — the first
+/// face with no witness at all. On the line through the centre along a chord's normal `n`,
+/// `o − t·n`, the chord is at `t = q = (n·o + d)/|n|²` and the circle at `t² = T = r²/|n|²`
+/// (both rational); the far side's point `t = 2qT/(q² + T)` lies beyond the chord (`|t| > |q|`
+/// iff `T > q²`, the chord inside the circle) and inside the circle (`t² < T` iff
+/// `(q² − T)² > 0`), the near side's `t = q/2` between the chord and the centre. A chord through
+/// the centre (`q = 0`) is the axis steps' case and adds nothing. Which side is the face's is,
+/// again, the ring's question. Not complete: a face whose second chord runs along that normal
+/// line (a quarter of a segment) has the far point *on* that chord — named `RingHasNoWitness`
+/// when it comes, in a multi-body result.
 fn ring_interior_candidates(
     jd: &Judge<'_, WorkingPlane>,
     plane: usize,
     def: &nacre_topo::CylinderDef,
     centre: &[nacre_scalar::Rat; 3],
+    ring: &[RingEdge],
 ) -> Option<Vec<[nacre_scalar::Rat; 3]>> {
     use nacre_scalar::Rat;
     let coeffs = class_coeffs_rat(jd, plane)?;
@@ -3622,6 +3649,54 @@ fn ring_interior_candidates(
                 nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r),
                 nacre_scalar::Orient::Negative,
                 "a step of r/(|e|^2+1) along a chart axis stays strictly inside the circle"
+            );
+            out.push(p);
+        }
+    }
+    // The chords' points, one wall class each.
+    let mut walls: Vec<usize> = Vec::new();
+    for e in ring {
+        if let Carrier::Plane { wall, .. } = e.carrier
+            && !walls.contains(&wall)
+        {
+            walls.push(wall);
+        }
+    }
+    let zero = Rat::from_int(0);
+    let recip = |v: Rat| Rat::new(v.denom(), v.numer());
+    for wall in walls {
+        let Some(w) = class_coeffs_rat(jd, wall) else {
+            continue;
+        };
+        let wn = [w[0], w[1], w[2]];
+        let Some(chord) = (|| {
+            let nn = dot3_rat(&wn, &wn)?;
+            let q = dot3_rat(&wn, centre)?
+                .checked_add(w[3])?
+                .checked_mul(recip(nn)?)?;
+            if q == zero {
+                return None; // through the centre: the axis steps' case
+            }
+            let t_cap = r.checked_mul(r)?.checked_mul(recip(nn)?)?;
+            let q2 = q.checked_mul(q)?;
+            let t_far = Rat::from_int(2)
+                .checked_mul(q)?
+                .checked_mul(t_cap)?
+                .checked_mul(recip(q2.checked_add(t_cap)?)?)?;
+            let t_near = q.checked_mul(Rat::new(1, 2)?)?;
+            Some([t_far, t_near])
+        })() else {
+            continue;
+        };
+        for t in chord {
+            let mut p = *centre;
+            for i in 0..3 {
+                p[i] = p[i].checked_sub(t.checked_mul(wn[i])?)?;
+            }
+            debug_assert_eq!(
+                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r),
+                nacre_scalar::Orient::Negative,
+                "a chord's near and far points stay strictly inside the circle"
             );
             out.push(p);
         }
@@ -3709,24 +3784,32 @@ pub(crate) fn coord_probes(
             // ([`point_in_mixed_ring`]), and an abstention just moves to the next candidate. The
             // centre goes first, so a cap the wall cuts off-centre still answers with it.
             //
-            // ☑ Measured: every accepted face found a candidate inside (40 of 40), so the
-            // fall-through below is a guard rather than a population — a cap cut by **two** chords
-            // through its centre is the shape that would use it, and this corpus has none.
+            // ☑ Measured (cell ③): the centre and the axis steps answer 40 of 40 faces of the
+            // through-axis corpus; the offset wall's thin segment answers by a chord point (8
+            // faces), and the fall-through below is the named residual — a segment cut again
+            // along the chord's own normal line.
             _ => {
-                let Some(cand) = ring_interior_candidates(jd, *q, def, &centre) else {
+                let BoundEdges::Ring(r) = &f.outer else {
+                    continue;
+                };
+                let Some(cand) = ring_interior_candidates(jd, *q, def, &centre, r) else {
                     continue;
                 };
                 let Some(coeffs) = class_coeffs_rat(jd, *q) else {
                     continue;
                 };
-                let BoundEdges::Ring(r) = &f.outer else {
-                    continue;
-                };
                 match cand
                     .into_iter()
-                    .find(|c| point_in_mixed_ring(jd, cyls, &coeffs, c, r) == Some(true))
+                    .enumerate()
+                    .find(|(_, c)| point_in_mixed_ring(jd, cyls, &coeffs, c, r) == Some(true))
                 {
-                    Some(c) => c,
+                    Some((i, c)) => {
+                        #[cfg(test)]
+                        witness_probe::answered(i);
+                        #[cfg(not(test))]
+                        let _ = i;
+                        c
+                    }
                     None => {
                         #[cfg(test)]
                         witness_probe::no_candidate();

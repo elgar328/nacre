@@ -10416,20 +10416,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // ★ Cell ③ — the offset wall. Every tool builds as it does for the wall families: the
         // mid slab parts the result, the through-axis wall (`y ≥ 2`, ⊥ to the plate's wall)
         // halves the segment. `offset-out`'s Common is a 0.2-deep segment prism whose halves
-        // have **no witness**: its corners are branch names (dropped by the vertex probe) and no
-        // candidate of the cut cap's centre-and-steps lies inside a segment thinner than `r/2`
-        // — named as such (`RingHasNoWitness`), the chord-derived candidate is the next commit.
-        [
-            [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
-            [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
-            [
-                Rejected(RingHasNoWitness),
-                Ok(1),
-                Ok(1),
-                Ok(1),
-                Rejected(RingHasNoWitness),
-            ],
-        ],
+        // had **no witness** for one commit — corners that are branch names (dropped by the
+        // vertex probe) and no candidate of the cut cap's centre-and-steps inside a segment
+        // thinner than `r/2` — until the cap offered two points per chord (1b): two solids.
+        [[Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON],
         [[Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON], // offset-in
         [[Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON], // offset-irr
     ];
@@ -10547,7 +10537,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
-    assert_eq!(count(|c| matches!(c, Ok(_))), 248, "{tally:?}");
+    assert_eq!(count(|c| matches!(c, Ok(_))), 250, "{tally:?}");
     // ★ `ring_in_ring`'s own refusals are **gone**: every one of them was a probe list that
     // started empty, and that fact now has its own name. What is left under this one is the other
     // road entirely — the 3D depth classification in `boolean.rs`, whose nodes really do run out.
@@ -10558,12 +10548,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // crossing was on it (`MissOnly`), and only the third met the cap's corner. The lateral reads
     // its loops now. The name is gone from this corpus; a new population must restate this 0.
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 0);
-    // ★ The name was gone from this corpus (every ring that had no witness was a wall panel, and
-    // a panel's perpendicular traces are whole chords, which name their own midpoints) — and the
-    // offset wall brought it back (cell ③): a thin segment prism's halves have branch-named
-    // corners only and no cap candidate inside. Two cells, by the name that says «no witness at
-    // all» rather than «every witness blocked».
-    assert_eq!(count(|c| *c == Rejected(RingHasNoWitness)), 2);
+    // ★ The name is gone from this corpus again: it came back for one commit with the offset
+    // wall (cell ③ — a thin segment prism's halves, branch-named corners and no cap candidate
+    // from the centre inside; two cells, by the name that says «no witness at all» rather than
+    // «every witness blocked») and left when the cut cap offered two points per chord. A new
+    // population must restate this 0.
+    assert_eq!(count(|c| *c == Rejected(RingHasNoWitness)), 0);
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
     assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 0);
