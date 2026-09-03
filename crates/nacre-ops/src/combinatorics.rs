@@ -1511,12 +1511,13 @@ fn ruling_line_turn(
 /// | the whole sign | negate the result | **invisible** — this same atom feeds both the cyclic order and the winding, and the walk tries both handednesses, so a *global* flip is absorbed by trying the other one |
 /// | `ccw` | drop it | **locked** — the two arcs at a crossing collapse into one bucket, `UnorderedEdges` |
 /// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus disagrees, and that class's walk merges four cells into one 8-half-edge orbit. ★ It used to be *accepted* there: the contour count passes it, and `arrangement::walk_cells`' Euler condition — added because of this probe — is what refuses it |
-/// | `axis_up` | drop it | **unexercised** — `true` on every class reached |
-/// | `frame_sign` | drop it | **unexercised** — `+1` on every class reached |
+/// | `axis_up` | drop it | **locked** — the unmoved corpus already: the disk-side watcher (`disk_side_probe::record`, *"the disk-side rule and the cell's own corners disagree"*) dies on the first boolean |
+/// | `frame_sign` | drop it | **locked since cell ④** (2026-09-03) — the commuting oracle's always-on subset turns red on 250 of 396 cells (`t(−4,−4,−2)` puts the plate's caps on a seed plane, `frame_sign = −1`), at the same watcher |
 ///
-/// The last two are derived, not guessed (the algebra is above), and a corpus with a face whose
-/// stored normal opposes its outward one, or a cylinder pointing the other way, is what would
-/// close them.
+/// The last two are derived, not guessed (the algebra is above). ★ Both rows read
+/// «unexercised — `+1`/`true` on every class reached» until cell ④: a face lies on a seed plane
+/// with its outward along +axis under a translation as ordinary as `t(−4,−4,−2)`, and no fixture
+/// had made one — the corpus does not contain the population a rule needs until a cell adds it.
 ///
 /// ★★★ **The `sense` gap that used to be named here is CLOSED** (2026-08-22). Flipping the sense a
 /// split carries onto its sub-segments (`Carrier::Plane::sense`) attaches the arcs to the wrong
@@ -5182,6 +5183,11 @@ pub(crate) fn loop_winding(
 /// lock names them. Dropping `frame_sign` changes nothing: it is `+1` on every class that reaches
 /// this rule today, which is the same shape [`turn`]'s own note records for its factor — the
 /// difference being that `turn`'s corpus does reach `Reversed` faces and this rule's does not yet.
+/// ☑ Re-measured under cell ④'s motion group (2026-09-03): still not caught — the commuting
+/// oracle's 396 always-on cells stay green with the factor dropped, so a ring whose lexicographic
+/// minimum is a smooth arc node on a `frame_sign = −1` class is a population no fixture has yet
+/// (the arc extremum rung reads the smooth minimum *inside* an arc, [`arc_extremum_winding`],
+/// which the oracle does exercise).
 fn smooth_extremum_winding(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,

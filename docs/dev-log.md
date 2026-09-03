@@ -16706,3 +16706,54 @@ P1·P2 위. P3 구멍 있는 옆면을 물은 횟수 1(census, 띠+구멍 1). P4
 - ★★★ **삭제한 전제를 산문 아홉 자리가 아직 말하고 있었다**: 게이트 함수의 doc(«tangency, offset crossings, the unproven»), `ChordTrace` doc(«through-axis class … the diameter»), 스캔의 원 외곽 주석·구멍-원 팔 주석(«meets the line only as a diameter … exactly through its axis»), 기록 주석(«a through-axis pair the gate did not list»), 「No circle」 주석, `cycle_on_class`의 «a plane through the axis», `rulings_on_class` doc(«unless the class runs exactly through the axis»), bands의 `either_axis…` doc(«clearing neither is the refusal» — 이제 «기록»이고, (c)의 정확 부피가 «기록됐다»를 잠근다: 안 기록되면 추적자가 침묵해 보어가 안 잘린다). 코드는 이미 «기록만 믿는다»로 바뀌었는데 doc이 옛 조건을 들고 있었다 — 규칙을 고친 이름으로 소스를 훑는 일을 자리마다 하지 않았다.
 - ☑ 코드 잔재 0(`class_through_axis`·`class_crosses_lateral`·`EXPERIMENT`·`CONTROL`), `cargo doc` 깨진 링크 0, dev-log 자리표시 0, 프로덕션 census 무변(sha `f991a783`), A/B: `non_manifold_result_edge` surfaced ±1은 proptest 잡음(D5 점검 때와 같은 자리).
 - ☑ 1b의 «중심이 답한 횟수 0»: 잘린 캡의 중심은 지름 현 위(경계)이고 온전한 원은 묻지 않는다 — 계기의 0이 «안 돎»이 아니라 기하의 사실.
+
+## 불리언은 강체 운동과 교환한다 — 대조군 하나, 뒤집힌 부호 셋 (M6-2 남은 것 ④)
+
+커밋: `7fa6f87`(단계 0 오라클·KNOWN 150·census mot 15행) · `bd07f99`(∥ 프레임) · `a422cbe`(극점 일반형) · `cac9b90`(수송 법칙) · 문서.
+
+### 뿌리 — 회전 뒤 처음 생기는 조합 셋
+- 실험(임시, 되돌림): BOSS_FAMILIES 17 × 3 × 7운동 = 357칸, 306 일치·51 불일치 → 세 자리. (1) ∥ 룰링 딱지 `ruling_interior_is_even = side·κ`가 차트 프레임(`frame_sign`)을 안 건넘 — ⊥ 도로가 2026-08-31에 얻은 인자의 쌍둥이. (2) `motion_is_exact`가 이동의 정확성을 회전 **전** 좌표로 재고, 부정확이면 `chain_motion`이 정확한 회전은 빼고 이동만 기록 → 진실(회전 전 정의 + [T]) ≠ 캐시. (3) `arc_extremum_winding`이 축 z만 판정 — 축이 ±x/±y로 돌면 부푼 호를 못 보고 `lo`의 turn을 읽어 3/4 원판이 root.
+- ★ frame −1의 메커니즘은 회전이 아니라 **세계 평면 씨앗**(검토 B): `Model::new()`의 x=0·y=0·z=0(캐시 −축) 위에 +축 바깥으로 앉는 면. t(−4,−4,−2) 하나로 max-side 9가족 전부가 뒤집혔다(실측).
+
+### 단계 0 (`7fa6f87`) — 오라클과 실측
+- 오라클 `boolean_commutes`: 이름·정렬 부피·(면,간선,정점,공동)·validate + 교환 다이어그램 digest(사분 회전 9 = 비트 동일 492/492 · 강체·dyadic 이동 = branch 정점 뺀 비트 240/240 · 기록 경로 = 부피·수만). 가족 22(BOSS 17 + enclosed + planar + bore offset/axis + through mid), 운동군 15, 상시 부분군 6(396칸 39 s), ignored 전체군 990칸 98 s.
+- KNOWN 150(3 kind 공통): WRONG_SIDE 105 · ONE_CYLINDER 27 · NOT_OWN_SOLID 9 · DIVERGES(planar × 강체 3) 9. 기계 대조: 판만 옮기면 `volume 30.43 → 32.0` 빨강.
+- P1(프로덕션, 릴리스 census 임시 행별 catch): offset-out rz90+t «안 닿는다»(Fuse 2솔리드 32+π·Cut 32·Common EMPTY) — 조용한 오답; corner-lo rx90 = Rejected(CylinderGateUndecided)(정직 거절); ∥ frame −1 행들은 부피 정확(틀린 딱지가 이 코퍼스에선 소비되지 않음). census `mot` 15행(xport 행은 단계 3에서), 두 프로파일 diff 0.
+- bore Fuse(안 옮긴 쪽) = Rejected(NoClearRay), 이름으로 잠금. 원장 직렬 두 잠금 초록(SHADOW agree 804 disagree 0).
+
+### 단계 1 (`bd07f99`) — ∥ 프레임: `ruling_interior_is_even = plus_theta_is_above ≠ (frame_sign > 0)`
+- 예측 «rz 계열·t(−4,−4,−2) 통과, ry90 계열 실측» → **WRONG_SIDE 105칸 전부 교환**(ry90·ry180 포함 — 뿌리 3으로 옮겨간 칸 0), 다른 자리로 간 칸 0. KNOWN 150 → 45. digest: Quadrantal 561/561 · ExactRigid 267 + branchless 9.
+- 문장의 집: «걷기는 셀을 root face 바깥 프레임의 왼쪽에 둔다»를 `frame_sign`의 doc 한 곳으로; ∥·⊥ 두 자리가 인용, `plus_theta_is_above`의 doc에 «프레임을 건너는 독자는 하나».
+- 관문: census 284행 **비트 동일**(sha `f821147d`) — 틀린 딱지가 프로덕션 코퍼스에서 소비되지 않는다는 단계 0의 실측 그대로; A/B `non_manifold_result_edge` ±1(proptest 잡음, 칸 ③ 점검과 같은 자리). 첫 관문의 clippy 빨강 = 빈 KNOWN 행이 남긴 미사용 import — 지우고 clippy·lib 재실행.
+
+### 단계 2 (`a422cbe`) — 극점은 «원이 걸치는 첫 세계축»에서, 반쪽은 원 자신의 평면으로
+- `arc_extremum_winding`: a = m과 평행하지 않은 첫 세계축, `m[a] = 0`이면 극점 `c − r·ê_a`(유리수), 반쪽은 법선 `m × ê_a`의 중심 평면 `plane_side`(branch)/유리수 내적 — `seen_ccw`·`m[2] < 0`·(ê₀,ê₁) 그림 소멸. NOT_OWN_SOLID 9칸 전부 교환, KNOWN 45 → 36. digest: Quadrantal 567/567 · ExactRigid 270 + 9.
+- hull 원장(직렬, 오라클 포함) 전: rings 329303 · arc_rings 43774 · below 14575 · undecided 5860 · broken 7501 · tilted 5860 → 후: rings 329543 · arc_rings 43870 · **below 17103 · undecided 16 · broken 8723** — 5844건이 처음 판정됐고(남은 16 = 진짜 기울어진 축), 기존 잠금·census 행은 하나도 안 움직였다(관문).
+- 관문: census 284행 중 **`mot perp corner-lo rx90` 3행만** 이동(Rejected(CylinderGateUndecided) → 1솔리드, 34.749/31.607/0.3927 = 32+π−π/8 · 32−π/8 · π/8 — 정확), sha `f821147d` → `88664ecb`; 84건의 첫 판정으로 움직인 기존 행 0. A/B `no_clear_ray@boolean.rs` raise 2 → 1(surfaced 동일 — corner-lo가 root를 바로 잡아 내부 raise 하나가 사라짐).
+
+### 단계 3 (`cac9b90`) — 수송 법칙 `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)`
+- `carry_of`(솔리드당 한 번, 후보 [full, 회전만, 없음]에 같은 탐침 «실현 == 정확 상» — 정점·평면 원점·**원통 축 원점** + `transport_points`/`transport_cylinder` 가능성) → `Carry::{Full, Rotation, None}`; `chain_motion(carry)`는 표 없이 «carry 안 된 부분을 기록, parent 있으면 전부»; pass 1은 «parent 있으면 verbatim, 아니면 carry_xform으로 수송». `motion_is_exact`(회전 전 좌표에 t를 더하던 탐침) 삭제.
+- 남은 Known 36칸(ONE_CYLINDER 27 + planar DIVERGES 9) 전부 교환 → **KNOWN 0**. digest: Quadrantal 567/567 · ExactRigid 294 + branchless 21 · differs 0.
+- 잠금: `a_rigid_motion_behaves_as_its_two_operations`(원점 (4.3, 0.5)·rigid(rz90, (−4,8,0)) — 두 길 모두 [T] 기록·`world_cylinder_def` (−4.5, 12.3, −1)로 접힘·보스 정점 비트와 Cut 결과 digest 동일), `the_offset_boss_under_a_rigid_motion_keeps_one_cylinder`(전부 정확·노드 없음·postcondition 생존·Cut 32−0.223648). census `mot xport offset-out rz90+t` 3행 추가.
+- 관문: census 287행(mot xport +3); **예측 (c) «기존 행 비트 무변»이 9행에서 반증됐고 둘 다 옛 탐침의 거짓이었다** — `rot Z 90` 3행: 피벗 (1,1,1)의 사분 회전이 0.4를 `1 + 0.6`으로 실현하면 1 ulp 반올림(정확 상 8/5와 다름)인데 옛 탐침은 t=0이면 무조건 «정확»(검토 A의 (ii)); `xy grid/three` 6행: 2세대 행의 이동 (0,20,0)에서 보어의 **축 원점** 6.3+20이 반올림되는데 옛 탐침은 원통 원점을 보지 않았다(정점은 전부 통과 — worktree `a422cbe`에 계기를 심어 확인: solid 7 `exact true`, 새 탐침은 `Carry::None`). 둘 다 이제 기록 경로(진실==캐시), 부피·면적 비트 동일, 입력 평면 digest·결과 정점 비트만 이동. 나머지 275행 무변. A/B: `no_clear_ray@combinatorics.rs` 24 → 23(bore Fuse 한 칸의 내부 raise), `non_manifold_result_edge` ±1(잡음).
+
+### 단계 4 — 문서·☑ 표의 red-probe
+- `arc_side`의 frame_sign을 빼면 상시 오라클 396칸 중 **250 빨강**(원판-쪽 감시자 «the disk-side rule and the cell's own corners disagree»), `axis_up`을 빼면 옮기기 전 첫 불리언부터 같은 감시자에서 죽는다 — 표의 «unexercised» 두 행을 «locked»로. `smooth_extremum_winding`의 frame_sign은 **여전히 미행사**(빼도 초록 — 사전식 최소가 매끈한 호 노드인 링 + frame −1 클래스는 아직 인구 없음; 호 **안**의 최소는 `arc_extremum_winding`이 읽고 그것은 오라클이 행사한다) — 정직하게 재기록.
+
+### ★ 검토가 본안을 바꾼 자리 (세 라운드, 여섯 검토)
+① 극점 조건·`lower` 세 축 ② 84건 첫 판정 실측(→ 5844건, undecided 5860 → 16) ③ offset 9칸은 탐침만으로(법칙 픽스처 별도) ④ 접두 = 탐침 캐스케이드(Through 잠재 결함 포함) ⑤ pass 1 verbatim 조건 ⑥ 원통 축 원점 탐침(→ `xy` 6행의 옛 거짓을 잡음) ⑦ census 무변은 검증 항목(→ 9행 반증·귀속) ⑧ frame −1 = 씨앗 평면, t(−4,−4,−2) ⑨ mot는 두 프로파일에서 dump되는 행만 ⑩ Known은 돌려서 자리 문장으로 ⑪ 원장 인구 ⑫ P2 셋 ⑬ 둘째-연산·공동 가족 ⑭ 실행 시간 ⑮ 예측에서 수 제거 ⑯ 반사 팔 한 철자 ⑰ 법칙 `T ∘ R`·두 길 동일 ⑱ 원자는 `frame_sign` 자체 ⑲ `KNOWN(&[Site])` + 메시지 상수 ⑳ digest → 정의 → 부피 ㉑ census 머리말 ㉒ digest 헬퍼 새로 ㉓ 비트 동일은 피벗 0 회전만 ㉔ 도구 빌더 자유 함수 ㉕ 예외 목록 + len ㉖ 솔리드 단위 ㉗ 단계별 단언 목록 ㉘ 원장 잠금 셋 ㉙ 낡은 문장 목록 ㉚ nodef 비용 실측(lib 105.7 → 116 s) ㉛ `cfg(debug_assertions)` ㉜ 순서 ∥ → 극점 → 수송 ㉝ 극점 일반형 지금 ㉞ `RulingCarrier::side` 차트화는 never ㉟ 안 옮긴 쪽 기대값 ㊱ mot 계급표 ㊲ 기계 대조 ㊳ 거절은 정의 팔 ㊴–㊻ 실행자의 타입·서명·명령 확정.
+
+### 빗나간 예측
+- «ry90 계열은 뿌리 3 후보» → ∥ 고침만으로 전부 교환(뿌리 3은 corner-lo의 rx90·ry270·rx90+t 9칸뿐).
+- «census 기존 행 무변» → 9행 이동, 둘 다 옛 탐침의 거짓(위 단계 3).
+- «offset 9칸은 분할 규칙이 닫는다»(첫 안) → 탐침 교정만으로 닫힘(검토 A) — 법칙의 픽스처는 (4.3, 0.5)+(−4,8,0).
+- 관문 clippy 두 번 빨강: 비운 KNOWN 행의 미사용 import(단계 1·2) — 표를 비우면 상수 import를 같이 지운다.
+
+### 남기는 항목
+극점이 무리수인 축(`m[a] ≠ 0`, M6-3 첫 칸; x축 둘레 기울기는 덮임) · `rotated`(«옮긴 상이면 참»)의 재정의 후보 · 원통의 `Mirror`(`MirrorNotPlanar`) · `smooth_extremum_winding`의 frame_sign 인구 · bore Fuse의 `NoClearRay`(슬랩이 판의 다섯 평면을 공유 — 이름으로 잠김) · `corner Common`의 차트 두 도로 불일치.
+
+### 관문
+매 커밋 전량 초록 + A/B + 직렬 원장; census sha `f991a783` → `f821147d`(s0, mot +15) → 무변(s1) → `88664ecb`(s2, corner-lo rx90 3행) → `63c18592`(s3, xport +3·rot Z 90 3·xy 6). lib 스위트 59.8 → 116 s(ws), 오라클 상시 42 s·전체군 98 s.
+
+### 다음
+스케치 원·호 어휘 · 접선 `d = r`은 C · `ObliqueCylinderCut`은 M6-3(첫 칸: 극점이 무리수인 축).
