@@ -34,7 +34,9 @@
 //! a population it does not contain. The first 130 lines are all *short* decimals, which is why a
 //! regression that closed the exact path for every arbitrarily-tilted plane crossed this file
 //! bit-identical, twice. The `fw` (full-width coordinates) and `tp` (tilted sketch plane) families
-//! exist for that reason. **Read "bit-identical" as evidence only about the population present.**
+//! exist for that reason, and so does `mot` (the boss corpus under rigid motion — cell ④):
+//! until it was added, no row held a **rotated** cylinder boolean at all. **Read "bit-identical"
+//! as evidence only about the population present.**
 
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
@@ -999,6 +1001,71 @@ fn dump() {
             let out = boolean(&mut m, BoolKind::Fuse, a, b);
             m.rebuild_adjacency();
             record(&format!("wal {pn} fuse"), &m, &inputs, &out);
+        }
+    }
+    // ── **The boss corpus under rigid motion** (`mot`, cell ④): the production-side rows of the
+    // commuting oracle (`tests.rs::the_boolean_commutes_with_rigid_motion`), one per sign class
+    // the oracle names — ∥ wall classes with `frame_sign = −1` (a max-side wall put on a seed
+    // plane by a translation; a wall turned onto one by rz90), ⊥ classes with `(axis_up, frame)`
+    // `= (true, −1)` (corner-lo with the axis turned to −y) and `(false, −1)` (the top cap put on
+    // z = 0), the transport's exactness boundary (the offset boss under a rigid motion) and the
+    // recorded path (a non-dyadic translation). ★ Rows are added only where **both** profiles
+    // dump them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) waits for the
+    // transport law (cell ④ stage 3), because `world_cylinder_def`'s postcondition is a
+    // `debug_assert` that takes the dev census down with it — measured with a temporary per-row
+    // catch: dev panics there, release answers «disjoint» (Fuse 2 bodies, Cut the plate
+    // untouched, Common empty), which is the silent wrong answer the law closes.
+    {
+        let boss = |m: &mut Model, base: [f64; 3]| -> (Handle<Solid>, Handle<Solid>) {
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let b = m.add_cylinder(
+                Point3::from_array(base),
+                nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                4.0,
+            );
+            m.rebuild_adjacency();
+            (plate, b)
+        };
+        let rot = |ax: Axis, deg: i128| {
+            Isometry::rotation(Rotation {
+                axis: ax,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
+            })
+        };
+        let t = |x: i128, y: i128, z: i128| {
+            Isometry::translation([Rat::from_int(x), Rat::from_int(y), Rat::from_int(z)])
+        };
+        let rows: Vec<(&str, [f64; 3], Isometry)> = vec![
+            ("par wall+x t", [4.0, 2.0, -1.0], t(-4, -4, -2)),
+            ("par wall-y rz90", [2.0, 0.0, -1.0], rot(Axis::Z, 90)),
+            ("perp corner-lo rx90", [0.0, 0.0, -1.0], rot(Axis::X, 90)),
+            ("perp wall+y t", [2.0, 4.0, -1.0], t(-4, -4, -2)),
+            (
+                "rec through t",
+                [2.0, 2.0, -1.0],
+                Isometry::translation([
+                    Rat::new(7, 11).expect("rat"),
+                    Rat::new(3, 10).expect("rat"),
+                    Rat::new(1, 4).expect("rat"),
+                ]),
+            ),
+        ];
+        for (name, base, iso) in &rows {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let (p, b) = boss(&mut m, *base);
+                let p = xf(&mut m, p, *iso);
+                let b = xf(&mut m, b, *iso);
+                let inputs = operands(&m, p, b);
+                let out = boolean(&mut m, k, p, b);
+                m.rebuild_adjacency();
+                record(&format!("mot {name} {kn}"), &m, &inputs, &out);
+            }
         }
     }
     // ── **A cap that lies in another face's plane** (`cap`): the population where a *disk* is a

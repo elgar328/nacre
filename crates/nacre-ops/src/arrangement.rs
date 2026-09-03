@@ -2566,6 +2566,10 @@ fn corner_sides<'a>(
 pub(crate) mod disk_side_probe {
     use std::sync::Mutex;
 
+    /// The sentence the disk-side check panics with — one spelling, shared with the commuting
+    /// oracle's `KNOWN` list (cell ④).
+    pub(crate) const NOT_OWN_SOLID: &str = "a cut circle's disk side does not carry its own solid";
+
     /// One entry per arc.
     #[derive(Clone, Copy, Debug, Default)]
     pub(crate) struct Row {
@@ -3053,6 +3057,11 @@ fn ruling_sweep(
 pub(crate) mod ruling_probe {
     use super::{SegKind, combinatorics};
     use std::sync::Mutex;
+
+    /// The sentence the ruling label's postcondition panics with — one spelling, so the
+    /// commuting oracle's `KNOWN` list (cell ④) names the site by the same constant the
+    /// `assert` prints.
+    pub(crate) const WRONG_SIDE: &str = "the ruling label took the wrong side of the wall";
 
     /// One entry per ruling a cycle grazed, in emission order: the kinds of its pieces, beside
     /// the cylinder's origin and the ruling's first and last station — so a reader can pick its
@@ -5198,8 +5207,8 @@ fn per_class(
                             assert_ne!(
                                 verdict,
                                 Some(false),
-                                "the ruling label took the wrong side of the wall: class {wc}, \
-                             side {}",
+                                "{}: class {wc}, side {}",
+                                ruling_probe::WRONG_SIDE,
                                 r.side
                             );
                             ruling_probe::SIDE_CHECK
@@ -6596,7 +6605,8 @@ fn emit_faces(
             #[cfg(test)]
             assert!(
                 disk_side_agrees(&ma.merged, &labels[c]).unwrap_or(true),
-                "a cut circle's disk side does not carry its own solid: {:?} {:?}",
+                "{}: {:?} {:?}",
+                disk_side_probe::NOT_OWN_SOLID,
                 ma.merged,
                 labels[c]
             );

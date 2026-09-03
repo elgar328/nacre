@@ -638,10 +638,16 @@ pub(crate) fn world_cylinder_def(
             cache.axis().distance(o) <= 1e-9 * scale
                 && (cache.radius() - out.radius().to_f64()).abs() <= 1e-9 * scale
         },
-        "the world statement and the realized cache describe one cylinder"
+        "{}",
+        ONE_CYLINDER
     );
     Some(out)
 }
+
+/// The sentence [`world_cylinder_def`]'s postcondition panics with — one spelling, shared with
+/// the commuting oracle's `KNOWN` list (cell ④), which names a panic site by its sentence.
+pub(crate) const ONE_CYLINDER: &str =
+    "the world statement and the realized cache describe one cylinder";
 
 /// A lateral face's axis-parameter span, read off its rim carrier planes (M6-2a).
 ///
