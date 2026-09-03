@@ -16665,3 +16665,39 @@ P1·P2 위. P3 구멍 있는 옆면을 물은 횟수 1(census, 띠+구멍 1). P4
 - ☑ 조사·대조의 임시 편집 잔재 0(`CONTROL`·`BEFORE-MEASURE`·`TMPA/L`), 삭제한 이름(`SpanAsk`·`cylinder_face_crossings`·`LateralRead`·`band_of`) 코드에 0 — 산문 한 줄(census doc의 miss-first 사다리)만 남아 «②-b가 걷은 물음»이라 적었다.
 - ☑ 1c의 «전» 측정을 `git stash`로 하려다 원장 하나만 돌려 0을 읽었다(stash는 되돌렸고 파일은 온전) — 역편집으로 다시 쟀다. 기록된 규칙(«A/B는 stash가 아니라 env-var/역편집»)을 한 번 어겼고 잡았다.
 - ☑ 둘째 점검(사용자 요청): design.md에서 «다음 계단 = 코너 평균»(칸 ②)과 «옆면의 MissOnly와는 무관»(잘린 캡)이 정정 없이 남아 있었다 — 새 문단만 더하고 낡은 문장을 안 고쳤다. 둘 다 ②-b의 반증을 단 채로 둔다. `cargo doc`에 삭제한 이름으로의 깨진 링크 0(있는 경고는 전부 이전의 «private item» 것). 계수기 `holes_probe`가 이제 «물은 횟수»만 세면서 이름은 구멍을 말하고 있었다 → `cylinder_asks`. `rim_plane` doc의 «띠 팔이 늘 이렇게 짓는다»를 과거형으로.
+
+## 벽∩옆면은 «한 이차식»이다 — 오프셋 벽은 게이트의 기록이 열고 배열은 기록만 믿는다 (M6-2 남은 것 ③)
+
+커밋: `004b0e1`(단계 0 계기) · `37cd130`(1a 게이트의 기록 팔·배열 네 자리·오라클·가족 셋·보어 잠금) · `0bdd144`(1b 잘린 캡의 현 걸음) · 문서.
+
+### 뿌리 — 산술이 아니라 어휘
+`WallMeetsLateral`의 오프셋 팔(축과 나란한 벽이 축에서 `0 < d < r`)은 «들어 올리면 `OpenResultShell`»이라는 **D5 이전** 측정 위에 서 있었다. 조사에서 «축을 지난다»(`class_through_axis == Some(true)`)가 다섯 자리(게이트의 기록 팔·`chord_on_class`·`rulings_on_class`·`crossing_on_ruling`·스캔의 구멍-원 팔)에 철자돼 있음을 보고, 임시로 그 다섯을 «두 룰링으로 만난다(0 ≤ d < r)»로 바꾸니 **보스의 첫 연산 12/12가 조립·validate 0·정확 부피**(유리수 룰링 d=0.3 → y = 2 ± 0.4, 무리수 d=0.2·d=2, 축이 판 밖·안, 얼린 `cylinder-wall-contact`, 40-판 `rul offset`), 2차 45칸 중 43 조립이었다. 그 밖의 산술(`plane_plane_cylinder`의 QuadVal 근·`ruling_side`·`circular_order`·D5의 영역 걷기·②-b의 루프 패리티)은 지름을 전제한 적이 없었다.
+
+### 원칙 — 철자 하나, 기록은 증명 캐시
+둘째 검토가 첫 안(새 술어 `class_crosses_lateral`)을 반증했다: 게이트의 기록 집합 `PlaneSetup::crossings`는 «평면이 r 안이고 면이 띠를 비키지 못했다»의 증명 캐시라 기록된 쌍은 구성상 만나고 안 기록된 쌍은 네 자리 모두 이미 침묵이다 — 곁에 기하 술어를 두면 한 사실의 다섯째 철자. 그래서 게이트의 `point_plane_clearance_rat(coeffs, o, r)` **한 호출**을 세 갈래로 읽고(`Positive` 비킴 · `Zero` 접선 → `WallMeetsLateral` · `Negative` → 면이 판단, 못 비키면 기록·통과), 배열의 네 자리는 `class_through_axis` 검사를 지우고 «기록된 쌍의 clearance는 Negative»를 `debug_assert`로 든다. `class_through_axis`는 삭제됐고 `corner_wall_class`(②-b)는 ∥ 클래스를 `n·m = 0`으로 고른다. «증명 안 된 면» 범주는 «기록 = 추적자가 판단하라»로 흡수된다(룰링 조각은 면의 사이클에서만 나오고 캡의 현은 그 평면과 원판의 참된 만남). M6-3에서도 이 모양이 산다.
+
+### 단계 0 (`004b0e1`) — 계기와 실측
+- P1 «후보 없음» 0 · 빈 탐침 목록 0(오늘의 코퍼스). P2 위. **P3 보어**(첫째 검토가 잡은 구멍 — 스위트의 `wall_meets_lateral` raise는 보스가 아니라 보어): 스위치 아래 보어 교차(판 40×20×5, 보어 r 3, 슬랩 면 y = 12) `2274.115741 = 4000 − 45π − (1600 − 5·seg(2,3))` 오차 0 · 갈린 보어 (c) `655.688298` = 유도식 오차 0 · rul offset 셋 — 전부 validate 0. P4 호출자 = 다섯 자리 + `corner_wall_class`.
+
+### 1a (`37cd130`)
+- 가로지르는 census +3 가족(`offset-out` (4.3,2) · `offset-in` (3.7,2) · `offset-irr` (4.2,2)): **Ok 205 → 248**, `RingHasNoWitness` 0 → **2**(`offset-out` Common × mid·벽 슬랩 — 빈 목록을 `NoClearRay`가 아니라 «증인 없음»으로, 3D 판정의 `no_witness`), `NoClearRay` 0. 부피 오라클 `disk_in_rect`는 원판∩축 정렬 직사각형의 **닫힌 일반식**(현 길이의 적분, `∫ min(c, s)`의 분할)으로 — panic 문장이 사라지고 단위 잠금(온전·반·사분·조각 둘·안의 직사각형·수치 적분 대조)이 지킨다.
+- 재연산 census +3행 `[Ok,Ok,Ok]·[RIMS_HOLE, PANEL, PANEL]`(추측이 맞았다), Ok 41 → 50, seam 이음 (8,0) → (14,0)(오프셋 Fuse의 온전한 rim 둘이 seam 정점을 지난다 — 벽 가족은 seam이 현의 끝).
+- bands.rs: 보어 교차·갈린 보어 (c)·`the_gate_still_refuses…`의 offset 행이 «빌드·부피 정확»으로, 접선은 그대로. reject_census: `cylinder-wall-contact` 대조군, 새 얼린 행 `cylinder-wall-tangent`(계기 자체 검사의 픽스처도 접선으로).
+- 원장: 판정 254 전부 첫 탐침·소진 2(offered 0), «후보 없음» 8(= 2칸 × 반쪽 2 × 캡 2), `SeamRoot` 56 → 245(오프셋 보스의 seam 위 근 — 첫 탐침이 답하는 호출 안).
+- 관문: census `c` 행 269 중 **`rul offset` 3행만** 이동(ERR → 1솔리드, sha `b7d60ade` → `f991a783`), reject-trace `ring_has_no_witness@boolean.rs` +1 사이트(두 칸) · `wall_meets_lateral@planes.rs` 2 → 1(`^RAISE`; surfaced 7 → 4, 남은 것은 접선 행들) · 그 밖 동일.
+- ★ 첫 관문에서 빨간 잠금 둘은 검토 목록 밖이었다: 재연산 census의 Ok 카운트(41 → 50)와 reject_census의 계기 자체 검사(`cylinder_wall_contact`를 «반드시 우는 픽스처»로 씀 → 접선으로).
+
+### 1b (`0bdd144`) — 잘린 캡의 현 걸음
+현마다 둘: `o − t·n`에서 `q = (n·o + d)/|n|²`, `T = r²/|n|²`, `t_far = 2qT/(q² + T)`(현 너머, 원 안 — `T > q²`·`(q² − T)² > 0`), `t_near = q/2`; `q = 0`은 축 걸음의 경우. 순서 중심 → 축 → 현. **예측 Ok 250 · `RingHasNoWitness` 0** — census Ok 248 → **250** · `RingHasNoWitness` 2 → **0** · 원장 «후보 없음» 8 → 0(현 걸음이 12면을 답함, 축 걸음 54, 중심 0 — 잘린 캡의 중심은 지름 현 위라 늘 경계) · 판정 258 전부 첫 탐침 · 프로덕션 census 무변 · A/B: `ring_has_no_witness` 사이트 소멸(`non_manifold_result_edge` surfaced 5 → 6은 proptest 잡음). 잔여: 현의 발 선 위에 둘째 현이 놓인 사분-조각(«증인 없음»으로 온다), `three_plane_probes`의 branch 탈락.
+
+### ★ 검토 셋이 본안을 바꾼 자리
+① 단계 0에 보어 실측 ② 카운트 잠금의 이동을 단계마다 ③ 현 걸음의 잔여를 이름으로 ④ `RingHasNoWitness`를 «링 또는 성분»으로 ⑤ 다섯 자리 확인 ⑥ 오라클 경우 열거 ⑦ **술어를 만들지 않는다**(기록이 곧 교차 진술) ⑧ `disk_in_rect` 닫힌 일반식 ⑨ P3의 출력 모양 ⑩ 1a의 잠금 넷 ⑪ branch 탐침의 크기와 막는 원시 술어 ⑫ 접선 경계의 정확성.
+
+### 남기는 항목
+접선 `d = r`(능력 C — `cylinder-wall-tangent`가 얼린 행) · 대칭 평면 위의 노드(`ruling_side` Zero → `DeclineKind::Ruling`) · `crossing_on_arc`의 «> π 호» 거절(첫 현에 나란한 중심 통과 벽) · 사분-조각 캡의 증인 · `Probe::Branch`(~120–180줄, 막는 원시 술어: 교차점이 branch 원점의 앞인가 뒤인가) · `SeamRoot` 245의 인구(첫 탐침이 답해 무해).
+
+### 관문
+매 커밋 전량 초록 + A/B + 직렬 원장 `--nocapture`; census sha는 1a에서 의도적으로 바뀜(행 diff 기록).
+
+### 다음
+강체 운동 불변 대조군 · 스케치 원·호 어휘 · 접선은 C · `ObliqueCylinderCut`은 M6-3.
