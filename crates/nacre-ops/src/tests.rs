@@ -11322,70 +11322,38 @@ const DIVERGES: &str = "<diverges silently>";
 /// determined). Commuting instead is red — the row must then be removed — and so is failing
 /// somewhere else.
 ///
-/// ★ Measured 2026-09-03 over the whole group (990 cells, 150 divergent): the ∥ ruling label's
-/// missing chart-frame factor (`WRONG_SIDE` — every max-side family under `t(−4,−4,−2)`, the
-/// walls and half walls under the z-rotations that put the wall on a seed plane, corner-lo under
-/// most rotations), the arc extremum's world-z premise (`NOT_OWN_SOLID` — corner-lo where the
+/// ★ Measured 2026-09-03 over the whole group (990 cells, 150 divergent at stage 0): the ∥
+/// ruling label's missing chart-frame factor (`WRONG_SIDE` — every max-side family under
+/// `t(−4,−4,−2)`, the walls and half walls under the z-rotations that put the wall on a seed
+/// plane, corner-lo under most rotations: 105 cells, all commuting since `ruling_interior_is_even`
+/// reads `frame_sign`), the arc extremum's world-z premise (`NOT_OWN_SOLID` — corner-lo where the
 /// axis turns to ±x/±y and its 270° arc bulges past the minimum node), and the transport's
 /// half-recorded chain (`ONE_CYLINDER` — the offset bosses under every rigid motion, whose seam
 /// vertex rounds when translated after the turn; and **silently** on the planar pair, whose
 /// `0.4`/`1.6` box does the same with no cylinder postcondition to catch it).
 const KNOWN: &[(&str, &[&str], &[&str])] = &[
-    (
-        "wall -y",
-        &["rx180", "rx270", "rz90", "rz180", "rx90+t"],
-        &[WRONG_SIDE],
-    ),
-    ("wall +y", &["t(-4,-4,-2)"], &[WRONG_SIDE]),
-    (
-        "wall -x",
-        &["ry90", "ry180", "rz180", "rz270"],
-        &[WRONG_SIDE],
-    ),
-    ("wall +x", &["t(-4,-4,-2)"], &[WRONG_SIDE]),
-    ("corner", &["t(-4,-4,-2)"], &[WRONG_SIDE]),
     ("corner-lo", &["rx90", "ry270", "rx90+t"], &[NOT_OWN_SOLID]),
-    (
-        "corner-lo",
-        &["rx180", "rx270", "ry90", "ry180", "rz90", "rz180", "rz270"],
-        &[WRONG_SIDE],
-    ),
-    ("offmid", &["t(-4,-4,-2)"], &[WRONG_SIDE]),
-    (
-        "half wall",
-        &["rx180", "rx270", "rz90", "rz180", "rx90+t"],
-        &[WRONG_SIDE],
-    ),
-    (
-        "half wall, cap below",
-        &["rx180", "rx270", "rz90", "rz180", "rx90+t"],
-        &[WRONG_SIDE],
-    ),
-    ("half +x", &["t(-4,-4,-2)"], &[WRONG_SIDE]),
-    ("half +x, cap below", &["t(-4,-4,-2)"], &[WRONG_SIDE]),
     (
         "offset-out",
         &["rx90+t", "ry90+t", "rz90+t"],
         &[ONE_CYLINDER],
     ),
-    ("offset-out", &["t(-4,-4,-2)"], &[WRONG_SIDE]),
     (
         "offset-in",
         &["rx90+t", "ry90+t", "rz90+t"],
         &[ONE_CYLINDER],
     ),
-    ("offset-in", &["t(-4,-4,-2)"], &[WRONG_SIDE]),
     (
         "offset-irr",
         &["rx90+t", "ry90+t", "rz90+t"],
         &[ONE_CYLINDER],
     ),
-    ("offset-irr", &["t(-4,-4,-2)"], &[WRONG_SIDE]),
     ("planar", &["rx90+t", "ry90+t", "rz90+t"], &[DIVERGES]),
 ];
 
 /// The count lock: how many cells `KNOWN` names (three kinds per motion).
-const KNOWN_CELLS: usize = 150;
+/// Stage 0: 150 · stage 1 (the ∥ chart-frame factor): 45 — every `WRONG_SIDE` row commutes.
+const KNOWN_CELLS: usize = 45;
 
 fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
     KNOWN
@@ -11395,7 +11363,6 @@ fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
 }
 
 use crate::arrangement::disk_side_probe::NOT_OWN_SOLID;
-use crate::arrangement::ruling_probe::WRONG_SIDE;
 use crate::planes::ONE_CYLINDER;
 
 fn run_commuting_oracle(labels: &[&str]) {

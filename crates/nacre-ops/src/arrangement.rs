@@ -2099,7 +2099,10 @@ fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
 /// gives `(x − o) · (m̂ × n̂) = n̂ · ((x − o) × m̂) = −r·(n̂ · θ̂)`, so `sign(n̂_r · θ̂) = −side`;
 /// [`world_rat_sense`] (`κ`) carries that to the stored normal. The three consumers are the
 /// ruling sweep's graze side, [`ruling_interior_is_even`], and the chart's vertical read — and the
-/// whole point of naming it is that none of them spells the product a second time.
+/// whole point of naming it is that none of them spells the product a second time. ★ Two of them
+/// read a **label** and stay in the stored frame; the one that picks a **cell** —
+/// [`ruling_interior_is_even`] — crosses into the chart's frame with `frame_sign`, and it is the
+/// only reader that does.
 pub(crate) fn plus_theta_is_above(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
@@ -6549,8 +6552,8 @@ fn emit_faces(
     // ★★★★★ **Which half-edge borders the disk side, derived — and the factor that was missing.**
     // `MergedArc::end` runs counter-clockwise about the *axis*, so the even half-edge travels
     // `+θ̂`. The walk keeps a cell on the **left of its travel in the root face's frame**, whose
-    // outward is `n_out = frame_sign · n_P` ([`crate::planes::WorkingPlane::frame_sign`]: *"this
-    // **is** the label frame"*), so
+    // outward is `n_out = frame_sign · n_P` ([`crate::planes::WorkingPlane::frame_sign`] — the
+    // sentence's one home; the ∥ road's `ruling_interior_is_even` cites it too), so
     //
     // ```text
     //   left = n_out × θ̂ = frame_sign·sign(n_P·m̂)·(m̂ × θ̂) = −frame_sign·axis_up·r̂
@@ -6817,29 +6820,38 @@ pub(crate) struct RulingExtent {
 /// **Which of a ruling's two half-edges borders the cell inside the cylinder** — `true` for the
 /// even one (the piece's own `end[0] → end[1]`, ascending the axis).
 ///
-/// ★★★★★ **Derived from the definitions, not re-spelled.** Three sentences already in this file
+/// ★★★★★ **Derived from the definitions, not re-spelled.** Three sentences already in this crate
 /// compose to the answer, and none of them is written a second time here:
 ///
 /// * [`combinatorics::RulingCarrier::side`] is `sign((x − o) · (m̂ × n̂))` against the class's
-///   **canonical rational** name, so the strip's interior lies along `−side · (m̂ × n̂)`.
-/// * A cell keeps its material **on the left of its boundary's travel** (the universal convention
-///   [`run_body_above`] and [`material_theta_sign`] both state), and the even half-edge travels
-///   `+m̂` ([`MergedRuling::end`]) — so its cell lies along `n̂ × m̂ = −(m̂ × n̂)`.
-/// * Those two are written against *different* normals, and [`world_rat_sense`] (`κ`) is the
-///   lift that relates them — the correction its own doc says was raised **so the ∥ ruling road
-///   would not spell it a second time**.
+///   **canonical rational** name, so the strip's interior lies along `−side · (m̂ × n̂_r)`; lifted
+///   to the stored normal by [`world_rat_sense`] (`κ`) that is `−side·κ·(m̂ × n̂_P)` — the
+///   product [`plus_theta_is_above`] already spells.
+/// * The walk keeps a cell **on the left of its travel in the root face's outward frame**,
+///   `n_out = frame_sign · n̂_P` ([`crate::planes::WorkingPlane::frame_sign`] — the sentence lives
+///   there), and the even half-edge travels `+m̂` ([`MergedRuling::end`]) — so its cell lies
+///   along `n_out × m̂ = −frame_sign · (m̂ × n̂_P)`.
 ///
 /// ```text
-///   even half-edge's cell is interior  ⟺  −(m̂ × n̂_stored) ∥₊ −side·κ·(m̂ × n̂_stored)
-///                                      ⟺  side · κ = +1
+///   even half-edge's cell is interior  ⟺  −frame_sign·(m̂ × n̂_P) ∥₊ −side·κ·(m̂ × n̂_P)
+///                                      ⟺  side · κ · frame_sign = +1
+///                                      ⟺  plus_theta_is_above ≠ (frame_sign > 0)
 /// ```
 ///
-/// ★ `side · κ` is exactly the frame-free product [`ruling_grazes`] names: both factors read
-/// `world_rat`, so flipping that name flips both and the product stands — which it must, because
-/// *which cell is inside the cylinder* cannot depend on how the plane was named.
+/// — letter for letter the ⊥ road's rule for a cut circle's disk side (`axis_up ≠ (frame_sign >
+/// 0)`, `emit_faces`), which is the other half-edge rule the chart frame enters.
+///
+/// ★★★★★ **The factor that was missing, and what found it.** This read `side · κ` alone until
+/// cell ④, and the note here argued the product was frame-free — true of *which ruling* it names,
+/// false of *which half-edge's cell*: the chart's left is the root face's, not the stored
+/// normal's. The unmoved corpus never told them apart because a wall class is `frame_sign = −1`
+/// only when its face lies on a **seed plane** with its outward along +axis (`Model::new` plants
+/// x = 0, y = 0, z = 0 with cache direction −axis), which no fixture did until the commuting
+/// oracle put the plate's max faces there by a translation and turned walls onto them by a
+/// rotation — 105 cells, every one caught by `ruling_probe::SIDE_CHECK` at the fact.
 fn ruling_interior_is_even(jd: &Judge<'_, WorkingPlane>, wc: usize, side: i8) -> Option<bool> {
-    // The strip's interior is the side `+θ̂` does **not** enter — [`plus_theta_is_above`].
-    Some(!plus_theta_is_above(jd, wc, side)?)
+    // The strip's interior is the side `+θ̂` does **not** enter, read in the chart's frame.
+    Some(plus_theta_is_above(jd, wc, side)? != (jd.planes[wc].frame_sign > 0))
 }
 
 /// What the arrangement learned about the curved boundary, bundled: the band pass reads

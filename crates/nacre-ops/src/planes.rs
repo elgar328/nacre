@@ -2029,6 +2029,15 @@ pub(crate) struct WorkingPlane {
     /// they oppose. This *is* the label frame: `[A_above, A_below, …]` is defined about the class
     /// root's stored normal, and this sign is what relates it to material. Precomputed here so the
     /// two `debug_assert`s that guard the convention run once, at construction.
+    ///
+    /// ★★★ **And it is the chart's frame.** The arrangement's cell walk keeps a cell **on the
+    /// left of its boundary's travel in the root face's outward frame**, `n_out = frame_sign ·
+    /// n_P` — so any rule that turns a 3D fact stated against the stored normal into *which
+    /// half-edge's cell* multiplies by this sign exactly once. Two rules do (the ⊥ road's
+    /// cut-circle disk side in `emit_faces`, the ∥ road's `ruling_interior_is_even`), and this
+    /// sentence is their one home; its population is a face lying on a **seed plane** with its
+    /// outward along +axis (`Model::new` plants x = 0, y = 0, z = 0 with cache direction −axis),
+    /// which a max-side face reaches by a translation or a rotation (cell ④).
     pub(crate) frame_sign: i8,
     /// The pre-rotation twin — see [`BaseFrame`].
     pub(crate) base: BaseFrame,
