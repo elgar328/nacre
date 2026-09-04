@@ -620,9 +620,11 @@ mod tests {
 
     /// ★★★★★ **A boundary that meets itself, and the two different sentences that says.**
     ///
-    /// A **touch** — a vertex on the boundary elsewhere — is a boundary the b-rep legitimately
-    /// asked for (an exact tangency), and only this decomposition has no answer for it. A
-    /// **crossing** is the b-rep's own invariant broken. Different claims, different names.
+    /// A **touch** — a vertex on the boundary elsewhere — is a boundary this decomposition has
+    /// no answer for (an exact tangency, which the sampled boundary reproduces when a sample lands
+    /// on it). A **crossing** is a ring set that has no triangulation at all: any one would be
+    /// wrong. Different claims about *the mesh*, different names — neither is a verdict on the
+    /// solid, which is `validate`'s to give.
     ///
     /// ☑ **The crossing branch exists because the gap was measured.** A bow-tie already came back
     /// `DegenerateRing` from the sweep, but the hole below — crossing the outer ring with no
@@ -666,6 +668,60 @@ mod tests {
             tri(&bowtie, &[0, 1, 2, 3], &[]),
             Err(TessError::DegenerateRing)
         ));
+    }
+
+    /// ★★★★★ **A touch vouches for nothing — two ways the old check let a crossing through.**
+    ///
+    /// `self_touch` used to return on the *first* touch it found and only then, if it found none,
+    /// scan for crossings. Two defects follow; this fixture is the first, the next test the second.
+    ///
+    /// **A touch hides a crossing elsewhere.** A hole whose apex sits exactly on the outer ring's
+    /// bottom edge (a genuine tangency — its two neighbours are both inside) *and* whose far side
+    /// pokes out through the right edge with no vertex at the crossing. The touch was found first
+    /// and the crossing never looked at, so the answer was `SelfTouchingBoundary` — "a boundary
+    /// this decomposition cannot draw" — when the true answer is `DegenerateRing`: any
+    /// triangulation of this ring set would be wrong.
+    ///
+    /// ☑ Measured red first (`SelfTouchingBoundary`), then fixed.
+    #[test]
+    fn a_touch_must_not_hide_a_crossing_elsewhere() {
+        // A real tangency at (2,0) plus a real crossing of x = 4 at y = 2.25.
+        let p = pts(&[
+            [0.0, 0.0],
+            [4.0, 0.0],
+            [4.0, 4.0],
+            [0.0, 4.0],
+            [2.0, 0.0],
+            [1.0, 2.0],
+            [3.0, 3.0],
+            [5.0, 1.5],
+        ]);
+        let r = tri(&p, &[0, 1, 2, 3], &[&[4, 5, 6, 7]]);
+        assert!(matches!(r, Err(TessError::DegenerateRing)), "{r:?}");
+    }
+
+    /// **A touch *is* a crossing.** A diamond hole poking out through the right edge whose two
+    /// crossings land exactly on its own vertices `(4,3)` and `(4,1)`. Both were recorded as
+    /// touches and the crossing scan never ran. The one `orient2d` pair that tells them apart:
+    /// at a vertex touching a segment, its two neighbours lie on the **same** side of that
+    /// segment's line for a tangency (the boundary turns back) and on **opposite** sides for a
+    /// crossing (the boundary passes through). Here `(3,2)` and `(5,2)` straddle `x = 4`.
+    ///
+    /// ☑ Measured red first (`SelfTouchingBoundary`), then fixed.
+    #[test]
+    fn a_touch_that_is_really_a_crossing_is_named_so() {
+        let p = pts(&[
+            [0.0, 0.0],
+            [4.0, 0.0],
+            [4.0, 4.0],
+            [0.0, 4.0],
+            [3.0, 2.0],
+            [4.0, 3.0],
+            [5.0, 2.0],
+            [4.0, 1.0],
+        ]);
+        let r = tri(&p, &[0, 1, 2, 3], &[&[4, 5, 6, 7]]);
+        assert!(matches!(r, Err(TessError::DegenerateRing)), "{r:?}");
     }
 
     #[test]

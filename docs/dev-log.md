@@ -16876,3 +16876,47 @@ census도 같은 말을 한다: HEAD(287행 `63c18592`) 대비 **바뀐 줄이 6
 
 ### 남기는 항목
 **① 메시의 SoS** — 이 칸이 그 인구를 키웠고, 사용자의 스크립트가 커널에선 되지만 **화면엔 안 나온다**. 다음 칸. **②** 접선을 품는 **셋째 평면**(국소 영역이 여섯) — 규칙이 안 서므로 기권한다; 구성한 두 경우는 배열이 `CoincidentNodes`로 먼저 거절한다. **③** 접촉이 증명 안 된 경우(`straddles == false`)는 `CylinderGateUndecided`.
+
+## 칸 ⑦b — 접촉은 자기 자격을 증명한다: `self_touch`가 교차를 가리지 않고, 「다리를 놓아도 되는가」에 답한다 (2026-09-05)
+
+칸 ⑥이 사용자의 스크립트를 커널에서 열었지만 **화면은 백지**였다 — 캡 면이 `SelfTouchingBoundary`로 거절되고 `tessellate`가 첫 거절에서 모델 전체를 버린다. 그 형상은 **정상 솔리드**다(칸 ⑤·⑥: 접선은 정점을 안 만들고, 접점의 링크는 원 하나, `validate` 깨끗, OCCT 동의). 못 그리는 건 테셀레이터의 능력 부족이고, 답은 `TessError`의 doc이 이미 이름 붙인 **스윕의 SoS**다.
+
+### 방향이 두 번 바뀌었다 — 둘 다 사용자가 원칙으로 잘랐다
+1. 첫 계획 ⑦a는 「못 그리는 면은 그 면만 잃게 한다」(`tessellate_partial` + 면별 결손 표시)였다. 아홉 라운드 검토 끝에 사용자가 접었다: *「정상 형상이면 둘 다 가능해야 하고, 문제인 형상이면 둘 다 안 되는 게 맞다」*. 실측이 뒷받침한다 — 면별 결손 인구는 ⑦d가 능력을 고치면 사실상 0이 된다(남는 `OverBudget`은 오늘 인구 0). ⇒ **능력부터 고친다.** 그 검토가 남긴 실측은 「남기는 항목」에.
+2. 「샘플 수를 바꿔 접점을 비켜 놓기」는 파급이 작아 보였지만 사용자가 원칙으로 죽였다: *「실제로 한 점에서 만나는 형상이면 시각화에서도 그 점에서 만나야 한다」*. 메시가 모델의 접촉을 없애면 **거짓말하는 캐시**다(`nacre-tess`의 헌장). SoS는 좌표를 하나도 안 움직이고 동점의 판정 순서만 정하므로 그 잣대를 통과한다.
+3. 사용자의 셋째 질문 — *「테셀레이션은 보여주기용이고 진실은 모델에 있다. 테셀레이션이 평가를 하지 말아야 하는 것 아닌가」* — 는 증거가 한 테스트 안에 세 줄 간격으로 있었다: `tests/coverage/nonconvex.rs`가 같은 깨진 솔리드를 `validate`(`NonOpposedEdge`)와 `tessellate`(`HoleWinding`)로 **두 번 판정**한다. 그리고 `polygon/mod.rs`의 자기 테스트가 *「That is a broken solid — `validate`'s business」*라고 적어 놓고 정작 자기가 판정한다. ⇒ 이 칸의 거절 이름은 **메시에 대한 말**로만 쓴다(아래).
+4. 「접선이 다리를 공짜로 준다」(두 루프가 접점에서 만나니 이어 붙이면 루프 하나)는 사용자의 제안이었고 방향은 맞았지만 **공짜가 아니다**: ☑ `sample_edge`에서 직선 간선은 점이 둘뿐이라 사각형 변에는 접점에 정점이 **없다**. 접촉은 «정점 대 정점»이 아니라 **«정점 대 선분 내부»**다. 다리를 놓으려면 그 변을 쪼개야 하고 그 폴리라인은 옆 면과 공유되므로 한쪽만 쪼개면 T-정점이 생긴다. 그리고 쌍둥이 인덱스 철자는 `link`는 통과하지만 `self_touch`·`sweep`의 동점 가드(`uv[a] == uv[b]`, 생좌표)·`emit`의 넓이 0 삼각형 셋이 독립적으로 막는다 — `sweep`의 주석이 이유를 이미 적었다(*「같은 점에 정점이 둘이면 `lex_less`가 엄격한 순서가 아니게 된다」*). ⇒ **다리와 SoS는 대안이 아니라 한 작업의 두 반쪽**이고, 사다리는 ⑦b(이 칸) → ⑦c(스윕에 일관된 순서, 거절 유지) → ⑦d(간선 분할 패스 + 다리 + 거절 해제)다.
+
+### 이 칸의 명제 — `Touch`가 아무것도 증명하지 않았다
+`self_touch`는 루프 둘이었다: ① 정점이 남의 선분 위에 있나 — 찾으면 **즉시 반환**, ② 선분 둘이 서로를 통과하나 — **①이 비었을 때만**. 결함 둘, 둘 다 손으로 지은 픽스처로 **먼저 빨갛게** 확인했다(오늘 둘 다 `SelfTouchingBoundary`):
+- **A — 접촉이 교차를 가린다.** 접점 하나(진짜 접선) + 다른 자리의 진짜 교차(꼭짓점 없음) → 교차를 아예 안 봐서 «이 분해법에 답이 없다»(`SelfTouchingBoundary`)로 나온다. 진짜 답은 «어떤 삼각분할이든 틀린다»(`DegenerateRing`).
+- **B — 접촉이 교차를 «흡수»한다(더 크다).** 다이아몬드 홀이 바깥 링을 뚫고 나가는데 두 교차점이 **홀의 꼭짓점과 정확히 일치** → 둘 다 «접촉»으로 기록. 오늘도, A를 고쳐도 `SelfTouchingBoundary`. **⑦d가 그걸 다리로 읽으면 바깥 링 밖으로 새는 메시**가 나온다 — 교차 분기가 애초에 막으려던 *「eight confident, wrong triangles」* 그 자체.
+
+### 설계 — 접촉이 자기 자격을 증명한다
+- **접선 증인**: 정점 `p`가 선분 `(u,v)` 위에 있을 때 `prev(p)`·`next(p)`가 선 `(u,v)`의 **같은 쪽**이면 경계가 되돌아온다 = 접선; **반대쪽**이면 건너간다 = 교차(`DegenerateRing`). `orient2d` 한 쌍. 이 술어는 진짜 접선에서 퇴화하지 않으므로 **⑦c의 SoS를 적용하면 안 되는 자리**다.
+- **어디서 완전한가**: 상대 링이 `p`에서 **직선**일 때 — `TouchKind::Interior`(정점이 선분 내부). `AtEnd`(두 링이 같은 좌표의 꼭짓점 공유)는 상대 링도 꺾이므로 한 줄로는 틀린다 — 손 계산 반례: B의 두 방향 10°·80°, A의 두 방향 100°·200°이면 10° 선에 대해 A가 반대쪽(증인 «교차»)이지만 각도 순서 `10(B),80(B),100(A),200(A)`는 끼어들지 않아 실제는 접촉. 올바른 판정은 네 방향의 각도 끼어듦 검사 ⇒ ⑦b는 `AtEnd`와 「이웃이 선 위」(공선)에서 **기권**(`Witness::Abstained`, 접촉으로 남김 = 오늘의 동작), 인구를 잰다.
+- **중복 제거**: 공유 끝점의 정점은 선분 `a`의 `v`로 한 번, `next[a]`의 `u`로 한 번 기록되던 것을 **시작하는 선분에만**. 안 그러면 ⑦d가 다리를 두 번 놓는다.
+- **교차 루프는 언제나 돌고 `straddles`는 엄격하다**(네 `orient2d` 전부 0 아닐 것). ★ **셋은 원자적이다** — 교차 루프를 무조건 돌리면서 옛 관대한 `straddles`(0을 음수 쪽으로 접음)를 두면 **사용자의 바로 그 픽스처가 거짓 `Cross`**를 낸다(사각 변 × 접점에서 나가는 원의 현: 양쪽 straddle이 참) → `bands`의 두 잠금이 빨개지고 `boolean.rs`의 census 단언이 lib 스위트를 패닉시킨다. 엄격 판이 진짜 교차를 놓치지 않는 이유: 선 위의 끝점은 선분 밖이면 그 선을 거기서만 만나므로 가로지를 수 없다.
+- **우선순위**: `crossing`이 있으면 `DegenerateRing`, 아니면 `touches`가 비지 않으면 `SelfTouchingBoundary`. 이유를 **솔리드 판결로 쓰지 않는다**: *교차는 「어떤 삼각분할이든 틀린다」, 접촉은 「이 분해법에 답이 없다」 — 「틀린다」가 「못 한다」를 이긴다.* `monotone.rs`의 `self_touch`·`Meet` doc과 `mod.rs`의 테스트 doc 세 문장을 그렇게 고쳐 썼다.
+- `Meets { touches: Vec<Touch>, crossing }`·`Touch { vertex, segment, kind, witness }`를 `pub(super)`로 — ⑦d가 시그니처를 다시 열지 않게.
+
+### 결과
+- `nacre-tess` **35 → 41**: 부정 대조 둘(`a_touch_must_not_hide_a_crossing_elsewhere`·`a_touch_that_is_really_a_crossing_is_named_so`, 둘 다 빨강 → `DegenerateRing`으로 초록) + `touch_tests` 넷(`Interior:Tangent` / 증인이 잡는 교차 / `AtEnd` 중복 제거·기권 / 공선 기권). 기존 35 무변 — 접촉만 있는 면은 같은 이름·같은 결과.
+- **거절 이름이 바뀐 자리는 두 증인뿐**: `nacre-ops` 전량 초록, `bands`의 두 접선 픽스처는 여전히 `SelfTouchingBoundary`, `nonconvex`는 `HoleWinding`, census 단언 침묵.
+- **접촉표 인구(nacre-ops 전체, `--test-threads=1`, 임시 원장으로 실측 후 제거)**: 원장 **6줄 = 서로 다른 면 4개**(`a_segment_tangent_to_the_rim_builds` n=188 rings=3, `a_turned_boss_tangent_to_the_plate_top_builds` n=184 rings=2 — 이 둘은 자기 면을 두 번 메싱, `one_chord_formula_…_tangent_limit` n=184, `the_users_tangent_stud_gives_three_answers` n=184). **전부 `Interior:Tangent`. crossing 0 · `AtEnd` 0 · 기권 0 · 증인 탈락 0.** 이 세션의 임시 계측 「12건」은 **재현 안 됨** — 진짜 수는 4다.
+- 손댄 파일: `polygon/monotone.rs`·`polygon/mod.rs` 둘뿐. `Meets`·`Touch`·`Witness`는 `polygon` 밖에서 안 쓰인다(밖의 유일한 언급은 `lib.rs`의 doc).
+
+### 관문
+fmt · clippy(workspace, `-D warnings`) · `test --workspace` **1197 passed / 0 failed** · `--no-default-features` · census debug·release **287행, 두 프로파일 동일** · `reject_census` · `--ignored` 스윕 · `perf`(release) — **9단계 전부 exit 0**(각 단계 파일로 받아 cargo의 `$?`를 읽음). census는 의존 그래프상 움직일 수 없다(`nacre-tess`는 dev-dependency, census 바이너리는 메셔를 안 부른다) — 잠금이 아니라 관문의 일부로만 돌렸다.
+
+### 안 잰 것 (계획에 있었는데 못 지킨 항목)
+- 계획은 접촉표에 「어느 모델의 **몇 번째 면**인가」를 요구했는데, 원장을 `decompose`에서 찍어 **면 핸들이 없다** — 테스트 이름·n·rings로만 귀속했다. 4개 면이 각 테스트의 유일한 접선 면이라 이번엔 충분했지만, ⑦d의 계기는 `triangulate_face`에서 찍어야 한다.
+- 「워크스페이스 전체」라 했지만 `nacre-tess` 자체 스위트(cube·cylinder뿐)와 `#[ignore]` 오라클(DRAWEXE 필요)은 접선 인구가 없거나 원장 밖이다. 실측 범위는 **`nacre-ops`의 비-ignore 전체**다.
+
+### 남기는 항목
+- **⑦c 설계 입력(확정)**: `AtEnd` 분기와 각도 끼어듦 검사는 **오늘 인구에 불필요**(0). 변환하면 안 되는 자리: `ring_orientation`의 `lex_less`·`orient2d`, `strictly_inside`, `insert_interior`가 부르는 `strictly_between`(프로덕션 간선 분할 도로 — SoS를 먹이면 넓이 0 삼각형), `self_touch`의 `orient2d == 0`(SoS를 먹이면 접촉표가 빈다), 이 칸의 접선 증인, 테스트의 `lex_less`. 잠금은 「35개 무변」이 아니라 **census 코퍼스 전체에서 `Tessellation` 바이트 동일**이어야 한다 — `left_of`/`insert`/`trace`의 `side == 0`은 좌표가 안 겹쳐도 흔하고, SoS가 대각선을 바꿔도 삼각형 수·넓이는 안 바뀐다. `assert_monotone`은 `#[cfg(test)]`라 프로덕션 면을 못 본다(계기가 아니다).
+- **⑦d 설계 입력(확정)**: 접촉이 **전부 `Interior`**이므로 **간선 분할 패스가 필수** — 분할점이 `tessellate`의 1·2단계 사이에 `by_edge`로 들어가 두 인접 면이 다 보게(안 하면 `pipeline.rs`의 watertight가 3건 샌다). 그 외: `sweep` 동점 가드 제거(⑦c가 `lex_less`에 답을 주면 전제가 거짓), `emit`의 넓이 0 허용, `triangulate_monotone`의 y-단조 전제 검사(오늘 없음 — 쌍둥이 둘을 담은 조각은 조용히 쓰레기), `trace` 비교자의 길이 0 간선(비추이적), `within_budget`·`constrained`에 다리, `check_partition` 재작성, `mod.rs`의 홀 감김 게이트 공허화, `bands`의 두 잠금·`boolean.rs`의 census 면제 뒤집기, **그리고 새 삼각형을 보는 것이 아무것도 없다** — 두 픽스처를 `mesh_vs_props` 아래로.
+- **테셀레이터가 솔리드를 판결하는 자리(별도 칸)**: `nacre-tess`의 b-rep 언급이 10 → 5. 남은 다섯 중 `lib.rs:76`(`HoleWinding`: *「the b-rep does not keep material on the left」*)과 `mod.rs`의 *「validate's business」* 주석이 권한 문제이고(`validate`가 같은 픽스처를 `NonOpposedEdge`로 잡는다), `lib.rs:40`·`:50`·`monotone.rs:62`는 「왜 검사가 있는지」라 옳다.
+- **dev-log 칸 ⑤의 「재봉합은 `link`의 인덱스 공유 핀치로 거절된다」는 반복 인덱스 철자에 대해서만 참이다** — 쌍둥이 인덱스 철자는 `link`를 통과하고 `self_touch`·`sweep`·`emit`이 막는다. 기제가 틀린 게 아니라 철자가 하나 더 있다.
+- **칸 ⑥의 「사용자의 스크립트」는 다른 솔리드다**: 앱의 `CylAnchor::Center`는 중간 높이라 사용자의 스터드는 `z ∈ [−1,1]` **관통**(면 10·집힌 캡 2·부피 `1 + 0.04π`), 픽스처는 `base` 해석(면 8·1·`1 + 0.06π`). 그 주장이 네 벌 — `bands.rs`의 doc과 **테스트 이름** `the_users_tangent_stud_gives_three_answers`, `design.md`의 칸 ⑥ 항목, 이 dev-log의 칸 ⑥. 칸 ⑤의 교훈 그대로(*「이름이 아니라 문장이 열쇠」*) — 사다리 어디에서든 함께 고친다. 관통 모델은 커널에서 아직 안 돌려 봤다(예측: 조립, 거절 2).
+- **접힌 ⑦a에서 살아남은 결함**: `tessellate`가 첫 거절에서 모델 전체를 버리고 `reachable()`이 세션의 모든 솔리드를 덮으며 플레이그라운드가 한 칸에 캐시하므로 **거절 하나가 상관없는 멀쩡한 몸통까지 지운다** — ⑦d 뒤에도 다른 이유의 거절에서 그대로. 축소된 답은 「몸통 일부 그리기」가 아니라 **거절 단위를 세션에서 «값»으로**. 실측 요약: `Tessellation`은 `default()` 한 자리로만 지어진다, 파사드는 손댈 게 없다(`nacre/src/lib.rs`가 크레이트 전체를 재수출), `FaceRow.face`는 `fh.index()`와 같은 번호, `mesh_of`·`edges_of`는 같은 `session.tess` 슬롯, `OverBudget`은 인구 0이고 `within_budget`이 민팅 뒤에 돌아 고아 정점을 남길 수 있다, `boolean.rs`의 「2129 중 2」는 칸 ⑥ 이후 낡았다.
