@@ -1137,6 +1137,60 @@ mod tests {
         assert_eq!(chi, vec![0, 2], "genus 1 and genus 0");
     }
 
+    /// **The tangency is a *slit*, not a cut — and that is why no combinatorial check can see it**
+    /// (cell ⑤). Two clauses, because either alone passes vacuously:
+    ///
+    /// 1. **No vertex within `1e-9` of the touch.** The arrangement names the point exactly
+    ///    (`NodeId::branch(.., QuadRoot::Double)`) and then *discards* it — a tangency touches
+    ///    without separating, so the circle keeps its closed cell. `nonmanifold_vertices` and the
+    ///    Euler count read topology, and there is none here: **their silence is not evidence**
+    ///    about this point, in either direction.
+    /// 2. **The circle that touches is still whole** — a closed `[v, v]` rim edge passing through
+    ///    the point. Without this the first clause cannot tell "the circle was never cut" from
+    ///    "the circle was cut and its vertex landed elsewhere".
+    ///
+    /// What *is* the evidence that the solid is sound: the link of the boundary at the touch is a
+    /// single circle (the pinched face's two lobes are joined around through the neighbouring
+    /// curved face), the material is locally one piece, and a second kernel returns a body of the
+    /// same volume and area (`nacre-oracle`'s `a_segment_tangent_to_a_rim_is_a_body_to_occt` and
+    /// `a_rim_tangent_to_a_plate_top_is_a_body_to_occt`, measured against an ε-twin whose tangency
+    /// is broken). ⇒ **the surface is a 2-manifold there; only the face is pinched.**
+    fn the_touch_is_a_slit(m: &Model, s: Handle<Solid>, at: [f64; 3]) {
+        let p = Point3::from_array(at);
+        let sol = m.solids.get(s).clone();
+        let (mut vertices_at, mut whole_circle_through) = (0usize, 0usize);
+        let mut seen = std::collections::HashSet::new();
+        for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
+            for &fh in &m.shells.get(sh).faces {
+                let face = m.faces.get(fh);
+                for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                    for he in &lp.half_edges {
+                        if !seen.insert(he.edge) {
+                            continue;
+                        }
+                        let e = m.edges.get(he.edge);
+                        for &vh in e.vertices.iter() {
+                            if m.vertex_point(vh).distance(p) <= 1e-9 {
+                                vertices_at += 1;
+                            }
+                        }
+                        // A whole circle is the closed `[v, v]` rim spelling; a cut one is arcs.
+                        if e.vertices[0] == e.vertices[1]
+                            && m.edge_curve(he.edge).distance(p) <= 1e-9
+                        {
+                            whole_circle_through += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(vertices_at, 0, "a tangency mints no vertex: {at:?}");
+        assert!(
+            whole_circle_through > 0,
+            "the touching circle is still whole (a closed rim edge through {at:?})"
+        );
+    }
+
     /// **A tangency builds.** The boss's `x = 11` edge is exactly tangent to the rim `(8,10)`,
     /// `r = 3`, so the locator's quadratic has a double root — the third arm of `CylinderMeet`
     /// that can reach here, and the only one whose point carries no radical (`(11, 10, 5)`,
@@ -1186,6 +1240,12 @@ mod tests {
             0,
             "genus 1: V{v_n} E{e_n} F{f_n} L{l_n}"
         );
+        // ★ **This χ is the genus's lock, not the tangency's.** A pinch *that has a vertex* makes
+        // χ odd — what `check_result_topology` reads — but a tangency mints no vertex at all
+        // (below), so an even χ is compatible with a pinch and with none: it decides nothing
+        // here. Deleting this assertion would lose the genus, not the manifold claim.
+        m.rebuild_adjacency();
+        the_touch_is_a_slit(&m, out[0], [11.0, 10.0, 5.0]);
         // ★★★★★ **And the solid cannot be meshed — say so here, where the geometry is.**
         // The boss's footprint touches the bore's rim at exactly one point, so the plate's top
         // face has two inner loops meeting there: its interior is pinched, and no triangulation
@@ -1313,6 +1373,9 @@ mod tests {
             2,
             "genus 0: V{v_n} E{e_n} F{f_n} L{l_n}"
         );
+        // ★ The genus's lock, not the tangency's — see the note in the fixture above.
+        m.rebuild_adjacency();
+        the_touch_is_a_slit(&m, out[0], [4.0, 2.0, 2.0]);
         // ★★★★★ **And the solid cannot be meshed — the same pinch, spelled inner-to-outer.**
         // The boss's base circle is tangent to the plate's `z = 2` edge at `(4, 2, 2)`, so the
         // `x = 4` face's hole touches its own outer ring at one point and the face's interior is

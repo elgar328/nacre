@@ -303,6 +303,16 @@ mod tests {
     /// ~5e-7 relative away (e.g. 20π → `62.8319`). A 1e-4 relative band clears
     /// that rounding noise by 100× while still catching any real geometry error
     /// (those miss by percents, not parts-per-thousand).
+    /// Faces of one live solid, outer shell and cavities — the figure `OcctProps::faces` is
+    /// compared against.
+    fn face_count(model: &Model, s: Handle<Solid>) -> usize {
+        let sol = model.solids.get(s);
+        std::iter::once(sol.outer)
+            .chain(sol.cavities.iter().copied())
+            .map(|sh| model.shells.get(sh).faces.len())
+            .sum()
+    }
+
     fn approx(a: f64, b: f64) -> bool {
         let diff = (a - b).abs();
         diff <= 1e-6 || diff <= 1e-4 * a.abs().max(b.abs())
@@ -504,6 +514,117 @@ centroid 1 1.5 2
         // And the analytic figure, so a *pair* of kernels agreeing on a wrong number would still
         // have to agree with arithmetic.
         assert!((ours.volume - (8.0 - PI * 0.25 * 2.0)).abs() < 1e-9);
+    }
+
+    /// **The tangency fixtures, scored by a second kernel** (cell ⑤).
+    ///
+    /// Two booleans in `nacre-ops` produce a solid whose *face* is pinched at one point — a boss
+    /// edge exactly tangent to a bore's rim, and a boss's base circle exactly tangent to the
+    /// plate's top edge. `validate` is clean and the volume is exact; the tessellator refuses
+    /// (`TessError::SelfTouchingBoundary`), and cell ㉓ left open whether the **solid** is valid.
+    ///
+    /// Cell ⑤ answered that from the geometry — the link of the boundary at the touch is a single
+    /// circle, so the surface is a 2-manifold there and only the *face* is pinched. **This is the
+    /// independent confirmation**: a second kernel is given the same two operands and asked for
+    /// the same union. If OCCT returns a body of the same volume, a commercial kernel agrees the
+    /// shape is a body.
+    ///
+    /// ★ **Why the face count is recorded and not asserted.** OCCT splits periodic surfaces at
+    /// its own seams and merges or divides faces across a STEP round trip, so an absolute count
+    /// says nothing about the pinched face. The **ε-twin** (the same model with the tangency
+    /// broken by 0.01) is measured beside it so the difference has a control; both numbers go to
+    /// the dev-log rather than into an assertion.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
+        // The plate with a bore, and a boss whose `x = 11` face is exactly tangent to the rim.
+        let build = |bx: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([40.0, 20.0, 5.0]),
+            );
+            let hole = m.add_cylinder(
+                Point3::from_array([8.0, 10.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                3.0,
+                7.0,
+            );
+            m.rebuild_adjacency();
+            let holed = boolean_one(&mut m, BoolKind::Cut, plate, hole).expect("the bore cuts");
+            let boss = m.add_cuboid(
+                Point3::from_array([bx, 8.0, 5.0]),
+                Point3::from_array([15.0, 12.0, 8.0]),
+            );
+            m.rebuild_adjacency();
+            (m, holed, boss)
+        };
+        // `11.0` is the tangency; `11.01` breaks it and is the control.
+        for (what, bx) in [("tangent", 11.0), ("twin", 11.01)] {
+            let (mut m, a, b) = build(bx);
+            let occt = occt_boolean_of(&m, OcctBool::Fuse, a, b).expect("occt fuses");
+            let s = boolean_one(&mut m, BoolKind::Fuse, a, b).expect("nacre fuses");
+            let ours = mass_props(&m, s).unwrap();
+            eprintln!(
+                "TANOCCT seg-{what}: volume nacre {} occt {} | area nacre {} occt {} | faces nacre {} occt {}",
+                ours.volume,
+                occt.volume,
+                ours.area,
+                occt.area,
+                face_count(&m, s),
+                occt.faces
+            );
+            assert!(
+                approx(ours.volume, occt.volume),
+                "{what}: volume nacre {} vs occt {}",
+                ours.volume,
+                occt.volume
+            );
+        }
+    }
+
+    /// The second tangency fixture — a turned boss whose base circle touches the plate's top
+    /// edge at one point. Same question, same discipline as the test above.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn a_rim_tangent_to_a_plate_top_is_a_body_to_occt() {
+        let build = |bz: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array([4.0, 2.0, bz]),
+                Vector3::from_array([1.0, 0.0, 0.0]),
+                0.5,
+                1.0,
+            );
+            m.rebuild_adjacency();
+            (m, plate, boss)
+        };
+        // `1.5` puts the circle's top exactly on `z = 2`; `1.49` clears it by 0.01.
+        for (what, bz) in [("tangent", 1.5), ("twin", 1.49)] {
+            let (mut m, a, b) = build(bz);
+            let occt = occt_boolean_of(&m, OcctBool::Fuse, a, b).expect("occt fuses");
+            let s = boolean_one(&mut m, BoolKind::Fuse, a, b).expect("nacre fuses");
+            let ours = mass_props(&m, s).unwrap();
+            eprintln!(
+                "TANOCCT rim-{what}: volume nacre {} occt {} | area nacre {} occt {} | faces nacre {} occt {}",
+                ours.volume,
+                occt.volume,
+                ours.area,
+                occt.area,
+                face_count(&m, s),
+                occt.faces
+            );
+            assert!(
+                approx(ours.volume, occt.volume),
+                "{what}: volume nacre {} vs occt {}",
+                ours.volume,
+                occt.volume
+            );
+        }
     }
 
     /// ★ **Two bores in one plate, scored independently** (M6-2a K1). The second cut's counterpart

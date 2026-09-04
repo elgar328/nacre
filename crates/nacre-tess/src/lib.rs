@@ -55,13 +55,18 @@ pub enum TessError {
     /// region is pinched there, so it is not a disk with sibling holes and this decomposition has
     /// no triangulation of it.
     ///
-    /// ★★★★★ **This does not say the solid is wrong.** The measured population is an exact
-    /// **tangency** — a hole touching another ring at one point, where a sampled circle vertex
-    /// lands on the touch — and both fixtures that produce it are `validate`-clean with volumes
-    /// exact to `1e-9`. Whether a face whose *interior* pinches is a non-manifold point on the
-    /// surface is a real question, and `validate` cannot see it (there is no topology vertex
-    /// there); it belongs to the capability that teaches the non-manifold test about tangential
-    /// contact, not to this layer. So this name states only what this layer knows.
+    /// ★★★★★ **This does not say the solid is wrong — and that is now measured, not hoped.** The
+    /// population is an exact **tangency**: a hole touching another ring at one point, where a
+    /// sampled circle vertex lands on the touch. Both fixtures are `validate`-clean with volumes
+    /// exact to `1e-9`, and cell ⑤ (2026-09-04) settled the question this doc used to defer —
+    /// **the surface is a 2-manifold at the touch**: the link of the boundary on a small sphere
+    /// there is a *single* circle, because the pinched face's two lobes are joined around through
+    /// the neighbouring curved face; OCCT, given the same operands, returns a body of the same
+    /// volume, area and face count. What is pinched is the **face**, not the surface, so the
+    /// capability that owes an answer is **not** the non-manifold test (it was right) but this
+    /// layer's own: a consistent symbolic order for coincident vertices in the sweep (design.md's
+    /// 「남은 능력」). ★ And the loss is larger than one face: [`tessellate`] walks the whole model
+    /// and stops at the first refusal, so one pinched face erases every body in that session.
     ///
     /// ★ The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier,
     /// by `monotone`'s `link`, and comes back as [`Self::DegenerateRing`]. That check has been

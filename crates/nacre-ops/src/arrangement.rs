@@ -4079,6 +4079,16 @@ fn split_circles(
             for n in xs {
                 // A tangency touches without separating — `segment_meets_cylinder` above already
                 // let that shape through, and cutting there would make a zero-length arc.
+                //
+                // ★★ **Two answers to one situation, and the other one is 60 lines down** (cell ⑤,
+                // recorded not resolved): `split_circles`' note reads *"a circle cut at exactly one
+                // point is **slit**, not divided, and the arc below comes out `[n, n]` — the closed
+                // form a rim has"*, and it names the real blocker as the walk's one-edge-cycle rule
+                // rather than a zero-length arc. So "zero-length arc" is imprecise by this file's
+                // own account. Which answer the tangent shape deserves is the first question of the
+                // cell that opens the tangent wall — measured there: with this skip lifted the boss
+                // families reach the walk and stop at `UnorderedEdges`, which is the `side` ±1
+                // vocabulary, not this arc.
                 if matches!(
                     combinatorics::branch_name(n),
                     Some((_, _, nacre_topo::QuadRoot::Double))
