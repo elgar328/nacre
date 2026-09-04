@@ -666,9 +666,10 @@ mod tests {
     //
     // ★★ These five are the population the `SeatedCylinderCap` rule refused. What actually makes a
     // seated circle hard is its boundary meeting the counterpart's — and a boundary is either an
-    // edge on a plane (parallel to the axis → `WallMeetsLateral`, oblique → `ObliqueCylinderCut`)
-    // or another cylinder's rim (→ `CylinderPairContact`). The two fences at the end of this block
-    // are those names still standing, so this file says both what was opened and what was not.
+    // edge on a plane (parallel to the axis → the wall rule, oblique → `ObliqueCylinderCut`) or
+    // another cylinder's rim (→ `CylinderPairContact`). ★ The wall rule is no longer a *fence*: it
+    // records a crossing (cell ③) or a tangency (cell ⑥) and the roads behind it answer, so what
+    // still stands at the end of this block is the oblique cut and the cylinder pair.
     //
     // ★★★ **Measured against the pre-deletion kernel, all seven of these came back
     // `SeatedCylinderCap` — the two fences included.** The rule stood before the wall and the
@@ -898,31 +899,31 @@ mod tests {
         through_boss_builds(BoolKind::Fuse, [40.0, 40.0, -10.0], 32000.0 + 1125.0 * pi);
     }
 
-    /// ★ The population the gate's arm deliberately keeps out: a **tangent** wall (distance
-    /// exactly `r`) assembles a volume-correct zero-thickness pinch `validate` cannot see. The
-    /// live set survives the refusal. The **offset** crossing (`0 <` distance `< r`) stood here
-    /// beside it — «walks to `OpenResultShell`», a measurement from before the region emitter —
-    /// and builds exactly since cell ③: the same row, now the build it is.
+    /// ★★★★★ **Both of this fence's exclusions are gone, and the tangent one took the longest
+    /// because its old sentence was *true*.** The **offset** crossing (`0 <` distance `< r`) stood
+    /// here on «walks to `OpenResultShell`», a measurement from before the region emitter, and
+    /// builds exactly since cell ③. The **tangent** wall (distance exactly `r`) stood on «assembles
+    /// a volume-correct zero-thickness pinch `validate` cannot see» — and cell ⑥ measured that this
+    /// is *exactly right*: with the gate passing it, `Cut` returns `Ok`, `validate` is clean, and
+    /// nothing in the kernel sees the contact. So the answer was never to keep refusing at the
+    /// gate; it was to give that pinch a judge (`boolean::tangency_reject`), which is what this row
+    /// now exercises — the operation decides, and the ones that do not pinch build.
     ///
     /// ★ A third row lived here until the D2b cutover: the **half-height** boss, whose upper cap
     /// sits inside the plate's material — the band road's `chamber` had no sector answer for that
     /// end and refused it `RulingBoundNotYet`. The chart reads it (a band below the plate, the
     /// outer sector beside it), so it builds now — [`Self::a_half_height_boss_builds`].
     #[test]
-    fn the_gate_still_refuses_what_the_road_does_not_serve() {
+    fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
         let seg = |d: f64, r: f64| r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
         let pi = std::f64::consts::PI;
-        // (base, h, the volume it builds — `None` for the refusal)
-        for (base, h, want) in [
-            // The offset wall: the plate's `x = 40` stands 2 from the axis (r = 5); the boss's
-            // part inside the plate is the disk less the `x > 40` segment, over the plate's height.
-            (
-                [38.0, 20.0, -10.0],
-                50.0,
-                Some(32000.0 + 1250.0 * pi - (25.0 * pi - seg(2.0, 5.0)) * 20.0),
-            ),
-            ([35.0, 20.0, -10.0], 50.0, None),
-        ] {
+        // ★★★★★ **One expression, both rows — which is the evidence that the rule is general.**
+        // The boss's part inside the plate is the disk less the `x > 40` circular segment, over the
+        // plate's height; the tangent row is that same expression at `d = r`, where `seg(5, 5) = 0`
+        // and the whole disk is inside. Nothing here is copied from an engine run: the tangent
+        // volume is *derived* by walking the offset row's formula to its limit.
+        let want = |d: f64| 32000.0 + 1250.0 * pi - (25.0 * pi - seg(d, 5.0)) * 20.0;
+        for (base, d) in [([38.0, 20.0, -10.0], 2.0), ([35.0, 20.0, -10.0], 5.0)] {
             let mut m = Model::new();
             let plate = m.add_cuboid(
                 Point3::from_array([0.0; 3]),
@@ -932,24 +933,16 @@ mod tests {
                 Point3::from_array(base),
                 Vector3::from_array([0.0, 0.0, 1.0]),
                 5.0,
-                h,
+                50.0,
             );
             m.rebuild_adjacency();
-            let live = m.live_solids.clone();
-            match (crate::boolean(&mut m, BoolKind::Fuse, plate, boss), want) {
-                (Ok(out), Some(want)) => {
-                    m.rebuild_adjacency();
-                    assert_eq!(out.len(), 1, "{base:?}");
-                    assert!(nacre_validate::validate(&m).is_empty(), "{base:?}");
-                    let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
-                    assert!((v - want).abs() < 1e-9, "{base:?}: {v} vs {want}");
-                }
-                (Err(BoolError::Rejected { reason, .. }), None) => {
-                    assert_eq!(reason, RejectReason::WallMeetsLateral, "{base:?} h {h}");
-                    assert_eq!(m.live_solids, live, "the live set survives the refusal");
-                }
-                (other, _) => panic!("{base:?}: {other:?}"),
-            }
+            let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
+                .unwrap_or_else(|e| panic!("{base:?}: {e:?}"));
+            m.rebuild_adjacency();
+            assert_eq!(out.len(), 1, "{base:?}");
+            assert!(nacre_validate::validate(&m).is_empty(), "{base:?}");
+            let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+            assert!((v - want(d)).abs() < 1e-9, "{base:?}: {v} vs {}", want(d));
         }
     }
 
@@ -1026,7 +1019,8 @@ mod tests {
     /// **The straddling boss builds.** The M6-2b milestone fence: a boss hanging over the
     /// plate's edge — its rim circle cut by the plate top's boundary segment — fuses into one
     /// valid solid. The ladder this closes, in the names its rungs wore: `WallMeetsLateral`
-    /// (the wall rule read the closed span) → `CircleMeetsSegment` → `ArcBoundNotYet` (the
+    /// (a reason since retired — the wall rule read the closed span) → `CircleMeetsSegment` →
+    /// `ArcBoundNotYet` (the
     /// stopper, walked from the class arrangement to the very end of the assembly) → built.
     ///
     /// The volume and the mixed-loop integrals are pinned by
@@ -1103,9 +1097,10 @@ mod tests {
         m.rebuild_adjacency();
         let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("a boss over a bore");
         // ★ The boss's whole footprint is inside the rim, so it stands over the **hole** and
-        // touches no material: two bodies, not one. That is forced rather than chosen — a boss
-        // that reached material inside the disk would lie within the bore's axial span, and the
-        // wall rule refuses that as `WallMeetsLateral`.
+        // touches no material: two bodies, not one. That is forced by the *geometry* — the
+        // footprint is strictly inside the rim, so there is no material to reach — and no longer
+        // by a refusal: the wall rule used to make the argument for us, and since cells ③ and ⑥ it
+        // serves that population instead of fencing it off.
         assert_eq!(out.len(), 2, "the boss touches nothing");
         assert!(
             nacre_validate::validate(&m).is_empty(),
@@ -2858,8 +2853,9 @@ mod tests {
 
     /// **A wall face that really does cross the bore builds** (cell ③). The plate's own `y = 20`
     /// wall would clear, so the tool here is a slab whose face runs right across the hole — the
-    /// wall rule's true population, and M6-2b's. It used to be the fence (`WallMeetsLateral`);
-    /// the gate records the pair now and the tracer cuts the bore's lateral along two rulings
+    /// wall rule's true population, and M6-2b's. It used to be the fence (`WallMeetsLateral`, a
+    /// reason since retired); the gate records the pair now and the tracer cuts the bore's lateral
+    /// along two rulings
     /// (2 from the axis, r = 3) and its caps along the chord: one body, the exact volume.
     #[test]
     fn a_wall_face_that_really_crosses_the_bore_builds() {
@@ -2895,10 +2891,18 @@ mod tests {
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
-    /// **The fence: exact tangency.** The slab's face stands exactly `r` from the axis, so it
-    /// touches the lateral surface along one ruling — the boundary case, and `Inside` includes it.
+    /// **Exact tangency, and the operation is what refuses it.** The slab's face stands exactly
+    /// `r` from the axis, so it touches the bore's lateral along one line. The gate passes that
+    /// now (cell ⑥) — what convicts this shape is the *verdict*: cutting the slab away leaves the
+    /// material as the **two wedges** between the parabola and the plane, which meet only on the
+    /// line, and both are bounded by the same faces so they are one solid. `SelfTouchingResult`.
+    ///
+    /// ★ Its siblings are the control: the same wall with the boss *inside* the plate builds under
+    /// `Fuse` and `Common` and only `Cut` pinches, and a boss tangent from **outside** comes back
+    /// as two valid bodies. So this is not "the gate refuses tangencies"; it is one operation's
+    /// answer about one shape.
     #[test]
-    fn a_wall_face_tangent_to_the_bore_is_refused() {
+    fn a_wall_face_tangent_to_the_bore_pinches_under_cut() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -2922,12 +2926,189 @@ mod tests {
             matches!(
                 err,
                 BoolError::Rejected {
-                    reason: RejectReason::WallMeetsLateral,
+                    reason: RejectReason::SelfTouchingResult,
                     ..
                 }
             ),
             "{err:?}"
         );
+    }
+
+    /// ★★★★★ **The user's script, and the three answers it must get.** A unit cube and a stud
+    /// whose axis stands `0.3` from the origin with `r = 0.2`: the wall `x = 0.5` is **exactly**
+    /// `r` away, which is what a round set of dimensions produces. The three operations differ,
+    /// and they differ without any of them being named — `keep` is asked about the three regions
+    /// beside the tangent line and the answers fall out.
+    ///
+    /// Volumes **derived, not copied**: the stud's footprint is `x ∈ [0.1, 0.5] × y ∈ [−0.2, 0.2]`,
+    /// inside the cube's, and only `z ∈ [0, 0.5]` overlaps — so the shared volume is `π r² · 0.5`.
+    #[test]
+    fn the_users_tangent_stud_gives_three_answers() {
+        let pi = std::f64::consts::PI;
+        let (whole, shared) = (pi * 0.04 * 2.0, pi * 0.04 * 0.5);
+        let build = || {
+            let mut m = Model::new();
+            let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+            let stud = m.add_cylinder(
+                Point3::from_array([0.3, 0.0, 0.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.2,
+                2.0,
+            );
+            m.rebuild_adjacency();
+            (m, cube, stud)
+        };
+        for (kind, want) in [
+            (BoolKind::Fuse, 1.0 + whole - shared),
+            (BoolKind::Common, shared),
+        ] {
+            let (mut m, a, b) = build();
+            let out =
+                crate::boolean(&mut m, kind, a, b).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
+            m.rebuild_adjacency();
+            assert_eq!(out.len(), 1, "{kind:?}");
+            assert!(nacre_validate::validate(&m).is_empty(), "{kind:?}");
+            let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+            assert!((v - want).abs() < 1e-9, "{kind:?}: {v} vs {want}");
+        }
+        // Cutting the stud out leaves the material as the **two wedges** beside the tangent line,
+        // which meet only on it — one solid whose surface touches itself.
+        let (mut m, a, b) = build();
+        let err = crate::boolean(&mut m, BoolKind::Cut, a, b).expect_err("the bore pinches");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::SelfTouchingResult,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    /// ★★★★★ **A tangency from *outside* is two bodies, not a refusal** — the control that says
+    /// the rule is not "reject every tangency", and the measurement that corrected it.
+    ///
+    /// The boss's axis stands at `x = −0.5` with `r = 0.5`, so it touches the plate's wall `x = 0`
+    /// from the void side. `Fuse` keeps the lens (the boss) and the far side (the plate) but not
+    /// the wedges between — two lumps meeting only on the line — and because they share no face
+    /// they are **two valid solids**, which is what the kernel returns. `Cut` removes nothing and
+    /// `Common` is empty.
+    #[test]
+    fn a_boss_tangent_from_outside_is_two_bodies() {
+        let pi = std::f64::consts::PI;
+        let build = || {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array([-0.5, 2.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                4.0,
+            );
+            m.rebuild_adjacency();
+            (m, plate, boss)
+        };
+        for (kind, bodies, want) in [
+            (BoolKind::Fuse, 2, 32.0 + pi),
+            (BoolKind::Cut, 1, 32.0),
+            (BoolKind::Common, 0, 0.0),
+        ] {
+            let (mut m, a, b) = build();
+            let out =
+                crate::boolean(&mut m, kind, a, b).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
+            m.rebuild_adjacency();
+            assert_eq!(out.len(), bodies, "{kind:?}");
+            assert!(nacre_validate::validate(&m).is_empty(), "{kind:?}");
+            let v: f64 = out
+                .iter()
+                .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
+                .sum();
+            assert!((v - want).abs() < 1e-9, "{kind:?}: {v} vs {want}");
+        }
+    }
+
+    /// ★★★★★ **The same two lumps, joined elsewhere — and this one *is* a pinch.** The block has a
+    /// notch, the boss stands in it tangent to the notch's wall `x = 2` from the void side, and it
+    /// overlaps the block in `y` (the notch is `0.8` wide, the boss `1.0`). So the lens and the far
+    /// side are the same body, and the tangent line is where that body's surface meets itself.
+    ///
+    /// ★ This is why the verdict asks the **grouping** and not only the geometry: without it, the
+    /// answer here would be the one the fixture above earns, and this solid shipped `Ok` with
+    /// `validate` clean and a mesh — measured before the check existed.
+    #[test]
+    fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
+        let mut m = Model::new();
+        let outer = m.add_cuboid(
+            Point3::from_array([0.0, 0.0, 0.0]),
+            Point3::from_array([6.0, 6.0, 2.0]),
+        );
+        let notch = m.add_cuboid(
+            Point3::from_array([2.0, 2.6, -0.5]),
+            Point3::from_array([6.5, 3.4, 2.5]),
+        );
+        m.rebuild_adjacency();
+        let block = crate::boolean(&mut m, BoolKind::Cut, outer, notch).expect("notch")[0];
+        m.rebuild_adjacency();
+        let boss = m.add_cylinder(
+            Point3::from_array([2.5, 3.0, -0.5]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            3.0,
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Fuse, block, boss).expect_err("a joined pinch");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::SelfTouchingResult,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    /// **The pinch formula, as a truth table** — four configurations × three operations × both
+    /// owner orders, checked against the geometry by hand rather than against an engine run.
+    ///
+    /// Read the rows as: the cylinder's side of the wall plane is (or is not) the wall face's
+    /// material side, and the cylinder keeps its material inside (a boss) or outside (a bore).
+    /// ★ The third row's `Common` is the one that says this is not "a rule about `Cut`": a bore
+    /// intersected with the wall's solid leaves the two wedges alone.
+    #[test]
+    fn the_pinch_formula_is_a_truth_table() {
+        use crate::boolean::lumps_fall_apart;
+        use crate::planes::SolidSide::{A, B};
+        // (lens_in_wall_solid, cyl_orient, [Fuse, Cut, Common]) with the wall on side A.
+        for (lens, orient, want) in [
+            (true, 1i8, [false, true, false]), // an inside boss: only Cut pinches
+            (false, 1, [true, false, false]),  // an outside boss: only Fuse splits into lumps
+            (true, -1, [false, false, true]),  // a bore on the material side: only Common
+            (false, -1, [false, false, false]), // a bore on the void side: never
+        ] {
+            for (i, kind) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+                .into_iter()
+                .enumerate()
+            {
+                assert_eq!(
+                    lumps_fall_apart(kind, A, lens, orient),
+                    want[i],
+                    "wall on A, lens {lens}, orient {orient}, {kind:?}"
+                );
+            }
+        }
+        // ★ Swapping the owners is not a symmetry: `Fuse` and `Common` are commutative but `Cut`
+        // is not, so the same geometry judged with the wall on `B` reads `A − B` the other way.
+        assert!(lumps_fall_apart(BoolKind::Cut, A, true, 1));
+        assert!(!lumps_fall_apart(BoolKind::Cut, B, true, 1));
+        assert!(lumps_fall_apart(BoolKind::Cut, B, false, -1));
+        assert!(!lumps_fall_apart(BoolKind::Cut, A, false, -1));
     }
 
     /// ★★ **The fence that measures the straight-edge barrier** — the only fixture that does.
@@ -3230,7 +3411,7 @@ mod tests {
         //     `x ∈ [3.27, 6.73]`, while its plane still crosses the bore. Along the axis it runs
         //     `t ∈ [4,8]`, straddling both bands. ★ The `x = 2.5` wall must stand clear of the axis
         //     by more than `r`, or *it* becomes the face under test — at `x = 3` it is exactly
-        //     tangent and this arm measures that instead (measured: it refuses).
+        //     tangent, and this arm would then measure the tangency instead of the clearance.
         let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
         let across = m.add_cuboid(
             Point3::from_array([0.0, 0.0, 3.0]),

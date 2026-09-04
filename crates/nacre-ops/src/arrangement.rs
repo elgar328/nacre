@@ -518,7 +518,8 @@ fn chords_to_segs(
             _ => return Err(undecided()), // the meet line ⊥ its own edge direction: degenerate
         };
         // Whether `end[0] → end[1]` runs along `+d_can`: the canonical root in `end[0]`'s own
-        // name (see the doc above — a `Double` root is a tangency the producer refuses).
+        // name (see the doc above — a `Double` root is a tangency, and the producer never sees
+        // one: the gate records no crossing for a tangent plane, so no chord of one is traced).
         let ordered = match combinatorics::branch_name(c.end[0]) {
             Some((_, _, nacre_topo::QuadRoot::Lo)) => true,
             Some((_, _, nacre_topo::QuadRoot::Hi)) => false,
@@ -2363,6 +2364,7 @@ fn chord_on_class(
     };
     // ★ The record is the crossing statement (cell ③): a listed pair's plane runs within the
     // radius, so the chord has two roots — a diameter only when the wall runs through the axis.
+    // (A *tangent* plane has one root and is never listed; see `planes::Tangency`.)
     debug_assert_eq!(
         nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.radius()),
         nacre_scalar::Orient::Negative,
@@ -2394,7 +2396,8 @@ fn chord_on_class(
 /// one spelling). The point arrives as `(line, s)` from [`nacre_scalar::quad::plane_plane_cylinder`],
 /// so the sign is one [`nacre_scalar::quad::plane_side`] against the plane through `o` with
 /// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
-/// tangent shape, which no caller feeds).
+/// tangent shape, which no caller feeds — **still true since the tangent wall opened**: the gate
+/// records no crossing for a tangency, so no ruling of one is ever built).
 pub(crate) fn ruling_side(
     w: &[Rat; 4],
     def: &nacre_topo::CylinderDef,
@@ -2419,7 +2422,8 @@ pub(crate) fn ruling_side(
 /// `wc ∩ fc ∩ cyl` at the root that *is* this ruling.
 ///
 /// A ruling edge lies in the face's own plane `fc` (a plane holding a ruling runs through the
-/// axis — or is tangent, which the gate refuses), so the pair `{wc, fc}` cuts the cylinder in two
+/// axis — or is tangent, which the gate passes but does **not** record, so no ruling of it ever
+/// reaches here), so the pair `{wc, fc}` cuts the cylinder in two
 /// points, one on each of `fc`'s two rulings, and `(cyl, side)` — the identity
 /// [`crate::boolean::Wall::Ruling`] carries, measured by [`ruling_side`] against `fc` when the
 /// ring was named — says which. The same predicate asked of each root picks it. `wc` must be ⊥
@@ -2755,7 +2759,9 @@ fn rulings_on_class(
     };
     // ★ The record is the crossing statement (cell ③): a listed pair's plane runs within the
     // radius, so the wall meets the lateral in two rulings; the sweep reads the face's cycles
-    // and says where. The premise is the gate's, asserted rather than re-derived.
+    // and says where. The premise is the gate's, asserted rather than re-derived — and it survived
+    // the tangent wall opening (cell ⑥) precisely because a tangency is written to `tangencies`
+    // and **not** to `crossings`: "within" still means within.
     debug_assert_eq!(
         nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.radius()),
         nacre_scalar::Orient::Negative,
@@ -4080,15 +4086,17 @@ fn split_circles(
                 // A tangency touches without separating — `segment_meets_cylinder` above already
                 // let that shape through, and cutting there would make a zero-length arc.
                 //
-                // ★★ **Two answers to one situation, and the other one is 60 lines down** (cell ⑤,
-                // recorded not resolved): `split_circles`' note reads *"a circle cut at exactly one
-                // point is **slit**, not divided, and the arc below comes out `[n, n]` — the closed
-                // form a rim has"*, and it names the real blocker as the walk's one-edge-cycle rule
-                // rather than a zero-length arc. So "zero-length arc" is imprecise by this file's
-                // own account. Which answer the tangent shape deserves is the first question of the
-                // cell that opens the tangent wall — measured there: with this skip lifted the boss
-                // families reach the walk and stop at `UnorderedEdges`, which is the `side` ±1
-                // vocabulary, not this arc.
+                // ★★★★★ **That question is answered: the skip is right, and a tangency mints no
+                // vertex** (cell ⑥, which opened the tangent wall). The note 60 lines down reads
+                // *"a circle cut at exactly one point is **slit**, not divided"* and the two used
+                // to disagree; they do not now. Three reasons, none of them new: cell ⑤ measured
+                // that the link at such a touch is a *single* circle and that OCCT returns the same
+                // body, so minting a vertex would invent structure that is not there; the
+                // `UnorderedEdges` this skip's lifting once reached is the **rulings** vocabulary
+                // (`side` ±1), which the tangent wall never enters because the gate records no
+                // crossing for it; and this arm is not gated on `crossings`, so ⊥ classes behave
+                // exactly as they always did once the gate opens. ☑ 21 cells assemble with it in
+                // place.
                 if matches!(
                     combinatorics::branch_name(n),
                     Some((_, _, nacre_topo::QuadRoot::Double))
@@ -4833,8 +4841,9 @@ pub(crate) mod extent_probe {
 /// **Where a segment crosses a cylinder's rulings on a ∥ class** — the straight sibling of
 /// [`circle_crossings`], same machinery ([`nacre_scalar::quad::plane_plane_cylinder`], the same
 /// fences, the same names), different reachable arms: on a class **parallel** to the axis the
-/// meet can be tangent to or lie on the lateral, and those are refused by the ladder's name
-/// rather than reasoned unreachable.
+/// meet can be tangent to the lateral — **skipped**, because a touch divides nothing and cutting
+/// there would make a zero-length piece — or lie on it, which the ladder refuses by name rather
+/// than reasoning it unreachable.
 ///
 /// Returns each crossing with the exact point it was solved at (`(line, s)` — the side and
 /// extent tests below read it without re-solving). `None` is overflow.
@@ -5592,8 +5601,10 @@ fn walk_cells(
             // 1-edge component the DCEL walk cannot express (orbits need ≥3): a `+1` disk cell
             // and a `−1` contour, with pseudo-half-edges numbered past the segment range —
             // `2n + 2i` (disk side) and its `^1` twin (outside), so the label propagation's
-            // twin arithmetic works unmodified (`2n` is even). The gate proves a circle meets
-            // no segment, so no crossing machinery is owed.
+            // twin arithmetic works unmodified (`2n` is even). No crossing machinery is owed: a
+            // circle and a segment cannot **cross** on this class — the gate cleared the pair or
+            // recorded it — and the one shape that touches, a tangency, is skipped by
+            // `split_circles`' `Double` arm rather than cut (a touch divides nothing).
             for (i, _) in circles.iter().enumerate() {
                 let he_in = he_count + 2 * i;
                 face_of.insert(he_in, cells.len());
@@ -5731,8 +5742,9 @@ fn nest_cells(
 }
 
 /// Whether a circle's **center** lies inside a polygon ring of the class — the containment
-/// witness `nest_cells` uses for a circle contour (the loops are disjoint by the gate's
-/// clearance proof, so one point decides). Exact: the center is `axis ∩ W` (rational), the
+/// witness `nest_cells` uses for a circle contour (the loops cannot **cross** — the gate proved
+/// clearance or recorded the crossing, and a tangency touches at most at a point — so one point
+/// decides). Exact: the center is `axis ∩ W` (rational), the
 /// ring corners are rational meets, and the parity runs in a rational 2D basis of `W`
 /// (`point_in_ring_2d_rat` — parity is invariant under the affine projection).
 ///
@@ -5954,9 +5966,12 @@ fn rational_point_in_ring(
     )
 }
 
-/// Whether a polygon contour lies inside a disk — population-impossible (its edges ride wall
-/// faces, all of them clear of the lateral), but computed honestly from one node's
-/// radial side rather than assumed.
+/// Whether a polygon contour lies inside a disk — **all but impossible** (its edges ride wall
+/// faces, and a wall face that meets the lateral is either recorded as a crossing, which puts its
+/// edges on the ruling road, or *tangent*, which since cell ⑥ passes: a corner of such a face can
+/// sit exactly on the tangent line and land a ring node exactly on the circle). Computed honestly
+/// from one node's radial side rather than assumed, and the `Zero` arm below is what that leftover
+/// reaches.
 fn node_in_circle(
     jd: &Judge<'_, WorkingPlane>,
     ring: &[combinatorics::RingEdge],
@@ -5982,8 +5997,10 @@ fn node_in_circle(
     match nacre_scalar::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()) {
         nacre_scalar::Orient::Negative => Ok(true),
         nacre_scalar::Orient::Positive => Ok(false),
-        // On the surface: the gate-impossible contact — a *geometric* degeneracy, so it keeps
-        // the gate's name while the width causes above take the road's.
+        // On the surface: a contact the gate admits but this road cannot rank — a *geometric*
+        // degeneracy, so it keeps the gate's name ("the gate could not decide exactly") while the
+        // width causes above take the road's. ★ It used to say "gate-impossible"; the tangent arm
+        // opened in cell ⑥ and a face corner on the tangent line reaches here.
         nacre_scalar::Orient::Zero => Err(reject(RejectReason::CylinderGateUndecided)),
     }
 }
@@ -6008,8 +6025,8 @@ fn node_in_circle(
 ///   centre test alone says "inside" for *both* nestings when the polygon happens to straddle the
 ///   centre — a boss standing over a bore, footprint `[7,9]×[9,11]` around the axis `(8,10)`, put
 ///   the **circle** inside the **square**. `circle_center_in_ring`'s own doc says one point decides
-///   *"the loops are disjoint by the gate's clearance proof"*, and disjoint they are; what it does
-///   not settle is **which way round**. The other direction does, so the pair is the predicate;
+///   *"the loops cannot cross"*, and cross they do not; what it does not settle is **which way
+///   round**. The other direction does, so the pair is the predicate;
 /// - **polygon in circle** — one node's radial side ([`node_in_circle`]), decisive on its own:
 ///   disjoint loops put every node on one side;
 /// - **polygon in polygon** — a ray from each of `a`'s nodes until one is clear
@@ -7790,6 +7807,7 @@ pub(crate) fn boolean(
         class_owner,
         cyls,
         crossings,
+        tangencies,
         standard,
         notes,
         ..
@@ -7976,7 +7994,11 @@ pub(crate) fn boolean(
                 &faces,
                 &cyls,
                 &curved.cut_rims,
-                deferred
+                deferred,
+                crate::boolean::Tangencies {
+                    kind,
+                    rows: &tangencies
+                },
             )
         )
     };
@@ -10933,6 +10955,7 @@ mod tests {
             &setup.cyls,
             &curved.cut_rims,
             None,
+            crate::boolean::Tangencies::none(),
         )
         .unwrap();
         assert_eq!(out.len(), 1, "one welded solid");

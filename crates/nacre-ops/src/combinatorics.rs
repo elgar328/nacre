@@ -3903,8 +3903,8 @@ fn planes_through_line(
 /// road ([`lateral_face_crossings`], cell ②-b) is the **named** road's probes — the crossing
 /// census's corner Commons, whose vertex rays cross the other half's panel — and the lattice
 /// oracle on the through-boss; a real `k = 1` from a coordinate probe wants a ∥ wall inside the
-/// strip, which the cylinder gate refuses (`WallMeetsLateral`), so it is owed to that gate, not
-/// to a fixture.
+/// strip — a population the gate **serves** rather than refuses (a crossing since cell ③, a
+/// tangency since cell ⑥), so what owes this arm a fixture is the rulings road, not a refusal.
 ///
 /// `Ok(None)` = this ray grazed; the caller has other directions to try.
 pub(crate) fn point_in_faces_rat(

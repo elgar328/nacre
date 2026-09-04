@@ -955,9 +955,16 @@ pub(crate) struct WorkingCyl {
 ///   the class answers for itself, across the strip or along a lateral face's span
 ///   ([`face_clears_footprint`]). A face not shown to miss either rides the rulings road — the
 ///   wall's plane within the radius (`0 ≤ d < r`, through the axis or offset from it), the
-///   pair **recorded and passed** — or, the plane exactly `r` from the axis, is
-///   [`RejectReason::WallMeetsLateral`] (the tangency — **B's last population, not capability C's**:
-///   cell ⑤ measured that lifting it assembles nothing, the arrangement declines).
+///   pair **recorded and passed** — or, the plane exactly `r` from the axis, **passes and is
+///   recorded as a [`Tangency`] instead**: a tangency divides nothing, so it earns no crossing.
+///
+///   ★★★★★ **One clearance call, three records, and that is the whole rule.** `Positive` clears
+///   and writes nothing; `Negative` writes a crossing (two rulings); `Zero` writes a tangency (one
+///   grazing line). The refusal that used to stand on the third arm is gone — cell ⑤'s measurement
+///   («lifting it assembles nothing») was made with the `crossings.insert` *left in*, which put the
+///   pair on the ruling road, and three roads there spell "two distinct roots". Not recording it
+///   keeps every one of those sentences true and the arrangement unchanged: ☑ 21 cells assemble,
+///   `validate` clean, volumes exact.
 /// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3).
 ///
 /// Per cylinder pair: axes clear of each other (`dist > r₁+r₂`, whatever their orientation)
@@ -970,7 +977,15 @@ pub(crate) fn cylinder_gate(
     geom: &[WorkingPlane],
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
-) -> Result<(Vec<WorkingCyl>, std::collections::HashSet<(usize, usize)>), BoolError> {
+    n_a: usize,
+) -> Result<
+    (
+        Vec<WorkingCyl>,
+        std::collections::HashSet<(usize, usize)>,
+        Vec<Tangency>,
+    ),
+    BoolError,
+> {
     // ★ Every question below is a **sign**, and the scalar layer answers signs totally: the
     // local checked-`Rat` closures this used to carry declined on overflow, which put a width
     // limit inside `CylinderGateUndecided` and made that name say less than it claimed.
@@ -978,6 +993,7 @@ pub(crate) fn cylinder_gate(
     let undecided = || reject(RejectReason::CylinderGateUndecided);
 
     let mut crossings = std::collections::HashSet::new();
+    let mut tangencies: Vec<Tangency> = Vec::new();
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
     for &surf in cyl_surfs {
         // ★ **The world statement or nothing.** A moved cylinder's def is written before its
@@ -1040,9 +1056,12 @@ pub(crate) fn cylinder_gate(
             // ★ **Nothing downstream has to catch a degenerate seating, because this gate still
             // does** — by the two rules below rather than by a rule about seating. A seated
             // circle can only reach the counterpart's boundary through a plane parallel to the
-            // axis (which must prove clearance > r) or an oblique one (refused outright) or
-            // another cylinder's rim (the pair rule), so a tangency or a crossing is named
-            // before the arrangement ever sees it.
+            // axis (which must clear the radius, cross it, or touch it) or an oblique one (refused
+            // outright) or another cylinder's rim (the pair rule), so a tangency or a crossing is
+            // **named** before the arrangement ever sees it. ★ Named, not refused: since the
+            // tangent arm opened, a touch passes with a [`Tangency`] row and the *verdict* is
+            // `boolean::tangency_reject`'s. What the sentence guarantees is unchanged — no
+            // degenerate seating reaches the arrangement unnamed.
             if !nacre_scalar::parallel_rat(&n, &m) {
                 if nacre_scalar::dot_sign_rat(&n, &m) != Orient::Zero {
                     return Err(reject(RejectReason::ObliqueCylinderCut));
@@ -1084,18 +1103,35 @@ pub(crate) fn cylinder_gate(
                         // arithmetic (`plane_plane_cylinder`'s roots, `ruling_side`, the chart's
                         // circular order) never assumed the diameter; only the vocabulary did.
                         //
-                        // What keeps the refusal is the **tangent** wall alone (distance exactly
-                        // `r`, one clearance call, `Zero`). ★ The sentence that used to stand here
-                        // — *"lifting it assembles a volume-correct solid … validate cannot see
-                        // the contact"* — was refuted in cell ⑤: lifting it assembles **nothing**,
-                        // because a tangency is a double root and three roads downstream spell
-                        // "two distinct roots" (see [`crate::RejectReason::WallMeetsLateral`]).
-                        // The honest place to stop it is still here, where the shape is named
-                        // exactly — but what it waits on is the arrangement, not validate.
+                        // ★★ **Nothing keeps a refusal here any more, and the two sentences this
+                        // replaces are both worth remembering.** The first — *"lifting it assembles
+                        // a volume-correct solid … validate cannot see the contact"* — is **true**
+                        // (cell ⑥ measured it: `Cut` returns `Ok`, `validate` clean, no net sees
+                        // the line), which is why the answer is a judge and not a fence. The second
+                        // — cell ⑤'s *"lifting it assembles **nothing**, a tangency is a double
+                        // root and three roads spell two distinct roots"* — was measured with the
+                        // `crossings.insert` below **left in**, which put the pair on the ruling
+                        // road; not recording it never reaches those roads.
+                        //
+                        // ★★★★★ **A tangency is a graze, not a crossing** — so it passes, and it
+                        // is **not** recorded. `crossings`' proposition is "the plane runs *within*
+                        // the radius", which a tangent plane does not; the four roads behind that
+                        // record assert it, and they stay true because this pair never reaches
+                        // them. The arrangement then sees nothing here, which is right: the line
+                        // divides no cell of this plane and stations no sector of the chart.
+                        //
+                        // What the pair can still do is pinch the *result*, and that is a question
+                        // about the operation — so the geometry is stated in a row and
+                        // `boolean::tangency_reject` asks `keep` — beside `self_touch_reject`,
+                        // where the grouping can also say whether the pieces share a solid.
                         if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) == Orient::Zero {
-                            return Err(reject(RejectReason::WallMeetsLateral));
+                            tangencies.extend(tangency_rows(
+                                model, faces, plane_ix, geom, n_a, c, ci, &coeffs, &cyl.def,
+                                cyl.surf,
+                            ));
+                        } else {
+                            crossings.insert((c, ci));
                         }
-                        crossings.insert((c, ci));
                     }
                 }
             }
@@ -1126,7 +1162,7 @@ pub(crate) fn cylinder_gate(
     // The rulings road's record rides out beside the table (`PlaneSetup::crossings`): the
     // pairs the record-and-pass arm above admitted without a clearance proof. Empty for every
     // population outside the rulings road.
-    Ok((cyls, crossings))
+    Ok((cyls, crossings, tangencies))
 }
 
 /// **Does every face on plane class `c` provably miss this cylinder?** — the boundary question
@@ -1175,6 +1211,297 @@ fn wall_faces_clear(
         return Err(reject(RejectReason::CylinderGateUndecided));
     }
     Ok(true)
+}
+
+/// **A wall plane exactly `r` from a cylinder's axis, and everything a verdict needs about it.**
+///
+/// ★★★★★ **A tangency is a graze, not a crossing.** The plane meets the lateral in one line and
+/// *divides nothing*, so it earns no [`PlaneSetup::crossings`] record — that set's proposition is
+/// "the plane runs **within** the radius", and the four roads behind it assert exactly that. The
+/// arrangement therefore never sees this pair, which is why opening the gate needs no arrangement
+/// change at all (measured: 21 cells assemble, `validate` clean).
+///
+/// What such a plane can still do is **pinch the result**: near the tangent line the material
+/// splits into three regions — the lens inside the cylinder, the **two** wedges between the
+/// parabola and the plane, and the far half-space — and whether the kept ones hang together is a
+/// question only [`crate::arrangement::keep`] can answer. So this is a *record*, not a verdict:
+/// the gate states the geometry, the operation decides.
+#[derive(Clone, Debug)]
+pub(crate) struct Tangency {
+    /// The plane class the wall face lies on.
+    pub(crate) wall: usize,
+    /// The cylinder class the lateral face lies on.
+    pub(crate) cyl: usize,
+    pub(crate) wall_solid: SolidSide,
+    pub(crate) cyl_solid: SolidSide,
+    /// Is the cylinder's side of the wall plane the wall **face**'s material side? Read from that
+    /// face's own outward statement, not from the class frame — one class can carry faces of both
+    /// operands with opposite material sides.
+    pub(crate) lens_in_wall_solid: bool,
+    /// `+1` material inside the cylinder (a boss), `-1` outside (a bore) — the lateral face's own
+    /// [`CylFaceInfo::orient_sign`].
+    pub(crate) cyl_orient: i8,
+    /// **The wall face has vertices on both sides of the tangent line** — so the contact is a
+    /// *segment*, not a corner grazing it at a point. Cell ⑤ measured that a point tangency is a
+    /// valid solid, so without this the verdict would accuse a shape it cannot convict. ★ Needed
+    /// because [`nacre_scalar::cylinder_strip_side`] answers `StripSide::Inside` for `U = 0`,
+    /// which its own doc calls *"merely conservative"* on an empty strip — and a tangent plane's
+    /// strip is exactly that, so "not clear of the strip" says nothing on its own here.
+    ///
+    /// ★★ **The axis span is deliberately *not* part of this** — see [`face_straddles_line`]: it is
+    /// already guaranteed, and asking again with the open-interval reading throws away every corner
+    /// of a face flush with the cap planes (☑ measured on the frozen `bore-slab` shape).
+    pub(crate) straddles: bool,
+    /// **Another plane class holds this tangent line.** Such a plane is a *secant*: substituting
+    /// `u = c·v` into `(u+r)² + v² = r²` gives `v·(v(1+c²) + 2cr) = 0`, so it meets the cylinder in
+    /// this ruling *and* one more, runs within the radius, and is recorded as a crossing. The local
+    /// picture is then **six** regions, not three, the two wedges can take different `keep`s, and
+    /// the record below cannot speak. Abstain rather than answer. (☑ Both constructed members of
+    /// this population reach `CoincidentNodes` in the arrangement anyway — two samples are not a
+    /// population claim, so the abstention stands.)
+    pub(crate) line_in_another_plane: bool,
+    /// Nothing above could be stated exactly (a face with no rational world description, an
+    /// overflow). Same answer as `line_in_another_plane`, different cause.
+    pub(crate) undecided: bool,
+    /// The tangency point, taken at the **middle of the lateral face's own span** rather than at
+    /// the axis origin — `RejectWhere`'s doc asks for a witness that is actually there.
+    pub(crate) witness: Point3,
+}
+
+/// **How a class's rational coefficients relate to a face's stored plane** — `+1` when the two
+/// describe the same direction, `-1` when they oppose. The same reading as
+/// `arrangement::world_rat_sense`, asked of a face rather than a class root: both must be nonzero
+/// in the component compared, because `raw` is `f64` and a component it rounds to zero would hand
+/// back a sign with nothing behind it.
+fn rel_to_stored(coeffs: &[nacre_scalar::Rat; 4], plane: &Plane) -> Option<i8> {
+    let raw = plane.coefficients();
+    let zero = nacre_scalar::Rat::from_int(0);
+    let i = (0..4).find(|&i| coeffs[i] != zero && raw[i] != 0.0)?;
+    Some(if (coeffs[i] > zero) == (raw[i] > 0.0) {
+        1
+    } else {
+        -1
+    })
+}
+
+/// Sign of `n·p + d` for a rational point — the side of the plane `p` is on. `None` on overflow.
+fn plane_side_of_rat(coeffs: &[nacre_scalar::Rat; 4], p: &[nacre_scalar::Rat; 3]) -> Option<i8> {
+    let mut acc = coeffs[3];
+    for k in 0..3 {
+        acc = acc.checked_add(coeffs[k].checked_mul(p[k])?)?;
+    }
+    Some(match acc.cmp(&nacre_scalar::Rat::from_int(0)) {
+        core::cmp::Ordering::Greater => 1,
+        core::cmp::Ordering::Less => -1,
+        core::cmp::Ordering::Equal => 0,
+    })
+}
+
+/// The foot of the perpendicular from the axis origin to the plane — **rational**, because it is
+/// `o - ((n·o + d)/(n·n))·n` and nothing there leaves the field. This is the tangency line's base
+/// point; the line itself is that point plus `t·m`.
+fn tangency_foot(
+    coeffs: &[nacre_scalar::Rat; 4],
+    o: &[nacre_scalar::Rat; 3],
+) -> Option<[nacre_scalar::Rat; 3]> {
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let mut num = coeffs[3];
+    let mut den = nacre_scalar::Rat::from_int(0);
+    for k in 0..3 {
+        num = num.checked_add(n[k].checked_mul(o[k])?)?;
+        den = den.checked_add(n[k].checked_mul(n[k])?)?;
+    }
+    // `Rat` has no division: the reciprocal is the exact inverse and `Rat::new` refuses `0`,
+    // which is precisely the degenerate normal this must not divide by.
+    let q = num.checked_mul(nacre_scalar::Rat::new(den.denom(), den.numer())?)?;
+    let mut out = [nacre_scalar::Rat::from_int(0); 3];
+    for k in 0..3 {
+        out[k] = o[k].checked_sub(q.checked_mul(n[k])?)?;
+    }
+    Some(out)
+}
+
+/// **Does any *other* plane class hold this tangent line?** — the exact condition under which the
+/// three-region model above stops being complete. Two rational questions per class: the line's
+/// direction lies in the plane (`n·m = 0`), and its base point is on it.
+fn line_lies_in_another_class(
+    geom: &[WorkingPlane],
+    wall: usize,
+    base: &[nacre_scalar::Rat; 3],
+    m: &[nacre_scalar::Rat; 3],
+) -> bool {
+    for (k, wp) in geom.iter().enumerate() {
+        if k == wall {
+            continue;
+        }
+        let Some(w) = wp.world_rat else { continue };
+        if nacre_scalar::dot_sign_rat(&[w[0], w[1], w[2]], m) != nacre_scalar::Orient::Zero {
+            continue;
+        }
+        if plane_side_of_rat(&w, base) == Some(0) {
+            return true;
+        }
+    }
+    false
+}
+
+/// **The rows a tangent `(class, cylinder)` pair writes** — one per (wall face, lateral face) pair
+/// that did not clear the footprint. A face that *did* clear cannot reach the tangent line, so it
+/// contributes nothing; that is why collecting here neither widens nor narrows the rule.
+///
+/// ★★★★★ **This walk cannot fail.** [`wall_faces_clear`] short-circuits on its first non-clearing
+/// face and raises on shapes it cannot read; walking further and *propagating* those raises would
+/// change which reason a tangency wears. Every failure here becomes `undecided` on the row
+/// instead — the verdict then abstains, which is the same answer with an honest name.
+#[allow(clippy::too_many_arguments)]
+fn tangency_rows(
+    model: &Model,
+    faces: &[FaceRow],
+    plane_ix: &[ClassIx],
+    geom: &[WorkingPlane],
+    n_a: usize,
+    c: usize,
+    ci: usize,
+    coeffs: &[nacre_scalar::Rat; 4],
+    def: &nacre_topo::CylinderDef,
+    surf: Handle<Surface>,
+) -> Vec<Tangency> {
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let side_of = |i: usize| {
+        if i < n_a { SolidSide::A } else { SolidSide::B }
+    };
+    // The line's base and whether a third plane holds it — one answer for the whole pair.
+    let base = tangency_foot(coeffs, &o);
+    let line_in_another_plane = base
+        .as_ref()
+        .is_some_and(|b| line_lies_in_another_class(geom, c, b, &m));
+    // Which side of the wall plane the cylinder is on. A tangency puts the whole cylinder on one
+    // side, so this is the lens' side and it is never zero.
+    let lens_side = base.as_ref().and_then(|_| plane_side_of_rat(coeffs, &o));
+    // ★ Built **once**, not once per face — the same warning `wall_faces_clear`'s caller carries
+    // (a cut over a plate with 16 bores once built this table 16 times and read it 0).
+    let spans = lateral_spans(faces, surf);
+    // The lateral faces of this cylinder, with their own orientation and span.
+    let laterals: Vec<(usize, &CylFaceInfo)> = faces
+        .iter()
+        .enumerate()
+        .filter_map(|(i, row)| match row {
+            FaceRow::Cylinder(cf) if cf.surf == surf => Some((i, cf)),
+            _ => None,
+        })
+        .collect();
+    let mut out = Vec::new();
+    for (fi_ix, row) in faces.iter().enumerate() {
+        let (ClassIx::Plane(k), FaceRow::Plane(fi)) = (plane_ix[fi_ix], row) else {
+            continue;
+        };
+        if k != c {
+            continue;
+        }
+        let cleared = fi
+            .face
+            .map(|fh| {
+                face_clears_footprint(model, model.faces.get(fh), coeffs, &o, &m, r, &spans)
+                    .unwrap_or(false)
+            })
+            .unwrap_or(false);
+        if cleared {
+            continue; // a face that clears the footprint cannot reach the tangent line
+        }
+        // The wall face's material side, w.r.t. the class's coefficients. ★ The outward direction
+        // is `n_out = orient_sign · plane.normal()` (`FaceInfo::n_out`, "the single source of
+        // outward"), material lies opposite it, so the answer is `−orient_sign · rel` where `rel`
+        // relates the *stored* plane to the class's rational one. ★★ `world_rat` is **not** that
+        // relation — measured: the seed plane `x = 0` carries `world_rat = (1,0,0,0)` while its
+        // stored normal is `−x`. The sign that does relate them is spelled once already, in
+        // `arrangement::world_rat_sense`, and this is that spelling asked of a face.
+        let mat_side = rel_to_stored(coeffs, &fi.plane).map(|rel| -fi.orient_sign * rel);
+        // A property of the wall face and the line, not of which lateral is paired with it.
+        let straddles = fi
+            .face
+            .map(|fh| face_straddles_line(model, model.faces.get(fh), coeffs, &o, &m, r))
+            .unwrap_or(false);
+        for (cy_ix, cf) in &laterals {
+            let witness = base.as_ref().zip(cf.t_range).and_then(|(b, span)| {
+                let mid = span[0]
+                    .checked_add(span[1])?
+                    .checked_mul(nacre_scalar::Rat::new(1, 2)?)?;
+                let mut p = [0.0f64; 3];
+                for j in 0..3 {
+                    p[j] = b[j].checked_add(mid.checked_mul(m[j])?)?.to_f64();
+                }
+                Some(Point3::from_array(p))
+            });
+            let undecided = base.is_none()
+                || lens_side.is_none()
+                || mat_side.is_none()
+                || witness.is_none()
+                || cf.def.is_none();
+            out.push(Tangency {
+                wall: c,
+                cyl: ci,
+                wall_solid: side_of(fi_ix),
+                cyl_solid: side_of(*cy_ix),
+                lens_in_wall_solid: lens_side.is_some() && lens_side == mat_side,
+                cyl_orient: cf.orient_sign,
+                straddles,
+                line_in_another_plane,
+                undecided,
+                witness: witness.unwrap_or(Point3::from_array([f64::NAN; 3])),
+            });
+        }
+    }
+    // ★ A tangency of a solid with **itself** is not this operation's business: for one solid to
+    // own both the wall face and a lateral tangent to it along that line, its own material would
+    // have to be the two wedges alone or the lens and the far side alone — and both of those *are*
+    // the pinch. Such an operand is invalid before any boolean runs, so dropping the row discards
+    // no information about a valid input.
+    out.retain(|t| t.wall_solid != t.cyl_solid);
+    out
+}
+
+/// **Does the face reach across the tangent line?** — the proof that the contact is a *segment*
+/// rather than a corner grazing the line at one point (the valid tangency cell ⑤ measured).
+/// `StripSide::Plus`/`Minus` are the two sides of the zero-width strip a tangent plane cuts, and
+/// a face with a corner on each has the line running through its hull.
+///
+/// ★ **The axis overlap needs no test here** — the caller only asks this of a face that already
+/// failed [`face_clears_footprint`], and that function returns `false` exactly when the face
+/// clears *neither* axis: not across the strip **and**, for every lateral span, not wholly at or
+/// below its start nor wholly at or above its end. The second half is the overlap, already proved.
+/// Re-testing it with `axis_side` would be worse than redundant: the span is read **open**
+/// (`planes.rs`'s own note), so a face whose corners sit exactly on the cap planes — a slab cut
+/// flush with a bore's own height, the frozen `bore-slab` shape — would have every corner dropped
+/// and the straddle read as absent. ☑ Measured: that is exactly what happened.
+fn face_straddles_line(
+    model: &Model,
+    face: &Face,
+    coeffs: &[nacre_scalar::Rat; 4],
+    o: &[nacre_scalar::Rat; 3],
+    m: &[nacre_scalar::Rat; 3],
+    r: nacre_scalar::Rat,
+) -> bool {
+    use nacre_scalar::StripSide;
+    let (mut plus, mut minus) = (false, false);
+    for he in &face.outer.half_edges {
+        if !matches!(model.edge_curve(he.edge), nacre_geom::Curve::Line(_)) {
+            continue;
+        }
+        let vh = he_start(model, *he);
+        let Some((p, None)) = model.vertex_meet(vh) else {
+            continue;
+        };
+        let corner = Corner::Rational(p);
+        if !corner.on_plane(coeffs) {
+            continue;
+        }
+        match corner.strip_side(coeffs, o, m, r) {
+            StripSide::Plus => plus = true,
+            StripSide::Minus => minus = true,
+            StripSide::Inside => {}
+        }
+    }
+    plus && minus
 }
 
 /// The axis-parameter spans this cylinder's lateral faces occupy — one per face, in the scale
@@ -1532,6 +1859,12 @@ pub(crate) struct PlaneSetup {
     /// refuses that population" — the gate-opening cell arrived, and the `crossings.insert` below
     /// fills it for a wall whose plane holds the axis exactly.
     pub(crate) crossings: std::collections::HashSet<(usize, usize)>,
+    /// **The tangent `(wall face, lateral face)` pairs** — the graze twin of `crossings`, and the
+    /// reason they are two sets rather than one: a recorded *crossing* says "this plane runs within
+    /// the radius, so it cuts the lateral in two rulings", and a tangency says the opposite ("it
+    /// touches along one line and cuts nothing"). Merging them would make the record's own
+    /// proposition false and break the four `debug_assert`s that lean on it. See [`Tangency`].
+    pub(crate) tangencies: Vec<Tangency>,
     /// How this operation judges, and where its evidence goes — the two facts that belong to the
     /// operation rather than to any one plane. The caller pairs them with a table to make a
     /// [`Judge`].
@@ -1592,15 +1925,17 @@ pub(crate) fn plane_index_setup(
     // goes on to be arranged. The `CylinderBooleanNotYet` stopper that stood here from C2 to
     // C4b-2 is gone — the bands and the assembly that serve this population landed.
     if !cyl_surfs.is_empty() {
-        let (cyls, crossings) = cylinder_gate(
+        let (cyls, crossings, tangencies) = cylinder_gate(
             model,
             &cyl_surfs,
             &setup.geom,
             &setup.planes,
             &setup.plane_ix,
+            setup.n_a,
         )?;
         setup.cyls = cyls;
         setup.crossings = crossings;
+        setup.tangencies = tangencies;
     }
     Ok(setup)
 }
@@ -1656,6 +1991,7 @@ pub(crate) fn plane_index_setup_inner(
             class_owner,
             cyls: Vec::new(),
             crossings: std::collections::HashSet::new(),
+            tangencies: Vec::new(),
             standard,
             notes,
         },
@@ -2374,6 +2710,83 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
 mod tests {
     use super::*;
     use nacre_scalar::{Angle, Axis, Rat};
+
+    /// **The tangency the gate used to refuse is now *stated*** — and every field of that
+    /// statement is asserted here, because the verdict downstream is only as good as this row.
+    ///
+    /// The frozen census shape (`cylinder-wall-tangent`): a `2³` cube and a cylinder of radius
+    /// `0.5` whose axis stands at `x = 0.5`, so the wall `x = 0` is **exactly** `r` away. Hand
+    /// geometry throughout — nothing below is copied from an engine run.
+    ///
+    /// ★ Called directly rather than through the gate's ledger: a process-global read by tests
+    /// running in parallel attributes one fixture's rows to another
+    /// ([[nondeterministic-fixtures-and-instruments]]), and the row builder is a pure function of
+    /// the setup, so the honest reading is to hand it that setup.
+    #[test]
+    fn the_tangent_wall_states_itself_exactly() {
+        let mut m = Model::new();
+        let cube = m.add_cuboid(
+            Point3::from_array([0.0; 3]),
+            Point3::from_array([2.0, 2.0, 2.0]),
+        );
+        let cyl = m.add_cylinder(
+            Point3::from_array([0.5, 1.0, -1.0]),
+            nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
+            0.5,
+            4.0,
+        );
+        m.rebuild_adjacency();
+        let (setup, cyl_surfs) = plane_index_setup_inner(&m, cube, cyl).expect("setup");
+        let surf = cyl_surfs[0];
+        let def = world_cylinder_def(&m, surf).expect("a world cylinder");
+        let (o, r) = (def.origin(), def.radius());
+        // The tangent class, found the gate's own way: one clearance call per class.
+        let c = (0..setup.geom.len())
+            .find(|&k| {
+                setup.geom[k].world_rat.is_some_and(|w| {
+                    nacre_scalar::point_plane_clearance_rat(&w, &o, r) == nacre_scalar::Orient::Zero
+                })
+            })
+            .expect("the wall x = 0 is exactly r from the axis");
+        let coeffs = setup.geom[c].world_rat.expect("checked above");
+        let rows = tangency_rows(
+            &m,
+            &setup.planes,
+            &setup.plane_ix,
+            &setup.geom,
+            setup.n_a,
+            c,
+            0,
+            &coeffs,
+            &def,
+            surf,
+        );
+        assert_eq!(rows.len(), 1, "one wall face, one lateral face: {rows:?}");
+        let t = &rows[0];
+        assert_eq!((t.wall, t.cyl), (c, 0));
+        assert_eq!(
+            (t.wall_solid, t.cyl_solid),
+            (SolidSide::A, SolidSide::B),
+            "the cube is the first operand"
+        );
+        // The cube's material is `x > 0` and the whole cylinder stands there too.
+        assert!(t.lens_in_wall_solid, "{t:?}");
+        // A solid cylinder operand keeps its material inside.
+        assert_eq!(t.cyl_orient, 1, "{t:?}");
+        // The face `x = 0` runs from `y = 0` to `y = 2` across the tangent line `y = 1`, and its
+        // corners sit at `t = 1` and `t = 3` inside the lateral's span `[0, 4]`.
+        assert!(t.straddles, "{t:?}");
+        // No other plane of either operand holds the line `x = 0, y = 1` (a plane that did would
+        // have to contain `+Z` and pass through `(0, 1)`).
+        assert!(!t.line_in_another_plane, "{t:?}");
+        assert!(!t.undecided, "{t:?}");
+        // The foot of the perpendicular is `(0, 1, −1)`; the span's middle carries it to `t = 2`.
+        let w = t.witness.as_array();
+        assert!(
+            (w[0] - 0.0).abs() < 1e-12 && (w[1] - 1.0).abs() < 1e-12 && (w[2] - 1.0).abs() < 1e-12,
+            "the witness sits on the contact, mid-span: {w:?}"
+        );
+    }
 
     /// **The branch tolerance is a measurement, and each of its terms can move.**
     ///

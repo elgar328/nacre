@@ -273,7 +273,8 @@ fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
 }
 
 /// The tangent wall: the axis sits exactly `r = 0.5` from the `x = 0` wall, so the wall touches
-/// the lateral along one ruling — the one population `WallMeetsLateral` keeps (cell ③).
+/// the lateral along one line. The gate passes it (cell ⑥); this `Cut` is refused by the
+/// **verdict**, because what it leaves near the line is two wedges of one solid.
 fn cylinder_wall_tangent(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(m, [0.0; 3], [2.0; 3]);
     let cyl = m.add_cylinder(
@@ -457,14 +458,20 @@ const CORPUS: [Fixture; 13] = [
     },
     Fixture {
         name: "cylinder-wall-tangent",
-        // The axis exactly r from the wall: a zero-thickness contact along one ruling, which
-        // validate cannot see. ★ The clause that used to follow — "until capability C" — was
-        // refuted in cell ⑤: lifting the arm assembles nothing, so what this waits on is the
-        // arrangement (a tangency is a double root), not validate.
-        expect: Some(RejectReason::WallMeetsLateral),
+        // The axis exactly r from the wall: a zero-thickness contact along one line, which
+        // `validate` cannot see — measured in cell ⑥, which is why the answer is a verdict rather
+        // than a fence. ★ Two clauses stood here before and both are gone: "until capability C"
+        // (cell ⑤) and "what this waits on is the arrangement, a tangency is a double root" (cell
+        // ⑤'s ladder, measured with the crossing still recorded). The reason now comes from the
+        // assembly, where the grouping can say the two wedges are one body.
+        expect: Some(RejectReason::SelfTouchingResult),
         run: cylinder_wall_tangent,
-        raised: &[("wall_meets_lateral", None, "crates/nacre-ops/src/planes.rs")],
-        surfaced: &[("wall_meets_lateral", None)],
+        raised: &[(
+            "self_touching_result",
+            None,
+            "crates/nacre-ops/src/boolean.rs",
+        )],
+        surfaced: &[("self_touching_result", None)],
     },
     Fixture {
         name: "cylinder-oblique",
@@ -635,13 +642,15 @@ fn instrument_answers_for_itself() {
     // `#[track_caller]` on `reject()` must report the *guard's* line, not `reject`'s own. Nothing
     // else in this file would notice if that attribute were dropped, and every row of the table
     // would silently collapse onto one line in `lib.rs`.
+    // ★ The oblique cut, not the tangent wall: the tangency's reason now comes from the
+    // *assembly* (`boolean.rs`), and what this checks is that a **gate** guard names its own line.
     let mut m = Model::new();
-    let _ = cylinder_wall_tangent(&mut m);
+    let _ = cylinder_oblique(&mut m);
     let c = reject_census::take();
     let site = c
         .raised
         .iter()
-        .find(|(s, _)| s.id.reason == "wall_meets_lateral")
+        .find(|(s, _)| s.id.reason == "oblique_cylinder_cut")
         .map(|(s, _)| *s)
         .expect("the cylinder guard rang");
     assert!(

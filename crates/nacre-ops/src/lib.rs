@@ -438,14 +438,26 @@ pub enum RejectReason {
     /// proptest landed on it whenever two sampled boxes shared exactly an edge. Those are answers
     /// now, and the proptest scores them against inclusion-exclusion instead of skipping them.
     NonManifoldResultEdge,
-    /// **The result's own surface touches itself**: an edge of the assembled solid lies in the
-    /// *interior* of one of that same solid's faces. An embedded boundary cannot do that — two
-    /// pieces of it would occupy the same points — so what came back is not a solid, however
-    /// plausible its volume.
+    /// **The result's own surface touches itself**, leaving the material no thickness where it
+    /// does. An embedded boundary cannot do that — two pieces of it would occupy the same points —
+    /// so what came back is not a solid, however plausible its volume.
+    ///
+    /// ★★★★★ **Two witnesses, one proposition.** The first is planar and combinatorial: an *edge*
+    /// of the solid lies in the interior of one of that same solid's faces. The second is curved
+    /// and has no edge at all (M6-2, cell ⑥): a **lateral tangent to one of the solid's own plane
+    /// faces along a line**. Nothing splits at such a contact, so there is no edge to count and no
+    /// vertex to link — the topology sees a perfectly ordinary solid — and it is caught instead by
+    /// asking what the material near the line is: three regions (the lens inside the cylinder, the
+    /// **two** wedges beside it, the far half-space), adjacent only `L–W2` and `F–W2`, so the kept
+    /// ones fall apart exactly when `(W2 ∧ ¬L ∧ ¬F)` or `(L ∧ F ∧ ¬W2)` — and the pieces land in
+    /// one body. See `boolean::tangency_reject`. ★ The second disjunct is *not* a defect on its
+    /// own: two bodies touching along a line are two valid solids, and the kernel returns them.
     ///
     /// Distinct from [`Self::NonManifoldResultEdge`], whose proposition ("uses an edge more than
     /// twice") is **false** here: the face is not split at the contact, so every edge is still used
-    /// exactly twice and the topology count sees nothing. `Impossible` for the stronger reason —
+    /// exactly twice and the topology count sees nothing. (That sentence was written for the planar
+    /// witness and is the reason the curved one needed a rule of its own — ☑ measured: a tangent
+    /// `Cut` returns `Ok` with `validate` clean and every net silent.) `Impossible` for the stronger reason —
     /// that one is now about a single solid pinching *itself* along an edge — the day it named an
     /// output shape the kernel might allow arrived, and several solids is what two touching bodies
     /// get. Both survive because each states a different proposition about one solid's surface: an
@@ -643,31 +655,6 @@ pub enum RejectReason {
     /// concurrency — this was never an artefact of `f64` construction, which is why exact
     /// rational construction (`crate::exact`) left it exactly where it was.
     FourPlane,
-    /// A wall parallel to a cylinder's axis stands **exactly `r`** from it — tangent to the
-    /// lateral surface.
-    ///
-    /// ★★★★★ **What this doc used to claim was refuted by measurement** (cell ⑤, 2026-09-04). It
-    /// read *"lifting the refusal assembles a volume-correct solid … a zero-thickness contact
-    /// `validate` cannot see, so the gate is the honest stop — until validate reads curved
-    /// contacts (capability C)"*. Lift the arm and **nothing assembles**: over twelve cells
-    /// (a boss inside the plate, a boss outside it, a bore under a slab × Fuse/Cut/Common) the
-    /// arrangement declines every one. Filling the arms in turn walks the ladder
-    /// `chord_on_class` (a tangent cap meets the wall at one **point**, not a chord) →
-    /// `crossing_on_ruling` (a tangent gives **one** ruling, not a pair) → the cell walk's
-    /// `UnorderedEdges`, which is where the real vocabulary decision sits: `RulingCarrier::side`
-    /// is `±1` and is the identity key of five structs, but a tangency has a single ruling.
-    /// ⇒ **the tangent is B's last population, not C's** — a refusal the *arrangement* owes,
-    /// and the reason it stands here is that the gate is where the shape is named exactly.
-    ///
-    /// ★ **Only the tangent, since cell ③.** A wall within the radius (`0 ≤ d < r`) is recorded
-    /// and passed — the through-axis wall since the rulings ladder, the offset wall since cell ③
-    /// (its refusal rested on a measurement made before the region emitter; measured again,
-    /// bosses and bores build exactly, rational and irrational rulings alike) — and the tracer
-    /// decides from the faces: a recorded face that misses the lateral contributes nothing.
-    /// «Could not be shown to stand clear» is therefore no longer a reason here: a plane within
-    /// the radius whose faces did not clear the strip is a pair that may meet, and that is what
-    /// the record says.
-    WallMeetsLateral,
     /// A ring holds a vertex the arrangement names as a `plane ∩ plane ∩ cylinder` **branch
     /// point**, on a path that speaks only three-plane names — the ring walks, the wall-and-handle
     /// derivation, the seam table. The point is exactly named; what is missing is that these paths
@@ -1265,7 +1252,6 @@ impl RejectReason {
             Self::SeamAlias => "seam_alias",
             Self::ZeroLengthEdge => "zero_length_edge",
             Self::FourPlane => "fourplane",
-            Self::WallMeetsLateral => "wall_meets_lateral",
             Self::BranchVertexUnnamed => "branch_vertex_unnamed",
             Self::VertexNamesAbsentSurface => "vertex_names_absent_surface",
             Self::ObliqueCylinderCut => "oblique_cylinder_cut",
@@ -1311,7 +1297,6 @@ impl RejectReason {
             Self::TraceDeclined { .. }
             | Self::ThreePlanes
             | Self::FourPlane
-            | Self::WallMeetsLateral
             | Self::BranchVertexUnnamed
             | Self::VertexNamesAbsentSurface
             | Self::ObliqueCylinderCut

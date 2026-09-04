@@ -1304,6 +1304,132 @@ fn wrapping_rim(
         .map(|(cyl, c, _)| (cyl, c)))
 }
 
+/// **What the tangency verdict needs, carried as one parameter** — the operation (the only thing
+/// that decides `keep`) and the rows the gate stated. Empty for every boolean without a tangent
+/// wall, which is almost all of them.
+#[derive(Clone, Copy)]
+pub(crate) struct Tangencies<'a> {
+    pub(crate) kind: BoolKind,
+    pub(crate) rows: &'a [crate::planes::Tangency],
+}
+
+impl Tangencies<'_> {
+    /// For the roads that assemble without a gate run (the band-road fixtures). ★ The `kind` here
+    /// is a placeholder, not a choice: with no rows the verdict returns before reading it, which is
+    /// why naming an operation at this one site is not the casework the rule forbids.
+    #[cfg(test)]
+    pub(crate) fn none() -> Self {
+        Self {
+            kind: BoolKind::Fuse,
+            rows: &[],
+        }
+    }
+}
+
+/// **A tangency pinches the result when the material it leaves is two lumps that meet only along
+/// the line — and both lumps end up in one solid.**
+///
+/// ★★★★★ **The operation enters here and only here, through [`crate::arrangement::keep`].** Near
+/// the tangent line the material is three regions — the lens inside the cylinder, the **two**
+/// wedges between the parabola and the plane, and the far half-space — and the adjacencies are
+/// `L–W2` and `F–W2` only: `L` and `F` meet along the line itself and nowhere else, because at
+/// `v = 0` the wedges are *inside* the cylinder. So the kept regions fall apart exactly when
+///
+/// ```text
+/// (W2 ∧ ¬L ∧ ¬F)   the two wedges cannot reach each other
+/// (L ∧ F ∧ ¬W2)    the lens and the far side meet only on the line
+/// ```
+///
+/// Each region's `(in_A, in_B)` is local: the wall **face**'s material side and the lateral
+/// **face**'s `orient_sign`, nothing else — which is why this is exact without touching the
+/// arrangement. (It is exact only where no *other* plane holds the tangent line; such a plane is a
+/// secant, so the picture there is six regions, and [`crate::planes::Tangency`] refuses to speak.)
+///
+/// ★★ **Two lumps is not yet a defect** — and that was measured, not assumed. A boss tangent to a
+/// wall *from outside* leaves `L ∧ F ∧ ¬W2`, and the honest answer is **two solids touching along
+/// a line**, which the engine already produces (`Ok(2)`, `validate` clean, and it meshes). What
+/// makes it a defect is the two lumps landing in **one** body, and that question is the grouping's,
+/// not the geometry's: the tangency's wall class and cylinder class in one solid. The first case
+/// above always answers yes (both wedges are bounded by the same wall face *and* the same lateral,
+/// neither of which the tangency splits), and the second is where the grouping earns its keep — a
+/// boss standing in a notch, tangent to the notch's wall and overlapping the block beside it, comes
+/// back as one solid whose boundary touches itself, and nothing else in the kernel sees it.
+/// **Does the material near a tangent line fall into more than one piece?** — the three regions
+/// and their two adjacencies, asked through [`crate::arrangement::keep`] and nothing else.
+///
+/// `lens_in_wall_solid` says whether the cylinder's side of the wall plane is the wall **face**'s
+/// material side; `cyl_orient` is `+1` for a boss (material inside) and `-1` for a bore. Those two
+/// bits fix all six memberships, because near the line the only boundaries are those two surfaces.
+pub(crate) fn lumps_fall_apart(
+    kind: BoolKind,
+    wall_solid: crate::planes::SolidSide,
+    lens_in_wall_solid: bool,
+    cyl_orient: i8,
+) -> bool {
+    use crate::planes::SolidSide;
+    let region = |in_lens_side: bool, inside_cyl: bool| {
+        let w = in_lens_side == lens_in_wall_solid; // in the wall face's solid
+        let c = inside_cyl == (cyl_orient > 0); // in the lateral face's solid
+        match wall_solid {
+            SolidSide::A => crate::arrangement::keep(kind, w, c),
+            SolidSide::B => crate::arrangement::keep(kind, c, w),
+        }
+    };
+    let (l, w2, f) = (
+        region(true, true),
+        region(true, false),
+        region(false, false),
+    );
+    (w2 && !l && !f) || (l && f && !w2)
+}
+
+fn tangency_reject(
+    tg: &Tangencies<'_>,
+    faces: &[LocalFace],
+    g: &Grouping,
+) -> Result<(), BoolError> {
+    use crate::planes::ClassIx;
+    if tg.rows.is_empty() {
+        return Ok(());
+    }
+    // The classes each *solid* carries — a solid is a material component plus its cavities.
+    let bodies: Vec<Vec<crate::planes::ClassIx>> = g
+        .positives
+        .iter()
+        .map(|m| {
+            let comps = &g.comps_of[m];
+            faces
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| comps.contains(&g.labels[*i]))
+                .map(|(_, lf)| lf.surf)
+                .collect()
+        })
+        .collect();
+    for t in tg.rows {
+        if t.line_in_another_plane || t.undecided {
+            return Err(reject(RejectReason::CylinderGateUndecided));
+        }
+        // Two lumps, and the contact is a *segment* — a corner grazing the line at a point is the
+        // valid tangency cell ⑤ measured, and this must not convict it.
+        if !lumps_fall_apart(tg.kind, t.wall_solid, t.lens_in_wall_solid, t.cyl_orient)
+            || !t.straddles
+        {
+            continue;
+        }
+        let together = bodies
+            .iter()
+            .any(|cls| cls.contains(&ClassIx::Plane(t.wall)) && cls.contains(&ClassIx::Cyl(t.cyl)));
+        if together {
+            return Err(crate::reject_at(
+                RejectReason::SelfTouchingResult,
+                crate::RejectWhere::Point(t.witness),
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Push the reconstructed result and supersede the inputs.
 ///
 /// ★ **The operands retire in exactly one place, and it is after the result is accepted.** The
@@ -1322,8 +1448,9 @@ pub(crate) fn assemble_fuse_cut(
     cyls: &[crate::planes::WorkingCyl],
     cut_rims: &crate::arrangement::CutRims,
     deferred: Option<BoolError>,
+    tangencies: Tangencies<'_>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
-    let out = reconstruct(model, jd, seam, faces, cyls, cut_rims, deferred)?;
+    let out = reconstruct(model, jd, seam, faces, cyls, cut_rims, deferred, tangencies)?;
     model.live_solids.retain(|&s| s != a && s != b);
     Ok(out)
 }
@@ -1820,6 +1947,7 @@ pub(crate) fn name_result_vertices(
 
 /// Rebuild the result solids from the arrangement's faces. Pushes into the arena; it does not take
 /// the operands at all, which is the point — the live set is its caller's to move.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn reconstruct(
     model: &mut Model,
     jd: &Judge<'_, WorkingPlane>,
@@ -1828,6 +1956,7 @@ pub(crate) fn reconstruct(
     cyls: &[crate::planes::WorkingCyl],
     cut_rims: &crate::arrangement::CutRims,
     deferred: Option<BoolError>,
+    tangencies: Tangencies<'_>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     let planes = jd.planes;
     // No faces means no result — `Common` of two solids that miss each other, `Cut` of a box that
@@ -1850,6 +1979,13 @@ pub(crate) fn reconstruct(
         Err(e) => return Err(deferred.unwrap_or(e)),
     };
     let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
+    // ★ **The tangency verdict stands beside the self-touch sieve, and for the same reason** —
+    // both are whole-result judgements that need the grouping and must speak *before* a handle is
+    // minted, so a refusal leaves the arena as it found it. A held grouping error stays held: the
+    // question "do these two lumps share a solid" is only askable of a grouping that answered.
+    if let Ok(g) = &grouping {
+        tangency_reject(&tangencies, faces, g)?;
+    }
 
     // Vertices (deterministic: first appearance across faces in order).
     let mut vh: HashMap<(usize, NodeId), Handle<Vertex>> = HashMap::new();

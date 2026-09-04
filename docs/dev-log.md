@@ -16815,3 +16815,61 @@ A 술어(`Bound::Circle`은 노드를 안 내놓는다 ⇒ 「조각 × 조각�
 - ★★★ **design.md만 고치고 코드 doc은 안 훑었다.** 이 칸이 실측으로 반증한 문장(«들어올리면 부피 정확한 solid가 조립된다 … 막는 것은 C다»)이 네 자리에 그대로 살아 있었다: `RejectReason::WallMeetsLateral`의 doc · `cylinder_gate`의 doc(«the tangency, capability C's») · 게이트 팔의 인라인 주석 · `reject_census`의 얼린 행(«until capability C»). 넷 다 «접선은 **B의 마지막 인구**이고 배열이 막는다»로, 무엇이 반증됐는지와 사다리를 함께 적어 고쳤다. **교훈: 문서의 주장을 반증했으면 그 주장의 «문장»으로 소스를 훑는다** — 이름(`WallMeetsLateral`)이 아니라 문장(«assembles a volume-correct solid»)이 열쇠였다.
 - ☑ 확인: 임시 스크립트 잔재 0(`RUNG*-PROBE`·`NEGCTRL`·`zz_probe`) · 문서의 수가 측정과 일치(32.785398 / 3906.628331, 면 수 8·12, 쌍둥이 동일) · `cargo doc` 깨진 링크 0 · 새로 적은 두 주장을 직접 검증(`nacre-kit`은 tess 참조 0; `tessellate`는 모든 면을 돌며 첫 실패에서 `?`) · 관문 전량 초록, census sha 무변(`63c18592`).
 - ☑ dev-log의 옛 칸에 남은 «접선 = 능력 C»는 **그 시점의 기록**이라 두었다 — 진실은 design.md와 소스 doc이고 둘 다 정정했다.
+
+---
+
+## 칸 ⑥ — 접선은 «가르지 않는다»: 게이트는 기록을 멈추고, 판정은 `keep`이 한다 (2026-09-04)
+
+사용자가 스크립트 하나를 들고 왔다: `cuboid()` + `cylinder({r: 0.2, h: 2, center: [0.3,0,0]})`. 축에서 벽까지가 정확히 `0.5 − 0.3 = 0.2 = r`이라 `WallMeetsLateral`로 거절된다. **접선은 희귀한 퇴화 입력이 아니다** — 딱 떨어지는 치수를 쓰면 자연히 나온다. 그리고 사용자의 관찰이 이 칸의 명제가 됐다: *「fuse는 접촉선이 결과에 안 나타나고, common은 그냥 원통 조각이고, cut은 자기 접촉이라 정직한 오류가 맞다 — 이걸 비스포크가 아니라 일반 규칙 단일 엔진으로」*.
+
+### 계획이 **네 번** 반증됐다 (전부 코드가, 실측이나 검토로)
+| 초안 | 무엇이 틀렸나 |
+|---|---|
+| ① 접선이면 룰링 **1개**, `side = 0` | `plus_theta_is_above`가 `-(κ·side) == 1`을 세므로 `side = 0`은 **조용한 `Some(false)`**; `merge_rulings`의 키도 `(cyl, side, end)` |
+| ② 룰링을 만들고 `drop_newsless`가 떤다 | **만들 이유가 없다.** 마스크가 `[false;4]`인 간선은 애초에 배열의 원소가 아니다 |
+| ③ 차트의 증인 θ가 접점에 놓일 수 있다 | **그런 기계가 없다.** 차트 셀은 점 질의가 아니라 **양 끝 ⊥ z-선의 라벨**로 읽는다(`read_cell`의 doc) |
+| ④ 국소 영역은 셋, 두 비트가 정한다 | 접선을 품는 **셋째 평면**이 있으면 여섯이다(`v(v(1+c²)+2cr) = 0`) — 검토가 반례 둘로 반증 |
+
+### 뿌리는 게이트 한 줄이었다
+엔진은 «a tangent line touches **without separating**»를 **여섯 자리**에 이미 옳게 적어 두었다: `lateral_crossings`의 `Tangent` 팔 · `circle_crossings`의 `Double` + `split_circles`의 skip · 광선 캐스팅 둘 · branch 정점 실현 둘. 그와 다른 말을 하는 자리는 `planes.rs`의 거절 **하나**뿐. ⇒ `point_plane_clearance_rat` 한 호출의 삼분법이 그대로 세 기록이다: `Positive` 무기록 · `Negative` → `crossings` · `Zero` → **`tangencies`**.
+
+★★★★★ **접선을 `crossings`에 안 넣는 것이 핵심.** 그 집합의 명제는 «평면이 반지름 **안**»이고 네 `debug_assert`가 그것을 든다. 안 넣으면 전부 그대로 참이고 **배열이 한 줄도 안 바뀐다**. 칸 ⑤의 «들어올리면 아무것도 조립 안 된다»는 `crossings.insert`를 **남긴 채** 잰 사다리였다 — 반증의 반증.
+
+### 단계 0 실측 (임시 편집, 전부 되돌림)
+게이트의 `Zero` 팔만 «기록 없이 통과»로 바꿔 21칸을 쟀다: **전부 조립, `validate` 전부 clean, 패닉 0**. 부피는 유도값과 정확히 일치(사용자의 Fuse `1 + 0.06π`, Common `0.02π`).
+- **Cut은 조용히 유효한 자기 접촉 솔리드를 낸다** — `Ok` + validate clean, 오늘의 그물 전부 침묵. ⇒ 판정은 선택이 아니라 필수. ★ `bands.rs`의 옛 문장(«assembles a volume-correct zero-thickness pinch `validate` cannot see» — 칸 ⑤이 네 자리를 고치며 **놓친 다섯째 자리**)이 이 경로에서는 **참**이었다.
+- 메시: 21칸 중 **7칸**이 `SelfTouchingBoundary`, 사용자의 Fuse가 그중 하나.
+- 1a의 «census 무변»은 `git worktree`로 HEAD를 따로 빌드해 확인(287행·sha `63c185928fbc` 양쪽 동일). 그래서 1a를 별도 커밋으로 안 남겼다 — 그 커밋의 유일한 효과가 «값을 만들고 버린다»가 된다.
+
+### ★★★★★ 실측이 규칙을 두 번 고쳤다
+1. **둘째 항은 그 자체로 결함이 아니다.** 바깥 접선의 Fuse(`L ∧ F ∧ ¬W2`)를 규칙은 pinch라 했지만 실제로는 **`Ok(2)` — 유효한 솔리드 둘**, validate clean, **메시까지 된다**. 선으로 닿는 두 **몸통**은 둘로 내보내는 것이 옳다. ⇒ 「두 덩이는 언제나 면을 공유한다」는 논증은 **첫째 항에만** 맞았다.
+2. **그런데 그 둘이 다른 데서 이어지면 진짜 pinch다.** 만들어 봤다 — 노치 벽에 접하면서 `y`로 블록과 겹치는 보스 — 그리고 `Ok(1)`·validate clean·**mesh ok**로 조용히 나왔다. ⇒ 판정은 «두 덩이 **∧** 벽 클래스와 원통 클래스가 **한 출력 솔리드**에». 첫째 항은 그 성분 조건이 항상 참(두 쐐기가 같은 두 면을 경계로 쓴다), 둘째 항이 진짜 물음이다.
+
+그래서 판사의 자리가 boolean 입구가 아니라 **`reconstruct`**(민팅 전, grouping이 손에 있는 곳, `self_touch_reject` 바로 옆)다. 배관은 인자 **하나**(`Tangencies { kind, rows }`)를 `assemble_fuse_cut`(호출자 1)·`reconstruct`(호출자 2)에 — `name_result_vertices`는 안 건드린다.
+
+### 「점이냐 선이냐」에서 한 번 더 빗나갔다
+접촉이 **선**임을 증명하려고 «벽 면의 코너가 스트립 양쪽 ∧ 옆면 span 안»을 요구했더니, 얼린 `bore-slab`(슬랩이 보어와 **같은 높이**로 잘린다)은 네 코너가 전부 span의 **끝**에 놓이고 span이 **열린** 구간이라 전부 버려져 거절이 안 났다. 축 겹침은 「못 비켰다」가 **이미** 보장한다(`face_clears_footprint`가 `false` = across도 along도 아님) ⇒ 스트립 양쪽만 본다.
+
+### 부호 하나를 `world_rat`에서 찾다가 못 찾았다
+«벽 면의 재료 쪽»을 `world_rat`과 `orient_sign`으로 유도했는데 틀렸다. 실측: 씨앗 평면 `x = 0`은 `world_rat = (1,0,0,0)`인데 **저장된 평면의 법선은 `−x`**다. 그 관계를 세는 철자는 이미 있었다 — `arrangement::world_rat_sense` — 그것을 «클래스가 아니라 면에게» 물으면 된다(`rel_to_stored`).
+
+### 결과
+| 연산 | 오늘 | 이 칸 뒤 |
+|---|---|---|
+| `fuse` | `Rejected` | **`Ok`, `1 + 0.06π`, validate 0** |
+| `common` | `Rejected` | **`Ok`, `0.02π`** |
+| `cut` | `WallMeetsLateral` | **`SelfTouchingResult`** (정확한 이름) |
+
+`WallMeetsLateral`은 생산자가 없어져 **삭제**했다. 이유는 새 이름이 아니라 `SelfTouchingResult` — 그 doc이 이제 증인 **둘**(간선 하나, 선 접선 하나)을 든다. **OCCT 대조**: 부피 `1.1885`·면적 `7.88496`·**면 수 8**까지 일치, 관통 쌍둥이(`0.35`)는 9면·다른 부피(판별력 있는 대조 — `0.29`짜리 «비껴간» 쌍둥이는 부피가 같아 아무것도 안 잰다).
+
+### 스위트에서 움직인 것은 예측한 잠금 셋뿐
+`the_gate_still_refuses_what_the_road_does_not_serve`(접선 행이 빌드로 → 이름도 `one_chord_formula_covers_the_offset_wall_and_its_tangent_limit`, 부피는 옆 행의 식을 `d = r`로 이은 `32000 + 750π`) · `a_wall_face_tangent_to_the_bore_is_refused`(거절 그대로, 이유가 `SelfTouchingResult` → `..._pinches_under_cut`) · `reject_census`의 얼린 행. 그 밖 **0**.
+
+census도 같은 말을 한다: HEAD(287행 `63c18592`) 대비 **바뀐 줄이 6줄 = `rul tangent` 세 행**뿐(`fuse`·`common`이 `WallMeetsLateral`에서 빌드로, `cut`이 `SelfTouchingResult`로), 새 sha `8a2f42a3`, 두 프로파일 동일. ★ 그 `cut` 행의 증인이 `Point([40, 20, 15])`인데 판 40×40×20에 축 `(35,20,−10)`·`r=5`이므로 접선은 `x=40, y=20`이고 `z=15`는 옆면 span의 **정중앙**이다 — 증인을 축 원점이 아니라 span 중점으로 옮긴 수정이 그대로 보인다.
+
+### 관문
+전량 초록: fmt · clippy · workspace · `--no-default-features`(353) · census 두 프로파일 **동일**(287행, sha `63c18592` → `8a2f42a3`, 바뀐 줄 6 = 접선 세 행) · reject_census · `--ignored` 스윕 실패 **0**(칸 ④의 모션-군 오라클 포함) · perf release 2/2(부울 수치는 기준선 대역; `check 5000` 177초는 머신이 다른 앱에 점유돼 비교 불가 — 관문 문서가 그 둘을 «시간을 단언하지 않는 커버리지»라 적는 이유) · kit 3단계 · 앱 4단계.
+**reject-trace A/B**(`rt_c6s0`, 임시 편집 **전에** 뜸): 줄 번호를 뺀 «(사유, 파일)» 집합에서 바뀐 것은 **`wall_meets_lateral`이 사라진 것 하나뿐**. `self_touching_result`는 `boolean.rs`에 이미 있었고 자리가 둘로 늘었을 뿐(9회 → 13회 — 횟수는 안정한 값이 아니라 집합이 잠금이다), `oblique_cylinder_cut` 2 → 3은 계기 테스트가 접선 픽스처 대신 이 사유를 쓰게 바꾼 몫이다.
+
+### 남기는 항목
+**① 메시의 SoS** — 이 칸이 그 인구를 키웠고, 사용자의 스크립트가 커널에선 되지만 **화면엔 안 나온다**. 다음 칸. **②** 접선을 품는 **셋째 평면**(국소 영역이 여섯) — 규칙이 안 서므로 기권한다; 구성한 두 경우는 배열이 `CoincidentNodes`로 먼저 거절한다. **③** 접촉이 증명 안 된 경우(`straddles == false`)는 `CylinderGateUndecided`.

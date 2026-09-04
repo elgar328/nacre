@@ -21,8 +21,8 @@
 //! | plane vs axis | distance | on the lateral | ☑ suite |
 //! |---|---|---|---|
 //! | `n ∥ m` | — | a **circle** — the chart's *horizontal* | 1128 |
-//! | `n ⊥ m` | `d = 0` | **two rulings** — the chart's *vertical* | 75 |
-//! | `n ⊥ m` | `0 < d ≤ r` | refused, `WallMeetsLateral` (capability B) | 7 |
+//! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 75 |
+//! | `n ⊥ m` | `d = r` | **nothing** — a tangency grazes and divides nothing | — |
 //! | `n ⊥ m` | `d > r` | nothing | 1494 |
 //! | oblique | — | refused, `ObliqueCylinderCut` (M6-3) | 2 |
 //!
@@ -30,10 +30,12 @@
 //! a ruling exists over a finite axis interval and a cut circle is arcs, so the cells are what
 //! rectilinear *segments* cut out — which is why building them is its own rung.
 //!
-//! ★ The gate is the reason, so the day the gate changes this does too. Capability B opening
-//! `0 < d ≤ r` adds vertical lines at **irrational** θ — and the chart never reads a θ *value*,
-//! only an order, so nothing here would break. That is plausible and **unmeasured**; it is not
-//! a reason this module leans on.
+//! ★ The gate is the reason, so the day the gate changed this did too — twice, and the counts
+//! above are from before both. Cell ③ opened the **offset** wall (`0 < d < r`), which adds
+//! vertical lines at *irrational* θ; the chart never reads a θ **value**, only an order, so
+//! nothing broke — as predicted, and now measured. Cell ⑥ opened the **tangent** wall (`d = r`),
+//! and that one adds nothing at all: a grazing line stations no sector, so the gate records no
+//! crossing and this table's third row is «nothing», not «one vertical».
 //!
 //! ## What is here, and what is not
 //!

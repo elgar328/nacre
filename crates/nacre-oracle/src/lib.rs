@@ -583,6 +583,56 @@ centroid 1 1.5 2
         }
     }
 
+    /// ★★★★★ **The tangent *wall* — the user's own script, scored against OCCT** (cell ⑥). A unit
+    /// cube and a stud whose axis stands `0.3` from the origin with `r = 0.2`, so the wall
+    /// `x = 0.5` is exactly `r` away. The kernel used to refuse this outright; it now fuses, and
+    /// the question this asks is the same one cell ⑤ asked of a point tangency: **does a second
+    /// kernel agree the shape is a body?**
+    ///
+    /// ★ The twin (`0.35`, the stud pushed **through** the wall) is the control, and it is chosen
+    /// so the two volumes actually differ: a twin that merely clears the wall keeps the same
+    /// overlap and the same union, which would make "the volumes agree" a statement about
+    /// arithmetic that never moved. Face counts are recorded, never asserted — OCCT splits
+    /// periodic surfaces at its own seams.
+    #[test]
+    #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
+    fn the_tangent_wall_fuses_to_a_body_occt_agrees_with() {
+        let build = |ax: f64| -> (Model, Handle<Solid>, Handle<Solid>) {
+            let mut m = Model::new();
+            let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+            let stud = m.add_cylinder(
+                Point3::from_array([ax, 0.0, 0.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.2,
+                2.0,
+            );
+            m.rebuild_adjacency();
+            (m, cube, stud)
+        };
+        // `0.3` is the tangency (`0.3 + 0.2 = 0.5`); `0.35` pushes the stud through the wall.
+        for (what, ax) in [("tangent", 0.3), ("twin", 0.35)] {
+            let (mut m, a, b) = build(ax);
+            let occt = occt_boolean_of(&m, OcctBool::Fuse, a, b).expect("occt fuses");
+            let s = boolean_one(&mut m, BoolKind::Fuse, a, b).expect("nacre fuses");
+            let ours = mass_props(&m, s).unwrap();
+            eprintln!(
+                "TANOCCT wall-{what}: volume nacre {} occt {} | area nacre {} occt {} | faces nacre {} occt {}",
+                ours.volume,
+                occt.volume,
+                ours.area,
+                occt.area,
+                face_count(&m, s),
+                occt.faces
+            );
+            assert!(
+                approx(ours.volume, occt.volume),
+                "{what}: volume nacre {} vs occt {}",
+                ours.volume,
+                occt.volume
+            );
+        }
+    }
+
     /// The second tangency fixture — a turned boss whose base circle touches the plate's top
     /// edge at one point. Same question, same discipline as the test above.
     #[test]

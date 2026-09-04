@@ -743,9 +743,9 @@ fn dump() {
         }
         // ── **The rulings road** (cell 4, the gate's record-and-pass arm): a boss whose axis
         // lies exactly on the plate's wall plane builds (through, the corner's two walls, an
-        // asymmetric station); the arm's deliberate exclusions record their refusals — offset
-        // (`0 < d < r`) and tangent (`d = r`) keep `WallMeetsLateral` at the gate, the
-        // half-height and flush-cap variants walk to the ladder's own refusals.
+        // asymmetric station); the arm's deliberate exclusions are gone — offset (`0 < d < r`,
+        // cell ③) and tangent (`d = r`, cell ⑥) both pass the gate now, and the tangent row's
+        // three kinds are where the *verdict* answers (`Fuse` builds, `Cut` pinches).
         for (pn, base, h) in [
             ("through", [40.0, 20.0, -10.0], 50.0),
             ("corner", [40.0, 40.0, -10.0], 50.0),
