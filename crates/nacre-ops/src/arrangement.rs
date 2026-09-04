@@ -4095,8 +4095,9 @@ fn split_circles(
                 // `UnorderedEdges` this skip's lifting once reached is the **rulings** vocabulary
                 // (`side` ±1), which the tangent wall never enters because the gate records no
                 // crossing for it; and this arm is not gated on `crossings`, so ⊥ classes behave
-                // exactly as they always did once the gate opens. ☑ 21 cells assemble with it in
-                // place.
+                // exactly as they always did once the gate opens. ☑ 15 of 21 measured cells
+                // assemble with it in place (the other 6 hold a third plane on the tangent line
+                // and are refused earlier, by `CoincidentNodes`).
                 if matches!(
                     combinatorics::branch_name(n),
                     Some((_, _, nacre_topo::QuadRoot::Double))

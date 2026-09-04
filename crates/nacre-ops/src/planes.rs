@@ -963,8 +963,10 @@ pub(crate) struct WorkingCyl {
 ///   grazing line). The refusal that used to stand on the third arm is gone — cell ⑤'s measurement
 ///   («lifting it assembles nothing») was made with the `crossings.insert` *left in*, which put the
 ///   pair on the ruling road, and three roads there spell "two distinct roots". Not recording it
-///   keeps every one of those sentences true and the arrangement unchanged: ☑ 21 cells assemble,
-///   `validate` clean, volumes exact.
+///   keeps every one of those sentences true and the arrangement unchanged: ☑ of 21 measured
+///   cells **15 assemble**, `validate` clean and volumes exact; the other 6 are the third-plane
+///   population [`Tangency::line_in_another_plane`] names, which the arrangement refuses on its
+///   own (`CoincidentNodes`).
 /// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3).
 ///
 /// Per cylinder pair: axes clear of each other (`dist > r₁+r₂`, whatever their orientation)
@@ -1115,9 +1117,10 @@ pub(crate) fn cylinder_gate(
                         //
                         // ★★★★★ **A tangency is a graze, not a crossing** — so it passes, and it
                         // is **not** recorded. `crossings`' proposition is "the plane runs *within*
-                        // the radius", which a tangent plane does not; the four roads behind that
-                        // record assert it, and they stay true because this pair never reaches
-                        // them. The arrangement then sees nothing here, which is right: the line
+                        // the radius", which a tangent plane does not; the three roads gated on
+                        // that record assert it in a `debug_assert` (`arrangement.rs`' circular-
+                        // hole arm, `chord_on_class`, `rulings_on_class`), and all three stay true
+                        // because this pair never reaches them. The arrangement then sees nothing here, which is right: the line
                         // divides no cell of this plane and stations no sector of the chart.
                         //
                         // What the pair can still do is pinch the *result*, and that is a question
@@ -1217,9 +1220,11 @@ fn wall_faces_clear(
 ///
 /// ★★★★★ **A tangency is a graze, not a crossing.** The plane meets the lateral in one line and
 /// *divides nothing*, so it earns no [`PlaneSetup::crossings`] record — that set's proposition is
-/// "the plane runs **within** the radius", and the four roads behind it assert exactly that. The
+/// "the plane runs **within** the radius", and the three roads gated on it assert exactly that
+/// (☑ `crossings.contains` has three readers, each with the matching `debug_assert`). The
 /// arrangement therefore never sees this pair, which is why opening the gate needs no arrangement
-/// change at all (measured: 21 cells assemble, `validate` clean).
+/// change at all (measured: of 21 cells, the 15 outside the third-plane population assemble with
+/// `validate` clean and exact volumes).
 ///
 /// What such a plane can still do is **pinch the result**: near the tangent line the material
 /// splits into three regions — the lens inside the cylinder, the **two** wedges between the
@@ -1375,9 +1380,16 @@ fn tangency_rows(
     let line_in_another_plane = base
         .as_ref()
         .is_some_and(|b| line_lies_in_another_class(geom, c, b, &m));
-    // Which side of the wall plane the cylinder is on. A tangency puts the whole cylinder on one
-    // side, so this is the lens' side and it is never zero.
-    let lens_side = base.as_ref().and_then(|_| plane_side_of_rat(coeffs, &o));
+    // Which side of the wall plane the cylinder is on — the lens' side. ★ A tangency puts the
+    // whole cylinder on one side, and `0` would mean the axis lies *in* the plane, which needs
+    // `r = 0`; `CylinderDef` refuses that at construction (`NonPositiveRadius`, "positive by
+    // construction"). Filtered anyway rather than assumed: a `Some(0)` here would compare unequal
+    // to every material side and hand the verdict a silent `false`, and this file's own rule is
+    // that an answer it cannot state becomes `undecided`, never a default.
+    let lens_side = base
+        .as_ref()
+        .and_then(|_| plane_side_of_rat(coeffs, &o))
+        .filter(|&s| s != 0);
     // ★ Built **once**, not once per face — the same warning `wall_faces_clear`'s caller carries
     // (a cut over a plate with 16 bores once built this table 16 times and read it 0).
     let spans = lateral_spans(faces, surf);

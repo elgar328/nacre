@@ -16833,12 +16833,12 @@ A 술어(`Bound::Circle`은 노드를 안 내놓는다 ⇒ 「조각 × 조각�
 ### 뿌리는 게이트 한 줄이었다
 엔진은 «a tangent line touches **without separating**»를 **여섯 자리**에 이미 옳게 적어 두었다: `lateral_crossings`의 `Tangent` 팔 · `circle_crossings`의 `Double` + `split_circles`의 skip · 광선 캐스팅 둘 · branch 정점 실현 둘. 그와 다른 말을 하는 자리는 `planes.rs`의 거절 **하나**뿐. ⇒ `point_plane_clearance_rat` 한 호출의 삼분법이 그대로 세 기록이다: `Positive` 무기록 · `Negative` → `crossings` · `Zero` → **`tangencies`**.
 
-★★★★★ **접선을 `crossings`에 안 넣는 것이 핵심.** 그 집합의 명제는 «평면이 반지름 **안**»이고 네 `debug_assert`가 그것을 든다. 안 넣으면 전부 그대로 참이고 **배열이 한 줄도 안 바뀐다**. 칸 ⑤의 «들어올리면 아무것도 조립 안 된다»는 `crossings.insert`를 **남긴 채** 잰 사다리였다 — 반증의 반증.
+★★★★★ **접선을 `crossings`에 안 넣는 것이 핵심.** 그 집합의 명제는 «평면이 반지름 **안**»이고 **세** `debug_assert`가 그것을 든다(`crossings.contains`의 독자가 셋 — 스캔의 구멍-원 팔·`chord_on_class`·`rulings_on_class` — 이고 각자 하나씩 든다; ☑ grep으로 셌다). 안 넣으면 전부 그대로 참이고 **배열이 한 줄도 안 바뀐다**. 칸 ⑤의 «들어올리면 아무것도 조립 안 된다»는 `crossings.insert`를 **남긴 채** 잰 사다리였다 — 반증의 반증.
 
 ### 단계 0 실측 (임시 편집, 전부 되돌림)
-게이트의 `Zero` 팔만 «기록 없이 통과»로 바꿔 21칸을 쟀다: **전부 조립, `validate` 전부 clean, 패닉 0**. 부피는 유도값과 정확히 일치(사용자의 Fuse `1 + 0.06π`, Common `0.02π`).
+게이트의 `Zero` 팔만 «기록 없이 통과»로 바꿔 21칸을 쟀다: **15칸 조립**(`validate` 전부 clean, 패닉 0, 부피는 유도값과 정확히 일치 — 사용자의 Fuse `1 + 0.06π`, Common `0.02π`), 나머지 **6칸은 거절**(반례 A·B의 세 연산씩 — 접선을 품는 셋째 평면이 있는 인구를 배열이 `CoincidentNodes`로 먼저 막는다).
 - **Cut은 조용히 유효한 자기 접촉 솔리드를 낸다** — `Ok` + validate clean, 오늘의 그물 전부 침묵. ⇒ 판정은 선택이 아니라 필수. ★ `bands.rs`의 옛 문장(«assembles a volume-correct zero-thickness pinch `validate` cannot see» — 칸 ⑤이 네 자리를 고치며 **놓친 다섯째 자리**)이 이 경로에서는 **참**이었다.
-- 메시: 21칸 중 **7칸**이 `SelfTouchingBoundary`, 사용자의 Fuse가 그중 하나.
+- 메시: 조립된 **15칸 중 7칸**이 `SelfTouchingBoundary`, 사용자의 Fuse가 그중 하나.
 - 1a의 «census 무변»은 `git worktree`로 HEAD를 따로 빌드해 확인(287행·sha `63c185928fbc` 양쪽 동일). 그래서 1a를 별도 커밋으로 안 남겼다 — 그 커밋의 유일한 효과가 «값을 만들고 버린다»가 된다.
 
 ### ★★★★★ 실측이 규칙을 두 번 고쳤다
@@ -16870,6 +16870,9 @@ census도 같은 말을 한다: HEAD(287행 `63c18592`) 대비 **바뀐 줄이 6
 ### 관문
 전량 초록: fmt · clippy · workspace · `--no-default-features`(353) · census 두 프로파일 **동일**(287행, sha `63c18592` → `8a2f42a3`, 바뀐 줄 6 = 접선 세 행) · reject_census · `--ignored` 스윕 실패 **0**(칸 ④의 모션-군 오라클 포함) · perf release 2/2(부울 수치는 기준선 대역; `check 5000` 177초는 머신이 다른 앱에 점유돼 비교 불가 — 관문 문서가 그 둘을 «시간을 단언하지 않는 커버리지»라 적는 이유) · kit 3단계 · 앱 4단계.
 **reject-trace A/B**(`rt_c6s0`, 임시 편집 **전에** 뜸): 줄 번호를 뺀 «(사유, 파일)» 집합에서 바뀐 것은 **`wall_meets_lateral`이 사라진 것 하나뿐**. `self_touching_result`는 `boolean.rs`에 이미 있었고 자리가 둘로 늘었을 뿐(9회 → 13회 — 횟수는 안정한 값이 아니라 집합이 잠금이다), `oblique_cylinder_cut` 2 → 3은 계기 테스트가 접선 픽스처 대신 이 사유를 쓰게 바꾼 몫이다.
+
+### 안 잰 것 (계획에 있었는데 못 지킨 항목)
+계획의 단계 0 `(e)`는 «`straddles == false`의 인구가 실제로 있는가»를 세기로 했는데 **안 셌다**. 지금 말할 수 있는 것은 «두 덩이»까지 간 접선이 넷 있었고 **넷 다 `straddles == true`였다»뿐이다(아니었으면 그 거절이 안 났다). 「증명 안 됨 → `CylinderGateUndecided`」 갈래는 그러므로 **인구가 실측되지 않은 채** 서 있다 — 조용한 수락이 아니라 기권 쪽이라 위험하지는 않지만, 「없는 인구를 위해 기계를 짓지 않는다」의 반대편에 걸려 있으므로 그 세 줄이 언제 발화하는지는 다음에 세는 것이 맞다.
 
 ### 남기는 항목
 **① 메시의 SoS** — 이 칸이 그 인구를 키웠고, 사용자의 스크립트가 커널에선 되지만 **화면엔 안 나온다**. 다음 칸. **②** 접선을 품는 **셋째 평면**(국소 영역이 여섯) — 규칙이 안 서므로 기권한다; 구성한 두 경우는 배열이 `CoincidentNodes`로 먼저 거절한다. **③** 접촉이 증명 안 된 경우(`straddles == false`)는 `CylinderGateUndecided`.
