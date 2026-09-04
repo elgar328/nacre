@@ -458,7 +458,9 @@ const CORPUS: [Fixture; 13] = [
     Fixture {
         name: "cylinder-wall-tangent",
         // The axis exactly r from the wall: a zero-thickness contact along one ruling, which
-        // validate cannot see — the gate is the honest stop until capability C.
+        // validate cannot see. ★ The clause that used to follow — "until capability C" — was
+        // refuted in cell ⑤: lifting the arm assembles nothing, so what this waits on is the
+        // arrangement (a tangency is a double root), not validate.
         expect: Some(RejectReason::WallMeetsLateral),
         run: cylinder_wall_tangent,
         raised: &[("wall_meets_lateral", None, "crates/nacre-ops/src/planes.rs")],

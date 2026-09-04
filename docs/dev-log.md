@@ -16810,3 +16810,8 @@ A 술어(`Bound::Circle`은 노드를 안 내놓는다 ⇒ 「조각 × 조각�
 
 ### 관문
 전량 초록 + A/B(`rt_c5s0` 기준선을 임시 편집 **전에** 뜸) + census 무변(프로덕션 코드 경로를 안 바꿈).
+
+### ☑ 자체 점검 (사용자 요청, 커밋 뒤) — 반증된 주장이 커널 소스에 **네 벌** 남아 있었다
+- ★★★ **design.md만 고치고 코드 doc은 안 훑었다.** 이 칸이 실측으로 반증한 문장(«들어올리면 부피 정확한 solid가 조립된다 … 막는 것은 C다»)이 네 자리에 그대로 살아 있었다: `RejectReason::WallMeetsLateral`의 doc · `cylinder_gate`의 doc(«the tangency, capability C's») · 게이트 팔의 인라인 주석 · `reject_census`의 얼린 행(«until capability C»). 넷 다 «접선은 **B의 마지막 인구**이고 배열이 막는다»로, 무엇이 반증됐는지와 사다리를 함께 적어 고쳤다. **교훈: 문서의 주장을 반증했으면 그 주장의 «문장»으로 소스를 훑는다** — 이름(`WallMeetsLateral`)이 아니라 문장(«assembles a volume-correct solid»)이 열쇠였다.
+- ☑ 확인: 임시 스크립트 잔재 0(`RUNG*-PROBE`·`NEGCTRL`·`zz_probe`) · 문서의 수가 측정과 일치(32.785398 / 3906.628331, 면 수 8·12, 쌍둥이 동일) · `cargo doc` 깨진 링크 0 · 새로 적은 두 주장을 직접 검증(`nacre-kit`은 tess 참조 0; `tessellate`는 모든 면을 돌며 첫 실패에서 `?`) · 관문 전량 초록, census sha 무변(`63c18592`).
+- ☑ dev-log의 옛 칸에 남은 «접선 = 능력 C»는 **그 시점의 기록**이라 두었다 — 진실은 design.md와 소스 doc이고 둘 다 정정했다.

@@ -644,10 +644,20 @@ pub enum RejectReason {
     /// rational construction (`crate::exact`) left it exactly where it was.
     FourPlane,
     /// A wall parallel to a cylinder's axis stands **exactly `r`** from it — tangent to the
-    /// lateral surface. Lifting the refusal assembles a volume-correct solid whose lateral
-    /// touches the wall along one ruling, a zero-thickness contact `validate` cannot see (its
-    /// pinch detectors abstain on cylinders), so the gate is the honest stop — until validate
-    /// reads curved contacts (capability C).
+    /// lateral surface.
+    ///
+    /// ★★★★★ **What this doc used to claim was refuted by measurement** (cell ⑤, 2026-09-04). It
+    /// read *"lifting the refusal assembles a volume-correct solid … a zero-thickness contact
+    /// `validate` cannot see, so the gate is the honest stop — until validate reads curved
+    /// contacts (capability C)"*. Lift the arm and **nothing assembles**: over twelve cells
+    /// (a boss inside the plate, a boss outside it, a bore under a slab × Fuse/Cut/Common) the
+    /// arrangement declines every one. Filling the arms in turn walks the ladder
+    /// `chord_on_class` (a tangent cap meets the wall at one **point**, not a chord) →
+    /// `crossing_on_ruling` (a tangent gives **one** ruling, not a pair) → the cell walk's
+    /// `UnorderedEdges`, which is where the real vocabulary decision sits: `RulingCarrier::side`
+    /// is `±1` and is the identity key of five structs, but a tangency has a single ruling.
+    /// ⇒ **the tangent is B's last population, not C's** — a refusal the *arrangement* owes,
+    /// and the reason it stands here is that the gate is where the shape is named exactly.
     ///
     /// ★ **Only the tangent, since cell ③.** A wall within the radius (`0 ≤ d < r`) is recorded
     /// and passed — the through-axis wall since the rulings ladder, the offset wall since cell ③

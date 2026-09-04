@@ -956,7 +956,8 @@ pub(crate) struct WorkingCyl {
 ///   ([`face_clears_footprint`]). A face not shown to miss either rides the rulings road — the
 ///   wall's plane within the radius (`0 ≤ d < r`, through the axis or offset from it), the
 ///   pair **recorded and passed** — or, the plane exactly `r` from the axis, is
-///   [`RejectReason::WallMeetsLateral`] (the tangency, capability C's).
+///   [`RejectReason::WallMeetsLateral`] (the tangency — **B's last population, not capability C's**:
+///   cell ⑤ measured that lifting it assembles nothing, the arrangement declines).
 /// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3).
 ///
 /// Per cylinder pair: axes clear of each other (`dist > r₁+r₂`, whatever their orientation)
@@ -1084,10 +1085,13 @@ pub(crate) fn cylinder_gate(
                         // circular order) never assumed the diameter; only the vocabulary did.
                         //
                         // What keeps the refusal is the **tangent** wall alone (distance exactly
-                        // `r`, one clearance call, `Zero`): lifting it assembles a volume-correct
-                        // solid whose lateral touches the wall along a ruling — zero-thickness
-                        // contact validate cannot see (its pinch detectors abstain on
-                        // cylinders), so the honest place to stop it is here, by its name.
+                        // `r`, one clearance call, `Zero`). ★ The sentence that used to stand here
+                        // — *"lifting it assembles a volume-correct solid … validate cannot see
+                        // the contact"* — was refuted in cell ⑤: lifting it assembles **nothing**,
+                        // because a tangency is a double root and three roads downstream spell
+                        // "two distinct roots" (see [`crate::RejectReason::WallMeetsLateral`]).
+                        // The honest place to stop it is still here, where the shape is named
+                        // exactly — but what it waits on is the arrangement, not validate.
                         if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) == Orient::Zero {
                             return Err(reject(RejectReason::WallMeetsLateral));
                         }
