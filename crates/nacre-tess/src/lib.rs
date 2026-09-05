@@ -905,7 +905,15 @@ fn triangulate_face(
     };
     let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
     let boundary = handles.len();
-    let tris = polygon::triangulate_uv(&mut uv, &refs, &interior)?;
+    // A vertex shared by two rings is the bridge pre-pass's doing (a curved ring's sample put
+    // into the straight edge it touches), and only on a plane is it one point in the chart —
+    // a cylinder's seam is the same handle at two `θ`s.
+    let bridges = if matches!(surface, Surface::Plane(_)) {
+        shared_vertices(&handles, &rings)
+    } else {
+        Vec::new()
+    };
+    let (tris, rings_used) = polygon::triangulate_uv(&mut uv, &refs, &interior, &bridges)?;
     // The tail is exactly the candidates the sweep took, in the order it took them — the chart's
     // first minted vertices. Everything before it was already a shared boundary vertex.
     for &p in &uv[boundary..] {
@@ -918,11 +926,36 @@ fn triangulate_face(
             },
         }));
     }
-    within_budget(t, cfg, surface, &handles, &rings, &tris)?;
+    within_budget(t, cfg, surface, &handles, &rings_used, &tris)?;
     for tri in tris {
         push_tri(t, fh, tri.map(|i| handles[i]));
     }
     Ok(())
+}
+
+/// The mesh vertices that appear in two different rings of one face, as the bridges the sweep
+/// should lay there. Handles only — which ring's straight edge was split is `polygon`'s to read
+/// off the geometry.
+fn shared_vertices(handles: &[Handle<TessVertex>], rings: &[Vec<usize>]) -> Vec<polygon::Bridge> {
+    let mut seen: HashMap<Handle<TessVertex>, (usize, usize)> = HashMap::new();
+    let mut out = Vec::new();
+    for (ri, ring) in rings.iter().enumerate() {
+        for (k, &i) in ring.iter().enumerate() {
+            match seen.get(&handles[i]) {
+                Some(&(rj, kj)) if rj != ri => out.push(polygon::Bridge {
+                    ring_x: rj,
+                    x: kj,
+                    ring_y: ri,
+                    y: k,
+                }),
+                Some(_) => {}
+                None => {
+                    seen.insert(handles[i], (ri, k));
+                }
+            }
+        }
+    }
+    out
 }
 
 /// ★★★★★ **The mesh's one rule, asked of the face's *interior* — where it was never asked.**

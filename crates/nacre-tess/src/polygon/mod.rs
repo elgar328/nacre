@@ -13,6 +13,23 @@ mod monotone;
 mod sos;
 
 pub(crate) use monotone::{Meets, Touch, TouchKind, Witness};
+use sos::Twins;
+
+/// Two rings that share a vertex — the same point at two indices, one in each — that the caller
+/// wants bridged into one ring there. Which of the two is the ring whose straight segment was
+/// split is decided here, by geometry, not by the caller: it is the one whose neighbours at the
+/// shared point are collinear with it.
+/// What [`triangulate_uv`] hands back: the triangles, and the rings it actually triangulated —
+/// the input rings, or with a bridged pair spliced into one.
+pub(crate) type Triangulated = (Vec<[usize; 3]>, Vec<Vec<usize>>);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Bridge {
+    pub(crate) ring_x: usize,
+    pub(crate) x: usize,
+    pub(crate) ring_y: usize,
+    pub(crate) y: usize,
+}
 
 use crate::TessError;
 use nacre_math::{Point3, Vector3};
@@ -116,25 +133,49 @@ pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
     Ok(monotone::self_touch(uv, &prev, &next))
 }
 
+///
+/// ★★★★★ **`bridges` — a hole touching another ring at one point is spliced into it.** The
+/// touching point sits at two indices (the chart layer put the curved ring's sample into the
+/// straight edge it touches, so both rings carry it); the two rings are joined there into one
+/// ring, `a[..=i] ++ b[j+1..] ++ b[..=j] ++ a[i+1..]`, the textbook bridge with a cut of length
+/// zero. Both rings are traversed in their stored direction, so same-winding rings merge into
+/// a ring of that winding (two holes stay a hole). The winding gate runs on the rings as
+/// given, *before* the splice, so a mis-wound hole is still named. The returned rings are the
+/// ones actually triangulated, and a caller that reads boundary edges off rings must use them.
+///
+/// The one pair of coincident indices this leaves in the ring is handed to the sweep as
+/// [`Twins`], with the order [`sos`] defines. At most one bridge per face is bridged; a second
+/// would need a second symbolic pair, and that population has not been seen — it comes back
+/// [`TessError::SelfTouchingBoundary`], as it always did.
 pub(crate) fn triangulate_uv(
     uv: &mut Vec<P2>,
     rings: &[&[usize]],
     candidates: &[P2],
-) -> Result<Vec<[usize; 3]>, TessError> {
+    bridges: &[Bridge],
+) -> Result<Triangulated, TessError> {
     if ring_orientation(rings[0], uv) != 1 {
         return Err(TessError::DegenerateRing);
     }
     if rings[1..].iter().any(|h| ring_orientation(h, uv) != -1) {
         return Err(TessError::HoleWinding);
     }
+    let mut rings_used: Vec<Vec<usize>> = rings.iter().map(|r| r.to_vec()).collect();
+    let mut twins: Option<Twins> = None;
+    if let Some(&bridge) = bridges.first() {
+        if bridges.len() > 1 {
+            return Err(TessError::SelfTouchingBoundary);
+        }
+        twins = Some(splice(uv, &mut rings_used, bridge)?);
+    }
+    let refs: Vec<&[usize]> = rings_used.iter().map(|r| r.as_slice()).collect();
     let mut out = Vec::new();
-    for piece in monotone::decompose(uv, rings, None)? {
-        monotone::triangulate_monotone(uv, &piece, &mut out, None)?;
+    for piece in monotone::decompose(uv, &refs, twins.as_ref())? {
+        monotone::triangulate_monotone(uv, &piece, &mut out, twins.as_ref())?;
     }
     // The decomposition answers *whether* the face meshes; this answers *how well*.
     // It moves diagonals only — never the rings — so the count, the area and the
     // boundary are the same on both sides of it.
-    let constrained: HashSet<(usize, usize)> = rings
+    let constrained: HashSet<(usize, usize)> = refs
         .iter()
         .flat_map(|r| {
             (0..r.len()).map(move |k| {
@@ -150,7 +191,49 @@ pub(crate) fn triangulate_uv(
         // Delaunay while nothing sits inside its circumcircle, and these points are what sit there.
         delaunay::refine(uv, &mut out, &constrained);
     }
-    Ok(out)
+    Ok((out, rings_used))
+}
+
+/// Join two rings at their shared point into one, and name the twins that leaves.
+///
+/// The split ring is the one whose two neighbours of the shared point are collinear with it —
+/// that is what a straight edge split at a sample looks like — and the other ring's neighbours
+/// are strictly off that line (the tangency witness certified as much). Both collinear or
+/// neither is not the shape this bridges and is refused by the sweep's own name for it.
+fn splice(uv: &[P2], rings: &mut Vec<Vec<usize>>, b: Bridge) -> Result<Twins, TessError> {
+    let straight = |ring: &[usize], at: usize| -> bool {
+        let n = ring.len();
+        let (p, c, q) = (ring[(at + n - 1) % n], ring[at], ring[(at + 1) % n]);
+        orient2d(uv[p], uv[c], uv[q]) == 0.0
+    };
+    let (sx, sy) = (
+        straight(&rings[b.ring_x], b.x),
+        straight(&rings[b.ring_y], b.y),
+    );
+    let (ra, i, rb, j) = match (sx, sy) {
+        (true, false) => (b.ring_x, b.x, b.ring_y, b.y),
+        (false, true) => (b.ring_y, b.y, b.ring_x, b.x),
+        _ => return Err(TessError::SelfTouchingBoundary),
+    };
+    let (a, hb) = (rings[ra].clone(), rings[rb].clone());
+    let (o, h) = (a[i], hb[j]);
+    let mut merged: Vec<usize> = Vec::with_capacity(a.len() + hb.len());
+    merged.extend_from_slice(&a[..=i]);
+    merged.extend_from_slice(&hb[j + 1..]);
+    merged.extend_from_slice(&hb[..=j]);
+    merged.extend_from_slice(&a[i + 1..]);
+    // `o` keeps its on-line predecessor, `h` its on-line successor: the two ends of the split
+    // segment, and the directions the twins slide toward.
+    let o_along = a[(i + a.len() - 1) % a.len()];
+    let h_along = a[(i + 1) % a.len()];
+    rings[ra] = merged;
+    rings.remove(rb);
+    Ok(Twins {
+        o,
+        h,
+        o_along,
+        h_along,
+    })
 }
 
 /// Whether `p` is **strictly** inside the counter-clockwise triangle `t` — exactly.
@@ -289,7 +372,21 @@ mod tests {
         let refs: Vec<&[usize]> = std::iter::once(outer)
             .chain(holes.iter().copied())
             .collect();
-        triangulate_uv(&mut v, &refs, &[])
+        triangulate_uv(&mut v, &refs, &[], &[]).map(|(t, _)| t)
+    }
+
+    /// The same road with one bridge named — what the chart layer hands over for a pinched face.
+    fn tri_bridged(
+        uv: &[P2],
+        outer: &[usize],
+        holes: &[&[usize]],
+        bridge: Bridge,
+    ) -> Result<Triangulated, TessError> {
+        let mut v = uv.to_vec();
+        let refs: Vec<&[usize]> = std::iter::once(outer)
+            .chain(holes.iter().copied())
+            .collect();
+        triangulate_uv(&mut v, &refs, &[], &[bridge])
     }
 
     /// The checks every golden gets, each catching a different fault: the count pins
@@ -573,7 +670,7 @@ mod tests {
         let lattice: Vec<P2> = (1..4)
             .flat_map(|i| (1..4).map(move |j| [f64::from(i), f64::from(j)]))
             .collect();
-        let t = triangulate_uv(&mut uv, &[&ring], &lattice).unwrap();
+        let t = triangulate_uv(&mut uv, &[&ring], &lattice, &[]).unwrap().0;
         assert_eq!(uv.len(), 4 + 9, "every offered point was placed");
         assert_eq!(t.len(), 2 * 9 + 4 - 2);
         check_partition(&t, &ring, &[]);
@@ -608,7 +705,7 @@ mod tests {
             [-1.0, 2.0], // outside, and level with the interior
         ] {
             let mut uv = base.clone();
-            let t = triangulate_uv(&mut uv, &[&ring], &[p]).unwrap();
+            let t = triangulate_uv(&mut uv, &[&ring], &[p], &[]).unwrap().0;
             assert_eq!(uv.len(), 4, "{p:?} was placed");
             assert_eq!(t.len(), 2, "{p:?} changed the mesh");
             check_partition(&t, &ring, &[]);
@@ -733,6 +830,102 @@ mod tests {
         ]);
         let r = tri(&p, &[0, 1, 2, 3], &[&[4, 5, 6, 7]]);
         assert!(matches!(r, Err(TessError::DegenerateRing)), "{r:?}");
+    }
+
+    /// ★★★★★ **A pinched face meshes once its touch is bridged.** The square's bottom edge
+    /// carries the hole's apex as a vertex of its own (index 1 — what the chart layer's pre-pass
+    /// does to the shared edge), the hole's apex is index 5 at the same point, and the bridge
+    /// names the two. The sweep then sees one ring, orders the twins by where they slide, and
+    /// produces a triangulation that covers exactly the square minus the hole — six triangles
+    /// for the eight-vertex ring, all CCW, whose once-used edges are the merged ring.
+    #[test]
+    fn a_bridged_touch_meshes_the_pinched_face() {
+        let p = pts(&[
+            [0.0, 0.0],
+            [2.0, 0.0],
+            [4.0, 0.0],
+            [4.0, 4.0],
+            [0.0, 4.0],
+            [2.0, 0.0],
+            [1.0, 2.0],
+            [3.0, 2.0],
+        ]);
+        let (tris, rings) = tri_bridged(
+            &p,
+            &[0, 1, 2, 3, 4],
+            &[&[5, 6, 7]],
+            Bridge {
+                ring_x: 0,
+                x: 1,
+                ring_y: 1,
+                y: 0,
+            },
+        )
+        .expect("the bridged face meshes");
+        check(&p, &tris, 6, 16.0 - 2.0);
+        assert_eq!(rings.len(), 1, "the hole was spliced into the outer ring");
+        check_partition(&tris, &rings[0], &[]);
+        // Naming the rings the other way round makes no difference: which is the split ring is
+        // read off the geometry.
+        let (tris2, _) = tri_bridged(
+            &p,
+            &[0, 1, 2, 3, 4],
+            &[&[5, 6, 7]],
+            Bridge {
+                ring_x: 1,
+                x: 0,
+                ring_y: 0,
+                y: 1,
+            },
+        )
+        .expect("the bridged face meshes");
+        check(&p, &tris2, 6, 16.0 - 2.0);
+        // And without the bridge the same rings are what they always were: a touch.
+        let r = tri(&p, &[0, 1, 2, 3, 4], &[&[5, 6, 7]]);
+        assert!(matches!(r, Err(TessError::SelfTouchingBoundary)), "{r:?}");
+    }
+
+    /// Two holes touching: the same bridge, and the merged ring is still a hole — CW, so the
+    /// winding gate on the rings as given still runs, and the outer ring is untouched.
+    #[test]
+    fn two_holes_that_touch_are_bridged_into_one_hole() {
+        let p = pts(&[
+            [0.0, 0.0],
+            [4.0, 0.0],
+            [4.0, 4.0],
+            [0.0, 4.0],
+            // hole A, CW, with the touching point (3,2) as a vertex of its right edge
+            [1.0, 1.0],
+            [1.0, 3.0],
+            [3.0, 3.0],
+            [3.0, 2.0],
+            [3.0, 1.0],
+            // hole B, CW, its apex on A's right edge
+            [3.0, 2.0],
+            [3.5, 2.5],
+            [3.5, 1.5],
+        ]);
+        let (tris, rings) = tri_bridged(
+            &p,
+            &[0, 1, 2, 3],
+            &[&[4, 5, 6, 7, 8], &[9, 10, 11]],
+            Bridge {
+                ring_x: 1,
+                x: 3,
+                ring_y: 2,
+                y: 0,
+            },
+        )
+        .expect("the bridged holes mesh");
+        check(&p, &tris, 12, 16.0 - 4.0 - 0.25);
+        assert_eq!(rings.len(), 2, "outer, and one merged hole");
+        assert_eq!(rings[0], vec![0, 1, 2, 3], "the outer ring is untouched");
+        assert_eq!(
+            ring_orientation(&rings[1], &p),
+            -1,
+            "the merged hole is still a hole"
+        );
+        check_partition(&tris, &rings[0], &[&rings[1]]);
     }
 
     #[test]

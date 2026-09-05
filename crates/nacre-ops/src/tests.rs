@@ -3321,6 +3321,54 @@ fn a_boss_on_any_wall_weighs_the_same() {
 /// [`nacre_props::face_props`] (an exact boundary integral) and the whole solid's triangles against
 /// [`nacre_props::mass_props`] (the divergence theorem on the b-rep).
 ///
+/// The mesh-covers-the-faces oracle, shared: a face's triangles against
+/// [`nacre_props::face_props`] and the solid's against [`nacre_props::mass_props`], at the derived
+/// relative budget (see [`the_mesh_covers_the_faces_it_approximates`]). Any test that meshes a
+/// solid for the first time calls this — it is the only reading in the workspace that asks
+/// whether the triangles lie on the face they claim.
+pub(crate) fn mesh_covers_faces(name: &str, m: &Model, solids: &[Handle<Solid>]) {
+    // 5 × the derived worst case (2.0e-4, a full disk at the angular budget).
+    const BUDGET: f64 = 1e-3;
+    let mesh = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()).expect("tess");
+    for &s in solids {
+        let sol = m.solids.get(s).clone();
+        let mut mesh_volume = 0.0f64;
+        for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
+            for fh in m.shells.get(sh).faces.clone() {
+                let exact = nacre_props::face_props(m, fh)
+                    .unwrap_or_else(|e| panic!("{name}: face_props {e:?}"))
+                    .area;
+                let mut area = 0.0f64;
+                for &th in mesh.by_face.get(&fh).map(|v| v.as_slice()).unwrap_or(&[]) {
+                    let t = mesh.triangles.get(th);
+                    let p: Vec<_> = t
+                        .vertices
+                        .iter()
+                        .map(|&h| mesh.vertices.get(h).pos)
+                        .collect();
+                    area += (p[1] - p[0]).cross(p[2] - p[0]).norm() * 0.5;
+                    // The signed volume of the tetrahedron on the origin; summed over an
+                    // outward-oriented closed mesh it is the volume that mesh encloses.
+                    let (a, b, c) = (p[0].as_array(), p[1].as_array(), p[2].as_array());
+                    mesh_volume += (a[0] * (b[1] * c[2] - b[2] * c[1])
+                        - a[1] * (b[0] * c[2] - b[2] * c[0])
+                        + a[2] * (b[0] * c[1] - b[1] * c[0]))
+                        / 6.0;
+                }
+                assert!(
+                    (area - exact).abs() <= BUDGET * exact,
+                    "{name}: a face's mesh area {area} is not its own {exact}"
+                );
+            }
+        }
+        let exact = nacre_props::mass_props(m, s).expect("mass_props").volume;
+        assert!(
+            (mesh_volume - exact).abs() <= BUDGET * exact,
+            "{name}: the mesh encloses {mesh_volume}, the solid is {exact}"
+        );
+    }
+}
+
 /// **The budget is derived, not chosen.** A circle sampled into `n` chords is approximated by the
 /// inscribed regular `n`-gon, whose area is `sinc(2π/n) = 1 − (2π/n)²/6` of the true one; a
 /// cylinder's lateral loses the arc-versus-chord ratio `sinc(π/n) = 1 − (π/n)²/6`, four times
@@ -3330,48 +3378,7 @@ fn a_boss_on_any_wall_weighs_the_same() {
 /// **either sign**: a plate whose circular bite is inscribed comes out slightly *larger*.
 #[test]
 fn the_mesh_covers_the_faces_it_approximates() {
-    // 5 × the derived worst case (2.0e-4, a full disk at the angular budget).
-    const BUDGET: f64 = 1e-3;
-    let check = |name: &str, m: &Model, solids: &[Handle<Solid>]| {
-        let mesh = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()).expect("tess");
-        for &s in solids {
-            let sol = m.solids.get(s).clone();
-            let mut mesh_volume = 0.0f64;
-            for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
-                for fh in m.shells.get(sh).faces.clone() {
-                    let exact = nacre_props::face_props(m, fh)
-                        .unwrap_or_else(|e| panic!("{name}: face_props {e:?}"))
-                        .area;
-                    let mut area = 0.0f64;
-                    for &th in mesh.by_face.get(&fh).map(|v| v.as_slice()).unwrap_or(&[]) {
-                        let t = mesh.triangles.get(th);
-                        let p: Vec<_> = t
-                            .vertices
-                            .iter()
-                            .map(|&h| mesh.vertices.get(h).pos)
-                            .collect();
-                        area += (p[1] - p[0]).cross(p[2] - p[0]).norm() * 0.5;
-                        // The signed volume of the tetrahedron on the origin; summed over an
-                        // outward-oriented closed mesh it is the volume that mesh encloses.
-                        let (a, b, c) = (p[0].as_array(), p[1].as_array(), p[2].as_array());
-                        mesh_volume += (a[0] * (b[1] * c[2] - b[2] * c[1])
-                            - a[1] * (b[0] * c[2] - b[2] * c[0])
-                            + a[2] * (b[0] * c[1] - b[1] * c[0]))
-                            / 6.0;
-                    }
-                    assert!(
-                        (area - exact).abs() <= BUDGET * exact,
-                        "{name}: a face's mesh area {area} is not its own {exact}"
-                    );
-                }
-            }
-            let exact = nacre_props::mass_props(m, s).expect("mass_props").volume;
-            assert!(
-                (mesh_volume - exact).abs() <= BUDGET * exact,
-                "{name}: the mesh encloses {mesh_volume}, the solid is {exact}"
-            );
-        }
-    };
+    let check = mesh_covers_faces;
     let plate = |m: &mut Model| {
         m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -3385,6 +3392,24 @@ fn the_mesh_covers_the_faces_it_approximates() {
         let a = plate(&mut m);
         m.rebuild_adjacency();
         check("plate", &m, &[a]);
+    }
+    // ★ The pinched caps (cell ⑦c): a stud tangent to the cube's wall. Blind (base anchored,
+    // one cap pinched) and through (`center` anchored — the user's own script — both caps
+    // pinched). These are the first solids whose caps are triangulated across a bridge, and
+    // this oracle is the only thing that would see a bridged cap come out the wrong shape.
+    for (name, base_z) in [("blind stud", 0.0), ("through stud", -1.0)] {
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+        let stud = m.add_cylinder(
+            Point3::from_array([0.3, 0.0, base_z]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.2,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the tangent stud fuses");
+        m.rebuild_adjacency();
+        check(name, &m, &out);
     }
     for (name, base, h) in [
         ("wall -x", [0.0, 2.0, -1.0], 4.0),

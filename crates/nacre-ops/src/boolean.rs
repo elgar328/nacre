@@ -122,9 +122,12 @@ pub(crate) mod tess_census {
         // measured: 764 of them, under `--test-threads=1`, because the suite runs in name order),
         // so a solid built by any later test would go unchecked. Asserting at the record makes the
         // coverage total and names the offending test in the panic instead of a distant census.
+        // ★ No exemption any more: the pinched caps that used to be excused as
+        // `SelfTouchingBoundary` are bridged since cell ⑦c, so every solid a boolean returns
+        // meshes, or the census says which test built the one that does not.
         assert!(
-            !matches!(&r, Err(e) if *e != TessError::SelfTouchingBoundary),
-            "a boolean built a solid the mesher refuses for an unnamed reason: {r:?}"
+            r.is_ok(),
+            "a boolean built a solid the mesher refuses: {r:?}"
         );
         MESHED
             .lock()

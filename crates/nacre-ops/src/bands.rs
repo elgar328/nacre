@@ -1241,22 +1241,17 @@ mod tests {
         // here. Deleting this assertion would lose the genus, not the manifold claim.
         m.rebuild_adjacency();
         the_touch_is_a_slit(&m, out[0], [11.0, 10.0, 5.0]);
-        // ★★★★★ **And the solid cannot be meshed — say so here, where the geometry is.**
-        // The boss's footprint touches the bore's rim at exactly one point, so the plate's top
-        // face has two inner loops meeting there: its interior is pinched, and no triangulation
-        // of a pinched region exists in this decomposition. That is a statement about the
-        // *tessellator*, not about this solid — `validate` is clean above and the volume is
-        // exact — and `TessError`'s own doc draws that line.
+        // ★★★★★ **And the solid meshes — across a bridge, since cell ⑦c.** The boss's footprint
+        // touches the bore's rim at exactly one point, so the plate's top face has two inner
+        // loops meeting there: its interior is pinched. Until ⑦c that was `SelfTouchingBoundary`
+        // — a statement about the *tessellator* (`validate` is clean above and the volume is
+        // exact). Now the touching sample is put into the straight edge it lies on, the two
+        // holes are spliced into one at that point, and the sweep orders the twins symbolically.
         // ★ Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
         // census that only agreed with itself would be measuring when it looks rather than what
         // came out. Both spellings say the same thing here.
         m.rebuild_adjacency();
-        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default());
-        assert!(
-            matches!(mesh, Err(nacre_tess::TessError::SelfTouchingBoundary)),
-            "the tangency's mesh: {:?}",
-            mesh.map(|t| t.triangles.len())
-        );
+        crate::tests::mesh_covers_faces("segment tangent to the rim", &m, &out);
     }
 
     /// ★★ **The fence post: a crossing that lands exactly on a segment's endpoint.** The boss's
@@ -1371,21 +1366,16 @@ mod tests {
         // ★ The genus's lock, not the tangency's — see the note in the fixture above.
         m.rebuild_adjacency();
         the_touch_is_a_slit(&m, out[0], [4.0, 2.0, 2.0]);
-        // ★★★★★ **And the solid cannot be meshed — the same pinch, spelled inner-to-outer.**
-        // The boss's base circle is tangent to the plate's `z = 2` edge at `(4, 2, 2)`, so the
-        // `x = 4` face's hole touches its own outer ring at one point and the face's interior is
-        // pinched there. `validate` is clean above and the volume is exact: this names what the
-        // tessellator cannot draw, not a defect in the solid.
+        // ★★★★★ **And the solid meshes — the same pinch, spelled inner-to-outer.** The boss's
+        // base circle is tangent to the plate's `z = 2` edge at `(4, 2, 2)`, so the `x = 4` face's
+        // hole touches its own outer ring at one point and the face's interior is pinched there.
+        // `validate` is clean above and the volume is exact; since cell ⑦c the touch is bridged
+        // and the face's triangles are held to its exact area.
         // ★ Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
         // census that only agreed with itself would be measuring when it looks rather than what
         // came out. Both spellings say the same thing here.
         m.rebuild_adjacency();
-        let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default());
-        assert!(
-            matches!(mesh, Err(nacre_tess::TessError::SelfTouchingBoundary)),
-            "the tangency's mesh: {:?}",
-            mesh.map(|t| t.triangles.len())
-        );
+        crate::tests::mesh_covers_faces("turned boss tangent to the plate top", &m, &out);
     }
 
     /// **The turned boss builds — and its crescent is the winding witness's red switch.**
