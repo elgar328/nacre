@@ -610,12 +610,12 @@ pub fn drop_collinear_midpoints(mut ring: Vec<[Rat; 2]>) -> Vec<[Rat; 2]> {
 }
 
 /// [`spike`]'s rational twin.
-fn spike_rat(u: [Rat; 2], s: [Rat; 2], v: [Rat; 2]) -> bool {
+pub(crate) fn spike_rat(u: [Rat; 2], s: [Rat; 2], v: [Rat; 2]) -> bool {
     orient2d_rat(u, s, v) == 0 && (on_segment_2d_rat(u, s, v) || on_segment_2d_rat(s, v, u))
 }
 
 /// [`segments_meet_2d`]'s rational twin: proper crossing or any touching contact.
-fn segments_meet_2d_rat(p1: [Rat; 2], p2: [Rat; 2], q1: [Rat; 2], q2: [Rat; 2]) -> bool {
+pub(crate) fn segments_meet_2d_rat(p1: [Rat; 2], p2: [Rat; 2], q1: [Rat; 2], q2: [Rat; 2]) -> bool {
     let d1 = orient2d_rat(q1, q2, p1);
     let d2 = orient2d_rat(q1, q2, p2);
     let d3 = orient2d_rat(p1, p2, q1);
@@ -631,7 +631,7 @@ fn segments_meet_2d_rat(p1: [Rat; 2], p2: [Rat; 2], q1: [Rat; 2], q2: [Rat; 2]) 
 }
 
 /// [`on_segment_2d`]'s rational twin — the **collinear** point `p` within `ab`'s box.
-fn on_segment_2d_rat(a: [Rat; 2], b: [Rat; 2], p: [Rat; 2]) -> bool {
+pub(crate) fn on_segment_2d_rat(a: [Rat; 2], b: [Rat; 2], p: [Rat; 2]) -> bool {
     p[0] >= a[0].min(b[0])
         && p[0] <= a[0].max(b[0])
         && p[1] >= a[1].min(b[1])

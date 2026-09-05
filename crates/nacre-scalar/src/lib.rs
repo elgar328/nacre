@@ -1760,7 +1760,10 @@ fn reduce_direction(v: [Rat; 3]) -> Option<[Rat; 3]> {
 ///
 /// A fraction in lowest terms is a perfect square exactly when its numerator and denominator both
 /// are — they share no factor to trade — so this is two integer square roots and two checks.
-fn rat_sqrt_exact(v: Rat) -> Option<Rat> {
+/// `√v` when it is rational — numerator and denominator both perfect squares — else `None`
+/// (also for `v < 0`). The sketch's arcs ask this of `|start − centre|²`: a radius the kernel can
+/// state is a rational one, and this is the only place that question is answered.
+pub fn rat_sqrt_exact(v: Rat) -> Option<Rat> {
     let (num, den) = (*v.0.numer(), *v.0.denom());
     if num < 0 {
         return None;

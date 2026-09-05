@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 04a2de7ea8eed244c79db85a1a8176c63fdb250b06189e4b56495a1981ced55c # shrinks to a = [[Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 0, denom: 1 })], [Rat(Ratio { numer: 2, denom: 1 }), Rat(Ratio { numer: -4, denom: 1 })], [Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 1, denom: 1 })], [Rat(Ratio { numer: 2, denom: 1 }), Rat(Ratio { numer: -4, denom: 1 })]], b = [[Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 0, denom: 1 })], [Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 0, denom: 1 })], [Rat(Ratio { numer: 0, denom: 1 }), Rat(Ratio { numer: 0, denom: 1 })]], px = 0, py = 0

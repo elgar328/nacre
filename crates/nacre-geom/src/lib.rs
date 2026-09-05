@@ -26,6 +26,7 @@ mod plane;
 /// intersection/classification code in one module). Kept as `pub mod` — callers
 /// write `intersect::plane_plane(..)`, keeping that isolation visible.
 pub mod intersect;
+pub mod mixed;
 
 mod region;
 
