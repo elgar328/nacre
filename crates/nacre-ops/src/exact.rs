@@ -423,11 +423,11 @@ pub(crate) fn prism_rings_in(
             },
         })
     };
-    let outer = ring(profile.outer().points())?;
+    let outer = ring(profile.outer().vertices())?;
     let holes = profile
         .holes()
         .iter()
-        .map(|h| ring(h.points()))
+        .map(|h| ring(h.vertices()))
         .collect::<Option<Vec<_>>>()?;
     Some((outer, holes))
 }

@@ -93,10 +93,10 @@ fn the_whole_pipeline_runs_through_the_facade_alone() {
 fn the_sketch_front_door_and_face_queries_are_reachable() {
     let p = |x: f64, y: f64| Point2::from_array([x, y]);
     let profiles = from_edges(vec![
-        Edge2d::line(p(0.0, 0.0), p(4.0, 0.0)),
-        Edge2d::line(p(4.0, 0.0), p(4.0, 4.0)),
-        Edge2d::line(p(4.0, 4.0), p(0.0, 4.0)),
-        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)),
+        Edge2d::line(p(0.0, 0.0), p(4.0, 0.0)).unwrap(),
+        Edge2d::line(p(4.0, 0.0), p(4.0, 4.0)).unwrap(),
+        Edge2d::line(p(4.0, 4.0), p(0.0, 4.0)).unwrap(),
+        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)).unwrap(),
     ])
     .unwrap();
     assert_eq!(profiles.len(), 1);
@@ -131,10 +131,10 @@ fn the_sketch_front_door_and_face_queries_are_reachable() {
 
     // A malformed sketch is refused by name, not silently built.
     let bowtie = from_edges(vec![
-        Edge2d::line(p(0.0, 0.0), p(4.0, 4.0)),
-        Edge2d::line(p(4.0, 4.0), p(4.0, 0.0)),
-        Edge2d::line(p(4.0, 0.0), p(0.0, 4.0)),
-        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)),
+        Edge2d::line(p(0.0, 0.0), p(4.0, 4.0)).unwrap(),
+        Edge2d::line(p(4.0, 4.0), p(4.0, 0.0)).unwrap(),
+        Edge2d::line(p(4.0, 0.0), p(0.0, 4.0)).unwrap(),
+        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)).unwrap(),
     ]);
     assert!(matches!(
         bowtie,

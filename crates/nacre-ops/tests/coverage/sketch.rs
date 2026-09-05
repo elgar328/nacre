@@ -333,10 +333,10 @@ fn drawn_segments_become_a_donut() {
     let ring = |a: f64, b: f64| {
         let p = |x: f64, y: f64| Point2::from_array([x, y]);
         vec![
-            Edge2d::line(p(a, a), p(b, a)),
-            Edge2d::line(p(b, b), p(b, a)), // backwards on purpose
-            Edge2d::line(p(b, b), p(a, b)),
-            Edge2d::line(p(a, b), p(a, a)),
+            Edge2d::line(p(a, a), p(b, a)).unwrap(),
+            Edge2d::line(p(b, b), p(b, a)).unwrap(), // backwards on purpose
+            Edge2d::line(p(b, b), p(a, b)).unwrap(),
+            Edge2d::line(p(a, b), p(a, a)).unwrap(),
         ]
     };
     let mut edges = ring(1.0, 3.0); // the hole, drawn first
@@ -462,10 +462,10 @@ fn touching_rings_are_refused_on_every_profile_entry_point() {
 fn a_self_crossing_outline_is_refused_before_the_rings_are_sorted() {
     let p = |x: f64, y: f64| Point2::from_array([x, y]);
     let bowtie = vec![
-        Edge2d::line(p(0.0, 0.0), p(4.0, 4.0)),
-        Edge2d::line(p(4.0, 4.0), p(4.0, 0.0)),
-        Edge2d::line(p(4.0, 0.0), p(0.0, 4.0)),
-        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)),
+        Edge2d::line(p(0.0, 0.0), p(4.0, 4.0)).unwrap(),
+        Edge2d::line(p(4.0, 4.0), p(4.0, 0.0)).unwrap(),
+        Edge2d::line(p(4.0, 0.0), p(0.0, 4.0)).unwrap(),
+        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)).unwrap(),
     ];
     assert!(matches!(
         from_edges(bowtie),
@@ -515,7 +515,7 @@ fn the_contract_does_not_bite_legitimate_profiles() {
     let p = Profile2d::polygon(flat).unwrap();
     assert_eq!(p.check(), Ok(()));
     assert_eq!(
-        p.outer().points().len(),
+        p.outer().vertices().len(),
         4,
         "the flat corner is dissolved at construction, not merely tolerated"
     );
@@ -541,10 +541,7 @@ fn a_dimension_outside_the_decimal_window_is_refused_at_construction() {
     );
     assert_eq!(
         from_rings(vec![ring]).unwrap_err(),
-        nacre_ops::SketchError::OutsideDecimalWindow {
-            ring: 0,
-            at: [1e300, 0.0],
-        }
+        nacre_ops::SketchError::OutsideDecimalWindow { at: [1e300, 0.0] }
     );
 }
 
@@ -565,8 +562,42 @@ fn a_corner_flat_in_decimal_but_not_in_binary_is_dissolved() {
     ])
     .unwrap();
     assert_eq!(
-        p.outer().points().len(),
+        p.outer().vertices().len(),
         4,
         "the decimal truth decided, so the midpoint is gone"
     );
+}
+
+/// **An arc reaches the door and is refused by name** — the vocabulary (a circle, a slot) is
+/// accepted and sorted like any ring, and the operation that would have to stand a cylinder wall
+/// says it cannot yet, rather than reading the ring's vertices as a polygon.
+#[test]
+fn a_profile_with_an_arc_is_refused_by_extrude_until_the_builder_learns_arcs() {
+    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+    let circle = from_edges(vec![Edge2d::circle(p2(0.0, 0.0), 1.0).unwrap()]).unwrap();
+    let slot = from_edges(vec![
+        Edge2d::line(p2(0.0, -1.0), p2(4.0, -1.0)).unwrap(),
+        Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -1.0), 2).unwrap(),
+        Edge2d::line(p2(4.0, 1.0), p2(0.0, 1.0)).unwrap(),
+        Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, 1.0), 2).unwrap(),
+    ])
+    .unwrap();
+    for profiles in [circle, slot] {
+        for profile in profiles {
+            assert!(profile.has_arcs());
+            let mut m = Model::new();
+            let frame = SketchFrame::world(&m, Axis::Z);
+            assert_eq!(
+                apply(
+                    &mut m,
+                    &Operation::Extrude {
+                        frame,
+                        profile,
+                        dist: 1.0
+                    }
+                ),
+                Err(nacre_ops::OpError::ArcsNotBuiltYet)
+            );
+        }
+    }
 }

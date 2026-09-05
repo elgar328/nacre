@@ -6659,7 +6659,7 @@ fn two_separated_collinear_walls_intern_to_one_surface() {
     ])
     .unwrap();
     // Self-qualification: the dissolve pass must have left all eight corners standing.
-    assert_eq!(profile.outer().points().len(), 8, "no corner is flat");
+    assert_eq!(profile.outer().vertices().len(), 8, "no corner is flat");
     let __w2 = SketchFrame::world(&m, Axis::Z);
     let OpOutput::Extrude { solid, .. } = apply(
         &mut m,
