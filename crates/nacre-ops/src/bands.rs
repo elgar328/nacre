@@ -2987,6 +2987,75 @@ mod tests {
         );
     }
 
+    /// ★★★★★ **The bridge pre-pass splits the wall's two straight edges under the through stud.**
+    ///
+    /// A stud through the cube (`center` anchoring, `z ∈ [−1, 1]`) pinches **both** caps: on
+    /// each, the stud's circle touches the square's `x = 0.5` edge at one point, and that edge
+    /// is shared with the `x = 0.5` wall. Before the pre-pass a straight edge carries exactly its
+    /// two ends, so the touching sample — a vertex of the circle — is a vertex of neither the
+    /// square ring nor the wall. The pre-pass inserts it into both edges' polylines, so the cap
+    /// gains its twin and the wall gains the same vertex (no T-vertex, no crack).
+    ///
+    /// Read through the test-only `bridge_report`, because `tessellate` still refuses these caps
+    /// (the bridge itself is the next commit) and discards everything on the way out.
+    #[test]
+    fn the_bridge_prepass_splits_the_walls_edges_under_both_caps() {
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+        let stud = m.add_cylinder(
+            Point3::from_array([0.3, 0.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.2,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let out =
+            crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the through stud fuses");
+        assert_eq!(out.len(), 1);
+        m.rebuild_adjacency();
+        let (report, t) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default());
+        assert!(
+            report.declined.is_empty(),
+            "declined: {:?}",
+            report.declined
+        );
+        assert_eq!(report.splits.len(), 2, "splits: {:?}", report.splits);
+        assert_ne!(
+            report.splits[0].edge, report.splits[1].edge,
+            "one split per cap"
+        );
+        for s in &report.splits {
+            assert!(
+                matches!(m.edge_curve(s.edge), nacre_geom::Curve::Line(_)),
+                "the split edge is straight"
+            );
+            let poly = &t.by_edge[&s.edge];
+            assert_eq!(poly.len(), 3, "two ends and the touching sample");
+            assert_eq!(poly[s.at], s.vertex);
+            assert!(
+                matches!(
+                    t.vertices.get(s.vertex).origin,
+                    nacre_tess::TessOrigin::OnEdge { .. }
+                ),
+                "the inserted vertex is the circle's own sample, not a new one"
+            );
+        }
+        // The blind stud (base anchoring) pinches one cap only.
+        let mut m = Model::new();
+        let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+        let stud = m.add_cylinder(
+            Point3::from_array([0.3, 0.0, 0.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.2,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        crate::boolean(&mut m, BoolKind::Fuse, cube, stud).expect("the blind stud fuses");
+        m.rebuild_adjacency();
+        let (report, _) = nacre_tess::bridge_report(&m, &nacre_tess::TessConfig::default());
+        assert!(report.declined.is_empty(), "{:?}", report.declined);
+        assert_eq!(report.splits.len(), 1, "{:?}", report.splits);
+    }
     /// ★★★★★ **A tangency from *outside* is two bodies, not a refusal** — the control that says
     /// the rule is not "reject every tangency", and the measurement that corrected it.
     ///

@@ -53,7 +53,7 @@ nacre-validate = { path = "../nacre-validate", version = "0.0.0" }
 # dev-only so the published lib's dependency surface stays clean (no cycle: neither
 # depends on nacre-ops).
 nacre-step = { path = "../nacre-step", version = "0.0.0" }
-nacre-tess = { path = "../nacre-tess", version = "0.0.0" }
+nacre-tess = { path = "../nacre-tess", version = "0.0.0", features = ["test-util"] }
 # Boolean tests diff result volumes against the analytic mass properties.
 nacre-props = { path = "../nacre-props", version = "0.0.0" }
 # The wide-name rescue tests hand-build synthetic `PlaneName::Wide` fixtures (production code

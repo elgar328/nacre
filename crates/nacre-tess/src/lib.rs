@@ -202,29 +202,248 @@ impl Tessellation {
 /// stores would mesh the operands alongside the result.
 pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessError> {
     let mut t = Tessellation::default();
-    let mut vmap: HashMap<Handle<Vertex>, Handle<TessVertex>> = HashMap::new();
     // `Reachable` is a `HashSet`; walk the stores in their own order and merely ask
     // membership, so the mesh stays reproducible (design §2: replay).
     let reach = model.reachable();
 
     // 1. Sample every live edge into a shared polyline (the crack-free contract).
-    for (eh, edge) in model.edges.iter() {
-        if !reach.edges.contains(&eh) {
-            continue;
-        }
-        let polyline = sample_edge(&mut t, &mut vmap, model, cfg, eh, edge);
-        t.by_edge.insert(eh, polyline);
-    }
+    let live = sample_live_edges(&mut t, model, cfg, &reach);
 
+    // 1½. Where a hole's sample lands exactly on a straight shared edge (an exact tangency, the
+    // one boundary the sweep cannot decompose), put that sample into the edge's polyline so
+    // every face on the edge sees it. Nothing is minted and no coordinate moves: an existing
+    // vertex becomes a sample of a second edge it lies on. See [`bridge_shared_edges`].
+    let _report = bridge_shared_edges(&mut t, model, &live);
     // 2. Triangulate each live face, reusing the shared edge polylines.
-    for (fh, face) in model.faces.iter() {
-        if !reach.faces.contains(&fh) {
-            continue;
-        }
+    for &(fh, face) in &live {
         triangulate_face(&mut t, model, cfg, fh, face)?;
     }
 
     Ok(t)
+}
+
+/// Phase 1 of [`tessellate`]: sample every live edge into `by_edge`, and hand back the live
+/// faces in store order so the later phases walk exactly that set.
+fn sample_live_edges<'m>(
+    t: &mut Tessellation,
+    model: &'m Model,
+    cfg: &TessConfig,
+    reach: &nacre_topo::Reachable,
+) -> Vec<(Handle<Face>, &'m Face)> {
+    let mut vmap: HashMap<Handle<Vertex>, Handle<TessVertex>> = HashMap::new();
+    for (eh, edge) in model.edges.iter() {
+        if !reach.edges.contains(&eh) {
+            continue;
+        }
+        let polyline = sample_edge(t, &mut vmap, model, cfg, eh, edge);
+        t.by_edge.insert(eh, polyline);
+    }
+    model
+        .faces
+        .iter()
+        .filter(|(fh, _)| reach.faces.contains(fh))
+        .collect()
+}
+
+/// One insertion the bridge pre-pass made: `vertex` now sits at `at` in `by_edge[edge]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Split {
+    pub edge: Handle<Edge>,
+    pub at: usize,
+    pub vertex: Handle<TessVertex>,
+}
+
+/// Why the bridge pre-pass left a bridgeable-looking touch alone. Counted, never acted on:
+/// every case is a shape this pass does not bridge, and the sweep goes on refusing it by name.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Declined {
+    /// The touched segment is a chord of a curved edge: a point on the chord is not on the curve.
+    CurvedEdge,
+    /// A face sharing the touched edge is not planar: a vertex planted there would seed diagonals
+    /// on a curved chart, a population this pass has not measured.
+    CurvedNeighbour,
+    /// Two touches on one segment: three coincident vertices have no consistent order.
+    SharedSegment,
+    /// One vertex touching two different segments.
+    MultiSegment,
+    /// The touched segment was not found consecutive in any polyline of its face.
+    NoEdge,
+}
+
+/// What the bridge pre-pass did and declined, for the caller that wants to read it.
+#[derive(Clone, Debug, Default)]
+pub struct BridgeReport {
+    pub splits: Vec<Split>,
+    pub declined: Vec<(Handle<Face>, Declined)>,
+}
+
+/// ★★★★★ **The bridge pre-pass — a tangency's sample becomes a sample of the edge it touches.**
+///
+/// A planar face whose hole touches another ring at exactly one point is a valid solid the
+/// sweep cannot decompose: the touching vertex is a sample of the *curved* edge, and the
+/// straight edge it lands on carries only its two ends (`sample_edge`'s `Line` arm), so the
+/// square ring has no vertex there to bridge to. Inserting that existing vertex into the
+/// straight edge's polyline gives the face the twin it needs — and, because `by_edge` is
+/// shared and read live by every face, gives the neighbouring face the same vertex, which is
+/// what keeps the mesh crack-free (a split one side does not know about is a T-vertex).
+///
+/// **Order matters twice.** Touches are collected over *every* live face before any polyline
+/// is changed, so a face walked later does not see an already-split edge and misreport the
+/// touch as `AtEnd`; and insertions on one edge go later-position-first, so earlier positions
+/// stay valid. The pass is idempotent: a polyline that already holds the vertex is left alone.
+///
+/// **Edge → faces is built here, from the live set**, not read from the model's adjacency —
+/// inside a boolean the adjacency is stale (its callers rebuild it afterwards), and this pass
+/// runs on the model as handed to it.
+///
+/// What it declines, it counts (see [`Declined`]); the population it was measured on is four
+/// planar caps, every touch `Interior` and `Tangent` on a straight edge shared by two planes.
+fn bridge_shared_edges(
+    t: &mut Tessellation,
+    model: &Model,
+    live: &[(Handle<Face>, &Face)],
+) -> BridgeReport {
+    use polygon::{TouchKind, Witness};
+    struct Cand {
+        face: Handle<Face>,
+        vertex: Handle<TessVertex>,
+        seg: [Handle<TessVertex>; 2],
+    }
+    struct Pending {
+        edge: Handle<Edge>,
+        at: usize,
+        vertex: Handle<TessVertex>,
+        face: Handle<Face>,
+    }
+    let mut report = BridgeReport::default();
+
+    // 1. Every bridgeable touch, read before anything is changed.
+    let mut cands: Vec<Cand> = Vec::new();
+    for &(fh, face) in live {
+        let Surface::Plane(plane) = model.surface(face.surface) else {
+            continue;
+        };
+        let Ok(chart) = planar_chart(t, face, plane) else {
+            continue; // the face's own triangulation will name this error
+        };
+        let refs: Vec<&[usize]> = chart.rings.iter().map(|r| r.as_slice()).collect();
+        let Ok(m) = polygon::meets(&chart.uv, &refs) else {
+            continue;
+        };
+        let bridgeable =
+            |tc: &polygon::Touch| tc.kind == TouchKind::Interior && tc.witness == Witness::Tangent;
+        let mut per_vertex: HashMap<usize, usize> = HashMap::new();
+        for tc in m.touches.iter().filter(|tc| bridgeable(tc)) {
+            *per_vertex.entry(tc.vertex).or_default() += 1;
+        }
+        for tc in m.touches.iter().filter(|tc| bridgeable(tc)) {
+            if per_vertex[&tc.vertex] > 1 {
+                report.declined.push((fh, Declined::MultiSegment));
+                continue;
+            }
+            cands.push(Cand {
+                face: fh,
+                vertex: chart.handles[tc.vertex],
+                seg: [chart.handles[tc.segment], chart.handles[tc.segment_end]],
+            });
+        }
+    }
+    if cands.is_empty() {
+        return report;
+    }
+
+    // 2. Which faces share each edge, and which of them are planar.
+    let planar: HashMap<Handle<Face>, bool> = live
+        .iter()
+        .map(|&(fh, f)| (fh, matches!(model.surface(f.surface), Surface::Plane(_))))
+        .collect();
+    let mut faces_on: HashMap<Handle<Edge>, Vec<Handle<Face>>> = HashMap::new();
+    for &(fh, face) in live {
+        for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+            for he in &lp.half_edges {
+                faces_on.entry(he.edge).or_default().push(fh);
+            }
+        }
+    }
+
+    // 3. Find each touched segment in its face's polylines and apply the guards.
+    let mut pending: Vec<Pending> = Vec::new();
+    for c in &cands {
+        let face = live
+            .iter()
+            .find(|(fh, _)| *fh == c.face)
+            .map(|(_, f)| *f)
+            .expect("a candidate names a live face");
+        let mut found = None;
+        'search: for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+            for he in &lp.half_edges {
+                let poly = &t.by_edge[&he.edge];
+                for k in 0..poly.len().saturating_sub(1) {
+                    let (p, q) = (poly[k], poly[k + 1]);
+                    if (p == c.seg[0] && q == c.seg[1]) || (p == c.seg[1] && q == c.seg[0]) {
+                        found = Some((he.edge, k));
+                        break 'search;
+                    }
+                }
+            }
+        }
+        let Some((eh, k)) = found else {
+            report.declined.push((c.face, Declined::NoEdge));
+            continue;
+        };
+        if !matches!(model.edge_curve(eh), Curve::Line(_)) {
+            report.declined.push((c.face, Declined::CurvedEdge));
+            continue;
+        }
+        if faces_on[&eh].iter().any(|f| !planar[f]) {
+            report.declined.push((c.face, Declined::CurvedNeighbour));
+            continue;
+        }
+        pending.push(Pending {
+            edge: eh,
+            at: k,
+            vertex: c.vertex,
+            face: c.face,
+        });
+    }
+    let mut on_segment: HashMap<(Handle<Edge>, usize), usize> = HashMap::new();
+    for p in &pending {
+        *on_segment.entry((p.edge, p.at)).or_default() += 1;
+    }
+    let (shared, mut ok): (Vec<_>, Vec<_>) = pending
+        .into_iter()
+        .partition(|p| on_segment[&(p.edge, p.at)] > 1);
+    for p in shared {
+        report.declined.push((p.face, Declined::SharedSegment));
+    }
+
+    // 4. Insert — per edge, later positions first, never twice.
+    ok.sort_by_key(|p| (p.edge.index(), std::cmp::Reverse(p.at)));
+    for p in ok {
+        let poly = t.by_edge.get_mut(&p.edge).expect("the edge was sampled");
+        if poly.contains(&p.vertex) {
+            continue;
+        }
+        poly.insert(p.at + 1, p.vertex);
+        report.splits.push(Split {
+            edge: p.edge,
+            at: p.at + 1,
+            vertex: p.vertex,
+        });
+    }
+    report
+}
+
+/// The bridge pre-pass alone, for a test that wants to see what it did before any face is
+/// triangulated (the returned `Tessellation` holds the sampled, split edge polylines and no
+/// triangles). Test-only, like `nacre-topo`'s `add_cuboid`.
+#[cfg(feature = "test-util")]
+pub fn bridge_report(model: &Model, cfg: &TessConfig) -> (BridgeReport, Tessellation) {
+    let mut t = Tessellation::default();
+    let reach = model.reachable();
+    let live = sample_live_edges(&mut t, model, cfg, &reach);
+    let report = bridge_shared_edges(&mut t, model, &live);
+    (report, t)
 }
 
 /// A deduped mesh vertex for a topology vertex (tagged `OnVertex`).
@@ -977,12 +1196,13 @@ mod tests {
         for r in [0.1, 0.5, 3.0, 20.0] {
             let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], r, 5.0);
             let t = tessellate(&m, &cfg).unwrap();
-            for (_, ring) in t.by_edge.iter() {
-                if ring.len() < 3 {
-                    continue; // a straight seam edge has no turn to measure
+            for (&eh, ring) in t.by_edge.iter() {
+                if ring.len() < 3 || matches!(m.edge_curve(eh), Curve::Line(_)) {
+                    continue; // a straight edge has no turn to measure, however many samples
                 }
-                // Wrapping is right because every multi-point polyline here is a closed
-                // rim; an arc would need the two end turns left out (M6-3).
+                // Wrapping is right because every multi-point *curved* polyline here is a
+                // closed rim; an arc would need the two end turns left out (M6-3). A straight
+                // edge can carry a third sample too (the bridge pre-pass), and is skipped above.
                 let p: Vec<Point3> = ring.iter().map(|&h| t.vertices.get(h).pos).collect();
                 for i in 0..p.len() {
                     let (a, b, c) = (p[i], p[(i + 1) % p.len()], p[(i + 2) % p.len()]);

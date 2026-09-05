@@ -85,7 +85,7 @@ pub(super) fn decompose(uv: &[P2], rings: &[&[usize]]) -> Result<Vec<Vec<usize>>
 /// well defined: **every vertex is used exactly once.** A repeated index would give
 /// one vertex two successors, and the sweep would have no way to know which chain it
 /// was on.
-fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usize>), TessError> {
+pub(super) fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usize>), TessError> {
     const NONE: usize = usize::MAX;
     let (mut prev, mut next) = (vec![NONE; n], vec![NONE; n]);
     for r in rings {
@@ -214,6 +214,7 @@ pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
             meets.touches.push(Touch {
                 vertex: i,
                 segment: a,
+                segment_end: b,
                 kind,
                 witness,
             });
@@ -254,7 +255,7 @@ pub(super) fn self_touch(uv: &[P2], prev: &[usize], next: &[usize]) -> Meets {
 
 /// Where on its segment a touching vertex sits — the bit a bridge builder branches on.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum TouchKind {
+pub(crate) enum TouchKind {
     /// The vertex coincides with one of the segment's ends: two rings share a coordinate, and
     /// both bend there. A bridge between them costs nothing.
     AtEnd,
@@ -266,7 +267,7 @@ pub(super) enum TouchKind {
 
 /// What the tangency witness said about a touch.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum Witness {
+pub(crate) enum Witness {
     /// Both ring neighbours on one side of the touched line: the boundary turns back here.
     Tangent,
     /// Not decidable from one line — an `AtEnd` touch, or a neighbour exactly on the line.
@@ -276,12 +277,14 @@ pub(super) enum Witness {
 
 /// One vertex on one segment it does not belong to — see [`self_touch`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) struct Touch {
-    pub(super) vertex: usize,
-    /// The segment `segment → next[segment]`.
-    pub(super) segment: usize,
-    pub(super) kind: TouchKind,
-    pub(super) witness: Witness,
+pub(crate) struct Touch {
+    pub(crate) vertex: usize,
+    /// The segment `segment → segment_end` (`segment_end == next[segment]`, carried so a caller
+    /// without the ring arrays can find the segment in its own polylines).
+    pub(crate) segment: usize,
+    pub(crate) segment_end: usize,
+    pub(crate) kind: TouchKind,
+    pub(crate) witness: Witness,
 }
 
 /// Everything [`self_touch`] found. `touches` holds one record per touch — a vertex on a shared
@@ -289,9 +292,9 @@ pub(super) struct Touch {
 /// the segment scan or by a touch whose witness said the boundary passes through, outranks every
 /// touch.
 #[derive(Clone, PartialEq, Eq, Debug)]
-pub(super) struct Meets {
-    pub(super) touches: Vec<Touch>,
-    pub(super) crossing: Option<(usize, usize)>,
+pub(crate) struct Meets {
+    pub(crate) touches: Vec<Touch>,
+    pub(crate) crossing: Option<(usize, usize)>,
 }
 
 fn classify(uv: &[P2], prev: &[usize], next: &[usize]) -> Result<Vec<Kind>, TessError> {
@@ -871,6 +874,7 @@ mod touch_tests {
             vec![Touch {
                 vertex: 4,
                 segment: 0,
+                segment_end: 1,
                 kind: TouchKind::Interior,
                 witness: Witness::Tangent,
             }]

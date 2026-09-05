@@ -14,6 +14,11 @@ nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
 nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
 
+[features]
+# Exposes the bridge pre-pass on its own (`bridge_report`) so a crate that can build a boolean
+# can lock what it split — the same shape as nacre-topo's `test-util`. Never on in a product build.
+test-util = []
+
 [dev-dependencies]
 # Enables the topo test-only primitive `Model::add_cuboid` for the cube-dump example/tests.
 nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }

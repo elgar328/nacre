@@ -11,6 +11,8 @@
 mod delaunay;
 mod monotone;
 
+pub(crate) use monotone::{Meets, Touch, TouchKind, Witness};
+
 use crate::TessError;
 use nacre_math::{Point3, Vector3};
 use nacre_predicates::orient2d;
@@ -105,6 +107,14 @@ pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
 /// ★★ **`candidates` are points the caller offers the interior**, in its own order; `uv` grows by
 /// the ones that were taken, in that same order, so a caller can map the tail back through its
 /// chart. A candidate with nowhere to go is **dropped, not forced** — see [`insert_interior`].
+/// Every way a ring set's boundary meets itself, without triangulating it — the chart layer's
+/// question before it decides to bridge a touch. Rings are linked exactly as [`triangulate_uv`]
+/// would link them, so the answer is the one the sweep would refuse on.
+pub(crate) fn meets(uv: &[P2], rings: &[&[usize]]) -> Result<Meets, TessError> {
+    let (prev, next) = monotone::link(uv.len(), rings)?;
+    Ok(monotone::self_touch(uv, &prev, &next))
+}
+
 pub(crate) fn triangulate_uv(
     uv: &mut Vec<P2>,
     rings: &[&[usize]],
