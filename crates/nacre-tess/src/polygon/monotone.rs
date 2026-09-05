@@ -18,6 +18,7 @@
 //! ones) and which side of a line a point falls on (`orient2d`, Shewchuk adaptive).
 //! There is no tolerance anywhere in this file.
 
+use super::sos::{Twins, lex_less_idx, side_idx};
 use super::{P2, lex_less, strictly_between};
 use crate::TessError;
 use nacre_predicates::orient2d;
@@ -62,7 +63,11 @@ enum Kind {
 /// once. That is the b-rep's own invariant (a face's loops are disjoint and its holes
 /// are siblings, never nested), but this file does not get to assume it — a violation
 /// comes back as [`TessError::DegenerateRing`] rather than as a quietly wrong mesh.
-pub(super) fn decompose(uv: &[P2], rings: &[&[usize]]) -> Result<Vec<Vec<usize>>, TessError> {
+pub(super) fn decompose(
+    uv: &[P2],
+    rings: &[&[usize]],
+    twins: Option<&Twins>,
+) -> Result<Vec<Vec<usize>>, TessError> {
     let n = uv.len();
     let (prev, next) = link(n, rings)?;
     // "Wrong" outranks "cannot": a crossing means every triangulation of these rings is wrong,
@@ -77,7 +82,7 @@ pub(super) fn decompose(uv: &[P2], rings: &[&[usize]]) -> Result<Vec<Vec<usize>>
     }
 
     let kinds = classify(uv, &prev, &next)?;
-    let diagonals = sweep(uv, &prev, &next, &kinds)?;
+    let diagonals = sweep(uv, &prev, &next, &kinds, twins)?;
     trace(uv, &next, &diagonals)
 }
 
@@ -339,10 +344,26 @@ fn sweep(
     prev: &[usize],
     next: &[usize],
     kinds: &[Kind],
+    twins: Option<&Twins>,
 ) -> Result<Vec<[usize; 2]>, TessError> {
     let n = uv.len();
+    // The one tie the order allows is the sanctioned pair, decided once here (a comparator
+    // cannot fail) and read by the sort below.
+    let twin_first = match twins {
+        Some(tw) => Some(lex_less_idx(tw.o, tw.h, uv, twins).ok_or(TessError::DegenerateRing)?),
+        None => None,
+    };
     let mut order: Vec<usize> = (0..n).collect();
     order.sort_by(|&a, &b| {
+        if let (Some(tw), Some(first)) = (twins, twin_first) {
+            if tw.is_pair(a, b) {
+                return if (a == tw.o) == first {
+                    std::cmp::Ordering::Less
+                } else {
+                    std::cmp::Ordering::Greater
+                };
+            }
+        }
         if lex_less(uv[a], uv[b]) {
             std::cmp::Ordering::Less
         } else if lex_less(uv[b], uv[a]) {
@@ -352,8 +373,12 @@ fn sweep(
         }
     });
     // Two vertices at the same point make `lex_less` a non-strict order, and every
-    // "which is above" question below would then have no answer.
-    if order.windows(2).any(|w| uv[w[0]] == uv[w[1]]) {
+    // "which is above" question below would then have no answer — except the sanctioned
+    // twins, whose order `sos` supplies.
+    if order
+        .windows(2)
+        .any(|w| uv[w[0]] == uv[w[1]] && !twins.is_some_and(|tw| tw.is_pair(w[0], w[1])))
+    {
         return Err(TessError::DegenerateRing);
     }
 
@@ -364,18 +389,32 @@ fn sweep(
 
     // The edge of `status` immediately left of `v` — the one whose region `v` falls
     // into. `None` means `v` is outside every span, which a valid polygon cannot be.
-    let left_of = |status: &Vec<Edge>, v: usize, uv: &[P2]| -> Option<usize> {
-        status
-            .iter()
-            .rposition(|e| side(uv[e.upper], uv[next[e.upper]], uv[v]) > 0)
+    // A zero here is structural only with the twins (a twin queried against the other twin's
+    // edge); `side_idx` decides it, and a zero it cannot decide is a refusal, not a guess.
+    let left_of = |status: &Vec<Edge>, v: usize, uv: &[P2]| -> Result<Option<usize>, TessError> {
+        for (i, e) in status.iter().enumerate().rev() {
+            let s =
+                side_idx(e.upper, next[e.upper], v, uv, twins).ok_or(TessError::DegenerateRing)?;
+            if s > 0 {
+                return Ok(Some(i));
+            }
+        }
+        Ok(None)
     };
-    let insert = |status: &mut Vec<Edge>, upper: usize, helper: usize, uv: &[P2]| {
-        let at = status
-            .iter()
-            .position(|e| side(uv[e.upper], uv[next[e.upper]], uv[upper]) < 0)
-            .unwrap_or(status.len());
-        status.insert(at, Edge { upper, helper });
-    };
+    let insert =
+        |status: &mut Vec<Edge>, upper: usize, helper: usize, uv: &[P2]| -> Result<(), TessError> {
+            let mut at = status.len();
+            for (i, e) in status.iter().enumerate() {
+                let s = side_idx(e.upper, next[e.upper], upper, uv, twins)
+                    .ok_or(TessError::DegenerateRing)?;
+                if s < 0 {
+                    at = i;
+                    break;
+                }
+            }
+            status.insert(at, Edge { upper, helper });
+            Ok(())
+        };
     let remove = |status: &mut Vec<Edge>, upper: usize| -> Result<usize, TessError> {
         let at = status
             .iter()
@@ -386,7 +425,7 @@ fn sweep(
 
     for &v in &order {
         match kinds[v] {
-            Kind::Start => insert(&mut status, v, v, uv),
+            Kind::Start => insert(&mut status, v, v, uv)?,
             Kind::End => {
                 let h = remove(&mut status, prev[v])?;
                 if kinds[h] == Kind::Merge {
@@ -394,17 +433,17 @@ fn sweep(
                 }
             }
             Kind::Split => {
-                let at = left_of(&status, v, uv).ok_or(TessError::DegenerateRing)?;
+                let at = left_of(&status, v, uv)?.ok_or(TessError::DegenerateRing)?;
                 out.push([v, status[at].helper]);
                 status[at].helper = v;
-                insert(&mut status, v, v, uv);
+                insert(&mut status, v, v, uv)?;
             }
             Kind::Merge => {
                 let h = remove(&mut status, prev[v])?;
                 if kinds[h] == Kind::Merge {
                     out.push([v, h]);
                 }
-                let at = left_of(&status, v, uv).ok_or(TessError::DegenerateRing)?;
+                let at = left_of(&status, v, uv)?.ok_or(TessError::DegenerateRing)?;
                 if kinds[status[at].helper] == Kind::Merge {
                     out.push([v, status[at].helper]);
                 }
@@ -420,9 +459,9 @@ fn sweep(
                     if kinds[h] == Kind::Merge {
                         out.push([v, h]);
                     }
-                    insert(&mut status, v, v, uv);
+                    insert(&mut status, v, v, uv)?;
                 } else {
-                    let at = left_of(&status, v, uv).ok_or(TessError::DegenerateRing)?;
+                    let at = left_of(&status, v, uv)?.ok_or(TessError::DegenerateRing)?;
                     if kinds[status[at].helper] == Kind::Merge {
                         out.push([v, status[at].helper]);
                     }
@@ -533,17 +572,21 @@ pub(super) fn triangulate_monotone(
     uv: &[P2],
     piece: &[usize],
     out: &mut Vec<[usize; 3]>,
+    twins: Option<&Twins>,
 ) -> Result<(), TessError> {
     let m = piece.len();
     if m < 3 {
         return Err(TessError::DegenerateRing);
     }
+    // The sweep's order, twins included — the same order `sweep` used, or the chains below
+    // would not be the chains it cut.
+    let below = |a: usize, b: usize| lex_less_idx(a, b, uv, twins).ok_or(TessError::DegenerateRing);
     let (mut top, mut bot) = (0, 0);
     for i in 1..m {
-        if lex_less(uv[piece[i]], uv[piece[top]]) {
+        if below(piece[i], piece[top])? {
             top = i;
         }
-        if lex_less(uv[piece[bot]], uv[piece[i]]) {
+        if below(piece[bot], piece[i])? {
             bot = i;
         }
     }
@@ -560,6 +603,20 @@ pub(super) fn triangulate_monotone(
         v
     };
     let (left, right) = (walk(top, 1), walk(top, m - 1));
+    // The precondition this function never checked in production: each chain descends. A
+    // piece that does not is not the sweep's — and with twins in play, the one place a wrong
+    // order would otherwise pass silently.
+    debug_assert!(
+        [&left, &right].iter().all(|chain| {
+            std::iter::once(top)
+                .chain(chain.iter().copied())
+                .chain(std::iter::once(bot))
+                .collect::<Vec<_>>()
+                .windows(2)
+                .all(|w| below(piece[w[0]], piece[w[1]]).unwrap_or(false))
+        }),
+        "a monotone piece's chains must descend in sweep order"
+    );
 
     // One sweep-ordered sequence, each vertex tagged with the chain it came from.
     let mut seq: Vec<(usize, bool)> = Vec::with_capacity(m);
@@ -571,7 +628,7 @@ pub(super) fn triangulate_monotone(
         } else if ri >= right.len() {
             true
         } else {
-            lex_less(uv[piece[left[li]]], uv[piece[right[ri]]])
+            below(piece[left[li]], piece[right[ri]])?
         };
         if take_left {
             seq.push((left[li], true));
@@ -664,7 +721,7 @@ mod tests {
 
     fn check(pts: &[[f64; 2]], rings: &[&[usize]]) -> Vec<Vec<usize>> {
         let uv = uv(pts);
-        let pieces = decompose(&uv, rings).expect("decomposes");
+        let pieces = decompose(&uv, rings, None).expect("decomposes");
         for p in &pieces {
             assert_monotone(&uv, p);
         }
@@ -837,7 +894,7 @@ mod tests {
             [1.0, 2.0],
         ];
         assert!(matches!(
-            decompose(&uv(&pts), &[&[0, 1, 2, 3], &[4, 5, 0]]),
+            decompose(&uv(&pts), &[&[0, 1, 2, 3], &[4, 5, 0]], None),
             Err(TessError::DegenerateRing)
         ));
     }

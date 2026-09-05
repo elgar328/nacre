@@ -10,6 +10,7 @@
 
 mod delaunay;
 mod monotone;
+mod sos;
 
 pub(crate) use monotone::{Meets, Touch, TouchKind, Witness};
 
@@ -127,8 +128,8 @@ pub(crate) fn triangulate_uv(
         return Err(TessError::HoleWinding);
     }
     let mut out = Vec::new();
-    for piece in monotone::decompose(uv, rings)? {
-        monotone::triangulate_monotone(uv, &piece, &mut out)?;
+    for piece in monotone::decompose(uv, rings, None)? {
+        monotone::triangulate_monotone(uv, &piece, &mut out, None)?;
     }
     // The decomposition answers *whether* the face meshes; this answers *how well*.
     // It moves diagonals only — never the rings — so the count, the area and the
