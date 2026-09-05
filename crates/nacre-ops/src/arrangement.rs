@@ -6002,15 +6002,22 @@ fn cell_in_cell(
             if combinatorics::ring_is_mixed(&rings[b]) {
                 let undecided = || reject(RejectReason::WitnessNotRational);
                 let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
-                // From each rational node of `a` until one ray is clear (`None` is the probe
+                // From each rational witness of `a` until one ray is clear (`None` is the probe
                 // on the ring, a tangent ray, or a seam-incident root — a corner on the ray is
                 // decided, cell ②); an exhausted ring is the same degeneracy `ring_in_ring`
-                // names.
+                // names. ★ The witnesses, in order: the three-plane corners, the **rational
+                // branch corners** ([`combinatorics::branch_coords_rat`] — a half-cylinder
+                // prism's cap has no other kind, cell ⑩), and the chords' midpoints
+                // ([`chord_midpoint_rat`]) — the supplies the named road below has, so the two
+                // roads offer the same points.
                 let mut asked = false;
-                for p in rings[a]
-                    .iter()
-                    .filter_map(|e| combinatorics::node_coords_rat(jd, e.node))
-                {
+                let witnesses = rings[a].iter().flat_map(|e| {
+                    combinatorics::node_coords_rat(jd, e.node)
+                        .or_else(|| combinatorics::branch_coords_rat(jd, cyls, e.node))
+                        .into_iter()
+                        .chain(chord_midpoint_rat(jd, cyls, e))
+                });
+                for p in witnesses {
                     asked = true;
                     if let Some(hit) =
                         combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, &rings[b])
@@ -6019,8 +6026,8 @@ fn cell_in_cell(
                     }
                 }
                 // ★ Same split as the named road below: a list that was **empty** is not a list
-                // that ran out. ☑ No population reaches this arm with either today; counted so a
-                // future one arrives under the right name.
+                // that ran out. ☑ Measured (cell ⑩): the half-cylinder pair reached this arm with
+                // an empty list before the branch corners joined it.
                 return Err(reject(if asked {
                     RejectReason::NoClearRay
                 } else {

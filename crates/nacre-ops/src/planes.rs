@@ -127,6 +127,50 @@ pub(crate) struct CylFaceInfo {
 pub(crate) struct Footprint {
     /// The axis-parameter extent — [`CylFaceInfo::footprint`]'s doc says how it is read.
     pub(crate) span: Option<[nacre_scalar::Rat; 2]>,
+    /// The angular extent — the arc the face's rims trace, as two radial vectors of the
+    /// cylinder's radius from the axis, `from → to` counter-clockwise about the axis direction
+    /// ([`lateral_theta_extent`]). `None` is a whole circle, or an extent this road could not
+    /// state (an irrational corner, rims that do not chain into one arc) — read as the whole
+    /// circle, which is the answer before cell ⑩ and conservative.
+    pub(crate) theta: Option<RimArc>,
+}
+
+/// An arc of a cylinder's cross-section, by two **radial vectors** of the cylinder's radius — a
+/// rim point minus the axis point on its cap — `from → to` counter-clockwise about the axis
+/// direction, `from == to` never (a whole circle is [`Footprint::theta`]'s `None`). Rational, as
+/// every corner a prism's rim has is: a seam point when the reference direction's norm is
+/// (`inv_sqrt_exact`), a branch corner when its root is ([`nacre_scalar::quad::QuadVal::as_rat`]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct RimArc {
+    pub(crate) from: [nacre_scalar::Rat; 3],
+    pub(crate) to: [nacre_scalar::Rat; 3],
+}
+
+/// Whether the radial direction `x` lies on the arc `from → to` (counter-clockwise about `m`,
+/// ends included). The sign of `(u × v)·m` says whether `v` is counter-clockwise of `u` by less
+/// than a half turn; an arc of more than a half turn is the complement of the shorter way round —
+/// the same three-way reading `nacre_geom::mixed`'s arc containment makes in 2D.
+fn arc_contains(
+    arc: &RimArc,
+    x: &[nacre_scalar::Rat; 3],
+    m: &[nacre_scalar::Rat; 3],
+) -> Option<bool> {
+    use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
+    let turn =
+        |u: &[Rat; 3], v: &[Rat; 3]| -> Option<Rat> { dot3(&combinatorics::cross3_rat(u, v)?, m) };
+    let ft = turn(&arc.from, &arc.to)?;
+    let fx = turn(&arc.from, x)?;
+    let xt = turn(x, &arc.to)?;
+    Some(if ft > zero {
+        fx >= zero && xt >= zero
+    } else if ft < zero {
+        !(turn(&arc.to, x)? > zero && turn(x, &arc.from)? > zero)
+    } else if dot3(&arc.from, &arc.to)? > zero {
+        true // `from` and `to` point the same way: the whole circle
+    } else {
+        fx >= zero // exactly a half turn
+    })
 }
 
 #[derive(Clone)]
@@ -232,6 +276,9 @@ pub(crate) fn collect_planes(
                         motion: motion.filter(|_| def.is_none()),
                         footprint: Footprint {
                             span: def.as_ref().and_then(|d| lateral_t_range(model, face, d)),
+                            theta: def
+                                .as_ref()
+                                .and_then(|d| lateral_theta_extent(model, face, d)),
                         },
                         def,
                     }));
@@ -791,6 +838,162 @@ fn lateral_t_range(
 /// All shells of a solid — outer first, then cavities. The boolean seam
 /// front-end walks these so a cavitied operand's void walls are seen (cell
 /// (5c-in)); a non-hollow solid yields just its outer shell, unchanged.
+/// **The angular extent of a lateral face** (cell ⑩) — the union of the arcs its outer loop's rim
+/// edges trace on the cross-section, as one counter-clockwise arc of radial vectors
+/// ([`RimArc`]). A rim edge is one whose other carrier is a cap (a plane ⊥ the axis); its two
+/// vertices are the arc's ends in the producer's own order (`derive_edge_curve`: `[A, B]` is A to
+/// B counter-clockwise about the axis). A whole rim (`[v, v]`), an irrational corner, a carrier
+/// this road cannot translate into the world, or rims that do not chain into one arc give `None`
+/// — the whole circle, the reading before this existed.
+///
+/// A corner's radial vector is its point minus the axis point on the cap: a seam vertex is
+/// `r·ê` for `ê` the reference direction's unit part ⊥ the axis (rational when the norm is), a
+/// branch corner is the meet line's point at its root ([`nacre_scalar::quad::QuadVal::as_rat`] —
+/// rational for every wall through or perpendicular to the axis, and for a tangent wall's single
+/// root).
+fn lateral_theta_extent(
+    model: &Model,
+    face: &nacre_topo::Face,
+    def: &nacre_topo::CylinderDef,
+) -> Option<RimArc> {
+    use nacre_scalar::Rat;
+    use nacre_scalar::quad::CylinderMeet;
+    use nacre_topo::{QuadRoot, VertexDef};
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let world_coeffs = |plane: Handle<Surface>| -> Option<[Rat; 4]> {
+        let coeffs = *model.surface_name.get(&plane)?.narrow()?;
+        match model.plane_motion(plane) {
+            None => Some(coeffs),
+            Some(leaf) => nacre_scalar::Isometry::translation(model.chain_translation(leaf)?)
+                .plane_coeffs(coeffs),
+        }
+    };
+    let sub = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<[Rat; 3]> {
+        Some([
+            a[0].checked_sub(b[0])?,
+            a[1].checked_sub(b[1])?,
+            a[2].checked_sub(b[2])?,
+        ])
+    };
+    let scaled = |v: &[Rat; 3], k: Rat| -> Option<[Rat; 3]> {
+        Some([
+            v[0].checked_mul(k)?,
+            v[1].checked_mul(k)?,
+            v[2].checked_mul(k)?,
+        ])
+    };
+    // The radial vector of a rim corner on the cap `cap`.
+    let radial = |vh: Handle<Vertex>, cap: [Rat; 4]| -> Option<[Rat; 3]> {
+        let t = axis_param_of_plane(&cap, def)?;
+        let mut centre = o;
+        for k in 0..3 {
+            centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
+        }
+        match model.vertices.get(vh).def {
+            VertexDef::OnSeam(_) => {
+                let e = def.ref_dir();
+                let (mm, em) = (dot3(&m, &m)?, dot3(&e, &m)?);
+                let mut e1 = [Rat::from_int(0); 3];
+                for k in 0..3 {
+                    e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
+                }
+                scaled(
+                    &e1,
+                    r.checked_mul(nacre_scalar::inv_sqrt_exact(dot3(&e1, &e1)?)?)?,
+                )
+            }
+            VertexDef::Branch {
+                planes,
+                cylinder,
+                root,
+            } => {
+                if cylinder != face.surface {
+                    return None;
+                }
+                // `planes` are stored in ascending-handle order and the roots run along
+                // `n₀ × n₁` (`VertexDef::Branch`'s convention); the world statement translates
+                // only the constants, so the normals — and the order — are the stored ones.
+                let (c0, c1) = (world_coeffs(planes[0])?, world_coeffs(planes[1])?);
+                let (line, sv) =
+                    match nacre_scalar::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r)? {
+                        CylinderMeet::Pair { line, s } => match root {
+                            QuadRoot::Lo => (line, s[0].as_rat()?),
+                            QuadRoot::Hi => (line, s[1].as_rat()?),
+                            QuadRoot::Double => return None,
+                        },
+                        CylinderMeet::Tangent { line, s } => match root {
+                            QuadRoot::Double => (line, s),
+                            _ => return None,
+                        },
+                        _ => return None,
+                    };
+                let (b, d) = (line.base(), line.dir());
+                let mut p = b;
+                for k in 0..3 {
+                    p[k] = p[k].checked_add(sv.checked_mul(d[k])?)?;
+                }
+                sub(&p, &centre)
+            }
+            VertexDef::ThreePlane(_) => None,
+        }
+    };
+    let mut acc: Option<RimArc> = None;
+    for he in &face.outer.half_edges {
+        let e = model.edges.get(he.edge);
+        let [a, b] = e.surfaces;
+        let cap = if a == face.surface { b } else { a };
+        if cap == face.surface {
+            continue; // the seam
+        }
+        let coeffs = world_coeffs(cap)?;
+        if !nacre_scalar::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
+            continue; // a ruling on a wall, not a rim
+        }
+        let [va, vb] = e.vertices;
+        if va == vb {
+            return None; // a whole rim: the whole circle
+        }
+        let arc = RimArc {
+            from: radial(va, coeffs)?,
+            to: radial(vb, coeffs)?,
+        };
+        acc = Some(match acc {
+            None => arc,
+            Some(cur) => {
+                let (f_in, t_in) = (
+                    arc_contains(&cur, &arc.from, &m)?,
+                    arc_contains(&cur, &arc.to, &m)?,
+                );
+                if f_in && t_in {
+                    // Inside the current arc — or the two together close the circle.
+                    if arc != cur
+                        && arc_contains(&arc, &cur.from, &m)?
+                        && arc_contains(&arc, &cur.to, &m)?
+                    {
+                        return None;
+                    }
+                    cur
+                } else if f_in {
+                    RimArc {
+                        from: cur.from,
+                        to: arc.to,
+                    }
+                } else if t_in {
+                    RimArc {
+                        from: arc.from,
+                        to: cur.to,
+                    }
+                } else if arc_contains(&arc, &cur.from, &m)? && arc_contains(&arc, &cur.to, &m)? {
+                    arc // the current arc lies inside this one
+                } else {
+                    return None; // two arcs that do not chain: no single extent
+                }
+            }
+        });
+    }
+    acc
+}
+
 pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Shell>> {
     let s = model.solids.get(solid);
     std::iter::once(s.outer)
@@ -1119,7 +1322,7 @@ pub(crate) fn cylinder_gate(
         // it — the plane-level test decides first. ★ Measured before this was made lazy: one cut
         // over a plate with 16 bores built the table 16 times and read it 0, which is exactly the
         // shape `wall_faces_clear` warns about two doc comments below.
-        let mut spans: Option<Vec<[nacre_scalar::Rat; 2]>> = None;
+        let mut footprints: Option<Vec<Footprint>> = None;
         for (c, wp) in geom.iter().enumerate() {
             // ★ **A world description or nothing** — the question this loop asks is geometric
             // (does this class's plane clear that cylinder), and both sides have to speak about
@@ -1160,8 +1363,8 @@ pub(crate) fn cylinder_gate(
                     // infinite plane, no face of that plane's class can meet the lateral, and the
                     // caps are the plane–plane arrangement's business. A pair not shown to miss is
                     // recorded; the refusal reads the record once, after this loop.
-                    let spans = spans.get_or_insert_with(|| lateral_spans(faces, cyl.surf));
-                    if !oblique_plane_clears(&cyl.def, spans, &coeffs) {
+                    let fps = footprints.get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
+                    if !oblique_plane_clears(&cyl.def, fps, &coeffs) {
                         oblique.insert((c, ci));
                     }
                     continue;
@@ -1184,8 +1387,12 @@ pub(crate) fn cylinder_gate(
                     // already the world description (a class without one never reaches here). The
                     // guard this replaces refused every moved class outright, which is what kept a
                     // translated body out of the cylinder roads.
-                    let spans = spans.get_or_insert_with(|| lateral_spans(faces, cyl.surf));
-                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r, spans)? {
+                    let spans: Vec<[nacre_scalar::Rat; 2]> = footprints
+                        .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
+                        .iter()
+                        .map(|f| f.span.expect("a listed footprint has a span"))
+                        .collect();
+                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r, &spans)? {
                         // ★ **The record-and-pass arm** (rulings ladder, cell 4; widened in
                         // cell ③): a wall whose plane runs **within** the radius — any
                         // `0 ≤ d < r`, the through-axis wall included — and whose faces did not
@@ -1298,7 +1505,7 @@ pub(crate) fn cylinder_gate(
                 {
                     true
                 }
-                _ => lateral_faces_clear(faces, a, b) || lateral_faces_clear(faces, b, a),
+                _ => lateral_faces_clear(faces, a, b),
             };
             if !clear {
                 cyl_pairs.insert((i, j));
@@ -1686,7 +1893,17 @@ fn face_straddles_line(
 /// argued safe (no lateral face, no band, nothing to protect), but that argument rests on the face
 /// table being complete here, which is a separate premise from the one this function is about.
 fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar::Rat; 2]> {
-    let mut out = Vec::new();
+    lateral_footprints(faces, surf)
+        .into_iter()
+        .map(|f| f.span.expect("a listed footprint has a span"))
+        .collect()
+}
+
+/// **The footprints of a cylinder class's lateral faces** — [`lateral_spans`]' rule with the
+/// angular extent alongside (cell ⑩): empty if any face's span could not be stated, else one
+/// footprint per face.
+fn lateral_footprints(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint> {
+    let mut out: Vec<Footprint> = Vec::new();
     for row in faces {
         let FaceRow::Cylinder(cf) = row else { continue };
         // ★ Matched by **handle**, not by geometry: two operands may state the same cylinder
@@ -1704,7 +1921,7 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
         // sitting squarely in the band. `lateral_t_range` orders it; this is where that is
         // relied on, so this is where it is said.
         debug_assert!(span[0] <= span[1], "a span is stated low end first");
-        out.push(span);
+        out.push(cf.footprint);
     }
     out
 }
@@ -1725,47 +1942,88 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
 /// plane arm reads (`d = n`, cell ⑩) and what a parallel cylinder pair reads (`d = m_A`, where the
 /// radial term vanishes instead and the question is the spans alone). `None` is also `Rat`
 /// overflow.
+/// The reach is `[lo − √rho2_lo, hi + √rho2_hi]`: each end is a rational base and a radical the
+/// arc may or may not add. ★ With an angular extent (cell ⑩) the radial term `r·(d·û)` over the
+/// face's arc peaks at the direction of `d⊥` when the arc holds it — `√ρ²`, as before — and at an
+/// **end** of the arc otherwise, where it is `d·v` for the end's radial vector, a rational folded
+/// into the base with a zero radical. One root at most on each end, and no new arithmetic.
 struct Reach {
     lo: nacre_scalar::Rat,
     hi: nacre_scalar::Rat,
-    rho2: nacre_scalar::Rat,
+    rho2_lo: nacre_scalar::Rat,
+    rho2_hi: nacre_scalar::Rat,
 }
 
 fn lateral_reach(
     def: &nacre_topo::CylinderDef,
-    span: Option<[nacre_scalar::Rat; 2]>,
+    fp: &Footprint,
     d: &[nacre_scalar::Rat; 3],
 ) -> Option<Reach> {
     use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
     let dm = dot3(d, &m)?;
     let mm = dot3(&m, &m)?;
     let base = dot3(d, &o)?;
-    let (lo, hi) = if dm == Rat::from_int(0) {
+    let (mut lo, mut hi) = if dm == zero {
         (base, base)
     } else {
-        let [s0, s1] = span?;
+        let [s0, s1] = fp.span?;
         let (a, b) = (s0.checked_mul(dm)?, s1.checked_mul(dm)?);
         (base.checked_add(a.min(b))?, base.checked_add(a.max(b))?)
     };
-    let dd = dot3(d, d)?;
-    let dperp2 = dd.checked_sub(
-        dm.checked_mul(dm)?
-            .checked_mul(Rat::new(mm.denom(), mm.numer())?)?,
-    )?;
+    // `d⊥ = d − (d·m / m·m) m`, the direction of the radial term's peak; `|d⊥|² = d·d − (d·m)²/m·m`.
+    let k = dm.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
+    let mut dperp = *d;
+    for i in 0..3 {
+        dperp[i] = dperp[i].checked_sub(k.checked_mul(m[i])?)?;
+    }
+    let dperp2 = dot3(&dperp, &dperp)?;
     let rho2 = r.checked_mul(r)?.checked_mul(dperp2)?;
-    Some(Reach { lo, hi, rho2 })
+    let (rho2_lo, rho2_hi) = match &fp.theta {
+        _ if dperp2 == zero => (zero, zero), // `d ∥ m`: no radial term at all
+        None => (rho2, rho2),
+        Some(arc) => {
+            let (f, t) = (dot3(d, &arc.from)?, dot3(d, &arc.to)?);
+            let hi_rad = if arc_contains(arc, &dperp, &m)? {
+                rho2
+            } else {
+                hi = hi.checked_add(f.max(t))?;
+                zero
+            };
+            let mut neg = dperp;
+            for x in neg.iter_mut() {
+                *x = zero.checked_sub(*x)?;
+            }
+            let lo_rad = if arc_contains(arc, &neg, &m)? {
+                rho2
+            } else {
+                lo = lo.checked_add(f.min(t))?;
+                zero
+            };
+            (lo_rad, hi_rad)
+        }
+    };
+    Some(Reach {
+        lo,
+        hi,
+        rho2_lo,
+        rho2_hi,
+    })
 }
 
 /// Is the closed interval `[lo, hi]` (in the reach's own `d·p` units) disjoint from the reach?
 /// Closed against closed: equality is the other face's rim touching this one at a point, which
-/// is not clear. Squares only. `None` is overflow.
+/// is not clear. Squares only (a zero radical is the plain `gap > 0`). `None` is overflow.
 fn reach_clears(reach: &Reach, lo: nacre_scalar::Rat, hi: nacre_scalar::Rat) -> Option<bool> {
     let zero = nacre_scalar::Rat::from_int(0);
-    let beyond = |gap: nacre_scalar::Rat| -> Option<bool> {
-        Some(gap > zero && gap.checked_mul(gap)? > reach.rho2)
+    let beyond = |gap: nacre_scalar::Rat, rho2: nacre_scalar::Rat| -> Option<bool> {
+        Some(gap > zero && gap.checked_mul(gap)? > rho2)
     };
-    Some(beyond(lo.checked_sub(reach.hi)?)? || beyond(reach.lo.checked_sub(hi)?)?)
+    Some(
+        beyond(lo.checked_sub(reach.hi)?, reach.rho2_hi)?
+            || beyond(reach.lo.checked_sub(hi)?, reach.rho2_lo)?,
+    )
 }
 
 /// **Does every lateral face of this cylinder provably miss the plane `n·p + d = 0`?** — the oblique
@@ -1774,18 +2032,18 @@ fn reach_clears(reach: &Reach, lo: nacre_scalar::Rat, hi: nacre_scalar::Rat) -> 
 /// "unusable" ([`lateral_spans`]'s doc), never clear; so is overflow.
 fn oblique_plane_clears(
     def: &nacre_topo::CylinderDef,
-    spans: &[[nacre_scalar::Rat; 2]],
+    footprints: &[Footprint],
     coeffs: &[nacre_scalar::Rat; 4],
 ) -> bool {
-    if spans.is_empty() {
+    if footprints.is_empty() {
         return false;
     }
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let Some(station) = nacre_scalar::Rat::from_int(0).checked_sub(coeffs[3]) else {
         return false;
     };
-    spans.iter().all(|span| {
-        lateral_reach(def, Some(*span), &n).and_then(|reach| reach_clears(&reach, station, station))
+    footprints.iter().all(|fp| {
+        lateral_reach(def, fp, &n).and_then(|reach| reach_clears(&reach, station, station))
             == Some(true)
     })
 }
@@ -1828,33 +2086,109 @@ fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> boo
 /// `b` it is one face of unknown span, which the reach handles. `None` from either predicate is
 /// not clear.
 fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> bool {
-    use nacre_scalar::Rat;
-    let spans_a = lateral_spans(faces, a.surf);
-    if spans_a.is_empty() {
-        return false;
-    }
-    let spans_b: Vec<Option<[Rat; 2]>> = {
-        let v = lateral_spans(faces, b.surf);
+    // A class whose spans cannot be stated still has faces to ask about, with an unbounded
+    // reach along anything not perpendicular to its axis: one footprint that says so.
+    let listed = |surf: Handle<Surface>| -> Vec<Footprint> {
+        let v = lateral_footprints(faces, surf);
         if v.is_empty() {
-            vec![None]
+            vec![Footprint {
+                span: None,
+                theta: None,
+            }]
         } else {
-            v.into_iter().map(Some).collect()
+            v
         }
     };
-    let (o, m) = (a.def.origin(), a.def.dir());
-    let (Some(mo), Some(mm)) = (dot3(&m, &o), dot3(&m, &m)) else {
-        return false;
-    };
-    let station = |t: Rat| t.checked_mul(mm).and_then(|x| mo.checked_add(x));
-    spans_a.iter().all(|[t0, t1]| {
-        let (Some(lo), Some(hi)) = (station(*t0), station(*t1)) else {
-            return false;
-        };
-        spans_b.iter().all(|sb| {
-            lateral_reach(&b.def, *sb, &m).and_then(|reach| reach_clears(&reach, lo, hi))
-                == Some(true)
+    let (fa, fb) = (listed(a.surf), listed(b.surf));
+    let parallel = nacre_scalar::parallel_rat(&a.def.dir(), &b.def.dir());
+    fa.iter().all(|x| {
+        fb.iter().all(|y| {
+            slab_clears(a, x, b, y) == Some(true)
+                || slab_clears(b, y, a, x) == Some(true)
+                || (parallel && cross_sections_clear(a, x, b, y) == Some(true))
         })
     })
+}
+
+/// **Face `x` of `a` lies in a slab of two caps ⊥ `a`'s axis; does face `y` of `b` provably miss
+/// that slab?** — `y`'s reach along `a`'s axis ([`lateral_reach`], `d = m_a`) against `x`'s span
+/// stations. `x` needs a span; `None` is "not proved".
+fn slab_clears(a: &WorkingCyl, x: &Footprint, b: &WorkingCyl, y: &Footprint) -> Option<bool> {
+    let (o, m) = (a.def.origin(), a.def.dir());
+    let (mo, mm) = (dot3(&m, &o)?, dot3(&m, &m)?);
+    let station = |t: nacre_scalar::Rat| t.checked_mul(mm).and_then(|v| mo.checked_add(v));
+    let [t0, t1] = x.span?;
+    let (lo, hi) = (station(t0)?, station(t1)?);
+    reach_clears(&lateral_reach(&b.def, y, &m)?, lo, hi)
+}
+
+/// **Two lateral faces on parallel axes: do their rims' arcs miss each other in the common
+/// cross-section?** (cell ⑩). The chart is `a`'s: `û₁` the reference direction's unit part ⊥
+/// the axis, `û₂ = m̂ × û₁` — rational exactly when both norms are (`inv_sqrt_exact`; every prism
+/// on a world frame), else `None`. Each face's arc is its angular extent, or the whole circle
+/// when none is stated; the question is [`nacre_geom::mixed::arcs_share_a_point`]'s, and a
+/// touch is not clear. Sound for any face of the class because the extent is the footprint's
+/// bounding arc: wider than a notched face, never narrower.
+fn cross_sections_clear(
+    a: &WorkingCyl,
+    x: &Footprint,
+    b: &WorkingCyl,
+    y: &Footprint,
+) -> Option<bool> {
+    use nacre_geom::mixed::ArcSpec;
+    use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
+    let (o, m, e) = (a.def.origin(), a.def.dir(), a.def.ref_dir());
+    let (mm, em) = (dot3(&m, &m)?, dot3(&e, &m)?);
+    let mut e1 = [zero; 3];
+    for k in 0..3 {
+        e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
+    }
+    let inv_e1 = nacre_scalar::inv_sqrt_exact(dot3(&e1, &e1)?)?;
+    let inv_m = nacre_scalar::inv_sqrt_exact(mm)?;
+    let scaled = |v: &[Rat; 3], k: Rat| -> Option<[Rat; 3]> {
+        Some([
+            v[0].checked_mul(k)?,
+            v[1].checked_mul(k)?,
+            v[2].checked_mul(k)?,
+        ])
+    };
+    let u1 = scaled(&e1, inv_e1)?;
+    let u2 = scaled(
+        &combinatorics::cross3_rat(&m, &e1)?,
+        inv_m.checked_mul(inv_e1)?,
+    )?;
+    let chart = |p: &[Rat; 3]| -> Option<[Rat; 2]> {
+        let mut v = *p;
+        for k in 0..3 {
+            v[k] = v[k].checked_sub(o[k])?;
+        }
+        Some([dot3(&v, &u1)?, dot3(&v, &u2)?])
+    };
+    let add2 = |p: [Rat; 2], q: [Rat; 2]| -> Option<[Rat; 2]> {
+        Some([p[0].checked_add(q[0])?, p[1].checked_add(q[1])?])
+    };
+    let spec = |c: &WorkingCyl, fp: &Footprint| -> Option<ArcSpec> {
+        let centre = chart(&c.def.origin())?;
+        let radius = c.def.radius();
+        let (start, end) = match &fp.theta {
+            Some(arc) => (
+                add2(centre, [dot3(&arc.from, &u1)?, dot3(&arc.from, &u2)?])?,
+                add2(centre, [dot3(&arc.to, &u1)?, dot3(&arc.to, &u2)?])?,
+            ),
+            None => {
+                let p = add2(centre, [radius, zero])?;
+                (p, p)
+            }
+        };
+        Some(ArcSpec {
+            centre,
+            radius,
+            start,
+            end,
+        })
+    };
+    nacre_geom::mixed::arcs_share_a_point(&spec(a, x)?, &spec(b, y)?).map(|meet| !meet)
 }
 
 /// Whether one planar face misses the **rectangle** this cylinder occupies in the face's plane.
@@ -3049,33 +3383,96 @@ mod tests {
             q(1, 5),
         )
         .unwrap();
+        let fp = |span: Option<[Rat; 2]>| Footprint { span, theta: None };
         let span = Some([z(0), z(2)]);
+        // A whole-circle reach is `lo − √ρ² .. hi + √ρ²` with one `ρ²` on both ends.
+        let whole = |r: &Reach| {
+            assert_eq!(
+                r.rho2_lo, r.rho2_hi,
+                "a whole circle reaches both ways alike"
+            );
+            (r.lo, r.hi, r.rho2_hi)
+        };
         // Along its own axis: the projected span, no radial reach.
-        let along = lateral_reach(&def, span, &[z(0), z(0), z(1)]).unwrap();
-        assert_eq!((along.lo, along.hi, along.rho2), (z(0), z(2), z(0)));
+        let along = lateral_reach(&def, &fp(span), &[z(0), z(0), z(1)]).unwrap();
+        assert_eq!(whole(&along), (z(0), z(2), z(0)));
         // Across it: a point widened by r² — with or without a span.
         for s in [span, None] {
-            let across = lateral_reach(&def, s, &[z(0), z(1), z(0)]).unwrap();
-            assert_eq!((across.lo, across.hi, across.rho2), (z(0), z(0), q(1, 25)));
+            let across = lateral_reach(&def, &fp(s), &[z(0), z(1), z(0)]).unwrap();
+            assert_eq!(whole(&across), (z(0), z(0), q(1, 25)));
         }
         // No span and a projection that needs one: nothing proved.
-        assert!(lateral_reach(&def, None, &[z(0), z(0), z(1)]).is_none());
+        assert!(lateral_reach(&def, &fp(None), &[z(0), z(0), z(1)]).is_none());
         // Slanted, `d = (0, 1, 1)`: `d·m = 1`, `|d⊥|² = 2 − 1 = 1` — span and radial part both.
-        let slant = lateral_reach(&def, span, &[z(0), z(1), z(1)]).unwrap();
-        assert_eq!((slant.lo, slant.hi, slant.rho2), (z(0), z(2), q(1, 25)));
+        let slant = lateral_reach(&def, &fp(span), &[z(0), z(1), z(1)]).unwrap();
+        assert_eq!(whole(&slant), (z(0), z(2), q(1, 25)));
         // Reversed, the projection's ends swap and the reach is still stated low end first.
-        let back = lateral_reach(&def, span, &[z(0), z(0), z(-1)]).unwrap();
-        assert_eq!((back.lo, back.hi, back.rho2), (z(-2), z(0), z(0)));
+        let back = lateral_reach(&def, &fp(span), &[z(0), z(0), z(-1)]).unwrap();
+        assert_eq!(whole(&back), (z(-2), z(0), z(0)));
         // Overflow is `None`, never a verdict.
-        assert!(lateral_reach(&def, span, &[q(i128::MAX / 2, 1); 3]).is_none());
+        assert!(lateral_reach(&def, &fp(span), &[q(i128::MAX / 2, 1); 3]).is_none());
 
         // Clearance against the across reach, `0 ± 1/5`:
-        let reach = lateral_reach(&def, None, &[z(0), z(1), z(0)]).unwrap();
+        let reach = lateral_reach(&def, &fp(None), &[z(0), z(1), z(0)]).unwrap();
         assert_eq!(reach_clears(&reach, q(1, 4), z(1)), Some(true)); // past the far end
         assert_eq!(reach_clears(&reach, z(-1), q(-1, 4)), Some(true)); // past the near end
         assert_eq!(reach_clears(&reach, q(1, 5), z(1)), Some(false)); // touches the end: a point
         assert_eq!(reach_clears(&reach, q(-1, 10), q(1, 10)), Some(false)); // inside
         assert_eq!(reach_clears(&reach, q(-1, 10), z(1)), Some(false)); // straddles
+
+        // ★ Cell ⑩: **an arc reaches less than its circle.** The quarter arc from `(−r, 0)` to
+        // `(0, −r)` — the third quadrant, counter-clockwise about `+z`.
+        let m = [z(0), z(0), z(1)];
+        let arc = RimArc {
+            from: [q(-1, 5), z(0), z(0)],
+            to: [z(0), q(-1, 5), z(0)],
+        };
+        assert_eq!(arc_contains(&arc, &[z(-1), z(-1), z(0)], &m), Some(true)); // 225°
+        assert_eq!(arc_contains(&arc, &arc.from, &m), Some(true)); // an end is on it
+        assert_eq!(arc_contains(&arc, &[z(0), z(1), z(0)], &m), Some(false)); // 90°
+        assert_eq!(arc_contains(&arc, &[z(1), z(-1), z(0)], &m), Some(false)); // 315°
+        let long = RimArc {
+            from: arc.to,
+            to: arc.from,
+        }; // the other three quarters
+        assert_eq!(arc_contains(&long, &[z(1), z(1), z(0)], &m), Some(true));
+        assert_eq!(arc_contains(&long, &[z(-1), z(-1), z(0)], &m), Some(false));
+        let half = RimArc {
+            from: [z(1), z(0), z(0)],
+            to: [z(-1), z(0), z(0)],
+        }; // exactly a half turn, through +y
+        assert_eq!(arc_contains(&half, &[z(0), z(1), z(0)], &m), Some(true));
+        assert_eq!(arc_contains(&half, &[z(0), z(-1), z(0)], &m), Some(false));
+        let fq = |span: Option<[Rat; 2]>| Footprint {
+            span,
+            theta: Some(arc),
+        };
+        // `d = +y`: the peak direction `+y` (90°) is off the arc, so the far end is the larger of
+        // the ends' `d·v` — `0` at `(−r, 0)` — with no radical; `−y` (270°) is the arc's own end,
+        // so the near side keeps `ρ²`.
+        let up = lateral_reach(&def, &fq(None), &[z(0), z(1), z(0)]).unwrap();
+        assert_eq!(
+            (up.lo, up.hi, up.rho2_lo, up.rho2_hi),
+            (z(0), z(0), q(1, 25), z(0))
+        );
+        // `d = −y`: the mirror image.
+        let down = lateral_reach(&def, &fq(None), &[z(0), z(-1), z(0)]).unwrap();
+        assert_eq!(
+            (down.lo, down.hi, down.rho2_lo, down.rho2_hi),
+            (z(0), z(0), z(0), q(1, 25))
+        );
+        // `d = (1, 1, 0)`: `+d⊥` at 45° is off, `−d⊥` at 225° is on; both ends give `−1/5`.
+        let diag = lateral_reach(&def, &fq(None), &[z(1), z(1), z(0)]).unwrap();
+        assert_eq!(
+            (diag.lo, diag.hi, diag.rho2_lo, diag.rho2_hi),
+            (z(0), q(-1, 5), q(2, 25), z(0))
+        );
+        // And what the arc clears that the circle did not: a station at `+1/10` along `+y`.
+        assert_eq!(reach_clears(&up, q(1, 10), q(1, 10)), Some(true));
+        assert_eq!(reach_clears(&reach, q(1, 10), q(1, 10)), Some(false));
+        // Along the axis the arc changes nothing.
+        let along_arc = lateral_reach(&def, &fq(span), &[z(0), z(0), z(1)]).unwrap();
+        assert_eq!(whole(&along_arc), (z(0), z(2), z(0)));
     }
 
     /// **The tangency the gate used to refuse is now *stated*** — and every field of that

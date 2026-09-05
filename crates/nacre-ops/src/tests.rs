@@ -12459,6 +12459,158 @@ fn a_fillets_tangent_ruling_declines_where_the_ring_is_named() {
     );
 }
 
+/// ★ Cell ⑩, S2 — **the gate reads the arc, not the circle.** A lateral face's footprint has an
+/// angular extent, and the two clearance questions that used to see a whole circle read it: the
+/// oblique plane's reach (a quarter-cylinder sector beside a gusset whose slanted plane runs
+/// within the radius but past the arc) and the parallel pair's cross-section (two half-cylinder
+/// prisms whose infinite surfaces cross while their arcs face away). Each has its negative
+/// control: the same plane through the arc, the same pair with the arcs facing each other.
+#[test]
+fn the_gate_reads_the_arc_not_the_circle() {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let prism =
+        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
+            let profile = crate::from_edges(edges).unwrap().remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        };
+    let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
+        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let OpOutput::Transform { solid } = apply(
+            m,
+            &Operation::Transform {
+                solid: s,
+                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+            },
+        )
+        .expect("the translation applies") else {
+            unreachable!()
+        };
+        solid
+    };
+    let volume = |m: &Model, s: Handle<Solid>| nacre_props::mass_props(m, s).expect("props").volume;
+    let clean = |m: &Model| {
+        assert!(
+            nacre_validate::validate(m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(m)
+        );
+    };
+    let rejects = |out: Result<Vec<Handle<Solid>>, BoolError>, want: RejectReason| {
+        assert!(
+            matches!(&out, Err(BoolError::Rejected { reason, .. }) if *reason == want),
+            "{out:?} vs {want:?}"
+        );
+    };
+
+    // (a) A quarter-cylinder sector — the third quadrant of a radius-1.5 disk about the z axis,
+    // its two flat walls through the axis — and a gusset standing beside it at x ∈ [2, 3] whose
+    // slanted face `2y − z = 1.5` sits at `y ∈ [0.75, 1.25]` over the sector's height: within the
+    // radius of the axis, so the infinite cylinder is cut, but the sector's arc never reaches
+    // `y > 0`. Two bodies that do not touch.
+    let sector = |m: &mut Model| {
+        prism(
+            m,
+            Axis::Z,
+            vec![
+                crate::Edge2d::line(p2(0.0, 0.0), p2(-1.5, 0.0)).unwrap(),
+                crate::Edge2d::arc_turns(p2(0.0, 0.0), p2(-1.5, 0.0), 1).unwrap(),
+                crate::Edge2d::line(p2(0.0, -1.5), p2(0.0, 0.0)).unwrap(),
+            ],
+            1.0,
+        )
+    };
+    let gusset = |m: &mut Model, mirror_y: f64| {
+        let g = prism(
+            m,
+            Axis::X,
+            vec![
+                crate::Edge2d::line(p2(0.75 * mirror_y, 0.0), p2(3.0 * mirror_y, 0.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0 * mirror_y, 0.0), p2(3.0 * mirror_y, 4.5)).unwrap(),
+                crate::Edge2d::line(p2(3.0 * mirror_y, 4.5), p2(0.75 * mirror_y, 0.0)).unwrap(),
+            ],
+            1.0,
+        );
+        shift(m, g, [2.0, 0.0, 0.0])
+    };
+    let mut m = Model::new();
+    let a = sector(&mut m);
+    let b = gusset(&mut m, 1.0);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the plane runs past the arc");
+    assert_eq!(out.len(), 2, "two bodies, apart");
+    m.rebuild_adjacency();
+    clean(&m);
+    let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
+    let want = 0.5625 * std::f64::consts::PI + 5.0625;
+    assert!((v - want).abs() < 1e-9, "sector + gusset: {v} vs {want}");
+    // Negative control: the gusset mirrored in y, its slanted face `−2y − z = 1.5` at
+    // `y ∈ [−1.25, −0.75]` — through the sector's arc. An ellipse the kernel does not build.
+    let mut m = Model::new();
+    let a = sector(&mut m);
+    let b = gusset(&mut m, -1.0);
+    m.rebuild_adjacency();
+    rejects(
+        boolean(&mut m, BoolKind::Fuse, a, b),
+        RejectReason::ObliqueCylinderCut,
+    );
+
+    // (b) Two half-cylinder prisms of radius 1.5 on parallel axes 2.5 apart — closer than the
+    // radii's sum, so the infinite surfaces cross — with the flat sides facing each other and the
+    // arcs facing away. Their rims' arcs share no point of the cross-section, and the fuse is two
+    // bodies.
+    let half = |m: &mut Model, cx: f64, bulge: f64| {
+        // The chord is `x = cx`, `y ∈ [0, 3]`; the arc bulges toward `bulge · x`.
+        let (top, bottom) = (p2(cx, 3.0), p2(cx, 0.0));
+        let (start, chord) = if bulge < 0.0 {
+            (top, crate::Edge2d::line(bottom, top).unwrap())
+        } else {
+            (bottom, crate::Edge2d::line(top, bottom).unwrap())
+        };
+        prism(
+            m,
+            Axis::Z,
+            vec![
+                crate::Edge2d::arc_turns(p2(cx, 1.5), start, 2).unwrap(),
+                chord,
+            ],
+            1.0,
+        )
+    };
+    let mut m = Model::new();
+    let a = half(&mut m, 0.0, -1.0);
+    let b = half(&mut m, 2.5, 1.0);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the arcs face away");
+    assert_eq!(out.len(), 2, "two bodies, apart");
+    m.rebuild_adjacency();
+    clean(&m);
+    let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
+    let want = 2.25 * std::f64::consts::PI;
+    assert!((v - want).abs() < 1e-9, "two half disks: {v} vs {want}");
+    // Negative control: the second prism moved to the other side, its arc facing the first's —
+    // the arcs cross, the bodies overlap, and the curve between two cylinders is not built yet.
+    let mut m = Model::new();
+    let a = half(&mut m, 0.0, -1.0);
+    let b = half(&mut m, -2.5, 1.0);
+    m.rebuild_adjacency();
+    rejects(
+        boolean(&mut m, BoolKind::Fuse, a, b),
+        RejectReason::CylinderPairContact,
+    );
+}
+
 /// ★ Cell ⑩, S1 — **the gate reads faces at every one of its four sites.** Three fixtures the old
 /// gate refused for a fact about *surfaces*, and one it still refuses for a fact about faces —
 /// then the three shapes the refusal had been hiding from the arrangement: a solid with two

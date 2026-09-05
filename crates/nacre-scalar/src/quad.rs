@@ -152,6 +152,20 @@ impl QuadVal {
     /// the answer to `f64` rounding, which is what [`QuadVal::sign`] exists to take back. Said
     /// out loud now that the first caller has arrived (a reject's witness location, drawn for a
     /// human and asserted only approximately).
+    /// The value as a rational **when it is one**: `b = 0`, or `c` a perfect square (then
+    /// `a + b·√c` exactly). `None` is an irrational value, not a failure.
+    ///
+    /// ★ Judged on the **value**, never on `b == 0` alone: a perfect-square discriminant leaves
+    /// `b ≠ 0` with a rational sum — a branch corner where a wall through the axis meets the rim,
+    /// for one (cell ⑩; `ops::branch_def` reads such a corner by comparing values, the same rule).
+    pub fn as_rat(&self) -> Option<Rat> {
+        if self.b == Rat::from_int(0) {
+            return Some(self.a);
+        }
+        let k = crate::rat_sqrt_exact(self.c)?;
+        self.a.checked_add(self.b.checked_mul(k)?)
+    }
+
     pub fn to_f64(&self) -> f64 {
         self.a.to_f64() + self.b.to_f64() * self.c.to_f64().sqrt()
     }

@@ -5611,6 +5611,33 @@ pub(crate) fn branch_point(
 /// realization, so the two are one function split in the middle rather than two solves. Every
 /// exact question about a branch point — its order along the line, its side of a plane, its θ about
 /// the seam — takes this and never the realization.
+/// **A branch corner as a rational point, when it is one** — the meet line's point at its root,
+/// for a root [`nacre_scalar::quad::QuadVal::as_rat`] can state (a wall through or perpendicular
+/// to the axis, a tangent wall's double root); `None` for any other corner or name.
+///
+/// ★ A **witness supply**, not a coordinate vessel: [`node_coords_rat`]'s `None` for a branch node
+/// is a type fact ("the coordinate is `a + b√c`") that its callers route on, and it must stay so.
+/// This answers a different question — "is there a rational point *here* to cast from?" — and is
+/// total over its input: the corners it cannot state simply do not join the probe list, the way a
+/// chord's midpoint ([`crate::arrangement`]'s `chord_midpoint_rat`) abstains per edge. Cell ⑩: a
+/// half-cylinder prism's cap has two corners, both branch, both rational, and no other point —
+/// the population `RingHasNoWitness`'s own doc said would arrive.
+pub(crate) fn branch_coords_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    n: NodeId,
+) -> Option<[nacre_scalar::Rat; 3]> {
+    let (_, cyl, _) = branch_name(n)?;
+    let (line, s) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
+    let sv = s.as_rat()?;
+    let (b, d) = (line.base(), line.dir());
+    let mut p = b;
+    for k in 0..3 {
+        p[k] = p[k].checked_add(sv.checked_mul(d[k])?)?;
+    }
+    Some(p)
+}
+
 pub(crate) fn branch_meet(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,

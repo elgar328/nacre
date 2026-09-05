@@ -320,6 +320,31 @@ fn skipped(x: &QPt, skip: &[[Rat; 2]]) -> Option<bool> {
 }
 
 /// Do two arcs meet anywhere except at the points in `skip`? Touching counts.
+/// One circular arc of the plane, stated for [`arcs_share_a_point`]: `start → end` runs
+/// counter-clockwise on the circle `(centre, radius)`, and `start == end` is the whole circle. The
+/// points are on the circle — the caller's contract, as for every arc in this module.
+#[derive(Clone, Copy, Debug)]
+pub struct ArcSpec {
+    pub centre: [Rat; 2],
+    pub radius: Rat,
+    pub start: [Rat; 2],
+    pub end: [Rat; 2],
+}
+
+/// **Do two circular arcs of one plane share a point?** — the predicate the mixed ring already
+/// asks of two arc steps ([`arcs_meet`]), opened for the cylinder gate (cell ⑩): two lateral faces
+/// on parallel axes share a point iff their rims' arcs do in the common cross-section. Touching
+/// counts as sharing. `None` is overflow.
+pub fn arcs_share_a_point(a: &ArcSpec, b: &ArcSpec) -> Option<bool> {
+    let arc = |x: &ArcSpec| Arc {
+        c: x.centre,
+        r: x.radius,
+        s: x.start,
+        e: x.end,
+    };
+    arcs_meet(&arc(a), &arc(b), &[])
+}
+
 fn arcs_meet(a: &Arc, b: &Arc, skip: &[[Rat; 2]]) -> Option<bool> {
     if a.c == b.c {
         if a.r != b.r {
