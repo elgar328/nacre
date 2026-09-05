@@ -1318,7 +1318,10 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
     셋 Ok, 구멍 판 fuse/cut Ok(common 은 상자 면이 구멍에 접해 `SelfTouchingResult` — 픽스처의 접촉),
     **링(annulus) × 상자는 셋 다 `CylinderPairContact`** — 동축 쌍을 평행 팔이 거절한다(칸 ⑧이 남긴
     핸들 인턴, 흔한 모양에서 바로 보임), 슬롯 × 상자는 `TraceDeclined { OuterRing }`(접선 룰링 —
-    `ruling_side` 가 0). 다음 칸의 입력이다. 실측·대화·함정은 dev-log 「칸 ⑨」.
+    `ruling_side` 가 0). ★ 사용자의 첫 조립체(2026-09-06)가 이 둘에 **비스듬 팔**까지 세 벽을 한 번에
+    만났다 — 필렛 판 × 슬롯 창 × 삼각 거싯: 평행 쌍(축 거리 ≤ r₁+r₂)·접선 룰링(먼 상자와도)·거싯
+    빗변 vs 구멍(`ObliqueCylinderCut`, 비켰음을 묻지 않음). 셋 다 닿지 않는 면 사이의 거절이다.
+    다음 칸의 입력이다. 실측·대화·함정은 dev-log 「칸 ⑨」.
 
   ★★★★★ **능력 D의 첫 계단 — 차트의 «선분 집합»이 섰다 (2026-08-29, `e6846a9`).**
   새 모듈 `nacre-ops::cyl_chart`(**`#[cfg(test)]`** — 계기다). 짓고 **재기만** 했고 커토버는 없다.
