@@ -696,15 +696,21 @@ pub enum RejectReason {
     /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
     /// intersection is an ellipse (M6-3's vocabulary).
     ObliqueCylinderCut,
-    /// Two distinct cylinder classes **touch or overlap**: the distance between their axes is
-    /// not greater than the sum of their radii. Their intersection is a quartic curve, which is
-    /// M6b's.
+    /// Two distinct cylinder classes **may share a face**: parallel axes not clear of each other
+    /// by the radius sum (a coaxial pair included), or non-parallel axes within the radius sum
+    /// whose lateral faces could not be shown to miss each other along either axis. Where the
+    /// faces do meet, their intersection is a quartic curve, which is M6b's.
     ///
-    /// ★ The name used to promise more than the check delivered: the gate could only measure
-    /// the distance between *parallel* axes, so every other pair — a drill crossing a bore with
-    /// room to spare — was refused under this name too. The predicate now spells the distance
-    /// both ways ([`nacre_scalar::cylinders_clear`]), so the refusal states a fact about the
-    /// geometry rather than about the arithmetic that looked at it.
+    /// ★ The name used to promise more than the check delivered, twice. First the gate could
+    /// only measure the distance between *parallel* axes, so a drill crossing a bore with room
+    /// to spare was refused under this name; [`nacre_scalar::cylinders_clear`] spelled the
+    /// distance both ways. Then the distance was the whole rule, a fact about two infinite
+    /// surfaces: a stud fused through a cube and a second stud across it were refused because
+    /// their axes cross, though no *face* of one reaches the other. The gate now asks the faces
+    /// (`planes.rs`, the pair loop), so the refusal states a fact about the geometry that is
+    /// there. What it still cannot say is a coaxial pair whose faces clear — two stacked
+    /// cylinders — because the cylinder chart interns a class by handle and relies on that
+    /// refusal.
     CylinderPairContact,
     /// The population gate could not decide a (plane, cylinder) pair **exactly** — a plane
     /// with no narrow rational description, a rotated class, a moved cylinder (its def is

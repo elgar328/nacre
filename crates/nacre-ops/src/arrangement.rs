@@ -5766,11 +5766,7 @@ fn circle_centre_rat(
     let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let (o, m) = (def.origin(), def.dir());
-    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
+    let dot3 = crate::planes::dot3;
     let nm = dot3(&n, &m)?;
     let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
     let t = Rat::from_int(0)
@@ -5799,8 +5795,9 @@ fn circle_centre_rat(
 /// **empty** and the road refuses with a name about rays it never cast. The shape is the same
 /// circle either way, and this is what says so.
 ///
-/// **Why the chain is the whole circle.** The gate proves every pair of cylinders clear by more
-/// than the radius sum ([`crate::planes::cylinder_gate`], else `CylinderPairContact`), so two
+/// **Why the chain is the whole circle.** The gate proves every pair of cylinders clear — their
+/// surfaces by more than the radius sum, or their faces along an axis
+/// ([`crate::planes::cylinder_gate`], else `CylinderPairContact`) — so two
 /// circles on one class **cannot meet** — arcs that chain head-to-tail therefore all ride the same
 /// circle, and running one way round (`ccw` all equal — a mixed pair would retrace one arc) closes
 /// it exactly once. ☑ Measured before this was written: **every** ring the road refused for an

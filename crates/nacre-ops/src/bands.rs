@@ -3044,6 +3044,176 @@ mod tests {
         );
     }
 
+    /// ★★★★★ **The user's cross studs — a stud along `z` and one along `y` through the cube,
+    /// fused in either order.** After the first fuse the `z` stud's remaining lateral faces sit
+    /// at `|z| ≥ 0.5` and the `y` stud's whole surface within `|z| ≤ 0.2`: the two cylinder
+    /// classes share no face, and the arrangement builds the result — measured before the gate
+    /// opened, with the pair let through by hand: 14 faces, volume `1 + 0.08π`, meshed. The
+    /// gate used to refuse the pair on the distance between their *axes*, zero since they cross
+    /// at the origin — a fact about two infinite surfaces, not about any face.
+    ///
+    /// Volumes: each stud is `0.08π`, half of it inside the cube; the second stud meets the
+    /// first only inside the cube.
+    #[test]
+    fn the_users_cross_studs_build_in_either_order() {
+        let pi = std::f64::consts::PI;
+        let z_stud = |m: &mut Model| {
+            m.add_cylinder(
+                Point3::from_array([0.0, 0.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.2,
+                2.0,
+            )
+        };
+        let y_stud = |m: &mut Model| {
+            m.add_cylinder(
+                Point3::from_array([0.0, -1.0, 0.0]),
+                Vector3::from_array([0.0, 1.0, 0.0]),
+                0.2,
+                2.0,
+            )
+        };
+        for z_first in [true, false] {
+            let build = || {
+                let mut m = Model::new();
+                let cube =
+                    m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+                let (first, second) = if z_first {
+                    (z_stud(&mut m), y_stud(&mut m))
+                } else {
+                    (y_stud(&mut m), z_stud(&mut m))
+                };
+                m.rebuild_adjacency();
+                let studded = crate::boolean(&mut m, BoolKind::Fuse, cube, first)
+                    .expect("the first stud fuses")[0];
+                m.rebuild_adjacency();
+                (m, studded, second)
+            };
+            for (kind, want, faces_want) in [
+                (BoolKind::Fuse, 1.0 + 0.08 * pi, Some(14)),
+                (BoolKind::Common, 0.04 * pi, Some(3)),
+                (BoolKind::Cut, 1.0, None),
+            ] {
+                let (mut m, a, b) = build();
+                let out = crate::boolean(&mut m, kind, a, b)
+                    .unwrap_or_else(|e| panic!("{kind:?} (z first: {z_first}): {e:?}"));
+                m.rebuild_adjacency();
+                assert_eq!(out.len(), 1, "{kind:?} (z first: {z_first})");
+                assert!(
+                    nacre_validate::validate(&m).is_empty(),
+                    "{kind:?}: {:?}",
+                    nacre_validate::validate(&m)
+                );
+                let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+                assert!((v - want).abs() < 1e-9, "{kind:?}: {v} vs {want}");
+                if let Some(n) = faces_want {
+                    let faces = m.shells.get(m.solids.get(out[0]).outer).faces.len();
+                    assert_eq!(faces, n, "{kind:?} (z first: {z_first})");
+                }
+                crate::tests::mesh_covers_faces("the user's cross studs", &m, &out);
+            }
+        }
+    }
+
+    /// **The same two studs without the cube really cross**, and the gate still says so: their
+    /// faces meet along a quartic curve (M6b). This is the negative control of the face-level
+    /// clearance — letting perpendicular pairs through blindly makes this fixture come back as
+    /// two separate, individually valid solids, which is wrong.
+    #[test]
+    fn crossing_studs_are_still_a_cylinder_pair_that_meets() {
+        let mut m = Model::new();
+        let z = m.add_cylinder(
+            Point3::from_array([0.0, 0.0, -1.0]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.2,
+            2.0,
+        );
+        let y = m.add_cylinder(
+            Point3::from_array([0.0, -1.0, 0.0]),
+            Vector3::from_array([0.0, 1.0, 0.0]),
+            0.2,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Fuse, z, y).expect_err("the studs cross");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::CylinderPairContact,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    /// **A cross above a stud**: a `y` cylinder at `z = 2.5` over a `z` cylinder ending at
+    /// `z = 2`. Their axes cross (distance zero), so the surface rule refuses, but the upper
+    /// one's reach along `z` is `[2.3, 2.7]` and the lower one's face spans `[0, 2]` — clear
+    /// by the face rule: two solids that never touch, and the boolean says so.
+    #[test]
+    fn a_cross_above_a_stud_is_two_solids() {
+        let mut m = Model::new();
+        let low = m.add_cylinder(
+            Point3::from_array([0.0; 3]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.2,
+            2.0,
+        );
+        let high = m.add_cylinder(
+            Point3::from_array([0.0, -1.0, 2.5]),
+            Vector3::from_array([0.0, 1.0, 0.0]),
+            0.2,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let out =
+            crate::boolean(&mut m, BoolKind::Fuse, low, high).unwrap_or_else(|e| panic!("{e:?}"));
+        m.rebuild_adjacency();
+        assert_eq!(out.len(), 2, "two bodies that never touch");
+        assert!(nacre_validate::validate(&m).is_empty());
+        for s in &out {
+            let v = nacre_props::mass_props(&m, *s).unwrap().volume;
+            assert!((v - 0.08 * std::f64::consts::PI).abs() < 1e-9, "{v}");
+        }
+    }
+
+    /// **An oblique cross above the stud** — the same, with the upper axis `(0, 1, 1)`. The
+    /// face rule would clear it too (`lateral_reach`'s `d·m ≠ 0` arm), but the pair never
+    /// reaches the pair loop: the upper cylinder's caps are planes oblique to the lower axis,
+    /// and the plane–cylinder gate refuses those without asking whether they clear — the same
+    /// proposition still spelled at surface level there. A lock on today's name, for the cell
+    /// that opens that arm to flip.
+    #[test]
+    fn an_oblique_cross_above_the_stud_is_refused_by_its_caps() {
+        let mut m = Model::new();
+        let low = m.add_cylinder(
+            Point3::from_array([0.0; 3]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            0.2,
+            2.0,
+        );
+        let high = m.add_cylinder(
+            Point3::from_array([0.0, -1.0, 3.0]),
+            Vector3::from_array([0.0, 1.0, 1.0]),
+            0.2,
+            2.0,
+        );
+        m.rebuild_adjacency();
+        let err = crate::boolean(&mut m, BoolKind::Fuse, low, high).expect_err("oblique caps");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::ObliqueCylinderCut,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
     /// ★★★★★ **The bridge pre-pass splits the wall's two straight edges under the through stud.**
     ///
     /// A stud through the cube (`center` anchoring, `z ∈ [−1, 1]`) pinches **both** caps: on

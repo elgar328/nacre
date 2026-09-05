@@ -682,6 +682,16 @@ pub(crate) fn plus_t_is_above(wp: &WorkingPlane, def: &nacre_topo::CylinderDef) 
     wp.plane.normal().dot(axis) > 0.0
 }
 
+/// `x·y` in checked `Rat` — `None` is overflow, which every reader here takes as "not stated".
+pub(crate) fn dot3(
+    x: &[nacre_scalar::Rat; 3],
+    y: &[nacre_scalar::Rat; 3],
+) -> Option<nacre_scalar::Rat> {
+    x[0].checked_mul(y[0])?
+        .checked_add(x[1].checked_mul(y[1])?)?
+        .checked_add(x[2].checked_mul(y[2])?)
+}
+
 pub(crate) fn axis_param_of_plane(
     coeffs: &[nacre_scalar::Rat; 4],
     def: &nacre_topo::CylinderDef,
@@ -689,11 +699,6 @@ pub(crate) fn axis_param_of_plane(
     use nacre_scalar::Rat;
     let (o, m) = (def.origin(), def.dir());
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let dot3 = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
     let nm = dot3(&n, &m)?;
     if nm == Rat::from_int(0) {
         return None;
@@ -967,11 +972,17 @@ pub(crate) struct WorkingCyl {
 ///   cells **15 assemble**, `validate` clean and volumes exact; the other 6 are the third-plane
 ///   population [`Tangency::line_in_another_plane`] names, which the arrangement refuses on its
 ///   own (`CoincidentNodes`).
-/// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3).
+/// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3). ★ This arm does
+///   not ask whether the faces clear: it is the one place the gate still speaks about surfaces,
+///   and the reason an oblique pair of cylinders never reaches the pair rule below (its caps are
+///   such planes). [`lateral_reach`] is written to answer it when it does.
 ///
 /// Per cylinder pair: axes clear of each other (`dist > r₁+r₂`, whatever their orientation)
-/// pass; a pair that touches or overlaps is [`RejectReason::CylinderPairContact`] (M6b, where
-/// the quartic intersection curve lives).
+/// pass outright; otherwise a non-parallel pair passes when the **faces** of one class provably
+/// miss the other's — every lateral face's axis span against the other faces' reach along that
+/// axis ([`lateral_faces_clear`], either direction) — and a parallel pair, or one whose faces
+/// cannot be shown to miss, is [`RejectReason::CylinderPairContact`] (M6b, where the quartic
+/// intersection curve lives).
 #[allow(clippy::type_complexity)]
 pub(crate) fn cylinder_gate(
     model: &Model,
@@ -1143,22 +1154,36 @@ pub(crate) fn cylinder_gate(
 
     for (i, a) in cyls.iter().enumerate() {
         for b in &cyls[i + 1..] {
-            // Clear iff the distance between the two axes exceeds the radius **sum** — one
-            // proposition for any pair, parallel or not. ★ This used to demand parallel axes
-            // first and refuse everything else, which made a limit of the *arithmetic* read as
-            // a limit of the kernel: a drill crossing a bore at a safe distance came back as
-            // "two cylinders touch". The predicate now carries both spellings of the distance,
-            // so the refusal below means what it says.
-            if nacre_scalar::cylinders_clear(
+            // The proposition is "the two classes share no face". The distance between the two
+            // axes exceeding the radius **sum** proves it for the two infinite surfaces, whatever
+            // their orientation, and decides most inputs. ★ It used to be the whole rule, and
+            // that made a fact about surfaces read as a fact about faces: a stud fused through a
+            // cube and then a second stud across it were refused because their *axes* cross,
+            // though the first stud's remaining faces sit past `|z| = 0.5` and the second's
+            // whole surface within `|z| = 0.2`. So a pair the distance cannot clear now asks
+            // the faces themselves — the same question the plane–cylinder arm asks per face
+            // (`face_clears_footprint`), spelled for a lateral face's reach along the other
+            // axis ([`lateral_faces_clear`], either direction). Parallel axes keep the surface
+            // verdict: the chart interns a cylinder class by handle and relies on a coaxial pair
+            // being refused (`cyl_chart::chart_of`), so two stacked coaxial cylinders are still
+            // declined here even though their faces clear.
+            match nacre_scalar::cylinders_clear(
                 &a.def.origin(),
                 &a.def.dir(),
                 a.def.radius(),
                 &b.def.origin(),
                 &b.def.dir(),
                 b.def.radius(),
-            ) != Orient::Positive
-            {
-                return Err(reject(RejectReason::CylinderPairContact));
+            ) {
+                Orient::Positive => {}
+                _ if nacre_scalar::parallel_rat(&a.def.dir(), &b.def.dir()) => {
+                    return Err(reject(RejectReason::CylinderPairContact));
+                }
+                _ => {
+                    if !(lateral_faces_clear(faces, a, b) || lateral_faces_clear(faces, b, a)) {
+                        return Err(reject(RejectReason::CylinderPairContact));
+                    }
+                }
             }
         }
     }
@@ -1547,6 +1572,107 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
         out.push(span);
     }
     out
+}
+
+/// **The interval a lateral face reaches along a direction `d`**, in `d·p` units.
+///
+/// A point of the face is `p = o + s·m + r·u` with `u ⊥ m` a unit vector and `s` over the face's
+/// own span, so `d·p = d·o + s·(d·m) + r·(d·u)` with `(d·u)² ≤ |d⊥|² = d·d − (d·m)²/(m·m)`: the
+/// face's projected span widened by a radial reach `ρ = r·|d⊥|`, carried as its square so no
+/// root is ever formed. It is the one clearance question a lateral face answers for any other
+/// surface: a cylinder pair reads `d = m_A` against the other class's own spans
+/// ([`lateral_faces_clear`]); an oblique plane would read `d = n` against its single station.
+///
+/// `span = None` is a face whose span could not be stated ([`lateral_spans`] empty). The reach
+/// is still bounded when `d·m = 0` — the projection is a point whatever `s` is — and unbounded
+/// otherwise, which is `None`: nothing proved. ★ That `d·m = 0` case is not a branch of its own;
+/// it is the general formula with the `s` term vanishing. It also happens to be the only case a
+/// production boolean reaches today: the plane–cylinder gate refuses every oblique
+/// (plane, cylinder) pair before the pair loop runs, and an oblique pair of cylinders always
+/// brings its caps along, so the `d·m ≠ 0` arm is exercised by the unit test alone until that
+/// arm of the gate reads faces too. `None` is also `Rat` overflow.
+struct Reach {
+    lo: nacre_scalar::Rat,
+    hi: nacre_scalar::Rat,
+    rho2: nacre_scalar::Rat,
+}
+
+fn lateral_reach(
+    def: &nacre_topo::CylinderDef,
+    span: Option<[nacre_scalar::Rat; 2]>,
+    d: &[nacre_scalar::Rat; 3],
+) -> Option<Reach> {
+    use nacre_scalar::Rat;
+    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let dm = dot3(d, &m)?;
+    let mm = dot3(&m, &m)?;
+    let base = dot3(d, &o)?;
+    let (lo, hi) = if dm == Rat::from_int(0) {
+        (base, base)
+    } else {
+        let [s0, s1] = span?;
+        let (a, b) = (s0.checked_mul(dm)?, s1.checked_mul(dm)?);
+        (base.checked_add(a.min(b))?, base.checked_add(a.max(b))?)
+    };
+    let dd = dot3(d, d)?;
+    let dperp2 = dd.checked_sub(
+        dm.checked_mul(dm)?
+            .checked_mul(Rat::new(mm.denom(), mm.numer())?)?,
+    )?;
+    let rho2 = r.checked_mul(r)?.checked_mul(dperp2)?;
+    Some(Reach { lo, hi, rho2 })
+}
+
+/// Is the closed interval `[lo, hi]` (in the reach's own `d·p` units) disjoint from the reach?
+/// Closed against closed: equality is the other face's rim touching this one at a point, which
+/// is not clear. Squares only. `None` is overflow.
+fn reach_clears(reach: &Reach, lo: nacre_scalar::Rat, hi: nacre_scalar::Rat) -> Option<bool> {
+    let zero = nacre_scalar::Rat::from_int(0);
+    let beyond = |gap: nacre_scalar::Rat| -> Option<bool> {
+        Some(gap > zero && gap.checked_mul(gap)? > reach.rho2)
+    };
+    Some(beyond(lo.checked_sub(reach.hi)?)? || beyond(reach.lo.checked_sub(hi)?)?)
+}
+
+/// **One direction of the face-level clearance for a cylinder pair**: every lateral face of `a`
+/// against the reach of every lateral face of `b` along `a`'s axis. If they are all disjoint,
+/// no point of `b`'s faces has an axis parameter inside any face of `a`, so the two classes
+/// share no face — the proposition the arrangement needs, which the surface distance
+/// ([`nacre_scalar::cylinders_clear`]) is only one sufficient condition for. Either direction
+/// suffices; the caller asks both.
+///
+/// `a`'s spans are axis parameters, so a span `[t0, t1]` is `[m·o + t0·(m·m), m·o + t1·(m·m)]`
+/// in `d·p` units. Empty [`lateral_spans`] for `a` is "unusable" (its doc), never clear; for
+/// `b` it is one face of unknown span, which the reach handles. `None` from either predicate is
+/// not clear.
+fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> bool {
+    use nacre_scalar::Rat;
+    let spans_a = lateral_spans(faces, a.surf);
+    if spans_a.is_empty() {
+        return false;
+    }
+    let spans_b: Vec<Option<[Rat; 2]>> = {
+        let v = lateral_spans(faces, b.surf);
+        if v.is_empty() {
+            vec![None]
+        } else {
+            v.into_iter().map(Some).collect()
+        }
+    };
+    let (o, m) = (a.def.origin(), a.def.dir());
+    let (Some(mo), Some(mm)) = (dot3(&m, &o), dot3(&m, &m)) else {
+        return false;
+    };
+    let station = |t: Rat| t.checked_mul(mm).and_then(|x| mo.checked_add(x));
+    spans_a.iter().all(|[t0, t1]| {
+        let (Some(lo), Some(hi)) = (station(*t0), station(*t1)) else {
+            return false;
+        };
+        spans_b.iter().all(|sb| {
+            lateral_reach(&b.def, *sb, &m).and_then(|reach| reach_clears(&reach, lo, hi))
+                == Some(true)
+        })
+    })
 }
 
 /// Whether one planar face misses the **rectangle** this cylinder occupies in the face's plane.
@@ -2722,6 +2848,53 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
 mod tests {
     use super::*;
     use nacre_scalar::{Angle, Axis, Rat};
+
+    /// **The reach of a lateral face along a direction, and the clearance read off it** — hand
+    /// geometry, every arm of the two predicates.
+    ///
+    /// The face: a cylinder on the `z` axis through the origin, radius `1/5`, span `t ∈ [0, 2]`
+    /// (`z ∈ [0, 2]`). Along `d = (0, 0, 1)` its reach is the span itself (`d·m ≠ 0`, no radial
+    /// part: `|d⊥| = 0`); along `d = (0, 1, 0)` it is `[−1/5, 1/5]` whatever the span — and with
+    /// no span at all, which is the only arm a production boolean reaches today.
+    #[test]
+    fn a_lateral_faces_reach_and_what_clears_it() {
+        let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        let z = |v: i128| Rat::from_int(v);
+        let def = nacre_topo::CylinderDef::new(
+            [z(0); 3],
+            [z(0), z(0), z(1)],
+            [z(1), z(0), z(0)],
+            q(1, 5),
+        )
+        .unwrap();
+        let span = Some([z(0), z(2)]);
+        // Along its own axis: the projected span, no radial reach.
+        let along = lateral_reach(&def, span, &[z(0), z(0), z(1)]).unwrap();
+        assert_eq!((along.lo, along.hi, along.rho2), (z(0), z(2), z(0)));
+        // Across it: a point widened by r² — with or without a span.
+        for s in [span, None] {
+            let across = lateral_reach(&def, s, &[z(0), z(1), z(0)]).unwrap();
+            assert_eq!((across.lo, across.hi, across.rho2), (z(0), z(0), q(1, 25)));
+        }
+        // No span and a projection that needs one: nothing proved.
+        assert!(lateral_reach(&def, None, &[z(0), z(0), z(1)]).is_none());
+        // Slanted, `d = (0, 1, 1)`: `d·m = 1`, `|d⊥|² = 2 − 1 = 1` — span and radial part both.
+        let slant = lateral_reach(&def, span, &[z(0), z(1), z(1)]).unwrap();
+        assert_eq!((slant.lo, slant.hi, slant.rho2), (z(0), z(2), q(1, 25)));
+        // Reversed, the projection's ends swap and the reach is still stated low end first.
+        let back = lateral_reach(&def, span, &[z(0), z(0), z(-1)]).unwrap();
+        assert_eq!((back.lo, back.hi, back.rho2), (z(-2), z(0), z(0)));
+        // Overflow is `None`, never a verdict.
+        assert!(lateral_reach(&def, span, &[q(i128::MAX / 2, 1); 3]).is_none());
+
+        // Clearance against the across reach, `0 ± 1/5`:
+        let reach = lateral_reach(&def, None, &[z(0), z(1), z(0)]).unwrap();
+        assert_eq!(reach_clears(&reach, q(1, 4), z(1)), Some(true)); // past the far end
+        assert_eq!(reach_clears(&reach, z(-1), q(-1, 4)), Some(true)); // past the near end
+        assert_eq!(reach_clears(&reach, q(1, 5), z(1)), Some(false)); // touches the end: a point
+        assert_eq!(reach_clears(&reach, q(-1, 10), q(1, 10)), Some(false)); // inside
+        assert_eq!(reach_clears(&reach, q(-1, 10), z(1)), Some(false)); // straddles
+    }
 
     /// **The tangency the gate used to refuse is now *stated*** — and every field of that
     /// statement is asserted here, because the verdict downstream is only as good as this row.

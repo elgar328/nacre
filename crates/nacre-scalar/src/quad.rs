@@ -801,6 +801,12 @@ fn radial_side_int(p: &V3, origin: &V3, dir: &V3, radii: &[Rat]) -> Orient {
 /// that had to establish "these are parallel" answered the *other* case by refusing it, which
 /// turned a limit of the arithmetic into a limit of the kernel — a drill crossing a bore at a
 /// safe distance was declined as "touching".
+///
+/// ★ This is a statement about two **infinite surfaces**, and a sufficient condition only: the
+/// gate asks it first, and a non-parallel pair it cannot clear is then asked about its faces —
+/// each lateral face's axial span against the other faces' reach along that axis (`nacre-ops`,
+/// `planes::lateral_faces_clear`). Two studs crossing through a cube clear that way while their
+/// axes meet at a point.
 pub fn cylinders_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Rat) -> Orient {
     debug_assert!(
         !is_zero3(m_a) && !is_zero3(m_b),
