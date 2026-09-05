@@ -16964,7 +16964,7 @@ fmt · clippy(workspace, `-D warnings`) · `test --workspace` **1197 passed / 0 
 fmt · clippy · `test --workspace` 1204/0 · `--no-default-features` · census debug·release 287 동일 · `reject_census` · `--ignored` 스윕 · `perf` — 9단계 전부 exit 0(파일로 받음). 플레이그라운드 4단계 exit 0. 각 커밋은 husky 훅(fmt·clippy·전 워크스페이스)을 통과.
 
 ### 안 잰 것
-- **브라우저 확인**은 못 했다(에이전트가 못 연다) — `mesh_of`→`tessellate`→`Ok` 경로와 `edge_segments`의 `windows(2)`(3점 직선 = 공선 선분 둘)는 코드로 확인했고 vitest는 초록. 사용자가 스크립트를 띄워 10면을 보는 것이 남았다.
+- ~~**브라우저 확인**은 못 했다~~ → ☑ **사용자가 브라우저에서 확인했다(2026-09-05)**: 스크립트 `cuboid() + cylinder({r: 0.2, h: 2, center: [0.3,0,0]})`의 Fuse가 플레이그라운드에 그려진다. 코드 쪽 근거는 `mesh_of`→`tessellate`→`Ok` 경로와 `edge_segments`의 `windows(2)`(3점 직선 = 공선 선분 둘), vitest 142/142.
 - 2차 SoS(1차 항 0)·곡선 간선 위의 접촉·원통 이웃·다중 접촉·면당 다리 둘: **인구 0**이라 안 지었다(세는 자리만 있다).
 - `side_idx`는 프로덕션 인구 0인 채로 배송됐다 — `OverBudget`과 같은 처지. 발화하는 합성 픽스처가 단위에 있다.
 
