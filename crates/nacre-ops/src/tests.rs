@@ -12348,3 +12348,86 @@ fn a_sketched_bored_plate_meets_a_box() {
         mesh_covers_faces("a sketched bored plate and a box", &m, &out);
     }
 }
+
+/// ★ Cell ⑩, S0 — **where** a fillet's tangent ruling declines. The census can only say
+/// `TraceDeclined { OuterRing }`, and three sites push that kind; this measures which, so S3's
+/// first target is a fact rather than a guess. A 7×8 plate with its two bottom corners filleted
+/// `r = 1.5` (fillet axes 4 apart, so the pair loop clears them) fused with a box far away: nothing
+/// touches, and the boolean still declines — the plate's own wall faces carry an edge along the
+/// ruling where the wall is *tangent* to the fillet cylinder, and the ring court has no side to
+/// spell for it (`ruling_side` reads zero there).
+#[test]
+fn a_fillets_tangent_ruling_declines_where_the_ring_is_named() {
+    use crate::arrangement::decline_probe::{Site, named_like};
+    const TAG: &str = "fillets_tangent_ruling";
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let edges = vec![
+        crate::Edge2d::line(p2(-2.0, -4.0), p2(2.0, -4.0)).unwrap(),
+        crate::Edge2d::arc_turns(p2(2.0, -2.5), p2(2.0, -4.0), 1).unwrap(),
+        crate::Edge2d::line(p2(3.5, -2.5), p2(3.5, 4.0)).unwrap(),
+        crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+        crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.5)).unwrap(),
+        crate::Edge2d::arc_turns(p2(-2.0, -2.5), p2(-3.5, -2.5), 1).unwrap(),
+    ];
+    let profile = crate::from_edges(edges).unwrap().remove(0);
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let OpOutput::Extrude { solid: plate, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 1.0,
+        },
+    )
+    .expect("the filleted plate extrudes") else {
+        unreachable!()
+    };
+    let far = m.add_cuboid(
+        Point3::from_array([20.0, 20.0, 20.0]),
+        Point3::from_array([21.0, 21.0, 21.0]),
+    );
+    m.rebuild_adjacency();
+    // The trace runs on rayon workers under `parallel`; a pool named after this test makes the
+    // probe's rows attributable (the sequential build's test thread carries the name itself).
+    #[cfg(feature = "parallel")]
+    let out = rayon::ThreadPoolBuilder::new()
+        .num_threads(2)
+        .thread_name(|i| format!("{TAG}-{i}"))
+        .build()
+        .expect("a probe pool")
+        .install(|| boolean(&mut m, BoolKind::Fuse, plate, far));
+    #[cfg(not(feature = "parallel"))]
+    let out = boolean(&mut m, BoolKind::Fuse, plate, far);
+    assert!(
+        matches!(
+            out,
+            Err(BoolError::Rejected {
+                reason: RejectReason::TraceDeclined {
+                    kind: crate::DeclineKind::OuterRing,
+                    ..
+                },
+                ..
+            })
+        ),
+        "{out:?}"
+    );
+    let sites = named_like(TAG);
+    assert!(!sites.is_empty(), "the decline was produced somewhere");
+    // The measured sites, locked (S0). The prediction was the seated ring court (`plane_ring`,
+    // `PolyCollapsed`) and it was wrong: the naming dies one road earlier — `loop_triples` hands
+    // the wall faces that ride a tangent ruling **no outer loop at all**, which the transversal
+    // walk reports as `NoOuter` and the seated walk as `RimOrNone` (the sequential build stops at
+    // the first class and sees three `NoOuter`; the parallel build evaluates every class and adds
+    // the seated rows). S3 flips this test — the fixture builds, and the probe reads nothing.
+    assert!(
+        sites
+            .iter()
+            .all(|s| matches!(s, Site::NoOuter | Site::RimOrNone)),
+        "sites: {sites:?}"
+    );
+    assert!(
+        sites.contains(&Site::NoOuter),
+        "the transversal naming is where the decline is first produced: {sites:?}"
+    );
+}

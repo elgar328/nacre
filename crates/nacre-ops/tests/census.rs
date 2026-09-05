@@ -1477,6 +1477,233 @@ fn dump() {
             }
         }
     }
+
+    // ── **Arc walls** (cell ⑩): the user's first assembly and its controls. A filleted plate
+    // with two holes (XY), a standing plate with a slot window (ZX, moved to y ∈ [3, 4]) and two
+    // triangular gussets (YZ) met three walls at once — same-solid parallel cylinder pairs, the
+    // oblique gusset plane, and the fillets' tangent rulings. Every row is a pair the assembly's
+    // fold visits or a control that isolates one wall; the plan's prediction table names what
+    // each stage flips.
+    {
+        // Helpers as items, not closures: the shape builders below are boxed and `move`d, and a
+        // closure they borrowed would not live long enough.
+        fn p2(x: f64, y: f64) -> nacre_math::Point2 {
+            nacre_math::Point2::from_array([x, y])
+        }
+        fn prism(m: &mut Model, axis: Axis, edges: Vec<Edge2d>, dist: f64) -> Handle<Solid> {
+            let profile = from_edges(edges).expect("a valid profile").remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the arc-wall profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        }
+        // An exact translation by decimals — the anchor arithmetic a script hands the kit.
+        fn shift(m: &mut Model, s: Handle<Solid>, t: [f64; 3]) -> Handle<Solid> {
+            let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
+            xf(m, s, Isometry::translation([r(t[0]), r(t[1]), r(t[2])]))
+        }
+        fn far_box(m: &mut Model) -> Handle<Solid> {
+            m.add_cuboid(
+                Point3::from_array([20.0, 20.0, 20.0]),
+                Point3::from_array([21.0, 21.0, 21.0]),
+            )
+        }
+        fn circle_prism(m: &mut Model, c: [f64; 2], r: f64, dist: f64) -> Handle<Solid> {
+            prism(
+                m,
+                Axis::Z,
+                vec![Edge2d::circle(p2(c[0], c[1]), r).unwrap()],
+                dist,
+            )
+        }
+        // p1: the plate, bottom corners filleted r 2 with the holes centred on the fillet axes.
+        let p1 = |m: &mut Model| {
+            prism(
+                m,
+                Axis::Z,
+                vec![
+                    Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
+                    Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
+                    Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
+                    Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
+                    Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
+                    Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                ],
+                1.0,
+            )
+        };
+        // p2: the standing plate on ZX (sketch u = z, v = x) with a 2×1 slot window, moved to y = 3.
+        let p2p = |m: &mut Model| {
+            let s = prism(
+                m,
+                Axis::Y,
+                vec![
+                    Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
+                    Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
+                    Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
+                    Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+                    Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
+                    Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
+                    Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
+                    Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+                ],
+                1.0,
+            );
+            shift(m, s, [0.0, 3.0, 0.0])
+        };
+        // p3: a triangular gusset on YZ (sketch u = y, v = z), moved to x = 1.5 as the script does.
+        let p3 = |m: &mut Model| {
+            let s = prism(
+                m,
+                Axis::X,
+                vec![
+                    Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
+                    Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
+                    Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+                ],
+                1.0,
+            );
+            shift(m, s, [1.5, 0.0, 0.0])
+        };
+        // Controls.
+        let fillet15 = |m: &mut Model| {
+            prism(
+                m,
+                Axis::Z,
+                vec![
+                    Edge2d::line(p2(-2.0, -4.0), p2(2.0, -4.0)).unwrap(),
+                    Edge2d::arc_turns(p2(2.0, -2.5), p2(2.0, -4.0), 1).unwrap(),
+                    Edge2d::line(p2(3.5, -2.5), p2(3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.5)).unwrap(),
+                    Edge2d::arc_turns(p2(-2.0, -2.5), p2(-3.5, -2.5), 1).unwrap(),
+                ],
+                1.0,
+            )
+        };
+        let slot30 = |m: &mut Model| {
+            prism(
+                m,
+                Axis::Z,
+                vec![
+                    Edge2d::line(p2(0.0, -5.0), p2(30.0, -5.0)).unwrap(),
+                    Edge2d::arc_turns(p2(30.0, 0.0), p2(30.0, -5.0), 2).unwrap(),
+                    Edge2d::line(p2(30.0, 5.0), p2(0.0, 5.0)).unwrap(),
+                    Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, 5.0), 2).unwrap(),
+                ],
+                2.0,
+            )
+        };
+        let holes_plate = |m: &mut Model| {
+            prism(
+                m,
+                Axis::Z,
+                vec![
+                    Edge2d::line(p2(-3.5, -4.0), p2(3.5, -4.0)).unwrap(),
+                    Edge2d::line(p2(3.5, -4.0), p2(3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -4.0)).unwrap(),
+                    Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
+                    Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                ],
+                1.0,
+            )
+        };
+        let rrect = |m: &mut Model| {
+            prism(
+                m,
+                Axis::Z,
+                vec![
+                    Edge2d::line(p2(2.0, 0.0), p2(8.0, 0.0)).unwrap(),
+                    Edge2d::arc_turns(p2(8.0, 2.0), p2(8.0, 0.0), 1).unwrap(),
+                    Edge2d::line(p2(10.0, 2.0), p2(10.0, 6.0)).unwrap(),
+                    Edge2d::arc_turns(p2(8.0, 6.0), p2(10.0, 6.0), 1).unwrap(),
+                    Edge2d::line(p2(8.0, 8.0), p2(2.0, 8.0)).unwrap(),
+                    Edge2d::arc_turns(p2(2.0, 6.0), p2(2.0, 8.0), 1).unwrap(),
+                    Edge2d::line(p2(0.0, 6.0), p2(0.0, 2.0)).unwrap(),
+                    Edge2d::arc_turns(p2(2.0, 2.0), p2(0.0, 2.0), 1).unwrap(),
+                ],
+                3.0,
+            )
+        };
+        let tube = |m: &mut Model| {
+            prism(
+                m,
+                Axis::Z,
+                vec![
+                    Edge2d::circle(p2(2.0, 2.0), 3.0).unwrap(),
+                    Edge2d::circle(p2(2.0, 2.0), 1.5).unwrap(),
+                ],
+                3.0,
+            )
+        };
+        type Pair = Box<dyn Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>)>;
+        let pairs: Vec<(&str, Pair)> = vec![
+            ("p1p2", Box::new(move |m| (p1(m), p2p(m)))),
+            ("p1p3", Box::new(move |m| (p1(m), p3(m)))),
+            ("p2p3", Box::new(move |m| (p2p(m), p3(m)))),
+            ("fillet15-far", Box::new(move |m| (fillet15(m), far_box(m)))),
+            ("slot-far", Box::new(move |m| (slot30(m), far_box(m)))),
+            ("holes-gusset", Box::new(move |m| (holes_plate(m), p3(m)))),
+            (
+                "rrect-box",
+                Box::new(move |m| {
+                    let a = rrect(m);
+                    let b = m.add_cuboid(
+                        Point3::from_array([3.0, 2.0, 1.0]),
+                        Point3::from_array([7.0, 6.0, 5.0]),
+                    );
+                    (a, b)
+                }),
+            ),
+            (
+                "bushing",
+                Box::new(move |m| {
+                    let a = tube(m);
+                    let pin = circle_prism(m, [2.0, 2.0], 1.0, 5.0);
+                    (a, shift(m, pin, [0.0, 0.0, -1.0]))
+                }),
+            ),
+            (
+                "stacked",
+                Box::new(move |m| {
+                    let boss = circle_prism(m, [0.0, 0.0], 2.0, 2.0);
+                    let pin = circle_prism(m, [0.0, 0.0], 1.0, 2.0);
+                    (boss, shift(m, pin, [0.0, 0.0, 2.0]))
+                }),
+            ),
+            (
+                "stacked-same",
+                Box::new(move |m| {
+                    let a = circle_prism(m, [0.0, 0.0], 1.0, 2.0);
+                    let b = circle_prism(m, [0.0, 0.0], 1.0, 2.0);
+                    (a, shift(m, b, [0.0, 0.0, 2.0]))
+                }),
+            ),
+        ];
+        for (pn, build) in &pairs {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let (a, b) = build(&mut m);
+                m.rebuild_adjacency();
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("arcwalls {pn} {kn}"), &m, &inputs, &out);
+            }
+        }
+    }
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].
