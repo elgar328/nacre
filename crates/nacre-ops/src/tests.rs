@@ -8414,11 +8414,13 @@ fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
     }
 }
 
-// ── K2: a cylinder in the operation log ───────────────────────────────────────────────────────
+// ── K2→⑨: a cylinder in the operation log is a circle extruded ────────────────────────────────
 //
-// `Model::add_cylinder` is a test convenience behind a feature; the road an application takes is
-// `Operation::Cylinder`, which is what these gates measure. What the frame buys is that the
-// statement never leaves the rationals: the axis is the frame's unit normal, the seam its `+u`.
+// `Model::add_cylinder_exact` is a test convenience behind a feature; the road an application
+// takes is `Operation::Extrude` of a one-circle profile — `cylinder()` is that sugar, and the
+// primitive operation retired once the two were measured identical. What the frame buys is that
+// the statement never leaves the rationals: the axis is the frame's unit normal, the seam its
+// `+u`. The extrude's faces come in push order: bottom cap, top cap, then the lateral.
 
 /// The lateral surface's exact truth in a model holding exactly one cylinder.
 fn lone_cylinder_def(m: &Model) -> nacre_topo::CylinderDef {
@@ -8433,10 +8435,9 @@ fn lone_cylinder_def(m: &Model) -> nacre_topo::CylinderDef {
 }
 
 fn cylinder_op(m: &Model, center: [f64; 2], radius: f64, dist: f64) -> Operation {
-    Operation::Cylinder {
+    Operation::Extrude {
         frame: SketchFrame::world(m, Axis::Z),
-        center,
-        radius,
+        profile: circle_profile(center, radius),
         dist,
     }
 }
@@ -8451,9 +8452,9 @@ fn cylinder_op(m: &Model, center: [f64; 2], radius: f64, dist: f64) -> Operation
 fn a_cylinder_op_states_its_axis_and_seam_as_integers() {
     let mut m = Model::new();
     let op = cylinder_op(&m, [0.5, 0.25], 0.1, 2.0);
-    let OpOutput::Cylinder { faces, .. } = apply(&mut m, &op).expect("a world-XY cylinder builds")
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &op).expect("a world-XY cylinder builds")
     else {
-        panic!("a cylinder op answers with a cylinder");
+        panic!("an extrude answers with an extrude");
     };
     let def = lone_cylinder_def(&m);
     let int = |n: i128| nacre_scalar::Rat::from_int(n);
@@ -8470,7 +8471,7 @@ fn a_cylinder_op_states_its_axis_and_seam_as_integers() {
         "the centre, placed"
     );
     assert_eq!(def.radius(), rat(1, 10));
-    assert_eq!(faces.len(), 3, "lateral, bottom cap, top cap");
+    assert_eq!(faces.len(), 3, "bottom cap, top cap, lateral");
 }
 
 /// A cylinder in a log replays to the same model — handles and coordinates both. The op is only
@@ -8493,22 +8494,43 @@ fn a_cylinder_op_replays_deterministically() {
     assert_eq!(m1.surface_count(), m2.surface_count());
 }
 
-/// ★★ **Every refusal is a name, and none of them leaves a cell behind.** The topo entry panics
-/// on the first two; an application's numbers are input, so here they are values. The store
-/// lengths are the other half — a refusal that had already pushed would shift every later log
-/// index (`apply`'s own doc says so).
+/// ★★ **Every refusal is a name, and none of them leaves a cell behind.** The circle's own
+/// numbers are refused where they are written — at the sketch, before any operation exists — and
+/// the operation-level refusals are decided before anything is pushed: a refusal that had already
+/// pushed would shift every later log index (`apply`'s own doc says so).
 #[test]
 fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
     let mut m = Model::new();
     // A cylinder surface to aim a frame at — the one thing a `SketchFrame` can name that is not
     // a plane.
     let fixture = cylinder_op(&m, [0.0, 0.0], 1.0, 1.0);
-    let OpOutput::Cylinder { faces, .. } =
+    let OpOutput::Extrude { faces, .. } =
         apply(&mut m, &fixture).expect("the fixture cylinder builds")
     else {
-        panic!("a cylinder op answers with a cylinder");
+        panic!("an extrude answers with an extrude");
     };
-    let on_lateral = SketchFrame::canonical(m.faces.get(faces[0]).surface);
+    let on_lateral = SketchFrame::canonical(m.faces.get(faces[2]).surface);
+
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let wide = 1e300;
+    for (center, radius) in [(p2(0.0, 0.0), 0.0), (p2(0.0, 0.0), -1.0)] {
+        assert!(
+            matches!(
+                crate::Edge2d::circle(center, radius),
+                Err(crate::SketchError::NonPositiveRadius { .. })
+            ),
+            "radius {radius}"
+        );
+    }
+    for (center, radius) in [(p2(0.0, 0.0), wide), (p2(wide, 0.0), 1.0)] {
+        assert!(
+            matches!(
+                crate::Edge2d::circle(center, radius),
+                Err(crate::SketchError::OutsideDecimalWindow { .. })
+            ),
+            "a number outside the decimal window"
+        );
+    }
 
     let before = (
         m.surface_count(),
@@ -8517,33 +8539,15 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
         m.faces.len(),
         m.live_solids.len(),
     );
-    let wide = 1e300;
-    let cases: [(Operation, OpError); 6] = [
-        (
-            cylinder_op(&m, [0.0, 0.0], 0.0, 1.0),
-            OpError::NonPositiveRadius,
-        ),
-        (
-            cylinder_op(&m, [0.0, 0.0], -1.0, 1.0),
-            OpError::NonPositiveRadius,
-        ),
+    let cases: [(Operation, OpError); 2] = [
         (
             cylinder_op(&m, [0.0, 0.0], 1.0, 0.0),
             OpError::NonPositiveDistance,
         ),
         (
-            cylinder_op(&m, [0.0, 0.0], wide, 1.0),
-            OpError::RadiusOutsideDecimalWindow,
-        ),
-        (
-            cylinder_op(&m, [wide, 0.0], 1.0, 1.0),
-            OpError::CenterOutsideDecimalWindow,
-        ),
-        (
-            Operation::Cylinder {
+            Operation::Extrude {
                 frame: on_lateral,
-                center: [0.0, 0.0],
-                radius: 1.0,
+                profile: circle_profile([0.0, 0.0], 1.0),
                 dist: 1.0,
             },
             OpError::NonPlanarFace,
@@ -8594,14 +8598,13 @@ fn a_logged_cylinder_cuts_a_through_hole() {
     let OpOutput::DatumPlane { frame, .. } = apply(&mut scratch, &below).unwrap() else {
         panic!("a datum answers with a datum");
     };
-    let drill = Operation::Cylinder {
+    let drill = Operation::Extrude {
         frame,
-        center: [2.0, 2.0],
-        radius: 0.5,
+        profile: circle_profile([2.0, 2.0], 0.5),
         dist: 3.0,
     };
-    let OpOutput::Cylinder { solid: b, .. } = apply(&mut scratch, &drill).unwrap() else {
-        panic!("a cylinder op answers with a cylinder");
+    let OpOutput::Extrude { solid: b, .. } = apply(&mut scratch, &drill).unwrap() else {
+        panic!("an extrude answers with an extrude");
     };
     let log = vec![
         extrude,
@@ -8652,15 +8655,14 @@ fn a_cylinder_clear_of_the_plate_removes_nothing() {
         &mut m,
         crate::SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 3.0])),
     );
-    let clear = Operation::Cylinder {
+    let clear = Operation::Extrude {
         frame: above,
-        center: [2.0, 2.0],
-        radius: 0.5,
+        profile: circle_profile([2.0, 2.0], 0.5),
         dist: 1.0,
     };
-    let OpOutput::Cylinder { solid: drill, .. } = apply(&mut m, &clear).expect("a clear cylinder")
+    let OpOutput::Extrude { solid: drill, .. } = apply(&mut m, &clear).expect("a clear cylinder")
     else {
-        panic!("a cylinder op answers with a cylinder");
+        panic!("an extrude answers with an extrude");
     };
     let solids = boolean(&mut m, BoolKind::Cut, plate_h, drill).expect("a disjoint cut answers");
     assert_eq!(solids.len(), 1, "cutting away nothing leaves one solid");
@@ -8697,10 +8699,9 @@ fn a_cylinder_on_a_face_frame_stands_outward() {
     // faces[1] is the top cap; its frame is measured against that face's outward normal.
     let top = face_sketch_frame(&m, faces[1]).expect("a face has a frame");
     let before = m.vertices.iter().count();
-    let boss = Operation::Cylinder {
+    let boss = Operation::Extrude {
         frame: top,
-        center: [2.0, 2.0],
-        radius: 0.5,
+        profile: circle_profile([2.0, 2.0], 0.5),
         dist: 1.0,
     };
     apply(&mut m, &boss).expect("a cylinder on a face frame builds");
@@ -8749,26 +8750,25 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
         )
         .expect("a tilted plane"),
     );
-    let op = Operation::Cylinder {
+    let op = Operation::Extrude {
         frame: tilted,
-        center: [0.0, 0.0],
-        radius: 0.2,
+        profile: circle_profile([0.0, 0.0], 0.2),
         dist: 4.0,
     };
-    let OpOutput::Cylinder {
+    let OpOutput::Extrude {
         solid: drill,
         faces,
     } = apply(&mut m, &op).expect("a tilted cylinder")
     else {
-        panic!("a cylinder op answers with a cylinder");
+        panic!("an extrude answers with an extrude");
     };
-    let lateral = m.faces.get(faces[0]).surface;
+    let lateral = m.faces.get(faces[2]).surface;
     match m.surface_truth(lateral) {
         nacre_topo::SurfaceTruth::Cylinder { motion, .. } => assert!(
             motion.is_some(),
             "a tilted frame states its cylinder inside a motion node"
         ),
-        _ => panic!("the first face is the lateral"),
+        _ => panic!("the third face is the lateral"),
     }
     // ★ The caches are realized from the same *local* rationals the truth is stated in — the
     // prism road's deal (`SweptRat::motion`). `validate` reads truth against cache, so a
@@ -8811,8 +8811,8 @@ fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
         let s = f.orientation.sign() as f64;
         p.normal().as_array().map(|c| c * s)
     };
-    let check = |m: &Model, faces: [Handle<Face>; 3], what: &str| {
-        let (bot, top) = (outward(m, faces[1]), outward(m, faces[2]));
+    let check = |m: &Model, faces: &[Handle<Face>], what: &str| {
+        let (bot, top) = (outward(m, faces[0]), outward(m, faces[1]));
         assert!(
             bot[2] < 0.0,
             "{what}: the bottom cap must face down, got {bot:?}"
@@ -8831,10 +8831,10 @@ fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
     // (a) a seeded world plane
     let mut m = Model::new();
     let op = cylinder_op(&m, [0.0, 0.0], 1.0, 2.0);
-    let OpOutput::Cylinder { faces, .. } = apply(&mut m, &op).unwrap() else {
-        panic!("a cylinder op answers with a cylinder");
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &op).unwrap() else {
+        panic!("an extrude answers with an extrude");
     };
-    check(&m, faces, "world XY");
+    check(&m, &faces, "world XY");
 
     // (b) a plane the log stated as a datum, facing +Z
     let mut m = Model::new();
@@ -8842,16 +8842,15 @@ fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
         &mut m,
         crate::SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, -0.5])),
     );
-    let op = Operation::Cylinder {
+    let op = Operation::Extrude {
         frame: below,
-        center: [0.0, 0.0],
-        radius: 1.0,
+        profile: circle_profile([0.0, 0.0], 1.0),
         dist: 2.0,
     };
-    let OpOutput::Cylinder { faces, .. } = apply(&mut m, &op).unwrap() else {
-        panic!("a cylinder op answers with a cylinder");
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &op).unwrap() else {
+        panic!("an extrude answers with an extrude");
     };
-    check(&m, faces, "stated datum");
+    check(&m, &faces, "stated datum");
 
     // (c) the plane of a face that already exists — the case that was wrong
     let mut m = Model::new();
@@ -8864,16 +8863,15 @@ fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
         panic!("an extrude answers with an extrude");
     };
     let top = face_sketch_frame(&m, plate[1]).expect("a face has a frame");
-    let op = Operation::Cylinder {
+    let op = Operation::Extrude {
         frame: top,
-        center: [0.5, 0.5],
-        radius: 0.2,
+        profile: circle_profile([0.5, 0.5], 0.2),
         dist: 1.0,
     };
-    let OpOutput::Cylinder { faces, .. } = apply(&mut m, &op).unwrap() else {
-        panic!("a cylinder op answers with a cylinder");
+    let OpOutput::Extrude { faces, .. } = apply(&mut m, &op).unwrap() else {
+        panic!("an extrude answers with an extrude");
     };
-    check(&m, faces, "an existing face's plane");
+    check(&m, &faces, "an existing face's plane");
 }
 
 /// ★★ **A hole must wind the other way round, and now something checks it.**
@@ -8910,14 +8908,13 @@ fn a_holes_winding_is_checked_too() {
     let OpOutput::DatumPlane { frame, .. } = apply(&mut scratch, &below).unwrap() else {
         panic!("a datum answers with a datum");
     };
-    let drill = Operation::Cylinder {
+    let drill = Operation::Extrude {
         frame,
-        center: [2.0, 2.0],
-        radius: 0.5,
+        profile: circle_profile([2.0, 2.0], 0.5),
         dist: 3.0,
     };
-    let OpOutput::Cylinder { solid: b, .. } = apply(&mut scratch, &drill).unwrap() else {
-        panic!("a cylinder op answers with a cylinder");
+    let OpOutput::Extrude { solid: b, .. } = apply(&mut scratch, &drill).unwrap() else {
+        panic!("an extrude answers with an extrude");
     };
     let mut m = replay(&[
         extrude,
@@ -9092,14 +9089,13 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
     let OpOutput::DatumPlane { frame, .. } = apply(&mut scratch, &below).unwrap() else {
         panic!("a datum answers with a datum");
     };
-    let drill = Operation::Cylinder {
+    let drill = Operation::Extrude {
         frame,
-        center: [2.0, 2.0],
-        radius: 0.5,
+        profile: circle_profile([2.0, 2.0], 0.5),
         dist: 3.0,
     };
-    let OpOutput::Cylinder { solid: b, .. } = apply(&mut scratch, &drill).unwrap() else {
-        panic!("a cylinder op answers with a cylinder");
+    let OpOutput::Extrude { solid: b, .. } = apply(&mut scratch, &drill).unwrap() else {
+        panic!("an extrude answers with an extrude");
     };
 
     // The axis of both the bore and the free-standing drill, as a line to measure against.
@@ -11804,9 +11800,10 @@ fn circle_profile(center: [f64; 2], radius: f64) -> Profile2d {
     .remove(0)
 }
 
-/// ★★★★★ **The sugar claim, measured.** `cylinder()` is to become «a circle sketched, then
-/// extruded», so the extrude of a whole-circle profile must state the very solid the cylinder
-/// primitive states: the same vertex coordinates (bits), the same two seam definitions, the same
+/// ★★★★★ **The sugar claim, measured.** `cylinder()` is «a circle sketched, then extruded», so
+/// the extrude of a whole-circle profile must state the very solid the cylinder primitive states
+/// (`Model::add_cylinder_exact`, the test door the retired `Operation::Cylinder` stood on): the
+/// same vertex coordinates (bits), the same two seam definitions, the same
 /// plane coefficients and cylinder definition, the same faces (kind, sense, loop shape), the same
 /// edges (carriers, curve, the circle closing on one vertex), the same volume bits and the same
 /// mesh. Handle numbering is the one thing left out — the two builders push their arenas in
@@ -11815,11 +11812,17 @@ fn circle_profile(center: [f64; 2], radius: f64) -> Profile2d {
 fn a_circle_profile_extrude_states_the_cylinder_primitive_solid() {
     let (center, radius, dist) = ([0.5, 0.25], 0.1, 2.0);
     let mut a = Model::new();
-    let op = cylinder_op(&a, center, radius, dist);
-    let OpOutput::Cylinder { solid: sa, .. } = apply(&mut a, &op).expect("the primitive builds")
-    else {
-        unreachable!()
-    };
+    let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+    let (sa, _) = a
+        .add_cylinder_exact(
+            [r(center[0]), r(center[1]), r(0.0)],
+            [r(0.0), r(0.0), r(1.0)],
+            [r(1.0), r(0.0), r(0.0)],
+            r(radius),
+            r(dist),
+            None,
+        )
+        .expect("the primitive builds");
     let mut b = Model::new();
     let frame = SketchFrame::world(&b, Axis::Z);
     let OpOutput::Extrude { solid: sb, faces } = apply(
@@ -11986,12 +11989,18 @@ fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
     refused(crate::boolean(&mut m, BoolKind::Fuse, s1, s2));
     // Two primitives — the same hazard predates the sketch road.
     let mut m = Model::new();
-    let op = cylinder_op(&m, [0.0, 0.0], 1.0, 2.0);
     let prim = |m: &mut Model| {
-        let OpOutput::Cylinder { solid, .. } = apply(m, &op).unwrap() else {
-            unreachable!()
-        };
-        solid
+        let r = |x: i128| nacre_scalar::Rat::from_int(x);
+        m.add_cylinder_exact(
+            [r(0), r(0), r(0)],
+            [r(0), r(0), r(1)],
+            [r(1), r(0), r(0)],
+            r(1),
+            r(2),
+            None,
+        )
+        .unwrap()
+        .0
     };
     let (s1, s2) = (prim(&mut m), prim(&mut m));
     m.rebuild_adjacency();

@@ -463,24 +463,6 @@ pub enum Operation {
         profile: Profile2d,
         dist: f64,
     },
-    /// A cylinder standing on `frame`: `center` and `radius` in that frame's own 2D
-    /// coordinates, swept `dist` along its `ŵ`. **The circular-profile twin of
-    /// [`Operation::Extrude`]**, and it reads the same way round — `dist` is a thickness, and
-    /// which way it goes is the frame's.
-    ///
-    /// ★ It is a primitive rather than a profile because a sketch has no circle: the sketch's edge vocabulary was
-    /// `Line` and a `Ring2d` is a list of points. This is the smallest thing that makes a
-    /// cylinder **statable in the log**, which is what a self-contained model needs; a circular
-    /// profile — pads, pockets and holes all at once — arrives with the sketch ladder.
-    ///
-    /// The seam lands on the frame's `+u`, so a user who knows where they drew the sketch knows
-    /// where the seam is.
-    Cylinder {
-        frame: SketchFrame,
-        center: [f64; 2],
-        radius: f64,
-        dist: f64,
-    },
     /// Pad a boss: extrude `profile` on a planar `face` into a tool prism (height
     /// `dist`) and `Fuse` it onto the solid — boolean sugar over [`Operation::Boolean`],
     /// not a direct face-split. No "profile inside the face" constraint: an overhanging
@@ -620,17 +602,6 @@ pub enum OpError {
     ArcsMeetAtVertex,
     /// A non-positive extrusion distance.
     NonPositiveDistance,
-    /// A non-positive cylinder radius. The distance's sibling: a zero radius is a line, not a
-    /// thin cylinder, and a negative one names nothing at all.
-    NonPositiveRadius,
-    /// A cylinder radius outside the decimal window — [`OpError::DistOutsideDecimalWindow`] for
-    /// the other dimension of the same statement.
-    RadiusOutsideDecimalWindow,
-    /// A cylinder's centre, in its frame's 2D coordinates, outside the decimal window. Separate
-    /// from the radius because the two are separate statements: a caller can write a sane radius
-    /// at an unrepresentable place, and reading "radius" there would send them to fix the wrong
-    /// number.
-    CenterOutsideDecimalWindow,
     /// An extrusion distance outside the decimal window (`Rat::from_decimal` — `~1e38` above,
     /// `~1e-22` below for a full-width value): it has no rational truth for the sweep to be
     /// computed in. The sibling of [`OpError::ProfileOutsideDecimalWindow`], named at the
@@ -857,12 +828,6 @@ pub enum OpOutput {
         solid: Handle<Solid>,
         faces: Vec<Handle<Face>>,
     },
-    /// The created cylinder and its three faces in push order: `faces[0]` the lateral,
-    /// `faces[1]` the bottom cap (on the frame's plane), `faces[2]` the top cap.
-    Cylinder {
-        solid: Handle<Solid>,
-        faces: [Handle<Face>; 3],
-    },
     /// The superseding solid and the boss's top cap face.
     PadOnFace {
         solid: Handle<Solid>,
@@ -913,15 +878,6 @@ pub fn apply(model: &mut Model, op: &Operation) -> Result<OpOutput, OpError> {
         } => {
             let (solid, faces) = extrude_on_frame(model, frame, profile, *dist)?;
             Ok(OpOutput::Extrude { solid, faces })
-        }
-        Operation::Cylinder {
-            frame,
-            center,
-            radius,
-            dist,
-        } => {
-            let (solid, faces) = cylinder_on_frame(model, frame, *center, *radius, *dist)?;
-            Ok(OpOutput::Cylinder { solid, faces })
         }
         Operation::PadOnFace {
             face,
@@ -1045,17 +1001,6 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
         } => Cow::Owned(Operation::Extrude {
             frame: frame.rebound(surface(frame.plane())?),
             profile: profile.clone(),
-            dist: *dist,
-        }),
-        Operation::Cylinder {
-            frame,
-            center,
-            radius,
-            dist,
-        } => Cow::Owned(Operation::Cylinder {
-            frame: frame.rebound(surface(frame.plane())?),
-            center: *center,
-            radius: *radius,
             dist: *dist,
         }),
         Operation::PadOnFace {
@@ -1671,84 +1616,6 @@ pub(crate) fn extrude_on_frame(
         Some(frame.plane()),
         None,
     )
-}
-
-/// **Stand a cylinder on a frame the model already holds** — the handle vocabulary of
-/// [`Operation::Cylinder`], and the same checks its extrude sibling runs, in the same order.
-///
-/// ★ **Why this road has no panics where `Model::add_cylinder` has seven.** That entry takes an
-/// f64 axis, normalizes it, and then has to lift the *computed* caps and seams back into
-/// rationals — which a long decimal can refuse. Here the frame's axes are already exact unit
-/// rationals (or, for a tilted face, the identity inside a motion node), so every derived point
-/// is a rational product and the only numbers ever lifted are the four the caller wrote.
-///
-/// The frame's `ŵ` decides which way the cylinder stands, exactly as it decides which way a prism
-/// sweeps. A face's frame points *out* of its solid, so drilling *into* material is a flipped
-/// frame — the direction is the frame's to state, not this operation's (`extrude_and_boolean`'s
-/// signed sweep is a composite's private business, not the log's vocabulary).
-pub(crate) fn cylinder_on_frame(
-    model: &mut Model,
-    frame: &SketchFrame,
-    center: [f64; 2],
-    radius: f64,
-    dist: f64,
-) -> Result<(Handle<Solid>, [Handle<Face>; 3]), OpError> {
-    if dist <= 0.0 {
-        return Err(OpError::NonPositiveDistance);
-    }
-    if radius <= 0.0 {
-        return Err(OpError::NonPositiveRadius);
-    }
-    let height = nacre_scalar::Rat::from_decimal(dist).ok_or(OpError::DistOutsideDecimalWindow)?;
-    let radius_rat =
-        nacre_scalar::Rat::from_decimal(radius).ok_or(OpError::RadiusOutsideDecimalWindow)?;
-    let mut center_rat = [nacre_scalar::Rat::from_int(0); 2];
-    for (out, c) in center_rat.iter_mut().zip(center) {
-        *out = nacre_scalar::Rat::from_decimal(c).ok_or(OpError::CenterOutsideDecimalWindow)?;
-    }
-    // A `SketchFrame` may name any surface, a cylinder included — reject that by name rather than
-    // letting the frame derivation fail for a reason that reads as something else (the
-    // `extrude_on_frame` precedent).
-    match model.surface(frame.plane()) {
-        Surface::Plane(_) => {}
-        Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
-    }
-    crate::rotated_vertex::frame_world_basis(model, frame.plane(), frame.placement(), frame.flip())
-        .ok_or(OpError::PlaneWithoutExactForm)?;
-
-    // ★ The placement is worked out **before** anything is pushed: on the frame-node road the node
-    // is an arena cell, and a refusal that has already minted one shifts every later log index
-    // ("no reject after commit"). The identity frame answers the placement question without it.
-    let world = exact_frame(model, frame);
-    let rat = world
-        .clone()
-        .unwrap_or_else(crate::exact::RatFrame::identity);
-    let placement = rat
-        .cylinder(center_rat, radius_rat, height)
-        .ok_or(OpError::PlaneWithoutExactForm)?;
-    let node = match world {
-        Some(_) => None,
-        None => Some(push_frame_node(model, *frame)),
-    };
-    model
-        .add_cylinder_exact(
-            placement.base,
-            placement.axis,
-            placement.ref_dir,
-            placement.radius,
-            placement.height,
-            node,
-        )
-        .map_err(|e| match e {
-            // Checked above, both of them — these arms exist so that no reachable path through
-            // this function can say something the caller did not.
-            nacre_topo::CylinderError::NonPositiveRadius => OpError::NonPositiveRadius,
-            nacre_topo::CylinderError::NonPositiveHeight => OpError::NonPositiveDistance,
-            // A frame that is orthonormal by construction, an `i128` overflow in the derived
-            // points, a cache that refused: all of them mean "the exact road cannot state this
-            // cylinder here", which is the name `prism_rings` already answers to.
-            _ => OpError::PlaneWithoutExactForm,
-        })
 }
 
 /// Place a profile on its plane and sweep it — **exactly, or not at all** (S6b).
