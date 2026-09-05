@@ -366,11 +366,6 @@ impl Swept {
         };
         self
     }
-
-    /// One vertex, one arc: the whole circle, whose vertex is the seam.
-    pub(crate) fn is_whole_circle(&self) -> bool {
-        self.base.len() == 1 && self.exact.segs.first().is_some_and(Seg3::is_arc)
-    }
 }
 
 impl SweptRat {

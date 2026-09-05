@@ -39,7 +39,7 @@
 //! as evidence only about the population present.**
 
 use nacre_math::Point3;
-use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
+use nacre_ops::{BoolKind, Edge2d, OpOutput, Operation, apply, boolean, from_edges};
 use nacre_ops::{DatumDef, SketchFrame, SketchPlane};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
@@ -1379,6 +1379,104 @@ fn dump() {
         "stat seeded_hits {}",
         nacre_topo::SEEDED_HITS.load(std::sync::atomic::Ordering::Relaxed)
     );
+    // ── **Arc profiles** (cell ⑨): sketched circles and arcs extruded, then met by a box. The
+    // half disk's chord wall *crosses* its cylinder (branch corners `Lo`/`Hi`), the annulus and
+    // the bored plate have only whole circles; the slot's straight walls are *tangent* to its half
+    // cylinders, the ruling the tracer has no side for — its rows record that refusal by name.
+    {
+        let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let sketch = |m: &mut Model, edges: Vec<Edge2d>, dist: f64| -> Handle<Solid> {
+            let profile = from_edges(edges).expect("a valid profile").remove(0);
+            let frame = SketchFrame::world(m, Axis::Z);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the arc profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        };
+        type Shape = Box<dyn Fn(&mut Model) -> Handle<Solid>>;
+        let shapes: [(&str, Shape); 4] = [
+            (
+                "halfdisk",
+                Box::new(move |m| {
+                    sketch(
+                        m,
+                        vec![
+                            Edge2d::line(p2(2.0, 5.0), p2(2.0, -1.0)).unwrap(),
+                            Edge2d::arc_turns(p2(2.0, 2.0), p2(2.0, -1.0), 2).unwrap(),
+                        ],
+                        3.0,
+                    )
+                }),
+            ),
+            (
+                "annulus",
+                Box::new(move |m| {
+                    sketch(
+                        m,
+                        vec![
+                            Edge2d::circle(p2(2.0, 2.0), 3.0).unwrap(),
+                            Edge2d::circle(p2(2.0, 2.0), 1.5).unwrap(),
+                        ],
+                        3.0,
+                    )
+                }),
+            ),
+            (
+                "bored",
+                Box::new(move |m| {
+                    sketch(
+                        m,
+                        vec![
+                            Edge2d::line(p2(-1.0, -1.0), p2(5.0, -1.0)).unwrap(),
+                            Edge2d::line(p2(5.0, -1.0), p2(5.0, 5.0)).unwrap(),
+                            Edge2d::line(p2(5.0, 5.0), p2(-1.0, 5.0)).unwrap(),
+                            Edge2d::line(p2(-1.0, 5.0), p2(-1.0, -1.0)).unwrap(),
+                            Edge2d::circle(p2(2.0, 2.0), 1.0).unwrap(),
+                        ],
+                        3.0,
+                    )
+                }),
+            ),
+            (
+                "slot",
+                Box::new(move |m| {
+                    sketch(
+                        m,
+                        vec![
+                            Edge2d::line(p2(0.0, 1.0), p2(4.0, 1.0)).unwrap(),
+                            Edge2d::arc_turns(p2(4.0, 2.0), p2(4.0, 1.0), 2).unwrap(),
+                            Edge2d::line(p2(4.0, 3.0), p2(0.0, 3.0)).unwrap(),
+                            Edge2d::arc_turns(p2(0.0, 2.0), p2(0.0, 3.0), 2).unwrap(),
+                        ],
+                        3.0,
+                    )
+                }),
+            ),
+        ];
+        for (sn, build) in &shapes {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let a = build(&mut m);
+                let b = m.add_cuboid(
+                    Point3::from_array([1.0, 0.0, 1.0]),
+                    Point3::from_array([6.0, 4.0, 5.0]),
+                );
+                m.rebuild_adjacency();
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("arcprofile {sn} {kn}"), &m, &inputs, &out);
+            }
+        }
+    }
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].

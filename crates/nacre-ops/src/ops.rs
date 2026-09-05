@@ -607,10 +607,17 @@ pub enum OpError {
     /// Checked arithmetic overflowed while classifying the profile — `SketchError::Undecidable`'s
     /// twin. Refused by name; nothing guesses.
     ProfileUndecidable,
-    /// The profile carries an arc between two vertices, whose junction vertices the prism builder
-    /// does not define yet — a whole circle stands (K3a), an arc waits for K3b. The honest refusal
-    /// between the vocabulary and the builder.
-    ArcsNotBuiltYet,
+    /// An arc that is not a whole number of quarter turns. The builder's exact winding reads a
+    /// ring's area as `a + b·π`, which needs every arc's angle to be a multiple of `π/2`; the
+    /// vocabulary states such an arc exactly (a `3-4-5` lens is a valid region), the builder does
+    /// not stand it yet — that family opens with named points.
+    ArcSweepNotQuarterTurn,
+    /// Two arcs of different circles meet at a profile vertex. That corner is a point on two
+    /// cylinders and a plane, which no [`nacre_topo::VertexDef`] states yet, and the ruling between
+    /// the two cylinder walls has no curve the kernel derives (`derive_edge_curve` declines two
+    /// distinct cylinders) — the same frontier as the cylinder–cylinder boolean (M6b). A lens, a
+    /// cam lobe; a straight step between the arcs is what builds today.
+    ArcsMeetAtVertex,
     /// A non-positive extrusion distance.
     NonPositiveDistance,
     /// A non-positive cylinder radius. The distance's sibling: a zero radius is a line, not a
@@ -1119,6 +1126,91 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
     })
 }
 
+/// **The definition of a corner where a straight wall meets an arc wall on a cap**: the wall's
+/// plane and the cap's plane meet in a line, and that line crosses the arc's cylinder at this
+/// point — [`VertexDef::Branch`], the same definition the boolean mints for its branch corners.
+///
+/// The root is read the way `QuadRoot` is defined: the two planes in **ascending handle order**,
+/// each by its **stored canonical name** (`surface_name`, the sign convention that fixes the meet
+/// line's direction), fed to [`nacre_scalar::quad::plane_plane_cylinder`] with the cylinder's own
+/// statement; the root whose parameter equals this point's is the name. A wall tangent to the
+/// cylinder — a fillet's, a slot's straight side — is the double root, one point. Every statement
+/// has to live in one frame for the meet to mean anything: a cap borrowed from another body in
+/// another frame (a pad on a turned face) declines by name rather than reading a frame line
+/// against a world cylinder.
+fn branch_def(
+    model: &Model,
+    plane: Handle<Surface>,
+    cap: Handle<Surface>,
+    cylinder: Handle<Surface>,
+    at: &[nacre_scalar::Rat; 3],
+) -> Result<VertexDef, OpError> {
+    use nacre_scalar::quad::CylinderMeet;
+    use nacre_topo::QuadRoot;
+    let (a, b) = if plane.index() < cap.index() {
+        (plane, cap)
+    } else {
+        (cap, plane)
+    };
+    let name = |h: Handle<Surface>| -> Result<[nacre_scalar::Rat; 4], OpError> {
+        model
+            .surface_name
+            .get(&h)
+            .and_then(|n| n.narrow().copied())
+            .ok_or(OpError::PlaneWithoutExactForm)
+    };
+    let (pa, pb) = (name(a)?, name(b)?);
+    let nacre_topo::SurfaceTruth::Cylinder { def, motion } = model.surface_truth(cylinder) else {
+        return Err(OpError::DegenerateGeometry);
+    };
+    if model.plane_motion(a) != *motion || model.plane_motion(b) != *motion {
+        return Err(OpError::PlaneWithoutExactForm);
+    }
+    let meet =
+        nacre_scalar::quad::plane_plane_cylinder(&pa, &pb, &def.origin(), &def.dir(), def.radius())
+            .ok_or(OpError::PlaneWithoutExactForm)?;
+    // This point's parameter along the meet line: `(at − base)·dir / dir·dir`.
+    let param = |line: &nacre_scalar::quad::MeetLine| -> Option<nacre_scalar::Rat> {
+        let (bse, d) = (line.base(), line.dir());
+        let mut num = nacre_scalar::Rat::from_int(0);
+        let mut den = nacre_scalar::Rat::from_int(0);
+        for k in 0..3 {
+            num = num.checked_add(at[k].checked_sub(bse[k])?.checked_mul(d[k])?)?;
+            den = den.checked_add(d[k].checked_mul(d[k])?)?;
+        }
+        num.checked_mul(nacre_scalar::Rat::new(den.denom(), den.numer())?)
+    };
+    let root = match meet {
+        CylinderMeet::Tangent { line, s } => {
+            debug_assert_eq!(param(&line), Some(s), "the tangent point is this corner");
+            QuadRoot::Double
+        }
+        CylinderMeet::Pair { line, s } => {
+            let t = param(&line).ok_or(OpError::PlaneWithoutExactForm)?;
+            // Compared as values: a rational root still arrives as `mid ± k·√disc` when the
+            // discriminant is a perfect square, so `b == 0` is not the test — the difference's
+            // sign is.
+            let is = |q: &nacre_scalar::quad::QuadVal| {
+                q.checked_sub(&nacre_scalar::quad::QuadVal::from_rat(t))
+                    .is_some_and(|d| d.sign() == nacre_scalar::Orient::Zero)
+            };
+            if is(&s[0]) {
+                QuadRoot::Lo
+            } else if is(&s[1]) {
+                QuadRoot::Hi
+            } else {
+                return Err(OpError::PlaneWithoutExactForm);
+            }
+        }
+        _ => return Err(OpError::DegenerateGeometry),
+    };
+    Ok(VertexDef::Branch {
+        planes: [a, b],
+        cylinder,
+        root,
+    })
+}
+
 fn push_line_edge(
     model: &mut Model,
     a: Handle<Vertex>,
@@ -1489,16 +1581,45 @@ fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::exact::RatFr
 /// `dist > 0` is a **thickness**; which way it goes is the frame's `ŵ`, measured by whoever built
 /// the frame (a datum against the caller's stated normal, a face against its outward). That is why
 /// this can take a frame where the operation used to take a plane and sweep the same way.
-/// A whole circle stands as a cylinder wall (K3a); an arc between two vertices does not yet (its
-/// junction vertices are `Branch` definitions the builder learns in K3b) — refused by name rather
-/// than reaching a builder that would read the ring's vertices as a polygon.
-fn refuse_arcs(profile: &Profile2d) -> Result<(), OpError> {
-    let partial = |r: &Ring2d| !r.is_polygon() && r.len() != 1;
-    if partial(profile.outer()) || profile.holes().iter().any(partial) {
-        Err(OpError::ArcsNotBuiltYet)
-    } else {
+/// The builder's exact winding needs quarter-turn arcs (`Ring2d::winding_sign`); an arc of any
+/// other angle is refused by name here, before the builder reads the ring.
+fn refuse_non_quarter_arcs(profile: &Profile2d) -> Result<(), OpError> {
+    let zero = Rat::from_int(0);
+    let quarter = |r: &Ring2d| -> Result<(), OpError> {
+        let n = r.len();
+        for i in 0..n {
+            let Seg2d::Arc { center, .. } = r.segs()[i] else {
+                continue;
+            };
+            let (s0, e0) = (r.vertices()[i], r.vertices()[(i + 1) % n]);
+            if s0 == e0 {
+                continue; // a whole circle
+            }
+            let v = |p: [Rat; 2]| -> Option<[Rat; 2]> {
+                Some([p[0].checked_sub(center[0])?, p[1].checked_sub(center[1])?])
+            };
+            let (a, b) = (
+                v(s0).ok_or(OpError::ProfileUndecidable)?,
+                v(e0).ok_or(OpError::ProfileUndecidable)?,
+            );
+            let dot = a[0]
+                .checked_mul(b[0])
+                .and_then(|x| x.checked_add(a[1].checked_mul(b[1])?));
+            let cross = a[0]
+                .checked_mul(b[1])
+                .and_then(|x| x.checked_sub(a[1].checked_mul(b[0])?));
+            let (Some(dot), Some(cross)) = (dot, cross) else {
+                return Err(OpError::ProfileUndecidable);
+            };
+            // A quarter, a half, three quarters: perpendicular radii, or opposite ones.
+            if !((dot == zero && cross != zero) || (dot < zero && cross == zero)) {
+                return Err(OpError::ArcSweepNotQuarterTurn);
+            }
+        }
         Ok(())
-    }
+    };
+    quarter(profile.outer())?;
+    profile.holes().iter().try_for_each(quarter)
 }
 
 pub(crate) fn extrude_on_frame(
@@ -1514,7 +1635,7 @@ pub(crate) fn extrude_on_frame(
         return Err(OpError::DistOutsideDecimalWindow);
     }
     profile.check()?;
-    refuse_arcs(profile)?;
+    refuse_non_quarter_arcs(profile)?;
     // ★ A `SketchFrame` may name any surface — `SketchFrame::canonical` makes no claim and checks
     // nothing — so a cylinder can reach here, which a `SketchPlane` never could. Reject it by name
     // rather than letting the frame derivation fail later for a reason that reads as something
@@ -1686,7 +1807,9 @@ pub(crate) fn build_prism(
     // derived from these, so there is no second half that could travel separately.
     base_cap_points: Option<[[nacre_scalar::Rat; 3]; 3]>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
-    let thin = |r: &Swept| r.base.len() < 3 && !r.is_whole_circle();
+    // A polygon needs three corners; a ring with an arc bounds area with one (a circle) or two
+    // (a half disk, a slot's end drawn alone).
+    let thin = |r: &Swept| r.base.len() < 3 && !r.exact.segs.iter().any(Seg3::is_arc);
     if thin(&outer_ring) || inner_rings.iter().any(thin) {
         return Err(OpError::DegenerateProfile);
     }
@@ -2061,32 +2184,55 @@ fn sweep_ring(
     // the chain reproduces the stored coordinate bit for bit — measured 8/8, re-measured
     // suite-wide by the reuse differential. The shell-less base-vertex scaffolding went
     // with it.)
-    let define = |i: usize, cap: Handle<Surface>| -> Result<VertexDef, OpError> {
+    let define = |model: &Model,
+                  i: usize,
+                  cap: Handle<Surface>,
+                  at: &[nacre_scalar::Rat; 3]|
+     -> Result<VertexDef, OpError> {
         let prev = walls[(i + n - 1) % n].0;
         let here = walls[i].0;
         if here == cap || prev == cap {
             return Err(OpError::DegenerateGeometry);
         }
-        // A whole circle: one wall, one vertex — the rim's point at `+ref_dir`, the seam.
-        if n == 1 && ring.exact.segs[0].is_arc() {
-            return Ok(VertexDef::OnSeam([here, cap]));
+        let (prev_arc, here_arc) = (
+            ring.exact.segs[(i + n - 1) % n].is_arc(),
+            ring.exact.segs[i].is_arc(),
+        );
+        match (prev_arc, here_arc) {
+            // Two straight walls and the cap: the corner every polygon prism has.
+            (false, false) => {
+                if prev == here {
+                    return Err(OpError::DegenerateGeometry);
+                }
+                Ok(VertexDef::ThreePlane([prev, here, cap]))
+            }
+            // A whole circle: one wall, one vertex — the rim's point at `+ref_dir`, the seam.
+            (true, true) if n == 1 => Ok(VertexDef::OnSeam([here, cap])),
+            // Two arcs of one circle merged in the profile's normal form; two of different
+            // circles are a corner the kernel does not define.
+            (true, true) => Err(OpError::ArcsMeetAtVertex),
+            // A straight wall meets an arc wall on the cap: the wall's plane and the cap's plane
+            // meet in a line that crosses the arc's cylinder there.
+            (true, false) => branch_def(model, here, cap, prev, at),
+            (false, true) => branch_def(model, prev, cap, here, at),
         }
-        if prev == here {
-            return Err(OpError::DegenerateGeometry);
-        }
-        Ok(VertexDef::ThreePlane([prev, here, cap]))
     };
     let push_verts = |model: &mut Model,
                       ps: &[Point3],
+                      exact: &[[nacre_scalar::Rat; 3]],
                       cap: Handle<Surface>|
      -> Result<Vec<Handle<Vertex>>, OpError> {
         ps.iter()
+            .zip(exact.iter())
             .enumerate()
-            .map(|(i, p)| Ok(model.push_vertex(define(i, cap)?, *p, None)))
+            .map(|(i, (p, at))| {
+                let def = define(model, i, cap, at)?;
+                Ok(model.push_vertex(def, *p, None))
+            })
             .collect()
     };
-    let bv = push_verts(model, &base_pts, caps.0)?;
-    let tv = push_verts(model, &top_pts, caps.1)?;
+    let bv = push_verts(model, &base_pts, &ring.exact.base, caps.0)?;
+    let tv = push_verts(model, &top_pts, &ring.exact.top, caps.1)?;
 
     let along: Vec<bool> = ring
         .exact
@@ -2665,7 +2811,7 @@ fn extrude_and_boolean(
         return Err(OpError::DistOutsideDecimalWindow);
     }
     profile.check()?;
-    refuse_arcs(profile)?;
+    refuse_non_quarter_arcs(profile)?;
     let frame = face_frame(model, face)?;
     // No containment check — an overhanging footprint routes to the overhang boolean sidecars.
     let n = frame.n;

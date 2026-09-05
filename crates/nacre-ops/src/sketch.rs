@@ -156,19 +156,28 @@ impl Edge2d {
         start: Point2,
         quarter_turns: i32,
     ) -> Result<Edge2d, SketchError> {
+        Self::arc_turns_rat(lift(center)?, lift(start)?, quarter_turns)
+    }
+
+    /// [`Edge2d::arc_turns`] for computed points: the centre and the start as `Rat` — the door a
+    /// pen takes when it already stands on an exact point (after a fillet's retreat, after an arc).
+    pub fn arc_turns_rat(
+        center: [Rat; 2],
+        start: [Rat; 2],
+        quarter_turns: i32,
+    ) -> Result<Edge2d, SketchError> {
         if !(1..=3).contains(&quarter_turns.unsigned_abs()) {
             return Err(SketchError::ArcTurnsOutOfRange {
                 turns: quarter_turns,
             });
         }
-        let (c, s) = (lift(center)?, lift(start)?);
-        let radius = radius_of(c, s)?;
-        let v = sub2(s, c).ok_or(SketchError::Undecidable)?;
-        let end = turned(c, v, quarter_turns).ok_or(SketchError::Undecidable)?;
+        let radius = radius_of(center, start)?;
+        let v = sub2(start, center).ok_or(SketchError::Undecidable)?;
+        let end = turned(center, v, quarter_turns).ok_or(SketchError::Undecidable)?;
         Ok(Edge2d::Arc {
-            center: c,
+            center,
             radius,
-            start: s,
+            start,
             end,
             ccw: quarter_turns > 0,
         })

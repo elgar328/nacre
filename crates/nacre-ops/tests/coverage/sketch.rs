@@ -568,13 +568,79 @@ fn a_corner_flat_in_decimal_but_not_in_binary_is_dissolved() {
     );
 }
 
-/// **A whole circle builds; an arc between two vertices is refused by name.** The vocabulary
-/// accepts both; the prism builder stands a circle's cylinder wall (K3a) and, for an arc whose
-/// junction vertices it cannot define yet, says so rather than reading the ring as a polygon.
+/// **Circles and arcs both build; what the builder cannot stand is refused by name.** The
+/// vocabulary accepts a `3-4-5` lens as a region, but its arcs are no quarter turns, so the
+/// exact winding cannot read it; a leaf of two quarter arcs winds fine and fails on its corners
+/// instead — a point on two cylinders is a definition the kernel does not have.
 #[test]
-fn a_whole_circle_extrudes_and_a_slot_is_refused_until_the_builder_learns_arcs() {
+fn a_circle_and_a_slot_extrude_and_a_lens_is_refused_by_name() {
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
+    let r = |n: i128| nacre_scalar::Rat::from_int(n);
     let circle = from_edges(vec![Edge2d::circle(p2(0.0, 0.0), 1.0).unwrap()]).unwrap();
+    let slot = from_edges(vec![
+        Edge2d::line(p2(0.0, -1.0), p2(4.0, -1.0)).unwrap(),
+        Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -1.0), 2).unwrap(),
+        Edge2d::line(p2(4.0, 1.0), p2(0.0, 1.0)).unwrap(),
+        Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, 1.0), 2).unwrap(),
+    ])
+    .unwrap();
+    let lens = from_edges(vec![
+        Edge2d::arc_rat([r(3), r(4)], [r(0), r(0)], [r(6), r(0)], true).unwrap(),
+        Edge2d::arc_rat([r(3), r(-4)], [r(6), r(0)], [r(0), r(0)], true).unwrap(),
+    ])
+    .unwrap();
+    for profiles in [circle, slot] {
+        let mut m = Model::new();
+        let frame = SketchFrame::world(&m, Axis::Z);
+        let out = apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile: profiles[0].clone(),
+                dist: 1.0,
+            },
+        );
+        assert!(matches!(out, Ok(OpOutput::Extrude { .. })), "{out:?}");
+    }
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, Axis::Z);
+    assert_eq!(
+        apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile: lens[0].clone(),
+                dist: 1.0
+            }
+        ),
+        Err(nacre_ops::OpError::ArcSweepNotQuarterTurn)
+    );
+    // A leaf: two quarter arcs of different circles between (0,0) and (5,5).
+    let leaf = from_edges(vec![
+        Edge2d::arc_turns(p2(5.0, 0.0), p2(0.0, 0.0), -1).unwrap(), // → (5,5), bulging up-left
+        Edge2d::arc_turns(p2(0.0, 5.0), p2(5.0, 5.0), -1).unwrap(), // → (0,0), bulging down-right
+    ])
+    .unwrap();
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, Axis::Z);
+    assert_eq!(
+        apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile: leaf[0].clone(),
+                dist: 1.0
+            }
+        ),
+        Err(nacre_ops::OpError::ArcsMeetAtVertex)
+    );
+}
+
+/// **A slot prism exports**: its cylinder walls and arc edges reach STEP as the surfaces and
+/// curves they are.
+#[test]
+fn a_slot_prism_tessellates_and_exports() {
+    let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
     let slot = from_edges(vec![
         Edge2d::line(p2(0.0, -1.0), p2(4.0, -1.0)).unwrap(),
         Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -1.0), 2).unwrap(),
@@ -584,26 +650,18 @@ fn a_whole_circle_extrudes_and_a_slot_is_refused_until_the_builder_learns_arcs()
     .unwrap();
     let mut m = Model::new();
     let frame = SketchFrame::world(&m, Axis::Z);
-    let out = apply(
+    apply(
         &mut m,
         &Operation::Extrude {
             frame,
-            profile: circle[0].clone(),
+            profile: slot[0].clone(),
             dist: 1.0,
         },
-    );
-    assert!(matches!(out, Ok(OpOutput::Extrude { .. })), "{out:?}");
-    let mut m = Model::new();
-    let frame = SketchFrame::world(&m, Axis::Z);
-    assert_eq!(
-        apply(
-            &mut m,
-            &Operation::Extrude {
-                frame,
-                profile: slot[0].clone(),
-                dist: 1.0
-            }
-        ),
-        Err(nacre_ops::OpError::ArcsNotBuiltYet)
-    );
+    )
+    .expect("the slot extrudes");
+    assert!(nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default()).is_ok());
+    let step = nacre_step::to_step(&m).unwrap();
+    for needle in ["MANIFOLD_SOLID_BREP", "CYLINDRICAL_SURFACE", "CIRCLE"] {
+        assert!(step.contains(needle), "missing {needle}");
+    }
 }

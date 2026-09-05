@@ -12054,3 +12054,288 @@ fn a_circle_prism_on_a_slanted_wall_builds_and_its_pad_declines_by_name() {
         "{r:?}"
     );
 }
+
+// ─── K3b: arcs between vertices — slot, rounded rectangle, D ─────────────────────────────────
+
+fn edges_profile(edges: Vec<crate::Edge2d>) -> Profile2d {
+    crate::from_edges(edges).unwrap().remove(0)
+}
+
+fn slot_profile(cx0: f64, cx1: f64, cy: f64, r: f64) -> Profile2d {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    edges_profile(vec![
+        crate::Edge2d::line(p2(cx0, cy - r), p2(cx1, cy - r)).unwrap(),
+        crate::Edge2d::arc_turns(p2(cx1, cy), p2(cx1, cy - r), 2).unwrap(),
+        crate::Edge2d::line(p2(cx1, cy + r), p2(cx0, cy + r)).unwrap(),
+        crate::Edge2d::arc_turns(p2(cx0, cy), p2(cx0, cy + r), 2).unwrap(),
+    ])
+}
+
+fn extrude_world_z(
+    m: &mut Model,
+    profile: Profile2d,
+    dist: f64,
+) -> (Handle<Solid>, Vec<Handle<Face>>) {
+    let frame = SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid, faces } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist,
+        },
+    )
+    .expect("the profile extrudes") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    (solid, faces)
+}
+
+/// The definitions of a solid's vertices, as the digest spells them, sorted.
+fn vertex_def_names(m: &Model, s: Handle<Solid>) -> Vec<String> {
+    brep_digest(m, s).vertex_defs
+}
+
+/// ★★★★★ **A slot stands.** Two straight walls tangent to two half cylinders: every corner is a
+/// `Branch` whose root is the **double** one — the wall's plane touches the cylinder along the
+/// ruling through that corner, which is what "tangent" says. Volume `(2rL + πr²)·h`, six faces,
+/// valid, and the mesh covers it.
+#[test]
+fn a_slot_extrudes_with_tangent_branch_corners() {
+    let pi = std::f64::consts::PI;
+    let mut m = Model::new();
+    let (solid, faces) = extrude_world_z(&mut m, slot_profile(0.0, 30.0, 0.0, 5.0), 2.0);
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v = nacre_props::mass_props(&m, solid).unwrap().volume;
+    assert!((v - (300.0 + 25.0 * pi) * 2.0).abs() < 1e-9, "{v}");
+    assert_eq!(
+        faces.len(),
+        6,
+        "two caps, two straight walls, two half cylinders"
+    );
+    assert_eq!(vertex_def_names(&m, solid), vec!["branch Double"; 8]);
+    let cylinders = faces
+        .iter()
+        .filter(|&&f| matches!(m.surface(m.faces.get(f).surface), Surface::Cylinder(_)))
+        .count();
+    assert_eq!(cylinders, 2);
+    mesh_covers_faces("a slot", &m, &[solid]);
+}
+
+/// **A rounded rectangle**: four straight walls, four quarter cylinders, sixteen tangent corners.
+/// Volume `(wh − (4 − π)r²)·h`.
+#[test]
+fn a_rounded_rectangle_extrudes() {
+    let pi = std::f64::consts::PI;
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let l = |a: [f64; 2], b: [f64; 2]| crate::Edge2d::line(p2(a[0], a[1]), p2(b[0], b[1])).unwrap();
+    let q = |c: [f64; 2], s: [f64; 2]| {
+        crate::Edge2d::arc_turns(p2(c[0], c[1]), p2(s[0], s[1]), 1).unwrap()
+    };
+    let profile = edges_profile(vec![
+        l([5.0, 0.0], [35.0, 0.0]),
+        q([35.0, 5.0], [35.0, 0.0]),
+        l([40.0, 5.0], [40.0, 15.0]),
+        q([35.0, 15.0], [40.0, 15.0]),
+        l([35.0, 20.0], [5.0, 20.0]),
+        q([5.0, 15.0], [5.0, 20.0]),
+        l([0.0, 15.0], [0.0, 5.0]),
+        q([5.0, 5.0], [0.0, 5.0]),
+    ]);
+    let mut m = Model::new();
+    let (solid, faces) = extrude_world_z(&mut m, profile, 1.0);
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v = nacre_props::mass_props(&m, solid).unwrap().volume;
+    assert!((v - (800.0 - (4.0 - pi) * 25.0)).abs() < 1e-9, "{v}");
+    assert_eq!(faces.len(), 10);
+    assert_eq!(vertex_def_names(&m, solid), vec!["branch Double"; 16]);
+    mesh_covers_faces("a rounded rectangle", &m, &[solid]);
+}
+
+/// **A D**: a half disk closed by its diameter. The chord's wall plane runs *through* the axis, so
+/// it crosses the cylinder in two rulings — the corners are the pair's `Lo` and `Hi`, not a
+/// tangency. Volume `πr²h/2`, four faces.
+#[test]
+fn a_half_disk_has_the_pair_roots_at_its_corners() {
+    let pi = std::f64::consts::PI;
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let profile = edges_profile(vec![
+        crate::Edge2d::line(p2(0.0, 5.0), p2(0.0, -5.0)).unwrap(),
+        crate::Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, -5.0), 2).unwrap(), // through (5, 0)
+    ]);
+    let mut m = Model::new();
+    let (solid, faces) = extrude_world_z(&mut m, profile, 2.0);
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v = nacre_props::mass_props(&m, solid).unwrap().volume;
+    assert!((v - 25.0 * pi).abs() < 1e-9, "{v}");
+    assert_eq!(
+        faces.len(),
+        4,
+        "two caps, the chord wall, the half cylinder"
+    );
+    let defs = vertex_def_names(&m, solid);
+    assert_eq!(defs.len(), 4);
+    assert!(
+        defs.contains(&"branch Lo".to_string()) && defs.contains(&"branch Hi".to_string()),
+        "{defs:?}"
+    );
+    mesh_covers_faces("a half disk", &m, &[solid]);
+}
+
+/// **A slot padded onto or pocketed into a plate declines by name — the tangent ruling is the
+/// tracer's frontier.** The slot's straight walls are *tangent* to its half cylinders, so the
+/// ruling where wall and cylinder meet lies *in* the wall's plane: the boolean's `ruling_side`
+/// asks which of a crossing wall's two rulings this one is, and a tangency has one. Until the
+/// tracer and the chart learn a tangent ruling (the same frontier a fillet's wall stands on), the
+/// pad and the pocket are refused — `curved_wall` declines the wall's ring, and the tracer
+/// surfaces that as the wall face's outer ring declined. The prism itself is a valid solid
+/// (`a_slot_extrudes_with_tangent_branch_corners`).
+#[test]
+fn a_slot_pad_and_pocket_decline_by_name_at_the_tangent_ruling() {
+    let plate = || {
+        let mut m = Model::new();
+        let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+        let square = Profile2d::polygon(vec![
+            p2(0.0, 0.0),
+            p2(40.0, 0.0),
+            p2(40.0, 40.0),
+            p2(0.0, 40.0),
+        ])
+        .unwrap();
+        let (solid, faces) = extrude_world_z(&mut m, square, 5.0);
+        (m, solid, faces[1])
+    };
+    let slot = || slot_profile(-10.0, 10.0, 0.0, 2.0);
+    let refused = |r: Result<OpOutput, OpError>| {
+        assert!(
+            matches!(
+                r,
+                Err(OpError::Boolean(BoolError::Rejected {
+                    reason: RejectReason::TraceDeclined {
+                        kind: DeclineKind::OuterRing,
+                        ..
+                    },
+                    ..
+                }))
+            ),
+            "{r:?}"
+        );
+    };
+    let (mut m, _, top) = plate();
+    refused(apply(
+        &mut m,
+        &Operation::PadOnFace {
+            face: top,
+            profile: slot(),
+            dist: 3.0,
+        },
+    ));
+    let (mut m, _, top) = plate();
+    refused(apply(
+        &mut m,
+        &Operation::PocketOnFace {
+            face: top,
+            profile: slot(),
+            dist: 2.0,
+        },
+    ));
+}
+
+/// **A half-disk boss on a plate — measured, and locked at today's name.** The D's chord wall
+/// crosses its own cylinder through the axis, so the prism builds (`Lo`/`Hi` corners) and the
+/// boolean records the wall as a crossing of the cylinder class — but the cylinder carries only
+/// half its circle, and the arrangement's cell labels come out in conflict. A refusal, not a wrong
+/// solid; with the tangent ruling of the slot it marks where booleans on arc profiles stand: the
+/// next cell's input, and this lock is what that cell flips.
+#[test]
+fn a_half_disk_boss_pad_declines_by_name_today() {
+    let mut m = Model::new();
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let square = Profile2d::polygon(vec![
+        p2(0.0, 0.0),
+        p2(40.0, 0.0),
+        p2(40.0, 40.0),
+        p2(0.0, 40.0),
+    ])
+    .unwrap();
+    let (_, faces) = extrude_world_z(&mut m, square, 5.0);
+    let d_shape = edges_profile(vec![
+        crate::Edge2d::line(p2(0.0, 5.0), p2(0.0, -5.0)).unwrap(),
+        crate::Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, -5.0), 2).unwrap(),
+    ]);
+    let r = apply(
+        &mut m,
+        &Operation::PadOnFace {
+            face: faces[1],
+            profile: d_shape,
+            dist: 3.0,
+        },
+    );
+    assert!(
+        matches!(
+            r,
+            Err(OpError::Boolean(BoolError::Rejected {
+                reason: RejectReason::LabelConflict,
+                ..
+            }))
+        ),
+        "{r:?}"
+    );
+}
+
+/// **A sketched bored plate meets a box** — whole circles are the arc vocabulary the boolean
+/// already reads (a bore's rim is a circle), so the plate with a round hole drawn as a sketch
+/// fuses and cuts like a drilled one. Plate `10 × 10 × 1` minus `π·2²`, a `4 × 2 × 3` box
+/// straddling its left edge (overlap `2 × 2 × 1`).
+#[test]
+fn a_sketched_bored_plate_meets_a_box() {
+    let pi = std::f64::consts::PI;
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let bored = || {
+        edges_profile(vec![
+            crate::Edge2d::line(p2(0.0, 0.0), p2(10.0, 0.0)).unwrap(),
+            crate::Edge2d::line(p2(10.0, 0.0), p2(10.0, 10.0)).unwrap(),
+            crate::Edge2d::line(p2(10.0, 10.0), p2(0.0, 10.0)).unwrap(),
+            crate::Edge2d::line(p2(0.0, 10.0), p2(0.0, 0.0)).unwrap(),
+            crate::Edge2d::circle(p2(5.0, 5.0), 2.0).unwrap(),
+        ])
+    };
+    for (kind, want) in [
+        (BoolKind::Fuse, 100.0 - 4.0 * pi + 24.0 - 4.0),
+        (BoolKind::Cut, 100.0 - 4.0 * pi - 4.0),
+        (BoolKind::Common, 4.0),
+    ] {
+        let mut m = Model::new();
+        let (plate, _) = extrude_world_z(&mut m, bored(), 1.0);
+        let box_ = m.add_cuboid(
+            Point3::from_array([-2.0, 4.0, -1.0]),
+            Point3::from_array([2.0, 6.0, 2.0]),
+        );
+        m.rebuild_adjacency();
+        let out =
+            crate::boolean(&mut m, kind, plate, box_).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
+        m.rebuild_adjacency();
+        assert_eq!(out.len(), 1, "{kind:?}");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{kind:?}: {:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+        assert!((v - want).abs() < 1e-9, "{kind:?}: {v} vs {want}");
+        mesh_covers_faces("a sketched bored plate and a box", &m, &out);
+    }
+}
