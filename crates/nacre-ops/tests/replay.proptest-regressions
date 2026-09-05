@@ -9,3 +9,4 @@ cc b9b510f06c4890c331392fdbaae9935b7ae5b5230009002f7b6302d15c471395 # shrinks to
 cc ae21d102c032611736021ea329b6da8ef0b094d12f177a9c8483e66b11d8db32 # shrinks to steps = [Boolean { kind: 0, a: 1, b: 1 }, Extrude { x: 2, y: 1, w: 1, dist: 1 }]
 cc 94ffced590113119f1e432e6248dc4c4e8b9feeeb1e1b9d183bbf5089c39c869 # shrinks to steps = [Rotate { solid: 0, axis: 0, deg: 4 }, Extrude { x: 0, y: -3, w: 3, dist: 2 }, Boolean { kind: 0, a: 1, b: 2 }]
 cc 1c41997e49c4d19003e15c0034cbb87f5d543c5b8a0328f1d507b3e17bef730f # shrinks to steps = [Rotate { solid: 0, axis: 2, deg: 2 }, Pad { solid: 0, face: 0, inset: 1, dist: 1 }, Pad { solid: 0, face: 0, inset: 0, dist: 1 }]
+cc 7a5e37ff7b24e9f1584119377da36816400b0dd66132422b82bc2e01cd15c469 # shrinks to steps = [Rotate { solid: 0, axis: 1, deg: 1 }, Mirror { solid: 0, axis: 0, offset: 0 }, Pad { solid: 0, face: 0, inset: 0, dist: 1 }]

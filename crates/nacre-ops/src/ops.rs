@@ -1989,9 +1989,10 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
 /// [`Profile2d::check`] is what guarantees it: a simple polygon cannot have zero area, and a ring
 /// that folds back on itself (a symmetric bowtie cancels to exactly zero) is not simple.
 /// Normalize a ring's direction about the **sweep**: `ccw` for the outer ring, its opposite for a
-/// hole. The winding is read exactly ([`crate::exact::SweptRat::winding_sign`], about the frame
-/// normal) and turned to the sweep's sense by `sweep_up`; a ring with arcs has no f64 polygon
-/// area to read, and a polygon's reads the same as before (`debug_assert`ed).
+/// hole. The winding is read exactly ([`crate::exact::SweptRat::winding`], about the ring's world
+/// normal — the frame's motion, a reflection included, already folded in) and turned to the
+/// sweep's sense by `sweep_up`; a ring with arcs has no f64 polygon area to read, and a polygon's
+/// reads the same as before (`debug_assert`ed — the check that caught the mirrored pad).
 fn oriented_ring(ring: Swept, sweep_up: bool, ccw: bool) -> Result<Swept, OpError> {
     let about_normal = ring.exact.winding;
     if about_normal == nacre_scalar::Orient::Zero {
