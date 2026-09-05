@@ -17012,7 +17012,7 @@ fmt · clippy · `test --workspace` 1204/0 · `--no-default-features` · census 
 | `tests.rs` «보어를 관통하는 터널»·`trc onaxis`·`reject_census` `cylinder-pair` 무변 | 무변(스위트 초록, 히스토그램 위) |
 | perf 무변(쌍 루프뿐) | release perf 초록 — fold 7/13/25/40/60/80: rotated 14/34/96/182/425/1020 ms, small 541 µs/boolean |
 
-관문: fmt·clippy·workspace **1210/0**·no-default-features 666/0·census 두 프로파일 287행 동일·`reject_census`·ignored 스윕 133/0·perf. 플레이그라운드 `wasm:all`·`tsc` 0·vitest **142/142**·`wasm/` clippy, kit fmt·clippy·test 72/0 — 전부 초록. 브라우저에서 사용자의 스크립트를 보는 것은 사용자에게 맡겼다.
+관문: fmt·clippy·workspace **1210/0**·no-default-features 666/0·census 두 프로파일 287행 동일·`reject_census`·ignored 스윕 133/0·perf. 플레이그라운드 `wasm:all`·`tsc` 0·vitest **142/142**·`wasm/` clippy, kit fmt·clippy·test 72/0 — 전부 초록. 브라우저: 사용자가 확인했다(«앱에서 잘 돼», 2026-09-05).
 
 ### 검토가 바꾼 것 셋
 | 초안 | 무엇이 틀렸나 |
