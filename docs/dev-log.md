@@ -16920,3 +16920,55 @@ fmt · clippy(workspace, `-D warnings`) · `test --workspace` **1197 passed / 0 
 - **dev-log 칸 ⑤의 「재봉합은 `link`의 인덱스 공유 핀치로 거절된다」는 반복 인덱스 철자에 대해서만 참이다** — 쌍둥이 인덱스 철자는 `link`를 통과하고 `self_touch`·`sweep`·`emit`이 막는다. 기제가 틀린 게 아니라 철자가 하나 더 있다.
 - **칸 ⑥의 「사용자의 스크립트」는 다른 솔리드다**: 앱의 `CylAnchor::Center`는 중간 높이라 사용자의 스터드는 `z ∈ [−1,1]` **관통**(면 10·집힌 캡 2·부피 `1 + 0.04π`), 픽스처는 `base` 해석(면 8·1·`1 + 0.06π`). 그 주장이 네 벌 — `bands.rs`의 doc과 **테스트 이름** `the_users_tangent_stud_gives_three_answers`, `design.md`의 칸 ⑥ 항목, 이 dev-log의 칸 ⑥. 칸 ⑤의 교훈 그대로(*「이름이 아니라 문장이 열쇠」*) — 사다리 어디에서든 함께 고친다. 관통 모델은 커널에서 아직 안 돌려 봤다(예측: 조립, 거절 2).
 - **접힌 ⑦a에서 살아남은 결함**: `tessellate`가 첫 거절에서 모델 전체를 버리고 `reachable()`이 세션의 모든 솔리드를 덮으며 플레이그라운드가 한 칸에 캐시하므로 **거절 하나가 상관없는 멀쩡한 몸통까지 지운다** — ⑦d 뒤에도 다른 이유의 거절에서 그대로. 축소된 답은 「몸통 일부 그리기」가 아니라 **거절 단위를 세션에서 «값»으로**. 실측 요약: `Tessellation`은 `default()` 한 자리로만 지어진다, 파사드는 손댈 게 없다(`nacre/src/lib.rs`가 크레이트 전체를 재수출), `FaceRow.face`는 `fh.index()`와 같은 번호, `mesh_of`·`edges_of`는 같은 `session.tess` 슬롯, `OverBudget`은 인구 0이고 `within_budget`이 민팅 뒤에 돌아 고아 정점을 남길 수 있다, `boolean.rs`의 「2129 중 2」는 칸 ⑥ 이후 낡았다.
+
+## 칸 ⑦c — 다리와 순서: 집힌 캡이 그려진다 (2026-09-05)
+
+칸 ⑦b가 접촉의 자격을 증명하고 인구를 쟀다(면 4, 전부 `Interior:Tangent`). 이 칸은 그 접촉에 **다리를 놓고**, 스윕에 **쌍둥이 한정 순서**를 주고, 거절을 풀었다. 결과: **사용자의 관통 스터드가 10/10 면으로 메싱된다**(1452 삼각형, 누수 0), 막힌 스터드 8/8, `bands`의 두 접선 픽스처가 넓이 오라클을 통과하고, census의 `SelfTouchingBoundary` 면제가 사라졌다. 커밋 셋 — `813f933`(A) · `b1179a9`(B1) · `d6986a2`(B2) — 그리고 이 문서 커밋.
+
+### 계획이 세 번 고쳐졌다 (검토 셋, 전부 코드가 잡았다)
+| 초안 | 무엇이 틀렸나 |
+|---|---|
+| ① 옛 ⑦c(SoS, 거절 유지)와 ⑦d(다리)를 따로 | 쌍둥이 한정 순서는 스플라이스 없이 **관측 불가**(동점 가드가 먼저 발화), 간선 분할은 B2 전엔 관측 불가(캡이 거절돼 `t`가 버려짐) ⇒ 한 칸의 커밋 넷 |
+| ② 섭동 방향 = 코너 안쪽(법선 성분 포함) | 접촉 변이 차트에서 **수평**이면 `u`·`T`·`v`가 스윕 좌표를 공유하고, 실제 섭동은 쌍둥이를 `v` **뒤에** 두는데 «쌍둥이 아닌 점은 정확 비교»는 **앞에** 둔다 — 어떤 ε에서도 안 나오는 순서. ⇒ **접선 방향만**(`d_o = uv[prev[o]] − T`, `d_h = uv[next[h]] − T`): 선 위에서만 미끄러져 모든 공선 관계가 보존 |
+| ③ `c≡b`의 1차 공식 「같은 꼴」 | 틀렸다(`(b−a)×(d_c−d_b)`); `a≡b`도 없었다 ⇒ 일반식 하나 `(b−a)×(d_c−d_a) + (d_b−d_a)×(c−a)` |
+| ④ 「한 쌍둥이는 Start, helper가 되는 건 Start뿐」 | 둘 다 거짓(아래 변 접촉은 `End`+`Regular`; 사용자의 **아래 캡**은 차트가 `(y,x)`로 뒤집혀 `T_h`가 `Regular`-else로 helper가 된다). 살아남는 논증은 **볼록성**: 증인이 홀 이웃 둘을 재료 쪽으로 보증하므로 두 쌍둥이 다 `orient2d > 0` — `Split`/`Merge`가 아니다 ⇒ 쌍둥이 대각선 없음 |
+| ⑤ 스플라이스의 `a`/`b` 미정 | 홀–홀 면에서 원 링이 먼저 오면 `a`=원 → `d`에 법선이 되살아남 ⇒ **`a` = T의 두 이웃이 T와 공선인 링**(기하로 결정) |
+| ⑥ B1 잠금 «census 코퍼스 전체 바이트 동일» | **그 형태로는 불가능** — 실측: 같은 코드를 두 번 돌려도 1536행이 다르다(proptest 넷의 무작위 입력). ⇒ **결정적 테스트 82개/1945 테셀레이션**에서 위치 정준 삼각형 집합(핸들 번호에 눈먼 해시) 비교 |
+| ⑦ 「pre-pass 비용은 `perf`로 잰다」 | `perf`는 **불리언** 벽시계라 테셀레이션을 안 본다 ⇒ `bridge_report` vs `tessellate`를 직접 쟀다 |
+
+### 커밋 A — pre-pass (`813f933`)
+- `tessellate`의 1·2단계 사이. 평면 면마다 `planar_chart` → `polygon::meets`(`link`+`self_touch`) → `Interior`+`Tangent` 접촉을 **전부 모은 뒤**(걸으면서 끼우면 뒤 면이 `AtEnd`를 본다) 접촉 선분이 **연속으로 놓인 폴리라인**을 면의 반간선에서 찾아, **`Curve::Line`이고 양쪽 면이 평면**일 때만 접점의 **기존 핸들**을 `by_edge`에 끼운다. 간선→면은 `Model::adj`가 아니라 살아 있는 면에서 직접(불리언 안에서 `adj`는 낡았다). 멱등. 거절은 센다(곡선·원통 이웃·같은 선분 둘·정점당 선분 둘·`NoEdge`).
+- `Touch.segment_end` 추가(⑦b 구조체 한 필드). `test-util` feature로 `bridge_report`(1단계+pre-pass만) 노출 — `nacre-topo`의 `add_cuboid`와 같은 꼴.
+- ☑ **전수 원장**(모든 `tessellate` 호출·모든 면): census 인구의 분할 5(rim 1 · turned-boss 1 · **one_chord 2** · users 1) + 화이트박스 3, **전부 `Line`, 거절 0**. `one_chord…` 픽스처는 캡이 **둘** 집힌다 — ⑦b의 원장은 첫 거절에서 멈춰 하나만 봤다.
+- 잠금: `the_bridge_prepass_splits_the_walls_edges_under_both_caps`(관통: 분할 2, 서로 다른 간선, 둘 다 `Line`, 폴리라인 길이 3, 끼운 정점이 원의 `OnEdge` 샘플; 막힌: 1).
+- `lib.rs`의 `no_chord_turns…`: 「다점 폴리라인은 전부 닫힌 림」이 거짓이 돼 직선 간선을 건너뛴다.
+
+### 커밋 B1 — 쌍둥이 한정 순서 (`b1179a9`)
+- 새 모듈 `polygon/sos.rs`: `Twins { o, h, o_along, h_along }`. `lex_less_idx`: 좌표가 다르면 정확 `lex_less`; 쌍둥이 동점은 **T가 소거되어** `lex_less(uv[o_along], uv[h_along])` — 저장 좌표의 정확 비교, 동점 불가(`None` 팔은 죽어 있다). `side_idx`: `orient2d ≠ 0`이면 그대로, 쌍둥이 없는 0은 `Some(0)`(오늘의 0), 쌍둥이 낀 0은 1차 항을 `Expansion`(`two_diff`·`mul`·`sub`·`add`·`sign`)으로 정확히, 그것도 0이면 `None` → 거절.
+- 꿴 자리: 정렬(쌍둥이 순서는 정렬 전에 한 번 결정 — 비교자는 `Result`를 못 돌려준다), `left_of`, `insert`, `top`/`bot`, 체인 병합. 동점 가드는 «허가된 쌍 이외»만. `triangulate_monotone`에 y-단조 전제의 `debug_assert`(오늘까지 프로덕션에 없었다).
+- ☑ **잠금 — 결정적 82 테스트/1945 테셀레이션 바이트 동일**(A 전 → A → B1, 새 테스트 1행 추가 외 0 차이). 수치 섭동(ε 이동)은 기각.
+
+### 커밋 B2 — 스플라이스 + 거절 해제 (`d6986a2`)
+- `triangulate_face`(평면 차트만): 링 간 **중복 핸들**이 `Bridge`. `triangulate_uv(…, bridges) -> (tris, rings_used)`: 감김 게이트는 **원래 링**에 → `splice`가 분할 링을 공선으로 고르고 `a[..=i] ++ b[j+1..] ++ b[..=j] ++ a[i+1..]`(같은 감김끼리 합쳐 감김 보존 — 홀–홀이면 병합 홀이 CW) → 링 목록에서 치환 → `constrained`는 병합 링에서 → `decompose(…, twins)`. `within_budget`의 `boundary`도 `rings_used`에서. 면당 다리 둘 이상은 `SelfTouchingBoundary`(둘째 기호 쌍은 인구가 없다).
+- `decompose`: 쌍둥이의 `AtEnd` 기록 둘(`(o on h→…)`·`(h on o→…)`)만 **인덱스 쌍으로** 면제. 그 외 접촉·교차는 그대로.
+- 잠금: `bands`의 두 픽스처 → `crate::tests::mesh_covers_faces`(면별 넓이 vs `face_props`, 부피 vs `mass_props`, 상대 `1e-3` — `the_mesh_covers_the_faces_it_approximates`의 `check`를 `pub(crate) fn`으로 올림); 같은 오라클에 막힌·관통 스터드 추가; `boolean.rs`의 census 단언은 `r.is_ok()`(면제 없음); `polygon` 단위 테스트 둘(outer+hole 힌트 → 6삼각형·넓이 14·`check_partition`은 병합 링; hole+hole → 12삼각형·넓이 11.75·병합 홀 `-1`).
+
+### 결과
+- **관통 스터드 10/10 면 · 1452 삼각형 · 누수 0**; 막힌 8/8 · 732. `the_users_through_stud_gives_three_answers`: Fuse `1+0.04π`(면 10, 넓이 오라클) · Common `0.04π` · Cut `SelfTouchingResult`(예측대로).
+- `nacre-tess` 41 → **47**(`sos` 단위 4 + 힌트 둘). `nacre-ops` lib 355. 워크스페이스 **1204 passed / 0 failed**. census 287행 두 프로파일 동일. 플레이그라운드 관문(`wasm:all`·`tsc`·**vitest 142/142**·wasm clippy) 초록 — **플레이그라운드는 한 줄도 안 바꿨다**(`mesh_of`가 `Ok`을 받으면 그린다).
+- **측정 넷**: (i) tripwire(`emit` 넓이 0 · `trace` 비추이) 무발화 (ii) 1차 항 0 무발화 (iii) 단조 `debug_assert` 무발화(debug 빌드) (iv) **`side_idx`의 1차 분기는 프로덕션에서 0회** — 기호 판정은 정렬 동점 16건뿐(예측 그대로: 앞 쌍둥이가 `End`/`Regular`-else라 간선을 안 넣는다). 일반 보증으로 남기고 합성 픽스처로 발화를 단위에서 잰다(`a_structural_zero_resolves_at_first_order`).
+- **pre-pass 비용**(release, ×200): 관통 스터드 `tessellate` 2754µs 중 1단계+pre-pass 180µs(**≤6.5%**), 평범한 큐브 15.7µs 중 3.6µs(≤23%, 절대값 미미). `self_touch`의 O(n²)를 면마다 한 번 더 도는 값.
+- 문서: `SelfTouchingBoundary`의 doc(«다리 못 놓는 접촉»만), `boolean.rs`·`tests.rs`의 census doc, oracle의 전제, design.md 「남은 능력」 ✅ + 철자 구분 + 칸 ⑥ 기록의 «사용자의 스크립트» 정정 + ⑦b·⑦c 항목. **픽스처 개명**: `the_users_tangent_stud…` → `a_blind_stud_tangent_to_the_wall…`, 사용자의 진짜 스크립트는 `the_users_through_stud…`.
+
+### 관문
+fmt · clippy · `test --workspace` 1204/0 · `--no-default-features` · census debug·release 287 동일 · `reject_census` · `--ignored` 스윕 · `perf` — 9단계 전부 exit 0(파일로 받음). 플레이그라운드 4단계 exit 0. 각 커밋은 husky 훅(fmt·clippy·전 워크스페이스)을 통과.
+
+### 안 잰 것
+- **브라우저 확인**은 못 했다(에이전트가 못 연다) — `mesh_of`→`tessellate`→`Ok` 경로와 `edge_segments`의 `windows(2)`(3점 직선 = 공선 선분 둘)는 코드로 확인했고 vitest는 초록. 사용자가 스크립트를 띄워 10면을 보는 것이 남았다.
+- 2차 SoS(1차 항 0)·곡선 간선 위의 접촉·원통 이웃·다중 접촉·면당 다리 둘: **인구 0**이라 안 지었다(세는 자리만 있다).
+- `side_idx`는 프로덕션 인구 0인 채로 배송됐다 — `OverBudget`과 같은 처지. 발화하는 합성 픽스처가 단위에 있다.
+
+### 남기는 항목
+- 옛 ⑦a의 살아남은 결함(dev-log 칸 ⑦b 「남기는 항목」): `tessellate`는 여전히 첫 거절에서 **세션 전체**를 버린다 — 이 칸 뒤 남은 거절(`AtEnd`·곡선·다중 등)에서 그대로. 축소된 답은 «거절 단위를 세션에서 값으로».
+- `HoleWinding`이 `validate`를 중복 판정하는 문제(⑦b 「남기는 항목」)는 그대로 별도 칸.
+- **census 해시 원장을 계기로 남길지**: 이번엔 임시였다. 결정적 인구의 바이트 동일은 앞으로 스윕을 건드리는 칸마다 필요한 잠금이라 `tess_census`에 옵션으로 두는 것이 옳아 보인다 — 다음에 스윕을 건드릴 때.

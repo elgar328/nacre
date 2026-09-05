@@ -729,10 +729,11 @@ mod tests {
     /// ★★★★★ **A boundary that meets itself, and the two different sentences that says.**
     ///
     /// A **touch** — a vertex on the boundary elsewhere — is a boundary this decomposition has
-    /// no answer for (an exact tangency, which the sampled boundary reproduces when a sample lands
-    /// on it). A **crossing** is a ring set that has no triangulation at all: any one would be
-    /// wrong. Different claims about *the mesh*, different names — neither is a verdict on the
-    /// solid, which is `validate`'s to give.
+    /// no answer for *as it stands* (an exact tangency, which the sampled boundary reproduces when
+    /// a sample lands on it); given a bridge it is drawn (see `a_bridged_touch_meshes_the_pinched_face`),
+    /// and without one, as here, it is named. A **crossing** is a ring set that has no
+    /// triangulation at all: any one would be wrong. Different claims about *the mesh*, different
+    /// names — neither is a verdict on the solid, which is `validate`'s to give.
     ///
     /// ☑ **The crossing branch exists because the gap was measured.** A bow-tie already came back
     /// `DegenerateRing` from the sweep, but the hole below — crossing the outer ring with no

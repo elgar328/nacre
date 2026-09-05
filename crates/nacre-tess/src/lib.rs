@@ -50,10 +50,20 @@ pub enum TessError {
     /// assumed because the b-rep guarantees it and this layer cannot: a decomposition
     /// handed a self-crossing ring would otherwise return a confident, wrong mesh.
     DegenerateRing,
-    /// **The face's boundary touches itself**: some vertex lies on the boundary somewhere other
-    /// than at its own two edges — on another ring, or on a non-adjacent part of its own. The
-    /// region is pinched there, so it is not a disk with sibling holes and this decomposition has
-    /// no triangulation of it.
+    /// **The face's boundary touches itself, and no bridge was laid there**: some vertex lies on
+    /// the boundary somewhere other than at its own two edges — on another ring, or on a
+    /// non-adjacent part of its own. The region is pinched there, so it is not a disk with sibling
+    /// holes and this decomposition has no triangulation of it *as two rings*.
+    ///
+    /// ★★★★★ **Since cell ⑦c the common case is drawn, not refused.** A hole whose sample sits
+    /// strictly inside a straight edge shared by two planar faces (`self_touch`'s
+    /// `Interior` + `Tangent`) has that sample put into the edge's polyline by [`tessellate`]'s
+    /// bridge pre-pass, the two rings are spliced into one at that point, and the sweep orders the
+    /// resulting coincident pair symbolically (`polygon::sos`). What still comes back under this
+    /// name is what that road does not cover, each counted by the pre-pass: a vertex on another
+    /// ring's *vertex* (`AtEnd`), a neighbour exactly on the touched line, a touch on a curved
+    /// edge or beside a curved face, two touches on one segment or at one point, and a face
+    /// with more than one bridge.
     ///
     /// ★★★★★ **This does not say the solid is wrong — and that is now measured, not hoped.** The
     /// population is an exact **tangency**: a hole touching another ring at one point, where a
@@ -64,9 +74,10 @@ pub enum TessError {
     /// the neighbouring curved face; OCCT, given the same operands, returns a body of the same
     /// volume, area and face count. What is pinched is the **face**, not the surface, so the
     /// capability that owes an answer is **not** the non-manifold test (it was right) but this
-    /// layer's own: a consistent symbolic order for coincident vertices in the sweep (design.md's
-    /// 「남은 능력」). ★ And the loss is larger than one face: [`tessellate`] walks the whole model
-    /// and stops at the first refusal, so one pinched face erases every body in that session.
+    /// layer's own: a consistent symbolic order for coincident vertices in the sweep — which
+    /// cell ⑦c supplied (design.md's 「남은 능력」 is closed). ★ For what is still refused, the
+    /// loss is larger than one face: [`tessellate`] walks the whole model and stops at the first
+    /// refusal, so one pinched face erases every body in that session.
     ///
     /// ★ The **combinatorial** twin — two rings sharing an *index* — is refused one step earlier,
     /// by `monotone`'s `link`, and comes back as [`Self::DegenerateRing`]. That check has been

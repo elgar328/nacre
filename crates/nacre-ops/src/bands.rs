@@ -2924,16 +2924,21 @@ mod tests {
         );
     }
 
-    /// ★★★★★ **The user's script, and the three answers it must get.** A unit cube and a stud
-    /// whose axis stands `0.3` from the origin with `r = 0.2`: the wall `x = 0.5` is **exactly**
-    /// `r` away, which is what a round set of dimensions produces. The three operations differ,
-    /// and they differ without any of them being named — `keep` is asked about the three regions
-    /// beside the tangent line and the answers fall out.
+    /// ★★★★★ **A blind stud tangent to the wall, and the three answers it must get.** A unit cube
+    /// and a stud whose axis stands `0.3` from the origin with `r = 0.2`: the wall `x = 0.5` is
+    /// **exactly** `r` away, which is what a round set of dimensions produces. The three operations
+    /// differ, and they differ without any of them being named — `keep` is asked about the three
+    /// regions beside the tangent line and the answers fall out.
+    ///
+    /// ★ This used to be called *the user's script*. It is not: the app's `cylinder({center})`
+    /// anchors the cylinder at mid-height, so the user's stud runs `z ∈ [−1, 1]` **through** the
+    /// cube (cell ⑦b caught the difference). That model is the next test; this one — base at
+    /// `z = 0`, one cap pinched — is its blind neighbour, and the shape cell ⑥ and OCCT measured.
     ///
     /// Volumes **derived, not copied**: the stud's footprint is `x ∈ [0.1, 0.5] × y ∈ [−0.2, 0.2]`,
     /// inside the cube's, and only `z ∈ [0, 0.5]` overlaps — so the shared volume is `π r² · 0.5`.
     #[test]
-    fn the_users_tangent_stud_gives_three_answers() {
+    fn a_blind_stud_tangent_to_the_wall_gives_three_answers() {
         let pi = std::f64::consts::PI;
         let (whole, shared) = (pi * 0.04 * 2.0, pi * 0.04 * 0.5);
         let build = || {
@@ -2963,6 +2968,68 @@ mod tests {
         }
         // Cutting the stud out leaves the material as the **two wedges** beside the tangent line,
         // which meet only on it — one solid whose surface touches itself.
+        let (mut m, a, b) = build();
+        let err = crate::boolean(&mut m, BoolKind::Cut, a, b).expect_err("the bore pinches");
+        assert!(
+            matches!(
+                err,
+                BoolError::Rejected {
+                    reason: RejectReason::SelfTouchingResult,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+    }
+
+    /// ★★★★★ **The user's script — `cuboid()` fused with `cylinder({r: 0.2, h: 2, center: [0.3,0,0]})`
+    /// — and its three answers.** `center` is mid-height, so the stud runs `z ∈ [−1, 1]` through
+    /// the cube and is tangent to the wall `x = 0.5` along the cube's whole height. Both caps are
+    /// pinched (the stud's circle touches each square's edge at one point) — and since cell ⑦c
+    /// both are bridged and drawn: this is the model the tessellator was opened for.
+    ///
+    /// Volumes derived: the stud is `π r² · 2`, the part inside the cube `π r² · 1`.
+    #[test]
+    fn the_users_through_stud_gives_three_answers() {
+        let pi = std::f64::consts::PI;
+        let (whole, shared) = (pi * 0.04 * 2.0, pi * 0.04 * 1.0);
+        let build = || {
+            let mut m = Model::new();
+            let cube = m.add_cuboid(Point3::from_array([-0.5; 3]), Point3::from_array([0.5; 3]));
+            let stud = m.add_cylinder(
+                Point3::from_array([0.3, 0.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.2,
+                2.0,
+            );
+            m.rebuild_adjacency();
+            (m, cube, stud)
+        };
+        for (kind, want) in [
+            (BoolKind::Fuse, 1.0 + whole - shared),
+            (BoolKind::Common, shared),
+        ] {
+            let (mut m, a, b) = build();
+            let out =
+                crate::boolean(&mut m, kind, a, b).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
+            m.rebuild_adjacency();
+            assert_eq!(out.len(), 1, "{kind:?}");
+            assert!(nacre_validate::validate(&m).is_empty(), "{kind:?}");
+            let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
+            assert!((v - want).abs() < 1e-9, "{kind:?}: {v} vs {want}");
+            if kind == BoolKind::Fuse {
+                let faces: usize = std::iter::once(m.solids.get(out[0]).outer)
+                    .map(|sh| m.shells.get(sh).faces.len())
+                    .sum();
+                assert_eq!(
+                    faces, 10,
+                    "four walls, two pinched caps, two bands, two stud caps"
+                );
+                crate::tests::mesh_covers_faces("the user's through stud", &m, &out);
+            }
+        }
+        // Cutting the stud out leaves the two wedges beside the tangent line, meeting only on
+        // it, the whole height of the cube — one solid whose surface touches itself.
         let (mut m, a, b) = build();
         let err = crate::boolean(&mut m, BoolKind::Cut, a, b).expect_err("the bore pinches");
         assert!(

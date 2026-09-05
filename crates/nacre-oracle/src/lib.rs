@@ -520,8 +520,9 @@ centroid 1 1.5 2
     ///
     /// Two booleans in `nacre-ops` produce a solid whose *face* is pinched at one point — a boss
     /// edge exactly tangent to a bore's rim, and a boss's base circle exactly tangent to the
-    /// plate's top edge. `validate` is clean and the volume is exact; the tessellator refuses
-    /// (`TessError::SelfTouchingBoundary`), and cell ㉓ left open whether the **solid** is valid.
+    /// plate's top edge. `validate` is clean and the volume is exact; the tessellator refused
+    /// (`TessError::SelfTouchingBoundary`) until cell ⑦c bridged the touch, and cell ㉓ left open
+    /// whether the **solid** is valid.
     ///
     /// Cell ⑤ answered that from the geometry — the link of the boundary at the touch is a single
     /// circle, so the surface is a 2-manifold there and only the *face* is pinched. **This is the

@@ -9177,14 +9177,16 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
 
 /// **The mesh census is live** — the invariant itself is asserted where the fact is made.
 ///
-/// `boolean::tess_census::record` checks every result as it is produced ("undrawable only for a
-/// named reason"), because a test reading the vector afterwards sees only the booleans that ran
-/// before it. What is left for a test is that the census is **running at all**: a hook that
-/// silently stopped recording would take the whole guarantee with it and nothing would go red.
+/// `boolean::tess_census::record` checks every result as it is produced ("every solid a boolean
+/// returns meshes" — since cell ⑦c, with no exemption), because a test reading the vector
+/// afterwards sees only the booleans that ran before it. What is left for a test is that the
+/// census is **running at all**: a hook that silently stopped recording would take the whole
+/// guarantee with it and nothing would go red.
 ///
 /// ★ The count is deliberately not asserted. It is whatever the suite happened to run before this
-/// test, and it moves with every fixture added — the population's *size* is pinned where the two
-/// known members are, beside their own geometry (`bands::tests`' two tangency fixtures).
+/// test, and it moves with every fixture added. The formerly refused population (the two tangency
+/// fixtures in `bands::tests`) is now held to its faces' exact areas there, through
+/// [`mesh_covers_faces`].
 #[test]
 fn the_mesh_census_is_running() {
     let seen = crate::boolean::tess_census::MESHED

@@ -89,8 +89,10 @@ pub fn boolean_with_report(
 /// Every other census in this crate watches a decision the boolean makes ([`crate::reject_census`],
 /// `ruling_probe`, `cyl_chart::probe`). None watched whether the solid that comes out can be
 /// meshed, and the answer was **no, twice in 2129** — a tangency whose face interior pinches — with
-/// nothing in the suite tessellating those two fixtures, so nobody saw it. This hook sits on the
-/// single success exit above, which is the one place both public entry points pass through.
+/// nothing in the suite tessellating those two fixtures, so nobody saw it. Since cell ⑦c bridged
+/// that pinch the answer is **every one meshes**, and the assertion says so with no exemption.
+/// This hook sits on the single success exit above, which is the one place both public entry
+/// points pass through.
 ///
 /// ★★ **It runs before `rebuild_adjacency`, deliberately measured**: the failures reproduce on a
 /// rebuilt model too, so this is watching the result and not an artifact of when it looks.
