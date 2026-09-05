@@ -568,11 +568,11 @@ fn a_corner_flat_in_decimal_but_not_in_binary_is_dissolved() {
     );
 }
 
-/// **An arc reaches the door and is refused by name** — the vocabulary (a circle, a slot) is
-/// accepted and sorted like any ring, and the operation that would have to stand a cylinder wall
-/// says it cannot yet, rather than reading the ring's vertices as a polygon.
+/// **A whole circle builds; an arc between two vertices is refused by name.** The vocabulary
+/// accepts both; the prism builder stands a circle's cylinder wall (K3a) and, for an arc whose
+/// junction vertices it cannot define yet, says so rather than reading the ring as a polygon.
 #[test]
-fn a_profile_with_an_arc_is_refused_by_extrude_until_the_builder_learns_arcs() {
+fn a_whole_circle_extrudes_and_a_slot_is_refused_until_the_builder_learns_arcs() {
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
     let circle = from_edges(vec![Edge2d::circle(p2(0.0, 0.0), 1.0).unwrap()]).unwrap();
     let slot = from_edges(vec![
@@ -582,22 +582,28 @@ fn a_profile_with_an_arc_is_refused_by_extrude_until_the_builder_learns_arcs() {
         Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, 1.0), 2).unwrap(),
     ])
     .unwrap();
-    for profiles in [circle, slot] {
-        for profile in profiles {
-            assert!(profile.has_arcs());
-            let mut m = Model::new();
-            let frame = SketchFrame::world(&m, Axis::Z);
-            assert_eq!(
-                apply(
-                    &mut m,
-                    &Operation::Extrude {
-                        frame,
-                        profile,
-                        dist: 1.0
-                    }
-                ),
-                Err(nacre_ops::OpError::ArcsNotBuiltYet)
-            );
-        }
-    }
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let out = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: circle[0].clone(),
+            dist: 1.0,
+        },
+    );
+    assert!(matches!(out, Ok(OpOutput::Extrude { .. })), "{out:?}");
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, Axis::Z);
+    assert_eq!(
+        apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile: slot[0].clone(),
+                dist: 1.0
+            }
+        ),
+        Err(nacre_ops::OpError::ArcsNotBuiltYet)
+    );
 }

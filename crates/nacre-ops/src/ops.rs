@@ -4,7 +4,7 @@
 
 use crate::BoolError;
 use crate::boolean::boolean;
-use crate::exact::Swept;
+use crate::exact::{Seg3, Swept};
 use crate::planes::outer_tri;
 use crate::transform::transform;
 use nacre_geom::intersect::{RingSide, orient2d_rat, plane_side};
@@ -15,6 +15,7 @@ use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
+use nacre_topo::CylinderDef;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Shell, Solid, Vertex, VertexDef,
 };
@@ -209,6 +210,34 @@ impl Ring2d {
     /// Straight steps only.
     pub fn is_polygon(&self) -> bool {
         self.segs.iter().all(|s| matches!(s, Seg2d::Line))
+    }
+
+    /// **Which way the ring runs**, exactly: `Positive` is counter-clockwise (`+x → +y`) — the
+    /// signed-area question over straight steps and quarter-turn arcs, answered in integers by
+    /// [`nacre_scalar::winding_sign_quarter_arcs`] on the profile's own coordinates (the author's
+    /// decimals, not a lifted frame's widths). `None` for an arc that is not a quarter-turn
+    /// multiple, which no producer makes yet.
+    pub(crate) fn winding_sign(&self) -> Option<nacre_scalar::Orient> {
+        let n = self.vertices.len();
+        let (mut lines, mut arcs) = (Vec::new(), Vec::new());
+        for i in 0..n {
+            let (s0, e0) = (self.vertices[i], self.vertices[(i + 1) % n]);
+            match self.segs[i] {
+                Seg2d::Line => lines.push([s0, e0]),
+                Seg2d::Arc {
+                    center,
+                    radius,
+                    ccw,
+                } => arcs.push(nacre_scalar::QuarterArc {
+                    center,
+                    radius,
+                    start: s0,
+                    end: e0,
+                    ccw,
+                }),
+            }
+        }
+        nacre_scalar::winding_sign_quarter_arcs(&lines, &arcs)
     }
 }
 
@@ -578,8 +607,9 @@ pub enum OpError {
     /// Checked arithmetic overflowed while classifying the profile — `SketchError::Undecidable`'s
     /// twin. Refused by name; nothing guesses.
     ProfileUndecidable,
-    /// The profile carries an arc and the prism builder does not stand cylinder walls yet — the
-    /// honest refusal between the vocabulary (K2) and the builder (K3).
+    /// The profile carries an arc between two vertices, whose junction vertices the prism builder
+    /// does not define yet — a whole circle stands (K3a), an arc waits for K3b. The honest refusal
+    /// between the vocabulary and the builder.
     ArcsNotBuiltYet,
     /// A non-positive extrusion distance.
     NonPositiveDistance,
@@ -1459,10 +1489,12 @@ fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::exact::RatFr
 /// `dist > 0` is a **thickness**; which way it goes is the frame's `ŵ`, measured by whoever built
 /// the frame (a datum against the caller's stated normal, a face against its outward). That is why
 /// this can take a frame where the operation used to take a plane and sweep the same way.
-/// Until the prism builder stands cylinder walls (K3), a profile with an arc is refused by name
-/// rather than reaching a builder that would read its vertices as a polygon.
+/// A whole circle stands as a cylinder wall (K3a); an arc between two vertices does not yet (its
+/// junction vertices are `Branch` definitions the builder learns in K3b) — refused by name rather
+/// than reaching a builder that would read the ring's vertices as a polygon.
 fn refuse_arcs(profile: &Profile2d) -> Result<(), OpError> {
-    if profile.has_arcs() {
+    let partial = |r: &Ring2d| !r.is_polygon() && r.len() != 1;
+    if partial(profile.outer()) || profile.holes().iter().any(partial) {
         Err(OpError::ArcsNotBuiltYet)
     } else {
         Ok(())
@@ -1654,16 +1686,20 @@ pub(crate) fn build_prism(
     // derived from these, so there is no second half that could travel separately.
     base_cap_points: Option<[[nacre_scalar::Rat; 3]; 3]>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
-    if outer_ring.base.len() < 3 || inner_rings.iter().any(|h| h.base.len() < 3) {
+    let thin = |r: &Swept| r.base.len() < 3 && !r.is_whole_circle();
+    if thin(&outer_ring) || inner_rings.iter().any(thin) {
         return Err(OpError::DegenerateProfile);
     }
 
-    let outer_pts = oriented_ring(outer_ring, normal, true);
-    // `false` = opposite to the normalized outer ring, whichever way that ended up.
+    // Whether the sweep runs along the frame normal (a boss) or against it (a pocket): the rings
+    // are normalized about the *sweep*, the arcs' `ccw` is stated about the *normal*, and the
+    // lateral orientation rule below compares the two.
+    let sweep_up = outer_ring.normal.dot(normal) > 0.0;
+    let outer_pts = oriented_ring(outer_ring, sweep_up, true)?;
     let hole_pts: Vec<Swept> = inner_rings
         .into_iter()
-        .map(|h| oriented_ring(h, normal, false))
-        .collect();
+        .map(|h| oriented_ring(h, sweep_up, false))
+        .collect::<Result<_, _>>()?;
 
     // ★★★ **Surfaces before topology.** A vertex is defined by the three faces that meet at it,
     // and `Store` is append-only, so the handles have to exist before the vertex does. The two
@@ -1787,10 +1823,14 @@ pub(crate) fn build_prism(
         inner: holes.iter().map(|h| h.cap_loop(Cap::Top)).collect(),
         orientation: top_orient,
     }));
-    for (ring, walls) in
-        std::iter::once((&outer, &outer_walls)).chain(holes.iter().zip(hole_walls.iter()))
-    {
-        ring.push_walls(model, walls, &mut faces);
+    for (ring, walls, swept_pts) in std::iter::once((&outer, &outer_walls, &outer_pts)).chain(
+        holes
+            .iter()
+            .zip(hole_walls.iter())
+            .zip(hole_pts.iter())
+            .map(|((r, w), p)| (r, w, p)),
+    ) {
+        ring.push_walls(model, walls, &swept_pts.exact.segs, sweep_up, &mut faces);
     }
 
     let shell = model.shells.push(Shell {
@@ -1820,6 +1860,12 @@ struct RingCells {
     be: Vec<Handle<Edge>>, // base  B_i -> B_{i+1}
     te: Vec<Handle<Edge>>, // top   T_i -> T_{i+1}
     ve: Vec<Handle<Edge>>, // riser B_i -> T_i
+    /// Whether step `i`'s edge, walked in its own direction, follows the ring. A straight edge is
+    /// pushed in ring order; a circle edge's own direction is fixed by the kernel's convention
+    /// (`[A, B]` counter-clockwise about the axis — for a whole circle `A == B`, so the vertex
+    /// order cannot carry it), so a clockwise arc's edge runs *against* the ring and every loop
+    /// that walks it flips `forward`.
+    along: Vec<bool>,
 }
 
 impl RingCells {
@@ -1836,7 +1882,7 @@ impl RingCells {
                     .rev()
                     .map(|i| HalfEdge {
                         edge: self.be[i],
-                        forward: false,
+                        forward: !self.along[i],
                     })
                     .collect(),
             },
@@ -1844,7 +1890,7 @@ impl RingCells {
                 half_edges: (0..n)
                     .map(|i| HalfEdge {
                         edge: self.te[i],
-                        forward: true,
+                        forward: self.along[i],
                     })
                     .collect(),
             },
@@ -1857,16 +1903,29 @@ impl RingCells {
         &self,
         model: &mut Model,
         walls: &[(Handle<Surface>, bool)],
+        segs: &[Seg3],
+        sweep_up: bool,
         faces: &mut Vec<Handle<Face>>,
     ) {
         let n = self.len();
         for (i, &(surface, flipped)) in walls.iter().enumerate().take(n) {
+            // A plane wall's sense is the plane's (`flipped` from `push_plane`). A cylinder wall
+            // is `Forward` iff the material lies **inside** the cylinder. Seen from `+ŵ`, the
+            // material is on the ring's left iff the sweep runs along `ŵ` (the rings are
+            // normalized about the sweep — outer and holes alike, since a hole runs the other way
+            // and the material is outside it), and the arc's centre is on its left iff the arc is
+            // counter-clockwise about `ŵ`. Material inside ⟺ the two sides agree: a boss's convex
+            // circle is `Forward`, a bore's circle and a notch's concave arc `Reversed`.
+            let flipped = match &segs[i] {
+                Seg3::Line => flipped,
+                Seg3::Arc { ccw, .. } => *ccw != sweep_up,
+            };
             let j = (i + 1) % n;
             let outer = Loop {
                 half_edges: vec![
                     HalfEdge {
                         edge: self.be[i],
-                        forward: true,
+                        forward: self.along[i],
                     },
                     HalfEdge {
                         edge: self.ve[j],
@@ -1874,7 +1933,7 @@ impl RingCells {
                     },
                     HalfEdge {
                         edge: self.te[i],
-                        forward: false,
+                        forward: !self.along[i],
                     },
                     HalfEdge {
                         edge: self.ve[i],
@@ -1906,17 +1965,29 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
     (0..n)
         .map(|i| {
             let j = (i + 1) % n;
-            // The witness is the same three points **in the frame the coefficients are written
-            // in** — the world's own points when there is no frame, so this is unchanged there.
-            Ok(model.push_plane(
-                Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
-                    .ok_or(OpError::DegenerateGeometry)?,
-                // ★ The same three points the f64 plane above is built through, in rationals — so
-                // this wall and any other face of the same plane record one array and derive one
-                // name, stated in the frame `motion` names.
-                ring.exact.wall_points(i),
-                ring.exact.motion,
-            ))
+            match &ring.exact.segs[i] {
+                Seg3::Line => Ok(model.push_plane(
+                    Plane::through_points(ring.base[i], ring.base[j], ring.top[i])
+                        .ok_or(OpError::DegenerateGeometry)?,
+                    ring.exact.wall_points(i),
+                    ring.exact.motion,
+                )),
+                // The wall is the cylinder about the arc's centre along the frame normal, stated
+                // exactly and interned by that statement: every arc of one circle in one sketch
+                // lands on one surface. The `bool` is a plane's flip; a cylinder's sense is
+                // decided by `push_walls` from the arc's turn.
+                Seg3::Arc {
+                    center,
+                    radius,
+                    ref_dir,
+                    cache,
+                    ..
+                } => {
+                    let def = CylinderDef::new(*center, ring.exact.normal, *ref_dir, *radius)
+                        .ok_or(OpError::DegenerateGeometry)?;
+                    Ok((model.push_cylinder(*cache, def, ring.exact.motion), false))
+                }
+            }
         })
         .collect()
 }
@@ -1927,17 +1998,33 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
 /// that encloses nothing gives zero — the comparison below would then pick a side by accident.
 /// [`Profile2d::check`] is what guarantees it: a simple polygon cannot have zero area, and a ring
 /// that folds back on itself (a symmetric bowtie cancels to exactly zero) is not simple.
-fn oriented_ring(ring: Swept, normal: Vector3, ccw: bool) -> Swept {
-    let v = &ring.base;
-    let k = v.len();
-    let area_vec = (0..k)
-        .map(|i| (v[i] - Point3::origin()).cross(v[(i + 1) % k] - Point3::origin()))
-        .fold(Vector3::from_array([0.0; 3]), |a, b| a + b);
-    if (area_vec.dot(normal) < 0.0) == ccw {
+/// Normalize a ring's direction about the **sweep**: `ccw` for the outer ring, its opposite for a
+/// hole. The winding is read exactly ([`crate::exact::SweptRat::winding_sign`], about the frame
+/// normal) and turned to the sweep's sense by `sweep_up`; a ring with arcs has no f64 polygon
+/// area to read, and a polygon's reads the same as before (`debug_assert`ed).
+fn oriented_ring(ring: Swept, sweep_up: bool, ccw: bool) -> Result<Swept, OpError> {
+    let about_normal = ring.exact.winding;
+    if about_normal == nacre_scalar::Orient::Zero {
+        return Err(OpError::DegenerateProfile);
+    }
+    let ccw_about_normal = about_normal == nacre_scalar::Orient::Positive;
+    debug_assert!(
+        ring.exact.segs.iter().any(Seg3::is_arc) || {
+            let v = &ring.base;
+            let k = v.len();
+            let area_vec = (0..k)
+                .map(|i| (v[i] - Point3::origin()).cross(v[(i + 1) % k] - Point3::origin()))
+                .fold(Vector3::from_array([0.0; 3]), |a, b| a + b);
+            (area_vec.dot(ring.normal) > 0.0) == ccw_about_normal
+        },
+        "the exact winding agrees with the f64 polygon area"
+    );
+    let ccw_about_sweep = ccw_about_normal == sweep_up;
+    Ok(if ccw_about_sweep != ccw {
         ring.reversed()
     } else {
         ring
-    }
+    })
 }
 
 /// Push one ring's vertices and edges (base ring, top ring, risers).
@@ -1977,7 +2064,14 @@ fn sweep_ring(
     let define = |i: usize, cap: Handle<Surface>| -> Result<VertexDef, OpError> {
         let prev = walls[(i + n - 1) % n].0;
         let here = walls[i].0;
-        if prev == here || prev == cap || here == cap {
+        if here == cap || prev == cap {
+            return Err(OpError::DegenerateGeometry);
+        }
+        // A whole circle: one wall, one vertex — the rim's point at `+ref_dir`, the seam.
+        if n == 1 && ring.exact.segs[0].is_arc() {
+            return Ok(VertexDef::OnSeam([here, cap]));
+        }
+        if prev == here {
             return Err(OpError::DegenerateGeometry);
         }
         Ok(VertexDef::ThreePlane([prev, here, cap]))
@@ -1994,13 +2088,23 @@ fn sweep_ring(
     let bv = push_verts(model, &base_pts, caps.0)?;
     let tv = push_verts(model, &top_pts, caps.1)?;
 
+    let along: Vec<bool> = ring
+        .exact
+        .segs
+        .iter()
+        .map(|s| !matches!(s, Seg3::Arc { ccw: false, .. }))
+        .collect();
     let (mut be, mut te, mut ve) = (Vec::new(), Vec::new(), Vec::new());
     for i in 0..n {
         let j = (i + 1) % n;
         // Carriers: the same expression `define` uses for the corner triples — a base/top edge
         // runs between wall `i` and its cap, a riser between the walls either side of corner `i`.
-        be.push(push_line_edge(model, bv[i], bv[j], [walls[i].0, caps.0])?);
-        te.push(push_line_edge(model, tv[i], tv[j], [walls[i].0, caps.1])?);
+        // A clockwise arc's edge is stored the other way round so its own direction — the
+        // kernel's `[A, B]` counter-clockwise — names the same points; the loops then walk it
+        // backwards (`along`).
+        let (p, q) = if along[i] { (i, j) } else { (j, i) };
+        be.push(push_line_edge(model, bv[p], bv[q], [walls[i].0, caps.0])?);
+        te.push(push_line_edge(model, tv[p], tv[q], [walls[i].0, caps.1])?);
         ve.push(push_line_edge(
             model,
             bv[i],
@@ -2013,6 +2117,7 @@ fn sweep_ring(
         be,
         te,
         ve,
+        along,
     })
 }
 

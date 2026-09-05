@@ -2112,12 +2112,55 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
         .map(|b| core::array::from_fn(|i| b[i].checked_add(sv[i]).expect("fixture widths")))
         .collect();
     let top = crate::exact::realize(&rt);
+    // The fixture's frame normal: the sweep's direction, which these fixtures keep axis-aligned.
+    let normal: [nacre_scalar::Rat; 3] = {
+        let len2 = sv
+            .iter()
+            .map(|c| c.checked_mul(*c).unwrap())
+            .fold(nacre_scalar::Rat::from_int(0), |a, b| {
+                a.checked_add(b).unwrap()
+            });
+        let inv = nacre_scalar::inv_sqrt_exact(len2).expect("an axis-aligned fixture sweep");
+        sv.map(|c| c.checked_mul(inv).unwrap())
+    };
+    let n = rb.len();
+    // The fixture's winding, read exactly on its own (small) coordinates.
+    let winding = {
+        let cross =
+            |a: &[nacre_scalar::Rat; 3], b: &[nacre_scalar::Rat; 3]| -> [nacre_scalar::Rat; 3] {
+                let t = |i: usize, j: usize| {
+                    a[i].checked_mul(b[j])
+                        .unwrap()
+                        .checked_sub(a[j].checked_mul(b[i]).unwrap())
+                        .unwrap()
+                };
+                [t(1, 2), t(2, 0), t(0, 1)]
+            };
+        let mut acc = nacre_scalar::Rat::from_int(0);
+        for i in 0..n {
+            let c = cross(&rb[i], &rb[(i + 1) % n]);
+            for k in 0..3 {
+                acc = acc
+                    .checked_add(c[k].checked_mul(normal[k]).unwrap())
+                    .unwrap();
+            }
+        }
+        match acc.cmp(&nacre_scalar::Rat::from_int(0)) {
+            core::cmp::Ordering::Greater => nacre_scalar::Orient::Positive,
+            core::cmp::Ordering::Less => nacre_scalar::Orient::Negative,
+            core::cmp::Ordering::Equal => nacre_scalar::Orient::Zero,
+        }
+    };
     crate::exact::Swept {
         base,
         top,
+        normal: Vector3::from_array(normal.map(|c| c.to_f64())),
         exact: crate::exact::SweptRat {
             base: rb,
             top: rt,
+            segs: vec![crate::exact::Seg3::Line; n],
+            normal,
+            winding,
             motion: None,
         },
     }
@@ -11640,4 +11683,374 @@ fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
     let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
     let want = 32.0 - 0.223648;
     assert!((v - want).abs() < 1e-5, "{v} vs {want}");
+}
+
+// ─── K3a: a whole circle extrudes into the cylinder primitive's own solid ───────────────────
+
+/// **A solid's b-rep, position-canonically.** What two builders must agree on when they claim to
+/// state one solid, with handle numbering left out — the two push their arenas in different
+/// orders, so handles cannot be the lock; everything the handles *name* can.
+#[derive(Debug, PartialEq)]
+struct BrepDigest {
+    vertex_bits: Vec<[u64; 3]>,
+    vertex_defs: Vec<String>,
+    plane_bits: Vec<[u64; 4]>,
+    cylinder_defs: Vec<String>,
+    /// `(surface kind, forward?, outer loop length, inner loop count)` per face.
+    faces: Vec<(&'static str, bool, usize, usize)>,
+    /// `(carrier kinds, curve kind, same vertex at both ends?)` per edge.
+    edges: Vec<(String, &'static str, bool)>,
+    volume_bits: u64,
+    /// Every mesh triangle as its three positions' bits, each triangle and the list sorted.
+    triangle_bits: Vec<[[u64; 3]; 3]>,
+}
+
+fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
+    let bits3 = |p: Point3| p.as_array().map(f64::to_bits);
+    let kind = |h: Handle<Surface>| match m.surface(h) {
+        Surface::Plane(_) => "plane",
+        Surface::Cylinder(_) => "cylinder",
+    };
+    let sol = m.solids.get(s).clone();
+    let (mut vertex_bits, mut vertex_defs, mut plane_bits, mut cylinder_defs) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let (mut faces, mut edges) = (Vec::new(), Vec::new());
+    let mut seen_edges: Vec<Handle<nacre_topo::Edge>> = Vec::new();
+    let mut seen_vertices: Vec<Handle<Vertex>> = Vec::new();
+    for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
+        for fh in m.shells.get(sh).faces.clone() {
+            let face = m.faces.get(fh);
+            match m.surface(face.surface) {
+                Surface::Plane(pl) => plane_bits.push(pl.coefficients().map(f64::to_bits)),
+                Surface::Cylinder(_) => {
+                    if let nacre_topo::SurfaceTruth::Cylinder { def, .. } =
+                        m.surface_truth(face.surface)
+                    {
+                        cylinder_defs.push(format!("{def:?}"));
+                    }
+                }
+            }
+            faces.push((
+                kind(face.surface),
+                face.orientation == Orientation::Forward,
+                face.outer.half_edges.len(),
+                face.inner.len(),
+            ));
+            for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                for he in &lp.half_edges {
+                    if !seen_edges.contains(&he.edge) {
+                        seen_edges.push(he.edge);
+                        let e = m.edges.get(he.edge);
+                        let mut carriers = [kind(e.surfaces[0]), kind(e.surfaces[1])];
+                        carriers.sort_unstable();
+                        let curve = match m.edge_curve(he.edge) {
+                            nacre_geom::Curve::Line(_) => "line",
+                            nacre_geom::Curve::Circle(_) => "circle",
+                        };
+                        edges.push((carriers.join("+"), curve, e.vertices[0] == e.vertices[1]));
+                    }
+                    for &vh in m.edges.get(he.edge).vertices.iter() {
+                        if !seen_vertices.contains(&vh) {
+                            seen_vertices.push(vh);
+                            vertex_bits.push(bits3(m.vertex_point(vh)));
+                            vertex_defs.push(match m.vertices.get(vh).def {
+                                VertexDef::ThreePlane(_) => "three-plane".to_string(),
+                                VertexDef::OnSeam(_) => "on-seam".to_string(),
+                                VertexDef::Branch { root, .. } => format!("branch {root:?}"),
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+    let mesh = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()).expect("tess");
+    let mut triangle_bits: Vec<[[u64; 3]; 3]> = mesh
+        .triangles
+        .iter()
+        .map(|(_, t)| {
+            let mut tri = t.vertices.map(|h| bits3(mesh.vertices.get(h).pos));
+            tri.sort_unstable();
+            tri
+        })
+        .collect();
+    vertex_bits.sort_unstable();
+    vertex_bits.dedup();
+    vertex_defs.sort_unstable();
+    plane_bits.sort_unstable();
+    plane_bits.dedup();
+    cylinder_defs.sort_unstable();
+    cylinder_defs.dedup();
+    faces.sort_unstable();
+    edges.sort_unstable();
+    triangle_bits.sort_unstable();
+    BrepDigest {
+        vertex_bits,
+        vertex_defs,
+        plane_bits,
+        cylinder_defs,
+        faces,
+        edges,
+        volume_bits: nacre_props::mass_props(m, s).unwrap().volume.to_bits(),
+        triangle_bits,
+    }
+}
+
+fn circle_profile(center: [f64; 2], radius: f64) -> Profile2d {
+    crate::from_edges(vec![
+        crate::Edge2d::circle(nacre_math::Point2::from_array(center), radius).unwrap(),
+    ])
+    .unwrap()
+    .remove(0)
+}
+
+/// ★★★★★ **The sugar claim, measured.** `cylinder()` is to become «a circle sketched, then
+/// extruded», so the extrude of a whole-circle profile must state the very solid the cylinder
+/// primitive states: the same vertex coordinates (bits), the same two seam definitions, the same
+/// plane coefficients and cylinder definition, the same faces (kind, sense, loop shape), the same
+/// edges (carriers, curve, the circle closing on one vertex), the same volume bits and the same
+/// mesh. Handle numbering is the one thing left out — the two builders push their arenas in
+/// different orders, and nothing downstream reads a handle's number.
+#[test]
+fn a_circle_profile_extrude_states_the_cylinder_primitive_solid() {
+    let (center, radius, dist) = ([0.5, 0.25], 0.1, 2.0);
+    let mut a = Model::new();
+    let op = cylinder_op(&a, center, radius, dist);
+    let OpOutput::Cylinder { solid: sa, .. } = apply(&mut a, &op).expect("the primitive builds")
+    else {
+        unreachable!()
+    };
+    let mut b = Model::new();
+    let frame = SketchFrame::world(&b, Axis::Z);
+    let OpOutput::Extrude { solid: sb, faces } = apply(
+        &mut b,
+        &Operation::Extrude {
+            frame,
+            profile: circle_profile(center, radius),
+            dist,
+        },
+    )
+    .expect("the circle extrudes") else {
+        unreachable!()
+    };
+    a.rebuild_adjacency();
+    b.rebuild_adjacency();
+    assert!(nacre_validate::validate(&a).is_empty());
+    assert!(
+        nacre_validate::validate(&b).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&b)
+    );
+    assert_eq!(faces.len(), 3, "base cap, top cap, lateral");
+    let (da, db) = (brep_digest(&a, sa), brep_digest(&b, sb));
+    assert_eq!(da.vertex_defs, vec!["on-seam", "on-seam"]);
+    assert_eq!(da, db);
+}
+
+/// **A round hole and a ring**: a plate with a circular bore, and an annulus — the circle as a
+/// hole ring (its lateral faces the material from outside) and as both rings of one profile.
+#[test]
+fn a_round_hole_and_an_annulus_extrude_exactly() {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let pi = std::f64::consts::PI;
+    // A 10 × 10 × 1 plate with a bore of radius 2 at (5, 5).
+    let mut edges: Vec<crate::Edge2d> = vec![
+        crate::Edge2d::line(p2(0.0, 0.0), p2(10.0, 0.0)).unwrap(),
+        crate::Edge2d::line(p2(10.0, 0.0), p2(10.0, 10.0)).unwrap(),
+        crate::Edge2d::line(p2(10.0, 10.0), p2(0.0, 10.0)).unwrap(),
+        crate::Edge2d::line(p2(0.0, 10.0), p2(0.0, 0.0)).unwrap(),
+    ];
+    edges.push(crate::Edge2d::circle(p2(5.0, 5.0), 2.0).unwrap());
+    let profiles = crate::from_edges(edges).unwrap();
+    assert_eq!(profiles.len(), 1);
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let OpOutput::Extrude { solid, faces } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: profiles[0].clone(),
+            dist: 1.0,
+        },
+    )
+    .expect("the bored plate extrudes") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v = nacre_props::mass_props(&m, solid).unwrap().volume;
+    assert!((v - (100.0 - 4.0 * pi)).abs() < 1e-9, "{v}");
+    assert_eq!(faces.len(), 7, "two caps, four walls, one bore");
+    let bore = faces
+        .iter()
+        .copied()
+        .find(|&f| matches!(m.surface(m.faces.get(f).surface), Surface::Cylinder(_)))
+        .expect("a bore face");
+    assert_eq!(
+        m.faces.get(bore).orientation,
+        Orientation::Forward.flipped(),
+        "the material is outside the bore"
+    );
+    let caps_with_a_hole = faces
+        .iter()
+        .filter(|&&f| m.faces.get(f).inner.len() == 1)
+        .count();
+    assert_eq!(caps_with_a_hole, 2);
+    mesh_covers_faces("a plate with a round hole", &m, &[solid]);
+
+    // An annulus: outer radius 5, inner 3, height 2.
+    let profiles = crate::from_edges(vec![
+        crate::Edge2d::circle(p2(0.0, 0.0), 5.0).unwrap(),
+        crate::Edge2d::circle(p2(0.0, 0.0), 3.0).unwrap(),
+    ])
+    .unwrap();
+    assert_eq!((profiles.len(), profiles[0].holes().len()), (1, 1));
+    let mut m = Model::new();
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let OpOutput::Extrude { solid, faces } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile: profiles[0].clone(),
+            dist: 2.0,
+        },
+    )
+    .expect("the annulus extrudes") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v = nacre_props::mass_props(&m, solid).unwrap().volume;
+    assert!((v - 32.0 * pi).abs() < 1e-9, "{v}");
+    assert_eq!(faces.len(), 4, "two caps, the outer wall, the inner wall");
+    let mut senses: Vec<bool> = faces
+        .iter()
+        .filter(|&&f| matches!(m.surface(m.faces.get(f).surface), Surface::Cylinder(_)))
+        .map(|&f| m.faces.get(f).orientation == Orientation::Forward)
+        .collect();
+    senses.sort_unstable();
+    assert_eq!(
+        senses,
+        vec![false, true],
+        "the outer wall faces in, the inner wall faces out"
+    );
+    mesh_covers_faces("an annulus", &m, &[solid]);
+}
+
+/// **One cylinder surface under two solids is refused, not asserted.** Cylinders intern by
+/// their exact statement, so two identical circle prisms — or two identical `cylinder()`
+/// primitives — share one lateral surface handle, which the chart reads as one solid's. Measured
+/// before the gate learned this: the fuse reached `cyl_chart`'s "one cylinder class carries rows
+/// of both solids" assertion. Now it is the coaxial pair's refusal, by name.
+#[test]
+fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
+    let refused = |r: Result<Vec<Handle<Solid>>, BoolError>| {
+        assert!(
+            matches!(
+                r,
+                Err(BoolError::Rejected {
+                    reason: RejectReason::CylinderPairContact,
+                    ..
+                })
+            ),
+            "{r:?}"
+        );
+    };
+    // Two circle prisms.
+    let mut m = Model::new();
+    let extrude = |m: &mut Model| {
+        let frame = SketchFrame::world(m, Axis::Z);
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile: circle_profile([0.0, 0.0], 1.0),
+                dist: 2.0,
+            },
+        )
+        .unwrap() else {
+            unreachable!()
+        };
+        solid
+    };
+    let (s1, s2) = (extrude(&mut m), extrude(&mut m));
+    m.rebuild_adjacency();
+    refused(crate::boolean(&mut m, BoolKind::Fuse, s1, s2));
+    // Two primitives — the same hazard predates the sketch road.
+    let mut m = Model::new();
+    let op = cylinder_op(&m, [0.0, 0.0], 1.0, 2.0);
+    let prim = |m: &mut Model| {
+        let OpOutput::Cylinder { solid, .. } = apply(m, &op).unwrap() else {
+            unreachable!()
+        };
+        solid
+    };
+    let (s1, s2) = (prim(&mut m), prim(&mut m));
+    m.rebuild_adjacency();
+    refused(crate::boolean(&mut m, BoolKind::Cut, s1, s2));
+}
+
+/// **A circle on a slanted wall's frame** — the measurement the plan asked for, locked at what it
+/// found. The prism alone is a valid solid: the arc wall's f64 cache is realized through the
+/// motion frame the way its vertices are, and the disk cap's winding check now realizes the
+/// plane's truth points the same way (before this it compared a frame triangle with a world
+/// normal and asserted — the first disk face ever to stand on a motion frame). Padding it onto the
+/// wall then declines by the name a tilted `cylinder()` primitive gets today: the cylinder gate
+/// cannot state a rotated cylinder against another body yet.
+#[test]
+fn a_circle_prism_on_a_slanted_wall_builds_and_its_pad_declines_by_name() {
+    let (mut m, wall) = prism_with_a_slanted_wall();
+    let sp = crate::ops::face_plane(&m, wall).expect("planar");
+    let d = nacre_props::face_props(&m, wall).unwrap().centroid - sp.origin;
+    let (cu, cv) = (d.dot(sp.x_axis), d.dot(sp.y_axis));
+    let profile = circle_profile([cu, cv], 0.4);
+    {
+        let (mut m2, wall2) = prism_with_a_slanted_wall();
+        let frame = crate::ops::face_sketch_frame(&m2, wall2).expect("a face frame");
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m2,
+            &Operation::Extrude {
+                frame,
+                profile: profile.clone(),
+                dist: 1.0,
+            },
+        )
+        .expect("the circle prism builds on the wall's frame") else {
+            unreachable!()
+        };
+        m2.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m2).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m2)
+        );
+        let v = nacre_props::mass_props(&m2, solid).unwrap().volume;
+        assert!((v - 0.16 * std::f64::consts::PI).abs() < 1e-9, "{v}");
+    }
+    let r = apply(
+        &mut m,
+        &Operation::PadOnFace {
+            face: wall,
+            profile,
+            dist: 1.0,
+        },
+    );
+    assert!(
+        matches!(
+            r,
+            Err(OpError::Boolean(BoolError::Rejected {
+                reason: RejectReason::CylinderGateUndecided,
+                ..
+            }))
+        ),
+        "{r:?}"
+    );
 }

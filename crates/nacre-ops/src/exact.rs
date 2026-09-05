@@ -24,8 +24,9 @@
 //! the same answer for the same reason.
 
 use crate::ops::{Profile2d, SketchPlane};
-use nacre_math::Point3;
-use nacre_scalar::Rat;
+use nacre_geom::mixed::Seg2d;
+use nacre_math::{Point3, Vector3};
+use nacre_scalar::{Orient, Rat};
 use nacre_store::Handle;
 use nacre_topo::{Model, MotionNode};
 
@@ -57,6 +58,14 @@ fn scale(v: &[Rat; 3], k: Rat) -> Option<[Rat; 3]> {
         v[0].checked_mul(k)?,
         v[1].checked_mul(k)?,
         v[2].checked_mul(k)?,
+    ])
+}
+
+fn sub(a: &[Rat; 3], b: &[Rat; 3]) -> Option<[Rat; 3]> {
+    Some([
+        a[0].checked_sub(b[0])?,
+        a[1].checked_sub(b[1])?,
+        a[2].checked_sub(b[2])?,
     ])
 }
 
@@ -253,6 +262,10 @@ pub(crate) fn realize(pts: &[[Rat; 3]]) -> Vec<Point3> {
 pub(crate) struct Swept {
     pub base: Vec<Point3>,
     pub top: Vec<Point3>,
+    /// The frame's unit normal realized in **world** f64 — the direction "counter-clockwise" is
+    /// about, where the vertices above are (a motion frame turns it with them). What the builder
+    /// compares the sweep direction against.
+    pub normal: Vector3,
     /// The same two rings **before** realization — the truth the f64 above is a cache of.
     /// Carried so the prism's planes can state themselves in rationals ([`SweptRat`]).
     /// Not optional since S6b: the f64 fallback (`Swept::along`) is gone — a prism the exact
@@ -265,10 +278,66 @@ pub(crate) struct Swept {
 /// The f64 realization is a cache. These are the numbers the planes come from, and computing a
 /// plane here rather than from the realized points is what makes two faces of one plane carry
 /// **the same coefficients** — see [`nacre_scalar::canonical_plane_coeffs`].
+/// One step of a swept ring, `vertices[i] → vertices[i + 1]`: straight, or an arc around a point
+/// of the base plane, counter-clockwise about the frame normal when `ccw`. The `cache` is the f64
+/// cylinder the arc's wall will be stored under — realized in world coordinates where the ring's
+/// vertices were, so that a motion frame's arc walls sit where its vertices sit.
+// The arc carries its f64 cylinder cache beside the straight variant's nothing: a per-step record,
+// a handful per ring, read once by the builder — boxing would buy nothing here.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone, Debug)]
+pub(crate) enum Seg3 {
+    Line,
+    Arc {
+        center: [Rat; 3],
+        radius: Rat,
+        ccw: bool,
+        /// The seam direction the wall is stated with: the frame's `x̂`, or for a whole circle the
+        /// direction from the centre to its one vertex (which is then the seam, at `+ref_dir`).
+        ref_dir: [Rat; 3],
+        cache: nacre_geom::Cylinder,
+    },
+}
+
+impl Seg3 {
+    /// The same step walked the other way.
+    pub(crate) fn reversed(&self) -> Seg3 {
+        match self {
+            Seg3::Line => Seg3::Line,
+            Seg3::Arc {
+                center,
+                radius,
+                ccw,
+                ref_dir,
+                cache,
+            } => Seg3::Arc {
+                center: *center,
+                radius: *radius,
+                ccw: !ccw,
+                ref_dir: *ref_dir,
+                cache: *cache,
+            },
+        }
+    }
+
+    pub(crate) fn is_arc(&self) -> bool {
+        matches!(self, Seg3::Arc { .. })
+    }
+}
+
 #[derive(Clone, Debug)]
 pub(crate) struct SweptRat {
     pub base: Vec<[Rat; 3]>,
     pub top: Vec<[Rat; 3]>,
+    /// `segs[i]` is the step `base[i] → base[i + 1]` (and the same step on the top ring).
+    pub segs: Vec<Seg3>,
+    /// The frame's unit normal, exact and in the frame's own coordinates — the axis every arc
+    /// wall is stated along.
+    pub normal: [Rat; 3],
+    /// Which way the base ring runs about that normal, decided exactly on the profile's own 2-D
+    /// coordinates ([`crate::Ring2d::winding_sign`]) — `Positive` is counter-clockwise. Flipped
+    /// by [`Swept::reversed`].
+    pub winding: Orient,
     /// ★★★ **Which frame the rationals above are written in.** `None` is the world, which is
     /// every case that existed before tilted faces became exact. `Some` says they are the
     /// coordinates of a plane's own frame, and that this motion is what carries them out — so
@@ -284,7 +353,23 @@ impl Swept {
         self.top.reverse();
         self.exact.base.reverse();
         self.exact.top.reverse();
+        // Step `k` of the reversed ring is old step `n − 2 − k` walked backwards.
+        let n = self.exact.segs.len();
+        let segs: Vec<Seg3> = (0..n)
+            .map(|k| self.exact.segs[(2 * n - 2 - k) % n].reversed())
+            .collect();
+        self.exact.segs = segs;
+        self.exact.winding = match self.exact.winding {
+            Orient::Positive => Orient::Negative,
+            Orient::Negative => Orient::Positive,
+            Orient::Zero => Orient::Zero,
+        };
         self
+    }
+
+    /// One vertex, one arc: the whole circle, whose vertex is the seam.
+    pub(crate) fn is_whole_circle(&self) -> bool {
+        self.base.len() == 1 && self.exact.segs.first().is_some_and(Seg3::is_arc)
     }
 }
 
@@ -314,7 +399,22 @@ impl SweptRat {
     pub(crate) fn cap_points(&self, top: bool) -> Option<[[Rat; 3]; 3]> {
         let ring = if top { &self.top } else { &self.base };
         if ring.len() < 3 {
-            return None;
+            // Fewer than three vertices: an arc names the plane instead — its centre (lifted to
+            // this cap), its vertex, and the vertex's radius turned a quarter about the normal.
+            // For a circle seamed at `+x̂` that is `[c, c + r·x̂, c + r·ŷ]`, the cylinder
+            // primitive's own cap triple.
+            let (k, seg) = self.segs.iter().enumerate().find(|(_, s)| s.is_arc())?;
+            let Seg3::Arc { center, .. } = seg else {
+                return None;
+            };
+            let lifted = if top {
+                add(center, &sub(&self.top[k], &self.base[k])?)?
+            } else {
+                *center
+            };
+            let v = ring[k];
+            let radial = sub(&v, &lifted)?;
+            return Some([lifted, v, add(&lifted, &cross(&self.normal, &radial)?)?]);
         }
         let f = |p: &[Rat; 3]| [p[0].to_f64(), p[1].to_f64(), p[2].to_f64()];
         let (a, b) = (f(&ring[0]), f(&ring[1]));
@@ -410,24 +510,73 @@ pub(crate) fn prism_rings_in(
                 .collect(),
         }
     };
-    let ring = |r: &[[Rat; 2]]| -> Option<Swept> {
-        let base = f.ring(r)?;
+    let normal = f.normal()?;
+    let ring = |r: &crate::Ring2d| -> Option<Swept> {
+        let base = f.ring(r.vertices())?;
         let top = swept(&base, &sweep)?;
+        let base_f64 = out(&base)?;
+        let normal_world = out(&[add(&base[0], &normal)?])?.pop()? - base_f64[0];
+        let winding = r.winding_sign()?;
+        let segs = r
+            .segs()
+            .iter()
+            .enumerate()
+            .map(|(i, seg)| match seg {
+                Seg2d::Line => Some(Seg3::Line),
+                Seg2d::Arc {
+                    center,
+                    radius,
+                    ccw,
+                } => {
+                    let c = f.ring(&[*center])?.pop()?;
+                    // The seam reference: a whole circle seams at its one vertex, an arc's wall
+                    // is stated with the frame's `x̂` so every arc of one circle interns to one
+                    // surface.
+                    let ref_dir = if r.len() == 1 {
+                        scale(
+                            &sub(&base[i], &c)?,
+                            Rat::new(radius.denom(), radius.numer())?,
+                        )?
+                    } else {
+                        f.x
+                    };
+                    // The f64 cache, realized where the vertices were realized: directions as
+                    // differences of realized points, so a motion frame turns them too.
+                    let at = |p: &[Rat; 3]| -> Option<Point3> { out(&[*p])?.pop() };
+                    let c_f64 = at(&c)?;
+                    let axis = at(&add(&c, &normal)?)? - c_f64;
+                    let refd = at(&add(&c, &ref_dir)?)? - c_f64;
+                    let cache =
+                        nacre_geom::Cylinder::from_axis(c_f64, axis, refd, radius.to_f64())?;
+                    Some(Seg3::Arc {
+                        center: c,
+                        radius: *radius,
+                        ccw: *ccw,
+                        ref_dir,
+                        cache,
+                    })
+                }
+            })
+            .collect::<Option<Vec<_>>>()?;
         Some(Swept {
-            base: out(&base)?,
+            base: base_f64,
             top: out(&top)?,
+            normal: normal_world,
             exact: SweptRat {
                 base,
                 top,
+                segs,
+                normal,
+                winding,
                 motion: frame,
             },
         })
     };
-    let outer = ring(profile.outer().vertices())?;
+    let outer = ring(profile.outer())?;
     let holes = profile
         .holes()
         .iter()
-        .map(|h| ring(h.vertices()))
+        .map(ring)
         .collect::<Option<Vec<_>>>()?;
     Some((outer, holes))
 }

@@ -246,12 +246,31 @@ pub(crate) fn collect_planes(
                 {
                     let nacre_topo::SurfaceTruth::Plane {
                         points: nacre_topo::PlanePoints::Known(pts),
-                        ..
+                        motion: disk_motion,
                     } = model.surface_truth(face.surface)
                     else {
                         return Err(reject(RejectReason::DegenerateFace));
                     };
-                    let mut tri = pts.map(|p| Point3::from_array(p.map(|x| x.to_f64())));
+                    // ★ The points are stated in the frame the plane's motion names — a disk cap
+                    // on a slanted wall's frame is in that frame's coordinates. Realized through
+                    // the motion, as every other witness here is, before being wound to the
+                    // face's *world* outward; naive f64 of the frame-stated points compared a
+                    // frame triangle against a world normal and asserted on the first such face
+                    // (measured 2026-09-05: a circle padded on a slanted wall).
+                    let mut tri = match disk_motion {
+                        None => pts.map(|p| Point3::from_array(p.map(|x| x.to_f64()))),
+                        Some(m) => {
+                            let chain = crate::rotated_vertex::motion_chain(model, *m)
+                                .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                            let mut out = [Point3::origin(); 3];
+                            for (o, p) in out.iter_mut().zip(pts.iter()) {
+                                let q = crate::rotated_vertex::replay(WitnessPoint::at(*p), &chain)
+                                    .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
+                                *o = Point3::from_array(q.coord);
+                            }
+                            out
+                        }
+                    };
                     let wound = (tri[1] - tri[0]).cross(tri[2] - tri[0]);
                     if wound.dot(n_out) < 0.0 {
                         tri.swap(1, 2);
@@ -487,7 +506,11 @@ pub(crate) fn collect_planes(
                     .cross(tri[2] - tri[0])
                     .normalize()
                     .is_some_and(|w| w.dot(n_out) > 0.5),
-                "a face's outer winding must agree with its stated orientation"
+                "a face's outer winding must agree with its stated orientation: face {fh:?} on {:?}, {} outer half-edges, {} inner loops, orientation {:?}",
+                face.surface,
+                face.outer.half_edges.len(),
+                face.inner.len(),
+                face.orientation
             );
             let name = model.surface_name.get(&face.surface).cloned();
             out.push(FaceRow::Plane(FaceInfo {
@@ -1025,6 +1048,19 @@ pub(crate) fn cylinder_gate(
             def,
             cache: *cache,
         });
+        // ★ **One surface, two solids.** Cylinders intern by their exact statement, so two operands
+        // whose laterals coincide arrive as one class carrying rows of both — the coaxial pair of
+        // equal radius, by another spelling. The chart reads a class as one solid's surface
+        // (`cyl_chart::chart_of`), so this is refused here, by the name the distance rule gives
+        // that pair, instead of asserting inside the chart. Measured (2026-09-05): two identical
+        // circle prisms fused reached that assertion before this arm existed.
+        let owned = |rows: &[FaceRow]| {
+            rows.iter()
+                .any(|r| matches!(r, FaceRow::Cylinder(cf) if cf.surf == surf))
+        };
+        if owned(&faces[..n_a]) && owned(&faces[n_a..]) {
+            return Err(reject(RejectReason::CylinderPairContact));
+        }
     }
 
     // ★ **One row per `cyl_surfs` entry, in order** — the loop above either pushes or returns, so
