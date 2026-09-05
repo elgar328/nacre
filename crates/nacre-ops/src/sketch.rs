@@ -190,16 +190,27 @@ impl Edge2d {
         let c = lift(center)?;
         let r = Rat::from_decimal(radius)
             .ok_or(SketchError::OutsideDecimalWindow { at: [radius, 0.0] })?;
-        if r <= Rat::from_int(0) {
+        Self::circle_rat(c, r)
+    }
+
+    /// [`Edge2d::circle`] for a computed radius — a diameter halved in `Rat`, say — and a
+    /// computed centre.
+    pub fn circle_rat(center: [Rat; 2], radius: Rat) -> Result<Edge2d, SketchError> {
+        if radius <= Rat::from_int(0) {
             return Err(SketchError::NonPositiveRadius {
-                center: center.as_array(),
-                radius,
+                center: f2(center),
+                radius: radius.to_f64(),
             });
         }
-        let seam = [c[0].checked_add(r).ok_or(SketchError::Undecidable)?, c[1]];
+        let seam = [
+            center[0]
+                .checked_add(radius)
+                .ok_or(SketchError::Undecidable)?,
+            center[1],
+        ];
         Ok(Edge2d::Arc {
-            center: c,
-            radius: r,
+            center,
+            radius,
             start: seam,
             end: seam,
             ccw: true,
