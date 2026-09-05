@@ -223,8 +223,15 @@ pub struct Profile2d {                        // 한 재료 영역 — 현행 �
     outer: Ring2d,
     holes: Vec<Ring2d>,
 }
-pub struct Ring2d { points: Vec<[Rat; 2]> }   // 지금은 직선 변만 — 호는 M6 에서 세그먼트
-                                              // enum(LineTo/ArcTo)으로 확장할 자리만 남긴다
+pub struct Ring2d {                           // ★ 칸 ⑨(2026-09-05): 정점 + 세그먼트 종류
+    vertices: Vec<[Rat; 2]>,                  //   segs[i] = vertices[i] → vertices[i+1 mod n]
+    segs: Vec<Seg2d>,                         //   온전한 원 = 정점 1 + Arc 1 (정점 = 솔기)
+}
+pub enum Seg2d { Line, Arc { center: [Rat; 2], radius: Rat, ccw: bool } }
+pub enum Edge2d {                             // 입력의 꼴(from_edges) — 전부 Rat, 회전각 없음
+    Line { from, to },
+    Arc { center, radius, start, end, ccw },  // start == end 는 온전한 원; radius 는 완전제곱 검사
+}
 // 링 더미 → 짝수 깊이 = 재료(even-odd) → 섬마다 Profile2d 하나 — from_rings, 현행 유지.
 
 // ─── 배치 — 어떤 평면 위 + 배치(기본은 정준 유도, 명시하면 값). ──
@@ -240,6 +247,8 @@ pub struct SketchFrame {
 
 | 규칙 | |
 |---|---|
+| **호의 진실은 끝점이다, 각도가 아니다** (칸 ⑨) | 3D 경계 표현이 요구하는 것은 **정점과 원**이고 각도는 어디에도 안 쓰인다. 끝점 표현이 더 넓다(무리수 도의 호도 끝점이 유리수면 정확 — 3-4-5). 90° 배수 회전은 생성자가 `(x,y)→(−y,x)` 로 `Rat` 끝점을 계산한다(`arc_turns_rat`). 뒷날 임의 각도는 «시작점을 θ 돌린 점»이라는 **점의 이름**으로 열린다 — `Arc` 의 꼴은 그대로. 오늘 빌더가 세우는 것은 4분원 배수 가족(감김 `a + b·π` 의 정확 부호)이고 그 밖은 `ArcSweepNotQuarterTurn` 으로 이름 붙여 거절 |
+| **원통 원시체는 없다 — 원은 스케치다** (칸 ⑨) | `Operation::Cylinder` 는 원 프로파일 Extrude 와 위치 정준 비트 동일이 실측된 뒤 은퇴. 직선–호 꼭짓점 = `VertexDef::Branch`(두 평면의 **저장된 정준 이름** × 원통, 근은 매개 값으로 고른다 — 빌더가 자기 점으로 계수를 다시 만들면 `Lo/Hi` 가 뒤집힐 수 있다), 온전한 원 = `OnSeam` |
 | **경계는 f64, 진실은 구성 시점에** ✔S3 | 공개 API 는 f64 그대로(§design 6.0). `Rat::from_decimal` 왕복을 `Profile2d` **생성자**에서 한다 — `check()`(자기교차·중첩·포함)가 진실 위에서 정확 술어로 돌고(`orient2d_rat`: narrow 우선 → BigInt 전역 부호, geom 의 `_rat` 워커 쌍둥이), 십진 창(1e38/1e-22) 밖 치수가 구성 시점의 이름 붙은 에러다(`ProfileOutsideDecimalWindow` / sketch 층 `OutsideDecimalWindow`). ★ f64 부호 ≠ 십진 부호가 실측 사실이라(0.1·0.2·0.3 공선이 이진에선 굽음) check 를 진실 위로 옮긴 것이 정확성 변경이고, 그 방향은 항상 "작성자가 쓴 수가 이긴다" |
 | **공선 중간점은 생성자가 지운다** ✔S3 | 공선 정점의 양옆 벽은 한 평면 → 교차가 직선이라 정의 불가, 그리고 비-2-manifold 퇴화다. 제거는 형상 불변(무손실 정규화, 거절 아님 — 정리된 프로파일의 프리즘은 깨끗한 쌍둥이와 비트 동일, 모든 코너가 3-평면 정의 보유 = Q2 ② 닫힘). 판정은 Rat 위 정확 orient2d, 제거 조건은 **엄격 내부**(중복점·스파이크는 생존해 각자의 이름 붙은 에러로 보고된다 — 경계 포함 판정을 재사용하면 작성자의 실수를 조용히 지운다) |
 | **프레임은 평면에서 뜨지 않는다** ✔S9 | `Named` 의 `origin` 은 참조 평면 **위**의 점(정확 검사 — C1). ★ 구현: `SketchFrame::named` 가 구성 시점에 검사한다 — `plane_residual_sign`(scalar, **전역**: Narrow 는 Rat 대입 → 넘치면 BigInt, Wide 는 BigInt — fail-open 없음) ≠ 0 이면 `OriginNotOnPlane`, `WideFrame::named_of` None 이면 `RefDirParallelToNormal`(그 함수는 폭에 전역이라 None 은 평행/영벡터뿐), 십진 창 밖은 `FrameOutsideDecimalWindow`. ★ 좌표계에 주의: «정의하려는 프레임의 (u,v,w)» 가 아니라 **그 평면의 `points` 가 적힌 좌표계**의 3D 점이다(모션 없으면 세계 — 상자 윗면 z=1 이면 origin 은 `[1,1,1]` 같은 점이지 셋째 성분 0 이 아니다). "평면 위" 는 성분이 아니라 **방정식 대입**(`a·x+b·y+c·z+d = 0`, 정확)으로 검사한다. `Canonical` 은 유도라 검사할 것이 없다. 면 위 스케치의 밑캡이 대상 면의 surface 핸들을 공유하는(flush 접촉 = 핸들 비교) 전제이기도 하다. 평면에서 d 떨어진 스케치가 필요하면 origin 을 띄우는 것이 아니라 **오프셋 평면**을 만든다 — 같은 프레임 안 `(0,0,d),(1,0,d),(0,1,d)` 유리수 세 점의 `Known` 평면(datum 가족, S5). 담체가 실제 평면 핸들로 남아 이름·interning·flush 규칙이 그대로 성립한다 |

@@ -17031,3 +17031,39 @@ fmt · clippy · `test --workspace` 1204/0 · `--no-default-features` · census 
 - **넷째 자리** — 비스듬 평면 팔. `lateral_reach`를 `d = n`으로 부르면 되나, 비켰음이 증명된 비스듬 클래스가 원통 쪽 도로에 아무것도 안 남긴다는 건 아직 주장이다.
 - 비-유리수 캡 림(`t_range` `None` → 폴백 거절) · 진짜 교차의 4차 곡선(M6b) · 후보 열거의 전수성.
 - 함정 하나: `cut -c1-150`으로 잘라 읽은 줄을 치환 앵커로 썼다가 «0건»으로 두 번 실패했다 — 앵커는 자르지 않은 원문에서.
+
+## 칸 ⑨ — 스케치가 원과 호를 그린다: `arc`·`circle`·`fillet`, 그리고 `cylinder()`는 설탕 (2026-09-05)
+
+사용자의 물음 — «기존 실린더도 스케치에 원 그린 다음 익스트루드 하는 것의 설탕으로 하는 게 깔끔한 거 아니야? M5에서도 박스를 이렇게 했잖아?» — 가 맞았다. 상자는 «네 점 프로파일 + 돌출»인데 원통만 `Operation::Cylinder → cylinder_on_frame → add_cylinder_exact`라는 별도 도로였고, 그 이유는 «스케치에 원이 없어서». 이 칸이 그 자리를 채웠다: 커널(nacre) K1–K4 다섯 커밋, 키트 한 커밋, 앱 한 커밋. **설탕 주장은 먼저 재고 그다음 원시체를 걷었다.**
+
+### 문법을 정한 대화 (kit `docs/syntax.md` §5.2–5.5 · `decisions.md` §19)
+| 결정 | 왜 |
+|---|---|
+| 펜 `arc({ center, sweep })` 하나 | 중심을 알면 끝점은 **회전**이다. `sweep > 0` = 스케치 `+x→+y` = 법선 쪽에서 본 반시계. 오늘은 90의 배수(`0<|sweep|<360`) |
+| `circle({ center, r \| d })` | 자리 인자는 반지름인지 지름인지 모호했다(사용자). `d`는 키트가 **유리수로** 반으로 나눈다(`CircleSize::Diameter` 리터럴 보존) |
+| `{ fillet: r }` 첫 판 = 두 축 정렬 직선 사이의 직각 | 접점이 정확히 `r` 물러난 곳, 중심 `P + r(û+v̂)` — 전부 유리수. 합 == 변이면 4분원 둘이 반원으로 **병합**(커널 정규형), > 이면 거절 |
+| 뭉치 `arc({ center, start, sweep })` | 커널이 받는 꼴 그대로 |
+| `close()`는 펜이 시작점이면 선을 안 그린다 | 호로 돌아온 슬롯의 길이 0 변을 막는다 |
+| 뺀 것: `arcThrough`·`tangentArcTo`·`sagittaArcTo`, 슬롯 지름길 | 유도에 제곱근이 남아 정확한 경우가 우연. 슬롯은 «중심 사이 vs 전체» 늘 모호 — 스크립트 함수로 |
+| `arcTo(end, { tangent \| radius })`는 뒤로 | 돌아와도 **커널 무변**(끝점 형태) |
+| **커널 진실 = 끝점** `Arc { center, radius, start, end, ccw }` | 사용자 제안 «중심·시작점·회전각 셋으로 통일»을 검토하다 뒤집혔다: 3D 경계가 요구하는 것은 정점과 원이고 각도는 어디에도 안 쓰인다. 끝점 표현이 **더 넓다**(3-4-5 렌즈처럼 각도가 무리수 도인 호도 끝점이 유리수면 정확). 90° 배수는 생성자가 `Rat`으로 끝점을 계산해 준다(`arc_turns`·`arc_turns_rat`) |
+
+### 사다리와 실측
+- **K1** `nacre-geom::mixed` — 선분–원·호–호·점-in-링을 ℚ(√c)의 `QuadVal` 부호로(한 근호). 광선의 반열림은 배열의 철자를 **옮겨 적었다**(코드 재사용 불가 — 배열은 `NodeId` 위에서 돈다). 다각형 링에서 옛 술어와 답 동일: proptest 회귀. 함정: 인접 판정을 옛 술어와 **인덱스 기준으로 똑같이** 해야 parity가 났다.
+- **K2** 어휘 — `Edge2d::{Line, Arc}`, `Ring2d { vertices, segs }`(끝점 중복이 타입에 없다), 정규형 = 공선 중간점 제거 + **같은 원·같은 방향 이웃 호 병합**(wrap 포함; 첫 정점을 지키려 `(1..n).chain(0)` 순서). 반지름은 `rat_sqrt_exact`의 완전제곱 검사. 함정: 정규형이 반복 점을 지우던 것 → 「양쪽 이웃과 다른 정점」 조건(옛 `drop_collinear_midpoints`와 같다).
+- **K3a** 온전한 원 — `OnSeam` 둘, 캡 세 점은 원의 중심·`+x̂`·`+ŷ`, 감김은 `2·넓이 = a + b·π`의 정확 부호(`winding_sign_quarter_arcs`; π 괄호 37자리). ★ **설탕 잠금 첫 시도 적중**: 원 프로파일 Extrude ≡ 원시체, 위치 정준 다이제스트(정점 비트·정점 정의·평면 계수 비트·`CylinderDef`·면(종류·방향·루프)·간선(담체·곡선)·부피 비트·삼각형 집합). 함정 셋: `oriented_ring`의 debug assert가 모션 프레임에서 울림(프레임 vs 세계 혼합 → 감김은 2D 프로파일 좌표에서, 세계 법선은 f64로 `Swept`에) · 16각형에서 i128 넘침 → BigInt는 **scalar에**(ops는 dev-dep만) · 온전한 원의 CW가 `k = 0`이던 버그(→ `±4`). 원 구멍 판·링(annulus)·같은 정의 원통 둘 fuse(→ `cyl_chart` **패닉** — 게이트가 «같은 곡면을 두 솔리드가 나눈다»를 이름으로 거절하도록) · 회전한 면 위 원 pad(`collect_planes`의 디스크 폴백이 패닉 → 진실 점을 모션으로 실현; 이제 `CylinderGateUndecided`로 정직 거절).
+- **K3b** 호 — 직선–호 꼭짓점 = `VertexDef::Branch`: 두 평면의 **저장된 정준 이름**(`surface_name`)을 핸들 오름차순으로 `plane_plane_cylinder`에 넣고, 근은 **매개 값**으로 고른다(`Tangent` → `Double`; 완전제곱 판별식이 `b ≠ 0`으로 남아 `b == 0` 단언은 거짓이었다). 시계 방향 호의 캡 간선은 `[A,B]` 반시계 규약에 맞춰 정점을 바꿔 저장(`along` 비트, 루프가 `forward`를 뒤집음). ★ **옆면 방향은 계획이 틀렸다**: «호의 ccw == 링의 감김»이 아니라 **`Forward ⟺ ccw == 스윕이 +w`** — 구멍 원의 옆면이 계획대로면 뒤집힌다(validate가 잡음). 얇음 검사 `len < 3`은 호가 있으면 면제(반원 D). 렌즈(3-4-5)는 `ArcSweepNotQuarterTurn`으로, 4분원 둘의 잎은 `ArcsMeetAtVertex`로 이름 붙여 거절. `Edge2d::arc_turns_rat`·`circle_rat`(키트의 유리수 문).
+- **census 가족 `arcprofile`**(반원 D·구멍 판·링·슬롯 × fuse/cut/common): 287 → **299행**, 두 프로파일 동일, 옛 287행 무변. D × 상자 셋 Ok · 구멍 판 fuse/cut Ok, common은 상자 면 `x = 1`이 구멍(중심 2, r 1)에 **접해** `SelfTouchingResult`(픽스처의 접촉 — 정직) · **링 × 상자 셋 다 `CylinderPairContact`** — 동축 원통 둘이 한 솔리드에 있으면 평행 팔이 거절한다(칸 ⑧이 남긴 핸들 인턴; 와셔라는 흔한 모양에서 바로 보인다) · 슬롯 × 상자 `TraceDeclined { OuterRing }` — 슬롯 벽은 원통에 **접하는** 룰링이고 `ruling_side`가 0이라 트레이서에 «쪽»이 없다. 셋 다 다음 칸의 입력.
+- **KIT1** — 스케치 값이 **문장**(펜 경로 + 뭉치 리터럴)을 저장하고 소비자마다 다시 낮춘다(`classify(step, paths, lines, mirror)`): 미러는 리터럴 부호 반전(`y`·`sweep`), 챔퍼의 f64 되돌림 왕복이 사라졌다. 필렛·호·원의 모든 계산값은 커널의 `Rat` 문으로. `Step::Cylinder`는 원 하나짜리 스케치의 `Extrude`. 잠금 7(`tests/arcs.rs`): 둥근 사각 `(wh − (4−π)r²)h` · 30×10 필렛 5 = 슬롯(면 **6**, 겹치면 거절) · 펜 슬롯 ≡ 뭉치 슬롯(부피 비트·정점 비트) · 음수 돌출의 발자국 동일 · `circle` r ≡ d ≡ `cylinder()`(부피 비트·정점·면 수) · 구멍 판 `(800 − 18π)·2` · 거절 문장 셋(호 옆 모서리·잎·√2 반지름). 관문 fmt·clippy·**79/0**.
+- **APP1** — 와이어 `SketchSeg::{LineTo, Arc}`, `Loose::{Line, Arc, Circle{size}}`; 레코더 `arc`·`circle({center, r|d})`·전역 `arc`; `m6` 배지·플래그 전부 제거(예약 어휘가 없다); 치트시트에 둥근 슬롯·구멍 판·캠·뭉치 슬롯 넷이 **실행되는** 줄로.
+- **K4** — `Operation::Cylinder`·`OpOutput::Cylinder`·`cylinder_on_frame`·`OpError::{NonPositiveRadius, RadiusOutsideDecimalWindow, CenterOutsideDecimalWindow}` 삭제. ops 테스트 스무 곳이 원 프로파일 Extrude로(면 순서 `[밑캡, 윗캡, 옆면]`); 원의 수 거절은 스케치 층(`SketchError`)으로 옮겨 잰다. 설탕 잠금의 대조군은 topo `add_cylinder_exact`(test-util).
+
+### 관문
+nacre(`31b266b`): fmt·clippy 0 · workspace **1239/0** · no-default-features **686/0** · census 두 프로파일 **299행** 동일, 옛 287행 무변(K3b 마지막 census와 행 동일) · `reject_census` 0 · ignored 스윕 **133/0** · perf release 같은 대역(fold 7/13/25/40/60/80: rotated 14/36/97/184/405/1030 ms · fold 80 407면 237.211567 · small 540 µs/boolean). kit(`375a650`·`bc9274e`): fmt·clippy 0 · **79/0**(K4 위에서 재검). 앱(`e3aa31b`): `wasm:all` 0 · `tsc` 0 · vitest **145/145**(142 → 145: 레코더 4 추가·M6 시험 1 제거) · `wasm/` clippy 0. 브라우저 확인은 사용자 몫(원·슬롯·라운드 사각·`cylinder()`).
+
+### 못 잰 것·남는 것
+- **동축 원통 둘의 불리언**(링·와셔·쌓인 원통) — 평행 팔의 핸들 인턴(`cyl_chart::chart_of`). 스케치 도로가 이 모양을 **한 줄로** 만들게 되어 벽이 앞으로 왔다. 다음 칸 «기하 인턴».
+- **접선 룰링**(슬롯·필렛 벽 × 다른 솔리드) — `ruling_side` 0 → `TraceDeclined{OuterRing}`; 반원 D 보스 pad는 `LabelConflict`(축 통과 벽), 같은 D × 상자는 Ok.
+- 90° 배수 아닌 호(점의 이름) · 직각 아닌 필렛 · 호–호 접합(`Branch`의 이웃 변종 + 원통–원통 룰링 곡선 = M6b) · `arcTo`.
+- 앱의 `cylinder({ d })`는 여전히 TS가 f64로 반으로 나눈다(정확 — 지수만 하나 준다; 레코더 주석). 원의 `d`는 키트가 유리수로 나누므로 두 길이 다르다 — 통일하려면 `Step::Cylinder`도 `CircleSize`를 실어야 한다.
+- 함정: 잎 픽스처의 첫 호 부호를 손으로 잘못 돌렸다(`(−5,0)`을 반시계로 돌리면 `(0,−5)`) — 생성자에 물어보고 적을 것.

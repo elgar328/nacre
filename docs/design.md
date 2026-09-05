@@ -506,10 +506,11 @@ pub enum Operation {
     // 기존 면 위에 작업하는 M4(PadOnFace/PocketOnFace)에서 비로소 필연적으로 도입된다.
     // M2는 매 Extrude 결과가 닫힌 솔리드라 validate가 빈틈없이 걸린다.
     Extrude { frame: SketchFrame, profile: Profile2d, dist: f64 },   // ← 평면을 «이름 부른다»(S5(i)-b)
-    // M6-2(K2): 원통 원시체. 스케치에 원이 없어서(Curve2d는 Line뿐) 프로파일이 아니라 원시체다 —
-    // 로그가 원통을 나를 수 있게 하는 **가장 작은** 어휘. 프레임이 축(단위 법선)·seam 기준(+u)·
-    // 밑면 중심을 전부 유리수로 주므로 진술이 유리수를 떠나지 않는다(`add_cylinder_exact`).
-    Cylinder { frame: SketchFrame, center: [f64; 2], radius: f64, dist: f64 },
+    // ★ 칸 ⑨(2026-09-05): 원통 원시체 `Cylinder { frame, center, radius, dist }`는 **은퇴했다** — 원이
+    // 스케치의 어휘(`Edge2d::Arc`, `start == end`)가 되어 `Extrude`가 나른다. 원 프로파일의 Extrude 가
+    // 원시체와 **위치 정준 비트 동일**(정점 비트·솔기 정의·평면/원통 진술·면·간선·부피 비트·삼각형)임을
+    // 잰 뒤 걷었다. 상자가 «네 점 + 돌출»인 것과 같은 구조. topo 의 `add_cylinder_exact`는 test-util
+    // 문으로 남아 그 잠금의 대조군이다.
     Revolve { plane: SketchPlane, profile: Profile2d, axis: Axis, angle: f64 },
     PadOnFace { face: Handle<Face>, profile: Profile2d, dist: f64 }, // M4: 기존 면 위 — Handle<Face> 참조
     Boolean { kind: BoolKind, a: Handle<Solid>, b: Handle<Solid> },
@@ -530,7 +531,8 @@ pub enum Operation {
 ŵ이다. `flip`은 소비 연산이 `measured_frame`에서 **한 곳에서만** 재므로(S9) 호출자가 뒤집힌 프레임을
 진술할 수 없다 — 면의 프레임은 그 면의 바깥을 향한다. 그래서 «면에 그려 안쪽으로» 파는 것은
 `toward`를 안쪽으로 재는 **복합 연산**(`PadOnFace`/`PocketOnFace`가 `extrude_and_boolean`의 부호 있는
-sweep으로 하는 일)이고, 원시체 연산의 어휘가 아니다. 원통에 대응하는 복합(면 정박 드릴)은 아직 없다.
+sweep으로 하는 일)이고, 원시체 연산의 어휘가 아니다. 원통에 대응하는 복합(면 정박 드릴)은 따로 없다 —
+원이 스케치 어휘이므로(칸 ⑨) 면 위 원 스케치의 `PocketOnFace`가 그것이다.
 
 - **방향은 `flip` 이 들고, 프레임을 만든 쪽이 잰다.** 평면의 정준 이름에는 방향이 없고 평면은
   interning 되므로(같은 평면을 `+n`/`−n` 으로 진술하면 **한 핸들**, 실측), 프레임이 방향을
@@ -641,7 +643,7 @@ pub fn replay(ops: &[Operation], cfg: TessConfig) -> Result<(Model, Tessellation
 
 **자기교차는 중첩 분류보다 먼저 본다** — 메시지 품질이 아니라 전제조건이다: `point_in_ring_2d`는 짝-홀 패리티로 답하고, 그건 단순한 링에서만 "안쪽"을 뜻한다. 술어는 `geom::intersect::ring_self_intersection`(인접하지 않은 변은 접촉만으로 실격, 인접한 변은 공선-겹침일 때만 = 되짚는 스파이크, 인접은 **순환**으로 판정). 스케치 층은 `RingSelfIntersects { ring, at }`로 **점**을 돌려준다 — `from_edges`는 순회 순서로 링을 만들어 변 인덱스가 작성자의 입력과 무관하기 때문이다(`OpenChain`·`BranchingVertex`와 같은 규약).
 
-**선 뭉치 — `from_edges` (2026-07-26 구현).** 생성 코드나 외부 데이터가 내놓는 모양 그대로, **순서도 방향도 무관한** 선들을 받아 끝점으로 이어 링을 만들고 `from_rings`에 넘긴다. `Edge2d { curve: Curve2d, start, end }`이고 `Curve2d`는 지금 `Line` 하나뿐 — M6에서 호가 들어와도 API가 안 깨지도록 자리를 먼저 만들었다.
+**선 뭉치 — `from_edges` (2026-07-26 구현).** 생성 코드나 외부 데이터가 내놓는 모양 그대로, **순서도 방향도 무관한** 선들을 받아 끝점으로 이어 링을 만들고 `from_rings`에 넘긴다. ★ **호와 원 (2026-09-05, 칸 ⑨).** `Edge2d::{ Line { from, to }, Arc { center, radius, start, end, ccw } }` — 전부 `Rat`, `start == end`는 온전한 원(시작점 = 솔기). 회전각은 커널이 모르는 말이다: 끝점 표현이 각도 표현보다 **넓고**(무리수 도의 호도 끝점이 유리수면 정확), 90° 배수 회전은 생성자가 `Rat`으로 끝점을 계산해 준다(`arc_turns`·`arc_turns_rat`; 반지름은 `|start−center|²`의 **완전제곱** 검사 — `rat_sqrt_exact`). 링은 **정점 + 세그먼트 종류**(`Ring2d { vertices, segs: Vec<Seg2d> }`)라 끝점 중복이 타입에 없고, 정규형이 공선 중간점 제거 옆에서 **같은 원·같은 방향의 이웃 호를 병합**한다(필렛 둘이 만나면 반원, 호 둘로 그린 원은 원 하나). 분류 술어는 `geom::mixed`(선분–원·호–호·점-in-링을 ℚ(√c)의 `QuadVal` 부호로, 광선 규칙은 배열의 반열림 철자를 옮겨 적음; 다각형 링에서 옛 술어와 답 동일을 proptest 로 잠금). 프리즘 빌더는 호마다 원통 조각 벽을 세우고(축 = 프레임 법선 `w`, `ref_dir` = 프레임 `x̂`, 온전한 원만 시작점 방향), 직선–호 꼭짓점은 **`VertexDef::Branch`**(두 평면의 저장된 정준 이름을 핸들 오름차순으로 `plane_plane_cylinder`에 — 접하는 벽은 `Double`), 감김은 `2·넓이 = a + b·π`의 정확 부호(`winding_sign_quarter_arcs`, scalar 의 BigInt). 옆면 방향 `Forward ⟺ 호의 ccw == 스윕이 +w`. 이름 붙여 거절: 90° 배수 아닌 호(`ArcSweepNotQuarterTurn`), 다른 원의 호–호 접합(`ArcsMeetAtVertex` — 두 원통 위의 점은 정점 정의가 없다), 반지름 무리수(`ArcRadiusNotRational`). **원통 원시체는 이 어휘의 설탕이 되어 은퇴했다**(위 `Operation` 목록).
 
 **끝점은 정확히 일치해야 한다.** 가까우면 붙여주는 스냅은 없다 — tolerance는 커널이 *발견한* 교차의 것이지 호출자가 *구성한* 것의 몫이 아니다(원칙 4). 대신 벌어진 끝점과 **가장 가까운 다른 자유 끝점까지의 거리**를 `OpenChain { at, gap }`으로 돌려준다(고치는 데 필요한 숫자가 그것이다). 그 밖의 거절: 영길이·중복 선, 그리고 세 개 이상이 만나는 `BranchingVertex`. **더 구체적인 결함을 먼저 보고한다** — 분기는 항상 어딘가에 홀수 끝점을 남기므로, 순서를 반대로 하면 늘 모호한 쪽(열림)이 보고된다(`check_result_topology`와 같은 원칙). 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치를 코드-CAD가 요구한다. **설탕으로 흉내내면 안 된다** — "외곽 extrude → 구멍 프리즘 Cut"은 전부 `Constructed`였을 모델을 불리언·`Discovered` 경로로 내리므로 원칙 4(tolerance는 발견된 교차에만)를 스스로 어긴다. 커널은 이미 대부분 준비돼 있다: `Face { inner: Vec<Loop> }` 존재, `nacre-tess::polygon`이 구멍 여럿을 네이티브로 다루는 삼각분할, `validate` 오일러의 `L_i` 항. 막는 것은 입력 타입 하나(`Profile2d { points: Vec<Point2> }` = 폴리곤 하나)다.
 - `{ outer, inners }`(구멍 N개, 제한 없음) + `extrude`가 구멍 벽면과 뚜껑 내부 루프를 함께 생성.
@@ -1218,7 +1220,7 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
   | **C. validate의 비다양체 판정이 곡면을 본다** | 접선의 두께-0 접촉 | 불리언이 아니라 **계측**의 일반화. ★ **정정(칸 ⑤)**: C가 B의 접선을 막고 있는 것이 **아니다**(B의 벽은 배열이다), 그리고 **칸 ㉓의 물음은 답이 나왔다** — 그 두 결과는 유효한 솔리드다. C의 진짜 인구는 **두께 0**이고 그것은 B가 열려야 생긴다 |
   | **D. 원통도 자기 차트에서 arrangement를 돈다** | ✅ **D5(2026-09-02)로 닫혔다** — 방출기가 차트의 «영역»(방출 셀의 연결 성분과 그 경계 사이클)을 걷고, 띠/패널 디스패치·D4 병합 패스는 삭제됐다. 남은 것은 조립의 슬릿 걷기(`band_loop`)뿐 | 아래 「여덟째 계단」 |
   | ─ 실린더 쌍(`CylinderPairContact`) | ✅ **면이 비킨 쌍은 열렸다(칸 ⑧, 2026-09-05)** — 게이트가 옆면의 축 구간으로 «두 클래스가 면을 공유하지 않음»을 증명하면 통과한다(사용자의 십자 스터드). 평행(동축) 쌍은 차트의 핸들 인턴 때문에 곡면 판정 그대로 | 면이 **만나는** 쌍만 **진짜 새 기하**(quartic) = M6b 마일스톤 |
-  | ─ 스케치 원·호 어휘(`Curve2d`는 `Line`뿐) | | 기능, 엔진과 직교 |
+  | ─ 스케치 원·호 어휘 | ✅ **열렸다(칸 ⑨, 2026-09-05)** — `Edge2d::Arc`(끝점·유리수), 4분원 배수의 호와 온전한 원이 프리즘 빌더에서 원통 조각 벽·`Branch` 꼭짓점으로 선다; `cylinder()`는 원 스케치 + 돌출의 설탕이 되어 원시체 연산이 은퇴했다. 남은 것: 임의 각도(점의 이름)·호–호 접합·**같은 솔리드의 동축 원통 둘(링·와셔)의 불리언**(평행 팔의 핸들 인턴 — 다음 칸) | 기능, 엔진과 직교 |
 
   ★★★★★ **B가 쪼개지는 곳 (2026-08-28, 코드가 직접 말한다).** `WallMeetsLateral` 하나에 **세 가지**가
   들어 있고, 그 doc이 각각을 이렇게 쓴다:
@@ -1301,6 +1303,22 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
     `d·o + s·(d·m)` ± 반경 도달 `r·|d⊥|`, 제곱으로 정확, 근호 없음)와 서로소면 두 클래스는 면을 공유하지
     않고 배열은 볼 것이 없다(어느 방향이든 하나면 충분). 수직은 그 일반식에서 `s` 항이 사라지는
     경우이지 분기가 아니다. 아래 칸 ⑧ 항목.
+  - ★★ **스케치가 원과 호를 그리고, `cylinder()`는 설탕이다 (칸 ⑨, 2026-09-05).** 상자는 «네 점
+    프로파일 + 돌출»인데 원통만 별도 도로(`Operation::Cylinder` → `add_cylinder_exact`)였다 — 스케치에
+    원이 없어서. 이 칸이 그 자리를 채웠다: 커널 진실은 `Arc { center, start, end, ccw }`(전부 유리수,
+    `start == end` = 온전한 원, 회전각은 커널이 모르는 말 — 끝점 표현이 더 넓다), 앱 문법은 펜
+    `arc({ center, sweep })`·`circle({ center, r | d })`·`{ fillet: r }`(직각·축 정렬만, 합 == 변이면
+    반원으로 병합)·뭉치 `arc({ center, start, sweep })`, `close()`는 펜이 시작점이면 선을 안 그린다.
+    ★ 설탕 주장은 **먼저 잰 뒤** 원시체를 걷었다: 원 프로파일의 Extrude 와 원시체가 위치 정준으로
+    비트 동일(정점 비트·`OnSeam` 둘·평면/원통 진술·면·간선·부피 비트·삼각형 집합, 첫 시도 적중).
+    ★ 실측이 가른 것: 옆면 방향은 «호의 ccw == 링의 감김»(계획)이 아니라 **`ccw == 스윕이 +w`**
+    (구멍 원의 옆면이 계획대로면 뒤집힌다); 감김의 `a + b·π` 는 16각형에서 i128 이 넘쳐 BigInt 로
+    (scalar 에 두고 ops 는 BigInt 무의존); 시계 방향 호의 캡 간선은 `[A,B]` 반시계 규약에 맞춰 정점을
+    바꿔 저장하고 반간선이 되돌린다. ★ census 가족 `arcprofile`(299행, 옛 287행 무변): D 보스 × 상자
+    셋 Ok, 구멍 판 fuse/cut Ok(common 은 상자 면이 구멍에 접해 `SelfTouchingResult` — 픽스처의 접촉),
+    **링(annulus) × 상자는 셋 다 `CylinderPairContact`** — 동축 쌍을 평행 팔이 거절한다(칸 ⑧이 남긴
+    핸들 인턴, 흔한 모양에서 바로 보임), 슬롯 × 상자는 `TraceDeclined { OuterRing }`(접선 룰링 —
+    `ruling_side` 가 0). 다음 칸의 입력이다. 실측·대화·함정은 dev-log 「칸 ⑨」.
 
   ★★★★★ **능력 D의 첫 계단 — 차트의 «선분 집합»이 섰다 (2026-08-29, `e6846a9`).**
   새 모듈 `nacre-ops::cyl_chart`(**`#[cfg(test)]`** — 계기다). 짓고 **재기만** 했고 커토버는 없다.
