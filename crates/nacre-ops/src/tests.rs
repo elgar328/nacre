@@ -4175,6 +4175,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                 surf,
                 def,
                 cache: *cache,
+                owner: crate::planes::SolidSide::A,
             }
         })
         .collect();
@@ -4378,6 +4379,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
                 surf,
                 def,
                 cache: *cache,
+                owner: crate::planes::SolidSide::A,
             }
         })
         .collect();
@@ -7013,19 +7015,43 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
 
 // ---- boolean Common algorithm (M5-c3 commit 2) ----
 
-/// The oblique twin of the seated `Common` in `bands`: the same box, but the cylinder's axis runs
-/// down the body diagonal, so none of the box's planes is either ⊥ or ∥ to it. Every crossing is
-/// an ellipse — the population M6-3 opens, and the one this door still names.
+/// The oblique twin of the seated `Common` in `bands`: the same box, but the cylinder stands on a
+/// tilted rational frame (the Pythagorean axes `u = (0.6, 0.8, 0)`, `v = (−0.48, 0.36, 0.8)`,
+/// normal `(0.64, −0.48, 0.6)`), so none of the box's planes is either ⊥ or ∥ to its axis and its
+/// lateral face **meets** them. Every crossing is an ellipse — the population M6-3 opens, and the
+/// one this door still names. ★ Since cell ⑩ the oblique arm asks the faces first, so the fixture
+/// has to be one whose faces the planes actually cross — this one's base rim straddles `z = 0` —
+/// and stated on the production road: the test door's `add_cylinder` lifts irrational caps, and
+/// a class with no world description is `CylinderGateUndecided`, an honest but different fact.
 #[test]
 fn common_rejects_an_oblique_cylinder() {
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
-    let cyl = m.add_cylinder(
-        Point3::from_array([1.0, 1.0, 0.0]),
-        Vector3::from_array([1.0, 1.0, 1.0]).normalize().unwrap(),
-        0.5,
-        2.0,
+    let frame = datum_frame(
+        &mut m,
+        crate::SketchPlane::from_axes(
+            Point3::from_array([1.0, 1.0, 0.0]),
+            Vector3::from_array([0.6, 0.8, 0.0]),
+            Vector3::from_array([-0.48, 0.36, 0.8]),
+        ),
     );
+    let profile = crate::from_edges(vec![
+        crate::Edge2d::circle(nacre_math::Point2::from_array([0.0, 0.0]), 0.5).unwrap(),
+    ])
+    .unwrap()
+    .remove(0);
+    let OpOutput::Extrude { solid: cyl, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 2.0,
+        },
+    )
+    .expect("a tilted cylinder on a rational frame") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
     assert_rejects(
         || boolean_one(&mut m, BoolKind::Common, a, cyl),
         RejectReason::ObliqueCylinderCut,
@@ -9800,6 +9826,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
                 surf,
                 def,
                 cache: *cache,
+                owner: crate::planes::SolidSide::A,
             }
         })
         .collect();
@@ -12430,4 +12457,238 @@ fn a_fillets_tangent_ruling_declines_where_the_ring_is_named() {
         sites.contains(&Site::NoOuter),
         "the transversal naming is where the decline is first produced: {sites:?}"
     );
+}
+
+/// ★ Cell ⑩, S1 — **the gate reads faces at every one of its four sites.** Three fixtures the old
+/// gate refused for a fact about *surfaces*, and one it still refuses for a fact about faces —
+/// then the three shapes the refusal had been hiding from the arrangement: a solid with two
+/// coaxial cylinders sectioned by a wall (the annulus), a cap whose merged region is bounded by a
+/// circle (the stacked pin's cut), and a component with no vertex anywhere (the tube).
+#[test]
+fn the_gate_reads_faces_at_every_site() {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let prism =
+        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
+            let profile = crate::from_edges(edges).unwrap().remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        };
+    let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
+        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let OpOutput::Transform { solid } = apply(
+            m,
+            &Operation::Transform {
+                solid: s,
+                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+            },
+        )
+        .expect("the translation applies") else {
+            unreachable!()
+        };
+        solid
+    };
+    let volume = |m: &Model, s: Handle<Solid>| nacre_props::mass_props(m, s).expect("props").volume;
+    let circle = |m: &mut Model, c: [f64; 2], r: f64, h: f64| {
+        prism(
+            m,
+            Axis::Z,
+            vec![crate::Edge2d::circle(p2(c[0], c[1]), r).unwrap()],
+            h,
+        )
+    };
+    let clean = |m: &Model| {
+        assert!(
+            nacre_validate::validate(m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(m)
+        );
+    };
+
+    // (a) Stacked coaxial cylinders of different radii: parallel axes, the smaller strictly
+    // inside the larger as surfaces — the pair rule clears them outright (`cylinders_nested`),
+    // and the fuse joins them across the shared cap plane.
+    let mut m = Model::new();
+    let boss = circle(&mut m, [0.0, 0.0], 2.0, 2.0);
+    let pin = circle(&mut m, [0.0, 0.0], 1.0, 2.0);
+    let pin = shift(&mut m, pin, [0.0, 0.0, 2.0]);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, boss, pin).expect("stacked cylinders fuse");
+    assert_eq!(out.len(), 1);
+    m.rebuild_adjacency();
+    clean(&m);
+    let v = volume(&m, out[0]);
+    let want = 10.0 * std::f64::consts::PI;
+    assert!((v - want).abs() < 1e-9, "boss + pin: {v} vs {want}");
+
+    // (b) A plate with two holes and a gusset whose slanted plane runs past them: the oblique
+    // arm asks the faces — each hole's reach along the gusset normal misses the plane's station —
+    // and the fuse is the plate plus the gusset standing on it.
+    let plate = |m: &mut Model| {
+        prism(
+            m,
+            Axis::Z,
+            vec![
+                crate::Edge2d::line(p2(-3.5, -4.0), p2(3.5, -4.0)).unwrap(),
+                crate::Edge2d::line(p2(3.5, -4.0), p2(3.5, 4.0)).unwrap(),
+                crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+                crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -4.0)).unwrap(),
+                crate::Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
+                crate::Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+            ],
+            1.0,
+        )
+    };
+    let gusset = |m: &mut Model, at: [f64; 3]| {
+        let g = prism(
+            m,
+            Axis::X,
+            vec![
+                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+            ],
+            1.0,
+        );
+        shift(m, g, at)
+    };
+    let mut m = Model::new();
+    let a = plate(&mut m);
+    let b = gusset(&mut m, [1.5, 0.0, 0.0]);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the gusset stands beside the holes");
+    assert_eq!(out.len(), 1);
+    m.rebuild_adjacency();
+    clean(&m);
+    let v = volume(&m, out[0]);
+    let want = 56.0 - 2.0 * std::f64::consts::PI + 7.5;
+    assert!(
+        (v - want).abs() < 1e-9,
+        "plate − holes + gusset: {v} vs {want}"
+    );
+
+    // (c) Negative control: the same gusset moved so its slanted plane runs through a hole's
+    // lateral (at z ∈ [0, 1] the plane sits at y ∈ [−2.6, −2], inside the hole's y ∈ [−3, −1]).
+    // Where a plane meets a lateral obliquely the curve is an ellipse the kernel does not build,
+    // and the name still says so.
+    let mut m = Model::new();
+    let a = plate(&mut m);
+    let b = gusset(&mut m, [1.5, -2.0, 0.0]);
+    m.rebuild_adjacency();
+    assert!(matches!(
+        boolean(&mut m, BoolKind::Fuse, a, b),
+        Err(BoolError::Rejected {
+            reason: RejectReason::ObliqueCylinderCut,
+            ..
+        })
+    ));
+
+    // (d) An annulus (one solid, two coaxial cylinders) and a box whose walls section both: the
+    // annular cap's chord on a wall class is **two pieces**, carved by the bore — the disk outer
+    // joined the parity sweep for this. No closed form for the volume (a circle clipped by a
+    // rectangle), so the oracle is the algebra of the three results against the operands.
+    let annulus = |m: &mut Model| {
+        prism(
+            m,
+            Axis::Z,
+            vec![
+                crate::Edge2d::circle(p2(2.0, 2.0), 3.0).unwrap(),
+                crate::Edge2d::circle(p2(2.0, 2.0), 1.5).unwrap(),
+            ],
+            3.0,
+        )
+    };
+    let box_b = |m: &mut Model| {
+        m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 1.0]),
+            Point3::from_array([6.0, 4.0, 5.0]),
+        )
+    };
+    let mut vols = Vec::new();
+    for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+        let mut m = Model::new();
+        let a = annulus(&mut m);
+        let b = box_b(&mut m);
+        m.rebuild_adjacency();
+        let (va, vb) = (volume(&m, a), volume(&m, b));
+        let out = boolean(&mut m, kind, a, b).expect("the annulus and the box combine");
+        assert_eq!(out.len(), 1, "{kind:?}");
+        m.rebuild_adjacency();
+        clean(&m);
+        vols.push((va, vb, volume(&m, out[0])));
+    }
+    let (va, vb, fuse) = vols[0];
+    let cut = vols[1].2;
+    let common = vols[2].2;
+    assert!(
+        (va - 20.25 * std::f64::consts::PI).abs() < 1e-9 && (vb - 80.0).abs() < 1e-9,
+        "operands: {va} {vb}"
+    );
+    assert!(
+        (fuse + common - (va + vb)).abs() < 1e-9 && (cut + common - va).abs() < 1e-9,
+        "fuse {fuse} cut {cut} common {common} vs {va} + {vb}"
+    );
+    assert!(common > 0.0 && cut < va, "the box does bite the annulus");
+
+    // (e) The stacked pin **cut** from the boss: the pin only touches the boss's cap, so the
+    // result is the boss — and on the shared plane the pin's disk fills the boss cap's hole, a
+    // merged region whose outer bound is the boss's circle. Unmerged, the pin's seam vertex kept
+    // naming a cylinder the result has no face on (`VertexNamesAbsentSurface`, measured).
+    let mut m = Model::new();
+    let boss = circle(&mut m, [0.0, 0.0], 2.0, 2.0);
+    let pin = circle(&mut m, [0.0, 0.0], 1.0, 2.0);
+    let pin = shift(&mut m, pin, [0.0, 0.0, 2.0]);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Cut, boss, pin).expect("the pin cuts nothing off the boss");
+    assert_eq!(out.len(), 1);
+    m.rebuild_adjacency();
+    clean(&m);
+    let v = volume(&m, out[0]);
+    let want = 8.0 * std::f64::consts::PI;
+    assert!((v - want).abs() < 1e-9, "the boss alone: {v} vs {want}");
+
+    // (f) A bushing: a tube and the coaxial pin standing in its bore with a gap — nested as
+    // surfaces, clear as faces. The fuse is two bodies, and telling which is inside which needs a
+    // witness on a component that has **no vertex at all**: the tube's annular cap names a point
+    // between its rims.
+    let tube = |m: &mut Model| {
+        prism(
+            m,
+            Axis::Z,
+            vec![
+                crate::Edge2d::circle(p2(2.0, 2.0), 3.0).unwrap(),
+                crate::Edge2d::circle(p2(2.0, 2.0), 1.5).unwrap(),
+            ],
+            3.0,
+        )
+    };
+    let mut m = Model::new();
+    let a = tube(&mut m);
+    let pin = circle(&mut m, [2.0, 2.0], 1.0, 5.0);
+    let pin = shift(&mut m, pin, [0.0, 0.0, -1.0]);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, a, pin).expect("the tube and the pin fuse");
+    assert_eq!(out.len(), 2, "two bodies, neither inside the other");
+    m.rebuild_adjacency();
+    clean(&m);
+    let v: f64 = out.iter().map(|&s| volume(&m, s)).sum();
+    let want = 25.25 * std::f64::consts::PI;
+    assert!((v - want).abs() < 1e-9, "tube + pin: {v} vs {want}");
+    let mut m = Model::new();
+    let a = tube(&mut m);
+    let pin = circle(&mut m, [2.0, 2.0], 1.0, 5.0);
+    let pin = shift(&mut m, pin, [0.0, 0.0, -1.0]);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Common, a, pin).expect("a common of nothing is empty");
+    assert!(out.is_empty(), "{out:?}");
 }

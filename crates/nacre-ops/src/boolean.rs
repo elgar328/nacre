@@ -3396,33 +3396,23 @@ pub(crate) fn unify_coplanar_faces(
             continue; // nothing to merge; the face (if any) is emitted as-is below
         }
         // ★ A face whose **outer** bound is curved contributes no node edge, so the re-threading
-        // below has nothing of it to thread — but that is only fatal when the curve is a *boundary*
-        // of the merged region. A **disk whose circle another member holds as a hole** is the other
-        // case: the circle is an interior seam, `merge_component` erases it, and the disk brings
-        // only its own inner bounds. So the skip narrows to the two shapes that really cannot be
-        // threaded — a band (no producer today) and a circle with no hole partner here.
+        // below has nothing of it to thread. A **disk whose circle another member holds as a
+        // hole** is an interior seam `merge_component` erases; a **disk whose circle no member
+        // holds** is the merged region's own outer bound, which `merge_component` states as a
+        // circle since cell ⑩ (a boss's cap that a pin's disk fills at its hole — the cut of a
+        // stacked pin used to leave the two unmerged and the pin's seam vertex naming a cylinder
+        // the result has no face on, `VertexNamesAbsentSurface`, measured). What still cannot be
+        // threaded is a band (no producer today); spelling it keeps "a band never merges" an
+        // *invariant* rather than an accident of which producer exists.
         //
         // Merging is a **correctness** matter, not the tidiness this pass once claimed: unmerged,
         // the corners on the erased boundary stay corners, keep naming a surface the result drops,
         // and the assembly refuses the whole boolean (`VertexNamesAbsentSurface`, measured on both
         // the contact fuse and the contact cut).
         if mem.iter().any(|&fi| {
-            kept[fi].as_ref().is_some_and(|lf| match lf.outer {
-                Bound::Ring(_) => false,
-                // ★ A band is spelled out even though nothing produces one on this road: it has
-                // no node ring either, so saying so keeps "a band never merges" an *invariant*
-                // rather than an accident of which producer exists today.
-                Bound::Band { .. } => true,
-                Bound::Circle { cyl } => !mem.iter().any(|&fj| {
-                    fj != fi
-                        && kept[fj].as_ref().is_some_and(|other| {
-                            other
-                                .inner
-                                .iter()
-                                .any(|b| matches!(b, Bound::Circle { cyl: c } if *c == cyl))
-                        })
-                }),
-            })
+            kept[fi]
+                .as_ref()
+                .is_some_and(|lf| matches!(lf.outer, Bound::Band { .. }))
         }) {
             continue;
         }
@@ -3439,7 +3429,7 @@ pub(crate) fn unify_coplanar_faces(
         let (plane_idx, flip) = (group[0].surf.plane(), group[0].flip);
         merged.extend(rings.into_iter().map(|(outer, inner)| LocalFace {
             surf: crate::planes::ClassIx::Plane(plane_idx),
-            outer: Bound::Ring(outer),
+            outer,
             inner,
             flip,
         }));
@@ -3469,11 +3459,13 @@ fn ring_edges_walled(ring: &Ring) -> impl Iterator<Item = ((NodeId, NodeId), Wal
     })
 }
 
-/// An outer ring with the bounds that belong to it — what one merged region looks like before it
+/// An outer bound with the bounds that belong to it — what one merged region looks like before it
 /// becomes a `LocalFace`. The inner side is [`Bound`] rather than [`Ring`] because a member's
 /// **circle** hole rides through the merge (a bore under a plate the merge is unifying); it has
-/// no nodes, so it is carried rather than re-threaded.
-type RegionRings = (Ring, Vec<Bound>);
+/// no nodes, so it is carried rather than re-threaded. ★ The outer is a [`Bound`] too since cell
+/// ⑩: a region whose boundary is a member's whole circle (a boss cap whose pin hole the pin's disk
+/// filled) has no ring to thread either, and is stated as the circle it is.
+type RegionRings = (Bound, Vec<Bound>);
 
 /// One edge-connected group → its faces after erasing the interior boundary: each outer ring with
 /// the bounds that belong to it — ring holes re-threaded, circle holes carried.
@@ -3636,9 +3628,6 @@ fn merge_component(
         }
         cycles.push(Ring::new(nodes, walls));
     }
-    if cycles.is_empty() {
-        return Err(reject(RejectReason::CoplanarMerge)); // everything erased: not a region
-    }
     // 4. Winding tells an outer ring from a hole; the plane is the frame both are read in. (This
     // used to canon the index first — `plane_idx` names a plane now, so there is nothing to fold.)
     let wc = group[0].surf.plane();
@@ -3655,9 +3644,58 @@ fn merge_component(
             _ => return Err(reject(RejectReason::CoplanarMerge)),
         }
     }
-    // 5. Each hole belongs to the outer ring that contains it — the same question `nest_cells` asks
-    //    of the arrangement's cells, answered by the same predicate.
-    let mut faces: Vec<RegionRings> = outers.into_iter().map(|o| (o, Vec::new())).collect();
+    // ★★ **A circle another member holds as its own outer bound is not a hole — it is the seam
+    // between the two, and merging erases it.** That is the disk-into-face case: the face around
+    // it holds the circle as a hole, the disk *is* the circle, and the merged region is simply the
+    // face without it. Erasing here rather than in the caller keeps one rule in one place, and
+    // costs the owner search below one question fewer.
+    //
+    // ★ **A circle no member holds as a hole is a region's outer bound** (cell ⑩): the disk it
+    // bounds joined the group through its *own* holes (a boss cap whose pin hole the pin's disk
+    // fills) or through node edges inside it, and what is left after the seams are erased is a
+    // region bounded by that circle — stated as the circle, with no ring to thread.
+    //
+    // Exactly one outer per circle, and at most one hole, or this abstains: two disks on one
+    // circle (coincident faces) or a circle held as a hole twice is a shape this pass does not
+    // arrange, and the whole-result judgements name it with their own sentences.
+    let mut erased: Vec<usize> = Vec::new();
+    let mut disk_outers: Vec<usize> = Vec::new();
+    {
+        let mut outer_of: HashMap<usize, usize> = HashMap::new();
+        for lf in group {
+            if let Bound::Circle { cyl } = lf.outer {
+                *outer_of.entry(cyl).or_insert(0) += 1;
+            }
+        }
+        for (&cyl, &outers) in &outer_of {
+            let holes = group
+                .iter()
+                .flat_map(|lf| lf.inner.iter())
+                .filter(|b| matches!(b, Bound::Circle { cyl: c } if *c == cyl))
+                .count();
+            match (outers, holes) {
+                (1, 1) => erased.push(cyl),
+                (1, 0) => disk_outers.push(cyl),
+                _ => return Ok(None),
+            }
+        }
+    }
+    // In class order, so the result is replay-stable whatever the table's iteration order.
+    disk_outers.sort_unstable();
+    if outers.is_empty() && disk_outers.is_empty() {
+        return Err(reject(RejectReason::CoplanarMerge)); // everything erased: not a region
+    }
+    // 5. Each hole belongs to the outer bound that contains it — the same question `nest_cells`
+    //    asks of the arrangement's cells, answered by the same predicates.
+    let mut faces: Vec<RegionRings> = outers
+        .into_iter()
+        .map(|o| (Bound::Ring(o), Vec::new()))
+        .chain(
+            disk_outers
+                .into_iter()
+                .map(|cyl| (Bound::Circle { cyl }, Vec::new())),
+        )
+        .collect();
     for hole in holes {
         // Every node is a probe, not just the first: which vertex can cast a clear ray is a fact
         // about that vertex, and settling for `nodes[0]` is what lost whole bands of rotation
@@ -3666,6 +3704,22 @@ fn merge_component(
         let probes = combinatorics::three_plane_probes(hole.nodes.iter().copied());
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
+            // ★ A region bounded by a **circle** asks the disk's question of the hole's nodes —
+            // the one `nest_cells` asks of a ring under a disk (cell ⑩).
+            let outer = match outer {
+                Bound::Ring(o) => o,
+                Bound::Circle { cyl } => {
+                    let hole_edges = hole.edges(jd, cyls, Some(wc))?;
+                    if crate::arrangement::node_in_circle(jd, &hole_edges, &cyls[*cyl].def)? {
+                        if owner.is_some() {
+                            return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
+                        }
+                        owner = Some(i);
+                    }
+                    continue;
+                }
+                Bound::Band { .. } => return Ok(None),
+            };
             let ring = outer.edges(jd, cyls, Some(wc))?;
             // A mixed outer takes the rational road - the (None, None) arm of the
             // arrangement's `cell_in_cell`, mirrored: each rational node of the hole is
@@ -3713,43 +3767,6 @@ fn merge_component(
             .1
             .push(Bound::Ring(hole));
     }
-    // ★ **A group of nothing but curved outers has no region to hold anything.** Unreachable while
-    // the caller's skip is what it is, and spelled rather than assumed because narrowing that skip
-    // is exactly what made this function see disks: without it the circle loop below would answer
-    // "no owner" and refuse (`CoplanarMerge`) where the honest answer is that this pass has nothing
-    // to say. Abstaining puts the pipeline back where it stood before the pass ran.
-    if faces.is_empty() {
-        return Ok(None);
-    }
-    // ★★ **A circle another member holds as its own outer bound is not a hole — it is the seam
-    // between the two, and merging erases it.** That is the disk-into-face case: the face around
-    // it holds the circle as a hole, the disk *is* the circle, and the merged region is simply the
-    // face without it. Erasing here rather than in the caller keeps one rule in one place, and
-    // costs the owner search below one question fewer.
-    //
-    // Exactly one on each side, or this abstains: two disks on one circle (coincident faces) or a
-    // circle claimed as an outer bound twice is a shape this pass does not arrange, and the
-    // whole-result judgements name it with their own sentences.
-    let mut erased: Vec<usize> = Vec::new();
-    {
-        let mut outer_of: HashMap<usize, usize> = HashMap::new();
-        for lf in group {
-            if let Bound::Circle { cyl } = lf.outer {
-                *outer_of.entry(cyl).or_insert(0) += 1;
-            }
-        }
-        for (&cyl, &outers) in &outer_of {
-            let holes = group
-                .iter()
-                .flat_map(|lf| lf.inner.iter())
-                .filter(|b| matches!(b, Bound::Circle { cyl: c } if *c == cyl))
-                .count();
-            if outers != 1 || holes != 1 {
-                return Ok(None);
-            }
-            erased.push(cyl);
-        }
-    }
     // ★★ **The members' circle holes ride through.** A circle has no nodes, so the re-threading
     // above cannot see it — which is why this pass used to skip such a component altogether, and
     // why lifting that skip without this loop drops the hole and opens the shell (measured).
@@ -3773,8 +3790,19 @@ fn merge_component(
         let def = &cyls[cyl].def;
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
-            let ring = outer.edges(jd, cyls, Some(wc))?;
-            if crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
+            // A ring outer is asked the centre's parity; a circle outer the two-disk inequality
+            // ([`crate::arrangement::disk_in_disk`], the nesting's own spelling).
+            let inside = match outer {
+                Bound::Ring(o) => {
+                    let ring = o.edges(jd, cyls, Some(wc))?;
+                    crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)?
+                }
+                Bound::Circle { cyl: oc } => {
+                    crate::arrangement::disk_in_disk(jd, wc, def, &cyls[*oc].def)?
+                }
+                Bound::Band { .. } => return Ok(None),
+            };
+            if inside {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge));
                 }

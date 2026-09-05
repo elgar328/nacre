@@ -375,30 +375,6 @@ pub(crate) struct RulingTrace {
     pub orient: i8,
 }
 
-/// **A disk cap's chord on a recorded wall class**: the cap face (a full disk ⊥ to the axis)
-/// crossed by a plane class within the radius leaves a chord — a diameter when the class runs
-/// through the centre, any chord otherwise (cell ③) — an ordinary straight segment on the cap's
-/// own plane class, except both its ends are Branch names (the two roots of
-/// `{wc, cap plane, cyl}`), so it joins the arrangement as a birth-branch [`MergedSeg`] **after**
-/// [`split_at_crossings`].
-///
-/// ★★ **Both reasons this used to give have died, and the placement is what is left.** The first
-/// was that such ends "cannot ride [`Seg`], whose `end_h` are third *planes*" — untrue once the
-/// pins widened to [`combinatorics::EndPin`]. The second was that the overlay was plane-only —
-/// untrue since it started taking [`Split`]. Joining after is therefore a fact about where the
-/// code puts them today, **not** a constraint: whether they should be overlaid with the rest is
-/// unmeasured, and that is the honest state of it.
-#[derive(Clone, Debug)]
-pub(crate) struct ChordTrace {
-    /// The cap's plane class — the chord's wall (its line is `wc ∩ wall`, rational).
-    pub wall: usize,
-    pub cyl: usize,
-    /// `end[0]` is the `Lo` root along the canonical meet line, `end[1]` the `Hi`.
-    pub end: [NodeId; 2],
-    pub solid: SolidSide,
-    pub kind: SegKind,
-}
-
 /// Group the class's ruling traces into [`MergedRuling`]s — the ruling twin of
 /// [`merge_circles`]: dedupe identical rulings (two operands stating one), collect their
 /// contributions, def from the class table. Deterministic order: `(cyl, side descending, extent)` —
@@ -442,101 +418,6 @@ fn merge_rulings(rulings: &[RulingTrace], cyls: &[crate::planes::WorkingCyl]) ->
     out
 }
 
-/// Turn the class's chord traces into birth-branch [`MergedSeg`]s — they join **after**
-/// [`split_at_crossings`] (see [`ChordTrace`]: where, not why), carrying a sense their own
-/// construction states.
-///
-/// ★★★★★ **`end[0] → end[1]` is the *solve's* `Lo → Hi`, not the canonical line's.**
-/// `chord_on_class` solves `(wc, fc)` in that order and names its roots, but [`NodeId::branch`]
-/// canonicalizes the pair — and when `wc > fc` the sorted pair reverses the meet line, so the
-/// *canonical* root stored in `end[0]`'s name is `Hi`. The sense below is a sign against the
-/// canonical direction, so it must be read off the travel the ends actually make: the name
-/// carries the canonical root, and `end[0]` rooted `Hi` means the travel is `−d_can`. This
-/// sentence used to claim the ends were canonical-ordered; every first operation happened to
-/// solve `wc < fc` (a boss's wall class precedes its caps), so the flip had no population until a
-/// re-operation's tool supplied a through-axis class *above* the caps — and the flipped sense
-/// wound one cell backwards, two layers later `RingOrientation` (E3-b's first measured wall).
-fn chords_to_segs(
-    chords: &[ChordTrace],
-    jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
-    cyls: &[crate::planes::WorkingCyl],
-) -> Result<Vec<MergedSeg>, BoolError> {
-    let undecided = || reject(RejectReason::WitnessNotRational);
-    let mut out: Vec<MergedSeg> = Vec::new();
-    let mut sorted: Vec<&ChordTrace> = chords.iter().collect();
-    sorted.sort_by_key(|c| (c.wall, c.cyl));
-    for c in sorted {
-        if let Some(last) = out.last_mut() {
-            if last.wall == c.wall && last.end == c.end {
-                last.merged.push((c.solid, c.kind));
-                continue;
-            }
-        }
-        // ★★ **Both factors in the **stored** spelling — one door, not two.** The sense convention
-        // every consumer reads is made against stored frames, and the canonical name opposes it on
-        // **half the classes**, so a cross product that mixes the two is right only where the two
-        // agree. The wall half was fixed when a `z = −10` cap's chord flipped its overhang's
-        // winding while the `z = 40` cap's was right; the `wc` half stood on the convention
-        // argument for one more cell, with its own comment recording that no lock could see it.
-        //
-        // ★★★★ **A boss on a min-side wall is the population that sees it** — and it saw it as a
-        // refusal, not as a wrong number: `wc`'s two spellings disagree exactly on the walls whose
-        // outward normal runs against the axis, the chord's sense flips there, and **one cell of
-        // six** (the overhang below the plate) comes back wound the other way. The walk then finds
-        // two outer contours where a one-component class has one, and says `RingOrientation` two
-        // layers from here. Measured: with this spelling the `−x`/`−y` walls build and weigh
-        // exactly what their `+x`/`+y` mirrors weigh, **to the bit**, and the census moves by
-        // exactly those six rows.
-        // ★★ **The rule this settles is not "always stored".** A class's canonical name differs
-        // from its stored one only by a sign, so the spelling is free wherever that sign cannot
-        // survive into the answer — and the siblings were read to say which is which:
-        // a **zero test** (the axis-parallel check in `bands`, `parallel_rat`) and a
-        // **parameter or ratio** (`axis_param_of_plane`, the circle centre's parameter, the
-        // residual/`n·dir` quotient) both cancel it and rightly stay canonical, with the
-        // cancellation argued where it is used. Only where a sign **survives into a direction or
-        // a turn** must the spelling be the stored one, and that is here. The one other surviving
-        // sign is `ruling_side`'s `side` label (`bands`, stated as canonical on both ends): it
-        // names *which* of two parallel rulings, never a turn, and nothing compares it across
-        // classes — the pair to revisit if something ever does.
-        let w = combinatorics::stored_coeffs_rat(jd, wc).ok_or_else(undecided)?;
-        let v = combinatorics::stored_coeffs_rat(jd, c.wall).ok_or_else(undecided)?;
-        let (line, _) = combinatorics::branch_meet(jd, c.cyl, &cyls[c.cyl].def, c.end[0])
-            .ok_or_else(undecided)?;
-        let d_edge = combinatorics::cross3_rat(&[w[0], w[1], w[2]], &[v[0], v[1], v[2]])
-            .ok_or_else(undecided)?;
-        let d_can = line.dir();
-        let mut dot = Rat::from_int(0);
-        for k in 0..3 {
-            dot = dot
-                .checked_add(d_can[k].checked_mul(d_edge[k]).ok_or_else(undecided)?)
-                .ok_or_else(undecided)?;
-        }
-        let along_can = match dot.numer().signum() {
-            1 => 1i8,
-            -1 => -1,
-            _ => return Err(undecided()), // the meet line ⊥ its own edge direction: degenerate
-        };
-        // Whether `end[0] → end[1]` runs along `+d_can`: the canonical root in `end[0]`'s own
-        // name (see the doc above — a `Double` root is a tangency, and the producer never sees
-        // one: the gate records no crossing for a tangent plane, so no chord of one is traced).
-        let ordered = match combinatorics::branch_name(c.end[0]) {
-            Some((_, _, nacre_topo::QuadRoot::Lo)) => true,
-            Some((_, _, nacre_topo::QuadRoot::Hi)) => false,
-            _ => return Err(undecided()),
-        };
-        let sense = if ordered { along_can } else { -along_can };
-        out.push(MergedSeg {
-            wall: c.wall,
-            end: c.end,
-            end_h: [combinatorics::EndPin::Cylinder; 2],
-            merged: vec![(c.solid, c.kind)],
-            sense: Some(sense),
-        });
-    }
-    Ok(out)
-}
-
 /// A solid's trace on one plane class. `declined` non-empty ⇒ incomplete: a consumer must not
 /// read "no segments" as "the plane misses the solid".
 #[derive(Default, Debug)]
@@ -546,8 +427,6 @@ pub(crate) struct Trace {
     pub circles: Vec<CircleTrace>,
     /// The rulings beside them (M6-2 rulings ladder) — see [`RulingTrace`].
     pub rulings: Vec<RulingTrace>,
-    /// Disk-cap chords — see [`ChordTrace`].
-    pub chords: Vec<ChordTrace>,
     /// Names this trace found to denote one feature — see [`Aliases`].
     pub aliases: Aliases,
     /// Single-point tangential contacts — real arrangement vertices, but not segments (a
@@ -848,49 +727,66 @@ fn trace_transversal_face(
     // Each ring pairs its class-form triples with the **carried walls** the producer read off
     // the model's edges (`NamedRing`) — the Crossing arm below names an edge's wall from the
     // ride, never from the two endpoint names.
-    let outer = match loops.outer.as_ref().and_then(|r| r.poly()) {
-        Some(nr) => match plane_ring(nr) {
-            Ok(pair) => pair,
-            Err(f) => {
-                out.declined.push((fp, decline_of(f)));
+    // The flip nodes a **circle** of this face leaves on `L` — its chord's two ends — for the
+    // outer and the holes alike (E3-b for the holes; the outer joined in cell ⑩), joined to the
+    // scan's node list below.
+    let mut circle_nodes: Vec<Node> = Vec::new();
+    // The outer ring the scan walks — `None` for a circular outer, whose two chord ends are
+    // already in `circle_nodes` and which has no polygon to walk.
+    let outer: Option<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>)> =
+        match loops.outer.as_ref().and_then(|r| r.poly()) {
+            Some(nr) => match plane_ring(nr) {
+                Ok(pair) => Some(pair),
+                Err(f) => {
+                    out.declined.push((fp, decline_of(f)));
+                    return;
+                }
+            },
+            // ★ A **circular outer is a disk — and a disk can have holes.** A recorded wall
+            // class cuts the circle in a chord (a diameter when it runs through the axis), and
+            // the chord's two ends are flip nodes of the same parity sweep every polygon face
+            // runs, so the face's **holes carve the chord** exactly as they carve a polygon's
+            // section: a tube's annular cap sectioned by a wall is two pieces, not the whole
+            // chord across the bore. ★★ This arm used to emit the whole chord on a vessel of its
+            // own (`ChordTrace`) and *return before reading the holes* — "a circular outer is a
+            // disk face", true only while the gate refused every solid with two coaxial cylinders
+            // (annulus, tube); the day the pair rule read faces, the tube's bore came through as
+            // a chord piece the cap does not cover and the class refused `LabelConflict`
+            // (measured, the annulus × box rows). One road now; the vessel is gone.
+            //
+            // Any other class misses or is left silent: another ⊥ class is parallel to the disk's
+            // own and meets it nowhere, and a ∥-axis wall the gate did not record either clears
+            // the disk (the gate's plane test) or cuts an **irrational** chord this road cannot
+            // state yet (the face-cleared family — its wrongly-silent trace lands in cells no
+            // face reaches, today's recorded state). A disk the wall clears has holes the wall
+            // clears too, so the silence covers the holes as well.
+            //
+            // `None` is also how an *unnamed* ring arrives, but not for a face the tracer
+            // reaches: the only loops `loop_triples` leaves unnamed are the ones it rejects for,
+            // and those are `Err` at the source. A circle is the one `None` that means "named,
+            // and not a polygon".
+            None if matches!(loops.outer, Some(combinatorics::LoopRing::Circle { .. })) => {
+                let Some(combinatorics::LoopRing::Circle { cyl }) = loops.outer else {
+                    unreachable!("the guard just matched a circle outer");
+                };
+                match chord_nodes(jd, faces, plane_ix, wc, fc, cyl, crossings) {
+                    Ok(Some(pair)) => circle_nodes.extend(pair),
+                    Ok(None) | Err(ChordFail::NoCoefficients) => return,
+                    Err(ChordFail::Unstatable) => {
+                        out.declined.push((fp, DeclineKind::Ruling));
+                        return;
+                    }
+                }
+                None
+            }
+            None => {
+                #[cfg(test)]
+                decline_probe::mark(decline_probe::Site::NoOuter);
+                out.declined.push((fp, DeclineKind::OuterRing));
                 return;
             }
-        },
-        // ★ A **circular outer is a disk face**. A recorded wall class cuts it in a chord
-        // (a diameter when it runs through the axis) — the chord contribution the rulings road
-        // needs to close its rectangle ([`ChordTrace`]); any other class misses or is left
-        // silent: another ⊥ class is parallel to the disk's own and meets it nowhere, and a
-        // ∥-axis wall the gate did not record
-        // either clears the disk (the gate's plane test) or cuts an **irrational** chord this
-        // road cannot state yet (the face-cleared family — its wrongly-silent trace lands in
-        // cells no face reaches, today's recorded state).
-        //
-        // `None` is also how an *unnamed* ring arrives, but not for a face the tracer reaches:
-        // the only loops `loop_triples` leaves unnamed are the ones it rejects for, and those
-        // are `Err` at the source. A circle is the one `None` that means "named, and not a
-        // polygon".
-        None if matches!(loops.outer, Some(combinatorics::LoopRing::Circle { .. })) => {
-            let Some(combinatorics::LoopRing::Circle { cyl }) = loops.outer else {
-                unreachable!("the guard just matched a circle outer");
-            };
-            let mat = faces[fp].plane().orient_sign;
-            match chord_on_class(jd, faces, plane_ix, fc, cyl, wc, which, mat, crossings) {
-                Ok(Some(ch)) => out.chords.push(ch),
-                Ok(None) => {}
-                Err(kind) => out.declined.push((fp, kind)),
-            }
-            return;
-        }
-        None => {
-            #[cfg(test)]
-            decline_probe::mark(decline_probe::Site::NoOuter);
-            out.declined.push((fp, DeclineKind::OuterRing));
-            return;
-        }
-    };
+        };
     let mut holes: Vec<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>)> = Vec::new();
-    // A circular hole's chord crossings (E3-b), joined to the scan's node list below.
-    let mut hole_chords: Vec<Node> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
     let Some(raw_holes) = &loops.holes else {
@@ -913,46 +809,24 @@ fn trace_transversal_face(
             // chord's two branch points, which used to be skipped "by proof": the proof covered
             // the clear half only, and the planted full-width chord surfaced as `LabelConflict`
             // on the through-family × through-axis tool (measured). The two roots are pushed as
-            // flip nodes — the hole's own chord, named the same way a disk cap's is
-            // (`chord_on_class`).
+            // flip nodes — the hole's own chord, named the same way a disk outer's is
+            // ([`chord_nodes`], the one spelling for both).
+            //
+            // ★ **The gate's record, the same one the rulings road reads first.** A pair the
+            // gate did not list was proven clear — no emitted face reaches the hole's footprint
+            // on this class, and the rulings road is silent for it — so planting flip nodes
+            // would break the line against rulings that are (rightly) absent: measured, the
+            // d = 0 boss-and-bore fixture walked its spur out and back and refused
+            // `StraightAngle`. Listed pairs get the nodes; unlisted pairs keep today's skip, and
+            // the two roads stay one rule.
             combinatorics::LoopRing::Circle { cyl } => {
-                let Some(hd) = cyls.get(*cyl).map(|c| &c.def) else {
-                    out.declined.push((fp, DeclineKind::HoleRing));
-                    return;
-                };
-                let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
-                    out.declined.push((fp, DeclineKind::HoleRing));
-                    return;
-                };
-                // ★ **The gate's record, the same one the rulings road reads first.** A
-                // pair the gate did not list was proven clear — no emitted face
-                // reaches the hole's footprint on this class, and the rulings road is silent
-                // for it — so planting flip nodes would break the line against rulings that
-                // are (rightly) absent: measured, the d = 0 boss-and-bore fixture walked its
-                // spur out and back and refused `StraightAngle`. Listed pairs get the nodes;
-                // unlisted pairs keep today's skip, and the two roads stay one rule.
-                if !crossings.contains(&(wc, *cyl)) {
-                    continue;
-                }
-                // ★ The record is the crossing statement (cell ③): a listed pair's plane runs
-                // within the radius, so `L` enters the hole at one root and leaves at the other —
-                // a chord, a diameter only when the wall runs through the axis. The premise is
-                // the gate's, asserted rather than re-derived.
-                debug_assert_eq!(
-                    nacre_scalar::point_plane_clearance_rat(&w, &hd.origin(), hd.radius()),
-                    nacre_scalar::Orient::Negative,
-                    "a recorded pair's plane runs within the radius"
-                );
-                for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
-                    hole_chords.push(Node {
-                        id: NodeId::branch(wc, fc, *cyl, root),
-                        pin: combinatorics::EndPin::Cylinder,
-                        flip: true,
-                        run: None,
-                        flanks_differ: false,
-                        single_touch: false,
-                        graze_above: None,
-                    });
+                match chord_nodes(jd, faces, plane_ix, wc, fc, *cyl, crossings) {
+                    Ok(Some(pair)) => circle_nodes.extend(pair),
+                    Ok(None) => {}
+                    Err(_) => {
+                        out.declined.push((fp, DeclineKind::HoleRing));
+                        return;
+                    }
                 }
                 continue;
             }
@@ -1050,10 +924,10 @@ fn trace_transversal_face(
     // back to void between them. A ring that does not meet `W` (every vertex one side) yields no
     // nodes; `run_counter` is shared so run ids stay unique across rings.
     let mut nodes: Vec<Node> = Vec::new();
-    nodes.append(&mut hole_chords);
+    nodes.append(&mut circle_nodes);
     let mut run_counter = 0usize;
     let mut declined: Option<DeclineKind> = None;
-    'rings: for (ring, walls) in std::iter::once(&outer).chain(holes.iter()) {
+    'rings: for (ring, walls) in outer.iter().chain(holes.iter()) {
         let n = ring.len();
         // Where this ring meets `L`, and whether it crosses or only touches — the walk the ray
         // caster shares (`combinatorics::ring_against_plane`). What is done with a feature is this
@@ -1836,7 +1710,7 @@ pub(crate) mod cycle_probe {
 /// lateral's loops: its axial `range`, its whole rims (station and plane class, in station order),
 /// and every other cycle — a panel, a chain rim, a hole — with its kind. The stations are read
 /// from the planes' world coefficients, so `range` is a second derivation of
-/// `CylFaceInfo::t_range` (the model side's: the outer loop's ⊥ carriers), and the two are held
+/// `CylFaceInfo::footprint.span` (the model side's: the outer loop's ⊥ carriers), and the two are held
 /// equal where they meet.
 ///
 /// Declines by the one name: `None` cycles (the outer loop could not be cut or named), a rim kind
@@ -1904,7 +1778,7 @@ fn lateral_shape(
     }
     debug_assert_eq!(
         Some(range),
-        cf.t_range,
+        cf.footprint.span,
         "the cycles' stations by name and the face's range by model disagree"
     );
     Ok(LateralShape {
@@ -2369,72 +2243,82 @@ fn cycle_on_class(
     Ok(())
 }
 
-/// **A disk cap's chord on a recorded wall class** — the chord the class `wc` cuts on the cap
-/// face lying in class `fc` (a diameter when `wc` runs through the axis, any chord within the
-/// radius otherwise — cell ③), or `Ok(None)` for a pair the gate did not record (today's
-/// silence). Declines whole on an unstatable piece, like [`rulings_on_class`].
-#[allow(clippy::too_many_arguments)]
-fn chord_on_class(
+/// Why a circle's chord on a class could not be stated — [`chord_nodes`]' two refusals, which its
+/// two callers read differently: a **circular outer** falls silent on missing coefficients (the
+/// disk's old silence for a class it cannot read) and declines the rest, a **circular hole**
+/// declines both.
+enum ChordFail {
+    /// The class `wc` has no rational world coefficients (a rotated class).
+    NoCoefficients,
+    /// No cylinder statement, no coefficients for the face's own class, or the meet is not a pair
+    /// of roots — a piece this road cannot state.
+    Unstatable,
+}
+
+/// **The two ends of the chord a recorded wall class `wc` cuts on a circle of a planar face** (the
+/// face lies in class `fc`, the circle rides cylinder `cyl`), as flip nodes of
+/// [`trace_transversal_face`]'s parity sweep — a diameter when the wall runs through the axis,
+/// any chord within the radius otherwise (cell ③). `Ok(None)` for a pair the gate did not record:
+/// the wall clears the circle (the gate's plane test), or cuts an **irrational** chord this road
+/// cannot state yet — today's silence, and the same trigger the rulings road reads.
+///
+/// ★ **Written once because a disk's outer and a bored face's hole are the same circle asked the
+/// same question** — each used to have its own spelling (a `ChordTrace` vessel for the outer, an
+/// inline pair of nodes for the hole), and the outer's returned before the holes were read.
+///
+/// The cylinder's statement comes from any face row on its class — the same table `merge_circles`
+/// indexes — so a caller that traces with no cylinder table (the test shims) is served too.
+fn chord_nodes(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
+    wc: usize,
     fc: usize,
     cyl: usize,
-    wc: usize,
-    which: SolidSide,
-    mat: i8,
     crossings: &std::collections::HashSet<(usize, usize)>,
-) -> Result<Option<ChordTrace>, DeclineKind> {
+) -> Result<Option<[Node; 2]>, ChordFail> {
     use nacre_scalar::quad::CylinderMeet;
-    // The gate's answer first — the same trigger as [`rulings_on_class`], same reason.
+    let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(ChordFail::NoCoefficients)?;
     if !crossings.contains(&(wc, cyl)) {
         return Ok(None);
     }
-    let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
-        return Ok(None);
-    };
-    // The cylinder's statement, from any face row on its class — the same table
-    // `merge_circles` indexes.
-    let Some(cf) = faces
+    let def = faces
         .iter()
         .zip(plane_ix)
         .find_map(|(row, ix)| match (row, ix) {
-            (FaceRow::Cylinder(cf), ClassIx::Cyl(k)) if *k == cyl => Some(cf),
+            (FaceRow::Cylinder(cf), ClassIx::Cyl(k)) if *k == cyl => cf.def.as_ref(),
             _ => None,
         })
-    else {
-        return Err(DeclineKind::Ruling);
-    };
-    let Some(def) = cf.def.as_ref() else {
-        return Err(DeclineKind::Ruling);
-    };
+        .ok_or(ChordFail::Unstatable)?;
     // ★ The record is the crossing statement (cell ③): a listed pair's plane runs within the
-    // radius, so the chord has two roots — a diameter only when the wall runs through the axis.
-    // (A *tangent* plane has one root and is never listed; see `planes::Tangency`.)
+    // radius, so `L` enters the circle at one root and leaves at the other. The premise is the
+    // gate's, asserted rather than re-derived. (A *tangent* plane has one root and is never
+    // listed; see `planes::Tangency`.)
     debug_assert_eq!(
         nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.radius()),
         nacre_scalar::Orient::Negative,
         "a recorded pair's plane runs within the radius"
     );
-    let Some(v) = combinatorics::class_coeffs_rat(jd, fc) else {
-        return Err(DeclineKind::Ruling);
-    };
+    let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(ChordFail::Unstatable)?;
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
     let Some(CylinderMeet::Pair { .. }) =
         nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
     else {
-        return Err(DeclineKind::Ruling);
+        return Err(ChordFail::Unstatable);
     };
-    Ok(Some(ChordTrace {
-        wall: fc,
-        cyl,
-        end: [
-            combinatorics::NodeId::branch(wc, fc, cyl, nacre_topo::QuadRoot::Lo),
-            combinatorics::NodeId::branch(wc, fc, cyl, nacre_topo::QuadRoot::Hi),
-        ],
-        solid: which,
-        kind: SegKind::Transversal { mat },
-    }))
+    let node = |root| Node {
+        id: NodeId::branch(wc, fc, cyl, root),
+        pin: combinatorics::EndPin::Cylinder,
+        flip: true,
+        run: None,
+        flanks_differ: false,
+        single_touch: false,
+        graze_above: None,
+    };
+    Ok(Some([
+        node(nacre_topo::QuadRoot::Lo),
+        node(nacre_topo::QuadRoot::Hi),
+    ]))
 }
 
 /// Which of the two rulings a point of the lateral lies on: the sign of `(x − o) · (m × n̂)`,
@@ -3266,6 +3150,10 @@ fn trace_on_class_of(
 
 /// One solid only — the second operand slot is filled with the same solid, whose loops are
 /// identical, and only `faces[0]` is read.
+///
+/// ★ It carries the cylinder table since cell ⑩: a disk cap's chord is two branch-pinned nodes of
+/// the parity sweep, and ordering them along the line asks the cylinder's statement — the old
+/// chord vessel bypassed the sweep, which is why this shim could trace with none.
 #[cfg(test)]
 #[allow(clippy::too_many_arguments)]
 fn trace_one_of(
@@ -3274,6 +3162,7 @@ fn trace_one_of(
     which: SolidSide,
     wc: usize,
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     faces: &[FaceRow],
     surf_ix: &HashMap<Handle<Face>, usize>,
     inc: &combinatorics::EdgeFaces,
@@ -3288,7 +3177,7 @@ fn trace_one_of(
         faces.len(),
         jd,
         plane_ix,
-        &[],
+        cyls,
         crossings,
     );
     trace_one(
@@ -3296,9 +3185,7 @@ fn trace_one_of(
         which,
         wc,
         jd,
-        // ★ This shim builds its input with no cylinder surfaces (`&[]` above), so there is no
-        // table to hand on and no branch node to want one.
-        &[],
+        cyls,
         faces,
         plane_ix,
         &input.crossings,
@@ -6016,7 +5903,7 @@ fn rational_point_in_ring(
 /// sit exactly on the tangent line and land a ring node exactly on the circle). Computed honestly
 /// from one node's radial side rather than assumed, and the `Zero` arm below is what that leftover
 /// reaches.
-fn node_in_circle(
+pub(crate) fn node_in_circle(
     jd: &Judge<'_, WorkingPlane>,
     ring: &[combinatorics::RingEdge],
     def: &nacre_topo::CylinderDef,
@@ -6092,7 +5979,14 @@ fn cell_in_cell(
     b: usize,
 ) -> Result<Option<bool>, BoolError> {
     match (circle_ix[a], circle_ix[b]) {
-        (Some(_), Some(_)) => Ok(None),
+        // ★ **Two disks** (cell ⑩). A disk lies inside another iff its rim does, and the gate
+        // keeps the rims of two classes apart, so the question is one rational inequality on
+        // the plane: `r_a < r_b` and `(r_b − r_a)² > |c_b − c_a|²` (a boss's cap under a pin's, a
+        // tube's two rims around a pin's trace — concentric or not). ★ This arm used to answer
+        // `None`, which left two disk cells unnested and *silently* kept both operands' caps: a
+        // pin stacked on a boss fused into **two** untouched bodies (measured the day the pair
+        // rule stopped refusing nested parallel cylinders). The old refusal was masking a gap.
+        (Some(ca), Some(cb)) => disk_in_disk(jd, wc, &circles[ca].def, &circles[cb].def).map(Some),
         (Some(ci), None) => Ok(Some(
             circle_center_in_ring(jd, cyls, wc, &circles[ci].def, &rings[b])?
                 && !node_in_circle(jd, &rings[b], &circles[ci].def)?,
@@ -6192,6 +6086,39 @@ fn cell_in_cell(
             combinatorics::ring_in_ring(jd, wc, &probes, &rings[b]).map(Some)
         }
     }
+}
+
+/// **Whether the disk cylinder `a` cuts on class `wc` lies inside the disk `b` cuts there** — one
+/// rational inequality on the plane: `r_a < r_b` and `(r_b − r_a)² > |c_b − c_a|²`. A disk lies
+/// inside another iff its rim does, and the rims of two classes never meet (the gate proves the
+/// faces clear, or the solid is valid), so the two centres and radii decide — concentric or not.
+///
+/// ★ **Written once because it is asked from two directions** (cell ⑩): the arrangement's nesting
+/// ([`cell_in_cell`], a pin's trace under a boss's cap) and the coplanar merge (a region whose
+/// outer bound is a circle asking which circle holes it owns).
+pub(crate) fn disk_in_disk(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    a: &nacre_topo::CylinderDef,
+    b: &nacre_topo::CylinderDef,
+) -> Result<bool, BoolError> {
+    let undecided = || reject(RejectReason::WitnessNotRational);
+    let pa = circle_centre_rat(jd, wc, a).ok_or_else(undecided)?;
+    let pb = circle_centre_rat(jd, wc, b).ok_or_else(undecided)?;
+    let (ra, rb) = (a.radius(), b.radius());
+    if ra >= rb {
+        return Ok(false);
+    }
+    let dr = rb.checked_sub(ra).ok_or_else(undecided)?;
+    let mut dist2 = nacre_scalar::Rat::from_int(0);
+    for k in 0..3 {
+        let d = pb[k].checked_sub(pa[k]).ok_or_else(undecided)?;
+        dist2 = dist2
+            .checked_add(d.checked_mul(d).ok_or_else(undecided)?)
+            .ok_or_else(undecided)?;
+    }
+    let dr2 = dr.checked_mul(dr).ok_or_else(undecided)?;
+    Ok(dr2 > dist2)
 }
 
 /// Which of `hosts` owns the hole: the **innermost** one — the candidate contained in all the
@@ -7154,14 +7081,10 @@ fn trace_result_faces(
                 // plane row would abort where an honest reject belongs.
                 return Err(reject(decline_to_reject(kind, faces[fp].face())));
             }
-            let mut merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
-            // ★★★★★ **The chords join *before* the overlay** (E3-b). They used to be appended
-            // after `split_at_crossings` — "a fact about where the code puts them today, not a
-            // constraint" (`ChordTrace`'s own words) — which held only while nothing crossed a
-            // chord strictly inside: a re-operation's through-axis tool wall does, and an
-            // unsplit chord under a split segment is not a subdivision at all (`RingOrientation`
-            // two layers later, measured on the offmid family).
-            merged.extend(chords_to_segs(&tr.chords, jd, wc, cyls)?);
+            // ★ A disk cap's chord is one of these segments since cell ⑩ (both ends branch-pinned,
+            // from the same parity sweep as every polygon's section) — it used to travel on a
+            // vessel of its own and join here.
+            let merged = timed!(MERGE, merge_coincident(&tr.segs, wc, &local));
             let split = timed!(SPLIT, split_at_crossings(jd, cyls, wc, &merged, &mut local))?;
             let split = drop_newsless(split)?;
             let circles = merge_circles(&tr.circles, cyls)?;
@@ -7768,9 +7691,7 @@ pub(crate) fn frame_audit(
                 // A copy, so one class's split discoveries cannot leak into the next class's
                 // audit — the fixpoint above already holds everything the boolean would know.
                 let mut local = aliases.clone();
-                let mut merged = merge_coincident(&tr.segs, wc, &local);
-                // Chords before the overlay — the boolean's own order (see `trace_result_faces`).
-                merged.extend(chords_to_segs(&tr.chords, &jd, wc, &cyls)?);
+                let merged = merge_coincident(&tr.segs, wc, &local);
                 let split = split_at_crossings(&jd, &cyls, wc, &merged, &mut local)?;
                 let split = drop_newsless(split)?;
                 let circles = merge_circles(&tr.circles, &cyls)?;
@@ -8347,6 +8268,7 @@ mod tests {
         let a2 = m.live_solids[0];
         let b2 = m.live_solids[1];
         let PlaneSetup {
+            cyls,
             planes: faces_tab,
             geom: planes,
             surf_ix,
@@ -8375,6 +8297,7 @@ mod tests {
             SolidSide::A,
             wc,
             &jd,
+            &cyls,
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -8465,6 +8388,7 @@ mod tests {
         let a2 = m.live_solids[0];
         let b2 = m.live_solids[1];
         let PlaneSetup {
+            cyls,
             planes: faces_tab,
             geom: planes,
             surf_ix,
@@ -8490,6 +8414,7 @@ mod tests {
             SolidSide::A,
             wc,
             &jd,
+            &cyls,
             &faces_tab,
             &surf_ix,
             &inc_a,
@@ -10352,6 +10277,7 @@ mod tests {
                 surf,
                 def: def.clone(),
                 cache: *cache,
+                owner: crate::planes::SolidSide::A,
             });
         }
         let wc = setup
@@ -10381,6 +10307,7 @@ mod tests {
             SolidSide::B,
             wc,
             &jd,
+            &setup.cyls,
             &setup.planes,
             &setup.surf_ix,
             &setup.inc_b,
@@ -10389,7 +10316,11 @@ mod tests {
             &mut tr,
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
-        assert!(tr.segs.is_empty(), "a boss leaves no plain segments here");
+        assert_eq!(
+            tr.segs.len(),
+            2,
+            "one chord per cap — a segment of the sweep since cell ⑩"
+        );
         let mut sides: Vec<i8> = tr.rulings.iter().map(|r| r.side).collect();
         sides.sort_unstable();
         assert_eq!(sides, [-1, 1], "one ruling per side");
@@ -10400,8 +10331,12 @@ mod tests {
             }
             assert!(matches!(r.kind, SegKind::Transversal { .. }));
         }
-        assert_eq!(tr.chords.len(), 2, "one chord per cap");
-        for c in &tr.chords {
+        for c in &tr.segs {
+            assert_eq!(
+                c.end_h,
+                [combinatorics::EndPin::Cylinder; 2],
+                "a chord's ends are the two roots"
+            );
             // The chord rides the cap's own class — a ⊥ plane at z = −10 or z = 40.
             let z = setup.geom[c.wall].tri[0].as_array()[2];
             assert!(
@@ -10421,6 +10356,7 @@ mod tests {
             SolidSide::B,
             wc,
             &jd,
+            &setup.cyls,
             &setup.planes,
             &setup.surf_ix,
             &setup.inc_b,
@@ -10429,7 +10365,7 @@ mod tests {
             &mut tr0,
         );
         assert!(
-            tr0.rulings.is_empty() && tr0.chords.is_empty(),
+            tr0.rulings.is_empty() && tr0.segs.is_empty(),
             "empty record, empty road"
         );
     }
@@ -10459,10 +10395,7 @@ mod tests {
             crossings,
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
-        let mut merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        let chords = chords_to_segs(&tr.chords, &jd, wc, &setup.cyls).unwrap();
-        assert_eq!(chords.len(), 2);
-        merged.extend(chords);
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split =
             split_at_crossings(&jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
         let split = drop_newsless(split).unwrap();
@@ -10512,8 +10445,7 @@ mod tests {
             crossings.clone(),
         );
         assert!(tr.declined.is_empty(), "{:?}", tr.declined);
-        let mut merged = merge_coincident(&tr.segs, wc, &Aliases::default());
-        merged.extend(chords_to_segs(&tr.chords, jd, wc, &setup.cyls).unwrap());
+        let merged = merge_coincident(&tr.segs, wc, &Aliases::default());
         let split =
             split_at_crossings(jd, &setup.cyls, wc, &merged, &mut Aliases::default()).unwrap();
         let split = drop_newsless(split).unwrap();
@@ -11755,6 +11687,7 @@ mod tests {
             SolidSide::B,
             wc,
             &jd,
+            &cyls,
             &faces_tab,
             &surf_ix,
             &inc_b,

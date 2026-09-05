@@ -116,7 +116,7 @@ pub(crate) fn cyl_rows(
             continue;
         };
         n_class = n_class.max(k + 1);
-        let Some(span) = cf.t_range else {
+        let Some(span) = cf.footprint.span else {
             return Err(reject(RejectReason::TraceDeclined {
                 kind: crate::DeclineKind::CylSpan,
                 face: cf.face,

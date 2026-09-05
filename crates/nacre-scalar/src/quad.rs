@@ -822,6 +822,25 @@ pub fn cylinders_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Ra
     skew_axes_clear(o_a, m_a, r_a, o_b, m_b, r_b)
 }
 
+/// **Is one of two parallel cylinders strictly inside the other?** — the sign of the axis distance
+/// against the radius **difference** `|r_a − r_b|`: `Negative` when one infinite surface lies
+/// strictly inside the other (a pin in a bore, a smaller pin on a boss), so the two never meet;
+/// `Zero` is an internal tangency (they touch along one line); `Positive` is neither, and says
+/// nothing on its own. The second sufficient clearance for a parallel pair beside
+/// [`cylinders_clear`]'s `dist > r_a + r_b`; the caller establishes parallelism. Same `BigInt`
+/// spelling as the sum, with the radii passed as parts `[r_a, −r_b]`.
+pub fn cylinders_nested(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, r_b: Rat) -> Orient {
+    debug_assert!(!is_zero3(m_a), "cylinder axis must be nonzero");
+    debug_assert!(
+        r_a > Rat::from_int(0) && r_b > Rat::from_int(0),
+        "cylinder radii must be positive"
+    );
+    let Some(neg_b) = Rat::from_int(0).checked_sub(r_b) else {
+        return Orient::Positive;
+    };
+    radial_side_int(o_b, o_a, m_a, &[r_a, neg_b])
+}
+
 /// [`cylinders_clear`]'s non-parallel branch: the common-perpendicular distance against the
 /// radius sum, in `BigInt`.
 fn skew_axes_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Rat) -> Orient {

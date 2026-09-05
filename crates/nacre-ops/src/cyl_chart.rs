@@ -341,9 +341,10 @@ pub(crate) fn boundary_lines(
 ///
 /// ★ The cylinder class itself is one solid's surface, not both operands': `planes.rs` interns
 /// cylinders by `Handle<Surface>` (planes by geometry), and two solids share no handles. That is
-/// sound here only because a **coincident pair is refused** — `cylinders_clear` turns coaxial
-/// cylinders away as `CylinderPairContact`. What does see both operands is what the chart is made
-/// *of*: the plane classes, which are interned geometrically.
+/// sound here only because a **coincident pair is refused** — one handle carrying rows of both
+/// solids, or one surface stated under two handles (`same_surface`), both `CylinderPairContact` at
+/// the gate (cell ⑩ split the two spellings out of the old parallel arm). What does see both
+/// operands is what the chart is made *of*: the plane classes, which are interned geometrically.
 pub(crate) fn chart_of(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[WorkingCyl],
@@ -1050,7 +1051,7 @@ pub(crate) fn census(
         };
         // ★★★★★ **The chart's lines cover its own boundary rule, asserted where the fact is made.**
         // The rim half is shared with `chart_of` by construction; the load-bearing half is the
-        // rows' span ends — a *different spelling* of the axis parameter (the tracer's `t_range`)
+        // rows' span ends — a *different spelling* of the axis parameter (the tracer's `footprint.span`)
         // than the classes' `axis_param` — so this says every lateral face's rim lands, with exact
         // `Rat` equality, on a ⊥ class the chart collected. Not a tautology: a rim on a class
         // `chart_of` skipped (no rational coefficients) or a span end the two spellings disagree on

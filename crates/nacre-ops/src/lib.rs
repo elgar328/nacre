@@ -694,24 +694,27 @@ pub enum RejectReason {
     /// population builds. What is left under this name is the contact-cut: a definition naming a
     /// surface the result has **no face on at all**, which no amount of merging repairs.
     VertexNamesAbsentSurface,
-    /// A cutting plane is neither perpendicular nor parallel to a cylinder's axis — the
-    /// intersection is an ellipse (M6-3's vocabulary).
+    /// A plane class neither perpendicular nor parallel to a cylinder's axis whose lateral faces
+    /// could not be shown to miss the plane — where they meet, the intersection is an ellipse
+    /// (M6-3's vocabulary). ★ Since cell ⑩ the gate asks the faces first: a slanted plane that
+    /// runs past every lateral face of the cylinder (a gusset beside a plate's holes) passes.
     ObliqueCylinderCut,
-    /// Two distinct cylinder classes **may share a face**: parallel axes not clear of each other
-    /// by the radius sum (a coaxial pair included), or non-parallel axes within the radius sum
-    /// whose lateral faces could not be shown to miss each other along either axis. Where the
-    /// faces do meet, their intersection is a quartic curve, which is M6b's.
+    /// Two cylinder classes **of different operands may share a face**: one surface stated by
+    /// both (one handle with rows of both solids, or one surface under two handles — a
+    /// `translate`d twin), or axes within the radius sum whose lateral faces could not be shown
+    /// to miss each other along either axis. Where the faces do meet, their intersection is a
+    /// quartic curve, which is M6b's.
     ///
-    /// ★ The name used to promise more than the check delivered, twice. First the gate could
-    /// only measure the distance between *parallel* axes, so a drill crossing a bore with room
-    /// to spare was refused under this name; [`nacre_scalar::cylinders_clear`] spelled the
+    /// ★ The name used to promise more than the check delivered, three times. First the gate
+    /// could only measure the distance between *parallel* axes, so a drill crossing a bore with
+    /// room to spare was refused under this name; [`nacre_scalar::cylinders_clear`] spelled the
     /// distance both ways. Then the distance was the whole rule, a fact about two infinite
     /// surfaces: a stud fused through a cube and a second stud across it were refused because
-    /// their axes cross, though no *face* of one reaches the other. The gate now asks the faces
-    /// (`planes.rs`, the pair loop), so the refusal states a fact about the geometry that is
-    /// there. What it still cannot say is a coaxial pair whose faces clear — two stacked
-    /// cylinders — because the cylinder chart interns a class by handle and relies on that
-    /// refusal.
+    /// their axes cross, though no *face* of one reaches the other (cell ⑧ asked the faces for
+    /// non-parallel pairs). Then the parallel arm still spoke about surfaces and the loop asked
+    /// pairs **within one solid**: a plate's two fillets, a slot's two half cylinders, refused a
+    /// boolean with anything (cell ⑩ — same-solid pairs are not asked, parallel pairs read their
+    /// spans, and the coincident surface under two handles is the one parallel refusal left).
     CylinderPairContact,
     /// The population gate could not decide a (plane, cylinder) pair **exactly** — a plane
     /// with no narrow rational description, a rotated class, a moved cylinder (its def is

@@ -112,7 +112,21 @@ pub(crate) struct CylFaceInfo {
     /// seam (`lateral_axis_span`); a hole spliced into the outer walk, a panel or a chain rim had
     /// none, and `circle_on_class` planted whole circles inside a `Some` — which is why the
     /// widening waited for the cycles.
-    pub(crate) t_range: Option<[nacre_scalar::Rat; 2]>,
+    ///
+    /// ★ Cell ⑩: this range is the first axis of the face's [`Footprint`] on its own chart; the
+    /// second, θ, joins with the angular extent.
+    pub(crate) footprint: Footprint,
+}
+
+/// **A lateral face's footprint on its own chart `(t, θ)`** (cell ⑩) — the bounding rectangle of
+/// the region the face occupies there (D5: a lateral *is* a region of its chart). Conservative for
+/// a chain rim or a notched face: wider, never narrower, so a clearance proved against it holds
+/// for the face. Every clearance the gate asks of a lateral is a two-axis question against this
+/// rectangle — the shape [`face_clears_footprint`] already has for a plane's faces.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct Footprint {
+    /// The axis-parameter extent — [`CylFaceInfo::footprint`]'s doc says how it is read.
+    pub(crate) span: Option<[nacre_scalar::Rat; 2]>,
 }
 
 #[derive(Clone)]
@@ -216,7 +230,9 @@ pub(crate) fn collect_planes(
                         // the surface. The one reader is the restatement mirror below, whose
                         // question is exactly "which frames are in play here".
                         motion: motion.filter(|_| def.is_none()),
-                        t_range: def.as_ref().and_then(|d| lateral_t_range(model, face, d)),
+                        footprint: Footprint {
+                            span: def.as_ref().and_then(|d| lateral_t_range(model, face, d)),
+                        },
                         def,
                     }));
                     continue;
@@ -966,6 +982,12 @@ pub(crate) struct WorkingCyl {
     /// The f64 twin of `def` — what a *measurement* reads (`branch_vertex_tol` measures a branch
     /// realization against this surface), while every decision reads `def`.
     pub(crate) cache: nacre_geom::Cylinder,
+    /// Which operand states this class (cell ⑩). The pair loop asks only pairs of **different**
+    /// owners: two classes of one valid solid keep their faces apart by construction, and the
+    /// arrangement has no cylinder–cylinder road that would need the proof. One surface stated by
+    /// both solids — the coincident pair by another spelling — never reaches this table: the class
+    /// loop refuses it by name before pushing.
+    pub(crate) owner: SolidSide,
 }
 
 /// **The M6-2a population gate** — decides, exactly, whether this operand pair stays inside
@@ -995,17 +1017,22 @@ pub(crate) struct WorkingCyl {
 ///   cells **15 assemble**, `validate` clean and volumes exact; the other 6 are the third-plane
 ///   population [`Tangency::line_in_another_plane`] names, which the arrangement refuses on its
 ///   own (`CoincidentNodes`).
-/// - anything else — [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3). ★ This arm does
-///   not ask whether the faces clear: it is the one place the gate still speaks about surfaces,
-///   and the reason an oblique pair of cylinders never reaches the pair rule below (its caps are
-///   such planes). [`lateral_reach`] is written to answer it when it does.
+/// - anything else — an oblique plane. It passes when every lateral face of the cylinder
+///   provably misses the plane — the face's reach along `n` against the plane's station
+///   ([`lateral_reach`], [`oblique_plane_clears`]) — and is otherwise recorded and refused as
+///   [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3). ★ Since cell ⑩ every one of the
+///   gate's four sites speaks about faces; a gusset whose slanted plane runs past a plate's holes
+///   used to be refused here for the plane alone.
 ///
-/// Per cylinder pair: axes clear of each other (`dist > r₁+r₂`, whatever their orientation)
-/// pass outright; otherwise a non-parallel pair passes when the **faces** of one class provably
-/// miss the other's — every lateral face's axis span against the other faces' reach along that
-/// axis ([`lateral_faces_clear`], either direction) — and a parallel pair, or one whose faces
-/// cannot be shown to miss, is [`RejectReason::CylinderPairContact`] (M6b, where the quartic
-/// intersection curve lives).
+/// Per cylinder pair **of different owners** (two classes of one valid solid keep their faces
+/// apart by construction and are not asked): axes clear of each other (`dist > r₁+r₂`, whatever
+/// their orientation) pass outright; one surface stated under two handles ([`same_surface`]) is
+/// refused as the coincident pair it is; otherwise the pair passes when the **faces** of one class
+/// provably miss the other's — every lateral face's axis span against the other faces' reach
+/// along that axis ([`lateral_faces_clear`], either direction; for parallel axes one cylinder
+/// strictly inside the other clears outright, [`nacre_scalar::cylinders_nested`], and otherwise
+/// the spans alone decide) — and a pair whose faces cannot be shown to miss is recorded and refused as
+/// [`RejectReason::CylinderPairContact`] (M6b, where the quartic intersection curve lives).
 #[allow(clippy::type_complexity)]
 pub(crate) fn cylinder_gate(
     model: &Model,
@@ -1030,6 +1057,13 @@ pub(crate) fn cylinder_gate(
 
     let mut crossings = std::collections::HashSet::new();
     let mut tangencies: Vec<Tangency> = Vec::new();
+    // ★ **Two more records, read once each** (cell ⑩): the (plane, cylinder) pairs the oblique
+    // arm could not show apart, and the cylinder pairs the pair rule could not. Today their one
+    // reader is the refusal below each loop; the day the ellipse road (M6-3) and the
+    // cylinder–cylinder road (M6b) arrive, that reader becomes a hand-over — the graduation
+    // `crossings` (cell ③) and `tangencies` (cell ⑥) already made from a refusal to a record.
+    // They stay local: nothing downstream reads them yet, and a field no one reads is not built.
+    let mut oblique: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
     for &surf in cyl_surfs {
         // ★ **The world statement or nothing.** A moved cylinder's def is written before its
@@ -1043,24 +1077,30 @@ pub(crate) fn cylinder_gate(
         let Surface::Cylinder(cache) = model.surface(surf) else {
             unreachable!("a cylinder truth carries a cylinder cache")
         };
-        cyls.push(WorkingCyl {
-            surf,
-            def,
-            cache: *cache,
-        });
         // ★ **One surface, two solids.** Cylinders intern by their exact statement, so two operands
         // whose laterals coincide arrive as one class carrying rows of both — the coaxial pair of
         // equal radius, by another spelling. The chart reads a class as one solid's surface
-        // (`cyl_chart::chart_of`), so this is refused here, by the name the distance rule gives
-        // that pair, instead of asserting inside the chart. Measured (2026-09-05): two identical
-        // circle prisms fused reached that assertion before this arm existed.
+        // (`cyl_chart::chart_of`), so this is refused here, by the name the pair rule gives that
+        // pair, instead of asserting inside the chart. Measured (2026-09-05): two identical
+        // circle prisms fused reached that assertion before this arm existed. Otherwise the side
+        // that owns the class is written on it — the pair loop reads it (cell ⑩).
         let owned = |rows: &[FaceRow]| {
             rows.iter()
                 .any(|r| matches!(r, FaceRow::Cylinder(cf) if cf.surf == surf))
         };
-        if owned(&faces[..n_a]) && owned(&faces[n_a..]) {
-            return Err(reject(RejectReason::CylinderPairContact));
-        }
+        let owner = match (owned(&faces[..n_a]), owned(&faces[n_a..])) {
+            (true, true) => return Err(reject(RejectReason::CylinderPairContact)),
+            (true, false) => SolidSide::A,
+            (false, true) => SolidSide::B,
+            // A class is named by some face row; a table with none describes nothing.
+            (false, false) => return Err(undecided()),
+        };
+        cyls.push(WorkingCyl {
+            surf,
+            def,
+            cache: *cache,
+            owner,
+        });
     }
 
     // ★ **One row per `cyl_surfs` entry, in order** — the loop above either pushes or returns, so
@@ -1113,7 +1153,18 @@ pub(crate) fn cylinder_gate(
             // degenerate seating reaches the arrangement unnamed.
             if !nacre_scalar::parallel_rat(&n, &m) {
                 if nacre_scalar::dot_sign_rat(&n, &m) != Orient::Zero {
-                    return Err(reject(RejectReason::ObliqueCylinderCut));
+                    // ★ **The oblique arm asks the faces** (cell ⑩) — the fourth of the gate's
+                    // four sites to speak about faces rather than surfaces. The plane's station
+                    // `n·p = −d` against every lateral face's reach along `n` ([`lateral_reach`],
+                    // the question its doc was written for): if every face provably misses the
+                    // infinite plane, no face of that plane's class can meet the lateral, and the
+                    // caps are the plane–plane arrangement's business. A pair not shown to miss is
+                    // recorded; the refusal reads the record once, after this loop.
+                    let spans = spans.get_or_insert_with(|| lateral_spans(faces, cyl.surf));
+                    if !oblique_plane_clears(&cyl.def, spans, &coeffs) {
+                        oblique.insert((c, ci));
+                    }
+                    continue;
                 }
                 // A parallel wall must provably miss the lateral surface. ★ **The question is
                 // about the wall's *faces*, not its plane** — the uniform-slab theorem this feeds
@@ -1177,7 +1228,7 @@ pub(crate) fn cylinder_gate(
                         if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) == Orient::Zero {
                             tangencies.extend(tangency_rows(
                                 model, faces, plane_ix, geom, n_a, c, ci, &coeffs, &cyl.def,
-                                cyl.surf,
+                                cyl.surf, cyl.owner,
                             ));
                         } else {
                             crossings.insert((c, ci));
@@ -1188,22 +1239,42 @@ pub(crate) fn cylinder_gate(
         }
     }
 
+    // The oblique record's one reader today (see the arm above).
+    if !oblique.is_empty() {
+        return Err(reject(RejectReason::ObliqueCylinderCut));
+    }
+
+    // ★★★★★ **The pair rule asks classes of different owners whether their faces share a point,
+    // and writes what it cannot prove.** The proposition is "the two classes share no face". Three
+    // things decide it, in order of cost. Two classes of one solid share none by construction — a
+    // valid solid's faces meet only along their edges — so those pairs are not asked (cell ⑩; the
+    // fillets of one plate, the two half cylinders of one slot). The distance between the axes
+    // exceeding the radius **sum** proves it for the two infinite surfaces, whatever their
+    // orientation, and decides most inputs. ★ It used to be the whole rule, and that made a fact
+    // about surfaces read as a fact about faces: a stud fused through a cube and then a second stud
+    // across it were refused because their *axes* cross, though the first stud's remaining faces
+    // sit past `|z| = 0.5` and the second's whole surface within `|z| = 0.2`. So a pair the
+    // distance cannot clear asks the faces themselves — the same question the plane–cylinder arm
+    // asks per face (`face_clears_footprint`), spelled for a lateral face's reach along the other
+    // axis ([`lateral_faces_clear`], either direction). Parallel axes take the same door, after
+    // one more surface fact — one infinite cylinder strictly **inside** the other never meets it
+    // ([`nacre_scalar::cylinders_nested`]: a pin in a bore, a smaller pin stacked on a boss) —
+    // and the reach along a parallel axis has no radial term, so what is left is the axis spans.
+    // ★ Except **one surface under
+    // two handles** — parallel axes on one line, one radius ([`same_surface`]): a `translate`d twin
+    // or a restatement with another `ref_dir`. The arrangement has no name for two classes on one
+    // surface (their circles coincide on every ⊥ class), so that pair is refused as the coincident
+    // pair it is; interning cylinders by geometry is a later cell's.
+    let mut cyl_pairs: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     for (i, a) in cyls.iter().enumerate() {
-        for b in &cyls[i + 1..] {
-            // The proposition is "the two classes share no face". The distance between the two
-            // axes exceeding the radius **sum** proves it for the two infinite surfaces, whatever
-            // their orientation, and decides most inputs. ★ It used to be the whole rule, and
-            // that made a fact about surfaces read as a fact about faces: a stud fused through a
-            // cube and then a second stud across it were refused because their *axes* cross,
-            // though the first stud's remaining faces sit past `|z| = 0.5` and the second's
-            // whole surface within `|z| = 0.2`. So a pair the distance cannot clear now asks
-            // the faces themselves — the same question the plane–cylinder arm asks per face
-            // (`face_clears_footprint`), spelled for a lateral face's reach along the other
-            // axis ([`lateral_faces_clear`], either direction). Parallel axes keep the surface
-            // verdict: the chart interns a cylinder class by handle and relies on a coaxial pair
-            // being refused (`cyl_chart::chart_of`), so two stacked coaxial cylinders are still
-            // declined here even though their faces clear.
-            match nacre_scalar::cylinders_clear(
+        for (j, b) in cyls.iter().enumerate().skip(i + 1) {
+            if matches!(
+                (a.owner, b.owner),
+                (SolidSide::A, SolidSide::A) | (SolidSide::B, SolidSide::B)
+            ) {
+                continue;
+            }
+            let clear = match nacre_scalar::cylinders_clear(
                 &a.def.origin(),
                 &a.def.dir(),
                 a.def.radius(),
@@ -1211,17 +1282,33 @@ pub(crate) fn cylinder_gate(
                 &b.def.dir(),
                 b.def.radius(),
             ) {
-                Orient::Positive => {}
-                _ if nacre_scalar::parallel_rat(&a.def.dir(), &b.def.dir()) => {
-                    return Err(reject(RejectReason::CylinderPairContact));
+                Orient::Positive => true,
+                _ if same_surface(&a.def, &b.def) => false,
+                // Parallel axes with one infinite cylinder strictly inside the other — a pin in a
+                // bore, a boss under a smaller pin — never meet as surfaces either: the second
+                // sufficient condition the distance rule has for parallel pairs.
+                _ if nacre_scalar::parallel_rat(&a.def.dir(), &b.def.dir())
+                    && nacre_scalar::cylinders_nested(
+                        &a.def.origin(),
+                        &a.def.dir(),
+                        a.def.radius(),
+                        &b.def.origin(),
+                        b.def.radius(),
+                    ) == Orient::Negative =>
+                {
+                    true
                 }
-                _ => {
-                    if !(lateral_faces_clear(faces, a, b) || lateral_faces_clear(faces, b, a)) {
-                        return Err(reject(RejectReason::CylinderPairContact));
-                    }
-                }
+                _ => lateral_faces_clear(faces, a, b) || lateral_faces_clear(faces, b, a),
+            };
+            if !clear {
+                cyl_pairs.insert((i, j));
             }
         }
+    }
+    // The pair record's one reader today — the place that hands the record to the
+    // cylinder–cylinder road when it exists.
+    if !cyl_pairs.is_empty() {
+        return Err(reject(RejectReason::CylinderPairContact));
     }
     // The rulings road's record rides out beside the table (`PlaneSetup::crossings`): the
     // pairs the record-and-pass arm above admitted without a clearance proof. Empty for every
@@ -1431,6 +1518,7 @@ fn tangency_rows(
     coeffs: &[nacre_scalar::Rat; 4],
     def: &nacre_topo::CylinderDef,
     surf: Handle<Surface>,
+    owner: SolidSide,
 ) -> Vec<Tangency> {
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
     let side_of = |i: usize| {
@@ -1471,6 +1559,17 @@ fn tangency_rows(
         if k != c {
             continue;
         }
+        // ★ **Same-solid pairs write no row** (cell ⑩). A wall tangent to its own solid's
+        // cylinder is that solid's smooth edge — a fillet — not a contact between operands. The
+        // judge would skip such a row anyway (`straddles` is false for a face that ends on the
+        // line), but a row it could not decide would refuse the boolean by a name that is about
+        // nothing. The same sentence the pair loop stands on: a valid solid's faces do not meet.
+        if matches!(
+            (side_of(fi_ix), owner),
+            (SolidSide::A, SolidSide::A) | (SolidSide::B, SolidSide::B)
+        ) {
+            continue;
+        }
         let cleared = fi
             .face
             .map(|fh| {
@@ -1495,7 +1594,7 @@ fn tangency_rows(
             .map(|fh| face_straddles_line(model, model.faces.get(fh), coeffs, &o, &m, r))
             .unwrap_or(false);
         for (cy_ix, cf) in &laterals {
-            let witness = base.as_ref().zip(cf.t_range).and_then(|(b, span)| {
+            let witness = base.as_ref().zip(cf.footprint.span).and_then(|(b, span)| {
                 let mid = span[0]
                     .checked_add(span[1])?
                     .checked_mul(nacre_scalar::Rat::new(1, 2)?)?;
@@ -1596,7 +1695,7 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
         if cf.surf != surf {
             continue;
         }
-        let Some(span) = cf.t_range else {
+        let Some(span) = cf.footprint.span else {
             return Vec::new();
         };
         // ★ The reader below asks "every vertex at or below `span[0]`, or every one at or above
@@ -1622,11 +1721,10 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
 /// `span = None` is a face whose span could not be stated ([`lateral_spans`] empty). The reach
 /// is still bounded when `d·m = 0` — the projection is a point whatever `s` is — and unbounded
 /// otherwise, which is `None`: nothing proved. ★ That `d·m = 0` case is not a branch of its own;
-/// it is the general formula with the `s` term vanishing. It also happens to be the only case a
-/// production boolean reaches today: the plane–cylinder gate refuses every oblique
-/// (plane, cylinder) pair before the pair loop runs, and an oblique pair of cylinders always
-/// brings its caps along, so the `d·m ≠ 0` arm is exercised by the unit test alone until that
-/// arm of the gate reads faces too. `None` is also `Rat` overflow.
+/// it is the general formula with the `s` term vanishing. The `d·m ≠ 0` arm is what the oblique
+/// plane arm reads (`d = n`, cell ⑩) and what a parallel cylinder pair reads (`d = m_A`, where the
+/// radial term vanishes instead and the question is the spans alone). `None` is also `Rat`
+/// overflow.
 struct Reach {
     lo: nacre_scalar::Rat,
     hi: nacre_scalar::Rat,
@@ -1668,6 +1766,54 @@ fn reach_clears(reach: &Reach, lo: nacre_scalar::Rat, hi: nacre_scalar::Rat) -> 
         Some(gap > zero && gap.checked_mul(gap)? > reach.rho2)
     };
     Some(beyond(lo.checked_sub(reach.hi)?)? || beyond(reach.lo.checked_sub(hi)?)?)
+}
+
+/// **Does every lateral face of this cylinder provably miss the plane `n·p + d = 0`?** — the oblique
+/// arm's face question (cell ⑩). The plane's station in `n·p` units is `−d`; a face clears when
+/// its reach along `n` ([`lateral_reach`]) is disjoint from that one point. An empty span list is
+/// "unusable" ([`lateral_spans`]'s doc), never clear; so is overflow.
+fn oblique_plane_clears(
+    def: &nacre_topo::CylinderDef,
+    spans: &[[nacre_scalar::Rat; 2]],
+    coeffs: &[nacre_scalar::Rat; 4],
+) -> bool {
+    if spans.is_empty() {
+        return false;
+    }
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let Some(station) = nacre_scalar::Rat::from_int(0).checked_sub(coeffs[3]) else {
+        return false;
+    };
+    spans.iter().all(|span| {
+        lateral_reach(def, Some(*span), &n).and_then(|reach| reach_clears(&reach, station, station))
+            == Some(true)
+    })
+}
+
+/// **Two statements of one cylinder surface** — parallel axes on one line, one radius — under two
+/// handles: a `translate`d twin (its motion key differs) or a statement with another `ref_dir`.
+/// Cylinders intern by their literal statement, so the class table holds both; the arrangement has
+/// no name for two classes on one surface (their circles would coincide on every ⊥ class), so the
+/// pair rule refuses them as the coincident pair they are. Overflow answers `true` — "not shown
+/// distinct" refuses, it never lets a pair through.
+fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> bool {
+    if !nacre_scalar::parallel_rat(&a.dir(), &b.dir()) || a.radius() != b.radius() {
+        return false;
+    }
+    let (oa, ob) = (a.origin(), b.origin());
+    let d: Option<[nacre_scalar::Rat; 3]> = (|| {
+        Some([
+            ob[0].checked_sub(oa[0])?,
+            ob[1].checked_sub(oa[1])?,
+            ob[2].checked_sub(oa[2])?,
+        ])
+    })();
+    let Some(d) = d else { return true };
+    let zero = nacre_scalar::Rat::from_int(0);
+    match crate::combinatorics::cross3_rat(&d, &a.dir()) {
+        Some(c) => c.iter().all(|x| *x == zero),
+        None => true,
+    }
 }
 
 /// **One direction of the face-level clearance for a cylinder pair**: every lateral face of `a`
@@ -2981,6 +3127,7 @@ mod tests {
             &coeffs,
             &def,
             surf,
+            SolidSide::B, // the cylinder is the second operand; the wall face is the cube's
         );
         assert_eq!(rows.len(), 1, "one wall face, one lateral face: {rows:?}");
         let t = &rows[0];
