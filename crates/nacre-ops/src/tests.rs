@@ -12969,3 +12969,133 @@ fn the_gate_reads_faces_at_every_site() {
     let out = boolean(&mut m, BoolKind::Common, a, pin).expect("a common of nothing is empty");
     assert!(out.is_empty(), "{out:?}");
 }
+
+/// ★ Cell ⑪, S0 — **the instrument, red on purpose.** A gusset whose apex lands on the wall's top
+/// edge leaves the fused operand with a vertex where four faces meet. The ring road names an
+/// operand vertex once per face loop — its own plane and the two edges' walls — so that vertex
+/// arrives at the tracer under **four names**, one of which (the top face's: front, top, slant)
+/// is three planes sharing a line and names no point. This test states today's facts so that
+/// the naming rule's rewrite (S1) flips each assertion; it is not a lock on a desired state.
+#[test]
+fn a_four_plane_operand_vertex_is_named_four_ways_today() {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let prism =
+        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
+            let profile = crate::from_edges(edges).unwrap().remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        };
+    let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
+        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let OpOutput::Transform { solid } = apply(
+            m,
+            &Operation::Transform {
+                solid: s,
+                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+            },
+        )
+        .expect("the translation applies") else {
+            unreachable!()
+        };
+        solid
+    };
+    let mut m = Model::new();
+    let w = prism(
+        &mut m,
+        Axis::Y,
+        vec![
+            crate::Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
+            crate::Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
+            crate::Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
+            crate::Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+        ],
+        1.0,
+    );
+    let w = shift(&mut m, w, [0.0, 3.0, 0.0]);
+    let gusset = |m: &mut Model, x: f64| {
+        let g = prism(
+            m,
+            Axis::X,
+            vec![
+                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+            ],
+            1.0,
+        );
+        shift(m, g, [x, 0.0, 0.0])
+    };
+    let g1 = gusset(&mut m, 1.4);
+    let g2 = gusset(&mut m, -2.4);
+    m.rebuild_adjacency();
+    let wg = boolean(&mut m, BoolKind::Fuse, w, g1).expect("wall + gusset")[0];
+    m.rebuild_adjacency();
+    let report = arrangement::operand_vertex_audit(&m, wg, g2).expect("the audit runs");
+    let four: Vec<_> = report.iter().filter(|r| r.topo.len() >= 4).collect();
+    for r in &four {
+        eprintln!(
+            "four-plane operand vertex {:?} {:?}: topo {:?} geom {:?} names {:?} dependent {:?} folded {:?} on vertex {:?}",
+            r.vertex, r.point, r.topo, r.geom, r.names, r.dependent, r.folded, r.folded_on_vertex
+        );
+    }
+    assert_eq!(four.len(), 2, "the apex edge's two ends: {four:?}");
+    for r in &four {
+        assert_eq!(r.side, 0, "the fused operand carries them");
+        assert_eq!(
+            r.geom.len(),
+            4,
+            "exactly four planes through the point: {:?}",
+            r.geom
+        );
+        assert_eq!(
+            r.topo, r.geom,
+            "the topology already knows every plane through it"
+        );
+        let mut distinct: Vec<NodeId> = r.names.iter().map(|(_, n)| *n).collect();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), 4, "one name per face today: {:?}", r.names);
+        assert_eq!(
+            r.dependent.iter().filter(|&&d| d).count(),
+            1,
+            "the top face's name shares a line: {:?}",
+            r.names
+        );
+        let mut folded = r.folded.clone();
+        folded.sort_unstable();
+        folded.dedup();
+        assert_eq!(
+            folded.len(),
+            2,
+            "the alias fold joins the three independent names and cannot fold the dependent one: {:?}",
+            r.folded
+        );
+        // ★ And the fold is **wrong**: the three independent names land on `[0, 2, 3]`, the wall's
+        // far corner `(−3.5, 3, 6)` — a point on the same shared line, not this vertex. Behind
+        // the reject sits a silent misidentification; S1 has to make this `all(true)`.
+        assert!(
+            r.folded_on_vertex.iter().any(|&on| !on),
+            "the fold lands on another point today: {:?}",
+            r.folded
+        );
+    }
+    // Every other vertex of both operands is a plain three-plane corner, named once.
+    for r in report.iter().filter(|r| r.topo.len() == 3) {
+        let mut distinct: Vec<NodeId> = r.names.iter().map(|(_, n)| *n).collect();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(distinct.len(), 1, "{:?}: {:?}", r.point, r.names);
+        assert!(r.dependent.iter().all(|&d| !d), "{:?}", r.point);
+    }
+}

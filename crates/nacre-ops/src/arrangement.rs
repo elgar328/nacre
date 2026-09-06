@@ -7700,6 +7700,217 @@ pub(crate) fn concurrency_audit(
     Ok(out)
 }
 
+/// **One operand vertex, as every producer names it** (cell ⑪'s instrument).
+///
+/// A point's identity is meant to be a function of the set of planes through it. This report
+/// holds, for one vertex of one operand, what the three sources say that set is and what names
+/// come out: the **topology** (the plane classes of the faces incident to the vertex — what the
+/// operand itself knows), the **geometry** (every class of the arrangement whose plane passes
+/// through the point, asked plane by plane), and the **names** the ring road hands the tracer
+/// for that vertex — one per face loop that visits it, with whether each is an independent
+/// triple (three planes sharing a line name no point) and what the alias table folds it to after
+/// every class has been traced.
+#[cfg(test)]
+#[derive(Debug, Clone)]
+pub(crate) struct OperandVertexReport {
+    /// Which operand (`0` = A, `1` = B) and the vertex.
+    pub side: usize,
+    pub vertex: Handle<Vertex>,
+    pub point: [f64; 3],
+    /// Plane classes of the incident faces, sorted; cylinder classes are not counted.
+    pub topo: Vec<usize>,
+    /// Every class through the point, from the first independent name; empty when no name is
+    /// independent (then no point exists to ask about).
+    pub geom: Vec<usize>,
+    /// `(face class, name)` per loop visit; `dependent[i]` says the name's planes share a line.
+    pub names: Vec<(usize, NodeId)>,
+    pub dependent: Vec<bool>,
+    /// `names[i]` after the alias fold of a full trace over every class.
+    pub folded: Vec<NodeId>,
+    /// Whether `folded[i]` names a point on every plane of `topo` — a fold that lands on another
+    /// point is the silent shape of a naming defect (a dependent fold counts as off).
+    pub folded_on_vertex: Vec<bool>,
+}
+
+/// Every plane-only operand vertex of `a` and `b`, as [`OperandVertexReport`]s — cell ⑪'s
+/// audit of the ring road's naming rule against the topology and the geometry.
+///
+/// Like [`concurrency_audit`] it drives the real front half (trace, merge, split) over **every**
+/// class and keeps going past a decline, accumulating the alias table so the fold it reports is
+/// the one production would reach. Vertices a cylinder touches are skipped: their names are
+/// branch points, a different vocabulary.
+#[cfg(test)]
+pub(crate) fn operand_vertex_audit(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Vec<OperandVertexReport>, BoolError> {
+    use crate::planes::{ClassIx, PlaneSetup, plane_index_setup};
+    let PlaneSetup {
+        planes: faces_tab,
+        surf_ix,
+        inc_a,
+        inc_b,
+        geom,
+        plane_ix,
+        crossings,
+        cyls,
+        standard,
+        notes,
+        ..
+    } = plane_index_setup(model, a, b)?;
+    let jd = Judge::new(&geom, standard, &notes);
+    let trace_in = combinatorics::trace_input(
+        model,
+        [(a, &inc_a), (b, &inc_b)],
+        &surf_ix,
+        faces_tab.len(),
+        &jd,
+        &plane_ix,
+        &cyls,
+        crossings.clone(),
+    );
+    // The alias fold production would reach: every class traced, merged and split, discoveries
+    // accumulated across classes.
+    let mut aliases = Aliases::default();
+    #[allow(clippy::needless_range_loop)]
+    for wc in 0..geom.len() {
+        let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix);
+        aliases.absorb(&tr.aliases);
+        let merged = merge_coincident(&tr.segs, wc, &aliases);
+        let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
+    }
+    let plane_class = |k: usize| match plane_ix[k] {
+        ClassIx::Plane(c) => Some(c),
+        ClassIx::Cyl(_) => None,
+    };
+    let mut out = Vec::new();
+    for (side, (solid, inc)) in [(a, &inc_a), (b, &inc_b)].into_iter().enumerate() {
+        // Topology: vertex → plane classes of its incident faces; a vertex on any cylinder face
+        // is left out (its name is a branch point).
+        let mut topo: HashMap<Handle<Vertex>, Vec<usize>> = HashMap::new();
+        let mut curved: std::collections::HashSet<Handle<Vertex>> = Default::default();
+        for (bounds, pair) in inc.values() {
+            for &vh in bounds {
+                for &k in pair {
+                    match plane_class(k) {
+                        Some(c) => topo.entry(vh).or_default().push(c),
+                        None => {
+                            curved.insert(vh);
+                        }
+                    }
+                }
+            }
+        }
+        // Names: per face loop, the ring road's triples, position `i` being the start of
+        // half-edge `i` (a seam joint pushes no name, so a loop whose lengths differ is skipped).
+        let mut names: HashMap<Handle<Vertex>, Vec<(usize, NodeId)>> = HashMap::new();
+        let face_handles: Vec<Handle<Face>> = solid_shell_handles(model, solid)
+            .into_iter()
+            .flat_map(|sh| model.shells.get(sh).faces.clone())
+            .collect();
+        for fh in face_handles {
+            let Some(&fp) = surf_ix.get(&fh) else {
+                continue;
+            };
+            let Some(fc) = plane_class(fp) else {
+                continue;
+            };
+            let face = model.faces.get(fh);
+            let mut loops: Vec<(Vec<nacre_topo::HalfEdge>, Option<Vec<NodeId>>)> = Vec::new();
+            loops.push((
+                face.outer.half_edges.clone(),
+                combinatorics::face_vertex_triples(model, fh, fp, inc, &jd, &plane_ix, &cyls)
+                    .ok()
+                    .and_then(|lr| lr.poly().map(|nr| nr.triples.clone())),
+            ));
+            if let Ok(holes) = combinatorics::hole_rings(model, fh, fp, inc, &jd, &plane_ix, &cyls)
+            {
+                for (lp, lr) in face.inner.iter().zip(holes) {
+                    loops.push((
+                        lp.half_edges.clone(),
+                        lr.poly().map(|nr| nr.triples.clone()),
+                    ));
+                }
+            }
+            for (hes, triples) in loops {
+                let Some(triples) = triples else {
+                    continue;
+                };
+                if triples.len() != hes.len() {
+                    continue;
+                }
+                for (he, &n) in hes.iter().zip(triples.iter()) {
+                    let vh = crate::he_start(model, *he);
+                    names.entry(vh).or_default().push((fc, n));
+                }
+            }
+        }
+        let mut vertices: Vec<Handle<Vertex>> = topo.keys().copied().collect();
+        vertices.sort_by_key(|v| v.index());
+        for vh in vertices {
+            if curved.contains(&vh) {
+                continue;
+            }
+            let mut t = topo[&vh].clone();
+            t.sort_unstable();
+            t.dedup();
+            let vnames = names.get(&vh).cloned().unwrap_or_default();
+            let dependent: Vec<bool> = vnames
+                .iter()
+                .map(|(_, n)| match three_plane_name(*n) {
+                    Some(tr) => jd.plane_pair_dir_sign(tr[0], tr[1], tr[2]) == 0,
+                    None => false,
+                })
+                .collect();
+            let geom_set =
+                vnames
+                    .iter()
+                    .zip(&dependent)
+                    .find(|(_, d)| !**d)
+                    .and_then(|((_, n), _)| three_plane_name(*n))
+                    .map(|tr| {
+                        let mut g: Vec<usize> = tr.to_vec();
+                        g.extend((0..geom.len()).filter(|q| {
+                            !tr.contains(q) && jd.orient3d(tr[0], tr[1], tr[2], *q) == 0
+                        }));
+                        g.sort_unstable();
+                        g
+                    })
+                    .unwrap_or_default();
+            let folded: Vec<NodeId> = vnames
+                .iter()
+                .map(|(_, n)| aliases.canon_point(*n))
+                .collect();
+            let folded_on_vertex = folded
+                .iter()
+                .map(|n| match three_plane_name(*n) {
+                    Some(tr) => {
+                        jd.plane_pair_dir_sign(tr[0], tr[1], tr[2]) != 0
+                            && t.iter().all(|&q| {
+                                tr.contains(&q) || jd.orient3d(tr[0], tr[1], tr[2], q) == 0
+                            })
+                    }
+                    None => false,
+                })
+                .collect();
+            let p = model.vertex_point(vh);
+            out.push(OperandVertexReport {
+                side,
+                vertex: vh,
+                point: [p[0], p[1], p[2]],
+                topo: t,
+                geom: geom_set,
+                names: vnames,
+                dependent,
+                folded,
+                folded_on_vertex,
+            });
+        }
+    }
+    Ok(out)
+}
+
 /// One plane class's **label-frame audit** (family #2 diagnostic): what each producer says about
 /// "above" on this class, plus how far the per-class pipeline gets. `#[cfg(test)]`, `pub(crate)`
 /// so the driver test can live in `crate::tests` where the two-solid fixtures are (the same reason

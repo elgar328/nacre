@@ -1704,6 +1704,221 @@ fn dump() {
             }
         }
     }
+    // ── **Four-plane operand vertices** (cell ⑪): a gusset whose apex lands exactly on a wall's top
+    // edge makes a result vertex where **four faces** meet. Fed back as an operand, that vertex is
+    // named once per face today — four names, one of them a triple whose planes share a line —
+    // and the next boolean refuses by whichever symptom its build order meets first. The rows
+    // hold the reject in both operand orders, the user's four-part fold in both fold orders, the
+    // near misses (apex above and below the edge), a box that shares only the top plane's class,
+    // and the mirrored fold (class numbers permuted).
+    {
+        fn p2(x: f64, y: f64) -> nacre_math::Point2 {
+            nacre_math::Point2::from_array([x, y])
+        }
+        fn prism(m: &mut Model, axis: Axis, edges: Vec<Edge2d>, dist: f64) -> Handle<Solid> {
+            let profile = from_edges(edges).expect("a valid profile").remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the four-plane profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        }
+        fn shift(m: &mut Model, s: Handle<Solid>, t: [f64; 3]) -> Handle<Solid> {
+            let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
+            xf(m, s, Isometry::translation([r(t[0]), r(t[1]), r(t[2])]))
+        }
+        fn mirror_x(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
+            let OpOutput::Mirror { solid } = apply(
+                m,
+                &Operation::Mirror {
+                    solid: s,
+                    axis: Axis::X,
+                    offset: Rat::from_int(0),
+                },
+            )
+            .expect("the mirror applies") else {
+                unreachable!()
+            };
+            solid
+        }
+        // A fuse inside a fixture: the operand a later row feeds back.
+        fn fuse(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>) -> Handle<Solid> {
+            m.rebuild_adjacency();
+            let out = boolean(m, BoolKind::Fuse, a, b).expect("the fixture's own fuse builds");
+            assert_eq!(out.len(), 1, "the fixture's own fuse is one body");
+            out[0]
+        }
+        // The standing wall: 7 × 5 × 1 at y ∈ [3, 4], z ∈ [1, 6] (the slot plate without its slot).
+        fn wall(m: &mut Model) -> Handle<Solid> {
+            let s = prism(
+                m,
+                Axis::Y,
+                vec![
+                    Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
+                    Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
+                    Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
+                    Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+                ],
+                1.0,
+            );
+            shift(m, s, [0.0, 3.0, 0.0])
+        }
+        // The user's slot plate: the wall with its 2 × 1 slot window.
+        fn slot_plate(m: &mut Model) -> Handle<Solid> {
+            let s = prism(
+                m,
+                Axis::Y,
+                vec![
+                    Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
+                    Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
+                    Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
+                    Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+                    Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
+                    Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
+                    Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
+                    Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+                ],
+                1.0,
+            );
+            shift(m, s, [0.0, 3.0, 0.0])
+        }
+        // The user's filleted, bored plate.
+        fn plate(m: &mut Model) -> Handle<Solid> {
+            prism(
+                m,
+                Axis::Z,
+                vec![
+                    Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
+                    Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
+                    Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
+                    Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
+                    Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
+                    Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                ],
+                1.0,
+            )
+        }
+        // The gusset on YZ (u = y, v = z), apex at `(3, apex)`, moved to `x`.
+        fn gusset(m: &mut Model, x: f64, apex: f64) -> Handle<Solid> {
+            let s = prism(
+                m,
+                Axis::X,
+                vec![
+                    Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
+                    Edge2d::line(p2(3.0, 1.0), p2(3.0, apex)).unwrap(),
+                    Edge2d::line(p2(3.0, apex), p2(0.0, 1.0)).unwrap(),
+                ],
+                1.0,
+            );
+            shift(m, s, [x, 0.0, 0.0])
+        }
+        type Pair = Box<dyn Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>)>;
+        let pairs: Vec<(&str, Pair)> = vec![
+            (
+                "wall+g",
+                Box::new(|m| {
+                    let w = wall(m);
+                    let g1 = gusset(m, 1.4, 6.0);
+                    let a = fuse(m, w, g1);
+                    (a, gusset(m, -2.4, 6.0))
+                }),
+            ),
+            (
+                "wall+g swapped",
+                Box::new(|m| {
+                    let w = wall(m);
+                    let g1 = gusset(m, 1.4, 6.0);
+                    let b = fuse(m, w, g1);
+                    (gusset(m, -2.4, 6.0), b)
+                }),
+            ),
+            (
+                "user4 1234",
+                Box::new(|m| {
+                    let p1 = plate(m);
+                    let p2s = slot_plate(m);
+                    let ab = fuse(m, p1, p2s);
+                    let g1 = gusset(m, 1.4, 6.0);
+                    let abc = fuse(m, ab, g1);
+                    (abc, gusset(m, -2.4, 6.0))
+                }),
+            ),
+            (
+                "user4 1342",
+                Box::new(|m| {
+                    let p1 = plate(m);
+                    let g1 = gusset(m, 1.4, 6.0);
+                    let ac = fuse(m, p1, g1);
+                    let g2 = gusset(m, -2.4, 6.0);
+                    let acd = fuse(m, ac, g2);
+                    (acd, slot_plate(m))
+                }),
+            ),
+            (
+                "apex-5.9",
+                Box::new(|m| {
+                    let w = wall(m);
+                    let g1 = gusset(m, 1.4, 5.9);
+                    let a = fuse(m, w, g1);
+                    (a, gusset(m, -2.4, 5.9))
+                }),
+            ),
+            (
+                "apex-6.1",
+                Box::new(|m| {
+                    let w = wall(m);
+                    let g1 = gusset(m, 1.4, 6.1);
+                    let a = fuse(m, w, g1);
+                    (a, gusset(m, -2.4, 6.1))
+                }),
+            ),
+            (
+                "far-box",
+                Box::new(|m| {
+                    let w = wall(m);
+                    let g1 = gusset(m, 1.4, 6.0);
+                    let a = fuse(m, w, g1);
+                    let b = m.add_cuboid(
+                        Point3::from_array([-3.0, 0.0, 6.0]),
+                        Point3::from_array([-1.0, 2.0, 7.0]),
+                    );
+                    (a, b)
+                }),
+            ),
+            (
+                "mirrored",
+                Box::new(|m| {
+                    let w = wall(m);
+                    let g1 = gusset(m, 1.4, 6.0);
+                    let a = fuse(m, w, g1);
+                    let a = mirror_x(m, a);
+                    let g2 = gusset(m, -2.4, 6.0);
+                    (a, mirror_x(m, g2))
+                }),
+            ),
+        ];
+        for (pn, build) in &pairs {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let (a, b) = build(&mut m);
+                m.rebuild_adjacency();
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("fourplane {pn} {kn}"), &m, &inputs, &out);
+            }
+        }
+    }
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].
