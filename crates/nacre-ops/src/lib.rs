@@ -1200,6 +1200,12 @@ pub enum DeclineKind {
     /// exactly — a rim without a ⊥ class to name its ends, or checked arithmetic past `Rat`
     /// (M6-2 rulings ladder). Declined whole rather than contributed partially: a
     /// half-contributed rectangle leaves the class's 1-skeleton dangling.
+    ///
+    /// ★ Cell ⑩ gave it a population: a class plane that holds a **tangent ruling** together with
+    /// the wall tangent there — a gusset's side plane exactly through a fillet's axis (`arcwalls
+    /// p1p3`), or a box face coplanar with a slot's tangent wall and running past the tangent
+    /// point (`rrect-box`). One line on two planes and the cylinder; folding that identity is the
+    /// next capability.
     Ruling,
 }
 
