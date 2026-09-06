@@ -1440,6 +1440,27 @@ pub(crate) fn cylinder_gate(
                         } else {
                             crossings.insert((c, ci));
                         }
+                    } else if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r)
+                        == Orient::Negative
+                        && {
+                            // ★ Only a footprint that can be **stated** proves a cut; an
+                            // unstatable one (a rotated class, no span) proves nothing either way
+                            // and keeps the old silence — recording on it drew rulings no face
+                            // has (measured, the rigid-motion oracle).
+                            let fps = footprints
+                                .get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
+                            !fps.is_empty() && !oblique_plane_clears(&cyl.def, fps, &coeffs)
+                        }
+                    {
+                        // ★ **The class cuts this lateral face though no face of the other solid touches
+                        // it** (cell ⑩, S3): the refusal question is face against face and it is clear, but
+                        // the arrangement on this class still needs the ruling — every face of *this* solid
+                        // that crosses the class ends on it (a cap's section ends where its rim arc meets
+                        // the plane), and without the ruling that end dangles and the walk doubles back
+                        // (measured: a gusset beside a filleted plate, its side plane within the fillet's
+                        // radius). So the record is «the plane cuts the face», not «the faces touch»; the
+                        // tangent plane (clearance `Zero`) is the tangency's own record.
+                        crossings.insert((c, ci));
                     }
                 }
             }

@@ -11159,8 +11159,13 @@ fn expected_unmoved_volume(fam: &str, kind: BoolKind) -> Option<f64> {
         // ★ The bore families' **Fuse** is `Rejected(NoClearRay)` today, moved or not — the
         // slab shares five of the plate's planes and the coplanar road's nesting finds no clear
         // ray; the oracle locks that name (`expected_unmoved_name`) rather than a volume.
+        // ★ The two fuses build since cell ⑩ (the slab's wall halves the bore's rim; the pieces
+        // the split keeps and the witnesses the nesting has now read it): the bored plate plus
+        // the slab's share of the bore.
+        ("bore offset", BoolKind::Fuse) => bored + 5.0 * seg(2.0, 3.0),
         ("bore offset", BoolKind::Cut) => bored - (1600.0 - 5.0 * seg(2.0, 3.0)),
         ("bore offset", BoolKind::Common) => 1600.0 - 5.0 * seg(2.0, 3.0),
+        ("bore axis", BoolKind::Fuse) => bored + 22.5 * PI,
         ("bore axis", BoolKind::Cut) => bored - (2000.0 - 22.5 * PI),
         ("bore axis", BoolKind::Common) => 2000.0 - 22.5 * PI,
         // The fused body is `32 + π/2`; the slab holds `16` of it and `20` beside it.
@@ -11174,10 +11179,10 @@ fn expected_unmoved_volume(fam: &str, kind: BoolKind) -> Option<f64> {
 /// The unmoved answer's **name** where it is not a build — a reject the oracle keeps stable by
 /// name, so the day it builds is noticed and the row gets its closed form.
 fn expected_unmoved_name(fam: &str, kind: BoolKind) -> Option<&'static str> {
-    match (fam, kind) {
-        ("bore offset" | "bore axis", BoolKind::Fuse) => Some("Rejected(NoClearRay)"),
-        _ => None,
-    }
+    // ★ Empty since cell ⑩: the bore fuses it used to hold at `NoClearRay` build now and are
+    // locked by volume above. The door stays for the next family a reject is the honest answer for.
+    let _ = (fam, kind);
+    None
 }
 
 /// One boolean's answer, as the oracle compares it: the outcome's name, the sorted volumes, the
@@ -12231,16 +12236,14 @@ fn a_half_disk_has_the_pair_roots_at_its_corners() {
     mesh_covers_faces("a half disk", &m, &[solid]);
 }
 
-/// **A slot padded onto or pocketed into a plate declines by name — the tangent ruling is the
-/// tracer's frontier.** The slot's straight walls are *tangent* to its half cylinders, so the
-/// ruling where wall and cylinder meet lies *in* the wall's plane: the boolean's `ruling_side`
-/// asks which of a crossing wall's two rulings this one is, and a tangency has one. Until the
-/// tracer and the chart learn a tangent ruling (the same frontier a fillet's wall stands on), the
-/// pad and the pocket are refused — `curved_wall` declines the wall's ring, and the tracer
-/// surfaces that as the wall face's outer ring declined. The prism itself is a valid solid
-/// (`a_slot_extrudes_with_tangent_branch_corners`).
+/// **A slot padded onto and pocketed into a plate** — the tangent ruling was the tracer's
+/// frontier (cell ⑨ locked both at `TraceDeclined{OuterRing}`), and cell ⑩ S3 gave the ruling a
+/// name (`side = 0`). The slot sits on the plate's corner: `cx ∈ [−10, 10]`, `r = 2` about the
+/// face's origin, so the part over the plate is a `10 × 2` strip plus a quarter disk. The pad
+/// adds the whole prism (it touches the plate along that part and hangs past its edges), the
+/// pocket removes the part inside: `8000 + 3·(80 + 4π)` and `8000 − 2·(20 + π)`.
 #[test]
-fn a_slot_pad_and_pocket_decline_by_name_at_the_tangent_ruling() {
+fn a_slot_pads_and_pockets_at_the_tangent_ruling() {
     let plate = || {
         let mut m = Model::new();
         let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
@@ -12255,49 +12258,50 @@ fn a_slot_pad_and_pocket_decline_by_name_at_the_tangent_ruling() {
         (m, solid, faces[1])
     };
     let slot = || slot_profile(-10.0, 10.0, 0.0, 2.0);
-    let refused = |r: Result<OpOutput, OpError>| {
+    let pi = std::f64::consts::PI;
+    let built = |m: &mut Model, r: Result<OpOutput, OpError>, want: f64| {
+        let solid = match r.expect("the slot builds at its tangent rulings") {
+            OpOutput::PadOnFace { solid, .. } | OpOutput::PocketOnFace { solid, .. } => solid,
+            other => panic!("{other:?}"),
+        };
+        m.rebuild_adjacency();
         assert!(
-            matches!(
-                r,
-                Err(OpError::Boolean(BoolError::Rejected {
-                    reason: RejectReason::TraceDeclined {
-                        kind: DeclineKind::OuterRing,
-                        ..
-                    },
-                    ..
-                }))
-            ),
-            "{r:?}"
+            nacre_validate::validate(m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(m)
         );
+        let v = nacre_props::mass_props(m, solid).expect("props").volume;
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     };
     let (mut m, _, top) = plate();
-    refused(apply(
+    let r = apply(
         &mut m,
         &Operation::PadOnFace {
             face: top,
             profile: slot(),
             dist: 3.0,
         },
-    ));
+    );
+    built(&mut m, r, 8000.0 + 3.0 * (80.0 + 4.0 * pi));
     let (mut m, _, top) = plate();
-    refused(apply(
+    let r = apply(
         &mut m,
         &Operation::PocketOnFace {
             face: top,
             profile: slot(),
             dist: 2.0,
         },
-    ));
+    );
+    built(&mut m, r, 8000.0 - 2.0 * (20.0 + pi));
 }
 
-/// **A half-disk boss on a plate — measured, and locked at today's name.** The D's chord wall
-/// crosses its own cylinder through the axis, so the prism builds (`Lo`/`Hi` corners) and the
-/// boolean records the wall as a crossing of the cylinder class — but the cylinder carries only
-/// half its circle, and the arrangement's cell labels come out in conflict. A refusal, not a wrong
-/// solid; with the tangent ruling of the slot it marks where booleans on arc profiles stand: the
-/// next cell's input, and this lock is what that cell flips.
+/// **A half-disk boss pads onto a plate.** The D's chord wall crosses its own cylinder through
+/// the axis (`Lo`/`Hi` corners) and the cylinder carries only half its circle — cell ⑨ locked the
+/// pad at `LabelConflict`, and cell ⑩ S3's split (no phantom piece for the uncovered half) and
+/// chart (an uncovered piece is the face's end) build it. Half the D hangs past the plate's
+/// `y = 0` edge; the pad adds the whole half disk: `8000 + 3·(π·25/2)`.
 #[test]
-fn a_half_disk_boss_pad_declines_by_name_today() {
+fn a_half_disk_boss_pads_onto_a_plate() {
     let mut m = Model::new();
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let square = Profile2d::polygon(vec![
@@ -12320,16 +12324,18 @@ fn a_half_disk_boss_pad_declines_by_name_today() {
             dist: 3.0,
         },
     );
+    let OpOutput::PadOnFace { solid, .. } = r.expect("the half disk pads") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
     assert!(
-        matches!(
-            r,
-            Err(OpError::Boolean(BoolError::Rejected {
-                reason: RejectReason::LabelConflict,
-                ..
-            }))
-        ),
-        "{r:?}"
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
     );
+    let v = nacre_props::mass_props(&m, solid).expect("props").volume;
+    let want = 8000.0 + 3.0 * (std::f64::consts::PI * 25.0 / 2.0);
+    assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
 /// **A sketched bored plate meets a box** — whole circles are the arc vocabulary the boolean
@@ -12376,16 +12382,16 @@ fn a_sketched_bored_plate_meets_a_box() {
     }
 }
 
-/// ★ Cell ⑩, S0 — **where** a fillet's tangent ruling declines. The census can only say
-/// `TraceDeclined { OuterRing }`, and three sites push that kind; this measures which, so S3's
-/// first target is a fact rather than a guess. A 7×8 plate with its two bottom corners filleted
-/// `r = 1.5` (fillet axes 4 apart, so the pair loop clears them) fused with a box far away: nothing
-/// touches, and the boolean still declines — the plate's own wall faces carry an edge along the
-/// ruling where the wall is *tangent* to the fillet cylinder, and the ring court has no side to
-/// spell for it (`ruling_side` reads zero there).
+/// ★ Cell ⑩, S3 — **a filleted plate builds beside a far box, and the decline probe reads
+/// nothing.** S0 locked this fixture's refusal (`TraceDeclined{OuterRing}`, the wall faces that
+/// ride a tangent ruling handed no outer loop) and said S3 would flip it. It did: the tangent
+/// ruling is a carrier with `side = 0`, the seated wall states its own piece, the split keeps no
+/// phantom arc, the angular order and the winding walk read the smooth corner as a half turn, and
+/// the chart reads an uncovered rim piece as the face's end. Two bodies, the plate's volume
+/// `7·8 − 2·(1.5² − π·1.5²/4)` plus the box's 1.
 #[test]
-fn a_fillets_tangent_ruling_declines_where_the_ring_is_named() {
-    use crate::arrangement::decline_probe::{Site, named_like};
+fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
+    use crate::arrangement::decline_probe::named_like;
     const TAG: &str = "fillets_tangent_ruling";
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let edges = vec![
@@ -12415,8 +12421,6 @@ fn a_fillets_tangent_ruling_declines_where_the_ring_is_named() {
         Point3::from_array([21.0, 21.0, 21.0]),
     );
     m.rebuild_adjacency();
-    // The trace runs on rayon workers under `parallel`; a pool named after this test makes the
-    // probe's rows attributable (the sequential build's test thread carries the name itself).
     #[cfg(feature = "parallel")]
     let out = rayon::ThreadPoolBuilder::new()
         .num_threads(2)
@@ -12426,36 +12430,157 @@ fn a_fillets_tangent_ruling_declines_where_the_ring_is_named() {
         .install(|| boolean(&mut m, BoolKind::Fuse, plate, far));
     #[cfg(not(feature = "parallel"))]
     let out = boolean(&mut m, BoolKind::Fuse, plate, far);
+    let out = out.expect("the filleted plate and the far box fuse");
+    assert_eq!(out.len(), 2, "two bodies, apart");
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v: f64 = out
+        .iter()
+        .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+        .sum();
+    let want = 56.0 - 2.0 * (2.25 - std::f64::consts::PI * 2.25 / 4.0) + 1.0;
+    assert!((v - want).abs() < 1e-9, "plate + box: {v} vs {want}");
+    assert!(
+        named_like(TAG).is_empty(),
+        "no decline was produced: {:?}",
+        named_like(TAG)
+    );
+}
+
+/// ★ Cell ⑩, S3 — **the user's plate, slot plate and gusset fold into one body.** The filleted,
+/// bored plate (p1), the slot-windowed vertical plate standing on it (p2) and a triangular gusset
+/// (p3) — every wall the three walls found: the fillets' tangent rulings, the slot's tangent
+/// rulings, the plate's caps crossing the gusset's side plane inside the fillet's radius, the
+/// nesting cell between a bore's and a fillet's rulings whose every corner is irrational. The
+/// slot plate and the gusset stand **on** the plate (their bottoms lie in its top face), so the
+/// volume is the sum of the parts: `48 + (34 − π/4) + 7.5` — the plate less its fillets' corners
+/// and bores, the slot plate less its window, the gusset.
+///
+/// ★ The gusset stands at `x = 1.6`, not the user's `1.5`: at `1.5` its side plane runs **through
+/// the fillet's axis** and so contains the fillet's tangent ruling — one line shared by two planes
+/// and a cylinder, the next capability (a `TraceDeclined` today, locked below as the honest name).
+#[test]
+fn the_users_plate_slot_and_gusset_fold() {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let prism =
+        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
+            let profile = crate::from_edges(edges).unwrap().remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        };
+    let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
+        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let OpOutput::Transform { solid } = apply(
+            m,
+            &Operation::Transform {
+                solid: s,
+                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+            },
+        )
+        .expect("the translation applies") else {
+            unreachable!()
+        };
+        solid
+    };
+    let plate = |m: &mut Model| {
+        prism(
+            m,
+            Axis::Z,
+            vec![
+                crate::Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
+                crate::Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
+                crate::Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
+                crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+                crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
+                crate::Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
+                crate::Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
+                crate::Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+            ],
+            1.0,
+        )
+    };
+    let slot_plate = |m: &mut Model| {
+        let s = prism(
+            m,
+            Axis::Y,
+            vec![
+                crate::Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
+                crate::Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
+                crate::Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
+                crate::Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+                crate::Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
+                crate::Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
+                crate::Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
+                crate::Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+            ],
+            1.0,
+        );
+        shift(m, s, [0.0, 3.0, 0.0])
+    };
+    let gusset = |m: &mut Model, x: f64| {
+        let g = prism(
+            m,
+            Axis::X,
+            vec![
+                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+            ],
+            1.0,
+        );
+        shift(m, g, [x, 0.0, 0.0])
+    };
+    let mut m = Model::new();
+    let a = plate(&mut m);
+    let b = slot_plate(&mut m);
+    let c = gusset(&mut m, 1.6);
+    m.rebuild_adjacency();
+    let ab = boolean(&mut m, BoolKind::Fuse, a, b).expect("plate + slot plate");
+    assert_eq!(ab.len(), 1);
+    m.rebuild_adjacency();
+    let abc = boolean(&mut m, BoolKind::Fuse, ab[0], c).expect("+ gusset");
+    assert_eq!(abc.len(), 1);
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v = nacre_props::mass_props(&m, abc[0]).expect("props").volume;
+    let pi = std::f64::consts::PI;
+    let want = 48.0 + (34.0 - pi / 4.0) + 7.5;
+    assert!((v - want).abs() < 1e-9, "the fold: {v} vs {want}");
+
+    // The gusset on the fillet's axis plane: the honest name for the shared line.
+    let mut m = Model::new();
+    let a = plate(&mut m);
+    let c = gusset(&mut m, 1.5);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, a, c);
     assert!(
         matches!(
             out,
             Err(BoolError::Rejected {
-                reason: RejectReason::TraceDeclined {
-                    kind: crate::DeclineKind::OuterRing,
-                    ..
-                },
+                reason: RejectReason::TraceDeclined { .. },
                 ..
             })
         ),
         "{out:?}"
-    );
-    let sites = named_like(TAG);
-    assert!(!sites.is_empty(), "the decline was produced somewhere");
-    // The measured sites, locked (S0). The prediction was the seated ring court (`plane_ring`,
-    // `PolyCollapsed`) and it was wrong: the naming dies one road earlier — `loop_triples` hands
-    // the wall faces that ride a tangent ruling **no outer loop at all**, which the transversal
-    // walk reports as `NoOuter` and the seated walk as `RimOrNone` (the sequential build stops at
-    // the first class and sees three `NoOuter`; the parallel build evaluates every class and adds
-    // the seated rows). S3 flips this test — the fixture builds, and the probe reads nothing.
-    assert!(
-        sites
-            .iter()
-            .all(|s| matches!(s, Site::NoOuter | Site::RimOrNone)),
-        "sites: {sites:?}"
-    );
-    assert!(
-        sites.contains(&Site::NoOuter),
-        "the transversal naming is where the decline is first produced: {sites:?}"
     );
 }
 

@@ -187,6 +187,13 @@ pub(crate) enum SegKind {
     /// from `Seated` so `edge_mask` can let it override a coincident seated rim at a reflex
     /// dihedral, where the two disagree on which side flips.
     Graze { body_above: bool },
+    /// The **tangent ruling** of a face lying in `W` (cell ⑩): the face ends where its cylinder
+    /// begins, tangent to `W`. Beyond the line what `W` separates is decided by which side the
+    /// cylinder bends toward — its **axis** side: a convex fillet's axis is on the body side and
+    /// that side turns void past the line (the cusp under the arc); a hole's axis is on the void
+    /// side and that side turns material. So crossing this edge flips the axis side's label, one
+    /// bit, whichever side the body was on.
+    Tangent { axis_above: bool },
 }
 
 /// One segment of a solid's trace on a plane class, named entirely in plane-class triples.
@@ -862,8 +869,27 @@ fn trace_transversal_face(
             // point's own name, and what pins it on `L` is the quadric — measured, every such corner
             // that lands on a cut line is pinned by that very cut plane (`far == wc`), so `wc` is in
             // its name and there is no fourth-plane alias to record either.
-            let Some(t) = three_plane_name(n) else {
-                return Ok((n, combinatorics::EndPin::Cylinder));
+            let (n, t) = match three_plane_name(n) {
+                Some(t) => (n, t),
+                None => match combinatorics::branch_name(n) {
+                    // Pinned by the quadric: its own pair is this line's.
+                    Some((planes, _, _)) if planes.contains(&wc) => {
+                        return Ok((n, combinatorics::EndPin::Cylinder));
+                    }
+                    // ★ **On `wc` by coincidence** (cell ⑩): a wall through a fillet's axis runs
+                    // through the fillet's tangent corner, so the corner is on `L` while neither of
+                    // its own planes is `wc`. Three planes pass through the point — its own two and
+                    // `wc` — so it is a **three-plane point**, named by them like any other; the
+                    // cylinder is a fourth carrier that names nothing here. (Restating it as a
+                    // branch of a new pair kept a root that pair does not have — measured, the
+                    // fold's gusset beside the plate's fillet.)
+                    Some((planes, _, _)) => {
+                        let mut t = [planes[0], planes[1], wc];
+                        t.sort_unstable();
+                        (NodeId::three_planes(t), t)
+                    }
+                    None => return Err(DeclineKind::RunName),
+                },
             };
             let (mut offs, mut has_fp, mut has_w) = (Vec::<usize>::new(), false, false);
             // `offs` counts the off-line classes; **which** one pins the point is
@@ -1419,6 +1445,40 @@ fn trace_one(
                 // ★ The claim is checked at the end of this walk rather than trusted — see
                 // `curves_owed` — because an element silently missing does not decline, it
                 // corrupts every label on the class.
+                // ★ Except a **tangent** ruling (`side == 0`, cell ⑩): the lateral touches this
+                // class along it and crosses nowhere, so no ruling trace will ever back it — the
+                // seated face is the only face on this class with that line as an edge, and it
+                // states the piece itself, `Seated` like its straight edges. `up` says which end
+                // is the lower one along the axis (`MergedRuling::end` ascends).
+                if let crate::boolean::Wall::Ruling { cyl, side: 0, up } = ws[i] {
+                    let (a, b) = (ns[i], ns[(i + 1) % n]);
+                    // The axis side, in the label frame (`W`'s stored normal): the one bit a
+                    // tangent edge flips ([`SegKind::Tangent`]).
+                    let axis_above = (|| -> Option<bool> {
+                        let w = combinatorics::stored_coeffs_rat(jd, wc)?;
+                        let o = cyls.get(cyl)?.def.origin();
+                        let mut acc = w[3];
+                        for k in 0..3 {
+                            acc = acc.checked_add(w[k].checked_mul(o[k])?)?;
+                        }
+                        Some(acc > Rat::from_int(0))
+                    })();
+                    let Some(axis_above) = axis_above else {
+                        out.declined.push((fp, DeclineKind::Ruling));
+                        continue;
+                    };
+                    out.rulings.push(RulingTrace {
+                        cyl,
+                        side: 0,
+                        end: if up { [a, b] } else { [b, a] },
+                        solid: which,
+                        kind: SegKind::Tangent { axis_above },
+                        #[cfg(test)]
+                        orient: faces[fp].plane().orient_sign,
+                    });
+                    curves_owed.push((fp, ws[i]));
+                    continue;
+                }
                 let crate::boolean::Wall::Plane(wall) = ws[i] else {
                     curves_owed.push((fp, ws[i]));
                     continue;
@@ -2029,6 +2089,9 @@ pub(crate) fn plus_theta_is_above(
     wc: usize,
     side: i8,
 ) -> Option<bool> {
+    // A tangent ruling (`side == 0`) is never a recorded crossing, so nothing labelled by this
+    // sign reaches it; the day one does, the answer is a measurement, not a sign.
+    debug_assert_ne!(side, 0, "a tangent ruling has no +θ side to be above");
     Some(-(world_rat_sense(jd, wc)? * side) == 1)
 }
 
@@ -2326,8 +2389,12 @@ fn chord_nodes(
 /// one spelling). The point arrives as `(line, s)` from [`nacre_scalar::quad::plane_plane_cylinder`],
 /// so the sign is one [`nacre_scalar::quad::plane_side`] against the plane through `o` with
 /// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
-/// tangent shape, which no caller feeds — **still true since the tangent wall opened**: the gate
-/// records no crossing for a tangency, so no ruling of one is ever built).
+/// tangent shape). ★ **A tangent ruling's side is `0`, and it is not read here** (cell ⑩, S3): the
+/// two places that build a ruling carrier ([`combinatorics::curved_wall`], [`node_ruling_side`])
+/// derive it from the corner's root (`Double`), because this function's `None` is a *sign*
+/// fact the ray caster (`departs_across`) and the arc departure read as "abstain" — answering
+/// `Some(0)` here would drop a ray into the `Negative` arm in silence. A fillet's or a slot's
+/// own walls are the callers that feed the tangent shape.
 pub(crate) fn ruling_side(
     w: &[Rat; 4],
     def: &nacre_topo::CylinderDef,
@@ -2388,9 +2455,17 @@ pub(crate) fn crossing_on_ruling(
     if !nacre_scalar::parallel_rat(&[w[0], w[1], w[2]], &m) {
         return Err(no);
     }
-    let Some(CylinderMeet::Pair { line, s }) =
-        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
-    else {
+    // ★ A **tangent** wall (`side == 0`, cell ⑩) has one ruling and one root — `Double`.
+    let meet = nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r);
+    if side == 0 {
+        return match meet {
+            Some(CylinderMeet::Tangent { .. }) => {
+                Ok(NodeId::branch(wc, fc, cyl, nacre_topo::QuadRoot::Double))
+            }
+            _ => Err(no),
+        };
+    }
+    let Some(CylinderMeet::Pair { line, s }) = meet else {
         return Err(no);
     };
     let mut found = None;
@@ -2499,6 +2574,24 @@ fn corner_sides<'a>(
     })
 }
 
+/// **Which side of a circle a cell lies on, by its rational corners — when they agree.** The
+/// instrument used to take the *first* corner, on the premise that no cell has corners on both
+/// sides of a circle it borders. ★ A fillet refutes the premise (cell ⑩): the cap face's cell is
+/// bounded by a **quarter** of the circle and reaches far beyond it, so its corners lie outside
+/// while the arc bounds it from the disk side. Such a cell has no single side and the witness
+/// abstains; a cell all of whose corners agree answers as before.
+#[cfg(test)]
+fn cell_side(
+    jd: &Judge<'_, WorkingPlane>,
+    edges: &ClassEdges<'_>,
+    cell: &Cell,
+    def: &nacre_topo::CylinderDef,
+) -> Option<bool> {
+    let mut sides = corner_sides(jd, edges, cell, def);
+    let first = sides.next()?;
+    sides.all(|s| s == first).then_some(first)
+}
+
 #[cfg(test)]
 pub(crate) mod disk_side_probe {
     use std::sync::Mutex;
@@ -2541,18 +2634,23 @@ pub(crate) mod disk_side_probe {
         frame_sign: i8,
     ) {
         let (a, b) = (even, odd);
-        if let (Some(x), Some(y)) = (a, b) {
-            assert!(
-                x != y,
-                "an arc's two cells landed on the same side of its circle"
-            );
-        }
+        // ★ **Two cells on one side is the witness failing, not the arc** (cell ⑩): a **convex**
+        // arc — a fillet's quarter, a slot's end — bounds a cell that lies inside the circle at
+        // the arc and reaches far outside it, so every rational corner of that cell is outside
+        // while the arc bounds it from the disk side. The corner witness cannot see a side
+        // there; where the two cells' corners agree, both abstain and the rule goes unchecked
+        // for that arc (the volume oracles of the tangent fixtures are what measure it). The
+        // bite population — arcs concave into a plate — keeps its witness exactly as before.
+        let (a, b) = match (a, b) {
+            (Some(x), Some(y)) if x == y => (None, None),
+            other => other,
+        };
         // The geometry's verdict on which half-edge borders the disk, where it has one.
         let witness = a.or_else(|| b.map(|inside| !inside));
         if let Some(even_is_disk) = witness {
             assert_eq!(
                 even_is_disk, rule_says_even,
-                "the disk-side rule and the cell's own corners disagree (frame_sign {frame_sign})"
+                "the disk-side rule and the cell's own corners disagree (frame_sign {frame_sign}, even {a:?}, odd {b:?})"
             );
         }
         ROWS.lock()
@@ -3059,15 +3157,19 @@ pub(crate) mod ruling_probe {
     }
 }
 
-/// Which of the two rulings of `w` this branch node sits on — [`ruling_side`] asked of a name.
-/// The one spelling: the chart's `ruling_name` reads it too (D5, 1a — it used to carry a twin).
+/// Which of the two rulings of `w` this branch node sits on — [`ruling_side`] asked of a name,
+/// and `0` for a **tangent** wall's single ruling (the name's root is `Double`; cell ⑩, S3). The
+/// one spelling: the chart's `ruling_name` reads it too (D5, 1a — it used to carry a twin).
 pub(crate) fn node_ruling_side(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     w: &[nacre_scalar::Rat; 4],
     n: NodeId,
 ) -> Option<i8> {
-    let (_, cyl, _) = combinatorics::branch_name(n)?;
+    let (_, cyl, root) = combinatorics::branch_name(n)?;
+    if root == nacre_topo::QuadRoot::Double {
+        return Some(0);
+    }
     let (line, s) = combinatorics::branch_meet(jd, cyl, def, n)?;
     ruling_side(w, def, (&line, &s))
 }
@@ -3752,8 +3854,15 @@ fn angular_order(
         match cross(0, i)? {
             c if c > 0 => pos.push(i),
             c if c < 0 => neg.push(i),
-            // Collinear with the reference: angle 0 (same ray) or π (opposite ray).
-            _ if combinatorics::antiparallel(&edges[i], &edges[0]) => pole.push(i),
+            // Collinear with the reference: angle 0 (same ray) or π (opposite ray). ★ A line and
+            // an arc tangent at this vertex with the arc leaving the other way (a fillet's smooth
+            // corner, cell ⑩) are π apart too — the structural test cannot see it, the geometric
+            // one can ([`combinatorics::tangent_pole`]).
+            _ if combinatorics::antiparallel(&edges[i], &edges[0])
+                || combinatorics::tangent_pole(jd, w, &edges[i], &edges[0])? =>
+            {
+                pole.push(i)
+            }
             _ => zero.push(i),
         }
     }
@@ -4149,7 +4258,16 @@ fn split_circles(
                     }
                 })
                 .map(|&(s, kind, _)| (s, kind))
-                .collect();
+                .collect::<Vec<_>>();
+            // ★ **A piece no contribution covers is not an edge** (cell ⑩, S3). A partial rim — a
+            // fillet's quarter, a slot's half — states its arc alone, and the rest of the circle
+            // bounds no face on this class; emitted, it stood as a phantom edge that tied with
+            // the tangent wall's line at the fillet's corner (`UnorderedEdges`, measured). The
+            // straight road drops its newsless pieces (`drop_newsless`); this is the arc's twin.
+            // The rim's cut nodes stay in `cut_rims` either way.
+            if merged.is_empty() {
+                continue;
+            }
             arcs.push(MergedArc {
                 cyl: circ.cyl,
                 def: circ.def.clone(),
@@ -4801,7 +4919,13 @@ fn lateral_crossings(
         }
         // A tangent line touches without separating; cutting there would make a zero-length
         // piece — the same skip the circle side's `Double` arm makes.
-        Some(CylinderMeet::Tangent { .. }) => return Ok(Some(Vec::new())),
+        // ★ A **tangent** class touches the cylinder along one ruling (cell ⑩, S3): the
+        // segment's line meets it in one point, root `Double` — the crossing the seated face's own
+        // tangent piece (`side == 0`) is cut at, named as the scan names it.
+        Some(CylinderMeet::Tangent { line, s }) => (
+            line,
+            vec![(QuadRoot::Double, nacre_scalar::quad::QuadVal::from_rat(s))],
+        ),
         Some(CylinderMeet::Miss(_)) | Some(CylinderMeet::AxisParallelMiss(_)) => {
             return Ok(Some(Vec::new()));
         }
@@ -4942,8 +5066,11 @@ fn split_rulings(
                 {
                     continue;
                 }
-                let Some(side) = ruling_side(&w, def, (&line, &s)) else {
-                    return Err(undecided());
+                // A tangent crossing's side is `0`, from its root — `ruling_side`'s `None` is
+                // the sign reading and stays so (cell ⑩).
+                let side = match combinatorics::branch_name(n) {
+                    Some((_, _, nacre_topo::QuadRoot::Double)) => 0,
+                    _ => ruling_side(&w, def, (&line, &s)).ok_or_else(undecided)?,
                 };
                 let Some(c) = coord_at(def, &line, &s) else {
                     return Err(undecided());
@@ -5127,7 +5254,15 @@ fn per_class(
                 let cell_at = |even: bool| -> Option<Label> {
                     Some(labels[*face_of.get(&(base + 2 * i + usize::from(!even)))?])
                 };
-                let inside = ruling_interior_is_even(jd, wc, r.side);
+                // ★ A **tangent** ruling (`side == 0`, cell ⑩) has no interior side on this class:
+                // the plane touches the cylinder, and both cells beside the line lie outside its
+                // disk. Its extent carries no label — the chart reads it as a station where the
+                // face ends, not as a wall with a chamber behind it.
+                let inside = if r.side == 0 {
+                    None
+                } else {
+                    ruling_interior_is_even(jd, wc, r.side)
+                };
                 let out = inside.and_then(cell_at);
                 #[cfg(test)]
                 {
@@ -5173,10 +5308,14 @@ fn per_class(
                                 .push(verdict);
                         }
                     }
-                    ruling_probe::LABELLED
-                        .lock()
-                        .expect("the probe's lock is never held across a panic")
-                        .push(out.is_some());
+                    // A tangent piece (`side == 0`) carries no label by design (cell ⑩); the
+                    // ledger's proposition is about the rulings a chamber lies behind.
+                    if r.side != 0 {
+                        ruling_probe::LABELLED
+                            .lock()
+                            .expect("the probe's lock is never held across a panic")
+                            .push(out.is_some());
+                    }
                 }
                 out
             };
@@ -5184,6 +5323,7 @@ fn per_class(
                 r.cyl,
                 RulingExtent {
                     wall: wc,
+                    side: r.side,
                     end: r.end,
                     z,
                     label,
@@ -5775,6 +5915,78 @@ pub(crate) fn circle_center_in_ring(
     rational_point_in_ring(jd, cyls, wc, &center, ring)?.ok_or_else(undecided)
 }
 
+/// **A rational point strictly inside a straight edge whose two ends are branch corners on one
+/// line** (cell ⑩). The chord witness needs the two ends to be one solve's two roots; a cap's
+/// section between the rulings of two *coaxial* cylinders — a bore inside a fillet, cut by a wall
+/// within both radii — has its ends on two solves, one radical each, and every corner of that cell
+/// irrational. Both ends still lie on one rational line (the pair `{wc, wall}`'s meet, the same
+/// parametrization from either solve), so a **rational parameter between the two** names a point
+/// of the edge's interior exactly: chosen by the realized midpoint, then **verified** against each
+/// end in its own radical ([`rational_between`]). `None` for any other edge shape, or when the
+/// two solves do not parametrize one line.
+fn edge_interior_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    e: &combinatorics::RingEdge,
+) -> Option<[nacre_scalar::Rat; 3]> {
+    if !matches!(e.carrier, combinatorics::Carrier::Plane { .. }) {
+        return None;
+    }
+    let (pa, ca, _) = combinatorics::branch_name(e.node)?;
+    let (pb, cb, _) = combinatorics::branch_name(e.to)?;
+    if pa != pb {
+        return None;
+    }
+    let (la, sa) = combinatorics::branch_meet(jd, ca, &cyls.get(ca)?.def, e.node)?;
+    let (lb, sb) = combinatorics::branch_meet(jd, cb, &cyls.get(cb)?.def, e.to)?;
+    if la.base() != lb.base() || la.dir() != lb.dir() {
+        return None;
+    }
+    let t = rational_between(&sa, &sb)?;
+    let (b, d) = (la.base(), la.dir());
+    let mut p = b;
+    for k in 0..3 {
+        p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
+    }
+    Some(p)
+}
+
+/// A rational strictly between two quadratic values that need not share a radical: the realized
+/// midpoint, taken exactly as the `f64` it is (`Rat::try_from_f64`), then **verified** against
+/// each end in that end's own radical — a comparison with a rational is always formable. If the
+/// midpoint lands outside (ends closer than the realization resolves), a few bisections toward
+/// the realized interval's middle are tried; `None` when none is inside.
+fn rational_between(
+    a: &nacre_scalar::quad::QuadVal,
+    b: &nacre_scalar::quad::QuadVal,
+) -> Option<nacre_scalar::Rat> {
+    use nacre_scalar::{Orient, Rat, quad::QuadVal};
+    let (mut lo, mut hi) = (a.to_f64(), b.to_f64());
+    if lo > hi {
+        std::mem::swap(&mut lo, &mut hi);
+    }
+    let inside = |t: Rat| -> Option<bool> {
+        let q = QuadVal::from_rat(t);
+        let da = q.checked_sub(a)?.sign();
+        let db = q.checked_sub(b)?.sign();
+        // strictly between: on opposite sides of the two ends
+        Some(matches!(
+            (da, db),
+            (Orient::Positive, Orient::Negative) | (Orient::Negative, Orient::Positive)
+        ))
+    };
+    let mut mid = (lo + hi) / 2.0;
+    for _ in 0..8 {
+        let t = Rat::try_from_f64(mid)?;
+        if inside(t)? {
+            return Some(t);
+        }
+        // the realization put it outside: pull toward the interval's middle
+        mid = (mid + (lo + hi) / 2.0) / 2.0;
+    }
+    None
+}
+
 /// **The midpoint of a ring edge whose two ends are one solve's two roots** — rational, exactly,
 /// and strictly between them.
 ///
@@ -5936,6 +6148,134 @@ pub(crate) fn node_in_circle(
     }
 }
 
+/// **Is polygon ring `ra` inside polygon ring `rb`?** — the two-polygon arm of [`cell_in_cell`],
+/// written once because the coplanar merge asks the same question of a hole and an outer
+/// (cell ⑩: it used to mirror this arm by hand, minus the witness supplies, and named a hole with
+/// no three-plane corner `NoClearRay` for a ray never cast). `Ok(None)` is adjacency (a shared
+/// node): not nested, not comparable.
+pub(crate) fn ring_in_ring_by_witness(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    wc: usize,
+    ra: &[combinatorics::RingEdge],
+    rb: &[combinatorics::RingEdge],
+) -> Result<Option<bool>, BoolError> {
+    if ra.iter().any(|e| rb.iter().any(|f| f.node == e.node)) {
+        return Ok(None);
+    }
+    if combinatorics::ring_is_mixed(rb) {
+        let undecided = || reject(RejectReason::WitnessNotRational);
+        let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+        // From each rational witness of `a` until one ray is clear (`None` is the probe
+        // on the ring, a tangent ray, or a seam-incident root — a corner on the ray is
+        // decided, cell ②); an exhausted ring is the same degeneracy `ring_in_ring`
+        // names. ★ The witnesses, in order: the three-plane corners, the **rational
+        // branch corners** ([`combinatorics::branch_coords_rat`] — a half-cylinder
+        // prism's cap has no other kind, cell ⑩), and the chords' midpoints
+        // ([`chord_midpoint_rat`]) — the supplies the named road below has, so the two
+        // roads offer the same points.
+        let mut asked = false;
+        let witnesses = ra.iter().flat_map(|e| {
+            combinatorics::node_coords_rat(jd, e.node)
+                .or_else(|| combinatorics::branch_coords_rat(jd, cyls, e.node))
+                .into_iter()
+                .chain(chord_midpoint_rat(jd, cyls, e))
+                .chain(edge_interior_rat(jd, cyls, e))
+        });
+        for p in witnesses {
+            asked = true;
+            if let Some(hit) = combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, rb) {
+                return Ok(Some(hit));
+            }
+        }
+        // ★ Same split as the named road below: a list that was **empty** is not a list
+        // that ran out. ☑ Measured (cell ⑩): the half-cylinder pair reached this arm with
+        // an empty list before the branch corners joined it.
+        return Err(reject(if asked {
+            RejectReason::NoClearRay
+        } else {
+            RejectReason::RingHasNoWitness
+        }));
+    }
+    // ★ `ring_in_ring` casts from each of `a`'s nodes until one gives a clear ray; an
+    // exhausted ring is the genuine degeneracy it rejects for.
+    //
+    // ★★★★★ **This used to end «— which is also why dropping a branch node from the probe
+    // list here is honest», and that was the defect wearing the word.** Dropping them left
+    // *nothing*: measured, every refusal this road raised came from a list that was empty
+    // before the first cast. What is honest is to say so, which the two arms above now do.
+    let probes = combinatorics::three_plane_probes(ra.iter().map(|e| e.node));
+    // ★★★★★ **A ring that *is* a circle is asked the circle's question.** The probe list
+    // above is plane-triple **names**, and a circle a wall has split into arcs has none —
+    // every corner is a branch point — so it comes out empty and `ring_in_ring` refuses
+    // with a name about rays it never cast. The cell is a disk either way, and the arm one
+    // match-arm up already answers disks exactly ([`circle_center_in_ring`], whose witness
+    // is the centre and so is rational whatever way the axis points).
+    //
+    // ★ **Only where the names run out.** Where they do not, today's road and today's
+    // order are untouched — a coordinate is not a name, and a rotated class has names but
+    // no rational coefficients (`WorkingPlane::world_rat` is `None` there), so keying this
+    // on "no rational witness" instead would divert the rotation sweep's own population.
+    // Asking the circle question *always* is the tidier end state and should be measured
+    // as an agreement first; this is the strict extension.
+    if probes.is_empty() {
+        if let Some(def) = ring_own_circle(ra) {
+            return Ok(Some(
+                circle_center_in_ring(jd, cyls, wc, def, rb)? && !node_in_circle(jd, rb, def)?,
+            ));
+        }
+        // ★★★★★ **And when the corners cannot name a witness, an edge can.** A ring edge
+        // whose two ends are one solve's two roots has a **rational midpoint**
+        // ([`chord_midpoint_rat`]) — the pair is built from a shared `mid`, so it costs one
+        // `branch_meet` and no approximation. That is the wall panel's case: four branch
+        // corners, no circle to take a centre from, and two perpendicular traces that are
+        // each a whole chord.
+        //
+        // ★ **`Ok(None)` is this witness's abstention, not the ring's** — the next edge's
+        // midpoint may still answer, which is why [`rational_point_in_ring`] hands the two
+        // apart. ☑ Measured before this was written: every ring here offers **two**
+        // midpoints and the two always agree, and none of them abstains.
+        //
+        // ★ It sits after [`ring_own_circle`] for the reader's sake only: the two supplies
+        // are **disjoint by construction** — that one needs every edge to be an arc, this
+        // one needs an edge that is not.
+        for e in ra {
+            let Some(mid) = chord_midpoint_rat(jd, cyls, e) else {
+                continue;
+            };
+            if let Some(hit) = rational_point_in_ring(jd, cyls, wc, &mid, rb)? {
+                return Ok(Some(hit));
+            }
+        }
+        // ★ And a **rational branch corner** is a witness too (cell ⑩): a slot's stadium
+        // has four, all tangent points, and neither a circle nor a whole chord — the
+        // supply the mixed road above offers ([`combinatorics::branch_coords_rat`]).
+        for e in ra {
+            let Some(p) = combinatorics::branch_coords_rat(jd, cyls, e.node) else {
+                continue;
+            };
+            if let Some(hit) = rational_point_in_ring(jd, cyls, wc, &p, rb)? {
+                return Ok(Some(hit));
+            }
+        }
+        // ★ And a rational point **inside an edge** whose ends are two solves' roots
+        // ([`edge_interior_rat`]) — the cell between a bore's and a fillet's rulings.
+        for e in ra {
+            let Some(p) = edge_interior_rat(jd, cyls, e) else {
+                continue;
+            };
+            if let Some(hit) = rational_point_in_ring(jd, cyls, wc, &p, rb)? {
+                return Ok(Some(hit));
+            }
+        }
+        // ★ And when neither a circle nor a chord names one, say **that** —
+        // `ring_in_ring` below would report an exhausted probe list, which is a different
+        // fact and one that never happened here.
+        return Err(reject(RejectReason::RingHasNoWitness));
+    }
+    combinatorics::ring_in_ring(jd, wc, &probes, rb).map(Some)
+}
+
 /// **Is cell `a`'s loop inside cell `b`'s?** — the one dispatch, four arms by carrier kind.
 ///
 /// `Ok(None)` is *not comparable*, and it covers two shapes that both mean "these are neighbours,
@@ -5949,8 +6289,8 @@ pub(crate) fn node_in_circle(
 /// drift, which is this repository's most-repeated defect.
 ///
 /// The arms:
-/// - **two circles** — never nested here: one circle's disk and its own contour are adjacent, and
-///   distinct cylinders are pairwise clear by the gate (`dist > r₁+r₂` forbids containment);
+/// - **two circles** — [`disk_in_disk`] on the radii and the centre distance (cell ⑩ S1: two disks
+///   of one class *do* nest — a pin fused onto a boss — the gate keeps only different classes apart);
 /// - **circle in polygon** — the centre (`axis ∩ wc`, rational) inside the ring, **and the ring not
 ///   inside the circle**. ★★ That second clause is not belt-and-braces: with disjoint loops the
 ///   centre test alone says "inside" for *both* nestings when the polygon happens to straddle the
@@ -5992,106 +6332,7 @@ fn cell_in_cell(
                 && !node_in_circle(jd, &rings[b], &circles[ci].def)?,
         )),
         (None, Some(ri)) => node_in_circle(jd, &rings[a], &circles[ri].def).map(Some),
-        (None, None) => {
-            if rings[a]
-                .iter()
-                .any(|e| rings[b].iter().any(|f| f.node == e.node))
-            {
-                return Ok(None);
-            }
-            if combinatorics::ring_is_mixed(&rings[b]) {
-                let undecided = || reject(RejectReason::WitnessNotRational);
-                let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
-                // From each rational witness of `a` until one ray is clear (`None` is the probe
-                // on the ring, a tangent ray, or a seam-incident root — a corner on the ray is
-                // decided, cell ②); an exhausted ring is the same degeneracy `ring_in_ring`
-                // names. ★ The witnesses, in order: the three-plane corners, the **rational
-                // branch corners** ([`combinatorics::branch_coords_rat`] — a half-cylinder
-                // prism's cap has no other kind, cell ⑩), and the chords' midpoints
-                // ([`chord_midpoint_rat`]) — the supplies the named road below has, so the two
-                // roads offer the same points.
-                let mut asked = false;
-                let witnesses = rings[a].iter().flat_map(|e| {
-                    combinatorics::node_coords_rat(jd, e.node)
-                        .or_else(|| combinatorics::branch_coords_rat(jd, cyls, e.node))
-                        .into_iter()
-                        .chain(chord_midpoint_rat(jd, cyls, e))
-                });
-                for p in witnesses {
-                    asked = true;
-                    if let Some(hit) =
-                        combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, &rings[b])
-                    {
-                        return Ok(Some(hit));
-                    }
-                }
-                // ★ Same split as the named road below: a list that was **empty** is not a list
-                // that ran out. ☑ Measured (cell ⑩): the half-cylinder pair reached this arm with
-                // an empty list before the branch corners joined it.
-                return Err(reject(if asked {
-                    RejectReason::NoClearRay
-                } else {
-                    RejectReason::RingHasNoWitness
-                }));
-            }
-            // ★ `ring_in_ring` casts from each of `a`'s nodes until one gives a clear ray; an
-            // exhausted ring is the genuine degeneracy it rejects for.
-            //
-            // ★★★★★ **This used to end «— which is also why dropping a branch node from the probe
-            // list here is honest», and that was the defect wearing the word.** Dropping them left
-            // *nothing*: measured, every refusal this road raised came from a list that was empty
-            // before the first cast. What is honest is to say so, which the two arms above now do.
-            let probes = combinatorics::three_plane_probes(rings[a].iter().map(|e| e.node));
-            // ★★★★★ **A ring that *is* a circle is asked the circle's question.** The probe list
-            // above is plane-triple **names**, and a circle a wall has split into arcs has none —
-            // every corner is a branch point — so it comes out empty and `ring_in_ring` refuses
-            // with a name about rays it never cast. The cell is a disk either way, and the arm one
-            // match-arm up already answers disks exactly ([`circle_center_in_ring`], whose witness
-            // is the centre and so is rational whatever way the axis points).
-            //
-            // ★ **Only where the names run out.** Where they do not, today's road and today's
-            // order are untouched — a coordinate is not a name, and a rotated class has names but
-            // no rational coefficients (`WorkingPlane::world_rat` is `None` there), so keying this
-            // on "no rational witness" instead would divert the rotation sweep's own population.
-            // Asking the circle question *always* is the tidier end state and should be measured
-            // as an agreement first; this is the strict extension.
-            if probes.is_empty() {
-                if let Some(def) = ring_own_circle(&rings[a]) {
-                    return Ok(Some(
-                        circle_center_in_ring(jd, cyls, wc, def, &rings[b])?
-                            && !node_in_circle(jd, &rings[b], def)?,
-                    ));
-                }
-                // ★★★★★ **And when the corners cannot name a witness, an edge can.** A ring edge
-                // whose two ends are one solve's two roots has a **rational midpoint**
-                // ([`chord_midpoint_rat`]) — the pair is built from a shared `mid`, so it costs one
-                // `branch_meet` and no approximation. That is the wall panel's case: four branch
-                // corners, no circle to take a centre from, and two perpendicular traces that are
-                // each a whole chord.
-                //
-                // ★ **`Ok(None)` is this witness's abstention, not the ring's** — the next edge's
-                // midpoint may still answer, which is why [`rational_point_in_ring`] hands the two
-                // apart. ☑ Measured before this was written: every ring here offers **two**
-                // midpoints and the two always agree, and none of them abstains.
-                //
-                // ★ It sits after [`ring_own_circle`] for the reader's sake only: the two supplies
-                // are **disjoint by construction** — that one needs every edge to be an arc, this
-                // one needs an edge that is not.
-                for e in &rings[a] {
-                    let Some(mid) = chord_midpoint_rat(jd, cyls, e) else {
-                        continue;
-                    };
-                    if let Some(hit) = rational_point_in_ring(jd, cyls, wc, &mid, &rings[b])? {
-                        return Ok(Some(hit));
-                    }
-                }
-                // ★ And when neither a circle nor a chord names one, say **that** —
-                // `ring_in_ring` below would report an exhausted probe list, which is a different
-                // fact and one that never happened here.
-                return Err(reject(RejectReason::RingHasNoWitness));
-            }
-            combinatorics::ring_in_ring(jd, wc, &probes, &rings[b]).map(Some)
-        }
+        (None, None) => ring_in_ring_by_witness(jd, cyls, wc, &rings[a], &rings[b]),
     }
 }
 
@@ -6236,6 +6477,8 @@ fn edge_mask(merged: &[(SolidSide, SegKind)]) -> Result<Label, BoolError> {
                 .filter_map(|k| match k {
                     SegKind::Graze { body_above } if want_graze => Some(*body_above),
                     SegKind::Seated { body_above } if !want_graze => Some(*body_above),
+                    // A tangent ruling flips its axis side — the seated rule with that side.
+                    SegKind::Tangent { axis_above } if !want_graze => Some(*axis_above),
                     _ => None,
                 })
                 .collect()
@@ -6599,11 +6842,11 @@ fn emit_faces(
                 cells
                     .iter()
                     .position(|q| q.half_edges.contains(&even))
-                    .and_then(|cx| corner_sides(jd, edges, &cells[cx], &ma.def).next()),
+                    .and_then(|cx| cell_side(jd, edges, &cells[cx], &ma.def)),
                 cells
                     .iter()
                     .position(|q| q.half_edges.contains(&(even + 1)))
-                    .and_then(|cx| corner_sides(jd, edges, &cells[cx], &ma.def).next()),
+                    .and_then(|cx| cell_side(jd, edges, &cells[cx], &ma.def)),
                 he == even,
                 jd.planes[wc].frame_sign,
             );
@@ -6789,6 +7032,9 @@ pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 #[derive(Clone, Debug)]
 pub(crate) struct RulingExtent {
     pub(crate) wall: usize,
+    /// Which of the wall's two rulings — or `0`, a **tangent** wall's single one (cell ⑩), the
+    /// one station that carries no label: nothing changes across it, the face ends there.
+    pub(crate) side: i8,
     pub(crate) end: [NodeId; 2],
     pub(crate) z: [nacre_scalar::Rat; 2],
     /// **The chart's vertical answer** (capability D, third rung): the label of the cell this
@@ -12065,7 +12311,7 @@ mod tests {
             .filter_map(|c| match c.kind {
                 SegKind::Seated { body_above } => Some((false, body_above)),
                 SegKind::Graze { body_above } => Some((true, body_above)),
-                SegKind::Transversal { .. } => None,
+                SegKind::Transversal { .. } | SegKind::Tangent { .. } => None,
             })
             .collect();
         assert_eq!(sides.len(), 2, "seated and graze: {:?}", cap.circles);

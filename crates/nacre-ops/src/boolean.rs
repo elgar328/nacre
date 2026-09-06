@@ -663,7 +663,17 @@ fn group_faces(
         .map(combinatorics::Probe::Named)
         .collect();
         if named.is_empty() {
-            combinatorics::coord_probes(jd, cyls, &comp_faces[c])
+            // ★ Rational branch corners first (cell ⑩ — a slot or a fillet-cornered prism has
+            // no other vertex), then the caps' derived points.
+            let mut out = combinatorics::corner_probes(
+                jd,
+                cyls,
+                by_comp_lf[c]
+                    .iter()
+                    .flat_map(|lf| lf.poly_rings().flat_map(|r| r.iter().copied())),
+            );
+            out.extend(combinatorics::coord_probes(jd, cyls, &comp_faces[c]));
+            out
         } else {
             named
         }
@@ -900,7 +910,8 @@ pub(crate) enum Wall {
     },
     /// A ruling piece (M6-2 rulings ladder): straight on the lateral, so like a line its ends
     /// order it — but its carrier is the cylinder, and `(cyl, side)` names which of the two
-    /// parallel rulings ([`combinatorics::RulingCarrier::side`]). `up` restates
+    /// parallel rulings ([`combinatorics::RulingCarrier::side`]; `0` is a **tangent** wall's
+    /// single ruling, cell ⑩). `up` restates
     /// `ClassEdges::edge_at`'s convention (`MergedRuling::end` ascends the axis; the even
     /// half-edge travels up, its twin down), carried like `Arc::ccw`.
     Ruling {
@@ -3701,7 +3712,6 @@ fn merge_component(
         // about that vertex, and settling for `nodes[0]` is what lost whole bands of rotation
         // angles here. `ring_in_ring` holds that retry now, for this caller and the two in the
         // arrangement alike.
-        let probes = combinatorics::three_plane_probes(hole.nodes.iter().copied());
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
             // ★ A region bounded by a **circle** asks the disk's question of the hole's nodes —
@@ -3728,34 +3738,17 @@ fn merge_component(
             // rational corner) is `RingHasNoWitness`. ☑ Neither has a population today
             // (cell ②'s ledger: 0 raises at this site); named so the first arrives under
             // the right word.
-            let hit = if combinatorics::ring_is_mixed(&ring) {
-                let undecided = || reject(RejectReason::WitnessNotRational);
-                let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
-                let mut ans = None;
-                let mut asked = false;
-                for p in hole
-                    .nodes
-                    .iter()
-                    .filter_map(|&n| combinatorics::node_coords_rat(jd, n))
-                {
-                    asked = true;
-                    if let Some(h) =
-                        combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, &ring)
-                    {
-                        ans = Some(h);
-                        break;
-                    }
-                }
-                ans.ok_or_else(|| {
-                    reject(if asked {
-                        RejectReason::NoClearRay
-                    } else {
-                        RejectReason::RingHasNoWitness
-                    })
-                })?
-            } else {
-                combinatorics::ring_in_ring(jd, wc, &probes, &ring)?
-            };
+            // ★ The rational road serves a mixed outer **and a hole with no three-plane corner**
+            // (cell ⑩ — a slot's stadium, four tangent corners and nothing else): its witnesses
+            // are the hole's rational corners, branch ones included
+            // ([`combinatorics::branch_coords_rat`]). Handing an empty probe list to
+            // `ring_in_ring` said `NoClearRay` for a ray never cast.
+            // ★ The arrangement's own two-polygon nesting ([`crate::arrangement::ring_in_ring_by_witness`])
+            // — one rule, one set of witnesses; adjacency (`None`) is «not inside».
+            let hole_edges = hole.edges(jd, cyls, Some(wc))?;
+            let hit =
+                crate::arrangement::ring_in_ring_by_witness(jd, cyls, wc, &hole_edges, &ring)?
+                    .unwrap_or(false);
             if hit {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names

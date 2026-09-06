@@ -213,7 +213,9 @@ pub(crate) fn face_spans(
     let mut answer: Option<bool> = None;
     for (_, kind) in r.marks.iter().filter(|(s, _)| *s == side) {
         let reaches = match *kind {
-            SegKind::Seated { .. } => continue, // a planar face's word — see `ArcLabel::marks`
+            // A planar face's word — see `ArcLabel::marks`; a tangent ruling is a seated face's
+            // too (cell ⑩), and never a rim arc's mark.
+            SegKind::Seated { .. } | SegKind::Tangent { .. } => continue,
             SegKind::Transversal { .. } => true,
             SegKind::Graze { body_above } => body_above == band_is_above,
         };

@@ -694,7 +694,9 @@ pub(crate) struct RulingCarrier {
     /// The cylinder class — the ruling's identity, with `side`.
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
-    /// Which of the two parallel rulings, by the sign convention above.
+    /// Which of the two parallel rulings, by the sign convention above — or `0`, the single
+    /// ruling of a **tangent** wall (cell ⑩, S3): an identity key like the other two values, never
+    /// a sign to multiply by (the sign consumers assert it away).
     pub side: i8,
     /// `true` when travel runs along `+m` — the sense the ruling split builds every
     /// `MergedRuling` in (`end[0] → end[1]` ascends the axis), inverted for the twin half-edge.
@@ -881,6 +883,9 @@ pub(crate) struct ArcDir {
     at: (nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
     /// The circle's centre on `P` — rational, because a circle bound's plane is ⊥ to the axis.
     centre: [nacre_scalar::Rat; 3],
+    /// The cylinder's axis direction — what `ccw` is about, and what the travel tangent at `at`
+    /// runs along as `m × (N − c)` ([`tangent_travel_agrees`]).
+    axis: [nacre_scalar::Rat; 3],
     /// `n_P · m > 0`: the class's **stored** normal against the cylinder's axis.
     ///
     /// ★★ **It used to say "measured unexercised, `true` on every class the corpus reaches", and
@@ -1066,6 +1071,7 @@ fn arc_at(
         cyl: a.cyl,
         at,
         centre,
+        axis: m,
         axis_up: crate::planes::plus_t_is_above(&jd.planes[p], &a.def),
         ccw: a.ccw,
     })))
@@ -1252,8 +1258,8 @@ pub(crate) fn continuation(
     p: usize,
     earlier: &EdgeDir,
     later: &EdgeDir,
-) -> Continuation {
-    match (earlier, later) {
+) -> Result<Continuation, BoolError> {
+    Ok(match (earlier, later) {
         (
             EdgeDir::Line {
                 carrier: ce,
@@ -1291,10 +1297,22 @@ pub(crate) fn continuation(
                 Continuation::DoublesBack
             }
         }
-        // A line and an arc at a **transversal** crossing turn — that is what transversal means,
-        // and the split makes no other kind of node.
+        // ★ A line and an arc **tangent** at the shared node (cell ⑩, S3 — a fillet's smooth
+        // corner): the turn is `0`, and whether the ring runs on or doubles back is the travel
+        // directions' agreement ([`tangent_travel_agrees`]).
+        (EdgeDir::Line { carrier, sense }, EdgeDir::Arc(arc))
+        | (EdgeDir::Arc(arc), EdgeDir::Line { carrier, sense })
+            if turn(jd, p, earlier, later)? == 0 =>
+        {
+            match tangent_travel_agrees(jd, p, *carrier, *sense, arc) {
+                Some(true) => Continuation::Straight,
+                Some(false) => Continuation::DoublesBack,
+                None => return Err(reject(RejectReason::WitnessNotRational)),
+            }
+        }
+        // A line and an arc at a **transversal** crossing turn — that is what transversal means.
         _ => Continuation::Turns,
-    }
+    })
 }
 
 /// The turn from the direction a loop **arrives on** to the one it **leaves on** — [`turn`] with
@@ -1529,6 +1547,70 @@ fn ruling_line_turn(
 ///
 /// ★ The table's first row was re-measured against that new lock and still holds: negating the
 /// whole result leaves the whole crate green. A global flip really is absorbed.
+/// **At a node where a line and an arc are tangent, do their travel directions agree?** — the
+/// sign of `d · t`: `d` the line's travel direction (`sense` along `cross(n_p, n_wall)` of the
+/// stored coefficients — the direction [`order_pinned`] orders by and [`arc_side`] reads), and
+/// `t = way · (m × (N − c))` the arc's travel tangent at its node `N` (`way` is `+1` for
+/// counter-clockwise travel about the axis `m`), formed in one radical from `N = base + s·dir`.
+///
+/// Asked only where [`turn`] is `0` for the pair — the line is tangent to the circle at `N`, so
+/// the two directions are parallel and the dot decides. `Some(false)`: **opposite** — a smooth
+/// join, the ring runs straight through, two departures are a half turn apart. `Some(true)`:
+/// the **same** way — the ring doubles back along the arc, or two departures coincide, which is a
+/// **curvature** question this crate does not order yet (two tangent circles, M6b's shape). `None`
+/// is a zero dot (not tangent after all) or overflow.
+///
+/// ★ Cell ⑩, S3: a fillet's or a slot's wall meets its cylinder exactly so, at a corner whose
+/// root is `Double`; the angular order read the pair as a tie (`UnorderedEdges`) and the winding
+/// walk as doubling back (`StraightAngle`) because [`antiparallel`] has no line–arc arm — the
+/// structure cannot tell, only the geometry can, and this is where it is asked once.
+pub(crate) fn tangent_travel_agrees(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    carrier: usize,
+    sense: i8,
+    arc: &ArcDir,
+) -> Option<bool> {
+    use nacre_scalar::{Orient, quad::QuadVal};
+    let (np, nw) = (stored_coeffs_rat(jd, p)?, stored_coeffs_rat(jd, carrier)?);
+    let d = cross3_rat(&[np[0], np[1], np[2]], &[nw[0], nw[1], nw[2]])?;
+    let (line, s) = &arc.at;
+    let mut rel = line.base();
+    for (r, c) in rel.iter_mut().zip(arc.centre.iter()) {
+        *r = r.checked_sub(*c)?;
+    }
+    let u = cross3_rat(&arc.axis, &rel)?;
+    let v = cross3_rat(&arc.axis, &line.dir())?;
+    let dot =
+        QuadVal::from_rat(dot3_rat(&d, &u)?).checked_add(&s.checked_mul_rat(dot3_rat(&d, &v)?)?)?;
+    let way = if arc.ccw { 1i8 } else { -1 };
+    match dot.sign() {
+        Orient::Positive => Some(sense * way > 0),
+        Orient::Negative => Some(sense * way < 0),
+        Orient::Zero => None,
+    }
+}
+
+/// Whether two **departures** from one node are a half turn apart by tangency — a line and an
+/// arc tangent at the node, the arc leaving opposite to the line. The structural
+/// [`antiparallel`] cannot see it; [`tangent_travel_agrees`] can. `Ok(false)` for any other pair.
+pub(crate) fn tangent_pole(
+    jd: &Judge<'_, WorkingPlane>,
+    p: usize,
+    a: &EdgeDir,
+    b: &EdgeDir,
+) -> Result<bool, BoolError> {
+    let (line, arc) = match (a, b) {
+        (EdgeDir::Line { carrier, sense }, EdgeDir::Arc(arc))
+        | (EdgeDir::Arc(arc), EdgeDir::Line { carrier, sense }) => ((*carrier, *sense), arc),
+        _ => return Ok(false),
+    };
+    if turn(jd, p, a, b)? != 0 {
+        return Ok(false);
+    }
+    Ok(tangent_travel_agrees(jd, p, line.0, line.1, arc) == Some(false))
+}
+
 fn arc_side(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
@@ -3729,14 +3811,6 @@ pub(crate) fn coord_probes(
 ) -> Vec<Probe> {
     use nacre_scalar::Rat;
     let zero = Rat::from_int(0);
-    let nonzero = |v: &[Rat; 3]| v.iter().any(|c| *c != zero);
-    let neg = |v: &[Rat; 3]| -> Option<[Rat; 3]> {
-        Some([
-            zero.checked_sub(v[0])?,
-            zero.checked_sub(v[1])?,
-            zero.checked_sub(v[2])?,
-        ])
-    };
     let mut out = Vec::new();
     for f in faces {
         let CompSurf::Plane(q) = &f.surf else {
@@ -3825,22 +3899,77 @@ pub(crate) fn coord_probes(
                     }
                 }
             };
-        let m = def.dir();
-        let mut dirs = vec![m];
-        dirs.extend(neg(&m));
-        for k in 0..3 {
-            let mut e = [zero; 3];
-            e[k] = Rat::from_int(1);
-            match cross3_rat(&e, &m) {
-                Some(w) if nonzero(&w) => {
-                    dirs.push(w);
-                    dirs.extend(neg(&w));
-                    break;
-                }
-                _ => {}
+        out.extend(
+            probe_dirs(&def.dir())
+                .into_iter()
+                .map(|dir| Probe::Coord { p, dir }),
+        );
+    }
+    out
+}
+
+/// The directions a coordinate probe casts along: the cylinder's axis both ways and one
+/// perpendicular both ways — several, because one ray can graze and the remedy is another
+/// direction; the order is not load-bearing. One spelling for [`coord_probes`] and
+/// [`corner_probes`].
+fn probe_dirs(m: &[nacre_scalar::Rat; 3]) -> Vec<[nacre_scalar::Rat; 3]> {
+    use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
+    let nonzero = |v: &[Rat; 3]| v.iter().any(|c| *c != zero);
+    let neg = |v: &[Rat; 3]| -> Option<[Rat; 3]> {
+        Some([
+            zero.checked_sub(v[0])?,
+            zero.checked_sub(v[1])?,
+            zero.checked_sub(v[2])?,
+        ])
+    };
+    let mut dirs = vec![*m];
+    dirs.extend(neg(m));
+    for k in 0..3 {
+        let mut e = [zero; 3];
+        e[k] = Rat::from_int(1);
+        match cross3_rat(&e, m) {
+            Some(w) if nonzero(&w) => {
+                dirs.push(w);
+                dirs.extend(neg(&w));
+                break;
             }
+            _ => {}
         }
-        out.extend(dirs.into_iter().map(|dir| Probe::Coord { p, dir }));
+    }
+    dirs
+}
+
+/// **Coordinate probes at a component's rational branch corners** (cell ⑩) — the corners a
+/// prism with arcs has where its walls meet its cylinders (a slot's, a fillet's, a D-prism's:
+/// no three-plane name anywhere, and [`coord_probes`]' cap witness is not always on the face).
+/// A corner whose root is rational ([`branch_coords_rat`]) is a point of the boundary as exact as
+/// a named vertex, cast along its own cylinder's directions. Each corner once.
+pub(crate) fn corner_probes(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    nodes: impl Iterator<Item = NodeId>,
+) -> Vec<Probe> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for n in nodes {
+        if !seen.insert(n) {
+            continue;
+        }
+        let Some((_, cyl, _)) = branch_name(n) else {
+            continue;
+        };
+        let Some(p) = branch_coords_rat(jd, cyls, n) else {
+            continue;
+        };
+        let Some(c) = cyls.get(cyl) else {
+            continue;
+        };
+        out.extend(
+            probe_dirs(&c.def.dir())
+                .into_iter()
+                .map(|dir| Probe::Coord { p, dir }),
+        );
     }
     out
 }
@@ -5203,7 +5332,7 @@ pub(crate) fn loop_winding(
         let shared = ring[ahead].node;
         let earlier = dir_at(jd, cyls, p, &ring[back], shared)?;
         let later = dir_at(jd, cyls, p, &ring[ahead], shared)?;
-        match continuation(jd, p, &earlier, &later) {
+        match continuation(jd, p, &earlier, &later)? {
             // ★★★★ **`earlier`, and not `ring[back]`'s direction at its own start.** The two are
             // the same value for a straight edge — a line's tangent does not change along it — and
             // that equality is what let the older spelling stand. On an arc they differ by the
@@ -5229,7 +5358,20 @@ pub(crate) fn loop_winding(
                 if ahead == lo
                     && let (EdgeDir::Arc(e), EdgeDir::Arc(l)) = (&earlier, &later) =>
             {
-                return smooth_extremum_winding(jd, p, e, l);
+                if e.cyl != l.cyl || e.ccw != l.ccw || e.axis_up != l.axis_up {
+                    return Err(reject(RejectReason::CurvedStraightRun));
+                }
+                return Ok(smooth_extremum_winding(jd, p, l));
+            }
+            // ★ A smooth **line–arc** join at the extremum (cell ⑩, S3 — a fillet's corner is
+            // the rounded rectangle's extreme node): the ring turns there only at second order,
+            // and the arc's bending is that turn.
+            Continuation::Straight
+                if ahead == lo
+                    && let (EdgeDir::Line { .. }, EdgeDir::Arc(a))
+                    | (EdgeDir::Arc(a), EdgeDir::Line { .. }) = (&earlier, &later) =>
+            {
+                return Ok(smooth_extremum_winding(jd, p, a));
             }
             Continuation::Straight
                 if matches!(earlier, EdgeDir::Arc(_)) || matches!(later, EdgeDir::Arc(_)) =>
@@ -5290,17 +5432,9 @@ pub(crate) fn loop_winding(
 /// minimum is a smooth arc node on a `frame_sign = −1` class is a population no fixture has yet
 /// (the arc extremum rung reads the smooth minimum *inside* an arc, [`arc_extremum_winding`],
 /// which the oracle does exercise).
-fn smooth_extremum_winding(
-    jd: &Judge<'_, WorkingPlane>,
-    p: usize,
-    earlier: &ArcDir,
-    later: &ArcDir,
-) -> Result<i8, BoolError> {
-    if earlier.cyl != later.cyl || earlier.ccw != later.ccw || earlier.axis_up != later.axis_up {
-        return Err(reject(RejectReason::CurvedStraightRun));
-    }
+fn smooth_extremum_winding(jd: &Judge<'_, WorkingPlane>, p: usize, arc: &ArcDir) -> i8 {
     let sign = |b: bool| if b { 1i8 } else { -1 };
-    Ok(sign(later.ccw) * sign(later.axis_up) * jd.planes[p].frame_sign)
+    sign(arc.ccw) * sign(arc.axis_up) * jd.planes[p].frame_sign
 }
 
 /// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.
@@ -5372,8 +5506,18 @@ fn curved_wall(
             let def = cyls.get(cyl).ok_or_else(curved)?.def.clone();
             let at = branch_meet(jd, cyl, &def, end).ok_or_else(curved)?;
             let w = class_coeffs_rat(jd, near).ok_or_else(curved)?;
-            let side =
-                crate::arrangement::ruling_side(&w, &def, (&at.0, &at.1)).ok_or_else(curved)?;
+            // ★ **A tangent wall has one ruling, and its side is `0`** (cell ⑩, S3): the corner's
+            // root says so (`Double`), and that is where the side is derived — not from
+            // [`crate::arrangement::ruling_side`], whose `None` on the axis plane is the *sign*
+            // reading the ray caster and the arc departure rely on. A fillet's or a slot's own
+            // walls are tangent to their cylinder, so every such operand used to fall here as
+            // `CurvedOperandBoundary` (S0's measured first decline).
+            let side = match branch_name(end) {
+                Some((_, _, nacre_topo::QuadRoot::Double)) => 0,
+                _ => {
+                    crate::arrangement::ruling_side(&w, &def, (&at.0, &at.1)).ok_or_else(curved)?
+                }
+            };
             // Which way travel runs along the axis: the stored edge ascends when its second
             // endpoint does, and `forward` says whether this half-edge walks it that way.
             //

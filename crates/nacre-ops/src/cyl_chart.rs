@@ -80,6 +80,9 @@ pub(crate) struct ZLine {
 #[derive(Clone, Debug)]
 pub(crate) struct ThetaSeg {
     pub(crate) wall: usize,
+    /// The ruling's side on its wall — `0` a **tangent** station (cell ⑩): a line the face ends
+    /// on, with no chamber to read behind it, so no `label`.
+    pub(crate) side: i8,
     /// The piece's own two branch nodes: the θ **order** is asked of these
     /// (`circular_order_about_seam` via `arrangement::circular_order`), never of a coordinate.
     pub(crate) end: [combinatorics::NodeId; 2],
@@ -399,6 +402,7 @@ pub(crate) fn chart_of(
                     };
                     ThetaSeg {
                         wall: r.wall,
+                        side: r.side,
                         end,
                         z,
                         label: r.label,
@@ -440,6 +444,12 @@ pub(crate) enum End<'a> {
     /// (`end_other`); a sector that merely spans several arcs is no longer here — it is an
     /// [`End::Exact`] run.
     Other,
+    /// The circle is cut, the cell's sector runs between two **adjacent** rim nodes, and no arc
+    /// covers it: the piece of the circle no face of this class has as a rim (cell ⑩ — the three
+    /// quarters a fillet's quarter leaves, the half a slot's end leaves; the split drops such a
+    /// piece rather than keep a phantom edge). The lateral face is **not here**: this end decides
+    /// existence, not a chamber.
+    Uncovered,
     /// No circle of this cylinder on this line at all: the line is a ⊥ class outside every
     /// lateral face's span (`circle_on_class` leaves a circle on every class *within* a span).
     NoCircle,
@@ -465,7 +475,7 @@ impl End<'_> {
                 let first = it.next()?;
                 it.all(|b| b == first).then_some(first)
             }
-            End::Other | End::NoCircle => None,
+            End::Other | End::Uncovered | End::NoCircle => None,
         }
     }
 }
@@ -497,12 +507,21 @@ pub(crate) enum OtherWhy {
 
 /// `arc_around`'s `None`, with its reason counted: every `End::Other` the suite still produces
 /// is named at the site that produced it, so «what is left» is a table and not a guess.
-fn other_none<'a>(why: OtherWhy) -> Option<Vec<&'a ArcLabel>> {
+/// Why [`Chart::arc_around`] could not hand back a run.
+enum RunFail {
+    /// Every piece of the run is one no contribution covers: the face is not over this sector
+    /// (cell ⑩) — [`End::Uncovered`].
+    AllMissing,
+    /// One of [`OtherWhy`]'s reasons, recorded — [`End::Other`].
+    Other,
+}
+
+fn run_fail<'a>(why: OtherWhy) -> Result<Vec<&'a ArcLabel>, RunFail> {
     #[cfg(test)]
     probe::other::record(why);
     #[cfg(not(test))]
     let _ = why;
-    None
+    Err(RunFail::Other)
 }
 
 /// One cell, read.
@@ -609,11 +628,11 @@ impl Chart {
         y: usize,
         rim: &crate::arrangement::CutRim,
         arcs: &'a [ArcLabel],
-    ) -> Option<Vec<&'a ArcLabel>> {
+    ) -> Result<Vec<&'a ArcLabel>, RunFail> {
         use OtherWhy as Why;
         let m = rim.nodes.len();
         if x == y && m >= 2 {
-            return other_none(Why::SingleCut);
+            return run_fail(Why::SingleCut);
         }
         let mut list: Vec<combinatorics::NodeId> = rim.nodes.clone();
         let mut index_of = |i: usize| -> Option<usize> {
@@ -635,23 +654,23 @@ impl Chart {
             }
         };
         let Some(ix) = index_of(x) else {
-            return other_none(Why::Unplaced);
+            return run_fail(Why::Unplaced);
         };
         let iy = if x == y {
             ix
         } else {
             match index_of(y) {
                 Some(i) => i,
-                None => return other_none(Why::Unplaced),
+                None => return run_fail(Why::Unplaced),
             }
         };
         let Ok((order, _)) = crate::arrangement::circular_order(jd, k, def, &list) else {
-            return other_none(Why::OrderFailed);
+            return run_fail(Why::OrderFailed);
         };
         let n = order.len();
         let pos = |li: usize| order.iter().position(|&o| o == li);
         let (Some(px), Some(py)) = (pos(ix), pos(iy)) else {
-            return other_none(Why::Unplaced);
+            return run_fail(Why::Unplaced);
         };
         let is_rim = |p: usize| order[p] < m;
         // The run's ends: the nearest rim node at or before `x` (clockwise), and at or after `y`.
@@ -672,6 +691,7 @@ impl Chart {
         // and the caller answers only when they **agree**, which is exactly what the whole-circle
         // arm of [`Chart::read_cell`] already does with a cut circle's arcs.
         let mut run: Vec<&'a ArcLabel> = Vec::new();
+        let mut missing = 0usize;
         let mut cur = a;
         while cur != b {
             let nxt = {
@@ -682,18 +702,28 @@ impl Chart {
                 q
             };
             let (na, nb) = (list[order[cur]], list[order[nxt]]);
-            let Some(arc) = arcs.iter().find(|arc| arc.ends == [na, nb]) else {
-                return other_none(Why::RowMissing);
-            };
-            run.push(arc);
+            match arcs.iter().find(|arc| arc.ends == [na, nb]) {
+                Some(arc) => run.push(arc),
+                // ★ A piece no contribution covers has no arc (cell ⑩ — the split keeps no
+                // phantom). A run made of nothing but such pieces is a sector the face is not
+                // over; a run with some of each is a producer inconsistency, as before.
+                None => missing += 1,
+            }
             cur = nxt;
+        }
+        if missing > 0 {
+            return if run.is_empty() {
+                Err(RunFail::AllMissing)
+            } else {
+                run_fail(Why::RowMissing)
+            };
         }
         // `a == b` means the sector's ends land on one rim node: no arc separates them, and the
         // caller has nothing to read here.
         if run.is_empty() {
-            return other_none(Why::EmptyRun);
+            return run_fail(Why::EmptyRun);
         }
-        Some(run)
+        Ok(run)
     }
 
     /// **Read one cell off the horizontal lines** — the function the cutover will call, measured
@@ -784,19 +814,20 @@ impl Chart {
                         };
                         match nodes {
                             (Some(nx), Some(ny)) if adjacent(nx, ny) => {
-                                // The split's arc order and the rim's node order are one table
-                                // read twice (`emit_faces` copies `ma.end`); a missing row is the
-                                // "sector labels missing" this name states (the band road's
-                                // `arc_at` stated it first).
-                                let Some(arc) = arcs.iter().find(|a| a.ends == [nx, ny]) else {
-                                    return Err(reject(RejectReason::RulingBoundNotYet));
-                                };
-                                let arc = vec![arc];
-                                End::Exact(arc)
+                                // ★ Adjacent rim nodes with no arc between them: the piece no face
+                                // covers (cell ⑩). It used to be a producer-inconsistency refusal
+                                // (`RulingBoundNotYet`) because the split kept every piece; now
+                                // it says the face ends before this sector.
+                                match arcs.iter().find(|a| a.ends == [nx, ny]) {
+                                    Some(arc) => End::Exact(vec![arc]),
+                                    None => End::Uncovered,
+                                }
                             }
-                            _ => self
-                                .arc_around(jd, k, def, c, t[e], x, y, rim, arcs)
-                                .map_or(End::Other, End::Exact),
+                            _ => match self.arc_around(jd, k, def, c, t[e], x, y, rim, arcs) {
+                                Ok(run) => End::Exact(run),
+                                Err(RunFail::AllMissing) => End::Uncovered,
+                                Err(RunFail::Other) => End::Other,
+                            },
                         }
                     }
                 };
@@ -850,6 +881,11 @@ impl Chart {
         {
             let vertical = |i: usize, starts_here: bool| -> Option<(bool, bool)> {
                 let seg = self.theta.get(i)?;
+                // A tangent station (cell ⑩) has no chamber behind it to read: the face ends
+                // there, and its `label` is `None` by design — said by the side, not inferred.
+                if seg.side == 0 {
+                    return None;
+                }
                 let l = seg.label?;
                 let (wall, sd) = self.ruling_name(jd, k, def, i)?;
                 // The sector leaves `x` counter-clockwise and arrives at `y`, so the two walls
@@ -930,7 +966,12 @@ impl Chart {
         // what says the face is *not* there (cell ㉒'s population — `exist_marks_false`). So the
         // disagreement that would be a defect is only the other direction: the trace claiming a
         // face where no row spans.
+        // ★ An uncovered rim piece decides existence outright (cell ⑩): the face's own rim does
+        // not run along this sector at that line, so the face is not over this cell — whatever
+        // the row's axial span says.
+        let uncovered = ends.iter().any(|e| matches!(e, End::Uncovered));
         let (present, exist_disagree) = match by_marks {
+            _ if uncovered => (false, false),
             Some(v) => (v, v && !by_span),
             None => (by_span, false),
         };
@@ -1071,10 +1112,12 @@ pub(crate) fn census(
         // ★★★★★ **Every vertical line carries an answer** (capability D, D2a). A ruling without
         // one is a chart that can state where a wall crosses but not what changes across it — and
         // the census below would then be comparing a partial chart. ☑ Measured 862/862 across the
-        // suite; `world_rat_sense` declines none of them.
+        // suite; `world_rat_sense` declines none of them. ★ Except a **tangent** station (cell
+        // ⑩): the wall touches the cylinder along it and nothing changes across it — the face
+        // ends there. Its answer is that it has none, and `read_cell` skips it.
         for t in &chart.theta {
             assert!(
-                t.label.is_some(),
+                t.label.is_some() || t.side == 0,
                 "a ruling reached the chart with no label: cyl {k}, wall {}",
                 t.wall
             );
@@ -1243,6 +1286,8 @@ pub(crate) fn census(
                             d2b.end_other_single_cut += 1;
                         }
                     }
+                    // An uncovered piece is an absence, not a read of a chamber (cell ⑩).
+                    End::Uncovered => d2b.end_uncovered += 1,
                     End::NoCircle => d2b.end_nocircle += 1,
                 }
             }
@@ -1314,7 +1359,7 @@ pub(crate) fn census(
             }
         }
         assert_eq!(
-            d2b.end_disk + d2b.end_exact + d2b.end_other + d2b.end_nocircle,
+            d2b.end_disk + d2b.end_exact + d2b.end_other + d2b.end_uncovered + d2b.end_nocircle,
             2 * cells.len(),
             "every cell has two ends: cyl {k}"
         );
@@ -2310,6 +2355,8 @@ pub(crate) mod probe {
             pub(crate) end_exact: usize,
             pub(crate) end_other: usize,
             pub(crate) end_nocircle: usize,
+            /// Ends between adjacent rim nodes no arc covers — the face is absent there (cell ⑩).
+            pub(crate) end_uncovered: usize,
             /// Present cells with an `Other` end — read from their other end alone. The
             /// population a θ-placement finer than [`Chart::arc_around`] would serve.
             pub(crate) other_present: usize,
@@ -2666,7 +2713,7 @@ mod tests {
                 "a ruling arrived with z descending: {r:?}"
             );
             assert_eq!(
-                r.end_disk + r.end_exact + r.end_other + r.end_nocircle,
+                r.end_disk + r.end_exact + r.end_other + r.end_uncovered + r.end_nocircle,
                 2 * r.cells,
                 "two ends per cell: {r:?}"
             );
@@ -2696,9 +2743,12 @@ mod tests {
             "the reader never emitted a cell"
         );
         assert!(sum(&rows, |r| r.arcs_read) > 0, "no cut end was ever read");
+        // ★ Runs of several arcs used to come from sectors spanning the **phantom** pieces of a
+        // half rim (a wall boss); those pieces are no edges now (cell ⑩) and such a sector reads
+        // `Uncovered`. The non-vacuity that replaces the run count is that arm's.
         assert!(
-            sum(&rows, |r| r.exact_run_arcs) > 0,
-            "no end ever read a run of the rim's arcs"
+            sum(&rows, |r| r.end_uncovered) > 0,
+            "no end ever read an uncovered piece of a rim"
         );
         assert!(
             sum(&rows, |r| r.emitted_faces) > 0,

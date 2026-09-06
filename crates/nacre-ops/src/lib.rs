@@ -515,6 +515,11 @@ pub enum RejectReason {
     /// **Two edges leave one arrangement vertex at the same angle**, so the cyclic order around
     /// that vertex has no answer — and the face walk is built from exactly that order.
     ///
+    /// ★ Since cell ⑩ a line and an arc **tangent** at the vertex are not this when the arc
+    /// leaves the other way (a fillet's smooth corner is a half turn, read by geometry). What is
+    /// still this: the same way — two edges tangent *and* co-directed, whose order is a matter of
+    /// **curvature** (two tangent circles, the shape M6b's cylinder pairs will bring).
+    ///
     /// Their lines are then identical (parallel plus a shared point), which upstream is supposed
     /// to have already resolved: `merge_coincident` folds an edge traced twice, and `Aliases`
     /// folds two walls that carry one line. Reaching here means one of those did not, and the
