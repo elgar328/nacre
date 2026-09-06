@@ -39,7 +39,12 @@
 //! other half: a fillet's or a slot's wall is tangent to its **own** cylinder, and that ruling is
 //! not a crossing but the face's edge — a station of `side = 0` carrying no label (the seated
 //! face states the piece itself, `SegKind::Tangent`), which the cell reader takes as «the face
-//! ends here» and the D2a assertion exempts.
+//! ends here» and the D2a assertion exempts. ★ Cell ⑫ read the row a third time: when the
+//! *other* solid's plane runs through the axis, one of its two verticals **is** that tangent
+//! ruling — a line two planes and the cylinder share. Its ends have one name (the alias table's,
+//! seeded from the operands — `Curved::aliases` is what this chart's stations are canonicalized
+//! through), and the line is stated in the plane vocabulary by both faces that touch it — the
+//! tangent wall's run and the lateral's own graze — so the ruling vocabulary states nothing there.
 //!
 //! ## What is here, and what is not
 //!

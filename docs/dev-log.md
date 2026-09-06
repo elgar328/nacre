@@ -17182,3 +17182,98 @@ nacre: fmt·clippy 0 · 커밋 훅이 스위트를 다시 돌린다(S2 트리와
 - **자체 점검(사용자 신고)**: 문서 커밋 뒤 사용자가 브라우저에서 같은 스크립트를 돌리자 `fourplane`이 그대로 났다. 앱 소스가 안 바뀌어 관문 줄에 «앱: 무변»이라 적고 `wasm:all`을 건너뛴 탓 — 브라우저의 wasm은 커널 수정 커밋보다 네 시간 앞선 빌드였다(`stat`으로 확인, 12:56 vs 16:46). 다시 지어 관문 초록. 커널 커밋이 있는 칸은 앱 소스 변경 여부와 무관하게 wasm을 다시 짓고, «앱: 무변»은 관문 줄에 쓰지 않는다.
 - **자체 점검(둘째, 사용자의 «실수 없었는지 보자»)**: 문서·주석 셋이 S0 시점의 사실을 «오늘»로 들고 있었다 — census 가족 주석(«면마다 이름 짓는다, 거절한다»), design.md ⑪ 항목(«강체 운동 오라클 행» — S2가 실측으로 못 넣은 것), boolean.rs 분할 쌍둥이 주석(삭제된 `far_plane`·투표 그물을 가리킴). 셋 다 고침. 코드 잔재 0(탐침·dbg 없음, 잠금의 리포트 출력만). 계획의 «감사 잠금 둘째 단언을 두 발견원의 합으로 고쳐 쓴다»는 **필요 없었다** — |F| = 4에서 run 발견만으로 이미 F 전체라 단언이 그대로 참이고 관문이 그것을 쟀다.
 - **여섯 얼굴이 남긴 교훈**: 같은 이름의 문제가 세 번째 나오면 «규칙이 어디 사는가»부터 묻는다. 생산자 목록을 grep으로 적고, 하나로 접고, 타입이 문을 지키게 한다. 계기는 «접힌 이름이 실제 그 점 위인가»처럼 **조용한 실패의 모양**을 직접 잰다 — 거절 수만 세면 이번처럼 거절이 가린 오식별을 못 본다.
+
+## 칸 ⑫ — 축을 지나는 평면의 룰링이 접선 룰링과 겹치면, 그 선은 접선의 이름 하나를 갖는다 (2026-09-06)
+
+**입력**: 칸 ⑪이 남긴 벽 (a)·(b) — 사용자 스크립트의 원래 치수(거싯 `1.5`/`−2.5`: 거싯 옆면 평면이 필렛 축을 정확히 지난다)와 census `rrect-box`가 `TraceDeclined{Ruling}`. 사용자의 물음 «왜 `1.5`는 안 되나»에 «한 직선 위에 면 셋(바닥면·거싯 옆면·필렛 원통)이 놓여 이름이 둘»이라 답했고, 그 칸이 이것이다.
+
+### 뿌리 (탐침으로 확정)
+`Ruling` 거절 자리 13곳에 줄 번호 탐침(`ruling_at!`)을 심어 재니 A(판 + 거싯 `1.5`)·B(`rrect-box`) 모두 **한 자리**: `theta_between` → `circular_order`. 문맥 탐침: 필렛 클래스 `k = 0`, 클래스 `wc = x=1.5`(축을 품음), `side = −1`에서 옆면 사이클의 호 끝점 `a = Branch{[cap, y=−4], Double}`(피연산자의 접선 코너)와 스윕의 교차 노드 `node = Branch{[cap, x=1.5], Lo}`가 **같은 점**인데 이름이 다르다 → `node == a` 거짓 → `theta_between` → `circular_order`가 «두 이름 한 점»을 `Coincident`로 → `Ruling`. 같은 클래스의 `side = +1`(`y = 0` 룰링, 호 밖)과 이웃 클래스 `x = 2.5`(보통 벽)는 정상. B는 같은 자리가 넷(축을 지나는 클래스 둘 × 접점 둘).
+
+그 점의 이름은 셋이다: ① 피연산자의 접선 코너 `Branch{[cap, t], Double}` ② 축 평면 클래스의 룰링 교차 `Branch{[cap, wc], Lo}` ③ 칸 ⑩ `third_on_l`의 «우연히 wc 위» 팔이 붙이는 `ThreePlane[cap, t, wc]`. 그리고 그 선의 진술은 평면 도로가 이미 낸다 — 바닥면(`t`)이 클래스 `wc`에 가로질러지며 접선 간선을 on-line run(`Seg{wall: t, kind: Graze}`)으로 내고 캡면이 그 코너에서 끝나는 세그먼트를 낸다(탐침에서 이 면들은 거절하지 않았다). 옆면은 그 룰링을 가로지르지 않고 거기서 끝난다.
+
+### 원장 — «원통 위의 한 점이 두 이름»을 오늘 어디서 판단하나 (계획 검토가 센 것)
+| 종류 | 자리 |
+|---|---|
+| branch 이름 생산자(프로덕션) | `crossing_on_ruling`(둘) · `crossing_on_arc` · 2387 · `split_rulings`(둘) · `branch_name_from_def` — 여섯 |
+| 지역 판단 «두 이름 한 점» | `combinatorics` `CoincidentNodes` 둘 · `arrangement` `CoincidentFeatures` · `CircleOrderFail::Coincident → CylHoleFeature` 둘 · `theta_between → Ruling` · `third_on_l`의 개명(칸 ⑩) — 여섯+1 |
+| 별칭 표를 묻는 `canon_point` | `merge_coincident` 둘 · `split_at_crossings` · 7466 · 감사 — 다섯, **옆면 도로 0** |
+
+계획 초안은 «스윕이 `Coincident`로 접선 side를 인식»이었다 — 일곱째 지역 철자. 검토에서 버리고(칸 ⑪이 방금 배운 모양) 두 규칙으로: **동일성은 별칭 표**(발견 사건 하나 — «branch 코너가 다른 클래스 위» — 에서 그 점의 이름 전부를 만들어 유니온; `record`의 원통판) · **진술은 담체가 정한 생산자 하나**(평면 쌍 선은 평면 도로, 원통만이 담는 룰링은 옆면 — 스윕의 `walls[i] == Plane(wc)` 검사의 빠진 절반). 여섯 지역 판단은 «표가 모르는 일치»의 바닥으로 남긴다. 셋째 검토가 잡은 것: 고정점 루프는 거절한 라운드에서 `Err`로 나가므로 발견이 **같은 라운드 안에서 옆면보다 먼저** 나야 한다 — `trace_on_class`가 평면 면을 먼저 걷고 옆면 도로가 지역 표를 읽는다.
+
+### S0 — 계기와 픽스처 (프로덕션 무변)
+- census 가족 **`tangentline`**(6쌍 × 3): `fillet-slab`(필렛 하나 판 × 축 평면 슬래브 `y ∈ [−3, 0]`, 판 위에 서 있음) · `fillet-slab far`(같은 평면, 멀리) · `slab 1.6`(대조군) · `user 1.5`(판 + 슬롯 판 뒤 거싯 `1.5`) · `slab wall 1.5`/`1.6`(아래). 353 → **371행**, 옛 353행 무변. 오늘: `fillet-slab`·`far`·`user 1.5` 셋 다 `TraceDeclined{Ruling}`(면 3 = 필렛 옆면; user는 면 40) · `slab 1.6` 셋 Ok(cut = 판 그대로 `55.14`, fuse `58.14`).
+- ★ **대조군 초안이 이웃 벽 둘을 찾았다.** 슬래브를 `y ∈ [−4, 0]`으로 두면 그 면이 판의 바닥 벽 평면 `y = −4`와 **동일평면**(겹치지 않음)이고 바닥 모서리가 접점 너머의 벽 선 위에 놓인다 — 축 평면(`1.5`)에선 `CoincidentNodes`, 축 밖(`1.6`)에선 **닿기만 하는 cut**이 판을 그대로 돌려줘야 하는데 `OpenResultShell`(조립이 면을 떨어뜨림 — 07-26 이후 미발화였던 결함 이름). 이 칸의 명제가 아니라 `slab wall 1.5`/`1.6` 행으로 이름을 얼려 두었다(다음 칸 후보: «접하기만 하는 cut의 동일평면 비겹침 면»).
+- 함정: 대조군을 «변수 하나만 다르게» 만들지 않으면 대조군이 다른 벽을 재게 된다 — 첫 초안이 그랬다.
+- 감사 `branch_corner_audit`: 피연산자의 branch 코너마다 «자기 평면 쌍이 아닌 클래스 위에 놓였는가»(`side_of == 0`)를 묻고, 그 점의 후보 이름 넷(코너·세 평면·클래스와 캡의 룰링 교차 `Lo`/`Hi`)과 전 클래스 추적 뒤의 별칭 접힘을 보고. `trace_declines`: 전 클래스의 (클래스, 면, 거절). 잠금 `a_tangent_corner_on_a_plane_through_the_axis_has_unjoined_names_today`: 접선 코너 둘(z = 0·1) × 클래스 `x = 1.5`, 후보 넷, 접힘 넷(아무것도 안 접힘), 거절 = (클래스 8, 옆면, `Ruling`) 하나.
+- 관문(S0 트리 `f0837f8`): fmt·clippy 0 · workspace **1249/0** · no-default **696/0** · census 두 프로파일 **371행** 동일, 옛 353행 무변 · `reject_census` 0 · ignored 스윕 **133/0** · reject-trace 단일 스레드 귀속 칸 ⑪ S1a → S0 **59 → 186**, 전부 새 테스트(칸 ⑪ S2 잠금의 `point_on_ring` ×128)와 proptest 변동 — 기존 테스트 이동 0.
+
+### S1 — 사다리 (예측 «인식 하나로 짓는다»는 틀렸다; 계단 여섯을 실측으로 올랐다)
+
+계획 개정 1은 «옆면이 접선 side를 인식해 비우면 평면 도로의 Graze run이 그 선을 채우므로 바로
+짓는다»고 예측했다. 실측은 여섯 계단이었고, 각 계단의 이름이 다음 계단을 가리켰다.
+
+| 계단 | 실측 이름(자리) | 뿌리 | 고친 것 |
+|---|---|---|---|
+| 1 | `TraceDeclined{Ruling}` (`theta_between → circular_order`, S0) | 접선 코너 `Branch{[cap,t],Double}`와 스윕의 교차 `Branch{[cap,wc],Lo}`가 한 점 두 이름 | 동일성은 표에: `Aliases::record_on_cylinder`(이름 셋 유니온), 스윕의 모든 «같은 노드?»가 `canon_point`를 거침(`same`) |
+| 2 | 패닉 `Split::of` «a cylinder pin was written beside a three-plane name» | `merge_coincident`가 이름은 접고(`Branch → ThreePlane`) 핀은 그대로 실었다 | 핀은 (정준 이름, 선)의 함수 — `combinatorics::pin_for` 한 규칙; 이름이 접힐 때 다시 유도 |
+| 3 | `CoincidentNodes` (`split_segments_at`, 캡 클래스) | 캡 위에서 세그먼트와 **온전한 원**의 교차 Hi 근(y=0)이 진짜 정점(슬래브 윗면·거싯 발이 `y = 0 = −2 + r`)과 겹침. 그 점은 호(사분원) 위에 없다 | «호 위에 없는 교차는 절단점이 아니다»: `split_circles`가 θ 순서를 먼저 매기고 덮인 교차만 남김. 실측: 1.6 대조군 op당 4개·rrect-box 16개·옛 353행 0개의 «유령 절단점»이 있었고(결과 다이제스트 무변 — 뒤에서 걸러졌다) 정점과 겹칠 때만 거절로 드러났다 |
+| 4 | `CoincidentNodes` (`loop_winding`, 핀치) | 링에 한 점이 두 이름으로: 세그먼트 끝은 정준(`ThreePlane`), 호·룰링 끝은 원래 이름(`Branch Double`) | **병합 층이 정준화한다**(`merge_coincident`에 더해 `merge_circles`·`merge_rulings`), 분할이 만드는 교차도 표의 이름으로. **대표 규칙**: 원통 위의 점은 원통 이름(`Branch`)이 대표 — 차트의 기하(θ)가 이름에서 원통을 읽는다. 차트의 정거장 이름도 표를 거침(`Curved.aliases`). 발견은 **씨앗 하나**(`seed_from_operands`: 피연산자 branch 코너 × 클래스, `side_of == 0`) — `third_on_l`의 기록·평면-먼저 순서는 지움(같은 라운드의 다른 클래스가 먼저 거절할 수 있었다). 스윕은 라운드 스냅샷을 읽는다 |
+| 5 | `LabelConflict` (`label_cells`, 축 평면 클래스) | 접선 선의 마스크가 바닥면의 Graze 하나 `[t,f]`인데 셀은 `[t,t]` — 판의 물질이 그 선 근처 **양쪽**에 있다(바닥면 쪽·필렛 쪽) | 옆면이 **자기 쪽**을 진술한다: 평면 어휘의 `Seg{wall: t, Graze{body_above}}` (`merge_coincident`가 벽의 것과 합쳐 `edge_mask`가 두 비트) — 룰링 어휘로는 침묵. 쪽은 룰링 run과 같은 식(`body_side`, `plus_theta_is_above`); `node_axis_param`이 `wc`를 이름에 요구하던 것을 «어느 평면이든 ⊥인 것»으로 |
+| 6 | **짓는다** | — | — |
+
+개정 1의 «옆면은 아무것도 내지 않는다»는 절반만 옳았다 — 룰링 어휘로는 아무것도 내지 않지만,
+평면 쌍 선의 **자기 쪽 진술**은 낸다. 개정 3의 «발견은 `third_on_l`, 평면 먼저»는 씨앗으로
+대체됐다. 3계단(절단점 규칙)은 계획에 없던 명제다.
+
+**실측(디버그 census, S1 뒤):** 목표 행 전부 Ok — `tangentline fillet-slab` fuse 1/cut 1/common
+EMPTY(부피 58.14/55.14 = 52+π+3 / 52+π), `far` fuse **2**(닿지 않는 두 몸)/cut 1/common EMPTY,
+`user 1.5` fuse 1/cut 1/common EMPTY(fuse − cut = 7.5 = 거싯), `arcwalls p1p3` fuse 55.5 / cut 48
+/ common EMPTY(예측표 그대로), `rrect-box` fuse 261.699 / cut 197.699 / common 32(예측표 그대로).
+옛 353행 **무변**. `slab 1.6`·`slab wall 1.6` 대조군 다이제스트 무변(유령 절단점 제거가 결과를
+바꾸지 않았다는 뜻 — 이미 뒤에서 걸러지고 있었다). `slab wall 1.5`(`CoincidentNodes`)·`slab wall
+1.6` cut(`OpenResultShell`)은 S0의 별건 그대로.
+
+**원장(S1 뒤) — 무엇이 표를 거치게 됐나:**
+
+| 자리 | S0 | S1 |
+|---|---|---|
+| 발견 | `third_on_l`(칸 ⑩: 개명만) | `seed_from_operands` **하나**(`record_on_cylinder`) |
+| 대표 | 최소 `NodeId`(= `ThreePlane` 우선) | `Branch` 우선, 그다음 최소 |
+| 병합 층 | `merge_coincident`만 정준(핀은 그대로) | 셋 다(`merge_coincident`·`merge_circles`·`merge_rulings`), 핀은 `pin_for` |
+| 분할 | 이름 raw `==` | `split_segments_at`(끝점·교차·dedup)·`split_circles`(dedup·`place`·덮임) 모두 `canon` |
+| 스윕 | `==` | `same`(스냅샷) + 접선 쪽 Graze 진술 |
+| 차트 | `crossing_on_ruling` raw | `station_on`·`station_name` → `canon`(`Curved.aliases`) |
+| 지역 거절 6자리 | 판단 | 그대로 «표가 모르는 일치»의 바닥(doc에 적음) |
+
+`canon_point` 소비자 5 → 12(arrangement 11 + cyl_chart 2). 새 기하 판정은 없다 — `side_of`(씨앗)·
+`ruling_side`·`crossing_on_ruling`·`circular_order`·`plus_theta_is_above`의 기존 답만 쓴다.
+
+**계기 전환:** `a_tangent_corner_on_a_plane_through_the_axis_has_unjoined_names_today` →
+`…_has_one_name`(코너·삼평면 이름·그 쪽 근이 한 대표, 다른 근은 다른 점, 대표는 `Branch`, 거절 0).
+`the_users_plate_slot_and_gusset_fold`의 `x = 1.5` 거절 팔 → 양성(판 + 거싯 = 55.5).
+
+- 관문(S1 트리): fmt·clippy 0 · workspace **1249/0** · no-default **696/0** · census 두 프로파일 **371행** 동일, 옛 353행 무변(목표 15행만 이동) · `reject_census` 0 · ignored 스윕 **133/0** · reject-trace 단일 스레드 귀속 S0 → S1 **186 → 186**, 이동 둘뿐 — 뒤집힌 잠금의 `trace_declined(ruling)` 1 → 0(예측), `l_prism_cut_identity`의 `non_manifold_result_edge` 0 → 1(칸 ⑪ → S0에서 1 → 0으로 움직였던 같은 proptest 변동).
+
+### S2 — 잠금이 계단 둘을 더 찾았다 (ops·키트)
+- 최소 픽스처를 **피연산자 순서를 바꿔** 돌리자 두 자리가 더 나왔다 — 둘 다 «이름에서 읽던 값»이다.
+  | 실측 이름 | 뿌리 | 고친 것 |
+  |---|---|---|
+  | `CoincidentNodes`(`split_at_crossings`의 동률·`split_rulings`의 T-교차) | 표가 이미 한 점으로 아는 이름 둘을 지역에서 거절 | 동률·T-교차 검사를 `canon_point` 뒤로; 표가 모르는 일치만 거절 |
+  | `WitnessNotRational`(차트 `ruling_name`) | «어느 룰링인가»를 이름의 **근**(`Double ⇒ 0`)에서 읽음 — 이름이 그 벽을 짝지을 때만 참인 진술 | `ruling_side_signed`(점과 벽에서, 축 평면을 `0`으로 답한다)로 두 자리(`node_ruling_side`·`combinatorics::curved_wall`) 통일; `ruling_side`는 광선 캐스터를 위해 계속 기권 |
+  | `EdgeCarrierMismatch`(validate) | 룰링 간선의 담체 평면을 **끝점 이름의 공유 평면**에서 유도 — 대표가 다른 쌍이면 그 평면은 선을 담기만 하고 간선을 **경계 짓지 않는다** | 간선을 쓰는 면에서 읽는다(`pair_surfs` 스캔을 룰링 키로 확장) — 평면 간선이 이미 쓰던 규칙 |
+- `a_plane_through_the_fillet_axis_shares_the_tangent_ruling`: 최소 픽스처(필렛 판 + 축 평면 슬래브) fuse/cut/common × 두 피연산자 순서 — fuse `(52 + π) + 3` 한 몸, cut은 판(`52 + π`) 또는 슬래브(`3`), common 빈 결과, 전부 validate 0.
+- `the_users_fold_builds_at_the_scripts_own_dimensions`: 칸 ⑪의 4부품 fold 잠금을 거싯 x로 매개화(`users_four_part_fold_in_either_order(gx)`)해 `1.4`(칸 ⑪)와 **`1.5`**(스크립트 원래 치수) 둘 다 — 양 순서 `48 + (34 − π/4) + 15`, 다이제스트(정점·면·간선·부피·메시) 비트 동일.
+- `a_tangent_corner_has_one_name_under_rigid_motion`: 모션 군 전부에서 옮긴 두 피연산자의 감사가 접선 코너 둘·후보 넷·대표 하나(`Branch`)·다른 근은 다른 점·거절 0, 옮긴 fuse가 `55 + π`. 강체 운동 **오라클** 행은 칸 ⑪의 이유(기울어진 평면의 f64 실현)로 넣지 않는다.
+- 키트 `the_users_plate_slot_plate_and_gusset_fold_into_one_body`: `steps(1.5)`의 거절 팔 → 양성(한 몸, 같은 부피).
+- census: 별건 `slab wall 1.5` 행 셋의 거절 이름이 `CoincidentNodes` → `StraightAngle`로 바뀐 것 말고는 무변.
+- 관문(S2 트리): fmt·clippy 0 · workspace **1252/0** · no-default **699/0** · census 두 프로파일 **371행** 동일, S1 대비 이동은 별건 `slab wall 1.5` 세 행의 거절 이름뿐 · `reject_census` 0 · ignored 스윕 **133/0** · reject-trace 단일 스레드 귀속 S1 → S2 **186 → 185**(`l_prism_cut_identity`의 proptest 변동 하나). ★ 함정: 관문 스크립트를 두 번 겹쳐 돌려 census 두 프로파일이 «237행 다름»으로 나왔다 — 두 실행이 같은 파일에 썼을 뿐이고, «한 번에 cargo 하나»를 어긴 것이다. 한 번만 다시 돌려 0.
+
+### 관문 (S3 트리)
+nacre: fmt·clippy 0 · 커밋 훅이 스위트를 다시 돌린다(S2 트리와 같은 1252/0; 문서·doc 주석만 바뀜) · census 371행 무변. 키트 `f8cea42`: fmt·clippy 0 · **80/0**. 앱: 소스 무변이나 **wasm 재빌드**(`wasm:all` 0 · `tsc` 0 · vitest **147/147** · `wasm/` clippy 0) — 브라우저·노드 두 빌드의 mtime이 커널 커밋 `221bb49`보다 뒤임을 `stat`으로 확인(04:08 > 04:03). 브라우저 확인(스크립트 원래 치수 `1.5`/`−2.5`)은 사용자 몫.
+
+### 못 잰 것·함정
+- **못 잰 것**: 접선 룰링을 **셋 이상**의 평면이 공유하는 경우(코퍼스 없음) · 원통 둘이 한 룰링을 공유(M6b) · 배열이 **만든** 원통 위 점의 두 이름(두 클래스 선이 같은 호를 한 점에서 가로지름 — 발견 경로 없음, `CoincidentNodes`류가 바닥) · 회전 좌표에서의 비트 동일(오라클이 못 잼, 감사 잠금만) · `slab wall 1.5/1.6`(접선 벽과 동일평면인 슬래브 면 — 별건).
+- **계획 대 실측**: 사다리는 여섯이 아니라 **여덟** 계단이었다(S1 여섯 + S2 둘, 둘 다 잠금이 찾았다 — 순서를 바꾼 피연산자가 계기였다). 개정 1의 «옆면은 아무것도 내지 않는다»는 절반(룰링 어휘)만 옳았고, 개정 3의 «발견은 `third_on_l`, 평면 먼저»는 씨앗으로 바뀌었으며, 절단점 규칙(3계단)은 계획에 없었다. 여섯 계단 모두 실측 이름이 다음 자리를 가리켰다 — 계획의 예측표는 «틀리면 그 이름이 다음 계단»이라 적었고 그대로였다.
+- **함정**: 패치 스크립트가 `cargo fmt` 뒤 텍스트 앵커에 다섯 번 미끄러짐(칸 ⑩·⑪과 같은 함정; 앵커 실패 시 아무것도 쓰지 않도록 어설션이 먼저라 손실은 없었다) · 탐침 제거가 이웃 `#[cfg(test)]`(order_probe)까지 잘라 괄호 불균형 — 제거 범위는 탐침 자신의 줄로 · 정규식 하나가 13k줄 파일에서 역추적 폭발(10분 타임아웃) — 다중 줄 호출은 정확한 텍스트로 · macOS에 `timeout`이 없다(exit 127) · 파라미터를 더한 `trace_on_class`의 계기 셋(`trace_every_class`·`concurrency_audit`·`trace_declines`)이 표 없이 돌고 있었다 → 프로덕션과 같은 씨앗을 준다.
+- **원장이 남긴 교훈**: «두 이름 한 점»을 지역에서 판단하던 여섯 자리 중 넷은 손대지 않았다 — 표가 아는 일치는 그 앞에서 접히고, 모르는 일치만 거기 닿는다. 나머지 둘(`split_at_crossings`의 동률·`split_rulings`의 T-교차)은 S2에서 표를 묻게 됐다: 그 둘은 «표가 모르는 일치»가 아니라 «표에 묻지 않은 일치»였다. 발견원을 «추적 중»에서 «씨앗»으로 옮긴 이유는 라운드의 순서 의존을 없애는 것이었고, 그것이 계획 개정 3의 «평면 먼저» 순서 보장(코드로 넣었다가 지움)을 대체했다.

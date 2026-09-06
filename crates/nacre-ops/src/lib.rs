@@ -1220,6 +1220,12 @@ pub enum DeclineKind {
     /// p1p3`), or a box face coplanar with a slot's tangent wall and running past the tangent
     /// point (`rrect-box`). One line on two planes and the cylinder; folding that identity is the
     /// next capability.
+    ///
+    /// ★ Cell ⑫ folded it: the corner's names are joined in the alias table before any trace
+    /// (`seed_from_operands` → `Aliases::record_on_cylinder`), the lateral states its own side of
+    /// the shared line as a graze segment in the plane vocabulary, and a crossing with a class
+    /// circle is a cut point only on an arc. Both populations build; what remains here is the
+    /// exact-arithmetic decline the variant was written for.
     Ruling,
 }
 
