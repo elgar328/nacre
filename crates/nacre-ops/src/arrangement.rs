@@ -7747,6 +7747,193 @@ pub(crate) struct OperandVertexReport {
     pub folded_on_vertex: Vec<bool>,
 }
 
+/// **A branch corner of an operand seen from a class plane that passes through it** (cell ⑫'s
+/// instrument). The point has more names than the corner's own: the three-plane name of its two
+/// planes with the class, and the class's ruling crossing with the corner's cap plane at whichever
+/// root is this point. Whether the alias table knows they are one point is what this reports.
+#[cfg(test)]
+#[derive(Debug, Clone)]
+pub(crate) struct BranchCornerReport {
+    pub side: usize,
+    pub vertex: Handle<Vertex>,
+    pub point: [f64; 3],
+    /// The corner's own name (its two planes, its cylinder, its root).
+    pub corner: NodeId,
+    /// The class plane through the point that is not one of the corner's own.
+    pub class: usize,
+    /// The candidate names for the same point: the corner, the three-plane name, and the two
+    /// ruling-crossing names (`side ±1`) of `class` with the corner's planes — one of the two is
+    /// this point, the other the class's other ruling on the same cap.
+    pub candidates: Vec<NodeId>,
+    /// `candidates` after the alias fold of a full trace over every class.
+    pub folded: Vec<NodeId>,
+}
+
+/// One declined (class, face, kind) of a full trace — [`trace_declines`]' row.
+#[cfg(test)]
+pub(crate) type ClassDecline = (usize, Option<Handle<Face>>, DeclineKind);
+
+/// Every declined (class, face) of a full trace over every class — the audits' companion, since
+/// the production driver stops at the first.
+#[cfg(test)]
+pub(crate) fn trace_declines(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Vec<ClassDecline>, BoolError> {
+    use crate::planes::{PlaneSetup, plane_index_setup};
+    let PlaneSetup {
+        planes: faces_tab,
+        surf_ix,
+        inc_a,
+        inc_b,
+        geom,
+        plane_ix,
+        crossings,
+        cyls,
+        standard,
+        notes,
+        ..
+    } = plane_index_setup(model, a, b)?;
+    let jd = Judge::new(&geom, standard, &notes);
+    let trace_in = combinatorics::trace_input(
+        model,
+        [(a, &inc_a), (b, &inc_b)],
+        &surf_ix,
+        faces_tab.len(),
+        &jd,
+        &plane_ix,
+        &cyls,
+        crossings.clone(),
+    );
+    let mut out = Vec::new();
+    for wc in 0..geom.len() {
+        let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix);
+        for &(fp, kind) in &tr.declined {
+            out.push((wc, faces_tab[fp].face(), kind));
+        }
+    }
+    Ok(out)
+}
+
+/// Every branch corner of `a` and `b` that lies on a class plane not its own, as
+/// [`BranchCornerReport`]s — the cylinder twin of [`operand_vertex_audit`].
+#[cfg(test)]
+pub(crate) fn branch_corner_audit(
+    model: &Model,
+    a: Handle<Solid>,
+    b: Handle<Solid>,
+) -> Result<Vec<BranchCornerReport>, BoolError> {
+    use crate::planes::{PlaneSetup, plane_index_setup};
+    let PlaneSetup {
+        planes: faces_tab,
+        surf_ix,
+        inc_a,
+        inc_b,
+        geom,
+        plane_ix,
+        crossings,
+        cyls,
+        standard,
+        notes,
+        ..
+    } = plane_index_setup(model, a, b)?;
+    let jd = Judge::new(&geom, standard, &notes);
+    let trace_in = combinatorics::trace_input(
+        model,
+        [(a, &inc_a), (b, &inc_b)],
+        &surf_ix,
+        faces_tab.len(),
+        &jd,
+        &plane_ix,
+        &cyls,
+        crossings.clone(),
+    );
+    let mut aliases = Aliases::default();
+    seed_from_operands(&mut aliases, &jd, &trace_in);
+    #[allow(clippy::needless_range_loop)]
+    for wc in 0..geom.len() {
+        let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix);
+        aliases.absorb(&tr.aliases);
+        let merged = merge_coincident(&tr.segs, wc, &aliases);
+        let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
+    }
+    // The corners: every branch name a plane face's ring carries, once per vertex.
+    let mut out = Vec::new();
+    for (side, (solid, inc)) in [(a, &inc_a), (b, &inc_b)].into_iter().enumerate() {
+        let mut seen: Vec<Handle<Vertex>> = Vec::new();
+        let face_handles: Vec<Handle<Face>> = solid_shell_handles(model, solid)
+            .into_iter()
+            .flat_map(|sh| model.shells.get(sh).faces.clone())
+            .collect();
+        for fh in face_handles {
+            let Some(&fp) = surf_ix.get(&fh) else {
+                continue;
+            };
+            let Ok(lr) =
+                combinatorics::face_vertex_triples(model, fh, fp, inc, &jd, &plane_ix, &cyls)
+            else {
+                continue;
+            };
+            let Some(nr) = lr.poly() else {
+                continue;
+            };
+            let face = model.faces.get(fh);
+            if nr.triples.len() != face.outer.half_edges.len() {
+                continue;
+            }
+            for (he, &n) in face.outer.half_edges.iter().zip(nr.triples.iter()) {
+                let Some((planes, cyl, _root)) = combinatorics::branch_name(n) else {
+                    continue;
+                };
+                let vh = crate::he_start(model, *he);
+                if seen.contains(&vh) {
+                    continue;
+                }
+                seen.push(vh);
+                let def = &cyls[cyl].def;
+                for class in 0..geom.len() {
+                    if planes.contains(&class) {
+                        continue;
+                    }
+                    if combinatorics::side_of(&jd, &cyls, n, class) != Some(0) {
+                        continue;
+                    }
+                    let mut cands = vec![n];
+                    let mut s = vec![planes[0], planes[1], class];
+                    s.sort_unstable();
+                    if let Some(t) = combinatorics::canonical_triple(&jd, &s) {
+                        cands.push(NodeId::three_planes(t));
+                    }
+                    for fc in planes {
+                        for side_r in [1i8, -1i8] {
+                            // `crossing_on_ruling` takes the cap (normal ∥ axis) first and the
+                            // class holding the axis second; the corner's wall plane errs out.
+                            if let Ok(id) = crossing_on_ruling(&jd, def, fc, class, cyl, side_r) {
+                                if !cands.contains(&id) {
+                                    cands.push(id);
+                                }
+                            }
+                        }
+                    }
+                    let folded = cands.iter().map(|&c| aliases.canon_point(c)).collect();
+                    let p = model.vertex_point(vh);
+                    out.push(BranchCornerReport {
+                        side,
+                        vertex: vh,
+                        point: [p[0], p[1], p[2]],
+                        corner: n,
+                        class,
+                        candidates: cands,
+                        folded,
+                    });
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
 /// Every plane-only operand vertex of `a` and `b`, as [`OperandVertexReport`]s — cell ⑪'s
 /// audit of the ring road's naming rule against the topology and the geometry.
 ///

@@ -13432,3 +13432,89 @@ fn a_four_plane_operand_vertex_has_one_name_under_rigid_motion() {
         assert!((v - 50.0).abs() < 1e-9, "{mn}: volume {v}");
     }
 }
+
+/// The cell-⑫ operand: a plate with one fillet (axis at `(1.5, −2)`, tangent to the bottom wall
+/// along `x = 1.5`) and a slab standing on it whose face plane `x = 1.5` holds that axis.
+fn fillet_plate_and_axis_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let mut m = Model::new();
+    let profile = crate::from_edges(vec![
+        crate::Edge2d::line(p2(-3.5, -4.0), p2(1.5, -4.0)).unwrap(),
+        crate::Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
+        crate::Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
+        crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+        crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -4.0)).unwrap(),
+    ])
+    .unwrap()
+    .remove(0);
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let OpOutput::Extrude { solid: plate, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 1.0,
+        },
+    )
+    .expect("the plate extrudes") else {
+        unreachable!()
+    };
+    let slab = m.add_cuboid(
+        Point3::from_array([1.5, -3.0, 1.0]),
+        Point3::from_array([2.5, 0.0, 2.0]),
+    );
+    m.rebuild_adjacency();
+    (m, plate, slab)
+}
+
+/// ★ Cell ⑫, S0 — **the instrument, stating today's facts.** The class plane `x = 1.5` holds the
+/// fillet's axis, so one of its two rulings on the fillet is the fillet's own tangent ruling with
+/// the plate's bottom wall. The tangent corner at the cap then has names from two vocabularies —
+/// its own `Branch … Double`, the three-plane name of its planes with the class, and the class's
+/// ruling crossing `Branch … Lo/Hi` at the same point — and nothing in the alias table joins
+/// them, so the lateral's ruling sweep declines (`Ruling`, from `theta_between`'s coincidence).
+/// S1 flips each assertion; this is not a lock on a desired state.
+#[test]
+fn a_tangent_corner_on_a_plane_through_the_axis_has_unjoined_names_today() {
+    let (m, plate, slab) = fillet_plate_and_axis_slab();
+    let corners = arrangement::branch_corner_audit(&m, plate, slab).expect("the audit runs");
+    for c in &corners {
+        eprintln!(
+            "branch corner {:?} {:?} of operand {} on class {}: corner {:?} candidates {:?} folded {:?}",
+            c.vertex, c.point, c.side, c.class, c.corner, c.candidates, c.folded
+        );
+    }
+    // The two tangent corners (z = 0 and z = 1) of the ruling `x = 1.5, y = −4`, each on the
+    // slab's class `x = 1.5`; the fillet's other tangent corners (`y = −2` with the right wall)
+    // are on no foreign class.
+    let on_axis_plane: Vec<_> = corners
+        .iter()
+        .filter(|c| (c.point[0] - 1.5).abs() < 1e-9 && (c.point[1] + 4.0).abs() < 1e-9)
+        .collect();
+    assert_eq!(on_axis_plane.len(), 2, "{corners:?}");
+    for c in on_axis_plane {
+        assert_eq!(
+            c.candidates.len(),
+            4,
+            "corner, three-plane, two roots: {:?}",
+            c.candidates
+        );
+        let mut distinct = c.folded.clone();
+        distinct.sort_unstable();
+        distinct.dedup();
+        assert_eq!(
+            distinct.len(),
+            4,
+            "the table joins none of the names today: {:?}",
+            c.folded
+        );
+    }
+    let declines = arrangement::trace_declines(&m, plate, slab).expect("the traces run");
+    eprintln!("declines: {declines:?}");
+    assert!(
+        declines
+            .iter()
+            .any(|(_, _, k)| matches!(k, DeclineKind::Ruling)),
+        "the lateral's sweep declines by name today: {declines:?}"
+    );
+}

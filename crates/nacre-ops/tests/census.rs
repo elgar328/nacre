@@ -1921,6 +1921,167 @@ fn dump() {
             }
         }
     }
+    // ── **A plane through a fillet's axis** (cell ⑫): a class plane that holds a fillet's axis
+    // has two rulings on the fillet, and one of them can be the fillet's own tangent ruling with
+    // the plate's wall. That line then carries names from two vocabularies — the operand's tangent
+    // corner (`Branch … Double`) and the class's ruling crossing (`Branch … Lo/Hi`) — with nothing
+    // that knows they are one point, and the lateral's ruling sweep declines by name. The rows:
+    // the minimal plate-and-slab in both contact shapes, an off-axis control, and the user's
+    // four-part fold at the script's own gusset positions (`1.5`/`−2.5`).
+    {
+        fn p2(x: f64, y: f64) -> nacre_math::Point2 {
+            nacre_math::Point2::from_array([x, y])
+        }
+        fn prism(m: &mut Model, axis: Axis, edges: Vec<Edge2d>, dist: f64) -> Handle<Solid> {
+            let profile = from_edges(edges).expect("a valid profile").remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the tangent-line profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        }
+        fn shift(m: &mut Model, s: Handle<Solid>, t: [f64; 3]) -> Handle<Solid> {
+            let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
+            xf(m, s, Isometry::translation([r(t[0]), r(t[1]), r(t[2])]))
+        }
+        fn fuse(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>) -> Handle<Solid> {
+            m.rebuild_adjacency();
+            let out = boolean(m, BoolKind::Fuse, a, b).expect("the fixture's own fuse builds");
+            assert_eq!(out.len(), 1, "the fixture's own fuse is one body");
+            out[0]
+        }
+        // A 7 × 8 plate with one fillet (r 2) at its bottom-right corner: axis at (1.5, −2), tangent
+        // to the bottom wall `y = −4` along `x = 1.5` and to the right wall `x = 3.5` along `y = −2`.
+        fn plate1(m: &mut Model) -> Handle<Solid> {
+            prism(
+                m,
+                Axis::Z,
+                vec![
+                    Edge2d::line(p2(-3.5, -4.0), p2(1.5, -4.0)).unwrap(),
+                    Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
+                    Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -4.0)).unwrap(),
+                ],
+                1.0,
+            )
+        }
+        fn slab(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
+            m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))
+        }
+        // The user's parts: the filleted, bored plate, the slot plate, the gusset at `x`.
+        fn plate(m: &mut Model) -> Handle<Solid> {
+            prism(
+                m,
+                Axis::Z,
+                vec![
+                    Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
+                    Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
+                    Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
+                    Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
+                    Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
+                    Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                ],
+                1.0,
+            )
+        }
+        fn slot_plate(m: &mut Model) -> Handle<Solid> {
+            let s = prism(
+                m,
+                Axis::Y,
+                vec![
+                    Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
+                    Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
+                    Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
+                    Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+                    Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
+                    Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
+                    Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
+                    Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+                ],
+                1.0,
+            );
+            shift(m, s, [0.0, 3.0, 0.0])
+        }
+        fn gusset(m: &mut Model, x: f64) -> Handle<Solid> {
+            let s = prism(
+                m,
+                Axis::X,
+                vec![
+                    Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
+                    Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
+                    Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+                ],
+                1.0,
+            );
+            shift(m, s, [x, 0.0, 0.0])
+        }
+        type Pair = Box<dyn Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>)>;
+        let pairs: Vec<(&str, Pair)> = vec![
+            // The slab stands on the plate; its face `x = 1.5` holds the fillet's axis. It stops
+            // at `y = −3`, short of the plate's bottom wall, so that plane is the only coincidence.
+            (
+                "fillet-slab",
+                Box::new(|m| (plate1(m), slab(m, [1.5, -3.0, 1.0], [2.5, 0.0, 2.0]))),
+            ),
+            // Same plane, the slab far from the plate: the class still cuts the fillet.
+            (
+                "fillet-slab far",
+                Box::new(|m| (plate1(m), slab(m, [1.5, 10.0, 1.0], [2.5, 12.0, 2.0]))),
+            ),
+            // Off the axis by 0.1: an ordinary offset wall — the control.
+            (
+                "slab 1.6",
+                Box::new(|m| (plate1(m), slab(m, [1.6, -3.0, 1.0], [2.6, 0.0, 2.0]))),
+            ),
+            // ★ Measured on the way (S0): a slab reaching the plate's bottom wall plane `y = −4`
+            // — its face coplanar with the wall, not overlapping it, its bottom edge on the
+            // wall's line past the tangent point — meets *other* walls: on the axis plane
+            // `CoincidentNodes`, off it a **cut** that should leave the plate untouched answers
+            // `OpenResultShell` (an assembly defect, unfired before). Both frozen here by name
+            // for the cell that takes them; not this cell's proposition.
+            (
+                "slab wall 1.5",
+                Box::new(|m| (plate1(m), slab(m, [1.5, -4.0, 1.0], [2.5, 0.0, 2.0]))),
+            ),
+            (
+                "slab wall 1.6",
+                Box::new(|m| (plate1(m), slab(m, [1.6, -4.0, 1.0], [2.6, 0.0, 2.0]))),
+            ),
+            // The user's fold at the script's own gusset position: the third fuse of the script
+            // (plate + slot plate, then the gusset at `1.5`). The fourth (`−2.5`) is the ops lock's.
+            (
+                "user 1.5",
+                Box::new(|m| {
+                    let p1 = plate(m);
+                    let p2s = slot_plate(m);
+                    let ab = fuse(m, p1, p2s);
+                    (ab, gusset(m, 1.5))
+                }),
+            ),
+        ];
+        for (pn, build) in &pairs {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let (a, b) = build(&mut m);
+                m.rebuild_adjacency();
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("tangentline {pn} {kn}"), &m, &inputs, &out);
+            }
+        }
+    }
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].

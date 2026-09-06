@@ -453,6 +453,7 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
             && !o.contains("side_of(jd, &[], NodeId::three_planes(Canon3::three(v)), r)")
             && !o.contains("side_of(jd, &[], NodeId::three_planes(Canon3::three(vq)), q)")
             && !o.contains("side_of(&jd, &[], n, wc)")
+            && !o.contains("side_of(&jd, &cyls, n, class)")
     });
     assert_eq!(
         offenders,
