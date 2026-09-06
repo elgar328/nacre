@@ -13099,3 +13099,336 @@ fn a_four_plane_operand_vertex_has_one_name() {
         assert!(r.dependent.iter().all(|&d| !d), "{:?}", r.point);
     }
 }
+
+/// The four-plane operand: a wall with a gusset whose apex lands on the wall's top edge, fused —
+/// and the second gusset that will be fused onto it (the user's `1.4`/`−2.4`).
+///
+/// ★ It is **not** a rigid-motion oracle family, and the reason is measured: that oracle's digest
+/// is bit-exact, and a vertex realized from three planes is exact only for axis-aligned triples.
+/// With the slant `5y − 3z + 3 = 0` the moved-then-fused gusset tips came out at `z = −3.9e−16`
+/// against `0`; with a 45° slant (`y − z + 1 = 0`) and dyadic positions every rotation agreed and
+/// one translation still differed by one ULP in `x`. Same vertices, same names, different last
+/// bits — so «one name under every motion» is asked of the audit instead
+/// (`a_four_plane_operand_vertex_has_one_name_under_rigid_motion`).
+fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
+    let (x1, x2, top) = (1.4, -2.4, 6.0);
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let prism = |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>| -> Handle<Solid> {
+        let profile = crate::from_edges(edges).unwrap().remove(0);
+        let frame = SketchFrame::world(m, axis);
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 1.0,
+            },
+        )
+        .expect("the profile extrudes") else {
+            unreachable!()
+        };
+        solid
+    };
+    let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
+        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let OpOutput::Transform { solid } = apply(
+            m,
+            &Operation::Transform {
+                solid: s,
+                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+            },
+        )
+        .expect("the translation applies") else {
+            unreachable!()
+        };
+        solid
+    };
+    let mut m = Model::new();
+    let w = prism(
+        &mut m,
+        Axis::Y,
+        vec![
+            crate::Edge2d::line(p2(1.0, -3.5), p2(top, -3.5)).unwrap(),
+            crate::Edge2d::line(p2(top, -3.5), p2(top, 3.5)).unwrap(),
+            crate::Edge2d::line(p2(top, 3.5), p2(1.0, 3.5)).unwrap(),
+            crate::Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+        ],
+    );
+    let w = shift(&mut m, w, [0.0, 3.0, 0.0]);
+    let gusset = |m: &mut Model, x: f64| {
+        let g = prism(
+            m,
+            Axis::X,
+            vec![
+                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, top)).unwrap(),
+                crate::Edge2d::line(p2(3.0, top), p2(0.0, 1.0)).unwrap(),
+            ],
+        );
+        shift(m, g, [x, 0.0, 0.0])
+    };
+    let g1 = gusset(&mut m, x1);
+    let g2 = gusset(&mut m, x2);
+    m.rebuild_adjacency();
+    let wg = boolean(&mut m, BoolKind::Fuse, w, g1).expect("wall + gusset")[0];
+    m.rebuild_adjacency();
+    (m, wg, g2)
+}
+
+/// ★ Cell ⑪ — **the four-plane operand vertex fuses, in either operand order.** The fused wall
+/// and gusset carry two vertices where four faces meet; fusing the second gusset onto that solid
+/// used to be refused by whichever symptom the build order met first (`FourPlane`,
+/// `DegenerateWitness`) while the same parts fused in another order built. Now both operand
+/// orders give one valid body of volume `35 + 2 · 7.5`, every result vertex has its own
+/// coordinate (two names for one point would show here as two vertices at one place), and the
+/// apex keeps its four faces.
+#[test]
+fn a_four_plane_operand_vertex_fuses_in_either_order() {
+    for swapped in [false, true] {
+        let (mut m, wg, g2) = wall_and_gusset_operand();
+        let (a, b) = if swapped { (g2, wg) } else { (wg, g2) };
+        let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the four-plane operand fuses");
+        assert_eq!(out.len(), 1, "one body (swapped {swapped})");
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        assert!((v - 50.0).abs() < 1e-9, "volume {v} (swapped {swapped})");
+        // Every result vertex has its own coordinate.
+        let sol = m.solids.get(out[0]);
+        let mut points: Vec<[u64; 3]> = Vec::new();
+        let mut apex_faces = 0usize;
+        for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
+            for fh in m.shells.get(sh).faces.clone() {
+                let face = m.faces.get(fh);
+                let mut seen: Vec<Handle<Vertex>> = Vec::new();
+                for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                    for he in &lp.half_edges {
+                        for &vh in m.edges.get(he.edge).vertices.iter() {
+                            if seen.contains(&vh) {
+                                continue;
+                            }
+                            seen.push(vh);
+                            let p = m.vertex_point(vh);
+                            if (p[0] - 1.4).abs() < 1e-9
+                                && (p[1] - 3.0).abs() < 1e-9
+                                && (p[2] - 6.0).abs() < 1e-9
+                            {
+                                apex_faces += 1;
+                            }
+                            let bits = [p[0].to_bits(), p[1].to_bits(), p[2].to_bits()];
+                            if !points.contains(&bits) {
+                                points.push(bits);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut vertices: Vec<Handle<Vertex>> = Vec::new();
+        for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
+            for fh in m.shells.get(sh).faces.clone() {
+                let face = m.faces.get(fh);
+                for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                    for he in &lp.half_edges {
+                        for &vh in m.edges.get(he.edge).vertices.iter() {
+                            if !vertices.contains(&vh) {
+                                vertices.push(vh);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            points.len(),
+            vertices.len(),
+            "one vertex per coordinate (swapped {swapped})"
+        );
+        assert_eq!(
+            apex_faces, 4,
+            "the apex keeps its four faces (swapped {swapped})"
+        );
+    }
+}
+
+/// ★ Cell ⑪ — **the user's four-part fold builds in script order**, and the two fold orders
+/// agree to the bit. The plate, the slot plate and two gussets (at `1.4` and `−2.4`) fuse to
+/// `48 + (34 − π/4) + 15` whether the slot plate joins second (the order that used to refuse,
+/// its third fuse leaving a four-plane vertex for the fourth) or last; the census measured the
+/// two results' digests identical, and this locks that measurement.
+#[test]
+fn the_users_four_part_fold_builds_in_either_order() {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let prism =
+        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
+            let profile = crate::from_edges(edges).unwrap().remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        };
+    let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
+        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let OpOutput::Transform { solid } = apply(
+            m,
+            &Operation::Transform {
+                solid: s,
+                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+            },
+        )
+        .expect("the translation applies") else {
+            unreachable!()
+        };
+        solid
+    };
+    let plate = |m: &mut Model| {
+        prism(
+            m,
+            Axis::Z,
+            vec![
+                crate::Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
+                crate::Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
+                crate::Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
+                crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
+                crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
+                crate::Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
+                crate::Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
+                crate::Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+            ],
+            1.0,
+        )
+    };
+    let slot_plate = |m: &mut Model| {
+        let s = prism(
+            m,
+            Axis::Y,
+            vec![
+                crate::Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
+                crate::Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
+                crate::Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
+                crate::Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+                crate::Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
+                crate::Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
+                crate::Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
+                crate::Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+            ],
+            1.0,
+        );
+        shift(m, s, [0.0, 3.0, 0.0])
+    };
+    let gusset = |m: &mut Model, x: f64| {
+        let g = prism(
+            m,
+            Axis::X,
+            vec![
+                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
+                crate::Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+            ],
+            1.0,
+        );
+        shift(m, g, [x, 0.0, 0.0])
+    };
+    let fuse = |m: &mut Model, a: Handle<Solid>, b: Handle<Solid>| -> Handle<Solid> {
+        m.rebuild_adjacency();
+        let out = boolean(m, BoolKind::Fuse, a, b).expect("the fold's fuse builds");
+        assert_eq!(out.len(), 1, "one body");
+        out[0]
+    };
+    let pi = std::f64::consts::PI;
+    let want = 48.0 + (34.0 - pi / 4.0) + 15.0;
+    let mut digests = Vec::new();
+    for slot_plate_last in [false, true] {
+        let mut m = Model::new();
+        let p1 = plate(&mut m);
+        let p2s = slot_plate(&mut m);
+        let g1 = gusset(&mut m, 1.4);
+        let g2 = gusset(&mut m, -2.4);
+        let part = if slot_plate_last {
+            let a = fuse(&mut m, p1, g1);
+            let a = fuse(&mut m, a, g2);
+            fuse(&mut m, a, p2s)
+        } else {
+            let a = fuse(&mut m, p1, p2s);
+            let a = fuse(&mut m, a, g1);
+            fuse(&mut m, a, g2)
+        };
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, part).expect("props").volume;
+        assert!(
+            (v - want).abs() < 1e-9,
+            "{v} vs {want} (slot plate last {slot_plate_last})"
+        );
+        digests.push(brep_digest(&m, part));
+    }
+    let (d0, d1) = (&digests[0], &digests[1]);
+    assert_eq!(
+        d0.vertex_bits, d1.vertex_bits,
+        "the two fold orders realize the same vertices"
+    );
+    assert_eq!(d0.faces, d1.faces, "and the same faces");
+    assert_eq!(d0.edges, d1.edges, "and the same edges");
+    assert_eq!(
+        d0.volume_bits, d1.volume_bits,
+        "and the same volume, to the bit"
+    );
+    assert_eq!(d0.triangle_bits, d1.triangle_bits, "and the same mesh");
+}
+
+/// ★ Cell ⑪ — **one name under every rigid motion.** The four-plane operand vertex is named from
+/// its incident classes, which a motion permutes and renumbers; under each motion of the oracle's
+/// group the moved operands must still name each apex once, never by a dependent triple, with the
+/// alias fold landing on the vertex — and the moved fuse must build to the same volume. (Why this
+/// is not a rigid-motion oracle row: see [`wall_and_gusset_operand`].)
+#[test]
+fn a_four_plane_operand_vertex_has_one_name_under_rigid_motion() {
+    for (mn, iso, _) in motion_group() {
+        let (mut m, wg, g2) = wall_and_gusset_operand();
+        let a = transform(&mut m, wg, &iso).expect("the operand moves");
+        let b = transform(&mut m, g2, &iso).expect("the gusset moves");
+        m.rebuild_adjacency();
+        let report = arrangement::operand_vertex_audit(&m, a, b).expect("the audit runs");
+        let four: Vec<_> = report.iter().filter(|r| r.topo.len() >= 4).collect();
+        assert_eq!(four.len(), 2, "{mn}: the apex edge's two ends: {four:?}");
+        for r in &four {
+            let mut distinct: Vec<NodeId> = r.names.iter().map(|(_, n)| *n).collect();
+            distinct.sort_unstable();
+            distinct.dedup();
+            assert_eq!(distinct.len(), 1, "{mn}: one name: {:?}", r.names);
+            assert!(r.dependent.iter().all(|&d| !d), "{mn}: {:?}", r.names);
+            assert!(
+                r.folded_on_vertex.iter().all(|&on| on),
+                "{mn}: every fold on the vertex: {:?}",
+                r.folded
+            );
+        }
+        let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the moved operand fuses");
+        assert_eq!(out.len(), 1, "{mn}: one body");
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{mn}: {:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        assert!((v - 50.0).abs() < 1e-9, "{mn}: volume {v}");
+    }
+}
