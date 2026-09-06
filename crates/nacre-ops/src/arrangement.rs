@@ -6712,6 +6712,70 @@ pub(crate) fn ring_in_ring_by_witness(
     combinatorics::ring_in_ring(jd, wc, &probes, rb).map(Some)
 }
 
+/// **What every nesting question was asked with** (cell 13, test-only).
+///
+/// The defect this cell fixes was invisible for one reason: the corpus never put a **ring with no
+/// three-plane corner** against a **disk**, so the arm whose witness supply was truncated to that
+/// one kind never fired. A reject count could not have seen it. So the instrument measures the
+/// **population**: for each question, what the source cell had to offer and which road could answer.
+///
+/// Off by default and switched on by the audit test — the road-agreement column runs *both* roads
+/// where both are available, which is work no ordinary test should pay for.
+#[cfg(test)]
+pub(crate) mod nesting_probe {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    use std::sync::{Mutex, OnceLock};
+
+    /// One question, as it arrived.
+    #[derive(Clone, Copy, Debug)]
+    pub(crate) struct Row {
+        pub a_disk: bool,
+        pub b_disk: bool,
+        pub b_mixed: bool,
+        /// `a`'s witnesses by kind — the five supplies today's four spellings draw from.
+        pub named: usize,
+        pub coords: usize,
+        pub branch: usize,
+        pub chord: usize,
+        pub edge: usize,
+        pub circle: bool,
+        /// Where **both** roads could answer, what each said — the direct measurement of this
+        /// cell's premise, that any witness gives the same answer.
+        pub roads: Option<(bool, bool)>,
+    }
+
+    static ENABLED: AtomicBool = AtomicBool::new(false);
+
+    pub(crate) fn on() -> bool {
+        ENABLED.load(Ordering::Relaxed)
+    }
+    pub(crate) fn enable() {
+        ENABLED.store(true, Ordering::Relaxed);
+    }
+    pub(crate) fn disable() {
+        ENABLED.store(false, Ordering::Relaxed);
+    }
+
+    fn rows() -> &'static Mutex<Vec<Row>> {
+        static ROWS: OnceLock<Mutex<Vec<Row>>> = OnceLock::new();
+        ROWS.get_or_init(|| Mutex::new(Vec::new()))
+    }
+    pub(crate) fn push(r: Row) {
+        rows()
+            .lock()
+            .expect("the probe's lock is never held across a panic")
+            .push(r);
+    }
+    /// Take everything recorded so far, leaving the list empty.
+    pub(crate) fn take() -> Vec<Row> {
+        std::mem::take(
+            &mut *rows()
+                .lock()
+                .expect("the probe's lock is never held across a panic"),
+        )
+    }
+}
+
 /// **Is cell `a`'s loop inside cell `b`'s?** — the one dispatch, four arms by carrier kind.
 ///
 /// `Ok(None)` is *not comparable*, and it covers two shapes that both mean "these are neighbours,
@@ -6754,6 +6818,67 @@ fn cell_in_cell(
     a: usize,
     b: usize,
 ) -> Result<Option<bool>, BoolError> {
+    #[cfg(test)]
+    if nesting_probe::on() {
+        let inv = |i: usize| -> (usize, usize, usize, usize, usize, bool) {
+            if circle_ix[i].is_some() {
+                return (0, 0, 0, 0, 0, false);
+            }
+            let r = &rings[i];
+            (
+                r.iter()
+                    .filter(|e| combinatorics::three_plane_name(e.node).is_some())
+                    .count(),
+                r.iter()
+                    .filter(|e| combinatorics::node_coords_rat(jd, e.node).is_some())
+                    .count(),
+                r.iter()
+                    .filter(|e| combinatorics::branch_coords_rat(jd, cyls, e.node).is_some())
+                    .count(),
+                r.iter()
+                    .filter(|e| chord_midpoint_rat(jd, cyls, e).is_some())
+                    .count(),
+                r.iter()
+                    .filter(|e| edge_interior_rat(jd, cyls, e).is_some())
+                    .count(),
+                ring_own_circle(r).is_some(),
+            )
+        };
+        let (named, coords, branch, chord, edge, circle) = inv(a);
+        // Where both roads can answer, ask both — the premise under test.
+        let roads = (|| {
+            if circle_ix[a].is_some() || circle_ix[b].is_some() {
+                return None;
+            }
+            let (ra, rb) = (&rings[a], &rings[b]);
+            // Through the shared door, as production asks it — the retry over the probes lives
+            // in `ring_in_ring`, and comparing anything else would compare a road nobody walks.
+            let probes = combinatorics::three_plane_probes(ra.iter().map(|e| e.node));
+            let by_name = combinatorics::ring_in_ring(jd, wc, &probes, rb).ok()?;
+            let by_coord = ra
+                .iter()
+                .find_map(|e| {
+                    combinatorics::node_coords_rat(jd, e.node)
+                        .or_else(|| combinatorics::branch_coords_rat(jd, cyls, e.node))
+                        .or_else(|| chord_midpoint_rat(jd, cyls, e))
+                        .or_else(|| edge_interior_rat(jd, cyls, e))
+                })
+                .and_then(|p| rational_point_in_ring(jd, cyls, wc, &p, rb).ok().flatten())?;
+            Some((by_name, by_coord))
+        })();
+        nesting_probe::push(nesting_probe::Row {
+            a_disk: circle_ix[a].is_some(),
+            b_disk: circle_ix[b].is_some(),
+            b_mixed: circle_ix[b].is_none() && combinatorics::ring_is_mixed(&rings[b]),
+            named,
+            coords,
+            branch,
+            chord,
+            edge,
+            circle,
+            roads,
+        });
+    }
     match (circle_ix[a], circle_ix[b]) {
         // ★ **Two disks** (cell ⑩). A disk lies inside another iff its rim does, and the gate
         // keeps the rims of two classes apart, so the question is one rational inequality on

@@ -13635,3 +13635,158 @@ fn a_tangent_corner_on_a_plane_through_the_axis_has_one_name() {
     let declines = arrangement::trace_declines(&m, plate, slab).expect("the traces run");
     assert!(declines.is_empty(), "no class declines: {declines:?}");
 }
+
+/// The cell-13 operand: a 90 × 50 × 12 plate whose corners are filleted (r 5) and which carries
+/// four bores (d 7). With every corner rounded its cap ring has **no three-plane corner at all** —
+/// eight fillet tangencies and nothing else.
+fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let corner = [
+        ([45.0, -25.0], [1.0, 0.0], [0.0, 1.0]),
+        ([45.0, 25.0], [0.0, 1.0], [-1.0, 0.0]),
+        ([-45.0, 25.0], [-1.0, 0.0], [0.0, -1.0]),
+        ([-45.0, -25.0], [0.0, -1.0], [1.0, 0.0]),
+    ];
+    let r = 5.0;
+    let mut edges: Vec<crate::Edge2d> = Vec::new();
+    let mut at = {
+        let (c, _, d_out) = corner[3];
+        if fillets > 3 {
+            [c[0] + r * d_out[0], c[1] + r * d_out[1]]
+        } else {
+            c
+        }
+    };
+    for (i, (c, d_in, d_out)) in corner.into_iter().enumerate() {
+        if i < fillets {
+            let tin = [c[0] - r * d_in[0], c[1] - r * d_in[1]];
+            let centre = [tin[0] + r * d_out[0], tin[1] + r * d_out[1]];
+            edges.push(crate::Edge2d::line(p2(at[0], at[1]), p2(tin[0], tin[1])).unwrap());
+            edges.push(
+                crate::Edge2d::arc_turns(p2(centre[0], centre[1]), p2(tin[0], tin[1]), 1).unwrap(),
+            );
+            at = [c[0] + r * d_out[0], c[1] + r * d_out[1]];
+        } else {
+            edges.push(crate::Edge2d::line(p2(at[0], at[1]), p2(c[0], c[1])).unwrap());
+            at = c;
+        }
+    }
+    for &[x, y] in [[38.0, 18.0], [38.0, -18.0], [-38.0, 18.0], [-38.0, -18.0]]
+        .iter()
+        .take(bores)
+    {
+        edges.push(crate::Edge2d::circle(p2(x, y), 3.5).unwrap());
+    }
+    let profile = crate::from_edges(edges).unwrap().remove(0);
+    let frame = SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 12.0,
+        },
+    )
+    .expect("the rounded plate extrudes") else {
+        unreachable!()
+    };
+    solid
+}
+
+/// ★ Cell 13, S0 — **the instrument sees the population the corpus never held.** A nesting
+/// question is answered by a witness of the source cell, and the supply that names those witnesses
+/// is spelled four ways today; the spelling the *disk* arm holds is one kind wide. This audit
+/// records what each question was asked with, so the truncation shows as a **population** rather
+/// than as a reject count — the arm never fired at all, so counting rejects could not have found it.
+///
+/// The negative control is the point: with every corner filleted the plate offers a ring of eight
+/// branch corners and **no** three-plane name, against a bore's disk. S1 flips the assertions.
+#[test]
+fn a_ring_with_no_three_plane_corner_reaches_the_disk_arm_today() {
+    arrangement::nesting_probe::enable();
+    let _ = arrangement::nesting_probe::take();
+    let mut m = Model::new();
+    let plate = rounded_plate(&mut m, 4, 4);
+    let far = m.add_cuboid(
+        Point3::from_array([200.0, -5.0, -5.0]),
+        Point3::from_array([210.0, 5.0, 5.0]),
+    );
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, plate, far);
+    let rows = arrangement::nesting_probe::take();
+    arrangement::nesting_probe::disable();
+
+    // Today: the plate cannot enter a boolean at all, and the name says the witness.
+    assert!(
+        matches!(
+            out,
+            Err(BoolError::Rejected {
+                reason: RejectReason::WitnessNotRational,
+                ..
+            })
+        ),
+        "{out:?}"
+    );
+    // ★ The negative control: the instrument must *see* the failing shape, or its zeros mean
+    // nothing. A ring with no three-plane name, asked against a disk.
+    let nameless_vs_disk: Vec<_> = rows
+        .iter()
+        .filter(|r| !r.a_disk && r.named == 0 && r.b_disk)
+        .collect();
+    assert!(
+        !nameless_vs_disk.is_empty(),
+        "the audit must see the ring that has no three-plane corner asked against a disk: {rows:?}"
+    );
+    // And those rings do have exact witnesses — of a kind this arm does not ask for.
+    for r in &nameless_vs_disk {
+        assert_eq!(r.coords, 0, "no three-plane coordinate: {r:?}");
+        assert!(
+            r.branch > 0,
+            "but every corner is a rational branch point: {r:?}"
+        );
+        // The rest of the supply, measured: a rounded outline's corners are tangencies, so no
+        // edge is a whole chord (`chord` 0) and the ring is not a circle — but its straight edges
+        // *do* name interior points, which is one more exact witness this arm never asks for.
+        assert_eq!(r.chord, 0, "no whole chord: {r:?}");
+        assert!(r.edge > 0, "but its edges name interior points: {r:?}");
+        assert!(!r.circle, "and the ring is not a circle: {r:?}");
+        assert!(!r.b_mixed, "a disk target is not a mixed ring: {r:?}");
+    }
+}
+
+/// ★ Cell 13, S0 — **the premise, measured**: where both roads can answer one question, they agree.
+/// The engine this cell builds picks whichever witness comes first, so «any witness decides» has to
+/// be a fact and not a hope. A single disagreement would mean the answer depends on the witness,
+/// which is the one thing that would make the unification wrong.
+#[test]
+fn the_two_roads_never_disagree() {
+    arrangement::nesting_probe::enable();
+    let _ = arrangement::nesting_probe::take();
+    let mut rows = Vec::new();
+    for (fillets, bores) in [(3, 4), (4, 0), (3, 0)] {
+        for k in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+            let mut m = Model::new();
+            let plate = rounded_plate(&mut m, fillets, bores);
+            let boss = m.add_cuboid(
+                Point3::from_array([10.0, -20.0, 12.0]),
+                Point3::from_array([25.0, 20.0, 62.0]),
+            );
+            m.rebuild_adjacency();
+            let _ = boolean(&mut m, k, plate, boss);
+        }
+        rows.extend(arrangement::nesting_probe::take());
+    }
+    arrangement::nesting_probe::disable();
+    let both: Vec<_> = rows.iter().filter_map(|r| r.roads).collect();
+    assert!(
+        !both.is_empty(),
+        "the fixtures must reach questions both roads can answer"
+    );
+    let disagree = both.iter().filter(|(a, b)| a != b).count();
+    assert_eq!(
+        disagree,
+        0,
+        "the name road and the coordinate road answered differently on {disagree} of {} questions",
+        both.len()
+    );
+}

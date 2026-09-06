@@ -2082,6 +2082,178 @@ fn dump() {
             }
         }
     }
+    // ── **A fully rounded outline** (cell ⑬): fillet *every* corner of a plate and its cap ring
+    // has no three-plane corner left — eight tangencies and nothing else. The predicate that asks
+    // "is this ring inside that bore's disk" looks for a witness among three-plane names only, so
+    // it finds none and refuses, and the plate cannot enter **any** boolean. The rows say exactly
+    // that: three partners that share nothing but the plate (one standing on it, one overlapping,
+    // one a hundred units away), and two controls that differ in one thing each — one corner left
+    // sharp, and no bores. The last row carries the user's own script, whose *next* wall this cell
+    // hands on to the one after it.
+    {
+        fn p2(x: f64, y: f64) -> nacre_math::Point2 {
+            nacre_math::Point2::from_array([x, y])
+        }
+        fn prism(m: &mut Model, axis: Axis, edges: Vec<Edge2d>, dist: f64) -> Handle<Solid> {
+            let profile = from_edges(edges).expect("a valid profile").remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the round-plate profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        }
+        fn shift(m: &mut Model, s: Handle<Solid>, t: [f64; 3]) -> Handle<Solid> {
+            let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
+            xf(m, s, Isometry::translation([r(t[0]), r(t[1]), r(t[2])]))
+        }
+        // A 90 × 50 × 12 plate whose corners are filleted (r 5) and which carries `bores` holes
+        // (d 7) at `(±38, ±18)`. `fillets` says how many of the four corners are rounded, walking
+        // counter-clockwise from the bottom-right: with four the outline has **no** sharp corner.
+        fn plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
+            // The corners in walk order, each with the direction in and the direction out.
+            let corner = [
+                ([45.0, -25.0], [1.0, 0.0], [0.0, 1.0]),
+                ([45.0, 25.0], [0.0, 1.0], [-1.0, 0.0]),
+                ([-45.0, 25.0], [-1.0, 0.0], [0.0, -1.0]),
+                ([-45.0, -25.0], [0.0, -1.0], [1.0, 0.0]),
+            ];
+            let r = 5.0;
+            let mut edges: Vec<Edge2d> = Vec::new();
+            // Where the previous corner left the pen.
+            let mut at = {
+                let (c, _, d_out) = corner[3];
+                if fillets > 3 {
+                    [c[0] + r * d_out[0], c[1] + r * d_out[1]]
+                } else {
+                    c
+                }
+            };
+            for (i, (c, d_in, d_out)) in corner.into_iter().enumerate() {
+                if i < fillets {
+                    let tin = [c[0] - r * d_in[0], c[1] - r * d_in[1]];
+                    let centre = [tin[0] + r * d_out[0], tin[1] + r * d_out[1]];
+                    edges.push(Edge2d::line(p2(at[0], at[1]), p2(tin[0], tin[1])).unwrap());
+                    edges.push(
+                        Edge2d::arc_turns(p2(centre[0], centre[1]), p2(tin[0], tin[1]), 1).unwrap(),
+                    );
+                    at = [c[0] + r * d_out[0], c[1] + r * d_out[1]];
+                } else {
+                    edges.push(Edge2d::line(p2(at[0], at[1]), p2(c[0], c[1])).unwrap());
+                    at = c;
+                }
+            }
+            for &[x, y] in [[38.0, 18.0], [38.0, -18.0], [-38.0, 18.0], [-38.0, -18.0]]
+                .iter()
+                .take(bores)
+            {
+                edges.push(Edge2d::circle(p2(x, y), 3.5).unwrap());
+            }
+            prism(m, Axis::Z, edges, 12.0)
+        }
+        // The user's rib: a stepped profile standing on the plate's top face, extruded ±20 in y.
+        fn rib(m: &mut Model, x: f64) -> Handle<Solid> {
+            let s = prism(
+                m,
+                Axis::Y,
+                vec![
+                    Edge2d::line(p2(12.0, 0.0), p2(12.0, 7.5)).unwrap(),
+                    Edge2d::line(p2(12.0, 7.5), p2(27.0, 7.5)).unwrap(),
+                    Edge2d::line(p2(27.0, 7.5), p2(27.0, 5.5)).unwrap(),
+                    Edge2d::line(p2(27.0, 5.5), p2(62.0, 5.5)).unwrap(),
+                    Edge2d::line(p2(62.0, 5.5), p2(62.0, -5.5)).unwrap(),
+                    Edge2d::line(p2(62.0, -5.5), p2(27.0, -5.5)).unwrap(),
+                    Edge2d::line(p2(27.0, -5.5), p2(27.0, -7.5)).unwrap(),
+                    Edge2d::line(p2(27.0, -7.5), p2(12.0, -7.5)).unwrap(),
+                    Edge2d::line(p2(12.0, -7.5), p2(12.0, 0.0)).unwrap(),
+                ],
+                40.0,
+            );
+            shift(m, s, [x, -20.0, 0.0])
+        }
+        fn box_at(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
+            m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))
+        }
+        type Pair = Box<dyn Fn(&mut Model) -> (Handle<Solid>, Handle<Solid>)>;
+        let pairs: Vec<(&str, Pair)> = vec![
+            // Standing on the plate's top face.
+            (
+                "box on top",
+                Box::new(|m| {
+                    (
+                        plate(m, 4, 4),
+                        box_at(m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]),
+                    )
+                }),
+            ),
+            // Overlapping it.
+            (
+                "box through",
+                Box::new(|m| {
+                    (
+                        plate(m, 4, 4),
+                        box_at(m, [10.0, -20.0, 6.0], [25.0, 20.0, 62.0]),
+                    )
+                }),
+            ),
+            // ★ A hundred units away — the partner has nothing to do with it. This row is what
+            // says the wall is the plate's own.
+            (
+                "box far",
+                Box::new(|m| {
+                    (
+                        plate(m, 4, 4),
+                        box_at(m, [200.0, -5.0, -5.0], [210.0, 5.0, 5.0]),
+                    )
+                }),
+            ),
+            // One corner left sharp — the control that differs in exactly one thing.
+            (
+                "one sharp corner",
+                Box::new(|m| {
+                    (
+                        plate(m, 3, 4),
+                        box_at(m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]),
+                    )
+                }),
+            ),
+            // Rounded but unbored — the other control.
+            (
+                "no bores",
+                Box::new(|m| {
+                    (
+                        plate(m, 4, 0),
+                        box_at(m, [10.0, -20.0, 12.0], [25.0, 20.0, 62.0]),
+                    )
+                }),
+            ),
+            // The rib the user's script builds, on one side.
+            ("rib", Box::new(|m| (plate(m, 4, 4), rib(m, 17.5)))),
+            // ★ The user's own script — plate, both ribs, then the cylinder that bores across
+            // them — is **not** a row yet: its own first fuse is the failure this cell is about, so
+            // the fixture cannot be built today. It joins the moment that fuse builds, and the name
+            // it lands on then (a class carrying a circle and rulings at once) is the hand-off to
+            // the next cell.
+        ];
+        for (pn, build) in &pairs {
+            for (kn, k) in KINDS {
+                let mut m = Model::new();
+                let (a, b) = build(&mut m);
+                m.rebuild_adjacency();
+                let inputs = operands(&m, a, b);
+                let out = boolean(&mut m, k, a, b);
+                m.rebuild_adjacency();
+                record(&format!("roundplate {pn} {kn}"), &m, &inputs, &out);
+            }
+        }
+    }
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].
