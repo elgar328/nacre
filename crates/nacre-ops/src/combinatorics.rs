@@ -39,7 +39,35 @@ use std::collections::HashMap;
 /// `edge_faces` builds it from `surf_ix: HashMap<Handle<Face>, usize>`. It was `EdgePlanes`, and
 /// that name is how a face index gets read as a plane one. The face→plane step is `plane_ix`, and
 /// it happens in `loop_triples`, nowhere else.
-pub(crate) type EdgeFaces = HashMap<Handle<Edge>, ([Handle<Vertex>; 2], [usize; 2])>;
+///
+/// ★ Cell ⑪: it also holds **every vertex's incident faces**, read off the same walk. That table
+/// is what lets a ring vertex be named from *all* the planes through it rather than from the one
+/// face loop asking — the set the 2026-07-27 record thought would take an `O(V·P)` query. The
+/// operand's own topology knows it, and the edge walk visits every (vertex, face) pair anyway.
+/// One edge's incidence: its two bounding vertices and the two faces (table slots) using it.
+pub(crate) type EdgeIncidence = ([Handle<Vertex>; 2], [usize; 2]);
+
+pub(crate) struct EdgeFaces {
+    edges: HashMap<Handle<Edge>, EdgeIncidence>,
+    vertex_faces: HashMap<Handle<Vertex>, Vec<usize>>,
+}
+
+impl EdgeFaces {
+    /// An edge's two bounding vertices and its two faces (table slots).
+    pub(crate) fn get(&self, e: &Handle<Edge>) -> Option<&EdgeIncidence> {
+        self.edges.get(e)
+    }
+    /// Every edge's `(bounds, faces)`, in no particular order — the audits' walk.
+    #[cfg(test)]
+    pub(crate) fn edges(&self) -> impl Iterator<Item = &EdgeIncidence> {
+        self.edges.values()
+    }
+    /// The faces (table slots) with an edge at `vh`, sorted — empty for a vertex no edge of this
+    /// solid touches.
+    pub(crate) fn faces_at(&self, vh: Handle<Vertex>) -> &[usize] {
+        self.vertex_faces.get(&vh).map(Vec::as_slice).unwrap_or(&[])
+    }
+}
 
 /// Index a solid's edges by handle — [`edge_incidence`] keyed for lookup.
 ///
@@ -50,11 +78,26 @@ pub(crate) fn edge_faces(
     solid: Handle<Solid>,
     surf_ix: &HashMap<Handle<Face>, usize>,
 ) -> Result<EdgeFaces, BoolError> {
-    let mut out = EdgeFaces::new();
+    let mut edges = HashMap::new();
+    let mut vertex_faces: HashMap<Handle<Vertex>, Vec<usize>> = HashMap::new();
     for (eh, bounds, inc) in edge_incidence(model, solid, surf_ix)? {
-        out.insert(eh, (bounds, inc));
+        for &vh in &bounds {
+            let at = vertex_faces.entry(vh).or_default();
+            for &f in &inc {
+                if !at.contains(&f) {
+                    at.push(f);
+                }
+            }
+        }
+        edges.insert(eh, (bounds, inc));
     }
-    Ok(out)
+    for at in vertex_faces.values_mut() {
+        at.sort_unstable();
+    }
+    Ok(EdgeFaces {
+        edges,
+        vertex_faces,
+    })
 }
 
 /// Order two crossings of the line `P ∩ Q` along that line: `-1` if `V_i` precedes
@@ -825,6 +868,54 @@ pub(crate) fn pin_on_line(
     t.iter()
         .copied()
         .find(|&c| c != a && c != b && jd.plane_pair_dir_sign(a, b, c) != 0)
+}
+
+/// **The one rule that names a point from the planes through it** (cell ⑪).
+///
+/// `s` is every plane class known to pass through one point, sorted and deduplicated. The name is
+/// the lexicographically first triple of `s` that is **independent** — three planes sharing a line
+/// name no point — and `None` when fewer than three classes are given.
+///
+/// Three classes need no judgement: they are the only candidate, and every producer that meets a
+/// three-plane point derives the same three (the ordinary vertex; this arm leaves its name what it
+/// always was, and asks nothing of the judge). Four or more is a concurrency, and the choice among
+/// the candidates is what has to be **one rule**: the alias table's representative
+/// (`arrangement::Aliases`) is the minimum of its union-find, i.e. this very triple, so a vertex
+/// an operand names here and a point the arrangement discovers fold onto the same name.
+///
+/// ★ **Why one function.** The rule was spelled six times between 2026-07-27 and 2026-09-06 —
+/// the arrangement's run-vertex discovery, its alias representative, the result vertex's
+/// definition, a line's wall family, an edge's end triples — each on the face of the problem a
+/// fixture had just shown, and each time the operand's own vertices kept a rule of their own (a
+/// triple per face loop). A concurrency then arrived under four names, one of them dependent,
+/// and the judge read the dependent one as lying on every class.
+///
+/// ★ **Completeness** — why an operand's set plus the arrangement's `{wc} ∪ t` records make one
+/// component: with `|F| = 4` planes through a point every record *is* `F`, so the union-find has
+/// one component whose minimum is this triple. Five or more is not in the corpus
+/// (`concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them`) and is the recorded
+/// stop condition.
+pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Option<[usize; 3]> {
+    debug_assert!(
+        s.windows(2).all(|w| w[0] < w[1]),
+        "sorted, deduplicated: {s:?}"
+    );
+    match *s {
+        [] | [_] | [_, _] => None,
+        [a, b, c] => Some([a, b, c]),
+        _ => {
+            for i in 0..s.len() {
+                for j in (i + 1)..s.len() {
+                    for k in (j + 1)..s.len() {
+                        if jd.plane_pair_dir_sign(s[i], s[j], s[k]) != 0 {
+                            return Some([s[i], s[j], s[k]]);
+                        }
+                    }
+                }
+            }
+            None
+        }
+    }
 }
 
 /// **A direction on a working plane**: the carrier that supplies it, and which way along it.
@@ -1810,6 +1901,12 @@ pub(crate) struct NamedRing {
     /// interior side. `cycle_on_class`'s Run arm reads this (E2-0 measured it equal to the flank's
     /// reading on every on-class arc of today's holes before the rule moved).
     pub arc_ccw: Vec<Option<bool>>,
+    /// ★ Cell ⑪: every **concurrency** this loop's corners revealed — a corner with four or more
+    /// plane classes incident, as the full sorted class set. Its name in `triples` is
+    /// [`canonical_triple`] of that set; the set itself goes to the arrangement's alias table
+    /// (`arrangement::Aliases`) before any class is traced, so the arrangement's own discoveries
+    /// fold onto the same representative.
+    pub concurrencies: Vec<Vec<usize>>,
 }
 
 /// One loop of a face, in the vocabulary the tracer speaks (M6-2a): a polygon of three-plane
@@ -2042,6 +2139,7 @@ fn loop_triples(
     let mut out = Vec::with_capacity(n);
     let mut walls = Vec::with_capacity(n);
     let mut arc_ccw = Vec::with_capacity(n);
+    let mut concurrencies: Vec<Vec<usize>> = Vec::new();
     for i in 0..n {
         // Vertex `i` starts edge `i` and ends edge `i - 1`.
         let (in_bounds, in_pair) = edge(&hes[(i + n - 1) % n])?;
@@ -2162,54 +2260,57 @@ fn loop_triples(
         else {
             unreachable!("the curved arms are handled above")
         };
-        // `inc` names faces, so `other` matches by face — but the triple names *planes*, and a
-        // consumer's `==` on it must mean "same plane". Canonize here, once, at the source.
-        let mut t = [near, far, wall];
-        t.sort_unstable();
-        if t[0] != t[1] && t[1] != t[2] {
-            out.push(NodeId::three_planes(t));
-            continue;
-        }
-        // Both neighbours are one plane: the corner's own faces say what else names it.
+        // ★ Cell ⑪ — **the vertex names itself, not the face loop.** The classes through this
+        // corner are the classes of its incident faces, which the incidence table knows, and the
+        // name is [`canonical_triple`] of that set. Three classes is the ordinary corner, and its
+        // name is exactly the `[near, far, wall]` this arm used to build (the face's own plane and
+        // both neighbours' are the three) — no judgement is asked, and the name moves by no bit.
+        // Four or more is a concurrency: **one** name for every loop that visits the vertex, and
+        // the set is handed on (`concurrencies`) so the arrangement's alias table starts from it.
+        //
+        // It used to build `[near, far, wall]` and fall back to the incident set only when the two
+        // neighbours were one plane; a four-plane vertex whose neighbours differ therefore got a
+        // name per face — four names, and from the face whose two edges ride the planes sharing a
+        // line with its own, a triple that names no point. The judge read that «point» as lying
+        // on every class, and the alias table folded everything onto a corner elsewhere.
         let mut classes: Vec<usize> = vertex_face_indices(corner, inc)
             .into_iter()
-            .map(|k| plane_ix[k].plane())
+            .filter_map(|k| match plane_ix[k] {
+                ClassIx::Plane(c) => Some(c),
+                ClassIx::Cyl(_) => None,
+            })
             .collect();
         classes.sort_unstable();
         classes.dedup();
-        if classes.len() != 3 {
-            // >3: a genuine four-plane concurrency, which this substrate cannot name.
-            // <3: the vertex lies on fewer than three planes, so no triple names it — a genuine
-            // straight angle, where dropping the vertex would preserve the polygon but this brick
-            // does not drop vertices.
-            //
-            // A vertex can also lack a triple by sitting on a **coplanar seam** (an edge between
-            // two coplanar, same-facing faces of one solid): its only edges are the seam's, so it
-            // touches one plane class. That is *not* a straight angle — the vertex is a corner and
-            // dropping it would change the shape — but no producer makes such an edge since
-            // `ImprintSketch` was retired, so it cannot reach here. See the 2026-07-22 dev-log
-            // cells if one ever does: the answer is that a whole-seam ring is not a boundary.
-            return Err(reject(if classes.len() > 3 {
-                RejectReason::FourPlane
+        let Some(t) = canonical_triple(jd, &classes) else {
+            // Fewer than three classes: the vertex lies on fewer than three planes, so no triple
+            // names it — a genuine straight angle (or a coplanar seam, which no producer makes
+            // since `ImprintSketch` retired; see the 2026-07-22 cells). Three or more with no
+            // independent triple cannot happen: two distinct planes through a point meet in a
+            // line, and a third off that line completes the point.
+            return Err(reject(if classes.len() >= 3 {
+                RejectReason::ThreePlanes
             } else {
-                // Fewer than three classes: there is no triple to name this vertex by.
                 RejectReason::RingNaming
             }));
-        }
-        // `plane_ix[p].plane()`, not `p`. An earlier revision kept `p` raw because consumers still matched the
-        // face's own plane by raw index; they now compare classes (2026-07-22), and a triple that
-        // mixed one face index with two class indices was exactly the ambiguity this brick exists
-        // to remove.
-        let mut t = [plane_ix[p].plane(), 0, 0];
-        let mut k = 1;
-        for &c in &classes {
-            if c != plane_ix[p].plane() {
-                t[k] = c;
-                k += 1;
+        };
+        if classes.len() == 3 {
+            // Both neighbours on one plane: the loop runs straight through and the three classes
+            // may share a line — the one place this road has always asked (and still asks) the
+            // judge about a three-class corner.
+            if far == wall && jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
+                return Err(reject(RejectReason::ThreePlanes)); // three planes through one line, not one point
             }
-        }
-        if jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
-            return Err(reject(RejectReason::ThreePlanes)); // three planes through one line, not one point
+            debug_assert!(
+                far == wall || {
+                    let mut u = [near, far, wall];
+                    u.sort_unstable();
+                    u == t
+                },
+                "a three-class corner keeps the loop's own name: {t:?} vs {near} {far} {wall}"
+            );
+        } else {
+            concurrencies.push(classes);
         }
         out.push(NodeId::three_planes(t));
     }
@@ -2222,6 +2323,7 @@ fn loop_triples(
         triples: out,
         walls,
         arc_ccw,
+        concurrencies,
     }))
 }
 
@@ -2923,18 +3025,9 @@ pub(crate) fn segment_meets_face(
 /// returns `inc`'s pairs verbatim, and those are faces. Its one caller maps them through
 /// `plane_ix`.)
 pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<usize> {
-    let mut out: Vec<usize> = Vec::new();
-    for (bounds, pair) in inc.values() {
-        if bounds.contains(&vh) {
-            for &p in pair {
-                if !out.contains(&p) {
-                    out.push(p);
-                }
-            }
-        }
-    }
-    out.sort_unstable();
-    out
+    // ★ Cell ⑪: a lookup — the incidence table carries the vertex → faces map (built once per
+    // operand), where this used to scan every edge for every vertex asked.
+    inc.faces_at(vh).to_vec()
 }
 
 /// Whether the point named by plane triple `v` lies on any edge of `ring` (a ring on plane `p`).

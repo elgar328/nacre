@@ -468,6 +468,34 @@ fn decline_to_reject(kind: DeclineKind, face: Option<Handle<Face>>) -> RejectRea
     }
 }
 
+/// **The alias table learns from the operands first** (cell ⑪): every concurrency an operand's
+/// own topology knows — a vertex with four or more incident plane classes, carried by its rings as
+/// `NamedRing::concurrencies` — is recorded before any class is traced. The representative the
+/// ring already named the vertex by (`canonical_triple`) is then the representative the
+/// arrangement's own discoveries (`{wc} ∪ t` at a run vertex, a wall family's line) fold onto.
+fn seed_from_operands(
+    aliases: &mut Aliases,
+    jd: &Judge<'_, WorkingPlane>,
+    trace_in: &combinatorics::TraceInput,
+) {
+    for side in &trace_in.faces {
+        for (_, loops) in side {
+            let rings = loops
+                .outer
+                .iter()
+                .chain(loops.holes.iter().flatten())
+                .chain(loops.cycles.iter().flatten().map(|(_, r)| r));
+            for lr in rings {
+                if let Some(nr) = lr.poly() {
+                    for s in &nr.concurrencies {
+                        aliases.record(jd, s);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// The names that turned out to denote **one** feature, learned while tracing.
 ///
 /// Both kinds come from the same discovery. When a producer learns the full set `S` of planes
@@ -501,7 +529,10 @@ impl Aliases {
         if s.len() < 4 {
             return; // three planes meeting at a point is the ordinary case, and names nothing new
         }
-        let mut names = Vec::new();
+        // ★ Cell ⑪: the representative is [`combinatorics::canonical_triple`]'s answer — the one
+        // rule every producer of a point's name calls — so a name an operand's ring already gave
+        // the point is the representative it folds onto here.
+        let rep = combinatorics::canonical_triple(jd, s).map(NodeId::three_planes);
         for i in 0..s.len() {
             for j in (i + 1)..s.len() {
                 for k in (j + 1)..s.len() {
@@ -511,15 +542,10 @@ impl Aliases {
                         self.union_wall(t[0], t[1], t[2]);
                         self.union_wall(t[1], t[0], t[2]);
                         self.union_wall(t[2], t[0], t[1]);
-                    } else {
-                        names.push(NodeId::three_planes(t));
+                    } else if let Some(rep) = rep {
+                        self.union_point(rep, NodeId::three_planes(t));
                     }
                 }
-            }
-        }
-        if let Some((&rep, rest)) = names.split_first() {
-            for &t in rest {
-                self.union_point(rep, t);
             }
         }
     }
@@ -891,56 +917,37 @@ fn trace_transversal_face(
                     None => return Err(DeclineKind::RunName),
                 },
             };
-            let (mut offs, mut has_fp, mut has_w) = (Vec::<usize>::new(), false, false);
-            // `offs` counts the off-line classes; **which** one pins the point is
-            // [`combinatorics::pin_on_line`]'s to say, in both arms below.
-            for &x in &t {
-                if x == fc {
-                    has_fp = true;
-                } else if x == wc {
-                    has_w = true;
-                } else {
-                    offs.push(x);
-                }
-            }
-            match (has_fp, has_w, offs.len()) {
-                // The ordinary point: `t` carries both of this line's planes, and the third both pins
-                // and names it.
-                // ★ It goes through [`combinatorics::pin_on_line`] like the arm below, though with
-                // one candidate there is nothing to choose. What the shared rule adds here is the
-                // **cut test** this arm used to skip — measured **0 of 1,622,692** calls where the
-                // lone off-line class fails it, so folding the two changes no answer and closes a
-                // difference between two arms of one function.
-                (true, true, 1) => combinatorics::pin_on_line(jd, wc, fc, t)
+            // ★ Cell ⑪: the face's own plane need not appear in the name — a ring vertex is on
+            // its face by topology, and a concurrency's canonical triple may name it by three
+            // *other* planes. One question remains: does `wc` name it? If so the pin is whichever
+            // plane of `t` cuts `L` (`pin_on_line`; with `t = {fc, wc, r}` that is `r`, the old
+            // ordinary arm, measured identical). If not, `wc` is a further plane through the
+            // point: record the concurrency, pin the same way, and call the point by the
+            // canonical triple of what is now known through it — the rule the operand's ring
+            // and the alias table use, so the three agree on the representative.
+            if t.contains(&wc) {
+                combinatorics::pin_on_line(jd, wc, fc, t)
                     .map(|r| (n, combinatorics::EndPin::Class(r)))
-                    .ok_or(DeclineKind::NoPinOnLine),
-                // On `wc` (this is a run vertex) yet `wc` does not name it. `t`'s classes are distinct
-                // (`plane_ring`) and `fc != wc` here, so `wc` is a **fourth** plane through the point.
-                (_, false, _) => {
-                    let mut set = t.to_vec();
-                    set.push(wc);
-                    set.sort_unstable();
-                    set.dedup();
-                    out.aliases.record(jd, &set);
-                    // ★ A handle has a duty the identity does not: it must **cut** `L` — see
-                    // [`combinatorics::pin_on_line`], where that rule and its reason live.
-                    // ★ `FourPlane` and not `NoPinOnLine`: this arm has already established that
-                    // `wc` is a fourth plane through the point, so the substrate limit is the cause
-                    // and a missing pin is its symptom.
-                    combinatorics::pin_on_line(jd, wc, fc, t)
-                        .ok_or(DeclineKind::FourPlane)
-                        // ★ The alias case names the point by **this line's** triple, not the ring's:
-                        // `wc` is a fourth plane through it, and `{wc, fc, r}` is the canonical name
-                        // the arrangement uses. That is why the name is rebuilt here while the
-                        // ordinary case simply carries the one it was given.
-                        .map(|r| {
-                            (
-                                NodeId::three_planes([wc, fc, r]),
-                                combinatorics::EndPin::Class(r),
-                            )
-                        })
-                }
-                _ => Err(DeclineKind::RunName),
+                    .ok_or(DeclineKind::NoPinOnLine)
+            } else {
+                let mut set = t.to_vec();
+                set.push(wc);
+                set.sort_unstable();
+                set.dedup();
+                out.aliases.record(jd, &set);
+                // ★ A handle has a duty the identity does not: it must **cut** `L` — see
+                // [`combinatorics::pin_on_line`], where that rule and its reason live.
+                // ★ `FourPlane` and not `NoPinOnLine`: this arm has already established that
+                // `wc` is a fourth plane through the point, so the substrate limit is the cause
+                // and a missing pin is its symptom.
+                combinatorics::pin_on_line(jd, wc, fc, t)
+                    .ok_or(DeclineKind::FourPlane)
+                    .map(|r| {
+                        let name = combinatorics::canonical_triple(jd, &set)
+                            .map(NodeId::three_planes)
+                            .unwrap_or(n);
+                        (name, combinatorics::EndPin::Class(r))
+                    })
             }
         };
 
@@ -7291,6 +7298,7 @@ fn trace_result_faces(
         c
     };
     let mut aliases = Aliases::default();
+    seed_from_operands(&mut aliases, jd, trace_in);
     #[allow(clippy::type_complexity)]
     let mut splits: Vec<(Vec<MergedSeg>, Vec<MergedCircle>, Vec<MergedRuling>)> = Vec::new();
     loop {
@@ -7773,6 +7781,7 @@ pub(crate) fn operand_vertex_audit(
     // The alias fold production would reach: every class traced, merged and split, discoveries
     // accumulated across classes.
     let mut aliases = Aliases::default();
+    seed_from_operands(&mut aliases, &jd, &trace_in);
     #[allow(clippy::needless_range_loop)]
     for wc in 0..geom.len() {
         let tr = trace_on_class(&trace_in, wc, &jd, &cyls, &faces_tab, &plane_ix);
@@ -7790,7 +7799,7 @@ pub(crate) fn operand_vertex_audit(
         // is left out (its name is a branch point).
         let mut topo: HashMap<Handle<Vertex>, Vec<usize>> = HashMap::new();
         let mut curved: std::collections::HashSet<Handle<Vertex>> = Default::default();
-        for (bounds, pair) in inc.values() {
+        for (bounds, pair) in inc.edges() {
             for &vh in bounds {
                 for &k in pair {
                     match plane_class(k) {
@@ -8497,6 +8506,7 @@ mod tests {
             triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],
             walls: vec![plane(1), ruling, plane(3)],
             arc_ccw: vec![None; 3],
+            concurrencies: vec![],
         };
         let (_, walls) = plane_ring(&curved_carrier).expect("a curved carrier is describable");
         assert_eq!(
@@ -8508,6 +8518,7 @@ mod tests {
             triples: vec![three(0, 1, 2), branch, three(0, 1, 3)],
             walls: vec![plane(1), ruling, plane(3)],
             arc_ccw: vec![None; 3],
+            concurrencies: vec![],
         };
         let (ts, _) = plane_ring(&curved_corner).expect("a branch corner is describable");
         assert_eq!(ts[1], branch, "the corner is the producer's, unflattened");
@@ -8516,6 +8527,7 @@ mod tests {
             triples: vec![three(0, 1, 2), three(0, 0, 3), three(0, 1, 3)],
             walls: vec![plane(1), plane(2), plane(3)],
             arc_ccw: vec![None; 3],
+            concurrencies: vec![],
         };
         assert!(matches!(plane_ring(&collapsed), Err(RingFail::Collapsed)));
         // And the plane-only ring still comes back with both halves.
@@ -8523,6 +8535,7 @@ mod tests {
             triples: vec![three(0, 1, 2), three(0, 2, 3), three(0, 1, 3)],
             walls: vec![plane(1), plane(2), plane(3)],
             arc_ccw: vec![None; 3],
+            concurrencies: vec![],
         };
         let (ts, walls) = plane_ring(&plain).expect("a plane ring");
         assert_eq!(ts.len(), 3);

@@ -12970,14 +12970,18 @@ fn the_gate_reads_faces_at_every_site() {
     assert!(out.is_empty(), "{out:?}");
 }
 
-/// ★ Cell ⑪, S0 — **the instrument, red on purpose.** A gusset whose apex lands on the wall's top
-/// edge leaves the fused operand with a vertex where four faces meet. The ring road names an
-/// operand vertex once per face loop — its own plane and the two edges' walls — so that vertex
-/// arrives at the tracer under **four names**, one of which (the top face's: front, top, slant)
-/// is three planes sharing a line and names no point. This test states today's facts so that
-/// the naming rule's rewrite (S1) flips each assertion; it is not a lock on a desired state.
+/// ★ Cell ⑪ — **a four-plane operand vertex has one name.** A gusset whose apex lands on the
+/// wall's top edge leaves the fused operand with a vertex where four faces meet. The ring road
+/// used to name an operand vertex once per face loop — its own plane and the two edges' walls —
+/// so that vertex reached the tracer under **four names**, one of them (the top face's: front,
+/// top, slant) three planes sharing a line that name no point; the judge read that «point» as
+/// lying on every class and the alias table folded everything onto the wall's far corner. Now
+/// the vertex names itself from the classes its topology knows (`canonical_triple`), every loop
+/// hands the tracer the same name, no name is dependent, and the alias fold of a full trace lands
+/// on the vertex. Locked through the audit (`operand_vertex_audit`), on the S0 instrument that
+/// measured the four names first.
 #[test]
-fn a_four_plane_operand_vertex_is_named_four_ways_today() {
+fn a_four_plane_operand_vertex_has_one_name() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let prism =
         |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
@@ -13065,28 +13069,24 @@ fn a_four_plane_operand_vertex_is_named_four_ways_today() {
         let mut distinct: Vec<NodeId> = r.names.iter().map(|(_, n)| *n).collect();
         distinct.sort_unstable();
         distinct.dedup();
-        assert_eq!(distinct.len(), 4, "one name per face today: {:?}", r.names);
-        assert_eq!(
-            r.dependent.iter().filter(|&&d| d).count(),
-            1,
-            "the top face's name shares a line: {:?}",
+        assert_eq!(distinct.len(), 1, "one name for the vertex: {:?}", r.names);
+        assert!(
+            r.dependent.iter().all(|&d| !d),
+            "no name shares a line: {:?}",
             r.names
         );
         let mut folded = r.folded.clone();
         folded.sort_unstable();
         folded.dedup();
+        assert_eq!(folded.len(), 1, "one representative: {:?}", r.folded);
         assert_eq!(
-            folded.len(),
-            2,
-            "the alias fold joins the three independent names and cannot fold the dependent one: {:?}",
+            folded[0], distinct[0],
+            "the fold is the name itself: {:?}",
             r.folded
         );
-        // ★ And the fold is **wrong**: the three independent names land on `[0, 2, 3]`, the wall's
-        // far corner `(−3.5, 3, 6)` — a point on the same shared line, not this vertex. Behind
-        // the reject sits a silent misidentification; S1 has to make this `all(true)`.
         assert!(
-            r.folded_on_vertex.iter().any(|&on| !on),
-            "the fold lands on another point today: {:?}",
+            r.folded_on_vertex.iter().all(|&on| on),
+            "every fold lands on the vertex: {:?}",
             r.folded
         );
     }

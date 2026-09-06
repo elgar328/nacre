@@ -1818,136 +1818,47 @@ pub(crate) fn name_result_vertices(
     // its two edges at that corner.** Those three are result faces by construction, so
     // `defs_are_remappable` holds by construction — and their meet is exactly this vertex, since
     // the two edge lines through it are distinct (checked, not assumed — see the corner guards).
-    let mut edge_faces: HashMap<(usize, (NodeId, NodeId)), Vec<usize>> = HashMap::new();
-    for (fi, lf) in faces.iter().enumerate() {
-        for ring in lf.poly_rings() {
-            let k = ring.len();
-            for t in 0..k {
-                // ★ Plane faces only (the rulings ladder): this table serves `far_plane`,
-                // whose one consumer is the three-plane def derivation — and a panel (a ring
-                // face on a cylinder class) can neither offer a far *plane* nor needs to: every
-                // vertex of a panel ring is Branch-named already. The ruling edge's plane side
-                // (the wall face) still contributes here.
-                if let crate::planes::ClassIx::Plane(pc) = lf.surf {
-                    edge_faces
-                        .entry((group_of[fi], norm_edge(ring[t], ring[(t + 1) % k])))
-                        .or_default()
-                        .push(pc);
-                }
-            }
-        }
-    }
-    // The plane on the other side of an edge, **within this solid**. `None` rather than an error:
-    // a corner this cannot
-    // resolve is one to skip, and the edge-use guard further down is what judges the face set.
-    let far_plane = |g: usize, a: NodeId, b: NodeId, own: usize| -> Option<usize> {
-        let mut others = edge_faces
-            .get(&(g, norm_edge(a, b)))?
-            .iter()
-            .copied()
-            .filter(|&x| x != own);
-        let o = others.next()?;
-        others.all(|x| x == o).then_some(o)
-    };
+    // ★ Cell ⑪ — **a result vertex is defined by the canonical triple of its incident faces'
+    // planes.** Every face whose ring visits the node passes through the point, so the planes of
+    // those faces are the result planes through it, and `canonical_triple` picks the name — the
+    // one rule the operand road and the alias table use. Over *incident* planes only, on purpose:
+    // the arrangement's alias representative ranges over every class, buried faces included, and
+    // a definition naming a surface the result has no face on was the 2026-08-12 defect
+    // (`defs_are_remappable` still stands guard, now true by construction). A node fewer than
+    // three faces name is a straight corner and keeps `StraightAngle` below. It replaces a
+    // face-by-face derivation (own plane plus the far plane across each edge, first face wins,
+    // dependent triples skipped, a voting net behind it) — the same rule this road, the operand
+    // road and the alias table each spelled on their own.
+    let mut planes_at: HashMap<(usize, NodeId), Vec<usize>> = HashMap::new();
     let mut def_triple: HashMap<(usize, NodeId), Def> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
         for ring in lf.poly_rings() {
-            let k = ring.len();
-            for t in 0..k {
-                let node = ring[t];
-                if def_triple.contains_key(&(g, node)) {
-                    continue;
-                }
+            for &node in &ring.nodes {
                 // ★ A branch vertex's def is a **declaration, not a derivation** — the name
-                // already carries its two result plane classes and its cylinder, so the far-plane
-                // road (which can only ever answer in planes) is not asked.
+                // already carries its two result plane classes and its cylinder.
                 if let Some((planes2, cyl, root)) = combinatorics::branch_name(node) {
-                    def_triple.insert(
-                        (g, node),
-                        Def::Branch {
-                            planes: planes2,
-                            cyl,
-                            root,
-                        },
-                    );
+                    def_triple.entry((g, node)).or_insert(Def::Branch {
+                        planes: planes2,
+                        cyl,
+                        root,
+                    });
                     continue;
                 }
-                let (Some(prev), Some(next)) = (
-                    far_plane(g, ring[(t + k - 1) % k], node, lf.surf.plane()),
-                    far_plane(g, node, ring[(t + 1) % k], lf.surf.plane()),
-                ) else {
-                    continue;
-                };
-                // ★ A straight corner is **skipped, not refused**. At a four-plane vertex a face's
-                // ring can run straight through the point — both its edges on one line — and then
-                // this face has no triple to give, while another face meeting the same vertex
-                // does. (`component_is_outward_tol` rejects here instead, and is right to: it
-                // asks about one lex-minimal corner, not about every vertex.)
-                if prev == next {
-                    continue;
-                }
-                // ★ …and neither is a corner whose two edges ride **different planes that carry
-                // one line**. `prev != next` does not rule that out, and three planes through a
-                // line name no point — the def would then be a triple that defines nothing. The
-                // same determinant the arrangement uses to spot it (`Aliases::record`: "shares a
-                // line: names no point") answers here. Measured: it fires nowhere in the suite,
-                // which is why the check is here rather than trusted — the argument above claims
-                // the meet *is* this vertex, and this is what makes that true by construction.
-                if jd.plane_pair_dir_sign(lf.surf.plane(), prev, next) == 0 {
-                    continue;
-                }
-                let mut tri = [lf.surf.plane(), prev, next];
-                tri.sort_unstable();
-                def_triple.insert((g, node), Def::Three(tri));
-            }
-        }
-    }
-    // ★★ **The walls-fallback — a zero-population net since the split-twin subdivision.** It was
-    // built for the arc population's bitten corner (a disk eating a plate corner starved every
-    // incident face's far-plane road — measured, exactly one such node); the subdivision above
-    // now matches those twins, so the corner derives on the main road and nothing reaches here
-    // today. Kept as the net for any future input whose far-plane road starves in a way the
-    // subdivision does not repair (an unsplittable edge takes exactly that path), under the same
-    // two guards as the derivation above plus one more: **every deriving face must agree** — the
-    // four-plane hazard (a wall that carries the edge's line without bounding the solid) is
-    // exactly where faces could disagree, so a split vote stays def-less rather than picking a
-    // winner. A genuinely straight corner is still refused by the guards and keeps its
-    // `StraightAngle`.
-    let mut fallback: HashMap<(usize, NodeId), Option<[usize; 3]>> = HashMap::new();
-    for (fi, lf) in faces.iter().enumerate() {
-        let g = group_of[fi];
-        for ring in lf.poly_rings() {
-            let k = ring.len();
-            for t in 0..k {
-                let node = ring[t];
-                if def_triple.contains_key(&(g, node)) {
-                    continue;
-                }
-                // An arc edge carries a cylinder, not a plane — no wall to name a triple with.
-                let (Wall::Plane(prev), Wall::Plane(next)) =
-                    (ring.walls[(t + k - 1) % k], ring.walls[t])
-                else {
-                    continue;
-                };
-                if prev == next {
-                    continue;
-                }
-                if jd.plane_pair_dir_sign(lf.surf.plane(), prev, next) == 0 {
-                    continue;
-                }
-                let mut tri = [lf.surf.plane(), prev, next];
-                tri.sort_unstable();
-                let vote = fallback.entry((g, node)).or_insert(Some(tri));
-                if matches!(vote, Some(seen) if *seen != tri) {
-                    *vote = None; // a split vote stays def-less
+                let at = planes_at.entry((g, node)).or_default();
+                if !at.contains(&lf.surf.plane()) {
+                    at.push(lf.surf.plane());
                 }
             }
         }
     }
-    for ((g, node), tri) in fallback {
-        if let Some(tri) = tri {
-            def_triple.insert((g, node), Def::Three(tri));
+    let mut keys: Vec<(usize, NodeId)> = planes_at.keys().copied().collect();
+    keys.sort_unstable();
+    for key in keys {
+        let mut at = planes_at.remove(&key).unwrap_or_default();
+        at.sort_unstable();
+        if let Some(t) = combinatorics::canonical_triple(jd, &at) {
+            def_triple.insert(key, Def::Three(t));
         }
     }
 
