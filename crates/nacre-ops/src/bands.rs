@@ -668,10 +668,12 @@ mod tests {
     //
     // ★★ These five are the population the `SeatedCylinderCap` rule refused. What actually makes a
     // seated circle hard is its boundary meeting the counterpart's — and a boundary is either an
-    // edge on a plane (parallel to the axis → the wall rule, oblique → `ObliqueCylinderCut`) or
-    // another cylinder's rim (→ `CylinderPairContact`). ★ The wall rule is no longer a *fence*: it
-    // records a crossing (cell ③) or a tangency (cell ⑥) and the roads behind it answer, so what
-    // still stands at the end of this block is the oblique cut and the cylinder pair.
+    // edge on a plane (parallel to the axis → the wall rule, oblique → asked to miss every lateral
+    // face since cell ⑩, else `ObliqueCylinderCut`) or another cylinder's rim (→ proved apart per
+    // face pair since cell ⑩, else `CylinderPairContact`). ★ The wall rule is no longer a *fence*:
+    // it records a crossing (cell ③) or a tangency (cell ⑥) and the roads behind it answer, so
+    // what still stands at the end of this block is the oblique cut that does meet a face and the
+    // cylinder pair whose faces do meet.
     //
     // ★★★ **Measured against the pre-deletion kernel, all seven of these came back
     // `SeatedCylinderCap` — the two fences included.** The rule stood before the wall and the

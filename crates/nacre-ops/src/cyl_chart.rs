@@ -22,7 +22,7 @@
 //! |---|---|---|---|
 //! | `n ∥ m` | — | a **circle** — the chart's *horizontal* | 1128 |
 //! | `n ⊥ m` | `0 ≤ d < r` | **two rulings** — the chart's *vertical* | 75 |
-//! | `n ⊥ m` | `d = r` | **nothing** — a tangency grazes and divides nothing | — |
+//! | `n ⊥ m` | `d = r` | **nothing** from another solid's plane (a tangency grazes and divides nothing); the face's **own** tangent wall is a **station with no crossing** — a ruling of `side = 0`, where the face ends (cell ⑩) | — |
 //! | `n ⊥ m` | `d > r` | nothing | 1494 |
 //! | oblique | — | refused, `ObliqueCylinderCut` (M6-3) | 2 |
 //!
@@ -35,7 +35,11 @@
 //! vertical lines at *irrational* θ; the chart never reads a θ **value**, only an order, so
 //! nothing broke — as predicted, and now measured. Cell ⑥ opened the **tangent** wall (`d = r`),
 //! and that one adds nothing at all: a grazing line stations no sector, so the gate records no
-//! crossing and this table's third row is «nothing», not «one vertical».
+//! crossing and this table's third row is «nothing», not «one vertical». ★ Cell ⑩ read the row's
+//! other half: a fillet's or a slot's wall is tangent to its **own** cylinder, and that ruling is
+//! not a crossing but the face's edge — a station of `side = 0` carrying no label (the seated
+//! face states the piece itself, `SegKind::Tangent`), which the cell reader takes as «the face
+//! ends here» and the D2a assertion exempts.
 //!
 //! ## What is here, and what is not
 //!

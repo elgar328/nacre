@@ -1440,7 +1440,9 @@ pub(crate) fn turn(
             -sense * arc_side(jd, p, *carrier, arc)?
         }
         // Two arcs of one circle at one node are tangent: no turn to read. (Two *different*
-        // circles cannot meet at a node — `cylinders_clear` keeps them `r₁+r₂` apart.)
+        // circles cannot meet at a node: faces of different operands are proved apart by the
+        // gate, per face pair since cell ⑩, and one valid operand's own faces do not cross —
+        // the sketch refuses an arc–arc join, `ArcsMeetAtVertex`.)
         (EdgeDir::Arc(_), EdgeDir::Arc(_)) => 0,
         // ★★ **A segment against a ruling collapses the same way the arc arm did.** The ruling's
         // direction is `±m` and it lies *in* the class (`m · n_P = 0`), so BAC-CAB leaves
@@ -1466,7 +1468,8 @@ pub(crate) fn turn(
         (EdgeDir::Ruling(_), EdgeDir::Ruling(_)) => 0,
         // A ruling and an arc cannot meet at a node: their classes demand the axis parallel and
         // perpendicular to `P` respectively, so the node would lie on two distinct cylinders —
-        // which `cylinders_clear` keeps `r₁+r₂` apart. `0` sends a surprise to the bucket whose
+        // faces the gate proved apart (different operands, cell ⑩) or faces of one valid
+        // operand, which do not cross. `0` sends a surprise to the bucket whose
         // walk names it (`UnorderedEdges`) rather than ranking it.
         (EdgeDir::Ruling(_), EdgeDir::Arc(_)) | (EdgeDir::Arc(_), EdgeDir::Ruling(_)) => 0,
     })
@@ -4128,9 +4131,9 @@ fn planes_through_line(
 /// ★ The **curved** arm is barely loaded from here: this road is entered a handful of times in
 /// the suite and mostly looks at no cylinder face at all (the other component is all planes —
 /// the void fixture's is a box); where it does (`two_cylinders_with_coplanar_caps_fuse_apart`)
-/// the ray misses. Nor can a fixture with parallel axes do better: `cylinders_clear` refuses any
-/// boolean whose two cylinders are within `r₁+r₂` of each other, so a ray from one cap's centre
-/// crosses the other lateral **0 or 2 times** and the parity is the same. What loads the lateral
+/// the ray misses. Nor can a fixture with parallel axes do better: the gate refuses any boolean
+/// whose two cylinders' faces it cannot prove apart (spans and arcs, cell ⑩), so a ray from one
+/// cap's centre crosses the other lateral **0 or 2 times** and the parity is the same. What loads the lateral
 /// road ([`lateral_face_crossings`], cell ②-b) is the **named** road's probes — the crossing
 /// census's corner Commons, whose vertex rays cross the other half's panel — and the lattice
 /// oracle on the through-boss; a real `k = 1` from a coordinate probe wants a ∥ wall inside the

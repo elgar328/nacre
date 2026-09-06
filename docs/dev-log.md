@@ -17083,3 +17083,43 @@ nacre(`31b266b`): fmt·clippy 0 · workspace **1239/0** · no-default-features *
 | 필렛 없는 판 + 구멍 × 거싯(빗변) | `ObliqueCylinderCut` | **비스듬 팔(넷째 자리)**: 거싯의 빗변 평면이 구멍 축에 비스듬 — 비켰음을 묻지 않고 거절(칸 ⑧이 «죽은 팔»로 기록한 자리, 이제 산 인구가 있다) |
 | 반원 D × 먼 상자 · 구멍 둘 판 × 먼 상자 | Ok | 접하지 않는 선–호 접합·서로 먼 평행 쌍은 통과 |
 ⇒ 오늘 불리언에 들어갈 수 있는 호는 «온전한 원 구멍(서로 r₁+r₂보다 멀리)»과 «접하지 않는 선–호 접합(D)»뿐이고, 상대 몸통에 축과 비스듬한 평면이 있으면 그것도 막힌다. 다음 칸의 우선순위: ① 비스듬 팔이 `lateral_reach(d = n)`로 비켰음을 묻기(가장 싼 벽, 술어는 이미 있다) ② 평행 쌍을 면의 t 구간으로(핸들 인턴 정리) ③ 접선 룰링. 함정: 하네스 프로브에서 `rect().circle()` 뒤 `.done()`을 빠뜨려 «not finished» — 지름길만의 스케치는 `done()`이 기록한다.
+
+## 칸 ⑩ — 게이트는 모든 자리에서 «면»을 읽고, 접선 룰링은 이름을 얻는다 (2026-09-06)
+
+**입력**: 칸 ⑨ 끝의 「사용자의 첫 조립체가 만난 세 벽」 — 필렛 판(`p1`) + 슬롯 창 세로판(`p2`) + 삼각 거싯(`p3`·`p4`)의 `fuse`가 **닿지 않는 면** 사이에서 세 번 거절됐다: 같은 솔리드 안의 평행 원통 쌍(`CylinderPairContact`), 접선 룰링(`TraceDeclined{OuterRing}`), 거싯 빗변 vs 구멍(`ObliqueCylinderCut`). 계획(`lively-gliding-tiger`, 개정 0–6)은 이 셋을 한 칸에서 닫되 순서를 S0 계기 → S1 게이트 → S2 각도 범위 → S3 접선 룰링으로 잡았다 — S1·S2는 경계가 알려진 일이고 S3는 열린 사다리라 닫힌 일을 먼저 끝내 S3의 측정을 깨끗하게 하려고.
+
+**뿌리 셋(코드로 확인)**: ① 게이트의 원통 쌍 루프가 **두 솔리드의 모든 클래스 쌍**을 검사한다 — 같은 솔리드 안의 쌍까지(유효 솔리드의 두 면은 교차하지 않으므로 증명이 필요 없는 쌍). 평행 팔이 곡면 판정 그대로인 이유로 적힌 «`chart_of`가 동축 거절에 기댄다»는 낡았다 — 차트가 실제로 요구하는 것은 **동일 곡면** 쌍의 거절이다. ② 옆면의 서술이 축 구간(`t_range`)뿐이라 각도 범위를 모른다 — 서로 반대편을 향한 두 4분원(필렛)이 닿지 않음을 증명할 수 없다. ③ `ruling_side`가 접선(`Orient::Zero`)에 `None`을 돌려주고 링 이름 짓기가 `Collapsed`로 무너진다 — doc의 «no caller feeds»는 칸 ⑨의 필렛·슬롯 피연산자가 먹인다.
+
+### S0 — 계기 (`b10df24`)
+census 가족 **`arcwalls`**(사용자 조립체의 쌍 셋 `p1p2`·`p1p3`·`p2p3` + `fillet15-far`·`slot-far`·`holes-gusset`·`rrect-box`·`bushing`·`stacked`·`stacked-same` × fuse/cut/common) — 299 → **329행**, 전부 거절(위 표의 세 이름 + `stacked`·`bushing`·`rrect-box`의 `CylinderPairContact`). reject-trace 자리별 히스토그램(`^RAISE`)이 이 칸의 계기다. ★ **S0의 예측 하나가 틀렸다**: 접선 픽스처의 `OuterRing`은 `plane_ring`의 붕괴가 아니라 그 앞 **`loop_triples`가 벽 면의 바깥 루프에 `None`을 주는 것**(가로지르는 걸음 `NoOuter`·앉은 걸음 `RimOrNone`)이었다 — 계기가 raise 자리를 귀속시켜 S3의 첫 표적이 실측으로 정해졌다.
+
+### S1 — 게이트는 «면»을 읽는다 (`d796f7d`, 곁가지 `5592f51`)
+- 클래스 표가 **소속**(`WorkingCyl::owner`)을 들고 쌍 루프는 교차 솔리드 쌍만 묻는다; 평행 팔의 첫 물음은 «같은 곡면인가»(축선 동일 ∧ 반지름 동일 → `CylinderPairContact`, «one surface, two handles» — `translate`로 쌓은 같은 반지름의 부정 대조 `stacked-same`이 이것), 아니면 비평행 팔과 **같은 문** `lateral_faces_clear`(평행이면 자동으로 축 구간의 서로소). 둘째 곡면 사실 **`cylinders_nested`**(한 무한 원통이 다른 것 안에 있으면 만나지 않는다 — 부싱·쌓인 원통은 구간이 z에서 닿아 이것으로만 통과). 비스듬 평면 팔이 옆면마다 `lateral_reach(d = n)`으로 비켰음을 묻는다. `tangency_rows`도 교차 솔리드 쌍만.
+- **거절이 가리던 배열의 구멍 셋**이 한 번에 드러났다(관대화의 잘못이 아니라 그 인구가 처음 도달한 자리): 두 디스크 셀 미중첩(`cell_in_cell`의 두-원 팔 `None` → 보스 위 핀 fuse가 **조용한 `Ok(2)`** — `disk_in_disk`) · 원형 바깥 루프가 구멍을 읽기 전 `return`(튜브 캡의 현이 보어를 가로질러 `LabelConflict` — 현 끝을 패리티 스윕의 flip 노드로) · 병합이 원형 바깥 경계를 못 말함(`RegionRings`의 바깥을 `Bound`로) + 튜브 성분 증인 없음(`holed_cap_witness`). 곁가지: replay proptest가 잡은 **미러된 면의 패드**(정확 감김에 체인 패리티를 곱하지 않음 — `chain_parity`).
+- 실측: `holes-gusset`·`stacked`·`bushing` 셋 다 **Ok**(`bushing fuse`는 관과 핀이 떨어져 있어 Ok(2)) · `p1p2`·`p2p3` → `TraceDeclined{OuterRing}`(접선, 예측대로) · `p1p3` → `ObliqueCylinderCut`(필렛을 온전한 원으로 읽어 거싯 평면에 닿음 — 예측대로, S2의 인구) · `rrect-box` → `TraceDeclined` · 옛 299행 무변.
+
+### S2 — 게이트는 원이 아니라 호를 읽는다 (`2885142`)
+`Footprint::theta: Option<RimArc>` — 면의 림 호 두 끝의 방사 방향을 **유리수로**(솔기 = `r·ê`, branch 코너 = 만남선의 점, 근이 유리수일 때 `QuadVal::as_rat`). `lateral_reach`가 반경 항의 극값을 «호가 `d⊥`를 품을 때만» 근호로, 아니면 호 끝의 유리수 값으로(`Reach { lo, hi, rho2_lo, rho2_hi }`, 새 산술 없음); 평행 쌍의 구간 겹침은 공통 단면의 두 **호**가 점을 공유하는가(`nacre_geom::mixed::arcs_share_a_point`, 문 하나 `pub`). 잠금 `the_gate_reads_the_arc_not_the_circle`(4분원 섹터 vs 거싯 평면 · 반원통 프리즘 둘, 각각 부정 대조). 실측: `p1p3` `ObliqueCylinderCut` → `TraceDeclined{OuterRing}`, 그 밖의 행 무변.
+
+### S3 — 접선 룰링은 `side = 0`이라는 이름이다 (이 커밋)
+**어휘**: `side = 0`은 캐리어를 만드는 두 자리(`curved_wall`·`node_ruling_side`)에서 코너의 근 `Double`로 유도한다. `ruling_side`는 무변(부호 술어 — 광선 캐스터가 `None`을 «2차 동률 → 기권»으로 읽는다). 그 뒤 **측정 사다리** — 여섯 픽스처의 다음 이름을 raise 자리로 읽고 뿌리를 고쳤다. 계획의 감사 목록(차트 ⓐ~ⓔ)은 첫 계단까지만 맞았고 **넷째 자리는 평면 배열의 각 순서**였다; 사용자가 «감사 목록 밖도 계속»을 결정했다(개정 6).
+1. **직선–호 접선 이음**: 접점에서 turn 0인데 `antiparallel`에 Line–Arc 팔이 없어 동률(`UnorderedEdges` ×4)·되돌아감(`StraightAngle`). 기하로 물음 — `tangent_travel_agrees` = 직선 이동 방향 `sense·(n_P×n_wall)`과 호의 이동 접선 `way·(m×(N−c))`의 내적 부호. **반대 방향 = 반바퀴**(`tangent_pole`, 직진 통과), 같은 방향 = 곡률 물음(정직 `UnorderedEdges`, M6b의 접하는 원 둘과 같은 부류). `continuation`이 `Result`가 되고 Line–Arc 팔을 얻음; `smooth_extremum_winding`(매끄러운 극값의 감김은 호의 것).
+2. **부분 림의 덮이지 않은 호는 간선이 아니다**: `split_circles`가 기여 없는 보완 호를 유령 간선으로 남겼다 → 버림; 차트는 덮이지 않은 조각을 «면이 끝난다»(`End::Uncovered` → 존재 false)로 읽는다(census `end_uncovered`).
+3. **앉은 면의 접선 룰링은 갚는 이가 없는 빚**: 앉은 면이 `RulingTrace { side: 0, kind: SegKind::Tangent { axis_above } }`를 스스로 낸다. **마스크는 축 쪽 비트를 뒤집는다**(볼록 필렛은 몸 쪽이 접선 너머 void, 구멍은 void 쪽이 접선 너머 material) — `Seated`로 냈다가 `LabelConflict`로 배웠다. 접선 클래스가 선분·룰링을 접점에서 자르도록 `lateral_crossings`에 Tangent 팔; 차트 D2a 단언은 접선 정거장(딱지 없음)을 면제하고 `read_cell`의 세로 읽기는 side 0을 건너뛴다.
+4. **셋째 평면 위의 코너는 세 평면 이름**: 거싯 옆면이 필렛 축을 지나면 branch 코너가 우연히 셋째 평면 위에 놓이는데, 이를 «평면 쌍 + 근»으로 재진술하면 거짓(`Double`이 `Pair` 쌍엔 없다 → `WitnessNotRational`) — `third_on_l`이 `NodeId::three_planes`로 이름 짓는다.
+5. **증인 공급 둘**: 유리수 branch 코너(`branch_coords_rat`·`corner_probes`), 한 직선 위 두 solve의 근 **사이**의 유리수 점(`edge_interior_rat`·`rational_between` — 보어 룰링과 필렛 룰링 사이의 셀은 모든 코너가 무리수). 두 다각형 중첩(`ring_in_ring_by_witness`)을 한 번 써서 `cell_in_cell`과 병합의 구멍 소유가 같은 증인 공급을 읽는다.
+6. **게이트 기록**: 다른 솔리드의 면이 닿지 않아도 ∥ 클래스 평면이 옆면의 진술 가능한 발자국을 **자르면** `crossings`에 적는다 — 그 클래스 위 이 솔리드의 캡 단면이 림 호에서 끝나 룰링이 없으면 매달린 끝. 빈 발자국엔 기록하지 않는다(강체 운동 오라클이 그 거짓 기록을 잡았다).
+7. 곁가지: `disk_side_probe::record`는 두 셀의 코너 증인이 일치하면 기권(볼록 호), `LABELLED` 원장은 side 0을 건너뜀, 회전 census의 «전부 Other인 셀»(버린 유령 조각)은 `RunFail::AllMissing` → Uncovered.
+
+**결과(실측)**: census 329행 중 **21행 이동**(칸 ⑨ 이전의 287행 무변 — 움직인 것은 칸 ⑨의 `arcprofile slot` 셋과 이 칸의 `arcwalls` 열여덟; 두 프로파일 동일) — `arcprofile slot` common·cut Ok(fuse는 상자 면 `x = 1`이 슬롯 원통에 **접해** `SelfTouchingResult` — `bored common`과 같은 픽스처의 접촉), `fillet15-far`·`slot-far` Ok(2) · **`p1p2`·`p2p3` Ok(1)** · 거싯을 `x = 1.6`으로 옮긴 **`p1 + p2 + p3` Ok(1)**, validate 0, 부피 = 부분 합 `48 + (34 − π/4) + 7.5`(잠금 `the_users_plate_slot_and_gusset_fold`, 키트 `the_users_plate_slot_plate_and_gusset_fold_into_one_body`) · 필렛 판 `a_filleted_plate_builds_and_the_decline_probe_reads_nothing`(S0의 거절 뒤집음) · 칸 ⑨의 «오늘의 이름» 잠금 둘이 양성으로: 반원 D 보스 pad(`LabelConflict` → Ok, `8000 + 37.5π`)·슬롯 pad/pocket(`TraceDeclined{OuterRing}` → Ok, `8000 + 3·(80+4π)`·`8000 − 2·(20+π)`) · 강체 운동 오라클의 보어 fuse 행 둘이 짓기 시작(표 갱신: `bored + 5·seg(2,3)`·`bored + 22.5π`).
+
+**남은 정직 거절(이름으로)**: (a) **`p1p3` 정확 치수**(거싯 `x = 1.5`): 옆면이 필렛 축을 정확히 지나 접선 룰링이 **두 평면과 원통이 공유하는 한 선** — `TraceDeclined{Ruling}`; 이름·간선 정체성을 접는 능력이 다음 칸. (b) **`rrect-box`**: 상자 면이 접선 벽과 동일평면이고 접점을 지나 뻗음 — 접선 룰링이 그 동일평면 클래스의 두 면에 걸린다(census `TraceDeclined{Ruling}`; 사다리 도중 순차 빌드에서는 같은 방향 접선 둘의 곡률 순서 `UnorderedEdges`로도 섰다 — 같은 뿌리의 두 얼굴). (c) 사용자의 4-fold는 `+p4` 단계에서 `DegenerateWitness`(동일평면·4평면 동시성 가족 — 별도 조사; 키트 잠금은 스크립트 그대로의 `x = 1.5`가 `trace_declined`임을 든다).
+
+### 관문
+nacre(S3 커밋 트리): fmt·clippy 0 · workspace **1244/0**(ignored 135) · no-default-features **691/0** · census 두 프로파일 **329행** 동일, 287행 무변, S2 대비 **21행 이동**(위 «결과») · `reject_census` 0 · ignored 스윕 **133/0** · reject-trace 자리별 히스토그램 `RAISE` **120 → 58**: `trace_declined(outer-ring)` 30 → 0 · `no_clear_ray`(combinatorics) 24 → 0 · `curved_operand_boundary` 7 → 0 · `label_conflict` 1 → 0 · 새로 `trace_declined(ruling)` 1(p1p3·rrect-box의 공유 룰링); 그 밖의 자리(self_touching 14·cylinder_pair 9·oblique 6·non_manifold 12·gate_undecided 8·witness_not_rational 1·precision_budget 1·edge_occupancy 2·face_undecided 1·coincident_nodes 1) 무변. kit(`b875750`): fmt·clippy 0 · **80/0**(79 → 80, 사용자 조립체 fold 잠금). 앱(`da291be`): `wasm:all` 0 · `tsc` 0 · vitest **147/147** · `wasm/` clippy 0. 브라우저 확인은 사용자 몫(필렛 판 + 슬롯 판 + 거싯, 거싯 `x = 1.6`).
+
+### 못 잰 것·함정
+- 계획의 예측 중 틀린 것: S0의 `OuterRing` 자리(위) · S3 감사 목록의 범위(넷째 자리는 배열) · 「접선 룰링은 기록된 교차가 아니어서 부호 소비자에 도달하지 않는다」— 앉은 면이 조각을 내면서 `plus_theta_is_above`에 `debug_assert`로 들고 있다(도달 0).
+- 자체 점검: S3 커밋 메시지(`b024bb2`)가 «the old 299 unchanged»라 적었다 — 옳은 문장은 «287 무변, 칸 ⑨의 슬롯 행 셋 이동»(위 «결과»). 훅을 다시 돌리는 amend 대신 여기 적는다.
+- 함정: Python 패치가 cargo fmt에 깨진 앵커로 세 번 실패 — raw를 읽고 괄호 매칭/정규식으로 찾는다. 탐침은 `#[cfg(test)] eprintln!("ZZ …")`로 심고 줄 단위로 걷는다(`grep -c '"ZZ'`가 0이어야 커밋). 옮긴 함수(`ring_in_ring_by_witness`)에 앞 함수의 doc이 붙어 clippy `doc list item without indentation` — 관문이 잡았다.
+- 못 잰 것: 진짜 교차하는 원통 쌍(quartic, M6b) · 진짜 비스듬 절단(타원, M6-3) · 접선을 품는 셋째 평면(위 (a)) · 무리수 끝점의 각도 범위(`None`, 보수) · 비평행 쌍의 각도 도달(인구 `p1p3`가 S2에서 통과했으므로 실행됨).
