@@ -441,6 +441,8 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
     // the plane the ray lies in"), and the alias seed ("does this vertex lie on that class").
     // None reads a sign sequence, so none is a walk.
     //
+    // ★ Cell ⑪: a three-plane name is minted through `Canon3` (`NodeId::three_planes(Canon3::three(..))`),
+    // so the two point-question spellings below carry that wrapper.
     // ★ **The text now says which is which, twice over.** `side_of` takes a `NodeId`, so a *point*
     // question wraps its own triple (`NodeId::three_planes(..)`) while the walk hands over a ring
     // member it was given; and it takes a cylinder table, so a road that has none passes `&[]` —
@@ -448,8 +450,8 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
     // branch node declines as it always did. The one call with a real table is the walk.
     offenders.retain(|o| {
         !o.contains("side_of(jd, cyls, nodes[i], q)")
-            && !o.contains("side_of(jd, &[], NodeId::three_planes(v), r)")
-            && !o.contains("side_of(jd, &[], NodeId::three_planes(vq), q)")
+            && !o.contains("side_of(jd, &[], NodeId::three_planes(Canon3::three(v)), r)")
+            && !o.contains("side_of(jd, &[], NodeId::three_planes(Canon3::three(vq)), q)")
             && !o.contains("side_of(&jd, &[], n, wc)")
     });
     assert_eq!(

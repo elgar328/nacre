@@ -17,7 +17,7 @@
 //! the same reason the kernel is allowed to have a fast path at all.
 
 use crate::boolean::LocalFace;
-use crate::combinatorics::NodeId;
+use crate::combinatorics::{Canon3, NodeId};
 use crate::planes::{ClassIx, FaceRow, SolidSide, WorkingPlane};
 use crate::{BoolKind, he_start};
 use nacre_cip::{WitnessPoint, orient3d_filter};
@@ -274,14 +274,17 @@ impl VertexClasses {
 
     /// The vertex's triple, or `None` when it is not three planes.
     ///
-    /// **Four or more is not a failure, it is a different question.** That is a concurrency, which
-    /// the arrangement resolves through its alias table by picking one triple as the name — a
-    /// choice this cannot reproduce from the solid alone. So the class is arranged instead, which
-    /// is always right and merely slower.
+    /// **Four or more is not a failure, it is a different question.** That is a concurrency. Since
+    /// cell ⑪ its name *is* reproducible from the solid alone — `canonical_triple` of the incident
+    /// classes, the rule the ring road and the alias table share — but this pass has no judge to
+    /// ask (`class_plans` runs before one is made), and passing a class through around such a
+    /// vertex also has to weld its faces to arranged ones by that name, which is unmeasured. So
+    /// the class is arranged instead, which is always right and merely slower; how many classes
+    /// that costs is a number the next cell can read off the corpus before deciding.
     fn triple(&self, v: Handle<Vertex>) -> Option<NodeId> {
         let c = self.vertices.get(&v)?;
         let [a, b, d] = c[..] else { return None };
-        Some(NodeId::three_planes([a, b, d]))
+        Some(NodeId::three_planes(Canon3::three([a, b, d])))
     }
 }
 

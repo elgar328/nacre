@@ -13,7 +13,7 @@ fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
         other => panic!("stating a plane: {other:?}"),
     }
 }
-use crate::combinatorics::NodeId;
+use crate::combinatorics::{Canon3, NodeId};
 use crate::tolerant::Judge;
 use crate::transform::transform;
 use crate::{boolean::*, ops::*, planes::*};
@@ -6113,7 +6113,7 @@ fn unify_merges_a_coplanar_chain() {
         mk_axis_plane(&mut m, 1, 1.0, true),  // 6: y=1
     ];
     let _canon: Vec<usize> = (0..p.len()).collect();
-    let v = |x: usize, y: usize| NodeId::three_planes([0, x, y]); // class, x-plane, y-plane
+    let v = |x: usize, y: usize| NodeId::three_planes(Canon3::three([0, x, y])); // class, x-plane, y-plane
     let (c00, c10, c20, c30) = (v(1, 5), v(2, 5), v(3, 5), v(4, 5));
     let (c01, c11, c21, c31) = (v(1, 6), v(2, 6), v(3, 6), v(4, 6));
     let faces = vec![
@@ -6195,7 +6195,7 @@ fn a_hole_filled_by_two_faces_still_merges() {
         mk_axis_plane(&mut m, 1, 3.0, true),  // 9: y=3
     ];
     let _canon: Vec<usize> = (0..p.len()).collect();
-    let v = |x: usize, y: usize| NodeId::three_planes([0, x, y]);
+    let v = |x: usize, y: usize| NodeId::three_planes(Canon3::three([0, x, y]));
     let (o00, o30, o33, o03) = (v(1, 6), v(5, 6), v(5, 9), v(1, 9));
     let (h11, h12, h22, h21) = (v(2, 7), v(2, 8), v(4, 8), v(4, 7));
     let (m12, m11) = (v(3, 8), v(3, 7)); // the split points on the hole's top and bottom
@@ -6236,18 +6236,18 @@ fn unify_keeps_a_vertex_that_is_a_corner_elsewhere() {
     ];
     let _canon: Vec<usize> = (0..p.len()).collect();
     let (v000, v100, v200) = (
-        NodeId::three_planes([0, 1, 4]),
-        NodeId::three_planes([0, 2, 4]),
-        NodeId::three_planes([0, 3, 4]),
+        NodeId::three_planes(Canon3::three([0, 1, 4])),
+        NodeId::three_planes(Canon3::three([0, 2, 4])),
+        NodeId::three_planes(Canon3::three([0, 3, 4])),
     );
     let (v010, v110, v210) = (
-        NodeId::three_planes([0, 1, 5]),
-        NodeId::three_planes([0, 2, 5]),
-        NodeId::three_planes([0, 3, 5]),
+        NodeId::three_planes(Canon3::three([0, 1, 5])),
+        NodeId::three_planes(Canon3::three([0, 2, 5])),
+        NodeId::three_planes(Canon3::three([0, 3, 5])),
     );
     let (v101, v201) = (
-        NodeId::three_planes([2, 4, 6]),
-        NodeId::three_planes([3, 4, 6]),
+        NodeId::three_planes(Canon3::three([2, 4, 6])),
+        NodeId::three_planes(Canon3::three([3, 4, 6])),
     );
     let faces = vec![
         face(0, vec![v000, v100, v110, v010], vec![]),
@@ -6999,7 +6999,7 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
                         combinatorics::side_of(
                             &jd,
                             &[],
-                            combinatorics::NodeId::three_planes(*t),
+                            combinatorics::NodeId::three_planes(combinatorics::Canon3::three(*t)),
                             q
                         ),
                         Some(0),
@@ -10825,12 +10825,12 @@ fn the_walk_cuts_a_run_at_a_departure() {
         class(2, 1.0),
     );
     let ring = [
-        NodeId::three_planes([x0, y0, z0]),
-        NodeId::three_planes([x1, y0, z0]),
-        NodeId::three_planes([x1, y1, z0]),
-        NodeId::three_planes([x1, y1, z1]),
-        NodeId::three_planes([x1, y0, z1]),
-        NodeId::three_planes([x0, y0, z1]),
+        NodeId::three_planes(Canon3::three([x0, y0, z0])),
+        NodeId::three_planes(Canon3::three([x1, y0, z0])),
+        NodeId::three_planes(Canon3::three([x1, y1, z0])),
+        NodeId::three_planes(Canon3::three([x1, y1, z1])),
+        NodeId::three_planes(Canon3::three([x1, y0, z1])),
+        NodeId::three_planes(Canon3::three([x0, y0, z1])),
     ];
     let off = side_of(&jd, &[], ring[0], x1).expect("a side");
     assert_ne!(off, 0);

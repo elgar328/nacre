@@ -1819,6 +1819,7 @@ mod tests {
                     let crate::boolean::Def::Three(t) = d else {
                         return false;
                     };
+                    let t = t.planes();
                     nacre_geom::intersect::three_planes(
                         &geom[t[0]].plane,
                         &geom[t[1]].plane,

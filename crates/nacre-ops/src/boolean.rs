@@ -1657,7 +1657,7 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// second answer belong to the minting, which the deferred stopper still stands in front of).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Def {
-    Three([usize; 3]),
+    Three(combinatorics::Canon3),
     Branch {
         planes: [usize; 2],
         cyl: usize,
@@ -1937,7 +1937,7 @@ pub(crate) fn reconstruct(
                 // planes — a degeneracy, and the honest answer is the one this reason already
                 // carries ("a corner with no turn").
                 let tri = match def_triple.get(&(g, node)).copied() {
-                    Some(Def::Three(t)) => t,
+                    Some(Def::Three(t)) => t.planes(),
                     // ★★★ **A branch vertex is minted from its declaration** — the def already
                     // names two result plane classes and the cylinder, so this is the class→handle
                     // mapping and nothing else. That mapping is where `QuadRoot::canonical`

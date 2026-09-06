@@ -15,7 +15,7 @@
 
 use super::*;
 use crate::boolean::*;
-use crate::combinatorics::{NodeId, three_plane_name};
+use crate::combinatorics::{Canon3, NodeId, three_plane_name};
 use crate::planes::*;
 use crate::tolerant::Judge;
 #[cfg(test)]
@@ -543,7 +543,7 @@ impl Aliases {
                         self.union_wall(t[1], t[0], t[2]);
                         self.union_wall(t[2], t[0], t[1]);
                     } else if let Some(rep) = rep {
-                        self.union_point(rep, NodeId::three_planes(t));
+                        self.union_point(rep, NodeId::three_planes(Canon3::three(t)));
                     }
                 }
             }
@@ -912,7 +912,7 @@ fn trace_transversal_face(
                     Some((planes, _, _)) => {
                         let mut t = [planes[0], planes[1], wc];
                         t.sort_unstable();
-                        (NodeId::three_planes(t), t)
+                        (NodeId::three_planes(Canon3::three(t)), t)
                     }
                     None => return Err(DeclineKind::RunName),
                 },
@@ -1014,7 +1014,7 @@ fn trace_transversal_face(
                     // so naming the arc's crossing here would meet a phantom ruling there.
                     let (id, pin) = match walls[edge] {
                         crate::boolean::Wall::Plane(w) => (
-                            NodeId::three_planes([wc, fc, w]),
+                            NodeId::three_planes(Canon3::three([wc, fc, w])),
                             combinatorics::EndPin::Class(w),
                         ),
                         crate::boolean::Wall::Ruling { cyl, side, .. } => {
@@ -3468,7 +3468,7 @@ impl Split {
     /// The name this point ships under.
     fn name(self, p: usize, q: usize) -> NodeId {
         match self {
-            Split::Class(r) => NodeId::three_planes([p, q, r]),
+            Split::Class(r) => NodeId::three_planes(Canon3::three([p, q, r])),
             Split::Branch { cyl, root } => {
                 let mut planes = [p, q];
                 planes.sort_unstable();
@@ -8493,7 +8493,8 @@ mod tests {
     /// ring") became false, and a lock whose sentence is false is worse than no lock.
     #[test]
     fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
-        let three = |a, b, c| combinatorics::NodeId::three_planes([a, b, c]);
+        let three =
+            |a, b, c| combinatorics::NodeId::three_planes(combinatorics::Canon3::three([a, b, c]));
         let branch = combinatorics::NodeId::branch(0, 1, 0, nacre_topo::QuadRoot::Lo);
         let plane = |c| crate::boolean::Wall::Plane(c);
         let ruling = crate::boolean::Wall::Ruling {

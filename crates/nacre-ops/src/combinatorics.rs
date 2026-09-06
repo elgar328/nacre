@@ -278,7 +278,7 @@ impl Located<'_> {
     /// The name this point is known by, given the line it sits on — derived for a plane pin.
     pub(crate) fn name(&self, p: usize, q: usize) -> NodeId {
         match self {
-            Located::Class { pin, .. } => NodeId::three_planes([p, q, *pin]),
+            Located::Class { pin, .. } => NodeId::three_planes(Canon3::three([p, q, *pin])),
             Located::Branch { name, .. } => *name,
         }
     }
@@ -288,7 +288,7 @@ impl OnLine {
     /// The name this point is known by, given the line it sits on — derived for a plane pin.
     pub(crate) fn name(&self, p: usize, q: usize) -> NodeId {
         match self {
-            OnLine::Class { pin, .. } => NodeId::three_planes([p, q, *pin]),
+            OnLine::Class { pin, .. } => NodeId::three_planes(Canon3::three([p, q, *pin])),
             OnLine::Branch { name, .. } => *name,
         }
     }
@@ -552,9 +552,8 @@ impl NodeId {
     /// (`CollapsedTriple`), [`loop_triples`] falls back to naming the vertex from every plane
     /// touching it — so making the constructor fallible would copy that fork to all eight minting
     /// sites.
-    pub(crate) fn three_planes(mut t: [usize; 3]) -> NodeId {
-        t.sort_unstable();
-        NodeId::ThreePlane(t)
+    pub(crate) fn three_planes(t: Canon3) -> NodeId {
+        NodeId::ThreePlane(t.planes())
     }
 
     /// The canonical name of a `plane ∩ plane ∩ cylinder` point — **the only way one is made**, so
@@ -820,8 +819,8 @@ pub(crate) fn ring_from_names(p: usize, ring: &[[usize; 3]]) -> Result<Vec<RingE
                 return Err(reject(RejectReason::RingNaming));
             };
             Ok(RingEdge {
-                node: NodeId::three_planes(a),
-                to: NodeId::three_planes(b),
+                node: NodeId::three_planes(Canon3::three(a)),
+                to: NodeId::three_planes(Canon3::three(b)),
                 carrier: Carrier::plane(wall),
                 from_h: EndPin::Class(from_h),
                 to_h: EndPin::Class(to_h),
@@ -870,6 +869,32 @@ pub(crate) fn pin_on_line(
         .find(|&c| c != a && c != b && jd.plane_pair_dir_sign(a, b, c) != 0)
 }
 
+/// **A three-plane name that went through the rule** (cell ⑪) — the only thing
+/// [`NodeId::three_planes`] accepts.
+///
+/// Two ways in, both here: [`canonical_triple`] for a *set* of planes known to pass through a
+/// point (the rule picks), and [`Canon3::three`] for a *construction* that produces exactly three
+/// — a line pinned by a plane, a solid's corner of three faces — where there is nothing to pick.
+/// What the type cannot say is that a caller passed **every** plane it knew: three of four is the
+/// defect in a new coat, and the operand-vertex audit (`operand_vertex_audit`) is what measures
+/// that, corpus-wide. What it does say is that no site spells the choice a seventh time.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub(crate) struct Canon3([usize; 3]);
+
+impl Canon3 {
+    /// Exactly three plane classes through the point, **by construction** — sorted here, so the
+    /// order given does not matter. Not for a set the caller cut down to three: that is
+    /// [`canonical_triple`]'s question.
+    pub(crate) fn three(mut t: [usize; 3]) -> Canon3 {
+        t.sort_unstable();
+        Canon3(t)
+    }
+    /// The three classes, ascending.
+    pub(crate) fn planes(self) -> [usize; 3] {
+        self.0
+    }
+}
+
 /// **The one rule that names a point from the planes through it** (cell ⑪).
 ///
 /// `s` is every plane class known to pass through one point, sorted and deduplicated. The name is
@@ -895,20 +920,20 @@ pub(crate) fn pin_on_line(
 /// one component whose minimum is this triple. Five or more is not in the corpus
 /// (`concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them`) and is the recorded
 /// stop condition.
-pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Option<[usize; 3]> {
+pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Option<Canon3> {
     debug_assert!(
         s.windows(2).all(|w| w[0] < w[1]),
         "sorted, deduplicated: {s:?}"
     );
     match *s {
         [] | [_] | [_, _] => None,
-        [a, b, c] => Some([a, b, c]),
+        [a, b, c] => Some(Canon3::three([a, b, c])),
         _ => {
             for i in 0..s.len() {
                 for j in (i + 1)..s.len() {
                     for k in (j + 1)..s.len() {
                         if jd.plane_pair_dir_sign(s[i], s[j], s[k]) != 0 {
-                            return Some([s[i], s[j], s[k]]);
+                            return Some(Canon3::three([s[i], s[j], s[k]]));
                         }
                     }
                 }
@@ -2298,14 +2323,15 @@ fn loop_triples(
             // Both neighbours on one plane: the loop runs straight through and the three classes
             // may share a line — the one place this road has always asked (and still asks) the
             // judge about a three-class corner.
-            if far == wall && jd.plane_pair_dir_sign(t[0], t[1], t[2]) == 0 {
+            let tp = t.planes();
+            if far == wall && jd.plane_pair_dir_sign(tp[0], tp[1], tp[2]) == 0 {
                 return Err(reject(RejectReason::ThreePlanes)); // three planes through one line, not one point
             }
             debug_assert!(
                 far == wall || {
                     let mut u = [near, far, wall];
                     u.sort_unstable();
-                    u == t
+                    u == t.planes()
                 },
                 "a three-class corner keeps the loop's own name: {t:?} vs {near} {far} {wall}"
             );
@@ -3052,7 +3078,7 @@ fn point_on_ring(
             .ok_or_else(|| reject(RejectReason::RingNaming))?;
         // ☑ A literal triple, so `side_of`'s branch arm is unreachable here and the empty
         // cylinder table is never consulted — this asks about a *point*, not a ring.
-        if side_of(jd, &[], NodeId::three_planes(v), r) != Some(0) {
+        if side_of(jd, &[], NodeId::three_planes(Canon3::three(v)), r) != Some(0) {
             continue; // `v` is not even on the edge's line
         }
         // Name `v` as a point of that line: `{p, r, s}` for one of its own planes `s` off the line.
@@ -4741,7 +4767,9 @@ pub(crate) fn point_in_component(
                                 let Some(coeffs) = class_coeffs_rat(jd, q) else {
                                     return Ok(None); // no exact class statement: abstain
                                 };
-                                let Some(px) = node_coords_rat(jd, NodeId::three_planes(x)) else {
+                                let Some(px) =
+                                    node_coords_rat(jd, NodeId::three_planes(Canon3::three(x)))
+                                else {
                                     return Ok(None);
                                 };
                                 return Ok(point_in_mixed_ring(jd, cyls, &coeffs, &px, r));
@@ -4751,8 +4779,10 @@ pub(crate) fn point_in_component(
                             }
                             Ok(every_ray(jd, q, x, r)?.first().copied())
                         }
-                        BoundEdges::Circle(def) => Ok(node_coords_rat(jd, NodeId::three_planes(x))
-                            .and_then(|p| point_in_disk(&p, def))),
+                        BoundEdges::Circle(def) => {
+                            Ok(node_coords_rat(jd, NodeId::three_planes(Canon3::three(x)))
+                                .and_then(|p| point_in_disk(&p, def)))
+                        }
                         // Loops bound a cylinder, never a plane — a producer error, not an input.
                         BoundEdges::Lateral(_) => Ok(None),
                     }
@@ -4774,7 +4804,7 @@ pub(crate) fn point_in_component(
                 // here because the sentence is true, not because a fixture is red.
                 let mut vq = [query[0], query[1], query[2]];
                 vq.sort_unstable();
-                if side_of(jd, &[], NodeId::three_planes(vq), q) == Some(0)
+                if side_of(jd, &[], NodeId::three_planes(Canon3::three(vq)), q) == Some(0)
                     && material(vq)? != Some(false)
                 {
                     return Ok(None);
@@ -4893,7 +4923,7 @@ fn cmp_key(
     // meet is stated once. The round-trip through the name is free: the solve is symmetric in its
     // three planes, so canonical order changes nothing.
     let meet = |t: [usize; 3]| {
-        node_coords_rat(jd, NodeId::three_planes(t))
+        node_coords_rat(jd, NodeId::three_planes(Canon3::three(t)))
             .map(nacre_scalar::MeetPoint::Narrow)
             .ok_or_else(|| reject(RejectReason::WitnessNotRational))
     };
@@ -5060,7 +5090,7 @@ fn arc_extremum_winding(
         };
         match k {
             CoordKey::Three(t) => {
-                let q = node_coords_rat(jd, NodeId::three_planes(*t))?;
+                let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))?;
                 ext.partial_cmp(&q[a])
             }
             CoordKey::Branch(b) => Some(ord(quad::cmp_coord_meet_branch(
@@ -5181,7 +5211,7 @@ fn arc_extremum_winding(
         let half = |k: &CoordKey, is_start: bool| -> Option<bool> {
             let o = match k {
                 CoordKey::Three(t) => {
-                    let q = node_coords_rat(jd, NodeId::three_planes(*t))?;
+                    let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))?;
                     let v = dot3_rat(&[h_plane[0], h_plane[1], h_plane[2]], &q)?
                         .checked_add(h_plane[3])?;
                     match v.partial_cmp(&zero)? {
@@ -6013,7 +6043,7 @@ mod tests {
             [9, 5, 2],
         ] {
             assert_eq!(
-                NodeId::three_planes(spelling),
+                NodeId::three_planes(Canon3::three(spelling)),
                 canonical,
                 "{spelling:?} names the same vertex as [2, 5, 9]"
             );
@@ -6081,7 +6111,7 @@ mod tests {
     /// is exactly why it is written down here rather than left to be discovered.
     #[test]
     fn the_two_variants_are_told_apart_and_ordered() {
-        let three = NodeId::three_planes([9, 2, 5]);
+        let three = NodeId::three_planes(Canon3::three([9, 2, 5]));
         let branch = NodeId::branch(2, 9, 7, nacre_topo::QuadRoot::Lo);
         assert_eq!(three_plane_name(three), Some([2, 5, 9]));
         assert_eq!(
