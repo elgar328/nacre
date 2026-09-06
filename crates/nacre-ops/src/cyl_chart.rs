@@ -269,9 +269,13 @@ impl Chart {
         def: &nacre_topo::CylinderDef,
         c: usize,
         i: usize,
+        aliases: &crate::arrangement::Aliases,
     ) -> Option<combinatorics::NodeId> {
         let (wall, side) = self.ruling_name(jd, k, def, i)?;
-        crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, side).ok()
+        // As the table knows it (cell ⑫): a station on a corner is the corner.
+        crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, side)
+            .ok()
+            .map(|n| aliases.canon_point(n))
     }
 }
 
@@ -632,6 +636,7 @@ impl Chart {
         y: usize,
         rim: &crate::arrangement::CutRim,
         arcs: &'a [ArcLabel],
+        aliases: &crate::arrangement::Aliases,
     ) -> Result<Vec<&'a ArcLabel>, RunFail> {
         use OtherWhy as Why;
         let m = rim.nodes.len();
@@ -647,7 +652,7 @@ impl Chart {
             // the rim did hold the station.
             let n = match self.node_on(i, t) {
                 Some(n) => n,
-                None => self.station_on(jd, k, def, c, i)?,
+                None => self.station_on(jd, k, def, c, i, aliases)?,
             };
             match rim.nodes.iter().position(|&r| r == n) {
                 Some(p) => Some(p),
@@ -827,7 +832,18 @@ impl Chart {
                                     None => End::Uncovered,
                                 }
                             }
-                            _ => match self.arc_around(jd, k, def, c, t[e], x, y, rim, arcs) {
+                            _ => match self.arc_around(
+                                jd,
+                                k,
+                                def,
+                                c,
+                                t[e],
+                                x,
+                                y,
+                                rim,
+                                arcs,
+                                &curved.aliases,
+                            ) {
                                 Ok(run) => End::Exact(run),
                                 Err(RunFail::AllMissing) => End::Uncovered,
                                 Err(RunFail::Other) => End::Other,
@@ -1664,6 +1680,7 @@ pub(crate) mod regions {
         curved: &Curved,
     ) -> Result<Walked, BoolError> {
         let undecided = || reject(RejectReason::WitnessNotRational);
+        let aliases = &curved.aliases;
 
         // ── 1. Stations: one per (wall, side), in one global θ order. ──
         let mut names: Vec<(usize, i8)> = Vec::new();
@@ -1838,7 +1855,9 @@ pub(crate) mod regions {
         // A station's canonical name on a line — [`Chart::station_on`]'s spelling, by name.
         let station_name = |c: usize, s: usize| -> Option<NodeId> {
             let (wall, sd) = name_at_station(s);
-            crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, sd).ok()
+            crate::arrangement::crossing_on_ruling(jd, def, c, wall, k, sd)
+                .ok()
+                .map(|n| aliases.canon_point(n))
         };
 
         // ── 3–7. Per component: boundary edges → cycles → runs → pieces → rings → bound. ──

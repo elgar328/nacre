@@ -12460,9 +12460,12 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
 /// volume is the sum of the parts: `48 + (34 − π/4) + 7.5` — the plate less its fillets' corners
 /// and bores, the slot plate less its window, the gusset.
 ///
-/// ★ The gusset stands at `x = 1.6`, not the user's `1.5`: at `1.5` its side plane runs **through
-/// the fillet's axis** and so contains the fillet's tangent ruling — one line shared by two planes
-/// and a cylinder, the next capability (a `TraceDeclined` today, locked below as the honest name).
+/// ★ The gusset stands at `x = 1.6` here; at the user's `1.5` its side plane runs **through the
+/// fillet's axis** and so contains the fillet's tangent ruling — one line shared by two planes
+/// and a cylinder. That was the next capability when this lock was written (a `TraceDeclined`,
+/// locked as the honest name); cell ⑫ opened it, and the second arm below is the plate and the
+/// gusset at `1.5` fusing: `48 + 7.5`. The four-part fold at the script's own dimensions is
+/// `the_users_fold_builds_at_the_scripts_own_dimensions`.
 #[test]
 fn the_users_plate_slot_and_gusset_fold() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
@@ -12566,21 +12569,24 @@ fn the_users_plate_slot_and_gusset_fold() {
     let want = 48.0 + (34.0 - pi / 4.0) + 7.5;
     assert!((v - want).abs() < 1e-9, "the fold: {v} vs {want}");
 
-    // The gusset on the fillet's axis plane: the honest name for the shared line.
+    // The gusset on the fillet's axis plane (cell ⑫): the shared line has one name, and the
+    // gusset stands on the plate — the volume is the sum.
     let mut m = Model::new();
     let a = plate(&mut m);
     let c = gusset(&mut m, 1.5);
     m.rebuild_adjacency();
-    let out = boolean(&mut m, BoolKind::Fuse, a, c);
+    let out = boolean(&mut m, BoolKind::Fuse, a, c).expect("plate + gusset on the axis plane");
+    assert_eq!(out.len(), 1);
+    m.rebuild_adjacency();
     assert!(
-        matches!(
-            out,
-            Err(BoolError::Rejected {
-                reason: RejectReason::TraceDeclined { .. },
-                ..
-            })
-        ),
-        "{out:?}"
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+    assert!(
+        (v - 55.5).abs() < 1e-9,
+        "plate + gusset at 1.5: {v} vs 55.5"
     );
 }
 
@@ -13467,23 +13473,19 @@ fn fillet_plate_and_axis_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, plate, slab)
 }
 
-/// ★ Cell ⑫, S0 — **the instrument, stating today's facts.** The class plane `x = 1.5` holds the
-/// fillet's axis, so one of its two rulings on the fillet is the fillet's own tangent ruling with
-/// the plate's bottom wall. The tangent corner at the cap then has names from two vocabularies —
-/// its own `Branch … Double`, the three-plane name of its planes with the class, and the class's
-/// ruling crossing `Branch … Lo/Hi` at the same point — and nothing in the alias table joins
-/// them, so the lateral's ruling sweep declines (`Ruling`, from `theta_between`'s coincidence).
-/// S1 flips each assertion; this is not a lock on a desired state.
+/// ★ Cell ⑫ — **a point on a cylinder that a foreign class passes through has one name.** The
+/// class plane `x = 1.5` holds the fillet's axis, so one of its two rulings on the fillet is the
+/// fillet's own tangent ruling with the plate's bottom wall, and the tangent corner at each cap
+/// is named three ways — its own `Branch … Double`, the three-plane name of its planes with the
+/// class, and the class's ruling crossing at the same point. The seed (`seed_from_operands` →
+/// `Aliases::record_on_cylinder`) joins them before any trace, the representative is a branch
+/// name (the point is represented on its cylinder), and the class's *other* root stays another
+/// point. S0 stated the opposite facts — four names unjoined and the lateral's sweep declining
+/// (`Ruling`, from `theta_between`'s coincidence) — and this is that instrument, flipped.
 #[test]
-fn a_tangent_corner_on_a_plane_through_the_axis_has_unjoined_names_today() {
+fn a_tangent_corner_on_a_plane_through_the_axis_has_one_name() {
     let (m, plate, slab) = fillet_plate_and_axis_slab();
     let corners = arrangement::branch_corner_audit(&m, plate, slab).expect("the audit runs");
-    for c in &corners {
-        eprintln!(
-            "branch corner {:?} {:?} of operand {} on class {}: corner {:?} candidates {:?} folded {:?}",
-            c.vertex, c.point, c.side, c.class, c.corner, c.candidates, c.folded
-        );
-    }
     // The two tangent corners (z = 0 and z = 1) of the ruling `x = 1.5, y = −4`, each on the
     // slab's class `x = 1.5`; the fillet's other tangent corners (`y = −2` with the right wall)
     // are on no foreign class.
@@ -13492,29 +13494,33 @@ fn a_tangent_corner_on_a_plane_through_the_axis_has_unjoined_names_today() {
         .filter(|c| (c.point[0] - 1.5).abs() < 1e-9 && (c.point[1] + 4.0).abs() < 1e-9)
         .collect();
     assert_eq!(on_axis_plane.len(), 2, "{corners:?}");
+    // Two vertices of the plate (operand A), both tangent corners, on the slab's one class.
+    assert_ne!(on_axis_plane[0].vertex, on_axis_plane[1].vertex);
+    assert_eq!(on_axis_plane[0].class, on_axis_plane[1].class);
     for c in on_axis_plane {
-        assert_eq!(
-            c.candidates.len(),
-            4,
-            "corner, three-plane, two roots: {:?}",
-            c.candidates
+        assert_eq!(c.side, 0, "the plate's corner");
+        assert!(
+            matches!(
+                crate::combinatorics::branch_name(c.corner),
+                Some((_, _, nacre_topo::QuadRoot::Double))
+            ),
+            "a tangent corner: {:?}",
+            c.corner
         );
-        let mut distinct = c.folded.clone();
-        distinct.sort_unstable();
-        distinct.dedup();
-        assert_eq!(
-            distinct.len(),
-            4,
-            "the table joins none of the names today: {:?}",
-            c.folded
+        // Candidates: the corner, the three-plane name, and the class's two ruling crossings.
+        assert_eq!(c.candidates.len(), 4, "{:?}", c.candidates);
+        let f = &c.folded;
+        assert!(
+            f[0] == f[1] && f[0] == f[3] && f[2] != f[0],
+            "the corner, its three-plane name and the class's root at it fold onto one \
+             representative; the class's other root is another point: {f:?}"
+        );
+        assert!(
+            crate::combinatorics::branch_name(f[0]).is_some(),
+            "a point on a cylinder is represented on the cylinder: {:?}",
+            f[0]
         );
     }
     let declines = arrangement::trace_declines(&m, plate, slab).expect("the traces run");
-    eprintln!("declines: {declines:?}");
-    assert!(
-        declines
-            .iter()
-            .any(|(_, _, k)| matches!(k, DeclineKind::Ruling)),
-        "the lateral's sweep declines by name today: {declines:?}"
-    );
+    assert!(declines.is_empty(), "no class declines: {declines:?}");
 }
