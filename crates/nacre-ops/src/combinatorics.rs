@@ -2114,23 +2114,21 @@ pub(crate) fn hole_rings(
 /// A loop's vertices as names — a three-plane triple, or a branch point where a cylinder is one of
 /// the three surfaces (the face's own, or a neighbour's).
 ///
-/// The name normally comes from the loop itself — the face's own plane and the two neighbours the
-/// meeting edges carry. **That fails when both neighbours lie on one plane**: an earlier boolean can
-/// split a plane between two faces with opposite normals (a base's exposed top and the cantilever
-/// underside above it), and a vertex where the loop runs straight through their shared line then
-/// names one plane twice. Such a triple defines no point — `three_planes` answers `None`, and the
-/// exact predicates, whose precondition is `D ≠ 0`, abort on it. Measured 2026-07-22: this is the
-/// *only* path by which a degenerate triple reaches them.
+/// ★ Cell ⑪: **a plane vertex names itself, not the loop.** Its name is [`canonical_triple`] of the
+/// plane classes of its incident faces — the set the incidence table carries ([`EdgeFaces`]) — so
+/// every loop that visits the vertex hands the tracer the same name. Three classes is the ordinary
+/// corner and its name is the face's own plane with the two neighbours' (what the loop used to
+/// build, bit for bit, and no judgement asked). Four or more is a concurrency: one name, and the
+/// class set travels in [`NamedRing::concurrencies`] to the arrangement's alias table.
 ///
-/// So when the two neighbours are one class, the name is taken from **every plane touching the
-/// vertex** ([`vertex_face_indices`]) instead: exactly three classes ⇒ that is the name, and it is
-/// the same set whichever face's loop asks, so welding stays consistent (a face whose loop does not
-/// degenerate here derives the same three). More than three is a real four-plane concurrency and
-/// fewer is a genuine straight angle — both decline. Three *dependent* planes share a line rather
-/// than a point, so independence is checked too ([`Judge::plane_pair_dir_sign`], which reads the same
-/// un-normalized coefficients the consumer does).
-///
-/// The common case is untouched, so no existing name moves.
+/// Before that, the name came from the loop — the face's own plane and the two neighbours the
+/// meeting edges carry — with a fallback to every plane touching the vertex only when both
+/// neighbours lay on one plane (a loop running straight through a shared line). A four-plane vertex
+/// whose neighbours differed therefore got a name per face, and from the face whose two edges ride
+/// the planes that share a line with its own, a triple that names no point: the judge read that
+/// «point» as lying on every class and the alias table folded everything onto a corner elsewhere.
+/// The straight-through case is still the one place a three-class corner is asked about
+/// independence ([`Judge::plane_pair_dir_sign`]), as it has been since 2026-07-22.
 #[allow(clippy::too_many_arguments)]
 fn loop_triples(
     model: &Model,

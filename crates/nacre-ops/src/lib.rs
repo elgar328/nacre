@@ -648,11 +648,18 @@ pub enum RejectReason {
     /// centroid. Vertex identity was normalised (names identify, structures carry geometry), and
     /// `coverage/rotation.rs` keeps the near misses around it building.
     ///
-    /// What survives is the guard, at two sites: an **operand** vertex found on more than three
-    /// plane classes (`combinatorics`), and a run whose candidate handles are all parallel to the
-    /// line they must cut (`arrangement`). Neither has a reproduction. It stays because a
+    /// What survives is the guard, at one site: a run whose candidate handles are all parallel to
+    /// the line they must cut (`arrangement`). It has no reproduction. It stays because a
     /// substrate that cannot name a point must say so rather than pick one of the names — and
     /// because an unfired reject costs nothing, while a missing one costs a wrong solid.
+    ///
+    /// ★ The **operand**-side guard — a vertex found on more than three plane classes — died in
+    /// cell ⑪, with the rule that needed it. That guard *had* a reproduction, found the day a
+    /// gusset's apex landed on a wall's top edge: the fused operand's vertex reached the ring road
+    /// under four names (one per face loop), one of them three planes sharing a line, and the
+    /// build order decided whether this name or `DegenerateWitness` came out. A point's name is
+    /// one function now (`combinatorics::canonical_triple`), and an operand vertex names itself
+    /// from the classes its topology knows.
     ///
     /// **Exact, not toleranced.** Measured on that model: perturbing an operand coordinate by
     /// **one ULP** in either direction removed the concurrency. The judgement returned zero
@@ -803,6 +810,13 @@ pub enum RejectReason {
     /// of `JudgeExhausted` either. `undecided_reject` is still wired and still the right shape —
     /// an undecided judgement must never reach the geometry as a zero — it simply has no fixture,
     /// which is recorded rather than taken as licence to delete the guard.
+    ///
+    /// ★ It fired once more, and earned its keep (cell ⑪): a four-plane operand vertex named per
+    /// face loop produced a triple of three planes sharing a line, the judge asked that «point»
+    /// for a side and came back degenerate, and everything downstream read the `0` as «on every
+    /// class» — false alias sets, parallel planes taken for a shared line, one merged wall family,
+    /// every name folded onto a corner elsewhere. This reject was the only thing between that
+    /// and a solid with a vertex in the wrong place. The dependent name is gone at its source.
     DegenerateWitness,
     /// Every candidate ray from a loop's nodes has a ring node on its line — or, in 3D, every node
     /// of a component grazes the boundary it is being classified against.

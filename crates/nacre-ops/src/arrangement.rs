@@ -512,6 +512,13 @@ fn seed_from_operands(
 /// Neither fold is optional if the other happens: `merge_coincident` keys an edge by
 /// `(wall, endpoints)`, so a duplicate edge merges only when **both** its wall and its endpoint
 /// names agree. That is why the two live in one table and are applied together.
+///
+/// ★ Cell ⑪: the table has **two sources**. The operands seed it before any class is traced
+/// ([`seed_from_operands`] — every vertex with four or more incident plane classes, which the
+/// operand's own topology knows), and the tracer adds what it discovers (`{wc} ∪ t` at a run
+/// vertex, a wall family's line). The representative is [`combinatorics::canonical_triple`]'s
+/// answer, which is also the name the operand's ring already gave the point; with four planes
+/// through a point every record is the whole set, so the two sources land in one component.
 // `Clone` so a round can hand every class the table as it stood when the round began, and
 // merge their discoveries afterwards — see `trace_result_faces`. In the ordinary model the
 // maps are empty, so the copy costs nothing.
