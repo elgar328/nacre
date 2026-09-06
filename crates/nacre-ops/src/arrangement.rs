@@ -568,9 +568,17 @@ fn seed_from_operands(
 /// ★ Cell ⑪: the table has **two sources**. The operands seed it before any class is traced
 /// ([`seed_from_operands`] — every vertex with four or more incident plane classes, which the
 /// operand's own topology knows), and the tracer adds what it discovers (`{wc} ∪ t` at a run
-/// vertex, a wall family's line). The representative is [`combinatorics::canonical_triple`]'s
-/// answer, which is also the name the operand's ring already gave the point; with four planes
-/// through a point every record is the whole set, so the two sources land in one component.
+/// vertex, a wall family's line). Among plane names the representative is
+/// [`combinatorics::canonical_triple`]'s answer, which is also the name the operand's ring
+/// already gave the point; with four planes through a point every record is the whole set, so the
+/// two sources land in one component.
+///
+/// ★ Cell ⑫: a point of the table need not be a plane name at all. The seed also learns every
+/// **branch corner** an operand carries that some further class passes through
+/// ([`Aliases::record_on_cylinder`]), so one component can hold a corner, a three-plane name and
+/// a class's ruling crossing; the representative among those is a **branch** name
+/// ([`Aliases::rep_rank`] — a point on a cylinder is represented on the cylinder, because the
+/// lateral chart reads the cylinder off the name).
 // `Clone` so a round can hand every class the table as it stood when the round began, and
 // merge their discoveries afterwards — see `trace_result_faces`. In the ordinary model the
 // maps are empty, so the copy costs nothing.
@@ -609,11 +617,6 @@ impl Aliases {
         }
     }
 
-    /// **Two names for one point, learned by a producer that knows both** (cell ⑫) — the door
-    /// [`Aliases::record_on_cylinder`] and the tests use; [`Aliases::record`] is the plane-set
-    /// spelling of the same fold. The representative is the union-find's minimum, and it is a
-    /// **key**: consumers that need a name's geometry (a branch's meet, its θ) keep asking with
-    /// the name they hold.
     /// **A branch corner found on a further plane class** (cell ⑫) — the cylinder twin of
     /// [`Aliases::record`]. The corner's planes `p0, p1` and the class `wc` all pass through the
     /// point, and so does the cylinder; every name that set can produce denotes it: the corner's
@@ -1038,12 +1041,13 @@ fn trace_transversal_face(
                     // branch of a new pair kept a root that pair does not have — measured, the
                     // fold's gusset beside the plate's fillet.)
                     Some((planes, _, _)) => {
-                        // ★ Cell ⑫: the **discovery event** for a point on a cylinder — this
-                        // corner has a third plane through it, so every name that set yields is
-                        // one point; the table learns it here, once, and the ruling sweep on
-                        // this same class reads it (`trace_one` walks the plane faces first).
-                        // The identity of this corner with `[p0, p1, wc]` and with the class's crossing of
-                        // its ruling is the seed's (`seed_from_operands`, cell ⑫), known before any trace.
+                        // ★ Cell ⑫: this corner has a third plane through it, so every name
+                        // that set yields is one point — its own, this three-plane one, and the
+                        // class's crossing of the ruling it sits on. The **table** holds that
+                        // identity, and it learns it from the operands before any class is
+                        // traced (`seed_from_operands` → `Aliases::record_on_cylinder`), not
+                        // here: a round that declines returns, so a discovery made mid-round
+                        // could arrive after the class that needed it had already refused.
                         let mut t = [planes[0], planes[1], wc];
                         t.sort_unstable();
                         (NodeId::three_planes(Canon3::three(t)), t)
@@ -2535,12 +2539,13 @@ fn chord_nodes(
 /// one spelling). The point arrives as `(line, s)` from [`nacre_scalar::quad::plane_plane_cylinder`],
 /// so the sign is one [`nacre_scalar::quad::plane_side`] against the plane through `o` with
 /// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
-/// tangent shape). ★ **A tangent ruling's side is `0`, and it is not read here** (cell ⑩, S3): the
-/// two places that build a ruling carrier ([`combinatorics::curved_wall`], [`node_ruling_side`])
-/// derive it from the corner's root (`Double`), because this function's `None` is a *sign*
-/// fact the ray caster (`departs_across`) and the arc departure read as "abstain" — answering
-/// `Some(0)` here would drop a ray into the `Negative` arm in silence. A fillet's or a slot's
-/// own walls are the callers that feed the tangent shape.
+/// tangent shape). ★ **The abstention is deliberate and this is the abstaining door**: this
+/// function's `None` is a *sign* fact the ray caster (`departs_across`) and the arc departure
+/// read as "abstain", and answering `Some(0)` here would drop a ray into the `Negative` arm in
+/// silence. Callers that want the tangent ruling *named* — "which ruling of this wall, `0` being
+/// its tangent one" — take [`ruling_side_signed`] instead (cell ⑫: [`node_ruling_side`],
+/// [`combinatorics::curved_wall`] and the ruling split, which read that `0` off the corner's
+/// root until it stopped meaning the same thing).
 pub(crate) fn ruling_side(
     w: &[Rat; 4],
     def: &nacre_topo::CylinderDef,
@@ -4590,6 +4595,14 @@ fn split_circles(
             .copied()
             .filter(|n| !dropped.contains(n))
             .collect();
+        // ★ Nothing left to cut at: the circle is whole, and saying so here is what keeps it in
+        // the class at all — an `Ordered` with no nodes would emit no arc *and* drop the circle,
+        // losing an edge in silence. (No corpus row reaches it: every measured drop leaves at
+        // least one arc end. It is spelled because the alternative fails quietly.)
+        if kept.is_empty() {
+            ordered.push(None);
+            continue;
+        }
         // The reduced order is the old one filtered: the relative θ order is unchanged, and it
         // still runs from the seam — which is a node only if it was one and stayed.
         let seam_is_node = seam_is_node && keep[0];
@@ -5484,12 +5497,15 @@ fn split_rulings(
                 {
                     continue;
                 }
-                // A tangent crossing's side is `0`, from its root — `ruling_side`'s `None` is
-                // the sign reading and stays so (cell ⑩).
-                let side = match combinatorics::branch_name(n) {
-                    Some((_, _, nacre_topo::QuadRoot::Double)) => 0,
-                    _ => ruling_side(&w, def, (&line, &s)).ok_or_else(undecided)?,
-                };
+                // Which of `wc`'s rulings the crossing is on, `0` being `wc`'s tangent one —
+                // asked of the point (cell ⑫, [`ruling_side_signed`]). It read that `0` off the
+                // crossing's own root (`Double`, i.e. the *line* `wc ∩ wall` touches the
+                // cylinder), which is the same statement only while `wc` is the wall that
+                // touches: a line tangent to the cylinder can cross a `wc` that cuts it, and
+                // then the root's `0` matched no ruling of `wc` at all.
+                // ☑ Measured: no census row moves, so the corpus never held the two apart —
+                // the third copy of one rule, retired with the other two.
+                let side = ruling_side_signed(&w, def, (&line, &s)).ok_or_else(undecided)?;
                 let Some(c) = coord_at(def, &line, &s) else {
                     return Err(undecided());
                 };
