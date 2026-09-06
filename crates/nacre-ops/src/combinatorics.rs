@@ -5664,18 +5664,16 @@ fn curved_wall(
             let def = cyls.get(cyl).ok_or_else(curved)?.def.clone();
             let at = branch_meet(jd, cyl, &def, end).ok_or_else(curved)?;
             let w = class_coeffs_rat(jd, near).ok_or_else(curved)?;
-            // ★ **A tangent wall has one ruling, and its side is `0`** (cell ⑩, S3): the corner's
-            // root says so (`Double`), and that is where the side is derived — not from
-            // [`crate::arrangement::ruling_side`], whose `None` on the axis plane is the *sign*
-            // reading the ray caster and the arc departure rely on. A fillet's or a slot's own
-            // walls are tangent to their cylinder, so every such operand used to fall here as
-            // `CurvedOperandBoundary` (S0's measured first decline).
-            let side = match branch_name(end) {
-                Some((_, _, nacre_topo::QuadRoot::Double)) => 0,
-                _ => {
-                    crate::arrangement::ruling_side(&w, &def, (&at.0, &at.1)).ok_or_else(curved)?
-                }
-            };
+            // ★ **A tangent wall has one ruling, and its side is `0`** (cell ⑩, S3). A fillet's
+            // or a slot's own walls are tangent to their cylinder, so every such operand used to
+            // fall here as `CurvedOperandBoundary` (cell ⑩'s measured first decline).
+            // ★ Cell ⑫ moved the reading from the corner's **root** to the **point**
+            // ([`crate::arrangement::ruling_side_signed`], which answers the axis plane instead
+            // of abstaining as `ruling_side` does for the ray caster's sake): the root says `0`
+            // only when `near` is the very wall the name pairs, and `near` may be a plane through
+            // the axis carrying that same corner on one of its two rulings.
+            let side = crate::arrangement::ruling_side_signed(&w, &def, (&at.0, &at.1))
+                .ok_or_else(curved)?;
             // Which way travel runs along the axis: the stored edge ascends when its second
             // endpoint does, and `forward` says whether this half-edge walks it that way.
             //

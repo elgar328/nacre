@@ -2157,6 +2157,16 @@ pub(crate) fn reconstruct(
     // sharing such an edge named two different walls. The faces themselves are the ground
     // truth, and every ring is already in hand, so one pre-scan reads it.
     let mut pair_surfs: HashMap<(usize, usize), Vec<Handle<Surface>>> = HashMap::new();
+    // ★ Cell ⑫ — **the same reading for a ruling edge's plane carrier.** It used to be derived
+    // from the two ends' *names* (the plane they share), which states the line only while a
+    // point's name is the pair that minted it: once the alias table represents a tangent corner
+    // by another pair — a class through the axis crossing the cylinder there — the shared plane
+    // is that class, which contains the line but does not bound the edge. The face that bounds
+    // it does, and the scan already walks every face. Keyed like the edge itself (`EdgeKey`),
+    // because a ruling and a plane-pair line can share one vertex pair.
+    /// A ruling edge's key in that scan — `EdgeKey::Ruling`'s fields, which is the point.
+    type RulingKey = (usize, i8, (usize, usize));
+    let mut ruling_surfs: HashMap<RulingKey, Vec<Handle<Surface>>> = HashMap::new();
     for (fi, lf) in faces.iter().enumerate() {
         let g = group_of[fi];
         // A band contributes no node edge — its rims and seam are minted with their carriers
@@ -2173,14 +2183,20 @@ pub(crate) fn reconstruct(
                 // with the chord between the same branch vertices, and pushing this face's plane
                 // here would pollute the chord's line-key entry into the fallback arm — the arc
                 // states its carriers directly instead (`edge_for`'s arc arm).
-                if !matches!(r.walls[t], Wall::Plane(_)) {
-                    continue;
-                }
                 let (va, vb) = (vh[&(g, r.nodes[t])], vh[&(g, r.nodes[(t + 1) % k])]);
-                pair_surfs
-                    .entry(unordered(va.index() as usize, vb.index() as usize))
-                    .or_default()
-                    .push(fsurf);
+                let pair = unordered(va.index() as usize, vb.index() as usize);
+                match r.walls[t] {
+                    Wall::Plane(_) => pair_surfs.entry(pair).or_default().push(fsurf),
+                    Wall::Ruling { cyl, side, .. } => ruling_surfs
+                        .entry((cyl, side, pair))
+                        .or_default()
+                        .push(fsurf),
+                    // An arc edge shares its vertex pair with the chord between the same branch
+                    // vertices, and pushing this face's plane here would pollute the chord's
+                    // line-key entry into the fallback arm — the arc states its carriers directly
+                    // instead (`edge_for`'s arc arm).
+                    Wall::Arc { .. } => continue,
+                }
             }
         }
     }
@@ -2236,18 +2252,32 @@ pub(crate) fn reconstruct(
                 if let Some(&e) = edge_of.get(&key) {
                     return Ok(e);
                 }
-                let wall = ends
-                    .and_then(|(a, b)| shared_branch_plane(a, b))
-                    .ok_or_else(|| {
-                        // Two Branch ends that share no single wall plane: a naming this ladder
-                        // does not arrange yet.
-                        reject(RejectReason::RulingBoundNotYet)
-                    })?;
+                // The plane that **bounds** it, read off the face that does (the scan above);
+                // the ends' shared plane is the fallback for an edge no plane face carries.
+                let bounding = match ruling_surfs.get(&(cyl, side, pair)).map(|v| {
+                    let mut v = v.clone();
+                    v.sort_unstable();
+                    v.dedup();
+                    v
+                }) {
+                    Some(v) if v.len() == 1 => Some(v[0]),
+                    _ => None,
+                };
+                let wall_surf = match bounding {
+                    Some(s) => s,
+                    None => {
+                        planes[ends
+                            .and_then(|(a, b)| shared_branch_plane(a, b))
+                            .ok_or_else(|| {
+                                // Two Branch ends that share no single wall plane: a naming this
+                                // ladder does not arrange yet.
+                                reject(RejectReason::RulingBoundNotYet)
+                            })?]
+                        .surf
+                    }
+                };
                 let e = model
-                    .push_edge(
-                        Edge::carrier_pair(cyls[cyl].surf, planes[wall].surf),
-                        [va, vb],
-                    )
+                    .push_edge(Edge::carrier_pair(cyls[cyl].surf, wall_surf), [va, vb])
                     .ok_or_else(|| reject(RejectReason::ZeroLengthEdge))?;
                 edge_of.insert(key, e);
                 Ok(e)

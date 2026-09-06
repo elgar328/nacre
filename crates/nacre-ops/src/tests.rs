@@ -13261,13 +13261,11 @@ fn a_four_plane_operand_vertex_fuses_in_either_order() {
     }
 }
 
-/// ★ Cell ⑪ — **the user's four-part fold builds in script order**, and the two fold orders
-/// agree to the bit. The plate, the slot plate and two gussets (at `1.4` and `−2.4`) fuse to
-/// `48 + (34 − π/4) + 15` whether the slot plate joins second (the order that used to refuse,
-/// its third fuse leaving a four-plane vertex for the fourth) or last; the census measured the
-/// two results' digests identical, and this locks that measurement.
-#[test]
-fn the_users_four_part_fold_builds_in_either_order() {
+/// The user's four parts — the filleted, bored plate, the slot plate standing on it, and two
+/// gussets at `gx` and `−(gx + 1)` — fused in both orders (slot plate second, slot plate last):
+/// one valid body of volume `48 + (34 − π/4) + 15` each time, and the two results equal to the
+/// bit. Cell ⑪ locked it at `gx = 1.4`; cell ⑫ at the script's own `1.5`.
+fn users_four_part_fold_in_either_order(gx: f64) {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let prism =
         |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
@@ -13361,8 +13359,8 @@ fn the_users_four_part_fold_builds_in_either_order() {
         let mut m = Model::new();
         let p1 = plate(&mut m);
         let p2s = slot_plate(&mut m);
-        let g1 = gusset(&mut m, 1.4);
-        let g2 = gusset(&mut m, -2.4);
+        let g1 = gusset(&mut m, gx);
+        let g2 = gusset(&mut m, -(gx + 1.0));
         let part = if slot_plate_last {
             let a = fuse(&mut m, p1, g1);
             let a = fuse(&mut m, a, g2);
@@ -13397,6 +13395,25 @@ fn the_users_four_part_fold_builds_in_either_order() {
         "and the same volume, to the bit"
     );
     assert_eq!(d0.triangle_bits, d1.triangle_bits, "and the same mesh");
+}
+
+/// ★ Cell ⑪ — **the user's four-part fold builds in script order**, and the two fold orders
+/// agree to the bit. The gussets at `1.4` and `−2.4`: the order that used to refuse left a
+/// four-plane vertex for the fourth fuse; the census measured the two results' digests identical,
+/// and this locks that measurement.
+#[test]
+fn the_users_four_part_fold_builds_in_either_order() {
+    users_four_part_fold_in_either_order(1.4);
+}
+
+/// ★ Cell ⑫ — **the user's fold builds at the script's own dimensions.** The gussets at `1.5`
+/// and `−2.5` stand with a side plane through each fillet's axis, so each such plane holds the
+/// fillet's tangent ruling with the plate's bottom wall — one line shared by two planes and a
+/// cylinder, refused by name (`TraceDeclined { Ruling }`) until this cell. Same volume, both
+/// orders, to the bit.
+#[test]
+fn the_users_fold_builds_at_the_scripts_own_dimensions() {
+    users_four_part_fold_in_either_order(1.5);
 }
 
 /// ★ Cell ⑪ — **one name under every rigid motion.** The four-plane operand vertex is named from
@@ -13473,6 +13490,98 @@ fn fillet_plate_and_axis_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, plate, slab)
 }
 
+/// ★ Cell ⑫ — **a plane through a fillet's axis shares the fillet's tangent ruling.** The slab's
+/// face plane `x = 1.5` holds the fillet's axis and so contains the fillet's tangent ruling with
+/// the plate's bottom wall; the slab stands on the plate's top cap and overlaps it nowhere. Fuse
+/// is the sum, `(52 + π) + 3`; cut is the plate, `52 + π`, or the slab, `3`; common is empty —
+/// in both operand orders, every result valid.
+#[test]
+fn a_plane_through_the_fillet_axis_shares_the_tangent_ruling() {
+    let pi = std::f64::consts::PI;
+    let plate_v = 52.0 + pi;
+    let slab_v = 3.0;
+    for swapped in [false, true] {
+        for (kind, want) in [
+            (BoolKind::Fuse, Some(plate_v + slab_v)),
+            (BoolKind::Cut, Some(if swapped { slab_v } else { plate_v })),
+            (BoolKind::Common, None),
+        ] {
+            let (mut m, plate, slab) = fillet_plate_and_axis_slab();
+            let (a, b) = if swapped {
+                (slab, plate)
+            } else {
+                (plate, slab)
+            };
+            let out = boolean(&mut m, kind, a, b)
+                .unwrap_or_else(|e| panic!("{kind:?} swapped {swapped}: {e:?}"));
+            m.rebuild_adjacency();
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "{kind:?} swapped {swapped}: {:?}",
+                nacre_validate::validate(&m)
+            );
+            match want {
+                None => assert!(out.is_empty(), "{kind:?} swapped {swapped}: empty: {out:?}"),
+                Some(want) => {
+                    assert_eq!(out.len(), 1, "{kind:?} swapped {swapped}: one body");
+                    let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+                    assert!(
+                        (v - want).abs() < 1e-9,
+                        "{kind:?} swapped {swapped}: volume {v} vs {want}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// ★ Cell ⑫ — **one name under every rigid motion.** The tangent corner's identity with the
+/// class's ruling crossing is read from the moved operands' own topology and the moved class
+/// table (`seed_from_operands`, `side_of`), so under each motion of the oracle's group the two
+/// corners on the axis plane must still fold onto one branch representative, no class may
+/// decline, and the moved fuse must build to the same volume.
+#[test]
+fn a_tangent_corner_has_one_name_under_rigid_motion() {
+    for (mn, iso, _) in motion_group() {
+        let (mut m, plate, slab) = fillet_plate_and_axis_slab();
+        let a = transform(&mut m, plate, &iso).expect("the plate moves");
+        let b = transform(&mut m, slab, &iso).expect("the slab moves");
+        m.rebuild_adjacency();
+        let corners = arrangement::branch_corner_audit(&m, a, b).expect("the audit runs");
+        assert_eq!(
+            corners.len(),
+            2,
+            "{mn}: the two tangent corners on the axis plane: {corners:?}"
+        );
+        for c in &corners {
+            assert_eq!(c.candidates.len(), 4, "{mn}: {:?}", c.candidates);
+            let f = &c.folded;
+            assert!(
+                f[0] == f[1] && (f[2] == f[0]) != (f[3] == f[0]),
+                "{mn}: one representative, the other root apart: {f:?}"
+            );
+            assert!(
+                crate::combinatorics::branch_name(f[0]).is_some(),
+                "{mn}: represented on the cylinder: {:?}",
+                f[0]
+            );
+        }
+        let declines = arrangement::trace_declines(&m, a, b).expect("the traces run");
+        assert!(declines.is_empty(), "{mn}: no class declines: {declines:?}");
+        let out = boolean(&mut m, BoolKind::Fuse, a, b).expect("the moved operands fuse");
+        assert_eq!(out.len(), 1, "{mn}: one body");
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{mn}: {:?}",
+            nacre_validate::validate(&m)
+        );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        let want = 55.0 + std::f64::consts::PI;
+        assert!((v - want).abs() < 1e-9, "{mn}: volume {v} vs {want}");
+    }
+}
+
 /// ★ Cell ⑫ — **a point on a cylinder that a foreign class passes through has one name.** The
 /// class plane `x = 1.5` holds the fillet's axis, so one of its two rulings on the fillet is the
 /// fillet's own tangent ruling with the plate's bottom wall, and the tangent corner at each cap
@@ -13509,11 +13618,13 @@ fn a_tangent_corner_on_a_plane_through_the_axis_has_one_name() {
         );
         // Candidates: the corner, the three-plane name, and the class's two ruling crossings.
         assert_eq!(c.candidates.len(), 4, "{:?}", c.candidates);
+        // The corner, its three-plane name and the class's root *at* it fold onto one
+        // representative; the class's other root is another point. Which of the two roots is
+        // the corner's is a matter of the class's stored normal (`Lo`/`Hi`), so it is not fixed.
         let f = &c.folded;
         assert!(
-            f[0] == f[1] && f[0] == f[3] && f[2] != f[0],
-            "the corner, its three-plane name and the class's root at it fold onto one \
-             representative; the class's other root is another point: {f:?}"
+            f[0] == f[1] && (f[2] == f[0]) != (f[3] == f[0]),
+            "one representative, the other root apart: {f:?}"
         );
         assert!(
             crate::combinatorics::branch_name(f[0]).is_some(),

@@ -2546,6 +2546,29 @@ pub(crate) fn ruling_side(
     def: &nacre_topo::CylinderDef,
     at: (&nacre_scalar::quad::MeetLine, &nacre_scalar::quad::QuadVal),
 ) -> Option<i8> {
+    ruling_side_signed(w, def, at).filter(|&s| s != 0)
+}
+
+/// **Which ruling of `w` a point of the lateral is on, `0` being `w`'s tangent ruling** — the
+/// same sign as [`ruling_side`], with the axis plane answered rather than abstained on.
+///
+/// ★★★★★ Cell ⑫ — **a side is a fact about the point and the wall, not about the point's own
+/// name.** Two sites used to read it off the name's root instead (`QuadRoot::Double ⇒ 0`:
+/// [`node_ruling_side`] and [`combinatorics::curved_wall`]), which is the same statement *only*
+/// when the wall asked about is the very wall the name pairs — the tangent wall the corner was
+/// minted on. It is not the same statement once the alias table can hand back a representative
+/// with another pair (a tangent corner a class through the axis also passes through, this cell's
+/// whole subject) or once a Double-rooted corner is asked about a *different* wall: then the
+/// root says `0` for a point that sits squarely on one of that wall's two rulings — silently, and
+/// with the sign the caller needs. Asked here, of the point, both cases answer correctly and the
+/// tangent wall still answers `0`.
+///
+/// `None` is checked-`Rat` overflow only.
+pub(crate) fn ruling_side_signed(
+    w: &[Rat; 4],
+    def: &nacre_topo::CylinderDef,
+    at: (&nacre_scalar::quad::MeetLine, &nacre_scalar::quad::QuadVal),
+) -> Option<i8> {
     let (o, m) = (def.origin(), def.dir());
     let n = [w[0], w[1], w[2]];
     let c = combinatorics::cross3_rat(&m, &n)?;
@@ -2553,11 +2576,13 @@ pub(crate) fn ruling_side(
     for k in 0..3 {
         d = d.checked_sub(c[k].checked_mul(o[k])?)?;
     }
-    match nacre_scalar::quad::plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
-        nacre_scalar::Orient::Positive => Some(1),
-        nacre_scalar::Orient::Negative => Some(-1),
-        nacre_scalar::Orient::Zero => None,
-    }
+    Some(
+        match nacre_scalar::quad::plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
+            nacre_scalar::Orient::Positive => 1,
+            nacre_scalar::Orient::Negative => -1,
+            nacre_scalar::Orient::Zero => 0,
+        },
+    )
 }
 
 /// **The planar scan's crossing on a ruling** — the point where the class line `L = wc ∩ fc`
@@ -3384,21 +3409,21 @@ pub(crate) mod ruling_probe {
     }
 }
 
-/// Which of the two rulings of `w` this branch node sits on — [`ruling_side`] asked of a name,
-/// and `0` for a **tangent** wall's single ruling (the name's root is `Double`; cell ⑩, S3). The
-/// one spelling: the chart's `ruling_name` reads it too (D5, 1a — it used to carry a twin).
+/// Which of the two rulings of `w` this branch node sits on, `0` being a **tangent** wall's
+/// single ruling — [`ruling_side_signed`] asked of the point the name denotes. The one spelling:
+/// the chart's `ruling_name` reads it too (D5, 1a — it used to carry a twin).
+///
+/// ★ Cell ⑩ read the `0` off the name's root (`Double`) and cell ⑫ moved it here, to the point:
+/// see [`ruling_side_signed`] for why the two stopped agreeing.
 pub(crate) fn node_ruling_side(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     w: &[nacre_scalar::Rat; 4],
     n: NodeId,
 ) -> Option<i8> {
-    let (_, cyl, root) = combinatorics::branch_name(n)?;
-    if root == nacre_topo::QuadRoot::Double {
-        return Some(0);
-    }
+    let (_, cyl, _) = combinatorics::branch_name(n)?;
     let (line, s) = combinatorics::branch_meet(jd, cyl, def, n)?;
-    ruling_side(w, def, (&line, &s))
+    ruling_side_signed(w, def, (&line, &s))
 }
 
 /// A branch point's axis parameter: one of the two planes in its name is ⊥ the axis (a cap, a
@@ -3926,15 +3951,19 @@ fn split_at_crossings(
             // ★ Two DISTINCT points ordering equal are one point wearing two names — a four-plane
             // concurrency `{wc, w, ·, ·}`. Record it, and keep one representative as a split point:
             // splitting at both would emit a zero-length piece between them.
-            // ★★★★ **A tie that involves a cylinder-pinned point is refused, not folded.** The
-            // fold is a statement about *plane classes* — it hands `Aliases` a set of them — and a
-            // branch name has none to contribute. Worse, folding would leave one point wearing a
-            // `ThreePlane` name and a `Branch` name, and the DCEL keys vertices by name, so the
-            // walk would see two vertices where there is one. `split_circles` refuses exactly this
-            // shape by the same reasoning; the fold is its own step.
-            // ☑ Measured unexercised — this arm and the three other new refusals in this function
-            // (the sort's flag, and the two containment `None`s) were each made `unreachable!()`
-            // with the workspace suite and the ignored sweep green.
+            // ★★★★ **A tie that involves a cylinder-pinned point is one the alias table must
+            // already know.** The plane fold below is a statement about *plane classes* — it
+            // hands `Aliases` a set of them — and a branch name has none to contribute; nor could
+            // a fold made here be trusted, since the DCEL keys vertices by name and the two
+            // handles would still ship two names. ★ Cell ⑫: the table *does* know such a point
+            // when it is an operand's corner a class passes through (the seed,
+            // `Aliases::record_on_cylinder`): every handle's name canonicalizes to one
+            // representative, the pieces below are emitted under it (`sorted`), and one handle
+            // is kept as the split point. A tie the table does not know is refused — the honest
+            // floor, as `split_segments_at` and `split_circles` refuse the same shape.
+            // ☑ Measured: the refusal was unexercised until cell ⑫'s fixtures reached it — and
+            // only with the slab as the first operand, where the corner's own name is not the
+            // representative and the tie is between the three-plane name and the class's root.
             let mut reps: Vec<Split> = Vec::with_capacity(pts.len());
             let mut group: Vec<Split> = Vec::new();
             let mut tied_branch = false;
@@ -3942,15 +3971,20 @@ fn split_at_crossings(
                          reps: &mut Vec<Split>,
                          al: &mut Aliases,
                          tied_branch: &mut bool| {
+                if group.len() > 1 && group.iter().any(|s| matches!(s, Split::Branch { .. })) {
+                    let rep = al.canon_point(group[0].name(wc, w));
+                    if group.iter().all(|g| al.canon_point(g.name(wc, w)) == rep) {
+                        reps.push(group[0]);
+                    } else {
+                        *tied_branch = true;
+                    }
+                    group.clear();
+                    return;
+                }
                 if let Some(&rep) = group.first() {
                     reps.push(rep);
                 }
                 if group.len() > 1 {
-                    if group.iter().any(|s| matches!(s, Split::Branch { .. })) {
-                        *tied_branch = true;
-                        group.clear();
-                        return;
-                    }
                     let mut set: Vec<usize> = vec![wc, w];
                     set.extend(group.iter().filter_map(|s| match s {
                         Split::Class(r) => Some(*r),
@@ -4055,10 +4089,17 @@ fn split_at_crossings(
                 }
             }
             if !merged.is_empty() {
+                // The pin is a fact about the name beside it (`pin_for`, cell ⑫): a handle whose
+                // point the table represents under another name — a class's root that is an
+                // operand's corner — is pinned as that name is on this line.
+                let (np, nq) = (sorted(p, aliases), sorted(q, aliases));
+                let pin = |s: Split, n: NodeId| {
+                    combinatorics::pin_for(jd, wc, w, n).unwrap_or_else(|| s.pin())
+                };
                 out.push(MergedSeg {
                     wall: w,
-                    end: [sorted(p, aliases), sorted(q, aliases)],
-                    end_h: [p.pin(), q.pin()],
+                    end: [np, nq],
+                    end_h: [pin(p, np), pin(q, nq)],
                     merged,
                     sense: None,
                 });
@@ -5473,9 +5514,10 @@ fn split_rulings(
                         (Equal, _) | (_, Equal) => {
                             // On an end: the T-junction. One point, and it must wear **one**
                             // name — the crossing's `{wc, wall}` pair must be the very pair
-                            // that named the ruling's end, else two names share the point.
+                            // that named the ruling's end, or (cell ⑫) the table must know the
+                            // two names as one point — else two names share the point.
                             let end_n = if a == Equal { r.end[0] } else { r.end[1] };
-                            if end_n != n {
+                            if aliases.canon_point(end_n) != aliases.canon_point(n) {
                                 return Err(reject(RejectReason::CoincidentNodes));
                             }
                             on_seg[si].push(aliases.canon_point(n));
