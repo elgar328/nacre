@@ -1705,10 +1705,12 @@ fn dump() {
         }
     }
     // ── **Four-plane operand vertices** (cell ⑪): a gusset whose apex lands exactly on a wall's top
-    // edge makes a result vertex where **four faces** meet. Fed back as an operand, that vertex is
-    // named once per face today — four names, one of them a triple whose planes share a line —
-    // and the next boolean refuses by whichever symptom its build order meets first. The rows
-    // hold the reject in both operand orders, the user's four-part fold in both fold orders, the
+    // edge makes a result vertex where **four faces** meet. Fed back as an operand, that vertex
+    // used to be named once per face — four names, one of them a triple whose planes share a
+    // line — and the next boolean refused by whichever symptom its build order met first
+    // (`DegenerateWitness` in the parallel build, `FourPlane` sequentially; measured at S0). Since
+    // S1 the vertex names itself from its incident classes and every pair builds. The rows hold
+    // both operand orders, the user's four-part fold in both fold orders, the
     // near misses (apex above and below the edge), a box that shares only the top plane's class,
     // and the mirrored fold (class numbers permuted).
     {

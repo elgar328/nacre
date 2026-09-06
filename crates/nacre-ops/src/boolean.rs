@@ -1688,14 +1688,15 @@ pub(crate) fn name_result_vertices(
     // plane class has no circle (the cylinder is parallel to it), so no vocabulary for the point
     // — measured, the T-junction finding. Only here, where every class's rings are in one hand,
     // can the plate-top's whole edge learn that the arc class subdivided its twin. Without this,
-    // `norm_edge` keys never match across such a pair, `far_plane` starves, and the future edge
-    // welding has no twins to weld.
+    // `norm_edge` keys never match across such a pair, the corner's incident-face set misses the
+    // twin's plane (cell ⑪: a result vertex is defined from the planes of the faces whose rings
+    // visit it), and the future edge welding has no twins to weld.
     //
     // A branch node lies on an edge's carrier line exactly when its plane pair *is* the edge's
     // `{own, wall}` — a name fact, no geometry — and betweenness is `branch_between`'s exact
-    // half. An edge whose order cannot be formed is left unsplit, which is precisely today's
-    // behaviour (starved `far_plane`, the walls-fallback net); the conservative arm degrades to
-    // the state this pass improves, never to something new. Identity for every non-arc input:
+    // half. An edge whose order cannot be formed is left unsplit, which is precisely the
+    // behaviour before this pass (a corner short of a plane, `StraightAngle`); the conservative
+    // arm degrades to the state this pass improves, never to something new. Identity for every non-arc input:
     // no branch nodes, no pairs, no rewrite.
     let mut by_pair: HashMap<[usize; 2], Vec<NodeId>> = HashMap::new();
     for lf in faces {
