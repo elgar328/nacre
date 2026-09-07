@@ -1807,7 +1807,7 @@ fn tangency_rows(
         ) {
             continue;
         }
-        let cleared = fi
+        let (cleared, unread) = fi
             .face
             .map(|fh| {
                 let got =
@@ -1833,9 +1833,18 @@ fn tangency_rows(
                         );
                     }
                 }
-                got.unwrap_or(false)
+                // ★★★★★ **A face this could not read is «unknown», not «innocent».** The doc
+                // above has always said every failure here becomes `undecided` on the row — and
+                // it did not: the failure was folded to «did not clear», a row was written, and
+                // the row then carried a `straddles` that had **never been computed** into the
+                // verdict. `!straddles` acquits, so an unreadable wall face was quietly cleared
+                // of pinching the result. Measured: every abstaining row in the corpus is such a
+                // face, and only `line_in_another_plane` kept the acquittal from being reached.
+                (got.as_ref().is_err(), got.unwrap_or(false))
             })
-            .unwrap_or(false);
+            // No face row at all is the same kind of silence.
+            .map(|(unread, cleared)| (cleared, unread))
+            .unwrap_or((false, true));
         if cleared {
             continue; // a face that clears the footprint cannot reach the tangent line
         }
@@ -1863,7 +1872,8 @@ fn tangency_rows(
                 }
                 Some(Point3::from_array(p))
             });
-            let undecided = base.is_none()
+            let undecided = unread
+                || base.is_none()
                 || lens_side.is_none()
                 || mat_side.is_none()
                 || witness.is_none()
