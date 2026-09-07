@@ -2176,17 +2176,22 @@ fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> boo
     }
 }
 
-/// **One direction of the face-level clearance for a cylinder pair**: every lateral face of `a`
-/// against the reach of every lateral face of `b` along `a`'s axis. If they are all disjoint,
-/// no point of `b`'s faces has an axis parameter inside any face of `a`, so the two classes
-/// share no face — the proposition the arrangement needs, which the surface distance
-/// ([`nacre_scalar::cylinders_clear`]) is only one sufficient condition for. Either direction
-/// suffices; the caller asks both.
+/// **The face-level clearance for a cylinder pair**: every lateral face of `a` against every
+/// lateral face of `b`, each pair asked along [`separating_dirs`]. A pair clears when **some**
+/// direction separates them; the classes clear when **every** pair does. Then no point of `b`'s
+/// faces lies on `a`'s, so the two classes share no face — the proposition the arrangement needs,
+/// which the surface distance ([`nacre_scalar::cylinders_clear`]) is only one sufficient
+/// condition for.
 ///
-/// `a`'s spans are axis parameters, so a span `[t0, t1]` is `[m·o + t0·(m·m), m·o + t1·(m·m)]`
-/// in `d·p` units. Empty [`lateral_spans`] for `a` is "unusable" (its doc), never clear; for
-/// `b` it is one face of unknown span, which the reach handles. `None` from either predicate is
-/// not clear.
+/// ★ The two axes used to be spelled here as two questions of different shapes — one class's
+/// **span** against the other's **reach**, asked both ways round. They are the one question
+/// [`separated`] asks at `d = m_a` and `d = m_b`: along its own axis a face's reach *is* that
+/// span (`d ∥ m` leaves no radial term), so the interval the old spelling built by hand is what
+/// [`lateral_reach`] returns. One rule, a list of directions, and the asymmetry is gone.
+///
+/// Empty [`lateral_spans`] is "unusable" (its doc), never clear: it becomes one footprint of
+/// unknown span, which the reach reads as unbounded along anything not perpendicular to the axis.
+/// `None` from any direction is not clear.
 fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> bool {
     // A class whose spans cannot be stated still has faces to ask about, with an unbounded
     // reach along anything not perpendicular to its axis: one footprint that says so.
@@ -2203,25 +2208,35 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
     };
     let (fa, fb) = (listed(a.surf), listed(b.surf));
     let parallel = nacre_scalar::parallel_rat(&a.def.dir(), &b.def.dir());
+    let dirs = separating_dirs(a, b);
     fa.iter().all(|x| {
         fb.iter().all(|y| {
-            slab_clears(a, x, b, y) == Some(true)
-                || slab_clears(b, y, a, x) == Some(true)
-                || (parallel && cross_sections_clear(a, x, b, y) == Some(true))
+            let apart = dirs.iter().any(|d| separated(a, x, b, y, d) == Some(true));
+            apart || (parallel && cross_sections_clear(a, x, b, y) == Some(true))
         })
     })
 }
 
-/// **Face `x` of `a` lies in a slab of two caps ⊥ `a`'s axis; does face `y` of `b` provably miss
-/// that slab?** — `y`'s reach along `a`'s axis ([`lateral_reach`], `d = m_a`) against `x`'s span
-/// stations. `x` needs a span; `None` is "not proved".
-fn slab_clears(a: &WorkingCyl, x: &Footprint, b: &WorkingCyl, y: &Footprint) -> Option<bool> {
-    let (o, m) = (a.def.origin(), a.def.dir());
-    let (mo, mm) = (dot3(&m, &o)?, dot3(&m, &m)?);
-    let station = |t: nacre_scalar::Rat| t.checked_mul(mm).and_then(|v| mo.checked_add(v));
-    let [t0, t1] = x.span?;
-    let (lo, hi) = (station(t0)?, station(t1)?);
-    reach_clears(&lateral_reach(&b.def, y, &m)?, lo, hi)
+/// **The separating directions a cylinder pair can state rationally.** Each axis is one: it is the
+/// normal of that cylinder's cap planes *and* the direction of its rulings, and a lateral face's
+/// boundary is made of nothing else — two rulings and two arcs.
+fn separating_dirs(a: &WorkingCyl, b: &WorkingCyl) -> Vec<[nacre_scalar::Rat; 3]> {
+    vec![a.def.dir(), b.def.dir()]
+}
+
+/// **Do face `x` of `a` and face `y` of `b` provably miss each other along `d`?** — each face's
+/// reach along the one direction ([`lateral_reach`]), asked whether they are disjoint. Sound for
+/// any `d`: a reach is a bounding interval of the face's projection, and two sets whose
+/// projections miss cannot share a point. `None` is "not proved" — an unstatable span, or
+/// overflow.
+fn separated(
+    a: &WorkingCyl,
+    x: &Footprint,
+    b: &WorkingCyl,
+    y: &Footprint,
+    d: &[nacre_scalar::Rat; 3],
+) -> Option<bool> {
+    reaches_apart(&lateral_reach(&a.def, x, d)?, &lateral_reach(&b.def, y, d)?)
 }
 
 /// **Two lateral faces on parallel axes: do their rims' arcs miss each other in the common
