@@ -2050,53 +2050,83 @@ fn lateral_reach(
     let zero = Rat::from_int(0);
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
     let dm = dot3(d, &m)?;
-    let mm = dot3(&m, &m)?;
     let base = dot3(d, &o)?;
-    let (mut lo, mut hi) = if dm == zero {
+    let (lo, hi) = if dm == zero {
         (base, base)
     } else {
         let [s0, s1] = fp.span?;
         let (a, b) = (s0.checked_mul(dm)?, s1.checked_mul(dm)?);
         (base.checked_add(a.min(b))?, base.checked_add(a.max(b))?)
     };
+    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(fp.theta.as_ref(), r, &m, d)?;
+    Some(Reach {
+        lo: lo.checked_add(lo_off)?,
+        hi: hi.checked_add(hi_off)?,
+        rho2_lo,
+        rho2_hi,
+    })
+}
+
+/// **How far an arc reaches either side of its centre, along `d`** — the rule cell ⑩ wrote for a
+/// cylinder's lateral face, said once so a **planar** face's arc piece can ask it too (cell ⑱).
+///
+/// `(lo_off, rho2_lo, hi_off, rho2_hi)`: the arc occupies
+/// `[d·centre + lo_off − √rho2_lo, d·centre + hi_off + √rho2_hi]`. The radial term `r·(d·û)` peaks
+/// at the direction of `d⊥` when the arc holds it — then the end is `√ρ²` with no offset — and at
+/// an **end of the arc** otherwise, where it is `d·v` for that end's radial vector, a value folded
+/// into the offset with a zero radical. One root at most on each end, and no new arithmetic.
+///
+/// ★★ **`axis` is the arc's own carrier axis, never a face's normal.** `arc.from → arc.to` is
+/// counter-clockwise **about that axis** (`derive_edge_curve`'s convention, which
+/// [`lateral_theta_extent`] states), so handing in a normal that runs the other way would silently
+/// name the **complementary** arc — not a bound on this one but a different set, which would prove
+/// clearances that are not there.
+///
+/// `arc = None` is the whole circle, and `d ∥ axis` leaves no radial term at all.
+fn arc_extent(
+    arc: Option<&RimArc>,
+    radius: nacre_scalar::Rat,
+    axis: &[nacre_scalar::Rat; 3],
+    d: &[nacre_scalar::Rat; 3],
+) -> Option<(
+    nacre_scalar::Rat,
+    nacre_scalar::Rat,
+    nacre_scalar::Rat,
+    nacre_scalar::Rat,
+)> {
+    use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
+    let (dm, mm) = (dot3(d, axis)?, dot3(axis, axis)?);
     // `d⊥ = d − (d·m / m·m) m`, the direction of the radial term's peak; `|d⊥|² = d·d − (d·m)²/m·m`.
     let k = dm.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
     let mut dperp = *d;
     for i in 0..3 {
-        dperp[i] = dperp[i].checked_sub(k.checked_mul(m[i])?)?;
+        dperp[i] = dperp[i].checked_sub(k.checked_mul(axis[i])?)?;
     }
     let dperp2 = dot3(&dperp, &dperp)?;
-    let rho2 = r.checked_mul(r)?.checked_mul(dperp2)?;
-    let (rho2_lo, rho2_hi) = match &fp.theta {
-        _ if dperp2 == zero => (zero, zero), // `d ∥ m`: no radial term at all
-        None => (rho2, rho2),
+    let rho2 = radius.checked_mul(radius)?.checked_mul(dperp2)?;
+    match arc {
+        _ if dperp2 == zero => Some((zero, zero, zero, zero)), // `d ∥ axis`
+        None => Some((zero, rho2, zero, rho2)),
         Some(arc) => {
             let (f, t) = (dot3(d, &arc.from)?, dot3(d, &arc.to)?);
-            let hi_rad = if arc_contains(arc, &dperp, &m)? {
-                rho2
+            let (hi_off, hi_rad) = if arc_contains(arc, &dperp, axis)? {
+                (zero, rho2)
             } else {
-                hi = hi.checked_add(f.max(t))?;
-                zero
+                (f.max(t), zero)
             };
             let mut neg = dperp;
             for x in neg.iter_mut() {
                 *x = zero.checked_sub(*x)?;
             }
-            let lo_rad = if arc_contains(arc, &neg, &m)? {
-                rho2
+            let (lo_off, lo_rad) = if arc_contains(arc, &neg, axis)? {
+                (zero, rho2)
             } else {
-                lo = lo.checked_add(f.min(t))?;
-                zero
+                (f.min(t), zero)
             };
-            (lo_rad, hi_rad)
+            Some((lo_off, lo_rad, hi_off, hi_rad))
         }
-    };
-    Some(Reach {
-        lo,
-        hi,
-        rho2_lo,
-        rho2_hi,
-    })
+    }
 }
 
 /// **Do two reaches provably miss each other?** — one lies wholly beyond the other, at either end.
