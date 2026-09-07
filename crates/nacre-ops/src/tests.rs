@@ -12976,6 +12976,78 @@ fn the_gate_reads_faces_at_every_site() {
     assert!(out.is_empty(), "{out:?}");
 }
 
+/// ★★★★★ **Cell ⑰ — the common perpendicular is the only direction that sees this pair apart.**
+///
+/// A 20 × 20 plate 8 thick, every corner filleted `5`, and a `d 7` drill laid along `x` through
+/// it. Each fillet's axis stands `5` from the drill's — inside the radius sum `5 + 7/2`, so the
+/// surface rule cannot clear them — and neither axis separates the faces: along the fillet's own
+/// axis both cover the plate's thickness, along the drill's the fillet sits inside its span. What
+/// does separate them is the rulings' cross product, `ŷ`: a fillet's quarter arc reaches
+/// `y ∈ [−10, −5]` (or its mirror) and the drill only `[−7/2, 7/2]`.
+///
+/// ★ **The kernel's own corpus reaches this predicate nowhere else** — measured at cell ⑰'s S0,
+/// where the whole suite made 67 face-pair questions and not one needed a third direction. So
+/// this fixture is the kernel's only end-to-end hold on the rule, and the volume is the oracle:
+/// the plate `(400 − 4(25 − 25π/4)) · 8` less the drill's `π(7/2)² · 20`.
+#[test]
+fn only_the_common_perpendicular_separates_a_fillet_from_a_crosswise_drill() {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let prism =
+        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
+            let profile = crate::from_edges(edges).unwrap().remove(0);
+            let frame = SketchFrame::world(m, axis);
+            let OpOutput::Extrude { solid, .. } = apply(
+                m,
+                &Operation::Extrude {
+                    frame,
+                    profile,
+                    dist,
+                },
+            )
+            .expect("the profile extrudes") else {
+                unreachable!()
+            };
+            solid
+        };
+    // The plate sits at `x ∈ [2, 22]` so the drill, which starts on the YZ plane, runs clear
+    // through it: fillet axes at `(7, ±5)` and `(17, ±5)`.
+    let (lo, hi, r) = (2.0, 22.0, 5.0);
+    let plate_edges = vec![
+        crate::Edge2d::line(p2(lo + r, -10.0), p2(hi - r, -10.0)).unwrap(),
+        crate::Edge2d::arc_turns(p2(hi - r, -10.0 + r), p2(hi - r, -10.0), 1).unwrap(),
+        crate::Edge2d::line(p2(hi, -10.0 + r), p2(hi, 10.0 - r)).unwrap(),
+        crate::Edge2d::arc_turns(p2(hi - r, 10.0 - r), p2(hi, 10.0 - r), 1).unwrap(),
+        crate::Edge2d::line(p2(hi - r, 10.0), p2(lo + r, 10.0)).unwrap(),
+        crate::Edge2d::arc_turns(p2(lo + r, 10.0 - r), p2(lo + r, 10.0), 1).unwrap(),
+        crate::Edge2d::line(p2(lo, 10.0 - r), p2(lo, -10.0 + r)).unwrap(),
+        crate::Edge2d::arc_turns(p2(lo + r, -10.0 + r), p2(lo, -10.0 + r), 1).unwrap(),
+    ];
+    let mut m = Model::new();
+    let plate = prism(&mut m, Axis::Z, plate_edges, 8.0);
+    // On the YZ plane `+u = ŷ`, `+v = ẑ`: the drill's axis is `(y, z) = (0, 4)`, the plate's
+    // mid-thickness, and `7/2 < 4` keeps it clear of the caps — a wider drill would meet them
+    // in a ruling at an irrational `y`, which is another wall entirely.
+    let drill = prism(
+        &mut m,
+        Axis::X,
+        vec![crate::Edge2d::circle(p2(0.0, 4.0), 3.5).unwrap()],
+        30.0,
+    );
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Cut, plate, drill).expect("the drill crosses the plate");
+    assert_eq!(out.len(), 1, "one plate with a hole through it");
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+    let pi = std::f64::consts::PI;
+    let want = (400.0 - 4.0 * (25.0 - 25.0 * pi / 4.0)) * 8.0 - pi * 3.5 * 3.5 * 20.0;
+    assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+}
+
 /// ★ Cell ⑪ — **a four-plane operand vertex has one name.** A gusset whose apex lands on the
 /// wall's top edge leaves the fused operand with a vertex where four faces meet. The ring road
 /// used to name an operand vertex once per face loop — its own plane and the two edges' walls —
