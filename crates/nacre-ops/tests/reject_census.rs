@@ -438,10 +438,12 @@ const CORPUS: [Fixture; 13] = [
         // it" — measured here rather than argued.
         expect: Some(RejectReason::WitnessNotRational),
         run: cylinder_wide_axis,
+        // ★ Cell 13 moved the nesting question — witnesses, point tests, dispatch — into its own
+        // module, so the guard that rings is the same one at a new address.
         raised: &[(
             "witness_not_rational",
             None,
-            "crates/nacre-ops/src/arrangement.rs",
+            "crates/nacre-ops/src/nesting.rs",
         )],
         surfaced: &[("witness_not_rational", None)],
     },

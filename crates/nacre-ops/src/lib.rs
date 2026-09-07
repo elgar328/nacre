@@ -21,6 +21,7 @@ mod combinatorics;
 /// The cylinder chart: the lateral faces' arrangement, emitted from cells (capability D).
 mod cyl_chart;
 mod exact;
+mod nesting;
 mod ops;
 mod par;
 mod planes;

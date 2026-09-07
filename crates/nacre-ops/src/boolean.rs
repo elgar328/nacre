@@ -3662,7 +3662,7 @@ fn merge_component(
                 Bound::Ring(o) => o,
                 Bound::Circle { cyl } => {
                     let hole_edges = hole.edges(jd, cyls, Some(wc))?;
-                    if crate::arrangement::node_in_circle(jd, &hole_edges, &cyls[*cyl].def)? {
+                    if crate::nesting::node_in_circle(jd, &hole_edges, &cyls[*cyl].def)? {
                         if owner.is_some() {
                             return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
                         }
@@ -3688,9 +3688,8 @@ fn merge_component(
             // ★ The arrangement's own two-polygon nesting ([`crate::arrangement::ring_in_ring_by_witness`])
             // — one rule, one set of witnesses; adjacency (`None`) is «not inside».
             let hole_edges = hole.edges(jd, cyls, Some(wc))?;
-            let hit =
-                crate::arrangement::ring_in_ring_by_witness(jd, cyls, wc, &hole_edges, &ring)?
-                    .unwrap_or(false);
+            let hit = crate::nesting::ring_in_ring_by_witness(jd, cyls, wc, &hole_edges, &ring)?
+                .unwrap_or(false);
             if hit {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
@@ -3730,10 +3729,10 @@ fn merge_component(
             let inside = match outer {
                 Bound::Ring(o) => {
                     let ring = o.edges(jd, cyls, Some(wc))?;
-                    crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)?
+                    crate::nesting::circle_center_in_ring(jd, cyls, wc, def, &ring)?
                 }
                 Bound::Circle { cyl: oc } => {
-                    crate::arrangement::disk_in_disk(jd, wc, def, &cyls[*oc].def)?
+                    crate::nesting::disk_in_disk(jd, wc, def, &cyls[*oc].def)?
                 }
                 Bound::Band { .. } => return Ok(None),
             };
@@ -3751,7 +3750,7 @@ fn merge_component(
         for hole in faces[owner].1.iter() {
             if let Some(h) = hole.ring() {
                 let ring = h.edges(jd, cyls, Some(wc))?;
-                if crate::arrangement::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
+                if crate::nesting::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
                     return Err(reject(RejectReason::CoplanarMerge));
                 }
             }

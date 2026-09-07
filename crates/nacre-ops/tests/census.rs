@@ -2237,10 +2237,39 @@ fn dump() {
             // The rib the user's script builds, on one side.
             ("rib", Box::new(|m| (plate(m, 4, 4), rib(m, 17.5)))),
             // ★ The user's own script — plate, both ribs, then the cylinder that bores across
-            // them — is **not** a row yet: its own first fuse is the failure this cell is about, so
-            // the fixture cannot be built today. It joins the moment that fuse builds, and the name
-            // it lands on then (a class carrying a circle and rulings at once) is the hand-off to
-            // the next cell.
+            // them. It could not be a row until the fuse built; now it is one, and the name it
+            // lands on is the **next** wall, a class carrying a circle and rulings at once. That
+            // is the hand-off to the cell after this one, held in the corpus so it cannot be lost.
+            (
+                "user script",
+                Box::new(|m| {
+                    let p1 = plate(m, 4, 4);
+                    let r1 = rib(m, 17.5);
+                    m.rebuild_adjacency();
+                    let ab = boolean(m, BoolKind::Fuse, p1, r1).expect("plate + rib")[0];
+                    let r2 = rib(m, -17.5);
+                    m.rebuild_adjacency();
+                    let abc = boolean(m, BoolKind::Fuse, ab, r2).expect("+ the second rib")[0];
+                    let c = prism(
+                        m,
+                        Axis::Z,
+                        vec![Edge2d::circle(p2(0.0, 0.0), 10.0).unwrap()],
+                        90.0,
+                    );
+                    let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
+                    let turned = xf(
+                        m,
+                        c,
+                        Isometry::rotation(nacre_scalar::Rotation {
+                            axis: Axis::Y,
+                            point: [r(0.0), r(0.0), r(0.0)],
+                            angle: nacre_scalar::Angle::from_deg(Rat::from_int(90))
+                                .expect("a right angle"),
+                        }),
+                    );
+                    (abc, shift(m, turned, [45.0, 0.0, 47.0]))
+                }),
+            ),
         ];
         for (pn, build) in &pairs {
             for (kn, k) in KINDS {

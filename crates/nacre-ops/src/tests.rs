@@ -13693,18 +13693,18 @@ fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
     solid
 }
 
-/// ★ Cell 13, S0 — **the instrument sees the population the corpus never held.** A nesting
-/// question is answered by a witness of the source cell, and the supply that names those witnesses
-/// is spelled four ways today; the spelling the *disk* arm holds is one kind wide. This audit
-/// records what each question was asked with, so the truncation shows as a **population** rather
-/// than as a reject count — the arm never fired at all, so counting rejects could not have found it.
+/// ★ Cell 13 — **a ring with no three-plane corner is answered by the witnesses it does have.**
+/// A nesting question is answered by a witness of the source cell; the supply that names those
+/// witnesses used to be spelled four ways, and the spelling the *disk* arm held was one kind wide.
+/// With every corner filleted the plate's cap ring offers eight branch corners, four edge-interior
+/// points and **no** three-plane name at all — so that arm found nothing and the plate could not
+/// enter any boolean, whatever the other solid was (this one is a hundred units away).
 ///
-/// The negative control is the point: with every corner filleted the plate offers a ring of eight
-/// branch corners and **no** three-plane name, against a bore's disk. S1 flips the assertions.
+/// The audit is also the negative control: it must *see* that shape, or its zeros mean nothing.
 #[test]
-fn a_ring_with_no_three_plane_corner_reaches_the_disk_arm_today() {
-    arrangement::nesting_probe::enable();
-    let _ = arrangement::nesting_probe::take();
+fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
+    nesting::nesting_probe::enable();
+    let _ = nesting::nesting_probe::take();
     let mut m = Model::new();
     let plate = rounded_plate(&mut m, 4, 4);
     let far = m.add_cuboid(
@@ -13713,20 +13713,26 @@ fn a_ring_with_no_three_plane_corner_reaches_the_disk_arm_today() {
     );
     m.rebuild_adjacency();
     let out = boolean(&mut m, BoolKind::Fuse, plate, far);
-    let rows = arrangement::nesting_probe::take();
-    arrangement::nesting_probe::disable();
+    let rows = nesting::nesting_probe::take();
+    nesting::nesting_probe::disable();
 
-    // Today: the plate cannot enter a boolean at all, and the name says the witness.
+    // Two bodies: the plate and the far box, each untouched.
+    let out = out.expect("the rounded plate enters a boolean");
+    assert_eq!(out.len(), 2, "the plate and the box, apart");
+    m.rebuild_adjacency();
     assert!(
-        matches!(
-            out,
-            Err(BoolError::Rejected {
-                reason: RejectReason::WitnessNotRational,
-                ..
-            })
-        ),
-        "{out:?}"
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
     );
+    let v: f64 = out
+        .iter()
+        .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+        .sum();
+    let want = (90.0 * 50.0 - 4.0 * (25.0 - std::f64::consts::PI * 25.0 / 4.0)) * 12.0
+        - 4.0 * std::f64::consts::PI * 3.5 * 3.5 * 12.0
+        + 1000.0;
+    assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     // ★ The negative control: the instrument must *see* the failing shape, or its zeros mean
     // nothing. A ring with no three-plane name, asked against a disk.
     let nameless_vs_disk: Vec<_> = rows
@@ -13760,8 +13766,8 @@ fn a_ring_with_no_three_plane_corner_reaches_the_disk_arm_today() {
 /// which is the one thing that would make the unification wrong.
 #[test]
 fn the_two_roads_never_disagree() {
-    arrangement::nesting_probe::enable();
-    let _ = arrangement::nesting_probe::take();
+    nesting::nesting_probe::enable();
+    let _ = nesting::nesting_probe::take();
     let mut rows = Vec::new();
     for (fillets, bores) in [(3, 4), (4, 0), (3, 0)] {
         for k in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
@@ -13774,9 +13780,9 @@ fn the_two_roads_never_disagree() {
             m.rebuild_adjacency();
             let _ = boolean(&mut m, k, plate, boss);
         }
-        rows.extend(arrangement::nesting_probe::take());
+        rows.extend(nesting::nesting_probe::take());
     }
-    arrangement::nesting_probe::disable();
+    nesting::nesting_probe::disable();
     let both: Vec<_> = rows.iter().filter_map(|r| r.roads).collect();
     assert!(
         !both.is_empty(),
