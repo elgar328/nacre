@@ -14091,6 +14091,22 @@ fn turned_cylinder(m: &mut Model, r: f64, h: f64, shift: [f64; 3]) -> Handle<Sol
     .expect("the cylinder moves")
 }
 
+/// **The user's script up to its last step** — the rounded, bored plate with both ribs fused on,
+/// and the cylinder that bores across them. Two tests read it: the one that names the wall the
+/// `cut` stops at, and the one that asks the same question of a moved copy.
+fn users_model(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
+    let plate = rounded_plate(m, 4, 4);
+    let r1 = user_rib(m, 17.5);
+    m.rebuild_adjacency();
+    let ab = boolean(m, BoolKind::Fuse, plate, r1).expect("plate + rib")[0];
+    let r2 = user_rib(m, -17.5);
+    m.rebuild_adjacency();
+    let abc = boolean(m, BoolKind::Fuse, ab, r2).expect("+ the second rib")[0];
+    let tool = turned_cylinder(m, 10.0, 90.0, [-45.0, 0.0, 47.0]);
+    m.rebuild_adjacency();
+    (abc, tool)
+}
+
 /// ★★★★★ **Cell ⑭ — the user's `cut` now reaches the *next* wall, and this row says which.**
 ///
 /// Before this cell the plate's own side plane `x = 45` refused outright for carrying a circle
@@ -14109,15 +14125,7 @@ fn turned_cylinder(m: &mut Model, r: f64, h: f64, shift: [f64; 3]) -> Handle<Sol
 #[test]
 fn the_users_cut_reaches_the_tangency_wall() {
     let mut m = Model::new();
-    let plate = rounded_plate(&mut m, 4, 4);
-    let r1 = user_rib(&mut m, 17.5);
-    m.rebuild_adjacency();
-    let ab = boolean(&mut m, BoolKind::Fuse, plate, r1).expect("plate + rib")[0];
-    let r2 = user_rib(&mut m, -17.5);
-    m.rebuild_adjacency();
-    let abc = boolean(&mut m, BoolKind::Fuse, ab, r2).expect("+ the second rib")[0];
-    let tool = turned_cylinder(&mut m, 10.0, 90.0, [-45.0, 0.0, 47.0]);
-    m.rebuild_adjacency();
+    let (abc, tool) = users_model(&mut m);
     let out = boolean(&mut m, BoolKind::Cut, abc, tool);
     assert!(
         matches!(
@@ -14133,16 +14141,55 @@ fn the_users_cut_reaches_the_tangency_wall() {
     {
         use std::sync::atomic::Ordering;
         let audit = &crate::arrangement::MIXED_CLASS_AUDIT;
-        let (pairs, unmeasured) = (
+        let (pairs, unmeasured, inside) = (
             audit.pairs.load(Ordering::Relaxed),
             audit.unmeasured.load(Ordering::Relaxed),
+            audit.inside.load(Ordering::Relaxed),
         );
         assert!(pairs > 0, "the mixed-class audit looked at nothing");
         assert_eq!(
             unmeasured, 0,
             "the audit could not measure {unmeasured} pairs"
         );
+        // ★ A zero-claim, safe under the counters' accumulation across a test binary: **no circle
+        // anywhere sits wholly inside a ruling cylinder's strip.** That is the one shape the walk
+        // has never been handed (a disk afloat in a ruling-bounded region), and
+        // `a_cylinder_nested_across_another_waits_at_the_gate` shows the placement is not even
+        // buildable today. If this ever fires it is news, not a regression: the walk just met it.
+        assert_eq!(
+            inside, 0,
+            "a circle now sits inside a ruling strip — the walk's first time"
+        );
     }
+}
+
+/// ★★★★ **Cell ⑭ — the wall is a fact about the shape, not about where it stands.**
+///
+/// The class this cell admitted is arranged for real now (its circle and rulings are cut into
+/// edges and walked), and a newly-admitted path is exactly where a frame-dependent slip would
+/// hide. So the whole assembly is carried somewhere else by an exact translation and asked again:
+/// the same wall, by name. It cannot be an oracle on geometry — nothing is produced — but a panic
+/// or a *different* wall under a motion would be this cell's own doing.
+#[test]
+fn the_users_cut_waits_at_the_same_wall_after_a_motion() {
+    let mut m = Model::new();
+    let (abc, tool) = users_model(&mut m);
+    let d = |v: f64| nacre_scalar::Rat::from_decimal(v).expect("a short decimal");
+    let iso = nacre_scalar::Isometry::translation([d(7.5), d(-13.0), d(4.25)]);
+    let abc = transform(&mut m, abc, &iso).expect("the body moves");
+    let tool = transform(&mut m, tool, &iso).expect("the tool moves");
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Cut, abc, tool);
+    assert!(
+        matches!(
+            out,
+            Err(BoolError::Rejected {
+                reason: RejectReason::CylinderGateUndecided,
+                ..
+            })
+        ),
+        "{out:?}"
+    );
 }
 
 /// ★★★★★ **Cell ⑭'s negative control — the net can see a crossing.**

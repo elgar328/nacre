@@ -5946,8 +5946,8 @@ pub(crate) fn circle_inside_strip_rat(
     for k in 0..3 {
         rel[k] = centre[k].checked_sub(o[k])?;
     }
-    let u2 = dot(&rel, &e)?;
-    let u2 = u2.checked_mul(u2)?;
+    let u = dot(&rel, &e)?;
+    let u2 = u.checked_mul(u)?;
     let rho2 = rho.checked_mul(rho)?.checked_mul(mm)?.checked_mul(nn)?;
     let a = w2.checked_sub(u2)?.checked_sub(rho2)?;
     Some(a > zero && Rat::from_int(4).checked_mul(u2)?.checked_mul(rho2)? < a.checked_mul(a)?)
@@ -5981,7 +5981,7 @@ fn circle_meets_ruling(
     ruling: &MergedRuling,
 ) -> Option<bool> {
     let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
-    let centre = crate::nesting::circle_centre_rat(jd, wc, &circle.def)?;
+    let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
     circle_meets_ruling_rat(
         &[coeffs[0], coeffs[1], coeffs[2]],
         coeffs[3],
@@ -6003,7 +6003,7 @@ fn circle_inside_strip(
     ruling: &MergedRuling,
 ) -> Option<bool> {
     let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
-    let centre = crate::nesting::circle_centre_rat(jd, wc, &circle.def)?;
+    let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
     circle_inside_strip_rat(
         &[coeffs[0], coeffs[1], coeffs[2]],
         coeffs[3],

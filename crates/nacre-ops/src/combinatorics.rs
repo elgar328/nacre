@@ -5757,6 +5757,44 @@ pub(crate) fn branch_name_from_def(
     Some(NodeId::branch(k0, k1, cyl, root))
 }
 
+/// **Where a cylinder's axis meets a plane class** — the centre of the circle that cylinder traces
+/// on the plane, exact.
+///
+/// ★ It is rational **whatever way the axis points**: the class has rational coefficients or this
+/// says nothing, and the meet is one division. That is why a circle can always name a witness of
+/// its own where a *ring* cannot — a ring's corners are branch points and carry radicals.
+///
+/// ★ It takes the cylinder's **statement**, not an arrangement element: the coplanar merge asks
+/// the same question of a `Bound::Circle` it is carrying into a merged region, and one spelling
+/// serves both.
+///
+/// ★★ It lives here, beside [`class_coeffs_rat`] which it reads, because it has **two** consumers
+/// and belongs to neither: `nesting`'s witness supply asks it for a circle's own point, and the
+/// arrangement's mixed-class net (cell ⑭) asks it for the circle to measure against a ruling.
+/// Keeping it inside `nesting` would have meant either a second spelling or opening that module's
+/// witness atoms, and both are the shape those atoms were made private to prevent.
+pub(crate) fn circle_centre_rat(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Option<[nacre_scalar::Rat; 3]> {
+    use nacre_scalar::Rat;
+    let coeffs = class_coeffs_rat(jd, wc)?;
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let (o, m) = (def.origin(), def.dir());
+    let dot3 = crate::planes::dot3;
+    let nm = dot3(&n, &m)?;
+    let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
+    let t = Rat::from_int(0)
+        .checked_sub(no_d)?
+        .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
+    let mut p = o;
+    for k in 0..3 {
+        p[k] = p[k].checked_add(t.checked_mul(m[k])?)?;
+    }
+    Some(p)
+}
+
 pub(crate) fn class_coeffs_rat(
     jd: &Judge<'_, WorkingPlane>,
     c: usize,

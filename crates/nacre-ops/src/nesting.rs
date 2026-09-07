@@ -21,43 +21,6 @@ use crate::combinatorics::{self, NodeId};
 use crate::planes::*;
 use crate::tolerant::Judge;
 
-/// Whether a circle's **center** lies inside a polygon ring of the class — the containment
-/// witness `nest_cells` uses for a circle contour (the loops cannot **cross** — the gate proved
-/// clearance or recorded the crossing, and a tangency touches at most at a point — so one point
-/// decides). Exact: the center is `axis ∩ W` (rational), the
-/// ring corners are rational meets, and the parity runs in a rational 2D basis of `W`
-/// (`point_in_ring_2d_rat` — parity is invariant under the affine projection).
-///
-/// ★ It takes the cylinder's **statement**, not an arrangement element: the coplanar merge asks
-/// the same question of a `Bound::Circle` it is carrying into a merged region, and one spelling
-/// serves both.
-/// **Where a cylinder's axis meets this class** — the circle's centre on the plane, exact.
-///
-/// ★ It is rational **whatever way the axis points**: the class has rational coefficients or this
-/// says nothing, and the meet is one division. That is why a circle can always name a witness of
-/// its own where a *ring* cannot — a ring's corners are branch points and carry radicals.
-pub(crate) fn circle_centre_rat(
-    jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
-    def: &nacre_topo::CylinderDef,
-) -> Option<[nacre_scalar::Rat; 3]> {
-    use nacre_scalar::Rat;
-    let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
-    let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let (o, m) = (def.origin(), def.dir());
-    let dot3 = crate::planes::dot3;
-    let nm = dot3(&n, &m)?;
-    let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
-    let t = Rat::from_int(0)
-        .checked_sub(no_d)?
-        .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
-    let mut p = o;
-    for k in 0..3 {
-        p[k] = p[k].checked_add(t.checked_mul(m[k])?)?;
-    }
-    Some(p)
-}
-
 /// **The circle a ring *is***, when every one of its edges is an arc of one cylinder and they
 /// chain the whole way round — `None` otherwise.
 ///
@@ -314,8 +277,8 @@ pub(crate) fn disk_in_disk(
     b: &nacre_topo::CylinderDef,
 ) -> Result<bool, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
-    let pa = circle_centre_rat(jd, wc, a).ok_or_else(undecided)?;
-    let pb = circle_centre_rat(jd, wc, b).ok_or_else(undecided)?;
+    let pa = combinatorics::circle_centre_rat(jd, wc, a).ok_or_else(undecided)?;
+    let pb = combinatorics::circle_centre_rat(jd, wc, b).ok_or_else(undecided)?;
     let (ra, rb) = (a.radius(), b.radius());
     if ra >= rb {
         return Ok(false);
@@ -407,10 +370,11 @@ fn witnesses<'a>(
     // A disk's interior witness, wherever the disk came from — the cell itself, or a ring that
     // turned out to be a whole circle. Written once because this cell is about supplies that were
     // written twice.
-    let centre_of = |def: &nacre_topo::CylinderDef| match circle_centre_rat(jd, wc, def) {
-        Some(c) => Witness::In(Where::Coord(c)),
-        None => Witness::Unformed,
-    };
+    let centre_of =
+        |def: &nacre_topo::CylinderDef| match combinatorics::circle_centre_rat(jd, wc, def) {
+            Some(c) => Witness::In(Where::Coord(c)),
+            None => Witness::Unformed,
+        };
     match cell {
         Cell::Disk(def) => Box::new(std::iter::once(centre_of(def))),
         Cell::Ring(r) => {
