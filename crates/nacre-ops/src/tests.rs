@@ -14207,51 +14207,37 @@ fn the_users_cut_waits_at_the_same_wall_after_a_motion() {
 #[test]
 #[cfg(debug_assertions)]
 fn a_circle_and_a_ruling_meet_or_clear() {
-    use crate::arrangement::circle_meets_ruling_rat as meets;
-    let r = |v: i128| nacre_scalar::Rat::from_int(v);
-    let n = [r(1), r(0), r(0)];
-    let z = [r(0), r(0), r(1)];
+    use nacre_scalar::{MeetPoint, Rat, cylinder_ruling_reached as reaches};
+    let r = |v: i128| Rat::from_int(v);
+    // The class `x = 0`; a cylinder about `z` at `x = 3` with radius 5, so its two rulings stand
+    // at `y = ±4`; and a circle centred on that plane whose radius is walked across each of them.
+    let wall = [r(1), r(0), r(0), r(0)];
+    let axis = [r(0), r(0), r(1)];
     let at = |x: i128| [r(x), r(0), r(0)];
-    let centre = |y: i128| [r(0), r(y), r(0)];
-    // Rulings at `y = ±4`: the circle centred at `y = 5` with radius 2 reaches the `+` one.
-    assert_eq!(
-        meets(&n, r(0), &at(3), &z, r(5), &centre(5), r(2), 1),
-        Some(true)
-    );
-    // …and not the `−` one, which is nine away.
-    assert_eq!(
-        meets(&n, r(0), &at(3), &z, r(5), &centre(5), r(2), -1),
-        Some(false)
-    );
-    // The mirror: a centre at `y = −5` reaches the `−` ruling.
-    assert_eq!(
-        meets(&n, r(0), &at(3), &z, r(5), &centre(-5), r(2), -1),
-        Some(true)
-    );
+    let centre = |y: i128| MeetPoint::Narrow([r(0), r(y), r(0)]);
+    let meets = |ox: i128, rad: i128, y: i128, rho: i128, side: i8| {
+        reaches(&wall, &centre(y), r(rho), &at(ox), &axis, r(rad), side)
+    };
+    // ★ Sides here are the **scalar** family's: the sign of `(p − o)·(n × m)`, which for this
+    // wall and axis points along `−y`. So a circle centred at `y = 5` sits on the `−` side, and
+    // the ruling it reaches is the `−` one.
+    assert!(meets(3, 5, 5, 2, -1));
+    // …and not the `+` one, which is nine away.
+    assert!(!meets(3, 5, 5, 2, 1));
+    // The mirror: a centre at `y = −5` reaches the `+` ruling.
+    assert!(meets(3, 5, -5, 2, 1));
     // Far enough away and it reaches neither.
     for side in [-1i8, 1] {
-        assert_eq!(
-            meets(&n, r(0), &at(3), &z, r(5), &centre(10), r(2), side),
-            Some(false),
-            "side {side}"
-        );
+        assert!(!meets(3, 5, 10, 2, side), "side {side}");
     }
     // A tangent wall: one ruling at `y = 0`, `side == 0`.
-    assert_eq!(
-        meets(&n, r(0), &at(5), &z, r(5), &centre(1), r(2), 0),
-        Some(true)
-    );
-    assert_eq!(
-        meets(&n, r(0), &at(5), &z, r(5), &centre(5), r(2), 0),
-        Some(false)
-    );
+    assert!(meets(5, 5, 1, 2, 0));
+    assert!(!meets(5, 5, 5, 2, 0));
     // A plane that clears the cylinder carries no ruling to meet.
-    assert_eq!(
-        meets(&n, r(0), &at(10), &z, r(5), &centre(0), r(2), 1),
-        Some(false)
-    );
-    // Not parallel to the axis: no statement, rather than a false one.
-    assert_eq!(meets(&n, r(0), &at(3), &n, r(5), &centre(5), r(2), 1), None);
+    assert!(!meets(10, 5, 0, 2, 1));
+    // ★ The precondition (a class parallel to the axis) is the caller's to check — the arrangement
+    // wrapper asks it and answers `None`; here it is a `debug_assert`, so this test does not drive
+    // an off-axis class through the door.
 }
 
 /// ★★★★★ **Cell ⑭ — why the net's population is empty today, frozen by name.**

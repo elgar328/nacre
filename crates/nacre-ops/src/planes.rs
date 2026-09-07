@@ -1936,7 +1936,16 @@ fn face_straddles_line(
         match corner.strip_side(coeffs, o, m, r) {
             StripSide::Plus => plus = true,
             StripSide::Minus => minus = true,
+            // A corner sitting *on* the line spans nothing, and neither does a piece that reaches
+            // the strip without crossing out the far side.
             StripSide::Inside => {}
+            // ★ **A piece with width can be the whole straddle by itself.** Two corners on
+            // opposite sides is one way for the line to run through the face; a single piece whose
+            // interior lies on both sides is the other, and it is the same fact.
+            StripSide::Crosses => {
+                plus = true;
+                minus = true;
+            }
         }
     }
     plus && minus
@@ -2075,14 +2084,21 @@ fn lateral_reach(
 /// Closed against closed: equality is the other face's rim touching this one at a point, which
 /// is not clear. Squares only (a zero radical is the plain `gap > 0`). `None` is overflow.
 fn reach_clears(reach: &Reach, lo: nacre_scalar::Rat, hi: nacre_scalar::Rat) -> Option<bool> {
-    let zero = nacre_scalar::Rat::from_int(0);
-    let beyond = |gap: nacre_scalar::Rat, rho2: nacre_scalar::Rat| -> Option<bool> {
-        Some(gap > zero && gap.checked_mul(gap)? > rho2)
-    };
     Some(
         beyond(lo.checked_sub(reach.hi)?, reach.rho2_hi)?
             || beyond(reach.lo.checked_sub(hi)?, reach.rho2_lo)?,
     )
+}
+
+/// **Is a gap wider than a radical?** — `gap > √rho2`, decided by squaring once (a zero radical is
+/// the plain `gap > 0`). `None` is overflow.
+///
+/// ★ It was a closure inside [`reach_clears`] until a **second** reader wanted it: a disk face's
+/// extent along an axis is `centre ± ρ|m|`, so «does this piece reach past the span's station»
+/// is this very comparison with `rho2 = ρ²(m·m)`. One spelling rather than two — the shape this
+/// repository keeps finding twice.
+fn beyond(gap: nacre_scalar::Rat, rho2: nacre_scalar::Rat) -> Option<bool> {
+    Some(gap > nacre_scalar::Rat::from_int(0) && gap.checked_mul(gap)? > rho2)
 }
 
 /// **Does every lateral face of this cylinder provably miss the plane `n·p + d = 0`?** — the oblique
@@ -2505,9 +2521,17 @@ fn face_clears_footprint(
         }
         vertices += 1;
         // The axis across the strip.
+        //
+        // ★ **The two clear sides are spelled out rather than caught.** A catch-all here would
+        // take any *future* answer for "clear, on some side" — and the answer this test is about
+        // to grow is the opposite one (a piece with width can straddle the strip by itself), which
+        // a catch-all would record as a side and let the face pass. Written this way the compiler
+        // asks the question at every new variant instead.
         match corner.strip_side(coeffs, o, m, r) {
-            StripSide::Inside => across = false,
-            s => match side {
+            // Reaching the strip and spanning it are different facts (the tangency road needs them
+            // apart), but for *clearing a rectangle* they are the same one: not clear.
+            StripSide::Inside | StripSide::Crosses => across = false,
+            s @ (StripSide::Plus | StripSide::Minus) => match side {
                 None => side = Some(s),
                 Some(prev) if prev != s => across = false, // the face straddles the strip
                 Some(_) => {}

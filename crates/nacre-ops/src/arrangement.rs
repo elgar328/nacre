@@ -5832,125 +5832,74 @@ enum HalfEdgeKind {
     Circle(usize),
 }
 
-/// **Cell ⑭'s invariant net: does this circle actually meet that ruling?** — rational throughout,
-/// and `None` is "could not be measured", never "no".
+/// **Cell ⑭'s invariant net, asked of the class's own tables** — «does this circle actually meet
+/// that ruling?».
 ///
-/// The class plane is parallel to the ruling cylinder's axis (`n · m = 0`, checked), so with
-/// `e = m × n` — the in-plane direction across the strip, `|e|² = |m|²|n|²` because `m ⊥ n` — a
-/// point's coordinate `U = (p − o) · e` places it: the cylinder's two rulings sit at `U = ±W`
-/// with `W² = (r²|n|² − (n·o + d)²)|m|²`, and `[`ruling_side_signed`]'s sign is `sign(U)` in this
-/// very vocabulary. The circle's own points sweep `U = U_c + ρ|e|·sin θ`, so it reaches the
-/// ruling of side `σ` exactly when `|σW − U_c| ≤ ρ|e|`.
-///
-/// Squaring that once leaves `L = W² + U_c² − ρ²|e|²` against `2σW·U_c`, whose sign is
-/// `σ·sign(U_c)` and whose square `4W²U_c²` is rational — so **one sign case and one more
-/// squaring close it over the rationals**. No radical, no new number type.
+/// ★★ Cell ⑮ folded the arithmetic away. The comparison this used to spell for itself is exactly
+/// [`nacre_scalar::cylinder_ruling_reached`] — a disk of the circle's radius about its centre,
+/// against the one named ruling — so the net now asks the predicate the gate asks, and there is
+/// one derivation rather than two. `None` stays "could not be measured", never "no".
 #[cfg(debug_assertions)]
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn circle_meets_ruling_rat(
-    n: &[Rat; 3],
-    d: Rat,
-    o: &[Rat; 3],
-    m: &[Rat; 3],
-    r: Rat,
-    centre: &[Rat; 3],
-    rho: Rat,
-    side: i8,
+fn circle_meets_ruling(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    circle: &MergedCircle,
+    ruling: &MergedRuling,
 ) -> Option<bool> {
-    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
-    let zero = Rat::from_int(0);
-    // The precondition, asked rather than assumed: a class that is not parallel to the axis
-    // carries no ruling of it, and the decomposition below would be about other geometry.
-    if dot(n, m)? != zero {
+    let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
+    let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
+    let (o, m, r) = (ruling.def.origin(), ruling.def.dir(), ruling.def.radius());
+    // The predicate's own precondition, asked rather than assumed: a class that is not parallel
+    // to the axis carries no ruling of it, and the decomposition would be about other geometry.
+    if nacre_scalar::dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m)
+        != nacre_scalar::Orient::Zero
+    {
         return None;
     }
-    let (nn, mm) = (dot(n, n)?, dot(m, m)?);
-    let q = dot(n, o)?.checked_add(d)?;
-    let w2 = r
-        .checked_mul(r)?
-        .checked_mul(nn)?
-        .checked_sub(q.checked_mul(q)?)?
-        .checked_mul(mm)?;
-    if w2 < zero {
-        return Some(false); // the plane clears the cylinder — it has no ruling here at all
-    }
-    let e = combinatorics::cross3_rat(m, n)?;
-    let mut rel = [zero; 3];
-    for k in 0..3 {
-        rel[k] = centre[k].checked_sub(o[k])?;
-    }
-    let u = dot(&rel, &e)?;
-    let u2 = u.checked_mul(u)?;
-    let rho2 = rho.checked_mul(rho)?.checked_mul(mm)?.checked_mul(nn)?;
-    let l = w2.checked_add(u2)?.checked_sub(rho2)?;
-    let cross2 = Rat::from_int(4).checked_mul(w2)?.checked_mul(u2)?;
-    let sgn = if u > zero {
-        1i8
-    } else if u < zero {
-        -1
-    } else {
-        0
-    };
-    Some(match side.signum() * sgn {
-        s if s > 0 => l <= zero || l.checked_mul(l)? <= cross2,
-        s if s < 0 => l < zero && l.checked_mul(l)? >= cross2,
-        // A tangent ruling (`side == 0`) sits at `U = 0`, and so does a centre on the axis plane:
-        // either way the cross term vanishes and `L ≤ 0` is the whole statement.
-        _ => l <= zero,
-    })
+    Some(nacre_scalar::cylinder_ruling_reached(
+        &coeffs,
+        &nacre_scalar::MeetPoint::Narrow(centre),
+        circle.def.radius(),
+        &o,
+        &m,
+        r,
+        // ★ **The two vocabularies are opposite.** `ruling.side` is measured against `m × n`
+        // (`ruling_side_signed`), and the scalar family writes its sides about `n × m`. The
+        // restatement is one negation, and it belongs here — at the boundary between the two
+        // index spaces — rather than inside a predicate that would then have to guess.
+        -ruling.side,
+    ))
 }
 
-/// **Does the circle lie wholly *between* the two rulings?** — the sibling proposition, in the
-/// same vocabulary: the circle's `U` sweeps `U_c ± ρ|e|`, so it stays inside when
-/// `|U_c| + ρ|e| < W`. Squaring once (both sides non-negative) leaves `2|U_c|ρ|e| < A` with
-/// `A = W² − U_c² − ρ²|e|²`, and squaring again closes it over the rationals.
-///
-/// It answers nothing about arrangeability — a circle inside the strip meets no ruling — and
-/// exists to **count** that population, because it is the one shape the walk had never seen
-/// before this cell (a disk floating inside a ruling-bounded region).
+/// **Does the circle lie wholly between the two rulings?** — the sibling population, counted
+/// because it is the one shape the walk had never seen before cell ⑭ (a disk afloat in a
+/// ruling-bounded region). Same door, read for its third answer.
 #[cfg(debug_assertions)]
-pub(crate) fn circle_inside_strip_rat(
-    n: &[Rat; 3],
-    d: Rat,
-    o: &[Rat; 3],
-    m: &[Rat; 3],
-    r: Rat,
-    centre: &[Rat; 3],
-    rho: Rat,
+fn circle_inside_strip(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    circle: &MergedCircle,
+    ruling: &MergedRuling,
 ) -> Option<bool> {
-    let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
-        x[0].checked_mul(y[0])?
-            .checked_add(x[1].checked_mul(y[1])?)?
-            .checked_add(x[2].checked_mul(y[2])?)
-    };
-    let zero = Rat::from_int(0);
-    if dot(n, m)? != zero {
+    let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
+    let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
+    let (o, m, r) = (ruling.def.origin(), ruling.def.dir(), ruling.def.radius());
+    if nacre_scalar::dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m)
+        != nacre_scalar::Orient::Zero
+    {
         return None;
     }
-    let (nn, mm) = (dot(n, n)?, dot(m, m)?);
-    let q = dot(n, o)?.checked_add(d)?;
-    let w2 = r
-        .checked_mul(r)?
-        .checked_mul(nn)?
-        .checked_sub(q.checked_mul(q)?)?
-        .checked_mul(mm)?;
-    if w2 < zero {
-        return Some(false);
-    }
-    let e = combinatorics::cross3_rat(m, n)?;
-    let mut rel = [zero; 3];
-    for k in 0..3 {
-        rel[k] = centre[k].checked_sub(o[k])?;
-    }
-    let u = dot(&rel, &e)?;
-    let u2 = u.checked_mul(u)?;
-    let rho2 = rho.checked_mul(rho)?.checked_mul(mm)?.checked_mul(nn)?;
-    let a = w2.checked_sub(u2)?.checked_sub(rho2)?;
-    Some(a > zero && Rat::from_int(4).checked_mul(u2)?.checked_mul(rho2)? < a.checked_mul(a)?)
+    Some(matches!(
+        nacre_scalar::cylinder_strip_side_margin(
+            &coeffs,
+            &nacre_scalar::MeetPoint::Narrow(centre),
+            circle.def.radius(),
+            &o,
+            &m,
+            r,
+        ),
+        nacre_scalar::StripSide::Inside
+    ))
 }
 
 /// How many `(circle, ruling)` pairs the net above looked at, and how many it **could not
@@ -5971,49 +5920,6 @@ pub(crate) static MIXED_CLASS_AUDIT: MixedClassAudit = MixedClassAudit {
     unmeasured: std::sync::atomic::AtomicUsize::new(0),
     inside: std::sync::atomic::AtomicUsize::new(0),
 };
-
-/// The net asked of one class's own tables — [`circle_meets_ruling_rat`] with the values looked up.
-#[cfg(debug_assertions)]
-fn circle_meets_ruling(
-    jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
-    circle: &MergedCircle,
-    ruling: &MergedRuling,
-) -> Option<bool> {
-    let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
-    let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
-    circle_meets_ruling_rat(
-        &[coeffs[0], coeffs[1], coeffs[2]],
-        coeffs[3],
-        &ruling.def.origin(),
-        &ruling.def.dir(),
-        ruling.def.radius(),
-        &centre,
-        circle.def.radius(),
-        ruling.side,
-    )
-}
-
-/// [`circle_inside_strip_rat`] with the class's own tables looked up.
-#[cfg(debug_assertions)]
-fn circle_inside_strip(
-    jd: &Judge<'_, WorkingPlane>,
-    wc: usize,
-    circle: &MergedCircle,
-    ruling: &MergedRuling,
-) -> Option<bool> {
-    let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
-    let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
-    circle_inside_strip_rat(
-        &[coeffs[0], coeffs[1], coeffs[2]],
-        coeffs[3],
-        &ruling.def.origin(),
-        &ruling.def.dir(),
-        ruling.def.radius(),
-        &centre,
-        circle.def.radius(),
-    )
-}
 
 impl<'a> ClassEdges<'a> {
     /// Run the arc split — and, when the class carries them, the chord injection and the ruling

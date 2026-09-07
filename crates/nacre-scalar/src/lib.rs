@@ -937,7 +937,16 @@ pub enum StripSide {
     /// Clear of the strip, on the `−(n × m)` side.
     Minus,
     /// Inside the strip, boundary included — the point is within `r` of the axis.
+    ///
+    /// For a piece with **width** this is "reaches the strip but does not span a boundary":
+    /// wholly between the two rulings, or touching one at a single point.
     Inside,
+    /// **The piece spans a boundary** — its interior lies strictly on both sides of one ruling.
+    ///
+    /// ★ A point can never be this (it has no width), so every answer
+    /// [`cylinder_strip_side`] and [`cylinder_strip_side_branch`] give is one of the three above,
+    /// unchanged. Only [`cylinder_strip_side_margin`] with `rho > 0` produces it.
+    Crosses,
 }
 
 /// **Where a point on a plane parallel to a cylinder's axis stands relative to the strip the
@@ -977,8 +986,47 @@ pub fn cylinder_strip_side(
     m: &[Rat; 3],
     r: Rat,
 ) -> StripSide {
+    // ★ **A door, so the two can never drift.** A point is a disk of radius zero, and at that
+    // radius the margin form's answers collapse onto this one exactly: `Crosses` needs a strictly
+    // positive width to be possible at all, and the remaining comparison is term-for-term the one
+    // this function used to spell for itself.
+    cylinder_strip_side_margin(coeffs, p, Rat::from_int(0), o, m, r)
+}
+
+/// The three squared quantities the strip questions compare, in **one common positive scale** —
+/// the whole derivation, shared by every door below.
+///
+/// With `e = n × m` (so `|e|² = |n|²|m|²`, the two being perpendicular):
+///
+/// ```text
+/// U  = (p − o)·e        W² = (r²|n|² − (n·o + c)²)|m|²        ρ'² = ρ²|e|²
+/// ```
+///
+/// A disk of radius `ρ` about `p` sweeps `U ± ρ'`, and the cylinder's two rulings stand at
+/// `U = ±W`; every question below is a comparison among those three. Cleared of denominators the
+/// scale is `dp²·d_o²·rd²·sd²` times the `1/(dc²dm²)` the plane's and direction's own
+/// denominators contribute — positive throughout, so only signs survive.
+struct StripScale {
+    /// `sign(U)` — which side of the axis plane the centre is on.
+    u_sign: Orient,
+    /// `U²`, `W²` and `ρ'²` in the common scale. `ww` is negative exactly when the plane clears
+    /// the cylinder altogether, and then there is no strip.
+    uu: num_bigint::BigInt,
+    ww: num_bigint::BigInt,
+    rr: num_bigint::BigInt,
+}
+
+fn strip_scale(
+    coeffs: &[Rat; 4],
+    p: &MeetPoint,
+    rho: Rat,
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    r: Rat,
+) -> StripScale {
     use num_bigint::BigInt;
     debug_assert!(r >= Rat::from_int(0), "a radius is not negative");
+    debug_assert!(rho >= Rat::from_int(0), "a margin is not negative");
     debug_assert!(
         dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], m) == Orient::Zero,
         "the strip only exists on a plane parallel to the axis"
@@ -992,6 +1040,7 @@ pub fn cylinder_strip_side(
     let (mm, _dm) = lift3(m);
     let (pp, dp) = p.lift();
     let (rn, rd) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
+    let (sn, sd) = (BigInt::from(rho.numer()), BigInt::from(rho.denom()));
     let n = [c[0].clone(), c[1].clone(), c[2].clone()];
     let dot = |x: &[BigInt; 3], y: &[BigInt; 3]| -> BigInt {
         (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
@@ -1009,23 +1058,108 @@ pub fn cylinder_strip_side(
     });
     let w: [BigInt; 3] = core::array::from_fn(|i| &pp[i] * &d_o - &oo[i] * &dp);
     let u = dot(&w, &e);
-    if u.sign() == num_bigint::Sign::NoSign {
-        return StripSide::Inside;
-    }
     // `n·o + c` over the common denominator `dc·d_o`, and the two squared magnitudes.
     let g = dot(&n, &oo) + &c[3] * &d_o;
     let nn = dot(&n, &n);
     let m2 = dot(&mm, &mm);
-    // sign(U² − (r²|n|² − (n·o+c)²)|m|²), with every positive common factor cleared:
-    //   (W·E)²·rd²  vs  (rn²|N|²·d_o² − G²·rd²)·|M|²·dp²
-    let lhs = &u * &u * (&rd * &rd);
-    let rhs = (&rn * &rn * &nn * (&d_o * &d_o) - &g * &g * (&rd * &rd)) * &m2 * (&dp * &dp);
-    if big_sign(&(lhs - rhs)) <= 0 {
-        StripSide::Inside
-    } else if u.sign() == num_bigint::Sign::Plus {
-        StripSide::Plus
-    } else {
-        StripSide::Minus
+    StripScale {
+        u_sign: orient_of(big_sign(&u)),
+        uu: &u * &u * (&rd * &rd) * (&sd * &sd),
+        ww: (&rn * &rn * &nn * (&d_o * &d_o) - &g * &g * (&rd * &rd))
+            * &m2
+            * (&dp * &dp)
+            * (&sd * &sd),
+        rr: (&sn * &sn) * &nn * &m2 * (&dp * &dp) * (&d_o * &d_o) * (&rd * &rd),
+    }
+}
+
+/// **Where a disk of radius `rho` about `p`, lying on the plane, stands relative to the strip.**
+/// Exact and total, at any width and any margin.
+///
+/// The four answers are what a piece with **extent** can say where a point could only say three:
+/// clear on the `+` side, clear on the `−` side, reaching the strip without spanning a boundary,
+/// or **spanning** one. Consumers fold them differently — the footprint rule treats the last two
+/// alike ("did not clear"), while the tangency road needs `Crosses` apart, because a piece that
+/// spans the line by itself is exactly the straddle two separate corners would otherwise have to
+/// witness between them.
+///
+/// ```text
+/// clear    |U| > W + ρ'        crosses   | |U| − W | < ρ'        else inside
+/// ```
+///
+/// Each is a comparison of a rational against `2√(xy)` for rational `x, y`, so **one sign case
+/// and one further squaring** closes it — no radical tower, no new number type. `Crosses` is
+/// strict on purpose: a disk touching a ruling at one point spans nothing, which is the same
+/// answer a corner sitting on the line gives.
+pub fn cylinder_strip_side_margin(
+    coeffs: &[Rat; 4],
+    p: &MeetPoint,
+    rho: Rat,
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    r: Rat,
+) -> StripSide {
+    use num_bigint::BigInt;
+    let s = strip_scale(coeffs, p, rho, o, m, r);
+    let side = |o: Orient| match o {
+        Orient::Positive => StripSide::Plus,
+        Orient::Negative => StripSide::Minus,
+        Orient::Zero => StripSide::Inside,
+    };
+    // The plane clears the cylinder: no strip exists, so nothing can reach it.
+    if s.ww.sign() == num_bigint::Sign::Minus {
+        return side(s.u_sign);
+    }
+    let four = BigInt::from(4);
+    let clear = &s.uu - &s.ww - &s.rr;
+    if clear.sign() == num_bigint::Sign::Plus && &clear * &clear > &four * &s.ww * &s.rr {
+        return side(s.u_sign);
+    }
+    let span = &s.uu + &s.ww - &s.rr;
+    if span.sign() == num_bigint::Sign::Minus || &span * &span < &four * &s.uu * &s.ww {
+        return StripSide::Crosses;
+    }
+    StripSide::Inside
+}
+
+/// **Does that disk reach *one named* ruling?** — `side` names the ruling in **this** family's
+/// vocabulary: the sign of `(p − o)·(n × m)`, the same one [`StripSide::Plus`] is written about.
+///
+/// ⚠ **The arrangement's `side` is the opposite sign.** `arrangement::ruling_side_signed` measures
+/// against `m × n`, so a caller carrying a `MergedRuling` must negate before asking here. Stated
+/// rather than absorbed: a predicate that silently accepted either convention would answer about
+/// the wrong ruling for whichever caller it was not written for.
+///
+/// The strip form above answers about **both** boundaries at once, which is what a face-clearance
+/// question wants. A caller holding the class's actual edges may carry only one of the two
+/// rulings, and asking about the strip would then count a circle that reaches the ruling **not
+/// present**. Same derivation, one boundary: `|σW − U| ≤ ρ'`, closed (a touch counts).
+pub fn cylinder_ruling_reached(
+    coeffs: &[Rat; 4],
+    p: &MeetPoint,
+    rho: Rat,
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    r: Rat,
+    side: i8,
+) -> bool {
+    use num_bigint::{BigInt, Sign};
+    let s = strip_scale(coeffs, p, rho, o, m, r);
+    if s.ww.sign() == Sign::Minus {
+        return false; // the plane clears the cylinder — it has no ruling here at all
+    }
+    let four = BigInt::from(4);
+    let l = &s.ww + &s.uu - &s.rr;
+    let cross = &four * &s.ww * &s.uu;
+    let toward = match (side.signum(), s.u_sign) {
+        (0, _) | (_, Orient::Zero) => 0i8,
+        (1, Orient::Positive) | (-1, Orient::Negative) => 1,
+        _ => -1,
+    };
+    match toward {
+        1 => l.sign() != Sign::Plus || &l * &l <= cross,
+        -1 => l.sign() == Sign::Minus && &l * &l >= cross,
+        _ => l.sign() != Sign::Plus,
     }
 }
 
