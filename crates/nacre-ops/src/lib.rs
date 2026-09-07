@@ -841,7 +841,7 @@ pub enum RejectReason {
     /// instead: 122 of the whole suite's 151 raises were that guard being caught and swallowed by
     /// its own retry loop. What raises this reason today is the caller whose node supply is
     /// exhausted (the 3D depth/cavity classification in `boolean.rs`) — and, same shape one
-    /// dimension down, `point_in_ring`'s rayless case, `ring_in_ring`'s probe exhaustion, and the
+    /// dimension down, `point_in_ring`'s rayless case, the nesting engine's exhausted offer, and the
     /// coplanar cleaning pass's own mirror of that road (`boolean.rs`, which names the empty
     /// list [`Self::RingHasNoWitness`] and the exhausted one this, as the arrangement's
     /// `cell_in_cell` does — cell ②; neither has a population there).
@@ -908,7 +908,7 @@ pub enum RejectReason {
     /// Raised where the cylinder work needs a number rather than a sign: a plane's axis parameter
     /// against a cylinder (`planes::axis_param_of_plane`, read by the band pass and the
     /// transversal-circle test), the rational chart the circle nesting projects a ring into
-    /// (`arrangement::circle_center_in_ring`), the order of two points on a meet line when one of
+    /// (`nesting::cell_inside`'s coordinate road), the order of two points on a meet line when one of
     /// them has no exact description (`combinatorics::order_pinned` and the interval overlay that
     /// calls it), and the arrangement's split passes, where a point's own description — its
     /// `(line, s)` or its `dir_sign` — could not be formed.
@@ -1661,7 +1661,7 @@ mod zzz_ledger {
                     .expect("the probe's lock is never held across a panic")
             );
             eprintln!(
-                "ledger C2-P5: ring_in_ring swallowed non-abstention errors {}",
+                "ledger C2-P5: the nesting retry swallowed non-abstention errors {}",
                 *crate::combinatorics::swallowed_probe::COUNT
                     .lock()
                     .expect("the probe's lock is never held across a panic")

@@ -404,11 +404,15 @@ fn witnesses<'a>(
     wc: usize,
     cell: Cell<'a>,
 ) -> Box<dyn Iterator<Item = Witness> + 'a> {
+    // A disk's interior witness, wherever the disk came from — the cell itself, or a ring that
+    // turned out to be a whole circle. Written once because this cell is about supplies that were
+    // written twice.
+    let centre_of = |def: &nacre_topo::CylinderDef| match circle_centre_rat(jd, wc, def) {
+        Some(c) => Witness::In(Where::Coord(c)),
+        None => Witness::Unformed,
+    };
     match cell {
-        Cell::Disk(def) => Box::new(std::iter::once(match circle_centre_rat(jd, wc, def) {
-            Some(c) => Witness::In(Where::Coord(c)),
-            None => Witness::Unformed,
-        })),
+        Cell::Disk(def) => Box::new(std::iter::once(centre_of(def))),
         Cell::Ring(r) => {
             let named = r.iter().filter_map(|e| {
                 combinatorics::three_plane_name(e.node).map(|t| Witness::On(Where::Named(t)))
@@ -423,12 +427,7 @@ fn witnesses<'a>(
             });
             // A ring that is a whole circle has no boundary point anyone can name exactly unless
             // its corners give one; its centre always answers, as an interior witness.
-            let centre = ring_own_circle(r)
-                .map(|def| match circle_centre_rat(jd, wc, def) {
-                    Some(c) => Witness::In(Where::Coord(c)),
-                    None => Witness::Unformed,
-                })
-                .into_iter();
+            let centre = ring_own_circle(r).map(centre_of).into_iter();
             Box::new(named.chain(coords).chain(centre))
         }
     }
@@ -573,6 +572,10 @@ fn inside(
 /// asked it, and the coplanar merge — the engine's other road — works with rings that do share
 /// nodes. Whether the asymmetry is right is a question for its own cell, not a thing to change
 /// while unifying.
+///
+/// ★ **The engine's precondition holds here structurally**: these cells are faces of one class's
+/// DCEL, and the split gave every crossing a vertex — so two of their loops cannot cross, they can
+/// only nest or share nodes.
 ///
 /// ★★ **Asked from two directions here and a third elsewhere.** [`crate::arrangement::nest_cells`]
 /// asks it of (contour, `+1` cell) to find hosts and `innermost_host` of (host, host) to order

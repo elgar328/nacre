@@ -640,7 +640,7 @@ pub(crate) fn branch_name(n: NodeId) -> Option<([usize; 2], usize, nacre_topo::Q
 /// are two shapes and only one of them may lose a member:
 ///
 /// - a **probe list** may — its consumers try each member until one decides, and an exhausted list
-///   is already a named decline (`ring_in_ring` answers `NoClearRay`, `boolean`'s `first_deciding`
+///   is already a named decline (`nesting::cell_inside` answers `NoClearRay`, `boolean`'s `first_deciding`
 ///   answers `Ok(None)` and leaves the rejection to its caller);
 /// - a **ring** may not — dropping a node from a cyclic sign sequence produces a *different
 ///   polygon* and answers a different question, confidently. Those sites collect through
@@ -2777,7 +2777,9 @@ pub(crate) mod witness_probe {
     }
 }
 
-/// Cell ② stage 0: how many failed judgements `ring_in_ring`'s retry swallowed (predicted 0).
+/// Cell ② stage 0: how many failed judgements the ring-vs-ring retry swallowed (predicted 0).
+/// ★ Cell 13 moved that retry into `nesting::cell_inside`, and this counter with it — the ledger
+/// line it feeds is the same one.
 #[cfg(test)]
 pub(crate) mod swallowed_probe {
     use std::sync::Mutex;
@@ -4398,7 +4400,7 @@ pub(crate) fn point_in_faces_rat(
 /// ★ It takes **coordinates**, so both roads ask it: the named probe realizes its three-plane
 /// crossing first, the coordinate road already has one. The rule must not be written twice.
 ///
-/// ★ The rule is `cylinder_radial_side`'s, the one `arrangement::node_in_circle` already reads —
+/// ★ The rule is `cylinder_radial_side`'s, the one the nesting engine reads for a disk target —
 /// a circle bound is `cylinder ∩ plane`, so "inside the disk" is "inside the cylinder's radius".
 fn point_in_disk(p: &[nacre_scalar::Rat; 3], def: &nacre_topo::CylinderDef) -> Option<bool> {
     match nacre_scalar::cylinder_radial_side(p, &def.origin(), &def.dir(), def.radius()) {

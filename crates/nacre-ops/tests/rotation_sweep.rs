@@ -355,7 +355,7 @@ fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
 /// witness list to the end. A caller that goes around it is a caller that will quietly lack the
 /// retry again, so the source says so.
 ///
-/// ★ **The exceptions are listed, not implied.** `ring_in_ring`'s value is picking *another node*
+/// ★ **The exceptions are listed, not implied.** The retry's value is picking *another witness*
 /// when one grazes, so the rule binds anything asking "is this ring inside that one". A caller
 /// asking about **one named vertex** has no other node to offer, and the retry would have nothing
 /// to retry with — `inside_trimmed_face` (the self-touch check) is that, and it is spelled out

@@ -3652,8 +3652,8 @@ fn merge_component(
     for hole in holes {
         // Every node is a probe, not just the first: which vertex can cast a clear ray is a fact
         // about that vertex, and settling for `nodes[0]` is what lost whole bands of rotation
-        // angles here. `ring_in_ring` holds that retry now, for this caller and the two in the
-        // arrangement alike.
+        // angles here. `nesting::cell_inside` holds that retry now — one witness list walked to
+        // the end — for this caller and the arrangement's alike.
         let mut owner = None;
         for (i, (outer, _)) in faces.iter().enumerate() {
             // ★ A region bounded by a **circle** asks the disk's question of the hole's nodes —
@@ -3692,10 +3692,11 @@ fn merge_component(
             // ★ The rational road serves a mixed outer **and a hole with no three-plane corner**
             // (cell ⑩ — a slot's stadium, four tangent corners and nothing else): its witnesses
             // are the hole's rational corners, branch ones included
-            // ([`combinatorics::branch_coords_rat`]). Handing an empty probe list to
-            // `ring_in_ring` said `NoClearRay` for a ray never cast.
-            // ★ The arrangement's own two-polygon nesting ([`crate::arrangement::ring_in_ring_by_witness`])
-            // — one rule, one set of witnesses; adjacency (`None`) is «not inside».
+            // (`combinatorics::branch_coords_rat`). Handing an empty probe list to the ray road
+            // said `NoClearRay` for a ray never cast; the engine names an empty offer
+            // `RingHasNoWitness` and an exhausted one `NoClearRay`, which are different facts.
+            // ★ The same engine the arrangement's nesting asks (cell 13) — one rule, one set of
+            // witnesses.
             let hole_edges = hole.edges(jd, cyls, Some(wc))?;
             // A hole and an outer of one coplanar group can share a node — they are pieces of one
             // boundary — so «share a node ⇒ not comparable» is not this road's rule, and the engine
@@ -3722,10 +3723,15 @@ fn merge_component(
     // ★★ **The members' circle holes ride through.** A circle has no nodes, so the re-threading
     // above cannot see it — which is why this pass used to skip such a component altogether, and
     // why lifting that skip without this loop drops the hole and opens the shell (measured).
+    // ★ **The engine's precondition holds here too, for a different reason**: these bounds are
+    // faces of one *valid* solid lying on one plane, so no two of their loops cross — a crossing
+    // would be a self-intersection the solid does not have.
+    //
     // Which merged region owns a circle is a **question, not a fact about counts**: the group can
-    // come apart into several outer rings, so the centre is tested against each
-    // ([`crate::arrangement::circle_center_in_ring`] — the same predicate the arrangement's own
-    // nesting asks). None, or more than one, is refused rather than guessed.
+    // come apart into several outer rings, so the disk is tested against each through the engine
+    // (`nesting::cell_inside` — the same door the arrangement's own nesting uses, which is also
+    // where the converse a centre alone cannot give lives). None, or more than one, is refused
+    // rather than guessed.
     let mut circles: Vec<usize> = group
         .iter()
         .flat_map(|lf| lf.inner.iter())
