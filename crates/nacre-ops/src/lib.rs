@@ -870,6 +870,13 @@ pub enum RejectReason {
     /// ring cut out of a cylinder names its corners with the quadric and `three_plane_probes`
     /// keeps only plane triples — so the road refused with a name about rays it had never cast.
     /// That fact has its own name now ([`Self::RingHasNoWitness`]).
+    ///
+    /// ★ Cell 13: for the nesting question the two are told apart by one rule and not by which of
+    /// four spellings a caller happened to hold — see [`Self::RingHasNoWitness`]. A rounded
+    /// outline under a 90° rotation is the shape that still reaches this name: every ray from its
+    /// three-plane corners grazes, and the coordinate witnesses beside them abstain too
+    /// (`bores_change_nothing_about_a_rounded_plate_under_rigid_motion` holds the population at
+    /// six of the motion group's rotations).
     NoClearRay,
     /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
     /// and not a value that could not be formed: the containment roads draw their witnesses from
@@ -882,10 +889,12 @@ pub enum RejectReason {
     /// exactly», and this is «there was no witness to begin with». Reading the first for the
     /// third sent this cell's diagnosis to the wrong layer for a while.
     ///
-    /// ☑ **Nothing in today's corpus raises it.** A ring that *is* a circle is asked the circle's
-    /// own question (`arrangement::ring_own_circle`), and a ring with a **whole chord** for an
-    /// edge names that chord's midpoint (`arrangement::chord_midpoint_rat`) — between them the
-    /// wall panels that used to arrive here are all answered. The **component** road raised it
+    /// ☑ **Nothing in today's corpus raises it.** ★ Cell 13 gave the three refusals of the nesting
+    /// question one rule ([`crate::nesting::cell_inside`]): a value that could not be **formed** is
+    /// [`Self::WitnessNotRational`], an offer that was **empty** is this one, and an offer every
+    /// member of which **abstained** is [`Self::NoClearRay`]. So this name now means exactly what
+    /// it says — the cell had nothing to offer — and the four supplies that used to decide which
+    /// of the three a caller reported are one supply. The **component** road raised it
     /// for one commit (cell ③): an offset boss's Common is a 0.2-deep segment prism whose halves
     /// have branch-named corners only and no cap candidate from the centre inside — until the
     /// cut cap offered two points per **chord** (`ring_interior_candidates`). What would still
