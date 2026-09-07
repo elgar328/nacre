@@ -1110,11 +1110,11 @@ pub fn cylinder_strip_side_margin(
     if s.ww.sign() == num_bigint::Sign::Minus {
         return side(s.u_sign);
     }
-    let four = BigInt::from(4);
-    let clear = &s.uu - &s.ww - &s.rr;
-    if clear.sign() == num_bigint::Sign::Plus && &clear * &clear > &four * &s.ww * &s.rr {
+    // `|U| > W + ρ'` — the whole clearance, in the one comparison the scalar family shares.
+    if crate::quad::sqrt_exceeds_root_sum(&s.uu, &s.ww, &s.rr) {
         return side(s.u_sign);
     }
+    let four = BigInt::from(4);
     let span = &s.uu + &s.ww - &s.rr;
     if span.sign() == num_bigint::Sign::Minus || &span * &span < &four * &s.uu * &s.ww {
         return StripSide::Crosses;

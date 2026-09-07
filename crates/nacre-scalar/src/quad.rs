@@ -413,6 +413,32 @@ pub fn biquad_sign(a: Rat, b: Rat, c: Rat, d: Rat, u: Rat, v: Rat) -> Option<Ori
     ))
 }
 
+/// **`√a > √b + √c`** for non-negative integers — the one comparison the strip decomposition and
+/// the reach comparison both reduce to, in the scale their caller already works in.
+///
+/// `√a > √b + √c  ⟺  a − b − c > 0  ∧  (a − b − c)² > 4bc` — one subtraction and one squaring,
+/// no radical ever formed. A zero radicand falls out of the same line (`c = 0` leaves `a > b`).
+///
+/// ★ **It takes the first term squared** because that is how both callers hold it: the strip's
+/// `U` is known through `U²` and a separate sign, and a rational `g` squares exactly. Taking
+/// `√a` rather than `g` is what lets the two share this line at all.
+pub(crate) fn sqrt_exceeds_root_sum(a: &BigInt, b: &BigInt, c: &BigInt) -> bool {
+    debug_assert!(
+        a.sign() != num_bigint::Sign::Minus,
+        "a radicand is not negative"
+    );
+    debug_assert!(
+        b.sign() != num_bigint::Sign::Minus,
+        "a radicand is not negative"
+    );
+    debug_assert!(
+        c.sign() != num_bigint::Sign::Minus,
+        "a radicand is not negative"
+    );
+    let t = a - b - c;
+    t.sign() == num_bigint::Sign::Plus && &t * &t > BigInt::from(4) * b * c
+}
+
 /// **Is `g` beyond the sum of two roots?** — `g > √p + √q` exactly, for `p, q ≥ 0`.
 ///
 /// The proposition two bounded reaches ask of each other: each end of a reach is a rational base
@@ -426,8 +452,24 @@ pub fn biquad_sign(a: Rat, b: Rat, c: Rat, d: Rat, u: Rat, v: Rat) -> Option<Ori
 ///
 /// `None` only if a radicand is negative — the value asked about is not real.
 pub fn exceeds_root_sum(g: Rat, p: Rat, q: Rat) -> Option<bool> {
-    let (minus, zero) = (Rat::from_int(-1), Rat::from_int(0));
-    Some(biquad_sign(g, minus, minus, zero, p, q)? == Orient::Positive)
+    let zero = Rat::from_int(0);
+    if p < zero || q < zero {
+        return None; // a negative radicand: the value asked about is not real
+    }
+    if g <= zero {
+        return Some(false); // no sum of roots is below a non-positive number
+    }
+    // One positive scale for all three, so `√(k·g²) > √(k·p) + √(k·q)` is the same question.
+    let lift = |x: Rat| (BigInt::from(x.numer()), BigInt::from(x.denom()));
+    let (gn, gd) = lift(g);
+    let (pn, pd) = lift(p);
+    let (qn, qd) = lift(q);
+    // Scaling all three by `K = gd²·pd·qd` keeps the question: `√(K·g²) > √(K·p) + √(K·q)`.
+    Some(sqrt_exceeds_root_sum(
+        &(&gn * &gn * &pd * &qd),
+        &(&pn * &qd * (&gd * &gd)),
+        &(&qn * &pd * (&gd * &gd)),
+    ))
 }
 
 fn biquad_sign_int(
