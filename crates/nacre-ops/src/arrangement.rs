@@ -5955,31 +5955,38 @@ impl<'a> ClassEdges<'a> {
         // axes, which never put a circle and a ruling on one class.)
         //
         // ★ So the check below is a **net over an argument, not a filter over a population**, and
-        // it lives under `debug_assertions` for that reason: shipping it in release would be a
-        // device behind a wall nothing can reach. The day the cylinder-pair refusal opens, this
-        // population becomes real — and the obligation to carry a *shipped* check then is written
-        // at that refusal, where it will be read.
-        #[cfg(debug_assertions)]
+        // it lived under `debug_assertions` for that reason: shipping it in release would have been
+        // a device behind a wall nothing could reach. The day the cylinder-pair refusal opens, this
+        // population becomes real — and the obligation to carry a *shipped* check then was written
+        // at that refusal, where it would be read.
+        //
+        // ★★★ **That day came, and this is the check** (cell ⑱). The argument above has a hole,
+        // and the two cells since found both ends of it: a circle becomes an edge **whole** while
+        // the face on that cylinder may use only a quarter of it, so a crossing on the rest says
+        // nothing about the faces — and cell ⑰ then let exactly such a pair through the gate, its
+        // faces being genuinely apart. What had stood in front of this population was the
+        // footprint reader's refusal of an arc, which cell ⑱ opened.
+        //
+        // `None` — the decomposition could not be stated — refuses with the same name:
+        // honest-reject over silent-wrong, and measured to fire on nothing today (`unmeasured` is
+        // 0 across the corpus, the census and the kit).
         if !rulings.is_empty() && !circles.is_empty() {
-            use std::sync::atomic::Ordering;
             for c in circles {
                 for ru in rulings {
-                    let met = circle_meets_ruling(jd, wc, c, ru);
-                    MIXED_CLASS_AUDIT.pairs.fetch_add(1, Ordering::Relaxed);
-                    if met.is_none() {
-                        MIXED_CLASS_AUDIT.unmeasured.fetch_add(1, Ordering::Relaxed);
+                    #[cfg(debug_assertions)]
+                    {
+                        use std::sync::atomic::Ordering;
+                        MIXED_CLASS_AUDIT.pairs.fetch_add(1, Ordering::Relaxed);
+                        if circle_meets_ruling(jd, wc, c, ru).is_none() {
+                            MIXED_CLASS_AUDIT.unmeasured.fetch_add(1, Ordering::Relaxed);
+                        }
+                        if circle_inside_strip(jd, wc, c, ru) == Some(true) {
+                            MIXED_CLASS_AUDIT.inside.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
-                    if circle_inside_strip(jd, wc, c, ru) == Some(true) {
-                        MIXED_CLASS_AUDIT.inside.fetch_add(1, Ordering::Relaxed);
+                    if circle_meets_ruling(jd, wc, c, ru) != Some(false) {
+                        return Err(reject(RejectReason::CircleMeetsRuling));
                     }
-                    debug_assert_ne!(
-                        met,
-                        Some(true),
-                        "a circle and a ruling of one class meet, which the cylinder-pair gate \
-                         is supposed to have refused first (class {wc}, cylinders {} and {})",
-                        c.cyl,
-                        ru.cyl,
-                    );
                 }
             }
         }
@@ -9578,6 +9585,148 @@ mod tests {
                 ([2_000_000, 3_000_000], false, true), // [2,3] B only
             ],
             "y=1 overlap resolved into three pieces, middle carries both solids: {pieces:?}"
+        );
+    }
+
+    /// ★★★★★ **Cell ⑱ — the net cell ⑭ left is a check, and this is it being walked.**
+    ///
+    /// A class carrying a circle (⊥ one cylinder) and rulings (∥ another) is fine until the two
+    /// **meet**, and then the crossing is `plane ∩ cylinder ∩ cylinder` — a point no road mints.
+    /// Cell ⑭ argued the population could not arrive and left the obligation to ship a check the
+    /// day it could; cell ⑱ opened the reader that had been standing in front of it. The
+    /// population reaches `ClassEdges::of` through a boolean, but the check is the first thing
+    /// that function does, so it can be walked here directly — which is the point: it must not be
+    /// a device behind a wall.
+    #[test]
+    fn a_circle_meeting_a_ruling_is_refused_by_name() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(
+            Point3::from_array([0.0, 1.0, 0.0]),
+            Point3::from_array([3.0, 2.0, 1.0]),
+        );
+        let b = m.add_cuboid(
+            Point3::from_array([1.0, 0.0, 0.0]),
+            Point3::from_array([2.0, 3.0, 1.0]),
+        );
+        m.rebuild_adjacency();
+        let PlaneSetup {
+            planes: faces_tab,
+            geom: planes,
+            surf_ix,
+            inc_a,
+            inc_b,
+            plane_ix,
+            standard,
+            notes,
+            ..
+        } = plane_index_setup(&m, a, b).unwrap();
+        let jd = Judge::new(&planes, standard, &notes);
+        let wc = shared_cap_class(&m, a, b, &surf_ix, &faces_tab, &plane_ix);
+        let tr = trace_on_class_of(
+            &m,
+            a,
+            b,
+            wc,
+            &jd,
+            &[],
+            &faces_tab,
+            &surf_ix,
+            &inc_a,
+            &inc_b,
+            &plane_ix,
+            Default::default(),
+        );
+        let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
+        let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
+        let q = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+        let z = |v: i128| nacre_scalar::Rat::from_int(v);
+        let def = |o: [nacre_scalar::Rat; 3],
+                   dir: [nacre_scalar::Rat; 3],
+                   e: [nacre_scalar::Rat; 3],
+                   r: nacre_scalar::Rat| {
+            nacre_topo::CylinderDef::new(o, dir, e, r).unwrap()
+        };
+        // ⊥ the shared cap: a circle of radius 6/5 about `(3/2, 3/2)` on that plane.
+        let circle = MergedCircle {
+            cyl: 0,
+            def: def(
+                [q(3, 2), q(3, 2), z(0)],
+                [z(0), z(0), z(1)],
+                [z(1), z(0), z(0)],
+                q(6, 5),
+            ),
+            merged: Vec::new(),
+        };
+        // ∥ it, and near enough (`1/2 < 1`) that both caps carry its rulings — at
+        // `y = 3/2 ± √(3)/2`, which the circle above reaches past on either side.
+        let ruling = MergedRuling {
+            cyl: 1,
+            def: def(
+                [z(0), q(3, 2), q(1, 2)],
+                [z(1), z(0), z(0)],
+                [z(0), z(0), z(1)],
+                z(1),
+            ),
+            side: 1,
+            end: [
+                crate::combinatorics::NodeId::ThreePlane([0, 1, 2]),
+                crate::combinatorics::NodeId::ThreePlane([0, 1, 3]),
+            ],
+            merged: Vec::new(),
+            orient: 1,
+        };
+        let out = ClassEdges::of(
+            &jd,
+            NO_CYLS,
+            wc,
+            &split,
+            std::slice::from_ref(&circle),
+            std::slice::from_ref(&ruling),
+            &Aliases::default(),
+        );
+        assert!(
+            matches!(
+                out,
+                Err(BoolError::Rejected {
+                    reason: RejectReason::CircleMeetsRuling,
+                    ..
+                })
+            ),
+            "a circle across a ruling must be refused by name"
+        );
+        // ★ And a circle that stays clear of both rulings is not refused — without this the check
+        // could be a constant and still be green. It sits **outside** the strip rather than inside
+        // it, so it adds nothing to `MIXED_CLASS_AUDIT.inside`, which another test reads from the
+        // same process-wide counters.
+        let clear = MergedCircle {
+            def: def(
+                [q(3, 2), z(10), z(0)],
+                [z(0), z(0), z(1)],
+                [z(1), z(0), z(0)],
+                q(1, 10),
+            ),
+            ..circle
+        };
+        // ★ Not «builds» — these edges are hand-made and the rest of the walk has no class table
+        // for them — but **not refused by this name**, which is what says the check reads its
+        // inputs rather than the mere presence of a circle beside a ruling.
+        assert!(
+            !matches!(
+                ClassEdges::of(
+                    &jd,
+                    NO_CYLS,
+                    wc,
+                    &split,
+                    std::slice::from_ref(&clear),
+                    std::slice::from_ref(&ruling),
+                    &Aliases::default(),
+                ),
+                Err(BoolError::Rejected {
+                    reason: RejectReason::CircleMeetsRuling,
+                    ..
+                })
+            ),
+            "a circle well inside the rulings shares no point with them"
         );
     }
 

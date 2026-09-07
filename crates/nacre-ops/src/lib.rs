@@ -1020,6 +1020,28 @@ pub enum RejectReason {
     /// `an_operand_bounded_by_a_cylinder_is_named_in_class_space`, which locks the naming rather
     /// than the decline.
     CurvedOperandBoundary,
+    /// **A circle and a ruling of one plane class meet** — two cylinders' curves crossing on one
+    /// plane, at a point this kernel cannot name.
+    ///
+    /// A class may carry a circle (⊥ one cylinder's axis) and rulings (∥ another's) at once, and
+    /// that alone is fine (cell ⑭ deleted the refusal that said otherwise): neither split cuts
+    /// the other's kind, so the two populations never interfere — **while they do not meet**. A
+    /// crossing they both walk past is a node no road mints, and the point itself is
+    /// `plane ∩ cylinder ∩ cylinder`, a nested radical with no name.
+    ///
+    /// ★★ **Cell ⑭ argued this population could not arrive and left the obligation to check for
+    /// real when it could.** The argument was that a crossing means two lateral *faces* share a
+    /// point, which `planes::lateral_faces_clear` denies. It has a hole: a circle becomes an edge
+    /// **whole**, while the face on that cylinder may use only part of it — a corner fillet uses a
+    /// quarter — so a crossing on the rest of the circle says nothing about the faces. Cell ⑰ then
+    /// let exactly such a pair through (its faces really are apart), and cell ⑱ opened the reader
+    /// that had been standing in front of it. This is that obligation, shipped.
+    ///
+    /// Not [`RejectReason::CurvedOperandBoundary`] (the road behind can read these rings) and not
+    /// [`RejectReason::CylinderPairContact`] (the two lateral faces do **not** touch). The shape
+    /// a user meets: a plate with a corner fillet, drilled across by a tool wide enough to reach
+    /// the plate's cap planes, where the fillet's whole circle crosses the drill's rulings.
+    CircleMeetsRuling,
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
     /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and
     /// carriers) and the gate's record-and-pass arm opened (cell 4), so this name is
@@ -1327,6 +1349,7 @@ impl RejectReason {
             Self::WitnessNotRational => "witness_not_rational",
             Self::ArcBoundNotYet => "arc_bound_not_yet",
             Self::CurvedOperandBoundary => "curved_operand_boundary",
+            Self::CircleMeetsRuling => "circle_meets_ruling",
             Self::RulingBoundNotYet => "ruling_bound_not_yet",
             Self::CurvedStraightRun => "curved_straight_run",
             Self::PointOnRing => "point_on_ring",
@@ -1388,6 +1411,7 @@ impl RejectReason {
             | Self::ArcBoundNotYet
             | Self::RulingBoundNotYet
             | Self::CurvedOperandBoundary
+            | Self::CircleMeetsRuling
             | Self::CurvedStraightRun
             | Self::PointOnRing
             | Self::HoleDepth
