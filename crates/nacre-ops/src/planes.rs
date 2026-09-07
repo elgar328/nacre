@@ -2217,11 +2217,34 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
     })
 }
 
-/// **The separating directions a cylinder pair can state rationally.** Each axis is one: it is the
-/// normal of that cylinder's cap planes *and* the direction of its rulings, and a lateral face's
-/// boundary is made of nothing else — two rulings and two arcs.
+/// **The separating directions a cylinder pair can state rationally** — and why these are all of
+/// them (cell ⑰).
+///
+/// What a footprint describes is a box in `(axis parameter × angle)`, and the boundary of such a
+/// face is made of **cap planes** (normal = the axis), **rulings** (direction = the axis) and
+/// **arcs**. A separating axis is a face normal or an edge×edge, so the rational candidates are
+/// each axis and — for skew axes — the two rulings' cross product, the common perpendicular. What
+/// is left out is the arcs' radial continuum, which no rational direction names; the tool for that
+/// is [`cross_sections_clear`], and it needs the common cross-section chart that only **parallel**
+/// axes have. So a pair the three cannot separate is refused as "not shown to clear", which is
+/// true, and completing the test further means the same test on a richer candidate set.
+///
+/// ★★ **The third direction is the face-level twin of a rung above it.** With a whole circle and
+/// no span, `d ⊥ m_a` and `d ⊥ m_b` make both reaches `d·o ± r|d|`, so "apart" reads
+/// `|d·(o_b − o_a)| > (r_a + r_b)|d|` — [`nacre_scalar::cylinders_clear`]'s skew branch, letter
+/// for letter. The faces answer the same question the infinite surfaces do, with their own extent.
+///
+/// Parallel axes have no third direction (the cross product is zero, and the surface rung is the
+/// distance rule with its own parallel branch); overflow forming it simply leaves the list short.
 fn separating_dirs(a: &WorkingCyl, b: &WorkingCyl) -> Vec<[nacre_scalar::Rat; 3]> {
-    vec![a.def.dir(), b.def.dir()]
+    let (ma, mb) = (a.def.dir(), b.def.dir());
+    let mut out = vec![ma, mb];
+    if !nacre_scalar::parallel_rat(&ma, &mb) {
+        if let Some(perp) = combinatorics::cross3_rat(&ma, &mb) {
+            out.push(perp);
+        }
+    }
+    out
 }
 
 /// **Do face `x` of `a` and face `y` of `b` provably miss each other along `d`?** — each face's
