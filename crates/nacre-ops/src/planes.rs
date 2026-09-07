@@ -2095,21 +2095,36 @@ fn lateral_reach(
     })
 }
 
-/// Is the closed interval `[lo, hi]` (in the reach's own `d·p` units) disjoint from the reach?
-/// Closed against closed: equality is the other face's rim touching this one at a point, which
-/// is not clear. Squares only (a zero radical is the plain `gap > 0`). `None` is overflow.
+/// **Do two reaches provably miss each other?** — one lies wholly beyond the other, at either end.
+///
+/// Each end is a rational base and a radical, so a gap has to clear **two** roots:
+/// `b.lo − √b.rho2_lo > a.hi + √a.rho2_hi` is `g > √p + √q`, which
+/// [`nacre_scalar::exceeds_root_sum`] answers exactly. `None` is `Rat` overflow forming a gap.
+///
+/// ★ **Closed against closed**: equality is one face's rim touching the other at a point, which is
+/// not clear. The footprint's *span* is read **open** instead, so the disk arm in
+/// [`Corner::reaches`] spells its own comparison rather than borrowing this one — the same algebra
+/// with the boundary the other way, and folding them together would move one convention silently.
+fn reaches_apart(a: &Reach, b: &Reach) -> Option<bool> {
+    Some(
+        nacre_scalar::exceeds_root_sum(b.lo.checked_sub(a.hi)?, a.rho2_hi, b.rho2_lo)?
+            || nacre_scalar::exceeds_root_sum(a.lo.checked_sub(b.hi)?, b.rho2_hi, a.rho2_lo)?,
+    )
+}
+
+/// Is the closed interval `[lo, hi]` (in the reach's own `d·p` units) disjoint from the reach? —
+/// [`reaches_apart`] against the reach a rational interval **is**: no radical at either end. The
+/// station a plane offers is such an interval of one point.
 fn reach_clears(reach: &Reach, lo: nacre_scalar::Rat, hi: nacre_scalar::Rat) -> Option<bool> {
     let zero = nacre_scalar::Rat::from_int(0);
-    // ★ **Closed against closed** (the doc above): equality is a touch, and a touch is not clear.
-    // The footprint's *span* is read **open** instead, so the disk arm in `Corner::reaches` spells
-    // its own comparison rather than borrowing this one — the same algebra with the boundary the
-    // other way, and folding them together would move one of the two conventions silently.
-    let beyond = |gap: nacre_scalar::Rat, rho2: nacre_scalar::Rat| -> Option<bool> {
-        Some(gap > zero && gap.checked_mul(gap)? > rho2)
-    };
-    Some(
-        beyond(lo.checked_sub(reach.hi)?, reach.rho2_hi)?
-            || beyond(reach.lo.checked_sub(hi)?, reach.rho2_lo)?,
+    reaches_apart(
+        &Reach {
+            lo,
+            hi,
+            rho2_lo: zero,
+            rho2_hi: zero,
+        },
+        reach,
     )
 }
 
