@@ -2267,7 +2267,11 @@ fn dump() {
                                 .expect("a right angle"),
                         }),
                     );
-                    (abc, shift(m, turned, [45.0, 0.0, 47.0]))
+                    // ★ The ops prism spans `0..90` along its axis, so centring the turned
+                    // cylinder on the plate is a shift of **−45** — the script's own
+                    // `cylinder({h: 90, center: [0,0,0]})`. With `+45` it would sit beside the
+                    // plate touching only its side plane, which is a different model.
+                    (abc, shift(m, turned, [-45.0, 0.0, 47.0]))
                 }),
             ),
         ];
