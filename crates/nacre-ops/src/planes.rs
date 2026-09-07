@@ -1646,7 +1646,12 @@ pub(crate) struct Tangency {
     /// `u = c·v` into `(u+r)² + v² = r²` gives `v·(v(1+c²) + 2cr) = 0`, so it meets the cylinder in
     /// this ruling *and* one more, runs within the radius, and is recorded as a crossing. The local
     /// picture is then **six** regions, not three, the two wedges can take different `keep`s, and
-    /// the record below cannot speak. Abstain rather than answer. (☑ Both constructed members of
+    /// the record below cannot speak.
+    ///
+    /// ★ Cell ⑮ emptied this arm's population without touching it: every row that reached it was
+    /// written for a wall face the footprint reader could not read — a whole **disk**, and each of
+    /// them clearing the tangent line by more than its own radius. Reading the disk means no row is
+    /// written at all, so what is left here is the abstention's true subject. Abstain rather than answer. (☑ Both constructed members of
     /// this population reach `CoincidentNodes` in the arrangement anyway — two samples are not a
     /// population claim, so the abstention stands.)
     pub(crate) line_in_another_plane: bool,
@@ -1932,14 +1937,14 @@ fn face_straddles_line(
     use nacre_scalar::StripSide;
     let (mut plus, mut minus) = (false, false);
     for he in &face.outer.half_edges {
-        if !matches!(model.edge_curve(he.edge), nacre_geom::Curve::Line(_)) {
-            continue;
-        }
-        let vh = he_start(model, *he);
-        let Some((p, None)) = model.vertex_meet(vh) else {
+        // ★ **The same reader the clearance road uses.** This used to take rational vertices and
+        // skip everything else, so a face ringed by tangent corners straddled nothing as far as
+        // this could tell — and «does not straddle» acquits. A piece it still cannot read is not
+        // a silent acquittal either: such a face fails the clearance call as well, and its row is
+        // marked undecided there.
+        let Ok(corner) = corner_of(model, face, he) else {
             continue;
         };
-        let corner = Corner::Rational(p);
         if !corner.on_plane(coeffs) {
             continue;
         }
@@ -2094,21 +2099,18 @@ fn lateral_reach(
 /// Closed against closed: equality is the other face's rim touching this one at a point, which
 /// is not clear. Squares only (a zero radical is the plain `gap > 0`). `None` is overflow.
 fn reach_clears(reach: &Reach, lo: nacre_scalar::Rat, hi: nacre_scalar::Rat) -> Option<bool> {
+    let zero = nacre_scalar::Rat::from_int(0);
+    // ★ **Closed against closed** (the doc above): equality is a touch, and a touch is not clear.
+    // The footprint's *span* is read **open** instead, so the disk arm in `Corner::reaches` spells
+    // its own comparison rather than borrowing this one — the same algebra with the boundary the
+    // other way, and folding them together would move one of the two conventions silently.
+    let beyond = |gap: nacre_scalar::Rat, rho2: nacre_scalar::Rat| -> Option<bool> {
+        Some(gap > zero && gap.checked_mul(gap)? > rho2)
+    };
     Some(
         beyond(lo.checked_sub(reach.hi)?, reach.rho2_hi)?
             || beyond(reach.lo.checked_sub(hi)?, reach.rho2_lo)?,
     )
-}
-
-/// **Is a gap wider than a radical?** — `gap > √rho2`, decided by squaring once (a zero radical is
-/// the plain `gap > 0`). `None` is overflow.
-///
-/// ★ It was a closure inside [`reach_clears`] until a **second** reader wanted it: a disk face's
-/// extent along an axis is `centre ± ρ|m|`, so «does this piece reach past the span's station»
-/// is this very comparison with `rho2 = ρ²(m·m)`. One spelling rather than two — the shape this
-/// repository keeps finding twice.
-fn beyond(gap: nacre_scalar::Rat, rho2: nacre_scalar::Rat) -> Option<bool> {
-    Some(gap > nacre_scalar::Rat::from_int(0) && gap.checked_mul(gap)? > rho2)
 }
 
 /// **Does every lateral face of this cylinder provably miss the plane `n·p + d = 0`?** — the oblique
@@ -2309,16 +2311,21 @@ fn cross_sections_clear(
 /// needs it.
 ///
 /// **Only the outer loop is walked**, and that is sound: a face is contained in the convex hull of
-/// its outer loop's vertices, a half-space is convex, and inner loops only *remove* material. It
+/// its outer loop's **pieces** (a vertex is the piece with no width), a half-space is convex, and
+/// inner loops only *remove* material. It
 /// is also what keeps the test reachable — a wall drilled by a crosswise bore carries that bore's
 /// rim as an inner loop, whose vertices have no rational meet at all.
 ///
-/// ★★ **The straight-edge demand is soundness, not convenience.** This plane may be some *other*
-/// cylinder's cap plane (one whose axis is perpendicular to it), and such a cap face's outer loop
-/// is a single circle with one seam vertex — "all vertices on one side" would then be satisfied by
-/// a single point and would pass a disk that crosses the strip. Today `vertex_meet` happens to
-/// decline that vertex, but relying on the coincidence would leave the barrier to vanish silently
-/// the day seam coordinates become solvable.
+/// ★★ **The straight-edge demand was soundness, and cell ⑮ paid for it rather than kept it.** This
+/// plane may be some *other* cylinder's cap plane (one whose axis is perpendicular to it), and
+/// such a cap face's outer loop is a single circle with one seam vertex — "all vertices on one
+/// side" would be satisfied by a single **point** and would pass a disk that crosses the strip.
+/// The barrier that stopped it also stopped every disk that genuinely clears, and folded to
+/// «did not clear» wrote tangency rows for contacts that are not there. So the piece answers for
+/// its own **extent** now ([`Corner::Disk`]): the hull statement below holds because a face is
+/// contained in the hull of its boundary, and each boundary piece reports how far it reaches.
+/// Anything else curved is still refused — an arc that is only part of a loop bulges past a hull
+/// this road cannot state, and that is the next cell's case of the same function.
 /// **A face corner, in whichever exact spelling it has** — the footprint test's currency.
 ///
 /// Three plane-carried corners have rational coordinates; a corner a cylinder made does not, and
@@ -2327,6 +2334,15 @@ fn cross_sections_clear(
 enum Corner {
     Rational(nacre_scalar::MeetPoint),
     Branch(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    /// **A whole disk** — the piece a face whose outer loop is a single circle *is*.
+    ///
+    /// ★ The name «corner» is historical: what this type carries is a **boundary piece's reach**,
+    /// and a vertex is the piece with no width. Written this way the loops below do not learn a
+    /// new shape; they ask the same three questions and one of the answers now has extent.
+    Disk {
+        centre: [nacre_scalar::Rat; 3],
+        rho: nacre_scalar::Rat,
+    },
 }
 
 impl Corner {
@@ -2337,6 +2353,10 @@ impl Corner {
             Self::Branch(line, s) => {
                 nacre_scalar::quad::plane_side(coeffs, line, s) == nacre_scalar::Orient::Zero
             }
+            Self::Disk { centre, .. } => nacre_scalar::point_on_plane_exact(
+                coeffs,
+                &nacre_scalar::MeetPoint::Narrow(*centre),
+            ),
         }
     }
 
@@ -2352,18 +2372,71 @@ impl Corner {
             Self::Branch(line, s) => {
                 nacre_scalar::cylinder_strip_side_branch(coeffs, line, s, o, m, r)
             }
+            Self::Disk { centre, rho } => nacre_scalar::cylinder_strip_side_margin(
+                coeffs,
+                &nacre_scalar::MeetPoint::Narrow(*centre),
+                *rho,
+                o,
+                m,
+                r,
+            ),
         }
     }
 
-    fn axis_side(
+    /// **Does this piece reach strictly past the plane at axis parameter `t`, to the `want` side?**
+    ///
+    /// ★★★★★ **A point answers this with one sign; a piece with width cannot.** The caller asks
+    /// twice — «did anything go above the span's start» and «did anything go below its end» — and
+    /// for a vertex those are the two readings of a single `Orient`. A disk straddling a station
+    /// is above it *and* below it, which no single `Orient` can say: answering `Zero` would make
+    /// **both** questions false and let a face that covers the station be read as clearing it.
+    /// So the question is named instead of inferred.
+    ///
+    /// ★ **The span is read open** (`face_clears_footprint`'s own note: a corner sitting exactly
+    /// on a cap plane must not be dropped), which is why the disk's comparison is spelled here
+    /// rather than borrowed from [`reach_clears`] — that one is closed against closed, and folding
+    /// the two together would move one convention silently.
+    fn reaches(
         &self,
         o: &[nacre_scalar::Rat; 3],
         m: &[nacre_scalar::Rat; 3],
         t: nacre_scalar::Rat,
-    ) -> nacre_scalar::Orient {
+        want: nacre_scalar::Orient,
+    ) -> bool {
         match self {
-            Self::Rational(p) => nacre_scalar::point_axis_side(p, o, m, t),
-            Self::Branch(line, s) => nacre_scalar::point_axis_side_branch(line, s, o, m, t),
+            Self::Rational(p) => nacre_scalar::point_axis_side(p, o, m, t) == want,
+            Self::Branch(line, s) => nacre_scalar::point_axis_side_branch(line, s, o, m, t) == want,
+            // The comparison quantity is `q = (p − o)·m − t(m·m)`; over the disk it sweeps
+            // `q_c ± ρ|m|`, so «reaches past» is `q_c` on that side or the radius covering the
+            // gap — `ρ²(m·m) > q_c²`, squared once and rational throughout.
+            // ★ Overflow answers **`true`**: "not shown to clear" is this test's safe direction.
+            Self::Disk { centre, rho } => {
+                let zero = nacre_scalar::Rat::from_int(0);
+                let dot = |x: &[nacre_scalar::Rat; 3], y: &[nacre_scalar::Rat; 3]| {
+                    x[0].checked_mul(y[0])?
+                        .checked_add(x[1].checked_mul(y[1])?)?
+                        .checked_add(x[2].checked_mul(y[2])?)
+                };
+                let q = (|| {
+                    let mut rel = [zero; 3];
+                    for k in 0..3 {
+                        rel[k] = centre[k].checked_sub(o[k])?;
+                    }
+                    let mm = dot(m, m)?;
+                    dot(&rel, m)?.checked_sub(t.checked_mul(mm)?)
+                })();
+                let hit = (|| {
+                    let q = q?;
+                    let mm = dot(m, m)?;
+                    Some(rho.checked_mul(*rho)?.checked_mul(mm)? > q.checked_mul(q)?)
+                })();
+                match (q, hit, want) {
+                    (Some(q), Some(hit), nacre_scalar::Orient::Positive) => q > zero || hit,
+                    (Some(q), Some(hit), nacre_scalar::Orient::Negative) => q < zero || hit,
+                    (_, _, nacre_scalar::Orient::Zero) => false,
+                    _ => true,
+                }
+            }
         }
     }
 }
@@ -2403,6 +2476,121 @@ fn branch_corner(
         _ => return None,
     };
     Some(Corner::Branch(line, s))
+}
+
+/// Why a boundary piece could not be read — the two causes the footprint road keeps apart.
+enum CornerFail {
+    /// A shape this road cannot spell at all (an arc that is not a whole disk, a seam vertex).
+    Shape,
+    /// The description ran out: a chain that will not fold, a name that is not narrow.
+    Arithmetic,
+}
+
+/// **One boundary piece of a face, in whichever exact spelling it has — the single reader.**
+///
+/// ★★★★★ **It was written twice, and the second copy was an abbreviation.**
+/// `face_clears_footprint` folded motion chains and solved `Branch` corners; `face_straddles_line`
+/// took rational vertices and *skipped* everything else — so a face ringed by tangent corners had
+/// its straddle read from nothing and answered «does not straddle», which acquits. One reader, and
+/// the two roads can no longer disagree about what a face says.
+///
+/// ★★ **A whole disk is a piece too.** A face whose outer loop is a single circle carried by a
+/// cylinder perpendicular to its plane *is* that disk, and its reach along any direction is
+/// `centre ± ρ`. The doc of [`face_clears_footprint`] named this shape as the reason its
+/// straight-edge demand was soundness rather than convenience — «all vertices on one side would be
+/// satisfied by a single point and would pass a disk that crosses the strip». The demand can go
+/// now because the piece answers for its own extent instead of for one point of it.
+fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Corner, CornerFail> {
+    match model.edge_curve(he.edge) {
+        nacre_geom::Curve::Line(_) => {}
+        // A single circular edge is the whole boundary, so the face is a disk — anything else
+        // curved bulges past a hull this road cannot state.
+        nacre_geom::Curve::Circle(_) if face.outer.half_edges.len() == 1 => {
+            return disk_of(model, face, he).ok_or(CornerFail::Shape);
+        }
+        _ => return Err(CornerFail::Shape),
+    }
+    let vh = he_start(model, *he);
+    match model.vertex_meet(vh) {
+        // ★ The point is stated in `frame`; the cylinder and the coefficients are world. A
+        // chain that folds to a rational translation carries it out exactly — the same move
+        // the class descriptions and the cylinder statements make, so this test sees a
+        // translated body the way every other reader does. A `Wide` meet has no narrow vessel
+        // to shift and declines, as does any other chain: honest, never a comparison across
+        // two frames.
+        Some((p, None)) => Ok(Corner::Rational(p)),
+        Some((p, Some(leaf))) => {
+            let (Some(t), Some(q)) = (model.chain_translation(leaf), p.narrow()) else {
+                return Err(CornerFail::Arithmetic);
+            };
+            let mut w = *q;
+            for (c, d) in w.iter_mut().zip(t) {
+                *c = c.checked_add(d).ok_or(CornerFail::Arithmetic)?;
+            }
+            Ok(Corner::Rational(nacre_scalar::MeetPoint::Narrow(w)))
+        }
+        // ★★★★★ **A corner a cylinder made has no rational meet — and does not need one.**
+        // `vertex_meet` declines a `Branch` because its coordinates are quadratic-irrational,
+        // which is a statement about *rationals*, not about knowability: the point is exactly
+        // `line.base() + s·line.dir()`, and the questions asked of it read that spelling
+        // directly. An `OnSeam` vertex is a different matter — it pins a curve, not a point —
+        // so it stays unreadable.
+        None => {
+            let nacre_topo::VertexDef::Branch {
+                planes,
+                cylinder,
+                root,
+            } = model.vertices.get(vh).def
+            else {
+                return Err(CornerFail::Shape);
+            };
+            branch_corner(model, planes, cylinder, root).ok_or(CornerFail::Arithmetic)
+        }
+    }
+}
+
+/// **The disk a single-circle face is** — centre and radius from the exact statements, never the
+/// cache.
+///
+/// ★★ **The centre is `axis ∩ the face's *own* plane`, not the class's.** The callers check the
+/// piece against the class's coefficients before measuring it, because a face can be merged into a
+/// class by *rounded* coefficients its own points do not satisfy. Deriving the centre from the
+/// class would make that check pass by construction and quietly retire it.
+///
+/// `None` is any shape this is not: a face that is not planar, an edge no cylinder carries, or an
+/// axis not perpendicular to the plane — that last one traces an **ellipse**, and this piece would
+/// be claiming to know a shape it does not.
+fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corner> {
+    if !matches!(model.surface(face.surface), nacre_geom::Surface::Plane(_)) {
+        return None;
+    }
+    let plane = *model.world_plane_name(face.surface)?.narrow()?;
+    let n = [plane[0], plane[1], plane[2]];
+    let def = model
+        .edges
+        .get(he.edge)
+        .surfaces
+        .iter()
+        .find(|&&s| matches!(model.surface(s), nacre_geom::Surface::Cylinder(_)))
+        .and_then(|&s| world_cylinder_def(model, s))?;
+    let (o, m) = (def.origin(), def.dir());
+    if !nacre_scalar::parallel_rat(&n, &m) {
+        return None;
+    }
+    // `n·(o + t·m) + d = 0`, and `n·m ≠ 0` because the axis is along the normal.
+    let nm = dot3(&n, &m)?;
+    let no_d = dot3(&n, &o)?.checked_add(plane[3])?;
+    let t = nacre_scalar::Rat::from_int(0)
+        .checked_sub(no_d)?
+        .checked_mul(nacre_scalar::Rat::new(nm.denom(), nm.numer())?)?;
+    let mut centre = o;
+    for k in 0..3 {
+        centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
+    }
+    Some(Corner::Disk {
+        centre,
+        rho: def.radius(),
+    })
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2467,58 +2655,13 @@ fn face_clears_footprint(
     let mut along: Vec<(bool, bool)> = vec![(true, true); spans.len()];
     let mut vertices = 0usize;
     for he in &face.outer.half_edges {
-        // ★ An **arc** edge stays unreadable, and deliberately: the sound-ness argument below
-        // ("a face is contained in the convex hull of its outer loop's vertices") holds because
-        // every edge is straight. An arc bulges past its endpoints' hull, so admitting one would
-        // need the hull statement fixed first — a different cell's first job.
-        if !matches!(model.edge_curve(he.edge), nacre_geom::Curve::Line(_)) {
-            return Err(unreadable());
-        }
-        let vh = he_start(model, *he);
-        // ★★★★ **The corner's description is chosen once, here** — the three questions below then
-        // ask it the same things whichever spelling it wears. Splitting per question would put one
-        // decision in three places.
-        let corner = match model.vertex_meet(vh) {
-            // ★ The point is stated in `frame`; the cylinder and the coefficients are world. A
-            // chain that folds to a rational translation carries it out exactly — the same move
-            // the class descriptions and the cylinder statements make, so this test sees a
-            // translated body the way every other reader does. A `Wide` meet has no narrow vessel
-            // to shift and declines, as does any other chain: honest, never a comparison across
-            // two frames.
-            Some((p, None)) => Corner::Rational(p),
-            Some((p, Some(leaf))) => {
-                let (Some(t), Some(q)) = (model.chain_translation(leaf), p.narrow()) else {
-                    return Err(arithmetic());
-                };
-                let mut w = *q;
-                for (c, d) in w.iter_mut().zip(t) {
-                    *c = c.checked_add(d).ok_or_else(arithmetic)?;
-                }
-                Corner::Rational(nacre_scalar::MeetPoint::Narrow(w))
-            }
-            // ★★★★★ **A corner a cylinder made has no rational meet — and does not need one.**
-            // `vertex_meet` declines a `Branch` because its coordinates are quadratic-irrational,
-            // which is a statement about *rationals*, not about knowability: the point is exactly
-            // `line.base() + s·line.dir()`, and the three questions below read that spelling
-            // directly. An `OnSeam` vertex is a different matter — it pins a curve, not a point —
-            // so it stays unreadable.
-            //
-            // ★ **The shape test stands here and the solve stands in the helper**, so the two
-            // refusals do not merge back together: this arm decides *unreadable*, and everything
-            // past it is the gate's own description running out.
-            None => {
-                let nacre_topo::VertexDef::Branch {
-                    planes,
-                    cylinder,
-                    root,
-                } = model.vertices.get(vh).def
-                else {
-                    return Err(unreadable());
-                };
-                branch_corner(model, planes, cylinder, root).ok_or_else(arithmetic)?
-            }
-        };
-        // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
+        // ★★★★ **The piece's description is chosen once, in one reader** — the three questions
+        // below then ask it the same things whichever spelling it wears, and the straddle road
+        // reads it the very same way.
+        let corner = corner_of(model, face, he).map_err(|e| match e {
+            CornerFail::Shape => unreadable(),
+            CornerFail::Arithmetic => arithmetic(),
+        })?; // ★ **The class's coefficients must actually describe *this* face's plane.** Classes merge
         // on three exact witnesses, one of which compares *rounded* coefficients — so a face can
         // sit in a class whose exact name its own vertices do not satisfy (the two-descriptions
         // hazard `FaceInfo::exact_coeffs` documents). The strip decomposition takes the plane's
@@ -2549,10 +2692,10 @@ fn face_clears_footprint(
         }
         // The axis along it — one rectangle per lateral face, and the span is open at both ends.
         for (i, span) in spans.iter().enumerate() {
-            if corner.axis_side(o, m, span[0]) == Orient::Positive {
+            if corner.reaches(o, m, span[0], Orient::Positive) {
                 along[i].0 = false;
             }
-            if corner.axis_side(o, m, span[1]) == Orient::Negative {
+            if corner.reaches(o, m, span[1], Orient::Negative) {
                 along[i].1 = false;
             }
         }

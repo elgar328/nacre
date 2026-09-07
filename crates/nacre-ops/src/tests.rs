@@ -14107,36 +14107,36 @@ fn users_model(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     (abc, tool)
 }
 
-/// ★★★★★ **Cell ⑭ — the user's `cut` now reaches the *next* wall, and this row says which.**
+/// ★★★★★ **Cell ⑮ — the user's script builds, `cut` and all.**
 ///
-/// Before this cell the plate's own side plane `x = 45` refused outright for carrying a circle
-/// (the tool's trace) and rulings (a fillet's) at once. That refusal is gone, the class is
-/// arranged, and the operation stops one layer further on: `crate::boolean::tangency_reject`,
-/// whose `line_in_another_plane` arm abstains because the fillet's tangent line lies in a second
-/// plane class as well — six local regions instead of three, which that record cannot speak about.
-/// ☑ Measured, not assumed: with the old guard lifted the raise moved from
-/// `arrangement.rs`'s class-edge assembly to `boolean.rs`'s tangency verdict, and the disjunct
-/// that fires is `line_in_another_plane`, not `undecided`.
+/// The rounded, bored plate with both ribs fused on, and the cylinder that bores across them. It
+/// took three cells: cell ⑬ opened the fuse, cell ⑭ removed a refusal that stood where nothing
+/// could arrive, and this one taught the footprint reader to read a **disk** — the tool's own cap,
+/// which sits on the plate's side plane and clears the corner fillet's tangent line by twice its
+/// radius. Until it could be read, that clearance was folded to "did not clear", a tangency row
+/// was written for a contact that is not there, and the verdict abstained on it.
 ///
-/// ★ **The audit's denominator rides along.** «No circle meets a ruling» is worth nothing unless
-/// the instrument looked: this asserts it measured pairs and failed to measure none. The count is
-/// not pinned — a global counter under parallel tests cannot be attributed — but zero-claims are
-/// safe under accumulation, and «looked at all» is the half that could rot silently.
+/// The volume is the oracle: the fuse's `100695.2213` less the two rib bores `2·π·10²·11`.
+///
+/// ★ **The audit's denominator rides along.** «No circle meets a ruling» (cell ⑭) is worth nothing
+/// unless the instrument looked: this asserts it measured pairs, failed to measure none, and found
+/// no circle sitting inside a ruling strip — the shape the walk has never been handed.
 #[test]
-fn the_users_cut_reaches_the_tangency_wall() {
+fn the_users_script_builds() {
     let mut m = Model::new();
     let (abc, tool) = users_model(&mut m);
-    let out = boolean(&mut m, BoolKind::Cut, abc, tool);
+    let out = boolean(&mut m, BoolKind::Cut, abc, tool).expect("the bore across the ribs");
+    assert_eq!(out.len(), 1, "one body");
+    m.rebuild_adjacency();
     assert!(
-        matches!(
-            out,
-            Err(BoolError::Rejected {
-                reason: RejectReason::CylinderGateUndecided,
-                ..
-            })
-        ),
-        "{out:?}"
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
     );
+    let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+    let want = rounded_plate_volume() + 2.0 * (15.0 * 15.0 + 35.0 * 11.0) * 40.0
+        - 2.0 * std::f64::consts::PI * 100.0 * 11.0;
+    assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     #[cfg(debug_assertions)]
     {
         use std::sync::atomic::Ordering;
@@ -14151,11 +14151,6 @@ fn the_users_cut_reaches_the_tangency_wall() {
             unmeasured, 0,
             "the audit could not measure {unmeasured} pairs"
         );
-        // ★ A zero-claim, safe under the counters' accumulation across a test binary: **no circle
-        // anywhere sits wholly inside a ruling cylinder's strip.** That is the one shape the walk
-        // has never been handed (a disk afloat in a ruling-bounded region), and
-        // `a_cylinder_nested_across_another_waits_at_the_gate` shows the placement is not even
-        // buildable today. If this ever fires it is news, not a regression: the walk just met it.
         assert_eq!(
             inside, 0,
             "a circle now sits inside a ruling strip — the walk's first time"
@@ -14163,15 +14158,14 @@ fn the_users_cut_reaches_the_tangency_wall() {
     }
 }
 
-/// ★★★★ **Cell ⑭ — the wall is a fact about the shape, not about where it stands.**
+/// ★★★★ **Cell ⑮ — and it builds the same body wherever it stands.**
 ///
-/// The class this cell admitted is arranged for real now (its circle and rulings are cut into
-/// edges and walked), and a newly-admitted path is exactly where a frame-dependent slip would
-/// hide. So the whole assembly is carried somewhere else by an exact translation and asked again:
-/// the same wall, by name. It cannot be an oracle on geometry — nothing is produced — but a panic
-/// or a *different* wall under a motion would be this cell's own doing.
+/// Two newly-admitted paths meet in this model (cell ⑭'s mixed class, arranged for real, and this
+/// cell's disk read from its own plane's exact statement), and a newly-admitted path is exactly
+/// where a frame-dependent slip would hide. So the whole assembly is carried somewhere else by an
+/// exact translation and asked again — now with a volume to answer with, not just a wall's name.
 #[test]
-fn the_users_cut_waits_at_the_same_wall_after_a_motion() {
+fn the_users_script_builds_the_same_body_after_a_motion() {
     let mut m = Model::new();
     let (abc, tool) = users_model(&mut m);
     let d = |v: f64| nacre_scalar::Rat::from_decimal(v).expect("a short decimal");
@@ -14179,17 +14173,18 @@ fn the_users_cut_waits_at_the_same_wall_after_a_motion() {
     let abc = transform(&mut m, abc, &iso).expect("the body moves");
     let tool = transform(&mut m, tool, &iso).expect("the tool moves");
     m.rebuild_adjacency();
-    let out = boolean(&mut m, BoolKind::Cut, abc, tool);
+    let out = boolean(&mut m, BoolKind::Cut, abc, tool).expect("the moved bore");
+    assert_eq!(out.len(), 1, "one body");
+    m.rebuild_adjacency();
     assert!(
-        matches!(
-            out,
-            Err(BoolError::Rejected {
-                reason: RejectReason::CylinderGateUndecided,
-                ..
-            })
-        ),
-        "{out:?}"
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
     );
+    let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+    let want = rounded_plate_volume() + 2.0 * (15.0 * 15.0 + 35.0 * 11.0) * 40.0
+        - 2.0 * std::f64::consts::PI * 100.0 * 11.0;
+    assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
 /// ★★★★★ **Cell ⑭'s negative control — the net can see a crossing.**
@@ -14238,6 +14233,58 @@ fn a_circle_and_a_ruling_meet_or_clear() {
     // ★ The precondition (a class parallel to the axis) is the caller's to check — the arrangement
     // wrapper asks it and answers `None`; here it is a `debug_assert`, so this test does not drive
     // an off-axis class through the door.
+}
+
+/// ★★★★★ **Cell ⑮ — a disk clears the strip, spans it, or floats inside it, and the three are
+/// told apart.** The gate's disk arm rests on this, and a predicate that answered one of them
+/// always would still pass every model in the corpus.
+///
+/// The class `x = 0`; a cylinder about `z` at `x = 3` with radius 5, so the strip runs `|U| ≤ 4`
+/// in the `n × m` coordinate — which for this wall and axis points along `−y`.
+///
+/// ★ The last case is the one the vocabulary exists for: a **point** on a ruling spans nothing, so
+/// `Crosses` needs width and never comes back from the spellings a vertex takes.
+#[test]
+fn a_disk_clears_a_strip_or_spans_it() {
+    use nacre_scalar::{MeetPoint, Rat, StripSide, cylinder_strip_side_margin as side};
+    let r = |v: i128| Rat::from_int(v);
+    let wall = [r(1), r(0), r(0), r(0)];
+    let axis = [r(0), r(0), r(1)];
+    let at = [r(3), r(0), r(0)];
+    let disk = |y: i128, rho: i128| {
+        side(
+            &wall,
+            &MeetPoint::Narrow([r(0), r(y), r(0)]),
+            r(rho),
+            &at,
+            &axis,
+            r(5),
+        )
+    };
+    // Ten away with a radius of two: clear, and on the `−(n × m)` side.
+    assert_eq!(disk(10, 2), StripSide::Minus);
+    assert_eq!(disk(-10, 2), StripSide::Plus);
+    // Centred on a ruling: it spans that boundary.
+    assert_eq!(disk(4, 2), StripSide::Crosses);
+    assert_eq!(disk(-4, 2), StripSide::Crosses);
+    // Reaching a ruling from outside, and stopping just short of one from inside.
+    assert_eq!(disk(7, 4), StripSide::Crosses);
+    assert_eq!(disk(0, 3), StripSide::Inside);
+    // Touching is not spanning, on either side of the boundary.
+    assert_eq!(disk(6, 2), StripSide::Inside);
+    // ★ A point has no width, so it can never span: on the ruling it is `Inside`, as it was
+    // before this cell and as `cylinder_strip_side` still answers.
+    assert_eq!(disk(4, 0), StripSide::Inside);
+    assert_eq!(
+        disk(4, 0),
+        nacre_scalar::cylinder_strip_side(
+            &wall,
+            &MeetPoint::Narrow([r(0), r(4), r(0)]),
+            &at,
+            &axis,
+            r(5)
+        )
+    );
 }
 
 /// ★★★★★ **Cell ⑭ — why the net's population is empty today, frozen by name.**
@@ -14292,10 +14339,15 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
 /// **inside** it, which is exactly the placement whose cap plane would carry its own circle and
 /// the big cylinder's rulings, the circle well within them.
 ///
-/// ☑ Measured: it does not reach the arrangement at all — the population gate abstains first, for
-/// both kinds. So «zero inside» is not an instrument that failed to look; it is a shape the
-/// operand gate does not admit yet. One placement is not a population claim, which is why this
-/// freezes the placement by name rather than asserting anything wider.
+/// ☑ Measured: it does not reach the arrangement at all — the operand gate speaks first, for both
+/// kinds. So «zero inside» is not an instrument that failed to look; it is a shape the gate does
+/// not admit yet. One placement is not a population claim, which is why this freezes the placement
+/// by name rather than asserting anything wider.
+///
+/// ★ Cell ⑮ moved which sentence the gate uses. With the caps readable the plane-level questions
+/// are answered instead of declined, and the pair rule gets to speak: these two cylinders really
+/// do share points, so `CylinderPairContact` is the true name and `CylinderGateUndecided` was the
+/// road running out before reaching it.
 #[test]
 fn a_cylinder_nested_across_another_waits_at_the_gate() {
     let mut m = Model::new();
@@ -14329,7 +14381,7 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
             matches!(
                 out,
                 Err(BoolError::Rejected {
-                    reason: RejectReason::CylinderGateUndecided,
+                    reason: RejectReason::CylinderPairContact,
                     ..
                 })
             ),

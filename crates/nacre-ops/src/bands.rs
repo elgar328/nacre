@@ -3412,15 +3412,20 @@ mod tests {
         assert!(!lumps_fall_apart(BoolKind::Cut, A, false, -1));
     }
 
-    /// ★★ **The fence that measures the straight-edge barrier** — the only fixture that does.
+    /// ★★★★★ **The disk on a wall plane is read, and it clears** — cell ⑮.
     ///
     /// The plate carries a **crosswise** bore, so the plane `x = 30` holds that bore's circular cap
     /// face: an outer loop of one arc and one seam vertex. That plane is also parallel to the
-    /// vertical drill's axis and passes within `r` of it, so the face test is reached — and a rule
-    /// reading vertices alone would find "every vertex on one side" true of a **single point** and
-    /// wave a disk straight through the strip. Asking the edge's curve kind is what stops it.
+    /// vertical drill's axis and passes within `r` of it, so the face test is reached. Until this
+    /// cell the road answered «cannot read this shape» and the boolean stopped there — the barrier
+    /// was sound (a rule reading vertices alone would have found "every vertex on one side" true
+    /// of a **single point**) but it turned away the true answer along with the false one.
+    ///
+    /// ☑ The disk's own numbers: centre `(30, 10, 5)` radius `2`, against a strip centred on
+    /// `y = 4` of half-width `√(9 − 1) ≈ 2.83`. Six apart, so it clears by more than its radius —
+    /// and now says so. The volume is the oracle that the answer is not merely *an* answer.
     #[test]
-    fn a_disk_face_on_a_wall_plane_is_undecided_not_waved_through() {
+    fn a_disk_face_on_a_wall_plane_is_read_and_clears() {
         let mut m = Model::new();
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -3446,18 +3451,19 @@ mod tests {
             12.0,
         );
         m.rebuild_adjacency();
-        let err = crate::boolean(&mut m, BoolKind::Cut, bored, drill)
-            .expect_err("a disk face on the wall plane cannot be judged by its vertices");
+        let out = crate::boolean(&mut m, BoolKind::Cut, bored, drill).expect("the drill cuts");
+        assert_eq!(out.len(), 1, "one body");
+        m.rebuild_adjacency();
         assert!(
-            matches!(
-                err,
-                BoolError::Rejected {
-                    reason: RejectReason::CylinderGateUndecided,
-                    ..
-                }
-            ),
-            "{err:?}"
+            nacre_validate::validate(&m).is_empty(),
+            "{:?}",
+            nacre_validate::validate(&m)
         );
+        let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+        // 40 × 20 × 10, less the crosswise bore (r 2, thirty long inside) and the drill (r 3,
+        // through the ten of thickness). Their axes pass six apart, clear of the radius sum.
+        let want = 8000.0 - std::f64::consts::PI * (4.0 * 30.0 + 9.0 * 10.0);
+        assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
     // ---- One surface, several lateral faces: the band belongs to the face ----
