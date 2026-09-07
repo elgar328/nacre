@@ -68,9 +68,9 @@ fn circle_centre_rat(
 /// stops holding is how a producer change is meant to surface here rather than two layers down.
 ///
 /// ★★★★★ **A cut circle's cell is still a disk, and must be asked a disk's question.** The
-/// dispatch below reaches [`circle_center_in_ring`] only for a cell whose half-edge is literally a
-/// `Circle`; a circle a wall has **split into arcs** takes the polygon road instead, where the
-/// probes are plane-triple names and an arc's corners are branch points — so the list comes out
+/// dispatch calls a cell a `Disk` only where its half-edge is literally a `Circle`; a circle a wall
+/// has **split into arcs** arrives as a ring instead, whose corners are branch points — so the
+/// three-plane names come out
 /// **empty** and the road refuses with a name about rays it never cast. The shape is the same
 /// circle either way, and this is what says so.
 ///
@@ -103,22 +103,6 @@ fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_
         }
     }
     Some(&first.def)
-}
-
-pub(crate) fn circle_center_in_ring(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    wc: usize,
-    def: &nacre_topo::CylinderDef,
-    ring: &[combinatorics::RingEdge],
-) -> Result<bool, BoolError> {
-    // ★ Every refusal below is a **value** that could not be formed exactly — a class with no
-    // narrow description, a coordinate past `Rat` — which is the road's name, not the gate's.
-    // (The gate's own questions are signs and were made total; borrowing its name here pointed
-    // at a layer that had already answered.)
-    let undecided = || reject(RejectReason::WitnessNotRational);
-    let center = circle_centre_rat(jd, wc, def).ok_or_else(undecided)?;
-    rational_point_in_ring(jd, cyls, wc, &center, ring)?.ok_or_else(undecided)
 }
 
 /// **A rational point strictly inside a straight edge whose two ends are branch corners on one
@@ -267,9 +251,9 @@ fn chord_midpoint_rat(
 /// a **value** could not be formed exactly.
 ///
 /// ★★★★★ **The two are different facts and the split is the point of this function.** The body
-/// below used to sit inside [`circle_center_in_ring`], where one witness is all there is, so a
-/// point that landed *on* the ring could be folded into the same refusal as a class with no
-/// rational description. A caller with **several** witnesses must not read them the same way: a
+/// below used to sit in the disk-against-a-ring arm, where one witness is all there is, so a point
+/// that landed *on* the ring could be folded into the same refusal as a class with no rational
+/// description. A caller with **several** witnesses must not read them the same way: a
 /// point on the ring has the **next witness as its remedy**, a value that cannot be formed does
 /// not — the lesson `point_in_component`'s doc states for the road one dimension up.
 ///
@@ -313,173 +297,6 @@ fn rational_point_in_ring(
             nacre_geom::intersect::RingSide::OnBoundary => None,
         },
     )
-}
-
-/// Whether a polygon contour lies inside a disk — **all but impossible** (its edges ride wall
-/// faces, and a wall face that meets the lateral is either recorded as a crossing, which puts its
-/// edges on the ruling road, or *tangent*, which since cell ⑥ passes: a corner of such a face can
-/// sit exactly on the tangent line and land a ring node exactly on the circle). Computed honestly
-/// from one node's radial side rather than assumed, and the `Zero` arm below is what that leftover
-/// reaches.
-pub(crate) fn node_in_circle(
-    jd: &Judge<'_, WorkingPlane>,
-    ring: &[combinatorics::RingEdge],
-    def: &nacre_topo::CylinderDef,
-) -> Result<bool, BoolError> {
-    let undecided = || reject(RejectReason::WitnessNotRational);
-    // Any node decides (disjoint loops put every node on one side), so take the first
-    // *rational* one — a bitten ring's branch corners have none, but its wall-meet corners do.
-    //
-    // An all-branch ring (no rational corner at all) still refuses.
-    //
-    // ★ **A fallback for that was written here and then measured away.** The plan for the road
-    // above predicted it would revive contours that arrive here with no rational corner, and the
-    // remedy looked free — a ring that *is* a circle can hand over its centre
-    // ([`ring_own_circle`] + [`circle_centre_rat`]). ☑ It fired **0** times over the suite: the
-    // contours that road revives are asked against *polygons*, which have rational corners. So the
-    // note above stands as it was, and the machinery is not here waiting for a population that
-    // does not exist.
-    let p = ring
-        .iter()
-        .find_map(|e| combinatorics::node_coords_rat(jd, e.node))
-        .ok_or_else(undecided)?;
-    match nacre_scalar::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()) {
-        nacre_scalar::Orient::Negative => Ok(true),
-        nacre_scalar::Orient::Positive => Ok(false),
-        // On the surface: a contact the gate admits but this road cannot rank — a *geometric*
-        // degeneracy, so it keeps the gate's name ("the gate could not decide exactly") while the
-        // width causes above take the road's. ★ It used to say "gate-impossible"; the tangent arm
-        // opened in cell ⑥ and a face corner on the tangent line reaches here.
-        nacre_scalar::Orient::Zero => Err(reject(RejectReason::CylinderGateUndecided)),
-    }
-}
-
-/// **Is polygon ring `ra` inside polygon ring `rb`?** — the two-polygon arm of [`cell_in_cell`],
-/// written once because the coplanar merge asks the same question of a hole and an outer
-/// (cell ⑩: it used to mirror this arm by hand, minus the witness supplies, and named a hole with
-/// no three-plane corner `NoClearRay` for a ray never cast). `Ok(None)` is adjacency (a shared
-/// node): not nested, not comparable.
-pub(crate) fn ring_in_ring_by_witness(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    wc: usize,
-    ra: &[combinatorics::RingEdge],
-    rb: &[combinatorics::RingEdge],
-) -> Result<Option<bool>, BoolError> {
-    if ra.iter().any(|e| rb.iter().any(|f| f.node == e.node)) {
-        return Ok(None);
-    }
-    if combinatorics::ring_is_mixed(rb) {
-        let undecided = || reject(RejectReason::WitnessNotRational);
-        let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
-        // From each rational witness of `a` until one ray is clear (`None` is the probe
-        // on the ring, a tangent ray, or a seam-incident root — a corner on the ray is
-        // decided, cell ②); an exhausted ring is the same degeneracy `ring_in_ring`
-        // names. ★ The witnesses, in order: the three-plane corners, the **rational
-        // branch corners** ([`combinatorics::branch_coords_rat`] — a half-cylinder
-        // prism's cap has no other kind, cell ⑩), and the chords' midpoints
-        // ([`chord_midpoint_rat`]) — the supplies the named road below has, so the two
-        // roads offer the same points.
-        let mut asked = false;
-        let witnesses = ra.iter().flat_map(|e| {
-            combinatorics::node_coords_rat(jd, e.node)
-                .or_else(|| combinatorics::branch_coords_rat(jd, cyls, e.node))
-                .into_iter()
-                .chain(chord_midpoint_rat(jd, cyls, e))
-                .chain(edge_interior_rat(jd, cyls, e))
-        });
-        for p in witnesses {
-            asked = true;
-            if let Some(hit) = combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, rb) {
-                return Ok(Some(hit));
-            }
-        }
-        // ★ Same split as the named road below: a list that was **empty** is not a list
-        // that ran out. ☑ Measured (cell ⑩): the half-cylinder pair reached this arm with
-        // an empty list before the branch corners joined it.
-        return Err(reject(if asked {
-            RejectReason::NoClearRay
-        } else {
-            RejectReason::RingHasNoWitness
-        }));
-    }
-    // ★ `ring_in_ring` casts from each of `a`'s nodes until one gives a clear ray; an
-    // exhausted ring is the genuine degeneracy it rejects for.
-    //
-    // ★★★★★ **This used to end «— which is also why dropping a branch node from the probe
-    // list here is honest», and that was the defect wearing the word.** Dropping them left
-    // *nothing*: measured, every refusal this road raised came from a list that was empty
-    // before the first cast. What is honest is to say so, which the two arms above now do.
-    let probes = combinatorics::three_plane_probes(ra.iter().map(|e| e.node));
-    // ★★★★★ **A ring that *is* a circle is asked the circle's question.** The probe list
-    // above is plane-triple **names**, and a circle a wall has split into arcs has none —
-    // every corner is a branch point — so it comes out empty and `ring_in_ring` refuses
-    // with a name about rays it never cast. The cell is a disk either way, and the arm one
-    // match-arm up already answers disks exactly ([`circle_center_in_ring`], whose witness
-    // is the centre and so is rational whatever way the axis points).
-    //
-    // ★ **Only where the names run out.** Where they do not, today's road and today's
-    // order are untouched — a coordinate is not a name, and a rotated class has names but
-    // no rational coefficients (`WorkingPlane::world_rat` is `None` there), so keying this
-    // on "no rational witness" instead would divert the rotation sweep's own population.
-    // Asking the circle question *always* is the tidier end state and should be measured
-    // as an agreement first; this is the strict extension.
-    if probes.is_empty() {
-        if let Some(def) = ring_own_circle(ra) {
-            return Ok(Some(
-                circle_center_in_ring(jd, cyls, wc, def, rb)? && !node_in_circle(jd, rb, def)?,
-            ));
-        }
-        // ★★★★★ **And when the corners cannot name a witness, an edge can.** A ring edge
-        // whose two ends are one solve's two roots has a **rational midpoint**
-        // ([`chord_midpoint_rat`]) — the pair is built from a shared `mid`, so it costs one
-        // `branch_meet` and no approximation. That is the wall panel's case: four branch
-        // corners, no circle to take a centre from, and two perpendicular traces that are
-        // each a whole chord.
-        //
-        // ★ **`Ok(None)` is this witness's abstention, not the ring's** — the next edge's
-        // midpoint may still answer, which is why [`rational_point_in_ring`] hands the two
-        // apart. ☑ Measured before this was written: every ring here offers **two**
-        // midpoints and the two always agree, and none of them abstains.
-        //
-        // ★ It sits after [`ring_own_circle`] for the reader's sake only: the two supplies
-        // are **disjoint by construction** — that one needs every edge to be an arc, this
-        // one needs an edge that is not.
-        for e in ra {
-            let Some(mid) = chord_midpoint_rat(jd, cyls, e) else {
-                continue;
-            };
-            if let Some(hit) = rational_point_in_ring(jd, cyls, wc, &mid, rb)? {
-                return Ok(Some(hit));
-            }
-        }
-        // ★ And a **rational branch corner** is a witness too (cell ⑩): a slot's stadium
-        // has four, all tangent points, and neither a circle nor a whole chord — the
-        // supply the mixed road above offers ([`combinatorics::branch_coords_rat`]).
-        for e in ra {
-            let Some(p) = combinatorics::branch_coords_rat(jd, cyls, e.node) else {
-                continue;
-            };
-            if let Some(hit) = rational_point_in_ring(jd, cyls, wc, &p, rb)? {
-                return Ok(Some(hit));
-            }
-        }
-        // ★ And a rational point **inside an edge** whose ends are two solves' roots
-        // ([`edge_interior_rat`]) — the cell between a bore's and a fillet's rulings.
-        for e in ra {
-            let Some(p) = edge_interior_rat(jd, cyls, e) else {
-                continue;
-            };
-            if let Some(hit) = rational_point_in_ring(jd, cyls, wc, &p, rb)? {
-                return Ok(Some(hit));
-            }
-        }
-        // ★ And when neither a circle nor a chord names one, say **that** —
-        // `ring_in_ring` below would report an exhausted probe list, which is a different
-        // fact and one that never happened here.
-        return Err(reject(RejectReason::RingHasNoWitness));
-    }
-    combinatorics::ring_in_ring(jd, wc, &probes, rb).map(Some)
 }
 
 /// **Whether the disk cylinder `a` cuts on class `wc` lies inside the disk `b` cuts there** — one
@@ -680,17 +497,6 @@ fn ask(
     }
 }
 
-/// **Is cell `a` inside cell `b`?** — the one engine: `a`'s witnesses, in one order, against `b`,
-/// until one decides.
-///
-/// The precondition is that the two loops do not **cross**; each road carries its own argument for
-/// why (the arrangement's cells are faces of one class's DCEL; the merge's are faces of one valid
-/// solid on one plane). Under it, a boundary witness of `a` decides outright and an interior one
-/// needs the converse — see [`Witness`].
-///
-/// The three refusals are one rule, not three sites: a value that could not be formed is
-/// [`RejectReason::WitnessNotRational`], an empty offer is [`RejectReason::RingHasNoWitness`], and
-/// an offer every one of whose members abstained is [`RejectReason::NoClearRay`].
 pub(crate) fn cell_inside(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -714,14 +520,17 @@ fn inside(
     // into an infinite one.
     may_ask_interior: bool,
 ) -> Result<bool, BoolError> {
-    // ★ S1a preserves today's two road-choices exactly, so that this rung changes nothing but the
-    // **supply** of the arm that was one witness wide. Both go in S1b, where the list is one list:
-    //   · a **mixed** target has no ray road at all today (every ray answers `Unnameable` at the
-    //     first branch corner), so its names are not offered;
-    //   · a plain ring target that named any probe answers on the ray road **alone**.
-    let target_mixed = matches!(b, Cell::Ring(rb) if combinatorics::ring_is_mixed(rb));
-    let stop_after_names = matches!(b, Cell::Ring(_)) && !target_mixed;
-    let (mut asked, mut unformed, mut saw_named) = (false, false, false);
+    // ★★★★★ **The list is one list, and it is walked to the end.** Two road-choices used to cut it
+    // short, and both were statements about a *road* rather than about the question:
+    //   · a **mixed** target was never offered the ray road, because every ray answers
+    //     `Unnameable` at the first branch corner — true, and now said by the ray itself, which
+    //     abstains and hands on to the next witness at no cost but its own;
+    //   · a plain ring target that named any probe answered on names **alone**, so a ring whose
+    //     every ray grazed was refused with coordinates still in hand.
+    // Neither is a fact about *whether `a` is inside `b`*, and the premise that lets them go is
+    // measured, not assumed: where both roads can answer they agree
+    // (`the_two_roads_never_disagree`).
+    let (mut asked, mut unformed) = (false, false);
     for w in witnesses(jd, cyls, wc, a) {
         let (p, interior) = match w {
             Witness::Unformed => {
@@ -736,13 +545,6 @@ fn inside(
                 (p, true)
             }
         };
-        if target_mixed && matches!(p, Where::Named(_)) {
-            continue;
-        }
-        if stop_after_names && saw_named && !matches!(p, Where::Named(_)) {
-            break;
-        }
-        saw_named |= matches!(p, Where::Named(_));
         match ask(jd, cyls, wc, &p, b) {
             Said::Unformed => unformed = true,
             Said::Abstain => asked = true,
@@ -762,37 +564,20 @@ fn inside(
     }))
 }
 
-/// **Is cell `a`'s loop inside cell `b`'s?** — the one dispatch, four arms by carrier kind.
+/// **The arrangement's adapter onto [`cell_inside`]** — its cells arrive as indices into the
+/// walk's rings and circles, and two questions are settled before a witness is asked.
 ///
-/// `Ok(None)` is *not comparable*, and it covers two shapes that both mean "these are neighbours,
-/// not nested": two circles (see below), and two polygons that **share a node** — a shared node is
-/// a split point, so the loops touch rather than one wrapping the other (that also excludes a
-/// contour's own `+1` partner, which carries the same ring).
+/// `Ok(None)` is *not comparable*: two polygons that **share a node** touch rather than nest (a
+/// shared node is a split point, and that also excludes a contour's own `+1` partner, which
+/// carries the same ring). ★ It is a **ring-ring** rule and stays one: the disk arms have never
+/// asked it, and the coplanar merge — the engine's other road — works with rings that do share
+/// nodes. Whether the asymmetry is right is a question for its own cell, not a thing to change
+/// while unifying.
 ///
-/// ★★ **Written once because it is asked from two directions.** [`nest_cells`] asks it of
-/// (contour, `+1` cell) to find hosts, and [`innermost_host`] asks it of (host, host) to order
-/// them. The four arms are the same question either way; two spellings of it would be free to
-/// drift, which is this repository's most-repeated defect.
-///
-/// The arms:
-/// - **two circles** — [`disk_in_disk`] on the radii and the centre distance (cell ⑩ S1: two disks
-///   of one class *do* nest — a pin fused onto a boss — the gate keeps only different classes apart);
-/// - **circle in polygon** — the centre (`axis ∩ wc`, rational) inside the ring, **and the ring not
-///   inside the circle**. ★★ That second clause is not belt-and-braces: with disjoint loops the
-///   centre test alone says "inside" for *both* nestings when the polygon happens to straddle the
-///   centre — a boss standing over a bore, footprint `[7,9]×[9,11]` around the axis `(8,10)`, put
-///   the **circle** inside the **square**. `circle_center_in_ring`'s own doc says one point decides
-///   *"the loops cannot cross"*, and cross they do not; what it does not settle is **which way
-///   round**. The other direction does, so the pair is the predicate;
-/// - **polygon in circle** — one node's radial side ([`node_in_circle`]), decisive on its own:
-///   disjoint loops put every node on one side;
-/// - **polygon in polygon** — a ray from each of `a`'s nodes until one is clear
-///   ([`combinatorics::ring_in_ring`]); when `b` is a **mixed** ring (branch corners, arc steps —
-///   a plate's section bitten by a boss, once the scan names crossings on rulings), the ray is
-///   [`combinatorics::point_in_mixed_ring`]'s from each of `a`'s rational nodes, the predicate the circle arm
-///   already asks of a centre. ★ The old road *always* exhausts on a mixed `b` (every ray answers
-///   `Unnameable` at the first branch corner), so this arm activates on exactly the population it
-///   refused — every other row stays bit-identical.
+/// ★★ **Asked from two directions here and a third elsewhere.** [`crate::arrangement::nest_cells`]
+/// asks it of (contour, `+1` cell) to find hosts and `innermost_host` of (host, host) to order
+/// them; the coplanar merge asks the same question of its own bounds. That third one used to hold
+/// a copy of this dispatch, and the copy is what cell 13 removed.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn cell_in_cell(
     jd: &Judge<'_, WorkingPlane>,
@@ -837,19 +622,28 @@ pub(crate) fn cell_in_cell(
                 return None;
             }
             let (ra, rb) = (&rings[a], &rings[b]);
-            // Through the shared door, as production asks it — the retry over the probes lives
-            // in `ring_in_ring`, and comparing anything else would compare a road nobody walks.
-            let probes = combinatorics::three_plane_probes(ra.iter().map(|e| e.node));
-            let by_name = combinatorics::ring_in_ring(jd, wc, &probes, rb).ok()?;
+            // ★ Through the engine's own per-witness door, so the comparison is between the two
+            // **roads** and not between two hand-written loops: the first name that decides
+            // against the first coordinate that decides.
+            let decided = |w: Where| match ask(jd, cyls, wc, &w, Cell::Ring(rb)) {
+                Said::In => Some(true),
+                Said::Out => Some(false),
+                Said::Abstain | Said::Unformed => None,
+            };
+            let by_name = ra
+                .iter()
+                .filter_map(|e| combinatorics::three_plane_name(e.node))
+                .find_map(|t| decided(Where::Named(t)))?;
             let by_coord = ra
                 .iter()
-                .find_map(|e| {
+                .flat_map(|e| {
                     combinatorics::node_coords_rat(jd, e.node)
                         .or_else(|| combinatorics::branch_coords_rat(jd, cyls, e.node))
-                        .or_else(|| chord_midpoint_rat(jd, cyls, e))
-                        .or_else(|| edge_interior_rat(jd, cyls, e))
+                        .into_iter()
+                        .chain(chord_midpoint_rat(jd, cyls, e))
+                        .chain(edge_interior_rat(jd, cyls, e))
                 })
-                .and_then(|p| rational_point_in_ring(jd, cyls, wc, &p, rb).ok().flatten())?;
+                .find_map(|p| decided(Where::Coord(p)))?;
             Some((by_name, by_coord))
         })();
         nesting_probe::push(nesting_probe::Row {

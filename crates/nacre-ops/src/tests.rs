@@ -13796,3 +13796,62 @@ fn the_two_roads_never_disagree() {
         both.len()
     );
 }
+
+/// ★ Cell 13 — **an island standing inside a round hole**, a shape the corpus did not hold: two
+/// bodies whose top faces are coplanar, one of them a ring that lies inside the other's circular
+/// hole and covers its centre.
+///
+/// ★★ **It was built to walk the merge road's changed question and does not** — measured, and
+/// recorded rather than dressed up. Cell 13 gave that road the converse clause it lacked («a
+/// centre inside a ring does not mean the disk is inside it»), and this is the shape that would
+/// make the old spelling claim two owners for one circle. It passes with the old spelling too:
+/// `unify_coplanar_faces` looks for a circle's owner **within its own edge-connected group**, and
+/// an island that does not touch the rim is not in that group. For a competing outer to be in it,
+/// something must reach the disk's face without cutting its rim — which no producer here makes.
+/// So the converse clause in that road guards a population that cannot yet arise, and this test
+/// locks the shape rather than the clause.
+#[test]
+fn an_island_inside_a_round_hole_does_not_claim_the_hole() {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let mut m = Model::new();
+    let profile = crate::from_edges(vec![
+        crate::Edge2d::line(p2(-20.0, -20.0), p2(20.0, -20.0)).unwrap(),
+        crate::Edge2d::line(p2(20.0, -20.0), p2(20.0, 20.0)).unwrap(),
+        crate::Edge2d::line(p2(20.0, 20.0), p2(-20.0, 20.0)).unwrap(),
+        crate::Edge2d::line(p2(-20.0, 20.0), p2(-20.0, -20.0)).unwrap(),
+        crate::Edge2d::circle(p2(0.0, 0.0), 10.0).unwrap(),
+    ])
+    .unwrap()
+    .remove(0);
+    let frame = SketchFrame::world(&m, Axis::Z);
+    let OpOutput::Extrude { solid: plate, .. } = apply(
+        &mut m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 5.0,
+        },
+    )
+    .expect("the holed plate extrudes") else {
+        unreachable!()
+    };
+    let island = m.add_cuboid(
+        Point3::from_array([-3.0, -3.0, 0.0]),
+        Point3::from_array([3.0, 3.0, 5.0]),
+    );
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, plate, island).expect("the two bodies fuse");
+    assert_eq!(out.len(), 2, "they do not touch, so they stay two");
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v: f64 = out
+        .iter()
+        .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+        .sum();
+    let want = (40.0 * 40.0 - std::f64::consts::PI * 100.0) * 5.0 + 6.0 * 6.0 * 5.0;
+    assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+}

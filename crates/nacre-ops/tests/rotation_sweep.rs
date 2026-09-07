@@ -350,8 +350,9 @@ fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
 /// ★ One implementation, and it stays one.
 ///
 /// The retry that answers "is this ring inside that one" used to live in the callers — spelled
-/// two ways in the arrangement, missing entirely in the cleaning pass. It lives in
-/// `ring_in_ring` now, and a caller that goes around it is a caller that will quietly lack the
+/// two ways in the arrangement, missing entirely in the cleaning pass. It lived in `ring_in_ring`
+/// after that, and since cell 13 it lives in `nesting::cell_inside`, whose loop walks **one**
+/// witness list to the end. A caller that goes around it is a caller that will quietly lack the
 /// retry again, so the source says so.
 ///
 /// ★ **The exceptions are listed, not implied.** `ring_in_ring`'s value is picking *another node*
@@ -365,6 +366,10 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
         "src/combinatorics.rs",
         "src/arrangement.rs",
         "src/boolean.rs",
+        // ★ Cell 13 moved the nesting question into its own module. A file this scan does not
+        // read is a file the rule does not cover, and the engine is exactly where the shared
+        // predicate is called — so the list follows the code.
+        "src/nesting.rs",
     ];
     let mut offenders = Vec::new();
     for file in src {
@@ -389,15 +394,16 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
             }
         }
     }
-    // `ring_in_ring` is the one ring-vs-ring caller, and `point_in_component` casts its own rays
-    // in 3D. `inside_trimmed_face` asks about a single vertex — see this test's note.
+    // The engine's own per-witness door is the one ring-vs-ring caller (cell 13 — `nesting::ask`,
+    // whose retry is the loop in `cell_inside` above it), and `point_in_component` casts its own
+    // rays in 3D. `inside_trimmed_face` asks about a single vertex — see this test's note.
     offenders.retain(|o| {
-        !o.contains("point_in_ring(jd, p, v, outer)") && !o.contains("point_in_ring(jd, q, t, ")
+        !o.contains("point_in_ring(jd, wc, *t, rb)") && !o.contains("point_in_ring(jd, q, t, ")
     });
     assert_eq!(
         offenders,
         Vec::<String>::new(),
-        "call `ring_in_ring` instead — the retry lives there"
+        "call `nesting::cell_inside` instead — the retry lives there"
     );
 }
 
@@ -422,6 +428,10 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
         "src/combinatorics.rs",
         "src/arrangement.rs",
         "src/boolean.rs",
+        // ★ Cell 13 moved the nesting question into its own module. A file this scan does not
+        // read is a file the rule does not cover, and the engine is exactly where the shared
+        // predicate is called — so the list follows the code.
+        "src/nesting.rs",
     ];
     let mut offenders = Vec::new();
     for file in src {

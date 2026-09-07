@@ -3662,7 +3662,16 @@ fn merge_component(
                 Bound::Ring(o) => o,
                 Bound::Circle { cyl } => {
                     let hole_edges = hole.edges(jd, cyls, Some(wc))?;
-                    if crate::nesting::node_in_circle(jd, &hole_edges, &cyls[*cyl].def)? {
+                    // ★ Cell 13: the same engine the arrangement's nesting asks, through the same
+                    // door — this road used to hold its own copy of the four arms, and the copy
+                    // was the one whose witness supply had been cut to a single kind.
+                    if crate::nesting::cell_inside(
+                        jd,
+                        cyls,
+                        wc,
+                        crate::nesting::Cell::Ring(&hole_edges),
+                        crate::nesting::Cell::Disk(&cyls[*cyl].def),
+                    )? {
                         if owner.is_some() {
                             return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
                         }
@@ -3688,8 +3697,17 @@ fn merge_component(
             // ★ The arrangement's own two-polygon nesting ([`crate::arrangement::ring_in_ring_by_witness`])
             // — one rule, one set of witnesses; adjacency (`None`) is «not inside».
             let hole_edges = hole.edges(jd, cyls, Some(wc))?;
-            let hit = crate::nesting::ring_in_ring_by_witness(jd, cyls, wc, &hole_edges, &ring)?
-                .unwrap_or(false);
+            // A hole and an outer of one coplanar group can share a node — they are pieces of one
+            // boundary — so «share a node ⇒ not comparable» is not this road's rule, and the engine
+            // does not carry it (it stays in the arrangement's own adapter, where it has always
+            // been). Here the question is only whether the hole sits in this outer.
+            let hit = crate::nesting::cell_inside(
+                jd,
+                cyls,
+                wc,
+                crate::nesting::Cell::Ring(&hole_edges),
+                crate::nesting::Cell::Ring(&ring),
+            )?;
             if hit {
                 if owner.is_some() {
                     return Err(reject(RejectReason::CoplanarMerge)); // nested deeper than this brick names
@@ -3729,7 +3747,17 @@ fn merge_component(
             let inside = match outer {
                 Bound::Ring(o) => {
                     let ring = o.edges(jd, cyls, Some(wc))?;
-                    crate::nesting::circle_center_in_ring(jd, cyls, wc, def, &ring)?
+                    // ★ Cell 13: a disk's only witness is its **centre**, which is an interior
+                    // point — it settles «the centre is in that ring», not «the disk is inside
+                    // it», because a ring inside the disk contains the centre too. This road asked
+                    // the centre alone; the engine asks the converse the rule calls for.
+                    crate::nesting::cell_inside(
+                        jd,
+                        cyls,
+                        wc,
+                        crate::nesting::Cell::Disk(def),
+                        crate::nesting::Cell::Ring(&ring),
+                    )?
                 }
                 Bound::Circle { cyl: oc } => {
                     crate::nesting::disk_in_disk(jd, wc, def, &cyls[*oc].def)?
@@ -3750,7 +3778,13 @@ fn merge_component(
         for hole in faces[owner].1.iter() {
             if let Some(h) = hole.ring() {
                 let ring = h.edges(jd, cyls, Some(wc))?;
-                if crate::nesting::circle_center_in_ring(jd, cyls, wc, def, &ring)? {
+                if crate::nesting::cell_inside(
+                    jd,
+                    cyls,
+                    wc,
+                    crate::nesting::Cell::Disk(def),
+                    crate::nesting::Cell::Ring(&ring),
+                )? {
                     return Err(reject(RejectReason::CoplanarMerge));
                 }
             }

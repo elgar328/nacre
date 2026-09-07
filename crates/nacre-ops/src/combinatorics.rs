@@ -2591,7 +2591,8 @@ pub(crate) enum EdgeMeet {
 /// had the rule (look at the node's two off-line neighbours: opposite sides is a crossing, equal
 /// sides a touch) inlined in its scan, entangled with naming, alias recording and decline kinds;
 /// the ray caster had no rule at all and threw such a candidate away. Resilience that lives in one
-/// consumer is resilience the other does not have — the same shape [`ring_in_ring`]'s retry was in.
+/// consumer is resilience the other does not have — the same shape the nesting road's retry was in
+/// before `nesting::cell_inside` became its one loop.
 ///
 /// What each consumer does *with* a feature stays its own: the tracer turns it into a **named
 /// point** (four-plane aliases, `DeclineKind`, occupancy), the ray caster into one bit ("ahead of
@@ -2733,56 +2734,6 @@ pub(crate) fn point_in_ring(
         .first()
         .copied()
         .ok_or_else(|| reject(RejectReason::NoClearRay))
-}
-
-/// Is the ring whose nodes are `probes` inside `outer` — **asked of the ring, not of one point**.
-///
-/// [`point_in_ring`] answers for a single vertex and can honestly fail there: every ray it can
-/// cast from that vertex may have a ring node on its line. That is a fact about the *probe*, not
-/// about the two rings, so the question is retried from the next node and only an exhausted ring
-/// is a real degeneracy.
-///
-/// ★ **The retry belongs here, not in the callers.** It used to live in two of them, spelled two
-/// different ways, and the third — the coplanar-merge cleaning pass — never got it: it probed
-/// `nodes[0]` alone and rejected the whole boolean when that one vertex happened to be spoiled.
-/// Measured, that lost a *band* of rotation angles at a stroke, because a small change of angle
-/// leaves the topology (and therefore the unlucky first node) exactly where it was. Resilience
-/// that lives in a caller is resilience the next caller does not have.
-///
-/// The probes are tried in order, so the answer is deterministic. Callers decide what *adjacency*
-/// means for them (see `arrangement`'s `nest_cells` and `innermost_host`, which disagree) and ask
-/// this only about rings they have already established are disjoint.
-pub(crate) fn ring_in_ring(
-    jd: &Judge<'_, WorkingPlane>,
-    p: usize,
-    probes: &[[usize; 3]],
-    outer: &[RingEdge],
-) -> Result<bool, BoolError> {
-    for &v in probes {
-        match point_in_ring(jd, p, v, outer) {
-            Ok(hit) => return Ok(hit),
-            // ★ Cell ② stage 0: an `Err` that is *not* the no-clear-ray abstention is a failed
-            // judgement this retry swallows — counted, so the split the doc above asks for is
-            // opened on a measured population or left alone on a measured 0.
-            Err(e) => {
-                #[cfg(test)]
-                if !matches!(
-                    e,
-                    BoolError::Rejected {
-                        reason: RejectReason::NoClearRay,
-                        ..
-                    }
-                ) {
-                    *swallowed_probe::COUNT
-                        .lock()
-                        .expect("the probe's lock is never held across a panic") += 1;
-                }
-                #[cfg(not(test))]
-                let _ = e;
-            }
-        }
-    }
-    Err(reject(RejectReason::NoClearRay))
 }
 
 /// How often the two roads ask a **cylinder** face (cell ②-b's ledger line). At stage 0 this
