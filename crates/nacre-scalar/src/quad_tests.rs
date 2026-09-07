@@ -1181,9 +1181,14 @@ fn a_gap_beyond_two_roots() {
     assert_eq!(exceeds_root_sum(ri(4), ri(4), ri(4)), Some(false));
     // A negative gap never clears, whatever the roots.
     assert_eq!(exceeds_root_sum(ri(-1), ri(0), ri(0)), Some(false));
-    // The user's cell ⑰ shape, in one dimension: a fillet reaching `[5, 10]` and a drill
-    // reaching `[−7/2, 7/2]` are apart by `3/2`, and both ends are rational there.
-    assert_eq!(exceeds_root_sum(r(3, 2), ri(0), ri(0)), Some(true));
+    // ★ The two calls cell ⑰'s own shape makes, and they are not the same door: a fillet whose
+    // reach is `5 + √25` against a drill's `0 ± √(49/4)`. One way round the gap is `5` against
+    // the drill's root alone (the fillet's near end carries none) — one radical; the other way
+    // it is `−5` against both — two, and negative, so it never had a chance.
+    assert_eq!(exceeds_root_sum(ri(5), ri(0), r(49, 4)), Some(true));
+    assert_eq!(exceeds_root_sum(ri(-5), ri(25), r(49, 4)), Some(false));
+    // Two live radicals that do clear: `5 > √(1/25) + √(1/25)`.
+    assert_eq!(exceeds_root_sum(ri(5), r(1, 25), r(1, 25)), Some(true));
     // Radicands must be real.
     assert_eq!(exceeds_root_sum(ri(1), ri(-1), ri(0)), None);
 }

@@ -2017,16 +2017,18 @@ fn lateral_footprints(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint
 /// own span, so `d·p = d·o + s·(d·m) + r·(d·u)` with `(d·u)² ≤ |d⊥|² = d·d − (d·m)²/(m·m)`: the
 /// face's projected span widened by a radial reach `ρ = r·|d⊥|`, carried as its square so no
 /// root is ever formed. It is the one clearance question a lateral face answers for any other
-/// surface: a cylinder pair reads `d = m_A` against the other class's own spans
-/// ([`lateral_faces_clear`]); an oblique plane would read `d = n` against its single station.
+/// surface: a cylinder pair asks two of these against each other, once per direction its shape
+/// can state ([`separating_dirs`], [`reaches_apart`]); an oblique plane reads `d = n` against its
+/// single station.
 ///
 /// `span = None` is a face whose span could not be stated ([`lateral_spans`] empty). The reach
 /// is still bounded when `d·m = 0` — the projection is a point whatever `s` is — and unbounded
 /// otherwise, which is `None`: nothing proved. ★ That `d·m = 0` case is not a branch of its own;
-/// it is the general formula with the `s` term vanishing. The `d·m ≠ 0` arm is what the oblique
-/// plane arm reads (`d = n`, cell ⑩) and what a parallel cylinder pair reads (`d = m_A`, where the
-/// radial term vanishes instead and the question is the spans alone). `None` is also `Rat`
-/// overflow.
+/// it is the general formula with the `s` term vanishing — and it is what makes the **common
+/// perpendicular** answerable at all (cell ⑰: `d ⊥ m` for both cylinders, so neither needs a span).
+/// The `d·m ≠ 0` arm is what the oblique plane arm reads (`d = n`, cell ⑩) and what a cylinder
+/// reads along **its own** axis, where the radial term vanishes instead and the reach is the span
+/// itself. `None` is also `Rat` overflow.
 /// The reach is `[lo − √rho2_lo, hi + √rho2_hi]`: each end is a rational base and a radical the
 /// arc may or may not add. ★ With an angular extent (cell ⑩) the radial term `r·(d·û)` over the
 /// face's arc peaks at the direction of `d⊥` when the arc holds it — `√ρ²`, as before — and at an
@@ -2368,7 +2370,8 @@ fn cross_sections_clear(
 /// out of is not, and neither is a slanted or L-shaped one; those are refused as "not shown to
 /// clear", which is true. Completing the test means adding the face's own edge normals as further
 /// axes — the same test with more axes, not a different machine — and waits for a shape that
-/// needs it.
+/// needs it. ★ The cylinder **pair**'s version of this sentence was closed in cell ⑰
+/// ([`separating_dirs`]); this arm, the plane's, still waits.
 ///
 /// **Only the outer loop is walked**, and that is sound: a face is contained in the convex hull of
 /// its outer loop's **pieces** (a vertex is the piece with no width), a half-space is convex, and
