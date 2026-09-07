@@ -1030,9 +1030,13 @@ pub enum RejectReason {
     /// a boundary run along a rim whose end is not one of the rim's nodes, a run along a ruling
     /// the wall class's pieces do not tile, a cycle whose pieces do not chain end to end, or a
     /// component with no outer cycle (☑ all measured 0 across the suite before the cutover);
-    /// and the assembly's standing guards — a class carrying both circles and rulings (the
-    /// cross-axis pair), a segment lying *on* the lateral, and ruling end names that share no
-    /// single plane. [`Self::ArcBoundNotYet`]'s straight sibling.
+    /// and the assembly's standing guards — a segment lying *on* the lateral, and ruling end
+    /// names that share no single plane. [`Self::ArcBoundNotYet`]'s straight sibling.
+    ///
+    /// ★ **Cell ⑭ removed one of those guards**: «a class carrying both circles and rulings»
+    /// refused a population it had no reason to, since the two only conflict when they *meet*
+    /// and a meeting means two lateral faces share a point — which the cylinder-pair gate
+    /// refuses first, by `CylinderPairContact`.
     RulingBoundNotYet,
     /// **A loop's winding had to be read across a *curved* straight stretch.**
     ///

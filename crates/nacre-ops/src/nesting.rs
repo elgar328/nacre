@@ -36,7 +36,7 @@ use crate::tolerant::Judge;
 /// ★ It is rational **whatever way the axis points**: the class has rational coefficients or this
 /// says nothing, and the meet is one division. That is why a circle can always name a witness of
 /// its own where a *ring* cannot — a ring's corners are branch points and carry radicals.
-fn circle_centre_rat(
+pub(crate) fn circle_centre_rat(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     def: &nacre_topo::CylinderDef,

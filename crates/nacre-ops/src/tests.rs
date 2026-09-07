@@ -14054,3 +14054,198 @@ fn bores_change_nothing_about_a_rounded_plate_under_rigid_motion() {
     // ★ The population, held as a number so a change in it is loud: six of the group's motions.
     assert_eq!(bored.len(), 6, "{bored:?}");
 }
+
+/// A cylinder of radius `r` and length `h` about the world Z axis, its base at the origin, then
+/// turned a quarter about Y and translated — the shape a script's `cylinder()` states.
+fn turned_cylinder(m: &mut Model, r: f64, h: f64, shift: [f64; 3]) -> Handle<Solid> {
+    let profile = circle_profile([0.0, 0.0], r);
+    let frame = SketchFrame::world(m, Axis::Z);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: h,
+        },
+    )
+    .expect("the cylinder extrudes") else {
+        unreachable!()
+    };
+    let q = |x: f64| nacre_scalar::Rat::from_decimal(x).expect("a short decimal");
+    let turned = transform(
+        m,
+        solid,
+        &nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+            axis: Axis::Y,
+            point: [q(0.0), q(0.0), q(0.0)],
+            angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(90))
+                .expect("a right angle"),
+        }),
+    )
+    .expect("the cylinder turns");
+    transform(
+        m,
+        turned,
+        &nacre_scalar::Isometry::translation([q(shift[0]), q(shift[1]), q(shift[2])]),
+    )
+    .expect("the cylinder moves")
+}
+
+/// ★★★★★ **Cell ⑭ — the user's `cut` now reaches the *next* wall, and this row says which.**
+///
+/// Before this cell the plate's own side plane `x = 45` refused outright for carrying a circle
+/// (the tool's trace) and rulings (a fillet's) at once. That refusal is gone, the class is
+/// arranged, and the operation stops one layer further on: `crate::boolean::tangency_reject`,
+/// whose `line_in_another_plane` arm abstains because the fillet's tangent line lies in a second
+/// plane class as well — six local regions instead of three, which that record cannot speak about.
+/// ☑ Measured, not assumed: with the old guard lifted the raise moved from
+/// `arrangement.rs`'s class-edge assembly to `boolean.rs`'s tangency verdict, and the disjunct
+/// that fires is `line_in_another_plane`, not `undecided`.
+///
+/// ★ **The audit's denominator rides along.** «No circle meets a ruling» is worth nothing unless
+/// the instrument looked: this asserts it measured pairs and failed to measure none. The count is
+/// not pinned — a global counter under parallel tests cannot be attributed — but zero-claims are
+/// safe under accumulation, and «looked at all» is the half that could rot silently.
+#[test]
+fn the_users_cut_reaches_the_tangency_wall() {
+    let mut m = Model::new();
+    let plate = rounded_plate(&mut m, 4, 4);
+    let r1 = user_rib(&mut m, 17.5);
+    m.rebuild_adjacency();
+    let ab = boolean(&mut m, BoolKind::Fuse, plate, r1).expect("plate + rib")[0];
+    let r2 = user_rib(&mut m, -17.5);
+    m.rebuild_adjacency();
+    let abc = boolean(&mut m, BoolKind::Fuse, ab, r2).expect("+ the second rib")[0];
+    let tool = turned_cylinder(&mut m, 10.0, 90.0, [-45.0, 0.0, 47.0]);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Cut, abc, tool);
+    assert!(
+        matches!(
+            out,
+            Err(BoolError::Rejected {
+                reason: RejectReason::CylinderGateUndecided,
+                ..
+            })
+        ),
+        "{out:?}"
+    );
+    #[cfg(debug_assertions)]
+    {
+        use std::sync::atomic::Ordering;
+        let audit = &crate::arrangement::MIXED_CLASS_AUDIT;
+        let (pairs, unmeasured) = (
+            audit.pairs.load(Ordering::Relaxed),
+            audit.unmeasured.load(Ordering::Relaxed),
+        );
+        assert!(pairs > 0, "the mixed-class audit looked at nothing");
+        assert_eq!(
+            unmeasured, 0,
+            "the audit could not measure {unmeasured} pairs"
+        );
+    }
+}
+
+/// ★★★★★ **Cell ⑭'s negative control — the net can see a crossing.**
+///
+/// The audit reports zero circle–ruling crossings over the corpus, and that number means
+/// «none there» only if the instrument can say «there». This drives the rational net directly,
+/// where the geometry is written by hand rather than found: a class `x = 0`, a cylinder about
+/// `z` at `x = 3` with radius `5` — so its two rulings stand at `y = ±4` — and a circle centred
+/// on that plane whose radius is walked across each of them.
+///
+/// It also pins the two answers a *side* separates (a circle reaching `y = +4` does not reach
+/// `y = −4`), the tangent-wall spelling (`side == 0`, the ruling at `y = 0`), a plane that clears
+/// the cylinder outright, and the precondition (a class not parallel to the axis is `None`, never
+/// `false`).
+#[test]
+#[cfg(debug_assertions)]
+fn a_circle_and_a_ruling_meet_or_clear() {
+    use crate::arrangement::circle_meets_ruling_rat as meets;
+    let r = |v: i128| nacre_scalar::Rat::from_int(v);
+    let n = [r(1), r(0), r(0)];
+    let z = [r(0), r(0), r(1)];
+    let at = |x: i128| [r(x), r(0), r(0)];
+    let centre = |y: i128| [r(0), r(y), r(0)];
+    // Rulings at `y = ±4`: the circle centred at `y = 5` with radius 2 reaches the `+` one.
+    assert_eq!(
+        meets(&n, r(0), &at(3), &z, r(5), &centre(5), r(2), 1),
+        Some(true)
+    );
+    // …and not the `−` one, which is nine away.
+    assert_eq!(
+        meets(&n, r(0), &at(3), &z, r(5), &centre(5), r(2), -1),
+        Some(false)
+    );
+    // The mirror: a centre at `y = −5` reaches the `−` ruling.
+    assert_eq!(
+        meets(&n, r(0), &at(3), &z, r(5), &centre(-5), r(2), -1),
+        Some(true)
+    );
+    // Far enough away and it reaches neither.
+    for side in [-1i8, 1] {
+        assert_eq!(
+            meets(&n, r(0), &at(3), &z, r(5), &centre(10), r(2), side),
+            Some(false),
+            "side {side}"
+        );
+    }
+    // A tangent wall: one ruling at `y = 0`, `side == 0`.
+    assert_eq!(
+        meets(&n, r(0), &at(5), &z, r(5), &centre(1), r(2), 0),
+        Some(true)
+    );
+    assert_eq!(
+        meets(&n, r(0), &at(5), &z, r(5), &centre(5), r(2), 0),
+        Some(false)
+    );
+    // A plane that clears the cylinder carries no ruling to meet.
+    assert_eq!(
+        meets(&n, r(0), &at(10), &z, r(5), &centre(0), r(2), 1),
+        Some(false)
+    );
+    // Not parallel to the axis: no statement, rather than a false one.
+    assert_eq!(meets(&n, r(0), &at(3), &n, r(5), &centre(5), r(2), 1), None);
+}
+
+/// ★★★★★ **Cell ⑭ — why the net's population is empty today, frozen by name.**
+///
+/// A circle and a ruling of one class meet only if two lateral faces share a point, and the
+/// cylinder-pair gate refuses that before any arrangement runs. This is that gate seen from
+/// outside: two cylinders on crossing axes, one per operand, whose surfaces intersect. The
+/// refusal is `CylinderPairContact` — *not* the arrangement's name — which is the whole content
+/// of «the guard this cell deleted was standing where nothing could arrive».
+#[test]
+fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
+    let mut m = Model::new();
+    let upright = {
+        let profile = circle_profile([0.0, 0.0], 5.0);
+        let frame = SketchFrame::world(&m, Axis::Z);
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 20.0,
+            },
+        )
+        .expect("the upright extrudes") else {
+            unreachable!()
+        };
+        solid
+    };
+    let across = turned_cylinder(&mut m, 5.0, 20.0, [-10.0, 0.0, 10.0]);
+    m.rebuild_adjacency();
+    for kind in [BoolKind::Fuse, BoolKind::Cut] {
+        let out = boolean(&mut m, kind, upright, across);
+        assert!(
+            matches!(
+                out,
+                Err(BoolError::Rejected {
+                    reason: RejectReason::CylinderPairContact,
+                    ..
+                })
+            ),
+            "{kind:?}: {out:?}"
+        );
+    }
+}

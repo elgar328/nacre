@@ -2274,6 +2274,31 @@ fn dump() {
                     (abc, shift(m, turned, [-45.0, 0.0, 47.0]))
                 }),
             ),
+            // ★ Cell ⑭ — **why the class-edge net's population is empty, held as a row.** Two
+            // cylinders on crossing axes, one per operand, whose surfaces meet. A class could
+            // otherwise carry one's circle and the other's rulings *touching*, which no split
+            // cuts; the pair gate refuses the pair (`CylinderPairContact`) before any arrangement
+            // runs, and this row is what would notice that stopping.
+            (
+                "crossing cylinders",
+                Box::new(|m| {
+                    let circle = |r: f64| vec![Edge2d::circle(p2(0.0, 0.0), r).unwrap()];
+                    let up = prism(m, Axis::Z, circle(5.0), 20.0);
+                    let across = prism(m, Axis::Z, circle(5.0), 20.0);
+                    let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
+                    let turned = xf(
+                        m,
+                        across,
+                        Isometry::rotation(nacre_scalar::Rotation {
+                            axis: Axis::Y,
+                            point: [r(0.0), r(0.0), r(0.0)],
+                            angle: nacre_scalar::Angle::from_deg(Rat::from_int(90))
+                                .expect("a right angle"),
+                        }),
+                    );
+                    (up, shift(m, turned, [-10.0, 0.0, 10.0]))
+                }),
+            ),
         ];
         for (pn, build) in &pairs {
             for (kn, k) in KINDS {

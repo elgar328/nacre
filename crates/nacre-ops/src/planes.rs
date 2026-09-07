@@ -1535,6 +1535,15 @@ pub(crate) fn cylinder_gate(
     }
     // The pair record's one reader today — the place that hands the record to the
     // cylinder–cylinder road when it exists.
+    //
+    // ★★★★★ **An obligation the cell that opens this refusal inherits** (cell ⑭). The arrangement
+    // leans on this line for a proposition of its own: a class may carry a circle (⊥ one
+    // cylinder) and rulings (∥ another) at once, and that is safe **only while the two never
+    // meet** — neither split cuts the other's kind, so a crossing they both walked past would be
+    // a node no road mints, and the point is `plane ∩ cylinder ∩ cylinder`, a nested radical with
+    // no name. Two such edges meeting means two lateral faces share a point, which is exactly what
+    // this refusal denies. `ClassEdges::of` carries the matching `debug_assert` and the derivation;
+    // when this population is admitted, that net has to become a **shipped** check there.
     if !cyl_pairs.is_empty() {
         return Err(reject(RejectReason::CylinderPairContact));
     }
