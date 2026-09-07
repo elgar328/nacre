@@ -426,9 +426,8 @@ pub fn biquad_sign(a: Rat, b: Rat, c: Rat, d: Rat, u: Rat, v: Rat) -> Option<Ori
 ///
 /// `None` only if a radicand is negative — the value asked about is not real.
 pub fn exceeds_root_sum(g: Rat, p: Rat, q: Rat) -> Option<bool> {
-    let (one, zero) = (Rat::from_int(1), Rat::from_int(0));
-    let neg_one = zero.checked_sub(one)?;
-    Some(biquad_sign(g, neg_one, neg_one, zero, p, q)? == Orient::Positive)
+    let (minus, zero) = (Rat::from_int(-1), Rat::from_int(0));
+    Some(biquad_sign(g, minus, minus, zero, p, q)? == Orient::Positive)
 }
 
 fn biquad_sign_int(
