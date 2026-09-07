@@ -1810,8 +1810,30 @@ fn tangency_rows(
         let cleared = fi
             .face
             .map(|fh| {
-                face_clears_footprint(model, model.faces.get(fh), coeffs, &o, &m, r, &spans)
-                    .unwrap_or(false)
+                let got =
+                    face_clears_footprint(model, model.faces.get(fh), coeffs, &o, &m, r, &spans);
+                #[cfg(feature = "tangency-trace")]
+                if got.is_err() {
+                    let f = model.faces.get(fh);
+                    let arcs = f
+                        .outer
+                        .half_edges
+                        .iter()
+                        .filter(|he| {
+                            !matches!(model.edge_curve(he.edge), nacre_geom::Curve::Line(_))
+                        })
+                        .count();
+                    #[allow(clippy::print_stderr)]
+                    {
+                        eprintln!(
+                            "TFACE unread edges={} arcs={} holes={}",
+                            f.outer.half_edges.len(),
+                            arcs,
+                            f.inner.len()
+                        );
+                    }
+                }
+                got.unwrap_or(false)
             })
             .unwrap_or(false);
         if cleared {
@@ -1846,6 +1868,13 @@ fn tangency_rows(
                 || mat_side.is_none()
                 || witness.is_none()
                 || cf.def.is_none();
+            #[cfg(feature = "tangency-trace")]
+            #[allow(clippy::print_stderr)]
+            {
+                eprintln!(
+                    "TROW liap={line_in_another_plane} straddles={straddles} undecided={undecided}"
+                );
+            }
             out.push(Tangency {
                 wall: c,
                 cyl: ci,

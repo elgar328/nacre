@@ -2274,6 +2274,35 @@ fn dump() {
                     (abc, shift(m, turned, [-45.0, 0.0, 47.0]))
                 }),
             ),
+            // ★ Cell ⑮ — **a disk that clears *neither* axis of the footprint.** The tool's cap
+            // sits on the plate's own side plane, and there it crosses a corner fillet's tangent
+            // line (5 away, radius 10) while overlapping the plate's z-span. So the wall rule's
+            // answer for it is «does not clear» — the other half of the pair whose first half is
+            // the user's script, where the same cap clears by both axes. Without both, the disk
+            // arm could be a constant and still be green.
+            (
+                "disk across the tangent",
+                Box::new(|m| {
+                    let c = prism(
+                        m,
+                        Axis::Z,
+                        vec![Edge2d::circle(p2(0.0, 0.0), 10.0).unwrap()],
+                        90.0,
+                    );
+                    let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
+                    let turned = xf(
+                        m,
+                        c,
+                        Isometry::rotation(nacre_scalar::Rotation {
+                            axis: Axis::Y,
+                            point: [r(0.0), r(0.0), r(0.0)],
+                            angle: nacre_scalar::Angle::from_deg(Rat::from_int(90))
+                                .expect("a right angle"),
+                        }),
+                    );
+                    (plate(m, 4, 0), shift(m, turned, [-45.0, -15.0, 6.0]))
+                }),
+            ),
             // ★ Cell ⑭ — **why the class-edge net's population is empty, held as a row.** Two
             // cylinders on crossing axes, one per operand, whose surfaces meet. A class could
             // otherwise carry one's circle and the other's rulings *touching*, which no split
