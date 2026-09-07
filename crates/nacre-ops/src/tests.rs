@@ -14249,3 +14249,58 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
         );
     }
 }
+
+/// ★★★★ **Cell ⑭ — the one shape the walk has never seen, and why no fixture stands for it.**
+///
+/// A class carrying a circle **inside** a ruling cylinder's strip would put a disk afloat in a
+/// ruling-bounded region: the arrangement's four edge kinds allow it, and nothing downstream has
+/// ever been handed it. The audit counts that population and reports **zero** — so this asks
+/// whether one could be *built*: the small cylinder crosses the big one's axis while lying wholly
+/// **inside** it, which is exactly the placement whose cap plane would carry its own circle and
+/// the big cylinder's rulings, the circle well within them.
+///
+/// ☑ Measured: it does not reach the arrangement at all — the population gate abstains first, for
+/// both kinds. So «zero inside» is not an instrument that failed to look; it is a shape the
+/// operand gate does not admit yet. One placement is not a population claim, which is why this
+/// freezes the placement by name rather than asserting anything wider.
+#[test]
+fn a_cylinder_nested_across_another_waits_at_the_gate() {
+    let mut m = Model::new();
+    let big = {
+        let profile = circle_profile([0.0, 0.0], 20.0);
+        let frame = SketchFrame::world(&m, Axis::Z);
+        let OpOutput::Extrude { solid, .. } = apply(
+            &mut m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist: 40.0,
+            },
+        )
+        .expect("the big one extrudes") else {
+            unreachable!()
+        };
+        let z = |v: i128| nacre_scalar::Rat::from_int(v);
+        transform(
+            &mut m,
+            solid,
+            &nacre_scalar::Isometry::translation([z(0), z(0), z(-20)]),
+        )
+        .expect("centred on the origin")
+    };
+    let small = turned_cylinder(&mut m, 5.0, 10.0, [-5.0, 0.0, 0.0]);
+    m.rebuild_adjacency();
+    for kind in [BoolKind::Fuse, BoolKind::Cut] {
+        let out = boolean(&mut m, kind, big, small);
+        assert!(
+            matches!(
+                out,
+                Err(BoolError::Rejected {
+                    reason: RejectReason::CylinderGateUndecided,
+                    ..
+                })
+            ),
+            "{kind:?}: {out:?}"
+        );
+    }
+}
