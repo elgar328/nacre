@@ -1922,7 +1922,7 @@ fn tangency_rows(
 /// failed [`face_clears_footprint`], and that function returns `false` exactly when the face
 /// clears *neither* axis: not across the strip **and**, for every lateral span, not wholly at or
 /// below its start nor wholly at or above its end. The second half is the overlap, already proved.
-/// Re-testing it with `axis_side` would be worse than redundant: the span is read **open**
+/// Re-testing it with [`Corner::reaches`] would be worse than redundant: the span is read **open**
 /// (`planes.rs`'s own note), so a face whose corners sit exactly on the cap planes — a slab cut
 /// flush with a bore's own height, the frozen `bore-slab` shape — would have every corner dropped
 /// and the straddle read as absent. ☑ Measured: that is exactly what happened.

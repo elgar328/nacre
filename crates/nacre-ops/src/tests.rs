@@ -14389,3 +14389,57 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
         );
     }
 }
+
+/// ★★★★ **Cell ⑮ — the shape that makes a disk *span* a tangent line, and why no verdict sees it
+/// yet.**
+///
+/// A boss tangent to the box's wall `x = 0`, and a bar ending exactly on that wall whose cap is a
+/// disk **containing** the tangent line. The gate writes the tangency row (measured: `straddles`
+/// comes back **true**, and since that wall face is one disk the only way both sides get a vote is
+/// [`nacre_scalar::StripSide::Crosses`] — the fold this cell added), and then the cylinder-pair
+/// rule speaks first and the operation stops.
+///
+/// ☑ **The two cannot be separated today.** For the row to be written at all the disk must overlap
+/// the boss's axis span; overlapping it puts the bar's own lateral inside the boss's reach, which
+/// is exactly what `lateral_faces_clear` denies. So the spanning fold is exercised but no
+/// *outcome* depends on it — the same shape as cell ⑭'s «circle inside a strip». This freezes the
+/// geometry so the cell that opens `CylinderPairContact` finds it waiting.
+#[test]
+fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
+    let mut m = Model::new();
+    let plate = m.add_cuboid(
+        Point3::from_array([0.0, 0.0, 0.0]),
+        Point3::from_array([40.0, 20.0, 10.0]),
+    );
+    // Tangent to `x = 0`: axis at x = 3, radius 3.
+    let boss = m.add_cylinder(
+        Point3::from_array([3.0, 10.0, 10.0]),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        3.0,
+        10.0,
+    );
+    m.rebuild_adjacency();
+    let a = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss fuses")[0];
+    // The bar's `+x` cap lands on `x = 0`, centred on the tangent line and overlapping the boss's
+    // span, so its disk spans that line rather than clearing it.
+    let bar = m.add_cylinder(
+        Point3::from_array([-20.0, 10.0, 9.0]),
+        Vector3::from_array([1.0, 0.0, 0.0]),
+        3.0,
+        20.0,
+    );
+    m.rebuild_adjacency();
+    for kind in [BoolKind::Fuse, BoolKind::Cut] {
+        let out = crate::boolean(&mut m, kind, a, bar);
+        assert!(
+            matches!(
+                out,
+                Err(BoolError::Rejected {
+                    reason: RejectReason::CylinderPairContact,
+                    ..
+                })
+            ),
+            "{kind:?}: {out:?}"
+        );
+    }
+}
