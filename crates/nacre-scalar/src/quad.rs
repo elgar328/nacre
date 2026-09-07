@@ -836,9 +836,14 @@ fn radial_side_int(p: &V3, origin: &V3, dir: &V3, radii: &[Rat]) -> Orient {
 ///
 /// ★ This is a statement about two **infinite surfaces**, and a sufficient condition only: the
 /// gate asks it first, and a non-parallel pair it cannot clear is then asked about its faces —
-/// each lateral face's axial span against the other faces' reach along that axis (`nacre-ops`,
-/// `planes::lateral_faces_clear`). Two studs crossing through a cube clear that way while their
-/// axes meet at a point.
+/// each lateral face's reach against the other's, along each axis and along this same common
+/// perpendicular (`nacre-ops`, `planes::lateral_faces_clear`). Two studs crossing through a cube
+/// clear along an axis while their axes meet at a point.
+///
+/// ★★ **The face test's third direction is this branch with extents.** Give it a whole circle and
+/// no span and `planes::separated` along `C` reduces to `|W·C| > (r_a + r_b)|C|`, which is the
+/// line below; a face that reaches less than its circle — a fillet's quarter — then clears where
+/// the surface cannot. Same question, one rung down, and `nacre-ops` freezes the agreement.
 pub fn cylinders_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Rat) -> Orient {
     debug_assert!(
         !is_zero3(m_a) && !is_zero3(m_b),

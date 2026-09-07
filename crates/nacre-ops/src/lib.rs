@@ -715,8 +715,9 @@ pub enum RejectReason {
     /// Two cylinder classes **of different operands may share a face**: one surface stated by
     /// both (one handle with rows of both solids, or one surface under two handles — a
     /// `translate`d twin), or axes within the radius sum whose lateral faces could not be shown
-    /// to miss each other along either axis. Where the faces do meet, their intersection is a
-    /// quartic curve, which is M6b's.
+    /// to miss each other along **any** direction the pair can state (`planes::separating_dirs`:
+    /// each axis, and for skew axes the common perpendicular). Where the faces do meet, their
+    /// intersection is a quartic curve, which is M6b's.
     ///
     /// ★ The name used to promise more than the check delivered, three times. First the gate
     /// could only measure the distance between *parallel* axes, so a drill crossing a bore with
@@ -728,6 +729,9 @@ pub enum RejectReason {
     /// pairs **within one solid**: a plate's two fillets, a slot's two half cylinders, refused a
     /// boolean with anything (cell ⑩ — same-solid pairs are not asked, parallel pairs read their
     /// spans, and the coincident surface under two handles is the one parallel refusal left).
+    /// ★★ And a fourth: the face test asked only the two **axes**, so a filleted plate and a drill
+    /// laid across it — apart along the rulings' cross product and nothing else — were refused
+    /// (cell ⑰ closed the rational candidate set).
     CylinderPairContact,
     /// The population gate could not decide a (plane, cylinder) pair **exactly** — a plane
     /// with no narrow rational description, a rotated class, a moved cylinder (its def is

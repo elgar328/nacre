@@ -1483,8 +1483,10 @@ pub(crate) fn cylinder_gate(
     // across it were refused because their *axes* cross, though the first stud's remaining faces
     // sit past `|z| = 0.5` and the second's whole surface within `|z| = 0.2`. So a pair the
     // distance cannot clear asks the faces themselves — the same question the plane–cylinder arm
-    // asks per face (`face_clears_footprint`), spelled for a lateral face's reach along the other
-    // axis ([`lateral_faces_clear`], either direction). Parallel axes take the same door, after
+    // asks per face (`face_clears_footprint`), spelled for a lateral face's reach against the
+    // other's along every direction the pair can state ([`lateral_faces_clear`] over
+    // [`separating_dirs`] — each axis, and for skew axes the common perpendicular, which is where
+    // a fillet beside a crosswise drill is seen apart). Parallel axes take the same door, after
     // one more surface fact — one infinite cylinder strictly **inside** the other never meets it
     // ([`nacre_scalar::cylinders_nested`]: a pin in a bore, a smaller pin stacked on a boss) —
     // and the reach along a parallel axis has no radial term, so what is left is the axis spans.
@@ -2208,10 +2210,12 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
     };
     let (fa, fb) = (listed(a.surf), listed(b.surf));
     let parallel = nacre_scalar::parallel_rat(&a.def.dir(), &b.def.dir());
-    let dirs = separating_dirs(a, b);
+    let dirs = separating_dirs(&a.def, &b.def);
     fa.iter().all(|x| {
         fb.iter().all(|y| {
-            let apart = dirs.iter().any(|d| separated(a, x, b, y, d) == Some(true));
+            let apart = dirs
+                .iter()
+                .any(|d| separated(&a.def, x, &b.def, y, d) == Some(true));
             apart || (parallel && cross_sections_clear(a, x, b, y) == Some(true))
         })
     })
@@ -2236,8 +2240,11 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
 ///
 /// Parallel axes have no third direction (the cross product is zero, and the surface rung is the
 /// distance rule with its own parallel branch); overflow forming it simply leaves the list short.
-fn separating_dirs(a: &WorkingCyl, b: &WorkingCyl) -> Vec<[nacre_scalar::Rat; 3]> {
-    let (ma, mb) = (a.def.dir(), b.def.dir());
+fn separating_dirs(
+    a: &nacre_topo::CylinderDef,
+    b: &nacre_topo::CylinderDef,
+) -> Vec<[nacre_scalar::Rat; 3]> {
+    let (ma, mb) = (a.dir(), b.dir());
     let mut out = vec![ma, mb];
     if !nacre_scalar::parallel_rat(&ma, &mb) {
         if let Some(perp) = combinatorics::cross3_rat(&ma, &mb) {
@@ -2253,13 +2260,13 @@ fn separating_dirs(a: &WorkingCyl, b: &WorkingCyl) -> Vec<[nacre_scalar::Rat; 3]
 /// projections miss cannot share a point. `None` is "not proved" — an unstatable span, or
 /// overflow.
 fn separated(
-    a: &WorkingCyl,
+    a: &nacre_topo::CylinderDef,
     x: &Footprint,
-    b: &WorkingCyl,
+    b: &nacre_topo::CylinderDef,
     y: &Footprint,
     d: &[nacre_scalar::Rat; 3],
 ) -> Option<bool> {
-    reaches_apart(&lateral_reach(&a.def, x, d)?, &lateral_reach(&b.def, y, d)?)
+    reaches_apart(&lateral_reach(a, x, d)?, &lateral_reach(b, y, d)?)
 }
 
 /// **Two lateral faces on parallel axes: do their rims' arcs miss each other in the common
@@ -3653,6 +3660,91 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
 mod tests {
     use super::*;
     use nacre_scalar::{Angle, Axis, Rat};
+
+    /// **Three directions, and each one is the only one that answers** (cell ⑰).
+    ///
+    /// `A` stands on the `z` axis through the origin, radius `1/5`, `z ∈ [0, 2]`. `B` lies along
+    /// `x`, same radius — and where it is put decides which direction sees it apart. The fourth
+    /// row is the one that matters most: a `B` that really runs through `A` is separated by
+    /// **none** of the three, which is what keeps a genuine crossing refused.
+    #[test]
+    fn each_separating_direction_is_the_only_one_for_some_pair() {
+        let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        let z = |v: i128| Rat::from_int(v);
+        let cyl = |o: [Rat; 3], m: [Rat; 3], e: [Rat; 3]| {
+            nacre_topo::CylinderDef::new(o, m, e, q(1, 5)).unwrap()
+        };
+        let a = cyl([z(0); 3], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
+        let fp = |span: [i128; 2]| Footprint {
+            span: Some([z(span[0]), z(span[1])]),
+            theta: None,
+        };
+        let (x, dirs_of) = (fp([0, 2]), |b: &nacre_topo::CylinderDef| {
+            separating_dirs(&a, b)
+        });
+        // `B` along `x`: its origin's `y`/`z` and its own span place it.
+        let along_x =
+            |y: i128, zz: i128| cyl([z(0), z(y), z(zz)], [z(1), z(0), z(0)], [z(0), z(0), z(1)]);
+        let cases: [(nacre_topo::CylinderDef, [i128; 2], [bool; 3]); 4] = [
+            // Clear of `A`'s span along `A`'s own axis, and nothing else.
+            (along_x(0, 5), [-10, 10], [true, false, false]),
+            // Off the end of `B`'s own span, and nothing else.
+            (along_x(0, 1), [5, 10], [false, true, false]),
+            // ★ Beside it, across both axes — only the common perpendicular sees this.
+            (along_x(5, 1), [-10, 10], [false, false, true]),
+            // Straight through it: no direction separates them, and none may.
+            (along_x(0, 1), [-10, 10], [false, false, false]),
+        ];
+        for (b, span, want) in cases {
+            let dirs = dirs_of(&b);
+            assert_eq!(dirs.len(), 3, "skew axes offer three directions");
+            let got: Vec<bool> = dirs
+                .iter()
+                .map(|d| separated(&a, &x, &b, &fp(span), d) == Some(true))
+                .collect();
+            assert_eq!(got, want.to_vec(), "b at {:?} span {span:?}", b.origin());
+        }
+        // Parallel axes have no third direction to offer.
+        let parallel = cyl([z(1), z(0), z(0)], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
+        assert_eq!(separating_dirs(&a, &parallel).len(), 2);
+    }
+
+    /// ★★ **The third direction is the face-level twin of the surface rung.** With a whole circle
+    /// and no span, `separated` along the common perpendicular says exactly what
+    /// [`nacre_scalar::cylinders_clear`] says about the infinite surfaces — so the face test does
+    /// not disagree with the rung that runs before it, it only knows more when a face knows more.
+    #[test]
+    fn the_common_perpendicular_degenerates_to_the_surface_rule() {
+        let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        let z = |v: i128| Rat::from_int(v);
+        let cyl = |o: [Rat; 3], m: [Rat; 3], e: [Rat; 3]| {
+            nacre_topo::CylinderDef::new(o, m, e, q(1, 5)).unwrap()
+        };
+        let a = cyl([z(0); 3], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
+        let unbounded = Footprint {
+            span: None,
+            theta: None,
+        };
+        // Offsets either side of the radius sum `2/5`, and exactly on it.
+        for (n, d) in [(1i128, 2i128), (2, 5), (1, 3), (9, 10)] {
+            let b = cyl(
+                [z(0), q(n, d), z(0)],
+                [z(1), z(0), z(0)],
+                [z(0), z(0), z(1)],
+            );
+            let perp = separating_dirs(&a, &b)[2];
+            let face = separated(&a, &unbounded, &b, &unbounded, &perp);
+            let surface = nacre_scalar::cylinders_clear(
+                &a.origin(),
+                &a.dir(),
+                a.radius(),
+                &b.origin(),
+                &b.dir(),
+                b.radius(),
+            ) == nacre_scalar::Orient::Positive;
+            assert_eq!(face, Some(surface), "offset {n}/{d}");
+        }
+    }
 
     /// **The reach of a lateral face along a direction, and the clearance read off it** — hand
     /// geometry, every arm of the two predicates.
