@@ -1099,25 +1099,70 @@ pub fn cylinder_strip_side_margin(
     m: &[Rat; 3],
     r: Rat,
 ) -> StripSide {
+    cylinder_strip_side_extent(coeffs, (p, rho), None, o, m, r)
+}
+
+/// **Where a piece whose extent across the strip is stated by its two *ends* stands** — the
+/// general form of [`cylinder_strip_side_margin`], and the only one an **arc** can use.
+///
+/// An end is a point on the plane and a margin: the low end is `U(p_lo) − ρ_lo'`, the high end
+/// `U(p_hi) + ρ_hi'`. A point is both ends with no margin, a disk is one point with the same
+/// margin twice — those pass `hi = None` — and an arc's two ends differ, because its angular
+/// extent reaches further one way than the other.
+///
+/// ★★ **`Plus`/`Minus` are exact for every shape; `Crosses` is claimed only where it is proved.**
+/// Spanning a boundary is a *positive* fact the tangency road acts on, so under-reporting it is
+/// the safe direction — and for an asymmetric extent this door reports [`StripSide::Inside`]
+/// rather than prove it. The symmetric case (`hi = None`) keeps the complete answer it always
+/// had. An arc that genuinely spans a ruling is therefore "reached the strip, spanned nothing",
+/// which every consumer folds as "did not clear"; the day a caller needs the stronger claim from
+/// an arc, the proof is `A < W < B` on the two ends and it goes here.
+pub fn cylinder_strip_side_extent(
+    coeffs: &[Rat; 4],
+    lo: (&MeetPoint, Rat),
+    hi: Option<(&MeetPoint, Rat)>,
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    r: Rat,
+) -> StripSide {
     use num_bigint::BigInt;
-    let s = strip_scale(coeffs, p, rho, o, m, r);
     let side = |o: Orient| match o {
         Orient::Positive => StripSide::Plus,
         Orient::Negative => StripSide::Minus,
         Orient::Zero => StripSide::Inside,
     };
+    let s = strip_scale(coeffs, lo.0, lo.1, o, m, r);
     // The plane clears the cylinder: no strip exists, so nothing can reach it.
     if s.ww.sign() == num_bigint::Sign::Minus {
         return side(s.u_sign);
     }
-    // `|U| > W + ρ'` — the whole clearance, in the one comparison the scalar family shares.
-    if crate::quad::sqrt_exceeds_root_sum(&s.uu, &s.ww, &s.rr) {
-        return side(s.u_sign);
+    let Some(hi) = hi else {
+        // Symmetric: one scale answers both boundaries, and `Crosses` with it.
+        // `|U| > W + ρ'` — the whole clearance, in the one comparison the scalar family shares.
+        if crate::quad::sqrt_exceeds_root_sum(&s.uu, &s.ww, &s.rr) {
+            return side(s.u_sign);
+        }
+        let four = BigInt::from(4);
+        let span = &s.uu + &s.ww - &s.rr;
+        if span.sign() == num_bigint::Sign::Minus || &span * &span < &four * &s.uu * &s.ww {
+            return StripSide::Crosses;
+        }
+        return StripSide::Inside;
+    };
+    // Asymmetric: each end answers in its own scale, which is sound because each verdict is a
+    // self-contained comparison of that end against `±W`.
+    //
+    // `U_lo − ρ_lo' > W` is `|U_lo| > W + ρ_lo'` with `U_lo` on the `+` side — the same line,
+    // read once per end.
+    if s.u_sign == Orient::Positive && crate::quad::sqrt_exceeds_root_sum(&s.uu, &s.ww, &s.rr) {
+        return StripSide::Plus;
     }
-    let four = BigInt::from(4);
-    let span = &s.uu + &s.ww - &s.rr;
-    if span.sign() == num_bigint::Sign::Minus || &span * &span < &four * &s.uu * &s.ww {
-        return StripSide::Crosses;
+    let t = strip_scale(coeffs, hi.0, hi.1, o, m, r);
+    if t.ww.sign() == num_bigint::Sign::Minus {
+        return side(t.u_sign);
+    }
+    if t.u_sign == Orient::Negative && crate::quad::sqrt_exceeds_root_sum(&t.uu, &t.ww, &t.rr) {
+        return StripSide::Minus;
     }
     StripSide::Inside
 }
