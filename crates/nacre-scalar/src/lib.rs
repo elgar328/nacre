@@ -38,7 +38,7 @@ pub mod quad;
 pub use mag::Mag;
 pub use quad::{
     QuadVal, biquad_sign, cylinder_radial_side, cylinders_clear, cylinders_nested,
-    segment_meets_cylinder,
+    exceeds_root_sum, segment_meets_cylinder,
 };
 
 use num_rational::Ratio;

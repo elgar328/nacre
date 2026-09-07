@@ -413,6 +413,24 @@ pub fn biquad_sign(a: Rat, b: Rat, c: Rat, d: Rat, u: Rat, v: Rat) -> Option<Ori
     ))
 }
 
+/// **Is `g` beyond the sum of two roots?** — `g > √p + √q` exactly, for `p, q ≥ 0`.
+///
+/// The proposition two bounded reaches ask of each other: each end of a reach is a rational base
+/// and a radical, so "these two intervals are disjoint" is a gap against *two* roots, not one.
+/// `nacre-ops`' cylinder gate is the caller ([`crate::Rat`] units throughout, cell ⑰).
+///
+/// ★ **No new algebra**: it is [`biquad_sign`] with the coefficients this shape fixes —
+/// `sign(g − √p − √q)`, whose `√(p·q)` coefficient is zero. The degenerate `q = 0` (one root, the
+/// question a rational interval asks) falls out of that function's own `√v` guard, so there is no
+/// second spelling here and no branch to keep in step.
+///
+/// `None` only if a radicand is negative — the value asked about is not real.
+pub fn exceeds_root_sum(g: Rat, p: Rat, q: Rat) -> Option<bool> {
+    let (one, zero) = (Rat::from_int(1), Rat::from_int(0));
+    let neg_one = zero.checked_sub(one)?;
+    Some(biquad_sign(g, neg_one, neg_one, zero, p, q)? == Orient::Positive)
+}
+
 fn biquad_sign_int(
     a: &BigInt,
     b: &BigInt,

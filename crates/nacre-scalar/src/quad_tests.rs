@@ -1163,3 +1163,39 @@ fn a_branch_points_two_roots_can_straddle_a_strip() {
         );
     }
 }
+
+// ──────────────────── g > √p + √q (cell ⑰) ────────────────────
+
+/// The gap against **two** roots, by hand — the shape a cylinder pair's two reaches ask.
+#[test]
+fn a_gap_beyond_two_roots() {
+    // √2 + √3 ≈ 3.146.
+    assert_eq!(exceeds_root_sum(ri(4), ri(2), ri(3)), Some(true));
+    assert_eq!(exceeds_root_sum(ri(3), ri(2), ri(3)), Some(false));
+    // One root: the question a rational interval asks, and the same door answers it.
+    assert_eq!(exceeds_root_sum(ri(2), ri(3), ri(0)), Some(true));
+    assert_eq!(exceeds_root_sum(ri(1), ri(3), ri(0)), Some(false));
+    assert_eq!(exceeds_root_sum(ri(0), ri(0), ri(0)), Some(false));
+    assert_eq!(exceeds_root_sum(ri(1), ri(0), ri(0)), Some(true));
+    // ★ **Exactly on the boundary is not beyond it** — a touch is not a clearance. `4 = √4 + √4`.
+    assert_eq!(exceeds_root_sum(ri(4), ri(4), ri(4)), Some(false));
+    // A negative gap never clears, whatever the roots.
+    assert_eq!(exceeds_root_sum(ri(-1), ri(0), ri(0)), Some(false));
+    // The user's cell ⑰ shape, in one dimension: a fillet reaching `[5, 10]` and a drill
+    // reaching `[−7/2, 7/2]` are apart by `3/2`, and both ends are rational there.
+    assert_eq!(exceeds_root_sum(r(3, 2), ri(0), ri(0)), Some(true));
+    // Radicands must be real.
+    assert_eq!(exceeds_root_sum(ri(1), ri(-1), ri(0)), None);
+}
+
+proptest::proptest! {
+    /// Against the 512-bit oracle, over both roots — including the degenerate `q = 0`.
+    #[test]
+    fn root_sum_matches_the_oracle(
+        gn in -60i128..60, gd in 1i128..12, p in 0i128..60, q in 0i128..60,
+    ) {
+        let (g, p, q) = (r(gn, gd), ri(p), ri(q));
+        let want = oracle_biquad(g, ri(-1), ri(-1), ri(0), p, q) == Orient::Positive;
+        proptest::prop_assert_eq!(exceeds_root_sum(g, p, q), Some(want));
+    }
+}
