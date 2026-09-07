@@ -13855,3 +13855,202 @@ fn an_island_inside_a_round_hole_does_not_claim_the_hole() {
     let want = (40.0 * 40.0 - std::f64::consts::PI * 100.0) * 5.0 + 6.0 * 6.0 * 5.0;
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
+
+/// The user's rib: a stepped profile standing on the plate's top face, extruded ±20 in y.
+fn user_rib(m: &mut Model, x: f64) -> Handle<Solid> {
+    let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
+    let line =
+        |a: [f64; 2], b: [f64; 2]| crate::Edge2d::line(p2(a[0], a[1]), p2(b[0], b[1])).unwrap();
+    let profile = crate::from_edges(vec![
+        line([12.0, 0.0], [12.0, 7.5]),
+        line([12.0, 7.5], [27.0, 7.5]),
+        line([27.0, 7.5], [27.0, 5.5]),
+        line([27.0, 5.5], [62.0, 5.5]),
+        line([62.0, 5.5], [62.0, -5.5]),
+        line([62.0, -5.5], [27.0, -5.5]),
+        line([27.0, -5.5], [27.0, -7.5]),
+        line([27.0, -7.5], [12.0, -7.5]),
+        line([12.0, -7.5], [12.0, 0.0]),
+    ])
+    .unwrap()
+    .remove(0);
+    let frame = SketchFrame::world(m, Axis::Y);
+    let OpOutput::Extrude { solid, .. } = apply(
+        m,
+        &Operation::Extrude {
+            frame,
+            profile,
+            dist: 40.0,
+        },
+    )
+    .expect("the rib extrudes") else {
+        unreachable!()
+    };
+    let r = |v: f64| nacre_scalar::Rat::from_decimal(v).unwrap();
+    transform(
+        m,
+        solid,
+        &nacre_scalar::Isometry::translation([r(x), r(-20.0), r(0.0)]),
+    )
+    .expect("the rib moves")
+}
+
+/// The plate's own volume, by hand: a 90 × 50 rectangle less four fillet corners, twelve thick,
+/// less four bores.
+fn rounded_plate_volume() -> f64 {
+    let pi = std::f64::consts::PI;
+    (90.0 * 50.0 - 4.0 * (25.0 - pi * 25.0 / 4.0)) * 12.0 - 4.0 * pi * 3.5 * 3.5 * 12.0
+}
+
+/// ★ Cell 13 — **a fully rounded plate enters a boolean**, in every operation and either operand
+/// order. Its cap ring has no three-plane corner at all, so the arm that asks it against a bore's
+/// disk used to find no witness it would accept and refuse; the engine asks for the witnesses the
+/// ring actually has. The partner stands on the plate's top face and overlaps it nowhere, so every
+/// answer is arithmetic.
+#[test]
+fn a_fully_rounded_plate_with_bores_enters_a_boolean() {
+    let plate_v = rounded_plate_volume();
+    let box_v = 15.0 * 40.0 * 50.0;
+    for swapped in [false, true] {
+        for (kind, want) in [
+            (BoolKind::Fuse, Some(plate_v + box_v)),
+            (BoolKind::Cut, Some(if swapped { box_v } else { plate_v })),
+            (BoolKind::Common, None),
+        ] {
+            let mut m = Model::new();
+            let plate = rounded_plate(&mut m, 4, 4);
+            let boss = m.add_cuboid(
+                Point3::from_array([10.0, -20.0, 12.0]),
+                Point3::from_array([25.0, 20.0, 62.0]),
+            );
+            m.rebuild_adjacency();
+            let (a, b) = if swapped {
+                (boss, plate)
+            } else {
+                (plate, boss)
+            };
+            let out = boolean(&mut m, kind, a, b)
+                .unwrap_or_else(|e| panic!("{kind:?} swapped {swapped}: {e:?}"));
+            m.rebuild_adjacency();
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "{kind:?} swapped {swapped}: {:?}",
+                nacre_validate::validate(&m)
+            );
+            match want {
+                None => assert!(out.is_empty(), "{kind:?} swapped {swapped}: {out:?}"),
+                Some(want) => {
+                    assert_eq!(out.len(), 1, "{kind:?} swapped {swapped}: one body");
+                    let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+                    assert!(
+                        (v - want).abs() < 1e-9,
+                        "{kind:?} swapped {swapped}: {v} vs {want}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// ★ Cell 13 — **the user's script fuses**: the rounded, bored plate and two stepped ribs standing
+/// on it. This is the model that reported the wall (a `witness_not_rational` on the very first
+/// fuse, with the cylinder that comes later having nothing to do with it). The ribs stand on the
+/// plate and overlap nothing, so the volume is the sum of the parts.
+///
+/// ★ The `cut` that follows in the script is **not** here: it meets the next wall, a class that
+/// carries a circle and rulings at once — measured to be the plate's own side plane `x = 45`,
+/// tangent to its corner fillets and crossed by the cylinder. The census row `roundplate user
+/// script` holds that hand-off by name.
+#[test]
+fn the_users_rib_plate_fuses() {
+    let mut m = Model::new();
+    let plate = rounded_plate(&mut m, 4, 4);
+    let r1 = user_rib(&mut m, 17.5);
+    m.rebuild_adjacency();
+    let ab = boolean(&mut m, BoolKind::Fuse, plate, r1).expect("plate + rib")[0];
+    let r2 = user_rib(&mut m, -17.5);
+    m.rebuild_adjacency();
+    let out = boolean(&mut m, BoolKind::Fuse, ab, r2).expect("+ the second rib");
+    assert_eq!(out.len(), 1, "one body");
+    m.rebuild_adjacency();
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "{:?}",
+        nacre_validate::validate(&m)
+    );
+    let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+    // Each rib is its profile's area (15 × 15 + 35 × 11) forty long.
+    let want = rounded_plate_volume() + 2.0 * (15.0 * 15.0 + 35.0 * 11.0) * 40.0;
+    assert!((v - want).abs() < 1e-9, "{v} vs {want}");
+}
+
+/// ★ Cell 13 — **the witnesses a ring offers are a fact about the ring, not about its bores.**
+///
+/// The supply is read from the corners' own names and solves, so under a rigid motion the rounded
+/// plate must fare exactly as it did — and, more to the point, **exactly as the same plate without
+/// bores does**. Before this cell the bored one refused under *every* motion of the group
+/// (`WitnessNotRational`, this cell's wall, measured on the pre-engine tree); now the two sets are
+/// equal.
+///
+/// ★★ **What the two sets are is not zero, and that is a different wall.** A *filleted* outline
+/// refuses under six of the group's rotations with `NoClearRay` — every ray from its three-plane
+/// corners grazes — and it did so before this cell too, with and without bores (measured the same
+/// way). So this lock says «the bores add nothing», which is this cell's claim, and freezes the
+/// other wall by name rather than hiding it inside a green assertion.
+///
+/// (Why no rigid-motion oracle row: see `wall_and_gusset_operand` — a slanted plane's realization
+/// differs in the last bit between the two paths, which a bit-exact digest cannot carry.)
+#[test]
+fn bores_change_nothing_about_a_rounded_plate_under_rigid_motion() {
+    let outcome = |bores: usize| -> Vec<String> {
+        let mut out = Vec::new();
+        for (mn, iso, _) in motion_group() {
+            let mut m = Model::new();
+            let plate = rounded_plate(&mut m, 4, bores);
+            let boss = m.add_cuboid(
+                Point3::from_array([10.0, -20.0, 12.0]),
+                Point3::from_array([25.0, 20.0, 62.0]),
+            );
+            let a = transform(&mut m, plate, &iso).expect("the plate moves");
+            let b = transform(&mut m, boss, &iso).expect("the box moves");
+            m.rebuild_adjacency();
+            match boolean(&mut m, BoolKind::Fuse, a, b) {
+                Ok(o) => {
+                    assert_eq!(o.len(), 1, "{mn}: one body");
+                    m.rebuild_adjacency();
+                    assert!(
+                        nacre_validate::validate(&m).is_empty(),
+                        "{mn}: {:?}",
+                        nacre_validate::validate(&m)
+                    );
+                    let v = nacre_props::mass_props(&m, o[0]).expect("props").volume;
+                    let want = if bores == 0 {
+                        (90.0 * 50.0 - 4.0 * (25.0 - std::f64::consts::PI * 25.0 / 4.0)) * 12.0
+                    } else {
+                        rounded_plate_volume()
+                    } + 15.0 * 40.0 * 50.0;
+                    assert!((v - want).abs() < 1e-9, "{mn}: {v} vs {want}");
+                }
+                Err(e) => out.push(format!("{mn}: {e:?}")),
+            }
+        }
+        out
+    };
+    let bored = outcome(4);
+    let plain = outcome(0);
+    assert_eq!(
+        bored.len(),
+        plain.len(),
+        "the bores must change nothing: bored {bored:?} vs plain {plain:?}"
+    );
+    for (a, b) in bored.iter().zip(plain.iter()) {
+        let name = |s: &String| s.split(':').next().unwrap_or("").to_string();
+        assert_eq!(name(a), name(b), "the same motions, either way: {a} vs {b}");
+        assert!(
+            a.contains("NoClearRay"),
+            "and the wall that remains is the filleted outline's own, not this cell's: {a}"
+        );
+    }
+    // ★ The population, held as a number so a change in it is loud: six of the group's motions.
+    assert_eq!(bored.len(), 6, "{bored:?}");
+}
