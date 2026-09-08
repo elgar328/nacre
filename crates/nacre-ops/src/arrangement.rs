@@ -5832,14 +5832,16 @@ enum HalfEdgeKind {
     Circle(usize),
 }
 
-/// **Cell ⑭'s invariant net, asked of the class's own tables** — «does this circle actually meet
-/// that ruling?».
+/// **Does this circle actually meet that ruling?** — asked of the class's own tables.
+///
+/// ★ It began as cell ⑭'s invariant *net*, debug-only because nothing could reach the population.
+/// Cell ⑱ opened that population and this became the check `RejectReason::CircleMeetsRuling` is
+/// raised from, so it ships.
 ///
 /// ★★ Cell ⑮ folded the arithmetic away. The comparison this used to spell for itself is exactly
 /// [`nacre_scalar::cylinder_ruling_reached`] — a disk of the circle's radius about its centre,
 /// against the one named ruling — so the net now asks the predicate the gate asks, and there is
 /// one derivation rather than two. `None` stays "could not be measured", never "no".
-#[cfg(debug_assertions)]
 fn circle_meets_ruling(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,

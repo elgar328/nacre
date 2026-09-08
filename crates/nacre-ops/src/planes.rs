@@ -2427,14 +2427,22 @@ fn cross_sections_clear(
 enum Corner {
     Rational(nacre_scalar::MeetPoint),
     Branch(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
-    /// **A whole disk** — the piece a face whose outer loop is a single circle *is*.
+    /// **A piece of a circle in the face's own plane** — the whole disk a single-circle loop *is*
+    /// (`arc: None`), or one **arc** of a loop that mixes lines and arcs (`arc: Some`, cell ⑱).
     ///
     /// ★ The name «corner» is historical: what this type carries is a **boundary piece's reach**,
     /// and a vertex is the piece with no width. Written this way the loops below do not learn a
     /// new shape; they ask the same three questions and one of the answers now has extent.
-    Disk {
+    ///
+    /// ★★ `axis` is the **carrier cylinder's** axis, and `arc`'s `from → to` is counter-clockwise
+    /// about it ([`lateral_theta_extent`] states that convention). The face's own normal may run
+    /// the other way; using it would name the **complementary** arc, which is not a bound on this
+    /// piece but a different set.
+    Round {
         centre: [nacre_scalar::Rat; 3],
         rho: nacre_scalar::Rat,
+        axis: [nacre_scalar::Rat; 3],
+        arc: Option<RimArc>,
     },
 }
 
@@ -2446,7 +2454,7 @@ impl Corner {
             Self::Branch(line, s) => {
                 nacre_scalar::quad::plane_side(coeffs, line, s) == nacre_scalar::Orient::Zero
             }
-            Self::Disk { centre, .. } => nacre_scalar::point_on_plane_exact(
+            Self::Round { centre, .. } => nacre_scalar::point_on_plane_exact(
                 coeffs,
                 &nacre_scalar::MeetPoint::Narrow(*centre),
             ),
@@ -2465,14 +2473,14 @@ impl Corner {
             Self::Branch(line, s) => {
                 nacre_scalar::cylinder_strip_side_branch(coeffs, line, s, o, m, r)
             }
-            Self::Disk { centre, rho } => nacre_scalar::cylinder_strip_side_margin(
-                coeffs,
-                &nacre_scalar::MeetPoint::Narrow(*centre),
-                *rho,
-                o,
-                m,
-                r,
-            ),
+            // ★ The strip runs along `e = n × m`, so **that** is the direction the piece's extent
+            // is asked for. A whole circle reaches `±ρ|e|` alike and takes the symmetric door,
+            // which is the complete answer it always had; an arc's two ends differ and take the
+            // general one. `None` from the extent is `Inside` — reached the strip, spanned
+            // nothing — which is the safe reading for both consumers.
+            Self::Round { .. } => {
+                round_strip_side(self, coeffs, o, m, r).unwrap_or(nacre_scalar::StripSide::Inside)
+            }
         }
     }
 
@@ -2499,35 +2507,43 @@ impl Corner {
         match self {
             Self::Rational(p) => nacre_scalar::point_axis_side(p, o, m, t) == want,
             Self::Branch(line, s) => nacre_scalar::point_axis_side_branch(line, s, o, m, t) == want,
-            // The comparison quantity is `q = (p − o)·m − t(m·m)`; over the disk it sweeps
-            // `q_c ± ρ|m|`, so «reaches past» is `q_c` on that side or the radius covering the
-            // gap — `ρ²(m·m) > q_c²`, squared once and rational throughout.
+            // The comparison quantity is `q = (p − o)·m − t(m·m)`; over the piece it sweeps
+            // `q_c + [lo_off − √rho2_lo, hi_off + √rho2_hi]` ([`arc_extent`]), so «reaches past»
+            // is that end on the wanted side, or its radical covering the gap —
+            // `rho2 > end²`, squared once and rational throughout. A whole circle is the
+            // symmetric case (`off = 0`, `rho2 = ρ²|m⊥|²`), which is what this said before an
+            // arc could be a piece.
             // ★ Overflow answers **`true`**: "not shown to clear" is this test's safe direction.
-            Self::Disk { centre, rho } => {
+            Self::Round {
+                centre,
+                rho,
+                axis,
+                arc,
+            } => {
                 let zero = nacre_scalar::Rat::from_int(0);
-                let dot = |x: &[nacre_scalar::Rat; 3], y: &[nacre_scalar::Rat; 3]| {
-                    x[0].checked_mul(y[0])?
-                        .checked_add(x[1].checked_mul(y[1])?)?
-                        .checked_add(x[2].checked_mul(y[2])?)
-                };
-                let q = (|| {
+                let end = (|| {
                     let mut rel = [zero; 3];
                     for k in 0..3 {
                         rel[k] = centre[k].checked_sub(o[k])?;
                     }
-                    let mm = dot(m, m)?;
-                    dot(&rel, m)?.checked_sub(t.checked_mul(mm)?)
+                    let mm = dot3(m, m)?;
+                    let q = dot3(&rel, m)?.checked_sub(t.checked_mul(mm)?)?;
+                    let (lo_off, rho2_lo, hi_off, rho2_hi) =
+                        arc_extent(arc.as_ref(), *rho, axis, m)?;
+                    Some(match want {
+                        nacre_scalar::Orient::Positive => (q.checked_add(hi_off)?, rho2_hi),
+                        _ => (q.checked_add(lo_off)?, rho2_lo),
+                    })
                 })();
-                let hit = (|| {
-                    let q = q?;
-                    let mm = dot(m, m)?;
-                    Some(rho.checked_mul(*rho)?.checked_mul(mm)? > q.checked_mul(q)?)
-                })();
-                match (q, hit, want) {
-                    (Some(q), Some(hit), nacre_scalar::Orient::Positive) => q > zero || hit,
-                    (Some(q), Some(hit), nacre_scalar::Orient::Negative) => q < zero || hit,
-                    (_, _, nacre_scalar::Orient::Zero) => false,
-                    _ => true,
+                match (end, want) {
+                    (_, nacre_scalar::Orient::Zero) => false,
+                    (Some((e, rho2)), nacre_scalar::Orient::Positive) => {
+                        e > zero || e.checked_mul(e).is_none_or(|sq| rho2 > sq)
+                    }
+                    (Some((e, rho2)), nacre_scalar::Orient::Negative) => {
+                        e < zero || e.checked_mul(e).is_none_or(|sq| rho2 > sq)
+                    }
+                    (None, _) => true,
                 }
             }
         }
@@ -2601,7 +2617,14 @@ fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Co
         nacre_geom::Curve::Circle(_) if face.outer.half_edges.len() == 1 => {
             return disk_of(model, face, he).ok_or(CornerFail::Shape);
         }
-        _ => return Err(CornerFail::Shape),
+        // ★★★★★ **An arc is a piece too** (cell ⑱). A loop that mixes lines and arcs — a filleted
+        // outline is the everyday one — used to be unreadable here whatever the arc was or where
+        // it sat, and a face the reader cannot spell refuses the boolean. The shape is spellable:
+        // the same circle a whole loop would be, cut to the extent its two ends name. So a failure
+        // now is `Arithmetic` — a value that could not be stated — and never `Shape`.
+        nacre_geom::Curve::Circle(_) => {
+            return arc_of(model, face, he).ok_or(CornerFail::Arithmetic);
+        }
     }
     let vh = he_start(model, *he);
     match model.vertex_meet(vh) {
@@ -2642,6 +2665,147 @@ fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Co
     }
 }
 
+/// **One arc of a face's outer loop, as the round piece it is** (cell ⑱).
+///
+/// Centre, radius and axis are [`disk_of`]'s — the same derivation a whole circle takes — and the
+/// extent is the arc's two ends as **radial vectors**, which is the vocabulary [`RimArc`] and
+/// [`arc_extent`] speak. The ends come from the **edge's stored order**, because that is what
+/// `derive_edge_curve` orders counter-clockwise about the axis; the half-edge's traversal
+/// direction says nothing about which arc this is, and two faces sharing the edge see the same one.
+fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corner> {
+    let Corner::Round {
+        centre, rho, axis, ..
+    } = disk_of(model, face, he)?
+    else {
+        return None;
+    };
+    let [a, b] = model.edges.get(he.edge).vertices;
+    let radial = |vh: Handle<Vertex>| -> Option<[nacre_scalar::Rat; 3]> {
+        let p = vertex_point(model, vh)?;
+        let mut v = p;
+        for k in 0..3 {
+            v[k] = v[k].checked_sub(centre[k])?;
+        }
+        Some(v)
+    };
+    Some(Corner::Round {
+        centre,
+        rho,
+        axis,
+        arc: Some(RimArc {
+            from: radial(a)?,
+            to: radial(b)?,
+        }),
+    })
+}
+
+/// **A vertex's rational coordinates, when it has them** — the *narrow* reading, for a caller that
+/// needs a **vector** from this point rather than a point to judge.
+///
+/// [`corner_of`] deliberately does not narrow: a `Wide` meet still judges exactly, and a `Branch`
+/// corner answers through its own line-and-root spelling. An arc's radial vector is arithmetic on
+/// coordinates, so it needs them — a `Wide` meet or a branch whose root is irrational declines,
+/// and the caller says so by name.
+fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_scalar::Rat; 3]> {
+    match model.vertex_meet(vh) {
+        Some((p, None)) => p.narrow().copied(),
+        Some((p, Some(leaf))) => {
+            let (t, q) = (model.chain_translation(leaf)?, p.narrow()?);
+            let mut w = *q;
+            for (c, d) in w.iter_mut().zip(t) {
+                *c = c.checked_add(d)?;
+            }
+            Some(w)
+        }
+        None => {
+            let nacre_topo::VertexDef::Branch {
+                planes,
+                cylinder,
+                root,
+            } = model.vertices.get(vh).def
+            else {
+                return None;
+            };
+            let Corner::Branch(line, s) = branch_corner(model, planes, cylinder, root)? else {
+                return None;
+            };
+            let sr = s.as_rat()?;
+            let (b, d) = (line.base(), line.dir());
+            let mut out = b;
+            for k in 0..3 {
+                out[k] = out[k].checked_add(sr.checked_mul(d[k])?)?;
+            }
+            Some(out)
+        }
+    }
+}
+
+/// **Where a round piece stands relative to the strip** — the extent form of
+/// [`nacre_scalar::cylinder_strip_side_margin`], read along the strip's own direction `e = n × m`.
+///
+/// The piece's reach along `e` is [`arc_extent`]'s, and because the arc lies in a plane whose
+/// normal is its own axis, `e ⊥ axis` makes `e⊥ = e` — so a side that reaches its full radial peak
+/// has margin exactly `ρ`, the number the door already takes, and a side that stops at an arc end
+/// has margin `0` and a **rational offset** along `e`. An offset is exact as a *point*: shifting
+/// the centre by `off/(e·e) · e` stays on the plane and moves `U` by `off`.
+fn round_strip_side(
+    piece: &Corner,
+    coeffs: &[nacre_scalar::Rat; 4],
+    o: &[nacre_scalar::Rat; 3],
+    m: &[nacre_scalar::Rat; 3],
+    r: nacre_scalar::Rat,
+) -> Option<nacre_scalar::StripSide> {
+    use nacre_scalar::{MeetPoint, Rat};
+    let Corner::Round {
+        centre,
+        rho,
+        axis,
+        arc,
+    } = piece
+    else {
+        return None;
+    };
+    let (rho, arc) = (*rho, arc.as_ref());
+    let zero = Rat::from_int(0);
+    if arc.is_none() {
+        // A whole circle reaches alike both ways: the symmetric door, complete answer and all.
+        return Some(nacre_scalar::cylinder_strip_side_margin(
+            coeffs,
+            &MeetPoint::Narrow(*centre),
+            rho,
+            o,
+            m,
+            r,
+        ));
+    }
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    let e = combinatorics::cross3_rat(&n, m)?;
+    let ee = dot3(&e, &e)?;
+    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(arc, rho, axis, &e)?;
+    let shifted = |off: Rat| -> Option<[Rat; 3]> {
+        if off == zero {
+            return Some(*centre);
+        }
+        let k = off.checked_mul(Rat::new(ee.denom(), ee.numer())?)?;
+        let mut p = *centre;
+        for i in 0..3 {
+            p[i] = p[i].checked_add(k.checked_mul(e[i])?)?;
+        }
+        Some(p)
+    };
+    let (p_lo, p_hi) = (shifted(lo_off)?, shifted(hi_off)?);
+    // `√rho2 = ρ|e|` when the side reaches its peak, and `0` when an arc end stopped it.
+    let margin = |rho2: Rat| if rho2 == zero { zero } else { rho };
+    Some(nacre_scalar::cylinder_strip_side_extent(
+        coeffs,
+        (&MeetPoint::Narrow(p_lo), margin(rho2_lo)),
+        Some((&MeetPoint::Narrow(p_hi), margin(rho2_hi))),
+        o,
+        m,
+        r,
+    ))
+}
+
 /// **The disk a single-circle face is** — centre and radius from the exact statements, never the
 /// cache.
 ///
@@ -2680,9 +2844,11 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
     for k in 0..3 {
         centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
     }
-    Some(Corner::Disk {
+    Some(Corner::Round {
         centre,
         rho: def.radius(),
+        axis: m,
+        arc: None,
     })
 }
 
@@ -3777,6 +3943,56 @@ mod tests {
             ) == nacre_scalar::Orient::Positive;
             assert_eq!(face, Some(surface), "offset {n}/{d}");
         }
+    }
+
+    /// ★★★★★ **Cell ⑱ — an arc's reach, by hand, and which arc it is.**
+    ///
+    /// The unit circle about the origin in the plane `z = 0`, axis `+ẑ`, and the **first quadrant**
+    /// as `from = (1,0) → to = (0,1)` (counter-clockwise about that axis). Its points are
+    /// `(cos θ, sin θ)` for `θ ∈ [0, π/2]`, so along `d = (1,1,0)` it reaches
+    /// `cos θ + sin θ ∈ [1, √2]` — **one end rational, the other a radical**, which is the shape
+    /// no symmetric margin can state and the reason this rule exists.
+    ///
+    /// ★ The last block is the lock that matters most: swapping the ends names the **complementary**
+    /// arc, whose reach is genuinely different. Reading the face's normal instead of the carrier's
+    /// axis would make exactly that swap.
+    #[test]
+    fn an_arcs_reach_is_its_own_and_not_its_complements() {
+        let z = |v: i128| Rat::from_int(v);
+        let axis = [z(0), z(0), z(1)];
+        let quadrant = RimArc {
+            from: [z(1), z(0), z(0)],
+            to: [z(0), z(1), z(0)],
+        };
+        // Along `+x̂`: the peak is on the arc (it is `from`), so that end carries the radical and
+        // the other stops at an end of the arc — `[0, 1]`, the quadrant's own span in `x`.
+        assert_eq!(
+            arc_extent(Some(&quadrant), z(1), &axis, &[z(1), z(0), z(0)]),
+            Some((z(0), z(0), z(0), z(1)))
+        );
+        // Along the diagonal: `[1, √2]`. `ρ² = r²|d⊥|² = 2`, and the low end is the rational `1`.
+        assert_eq!(
+            arc_extent(Some(&quadrant), z(1), &axis, &[z(1), z(1), z(0)]),
+            Some((z(1), z(0), z(0), z(2)))
+        );
+        // A whole circle reaches alike both ways, and `d ∥ axis` has no radial term at all.
+        assert_eq!(
+            arc_extent(None, z(1), &axis, &[z(1), z(0), z(0)]),
+            Some((z(0), z(1), z(0), z(1)))
+        );
+        assert_eq!(
+            arc_extent(Some(&quadrant), z(1), &axis, &axis),
+            Some((z(0), z(0), z(0), z(0)))
+        );
+        // ★ The complement is a different set: `[−1, 1]`, not `[0, 1]`.
+        let rest = RimArc {
+            from: quadrant.to,
+            to: quadrant.from,
+        };
+        assert_eq!(
+            arc_extent(Some(&rest), z(1), &axis, &[z(1), z(0), z(0)]),
+            Some((z(0), z(1), z(0), z(1)))
+        );
     }
 
     /// **The reach of a lateral face along a direction, and the clearance read off it** — hand
