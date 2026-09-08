@@ -14294,12 +14294,15 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
                             cylinder_ruling_reached(&wall, &p, r(rho), &o, &axis, r(rad), side);
                         let both = cylinder_ruling_reached_extent(
                             &wall,
-                            (&p, r(rho)),
-                            Some((&p, r(rho))),
+                            &nacre_scalar::StripReach {
+                                lo: (&p, r(rho)),
+                                hi: Some((&p, r(rho))),
+                            },
                             &o,
                             &axis,
                             r(rad),
                             side,
+                            true,
                         );
                         assert_eq!(disk, both, "ox {ox} rad {rad} y {y} rho {rho} side {side}");
                     }
@@ -14313,15 +14316,31 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
     let lo = MeetPoint::Narrow([r(0), r(4), r(0)]);
     let hi = MeetPoint::Narrow([r(0), r(6), r(0)]);
     let o = [r(3), r(0), r(0)];
-    let reach = |side| {
-        cylinder_ruling_reached_extent(&wall, (&hi, r(0)), Some((&lo, r(0))), &o, &axis, r(5), side)
+    let reach = |side, touch_counts| {
+        cylinder_ruling_reached_extent(
+            &wall,
+            &nacre_scalar::StripReach {
+                lo: (&hi, r(0)),
+                hi: Some((&lo, r(0))),
+            },
+            &o,
+            &axis,
+            r(5),
+            side,
+            touch_counts,
+        )
     };
     // The scalar side runs along `−y` here, so the ruling at `y = +4` is the `−` one.
     assert!(
-        reach(-1),
+        reach(-1, true),
         "the reach ends on the ruling, and a touch counts"
     );
-    assert!(!reach(1), "and never comes near the other one");
+    assert!(!reach(1, true), "and never comes near the other one");
+    // ★★ Cell ⑳ — **and the same reach does not *cross* it.** The arrangement's net asks about a
+    // crossing, because a node no road mints is one; an edge tangent to another divides nothing,
+    // which is the sentence cell ⑤ wrote for a tangency at a vertex.
+    assert!(!reach(-1, false), "ending on the ruling is not crossing it");
+    assert!(!reach(1, false));
 }
 
 /// It also pins the two answers a *side* separates (a circle reaching `y = +4` does not reach

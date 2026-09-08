@@ -2784,8 +2784,10 @@ fn round_strip_side(
     let (lo, hi) = arc_ends_along(centre, rho, axis, arc, &e)?;
     Some(nacre_scalar::cylinder_strip_side_extent(
         coeffs,
-        (&MeetPoint::Narrow(lo.0), lo.1),
-        Some((&MeetPoint::Narrow(hi.0), hi.1)),
+        &nacre_scalar::StripReach {
+            lo: (&MeetPoint::Narrow(lo.0), lo.1),
+            hi: Some((&MeetPoint::Narrow(hi.0), hi.1)),
+        },
         o,
         m,
         r,
@@ -4005,12 +4007,17 @@ mod tests {
             let (lo, hi) = arc_ends_along(&centre, rho, &axis, arc, &e).expect("an extent");
             cylinder_ruling_reached_extent(
                 &coeffs,
-                (&MeetPoint::Narrow(lo.0), lo.1),
-                Some((&MeetPoint::Narrow(hi.0), hi.1)),
+                &nacre_scalar::StripReach {
+                    lo: (&MeetPoint::Narrow(lo.0), lo.1),
+                    hi: Some((&MeetPoint::Narrow(hi.0), hi.1)),
+                },
                 &o,
                 &m,
                 r,
                 side,
+                // Production's question: a crossing, not a touch (cell ⑳). Every case below is
+                // clear of the boundary either way, which is why the boundary has its own lock.
+                false,
             )
         };
         // The whole circle spans `±6/5` and holds both.

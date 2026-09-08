@@ -1099,7 +1099,26 @@ pub fn cylinder_strip_side_margin(
     m: &[Rat; 3],
     r: Rat,
 ) -> StripSide {
-    cylinder_strip_side_extent(coeffs, (p, rho), None, o, m, r)
+    cylinder_strip_side_extent(
+        coeffs,
+        &StripReach {
+            lo: (p, rho),
+            hi: None,
+        },
+        o,
+        m,
+        r,
+    )
+}
+
+/// **A piece's reach across the strip, as its two ends** — each end a point on the plane and the
+/// margin the doors add to it.
+///
+/// `hi = None` is the symmetric piece a point or a disk is: one end answers both. An arc's ends
+/// differ, and stating them is the only way that shape can ask these questions at all (cells ⑱·⑲).
+pub struct StripReach<'a> {
+    pub lo: (&'a MeetPoint, Rat),
+    pub hi: Option<(&'a MeetPoint, Rat)>,
 }
 
 /// **Where a piece whose extent across the strip is stated by its two *ends* stands** — the
@@ -1119,13 +1138,13 @@ pub fn cylinder_strip_side_margin(
 /// an arc, the proof is `A < W < B` on the two ends and it goes here.
 pub fn cylinder_strip_side_extent(
     coeffs: &[Rat; 4],
-    lo: (&MeetPoint, Rat),
-    hi: Option<(&MeetPoint, Rat)>,
+    reach: &StripReach<'_>,
     o: &[Rat; 3],
     m: &[Rat; 3],
     r: Rat,
 ) -> StripSide {
     use num_bigint::BigInt;
+    let (lo, hi) = (reach.lo, reach.hi);
     let side = |o: Orient| match o {
         Orient::Positive => StripSide::Plus,
         Orient::Negative => StripSide::Minus,
@@ -1188,7 +1207,18 @@ pub fn cylinder_ruling_reached(
     r: Rat,
     side: i8,
 ) -> bool {
-    cylinder_ruling_reached_extent(coeffs, (p, rho), None, o, m, r, side)
+    cylinder_ruling_reached_extent(
+        coeffs,
+        &StripReach {
+            lo: (p, rho),
+            hi: None,
+        },
+        o,
+        m,
+        r,
+        side,
+        true,
+    )
 }
 
 /// **Does a piece whose reach across the strip is stated by its two *ends* touch the named
@@ -1206,21 +1236,23 @@ pub fn cylinder_ruling_reached(
 /// **Closed**, like its predecessor: a piece touching the ruling at one point has reached it.
 pub fn cylinder_ruling_reached_extent(
     coeffs: &[Rat; 4],
-    lo: (&MeetPoint, Rat),
-    hi: Option<(&MeetPoint, Rat)>,
+    reach: &StripReach<'_>,
     o: &[Rat; 3],
     m: &[Rat; 3],
     r: Rat,
     side: i8,
+    touch_counts: bool,
 ) -> bool {
     use num_bigint::Sign;
+    let (lo, hi) = (reach.lo, reach.hi);
     let s_lo = strip_scale(coeffs, lo.0, lo.1, o, m, r);
     if s_lo.ww.sign() == Sign::Minus {
         return false; // the plane clears the cylinder — it has no ruling here at all
     }
     let sigma = side.signum();
-    // `U_lo − √rr > σ√ww`: the whole reach starts above the ruling.
-    if strip_end_beyond(&s_lo, s_lo.u_sign, sigma) {
+    // `U_lo − √rr > σ√ww`: the whole reach starts above the ruling. When a touch does **not**
+    // count, "starts above" includes starting exactly on it, so the comparison relaxes.
+    if strip_end_beyond(&s_lo, s_lo.u_sign, sigma, touch_counts) {
         return false;
     }
     let s_hi = match hi {
@@ -1234,28 +1266,34 @@ pub fn cylinder_ruling_reached_extent(
         }
     };
     // `U_hi + √rr < σ√ww` is the same question with `U` and `σ` both negated.
-    !strip_end_beyond(&s_hi, orient_neg(s_hi.u_sign), -sigma)
+    !strip_end_beyond(&s_hi, orient_neg(s_hi.u_sign), -sigma, touch_counts)
 }
 
-/// Is `su·√uu − √rr > σ·√ww`? — one end of a reach against the named ruling, with the signs of
-/// `U` and `σ` deciding which side of the identity each root belongs on.
-fn strip_end_beyond(s: &StripScale, su: Orient, sigma: i8) -> bool {
-    use crate::quad::sqrt_root_sum_cmp;
+/// Is `su·√uu − √rr > σ·√ww` (or `≥`, when `strict` is false)? — one end of a reach against the
+/// named ruling, with the signs of `U` and `σ` deciding which side of the identity each root
+/// belongs on, and the boundary named rather than assumed.
+fn strip_end_beyond(s: &StripScale, su: Orient, sigma: i8, strict: bool) -> bool {
+    use crate::quad::sqrt_root_sum_cmp as cmp;
+    use num_bigint::Sign;
+    let nil = |x: &num_bigint::BigInt| x.sign() == Sign::NoSign;
+    let ord = |a: &num_bigint::BigInt, b: &num_bigint::BigInt| if strict { a > b } else { a >= b };
     match (su, sigma) {
-        // `√uu > √rr + √ww`
-        (Orient::Positive, 1) => sqrt_root_sum_cmp(&s.uu, &s.rr, &s.ww, true),
-        // `√uu > √rr`
-        (Orient::Positive, 0) => s.uu > s.rr,
-        // `√uu + √ww > √rr`, i.e. not `√rr ≥ √uu + √ww`
-        (Orient::Positive, _) => !sqrt_root_sum_cmp(&s.rr, &s.uu, &s.ww, false),
-        // `√ww > √rr`
-        (Orient::Zero, -1) => s.ww > s.rr,
-        // `0 > √rr + √ww`, and `0 > √rr`
-        (Orient::Zero, _) => false,
-        // `√ww > √uu + √rr`
-        (Orient::Negative, -1) => sqrt_root_sum_cmp(&s.ww, &s.uu, &s.rr, true),
-        // `−√uu > √rr (+ √ww)`
-        (Orient::Negative, _) => false,
+        // `√uu ? √rr + √ww`
+        (Orient::Positive, 1) => cmp(&s.uu, &s.rr, &s.ww, strict),
+        // `√uu ? √rr`
+        (Orient::Positive, 0) => ord(&s.uu, &s.rr),
+        // `√uu + √ww ? √rr`, i.e. not `√rr ?̄ √uu + √ww` with the boundary flipped
+        (Orient::Positive, _) => !cmp(&s.rr, &s.uu, &s.ww, !strict),
+        // `√ww ? √rr`
+        (Orient::Zero, -1) => ord(&s.ww, &s.rr),
+        // `0 ? √rr`, and `0 ? √rr + √ww` — only an equality can hold, and only when not strict.
+        (Orient::Zero, 0) => !strict && nil(&s.rr),
+        (Orient::Zero, _) => !strict && nil(&s.rr) && nil(&s.ww),
+        // `√ww ? √uu + √rr`
+        (Orient::Negative, -1) => cmp(&s.ww, &s.uu, &s.rr, strict),
+        // `−√uu ? √rr (+ √ww)` — likewise, only as an equality of zeros.
+        (Orient::Negative, 0) => !strict && nil(&s.uu) && nil(&s.rr),
+        (Orient::Negative, _) => !strict && nil(&s.uu) && nil(&s.rr) && nil(&s.ww),
     }
 }
 

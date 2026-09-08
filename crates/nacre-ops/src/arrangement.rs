@@ -5872,8 +5872,10 @@ fn circle_meets_ruling(
         )?;
         Some(nacre_scalar::cylinder_ruling_reached_extent(
             &coeffs,
-            (&nacre_scalar::MeetPoint::Narrow(lo.0), lo.1),
-            Some((&nacre_scalar::MeetPoint::Narrow(hi.0), hi.1)),
+            &nacre_scalar::StripReach {
+                lo: (&nacre_scalar::MeetPoint::Narrow(lo.0), lo.1),
+                hi: Some((&nacre_scalar::MeetPoint::Narrow(hi.0), hi.1)),
+            },
             &o,
             &m,
             r,
@@ -5882,6 +5884,12 @@ fn circle_meets_ruling(
             // restatement is one negation, and it belongs here — at the boundary between the two
             // index spaces — rather than inside a predicate that would then have to guess.
             -ruling.side,
+            // ★★★ **A touch is not what this asks about** (cell ⑳). The node no road mints is a
+            // **crossing**; an arc tangent to a ruling divides nothing, which is the same sentence
+            // cell ⑤ wrote for a tangency at a vertex. Measured: a slab wall at `x = ±12` puts a
+            // `d 30` cylinder's rulings exactly on a `d 18` tool's circle, and the boolean that
+            // follows validates clean.
+            false,
         ))
     };
     // ★★★★★ **The question is about the arc, not the circle** (cell ⑲). A contribution states the
