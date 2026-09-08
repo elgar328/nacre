@@ -5847,6 +5847,7 @@ enum HalfEdgeKind {
 /// one derivation rather than two. `None` stays "could not be measured", never "no".
 fn circle_meets_ruling(
     jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     circle: &MergedCircle,
     ruling: &MergedRuling,
@@ -5854,26 +5855,88 @@ fn circle_meets_ruling(
     let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
     let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
     let (o, m, r) = (ruling.def.origin(), ruling.def.dir(), ruling.def.radius());
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
     // The predicate's own precondition, asked rather than assumed: a class that is not parallel
     // to the axis carries no ruling of it, and the decomposition would be about other geometry.
-    if nacre_scalar::dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m)
-        != nacre_scalar::Orient::Zero
-    {
+    if nacre_scalar::dot_sign_rat(&n, &m) != nacre_scalar::Orient::Zero {
         return None;
     }
-    Some(nacre_scalar::cylinder_ruling_reached(
-        &coeffs,
-        &nacre_scalar::MeetPoint::Narrow(centre),
-        circle.def.radius(),
-        &o,
-        &m,
-        r,
-        // ★ **The two vocabularies are opposite.** `ruling.side` is measured against `m × n`
-        // (`ruling_side_signed`), and the scalar family writes its sides about `n × m`. The
-        // restatement is one negation, and it belongs here — at the boundary between the two
-        // index spaces — rather than inside a predicate that would then have to guess.
-        -ruling.side,
-    ))
+    // The strip runs along `e = n × m`, so that is the direction a piece states its reach in.
+    let e = combinatorics::cross3_rat(&n, &m)?;
+    let ask = |arc: Option<&crate::planes::RimArc>| -> Option<bool> {
+        let (lo, hi) = crate::planes::arc_ends_along(
+            &centre,
+            circle.def.radius(),
+            &circle.def.dir(),
+            arc,
+            &e,
+        )?;
+        Some(nacre_scalar::cylinder_ruling_reached_extent(
+            &coeffs,
+            (&nacre_scalar::MeetPoint::Narrow(lo.0), lo.1),
+            Some((&nacre_scalar::MeetPoint::Narrow(hi.0), hi.1)),
+            &o,
+            &m,
+            r,
+            // ★ **The two vocabularies are opposite.** `ruling.side` is measured against `m × n`
+            // (`ruling_side_signed`), and the scalar family writes its sides about `n × m`. The
+            // restatement is one negation, and it belongs here — at the boundary between the two
+            // index spaces — rather than inside a predicate that would then have to guess.
+            -ruling.side,
+        ))
+    };
+    // ★★★★★ **The question is about the arc, not the circle** (cell ⑲). A contribution states the
+    // angular extent its face covers, and *that* is the edge — the rest of the circle is a
+    // continuation no face uses. Cell ⑱ asked the whole circle and refused a plate whose corner
+    // fillets never come near the drill's rulings.
+    //
+    // An extent that cannot be realized, and a circle with nothing partial to read, fall back to
+    // the whole circle: a superset of every arc on it, so the answer stays sound and is the one
+    // this predicate always gave.
+    if circle.merged.is_empty() {
+        return ask(None);
+    }
+    for (_, _, extent) in &circle.merged {
+        let hit = match extent {
+            None => ask(None)?,
+            Some(ends) => match rim_arc_of(jd, cyls, &centre, *ends) {
+                Some(arc) => ask(Some(&arc))?,
+                None => ask(None)?,
+            },
+        };
+        if hit {
+            return Some(true);
+        }
+    }
+    Some(false)
+}
+
+/// **A contribution's angular extent as the two radial vectors [`crate::planes::RimArc`] speaks**
+/// — its ends realized and taken from the circle's centre.
+///
+/// The order is the contribution's own, which [`CircleTrace::arc`] states is counter-clockwise
+/// about the cylinder's axis — the same convention `RimArc` carries, so no reordering. A node with
+/// no rational coordinate (a `Wide` meet, a branch whose root is irrational) gives `None`, and the
+/// caller then reads the whole circle rather than guess.
+fn rim_arc_of(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    centre: &[nacre_scalar::Rat; 3],
+    ends: [NodeId; 2],
+) -> Option<crate::planes::RimArc> {
+    let radial = |node: NodeId| -> Option<[nacre_scalar::Rat; 3]> {
+        let p = combinatorics::node_coords_rat(jd, node)
+            .or_else(|| combinatorics::branch_coords_rat(jd, cyls, node))?;
+        let mut v = p;
+        for k in 0..3 {
+            v[k] = v[k].checked_sub(centre[k])?;
+        }
+        Some(v)
+    };
+    Some(crate::planes::RimArc {
+        from: radial(ends[0])?,
+        to: radial(ends[1])?,
+    })
 }
 
 /// **Does the circle lie wholly between the two rulings?** — the sibling population, counted
@@ -5982,14 +6045,14 @@ impl<'a> ClassEdges<'a> {
                     {
                         use std::sync::atomic::Ordering;
                         MIXED_CLASS_AUDIT.pairs.fetch_add(1, Ordering::Relaxed);
-                        if circle_meets_ruling(jd, wc, c, ru).is_none() {
+                        if circle_meets_ruling(jd, cyls, wc, c, ru).is_none() {
                             MIXED_CLASS_AUDIT.unmeasured.fetch_add(1, Ordering::Relaxed);
                         }
                         if circle_inside_strip(jd, wc, c, ru) == Some(true) {
                             MIXED_CLASS_AUDIT.inside.fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                    if circle_meets_ruling(jd, wc, c, ru) != Some(false) {
+                    if circle_meets_ruling(jd, cyls, wc, c, ru) != Some(false) {
                         return Err(reject(RejectReason::CircleMeetsRuling));
                     }
                 }
@@ -9652,6 +9715,11 @@ mod tests {
             nacre_topo::CylinderDef::new(o, dir, e, r).unwrap()
         };
         // ⊥ the shared cap: a circle of radius 6/5 about `(3/2, 3/2)` on that plane.
+        //
+        // ★ The contribution is stated **whole** rather than left empty: cell ⑲ made the check read
+        // the arc a contribution covers, and an empty list is its fallback path. Carrying a real
+        // contribution keeps this test on the road a model takes.
+        let whole = vec![(SolidSide::A, SegKind::Seated { body_above: true }, None)];
         let circle = MergedCircle {
             cyl: 0,
             def: def(
@@ -9660,7 +9728,7 @@ mod tests {
                 [z(1), z(0), z(0)],
                 q(6, 5),
             ),
-            merged: Vec::new(),
+            merged: whole.clone(),
         };
         // ∥ it, and near enough (`1/2 < 1`) that both caps carry its rulings — at
         // `y = 3/2 ± √(3)/2`, which the circle above reaches past on either side.
@@ -9710,6 +9778,7 @@ mod tests {
                 [z(1), z(0), z(0)],
                 q(1, 10),
             ),
+            merged: whole,
             ..circle
         };
         // ★ Not «builds» — these edges are hand-made and the rest of the walk has no class table

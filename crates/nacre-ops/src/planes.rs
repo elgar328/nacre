@@ -2794,7 +2794,7 @@ fn round_strip_side(
 
 /// One end of a round piece's reach along a direction: a point on the piece's plane and the
 /// margin the doors add to it — `(p, ρ)`, the pair every scalar door here already takes.
-type ArcEnd = ([nacre_scalar::Rat; 3], nacre_scalar::Rat);
+pub(crate) type ArcEnd = ([nacre_scalar::Rat; 3], nacre_scalar::Rat);
 
 /// **The two ends of a round piece's reach along `d`, each as a point and a margin** — the form
 /// both scalar doors take (cell ⑲).
@@ -2809,7 +2809,7 @@ type ArcEnd = ([nacre_scalar::Rat; 3], nacre_scalar::Rat);
 ///
 /// `arc = None` is the whole circle: both ends are the centre with margin `ρ`, which is what the
 /// symmetric doors have always been handed.
-fn arc_ends_along(
+pub(crate) fn arc_ends_along(
     centre: &[nacre_scalar::Rat; 3],
     rho: nacre_scalar::Rat,
     axis: &[nacre_scalar::Rat; 3],
@@ -3975,6 +3975,63 @@ mod tests {
             ) == nacre_scalar::Orient::Positive;
             assert_eq!(face, Some(surface), "offset {n}/{d}");
         }
+    }
+
+    /// ★★★★★ **Cell ⑲ — the same circle and the same ruling, and the arc decides.**
+    ///
+    /// The unit-ish circle of radius `6/5` about the origin in `z = 0`, and a cylinder along `x`
+    /// through the origin with radius `1` — so that plane cuts it in the two rulings `y = ±1`, and
+    /// the extent every piece is measured along is `e = n × m = ŷ`.
+    ///
+    /// The whole circle reaches `y ∈ [−6/5, 6/5]` and holds both rulings. The **left** arc — from
+    /// `(−24/25, 18/25)` to `(−24/25, −18/25)`, counter-clockwise about `+ẑ`, so it runs through
+    /// `−x̂` and holds neither `±ŷ` — reaches only `[−18/25, 18/25]` and holds neither. A **top**
+    /// arc holds `+ŷ`, so it reaches `+6/5` and holds the `+1` ruling but not the `−1`.
+    ///
+    /// That is the whole of cell ⑲ in one place: cell ⑱ asked the circle and refused a plate whose
+    /// corner fillets never come near the drill's rulings.
+    #[test]
+    fn the_arc_decides_which_ruling_a_circle_holds() {
+        use nacre_scalar::{MeetPoint, cylinder_ruling_reached_extent};
+        let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        let z = |v: i128| Rat::from_int(v);
+        let coeffs = [z(0), z(0), z(1), z(0)]; // the plane `z = 0`
+        let axis = [z(0), z(0), z(1)]; // the circle's carrier
+        let (o, m, r) = ([z(0); 3], [z(1), z(0), z(0)], z(1)); // the ruling cylinder, along `x`
+        let e = [z(0), z(1), z(0)]; // `n × m`
+        let centre = [z(0); 3];
+        let rho = q(6, 5);
+        let holds = |arc: Option<&RimArc>, side: i8| {
+            let (lo, hi) = arc_ends_along(&centre, rho, &axis, arc, &e).expect("an extent");
+            cylinder_ruling_reached_extent(
+                &coeffs,
+                (&MeetPoint::Narrow(lo.0), lo.1),
+                Some((&MeetPoint::Narrow(hi.0), hi.1)),
+                &o,
+                &m,
+                r,
+                side,
+            )
+        };
+        // The whole circle spans `±6/5` and holds both.
+        for side in [-1i8, 1] {
+            assert!(holds(None, side), "the whole circle, side {side}");
+        }
+        // The left arc spans `±18/25` and holds neither — the arc's own reach, not its circle's.
+        let left = RimArc {
+            from: [q(-24, 25), q(18, 25), z(0)],
+            to: [q(-24, 25), q(-18, 25), z(0)],
+        };
+        for side in [-1i8, 1] {
+            assert!(!holds(Some(&left), side), "the left arc, side {side}");
+        }
+        // A top arc holds `+ŷ`, so it reaches `+6/5` — and still never the other ruling.
+        let top = RimArc {
+            from: [q(24, 25), q(18, 25), z(0)],
+            to: [q(-24, 25), q(18, 25), z(0)],
+        };
+        assert!(holds(Some(&top), 1), "the top arc reaches the `+1` ruling");
+        assert!(!holds(Some(&top), -1), "and never the `−1` one");
     }
 
     /// ★★★★★ **Cell ⑱ — an arc's reach, by hand, and which arc it is.**
