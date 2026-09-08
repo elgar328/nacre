@@ -423,20 +423,28 @@ pub fn biquad_sign(a: Rat, b: Rat, c: Rat, d: Rat, u: Rat, v: Rat) -> Option<Ori
 /// `U` is known through `U²` and a separate sign, and a rational `g` squares exactly. Taking
 /// `√a` rather than `g` is what lets the two share this line at all.
 pub(crate) fn sqrt_exceeds_root_sum(a: &BigInt, b: &BigInt, c: &BigInt) -> bool {
-    debug_assert!(
-        a.sign() != num_bigint::Sign::Minus,
-        "a radicand is not negative"
-    );
-    debug_assert!(
-        b.sign() != num_bigint::Sign::Minus,
-        "a radicand is not negative"
-    );
-    debug_assert!(
-        c.sign() != num_bigint::Sign::Minus,
-        "a radicand is not negative"
-    );
+    sqrt_root_sum_cmp(a, b, c, true)
+}
+
+/// [`sqrt_exceeds_root_sum`] with the boundary **named** — `√a > √b + √c` when `strict`,
+/// `√a ≥ √b + √c` when not.
+///
+/// ★ Both readings come from the one identity, and a caller that needs the non-strict form is
+/// asking the negation of a strict one somewhere else (`√x + √y > √z` is `!(√z ≥ √x + √y)`).
+/// Writing the boundary as an argument keeps that pair from drifting into two spellings.
+pub(crate) fn sqrt_root_sum_cmp(a: &BigInt, b: &BigInt, c: &BigInt, strict: bool) -> bool {
+    use num_bigint::Sign;
+    debug_assert!(a.sign() != Sign::Minus, "a radicand is not negative");
+    debug_assert!(b.sign() != Sign::Minus, "a radicand is not negative");
+    debug_assert!(c.sign() != Sign::Minus, "a radicand is not negative");
     let t = a - b - c;
-    t.sign() == num_bigint::Sign::Plus && &t * &t > BigInt::from(4) * b * c
+    let rhs = BigInt::from(4) * b * c;
+    let sq = &t * &t;
+    if strict {
+        t.sign() == Sign::Plus && sq > rhs
+    } else {
+        t.sign() != Sign::Minus && sq >= rhs
+    }
 }
 
 /// **Is `g` beyond the sum of two roots?** — `g > √p + √q` exactly, for `p, q ≥ 0`.

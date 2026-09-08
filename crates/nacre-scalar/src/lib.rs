@@ -1188,23 +1188,83 @@ pub fn cylinder_ruling_reached(
     r: Rat,
     side: i8,
 ) -> bool {
-    use num_bigint::{BigInt, Sign};
-    let s = strip_scale(coeffs, p, rho, o, m, r);
-    if s.ww.sign() == Sign::Minus {
+    cylinder_ruling_reached_extent(coeffs, (p, rho), None, o, m, r, side)
+}
+
+/// **Does a piece whose reach across the strip is stated by its two *ends* touch the named
+/// ruling?** — the general form of [`cylinder_ruling_reached`], and the only one an **arc** can use
+/// (cell ⑲).
+///
+/// The piece occupies `[U_lo − ρ_lo', U_hi + ρ_hi']` across the strip; the ruling sits at `σW`. It
+/// is touched unless the whole reach lies on one side, which is two comparisons of the same shape
+/// — each a signed sum of three roots, and each falling to [`quad::sqrt_root_sum_cmp`] once the
+/// signs of `U` and `σ` say which term goes where.
+///
+/// `hi = None` is the symmetric piece (a point, a disk), which is what this door has always been
+/// handed; then one scale answers both ends and the verdict is the one it always gave.
+///
+/// **Closed**, like its predecessor: a piece touching the ruling at one point has reached it.
+pub fn cylinder_ruling_reached_extent(
+    coeffs: &[Rat; 4],
+    lo: (&MeetPoint, Rat),
+    hi: Option<(&MeetPoint, Rat)>,
+    o: &[Rat; 3],
+    m: &[Rat; 3],
+    r: Rat,
+    side: i8,
+) -> bool {
+    use num_bigint::Sign;
+    let s_lo = strip_scale(coeffs, lo.0, lo.1, o, m, r);
+    if s_lo.ww.sign() == Sign::Minus {
         return false; // the plane clears the cylinder — it has no ruling here at all
     }
-    let four = BigInt::from(4);
-    let l = &s.ww + &s.uu - &s.rr;
-    let cross = &four * &s.ww * &s.uu;
-    let toward = match (side.signum(), s.u_sign) {
-        (0, _) | (_, Orient::Zero) => 0i8,
-        (1, Orient::Positive) | (-1, Orient::Negative) => 1,
-        _ => -1,
+    let sigma = side.signum();
+    // `U_lo − √rr > σ√ww`: the whole reach starts above the ruling.
+    if strip_end_beyond(&s_lo, s_lo.u_sign, sigma) {
+        return false;
+    }
+    let s_hi = match hi {
+        None => s_lo,
+        Some(h) => {
+            let t = strip_scale(coeffs, h.0, h.1, o, m, r);
+            if t.ww.sign() == Sign::Minus {
+                return false;
+            }
+            t
+        }
     };
-    match toward {
-        1 => l.sign() != Sign::Plus || &l * &l <= cross,
-        -1 => l.sign() == Sign::Minus && &l * &l >= cross,
-        _ => l.sign() != Sign::Plus,
+    // `U_hi + √rr < σ√ww` is the same question with `U` and `σ` both negated.
+    !strip_end_beyond(&s_hi, orient_neg(s_hi.u_sign), -sigma)
+}
+
+/// Is `su·√uu − √rr > σ·√ww`? — one end of a reach against the named ruling, with the signs of
+/// `U` and `σ` deciding which side of the identity each root belongs on.
+fn strip_end_beyond(s: &StripScale, su: Orient, sigma: i8) -> bool {
+    use crate::quad::sqrt_root_sum_cmp;
+    match (su, sigma) {
+        // `√uu > √rr + √ww`
+        (Orient::Positive, 1) => sqrt_root_sum_cmp(&s.uu, &s.rr, &s.ww, true),
+        // `√uu > √rr`
+        (Orient::Positive, 0) => s.uu > s.rr,
+        // `√uu + √ww > √rr`, i.e. not `√rr ≥ √uu + √ww`
+        (Orient::Positive, _) => !sqrt_root_sum_cmp(&s.rr, &s.uu, &s.ww, false),
+        // `√ww > √rr`
+        (Orient::Zero, -1) => s.ww > s.rr,
+        // `0 > √rr + √ww`, and `0 > √rr`
+        (Orient::Zero, _) => false,
+        // `√ww > √uu + √rr`
+        (Orient::Negative, -1) => sqrt_root_sum_cmp(&s.ww, &s.uu, &s.rr, true),
+        // `−√uu > √rr (+ √ww)`
+        (Orient::Negative, _) => false,
+    }
+}
+
+/// `Orient`'s negation — the sign of `−x` from the sign of `x`.
+fn orient_neg(o: Orient) -> Orient {
+    match o {
+        Orient::Positive => Orient::Negative,
+        Orient::Negative => Orient::Positive,
+        Orient::Zero => Orient::Zero,
     }
 }
 

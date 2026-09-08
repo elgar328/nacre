@@ -14267,6 +14267,63 @@ fn the_users_script_builds_the_same_body_after_a_motion() {
 /// `z` at `x = 3` with radius `5` — so its two rulings stand at `y = ±4` — and a circle centred
 /// on that plane whose radius is walked across each of them.
 ///
+/// ★★★★★ **Cell ⑲ — the extent form and the disk form are one door.**
+///
+/// [`nacre_scalar::cylinder_ruling_reached_extent`] answers for a piece stated by its two ends;
+/// a disk is that piece with both ends the same. Handing it the **same** point and margin twice
+/// must reproduce the disk answer exactly — otherwise the general form has drifted from the case
+/// it generalizes, and every arc reading rests on it. Swept over centres, radii and both sides so
+/// the agreement is a population, not a sample.
+///
+/// ★ And the last block is what the generalization is *for*: two **different** ends read a reach
+/// the symmetric form cannot state, and they answer differently.
+#[test]
+fn the_extent_form_agrees_with_the_disk_it_generalizes() {
+    use nacre_scalar::{MeetPoint, Rat, cylinder_ruling_reached, cylinder_ruling_reached_extent};
+    let r = |v: i128| Rat::from_int(v);
+    let wall = [r(1), r(0), r(0), r(0)];
+    let axis = [r(0), r(0), r(1)];
+    for ox in [3i128, 5, 7] {
+        for rad in [4i128, 5, 9] {
+            for y in [-10i128, -6, -4, -1, 0, 1, 4, 6, 10] {
+                for rho in [0i128, 1, 2, 4, 7] {
+                    for side in [-1i8, 0, 1] {
+                        let p = MeetPoint::Narrow([r(0), r(y), r(0)]);
+                        let o = [r(ox), r(0), r(0)];
+                        let disk =
+                            cylinder_ruling_reached(&wall, &p, r(rho), &o, &axis, r(rad), side);
+                        let both = cylinder_ruling_reached_extent(
+                            &wall,
+                            (&p, r(rho)),
+                            Some((&p, r(rho))),
+                            &o,
+                            &axis,
+                            r(rad),
+                            side,
+                        );
+                        assert_eq!(disk, both, "ox {ox} rad {rad} y {y} rho {rho} side {side}");
+                    }
+                }
+            }
+        }
+    }
+    // ★ A reach from `y = 4` to `y = 6` with no margin: it holds the `−` ruling at `y = 4`
+    // (closed, a touch counts) and misses the `+` one at `y = −4` entirely — which no single
+    // centre-and-radius could say, because a disk covering `[4, 6]` is centred at `5`.
+    let lo = MeetPoint::Narrow([r(0), r(4), r(0)]);
+    let hi = MeetPoint::Narrow([r(0), r(6), r(0)]);
+    let o = [r(3), r(0), r(0)];
+    let reach = |side| {
+        cylinder_ruling_reached_extent(&wall, (&hi, r(0)), Some((&lo, r(0))), &o, &axis, r(5), side)
+    };
+    // The scalar side runs along `−y` here, so the ruling at `y = +4` is the `−` one.
+    assert!(
+        reach(-1),
+        "the reach ends on the ruling, and a touch counts"
+    );
+    assert!(!reach(1), "and never comes near the other one");
+}
+
 /// It also pins the two answers a *side* separates (a circle reaching `y = +4` does not reach
 /// `y = −4`), the tangent-wall spelling (`side == 0`, the ruling at `y = 0`), a plane that clears
 /// the cylinder outright, and the precondition (a class not parallel to the axis is `None`, never
