@@ -681,6 +681,29 @@ pub(crate) fn cell_in_cell(
     a: usize,
     b: usize,
 ) -> Result<Option<bool>, BoolError> {
+    // ★ **Adjacency stays a ring–ring rule, where it has always been.** A shared node is a split
+    // point, so the two loops touch rather than one wrapping the other (that also excludes a
+    // contour's own `+1` partner, which carries the same ring). It is *not* asked of the disk arms
+    // today, and hoisting it into the engine would answer «not comparable» where they answer — and
+    // would change the merge road, whose rings do share nodes. The asymmetry is left where it is
+    // and written down; whether it is right is a question for its own cell.
+    // ★ **The route is one named decision** (cell 21's follow-up). It used to be three
+    // fall-throughs, and the instrument below sat above all of them — so **85% of its rows
+    // described questions no witness was ever asked for** (measured: 189,662 rows against 28,000
+    // engine questions over the lib suite). A row that says "the source had N witnesses" about a
+    // question answered by a shared node, or by two radii, is a lie the audit tests then read.
+    let route = if circle_ix[a].is_none() && circle_ix[b].is_none() {
+        let (ra, rb) = (&rings[a], &rings[b]);
+        if ra.iter().any(|e| rb.iter().any(|f| f.node == e.node)) {
+            Route::SharedNode
+        } else {
+            Route::Engine
+        }
+    } else if let (Some(ca), Some(cb)) = (circle_ix[a], circle_ix[b]) {
+        Route::DiskPair { ca, cb }
+    } else {
+        Route::Engine
+    };
     #[cfg(test)]
     if nesting_probe::on() {
         let inv = |i: usize| -> (usize, usize, usize, usize, usize, bool) {
@@ -708,6 +731,16 @@ pub(crate) fn cell_in_cell(
             )
         };
         let (named, coords, branch, chord, edge, circle) = inv(a);
+        // ★ Cell 21's blind spot: `inv` speaks a *ring's* vocabulary, so a disk read all zeros and
+        // **no row ever described the arm whose whole supply was one witness**. Its rim is its
+        // supply, so the row says how many it offered.
+        let rim = match circle_ix[a] {
+            Some(c) => rim_and_centre(jd, wc, &circles[c].def)
+                .iter()
+                .filter(|w| matches!(w, Witness::On(_)))
+                .count(),
+            None => 0,
+        };
         // Where both roads can answer, ask both — the premise under test.
         let roads = (|| {
             if circle_ix[a].is_some() || circle_ix[b].is_some() {
@@ -748,37 +781,63 @@ pub(crate) fn cell_in_cell(
             chord,
             edge,
             circle,
+            rim,
+            route,
             roads,
         });
-    }
-    // ★ **Adjacency stays a ring–ring rule, where it has always been.** A shared node is a split
-    // point, so the two loops touch rather than one wrapping the other (that also excludes a
-    // contour's own `+1` partner, which carries the same ring). It is *not* asked of the disk arms
-    // today, and hoisting it into the engine would answer «not comparable» where they answer — and
-    // would change the merge road, whose rings do share nodes. The asymmetry is left where it is
-    // and written down; whether it is right is a question for its own cell.
-    if circle_ix[a].is_none() && circle_ix[b].is_none() {
-        let (ra, rb) = (&rings[a], &rings[b]);
-        if ra.iter().any(|e| rb.iter().any(|f| f.node == e.node)) {
-            return Ok(None);
-        }
     }
     // ★ **Two disks are not a witness question at all** (cell 10): a disk lies inside another iff
     // its rim does, and the rims of two classes never meet, so the radii and the centre distance
     // decide it exactly. ★ This arm used to answer `None`, which left two disk cells unnested and
     // *silently* kept both operands' caps: a pin stacked on a boss fused into **two** untouched
     // bodies. The old refusal was masking a gap.
-    if let (Some(ca), Some(cb)) = (circle_ix[a], circle_ix[b]) {
-        return disk_in_disk(jd, wc, &circles[ca].def, &circles[cb].def).map(Some);
+    match route {
+        Route::SharedNode => Ok(None),
+        Route::DiskPair { ca, cb } => {
+            disk_in_disk(jd, wc, &circles[ca].def, &circles[cb].def).map(Some)
+        }
+        Route::Engine => {
+            let cell = |i: usize| match circle_ix[i] {
+                Some(c) => Cell::Disk(&circles[c].def),
+                None => Cell::Ring(&rings[i]),
+            };
+            cell_inside(jd, cyls, wc, cell(a), cell(b)).map(Some)
+        }
     }
-    let cell = |i: usize| match circle_ix[i] {
-        Some(c) => Cell::Disk(&circles[c].def),
-        None => Cell::Ring(&rings[i]),
-    };
-    cell_inside(jd, cyls, wc, cell(a), cell(b)).map(Some)
+}
+
+/// **Which road answers a nesting question** — named because the instrument has to say so, and
+/// because a rule spelled at the branch and again at the probe is two rules
+/// ([`nesting_probe::Row::route`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Route {
+    /// Two loops that share a node touch rather than nest: not comparable, no witness asked.
+    SharedNode,
+    /// Two disks: radii and centre distance decide, exactly ([`disk_in_disk`]). ★ It carries the
+    /// two circle indices rather than letting the arm re-derive them — the decision already knows
+    /// them, and a second `let … else { unreachable!() }` would be the rule spelled twice.
+    DiskPair { ca: usize, cb: usize },
+    /// The witness engine ([`cell_inside`]).
+    Engine,
 }
 
 /// **What every nesting question was asked with** (cell 13, test-only).
+///
+/// ★★★ **A row is not a population, and for two reasons — both measured** (cell 21's follow-up).
+/// 1. **Most rows are about questions no witness was asked for.** This pushes from
+///    [`cell_in_cell`], which answers three ways ([`Route`]): a shared node, two radii, or the
+///    engine. Sampled over the lib suite at the moment the 28,000th engine question ran, the
+///    adapter had been entered **189,662** times — so roughly **six of every seven rows** describe
+///    an offer nobody read. Filter on [`Row::route`] before counting anything,
+///    and never read a raw row count as a population (the rule `reject_census` states for raises,
+///    one layer in).
+/// 2. **The merge road is invisible.** `boolean.rs` calls [`cell_inside`] directly, so those
+///    questions never pass here at all — sampled at **~1% of engine questions in the lib suite and
+///    ~3% in census**, which is why this is a footnote rather than the headline.
+///
+/// ⚠ **Two tests reading this cannot run concurrently.** `enable`/`take`/`disable` are global, so
+/// a second reader steals the first's rows and switches it off mid-collection — a flake that cost
+/// this cell two wrong conclusions before it was named.
 ///
 /// The defect this cell fixes was invisible for one reason: the corpus never put a **ring with no
 /// three-plane corner** against a **disk**, so the arm whose witness supply was truncated to that
@@ -805,6 +864,15 @@ pub(crate) mod nesting_probe {
         pub chord: usize,
         pub edge: usize,
         pub circle: bool,
+        /// A **disk's** supply, which the five ring counts above cannot describe: how many rim
+        /// witnesses it offered (cell 21). `0` for a ring, including one that is a whole circle —
+        /// until that arm gets its rim too.
+        pub rim: usize,
+        /// **Which road answered.** Only [`super::Route::Engine`] rows ever had a witness asked
+        /// of them; the counts above describe an offer nobody read on the other two. 85% of the
+        /// rows this probe used to push were of that kind (189,662 against 28,000 engine
+        /// questions, lib suite), which is why a population read off them was wrong.
+        pub route: super::Route,
         /// Where **both** roads could answer, what each said — the direct measurement of this
         /// cell's premise, that any witness gives the same answer.
         pub roads: Option<(bool, bool)>,

@@ -13936,9 +13936,11 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     // ★ The negative control: the instrument must *see* the failing shape, or its zeros mean
     // nothing. A ring with no three-plane name, asked against a disk.
+    // ★ Cell 21's follow-up: `route` first. A row from the shared-node or two-radii road
+    // describes an offer nobody read, and 85% of the rows are of that kind.
     let nameless_vs_disk: Vec<_> = rows
         .iter()
-        .filter(|r| !r.a_disk && r.named == 0 && r.b_disk)
+        .filter(|r| r.route == nesting::Route::Engine && !r.a_disk && r.named == 0 && r.b_disk)
         .collect();
     assert!(
         !nameless_vs_disk.is_empty(),
@@ -13958,6 +13960,20 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
         assert!(r.edge > 0, "but its edges name interior points: {r:?}");
         assert!(!r.circle, "and the ring is not a circle: {r:?}");
         assert!(!r.b_mixed, "a disk target is not a mixed ring: {r:?}");
+    }
+    // ★ Cell 21's blind spot, closed: a disk source now describes its own supply. Before the rim
+    // it read all zeros in a ring's vocabulary, so no row ever said what that arm had to offer —
+    // which is how a population counted off these rows came out wrong.
+    let disks: Vec<_> = rows
+        .iter()
+        .filter(|r| r.route == nesting::Route::Engine && r.a_disk)
+        .collect();
+    assert!(
+        !disks.is_empty(),
+        "the plate's bores ask as disks: {rows:?}"
+    );
+    for r in &disks {
+        assert_eq!(r.rim, 4, "a disk offers its four rim witnesses: {r:?}");
     }
 }
 
@@ -13984,7 +14000,13 @@ fn the_two_roads_never_disagree() {
         rows.extend(nesting::nesting_probe::take());
     }
     nesting::nesting_probe::disable();
-    let both: Vec<_> = rows.iter().filter_map(|r| r.roads).collect();
+    // ★ Cell 21-C: `route` first here too. A shared-node pair is «not comparable» — the engine
+    // discards that question — so agreeing about it measures nothing the kernel acts on.
+    let both: Vec<_> = rows
+        .iter()
+        .filter(|r| r.route == nesting::Route::Engine)
+        .filter_map(|r| r.roads)
+        .collect();
     assert!(
         !both.is_empty(),
         "the fixtures must reach questions both roads can answer"
