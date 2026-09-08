@@ -5401,13 +5401,12 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 /// ★★ **It cuts rulings against *segments*, and deliberately not against arcs** — as its twin cuts
 /// circles against segments and not against rulings. One class *can* carry both populations
 /// (cell ⑭ removed the blanket refusal that said otherwise), so what keeps the pair of splits
-/// complete is no longer «they never share a class» but the sharper fact that **a circle and a
-/// ruling of one class never meet** — and what makes *that* true is now a check rather than an
-/// argument. Cell ⑭ derived it from `crate::planes::lateral_faces_clear`: a crossing would put two
-/// lateral faces on one point, which the pair rule denies. That derivation has a hole — a circle
-/// becomes an edge **whole** while the face on its cylinder may use only a quarter of it — so
-/// `ClassEdges::of` asks the question outright and refuses by name
-/// ([`crate::RejectReason::CircleMeetsRuling`], cell ⑱).
+/// complete is no longer «they never share a class» but the sharper fact that **a class's edge is
+/// some face's boundary**: two edges of different cylinders meeting would put two lateral faces on
+/// one point, which `crate::planes::lateral_faces_clear` denies (cell ⑭). That one sentence covers
+/// every pair no split cuts — circle×circle and ruling×ruling as well as this one — and
+/// `ClassEdges::of` carries a shipped backstop over the pair that has an exact predicate
+/// ([`crate::RejectReason::CircleMeetsRuling`], cells ⑱·⑲).
 ///
 /// The ordering vocabulary is the established one: along a segment, [`cmp_along`] on the
 /// canonical meet line; along a ruling, the same comparator on the **axis coordinate**
@@ -6028,12 +6027,22 @@ impl<'a> ClassEdges<'a> {
         // population becomes real — and the obligation to carry a *shipped* check then was written
         // at that refusal, where it would be read.
         //
-        // ★★★ **That day came, and this is the check** (cell ⑱). The argument above has a hole,
-        // and the two cells since found both ends of it: a circle becomes an edge **whole** while
-        // the face on that cylinder may use only a quarter of it, so a crossing on the rest says
-        // nothing about the faces — and cell ⑰ then let exactly such a pair through the gate, its
-        // faces being genuinely apart. What had stood in front of this population was the
-        // footprint reader's refusal of an arc, which cell ⑱ opened.
+        // ★★★ **The check is here, and the argument above is why it never fires** (cells ⑱·⑲).
+        // Cell ⑱ read the argument about the whole **circle** — which is not an edge of any face
+        // when the face uses a quarter of it — and refused a plate whose corner fillets never come
+        // near a crosswise drill. Cell ⑲ moved the question onto the arc a contribution states,
+        // and with that reading the argument holds: an arc reaching a ruling is inside the other
+        // cylinder's own reach (a ruling sits at `√(r² − h²) < r` from its axis), so the pair rule
+        // speaks first.
+        //
+        // ★★ **One sentence covers all three uncut pairs.** `split_at_crossings` cuts segments
+        // against segments, [`split_circles`] circles against segments, [`split_rulings`] rulings
+        // against segments — so circle×circle, circle×ruling and ruling×ruling are never cut by
+        // anything. All three are safe for the same reason: **a class's edge is some face's
+        // boundary**, so two of them from different cylinders meeting puts two lateral faces on
+        // one point. Only this pair carries a check, because only this pair has a cheap exact
+        // predicate; the other two rest on the sentence alone, and building detectors for
+        // populations that cannot arrive is what cell ⑭ warned against.
         //
         // `None` — the decomposition could not be stated — refuses with the same name:
         // honest-reject over silent-wrong, and measured to fire on nothing today (`unmeasured` is

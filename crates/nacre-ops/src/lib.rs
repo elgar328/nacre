@@ -1029,18 +1029,22 @@ pub enum RejectReason {
     /// crossing they both walk past is a node no road mints, and the point itself is
     /// `plane ∩ cylinder ∩ cylinder`, a nested radical with no name.
     ///
-    /// ★★ **Cell ⑭ argued this population could not arrive and left the obligation to check for
-    /// real when it could.** The argument was that a crossing means two lateral *faces* share a
-    /// point, which `planes::lateral_faces_clear` denies. It has a hole: a circle becomes an edge
-    /// **whole**, while the face on that cylinder may use only part of it — a corner fillet uses a
-    /// quarter — so a crossing on the rest of the circle says nothing about the faces. Cell ⑰ then
-    /// let exactly such a pair through (its faces really are apart), and cell ⑱ opened the reader
-    /// that had been standing in front of it. This is that obligation, shipped.
+    /// ★★ **Cell ⑭ argued this population could not arrive**: a crossing means two lateral
+    /// *faces* share a point, which `planes::lateral_faces_clear` denies. Cell ⑱ thought it had
+    /// found a hole — a circle becomes an edge **whole** while the face on that cylinder may use
+    /// only a quarter of it — and shipped the check. The hole was in the **reading**, not the
+    /// argument: what a contribution states is the extent its face covers, and *that* arc is the
+    /// edge. Cell ⑲ moved the question onto it, and cell ⑭'s argument holds again.
+    ///
+    /// ★★★ **So this is a backstop, and deliberately so.** A ruling sits nearer its cylinder's
+    /// axis than that cylinder's own radius (`√(r² − h²) < r`), so an arc reaching one is inside
+    /// the drill's reach and the pair rule refuses first — measured on a plate whose corner
+    /// fillets grow until their arcs do reach (`f = 6, 7, 8`: all `CylinderPairContact`). It
+    /// ships rather than living under `debug_assertions` because a node no road mints is a
+    /// **silently wrong solid**, not a crash, and this argument has been read wrong once already.
     ///
     /// Not [`RejectReason::CurvedOperandBoundary`] (the road behind can read these rings) and not
-    /// [`RejectReason::CylinderPairContact`] (the two lateral faces do **not** touch). The shape
-    /// a user meets: a plate with a corner fillet, drilled across by a tool wide enough to reach
-    /// the plate's cap planes, where the fillet's whole circle crosses the drill's rulings.
+    /// [`RejectReason::CylinderPairContact`] (the two lateral faces do **not** touch).
     CircleMeetsRuling,
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
     /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and
