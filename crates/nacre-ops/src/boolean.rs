@@ -3723,6 +3723,10 @@ fn merge_component(
     // ★★ **The members' circle holes ride through.** A circle has no nodes, so the re-threading
     // above cannot see it — which is why this pass used to skip such a component altogether, and
     // why lifting that skip without this loop drops the hole and opens the shell (measured).
+    // ★ **True of nodes, and cell 21 found the consequence that does not follow**: "no node" was
+    // read here and in three other places as "no boundary point that can be named", and a circle
+    // has four exact ones — its rim over the cylinder's own unit frame. The kernel already mints
+    // that very point as a seam vertex; what the arrangement drops is the node, not the point.
     // ★ **The engine's precondition holds here too, for a different reason**: these bounds are
     // faces of one *valid* solid lying on one plane, so no two of their loops cross — a crossing
     // would be a self-intersection the solid does not have.

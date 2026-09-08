@@ -13790,6 +13790,110 @@ fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
     solid
 }
 
+/// ★★★★★ **Cell 21 — a circle names witnesses on its own rim, and that opens a road that was
+/// structurally closed.**
+///
+/// `inside`'s converse pass skips `Witness::In` without setting a flag, so a `Cell::Disk` in the
+/// reverse position had **nothing to offer** and every such descent ended in
+/// [`crate::RejectReason::RingHasNoWitness`]. A nested pair of disks is the smallest shape that
+/// walks that road: the small disk's centre lands inside the big one, the engine asks the
+/// converse, and the converse used to refuse.
+///
+/// Both adapters answer disk↔disk with `disk_in_disk` before the engine sees it
+/// (`nesting::cell_in_cell`, `boolean.rs`'s merge road), so this configuration reaches
+/// `cell_inside` **only from a test** — which is exactly why the road needs one.
+///
+/// With the rim in the supply the question never gets that far: a boundary witness that lands
+/// strictly inside settles it at `Said::In` with no descent at all.
+#[test]
+fn a_disk_inside_a_disk_is_decided_by_its_rim() {
+    let mut m = Model::new();
+    let s = m.add_cuboid(
+        Point3::from_array([-10.0, -10.0, 0.0]),
+        Point3::from_array([10.0, 10.0, 5.0]),
+    );
+    m.rebuild_adjacency();
+    let faces_tab = collect_planes(&m, s).unwrap();
+    let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
+    let (planes, _plane_ix, _cyls) = dense_planes(&faces_tab, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let zero = nacre_scalar::Rat::from_int(0);
+    // A class the z axis actually meets — a cap, not a wall.
+    let wc = (0..planes.len())
+        .find(|&c| {
+            combinatorics::class_coeffs_rat(&jd, c)
+                .is_some_and(|k| k[0] == zero && k[1] == zero && k[2] != zero)
+        })
+        .expect("a cap class");
+    let disk = |r: i128| {
+        let q = nacre_scalar::Rat::from_int;
+        nacre_topo::CylinderDef::new(
+            [zero, zero, zero],
+            [zero, zero, q(1)],
+            [q(1), zero, zero],
+            q(r),
+        )
+        .expect("a coaxial bore")
+    };
+    let (small, big) = (disk(2), disk(7));
+    assert!(
+        crate::nesting::cell_inside(
+            &jd,
+            NO_CYLS,
+            wc,
+            crate::nesting::Cell::Disk(&small),
+            crate::nesting::Cell::Disk(&big),
+        )
+        .expect("the rim decides where the centre could only ask the converse"),
+        "the small disk is inside the big one"
+    );
+    // And the other way round is a plain «out», by the same rim.
+    assert!(
+        !crate::nesting::cell_inside(
+            &jd,
+            NO_CYLS,
+            wc,
+            crate::nesting::Cell::Disk(&big),
+            crate::nesting::Cell::Disk(&small),
+        )
+        .expect("decided"),
+        "the big disk is not inside the small one"
+    );
+}
+
+/// ★ Cell 21 — **the rim witness is the point the cylinder's own statement names.** The extrude
+/// road states a unit, perpendicular frame (a sketch frame is checked orthonormal exactly, and a
+/// whole circle's `ref_dir` is a rim chord divided by its own radius), so the unit frame comes
+/// back as the statement itself and `centre + r·û₁` is that circle's seam point — not new
+/// geometry, just the point the arrangement's uncut circle drops the node for.
+#[test]
+fn a_rim_witness_is_the_statements_own_seam_point() {
+    let mut m = Model::new();
+    let op = cylinder_op(&m, [3.0, -4.0], 2.5, 6.0);
+    apply(&mut m, &op).expect("the cylinder extrudes");
+    let def = lone_cylinder_def(&m);
+    let (u1, u2) = nacre_scalar::cyl_unit_frame(&def.dir(), &def.ref_dir())
+        .expect("the extrude road's frame is unit and perpendicular");
+    assert_eq!(u1, def.ref_dir(), "û₁ is the statement's own ref_dir");
+    assert_eq!(
+        u2,
+        combinatorics::cross3_rat(&def.dir(), &def.ref_dir()).expect("m × ê"),
+        "û₂ is m × ê, already unit"
+    );
+    // The post-condition the supply asserts where it mints: a rim point is on the rim, exactly.
+    let r = def.radius();
+    for u in [u1, u2] {
+        let mut p = def.origin();
+        for k in 0..3 {
+            p[k] = p[k].checked_add(r.checked_mul(u[k]).unwrap()).unwrap();
+        }
+        assert_eq!(
+            nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r),
+            nacre_scalar::Orient::Zero,
+        );
+    }
+}
+
 /// ★ Cell 13 — **a ring with no three-plane corner is answered by the witnesses it does have.**
 /// A nesting question is answered by a witness of the source cell; the supply that names those
 /// witnesses used to be spelled four ways, and the spelling the *disk* arm held was one kind wide.

@@ -881,6 +881,59 @@ pub fn dot_sign_rat(a: &[Rat; 3], b: &[Rat; 3]) -> Orient {
     ))
 }
 
+/// **A cylinder's rational unit cross-section frame** — `û₁ = ref_dir/‖ref_dir‖`,
+/// `û₂ = (dir × ref_dir)/(‖dir‖‖ref_dir‖)`, both exact rationals ⊥ the axis and to each other.
+///
+/// `None` — and the three causes are told apart on purpose:
+/// * `ref_dir` is **parallel to the axis** (a zero vector included — [`parallel_rat`] says so):
+///   the statement pins no cross-section at all;
+/// * `ref_dir` is **not perpendicular** to the axis ([`dot_sign_rat`], exact and total). The
+///   general recipe would project it, and that is deliberately **not** done here: a caller who
+///   needs the frame of a `CylinderDef` gets a frame whose `û·dir = 0` is a *fact*, not a
+///   derivation, because everything downstream (`quad::cylinder_radial_side` reduces to
+///   `‖dir‖²·r²·(û·û − 1)`) is sound only when that holds exactly.
+/// * a norm is **irrational**, or the arithmetic left `i128` ([`inv_sqrt_exact`]).
+///
+/// ★ Every cylinder the modelling road states satisfies the first two by construction — a sketch
+/// frame is checked orthonormal exactly, and `ref_dir` is either its `x̂` or a rim chord divided
+/// by its own radius — so `None` there means the third cause alone.
+pub fn cyl_unit_frame(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([Rat; 3], [Rat; 3])> {
+    if parallel_rat(ref_dir, dir) || dot_sign_rat(ref_dir, dir) != Orient::Zero {
+        return None;
+    }
+    let dot = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<Rat> {
+        let mut acc = Rat::from_int(0);
+        for k in 0..3 {
+            acc = acc.checked_add(a[k].checked_mul(b[k])?)?;
+        }
+        Some(acc)
+    };
+    let scale = |v: &[Rat; 3], k: Rat| -> Option<[Rat; 3]> {
+        Some([
+            v[0].checked_mul(k)?,
+            v[1].checked_mul(k)?,
+            v[2].checked_mul(k)?,
+        ])
+    };
+    let cross = [
+        dir[1]
+            .checked_mul(ref_dir[2])?
+            .checked_sub(dir[2].checked_mul(ref_dir[1])?)?,
+        dir[2]
+            .checked_mul(ref_dir[0])?
+            .checked_sub(dir[0].checked_mul(ref_dir[2])?)?,
+        dir[0]
+            .checked_mul(ref_dir[1])?
+            .checked_sub(dir[1].checked_mul(ref_dir[0])?)?,
+    ];
+    let inv_e = inv_sqrt_exact(dot(ref_dir, ref_dir)?)?;
+    let inv_m = inv_sqrt_exact(dot(dir, dir)?)?;
+    Some((
+        scale(ref_dir, inv_e)?,
+        scale(&cross, inv_e.checked_mul(inv_m)?)?,
+    ))
+}
+
 /// **How a point's distance from a plane compares with `r`** — [`Orient::Negative`] inside the
 /// slab of half-width `r` about the plane, [`Orient::Zero`] exactly at distance `r`,
 /// [`Orient::Positive`] clear of it. Exact and total.
@@ -3194,6 +3247,36 @@ pub fn mirror_plane_coeffs(c: [Rat; 4], axis: Axis, offset: Rat) -> Option<[Rat;
 
 #[cfg(test)]
 mod tests {
+    /// **A cylinder's unit frame is its own statement when the frame is already orthonormal** —
+    /// and it declines rather than projecting when `ref_dir` is not perpendicular, because every
+    /// consumer's soundness rests on `û·dir = 0` being a fact.
+    #[test]
+    fn a_cylinder_frame_is_unit_and_perpendicular_or_it_is_nothing() {
+        use crate::{Rat, cyl_unit_frame};
+        let q = |n: i128| Rat::from_int(n);
+        let v = |a: i128, b: i128, c: i128| [q(a), q(b), q(c)];
+        // Orthonormal in, and the two axes come back as the statement itself.
+        let (u1, u2) = cyl_unit_frame(&v(0, 0, 1), &v(1, 0, 0)).expect("a world frame");
+        assert_eq!(u1, v(1, 0, 0));
+        assert_eq!(u2, v(0, 1, 0));
+        // A non-unit but perpendicular seed still normalizes exactly when the norms are rational.
+        let (u1, u2) = cyl_unit_frame(&v(0, 0, 5), &v(3, 4, 0)).expect("a 3-4-5 seed");
+        assert_eq!(u1, [Rat::new(3, 5).unwrap(), Rat::new(4, 5).unwrap(), q(0)]);
+        assert_eq!(
+            u2,
+            [Rat::new(-4, 5).unwrap(), Rat::new(3, 5).unwrap(), q(0)]
+        );
+        // ★ Not perpendicular: declined, **not** projected. The projecting recipe would answer
+        // here, and its `û₁` would carry an axis component — a "rim" point off the cap plane.
+        assert!(cyl_unit_frame(&v(0, 0, 1), &v(3, 0, 4)).is_none());
+        // Parallel, and the zero vector with it (`parallel_rat` says a zero is parallel to all).
+        assert!(cyl_unit_frame(&v(0, 0, 1), &v(0, 0, 2)).is_none());
+        assert!(cyl_unit_frame(&v(0, 0, 1), &v(0, 0, 0)).is_none());
+        assert!(cyl_unit_frame(&v(0, 0, 0), &v(1, 0, 0)).is_none());
+        // An irrational norm is the third cause, and it is a decline like the others.
+        assert!(cyl_unit_frame(&v(0, 0, 1), &v(1, 1, 0)).is_none());
+    }
+
     /// `a + b·π` signed exactly through π's bracket: `22/7` and `355/113` straddle π and both
     /// decide, a rational alone is its own sign, and the integer door agrees with the `Rat` one.
     #[test]

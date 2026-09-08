@@ -350,6 +350,105 @@ enum Said {
     Unformed,
 }
 
+/// **A circle's own witnesses: four points on its rim, then its centre** (cell 21).
+///
+/// The rim points are `centre ± r·û₁` and `centre ± r·û₂` over the cylinder's rational unit
+/// cross-section frame ([`nacre_scalar::cyl_unit_frame`]). They are **boundary** witnesses, and
+/// that is the whole point: a boundary witness that lands strictly inside settles the question at
+/// once, where the centre — an interior point — has to ask the converse, and a disk **cannot
+/// answer** a converse (`inside`'s `may_ask_interior` skips its one witness, so the reverse
+/// descent has always ended in [`crate::RejectReason::RingHasNoWitness`]).
+///
+/// ★ **This is not new geometry — it is the point the kernel already mints.** For a whole circle
+/// `crate::exact` states `ref_dir` as `(vertex − centre)/radius`, so `centre + radius·ref_dir`
+/// **is** that ring's one vertex, exactly, by construction; the same expression is what
+/// `add_cylinder_exact` stores as a seam point. What the arrangement drops is the *node*: an
+/// uncut circle carries no `NodeId`, which is why the corner supply above finds nothing and why
+/// this rebuilds the point from the statement instead of reading it.
+///
+/// ★★ **Four, and no pair is droppable.** The parity ray runs along the class chart's `e₁`, and a
+/// rim point shares the centre's ray line exactly when `û ∥ e₁`. `û₁ ⊥ û₂` span the plane ⊥ the
+/// axis, so **at most one** of the two pairs can lie on that line — which also means at least one
+/// pair always leaves it. Dropping either pair would leave a class with no fresh ray. (The next
+/// rung, if four ever graze, is a Pythagorean direction — `((a²−b²)û₁ + 2ab·û₂)/(a²+b²)` is exact
+/// and unit with no new square root — and it buys a **new ray line**, which is the thing that is
+/// scarce, not a new radical.)
+///
+/// **Soundness rests on `û·û = 1` exactly**, not on the frame being cheap:
+/// `cylinder_radial_side` reduces to `‖m‖²·r²·(û·û − 1)` for any `‖m‖`, so an inexact unit vector
+/// would make a rim point a `Witness::On` that is not on the boundary — and `inside` returns from
+/// a boundary `In` **without** the converse. Hence the exact `inv_sqrt_exact` road and the
+/// post-conditions below, asserted where the point is made rather than where it is used
+/// ([`chord_midpoint_rat`]'s rule).
+///
+/// ⚠⚠ **The premise that makes these boundary points is not guarded, only asserted.** A rim point
+/// lies on the *cell* — not merely on the cylinder — because the class plane is ⊥ the axis, and
+/// nothing here enforces that: `circle_centre_rat` answers for a tilted axis too (it declines
+/// only on `n·m = 0`), and `û ⊥ m` does not give `û ⊥ n` unless `m ∥ n`. Every circle the
+/// arrangement carries passed `circle_on_class`'s `parallel_rat`, so the population that would
+/// break it is empty today and the `debug_assert` below is what would say so — but an `On` that
+/// is not on the boundary returns from `inside` **without** the converse, so this is a silent
+/// wrong answer, not a refusal. **Turning that assert into a guard is the next cell's
+/// obligation**, along with the two older consumers resting on the same unwritten premise
+/// (`disk_in_disk`'s 3-D centre distance, and `ask`'s radial arm).
+///
+/// A centre that cannot be formed keeps its own name ([`Witness::Unformed`] →
+/// [`crate::RejectReason::WitnessNotRational`]); a frame that cannot be formed suppresses the
+/// **rim only**, because "this class has no rational description" and "this cylinder's frame has
+/// an irrational norm" are different sentences and only the first is that reason's.
+fn rim_and_centre<'a>(
+    jd: &Judge<'a, WorkingPlane>,
+    wc: usize,
+    def: &nacre_topo::CylinderDef,
+) -> Vec<Witness> {
+    let Some(centre) = combinatorics::circle_centre_rat(jd, wc, def) else {
+        return vec![Witness::Unformed];
+    };
+    let mut out = Vec::with_capacity(5);
+    if let Some((u1, u2)) = nacre_scalar::cyl_unit_frame(&def.dir(), &def.ref_dir()) {
+        let r = def.radius();
+        let neg = |v: &[nacre_scalar::Rat; 3]| -> Option<[nacre_scalar::Rat; 3]> {
+            let z = nacre_scalar::Rat::from_int(0);
+            Some([
+                z.checked_sub(v[0])?,
+                z.checked_sub(v[1])?,
+                z.checked_sub(v[2])?,
+            ])
+        };
+        let at = |u: &[nacre_scalar::Rat; 3]| -> Option<[nacre_scalar::Rat; 3]> {
+            let mut p = centre;
+            for k in 0..3 {
+                p[k] = p[k].checked_add(r.checked_mul(u[k])?)?;
+            }
+            Some(p)
+        };
+        for d in [Some(u1), neg(&u1), Some(u2), neg(&u2)] {
+            // A point whose arithmetic left `i128` is simply not offered: the cell still has its
+            // centre, and calling it `Unformed` would rename the refusal.
+            let Some(p) = d.and_then(|d| at(&d)) else {
+                continue;
+            };
+            debug_assert_eq!(
+                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r),
+                nacre_scalar::Orient::Zero,
+                "a rim witness is on its own rim"
+            );
+            debug_assert!(
+                combinatorics::class_coeffs_rat(jd, wc).is_none_or(|c| {
+                    let n = [c[0], c[1], c[2]];
+                    crate::planes::dot3(&n, &p)
+                        .and_then(|d| d.checked_add(c[3]))
+                        .is_none_or(|v| v == nacre_scalar::Rat::from_int(0))
+                }),
+                "a rim witness is on the class it is a witness of"
+            );
+            out.push(Witness::On(Where::Coord(p)));
+        }
+    }
+    out.push(Witness::In(Where::Coord(centre)));
+    out
+}
+
 /// **Every witness `cell` can offer, in one order, once** (cell 13).
 ///
 /// Boundary witnesses first and in this order: the corners' three-plane **names** (the ray road,
@@ -357,6 +456,13 @@ enum Said {
 /// rational **branch** corners (a fillet tangency — cell 10), then a whole chord's **midpoint**,
 /// then a rational point **inside** an edge whose ends are two solves' roots. An interior witness
 /// last, and only where there is one: a disk's centre, and a ring that *is* a circle.
+///
+/// ★★★★★ **A circle has no corner — and the conclusion drawn from that was false** (cell 21).
+/// Every supply above reads the *arrangement*: names, nodes, chords, edge interiors. An uncut
+/// circle carries none of those (`MergedCircle`'s contributions state no `NodeId`), which is
+/// true — and four places in this kernel took the next step and concluded that such a cell has no
+/// boundary point that can be named at all. That step is wrong. A circle's boundary points are
+/// **geometric**, and they are exactly rational: [`rim_and_centre`].
 ///
 /// ★ **Lazy on purpose.** The corpus asks this question 33,781 times in one census pass, and every
 /// kind after the first is a `branch_meet` solve. The name that decides is almost always the first
@@ -376,7 +482,17 @@ fn witnesses<'a>(
             None => Witness::Unformed,
         };
     match cell {
-        Cell::Disk(def) => Box::new(std::iter::once(centre_of(def))),
+        // ★ Cell 21: a disk's boundary is a circle, and a circle's rim points are exact — the
+        // supply is no longer the centre alone.
+        // ⚠ The wrapper does **not** buy laziness here and is not there for it: `inside` is the
+        // only caller and its `for` always polls once, so the closure always runs. It is the
+        // shape the ring arm needs when the two supplies fold into one, kept the same on both
+        // sides so that fold is a move and not a rewrite. What this arm costs is five points
+        // where it used to build one — and that is the measurement cell 21 could not take
+        // (the perf A/B ran against other load).
+        Cell::Disk(def) => {
+            Box::new(std::iter::once_with(move || rim_and_centre(jd, wc, def)).flatten())
+        }
         Cell::Ring(r) => {
             let named = r.iter().filter_map(|e| {
                 combinatorics::three_plane_name(e.node).map(|t| Witness::On(Where::Named(t)))
@@ -389,8 +505,17 @@ fn witnesses<'a>(
                     .chain(edge_interior_rat(jd, cyls, e))
                     .map(|p| Witness::On(Where::Coord(p)))
             });
-            // A ring that is a whole circle has no boundary point anyone can name exactly unless
-            // its corners give one; its centre always answers, as an interior witness.
+            // ★ Cell 21 made the sentence that used to stand here false: "a ring that is a whole
+            // circle has no boundary point anyone can name exactly". It has four — the same rim
+            // points [`rim_and_centre`] gives a `Cell::Disk`. This arm still offers only the
+            // centre, because this cell fixed the shape that reported the wall and stopped there;
+            // the two arms of one supply reading differently is exactly what this module exists
+            // to prevent, so **giving this arm the rim too is the next cell's obligation**, and it
+            // is measurable (the whole-circle ring population is the one `ring_own_circle`'s doc
+            // counts). Its centre answers meanwhile, as an interior witness.
+            // ⚠ And it is eager: `Option::map` runs `centre_of` before this iterator is polled,
+            // so the module's own "lazy on purpose" rule is already broken here. Folding both
+            // arms onto `rim_and_centre` fixes that in the same move.
             let centre = ring_own_circle(r).map(centre_of).into_iter();
             Box::new(named.chain(coords).chain(centre))
         }

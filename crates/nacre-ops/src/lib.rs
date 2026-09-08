@@ -905,6 +905,13 @@ pub enum RejectReason {
     /// reach it is a segment cut again along its chord's normal line, in a multi-body result.
     /// The remedy for every such shape at once is to widen the probe's **type** so a branch
     /// corner is itself a witness.
+    ///
+    /// ★★ **And it used to be the *only* answer a disk could give the converse** (cell 21).
+    /// [`crate::nesting`]'s reverse pass skips an interior witness without setting a flag, so a
+    /// `Cell::Disk` — whose whole supply was its centre — offered nothing and fell straight to
+    /// this name, every time. Nothing in the corpus walks that road (the `== 0` above is an
+    /// emptiness of *this* corpus), so no reject ever showed it; the disk's rim witnesses close
+    /// it, and `a_disk_inside_a_disk_is_decided_by_its_rim` is that road's only coverage.
     RingHasNoWitness,
     /// **An exact *value* could not be formed** — a class with no narrow rational description (a
     /// rotated one, say) or a coordinate past `Rat`'s ceiling.
