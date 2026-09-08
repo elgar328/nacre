@@ -13,3 +13,31 @@ rust-version = "1.85"
 [workspace.dependencies]
 proptest = "1"
 rayon = "1"
+
+# ★★★★★ **The tests are the slow thing, and they were slow for one reason** (2026-09-08).
+#
+# This kernel's inner loop is exact arithmetic — `i128` rationals, `BigInt` towers, sign
+# predicates evaluated hundreds of thousands of times per boolean — and at `opt-level = 0` that
+# runs about **nine times** slower than it needs to. Measured on `nacre-ops`' library tests, same
+# session, same machine:
+#
+#   opt-level 0 : 68.4s to run     debug 2 : a 32 MB test binary
+#   opt-level 2 :  7.9s to run     debug 1 : a 11.7 MB one
+#
+# ★ **And it costs nothing where it would hurt.** The edit-compile loop is what a session actually
+# spends its time in, and incremental compilation keeps it flat: 1.22s at `opt-level 0`, **1.14s**
+# at 2, for the same one-line edit. The optimizer is paid for once per cold build, not per edit.
+#
+# ★★ `debug = 1` is line tables without the full DWARF. A panic still names its file and line —
+# that comes from `Location`, which the compiler bakes in whatever this says — and a backtrace
+# still resolves frames. What goes is the variable-level detail a debugger wants, and with it most
+# of the artifact size: `target/debug` was measured to grow **9.1 GB in a single session**, of
+# which the leftover test binaries (one per edit, never collected by cargo) were the largest
+# movable part.
+[profile.dev]
+opt-level = 2
+debug = 1
+
+[profile.test]
+opt-level = 2
+debug = 1

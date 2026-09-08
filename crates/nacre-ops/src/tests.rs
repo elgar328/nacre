@@ -919,15 +919,28 @@ fn parallel_boolean_is_thread_order_independent() {
             let (solids, report) = boolean_with_report(&mut m, BoolKind::Fuse, acc, fin).unwrap();
             m.rebuild_adjacency();
             acc = solids[0];
-            // **The report travels in the signature**, not just the geometry. Measured on
-            // this fixture: up to 841 coincidences per boolean, so `loosest`'s `max_by_key`
-            // is choosing among hundreds of candidates — which is the tie-break that a
-            // schedule could otherwise decide.
+            // **The report's decisions travel in the signature**, not just the geometry. Measured
+            // on this fixture: up to 841 coincidences per boolean, so `loosest`'s `max_by_key` is
+            // choosing among hundreds of candidates — which is the tie-break that a schedule could
+            // otherwise decide.
+            //
+            // ★★★★★ **The count does not travel, because it is not an answer.**
+            // `BoolReport::coincidences` is *"how many judgements were answered by a proved
+            // coincidence"* — a measure of **work done**, and how much work the parallel phases do
+            // is exactly what a schedule decides. The two decision fields carry their own rule
+            // (`loosest`: *"Ties keep the first in sorted order, so the answer does not depend on
+            // the schedule"*); the count carries none and never could.
+            //
+            // Measured with the tests optimized, which changes the interleaving: the same fold
+            // reported 755 coincidences on one schedule and 735 on another while the 2,678
+            // characters of decisions and geometry around it were **identical**. Comparing it
+            // asserted something the kernel does not claim. What it is here for — that the report
+            // is not empty, so comparing it proves something — is the assertion below, kept.
             assert!(
                 i == 0 || report.coincidences > 0,
                 "the report is empty, so comparing it proves nothing"
             );
-            sig.push_str(&format!("{report:?}"));
+            sig.push_str(&format!("{:?}{:?}", report.merges, report.loosest));
         }
         sig.push_str(&model_sig(&m, &[acc]));
         sig
@@ -966,7 +979,13 @@ fn parallel_boolean_is_thread_order_independent() {
         let (mut m, a, b) = build();
         let (solids, report) = boolean_with_report(&mut m, BoolKind::Fuse, a, b).unwrap();
         m.rebuild_adjacency();
-        format!("{report:?}{}", model_sig(&m, &solids))
+        // The same rule as the fold above: decisions travel, the work count does not.
+        format!(
+            "{:?}{:?}{}",
+            report.merges,
+            report.loosest,
+            model_sig(&m, &solids)
+        )
     };
     let pool1 = rayon::ThreadPoolBuilder::new()
         .num_threads(1)
@@ -981,7 +1000,13 @@ fn parallel_boolean_is_thread_order_independent() {
         let (mut m, target, bar) = four_plane_model(0.2, 45);
         let (solids, report) = boolean_with_report(&mut m, BoolKind::Cut, target, bar).unwrap();
         m.rebuild_adjacency();
-        format!("{report:?}{}", model_sig(&m, &solids))
+        // The same rule as the fold above: decisions travel, the work count does not.
+        format!(
+            "{:?}{:?}{}",
+            report.merges,
+            report.loosest,
+            model_sig(&m, &solids)
+        )
     };
     for (name, run) in [
         (
