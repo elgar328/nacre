@@ -2757,7 +2757,7 @@ fn round_strip_side(
     m: &[nacre_scalar::Rat; 3],
     r: nacre_scalar::Rat,
 ) -> Option<nacre_scalar::StripSide> {
-    use nacre_scalar::{MeetPoint, Rat};
+    use nacre_scalar::MeetPoint;
     let Corner::Round {
         centre,
         rho,
@@ -2768,7 +2768,6 @@ fn round_strip_side(
         return None;
     };
     let (rho, arc) = (*rho, arc.as_ref());
-    let zero = Rat::from_int(0);
     if arc.is_none() {
         // A whole circle reaches alike both ways: the symmetric door, complete answer and all.
         return Some(nacre_scalar::cylinder_strip_side_margin(
@@ -2782,29 +2781,60 @@ fn round_strip_side(
     }
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let e = combinatorics::cross3_rat(&n, m)?;
-    let ee = dot3(&e, &e)?;
-    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(arc, rho, axis, &e)?;
+    let (lo, hi) = arc_ends_along(centre, rho, axis, arc, &e)?;
+    Some(nacre_scalar::cylinder_strip_side_extent(
+        coeffs,
+        (&MeetPoint::Narrow(lo.0), lo.1),
+        Some((&MeetPoint::Narrow(hi.0), hi.1)),
+        o,
+        m,
+        r,
+    ))
+}
+
+/// One end of a round piece's reach along a direction: a point on the piece's plane and the
+/// margin the doors add to it — `(p, ρ)`, the pair every scalar door here already takes.
+type ArcEnd = ([nacre_scalar::Rat; 3], nacre_scalar::Rat);
+
+/// **The two ends of a round piece's reach along `d`, each as a point and a margin** — the form
+/// both scalar doors take (cell ⑲).
+///
+/// [`arc_extent`] states the reach as offsets and squared radicals about the centre; the doors
+/// want `(point, ρ)` pairs. The bridge is exact and needs no new arithmetic:
+/// * an offset becomes a **moved point** — `centre + off/(d·d)·d` stays on the piece's plane and
+///   moves `d·p` by exactly `off`, whatever origin the door measures from;
+/// * a side that reaches its full radial peak has margin `ρ` (because the piece's plane has the
+///   carrier's axis as its normal, `d⊥ = d` there and `√rho2 = ρ|d|`), and a side an arc end
+///   stopped has margin `0` with the offset carrying it.
+///
+/// `arc = None` is the whole circle: both ends are the centre with margin `ρ`, which is what the
+/// symmetric doors have always been handed.
+fn arc_ends_along(
+    centre: &[nacre_scalar::Rat; 3],
+    rho: nacre_scalar::Rat,
+    axis: &[nacre_scalar::Rat; 3],
+    arc: Option<&RimArc>,
+    d: &[nacre_scalar::Rat; 3],
+) -> Option<(ArcEnd, ArcEnd)> {
+    use nacre_scalar::Rat;
+    let zero = Rat::from_int(0);
+    let dd = dot3(d, d)?;
+    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(arc, rho, axis, d)?;
     let shifted = |off: Rat| -> Option<[Rat; 3]> {
         if off == zero {
             return Some(*centre);
         }
-        let k = off.checked_mul(Rat::new(ee.denom(), ee.numer())?)?;
+        let k = off.checked_mul(Rat::new(dd.denom(), dd.numer())?)?;
         let mut p = *centre;
         for i in 0..3 {
-            p[i] = p[i].checked_add(k.checked_mul(e[i])?)?;
+            p[i] = p[i].checked_add(k.checked_mul(d[i])?)?;
         }
         Some(p)
     };
-    let (p_lo, p_hi) = (shifted(lo_off)?, shifted(hi_off)?);
-    // `√rho2 = ρ|e|` when the side reaches its peak, and `0` when an arc end stopped it.
     let margin = |rho2: Rat| if rho2 == zero { zero } else { rho };
-    Some(nacre_scalar::cylinder_strip_side_extent(
-        coeffs,
-        (&MeetPoint::Narrow(p_lo), margin(rho2_lo)),
-        Some((&MeetPoint::Narrow(p_hi), margin(rho2_hi))),
-        o,
-        m,
-        r,
+    Some((
+        (shifted(lo_off)?, margin(rho2_lo)),
+        (shifted(hi_off)?, margin(rho2_hi)),
     ))
 }
 
