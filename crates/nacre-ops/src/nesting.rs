@@ -68,148 +68,6 @@ fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_
     Some(&first.def)
 }
 
-/// **A rational point strictly inside a straight edge whose two ends are branch corners on one
-/// line** (cell ⑩). The chord witness needs the two ends to be one solve's two roots; a cap's
-/// section between the rulings of two *coaxial* cylinders — a bore inside a fillet, cut by a wall
-/// within both radii — has its ends on two solves, one radical each, and every corner of that cell
-/// irrational. Both ends still lie on one rational line (the pair `{wc, wall}`'s meet, the same
-/// parametrization from either solve), so a **rational parameter between the two** names a point
-/// of the edge's interior exactly: chosen by the realized midpoint, then **verified** against each
-/// end in its own radical ([`rational_between`]). `None` for any other edge shape, or when the
-/// two solves do not parametrize one line.
-fn edge_interior_rat(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    e: &combinatorics::RingEdge,
-) -> Option<[nacre_scalar::Rat; 3]> {
-    if !matches!(e.carrier, combinatorics::Carrier::Plane { .. }) {
-        return None;
-    }
-    let (pa, ca, _) = combinatorics::branch_name(e.node)?;
-    let (pb, cb, _) = combinatorics::branch_name(e.to)?;
-    if pa != pb {
-        return None;
-    }
-    let (la, sa) = combinatorics::branch_meet(jd, ca, &cyls.get(ca)?.def, e.node)?;
-    let (lb, sb) = combinatorics::branch_meet(jd, cb, &cyls.get(cb)?.def, e.to)?;
-    if la.base() != lb.base() || la.dir() != lb.dir() {
-        return None;
-    }
-    let t = rational_between(&sa, &sb)?;
-    let (b, d) = (la.base(), la.dir());
-    let mut p = b;
-    for k in 0..3 {
-        p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
-    }
-    Some(p)
-}
-
-/// A rational strictly between two quadratic values that need not share a radical: the realized
-/// midpoint, taken exactly as the `f64` it is (`Rat::try_from_f64`), then **verified** against
-/// each end in that end's own radical — a comparison with a rational is always formable. If the
-/// midpoint lands outside (ends closer than the realization resolves), a few bisections toward
-/// the realized interval's middle are tried; `None` when none is inside.
-fn rational_between(
-    a: &nacre_scalar::quad::QuadVal,
-    b: &nacre_scalar::quad::QuadVal,
-) -> Option<nacre_scalar::Rat> {
-    use nacre_scalar::{Orient, Rat, quad::QuadVal};
-    let (mut lo, mut hi) = (a.to_f64(), b.to_f64());
-    if lo > hi {
-        std::mem::swap(&mut lo, &mut hi);
-    }
-    let inside = |t: Rat| -> Option<bool> {
-        let q = QuadVal::from_rat(t);
-        let da = q.checked_sub(a)?.sign();
-        let db = q.checked_sub(b)?.sign();
-        // strictly between: on opposite sides of the two ends
-        Some(matches!(
-            (da, db),
-            (Orient::Positive, Orient::Negative) | (Orient::Negative, Orient::Positive)
-        ))
-    };
-    let mut mid = (lo + hi) / 2.0;
-    for _ in 0..8 {
-        let t = Rat::try_from_f64(mid)?;
-        if inside(t)? {
-            return Some(t);
-        }
-        // the realization put it outside: pull toward the interval's middle
-        mid = (mid + (lo + hi) / 2.0) / 2.0;
-    }
-    None
-}
-
-/// **The midpoint of a ring edge whose two ends are one solve's two roots** — rational, exactly,
-/// and strictly between them.
-///
-/// ★★★★★ **A chord names its own middle.** `plane_plane_cylinder` builds the pair as
-/// `lo = (mid, −half, disc)` and `hi = (mid, +half, disc)` — **one `mid`, shared** — so a segment
-/// whose ends are that pair has `base + s.a()·dir` for its midpoint whichever end is asked, with
-/// no second solve and no approximation. `disc > 0` for a `Pair`, so it is strictly inside.
-///
-/// **Conjugacy is a question about names, not values**: the two ends must carry the same canonical
-/// plane pair, the same cylinder, and the two roots. That is also what keeps a *piece* of a chord
-/// out — an edge cut short by another feature has a different node at one end, and
-/// `split_at_crossings` states that "whether a crossing is on this segment is the caller's
-/// question", which this answers by refusing to guess.
-fn chord_midpoint_rat(
-    jd: &Judge<'_, WorkingPlane>,
-    cyls: &[crate::planes::WorkingCyl],
-    e: &combinatorics::RingEdge,
-) -> Option<[nacre_scalar::Rat; 3]> {
-    use nacre_topo::QuadRoot::{Hi, Lo};
-    let (pa, ca, ra) = combinatorics::branch_name(e.node)?;
-    let (pb, cb, rb) = combinatorics::branch_name(e.to)?;
-    if pa != pb || ca != cb || !matches!((ra, rb), (Lo, Hi) | (Hi, Lo)) {
-        return None;
-    }
-    // ★★★★★ **The edge must *be* the segment between its ends, and an arc is not.** Two ends can
-    // be one solve's two roots and still be joined by a **curve**: a plane cutting a circle names
-    // both crossings, and *either* arc between them carries that same pair of names. The chord's
-    // midpoint is then a point strictly inside the circle and **not on this ring at all** — and a
-    // point off the ring is not a witness for it, since containment is read from a point *of* `a`
-    // and a point in `a`'s interior answers a different question wherever `b` nests inside it.
-    // ☑ Measured over the whole lib suite: 120 acceptances, **not one** curved carrier — an
-    // all-arc ring is answered by `ring_own_circle` one arm up, and every ring that reaches here
-    // offered two straight chords. The guard states the precondition; it does not describe a
-    // population.
-    if matches!(e.carrier, combinatorics::Carrier::Arc(_)) {
-        return None;
-    }
-    let def = &cyls.get(ca)?.def;
-    let (line, s) = combinatorics::branch_meet(jd, ca, def, e.node)?;
-    let (b, d) = (line.base(), line.dir());
-    let t = s.a();
-    let mut p = [b[0], b[1], b[2]];
-    for k in 0..3 {
-        p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
-    }
-    // ★★★★★ **Asserted where the fact is made, not where it is consumed.** Both claims this
-    // function rests on are checkable here and nowhere cheaper: that `MeetLine`'s `base`/`dir`
-    // really do parameterize the two planes' meet (so `base + t·dir` is on both), and that the
-    // shared `a()` lands **strictly between** the two roots (so it is strictly inside the
-    // cylinder, which is what `disc > 0` buys). A producer change that broke either would
-    // otherwise surface as a wrong containment answer two layers up.
-    debug_assert!(
-        [pa[0], pa[1]].iter().all(|&k| {
-            combinatorics::class_coeffs_rat(jd, k).is_none_or(|c| {
-                let n = [c[0], c[1], c[2]];
-                combinatorics::dot3_rat(&n, &p)
-                    .and_then(|v| v.checked_add(c[3]))
-                    .is_none_or(|v| v == nacre_scalar::Rat::from_int(0))
-            })
-        }),
-        "a chord midpoint is on both of its planes"
-    );
-    debug_assert_eq!(
-        nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()),
-        nacre_scalar::Orient::Negative,
-        "a chord midpoint is strictly inside the cylinder"
-    );
-    Some(p)
-}
-
 /// **Is a rational point inside a ring?** — `Ok(None)` when *this point* cannot answer, `Err` when
 /// a **value** could not be formed exactly.
 ///
@@ -397,7 +255,7 @@ enum Said {
 /// would make a rim point a `Witness::On` that is not on the boundary — and `inside` returns from
 /// a boundary `In` **without** the converse. Hence the exact `inv_sqrt_exact` road and the
 /// post-conditions below, asserted where the point is made rather than where it is used
-/// ([`chord_midpoint_rat`]'s rule).
+/// ([`combinatorics::conjugate_midpoint`]'s rule).
 ///
 /// ⚠⚠ **The premise that makes these boundary points is not guarded, only asserted.** A rim point
 /// lies on the *cell* — not merely on the cylinder — because the class plane is ⊥ the axis, and
@@ -551,11 +409,7 @@ fn witnesses<'a>(
                 combinatorics::three_plane_name(e.node).map(|t| Witness::On(Where::Named(t)))
             });
             let coords = r.iter().flat_map(move |e| {
-                combinatorics::node_coords_rat(jd, e.node)
-                    .or_else(|| combinatorics::branch_coords_rat(jd, cyls, e.node))
-                    .into_iter()
-                    .chain(chord_midpoint_rat(jd, cyls, e))
-                    .chain(edge_interior_rat(jd, cyls, e))
+                combinatorics::edge_witness_points(jd, cyls, e)
                     .map(|p| Witness::On(Where::Coord(p)))
             });
             // ★ Cell 21 made the sentence that used to stand here false: "a ring that is a whole
@@ -777,10 +631,10 @@ pub(crate) fn cell_in_cell(
                     .filter(|e| combinatorics::branch_coords_rat(jd, cyls, e.node).is_some())
                     .count(),
                 r.iter()
-                    .filter(|e| chord_midpoint_rat(jd, cyls, e).is_some())
+                    .filter(|e| combinatorics::conjugate_midpoint(jd, cyls, e).is_some())
                     .count(),
                 r.iter()
-                    .filter(|e| edge_interior_rat(jd, cyls, e).is_some())
+                    .filter(|e| combinatorics::branch_ends_between(jd, cyls, e).is_some())
                     .count(),
                 ring_own_circle(r).is_some(),
             )
@@ -816,13 +670,7 @@ pub(crate) fn cell_in_cell(
                 .find_map(|t| decided(Where::Named(t)))?;
             let by_coord = ra
                 .iter()
-                .flat_map(|e| {
-                    combinatorics::node_coords_rat(jd, e.node)
-                        .or_else(|| combinatorics::branch_coords_rat(jd, cyls, e.node))
-                        .into_iter()
-                        .chain(chord_midpoint_rat(jd, cyls, e))
-                        .chain(edge_interior_rat(jd, cyls, e))
-                })
+                .flat_map(|e| combinatorics::edge_witness_points(jd, cyls, e))
                 .find_map(|p| decided(Where::Coord(p)))?;
             Some((by_name, by_coord))
         })();
@@ -912,7 +760,10 @@ pub(crate) mod nesting_probe {
         pub a_disk: bool,
         pub b_disk: bool,
         pub b_mixed: bool,
-        /// `a`'s witnesses by kind — the five supplies today's four spellings draw from.
+        /// `a`'s witnesses by kind. ☑ **Cell 24 made the rule one place**: `chord` and `edge` are now
+        /// two arms of [`combinatorics::edge_interior_points`] rather than two producers chained by
+        /// four different spellings, and the breakdown is kept because a *count per kind* is not a
+        /// spelling of the rule.
         pub named: usize,
         pub coords: usize,
         pub branch: usize,

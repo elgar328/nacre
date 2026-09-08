@@ -892,11 +892,17 @@ pub enum RejectReason {
     /// That fact has its own name now ([`Self::RingHasNoWitness`]).
     ///
     /// ★ Cell 13: for the nesting question the two are told apart by one rule and not by which of
-    /// four spellings a caller happened to hold — see [`Self::RingHasNoWitness`]. A rounded
-    /// outline under a 90° rotation is the shape that still reaches this name: every ray from its
-    /// three-plane corners grazes, and the coordinate witnesses beside them abstain too
-    /// (`bores_change_nothing_about_a_rounded_plate_under_rigid_motion` holds the population at
-    /// six of the motion group's rotations).
+    /// four spellings a caller happened to hold — see [`Self::RingHasNoWitness`].
+    ///
+    /// ☑ **Cell 24 emptied it.** The shapes that reached this name did so because a component was
+    /// offered nothing but its **corners** — a rounded outline under a quarter turn (six of the
+    /// motion group's rotations) and a void whose every corner rides a wall. Both were the supply
+    /// being thin, not the geometry being hard: given the points its **edges** name
+    /// ([`crate::combinatorics::edge_interior_points`]) every one of those questions decides. The
+    /// six rotations **build**, with one body, a clean `validate` and the exact volume; the void
+    /// gets the name its shape has always had one grazing corner down
+    /// ([`Self::SelfTouchingResult`]). What is left under this name raises **0 or 1 times per
+    /// whole-suite sweep** — a backstop with no population, and no fixture surfaces it any more.
     NoClearRay,
     /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
     /// and not a value that could not be formed: the containment roads draw their witnesses from

@@ -4023,11 +4023,12 @@ pub(crate) fn coord_probes(
     out
 }
 
-/// The directions a coordinate probe casts along: the cylinder's axis both ways and one
-/// perpendicular both ways — several, because one ray can graze and the remedy is another
-/// direction; the order is not load-bearing. One spelling for [`coord_probes`] and
-/// [`corner_probes`].
-fn probe_dirs(m: &[nacre_scalar::Rat; 3]) -> Vec<[nacre_scalar::Rat; 3]> {
+/// The directions a coordinate probe casts along: the axis both ways and one perpendicular both
+/// ways — several, because one ray can graze and the remedy is another direction; the order is not
+/// load-bearing. One spelling for [`coord_probes`], [`corner_probes`], and (cell 24) the component
+/// road's edge supply, which hands in a **plane's normal** where the other two hand in a cylinder's
+/// axis: the argument is only "a nonzero direction to build a frame from".
+pub(crate) fn probe_dirs(m: &[nacre_scalar::Rat; 3]) -> Vec<[nacre_scalar::Rat; 3]> {
     use nacre_scalar::Rat;
     let zero = Rat::from_int(0);
     let nonzero = |v: &[Rat; 3]| v.iter().any(|c| *c != zero);
@@ -5969,6 +5970,264 @@ pub(crate) fn branch_coords_rat(
     for k in 0..3 {
         p[k] = p[k].checked_add(sv.checked_mul(d[k])?)?;
     }
+    Some(p)
+}
+/// **Every rational point that names the interior of this *straight* ring edge** — the one rule,
+/// with one arm per way the two ends can be described.
+///
+/// ★★★★★ **This was four spellings of one sentence** (cell 24). `nesting`'s witness supply and its
+/// diagnostic twin each chained `chord_midpoint_rat` after `edge_interior_rat` **verbatim**, its
+/// instrument counted the same producers a third time, and the component road one dimension up had
+/// no edge witness at all — so a planar component whose every corner grazed had nothing left to
+/// say and refused `NoClearRay` where the shape's truth was `SelfTouchingResult`. The two names
+/// were never two rules: the "chord" one **refuses `Carrier::Arc`** in as many words, so both were
+/// always *a point inside a straight edge*, differing only in how the ends were named.
+///
+/// | arm | the ends | why it is inside |
+/// |---|---|---|
+/// | [`conjugate_midpoint`] | one solve's two roots (`Lo`/`Hi`) | the shared `mid`, `disc > 0` |
+/// | [`branch_ends_between`] | two solves on one line | a rational verified strictly between |
+/// | [`rational_ends_midpoint`] | both rational | the midpoint of two rationals |
+///
+/// ★★ **An iterator, not an `Option`, and that is load-bearing.** The first two arms **both** match
+/// a conjugate-rooted edge — the two roots share the plane pair and the cylinder, so `branch_meet`
+/// hands each end the same line, which is all the second arm asks — and they name **different**
+/// points (a shared `mid` against a realized-then-verified midpoint). Folding them into one answer
+/// would delete a witness silently.
+///
+/// ☑ **Measured over the lib + census corpus** (cell 24), because the argument above is read off the
+/// guards and a reader should not have to re-derive it: **284** edges where the first two arms both
+/// answer and **0** where the first answers alone — so a fold to "the first arm that matches" would
+/// drop 284 points. Those two are **stable across runs**; the other two are not, because proptest
+/// fixtures reach this function, so they are given as orders: ~2·10³ edges where only the second arm
+/// answers, and **~10⁴** where only the third — the arm this cell added, and by a wide margin the
+/// largest supply. (Three runs of the same tree: 10,963 / 13,027 / 11,075 for the third.)
+///
+/// ★ **Order is today's**: conjugate, then between, then the rational midpoint (which is disjoint
+/// from both — a branch end is not rational).
+///
+/// **Every arm lands *on* the edge**, which is what lets the component road wrap these in
+/// [`Probe::Coord`]: that type's invariant is a point **on** the boundary, and an interior witness
+/// "could be separated from the boundary by another component's wall".
+pub(crate) fn edge_interior_points(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    e: &RingEdge,
+) -> impl Iterator<Item = [nacre_scalar::Rat; 3]> {
+    [
+        conjugate_midpoint(jd, cyls, e),
+        branch_ends_between(jd, cyls, e),
+        rational_ends_midpoint(jd, e),
+    ]
+    .into_iter()
+    .flatten()
+}
+
+/// **Arm b of [`edge_interior_points`] — a rational point strictly inside a straight edge whose
+/// two ends are branch corners on one line** (cell ⑩). The chord witness needs the two ends to be one solve's two roots; a cap's
+/// section between the rulings of two *coaxial* cylinders — a bore inside a fillet, cut by a wall
+/// within both radii — has its ends on two solves, one radical each, and every corner of that cell
+/// irrational. Both ends still lie on one rational line (the pair `{wc, wall}`'s meet, the same
+/// parametrization from either solve), so a **rational parameter between the two** names a point
+/// of the edge's interior exactly: chosen by the realized midpoint, then **verified** against each
+/// end in its own radical ([`rational_between`]). `None` for any other edge shape, or when the
+/// two solves do not parametrize one line.
+pub(crate) fn branch_ends_between(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    e: &RingEdge,
+) -> Option<[nacre_scalar::Rat; 3]> {
+    if !matches!(e.carrier, Carrier::Plane { .. }) {
+        return None;
+    }
+    let (pa, ca, _) = branch_name(e.node)?;
+    let (pb, cb, _) = branch_name(e.to)?;
+    if pa != pb {
+        return None;
+    }
+    let (la, sa) = branch_meet(jd, ca, &cyls.get(ca)?.def, e.node)?;
+    let (lb, sb) = branch_meet(jd, cb, &cyls.get(cb)?.def, e.to)?;
+    if la.base() != lb.base() || la.dir() != lb.dir() {
+        return None;
+    }
+    let t = rational_between(&sa, &sb)?;
+    let (b, d) = (la.base(), la.dir());
+    let mut p = b;
+    for k in 0..3 {
+        p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
+    }
+    Some(p)
+}
+
+/// A rational strictly between two quadratic values that need not share a radical: the realized
+/// midpoint, taken exactly as the `f64` it is (`Rat::try_from_f64`), then **verified** against
+/// each end in that end's own radical — a comparison with a rational is always formable. If the
+/// midpoint lands outside (ends closer than the realization resolves), a few bisections toward
+/// the realized interval's middle are tried; `None` when none is inside.
+fn rational_between(
+    a: &nacre_scalar::quad::QuadVal,
+    b: &nacre_scalar::quad::QuadVal,
+) -> Option<nacre_scalar::Rat> {
+    use nacre_scalar::{Orient, Rat, quad::QuadVal};
+    let (mut lo, mut hi) = (a.to_f64(), b.to_f64());
+    if lo > hi {
+        std::mem::swap(&mut lo, &mut hi);
+    }
+    let inside = |t: Rat| -> Option<bool> {
+        let q = QuadVal::from_rat(t);
+        let da = q.checked_sub(a)?.sign();
+        let db = q.checked_sub(b)?.sign();
+        // strictly between: on opposite sides of the two ends
+        Some(matches!(
+            (da, db),
+            (Orient::Positive, Orient::Negative) | (Orient::Negative, Orient::Positive)
+        ))
+    };
+    let mut mid = (lo + hi) / 2.0;
+    for _ in 0..8 {
+        let t = Rat::try_from_f64(mid)?;
+        if inside(t)? {
+            return Some(t);
+        }
+        // the realization put it outside: pull toward the interval's middle
+        mid = (mid + (lo + hi) / 2.0) / 2.0;
+    }
+    None
+}
+
+/// **Every rational point a ring edge offers a witness supply** — its start corner, then the points
+/// its interior names ([`edge_interior_points`]).
+///
+/// ★ **The whole per-edge chain, in one place** (cell 24). `nesting`'s witness supply and its
+/// diagnostic twin held this verbatim, and the interior half being one rule left the *corner* half
+/// still written twice. The order is the one they had: the corner first — rational if the node has
+/// a three-plane name, else the branch root's coordinates — then the interior arms.
+///
+/// ⚠ **The component road one dimension up does not call this**: it already offers every corner as
+/// a [`Probe::Named`], which is exact without coordinates at all, so it takes
+/// [`edge_interior_points`] alone rather than minting a second description of a point it has.
+pub(crate) fn edge_witness_points(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    e: &RingEdge,
+) -> impl Iterator<Item = [nacre_scalar::Rat; 3]> {
+    node_coords_rat(jd, e.node)
+        .or_else(|| branch_coords_rat(jd, cyls, e.node))
+        .into_iter()
+        .chain(edge_interior_points(jd, cyls, e))
+}
+
+/// **Arm a of [`edge_interior_points`] — the midpoint of a ring edge whose two ends are one
+/// solve's two roots** — rational, exactly, and strictly between them.
+///
+/// ★★★★★ **A chord names its own middle.** `plane_plane_cylinder` builds the pair as
+/// `lo = (mid, −half, disc)` and `hi = (mid, +half, disc)` — **one `mid`, shared** — so a segment
+/// whose ends are that pair has `base + s.a()·dir` for its midpoint whichever end is asked, with
+/// no second solve and no approximation. `disc > 0` for a `Pair`, so it is strictly inside.
+///
+/// **Conjugacy is a question about names, not values**: the two ends must carry the same canonical
+/// plane pair, the same cylinder, and the two roots. That is also what keeps a *piece* of a chord
+/// out — an edge cut short by another feature has a different node at one end, and
+/// `split_at_crossings` states that "whether a crossing is on this segment is the caller's
+/// question", which this answers by refusing to guess.
+pub(crate) fn conjugate_midpoint(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    e: &RingEdge,
+) -> Option<[nacre_scalar::Rat; 3]> {
+    use nacre_topo::QuadRoot::{Hi, Lo};
+    let (pa, ca, ra) = branch_name(e.node)?;
+    let (pb, cb, rb) = branch_name(e.to)?;
+    if pa != pb || ca != cb || !matches!((ra, rb), (Lo, Hi) | (Hi, Lo)) {
+        return None;
+    }
+    // ★★★★★ **The edge must *be* the segment between its ends, and an arc is not.** Two ends can
+    // be one solve's two roots and still be joined by a **curve**: a plane cutting a circle names
+    // both crossings, and *either* arc between them carries that same pair of names. The chord's
+    // midpoint is then a point strictly inside the circle and **not on this ring at all** — and a
+    // point off the ring is not a witness for it, since containment is read from a point *of* `a`
+    // and a point in `a`'s interior answers a different question wherever `b` nests inside it.
+    // ☑ Measured over the whole lib suite: 120 acceptances, **not one** curved carrier — an
+    // all-arc ring is answered by `ring_own_circle` one arm up, and every ring that reaches here
+    // offered two straight chords. The guard states the precondition; it does not describe a
+    // population.
+    if matches!(e.carrier, Carrier::Arc(_)) {
+        return None;
+    }
+    let def = &cyls.get(ca)?.def;
+    let (line, s) = branch_meet(jd, ca, def, e.node)?;
+    let (b, d) = (line.base(), line.dir());
+    let t = s.a();
+    let mut p = [b[0], b[1], b[2]];
+    for k in 0..3 {
+        p[k] = p[k].checked_add(t.checked_mul(d[k])?)?;
+    }
+    // ★★★★★ **Asserted where the fact is made, not where it is consumed.** Both claims this
+    // function rests on are checkable here and nowhere cheaper: that `MeetLine`'s `base`/`dir`
+    // really do parameterize the two planes' meet (so `base + t·dir` is on both), and that the
+    // shared `a()` lands **strictly between** the two roots (so it is strictly inside the
+    // cylinder, which is what `disc > 0` buys). A producer change that broke either would
+    // otherwise surface as a wrong containment answer two layers up.
+    debug_assert!(
+        [pa[0], pa[1]].iter().all(|&k| {
+            class_coeffs_rat(jd, k).is_none_or(|c| {
+                let n = [c[0], c[1], c[2]];
+                dot3_rat(&n, &p)
+                    .and_then(|v| v.checked_add(c[3]))
+                    .is_none_or(|v| v == nacre_scalar::Rat::from_int(0))
+            })
+        }),
+        "a chord midpoint is on both of its planes"
+    );
+    debug_assert_eq!(
+        nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()),
+        nacre_scalar::Orient::Negative,
+        "a chord midpoint is strictly inside the cylinder"
+    );
+    Some(p)
+}
+
+/// **The midpoint of a straight ring edge whose two ends are rational** (cell 24) — the arm the
+/// other two never covered, because both of them start by asking for a branch name.
+///
+/// The plainest case there is, and the one a planar component is made of: two three-plane corners
+/// joined by a straight step. Its midpoint is the average of two rationals, exact, and strictly
+/// between the ends, so it is a point of the edge's interior — on the ring, which is what a
+/// witness for the ring has to be.
+fn rational_ends_midpoint(
+    jd: &Judge<'_, WorkingPlane>,
+    e: &RingEdge,
+) -> Option<[nacre_scalar::Rat; 3]> {
+    if !matches!(e.carrier, Carrier::Plane { .. }) {
+        return None;
+    }
+    let (a, b) = (node_coords_rat(jd, e.node)?, node_coords_rat(jd, e.to)?);
+    let half = nacre_scalar::Rat::new(1, 2)?;
+    let mut p = [nacre_scalar::Rat::from_int(0); 3];
+    for k in 0..3 {
+        p[k] = a[k].checked_add(b[k])?.checked_mul(half)?;
+    }
+    // ★ Asserted where the fact is made: the two ends share the two planes this edge rides, so the
+    // midpoint is on both of them. The same postcondition `conjugate_midpoint` states below, in the
+    // vocabulary this arm's ends come in.
+    debug_assert!(
+        {
+            let shared = three_plane_name(e.node)
+                .zip(three_plane_name(e.to))
+                .map(|(x, y)| x.into_iter().filter(|k| y.contains(k)).collect::<Vec<_>>());
+            shared.is_none_or(|ks| {
+                ks.iter().all(|&k| {
+                    class_coeffs_rat(jd, k).is_none_or(|c| {
+                        let n = [c[0], c[1], c[2]];
+                        dot3_rat(&n, &p)
+                            .and_then(|v| v.checked_add(c[3]))
+                            .is_none_or(|v| v == nacre_scalar::Rat::from_int(0))
+                    })
+                })
+            })
+        },
+        "an edge midpoint is on the planes its two ends share"
+    );
     Some(p)
 }
 

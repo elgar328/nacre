@@ -678,6 +678,58 @@ fn group_faces(
             named
         }
     };
+    // ★★★★★ **The supply a component's *edges* name, tried only when its corners are exhausted**
+    // (cell 24). `probes_of` above offers a polyhedral component nothing but its **vertices** — the
+    // two fallbacks beside it both need a cylinder (`corner_probes` wants branch corners,
+    // `coord_probes` a cap's circle), so a planar component has none. A void whose every corner
+    // sits on its host's wall therefore ran out of witnesses and the caller refused `NoClearRay`,
+    // while the *shape's* truth — its surface meets itself along the corner's edge — is what the
+    // self-touch test says once the depth is decided. Its one-grazing-corner sibling has always
+    // said exactly that, with the same witness segment; the two differed only in **how many**
+    // corners were degenerate, which is a fact about the supply and not about the geometry.
+    //
+    // Every point comes from [`combinatorics::edge_interior_points`] — the same rule the 2-D
+    // witness supply reads, not a second spelling of it — so each is **on** this component's
+    // boundary, which is [`combinatorics::Probe`]'s invariant.
+    //
+    // ★ **Built only on exhaustion**, because `probes_of` is eager and asked at three sites: a
+    // component with 8 vertices has some 30 edge points behind it, and paying for them where a
+    // vertex answers first is waste the ledger already warns about two doc comments above.
+    let edge_probes_of = |c: usize| -> Vec<combinatorics::Probe> {
+        let mut out = Vec::new();
+        for f in comp_faces[c].iter() {
+            let normal = match &f.surf {
+                combinatorics::CompSurf::Plane(q) => {
+                    match combinatorics::class_coeffs_rat(jd, *q) {
+                        Some(k) => [k[0], k[1], k[2]],
+                        None => continue,
+                    }
+                }
+                // A curved face's own edges are still edges; its class has no plane to point along,
+                // so the ray directions come from the cylinder the `Carrier` names — which is what
+                // `corner_probes` already does for that population. Nothing here yet.
+                _ => continue,
+            };
+            // One direction set per face: it is a function of the normal alone, and rebuilding it
+            // per point would allocate once for every edge of every ring.
+            let dirs = combinatorics::probe_dirs(&normal);
+            let rings = std::iter::once(&f.outer).chain(f.inner.iter());
+            for b in rings {
+                let combinatorics::BoundEdges::Ring(r) = b else {
+                    continue;
+                };
+                for e in r {
+                    for p in combinatorics::edge_interior_points(jd, cyls, e) {
+                        out.extend(
+                            dirs.iter()
+                                .map(|&dir| combinatorics::Probe::Coord { p, dir }),
+                        );
+                    }
+                }
+            }
+        }
+        out
+    };
     // Try `f` at each node in turn: the first node that **decides** wins, a node that abstains
     // (`Ok(None)` — it grazed a boundary) is passed over for the next, and a failed judgement
     // (`Err`) propagates immediately. The last part is the point of the shape: an abstention has
@@ -685,8 +737,17 @@ fn group_faces(
     // node` arms retried both, so a real cause could masquerade as `NoClearRay` once every node
     // hit it. `Ok(None)` here means every node abstained; that being a reject is the *caller's*
     // proposition to raise.
+    /// ★★ **Two stages, the second built only on exhaustion** (cell 24): `more` is the supply that
+    /// costs something to derive, and a component whose first corner decides never pays for it.
+    /// Trying it **after** the primary list is what keeps this change a proof rather than a
+    /// measurement — every question that decides today decides on the same probe, in the same
+    /// order, so only a question that used to run out answer differently.
+    ///
+    /// The ledger's `offered` is now **what was actually built**: the primary list when it decided,
+    /// the sum when it did not. One row per question either way.
     fn first_deciding<T>(
         probes: &[combinatorics::Probe],
+        more: impl FnOnce() -> Vec<combinatorics::Probe>,
         mut f: impl FnMut(&combinatorics::Probe) -> Result<Option<T>, BoolError>,
     ) -> Result<Option<T>, BoolError> {
         #[cfg(test)]
@@ -700,10 +761,23 @@ fn group_faces(
                 return Ok(Some(v));
             }
         }
+        let extra = more();
+        let offered = probes.len() + extra.len();
+        for (tried, x) in extra.iter().enumerate() {
+            #[cfg(not(test))]
+            let _ = tried;
+            if let Some(v) = f(x)? {
+                #[cfg(test)]
+                probe::deciding::record(probes.len() + tried + 1, offered, true, Vec::new());
+                return Ok(Some(v));
+            }
+        }
+        #[cfg(not(test))]
+        let _ = offered;
         #[cfg(test)]
         probe::deciding::record(
-            probes.len(),
-            probes.len(),
+            offered,
+            offered,
             false,
             combinatorics::tie_probe::since(tie0),
         );
@@ -713,8 +787,12 @@ fn group_faces(
     // every corner is a branch name and whose caps offer no candidate their ring says is inside
     // — a thin segment of a disk — has no witness at all, and says so by the name the rings use
     // for the same proposition.
-    fn no_witness(probes: &[combinatorics::Probe]) -> RejectReason {
-        if probes.is_empty() {
+    ///
+    /// ⚠ **Asked of both stages** (cell 24): a component whose corners are all branch names *and*
+    /// whose edges name no interior point has started empty; one whose edges did offer points has
+    /// run out.
+    fn no_witness(primary: &[combinatorics::Probe], extra: usize) -> RejectReason {
+        if primary.is_empty() && extra == 0 {
             RejectReason::RingHasNoWitness
         } else {
             RejectReason::NoClearRay
@@ -750,18 +828,27 @@ fn group_faces(
         // a node that grazes one component's boundary is a fact about that node, not about the
         // components.
         let probes = probes_of(c);
-        let depth = first_deciding(&probes, |x| {
-            let mut d = 0usize;
-            for other in (0..n).filter(|&o| o != c) {
-                match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[other])? {
-                    Some(true) => d += 1,
-                    Some(false) => {}
-                    None => return Ok(None), // grazed — this node abstains
+        let mut extra_len = 0usize;
+        let depth = first_deciding(
+            &probes,
+            || {
+                let v = edge_probes_of(c);
+                extra_len = v.len();
+                v
+            },
+            |x| {
+                let mut d = 0usize;
+                for other in (0..n).filter(|&o| o != c) {
+                    match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[other])? {
+                        Some(true) => d += 1,
+                        Some(false) => {}
+                        None => return Ok(None), // grazed — this node abstains
+                    }
                 }
-            }
-            Ok(Some(d))
-        })?
-        .ok_or_else(|| reject(no_witness(&probes)))?;
+                Ok(Some(d))
+            },
+        )?
+        .ok_or_else(|| reject(no_witness(&probes, extra_len)))?;
         if depth % 2 == 0 {
             positives.push(c);
         }
@@ -788,18 +875,27 @@ fn group_faces(
                 // A cavity node that classifies cleanly against *every* material (one shared origin
                 // keeps the nesting consistent); its `true` materials nest, so take the innermost.
                 let probes = probes_of(d);
-                let containers = first_deciding(&probes, |x| {
-                    let mut cs = Vec::new();
-                    for &m in &positives {
-                        match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[m])? {
-                            Some(true) => cs.push(m),
-                            Some(false) => {}
-                            None => return Ok(None), // grazed against a material — abstain
+                let mut extra_len = 0usize;
+                let containers = first_deciding(
+                    &probes,
+                    || {
+                        let v = edge_probes_of(d);
+                        extra_len = v.len();
+                        v
+                    },
+                    |x| {
+                        let mut cs = Vec::new();
+                        for &m in &positives {
+                            match combinatorics::probe_in_component(jd, cyls, x, &comp_faces[m])? {
+                                Some(true) => cs.push(m),
+                                Some(false) => {}
+                                None => return Ok(None), // grazed against a material — abstain
+                            }
                         }
-                    }
-                    Ok(Some(cs))
-                })?
-                .ok_or_else(|| reject(no_witness(&probes)))?;
+                        Ok(Some(cs))
+                    },
+                )?
+                .ok_or_else(|| reject(no_witness(&probes, extra_len)))?;
                 let owner = match containers.as_slice() {
                     [] => return Err(reject(RejectReason::CavityNoOwner)),
                     [only] => *only,
@@ -817,9 +913,18 @@ fn group_faces(
                                 if o == c {
                                     continue;
                                 }
-                                let v = first_deciding(&probes_of(c), |x| {
-                                    combinatorics::probe_in_component(jd, cyls, x, &comp_faces[o])
-                                })?
+                                let v = first_deciding(
+                                    &probes_of(c),
+                                    || edge_probes_of(c),
+                                    |x| {
+                                        combinatorics::probe_in_component(
+                                            jd,
+                                            cyls,
+                                            x,
+                                            &comp_faces[o],
+                                        )
+                                    },
+                                )?
                                 .unwrap_or(false);
                                 inside.insert((c, o), v);
                             }

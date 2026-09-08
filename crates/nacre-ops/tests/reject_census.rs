@@ -392,15 +392,24 @@ const CORPUS: [Fixture; 13] = [
     },
     Fixture {
         name: "diamond-void",
-        expect: Some(RejectReason::NoClearRay),
-        run: diamond_void,
         // ★ One site now, and it is the one the caller is told about. This fixture used to be
         // the census's carrier of swallowed raises — its per-node probe rang `no_clear_ray` from
         // `combinatorics.rs` 24 times per boolean and surfaced once — until E (2026-08-17) made
         // the probe's "this node cannot decide" an abstention in its type (`Ok(None)`) instead
         // of an error for the retry to catch. What rings now is what surfaces.
-        raised: &[("no_clear_ray", None, BOOLEAN)],
-        surfaced: &[("no_clear_ray", None)],
+        //
+        // ★★ **And since cell 24 what surfaces is the shape's own name.** `no_clear_ray` was the
+        // depth question running out of witnesses — a planar component was offered nothing but its
+        // vertices, and here every one of them sits on the host's wall. Given the points its
+        // **edges** name, the depth decides and the self-touch test says what this really is: a void
+        // whose corner rides a wall makes the result's surface meet itself along that corner's
+        // edge, which is exactly what the one-grazing-corner sibling in `contact_separates.rs` has
+        // always reported. ⚠ This was `NoClearRay`'s only *surfacing* fixture; the name still
+        // raises on the 2-D ring road and the `reject-trace` sweep is what keeps it visible.
+        expect: Some(RejectReason::SelfTouchingResult),
+        run: diamond_void,
+        raised: &[("self_touching_result", None, BOOLEAN)],
+        surfaced: &[("self_touching_result", None)],
     },
     // ── The M6-2a population gate names its refusals (C2) — one fixture per cause. All are
     // raised while reading the operands (`plane_index_setup`), before any arrangement work.

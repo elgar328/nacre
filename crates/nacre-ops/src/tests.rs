@@ -13988,6 +13988,61 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     );
 }
 
+/// ★★★★★ **Cell 24 — one rule for "the point this edge names", and its plainest arm was missing.**
+///
+/// `nesting`'s witness supply and its diagnostic twin each chained two producers **verbatim**, its
+/// instrument counted the same pair a third time, and the component road one dimension up had no
+/// edge witness at all — so a planar component whose every corner grazed ran out of witnesses and
+/// refused `NoClearRay` where the shape's own name was `SelfTouchingResult`
+/// (`contact_separates.rs`'s ⑤c). The two producers were never two rules: the "chord" one refuses
+/// `Carrier::Arc` in as many words, so both were always *a point inside a straight edge* — and
+/// **neither covered the plainest edge there is**, two three-plane corners joined by a straight
+/// step, because both start by asking for a branch name.
+///
+/// The oracle is computed **from the corners**, not by calling the arm a second time.
+#[test]
+fn a_straight_edge_between_rational_corners_names_its_own_midpoint() {
+    let (planes, p, outer, _hole) = holed_face_rings("dimple");
+    let jd = crate::planes::test_judge(&planes);
+    let ring = combinatorics::ring_from_names(p, &outer).unwrap();
+    let half = nacre_scalar::Rat::new(1, 2).unwrap();
+    let mut seen = 0usize;
+    for e in &ring {
+        let got: Vec<_> = combinatorics::edge_interior_points(&jd, NO_CYLS, e).collect();
+        // Exactly one arm answers a rational-cornered straight edge: a careless fourth arm, or one
+        // whose guards overlap, shows up here.
+        assert_eq!(got.len(), 1, "one point per plain edge: {got:?}");
+        let (a, b) = (
+            combinatorics::node_coords_rat(&jd, e.node).expect("a rational corner"),
+            combinatorics::node_coords_rat(&jd, e.to).expect("a rational corner"),
+        );
+        let want: Vec<_> = (0..3)
+            .map(|k| a[k].checked_add(b[k]).unwrap().checked_mul(half).unwrap())
+            .collect();
+        assert_eq!(got[0].to_vec(), want, "the midpoint of the edge's two ends");
+        // And it is *on* the edge, which is the invariant the component road's `Probe` rests on:
+        // strictly between the ends in every coordinate that separates them.
+        for k in 0..3 {
+            if a[k] != b[k] {
+                let (lo, hi) = if a[k] < b[k] {
+                    (a[k], b[k])
+                } else {
+                    (b[k], a[k])
+                };
+                assert!(
+                    lo < got[0][k] && got[0][k] < hi,
+                    "strictly inside in axis {k}"
+                );
+                seen += 1;
+            }
+        }
+    }
+    assert!(
+        seen > 0,
+        "the fixture must have edges that separate coordinates"
+    );
+}
+
 /// ★★★★★ **Cell 23 — a plain bored cube builds at any size, and the answer is right.**
 ///
 /// A bore through a cube is the least exotic input this kernel has, and until this cell it was
@@ -14398,11 +14453,15 @@ fn the_users_rib_plate_fuses() {
 /// (`WitnessNotRational`, this cell's wall, measured on the pre-engine tree); now the two sets are
 /// equal.
 ///
-/// ★★ **What the two sets are is not zero, and that is a different wall.** A *filleted* outline
-/// refuses under six of the group's rotations with `NoClearRay` — every ray from its three-plane
-/// corners grazes — and it did so before this cell too, with and without bores (measured the same
-/// way). So this lock says «the bores add nothing», which is this cell's claim, and freezes the
-/// other wall by name rather than hiding it inside a green assertion.
+/// ★★ **The two sets were not zero, and that other wall is gone since cell 24.** A *filleted*
+/// outline used to refuse under **six** of the group's rotations with `NoClearRay` — every ray from
+/// its three-plane corners grazed — with and without bores alike, and this lock froze that number so
+/// a change in it would be loud. It was: giving a component the points its **edges** name (not only
+/// its corners) decides those depths, and all six build. **They are checked, not merely accepted** —
+/// the `Ok` arm below asserts one body, a clean `validate`, and the exact volume, for every motion.
+///
+/// So the number is now `0`, and this lock says two things at once: «the bores add nothing» (this
+/// cell's original claim) and «no motion of a filleted outline is refused» (cell 24's).
 ///
 /// (Why no rigid-motion oracle row: see `wall_and_gusset_operand` — a slanted plane's realization
 /// differs in the last bit between the two paths, which a bit-exact digest cannot carry.)
@@ -14457,8 +14516,8 @@ fn bores_change_nothing_about_a_rounded_plate_under_rigid_motion() {
             "and the wall that remains is the filleted outline's own, not this cell's: {a}"
         );
     }
-    // ★ The population, held as a number so a change in it is loud: six of the group's motions.
-    assert_eq!(bored.len(), 6, "{bored:?}");
+    // ★ The population, held as a number so a change in it is loud: **none** since cell 24.
+    assert_eq!(bored.len(), 0, "{bored:?}");
 }
 
 /// A cylinder of radius `r` and length `h` about the world Z axis, its base at the origin, then

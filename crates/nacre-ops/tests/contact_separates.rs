@@ -291,15 +291,23 @@ fn a_cavity_touching_its_host_s_wall_is_still_a_reject() {
     assert!(hit, "witness off the corner edge: {seg:?}");
 }
 
-/// ⑤c ★ **Every candidate node grazes.** A diamond void whose four corners sit on the four walls:
-/// a component's nesting depth is decided by casting from one of its own nodes, and here every one
-/// of them lies on the block's boundary. The kernel says that rather than guessing.
+/// ⑤c ★★★★★ **Every candidate node grazes — and the shape still has a name** (cell 24).
 ///
-/// A new population, not a new defect — until contacts separated, a touching void and its host
-/// were one component and the question was never asked. Locked because it is the one reject this
-/// change adds that a caller can actually meet, and its name should not drift.
+/// A diamond void whose four corners sit on the four walls. A component's nesting depth is cast
+/// from one of its own nodes, and here **every one of them** lies on the block's boundary, so the
+/// vertex supply runs out. Until cell 24 that was the whole answer: `NoClearRay`, "I could not find
+/// a ray". But the depth is not the question a caller asked, and the shape's own truth is the one
+/// ⑤b above already reports for its **single**-grazing-corner sibling — the surface meets itself
+/// along the corner's edge. The two inputs differ only in *how many* corners are degenerate, which
+/// is a fact about the witness supply and not about the geometry; giving the component the points
+/// its **edges** name lets the same self-touch test speak for both.
+///
+/// ⚠ **"It decided" is not "it decided right."** A flipped depth would label the cavity material
+/// and the self-touch test could still ring, so the two operations whose answers are *valid solids*
+/// are checked against exact volumes here too: `Fuse` is the block and `Common` is the diamond
+/// prism, and neither number survives a depth read the wrong way round.
 #[test]
-fn a_void_whose_every_corner_grazes_declines_by_name() {
+fn a_void_whose_every_corner_grazes_still_names_its_self_touch() {
     let mut m = Model::new();
     let b = block(&mut m);
     let diamond = prism(
@@ -308,13 +316,115 @@ fn a_void_whose_every_corner_grazes_declines_by_name() {
         1.0,
         1.0,
     );
-    assert!(matches!(
-        boolean(&mut m, BoolKind::Cut, b, diamond),
-        Err(BoolError::Rejected {
-            reason: RejectReason::NoClearRay,
-            ..
-        })
-    ));
+    let err = boolean(&mut m, BoolKind::Cut, b, diamond).unwrap_err();
+    let BoolError::Rejected {
+        reason: RejectReason::SelfTouchingResult,
+        at,
+    } = err
+    else {
+        panic!("expected the self-touch, got {err:?}");
+    };
+    // ⚠ **Which** corner is not a proposition of this shape. ⑤b's triangle grazes at one point, so
+    // its witness is that one; this diamond touches **all four** walls, and which of the four
+    // vertical corner edges the scan reports first is a fact about the walk's order. So the
+    // assertion is the one the geometry makes: the witness *is* one of them, `z` from 1 to 2, read
+    // off this fixture's own polygon and z-range.
+    let Some(RejectWhere::Segment(seg)) = at else {
+        panic!("the self-touch carries no witness segment: {at:?}");
+    };
+    let corner = [[0.0, 2.0], [2.0, 0.0], [4.0, 2.0], [2.0, 4.0]]
+        .into_iter()
+        .any(|[x, y]| {
+            let (p, q) = (
+                Point3::from_array([x, y, 1.0]),
+                Point3::from_array([x, y, 2.0]),
+            );
+            (seg[0].distance(p) < 1e-9 && seg[1].distance(q) < 1e-9)
+                || (seg[0].distance(q) < 1e-9 && seg[1].distance(p) < 1e-9)
+        });
+    assert!(corner, "witness off every corner edge: {seg:?}");
+
+    // ★ The depths, checked by value. `Fuse` is the block (4·4·3) and `Common` is the diamond prism
+    // (the square's diagonals are 4 and 4, so its area is 8, times a height of 1).
+    for (kind, want) in [(BoolKind::Fuse, 48.0), (BoolKind::Common, 8.0)] {
+        let mut m = Model::new();
+        let b = block(&mut m);
+        let diamond = prism(
+            &mut m,
+            &[[0.0, 2.0], [2.0, 0.0], [4.0, 2.0], [2.0, 4.0]],
+            1.0,
+            1.0,
+        );
+        let out = boolean(&mut m, kind, b, diamond).unwrap_or_else(|e| panic!("{kind:?}: {e:?}"));
+        m.rebuild_adjacency();
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "{kind:?}: {:?}",
+            nacre_validate::validate(&m)
+        );
+        let v: f64 = out
+            .iter()
+            .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+            .sum();
+        assert!((v - want).abs() < 1e-9, "{kind:?}: {v} vs {want}");
+    }
+}
+
+/// ⑤d ★★ **The all-grazing population, not one shape of it** (cell 24). ⑤c's diamond was `n = 1`
+/// evidence that the new supply decides *and* decides right; these are the rest of the axis.
+///
+/// Each void's every corner sits on a wall of the host, so the vertex supply is exhausted in every
+/// one — and each is checked the same way: the `Cut` is a refusal whose name is the shape's own,
+/// while `Fuse` and `Common` are valid solids whose volumes are exact. ☑ The hypothesis this
+/// settles: an all-grazing cavity is **intrinsically** degenerate, so the `Cut` is always a
+/// refusal — no shape here produces a solid, and the win is the *name*, not a new answer.
+#[test]
+fn every_all_grazing_void_names_its_shape_and_keeps_its_volumes() {
+    // (polygon, cut area) — each polygon's corners all lie on `x = 0`, `x = 4`, `y = 0` or `y = 4`.
+    let cases: &[(&[[f64; 2]], f64)] = &[
+        // the diamond turned a quarter-turn about the block's centre: the same shape, other corners
+        (&[[2.0, 0.0], [4.0, 2.0], [2.0, 4.0], [0.0, 2.0]], 8.0),
+        // a triangle on three walls
+        (&[[0.0, 1.0], [4.0, 2.0], [2.0, 4.0]], 5.0),
+        // an off-centre quadrilateral, every corner on a different wall
+        (&[[0.0, 3.0], [1.0, 0.0], [4.0, 1.0], [3.0, 4.0]], 10.0),
+    ];
+    for (pts, area) in cases {
+        let mut m = Model::new();
+        let b = block(&mut m);
+        let void = prism(&mut m, pts, 1.0, 1.0);
+        let err = boolean(&mut m, BoolKind::Cut, b, void).unwrap_err();
+        let BoolError::Rejected { reason, .. } = err else {
+            panic!("{pts:?}: expected a rejection, got {err:?}");
+        };
+        assert!(
+            matches!(
+                reason,
+                RejectReason::SelfTouchingResult
+                    | RejectReason::NonManifoldResultEdge
+                    | RejectReason::NonManifoldVertex
+            ),
+            "{pts:?}: a cavity touching a wall is not a solid, and the name should say so: {reason:?}"
+        );
+        for (kind, want) in [(BoolKind::Fuse, 48.0), (BoolKind::Common, *area)] {
+            let mut m = Model::new();
+            let b = block(&mut m);
+            let void = prism(&mut m, pts, 1.0, 1.0);
+            let out = boolean(&mut m, kind, b, void)
+                .unwrap_or_else(|e| panic!("{pts:?} {kind:?}: {e:?}"));
+            m.rebuild_adjacency();
+            assert!(
+                nacre_validate::validate(&m).is_empty(),
+                "{pts:?} {kind:?}: {:?}",
+                nacre_validate::validate(&m)
+            );
+            let v: f64 = out
+                .iter()
+                .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                .sum();
+            assert!((v - want).abs() < 1e-9, "{pts:?} {kind:?}: {v} vs {want}");
+        }
+    }
 }
 
 /// ⑥ ★ Each body names itself by **its own** planes. The definition triple is derived per solid, so
