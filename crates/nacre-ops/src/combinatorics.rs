@@ -1574,8 +1574,11 @@ pub(crate) fn turn(
             },
         ) => sa * sb * jd.plane_pair_dir_sign(p, *ca, *cb) * frame,
         // ★★★ **A segment against an arc needs no new primitive, and the algebra says why.**
-        // A circle bound's plane is ⊥ to the axis (`circle_on_class` answers `None` otherwise), so
-        // `n_P ∥ m`. The arc's tangent is `T = ±(m × r)` with `r = x − c`, the segment's direction
+        // A circle bound's plane is ⊥ to the axis, so `n_P ∥ m` — see
+        // [`class_carries_circle`] for what actually holds that (the gate, not this module; the
+        // sentence that used to stand here named `circle_on_class`, which neither owns the rule
+        // nor answers `None` — it answers `Ok(Vec::new())`). The arc's tangent is
+        // `T = ±(m × r)` with `r = x − c`, the segment's direction
         // `d = n_P × n_carrier` is ⊥ to `m`, and BAC-CAB collapses the cross product:
         //
         //   (d × T) · m = (d × (m × r)) · m = (m (d·r) − r (d·m)) · m = (d·r)(m·m)
@@ -3735,9 +3738,14 @@ pub(crate) fn probe_in_component(
 /// first** — 20 rings with no arc at all (the wall panels). Two cylinders' arcs on one planar face
 /// and a plane that is *not* perpendicular to the axis both refuse **0 times**, and they stay: the
 /// first would take a circle that bounds only part of the ring, the second would call an ellipse a
-/// circle and put the "centre" off the face. The gate refuses an oblique cylinder cut today, which
-/// is why the second is structurally empty rather than luckily so — and a producer that stops
-/// holding either proposition should be caught here rather than two layers down.
+/// circle and put the "centre" off the face — and a producer that stops holding either proposition
+/// should be caught here rather than two layers down.
+///
+/// ⚠ **The sentence that used to stand here — "the gate refuses an oblique cylinder cut today" —
+/// has been false since cell ⑩**: the gate lets an oblique plane through when every lateral face
+/// of the cylinder provably misses it. The conclusion survives on a narrower fact: this ring holds
+/// an **arc** of that cylinder, so the plane does not miss it, and an oblique pair that meets is
+/// what the gate refuses. [`class_carries_circle`] carries the argument now.
 fn face_circle<'a>(
     jd: &Judge<'_, WorkingPlane>,
     plane: usize,
@@ -5755,6 +5763,41 @@ pub(crate) fn branch_name_from_def(
     }
     let root = if s0 == s1 { root } else { root.flipped() };
     Some(NodeId::branch(k0, k1, cyl, root))
+}
+
+/// **Does this class carry that cylinder's *circle*?** — its normal is parallel to the axis, so
+/// the section is a circle and not an ellipse. Exact and **total** ([`nacre_scalar::parallel_rat`]
+/// clears denominators into `BigInt`), so a caller's `false` means the geometry, never the width.
+///
+/// ★★★★★ **The one place this rule is named, and it is load-bearing far past its callers.**
+/// Nine sites reason from "a circle's class is ⊥ to its axis" — [`crate::nesting`]'s rim witnesses
+/// and `disk_in_disk`, the segment-vs-arc turn sign below, `segment_meets_cylinder`'s
+/// precondition, `circle_crosses_ruling`'s extent derivation, an `unreachable!` in the
+/// arrangement's circle crossings, and three of the merge road's f64 arguments — and until this
+/// cell **none of them checked**; the proposition was held by the gate alone.
+///
+/// **What actually holds it** ([`crate::planes::cylinder_gate`]): the gate runs whenever the input
+/// has a cylinder at all and sweeps **every (plane class × cylinder)** pair; an oblique pair whose
+/// lateral faces cannot be *proved* to miss the plane is refused
+/// ([`crate::RejectReason::ObliqueCylinderCut`] — the section would be an ellipse, M6-3). So a
+/// class that carries a circle is a class whose plane **meets** that cylinder, and had it been
+/// oblique the gate would already have refused. ★ The seated producer has a second, stronger
+/// reason that survives a gate change: `LoopRing::Circle` is minted only from a **single closed
+/// edge**, so the cell's boundary is a whole circle lying in the class — and a circle determines
+/// its own plane, while a cylinder's *circular* section is ⊥ to the axis.
+///
+/// ⚠ **The argument has been misread three times** (all in one session, all by the same author),
+/// which is why the two consumers that would answer *silently wrong* now ask instead of assume.
+/// ⚠ `parallel_rat` calls a **zero** vector parallel to everything, so a zero normal or axis
+/// answers `true` here — "carries" is the positive reading and a guard spelled `!` fails **open**.
+/// Unreachable ([`nacre_topo::CylinderDef::new`] refuses a zero `dir`; the gate refuses a class
+/// with no rational description), and the eight inline spellings this will replace already inherit
+/// that convention — but the name reads the convention backwards, so it is written down here.
+pub(crate) fn class_carries_circle(
+    n: &[nacre_scalar::Rat; 3],
+    dir: &[nacre_scalar::Rat; 3],
+) -> bool {
+    nacre_scalar::parallel_rat(n, dir)
 }
 
 /// **Where a cylinder's axis meets a plane class** — the centre of the circle that cylinder traces

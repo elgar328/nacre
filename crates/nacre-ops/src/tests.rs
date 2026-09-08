@@ -13861,6 +13861,133 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
     );
 }
 
+/// ★★★★★ **Cell 22 — a circle cell is a circle only where the class is ⊥ to the axis.**
+///
+/// Cell 21 gave `Cell::Disk` four rim witnesses, and their being *on the cell's boundary* rests on
+/// the class plane being perpendicular to the cylinder's axis — a premise nothing enforced. Off it
+/// the section is an ellipse: `û ⊥ axis` does not give `û ⊥ n`, so two of the four rim points leave
+/// the plane, and `inside` answers a boundary `In` **without the converse**. That is a silent wrong
+/// answer, which is why the two consumers now ask.
+///
+/// The fixture is the smallest oblique one that still forms everything: a cuboid's `x̂` class with
+/// `dir = (3,4,0)`, `ref_dir = (0,0,1)`. It is oblique (`n × m = (0,0,4) ≠ 0`), the centre still
+/// forms (`n·m = 3 ≠ 0`), and the frame still stands (`‖dir‖ = 5`, `‖ref_dir‖ = 1`, both rational)
+/// — so `û₁ = (0,0,1)` lies in the plane while `û₂ = (4,−3,0)/5` does not. ★ An axis like `(1,1,0)`
+/// measures nothing here: `‖dir‖² = 2` is irrational, no frame forms, and the rim is absent with or
+/// without the guard.
+#[test]
+fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
+    let q = nacre_scalar::Rat::from_int;
+    let zero = q(0);
+    let mut m = Model::new();
+    let s = m.add_cuboid(
+        Point3::from_array([-10.0, -10.0, 0.0]),
+        Point3::from_array([10.0, 10.0, 5.0]),
+    );
+    m.rebuild_adjacency();
+    let faces_tab = collect_planes(&m, s).unwrap();
+    let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
+    let (planes, _plane_ix, _cyls) = dense_planes(&faces_tab, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let class = |pick: &dyn Fn(&[nacre_scalar::Rat; 4]) -> bool| {
+        (0..planes.len())
+            .find(|&c| combinatorics::class_coeffs_rat(&jd, c).is_some_and(|k| pick(&k)))
+            .expect("the cuboid has all three")
+    };
+    let wall = class(&|k: &[nacre_scalar::Rat; 4]| k[1] == zero && k[2] == zero && k[0] != zero);
+    let cap = class(&|k: &[nacre_scalar::Rat; 4]| k[0] == zero && k[1] == zero && k[2] != zero);
+    let def =
+        |o: [nacre_scalar::Rat; 3], d: [nacre_scalar::Rat; 3], e: [nacre_scalar::Rat; 3], r| {
+            nacre_topo::CylinderDef::new(o, d, e, q(r)).expect("a statable cylinder")
+        };
+
+    // ⊥: the four rim witnesses stand, as cell 21 built them.
+    let upright = def([zero; 3], [zero, zero, q(1)], [q(1), zero, zero], 2);
+    assert_eq!(crate::nesting::rim_witness_count(&jd, cap, &upright), 4);
+    // Oblique: the same cylinder statement, asked on a class its axis is not perpendicular to.
+    // The frame forms and the centre forms — only the premise fails, and only the rim goes.
+    let slanted = def([zero; 3], [q(3), q(4), zero], [zero, zero, q(1)], 2);
+    assert!(
+        nacre_scalar::cyl_unit_frame(&slanted.dir(), &slanted.ref_dir()).is_some(),
+        "the fixture must be one where the frame stands, or it measures nothing"
+    );
+    assert!(combinatorics::circle_centre_rat(&jd, wall, &slanted).is_some());
+    assert_eq!(
+        crate::nesting::rim_witness_count(&jd, wall, &slanted),
+        0,
+        "an ellipse's boundary is not `centre ± r·û`"
+    );
+}
+
+/// ★★★★★ **Cell 22 — and radii do not decide an ellipse.** `disk_in_disk` compares `(r_b − r_a)²`
+/// with the centre distance, which is the right question only when both sections are circles.
+///
+/// This fixture is the half where it is **silently wrong**, not merely conservative: both axes are
+/// `(3,4,0)`, so each section is an ellipse elongated along `ŷ` (semi-minor `r`, semi-major `5r/3`),
+/// and the two centres are separated by `4/3` **along that major axis**. Shrinking `ŷ` by `3/5`
+/// turns both into circles and the offset into `4/5`, so `4/5 + 1 ≤ 2` — the small disk really is
+/// inside the big one. Today the kernel answers `Ok(false)`: `(2−1)² = 1` is not `> (4/3)² = 16/9`.
+///
+/// ⚠ Concentric or minor-axis offsets are answered **correctly** even on an oblique class, so a
+/// fixture that did not pin the offset's direction would show the guard "answering" rather than
+/// the old road being wrong.
+#[test]
+fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
+    let q = nacre_scalar::Rat::from_int;
+    let zero = q(0);
+    let mut m = Model::new();
+    let s = m.add_cuboid(
+        Point3::from_array([-10.0, -10.0, 0.0]),
+        Point3::from_array([10.0, 10.0, 5.0]),
+    );
+    m.rebuild_adjacency();
+    let faces_tab = collect_planes(&m, s).unwrap();
+    let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
+    let (planes, _plane_ix, _cyls) = dense_planes(&faces_tab, &canon);
+    let jd = crate::planes::test_judge(&planes);
+    let wall = (0..planes.len())
+        .find(|&c| {
+            combinatorics::class_coeffs_rat(&jd, c)
+                .is_some_and(|k| k[1] == q(0) && k[2] == q(0) && k[0] != q(0))
+        })
+        .expect("an x-normal wall class");
+    // Same axis for both, so the two section centres differ by exactly the origins' difference.
+    let axis = [q(3), q(4), zero];
+    let seam = [zero, zero, q(1)];
+    let small = nacre_topo::CylinderDef::new([zero; 3], axis, seam, q(1)).expect("small");
+    let big = nacre_topo::CylinderDef::new(
+        [zero, nacre_scalar::Rat::new(4, 3).unwrap(), zero],
+        axis,
+        seam,
+        q(2),
+    )
+    .expect("big");
+    // The offset really is `4/3` along `ŷ`, in the class — stated so the fixture cannot drift.
+    let (ca, cb) = (
+        combinatorics::circle_centre_rat(&jd, wall, &small).expect("centre a"),
+        combinatorics::circle_centre_rat(&jd, wall, &big).expect("centre b"),
+    );
+    let delta: Vec<_> = (0..3)
+        .map(|k| cb[k].checked_sub(ca[k]).expect("a rational offset"))
+        .collect();
+    assert_eq!(
+        delta,
+        vec![zero, nacre_scalar::Rat::new(4, 3).unwrap(), zero]
+    );
+    let err = crate::nesting::disk_in_disk(&jd, wall, &small, &big)
+        .expect_err("radii cannot decide an ellipse");
+    assert!(
+        matches!(
+            err,
+            BoolError::Rejected {
+                reason: crate::RejectReason::ObliqueCircleClass,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+}
+
 /// ★ Cell 21 — **the rim witness is the point the cylinder's own statement names.** The extrude
 /// road states a unit, perpendicular frame (a sketch frame is checked orthonormal exactly, and a
 /// whole circle's `ref_dir` is a rim chord divided by its own radius), so the unit frame comes

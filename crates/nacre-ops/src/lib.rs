@@ -712,6 +712,22 @@ pub enum RejectReason {
     /// (M6-3's vocabulary). ★ Since cell ⑩ the gate asks the faces first: a slanted plane that
     /// runs past every lateral face of the cylinder (a gusset beside a plate's holes) passes.
     ObliqueCylinderCut,
+    /// **A cell called a circle sits on a class that is not perpendicular to its axis** — so its
+    /// boundary is an ellipse and every rule that reads a *radius* as that boundary's width is
+    /// wrong there (cell 22).
+    ///
+    /// ★ **A backstop, deliberately, and it is classified as one.** [`Self::ObliqueCylinderCut`]
+    /// says *the kernel's coverage ends here* and judges nothing about the input; this says
+    /// something stronger and different — the gate promised no oblique class would carry a circle
+    /// (see [`crate::combinatorics::class_carries_circle`]) and the promise did not hold. Sharing
+    /// the older name would have put two sentences under one label, which is the shape this
+    /// kernel keeps re-learning. The vessel-guard precedent is [`Self::PartialCircleUncut`], and
+    /// it takes the same class.
+    ///
+    /// ☑ Nothing raises it today, and that is the point: the alternative at its two sites is not a
+    /// refusal but a **silently wrong containment answer** — a rim witness off the cell's own
+    /// plane, or two radii compared as if an ellipse's width were its radius.
+    ObliqueCircleClass,
     /// Two cylinder classes **of different operands may share a face**: one surface stated by
     /// both (one handle with rows of both solids, or one surface under two handles — a
     /// `translate`d twin), or axes within the radius sum whose lateral faces could not be shown
@@ -1352,6 +1368,7 @@ impl RejectReason {
             Self::BranchVertexUnnamed => "branch_vertex_unnamed",
             Self::VertexNamesAbsentSurface => "vertex_names_absent_surface",
             Self::ObliqueCylinderCut => "oblique_cylinder_cut",
+            Self::ObliqueCircleClass => "oblique_circle_class",
             Self::CylinderPairContact => "cylinder_pair_contact",
             Self::CylinderGateUndecided => "cylinder_gate_undecided",
             Self::CylinderFaceUndecided => "cylinder_face_undecided",
@@ -1449,6 +1466,7 @@ impl RejectReason {
             | Self::LabelConflict
             | Self::HoleRoots
             | Self::PartialCircleUncut
+            | Self::ObliqueCircleClass
             | Self::MissingSeam => RejectClass::SuspectedDefect,
         }
     }

@@ -279,6 +279,24 @@ pub(crate) fn disk_in_disk(
     let undecided = || reject(RejectReason::WitnessNotRational);
     let pa = combinatorics::circle_centre_rat(jd, wc, a).ok_or_else(undecided)?;
     let pb = combinatorics::circle_centre_rat(jd, wc, b).ok_or_else(undecided)?;
+    // ★★ **Radii decide only where both sections are circles** (cell 22). On an oblique class each
+    // is an ellipse with semi-minor `r` and semi-major `r/|cos θ|`, and comparing radii is then
+    // wrong in both directions: it says "not inside" for a pair separated **along the major axis**
+    // that really nests (`ra 1`, `rb 2`, offset `4/3` on the `(3,4,0)` axis: `3·(4/3)/5 + 1 ≤ 2`),
+    // and it happens to be right when the offset is concentric or along the minor axis. Refusing
+    // the whole oblique population buys the first and sells the second — and the sold half is the
+    // trade this kernel's DNA asks for (`honest-reject > silent-wrong`).
+    // ⚠ Asked **before** the `ra >= rb` return below: that return is sound for ellipses too (the
+    // semi-minor is exactly `r`, so `ra < rb` is necessary for nesting), so putting the guard
+    // after it would leave half the population unguarded. And asked **after** the two centres, so
+    // the class is known to have coefficients — no unreachable "what if it has none" arm.
+    let coeffs = combinatorics::class_coeffs_rat(jd, wc).ok_or_else(undecided)?;
+    let n = [coeffs[0], coeffs[1], coeffs[2]];
+    if !combinatorics::class_carries_circle(&n, &a.dir())
+        || !combinatorics::class_carries_circle(&n, &b.dir())
+    {
+        return Err(reject(RejectReason::ObliqueCircleClass));
+    }
     let (ra, rb) = (a.radius(), b.radius());
     if ra >= rb {
         return Ok(false);
@@ -388,9 +406,12 @@ enum Said {
 /// arrangement carries passed `circle_on_class`'s `parallel_rat`, so the population that would
 /// break it is empty today and the `debug_assert` below is what would say so — but an `On` that
 /// is not on the boundary returns from `inside` **without** the converse, so this is a silent
-/// wrong answer, not a refusal. **Turning that assert into a guard is the next cell's
-/// obligation**, along with the two older consumers resting on the same unwritten premise
-/// (`disk_in_disk`'s 3-D centre distance, and `ask`'s radial arm).
+/// wrong answer, not a refusal. ☑ **Cell 22 turned that assert into a guard**
+/// ([`combinatorics::class_carries_circle`]) — and corrected what this paragraph used to claim:
+/// `ask`'s radial arm is **right** on an oblique class (it reads the solid cylinder, and an
+/// elliptical section is exactly the plane's points within `r` of the axis), while `disk_in_disk`
+/// is wrong for a different reason than the one named here — not the centre distance (both
+/// centres lie *on* the plane) but the **radii**, which are not an ellipse's width.
 ///
 /// A centre that cannot be formed keeps its own name ([`Witness::Unformed`] →
 /// [`crate::RejectReason::WitnessNotRational`]); a frame that cannot be formed suppresses the
@@ -405,7 +426,20 @@ fn rim_and_centre<'a>(
         return vec![Witness::Unformed];
     };
     let mut out = Vec::with_capacity(5);
-    if let Some((u1, u2)) = nacre_scalar::cyl_unit_frame(&def.dir(), &def.ref_dir()) {
+    // ★★ **The rim is a boundary point only where the class is ⊥ to the axis** (cell 22). Off that
+    // the section is an ellipse: `û ⊥ axis` does not give `û ⊥ n`, so `centre ± r·û` leaves the
+    // class plane and a `Witness::On` there is a lie `inside` answers **without the converse** —
+    // a silent wrong answer, not a refusal. The centre stays: it is the ellipse's centre either
+    // way, and `ask`'s radial arm reads the solid cylinder, which is right for any section.
+    // ☑ The guard is total ([`combinatorics::class_carries_circle`]) and fires nowhere today; the
+    // gate is what empties its population, and this is what says so where the point is made.
+    // ⚠ `is_some_and` folds a *second* cause in — a class with no rational description also loses
+    // its rim. That population is empty for the same reason (the gate refuses such a class outright,
+    // `RejectReason::CylinderGateUndecided`), and if it ever stops being empty the cell falls to
+    // `RingHasNoWitness` rather than to a wrong answer, which is the direction this kernel takes.
+    let carries = combinatorics::class_coeffs_rat(jd, wc)
+        .is_some_and(|c| combinatorics::class_carries_circle(&[c[0], c[1], c[2]], &def.dir()));
+    if carries && let Some((u1, u2)) = nacre_scalar::cyl_unit_frame(&def.dir(), &def.ref_dir()) {
         let r = def.radius();
         let neg = |v: &[nacre_scalar::Rat; 3]| -> Option<[nacre_scalar::Rat; 3]> {
             let z = nacre_scalar::Rat::from_int(0);
@@ -433,6 +467,9 @@ fn rim_and_centre<'a>(
                 nacre_scalar::Orient::Zero,
                 "a rim witness is on its own rim"
             );
+            // ⚠ Cell 22's guard above makes this unreachable **for its own cause** — a class that
+            // is not ⊥ never gets here now. It stays because it also catches a broken frame or a
+            // centre that is not the axis' meet, which no guard above asks about.
             debug_assert!(
                 combinatorics::class_coeffs_rat(jd, wc).is_none_or(|c| {
                     let n = [c[0], c[1], c[2]];
@@ -447,6 +484,22 @@ fn rim_and_centre<'a>(
     }
     out.push(Witness::In(Where::Coord(centre)));
     out
+}
+
+/// **How many boundary witnesses a disk offers** — the count alone, so a test can read it without
+/// [`Witness`] and [`Where`] leaving this module. `circle_centre_rat` lives in `combinatorics`
+/// rather than here for exactly that reason (*"opening that module's witness atoms … the shape
+/// those atoms were made private to prevent"*), and cell 22's lock is not worth undoing it.
+#[cfg(test)]
+pub(crate) fn rim_witness_count(
+    jd: &Judge<'_, WorkingPlane>,
+    wc: usize,
+    def: &nacre_topo::CylinderDef,
+) -> usize {
+    rim_and_centre(jd, wc, def)
+        .iter()
+        .filter(|w| matches!(w, Witness::On(_)))
+        .count()
 }
 
 /// **Every witness `cell` can offer, in one order, once** (cell 13).
@@ -512,7 +565,9 @@ fn witnesses<'a>(
             // the two arms of one supply reading differently is exactly what this module exists
             // to prevent, so **giving this arm the rim too is the next cell's obligation**, and it
             // is measurable (the whole-circle ring population is the one `ring_own_circle`'s doc
-            // counts). Its centre answers meanwhile, as an interior witness.
+            // counts — and cell 22 measured **zero** such rings as a question's source over 27,000
+            // engine questions, so what that "88 acceptances" counts is the first thing that cell
+            // has to settle). Its centre answers meanwhile, as an interior witness.
             // ⚠ And it is eager: `Option::map` runs `centre_of` before this iterator is polled,
             // so the module's own "lazy on purpose" rule is already broken here. Folding both
             // arms onto `rim_and_centre` fixes that in the same move.
