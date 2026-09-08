@@ -13988,6 +13988,62 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     );
 }
 
+/// ★★★★★ **Cell 23 — a plain bored cube builds at any size, and the answer is right.**
+///
+/// A bore through a cube is the least exotic input this kernel has, and until this cell it was
+/// **refused** — `WitnessNotRational` — whenever a coordinate needed a long decimal at a small
+/// scale. Measured boundary before the fix: `1/3` and `1/3·1e-3` built, `1/3·1e-4` and `1/7·1e-3`
+/// did not. Nothing about the geometry changed across that line; what changed was the plane
+/// offset's denominator passing `sqrt(i128)`, and it rode into the chart on a normal the
+/// four-coefficient canonicalisation had left non-primitive ([`crate::combinatorics`]'s
+/// `primitive_normal`).
+///
+/// The sizes below span **seven orders of magnitude**, each with a full 17-digit mantissa so the
+/// denominators are as bad as f64 can make them; the last two built before this cell and are here
+/// as the regression half. The oracle is `s³ − πr²s`.
+///
+/// ⚠ **The tolerance is relative and it belongs to the oracle, not to the kernel.** At `s = 2e-7`
+/// the volume is ~6.4e-21, where any absolute epsilon is meaningless; and `π` does not cancel
+/// here, so the oracle is f64 arithmetic while the kernel's answer is not. Precedent for the
+/// relative form: `pocket_on_a_random_slanted_face_is_valid_or_rejects`' `1e-9 * 8.0`.
+#[test]
+fn a_bored_cube_builds_at_any_size_and_its_volume_is_right() {
+    for s in [
+        2.0000000000000003e-7,
+        (1.0 / 3.0) * 1e-4,
+        (1.0 / 7.0) * 1e-3,
+        1.0 / 3.0,
+        2.0000000000000003,
+    ] {
+        let (h, r) = (s / 2.0, s / 4.0);
+        let mut m = Model::new();
+        let block = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([s; 3]));
+        let bore = m.add_cylinder(
+            Point3::from_array([h, h, -h]),
+            Vector3::from_array([0.0, 0.0, 1.0]),
+            r,
+            s * 2.0,
+        );
+        m.rebuild_adjacency();
+        let out = boolean(&mut m, BoolKind::Cut, block, bore)
+            .unwrap_or_else(|e| panic!("s = {s:e}: {e:?}"));
+        assert_eq!(out.len(), 1, "s = {s:e}: a bored cube is one body");
+        assert!(
+            nacre_validate::validate(&m).is_empty(),
+            "s = {s:e}: {:?}",
+            nacre_validate::validate(&m)
+        );
+        let vol = nacre_props::mass_props(&m, out[0])
+            .expect("mass props")
+            .volume;
+        let want = s * s * s - std::f64::consts::PI * r * r * s;
+        assert!(
+            (vol - want).abs() <= 1e-12 * want,
+            "s = {s:e}: volume {vol:e} against {want:e}"
+        );
+    }
+}
+
 /// ★ Cell 21 — **the rim witness is the point the cylinder's own statement names.** The extrude
 /// road states a unit, perpendicular frame (a sketch frame is checked orthonormal exactly, and a
 /// whole circle's `ref_dir` is a rim chord divided by its own radius), so the unit frame comes

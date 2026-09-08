@@ -431,21 +431,27 @@ const CORPUS: [Fixture; 13] = [
     Fixture {
         name: "cylinder-wide-axis",
         // ★ The same population spelled with long decimals. The **gate** answers it (S2 made its
-        // questions total), and the wall this input now meets is the **value** path: the circle
+        // questions total), and the wall this input met next was the **value** path: the circle
         // nesting projects the ring's corners into the class's rational chart, and a sub-micron
-        // model at full f64 precision leaves `Rat` there. Exactly what S2 said it was buying and
-        // what it said it was *not* — "the decline moves to the place that genuinely cannot do
-        // it" — measured here rather than argued.
-        expect: Some(RejectReason::WitnessNotRational),
+        // model at full f64 precision left `Rat` there.
+        //
+        // ★★ **It builds since cell 23, and the decline it froze was not about this model at
+        // all.** The chart's second axis is `n x e1`, which squares the normal — and that normal
+        // was carrying a factor the plane-name canonicalisation had not removed, because that
+        // canonicalisation divides the content out of **four** coefficients while the chart reads
+        // three. On `z = s` with a long decimal `s`, the leftover factor is `s`'s denominator. It
+        // is divided out now (`combinatorics::primitive_normal`), the axes come out along the same
+        // directions as ever, and this cut is exact: one solid, `validate` clean, volume matching
+        // `s^3 - pi r^2 s`. The fixture stays as coverage — a model three orders of magnitude
+        // below anything else here.
+        //
+        // ⚠ It was `WitnessNotRational`'s only *surfacing* fixture. That name still raises inside
+        // the engine and the `reject-trace` sweep is what keeps it visible; nothing was invented
+        // to replace this row.
+        expect: None,
         run: cylinder_wide_axis,
-        // ★ Cell 13 moved the nesting question — witnesses, point tests, dispatch — into its own
-        // module, so the guard that rings is the same one at a new address.
-        raised: &[(
-            "witness_not_rational",
-            None,
-            "crates/nacre-ops/src/nesting.rs",
-        )],
-        surfaced: &[("witness_not_rational", None)],
+        raised: &[],
+        surfaced: &[],
     },
     Fixture {
         name: "cylinder-wall-contact",

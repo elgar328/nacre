@@ -516,6 +516,13 @@ impl PlaneName {
     /// consume. A canonical narrow name is a primitive integer vector (the invariant
     /// [`plane_name_exact`] normalizes to), so `numer()` is the value; a wide name already is
     /// the integers.
+    ///
+    /// ⚠ **Primitive over *four* coefficients — the normal alone is not** (learned in `nacre-ops`
+    /// cell 23). The content divided out is `gcd(a,b,c,d)`, so `(a,b,c)` keeps a factor of
+    /// `gcd(a,b,c)/gcd(a,b,c,d)`; for an axis-aligned plane at an offset needing a long decimal
+    /// that factor is the offset's **denominator**, arbitrarily large on the plainest of planes.
+    /// A consumer that reads only the normal **and multiplies** must divide it by its own gcd
+    /// first, or it pays that factor — squared, if it takes a cross product.
     pub fn coeff_ints(&self) -> [num_bigint::BigInt; 4] {
         match self {
             PlaneName::Narrow(c) => {

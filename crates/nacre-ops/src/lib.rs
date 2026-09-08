@@ -950,6 +950,13 @@ pub enum RejectReason {
     /// [`Self::CylinderGateUndecided`] means the geometry — a rotated class, a moved cylinder, a
     /// surface contact. This one means the arithmetic: the wall a wide model meets after the gate
     /// has already said yes. Sharing one name would put a width limit inside a geometric verdict.
+    ///
+    /// ☑ **The chart half of that wall is closed** (cell 23): the width a plain sub-millimetre
+    /// model met was never its own — it was the plane offset's denominator, riding along in a
+    /// normal that the four-coefficient canonicalisation had not made primitive, and then squared
+    /// by the chart's second axis. What is left under this name on that road is a **primitive**
+    /// normal past ~2⁶³, and the corpus has none. ⚠ It kept its raises but lost its only frozen
+    /// *surfacing* fixture; `reject-trace` is what keeps it visible now.
     WitnessNotRational,
     /// **An arc-bounded boundary this assembly cannot spell yet** — a backstop, no longer a
     /// stopper.

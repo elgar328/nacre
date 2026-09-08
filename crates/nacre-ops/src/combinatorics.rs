@@ -6034,6 +6034,55 @@ pub(crate) fn cross3_rat(
     ])
 }
 
+/// **A plane's normal in primitive form** — divided by the gcd of its own three components.
+///
+/// ★★★★★ **The canonicalisation that made the name narrow was over *four* coefficients, and a
+/// reader of three does not inherit it** (cell 23). A [`nacre_scalar::PlaneName`] is normalised by
+/// clearing denominators, dividing out the **content of all four**, and fixing a sign; so the
+/// normal `(a, b, c)` keeps a factor of `gcd(a,b,c) / gcd(a,b,c,d)`. For an axis-aligned class at
+/// an offset that needs a long decimal — `z = s`, coefficients `(0, 0, D, −N)` with `gcd(D,N) = 1`
+/// — that leftover factor is exactly **the offset's denominator**, and it can be arbitrarily
+/// large while the plane itself is the plainest one there is.
+///
+/// The rescale is by a **positive** rational, so every direction derived from the normal is
+/// unchanged and only the width moves: over the distinct class normals sampled from this corpus,
+/// the widest component fell from a median of 51 bits to **1**.
+///
+/// **Total.** Class coefficients arrive as a canonical *integer* 4-vector (`class_coeffs_rat` is a
+/// read of `world_rat`, which is `PlaneName::narrow()`), so the gcd is an integer one and the
+/// division is exact. A component that is somehow not an integer is returned untouched rather than
+/// guessed at — the structural argument can rot without this quietly changing an answer.
+fn primitive_normal(n: &[nacre_scalar::Rat; 3]) -> [nacre_scalar::Rat; 3] {
+    // `unsigned_abs` rather than `abs`: the latter panics on `i128::MIN`, and a panic is a worse
+    // answer than the wide arithmetic this exists to avoid.
+    fn gcd(a: u128, b: u128) -> u128 {
+        let (mut a, mut b) = (a, b);
+        while b != 0 {
+            let t = a % b;
+            a = b;
+            b = t;
+        }
+        a
+    }
+    let mut g = 0u128;
+    for c in n.iter() {
+        if c.denom() != 1 {
+            return *n;
+        }
+        g = gcd(g, c.numer().unsigned_abs());
+    }
+    // `g == 0` is the zero normal (no plane, and `of_normal` says so); `g == 1` is already
+    // primitive. Both leave the statement alone, and so does the one `u128` that has no `i128`
+    // (a lone `i128::MIN` component) — declining to divide is never wrong here.
+    let Ok(g) = i128::try_from(g).map(|g| g.max(1)) else {
+        return *n;
+    };
+    if g == 1 {
+        return *n;
+    }
+    core::array::from_fn(|k| nacre_scalar::Rat::from_int(n[k].numer() / g))
+}
+
 /// **A rational 2D chart of a plane**, for running a parity test in it.
 ///
 /// `e₁ = ê_k × n` for the first basis axis giving a nonzero cross, `e₂ = n × e₁`. The chart is
@@ -6041,14 +6090,40 @@ pub(crate) fn cross3_rat(
 /// the plane, and demanding unit vectors would need square roots that leave the rationals. One
 /// copy of this rule, because a second spelling of it is how two consumers start disagreeing
 /// about which side of a ring a point is on.
+///
+/// ★★★★★ **"Not orthonormal" is not "not orthogonal", and three cheaper charts die on the
+/// difference** (cell 23). `e₁·e₂ = e₁·(n × e₁) = 0`, so this is an **orthogonal, non-unit frame
+/// of the plane** — and that is what makes [`Self::axes`]'s sentence ("the parity walks its ray
+/// along `e₁`") a true statement about the *world*: in a skew frame the direction of "y fixed, x
+/// increasing" is not `e₁`. Measured refutations, so the next reader does not re-derive them:
+/// - **Drop a coordinate** (`e₁ = ê_i`, `e₂ = ê_j`, zero arithmetic): census **398 → 389 rows**,
+///   `arcwalls rrect-box` and `roundplate` falling to `NoClearRay`. Parity is affine-invariant but
+///   the **degeneracy pattern is not**, and a corner on the ray is what the census is made of.
+/// - **`e₂ = ê_k`** (zero arithmetic, `e₁` untouched, and on the plane `p·e₂_old = |n|²p_k + n_k·d`
+///   is a *positive affine* image of `p_k`, so every comparison and `orient2d` sign is identical):
+///   refuted because [`ring_interior_candidates`] walks these axes as **3-D directions in the
+///   plane** to mint cap witnesses, and `ê_k·n = n_k ≠ 0` leaves it. An axis here is a direction,
+///   not only a coordinate functional.
+/// - **`e₂ = ê_j × n`** (degree 1 in `n`, so no squaring, and it *is* in the plane): not
+///   orthogonal to `e₁`, so it rotates the ray's level set — the same axis the first one died on.
+///
+/// ⇒ the only change that provably moves nothing is a **positive rescale** of `n`, which is what
+/// [`primitive_normal`] does.
 pub(crate) struct Chart2dRat {
     e1: [nacre_scalar::Rat; 3],
     e2: [nacre_scalar::Rat; 3],
 }
 
 impl Chart2dRat {
-    /// The chart of the plane with normal `n`. `None` on a zero normal or on checked-`Rat`
-    /// overflow.
+    /// The chart of the plane with normal `n`. `None` on a zero normal, or when `e₂ = n × e₁`
+    /// leaves `i128` — which after [`primitive_normal`] means the **primitive** normal is itself
+    /// past ~2⁶³, not that a spurious factor rode in on it.
+    ///
+    /// ★ **The rescale is first, and it is why this is not a behaviour change** (cell 23):
+    /// `ê_k × n` cannot overflow (its factors are 0 and 1) and parallelism is scale-invariant, so
+    /// `k` is the same index either way, and both axes come out along the same directions — only
+    /// narrower. What the corpus met before was never geometry: an axis-aligned class at an offset
+    /// with a long decimal carries that offset's denominator in its normal, and `e₂` squares it.
     pub(crate) fn of_normal(n: &[nacre_scalar::Rat; 3]) -> Option<Self> {
         let zero = nacre_scalar::Rat::from_int(0);
         let basis = |k: usize| -> [nacre_scalar::Rat; 3] {
@@ -6056,6 +6131,7 @@ impl Chart2dRat {
             e[k] = nacre_scalar::Rat::from_int(1);
             e
         };
+        let n = &primitive_normal(n);
         let e1 = (0..3)
             .filter_map(|k| cross3_rat(&basis(k), n))
             .find(|e| e.iter().any(|c| *c != zero))?;
@@ -6192,6 +6268,51 @@ mod tests {
             three_plane_probes([branch, three, branch]),
             vec![[2, 5, 9]],
             "a probe list may lose a member; that is its licence"
+        );
+    }
+
+    /// ★★★★★ **Cell 23 — the chart's shape, stated from the rule rather than from itself.**
+    ///
+    /// One normal carries every clause: `n = 3e19 * (1, 2, 3)` is **wide** (a component of `9e19`,
+    /// whose square leaves `i128`, so an unrescaled `e2` is `None`) and **tilted** (`n_k != 0` for
+    /// the chosen `k`, without which two of the four clauses below cannot fail).
+    ///
+    /// ⚠ **The expected axes are written out by hand from `e1 = ê_k × n`, `e2 = n × e1`, never by
+    /// calling `of_normal` a second time.** An earlier draft of this lock compared
+    /// `of_normal(K·n)` against `of_normal(n)` — which a chart that ignores magnitude entirely
+    /// (dropping a coordinate) passes on both sides while regressing the census by nine rows. An
+    /// oracle has to come from the inputs.
+    ///
+    /// Cross-check on `e2`: `n × (ê₀ × n) = |n|²ê₀ − n₀n = 14(1,0,0) − (1,2,3) = (13, −2, −3)`,
+    /// the same vector the cross product gives — two derivations, one answer.
+    #[test]
+    fn the_chart_is_an_orthogonal_in_plane_frame_along_the_normals_own_directions() {
+        use nacre_scalar::{Orient, Rat, dot_sign_rat, parallel_rat};
+        let q = Rat::from_int;
+        let k = 30_000_000_000_000_000_000i128; // 3e19
+        let n = [q(k), q(2 * k), q(3 * k)];
+        let chart = Chart2dRat::of_normal(&n)
+            .expect("a wide normal is a rescale away from a chart, not a refusal");
+        let (e1, e2) = chart.axes();
+        for (got, want, name) in [
+            (e1, [q(0), q(-3), q(2)], "e1 = ê₀ × n"),
+            (e2, [q(13), q(-2), q(-3)], "e2 = n × e1"),
+        ] {
+            assert!(
+                parallel_rat(got, &want) && dot_sign_rat(got, &want) == Orient::Positive,
+                "{name}: {got:?} is not along {want:?}"
+            );
+            assert_eq!(
+                dot_sign_rat(got, &n),
+                Orient::Zero,
+                "{name} is a direction *in* the plane, and `ring_interior_candidates` walks it as one"
+            );
+        }
+        assert_eq!(
+            dot_sign_rat(e1, e2),
+            Orient::Zero,
+            "the frame is orthogonal (not orthonormal), which is what makes `axes`' sentence — \
+             the parity walks its ray along e1 — true of the world and not just of the chart"
         );
     }
 }
