@@ -2589,7 +2589,9 @@ fn branch_corner(
 
 /// Why a boundary piece could not be read — the two causes the footprint road keeps apart.
 enum CornerFail {
-    /// A shape this road cannot spell at all (an arc that is not a whole disk, a seam vertex).
+    /// A shape this road cannot spell at all — a seam vertex. ★ It used to include *an arc that
+    /// is not a whole disk*, and that was the everyday one; cell ⑱ made an arc a piece, so what is
+    /// left here is a vertex with no exact name of any kind.
     Shape,
     /// The description ran out: a chain that will not fold, a name that is not narrow.
     Arithmetic,

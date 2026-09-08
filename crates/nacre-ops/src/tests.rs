@@ -14476,6 +14476,10 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
 /// is exactly what `lateral_faces_clear` denies. So the spanning fold is exercised but no
 /// *outcome* depends on it — the same shape as cell ⑭'s «circle inside a strip». This freezes the
 /// geometry so the cell that opens `CylinderPairContact` finds it waiting.
+///
+/// ★ Cell ⑰ widened what the pair rule can clear (a third separating direction) and cell ⑱ opened
+/// the reader in front of it, so «cannot be separated today» is a statement about *this* geometry
+/// and no longer about the rule in general. The freeze is what says so if that changes.
 #[test]
 fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
     let mut m = Model::new();

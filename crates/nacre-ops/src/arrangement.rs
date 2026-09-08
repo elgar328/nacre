@@ -5402,9 +5402,12 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 /// circles against segments and not against rulings. One class *can* carry both populations
 /// (cell ⑭ removed the blanket refusal that said otherwise), so what keeps the pair of splits
 /// complete is no longer «they never share a class» but the sharper fact that **a circle and a
-/// ruling of one class never meet**: their meeting would put two lateral faces on one point, which
-/// [`crate::planes::lateral_faces_clear`] denies before any arrangement runs. `ClassEdges::of`
-/// carries that derivation and a `debug_assert` over it.
+/// ruling of one class never meet** — and what makes *that* true is now a check rather than an
+/// argument. Cell ⑭ derived it from `crate::planes::lateral_faces_clear`: a crossing would put two
+/// lateral faces on one point, which the pair rule denies. That derivation has a hole — a circle
+/// becomes an edge **whole** while the face on its cylinder may use only a quarter of it — so
+/// `ClassEdges::of` asks the question outright and refuses by name
+/// ([`crate::RejectReason::CircleMeetsRuling`], cell ⑱).
 ///
 /// The ordering vocabulary is the established one: along a segment, [`cmp_along`] on the
 /// canonical meet line; along a ruling, the same comparator on the **axis coordinate**
