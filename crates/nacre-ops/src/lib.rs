@@ -1020,8 +1020,13 @@ pub enum RejectReason {
     /// `an_operand_bounded_by_a_cylinder_is_named_in_class_space`, which locks the naming rather
     /// than the decline.
     CurvedOperandBoundary,
-    /// **A circle and a ruling of one plane class meet** — two cylinders' curves crossing on one
+    /// **A circle and a ruling of one plane class cross** — two cylinders' curves crossing on one
     /// plane, at a point this kernel cannot name.
+    ///
+    /// ★ **Crossing, not merely meeting** (cell ⑳). A tangency divides nothing — the sentence
+    /// cell ⑤ wrote for a tangency at a vertex — so a curve that only touches another mints no
+    /// node and needs none. The name says so because reading it the other way is what refused a
+    /// user's part twice.
     ///
     /// A class may carry a circle (⊥ one cylinder's axis) and rulings (∥ another's) at once, and
     /// that alone is fine (cell ⑭ deleted the refusal that said otherwise): neither split cuts
@@ -1045,7 +1050,7 @@ pub enum RejectReason {
     ///
     /// Not [`RejectReason::CurvedOperandBoundary`] (the road behind can read these rings) and not
     /// [`RejectReason::CylinderPairContact`] (the two lateral faces do **not** touch).
-    CircleMeetsRuling,
+    CircleCrossesRuling,
     /// The **rulings ladder's** own refusal — a configuration its machinery does not arrange
     /// yet. The assembly's edge road opened (cell 3: ruling edges mint with their own key and
     /// carriers) and the gate's record-and-pass arm opened (cell 4), so this name is
@@ -1353,7 +1358,7 @@ impl RejectReason {
             Self::WitnessNotRational => "witness_not_rational",
             Self::ArcBoundNotYet => "arc_bound_not_yet",
             Self::CurvedOperandBoundary => "curved_operand_boundary",
-            Self::CircleMeetsRuling => "circle_meets_ruling",
+            Self::CircleCrossesRuling => "circle_crosses_ruling",
             Self::RulingBoundNotYet => "ruling_bound_not_yet",
             Self::CurvedStraightRun => "curved_straight_run",
             Self::PointOnRing => "point_on_ring",
@@ -1415,7 +1420,7 @@ impl RejectReason {
             | Self::ArcBoundNotYet
             | Self::RulingBoundNotYet
             | Self::CurvedOperandBoundary
-            | Self::CircleMeetsRuling
+            | Self::CircleCrossesRuling
             | Self::CurvedStraightRun
             | Self::PointOnRing
             | Self::HoleDepth

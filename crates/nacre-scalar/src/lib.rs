@@ -1233,7 +1233,11 @@ pub fn cylinder_ruling_reached(
 /// `hi = None` is the symmetric piece (a point, a disk), which is what this door has always been
 /// handed; then one scale answers both ends and the verdict is the one it always gave.
 ///
-/// **Closed**, like its predecessor: a piece touching the ruling at one point has reached it.
+/// ★★ **`touch_counts` names the boundary rather than assuming one** (cell ⑳). Its predecessor is
+/// closed — a piece touching the ruling at one point has *reached* it — and that is the right
+/// reading for a clearance. The arrangement's net wants the other one: what it cannot mint is a
+/// **crossing**, and an edge tangent to another divides nothing. Two propositions, one door, and
+/// the caller says which.
 pub fn cylinder_ruling_reached_extent(
     coeffs: &[Rat; 4],
     reach: &StripReach<'_>,

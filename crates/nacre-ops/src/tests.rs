@@ -14305,6 +14305,26 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
                             true,
                         );
                         assert_eq!(disk, both, "ox {ox} rad {rad} y {y} rho {rho} side {side}");
+                        // ★★ Cell ⑳ — **crossing implies reaching, everywhere.** The open
+                        // reading is the closed one minus its boundary, so it can never say
+                        // *more*. This is what sweeps the hand-written arms of the sign table
+                        // the named boundary threads through; nothing else exercises them in bulk.
+                        let crossed = cylinder_ruling_reached_extent(
+                            &wall,
+                            &nacre_scalar::StripReach {
+                                lo: (&p, r(rho)),
+                                hi: Some((&p, r(rho))),
+                            },
+                            &o,
+                            &axis,
+                            r(rad),
+                            side,
+                            false,
+                        );
+                        assert!(
+                            !crossed || both,
+                            "crossed but not reached: ox {ox} rad {rad} y {y} rho {rho} side {side}"
+                        );
                     }
                 }
             }
@@ -14341,6 +14361,25 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
     // which is the sentence cell ⑤ wrote for a tangency at a vertex.
     assert!(!reach(-1, false), "ending on the ruling is not crossing it");
     assert!(!reach(1, false));
+    // ★ And for a **disk**, where the two readings are the only thing separating a tangency from
+    // an overlap: the same rulings at `y = ±4`, and a disk covering `[4, 8]` about `y = 6`.
+    let tangent = MeetPoint::Narrow([r(0), r(6), r(0)]);
+    let touching = |touch_counts| {
+        cylinder_ruling_reached_extent(
+            &wall,
+            &nacre_scalar::StripReach {
+                lo: (&tangent, r(2)),
+                hi: None,
+            },
+            &o,
+            &axis,
+            r(5),
+            -1,
+            touch_counts,
+        )
+    };
+    assert!(touching(true), "the disk ends exactly on the ruling");
+    assert!(!touching(false), "and does not cross it");
 }
 
 /// It also pins the two answers a *side* separates (a circle reaching `y = +4` does not reach

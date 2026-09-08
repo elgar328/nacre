@@ -1484,6 +1484,9 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
     **디버그에서도** 지어진다(한 몸, `validate` 깨끗, 부피 `88813.84639076446`).
   - **어휘 하나**: 「조각의 strip 도달 범위」가 `nacre_scalar::StripReach` 한 타입이 되어 strip 문과
     룰링 문이 같은 단어를 쓴다.
+  - ★ **이름도 고쳤다**: `CircleMeetsRuling` → **`CircleCrossesRuling`**(`circle_crosses_ruling`).
+    이름이 「만난다」인데 묻는 것이 「가로지른다」인 표류가 이 버그의 기제였으므로, 이름이 명제를
+    말하게 한다.
   - ☑ census **무변**(두 프로파일) · 칸 ⑲의 잠금 전부 무변 · 심은 위반(접촉을 다시 세기)에서
     사용자 부품이 **빨강**. dev-log 「칸 ⑳」.
 

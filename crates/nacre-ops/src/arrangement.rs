@@ -5406,7 +5406,7 @@ type SplitRulings = Option<(Vec<MergedSeg>, Vec<MergedRuling>)>;
 /// one point, which `crate::planes::lateral_faces_clear` denies (cell ⑭). That one sentence covers
 /// every pair no split cuts — circle×circle and ruling×ruling as well as this one — and
 /// `ClassEdges::of` carries a shipped backstop over the pair that has an exact predicate
-/// ([`crate::RejectReason::CircleMeetsRuling`], cells ⑱·⑲).
+/// ([`crate::RejectReason::CircleCrossesRuling`], cells ⑱·⑲).
 ///
 /// The ordering vocabulary is the established one: along a segment, [`cmp_along`] on the
 /// canonical meet line; along a ruling, the same comparator on the **axis coordinate**
@@ -5837,14 +5837,14 @@ enum HalfEdgeKind {
 /// **Does this circle actually meet that ruling?** — asked of the class's own tables.
 ///
 /// ★ It began as cell ⑭'s invariant *net*, debug-only because nothing could reach the population.
-/// Cell ⑱ opened that population and this became the check `RejectReason::CircleMeetsRuling` is
+/// Cell ⑱ opened that population and this became the check `RejectReason::CircleCrossesRuling` is
 /// raised from, so it ships.
 ///
 /// ★★ Cell ⑮ folded the arithmetic away. The comparison this used to spell for itself is exactly
 /// [`nacre_scalar::cylinder_ruling_reached`] — a disk of the circle's radius about its centre,
 /// against the one named ruling — so the net now asks the predicate the gate asks, and there is
 /// one derivation rather than two. `None` stays "could not be measured", never "no".
-fn circle_meets_ruling(
+fn circle_crosses_ruling(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
@@ -6062,15 +6062,15 @@ impl<'a> ClassEdges<'a> {
                     {
                         use std::sync::atomic::Ordering;
                         MIXED_CLASS_AUDIT.pairs.fetch_add(1, Ordering::Relaxed);
-                        if circle_meets_ruling(jd, cyls, wc, c, ru).is_none() {
+                        if circle_crosses_ruling(jd, cyls, wc, c, ru).is_none() {
                             MIXED_CLASS_AUDIT.unmeasured.fetch_add(1, Ordering::Relaxed);
                         }
                         if circle_inside_strip(jd, wc, c, ru) == Some(true) {
                             MIXED_CLASS_AUDIT.inside.fetch_add(1, Ordering::Relaxed);
                         }
                     }
-                    if circle_meets_ruling(jd, cyls, wc, c, ru) != Some(false) {
-                        return Err(reject(RejectReason::CircleMeetsRuling));
+                    if circle_crosses_ruling(jd, cyls, wc, c, ru) != Some(false) {
+                        return Err(reject(RejectReason::CircleCrossesRuling));
                     }
                 }
             }
@@ -9778,7 +9778,7 @@ mod tests {
             matches!(
                 out,
                 Err(BoolError::Rejected {
-                    reason: RejectReason::CircleMeetsRuling,
+                    reason: RejectReason::CircleCrossesRuling,
                     ..
                 })
             ),
@@ -9813,7 +9813,7 @@ mod tests {
                     &Aliases::default(),
                 ),
                 Err(BoolError::Rejected {
-                    reason: RejectReason::CircleMeetsRuling,
+                    reason: RejectReason::CircleCrossesRuling,
                     ..
                 })
             ),
