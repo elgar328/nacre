@@ -19368,6 +19368,23 @@ kit **94/0**(기준선 93 + 새 잠금 1) · fmt·clippy 0 · wasm fmt·clippy 0
 kit과 playground는 **다른 git 저장소**이고 **둘 다 훅이 없다**. `error.rs`를 고친 사람이 돌리는 건
 kit의 `cargo test`인데, 앱에만 잠금을 두면 그 스위트는 접두가 돌아와도 초록이다.
 
+### 자체 감사가 찾은 것 다섯 (같은 세션, 커밋 뒤 — `13fcc7f`·`955561d`)
+
+1. ★★ **접두가 «유일한 위치 진술»이던 자리가 하나 있었다.** `main.ts`의
+   `the prefix would not rebuild (…)` — 이 문장은 `Showing` 행으로 가는데 그때 `Where`는
+   **바깥 실패**를 가리킨다 ⇒ **어느 프리픽스 스텝이 무너졌는지 말해 줄 것이 아무것도 없어졌다.**
+   계획의 「위치는 사라지지 않는다」에 **예외 하나**가 있었던 셈. 자기 스텝을 말하게 고쳤다.
+   ⚠ 잠그지는 못한다 — `showPrefix`는 내보내지지 않고, 그 분기는 «결정성이 깨졌다»는 뜻이라
+   테스트로 강제할 수 없다.
+2. ⚠ **내 삽입이 원래 문장을 쪼갰다.** `reject_class.rs` 표의 doc에 문단을 끼워 넣어
+   *"Constructed directly (the fields are public)…"*가 엉뚱한 주어에 매달렸다 — 이 세션이 계속
+   잡아 온 «편집에 고아가 된 주석»을, 그것을 없애는 칸에서 **내가 만들었다**.
+3. **크레이트가 자기 소비자를 부르는 말은 하나여야 한다.** `step.rs`·`build.rs`가 「the app」이라
+   쓰는데 내가 「the playground」라는 **둘째 이름**을 들여왔다.
+4. **세대 참조 대신 형제 선언을 가리키게.** `Queries.run`의 주석이 *"the cell that fixed…"*라
+   적혀 있었는데, 사실은 `bridge.ts`의 `RunErr.step`이 말한다.
+5. 주석 하나가 «자기가 설명하는 것»(테스트)이 아니라 데이터 옆에 있었다.
+
 ### 다음 칸으로
 ✔ `step N:` 이중 인쇄 — **닫혔다**.
 ☐ `Entry.options`가 언제 필수인지 · kit 메시지 둘(`DistOutsideDecimalWindow`·`at("0")`) ·
