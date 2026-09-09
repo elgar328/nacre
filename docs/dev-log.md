@@ -19046,6 +19046,22 @@ isPlainObject). kit·커널 **무변**(이 칸은 TypeScript만).
 (`style takes an object like { color, opacity, width, edges }`) — 전엔 `style takes an object`거나
 (배열은) 조용한 무동작이었다.
 
+### 자체 감사가 찾은 것 셋 (같은 세션, 커밋 뒤 — `bb5a2d3`)
+1. ★★ **주석이 일반화를 과하게 했다.** `isPlainObject`의 doc에 *"두 호출이 **둘 다** 클래스 이름을
+   나열해 갈랐다"*고 적었는데 **`plane`은 그렇게 안 했다** — 앞의 `instanceof` 둘이 early-return이고
+   나머지는 `typeof`만 물었다(그래서 **배열**이 스펙 팔로 새어 든 것이다). 서로 **다른 두 실수**인데
+   하나로 묶어 적었다. ⇒ 둘을 갈라 적었다.
+2. ★ **「객체가 아니다」에 문장을 둘 만들었다** — `style()`은 내가 쓴 `style takes an object`,
+   `style(null)`은 `onlyKeys`의 `style takes an object like { color, … }`. ⇒ `spec ?? null`로
+   넘겨 **이미 있는 한 문장**을 쓰게 했다(필드 목록도 한 번만 적힌다). 잠금 6은 여전히 문다.
+3. **표 주도 잠금이 스크립트를 두 번 실행했다**(단언마다 한 번). 한 번으로.
+
+☑ 대조로 확인: `display()`·`display(a, undefined)`·`edges: true|false|"#f00"`·`plane({through})`의
+길이 검사·`plane({origin만})`의 catch-all이 **전부 그대로**다. `display(a,{edges:[1,2]})`는 이제
+문장을 얻는다(전엔 조용히 「edges 켬」이었다).
+⚠ 남겨 둔 것: `docs.test.ts`에 `fresh`·`pen`이 두 describe에 각각 있다. **규칙이 아니라 픽스처**이고
+`box`는 크기가 일부러 다르며(10 vs 1), 둘이 어긋나도 **시끄럽게** 깨진다 ⇒ 접지 않았다.
+
 ### 다음 칸으로
 ☐ **`Entry.options`가 언제 «필수»인지 기계가 모른다** — 위의 경계. `docs.ts`의 표 구조 문제다.
 ☐ `solidArg`에도 배열 힌트(`fuse([a,b])`). 오늘 조용하지는 않으므로 급하지 않다.
