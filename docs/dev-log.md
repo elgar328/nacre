@@ -18601,6 +18601,21 @@ can end — is the same rule written in several spots, **which is how two of the
 심은 위반 **여섯 전부 빨강** · `ZZ` 0. kit **93/0 무변** · 커널 **무변**(워킹트리 깨끗 ·
 workspace **1,283/0** · census **398행 두 프로파일 동일**).
 
+### 자체 감사가 찾은 것 넷 (같은 세션, 커밋 뒤)
+1. ⚠ **주석이 거짓이 됐다.** `main.ts`에 *"the kit's message already opens with 'step N: ', so the
+   step is not repeated"*가 남아 있었는데, 새 표가 `Where step 6`과 `Message step 6: …`을 **둘 다**
+   낸다. 그 문장이 참인 곳은 **상태줄**뿐이다(거긴 `in cut`이라 적는다) ⇒ 정확히 다시 썼고, 「왜
+   줄 번호가 아니라 연산인가」(Safari)는 그 결정이 사는 `summary.ts`의 `where()`로 옮겼다.
+2. `printed_count` — **snake_case를 TypeScript에 넣었다**(저장소는 `autoCopies`·`closestCalls`처럼
+   camelCase). `printedCount`로.
+3. ★ **툴팁에 숨어 있던 문법 오류가 드러났다**: `and an ${BLAME.word} cross` — `word`가 `"red"`라
+   **"an red cross"**였다. 관사가 오지 않은 낱말을 위해 쓰여 있었고, 그 문장이 툴팁에 살던 동안은
+   아무도 안 봤다. **표로 올리자 보였다** ⇒ `a red cross`.
+4. ☑ **옛 상태줄의 다섯 항목이 전부 새 자리에 있는지** 대조했다(steps→`Operations`,
+   values drawn→`Drawn`, copies→`Auto copies`, printed→상태줄과 배지, ms→`Time`) — 잃은 것 없음.
+   그리고 지운 것들이 정말 안 쓰이는지 확인했다(`setError` 0 · 상태줄 `title` 0 · import 순환 없음),
+   프레임의 스크롤 기본이 **위로**임을 `overlay.ts:65`에서 확인했다(예외를 지운 근거).
+
 ### 다음 칸으로
 ☐ **실패의 «몇 번째 줄»** — 기제를 실측해 뒀다: 문장 앞마다 `__at(N);`을 심고(CodeMirror 파서로
    경계를 얻고, `console`이 어휘 「옆」으로 가는 그 선례로 `__at`도 옆으로) `Recorder.push`가 줄을
