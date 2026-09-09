@@ -19305,3 +19305,72 @@ solids — got string`). 잠긴 곳은 없었고 더 정확하다.
 ☐ `step N:` 이중 인쇄 · `Entry.options`가 언제 필수인지 · kit 메시지 둘(`DistOutsideDecimalWindow`·
    `at("0")`) · 메서드 표 양방향 · syntax.md 잠금(칸 ㉞이 색만 물었다) · M6b.
 ☐ 그리고 위에서 **측정된** 구멍 하나: (b) 글자 쓰기는 여전히 브라우저로만 확인된다.
+
+## 칸 ㊲ — 스텝은 데이터지 산문이 아니다 (2026-09-10)
+
+사용자가 앱에서 본 것: `Where line 2 — extrude` **옆에** `Message step 1: extrude distance
+must be nonzero`. 그리고 선택자 경로에서는 `step 1: step 1: …`.
+
+★★ **사용자가 뿌리를 짚었다** — *"별도 필드에도 정보가 있다고 하지 않았어? 다른 앱에서도 그냥
+필드에서 받으면 되는 거 아니야?"* 맞다. `KitError`의 **자기 doc이 이미** *"`step` is always the
+index of the script step being built"*라 적어 뒀는데 `Display`가 그걸 **문장에 또** 쓰고 있었다.
+⚠ 내가 먼저 낸 안(「스텝 없는 문장」을 하나 더 만든다)은 **없어도 되는 배관**이었다.
+
+### ★ 기록이 «왜 그것이 거기 있었는지»를 말해 줬다
+
+dev-log 18605에 앞선 감사가 고친 문장이 있었다: *"the kit's message already opens with
+`'step N: '`, **so the step is not repeated**"*. ⇒ 앱은 한때 **kit의 접두를 자기 위치 진술로
+썼다.** `Where` 행이 서면서 그 전제가 죽었는데 **접두는 남았다**. 그리고 이중 인쇄는 18495에
+*"옛 테스트가 `toContain`만 해서 안 보였다. 다음 칸으로"*라고 **이미 이월돼 있었다**.
+
+### 무엇이 바뀌었나
+
+- **kit** `Display`의 팔 넷에서 접두 제거 + `pub fn step()`. ★ 그 접근자가 wasm의 **세 변종
+  매치**를 한 호출로 바꾸고, 변종이 늘어도 안 깨진다.
+- **wasm** `err_js_marked(step, e.to_string(), …)`가 보내던 **같은 사실 둘** 중 하나가 사라졌다.
+- **앱** `ensureBuilt`의 접두 삭제 ⇒ **두 경로가 같은 말**을 한다.
+- 남는 모습: `Where line 2 — extrude` · `Message extrude distance must be nonzero`.
+
+### ⚠ 계측 오류 — 「단언 하나」가 아니라 «열»이었다
+
+계획 표에 *"접두에 기대는 단언: **딱 하나**(`arcs.rs:311`)"*라 적었다. **틀렸다.**
+내 grep이 `starts_with("step`·`"step 0/1/2`만 봐서 **`"step 3:`을 통째로 놓쳤다** —
+`reject_class.rs`의 `every_reason_sentence_is_pinned`가 **아홉 문장**을 정확히 고정하고 있었다.
+☑ 그런데 그게 **좋은 쪽으로** 틀렸다: 그 표가 내가 새로 쓰려던 잠금보다 **나은 집**이었다.
+접두 아홉을 빼자 표 자체가 규칙을 진술하고, 옆에 「네 팔 전부」를 재는 테스트 하나만 더 놓으면 됐다.
+⇒ **「하나뿐」이라 적을 땐 패턴이 그 하나만 볼 수 있게 쓰였는지 먼저 의심하라.**
+
+### ⚠ 그리고 타입이 가리고 있던 것 하나 더
+
+`recorder.ts`의 접두를 지우자 tsc가 빨개졌다 — `Queries.run`이
+`{ ok: boolean; step?: number | null; message?: string }`이었다. 둘 다 **거짓**이다:
+`null`은 와이어가 **보내지 않는 값**이고(칸 ㉟이 `RunErr`에서 고친 **바로 그 거짓말의 둘째 철자**),
+`message?`는 **없을 수도 있는 문자열을 문장에 붙이고** 있었다 — 템플릿 리터럴이라
+**`step 1: undefined`가 타입 하나 거리**였다. 진짜 두 모양으로 다시 썼다.
+
+### 실측
+kit **94/0**(기준선 93 + 새 잠금 1) · fmt·clippy 0 · wasm fmt·clippy 0 · `wasm:all` 0 ·
+`tsc` 0 · vitest **243/243** · `build` 0 · `ZZ` 0 · **커널 무변**.
+**심은 위반 다섯 전부 빨강** — `Display` 접두 되돌리기(kit 잠금 0 · 재빌드 뒤 앱 잠금 1) ·
+`step()`이 틀린 수(잠금 4) · `recorder.ts` 접두 되돌리기(잠금 2) · script 팔의 `step` 제거(잠금 3).
+⚠ **전체 스위트 첫 회에 하나 빨갰다**: `complete.test.ts`의 `expected [] to include 'translate'`.
+격리 **3/3 초록**, 전체 **3회 더 초록**, 그 파일은 이 칸이 만진 것을 **이름조차 안 쓴다**.
+빈 목록은 «내용이 바뀜»이 아니라 «분석이 못 끝남»의 모양 ⇒ 칸 ㉙의 그 흔들림이다(내 것 아님).
+
+### 알고 치른 비용 · 안 잠긴 것
+- ⚠ kit 테스트의 `panic!("{e}")` **넷**이 스텝 번호를 잃는다(`extrude.rs:217`·`cylinder.rs:221,246`·
+  `arcs.rs:38`). 전부 «성공해야 하는데 실패» 패닉이라 소스가 손에 있고 `e.step()`이 있다.
+- ⚠ `Display`만 인쇄하는 소비자가 생기면 위치를 잃는다. 오늘 그런 소비자는 **없고**(측정:
+  kit을 쓰는 건 playground wasm 하나, 미출판) **지금이 바꿀 때다**.
+- ⚠ **패널이 실제로 그렇게 그리는지는 안 잠긴다** — 잠금은 와이어와 `summarize`에 서고 DOM엔 안 선다.
+
+### ☑ kit이 자기 규칙을 자기 자리에서 잠근다
+kit과 playground는 **다른 git 저장소**이고 **둘 다 훅이 없다**. `error.rs`를 고친 사람이 돌리는 건
+kit의 `cargo test`인데, 앱에만 잠금을 두면 그 스위트는 접두가 돌아와도 초록이다.
+
+### 다음 칸으로
+✔ `step N:` 이중 인쇄 — **닫혔다**.
+☐ `Entry.options`가 언제 필수인지 · kit 메시지 둘(`DistOutsideDecimalWindow`·`at("0")`) ·
+   메서드 표 양방향 · syntax.md 잠금 · M6b.
+☐ 같은 부류의 «나머지» 둘(안 하기로 판단): `[cylinder_gate_undecided]` 식별자는 **검색용 손잡이**,
+   `(between value 2 and value 3: …)`는 **어느 두 값인지**를 앱이 달리 글로 말하지 않는다 ⇒ 중복이 아니다.
