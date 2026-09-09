@@ -19404,8 +19404,26 @@ the 5 steps before it, the two it would not combine in red and a red cross where
 그래서 **앱에서 유일하게 테스트가 없는 문장**이었다 — 그리고 **두 번 틀렸다**(`an red`, `the 1 step`).
 ⇒ `showingWords()`로 옮기고 잠갔다. 호출자는 «셀 것»과 색 낱말만 넘긴다(색은 «그린 쪽»의 사실).
 
-실측: `tsc` 0 · vitest **246/246**(두 번) · `build` 0 · `ZZ` 0.
-**심은 위반 셋 전부 빨강**(옛 복수형 · 두 조각을 붙여 쓰기 · 셋을 쉼표 없이).
+실측: `tsc` 0 · vitest **247/247**(두 번) · `build` 0 · `ZZ` 0.
+**심은 위반 넷 전부 빨강**(옛 복수형 · 두 조각을 붙여 쓰기 · 셋을 쉼표 없이 · 옛 「the two」).
+
+#### ★★ 감사가 «살아 있는» 흠을 하나 더 찾았다 (`6e493f6`·`83884b7`)
+
+옮기고 나서 인자의 뜻을 재 보니 — `fuse(a, a)`·`cut(a, a)`가 **`between value 0 and value 0`**을
+돌려준다. `blamed`는 `Set([a, b])`라 **크기가 1**이고 빨간 것도 **하나**인데, 문장은 그대로
+**"the two it would not combine"**이라 말하고 있었다. **「the 1 step」과 같은 부류** — 세어 놓고
+안 읽은 수. 실측하고 고쳤고(`the one` / `the two`) 잠갔다.
+
+⚠ 그리고 **같은 잘못된 믿음이 두 군데 더** 있었다:
+- 내가 방금 쓴 인자 doc — *"How many of the blamed pair **could be drawn**"*. **거름이 없다**:
+  `failureView`는 비난받은 id를 그리는 집합에 **더한다**(`runtime.ts:235`).
+- `bridge.ts`의 `Blame` doc — *"Which **two** script values…"*. 쌍은 «자리»의 쌍이지 반드시
+  «서로 다른 값»의 쌍이 아니다.
+⇒ [[a-fact-stated-twice-is-one-of-them-stale]]의 그 모양이 이 칸 안에서 또 나왔다.
+
+⚠ **주장을 잰 것에 맞췄다**: doc에 *"커널이 쌍과 증인 위치를 함께 돌려준다"*고 적었는데, 내가
+확인한 건 **`build.rs`에 그런 오류를 «짓는» 자리가 있다**는 것이고 **탐침으로는 한 번도 안 나왔다**.
+그렇게 다시 적었다.
 
 ### 다음 칸으로
 ✔ `step N:` 이중 인쇄 — **닫혔다**.
