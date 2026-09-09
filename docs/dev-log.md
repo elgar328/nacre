@@ -19536,3 +19536,76 @@ assignable to type 'boolean'`). 「한 사실을 두 곳에 적으면 한쪽이 
 ☐ `Entry.options`가 언제 필수인지 · kit 메시지 둘(`DistOutsideDecimalWindow`는 이제 **enum 이름
    하나뿐**이다 · `bodies().at("0")` 아님 — `at`은 닫혔다) · 메서드 표 양방향 · syntax.md 잠금 · M6b.
 ☐ 보았지만 안 한 것: `VertexList.filter`가 맨 배열을 돌려주는 비대칭 — **의도**다(`docs.ts:286`).
+
+## 칸 ㊴ — 커널의 오류 «이름»에 사람의 문장을 준다 (2026-09-10)
+
+4 두께 판에 깊이 4로 구멍을 파면 앱이 **`PocketNotBlind`**라고만 답했다 — Rust 변종의 이름.
+뿌리는 `nacre-kit/src/build.rs`의 catch-all `what: format!("{other:?}")`이고, **kit이 스스로**
+*"their taxonomy is a later step"*이라 적어 뒀다. 이 칸이 그 step이다.
+
+### ★★ 인구를 «표본»이 아니라 제대로 세었다
+
+첫 쓸기는 «현실적 실수 9건 중 벌거벗은 것 1건»이었고 그건 **표본**이었다. `OpError`의 **변종 33개**
+발생 지점을 읽고 다시 태우니 **다섯이 닿는다** — 그중 **셋이 매일 하는 일**이다:
+
+| 변종 | 어떻게 만나나 |
+|---|---|
+| `PocketNotBlind` | 4 두께 판에 깊이 4 — **구멍 뚫으려는 첫 시도** |
+| `PadMissesFace` | pad의 스케치가 면 밖(특히 mirror 뒤) |
+| `NonPlanarFace` | 원통 옆면에 pad |
+| `DuplicateVertex` | `plane({through:[v, v, w]})` |
+| `DistOutsideDecimalWindow` | `extrude(s, 1e300)` |
+
+⚠ 첫 쓸기에서 **내 탐침 셋이 앱의 문에서 죽어**(pad의 인자 수를 틀림) `PadMissesFace`를 놓치고
+있었다. **탐침이 목표에 닿았는지 먼저 확인하라.**
+⚠ 나머지 25개는 **못 닿았다** — 「안 닿는다」가 아니다. 설계가 그것들을 **오늘과 똑같이 두므로**
+이 칸은 아무것도 나쁘게 만들지 않는다.
+
+### 무엇이 바뀌었나
+
+- **`error.rs`에 `op_words`** — 저자에게 보이는 말 셋(`class_sentence`·`reason_sentence`·`op_words`)이
+  **한 파일**에 모였고, 형식 `<fact> [Identifier]`가 분류된 줄 **바로 옆**에 선다.
+- ★★★ **빠짐없는 `match`**: `OpError`는 `#[non_exhaustive]`가 아니므로 **새 변종은 컴파일이 안 된다**
+  (실측: `non-exhaustive patterns: OpError::ZZPlantedVariant not covered`). `None`도 기록된 결정이다.
+- ★ **식별자를 유지**했다 — 검색용 손잡이이고, 기존 단언 둘이 거기 기댄다.
+- ★★ **`build.rs`의 팔 하나가 사라졌다**: `ArcsMeetAtVertex`의 특별 팔은 catch-all과 `what` 하나만
+  달랐다 ⇒ 문장을 표로 옮기니 **코드가 줄었다**. 부작용으로 형식이 통일됐다(그 팔만 식별자 접미가
+  없었다).
+- **문장을 발명하지 않았다** — 다섯의 doc 주석이 이미 문장이었고, `DistOutsideDecimalWindow`는
+  스케치 층의 어구(*"is outside the exact decimal window"*)를 되쓴다.
+
+### ⚠ 왜 형제와 «다른» 방식인가 — 관례가 무엇에 기대는지 읽었다
+
+`reason_sentence`가 문자열 키인 것은 게을러서가 아니라 그 주석이 근거를 적어 뒀다:
+*"a reason rename turns **the census gate** red."* `OpError`엔 **그런 게이트가 없다** ⇒ 컴파일러가
+유일한 파수꾼이다. **같은 문제에 다른 도구가 아니라 다른 문제였다.**
+
+### 잠금 — 표가 아니라 «실제로 일으켜서»
+
+⚠ 계획은 처음에 「형제처럼 표로」였는데 **지을 수 없었다**: `op_words`는 `pub(crate)`이고 kit은
+`src`에 단위 테스트를 두지 않는다(칸 ㊲에서 내가 잰 사실인데 이번 계획에 안 쓰고 있었다).
+⇒ **다섯을 진짜로 일으킨다** — 그게 더 강하다(이 칸의 근거인 «닿는다»를 빌드가 증명한다).
+셋은 **이미 일으키고 있어서 단언만 강화**(`pad.rs`·`reject_class.rs`·`through.rs` — 오늘 식별자만
+물었다), 셋은 픽스처 신설(`pad.rs` 둘 · `extrude.rs` 하나).
+✗ 「문장 없는 변종의 무회귀」 잠금은 **뺐다** — 잴 인구가 0이다(닿는 다섯이 전부 문장을 받는다).
+무회귀는 코드 모양이 근거지 테스트가 아니다.
+
+### 실측
+kit **97/0**(기준선 94 + 새 잠금 셋) · fmt·clippy 0 · `wasm:all` 0 · `tsc` 0 ·
+vitest **261/261**(두 번) · `build` 0 · `ZZ` 0 · **커널 무변**.
+**심은 위반 셋 전부 빨강**, 그중 하나는 **컴파일러**가 문다(커널에 변종을 심어 확인 후 즉시 되돌림 —
+커널 워킹트리 0 확인).
+☑ 앱 쪽 잠금은 **중복이 아니었다**: 실측으로 앱은 pad/pocket을 **성공 경로로만** 몰고 있었다.
+
+### ⚠ 알고 남긴 한계 둘
+1. **문장이 «수»를 못 댄다.** 이 저장소의 가장 좋은 메시지는 수를 댄다(`the fillet 9 at (0, 0)
+   does not fit — its edge is only 4 long`). 다섯 변종은 **필드가 없다**. 반쪽(요청한 깊이)은 kit이
+   든 `Operation`에서 얻을 수 있고(`op_words(e, op)`), 나머지 반(면의 두께)은 커널이 필드로 실어야
+   한다. **기제를 적어 두니 다음 사람이 다시 알아낼 필요가 없다.**
+2. ***"그럼 구멍은 어떻게 뚫나"*는 일부러 안 답한다** — `error.rs`의 규칙이 *"facts only, never
+   advice"*다. 결정이지 누락이 아니다.
+
+### 다음 칸으로
+☐ `syntax.md`의 예제를 컴파일하기(어제 지은 기계로 — `ts` 블록 25 중 10이 홀로 깨끗, 14는 조각,
+   1은 문서가 스스로 «Reserved»라 적음 ⇒ 문서가 «돌아가는 예제»를 표시해 주면 닫힌다) · M6b.
+☐ 좁아진 둘: 문서·선언 둘 다 있고 «구현만» 없는 멤버 · 표기도 탐침도 없이 들어오는 새 옵션 위치.
