@@ -18721,3 +18721,70 @@ f(a, b)  →  __at(3, "f", () => f(a, b))
 ☐ **`reports`가 버려지고 있다** — `merges`·`coincidences`·`closestCalls`. 칸 ㉙의 표가 그 자리다.
 ☐ **패널·상태줄에 DOM 잠금이 없다** — jsdom을 들일지의 결정. ★ 이번 칸의 +3 버그도 그 종류다.
 ☐ `step N:` 접두사 중복 · 메서드 표 양방향 · syntax.md 잠금 · 숫자 인자 검증 · 옵션 넷의 가드 · M6b.
+
+## 칸 ㉛ — `Drawn`은 «값»이 아니라 «몸통»을 센다 (2026-09-09)
+
+사용자가 스크립트로 어긋남을 찾았다:
+
+```ts
+let a = cuboid({size: [1,1,1], corner: [0,0,0]});
+let b = cuboid({size: [1,1,1], corner: [-1,-1,0]});
+print("bodies:", fuse(a, b).bodies().length);   // → 2
+```
+
+모서리로만 닿는 두 큐브라 `fuse`의 답은 **몸통 둘**이고 뷰포트에도 둘이 보이는데, 표는
+**`Drawn  1 solid`**라 적었다 — **값**을 세고 있었다.
+
+★ **칸 ㉙이 하다 만 절반이다.** 그 칸이 `1 value(s) drawn`의 은어는 없앴지만 **세는 대상은 그대로**
+두고 이름만 `solid`로 바꿨다. 「화면과 일치」를 고칠 때 «메시가 없는 값»은 봤는데 «한 값이 여러
+몸통»은 안 봤다.
+
+### 낱말은 저장소가 이미 정해 뒀다
+`decisions.md` §6(**타입은 `Solid` 하나, 조각은 `body`**), `syntax.md` 13행, kit의
+`SolidValue { bodies }`, 앱 선언의 *"zero or more disjoint bodies"*, 스크립트의 `part.bodies()`.
+**표만 그 낱말을 안 쓰고 있었다.** ⇒ `SolidValue` **개명은 하지 않았다** — 사용자가 이상하다고 한
+`1 SolidValue (2 bodies)`의 문제는 낱말이 아니라 **타입 이름을 표에 넣으려 한 것**이었다.
+
+```
+Drawn         1 body          Drawn         2 bodies
+Drawn         2 bodies, 1 sketch            Drawn         nothing
+```
+
+### ★★ 탐침이 «둘째» 오답을 찾았다 — 몸통 0개
+계획이 「추측 말고 재라」고 적어 둔 자리다. 실측: 몸통이 **0개**인 값(`common`이 빈 결과, 통째로
+잘려 나간 `cut`)은 `mesh_of`가 **`ok: true`에 positions 길이 0인 «빈 메시»**를 준다 ⇒ 오늘 코드가
+`"positions" in mesh`를 통과시켜 **`drawn.solids++`** 했다. 즉 **아무것도 안 그린 실행이
+`Drawn 1 solid`라 적고 있었다.** 몸통을 세면 그대로 `nothing`이 된다 — 한 규칙이 두 오답을 덮었다.
+
+### ★★ 세는 곳을 «잠글 수 있는 자리»로 옮겼다 — 검토가 바꾼 것
+첫 안은 *"`collect()`가 테스트 없는 `main.ts` 안이라 못 잠근다, 틈은 눈 확인으로 덮는다"*였다.
+**두 칸 연속 같은 벽**이다(칸 ㉙은 패널 DOM을 그렇게 남겼다). 그래서 **옮길 수 있는지 쟀다**:
+`collect()`는 **DOM을 전혀 안 쓴다**(wasm 질의 넷 + `resolveStyle` + 상수 하나, `Drawable`은 타입뿐).
+진짜 벽은 **`api/bridge.ts`가 «브라우저» wasm 빌드를 직접 import**하는 것이었다.
+★★ **저장소가 그 문제를 이미 풀어 뒀다** — `Recorder`가 질의를 **주입**받는다(*"the web bridge in
+the app, the nodejs-target pkg in tests, so the runtime is lockable in both"*). 같은 이유, 같은 처방.
+⇒ **`web/src/app/draw.ts`** 신설: `collect()`와 `BLAME`이 옮겨 오고 질의를 **인자로** 받는다.
+`tests/queries.ts`가 그 문(`drawQueries`)을 하나 더 든다 — 그 파일이 존재하는 이유 그대로다.
+
+**단계 1은 순수한 이동으로 못 박았다** — 옮긴 본문과 옛 본문의 diff가 `q.` 셋뿐임을 기계로 확인했고,
+그 상태로 기존 199개가 한 줄도 안 바뀐 채 초록. 옮기기와 고치기를 섞으면 어느 쪽이 깨뜨렸는지 못 가린다.
+
+### 잠금
+`tests/bodies.test.ts`가 **실제 커널로** 앱의 그리기 패스를 걷는다(`collect(drawQueries, …)`):
+사용자의 그 스크립트 → `{ bodies: 2, sketches: 0 }`, 빈 `common` → `{ bodies: 0, … }`,
+평범한 부품 → 1, 스케치 → `{ bodies: 0, sketches: 1 }`. 그리고 **「화면에 안 온 것은 안 센다」** —
+「몸통 다섯」이라 답하면서 메시는 안 주는 가짜 문을 넘겨 답이 **0**임을 못 박는다(수를 팔 밖으로
+빼면 이게 문다). `summary.test.ts`는 낱말과 복수형.
+**심은 위반 셋 전부 빨강**: 값 다시 세기 → 2 실패 · 복수형 제거 → 1 · 메시 없이 세기 → 1.
+
+### 실측
+앱 `wasm:all` 0 · `tsc` 0 · vitest **203/203**(19 파일, 재빌드 전후로 **두 번씩**) ·
+wasm clippy 0 · `ZZ` 0. kit **93/0 무변**. **커널·kit·wasm은 한 줄도 안 바뀌었다**(git 워킹트리가
+증명 — 이 칸은 TypeScript만 건드린다).
+
+### 다음 칸으로
+☐ **`reports`가 버려지고 있다** — `merges`·`coincidences`·`closestCalls`가 와이어를 건너오는데 앱이
+   안 그린다. **다른 길이 없는 유일한 항목**이다(스크립트로 물을 방법이 없다).
+☐ **패널·상태줄에 DOM 잠금이 없다** — jsdom을 들일지의 결정. ★ 이번 칸이 `collect()`를 잠글 수 있는
+   자리로 옮겼으니, 남은 사각지대는 **DOM에 그리는 부분뿐**이다.
+☐ `step N:` 접두사 중복 · 메서드 표 양방향 · syntax.md 잠금 · 숫자 인자 검증 · 옵션 넷의 가드 · M6b.
