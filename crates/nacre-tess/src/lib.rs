@@ -127,6 +127,16 @@ pub struct TessTriangle {
 /// consume these, never re-sample), `by_face` the triangles per face. (The
 /// incremental `stale` set of §5 is deferred — this is from-scratch, like
 /// `Adjacency`.)
+///
+/// ★★★★★ **A closed edge's polyline does not repeat its first point — the closure is
+/// implicit.** [`sample_edge`]'s full-rim arm samples a circle at `0 .. (n−1)τ/n` and stops,
+/// and `boundary_ring` drops the wrap-around duplicate for the same reason: these are mesh
+/// vertices, and repeating a handle would give the face a degenerate triangle. So a consumer
+/// that walks a polyline **pairwise** gets `n − 1` steps for a ring of `n`, and must add the
+/// closing step itself; `edge.vertices[0] == edge.vertices[1]` is the fact to branch on — the
+/// very test `sample_edge` uses. ⚠ Written here because a consumer that did not know it drew
+/// every uncut rim with a gap in it (the playground's viewport, 2026-09-09), and the contract
+/// was nowhere in this type's own words.
 #[derive(Debug, Default)]
 pub struct Tessellation {
     pub vertices: Store<TessVertex>,

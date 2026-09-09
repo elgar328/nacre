@@ -1,13 +1,23 @@
 //! **What a wide-named datum costs the judge — open item 1, half of it.**
 //!
 //! `docs/truth-and-cache.md` §판정 says a rational-closure datum judges exactly and for free:
-//! *"`Wide` 이름이 곧 정확 계수라 분모 털어 `Expansion` 으로 정확 판정 … 공짜"*. ★★★ **That
-//! route does not exist.** The predicates ask for coefficients through `exact_coeffs()` /
-//! `base_coeffs()`, both of which read `PlaneName::narrow()`; a `Wide` name answers `None` to
-//! both, so every exact shortcut declines and the judgement takes the toleranced route that
-//! climbs. The only consumer of `Wide`'s BigInt coefficients anywhere is `WideFrame` — frame
-//! realization, not judgement — which is what `nacre-topo` means by *"`Wide` carries identity
-//! only"*.
+//! *"`Wide` 이름이 곧 정확 계수라 분모 털어 `Expansion` 으로 정확 판정 … 공짜"*.
+//!
+//! ★★★ **When this file was written that route did not exist** — the predicates asked for
+//! coefficients through `exact_coeffs()`/`base_coeffs()`, both of which read
+//! `PlaneName::narrow()`, so a `Wide` name answered `None` to every one and the judgement took
+//! the toleranced route that climbs.
+//!
+//! ☑ **It exists now** (re-read 2026-09-09): `nacre_cip::predicate::NameInts { ints, wide }` and
+//! `Judge::name_rescue` carry a wide name's integer coefficients into the three sign predicates
+//! that read coefficients at all — `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign` — and the
+//! gate is written so that an all-narrow question keeps its existing route to the bit.
+//! `planes_coplanar` is **not** a gap in that rescue: it runs *before* a plane table exists and
+//! asks only for a [`Witness`], deliberately deciding on the faces' own coordinates rather than on
+//! derived coefficients. ⇒ **the decision this file's header asks for has been made and shipped**,
+//! and what the numbers below measure is not "the missing exact route" but the cost of the
+//! toleranced route an **irrational motion** still takes. Re-measured today: `narrow_name` 246
+//! climbs against `wide_name` 475 — **1.9×**, not the 3.2× recorded below.
 //!
 //! So the number below is not "how many `Expansion` pieces": it is **what the missing exact route
 //! costs**, and it is the input to a decision the doc does not currently list — whether the

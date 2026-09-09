@@ -25,7 +25,17 @@ use crate::tolerant::Judge;
 /// chain the whole way round — `None` otherwise.
 ///
 /// ☑ **Its clauses beyond "the first edge is an arc" are guards, and none of them fired** over the
-/// suite (88 acceptances, 0 rejections past that first test). They are kept because each states a
+/// suite (88 acceptances, 0 rejections past that first test).
+///
+/// ⚠ **Those 88 are not 88 questions** (cell 25, correcting cell 21's note). Cell 21 read this
+/// number against its own measurement — *"zero whole-circle rings as an engine question's source
+/// over 27,000"* — and called the two a contradiction. They are **different populations**: this
+/// counts every ring the supply asks about, and 85% of the probe's rows are not engine questions
+/// at all (cell 21-C). Both are true, and together they say the thing that matters: a ring that
+/// *is* a whole circle is **never** the source of an engine question in this corpus. ⇒ giving
+/// [`Cell::Ring`]'s whole-circle arm a rim, which cells 21 and 22 both deferred as "the next
+/// cell's first item", would be building for an empty population. **It is not built, and this is
+/// why.** They are kept because each states a
 /// proposition proved somewhere else — two circles on one class cannot meet (the gate), a ring is
 /// a chain (measured over 153,798 rings), a mixed sense would retrace one arc — and a guard that
 /// stops holding is how a producer change is meant to surface here rather than two layers down.
@@ -417,11 +427,16 @@ fn witnesses<'a>(
             // points [`rim_and_centre`] gives a `Cell::Disk`. This arm still offers only the
             // centre, because this cell fixed the shape that reported the wall and stopped there;
             // the two arms of one supply reading differently is exactly what this module exists
-            // to prevent, so **giving this arm the rim too is the next cell's obligation**, and it
-            // is measurable (the whole-circle ring population is the one `ring_own_circle`'s doc
-            // counts — and cell 22 measured **zero** such rings as a question's source over 27,000
-            // engine questions, so what that "88 acceptances" counts is the first thing that cell
-            // has to settle). Its centre answers meanwhile, as an interior witness.
+            // to prevent, so giving this arm the rim too was written down as the next cell's
+            // obligation.
+            //
+            // ☑ **Settled, and the answer is «do not» (cell 25).** The two numbers that looked
+            // like a contradiction — `ring_own_circle`'s 88 acceptances against cell 22's *zero*
+            // whole-circle rings as an engine question's source over 27,000 — are **different
+            // populations** (85% of the probe's rows are not engine questions at all, cell 21-C).
+            // Both hold, and together they say a ring that *is* a whole circle never sources an
+            // engine question here: the rim would be built for nobody. Its centre answers
+            // meanwhile, as an interior witness, and that is enough for every row measured.
             // ⚠ And it is eager: `Option::map` runs `centre_of` before this iterator is polled,
             // so the module's own "lazy on purpose" rule is already broken here. Folding both
             // arms onto `rim_and_centre` fixes that in the same move.

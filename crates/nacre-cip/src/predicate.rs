@@ -226,8 +226,11 @@ pub trait PlaneWitness: Witness {
     /// (or the fold declined). This is what gives a *wide* name its exact shortcuts back
     /// (truth-and-cache open item 15): [`Witness::base_coeffs_rat`] and
     /// [`Self::base_coeffs`]/[`Self::exact_coeffs`] all read `PlaneName::narrow()` or `f64`, so
-    /// a wide name answers `None` to every one of them and the judgement climbs — measured at
-    /// **3.2×** the escalations.
+    /// a wide name answers `None` to every one of them and the judgement climbs — **1.9×** the
+    /// escalations (246 against 475, re-measured 2026-09-09; the `3.2×` this line used to quote
+    /// is from 2026-08-08 and the population has moved under it. The confound
+    /// `wide_datum_cost.rs` states — the two arms pick different vertex triples — applies to
+    /// either number, so read it as "several times", not as a coefficient).
     fn name_ints(&self) -> Option<&NameInts> {
         None
     }
