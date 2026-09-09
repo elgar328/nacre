@@ -18531,3 +18531,87 @@ workspace **1,283/0** · census **398행 두 프로파일 동일**.
 ☐ **syntax.md를 코드에 물리는 잠금** — 이 칸이 두 줄을 지웠지만 다시 표류하지 못하게 하는 것이 없다.
 ☐ 숫자 인자 검증(인구 여섯) · 보이는 것만 바꾸는 옵션 넷의 「모르는 키」 가드 · `rotateX/Y/Z` ·
    기울어진 실린더(M6b).
+
+## 칸 ㉙ — 실행 결과를 둘로 나눈다: 바깥은 「됐나·얼마나」, 안쪽은 표 하나 + 사용자의 말 (2026-09-09)
+
+사용자: *"ok — 10 steps, 1 value(s) drawn, 6 automatic copies, 234 ms … 너무 너저분한거같애"*,
+그리고 *"steps 라는게 어떤 의미인지 잘 이해도 안되고, 1 value 이것도 무슨 의미인지 모르겠어."*
+
+**맞다 — 그 둘은 내부의 말이었다.** `10 steps`는 **스텝 로그의 길이**(스크립트 줄 수도, 도형 수도
+아니다), `1 value(s) drawn`은 뜻은 있으나 "value"가 은어, `6 automatic copies`는 kit이 스스로
+*"inspector information, **never an error**"*라 적어 둔 것. ★ 진짜 원인은 수가 많은 게 아니라
+**「기계의 말」과 「사용자의 말」이 섞인 것**이었다 — 상태줄에 내부 수치가, 출력창엔 오류 전문이
+print 사이에.
+
+### 지금
+```
+built in 234 ms                  built in 234 ms · 4 printed      [FAILED] in cut
+```
+```
+Time          234 ms                      Where         step 6 — cut
+Drawn         1 solid                     Showing       the 5 steps before it, and the two
+Operations    10 — cuboid ×2, sketch, …                 it would not combine in red
+Auto copies   6 — a value is copied …     Message       step 6: the kernel does not build …
+──────────────────────────────            ──────────────────────────────
+bore diameter: 6                          bore diameter: 6
+```
+**성공은 `built in`** — 별도 딱지 없이 한 낱말이 무엇이 일어났는지 말하고, **실패 쪽 어휘와 짝이
+맞는다**(커널의 거절이 *"the kernel does not **build** this"*). **실패엔 시간이 없다**(사용자 결정) ⇒
+시간은 성공의 말이다. 규칙 하나: **그 실행을 가장 잘 설명하는 것이 먼저이고, 없는 것은 적지 않는다.**
+
+### 설계 — 문구를 «한 자리»에서 짓는다
+새 순수 함수 `summarize()`(`app/summary.ts`)가 상태줄 문구와 패널 헤더를 **함께** 낸다. 이유는
+저장소가 이미 적어 뒀다 — `output.ts`: *"the app … assembling the panel at each of the places a run
+can end — is the same rule written in several spots, **which is how two of them come to disagree**."*
+패널엔 적용됐고 **상태줄이 바로 그 「여러 자리」**(`say()` 다섯, 그중 넷이 실행의 결말)였다.
+`main.ts`는 이제 그리기만 한다. `summarize()`는 DOM을 모르므로 **전부 잠긴다**(잠금 12개).
+
+### ★★ 이 칸이 «없앤» 특수 규칙 둘 — 둘 다 이유가 적혀 있었고 그 이유가 죽었다
+1. 패널이 열릴 때 **맨 아래로 스크롤**했다 — *"The failure is the last thing … so it is at the bottom
+   (The frame scrolls to the top on open; **this is the exception**)"*. 오류가 위로 오니 전제가 죽었다
+   ⇒ 뒤집는 게 아니라 **지웠다**.
+2. 상태줄의 **`-webkit-line-clamp: 1`** — *"the failure's **own first line** lives here"*. 메시지가
+   통째로 패널로 가니 남는 건 구성상 짧다 ⇒ 지웠다. ★ 그리고 그 클램프가 **자기 말줄임을 그리고
+   있었다**(`FAILED in fuse…` — 잘린 게 없는데 박스가 그렇게 말했다).
+
+### 실행이 찾은 것 넷
+1. ★★★ **계기가 흔들리고 있었다.** `complete.test.ts`가 **단독 3/3 초록, 전체 스위트 3/3 실패**
+   (실패하는 케이스가 매번 다름). 원인은 Lezer의 **시간 예산** — 붐비면 트리가 커서까지 못 가
+   완성이 `[]`가 된다. `ensureSyntaxTree`로 파싱을 끝까지 강제하니 3/3 × 180 초록.
+   ⚠ **칸 ㉘의 관문(168/168 두 번)은 운으로 통과한 것**이다. `signature.test.ts`도 같은 모양이라
+   같이 고쳤다(아직 흔들린 적 없다 — 그게 지금 고칠 이유다).
+2. ★ **`Drawn`은 `rendered`가 아니라 «화면»을 세야 한다**(사용자 물음이 찾아냈다). `collect()`는
+   메시가 없으면 **말없이 건너뛴다** ⇒ `rendered`를 세면 화면보다 많을 수 있다. `collect()`가
+   종류별 수를 함께 돌려주게 했다. ☑ `display(sketch)`만 한 스크립트는 솔리드가 있어도 `1 sketch`다.
+3. ★ **잃을 뻔한 정보**: `showPrefix()`가 *"the 5 steps before it, the two it would not combine in
+   red…"*를 돌려주는데 **툴팁에만** 있어 폰에선 안 보였다 ⇒ 표의 **`Showing` 행**으로 올렸다.
+4. **print 개수의 오프바이원이 «두 곳»**이었다(상태줄과 패널 배지). `lines()`가 상한에서
+   `… N more lines (not kept)` 꼬리를 붙이므로 `length`가 하나 많다 ⇒ `Recorder.printed_count`.
+
+### 눈으로만 확인되는 것 — DOM 잠금이 없다
+⚠ 테스트 환경에 **DOM이 없다**(jsdom 미설치·vitest 설정 없음·`document`를 쓰는 테스트 0) ⇒ 패널의
+조립(행→div·줄의 자리·배지)과 상태줄의 칩은 **잠글 수 없고** 브라우저에서 확인했다. 사용자 확인에서
+칩을 두 번 고쳤다: ① 라운드 사각형이 커 보임 → **알약 + 고정 높이 13px + `align-items: center`**
+(패딩 보정은 폰트마다 틀린다 — `ui-monospace`는 OS마다 다른 폰트다), ② 칩이 상태줄의 **monospace를
+물려받고** 있었다 → **UI 폰트**로. ★ 그 답도 저장소에 있었다: `#out .count`가 같은 이유로 이미
+`-apple-system`을 쓴다(배지는 데이터가 아니라 딱지다).
+
+### 실측
+앱 `wasm:all` 0 · `tsc` 0 · vitest **180/180**(18 파일, 두 번) · wasm clippy·fmt 0 ·
+심은 위반 **여섯 전부 빨강** · `ZZ` 0. kit **93/0 무변** · 커널 **무변**(워킹트리 깨끗 ·
+workspace **1,283/0** · census **398행 두 프로파일 동일**).
+
+### 다음 칸으로
+☐ **실패의 «몇 번째 줄»** — 기제를 실측해 뒀다: 문장 앞마다 `__at(N);`을 심고(CodeMirror 파서로
+   경계를 얻고, `console`이 어휘 「옆」으로 가는 그 선례로 `__at`도 옆으로) `Recorder.push`가 줄을
+   함께 적는다. `Where` 행의 **내용만** `line 4 — cut`으로 바뀌고 표는 그대로다. 실측
+   `step→line: [1,2,4,5,5]` · 파싱 0.25 ms(17줄)·2.8 ms(340줄) · 줄 번호가 리터럴이라 sucrase가
+   못 흔든다. ⚠ 원본을 먼저 `transform`해 문법 오류를 보고하고 **그 다음** 심은 소스를 변환한다.
+☐ **`Live` 행 — 「마지막에 남아 있는 요소」**(사용자 요청). 오늘 와이어에 **없다**: `display()`를
+   쓰면 `rendered`가 그 목록으로 덮여 DAG 잎 정보가 사라진다 ⇒ kit이 잎을 별도 필드로 내보내야 한다.
+   `values`로 대신 세는 안은 **중간 값을 포함해 사용자가 세는 수와 달라서** 물렸다.
+☐ **`reports`가 버려지고 있다** — `merges`·`coincidences`·`closestCalls`가 와이어를 건너오는데 앱이
+   안 그린다. 이 칸이 만든 표가 그 자리다.
+☐ **패널·상태줄에 DOM 잠금이 없다** — jsdom을 dev 의존성으로 들일지의 결정.
+☐ `step N:` 접두사 중복(질의 경로) · 메서드 표 양방향 · syntax.md 잠금 · 숫자 인자 검증 ·
+   보이는 것만 바꾸는 옵션 넷의 「모르는 키」 가드.
