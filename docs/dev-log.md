@@ -18970,6 +18970,34 @@ kit·커널 **무변**(워킹트리 깨끗 — 바뀐 Rust는 `playground/wasm` 
 ☐ **문자열 방향** — `display(a, {color: 5})`도 같은 `malformed steps`로 죽는다(이번엔 줄은 얻는다).
 ☐ **패널·상태줄 DOM 잠금**(jsdom) — 그때 `main.ts`의 세 갈래를 순수 함수로 빼면 이 칸의 테스트가
    베낀 사본도 사라진다.
-☐ kit 메시지 둘: `extrude(s, Infinity)` → `DistOutsideDecimalWindow`(enum 이름) ·
-   `cylinder needs a positive r, got 1`(문자열에 따옴표 없음) · `at("0")`의 「there is no body 0」.
+☐ kit 메시지: `extrude(s, Infinity)` → `DistOutsideDecimalWindow`(문장이 아니라 enum 이름) ·
+   `at("0")`의 「there is no body 0」. ✗ ~~cylinder의 따옴표~~ — 아래 후속에서 고쳤다.
 ☐ 메서드 표 양방향 · syntax.md 잠금 · M6b(기울어진 실린더).
+
+## 칸 ㉜-후속 — `cylinder`의 사본이 `"30"`을 `got 30`이라 찍었다 (2026-09-09, `15494ee`)
+
+사용자 보고: `cylinder({ d: "30", … })`가 **`cylinder needs a positive d, got 30`**이라 답했다 —
+「30이 양수가 아니라니?」로 읽힌다.
+
+★★ **내가 알고도 흘린 것이다.** 이 칸의 **첫 계획에는** *"B를 접는다 — 접으면 `got 1` 따옴표 버그가
+같이 사라진다"*가 있었는데, 계획이 **뿌리 수정(wasm)으로 피벗하면서 그 폴딩을 뺐고** 버그는
+「곁들여 찾은 것 — 이 칸 밖(기록만)」으로 내려갔다. 그리고 **사용자가 실제로 그걸 밟았다.**
+⇒ 「기록만」으로 내리는 판단은 **인구가 0에 가까울 때만** 정당하다. 이건 `cylinder`의 **인자 다섯
+전부**였고, `cylinder`는 사용자가 두 번째로 많이 쓰는 프리미티브다.
+
+**census**: `got ${…}`를 쓰는 자리를 전부 세니 **`cylinder`의 로컬 둘만** 남아 있었고(나머지는 이미
+이 칸의 `said()`를 지난다), 그 둘은 모듈의 `positive`·`point3`와 **문자 그대로의 복제**였다. 접었다:
+
+```
+cylinder's d must be positive, got "30"          (전: cylinder needs a positive d, got 30)
+cylinder's center is a point like [0, 0, 0], got [NaN, 0, 0]      (전: [null, 0, 0])
+```
+
+문장이 `circle`과 같아졌고, 배열 안의 `NaN`도 제 이름으로 찍힌다 — 이 칸이 `said()`에 넣은
+배열 순회가 여기서 값을 했다.
+⚠ 기존 잠금의 부분 문자열 둘(`"positive r"`·`"positive h"`)이 새 문장에 안 맞아 함께 고쳤고,
+**사용자의 그 케이스를 잠금에 넣었다**(`cylinder({ d: "30", h: 5 })` → `got "30"`).
+
+**실측**: `wasm:all` 0 · `tsc` 0 · vitest **211/211**(두 번) · `ZZ` 0. 남은 raw 보간은 셋뿐이고
+전부 의도된 것이다(`got ${typeof v}` 둘, 정점 개수 하나).
+☑ 그리고 **브라우저에서 사용자가 확인**했다 — 이 칸 전체(줄 번호·조용한 다섯·이번 문장)가 앱에서 돈다.
