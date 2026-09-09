@@ -19431,3 +19431,86 @@ the 5 steps before it, the two it would not combine in red and a red cross where
    메서드 표 양방향 · syntax.md 잠금 · M6b.
 ☐ 같은 부류의 «나머지» 둘(안 하기로 판단): `[cylinder_gate_undecided]` 식별자는 **검색용 손잡이**,
    `(between value 2 and value 3: …)`는 **어느 두 값인지**를 앱이 달리 글로 말하지 않는다 ⇒ 중복이 아니다.
+
+## 칸 ㊳ — 목록에도 문이 있다 (2026-09-10)
+
+사용자가 고른 것: `a.bodies().at("0")`이 **`value 0 has 1 body, so there is no body 0`**이라
+답한다 — **0번 몸통은 있으므로 거짓**이다. 뿌리: `at(i: number)`에 문이 없어 `"0"`이 정수 검사에
+걸리고 **«범위» 팔**로 떨어진다 ⇒ **모양의 실패에 범위의 원인**을 붙였다.
+
+### ★★★ 사용자가 물었다: *"TS는 원래 이렇게 허술해? 이거 땜빵 아니야?"*
+
+**TS가 허술한 게 아니라 여기엔 없다**(실측): 스크립트는 sucrase가 `transforms:["typescript"]`로
+**검사 없이 타입을 떼어내고**(`runtime.ts` 1행 주석이 *"type stripping only"*), 에디터의
+`javascript({ typescript: true })`는 **문법 강조**다. ⇒ 스크립트는 **검사받지 않는 JavaScript**로
+돈다. `at(i: number)`은 «TS로 컴파일되는 호출자»에게 하는 약속이고 스크립트는 그런 호출자가 아니다.
+
+★★ 그리고 **이 저장소엔 이미 엔진이 있었다** — 칸 ㉟의 수는 «검사를 더하기»가 아니라 **인자를
+`unknown`으로 두어 문을 안 지나면 컴파일이 안 되게** 하는 것이다. 넷은 그 규제가 생기기 전에
+쓰였을 뿐이다. ⇒ **새 층이 아니라 남은 넷의 이행.**
+
+☑ **실측으로 확인한 두 층의 분업**:
+
+| 심은 것 | 누가 무나 |
+|---|---|
+| 문을 **지움** | **tsc** — `'asked' is of type 'unknown'` |
+| 문을 **캐스팅으로 우회** | tsc 통과, **테스트**가 문다 |
+
+⇒ `unknown`은 «잊는 것»을, 잠금은 «거짓말»을 막는다.
+
+### ★ 칸 ㉟이 「인구 0」이라 적은 그 인구가 이걸 안 세고 있었다
+
+dev-log 19213: *"인구가 정말 0인지 다시 쟀다: 30가지 → 앱 30 · 와이어 0 · 조용히 0."* 그 30에
+**이 다섯 메서드가 없었다.** ⇒ 이번엔 `docs.ts`의 `MEMBERS`(11타입·44멤버)에서 «인자를 받는 것»을
+전부 태워 세었다: `Solid`·`Sketch`의 문 ☑ · `Dir.isClose`는 **인자 둘 다** 문 있음 ☑ ·
+`nearest` ☑ ⇒ **구멍은 정확히 넷**(`at` · `filter`×2 · `maxBy`).
+
+### 무엇이 바뀌었나
+
+- **`at`** — `whole` 문. **모양과 범위가 다른 문장**이 됐다:
+  `at's index is a whole number, got "0"` / `value 0 has 1 body, so there is no body 9`.
+- **`filter`×2 · `maxBy`** — `callable` 문. 전엔 엔진이 대신 답했다(`number 3 is not a function`
+  하나, `key is not a function` 하나 — **형제끼리 문장도 달랐다**).
+- ★★★ **`maxBy`가 «점수»도 읽는다** — `maxBy(f => "x")`는 **조용히** 면을 답했고, `NaN`이면 비교가
+  늘 거짓이라 **첫 면**이 이겼다. 둘 다 말이 없었다. ☑ 덤: 키를 **원소당 두 번** 부르던 것이 한 번으로.
+- ★ **`said`가 `show`에 위임한다** — 문 문장이 `JSON.stringify`로 끝나 **솔리드를 넘기면 내부 기록
+  229자**(13몸통이면 **1416자**, **모델과 함께 자람**), **순환 객체면 문이 말하기 전에 터졌다**
+  (`Converting circular structure to JSON`). `print`의 `show`는 종류를 이름하고 순환도 막고 있었다.
+
+### ⚠ 콜백 인자는 «값 인자»와 다르다 — 오버로드
+
+`unknown`으로 두자 **TS 호출자가 원소 타입을 잃었다**(`docs.test.ts`의 탐침 셋이 `f => f.area`를
+쓴다). ⇒ **선언은 정확히, 몸통은 `unknown`으로**(오버로드). 문은 여전히 못 건너뛰고, 덤으로
+**타입 있는 호출자가 비함수를 넘기면 컴파일 오류**가 된다.
+☑ 스크립트 저자 쪽은 무변이었다: `nacre.d.ts`는 그대로고, 콜백 «안»의 자동완성은 `docs.ts`의
+`callbackParam`에서 온다(TS 타입이 아니다).
+
+### ⚠ `filter`의 술어 «반환»은 일부러 안 잠갔다
+
+진리값은 JavaScript 자신의 규칙이고 `Array.prototype.filter`도 그렇다 — 그리고 **앱의 데모가
+증인**이다: `f.normal?.isClose(Z)`는 곡면에서 `undefined`다. boolean으로 잠그면 **데모가 깨진다.**
+(`maxBy`는 `>`로 «비교»하므로 다르다.) 나중에 「일관성」을 이유로 잠그려는 사람을 위해 적어 둔다.
+
+### ★★ 잠금은 전부 «이미 있는 주인»에게 갔다 — 새 파일 없음
+
+- `bodies.test.ts` — 머리말이 이미 *"거절이 인용하는 수는 `at`이 받은 수다"*라 적고 **범위 케이스를
+  잠그고 있었다** ⇒ **모양** 케이스를 그 옆에. 한 테스트가 한 문의 두 실패를 나란히 보인다.
+- `docs.test.ts` — `WITH_OPTS`와 **같은 패턴**으로 `WITH_CALLBACK`을 `callbackParam`에 대해
+  **양방향** 잠금 ⇒ 새 콜백 멤버가 탐침 없이 못 들어온다.
+- `values.test.ts` — 조용한 값(`maxBy`)과 문의 목소리(`said`).
+
+### 실측
+`tsc` 0 · vitest **258/258**(두 번) · `build` 0 · `ZZ` 0 · **커널·kit·wasm 무변**
+(★ 지난 칸과 달리 **재빌드를 안 빚는다**). **심은 위반 넷 전부 빨강**, 그중 하나는 **tsc**가 문다.
+독 코퍼스 **86건 그대로 초록** — 좋은 대조군이었다(그 코퍼스가 `at("0")`을 **이미 먹이고 있었는데**
+`Where` 줄만 보느라 틀린 문장이 초록을 통과해 왔다).
+
+### ⚠ 인구 재측정이 흠 하나를 잡았다
+끝나고 census를 다시 돌리니 `maxBy's key answers with a number **is a number**, got "x"` —
+`num`이 붙이는 말과 **겹쳤다**. `what`을 문서 자신의 낱말로(`maxBy's score`) 바꿨다.
+**계획에 「끝나고 다시 센다」를 적어 두지 않았으면 그대로 나갔다.**
+
+### 다음 칸으로
+☐ `Entry.options`가 언제 필수인지 · kit 메시지 둘(`DistOutsideDecimalWindow`는 이제 **enum 이름
+   하나뿐**이다 · `bodies().at("0")` 아님 — `at`은 닫혔다) · 메서드 표 양방향 · syntax.md 잠금 · M6b.
+☐ 보았지만 안 한 것: `VertexList.filter`가 맨 배열을 돌려주는 비대칭 — **의도**다(`docs.ts:286`).
