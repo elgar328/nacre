@@ -18396,15 +18396,37 @@ wasm clippy·fmt 0. 커널 **무변**(위).
 불변. `docs.test.ts`의 옵션 잠금은 **mirror까지** 넓혔다(전역 인덱스 2·메서드 인덱스 1 둘 다 —
 메서드 항목엔 오늘 `options`가 아예 없어서 «이동»이 아니라 «추가»였다).
 
-★ **잠금 2가 kit의 `Step::Mirror` 팔을 처음으로 덮는다** — kit엔 미러 테스트가 하나도 없었고,
-앱의 오프셋 도로도 **한 번도 안 돌아 봤다**(계획은 「첫 실행에 빨강일 수 있다」고 예측했으나 돌았다).
+⚠ **그리고 이 문장을 감사에서 고쳤다.** 처음엔 *"잠금 2가 kit의 `Step::Mirror` 팔을 **처음으로**
+덮는다"*고 적었는데 **과장**이다 — `recorder.test.ts`의 어휘 테스트가 `runScript`(→ `wasm.run`)로
+`mirror(e, YZ)`를 이미 지나가고 있었으므로 그 팔은 **offset 0으로 덮여 있었다**. 정확히는:
+kit의 **자체** 스위트엔 미러 테스트가 없고, 잠금 2가 새로 덮는 것은 **오프셋 경로**다(그 경로는
+정말로 한 번도 안 돌아 봤고, 계획은 「첫 실행에 빨강일 수 있다」고 예측했으나 돌았다).
 
 ### 실측
 앱 `wasm:all` 0 · `tsc` 0 · vitest **163/163**(17 파일) · wasm clippy·fmt 0.
 kit fmt·clippy 0 · **93/0** — ★ **코드는 한 줄도 안 바뀌었다**(문서만). 커널 **무변**:
 워킹트리 깨끗 · workspace **1,283/0** · census **398행 두 프로파일 동일**.
 
+### 자체 감사가 찾은 것 넷 (같은 세션, 커밋 뒤)
+1. ⚠ **주석 하나가 여섯 호출자 중 둘에 거짓이었다.** `onlyKeys`에 *"Each of these objects gives
+   every field a default"*라 적었는데 **`circle`·`arc`는 아니다** — 필수 필드가 빠지면 시끄럽게
+   실패한다(실측: *"circle needs r or d"*, *"arc needs a nonzero sweep"*). 규칙은 여섯 곳 다 값어치가
+   있지만 **이유의 크기가 다르다**: 기본값이 다 있는 다섯 곳에서만 침묵이 «부품»을 바꾼다.
+2. 메시지가 `mirror's options does not take 'ofset'`이었다 — 형제들은 전부 **호출의 이름**을 말한다
+   (`cuboid does not take …`). `mirror does not take …`로 고쳤다.
+3. `cuboid`에서 내 `onlyKeys` 삽입이 **주석과 그 주석이 설명하는 코드 사이**에 들어갔다.
+4. `nacre.d.ts`의 문장 *"to tilt one, there is nothing to tilt"*는 **뜻이 안 통했다**. 참인 말로
+   바꿨다: 커널이 **좌표 평면**에 반사하므로 기울어진 미러 면은 말할 수 없다.
+
+### ★ 감사가 «다음 칸» 하나를 새로 열었다 — 숫자 인자가 와이어의 말로 죽는다
+`mirror(…, { offset: "3" })`이 `malformed steps: invalid type: string "3", expected f64`을 낸다.
+이건 내가 판 구멍이 **아니라 기존 인구의 여섯째**다 — 실측으로 **다섯**을 더 셌다:
+`plane`의 offset · `translate` · `rotateZ`의 각도 · `extrude`의 dist · `fillet`. **`cylinder`만**
+숫자를 검증한다(*"needs a positive h"*). ⇒ 「모르는 키」와 **나란한 둘째 규칙**(«값이 숫자인가»)이
+거의 어디에도 없다. 미러 것만 고치면 그게 비스포크이므로, **인구를 적고 별도 칸으로 넘긴다**.
+
 ### 다음 칸으로
+☐ ★ **숫자 인자 검증** — 위 인구 여섯. 「모르는 키」와 같은 모양으로 한 번 적을 수 있는지 본다.
 ☐ **(나) 넷** — 목록이 `docs.ts`에 **이미 있으므로** 새로 짓지 않는다.
 ☐ **그때 정할 것**: 런타임 잠금을 일반화할지, 아니면 `recorder.ts`가 키 배열을 export하고
    `docs.ts`가 그걸 import해 **`tsc`가 일치를 강제**하게 할지(후자가 나을 수 있다 — 두 목록이
