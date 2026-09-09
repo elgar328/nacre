@@ -19385,6 +19385,28 @@ kit의 `cargo test`인데, 앱에만 잠금을 두면 그 스위트는 접두가
    적혀 있었는데, 사실은 `bridge.ts`의 `RunErr.step`이 말한다.
 5. 주석 하나가 «자기가 설명하는 것»(테스트)이 아니라 데이터 옆에 있었다.
 
+### 덤 — `Showing` 행의 영어 (`24fe57d`)
+
+사용자가 `Showing the 1 step before it`을 보고 **영어가 이상하다**고 했다. 맞다: 복수형은
+처리했는데 **관사를 안 봤다**(하나면 *the* step이다). ⚠ 그리고 재 보니 흠이 **하나 더** 있었다 —
+조각 셋이 다 있을 때 접속사가 둘이 된다:
+
+```
+the 5 steps before it, the two it would not combine in red and a red cross where it failed
+                                                          ~~~ 쉼표 없이 and 가 둘
+```
+
+☑ **인구가 0이 아닌지 먼저 쟀다**: `nacre-kit/src/build.rs:245-246`이 `blame: Some(...)`과
+`mark: at.map(...)`을 **함께** 세운다 ⇒ 출하되는 조합이다.
+
+★★ **뿌리는 그 문장이 «말을 정하는 곳» 밖에 있었다는 것.** `summary.ts`의 머리말이
+*"put into words in one place"*라 적혀 있는데 이 문장만 `main.ts`에서 그려지며 조립됐고,
+그래서 **앱에서 유일하게 테스트가 없는 문장**이었다 — 그리고 **두 번 틀렸다**(`an red`, `the 1 step`).
+⇒ `showingWords()`로 옮기고 잠갔다. 호출자는 «셀 것»과 색 낱말만 넘긴다(색은 «그린 쪽»의 사실).
+
+실측: `tsc` 0 · vitest **246/246**(두 번) · `build` 0 · `ZZ` 0.
+**심은 위반 셋 전부 빨강**(옛 복수형 · 두 조각을 붙여 쓰기 · 셋을 쉼표 없이).
+
 ### 다음 칸으로
 ✔ `step N:` 이중 인쇄 — **닫혔다**.
 ☐ `Entry.options`가 언제 필수인지 · kit 메시지 둘(`DistOutsideDecimalWindow`·`at("0")`) ·
