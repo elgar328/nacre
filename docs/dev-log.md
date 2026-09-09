@@ -18966,7 +18966,7 @@ kit·커널 **무변**(워킹트리 깨끗 — 바뀐 Rust는 `playground/wasm` 
 ☐ **백로그 ③의 기제를 실측했다**: `Recorder.ensureBuilt`가 `step ${step}: `를 붙이는데 kit의
    `Display`(`error.rs:79`)가 **이미** 붙인다 ⇒ 선택자 경로에서 **`step 0: step 0: …`**로 이중
    인쇄된다(이 칸의 새 메시지는 접두사를 안 달아 그 함정을 피했다).
-☐ **보이는 것만 바꾸는 옵션의 「모르는 키」 가드** — 이제 `styleFields` 한 자리에 달면 된다.
+✗ ~~**보이는 것만 바꾸는 옵션의 「모르는 키」 가드**~~ — **칸 ㉝에서 했다**(인구는 셋이 아니라 다섯).
 ☐ **문자열 방향** — `display(a, {color: 5})`도 같은 `malformed steps`로 죽는다(이번엔 줄은 얻는다).
 ☐ **패널·상태줄 DOM 잠금**(jsdom) — 그때 `main.ts`의 세 갈래를 순수 함수로 빼면 이 칸의 테스트가
    베낀 사본도 사라진다.
@@ -19001,3 +19001,54 @@ cylinder's center is a point like [0, 0, 0], got [NaN, 0, 0]      (전: [null, 0
 **실측**: `wasm:all` 0 · `tsc` 0 · vitest **211/211**(두 번) · `ZZ` 0. 남은 raw 보간은 셋뿐이고
 전부 의도된 것이다(`got ${typeof v}` 둘, 정점 개수 하나).
 ☑ 그리고 **브라우저에서 사용자가 확인**했다 — 이 칸 전체(줄 번호·조용한 다섯·이번 문장)가 앱에서 돈다.
+
+## 칸 ㉝ — 옵션의 오타가 조용히 삼켜지지 않는다 (2026-09-09, `150fe3a`)
+
+칸 ㉗이 `onlyKeys`로 「모르는 키는 이름을 불러 거절한다」를 한 벌 만들었는데, **그때 안 건 자리가
+남아 있었다.** 실측하니 옵션 객체를 날로 읽는 자리가 **다섯**이었다(목록엔 「셋」이라 적혀 있었다):
+`style` · `display`의 마지막 스타일 객체 · `edges` 객체 · **`view`** · **`plane`의 스펙 객체**.
+전부 **오타가 무시되고 실행은 성공**했다 — 색이 안 바뀌고 카메라가 안 움직이는데 아무 말이 없다.
+
+### ★★ 잠금을 «표»가 몰게 했다
+`docs.ts`가 옵션 자리를 **21개** 문서화하고 있고 `docs.test.ts`에 그 표를 도는 기계(`CALLS`)와
+완전성 단언이 **이미** 있었다. 같은 모양으로 `WITH_OPTS`(자리마다 호출 한 줄)를 놓고 둘을 잠갔다:
+**모르는 키를 «이름으로 부르는가»**(그냥 「거절」이면 다른 이유로 죽어도 초록이 된다) + **양방향
+완전성**. 단계 1의 실측이 **21 중 4 빨강**으로 census와 정확히 맞았다.
+
+⚠ **「자동」의 경계**: 이 잠금이 얼리는 것은 **표에 적힌 21자리**다. `Entry.options`는 **선택 필드**라
+옵션을 받으면서 표를 비워 둔 새 전역은 **아무것도 안 건다** — 계획 검토가 내 과장("새 옵션 자리가
+생기면 docs.test가 강제한다")을 잡아 준 자리다. 그 틈은 표 구조를 바꿔야 닫힌다(다음 칸).
+☑ 그리고 오늘 코드의 `known` 아홉 벌과 `docs.ts`가 **전부 일치**함을 손으로 대조했다 — 잠금은
+숨은 불일치를 고친 게 아니라 그 일치를 얼린다.
+
+### ★★ 가드를 얹기 «전에» 판별을 고쳐야 했다
+스타일이냐 값이냐를 **클래스 목록**으로 가르고 있었다(`!(x instanceof SolidVal) && !(x instanceof
+SketchBuilder)`). 목록은 조용히 낡는다 — 실측: **`display(a, planeVal)`이 평면을 스타일로 읽고,
+아무것도 안 그리고, 아무 말도 안 했다**(`display(p)` 혼자면 좋은 문장이 나오는데도). 거기 `onlyKeys`만
+얹었으면 `display does not take 'rec'`로 **더 나빠졌을** 것이다.
+⇒ **규칙으로 바꿨다: 스타일은 «객체 리터럴»이다**(이 API의 값은 전부 클래스 인스턴스다).
+★ 그리고 검토가 **같은 갈림길이 둘**임을 찾았다 — `plane`의 스펙 팔도 `typeof a === "object"`라
+배열이 들어온다. `plane([1,2,3])`이 오늘 얻는 좋은 catch-all 문장을 지키려면 같은 술어가 필요하다
+⇒ `isPlainObject` 하나를 둘이 쓴다.
+★ 배열의 문장은 `shownArg` **안에** 뒀다 ⇒ `display(a,[b,c])`와 `display([a,b])`가 **한 문**을 지난다:
+*"display takes values one at a time — display(a, ...list) spreads a list"*.
+
+### 안 한 것 — 기록된 결정을 뒤집지 않는다
+dev-log가 열어 둔 물음(*"`recorder.ts`가 키 배열을 export하고 `docs.ts`가 import해 tsc가 강제"*)은
+**안 했다**. `onlyKeys`의 doc이 이미 답했다: *"the API is the truth and the table describes it,
+never the other way round."* 대신 **테스트가 둘을 대조**한다.
+
+### 실측
+앱 `wasm:all` 0 · `tsc` 0 · vitest **217/217**(두 번) · wasm fmt·clippy 0 · `ZZ` 0 ·
+**심은 위반 다섯 전부 빨강**(style의 onlyKeys · WITH_OPTS 한 줄 · 옛 판별 · 필수 검사 · plane의
+isPlainObject). kit·커널 **무변**(이 칸은 TypeScript만).
+☑ 곁들여: `style(null)`·`style(5)`·`style([1,2])`가 이제 **필드를 열거하는** 문장을 얻는다
+(`style takes an object like { color, opacity, width, edges }`) — 전엔 `style takes an object`거나
+(배열은) 조용한 무동작이었다.
+
+### 다음 칸으로
+☐ **`Entry.options`가 언제 «필수»인지 기계가 모른다** — 위의 경계. `docs.ts`의 표 구조 문제다.
+☐ `solidArg`에도 배열 힌트(`fuse([a,b])`). 오늘 조용하지는 않으므로 급하지 않다.
+☐ `view:` 콜론체 문장들을 형제 어투로 맞출지(이제 `view`의 키 문장만 형제 어투다).
+☐ 패널·상태줄 DOM 잠금(jsdom) · `step N:` 이중 인쇄 · 문자열 방향 · kit 메시지 둘 ·
+   메서드 표 양방향 · syntax.md 잠금 · M6b.
