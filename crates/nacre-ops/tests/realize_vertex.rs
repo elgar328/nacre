@@ -9,14 +9,22 @@
 //!
 //! | population | vertex width | compared | **cache is nearest** |
 //! |---|---|---|---|
-//! | axis-aligned box       | 7 bits  | 16 | 16/16 |
-//! | box, boolean'd twice   | 7 bits  | 32 | 32/32 |
-//! | prism on a tilted frame | 59 bits |  8 | **0/8** — every one off, by up to 4 ulp |
+//! | axis-aligned box        | 7 bits  | 16 | 16/16 |
+//! | box, boolean'd twice    | 7 bits  | 32 | 32/32 |
+//! | prism on a tilted frame | 59 bits | 12 | **0/12** — every one off, by up to 4 ulp |
 //!
-//! ★★★ The split is the mantissa: 7 bits land in an `f64` exactly, so nothing can go wrong; 59
-//! bits do not, and there the cached coordinate is **not** the nearest `f64` to the truth. That is
-//! the first measurement of `truth-and-cache.md`'s *"최근접 f64 가 아닐 수 있다"* on vertices, and
-//! it is what this door exists to fix.
+//! ⚠★★★ **The split is not representability, and saying it was is a mistake worth keeping
+//! written down.** The first reading of this table said "7 bits land in an `f64` exactly, 59 do
+//! not". Measured per coordinate: of `boolean_corner`'s 48, only **32** are dyadic — 16 are exact
+//! rationals no `f64` can hold (the fixture cuts at 3.3 and 7.7, and `33/10` is not a binary
+//! fraction) — and the cache agrees on **all 48**. So being unrepresentable does not make a
+//! coordinate disagree.
+//!
+//! What actually separates the families: on the narrow ones both roads round *the same rational*
+//! the same way, so they cannot differ. On the tilted ones the cached coordinate comes out of a
+//! longer `f64` derivation that is not a correct rounding of anything — the 59-bit width is a
+//! proxy for how much arithmetic happened, not the mechanism. This is the first measurement of
+//! `truth-and-cache.md`'s *"최근접 f64 가 아닐 수 있다"* on vertices either way.
 
 use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
@@ -275,7 +283,15 @@ fn a_box_realizes_to_exactly_what_the_cache_holds() {
         let (v, e) = r.to_f64().expect("an exact value names an f64");
         let cached = m.vertex_point(vh).as_array();
         assert_eq!(v, cached, "vertex {vh:?}");
-        assert_eq!(e, [0.0; 3], "an exact realization carries no error");
+        // ⚠ **Width is not representability.** These corners are 7 bits wide by
+        // `tests/point_width.rs`'s metric, and `boolean_corner` cuts at 3.3 and 7.7 — `33/10` is
+        // an exact `Rat` and no `f64` at all. So the readout rounds, and the error says so; a
+        // coordinate that *is* dyadic (0, 10, …) reports zero. Asserting `[0.0; 3]` here passed
+        // only because the arm used to claim it unconditionally.
+        for k in 0..3 {
+            let dyadic = format!("{:.60}", v[k]) == r.to_decimal(60).expect("exact")[k];
+            assert_eq!(e[k] == 0.0, dyadic, "error {} vs dyadic {dyadic}", e[k]);
+        }
         n += 1;
     }
     assert!(
@@ -558,9 +574,31 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
             let Ok(r) = realize_vertex(&m, vh, Precision::Bits(bits)) else {
                 continue;
             };
-            let Some((_, e)) = r.to_f64() else { continue };
+            let Some((v, e)) = r.to_f64() else { continue };
             if r.is_exact() {
-                assert_eq!(e, [0.0; 3], "an exact coordinate carries no error");
+                // ⚠ **Not `[0.0; 3]`.** An exact *realization* still rounds when it is read out
+                // at 53 bits, and the tilted family's coordinates are 59 bits wide. Zero is
+                // allowed only where the rational really is an `f64`; where it is not, the error
+                // must be positive and no wider than half an ulp. An earlier spelling of this
+                // lock asserted zero and so pinned the lie it was written to catch.
+                let d = r
+                    .to_decimal(60)
+                    .expect("an exact realization prints every place");
+                for k in 0..3 {
+                    let readout_is_the_value = format!("{:.60}", v[k]) == d[k];
+                    match readout_is_the_value {
+                        true => assert_eq!(e[k], 0.0, "a representable rational has no error"),
+                        false => {
+                            assert!(e[k] > 0.0, "a rounded readout reported no error: {}", d[k]);
+                            assert!(
+                                e[k] <= (v[k].abs() * f64::EPSILON).max(f64::MIN_POSITIVE),
+                                "error {} is wider than an ulp of {}",
+                                e[k],
+                                v[k]
+                            );
+                        }
+                    }
+                }
                 exact += 1;
                 continue;
             }

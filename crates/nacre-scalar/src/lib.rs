@@ -321,7 +321,42 @@ fn big_to_ratio(x: &BigFloat) -> Option<(num_bigint::BigInt, num_bigint::BigInt)
     })
 }
 
-/// The nearest integer to `num · 10^places / den`, ties away from zero. `den` must be positive.
+/// Round `q + r/den` to an integer, **ties to even** — IEEE's rule, and the kernel's.
+///
+/// ⚠★★★ **Not "away from zero", which is what this crate shipped first.** At `2⁵² + ½` both
+/// neighbours are representable, so the tie rule decides, and half-away answered
+/// `4503599627370497` where [`Rat::to_f64`] — the road the point cache is built on — answers
+/// `4503599627370496`. Two roads for one quantity disagreeing at a tie is exactly what the
+/// vertex door exists to rule out. A 20,000-pair sweep missed it: random pairs are never ties,
+/// and the boundary family it was checked against (`2ᵏ⁺¹ − 1` over 2) lands on the one tie both
+/// rules resolve the same way.
+///
+/// Both roundings this crate hands out — binary ([`round_shifted`]) and decimal
+/// ([`round_scaled`]) — go through here, so they cannot drift apart.
+fn round_ties_even(
+    q: num_bigint::BigInt,
+    r: &num_bigint::BigInt,
+    den: &num_bigint::BigInt,
+) -> num_bigint::BigInt {
+    use num_bigint::{BigInt, Sign};
+    use num_integer::Integer;
+    let twice = (r * BigInt::from(2)).magnitude().clone();
+    let step = match twice.cmp(den.magnitude()) {
+        core::cmp::Ordering::Less => false,
+        core::cmp::Ordering::Greater => true,
+        // The exact tie: move only if it would land on an even integer.
+        core::cmp::Ordering::Equal => q.is_odd(),
+    };
+    if !step {
+        return q;
+    }
+    match r.sign() {
+        Sign::Minus => q - 1,
+        _ => q + 1,
+    }
+}
+
+/// The nearest integer to `num · 10^places / den`, **ties to even**. `den` must be positive.
 ///
 /// Exact: every step is integer arithmetic, so this is the *decision* about the last digit and
 /// not an approximation of it.
@@ -333,37 +368,24 @@ fn round_scaled(
     use num_bigint::BigInt;
     use num_integer::Integer;
     let scaled = num * BigInt::from(10).pow(places as u32);
+    // `div_rem` truncates toward zero and `r` carries the dividend's sign, so the tie decision
+    // works on magnitudes and steps away from zero.
     let (q, r) = scaled.div_rem(den);
-    // `div_rem` truncates toward zero and `r` carries the dividend's sign, so the comparison is
-    // on magnitudes and the step is away from zero — the same tie rule `format!("{:.*}")` uses.
-    if (&r * BigInt::from(2)).magnitude() >= den.magnitude() {
-        return match r.sign() {
-            num_bigint::Sign::Minus => q - 1,
-            _ => q + 1,
-        };
-    }
-    q
+    round_ties_even(q, &r, den)
 }
 
-/// The nearest integer to `num · 2^k / den` (ties away from zero), `den` positive, `k` any sign.
+/// The nearest integer to `num · 2^k / den` (**ties to even**), `den` positive, `k` any sign.
 ///
-/// [`round_scaled`]'s binary twin — same decision, a different radix, so the two roundings this
-/// crate hands out cannot drift apart in their tie rule.
+/// [`round_scaled`]'s binary twin — same decision through [`round_ties_even`], a different radix,
+/// so the two roundings this crate hands out cannot drift apart in their tie rule.
 fn round_shifted(num: &num_bigint::BigInt, den: &num_bigint::BigInt, k: i64) -> num_bigint::BigInt {
-    use num_bigint::BigInt;
     use num_integer::Integer;
     let (n, d) = match k >= 0 {
         true => (num << k as usize, den.clone()),
         false => (num.clone(), den << (-k) as usize),
     };
     let (q, r) = n.div_rem(&d);
-    if (&r * BigInt::from(2)).magnitude() >= d.magnitude() {
-        return match r.sign() {
-            num_bigint::Sign::Minus => q - 1,
-            _ => q + 1,
-        };
-    }
-    q
+    round_ties_even(q, &r, &d)
 }
 
 /// **The nearest `f64` to the exact rational `num/den`** (`den` positive) — one rounding, from
@@ -375,8 +397,26 @@ fn round_shifted(num: &num_bigint::BigInt, den: &num_bigint::BigInt, k: i64) -> 
 ///
 /// `None` when the value is outside `f64`'s normal range.
 pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Option<f64> {
+    nearest_f64_big_exact(num, den).map(|(v, _)| v)
+}
+
+/// [`nearest_f64_big`], **and whether the rounding lost anything**.
+///
+/// ★★★ **The second half is not optional information.** A three-plane meet is an exact rational,
+/// which is a fact about the *realization*, not about the `f64` it is then read out as: a 59-bit
+/// coordinate does not fit a 53-bit mantissa, so the readout rounds and the value handed over is
+/// **not** the point. Reporting that as a zero error is the same lie the cache tells — measured on
+/// the tilted-frame family, where the exact value is `0.130864196953086372` and its `f64` is
+/// `0.13086419695308637578…`.
+///
+/// `true` means the `f64` **is** the rational, so a caller may honestly say its error is zero.
+pub fn nearest_f64_big_exact(
+    num: &num_bigint::BigInt,
+    den: &num_bigint::BigInt,
+) -> Option<(f64, bool)> {
+    use num_bigint::BigInt;
     if num.sign() == num_bigint::Sign::NoSign {
-        return Some(0.0);
+        return Some((0.0, true));
     }
     // `value ∈ (2^(e-1), 2^(e+1))`, so `52 - e` aims the mantissa at 53 bits and lands one short
     // at worst — one nudge, never two.
@@ -411,7 +451,15 @@ pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Op
         v *= 2f64.powi(step as i32);
         rem -= step;
     }
-    v.is_finite().then_some(v)
+    // Exact iff the scaled division left no remainder: `value = q · 2^-k` exactly means
+    // `num · 2^k == q · den`. Both sides are integers, so this is a decision and not an estimate.
+    let (lhs, rhs) = match k >= 0 {
+        true => (num << k as usize, &q * den),
+        false => (num.clone(), (&q * den) << (-k) as usize),
+    };
+    let exact = lhs == rhs;
+    let _ = BigInt::from(0);
+    v.is_finite().then_some((v, exact))
 }
 
 /// `places` decimal places of the **exact** rational `num/den` (`den` positive).
@@ -6517,6 +6565,19 @@ mod decimal_realization {
                 n += 1;
             }
         }
+        // ★★★ **The tie, which a random sweep can never reach.** At `2⁵² + ½` both neighbours
+        // are representable, so this is where a tie rule is visible — and where half-away-from-zero
+        // (what this shipped first) disagreed with the road the point cache is built on.
+        for e in [50u32, 51, 52, 53] {
+            let two_e = 1i128 << e;
+            let (num, den) = (two_e * 2 + 1, 2i128);
+            let big = nearest_f64_big(&BigInt::from(num), &BigInt::from(den)).expect("in range");
+            assert_eq!(
+                big,
+                Rat::new(num, den).expect("in range").to_f64(),
+                "2^{e} + 1/2"
+            );
+        }
         // Wide inputs no `Rat` can hold — the reason this twin exists at all.
         let big = BigInt::from(1i128) << 200;
         let v = nearest_f64_big(&(&big * 3), &big).expect("in range");
@@ -6552,7 +6613,8 @@ mod decimal_realization {
         assert_eq!(c(1, 3, 10), "0.3333333333");
         assert_eq!(c(2, 3, 10), "0.6666666667");
         assert_eq!(c(-2, 3, 5), "-0.66667");
-        assert_eq!(c(1, 2, 0), "1"); // 0.5 ties away from zero
+        assert_eq!(c(1, 2, 0), "0"); // 0.5 ties to even, as IEEE and `Rat::to_f64` do
+        assert_eq!(c(3, 2, 0), "2"); // 1.5 ties to even the other way
         assert_eq!(c(7, 1, 3), "7.000");
         assert_eq!(c(0, 1, 4), "0.0000");
         assert_eq!(c(1, 8, 20), "0.12500000000000000000");

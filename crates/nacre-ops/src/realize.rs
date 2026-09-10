@@ -101,10 +101,24 @@ impl Realized {
         match &self.0 {
             Arm::Exact(n, d) => {
                 let mut v = [0.0; 3];
+                let mut e = [0.0; 3];
                 for k in 0..3 {
-                    v[k] = nacre_scalar::nearest_f64_big(&n[k], d)?;
+                    // ⚠★★★ **An exact realization is not an exact `f64`.** The rational is the
+                    // truth; reading it out at 53 bits rounds, and a 59-bit coordinate does not
+                    // fit — measured on the tilted-frame family, where the value is
+                    // `0.130864196953086372` and its `f64` is `0.13086419695308637578…`. An
+                    // earlier spelling reported `[0.0; 3]` here, which is the cache's own lie in
+                    // a new place, and the audit lock written for it *enforced* the lie.
+                    let (val, no_loss) = nacre_scalar::nearest_f64_big_exact(&n[k], d)?;
+                    v[k] = val;
+                    // Half an ulp bounds a correct rounding; floored at the smallest subnormal so
+                    // a tiny coordinate cannot report zero error by underflow.
+                    e[k] = match no_loss {
+                        true => 0.0,
+                        false => (val.abs() * f64::EPSILON / 2.0).max(f64::from_bits(1)),
+                    };
                 }
-                Some((v, [0.0; 3]))
+                Some((v, e))
             }
             Arm::Approached(p, prec) => {
                 let mut v = [0.0; 3];
