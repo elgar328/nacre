@@ -624,7 +624,7 @@ pub enum Decision {
 | S6c | **수송 법칙**(칸 ④, 2026-09-03) — `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)`: `carry_of`(옛 `motion_is_exact`)가 솔리드당 한 번, 후보 [전부·회전만·없음]에 같은 탐침 «실현(`Xform::point`) == 정확 상(`point_rat`/`mirror_point_rat`)»을 정점·평면 원점·**원통 축 원점**에 물어 첫 통과를 수송(`transport_points`/`transport_cylinder`)하고 나머지를 기록(`chain_motion(carry)` — 표 없음, parent 있으면 전부). 기록된 노드는 **기록된 부분** 앞의 진술을 말한다(회전 정확·이동 부정확 → 회전된 진술 + [T], `chain_translation` 접힘). 반증한 것: 회전 전 좌표 `p+t`로 재던 탐침(회전 뒤 반올림을 «정확»이라 함)과 «정확한 회전은 노드 없음 ∧ 부정확 이동은 노드»의 반쪽 체인(오프셋 보스가 릴리스에서 «안 닿는다»). | ✔ 2026-09-03 |
 | S9 | **공개 스케치 API 통일 + world 평면 사전 심기** — ① `Model::new()` 가 세계 축 평면 셋을 심는다(핸들 0·1·2 = XY·YZ·ZX, points 는 `axis_plane` 삼중 `[0,u,v]`, **캐시 방향은 −축** — extrude 밑캡의 감각과 일치, +축이면 실측 781 캡 flip 재도입; `#[derive(Default)]` 제거 = 무씨앗 뒷문 폐쇄, `world_plane(Axis)` 접근자, `stat seeded_hits` 반증성 다리 신설 = 실측 455). census ε-재기준 1회: 평면 digest 이동 127/150줄, **결과는 143/150 비트 동일 + 나머지 7줄도 부피·면적·centroid 전부 비트 동일**(정점 해시만 이동 — Cramer 가 사실상 스케일-불변으로 반올림, 스칼라 최대 편차 정확히 0), ERR/EMPTY·피연산자 정점 해시 문자 동일. ② 공개 `SketchFrame{plane, placement, flip}`(필드 private + 검증 생성자 — 리터럴 우회 봉쇄): `named()` 가 구성 시점 거절 `FrameOutsideDecimalWindow`·`OriginNotOnPlane`(신규 scalar `plane_residual_sign` — orient2d_rat 급 **전역**, Wide 는 BigInt 팔)·`RefDirParallelToNormal`(판정은 `WideFrame::named_of` 재사용 — 폭에 전역이라 None = 평행뿐), 이름 없는 평면 = `PlaneWithoutExactForm` 재사용. `face_sketch_frame` 신설(이음새 — face_frame 이 만들던 값을 버리지 않고 공개). ③ 내부 통일: flip 측정은 `measured_frame` 한 곳, 노드 push 는 `push_frame_node` 한 곳(extrude·face 두 도로가 한 모양, 게이트 표현식 문자 유지, census 비트 동일). ★ **`Operation` 의 평면-핸들 어휘 교체는 S5 로 유예** — replay 자기완결성: 로그 속 핸들의 합법 표적은 씨앗·기존 면·datum 뿐인데 datum op 가 S5 에야 생긴다. ★ 잠금서 확정 둘: 씨앗 intern 직접 증거(원점 상자 바닥/왼쪽/앞 + z=0 밑캡 = 씨앗 핸들, 아레나 6 유지), ZX 의 canonical 프레임은 `−x̂`(스크립트 삼중과 다름 — Named 로 말할 사례임을 잠금이 명문화) | ✔ 2026-08-06 |
 | S8 | **Edge 최종형** — `Edge{surfaces: [Handle<Surface>;2], vertices: [Handle<Vertex>;2]}`: 담체 두 면(오름차순 정렬 쌍) + 경계 두 점, `curve`·`bounds: Option`·`origin` 사망. `Store<Curve>` → `edge_cache: Vec<EdgeCache>`(인덱스-평행 캐시): 유일 입구 `push_edge`(eager 파생, 퇴화 검사는 **팔별** — rim `[v,v]` 는 합법) + `rebuild_edge_cache`(«버리고 재생» 잠금이 비트 동일 증명) + `edge_curve` 접근자·`derive_edge_curve`(직선 = 끝점 through_points, rim 원 = 담체에서 — 신설 geom `line_plane`, seam = 자기-인접 `[cyl,cyl]` 잠정 표기). transform pass 2(곡선 이동) 통째 소멸. validate: 신설 `EdgeCarrierMismatch`(담체 ≠ 인접 관측, `[plane,plane]` 자기쌍 검출) + `UnboundedEdgeInLoop`·`RefKind::EdgeCurve`·`StepError::UnboundedEdge` 순삭. ★ 구현 중 발견 2건: ① **담체는 wall 로 추측하면 틀린다** — 세 평면이 한 직선을 공유하는 인구(해결된 4-평면 동시성)에서 각 면의 arrangement 는 제3의 평면을 wall 로 (옳게) 지목 — 담체는 **전 링 선-주사한 인접성**에서 읽는다(실측: debug_assert 발화가 잡음). ② «전 생산 직선 비트 동일» 주장이 이동 경로에서 반박 — pass 2 는 방향을 직접 회전, 파생은 끝점 차 재정규화라 방향 ~1 ulp(실측 2.8e-16, 직선 83/84 비트 동일, 원 최대 2.2e-16 — 직선 기하는 비관측이라 무해). ③ VertexOffCurve 의 직선 갈래는 **타입상 항진**이 됐다(끝점이 자기 직선 위) — 검사는 원(rim)으로 이빨 유지, `.max(tol_of(edge.origin))` 은 상수 `EPS_CONSTRUCTED` 로 재철자(**무-행동이 아니었다** — `Discovered{tol:0}` 정점의 하한을 edge 항이 받치고 있었음, 실측). census 전 커밋 비트 동일 | ✔ 2026-08-06 |
-| S7 | **`Origin` 소멸 — 정점은 자기 정의를 들고, 좌표는 캐시가 된다** — `Vertex{def: VertexDef{ThreePlane([3]) \| OnSeam([2])}}`(Q3 수정: seam 정점이 단일형을 반박 — 반증표), `point`·`Origin`(3변종) 사망, `vertex_cache: Vec<PointCache{coord, tol: Option<f64>}>` 인덱스-평행 + 유일 입구 `push_vertex` + 접근자 `vertex_point`/`vertex_tol`. **`rebuild_vertex_cache` 는 없다**(3b ⏸ — 발견 좌표는 배열이 공들인 값 1992 중 238 이 순진 Cramer 와 다르고, seam 좌표는 load-bearing): S8 이 모서리에서 얻은 «버리고 재생» 보증은 정점엔 아직 없음을 정직 기록. 소멸한 기계: 스케치 프레임 base 정점(Q2 — 프레임 공유 세 평면의 유리수 Cramer + 사슬 재생이 저장 좌표를 **비트 동일**로 재현, 8/8 실측을 영구 잠금으로 승격)·`remap_origin`·`solid_motion`+정점용 `move_node`(면이 자기 leaf 를 든다 — 규칙 3)·한-홉 base 불변식(타입이 흡수: 중복 적용이 표현 불가)·`exact.rs::base_f64/top_f64`. reuse `solid_points` 는 def 경로로(구성=`Pt3::exact` 문자 동일, 발견=포기 문자 동일, 이동=세 이름의 checked-i128 Cramer→replay; **혼합 프레임은 정직한 decline** = 기록된 유일한 차이). 게이트 `origins_are_remappable`→`defs_are_remappable` 전 정점 확장(발화 0 + **양성 대조**), validate: `tol_of` 1식화·`VertexOffDefinition` **전 정점 확장**(+양성 대조)·신설 `VertexDefCarrierMismatch`(변종 ⇔ 담체 종류). 신설 `nacre_scalar::three_planes_rat`. census **전 커밋 비트 동일**(좌표 verbatim 이사 — 재기준 없음) | ✔ 2026-08-07 |
+| S7 | **`Origin` 소멸 — 정점은 자기 정의를 들고, 좌표는 캐시가 된다** — `Vertex{def: VertexDef{ThreePlane([3]) \| OnSeam([2])}}`(Q3 수정: seam 정점이 단일형을 반박 — 반증표), `point`·`Origin`(3변종) 사망, `vertex_cache: Vec<PointCache{coord, tol: Option<f64>}>` 인덱스-평행 + 유일 입구 `push_vertex` + 접근자 `vertex_point`/`vertex_tol`. **`rebuild_vertex_cache` 는 없다**(3b ⏸ — 발견 좌표는 배열이 공들인 값 1992 중 238 이 순진 Cramer 와 다르고, seam 좌표는 load-bearing. ⚠ **그 근거는 2026-09-11 에 지나갔다 — 열린 항목 12 의 정정을 볼 것**; 이 행은 2026-08-07 당시의 기록으로 남긴다): S8 이 모서리에서 얻은 «버리고 재생» 보증은 정점엔 아직 없음을 정직 기록. 소멸한 기계: 스케치 프레임 base 정점(Q2 — 프레임 공유 세 평면의 유리수 Cramer + 사슬 재생이 저장 좌표를 **비트 동일**로 재현, 8/8 실측을 영구 잠금으로 승격)·`remap_origin`·`solid_motion`+정점용 `move_node`(면이 자기 leaf 를 든다 — 규칙 3)·한-홉 base 불변식(타입이 흡수: 중복 적용이 표현 불가)·`exact.rs::base_f64/top_f64`. reuse `solid_points` 는 def 경로로(구성=`Pt3::exact` 문자 동일, 발견=포기 문자 동일, 이동=세 이름의 checked-i128 Cramer→replay; **혼합 프레임은 정직한 decline** = 기록된 유일한 차이). 게이트 `origins_are_remappable`→`defs_are_remappable` 전 정점 확장(발화 0 + **양성 대조**), validate: `tol_of` 1식화·`VertexOffDefinition` **전 정점 확장**(+양성 대조)·신설 `VertexDefCarrierMismatch`(변종 ⇔ 담체 종류). 신설 `nacre_scalar::three_planes_rat`. census **전 커밋 비트 동일**(좌표 verbatim 이사 — 재기준 없음) | ✔ 2026-08-07 |
 
 | M6-0 | **원통의 진실** — `SurfaceTruth::Cylinder { def: CylinderDef, motion }`, `CylinderDef { origin, dir, ref_dir, radius }` 전부 유리수(dir·ref_dir 은 **비정규화 원시** — normalize 가 정확형을 파괴하는 `normal_def` 선례; 성분형은 «유도된 곱» 이 아니라 사용자 어휘의 리프트+셔플이라 반증표 무저촉). ref_dir 원시는 `any_perpendicular` **자신의 규칙을 유리수로**(최소-\|성분\| 축, 동률 X→Y→Z; ★ 축 선택은 **정규화된 `d`** — 캐시의 실제 입력 — 를 읽어 구조적 일치. 첫 철자의 «양수 배는 순서 보존» 은 실수-산술 논증이라 반증됨: f64 나눗셈 반올림이 강부등호를 동률로 붕괴 — 실측 축 `[0.34, 0.33999999999999997, 1]` 에서 원시=Y·`d`=X 로 seam ~90° 어긋남, 회귀 픽스처로 박제. 외적은 원시 정확 성분 그대로라 seam 방향 보존). interning 은 **보수적**(`cylinder_ids` 별도 맵, def 문자 동일 + motion — 다른 ref_dir 을 합치면 seam 이 갈라지므로 위험 0 키로 시작, 기하 동일성은 M6-1 술어 몫). **seam 은 모델 기하라 여기서 영구 고정**(+ref_dir, θ=0) — M6-1 의 유리수 반각 차트가 자기 배제점을 seam 에 맞춘다(역방향 절대 금지). OnSeam = "rim ∩ +ref_dir ray" 로 정의 완성(좌표 캐시 load-bearing 해제 선언 — 재생 기계는 3b 와 함께 유예), `[s,s]` 자기-인접 확정. 규약 전문 design.md §9. 관문: 사전-측정 비트 리터럴 4픽스처(축정렬·피타고라스 비트 동일, 기울면 ≤1ulp), census 원통 가족(+`CylinderFace` 거절 줄), validate `CylinderTruthCacheMismatch`(혼합 절대/상대 — ulp 계량은 전폭 축의 Gram–Schmidt 0-자리 스미어에 반증됨), step-io 독립 왕복 클린 | ✔ 2026-08-17 |
 
@@ -811,8 +811,9 @@ STEP 출력, undo/replay.
    이미 다른 뜻으로 「8b」를 쓰고 있어 번호가 충돌한다.
 
    - **「8·반전」(아레나 반전) — 조건 없음, 지금 가능.** 캐시의 «내용»은 안 바꾸고 «자리»만 바꾼다.
-     ★ **소비자가 도착했다**: 아래 항목 12 가 「판정 통합」을 *"좌표 재생이 생기는 자리"* 로 쓰는데,
-     좌표 재생은 2026-09-11 에 섰다(`nacre_ops::realize_vertex`, 칸 ㊵). 정제가 캐시를 덮어써야
+     ★ **소비자가 도착했다**: 「판정 통합」은 아래 항목 12 가 *"좌표 재생이 생기는 자리"* 로 묶어
+     쓰던 것이고(그 문장은 2026-09-11 정정에 인용해 두었다), **좌표 재생은 그날 섰다**
+     (`nacre_ops::realize_vertex`, 칸 ㊵). 정제가 캐시를 덮어써야
      하고, 반전이 없으면 **커널의 모든 아레나를 덮는 `Store` 봉인을 열어야** 한다 — topo 국소
      문제 때문에. ⇒ 반전이 사는 것은 **그 문이 `Store` 가 아니라 `Model` 의 사설 `Vec` 에 난다**는
      것이다(`rebuild_edge_cache` 가 선례).
@@ -842,10 +843,21 @@ STEP 출력, undo/replay.
    묻는 더 강한 게이트가 가능하지만, **표현식을 바꾸면 노드 인구가 움직인다** — 두 ★★ 주석의
    경고 그대로, 교체는 census 관문 동반 필수(S9 에서 기록만).
 12. **정점 캐시엔 «버리고 재생» 보증이 없다(S7)** — `rebuild_edge_cache` 의 정점판을 짓지
-   않았다: 3b(좌표 재생)가 ⏸ 이고, 발견 좌표는 배열이 공들여 만든 값(1992 중 238 이 순진
-   Cramer 와 다름)이며 seam 좌표는 M6 까지 load-bearing 이다. 정점 `D≠0` 의 완전한 유리수
-   단언(문서 :85 의 «공짜 단언»)도 같은 이유로 유예 — 오늘은 `push_vertex` 의 핸들 상이성
-   debug_assert 까지. 좌표 재생이 생기는 자리(M6/판정 통합)에서 셋을 함께 연다.
+   않았다. 정점 `D≠0` 의 완전한 유리수 단언(문서 :85 의 «공짜 단언»)도 같은 이유로 유예 —
+   오늘은 `push_vertex` 의 핸들 상이성 debug_assert 까지.
+
+   ⚠★★★ **정정(2026-09-11) — 여기 적혀 있던 근거 셋이 전부 지나갔다.** 원문은 *"3b(좌표 재생)가
+   ⏸ 이고, 발견 좌표는 배열이 공들여 만든 값(1992 중 238 이 순진 Cramer 와 다름)이며 seam 좌표는
+   M6 까지 load-bearing 이다 … 좌표 재생이 생기는 자리(M6/판정 통합)에서 셋을 함께 연다"* 였다.
+   - **3b 는 절반 섰다** — §이행 3b 행: 묻는 문(`nacre_ops::realize_vertex{,_decimal}`)은 섰고
+     덮어쓰기가 남았다. ⇒ 「⏸ 이므로」는 더 이상 근거가 아니다.
+   - **238/1,992 는 «순진 Cramer» 와의 차이였다** — 항목 15 가 그 근거를 반증했고, 칸 ㊵ 가
+     정확 반올림 실현으로 실측했다: 축정렬·불리언 인구는 **48/48 · 96/96 일치**, 기울어진 프레임은
+     **12/12 불일치(최대 4 ulp)** ⇒ 그쪽에서는 **캐시가 틀린 쪽**이다.
+   - **M6 는 도착했다** — `OnSeam` 의 좌표는 `CylinderDef` 로 정확히 지정된다(§최종 타입).
+   ⇒ 남은 것은 「보증이 없다」는 **사실**이지 그 근거들이 아니다. 정점판 재생(=`refine_caches`)은
+   **「8·반전」 뒤 곡면 실현과 함께** 열린다 — 그때 캐시가 실현의 메모가 되고 계약이 한 문장이 된다
+   (*"모든 `vertex_point(v)` 가 `realize_vertex(v, NearestF64)` 와 같아지게 한다"*).
 13. **reuse 의 발견-정점 갈래는 아직 포기다(S7)** — `solid_points` 는 측정 좌표를 만나면
    `None`(→ Arrange). `nacre-cip` 의 `ImplicitPoint`(세 평면의 암시적 점)로 갈아타면 융합
    fold 의 클래스 재사용이 불리언 **결과** 피연산자에도 걸린다 — 판정 기계 교체라 행동
