@@ -396,7 +396,21 @@ pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Op
     if !(-1200..=1200).contains(&k) {
         return None;
     }
-    let v = m * 2f64.powi(-k as i32);
+    // ⚠★★★ **Scaled in steps, because `2f64.powi` underflows before the product does.** `m` is
+    // ~2⁵³, so `m · 2⁻ᵏ` can be an ordinary `f64` while `2⁻ᵏ` alone is zero: measured, `2⁻¹⁰⁰⁰` —
+    // a normal `f64` at 9.33e-302 — came back **0.0**, and so did every subnormal. A silent wrong
+    // answer, not a refusal. Powers of two are exact, so splitting the scale costs nothing and
+    // the value underflows only where it genuinely should.
+    //
+    // ★ Third place in this cell where a `2f64.powi` of a realization-sized exponent was wrong
+    // (`rad_upper_big`, `Realized::to_f64`'s error readout, here).
+    let mut v = m;
+    let mut rem = -k;
+    while rem != 0 && v != 0.0 && v.is_finite() {
+        let step = rem.clamp(-1000, 1000);
+        v *= 2f64.powi(step as i32);
+        rem -= step;
+    }
     v.is_finite().then_some(v)
 }
 
@@ -6468,6 +6482,23 @@ mod decimal_realization {
         }
         println!("boundary agreements={carries}");
         assert_eq!(bad, 0, "{bad} disagreements with the Rat oracle");
+    }
+
+    /// A value below `2⁻¹⁰²²` is still a value — the scale must not underflow before it does.
+    ///
+    /// `2⁻¹⁰⁰⁰` is an ordinary normal `f64`; an earlier spelling answered `0.0` for it and for
+    /// every subnormal, because `2f64.powi(-k)` flushed before the product did.
+    #[test]
+    fn a_tiny_rational_still_names_its_f64() {
+        let one = BigInt::from(1);
+        let at = |e: usize| nearest_f64_big(&one, &(BigInt::from(1) << e));
+        assert_eq!(at(1000), Some(2f64.powi(-500) * 2f64.powi(-500))); // normal
+        assert_eq!(at(1040), Some(2f64.powi(-520) * 2f64.powi(-520))); // subnormal
+        assert_eq!(at(1074), Some(f64::from_bits(1))); // the smallest subnormal
+        assert_eq!(at(1100), Some(0.0)); // genuinely below the range
+        // And the ordinary range is unmoved.
+        assert_eq!(at(0), Some(1.0));
+        assert_eq!(at(10), Some(1.0 / 1024.0));
     }
 
     /// The BigInt road must agree with the `Rat` road wherever both can speak.

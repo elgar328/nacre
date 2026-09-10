@@ -76,6 +76,15 @@ pub enum RealizeError {
     WideUnderMotion,
     /// The vertex's motion chain could not be rebuilt exactly.
     NoMotionChain,
+    /// A curved definition (`OnSeam`, `Branch`) did not resolve into a point.
+    ///
+    /// ⚠ **This is a bag, and saying so is the point.** It covers: a carrier that cannot be
+    /// stated in the world exactly, a cap plane that is not perpendicular to the axis (so it
+    /// bounds no rim), a `root` that does not match the kind of crossing the carriers actually
+    /// make (a `Double` asked of a `Pair`), and rational overflow on the way. Each deserves its
+    /// own name; none of them is [`Self::NoMeet`], which is a *different* function declining —
+    /// `Model::vertex_meet` is never called on this road.
+    NoCurvedPoint,
     /// The realization ladder reached its ceiling without deciding what was asked.
     Undecided,
 }
@@ -102,10 +111,23 @@ impl Realized {
                 let mut e = [0.0; 3];
                 for k in 0..3 {
                     v[k] = nacre_scalar::round_to_f64(&p[k].0, p[k].1, *prec)?;
-                    // `2^exp2` is an upper bound on the radius and exactly representable — the
-                    // same bound `rad_upper_big` rounds with, so the reported error can never be
-                    // tighter than the one the decision was made against.
-                    e[k] = p[k].1.exp2().map_or(0.0, |x| 2f64.powi(x as i32));
+                    // `2^exp2` is an upper bound on the radius — the same bound `rad_upper_big`
+                    // rounds with, so the reported error can never be tighter than the one the
+                    // decision was made against.
+                    //
+                    // ⚠★★★ **And it must never flush to zero.** `2f64.powi` underflows below
+                    // `2⁻¹⁰⁷⁴`, and a realization at 4096 bits carries a radius near `2⁻⁴⁰⁹¹`:
+                    // measured, every coordinate reported `0e0` — which is exactly what the
+                    // **exact** arm reports, so a caller could not tell an irrational
+                    // realization from a rational one. Clamping widens the bound, which is the
+                    // safe direction; `Mag::ZERO` (`exp2() == None`) stays the only honest zero.
+                    // Same shape as the wall `rad_upper_big` had, one line away from it.
+                    e[k] = match p[k].1.exp2() {
+                        None => 0.0,
+                        Some(x) => 2f64
+                            .powi(x.clamp(-1074, 1023) as i32)
+                            .max(f64::from_bits(1)),
+                    };
                 }
                 Some((v, e))
             }
@@ -170,7 +192,6 @@ fn climb(
     v: Handle<Vertex>,
     decided: impl Fn(Realized) -> Option<Realized>,
 ) -> Result<Realized, RealizeError> {
-    let mut last = RealizeError::Undecided;
     for bits in LADDER {
         match build(model, v, bits) {
             Ok(r) => {
@@ -184,9 +205,9 @@ fn climb(
             // A structural refusal does not improve with precision.
             Err(e) => return Err(e),
         }
-        last = RealizeError::Undecided;
     }
-    Err(last)
+    // Every rung built, none decided — the only thing running out of ladder can mean.
+    Err(RealizeError::Undecided)
 }
 
 /// One realization at `bits`, from the definition.
@@ -204,10 +225,10 @@ fn build(model: &Model, v: Handle<Vertex>, bits: usize) -> Result<Realized, Real
     }
 }
 
-fn curved(p: Option<[Bounded; 3]>, _bits: usize) -> Result<Realized, RealizeError> {
+fn curved(p: Option<[Bounded; 3]>, bits: usize) -> Result<Realized, RealizeError> {
     Ok(Realized(Arm::Approached(
-        p.ok_or(RealizeError::NoMeet)?,
-        _bits,
+        p.ok_or(RealizeError::NoCurvedPoint)?,
+        bits,
     )))
 }
 

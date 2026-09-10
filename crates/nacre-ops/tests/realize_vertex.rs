@@ -438,7 +438,18 @@ fn every_vertex_variant_answers() {
                 );
                 branch += 1;
             }
-            Err(_) => refused += 1,
+            // ★ **Which refusal, not just that there was one.** A plane pair whose meet line
+            // misses the cylinder is a *curved* definition failing to resolve; `vertex_meet` is
+            // never called on this road, so answering `NoMeet` would name a decline that did not
+            // happen. Planted: swapping the two left every other test here green.
+            Err(e) => {
+                assert_eq!(
+                    e,
+                    RealizeError::NoCurvedPoint,
+                    "a branch pair that does not cross should say so in its own words"
+                );
+                refused += 1;
+            }
         }
     }
     println!("answered: three_plane={three} on_seam={seam} branch={branch} (refused {refused})");
@@ -532,6 +543,45 @@ fn the_cache_is_not_always_nearest() {
     }
 }
 
+/// ★★★ **A realized coordinate never reports the error an exact one does.**
+///
+/// `to_f64` hands back `(value, error)`, and `0.0` there means *exact* — the rational arm's
+/// promise. An approached coordinate must not be able to say it: at 4096 bits the radius is near
+/// `2⁻⁴⁰⁹¹`, and reading it out through `2f64.powi` flushed every coordinate to `0e0`. Measured,
+/// shipped, and caught only by this file's audit — so the lock lives here now.
+#[test]
+fn an_approached_coordinate_never_claims_to_be_exact() {
+    let m = tilted_frame(1);
+    let (mut approached, mut exact) = (0usize, 0usize);
+    for vh in live_vertices(&m) {
+        for bits in [128usize, 512, 1024, 2048, 4096] {
+            let Ok(r) = realize_vertex(&m, vh, Precision::Bits(bits)) else {
+                continue;
+            };
+            let Some((_, e)) = r.to_f64() else { continue };
+            if r.is_exact() {
+                assert_eq!(e, [0.0; 3], "an exact coordinate carries no error");
+                exact += 1;
+                continue;
+            }
+            for c in e {
+                assert!(
+                    c > 0.0,
+                    "a realization at {bits} bits reported error {c:e} — that is the exact \
+                     arm's answer, and this coordinate is not exact"
+                );
+            }
+            approached += 1;
+        }
+    }
+    // Both arms have to be present, or this measures one of them and calls it both.
+    assert!(approached > 8, "only {approached} approached readings");
+    assert!(
+        exact > 0,
+        "no exact reading — the negative control is missing"
+    );
+}
+
 /// ★★ **Refusals are named, and never fall back to the cache.**
 ///
 /// A "there is none" lock needs its positive twin in the same test, or a door that refused
@@ -550,6 +600,7 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
                         RealizeError::NoMeet
                             | RealizeError::WideUnderMotion
                             | RealizeError::NoMotionChain
+                            | RealizeError::NoCurvedPoint
                             | RealizeError::Undecided
                     ),
                     "unnamed refusal {e:?}"
