@@ -674,3 +674,59 @@ fn an_exact_vertex_prints_exact_digits() {
         );
     }
 }
+
+/// ★★★★ **The deepest claim this door makes: a decided digit is a true digit.**
+///
+/// Everything else rests on the error radius really bounding the error — under-report it and
+/// `round_to_digits` accepts a place the definition never determined, which is a *wrong digit
+/// printed confidently*, the worst thing this feature could do. The radius comes from arithmetic
+/// written for this cell (`mul_bounded`/`add_bounded`/`rat_bounded`), so it is not something to
+/// take on faith.
+///
+/// The oracle is the same door at 8192 bits. Compared in **decimal**: an `f64` comparison
+/// collapses every difference a high-precision radius is about, and an earlier spelling of this
+/// probe reported "0 violations" while measuring nothing.
+///
+/// ★★ **Calibrated, because "0 wrong" is only worth what the instrument can see.** Shrinking the
+/// radius by 2⁻²⁰ already produces 12 wrong digits here; 2⁻⁶⁰ gives 48, 2⁻¹²⁰ gives 192. So the
+/// bound is honest to within about 20 bits of the true error — tight, not vacuously wide. (Three
+/// smaller mutations — dropping the product's rounding, the operand cross-terms, or the rational
+/// conversion's own half-ulp — leave it green, which says those terms are slack inside that
+/// margin, not that the test is asleep.)
+#[test]
+fn a_digit_this_door_decides_is_the_coordinates_own() {
+    let (mut checked, mut wrong) = (0usize, 0usize);
+    for m in [cylinder(), tilted_frame(1)] {
+        for vh in live_vertices(&m) {
+            let Ok(truth) = realize_vertex(&m, vh, Precision::Bits(8192)) else {
+                continue;
+            };
+            if truth.is_exact() {
+                continue; // an exact ratio has no radius to be wrong about
+            }
+            for bits in [64usize, 80, 96, 128, 192, 256, 512] {
+                let Ok(r) = realize_vertex(&m, vh, Precision::Bits(bits)) else {
+                    continue;
+                };
+                for places in [5usize, 15, 25, 40, 70, 120] {
+                    let (Some(got), Some(want)) = (r.to_decimal(places), truth.to_decimal(places))
+                    else {
+                        continue;
+                    };
+                    for k in 0..3 {
+                        checked += 1;
+                        wrong += usize::from(got[k] != want[k]);
+                    }
+                }
+            }
+        }
+    }
+    assert!(
+        checked > 300,
+        "only {checked} comparisons — instrument too small"
+    );
+    assert_eq!(
+        wrong, 0,
+        "{wrong} of {checked} decided digits were not the coordinate's"
+    );
+}
