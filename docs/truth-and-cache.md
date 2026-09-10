@@ -561,7 +561,7 @@ pub enum Decision {
 | 3a | `Vertex.definition` 을 `point` 옆에 추가 — 세 origin 100% 커버 실측 | ✔ 2026-08-01 |
 | 2 | `Motion::Frame` — 기울어진 면 위 스케치가 그 평면 자신의 프레임에서 | ✔ 2026-08-03 |
 | 1″ | 평면의 진실을 점 셋으로 (계수는 유도된 이름으로 강등) | ✔ 2026-08-04 |
-| 3b | 좌표 재생 — 재보고 보류: 공유 프레임 풀이 + 모션 재생 = 비트 동일(8/8)로 목적지와 `Pt3` 재생의 무충돌만 확인해 둠 | ⏸ |
+| 3b | 좌표 재생 — **묻는 문은 섰고 덮어쓰기는 아직**(2026-09-11, 칸 ㊵). `nacre_ops::realize_vertex{,_decimal}` 이 정의에서 좌표를 실현하고 한 번만 반올림한다(변종 셋 전부: `ThreePlane`·`OnSeam`·`Branch`). ★ **그리고 재보고가 났다**: 축정렬 인구는 캐시가 이미 최근접 f64(48/48 비트 동일, 7비트 좌표), **기울어진 프레임 인구는 대조 가능한 12개 «전부» 최근접이 아니고 최대 4 ulp** — 59비트 좌표라 f64 맨티사를 넘는다. 남은 절반은 캐시 덮어쓰기(`refine_caches`) | ⏸ |
 | S1 | `Store<Surface>`·`Store<MotionNode>` 봉인 — 좁은 접근자(`surface`/`surface_count`/`motion`) + `compile_fail,E0616` 잠금. 기록 없는 surface 는 크레이트 밖에서 표현 불가(테스트 전용 입구 `push_surface_unrecorded` 만 예외, `test-util` 게이트) | ✔ 2026-08-05 |
 | S2 | **임의정밀 이름** — `PlaneName{Narrow\|Wide}` 그릇(`plane_name_big` 꼬리의 `to_i128` 분기 하나), `surface_coeffs`→`surface_name` 개명, Wide 도 intern. **동일성 팔 절단**: 점 가진 평면의 이름 실패가 공선뿐이 됨 — ★ f64 폴백 연쇄의 **프레임 팔은 S4 몫**(Wide 는 `narrow()=None` 이라 프레임·지름길을 안 연다, 반증표 그대로). 잠금: 스칼라 2(`a_plane_too_wide…`·narrow/wide 합의) + topo 1(`a_wide_plane_interns_but_opens_no_shortcut`) | ✔ 2026-08-05 |
 | S4 | **프레임 팔 절단** — `Motion::Frame{plane, placement, flip}` + `FramePlacement{Canonical\|Named}`. `Canonical`(기본)은 사슬 펼침 시 유도: 좁으면 오늘의 `plane_frame_default` 그대로(비트 보존 — 유도의 이사), **넘치면 wide 도로**(`MoveNode::FrameWide` = `PlaneFrame` 의 BigInt 쌍둥이, 실현은 `HpIv` 전 구간 + f64 캐시는 128비트 실현의 좁힘). Wide 이름·`n·n` 넘침(1.6%) 인구의 프레임이 열려 §12 연쇄의 프레임 팔이 닫힘. 잠금: cip 2(on-plane·tol-bounds wide 쌍둥이) + ops 3(`a_wide_plane_hosts_a_canonical_frame`·nn-넘침 개통·**종단** `a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road`) + census `wf` 가족. ★ 계획의 "심기 + 공개 SketchFrame 통일"은 **S9 로 분리**(아래) | ✔ 2026-08-05 |
@@ -931,7 +931,8 @@ STEP 출력, undo/replay.
    `check()` 가 단순성(≠0 면적)을 진실 위에서 보증하므로 지금은 건전하지만, f64 폴백 소멸
    (S6 이후)과 함께 재검할 것.
 
-15. **`tess` 는 «수치 정밀도» 손잡이가 없다 — 내보내기가 그것을 필요로 한다** (2026-09-10, 논의만).
+15. **`tess` 는 «수치 정밀도» 손잡이가 없다 — 내보내기가 그것을 필요로 한다** (2026-09-10, 논의만;
+    ★ 2026-09-11 칸 ㊵ 로 **정점 쪽 절반이 섰다** — 아래 「칸 ㊵ 가 한 것」).
     ⚠ **두 손잡이를 가르는 것이 이 항목의 전부다.**
 
     | | 무엇 | 오늘 |
@@ -961,6 +962,33 @@ STEP 출력, undo/replay.
     ☑ 그리고 **잠금이 공짜로 딸려 온다**: 실현이 유일하므로 ⑴ 같은 모델은 **바이트 동일**한 파일을
     내고 ⑵ 실현 정밀도를 **두 배로 올려도 f64 결과가 안 바뀌어야** 한다(이미 최근접이므로).
     그 둘이 「이건 정밀도 «기능» 이 아니라 정확성 «고침» 이다」의 증거다.
+
+    #### 칸 ㊵ 가 한 것 (2026-09-11) — **정점 쪽 절반**
+
+    `nacre_ops::realize_vertex{,_decimal}` + 앱의 `v.digits(n)`. 정의에서 실현하고 한 번만
+    반올림한다. **캐시는 한 비트도 안 바꿨다**(덮어쓰기는 3b 의 남은 절반).
+
+    ★★★ **그리고 이 문서가 「원리로만」 적어 둔 것이 정점에서 실측됐다.**
+
+    | 인구 | 정점 폭 | 대조 | **캐시가 최근접** |
+    |---|---|---|---|
+    | 축정렬 상자 · 두 번 불린 | 7비트 | 48 | 48/48 |
+    | 기울어진 프레임 위 프리즘 | **59비트** | 12 | **0/12** — 전부, 최대 **4 ulp** |
+
+    가르는 것은 맨티사다: 7비트는 f64 에 정확히 들어 틀릴 수가 없고, 59비트는 안 들어간다 —
+    그리고 거기서 캐시는 **최근접도 아니다**.
+
+    ☑ 새로 선 것: `round_to_digits`(`round_to_f64` 의 십진 쌍둥이 — 못 정하면 «모른다») ·
+    `decimals_of_ratio`(유리수는 긴 나눗셈, 찍는 자리가 좌표 자신의 자리) · `nearest_f64_big` ·
+    곡선 정점용 유계 산술(`sqrt_bounded`·`realize_quad`·`realize_seam_point`) ·
+    `WitnessPoint::realize(prec)`(cip 의 유일한 새 공개 표면, 새 타입 0개).
+
+    ⚠ **고친 벽 하나**: `rad_upper_big` 이 `2^e` 를 f64 로 만들며 `|e| > 1000` 을 거절해서,
+    **1024비트 실현이 「모른다」로** 나오고 있었다 — 사다리를 오를수록 답이 나빠졌다. BigFloat 에서
+    조립하도록 고쳤다.
+
+    ⚠ **남은 것은 이 항목의 본체**: `tess` 의 손잡이 B 와 **곡선 위 샘플점**. 위 표가 말하듯 정점은
+    대부분 안 움직이고, OBJ 는 거의 전부 샘플점이다.
 
     #### 설계 (2026-09-10 이어진 논의로 확정된 모양 — 아직 아무것도 안 지음)
 
