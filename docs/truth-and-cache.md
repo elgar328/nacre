@@ -961,3 +961,55 @@ STEP 출력, undo/replay.
     ☑ 그리고 **잠금이 공짜로 딸려 온다**: 실현이 유일하므로 ⑴ 같은 모델은 **바이트 동일**한 파일을
     내고 ⑵ 실현 정밀도를 **두 배로 올려도 f64 결과가 안 바뀌어야** 한다(이미 최근접이므로).
     그 둘이 「이건 정밀도 «기능» 이 아니라 정확성 «고침» 이다」의 증거다.
+
+    #### 설계 (2026-09-10 이어진 논의로 확정된 모양 — 아직 아무것도 안 지음)
+
+    ⚠ **첫 정리에서 내가 두 번 틀렸고 사용자가 둘 다 잡았다.**
+    - *「캐시를 고치면 기하가 망가진다」* → **틀림.** 판정은 캐시를 **1단 f64 필터**로만 쓰고
+      (규칙 5) **증명은 진실에서** 나온다 ⇒ **더 정확한 좌표 + 정직한 `tol` 이면 필터가 좁아질
+      뿐 답이 나빠질 수 없다**(상승도 준다). 3b 가 보류인 근거는 *"**naive** re-solve 와
+      238/1,992 가 다르다"* 인데, **정확 반올림 실현은 naive 재풀이가 아니다**. `OnSeam` 의 doc
+      자신이 *"a unique point, **exactly designated** … 정의는 완성됐고 없는 건 재생 기계"* 라
+      적었다 ⇒ **불건전해서가 아니라 아무도 짓고 검증하지 않아서** 보류다.
+    - *「출력 전용 실현이 유일한 안전한 길」* → **불필요.** 캐시는 아레나가 아니라 덮어써도 되고,
+      덮어쓰는 편이 **덤이 크다**(화면·tess·STEP·OBJ 가 한 값을 공유 ⇒ 서로 어긋날 자리가 없음).
+
+    ★ **모양**: 정제를 «내보내기 안»이 아니라 **자기 연산**으로 둔다.
+    ```rust
+    model.refine_caches(bits);                     // 명시적 — 부르는 쪽이 정한다
+    let step = to_step(&model);                    // 서명 무변 (오늘 둘 다 &Model — 실측)
+    let obj  = tessellate(&model, cfg)?.to_obj();  // 무변
+    ```
+    ⚠ 내보내기가 `&mut Model` 을 받으면 **이름이 약속하지 않은 일**을 한다(그 뒤 불리언의 판단이
+    달라질 수 있다). ⚠ 그리고 128비트 실현은 f64 캐시보다 **훨씬 느리다** — 화면 갱신마다 부르면
+    안 된다. 그 비대칭이 «명시적 연산» 이어야 하는 둘째 이유다.
+    ⚠ **세 캐시 전부**: 정점 · 간선(`derive_edge_curve` 가 «carriers and endpoints» 에서 유도 ⇒
+    `rebuild_edge_cache` 가 이미 있다) · **곡면**(`SurfaceCache.coeffs` — STEP 의 평면 계수가
+    여기서 나온다). 정점만 하면 **파일이 자기모순**이 되고 OCCT 오라클이 *"vertex not on face"* 로 잡는다.
+
+    ★★ **공개 문은 하나, 정밀도는 «이름 있는 인자»로.**
+    ```rust
+    pub enum Precision { NearestF64, Bits(usize) }   // 나중에 Digits(n) 도
+    impl Model {
+        pub fn realize_vertex(&self, v: Handle<Vertex>, p: Precision) -> Realized;
+        pub fn realize_surface(&self, s: Handle<Surface>, p: Precision) -> RealizedPlane;
+    }
+    pub struct Realized { coord: [BigFloat; 3], tol: [Mag; 3] }  // 값+tol 한 덩이 (규칙 4)
+    ```
+    ⇒ 셋이 **같은 문의 소비자**가 된다: `refine_caches` 는 `NearestF64` 로 부르고, 고정밀 STEP 은
+    `Bits(n)` 로 불러 **f64 를 안 거치고** 자릿수를 찍고, «점 하나만 아주 정밀히» 도 그 자리에서 열린다.
+    ★ 그러면 캐시가 «별개의 진실» 이 아니라 **실현의 «메모»** 가 되고, `refine_caches` 의 계약이
+    한 문장이 된다 — **«모든 `vertex_point(v)` 가 `realize_vertex(v, NearestF64)` 와 같아지게 한다»**
+    — 그 문장이 곧 잠금이고 멱등도 거기서 따라 나온다.
+
+    ⚠ **이름 둘을 재서 골랐다.** `_at` 은 안 된다 — 이 커널에서 `at` 은 **위치의 낱말**이다
+    (`point_at` ×12 · `normal_at` ×6 · `surface_handle_at` ×4 …). 반대로 `realize_*` 는 이미
+    «정의를 정밀도로 값이 되게 한다» 는 뜻으로 쓰이고 **전부 `prec` 를 받는다**
+    (`realize_cos_sin(prec)` · `realize_inv_sqrt(v, prec)`). ☑ 판정과의 혼동은 **암묵적 기본값**이
+    원인이었지 낱말이 아니다 — `Precision` 이 항상 명시되면 기본값이 없다. 판정은 이 문을 안 부르고
+    자기 어휘(`hp_coord` · `judge_precision` · `trial_bound`)를 쓴다.
+
+    ★★★ **먼저 잴 것 — 짓기 전에.** *"238 of 1,992 differ from a naive re-solve"* 의 **238건이
+    정확 반올림 실현으로는 어디로 가는가**. 같으면 정제는 거의 무동작이고 얻는 것은 곡선 샘플뿐이며,
+    다르면 **어느 쪽이 옳은지가 드러난다**(진실에서 나온 쪽이 옳다) ⇒ 그 자체가 버그를 찾는 계기다.
+    그 수가 이 일의 크기와 값을 정한다.
