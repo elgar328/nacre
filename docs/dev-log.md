@@ -19623,6 +19623,19 @@ vitest **261/261**(두 번) · `build` 0 · `ZZ` 0 · **커널 무변**.
    문장을 주려면 무엇이 필요한지»를 그 자리에 적었다.
 3. ☑ 다시 잰 것: 연속 문자열의 공백(이중 공백·줄바꿈 없음) · 커널 워킹트리 0 · 심은 변종 잔재 0.
 
+### 둘째 점검이 찾은 것 (`4f73454`)
+
+★★ **사용자가 가진 낱말로 말하지 않았다.** `NonPlanarFace`가 *"carries no sketch frame"*과
+*"the quadric milestones"*로 자기를 설명했다 — 앞은 kit이 좌표계를 부르는 말, 뒤는 **로드맵 이름**.
+**스크립트 저자가 읽는 문서에 대고 재니**: `quadric`은 **0회**, `frame`은 구현 주석 안에만 나온다.
+형제 문장들은 평범한 진술을 지킨다(*"the result pinches at a single vertex"* ·
+*"a crossing through the axis builds"*) ⇒ 그렇게 다시 썼다:
+*"a sketch stands on a flat face — this surface is curved, and features on curved faces are not
+built yet."*
+☑ **`the exact decimal window`는 남긴다** — 그것도 문서엔 없지만 **스케치 층이 이미 그 어구를 출하**
+하고 있고, 한 관념에 두 문장을 두는 것이 낯선 명사 하나보다 나쁘다.
+☑ 그리고 확인: `ArcsMeetAtVertex`의 문장은 이동 중 **글자 하나 안 바뀌었다**(`a609fe4~1`과 대조).
+
 ### 다음 칸으로
 ☐ `syntax.md`의 예제를 컴파일하기(어제 지은 기계로 — `ts` 블록 25 중 10이 홀로 깨끗, 14는 조각,
    1은 문서가 스스로 «Reserved»라 적음 ⇒ 문서가 «돌아가는 예제»를 표시해 주면 닫힌다) · M6b.
