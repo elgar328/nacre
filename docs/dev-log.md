@@ -19882,3 +19882,28 @@ silently while every assertion stays green"* 이라 적어 둔 그 실패다. �
    ☑ 형제들(`vertices()`·`faces()`·`bodies()`)은 다시 읽으므로 영향 없다 — `digits` 만 «부르는 쪽이
    붙잡아 둔 인덱스»를 받는 유일한 질의다. `plane({through})` 이 안전한 이유도 여기서 나온다:
    그건 **기록**되어 그 인덱스가 유효했던 자리에서 재생된다.
+
+### 감사 넷째 라운드 — **그 타입이 이미 그 이유로 존재했다**
+
+이번엔 제가 유일하게 건드린 **기존 공유 코드**(`rad_upper_big` → `round_to_f64` → cip 의 좌표 읽기)를
+쳤다.
+
+☑ **무변임을 측정으로 확인했다**: 전 스위트에 계기를 달아 옛 f64 경로와 새 BigFloat 구성을 대조 —
+**DIFFER 0**(비트 동일), 그리고 `|e| > 1000` 은 **841건 전부 내 테스트**에서만 나온다(기존 호출자 0).
+그 doc 의 *"cannot happen for prec ≤ 256"* 이 기존 호출자에 대해 참이었다.
+⚠ **다만 첫 측정이 무효였다**: `cargo test` 는 통과한 테스트의 `eprintln!` 을 버린다 —
+`-- --nocapture` 없이 「0/0」을 읽었고, 계기가 도는지 확인해서야 알았다(내 기억에 있는 그 함정).
+
+★★★★ **그리고 로그의 기존 테스트 이름 하나가 이 칸 전체를 다시 읽게 했다** —
+`mag::tests::a_deep_ladder_radius_does_not_underflow_to_zero`. 그 doc:
+> *"The reason this type exists: a radius the ladder actually produces must not become zero.
+> An `f64` cannot hold `2⁻²⁰⁴⁸`; this must… the f64 this replaces does underflow."*
+
+⇒ **`Mag` 이 바로 이 문제 때문에 있다.** 1라운드의 결함 셋은 전부 «그 타입을 떠나 f64 거듭제곱으로
+돌아간» 것이었고, 내가 1라운드에 넣은 **클램프는 떠난 것에 대한 땜빵**이었다.
+`Realized::to_f64` 의 오차를 **`Mag` 으로 내보내자** 클램프가 사라졌다 — 변환이 없으니 언더플로할
+것도 없다. 값은 f64 여야 하지만(그게 요청이다) **한계는 그럴 필요가 없고, 사다리 끝에서는 그럴 수도
+없다.**
+
+☑ 그리고 1라운드에 「기존 코드라 범위 밖」이라 넘긴 두 자리(`scalar:2825`·`3271`)는 **고정 `P = 128`**
+을 쓰고 내 사다리가 지나지 않는다 — 진짜로 범위 밖임을 확인했다.

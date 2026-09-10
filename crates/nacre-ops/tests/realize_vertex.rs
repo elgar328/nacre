@@ -290,7 +290,12 @@ fn a_box_realizes_to_exactly_what_the_cache_holds() {
         // only because the arm used to claim it unconditionally.
         for k in 0..3 {
             let dyadic = format!("{:.60}", v[k]) == r.to_decimal(60).expect("exact")[k];
-            assert_eq!(e[k] == 0.0, dyadic, "error {} vs dyadic {dyadic}", e[k]);
+            assert_eq!(
+                e[k].is_zero(),
+                dyadic,
+                "error {:?} vs dyadic {dyadic}",
+                e[k]
+            );
         }
         n += 1;
     }
@@ -587,12 +592,18 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
                 for k in 0..3 {
                     let readout_is_the_value = format!("{:.60}", v[k]) == d[k];
                     match readout_is_the_value {
-                        true => assert_eq!(e[k], 0.0, "a representable rational has no error"),
+                        true => assert!(e[k].is_zero(), "a representable rational has no error"),
                         false => {
-                            assert!(e[k] > 0.0, "a rounded readout reported no error: {}", d[k]);
                             assert!(
-                                e[k] <= (v[k].abs() * f64::EPSILON).max(f64::MIN_POSITIVE),
-                                "error {} is wider than an ulp of {}",
+                                !e[k].is_zero(),
+                                "a rounded readout reported no error: {}",
+                                d[k]
+                            );
+                            assert!(
+                                e[k].lt(
+                                    nacre_scalar::Mag::of(v[k]).times(nacre_scalar::Mag::pow2(-51))
+                                ),
+                                "error {:?} is wider than an ulp of {}",
                                 e[k],
                                 v[k]
                             );
@@ -604,9 +615,9 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
             }
             for c in e {
                 assert!(
-                    c > 0.0,
-                    "a realization at {bits} bits reported error {c:e} — that is the exact \
-                     arm's answer, and this coordinate is not exact"
+                    !c.is_zero(),
+                    "a realization at {bits} bits reported no error — that is the exact arm's \
+                     answer, and this coordinate is not exact"
                 );
             }
             approached += 1;

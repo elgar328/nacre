@@ -25,7 +25,7 @@
 
 use crate::rotated_vertex::{motion_chain, replay};
 use nacre_cip::WitnessPoint;
-use nacre_scalar::{Bounded, MeetPoint};
+use nacre_scalar::{Bounded, Mag, MeetPoint};
 use nacre_store::Handle;
 use nacre_topo::{Model, Vertex};
 use num_bigint::BigInt;
@@ -94,14 +94,24 @@ pub enum RealizeError {
 const LADDER: [usize; 6] = [128, 256, 512, 1024, 2048, 4096];
 
 impl Realized {
-    /// The nearest `f64` per coordinate, with the error radius each carries (`0.0` when the value
-    /// is exact). `None` where the realization does not name one — which cannot happen on the
-    /// exact arm.
-    pub fn to_f64(&self) -> Option<([f64; 3], [f64; 3])> {
+    /// The nearest `f64` per coordinate, with the error each carries. `None` where the
+    /// realization does not name one.
+    ///
+    /// ★★★ **The error comes back as [`Mag`], not `f64`, and that is what that type is for.**
+    /// `nacre-scalar`'s own test says so: *"the reason this type exists: a radius the ladder
+    /// actually produces must not become zero. An `f64` cannot hold `2⁻²⁰⁴⁸`."* A realization at
+    /// 4096 bits carries exactly such a radius, so handing the bound over as an `f64` forces the
+    /// conversion the type was built to prevent — an earlier spelling did, reported `0e0`, and
+    /// became indistinguishable from the exact arm's honest zero. Clamping papered over that;
+    /// staying in `Mag` removes it.
+    ///
+    /// The *value* is an `f64` because that is what the caller asked for. The *bound* on it need
+    /// not be one, and at the top of the ladder cannot be.
+    pub fn to_f64(&self) -> Option<([f64; 3], [Mag; 3])> {
         match &self.0 {
             Arm::Exact(n, d) => {
                 let mut v = [0.0; 3];
-                let mut e = [0.0; 3];
+                let mut e = [Mag::ZERO; 3];
                 for k in 0..3 {
                     // ⚠★★★ **An exact realization is not an exact `f64`.** The rational is the
                     // truth; reading it out at 53 bits rounds, and a 59-bit coordinate does not
@@ -111,37 +121,25 @@ impl Realized {
                     // a new place, and the audit lock written for it *enforced* the lie.
                     let (val, no_loss) = nacre_scalar::nearest_f64_big_exact(&n[k], d)?;
                     v[k] = val;
-                    // Half an ulp bounds a correct rounding; floored at the smallest subnormal so
-                    // a tiny coordinate cannot report zero error by underflow.
+                    // Half an ulp bounds a correct rounding — as a `Mag`, so a tiny coordinate's
+                    // bound cannot vanish on the way out either.
                     e[k] = match no_loss {
-                        true => 0.0,
-                        false => (val.abs() * f64::EPSILON / 2.0).max(f64::from_bits(1)),
+                        true => Mag::ZERO,
+                        false => Mag::of(val).times(Mag::pow2(-53)),
                     };
                 }
                 Some((v, e))
             }
             Arm::Approached(p, prec) => {
                 let mut v = [0.0; 3];
-                let mut e = [0.0; 3];
+                let mut e = [Mag::ZERO; 3];
                 for k in 0..3 {
                     v[k] = nacre_scalar::round_to_f64(&p[k].0, p[k].1, *prec)?;
-                    // `2^exp2` is an upper bound on the radius — the same bound `rad_upper_big`
-                    // rounds with, so the reported error can never be tighter than the one the
-                    // decision was made against.
-                    //
-                    // ⚠★★★ **And it must never flush to zero.** `2f64.powi` underflows below
-                    // `2⁻¹⁰⁷⁴`, and a realization at 4096 bits carries a radius near `2⁻⁴⁰⁹¹`:
-                    // measured, every coordinate reported `0e0` — which is exactly what the
-                    // **exact** arm reports, so a caller could not tell an irrational
-                    // realization from a rational one. Clamping widens the bound, which is the
-                    // safe direction; `Mag::ZERO` (`exp2() == None`) stays the only honest zero.
-                    // Same shape as the wall `rad_upper_big` had, one line away from it.
-                    e[k] = match p[k].1.exp2() {
-                        None => 0.0,
-                        Some(x) => 2f64
-                            .powi(x.clamp(-1074, 1023) as i32)
-                            .max(f64::from_bits(1)),
-                    };
+                    // The realization's own radius, handed over unchanged — no conversion, so
+                    // nothing to underflow. That is what `Mag` is for: its own test records
+                    // that an `f64` cannot hold `2⁻²⁰⁴⁸` and a deep rung's radius is exactly
+                    // that small. An earlier spelling converted here and reported `0e0`.
+                    e[k] = p[k].1;
                 }
                 Some((v, e))
             }
