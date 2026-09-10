@@ -1008,6 +1008,21 @@ impl WitnessPoint {
         self.compute_hp(prec)
     }
 
+    /// **The coordinate realized at `prec` bits from the definition, with the error it carries** —
+    /// the door [`Self::hp_coord`] is behind, in the pair shape this workspace already hands out
+    /// publicly (`nacre_scalar::inv_sqrt_bounded` returns the same `(BigFloat, Mag)`).
+    ///
+    /// ★ **The radius is half the answer.** A value without the bound its realization cost cannot
+    /// be rounded honestly — see [`HpApprox`]'s contract: a radius invented for convenience makes
+    /// every sign above it unearned. Callers round with `nacre_scalar::round_to_f64` /
+    /// `round_to_digits`, which report *undecided* rather than picking when `prec` is short.
+    ///
+    /// ★★ Calling this at a precision the boolean is not using is safe: [`Self::hp_coord`]'s memo
+    /// is keyed by precision and recomputes rather than disturbing the cached value.
+    pub fn realize(&self, prec: usize) -> [nacre_scalar::Bounded; 3] {
+        self.hp_coord(prec).map(|a| (a.value, a.error))
+    }
+
     /// The uncached realization (the body of [`Self::hp_coord`]), **with the error it carries**.
     ///
     /// This is the same walk as [`rotate_about`](Self::rotate_about)'s tol propagation, one level

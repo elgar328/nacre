@@ -25,6 +25,7 @@ mod nesting;
 mod ops;
 mod par;
 mod planes;
+mod realize;
 /// Public because the measurements that read it live in other crates — see the module doc.
 pub mod reject_census;
 mod reuse;
@@ -43,6 +44,7 @@ pub use ops::{
     BoolKind, DatumDef, LogCell, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing,
     Ring2d, SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,
 };
+pub use realize::{Precision, RealizeError, Realized, realize_vertex, realize_vertex_decimal};
 pub use sketch::{Edge2d, SketchError, from_edges, from_rings};
 
 impl SketchPlane {

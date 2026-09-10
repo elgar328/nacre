@@ -24,6 +24,9 @@ nacre-cip = { path = "../nacre-cip", version = "0.0.0" }
 # default-on `parallel` feature, so a single-threaded / wasm build
 # (`--no-default-features`) links no rayon. `src/par.rs` is the only place the switch lives.
 rayon = { workspace = true, optional = true }
+# Exact integer coordinates: `MeetPoint::lift` hands out `(BigInt, BigInt)` and `src/realize.rs`
+# divides them. Already in the product tree through num-rational; declaring it makes that explicit.
+num-bigint = "0.4"
 
 [features]
 # Parallelize the boolean's three independent phases via rayon, and switch `WitnessPoint`'s hp cache

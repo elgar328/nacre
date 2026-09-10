@@ -673,7 +673,10 @@ pub(crate) fn collect_planes(
 /// share a wall whose two f64 images differ in the last place, and flipping such a plane to
 /// unrotated sent the merge through the exact-f64 triangle test — one body came back as two. So
 /// the world description rides *beside* the flag, and the judging road is left alone.
-fn world_plane_coeffs(model: &Model, surf: Handle<Surface>) -> Option<[nacre_scalar::Rat; 4]> {
+pub(crate) fn world_plane_coeffs(
+    model: &Model,
+    surf: Handle<Surface>,
+) -> Option<[nacre_scalar::Rat; 4]> {
     model.world_plane_name(surf)?.narrow().copied()
 }
 

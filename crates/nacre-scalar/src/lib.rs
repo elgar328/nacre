@@ -194,17 +194,30 @@ pub fn round_to_f64(mid: &BigFloat, rad: Mag, prec: usize) -> Option<f64> {
 /// because widening the interval can only cost an escalation, never buy a wrong acceptance, and
 /// `Mag` does not expose its mantissa. A power of two is exact in `BigFloat` at any precision.
 ///
-/// `None` when `2^e` is outside `f64`'s range. That cannot happen for the radii this crate
-/// produces (`prec ≤ 256` against magnitudes above `2⁻¹³³`), and returning `None` rather than
-/// silently flushing to zero is what keeps a broken premise from reading as a *tighter* interval.
+/// ★★★ **Built in `BigFloat`, not through `f64`.** An earlier spelling wrote
+/// `BigFloat::from_f64(2f64.powi(e))` and refused `|e| > 1000` — safe, because flushing a radius
+/// to zero would read as a *tighter* interval than the realization earned. But a realization at
+/// 1024 bits carries a radius near `2⁻¹⁰¹⁹`, so that refusal turned **more** precision into
+/// "undecided": climbing a ladder made the answer worse, measured. A power of two is exact in
+/// `BigFloat` at any precision, so the bound is assembled there and the range guard is gone.
+///
+/// `None` only when the exponent is absurd enough that the multiply loop would not terminate
+/// usefully — far outside anything a realization produces.
 fn rad_upper_big(rad: Mag, p: usize) -> Option<BigFloat> {
     let Some(e) = rad.exp2() else {
         return Some(BigFloat::from_f64(0.0, p)); // an exact realization: a zero radius is honest
     };
-    if !(-1000..=1000).contains(&e) {
+    if !(-1_000_000..=1_000_000).contains(&e) {
         return None;
     }
-    Some(BigFloat::from_f64(2f64.powi(e as i32), p))
+    let mut out = BigFloat::from_f64(1.0, p);
+    let mut rem = e;
+    while rem != 0 {
+        let step = rem.clamp(-1000, 1000);
+        out = out.mul(&BigFloat::from_f64(2f64.powi(step as i32), p), p, HP_RM);
+        rem -= step;
+    }
+    Some(out)
 }
 
 /// `x` rounded to 53 significant bits and read out as the `f64` with those bits.
@@ -257,6 +270,294 @@ fn to_f64_exact(x: &BigFloat) -> Option<f64> {
     Some(f64::from_bits(
         sign_bit | ((biased as u64) << 52) | ((top << 1) >> 12),
     ))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Decimal places — the twin of `round_to_f64`, and the one long division both arms share
+// ---------------------------------------------------------------------------------------------
+
+/// **A realized value and the error it carries** — the pair this crate already hands out
+/// (`inv_sqrt_bounded`), named so a consumer can hold one without naming astro-float.
+///
+/// The radius is not decoration: `round_to_f64` and `round_to_digits` both need it to say whether
+/// an answer is determined, and a value without it can only be rounded by guessing.
+pub type Bounded = (BigFloat, Mag);
+
+/// The precision `x` actually carries, in bits — the mantissa the words spell.
+fn bits_of(x: &BigFloat) -> usize {
+    x.as_raw_parts()
+        .map_or(0, |(w, _, _, _, _)| w.len() * astro_float::WORD_BIT_SIZE)
+}
+
+/// A `BigFloat` as the exact `(numerator, positive denominator)` it *is*.
+///
+/// A binary float is a dyadic rational, so this loses nothing: astro-float stores `m · 2^e` with
+/// the mantissa normalized into `[0.5, 1)`, which makes the integer the words spell equal to
+/// `m · 2^bits` and the value `± words · 2^(e - bits)`.
+///
+/// ★ **The scale comes from the words being read, not from `as_raw_parts`' second field.**
+/// Measured (6 precisions x 6 values, including 53 and 100): astro-float pads the mantissa to
+/// whole words and reports that padded length, so the two agree everywhere. Deriving it from the
+/// same words the integer is assembled from keeps them agreeing by construction rather than by
+/// coincidence.
+fn big_to_ratio(x: &BigFloat) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
+    use num_bigint::BigInt;
+    if x.is_zero() {
+        return Some((BigInt::from(0), BigInt::from(1)));
+    }
+    let (words, _bits, sign, e, _inexact) = x.as_raw_parts()?;
+    const WB: usize = astro_float::WORD_BIT_SIZE;
+    let mut m = BigInt::from(0);
+    for w in words.iter().rev() {
+        m = (m << WB) | BigInt::from(*w);
+    }
+    if sign == astro_float::Sign::Neg {
+        m = -m;
+    }
+    let shift = i64::from(e) - (words.len() * WB) as i64;
+    Some(match shift >= 0 {
+        true => (m << shift as usize, BigInt::from(1)),
+        false => (m, BigInt::from(1) << (-shift) as usize),
+    })
+}
+
+/// The nearest integer to `num · 10^places / den`, ties away from zero. `den` must be positive.
+///
+/// Exact: every step is integer arithmetic, so this is the *decision* about the last digit and
+/// not an approximation of it.
+fn round_scaled(
+    num: &num_bigint::BigInt,
+    den: &num_bigint::BigInt,
+    places: usize,
+) -> num_bigint::BigInt {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    let scaled = num * BigInt::from(10).pow(places as u32);
+    let (q, r) = scaled.div_rem(den);
+    // `div_rem` truncates toward zero and `r` carries the dividend's sign, so the comparison is
+    // on magnitudes and the step is away from zero — the same tie rule `format!("{:.*}")` uses.
+    if (&r * BigInt::from(2)).magnitude() >= den.magnitude() {
+        return match r.sign() {
+            num_bigint::Sign::Minus => q - 1,
+            _ => q + 1,
+        };
+    }
+    q
+}
+
+/// The nearest integer to `num · 2^k / den` (ties away from zero), `den` positive, `k` any sign.
+///
+/// [`round_scaled`]'s binary twin — same decision, a different radix, so the two roundings this
+/// crate hands out cannot drift apart in their tie rule.
+fn round_shifted(num: &num_bigint::BigInt, den: &num_bigint::BigInt, k: i64) -> num_bigint::BigInt {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    let (n, d) = match k >= 0 {
+        true => (num << k as usize, den.clone()),
+        false => (num.clone(), den << (-k) as usize),
+    };
+    let (q, r) = n.div_rem(&d);
+    if (&r * BigInt::from(2)).magnitude() >= d.magnitude() {
+        return match r.sign() {
+            num_bigint::Sign::Minus => q - 1,
+            _ => q + 1,
+        };
+    }
+    q
+}
+
+/// **The nearest `f64` to the exact rational `num/den`** (`den` positive) — one rounding, from
+/// integers.
+///
+/// [`nearest_f64`]'s unbounded twin: that one is the `Rat` road and caps at `u128`, this one takes
+/// the `(numerator, common denominator)` pair [`MeetPoint::lift`] hands out, which is how a
+/// coordinate too wide for `Rat` still gets a correctly rounded coordinate rather than a refusal.
+///
+/// `None` when the value is outside `f64`'s normal range.
+pub fn nearest_f64_big(num: &num_bigint::BigInt, den: &num_bigint::BigInt) -> Option<f64> {
+    if num.sign() == num_bigint::Sign::NoSign {
+        return Some(0.0);
+    }
+    // `value ∈ (2^(e-1), 2^(e+1))`, so `52 - e` aims the mantissa at 53 bits and lands one short
+    // at worst — one nudge, never two.
+    //
+    // ★ **A carry out of the top bit needs no correction, measured.** Rounding can push `q` to
+    // exactly `2^53` (from `2^53 - ½`, the only way), and `2^53 · 2^-k` is representable exactly,
+    // so the wide `q` still spells the right `f64`. A branch for it was written, planted against a
+    // 20,000-pair sweep plus a power-of-two boundary family, and never changed an answer.
+    let e = num.magnitude().bits() as i64 - den.magnitude().bits() as i64;
+    let mut k = 52 - e;
+    let mut q = round_shifted(num, den, k);
+    if q.magnitude().bits() < 53 {
+        k += 1;
+        q = round_shifted(num, den, k);
+    }
+    let m = i64::try_from(&q).ok()? as f64;
+    if !(-1200..=1200).contains(&k) {
+        return None;
+    }
+    let v = m * 2f64.powi(-k as i32);
+    v.is_finite().then_some(v)
+}
+
+/// `places` decimal places of the **exact** rational `num/den` (`den` positive).
+///
+/// ★ For a value that really is rational — a three-plane meet, a `QuadVal` whose radical vanishes
+/// — every digit this prints is a digit of the coordinate itself, not of an approximation to it.
+/// That is the thing an exact kernel can say and a floating-point one cannot.
+pub fn decimals_of_ratio(
+    num: &num_bigint::BigInt,
+    den: &num_bigint::BigInt,
+    places: usize,
+) -> String {
+    use num_bigint::BigInt;
+    use num_integer::Integer;
+    let n = round_scaled(num, den, places);
+    let sign = if n.sign() == num_bigint::Sign::Minus {
+        "-"
+    } else {
+        ""
+    };
+    let a = n.magnitude();
+    if places == 0 {
+        return format!("{sign}{a}");
+    }
+    let (int, frac) = BigInt::from(a.clone()).div_rem(&BigInt::from(10).pow(places as u32));
+    format!("{sign}{int}.{:0>width$}", frac.magnitude(), width = places)
+}
+
+/// `places` decimal places of the realization `mid ± rad`, or `None` when `prec` bits **do not
+/// decide them** — the twin of [`round_to_f64`], and `None` means the same thing there.
+///
+/// ★ The caller's move on `None` is to realize again at higher precision, exactly as
+/// `realize_inv_sqrt_rounded` escalates. That is why this reports undecided rather than picking:
+/// a digit invented here would be indistinguishable, to everything downstream, from one the
+/// definition actually determines.
+pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String> {
+    if mid.is_nan() || mid.is_inf() {
+        return None;
+    }
+    // ★★★ **The working precision is `mid`'s own, not a parameter.** An earlier spelling took one,
+    // and a caller that climbed a ladder and then passed the bottom rung would widen `mid` back
+    // down to it — printing digits of a 192-bit rounding as if they were the value's. With a zero
+    // radius that is silent (the interval ends agree, because they are the same rounded number),
+    // which makes it worse than a refusal. Reading the precision off the value it is about is the
+    // one spelling that cannot disagree with itself.
+    let p = bits_of(mid) + 64;
+    let r = rad_upper_big(rad, p)?;
+    let (lo, hi) = (mid.sub(&r, p, HP_RM), mid.add(&r, p, HP_RM));
+    let (nlo, dlo) = big_to_ratio(&lo)?;
+    let (nhi, dhi) = big_to_ratio(&hi)?;
+    let (slo, shi) = (
+        round_scaled(&nlo, &dlo, places),
+        round_scaled(&nhi, &dhi, places),
+    );
+    // Both ends rounding to the same scaled integer is what "these digits are determined" means.
+    (slo == shi).then(|| decimals_of_ratio(&nlo, &dlo, places))
+}
+
+// ---------------------------------------------------------------------------------------------
+// Realizing an algebraic coordinate at a precision — the arithmetic behind a curved vertex
+// ---------------------------------------------------------------------------------------------
+
+/// A rational realized at `p` bits, with the rounding it cost (`Mag::ZERO` when it landed exactly).
+fn rat_bounded(r: Rat, p: usize) -> Bounded {
+    let (n, d) = (r.numer(), r.denom());
+    let v = BigFloat::from_i128(n, p).div(&BigFloat::from_i128(d, p), p, HP_RM);
+    // A quotient of two exactly-representable integers costs at most a half-ulp of the result.
+    (v.clone(), half_ulp(&v, p))
+}
+
+/// `|x| · 2^-p` — the most a `p`-bit operation can add to its own result.
+fn half_ulp(x: &BigFloat, p: usize) -> Mag {
+    match x.exponent() {
+        Some(e) => Mag::pow2(i64::from(e) - p as i64),
+        None => Mag::ZERO,
+    }
+}
+
+/// `a * b` with its error — `(va ± ra)(vb ± rb)` widened by the product's own rounding.
+fn mul_bounded(a: &Bounded, b: &Bounded, p: usize) -> Bounded {
+    let v = a.0.mul(&b.0, p, HP_RM);
+    let (ua, ub) = (upper(&a.0), upper(&b.0));
+    // |va·rb| + |vb·ra| + ra·rb, then the rounding of the product itself.
+    let e = ua
+        .times(b.1)
+        .plus(ub.times(a.1))
+        .plus(a.1.times(b.1))
+        .plus(half_ulp(&v, p));
+    (v, e)
+}
+
+/// `a + b` with its error.
+fn add_bounded(a: &Bounded, b: &Bounded, p: usize) -> Bounded {
+    let v = a.0.add(&b.0, p, HP_RM);
+    (v.clone(), a.1.plus(b.1).plus(half_ulp(&v, p)))
+}
+
+/// An upper bound on `|x|`.
+fn upper(x: &BigFloat) -> Mag {
+    match x.exponent() {
+        Some(e) => Mag::pow2(i64::from(e)),
+        None => Mag::ZERO,
+    }
+}
+
+/// **`√v` realized at `p` bits, with its error** — `v · (1/√v)`, so the one radical primitive this
+/// crate already has ([`inv_sqrt_bounded`]) is the only place a square root is approached.
+pub fn sqrt_bounded(v: Rat, p: usize) -> Option<Bounded> {
+    if v == Rat::from_int(0) {
+        return Some((BigFloat::from_f64(0.0, p), Mag::ZERO));
+    }
+    let inv = inv_sqrt_bounded(v, p)?;
+    Some(mul_bounded(&rat_bounded(v, p), &inv, p))
+}
+
+/// **A quadratic algebraic scalar `a + b√c` realized at `p` bits, with its error.**
+///
+/// ★ Exact when the radical vanishes or resolves ([`quad::QuadVal::as_rat`]) — the value is asked,
+/// not its provenance, so a tangency's rational root takes the rational road even though it
+/// arrived through the same variant as an irrational one.
+pub fn realize_quad(q: &quad::QuadVal, p: usize) -> Option<Bounded> {
+    if let Some(r) = q.as_rat() {
+        let (v, _) = rat_bounded(r, p);
+        // The rational is the value; the only error is this realization's own rounding.
+        return Some((v.clone(), half_ulp(&v, p)));
+    }
+    let root = sqrt_bounded(q.c(), p)?;
+    let term = mul_bounded(&rat_bounded(q.b(), p), &root, p);
+    Some(add_bounded(&rat_bounded(q.a(), p), &term, p))
+}
+
+/// `base + dir·s` for exact rational `base`/`dir` and a realized `s` — the last step of a point
+/// that lives at a parameter along an exactly-stated line.
+pub fn affine_bounded(base: Rat, dir: Rat, s: &Bounded, p: usize) -> Option<Bounded> {
+    let term = mul_bounded(&rat_bounded(dir, p), s, p);
+    Some(add_bounded(&rat_bounded(base, p), &term, p))
+}
+
+/// **A point on a circle's `+ref` seam, realized at `p` bits.**
+///
+/// `centre + r · e₁/|e₁|`, where `e₁` is the reference direction's component perpendicular to the
+/// axis. All of `centre`, `e₁` and `r` are exact rationals; the single irrational step is
+/// `1/|e₁|`, which is why this is one `inv_sqrt_bounded` and some exact arithmetic around it.
+pub fn realize_seam_point(
+    centre: [Rat; 3],
+    e1: [Rat; 3],
+    radius: Rat,
+    p: usize,
+) -> Option<[Bounded; 3]> {
+    let mut sq = Rat::from_int(0);
+    for c in &e1 {
+        sq = sq.checked_add(c.checked_mul(*c)?)?;
+    }
+    let inv = inv_sqrt_bounded(sq, p)?;
+    let scale = mul_bounded(&rat_bounded(radius, p), &inv, p);
+    let coord = |k: usize| {
+        let radial = mul_bounded(&rat_bounded(e1[k], p), &scale, p);
+        add_bounded(&rat_bounded(centre[k], p), &radial, p)
+    };
+    Some([coord(0), coord(1), coord(2)])
 }
 
 /// An angle **together with one f64 realization of it** — `(angle, cos.to_bits(), sin.to_bits())`.
@@ -6068,5 +6369,175 @@ mod symprobe {
                 sx == -sy
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod decimal_realization {
+    use super::*;
+    use num_bigint::BigInt;
+
+    /// A radical realized at precision must agree with the digits of √2, and with itself.
+    #[test]
+    fn a_radical_realizes_to_its_own_digits() {
+        let two = Rat::from_int(2);
+        // √2 = 1.414213562373095048801688724209 6980785696 7187537694...
+        //                                        ^places 31-40  ^place 41 is 7, so 40 places
+        // round the last digit up: ...5696 -> ...5697. The digit string is public knowledge and
+        // the rounding is done here by hand, so this is an oracle and not a restatement.
+        let want = "1.4142135623730950488016887242096980785697";
+        for p in [256usize, 512, 1024] {
+            let (v, e) = sqrt_bounded(two, p).expect("a positive radicand");
+            let d = round_to_digits(&v, e, 40).expect("40 places at this precision");
+            assert_eq!(d, want, "prec {p}");
+        }
+        // A rational-valued QuadVal takes the exact road.
+        let q = quad::QuadVal::from_rat(Rat::new(1, 8).unwrap());
+        let (v, e) = realize_quad(&q, 256).expect("rational");
+        assert_eq!(
+            round_to_digits(&v, e, 20).as_deref(),
+            Some("0.12500000000000000000")
+        );
+        // A perfect square resolves rather than being approached: 3 + 2·√4 = 7.
+        let q = quad::QuadVal::new(Rat::from_int(3), Rat::from_int(2), Rat::from_int(4)).unwrap();
+        let (v, e) = realize_quad(&q, 256).expect("resolves");
+        assert_eq!(round_to_digits(&v, e, 5).as_deref(), Some("7.00000"));
+    }
+
+    /// A seam point is the centre plus a radius along the normalized perpendicular.
+    #[test]
+    fn a_seam_point_lands_on_the_rim() {
+        let r = |n: i128| Rat::from_int(n);
+        // centre at origin, e1 = +x (already unit), radius 5 -> (5, 0, 0) exactly.
+        let out = realize_seam_point([r(0); 3], [r(1), r(0), r(0)], r(5), 256).expect("ok");
+        let got: Vec<_> = out
+            .iter()
+            .map(|(v, e)| round_to_digits(v, *e, 10).expect("decided"))
+            .collect();
+        assert_eq!(got, ["5.0000000000", "0.0000000000", "0.0000000000"]);
+        // e1 = (1,1,0): the seam is at radius/√2 on each of x and y.
+        let out = realize_seam_point([r(0); 3], [r(1), r(1), r(0)], r(1), 512).expect("ok");
+        let x = round_to_digits(&out[0].0, out[0].1, 20).expect("decided");
+        assert_eq!(x, "0.70710678118654752440");
+    }
+
+    /// A sweep for the carry and tie cases the hand-picked table cannot reach.
+    #[test]
+    fn the_big_road_agrees_with_the_rat_oracle_under_sweep() {
+        // deterministic xorshift
+        let mut x: u64 = 0x0020_2609_11c0_ffee;
+        let mut next = || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let mut bad = 0usize;
+        let mut carries = 0usize;
+        for _ in 0..20000 {
+            let num = (next() as i128) - (i64::MAX as i128);
+            let den = ((next() % 1_000_000) + 1) as i128;
+            let Some(r) = Rat::new(num, den) else {
+                continue;
+            };
+            let got = nearest_f64_big(&BigInt::from(num), &BigInt::from(den)).expect("range");
+            if got != r.to_f64() {
+                bad += 1;
+                if bad < 4 {
+                    println!("MISMATCH {num}/{den}: big={got:?} rat={:?}", r.to_f64());
+                }
+            }
+        }
+        // boundary family: values that round up across a power of two
+        for p in [52i32, 53, 54, 60] {
+            let two_p = BigInt::from(1i128) << p;
+            for off in [-1i128, 0, 1] {
+                let num = &two_p * 2 - BigInt::from(1) + BigInt::from(off);
+                let den = BigInt::from(2);
+                let got = nearest_f64_big(&num, &den).expect("range");
+                let want = Rat::new(i128::try_from(&num).expect("fits"), 2)
+                    .expect("in range")
+                    .to_f64();
+                if got != want {
+                    bad += 1;
+                    println!("BOUNDARY p={p} off={off}: big={got:?} rat={want:?}");
+                } else {
+                    carries += 1;
+                }
+            }
+        }
+        println!("boundary agreements={carries}");
+        assert_eq!(bad, 0, "{bad} disagreements with the Rat oracle");
+    }
+
+    /// The BigInt road must agree with the `Rat` road wherever both can speak.
+    ///
+    /// An independent oracle: `Rat::to_f64` is correctly rounded by a different route
+    /// (`nearest_f64` on `u128`), so agreement is evidence, not a restatement.
+    #[test]
+    fn the_big_road_agrees_with_the_rat_road() {
+        let mut n = 0usize;
+        for num in [-97i128, -7, -1, 1, 3, 5, 7, 11, 97, 1234567, -98765432] {
+            for den in [1i128, 2, 3, 7, 10, 1024, 999983, 1_000_000_007] {
+                let r = Rat::new(num, den).expect("in range");
+                let got =
+                    nearest_f64_big(&BigInt::from(num), &BigInt::from(den)).expect("in f64 range");
+                assert_eq!(got, r.to_f64(), "{num}/{den}");
+                n += 1;
+            }
+        }
+        // Wide inputs no `Rat` can hold — the reason this twin exists at all.
+        let big = BigInt::from(1i128) << 200;
+        let v = nearest_f64_big(&(&big * 3), &big).expect("in range");
+        assert_eq!(v, 3.0);
+        assert!(n > 50, "oracle swept {n} pairs");
+    }
+
+    /// Does `big_to_ratio` really spell the value? Exact f64s have known ratios.
+    #[test]
+    fn a_binary_float_lifts_to_the_ratio_it_is() {
+        for (v, n, d) in [
+            (0.5f64, 1i64, 2i64),
+            (1.0, 1, 1),
+            (3.0, 3, 1),
+            (-0.25, -1, 4),
+            (0.75, 3, 4),
+            (1024.0, 1024, 1),
+            (-7.0, -7, 1),
+        ] {
+            let b = BigFloat::from_f64(v, 128);
+            let (gn, gd) = big_to_ratio(&b).expect("finite");
+            // compare as a reduced fraction
+            let lhs = &gn * BigInt::from(d);
+            let rhs = &gd * BigInt::from(n);
+            assert_eq!(lhs, rhs, "value {v}: got {gn}/{gd}, want {n}/{d}");
+        }
+    }
+
+    /// Exact decimals of a rational, including the tie rule and negatives.
+    #[test]
+    fn a_rational_prints_its_own_digits() {
+        let c = |n: i64, d: i64, p: usize| decimals_of_ratio(&BigInt::from(n), &BigInt::from(d), p);
+        assert_eq!(c(1, 3, 10), "0.3333333333");
+        assert_eq!(c(2, 3, 10), "0.6666666667");
+        assert_eq!(c(-2, 3, 5), "-0.66667");
+        assert_eq!(c(1, 2, 0), "1"); // 0.5 ties away from zero
+        assert_eq!(c(7, 1, 3), "7.000");
+        assert_eq!(c(0, 1, 4), "0.0000");
+        assert_eq!(c(1, 8, 20), "0.12500000000000000000");
+    }
+
+    /// The escalation signal: too few bits must say "undecided", more bits must decide.
+    #[test]
+    fn too_few_bits_report_undecided() {
+        // A wide interval cannot pin many digits; a zero radius pins all of them.
+        let mid = BigFloat::from_f64(0.125, 256);
+        assert_eq!(
+            round_to_digits(&mid, Mag::ZERO, 10).as_deref(),
+            Some("0.1250000000")
+        );
+        let fuzzy = Mag::pow2(-10); // ±~0.001 — cannot decide the 5th place
+        assert_eq!(round_to_digits(&mid, fuzzy, 5), None);
+        assert_eq!(round_to_digits(&mid, fuzzy, 1).as_deref(), Some("0.1"));
     }
 }
