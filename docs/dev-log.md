@@ -19688,22 +19688,41 @@ positions.extend(corner.as_array().iter().map(|&x| x as f32));
 ⇒ 설계: **wasm 이 STEP·OBJ 둘 다 «문자열»을 돌려주고 앱은 기하를 전혀 만지지 않는다.** 그러면
 나중에 정밀도가 올라도 **앱은 한 줄도 안 바뀐다**.
 
-**③ 메시 형식은 «형식마다 크레이트»가 아니다 — 경계는 «입력»을 따른다** (사용자 지적).
-```rust
-pub struct Tessellation { vertices, triangles, by_edge, by_face }   // 한 입력이 전부를 먹인다
-```
-| 입력 | 크레이트 | 형식 |
-|---|---|---|
-| `&Model`(정확 형상) | `nacre-step` (있음) | STEP AP242 |
-| `&Tessellation` | **하나** — 형식은 **모듈** | OBJ · STL · PLY … |
+**③ ⚠⚠ OBJ 출력은 «이미 있다» — 여기서 내가 두 번 틀렸다** (사용자가 물고 늘어져 드러남).
 
-⚠ **`-io` 는 거짓말이다**(읽기가 없다) ⇒ 이름은 **`nacre-mesh-emit`** 를 권함. `step-io/src/emit/`
-가 이미 «쓰는 쪽 = emit»으로 쓴다. `nacre-step` 이 방향을 안 말하는 것과 갈리는 근거: 그쪽은
-**형식이 하나**라 이름이 형식을 가리켜도 모호하지 않고, 이쪽은 **여럿**이라 «무엇을 하는가»가 필요하다.
-⚠ **겉모습을 담는 형식(glTF·3MF)은 여기 못 들어온다** — 커널이 `style()`·`display()` 를 모른다.
-그건 **앱의 장면이 있는 곳**에서 조립해야 한다.
-☑ **kit 은 이 경로에 없다**(실측: kit 은 `Tessellation` 을 **모른다**; wasm 이 `nacre::tess` 에서
-직접 가져온다) — 「kit 의 역할인가」의 답은 **아니오**.
+```rust
+// nacre-tess/src/lib.rs:187 — 처음부터 있었다
+impl Tessellation {
+    /// Wavefront OBJ text (vertices in store order, 1-based triangle indices).
+    pub fn to_obj(&self) -> String { … }
+}
+```
+테스트(`unit_cube_obj_shape`)·예제(`dump_cube`·`dump_cylinder_obj`)·**커널 자신의 사용처**
+(`bands.rs:2494`, 눈으로 보려고 덤프)까지 있다.
+
+⚠ **틀림 1 — 확인하지 않고 «새 크레이트»를 제안했다**(`nacre-mesh-emit`). 그리고 그 파일 머리말이
+바로 그 함정을 적어 뒀다: *"★★★★★ **There used to be two, and the second one lied.** An M1
+bootstrap `to_obj(&Model)` …"* — **전에 OBJ 출력기가 둘이었고 하나가 거짓말했다.** 내 제안은 그
+기록된 실수를 반복할 뻔했다. ⇒ **짓기 전에 «이미 있나»를 grep 한다**(이 세션에서 두 번째다:
+칸 ㊳에서도 「명제를 새로 만들기 전에 누가 이미 말하고 있나」를 검토가 막았다).
+
+⚠ **틀림 2 — 「형식은 커널 옆」이라던 근거가 약했다.** `nacre-step` 이 커널 저장소에 있는 이유는
+«형식이라서»가 아니라 **커널 자신이 쓰기 때문**이다:
+| 무엇 | 커널의 소비자 |
+|---|---|
+| `to_step` | `nacre-oracle` → OCCT 에 보내 «답안지»와 대조 |
+| `to_obj` | `bands.rs` → 눈으로 보려고 덤프 |
+⇒ 둘 다 **커널의 자기 검증·디버깅 도구**다. 그게 진짜 규칙이다:
+**커널이 «자기가 쓰는» 형식은 테셀레이션 옆에 산다. 앱만 원하는 형식은 커널에 있을 이유가 없다.**
+
+☑ **오늘의 OBJ 에는 kit 이 필요 없다** — wasm 이 `session.tess.to_obj()` 를 부르면 끝이다.
+⚠ 다만 사용자의 «kit 이 다뤄야 하지 않나»가 **틀린 방향은 아니다**. kit 이 들어와야 하는 조건:
+| 조건 | 왜 |
+|---|---|
+| 내보내기가 **스크립트 동사**가 될 때(`export(part, …)`) | 스크립트 어휘는 **kit 의 소유** |
+| **값 단위**로 내보낼 때(`part` 만, 몸통 하나만) | `ValueId` → 면/솔리드 대응은 kit 이 안다 |
+| 색·재질을 담는 형식(glTF·3MF) | `style()` 은 앱, 값 이름은 kit — **커널은 모른다** |
+오늘의 `to_obj()` 는 **테셀레이션 전체**를 낸다. 「이 값만」이 필요해지는 순간 그건 kit 의 물음이다.
 
 **④ step-io 컴팩트화는 보류**(사용자 판단) — 그냥 step-io 를 쓴다. 다만 재 둔 수치:
 `nacre-step` 이 부르는 `StepBuilder` 메서드는 **8개**(`header`·`part`·`vertex`·`edge`·`face`·
