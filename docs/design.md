@@ -46,7 +46,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 **편의 레이어 `nacre-kit` (워크스페이스 밖, 별도 리포 — 2026-07-26 결정, 미착수).** 코드-CAD 스크립트와 커널 사이의 층: 다중 솔리드 값(compound), 값 의미론(재사용 시 `Copy` 자동 삽입), 다인수 fuse/cut/common(fold), 프로파일 헬퍼와 섬-분해 호출, 패턴·미러, 에러의 사람용 매핑, 표시 메타데이터(색·투명도 — 커널 비목표라 여기가 제자리). **Rust로 두는 이유:** 헤드리스 `cargo test`가 되고, 술어 인접 로직이 exactness 도구가 있는 쪽에 남고, 프론트엔드를 교체해도 살아남고, wasm 경계가 함수 하나로 유지된다. 경계 규칙은 overview.md의 "설탕 vs 커널 판별 기준"이고, **문법·의미론과 그 결정 이유는 `nacre-kit` 리포의 `docs/syntax.md`·`docs/decisions.md`에 있다**(여기에 복사하지 않는다 — 두 곳에 같은 내용이 있으면 어긋난다). **전제였던 것 — ✅ 2026-07-27 해소:** 파사드 `nacre`가 채워져 소비자가 **한 줄**로 매단다(아래 §파사드).
 
 **공개 표면 조사 (2026-07-26, 코드 실측 — 다시 조사하지 말 것).** 외부 소비자 관점에서 무엇이 막혀 있는지 훑은 결과.
-- **이미 열려 있다(막혀 있다고 오해했던 것들):** `Model`의 모든 필드와 `Vertex/Edge/Face/Shell/Solid`의 모든 필드가 `pub`이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.vertices → vertex.point`). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Vertex::def`(=`VertexDef{ThreePlane|OnSeam}`)·`Model::{vertex_point, vertex_tol}`·`Model::motions`(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`Tessellation::to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개(★ 자유 함수 `to_obj(&Model)`은 **칸 ㉓에서 삭제** — 아래). 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
+- **이미 열려 있다(막혀 있다고 오해했던 것들):** `Model`의 모든 필드와 `Vertex/Edge/Face/Shell/Solid`의 모든 필드가 `pub`이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.vertices` → 좌표는 `Model::vertex_point(vh)` — ⚠ **정정(2026-09-11)**: 여기 `vertex.point` 라 적혀 있었는데 그 필드는 S7 이 캐시로 옮겼다(`76a07b2`)). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Vertex::def`(=`VertexDef{ThreePlane|OnSeam|Branch}` — ⚠ `Branch` 는 M6 에서 도착, 2026-09-11 정정)·`Model::{vertex_point, vertex_tol}`·`Model::motions`(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`Tessellation::to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개(★ 자유 함수 `to_obj(&Model)`은 **칸 ㉓에서 삭제** — 아래). 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
 - **파생 값과 에러 표면 — ✅ 2026-07-26 공개.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. §6의 거절 이유는 그 앞에 끝났다. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 미래.
   - **`bounds`는 곡선을 인지한다.** 원통 옆면은 솔기 정점보다 바깥으로 볼록하므로 꼭짓점 min/max는 **조용히 작은 상자**를 준다. 반지름 `r`·법선 `n̂`인 원은 축 `e` 방향으로 `±r·√(1−(n̂·e)²)`만큼 뻗는다(정확). OCCT `bounding`이 심판하되 **등호로 비교하지 않는다** — DRAWEXE는 상자를 보수적으로 부풀린다(실측 ~1e-7).
   - **`centroid`는 새 적분이 아니다.** 솔리드는 기준점에서 각 평면 면으로 뻗은 **원뿔들의 부호합**이고, 원뿔의 중심은 밑면 모양과 무관하게 꼭짓점→밑면중심의 **3/4** 지점이다. 즉 `mass_props`가 이미 계산하는 `(Aᵢ, cᵢ, n̂ᵢ)`만으로 `C = R + Σ Vᵢ·¾(cᵢ−R)/ΣVᵢ`가 나온다. 곡면은 그 논증이 깨지므로 **이름 달고 거절**하고, 그래서 `MassProps`의 필드가 아니라 별도 함수다(곡면 솔리드의 부피·넓이는 계속 살아 있어야 한다).
@@ -150,25 +150,19 @@ replay(&log)`). 이 규율을 어긴 세션은 replay 가 재현할 수 없는 �
 
 저장소는 도메인별로 나눈다:
 
-```rust
-pub struct Model {
-    // 정확 기하 (진실)
-    pub surfaces: Store<Surface>,
-    pub curves:   Store<Curve>,
-    // 위상 (기하를 Handle로 참조)
-    pub vertices: Store<Vertex>,
-    pub edges:    Store<Edge>,
-    pub faces:    Store<Face>,
-    pub shells:   Store<Shell>,
-    pub solids:   Store<Solid>,
-    // 파생 캐시 — 역방향 인덱스 (§4)
-    pub adj:  Adjacency,
-}
-```
+⚠ **`Model` 의 필드 목록은 여기 그리지 않는다 — `docs/truth-and-cache.md` §최종 타입 / §캐시 가
+진실이다.** 여기 있던 스케치는 낙후됐었고(2026-09-11 실측: `pub curves: Store<Curve>` 는 **존재하지
+않고** — 곡선은 진실이 아니라 `EdgeCache` 다 —, `surfaces` 는 **비공개**(S1), 캐시 필드 셋이 빠져
+있었다), 진실/캐시 어휘를 두 곳에 그리면 **반드시** 한쪽이 상한다. 도메인 구분만 남긴다:
+
+- **진실**(아레나, append-only): 곡면 · 정점 · 간선 · 면 · 셸 · 솔리드 · 모션(interned)
+- **캐시**(핸들 인덱스 병렬, 버리고 재생 가능): 정점 좌표 · 곡면 실현 · 간선 곡선 · 역방향 인덱스(§4)
+
+타입 이름·필드·공개 여부는 `truth-and-cache.md` 를 본다.
 
 **Model은 "진실"만 담는다 — tess도 ops도 Model의 필드가 아니다.** §0에서 "모델은 연산 로그의 재생 **결과**"라 했으니 `ops: Vec<Operation>`은 Model을 *만들어내는 입력*이지 Model 안에 든 게 아니고, tessellation은 Model에서 *뽑아낸 파생 캐시*다(진실/캐시 분리). 게다가 레이어링상 Model은 `nacre-topo`에 사는데 `Tessellation`(§5)·`Operation`(§6)은 topo보다 위 크레이트라, Model에 필드로 넣으면 topo→tess/ops 순환이 된다. 그래서 op 로그와 tess 캐시는 상위 레이어(ops/파사드)에서 Model과 **나란히** 보관하고, "동일 로그·동일 cfg → 동일 모델 + 함께 재생성되는 tess"라는 §5·§6의 커플링은 그 상위 번들이 책임진다.
 
-(점 저장소는 두지 않는다 — 두 Vertex가 한 Point를 공유하는 상황은 설계상 존재하면 안 되고, Point는 작아서 간접화의 실익이 없으므로 `Vertex`에 인라인한다.)
+(점 저장소는 두지 않는다 — 두 Vertex가 한 Point를 공유하는 상황은 설계상 존재하면 안 된다. ⚠ **정정(2026-09-11)**: 뒤이어 *"Point는 `Vertex`에 인라인한다"* 고 적혀 있었는데 **S7 이 그것을 되돌렸다**(`76a07b2` *"a vertex is its definition — Origin dies, the coordinate becomes a cache"*). 오늘 `Vertex` 는 자기 **정의**만 들고, 좌표와 측정 tol 은 인덱스 병렬 캐시(`Model::vertex_point`/`vertex_tol`)에 산다 — `truth-and-cache.md` §최종 타입.)
 
 ### 편집 연산의 supersede 의미론 — live 도달가능성 (partially persistent)
 

@@ -82,13 +82,28 @@
 ```rust
 // ─── nacre-geom / nacre-topo ── 진실 (아레나, append-only) ─────────────
 
+/// ⏸ **이름은 아직 geom 의 f64 캐시가 쥐고 있다** — 오늘의 코드는 이것을 `SurfaceTruth` 로
+/// 부르고 사설 `Vec` 에 둔다. 개명·반전은 열린 항목 8「8·반전」이 집행한다.
+///
+/// ★ **「`SurfaceDef` 를 흡수한다」의 뜻**(원 주석이 짧아 오해를 낳았다): 그 시절 `SurfaceDef` 는
+/// **사이드테이블 enum**(`Constructed` / `Rotated{witness, rotation}` / `Inexact`, `a5379a2` 에서
+/// 사망)이었고, 「흡수」는 그 **역할**을 진실이 삼킨다는 뜻이다 — `Constructed`/`Rotated` 가
+/// `motion: None`/`Some` 으로 표현된다. **struct 냐 enum 이냐를 정한 문장이 아니다.**
+/// ⚠ 그러니 `Vertex { def }` 와의 비대칭은 **설계가 아니라 잔재다**: `Vertex` 는 최초 커밋
+/// (`f86e7e3`)에 `point`+`origin`+`def` 를 든 구조체였고 `76a07b2` 가 앞의 둘을 캐시로 보내
+/// 껍데기가 남았다. `VertexDef` 를 `Vertex` 로 접는 정리는 **누구도 요구하지 않는다**
+/// (실측 2026-09-11: `VertexDef` 146자리 · `.def` 195자리) — 선택적 후속.
 pub enum Surface {
     Plane {
         points: PlanePoints,
-        motion: Option<Handle<MotionNode>>,   // ← SurfaceDef 를 흡수한다
+        motion: Option<Handle<MotionNode>>,
     },
-    // Cylinder { point: [Rat;3], dir: [Rat;3], radius: Rat, ref_dir: [Rat;3],
-    //            motion: Option<Handle<MotionNode>> }        — M6, 자기 진실로
+    /// M6 ✔ **도착했다** — 예고가 아니다. 성분형이 옳은 이유·`ref_dir` 원시 규칙은 design.md
+    /// 원통 절이 상세히 적는다.
+    Cylinder {
+        def: CylinderDef,                     // { origin, dir, ref_dir, radius } 전부 Rat
+        motion: Option<Handle<MotionNode>>,
+    },
 }
 
 /// 평면의 세 점 — 진술의 종류가 곧 변종이다.
@@ -118,10 +133,19 @@ pub enum VertexDef {
     /// 세 평면의 교점 — 이름이 곧 점. (D != 0 은 좌표 재생이 생기는 자리에서 단언한다.)
     ThreePlane([Handle<Surface>; 3]),
     /// 두 곡면의 교차 «곡선» 위의 점 — M3 원통 seam(테두리 원의 θ=0). 점을 못 박는 매개
-    /// 정보(원통의 `ref_dir`)는 M6 의 원통 진실과 함께 오고, 그때까지 **좌표 캐시가
-    /// load-bearing** 이다(정직 기록). M6 는 변종을 더한다: `Branch{surfaces, branch}`
-    /// (이차곡면 셋의 최대 8점), 원뿔 꼭짓점 `Apex(Handle)` 등.
+    /// 정보(원통의 `ref_dir`)는 **M6 의 원통 진실과 함께 왔다**(`CylinderDef`) — 그래서
+    /// `OnSeam([cylinder, cap])` 은 「rim ∩ +`ref_dir` 광선」으로 **정확히 지정된 한 점**이다.
+    /// ⚠ 정의는 완성됐고 없는 것은 **그 좌표를 재생하는 기계**다(§이행 3b).
     OnSeam([Handle<Surface>; 2]),
+    /// ★ **M6 ✔ 도착 — 예고했던 것과 모양이 다르다.** 예고는 `Branch{surfaces, branch}` 였고
+    /// 실제는 담체 종류를 **구조로** 말한다(닮은 핸들 셋이 아니라). `root` 는 정준 선 방향
+    /// (`n₀ × n₁`, 저장 순서)을 따른 오름차순이고 접선은 `QuadRoot::Double` 이다.
+    Branch {
+        planes: [Handle<Surface>; 2],         // 오름차순 핸들
+        cylinder: Handle<Surface>,
+        root: QuadRoot,                       // Lo | Hi | Double
+    },
+    // 원뿔 꼭짓점 `Apex(Handle)` 등은 아직 예고다.
 }
 
 /// 곡면 집합은 「담체」를 정하고, 경계가 나머지를 정한다.
@@ -197,7 +221,9 @@ pub struct MotionNode {
   정점을 미리 만들면 같은 점이 아레나에 둘(진술본+위상본), 위상이 재사용하면 «정점 = 세 면의
   교점» 통일이 깨진다.
 - 정점은 술어·validate·배열이 가장 많이 소비하는 타입 — 단일형의 가치가 평면 단일형보다 크다.
-  평면의 두 변종은 판정층 거울(`WorkingPlaneDef`)의 `match` 하나로 흡수된다.
+  평면의 두 변종은 판정층 거울의 `match` 하나로 흡수된다. ⚠ **정정(2026-09-11)**: 그 거울은
+  `WorkingPlaneDef` 라는 별도 enum 이 아니다 — 16-3 정정이 변종을 하나로 줄여 `WorkingPlane` 이
+  증인 삼각형(`[WitnessPoint; 3]`)을 **직접** 든다.
 - 저장 증가·재사용률 질문이 통째로 사라지고, `Known` 은 오늘 동작하는 코드 그대로다.
 
 ### 정점 — interning 하지 않는다
@@ -335,10 +361,14 @@ pub struct Model {
     pub motions:  Store<MotionNode>,          // interned
     // faces / shells / solids / live_solids …
 
-    // 캐시 — 핸들 인덱스 병렬, 통째로 버리고 재생 가능. live 도달분만 lazy 채움.
-    pub vertex_cache:  Vec<PointCache>,
-    pub surface_cache: Vec<SurfaceCache>,
-    pub edge_cache:    Vec<EdgeCache>,        // 평가 가능한 곡선 (M5 는 직선)
+    // 캐시 — 핸들 인덱스 병렬, 통째로 버리고 재생 가능.
+    // ★ **비공개다**(실측: 오늘의 `vertex_cache`·`edge_cache` 에 `pub` 이 없다). 읽기는 좁은 문
+    //   (`vertex_point`/`vertex_tol`/`surface`/`edge_curve`)이 이미 열려 있고, 정제도 `Model` 의
+    //   좁은 문으로 들어온다 — 밖에서 벡터를 만지면 index-parallel 불변식을 아무도 못 지킨다.
+    //   (이 스케치는 `pub` 으로 그려 뒀었다. 코드가 옳다.)
+    vertex_cache:  Vec<PointCache>,
+    surface_cache: Vec<SurfaceCache>,         // ⏸ 「8·반전」이 만든다
+    edge_cache:    Vec<EdgeCache>,            // 평가 가능한 곡선
 
     // 이름 — 진실에서 유도해 하나만 저장(Narrow|Wide — §이름과 interning).
     // 곁표인 이유: Known 은 항상 있지만 무리수 모션의 Through 는 없을 수 있다.
@@ -352,9 +382,31 @@ pub struct Approx        { value: f64,      error: f64 }           // 중간 스
 pub struct HpApprox      { value: BigFloat, error: Mag }
 pub struct PointCache    { coord: Point3,        tol: Option<f64> }  // S7 실형: 측정치 유무
 pub struct HpPointCache  { coord: [BigFloat; 3], tol: [Mag; 3] }
-pub struct SurfaceCache  { coeffs: [f64; 4], tol: [f64; 4], inv_norm: f64 }
-pub struct HpSurfaceCache{ coeffs: [BigFloat; 4], tol: [Mag; 4] }
+// ⏸★★ **`SurfaceCache` 의 모양은 «미정으로 되돌렸다»** — 아래 스케치는 2026-08-05, 즉 **M6 전**
+//    이라 평면 전용이다. ⚠ **원통에는 4계수 음함수형이 없다**(2차 곡면) ⇒ 필드를 더해서는 확장되지
+//    않는다. 변종이 필요하거나 geom 의 값을 감싸야 하고, **형제 선례가 후자다**(`EdgeCache`).
+//    ⇒ 「8·반전」시점의 모양은 `SurfaceCache { realized: nacre_geom::Surface }`(오늘 것을 그대로
+//    감싼다), `tol` 은 「8·캐시 실형」이 더한다.
+// pub struct SurfaceCache  { coeffs: [f64; 4], tol: [f64; 4], inv_norm: f64 }   ← 평면 전용 스케치
+// pub struct HpSurfaceCache{ coeffs: [BigFloat; 4], tol: [Mag; 4] }             ← 같음
 pub struct EdgeCache     { curve: Curve }                          // 평가 가능한 담체 곡선
+
+// ★★★★ **세 «오차»를 섞지 말 것** — 이 절을 읽고 한 번 섞였으므로 갈라 적는다(2026-09-11).
+//
+// | 무엇 | 성질 | 상태 |
+// |---|---|---|
+// | `Plane::distance_eps(p)` | **이 거리 계산**의 f64 반올림, `3ε·Σ|pᵢ−oᵢ|` — **`p` 에 의존**(두 연산자) | ✔ 있음, **저장 불가** |
+// | `SurfaceCache.tol`       | **이 평면 자신**이 참 평면에서 얼마나 떨어졌나 — 평면의 성질(한 연산자) | ✗ 없음, 저장 가능 |
+// | `PointCache.tol`         | 같은 것의 정점판(*"measured residual"*)                                  | ✔ 있음 |
+//
+// ⚠ 「곡면당 저장하는 tol 은 틀린 양」은 **첫째에만** 맞다. 그 근거는 코드가 적어 뒀다 —
+//   *"the tolerance it has to hand is the vertex's … a point that is exactly on the plane can
+//   still produce a nonzero residual"*, 그리고 그 사고가 실재했다(*"residual **exactly equal** to
+//   the claimed tolerance, saved only by the comparison being strict"*).
+// ☑ 반면 **둘째는 `PointCache.tol` 의 곡면판**이므로 저장하는 게 옳고, **없는 것은 「대체됐다」가
+//   아니라 「아직 안 지었다」**다. 만드는 법은 이 절이 이미 적었다(아래: 세 정점의 실현에서 유도).
+// ☑ `inv_norm` 도 «없는 게 아니라 다른 배치»다: 오늘 `Plane` 은 **단위 법선**(구성 시 한 번 정규화)
+//   + `raw`(정확 계수용)를 들어 같은 정보를 갖는다. 계수 우선 캐시를 고를 때만 필요한 필드다.
 ```
 
 | 캐시 | 키 | 수명 | |
@@ -389,7 +441,9 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
   수선이었고, 한 이름으로 합치면 고친 결함의 이름이 되살아난다. 합치기는 개명이 아니라 설계
   작업이며 16 이후 재검토.
 - `WorkingPoint` → `WorkingVertex`: 코드에 아직 없음 — 16이 만들 타입이 이 이름으로 태어난다.
-- `tri_pt3` → `def`: 개명이 아니라 **타입 변경**(`[WitnessPoint;3]` → `WorkingPlaneDef`) — 16의 몫.
+- `tri_pt3` → `def`: 개명이다. ⚠ **정정(2026-09-11)**: 「타입 변경(`[WitnessPoint;3]` →
+  `WorkingPlaneDef`)」이라 적어 뒀는데, 16-3 정정이 `Through` 변종을 없애 **타입은 그대로**
+  `[WitnessPoint; 3]` 다(코드 실측: `WorkingPlaneDef` 없음).
 - `Standard` → `ProofStandard`: 같은 계열(모양이 다르다 — `same_within` 유도로의 재구성) — 대응
   명시가 없어 유예. **기준: 이 목록에 명시된 것만 기계적 개명이다.**
 (점 실현 묶음 `HpPointCache` 는 아직 타입으로 없음 — 오늘은 `(usize, [HpApprox; 3])` 튜플.)
@@ -397,7 +451,7 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
 ```rust
 /// 판정용 평면 — `Surface::Plane` 의 쌍둥이. 정의를 펼쳐 들고 두 실현을 메모한다.
 pub struct WorkingPlane {
-    pub def: WorkingPlaneDef,                 // 정의 — 진실의 두 변종을 그대로 비춘다
+    pub def: [WitnessPoint; 3],               // 정의 — 증인 삼각형 하나로 전체(16-3 정정)
     pub name: Option<PlaneName>,              // 이름 — Narrow 는 Shewchuk, Wide 는 BigInt(항목 15)
     pub chain: Rc<[MoveNode]>,                // 사슬을 펼친 것. MoveNode = Motion 의 판정층
                                               // 펼침 — 핸들 숲은 판정층이 못 푸므로 경계에서
@@ -419,10 +473,9 @@ pub struct WorkingPlane {
 /// 평면은 자기 프레임의 probe 로 그 점을 정의상 갖는다(반증표 참조). 거울 이름 규칙 ② 의
 /// 한정: 진실의 `Through` 는 거울에서 **probe 로 유도된 증인 삼각형**으로 나타난다 — 변종이
 /// 아니라 유도다.
-pub enum WorkingPlaneDef {
-    /// 증인 삼각형 — 유리수 base + 사슬. 오늘의 `tri_pt3` 그대로.
-    Known([WitnessPoint; 3]),
-}
+// ⚠ **`WorkingPlaneDef` 는 지운다**(2026-09-11) — 바로 위 정정이 변종을 **하나로** 줄였으므로
+//    별도 enum 이 존재할 이유가 없다. 코드에도 없다(실측). 판정 평면은 증인 삼각형을 직접 든다:
+//        def: [WitnessPoint; 3]      // 유리수 base + 사슬. 오늘의 `tri_pt3` 그대로.
 
 /// 증인 점 — 유리수 base 를 모션 사슬로 나른다. base + chain 이 정의, coord/tol 은
 /// f64 캐시(= `PointCache` 모양), hp 는 고정밀 메모(= 평면의 `HpSurfaceCache` 와 대칭).
@@ -595,7 +648,11 @@ pub enum Decision {
 
 ### 남은 항목 — **비었다** (2026-08-08)
 
-★★★★★ **진실 타입이 전부 최종형에 도달했다.** `PlanePoints`·`VertexDef`·`SurfaceTruth`·
+⚠★★ **정정(2026-09-11): 「전부」는 타입의 «내용»이고, 곡면의 «이름과 자리»는 남아 있다.**
+아래 선언과 열린 항목 8 이 어긋나 있었다 — 8 은 *"진실 enum 은 `SurfaceTruth`(문서의 `Surface`
+이름은 아직 geom 의 f64 캐시가 쥠)"* 라 적는다. ⇒ **내용은 최종형, 이름·자리는 「8·반전」 몫**이다.
+
+★★★★★ **진실 타입의 «내용»이 전부 최종형에 도달했다.** `PlanePoints`·`VertexDef`·`SurfaceTruth`·
 `PlaneName`·`Profile2d`·`Edge`·`FramePlacement` — 그리고 `Motion::Frame { plane }` 은 **이름 없는
 평면에도 이미 정확한 정의**다. 남은 것은 타입이 아니라 **판정층의 실현**이고, 그래서 마지막 행이
 이행표를 떠나 열린 항목으로 갔다(아래 표의 S5(ii)-2b 줄).
@@ -647,8 +704,11 @@ datum 은 새 복사본을 추적하지 않는다. 실제 규약은 **핸들을 
   population 을 대장에 먼저 넣고(17자리 `fw`·기울어진 `tp` 가족은 이미 있다), *"어느
   population 인가"* 는 추측하지 말고 계측이 이름을 대게 한다. 좌표 관문은 «답은 같은데 더 나쁜
   길로 갔다»를 원리적으로 못 보므로 **"정확 경로를 탔는가"를 직접 단언하는 테스트**를 함께 둔다.
-- **병렬 불변식**: 병렬 구간에서 `push_surface` 금지(재생 결정성) — 오늘은 전 호출부가 순차,
-  M6 교차 곡면에서 다시 본다(그때는 정준 키 정렬 후 일괄 push).
+- **병렬 불변식**: 병렬 구간에서 **곡면 push 금지**(재생 결정성). ⚠ **정정(2026-09-11)**: 이 규칙은
+  `push_surface` 를 이름 짓고 있었는데 **그 함수는 없다**(S6b 에서 `push_surface(_with_points/
+  _unrecorded)` 사망, 실측 0건). 오늘의 문은 `Model::push_plane`·`push_cylinder`(사설 `push_raw` 로
+  모인다). ⚠ 그리고 *"M6 교차 곡면에서 다시 본다"* 고 적어 뒀는데 **M6 는 도착했다** — 다시 볼 자리에
+  왔으니, 병렬 구간의 곡면 push 유무를 **재서** 이 줄을 갱신할 것(재지 않고 규칙을 다시 쓰지 않는다).
 
 ---
 
@@ -743,10 +803,34 @@ STEP 출력, undo/replay.
    ✔ 집행: `Mag`·`Approx`/`HpApprox`(+필드 `value`/`error`)·`WitnessPoint`·`WorkingPlane` —
    4커밋, census 비트 동일 ×4, 항목별 처분은 §판정 이름 규칙의 대응 목록.
    ⏳ 잔여: 진실 enum 은 `SurfaceTruth`(문서의 `Surface` 이름은 아직 geom 의 f64 캐시가 쥠),
-   캐시는 `Store<geom::Surface>` 그대로. `Handle<T>` 의 타입 매개변수가 아레나 반전을 강제하고
-   (공유 인덱스라 의미 무손실), `SurfaceCache{coeffs,tol,inv_norm}` **실형이 판정 통합에서 생길
-   때** 개명·반전을 한 번에 기계적으로 한다 — 조건은 원래 그대로, 오늘은 그 실형을 만들 수 없다
-   (`tol`·`inv_norm` 이 존재하지 않는다).
+   캐시는 `Store<geom::Surface>` 그대로.
+
+   ⚠★★★★ **정정(2026-09-11) — 조건을 옮기고 둘로 가른다.** 여기 *"`SurfaceCache{coeffs,tol,
+   inv_norm}` 실형이 **판정 통합에서** 생길 때 개명·반전을 **한 번에** 한다"* 고 적혀 있었다.
+   오늘의 실측이 그 조건과 그 묶음을 둘 다 반박한다. ⚠ 표지는 **내용으로** 붙인다 — §관문 규칙이
+   이미 다른 뜻으로 「8b」를 쓰고 있어 번호가 충돌한다.
+
+   - **「8·반전」(아레나 반전) — 조건 없음, 지금 가능.** 캐시의 «내용»은 안 바꾸고 «자리»만 바꾼다.
+     ★ **소비자가 도착했다**: 아래 항목 12 가 「판정 통합」을 *"좌표 재생이 생기는 자리"* 로 쓰는데,
+     좌표 재생은 2026-09-11 에 섰다(`nacre_ops::realize_vertex`, 칸 ㊵). 정제가 캐시를 덮어써야
+     하고, 반전이 없으면 **커널의 모든 아레나를 덮는 `Store` 봉인을 열어야** 한다 — topo 국소
+     문제 때문에. ⇒ 반전이 사는 것은 **그 문이 `Store` 가 아니라 `Model` 의 사설 `Vec` 에 난다**는
+     것이다(`rebuild_edge_cache` 가 선례).
+     ☑ 순환 걱정은 근거가 없다: `nacre-store`·`nacre-geom` 의 주석이 *"geom already needs `Handle`
+     (its `Curve::Intersection` holds `Handle<Surface>`)"* 라 적었는데 **그 변종은 존재한 적이 없다**
+     (`Curve = Line | Circle`, `6f233a2` 부터; geom 의 실제 `Handle<` 사용 0건, `nacre-store` 의존
+     없음 — 실측). ⇒ **그 주석 셋을 고치는 것이 반전 칸의 몫이다**(그 칸의 안전 근거이므로).
+     ☑ 규모 실측(2026-09-11): `Handle<Surface>` **103자리 무변**(그리고 그때 «참»이 된다) ·
+     `.surface(` 읽기 **103자리 무변** · `SurfaceTruth`→`Surface` 111 · `surface_truth(`→
+     `surface_def(` 75 · geom 의 `Surface` 를 정규화할 자리 ~78(두 이름을 함께 쓰는 9파일 안).
+   - **「8·캐시 실형」(`SurfaceCache`) — 조건은 「판정 통합」이 아니라 「곡면 실현」이다.** 근거는 이
+     문서 자신의 문장: *"`Through` 평면의 `SurfaceCache` 는 **세 정점의 실현에서 유도된다**"* ⇒
+     `tol` 은 판정이 아니라 **실현**이 알게 된다. ⏸ 모양은 미정이다(§캐시의 주석 — 원통에 4계수형이
+     없다). ⚠ 그리고 **소비자 유무를 그 칸에서 확인한다**: 오늘 판정은 `distance_eps`+증인 tol 로
+     자기 방식이고 STEP 은 tol 을 안 쓴다 ⇒ 「소비자 없는 배관」 금지에 걸릴 수 있다.
+   - ★ **「한 번에」 논거를 취소한다** — 두 일이 건드리는 자리가 다르다(실측): 반전은 **타입 표기**
+     (`Handle<Surface>`·`SurfaceTruth`·`surface_truth(`), 캐시 실형은 **읽기**(`.origin()`·
+     `.normal()`·`.radius()`). **같은 줄에 둘 다 있는 자리는 0건**이다.
 9. **`Inexact` 소멸의 두 반증은 지반이 제거됐다(S6a)** — #28(축만 든 호출자)은 `from_axes`
    리프트가 닫았고(십진 진실 def + S2 이름 + S4 wide 프레임), "정확한 형태가 없는 평면
    0.07%/모델 25.8%" 실측은 **S2 이전 수치**(원인이 이름의 i128 넘침이었고 그 원인이
@@ -1052,3 +1136,26 @@ STEP 출력, undo/replay.
     정확 반올림 실현으로는 어디로 가는가**. 같으면 정제는 거의 무동작이고 얻는 것은 곡선 샘플뿐이며,
     다르면 **어느 쪽이 옳은지가 드러난다**(진실에서 나온 쪽이 옳다) ⇒ 그 자체가 버그를 찾는 계기다.
     그 수가 이 일의 크기와 값을 정한다.
+
+18. ⚠★★★★ **`design.md` 가 은퇴한 어휘를 «현재형으로» 가르친다** (2026-09-11 실측, 진단만).
+
+    | 어휘 | design.md | 코드 |
+    |---|---|---|
+    | `Origin` / `Constructed` / `Discovered` | **13 / 17 / 25** | **0** |
+    | `Store<Curve>` | 1 ✔ 고침 | **0** |
+    | `vertex.point` (49·174행) | 2 ✔ 고침 | **0** |
+    | `ImprintSketch` | 2 | **0** |
+
+    `Origin` 은 `76a07b2`(*"a vertex is its definition — Origin dies"*)에서, imprint 는 2026-07-22 에
+    은퇴했는데 문서가 따라가지 않았다. ⚠ **`CLAUDE.md` 가 design.md 를 «작업 전 필독»으로 지정하므로
+    가장 눈에 띄는 자리의 낙후다** — 디버그 뷰어 문단(66행)·`nacre-scalar` 문단(70행)·M4 마일스톤
+    (1988행)이 그 죽은 타입에 기대어 서 있다.
+
+    ☑ **이번 칸(2026-09-11)이 고친 것은 진실/캐시 갈래에 하중이 걸린 셋뿐이다** — `Model` 스케치를
+    포인터로, `vertex.point` 둘, `VertexDef` 의 `Branch` 누락. **`Origin` 55곳은 정점 갈래의 이야기라
+    곡면 칸에 섞지 않았다.** 범위를 좁힐 때 버리는 것을 적어 두는 것이 이 항목의 목적이다.
+
+    ⇒ 할 일: `Origin`/`Constructed`/`Discovered` 를 오늘의 어휘(`PointCache.tol` 의 `Some`/`None`,
+    `VertexDef`)로 옮기고, `ImprintSketch` 문단을 은퇴 표기로. **코드 변경 0**이지만 55곳이라 자기 칸이
+    필요하다. ★ 그리고 그 칸의 규율은 이번 칸과 같다 — **문서가 이름 짓는 타입이 실재하는지 grep 으로
+    확인한다**(가시성 한정자를 빼고).
