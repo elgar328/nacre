@@ -20011,3 +20011,34 @@ census 를 움직일 수 없다**(의미 없는 변경) — 두 `Surface` 의 �
 진실 다이제스트 **동일**(138 곡면 — `Known` 135·`Through` 2·원통 1·moved 49) · 잠금 2′ 신설
 (`the_surface_cache_is_writable_and_the_truth_is_not` — 반전 전에는 **쓸 수 없던** 테스트) ·
 geom·store **코드 0줄, doc 만**.
+
+### 감사 — 반전이 조용히 떨어뜨린 가드 하나
+
+★★★★ `Store::get` 은 디버그에서 **cross-store 가드**를 든다(*"Handle was minted by a different
+Store"*). 반전 전 `Model::surface` 는 `self.surfaces.get(h)` 였으니 그 가드를 공짜로 받았고, 캐시를
+`Vec` 색인으로 바꾸면서 **잃었다**. 실측(탐침):
+
+| 문 | 남의 모델 핸들을 주면 |
+|---|---|
+| `surface` | **패닉 없음 — 가드 상실**(반전 전에는 패닉) |
+| `surface_truth` | 패닉 — 가드 온전 |
+| `vertex_point` | **패닉 없음** — 애초에 없었다 |
+
+⇒ 「형제를 따른다」가 **가드를 잃는 방향**이었다. 형제가 옳은 모양을 갖고 있다는 이 칸의 논거는
+«어느 층이 어휘의 주인인가»에 대해서는 맞았지만, **형제의 구멍까지 따라갈 근거는 아니었다.**
+
+☑ 수리는 부류 전체로: 네 캐시 읽기가 자기 `Store` 에 먼저 물어본다(`Model::debug_guard`, 디버그
+전용이라 release 비용 0). 잠금 `a_foreign_handle_cannot_read_a_cache` 가 다섯 문을 다 물고, 가드를
+`surface`·`vertex_point` 에서 각각 빼 보니 **그 이름으로** 빨개졌다. ★ 확장이 기존 테스트를 하나도
+깨지 않았다 ⇒ 구멍은 있었지만 아직 밟히지 않았다.
+
+**그 밖에 감사가 확인한 것**: 다시 지은 픽스처가 여전히 잰다(깊은 진술에 **면 1개**만 interning,
+그 캐시가 `[0,0,1,-1]` = z=1, 진실은 삼중항 verbatim, 여섯 면 중 **1개만** transport 넘침 ⇒ 인구가
+아니라 한 평면을 잰다; 게다가 이제 진실·캐시가 **일치**해 원본보다 낫다) · 문서에 적은 수치 넷을
+부모 커밋에서 재확인(**17파일·99·32·122**) · `push_plane_unregistered` 는 여전히 7 호출자 ·
+`set_plane_points_for_test` 의 남은 언급은 전부 «그때의 기록»(늘어진 참조 0) · kit·앱이 두 접근자를
+**한 번도** 부르지 않음(0건 — 내가 kit 에 적은 주석이 참) · validate 의 `CylinderTruthCacheMismatch`
+가 양쪽을 읽는 형태 그대로 살아 있고 자기 양성 대조가 초록.
+
+**고친 낙후 둘**: 픽스처 주석의 *"doctored"*(이제 아무것도 손대지 않는다) · census 모듈 doc 의
+*"the same **148** lines"*(실측 **398** — 코퍼스가 자라므로 주장은 「같은 줄」이지 숫자가 아니다).

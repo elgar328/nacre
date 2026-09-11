@@ -888,6 +888,24 @@ impl Model {
         h
     }
 
+    /// **Debug-only: the cross-store guard for an index-parallel cache read.**
+    ///
+    /// A cache is a plain `Vec` indexed by `h.index()`, so reading it alone accepts a handle
+    /// minted by *another* model and silently answers with the wrong cell. [`Store::get`] is
+    /// where that guard lives (*"Handle was minted by a different Store"*), so a cache read asks
+    /// its store first and throws the answer away.
+    ///
+    /// ★ Measured (2026-09-11): before the arena held the truth, `Model::surface` **was** a
+    /// `Store::get` and carried this guard for free; indexing the cache alone dropped it, while
+    /// `vertex_point`/`edge_curve` had never had it. A foreign handle reached all three without a
+    /// sound. Release builds pay nothing — `Store::get`'s assertion is `cfg(debug_assertions)`
+    /// and so is this call.
+    #[inline]
+    #[cfg(debug_assertions)]
+    fn debug_guard<T>(store: &Store<T>, h: Handle<T>) {
+        let _ = store.get(h);
+    }
+
     /// The surface a handle names, realized — the **f64 cache** of [`Model::surface_truth`]'s
     /// answer.
     ///
@@ -901,6 +919,8 @@ impl Model {
     /// ```
     #[inline]
     pub fn surface(&self, h: Handle<Surface>) -> &nacre_geom::Surface {
+        #[cfg(debug_assertions)]
+        Self::debug_guard(&self.surfaces, h);
         debug_assert_eq!(
             self.surface_cache.len(),
             self.surfaces.len(),
@@ -1502,6 +1522,8 @@ impl Model {
     /// read from the index-parallel cache [`Model::push_vertex`] fills.
     #[inline]
     pub fn vertex_point(&self, vh: Handle<Vertex>) -> Point3 {
+        #[cfg(debug_assertions)]
+        Self::debug_guard(&self.vertices, vh);
         debug_assert_eq!(
             self.vertex_cache.len(),
             self.vertices.len(),
@@ -1516,6 +1538,8 @@ impl Model {
     /// construction epsilon).
     #[inline]
     pub fn vertex_tol(&self, vh: Handle<Vertex>) -> Option<f64> {
+        #[cfg(debug_assertions)]
+        Self::debug_guard(&self.vertices, vh);
         debug_assert_eq!(self.vertex_cache.len(), self.vertices.len());
         self.vertex_cache[vh.index() as usize].tol
     }
@@ -1560,6 +1584,8 @@ impl Model {
     /// index-parallel cache [`Model::push_edge`] fills.
     #[inline]
     pub fn edge_curve(&self, e: Handle<Edge>) -> &Curve {
+        #[cfg(debug_assertions)]
+        Self::debug_guard(&self.edges, e);
         debug_assert_eq!(
             self.edge_cache.len(),
             self.edges.len(),
@@ -2607,6 +2633,54 @@ mod tests {
                 assert_eq!(he_end(&m, hes[i]), he_start(&m, hes[(i + 1) % hes.len()]));
             }
         }
+    }
+
+    /// ★★★ **A foreign handle does not read a cache** — the guard [`Store::get`] owns, kept on
+    /// the index-parallel cache reads too ([`Model::debug_guard`]).
+    ///
+    /// ★ This is a **regression test with a measured history**: `Model::surface` used to be a
+    /// `Store::get` and had the guard for free; the arena flip made it a `Vec` index and dropped
+    /// it, and `vertex_point`/`edge_curve` had never had it — a handle from another model reached
+    /// all three and answered with the wrong cell. The guard is `cfg(debug_assertions)`, so the
+    /// test is too. Panic output is left unsuppressed on purpose: swapping the panic hook is
+    /// global state, and the suite runs tests in parallel.
+    #[test]
+    #[cfg(debug_assertions)]
+    fn a_foreign_handle_cannot_read_a_cache() {
+        let mut a = Model::new();
+        let mut b = Model::new();
+        for m in [&mut a, &mut b] {
+            let _ = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([1.0, 1.0, 1.0]),
+            );
+        }
+        let surf = b.surface_handle_at(4).expect("b has surfaces");
+        let vert = b.vertex_handle_at(3).expect("b has vertices");
+        let edge = b.edges.handle_at(3).expect("b has edges");
+
+        let refuses = |what: &str, call: &dyn Fn()| {
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(call));
+            assert!(
+                r.is_err(),
+                "{what}: a handle minted by another model must not read this model's cell"
+            );
+        };
+        refuses("surface", &|| {
+            let _ = a.surface(surf);
+        });
+        refuses("surface_truth", &|| {
+            let _ = a.surface_truth(surf);
+        });
+        refuses("vertex_point", &|| {
+            let _ = a.vertex_point(vert);
+        });
+        refuses("vertex_tol", &|| {
+            let _ = a.vertex_tol(vert);
+        });
+        refuses("edge_curve", &|| {
+            let _ = a.edge_curve(edge);
+        });
     }
 
     /// ★★★★ **What the flip bought: the surface cache is writable, and the truth is not.**

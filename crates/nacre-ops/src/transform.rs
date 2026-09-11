@@ -1063,7 +1063,7 @@ mod tests {
         );
         assert!(deep.checked_add(t).is_none(), "the transport must overflow");
 
-        // The z component keeps the doctored z-plane off the invariant branch (a purely-x
+        // The z component keeps the deep z-plane off the invariant branch (a purely-x
         // translation *fixes* it, and a fixed plane is restated with no transport at all —
         // this test is about the transport overflowing). `0 + 1` and `1 + 1` are exact, so
         // the f64-side qualification above still holds for every corner.

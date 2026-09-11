@@ -19,7 +19,8 @@
 //! ```
 //!
 //! ★★★ **Diff it across *profiles* too, not only across commits.** Drop `--release` and the same
-//! 148 lines must come out — they do, measured. That is not a formality: `Angle`'s f64 route is
+//! lines must come out — they do, measured (398 of them on 2026-09-11; the claim is *the same
+//! lines*, not a number, because the corpus grows). That is not a formality: `Angle`'s f64 route is
 //! `(deg.to_f64() * PI / 180.0).cos()`, and LLVM evaluates that at compile time wherever it can see
 //! the angle, one ulp away from what libm returns at run time. Two builds disagreeing here would
 //! mean the coordinates a model stores depend on how it was compiled.

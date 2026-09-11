@@ -839,6 +839,17 @@ STEP 출력, undo/replay.
    interning 되게 한다(그 interning 을 테스트가 단언한다) ⇒ **`Store` 에 test-gated 문도 내지
    않았다.** 「의도적으로 어긋날 수 있는」 곡면이 이제 이 저장소에 없다.
 
+   ⚠★★★★ **감사가 잡은 것 — 반전이 «가드 하나»를 조용히 떨어뜨렸다** (2026-09-11, 같은 날 수리).
+   `Store::get` 은 `cfg(debug_assertions)` 로 **cross-store 가드**를 든다(*"Handle was minted by a
+   different Store"*). 반전 전 `Model::surface` 는 `self.surfaces.get(h)` 였으므로 그 가드를 공짜로
+   받았는데, 캐시를 `Vec` 으로 색인하면서 **사라졌다**(실측: 남의 모델 핸들이 패닉 없이 다른 칸을
+   읽었다). ⚠ 그리고 **형제 둘은 애초에 없었다** — `vertex_point`·`vertex_tol`·`edge_curve` 전부
+   통과. ⇒ 「형제를 따른다」가 **가드를 잃는 방향**이었다.
+   ☑ 수리는 부류 전체로: 캐시 읽기가 자기 `Store` 에 먼저 물어본다(`Model::debug_guard`, 디버그
+   전용 ⇒ release 비용 0). 잠금 `a_foreign_handle_cannot_read_a_cache` 가 **다섯 문 전부**를 문다
+   (가드를 `surface` 에서·`vertex_point` 에서 각각 빼 보고 그 이름으로 빨개지는 것을 확인).
+   ★ 확장이 **기존 테스트를 하나도 깨지 않았다** ⇒ 그 구멍은 있었지만 아직 밟히지 않았다.
+
    ★★★ **실측한 계기의 분업**(위반을 심어 확인): 캐시 순열 → census 가 움직이고 패닉 ·
    **모든 유도값이 같은 진실 재진술**(평면 삼중항의 순환 회전) → census **비트 동일**이고
    `arena_sig` **초록**, 진실 다이제스트만 본다 ⇒ 그 다이제스트가 존재하는 이유가 그 한 부류다 ·
