@@ -372,25 +372,50 @@ pub struct Model {
     surface_cache: Vec<SurfaceCache>,         // ✔ 2026-09-11 — 실현. 아레나가 진실을 든다
     edge_cache:    Vec<EdgeCache>,            // 평가 가능한 곡선
 
-    // 이름 — 진실에서 유도해 하나만 저장(Narrow|Wide — §이름과 interning).
-    // 곁표인 이유: Known 은 항상 있지만 무리수 모션의 Through 는 없을 수 있다.
-    pub surface_name: HashMap<Handle<Surface>, PlaneName>,
-    pub surface_ids:  HashMap<SurfaceKey, Handle<Surface>>,
+    // 동일성 — 「같은 곡면 ⇒ 같은 핸들」이 되게(그래야 동일성이 정수 비교다).
+    // ⏳ 오늘 코드는 표가 «셋»이다(`surface_ids`·`surface_through_ids`·`cylinder_ids`) — 최종형은
+    //    미정이고 다음 의논 몫이다.
+    surface_ids: HashMap<SurfaceKey, Handle<Surface>>,
 }
+// ⏳ **`surface_name` 은 사라진다** — 이름은 유도되므로 캐시이고, `SurfaceCache::Plane.name` 으로
+//    들어간다(위 §수치·캐시 타입). 오늘은 `pub HashMap` 곁표라 곡면의 캐시가 두 벌이다.
 
 // 수치 층 — 같은 것의 다른 정밀도는 Hp 접두사 하나로만 다르다. 값+tol 이 한 덩어리.
 pub struct Mag { m: f64, e: i64 }                                  // f64 밖 범위의 보수적 크기
 pub struct Approx        { value: f64,      error: f64 }           // 중간 스칼라
 pub struct HpApprox      { value: BigFloat, error: Mag }
 pub struct PointCache    { coord: Point3,        tol: Option<f64> }  // S7 실형: 측정치 유무
+// ⏸ `HpPointCache` 는 아직 «타입»이 아니다 — 오늘은 튜플 `(usize, [HpApprox; 3])`. 층으로
+//    굳히는 것은 곡면 실현 몫(열린 항목 8). 이름만 먼저 정해 둔 자리다.
 pub struct HpPointCache  { coord: [BigFloat; 3], tol: [Mag; 3] }
-pub struct SurfaceCache  { realized: nacre_geom::Surface }          // ✔ 2026-09-11 — 감싸기만
-// ★★ 아래 스케치(2026-08-05, M6 전)는 평면 전용이라 **버렸다**: 원통에는 4계수 음함수형이 없다
-//    (2차 곡면) ⇒ 필드를 더해서는 확장되지 않는다. geom 의 값을 감싸는 쪽을 골랐고 **형제 선례가
-//    그것이다**(`EdgeCache { curve: Curve }`) — 그리고 그 union 의 메서드가 기하이므로 어휘의
-//    주인은 geom 이다. ⏸ 남은 것은 `tol` 하나, 「8·캐시 실형」 몫.
-// pub struct SurfaceCache  { coeffs: [f64; 4], tol: [f64; 4], inv_norm: f64 }   ← 평면 전용 스케치
-// pub struct HpSurfaceCache{ coeffs: [BigFloat; 4], tol: [Mag; 4] }             ← 같음
+
+// ⏳ **한 곡면의 캐시 = 변종 «하나»** — 진실과 짝을 이룬다(`Surface::Plane` ↔ `SurfaceCache::Plane`).
+//    2026-09-12 확정, 아직 안 지음(오늘 코드는 `{ realized: geom::Surface }` + 곁표 `surface_name`).
+pub enum SurfaceCache {
+    Plane    { realized: geom::Plane,    name: Option<PlaneName>, tol: ⏸ },
+    Cylinder { realized: geom::Cylinder,                          tol: ⏸ },
+}
+// ★★★★ **왜 변종인가 — 이름이 평면에만 있기 때문이다.** 원통에는 4계수 음함수형이 없다(2차 곡면).
+//    단일 구조체로 두면 `name: Option<PlaneName>` 이 **원통에겐 영원히 `None`** 인 필드가 되고,
+//    그것은 타입이 「있을 수 없는 것」을 표현 가능하게 두는 것이다. 변종이면 원통에 이름 자리가
+//    **아예 없다** — 그리고 구·원뿔이 와도 같은 방식으로 자란다(각자 자기 필드만).
+// ★★★★ **왜 이름이 여기 사는가 — 이름은 캐시다.** `plane_name_exact(세 점)` 로 언제든 다시 나온다
+//    (`Through` 는 정점을 풀어서 `plane_name_through`). 그런데 오늘은 **`pub surface_name` 곁표**에
+//    따로 살아서, 같은 곡면의 캐시가 **두 벌**이고 그릇(`Vec`↔`HashMap`)·이름 규칙(`_cache`↔`_name`)·
+//    가시성(비공개↔**`pub`**)이 셋 다 어긋나 있다. 캐시로 접으면 `PointCache`·`EdgeCache` 와 같은
+//    「한 실체 = 한 캐시 구조체」가 되고, `rebuild_surface_cache()` **하나**가 실현과 이름을 같이
+//    재생하며 그 **비트 동일 잠금이 「이름은 캐시다」를 증명**한다(간선이 만든 선례).
+//    ☑ 실측(2026-09-12): `surface_name` 사용 44곳이 전부 «핸들로 조회»(`get` 24·`contains_key` 18·
+//    `len`·`iter`·`insert` 각 1) ⇒ `HashMap` 이어야 할 이유가 없다.
+// ★★ 접근자 이름은 §문의 이름이 정한다: 진실은 `surface(h)`, 캐시는 `surface_cache(h)`, 조각은
+//    그 위에서 체이닝(`.plane()`·`.cylinder()`·`.name()`·`.tol()`). 다형 질의(`distance`·
+//    `normal_at`)도 `SurfaceCache` 의 메서드다 — 오늘 geom 의 enum 이 하던 일 그대로.
+// ☑ **대가 실측(2026-09-12)**: `m.surface(h)` 호출 **106**곳 중 **58 은 `match`/`matches!`**(변종을
+//    바로 가르므로 오히려 나아진다) · **30 은 `let`-`else` 로 한 변종만**(형태만 바뀐다) ·
+//    **손봐야 하는 건 18**(enum 통째로 11 + enum 메서드 7), 그중 대부분은 `distance`/`normal_at` 을
+//    `SurfaceCache` 로 옮기면 사라진다. 통째로 변환하는 진짜 자리는 `transform.rs` **한 곳**.
+// ⚠ 버린 스케치(2026-08-05, M6 전): `{ coeffs: [f64;4], tol: [f64;4], inv_norm }` — 평면 전용이라
+//    원통으로 확장되지 않는다. `HpSurfaceCache{ coeffs, tol }` 도 같은 이유로 죽었다.
 pub struct EdgeCache     { curve: Curve }                          // 평가 가능한 담체 곡선
 // ★★★★ **세 캐시는 «실현값 + 그 오차»로 수렴한다 — 오차가 빠진 쪽은 `EdgeCache` 다**(2026-09-11):
 //    `PointCache{coord, tol}` ✔ · `SurfaceCache{realized, tol⏸}` · `EdgeCache{curve, ???}`.
@@ -426,6 +451,66 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
 쓰이므로 틀려도 조용한 오답이 아니라 느려질 뿐이다.
 
 ---
+
+## 문의 이름 — `Model` 은 실체당 «둘», 조각은 체이닝 (2026-09-12 확정)
+
+저장소가 비공개면 밖은 **문(=`Model` 의 메서드)** 으로만 읽는다. 규칙은 **한 줄**이다:
+
+> **`Model` 은 실체당 문이 «둘» — `x(h)` 는 «진실»(아레나 항목 그 자체), `x_cache(h)` 는 «캐시».
+> 그 아래 조각은 `Model` 에 문을 더 내지 않고 돌려받은 타입의 «메서드»로 꺼낸다.**
+
+```rust
+// ── Model 의 문 — 실체당 둘, 그게 전부다 ──────────────────────────────
+m.surface(h)       -> &Surface        m.surface_cache(h) -> &SurfaceCache
+m.vertex(v)        -> &Vertex         m.vertex_cache(v)  -> &PointCache
+m.edge(e)          -> &Edge           m.edge_cache(e)    -> &EdgeCache
+m.face(f) · m.shell(s) · m.solid(s) · m.motion(n)          // 캐시가 없는 실체는 하나뿐
+m.surface_count() · m.vertex_count() · …                   // 개수는 예외적으로 Model 에
+
+// ── 조각은 체이닝 ────────────────────────────────────────────────────
+m.surface(h).motion()            -> Option<Handle<MotionNode>>  // 진실 조각
+m.surface_cache(h).plane()       -> Option<&geom::Plane>        // 캐시 조각
+m.surface_cache(h).cylinder()    -> Option<&geom::Cylinder>
+m.surface_cache(h).name()        -> Option<&PlaneName>
+m.surface_cache(h).tol()         -> ⏸ 「8·캐시 실형」
+m.surface_cache(h).distance(p)   -> f64                         // 다형 질의는 캐시가 가른다
+m.vertex_cache(v).coord()        -> Point3
+m.vertex_cache(v).tol()          -> Option<f64>
+m.edge_cache(e).curve()          -> &Curve
+m.edge_cache(e).err()            -> ⏸ (수렴 주석의 빠진 오차)
+```
+
+★★★★ **왜 체이닝인가 — 이름이 «어디의» 조각인지를 스스로 말한다.** 초안은 `plane(h)`·`name(h)` 를
+`Model` 에 달려 했는데, `Plane` 은 `Surface::Plane`, 즉 **실체 이름**이라 규칙 ①(실체 이름 = 진실)과
+정면으로 부딪친다 — `plane(h)` 가 진실을 줄 것처럼 읽힌다. `m.surface_cache(h).plane()` 은 **이미
+「캐시의」라고 말하고 들어왔으므로** 그 오해가 **구조적으로 불가능**하다.
+☑ 그리고 새 방식이 아니다 — `geom::Surface` 가 `distance()`·`normal_at()` 을 자기 메서드로 갖고
+안에서 가르는 것과 **같은 관용구**를 캐시에 적용하는 것이다.
+☑ **`Model` 이 안 자란다**: 구·원뿔·NURBS 가 와도 `SurfaceCache` 에 `sphere()` 가 붙을 뿐이고,
+「8·캐시 실형」이 `tol` 을, 수렴 주석이 `EdgeCache::err` 을 더해도 문 개수는 그대로다.
+
+★★★★ **`_truth` 접미사는 사라진다.** `surface_truth` 는 이 커널에서 **유일한** `_truth` 였다
+(`vertex_truth`·`edge_truth` 는 없다 — 정점·간선의 진실은 공개 필드 `.get()` 으로 읽혀 왔다).
+접미사가 필요했던 것은 **이름을 캐시가 쥐고 있어서**였고, 칸 ㊷이 그 원인을 없앴다.
+★ 오늘의 예외 둘도 규칙 안으로 들어온다: `plane_motion(h)` → `m.surface(h).motion()`,
+`pub surface_name` 곁표 → `m.surface_cache(h).name()`.
+☑ `m.motion(n)` 은 **이미** 이 규칙이다 — 새 규칙을 만드는 게 아니라 넓히는 것이다.
+
+⚠ **`surface(h)` 는 개명이 아니라 «뜻 뒤집기»다** — 오늘은 캐시를 주고 **106곳**이 그것을 쓴다.
+☑ 타입이 달라(`&geom::Surface` ↔ `&topo::Surface`) **전부 컴파일 오류로 드러나고 조용히 틀릴 자리가
+0**이지만, 106곳을 한 건씩 「진실을 원했나 캐시를 원했나」 판정해야 한다(분포는 §캐시의
+`SurfaceCache` 주석: `match` 58 · `let`-`else` 30 · 통째로 18).
+
+☑ **나머지는 기계적이다** (실측 2026-09-12): `vertex_point` **111** · `edge_curve` **29** ·
+`plane_motion` **18** · `vertex_tol` **17** · `surface_name` **44**. 저장소가 비공개가 되면
+`.get()` **683**곳이 `m.vertex(v)` 꼴로 바뀐다(열린 항목 21).
+
+☑ **성능은 이 결정의 고려사항이 아니다.** 어느 철자든 안에서 하는 일은 «디버그 가드 + 배열 색인
+하나 + 판별자 읽기»이고 할당도 복사도 없다(`#[inline]`). ★ 오히려 **줄어든다**: 오늘 이름과 실현이
+따로 살아 둘 다 필요하면 조회가 둘(`Vec` 색인 + **`HashMap` 해시**)인데, 체이닝이면 `Vec` 색인
+**하나**에서 둘 다 꺼낸다.
+⚠ 대가는 `PointCache`·`EdgeCache`·`SurfaceCache` 의 필드가 비공개이므로 **조각마다 메서드를 하나씩
+지어야 한다**는 것 — 작지만 0은 아니다.
 
 ## 판정 (연산 동안만 산다 — nacre-cip)
 
@@ -1074,7 +1159,14 @@ STEP 출력, undo/replay.
    `check()` 가 단순성(≠0 면적)을 진실 위에서 보증하므로 지금은 건전하지만, f64 폴백 소멸
    (S6 이후)과 함께 재검할 것.
 
-15. **`tess` 는 «수치 정밀도» 손잡이가 없다 — 내보내기가 그것을 필요로 한다** (2026-09-10, 논의만;
+22. **`tess` 는 «수치 정밀도» 손잡이가 없다 — 내보내기가 그것을 필요로 한다** (2026-09-10, 논의만;
+    ⚠ **번호 정정 2026-09-12 — 이 항목은 «옛 이름»이 있다.** `15.` 로 붙어 있었는데 그 번호는 이미
+    쓰이고 있었다(「술어가 이름의 정수를 읽는다」, 2026-08-09 닫힘). 22로 옮긴다.
+    ⇒ **「열린 항목 15」라고 적힌 기록은 두 항목으로 갈린다**(실측: 인용 21곳):
+    `design.md`·소스 주석 셋(`planes.rs`·`tolerant_tests.rs`·`predicate.rs`)·dev-log 7456·7829 는
+    **닫힌 15**를, **dev-log 19734·19752·19806·19811·19835(칸 ㊵)는 «이 항목»**을 가리킨다.
+    dev-log 는 그때 참이었던 것을 적는 기록이므로 고치지 않고, 여기에 별칭을 적어 둔다 —
+    **칸 ㊵ 기록의 「열린 항목 15」 = 이 항목(22)**.;
     ★ 2026-09-11 칸 ㊵ 로 **정점 쪽 절반이 섰다** — 아래 「칸 ㊵ 가 한 것」).
     ⚠ **두 손잡이를 가르는 것이 이 항목의 전부다.**
 
@@ -1244,3 +1336,59 @@ STEP 출력, undo/replay.
 
     ⏸ **코드 인구 0** 이므로 짓지 않는다(실측: geom 에 `Handle<` 0건, `Curve = Line | Circle`).
     M7 이 마친 교차를 실제로 만들 때, `EdgeCache` 를 `{curve, err}` 로 키우는 것이 그 자리다.
+
+20. ⚠★★★★ **`let`-`else` 30곳이 새 곡면 종류를 «조용히» 놓친다** (2026-09-12 실측, 진단만).
+
+    `m.surface(h)` 호출 **106**곳의 모양을 세었다:
+
+    | 받아서 하는 일 | 수 | 구(Sphere)·원뿔이 추가되면 |
+    |---|---|---|
+    | `match` / `matches!` | **58** | ☑ **비망라 컴파일 오류** — 컴파일러가 전부 짚는다 |
+    | `let`-`else` / `if let` 로 한 변종만 | **30** | ⚠ **조용히 `else` 로 떨어진다** |
+    | enum 통째로 · enum 메서드 | 18 | 손봐야 함(캐시 변종화의 대가) |
+
+    ★ 이미 이름이 있는 함정이다 — *"새 enum 변종은 `match` 엔 보이고 `let`-`else` 엔 안 보인다"*.
+    ⚠ **캐시를 변종으로 바꿔도 이건 안 고쳐진다**(`let SurfaceCache::Plane{..} = … else` 도 똑같이
+    조용하다) ⇒ **별개의 일**이다.
+
+    ⇒ **30곳을 한 건씩 읽어 의도를 판정해야 한다**, 그리고 의도가 둘로 갈린다:
+
+    | 그 줄의 의도 | 옳은 철자 |
+    |---|---|
+    | **「평면이어야만 한다」**(여기 다른 종류가 올 리 없다) | **타입 문** `plane(h) -> Option<&geom::Plane>` — 구가 와도 «평면 아님» 으로 정직하게 답한다 |
+    | **「모든 곡면 종류를 다뤄야 한다」**(오늘 둘뿐이라 줄여 쓴 것) | **`match`** — 그래야 새 종류가 컴파일 오류로 온다 |
+
+    ⏸ 오늘 인구는 **0**(곡면 종류가 둘뿐이라 아직 아무것도 안 놓친다) ⇒ 지금 짓지 않는다.
+    **구·원뿔·NURBS 를 더하기 «전에» 반드시** — 그 칸의 첫 단계가 이 30곳 판정이다.
+
+21. ⏳★★★★ **저장소 가시성을 «전부 비공개»로 — 방향은 확정, 막고 있는 것이 둘** (2026-09-12 실측).
+
+    오늘 곡면·모션만 비공개이고 정점·간선·면·셸·솔리드는 **공개 필드**다. 같은 위험(캐시 없는
+    raw push)을 **곡면은 타입으로, 나머지는 검사로** 막는 셈이고, 문서가 그것을 알고 적어 두기도
+    했다 — *"A raw `edges.push` without a cache entry desyncs the two … the store stays `pub`"*.
+    ⇒ 통일 방향은 **↑ 전부 비공개**다(↓ 공개로 내리면 칸 ㊷이 얻은 봉인을 잃는다).
+
+    **밖에서 쓰는 연산 실측**(topo 밖):
+
+    | 연산 | 수 | 문으로 대신 |
+    |---|---|---|
+    | `.get()` | **683** | ☑ §문의 이름의 `vertex`/`edge`/`face`/`shell`/`solid` — 기계적 |
+    | `.len()` | 97 | ☑ `*_count()` (`surface_count` 선례) |
+    | `.iter()` | 60 | ⚠ 아래 (b) |
+    | `.push()` | **76** | ⚠ 아래 (a) |
+
+    ☑ **정점·간선은 이미 깨끗하다** — 밖에서 raw push **0건**(둘 다 `push_vertex`/`push_edge` 를
+    지난다). 처음 보인 4건은 `Tessellation` 자기 저장소였다(오탐).
+
+    ⚠ **(a) 면·셸에는 문이 «없다».** 프로덕션 raw push **74곳**(faces 40 · shells 34 —
+    `boolean.rs`·`ops.rs`·`transform.rs`): 불리언이 결과를 조립하며 아레나에 직접 민다.
+    `push_face`/`push_shell` 이 아예 없어서다. ⇒ **이 항목의 본체는 「비공개로 바꾸기」가 아니라
+    「면·셸의 문을 설계하기」**이고, 그 문이 지켜야 할 불변식(면↔셸의 규칙, 캐시 없음)을 먼저
+    정해야 한다.
+
+    ⚠ **(b) 전량 순회 60곳의 정당성이 미검증이다.** 곡면 저장소는 *"전량 순회 문이 의도적으로
+    없다 — 아레나엔 superseded 도 있으니 소비자는 live face 를 걷는다"* 인데, 정점·간선·면은
+    밖에서 전량 순회가 된다. 그 60곳이 **superseded 를 같이 읽고 있는지** 재야 한다 —
+    읽고 있다면 그것은 가시성 문제가 아니라 **오늘의 결함**이다.
+
+    ⇒ 순서: (b)를 먼저 재고(결함이면 그것부터), (a)를 설계하고, 그다음 필드를 닫는다.
