@@ -18,10 +18,10 @@ use crate::tolerant::Judge;
 use crate::transform::transform;
 use crate::{boolean::*, ops::*, planes::*};
 use nacre_cip::WitnessPoint;
+use nacre_geom::Plane;
 use nacre_geom::intersect::{planes_coplanar, three_planes};
-use nacre_geom::{Plane, Surface};
 use nacre_scalar::Axis;
-use nacre_topo::{Loop, Orientation, VertexDef};
+use nacre_topo::{Loop, Orientation, Surface, VertexDef};
 use proptest::prelude::*;
 use std::collections::HashMap;
 
@@ -64,7 +64,7 @@ fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3) ->
     let shell = m.solids.get(solid).outer;
     m.shells.get(shell).faces.iter().any(|&fh| {
         let f = m.faces.get(fh);
-        let Surface::Plane(plane) = m.surface(f.surface) else {
+        let nacre_geom::Surface::Plane(plane) = m.surface(f.surface) else {
             return false;
         };
         let sign = f64::from(f.orientation.sign());
@@ -2223,7 +2223,7 @@ fn build_prism_base_cap_reuses_shared_surface() {
     // Shared handle (was a fresh push before overhaul #3).
     assert_eq!(cap.surface, sf, "base cap reuses the shared surface handle");
     // Orientation reconciled: materialized outward normal is −sweep (−z).
-    let Surface::Plane(p) = m.surface(cap.surface) else {
+    let nacre_geom::Surface::Plane(p) = m.surface(cap.surface) else {
         unreachable!()
     };
     let sign = f64::from(cap.orientation.sign());
@@ -2278,7 +2278,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
     let (m, surf) = prism(Some(far_pts));
     assert_eq!(
         m.surface_truth(surf),
-        &nacre_topo::SurfaceTruth::Plane {
+        &nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Known(far_pts),
             motion: None,
         },
@@ -2296,10 +2296,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
     // fallback is gone (S6b): the negative pins live at the operation as named rejects now.
     let (m, surf) = prism(None);
     assert!(
-        matches!(
-            m.surface_truth(surf),
-            nacre_topo::SurfaceTruth::Plane { .. }
-        ),
+        matches!(m.surface_truth(surf), nacre_topo::Surface::Plane { .. }),
         "the ring's triple is recorded"
     );
     assert_eq!(
@@ -4832,8 +4829,8 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
                     unreachable!("a cuboid corner is a three-plane point")
                 };
                 let motion_of = |h| match m.surface_truth(h) {
-                    nacre_topo::SurfaceTruth::Plane { motion, .. } => *motion,
-                    nacre_topo::SurfaceTruth::Cylinder { motion, .. } => *motion,
+                    nacre_topo::Surface::Plane { motion, .. } => *motion,
+                    nacre_topo::Surface::Cylinder { motion, .. } => *motion,
                 };
                 // The caps were fixed by the Z turn and by the X mirror (normal ⊥ both),
                 // so they are world-stated; the moved carriers share the one leaf whose
@@ -5084,7 +5081,7 @@ fn transform_rotate_boolean_result_keeps_discovered_base() {
                 if tri.iter().any(|&h| {
                     !matches!(
                         m.surface_truth(h),
-                        nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+                        nacre_topo::Surface::Plane { motion: None, .. }
                     )
                 }) {
                     found_moved_carrier = true;
@@ -5162,10 +5159,10 @@ fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
     m.shells.get(m.solids.get(s).outer).faces.iter().any(|&fh| {
         matches!(
             m.surface_truth(m.faces.get(fh).surface),
-            nacre_topo::SurfaceTruth::Plane {
+            nacre_topo::Surface::Plane {
                 motion: Some(_),
                 ..
-            } | nacre_topo::SurfaceTruth::Cylinder {
+            } | nacre_topo::Surface::Cylinder {
                 motion: Some(_),
                 ..
             }
@@ -5197,7 +5194,7 @@ fn rot_iso(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
 fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_scalar::Axis>)> {
     let mut best: Option<Vec<nacre_scalar::Axis>> = None;
     for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-        let &nacre_topo::SurfaceTruth::Plane {
+        let &nacre_topo::Surface::Plane {
             motion: Some(rotation),
             ..
         } = m.surface_truth(m.faces.get(fh).surface)
@@ -5301,7 +5298,7 @@ fn the_same_motion_applied_twice_is_one_node() {
         let sh = m.solids.get(s).outer;
         let fh = m.shells.get(sh).faces[0];
         match m.surface_truth(m.faces.get(fh).surface) {
-            nacre_topo::SurfaceTruth::Plane {
+            nacre_topo::Surface::Plane {
                 motion: Some(motion),
                 ..
             } => *motion,
@@ -5361,7 +5358,7 @@ fn a_rerotated_boolean_result_continues_each_walls_history() {
     for &fh in &m.shells.get(sh).faces {
         let s = m.faces.get(fh).surface;
         match m.surface_truth(s) {
-            &nacre_topo::SurfaceTruth::Plane {
+            &nacre_topo::Surface::Plane {
                 motion: Some(rotation),
                 ..
             } => {
@@ -5376,7 +5373,7 @@ fn a_rerotated_boolean_result_continues_each_walls_history() {
             }
             // Every rotation in this chain is about Z, so the z-caps are fixed by all
             // of them and stay restated — the only faces allowed to carry nothing.
-            nacre_topo::SurfaceTruth::Plane { motion: None, .. } => {
+            nacre_topo::Surface::Plane { motion: None, .. } => {
                 let n = m.surface_name.get(&s).unwrap().narrow().unwrap();
                 assert!(
                     n[0] == nacre_scalar::Rat::from_int(0)
@@ -8146,7 +8143,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     assert!(
         matches!(
             m.surface_truth(m.faces.get(faces[0]).surface),
-            nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+            nacre_topo::Surface::Plane { motion: None, .. }
         ),
         "★ and it carries no motion, so its judgment stays exact"
     );
@@ -8163,7 +8160,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     // ★★★★★ **Two extrudes on one named plane put their far caps on one handle** — by name,
     // at construction, with no f64 comparison. That is what the frame buys over the f64 path,
     // where the two would agree only if their rounded coefficients happened to.
-    let cap_of = |m: &mut Model, d: f64| -> Handle<nacre_geom::Surface> {
+    let cap_of = |m: &mut Model, d: f64| -> Handle<Surface> {
         let __g201 = datum_frame(m, plane);
         let OpOutput::Extrude { faces, .. } = apply(
             m,
@@ -8267,7 +8264,7 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
         total += 1;
         if !matches!(
             m.surface_truth(m.faces.get(f).surface),
-            nacre_topo::SurfaceTruth::Plane { .. }
+            nacre_topo::Surface::Plane { .. }
         ) {
             missing += 1;
         }
@@ -8338,7 +8335,7 @@ fn a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road() {
         total += 1;
         if !matches!(
             m.surface_truth(m.faces.get(f).surface),
-            nacre_topo::SurfaceTruth::Plane { .. }
+            nacre_topo::Surface::Plane { .. }
         ) {
             missing += 1;
         }
@@ -8478,7 +8475,7 @@ fn lone_cylinder_def(m: &Model) -> nacre_topo::CylinderDef {
     let mut found = None;
     for (h, _) in m.faces.iter() {
         let s = m.faces.get(h).surface;
-        if let nacre_topo::SurfaceTruth::Cylinder { def, .. } = m.surface_truth(s) {
+        if let nacre_topo::Surface::Cylinder { def, .. } = m.surface_truth(s) {
             found = Some(def.clone());
         }
     }
@@ -8815,7 +8812,7 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
     };
     let lateral = m.faces.get(faces[2]).surface;
     match m.surface_truth(lateral) {
-        nacre_topo::SurfaceTruth::Cylinder { motion, .. } => assert!(
+        nacre_topo::Surface::Cylinder { motion, .. } => assert!(
             motion.is_some(),
             "a tilted frame states its cylinder inside a motion node"
         ),
@@ -8856,7 +8853,7 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
 fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
     let outward = |m: &Model, fh: Handle<Face>| -> [f64; 3] {
         let f = m.faces.get(fh);
-        let Surface::Plane(p) = m.surface(f.surface) else {
+        let nacre_geom::Surface::Plane(p) = m.surface(f.surface) else {
             panic!("a cap is planar")
         };
         let s = f.orientation.sign() as f64;
@@ -9158,7 +9155,12 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
             .get(shell)
             .faces
             .iter()
-            .find(|&&fh| matches!(m.surface(m.faces.get(fh).surface), Surface::Cylinder(_)))
+            .find(|&&fh| {
+                matches!(
+                    m.surface(m.faces.get(fh).surface),
+                    nacre_geom::Surface::Cylinder(_)
+                )
+            })
             .expect("a cylindrical wall");
         // A point on that wall: the seam vertex of one of its rims.
         let he = m.faces.get(wall).outer.half_edges[0];
@@ -9996,7 +9998,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                             let face = m.faces.get(fh);
                             let lateral = matches!(
                                 m.surface_truth(face.surface),
-                                nacre_topo::SurfaceTruth::Cylinder { .. }
+                                nacre_topo::Surface::Cylinder { .. }
                             );
                             let joint = |lp: &nacre_topo::Loop| {
                                 lp.half_edges.len() >= 2
@@ -11682,7 +11684,7 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
             .faces
             .iter()
             .map(|&fh| m.faces.get(fh).surface)
-            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .find(|&h| matches!(m.surface(h), nacre_geom::Surface::Cylinder(_)))
             .expect("the boss has a lateral");
         crate::planes::world_cylinder_def(m, surf).expect("the chain folds to a world cylinder")
     };
@@ -11726,7 +11728,7 @@ fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
         .faces
         .iter()
         .map(|&fh| m.faces.get(fh).surface)
-        .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+        .find(|&h| matches!(m.surface(h), nacre_geom::Surface::Cylinder(_)))
         .expect("the boss has a lateral");
     let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
     assert_eq!(def.origin().map(|x| x.to_f64()), [3.0, 1.3, 1.0]);
@@ -11761,8 +11763,8 @@ struct BrepDigest {
 fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
     let bits3 = |p: Point3| p.as_array().map(f64::to_bits);
     let kind = |h: Handle<Surface>| match m.surface(h) {
-        Surface::Plane(_) => "plane",
-        Surface::Cylinder(_) => "cylinder",
+        nacre_geom::Surface::Plane(_) => "plane",
+        nacre_geom::Surface::Cylinder(_) => "cylinder",
     };
     let sol = m.solids.get(s).clone();
     let (mut vertex_bits, mut vertex_defs, mut plane_bits, mut cylinder_defs) =
@@ -11774,10 +11776,11 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
         for fh in m.shells.get(sh).faces.clone() {
             let face = m.faces.get(fh);
             match m.surface(face.surface) {
-                Surface::Plane(pl) => plane_bits.push(pl.coefficients().map(f64::to_bits)),
-                Surface::Cylinder(_) => {
-                    if let nacre_topo::SurfaceTruth::Cylinder { def, .. } =
-                        m.surface_truth(face.surface)
+                nacre_geom::Surface::Plane(pl) => {
+                    plane_bits.push(pl.coefficients().map(f64::to_bits))
+                }
+                nacre_geom::Surface::Cylinder(_) => {
+                    if let nacre_topo::Surface::Cylinder { def, .. } = m.surface_truth(face.surface)
                     {
                         cylinder_defs.push(format!("{def:?}"));
                     }
@@ -11948,7 +11951,12 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
     let bore = faces
         .iter()
         .copied()
-        .find(|&f| matches!(m.surface(m.faces.get(f).surface), Surface::Cylinder(_)))
+        .find(|&f| {
+            matches!(
+                m.surface(m.faces.get(f).surface),
+                nacre_geom::Surface::Cylinder(_)
+            )
+        })
         .expect("a bore face");
     assert_eq!(
         m.faces.get(bore).orientation,
@@ -11993,7 +12001,12 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
     assert_eq!(faces.len(), 4, "two caps, the outer wall, the inner wall");
     let mut senses: Vec<bool> = faces
         .iter()
-        .filter(|&&f| matches!(m.surface(m.faces.get(f).surface), Surface::Cylinder(_)))
+        .filter(|&&f| {
+            matches!(
+                m.surface(m.faces.get(f).surface),
+                nacre_geom::Surface::Cylinder(_)
+            )
+        })
         .map(|&f| m.faces.get(f).orientation == Orientation::Forward)
         .collect();
     senses.sort_unstable();
@@ -12187,7 +12200,12 @@ fn a_slot_extrudes_with_tangent_branch_corners() {
     assert_eq!(vertex_def_names(&m, solid), vec!["branch Double"; 8]);
     let cylinders = faces
         .iter()
-        .filter(|&&f| matches!(m.surface(m.faces.get(f).surface), Surface::Cylinder(_)))
+        .filter(|&&f| {
+            matches!(
+                m.surface(m.faces.get(f).surface),
+                nacre_geom::Surface::Cylinder(_)
+            )
+        })
         .count();
     assert_eq!(cylinders, 2);
     mesh_covers_faces("a slot", &m, &[solid]);

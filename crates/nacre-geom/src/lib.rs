@@ -1,19 +1,25 @@
-//! Exact analytic geometry — the truth layer of the nacre kernel (design.md §3).
+//! Analytic geometry — the **realization** layer of the nacre kernel (design.md §3).
 //!
 //! Surfaces and curves are kept in analytic form forever; meshes are derived
-//! (overview 절대원칙 1). Coordinates here are the *cache* side of the
-//! truth/cache split — this crate does exact geometry and stores **no**
-//! tolerance: every containment query takes the caller's epsilon (overview
-//! 절대원칙 4).
+//! (overview 절대원칙 1). But analytic is not the same as exact: coordinates here are
+//! the *cache* side of the truth/cache split — what a surface or curve **is** lives in
+//! `nacre-topo`'s arenas, and this crate holds the f64 answer beside it. The arithmetic
+//! is closed-form and stores **no** tolerance: every containment query takes the
+//! caller's epsilon (overview 절대원칙 4).
 //!
 //! M1 defined [`Plane`] and [`Line`]; M3 adds [`Circle`] (the full-circle
 //! carrier), [`Cylinder`], and [`NurbsCurve`]/[`NurbsSurface`] (rational B-spline
 //! evaluation), with `Sphere` and the `Curve::Intersection` variant to follow.
 //! ([`NurbsCurve`]/[`NurbsSurface`] are standalone evaluators for now — the
 //! `Curve::Nurbs`/`Surface::Nurbs` variants are wired with a producer later.)
-//! That intersection variant (holding `Handle<Surface>`) is the sole reason geom
-//! will later depend on `nacre-store`; today it uses no `Handle` and has no store
-//! dependency.
+//!
+//! ★★ **This crate has no `Handle` and will not grow one.** The older note here said
+//! `Curve::Intersection` would hold `Handle<Surface>` and so make geom depend on
+//! `nacre-store`. A handle names an arena entry, and the arena holds the surface's
+//! **truth** (`nacre_topo::Surface`, which carries a motion handle) — a type below
+//! topo cannot name it. What that variant wanted splits along the truth/cache line
+//! instead: *which two surfaces* is already an edge's truth, and the approximating
+//! spline with its error is the edge's cache. See `docs/truth-and-cache.md`.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod circle;
@@ -82,7 +88,10 @@ impl AxisMirror {
     }
 }
 
-/// A surface — the exact truth of a face's geometry.
+/// A surface, realized — the **cache** side of a face's geometry (see the crate doc).
+///
+/// Exact in form (analytic, never a mesh) but f64 in its coefficients: what the surface *is*
+/// lives in `nacre_topo::Surface`, and this is the realization beside it.
 ///
 /// `Plane` and `Cylinder` are wired; a `Nurbs(NurbsSurface)` variant (the
 /// [`NurbsSurface`] evaluator already exists) and `Sphere` arrive when wired with
@@ -169,13 +178,12 @@ impl Surface {
     }
 }
 
-/// A curve — the exact truth of an edge's geometry.
+/// A curve, realized — the **cache** side of an edge's geometry, [`Surface`]'s sibling: the
+/// carriers and endpoints an edge records are the truth, and this is derived from them.
 ///
-/// `Line` and `Circle` (the full-circle carrier) are wired; `Nurbs` and the
-/// `Intersection { surfaces: [Handle<Surface>; 2], .. }` variant (design §3)
-/// arrive later — that intersection variant is the sole reason geom will later
-/// depend on `nacre-store`. **Not `Copy`** (future heap-backed variants), same
-/// as [`Surface`].
+/// `Line` and `Circle` (the full-circle carrier) are wired; `Nurbs` arrives later, and the
+/// marched intersections of M7 want a shape this crate cannot spell — see the crate doc.
+/// **Not `Copy`** (future heap-backed variants), same as [`Surface`].
 #[derive(Clone, Debug, PartialEq)]
 pub enum Curve {
     Line(Line),

@@ -176,7 +176,7 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
                 tri.iter().any(|&h| {
                     !matches!(
                         m.surface_truth(h),
-                        nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+                        nacre_topo::Surface::Plane { motion: None, .. }
                     )
                 })
             })

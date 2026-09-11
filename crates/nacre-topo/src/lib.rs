@@ -17,7 +17,7 @@ mod topology;
 pub use adjacency::{Adjacency, nonmanifold_vertices};
 pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};
 
-use nacre_geom::{Circle, Curve, Cylinder, Line, Plane, Surface};
+use nacre_geom::{Circle, Curve, Cylinder, Line, Plane};
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Angle, Axis, Rat};
 use nacre_store::{Handle, Store};
@@ -262,7 +262,7 @@ pub enum FramePlacement {
 /// parent link so several points can share a history's tail.
 ///
 /// Stored in [`Model::motions`]; a moved surface's
-/// moved surfaces name their leaf node ([`SurfaceTruth`]'s motion slot). The tol a motion contributes is
+/// moved surfaces name their leaf node ([`Surface`]'s motion slot). The tol a motion contributes is
 /// application-point-dependent, so it is **not** stored here — judgment computes it by traversing
 /// to the root.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -357,7 +357,7 @@ impl Orientation {
 /// common case to shrink the rare one.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
-pub enum SurfaceTruth {
+pub enum Surface {
     Plane {
         /// The plane's three exact points, stated in the frame `motion` names (the world when
         /// `None`) — the value `Model::surface_points` used to carry.
@@ -371,7 +371,7 @@ pub enum SurfaceTruth {
     Cylinder {
         /// The exact statement, in the frame `motion` names (the world when `None`).
         def: CylinderDef,
-        /// See [`SurfaceTruth::Plane::motion`].
+        /// See [`Surface::Plane::motion`].
         motion: Option<Handle<MotionNode>>,
     },
 }
@@ -525,22 +525,26 @@ struct CylinderParts {
 #[derive(Debug)]
 pub struct Model {
     // exact geometry (truth)
+    /// ★★★ **The truth, in the arena** — so a `Handle<Surface>` names what the surface *is*,
+    /// not a realization of it. Total: a surface cannot enter without its truth, which is what
+    /// retired `SurfaceDef`/`Inexact` and the point-less population.
+    ///
     /// ★ Private (stage S1, `docs/truth-and-cache.md`): a surface can only enter through
     /// [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth —
     /// a surface **without** a record is unrepresentable from outside this crate. Read through
-    /// [`Model::surface`]/[`Model::surface_count`]; there is deliberately no whole-store
-    /// iterator (the arena keeps superseded surfaces — consumers walk the live faces).
+    /// [`Model::surface_truth`]/[`Model::surface`]/[`Model::surface_count`]; there is
+    /// deliberately no whole-store iterator (the arena keeps superseded surfaces — consumers
+    /// walk the live faces).
     surfaces: Store<Surface>,
-    /// ★★ **The truth beside the cache** (S6b): index-parallel to [`Model::surfaces`], so a
-    /// `Handle<Surface>` names both — the store above holds the f64 *realization*, this holds
-    /// what the surface *is*. Total: a surface cannot enter without its truth, which is what
-    /// retired `SurfaceDef`/`Inexact` and the point-less population.
+    /// Per-surface f64 caches, index-parallel to `surfaces` — **cache, not truth**: the truth
+    /// above decides the realization, and a refinement pass may discard and regenerate the lot.
+    /// Filled eagerly by [`Model::push_raw`]; read through [`Model::surface`].
     ///
-    /// (Why the truth is the `Vec` and the cache the `Store`, when the doc draws it the other
-    /// way: `Handle<T>`'s type parameter. Retyping `Face::surface` would ripple through every
-    /// crate for a distinction the shared index already erases — the flip happens with the
-    /// final rename, when `SurfaceCache` gets its real shape.)
-    surface_truths: Vec<SurfaceTruth>,
+    /// ★★ **Why this is a private `Vec` and not a second `Store`**: a `Store` is append-only and
+    /// sealed, so nothing could ever rewrite a cache entry at a higher precision. The cache has
+    /// to be writable to be a cache at all — `edge_cache` and its
+    /// [`Model::rebuild_edge_cache`] set that precedent.
+    surface_cache: Vec<SurfaceCache>,
     /// The three seeded world planes, in normal-axis order Z(XY)·X(YZ)·Y(ZX) — captured at
     /// [`Model::new`] so [`Model::world_plane`] needs no handle minting. Always length 3.
     world_planes: Vec<Handle<Surface>>,
@@ -654,6 +658,19 @@ pub struct EdgeCache {
     curve: Curve,
 }
 
+/// One surface's realized geometry — a **cache** beside the surface store (index-parallel),
+/// the f64 answer to what [`Model::surface_truth`] states exactly.
+///
+/// ★ **[`EdgeCache`]'s mirror**: topo wraps, and the geometry's own methods stay in
+/// `nacre-geom` — `distance`, `normal_at`, `translated` and the rest dispatch on
+/// [`nacre_geom::Surface`], which is geom's vocabulary and stays there. The wrapper exists so
+/// the cache is a named thing with room to grow: a measured `tol` (the surface analogue of
+/// [`PointCache`]'s) arrives with the refinement pass that can produce it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SurfaceCache {
+    realized: nacre_geom::Surface,
+}
+
 /// The handles reachable from a model's live solids — the live model (design §2).
 ///
 /// Only the sets consumers need today: `validate`'s Euler counts vertices/edges/
@@ -731,7 +748,7 @@ impl Model {
     pub fn new() -> Self {
         let mut m = Model {
             surfaces: Store::default(),
-            surface_truths: Vec::new(),
+            surface_cache: Vec::new(),
             edge_cache: Vec::new(),
             vertex_cache: Vec::new(),
             motions: Store::default(),
@@ -829,21 +846,25 @@ impl Model {
         h
     }
 
-    /// The one push everything funnels through (private): the f64 cache and the exact truth,
-    /// index-parallel, in one motion — so the two stores cannot come apart.
-    fn push_raw(&mut self, surface: Surface, truth: SurfaceTruth) -> Handle<Surface> {
-        let h = self.surfaces.push(surface);
-        self.surface_truths.push(truth);
-        debug_assert_eq!(self.surface_truths.len(), self.surfaces.len());
+    /// The one push everything funnels through (private): the exact truth and its f64 cache,
+    /// index-parallel, in one motion — so the two cannot come apart.
+    ///
+    /// ★ The truth comes first because the arena holds it; the cache is derived from it in
+    /// principle and handed in by the producer today (the derivation is the refinement pass's).
+    fn push_raw(&mut self, truth: Surface, cache: nacre_geom::Surface) -> Handle<Surface> {
+        let h = self.surfaces.push(truth);
+        self.surface_cache.push(SurfaceCache { realized: cache });
+        debug_assert_eq!(self.surface_cache.len(), self.surfaces.len());
         h
     }
 
     /// The surface's exact truth — what it *is*, beside the f64 realization
-    /// [`Model::surface`] returns. Total: a surface without a truth entry is unrepresentable
-    /// (S6b), which is what retired `SurfaceDef::Inexact` and the `UndefinedSurface` violation.
+    /// [`Model::surface`] returns. Total: a surface without a truth is unrepresentable — the
+    /// truth **is** the arena entry a handle names, which is what retired `SurfaceDef::Inexact`
+    /// and the `UndefinedSurface` violation.
     #[inline]
-    pub fn surface_truth(&self, h: Handle<Surface>) -> &SurfaceTruth {
-        &self.surface_truths[h.index() as usize]
+    pub fn surface_truth(&self, h: Handle<Surface>) -> &Surface {
+        self.surfaces.get(h)
     }
 
     /// The seeded world plane whose **normal** runs along `axis` — `Z` names the XY plane
@@ -857,16 +878,14 @@ impl Model {
         };
         let h = self.world_planes[ix];
         debug_assert!(
-            matches!(
-                self.surface_truth(h),
-                SurfaceTruth::Plane { motion: None, .. }
-            ),
+            matches!(self.surface_truth(h), Surface::Plane { motion: None, .. }),
             "seed handles must stay the world planes"
         );
         h
     }
 
-    /// The surface a handle names — the **f64 cache** of [`Model::surface_truth`]'s answer.
+    /// The surface a handle names, realized — the **f64 cache** of [`Model::surface_truth`]'s
+    /// answer.
     ///
     /// Reading is open; **writing is not** — the store is private (S1), so a surface can only
     /// enter through [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth. The
@@ -877,8 +896,9 @@ impl Model {
     /// let _ = m.surfaces.len(); // private field — read through `surface`/`surface_count`
     /// ```
     #[inline]
-    pub fn surface(&self, h: Handle<Surface>) -> &Surface {
-        self.surfaces.get(h)
+    pub fn surface(&self, h: Handle<Surface>) -> &nacre_geom::Surface {
+        debug_assert_eq!(self.surface_cache.len(), self.surfaces.len());
+        &self.surface_cache[h.index() as usize].realized
     }
 
     /// How many surfaces the arena holds — live and superseded alike. Handle-validity checks
@@ -1144,8 +1164,8 @@ impl Model {
             }
         }
         let h = self.push_raw(
-            Surface::Plane(cache),
-            SurfaceTruth::Plane { points, motion },
+            Surface::Plane { points, motion },
+            nacre_geom::Surface::Plane(cache),
         );
         if let Some((n, _)) = &key {
             // One clone per push — the name is derived once here, never on a judging loop.
@@ -1162,9 +1182,9 @@ impl Model {
     /// exact here: two caches of one plane have parallel normals, so the sign cannot be lost to
     /// rounding.
     fn flipped_against(&self, h: Handle<Surface>, cache: &nacre_geom::Plane) -> bool {
-        match self.surfaces.get(h) {
-            Surface::Plane(p) => p.normal().dot(cache.normal()) < 0.0,
-            Surface::Cylinder(_) => false,
+        match self.surface(h) {
+            nacre_geom::Surface::Plane(p) => p.normal().dot(cache.normal()) < 0.0,
+            nacre_geom::Surface::Cylinder(_) => false,
         }
     }
 
@@ -1213,11 +1233,11 @@ impl Model {
             return (h, self.flipped_against(h, &cache));
         }
         let h = self.push_raw(
-            Surface::Plane(cache),
-            SurfaceTruth::Plane {
+            Surface::Plane {
                 points: PlanePoints::Through(vertices),
                 motion,
             },
+            nacre_geom::Surface::Plane(cache),
         );
         self.surface_through_ids.insert((vertices, motion), h);
         (h, false)
@@ -1382,7 +1402,7 @@ impl Model {
     #[inline]
     pub fn plane_motion(&self, h: Handle<Surface>) -> Option<Handle<MotionNode>> {
         match self.surface_truth(h) {
-            SurfaceTruth::Plane { motion, .. } | SurfaceTruth::Cylinder { motion, .. } => *motion,
+            Surface::Plane { motion, .. } | Surface::Cylinder { motion, .. } => *motion,
         }
     }
 
@@ -1402,8 +1422,8 @@ impl Model {
             return h;
         }
         let h = self.push_raw(
-            Surface::Cylinder(cache),
-            SurfaceTruth::Cylinder { def, motion },
+            Surface::Cylinder { def, motion },
+            nacre_geom::Surface::Cylinder(cache),
         );
         self.cylinder_ids.insert(key, h);
         h
@@ -1423,28 +1443,12 @@ impl Model {
         points: [[nacre_scalar::Rat; 3]; 3],
     ) -> Handle<Surface> {
         self.push_raw(
-            Surface::Plane(cache),
-            SurfaceTruth::Plane {
+            Surface::Plane {
                 points: PlanePoints::Known(points),
                 motion: None,
             },
+            nacre_geom::Surface::Plane(cache),
         )
-    }
-
-    /// Overwrite a plane's truth points — **test-only**, and deliberately incoherence-capable:
-    /// the surface's derived name and interning key stay whatever the original points said, so
-    /// this door exists for fixtures that need adversarial point widths on an existing surface
-    /// (the overflowing-move probe) and must never grow a production caller.
-    #[cfg(any(test, feature = "test-util"))]
-    pub fn set_plane_points_for_test(
-        &mut self,
-        h: Handle<Surface>,
-        pts: [[nacre_scalar::Rat; 3]; 3],
-    ) {
-        match &mut self.surface_truths[h.index() as usize] {
-            SurfaceTruth::Plane { points, .. } => *points = PlanePoints::Known(pts),
-            SurfaceTruth::Cylinder { .. } => panic!("a cylinder has no plane points"),
-        }
     }
 
     /// A new shell whose faces are copies of `src`'s with their outward normals
@@ -1633,12 +1637,14 @@ impl Model {
             Some(Curve::Line(Line::through_points(p0, p1)?))
         };
         match (self.surface(surfaces[0]), self.surface(surfaces[1])) {
-            (Surface::Plane(_), Surface::Plane(_)) => endpoints_line(),
-            (Surface::Cylinder(_), Surface::Cylinder(_)) if surfaces[0] == surfaces[1] => {
+            (nacre_geom::Surface::Plane(_), nacre_geom::Surface::Plane(_)) => endpoints_line(),
+            (nacre_geom::Surface::Cylinder(_), nacre_geom::Surface::Cylinder(_))
+                if surfaces[0] == surfaces[1] =>
+            {
                 endpoints_line() // the seam — a parameterization joint, straight along the axis
             }
-            (Surface::Plane(p), Surface::Cylinder(c))
-            | (Surface::Cylinder(c), Surface::Plane(p)) => {
+            (nacre_geom::Surface::Plane(p), nacre_geom::Surface::Cylinder(c))
+            | (nacre_geom::Surface::Cylinder(c), nacre_geom::Surface::Plane(p)) => {
                 let axis = c.axis();
                 // A plane **parallel** to the axis meets the lateral along rulings — straight,
                 // so the endpoints decide, exactly like the seam arm above (the rulings
@@ -1668,7 +1674,7 @@ impl Model {
                     c.radius(),
                 )?))
             }
-            (Surface::Cylinder(_), Surface::Cylinder(_)) => None, // two distinct cylinders: M6
+            (nacre_geom::Surface::Cylinder(_), nacre_geom::Surface::Cylinder(_)) => None, // two distinct cylinders: M6
         }
     }
 
@@ -2276,12 +2282,12 @@ mod tests {
                 .faces
                 .iter()
                 .map(|&fh| &m.faces.get(fh).surface)
-                .find(|&&sh| match m.surfaces.get(sh) {
-                    Surface::Plane(p) => {
+                .find(|&&sh| match m.surface(sh) {
+                    nacre_geom::Surface::Plane(p) => {
                         let [a, b, c, d] = p.coefficients();
                         b == 0.0 && c == 0.0 && a != 0.0 && (-d / a - want_x).abs() < 1e-12
                     }
-                    Surface::Cylinder(_) => false,
+                    nacre_geom::Surface::Cylinder(_) => false,
                 })
                 .expect("a face on x = 3")
         };
@@ -2374,7 +2380,7 @@ mod tests {
                      leaf: Handle<MotionNode>,
                      n: [f64; 3],
                      at: [f64; 3]| {
-            let SurfaceTruth::Plane {
+            let Surface::Plane {
                 points: PlanePoints::Known(pts),
                 ..
             } = m.surface_truth(src).clone()
@@ -2492,10 +2498,12 @@ mod tests {
         if he.forward { b } else { a }
     }
     fn face_plane_normal(m: &Model, f: &Face) -> Vector3 {
-        match m.surfaces.get(f.surface) {
-            Surface::Plane(p) => p.normal(),
+        match m.surface(f.surface) {
+            nacre_geom::Surface::Plane(p) => p.normal(),
             // Planar-only helper: callers filter to plane faces (caps), never cylinders.
-            Surface::Cylinder(_) => unreachable!("face_plane_normal called on a curved face"),
+            nacre_geom::Surface::Cylinder(_) => {
+                unreachable!("face_plane_normal called on a curved face")
+            }
         }
     }
     fn face_centroid(m: &Model, f: &Face) -> Point3 {
@@ -2590,6 +2598,51 @@ mod tests {
                 assert_eq!(he_end(&m, hes[i]), he_start(&m, hes[(i + 1) % hes.len()]));
             }
         }
+    }
+
+    /// ★★★★ **What the flip bought: the surface cache is writable, and the truth is not.**
+    ///
+    /// Before the arena held the truth, a refinement pass had nowhere to write — the realization
+    /// lived in a `Store`, which is append-only and sealed, and the only mutable copy was the
+    /// *truth*. This test is the warrant, and it could not have been written then: it rewrites a
+    /// cache entry in place and reads it back through [`Model::surface`], while the truth the same
+    /// handle names is untouched.
+    ///
+    /// ★ It writes through the private field on purpose — that is the door the refinement pass
+    /// (`realize_surface`) will take, from inside this crate. Outside, there is no door at all,
+    /// which is the other half of the warrant and what [`Model::surface`]'s `compile_fail` pins.
+    #[test]
+    fn the_surface_cache_is_writable_and_the_truth_is_not() {
+        let mut m = Model::new();
+        let h = m.world_plane(nacre_scalar::Axis::Z);
+        let truth_before = m.surface_truth(h).clone();
+        let cache_before = m.surface(h).clone();
+
+        // A different plane in the same slot — what a refinement at a higher precision does in
+        // kind, if not in size.
+        let refined = nacre_geom::Surface::Plane(
+            Plane::from_point_normal(
+                Point3::from_array([0.0, 0.0, 0.25]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .expect("a unit normal names a plane"),
+        );
+        m.surface_cache[h.index() as usize] = SurfaceCache {
+            realized: refined.clone(),
+        };
+
+        assert_eq!(*m.surface(h), refined, "the cache took the new realization");
+        assert_ne!(*m.surface(h), cache_before, "and it is not the old one");
+        assert_eq!(
+            *m.surface_truth(h),
+            truth_before,
+            "the truth a handle names is untouched — it is the arena entry, and the arena is sealed"
+        );
+        assert_eq!(
+            m.surface_cache.len(),
+            m.surface_count(),
+            "index-parallel, still"
+        );
     }
 
     /// ★★ S8, the «discard and regenerate» warrant: the edge-curve cache rebuilt from the
@@ -2700,7 +2753,7 @@ mod tests {
         // Planar caps only (the lateral cylindrical face has no single normal).
         let mut caps = 0;
         for (_, f) in m.faces.iter() {
-            if matches!(m.surfaces.get(f.surface), Surface::Plane(_)) {
+            if matches!(m.surface(f.surface), nacre_geom::Surface::Plane(_)) {
                 let n = face_plane_normal(&m, f).as_array();
                 // Bottom cap → −Z, top cap → +Z (outward along the axis).
                 assert!(n == [0.0, 0.0, -1.0] || n == [0.0, 0.0, 1.0]);
@@ -2727,10 +2780,10 @@ mod tests {
                 panic!("a seam vertex carries OnSeam, got {d:?}")
             };
             assert!(
-                matches!(m.surface(*a), Surface::Cylinder(_)),
+                matches!(m.surface(*a), nacre_geom::Surface::Cylinder(_)),
                 "first carrier is the lateral cylinder"
             );
-            let Surface::Plane(p) = m.surface(*b) else {
+            let nacre_geom::Surface::Plane(p) = m.surface(*b) else {
                 panic!("second carrier is the cap plane")
             };
             // Bottom vertex names the bottom cap (through z = 0), top the top cap (z = 5).
@@ -3193,9 +3246,9 @@ mod tests {
                 );
                 assert!(matches!(
                     m.surface_truth(h),
-                    SurfaceTruth::Plane { motion: None, .. }
+                    Surface::Plane { motion: None, .. }
                 ));
-                let Surface::Plane(pl) = m.surface(h) else {
+                let nacre_geom::Surface::Plane(pl) = m.surface(h) else {
                     panic!("a seed is a plane")
                 };
                 assert_eq!(
@@ -3302,12 +3355,12 @@ mod tests {
             .faces
             .iter()
             .map(|&fh| m.faces.get(fh).surface)
-            .filter(|&s| matches!(m.surface(s), Surface::Plane(_)))
+            .filter(|&s| matches!(m.surface(s), nacre_geom::Surface::Plane(_)))
             .collect();
         assert_eq!(planar.len(), 2, "two caps");
         for s in &planar {
             assert!(
-                matches!(m.surface_truth(*s), SurfaceTruth::Plane { .. }),
+                matches!(m.surface_truth(*s), Surface::Plane { .. }),
                 "a cap without truth"
             );
             assert!(m.surface_name.contains_key(s), "a cap without a name");
@@ -3358,7 +3411,7 @@ mod tests {
         );
         assert!(matches!(
             m.surface_truth(h),
-            SurfaceTruth::Plane {
+            Surface::Plane {
                 points: PlanePoints::Through(_),
                 ..
             }
@@ -3392,7 +3445,7 @@ mod tests {
         // at vertices. Which variant a plane ends up with is arena history, not a promise.
         assert!(matches!(
             m.surface_truth(known),
-            SurfaceTruth::Plane {
+            Surface::Plane {
                 points: PlanePoints::Through(_),
                 ..
             }
@@ -3411,7 +3464,7 @@ mod tests {
         )
         .unwrap();
         let (h, _) = m.push_plane_through(cache, vs, None);
-        let SurfaceTruth::Plane {
+        let Surface::Plane {
             points: PlanePoints::Through(named),
             ..
         } = m.surface_truth(h)

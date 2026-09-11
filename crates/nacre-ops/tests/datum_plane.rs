@@ -10,12 +10,11 @@
 //! always did**: the same plane keeps one handle, the stored truth is the caller's own points, and
 //! the whole thing replays.
 
-use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{DatumDef, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, replay};
 use nacre_scalar::Axis;
-use nacre_topo::{FramePlacement, Model, PlanePoints, SurfaceTruth};
+use nacre_topo::{FramePlacement, Model, PlanePoints, Surface};
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
 /// when the plane is not one the model already holds (a seed, or a face's).
@@ -78,7 +77,7 @@ fn stating_a_world_plane_returns_the_seed_it_already_is() {
         );
         // The convention check, stated where it can fail: the seed's cache and the datum's face
         // the same way, so nothing downstream has to compensate.
-        let Surface::Plane(p) = m.surface(h) else {
+        let nacre_geom::Surface::Plane(p) = m.surface(h) else {
             unreachable!()
         };
         let axis_v = match axis {
@@ -105,7 +104,7 @@ fn a_tilted_datum_records_the_points_the_caller_wrote() {
         unreachable!()
     };
 
-    let SurfaceTruth::Plane { points, motion } = m.surface_truth(plane) else {
+    let Surface::Plane { points, motion } = m.surface_truth(plane) else {
         unreachable!("a datum is a plane")
     };
     assert_eq!(*motion, None, "a world statement records no motion");
@@ -400,7 +399,7 @@ fn an_offset_of_a_world_plane_is_the_plane_the_world_already_names() {
         m.world_plane(Axis::Z),
         "z = 0 is the seeded XY plane, however it was reached"
     );
-    let SurfaceTruth::Plane { motion, .. } = m.surface_truth(plane) else {
+    let Surface::Plane { motion, .. } = m.surface_truth(plane) else {
         unreachable!()
     };
     assert_eq!(*motion, None, "a world-liftable offset makes no frame node");
@@ -414,7 +413,7 @@ fn an_offset_of_a_world_plane_is_the_plane_the_world_already_names() {
     };
     assert_eq!(m.surface_count(), before + 1, "z = 2 is new");
     assert_ne!(up, cap_plane);
-    let SurfaceTruth::Plane { points, motion } = m.surface_truth(up) else {
+    let Surface::Plane { points, motion } = m.surface_truth(up) else {
         unreachable!()
     };
     assert_eq!(*motion, None);
@@ -487,7 +486,7 @@ fn a_tilted_offset_is_exact_inside_the_frame() {
         unreachable!()
     };
 
-    let SurfaceTruth::Plane { points, motion } = m.surface_truth(plane) else {
+    let Surface::Plane { points, motion } = m.surface_truth(plane) else {
         unreachable!()
     };
     assert!(
@@ -1279,7 +1278,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     assert!(
         matches!(
             mx.surface_truth(plane),
-            SurfaceTruth::Plane {
+            Surface::Plane {
                 points: PlanePoints::Through(_),
                 motion: None,
             }
@@ -1801,7 +1800,7 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
         .find(|&f| {
             matches!(
                 m.surface_truth(m.faces.get(f).surface),
-                SurfaceTruth::Plane {
+                Surface::Plane {
                     points: PlanePoints::Through(_),
                     ..
                 }
@@ -1823,7 +1822,7 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
 
     // ★ And the truth still agrees with the cache: the definition names the *same* vertices plus
     // a node, so the plane derived from the definition must contain the cache's own origin.
-    let SurfaceTruth::Plane {
+    let Surface::Plane {
         points: PlanePoints::Through(named),
         motion,
     } = m.surface_truth(m.faces.get(cap).surface)
@@ -1925,7 +1924,7 @@ fn every_plane_still_has_a_name() {
     let mut i = 0u32;
     while let Some(h) = m.surface_handle_at(i) {
         i += 1;
-        if let SurfaceTruth::Plane { points, .. } = m.surface_truth(h) {
+        if let Surface::Plane { points, .. } = m.surface_truth(h) {
             planes += 1;
             assert!(
                 m.surface_name.contains_key(&h) || matches!(points, PlanePoints::Through(_)),
@@ -2016,7 +2015,7 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
         .find(|s| {
             matches!(
                 m.surface_truth(*s),
-                SurfaceTruth::Plane {
+                Surface::Plane {
                     motion: Some(_),
                     ..
                 }
@@ -2066,7 +2065,7 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
 
     // ★★ The truth says which frame its points are written in — the disambiguator that keeps the
     // two same-named planes apart.
-    let SurfaceTruth::Plane { motion, .. } = m.surface_truth(plane) else {
+    let Surface::Plane { motion, .. } = m.surface_truth(plane) else {
         unreachable!()
     };
     assert!(
@@ -2413,8 +2412,8 @@ fn a_frame_says_where_it_is() {
     let sp = nacre_ops::frame_plane(&m, &frame).expect("a stated plane realizes");
     // Every point of the frame lies on the plane the frame names.
     let normal = match m.surface(plane) {
-        Surface::Plane(p) => p.normal(),
-        Surface::Cylinder(_) => panic!("a datum is planar"),
+        nacre_geom::Surface::Plane(p) => p.normal(),
+        nacre_geom::Surface::Cylinder(_) => panic!("a datum is planar"),
     };
     let anchor = sp.origin();
     for (u, v) in [(0.0, 0.0), (3.0, 0.0), (0.0, -2.5), (7.25, 4.5)] {

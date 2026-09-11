@@ -15,7 +15,7 @@
 use nacre_cip::{MoveNode, WitnessPoint};
 use nacre_scalar::Rat;
 use nacre_store::Handle;
-use nacre_topo::{Model, Motion, MotionNode};
+use nacre_topo::{Model, Motion, MotionNode, Surface};
 
 /// Why a coordinate could not be lifted to an exact rational.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -73,14 +73,14 @@ pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint
 /// (a datum on a nameless datum — depth, open item 16-3's question) and for a cylinder.
 pub(crate) fn surface_witness_triangle(
     model: &Model,
-    h: Handle<nacre_geom::Surface>,
+    h: Handle<Surface>,
 ) -> Option<[WitnessPoint; 3]> {
     let (base, motion) = match model.surface_truth(h) {
-        nacre_topo::SurfaceTruth::Plane {
+        nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Known(pts),
             motion,
         } => (*pts, *motion),
-        nacre_topo::SurfaceTruth::Plane {
+        nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Through(vs),
             motion,
         } => match model.through_points_rat(*vs) {
@@ -93,7 +93,7 @@ pub(crate) fn surface_witness_triangle(
             }
             None => return None, // nameless Through — depth
         },
-        nacre_topo::SurfaceTruth::Cylinder { .. } => return None,
+        nacre_topo::Surface::Cylinder { .. } => return None,
     };
     let w = base.map(WitnessPoint::at);
     match motion {
@@ -234,7 +234,7 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
 /// is that it names the frame `PadOnFace` actually places a profile in.
 pub(crate) fn frame_chain(
     model: &Model,
-    plane: Handle<nacre_geom::Surface>,
+    plane: Handle<Surface>,
     placement: &nacre_topo::FramePlacement,
     flip: bool,
 ) -> Option<Vec<MoveNode>> {
@@ -248,7 +248,7 @@ pub(crate) fn frame_chain(
         // already rejects it by name at construction — an on-plane claim needs a name to verify
         // against), and the plane's own later motion is appended by the shared tail below,
         // exactly as for the named roads.
-        let nacre_topo::SurfaceTruth::Plane {
+        let nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Through(vs),
             motion,
         } = model.surface_truth(plane)
@@ -313,14 +313,14 @@ pub(crate) fn frame_chain(
     };
     let mut chain = vec![narrow_road().or_else(wide_road)?];
     match model.surface_truth(plane) {
-        nacre_topo::SurfaceTruth::Plane {
+        nacre_topo::Surface::Plane {
             motion: Some(m), ..
         }
-        | nacre_topo::SurfaceTruth::Cylinder {
+        | nacre_topo::Surface::Cylinder {
             motion: Some(m), ..
         } => chain.append(&mut motion_chain(model, *m)?),
-        nacre_topo::SurfaceTruth::Plane { motion: None, .. }
-        | nacre_topo::SurfaceTruth::Cylinder { motion: None, .. } => {}
+        nacre_topo::Surface::Plane { motion: None, .. }
+        | nacre_topo::Surface::Cylinder { motion: None, .. } => {}
     }
     Some(chain)
 }
@@ -342,7 +342,7 @@ pub(crate) type WorldBasis = ([f64; 3], [f64; 3], [f64; 3], [f64; 3]);
 /// only the linear part is left.
 pub(crate) fn frame_world_basis(
     model: &Model,
-    plane: Handle<nacre_geom::Surface>,
+    plane: Handle<Surface>,
     placement: &nacre_topo::FramePlacement,
     flip: bool,
 ) -> Option<WorldBasis> {
@@ -522,8 +522,8 @@ mod tests {
                             panic!("a cuboid corner is a three-plane point");
                         };
                         let motion_of = |h| match m.surface_truth(h) {
-                            nacre_topo::SurfaceTruth::Plane { motion, .. } => *motion,
-                            nacre_topo::SurfaceTruth::Cylinder { motion, .. } => *motion,
+                            nacre_topo::Surface::Plane { motion, .. } => *motion,
+                            nacre_topo::Surface::Cylinder { motion, .. } => *motion,
                         };
                         // The solvable population mirrors `solid_points`' own criterion: the
                         // moved carriers share one leaf, and a world-stated carrier among
@@ -601,7 +601,7 @@ mod tests {
         let sh = m.solids.get(r).outer;
         let mut counts: std::collections::HashMap<Vec<Axis>, usize> = Default::default();
         for &fh in &m.shells.get(sh).faces {
-            let &nacre_topo::SurfaceTruth::Plane {
+            let &nacre_topo::Surface::Plane {
                 motion: Some(rotation),
                 ..
             } = m.surface_truth(m.faces.get(fh).surface)
@@ -634,7 +634,7 @@ mod tests {
     /// Push a plane whose exact triple is `pts`, with an f64 `Plane` **consistent with it**
     /// (`Plane::through_points` of the realized corners) — the frame locks below ask about the
     /// realized basis's geometry, so unlike the interning lock the f64 form has to match.
-    fn push_consistent(m: &mut Model, pts: [[R; 3]; 3]) -> Handle<nacre_geom::Surface> {
+    fn push_consistent(m: &mut Model, pts: [[R; 3]; 3]) -> Handle<Surface> {
         let f = |p: [R; 3]| Point3::from_array(p.map(|r| r.to_f64()));
         let pl = nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2]))
             .expect("a non-degenerate triple");
@@ -646,7 +646,7 @@ mod tests {
     /// and whose `ŵ` is parallel to the plane's normal — the sanity every frame lock needs.
     fn assert_frame_shape(
         m: &Model,
-        h: Handle<nacre_geom::Surface>,
+        h: Handle<Surface>,
         placement: &nacre_topo::FramePlacement,
         what: &str,
     ) {

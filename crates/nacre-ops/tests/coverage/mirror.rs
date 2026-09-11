@@ -273,8 +273,8 @@ fn an_exact_mirror_plane_records_no_motion_and_a_lossy_one_does() {
         let mut motions = Vec::new();
         for &fh in &m.shells.get(shell).faces {
             motions.push(match m.surface_truth(m.faces.get(fh).surface) {
-                nacre_topo::SurfaceTruth::Plane { motion, .. }
-                | nacre_topo::SurfaceTruth::Cylinder { motion, .. } => motion.is_some(),
+                nacre_topo::Surface::Plane { motion, .. }
+                | nacre_topo::Surface::Cylinder { motion, .. } => motion.is_some(),
             });
         }
         assert!(!motions.is_empty(), "walked no faces");
@@ -349,7 +349,7 @@ fn a_rotated_solid_mirrors() {
             tri.iter().any(|&h| {
                 !matches!(
                     m.surface_truth(h),
-                    nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+                    nacre_topo::Surface::Plane { motion: None, .. }
                 )
             })
         })

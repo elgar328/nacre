@@ -9,10 +9,11 @@
 //! when a `Tessellation` exists.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-use nacre_geom::Surface;
 use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
-use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Vertex, VertexDef};
+use nacre_topo::{
+    Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Surface, Vertex, VertexDef,
+};
 
 /// Residual bound for a vertex with **no measured tolerance** lying on its reference
 /// curve/surface. Machine epsilon (~2.2e-16) is too tight — such a coordinate is the
@@ -396,18 +397,18 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
         let bad = match &vertex.def {
             VertexDef::ThreePlane(planes) => planes
                 .iter()
-                .any(|&s| !matches!(m.surface(s), Surface::Plane(_))),
+                .any(|&s| !matches!(m.surface(s), nacre_geom::Surface::Plane(_))),
             VertexDef::OnSeam(pair) => pair
                 .iter()
-                .all(|&s| matches!(m.surface(s), Surface::Plane(_))),
+                .all(|&s| matches!(m.surface(s), nacre_geom::Surface::Plane(_))),
             // The structure says the kinds (M6-1): two planes and one cylinder, positionally.
             VertexDef::Branch {
                 planes, cylinder, ..
             } => {
                 planes
                     .iter()
-                    .any(|&s| !matches!(m.surface(s), Surface::Plane(_)))
-                    || !matches!(m.surface(*cylinder), Surface::Cylinder(_))
+                    .any(|&s| !matches!(m.surface(s), nacre_geom::Surface::Plane(_)))
+                    || !matches!(m.surface(*cylinder), nacre_geom::Surface::Cylinder(_))
             }
         };
         if bad {
@@ -563,7 +564,7 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     let mut flux = 0.0;
     for &fh in faces {
         let face = m.faces.get(fh);
-        let Surface::Plane(plane) = m.surface(face.surface) else {
+        let nacre_geom::Surface::Plane(plane) = m.surface(face.surface) else {
             return None;
         };
         let sign = f64::from(face.orientation.sign());
@@ -663,7 +664,7 @@ fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>
         if !reach.faces.contains(&fh) {
             continue;
         }
-        let Surface::Plane(plane) = m.surface(face.surface) else {
+        let nacre_geom::Surface::Plane(plane) = m.surface(face.surface) else {
             continue;
         };
         let stated = plane.normal() * f64::from(face.orientation.sign());
@@ -745,13 +746,12 @@ fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
         if !reach.faces.contains(&fh) || !seen.insert(face.surface) {
             continue;
         }
-        let Surface::Cylinder(cy) = m.surface(face.surface) else {
+        let nacre_geom::Surface::Cylinder(cy) = m.surface(face.surface) else {
             continue;
         };
         // The stores are index-parallel with one entry door, so a kind mismatch cannot arise;
         // it is transform's `unreachable!`, not this check's proposition.
-        let nacre_topo::SurfaceTruth::Cylinder { def, motion } = m.surface_truth(face.surface)
-        else {
+        let nacre_topo::Surface::Cylinder { def, motion } = m.surface_truth(face.surface) else {
             continue;
         };
         let surface_index = face.surface.index();
@@ -891,7 +891,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nacre_geom::{Plane, Surface};
+    use nacre_geom::Plane;
     use nacre_math::Vector3;
     use nacre_topo::{HalfEdge, Orientation, Shell, Solid};
     use proptest::prelude::*;
@@ -919,17 +919,14 @@ mod tests {
         h
     }
 
-    /// A `Handle<Surface>` for `index` (same throwaway-store trick).
+    /// A `Handle<Surface>` for `index` (same throwaway-store trick). The store holds the
+    /// **truth**, as the model's does — only `.index()` is read, so any statement will do.
     fn surface_handle_at(index: u32) -> Handle<Surface> {
-        let plane = || {
-            Surface::Plane(
-                Plane::through_points(
-                    Point3::from_array([0.0, 0.0, 0.0]),
-                    Point3::from_array([1.0, 0.0, 0.0]),
-                    Point3::from_array([0.0, 1.0, 0.0]),
-                )
-                .unwrap(),
-            )
+        let plane = || Surface::Plane {
+            points: nacre_topo::PlanePoints::Known(
+                [[0, 0, 0], [1, 0, 0], [0, 1, 0]].map(|p| p.map(nacre_scalar::Rat::from_int)),
+            ),
+            motion: None,
         };
         let mut s: Store<Surface> = Store::new();
         let mut h = s.push(plane());
@@ -1526,7 +1523,7 @@ mod tests {
             .faces
             .iter()
             .map(|(_, f)| f.surface)
-            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .find(|&h| matches!(m.surface(h), nacre_geom::Surface::Cylinder(_)))
             .expect("the lateral cylinder");
         let (z0, x0) = (
             m.world_plane(nacre_scalar::Axis::Z),
@@ -1568,7 +1565,8 @@ mod tests {
             .iter()
             .find(|&&fh| {
                 let f = m.faces.get(fh);
-                matches!(m.surface(f.surface), Surface::Plane(_)) && f.outer.half_edges.len() == 1
+                matches!(m.surface(f.surface), nacre_geom::Surface::Plane(_))
+                    && f.outer.half_edges.len() == 1
             })
             .expect("a cylinder has two disk caps");
         let twin = {
@@ -1661,10 +1659,15 @@ mod tests {
         let faces = m.shells.get(shell).faces.clone();
         let victim = *faces
             .iter()
-            .find(|&&fh| matches!(m.surface(m.faces.get(fh).surface), Surface::Cylinder(_)))
+            .find(|&&fh| {
+                matches!(
+                    m.surface(m.faces.get(fh).surface),
+                    nacre_geom::Surface::Cylinder(_)
+                )
+            })
             .expect("the lateral face");
         let cache = match m.surface(m.faces.get(victim).surface) {
-            Surface::Cylinder(c) => *c,
+            nacre_geom::Surface::Cylinder(c) => *c,
             _ => unreachable!(),
         };
         let r = |x: f64| nacre_scalar::Rat::from_decimal(x).expect("decimal");
@@ -1717,7 +1720,7 @@ mod tests {
             .faces
             .iter()
             .map(|(_, f)| f.surface)
-            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .find(|&h| matches!(m.surface(h), nacre_geom::Surface::Cylinder(_)))
             .expect("lateral");
         let bottom = m.world_plane(nacre_scalar::Axis::Z);
         let x0 = m.world_plane(nacre_scalar::Axis::X);
@@ -1798,7 +1801,7 @@ mod tests {
             .faces
             .iter()
             .map(|(_, f)| f.surface)
-            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .find(|&h| matches!(m.surface(h), nacre_geom::Surface::Cylinder(_)))
             .expect("lateral");
         let bottom = m.world_plane(nacre_scalar::Axis::Z);
         let x0 = m.world_plane(nacre_scalar::Axis::X);
@@ -1870,13 +1873,13 @@ mod tests {
             .faces
             .iter()
             .map(|(_, f)| f.surface)
-            .find(|&h| matches!(m.surface(h), Surface::Cylinder(_)))
+            .find(|&h| matches!(m.surface(h), nacre_geom::Surface::Cylinder(_)))
             .expect("the cylinder's lateral surface");
         let cap = m
             .faces
             .iter()
             .map(|(_, f)| f.surface)
-            .find(|&h| h != lateral && !matches!(m.surface(h), Surface::Cylinder(_)))
+            .find(|&h| h != lateral && !matches!(m.surface(h), nacre_geom::Surface::Cylinder(_)))
             .expect("a cap plane");
         // A seam vertex at radius 2 + 1e-3 — off the derived radius-2 rim circle. Its
         // definition is `OnSeam` (the lateral cylinder and its cap), which is what a rim's

@@ -3,12 +3,12 @@
 //! operand stays exactly defined. [`copy`] is the same walk with no motion at all.
 
 use crate::OpError;
-use nacre_geom::{AxisMirror, Cylinder, Plane, Surface};
+use nacre_geom::{AxisMirror, Cylinder, Plane};
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Shell, Solid, Vertex, VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Shell, Solid, Surface, Vertex, VertexDef,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -331,17 +331,17 @@ fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
         // for geometry it had never seen. Spelled as a match, the next variant (M6's) is a
         // compile error at exactly this decision.
         match model.surface_truth(s) {
-            nacre_topo::SurfaceTruth::Plane {
+            nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(p),
                 ..
             } => transport_points(m, *p).is_some(),
             // A `Through` plane's truth carries geometry **by reference** — no transport can
             // move it while the f64 cache moves, so it refuses every carrying candidate.
-            nacre_topo::SurfaceTruth::Plane {
+            nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Through(_),
                 ..
             } => false,
-            nacre_topo::SurfaceTruth::Cylinder { def, .. } => transport_cylinder(m, def).is_some(),
+            nacre_topo::Surface::Cylinder { def, .. } => transport_cylinder(m, def).is_some(),
         }
     };
     let mut ok: Vec<bool> = vec![true; candidates.len()];
@@ -358,12 +358,12 @@ fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
             // Exhaustive for the same reason as `points_move`: a new `Surface` variant (M6's
             // sphere/cone) must be a compile error here, not a silently skipped probe.
             match model.surface(face.surface) {
-                Surface::Plane(pl) => probe(&mut ok, pl.origin()),
+                nacre_geom::Surface::Plane(pl) => probe(&mut ok, pl.origin()),
                 // ★ The cylinder's axis origin is a datum a judgment reads since M6 — the gate's
                 // clearance and `world_cylinder_def`'s postcondition compare it against the
                 // cache — so it is probed like a plane's origin (the direction rides `dir_rat`,
                 // exact under any turn the rationals can state).
-                Surface::Cylinder(cy) => probe(&mut ok, cy.axis().origin()),
+                nacre_geom::Surface::Cylinder(cy) => probe(&mut ok, cy.axis().origin()),
             }
             for (k, (_, m)) in candidates.iter().enumerate() {
                 if ok[k] && !points_move(m, face.surface) {
@@ -517,7 +517,7 @@ impl Xform<'_> {
 
     /// `None` when the variant has no image under this motion — a mirrored cylinder, whose
     /// parametrisation handedness is a curved-geometry decision (see `Surface::mirrored`).
-    fn surface(&self, s: &Surface, offset: Vector3) -> Option<Surface> {
+    fn surface(&self, s: &nacre_geom::Surface, offset: Vector3) -> Option<nacre_geom::Surface> {
         match self {
             Xform::Rigid(iso) => Some(transform_surface(s, iso, offset)),
             Xform::Mirror { m, .. } => s.mirrored(*m),
@@ -544,20 +544,24 @@ impl Xform<'_> {
 /// and its exact `raw` — is unchanged). A rotation rebuilds from the moved
 /// origin/normal via the constructor (rotation makes `raw` irrational, as expected —
 /// the plane then carries tol, judged by CIP later).
-fn transform_surface(s: &Surface, iso: &Isometry, offset: Vector3) -> Surface {
+fn transform_surface(
+    s: &nacre_geom::Surface,
+    iso: &Isometry,
+    offset: Vector3,
+) -> nacre_geom::Surface {
     if iso.rotate.is_none() {
         return s.translated(offset);
     }
     let p = |q: Point3| Point3::from_array(iso.apply_point(q.as_array()));
     let d = |v: Vector3| Vector3::from_array(iso.apply_dir(v.as_array()));
     match s {
-        Surface::Plane(pl) => Surface::Plane(
+        nacre_geom::Surface::Plane(pl) => nacre_geom::Surface::Plane(
             Plane::from_point_normal(p(pl.origin()), d(pl.normal()))
                 .expect("rotation preserves a nonzero normal"),
         ),
-        Surface::Cylinder(cy) => {
+        nacre_geom::Surface::Cylinder(cy) => {
             let ax = cy.axis();
-            Surface::Cylinder(
+            nacre_geom::Surface::Cylinder(
                 Cylinder::from_axis(
                     p(ax.origin()),
                     d(ax.direction()),
@@ -629,8 +633,8 @@ fn transform_solid(
             .any(|fh| {
                 !matches!(
                     model.surface_truth(model.faces.get(fh).surface),
-                    nacre_topo::SurfaceTruth::Plane { motion: None, .. }
-                        | nacre_topo::SurfaceTruth::Cylinder { motion: None, .. }
+                    nacre_topo::Surface::Plane { motion: None, .. }
+                        | nacre_topo::Surface::Cylinder { motion: None, .. }
                 )
             })
     };
@@ -693,7 +697,7 @@ fn transform_solid(
         // an improper motion's parity interactions deserve their own measured stage.
         let invariant = matches!(
             &src_truth,
-            nacre_topo::SurfaceTruth::Plane {
+            nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(_),
                 motion: None,
             }
@@ -727,8 +731,8 @@ fn transform_solid(
         // `new_motion` is always `Some` here.
         let (new_s, flipped) = match (moved, &src_truth) {
             (
-                Surface::Plane(pl),
-                nacre_topo::SurfaceTruth::Plane {
+                nacre_geom::Surface::Plane(pl),
+                nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Known(p),
                     ..
                 },
@@ -752,8 +756,8 @@ fn transform_solid(
                 model.push_plane(pl, carried, new_motion)
             }
             (
-                Surface::Plane(pl),
-                nacre_topo::SurfaceTruth::Plane {
+                nacre_geom::Surface::Plane(pl),
+                nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Through(vs),
                     ..
                 },
@@ -790,7 +794,7 @@ fn transform_solid(
                 );
                 out
             }
-            (Surface::Cylinder(cy), nacre_topo::SurfaceTruth::Cylinder { def, .. }) => {
+            (nacre_geom::Surface::Cylinder(cy), nacre_topo::Surface::Cylinder { def, .. }) => {
                 // The same fork as the `Known` plane above, minus the invariant road (an
                 // invariant-cylinder restatement — a turn about its own axis — is deliberately
                 // deferred; the condition is narrower than a plane's because `ref_dir` turns).
@@ -807,8 +811,8 @@ fn transform_solid(
                 };
                 (model.push_cylinder(cy, carried, new_motion), false)
             }
-            (Surface::Plane(_), nacre_topo::SurfaceTruth::Cylinder { .. })
-            | (Surface::Cylinder(_), nacre_topo::SurfaceTruth::Plane { .. }) => {
+            (nacre_geom::Surface::Plane(_), nacre_topo::Surface::Cylinder { .. })
+            | (nacre_geom::Surface::Cylinder(_), nacre_topo::Surface::Plane { .. }) => {
                 unreachable!("a surface's cache and truth cannot disagree about its kind")
             }
         };
@@ -1018,22 +1022,39 @@ mod tests {
     #[test]
     fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
         let mut m = Model::new();
+        // ★★★ **State the deep plane first and let the cuboid intern onto it.** The three points
+        // below name `z = 1` — the same plane the cuboid's top cap names — so `add_cuboid` finds
+        // this handle by canonical name and the cap carries *this* statement. No test-only door
+        // and no mutation: the arena holds the truth, and interning is the production road onto it.
+        // (`z = 1` rather than `z = 0` because the world seeds already state the three origin
+        // planes, and interning would hand back a seed's shallow triple.)
+        let deep = Rat::new(1, 5i128.pow(42)).unwrap();
+        let pts = [
+            [deep, Rat::from_int(0), Rat::from_int(1)],
+            [Rat::from_int(1), Rat::from_int(0), Rat::from_int(1)],
+            [Rat::from_int(0), Rat::from_int(1), Rat::from_int(1)],
+        ];
+        let (deep_surf, _) = m.push_plane(
+            Plane::from_point_normal(
+                Point3::from_array([0.0, 0.0, 1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+            )
+            .expect("a unit normal names a plane"),
+            pts,
+            None,
+        );
         let s = m.add_cuboid(
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.0, 1.0, 1.0]),
         );
-        m.rebuild_adjacency();
-        // Make one surface's triple adversarially deep: a 5⁴² denominator no dyadic translation
-        // can share. (The map is data here — the mechanism under test reads it, nothing else.)
-        let fh = m.shells.get(m.solids.get(s).outer).faces[0];
-        let surf = m.faces.get(fh).surface;
-        let deep = Rat::new(1, 5i128.pow(42)).unwrap();
-        let pts = [
-            [deep, Rat::from_int(0), Rat::from_int(0)],
-            [Rat::from_int(1), Rat::from_int(0), Rat::from_int(0)],
-            [Rat::from_int(0), Rat::from_int(1), Rat::from_int(0)],
-        ];
-        m.set_plane_points_for_test(surf, pts);
+        assert!(
+            m.shells
+                .get(m.solids.get(s).outer)
+                .faces
+                .iter()
+                .any(|&f| m.faces.get(f).surface == deep_surf),
+            "the cuboid's top cap must intern onto the deep statement"
+        );
         // Fixture qualification: the f64 side is exact, the rational side overflows.
         let t = Rat::new(1, 1 << 30).unwrap();
         assert_eq!(
@@ -1058,7 +1079,7 @@ mod tests {
             .find(|&s2| {
                 matches!(
                     m.surface_truth(s2),
-                    nacre_topo::SurfaceTruth::Plane {
+                    nacre_topo::Surface::Plane {
                         points: nacre_topo::PlanePoints::Known(p),
                         ..
                     } if *p == pts
@@ -1068,7 +1089,7 @@ mod tests {
         assert!(
             matches!(
                 m.surface_truth(moved_surf),
-                nacre_topo::SurfaceTruth::Plane {
+                nacre_topo::Surface::Plane {
                     motion: Some(_),
                     ..
                 }
@@ -1206,12 +1227,12 @@ mod tests {
             .faces
             .iter()
             .map(|&f| m.faces.get(f).surface)
-            .find(|&su| matches!(m.surface(su), Surface::Cylinder(_)))
+            .find(|&su| matches!(m.surface(su), nacre_geom::Surface::Cylinder(_)))
             .expect("a cylinder keeps its lateral face");
         // An inexact turn records a node, and the def is carried **verbatim** — the recorded
         // node states its cylinder before the motion (the plane rule, unchanged by M6-0).
         match m.surface_truth(lateral) {
-            nacre_topo::SurfaceTruth::Cylinder {
+            nacre_topo::Surface::Cylinder {
                 def,
                 motion: Some(_),
             } => {
@@ -1259,7 +1280,7 @@ mod tests {
         let lateral = faces
             .iter()
             .map(|&f| m.faces.get(f).surface)
-            .find(|&su| matches!(m.surface(su), Surface::Cylinder(_)))
+            .find(|&su| matches!(m.surface(su), nacre_geom::Surface::Cylinder(_)))
             .expect("lateral");
         let bottom = m.world_plane(Axis::Z); // the z = 0 cap interned onto the world seed
         let x0 = m.world_plane(Axis::X);
@@ -1378,14 +1399,14 @@ mod tests {
             .faces
             .iter()
             .map(|&f| m.faces.get(f).surface)
-            .find(|&su| matches!(m.surface(su), Surface::Cylinder(_)))
+            .find(|&su| matches!(m.surface(su), nacre_geom::Surface::Cylinder(_)))
             .expect("a cylinder keeps its lateral face");
         // A 90°-family turn is exact: nothing is recorded, and the def rides the very
         // transport the probe checked — origin through `point_rat`, directions through
         // `dir_rat` (the pivot cancels), radius invariant. (x, y) ↦ (−y, x).
         let d = |x: f64| Rat::from_decimal(x).expect("decimal");
         match m.surface_truth(lateral) {
-            nacre_topo::SurfaceTruth::Cylinder { def, motion: None } => {
+            nacre_topo::Surface::Cylinder { def, motion: None } => {
                 assert_eq!(def.origin(), [d(1.25), d(0.5), d(2.0)]);
                 assert_eq!(def.dir(), [d(0.0), d(0.0), d(1.0)]);
                 assert_eq!(

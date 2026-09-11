@@ -265,6 +265,7 @@ mod tests {
     use crate::planes::{PlaneSetup, plane_index_setup};
     use nacre_math::{Point3, Vector3};
     use nacre_store::Handle;
+    use nacre_topo::Surface;
     use nacre_topo::{Model, Solid};
 
     /// **The existence rule's whole truth table** — [`face_spans`] against marks written by hand.
@@ -3503,16 +3504,12 @@ mod tests {
 
     /// How many faces of `s` lie on cylinder surfaces, grouped by surface.
     fn lateral_face_counts(m: &Model, s: Handle<Solid>) -> Vec<usize> {
-        let mut counts: std::collections::HashMap<Handle<nacre_geom::Surface>, usize> =
-            Default::default();
+        let mut counts: std::collections::HashMap<Handle<Surface>, usize> = Default::default();
         let solid = m.solids.get(s);
         for sh in std::iter::once(solid.outer).chain(solid.cavities.iter().copied()) {
             for &fh in &m.shells.get(sh).faces {
                 let surf = m.faces.get(fh).surface;
-                if matches!(
-                    m.surface_truth(surf),
-                    nacre_topo::SurfaceTruth::Cylinder { .. }
-                ) {
+                if matches!(m.surface_truth(surf), nacre_topo::Surface::Cylinder { .. }) {
                     *counts.entry(surf).or_default() += 1;
                 }
             }

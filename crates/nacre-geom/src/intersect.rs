@@ -28,9 +28,8 @@ const PARALLEL_EPS: f64 = 1e-16;
 ///
 /// Closed form — no SSI march or spline cache (design §8 M5). Direction is
 /// `n1 × n2`; the base point is the point of the line closest to the origin.
-/// Returns a bare [`Line`] (the closed-form truth), not a cached
-/// `Curve::Intersection` (that variant, holding `Handle<Surface>`, is for the
-/// marched intersections of M7).
+/// Returns a bare [`Line`] (the closed form), not a marched approximation — the M7
+/// shape for those is an open question this crate cannot spell (see the crate doc).
 ///
 /// The base point is `p0 = (h1·(n2×d) + h2·(d×n1)) / (d·d)` with `d = n1×n2` and
 /// `hi = ni·originᵢ`; one verifies `n1·p0 = h1` and `n2·p0 = h2` (using

@@ -169,13 +169,12 @@
 //! the shape to watch for here: this file's counters can shrink a population silently while every
 //! assertion stays green.
 
-use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{BoolKind, DatumDef, OpOutput, Operation, Profile2d, SketchFrame, SketchPlane};
 use nacre_ops::{apply, boolean};
 use nacre_scalar::{Angle, Axis, Isometry, MeetPoint, PlaneName, Rat, Rotation};
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, SurfaceTruth, Vertex, VertexDef};
+use nacre_topo::{Model, Solid, Surface, Vertex, VertexDef};
 
 // ---------------------------------------------------------------------------------------------
 // fixtures — the shapes `tests/points_coverage.rs` already uses
@@ -279,8 +278,8 @@ impl Tally {
 
 fn motion_of(m: &Model, h: Handle<Surface>) -> Option<Handle<nacre_topo::MotionNode>> {
     match m.surface_truth(h) {
-        SurfaceTruth::Plane { motion, .. } => *motion,
-        SurfaceTruth::Cylinder { motion, .. } => *motion,
+        Surface::Plane { motion, .. } => *motion,
+        Surface::Cylinder { motion, .. } => *motion,
     }
 }
 
@@ -873,7 +872,7 @@ fn name_census(m: &Model) -> (u64, usize, usize, usize) {
         };
         widest = widest.max(w);
         distinct.insert(format!("{n:?}"));
-        if let SurfaceTruth::Plane {
+        if let Surface::Plane {
             motion: Some(_), ..
         } = m.surface_truth(*h)
         {

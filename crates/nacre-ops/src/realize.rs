@@ -27,7 +27,7 @@ use crate::rotated_vertex::{motion_chain, replay};
 use nacre_cip::WitnessPoint;
 use nacre_scalar::{Bounded, Mag, MeetPoint};
 use nacre_store::Handle;
-use nacre_topo::{Model, Vertex};
+use nacre_topo::{Model, Surface, Vertex};
 use num_bigint::BigInt;
 
 /// How precisely to realize — always stated, never defaulted.
@@ -250,8 +250,8 @@ fn curved(p: Option<[Bounded; 3]>, bits: usize) -> Result<Realized, RealizeError
 /// is the half of migration row 3b that was recorded as missing.
 fn seam_point(
     model: &Model,
-    cyl: Handle<nacre_geom::Surface>,
-    cap: Handle<nacre_geom::Surface>,
+    cyl: Handle<Surface>,
+    cap: Handle<Surface>,
     bits: usize,
 ) -> Option<[Bounded; 3]> {
     let def = crate::planes::world_cylinder_def(model, cyl)?;
@@ -269,8 +269,8 @@ fn seam_point(
 /// line, the cylinder gives the quadratic, and `root` names which crossing.
 fn branch_point(
     model: &Model,
-    planes: [Handle<nacre_geom::Surface>; 2],
-    cylinder: Handle<nacre_geom::Surface>,
+    planes: [Handle<Surface>; 2],
+    cylinder: Handle<Surface>,
     root: nacre_topo::QuadRoot,
     bits: usize,
 ) -> Option<[Bounded; 3]> {

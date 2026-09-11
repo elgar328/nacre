@@ -7,17 +7,18 @@ use crate::boolean::boolean;
 use crate::exact::{Seg3, Swept};
 use crate::planes::outer_tri;
 use crate::transform::transform;
+use nacre_geom::Plane;
 use nacre_geom::intersect::{RingSide, orient2d_rat, plane_side};
 use nacre_geom::mixed::{
     Seg2d, mixed_ring_self_intersection, mixed_rings_cross, point_in_mixed_ring,
 };
-use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::CylinderDef;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Shell, Solid, Vertex, VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Shell, Solid, Surface, Vertex,
+    VertexDef,
 };
 use std::borrow::Cow;
 
@@ -1105,7 +1106,7 @@ fn branch_def(
             .ok_or(OpError::PlaneWithoutExactForm)
     };
     let (pa, pb) = (name(a)?, name(b)?);
-    let nacre_topo::SurfaceTruth::Cylinder { def, motion } = model.surface_truth(cylinder) else {
+    let nacre_topo::Surface::Cylinder { def, motion } = model.surface_truth(cylinder) else {
         return Err(OpError::DegenerateGeometry);
     };
     if model.plane_motion(a) != *motion || model.plane_motion(b) != *motion {
@@ -1586,8 +1587,8 @@ pub(crate) fn extrude_on_frame(
     // rather than letting the frame derivation fail later for a reason that reads as something
     // else ("no exact form" when the truth is "not a plane").
     match model.surface(frame.plane()) {
-        Surface::Plane(_) => {}
-        Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
+        nacre_geom::Surface::Plane(_) => {}
+        nacre_geom::Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
     }
     let (_, _, _, w) = crate::rotated_vertex::frame_world_basis(
         model,
@@ -1706,8 +1707,8 @@ pub(crate) fn build_prism(
     let (base_surface, base_orient) = match base_cap_surface {
         Some(h) => {
             let n_h = match model.surface(h) {
-                Surface::Plane(p) => p.normal(),
-                Surface::Cylinder(_) => return Err(OpError::DegenerateGeometry),
+                nacre_geom::Surface::Plane(p) => p.normal(),
+                nacre_geom::Surface::Cylinder(_) => return Err(OpError::DegenerateGeometry),
             };
             let orient = if n_h.dot(-normal) > 0.0 {
                 Orientation::Forward
@@ -2533,8 +2534,8 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let surface_h = f.surface;
     let orientation = f.orientation;
     let plane = match model.surface(surface_h) {
-        Surface::Plane(p) => *p,
-        Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
+        nacre_geom::Surface::Plane(p) => *p,
+        nacre_geom::Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
     };
     let sign = f64::from(orientation.sign());
     let n = plane.normal() * sign;
@@ -2563,7 +2564,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // keeps the f64 projection exactly as a missing name did.
     let world_stated = matches!(
         model.surface_truth(surface_h),
-        nacre_topo::SurfaceTruth::Plane { motion: None, .. }
+        nacre_topo::Surface::Plane { motion: None, .. }
     );
     let origin = match (
         world_stated,
@@ -2857,7 +2858,7 @@ pub(crate) fn find_face_coplanar_with(
     let shell = model.solids.get(solid).outer;
     model.shells.get(shell).faces.iter().copied().find(|&fh| {
         let face = model.faces.get(fh);
-        let Surface::Plane(pl) = model.surface(face.surface) else {
+        let nacre_geom::Surface::Plane(pl) = model.surface(face.surface) else {
             return false;
         };
         let coplanar = face.surface == ref_surf
@@ -3198,7 +3199,7 @@ mod frame_differential {
             other => panic!("stating a plane: {other:?}"),
         }
     }
-    use nacre_topo::SurfaceTruth;
+    use nacre_topo::Surface;
 
     fn rect(x0: f64, y0: f64, x1: f64, y1: f64) -> Profile2d {
         Profile2d::polygon(vec![
@@ -3302,9 +3303,7 @@ mod frame_differential {
         for i in 0..m.surface_count() as u32 {
             let h = m.surface_handle_at(i).expect("in range");
             let motion = match m.surface_truth(h) {
-                SurfaceTruth::Plane { motion, .. } | SurfaceTruth::Cylinder { motion, .. } => {
-                    *motion
-                }
+                Surface::Plane { motion, .. } | Surface::Cylinder { motion, .. } => *motion,
             };
             if let Some(node) = motion {
                 seen.insert(node.index());

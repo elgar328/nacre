@@ -5,12 +5,12 @@ use crate::combinatorics;
 use crate::{BoolError, RejectReason, he_start, reject};
 use nacre_cip::predicate::{Judge, Notes};
 use nacre_cip::{Standard, WitnessPoint};
+use nacre_geom::Plane;
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
-use nacre_geom::{Plane, Surface};
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::Mag;
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, HalfEdge, Model, Shell, Solid, Vertex};
+use nacre_topo::{Edge, Face, HalfEdge, Model, Shell, Solid, Surface, Vertex};
 use std::collections::HashMap;
 
 /// A face's supporting plane plus the exact in/out data the seam path needs.
@@ -28,7 +28,7 @@ use std::collections::HashMap;
 /// is now an enum so a cylinder face can *sit in the table* (keeping the face-index space that
 /// `surf_ix`/`EdgeFaces`/`plane_ix` share) while the plane data keeps its own struct — plane
 /// consumers read through [`FaceRow::plane`], and the population gate decides what flows.
-/// ★ The size gap is the `SurfaceTruth` trade taken again: planes dominate every table (a
+/// ★ The size gap is the `Surface` trade taken again: planes dominate every table (a
 /// prism is all planes; a cylinder contributes one lateral row), so boxing the plane data
 /// would put an allocation and a pointer chase on the common row to shrink the rare one.
 #[allow(clippy::large_enum_variant)]
@@ -247,13 +247,13 @@ pub(crate) fn collect_planes(
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
             let plane = match model.surface(face.surface) {
-                Surface::Plane(p) => *p,
+                nacre_geom::Surface::Plane(p) => *p,
                 // A cylinder face sits in the table (M6-2a) — its row keeps the shared facts
                 // (surface, face, stated outward sign, motion leaf) and none of the plane
                 // vocabulary. Whether it may *flow* is the population gate's question, asked
                 // in `plane_index_setup`, not a door slam here.
-                Surface::Cylinder(_) => {
-                    let nacre_topo::SurfaceTruth::Cylinder { motion, .. } =
+                nacre_geom::Surface::Cylinder(_) => {
+                    let nacre_topo::Surface::Cylinder { motion, .. } =
                         model.surface_truth(face.surface)
                     else {
                         unreachable!("a cylinder cache carries a cylinder truth")
@@ -307,7 +307,7 @@ pub(crate) fn collect_planes(
                     matches!(model.edge_curve(he.edge), nacre_geom::Curve::Circle(_))
                 }) =>
                 {
-                    let nacre_topo::SurfaceTruth::Plane {
+                    let nacre_topo::Surface::Plane {
                         points: nacre_topo::PlanePoints::Known(pts),
                         motion: disk_motion,
                     } = model.surface_truth(face.surface)
@@ -376,7 +376,7 @@ pub(crate) fn collect_planes(
                 // ★ `WitnessPoint::exact` is kept for a point that **is** an f64: it states the same thing
                 // and skips the nine BigFloat operations `WitnessPoint::at` spends measuring a zero. The
                 // round-trip test is the one `BaseFrame` already uses.
-                nacre_topo::SurfaceTruth::Plane {
+                nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),
                     motion: None,
                 } => {
@@ -412,7 +412,7 @@ pub(crate) fn collect_planes(
                     });
                     (wind(w), false, None)
                 }
-                nacre_topo::SurfaceTruth::Plane {
+                nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),
                     motion: Some(motion),
                 } => {
@@ -461,7 +461,7 @@ pub(crate) fn collect_planes(
                 //
                 // A *straddling*-vertex datum has no witness triangle **from its vertices** —
                 // its witness is the judged frame's probes, built in the branch below (16-3).
-                nacre_topo::SurfaceTruth::Plane {
+                nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Through(vs),
                     motion,
                 } => {
@@ -549,7 +549,7 @@ pub(crate) fn collect_planes(
                     _t.charge(Sub::TriPt3);
                     (wind(w), rotated, motion)
                 }
-                nacre_topo::SurfaceTruth::Cylinder { .. } => {
+                nacre_topo::Surface::Cylinder { .. } => {
                     unreachable!("a plane cache cannot carry a cylinder truth")
                 }
             };
@@ -628,7 +628,7 @@ pub(crate) fn collect_planes(
                 continue;
             }
             let Some(name) = f.base_rat else { continue };
-            let nacre_topo::SurfaceTruth::Plane {
+            let nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(pts),
                 motion: None,
             } = model.surface_truth(f.surf)
@@ -701,7 +701,7 @@ pub(crate) fn world_cylinder_def(
     model: &Model,
     surf: Handle<Surface>,
 ) -> Option<nacre_topo::CylinderDef> {
-    let nacre_topo::SurfaceTruth::Cylinder { def, motion } = model.surface_truth(surf) else {
+    let nacre_topo::Surface::Cylinder { def, motion } = model.surface_truth(surf) else {
         unreachable!("a cylinder surface carries a cylinder truth")
     };
     let out = match motion {
@@ -719,7 +719,7 @@ pub(crate) fn world_cylinder_def(
     };
     debug_assert!(
         {
-            let Surface::Cylinder(cache) = model.surface(surf) else {
+            let nacre_geom::Surface::Cylinder(cache) = model.surface(surf) else {
                 unreachable!("a cylinder truth carries a cylinder cache")
             };
             let o = Point3::from_array(out.origin().map(|r| r.to_f64()));
@@ -1280,7 +1280,7 @@ pub(crate) fn cylinder_gate(
         let Some(def) = world_cylinder_def(model, surf) else {
             return Err(undecided());
         };
-        let Surface::Cylinder(cache) = model.surface(surf) else {
+        let nacre_geom::Surface::Cylinder(cache) = model.surface(surf) else {
             unreachable!("a cylinder truth carries a cylinder cache")
         };
         // ★ **One surface, two solids.** Cylinders intern by their exact statement, so two operands

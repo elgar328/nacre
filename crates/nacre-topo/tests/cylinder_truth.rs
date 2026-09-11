@@ -20,7 +20,7 @@
 
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::Rat;
-use nacre_topo::{CylinderDef, Model, SurfaceTruth, VertexDef};
+use nacre_topo::{CylinderDef, Model, Surface, VertexDef};
 
 fn pt(x: f64, y: f64, z: f64) -> Point3 {
     Point3::from_array([x, y, z])
@@ -57,7 +57,7 @@ fn build(
         _ => unreachable!(),
     };
     let def = match m.surface_truth(lateral) {
-        SurfaceTruth::Cylinder { def, motion } => {
+        Surface::Cylinder { def, motion } => {
             assert!(motion.is_none(), "construction states the world");
             def.clone()
         }
@@ -414,7 +414,7 @@ type CylFaces = [nacre_store::Handle<nacre_topo::Face>; 3];
 fn read_exact(m: &Model, faces: CylFaces) -> (CylinderDef, Point3, Point3) {
     let lateral = m.faces.get(faces[0]).surface;
     let def = match m.surface_truth(lateral) {
-        SurfaceTruth::Cylinder { def, motion } => {
+        Surface::Cylinder { def, motion } => {
             assert!(motion.is_none(), "this fixture states the world");
             def.clone()
         }

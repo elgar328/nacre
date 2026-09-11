@@ -1087,7 +1087,7 @@ fn two_caps_described_exactly_are_one_plane() {
             .narrow()
             .expect("a frame cap's name is narrow");
         let motion = match m.surface_truth(surf) {
-            nacre_topo::SurfaceTruth::Plane {
+            nacre_topo::Surface::Plane {
                 motion: Some(motion),
                 ..
             } => *motion,
@@ -1240,7 +1240,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
         let faces = collect_planes(&m, s).unwrap();
         let (mut with, mut without) = (0usize, 0usize);
         for fi in &faces {
-            let nacre_topo::SurfaceTruth::Plane {
+            let nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(pts),
                 ..
             } = m.surface_truth(fi.surf())
@@ -1471,7 +1471,7 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
             // of what this lock used to have to check.
             let ok = matches!(
                 m.surface_truth(fi.surf()),
-                nacre_topo::SurfaceTruth::Plane { .. }
+                nacre_topo::Surface::Plane { .. }
             );
             if ok {
                 exact += 1;

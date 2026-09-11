@@ -5,9 +5,14 @@
 //! and identity is an integer comparison (`h1 == h2`), never a floating-point
 //! coordinate comparison. See `docs/design.md` §2.
 //!
-//! `Store`/`Handle` live in this lowest crate on purpose: `nacre-geom` already
-//! needs `Handle` (its `Curve::Intersection` holds `Handle<Surface>`), so placing
-//! them in `nacre-topo` would create a geom→topo→geom cycle.
+//! `Store`/`Handle` live in this lowest crate on purpose: a typed-index arena knows
+//! nothing of geometry or topology, and everything above it — `nacre-topo`'s arenas,
+//! `nacre-ops`, `nacre-validate`, `nacre-step` — names handles freely.
+//!
+//! (The older note here gave a different reason — that `nacre-geom` would need `Handle`
+//! for a `Curve::Intersection` variant. It will not: a handle names an arena entry, and
+//! the surface arena holds the **truth**, a `nacre-topo` type. A crate below topo cannot
+//! name it, so geom stays `Handle`-free.)
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use core::cmp::Ordering;

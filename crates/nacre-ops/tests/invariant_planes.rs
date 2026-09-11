@@ -11,12 +11,11 @@
 //! `FrameNotRepresentable` refusal on those faces dissolves (`face_sketch_frame` answers the
 //! world frame and the contract sweep verifies it bit-for-bit).
 
-use nacre_geom::Surface;
 use nacre_math::Point2;
 use nacre_ops::{OpOutput, Operation, Profile2d, SketchFrame, apply, face_sketch_frame};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
-use nacre_topo::{Model, PlanePoints, Solid, SurfaceTruth};
+use nacre_topo::{Model, PlanePoints, Solid, Surface};
 
 fn block(m: &mut Model) -> Handle<Solid> {
     let world = SketchFrame::world(m, Axis::Z);
@@ -67,7 +66,7 @@ fn caps_and_walls(m: &Model, s: Handle<Solid>) -> (Vec<Handle<Surface>>, Vec<Han
     let (mut caps, mut walls) = (vec![], vec![]);
     for &fh in &m.shells.get(m.solids.get(s).outer).faces {
         let surf = m.faces.get(fh).surface;
-        let SurfaceTruth::Plane {
+        let Surface::Plane {
             points: PlanePoints::Known(p),
             ..
         } = m.surface_truth(surf)
@@ -106,10 +105,7 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
             "a turned cap must be its source handle, not a moved twin: {c:?} vs {src_caps:?}"
         );
         assert!(
-            matches!(
-                m.surface_truth(*c),
-                SurfaceTruth::Plane { motion: None, .. }
-            ),
+            matches!(m.surface_truth(*c), Surface::Plane { motion: None, .. }),
             "a fixed plane records no motion"
         );
     }
@@ -119,7 +115,7 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
         assert!(
             matches!(
                 m.surface_truth(*w),
-                SurfaceTruth::Plane {
+                Surface::Plane {
                     motion: Some(_),
                     ..
                 }
@@ -144,10 +140,7 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
     assert!(caps2.contains(&seed), "still the seed after a second turn");
     for c in &caps2 {
         assert!(
-            matches!(
-                m.surface_truth(*c),
-                SurfaceTruth::Plane { motion: None, .. }
-            ),
+            matches!(m.surface_truth(*c), Surface::Plane { motion: None, .. }),
             "a twice-turned cap still records no motion"
         );
     }

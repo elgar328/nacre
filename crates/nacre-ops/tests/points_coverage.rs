@@ -66,13 +66,10 @@ fn assert_all_planes_record_points(m: &Model, what: &str) {
             for &fh in &m.shells.get(sh).faces {
                 let surf = m.faces.get(fh).surface;
                 match (m.surface(surf), m.surface_truth(surf)) {
-                    (nacre_geom::Surface::Plane(_), nacre_topo::SurfaceTruth::Plane { .. }) => {
+                    (nacre_geom::Surface::Plane(_), nacre_topo::Surface::Plane { .. }) => {
                         seen += 1;
                     }
-                    (
-                        nacre_geom::Surface::Cylinder(_),
-                        nacre_topo::SurfaceTruth::Cylinder { .. },
-                    ) => {
+                    (nacre_geom::Surface::Cylinder(_), nacre_topo::Surface::Cylinder { .. }) => {
                         // curved truth is M6's; booleans reject it honestly today
                     }
                     (cache, truth) => panic!(

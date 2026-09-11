@@ -26,7 +26,6 @@
 //! proxy for how much arithmetic happened, not the mechanism. This is the first measurement of
 //! `truth-and-cache.md`'s *"최근접 f64 가 아닐 수 있다"* on vertices either way.
 
-use nacre_geom::Surface;
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{
     BoolKind, DatumDef, Edge2d, OpOutput, Operation, Precision, Profile2d, RealizeError,
@@ -34,7 +33,7 @@ use nacre_ops::{
 };
 use nacre_scalar::Axis;
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, Vertex};
+use nacre_topo::{Model, Solid, Surface, Vertex};
 
 fn p2(x: f64, y: f64) -> Point2 {
     Point2::from_array([x, y])
@@ -208,7 +207,6 @@ fn bored_plate() -> Model {
 /// crosses the lateral surface answer, the rest refuse. Both outcomes are asserted, so this cannot
 /// pass by refusing everything.
 fn branch_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
-    use nacre_geom::Surface;
     use nacre_topo::{QuadRoot, VertexDef};
     let mut cyl = None;
     let mut planes = Vec::new();
@@ -217,8 +215,8 @@ fn branch_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
             continue;
         };
         match m.surface(h) {
-            Surface::Cylinder(_) => cyl = Some(h),
-            Surface::Plane(_) => planes.push(h),
+            nacre_geom::Surface::Cylinder(_) => cyl = Some(h),
+            nacre_geom::Surface::Plane(_) => planes.push(h),
         }
     }
     let cylinder = cyl.expect("the fixture has a cylinder");

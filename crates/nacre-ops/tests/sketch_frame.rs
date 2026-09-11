@@ -41,7 +41,7 @@ fn frame_nodes(m: &Model) -> Vec<Motion> {
         .filter_map(|&fh| {
             let su = m.faces.get(fh).surface;
             let motion = match m.surface_truth(su) {
-                nacre_topo::SurfaceTruth::Plane {
+                nacre_topo::Surface::Plane {
                     motion: Some(h), ..
                 } => *h,
                 _ => return None,

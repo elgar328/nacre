@@ -23,6 +23,7 @@ use crate::transform::transform;
 use nacre_cip::Decision;
 use nacre_cip::predicate::Notes;
 use nacre_geom::intersect::three_planes;
+use nacre_topo::Surface;
 
 /// **Phase timers, on the production path.**
 ///
@@ -8537,7 +8538,7 @@ pub(crate) fn frame_audit(
 /// faces and silently produce a non-manifold or wrong-volume solid.
 /// What each input face's plane became: its **plane class's representative surface**, which is
 /// what every result face on that plane carries.
-pub(crate) type ClassOf = std::collections::HashMap<Handle<Face>, Handle<nacre_geom::Surface>>;
+pub(crate) type ClassOf = std::collections::HashMap<Handle<Face>, Handle<Surface>>;
 
 pub(crate) fn boolean(
     model: &mut Model,
@@ -11208,7 +11209,7 @@ mod tests {
         let (mut setup, cyl_surfs) =
             crate::planes::plane_index_setup_inner(&m, plate, boss).unwrap();
         for &surf in &cyl_surfs {
-            let nacre_topo::SurfaceTruth::Cylinder { def, .. } = m.surface_truth(surf) else {
+            let nacre_topo::Surface::Cylinder { def, .. } = m.surface_truth(surf) else {
                 unreachable!("a cylinder row carries a cylinder truth")
             };
             let nacre_geom::Surface::Cylinder(cache) = m.surface(surf) else {

@@ -11,10 +11,11 @@ use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
 use nacre_cip::Decision;
 use nacre_cip::predicate::{Evidence, Notes, Site};
-use nacre_geom::Surface;
 use nacre_math::Point3;
 use nacre_store::Handle;
-use nacre_topo::{Edge, Face, HalfEdge, Loop, Model, Orientation, Shell, Solid, Vertex, VertexDef};
+use nacre_topo::{
+    Edge, Face, HalfEdge, Loop, Model, Orientation, Shell, Solid, Surface, Vertex, VertexDef,
+};
 use std::collections::{HashMap, HashSet};
 
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
@@ -313,12 +314,7 @@ fn check_result_topology(
         for &eh in edge_uses.keys() {
             let e = model.edges.get(eh);
             let [s0, s1] = e.surfaces;
-            if s0 == s1
-                && matches!(
-                    model.surface_truth(s0),
-                    nacre_topo::SurfaceTruth::Plane { .. }
-                )
-            {
+            if s0 == s1 && matches!(model.surface_truth(s0), nacre_topo::Surface::Plane { .. }) {
                 same_plane.push(eh);
             }
         }

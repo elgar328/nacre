@@ -5,8 +5,7 @@
 //! `Eq`/`Hash` if it transitively holds an `f64` (a `Point3`); those get
 //! `PartialEq` for tests only.
 
-use crate::{Orientation, VertexDef};
-use nacre_geom::Surface;
+use crate::{Orientation, Surface, VertexDef};
 use nacre_store::Handle;
 
 /// A 0-cell: **its definition is all it is** (S7). The realized coordinate and its measured
