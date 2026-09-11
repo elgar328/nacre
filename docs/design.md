@@ -19,7 +19,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 ├── nacre-scalar     # exact 유리수 값 엔진: Rat·Angle·Axis/Rotation/Isometry·Orient
 ├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone
 ├── nacre-cip        # toleranced 부호 술어(회전): kernel(WitnessPoint 판정) + predicate(평면 배열 술어). predicates의 쌍둥이
-├── nacre-geom       # f64 기하 캐시(Surface·Curve)·교차(intersect 격리; scalar 의존 — Rat 링 술어 쌍둥이). 평면의 진실은 topo 의 SurfaceTruth(S6b)
+├── nacre-geom       # f64 기하 «실현»(Surface·Curve)·교차(intersect 격리; scalar 의존 — Rat 링 술어 쌍둥이). 곡면의 진실은 topo 의 Surface — 맨이름은 진실, 실현은 nacre_geom::Surface(진실과캐시 §관문 규칙)
 ├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model
 ├── nacre-tess       # tessellation: 출처 태그·증분 갱신
 │   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
@@ -65,7 +65,7 @@ X축은 `any_perpendicular` — **가장 작은 성분의 축과 외적**, Onsha
 
 **디버그 뷰어는 커널 크레이트가 아니라 워크스페이스 밖 별도 앱이다.** 연산 로그를 입력받아 매 동작을 스텝별로 재생하며(append-only라 "N번째까지 replay"가 공짜), STEP에 안 담기는 nacre **내부 정보**(`Origin`의 `Constructed`/`Discovered`, `Discovered`의 tolerance 실측값, `Handle` 관계·인접 등)까지 시각화하는 인터랙티브 도구. 내부 자료구조에 접근해야 하므로 nacre를 **직접 링크**한다(개발 중 path 의존 → 안정화 후 version 의존, 버전별 디버깅도 자연스러워짐). 만드는 시점은 **`Discovered`/tolerance가 처음 등장하는 M5 즈음** — 그 전(M1~M4는 전부 `Constructed`)의 시각 확인은 정상 결과는 STEP→step-loupe(구조+검증), 중간·깨진 상태는 OBJ 덤프→맥 미리보기로 충분해, 인터랙티브 뷰어는 필요가 증명될 때까지 미룬다.
 
-`Store`/`Handle`은 **최하위 `nacre-store`에 둔다.** geom도 Handle을 쓰기 때문이다 — `Curve::Intersection`(§3)이 `Handle<Surface>`를 담으므로, Handle이 topo에 있으면 geom→topo→geom 순환 의존이 된다. typed-index 저장소는 기하·위상을 전혀 모르는 순수 인프라이므로 두 층보다 아래에 격리하고, 위의 모든 크레이트가 자유롭게 참조한다. (라이선스는 MIT/Apache-2.0 듀얼 — Manifold(Apache-2.0) 알고리즘 차용과 호환.)
+`Store`/`Handle`은 **최하위 `nacre-store`에 둔다.** typed-index 저장소는 기하·위상을 전혀 모르는 순수 인프라이므로 두 층보다 아래에 격리하고, 위의 모든 크레이트(topo의 아레나들·ops·validate·step)가 자유롭게 참조한다. ⚠ **정정(2026-09-11)**: 여기 근거가 *"geom도 Handle을 쓴다 — `Curve::Intersection`(§3)이 `Handle<Surface>`를 담으므로"* 라 적혀 있었다. **그렇게 되지 않는다**: 핸들은 아레나 항목을 이름 짓고, 곡면 아레나는 **진실**(`Handle<MotionNode>`를 든 topo 타입)을 들므로 topo 아래 크레이트는 그 타입을 이름 지을 수 없다 ⇒ geom은 `Handle`을 영구히 갖지 않는다(진실과캐시 열린 항목 19). 자리는 그대로 옳고 근거만 위 문장이다. (라이선스는 MIT/Apache-2.0 듀얼 — Manifold(Apache-2.0) 알고리즘 차용과 호환.)
 
 `nacre-scalar`는 **회전 오버홀의 근본 표현 — exact 유리수 스칼라**를 격리한다. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**으로, 오버플로가 §4 강등 **트리거**(값의 캐시를 f64/dd로 내리고 tol을 `Origin`에 기록; 정의는 op-log로 불변 보존). `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **★ `nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-scalar는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **의존 결정(오버홀 최초 새 외부 dep):** `num-rational`(+num-traits)을 채택 — 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **회전 좌표의 toleranced 부호 판정**(무리수 좌표라 exact 못 하지만 부호는 f64 필터→astro-float 상승→*증명된 일치 또는 정직한 미결*로 sound하게 정함, §9 ③)은 이제 **`nacre-cip::kernel`으로 분리**됐다 — nacre-math 독립 순수 술어층, predicates의 쌍둥이(§9). **범위:** exact 값 엔진까지. 통합 값+tol `Scalar`·판정 잔여 정책(§9 ③)·커널 배선은 후속 셀.
 
@@ -203,9 +203,15 @@ replay(&log)`). 이 규율을 어긴 세션은 replay 가 재현할 수 없는 �
 
 **미래(파라메트릭 편집 v2) 기록.** 편집 대상 참조를 transient Handle 인덱스로 두면 kernel numbering에 종속돼 상류 수정에 깨진다(§6 topological naming). 정석은 **저장된 기하 cue(3D 참조점 등)로 tolerance 내 재탐색**해 참조를 의미로 resolve하는 것(HistCAD 계열). §6 `OpRef`를 지금 구현하진 않되, 참조를 "순수 인덱스"가 아니라 "기하 cue 포함"으로 확장할 자리를 로그 포맷에 남긴다.
 
-## 3. 정확 기하 층 (`nacre-geom`)
+## 3. 해석 기하 층 (`nacre-geom`)
+
+⚠ **이 절의 제목은 「정확 기하 층」이었다**(2026-09-11 정정). 이 크레이트는 **해석적**이지만
+**정확하지 않다** — 계수가 f64 다. 무엇이 진실인가는 `docs/truth-and-cache.md` 가 정한다:
+곡면의 진실은 `nacre_topo::Surface`(유리수 점 또는 `CylinderDef` + 모션)이고, 여기 있는
+`Surface`·`Curve` 는 그 **실현**이다. 산술이 닫힌 형태라는 것과 값이 정확하다는 것은 다른 말이다.
 
 핵심 결정: **교차 곡선을 1급 variant로, 이중 표현으로 둔다.** 상용 커널과 STEP이 공유하는 그 구조다.
+⚠ 그 「이중 표현」의 **핸들 절반은 이 층에 살 수 없다**(아래 `Intersection` 주석·열린 항목 19).
 
 ```rust
 pub enum Surface {
@@ -223,18 +229,17 @@ pub enum Curve {
     /// step-io CurveInput::Circle(끝점 동일 여부로 원/호 구분)과 정합.
     Circle(Circle),
     Nurbs(NurbsCurve),
-    /// 두 곡면의 교집합 — 절차적 정의(진실) + 근사 캐시(힌트)
-    Intersection {
-        surfaces: [Handle<Surface>; 2],
-        /// 표시·초기값용 근사 스플라인. 진실이 아니라 캐시.
-        cache: NurbsCurve,
-        /// 캐시가 진짜 교차에서 벗어난 최대 거리 (SSI 행진 시 산출)
-        cache_err: f64,
-    },
+    // ⚠★★★★ **이 변종은 이 절이 처음 쓰인 2026-07-07 의 것이고, 진실/캐시 분리 이전 설계다**
+    //    (그때는 geom 의 `Surface` 가 «진실» 이었다). 반전 뒤 `Handle<Surface>` 는 topo 의 진실을
+    //    이름 짓고 geom 은 그 타입을 이름 지을 수 없으므로, **이 모양으로는 지어지지 않는다.**
+    //    세 조각이 오늘의 분리선 양쪽으로 갈라진다 — 「두 곡면」은 이미 `Edge` 의 진실(담체)이고,
+    //    근사 스플라인과 `cache_err` 는 `EdgeCache` 다. 재배치는 진실과캐시 **열린 항목 19**.
+    //    (원문 보존:)
+    //    Intersection { surfaces: [Handle<Surface>; 2], cache: NurbsCurve, cache_err: f64 }
 }
 ```
 
-`Intersection`의 평가는 두 단계다: cache에서 대략적 점을 얻고, 두 곡면 위로 Newton relaxation하여 머신 정밀도로 수렴시킨다. 이 함수 하나가 "언제든 정확한 점을 되찾는" 능력의 전부다.
+`Intersection`의 평가는 두 단계다: cache에서 대략적 점을 얻고, 두 곡면 위로 Newton relaxation하여 머신 정밀도로 수렴시킨다. 이 함수 하나가 "언제든 정확한 점을 되찾는" 능력의 전부다. ☑ **그 함수는 재배치에 무영향이다** — 아래 시그니처가 이미 `&Surface` 를 **참조로** 받으므로(핸들이 아니라), 두 곡면을 누가 들고 있든 그대로 쓰인다.
 
 ```rust
 /// cache 위 파라미터 t의 점을 실제 교차점으로 정련한다 — 적응 정밀도 사다리.
@@ -2024,7 +2029,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 **어댑터 분리(옵션 보존):** 내부를 A로 두어도 nacre-step은 어댑터라 **필요 시 export 시점에 unseam해 B로 내보낼 수 있다**(내부 표현 ≠ 교환 표현). 지금은 A 출력(OCCT 상호운용 안전)이고, 특정 상호운용 요구가 생기면 B 출력을 어댑터에 추가. **tess 층의 남은 세부**(seam polyline 샘플 밀도·법선 비분리 규칙 구현)는 M3 tess 곡면 샘플링에서 확정.
 
 **★ M6-0 규약 (2026-08-17 확정 — 원통의 진실).** M6a(원통-우선) 진입 재조사에서 확정한 여섯:
-1. **진실 형태**: `SurfaceTruth::Cylinder { def: CylinderDef, motion }`, `CylinderDef { origin, dir, ref_dir, radius }` 전부 유리수 — dir·ref_dir은 **정규화하지 않은 원시**(normalize가 정확형을 파괴 — `normal_def` 선례), 캐시는 실현. 성분형이 옳은 이유: 사용자 어휘의 직접 리프트 + 곱-없는 셔플 — 반증표가 금지한 «유도된 곱(계수)» 모양이 아니라 평면 *점*의 원통 대응물. ref_dir 원시는 `any_perpendicular` **자신의 규칙을 유리수로**(최소-|성분| 축, 동률 X→Y→Z). ★ **축 선택은 정규화된 `d` — 캐시가 실제로 읽는 값 — 를 읽는다**(구조적 일치): 첫 철자는 원시 성분을 읽고 "양수 배는 순서 보존"을 논증했으나 그건 실수 산술 논증이었다 — f64 나눗셈 반올림이 강부등호를 동률로 붕괴시켜(실측 축 `[0.34, 0.33999999999999997, 1]`: 원시는 Y, `d`는 X) seam이 캐시와 ~90° 어긋난다. 외적은 여전히 원시 정확 성분으로(어느 값이 기저를 골랐든 `ê_k×원시 ∥ ê_k×d` 양의 평행 — seam 방향 정확 보존).
+1. **진실 형태**: `nacre_topo::Surface::Cylinder { def: CylinderDef, motion }`, `CylinderDef { origin, dir, ref_dir, radius }` 전부 유리수 — dir·ref_dir은 **정규화하지 않은 원시**(normalize가 정확형을 파괴 — `normal_def` 선례), 캐시는 실현. 성분형이 옳은 이유: 사용자 어휘의 직접 리프트 + 곱-없는 셔플 — 반증표가 금지한 «유도된 곱(계수)» 모양이 아니라 평면 *점*의 원통 대응물. ref_dir 원시는 `any_perpendicular` **자신의 규칙을 유리수로**(최소-|성분| 축, 동률 X→Y→Z). ★ **축 선택은 정규화된 `d` — 캐시가 실제로 읽는 값 — 를 읽는다**(구조적 일치): 첫 철자는 원시 성분을 읽고 "양수 배는 순서 보존"을 논증했으나 그건 실수 산술 논증이었다 — f64 나눗셈 반올림이 강부등호를 동률로 붕괴시켜(실측 축 `[0.34, 0.33999999999999997, 1]`: 원시는 Y, `d`는 X) seam이 캐시와 ~90° 어긋난다. 외적은 여전히 원시 정확 성분으로(어느 값이 기저를 골랐든 `ê_k×원시 ∥ ê_k×d` 양의 평행 — seam 방향 정확 보존).
 2. **seam은 모델 기하다 — 여기서 영구 고정된다**(+ref_dir 방향, θ=0). M6-1이 정하는 것은 **차트**뿐이고, 차트가 자기 배제점을 기존 seam 위에 놓도록 맞춘다 — 차트가 seam에 적응하지, 그 역은 절대 아니다.
 3. **interning은 보수적으로**: `cylinder_ids`(별도 맵), def **문자 동일**(ref_dir 포함) + motion 만 합침 — 같은 축·반지름·다른 ref_dir을 합치면 seam이 갈라지므로 잘못 합칠 위험 0인 키로 시작, 기하 동일성은 규칙 6대로 술어 몫(M6-1). 평면의 `flipped` 대응물 불요(문자-동일 키면 캐시 구성도 동일).
 4. **OnSeam 정점의 정의 완성**: OnSeam([원통, 캡]) = "rim ∩ +ref_dir 방향 ray" — ref_dir이 진실에 앉아 유일점을 정확히 지시한다(좌표 캐시의 load-bearing 해제; 좌표-재생 기계는 별도 유예).

@@ -82,8 +82,10 @@
 ```rust
 // ─── nacre-geom / nacre-topo ── 진실 (아레나, append-only) ─────────────
 
-/// ⏸ **이름은 아직 geom 의 f64 캐시가 쥐고 있다** — 오늘의 코드는 이것을 `SurfaceTruth` 로
-/// 부르고 사설 `Vec` 에 둔다. 개명·반전은 열린 항목 8「8·반전」이 집행한다.
+/// ✔ **이름과 자리를 얻었다** (2026-09-11, `78d770f`): 이 enum 이 `Surface` 이고 아레나
+/// (`surfaces: Store<Surface>`)가 그것을 든다. 실현은 `surface_cache: Vec<SurfaceCache>`.
+/// ⇒ **맨이름 `Surface` = 이것**이고, geom 의 f64 실현은 `nacre_geom::Surface` 로 적는다
+/// (열린 항목 8 의 철자 규칙).
 ///
 /// ★ **「`SurfaceDef` 를 흡수한다」의 뜻**(원 주석이 짧아 오해를 낳았다): 그 시절 `SurfaceDef` 는
 /// **사이드테이블 enum**(`Constructed` / `Rotated{witness, rotation}` / `Inexact`, `a5379a2` 에서
@@ -367,7 +369,7 @@ pub struct Model {
     //   좁은 문으로 들어온다 — 밖에서 벡터를 만지면 index-parallel 불변식을 아무도 못 지킨다.
     //   (이 스케치는 `pub` 으로 그려 뒀었다. 코드가 옳다.)
     vertex_cache:  Vec<PointCache>,
-    surface_cache: Vec<SurfaceCache>,         // ⏸ 「8·반전」이 만든다
+    surface_cache: Vec<SurfaceCache>,         // ✔ 2026-09-11 — 실현. 아레나가 진실을 든다
     edge_cache:    Vec<EdgeCache>,            // 평가 가능한 곡선
 
     // 이름 — 진실에서 유도해 하나만 저장(Narrow|Wide — §이름과 interning).
@@ -382,14 +384,18 @@ pub struct Approx        { value: f64,      error: f64 }           // 중간 스
 pub struct HpApprox      { value: BigFloat, error: Mag }
 pub struct PointCache    { coord: Point3,        tol: Option<f64> }  // S7 실형: 측정치 유무
 pub struct HpPointCache  { coord: [BigFloat; 3], tol: [Mag; 3] }
-// ⏸★★ **`SurfaceCache` 의 모양은 «미정으로 되돌렸다»** — 아래 스케치는 2026-08-05, 즉 **M6 전**
-//    이라 평면 전용이다. ⚠ **원통에는 4계수 음함수형이 없다**(2차 곡면) ⇒ 필드를 더해서는 확장되지
-//    않는다. 변종이 필요하거나 geom 의 값을 감싸야 하고, **형제 선례가 후자다**(`EdgeCache`).
-//    ⇒ 「8·반전」시점의 모양은 `SurfaceCache { realized: nacre_geom::Surface }`(오늘 것을 그대로
-//    감싼다), `tol` 은 「8·캐시 실형」이 더한다.
+pub struct SurfaceCache  { realized: nacre_geom::Surface }          // ✔ 2026-09-11 — 감싸기만
+// ★★ 아래 스케치(2026-08-05, M6 전)는 평면 전용이라 **버렸다**: 원통에는 4계수 음함수형이 없다
+//    (2차 곡면) ⇒ 필드를 더해서는 확장되지 않는다. geom 의 값을 감싸는 쪽을 골랐고 **형제 선례가
+//    그것이다**(`EdgeCache { curve: Curve }`) — 그리고 그 union 의 메서드가 기하이므로 어휘의
+//    주인은 geom 이다. ⏸ 남은 것은 `tol` 하나, 「8·캐시 실형」 몫.
 // pub struct SurfaceCache  { coeffs: [f64; 4], tol: [f64; 4], inv_norm: f64 }   ← 평면 전용 스케치
 // pub struct HpSurfaceCache{ coeffs: [BigFloat; 4], tol: [Mag; 4] }             ← 같음
 pub struct EdgeCache     { curve: Curve }                          // 평가 가능한 담체 곡선
+// ★★★★ **세 캐시는 «실현값 + 그 오차»로 수렴한다 — 오차가 빠진 쪽은 `EdgeCache` 다**(2026-09-11):
+//    `PointCache{coord, tol}` ✔ · `SurfaceCache{realized, tol⏸}` · `EdgeCache{curve, ???}`.
+//    그 빠진 필드는 이미 이름이 있다 — design §3 의 `Intersection.cache_err`(*"캐시가 진짜 교차에서
+//    벗어난 최대 거리"*). ⏸ 소비자 0 ⇒ 짓지 않고 적어 둔다(열린 항목 19).
 
 // ★★★★ **세 «오차»를 섞지 말 것** — 이 절을 읽고 한 번 섞였으므로 갈라 적는다(2026-09-11).
 //
@@ -620,7 +626,7 @@ pub enum Decision {
 | S4 | **프레임 팔 절단** — `Motion::Frame{plane, placement, flip}` + `FramePlacement{Canonical\|Named}`. `Canonical`(기본)은 사슬 펼침 시 유도: 좁으면 오늘의 `plane_frame_default` 그대로(비트 보존 — 유도의 이사), **넘치면 wide 도로**(`MoveNode::FrameWide` = `PlaneFrame` 의 BigInt 쌍둥이, 실현은 `HpIv` 전 구간 + f64 캐시는 128비트 실현의 좁힘). Wide 이름·`n·n` 넘침(1.6%) 인구의 프레임이 열려 §12 연쇄의 프레임 팔이 닫힘. 잠금: cip 2(on-plane·tol-bounds wide 쌍둥이) + ops 3(`a_wide_plane_hosts_a_canonical_frame`·nn-넘침 개통·**종단** `a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road`) + census `wf` 가족. ★ 계획의 "심기 + 공개 SketchFrame 통일"은 **S9 로 분리**(아래) | ✔ 2026-08-05 |
 | S3 | **`Profile2d` 유리수화 + 공선 중간점 정리** — `Profile2d{outer: Ring2d, holes}`·`Ring2d{points: Vec<[Rat;2]>}`, 생성자가 리프트(창 밖 = `ProfileOutsideDecimalWindow` 구성 시점 에러) + 공선 중간점 소멸(엄격 내부만 — 중복점·스파이크는 생존해 제 이름으로 보고). `check()`·`from_rings` 분류가 진실 위 정확 술어로(`orient2d_rat` scalar + geom `_rat` 쌍둥이 — geom 이 scalar 의존 획득, §design 1 격리 규칙 준수). 잠금: 쌍둥이 프리즘 비트 동일+전 코너 3-평면 정의(Q2 ② 닫힘), 창 에러 2, 십진-이진 부호 분기(십진이 이긴다), 비인접 공선 벽 interning 재핀. census 150줄 비트 동일. ★ 실측: check 는 34ms@100점(호출당 ~1.7µs, gcd 지배 — §열린 항목 7) | ✔ 2026-08-05 |
 | S6a | **점 없는 평면의 소멸** — `Inexact` 소멸(S6b 타입 교체)의 전제. `PlaneDef` 를 점 셋 단일 필드로(origin=points[0]·ref_dir=points[1]−points[0]·극성=점 순서 — 불변식이 구조, 좁은-계수 def 실패 계급 사망, `named_plane_points` 은퇴), **`from_axes` 가 축의 십진 진실을 정의로**(#28 «축만 든 호출자» 인구 개통 — 45°급 프레임의 프리즘이 `WideFrame::named_of` 로 정확 경로; 내부의 실현-기저 호출 3곳은 의도적 무-def `realized_plane` 분리 — 두-정확-기술 재발 방지), `add_cylinder` 캡 점 기록(add_cuboid 선례), 넘침-이동은 노드 기록(`motion_is_exact`(칸 ④에서 `carry_of`로 — 법칙 행 S6c) 프로브에 점 수송 포함). 잠금: Named×Wide 프레임 단위 + 축-전용 기울어진 프리즘 종단 + 원통 캡 interning + 넘침-이동 + **전수 관문**(`points_coverage` — 생산 경로별 모델의 live 평면 face 전수가 점 보유). census 150줄 비트 동일 ×3회 | ✔ 2026-08-05 |
-| S6b | **타입 교체** — 진실 스토어(`SurfaceTruth{Plane{points: PlanePoints::Known, motion} \| Cylinder{motion}}`)가 캐시 store 와 인덱스-평행으로 탄생, `SurfaceDef`·`surface_defs`·`surface_points`·`push_surface(_with_points/_unrecorded)`·`Violation::UndefinedSurface`·`RejectReason::{InexactSurface, CoordinateOutOfRange}` **사망**. push 는 `push_plane`(interning, flipped 는 f64 캐시 내적 그대로 — 같은 평면이라 부호 정확)·`push_cylinder(motion)`·test-util `push_plane_unregistered`/`set_plane_points_for_test`. f64 프리즘 폴백 → **이름 붙은 거절**(`PlaneWithoutExactForm`·`DistOutsideDecimalWindow` — `Swept::along` 삭제, build_prism 정확-전용). 부수 개선: 이동된 원통이 `Inexact` 강등 대신 모션 기록. ★ 구현 중 반박 1건: normal_def 의 `v = n×u` 곱이 작은-지수 전폭 법선(분모 10²¹→10⁴²)에서 넘침 — proptest 가 폴백 소멸 당일 발견, 원시 방향조차 137비트라 **기저-교차 셔플**(`w = x̂×n` + 대수 부호 `det[ẑ,x̂,n]=n₁`)로 재구성(곱 0개, 전역). 아레나 반전(캐시가 Store·진실이 Vec — `Handle<T>` 타입 매개변수가 강제)은 최종 개명 시 제자리로(§열린 항목). census 150줄 비트 동일 ×4 | ✔ 2026-08-06 |
+| S6b | **타입 교체** — 진실 스토어(`SurfaceTruth{Plane{points: PlanePoints::Known, motion} \| Cylinder{motion}}`)가 캐시 store 와 인덱스-평행으로 탄생, `SurfaceDef`·`surface_defs`·`surface_points`·`push_surface(_with_points/_unrecorded)`·`Violation::UndefinedSurface`·`RejectReason::{InexactSurface, CoordinateOutOfRange}` **사망**. push 는 `push_plane`(interning, flipped 는 f64 캐시 내적 그대로 — 같은 평면이라 부호 정확)·`push_cylinder(motion)`·test-util `push_plane_unregistered`/`set_plane_points_for_test`. f64 프리즘 폴백 → **이름 붙은 거절**(`PlaneWithoutExactForm`·`DistOutsideDecimalWindow` — `Swept::along` 삭제, build_prism 정확-전용). 부수 개선: 이동된 원통이 `Inexact` 강등 대신 모션 기록. ★ 구현 중 반박 1건: normal_def 의 `v = n×u` 곱이 작은-지수 전폭 법선(분모 10²¹→10⁴²)에서 넘침 — proptest 가 폴백 소멸 당일 발견, 원시 방향조차 137비트라 **기저-교차 셔플**(`w = x̂×n` + 대수 부호 `det[ẑ,x̂,n]=n₁`)로 재구성(곱 0개, 전역). 아레나 반전(캐시가 Store·진실이 Vec — `Handle<T>` 타입 매개변수가 강제)은 최종 개명 시 제자리로(§열린 항목) — ✔ **2026-09-11 `78d770f` 이 되돌렸고, 개명도 같은 커밋이다**(당시의 «강제» 는 갈라 커밋할 때만 참이었다: 한 커밋이면 핸들 철자가 안 바뀐다). census 150줄 비트 동일 ×4 | ✔ 2026-08-06 |
 | S6c | **수송 법칙**(칸 ④, 2026-09-03) — `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)`: `carry_of`(옛 `motion_is_exact`)가 솔리드당 한 번, 후보 [전부·회전만·없음]에 같은 탐침 «실현(`Xform::point`) == 정확 상(`point_rat`/`mirror_point_rat`)»을 정점·평면 원점·**원통 축 원점**에 물어 첫 통과를 수송(`transport_points`/`transport_cylinder`)하고 나머지를 기록(`chain_motion(carry)` — 표 없음, parent 있으면 전부). 기록된 노드는 **기록된 부분** 앞의 진술을 말한다(회전 정확·이동 부정확 → 회전된 진술 + [T], `chain_translation` 접힘). 반증한 것: 회전 전 좌표 `p+t`로 재던 탐침(회전 뒤 반올림을 «정확»이라 함)과 «정확한 회전은 노드 없음 ∧ 부정확 이동은 노드»의 반쪽 체인(오프셋 보스가 릴리스에서 «안 닿는다»). | ✔ 2026-09-03 |
 | S9 | **공개 스케치 API 통일 + world 평면 사전 심기** — ① `Model::new()` 가 세계 축 평면 셋을 심는다(핸들 0·1·2 = XY·YZ·ZX, points 는 `axis_plane` 삼중 `[0,u,v]`, **캐시 방향은 −축** — extrude 밑캡의 감각과 일치, +축이면 실측 781 캡 flip 재도입; `#[derive(Default)]` 제거 = 무씨앗 뒷문 폐쇄, `world_plane(Axis)` 접근자, `stat seeded_hits` 반증성 다리 신설 = 실측 455). census ε-재기준 1회: 평면 digest 이동 127/150줄, **결과는 143/150 비트 동일 + 나머지 7줄도 부피·면적·centroid 전부 비트 동일**(정점 해시만 이동 — Cramer 가 사실상 스케일-불변으로 반올림, 스칼라 최대 편차 정확히 0), ERR/EMPTY·피연산자 정점 해시 문자 동일. ② 공개 `SketchFrame{plane, placement, flip}`(필드 private + 검증 생성자 — 리터럴 우회 봉쇄): `named()` 가 구성 시점 거절 `FrameOutsideDecimalWindow`·`OriginNotOnPlane`(신규 scalar `plane_residual_sign` — orient2d_rat 급 **전역**, Wide 는 BigInt 팔)·`RefDirParallelToNormal`(판정은 `WideFrame::named_of` 재사용 — 폭에 전역이라 None = 평행뿐), 이름 없는 평면 = `PlaneWithoutExactForm` 재사용. `face_sketch_frame` 신설(이음새 — face_frame 이 만들던 값을 버리지 않고 공개). ③ 내부 통일: flip 측정은 `measured_frame` 한 곳, 노드 push 는 `push_frame_node` 한 곳(extrude·face 두 도로가 한 모양, 게이트 표현식 문자 유지, census 비트 동일). ★ **`Operation` 의 평면-핸들 어휘 교체는 S5 로 유예** — replay 자기완결성: 로그 속 핸들의 합법 표적은 씨앗·기존 면·datum 뿐인데 datum op 가 S5 에야 생긴다. ★ 잠금서 확정 둘: 씨앗 intern 직접 증거(원점 상자 바닥/왼쪽/앞 + z=0 밑캡 = 씨앗 핸들, 아레나 6 유지), ZX 의 canonical 프레임은 `−x̂`(스크립트 삼중과 다름 — Named 로 말할 사례임을 잠금이 명문화) | ✔ 2026-08-06 |
 | S8 | **Edge 최종형** — `Edge{surfaces: [Handle<Surface>;2], vertices: [Handle<Vertex>;2]}`: 담체 두 면(오름차순 정렬 쌍) + 경계 두 점, `curve`·`bounds: Option`·`origin` 사망. `Store<Curve>` → `edge_cache: Vec<EdgeCache>`(인덱스-평행 캐시): 유일 입구 `push_edge`(eager 파생, 퇴화 검사는 **팔별** — rim `[v,v]` 는 합법) + `rebuild_edge_cache`(«버리고 재생» 잠금이 비트 동일 증명) + `edge_curve` 접근자·`derive_edge_curve`(직선 = 끝점 through_points, rim 원 = 담체에서 — 신설 geom `line_plane`, seam = 자기-인접 `[cyl,cyl]` 잠정 표기). transform pass 2(곡선 이동) 통째 소멸. validate: 신설 `EdgeCarrierMismatch`(담체 ≠ 인접 관측, `[plane,plane]` 자기쌍 검출) + `UnboundedEdgeInLoop`·`RefKind::EdgeCurve`·`StepError::UnboundedEdge` 순삭. ★ 구현 중 발견 2건: ① **담체는 wall 로 추측하면 틀린다** — 세 평면이 한 직선을 공유하는 인구(해결된 4-평면 동시성)에서 각 면의 arrangement 는 제3의 평면을 wall 로 (옳게) 지목 — 담체는 **전 링 선-주사한 인접성**에서 읽는다(실측: debug_assert 발화가 잡음). ② «전 생산 직선 비트 동일» 주장이 이동 경로에서 반박 — pass 2 는 방향을 직접 회전, 파생은 끝점 차 재정규화라 방향 ~1 ulp(실측 2.8e-16, 직선 83/84 비트 동일, 원 최대 2.2e-16 — 직선 기하는 비관측이라 무해). ③ VertexOffCurve 의 직선 갈래는 **타입상 항진**이 됐다(끝점이 자기 직선 위) — 검사는 원(rim)으로 이빨 유지, `.max(tol_of(edge.origin))` 은 상수 `EPS_CONSTRUCTED` 로 재철자(**무-행동이 아니었다** — `Discovered{tol:0}` 정점의 하한을 edge 항이 받치고 있었음, 실측). census 전 커밋 비트 동일 | ✔ 2026-08-06 |
@@ -648,11 +654,15 @@ pub enum Decision {
 
 ### 남은 항목 — **비었다** (2026-08-08)
 
-⚠★★ **정정(2026-09-11): 「전부」는 타입의 «내용»이고, 곡면의 «이름과 자리»는 남아 있다.**
-아래 선언과 열린 항목 8 이 어긋나 있었다 — 8 은 *"진실 enum 은 `SurfaceTruth`(문서의 `Surface`
-이름은 아직 geom 의 f64 캐시가 쥠)"* 라 적는다. ⇒ **내용은 최종형, 이름·자리는 「8·반전」 몫**이다.
+☑★★ **정정의 정정(2026-09-11, 칸 ㊷ `78d770f`): 이름과 자리도 도착했다.** 이 자리에 *"「전부」는
+타입의 «내용»이고, 곡면의 «이름과 자리»는 남아 있다"* 고 적혀 있었다 — 그 남은 절반이 그날 닫혔다
+(진실 enum = `Surface`, 아레나가 그것을 든다; 열린 항목 8). **남은 것은 `SurfaceCache.tol` 하나**이고
+그것은 타입의 내용이 아니라 **실현**의 몫이다.
+⚠★★★★ 그리고 반전이 **새 항목 하나를 드러냈다**: 곡면의 push 문이 캐시를 **받는다**(`push_plane
+(cache, points, motion)`) ⇒ 진실과 캐시가 어긋난 상태가 «표현 가능»하다. 형제(`push_edge`)는
+**유도**한다. 최종 상태는 「문이 진실만 받는다」이고, 그 열쇠가 `realize_surface` 다(열린 항목 8).
 
-★★★★★ **진실 타입의 «내용»이 전부 최종형에 도달했다.** `PlanePoints`·`VertexDef`·`SurfaceTruth`·
+★★★★★ **진실 타입의 «내용»이 전부 최종형에 도달했다.** `PlanePoints`·`VertexDef`·`Surface`·
 `PlaneName`·`Profile2d`·`Edge`·`FramePlacement` — 그리고 `Motion::Frame { plane }` 은 **이름 없는
 평면에도 이미 정확한 정의**다. 남은 것은 타입이 아니라 **판정층의 실현**이고, 그래서 마지막 행이
 이행표를 떠나 열린 항목으로 갔다(아래 표의 S5(ii)-2b 줄).
@@ -704,6 +714,11 @@ datum 은 새 복사본을 추적하지 않는다. 실제 규약은 **핸들을 
   population 을 대장에 먼저 넣고(17자리 `fw`·기울어진 `tp` 가족은 이미 있다), *"어느
   population 인가"* 는 추측하지 말고 계측이 이름을 대게 한다. 좌표 관문은 «답은 같은데 더 나쁜
   길로 갔다»를 원리적으로 못 보므로 **"정확 경로를 탔는가"를 직접 단언하는 테스트**를 함께 둔다.
+- ★★★ **두 `Surface` 의 철자**(2026-09-11, 영구 규칙 — 열린 항목 8): 한 파일이 둘 다 필요하면
+  **맨이름은 진실**(topo, `Handle<Surface>` 가 이름 짓는 것)이고 실현은 `nacre_geom::Surface` 로
+  적는다. 반대로 하면 같은 파일에서 `Handle<Surface>` 는 진실을, 맨 `Surface::Plane(p)` 는 캐시를
+  뜻해 한 단어가 표지 없이 두 가지가 된다. ☑ 섞으면 **하드 오류**다(geom 은 tuple 변종, 진실은
+  struct 변종 ⇒ E0532) — 조용히 틀릴 자리가 0.
 - **병렬 불변식**: 병렬 구간에서 **곡면 push 금지**(재생 결정성). ⚠ **정정(2026-09-11)**: 이 규칙은
   `push_surface` 를 이름 짓고 있었는데 **그 함수는 없다**(S6b 에서 `push_surface(_with_points/
   _unrecorded)` 사망, 실측 0건). 오늘의 문은 `Model::push_plane`·`push_cylinder`(사설 `push_raw` 로
@@ -799,39 +814,60 @@ STEP 출력, undo/replay.
    손 스케치(수십 점)는 ms 미만이라 수용, 수천 점 생성기가 실재해지면 그때의 수: (a) Rat
    비교 기반 정확 bbox 선별(교차쌍 대부분 기각), (b) 실현 f64 + 건전 오차 한계 필터 → Rat
    상승(CIP 필터 철학의 2D 판). **둘 다 그 인구가 생기기 전엔 짓지 않는다.**
-8. **최종 개명 — 판정층 절반은 집행됐고(2026-08-08), 아레나 반전 절반만 남았다.**
-   ✔ 집행: `Mag`·`Approx`/`HpApprox`(+필드 `value`/`error`)·`WitnessPoint`·`WorkingPlane` —
-   4커밋, census 비트 동일 ×4, 항목별 처분은 §판정 이름 규칙의 대응 목록.
-   ⏳ 잔여: 진실 enum 은 `SurfaceTruth`(문서의 `Surface` 이름은 아직 geom 의 f64 캐시가 쥠),
-   캐시는 `Store<geom::Surface>` 그대로.
+8. ✔ **닫힘 (2026-09-11, 칸 ㊷ `78d770f`) — 최종 개명의 두 절반이 다 집행됐다.**
+   ✔ 판정층(2026-08-08): `Mag`·`Approx`/`HpApprox`(+필드 `value`/`error`)·`WitnessPoint`·
+   `WorkingPlane` — 4커밋, census 비트 동일 ×4, 항목별 처분은 §판정 이름 규칙의 대응 목록.
+   ✔ **아레나 반전**(2026-09-11): `surfaces: Store<Surface>` 가 **진실**을 들고
+   `surface_cache: Vec<SurfaceCache>` 가 실현을 든다. `SurfaceTruth`→`Surface` 개명 동반.
+   두 접근자의 서명은 그대로이므로 `.surface(`·`surface_truth(` 호출 철자는 무변이고,
+   바뀐 것은 «어느 쪽을 돌려주는가»다.
 
-   ⚠★★★★ **정정(2026-09-11) — 조건을 옮기고 둘로 가른다.** 여기 *"`SurfaceCache{coeffs,tol,
-   inv_norm}` 실형이 **판정 통합에서** 생길 때 개명·반전을 **한 번에** 한다"* 고 적혀 있었다.
-   오늘의 실측이 그 조건과 그 묶음을 둘 다 반박한다. ⚠ 표지는 **내용으로** 붙인다 — §관문 규칙이
-   이미 다른 뜻으로 「8b」를 쓰고 있어 번호가 충돌한다.
+   ★★★★ **개명과 반전은 한 커밋이었다 — 갈랐던 계획이 타입 체계에 반증됐다.** 진실을
+   `Surface` 로 부르는 순간 topo 자신의 `use nacre_geom::Surface` 가 **E0255** 이므로, 갈라
+   가면 `Handle<Surface>` **122자리**를 `Handle<nacre_geom::Surface>` 로 적고 되돌려야 한다.
+   개명은 census 를 움직일 수 없고(의미가 없는 변경), 두 `Surface` 의 혼동은 **하드 오류**
+   (geom 은 tuple 변종, 진실은 struct 변종 ⇒ E0532)이므로 합쳐서 잃는 것이 없다.
 
-   - **「8·반전」(아레나 반전) — 조건 없음, 지금 가능.** 캐시의 «내용»은 안 바꾸고 «자리»만 바꾼다.
-     ★ **소비자가 도착했다**: 「판정 통합」은 아래 항목 12 가 *"좌표 재생이 생기는 자리"* 로 묶어
-     쓰던 것이고(그 문장은 2026-09-11 정정에 인용해 두었다), **좌표 재생은 그날 섰다**
-     (`nacre_ops::realize_vertex`, 칸 ㊵). 정제가 캐시를 덮어써야
-     하고, 반전이 없으면 **커널의 모든 아레나를 덮는 `Store` 봉인을 열어야** 한다 — topo 국소
-     문제 때문에. ⇒ 반전이 사는 것은 **그 문이 `Store` 가 아니라 `Model` 의 사설 `Vec` 에 난다**는
-     것이다(`rebuild_edge_cache` 가 선례).
-     ☑ 순환 걱정은 근거가 없다: `nacre-store`·`nacre-geom` 의 주석이 *"geom already needs `Handle`
-     (its `Curve::Intersection` holds `Handle<Surface>`)"* 라 적었는데 **그 변종은 존재한 적이 없다**
-     (`Curve = Line | Circle`, `6f233a2` 부터; geom 의 실제 `Handle<` 사용 0건, `nacre-store` 의존
-     없음 — 실측). ⇒ **그 주석 셋을 고치는 것이 반전 칸의 몫이다**(그 칸의 안전 근거이므로).
-     ☑ 규모 실측(2026-09-11): `Handle<Surface>` **103자리 무변**(그리고 그때 «참»이 된다) ·
-     `.surface(` 읽기 **103자리 무변** · `SurfaceTruth`→`Surface` 111 · `surface_truth(`→
-     `surface_def(` 75 · geom 의 `Surface` 를 정규화할 자리 ~78(두 이름을 함께 쓰는 9파일 안).
+   ★★★ **철자 규칙(영구)**: 두 `Surface` 가 한 파일에 오면 **맨이름은 진실**(= `Handle<Surface>`
+   가 이름 짓는 것)이고 실현은 `nacre_geom::Surface` 로 적는다. 실측: 두 이름이 다 필요한 파일
+   **17**, 그 안에서 경로를 붙인 geom 패턴 **99**(32는 이미 그 형태), `Handle<Surface>` **무변**.
+   ⇒ 반대로 하면 한 파일에서 `Handle<Surface>` 는 진실을, 맨 `Surface::Plane(p)` 는 캐시를 뜻해
+   **한 단어가 표지 없이 두 가지**가 된다.
+
+   ☑ **`set_plane_points_for_test` 는 «다시 열지» 않고 사망했다.** 유일한 픽스처가 깊은 삼중항을
+   `push_plane`(프로덕션 interning 문)으로 **먼저** 진술하고 `add_cuboid` 의 캡이 그 위로
+   interning 되게 한다(그 interning 을 테스트가 단언한다) ⇒ **`Store` 에 test-gated 문도 내지
+   않았다.** 「의도적으로 어긋날 수 있는」 곡면이 이제 이 저장소에 없다.
+
+   ★★★ **실측한 계기의 분업**(위반을 심어 확인): 캐시 순열 → census 가 움직이고 패닉 ·
+   **모든 유도값이 같은 진실 재진술**(평면 삼중항의 순환 회전) → census **비트 동일**이고
+   `arena_sig` **초록**, 진실 다이제스트만 본다 ⇒ 그 다이제스트가 존재하는 이유가 그 한 부류다 ·
+   평면 캐시를 든 원통 진실 → 변종 스윕보다 **먼저** rim circle 유도가 잡는다(캐시를 읽으므로).
+   ⇒ 「변종 일치」는 검사만 되는 게 아니라 **유도에 하중이 걸려 있다**.
+
+   ⚠ 이 항목은 *"`SurfaceCache` 실형이 **판정 통합에서** 생길 때 개명·반전을 **한 번에** 한다"*
+   고 적고 있었다. 2026-09-11 이 그 조건(판정 통합 ✗ → 곡면 실현)과 그 묶음(반전 ✔ 먼저)을 둘 다
+   반박해 둘로 갈랐고, 반전 쪽이 위와 같이 닫혔다. 표지는 번호가 아니라 **내용**으로 붙인다 —
+   §관문 규칙이 이미 다른 뜻으로 「8b」를 쓴다. 남은 절반:
+
    - **「8·캐시 실형」(`SurfaceCache`) — 조건은 「판정 통합」이 아니라 「곡면 실현」이다.** 근거는 이
      문서 자신의 문장: *"`Through` 평면의 `SurfaceCache` 는 **세 정점의 실현에서 유도된다**"* ⇒
      `tol` 은 판정이 아니라 **실현**이 알게 된다. ⏸ 모양은 미정이다(§캐시의 주석 — 원통에 4계수형이
      없다). ⚠ 그리고 **소비자 유무를 그 칸에서 확인한다**: 오늘 판정은 `distance_eps`+증인 tol 로
      자기 방식이고 STEP 은 tol 을 안 쓴다 ⇒ 「소비자 없는 배관」 금지에 걸릴 수 있다.
-   - ★ **「한 번에」 논거를 취소한다** — 두 일이 건드리는 자리가 다르다(실측): 반전은 **타입 표기**
-     (`Handle<Surface>`·`SurfaceTruth`·`surface_truth(`), 캐시 실형은 **읽기**(`.origin()`·
-     `.normal()`·`.radius()`). **같은 줄에 둘 다 있는 자리는 0건**이다.
+
+   ⚠★★★★★ **반전이 드러낸 것 — 문이 캐시를 «받는다»(남은 절반의 진짜 목표).** 실측:
+   `push_plane(cache: nacre_geom::Plane, points, motion)` · `push_cylinder(cache, def, motion)` ·
+   `push_raw(truth, cache)` — **캐시를 호출자가 준다.** 캐시의 정의는 「진실에서 언제든 다시
+   계산할 수 있는 것」인데, 받는 문은 **둘이 어긋난 상태를 표현 가능하게** 만든다. 그래서
+   `points_coverage` 의 *"cache and truth disagree about what this surface is"* 검사가 **존재해야
+   했다**. 형제는 다르다: `push_edge` 는 캐시를 `derive_edge_curve` 로 **유도**하므로 간선은 그
+   어긋남이 **표현 불가**다.
+   ⇒ **옳은 최종 상태는 「문이 진실만 받고 캐시를 유도한다」**이고, 그러면 그 변종 검사가 *필요
+   없어진다* — 그것이 곡면 실현 칸의 판정 기준이다. ⚠ 유도에는 `realize_surface` 가 필요하고
+   (`Known` 의 세 `Rat` 에서 법선을 유리수로 유도하면 넘친다 ⇒ `PlaneName{Narrow|Wide}` 경유),
+   그래서 반전 칸은 이것을 닫지 않았다.
+
 9. **`Inexact` 소멸의 두 반증은 지반이 제거됐다(S6a)** — #28(축만 든 호출자)은 `from_axes`
    리프트가 닫았고(십진 진실 def + S2 이름 + S4 wide 프레임), "정확한 형태가 없는 평면
    0.07%/모델 25.8%" 실측은 **S2 이전 수치**(원인이 이름의 i128 넘침이었고 그 원인이
@@ -1171,3 +1207,29 @@ STEP 출력, undo/replay.
     `VertexDef`)로 옮기고, `ImprintSketch` 문단을 은퇴 표기로. **코드 변경 0**이지만 55곳이라 자기 칸이
     필요하다. ★ 그리고 그 칸의 규율은 이번 칸과 같다 — **문서가 이름 짓는 타입이 실재하는지 grep 으로
     확인한다**(가시성 한정자를 빼고).
+
+19. ⚠★★★★ **`design.md` §3 의 `Curve::Intersection` 은 split 이전 설계의 잔재다** (2026-09-11, 기록만).
+
+    실측: `git log -S "surfaces: [Handle<Surface>; 2]" -- docs/design.md` → **`2f84fae`
+    (2026-07-07), 최초 설계 커밋, 그 뒤 한 번도 개정되지 않았다.** 진실/캐시 분리는 `4c51a5e`
+    (2026-08-01), 곡면 진실은 `a7c9bd1`(2026-08-06). **그때 geom 의 `Surface` 가 진실이었고**
+    (그 doc 이 스스로 *"the exact truth of a face's geometry"* 라 적고 있었다 — 이번 칸이 고쳤다),
+    그래서 `Handle<Surface>` 는 「진실을 가리키는 핸들」이었다.
+
+    ⇒ 아레나 반전 뒤 그 변종은 **영구히 불가능**하다: `Handle<T>` 는 아레나 항목을 이름 짓고, 항목은
+    `Handle<MotionNode>` 를 든 topo 의 진실이므로 **topo 아래 크레이트는 그 타입을 이름 지을 수 없다**
+    ⇒ geom→topo 순환. ⇒ geom 은 `nacre-store` 의존을 **영원히 갖지 않는다**.
+    ☑ `Store`/`Handle` 을 최하위에 둔 **결론은 그대로 옳다** — 근거만 *"geom 도 쓴다"* 에서
+    *"기하·위상을 모르는 순수 인프라이고 topo·ops·validate 가 쓴다"* 로 바뀐다(이번 칸이 `nacre-store`·
+    `nacre-geom` 의 주석과 design.md 68행을 그렇게 고쳤다).
+
+    ⇒ **그 변종의 세 조각은 오늘의 분리선 양쪽으로 갈라진다**:
+
+    | design §3 이 적은 것 | 오늘 그것이 사는 곳 |
+    |---|---|
+    | *"절차적 정의(진실) = 두 곡면"* | **`Edge` 의 진실(담체)이 이미 기록한다** |
+    | *"근사 스플라인 `NurbsCurve` — 진실이 아니라 캐시"* | `EdgeCache` |
+    | *"`cache_err` — 캐시가 진짜 교차에서 벗어난 최대 거리"* | `EdgeCache`(§캐시의 수렴 주석) |
+
+    ⏸ **코드 인구 0** 이므로 짓지 않는다(실측: geom 에 `Handle<` 0건, `Curve = Line | Circle`).
+    M7 이 마친 교차를 실제로 만들 때, `EdgeCache` 를 `{curve, err}` 로 키우는 것이 그 자리다.
