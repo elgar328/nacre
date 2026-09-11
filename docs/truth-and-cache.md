@@ -303,12 +303,15 @@ pub struct SketchFrame {
 이름은 **하나만 저장**하고, 좁은 형태는 저장이 아니라 **투영**이다:
 
 ```
-PlanePoints (진실 — 점 셋)
-   │ 유도 (정준화: 분모 털기 → gcd → 부호 규약)
+Surface (진실 — 평면이면 점 셋, 원통이면 def, + 모션)
+   │ 유도 (정준화: 분모 털기 → gcd → 부호 규약)  ※ 평면이고 유리수 닫힘일 때만
    ▼
 PlaneName = Narrow([Rat;4]) | Wide([BigInt;4])    ← 저장은 이것 하나
    ├─ narrow() → Option<&[Rat;4]>    산술·프레임·지름길 — 사본이 아니라 빌려 읽는다
-   └─ + 모션  → SurfaceKey           interning 표(`surface_ids`)의 키
+   └─ + 모션  → SurfaceKey::Name     interning 표(`surface_ids`)의 키 — «합친다»
+
+Surface (진실) ─── 이름이 유도 «안 될» 때 ──→ SurfaceKey::Verbatim(그 진실 그대로)
+   무리수 모션의 Through 평면 · 4계수형이 없는 모든 곡면 — «안 합친다»
 ```
 
 ```rust
@@ -330,10 +333,71 @@ impl PlaneName {
     pub fn narrow(&self) -> Option<&[Rat; 4]> { … }
 }
 
-/// interning 표의 **키** — 이름 + 그 이름이 진술된 모션. 같은 계수라도 Constructed(세계)와
-/// Moved(모션 전 프레임)는 다른 평면이다 ⇒ 구조가 같을 때만 합친다.
-pub type SurfaceKey = (PlaneName, Option<Handle<MotionNode>>);
+/// interning 표의 **키 — 팔이 둘이고 영원히 둘이다** (2026-09-12 확정; 오늘 코드는 아래 ⏳).
+///
+/// 같은 계수라도 Constructed(세계)와 Moved(모션 전 프레임)는 다른 평면이므로 **모션이 늘 함께**
+/// 열쇠에 든다.
+pub enum SurfaceKey {
+    /// **유도된 정준형** — 다르게 진술해도 같은 평면이면 한 핸들(**기하 동일성**).
+    Name(PlaneName, Option<Handle<MotionNode>>),
+    /// **진실 그대로** — 글자가 같아야 한 핸들(**문자 동일성**). 이름이 «없는» 모든 경우가
+    /// 여기로 온다: 무리수 모션의 `Through` 평면, 그리고 4계수 음함수형이 없는 모든 곡면.
+    Verbatim(Surface),
+}
 ```
+
+### ★★★★ 열쇠가 «둘»인 이유 — 그리고 구·원뿔이 와도 안 늘어나는 이유
+
+오늘 코드는 표가 **셋**이다(`surface_ids`·`surface_through_ids`·`cylinder_ids`). 그런데 재 보면
+뒤의 둘이 **같은 관계**다 — 열쇠 필드가 **진실의 필드와 같다**:
+
+| 오늘의 표 | 열쇠 | 실제로 무엇인가 |
+|---|---|---|
+| `surface_ids` | `(PlaneName, motion)` | **유도된 것** — 합친다 |
+| `surface_through_ids` | `([Handle<Vertex>;3], motion)` | `Surface::Plane{points: Through(vs), motion}` **그대로** |
+| `cylinder_ids` | `(CylinderDef, motion)` | `Surface::Cylinder{def, motion}` **그대로** |
+
+⇒ 둘은 «어느 종류냐»로 갈려 있었을 뿐 관계는 하나다. **진실 자체를 열쇠로** 쓰면 `Verbatim` 한 팔이
+둘을 삼키고, **구·원뿔·토러스·NURBS 가 와도 새 팔이 필요 없다** — `Surface::Sphere{..}` 가 생기면
+`Verbatim` 이 그냥 받는다. 팔 이름이 «어느 종류»가 아니라 **«합치는가 아닌가»** 를 말하기 때문이다.
+☑ 그래서 원통의 **일부러 약한** 보장이 이름에 드러난다: `ref_dir` 이 다르면 seam(θ=0 이음매)이
+갈라지므로 기하가 같아도 **합치면 안 된다** — 기하 동일성은 술어가 물을 때마다 답한다(규칙 6).
+
+### 열쇠는 «생산자»가 아니라 «진실»이 고른다
+
+```rust
+surface_ids: HashMap<SurfaceKey, Handle<Surface>>     // 표 «하나»
+
+fn surface_key(&self, truth: &Surface) -> SurfaceKey {
+    match self.derive_name(truth) {
+        Some(n) => SurfaceKey::Name(n, truth.motion()),
+        None    => SurfaceKey::Verbatim(truth.clone()),
+    }
+}
+```
+
+오늘은 `push_plane` → 표 ①, `push_plane_through` → 이름 있으면 ① 없으면 ②, `push_cylinder` → ③
+으로 **어느 문으로 들어왔는지가** 열쇠를 고른다. 위 모양은 **`push_raw` 한 자리**에서 진실을 보고
+고르므로, 「이름이 있으면 이름으로, 없으면 그대로」가 **모든 곡면 종류에 자동으로** 적용된다.
+
+⚠★★★★ **오늘 이 불변식을 «검사하는» 코드가 없다**(실측 2026-09-12): `validate` 에 중복 곡면 검사
+**0건**이고, 지키는 것은 생산자 넷(`intern_plane`·`push_plane_through`·`push_cylinder`·
+test-only `push_plane_unregistered`)이 **각자 표를 기억하는 규율**뿐이다. ⇒ 다섯째 생산자가 잊으면
+컴파일도 되고 테스트도 초록인데 **조용히 중복 핸들**이 생긴다. 문을 하나로 모으면 그 실수가
+**구조적으로 불가능**해진다 — 이것이 이 개편이 사는 것이다.
+☑ 문을 넘나드는 경우는 이미 잠겨 있다:
+`a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle`.
+☑ 인구가 배타적이라는 것도 실측: 유리수 점 셋으로 말한 평면은 계수가 **반드시** 유리수라 항상 이름이
+있고(⇒ `Name`), `Verbatim` 으로는 이름이 계산 안 되는 것만 간다 ⇒ **한 평면이 두 팔로 갈라지지 않는다.**
+
+⏳ **실현 조건**(재기 완료): 진실 안에 `f64` 가 **0개**(전부 유리수·핸들)라 `Eq`/`Hash` 파생이
+가능하다. ⚠ 다만 오늘 `Surface`·`PlanePoints` 는 `PartialEq` 만 파생하므로 **`Eq, Hash` 를 더해야**
+한다(`CylinderDef`·`MotionNode` 는 이미 있다).
+⚠ **대가 하나 — 측정 대상**: `Verbatim(Surface)` 는 진실의 사본을 열쇠로 들고, `Surface` 의 크기는
+가장 큰 팔(`PlanePoints::Known`, 유리수 아홉 ≈ 288 B)이 정한다. 그런데 `Known` 은 **항상 이름이
+있어서 `Verbatim` 으로 갈 일이 없다** ⇒ 쓰지 않는 팔 때문에 열쇠가 커진다. 오늘도 `cylinder_ids` 가
+`CylinderDef` 사본을 들고 `PlaneName::Wide` 는 `[BigInt;4]` 라 비슷한 자릿수이지만, **재 보고**
+문제면 `Verbatim(Box<Surface>)` 가 탈출구다.
 
 - **정준화**: 분모 털기(lcm) → 내용(gcd) 나누기 → 부호 규약(첫 0 아닌 성분 양수). 정준 여부는
   플래그가 아니라 **값이 말한다**(정수인가·서로소인가·부호 규약인가).
@@ -373,9 +437,11 @@ pub struct Model {
     edge_cache:    Vec<EdgeCache>,            // 평가 가능한 곡선
 
     // 동일성 — 「같은 곡면 ⇒ 같은 핸들」이 되게(그래야 동일성이 정수 비교다).
-    // ⏳ 오늘 코드는 표가 «셋»이다(`surface_ids`·`surface_through_ids`·`cylinder_ids`) — 최종형은
-    //    미정이고 다음 의논 몫이다.
+    // ⏳ 오늘 코드는 표가 «셋»이다(`surface_ids`·`surface_through_ids`·`cylinder_ids`).
+    //    최종형은 표 «하나» — 열쇠가 `SurfaceKey{Name|Verbatim}` 이고 **진실에서 유도**된다
+    //    (§이름과 interning). 모션도 같은 패턴이다(`motion_ids`, 이미 한 표).
     surface_ids: HashMap<SurfaceKey, Handle<Surface>>,
+    motion_ids:  HashMap<MotionNode, Handle<MotionNode>>,
 }
 // ⏳ **`surface_name` 은 사라진다** — 이름은 유도되므로 캐시이고, `SurfaceCache::Plane.name` 으로
 //    들어간다(위 §수치·캐시 타입). 오늘은 `pub HashMap` 곁표라 곡면의 캐시가 두 벌이다.
