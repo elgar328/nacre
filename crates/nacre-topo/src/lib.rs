@@ -854,7 +854,11 @@ impl Model {
     fn push_raw(&mut self, truth: Surface, cache: nacre_geom::Surface) -> Handle<Surface> {
         let h = self.surfaces.push(truth);
         self.surface_cache.push(SurfaceCache { realized: cache });
-        debug_assert_eq!(self.surface_cache.len(), self.surfaces.len());
+        debug_assert_eq!(
+            self.surface_cache.len(),
+            self.surfaces.len(),
+            "the truth and its cache enter together or not at all"
+        );
         h
     }
 
@@ -897,7 +901,12 @@ impl Model {
     /// ```
     #[inline]
     pub fn surface(&self, h: Handle<Surface>) -> &nacre_geom::Surface {
-        debug_assert_eq!(self.surface_cache.len(), self.surfaces.len());
+        debug_assert_eq!(
+            self.surface_cache.len(),
+            self.surfaces.len(),
+            "surface cache out of step with the surface store — push surfaces through \
+             Model::push_plane / push_cylinder"
+        );
         &self.surface_cache[h.index() as usize].realized
     }
 
