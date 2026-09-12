@@ -42,8 +42,8 @@ pub enum VertexDef {
     /// ★ The pair pins a curve; what picks the point on it is the cylinder's `ref_dir`, which
     /// sits in the cylinder's truth since M6-0 ([`CylinderDef`]): `OnSeam([cylinder, cap])`
     /// **is** "the rim ∩ the `+ref_dir` ray" — a unique point, exactly designated. The
-    /// definition is complete; what remains deferred (with 3b, recorded honestly) is the
-    /// machinery that *regenerates* the cached coordinate from it.
+    /// definition is complete and `nacre_ops::realize_vertex` regenerates the coordinate from
+    /// it (cell 41); what remains (3b) is writing that back into the cache.
     /// M6 grows the vocabulary by variants, each stating its own truth — the invariants are
     /// per-variant (Q5's doctrine); [`VertexDef::Branch`] (M6-1) is the first.
     OnSeam([Handle<Surface>; 2]),
@@ -560,8 +560,9 @@ pub struct Model {
     /// Per-vertex coordinate caches, index-parallel to `vertices` (S7) — the realized `coord`
     /// and, for discovered vertices, the measured `tol`. Filled by [`Model::push_vertex`];
     /// read through [`Model::vertex_point`] / [`Model::vertex_tol`]. No rebuild exists (3b ⏸):
-    /// for discovered and seam vertices the coordinate carries information the definition
-    /// cannot yet reproduce.
+    /// `nacre_ops::realize_vertex` can reproduce every variant from its definition (cell 41),
+    /// but nothing writes that answer back here yet — today's coordinate is whatever the
+    /// producer computed in f64.
     vertex_cache: Vec<PointCache>,
     /// The motion-history forest (§CIP ⑦): motion definitions named by moved surfaces. Not geometry — a definition store.
     ///

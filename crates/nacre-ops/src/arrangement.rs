@@ -12864,8 +12864,9 @@ mod tests {
     }
 
     /// The hole arm of the seated tracer: a face whose inner loop is a circle (a two-hole
-    /// plate's input shape — no producer builds one until C4b/C5, so the loops are doctored by
-    /// hand) emits its polygon segments **and** a seated circle that inherits the face's own
+    /// plate's input shape — a bore `Cut` builds one in production now, so the hand-doctored
+    /// loops this arm was written against have company) emits its polygon segments **and** a
+    /// seated circle that inherits the face's own
     /// body side.
     #[test]
     fn a_circular_hole_ring_traces_as_a_seated_circle() {

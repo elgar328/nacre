@@ -11,7 +11,8 @@
 //! limit ([`Standard`]): below it the coincidence is proved, above it the judgement climbs to the
 //! precision the shortfall names, and past the cap it is reported ([`Decision`]) instead of
 //! assumed. This is the judgment **layer only**
-//! ("층만") — not yet wired into boolean (that is stage 3), and it is the *tol > 0*
+//! ("층만") — wired into the boolean since the CIP stages that followed (`nacre-ops`'
+//! `tolerant` module is the seam), and it is the *tol > 0*
 //! path: a tol-0 (`Constructed`) config is faster/exact via `nacre-predicates`
 //! (Shewchuk), routed by a higher layer, not here.
 //!

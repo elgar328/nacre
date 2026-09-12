@@ -78,7 +78,7 @@ impl FaceRow {
 /// A cylinder face's table row (M6-2a): what `collect_planes` can state about a lateral face
 /// without pretending it has a plane's four-piece description (`plane`/`tri`/`n_out`/`tri_pt3`
 /// are constant-normal vocabulary — a dummy would be the type lying). The class index and the
-/// exact def arrive with the cylinder class table (C2).
+/// exact def live in the cylinder class table (`ClassIx::Cyl`, C2).
 #[derive(Clone, Debug)]
 pub(crate) struct CylFaceInfo {
     pub(crate) surf: Handle<Surface>,
@@ -1149,8 +1149,8 @@ fn class_owners(plane_ix: &[ClassIx], n_a: usize, n_class: usize) -> Vec<Option<
 pub(crate) enum ClassIx {
     /// An index into the dense plane-class table (`PlaneSetup::geom`).
     Plane(usize),
-    /// An index into the cylinder-class table (arrives with C2; the index space exists first so
-    /// the type is total).
+    /// An index into the cylinder-class table (C2). The index space predates the table — it
+    /// existed first so the type was total before the table had entries.
     Cyl(usize),
 }
 

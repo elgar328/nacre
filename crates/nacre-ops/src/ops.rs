@@ -217,7 +217,8 @@ impl Ring2d {
     /// signed-area question over straight steps and quarter-turn arcs, answered in integers by
     /// [`nacre_scalar::winding_sign_quarter_arcs`] on the profile's own coordinates (the author's
     /// decimals, not a lifted frame's widths). `None` for an arc that is not a quarter-turn
-    /// multiple, which no producer makes yet.
+    /// multiple — `Edge2d::arc_rat` (a fillet's tangent points) makes those, and they take the
+    /// `None` arm here.
     pub(crate) fn winding_sign(&self) -> Option<nacre_scalar::Orient> {
         let n = self.vertices.len();
         let (mut lines, mut arcs) = (Vec::new(), Vec::new());

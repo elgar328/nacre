@@ -13,7 +13,7 @@
 //! reports a positive analytic volume only then), and (3) the transport works —
 //! promoting the old manual FreeCAD check to an automated regression. The
 //! nacre-side volume/area (`nacre-props`) is now diffed directly against OCCT
-//! here (M4); the boolean `fuse|cut|common` oracle arrives with M5.
+//! here (M4), and the boolean `fuse|cut|common` oracle beside it since M5.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_store::Handle;
