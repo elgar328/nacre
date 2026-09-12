@@ -62,12 +62,14 @@ pub enum VertexDef {
     /// class indices) must restate `root` with it, and **[`QuadRoot::canonical`] is the one
     /// place that rule lives** — do not spell it again at the site.
     ///
-    /// The producer arrives with M6-2's boolean; until then hand-built fixtures and validate
-    /// are the consumers (the `FaceMisoriented`-control precedent). ★ As of M6-2b the *name* has
-    /// one a layer up — `nacre-ops`' arrangement mints these points as `NodeId::Branch` — but this
-    /// **definition** still does not: the assembler's seam table declines a branch node rather
-    /// than minting one, because class order and handle order are canonical in different index
-    /// spaces and that correspondence has to be established a second time.
+    /// Minted in production by `nacre-ops`' arrangement (15 sites) since the tangent-ruling
+    /// cells: the engine names the point as `NodeId::Branch` in class-index space and the
+    /// assembler restates it here in handle space — two canonical orders, one correspondence,
+    /// established at the mint site through [`QuadRoot::canonical`]. (An earlier note here said
+    /// the assembler declined these; that was true at M6-2b and is not now.)
+    ///
+    /// ⏳ **Renamed to `Pierce` next** (`docs/truth-and-cache.md` open item 24): "branch" says
+    /// which root was picked, not what the point is — a line piercing a cylinder.
     Branch {
         /// The two cutting planes, ascending handle order (the `ThreePlane` precedent).
         planes: [Handle<Surface>; 2],
