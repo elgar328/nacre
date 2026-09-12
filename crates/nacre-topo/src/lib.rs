@@ -1654,10 +1654,11 @@ impl Model {
     ///   `[A, B]` means the piece from A to B **counter-clockwise about the axis direction**,
     ///   and the two complementary arcs between one vertex pair are the two orders. Producers
     ///   uphold this (`boolean`'s edge welding keys arcs in CCW order); the curve stored here is
-    ///   the whole circle either way. ★ Two consumers do **not** know the convention yet:
-    ///   tessellation's `sample_edge` walks the full `0..τ`, and `validate`'s loop closure treats
-    ///   a circle edge as closed — both are the band/tess cells' debt, and no green result
-    ///   contains an arc edge until those cells land.
+    ///   the whole circle either way. Both consumers read it the same way: tessellation's
+    ///   `sample_edge` walks `θ(v0) → θ(v0) + Δθ` with `Circle::angle_of` as the one spelling of
+    ///   θ, and `validate`'s `loop_winding` adds each arc's circular segment with Δθ from the
+    ///   same order — since `019dbd5`, the commit after this convention was written. (An earlier
+    ///   note here said neither consumer knew it yet; that was true for one commit.)
     /// * **Cylinder × Cylinder**: no producer builds one before M6 — `None`, honestly.
     ///
     /// ★ The M3 rim population is axis-perpendicular by construction; a *tilted* plane over a
