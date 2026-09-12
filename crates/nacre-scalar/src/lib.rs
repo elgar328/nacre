@@ -2528,8 +2528,9 @@ pub struct QuarterArc {
 /// in `BigInt`: two 17-digit decimals multiplied already leave `i128` (the reason [`orient2d_rat`]
 /// carries a `BigInt` arm), and a winding read that failed open on overflow would build a solid
 /// inside out. The area is doubled so `r²·k/2` stays integral. `None` for an arc that is not a
-/// quarter-turn multiple (`arc_rat` profiles make those; they decline here) or for a sum that lands
-/// inside the π bracket.
+/// quarter-turn multiple (no producer makes one today — the kit's fillet is axis-aligned, so its
+/// `arc_rat` arcs are quarter-turns; the type allows more) or for a sum that lands inside the π
+/// bracket.
 pub fn winding_sign_quarter_arcs(lines: &[[[Rat; 2]; 2]], arcs: &[QuarterArc]) -> Option<Orient> {
     use num_bigint::{BigInt, Sign};
     use num_integer::Integer;
