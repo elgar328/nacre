@@ -25,7 +25,7 @@
    > ★★ **규칙의 근거는 «폭» 이 아니라 «가리키기» 이고, 그것은 이미 서 있다.** (처음 여기에
    > 적었던 근거 —`Pt3` 가 base+chain 을 든다 — 는 **틀렸다**: `Pt3` 는 위 이름 대응표의
    > `WitnessPoint`, 즉 **판정층**(연산 하나 동안만 사는) 타입이지 진실이 아니다.) 진실 쪽은 더
-   > 강하다 — 정점은 `VertexDef::ThreePlane` 으로 **좌표를 아예 안 들고**(세 핸들뿐), 모션은
+   > 강하다 — 정점은 `Vertex::ThreePlane` 으로 **좌표를 아예 안 들고**(세 핸들뿐), 모션은
    > 규칙 3 대로 **면이 든다**.
    >
    > ★★★ **그래서 «연산이 누적되면 결국 넘치지 않나» 의 답은 «아니오» 이고, 논증이 아니라
@@ -91,10 +91,11 @@
 /// **사이드테이블 enum**(`Constructed` / `Rotated{witness, rotation}` / `Inexact`, `a5379a2` 에서
 /// 사망)이었고, 「흡수」는 그 **역할**을 진실이 삼킨다는 뜻이다 — `Constructed`/`Rotated` 가
 /// `motion: None`/`Some` 으로 표현된다. **struct 냐 enum 이냐를 정한 문장이 아니다.**
-/// ⚠ 그러니 `Vertex { def }` 와의 비대칭은 **설계가 아니라 잔재다**: `Vertex` 는 최초 커밋
+/// ⚠ 그러니 `Vertex { def }` 와의 비대칭은 **설계가 아니라 잔재였다**: `Vertex` 는 최초 커밋
 /// (`f86e7e3`)에 `point`+`origin`+`def` 를 든 구조체였고 `76a07b2` 가 앞의 둘을 캐시로 보내
-/// 껍데기가 남았다. `VertexDef` 를 `Vertex` 로 접는 정리는 **누구도 요구하지 않는다**
-/// (실측 2026-09-11: `VertexDef` 146자리 · `.def` 195자리) — 선택적 후속.
+/// 껍데기가 남았다. ⏳ **접는다 (2026-09-13 확정)** — `Surface` 와 같은 모양(진실 = enum 그 자체),
+/// `m.vertex(v)` 가 바로 `match` 되게. 실측 2026-09-13: `VertexDef` 173자리 · `.def` 218자리,
+/// 전부 기계적·census 무영향. 「문의 이름」 칸이 정점 자리를 어차피 전부 지나므로 거기 얹는다(열린 항목 21).
 pub enum Surface {
     Plane {
         points: PlanePoints,
@@ -124,14 +125,12 @@ pub enum PlanePoints {
     Through([Handle<Vertex>; 3]),
 }
 
-/// 정점 = 자기 **정의**. 좌표는 진실이 아니라 캐시다(PointCache). `Origin`·`point` 는 소멸.
-/// ★ 단일형이 아니라 **두 변종**이다(S7 에서 Q3 수정 — 아래 반증표): M5 에 원통 seam 정점이
+/// 정점 = 자기 **정의**, 그리고 정의가 곧 타입이다 — `Surface` 와 같은 모양. 좌표는 진실이 아니라
+/// 캐시다(PointCache). `Origin`·`point` 는 소멸. ⏳ 오늘 코드는 `struct Vertex { def: VertexDef }`
+/// 껍데기(위 주석)이고, 접는 것은 열린 항목 21.
+/// ★ 단일형이 아니라 **세 변종**이다(S7 에서 Q3 수정 — 아래 반증표): M5 에 원통 seam 정점이
 /// 실재하고 그 점은 «세 평면»으로 적을 수 없다. 변종별 불변식(Q5)이 이 구조의 근거다.
-pub struct Vertex {
-    pub def: VertexDef,
-}
-
-pub enum VertexDef {
+pub enum Vertex {
     /// 세 평면의 교점 — 이름이 곧 점. (D != 0 은 좌표 재생이 생기는 자리에서 단언한다.)
     ThreePlane([Handle<Surface>; 3]),
     /// 두 곡면의 교차 «곡선» 위의 점 — M3 원통 seam(테두리 원의 θ=0). 점을 못 박는 매개
@@ -845,7 +844,7 @@ pub enum Decision {
 (cache, points, motion)`) ⇒ 진실과 캐시가 어긋난 상태가 «표현 가능»하다. 형제(`push_edge`)는
 **유도**한다. 최종 상태는 「문이 진실만 받는다」이고, 그 열쇠가 `realize_surface` 다(열린 항목 8).
 
-★★★★★ **진실 타입의 «내용»이 전부 최종형에 도달했다.** `PlanePoints`·`VertexDef`·`Surface`·
+★★★★★ **진실 타입의 «내용»이 전부 최종형에 도달했다.** `PlanePoints`·`Vertex`(⏳ 오늘 `VertexDef`)·`Surface`·
 `PlaneName`·`Profile2d`·`Edge`·`FramePlacement` — 그리고 `Motion::Frame { plane }` 은 **이름 없는
 평면에도 이미 정확한 정의**다. 남은 것은 타입이 아니라 **판정층의 실현**이고, 그래서 마지막 행이
 이행표를 떠나 열린 항목으로 갔다(아래 표의 S5(ii)-2b 줄).
@@ -1510,6 +1509,13 @@ STEP 출력, undo/replay.
     읽고 있다면 그것은 가시성 문제가 아니라 **오늘의 결함**이다.
 
     ⇒ 순서: (b)를 먼저 재고(결함이면 그것부터), (a)를 설계하고, 그다음 필드를 닫는다.
+
+    ★ **같은 칸에 얹는 것 — `VertexDef` 를 `Vertex` 로 접는다** (2026-09-13 확정). `Vertex { def }` 는
+    S7 이 `point`·`origin` 을 캐시로 보내고 남은 **한 필드 껍데기**다(`f86e7e3` → `76a07b2`). `Surface` 는
+    진실이 enum 그 자체인데 정점만 struct 한 겹을 더 벗겨야 한다 — `m.vertex(v).def` 가 아니라
+    `m.vertex(v)` 를 바로 `match`. 실측: `VertexDef` 173 · `.def` 218 자리, 전부 기계적이고 타입이 바뀌므로
+    놓친 자리는 컴파일 오류, census 무영향. 문의 이름 칸이 `vertex_point` 111곳으로 정점 자리를 어차피
+    지나므로 **같은 손으로** 한다 — 따로 하면 같은 파일을 두 번 연다.
 
 23. ⏳★★★★ **`Bounded` 통합 — 「값 + 경계」에 이름이 둘이고, 산술은 한쪽에만 있다** (2026-09-12 실측).
 
