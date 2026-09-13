@@ -263,15 +263,17 @@ pub struct Profile2d {                        // 한 재료 영역 — 현행 �
     outer: Ring2d,
     holes: Vec<Ring2d>,
 }
-pub struct Ring2d {                           // ★ 칸 ⑨(2026-09-05): 정점 + 세그먼트 종류
-    vertices: Vec<[Rat; 2]>,                  //   segs[i] = vertices[i] → vertices[i+1 mod n]
-    segs: Vec<Seg2d>,                         //   온전한 원 = 정점 1 + Arc 1 (정점 = 솔기)
+pub struct Ring2d {                           // 정점 + 조각. segs[i] = vertices[i] → vertices[i+1 mod n]
+    vertices: Vec<[Rat; 2]>,                  //   온전한 원 = 정점 1 + Arc 1 (정점 = 솔기)
+    edges: Vec<Edge2d>,                       //   ⏳ 오늘 코드는 `segs: Vec<Seg2d>` — 열린 항목 26
 }
-pub enum Seg2d { Line, Arc { center: [Rat; 2], radius: Rat, ccw: bool } }
-pub enum Edge2d {                             // 입력의 꼴(from_edges) — 전부 Rat, 회전각 없음
-    Line { from, to },
-    Arc { center, radius, start, end, ccw },  // start == end 는 온전한 원; radius 는 완전제곱 검사
+pub enum Edge2d {                             // 조각 «하나» — 순서 있는 고리라 시작=앞 꼭짓점
+    Line,
+    Arc { center: [Rat; 2], radius: Rat, ccw: bool },  // ⏳25 radius→r²·중심 정의화는 미정 마일스톤
 }
+// ⏳★★ **오늘 코드는 조각 타입이 둘**이다: 입력 `Edge2d{Line{from,to} | Arc{..start,end..}}`(양끝을 자기가
+//    들어 순서 없이 흩어져 들어옴) + 저장 `Seg2d{Line | Arc{center,radius,ccw}}`. 열린 항목 26 이 kit 펜의
+//    순서를 살려 둘을 합치고 `start`/`end` 를 없앤다(살아남는 이름 = `Edge2d`). 위 그림이 그 최종형이다.
 // 링 더미 → 짝수 깊이 = 재료(even-odd) → 섬마다 Profile2d 하나 — from_rings, 현행 유지.
 
 // ─── 배치 — 어떤 평면 위 + 배치(기본은 정준 유도, 명시하면 값). ──
@@ -287,7 +289,7 @@ pub struct SketchFrame {
 
 | 규칙 | |
 |---|---|
-| **호의 진실은 끝점이다, 각도가 아니다** (칸 ⑨) | 3D 경계 표현이 요구하는 것은 **정점과 원**이고 각도는 어디에도 안 쓰인다. 끝점 표현이 더 넓다(무리수 도의 호도 끝점이 유리수면 정확 — 3-4-5). 90° 배수 회전은 생성자가 `(x,y)→(−y,x)` 로 `Rat` 끝점을 계산한다(`arc_turns_rat`). 뒷날 임의 각도는 «시작점을 θ 돌린 점»이라는 **점의 이름**으로 열린다 — `Arc` 의 꼴은 그대로. 오늘 빌더가 세우는 것은 4분원 배수 가족(감김 `a + b·π` 의 정확 부호)이고 그 밖은 `ArcSweepNotQuarterTurn` 으로 이름 붙여 거절 |
+| **호의 진실은 끝점이다, 각도가 아니다** (칸 ⑨) | 3D 경계 표현이 요구하는 것은 **정점과 원**이고 각도는 어디에도 안 쓰인다(`Arc` 에 각도 필드 없음 — 실측). 끝점 표현이 더 넓다(무리수 도의 호도 끝점이 유리수면 정확 — 3-4-5). ✔ **임의 각은 이미 열렸다**: `arc_rat(center, start, end, ccw)` 이 끝점을 받고 «원 위인가»만 검사하지 각도를 제한하지 않는다; `arc_turns` 는 90° 배수 끝점을 `(x,y)→(−y,x)` 로 유도해 주는 **설탕**일 뿐이다. ⚠ **남은 제한은 «스케치»가 아니라 «돌출»에 있다**: `refuse_non_quarter_arcs`(`ops.rs`)가 프리즘 빌더에서 비-사분 호를 `ArcSweepNotQuarterTurn` 으로 거절한다 — 원통 옆면의 정확 표현이 사분 가족에서만 서기 때문이고(M6), 스케치 입력의 한계가 아니다. ⏳ 그 벽은 열린 항목 25(중심·반지름의 정의 기반화)와 곡선 마일스톤이 함께 연다 |
 | **원통 원시체는 없다 — 원은 스케치다** (칸 ⑨) | `Operation::Cylinder` 는 원 프로파일 Extrude 와 위치 정준 비트 동일이 실측된 뒤 은퇴. 직선–호 꼭짓점 = `VertexDef::Branch`(두 평면의 **저장된 정준 이름** × 원통, 근은 매개 값으로 고른다 — 빌더가 자기 점으로 계수를 다시 만들면 `Lo/Hi` 가 뒤집힐 수 있다), 온전한 원 = `OnSeam` |
 | **경계는 f64, 진실은 구성 시점에** ✔S3 | 공개 API 는 f64 그대로(§design 6.0). `Rat::from_decimal` 왕복을 `Profile2d` **생성자**에서 한다 — `check()`(자기교차·중첩·포함)가 진실 위에서 정확 술어로 돌고(`orient2d_rat`: narrow 우선 → BigInt 전역 부호, geom 의 `_rat` 워커 쌍둥이), 십진 창(1e38/1e-22) 밖 치수가 구성 시점의 이름 붙은 에러다(`ProfileOutsideDecimalWindow` / sketch 층 `OutsideDecimalWindow`). ★ f64 부호 ≠ 십진 부호가 실측 사실이라(0.1·0.2·0.3 공선이 이진에선 굽음) check 를 진실 위로 옮긴 것이 정확성 변경이고, 그 방향은 항상 "작성자가 쓴 수가 이긴다" |
 | **공선 중간점은 생성자가 지운다** ✔S3 | 공선 정점의 양옆 벽은 한 평면 → 교차가 직선이라 정의 불가, 그리고 비-2-manifold 퇴화다. 제거는 형상 불변(무손실 정규화, 거절 아님 — 정리된 프로파일의 프리즘은 깨끗한 쌍둥이와 비트 동일, 모든 코너가 3-평면 정의 보유 = Q2 ② 닫힘). 판정은 Rat 위 정확 orient2d, 제거 조건은 **엄격 내부**(중복점·스파이크는 생존해 각자의 이름 붙은 에러로 보고된다 — 경계 포함 판정을 재사용하면 작성자의 실수를 조용히 지운다) |
@@ -436,14 +438,19 @@ test-only `push_plane_unregistered`)이 **각자 표를 기억하는 규율**뿐
 
 ```rust
 pub struct Model {
-    // 진실 — append-only
-    surfaces: Store<Surface>,                 // ★ 비공개(S1 ✔) — push 는 생성자 경유만, 읽기는
-                                              //   좁은 접근자(surface/surface_count/motion —
-                                              //   전량 순회 없음: 아레나엔 superseded 도 있다)
-    pub vertices: Store<Vertex>,
-    pub edges:    Store<Edge>,
-    pub motions:  Store<MotionNode>,          // interned
-    // faces / shells / solids / live_solids …
+    // 진실 — append-only. ★★ **모두 비공개**(최종형): 밖은 §문의 이름의 문으로만 읽는다.
+    //   ⏳ 오늘 코드는 surfaces·motions 만 비공개, vertices·edges·faces·shells·solids 는 `pub` —
+    //   열린 항목 21 이 닫는다(면·셸의 push 문 신설 + 전량 순회 60곳 검증이 선행).
+    surfaces: Store<Surface>,                 // 읽기는 좁은 문(surface/surface_count/…), push 는
+    vertices: Store<Vertex>,                  //   생성자 경유만. 전량 순회 없음: 아레나엔
+    edges:    Store<Edge>,                    //   superseded 도 있어 소비자는 live face 를 걷는다.
+    faces:    Store<Face>,
+    shells:   Store<Shell>,
+    solids:   Store<Solid>,
+    motions:  Store<MotionNode>,              // interned
+
+    // 루트 — 지금 살아있는 솔리드 핸들 목록(도달 집합의 뿌리). 저장소가 아니라 «무엇이 현재 모델인가».
+    pub live_solids: Vec<Handle<Solid>>,
 
     // 캐시 — 핸들 인덱스 병렬, 통째로 버리고 재생 가능.
     // ★ **비공개다**(실측: 오늘의 `vertex_cache`·`edge_cache` 에 `pub` 이 없다). 읽기는 좁은 문
@@ -464,14 +471,36 @@ pub struct Model {
 // ⏳ **`surface_name` 은 사라진다** — 이름은 유도되므로 캐시이고, `SurfaceCache::Plane.name` 으로
 //    들어간다(위 §수치·캐시 타입). 오늘은 `pub HashMap` 곁표라 곡면의 캐시가 두 벌이다.
 
-// 수치 층 — 같은 것의 다른 정밀도는 Hp 접두사 하나로만 다르다. 값+tol 이 한 덩어리.
-pub struct Mag { m: f64, e: i64 }                                  // f64 밖 범위의 보수적 크기
-pub struct Approx        { value: f64,      error: f64 }           // 중간 스칼라
-pub struct HpApprox      { value: BigFloat, error: Mag }
-pub struct PointCache    { coord: Point3,        tol: Option<f64> }  // S7 실형: 측정치 유무
-// ⏸ `HpPointCache` 는 아직 «타입»이 아니다 — 오늘은 튜플 `(usize, [HpApprox; 3])`. 층으로
-//    굳히는 것은 곡면 실현 몫(열린 항목 8). 이름만 먼저 정해 둔 자리다.
-pub struct HpPointCache  { coord: [BigFloat; 3], tol: [Mag; 3] }
+// 수치 층 — 「값 + 그 값이 갇힌 오차」가 **세 계단**으로 산다(2026-09-13 정리; ⏳ 열린 항목 23 이 집행).
+//   같은 것의 다른 정밀도는 `Hp` 접두사 하나로만 다르다.
+pub struct Mag { m: f64, e: i64 }                                  // f64 밖 범위의 보수적 크기(0에서 먼 쪽)
+
+// ── 계단 1: «원자» — 값 하나 + 그 반경. ────────────────────────────────
+pub struct Bounded   { value: f64,      error: f64 }              // ⏳ 오늘 `Approx`(cip, 50곳)
+pub struct HpBounded { value: BigFloat, error: Mag }              // ⏳ 오늘 `HpApprox`(cip, 115곳)
+//   ⏳ scalar 의 튜플 `Bounded = (BigFloat, Mag)` 는 `HpBounded` 가 흡수. 산술 20개도 scalar 로 이사.
+
+// ── 계단 2: «경계 지어진 점» — 원자 셋(축별). realize 가 이미 `[Bounded;3]` 로 든다. ──
+//   ★ 값과 오차를 «묶어» 든다(따로 든 배열 둘이 아니라). 그래야 «참값 ∈ value±error» 가 구조로 서고
+//     transform 이 값만 옮기고 오차를 안 옮기는 desync 가 **불가능**해진다.
+pub enum PointCache {                                             // ⏳ 오늘 `{coord: Point3, tol: Option<f64>}`
+    Constructed([f64; 3]),                                        //   좌표만 — 측정 없음(checker 가 자기 ε)
+    Discovered([Bounded; 3]),                                     //   값+오차 «묶음»(계단 2) — 발견 정점
+}
+//   ★★ **출처를 변종으로** — 오늘 `tol: Option<f64>` 의 `None`/`Some` 이 나르던 «구성/발견»을 타입이
+//     구조로 말한다(reuse 가 그 유무로 «유리수 base 없음»을 읽는다 — `matches!(Discovered)`). 값과 오차는
+//     발견 변종 안에서 [Bounded;3] 로 «묶여» desync 불가; 구성 변종엔 오차 자리가 아예 없다(있을 수 없는
+//     것을 표현 안 함 — `SurfaceCache` 변종과 같은 원칙). 좌표 중복 없음(발견의 coord = Bounded.value).
+//   ⏳ 오늘은 단일 struct 라 구성 정점도 `tol: None` 으로 «오차 자리»를 든다 — 칸 ㊸ 가 변종화하며
+//     스칼라 tol 을 축별 `[Bounded;3]` 로 바꾼다.
+//   ⏸ 고정밀판은 아직 «타입»이 아니다: 연산 하나짜리 실현이라 이름이 «Cache» 가 아니다(항목 23) —
+//     `[HpBounded; 3]` 이거나 아래 `WitnessPoint` 자신이다(튜플 `(usize, [HpBounded;3])` 가 오늘 것).
+
+// ── 계단 3: «경계 점 + 정의» — 판정 전용. 계단 2 의 상위집합이지 중복이 아니다. ──
+//   ★★★★ `WitnessPoint = [Bounded;3](계단 2) + 정의(base:[Rat;3]·chain) + hp(메모)`. 그 «정의» 가
+//     정확 단계의 입력이라 캐시(`PointCache`)와 «같은 것»이 아니다 — 이 차이가 진실/캐시 경계 그 자체다.
+//     그래서 계단 1·2 는 합치되 이것은 캐시로 접지 않는다(접으면 경계가 지워진다).
+pub struct WitnessPoint  { base: [Rat; 3], chain: /*모션*/_, coord_tol: [Bounded; 3], hp: /*메모*/_ }
 
 // ⏳ **한 곡면의 캐시 = 변종 «하나»** — 진실과 짝을 이룬다(`Surface::Plane` ↔ `SurfaceCache::Plane`).
 //    2026-09-12 확정, 아직 안 지음(오늘 코드는 `{ realized: geom::Surface }` + 곁표 `surface_name`).
@@ -501,8 +530,10 @@ pub enum SurfaceCache {
 // ⚠ 버린 스케치(2026-08-05, M6 전): `{ coeffs: [f64;4], tol: [f64;4], inv_norm }` — 평면 전용이라
 //    원통으로 확장되지 않는다. `HpSurfaceCache{ coeffs, tol }` 도 같은 이유로 죽었다.
 pub struct EdgeCache     { curve: Curve }                          // 평가 가능한 담체 곡선
-// ★★★★ **세 캐시는 «실현값 + 그 오차»로 수렴한다 — 오차가 빠진 쪽은 `EdgeCache` 다**(2026-09-11):
-//    `PointCache{coord, tol}` ✔ · `SurfaceCache{realized, tol⏸}` · `EdgeCache{curve, ???}`.
+// ★★★ **캐시는 «실현값 (+ 필요하면 그 오차)»** (2026-09-13 정정 — «셋 다 오차로 수렴»은 과했다):
+//    `PointCache{coord, tol}` ✔(정점은 발견 잔차가 실물) · `EdgeCache{curve, err?}`(M7 후보) ·
+//    `SurfaceCache{realized, tol?}` **동기 미확인**(위 §최종 타입 — 곡면 진실은 정확해 잔차가 없다).
+//    ⇒ 오차 필드는 «소비자가 있으면» 붙지 대칭으로 붙지 않는다.
 //    그 빠진 필드는 이미 이름이 있다 — design §3 의 `Intersection.cache_err`(*"캐시가 진짜 교차에서
 //    벗어난 최대 거리"*). ⏸ 소비자 0 ⇒ 짓지 않고 적어 둔다(열린 항목 19).
 
@@ -511,7 +542,7 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
 // | 무엇 | 성질 | 상태 |
 // |---|---|---|
 // | `Plane::distance_eps(p)` | **이 거리 계산**의 f64 반올림, `3ε·Σ|pᵢ−oᵢ|` — **`p` 에 의존**(두 연산자) | ✔ 있음, **저장 불가** |
-// | `SurfaceCache.tol`       | **이 평면 자신**이 참 평면에서 얼마나 떨어졌나 — 평면의 성질(한 연산자) | ✗ 없음, 저장 가능 |
+// | `SurfaceCache.tol`       | **이 평면 자신**이 참 평면에서 얼마나 떨어졌나 — 평면의 성질(한 연산자) | ✗ 없음 **+ 동기 미확인**(아래) |
 // | `PointCache.tol`         | 같은 것의 정점판(*"measured residual"*)                                  | ✔ 있음 |
 //
 // ⚠ 「곡면당 저장하는 tol 은 틀린 양」은 **첫째에만** 맞다. 그 근거는 코드가 적어 뒀다 —
@@ -578,10 +609,9 @@ m.surface_cache(h).cylinder()    -> Option<&geom::Cylinder>
 m.surface_cache(h).name()        -> Option<&PlaneName>
 m.surface_cache(h).tol()         -> ⏸ 「8·캐시 실형」
 m.surface_cache(h).distance(p)   -> f64                         // 다형 질의는 캐시가 가른다
-m.vertex_cache(v).coord()        -> Point3
-m.vertex_cache(v).tol()          -> Option<f64>
-m.edge_cache(e).curve()          -> &Curve
-m.edge_cache(e).err()            -> ⏸ (수렴 주석의 빠진 오차)
+m.vertex_cache(v)                -> &PointCache                 // 변종(Constructed | Discovered) — §캐시
+//   조각은 그 위에서 `match` — 발견이면 `[Bounded;3]`, 구성이면 좌표만. (오늘은 coord()/tol() 둘로 갈렸다.)
+m.edge_cache(e).curve()          -> &Curve                     // (오차 err 은 M7 후보 — 위 §캐시)
 ```
 
 ★★★★ **왜 체이닝인가 — 이름이 «어디의» 조각인지를 스스로 말한다.** 초안은 `plane(h)`·`name(h)` 를
@@ -845,7 +875,14 @@ pub enum Decision {
 
 ☑★★ **정정의 정정(2026-09-11, 칸 ㊷ `78d770f`): 이름과 자리도 도착했다.** 이 자리에 *"「전부」는
 타입의 «내용»이고, 곡면의 «이름과 자리»는 남아 있다"* 고 적혀 있었다 — 그 남은 절반이 그날 닫혔다
-(진실 enum = `Surface`, 아레나가 그것을 든다; 열린 항목 8). **남은 것은 `SurfaceCache.tol` 하나**이고
+(진실 enum = `Surface`, 아레나가 그것을 든다; 열린 항목 8). ⚠★★★ **`SurfaceCache.tol` 은 «안 지음»이
+아니라 «동기 미확인»이다**(2026-09-13 실측): 소비자 **0**, 그리고 정점과 달리 **곡면 진실은 정확**해
+(`Known` = 유리수 점 셋, 원통 = 유리수 `CylinderDef`) «참 곡면에서 떨어진 잔차»가 애초에 없다 — 발견
+정점은 세 평면의 f64 해라 면에서 떠 있지만(그래서 `PointCache.tol` 이 실물, 14 소비자), 곡면은 그렇지
+않다. f64 계수의 반올림은 `distance_eps` 로 **질의 때** 나온다(저장 불가). 유일한 후보는 `Through` datum
+평면이 세 정점의 tol 을 유도해 무는 것인데 그나마 **하중 없는 지름길**이다. ⇒ 「곡면 실현」 칸은 필드를
+짓기 전에 **정말 필요한가부터** 확인한다(대칭이 만든 유령 필드일 수 있다 — 「소비자 없는 배관 금지」).
+남은 것은
 그것은 타입의 내용이 아니라 **실현**의 몫이다.
 ⚠★★★★ 그리고 반전이 **새 항목 하나를 드러냈다**: 곡면의 push 문이 캐시를 **받는다**(`push_plane
 (cache, points, motion)`) ⇒ 진실과 캐시가 어긋난 상태가 «표현 가능»하다. 형제(`push_edge`)는
@@ -1081,8 +1118,14 @@ STEP 출력, undo/replay.
    (사다리 없음, 기울면 최대 4 ulp)인데, `realize_vertex(v, NearestF64)` 의 출력을 쓰면 «정확 반올림 +
    축별 경계 `[Mag;3]`»가 된다. 최초판 887행의 약속(*"STEP 은 정확 반올림해 낸다"*)이 그때 닫히고,
    `PointCache.tol` 의 뜻이 «잔차 하나»에서 «축별 경계 셋»으로 바뀐다(§캐시 «세 오차» 표 갱신 대상).
-   그 뒤에야 「캐시를 판정 1단의 씨앗으로」(`WitnessPoint::at_with_tol` 이 그 문)를 **실측으로** 저울질할
-   수 있다 — 캐시가 정확성을 지게 되는 대가와 f64 Cramer 한 번의 절약 사이에서.
+   ⚠★★★ **정정(2026-09-13) — 「캐시를 판정 1단의 씨앗으로」는 이득이 작다, 그리고 이유는 «캐시가 정확성을
+   진다»가 아니다.** 여기 그 대가를 그렇게 적었는데 부정확했다. 캐시의 오차는 엉터리가 아니다(㊸ 뒤면
+   realize 통로에서 나온 건전한 `Mag`). 진짜는 **캐시가 실현의 «출력»(나눠 반올림한 f64)이고 판정의 정확
+   단계는 «입력»(유리수 정의 = 세 평면)을 필요로 한다**는 것 — `PointCache` 엔 `base:[Rat;3]` 이 없어
+   `WitnessPoint::at_with_tol` 에 애초에 못 들어가고(반올림한 f64 를 유리수로 도로 들면 «다른 점»의 부호를
+   정한다), 씨앗이 될 수 있는 건 1단 f64 필터뿐인데 그건 `base.to_f64()` 세 번이고 비싼 hp 는 이미
+   메모돼 있다. ⇒ 성능 이득 ~0. 구조 이득은 **위 계단 2 통일**로 따로 받는다(§이름과 interning 위,
+   열린 항목 23).
    ⇒ **옳은 최종 상태는 「문이 진실만 받고 캐시를 유도한다」**이고, 그러면 그 변종 검사가 *필요
    없어진다* — 그것이 곡면 실현 칸의 판정 기준이다. ⚠ 유도에는 `realize_surface` 가 필요하고
    (`Known` 의 세 `Rat` 에서 법선을 유리수로 유도하면 넘친다 ⇒ `PlaneName{Narrow|Wide}` 경유),
@@ -1552,6 +1595,17 @@ STEP 출력, undo/replay.
     불가능해진다. `HpPointCache` 도 이 때 다시 본다: 모델 캐시가 아니라 연산 하나짜리 실현이므로 «Cache»
     가 붙을 이름이 아니다 — `[HpBounded; 3]` 이거나 `WitnessPoint` 자신이다.
 
+    ★★★★ **원자만이 아니라 «계단 2»도 통일된다 — «경계 지어진 점»** (2026-09-13, §캐시 수치 층 그림).
+    「값+오차」가 오늘 **세 곳에 값 배열·오차 배열을 «따로»** 든다: `realize` 출력 `([f64;3],[Mag;3])` ·
+    `WitnessPoint{coord:[f64;3], tol:[f64;3]}` · `PointCache{coord, tol}`. ★ `realize` 는 **내부적으로 이미
+    `[Bounded;3]` 로 묶어** 든다(`Approached([Bounded;3], _)`) — «묶은 점» 타입이 한 자리에 있고 나머지가
+    안 따라간 것뿐이다. 묶으면 정리이자 **건전성**이다: «참값 ∈ value±error» 가 구조로 서서 transform 이
+    값만 옮기고 오차를 안 옮기는 desync 가 불가능해진다.
+    ⚠ **그러나 `WitnessPoint` 를 `PointCache` 로 접지는 않는다.** `WitnessPoint = [Bounded;3] + 정의
+    (`base:[Rat;3]`·chain) + hp(메모)` 로, 그 «정의» 가 정확 단계의 입력이다 — 캐시는 일부러 안 든다. 계단
+    2 를 **공유**하되(둘 다 `[Bounded;3]` 를 품는다) 계단 3 은 상위집합으로 남는다. 접으면 진실/캐시 경계가
+    지워진다.
+
 24. ⏳★★★ **`Branch` → `Pierce` — 이름이 «고른 방법»을 말하고 «무슨 점»인지는 안 말한다** (2026-09-13 확정).
 
     출처: 최초판 Q5(2026-08-01)의 *"가지 번호(`branch: u8`) 또는 재명명"* — 세 이차곡면이 Bézout 로 최대
@@ -1573,3 +1627,52 @@ STEP 출력, undo/replay.
     (`frame3.rs` 는 두 뜻을 이웃 줄에서 쓴다).
     순수 개명 · census 무영향 · 타입이 바뀌므로 놓친 자리는 컴파일 오류. ⚠ 문의 이름 칸(21)의 경로가 아니라
     배열 엔진 내부라 **자기 패스**가 필요하다 — 다음 불리언 칸에 얹거나 따로.
+
+25. ⏳★★★★ **원/원호의 진실은 «실현값»이 아니라 «정의»여야 한다 — 평면의 normal-vs-coefficients 와 같은 갈래**
+    (2026-09-13 진단, 곡선 마일스톤 입력).
+
+    오늘 원호는 «실현된 값»으로 저장된다: `Seg2d::Arc{center: [Rat;2], radius: Rat, ccw}` ·
+    `CylinderDef{.., radius: Rat}`. 그래서 **무리수가 되는 두 양**에서 막힌다.
+
+    **① 반지름 — 저장하는 양이 틀렸다.** `radius_of` 는 `r² = |start−center|²`(분수끼리라 **항상 유리수**)를
+    구한 뒤 `rat_sqrt_exact(r²)` 로 √ 이 유리수인지 보고, 아니면 `ArcRadiusNotRational` 로 거절한다. 그런데
+    정확 술어는 r 을 **제곱해서** 쓴다(원통 게이트 `(n·o+d)² > r²|n|²`, 부피 `πr²h`) — **맨 r 을 유리수로
+    요구하는 곳은 `radius_of` 자신뿐**이고, geom `Circle` 은 r 을 **f64**(캐시)로 든다. ⇒ 진실은 `r²: Rat`
+    이어야 한다(항상 유리수 = 모든 원을 담는다), r 은 f64 캐시로 √ 해서 쓴다. 이것은 평면이 「유리수 법선을
+    저장하려다 무리수·오버플로에 걸려 계수(정의)를 저장하고 법선을 유도」한 것(`normal_def` 재구성, S6b)과
+    **같은 실수**다. 막는 인구: 손으로 그린 «비피타고라스» 원호(중심 (0,0), (1,1)→(−1,1), r²=2).
+
+    **② 중심 — r² 트릭으로도 안 풀리는 둘째 축.** 기울어진 코너의 필렛은 **중심 자체가 무리수**다(모서리에서
+    이등분선 방향으로 r — 단위 이등분선이 무리수). kit 이 *"축정렬 직각 코너가 아니면 거절"* 하는 진짜 이유.
+    이것도 평면과 같다 — 기울어진 평면이 무리수 법선이라 «점 셋(정의)»을 저장하고 실현하듯, 기울어진 원호도
+    «만든 방법(두 간선 + 반지름)»을 저장하고 중심을 실현해야 한다.
+
+    ⇒ **뿌리는 하나**: 원/원호가 평면이 S6/S7 에서 지나온 «정의 vs 실현» 분리를 아직 안 지났다. 「다 만들 수
+    있어야 한다」가 옳고, 길은 평면이 간 길이다. ⚠ 크기는 doc 한 줄이 아니라 **곡선 마일스톤**(진실 필드
+    `radius`→`r²` 를 `Seg2d::Arc`·`CylinderDef` 에서 함께 + 중심의 정의 기반 표현 신설) — 지금 고치는 게
+    아니라 그 계획의 입력이다. ★ `arc_turns`/`arc_rat` 이 갈린 것은 이것과 무관한 편의 설탕(끝점을 90°k 로
+    유도 vs 받음)이고, 정의 기반이 되면 둘 다 «정의를 진술하는 한 방법»으로 자연히 정리된다.
+
+26. ⏳★★★ **입력을 «순서 있는 고리»로 통일한다 — `Edge2d`/`Seg2d` 가 하나가 되고 `from_edges` 의
+    순서 재발견이 사라진다** (2026-09-13 진단).
+
+    오늘 스케치 조각은 **둘**이다: 입력 `Edge2d::Arc{center, radius, start, end, ccw}`(양끝을 자기가 든다) ·
+    저장 `Seg2d::Arc{center, radius, ccw}`(시작=앞 꼭짓점, 끝=다음 꼭짓점). 차이는 **«양끝을 자기가 드느냐»**
+    하나뿐이고, 그것이 곧 「순서 없음 ↔ 순서 있음」의 자국이다. `from_edges` 는 `Vec<Edge2d>` 를 받아 끝점
+    탐색으로 **사슬을 재발견**한다 — 뭉텅이로 흩어져 들어와도 잇기 위한 층이다.
+
+    ★ **코드캐드라 그 층이 필요 없다.** kit 의 `PenPath` 는 이미 «펜»이다(`SketchSeg::Arc` = *"an arc from
+    where the pen stands"*, `close()` 가 시작점으로 되돌려 닫는다) — 순서를 **이미 안다**. 그런데 그걸
+    `Vec<Edge2d>` 로 펼쳐 순서를 버리고, 커널이 `from_edges` 로 도로 찾는다. 「펜 → 조각 목록 → 순서
+    재발견」의 가운데가 헛돌음이다.
+
+    ⇒ **셋을 한다**: (a) 「순서 있는 + 호 되는」 입력 문 — `from_rings(Vec<Vec<Point2>>)` 가 절반이나 이미
+    그 문인데(순서 있는 고리) **`Ring2d::polygon`, 즉 직선만** 받는다; 호 버전이 비어 있다. (b) `from_edges`
+    의 순서 탐색을 지우고 그 문으로 대체(②검증 `OpenChain`·`BranchingVertex` 와 ③`classify` 겹침·구멍
+    판정은 **입력 형태와 무관**하므로 그대로 산다). (c) `Seg2d` 를 `Edge2d` 로 흡수 — `start`/`end` 필드가
+    소멸하고 조각 타입이 하나가 된다. ★ 살아남는 이름은 **`Edge2d`** 다: 검증 문(`arc_rat`→`radius_of`,
+    `arc_turns`, `circle`)이 거기 붙어 있고 `Seg2d` 는 geom 의 검증 없는 데이터다(실측: `Edge2d::` 58곳).
+
+    ☑ **열린 항목 25 를 쉽게 만든다**: radius→r² 를 오늘은 `Edge2d`·`Seg2d`·`CylinderDef` **셋**에서
+    해야 하는데, (c) 뒤엔 **둘**이다. ⚠ 실제 코드 변경이라 자기 칸이 필요하고, kit 쪽은 «펜을 `Edge2d`
+    목록으로 펼치는 단계»를 없애 펜을 커널의 고리 문에 직접 넘기는 것이 자연스럽다.
