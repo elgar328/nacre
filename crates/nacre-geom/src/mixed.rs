@@ -33,8 +33,11 @@ use nacre_scalar::{Orient, Rat};
 pub enum Seg2d {
     Line,
     /// The arc from this step's vertex to the next, around `center`, counter-clockwise when
-    /// `ccw`. `radius` is stated, not derived from the vertices (that derivation is a square root);
-    /// both vertices lie on the circle by the caller's contract. A step whose two vertices are one
+    /// `ccw`. `radius` is **derived once at the door and stored** — `Edge2d`'s constructors compute
+    /// `|start − center|²` and accept only a rational square root (`rat_sqrt_exact`, else
+    /// `ArcRadiusNotRational`), and check `end` against it (`ArcEndOffCircle`). It is kept
+    /// because the cylinder truth needs it as a `Rat` and recomputing it is a `√` away from the
+    /// points; `Ring2d`'s private `segs` is what keeps a hand-built `Arc` from bypassing that door. A step whose two vertices are one
     /// point is the whole circle (its vertex is the seam).
     Arc {
         center: [Rat; 2],
