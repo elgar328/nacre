@@ -167,7 +167,7 @@ pub struct Edge {
 // ─── 모션 (nacre-topo — Handle 이 필요하다) ────────────────────────────
 
 pub enum Motion {
-    Rotate    { axis: Axis, point: [Rat; 3], angle: Angle },
+    Rotate    { axis: Axis, pivot: [Rat; 3], angle: Angle },   // ⏳ 코드는 `point` — 열린 항목 21
     Translate { offset: [Rat; 3] },
     Mirror    { axis: Axis, offset: Rat },    // det = −1, 사슬 패리티
     /// 평면 자신의 프레임으로의 기저 변경 — 기울어진 면 위 스케치를 정확하게 만든다.
