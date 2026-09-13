@@ -20186,4 +20186,21 @@ combinatorics 6,577 + bands 4,172 + cyl_chart 2,944 + nesting ≈ 28k)과 **모�
 관통점을 «branch corner/node/point/vertex/name»로 부르던 ~190곳. 낱말 경계 고정 구절 치환으로 옮기되
 `Branching`/`branched`/제어 뜻은 남긴다. ⚠ **BSD sed 는 `\b` 미지원** — 지역변수는 문맥 고정 패턴으로.
 ⚠ 여러 주석이 «...branch\n// corners» 처럼 줄바꿈으로 갈려 구절 치환을 비껴갔다 — 줄 끝 `branch$` 로
-따로 잡았다. `branch arm` 은 형제가 이미 `three-plane arm`·`pierce arm` 이라 → `pierce arm`(대칭).
+따로 잡았다. `branch arm` 은 → `pierce arm`: 형제가 `three-plane arm` 이고(개명 전부터 있던 말 —
+`branch` 를 안 담은 줄이라 치환이 못 건드린다), 그 팔들은 «어느 정점 «이름» 종류를 다루나»로 명명된다.
+
+### ⚠ 감사가 잡은 것 (같은 칸, 커밋 직후)
+
+1. **과잉 개명 하나** — `tests.rs` 의 *"the branch fixture A never reaches"* 는 광선-교차 패리티
+   테스트의 **코드 분기**(같은 테스트 1799행이 *"the branch under test"* 로 남아 있는 그 분기)인데
+   `s/branch fixture/pierce fixture/` 가 먹었다. 되돌렸다. ⇒ **일괄 구절 치환은 «명사구가 엔티티를
+   가리킬 때»만 안전하다** — `fixture`·`arm`·`check` 처럼 «코드 것»을 가리킬 수 있는 낱말이 뒤에
+   오면 구절이 아니라 한 줄씩 읽어야 한다.
+2. ★★ **근거가 순환이었다** — `branch arm`→`pierce arm` 을 정당화하며 *"bands.rs 가 이미 pierce arm"*
+   이라 적었는데, 그 `pierce arm` 은 **몇 분 전 내 sed 가 만든 내 출력**이었다(`git show HEAD~1` 로
+   확인: 그때 bands.rs 는 `branch arm`). 결론은 옳았지만(독립 증거는 개명이 못 건드린
+   `three-plane arm`) **내가 방금 만든 것을 증거로 삼았다.** 같은 세션에 두 번째다(커밋 공동저자도
+   내 커밋을 «선례»라 불렀다). ⇒ 관례를 인용하기 전에 **그것이 내 손에서 나온 것인지 `git show` 로
+   묻는다.**
+3. **기록 누락** — `Pierce` 변종을 가진 enum 은 다섯이다. 위의 형제 넷에 더해 `CoordKey::Pierce`
+   (관통점의 좌표 키 — `(MeetLine, QuadVal)`)가 있고 이것도 옳게 개명됐다.

@@ -1785,7 +1785,7 @@ fn a_ray_that_grazes_a_corner_still_answers() {
     assert!(!rays.iter().any(|&x| x), "and unanimous — {rays:?}");
 }
 
-/// The isolated **touch** — the pierce fixture A never reaches.
+/// The isolated **touch** — the branch fixture A never reaches.
 ///
 /// The outline's bottom notch rises to `(12,10)` and turns straight back down, so both its
 /// neighbours `(8,0)` and `(16,0)` are below `y=10`: the ring touched the ray's line without
