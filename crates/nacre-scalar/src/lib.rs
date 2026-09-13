@@ -1792,7 +1792,7 @@ pub fn point_axis_side(p: &MeetPoint, o: &[Rat; 3], m: &[Rat; 3], t: Rat) -> Ori
 /// **A branch point's coordinates as `(A + B√C) / D`** — integer throughout, `D > 0`, `C ≥ 0`.
 ///
 /// The two footprint predicates below are the same questions [`cylinder_strip_side`] and
-/// [`point_axis_side`] ask; only the point's *description* differs. A `VertexDef::Branch` has no
+/// [`point_axis_side`] ask; only the point's *description* differs. A `VertexDef::Pierce` has no
 /// rational coordinates at all — it is `line.base() + s·line.dir()` with `s` quadratic-irrational
 /// — so its coordinates live in `ℚ(√c)`, and every quantity those predicates form from a point is
 /// a polynomial in them, hence of the shape `X + Y√C` whose sign the tower already answers.

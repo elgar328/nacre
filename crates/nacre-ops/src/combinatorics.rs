@@ -179,15 +179,15 @@ pub(crate) fn order_on(
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum PointOn {
     Class(usize),
-    /// Must be a [`NodeId::Branch`]; the quadric road reads its cylinder and root.
-    Branch(NodeId),
+    /// Must be a [`NodeId::Pierce`]; the quadric road reads its cylinder and root.
+    Pierce(NodeId),
 }
 
 impl PointOn {
-    /// ★★★★ **A cylinder pin arrives with a branch name — a producer's invariant, so this stops
+    /// ★★★★ **A cylinder pin arrives with a pierce name — a producer's invariant, so this stops
     /// loudly rather than naming a refusal.** Every site that writes `EndPin::Cylinder` writes the
-    /// `NodeId::Branch` beside it, so the two disagreeing is a defect in this kernel rather than a
-    /// property of the model, and [`RejectReason::BranchVertexUnnamed`] would be a false sentence
+    /// `NodeId::Pierce` beside it, so the two disagreeing is a defect in this kernel rather than a
+    /// property of the model, and [`RejectReason::PierceVertexUnnamed`] would be a false sentence
     /// for it: that one says the point *is* exactly named and only the path lacks a way to carry
     /// it. The rule is `crate::planes::ClassIx::plane`'s — *"a loud panic beats a silently wrong
     /// plane."*
@@ -197,7 +197,7 @@ impl PointOn {
         match pt.1 {
             EndPin::Class(r) => PointOn::Class(r),
             EndPin::Cylinder => match pt.0 {
-                NodeId::Branch { .. } => PointOn::Branch(pt.0),
+                NodeId::Pierce { .. } => PointOn::Pierce(pt.0),
                 n @ NodeId::ThreePlane(_) => {
                     unreachable!("a cylinder pin was written beside a three-plane name: {n:?}")
                 }
@@ -221,7 +221,7 @@ impl PointOn {
 /// plus a separate `b_ds: Option<i8>`, which is a value that has to match arguments it cannot see
 /// — the same shape as a bug this cell's review caught (passing the wrong `q`). Built here, `ds`
 /// cannot disagree with the `(p, q)` it was built for. And the symmetry pays again: a segment
-/// endpoint's `Located` is built once per segment, so a branch end's [`branch_meet`] is never
+/// endpoint's `Located` is built once per segment, so a pierce end's [`pierce_meet`] is never
 /// re-solved per (split point × segment).
 pub(crate) enum OnLine {
     /// A point three planes name. `ds` is `dir_sign(p, q, pin)`.
@@ -242,7 +242,7 @@ pub(crate) enum OnLine {
     /// path is a plane pin. Unboxed it moved `split_at_crossings` from 23.2% of a rotated fold to
     /// 28.2%, and 12.1% of an axis-aligned one to 19.0% — with the *same trip counts*, so the cost
     /// was the width and nothing else. One allocation on the cold road buys that back.
-    Branch {
+    Pierce {
         name: NodeId,
         meet: Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>,
     },
@@ -268,7 +268,7 @@ pub(crate) enum Located<'a> {
         pin: usize,
         at: crate::tolerant::ImplicitPoint<'a, WorkingPlane>,
     },
-    Branch {
+    Pierce {
         name: NodeId,
         meet: Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>,
     },
@@ -279,7 +279,7 @@ impl Located<'_> {
     pub(crate) fn name(&self, p: usize, q: usize) -> NodeId {
         match self {
             Located::Class { pin, .. } => NodeId::three_planes(Canon3::three([p, q, *pin])),
-            Located::Branch { name, .. } => *name,
+            Located::Pierce { name, .. } => *name,
         }
     }
 }
@@ -289,7 +289,7 @@ impl OnLine {
     pub(crate) fn name(&self, p: usize, q: usize) -> NodeId {
         match self {
             OnLine::Class { pin, .. } => NodeId::three_planes(Canon3::three([p, q, *pin])),
-            OnLine::Branch { name, .. } => *name,
+            OnLine::Pierce { name, .. } => *name,
         }
     }
 }
@@ -305,7 +305,7 @@ impl OnLine {
 pub(crate) fn same_point(a: &Located<'_>, b: &OnLine) -> bool {
     match (a, b) {
         (Located::Class { pin: x, .. }, OnLine::Class { pin: y, .. }) => x == y,
-        (Located::Branch { name: x, .. }, OnLine::Branch { name: y, .. }) => x == y,
+        (Located::Pierce { name: x, .. }, OnLine::Pierce { name: y, .. }) => x == y,
         // ★ A point three planes name and a point a cylinder pins are never the same *name* — the
         // two are different variants of `NodeId`. Whether they are the same **point** is a
         // different question, and the order predicate below is what asks it.
@@ -374,12 +374,12 @@ pub(crate) fn on_line(
             pin,
             ds: dir_sign(jd, p, q, pin),
         }),
-        PointOn::Branch(name) => {
-            let NodeId::Branch { cyl, .. } = name else {
+        PointOn::Pierce(name) => {
+            let NodeId::Pierce { cyl, .. } = name else {
                 return None;
             };
-            let meet = branch_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
-            Some(OnLine::Branch {
+            let meet = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
+            Some(OnLine::Pierce {
                 name,
                 meet: Box::new(meet),
             })
@@ -404,12 +404,12 @@ pub(crate) fn locate<'j>(
             pin,
             at: jd.point(p, q, pin),
         }),
-        PointOn::Branch(name) => {
-            let NodeId::Branch { cyl, .. } = name else {
+        PointOn::Pierce(name) => {
+            let NodeId::Pierce { cyl, .. } = name else {
                 return None;
             };
-            let meet = branch_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
-            Some(Located::Branch {
+            let meet = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
+            Some(Located::Pierce {
                 name,
                 meet: Box::new(meet),
             })
@@ -487,19 +487,19 @@ fn order_located_quad(
         // ☑ Unreachable — two plane-pinned points returned through the integer road above. Spelled
         // as a decline rather than a panic or a second rational comparison nobody would exercise.
         (Located::Class { .. }, OnLine::Class { .. }) => return None,
-        (Located::Class { .. }, OnLine::Branch { meet, .. }) => sign(cmp_coord_meet_branch(
+        (Located::Class { .. }, OnLine::Pierce { meet, .. }) => sign(cmp_coord_meet_branch(
             &rat(a.name(p, q))?,
             &meet.0,
             &meet.1,
             k,
         )),
-        (Located::Branch { meet, .. }, OnLine::Class { .. }) => -sign(cmp_coord_meet_branch(
+        (Located::Pierce { meet, .. }, OnLine::Class { .. }) => -sign(cmp_coord_meet_branch(
             &rat(b.name(p, q))?,
             &meet.0,
             &meet.1,
             k,
         )),
-        (Located::Branch { meet: m1, .. }, OnLine::Branch { meet: m2, .. }) => {
+        (Located::Pierce { meet: m1, .. }, OnLine::Pierce { meet: m2, .. }) => {
             sign(cmp_coord_branch((&m1.0, &m1.1), (&m2.0, &m2.1), k))
         }
     };
@@ -522,14 +522,14 @@ fn order_located_quad(
 pub(crate) enum NodeId {
     ThreePlane([usize; 3]), // sorted triple (key into the seam map)
     /// Where two plane classes' meet line crosses a cylinder's lateral surface — the point
-    /// [`nacre_topo::VertexDef::Branch`] names, and the point the next rung splits a circle
+    /// [`nacre_topo::VertexDef::Pierce`] names, and the point the next rung splits a circle
     /// into arcs at.
     ///
     /// ★ **Two index spaces in one name.** `planes` are plane-class indices and `cyl` is a
     /// **cylinder**-class index (`crate::planes::ClassIx::Cyl`'s payload); they are separate
     /// numberings and a value from one is meaningless in the other. `reuse::canonical` already
     /// carries both kinds in one key, so the precedent is the file's, not this type's.
-    Branch {
+    Pierce {
         /// The two cutting plane classes, ascending — the [`NodeId::ThreePlane`] precedent, and
         /// the order `root` is defined against.
         planes: [usize; 2],
@@ -545,7 +545,7 @@ impl NodeId {
     /// made**, so "two spellings of one vertex are one name" holds by construction.
     ///
     /// ★★ **Sorting is *this variant's* canonicalization, not the definition of canonical** — see
-    /// [`NodeId::branch`], whose pair carries a root that a re-sort has to restate.
+    /// [`NodeId::pierce`], whose pair carries a root that a re-sort has to restate.
     ///
     /// It does **not** check for a collapsed triple. Two names being equal is a real condition
     /// with *different answers at different callers* — `arrangement::plane_ring` declines
@@ -566,14 +566,14 @@ impl NodeId {
     ///
     /// `first`/`second` are the two plane classes **in whatever order the caller solved them**;
     /// `root` is that solve's answer (`Double` for a tangency).
-    pub(crate) fn branch(
+    pub(crate) fn pierce(
         first: usize,
         second: usize,
         cyl: usize,
         root: nacre_topo::QuadRoot,
     ) -> NodeId {
         let (planes, root) = nacre_topo::QuadRoot::canonical([first, second], root);
-        NodeId::Branch { planes, cyl, root }
+        NodeId::Pierce { planes, cyl, root }
     }
 }
 
@@ -583,12 +583,12 @@ impl NodeId {
 /// `point_in_component`'s `{a, b, q}` is three planes without being any vertex of the arrangement,
 /// so a name is the wrong type for their parameter.
 ///
-/// **`None` is a branch point**, and the answer for every caller behind this door is the same one:
+/// **`None` is a pierce point**, and the answer for every caller behind this door is the same one:
 /// it has no three-plane name and none of those paths has another to give. What differs is what
 /// each does about it, and that splits in two — see [`three_plane_probes`] for the split.
 ///
 /// Sites that *dispatch* instead of declining stay out of it deliberately — [`node_coords_rat`],
-/// [`branch_point`] and [`loop_winding`]'s lexicographic scan, each with its own answer for the
+/// [`pierce_point`] and [`loop_winding`]'s lexicographic scan, each with its own answer for the
 /// other variant. ★ And one is **not** in the ring-and-segment world at all: `reuse::canonical`
 /// builds a comparison key, and its answer is that the key's vessel widens (`CanonNode`), not that
 /// the question is refused.
@@ -596,7 +596,7 @@ impl NodeId {
 /// ★★ **The gate that keeps this honest**, and the two files it exempts:
 ///
 /// ```text
-/// rg 'NodeId::(ThreePlane|Branch)' crates/ \
+/// rg 'NodeId::(ThreePlane|Pierce)' crates/ \
 ///   -g '!**/combinatorics.rs' -g '!**/reuse.rs' | grep -vE ':\s*//'
 /// ```
 ///
@@ -604,8 +604,8 @@ impl NodeId {
 /// answering — the same gate found **fifteen** of those in the previous cell with the whole suite
 /// already green, and it costs nothing and does not break on a rename.
 ///
-/// ★★★ **Empty again since [`branch_name`] exists** (2026-08-22). Three sites in `arrangement`
-/// used to open the `Branch` variant directly — `arc_split_witness`' `separates` closure and two
+/// ★★★ **Empty again since [`pierce_name`] exists** (2026-08-22). Three sites in `arrangement`
+/// used to open the `Pierce` variant directly — `arc_split_witness`' `separates` closure and two
 /// inside `split_circles` — because this door answers only the three-plane half and its twin did
 /// not exist. The seam table becoming a fourth consumer is what finally paid for the twin; all
 /// four go through it now.
@@ -616,25 +616,25 @@ impl NodeId {
 pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
     match n {
         NodeId::ThreePlane(t) => Some(t),
-        NodeId::Branch { .. } => None,
+        NodeId::Pierce { .. } => None,
     }
 }
 
-/// [`three_plane_name`]'s twin — the payload of a **branch** name, `None` for a three-plane one.
+/// [`three_plane_name`]'s twin — the payload of a **pierce** name, `None` for a three-plane one.
 ///
 /// The three questions its consumers ask are all payload reads: does this root *separate* (a
 /// tangency's `Double` does not), which cylinder is the point on, where does it sort along the
 /// meet line. Spelling the variant at those sites instead is what the gate above forbids — the
 /// door is total over the enum, so a third variant becomes a compile error here rather than a
 /// silent fall-through at four call sites.
-pub(crate) fn branch_name(n: NodeId) -> Option<([usize; 2], usize, nacre_topo::QuadRoot)> {
+pub(crate) fn pierce_name(n: NodeId) -> Option<([usize; 2], usize, nacre_topo::QuadRoot)> {
     match n {
         NodeId::ThreePlane(_) => None,
-        NodeId::Branch { planes, cyl, root } => Some((planes, cyl, root)),
+        NodeId::Pierce { planes, cyl, root } => Some((planes, cyl, root)),
     }
 }
 
-/// **The names of a list of *candidates*, branch points dropped.**
+/// **The names of a list of *candidates*, pierce points dropped.**
 ///
 /// ★★★ **This is the licence, and its name is where the licence is stated.** Behind the door there
 /// are two shapes and only one of them may lose a member:
@@ -658,18 +658,18 @@ pub(crate) fn three_plane_probes(nodes: impl IntoIterator<Item = NodeId>) -> Vec
 /// ★ A traced segment's ends are always plane triples, so this had been a bare `usize` (the third
 /// plane class) everywhere. The arc split puts a **cylinder** crossing in the middle of a segment,
 /// and that point has no third *plane* — what pins it is the quadric, and its name is the
-/// [`NodeId::Branch`] the edge already carries in its endpoint list. So the pin says **which kind**
+/// [`NodeId::Pierce`] the edge already carries in its endpoint list. So the pin says **which kind**
 /// and the name is read from beside it, rather than a second copy living here.
 ///
 /// ★★ The two arms are two *orders*, not two spellings of one: [`order_along`] reads a class
-/// through `orient3d` × `dir_sign` (integer predicates), and a branch point through the
+/// through `orient3d` × `dir_sign` (integer predicates), and a pierce point through the
 /// `a + b√c` tower. Naming the kind is what makes the second reachable at all — a `usize` had
 /// nowhere to say "not a plane".
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum EndPin {
     /// The third plane class: the point is `P ∩ wall ∩ this`.
     Class(usize),
-    /// A cylinder crossing: the point is the [`NodeId::Branch`] this endpoint is named by.
+    /// A cylinder crossing: the point is the [`NodeId::Pierce`] this endpoint is named by.
     Cylinder,
 }
 
@@ -698,7 +698,7 @@ pub(crate) enum Carrier {
         wall: usize,
         /// The travel sense along `n_P × n_wall`, when the **endpoints** cannot supply it.
         ///
-        /// ★★ An arc split cuts a segment at branch points, and `order_along` speaks three-plane
+        /// ★★ An arc split cuts a segment at pierce points, and `order_along` speaks three-plane
         /// classes only — so a sub-segment with a cut end has nothing to derive its sense from.
         /// The split does know it (it sorted those points along the line), so it carries it here
         /// rather than leaving a hole for [`edge_dir`] to fall into. `None` on an edge whose two
@@ -946,12 +946,12 @@ pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Opt
 /// **What pins a named point on the line `a ∩ b`** (cell ⑫) — the one rule, read from the name.
 ///
 /// A three-plane name is pinned by whichever of its planes cuts the line ([`pin_on_line`]). A
-/// branch name whose pair *is* the line's is pinned by its cylinder ([`EndPin::Cylinder`] — the
-/// quadric's root along that very line); a branch name with another pair is a point the line
+/// pierce name whose pair *is* the line's is pinned by its cylinder ([`EndPin::Cylinder`] — the
+/// quadric's root along that very line); a pierce name with another pair is a point the line
 /// passes through by coincidence, pinned by whichever of that pair's planes cuts the line.
 ///
 /// ★ Why it exists: a segment's endpoint travels as a (name, pin) pair, and the alias table can
-/// fold the name onto a representative of another **variant** — a tangent corner's `Branch` onto
+/// fold the name onto a representative of another **variant** — a tangent corner's `Pierce` onto
 /// the `ThreePlane` of its planes with the class through it. The pin is a fact about the
 /// representative, so it is derived again from it, here, rather than carried across the fold.
 pub(crate) fn pin_for(
@@ -962,7 +962,7 @@ pub(crate) fn pin_for(
 ) -> Option<EndPin> {
     match name {
         NodeId::ThreePlane(t) => pin_on_line(jd, a, b, t).map(EndPin::Class),
-        NodeId::Branch { planes, .. } => {
+        NodeId::Pierce { planes, .. } => {
             let mut line = [a, b];
             line.sort_unstable();
             if planes == line {
@@ -1152,7 +1152,7 @@ pub(crate) fn dir_at(
     );
     match &e.carrier {
         // ★ The carried sense first, and only then the endpoints. This used to say the endpoints
-        // *cannot* answer a cut end — that was true while a branch point had no order, and
+        // *cannot* answer a cut end — that was true while a pierce point had no order, and
         // [`order_pinned`] has since given it one. What is left is the better reason: the sense is
         // the **splitter's own statement** about a piece it made, taken once for the whole segment
         // and handed to every sub-segment, rather than re-derived per piece from two names.
@@ -1168,7 +1168,7 @@ pub(crate) fn dir_at(
         }
         Carrier::Arc(a) => arc_at(jd, p, a, node),
         // A ruling's direction is `±m` at both ends — the carrier states the travel, no endpoint
-        // order is asked (its ends are branch points, which have no third plane to order by).
+        // order is asked (its ends are pierce points, which have no third plane to order by).
         Carrier::Ruling(r) => Ok(EdgeDir::Ruling(Box::new(RulingDir {
             cyl: r.cyl,
             side: r.side,
@@ -1180,7 +1180,7 @@ pub(crate) fn dir_at(
 
 /// **An arc's direction of travel at one of its ends** — the curved half of [`dir_at`].
 ///
-/// Everything here is a *cache of the node's name*: [`branch_meet`] re-solves the point from the
+/// Everything here is a *cache of the node's name*: [`pierce_meet`] re-solves the point from the
 /// name rather than taking a producer's coordinate, and the circle's centre is the axis point at
 /// this plane's parameter. The direction itself is never materialized — [`turn`] reads it through
 /// one `a + b√c` sign, and the three booleans below are what orient that sign.
@@ -1191,7 +1191,7 @@ fn arc_at(
     node: NodeId,
 ) -> Result<EdgeDir, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
-    // ★★ **Two causes, two names.** `branch_meet` folds four `None`s into one, and they are not the
+    // ★★ **Two causes, two names.** `pierce_meet` folds four `None`s into one, and they are not the
     // same fact: a three-plane node on an arc is a *naming* failure (the split shipped the
     // two-names case it exists to refuse), while a class with no rational description, a meet that
     // does not solve, and a root the meet does not have are all "the exact route declined". Asking
@@ -1199,10 +1199,10 @@ fn arc_at(
     //
     // ★ Only the first is reachable from here: the other three would have stopped the split that
     // built this arc, since it re-solves the same pair of classes for the same cylinder.
-    let NodeId::Branch { .. } = node else {
+    let NodeId::Pierce { .. } = node else {
         return Err(reject(RejectReason::RingNaming));
     };
-    let at = branch_meet(jd, a.cyl, &a.def, node).ok_or_else(undecided)?;
+    let at = pierce_meet(jd, a.cyl, &a.def, node).ok_or_else(undecided)?;
     let coeffs = class_coeffs_rat(jd, p).ok_or_else(undecided)?;
     // The circle's centre: where the axis pierces this plane. ★ The canonical sign the coefficients
     // carry cancels in the parameter (numerator and denominator both flip), so this one does not
@@ -1521,7 +1521,7 @@ fn turn_between(
 /// ★★ **What arcs will widen, and what they will not.** A circle's tangent rides no plane, so an
 /// arc arrives as a direction this signature cannot spell: what grows is the **input type**, not
 /// the skeleton around it — the identity above becomes a cross product with one quadratic factor,
-/// whose sign closes over `QuadVal::sign` (the tangent `m × (p − o)` is *linear* in the branch
+/// whose sign closes over `QuadVal::sign` (the tangent `m × (p − o)` is *linear* in the pierce
 /// point, so no biquadratic is needed; two tangents at one vertex would be quadratic, and that is
 /// two circles meeting, already refused as `CylinderPairContact`).
 ///
@@ -1585,7 +1585,7 @@ pub(crate) fn turn(
         //
         // so the whole turn is `sign(d · (x − c))` — **one** `a + b√c` question, and
         // `quad::plane_side` is exactly it: the plane with normal `d` through the centre, measured
-        // at the branch point.
+        // at the pierce point.
         (EdgeDir::Line { carrier, sense }, EdgeDir::Arc(arc)) => {
             sense * arc_side(jd, p, *carrier, arc)?
         }
@@ -2097,7 +2097,7 @@ pub(crate) fn trace_input(
                 // ★★★★★ **Its holes are named like every other face's.** A fuse can burn a hole
                 // into a band (a boss straddling a plate's wall), and that loop is an ordinary
                 // closed ring whose corners are `plane ∩ plane ∩ cylinder` — the shape
-                // [`branch_name_from_def`] restates. The tracer needs it to answer *per angle*
+                // [`pierce_name_from_def`] restates. The tracer needs it to answer *per angle*
                 // instead of claiming the whole circle, and naming it here is what puts the lateral
                 // on the same road as everything else: one walk ([`ring_against_plane`]), not a
                 // second description of the same loop.
@@ -2148,7 +2148,7 @@ pub(crate) fn hole_rings(
         .collect()
 }
 
-/// A loop's vertices as names — a three-plane triple, or a branch point where a cylinder is one of
+/// A loop's vertices as names — a three-plane triple, or a pierce point where a cylinder is one of
 /// the three surfaces (the face's own, or a neighbour's).
 ///
 /// ★ Cell ⑪: **a plane vertex names itself, not the loop.** Its name is [`canonical_triple`] of the
@@ -2218,13 +2218,13 @@ fn loop_triples(
         // ★★★★★ **A curved neighbour is described now, not declined.** The two questions are
         // **independent**: edge `i`'s carrier is `b`'s business, and the corner's name is both
         // neighbours' — a ruling can arrive at this corner and a plane leave it. What this road
-        // lacked was the vertex's restatement into class space ([`branch_name_from_def`] — the
+        // lacked was the vertex's restatement into class space ([`pierce_name_from_def`] — the
         // vertex already carries its own name) and somewhere to write a curved carrier
         // ([`NamedRing`]'s `Wall`). The one curved loop answered before this point is the circle.
         //
         // ★★★★★ **And the face itself may be the cylinder now.** A lateral face's *hole* is a loop
         // like any other — a rectangle of two arcs and two rulings in the chart — and its corners
-        // are `plane ∩ plane ∩ cylinder`, the very shape [`branch_name_from_def`] restates. The
+        // are `plane ∩ plane ∩ cylinder`, the very shape [`pierce_name_from_def`] restates. The
         // only loop of a lateral face this road cannot walk *whole* is its **outer** one, whose
         // slit edges are self-adjacent (`other` gives back `p`) and whose corners are therefore
         // not three-surface points; `lateral_cycles` cuts it at the slits first.
@@ -2265,11 +2265,11 @@ fn loop_triples(
             debug_assert_eq!(prev.forward, hes[i].forward, "one sense about the axis");
             continue;
         }
-        let branch = match plane_ix[p] {
+        let pierce = match plane_ix[p] {
             ClassIx::Plane(near) => match (plane_ix[a], plane_ix[b]) {
                 (ClassIx::Cyl(k), ClassIx::Plane(far)) | (ClassIx::Plane(far), ClassIx::Cyl(k)) => {
                     Some(
-                        branch_name_from_def(model, jd, corner, k, [near, far])
+                        pierce_name_from_def(model, jd, corner, k, [near, far])
                             .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
                     )
                 }
@@ -2282,7 +2282,7 @@ fn loop_triples(
             },
             ClassIx::Cyl(k) => match (plane_ix[a], plane_ix[b]) {
                 (ClassIx::Plane(x), ClassIx::Plane(y)) => Some(
-                    branch_name_from_def(model, jd, corner, k, [x, y])
+                    pierce_name_from_def(model, jd, corner, k, [x, y])
                         .ok_or_else(|| reject(RejectReason::CurvedOperandBoundary))?,
                 ),
                 // A lateral's loop running along a second lateral is M6b's cylinder pair too.
@@ -2294,7 +2294,7 @@ fn loop_triples(
         walls.push(match (plane_ix[b], plane_ix[p]) {
             (ClassIx::Plane(w), _) => crate::boolean::Wall::Plane(w),
             (ClassIx::Cyl(k), ClassIx::Plane(near)) => {
-                let end = branch.expect("a curved edge's corner is a branch point");
+                let end = pierce.expect("a curved edge's corner is a pierce point");
                 curved_wall(model, jd, cyls, &hes[i], k, near, end)?
             }
             (ClassIx::Cyl(_), ClassIx::Cyl(_)) => {
@@ -2311,7 +2311,7 @@ fn loop_triples(
             }
             _ => None,
         });
-        if let Some(n) = branch {
+        if let Some(n) = pierce {
             out.push(n);
             continue;
         }
@@ -2389,7 +2389,7 @@ fn loop_triples(
 }
 
 /// **Canonical → outward**: the sign that carries a class's `world_rat` name to the frame
-/// `orient3d` answers in, for the predicates that read the name ([`side_of`]'s branch arm,
+/// `orient3d` answers in, for the predicates that read the name ([`side_of`]'s pierce arm,
 /// [`arc_departure_side`]).
 ///
 /// ★★★★★ **`world_rat` is the plane's *name*, not an oriented normal.** `orient3d` answers
@@ -2413,7 +2413,7 @@ fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
     Some(k * jd.planes[q].frame_sign)
 }
 
-/// **Which side of `q` an arc leaves to** (E3-c): the arc starts at `node` — a branch point of
+/// **Which side of `q` an arc leaves to** (E3-c): the arc starts at `node` — a pierce point of
 /// cylinder `cyl` on the line `q` cuts — and travels counter-clockwise about the axis when `ccw`.
 /// Its tangent there is `±m̂ × (a − c)`, and the side of `q` that points to is the side the whole
 /// excursion lies on (a circle meets a plane in two points).
@@ -2437,7 +2437,7 @@ pub(crate) fn arc_departure_side(
 ) -> Option<i8> {
     let def = &cyls.get(cyl)?.def;
     let w = class_coeffs_rat(jd, q)?;
-    let (line, sv) = branch_meet(jd, cyl, def, node)?;
+    let (line, sv) = pierce_meet(jd, cyl, def, node)?;
     let rs = crate::arrangement::ruling_side(&w, def, (&line, &sv))?;
     Some(outward_fix(jd, q)? * if ccw { -rs } else { rs })
 }
@@ -2456,16 +2456,16 @@ pub(crate) fn arc_departure_side(
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
 /// *difference* (does this edge cross `W`?) is frame-free and needs no correction.
-/// ★★ **`None` where the node is not three planes.** A [`NodeId::Branch`] *is* a point, but its
+/// ★★ **`None` where the node is not three planes.** A [`NodeId::Pierce`] *is* a point, but its
 /// coordinates are quadratic-irrational and `orient3d` is the plane-triple judge — so this says
 /// "not mine to answer" rather than guessing. Callers turn that into their own vocabulary (the
 /// tracer a [`crate::DeclineKind`], the ray caster a reject), which is why it is not a reject here.
 ///
 /// ★★★★★ **That arm used to be unexercised, and the rung that took `plane_ring`'s checks away
 /// fired it — with a wrong sign.** The scan road now walks rings whose corners a cylinder made,
-/// and the first thing that came back was a branch corner on the *opposite* side of its own face's
+/// and the first thing that came back was a pierce corner on the *opposite* side of its own face's
 /// plane from its four plane-named neighbours (measured: `sides = [1, -1, -1, -1, -1, 1]`, the two
-/// `1`s being the branch nodes). The scan read those as crossings that are not there and named one
+/// `1`s being the pierce nodes). The scan read those as crossings that are not there and named one
 /// with a plane triple that never met, and `orient3d` answered `D = 0`. ★ I reported that panic as
 /// a hole upstream in the naming; every ring name measured correct and the fault was here.
 pub(crate) fn side_of(
@@ -2476,13 +2476,13 @@ pub(crate) fn side_of(
 ) -> Option<i8> {
     match n {
         NodeId::ThreePlane(t) => Some(jd.orient3d(t[0], t[1], t[2], q)),
-        // ★★ **A branch point's side of a plane is one `a + b√c` sign.** The point is
+        // ★★ **A pierce point's side of a plane is one `a + b√c` sign.** The point is
         // `line.base() + s·line.dir()`, the plane's coefficients are rational, and
         // `quad::plane_side` is that sign — the same predicate `ruling_side` reads. `None` is a
         // missing description (a class with no world name, a cylinder with no world statement),
         // never a shape this cannot answer.
-        NodeId::Branch { cyl, .. } => {
-            let (line, sv) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
+        NodeId::Pierce { cyl, .. } => {
+            let (line, sv) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
             let co = class_coeffs_rat(jd, q)?;
             let fix = outward_fix(jd, q)?;
             Some(
@@ -2520,8 +2520,8 @@ pub(crate) enum RingWalk {
     AllOn,
     /// A node whose side this walk cannot answer.
     ///
-    /// ★★ **It used to mean "a [`NodeId::Branch`]", and it does not any more.** [`side_of`]'s
-    /// branch arm answers, so a cylinder's corner is read like any other; what is left here is
+    /// ★★ **It used to mean "a [`NodeId::Pierce`]", and it does not any more.** [`side_of`]'s
+    /// pierce arm answers, so a cylinder's corner is read like any other; what is left here is
     /// that arm's own `None` — a class with no narrow rational description, a cylinder missing
     /// from the table. ☑ Still never produced: measured **0** across the workspace suite.
     Unnameable,
@@ -2809,7 +2809,7 @@ pub(crate) fn every_ray(
     // front.** That is a real shift and it is spelled rather than glossed: a ring carrying a node
     // the walk cannot read used to be refused here even when no ray was cast, and is now refused
     // by the first ray that actually asks. The two differ only when *every* `qa` answers `AllOn`
-    // — a ring lying in both cut planes — and that pairs with a branch node nothing produces here
+    // — a ring lying in both cut planes — and that pairs with a pierce node nothing produces here
     // yet, so the difference is unreachable twice over. Recorded because it will stop being.
     //
     // ★ A **ring**, not a probe list: `ring_against_plane` reads it as a cyclic sign sequence, so
@@ -2827,19 +2827,19 @@ pub(crate) fn every_ray(
         // on the same line, so `a·b < 0` iff `From` and `To` lie on opposite sides of `Q_a` — which
         // is what the walk already knows from their sides. The parallel guard goes with it: an edge
         // whose line is parallel to `P ∩ Q_a` has both endpoints on one side and is not a crossing.
-        // ★ No cylinder table on this road: a branch node in a **result** cell's ring
+        // ★ No cylinder table on this road: a pierce node in a **result** cell's ring
         // declines here exactly as it did before, and threading one is the arc road's business.
         // ★ The meet here is a **line** (`p ∩ Q_a`), and two points fix a line — so a straight
         // edge between two on-line nodes is on it and a curved one is not. Same reading as
         // `arrangement::trace_transversal_face`'s, which walks the same kind of ring.
         // ★ An arc between two on-line nodes would need a cylinder table to side (E3-c's
         // `arc_departure_side`), and this road carries none — `None` is the honest answer,
-        // and the walk's `Unnameable` is the same refusal a branch node already meets here.
+        // and the walk's `Unnameable` is the same refusal a pierce node already meets here.
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
         let features = match ring_against_plane(jd, &[], &nodes, qa, on_meet) {
             RingWalk::Met(f) => f,
-            RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
+            RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
             RingWalk::AllOn => continue, // the whole ring lies on `Q_a`
         };
         let qb = *v
@@ -2963,7 +2963,7 @@ pub(crate) fn segment_meets_face(
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
         let features = match ring_against_plane(jd, &[], &nodes, w, on_meet) {
             RingWalk::Met(f) => f,
-            RingWalk::Unnameable => return Err(reject(RejectReason::BranchVertexUnnamed)),
+            RingWalk::Unnameable => return Err(reject(RejectReason::PierceVertexUnnamed)),
             // The whole ring lies on `w`: this face's boundary is the line itself, and the
             // alternation has no crossings to read. Refusing to guess.
             RingWalk::AllOn => return Err(reject(RejectReason::PointOnRing)),
@@ -3064,7 +3064,7 @@ fn point_on_ring(
             .carrier
             .wall()
             .ok_or_else(|| reject(RejectReason::RingNaming))?;
-        // ☑ A literal triple, so `side_of`'s branch arm is unreachable here and the empty
+        // ☑ A literal triple, so `side_of`'s pierce arm is unreachable here and the empty
         // cylinder table is never consulted — this asks about a *point*, not a ring.
         if side_of(jd, &[], NodeId::three_planes(Canon3::three(v)), r) != Some(0) {
             continue; // `v` is not even on the edge's line
@@ -3082,16 +3082,16 @@ fn point_on_ring(
     Ok(false)
 }
 
-/// A ring the rational chart road cannot name: a branch corner (no rational coordinates) or an
+/// A ring the rational chart road cannot name: a pierce corner (no rational coordinates) or an
 /// arc step (no straight chart image). Such a ring takes [`point_in_mixed_ring`], which walks it
 /// step by step in ℚ(√c) — the one predicate, asked by the circle arm of the arrangement's `cell_in_cell` of a
 /// centre and by its polygon arm of a node.
 pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
     ring.iter()
-        .any(|e| matches!(e.carrier, Carrier::Arc(_)) || branch_name(e.node).is_some())
+        .any(|e| matches!(e.carrier, Carrier::Arc(_)) || pierce_name(e.node).is_some())
 }
 
-/// **Parity of a rational point against a ring with branch corners and arc steps** — the mixed
+/// **Parity of a rational point against a ring with pierce corners and arc steps** — the mixed
 /// sibling of the chart road, asked only when `node_coords_rat` cannot name every corner.
 ///
 /// The ray runs along the chart's own first axis (`Chart2dRat::axes` — one decision rule, not a
@@ -3099,13 +3099,13 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
 /// answers by its carrier:
 ///
 /// * a **line step** compares in ℚ(√c): the corners' chart coordinates are `QuadVal`s (a
-///   rational corner lifted by `from_rat`, a branch corner evaluated along its canonical meet
-///   line — [`branch_meet`]), the y-straddle is two signs, and "right of the
+///   rational corner lifted by `from_rat`, a pierce corner evaluated along its canonical meet
+///   line — [`pierce_meet`]), the y-straddle is two signs, and "right of the
 ///   probe" is the 2-D orientation `(b−a) × (q−a)` — products stay in one radical because a
 ///   step carries at most one circle's corners; two *different* circles' corners on one step
 ///   make `checked_mul` refuse the radical mismatch and the whole answer abstains honestly;
 /// * an **arc step** solves ray × circle exactly — the ray's plane `{ e2·p = q.y }` against the
-///   class plane and the cylinder is [`nacre_scalar::quad::plane_plane_cylinder`], the branch
+///   class plane and the cylinder is [`nacre_scalar::quad::plane_plane_cylinder`], the pierce
 ///   shape — and asks each root: right of the probe (chart-x as a `QuadVal`), and inside the
 ///   arc's CCW span (`circular_order_about_seam` on the carrier's own `end` pair, cyclic with
 ///   the wrap arm).
@@ -3376,7 +3376,7 @@ fn point_in_mixed_ring_inner(
     let (e1, e2) = chart.axes();
     let q = chart.project(probe)?;
     let (qx, qy) = (q[0], q[1]);
-    // The ring's cylinders, for evaluating branch corners — an arc or a ruling both carry theirs.
+    // The ring's cylinders, for evaluating pierce corners — an arc or a ruling both carry theirs.
     // The class table is the identity's source; a chord-bounded ring carries no cylinder of its
     // own (E3-b), so the ring's carriers cannot be the door.
     let def_of = |cyl: usize| cyls.get(cyl).map(|c| &c.def);
@@ -3387,9 +3387,9 @@ fn point_in_mixed_ring_inner(
     };
     // A corner's chart coordinates, as `QuadVal`s.
     let corner = |nd: NodeId| -> Option<[QuadVal; 2]> {
-        if let Some((_, cyl, _)) = branch_name(nd) {
+        if let Some((_, cyl, _)) = pierce_name(nd) {
             let def = def_of(cyl)?;
-            let (line, s) = branch_meet(jd, cyl, def, nd)?;
+            let (line, s) = pierce_meet(jd, cyl, def, nd)?;
             let (b, d) = (line.base(), line.dir());
             let coord = |e: &[Rat; 3]| -> Option<QuadVal> {
                 QuadVal::from_rat(dot(&b, e)?).checked_add(&s.checked_mul_rat(dot(&d, e)?)?)
@@ -3407,7 +3407,7 @@ fn point_in_mixed_ring_inner(
         let (na, nb) = (ring[i].node, ring[(i + 1) % k].node);
         match &ring[i].carrier {
             // A ruling is a straight step like a plane step — same y-straddle, same orient2d;
-            // its corners are branch points, which `corner` already evaluates exactly.
+            // its corners are pierce points, which `corner` already evaluates exactly.
             Carrier::Plane { .. } | Carrier::Ruling(_) => {
                 let a = corner(na)?;
                 let b = corner(nb)?;
@@ -3487,8 +3487,8 @@ fn point_in_mixed_ring_inner(
                 // same convention every arc consumer reads (membership is direction-agnostic,
                 // so the *set* is what the CCW pair names).
                 let (lo_nd, hi_nd) = if arc.ccw { (na, nb) } else { (nb, na) };
-                let e_lo = branch_meet(jd, arc.cyl, &arc.def, lo_nd)?;
-                let e_hi = branch_meet(jd, arc.cyl, &arc.def, hi_nd)?;
+                let e_lo = pierce_meet(jd, arc.cyl, &arc.def, lo_nd)?;
+                let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?;
                 for root in s {
                     // Right of the probe along the ray: chart-x of the root.
                     let (bse, dir) = (line.base(), line.dir());
@@ -3608,7 +3608,7 @@ pub(crate) enum BoundEdges {
 pub(crate) enum LateralLoop {
     /// A whole-circle rim: the plane class it rides (⊥ to the axis).
     Circle(usize),
-    /// A ring of arcs (on ⊥ classes) and rulings (on ∥ classes), its corners branch names.
+    /// A ring of arcs (on ⊥ classes) and rulings (on ∥ classes), its corners pierce names.
     Ring(Vec<RingEdge>),
 }
 
@@ -3781,7 +3781,7 @@ fn face_circle<'a>(
 ///
 /// ★ **And two points per chord** (cell ③): a cap the wall cuts *off* the diameter can be a
 /// segment thinner than any step from the centre reaches (an offset boss's Common, 0.2 deep
-/// against `r/2 = 0.25`), and its corners are branch names the vertex probe drops — the first
+/// against `r/2 = 0.25`), and its corners are pierce names the vertex probe drops — the first
 /// face with no witness at all. On the line through the centre along a chord's normal `n`,
 /// `o − t·n`, the chord is at `t = q = (n·o + d)/|n|²` and the circle at `t² = T = r²/|n|²`
 /// (both rational); the far side's point `t = 2qT/(q² + T)` lies beyond the chord (`|t| > |q|`
@@ -4056,10 +4056,10 @@ pub(crate) fn probe_dirs(m: &[nacre_scalar::Rat; 3]) -> Vec<[nacre_scalar::Rat; 
     dirs
 }
 
-/// **Coordinate probes at a component's rational branch corners** (cell ⑩) — the corners a
+/// **Coordinate probes at a component's rational pierce corners** (cell ⑩) — the corners a
 /// prism with arcs has where its walls meet its cylinders (a slot's, a fillet's, a D-prism's:
 /// no three-plane name anywhere, and [`coord_probes`]' cap witness is not always on the face).
-/// A corner whose root is rational ([`branch_coords_rat`]) is a point of the boundary as exact as
+/// A corner whose root is rational ([`pierce_coords_rat`]) is a point of the boundary as exact as
 /// a named vertex, cast along its own cylinder's directions. Each corner once.
 pub(crate) fn corner_probes(
     jd: &Judge<'_, WorkingPlane>,
@@ -4072,10 +4072,10 @@ pub(crate) fn corner_probes(
         if !seen.insert(n) {
             continue;
         }
-        let Some((_, cyl, _)) = branch_name(n) else {
+        let Some((_, cyl, _)) = pierce_name(n) else {
             continue;
         };
-        let Some(p) = branch_coords_rat(jd, cyls, n) else {
+        let Some(p) = pierce_coords_rat(jd, cyls, n) else {
             continue;
         };
         let Some(c) = cyls.get(cyl) else {
@@ -4346,7 +4346,7 @@ pub(crate) fn point_in_faces_rat(
                 BoundEdges::Ring(r) => {
                     // A mixed ring forks to the rational walk here exactly as the named
                     // road forks: the crossing x is already rational, and the chart-ring
-                    // derivation below has no spelling for a branch corner or an arc step.
+                    // derivation below has no spelling for a pierce corner or an arc step.
                     if ring_is_mixed(r) {
                         return Ok(point_in_mixed_ring(jd, cyls, &coeffs, &x, r));
                     }
@@ -4364,14 +4364,14 @@ pub(crate) fn point_in_faces_rat(
                     if r.len() < 3 {
                         return Err(reject(RejectReason::DegenerateRing));
                     }
-                    // The branch check is spelled before the chart rather than left to
+                    // The pierce check is spelled before the chart rather than left to
                     // `node_coords_rat`'s `None`, so an unnamed vertex is reported as itself and
                     // not as arithmetic that ran out of room — the same split `every_ray` makes.
                     let nodes: Vec<NodeId> = r
                         .iter()
                         .map(|e| three_plane_name(e.node).map(NodeId::ThreePlane))
                         .collect::<Option<_>>()
-                        .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
+                        .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?;
                     let ring2 = chart.ring(jd, &nodes).ok_or_else(not_rational)?;
                     Ok(match point_in_ring_2d_rat(x2, &ring2) {
                         RingSide::Inside => Some(true),
@@ -4480,23 +4480,23 @@ fn rim_plane(
     Some([m[0], m[1], m[2], d0])
 }
 
-/// The axis parameter of the ⊥ class among a branch corner's two naming planes — the `z` of
+/// The axis parameter of the ⊥ class among a pierce corner's two naming planes — the `z` of
 /// the arc that ends there, or of a ruling piece's end. Exactly one of the two is ⊥ in this
 /// population (two ⊥ planes never meet, and [`crate::planes::axis_param_of_plane`] answers only
 /// for `n · m ≠ 0`); `None` names a corner without one — a tilted cut (M6-3) or a three-plane
-/// name where a branch was expected.
+/// name where a pierce was expected.
 fn corner_axis_param(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
 ) -> Option<nacre_scalar::Rat> {
-    let (planes, _, _) = branch_name(n)?;
+    let (planes, _, _) = pierce_name(n)?;
     planes
         .iter()
         .find_map(|&c| crate::planes::axis_param_of_plane(&class_coeffs_rat(jd, c)?, def))
 }
 
-/// The ∥ class among a branch corner's naming planes — the wall a ruling piece ending there
+/// The ∥ class among a pierce corner's naming planes — the wall a ruling piece ending there
 /// rides: the one whose normal is ⊥ to the axis (`n · m = 0`), through the axis or offset from
 /// it (cell ③); the other name is the ⊥ class the arc rides.
 fn corner_wall_class(
@@ -4504,7 +4504,7 @@ fn corner_wall_class(
     def: &nacre_topo::CylinderDef,
     n: NodeId,
 ) -> Option<usize> {
-    let (planes, _, _) = branch_name(n)?;
+    let (planes, _, _) = pierce_name(n)?;
     let m = def.dir();
     planes.iter().copied().find(|&c| {
         class_coeffs_rat(jd, c).is_some_and(|w| {
@@ -4576,8 +4576,8 @@ pub(crate) fn loop_parity(
                             } else {
                                 (e.to, e.node)
                             };
-                            let e_lo = branch_meet(jd, arc.cyl, &arc.def, lo_nd)?;
-                            let e_hi = branch_meet(jd, arc.cyl, &arc.def, hi_nd)?;
+                            let e_lo = pierce_meet(jd, arc.cyl, &arc.def, lo_nd)?;
+                            let e_hi = pierce_meet(jd, arc.cyl, &arc.def, hi_nd)?;
                             let Some(span) = arc_span(&arc.def, &e_lo, &e_hi, &(meet.clone(), *s))
                             else {
                                 // A seam tie (the root on the seam, two seam ends, a zero span)
@@ -4751,11 +4751,11 @@ pub(crate) fn point_in_component(
                 let inside = |b: &BoundEdges| -> Result<Option<bool>, BoolError> {
                     match b {
                         BoundEdges::Ring(r) => {
-                            // A mixed ring (an arc step, a branch corner) takes the
+                            // A mixed ring (an arc step, a pierce corner) takes the
                             // rational road: the crossing X is a rational three-plane
                             // point, the ring is walked by its carriers, and every tie
                             // abstains for the next probe. The named walk cannot read a
-                            // branch corner at all - letting it try would answer
+                            // pierce corner at all - letting it try would answer
                             // `RingNaming`, a false name for the cause.
                             if ring_is_mixed(r) {
                                 let Some(coeffs) = class_coeffs_rat(jd, q) else {
@@ -4850,7 +4850,7 @@ pub(crate) fn point_in_component(
 /// [`loop_winding`]'s lexicographic scan orders by.
 ///
 /// ★★★ **The two arms are not two widths of one thing, they are two *kinds*.** A three-plane node
-/// is the rational meet of three planes; a branch node's coordinate is `a + b√c` and no rational
+/// is the rational meet of three planes; a pierce node's coordinate is `a + b√c` and no rational
 /// vessel holds it. That is why this is an enum and not a `[Rat; 3]` with a decline: the second
 /// arm is not a precision failure to be lifted, it is a different number.
 enum CoordKey {
@@ -4860,17 +4860,17 @@ enum CoordKey {
     /// The point a plane pair cuts out of a cylinder: `base + s·dir` with `s = a + b√c`.
     /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
     /// common case.
-    Branch(Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>),
+    Pierce(Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>),
 }
 
 /// Build one ring node's key.
 ///
 /// ★ **The cylinder comes from the class table.** The name says which cylinder
-/// (`NodeId::Branch` carries the class), and the table's def is the statement every carrier's
-/// def is a clone of. This used to search the ring's own arc/ruling carriers instead — "a branch
+/// (`NodeId::Pierce` carries the class), and the table's def is the statement every carrier's
+/// def is a clone of. This used to search the ring's own arc/ruling carriers instead — "a pierce
 /// node is an arc endpoint" — which a **chord** refuted (E3-b): a cell bounded by a cap's chord
-/// alone has branch corners and only plane carriers, and the search refused an honestly-named
-/// point (`BranchVertexUnnamed` on the straddling flush corpus, measured).
+/// alone has pierce corners and only plane carriers, and the search refused an honestly-named
+/// point (`PierceVertexUnnamed` on the straddling flush corpus, measured).
 fn coord_key(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -4878,21 +4878,21 @@ fn coord_key(
     i: usize,
 ) -> Result<CoordKey, BoolError> {
     let node = ring[i].node;
-    let NodeId::Branch { cyl, .. } = node else {
+    let NodeId::Pierce { cyl, .. } = node else {
         // A `match` and not a fallback: a third variant must light this up rather than fall in
         // here (`let`-`else` is what hid a new variant once already).
         return match node {
             NodeId::ThreePlane(t) => Ok(CoordKey::Three(t)),
-            NodeId::Branch { .. } => unreachable!("the let-else above took every branch node"),
+            NodeId::Pierce { .. } => unreachable!("the let-else above took every pierce node"),
         };
     };
     let def = &cyls
         .get(cyl)
-        .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?
+        .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?
         .def;
     let (line, s) =
-        branch_meet(jd, cyl, def, node).ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
-    Ok(CoordKey::Branch(Box::new((line, s))))
+        pierce_meet(jd, cyl, def, node).ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+    Ok(CoordKey::Pierce(Box::new((line, s))))
 }
 
 /// Order two ring nodes along one world axis — `+1` when `a`'s coordinate is the larger.
@@ -4923,19 +4923,19 @@ fn cmp_key(
     };
     Ok(match (a, b) {
         (CoordKey::Three(x), CoordKey::Three(y)) => jd.cmp_coord(*x, *y, axis),
-        (CoordKey::Three(x), CoordKey::Branch(b)) => {
+        (CoordKey::Three(x), CoordKey::Pierce(b)) => {
             sign(quad::cmp_coord_meet_branch(&meet(*x)?, &b.0, &b.1, axis))
         }
-        (CoordKey::Branch(b), CoordKey::Three(y)) => {
+        (CoordKey::Pierce(b), CoordKey::Three(y)) => {
             -sign(quad::cmp_coord_meet_branch(&meet(*y)?, &b.0, &b.1, axis))
         }
-        (CoordKey::Branch(a), CoordKey::Branch(b)) => {
+        (CoordKey::Pierce(a), CoordKey::Pierce(b)) => {
             sign(quad::cmp_coord_branch((&a.0, &a.1), (&b.0, &b.1), axis))
         }
     })
 }
 
-/// **The branch nodes lying strictly between two ring nodes, in ring order** — the exact half of
+/// **The pierce nodes lying strictly between two ring nodes, in ring order** — the exact half of
 /// the split-twin subdivision (`boolean::name_result_vertices`' opening pass). The caller has
 /// already matched the candidates' plane pair to the edge's `{own, wall}`, so by name every
 /// candidate lies on the edge's own carrier line and single-axis order *is* order along it.
@@ -4951,7 +4951,7 @@ fn cmp_key(
 /// is today's behaviour exactly — the far-plane road starves there and the walls-fallback net
 /// answers — so the conservative arm degrades to the state this pass was built to improve, never
 /// to something new.
-pub(crate) fn branch_between(
+pub(crate) fn pierce_between(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     a: NodeId,
@@ -4961,9 +4961,9 @@ pub(crate) fn branch_between(
     let key = |n: NodeId| -> Option<CoordKey> {
         match n {
             NodeId::ThreePlane(t) => Some(CoordKey::Three(t)),
-            NodeId::Branch { cyl, .. } => {
-                let (line, s) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
-                Some(CoordKey::Branch(Box::new((line, s))))
+            NodeId::Pierce { cyl, .. } => {
+                let (line, s) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
+                Some(CoordKey::Pierce(Box::new((line, s))))
             }
         }
     };
@@ -5075,7 +5075,7 @@ fn arc_extremum_winding(
     use nacre_scalar::{Orient, Rat, quad};
     let key = |i: usize| &keys[i];
     // A rational coordinate against a ring node's key, through the same two comparators `cmp_key`
-    // dispatches to — so a branch node is decided too.
+    // dispatches to — so a pierce node is decided too.
     let cmp_rat = |ext: Rat, k: &CoordKey, a: usize| -> Option<std::cmp::Ordering> {
         let ord = |o: Orient| match o {
             Orient::Positive => std::cmp::Ordering::Greater,
@@ -5087,7 +5087,7 @@ fn arc_extremum_winding(
                 let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))?;
                 ext.partial_cmp(&q[a])
             }
-            CoordKey::Branch(b) => Some(ord(quad::cmp_coord_meet_branch(
+            CoordKey::Pierce(b) => Some(ord(quad::cmp_coord_meet_branch(
                 &nacre_scalar::MeetPoint::Narrow([ext, ext, ext]),
                 &b.0,
                 &b.1,
@@ -5214,7 +5214,7 @@ fn arc_extremum_winding(
                         std::cmp::Ordering::Equal => Orient::Zero,
                     }
                 }
-                CoordKey::Branch(b) => quad::plane_side(&h_plane, &b.0, &b.1),
+                CoordKey::Pierce(b) => quad::plane_side(&h_plane, &b.0, &b.1),
             };
             Some(match o {
                 Orient::Positive => true,
@@ -5306,7 +5306,7 @@ fn arc_extremum_winding(
 /// needs no angle sum — only its tangent's direction at that node. The other two sites that read
 /// the direction's *representation* each got their own answer: the walk-back below asks
 /// [`continuation`], which has a curved arm ("are the tangents parallel" is "same circle, same
-/// travel"), and the lexicographic minimum above runs on [`CoordKey`], which holds a branch node's
+/// travel"), and the lexicographic minimum above runs on [`CoordKey`], which holds a pierce node's
 /// `a + b√c` coordinate beside a name and compares across the two through the quad tower.
 ///
 /// A ring may be *non-simple* — visiting one node twice — and still be a legitimate face: the
@@ -5338,14 +5338,14 @@ pub(crate) fn loop_winding(
     // ★ **The comparator, in one place, reading the identity directly.** This is the second of the
     // two sites that deliberately do not go through [`three_plane_name`]: `Judge::cmp_coord` speaks
     // three plane indices (it lives in `nacre-cip`, below this crate, so the name cannot travel
-    // there), and a branch point's coordinate is `a + b√c` with its own total comparators
+    // there), and a pierce point's coordinate is `a + b√c` with its own total comparators
     // (`nacre_scalar::quad::cmp_coord_meet_branch` and `cmp_coord_branch`). **This dispatch is
     // where that decision belongs** — the door's single answer is the wrong one here, and
     // `Judge::cmp_coord`'s four-rung ladder speaks neither `MeetLine` nor `QuadVal`.
     //
     // ★★ **The keys are materialized, and that is a change of shape, not just of type.** The old
-    // spelling read `[usize; 3]` out of the name on every comparison — free. A branch key is a
-    // *solve* ([`branch_meet`] re-derives the point from the name), and the scan below asks for
+    // spelling read `[usize; 3]` out of the name on every comparison — free. A pierce key is a
+    // *solve* ([`pierce_meet`] re-derives the point from the name), and the scan below asks for
     // each node's key on the order of six times, so re-solving per read would multiply the exact
     // work by that. One pass, one `Vec`.
     let keys: Vec<CoordKey> = (0..ring.len())
@@ -5604,8 +5604,8 @@ pub(crate) fn dir_sign(jd: &Judge<'_, WorkingPlane>, p: usize, q: usize, r: usiz
 ///   coordinate rather than read off a rule.
 ///
 /// `side` is [`crate::arrangement::ruling_side`]'s one spelling, and it needs a point on the ruling
-/// *exactly* — which is why the branch name comes in: [`branch_meet`] realizes it as the `(line, s)`
-/// that function takes. A ruling whose end is not a branch point (a seam end) has no such point and
+/// *exactly* — which is why the pierce name comes in: [`pierce_meet`] realizes it as the `(line, s)`
+/// that function takes. A ruling whose end is not a pierce point (a seam end) has no such point and
 /// is refused rather than guessed.
 fn curved_wall(
     model: &Model,
@@ -5624,7 +5624,7 @@ fn curved_wall(
         }),
         nacre_geom::Curve::Line(_) => {
             let def = cyls.get(cyl).ok_or_else(curved)?.def.clone();
-            let at = branch_meet(jd, cyl, &def, end).ok_or_else(curved)?;
+            let at = pierce_meet(jd, cyl, &def, end).ok_or_else(curved)?;
             let w = class_coeffs_rat(jd, near).ok_or_else(curved)?;
             // ★ **A tangent wall has one ruling, and its side is `0`** (cell ⑩, S3). A fillet's
             // or a slot's own walls are tangent to their cylinder, so every such operand used to
@@ -5643,20 +5643,20 @@ fn curved_wall(
             // never from their realizations.** A ruling edge's stored pair carries no order:
             // `edge_for` keys it `unordered(va, vb)` ("a ruling edge is straight, so the unordered
             // pair orders it"), unlike an arc, whose `[A, B]` *is* the CCW convention. So the two
-            // ends have to be compared — and each end is a branch point of `near`, the cylinder,
+            // ends have to be compared — and each end is a pierce point of `near`, the cylinder,
             // and **one other plane**. `near` *holds* the ruling, so it is that other plane that
             // **cuts** it, and where it crosses the axis is a rational question
             // ([`crate::planes::axis_param_of_plane`]).
             //
             // ☑ **The two parameters cannot tie**: a plane that *meets* this cylinder's faces is
             // parallel to the axis or perpendicular to it — the gate admits an oblique class only
-            // after proving it misses every lateral face (cell ⑩), so no branch vertex names one
+            // after proving it misses every lateral face (cell ⑩), so no pierce vertex names one
             // — and a parallel plane cannot cut a ruling. So both cutting planes are caps, and
             // distinct caps cross the axis at distinct parameters. The strict `>` therefore
             // restates the comparison it replaces exactly, rather than growing a decline for a
             // case that has none.
             let other_param = |v: Handle<Vertex>| -> Option<nacre_scalar::Rat> {
-                let nacre_topo::VertexDef::Branch { planes, .. } = model.vertices.get(v).def else {
+                let nacre_topo::VertexDef::Pierce { planes, .. } = model.vertices.get(v).def else {
                     return None;
                 };
                 let mut cut = None;
@@ -5711,15 +5711,15 @@ fn plane_sense(a: &[nacre_scalar::Rat; 4], b: &[nacre_scalar::Rat; 4]) -> Option
     })
 }
 
-/// **An operand vertex's own branch name, restated in this arrangement's class space.**
+/// **An operand vertex's own pierce name, restated in this arrangement's class space.**
 ///
 /// ★★★★★ **The second half of a correspondence the forward direction gets for free.** When a
-/// boolean *mints* a [`nacre_topo::VertexDef::Branch`] it writes the two planes as **its own
+/// boolean *mints* a [`nacre_topo::VertexDef::Pierce`] it writes the two planes as **its own
 /// classes' representative surfaces**, so restating class order as handle order is the only
 /// correction it needs ([`nacre_topo::QuadRoot::canonical`], which `assemble` calls). Coming back
 /// the other way the handles are **given**, and they may be a surface that merged into a class
 /// under a different representative — and, because a class holds faces whose normals oppose, under
-/// the **opposite sign**. `VertexDef::Branch`'s own doc says this correspondence "has to be
+/// the **opposite sign**. `VertexDef::Pierce`'s own doc says this correspondence "has to be
 /// established a second time"; this is that time.
 ///
 /// ★★ **Both corrections are the same rule.** `Lo`/`Hi` are the order along `ℓ = n₁ × n₂`, and
@@ -5728,17 +5728,17 @@ fn plane_sense(a: &[nacre_scalar::Rat; 4], b: &[nacre_scalar::Rat; 4]) -> Option
 /// exactly where they were and only reverses `ℓ`: the two roots trade places, which is what
 /// `flipped` says. Swapping the pair reverses `ℓ` too (the derivation `canonical` already carries).
 /// ⇒ **flip once per reversal, and an even number of reversals is no flip at all.** The swap is
-/// [`NodeId::branch`]'s to count; the two signs are this function's.
+/// [`NodeId::pierce`]'s to count; the two signs are this function's.
 /// ☑ The cylinder needs no correction: negating its axis direction does not move the surface, so
 /// the two roots are the same two points in the same order.
-pub(crate) fn branch_name_from_def(
+pub(crate) fn pierce_name_from_def(
     model: &Model,
     jd: &Judge<'_, WorkingPlane>,
     v: Handle<Vertex>,
     cyl: usize,
     candidates: [usize; 2],
 ) -> Option<NodeId> {
-    let nacre_topo::VertexDef::Branch { planes, root, .. } = model.vertices.get(v).def else {
+    let nacre_topo::VertexDef::Pierce { planes, root, .. } = model.vertices.get(v).def else {
         return None;
     };
     // Which candidate class each stored handle *is*, and with which sense. The match decides the
@@ -5763,7 +5763,7 @@ pub(crate) fn branch_name_from_def(
         return None;
     }
     let root = if s0 == s1 { root } else { root.flipped() };
-    Some(NodeId::branch(k0, k1, cyl, root))
+    Some(NodeId::pierce(k0, k1, cyl, root))
 }
 
 /// **Does this class carry that cylinder's *circle*?** — its normal is parallel to the axis, so
@@ -5806,7 +5806,7 @@ pub(crate) fn class_carries_circle(
 ///
 /// ★ It is rational **whatever way the axis points**: the class has rational coefficients or this
 /// says nothing, and the meet is one division. That is why a circle can always name a witness of
-/// its own where a *ring* cannot — a ring's corners are branch points and carry radicals.
+/// its own where a *ring* cannot — a ring's corners are pierce points and carry radicals.
 ///
 /// ★ It takes the cylinder's **statement**, not an arrangement element: the coplanar merge asks
 /// the same question of a `Bound::Circle` it is carrying into a merged region, and one spelling
@@ -5850,11 +5850,11 @@ pub(crate) fn class_coeffs_rat(
 /// any class lacks a narrow rational description — the caller declines rather than guessing.
 ///
 /// ★ **This reads the identity directly rather than going through [`three_plane_name`]**, because
-/// it is one of the two places whose answer for a second variant is *its own*: a branch point's
+/// it is one of the two places whose answer for a second variant is *its own*: a pierce point's
 /// coordinate is `a + b√c`, not a rational meet, so this `match` is where that decision belongs —
 /// not behind a door whose one answer is "no three-plane name, nothing to give".
 ///
-/// ★★ **A branch node's `None` is a type fact, not a width decline** — the vessel is rational and
+/// ★★ **A pierce node's `None` is a type fact, not a width decline** — the vessel is rational and
 /// the coordinate is not, so no amount of precision reaches it. Resist answering `Some` for a
 /// tangency because *its* coordinate happens to be rational: a function right for one root and not
 /// the other is the "sometimes right" trap.
@@ -5862,7 +5862,7 @@ pub(crate) fn class_coeffs_rat(
 /// ★★★ **And the live caller names that `None` wrongly for this cause — reachably, now.**
 /// `arrangement::split_circles` asks it of both ends of every segment and turns `None` into
 /// `WitnessNotRational`, whose sentence is "a wider rational would lift this" — **false** for a
-/// branch point, which has no rational coordinate at any width. This is where every chained-cylinder
+/// pierce point, which has no rational coordinate at any width. This is where every chained-cylinder
 /// operand stops today, so the wrong sentence is the one a user meets. The fix is structural rather
 /// than a rename: that caller is being taught to ask for an **order** instead of a coordinate, and
 /// then it will not ask this at all. (The predecessor this paragraph used to name,
@@ -5872,7 +5872,7 @@ pub(crate) fn node_coords_rat(
     n: NodeId,
 ) -> Option<[nacre_scalar::Rat; 3]> {
     match n {
-        NodeId::Branch { .. } => None,
+        NodeId::Pierce { .. } => None,
         NodeId::ThreePlane(t) => nacre_scalar::three_planes_rat([
             class_coeffs_rat(jd, t[0])?,
             class_coeffs_rat(jd, t[1])?,
@@ -5882,7 +5882,7 @@ pub(crate) fn node_coords_rat(
 }
 
 /// **A node's realized coordinate, whichever kind of name it is** — the `f64` sibling of
-/// [`node_coords_rat`] and [`branch_point`], which each answer for one variant only.
+/// [`node_coords_rat`] and [`pierce_point`], which each answer for one variant only.
 ///
 /// ★★ **It lives here because the `match` does.** Reaching into a [`NodeId`] variant outside this
 /// file (and `reuse`) is what [`three_plane_name`]'s gate forbids, and the first draft of this
@@ -5905,14 +5905,14 @@ pub(crate) fn node_point_f64(
             &jd.planes[t[2]].plane,
         )
         .map(|p| p.as_array()),
-        NodeId::Branch { cyl, .. } => branch_point(jd, cyl, &cyls[cyl].def, n),
+        NodeId::Pierce { cyl, .. } => pierce_point(jd, cyl, &cyls[cyl].def, n),
     }
 }
 
-/// **A branch node's realized coordinate, derived from the name.**
+/// **A pierce node's realized coordinate, derived from the name.**
 ///
 /// The sibling of [`node_coords_rat`] for the other variant, and the two return types *are* the
-/// distinction: a branch coordinate is `a + b√c`, so the rational vessel next door cannot hold it
+/// distinction: a pierce coordinate is `a + b√c`, so the rational vessel next door cannot hold it
 /// and only the cache can.
 ///
 /// ★★ **It re-solves from the name rather than taking the producer's `(line, s)`** — the truth is
@@ -5929,41 +5929,41 @@ pub(crate) fn node_point_f64(
 /// than promised — a mismatched pair would otherwise realize a real point of the *wrong* cylinder.
 /// `None` is a three-plane node, a class with no rational description, a root the meet does not
 /// have, or checked-`Rat` overflow.
-pub(crate) fn branch_point(
+pub(crate) fn pierce_point(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
 ) -> Option<[f64; 3]> {
-    let (line, s) = branch_meet(jd, cyl, def, n)?;
+    let (line, s) = pierce_meet(jd, cyl, def, n)?;
     Some(nacre_scalar::quad::branch_point_f64(&line, &s))
 }
 
-/// **The exact half of [`branch_point`]** — the `(line, s)` the name designates, before it is
+/// **The exact half of [`pierce_point`]** — the `(line, s)` the name designates, before it is
 /// realized.
 ///
 /// ★ «진실은 정의, 좌표는 캐시»: the pair *is* the point and the `[f64; 3]` beside it is its
 /// realization, so the two are one function split in the middle rather than two solves. Every
-/// exact question about a branch point — its order along the line, its side of a plane, its θ about
+/// exact question about a pierce point — its order along the line, its side of a plane, its θ about
 /// the seam — takes this and never the realization.
-/// **A branch corner as a rational point, when it is one** — the meet line's point at its root,
+/// **A pierce corner as a rational point, when it is one** — the meet line's point at its root,
 /// for a root [`nacre_scalar::quad::QuadVal::as_rat`] can state (a wall through or perpendicular
 /// to the axis, a tangent wall's double root); `None` for any other corner or name.
 ///
-/// ★ A **witness supply**, not a coordinate vessel: [`node_coords_rat`]'s `None` for a branch node
+/// ★ A **witness supply**, not a coordinate vessel: [`node_coords_rat`]'s `None` for a pierce node
 /// is a type fact ("the coordinate is `a + b√c`") that its callers route on, and it must stay so.
 /// This answers a different question — "is there a rational point *here* to cast from?" — and is
 /// total over its input: the corners it cannot state simply do not join the probe list, the way a
 /// chord's midpoint ([`crate::arrangement`]'s `chord_midpoint_rat`) abstains per edge. Cell ⑩: a
-/// half-cylinder prism's cap has two corners, both branch, both rational, and no other point —
+/// half-cylinder prism's cap has two corners, both pierce, both rational, and no other point —
 /// the population `RingHasNoWitness`'s own doc said would arrive.
-pub(crate) fn branch_coords_rat(
+pub(crate) fn pierce_coords_rat(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     n: NodeId,
 ) -> Option<[nacre_scalar::Rat; 3]> {
-    let (_, cyl, _) = branch_name(n)?;
-    let (line, s) = branch_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
+    let (_, cyl, _) = pierce_name(n)?;
+    let (line, s) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
     let sv = s.as_rat()?;
     let (b, d) = (line.base(), line.dir());
     let mut p = b;
@@ -5986,11 +5986,11 @@ pub(crate) fn branch_coords_rat(
 /// | arm | the ends | why it is inside |
 /// |---|---|---|
 /// | [`conjugate_midpoint`] | one solve's two roots (`Lo`/`Hi`) | the shared `mid`, `disc > 0` |
-/// | [`branch_ends_between`] | two solves on one line | a rational verified strictly between |
+/// | [`pierce_ends_between`] | two solves on one line | a rational verified strictly between |
 /// | [`rational_ends_midpoint`] | both rational | the midpoint of two rationals |
 ///
 /// ★★ **An iterator, not an `Option`, and that is load-bearing.** The first two arms **both** match
-/// a conjugate-rooted edge — the two roots share the plane pair and the cylinder, so `branch_meet`
+/// a conjugate-rooted edge — the two roots share the plane pair and the cylinder, so `pierce_meet`
 /// hands each end the same line, which is all the second arm asks — and they name **different**
 /// points (a shared `mid` against a realized-then-verified midpoint). Folding them into one answer
 /// would delete a witness silently.
@@ -6004,7 +6004,7 @@ pub(crate) fn branch_coords_rat(
 /// largest supply. (Three runs of the same tree: 10,963 / 13,027 / 11,075 for the third.)
 ///
 /// ★ **Order is today's**: conjugate, then between, then the rational midpoint (which is disjoint
-/// from both — a branch end is not rational).
+/// from both — a pierce end is not rational).
 ///
 /// **Every arm lands *on* the edge**, which is what lets the component road wrap these in
 /// [`Probe::Coord`]: that type's invariant is a point **on** the boundary, and an interior witness
@@ -6016,7 +6016,7 @@ pub(crate) fn edge_interior_points(
 ) -> impl Iterator<Item = [nacre_scalar::Rat; 3]> {
     [
         conjugate_midpoint(jd, cyls, e),
-        branch_ends_between(jd, cyls, e),
+        pierce_ends_between(jd, cyls, e),
         rational_ends_midpoint(jd, e),
     ]
     .into_iter()
@@ -6024,7 +6024,7 @@ pub(crate) fn edge_interior_points(
 }
 
 /// **Arm b of [`edge_interior_points`] — a rational point strictly inside a straight edge whose
-/// two ends are branch corners on one line** (cell ⑩). The chord witness needs the two ends to be one solve's two roots; a cap's
+/// two ends are pierce corners on one line** (cell ⑩). The chord witness needs the two ends to be one solve's two roots; a cap's
 /// section between the rulings of two *coaxial* cylinders — a bore inside a fillet, cut by a wall
 /// within both radii — has its ends on two solves, one radical each, and every corner of that cell
 /// irrational. Both ends still lie on one rational line (the pair `{wc, wall}`'s meet, the same
@@ -6032,7 +6032,7 @@ pub(crate) fn edge_interior_points(
 /// of the edge's interior exactly: chosen by the realized midpoint, then **verified** against each
 /// end in its own radical ([`rational_between`]). `None` for any other edge shape, or when the
 /// two solves do not parametrize one line.
-pub(crate) fn branch_ends_between(
+pub(crate) fn pierce_ends_between(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     e: &RingEdge,
@@ -6040,13 +6040,13 @@ pub(crate) fn branch_ends_between(
     if !matches!(e.carrier, Carrier::Plane { .. }) {
         return None;
     }
-    let (pa, ca, _) = branch_name(e.node)?;
-    let (pb, cb, _) = branch_name(e.to)?;
+    let (pa, ca, _) = pierce_name(e.node)?;
+    let (pb, cb, _) = pierce_name(e.to)?;
     if pa != pb {
         return None;
     }
-    let (la, sa) = branch_meet(jd, ca, &cyls.get(ca)?.def, e.node)?;
-    let (lb, sb) = branch_meet(jd, cb, &cyls.get(cb)?.def, e.to)?;
+    let (la, sa) = pierce_meet(jd, ca, &cyls.get(ca)?.def, e.node)?;
+    let (lb, sb) = pierce_meet(jd, cb, &cyls.get(cb)?.def, e.to)?;
     if la.base() != lb.base() || la.dir() != lb.dir() {
         return None;
     }
@@ -6101,7 +6101,7 @@ fn rational_between(
 /// ★ **The whole per-edge chain, in one place** (cell 24). `nesting`'s witness supply and its
 /// diagnostic twin held this verbatim, and the interior half being one rule left the *corner* half
 /// still written twice. The order is the one they had: the corner first — rational if the node has
-/// a three-plane name, else the branch root's coordinates — then the interior arms.
+/// a three-plane name, else the pierce root's coordinates — then the interior arms.
 ///
 /// ⚠ **The component road one dimension up does not call this**: it already offers every corner as
 /// a [`Probe::Named`], which is exact without coordinates at all, so it takes
@@ -6112,7 +6112,7 @@ pub(crate) fn edge_witness_points(
     e: &RingEdge,
 ) -> impl Iterator<Item = [nacre_scalar::Rat; 3]> {
     node_coords_rat(jd, e.node)
-        .or_else(|| branch_coords_rat(jd, cyls, e.node))
+        .or_else(|| pierce_coords_rat(jd, cyls, e.node))
         .into_iter()
         .chain(edge_interior_points(jd, cyls, e))
 }
@@ -6136,8 +6136,8 @@ pub(crate) fn conjugate_midpoint(
     e: &RingEdge,
 ) -> Option<[nacre_scalar::Rat; 3]> {
     use nacre_topo::QuadRoot::{Hi, Lo};
-    let (pa, ca, ra) = branch_name(e.node)?;
-    let (pb, cb, rb) = branch_name(e.to)?;
+    let (pa, ca, ra) = pierce_name(e.node)?;
+    let (pb, cb, rb) = pierce_name(e.to)?;
     if pa != pb || ca != cb || !matches!((ra, rb), (Lo, Hi) | (Hi, Lo)) {
         return None;
     }
@@ -6155,7 +6155,7 @@ pub(crate) fn conjugate_midpoint(
         return None;
     }
     let def = &cyls.get(ca)?.def;
-    let (line, s) = branch_meet(jd, ca, def, e.node)?;
+    let (line, s) = pierce_meet(jd, ca, def, e.node)?;
     let (b, d) = (line.base(), line.dir());
     let t = s.a();
     let mut p = [b[0], b[1], b[2]];
@@ -6188,7 +6188,7 @@ pub(crate) fn conjugate_midpoint(
 }
 
 /// **The midpoint of a straight ring edge whose two ends are rational** (cell 24) — the arm the
-/// other two never covered, because both of them start by asking for a branch name.
+/// other two never covered, because both of them start by asking for a pierce name.
 ///
 /// The plainest case there is, and the one a planar component is made of: two three-plane corners
 /// joined by a straight step. Its midpoint is the average of two rationals, exact, and strictly
@@ -6231,7 +6231,7 @@ fn rational_ends_midpoint(
     Some(p)
 }
 
-pub(crate) fn branch_meet(
+pub(crate) fn pierce_meet(
     jd: &Judge<'_, WorkingPlane>,
     cyl: usize,
     def: &nacre_topo::CylinderDef,
@@ -6240,7 +6240,7 @@ pub(crate) fn branch_meet(
     use nacre_scalar::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
     let (planes, root) = match n {
-        NodeId::Branch {
+        NodeId::Pierce {
             planes,
             cyl: named,
             root,
@@ -6479,52 +6479,52 @@ mod tests {
         }
     }
 
-    /// **A branch point named either way round is one name** — the [`NodeId::three_planes`]
+    /// **A pierce point named either way round is one name** — the [`NodeId::three_planes`]
     /// proposition for the second variant, where the canonicalization is bigger than a sort.
     ///
     /// The expected values are written from the rule's sentence, not by calling the constructor a
     /// second time. The rule itself is [`nacre_topo::QuadRoot::canonical`]'s, and its own locks
     /// (in `nacre-topo`) are what say the *geometry* agrees; this only says the name reads it.
     #[test]
-    fn a_branch_is_one_name_however_the_pair_is_handed_in() {
+    fn a_pierce_is_one_name_however_the_pair_is_handed_in() {
         use nacre_topo::QuadRoot::{Double, Hi, Lo};
         for (root, other) in [(Lo, Hi), (Hi, Lo), (Double, Double)] {
             assert_eq!(
-                NodeId::branch(9, 2, 7, root),
-                NodeId::branch(2, 9, 7, other),
+                NodeId::pierce(9, 2, 7, root),
+                NodeId::pierce(2, 9, 7, other),
                 "{root:?} handed in descending is {other:?} in stored order"
             );
         }
         // ★ And the two roots of one pair stay **two** names — a canonicalization that collapsed
         // them would make this pass by making everything equal.
-        assert_ne!(NodeId::branch(2, 9, 7, Lo), NodeId::branch(2, 9, 7, Hi));
+        assert_ne!(NodeId::pierce(2, 9, 7, Lo), NodeId::pierce(2, 9, 7, Hi));
         // A different cylinder through the same two planes is a different point.
-        assert_ne!(NodeId::branch(2, 9, 7, Lo), NodeId::branch(2, 9, 8, Lo));
+        assert_ne!(NodeId::pierce(2, 9, 7, Lo), NodeId::pierce(2, 9, 8, Lo));
     }
 
     /// ★ **The door tells the two variants apart, and `Ord` places them deterministically.**
     ///
     /// The order itself is a *choice* — derived `Ord` puts every `ThreePlane` before every
-    /// `Branch`, so "the smallest name wins" gains a systematic lean toward three-plane names at
-    /// the six rules that read it. Nothing can observe it yet (no ring holds a branch node), which
+    /// `Pierce`, so "the smallest name wins" gains a systematic lean toward three-plane names at
+    /// the six rules that read it. Nothing can observe it yet (no ring holds a pierce node), which
     /// is exactly why it is written down here rather than left to be discovered.
     #[test]
     fn the_two_variants_are_told_apart_and_ordered() {
         let three = NodeId::three_planes(Canon3::three([9, 2, 5]));
-        let branch = NodeId::branch(2, 9, 7, nacre_topo::QuadRoot::Lo);
+        let pierce = NodeId::pierce(2, 9, 7, nacre_topo::QuadRoot::Lo);
         assert_eq!(three_plane_name(three), Some([2, 5, 9]));
         assert_eq!(
-            three_plane_name(branch),
+            three_plane_name(pierce),
             None,
-            "a branch point has no triple"
+            "a pierce point has no triple"
         );
         assert!(
-            three < branch,
-            "declaration order: ThreePlane before Branch"
+            three < pierce,
+            "declaration order: ThreePlane before Pierce"
         );
-        // The probe helper drops exactly the branch node, and keeps the ring's order otherwise.
+        // The probe helper drops exactly the pierce node, and keeps the ring's order otherwise.
         assert_eq!(
-            three_plane_probes([branch, three, branch]),
+            three_plane_probes([pierce, three, pierce]),
             vec![[2, 5, 9]],
             "a probe list may lose a member; that is its licence"
         );

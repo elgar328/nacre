@@ -134,11 +134,11 @@ pub(crate) fn through_judged_points(
     for (o, vh) in out.iter_mut().zip(vs) {
         let tri = match model.vertices.get(vh).def {
             nacre_topo::VertexDef::ThreePlane(tri) => tri,
-            // OnSeam pins a curve, not a point; a Branch point's coordinates are
+            // OnSeam pins a curve, not a point; a Pierce point's coordinates are
             // quadratic-irrational, and this table's witnesses are rational by type —
-            // both decline, per variant (M6-2's judging of branch points is new machinery,
+            // both decline, per variant (M6-2's judging of pierce points is new machinery,
             // not this road).
-            nacre_topo::VertexDef::OnSeam(_) | nacre_topo::VertexDef::Branch { .. } => {
+            nacre_topo::VertexDef::OnSeam(_) | nacre_topo::VertexDef::Pierce { .. } => {
                 return None;
             }
         };

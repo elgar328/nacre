@@ -92,7 +92,7 @@ pub(crate) struct ThetaSeg {
     /// The ruling's side on its wall — `0` a **tangent** station (cell ⑩): a line the face ends
     /// on, with no chamber to read behind it, so no `label`.
     pub(crate) side: i8,
-    /// The piece's own two branch nodes: the θ **order** is asked of these
+    /// The piece's own two pierce nodes: the θ **order** is asked of these
     /// (`circular_order_about_seam` via `arrangement::circular_order`), never of a coordinate.
     pub(crate) end: [combinatorics::NodeId; 2],
     /// `[lower, upper]` on the axis.
@@ -129,12 +129,12 @@ pub(crate) struct Chart {
 /// key the band road's rings were joined on while that road was the reference.
 type RulingName = (usize, i8);
 
-/// **Which of a wall's two rulings a branch node lies on** — `arrangement::node_ruling_side`, the
+/// **Which of a wall's two rulings a pierce node lies on** — `arrangement::node_ruling_side`, the
 /// one spelling (`ruling_side` asked of a name) the assembly's `Wall::Ruling { side }` reads.
-/// ★ This used to be a second copy of that function's body (D5, 1a): the same `branch_meet` +
+/// ★ This used to be a second copy of that function's body (D5, 1a): the same `pierce_meet` +
 /// `ruling_side`, spelled twice one module apart.
 ///
-/// ★★★★★ **Not the node's `QuadRoot`.** A `Branch` name's root is `Lo`/`Hi` along
+/// ★★★★★ **Not the node's `QuadRoot`.** A `Pierce` name's root is `Lo`/`Hi` along
 /// `ℓ = n₁ × n₂` of *its own* plane pair, so the same physical ruling reads `Hi` where its node
 /// pairs the wall with the plate's top and `Lo` where it pairs it with the boss's cap (the pair
 /// order and the ⊥ normal's sense both reverse `ℓ` — `QuadRoot::canonical`'s doc). ☑ Measured on
@@ -150,7 +150,7 @@ fn ruling_side_of(
 ) -> Option<i8> {
     // A ruling piece's node names this chart's own cylinder; a name of another cylinder has no
     // side here (M6b's pair, which no piece carries today).
-    let (_, cyl, _) = combinatorics::branch_name(n)?;
+    let (_, cyl, _) = combinatorics::pierce_name(n)?;
     if cyl != k {
         return None;
     }
@@ -257,7 +257,7 @@ impl Chart {
 
     /// **A station's canonical name on a z-line** — `crossing_on_ruling(c, wall, k, side)`: the
     /// very name `ruling_sweep` gives a piece ending on that line and `split_circles` gives a rim
-    /// node there (`NodeId::branch` folds the pair and the root), so «does this rim carry this
+    /// node there (`NodeId::pierce` folds the pair and the root), so «does this rim carry this
     /// station» is **name equality**, and a station the rim does not carry joins the θ order under
     /// the name a piece ending there would have worn.
     ///

@@ -42,7 +42,7 @@ use crate::tolerant::Judge;
 ///
 /// ★★★★★ **A cut circle's cell is still a disk, and must be asked a disk's question.** The
 /// dispatch calls a cell a `Disk` only where its half-edge is literally a `Circle`; a circle a wall
-/// has **split into arcs** arrives as a ring instead, whose corners are branch points — so the
+/// has **split into arcs** arrives as a ring instead, whose corners are pierce points — so the
 /// three-plane names come out
 /// **empty** and the road refuses with a name about rays it never cast. The shape is the same
 /// circle either way, and this is what says so.
@@ -90,7 +90,7 @@ fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_
 ///
 /// ★ **And it dispatches to the strongest road it can.** A ring the rational chart can name takes
 /// [`nacre_geom::intersect::point_in_ring_2d_rat`], which is **half-open in y** and so decides
-/// even where a ring corner sits on the ray; only a ring with branch corners or arc steps falls
+/// even where a ring corner sits on the ray; only a ring with pierce corners or arc steps falls
 /// to `point_in_mixed_ring`, which abstains there. Anything that hands this a witness gets the
 /// better answer for free.
 fn rational_point_in_ring(
@@ -107,7 +107,7 @@ fn rational_point_in_ring(
     // The class's rational chart — the one copy of that rule ([`combinatorics::Chart2dRat`]);
     // parity is affine-invariant, so the basis need not be orthonormal.
     // ★ **A ring the chart road cannot name takes the mixed road** (M6-2b chaining ladder,
-    // wall 3): branch corners have no rational coordinates and arc steps no straight chart
+    // wall 3): pierce corners have no rational coordinates and arc steps no straight chart
     // image, so the parity walks the ring step by step in ℚ(√c) instead. Rings the old road
     // could always name still take it — the mixed arm activates on exactly the population the
     // old road refused, which is what keeps every green census row bit-identical.
@@ -374,7 +374,7 @@ pub(crate) fn rim_witness_count(
 ///
 /// Boundary witnesses first and in this order: the corners' three-plane **names** (the ray road,
 /// and the only road a rotated class has), then the corners' rational coordinates, then the
-/// rational **branch** corners (a fillet tangency — cell 10), then a whole chord's **midpoint**,
+/// rational **pierce** corners (a fillet tangency — cell 10), then a whole chord's **midpoint**,
 /// then a rational point **inside** an edge whose ends are two solves' roots. An interior witness
 /// last, and only where there is one: a disk's centre, and a ring that *is* a circle.
 ///
@@ -386,7 +386,7 @@ pub(crate) fn rim_witness_count(
 /// **geometric**, and they are exactly rational: [`rim_and_centre`].
 ///
 /// ★ **Lazy on purpose.** The corpus asks this question 33,781 times in one census pass, and every
-/// kind after the first is a `branch_meet` solve. The name that decides is almost always the first
+/// kind after the first is a `pierce_meet` solve. The name that decides is almost always the first
 /// one offered (measured: 23,581 of 24,449 ring questions), so nothing after it should be built.
 fn witnesses<'a>(
     jd: &'a Judge<'a, WorkingPlane>,
@@ -535,7 +535,7 @@ fn inside(
     // ★★★★★ **The list is one list, and it is walked to the end.** Two road-choices used to cut it
     // short, and both were statements about a *road* rather than about the question:
     //   · a **mixed** target was never offered the ray road, because every ray answers
-    //     `Unnameable` at the first branch corner — true, and now said by the ray itself, which
+    //     `Unnameable` at the first pierce corner — true, and now said by the ray itself, which
     //     abstains and hands on to the next witness at no cost but its own;
     //   · a plain ring target that named any probe answered on names **alone**, so a ring whose
     //     every ray grazed was refused with coordinates still in hand.
@@ -643,18 +643,18 @@ pub(crate) fn cell_in_cell(
                     .filter(|e| combinatorics::node_coords_rat(jd, e.node).is_some())
                     .count(),
                 r.iter()
-                    .filter(|e| combinatorics::branch_coords_rat(jd, cyls, e.node).is_some())
+                    .filter(|e| combinatorics::pierce_coords_rat(jd, cyls, e.node).is_some())
                     .count(),
                 r.iter()
                     .filter(|e| combinatorics::conjugate_midpoint(jd, cyls, e).is_some())
                     .count(),
                 r.iter()
-                    .filter(|e| combinatorics::branch_ends_between(jd, cyls, e).is_some())
+                    .filter(|e| combinatorics::pierce_ends_between(jd, cyls, e).is_some())
                     .count(),
                 ring_own_circle(r).is_some(),
             )
         };
-        let (named, coords, branch, chord, edge, circle) = inv(a);
+        let (named, coords, pierce, chord, edge, circle) = inv(a);
         // ★ Cell 21's blind spot: `inv` speaks a *ring's* vocabulary, so a disk read all zeros and
         // **no row ever described the arm whose whole supply was one witness**. Its rim is its
         // supply, so the row says how many it offered.
@@ -695,7 +695,7 @@ pub(crate) fn cell_in_cell(
             b_mixed: circle_ix[b].is_none() && combinatorics::ring_is_mixed(&rings[b]),
             named,
             coords,
-            branch,
+            pierce,
             chord,
             edge,
             circle,
@@ -725,7 +725,7 @@ pub(crate) fn cell_in_cell(
 }
 
 /// **Which road answers a nesting question** — named because the instrument has to say so, and
-/// because a rule spelled at the branch and again at the probe is two rules
+/// because a rule spelled at the pierce and again at the probe is two rules
 /// ([`nesting_probe::Row::route`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Route {
@@ -781,7 +781,7 @@ pub(crate) mod nesting_probe {
         /// spelling of the rule.
         pub named: usize,
         pub coords: usize,
-        pub branch: usize,
+        pub pierce: usize,
         pub chord: usize,
         pub edge: usize,
         pub circle: bool,

@@ -26,7 +26,7 @@ use proptest::prelude::*;
 use std::collections::HashMap;
 
 /// ★ **A fixture with no cylinders, said as a fact rather than left as a hole.** The table is how
-/// a `NodeId::Branch` reaches its definition, so an all-plane fixture has nothing to put in it —
+/// a `NodeId::Pierce` reaches its definition, so an all-plane fixture has nothing to put in it —
 /// and a bare `&[]` at a call site reads like something forgotten.
 const NO_CYLS: &[crate::planes::WorkingCyl] = &[];
 
@@ -1785,7 +1785,7 @@ fn a_ray_that_grazes_a_corner_still_answers() {
     assert!(!rays.iter().any(|&x| x), "and unanimous — {rays:?}");
 }
 
-/// The isolated **touch** — the branch fixture A never reaches.
+/// The isolated **touch** — the pierce fixture A never reaches.
 ///
 /// The outline's bottom notch rises to `(12,10)` and turns straight back down, so both its
 /// neighbours `(8,0)` and `(16,0)` are below `y=10`: the ring touched the ray's line without
@@ -3721,12 +3721,12 @@ fn chained_cylinder_operations_that_build_today_still_build() {
 /// exactly one place: a `false` sends the seated pair to the `d = 0` record-and-pass arm, which
 /// puts it in `crossings`, which is what makes the tracer's ruling and chord arms fire at all. A
 /// wrong `true` would refuse nothing, panic nowhere and change no output — today's population
-/// declines a step later either way (`BranchNode`, the lock below) — so **the suite would stay
-/// green with the branch corner's answer thrown away entirely**. Measured, by throwing it away:
+/// declines a step later either way (`PierceNode`, the lock below) — so **the suite would stay
+/// green with the pierce corner's answer thrown away entirely**. Measured, by throwing it away:
 /// 316 green. This is the lock that sees it.
 ///
 /// ★★ **What it sees is that the corner is *readable*, not what it says** — recorded rather than
-/// claimed. Forcing every branch corner to one strip side leaves even this lock green, because the
+/// claimed. Forcing every pierce corner to one strip side leaves even this lock green, because the
 /// verdict here is settled on the *other* separating axis: the wall's plate corners already sit
 /// inside the boss's axial span, so `along` fails whatever the strip half answers. The corner's
 /// side becomes decisive only for a face that clears along the axis and has to be judged across
@@ -3825,7 +3825,7 @@ fn the_extent_rule_agrees_with_the_fences_it_replaced() {
 
 /// ★★★★★ **The order rule may read the retired ruler backwards, but it may never reshuffle it.**
 ///
-/// The arc split used to sort its points by their parameter on `branch_meet`'s canonical meet line;
+/// The arc split used to sort its points by their parameter on `pierce_meet`'s canonical meet line;
 /// it asks [`combinatorics::order_located`] now. The two do **not** agree pointwise — the ruler's
 /// direction comes from the classes' rational coefficients and the rule's axis sign from the judge's
 /// stored planes, and those two spellings name the same plane without naming the same side. A
@@ -3876,7 +3876,7 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
     // sorted pair and the call-order pair are opposite calls. Swapping the pair flips *every*
     // comparison on a segment, so it can only turn "same" into "reversed" — which the assertion
     // above already says is harmless. The sorted pair is chosen for agreeing with
-    // `NodeId::Branch`'s convention, not because a fixture prefers it.
+    // `NodeId::Pierce`'s convention, not because a fixture prefers it.
     //
     // ★ That count is **recorded, not asserted**: these counters accumulate across the binary, and
     // this test cannot know what has run before it. Only the two "never" claims above are safe to
@@ -4047,7 +4047,7 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// A boss standing on a **wall** was the one chained operand that did not build. It buries half the
 /// boss's lateral in the plate, so that face comes back as a band with a **hole**, and every layer
 /// downstream had a sentence that was false about it. The wall moved six times as those were
-/// closed one at a time — `TraceDeclined { BranchNode }`, `WitnessNotRational`,
+/// closed one at a time — `TraceDeclined { PierceNode }`, `WitnessNotRational`,
 /// [`RejectReason::CurvedStraightRun`], [`RejectReason::OpenResultShell`],
 /// [`RejectReason::LabelConflict`] when one of two cancelling falsehoods was fixed, then
 /// `OpenResultShell` again with the arrangement whole — and this lock was the map of that walk.
@@ -4203,7 +4203,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
         .collect();
 
     let jd = crate::planes::test_judge(&planes);
-    let (mut curved_walls, mut branch_names) = (0usize, 0usize);
+    let (mut curved_walls, mut pierce_names) = (0usize, 0usize);
     let (mut ups, mut sides): (Vec<bool>, Vec<i8>) = (Vec::new(), Vec::new());
     for &fh in &m.shells.get(m.solids.get(r).outer).faces {
         let fp = surf_ix[&fh];
@@ -4279,7 +4279,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                     // stored surface's. `side` is a **label** telling the two rulings apart, so it
                     // is well defined exactly as long as every road spells `n̂` the one way.
                     // Sharing that input leaves the two roads independent where it counts — the
-                    // code decides in exact `quad::plane_side` on the branch meet, this in `f64`
+                    // code decides in exact `quad::plane_side` on the pierce meet, this in `f64`
                     // on the realized vertex.
                     let wr = combinatorics::class_coeffs_rat(&jd, near).expect("a named class");
                     let n_hat =
@@ -4297,16 +4297,16 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                     curved_walls += 1;
                 }
             }
-            let Some((_, cyl, _)) = combinatorics::branch_name(node) else {
+            let Some((_, cyl, _)) = combinatorics::pierce_name(node) else {
                 continue;
             };
-            branch_names += 1;
+            pierce_names += 1;
             // ★★★★★ **Two roads, one point.** The name is this boolean's classes; the coordinate is
             // what the *previous* boolean realized from *its* classes. Realizing the one and
             // measuring it against the other is what says the restatement — the pair's order and
             // each normal's sign — came out right: get either wrong and the name designates the
             // **other root**, a visibly different point on the far ruling.
-            let got = combinatorics::branch_point(&jd, cyl, &cyls[cyl].def, node)
+            let got = combinatorics::pierce_point(&jd, cyl, &cyls[cyl].def, node)
                 .expect("the name realizes");
             let want = m.vertex_point(corner(i)).as_array();
             let d: f64 = (0..3)
@@ -4321,18 +4321,18 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
         }
     }
     // Four faces run along the boss — the two plate caps it bit an arc out of, and the two halves
-    // its rulings split the wall into — and each contributes two curved edges and two branch
+    // its rulings split the wall into — and each contributes two curved edges and two pierce
     // corners. The boss's own caps are full circles (the one curved loop this road already spoke)
     // and the three untouched walls are plain.
     assert_eq!(curved_walls, 4, "edges riding the boss");
-    assert_eq!(branch_names, 8, "corners named as branch points");
+    assert_eq!(pierce_names, 8, "corners named as pierce points");
     (ups, sides)
 }
 
 /// ★★★★★ **A cylinder-pinned end is ordered, not refused — and the sense is the geometry's.**
 ///
 /// `edge_dir` is the one place a direction is made, and its cylinder arm used to say `RingNaming`
-/// by name: a branch point has no third plane, and the integer predicate wants one. Measured
+/// by name: a pierce point has no third plane, and the integer predicate wants one. Measured
 /// before this landed — every one of the 40 pins below came back refused. Now they order through
 /// the `a + b√c` tower, and this fixes what the answer must be.
 ///
@@ -4341,7 +4341,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
 /// ruling lock next door shares `world_rat`: a *label*'s reference frame has to be one spelling or
 /// the two roads are not comparing the same thing. What is independent is the part under test —
 /// the **order of the two points on that line**: the code decides it exactly (a rational meet
-/// against a branch root, or two roots against each other), the oracle realizes both points in
+/// against a pierce root, or two roots against each other), the oracle realizes both points in
 /// `f64` and subtracts. Measured `|t|` from 1.5 to 456, so nothing here is decided in the noise.
 ///
 /// ★★ **The population is one-sided and that is a fact, not a blind instrument.** All 40 order
@@ -4362,7 +4362,7 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
     ] {
         pins += pinned_ends_ordered(at, dir, kind);
     }
-    // ★ The count is the lock on the *population*: let the fixtures stop producing branch-pinned
+    // ★ The count is the lock on the *population*: let the fixtures stop producing pierce-pinned
     // ends and every assertion below would pass vacuously. 40 while a ring split at a seam joint
     // was declined; **48** since E1 ③ names it — the `[6, 4, −1]` boss sits on the +y wall, so
     // its bite on the plate's caps wraps the seam (θ = 0 is at −y), and those rings' ends join.
@@ -4443,9 +4443,9 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
             // The f64 road: realize both points and dot the difference with `n_p × n_q` taken
             // from the raw coefficients — the same direction `plane_pair_dir_sign` reads.
             let xyz = |x: combinatorics::NodeId| -> [f64; 3] {
-                match combinatorics::branch_name(x) {
+                match combinatorics::pierce_name(x) {
                     Some((_, cyl, _)) => {
-                        combinatorics::branch_point(&jd, cyl, &cyls[cyl].def, x).expect("realizes")
+                        combinatorics::pierce_point(&jd, cyl, &cyls[cyl].def, x).expect("realizes")
                     }
                     None => {
                         let c = combinatorics::node_coords_rat(&jd, x).expect("coords");
@@ -9738,7 +9738,7 @@ fn a_spliced_band_is_cut_across_its_notch() {
         );
     }
     // (b) caps through the notch: the plate's wall face carries the boss's rulings, and the
-    // caps' classes cross it there — the scan names each crossing as a branch node (E3). The
+    // caps' classes cross it there — the scan names each crossing as a pierce node (E3). The
     // tool takes the plate's `x ∈ [3, 4]` slab (4) and the boss's outer half over the slab's
     // height (π/8); its wall `x = 3` clears the boss (1 > r). Beside the volume, the probe: every
     // crossing named in this binary lies on its class, its face plane and the cylinder, on the
@@ -10095,7 +10095,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         "every ring of a result face has a name"
     );
     // 8 → 14 (cell ③): each offset family's Fuse carries two whole-circle rims that pass the
-    // seam vertex — the wall families' seam sits on the wall itself (a chord end, a branch
+    // seam vertex — the wall families' seam sits on the wall itself (a chord end, a pierce
     // vertex), which is why they added none.
     assert_eq!(seam_joints, (14, 0), "seam-joint loops (outer, holes)");
 }
@@ -10317,18 +10317,18 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 /// slab (6: the ⊥ caps cross the plate's wall face on the boss's rulings) and × through-axis wall
 /// (5: the wall crosses the bitten cap's arc) · `CylSpan` 96 (panel and chain laterals, E2-2) ·
 /// `NoClearRay` 8 (an interior boss × through-axis wall: the wall halves the cap's circular hole;
-/// corner × its coplanar wall) · `BranchVertexUnnamed` 1 (offmid Fuse × top slab) · first op
+/// corner × its coplanar wall) · `PierceVertexUnnamed` 1 (offmid Fuse × top slab) · first op
 /// refused 12 · empty 4. The rungs that follow move this table one named cause at a time:
 ///
-/// * E3 ②: the scan names a crossing on a ruling as a branch node, and a cell's nesting reads a
+/// * E3 ②: the scan names a crossing on a ruling as a pierce node, and a cell's nesting reads a
 ///   mixed ring. The **wall slab** column (added here, 210 cells) is the rung's own population:
 ///   wall ±x/±y and offmid Fuse × wall slab are **Ok(1)** with their exact volumes. The mid slab
 ///   crosses the same rulings and then splits the result in two, where the grouping road's
-///   plane-walls shim refuses the mixed rings — `CurvedRingWall` 6 → `BranchVertexUnnamed` 5 +
+///   plane-walls shim refuses the mixed rings — `CurvedRingWall` 6 → `PierceVertexUnnamed` 5 +
 ///   `RulingBoundNotYet` 1 (corner: the chart's `End::Other`, E2-2); the through-axis wall's
-///   `NoClearRay` 8 → `BranchVertexUnnamed` 6 (the chord's cell has no cylinder for its corners,
+///   `NoClearRay` 8 → `PierceVertexUnnamed` 6 (the chord's cell has no cylinder for its corners,
 ///   `coord_key`) + 2 (Common). Ok 49 · `CurvedRingWall` 5 (arc crossings) · `CylSpan` 120 ·
-///   `BranchVertexUnnamed` 12 · `RulingBoundNotYet` 2 · `NoClearRay` 2 · first 15 · empty 5.
+///   `PierceVertexUnnamed` 12 · `RulingBoundNotYet` 2 · `NoClearRay` 2 · first 15 · empty 5.
 /// * E2-2 ①: the circle road reads panels and chains; the first reject moves off the ⊥ classes,
 ///   and the rows whose result has a two-edge cap (wall/offmid Common, every half family) surface
 ///   `CurvedDeparture` on every tool — 85; `CylSpan` 120 → 35 (the Cut rows and corner Common,
@@ -10338,7 +10338,7 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   volume**, the mid slab on the grouping road, the through-axis wall on the bite's arc) and the
 ///   corner's coplanar tool reaches the chord's cell; corner Common (a quarter cylinder alone)
 ///   builds under the top and bottom slabs and finds no clear ray once a slab parts it. `CylSpan`
-///   0 · Ok 69 · `BranchVertexUnnamed` 19 · `CurvedRingWall` 10 · `NoClearRay` 4 ·
+///   0 · Ok 69 · `PierceVertexUnnamed` 19 · `CurvedRingWall` 10 · `NoClearRay` 4 ·
 ///   `CylinderGateUndecided` 1 (the chart's walk has an open end at a wall with one ruling).
 /// * E3-c: the half-disk caps are traced, so `CurvedDeparture` 85 → 0: the half Fuse rows read
 ///   like the wall Fuse rows (top/bottom/wall slab Ok(1) with exact volumes), the Common rows and
@@ -10354,7 +10354,7 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   construction-time refusal dies — the mid column and offmid × top land on the label's
 ///   next wall (a split result's panel/chain lateral abstains the ray: `NoClearRay` 40 → 56),
 ///   the corner × through-axis cells thread their merge and meet the chart's unreadable cell
-///   (`CylinderGateUndecided` 44 → 46). `BranchVertexUnnamed` 18 → 0.
+///   (`CylinderGateUndecided` 44 → 46). `PierceVertexUnnamed` 18 → 0.
 /// * miss-first: the label's ray solves before it asks for bounds, so a cylinder the ray
 ///   runs clear of counts 0 even where the face is a panel or a chain (`SpanAsk::MissOnly`,
 ///   an ask cell ②-b retired when a lateral's loops became readable),
@@ -10424,7 +10424,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     };
     const TOOLS: [&str; 5] = ["mid", "top", "bottom", "axis wall", "wall slab"];
     // Per family, per kind: the five tools' outcomes, in `TOOLS` order.
-    use RejectReason::{BranchVertexUnnamed, NoClearRay, RingHasNoWitness, RulingBoundNotYet};
+    use RejectReason::{NoClearRay, PierceVertexUnnamed, RingHasNoWitness, RulingBoundNotYet};
     // A band result: the mid slab parts the plate into two solids, the top and bottom slabs cut
     // the standing boss, the wall slab clears the boss. The through-axis wall builds since the
     // chord's cell reads its cylinder from the class table (E3-b/c). ★ The Common column used to
@@ -10437,7 +10437,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // hands over its **midpoint** now, so the two constants have nothing left to tell apart.
     const BAND_COMMON: [Cross; 5] = BAND;
     // A wall boss fused: the wall slab's caps cross the plate's wall face on the boss's
-    // **rulings** — named as branch nodes since E3 — and the cut builds with its exact volume.
+    // **rulings** — named as pierce nodes since E3 — and the cut builds with its exact volume.
     // The mid slab does the same and then splits the result in two — and the label decides:
     // every deciding probe's rays run clear of the boss, and a miss now counts 0 against a
     // panel/chain lateral (miss-first), so both halves classify and build with their exact
@@ -10463,7 +10463,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // differing cell is gone: they take `HALF_FUSE` whole.
     // A Common result — the inner half-cylinder alone, two half-disk caps and a flat side. Under a
     // **slab** the cut severs it in two and the coplanar cleaning pass nests the pieces' rings,
-    // where no probe decides at the half-disk's branch corners (`NoClearRay` — the cleaning's own
+    // where no probe decides at the half-disk's pierce corners (`NoClearRay` — the cleaning's own
     // nesting road, a wall of its own beside the label's). The **through-axis wall** cuts the
     // other way and leaves one solid, so it never reaches that road: since the sector reads as a
     // run of arcs (this rung) it builds with its exact volume. ☑ Of the nine families that take
@@ -10537,7 +10537,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // ★ Cell ③ — the offset wall. Every tool builds as it does for the wall families: the
         // mid slab parts the result, the through-axis wall (`y ≥ 2`, ⊥ to the plate's wall)
         // halves the segment. `offset-out`'s Common is a 0.2-deep segment prism whose halves
-        // had **no witness** for one commit — corners that are branch names (dropped by the
+        // had **no witness** for one commit — corners that are pierce names (dropped by the
         // vertex probe) and no candidate of the cut cap's centre-and-steps inside a segment
         // thinner than `r/2` — until the cap offered two points per chord (1b): two solids.
         [[Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON],
@@ -10670,14 +10670,14 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // its loops now. The name is gone from this corpus; a new population must restate this 0.
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 0);
     // ★ The name is gone from this corpus again: it came back for one commit with the offset
-    // wall (cell ③ — a thin segment prism's halves, branch-named corners and no cap candidate
+    // wall (cell ③ — a thin segment prism's halves, pierce-named corners and no cap candidate
     // from the centre inside; two cells, by the name that says «no witness at all» rather than
     // «every witness blocked») and left when the cut cap offered two points per chord. A new
     // population must restate this 0.
     assert_eq!(count(|c| *c == Rejected(RingHasNoWitness)), 0);
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
-    assert_eq!(count(|c| *c == Rejected(BranchVertexUnnamed)), 0);
+    assert_eq!(count(|c| *c == Rejected(PierceVertexUnnamed)), 0);
     // ★ The name is gone from this corpus (D5): every one of its 15 cells was a run whose
     // boundary ruling had no node on the interval's z-line — a region crossing that line
     // transversally in one sector while ending on it in another, which the band vocabulary
@@ -11047,7 +11047,7 @@ enum MotionClass {
     /// A pivot-0 quadrantal rotation: a signed permutation of coordinates, exact on any `f64`,
     /// so the moved result's vertex bits equal the unmoved result's bits moved.
     Quadrantal,
-    /// An exact rigid motion or dyadic translation: rational vertices stay bit-exact; a branch
+    /// An exact rigid motion or dyadic translation: rational vertices stay bit-exact; a pierce
     /// vertex (`a + b√c`, irrational) rounds once more on the moved road.
     ExactRigid,
     /// A non-dyadic translation: the recorded path — volumes, counts and validity only.
@@ -11291,7 +11291,7 @@ fn answers_agree(a: &Answer, b: &Answer) -> Result<(), String> {
 }
 
 /// The result's vertex coordinates as bits, sorted, each tagged by its definition's kind
-/// (0 three-plane, 1 seam, 2 branch) — a `Vec` rather than a hash so the first difference can be
+/// (0 three-plane, 1 seam, 2 pierce) — a `Vec` rather than a hash so the first difference can be
 /// named. Traversal order does not matter; the sort removes it.
 fn sorted_vertex_bits(m: &Model, solids: &[Handle<Solid>]) -> Vec<(u8, [u64; 3])> {
     let mut out = Vec::new();
@@ -11306,7 +11306,7 @@ fn sorted_vertex_bits(m: &Model, solids: &[Handle<Solid>]) -> Vec<(u8, [u64; 3])
                             let kind = match &m.vertices.get(vh).def {
                                 VertexDef::ThreePlane(_) => 0u8,
                                 VertexDef::OnSeam(_) => 1,
-                                VertexDef::Branch { .. } => 2,
+                                VertexDef::Pierce { .. } => 2,
                             };
                             let p = m.vertex_point(vh).as_array();
                             out.push((kind, [p[0].to_bits(), p[1].to_bits(), p[2].to_bits()]));
@@ -11329,8 +11329,8 @@ enum Digest {
     /// Moving the unmoved result was refused (`OriginNotOnSolid`): nothing to compare bits with.
     Refused,
     Identical,
-    /// Equal once branch vertices are left out.
-    BranchlessIdentical,
+    /// Equal once pierce vertices are left out.
+    PiercelessIdentical,
     Differs(String),
 }
 
@@ -11415,11 +11415,11 @@ fn boolean_commutes(
                 if x == y {
                     Digest::Identical
                 } else {
-                    let branchless = |v: &[(u8, [u64; 3])]| -> Vec<(u8, [u64; 3])> {
+                    let pierceless = |v: &[(u8, [u64; 3])]| -> Vec<(u8, [u64; 3])> {
                         v.iter().filter(|e| e.0 != 2).copied().collect()
                     };
-                    if branchless(&x) == branchless(&y) {
-                        Digest::BranchlessIdentical
+                    if pierceless(&x) == pierceless(&y) {
+                        Digest::PiercelessIdentical
                     } else {
                         let first = x
                             .iter()
@@ -11513,7 +11513,7 @@ fn run_commuting_oracle(labels: &[&str]) {
         ("Common", BoolKind::Common),
     ];
     let mut failures: Vec<String> = Vec::new();
-    // Per class: identical, branchless-identical, differs (first), refused, not asked.
+    // Per class: identical, pierceless-identical, differs (first), refused, not asked.
     let mut stats: HashMap<MotionClass, (usize, usize, usize, usize, Option<String>)> =
         HashMap::new();
     let mut known_hit = 0usize;
@@ -11553,15 +11553,15 @@ fn run_commuting_oracle(labels: &[&str]) {
                 }
                 // ★ The commuting diagram's digest is a lock where measurement said it holds
                 // (stage 0: every quadrantal cell bit-identical, 492/492; every exact-rigid cell
-                // identical or identical without its branch vertices, 240/240 of the commuting
-                // ones — the branch vertices of the offset bosses round once more under a
+                // identical or identical without its pierce vertices, 240/240 of the commuting
+                // ones — the pierce vertices of the offset bosses round once more under a
                 // translation, as their `a + b√c` predicts).
                 if known.is_none() {
                     let ok = match (class, &digest) {
                         (MotionClass::Quadrantal, Digest::Identical) => true,
                         (
                             MotionClass::ExactRigid,
-                            Digest::Identical | Digest::BranchlessIdentical,
+                            Digest::Identical | Digest::PiercelessIdentical,
                         ) => true,
                         (MotionClass::Recorded, Digest::NotAsked) => true,
                         // Nothing to compare: no solid came out (a reject, or an empty Common).
@@ -11581,7 +11581,7 @@ fn run_commuting_oracle(labels: &[&str]) {
                 let e = stats.entry(*class).or_insert((0, 0, 0, 0, None));
                 match digest {
                     Digest::Identical => e.0 += 1,
-                    Digest::BranchlessIdentical => e.1 += 1,
+                    Digest::PiercelessIdentical => e.1 += 1,
                     Digest::Differs(first) => {
                         e.2 += 1;
                         e.4.get_or_insert(format!("{fam} {kn} {mn}: {first}"));
@@ -11594,7 +11594,7 @@ fn run_commuting_oracle(labels: &[&str]) {
     }
     for (class, (i, b, d, r, first)) in &stats {
         eprintln!(
-            "EXPM class {class:?} identical {i} / branchless-identical {b} / differs {d} (first: {}) / refused {r}",
+            "EXPM class {class:?} identical {i} / pierceless-identical {b} / differs {d} (first: {}) / refused {r}",
             first.as_deref().unwrap_or("-")
         );
     }
@@ -11812,7 +11812,7 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
                             vertex_defs.push(match m.vertices.get(vh).def {
                                 VertexDef::ThreePlane(_) => "three-plane".to_string(),
                                 VertexDef::OnSeam(_) => "on-seam".to_string(),
-                                VertexDef::Branch { root, .. } => format!("branch {root:?}"),
+                                VertexDef::Pierce { root, .. } => format!("pierce {root:?}"),
                             });
                         }
                     }
@@ -12177,11 +12177,11 @@ fn vertex_def_names(m: &Model, s: Handle<Solid>) -> Vec<String> {
 }
 
 /// ★★★★★ **A slot stands.** Two straight walls tangent to two half cylinders: every corner is a
-/// `Branch` whose root is the **double** one — the wall's plane touches the cylinder along the
+/// `Pierce` whose root is the **double** one — the wall's plane touches the cylinder along the
 /// ruling through that corner, which is what "tangent" says. Volume `(2rL + πr²)·h`, six faces,
 /// valid, and the mesh covers it.
 #[test]
-fn a_slot_extrudes_with_tangent_branch_corners() {
+fn a_slot_extrudes_with_tangent_pierce_corners() {
     let pi = std::f64::consts::PI;
     let mut m = Model::new();
     let (solid, faces) = extrude_world_z(&mut m, slot_profile(0.0, 30.0, 0.0, 5.0), 2.0);
@@ -12197,7 +12197,7 @@ fn a_slot_extrudes_with_tangent_branch_corners() {
         6,
         "two caps, two straight walls, two half cylinders"
     );
-    assert_eq!(vertex_def_names(&m, solid), vec!["branch Double"; 8]);
+    assert_eq!(vertex_def_names(&m, solid), vec!["pierce Double"; 8]);
     let cylinders = faces
         .iter()
         .filter(|&&f| {
@@ -12241,7 +12241,7 @@ fn a_rounded_rectangle_extrudes() {
     let v = nacre_props::mass_props(&m, solid).unwrap().volume;
     assert!((v - (800.0 - (4.0 - pi) * 25.0)).abs() < 1e-9, "{v}");
     assert_eq!(faces.len(), 10);
-    assert_eq!(vertex_def_names(&m, solid), vec!["branch Double"; 16]);
+    assert_eq!(vertex_def_names(&m, solid), vec!["pierce Double"; 16]);
     mesh_covers_faces("a rounded rectangle", &m, &[solid]);
 }
 
@@ -12273,7 +12273,7 @@ fn a_half_disk_has_the_pair_roots_at_its_corners() {
     let defs = vertex_def_names(&m, solid);
     assert_eq!(defs.len(), 4);
     assert!(
-        defs.contains(&"branch Lo".to_string()) && defs.contains(&"branch Hi".to_string()),
+        defs.contains(&"pierce Lo".to_string()) && defs.contains(&"pierce Hi".to_string()),
         "{defs:?}"
     );
     mesh_covers_faces("a half disk", &m, &[solid]);
@@ -13653,7 +13653,7 @@ fn a_plane_through_the_fillet_axis_shares_the_tangent_ruling() {
 /// ★ Cell ⑫ — **one name under every rigid motion.** The tangent corner's identity with the
 /// class's ruling crossing is read from the moved operands' own topology and the moved class
 /// table (`seed_from_operands`, `side_of`), so under each motion of the oracle's group the two
-/// corners on the axis plane must still fold onto one branch representative, no class may
+/// corners on the axis plane must still fold onto one pierce representative, no class may
 /// decline, and the moved fuse must build to the same volume.
 #[test]
 fn a_tangent_corner_has_one_name_under_rigid_motion() {
@@ -13662,7 +13662,7 @@ fn a_tangent_corner_has_one_name_under_rigid_motion() {
         let a = transform(&mut m, plate, &iso).expect("the plate moves");
         let b = transform(&mut m, slab, &iso).expect("the slab moves");
         m.rebuild_adjacency();
-        let corners = arrangement::branch_corner_audit(&m, a, b).expect("the audit runs");
+        let corners = arrangement::pierce_corner_audit(&m, a, b).expect("the audit runs");
         assert_eq!(
             corners.len(),
             2,
@@ -13676,7 +13676,7 @@ fn a_tangent_corner_has_one_name_under_rigid_motion() {
                 "{mn}: one representative, the other root apart: {f:?}"
             );
             assert!(
-                crate::combinatorics::branch_name(f[0]).is_some(),
+                crate::combinatorics::pierce_name(f[0]).is_some(),
                 "{mn}: represented on the cylinder: {:?}",
                 f[0]
             );
@@ -13700,16 +13700,16 @@ fn a_tangent_corner_has_one_name_under_rigid_motion() {
 /// ★ Cell ⑫ — **a point on a cylinder that a foreign class passes through has one name.** The
 /// class plane `x = 1.5` holds the fillet's axis, so one of its two rulings on the fillet is the
 /// fillet's own tangent ruling with the plate's bottom wall, and the tangent corner at each cap
-/// is named three ways — its own `Branch … Double`, the three-plane name of its planes with the
+/// is named three ways — its own `Pierce … Double`, the three-plane name of its planes with the
 /// class, and the class's ruling crossing at the same point. The seed (`seed_from_operands` →
-/// `Aliases::record_on_cylinder`) joins them before any trace, the representative is a branch
+/// `Aliases::record_on_cylinder`) joins them before any trace, the representative is a pierce
 /// name (the point is represented on its cylinder), and the class's *other* root stays another
 /// point. S0 stated the opposite facts — four names unjoined and the lateral's sweep declining
 /// (`Ruling`, from `theta_between`'s coincidence) — and this is that instrument, flipped.
 #[test]
 fn a_tangent_corner_on_a_plane_through_the_axis_has_one_name() {
     let (m, plate, slab) = fillet_plate_and_axis_slab();
-    let corners = arrangement::branch_corner_audit(&m, plate, slab).expect("the audit runs");
+    let corners = arrangement::pierce_corner_audit(&m, plate, slab).expect("the audit runs");
     // The two tangent corners (z = 0 and z = 1) of the ruling `x = 1.5, y = −4`, each on the
     // slab's class `x = 1.5`; the fillet's other tangent corners (`y = −2` with the right wall)
     // are on no foreign class.
@@ -13725,7 +13725,7 @@ fn a_tangent_corner_on_a_plane_through_the_axis_has_one_name() {
         assert_eq!(c.side, 0, "the plate's corner");
         assert!(
             matches!(
-                crate::combinatorics::branch_name(c.corner),
+                crate::combinatorics::pierce_name(c.corner),
                 Some((_, _, nacre_topo::QuadRoot::Double))
             ),
             "a tangent corner: {:?}",
@@ -13742,7 +13742,7 @@ fn a_tangent_corner_on_a_plane_through_the_axis_has_one_name() {
             "one representative, the other root apart: {f:?}"
         );
         assert!(
-            crate::combinatorics::branch_name(f[0]).is_some(),
+            crate::combinatorics::pierce_name(f[0]).is_some(),
             "a point on a cylinder is represented on the cylinder: {:?}",
             f[0]
         );
@@ -14015,7 +14015,7 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
 /// (`contact_separates.rs`'s ⑤c). The two producers were never two rules: the "chord" one refuses
 /// `Carrier::Arc` in as many words, so both were always *a point inside a straight edge* — and
 /// **neither covered the plainest edge there is**, two three-plane corners joined by a straight
-/// step, because both start by asking for a branch name.
+/// step, because both start by asking for a pierce name.
 ///
 /// The oracle is computed **from the corners**, not by calling the arm a second time.
 #[test]
@@ -14153,7 +14153,7 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
 /// ★ Cell 13 — **a ring with no three-plane corner is answered by the witnesses it does have.**
 /// A nesting question is answered by a witness of the source cell; the supply that names those
 /// witnesses used to be spelled four ways, and the spelling the *disk* arm held was one kind wide.
-/// With every corner filleted the plate's cap ring offers eight branch corners, four edge-interior
+/// With every corner filleted the plate's cap ring offers eight pierce corners, four edge-interior
 /// points and **no** three-plane name at all — so that arm found nothing and the plate could not
 /// enter any boolean, whatever the other solid was (this one is a hundred units away).
 ///
@@ -14206,8 +14206,8 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
     for r in &nameless_vs_disk {
         assert_eq!(r.coords, 0, "no three-plane coordinate: {r:?}");
         assert!(
-            r.branch > 0,
-            "but every corner is a rational branch point: {r:?}"
+            r.pierce > 0,
+            "but every corner is a rational pierce point: {r:?}"
         );
         // The rest of the supply, measured: a rounded outline's corners are tangencies, so no
         // edge is a whole chord (`chord` 0) and the ring is not a circle — but its straight edges

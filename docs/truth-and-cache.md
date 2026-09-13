@@ -139,12 +139,12 @@ pub enum Vertex {
     /// ✔ 정의는 완성됐고 **재생하는 기계도 섰다**(칸 ㊵ `realize_vertex`, `seam_point`). ⏳ 없는 것은
     /// 그 값을 캐시에 **되쓰는 것**(칸 ㊸) — 그래서 STEP 은 오늘도 만들 때 나온 f64 를 내보낸다.
     OnSeam([Handle<Surface>; 2]),
-    /// ⏳ **이름을 `Pierce` 로 바꾼다**(2026-09-13 확정, 열린 항목 24): «branch» 는 «어느 근이냐»(수학의
-    /// 가지)를 말하지 «무슨 점이냐»를 말하지 않는다. 이 점은 도법기하의 **관통점**(piercing point)이다.
+    /// ✔ **`Pierce`** (2026-09-13, 열린 항목 24 완료): «branch» 는 «어느 근이냐»(수학의 가지)를
+    /// 말하지 «무슨 점이냐»를 말하지 않아 개명 — 이 점은 도법기하의 **관통점**(piercing point)이다.
     /// ★ **M6 ✔ 도착 — 예고했던 것과 모양이 다르다.** 예고는 `Branch{surfaces, branch}` 였고
     /// 실제는 담체 종류를 **구조로** 말한다(닮은 핸들 셋이 아니라). `root` 는 정준 선 방향
     /// (`n₀ × n₁`, 저장 순서)을 따른 오름차순이고 접선은 `QuadRoot::Double` 이다.
-    Branch {
+    Pierce {
         planes: [Handle<Surface>; 2],         // 오름차순 핸들
         cylinder: Handle<Surface>,
         root: QuadRoot,                       // Lo | Hi | Double
@@ -1606,27 +1606,18 @@ STEP 출력, undo/replay.
     2 를 **공유**하되(둘 다 `[Bounded;3]` 를 품는다) 계단 3 은 상위집합으로 남는다. 접으면 진실/캐시 경계가
     지워진다.
 
-24. ⏳★★★ **`Branch` → `Pierce` — 이름이 «고른 방법»을 말하고 «무슨 점»인지는 안 말한다** (2026-09-13 확정).
+24. ✔ **`Branch` → `Pierce` — 이름이 «무슨 점»인지 말한다** (2026-09-13 완료).
 
-    출처: 최초판 Q5(2026-08-01)의 *"가지 번호(`branch: u8`) 또는 재명명"* — 세 이차곡면이 Bézout 로 최대
-    8점에서 만날 때 «어느 점»을 고르는 임시 단어였다. M6 가 8점을 2점(직선 ∩ 원통)으로 줄이고 그 선택은
-    `root: QuadRoot{Lo, Hi, Double}` 이 받았는데, **변종 이름은 임시 단어를 물려받았다.** CAD 에는 이 정의의
-    이름이 없고(그냥 정점), 도법기하는 정확히 이것을 **관통점(piercing point)** 이라 부른다.
+    최초판 Q5(2026-08-01)의 임시어 «가지 번호»가 변종 이름에 남아 있었다 — `root: QuadRoot{Lo,Hi,Double}` 이
+    «어느 근»을 이미 받는데도. 이 점은 도법기하의 **관통점(piercing point)**: 두 평면의 교선이 원통을 뚫는 점.
 
-    **저장소의 «branch» 는 뜻이 셋이다**(실측):
-
-    | 뜻 | 자리 | 처분 |
-    |---|---|---|
-    | ① 관통점 — `VertexDef::Branch`·`NodeId::Branch`·`branch_meet`·`branch_name`·`cmp_coord_branch`·`branch_vertex_tol`·`tied_branch`·`BranchVertexUnnamed`… | **~500** (`Branch` 185 + 식별자 ~240 + 산문) — combinatorics 89·arrangement 68·bands 38·boolean 37·scalar 20·cip 18 | **`Pierce`** 로 |
-    | ② 그래프 분기 — `SketchError::BranchingVertex`(간선 셋 이상이 한 점) | 1 | 그대로 — 올바른 영어 |
-    | ③ 코드 갈래 — 주석의 *"the exact branch takes"*, *"both branches compute"* | 산문 | 그대로 — 평범한 영어 |
-
-    ⇒ **①만 바꾼다**: 변종·`NodeId` 변종·헬퍼 이름 전부 `Pierce`/`pierce_*`. `QuadRoot` 는 «어느 근»이라
-    «가지»의 제자리이므로 **그대로**. `NodeId::Branch` 는 doc 이 *"the point `VertexDef::Branch` names"* 라
-    적은 같은 개념(클래스 인덱스 공간)이라 **같이 간다** — 한 개념 한 단어. 덤: ③(if 팔)과의 충돌이 사라진다
-    (`frame3.rs` 는 두 뜻을 이웃 줄에서 쓴다).
-    순수 개명 · census 무영향 · 타입이 바뀌므로 놓친 자리는 컴파일 오류. ⚠ 문의 이름 칸(21)의 경로가 아니라
-    배열 엔진 내부라 **자기 패스**가 필요하다 — 다음 불리언 칸에 얹거나 따로.
+    개명한 것 — **① 관통점 엔티티**(topo+ops+validate): `VertexDef::Pierce`, 형제 enum 넷
+    (`NodeId`·`PointOn`·`OnLine`·`Located`)의 `Pierce` 변종, 헬퍼 `pierce_*`(`pierce_meet`·`pierce_name`·
+    `pierce_vertex_tol`…), 산문·테스트 라벨. 그대로 둔 것 — **② 근**(scalar/cip 의 `*_branch`,
+    `QuadRoot` 자체)과 **③ 그래프/제어**(`SketchError::BranchingVertex`, "code branch" 산문).
+    ★ **구조가 경계를 강제했다**: scalar/cip 는 topo 에 의존하지 않아 그 `branch` 는 관통점일 수 없다(어느 근).
+    그래서 개명 전 분석표가 `cmp_coord_branch` 를 ①로 넣은 것은 틀렸다 — 근 뜻이라 그대로다.
+    순수 개명 · **census 비트 동일**(debug·release 양 프로파일, 398행).
 
 25. ⏳★★★★ **원/원호의 진실은 «실현값»이 아니라 «정의»여야 한다 — 평면의 normal-vs-coefficients 와 같은 갈래**
     (2026-09-13 진단, 곡선 마일스톤 입력).

@@ -864,13 +864,13 @@ fn transform_solid(
             // defined against the meet line of the *stored* order. `QuadRoot::canonical` owns
             // that restatement — including the tangency, whose single point a swap fixes — and
             // this site reads it rather than spelling it again.
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [p0, p1],
                 cylinder,
                 root,
             } => {
                 let (planes, root) = nacre_topo::QuadRoot::canonical([remap(p0), remap(p1)], root);
-                VertexDef::Branch {
+                VertexDef::Pierce {
                     planes,
                     cylinder: remap(cylinder),
                     root,
@@ -1253,19 +1253,19 @@ mod tests {
         );
     }
 
-    /// ★ M6-1: the remap of a `Branch` definition is not `.map(remap)` — pass 1 issues new
+    /// ★ M6-1: the remap of a `Pierce` definition is not `.map(remap)` — pass 1 issues new
     /// surface handles in face-traversal order, so the two planes' handle order can invert,
     /// and re-sorting flips the canonical line direction ℓ = n₁×n₂, so the root must toggle
     /// with the swap or `Lo` silently names the other point.
     ///
-    /// The fixture makes the swap *actually happen*: the branch planes are the cylinder's
+    /// The fixture makes the swap *actually happen*: the pierce planes are the cylinder's
     /// bottom cap (a fresh handle after a z-translation) and the world x = 0 seed (invariant
     /// under that translation — it keeps handle 1), so `[cap(0), x0(1)]` remaps to
     /// `[N, 1] → sorted [1, N]` — swapped. Geometry agrees with the toggle: with planes
     /// `[cap, x0]` the canonical ℓ is +y and the y = −2 point is `Lo`; with `[x0, cap′]` ℓ
     /// is −y and that same point is `Hi`.
     #[test]
-    fn a_branch_definition_swap_toggles_its_root() {
+    fn a_pierce_definition_swap_toggles_its_root() {
         use nacre_topo::QuadRoot;
         let mut m = Model::new();
         let s = m.add_cylinder(
@@ -1285,10 +1285,10 @@ mod tests {
         let bottom = m.world_plane(Axis::Z); // the z = 0 cap interned onto the world seed
         let x0 = m.world_plane(Axis::X);
         assert!(bottom.index() < x0.index(), "the fixture's premise");
-        // The two branch points of {z = 0} ∧ {x = 0} against the cylinder: (0, ∓2, 0).
+        // The two pierce points of {z = 0} ∧ {x = 0} against the cylinder: (0, ∓2, 0).
         // Canonical normals (0,0,1) × (1,0,0) = +y, so y = −2 is the smaller parameter: Lo.
         let v_lo = m.push_vertex(
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Lo,
@@ -1297,7 +1297,7 @@ mod tests {
             None,
         );
         let v_hi = m.push_vertex(
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Hi,
@@ -1334,7 +1334,7 @@ mod tests {
         let iso = Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::from_int(1)]);
         let moved = transform_solid(&mut m, franken_solid, &Xform::Rigid(&iso)).expect("moves");
 
-        // Find the two branch vertices of the moved solid and read their defs.
+        // Find the two pierce vertices of the moved solid and read their defs.
         let mut seen = Vec::new();
         let solid = m.solids.get(moved).clone();
         for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
@@ -1343,7 +1343,7 @@ mod tests {
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
                         for &vh in m.edges.get(he.edge).vertices.iter() {
-                            if let VertexDef::Branch { planes, root, .. } = m.vertices.get(vh).def {
+                            if let VertexDef::Pierce { planes, root, .. } = m.vertices.get(vh).def {
                                 seen.push((m.vertex_point(vh).as_array(), planes, root));
                             }
                         }
@@ -1353,7 +1353,7 @@ mod tests {
         }
         seen.sort_by(|a, b| a.0[1].partial_cmp(&b.0[1]).unwrap());
         seen.dedup_by_key(|e| e.0[1] as i64);
-        assert_eq!(seen.len(), 2, "both branch vertices survive the move");
+        assert_eq!(seen.len(), 2, "both pierce vertices survive the move");
         for (p, planes, root) in &seen {
             assert!(
                 planes[0].index() < planes[1].index(),

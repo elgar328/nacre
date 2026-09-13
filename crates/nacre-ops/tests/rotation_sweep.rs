@@ -457,7 +457,7 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
     // question wraps its own triple (`NodeId::three_planes(..)`) while the walk hands over a ring
     // member it was given; and it takes a cylinder table, so a road that has none passes `&[]` —
     // which is exactly the three that ask about a point or about a **result** cell's ring, where a
-    // branch node declines as it always did. The one call with a real table is the walk.
+    // pierce node declines as it always did. The one call with a real table is the walk.
     offenders.retain(|o| {
         !o.contains("side_of(jd, cyls, nodes[i], q)")
             && !o.contains("side_of(jd, &[], NodeId::three_planes(Canon3::three(v)), r)")

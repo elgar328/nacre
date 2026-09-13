@@ -1077,7 +1077,7 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
 
 /// **The definition of a corner where a straight wall meets an arc wall on a cap**: the wall's
 /// plane and the cap's plane meet in a line, and that line crosses the arc's cylinder at this
-/// point — [`VertexDef::Branch`], the same definition the boolean mints for its branch corners.
+/// point — [`VertexDef::Pierce`], the same definition the boolean mints for its pierce corners.
 ///
 /// The root is read the way `QuadRoot` is defined: the two planes in **ascending handle order**,
 /// each by its **stored canonical name** (`surface_name`, the sign convention that fixes the meet
@@ -1087,7 +1087,7 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
 /// has to live in one frame for the meet to mean anything: a cap borrowed from another body in
 /// another frame (a pad on a turned face) declines by name rather than reading a frame line
 /// against a world cylinder.
-fn branch_def(
+fn pierce_def(
     model: &Model,
     plane: Handle<Surface>,
     cap: Handle<Surface>,
@@ -1153,7 +1153,7 @@ fn branch_def(
         }
         _ => return Err(OpError::DegenerateGeometry),
     };
-    Ok(VertexDef::Branch {
+    Ok(VertexDef::Pierce {
         planes: [a, b],
         cylinder,
         root,
@@ -1245,9 +1245,9 @@ fn datum_plane(
             let tri = match model.vertices.get(*vh).def {
                 nacre_topo::VertexDef::ThreePlane(tri) => tri,
                 // A through-vertices datum needs three-plane meets; a seam vertex has no
-                // point-meet at all and a branch point has no rational one — the same honest
+                // point-meet at all and a pierce point has no rational one — the same honest
                 // reject, spelled per variant.
-                nacre_topo::VertexDef::OnSeam(_) | nacre_topo::VertexDef::Branch { .. } => {
+                nacre_topo::VertexDef::OnSeam(_) | nacre_topo::VertexDef::Pierce { .. } => {
                     return Err(OpError::VertexNotThreePlane);
                 }
             };
@@ -2085,8 +2085,8 @@ fn sweep_ring(
             (true, true) => Err(OpError::ArcsMeetAtVertex),
             // A straight wall meets an arc wall on the cap: the wall's plane and the cap's plane
             // meet in a line that crosses the arc's cylinder there.
-            (true, false) => branch_def(model, here, cap, prev, at),
-            (false, true) => branch_def(model, prev, cap, here, at),
+            (true, false) => pierce_def(model, here, cap, prev, at),
+            (false, true) => pierce_def(model, prev, cap, here, at),
         }
     };
     let push_verts = |model: &mut Model,

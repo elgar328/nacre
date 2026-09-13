@@ -167,7 +167,7 @@ fn cylinder() -> Model {
     m
 }
 
-/// A box with a bore through it — the wall/bore crossings are `VertexDef::Branch`.
+/// A box with a bore through it — the wall/bore crossings are `VertexDef::Pierce`.
 fn bored_plate() -> Model {
     let mut m = Model::new();
     let profile = from_edges(vec![
@@ -195,18 +195,18 @@ fn bored_plate() -> Model {
     m
 }
 
-/// **A hand-built `Branch` vertex** — the kernel does not mint these yet.
+/// **A hand-built `Pierce` vertex** — the kernel does not mint these yet.
 ///
-/// `VertexDef::Branch`'s own doc records why: *"The producer arrives with M6-2's boolean; until
+/// `VertexDef::Pierce`'s own doc records why: *"The producer arrives with M6-2's boolean; until
 /// then hand-built fixtures and validate are the consumers"* — the assembler declines to mint a
-/// branch node because class order and handle order are canonical in different index spaces. So a
+/// pierce node because class order and handle order are canonical in different index spaces. So a
 /// fixture that waited for a boolean to produce one would measure nothing, forever.
 ///
 /// The shape: a radius-3 cylinder on the world Z axis at `(2, 2)`, and a cuboid whose faces supply
 /// plane carriers. Every plane pair is offered to the door; the ones whose meet line actually
 /// crosses the lateral surface answer, the rest refuse. Both outcomes are asserted, so this cannot
 /// pass by refusing everything.
-fn branch_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
+fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
     use nacre_topo::{QuadRoot, VertexDef};
     let mut cyl = None;
     let mut planes = Vec::new();
@@ -223,11 +223,11 @@ fn branch_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
     let mut out = Vec::new();
     for a in 0..planes.len() {
         for b in (a + 1)..planes.len() {
-            // Ascending handle order is `Branch`'s stored convention.
+            // Ascending handle order is `Pierce`'s stored convention.
             let (p0, p1) = (planes[a], planes[b]);
             for root in [QuadRoot::Lo, QuadRoot::Hi, QuadRoot::Double] {
                 out.push(m.push_vertex(
-                    VertexDef::Branch {
+                    VertexDef::Pierce {
                         planes: [p0, p1],
                         cylinder,
                         root,
@@ -408,12 +408,12 @@ fn the_door_returns_the_places_it_was_asked_for() {
 /// ★★ **Lock 2 — every variant answers, and it is raised for real rather than tabulated.**
 ///
 /// A table of variants proves nothing about a dispatch; these fixtures actually mint an `OnSeam`
-/// rim corner and a `Branch` wall crossing, and the test fails if a population goes empty — which
+/// rim corner and a `Pierce` wall crossing, and the test fails if a population goes empty — which
 /// is how deleting one arm shows up as something other than a smaller number nobody reads.
 #[test]
 fn every_vertex_variant_answers() {
     use nacre_topo::VertexDef;
-    let (mut seam, mut branch, mut three) = (0usize, 0usize, 0usize);
+    let (mut seam, mut pierce, mut three) = (0usize, 0usize, 0usize);
     for m in [cylinder(), bored_plate(), boolean_corner()] {
         for vh in live_vertices(&m) {
             let kind = m.vertices.get(vh).def;
@@ -425,25 +425,25 @@ fn every_vertex_variant_answers() {
             }
             match kind {
                 VertexDef::OnSeam(_) => seam += 1,
-                VertexDef::Branch { .. } => branch += 1,
+                VertexDef::Pierce { .. } => pierce += 1,
                 VertexDef::ThreePlane(_) => three += 1,
             }
         }
     }
-    // `Branch` has no producer in the kernel yet, so its population is built here.
+    // `Pierce` has no producer in the kernel yet, so its population is built here.
     let mut m = cylinder();
     let _ = m.add_cuboid(
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 1.0]),
     );
     let mut refused = 0usize;
-    for vh in branch_vertices(&mut m) {
+    for vh in pierce_vertices(&mut m) {
         match realize_vertex_decimal(&m, vh, 25) {
             Ok(d) => {
                 for s in &d {
                     assert_eq!(s.split_once('.').expect("a point").1.len(), 25);
                 }
-                // ★ An oracle that owes nothing to the derivation: a branch point is a point
+                // ★ An oracle that owes nothing to the derivation: a pierce point is a point
                 // **on the cylinder**, so its distance from the axis is the radius. The fixture's
                 // bore is radius 3 about `(2, 2)` on the world Z axis.
                 let (x, y) = (
@@ -453,9 +453,9 @@ fn every_vertex_variant_answers() {
                 let rr = ((x - 2.0).powi(2) + (y - 2.0).powi(2)).sqrt();
                 assert!(
                     (rr - 3.0).abs() < 1e-9,
-                    "a branch point is {rr} from the axis, not the radius 3"
+                    "a pierce point is {rr} from the axis, not the radius 3"
                 );
-                branch += 1;
+                pierce += 1;
             }
             // ★ **Which refusal, not just that there was one.** A plane pair whose meet line
             // misses the cylinder is a *curved* definition failing to resolve; `vertex_meet` is
@@ -465,21 +465,21 @@ fn every_vertex_variant_answers() {
                 assert_eq!(
                     e,
                     RealizeError::NoCurvedPoint,
-                    "a branch pair that does not cross should say so in its own words"
+                    "a pierce pair that does not cross should say so in its own words"
                 );
                 refused += 1;
             }
         }
     }
-    println!("answered: three_plane={three} on_seam={seam} branch={branch} (refused {refused})");
+    println!("answered: three_plane={three} on_seam={seam} pierce={pierce} (refused {refused})");
     assert!(three > 0, "no three-plane vertex answered");
     assert!(
         seam > 0,
         "no OnSeam vertex answered — that arm is not being exercised"
     );
     assert!(
-        branch > 0,
-        "no Branch vertex answered — that arm is not being exercised"
+        pierce > 0,
+        "no Pierce vertex answered — that arm is not being exercised"
     );
     assert!(
         refused > 0,
@@ -489,7 +489,7 @@ fn every_vertex_variant_answers() {
 
 /// ★★★ **The curved arms are checked against a route that shares nothing with them.**
 ///
-/// A seam or branch coordinate is assembled here out of `inv_sqrt_bounded` and exact rational
+/// A seam or pierce coordinate is assembled here out of `inv_sqrt_bounded` and exact rational
 /// arithmetic; the cached one was computed at boolean time by different code entirely. Agreement
 /// to the cache's own accuracy is therefore evidence, where comparing two spellings of the same
 /// derivation would not be (`tests/` has that failure on record).

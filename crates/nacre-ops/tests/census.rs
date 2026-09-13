@@ -685,7 +685,7 @@ fn dump() {
             record(&format!("cyl {kn}"), &m, &inputs, &out);
         }
         // ── **Cut rims** (M6-2b green): a boss whose circle a boundary segment cuts — the arc
-        // population. Three placements: straddling the plate's top edge (seam ≡ branch), turned
+        // population. Three placements: straddling the plate's top edge (seam ≡ pierce), turned
         // over the corner (the seam splits the wrap arc), and hung under the bottom edge (the
         // cut circle is the band's hi end).
         for (pn, origin, axis) in [
@@ -713,7 +713,7 @@ fn dump() {
             }
         }
         // ── **A bored plate, then a straddling boss** (chaining wall 3): the second boolean's
-        // nesting reads a bitten top ring — branch corners and an arc step — so the containment
+        // nesting reads a bitten top ring — pierce corners and an arc step — so the containment
         // parity runs the mixed road instead of the rational chart. The first boolean is fixed
         // (`cut` the through-bore); the second varies by kind.
         for (kn, k) in KINDS {
@@ -1381,7 +1381,7 @@ fn dump() {
         nacre_topo::SEEDED_HITS.load(std::sync::atomic::Ordering::Relaxed)
     );
     // ── **Arc profiles** (cell ⑨): sketched circles and arcs extruded, then met by a box. The
-    // half disk's chord wall *crosses* its cylinder (branch corners `Lo`/`Hi`), the annulus and
+    // half disk's chord wall *crosses* its cylinder (pierce corners `Lo`/`Hi`), the annulus and
     // the bored plate have only whole circles; the slot's straight walls are *tangent* to its half
     // cylinders, the ruling the tracer has no side for — its rows record that refusal by name.
     {
@@ -1925,7 +1925,7 @@ fn dump() {
     // ── **A plane through a fillet's axis** (cell ⑫): a class plane that holds a fillet's axis
     // has two rulings on the fillet, and one of them can be the fillet's own tangent ruling with
     // the plate's wall. That line then carries names from two vocabularies — the operand's tangent
-    // corner (`Branch … Double`) and the class's ruling crossing (`Branch … Lo/Hi`) — with nothing
+    // corner (`Pierce … Double`) and the class's ruling crossing (`Pierce … Lo/Hi`) — with nothing
     // that knows they are one point, and the lateral's ruling sweep declines by name. The rows:
     // the minimal plate-and-slab in both contact shapes, an off-axis control, and the user's
     // four-part fold at the script's own gusset positions (`1.5`/`−2.5`).

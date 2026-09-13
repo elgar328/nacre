@@ -76,7 +76,7 @@ pub enum RealizeError {
     WideUnderMotion,
     /// The vertex's motion chain could not be rebuilt exactly.
     NoMotionChain,
-    /// A curved definition (`OnSeam`, `Branch`) did not resolve into a point.
+    /// A curved definition (`OnSeam`, `Pierce`) did not resolve into a point.
     ///
     /// ⚠ **This is a bag, and saying so is the point.** It covers: a carrier that cannot be
     /// stated in the world exactly, a cap plane that is not perpendicular to the axis (so it
@@ -229,11 +229,11 @@ fn build(model: &Model, v: Handle<Vertex>, bits: usize) -> Result<Realized, Real
         nacre_topo::VertexDef::OnSeam([cyl, cap]) => {
             curved(seam_point(model, cyl, cap, bits), bits)
         }
-        nacre_topo::VertexDef::Branch {
+        nacre_topo::VertexDef::Pierce {
             planes,
             cylinder,
             root,
-        } => curved(branch_point(model, planes, cylinder, root, bits), bits),
+        } => curved(pierce_point(model, planes, cylinder, root, bits), bits),
     }
 }
 
@@ -265,9 +265,9 @@ fn seam_point(
     nacre_scalar::realize_seam_point(centre, perp_component(&e, &m)?, r, bits)
 }
 
-/// **A branch vertex is the meet line's point at its root** — the two cutting planes give the
+/// **A pierce vertex is the meet line's point at its root** — the two cutting planes give the
 /// line, the cylinder gives the quadratic, and `root` names which crossing.
-fn branch_point(
+fn pierce_point(
     model: &Model,
     planes: [Handle<Surface>; 2],
     cylinder: Handle<Surface>,
@@ -333,7 +333,7 @@ fn perp_component(
 }
 
 /// **Which of the crossings `root` names.** `Lo`/`Hi` are ascending parameter along the meet
-/// line's direction — `nacre_scalar::quad`'s pair order, which is `VertexDef::Branch`'s stated
+/// line's direction — `nacre_scalar::quad`'s pair order, which is `VertexDef::Pierce`'s stated
 /// convention — and a tangency is one point spelled `Double`, never `Lo`.
 ///
 /// ⚠ Split out because the integration oracle ("the point is on the cylinder") is satisfied by
@@ -393,7 +393,7 @@ mod tests {
     ///
     /// The oracle the integration test uses — "the point is on the cylinder" — is satisfied by
     /// *both* roots, so swapping them leaves it green (planted and measured). This asks the
-    /// question that actually distinguishes them, in the vocabulary `VertexDef::Branch`'s doc
+    /// question that actually distinguishes them, in the vocabulary `VertexDef::Pierce`'s doc
     /// defines: ascending parameter along `n₀ × n₁`.
     #[test]
     fn lo_and_hi_run_along_the_line() {

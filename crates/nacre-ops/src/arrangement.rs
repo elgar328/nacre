@@ -366,7 +366,7 @@ fn merge_circles(
 /// **One piece of a solid's ruling trace on a ∥ class** (M6-2 rulings ladder): a lateral face's
 /// mark on a plane class that contains the cylinder's axis, along one of the two axis-parallel
 /// lines. The ruling sibling of [`CircleTrace`], with ends because a ruling is not closed:
-/// `end[0]` → `end[1]` ascends the axis, and both are Branch names (`{wc, ⊥ plane, cyl, root}` —
+/// `end[0]` → `end[1]` ascends the axis, and both are Pierce names (`{wc, ⊥ plane, cyl, root}` —
 /// real classes, found by the tracer).
 ///
 /// ★★ **It used to say "spanning the face's own rims", and a hole makes that false.** Where the
@@ -515,14 +515,14 @@ fn seed_from_operands(
                         nr.triples
                             .iter()
                             .copied()
-                            .filter(|&n| combinatorics::branch_name(n).is_some()),
+                            .filter(|&n| combinatorics::pierce_name(n).is_some()),
                     );
                 }
             }
         }
     }
-    // ★ Cell ⑫ — **the operands' cylinder corners, against every class.** A branch corner
-    // (`Branch{[p0, p1], cyl, root}` — a fillet's tangent corner, a boss's foot) is a point some
+    // ★ Cell ⑫ — **the operands' cylinder corners, against every class.** A pierce corner
+    // (`Pierce{[p0, p1], cyl, root}` — a fillet's tangent corner, a boss's foot) is a point some
     // *other* class may pass through: the gusset's side plane through the fillet axis contains
     // the tangent ruling, and so the corner. Then the point has three names — its own, the
     // three-plane `[p0, p1, wc]`, and the class's crossing of that ruling — and
@@ -535,7 +535,7 @@ fn seed_from_operands(
     corners.sort_unstable();
     corners.dedup();
     for &corner in &corners {
-        let Some((planes, _, _)) = combinatorics::branch_name(corner) else {
+        let Some((planes, _, _)) = combinatorics::pierce_name(corner) else {
             continue;
         };
         for c in 0..jd.planes.len() {
@@ -575,9 +575,9 @@ fn seed_from_operands(
 /// two sources land in one component.
 ///
 /// ★ Cell ⑫: a point of the table need not be a plane name at all. The seed also learns every
-/// **branch corner** an operand carries that some further class passes through
+/// **pierce corner** an operand carries that some further class passes through
 /// ([`Aliases::record_on_cylinder`]), so one component can hold a corner, a three-plane name and
-/// a class's ruling crossing; the representative among those is a **branch** name
+/// a class's ruling crossing; the representative among those is a **pierce** name
 /// ([`Aliases::rep_rank`] — a point on a cylinder is represented on the cylinder, because the
 /// lateral chart reads the cylinder off the name).
 // `Clone` so a round can hand every class the table as it stood when the round began, and
@@ -618,7 +618,7 @@ impl Aliases {
         }
     }
 
-    /// **A branch corner found on a further plane class** (cell ⑫) — the cylinder twin of
+    /// **A pierce corner found on a further plane class** (cell ⑫) — the cylinder twin of
     /// [`Aliases::record`]. The corner's planes `p0, p1` and the class `wc` all pass through the
     /// point, and so does the cylinder; every name that set can produce denotes it: the corner's
     /// own, the three-plane name of `{p0, p1, wc}` (when independent), and `wc`'s ruling crossing
@@ -635,7 +635,7 @@ impl Aliases {
         corner: NodeId,
         wc: usize,
     ) {
-        let Some((planes, cyl, _)) = combinatorics::branch_name(corner) else {
+        let Some((planes, cyl, _)) = combinatorics::pierce_name(corner) else {
             return;
         };
         let mut s = vec![planes[0], planes[1], wc];
@@ -652,7 +652,7 @@ impl Aliases {
         let Some(w) = combinatorics::class_coeffs_rat(jd, wc) else {
             return;
         };
-        let Some(meet) = combinatorics::branch_meet(jd, cyl, def, corner) else {
+        let Some(meet) = combinatorics::pierce_meet(jd, cyl, def, corner) else {
             return;
         };
         let Some(side) = ruling_side(&w, def, (&meet.0, &meet.1)) else {
@@ -680,11 +680,11 @@ impl Aliases {
     ///
     /// Among three-plane names it is the least, which is [`combinatorics::canonical_triple`]'s
     /// own answer (cell ⑪: the operand's name and the arrangement's discoveries meet there).
-    /// ★ Cell ⑫: **a point on a cylinder is represented on the cylinder.** A `Branch` name
+    /// ★ Cell ⑫: **a point on a cylinder is represented on the cylinder.** A `Pierce` name
     /// locates the point exactly *and* says which cylinder it lies on — the lateral chart's
-    /// geometry (θ about the axis, `branch_meet`) reads that from the name — while a three-plane
+    /// geometry (θ about the axis, `pierce_meet`) reads that from the name — while a three-plane
     /// name of the same point (a class through a tangent corner: `ThreePlane([cap, t, wc])`) is
-    /// a key only. So a branch name outranks a three-plane name; among branch names the least.
+    /// a key only. So a pierce name outranks a three-plane name; among pierce names the least.
     /// Either way the representative is a function of the class alone.
     fn rep_rank(n: NodeId) -> (u8, NodeId) {
         (u8::from(matches!(n, NodeId::ThreePlane(_))), n)
@@ -839,7 +839,7 @@ fn plane_ring(
 /// ★★ It used to be a bare third plane (`r`), which is the shape a three-plane point has and no
 /// other. The name is now carried whole ([`NodeId`], so a corner a cylinder made can be one) and
 /// the pin says **which kind** it is ([`combinatorics::EndPin`]) — the same pair a segment's ends
-/// already travel as. The crossing arm writes the other pair — `Branch`/`Cylinder` — where the
+/// already travel as. The crossing arm writes the other pair — `Pierce`/`Cylinder` — where the
 /// ring crosses the class line on a ruling ([`crossing_on_ruling`]).
 struct Node {
     /// The point's own name — what the arrangement calls it, and what a segment's end records.
@@ -971,7 +971,7 @@ fn trace_transversal_face(
             // (E3-b). The population gate admits a ∥-axis wall clear of the hole's cylinder
             // (skip: the circle cannot meet `L`) or **recorded** — within the radius, through
             // the axis or offset from it (cell ③) — and there the line cuts the hole in the
-            // chord's two branch points, which used to be skipped "by proof": the proof covered
+            // chord's two pierce points, which used to be skipped "by proof": the proof covered
             // the clear half only, and the planted full-width chord surfaced as `LabelConflict`
             // on the through-family × through-axis tool (measured). The two roots are pushed as
             // flip nodes — the hole's own chord, named the same way a disk outer's is
@@ -1029,7 +1029,7 @@ fn trace_transversal_face(
             // its name and there is no fourth-plane alias to record either.
             let (n, t) = match three_plane_name(n) {
                 Some(t) => (n, t),
-                None => match combinatorics::branch_name(n) {
+                None => match combinatorics::pierce_name(n) {
                     // Pinned by the quadric: its own pair is this line's.
                     Some((planes, _, _)) if planes.contains(&wc) => {
                         return Ok((n, combinatorics::EndPin::Cylinder));
@@ -1039,7 +1039,7 @@ fn trace_transversal_face(
                     // its own planes is `wc`. Three planes pass through the point — its own two and
                     // `wc` — so it is a **three-plane point**, named by them like any other; the
                     // cylinder is a fourth carrier that names nothing here. (Restating it as a
-                    // branch of a new pair kept a root that pair does not have — measured, the
+                    // pierce of a new pair kept a root that pair does not have — measured, the
                     // fold's gusset beside the plate's fillet.)
                     Some((planes, _, _)) => {
                         // ★ Cell ⑫: this corner has a third plane through it, so every name
@@ -1131,7 +1131,7 @@ fn trace_transversal_face(
             // class at its end (E3-c). ☑ Measured 0 raises across the workspace suite; the name
             // is kept because the walk can still say it.
             combinatorics::RingWalk::Unnameable => {
-                declined = Some(DeclineKind::BranchNode);
+                declined = Some(DeclineKind::PierceNode);
                 break;
             }
         };
@@ -1144,7 +1144,7 @@ fn trace_transversal_face(
                     // hand back a plane the edge does not ride at a concurrency.
                     //
                     //
-                    // ★ A crossing on a **ruling** is a point on the cylinder — a branch node
+                    // ★ A crossing on a **ruling** is a point on the cylinder — a pierce node
                     // `wc ∩ fc ∩ cyl`, pinned by the quadric ([`crossing_on_ruling`]); the second
                     // operation on a wall boss makes one wherever a ⊥ cap crosses the plate's
                     // wall face along the boss's rulings (the crossing census's mid slab). A
@@ -1246,7 +1246,7 @@ fn trace_transversal_face(
                                 // straddling transversal.
                                 let Some(ba) = run_body_above(jd, cyls, faces, wc, fc, fp, &rs)
                                 else {
-                                    declined = Some(DeclineKind::BranchNode);
+                                    declined = Some(DeclineKind::PierceNode);
                                     break 'rings;
                                 };
                                 let graze_above = Some(ba);
@@ -1297,7 +1297,7 @@ fn trace_transversal_face(
     };
     nodes.sort_by(|a, b| order(a, b, &mut unordered));
     if unordered {
-        out.declined.push((fp, DeclineKind::BranchNode));
+        out.declined.push((fp, DeclineKind::PierceNode));
         return;
     }
     for w in nodes.windows(2) {
@@ -2063,8 +2063,8 @@ pub(crate) mod arc_probe {
         arc: [NodeId; 2],
     ) {
         let (Some(pa), Some(pb)) = (
-            combinatorics::branch_point(jd, cyl, def, arc[0]),
-            combinatorics::branch_point(jd, cyl, def, arc[1]),
+            combinatorics::pierce_point(jd, cyl, def, arc[0]),
+            combinatorics::pierce_point(jd, cyl, def, arc[1]),
         ) else {
             return;
         };
@@ -2221,7 +2221,7 @@ fn material_theta_sign(orient_sign: i8, travel_up: i8) -> i8 {
 /// stored one, negative included. A predicate built on it answers about *identity* (which of two
 /// rulings, which side of a pair) frame-freely, because the same spelling is used on both sides of
 /// the comparison; a **label** is different, because "above" is defined by the stored normal. This
-/// is the correction [`combinatorics::side_of`]'s branch arm makes inline, lifted so the ∥ ruling
+/// is the correction [`combinatorics::side_of`]'s pierce arm makes inline, lifted so the ∥ ruling
 /// road can make the same one without spelling it a second time.
 /// **Which way `+θ̂` points across a ∥ wall, in the frame a label is written in** — `+1` when
 /// leaving a ruling counter-clockwise about the axis enters the wall's **stored-normal** side.
@@ -2395,7 +2395,7 @@ fn cycle_on_class(
                     return Err(DeclineKind::CylHoleFeature);
                 };
                 let start = ring[edge];
-                let Some((planes, ncyl, _)) = combinatorics::branch_name(start) else {
+                let Some((planes, ncyl, _)) = combinatorics::pierce_name(start) else {
                     return Err(DeclineKind::CylHoleFeature);
                 };
                 if !planes.contains(&j) {
@@ -2521,7 +2521,7 @@ fn chord_nodes(
         return Err(ChordFail::Unstatable);
     };
     let node = |root| Node {
-        id: NodeId::branch(wc, fc, cyl, root),
+        id: NodeId::pierce(wc, fc, cyl, root),
         pin: combinatorics::EndPin::Cylinder,
         flip: true,
         run: None,
@@ -2592,7 +2592,7 @@ pub(crate) fn ruling_side_signed(
 }
 
 /// **The planar scan's crossing on a ruling** — the point where the class line `L = wc ∩ fc`
-/// leaves the face across an edge riding a cylinder's ruling, named as the branch node
+/// leaves the face across an edge riding a cylinder's ruling, named as the pierce node
 /// `wc ∩ fc ∩ cyl` at the root that *is* this ruling.
 ///
 /// A ruling edge lies in the face's own plane `fc` (a plane holding a ruling runs through the
@@ -2605,7 +2605,7 @@ pub(crate) fn ruling_side_signed(
 /// refused at the gate).
 ///
 /// ★ Solved in the caller's order `(wc, fc)`, as [`rulings_on_class`] and [`chord_on_class`]
-/// spell it — [`NodeId::branch`] canonicalizes the pair and the root together, so this is the one
+/// spell it — [`NodeId::pierce`] canonicalizes the pair and the root together, so this is the one
 /// name every road gives the point. The lateral face names the same point when its hole ring
 /// crosses the class ([`cycle_on_class`]'s crossing arm restates the hole corner's own root to
 /// `wc` by the axis senses of the two ⊥ classes); the two spellings agree because the roots of
@@ -2637,7 +2637,7 @@ pub(crate) fn crossing_on_ruling(
     if side == 0 {
         return match meet {
             Some(CylinderMeet::Tangent { .. }) => {
-                Ok(NodeId::branch(wc, fc, cyl, nacre_topo::QuadRoot::Double))
+                Ok(NodeId::pierce(wc, fc, cyl, nacre_topo::QuadRoot::Double))
             }
             _ => Err(no),
         };
@@ -2657,11 +2657,11 @@ pub(crate) fn crossing_on_ruling(
             found = Some(root);
         }
     }
-    Ok(NodeId::branch(wc, fc, cyl, found.ok_or(no)?))
+    Ok(NodeId::pierce(wc, fc, cyl, found.ok_or(no)?))
 }
 
 /// **The planar scan's crossing on an arc** (E3-b) — the point where the class line `L = wc ∩ fc`
-/// leaves the face across an edge riding a circle of `cyl`, named as the branch node
+/// leaves the face across an edge riding a circle of `cyl`, named as the pierce node
 /// `wc ∩ fc ∩ cyl` at the root that lies **inside** the arc.
 ///
 /// The arc lies in the face's own plane `fc` (a cap's ⊥ plane), so the pair `{wc, fc}` cuts the
@@ -2672,7 +2672,7 @@ pub(crate) fn crossing_on_ruling(
 /// diameter's class), refused rather than guessed.
 ///
 /// ★ The same canonical name the lateral's ruling sweep gives this point as a station
-/// (`crossing_on_ruling(fc, wc, …)` — [`NodeId::branch`] folds the pair and root together), so
+/// (`crossing_on_ruling(fc, wc, …)` — [`NodeId::pierce`] folds the pair and root together), so
 /// [`merge_coincident`] reads one point, not two.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn crossing_on_arc(
@@ -2699,7 +2699,7 @@ pub(crate) fn crossing_on_arc(
     let (lo, hi) = if ccw { (a, b) } else { (b, a) };
     let mut found = None;
     for root in [nacre_topo::QuadRoot::Lo, nacre_topo::QuadRoot::Hi] {
-        let node = NodeId::branch(wc, fc, cyl, root);
+        let node = NodeId::pierce(wc, fc, cyl, root);
         if theta_between(jd, cyl, def, lo, hi, node).map_err(|_| no)? {
             if found.is_some() {
                 return Err(no); // both roots inside: the arc meets the line twice
@@ -2730,7 +2730,7 @@ pub(crate) fn crossing_on_arc(
 /// two fixtures and generalising; this one asks the geometry every time.
 /// **Which side of a circle a cell lies on, from its own corners** — the geometry that watches
 /// the disk-side rule. A cell cannot straddle the circle (the circle is an arrangement edge), so
-/// any rational corner with a definite radial side names the side the whole cell is on; a branch
+/// any rational corner with a definite radial side names the side the whole cell is on; a pierce
 /// corner sits *on* the circle and says nothing, and so does a three-plane corner that happens to
 /// land there.
 #[cfg(test)]
@@ -2875,7 +2875,7 @@ pub(crate) mod crossing_probe {
         arc: bool,
         id: NodeId,
     ) {
-        let Some(p) = combinatorics::branch_point(jd, cyl, def, id) else {
+        let Some(p) = combinatorics::pierce_point(jd, cyl, def, id) else {
             return;
         };
         let coeffs = |c: usize| -> Option<[f64; 4]> {
@@ -3059,7 +3059,7 @@ type SweepOut = (Vec<([NodeId; 2], SegKind)>, Vec<Seg>);
 /// Every cycle contributes **stations** on the ruling, each with an event:
 /// - a whole **rim** toggles the face (it starts or ends there);
 /// - an **arc** that strictly contains the ruling's θ ([`theta_between`]) toggles it — the boundary
-///   crosses the line there, at the branch node `{arc's plane, wc}` ([`crossing_on_ruling`], the
+///   crosses the line there, at the pierce node `{arc's plane, wc}` ([`crossing_on_ruling`], the
 ///   one door every road names such a point through);
 /// - a **run** of the cycle's own edges lying on the ruling is a `Graze` over its extent, the side
 ///   the face occupies along it `σ·τ·κ·side` (the rulings ladder's derivation, unchanged), and it
@@ -3189,7 +3189,7 @@ fn ruling_sweep(
                     // Both ends this ruling's crossings with the caps the ends name? Then the edge
                     // lies on the ruling and `wc ∩ t` carries it.
                     let on_ruling_end = |x: NodeId| -> bool {
-                        combinatorics::branch_name(x).is_some_and(|(pl, _, _)| {
+                        combinatorics::pierce_name(x).is_some_and(|(pl, _, _)| {
                             pl.iter().any(|&c| {
                                 c != t
                                     && crossing_on_ruling(jd, def, c, wc, k, side)
@@ -3415,7 +3415,7 @@ pub(crate) mod ruling_probe {
     }
 }
 
-/// Which of the two rulings of `w` this branch node sits on, `0` being a **tangent** wall's
+/// Which of the two rulings of `w` this pierce node sits on, `0` being a **tangent** wall's
 /// single ruling — [`ruling_side_signed`] asked of the point the name denotes. The one spelling:
 /// the chart's `ruling_name` reads it too (D5, 1a — it used to carry a twin).
 ///
@@ -3427,24 +3427,24 @@ pub(crate) fn node_ruling_side(
     w: &[nacre_scalar::Rat; 4],
     n: NodeId,
 ) -> Option<i8> {
-    let (_, cyl, _) = combinatorics::branch_name(n)?;
-    let (line, s) = combinatorics::branch_meet(jd, cyl, def, n)?;
+    let (_, cyl, _) = combinatorics::pierce_name(n)?;
+    let (line, s) = combinatorics::pierce_meet(jd, cyl, def, n)?;
     ruling_side_signed(w, def, (&line, &s))
 }
 
-/// A branch point's axis parameter: one of the two planes in its name is ⊥ the axis (a cap, a
+/// A pierce point's axis parameter: one of the two planes in its name is ⊥ the axis (a cap, a
 /// rim), and **that class's** parameter is the point's — a rational, so the ordering along a
 /// ruling needs no quadratic comparison at all.
 ///
 /// ★ Cell ⑫: it used to require `wc` in the name — a station the sweep minted. A corner the
-/// operand named (`Branch{[cap, t], Double}`, a fillet's tangent corner) lies on `wc`'s ruling
+/// operand named (`Pierce{[cap, t], Double}`, a fillet's tangent corner) lies on `wc`'s ruling
 /// too when `wc` contains it, and its parameter is read the same way: from its cap.
 fn node_axis_param(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
 ) -> Option<nacre_scalar::Rat> {
-    let (planes, _, _) = combinatorics::branch_name(n)?;
+    let (planes, _, _) = combinatorics::pierce_name(n)?;
     planes.iter().find_map(|&c| {
         crate::planes::axis_param_of_plane(&combinatorics::class_coeffs_rat(jd, c)?, def)
     })
@@ -3514,7 +3514,7 @@ fn trace_on_class_of(
 /// One solid only — the second operand slot is filled with the same solid, whose loops are
 /// identical, and only `faces[0]` is read.
 ///
-/// ★ It carries the cylinder table since cell ⑩: a disk cap's chord is two branch-pinned nodes of
+/// ★ It carries the cylinder table since cell ⑩: a disk cap's chord is two pierce-pinned nodes of
 /// the parity sweep, and ordering them along the line asks the cylinder's statement — the old
 /// chord vessel bypassed the sweep, which is why this shim could trace with none.
 #[cfg(test)]
@@ -3616,7 +3616,7 @@ fn merge_coincident(
                     // The canonical name of the line, so every producer on it agrees. A handle
                     // stays as recorded while the endpoint's name does: an aliased wall carries
                     // the *same* line, so a handle that pinned an endpoint there still pins it
-                    // here. ★ Cell ⑫: when the **name** folds (a tangent corner's `Branch` onto
+                    // here. ★ Cell ⑫: when the **name** folds (a tangent corner's `Pierce` onto
                     // the `ThreePlane` of its planes with this class) the pin is derived again
                     // from the representative and the line — [`combinatorics::pin_for`], the one
                     // rule — because a pin is a fact about the name beside it, not luggage.
@@ -3698,23 +3698,23 @@ enum Split {
     /// `group.first()` to the output as the point's name, and that is the "smallest name wins"
     /// rule the arrangement replays on.
     Class(usize),
-    Branch {
+    Pierce {
         cyl: usize,
         root: nacre_topo::QuadRoot,
     },
 }
 
 impl Split {
-    /// ★ **The branch arm keeps the root the producer wrote, not a re-canonicalized one.** A
-    /// segment on `w` in class `wc` has branch ends whose plane pair *is* `{wc, w}`, so the stored
+    /// ★ **The pierce arm keeps the root the producer wrote, not a re-canonicalized one.** A
+    /// segment on `w` in class `wc` has pierce ends whose plane pair *is* `{wc, w}`, so the stored
     /// name is already canonical for it and [`Split::name`] can put it back verbatim. Restating it
-    /// through `NodeId::branch` would re-run the pair ordering and could flip the root — the trap
+    /// through `NodeId::pierce` would re-run the pair ordering and could flip the root — the trap
     /// cell ⑩ recorded.
-    /// ★★★★ **A cylinder pin arrives with a branch name, and that is a producer's invariant, so
+    /// ★★★★ **A cylinder pin arrives with a pierce name, and that is a producer's invariant, so
     /// this panics rather than naming a refusal.** Every site that writes an `EndPin::Cylinder`
-    /// writes the `NodeId::Branch` beside it — the seated walk, the arc split, the chord pass — so
+    /// writes the `NodeId::Pierce` beside it — the seated walk, the arc split, the chord pass — so
     /// the two disagreeing is a defect in *this* kernel, not a property of the model. The
-    /// alternative was `BranchVertexUnnamed`, and its sentence is the mirror image of this case:
+    /// alternative was `PierceVertexUnnamed`, and its sentence is the mirror image of this case:
     /// *"the point is exactly named; what is missing is that these paths have no other name to
     /// carry it by."* Here the point is **not** exactly named — its two halves contradict. A false
     /// sentence in a reject is worse than a loud stop, which is what `ClassIx::plane` says one
@@ -3723,8 +3723,8 @@ impl Split {
     fn of(name: NodeId, pin: combinatorics::EndPin) -> Split {
         match (name, pin) {
             (_, combinatorics::EndPin::Class(r)) => Split::Class(r),
-            (NodeId::Branch { cyl, root, .. }, combinatorics::EndPin::Cylinder) => {
-                Split::Branch { cyl, root }
+            (NodeId::Pierce { cyl, root, .. }, combinatorics::EndPin::Cylinder) => {
+                Split::Pierce { cyl, root }
             }
             (n, combinatorics::EndPin::Cylinder) => unreachable!(
                 "a cylinder pin was written beside a three-plane name: {n:?} — the producer that \
@@ -3738,7 +3738,7 @@ impl Split {
     fn on(self, p: usize, q: usize) -> combinatorics::PointOn {
         match self {
             Split::Class(r) => combinatorics::PointOn::Class(r),
-            Split::Branch { .. } => combinatorics::PointOn::Branch(self.name(p, q)),
+            Split::Pierce { .. } => combinatorics::PointOn::Pierce(self.name(p, q)),
         }
     }
 
@@ -3746,10 +3746,10 @@ impl Split {
     fn name(self, p: usize, q: usize) -> NodeId {
         match self {
             Split::Class(r) => NodeId::three_planes(Canon3::three([p, q, r])),
-            Split::Branch { cyl, root } => {
+            Split::Pierce { cyl, root } => {
                 let mut planes = [p, q];
                 planes.sort_unstable();
-                NodeId::Branch { planes, cyl, root }
+                NodeId::Pierce { planes, cyl, root }
             }
         }
     }
@@ -3758,7 +3758,7 @@ impl Split {
     fn pin(self) -> combinatorics::EndPin {
         match self {
             Split::Class(r) => combinatorics::EndPin::Class(r),
-            Split::Branch { .. } => combinatorics::EndPin::Cylinder,
+            Split::Pierce { .. } => combinatorics::EndPin::Cylinder,
         }
     }
 }
@@ -3780,7 +3780,7 @@ fn split_at_crossings(
     // [`combinatorics::order_located`], which takes both. The endpoints are not read as class ids
     // up front either: they are located as [`combinatorics::OnLine`]s, so an end a cylinder pinned
     // has a form to be compared by. The refusal that used to stand here
-    // (`RejectReason::BranchVertexUnnamed`) went with it — [`Split::of`] and
+    // (`RejectReason::PierceVertexUnnamed`) went with it — [`Split::of`] and
     // `combinatorics::PointOn::of` **panic** on a cylinder pin beside a three-plane name, because
     // those two halves disagreeing is this kernel's defect and not a shape a model can have.
     // ★★ **Both ends of every segment, located on that segment's own line, once.** This is where
@@ -3959,7 +3959,7 @@ fn split_at_crossings(
             // splitting at both would emit a zero-length piece between them.
             // ★★★★ **A tie that involves a cylinder-pinned point is one the alias table must
             // already know.** The plane fold below is a statement about *plane classes* — it
-            // hands `Aliases` a set of them — and a branch name has none to contribute; nor could
+            // hands `Aliases` a set of them — and a pierce name has none to contribute; nor could
             // a fold made here be trusted, since the DCEL keys vertices by name and the two
             // handles would still ship two names. ★ Cell ⑫: the table *does* know such a point
             // when it is an operand's corner a class passes through (the seed,
@@ -3972,17 +3972,17 @@ fn split_at_crossings(
             // representative and the tie is between the three-plane name and the class's root.
             let mut reps: Vec<Split> = Vec::with_capacity(pts.len());
             let mut group: Vec<Split> = Vec::new();
-            let mut tied_branch = false;
+            let mut tied_pierce = false;
             let flush = |group: &mut Vec<Split>,
                          reps: &mut Vec<Split>,
                          al: &mut Aliases,
-                         tied_branch: &mut bool| {
-                if group.len() > 1 && group.iter().any(|s| matches!(s, Split::Branch { .. })) {
+                         tied_pierce: &mut bool| {
+                if group.len() > 1 && group.iter().any(|s| matches!(s, Split::Pierce { .. })) {
                     let rep = al.canon_point(group[0].name(wc, w));
                     if group.iter().all(|g| al.canon_point(g.name(wc, w)) == rep) {
                         reps.push(group[0]);
                     } else {
-                        *tied_branch = true;
+                        *tied_pierce = true;
                     }
                     group.clear();
                     return;
@@ -3994,7 +3994,7 @@ fn split_at_crossings(
                     let mut set: Vec<usize> = vec![wc, w];
                     set.extend(group.iter().filter_map(|s| match s {
                         Split::Class(r) => Some(*r),
-                        Split::Branch { .. } => None,
+                        Split::Pierce { .. } => None,
                     }));
                     set.sort_unstable();
                     set.dedup();
@@ -4007,12 +4007,12 @@ fn split_at_crossings(
                     combinatorics::order_on(jd, cyls, wc, w, g.on(wc, w), r.on(wc, w)) == Some(0)
                 });
                 if !same {
-                    flush(&mut group, &mut reps, aliases, &mut tied_branch);
+                    flush(&mut group, &mut reps, aliases, &mut tied_pierce);
                 }
                 group.push(r);
             }
-            flush(&mut group, &mut reps, aliases, &mut tied_branch);
-            if tied_branch {
+            flush(&mut group, &mut reps, aliases, &mut tied_pierce);
+            if tied_pierce {
                 return Err(reject(RejectReason::CoincidentNodes));
             }
             reps
@@ -4037,11 +4037,11 @@ fn split_at_crossings(
         {
             let family = aliases.wall_family(wc, w);
             if family.len() > 1 {
-                // ★ Only a point three planes name joins a plane-class fold — a branch name has
+                // ★ Only a point three planes name joins a plane-class fold — a pierce name has
                 // no third class to contribute to the set.
                 for r in pts.iter().filter_map(|s| match s {
                     Split::Class(r) => Some(*r),
-                    Split::Branch { .. } => None,
+                    Split::Pierce { .. } => None,
                 }) {
                     let mut set: Vec<usize> = vec![wc, r];
                     set.extend(family.iter().copied());
@@ -4397,7 +4397,7 @@ fn split_circles(
     }
     // ★★★★★ **Where a segment's ends are, asked once per segment — and a missing one is no longer
     // fatal.** This used to sit inside the circle loop, re-solving the same two points once per
-    // circle, and it *stopped* the whole class when either end was a branch point, which has no
+    // circle, and it *stopped* the whole class when either end was a pierce point, which has no
     // rational coordinate at any width. Nothing below needs a coordinate to decide anything now;
     // the one thing left that reads it is a **filter**.
     let seg_coords: Vec<[Option<[Rat; 3]>; 2]> = segs
@@ -4416,7 +4416,7 @@ fn split_circles(
             }
             // ★★★★★ **The cheap rejection runs where it can be formed, and skipping it asks
             // *more*, not less.** `segment_meets_cylinder` needs both endpoints' coordinates; where
-            // one is a branch point the question goes straight to `circle_crossings`, which answers
+            // one is a pierce point the question goes straight to `circle_crossings`, which answers
             // `Miss` exactly when the line misses. Losing the filter costs a solve, never an answer.
             if let [Some(p0), Some(p1)] = &seg_coords[si]
                 && (p0 == p1 || !nacre_scalar::segment_meets_cylinder(p0, p1, &o, &m, r))
@@ -4443,7 +4443,7 @@ fn split_circles(
                 // assemble with it in place (the other 6 hold a third plane on the tangent line
                 // and are refused earlier, by `CoincidentNodes`).
                 if matches!(
-                    combinatorics::branch_name(n),
+                    combinatorics::pierce_name(n),
                     Some((_, _, nacre_topo::QuadRoot::Double))
                 ) {
                     continue;
@@ -4453,7 +4453,7 @@ fn split_circles(
                 // fences inside `circle_crossings`, which needed a *plane* through each endpoint
                 // and so could only be built where every end was three-plane named.
                 let at =
-                    combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Branch(n))
+                    combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Pierce(n))
                         .ok_or_else(undecided)?;
                 #[cfg(test)]
                 if let [Some(p0), Some(p1)] = &seg_coords[si] {
@@ -4717,7 +4717,7 @@ pub(crate) enum CircleOrderFail {
 /// below refuses as the two-names-for-one-point it is.
 ///
 /// ★★ **Two names for one point.** Two walls crossing the circle at one point are two *different*
-/// branch names — a `dedup` cannot see it, and the θ sort puts them adjacent — so an arc of zero
+/// pierce names — a `dedup` cannot see it, and the θ sort puts them adjacent — so an arc of zero
 /// length would follow. The segment side asks this question already; asking it here too is what
 /// keeps the two sides from disagreeing about what "one point" means.
 ///
@@ -4732,7 +4732,7 @@ pub(crate) fn circular_order(
     use nacre_scalar::quad::{SeamOrder, circular_order_about_seam};
     let meets = nodes
         .iter()
-        .map(|&n| combinatorics::branch_meet(jd, cyl, def, n).ok_or(CircleOrderFail::Undecided))
+        .map(|&n| combinatorics::pierce_meet(jd, cyl, def, n).ok_or(CircleOrderFail::Undecided))
         .collect::<Result<Vec<_>, _>>()?;
     let cmp = |i: usize, j: usize| {
         circular_order_about_seam(
@@ -4819,7 +4819,7 @@ fn split_segments_at(
         // ruler to lay and nothing to convert.
         //
         // ★★ **The pair is the sorted one, and that is not cosmetic.** The retired ruler was
-        // `branch_meet`'s canonical line, whose direction is `n_min × n_max`; asking in call order
+        // `pierce_meet`'s canonical line, whose direction is `n_min × n_max`; asking in call order
         // would flip every comparison on a class where `wc > wall`, taking the emitted pieces and
         // the sense with it. ☑ Differenced against the ruler below.
         //
@@ -4837,28 +4837,28 @@ fn split_segments_at(
         };
         let mut keyed: Vec<(combinatorics::PointOn, NodeId, combinatorics::EndPin)> = Vec::new();
         for &n in &nodes {
-            if combinatorics::branch_name(n).is_none() {
+            if combinatorics::pierce_name(n).is_none() {
                 return Err(reject(RejectReason::RingNaming));
             }
             // ★ Cell ⑫: the crossing arrives under the table's name, which may carry another
             // pair — a corner's own — so its pin on *this* line is derived, not assumed
             // (`pin_for`: the cylinder when the pair is the line's, else the plane of its pair
-            // that cuts the line). `PointOn::Branch` locates the point by its name either way.
+            // that cuts the line). `PointOn::Pierce` locates the point by its name either way.
             let Some(pin) = combinatorics::pin_for(jd, pair[0], pair[1], n) else {
                 return Err(reject(RejectReason::RingNaming));
             };
-            keyed.push((combinatorics::PointOn::Branch(n), n, pin));
+            keyed.push((combinatorics::PointOn::Pierce(n), n, pin));
         }
         // ★★★★★ **A crossing that *is* an endpoint is one point with one name, so it is deduped
         // rather than refused.** The old sentence here — "one point wearing two names, a three-plane
-        // one and a branch one" — is still true and still refused, but only for the case it
+        // one and a pierce one" — is still true and still refused, but only for the case it
         // describes: a crossing at a *three-plane* end really does carry a second name, and the
         // equality check below catches it. Where the end was pinned by a cylinder, its name **is**
-        // the crossing's `Branch{planes, cyl, root}` — the same vertex, arrived at twice — and
+        // the crossing's `Pierce{planes, cyl, root}` — the same vertex, arrived at twice — and
         // shipping it twice would put a zero-length piece between a point and itself.
         //
         // ★ Cell ⑫: **"the same name" is asked of the alias table.** A tangent corner is a point
-        // the cylinder crossing names `Branch{[cap, wc], root}` and the plane road names
+        // the cylinder crossing names `Pierce{[cap, wc], root}` and the plane road names
         // `ThreePlane([cap, t, wc])`; `Aliases::record_on_cylinder` has joined them, so the
         // crossing folds onto the end here as it would had the names been equal. The end's own
         // name and pin stay on the slot — they are the canonical ones (`merge_coincident`) and
@@ -4934,7 +4934,7 @@ fn split_segments_at(
         #[cfg(test)]
         order_probe::against_the_ruler(jd, cyls, wc, &sg, &keyed, pair);
         // ★ A crossing that lands **on** an endpoint is one point wearing two names — a three-plane
-        // one and a branch one — and the DCEL keys vertices by name, so shipping both would make
+        // one and a pierce one — and the DCEL keys vertices by name, so shipping both would make
         // two vertices where there is one. Names the alias table knows as one point were folded
         // above (cell ⑫); what reaches here is a coincidence no discovery event recorded, and
         // refusing it is honest — there is no ground to invent the identity on.
@@ -4983,7 +4983,7 @@ fn split_segments_at(
 }
 
 /// **Where a rational point sits along a line** — the retired ruler's half for a three-plane end
-/// (a branch end brought its own parameter from [`combinatorics::branch_meet`]).
+/// (a pierce end brought its own parameter from [`combinatorics::pierce_meet`]).
 ///
 /// ★★ **Production does not lay a ruler any more**, so this survives only inside
 /// [`order_probe`], which differences the order rule against what it used to compute. That it needs
@@ -5034,12 +5034,12 @@ fn cmp_along(
     })
 }
 
-/// **Where a segment crosses a circle**, exactly — the points a `VertexDef::Branch` names.
+/// **Where a segment crosses a circle**, exactly — the points a `VertexDef::Pierce` names.
 ///
 /// The segment rides `wc ∩ sg.wall` and the circle is `cylinder ∩ wc`, so a crossing is
 /// `plane ∩ plane ∩ cylinder` — the very shape [`nacre_scalar::quad::plane_plane_cylinder`]
 /// answers and
-/// [`nacre_topo::VertexDef::Branch`] names. Solving along the segment instead would be shorter and
+/// [`nacre_topo::VertexDef::Pierce`] names. Solving along the segment instead would be shorter and
 /// would yield a point with **no name**, which the next rung (splitting the circle into arcs)
 /// would have to re-derive.
 ///
@@ -5056,8 +5056,8 @@ fn cmp_along(
 /// `None` is overflow (the caller drops the witness, never the rejection).
 ///
 /// ★★ **It returns the crossings' *names*, and the coordinate is derived from the name** (see
-/// [`combinatorics::branch_point`]). The pair is solved in this function's own call order —
-/// `(wc, sg.wall)` — and `NodeId::branch` puts it in canonical order, restating the root with it.
+/// [`combinatorics::pierce_point`]). The pair is solved in this function's own call order —
+/// `(wc, sg.wall)` — and `NodeId::pierce` puts it in canonical order, restating the root with it.
 /// Solving in ascending order instead would make the correspondence true by construction and leave
 /// the canonicalization unexercised, which is where a wrong rule hides; the next mint site (the arc
 /// split, walking segments in DCEL order) will not have that luxury either.
@@ -5085,7 +5085,7 @@ fn circle_crossings(
         // ★★ **Reachable, and it always was the honest answer.** It used to be unreachable behind
         // the caller's `segment_meets_cylinder` — a segment that meets the solid cylinder has a line
         // that meets its surface. That filter needs both endpoints' coordinates, so it is skipped
-        // where one end is a branch point, and the line genuinely can miss. "No crossings" is what
+        // where one end is a pierce point, and the line genuinely can miss. "No crossings" is what
         // a miss means; nothing about the arm changes but the sentence above it.
         // ☑ Measured: **6** times over the suite, where the doc used to say never.
         CylinderMeet::Miss(_) => return Some(Vec::new()),
@@ -5097,7 +5097,7 @@ fn circle_crossings(
     Some(
         roots
             .into_iter()
-            .map(|(root, _)| combinatorics::NodeId::branch(wc, sg.wall, circ.cyl, root))
+            .map(|(root, _)| combinatorics::NodeId::pierce(wc, sg.wall, circ.cyl, root))
             .collect(),
     )
 }
@@ -5117,7 +5117,7 @@ fn circle_crossings(
 /// order and `forward` is taken with that same comparator, while a *partial* disagreement would be
 /// a genuine reshuffle and would put the sub-segments in the wrong places. That is what is counted.
 ///
-/// ★ The pair handed to the rule is the **sorted** one, matching `NodeId::Branch`'s own convention
+/// ★ The pair handed to the rule is the **sorted** one, matching `NodeId::Pierce`'s own convention
 /// (`planes` ascending, and `root` defined against that order). ☑ Measured: **36 of 256** segments
 /// have `wc > wall`, so the corpus does reach the case where the two orders are opposite calls —
 /// and by the paragraph above it does not matter which is taken, because swapping the pair can only
@@ -5157,11 +5157,11 @@ pub(crate) mod order_probe {
             // The endpoints are three-plane named and take the second pass; only a crossing lays
             // the ruler. (Written with `?` at first, which made every call return `None` — the
             // aliveness check below is what said so.)
-            let Some((_, cyl, _)) = combinatorics::branch_name(k.1) else {
+            let Some((_, cyl, _)) = combinatorics::pierce_name(k.1) else {
                 continue;
             };
             let def = &cyls.get(cyl)?.def;
-            let (l, s) = combinatorics::branch_meet(jd, cyl, def, k.1)?;
+            let (l, s) = combinatorics::pierce_meet(jd, cyl, def, k.1)?;
             line = Some(l);
             out[i] = Some(s);
         }
@@ -5302,10 +5302,10 @@ pub(crate) mod extent_probe {
         seg_ends: &[combinatorics::OnLine; 2],
         wc: usize,
     ) {
-        let Some((_, cyl, _)) = combinatorics::branch_name(n) else {
+        let Some((_, cyl, _)) = combinatorics::pierce_name(n) else {
             return;
         };
-        let Some(meet) = combinatorics::branch_meet(jd, cyl, def, n) else {
+        let Some(meet) = combinatorics::pierce_meet(jd, cyl, def, n) else {
             return;
         };
         let (a, b) = (
@@ -5376,7 +5376,7 @@ fn lateral_crossings(
             .into_iter()
             .map(|(root, s)| {
                 (
-                    combinatorics::NodeId::branch(wc, sg.wall, cyl, root),
+                    combinatorics::NodeId::pierce(wc, sg.wall, cyl, root),
                     line.clone(),
                     s,
                 )
@@ -5385,7 +5385,7 @@ fn lateral_crossings(
     ))
 }
 
-/// One crossing [`lateral_crossings`] found: its Branch name, and the exact `(line, s)` it was
+/// One crossing [`lateral_crossings`] found: its Pierce name, and the exact `(line, s)` it was
 /// solved at (the side and extent tests read it without re-solving).
 type LateralCrossing = (
     combinatorics::NodeId,
@@ -5445,7 +5445,7 @@ fn split_rulings(
         .iter()
         .map(|r| {
             let coord = |n| {
-                let (line, s) = combinatorics::branch_meet(jd, r.cyl, &r.def, n)?;
+                let (line, s) = combinatorics::pierce_meet(jd, r.cyl, &r.def, n)?;
                 coord_at(&r.def, &line, &s)
             };
             match (coord(r.end[0]), coord(r.end[1])) {
@@ -5476,7 +5476,7 @@ fn split_rulings(
         // of those crossings splits a ruling. It is a measurement now rather than an argument.
         //
         // A segment whose two ends are one point cuts nothing — asked by **name**, the identity,
-        // rather than by a coordinate a branch end does not have. ☑ Measured unexercised.
+        // rather than by a coordinate a pierce end does not have. ☑ Measured unexercised.
         if sg.end[0] == sg.end[1] {
             continue;
         }
@@ -5500,7 +5500,7 @@ fn split_rulings(
                 // ★ On this segment? The caller's question since the fences went — same rule, same
                 // vocabulary as the circle side.
                 let at =
-                    combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Branch(n))
+                    combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Pierce(n))
                         .ok_or_else(undecided)?;
                 if !combinatorics::closed_contains(jd, wc, sg.wall, &at, &seg_ends)
                     .ok_or_else(undecided)?
@@ -5572,7 +5572,7 @@ fn split_rulings(
         let mut keyed: Vec<(QuadVal, combinatorics::NodeId)> = Vec::new();
         for &n in &nodes {
             let (line, s) =
-                combinatorics::branch_meet(jd, r.cyl, &r.def, n).ok_or_else(undecided)?;
+                combinatorics::pierce_meet(jd, r.cyl, &r.def, n).ok_or_else(undecided)?;
             keyed.push((coord_at(&r.def, &line, &s).ok_or_else(undecided)?, n));
         }
         let [lo, hi] = ruling_ends[ri];
@@ -5924,7 +5924,7 @@ fn circle_crosses_ruling(
 ///
 /// The order is the contribution's own, which [`CircleTrace::arc`] states is counter-clockwise
 /// about the cylinder's axis — the same convention `RimArc` carries, so no reordering. A node with
-/// no rational coordinate (a `Wide` meet, a branch whose root is irrational) gives `None`, and the
+/// no rational coordinate (a `Wide` meet, a pierce whose root is irrational) gives `None`, and the
 /// caller then reads the whole circle rather than guess.
 fn rim_arc_of(
     jd: &Judge<'_, WorkingPlane>,
@@ -5934,7 +5934,7 @@ fn rim_arc_of(
 ) -> Option<crate::planes::RimArc> {
     let radial = |node: NodeId| -> Option<[nacre_scalar::Rat; 3]> {
         let p = combinatorics::node_coords_rat(jd, node)
-            .or_else(|| combinatorics::branch_coords_rat(jd, cyls, node))?;
+            .or_else(|| combinatorics::pierce_coords_rat(jd, cyls, node))?;
         let mut v = p;
         for k in 0..3 {
             v[k] = v[k].checked_sub(centre[k])?;
@@ -6185,7 +6185,7 @@ impl<'a> ClassEdges<'a> {
         };
         // The endpoints as handles on this edge's line, carried by the producer. Not recovered from
         // the names: a canonical name need not mention `wc` or the wall (see
-        // `combinatorics::RingEdge`). ★ An arc's ends are branch points by construction — and a
+        // `combinatorics::RingEdge`). ★ An arc's ends are pierce points by construction — and a
         // ruling's too — which is what `EndPin::Cylinder` says.
         let (from_h, to_h) = match self.kind(he) {
             HalfEdgeKind::Seg(i) => (self.segs[i].end_h[he % 2], self.segs[i].end_h[1 - he % 2]),
@@ -7106,12 +7106,12 @@ pub(crate) struct ArcLabel {
 }
 
 /// **A cut circle's seam datum — carried from the split, never re-derived.** `split_circles`
-/// already orders a cut circle's branch nodes by θ about the seam and classifies a seam-incident
+/// already orders a cut circle's pierce nodes by θ about the seam and classifies a seam-incident
 /// node by name (`circular_order_about_seam`), so the one fact the assembly cannot re-derive
 /// cheaply — *where θ = 0 sits among the arcs* — travels from the place that computed it.
 #[derive(Clone, Debug)]
 pub(crate) struct CutRim {
-    /// The circle's branch nodes in θ order (CCW about the axis). When `seam_is_node`, the
+    /// The circle's pierce nodes in θ order (CCW about the axis). When `seam_is_node`, the
     /// seam-incident node is first; otherwise θ = 0 lies inside the wrap arc
     /// `nodes.last() → nodes[0]`.
     pub(crate) nodes: Vec<combinatorics::NodeId>,
@@ -7130,7 +7130,7 @@ pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
 /// fact** — the defect shape this repository names first. So the value leaves by the road
 /// [`CutRims`] already takes: made per class, folded once, keyed in the global class space.
 ///
-/// ★ `end` is the piece's own two branch nodes and `z` their axis parameters
+/// ★ `end` is the piece's own two pierce nodes and `z` their axis parameters
 /// ([`node_axis_param`]). Both are carried because the chart needs the **order** (from the node's
 /// `(MeetLine, QuadVal)` name, via `circular_order_about_seam`) and the **position** (`z`), and
 /// deriving one from the other twice is how a name loses a sign.
@@ -7252,7 +7252,7 @@ pub(crate) struct Curved {
 /// ★ A named function rather than a block for the same reason `per_class` is one: the arc fence
 /// calls it on the very faces production feeds it. The deferred stopper intercepts the whole
 /// stretch this runs in, so a failure *here* never reaches an arc population's caller — which
-/// means no reject name can testify that the branch arm works, and only a direct second consumer
+/// means no reject name can testify that the pierce arm works, and only a direct second consumer
 /// can (measured: with the arm disabled wholesale, every boolean-level fence stays green).
 pub(crate) fn seam_table(
     faces: &[LocalFace],
@@ -7269,29 +7269,29 @@ pub(crate) fn seam_table(
                 if seen.insert(node, ()).is_some() {
                     continue;
                 }
-                // ★★ **A branch node is realized from its name, like everything else
+                // ★★ **A pierce node is realized from its name, like everything else
                 // here: the truth is the definition, the coordinate its cache.** The
-                // coordinate is `a + b√c` — `branch_point` re-solves it from the name's
+                // coordinate is `a + b√c` — `pierce_point` re-solves it from the name's
                 // `(line, s)`; a rational road cannot hold it (`node_coords_rat`'s doc
                 // calls that a type fact, not a width decline). The tolerance is the same
                 // rule as the three-plane arm below: how far the realized point sits from
                 // each surface that defines it, plus the closed-form pairwise meet
-                // (`branch_vertex_tol` carries the argument for which pairwise curves are
+                // (`pierce_vertex_tol` carries the argument for which pairwise curves are
                 // in and out).
                 //
                 // ★ The **vertex minting** past this table is `boolean`'s
-                // `def_triple`/`node_handle`, which names a branch node's vertex as
-                // `VertexDef::Branch` — a cut rim's node and the scan's crossing on a
+                // `def_triple`/`node_handle`, which names a pierce node's vertex as
+                // `VertexDef::Pierce` — a cut rim's node and the scan's crossing on a
                 // ruling both travel that road.
-                if let Some(([p0, p1], cyl, _)) = combinatorics::branch_name(node) {
+                if let Some(([p0, p1], cyl, _)) = combinatorics::pierce_name(node) {
                     let wcy = &cyls[cyl];
-                    let arr = combinatorics::branch_point(jd, cyl, &wcy.def, node)
+                    let arr = combinatorics::pierce_point(jd, cyl, &wcy.def, node)
                         .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
                     let point = nacre_math::Point3::from_array(arr);
                     seam.push(SeamVertex {
                         point,
                         triple: node,
-                        tol: crate::planes::branch_vertex_tol(
+                        tol: crate::planes::pierce_vertex_tol(
                             point,
                             &geom[p0].plane,
                             &geom[p1].plane,
@@ -7305,7 +7305,7 @@ pub(crate) fn seam_table(
                 // "a reconstruction dropped a crossing" — a wrong diagnosis for an input
                 // the kernel simply does not build yet.
                 let t = three_plane_name(node)
-                    .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?;
+                    .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?;
                 let point = three_planes(&geom[t[0]].plane, &geom[t[1]].plane, &geom[t[2]].plane)
                     .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
                 seam.push(SeamVertex {
@@ -7457,7 +7457,7 @@ fn trace_result_faces(
                 // plane row would abort where an honest reject belongs.
                 return Err(reject(decline_to_reject(kind, faces[fp].face())));
             }
-            // ★ A disk cap's chord is one of these segments since cell ⑩ (both ends branch-pinned,
+            // ★ A disk cap's chord is one of these segments since cell ⑩ (both ends pierce-pinned,
             // from the same parity sweep as every polygon's section) — it used to travel on a
             // vessel of its own and join here.
             let merged = timed!(MERGE, merge_coincident(jd, &tr.segs, wc, &local));
@@ -7774,7 +7774,7 @@ pub(crate) fn concurrency_audit(
                 // hunt — instead of panicking.
                 // ★★★★★ **And the exclusion is said, not left to an argument value.** It used to
                 // happen only because `side_of` was handed an empty cylinder table and so declined
-                // a branch node; give that call a real table one day "for consistency" and the
+                // a pierce node; give that call a real table one day "for consistency" and the
                 // `expect` below turns into a panic. A concurrency is a fact about plane triples,
                 // so scope is the reason and it belongs in the filter — after which `&[]` is
                 // provably never read, which is what the other two sites say by wrapping their own
@@ -7862,13 +7862,13 @@ pub(crate) struct OperandVertexReport {
     pub folded_on_vertex: Vec<bool>,
 }
 
-/// **A branch corner of an operand seen from a class plane that passes through it** (cell ⑫'s
+/// **A pierce corner of an operand seen from a class plane that passes through it** (cell ⑫'s
 /// instrument). The point has more names than the corner's own: the three-plane name of its two
 /// planes with the class, and the class's ruling crossing with the corner's cap plane at whichever
 /// root is this point. Whether the alias table knows they are one point is what this reports.
 #[cfg(test)]
 #[derive(Debug, Clone)]
-pub(crate) struct BranchCornerReport {
+pub(crate) struct PierceCornerReport {
     pub side: usize,
     pub vertex: Handle<Vertex>,
     pub point: [f64; 3],
@@ -7934,14 +7934,14 @@ pub(crate) fn trace_declines(
     Ok(out)
 }
 
-/// Every branch corner of `a` and `b` that lies on a class plane not its own, as
-/// [`BranchCornerReport`]s — the cylinder twin of [`operand_vertex_audit`].
+/// Every pierce corner of `a` and `b` that lies on a class plane not its own, as
+/// [`PierceCornerReport`]s — the cylinder twin of [`operand_vertex_audit`].
 #[cfg(test)]
-pub(crate) fn branch_corner_audit(
+pub(crate) fn pierce_corner_audit(
     model: &Model,
     a: Handle<Solid>,
     b: Handle<Solid>,
-) -> Result<Vec<BranchCornerReport>, BoolError> {
+) -> Result<Vec<PierceCornerReport>, BoolError> {
     use crate::planes::{PlaneSetup, plane_index_setup};
     let PlaneSetup {
         planes: faces_tab,
@@ -7976,7 +7976,7 @@ pub(crate) fn branch_corner_audit(
         let merged = merge_coincident(&jd, &tr.segs, wc, &aliases);
         let _ = split_at_crossings(&jd, &cyls, wc, &merged, &mut aliases);
     }
-    // The corners: every branch name a plane face's ring carries, once per vertex.
+    // The corners: every pierce name a plane face's ring carries, once per vertex.
     let mut out = Vec::new();
     for (side, (solid, inc)) in [(a, &inc_a), (b, &inc_b)].into_iter().enumerate() {
         let mut seen: Vec<Handle<Vertex>> = Vec::new();
@@ -8001,7 +8001,7 @@ pub(crate) fn branch_corner_audit(
                 continue;
             }
             for (he, &n) in face.outer.half_edges.iter().zip(nr.triples.iter()) {
-                let Some((planes, cyl, _root)) = combinatorics::branch_name(n) else {
+                let Some((planes, cyl, _root)) = combinatorics::pierce_name(n) else {
                     continue;
                 };
                 let vh = crate::he_start(model, *he);
@@ -8036,7 +8036,7 @@ pub(crate) fn branch_corner_audit(
                     }
                     let folded = cands.iter().map(|&c| aliases.canon_point(c)).collect();
                     let p = model.vertex_point(vh);
-                    out.push(BranchCornerReport {
+                    out.push(PierceCornerReport {
                         side,
                         vertex: vh,
                         point: [p[0], p[1], p[2]],
@@ -8058,7 +8058,7 @@ pub(crate) fn branch_corner_audit(
 /// Like [`concurrency_audit`] it drives the real front half (trace, merge, split) over **every**
 /// class and keeps going past a decline, accumulating the alias table so the fold it reports is
 /// the one production would reach. Vertices a cylinder touches are skipped: their names are
-/// branch points, a different vocabulary.
+/// pierce points, a different vocabulary.
 #[cfg(test)]
 pub(crate) fn operand_vertex_audit(
     model: &Model,
@@ -8108,7 +8108,7 @@ pub(crate) fn operand_vertex_audit(
     let mut out = Vec::new();
     for (side, (solid, inc)) in [(a, &inc_a), (b, &inc_b)].into_iter().enumerate() {
         // Topology: vertex → plane classes of its incident faces; a vertex on any cylinder face
-        // is left out (its name is a branch point).
+        // is left out (its name is a pierce point).
         let mut topo: HashMap<Handle<Vertex>, Vec<usize>> = HashMap::new();
         let mut curved: std::collections::HashSet<Handle<Vertex>> = Default::default();
         for (bounds, pair) in inc.edges() {
@@ -8334,7 +8334,7 @@ fn cmp_pt(a: &[f64; 3], b: &[f64; 3]) -> std::cmp::Ordering {
 /// carries the argument for coordinates, for normalizing rotation, and for leaving reversal alone.
 ///
 /// ★★ **A ring here can need both roads to a coordinate** — three of its nodes are plane triples
-/// and two are branch points — and the dispatch between them lives in
+/// and two are pierce points — and the dispatch between them lives in
 /// [`combinatorics::node_point_f64`], not here: spelling a [`combinatorics::NodeId`] variant
 /// outside that file is what `three_plane_name`'s gate forbids, and the first draft of this
 /// function broke it with the suite green.
@@ -8606,7 +8606,7 @@ pub(crate) fn boolean(
         // `disk_labels`: per (cylinder class, plane class), the four bits of that circle's disk
         // cell — what the band pass reads instead of casting a witness ray (M6-2a K1).
         // `deferred`: an arc class's stopper reject, made per class and raised below **after** the
-        // seam stretch, so the seam's branch arm runs before the population is refused.
+        // seam stretch, so the seam's pierce arm runs before the population is refused.
         let (faces, curved, deferred) = trace_result_faces(
             model,
             kind,
@@ -8676,7 +8676,7 @@ pub(crate) fn boolean(
         }
         // ★★★ **The seam stretch, held as one closed result — the deferred stopper's second
         // interception layer.** Everything from the cleaning pass to the seam table runs even for
-        // an arc input (that is the point: the seam's branch arm is exercised), and then the
+        // an arc input (that is the point: the seam's pierce arm is exercised), and then the
         // deferred reject wins over whatever the stretch produced, `Ok` *or* `Err`. Without the
         // `Err` half, an arc input would carry out whichever of the stretch's five fallible
         // steps — `unify_coplanar_faces`, `cyl_rows`, `emit_lateral`, the seam fill, the
@@ -8787,7 +8787,7 @@ mod tests {
     use nacre_scalar::Axis;
 
     /// ★ **A fixture with no cylinders, said as a fact rather than left as a hole.** The table is
-    /// how a `NodeId::Branch` reaches its definition, so an all-plane fixture has nothing to put
+    /// how a `NodeId::Pierce` reaches its definition, so an all-plane fixture has nothing to put
     /// in it — and a bare `&[]` at a call site reads like something forgotten.
     const NO_CYLS: &[crate::planes::WorkingCyl] = &[];
 
@@ -8795,7 +8795,7 @@ mod tests {
     ///
     /// ★★★★★ **The vessel carries a curved ring through, and only a *collapsed* name is refused.**
     ///
-    /// This used to assert the opposite: a branch corner was `RingFail::Branch` and a curved
+    /// This used to assert the opposite: a pierce corner was `RingFail::Pierce` and a curved
     /// carrier `RingFail::CurvedWall`, because the ring came out as plane ids and could not hold
     /// either. Both refusals were the type running out rather than a decision, and they are gone
     /// with the projections. What still stops here is a name that is degenerate *as a name* — two
@@ -8807,7 +8807,7 @@ mod tests {
     fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
         let three =
             |a, b, c| combinatorics::NodeId::three_planes(combinatorics::Canon3::three([a, b, c]));
-        let branch = combinatorics::NodeId::branch(0, 1, 0, nacre_topo::QuadRoot::Lo);
+        let pierce = combinatorics::NodeId::pierce(0, 1, 0, nacre_topo::QuadRoot::Lo);
         let plane = |c| crate::boolean::Wall::Plane(c);
         let ruling = crate::boolean::Wall::Ruling {
             cyl: 0,
@@ -8826,15 +8826,15 @@ mod tests {
             walls[1], ruling,
             "the carrier is the producer's, unflattened"
         );
-        // So does a branch corner, as its own name.
+        // So does a pierce corner, as its own name.
         let curved_corner = combinatorics::NamedRing {
-            triples: vec![three(0, 1, 2), branch, three(0, 1, 3)],
+            triples: vec![three(0, 1, 2), pierce, three(0, 1, 3)],
             walls: vec![plane(1), ruling, plane(3)],
             arc_ccw: vec![None; 3],
             concurrencies: vec![],
         };
-        let (ts, _) = plane_ring(&curved_corner).expect("a branch corner is describable");
-        assert_eq!(ts[1], branch, "the corner is the producer's, unflattened");
+        let (ts, _) = plane_ring(&curved_corner).expect("a pierce corner is describable");
+        assert_eq!(ts[1], pierce, "the corner is the producer's, unflattened");
         // ★ What is still refused, and for a reason that has nothing to do with cylinders.
         let collapsed = combinatorics::NamedRing {
             triples: vec![three(0, 1, 2), three(0, 0, 3), three(0, 1, 3)],
@@ -11233,7 +11233,7 @@ mod tests {
 
     /// ★ **The gate's record arms the rulings road — and only the record.** With the
     /// through-boss pair listed, the boss's trace on the wall class is the rectangle: two
-    /// rulings (one per side, Branch-named ends, no plain segments) and two cap chords
+    /// rulings (one per side, Pierce-named ends, no plain segments) and two cap chords
     /// (`Lo`/`Hi` roots on the cap classes). With the record empty — every production call
     /// today — the same trace is empty: the negative control that pins "an empty record
     /// changes nothing", which is the very population an unconditionally-firing arm broke
@@ -11268,7 +11268,7 @@ mod tests {
         assert_eq!(sides, [-1, 1], "one ruling per side");
         for r in &tr.rulings {
             for nd in r.end {
-                let (_, cyl, _) = combinatorics::branch_name(nd).expect("a Branch end");
+                let (_, cyl, _) = combinatorics::pierce_name(nd).expect("a Pierce end");
                 assert_eq!(cyl, 0);
             }
             assert!(matches!(r.kind, SegKind::Transversal { .. }));
@@ -11314,7 +11314,7 @@ mod tests {
 
     /// ★ **The armed arrangement digests the rectangle** — production bricks end to end on the
     /// wall class. Each ruling is cut at its T-junctions with the plate's `z = 0` and `z = 20`
-    /// lines (three pieces each), those lines split at the same Branch nodes, the chords close
+    /// lines (three pieces each), those lines split at the same Pierce nodes, the chords close
     /// the far ends, and the walk closes the subdivision: one unbounded contour and five
     /// bounded cells — plate-left, plate-right, the overlap band, and the rectangle's two
     /// overhangs.
@@ -12002,7 +12002,7 @@ mod tests {
     /// **The mixed parity reads a bitten ring — exactly, on the production pieces.**
     ///
     /// The straddling boss cuts the plate-top ring at `(40, 15)` and `(40, 25)`, so that ring
-    /// carries two branch corners and one arc step; the overhang digon is chord + outer arc.
+    /// carries two pierce corners and one arc step; the overhang digon is chord + outer arc.
     /// Probes are derived, not read back: the chart for `n = +z` picks `e1 = [0, −1, 0]`, so
     /// the ray runs toward −y at fixed x. `[37, 30]` is inside and its ray crosses the **arc
     /// twice** (`(37−40)² + (y−20)² = 25` → y = 16, 24) before the bottom edge — the arc arm is

@@ -45,7 +45,7 @@ pub enum VertexDef {
     /// definition is complete and `nacre_ops::realize_vertex` regenerates the coordinate from
     /// it (cell 41); what remains (3b) is writing that back into the cache.
     /// M6 grows the vocabulary by variants, each stating its own truth — the invariants are
-    /// per-variant (Q5's doctrine); [`VertexDef::Branch`] (M6-1) is the first.
+    /// per-variant (Q5's doctrine); [`VertexDef::Pierce`] (M6-1) is the first.
     OnSeam([Handle<Surface>; 2]),
     /// One of the (at most two) points where two planes' meet line crosses a cylinder's
     /// lateral surface (M6-1) — the structure says the carrier kinds, deliberately not an
@@ -63,14 +63,14 @@ pub enum VertexDef {
     /// place that rule lives** — do not spell it again at the site.
     ///
     /// Minted in production by `nacre-ops`' arrangement (15 sites) since the tangent-ruling
-    /// cells: the engine names the point as `NodeId::Branch` in class-index space and the
+    /// cells: the engine names the point as `NodeId::Pierce` in class-index space and the
     /// assembler restates it here in handle space — two canonical orders, one correspondence,
     /// established at the mint site through [`QuadRoot::canonical`]. (An earlier note here said
     /// the assembler declined these; that was true at M6-2b and is not now.)
     ///
-    /// ⏳ **Renamed to `Pierce` next** (`docs/truth-and-cache.md` open item 24): "branch" says
-    /// which root was picked, not what the point is — a line piercing a cylinder.
-    Branch {
+    /// The name says what the point *is* — a line piercing a cylinder — not which root was
+    /// picked (that is `root`); "branch", the M6-1 placeholder, said only the latter.
+    Pierce {
         /// The two cutting planes, ascending handle order (the `ThreePlane` precedent).
         planes: [Handle<Surface>; 2],
         /// The cylinder whose lateral surface the meet line crosses.
@@ -80,8 +80,8 @@ pub enum VertexDef {
     },
 }
 
-/// Which root of the two-point plane·plane·cylinder crossing a [`VertexDef::Branch`] means —
-/// ascending parameter along the canonical meet-line direction (see `Branch`'s doc for the
+/// Which root of the two-point plane·plane·cylinder crossing a [`VertexDef::Pierce`] means —
+/// ascending parameter along the canonical meet-line direction (see `Pierce`'s doc for the
 /// full convention). Definition vocabulary, so it lives here beside [`VertexDef`], not in
 /// scalar (whose pair is positional).
 ///
@@ -123,7 +123,7 @@ impl QuadRoot {
 
     /// **The one place "which root is it, once the pair is put in canonical order" is answered.**
     ///
-    /// A [`VertexDef::Branch`] stores its two plane carriers ascending, and its root is defined
+    /// A [`VertexDef::Pierce`] stores its two plane carriers ascending, and its root is defined
     /// against the meet line `ℓ = n₁ × n₂` of *that* order. So anything holding a solver's
     /// `(pair, root)` in some other order has to restate the root — and the restatement is a
     /// **derivation, not a convention**. Swapping the two planes in
@@ -149,7 +149,7 @@ impl QuadRoot {
     /// `{n₁·x = −d₁, n₂·x = −d₂, ℓ·x = 0}` — a condition `−ℓ` satisfies identically — so the base
     /// does not move and `ℓ` alone reverses. ⇒ **flip once per reversal; an even number is no flip
     /// at all.** A caller restating a name across two *spellings* of the same planes (rather than
-    /// two orders of them) owes the sign half — `nacre-ops`' `branch_name_from_def` is the one that
+    /// two orders of them) owes the sign half — `nacre-ops`' `pierce_name_from_def` is the one that
     /// does, coming back from handle space into class space.
     ///
     /// ☑ **The swap half is measured at last (2026-08-26).** It was recorded as unexercised where
@@ -177,7 +177,7 @@ impl VertexDef {
         let (arr, n): ([Handle<Surface>; 3], usize) = match *self {
             VertexDef::ThreePlane(s) => (s, 3),
             VertexDef::OnSeam([a, b]) => ([a, b, b], 2),
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [a, b],
                 cylinder,
                 ..
@@ -1347,11 +1347,11 @@ impl Model {
     ) -> Option<(nacre_scalar::MeetPoint, Option<Handle<MotionNode>>)> {
         let tri = match self.vertices.get(v).def {
             VertexDef::ThreePlane(tri) => tri,
-            // OnSeam pins a curve, not a point; a Branch *is* a point but its coordinates
+            // OnSeam pins a curve, not a point; a Pierce *is* a point but its coordinates
             // are quadratic-irrational — neither has the rational meet a datum statement
             // needs, so both decline here (honest, and spelled per variant so the next
             // variant is a compile error, not a silent fall-through).
-            VertexDef::OnSeam(_) | VertexDef::Branch { .. } => return None,
+            VertexDef::OnSeam(_) | VertexDef::Pierce { .. } => return None,
         };
         // ★★★ **The third door — solve in the world** (2026-08-24). The two below want *one*
         // frame: the world (nothing moved) or one shared chain. A second-generation array breaks
@@ -1569,13 +1569,13 @@ impl Model {
             VertexDef::OnSeam([a, b]) => {
                 debug_assert!(a != b, "a seam vertex needs two distinct carriers")
             }
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [a, b],
                 cylinder,
                 ..
             } => debug_assert!(
                 a.index() < b.index() && cylinder != a && cylinder != b,
-                "a branch definition needs two sorted distinct planes and a distinct cylinder"
+                "a pierce definition needs two sorted distinct planes and a distinct cylinder"
             ),
         }
         let h = self.vertices.push(Vertex { def });

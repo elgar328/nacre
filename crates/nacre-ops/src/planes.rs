@@ -139,7 +139,7 @@ pub(crate) struct Footprint {
 /// rim point minus the axis point on its cap — `from → to` counter-clockwise about the axis
 /// direction, `from == to` never (a whole circle is [`Footprint::theta`]'s `None`). Rational, as
 /// every corner a prism's rim has is: a seam point when the reference direction's norm is
-/// (`inv_sqrt_exact`), a branch corner when its root is ([`nacre_scalar::quad::QuadVal::as_rat`]).
+/// (`inv_sqrt_exact`), a pierce corner when its root is ([`nacre_scalar::quad::QuadVal::as_rat`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct RimArc {
     pub(crate) from: [nacre_scalar::Rat; 3],
@@ -851,7 +851,7 @@ fn lateral_t_range(
 ///
 /// A corner's radial vector is its point minus the axis point on the cap: a seam vertex is
 /// `r·ê` for `ê` the reference direction's unit part ⊥ the axis (rational when the norm is), a
-/// branch corner is the meet line's point at its root ([`nacre_scalar::quad::QuadVal::as_rat`] —
+/// pierce corner is the meet line's point at its root ([`nacre_scalar::quad::QuadVal::as_rat`] —
 /// rational for every wall through or perpendicular to the axis, and for a tangent wall's single
 /// root).
 fn lateral_theta_extent(
@@ -905,7 +905,7 @@ fn lateral_theta_extent(
                     r.checked_mul(nacre_scalar::inv_sqrt_exact(dot3(&e1, &e1)?)?)?,
                 )
             }
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes,
                 cylinder,
                 root,
@@ -914,7 +914,7 @@ fn lateral_theta_extent(
                     return None;
                 }
                 // `planes` are stored in ascending-handle order and the roots run along
-                // `n₀ × n₁` (`VertexDef::Branch`'s convention); the world statement translates
+                // `n₀ × n₁` (`VertexDef::Pierce`'s convention); the world statement translates
                 // only the constants, so the normals — and the order — are the stored ones.
                 let (c0, c1) = (world_coeffs(planes[0])?, world_coeffs(planes[1])?);
                 let (line, sv) =
@@ -1076,26 +1076,26 @@ pub(crate) fn vertex_tol(p: Point3, a: &Plane, b: &Plane, c: &Plane) -> f64 {
     tol
 }
 
-/// [`vertex_tol`]'s branch sibling — the measured tolerance of a realized `plane ∩ plane ∩
+/// [`vertex_tol`]'s pierce sibling — the measured tolerance of a realized `plane ∩ plane ∩
 /// cylinder` vertex: max distance of `p` to its two planes, the cylinder **surface**, and the
 /// planes' meet line.
 ///
 /// ★★ **The meet line is the one pairwise curve this covers, on purpose.** The seam's tolerance
 /// means "surfaces *and* pairwise meets" — `boolean`'s vertex minting says the pairwise part "is
 /// a real part of what this number means", and [`vertex_tol`] above covers all three of its
-/// lines. Here only `a ∩ b` has a closed form that is always a line: a branch plane can be
+/// lines. Here only `a ∩ b` has a closed form that is always a line: a pierce plane can be
 /// **parallel to the axis**, where `plane ∩ cylinder` is a pair of ruling lines — a per-case
 /// curve family this deliberately does not chase. The cylinder-*surface* distance already bounds
 /// the radial part of that error; the meet line is also exactly the line the point is defined on
-/// (`combinatorics::branch_point` realizes from `(line, s)`), so its residual is the first-class
+/// (`combinatorics::pierce_point` realizes from `(line, s)`), so its residual is the first-class
 /// question about the realization.
 ///
 /// ★ **The meet-line term is unexercised in today's corpus, measured** — with it removed, every
-/// assertion stays green. Both fixtures' branch planes are perpendicular, and for a
+/// assertion stays green. Both fixtures' pierce planes are perpendicular, and for a
 /// perpendicular pair the line residual never exceeds `√2 ×` the larger plane residual, so the
-/// `max` cannot turn on it. It earns its keep the day a branch pair meets **obliquely** (a
+/// `max` cannot turn on it. It earns its keep the day a pierce pair meets **obliquely** (a
 /// turned wall), where the line residual outgrows both plane residuals near the line.
-pub(crate) fn branch_vertex_tol(
+pub(crate) fn pierce_vertex_tol(
     p: Point3,
     a: &Plane,
     b: &Plane,
@@ -1185,7 +1185,7 @@ pub(crate) struct WorkingCyl {
     #[allow(dead_code)] // the arrangement's circle elements read these from C3 on
     pub(crate) surf: Handle<Surface>,
     pub(crate) def: nacre_topo::CylinderDef,
-    /// The f64 twin of `def` — what a *measurement* reads (`branch_vertex_tol` measures a branch
+    /// The f64 twin of `def` — what a *measurement* reads (`pierce_vertex_tol` measures a pierce
     /// realization against this surface), while every decision reads `def`.
     pub(crate) cache: nacre_geom::Cylinder,
     /// Which operand states this class (cell ⑩). The pair loop asks only pairs of **different**
@@ -2429,7 +2429,7 @@ fn cross_sections_clear(
 /// same three questions, so they are asked through one type rather than branched at each call.
 enum Corner {
     Rational(nacre_scalar::MeetPoint),
-    Branch(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    Pierce(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
     /// **A piece of a circle in the face's own plane** — the whole disk a single-circle loop *is*
     /// (`arc: None`), or one **arc** of a loop that mixes lines and arcs (`arc: Some`, cell ⑱).
     ///
@@ -2454,7 +2454,7 @@ impl Corner {
     fn on_plane(&self, coeffs: &[nacre_scalar::Rat; 4]) -> bool {
         match self {
             Self::Rational(p) => nacre_scalar::point_on_plane_exact(coeffs, p),
-            Self::Branch(line, s) => {
+            Self::Pierce(line, s) => {
                 nacre_scalar::quad::plane_side(coeffs, line, s) == nacre_scalar::Orient::Zero
             }
             Self::Round { centre, .. } => nacre_scalar::point_on_plane_exact(
@@ -2473,7 +2473,7 @@ impl Corner {
     ) -> nacre_scalar::StripSide {
         match self {
             Self::Rational(p) => nacre_scalar::cylinder_strip_side(coeffs, p, o, m, r),
-            Self::Branch(line, s) => {
+            Self::Pierce(line, s) => {
                 nacre_scalar::cylinder_strip_side_branch(coeffs, line, s, o, m, r)
             }
             // ★ The strip runs along `e = n × m`, so **that** is the direction the piece's extent
@@ -2509,7 +2509,7 @@ impl Corner {
     ) -> bool {
         match self {
             Self::Rational(p) => nacre_scalar::point_axis_side(p, o, m, t) == want,
-            Self::Branch(line, s) => nacre_scalar::point_axis_side_branch(line, s, o, m, t) == want,
+            Self::Pierce(line, s) => nacre_scalar::point_axis_side_branch(line, s, o, m, t) == want,
             // The comparison quantity is `q = (p − o)·m − t(m·m)`; over the piece it sweeps
             // `q_c + [lo_off − √rho2_lo, hi_off + √rho2_hi]` ([`arc_extent`]), so «reaches past»
             // is that end on the wanted side, or its radical covering the gap —
@@ -2553,20 +2553,20 @@ impl Corner {
     }
 }
 
-/// **A branch vertex's exact point, solved from its own definition.**
+/// **A pierce vertex's exact point, solved from its own definition.**
 ///
 /// ★★★ **No restatement is owed here.** `QuadRoot` is written about the canonical direction of the
 /// meet line of *the two planes the definition names, in the order it names them* — and this reads
 /// exactly those, in that order, so the root applies directly. (The `ℓ` correction
-/// `combinatorics::branch_name_from_def` carries is the price of crossing from handle space into a
+/// `combinatorics::pierce_name_from_def` carries is the price of crossing from handle space into a
 /// class table's order; this side has no class table for the operand at all.)
 ///
 /// ★★ **`None` is only ever a missing *description***, never a shape this road cannot spell — the
-/// caller has already established that the vertex is a `Branch`, so the two refusals stay apart:
+/// caller has already established that the vertex is a `Pierce`, so the two refusals stay apart:
 /// a plane whose world name is not narrow, a cylinder with no world statement, or a root the meet
 /// does not offer are the gate's own arithmetic running out (`CylinderGateUndecided`), while a
 /// seam vertex never reaches here at all.
-fn branch_corner(
+fn pierce_corner(
     model: &Model,
     planes: [Handle<Surface>; 2],
     cylinder: Handle<Surface>,
@@ -2587,7 +2587,7 @@ fn branch_corner(
         (CylinderMeet::Tangent { line, s }, QuadRoot::Double) => (line, QuadVal::from_rat(s)),
         _ => return None,
     };
-    Some(Corner::Branch(line, s))
+    Some(Corner::Pierce(line, s))
 }
 
 /// Why a boundary piece could not be read — the two causes the footprint road keeps apart.
@@ -2603,7 +2603,7 @@ enum CornerFail {
 /// **One boundary piece of a face, in whichever exact spelling it has — the single reader.**
 ///
 /// ★★★★★ **It was written twice, and the second copy was an abbreviation.**
-/// `face_clears_footprint` folded motion chains and solved `Branch` corners; `face_straddles_line`
+/// `face_clears_footprint` folded motion chains and solved `Pierce` corners; `face_straddles_line`
 /// took rational vertices and *skipped* everything else — so a face ringed by tangent corners had
 /// its straddle read from nothing and answered «does not straddle», which acquits. One reader, and
 /// the two roads can no longer disagree about what a face says.
@@ -2651,13 +2651,13 @@ fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Co
             Ok(Corner::Rational(nacre_scalar::MeetPoint::Narrow(w)))
         }
         // ★★★★★ **A corner a cylinder made has no rational meet — and does not need one.**
-        // `vertex_meet` declines a `Branch` because its coordinates are quadratic-irrational,
+        // `vertex_meet` declines a `Pierce` because its coordinates are quadratic-irrational,
         // which is a statement about *rationals*, not about knowability: the point is exactly
         // `line.base() + s·line.dir()`, and the questions asked of it read that spelling
         // directly. An `OnSeam` vertex is a different matter — it pins a curve, not a point —
         // so it stays unreadable.
         None => {
-            let nacre_topo::VertexDef::Branch {
+            let nacre_topo::VertexDef::Pierce {
                 planes,
                 cylinder,
                 root,
@@ -2665,7 +2665,7 @@ fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Co
             else {
                 return Err(CornerFail::Shape);
             };
-            branch_corner(model, planes, cylinder, root).ok_or(CornerFail::Arithmetic)
+            pierce_corner(model, planes, cylinder, root).ok_or(CornerFail::Arithmetic)
         }
     }
 }
@@ -2707,9 +2707,9 @@ fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corne
 /// **A vertex's rational coordinates, when it has them** — the *narrow* reading, for a caller that
 /// needs a **vector** from this point rather than a point to judge.
 ///
-/// [`corner_of`] deliberately does not narrow: a `Wide` meet still judges exactly, and a `Branch`
+/// [`corner_of`] deliberately does not narrow: a `Wide` meet still judges exactly, and a `Pierce`
 /// corner answers through its own line-and-root spelling. An arc's radial vector is arithmetic on
-/// coordinates, so it needs them — a `Wide` meet or a branch whose root is irrational declines,
+/// coordinates, so it needs them — a `Wide` meet or a pierce whose root is irrational declines,
 /// and the caller says so by name.
 fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_scalar::Rat; 3]> {
     match model.vertex_meet(vh) {
@@ -2723,7 +2723,7 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_scalar::Rat;
             Some(w)
         }
         None => {
-            let nacre_topo::VertexDef::Branch {
+            let nacre_topo::VertexDef::Pierce {
                 planes,
                 cylinder,
                 root,
@@ -2731,7 +2731,7 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_scalar::Rat;
             else {
                 return None;
             };
-            let Corner::Branch(line, s) = branch_corner(model, planes, cylinder, root)? else {
+            let Corner::Pierce(line, s) = pierce_corner(model, planes, cylinder, root)? else {
                 return None;
             };
             let sr = s.as_rat()?;
@@ -2934,7 +2934,7 @@ fn face_clears_footprint(
     // `arithmetic` is for the gate's own description running out: a chain that will not fold, a
     // name that is not narrow, a class whose coefficients miss its own face. Those are
     // [`RejectReason::CylinderGateUndecided`] whatever the boundary looks like, because the road
-    // behind has nothing to do with them — and since a **branch corner is now readable**, calling
+    // behind has nothing to do with them — and since a **pierce corner is now readable**, calling
     // them "curved" would put a false sentence on a true refusal.
     let unreadable = || {
         reject(if curved {
@@ -4282,7 +4282,7 @@ mod tests {
         );
     }
 
-    /// **The branch tolerance is a measurement, and each of its terms can move.**
+    /// **The pierce tolerance is a measurement, and each of its terms can move.**
     ///
     /// Hand geometry — no class indices, so nothing here is copied from an engine run: the turned
     /// boss's second crossing, where the meet line of `y = 0` and `x = 4` pierces a cylinder of
@@ -4293,7 +4293,7 @@ mod tests {
     /// only the cylinder-surface term can see it — which is how this asserts that term is
     /// *exercised*, not merely present ([[instrument-decides-the-answer]]'s negative control).
     #[test]
-    fn branch_vertex_tol_measures_and_each_term_moves() {
+    fn pierce_vertex_tol_measures_and_each_term_moves() {
         let pa = Plane::from_point_normal(
             Point3::from_array([0.0, 0.0, 0.0]),
             nacre_math::Vector3::from_array([0.0, 1.0, 0.0]),
@@ -4314,20 +4314,20 @@ mod tests {
         let s = 2.0 - 3.0f64.sqrt() / 4.0;
         let p = Point3::from_array([4.0, 0.0, s]);
         assert!(
-            branch_vertex_tol(p, &pa, &pb, &cyl) < 1e-12,
+            pierce_vertex_tol(p, &pa, &pb, &cyl) < 1e-12,
             "the true crossing measures at rounding scale: {}",
-            branch_vertex_tol(p, &pa, &pb, &cyl)
+            pierce_vertex_tol(p, &pa, &pb, &cyl)
         );
         // Along the meet line: planes and line stay zero, the cylinder term alone answers.
         let along = Point3::from_array([4.0, 0.0, s - 1e-6]);
         assert!(
-            branch_vertex_tol(along, &pa, &pb, &cyl) > 1e-7,
+            pierce_vertex_tol(along, &pa, &pb, &cyl) > 1e-7,
             "the cylinder-surface term is exercised"
         );
         // Off a plane: the instrument moves by the full offset.
         let off = Point3::from_array([4.0, 1e-6, s]);
         assert!(
-            branch_vertex_tol(off, &pa, &pb, &cyl) > 0.9e-6,
+            pierce_vertex_tol(off, &pa, &pb, &cyl) > 0.9e-6,
             "a plane term is exercised"
         );
     }

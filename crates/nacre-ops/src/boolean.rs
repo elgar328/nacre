@@ -529,7 +529,7 @@ pub(crate) struct Grouping {
 /// ([`combinatorics::LateralLoop`]): a band's rims (a whole circle by its class, a chain by its
 /// edges), a panel's ring, and the holes — outer and holes together, because on the chart's
 /// annulus a wrapping loop has no inside and the face is a parity over all of them (cell ②-b).
-/// A lateral ring's corners are branch names (the region walk's stations and rim nodes), so its
+/// A lateral ring's corners are pierce names (the region walk's stations and rim nodes), so its
 /// edges need no plane class to pin a three-plane end and refuse one by name (`RingNaming`).
 pub(crate) fn comp_face(
     jd: &Judge<'_, WorkingPlane>,
@@ -634,7 +634,7 @@ fn group_faces(
                 .collect::<Result<_, BoolError>>()
         })
         .collect::<Result<_, BoolError>>()?;
-    // A **probe list**, so a branch node may be dropped: `first_deciding` below tries each in
+    // A **probe list**, so a pierce node may be dropped: `first_deciding` below tries each in
     // turn, and an exhausted list is already `Ok(None)` — the caller's own rejection.
     //
     // ★★★ **Coordinates only when there is no vertex to name.** A named probe is exact without
@@ -659,7 +659,7 @@ fn group_faces(
         .map(combinatorics::Probe::Named)
         .collect();
         if named.is_empty() {
-            // ★ Rational branch corners first (cell ⑩ — a slot or a fillet-cornered prism has
+            // ★ Rational pierce corners first (cell ⑩ — a slot or a fillet-cornered prism has
             // no other vertex), then the caps' derived points.
             let mut out = combinatorics::corner_probes(
                 jd,
@@ -676,7 +676,7 @@ fn group_faces(
     };
     // ★★★★★ **The supply a component's *edges* name, tried only when its corners are exhausted**
     // (cell 24). `probes_of` above offers a polyhedral component nothing but its **vertices** — the
-    // two fallbacks beside it both need a cylinder (`corner_probes` wants branch corners,
+    // two fallbacks beside it both need a cylinder (`corner_probes` wants pierce corners,
     // `coord_probes` a cap's circle), so a planar component has none. A void whose every corner
     // sits on its host's wall therefore ran out of witnesses and the caller refused `NoClearRay`,
     // while the *shape's* truth — its surface meets itself along the corner's edge — is what the
@@ -780,11 +780,11 @@ fn group_faces(
         Ok(None)
     }
     // ★ A list that **started empty** is not a list that ran out (cell ③): a component whose
-    // every corner is a branch name and whose caps offer no candidate their ring says is inside
+    // every corner is a pierce name and whose caps offer no candidate their ring says is inside
     // — a thin segment of a disk — has no witness at all, and says so by the name the rings use
     // for the same proposition.
     ///
-    /// ⚠ **Asked of both stages** (cell 24): a component whose corners are all branch names *and*
+    /// ⚠ **Asked of both stages** (cell 24): a component whose corners are all pierce names *and*
     /// whose edges name no interior point has started empty; one whose edges did offer points has
     /// run out.
     fn no_witness(primary: &[combinatorics::Probe], extra: usize) -> RejectReason {
@@ -997,7 +997,7 @@ pub(crate) struct Ring {
 /// runs**: `ccw` restates `ClassEdges::edge_at`'s own convention (*"`MergedArc::end` runs
 /// counter-clockwise about the axis"* — the even half-edge travels that way, its twin the other),
 /// carried rather than re-derived. That bit is what will let `edge_for` tell the two
-/// complementary arcs between one pair of branch vertices apart.
+/// complementary arcs between one pair of pierce vertices apart.
 ///
 /// ★ Replacing the `usize::MAX` sentinel with a variant also kills a recorded hazard for free:
 /// `dissolve_straight_angles` folds on wall *equality*, and two arcs of different circles — or
@@ -1040,7 +1040,7 @@ impl Wall {
 /// (`Wall` is the type half).
 ///
 /// Keys live in *handle* space, the space `edge_of` always keyed. A line is its unordered
-/// endpoint pair, as before. Between one pair of branch vertices a circle offers **two**
+/// endpoint pair, as before. Between one pair of pierce vertices a circle offers **two**
 /// complementary pieces, so the endpoints alone cannot name an arc — the key carries them **in
 /// CCW order about the axis** (`from → to`), and the two complementary arcs get the two orders.
 /// The minted edge stores its vertices in that same order, which is what the `[A, B]`-CCW
@@ -1072,7 +1072,7 @@ impl Ring {
         let k = nodes.len();
         let walls = (0..k)
             .map(|i| {
-                // Its own contract is "clean fixture rings only", so a branch node here is a
+                // Its own contract is "clean fixture rings only", so a pierce node here is a
                 // fixture bug, not an input the kernel must survive.
                 let name = |n| {
                     combinatorics::three_plane_name(n).expect("a clean fixture ring names triples")
@@ -1112,23 +1112,23 @@ impl Ring {
             || self
                 .nodes
                 .iter()
-                .any(|&n| combinatorics::branch_name(n).is_some())
+                .any(|&n| combinatorics::pierce_name(n).is_some())
     }
 
     /// This ring's edges, ready for the exact predicates - built from the walls the ring
     /// carries, in the engine's own vocabulary.
     ///
     /// Until this cell the body was a legacy shim: walls flattened to plane indices (a curved
-    /// carrier to a sentinel) and handed to the plane-only derivation, whose branch-node guard
+    /// carrier to a sentinel) and handed to the plane-only derivation, whose pierce-node guard
     /// refused every mixed ring at construction time - before any consumer could even abstain.
     /// Now a wall becomes its carrier (`Wall::Arc` an [`combinatorics::ArcCarrier`] with the
-    /// class table's def - the same clone convention every producer follows), a branch end is
+    /// class table's def - the same clone convention every producer follows), a pierce end is
     /// pinned by its cylinder, and a three-plane end by `pin_on_line` exactly as the old road
     /// pinned it - so a pure ring yields the same edges bit for bit, and a mixed ring yields
     /// edges its consumers fork on (`ring_is_mixed`) instead of dying here.
     ///
     /// `p` is the plane class the ring lies in, which pins a **three-plane** end on its edge's
-    /// line; a lateral ring (on a cylinder) has none — its corners are branch names — and passes
+    /// line; a lateral ring (on a cylinder) has none — its corners are pierce names — and passes
     /// `None`, so a three-plane end there is refused by name rather than pinned by a guess.
     pub(crate) fn edges(
         &self,
@@ -1140,7 +1140,7 @@ impl Ring {
             return Err(reject(RejectReason::RingNaming));
         }
         let pin = |n: NodeId, wall: &Wall| -> Result<combinatorics::EndPin, BoolError> {
-            if combinatorics::branch_name(n).is_some() {
+            if combinatorics::pierce_name(n).is_some() {
                 return Ok(combinatorics::EndPin::Cylinder);
             }
             let Some(t) = combinatorics::three_plane_name(n) else {
@@ -1159,7 +1159,7 @@ impl Ring {
         let def_of = |cyl: usize| -> Result<nacre_topo::CylinderDef, BoolError> {
             Ok(cyls
                 .get(cyl)
-                .ok_or_else(|| reject(RejectReason::BranchVertexUnnamed))?
+                .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?
                 .def
                 .clone())
         };
@@ -1355,7 +1355,7 @@ impl LocalFace {
 ///   {wall, circle-plane}), so the unique-share rule a ruling edge uses cannot apply: the circle's
 ///   plane is the shared candidate that carries a cut-rim record. Two such candidates is a naming
 ///   this ladder does not arrange (`RulingBoundNotYet`).
-/// - **the directed passage test** — with two branch nodes the two complementary arcs share one
+/// - **the directed passage test** — with two pierce nodes the two complementary arcs share one
 ///   unordered endpoint pair, so the step is oriented by the `ccw` bit the wall carries and
 ///   compared against the split's own θ order: the CCW arc `nodes.last() → nodes[0]` is the one
 ///   holding θ = 0. ★ **Half-open.** When the seam *is* a node (`CutRim::seam_is_node`), that arc
@@ -1378,11 +1378,11 @@ fn seam_step(
         ClassIx::Plane(c) => c,
         ClassIx::Cyl(_) => {
             let shared = |x| {
-                let (pa, _, _) = combinatorics::branch_name(a)?;
-                let (pb, _, _) = combinatorics::branch_name(b)?;
+                let (pa, _, _) = combinatorics::pierce_name(a)?;
+                let (pb, _, _) = combinatorics::pierce_name(b)?;
                 (pa.contains(&x) && pb.contains(&x)).then_some(x)
             };
-            let mut hits = combinatorics::branch_name(a)
+            let mut hits = combinatorics::pierce_name(a)
                 .map(|(pa, _, _)| pa)
                 .into_iter()
                 .flatten()
@@ -1401,7 +1401,7 @@ fn seam_step(
         return Ok(None);
     };
     let ccw_pair = if ccw { (a, b) } else { (b, a) };
-    let last = *cr.nodes.last().expect("a cut circle has branch nodes");
+    let last = *cr.nodes.last().expect("a cut circle has pierce nodes");
     Ok((ccw_pair == (last, cr.nodes[0])).then_some((cyl, c, if ccw { 1 } else { -1 })))
 }
 
@@ -1631,7 +1631,7 @@ fn self_touch_reject(
         // check and `validate` all still stand behind it, so a curved self-touch surfaces there
         // instead of being missed silently. A band that pinches against a *plane* face is
         // therefore the case this does not see yet, and it is written down rather than assumed
-        // away. ★ **An edge with a branch endpoint joins that population** (M6-2b): it has no
+        // away. ★ **An edge with a pierce endpoint joins that population** (M6-2b): it has no
         // three-plane name for the plane-membership question below, so it is skipped by the same
         // rule and for the same reason.
         let faces: Vec<&LocalFace> = g
@@ -1669,7 +1669,7 @@ fn self_touch_reject(
         let mut rings_of_face: HashMap<usize, Vec<Vec<combinatorics::RingEdge>>> = HashMap::new();
         for (&[u, v], own) in &owners {
             // ★ **Abstain, exactly as the paragraph above already does for a lateral band.** An
-            // edge with a branch endpoint has no three-plane name to intersect, and this is a
+            // edge with a pierce endpoint has no three-plane name to intersect, and this is a
             // *rejection guard*: declining here would turn "I cannot check this edge" into "this
             // model is invalid" — a reject on a possibly-sound solid. The nets named above (the
             // edge-use guard, the non-manifold vertex check, `validate`) still stand behind it,
@@ -1694,7 +1694,7 @@ fn self_touch_reject(
                         continue;
                     }
                     // A face trimmed by a mixed ring joins the populations this sieve
-                    // already passes over (a lateral face, a branch-ended edge): the
+                    // already passes over (a lateral face, a pierce-ended edge): the
                     // named walk cannot read it, and an `Err` here would turn "cannot
                     // check" into "model invalid". The net behind the skip stays what
                     // it is for those: the edge-use guard, the non-manifold vertex
@@ -1752,14 +1752,14 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
 /// **A result vertex's definition, in class space** — what the minting turns into a `VertexDef`.
 ///
-/// ★ `Three` is the derived triple the pre-pass has always built. `Branch` is a **declaration,
-/// not a derivation**: `NodeId::Branch` already names two result plane classes and the cylinder,
+/// ★ `Three` is the derived triple the pre-pass has always built. `Pierce` is a **declaration,
+/// not a derivation**: `NodeId::Pierce` already names two result plane classes and the cylinder,
 /// so its def is the name's own payload (the class→handle mapping and `QuadRoot::canonical`'s
 /// second answer belong to the minting, which the deferred stopper still stands in front of).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Def {
     Three(combinatorics::Canon3),
-    Branch {
+    Pierce {
         planes: [usize; 2],
         cyl: usize,
         root: nacre_topo::QuadRoot,
@@ -1784,8 +1784,8 @@ pub(crate) fn name_result_vertices(
     cyls: &[crate::planes::WorkingCyl],
     cut_rims: &crate::arrangement::CutRims,
 ) -> Result<Named, BoolError> {
-    // ★★★ **The split-twin subdivision — every branch node is cut into every edge it lies on.**
-    // The arrangement cannot do this: a branch point needs the cylinder, and the neighbouring
+    // ★★★ **The split-twin subdivision — every pierce node is cut into every edge it lies on.**
+    // The arrangement cannot do this: a pierce point needs the cylinder, and the neighbouring
     // plane class has no circle (the cylinder is parallel to it), so no vocabulary for the point
     // — measured, the T-junction finding. Only here, where every class's rings are in one hand,
     // can the plate-top's whole edge learn that the arc class subdivided its twin. Without this,
@@ -1793,17 +1793,17 @@ pub(crate) fn name_result_vertices(
     // twin's plane (cell ⑪: a result vertex is defined from the planes of the faces whose rings
     // visit it), and the future edge welding has no twins to weld.
     //
-    // A branch node lies on an edge's carrier line exactly when its plane pair *is* the edge's
-    // `{own, wall}` — a name fact, no geometry — and betweenness is `branch_between`'s exact
+    // A pierce node lies on an edge's carrier line exactly when its plane pair *is* the edge's
+    // `{own, wall}` — a name fact, no geometry — and betweenness is `pierce_between`'s exact
     // half. An edge whose order cannot be formed is left unsplit, which is precisely the
     // behaviour before this pass (a corner short of a plane, `StraightAngle`); the conservative
     // arm degrades to the state this pass improves, never to something new. Identity for every non-arc input:
-    // no branch nodes, no pairs, no rewrite.
+    // no pierce nodes, no pairs, no rewrite.
     let mut by_pair: HashMap<[usize; 2], Vec<NodeId>> = HashMap::new();
     for lf in faces {
         for ring in lf.poly_rings() {
             for &n in ring.iter() {
-                if let Some((pair, _, _)) = combinatorics::branch_name(n) {
+                if let Some((pair, _, _)) = combinatorics::pierce_name(n) {
                     let v = by_pair.entry(pair).or_default();
                     if !v.contains(&n) {
                         v.push(n);
@@ -1829,7 +1829,7 @@ pub(crate) fn name_result_vertices(
                     nodes.push(a);
                     walls.push(w);
                     let Wall::Plane(w) = w else {
-                        // An arc or ruling edge: the arrangement's own split made it, branch
+                        // An arc or ruling edge: the arrangement's own split made it, pierce
                         // points and all — there is no whole twin to subdivide.
                         continue;
                     };
@@ -1838,7 +1838,7 @@ pub(crate) fn name_result_vertices(
                     let Some(cands) = by_pair.get(&pair) else {
                         continue;
                     };
-                    if let Some(bet) = combinatorics::branch_between(jd, cyls, a, b, cands) {
+                    if let Some(bet) = combinatorics::pierce_between(jd, cyls, a, b, cands) {
                         for x in bet {
                             nodes.push(x);
                             walls.push(Wall::Plane(w));
@@ -1937,10 +1937,10 @@ pub(crate) fn name_result_vertices(
         let g = group_of[fi];
         for ring in lf.poly_rings() {
             for &node in &ring.nodes {
-                // ★ A branch vertex's def is a **declaration, not a derivation** — the name
+                // ★ A pierce vertex's def is a **declaration, not a derivation** — the name
                 // already carries its two result plane classes and its cylinder.
-                if let Some((planes2, cyl, root)) = combinatorics::branch_name(node) {
-                    def_triple.entry((g, node)).or_insert(Def::Branch {
+                if let Some((planes2, cyl, root)) = combinatorics::pierce_name(node) {
+                    def_triple.entry((g, node)).or_insert(Def::Pierce {
                         planes: planes2,
                         cyl,
                         root,
@@ -2040,11 +2040,11 @@ pub(crate) fn reconstruct(
                 // carries ("a corner with no turn").
                 let tri = match def_triple.get(&(g, node)).copied() {
                     Some(Def::Three(t)) => t.planes(),
-                    // ★★★ **A branch vertex is minted from its declaration** — the def already
+                    // ★★★ **A pierce vertex is minted from its declaration** — the def already
                     // names two result plane classes and the cylinder, so this is the class→handle
                     // mapping and nothing else. That mapping is where `QuadRoot::canonical`
-                    // answers a **second** time: `NodeId::Branch` is canonical in *class* order,
-                    // `VertexDef::Branch` in *handle* order, and the class→handle map is not
+                    // answers a **second** time: `NodeId::Pierce` is canonical in *class* order,
+                    // `VertexDef::Pierce` in *handle* order, and the class→handle map is not
                     // monotone in general — a re-sort must carry the root through
                     // (`transform`'s remap already locks the same rule on the way back out).
                     // ★ The flip is unexercised **at this call**: dropping it leaves every fence
@@ -2053,13 +2053,13 @@ pub(crate) fn reconstruct(
                     // is red (2026-08-26).** The population this note was waiting for is a
                     // boolean's *result used as the next operand*, where a second boolean builds
                     // its classes afresh and their order is not the handles': dropping the same
-                    // restatement in `combinatorics::branch_name_from_def` turns
+                    // restatement in `combinatorics::pierce_name_from_def` turns
                     // `an_operand_bounded_by_a_cylinder_is_named_in_class_space` red. So what is
                     // still owed here is only a fixture that reaches *this* line, not the rule.
                     // The tolerance is the Three arm's rule below, one surface swapped: measured
                     // against the very `model.surface` objects `validate` reads, maxed with
-                    // `sv.tol` (which `branch_vertex_tol` built, meet-line term included).
-                    Some(Def::Branch {
+                    // `sv.tol` (which `pierce_vertex_tol` built, meet-line term included).
+                    Some(Def::Pierce {
                         planes: p2,
                         cyl,
                         root,
@@ -2074,7 +2074,7 @@ pub(crate) fn reconstruct(
                             .chain(std::iter::once(&cylinder))
                             .map(|&s| model.surface(s).distance(sv.point))
                             .fold(sv.tol, f64::max);
-                        let def = VertexDef::Branch {
+                        let def = VertexDef::Pierce {
                             planes: pair,
                             cylinder,
                             root,
@@ -2223,7 +2223,7 @@ pub(crate) fn reconstruct(
                 // minted one that only the reject then discarded), while θ = 0 is still where the
                 // band's joint must sit (a `[lat, lat]` seam edge derives a line from its
                 // endpoints, so both must share one θ — and the seam is model geometry, fixed at
-                // `+ref_dir`). Degenerate case first: when a branch vertex lies **on** the seam
+                // `+ref_dir`). Degenerate case first: when a pierce vertex lies **on** the seam
                 // generator — the split's own `SeamIncident` classification, carried in
                 // `CutRim::seam_is_node`, never re-derived from coordinates — that vertex *is*
                 // the seam point and minting another would stand a second handle on the same
@@ -2281,7 +2281,7 @@ pub(crate) fn reconstruct(
             let k = r.nodes.len();
             for t in 0..k {
                 // ★ Only plane-carried edges feed the scan. An arc edge shares its vertex pair
-                // with the chord between the same branch vertices, and pushing this face's plane
+                // with the chord between the same pierce vertices, and pushing this face's plane
                 // here would pollute the chord's line-key entry into the fallback arm — the arc
                 // states its carriers directly instead (`edge_for`'s arc arm).
                 let (va, vb) = (vh[&(g, r.nodes[t])], vh[&(g, r.nodes[(t + 1) % k])]);
@@ -2292,7 +2292,7 @@ pub(crate) fn reconstruct(
                         .entry((cyl, side, pair))
                         .or_default()
                         .push(fsurf),
-                    // An arc edge shares its vertex pair with the chord between the same branch
+                    // An arc edge shares its vertex pair with the chord between the same pierce
                     // vertices, and pushing this face's plane here would pollute the chord's
                     // line-key entry into the fallback arm — the arc states its carriers directly
                     // instead (`edge_for`'s arc arm).
@@ -2368,9 +2368,9 @@ pub(crate) fn reconstruct(
                     Some(s) => s,
                     None => {
                         planes[ends
-                            .and_then(|(a, b)| shared_branch_plane(a, b))
+                            .and_then(|(a, b)| shared_pierce_plane(a, b))
                             .ok_or_else(|| {
-                                // Two Branch ends that share no single wall plane: a naming this
+                                // Two Pierce ends that share no single wall plane: a naming this
                                 // ladder does not arrange yet.
                                 reject(RejectReason::RulingBoundNotYet)
                             })?]
@@ -2386,7 +2386,7 @@ pub(crate) fn reconstruct(
             Wall::Arc { cyl, ccw } => {
                 // ★★★ **An arc edge is minted in CCW order** — `[A, B]` is the piece from A to
                 // B counter-clockwise about the axis, so the two complementary arcs between one
-                // branch pair are `[A, B]` and `[B, A]`: the vertex order is the last bit the
+                // pierce pair are `[A, B]` and `[B, A]`: the vertex order is the last bit the
                 // endpoints alone cannot give (`EdgeKey`'s note). The carriers are stated
                 // directly — the two faces using an arc edge are this cap and the cylinder's
                 // side, so there is nothing for the scan to read — which also keeps the chord's
@@ -2411,7 +2411,7 @@ pub(crate) fn reconstruct(
 
     // ★★ **A cut rim's boundary chain, minted once per `(group, cylinder, plane)` — before the
     // face loop, in face order.** The chain walks the circle CCW from the seam vertex through the
-    // branch nodes and back (the wrap arc's two seam-split pieces included), so a cut rim's
+    // pierce nodes and back (the wrap arc's two seam-split pieces included), so a cut rim's
     // pieces exist under their `EdgeKey`s before either consumer asks: the cap faces' ring steps
     // weld to these very handles by key, and `band_loop` reads the chain directly — which is
     // also why this is not minted inside `band_loop`: two closures cannot both own `edge_for`.
@@ -2486,12 +2486,12 @@ pub(crate) fn reconstruct(
             for t in 0..k {
                 let (va, vb) = (handles[t], handles[(t + 1) % k]);
                 // ★★ **The wrap arc is minted as two pieces, split at the seam vertex.** θ = 0
-                // lies inside exactly one arc of a cut circle (unless a branch vertex sits on the
+                // lies inside exactly one arc of a cut circle (unless a pierce vertex sits on the
                 // seam — `CutRim::seam_is_node`, in which case nothing splits), and the band's
                 // seam edge must end there; splitting on the *cap* side is what hands the band
                 // the same two edges and keeps the shell guard's use count at two.
                 //
-                // ★ The wrap test is **directed**: with two branch nodes the two complementary
+                // ★ The wrap test is **directed**: with two pierce nodes the two complementary
                 // arcs share one unordered endpoint pair, so the match orients the ring step by
                 // the `ccw` bit the wall carries and compares against the split's own θ order
                 // (`nodes.last() → nodes[0]` is the piece that wraps past θ = 0).
@@ -2613,7 +2613,7 @@ pub(crate) fn reconstruct(
         // outer walk. A hole that does not meet the seam is left alone.
         // ★★ **Where the seam generator meets a cylinder's cut circles** — the only points a
         // hole or a chain rim can touch it at. One rule, two spellings, both carried rather
-        // than re-derived: a branch vertex sitting **on** the seam *is* the contact
+        // than re-derived: a pierce vertex sitting **on** the seam *is* the contact
         // (`CutRim::seam_is_node` — the split's own classification), and otherwise it is the
         // `OnSeam` vertex the rim table minted for that circle.
         let contacts_of = |k: usize| -> Vec<(Handle<Vertex>, usize)> {
@@ -3065,7 +3065,7 @@ pub(crate) fn reconstruct(
     // ★★ **Every result vertex must re-solve from the result's own faces** — the property
     // transform and replay stand on. This was a debug_assert until the chained contact-cut
     // refuted it (2026-08-23): a bored plate cut by a boss that only touches its top kept the
-    // top ring's branch vertices, defs still naming the boss's cylinder with every boss face
+    // top ring's pierce vertices, defs still naming the boss's cylinder with every boss face
     // gone — right volume, wrong names, and release builds shipped it silently. Refusing here
     // is the floor until the assembly learns to shed the stale corners; the garbage-solid
     // residue is the same class every late reject leaves (see the raise above).
@@ -3082,14 +3082,14 @@ pub(crate) fn reconstruct(
     out
 }
 
-/// The one plane class two **Branch** end names share — the fact a curved-face ring cannot
+/// The one plane class two **Pierce** end names share — the fact a curved-face ring cannot
 /// read off its own surface (a panel's `surf` is the cylinder): an arc's two ends share the
 /// class of the circle's plane, a ruling's two ends share the wall's. `None` is the honest
 /// answer for a pair that shares none or both (a degenerate naming this ladder does not
 /// arrange) — callers refuse by the ladder's name rather than unwrap.
-fn shared_branch_plane(a: NodeId, b: NodeId) -> Option<usize> {
-    let (pa, _, _) = combinatorics::branch_name(a)?;
-    let (pb, _, _) = combinatorics::branch_name(b)?;
+fn shared_pierce_plane(a: NodeId, b: NodeId) -> Option<usize> {
+    let (pa, _, _) = combinatorics::pierce_name(a)?;
+    let (pb, _, _) = combinatorics::pierce_name(b)?;
     let mut shared = pa.iter().filter(|x| pb.contains(x));
     let c = *shared.next()?;
     shared.next().is_none().then_some(c)
@@ -3545,7 +3545,7 @@ fn merge_component(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Option<Vec<RegionRings>>, BoolError> {
-    // 1. Collect directed edges **with their walls in the key**: between one pair of branch
+    // 1. Collect directed edges **with their walls in the key**: between one pair of pierce
     //    vertices a chord and an arc — or two complementary arcs — are *different edges*, and
     //    a node-pair key made them collide (measured: the flush half-disk pair abstained here
     //    and shipped a stated plane-self edge for the whole-result guard to refuse).
@@ -3792,8 +3792,8 @@ fn merge_component(
             // the right word.
             // ★ The rational road serves a mixed outer **and a hole with no three-plane corner**
             // (cell ⑩ — a slot's stadium, four tangent corners and nothing else): its witnesses
-            // are the hole's rational corners, branch ones included
-            // (`combinatorics::branch_coords_rat`). Handing an empty probe list to the ray road
+            // are the hole's rational corners, pierce ones included
+            // (`combinatorics::pierce_coords_rat`). Handing an empty probe list to the ray road
             // said `NoClearRay` for a ray never cast; the engine names an empty offer
             // `RingHasNoWitness` and an exhausted one `NoClearRay`, which are different facts.
             // ★ The same engine the arrangement's nesting asks (cell 13) — one rule, one set of
@@ -3918,7 +3918,7 @@ fn merge_component(
 ///
 /// ★★ **Arc-bearing rings flow through here, and the carrier keeps equality honest** (2026-08-23).
 /// While the wall was the `usize::MAX` sentinel, two *consecutive arcs* compared as "same wall"
-/// and the branch vertex between them would have dissolved — a recorded hazard, unfired only
+/// and the pierce vertex between them would have dissolved — a recorded hazard, unfired only
 /// because in both arc fixtures a chord or a segment sits between any two arcs. `Wall`'s derived
 /// equality killed it structurally: arcs of different circles, or of one circle in different
 /// directions, now compare unequal. The one pair still equal — two *same-direction* arcs of one

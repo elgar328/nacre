@@ -113,12 +113,12 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
                     format!("3p[{},{},{}]", s[0].index(), s[1].index(), s[2].index())
                 }
                 VertexDef::OnSeam(s) => format!("seam[{},{}]", s[0].index(), s[1].index()),
-                VertexDef::Branch {
+                VertexDef::Pierce {
                     planes,
                     cylinder,
                     root,
                 } => format!(
-                    "branch[{},{};{};{root:?}]",
+                    "pierce[{},{};{};{root:?}]",
                     planes[0].index(),
                     planes[1].index(),
                     cylinder.index()

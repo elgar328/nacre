@@ -92,12 +92,12 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     }
                     let tri = match model.vertices.get(vh).def {
                         VertexDef::ThreePlane(tri) => tri,
-                        // No rational base point: OnSeam and Branch coordinates are not
+                        // No rational base point: OnSeam and Pierce coordinates are not
                         // rational, so reuse declines and the boolean takes the slower road.
                         // ★ The old comment's premise ("a cylinder never reaches a boolean")
                         // expires at M6-2 — the decline stays correct then, the premise does
                         // not.
-                        VertexDef::OnSeam(_) | VertexDef::Branch { .. } => return None,
+                        VertexDef::OnSeam(_) | VertexDef::Pierce { .. } => return None,
                     };
                     let motions = tri.map(|h| model.plane_motion(h));
                     out.push(if motions.iter().all(Option::is_none) {
@@ -223,9 +223,9 @@ pub(crate) fn class_plans(
 /// there. A vertex of a solid meets exactly the classes of the faces around it, so the same name
 /// is available without arranging anything.
 ///
-/// ★ That is *a* name, not the only one since M6-2b — the arrangement also names branch points
-/// ([`crate::combinatorics::NodeId::Branch`]). This table stays three-plane by construction: its
-/// population is the vertices a **solid already has**, and a solid gains a branch vertex only when
+/// ★ That is *a* name, not the only one since M6-2b — the arrangement also names pierce points
+/// ([`crate::combinatorics::NodeId::Pierce`]). This table stays three-plane by construction: its
+/// population is the vertices a **solid already has**, and a solid gains a pierce vertex only when
 /// the arc split starts building them.
 pub(crate) struct VertexClasses {
     vertices: HashMap<Handle<Vertex>, Vec<usize>>,
@@ -299,7 +299,7 @@ impl VertexClasses {
 /// One element of a canonicalized bound: a node's name, or the class a curved bound is.
 ///
 /// ★ **The vessel widened rather than refusing** (M6-2b). The differential's job is to *separate*
-/// faces the two routes could disagree about, so a branch node needs a spelling here — declining
+/// faces the two routes could disagree about, so a pierce node needs a spelling here — declining
 /// would silently stop covering every face that contains one, which is precisely the population
 /// being added. Making it an enum also **deletes the `usize::MAX` sentinels** a circle and a band
 /// used to be spelled with: those existed only because the vessel was a triple, which is the same
@@ -319,7 +319,7 @@ pub(crate) enum CanonNode {
     /// A three-plane vertex, by its sorted classes.
     Three([usize; 3]),
     /// A `plane ∩ plane ∩ cylinder` vertex, by everything that names it.
-    Branch {
+    Pierce {
         planes: [usize; 2],
         cyl: usize,
         root: nacre_topo::QuadRoot,
@@ -334,12 +334,12 @@ pub(crate) enum CanonNode {
 #[cfg(any(debug_assertions, test))]
 impl CanonNode {
     /// A node's spelling. ★ It reads the identity directly rather than through
-    /// `three_plane_name`: this caller's answer for a branch node is not "refused" but "the key
+    /// `three_plane_name`: this caller's answer for a pierce node is not "refused" but "the key
     /// says which one it is", so the door's single answer is the wrong one here.
     fn of(n: NodeId) -> CanonNode {
         match n {
             NodeId::ThreePlane(t) => CanonNode::Three(t),
-            NodeId::Branch { planes, cyl, root } => CanonNode::Branch { planes, cyl, root },
+            NodeId::Pierce { planes, cyl, root } => CanonNode::Pierce { planes, cyl, root },
         }
     }
 }

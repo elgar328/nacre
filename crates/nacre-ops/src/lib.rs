@@ -627,7 +627,7 @@ pub enum RejectReason {
     ///
     /// ★ A genuine 4-plane concurrency used to reach here too, and that was **this reject naming
     /// the wrong thing** — a property of the input reported at the class that says "report a bug".
-    /// The arrangement folds those names now, including the branch that was missing: a plane which
+    /// The arrangement folds those names now, including the pierce that was missing: a plane which
     /// *carries* an arrangement line rather than crossing it (`Aliases::wall_family`, and
     /// `tests/concurrent_line.rs` for the shape). What remains here is meant to be a real defect.
     SeamAlias,
@@ -671,32 +671,32 @@ pub enum RejectReason {
     /// concurrency — this was never an artefact of `f64` construction, which is why exact
     /// rational construction (`crate::exact`) left it exactly where it was.
     FourPlane,
-    /// A ring holds a vertex the arrangement names as a `plane ∩ plane ∩ cylinder` **branch
+    /// A ring holds a vertex the arrangement names as a `plane ∩ plane ∩ cylinder` **pierce
     /// point**, on a path that speaks only three-plane names — the ring walks, the wall-and-handle
     /// derivation, the seam table. The point is exactly named; what is missing is that these paths
     /// have no other name to carry it by, and dropping it from a ring would silently answer about a
     /// different polygon.
     ///
     /// ★ **Not [`Self::RingNaming`].** That one's sentence is "these names do not chain" — a fact
-    /// about a *three-plane* naming that came out degenerate. A branch point has no such name to
+    /// about a *three-plane* naming that came out degenerate. A pierce point has no such name to
     /// begin with, so reporting it there would put two causes under one label.
     ///
-    /// ★ Its per-face sibling is `DeclineKind::BranchNode`: the tracer's decline structure carries
+    /// ★ Its per-face sibling is `DeclineKind::PierceNode`: the tracer's decline structure carries
     /// a face handle, so the paths inside it say *where* instead of raising this.
     ///
-    /// ★★ **A ring may now hold a branch node, and this no longer refuses one.**
-    /// `loop_winding` compares branch coordinates through the quad tower
-    /// (`combinatorics::CoordKey`); what is left here is the narrower sentence — a branch node
+    /// ★★ **A ring may now hold a pierce node, and this no longer refuses one.**
+    /// `loop_winding` compares pierce coordinates through the quad tower
+    /// (`combinatorics::CoordKey`); what is left here is the narrower sentence — a pierce node
     /// whose *cylinder* is not on any of the ring's own carriers, so the point cannot be re-solved
     /// from its name. That arm has no fixture, and neither does the ray-cast one next to it; both
     /// are recorded rather than hidden. (`DegenerateWitness` is the precedent: no fixture, written
     /// down, and not taken as licence to delete the guard.)
-    BranchVertexUnnamed,
+    PierceVertexUnnamed,
     /// A **result** vertex's definition names a surface the finished solid keeps no face on, so
     /// the point could not be re-solved from the solid's own geometry — the property transform
     /// and replay stand on (`defs_are_remappable`). Measured population: the
     /// **contact-cut** — a plate cut by a boss that only touches its top face. The cut
-    /// removes no material, but the arrangement minted branch vertices where the boss's rim
+    /// removes no material, but the arrangement minted pierce vertices where the boss's rim
     /// crossed the plate's edge, and the assembly kept them with definitions still saying
     /// `wall ∩ boss cylinder` after every boss face was gone. The volume was already right; the
     /// names were not. Promoted from a debug_assert this population refuted (2026-08-23) —
@@ -908,7 +908,7 @@ pub enum RejectReason {
     NoClearRay,
     /// **A ring — or a component — offered no point to ask about** — not a ray that was blocked,
     /// and not a value that could not be formed: the containment roads draw their witnesses from
-    /// a ring's *corners*, and a ring cut out of a cylinder has only branch-named ones; the 3D
+    /// a ring's *corners*, and a ring cut out of a cylinder has only pierce-named ones; the 3D
     /// depth classification draws them from a component's vertices and, failing those, from its
     /// cut caps' interiors, and a thin segment of a disk can offer neither (cell ③).
     ///
@@ -924,10 +924,10 @@ pub enum RejectReason {
     /// it says — the cell had nothing to offer — and the four supplies that used to decide which
     /// of the three a caller reported are one supply. The **component** road raised it
     /// for one commit (cell ③): an offset boss's Common is a 0.2-deep segment prism whose halves
-    /// have branch-named corners only and no cap candidate from the centre inside — until the
+    /// have pierce-named corners only and no cap candidate from the centre inside — until the
     /// cut cap offered two points per **chord** (`ring_interior_candidates`). What would still
     /// reach it is a segment cut again along its chord's normal line, in a multi-body result.
-    /// The remedy for every such shape at once is to widen the probe's **type** so a branch
+    /// The remedy for every such shape at once is to widen the probe's **type** so a pierce
     /// corner is itself a witness.
     ///
     /// ★★ **And it used to be the *only* answer a disk could give the converse** (cell 21).
@@ -1015,8 +1015,8 @@ pub enum RejectReason {
     /// ★★★★★ **Two sites, and neither of them fires today** — measured over the whole suite
     /// (`--features reject-trace`: 86 raises across 15 reasons, this one **absent**). What a caller
     /// meets on a chained operand has kept moving outward as the rungs went in, and the sentence
-    /// here has had to move with it four times: [`DeclineKind::BranchNode`] at the tracer's ring
-    /// naming, then [`Self::BranchVertexUnnamed`] at the arrangement's then-plane-only overlay,
+    /// here has had to move with it four times: [`DeclineKind::PierceNode`] at the tracer's ring
+    /// naming, then [`Self::PierceVertexUnnamed`] at the arrangement's then-plane-only overlay,
     /// then [`Self::WitnessNotRational`] at the arc split, which asked every segment for its two
     /// ends' exact coordinates — and now [`Self::CurvedStraightRun`], **one stage further into the
     /// arrangement**: its split passes all take a cylinder-pinned end, so a chained operand reaches
@@ -1026,7 +1026,7 @@ pub enum RejectReason {
     ///
     /// * `planes::face_clears_footprint` — the population **gate**. It used to refuse the whole
     ///   chained population here, because its clearance scan stopped at the first corner a
-    ///   cylinder made. That corner is now **read exactly** (a branch point carries one radicand
+    ///   cylinder made. That corner is now **read exactly** (a pierce point carries one radicand
     ///   and everything it is measured against is rational), so what is left under this name is
     ///   only what the scan genuinely cannot spell: an **arc** edge — whose bulge breaks the
     ///   convex-hull argument the scan rests on — and an `OnSeam` vertex, which pins a curve
@@ -1039,11 +1039,11 @@ pub enum RejectReason {
     ///   even where the surfaced label is the loop's.
     ///
     ///   ★★ **That second site is now a backstop with no firings, and deliberately so.** Once the
-    ///   ring naming learned to restate an operand's branch corner
-    ///   (`combinatorics::branch_name_from_def`) and to write a curved carrier, the curved rings of
+    ///   ring naming learned to restate an operand's pierce corner
+    ///   (`combinatorics::pierce_name_from_def`) and to write a curved carrier, the curved rings of
     ///   today's population are **described** rather than declined — measured, zero raises from
     ///   this site across the whole suite. What can still reach it: a corner whose def is not
-    ///   `Branch` (a ruling ending at a seam vertex — a seam *joint* between two legs of one
+    ///   `Pierce` (a ruling ending at a seam vertex — a seam *joint* between two legs of one
     ///   arc is read as one step since E1, not as a corner), a plane with no *narrow* world
     ///   description (a wide or rotated chain), a handle that answers to both candidate classes
     ///   or to neither, two laterals meeting at one corner (M6b's), and a loop whose every joint
@@ -1176,7 +1176,7 @@ pub enum RejectReason {
 pub enum DeclineKind {
     /// A ring vertex's plane triple collapses (two of its planes coincide), so it names no point.
     CollapsedTriple,
-    /// A ring vertex is a `plane ∩ plane ∩ cylinder` **branch point**, and something on the
+    /// A ring vertex is a `plane ∩ plane ∩ cylinder` **pierce point**, and something on the
     /// tracer's road could not take it.
     ///
     /// ★★★★★ **It has narrowed to nothing, and that is the shape of two rungs.** Last cell this
@@ -1190,15 +1190,15 @@ pub enum DeclineKind {
     /// ★ Distinct from [`Self::CollapsedTriple`] on purpose: that one's sentence is "two of its
     /// planes coincide", which is simply not what happened here. The census keys its `detail` on
     /// this name, so reusing the other would put a false cause in the ledger.
-    BranchNode,
+    PierceNode,
     /// The scan's crossing arm met an edge riding a cylinder that it cannot name a point on: an
     /// **arc** (its crossing waits on the lateral's ruling sweep, E2-2 — see
     /// `arrangement::crossing_on_ruling`), or a **ruling** whose crossing has no exact statement
     /// (a class that is not ⊥ to the axis, a plane not through it, a tangency, both roots on one
-    /// side). A crossing on a ruling with a statement is named as a branch node and passes.
+    /// side). A crossing on a ruling with a statement is named as a pierce node and passes.
     ///
-    /// ★ Distinct from [`Self::BranchNode`], which is about a *corner*. The two travel together on
-    /// the population that produced them (a ruling's ends lie on the cylinder, so they are branch
+    /// ★ Distinct from [`Self::PierceNode`], which is about a *corner*. The two travel together on
+    /// the population that produced them (a ruling's ends lie on the cylinder, so they are pierce
     /// points), but they are different sentences, and a ring whose names are perfectly good while a
     /// **carrier** is curved is a fact worth seeing on its own.
     CurvedRingWall,
@@ -1321,7 +1321,7 @@ impl DeclineKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::CollapsedTriple => "collapsed-triple",
-            Self::BranchNode => "branch-node",
+            Self::PierceNode => "pierce-node",
             Self::CurvedRingWall => "curved-ring-wall",
             Self::OuterRing => "outer-ring",
             Self::HoleRing => "hole-ring",
@@ -1380,7 +1380,7 @@ impl RejectReason {
             Self::SeamAlias => "seam_alias",
             Self::ZeroLengthEdge => "zero_length_edge",
             Self::FourPlane => "fourplane",
-            Self::BranchVertexUnnamed => "branch_vertex_unnamed",
+            Self::PierceVertexUnnamed => "pierce_vertex_unnamed",
             Self::VertexNamesAbsentSurface => "vertex_names_absent_surface",
             Self::ObliqueCylinderCut => "oblique_cylinder_cut",
             Self::ObliqueCircleClass => "oblique_circle_class",
@@ -1409,7 +1409,7 @@ impl RejectReason {
         }
     }
 
-    /// What kind of answer this is — see [`RejectClass`]. **Branch on this, not on the variant.**
+    /// What kind of answer this is — see [`RejectClass`]. **Pierce on this, not on the variant.**
     ///
     /// The split follows what each guard's own documentation says it detects: invalid operands
     /// (no valid solid exists) are `Impossible`, coverage limits are `NotSupported`, and
@@ -1427,7 +1427,7 @@ impl RejectReason {
             Self::TraceDeclined { .. }
             | Self::ThreePlanes
             | Self::FourPlane
-            | Self::BranchVertexUnnamed
+            | Self::PierceVertexUnnamed
             | Self::VertexNamesAbsentSurface
             | Self::ObliqueCylinderCut
             | Self::CylinderPairContact

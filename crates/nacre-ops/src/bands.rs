@@ -1141,7 +1141,7 @@ mod tests {
     /// (cell ⑤). Two clauses, because either alone passes vacuously:
     ///
     /// 1. **No vertex within `1e-9` of the touch.** The arrangement names the point exactly
-    ///    (`NodeId::branch(.., QuadRoot::Double)`) and then *discards* it — a tangency touches
+    ///    (`NodeId::pierce(.., QuadRoot::Double)`) and then *discards* it — a tangency touches
     ///    without separating, so the circle keeps its closed cell. `nonmanifold_vertices` and the
     ///    Euler count read topology, and there is none here: **their silence is not evidence**
     ///    about this point, in either direction.
@@ -1291,7 +1291,7 @@ mod tests {
         let err = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect_err("corner on rim");
         // ★★ **One point, two names** — and the split says so by name. `(8,13,5)` is the boss's
         // corner, so the arrangement already holds it as a three-plane vertex; the rim crossing
-        // names the *same* point as a `NodeId::Branch`. The DCEL keys vertices by name, so shipping
+        // names the *same* point as a `NodeId::Pierce`. The DCEL keys vertices by name, so shipping
         // both would put two vertices where there is one — folding them is its own step, and until
         // then `CoincidentNodes` ("two names for one point") is the true sentence.
         assert!(
@@ -1314,7 +1314,7 @@ mod tests {
     /// and `build_prism` pushes "base cap, top cap, then walls", so a `+Z` cylinder's circle always
     /// lives on a class interned **before** the wall that crosses it. Measured over the whole ops
     /// suite: 463 of the 2060 `(class, wall)` pairs the gate examines are descending, but **all
-    /// nine that reach the locator are ascending**. So `NodeId::branch`'s canonicalization —
+    /// nine that reach the locator are ascending**. So `NodeId::pierce`'s canonicalization —
     /// re-sorting the pair and restating the root with it — has never once been exercised by a
     /// production path.
     ///
@@ -1390,7 +1390,7 @@ mod tests {
     /// (`cos = −1`, the measured wall) — `validate == []` here is what pins `loop_winding`'s
     /// segment witnesses. ★ The old fence's proposition — a root that fails to follow its pair
     /// through the sort names the wrong crossing — did not retire with the reject: the mint
-    /// fence asserts the branch vertices sit **on the derived crossings**, and a wrong root
+    /// fence asserts the pierce vertices sit **on the derived crossings**, and a wrong root
     /// moves the minted point itself.
     #[test]
     fn a_turned_boss_over_the_plates_corner_builds() {
@@ -1609,23 +1609,23 @@ mod tests {
         }
     }
 
-    /// **The seam realizes a branch vertex and measures it — seen through the door production
+    /// **The seam realizes a pierce vertex and measures it — seen through the door production
     /// uses, because nothing else can see it at all.**
     ///
-    /// ★★★ The deferred stopper intercepts the whole seam stretch, so with the branch arm
-    /// deleted the seam fails `BranchVertexUnnamed`, the interception swallows it, and **every
+    /// ★★★ The deferred stopper intercepts the whole seam stretch, so with the pierce arm
+    /// deleted the seam fails `PierceVertexUnnamed`, the interception swallows it, and **every
     /// boolean-level fence stays green** (measured — that probe is what forced this test). The
     /// arm's only witness is a direct second consumer of `seam_table` on the very faces
     /// production feeds it, so this walks production's stretch step for step: trace, clean,
     /// append the bands, build the seam.
     ///
-    /// ★ The tolerance is asserted as a **bound**, never a copied value; the branch coordinates
-    /// themselves are pinned by `ClassAudit::outer_rings` through the same `branch_point` road,
+    /// ★ The tolerance is asserted as a **bound**, never a copied value; the pierce coordinates
+    /// themselves are pinned by `ClassAudit::outer_rings` through the same `pierce_point` road,
     /// so re-asserting them here would be a second copy of an existing lock — and a `Lo`/`Hi`
     /// mix-up cannot hide behind the bound either, because both crossings lie on every defining
     /// surface and `outer_rings` is what tells them apart.
     #[test]
-    fn the_seam_realizes_a_branch_vertex_and_measures_it() {
+    fn the_seam_realizes_a_pierce_vertex_and_measures_it() {
         for (origin, axis) in [
             ([4.0, 2.0, 2.0], [0.0, 0.0, 1.0]),
             ([4.0, 0.25, 2.0], [1.0, 0.0, 0.0]),
@@ -1694,16 +1694,16 @@ mod tests {
                     .expect("the lateral faces emit"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
-                .expect("the seam realizes branch nodes");
-            let branch: Vec<_> = seam
+                .expect("the seam realizes pierce nodes");
+            let pierce: Vec<_> = seam
                 .iter()
-                .filter(|sv| crate::combinatorics::branch_name(sv.triple).is_some())
+                .filter(|sv| crate::combinatorics::pierce_name(sv.triple).is_some())
                 .collect();
-            assert_eq!(branch.len(), 2, "both crossings reach the seam, once each");
-            for sv in branch {
+            assert_eq!(pierce.len(), 2, "both crossings reach the seam, once each");
+            for sv in pierce {
                 assert!(
                     sv.tol < 1e-12,
-                    "a branch realization sits on everything that defines it: tol {}",
+                    "a pierce realization sits on everything that defines it: tol {}",
                     sv.tol
                 );
             }
@@ -1719,8 +1719,8 @@ mod tests {
     /// is the only witness. This walks production's road (trace → clean → bands → seam → naming)
     /// and asserts on its product.
     ///
-    /// ★★ Disabling the branch arm reddens both fixtures (and the walls-fallback cannot fake a
-    /// branch def past its arc-carrier guard). ★ The fallback itself went **zero-population** when
+    /// ★★ Disabling the pierce arm reddens both fixtures (and the walls-fallback cannot fake a
+    /// pierce def past its arc-carrier guard). ★ The fallback itself went **zero-population** when
     /// the split-twin subdivision landed — the bitten corner's twins match now, so its def comes
     /// down the far-plane road and no probe reddens on the fallback alone; the subdivision has
     /// its own fence (`a_subdivided_twin_matches_its_neighbour_edge_for_edge`).
@@ -1807,12 +1807,12 @@ mod tests {
                 }
             }
             assert!(missing.is_empty(), "def-less nodes: {missing:?}");
-            let branch_defs = named
+            let pierce_defs = named
                 .defs
                 .values()
-                .filter(|d| matches!(d, crate::boolean::Def::Branch { .. }))
+                .filter(|d| matches!(d, crate::boolean::Def::Pierce { .. }))
                 .count();
-            assert_eq!(branch_defs, 2, "both crossings are declared, once each");
+            assert_eq!(pierce_defs, 2, "both crossings are declared, once each");
             // The bitten corner's def names the right point: realize its three planes and land
             // on (4, 0, 2) — the fixture's own number, no class index copied.
             if bites_corner {
@@ -1842,14 +1842,14 @@ mod tests {
     /// rescues the bitten corner whether or not the twins match, so that fence is green either
     /// way. What the subdivision actually changes is the **edge-key census**: a neighbour's whole
     /// edge and the arc class's subdivided pieces share `norm_edge` keys only once the whole edge
-    /// is cut at the same branch nodes. So the proposition, with its one exception stated:
+    /// is cut at the same pierce nodes. So the proposition, with its one exception stated:
     ///
     /// > every segment ring edge (a `Wall::Plane` carrier) has its key used by exactly two
     /// > faces.
     ///
     /// Arc edges are excluded because their far side is the band, which contributes no ring.
-    /// ★ Both-ends-branch keys used to be excluded too — the chord and the two arcs between one
-    /// branch pair folded into a single `norm_edge` key — but the carrier gave arcs their own
+    /// ★ Both-ends-pierce keys used to be excluded too — the chord and the two arcs between one
+    /// pierce pair folded into a single `norm_edge` key — but the carrier gave arcs their own
     /// ordered key, so the chord's line key counts exactly its two coplanar faces now (measured:
     /// the exclusion removed, both fixtures stay green — the tightening the carrier cell's plan
     /// predicted).
@@ -1957,19 +1957,19 @@ mod tests {
         }
     }
 
-    /// **The branch vertices are minted — canonical, measured, on the derived crossings.**
+    /// **The pierce vertices are minted — canonical, measured, on the derived crossings.**
     ///
-    /// Before the boolean no `VertexDef::Branch` exists anywhere in the model, so a whole-store
+    /// Before the boolean no `VertexDef::Pierce` exists anywhere in the model, so a whole-store
     /// filter is position-independent; a wrong `QuadRoot` canonicalization moves the minted
     /// point itself, which is what keeps the old toggle-lock alive now that the reject (whose
     /// witness once carried it) is gone.
     ///
     /// ★ The coordinates are the fixtures' own crossing derivations (the same numbers the ring
     /// and seam fences pin) — nothing here is copied from a run. The tolerance is a bound, and
-    /// ascending handle order is `VertexDef::Branch`'s own contract, minted through
+    /// ascending handle order is `VertexDef::Pierce`'s own contract, minted through
     /// `QuadRoot::canonical`'s second answer.
     #[test]
-    fn a_branch_vertex_is_minted_and_measured() {
+    fn a_pierce_vertex_is_minted_and_measured() {
         let s = 2.0 - 3.0f64.sqrt() / 4.0;
         for (origin, axis, crossings) in [
             (
@@ -2001,14 +2001,14 @@ mod tests {
             assert_eq!(out.len(), 1, "one fused solid");
             assert_ne!(m.live_solids, before, "the operands retired");
             assert_eq!(m.live_solids, out, "the result lives");
-            let branch: Vec<_> = m
+            let pierce: Vec<_> = m
                 .vertices
                 .iter()
-                .filter(|(_, v)| matches!(v.def, nacre_topo::VertexDef::Branch { .. }))
+                .filter(|(_, v)| matches!(v.def, nacre_topo::VertexDef::Pierce { .. }))
                 .collect();
-            assert_eq!(branch.len(), 2, "both crossings minted, once each");
-            for (h, v) in branch {
-                let nacre_topo::VertexDef::Branch { planes: [a, b], .. } = v.def else {
+            assert_eq!(pierce.len(), 2, "both crossings minted, once each");
+            for (h, v) in pierce {
+                let nacre_topo::VertexDef::Pierce { planes: [a, b], .. } = v.def else {
                     unreachable!("filtered above");
                 };
                 assert!(a < b, "planes in ascending handle order: {a:?} vs {b:?}");
@@ -2017,7 +2017,7 @@ mod tests {
                     crossings
                         .iter()
                         .any(|c| (0..3).all(|i| (p.as_array()[i] - c[i]).abs() < 1e-9)),
-                    "a minted branch vertex sits on a derived crossing: {p:?}"
+                    "a minted pierce vertex sits on a derived crossing: {p:?}"
                 );
                 let tol = m
                     .vertex_tol(h)
@@ -2030,7 +2030,7 @@ mod tests {
     /// **The two complementary arcs are two edges, and the cut rim is none.**
     ///
     /// ★★★ The observable form of the `[A, B]`-CCW convention (`derive_edge_curve`'s circle
-    /// arm): between one pair of branch vertices a circle offers two pieces, the endpoints
+    /// arm): between one pair of pierce vertices a circle offers two pieces, the endpoints
     /// alone cannot tell them apart, and the *vertex order* is the bit that does — so the store
     /// must hold **two** circle-carrier edges whose vertex pairs are each other's reverse.
     /// Erase the order from the welding key and they fold into one edge (the red probe this
@@ -2041,7 +2041,7 @@ mod tests {
     /// the **uncut** far rim still mints exactly one — the skip's negative control, pinned to
     /// the far cap's axis coordinate so a skip that turned into "skip every rim" reddens here.
     ///
-    /// ★ The two populations differ on the chord, deliberately: the straddling boss's branch
+    /// ★ The two populations differ on the chord, deliberately: the straddling boss's pierce
     /// pair is joined by the plate-top chord (welded with the subdivided middle piece into
     /// **one** line edge used by both coplanar faces — the subdivision cell's promise realized
     /// in the store), while the turned boss's pair sits across the plate corner, joined through
@@ -2050,7 +2050,7 @@ mod tests {
     #[test]
     fn an_arc_and_its_complement_are_minted_as_two_ordered_edges() {
         let s = 2.0 - 3.0f64.sqrt() / 4.0;
-        // `seam_split`: where θ = 0 sits. `None` = a branch vertex lies on the seam generator
+        // `seam_split`: where θ = 0 sits. `None` = a pierce vertex lies on the seam generator
         // (the straddling boss — the split's own `SeamIncident` case), so no piece splits;
         // `Some(p)` = the seam vertex S is minted at `p` (centre + ref_dir·r, derived) and the
         // wrap arc is cut there into two pieces.
@@ -2125,19 +2125,19 @@ mod tests {
                 }
             }
             assert_eq!(steps, expect_pieces, "the pieces close one circle");
-            // Endpoints: exactly two branch vertices on the derived crossings, plus — when the
+            // Endpoints: exactly two pierce vertices on the derived crossings, plus — when the
             // seam splits an arc — one OnSeam vertex at the derived seam point, with its
             // tolerance measured.
-            let (mut branch, mut on_seam) = (Vec::new(), Vec::new());
+            let (mut pierce, mut on_seam) = (Vec::new(), Vec::new());
             for &v in succ.keys() {
                 match m.vertices.get(v).def {
-                    nacre_topo::VertexDef::Branch { .. } => branch.push(v),
+                    nacre_topo::VertexDef::Pierce { .. } => pierce.push(v),
                     nacre_topo::VertexDef::OnSeam(_) => on_seam.push(v),
-                    ref d => panic!("an arc endpoint is neither branch nor seam: {d:?}"),
+                    ref d => panic!("an arc endpoint is neither pierce nor seam: {d:?}"),
                 }
             }
-            assert_eq!(branch.len(), 2, "one branch pair");
-            for &v in &branch {
+            assert_eq!(pierce.len(), 2, "one pierce pair");
+            for &v in &pierce {
                 let p = m.vertex_point(v);
                 assert!(
                     crossings
@@ -2147,7 +2147,7 @@ mod tests {
                 );
             }
             match seam_split {
-                None => assert!(on_seam.is_empty(), "the seam is the branch vertex itself"),
+                None => assert!(on_seam.is_empty(), "the seam is the pierce vertex itself"),
                 Some(sp) => {
                     assert_eq!(on_seam.len(), 1, "one seam vertex on the cut circle");
                     let p = m.vertex_point(on_seam[0]);
@@ -2160,7 +2160,7 @@ mod tests {
                 }
             }
             // The minted OnSeam census: the uncut far rim's vertex, plus S when it stands —
-            // and nothing else (a duplicate S at a seam-incident branch vertex would show here).
+            // and nothing else (a duplicate S at a seam-incident pierce vertex would show here).
             let minted_on_seam = m
                 .vertices
                 .iter()
@@ -2192,14 +2192,14 @@ mod tests {
 
             // The chord: welded into one line edge on the straddling boss, absent across the
             // turned boss's corner.
-            let (ba, bb) = (branch[0], branch[1]);
+            let (ba, bb) = (pierce[0], pierce[1]);
             let chords = minted
                 .iter()
                 .filter(|(_, e)| {
                     !on_circle(e) && (e.vertices == [ba, bb] || e.vertices == [bb, ba])
                 })
                 .count();
-            assert_eq!(chords, chord_edges, "the branch pair's line edges");
+            assert_eq!(chords, chord_edges, "the pierce pair's line edges");
         }
     }
 
@@ -2210,7 +2210,7 @@ mod tests {
     /// exactly twice across its faces, and the band face's outer loop is one vertex-continuous
     /// cycle of the derived length, with the seam edge traversed once in each sense.
     ///
-    /// ★ Three fixtures: the straddling boss (lo rim cut, seam ≡ branch), the turned boss
+    /// ★ Three fixtures: the straddling boss (lo rim cut, seam ≡ pierce), the turned boss
     /// (lo rim cut, seam splits the wrap arc — six half-edges), and the **hung** boss (the
     /// straddling boss mirrored under the plate — the cut circle is the band's **hi** end, so
     /// the chain is walked reversed; measured to pass the gate before this fence was written).
@@ -2299,7 +2299,7 @@ mod tests {
     ///
     /// ★ Asserted on `name_result_vertices`' own product (the subdivision must run first for the
     /// chord's line key to match), across all three fixtures. red: the band's registration
-    /// removed → n == 2 and the held grouping is the old `BranchVertexUnnamed`.
+    /// removed → n == 2 and the held grouping is the old `PierceVertexUnnamed`.
     #[test]
     fn the_grouping_joins_across_a_cut_rim() {
         for (origin, axis) in [
@@ -2368,7 +2368,7 @@ mod tests {
                     .expect("the lateral faces emit"),
             );
             let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
-                .expect("the seam realizes branch nodes");
+                .expect("the seam realizes pierce nodes");
             let named =
                 crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
                     .expect("the naming runs");
@@ -2506,7 +2506,7 @@ mod tests {
 
     /// The chained bore-then-boss body: `cut` a through-bore at `(12,12)`, then `fuse` a boss
     /// whose rim the plate's edge cuts. The chain is what the milestone fence could not ask:
-    /// nesting must place the bore's rim circle inside a **bitten** top ring — two branch
+    /// nesting must place the bore's rim circle inside a **bitten** top ring — two pierce
     /// corners and an arc step — where the chart road's parity had no rational corners to read
     /// (`WitnessNotRational`, chaining wall 3) and the mixed parity answers in ℚ(√c).
     fn a_bored_plate_with_a_boss(boss_base: [f64; 3]) -> f64 {
@@ -2574,7 +2574,7 @@ mod tests {
     /// instead of fusing: the boss only *touches* the bored plate's top, so the cut removes
     /// nothing — and the result is the bored plate, exactly. It used to refuse
     /// `VertexNamesAbsentSurface` here: the top ring's rim seam could not merge (the arc pair
-    /// collided in the merge's node-pair key), the unmerged ring kept branch vertices whose
+    /// collided in the merge's node-pair key), the unmerged ring kept pierce vertices whose
     /// definitions name the boss's cylinder, and the result has no face on it. The two-pass
     /// erase removes the seam — and the vertices with it — so the honest refusal became the
     /// honest build. Volume and validate lock that the build is *right*, not merely green.

@@ -20146,3 +20146,44 @@ combinatorics 6,577 + bands 4,172 + cyl_chart 2,944 + nesting ≈ 28k)과 **모�
 - ⚠ **`rebuild_surface_names` 가 없다.** 간선은 `rebuild_edge_cache` + 비트 동일 잠금으로
   *"proof that nothing in it was truth"* 를 갖는데, 이름에는 그 증명이 없다 ⇒ 「이름은 캐시」는
   아직 **주장**이다.
+
+## 칸 ㊸ — «분기»가 «관통»이 된다 — 이름이 고른 방법이 아니라 무슨 점인지 말한다 (2026-09-13)
+
+열린 항목 24 완료. 관통점 엔티티 `Branch` → `Pierce`. 기능 0, 순수 개명 — census 가 이름을
+문자열로 안 핀하므로(실측) 값이 못 움직이고, 타입이 바뀌므로 놓친 코드 자리는 컴파일 오류다.
+
+### 개명 — «관통점을 뜻하는 branch»만 (구조가 경계를 강제)
+
+- **① 관통점 엔티티 → `Pierce`** (topo+ops+validate): `VertexDef::Pierce`; 형제 enum 넷
+  (`NodeId`·`PointOn`·`OnLine`·`Located`)의 `Pierce` 변종; 헬퍼 `pierce_*`(`pierce_meet`·
+  `pierce_name`·`pierce_vertex_tol`·`pierce_coords_rat`·`PierceVertexUnnamed`·`PierceNode`…);
+  arrangement/combinatorics 의 지역변수 `let pierce`; 산문·`expect`/`assert` 문자열·테스트 라벨
+  (`vertex_def_names` 의 `"pierce {root}"` 생산자+소비자 함께).
+- **그대로** — **② 근**: scalar/cip 의 `*_branch`(`cmp_coord_branch`·`point_axis_side_branch`·
+  `cylinder_strip_side_branch`·`branch_point_f64`)와 `QuadRoot` 자체. **③ 그래프/제어**:
+  `SketchError::BranchingVertex`, "code branch" 산문.
+- ★ **구조가 갇힘을 강제했다**: `nacre-scalar`·`nacre-cip` 는 `nacre-topo` 에 의존하지 «않아»
+  그 층의 `branch` 는 관통점일 수 «없다» — `QuadRoot` 가 고르는 «근» 뜻이다. 그래서 개명이 topo+ops
+  로 자연히 갇힌다. ⚠ **개명 전 분석표가 `cmp_coord_branch` 를 ①에 넣은 것은 틀렸다** — 근 뜻이라
+  그대로다(truth-and-cache.md 항목 24 정정).
+
+### 잠금 (넷 다 초록)
+
+- **0 census 비트 동일** — debug·release 양 프로파일, 각 398행, 전/후 diff 0, 두 프로파일 상호 일치.
+- **1 개명이 topo+ops+validate 에 갇힘** — `git diff` 에 `nacre-cip`·`nacre-geom` 없음; `nacre-scalar`
+  는 하류 타입을 이름으로 부르던 doc 주석 **2줄 정정만**(`VertexDef::Branch`→`Pierce`).
+- **2 `QuadRoot` 무변** — 토큰 `-`측 6 = `+`측 6(개명 줄 부수효과일 뿐); scalar 콜리 이름
+  (`point_axis_side_branch` 1=1, `cmp_coord_meet_branch` 3=3) 양측 동수 = 무변; 변종 스펠링 변경 0.
+- **3 KEEP 식별자 무변** — 삭제줄에 `Branching`·`branched`·`branches`·`BranchingVertex` 0(개명 후에도
+  각각 존재: Branching 4·branched 1·BranchingVertex 3).
+
+관문: fmt · clippy(`-D warnings`) · 전 스위트 · `-p nacre-ops --no-default-features` ·
+`--ignored` 스윕 · reject_census — 전부 초록. 이후 wasm 재빌드 + 앱 관문(two-builds-one-gate).
+
+### 방법 메모 — 개명의 «부피»는 산문 주석이었다
+
+타입·식별자는 명시 치환 맵으로 한 번에(컴파일러가 놓친 자리를 가리킨다). **부피는 산문 주석**이었다:
+관통점을 «branch corner/node/point/vertex/name»로 부르던 ~190곳. 낱말 경계 고정 구절 치환으로 옮기되
+`Branching`/`branched`/제어 뜻은 남긴다. ⚠ **BSD sed 는 `\b` 미지원** — 지역변수는 문맥 고정 패턴으로.
+⚠ 여러 주석이 «...branch\n// corners» 처럼 줄바꿈으로 갈려 구절 치환을 비껴갔다 — 줄 끝 `branch$` 로
+따로 잡았다. `branch arm` 은 형제가 이미 `three-plane arm`·`pierce arm` 이라 → `pierce arm`(대칭).

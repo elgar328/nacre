@@ -402,7 +402,7 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
                 .iter()
                 .all(|&s| matches!(m.surface(s), nacre_geom::Surface::Plane(_))),
             // The structure says the kinds (M6-1): two planes and one cylinder, positionally.
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes, cylinder, ..
             } => {
                 planes
@@ -1705,15 +1705,15 @@ mod tests {
         );
     }
 
-    /// ★ M6-1: a well-formed `Branch` vertex passes every check, and its coordinate is held
+    /// ★ M6-1: a well-formed `Pierce` vertex passes every check, and its coordinate is held
     /// to **all three** carriers — the cylinder included, which is the carrier the variant
-    /// adds. The branch points of {z = 0} ∧ {x = 0} against the r = 2 z-cylinder are
+    /// adds. The pierce points of {z = 0} ∧ {x = 0} against the r = 2 z-cylinder are
     /// (0, ∓2, 0); the good one is clean, the one 1e−3 off the cylinder is flagged by
     /// `VertexOffDefinition` through the cylinder carrier while both plane residuals stay 0
     /// (the fixture is deliberately open — other violations may fire; the assertions are
     /// per-proposition).
     #[test]
-    fn a_branch_vertex_is_held_to_its_cylinder() {
+    fn a_pierce_vertex_is_held_to_its_cylinder() {
         use nacre_topo::QuadRoot;
         let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
         let lateral = m
@@ -1727,7 +1727,7 @@ mod tests {
         // The good statement, free-floating: reference integrity and the carrier-kind check
         // run over every vertex, and neither may fire.
         let _good = m.push_vertex(
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Lo,
@@ -1735,11 +1735,11 @@ mod tests {
             Point3::from_array([0.0, -2.0, 0.0]),
             None,
         );
-        assert_eq!(validate(&m), vec![], "a sound branch statement is clean");
+        assert_eq!(validate(&m), vec![], "a sound pierce statement is clean");
         // The lying coordinate, wired into a reachable face so the off-definition check
         // sees it.
         let bad = m.push_vertex(
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Hi,
@@ -1748,7 +1748,7 @@ mod tests {
             None,
         );
         let anchor = m.push_vertex(
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Lo,
@@ -1791,10 +1791,10 @@ mod tests {
         );
     }
 
-    /// ★ M6-1 negative controls: a `Branch` whose carrier kinds contradict the structure is
+    /// ★ M6-1 negative controls: a `Pierce` whose carrier kinds contradict the structure is
     /// flagged — a cylinder in a plane slot, and a plane in the cylinder slot.
     #[test]
-    fn a_contradictory_branch_def_is_flagged() {
+    fn a_contradictory_pierce_def_is_flagged() {
         use nacre_topo::QuadRoot;
         let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
         let lateral = m
@@ -1806,7 +1806,7 @@ mod tests {
         let bottom = m.world_plane(nacre_scalar::Axis::Z);
         let x0 = m.world_plane(nacre_scalar::Axis::X);
         let cyl_in_plane_slot = m.push_vertex(
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [bottom, lateral],
                 cylinder: x0,
                 root: QuadRoot::Lo,
@@ -1815,7 +1815,7 @@ mod tests {
             None,
         );
         let plane_in_cyl_slot = m.push_vertex(
-            VertexDef::Branch {
+            VertexDef::Pierce {
                 planes: [bottom, x0],
                 cylinder: m.world_plane(nacre_scalar::Axis::Y),
                 root: QuadRoot::Lo,
@@ -1829,7 +1829,7 @@ mod tests {
                 vs.iter().any(
                     |v| matches!(v, Violation::VertexDefCarrierMismatch { vertex } if *vertex == bad)
                 ),
-                "a contradictory branch def must be flagged: {vs:?}"
+                "a contradictory pierce def must be flagged: {vs:?}"
             );
         }
     }
