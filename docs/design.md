@@ -937,7 +937,7 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
   - **대응과 부호를 «한 비교»가 답한다**: def 의 각 평면 handle 의 세계 계수가 어느 후보 클래스의
     계수와 **비례하는지** 보면, 비례하는 쪽이 그 클래스이고 **비례 상수의 부호가 곧 보정**이다.
     따로 구하면 두 곳에서 어긋날 수 있다.
-- ★ **「결정은 `def`, 측정은 `cache`」** — 규칙은 `WorkingCyl::cache` 의 doc 이 든다(「the f64 twin …
+- ★ **「결정은 `def`, 측정은 `cache`」** — 규칙은 `WorkingCyl::realized` 의 doc 이 든다(2026-09-15 까지 `cache` 였다)(「the f64 twin …
   while **every decision reads `def`**」). 축 방향 **결정**은 정확 서술로 내린다: `Wall::Ruling::up` 은
   양 끝을 **끊는** 캡들의 축 매개변수를 비교하고, `band_loop` 의 station 은 접점이 앉은 **cut circle 의
   평면**이 축을 가로지르는 자리를 읽는다. `cache` 를 읽어도 되는 것은 **측정**뿐이다(공차·rim 의 중심).

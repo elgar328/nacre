@@ -2215,16 +2215,16 @@ pub(crate) fn reconstruct(
                 let (lat, plane) = (cyls[k].surf, planes[c].surf);
                 // The seam point of this rim, spelled as `add_cylinder` spells one: the axis meets the
                 // plane at the circle's centre, and `θ = 0` is the `+ref_dir` side of it.
-                let cache = cyls[k].cache;
+                let realized = cyls[k].realized;
                 let centre = nacre_geom::intersect::line_plane(
-                    &cache.axis(),
+                    &realized.axis(),
                     match model.surface(plane) {
                         nacre_geom::Surface::Plane(p) => p,
                         _ => return Err(reject(RejectReason::ThreePlanes)),
                     },
                 )
                 .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
-                let point = centre + cache.ref_dir() * cache.radius();
+                let point = centre + realized.ref_dir() * realized.radius();
                 // The tolerance is measured, not assumed — the same rule the three-plane vertices
                 // above follow: how far the realized point sits from each surface that defines it.
                 let tol = model
@@ -2583,7 +2583,7 @@ pub(crate) fn reconstruct(
             planes[c]
                 .plane
                 .normal()
-                .dot(cyls[k].cache.axis().direction())
+                .dot(cyls[k].realized.axis().direction())
                 * s
         };
         let circle_loop =

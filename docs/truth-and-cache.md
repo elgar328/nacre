@@ -137,7 +137,7 @@ pub enum Vertex {
     /// 정보(원통의 `ref_dir`)는 **M6 의 원통 진실과 함께 왔다**(`CylinderDef`) — 그래서
     /// `OnSeam([cylinder, cap])` 은 「rim ∩ +`ref_dir` 광선」으로 **정확히 지정된 한 점**이다.
     /// ✔ 정의는 완성됐고 **재생하는 기계도 섰다**(칸 ㊵ `realize_vertex`, `seam_point`). ⏳ 없는 것은
-    /// 그 값을 캐시에 **되쓰는 것**(칸 ㊸) — 그래서 STEP 은 오늘도 만들 때 나온 f64 를 내보낸다.
+    /// 그 값을 캐시에 **되쓰는 것**(열린 항목 28) — 그래서 STEP 은 오늘도 만들 때 나온 f64 를 내보낸다.
     OnSeam([Handle<Surface>; 2]),
     /// ✔ **`Pierce`** (2026-09-13, 열린 항목 24 완료): «branch» 는 «어느 근이냐»(수학의 가지)를
     /// 말하지 «무슨 점이냐»를 말하지 않아 개명 — 이 점은 도법기하의 **관통점**(piercing point)이다.
@@ -569,7 +569,7 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
 ★★★★★ **f64 가 «둘»이고, 둘은 만나지 않는다** (2026-09-12 — 이 절이 한 사다리처럼 읽혀 생긴 오해를
 갈라 적는다). 아래 표의 세 줄은 **한 사다리의 세 단이 아니라 세 «수명»**이다:
 
-| | 모델 캐시 (`PointCache`·`SurfaceCache`) | 실현 (`WitnessPoint.coord`·`WorkingPlane.cache`) |
+| | 모델 캐시 (`PointCache`·`SurfaceCache`) | 실현 (`WitnessPoint.realized`·`WorkingCyl.realized`) |
 |---|---|---|
 | 누가 만드나 | 구성·불리언 경로가 f64 로 계산해 **넘겨준다** | 판정이 **정의에서** 정밀도를 불러 만든다 |
 | 오차 | `tol` 하나 — 저장된 점의 **잔차**(면에서 얼마나) | 축별 경계 셋 — «참값 ∈ 값 ± 경계» **증명됨** |
@@ -581,10 +581,13 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
 영향이 없고**, 좌표가 결과인 STEP 출력은 `realize(p, 128) → round_to_f64` 로 정확 반올림해 낸다 ⇒ 남는
 것은 표시·테셀레이션이 그 f64 로 충분한가뿐"* 이라 적었다. 구현은 그대로다. ⚠ **벗어난 것은 판정이
 아니라 내보내기다**: 그 문장이 약속한 «정확 반올림 통로»는 칸 ㊵가 문(`realize_vertex`)만 세웠고 캐시에
-**쓰는 것**은 아직이라, STEP 은 오늘도 날것 f64 캐시를 읽는다(기울면 최대 4 ulp) — 칸 ㊸이 닫는다.
+**쓰는 것**은 아직이라, STEP 은 오늘도 날것 f64 캐시를 읽는다(기울면 최대 4 ulp) — **열린 항목 28**
+(여기 «칸 ㊸이 닫는다» 라 적혀 있었는데 ㊸ 는 개명 칸이었고 닫지 않았다 — 2026-09-15 정정).
 ⚠ **오해의 뿌리는 어휘다**: 원문 496행이 *"f64 필터가 가장 뜨겁게 읽는 `cache`"* 라 적은 그 `cache` 는
-**`WorkingPlane.cache`**, 연산이 끝나면 사라지는 판정용 사본이다 — 모델 캐시가 아니다. 같은 단어가 두
-수명을 가리킨다. ⇒ 판정 쪽 «cache» 어휘는 열린 항목 23(`Bounded`)이 «실현»으로 갈아 없앤다.
+판정의 **작업 사본**(연산이 끝나면 사라진다 — 모델 캐시가 아니다)이었고, 같은 단어가 두 수명을 가리켰다.
+✔ **갈아 없앴다(2026-09-15, 열린 항목 23)**: `WorkingCyl.cache` → `realized`, `WitnessPoint { coord, tol }`
+→ `realized: [Bounded; 3]`. (이 문단이 *"`WorkingPlane.cache`"* 라 적었던 것은 실측으로 거짓 — `WorkingPlane`
+엔 그 필드가 없었고 `cache` 는 `WorkingCyl` 의 것이었다.)
 
 | 캐시 | 키 | **수명** | |
 |---|---|---|---|
@@ -715,15 +718,14 @@ pub struct WorkingPlane {
 //    별도 enum 이 존재할 이유가 없다. 코드에도 없다(실측). 판정 평면은 증인 삼각형을 직접 든다:
 //        def: [WitnessPoint; 3]      // 유리수 base + 사슬. 오늘의 `tri_pt3` 그대로.
 
-/// 증인 점 — 유리수 base 를 모션 사슬로 나른다. base + chain 이 정의, coord/tol 은
-/// f64 캐시(= `PointCache` 모양), hp 는 고정밀 메모(= 평면의 `HpSurfaceCache` 와 대칭).
-/// 같은 정의는 같은 실현(경로 무관)이다.
+/// 증인 점 — 유리수 base 를 모션 사슬로 나른다. base + chain 이 정의, realized 는 f64 실현
+/// (축마다 값+경계 한 원자 — 모델 캐시가 아니라 연산 하나의 것), hp 는 고정밀 메모.
+/// 같은 정의는 같은 실현(경로 무관)이다.                                  // ✔ 2026-09-15 오늘 것
 pub struct WitnessPoint {
     pub base: [Rat; 3],
     pub chain: Rc<[MoveNode]>,
-    pub coord: [f64; 3],
-    pub tol: [f64; 3],
-    hp: Rc<OnceCell<(usize, HpPointCache)>>,
+    pub realized: [Bounded; 3],
+    hp: Rc<OnceCell<(usize, [HpBounded; 3])>>,  // `HpPointCache` 라는 타입은 없다(열린 항목 23)
 }
 
 /// 판정용 정점 — `Vertex { surfaces: [3] }` 의 쌍둥이. 세 평면을 가리키기만 하고
@@ -1639,40 +1641,47 @@ STEP 출력, undo/replay.
     `Axis` 는 방향(X/Y/Z)뿐이라 회전엔 «어느 선»인지가 더 필요하고, 그 필드가 `point` 다 — doc 은 이미
     *"the rational **pivot** `point`"* 라 6번 부르는데 이름만 뜻을 안 말한다. 접근 30곳(테스트 제외), 순수 개명.
 
-23. ⏳★★★★ **`Bounded` 통합 — 「값 + 경계」에 이름이 둘이고, 산술은 한쪽에만 있다** (2026-09-12 실측).
+23. ✔★★★★ **`Bounded` 통합 — 「값 + 경계」에 기계가 둘이었고, 한쪽이 느슨했다** (2026-09-12 실측 → 2026-09-15
+    완료; 커밋 `819df02` · `6f7bf23` · `b3f319c` · 이 칸).
 
-    | 오늘 | 어디 | 내용 |
-    |---|---|---|
-    | `pub type Bounded = (BigFloat, Mag)` | scalar (칸 ㊵가 만듦) | 튜플, 산술 없음 |
-    | `pub(crate) struct HpApprox { value: BigFloat, error: Mag }` | cip `interval.rs` | **같은 내용**, 메서드 **20개** |
-    | `pub(crate) struct Approx { value: f64, error: f64 }` | cip | f64 판 |
+    **집행 전 조사가 이 항목의 진단표를 갈랐다** — ✗ 셋 · △ 하나 · ✔ 둘 · 안 센 벽 하나:
 
-    한 개념에 이름이 둘이고, ㊵ 감사 네 라운드가 못 봤다. ⇒ **`Bounded { value: f64, error: f64 }` ·
-    `HpBounded { value: BigFloat, error: Mag }`** 로 통일하고 튜플 별칭은 죽인다(문서 규칙 그대로 — 같은 것의
-    다른 정밀도는 `Hp` 접두사 하나로만 다르다). 「근사(`Approx`)」가 아니라 「참값이 반경 안에 있음이
-    보장됨」이 이 타입의 정체이므로 이름도 그것을 말해야 한다.
+    | 항목이 적었던 것 | 실측 |
+    |---|---|
+    | *"`Bounded` = 튜플, 산술 없음"* | ✗ scalar 에 산술·실현 **8개**가 있었다 — 같은 기계의 **둘째 철자** |
+    | *"`HpApprox` — 같은 내용"* | △ **cip 판이 세 자리에서 더 조이거나 안전했다**: 크기 읽기의 0 가드(scalar 의 `upper` 엔 없어 정확한 0 에 반올림을 청구) · 유리수 진입의 exact 분기 · `i128` 을 128비트 하한으로 넣는 것(`rat_bounded` 는 `p` 그대로라 p<128 에서 잘렸다) |
+    | *"메서드 20개"* | ✔ 5 + 11 + 헬퍼 4 |
+    | *"`WorkingPlane.cache` → `realized`"* | ✗ **`WorkingPlane` 엔 `cache` 필드가 없다**(11 필드 전수). `cache` 는 `WorkingCyl` 의 것 — 그것을 고쳤다 |
+    | *"`HpPointCache` 도 다시 본다"* | ✗ **`crates/` 에 0건** — 있던 적이 없는 이름(§캐시 자신이 그렇게 적는다) |
+    | *"census 무영향"* | ✔ 그리고 이제 «왜»가 있다: 반경의 소비자 둘(`round_to_f64` 의 «결정», `sign()` 의 부호)은 «구간이 충분히 좁은가»를 묻지 «값이 얼마인가»를 묻지 않는다 ⇒ 조이면 «언제 결정되나»만 바뀐다. 실측: census 398행이 커밋 셋 모두 HEAD 와 비트 동일(debug·release) |
+    | (안 셈) | `predicate.rs` 의 벽 *"`Approx` 는 `pub(crate)` 여야 한다"* — 지키던 건 가시성이 아니라 «`PlaneWitness`(ops 가 구현하는 trait)가 구현자에게 반경을 지어내라 하지 않는다»였다. 새 문장이 그것을 든다 |
 
-    ⚠★★★ **개명이 아니라 «이사»다.** 산술(`add`·`sub`·`mul`·`div`·`div_exact`·`inv_sqrt`·`sign` — 20개)과
-    변환 헬퍼(`rat_to_hp`·`bigint_to_hp`·`ub`·`lb`)가 cip 에 살고, Rust 는 남의 타입에 inherent impl 을 못
-    다니 **타입과 산술이 함께 scalar 로 내려간다.** 크레이트 규칙(«유도된 값 + 그 산술 = scalar»)과 맞고,
-    ㊵가 튜플을 새로 만들어야 했던 것 자체가 그 증거다(cip 의 struct 가 `pub(crate)` 라 scalar 가 못 썼다).
-    개명 자리(`Approx` 50·`HpApprox` 115)는 그 뒤의 기계적 일. census 무영향.
+    **한 것.** 3단계(`819df02`, 먼저 — 1·2 와 독립): `PointCache { coord, tol: Option<f64> }` →
+    **`Unmeasured(Point3) | Measured { coord, residual }`**, 문 `push_vertex(def, PointCache)`(34곳: 31 미측정 · 3 측정),
+    읽기 문 `vertex_cache(h)`(§문의 이름의 첫 사례). 1단계(`6f7bf23`): `Approx`/`HpApprox` → **`Bounded`/`HpBounded`**,
+    집은 `nacre-scalar/src/bounded.rs`(서문 «두 기계는 한 파일에 산다» + 사고 기록이 함께 갔다); scalar 의 중복 다섯
+    흡수, 「|x| 의 상계」 네 철자 → **`Mag::above`** 하나 + `Mag::below`, `HP_RM` 하나, `rat_to_hp`/`bigint_to_hp` →
+    `HpBounded::of_rat`/`of_bigint`, `WitnessPoint::realize` 가 `[HpBounded;3]` 를 그대로 준다, `sqrt_bounded` 는
+    `pub(crate)`(밖 소비자 0). 2단계(`b3f319c`): `WitnessPoint { coord, tol }` → **`realized: [Bounded; 3]`** +
+    `coord()`/`tol()`; 지퍼 `pt_iv` 가 사라지고 호출자 17곳이 필드를 읽는다. 4단계(이 칸): `WorkingCyl.cache` → `realized`.
 
-    ★★ **같은 수술로 판정 쪽 «cache» 어휘를 없앤다** — `WorkingPlane.cache` → `realized`,
-    `WitnessPoint { coord, tol }` → `[Bounded; 3]` 꼴. §캐시가 갈라 적은 «f64 가 둘» 오해가 **이름 수준에서**
-    불가능해진다. `HpPointCache` 도 이 때 다시 본다: 모델 캐시가 아니라 연산 하나짜리 실현이므로 «Cache»
-    가 붙을 이름이 아니다 — `[HpBounded; 3]` 이거나 `WitnessPoint` 자신이다.
+    ★★★★ **반증 둘 — 문서 쪽을 고쳤다.** ① §캐시 그림의 `PointCache::Discovered([Bounded;3])` 는 같은 문서의
+    「세 «오차»를 섞지 말 것」이 경고한 바로 그 혼동이었다 — `PointCache` 의 오차는 담체 거리 **하나**(`pierce_vertex_tol`)
+    지 증명된 축별 반경이 아니고, `Bounded.error` 의 계약(*"a radius that actually bounds"*)에 넣으면 타입이 증명 안 된
+    포함을 주장한다. ② 변종 이름 `Constructed`/`Discovered`(출처) → **`Unmeasured`/`Measured`**(캐시가 아는 것):
+    `transform` 이 기록된 이동을 받은 «발견» 정점을 `None` 으로 강등해 왔으므로 `None` 은 «구성»이 아니라 «미측정»
+    이었다 — 쓰는 쪽이 정했다.
 
-    ★★★★ **원자만이 아니라 «계단 2»도 통일된다 — «경계 지어진 점»** (2026-09-13, §캐시 수치 층 그림).
-    「값+오차」가 오늘 **세 곳에 값 배열·오차 배열을 «따로»** 든다: `realize` 출력 `([f64;3],[Mag;3])` ·
-    `WitnessPoint{coord:[f64;3], tol:[f64;3]}` · `PointCache{coord, tol}`. ★ `realize` 는 **내부적으로 이미
-    `[Bounded;3]` 로 묶어** 든다(`Approached([Bounded;3], _)`) — «묶은 점» 타입이 한 자리에 있고 나머지가
-    안 따라간 것뿐이다. 묶으면 정리이자 **건전성**이다: «참값 ∈ value±error» 가 구조로 서서 transform 이
-    값만 옮기고 오차를 안 옮기는 desync 가 불가능해진다.
-    ⚠ **그러나 `WitnessPoint` 를 `PointCache` 로 접지는 않는다.** `WitnessPoint = [Bounded;3] + 정의
-    (`base:[Rat;3]`·chain) + hp(메모)` 로, 그 «정의» 가 정확 단계의 입력이다 — 캐시는 일부러 안 든다. 계단
-    2 를 **공유**하되(둘 다 `[Bounded;3]` 를 품는다) 계단 3 은 상위집합으로 남는다. 접으면 진실/캐시 경계가
-    지워진다.
+    ★★ **0단계 — 흡수의 유일한 실제 위험을 «잠금 자신»으로 쟀다.** `Mag::above` 의 0 가드는 정확히 0 인 approached
+    좌표에 반경 0 을 주고, `realize_vertex.rs` 의 approached-팔 잠금은 «0 아님»을 단언한다. 실측: **초록 — 인구 0**
+    (`tilted_frame(1)` 에 그런 축이 오늘 없다; 인구가 오면 잠금을 정확 팔의 규칙 — readout 이 값이면 0 허용 — 으로
+    정밀화한다, 약화가 아니다). 「결정된 자릿수」 계기는 **408 → 450 checked, 0 wrong** — 조인 반경이 42개 비교를
+    더 결정했고 하나도 틀리지 않았다. perf 같은-세션 A/B 는 잡음 안, 에스컬레이션 계수 잠금 초록.
+
+    ⏭ **넘김**: `SeamVertex { point, tol }`(「점 + 잔차」의 넷째 철자 — `PointCache::Measured` 를 그대로 들 수 있다,
+    항목 21) · `Seg3::Arc { cache }`(`exact.rs` — `WorkingCyl.cache` 와 같은 어휘, 이 칸은 안 쟀다) · `bf_mag`(frame3 —
+    「|x| 상계」의 f64 읽기; `Mag::above` 로 접으면 `exp2` 가 한 옥타브 높게 읽어 값이 바뀐다 — 여섯째 철자로 남김) ·
+    STEP 통로 → **항목 28**.
 
 24. ✔ **`Branch` → `Pierce` — 이름이 «무슨 점»인지 말한다** (2026-09-13 완료).
 
@@ -1796,3 +1805,12 @@ STEP 출력, undo/replay.
     ☑ **재발은 관문이 막는다** — `overview.md` 「관문」에 **조건부 절차 한 줄**이 생겼다: *"이름을
     개명·은퇴시킨 칸은 `docs/` 도 훑는다."* 항목 ⑱ 도 **항목 24 도** 그걸 안 해서 닫혔다 —
     **한 번은 사고지만 둘이면 부류다.**
+
+28. ⏳★★★ **STEP 의 «정확 반올림 통로» — 문은 섰고 제품 소비자는 0** (2026-09-15, 항목 23 이 세움).
+    최초판(2026-08-01)이 *"STEP 은 `realize(p, 128) → round_to_f64` 로 정확 반올림해 낸다"* 라 약속했고 칸 ㊵ 가 그
+    문(`nacre_ops::realize_vertex`)을 세웠다. 실측: **그 문을 부르는 제품 코드는 0** — 호출 10곳 전부 자기 테스트
+    파일(`tests/realize_vertex.rs`). STEP 은 오늘도 `PointCache` 의 날것 f64 를 내보낸다(기울면 최대 4 ulp).
+    이 문서 두 곳이 그 일을 *"칸 ㊸ 이 닫는다"* 라 **미래형**으로 적어 뒀는데 ㊸ 는 개명 칸이었고 닫지 않았다 —
+    끝난 칸에 미래를 맡긴 채였다. 그래서 번호를 준다(✔ 옆 단서로 두지 않는다 — 칸 ㊼ 의 교훈).
+    ⚠ 통로를 열면 `PointCache` 에 **셋째 변종**이 생긴다: `realize` 가 채운 좌표는 증명된 축별 경계를 들므로
+    `Measured { residual }`(담체 거리 하나)가 아니다 — §캐시 「세 «오차»」 표.

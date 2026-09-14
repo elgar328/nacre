@@ -4196,7 +4196,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
             crate::planes::WorkingCyl {
                 surf,
                 def,
-                cache: *cache,
+                realized: *cache,
                 owner: crate::planes::SolidSide::A,
             }
         })
@@ -4261,7 +4261,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                     let crate::planes::ClassIx::Plane(near) = plane_ix[fp] else {
                         unreachable!("a lateral face was skipped above")
                     };
-                    let axis = cyls[k].cache.axis();
+                    let axis = cyls[k].realized.axis();
                     let axial = |p: Point3| (p - axis.origin()).dot(axis.direction());
                     assert_eq!(
                         up,
@@ -4400,7 +4400,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
             crate::planes::WorkingCyl {
                 surf,
                 def,
-                cache: *cache,
+                realized: *cache,
                 owner: crate::planes::SolidSide::A,
             }
         })
@@ -9852,7 +9852,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
             crate::planes::WorkingCyl {
                 surf,
                 def,
-                cache: *cache,
+                realized: *cache,
                 owner: crate::planes::SolidSide::A,
             }
         })

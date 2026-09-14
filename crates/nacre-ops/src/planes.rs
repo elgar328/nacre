@@ -1185,9 +1185,10 @@ pub(crate) struct WorkingCyl {
     #[allow(dead_code)] // the arrangement's circle elements read these from C3 on
     pub(crate) surf: Handle<Surface>,
     pub(crate) def: nacre_topo::CylinderDef,
-    /// The f64 twin of `def` — what a *measurement* reads (`pierce_vertex_tol` measures a pierce
-    /// realization against this surface), while every decision reads `def`.
-    pub(crate) cache: nacre_geom::Cylinder,
+    /// The f64 twin of `def` — its realization, what a *measurement* reads (`pierce_vertex_tol`
+    /// measures a pierce realization against this surface), while every decision reads `def`. Not
+    /// a cache of the model: it lives for one operation, like `WitnessPoint::realized`.
+    pub(crate) realized: nacre_geom::Cylinder,
     /// Which operand states this class (cell ⑩). The pair loop asks only pairs of **different**
     /// owners: two classes of one valid solid keep their faces apart by construction, and the
     /// arrangement has no cylinder–cylinder road that would need the proof. One surface stated by
@@ -1304,7 +1305,7 @@ pub(crate) fn cylinder_gate(
         cyls.push(WorkingCyl {
             surf,
             def,
-            cache: *cache,
+            realized: *cache,
             owner,
         });
     }

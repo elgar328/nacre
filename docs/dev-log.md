@@ -20805,3 +20805,95 @@ census 태그 · **진짜 결함**. ☑ **인구에 있으면서 결함이 아�
 
 ★ **안 한 일을 ✔ 옆의 단서로 두지 않는다** — **자기 번호를 가진 열린 항목**이어야 한다.
 **✔ 에 붙은 단서는 아무도 다시 안 읽는다. 이번 일이 그 증거다.**
+
+## 칸 ㊽ — 「값 + 경계」에 기계가 둘이었고, 한쪽이 느슨했다 (열린 항목 23 완료, 2026-09-15)
+
+항목 23 은 *"이름이 둘"* 문제로 진단돼 있었다(`Bounded` 튜플 · `HpApprox` · `Approx`). 조사가 진단표
+7행을 **✗ 셋 · △ 하나 · ✔ 둘 · 안 센 벽 하나**로 갈랐고, 그중 하나는 «하지 말아야 할 일»이었다.
+
+### 실측이 항목을 고쳤다
+
+| 항목의 문장 | 실측 |
+|---|---|
+| *"`Bounded` = 튜플, 산술 없음"* | ✗ scalar 에 산술·실현 **8개** — 같은 기계의 **둘째 철자** |
+| *"`HpApprox` — 같은 내용"* | △ cip 판이 **세 자리**에서 더 조이거나 안전: `ub` 의 0 가드(scalar `upper` 엔 없어 **정확한 0 에 반올림을 청구**) · `rat_to_hp` 의 exact 분기 · `rat_to_big` 의 128 하한(`rat_bounded` 는 `p` 그대로 — p<128 에서 `i128` 이 잘린다) |
+| *"`WorkingPlane.cache` → `realized`"* | ✗ `WorkingPlane` 에 **그 필드가 없다**(11 필드 전수) — `WorkingCyl` 의 것 |
+| *"`HpPointCache` 도 다시 본다"* | ✗ `crates/` **0건** — 있던 적 없는 이름 |
+| *"census 무영향"* | ✔ 그리고 «왜»를 유도했다(아래) |
+| (안 셈) | `predicate.rs:370` 의 벽 *"`Approx` 는 `pub(crate)` 여야 한다"* — 이사가 거짓으로 만든다 |
+
+★ **「\|x\| 의 상계」가 네 번 철자돼 있었고 scalar 의 `upper` 만 0 가드가 빠졌다** — `ub`(cip) ·
+`cos_sin_bounded` 인라인 · `realize_inv_sqrt` 인라인 · `upper`. 흡수하면 넷이 **`Mag::above`** 하나.
+그리고 `HP_RM = ToEven` 이 두 크레이트에 똑같이 두 번.
+
+### ★★★★★ 유도된 보증 — 반경을 조여도 «답»은 안 바뀐다
+
+반경의 소비자는 둘이고 **둘 다 «구간이 충분히 좁은가»를 묻지 «값이 얼마인가»를 묻지 않는다**:
+`round_to_f64` 는 `mid±rad` 의 양 끝이 **같은 f64 로** 떨어질 때만 그것을 돌려주고(참값은 조인 구간에도
+넓은 구간에도 있으므로 어느 단이 결정하든 f64 는 같다), `sign()` 은 구간이 0 을 벗어날 때만 부호를 낸다.
+⇒ census(정점 좌표 비트 해시)는 **증명적으로 불변**. 실측: 커밋 셋 전부 **398행 HEAD ≡ debug ≡ release**.
+★ 폭발 반경도 이름별로 갈랐다: `upper`/`half_ulp` 를 부르는 가지(`rat_bounded`→`realize_quad`→`ops/realize.rs`)
+의 **유일한 소비자가 `realize_vertex` 이고 그 문의 제품 소비자는 0**(호출 10곳 전부 자기 테스트). 제품 경로
+(`cos_sin_bounded`·`inv_sqrt_*`)는 자기 인라인 가드를 따로 갖고 있었다.
+
+### ★★★★★ 문서가 자기 처방을 반증해 뒀다 — 그리고 «쓰는 쪽»이 이름을 정했다
+
+① §캐시 그림은 `PointCache::Discovered([Bounded; 3])` 이라 적었는데 같은 절의 「f64 가 «둘»」 표가
+*"모델 캐시의 오차 = `tol` 하나 — 저장된 점의 **잔차**"* 라 적고 「세 «오차»를 섞지 말 것」이라 경고한다.
+실측이 표 쪽: `pierce_vertex_tol` = `max(a.distance(p), …)` **하나**. `Bounded.error` 의 계약(*"a radius that
+**actually bounds** its value's distance from the truth"*)에 담체 거리를 넣으면 **타입이 증명 안 된 포함을
+주장한다**(퇴화한 담체 교차는 모든 담체에 가까우면서 코너에서 멀 수 있다). ⇒ `PointCache` 는 잔차를 잔차로 든다.
+② 변종 이름 — 문서는 `Constructed`/`Discovered`(출처). **`transform.rs` 가 기록된 이동을 받은 «발견» 정점을
+`None` 으로 강등**해 왔으므로(*"a recorded move used to demote to `Moved` … now `None`"*) 오늘의 `None` 은
+«구성»이 아니라 «**미측정**»이었다. `Constructed` 라 이름했다면 그 자리가 이동된 발견 정점을 «구성»이라 **철자**
+했을 것 — `None` 은 침묵했지만 이름은 거짓을 말한다. 읽는 쪽 넷은 갈렸고(`reuse`·`point_width` 는 *measured*,
+`validate` 는 `EPS_CONSTRUCTED`) **쓰는 쪽만이 결정적**이었다 ⇒ **`Unmeasured` / `Measured { residual }`**.
+
+### 네 커밋, 순서 3 → 1 → 2 → 4 (3 은 1·2 와 독립 — 0단계가 멈춰도 살게)
+
+| 커밋 | 무엇 | 실측 |
+|---|---|---|
+| `819df02` 3단계 | `PointCache` 변종화, `push_vertex(def, PointCache)` 34곳(31 미측정·3 측정), `vertex_cache(h)`(§문의 이름의 첫 사례 — 접근자 셋 다 없었다), `vertex_point`/`vertex_tol` 서명 유지(소비자 132곳 무변) | census 398 ≡ · 스윕 델타 **0**(고유 이름 260→260) |
+| `6f7bf23` 1단계 | `bounded.rs` 신설(서문 «한 파일에 사는 이유» + 사고 기록 동반), `Bounded`/`HpBounded`, 중복 다섯 흡수, `Mag::above`/`below`, `HP_RM` 하나, `HpBounded::of_rat`/`of_bigint`, `realize` 가 `[HpBounded;3]` 그대로, `sqrt_bounded` `pub(crate)`, 벽 주석 둘 정정, `interval.rs` 소멸(테스트 8 이사 + `an_exact_zero_is_charged_no_rounding` 신설 = 9) | **0단계 인구 0**(잠금 초록) · 「결정된 자릿수」 **408 → 450 checked, 0 wrong**(`eprintln` 한 줄을 계기에 남김) · census 398 ≡ · perf A/B 잡음 안 · 스윕 **예측 +3, 실측 +7**(아래) |
+| `b3f319c` 2단계 | `WitnessPoint { coord, tol }` → `realized: [Bounded;3]` + `coord()`/`tol()`; 축별 25+37, 통째 39+30(frame3) + 그 밖 29(ops 28 · cip `predicate` 1); **지퍼 `pt_iv` 소멸, 호출자 17곳 인라인** | census 398 ≡ |
+| 이 칸 4단계 | `WorkingCyl.cache` → `realized`(필드·리터럴 5·읽기 4), 항목 23 ✔, **항목 28**(STEP 통로), `칸 ㊸` 미래형 참조 셋 정정, «f64 가 둘» 문단·§판정 그림 정정 | census 398 ≡ |
+
+### ★★★ 계기가 «내 새 산문»을 잡았다 — 스윕 예측 +3, 실측 +7
+
+커밋 1 뒤 스윕: `Approx`·`HpApprox`·`rat_to_hp`·`bigint_to_hp` +1씩(예측대로 — 앞 둘은 §판정 개명 기록의
+**은퇴 서술**로 영구히 남고, 뒤 둘은 항목 23 본문이라 4단계가 지운다), `HpBounded` −1, 그리고 예측에 없던
+**`rat_bounded`·`mul_bounded`·`add_bounded`·`half_ulp` +1씩** — 내가 §캐시 정정문에 «흡수된 다섯»을 이름으로
+적어서다. 은퇴 서술이라 정당하고 그대로 둔다(무엇이 흡수됐는지가 `git log -S` 의 실마리다). ⇒ **예측 뒤에 쓴
+문장은 예측을 다시 잰다** — 칸 ㊼ 가 관문 산문에 `Branch`·`RotNode` 를 백틱해 놓고 같은 일을 겪었다.
+4단계 뒤(커밋 2+4): **+2 더** — `pt_iv`(지운 지퍼를 항목 23 ✔ 본문이 은퇴 서술로 든다) · `b3f319c`(백틱 커밋
+해시; 숫자로 시작하는 `819df02`·`6f7bf23` 은 토크나이저가 거른다). 그리고 플랜이 «4단계가 지운다»던
+`rat_to_hp`·`bigint_to_hp` 는 **남았다** — ✔ 본문이 옛 이름을 «였다»로 들기 때문이다. **셀 누적: 고유 이름 260 → 269
+= +9**(플랜 예측은 −1) — `HpBounded` −1, 은퇴 서술 9(`Approx`·`HpApprox`·`rat_to_hp`·`bigint_to_hp`·`rat_bounded`·
+`mul_bounded`·`add_bounded`·`half_ulp`·`pt_iv`), 해시 1. 설명 안 되는 델타 0. ★ **✔ 로 닫는 항목은 죽은 이름을
+«였다»로 들 수밖에 없으므로, 개명 칸의 스윕 예측은 «순증 0» 이 아니라 «은퇴 서술 n 개»로 세워야 한다.**
+
+### `Bounded` — 죽지 않고 «뜻이 바뀐» 이름 18곳 (스윕이 원리적으로 못 보는 부류)
+
+| 자리 | 뜻 | 한 일 |
+|---|---|---|
+| §캐시 `:483` *"realize 가 이미 `[Bounded;3]` 로 든다"* | **HP** | `[HpBounded;3]` |
+| §캐시 `:479`·`:481`(계단 1 그림) | 새 f64 struct / 옛 튜플 | ⏳ → ✔ 로 |
+| §캐시 `:497`·`:499`·`:502`·`:508`·`:511`·`:621`(`WitnessPoint`·`PointCache`) | f64 | 무변(`:511` 은 `coord_tol` → `realized`) |
+| `:584` 항목 이름 · `:1139` 미래 그림 | — | 무변 |
+| 항목 23 본문 여섯 | 혼재 | 본문 재작성 |
+
+### 실행 중 드러난 것 (계획 밖)
+
+- **clippy `should_implement_trait`** — `Bounded::{add, sub, mul}` 가 공개 타입이 되자 처음 울렸다(cip 에선
+  `pub(crate)` 라 침묵). 두 정밀도가 **같은 이름**을 쓰는 게 «한 기계» 논지이고 `HpBounded` 쪽은 `prec` 을
+  받아 표준 trait 꼴이 아니므로, 이름을 가르지 않고 `allow` 에 이유를 달았다.
+- `bf_mag`(frame3) — 「|x| 상계」의 **여섯째** 철자(f64 읽기). `Mag::above(x).exp2()` 로 접으면 `pow2(e)` 의
+  `exp2` 가 `e+1` 을 돌려줘 **한 옥타브 높게** 읽는다 — 값이 바뀌므로 frame3 안 private 로 두고 넘긴다.
+- `Seg3::Arc { cache }`(`exact.rs`) — `WorkingCyl.cache` 와 같은 어휘. 안 쟀다 → 넘김.
+- 1단계 문서 스크립트가 10번째 편집에서 멈췄다(원문 들여쓰기 3칸) — 앞 아홉은 이미 적용된 채. 정확-문자열
+  스크립트는 «하나씩 쓰고 다음을 검사»하므로 멈춘 자리부터 손으로 이었다.
+- `git stash -u` A/B 를 여섯 번(census ×4 · perf · `realize_vertex` 전후) — 복구 뒤 dirty 수를 매번 확인했다(`probe-revert` 사고의 부류).
+
+### 넘기는 것
+`SeamVertex { point, tol }`(넷째 철자 — 항목 21) · `Seg3::Arc { cache }` · `bf_mag` · **항목 28** STEP 통로
+(`realize_vertex` 제품 소비자 0; 열면 `PointCache` 셋째 변종) · `SurfaceCache` 변종화 · 항목 19.

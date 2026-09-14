@@ -7295,7 +7295,7 @@ pub(crate) fn seam_table(
                             point,
                             &geom[p0].plane,
                             &geom[p1].plane,
-                            &wcy.cache,
+                            &wcy.realized,
                         ),
                     });
                     continue;
@@ -11218,7 +11218,7 @@ mod tests {
             setup.cyls.push(crate::planes::WorkingCyl {
                 surf,
                 def: def.clone(),
-                cache: *cache,
+                realized: *cache,
                 owner: crate::planes::SolidSide::A,
             });
         }
