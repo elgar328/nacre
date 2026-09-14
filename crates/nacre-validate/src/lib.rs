@@ -568,8 +568,12 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
     let mut flux = 0.0;
     for &fh in faces {
         let face = m.faces.get(fh);
-        let nacre_geom::Surface::Plane(plane) = m.surface(face.surface) else {
-            return None;
+        let plane = match m.surface(face.surface) {
+            nacre_geom::Surface::Plane(plane) => plane,
+            // M5 cavities are planar; a curved void is simply not checked. An arm rather than an
+            // `else`, so a third surface kind is a compile error here and its author decides
+            // whether its flux can be summed.
+            nacre_geom::Surface::Cylinder(_) => return None,
         };
         let sign = f64::from(face.orientation.sign());
         let normal = plane.normal() * sign;
@@ -668,8 +672,12 @@ fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>
         if !reach.faces.contains(&fh) {
             continue;
         }
-        let nacre_geom::Surface::Plane(plane) = m.surface(face.surface) else {
-            continue;
+        let plane = match m.surface(face.surface) {
+            nacre_geom::Surface::Plane(plane) => plane,
+            // A cylinder's lateral normal changes from point to point, so "the face's normal" is
+            // not a question. An arm rather than an `else`, so a third surface kind is a compile
+            // error here and its author decides whether it can be asked.
+            nacre_geom::Surface::Cylinder(_) => continue,
         };
         let stated = plane.normal() * f64::from(face.orientation.sign());
         // Two aligned unit vectors sit at ±1; 0.5 is the same "a full unit from
@@ -750,13 +758,19 @@ fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
         if !reach.faces.contains(&fh) || !seen.insert(face.surface) {
             continue;
         }
-        let nacre_geom::Surface::Cylinder(cy) = m.surface(face.surface) else {
-            continue;
+        let cy = match m.surface(face.surface) {
+            nacre_geom::Surface::Cylinder(cy) => cy,
+            // A plane has no truth-versus-cache residual to check: its truth is exact
+            // coefficients, and its orientation is `check_face_orientation`'s question. An arm
+            // rather than an `else`, so a third surface kind is a compile error here and its
+            // author decides what its truth check is.
+            nacre_geom::Surface::Plane(_) => continue,
         };
-        // The stores are index-parallel with one entry door, so a kind mismatch cannot arise;
-        // it is transform's `unreachable!`, not this check's proposition.
-        let nacre_topo::Surface::Cylinder { def, motion } = m.surface_truth(face.surface) else {
-            continue;
+        let (def, motion) = match m.surface_truth(face.surface) {
+            nacre_topo::Surface::Cylinder { def, motion } => (def, motion),
+            // The stores are index-parallel with one entry door, so a kind mismatch cannot
+            // arise; it is transform's `unreachable!`, not this check's proposition.
+            nacre_topo::Surface::Plane { .. } => continue,
         };
         let surface_index = face.surface.index();
         let mut flag = |field: &'static str, dv: f64, cv: f64| {

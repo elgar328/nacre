@@ -341,8 +341,11 @@ fn bridge_shared_edges(
     // 1. Every bridgeable touch, read before anything is changed.
     let mut cands: Vec<Cand> = Vec::new();
     for &(fh, face) in live {
-        let Surface::Plane(plane) = model.surface(face.surface) else {
-            continue;
+        let plane = match model.surface(face.surface) {
+            Surface::Plane(plane) => plane,
+            // Bridges are defined on planar charts only. An arm rather than an `else`, so a third
+            // surface kind is a compile error here and its author decides whether it bridges.
+            Surface::Cylinder(_) => continue,
         };
         let Ok(chart) = planar_chart(t, face, plane) else {
             continue; // the face's own triangulation will name this error
@@ -927,12 +930,13 @@ fn triangulate_face(
     let refs: Vec<&[usize]> = rings.iter().map(|r| r.as_slice()).collect();
     let boundary = handles.len();
     // A vertex shared by two rings is the bridge pre-pass's doing (a curved ring's sample put
-    // into the straight edge it touches), and only on a plane is it one point in the chart —
-    // a cylinder's seam is the same handle at two `θ`s.
-    let bridges = if matches!(surface, Surface::Plane(_)) {
-        shared_vertices(&handles, &rings)
-    } else {
-        Vec::new()
+    // into the straight edge it touches).
+    let bridges = match surface {
+        Surface::Plane(_) => shared_vertices(&handles, &rings),
+        // Only on a plane is a shared handle one point in the chart — a cylinder's seam is the
+        // same handle at two `θ`s. An arm rather than a boolean, so a third surface kind is a
+        // compile error here rather than a silent "no bridges".
+        Surface::Cylinder(_) => Vec::new(),
     };
     let (tris, rings_used) = polygon::triangulate_uv(&mut uv, &refs, &interior, &bridges)?;
     // The tail is exactly the candidates the sweep took, in the order it took them — the chart's
