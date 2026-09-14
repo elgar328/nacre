@@ -45,7 +45,7 @@ nacre = 진주층(자개). 한 겹씩 침착만 되고 이미 만든 겹은 절�
 - **증명하지 못한 판정은 조용한 0이 아니다.** 일치 정밀도보다 가깝다고 *증명되면* 일치로 처리하고 **근거를 보고**하며(`boolean_with_report`), 못 좁히면 원인에 이름을 붙여 거절한다(`JudgeExhausted`·`DegenerateWitness`·`PrecisionBudget`). 사용자에게 되묻지 않는다 — 그 정책은 실측이 반박했다(§9 ③).
 - 모든 연산 직후 `validate` 실행(디버그). 오일러-푸앵카레는 내부 루프 항 포함형 `V−E+F = 2(S−G) + L_i`.
 - proptest로 불변식(멱등성·부피보존·불리언 대수)과 OCCT 오라클 diff.
-- *(예고와 다르게 풀렸다 — 곡면이 왔다)* 정확한 점은 **정의에서 실현하고 필요한 만큼 정밀도를 올린다**(`nacre_ops::realize`). 예고했던 relaxation 3단 사다리(f64 Newton → 고정밀 → `Tangential` 상신)는 짓지 않았다. 실패를 삼키지 말라는 원칙은 그대로다.
+- *(예고와 다르게 풀렸다 — 곡면이 왔다)* 정확한 점은 **정의에서 실현하고 호출자가 고른 정밀도로 올린다**(`nacre_ops::realize_vertex`). 예고했던 relaxation 3단 사다리(f64 Newton → 고정밀 → `Tangential` 상신)는 짓지 않았다. 실패를 삼키지 말라는 원칙은 그대로다.
 - ★★★★★ **점과 평면의 표현이 어디로 가는지는 `docs/truth-and-cache.md` 가 정한다** — 최종 타입
   구조는 **확정됐다(2026-08-05)**: 그 문서가 도착점(최종 타입·숫자 규칙 7·남은 이행 항목)을
   말하고, 「이행」의 단계표가 진행의 진실이다. **그 방향의 작업(정점 정의·평면 표현·곡면 진실·
@@ -97,6 +97,21 @@ cargo test --workspace --no-fail-fast -- --ignored \
     --skip boolean_wall_clock --skip profile_check_wall_clock
 cargo test -p nacre-ops --release --test perf -- --ignored --nocapture   # 성능은 release로 따로
 ```
+★★ **조건부 — 이름을 «개명·은퇴»시킨 칸은 `docs/` 도 훑는다.** 코드에서 사라진 이름을 두 필독 문서가
+**현재형으로** 들고 있지 않은지. ⚠ **`truth-and-cache.md` 도 본다** — 타입의 진실이 사는 문서라
+개명이 가장 크게 닿는 자리다(실제로 한 칸이 그것을 빠뜨렸다):
+
+```sh
+python3 tools/deadname-sweep.py docs/design.md docs/overview.md docs/truth-and-cache.md   # 개명·은퇴한 칸만
+```
+
+계기는 **한 물음만** 답한다 — 「백틱 안 식별자 중 `crates/` 비주석 사용이 0인가」. 파일명·의존·형제
+리포·주석 전용은 **열로 붙을 뿐 제외되지 않는다**(제외를 넣으면 계기가 조용히 판정하고, 그 판정이
+틀리면 아무도 모른다 — 실제로 그렇게 **죽은 이름 둘이 가려진 적이 있다**; 무엇이었는지는 진실과캐시 항목 27). **출력은 후보지 작업
+목록이 아니다**(은퇴 서술·수식 기호·외부 도구가 섞인다) — 자기 칸이 만든 이름만 보면 된다.
+⚠ **왜 조건부인가**: 관문의 위 명령 중 `docs/` 를 읽는 것이 **하나도 없어서**, 개명이 코드에만 적용된 채
+✔ 로 닫힌 항목이 **둘**이었다(진실과캐시 ⑱·24). 반면 문서를 고칠 때마다 돌리면 아무도 안 본다.
+
 그리고 kit(`../nacre-kit`: fmt·clippy·test)과 앱(`../nacre-playground/web`: `npm run wasm:all`
 + `npx tsc --noEmit` + `npx vitest run`, 그리고 `wasm/`에 clippy).
 
