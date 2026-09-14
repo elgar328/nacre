@@ -12,6 +12,8 @@
 //! answer. Each result is therefore inflated by a relative `2·ε`, which covers the `f64` rounding
 //! of the bound arithmetic itself.
 
+use astro_float::BigFloat;
+
 /// A non-negative upper bound, `m · 2^e` with `m ∈ [0.5, 1)` when nonzero.
 ///
 /// Comparison and arithmetic are **conservative**: the stored value is never smaller than the
@@ -84,6 +86,30 @@ impl Mag {
     /// The smallest representable bound at or above `|x|`.
     pub fn of(x: f64) -> Mag {
         Mag::scaled(x, 0)
+    }
+
+    /// An upper bound on `|x|` from its exponent (`|x| < 2^exponent`) — [`Mag::ZERO`] for an
+    /// exact zero, which has no magnitude to bound. **The one spelling of this reading**: the
+    /// interval arithmetic, the trig and the inverse-square-root realizations all charge their
+    /// rounding as a multiple of it. (Four spellings used to exist, and the one without the zero
+    /// guard charged an exact zero a rounding it never paid.)
+    pub fn above(x: &BigFloat) -> Mag {
+        match x.exponent() {
+            Some(e) if !x.is_zero() => Mag::pow2(i64::from(e)),
+            _ => Mag::ZERO,
+        }
+    }
+
+    /// A lower bound on `|x|` (`|x| ≥ 2^(exponent−1)`), or `None` when `x` is zero.
+    ///
+    /// Reading the mantissa would tighten this by up to one bit. It is left at the exponent
+    /// because the error is in the safe direction — a judgement declines slightly sooner than it
+    /// must, and the ladder is what recovers those, not a tighter comparison here.
+    pub fn below(x: &BigFloat) -> Option<Mag> {
+        match x.exponent() {
+            Some(e) if !x.is_zero() => Some(Mag::pow2(i64::from(e) - 1)),
+            _ => None,
+        }
     }
 
     /// Is this bound zero? A zero bound asserts exactness, so callers that could be wrong about

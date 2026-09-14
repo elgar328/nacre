@@ -732,6 +732,7 @@ fn a_digit_this_door_decides_is_the_coordinates_own() {
             }
         }
     }
+    eprintln!("[decided digits] {checked} checked, {wrong} wrong");
     assert!(
         checked > 300,
         "only {checked} comparisons — instrument too small"

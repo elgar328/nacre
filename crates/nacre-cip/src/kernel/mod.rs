@@ -8,10 +8,9 @@
 //! than assumed. Pure numeric layer — depends only on `nacre-scalar` (Rat/Angle/Orient) and
 //! astro-float, never on `nacre-math`/`nacre-topo`.
 
-use astro_float::RoundingMode;
-
-/// Rounding mode for the high-precision (astro-float) realization layer.
-pub(crate) const HP_RM: RoundingMode = RoundingMode::ToEven;
+/// Rounding mode for the high-precision (astro-float) realization layer — `nacre-scalar`'s, so a
+/// value rounded there and one rounded here never disagree by mode (this crate used to carry an
+/// identical private copy).
+pub(crate) use nacre_scalar::HP_RM;
 
 pub mod frame3;
-pub(crate) mod interval;

@@ -1,9 +1,10 @@
-//! The two intervals the judgment ladder runs on — **one machine at two precisions**.
+//! **A value and the error it is caught in** — one machine at two precisions.
 //!
-//! [`Approx`] is the `f64` filter: a value with an error radius, propagated through every operation,
-//! whose sign is only reported when the interval clears zero. [`HpApprox`] is the same thing in
-//! astro-float, differing in exactly one place — the per-operation rounding is `2⁻ᵖʳᵉᶜ` instead of
-//! `2·ε`.
+//! [`Bounded`] is the `f64` filter: a value with an error radius, propagated through every
+//! operation, whose sign is only reported when the interval clears zero. [`HpBounded`] is the same
+//! thing in astro-float, differing in exactly one place — the per-operation rounding is `2⁻ᵖʳᵉᶜ`
+//! instead of `2·ε`. Named for what the type promises — the truth lies within `value ± error` —
+//! not for what the value is (an approximation), because the promise is the whole point.
 //!
 //! **They live in one file on purpose.** The two used to be different kinds of machine: the filter
 //! propagated a radius, while the escalation compared a determinant against a hand-picked floor
@@ -12,20 +13,20 @@
 //! rounding residue was reported as a confident sign. Side by side, an operation that propagates
 //! its radius in one and not the other is visible.
 //!
+//! **And they live in this crate, not in the judge that runs them,** for the same reason. The
+//! judge (`nacre-cip`) used to hold both as crate-private types while this crate realized curved
+//! coordinates with a second, looser spelling of the high-precision arithmetic — a tuple alias
+//! and five free functions whose magnitude reader had no zero guard and whose rational entry had
+//! no exact branch. Two spellings of one machine in two crates is how one of them drifts; one
+//! spelling here, and the judge imports it.
+//!
 //! **The radius is a [`Mag`], not an `f64`.** At a deep rung `2⁻ᵖʳᵉᶜ` underflows an `f64` to
-//! zero, and a zero radius claims exactness — the same failure in new clothes. See
-//! [`nacre_scalar::Mag`]'s own doc.
+//! zero, and a zero radius claims exactness — the same failure in new clothes. See [`Mag`]'s own
+//! doc.
 
 use astro_float::BigFloat;
-use nacre_scalar::{Mag, Rat};
 
-use super::HP_RM;
-
-// ---- realizing an exact value, and what that realization costs ----
-//
-// These four moved here when the 2D frame that first held them was deleted (nothing consumed it).
-// They belong with the intervals: three of them are how an exact rational *enters* this machine,
-// and the fourth is the f64 rounding the filter charges per operation.
+use crate::{HP_RM, Mag, Rat};
 
 /// A rational as an arbitrary-precision float.
 ///
@@ -35,84 +36,50 @@ use super::HP_RM;
 /// denominator of `2⁵⁴+1` took a coordinate's error bound from `2⁻²⁵¹` to `2⁻⁵⁰`. Chained exact
 /// rational arithmetic multiplies denominators, so that is not an exotic input; it is what the
 /// crate's own bit-growth note is about.
-pub(crate) fn rat_to_big(r: Rat, prec: usize) -> BigFloat {
+pub fn rat_to_big(r: Rat, prec: usize) -> BigFloat {
     // `from_i128` needs at least 128 bits to hold the integer before the division rounds it.
     let p = prec.max(128);
     BigFloat::from_i128(r.numer(), p).div(&BigFloat::from_i128(r.denom(), p), prec, HP_RM)
 }
 
-/// A rational realized at `prec` bits **with the error that realization carries**.
-///
-/// Two things can go wrong and both are bounded here rather than assumed away:
-///
-/// The integers themselves are exact — [`rat_to_big`] feeds them in as `i128` — so the only
-/// error is the division, and even that vanishes when it terminates: a power-of-two denominator
-/// with a numerator inside `prec` bits is exact, and then the radius is genuinely zero.
-pub(crate) fn rat_to_hp(r: Rat, prec: usize) -> HpApprox {
-    let value = rat_to_big(r, prec);
-    let (n, d) = (r.numer(), r.denom()); // `d > 0` after reduction
-    let n_bits = (128 - n.unsigned_abs().leading_zeros()) as usize;
-    if d & (d - 1) == 0 && n_bits <= prec {
-        return HpApprox::exact(value); // a terminating division: a power-of-two denominator
-    }
-    // The integers enter exactly (see `rat_to_big`), so the only error left is the division's
-    // own rounding.
-    let error = ub(&value).times(Mag::pow2(-(prec as i64)));
-    HpApprox::new(value, error)
-}
-
-/// An arbitrary-precision integer as an **exact** interval — the wide-frame (S4) entry point.
-///
-/// [`nacre_scalar::bigint_to_bigfloat`] converts at the integer's own bit length, so the value
-/// enters whole and the radius is genuinely zero; downstream operations charge their own
-/// rounding, exactly as [`rat_to_hp`]'s exact branch does.
-pub(crate) fn bigint_to_hp(x: &num_bigint::BigInt, prec: usize) -> HpApprox {
-    HpApprox::exact(nacre_scalar::bigint_to_bigfloat(x, prec))
-}
-
-/// Magnitude of a `BigFloat` as an f64 power of two (0 when exactly zero).
-pub(crate) fn bf_mag(bf: &BigFloat) -> f64 {
-    if bf.is_zero() {
-        0.0
-    } else {
-        2f64.powi(bf.exponent().unwrap_or(0))
-    }
-}
-
 /// A value with a symmetric error radius (`value ± error`, `error ≥ 0`). Arithmetic keeps
 /// `error` a sound upper bound (worst case), plus a per-op f64-rounding inflation.
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct Approx {
+pub struct Bounded {
     pub value: f64,
     pub error: f64,
 }
 
-impl Approx {
+// `add`/`sub`/`mul` are spelled like the std traits on purpose and are not them: the same names
+// at both precisions is what lets the two machines be read side by side, and `HpBounded`'s take
+// a `prec` the trait signatures have no room for. Naming these apart would split the one machine.
+#[allow(clippy::should_implement_trait)]
+impl Bounded {
     pub fn new(value: f64, error: f64) -> Self {
-        Approx { value, error }
+        Bounded { value, error }
     }
     /// `2·ε` per operation, four times the `ε/2` that round-to-nearest can cost — derived, not
     /// picked, and the same charge in `add` and `mul`.
-    pub fn sub(self, o: Approx) -> Approx {
+    pub fn sub(self, o: Bounded) -> Bounded {
         let value = self.value - o.value;
-        Approx::new(
+        Bounded::new(
             value,
             self.error + o.error + 2.0 * f64::EPSILON * value.abs(),
         )
     }
-    pub fn add(self, o: Approx) -> Approx {
+    pub fn add(self, o: Bounded) -> Bounded {
         let value = self.value + o.value;
-        Approx::new(
+        Bounded::new(
             value,
             self.error + o.error + 2.0 * f64::EPSILON * value.abs(),
         )
     }
-    pub fn mul(self, o: Approx) -> Approx {
+    pub fn mul(self, o: Bounded) -> Bounded {
         let value = self.value * o.value;
         // Worst-case product radius `|a|·rad_b + |b|·rad_a + rad_a·rad_b`, plus the
         // f64 rounding of the product itself.
         let error = self.value.abs() * o.error + o.value.abs() * self.error + self.error * o.error;
-        Approx::new(value, error + 2.0 * f64::EPSILON * value.abs())
+        Bounded::new(value, error + 2.0 * f64::EPSILON * value.abs())
     }
     /// `Some(true)` if definitely positive, `Some(false)` if definitely negative,
     /// `None` if the interval straddles 0 (escalate).
@@ -127,87 +94,99 @@ impl Approx {
     }
 }
 
-/// An upper bound on `|x|`, from its exponent (`|x| < 2^exponent`).
-pub(crate) fn ub(x: &BigFloat) -> Mag {
-    match x.exponent() {
-        Some(e) if !x.is_zero() => Mag::pow2(e as i64),
-        _ => Mag::ZERO,
-    }
-}
-
-/// A lower bound on `|x|` (`|x| ≥ 2^(exponent−1)`), or `None` when `x` is zero.
-///
-/// Reading the mantissa would tighten this by up to one bit. It is left at the exponent because
-/// the error is in the safe direction — a judgement declines slightly sooner than it must, and
-/// the ladder is what recovers those, not a tighter comparison here.
-pub(crate) fn lb(x: &BigFloat) -> Option<Mag> {
-    match x.exponent() {
-        Some(e) if !x.is_zero() => Some(Mag::pow2(e as i64 - 1)),
-        _ => None,
-    }
-}
-
-/// [`Approx`] in astro-float: a high-precision value with a **computed** error radius.
+/// [`Bounded`] in astro-float: a high-precision value with a **computed** error radius.
 ///
 /// Every constructor must supply a radius that actually bounds its value's distance from the
 /// truth — for a coordinate that means the rotation chain's realization error
-/// ([`nacre_scalar::Angle::cos_sin_bounded`] is where it starts), and for a rational read at
-/// enough bits it means [`Mag::ZERO`]. A radius invented for convenience makes every sign above
-/// it unearned.
+/// ([`crate::Angle::cos_sin_bounded`] is where it starts), and for a rational read at enough
+/// bits it means [`Mag::ZERO`]. A radius invented for convenience makes every sign above it
+/// unearned.
+///
+/// A consumer holds one without naming astro-float (`nacre-ops` does), and the radius is not
+/// decoration: [`crate::round_to_f64`] and [`crate::round_to_digits`] both need it to say whether
+/// an answer is determined — a value without it can only be rounded by guessing.
 #[derive(Clone, Debug)]
-pub(crate) struct HpApprox {
+pub struct HpBounded {
     pub value: BigFloat,
     pub error: Mag,
 }
 
-impl HpApprox {
+impl HpBounded {
     pub fn new(value: BigFloat, error: Mag) -> Self {
-        HpApprox { value, error }
+        HpBounded { value, error }
     }
 
     /// A value known exactly at this precision — a rational whose realization did not round.
     pub fn exact(value: BigFloat) -> Self {
-        HpApprox {
+        HpBounded {
             value,
             error: Mag::ZERO,
         }
     }
 
-    /// The rounding a `prec`-bit operation adds to its own result: at most a half-ulp,
-    /// `|result| · 2⁻ᵖʳᵉᶜ`.
-    fn round_off(value: &BigFloat, prec: usize) -> Mag {
-        ub(value).times(Mag::pow2(-(prec as i64)))
+    /// A rational realized at `prec` bits **with the error that realization carries**.
+    ///
+    /// The integers themselves are exact — [`rat_to_big`] feeds them in as `i128` — so the only
+    /// error is the division, and even that vanishes when it terminates: a power-of-two
+    /// denominator with a numerator inside `prec` bits is exact, and then the radius is genuinely
+    /// zero.
+    pub fn of_rat(r: Rat, prec: usize) -> Self {
+        let value = rat_to_big(r, prec);
+        let (n, d) = (r.numer(), r.denom()); // `d > 0` after reduction
+        let n_bits = (128 - n.unsigned_abs().leading_zeros()) as usize;
+        if d & (d - 1) == 0 && n_bits <= prec {
+            return HpBounded::exact(value); // a terminating division: a power-of-two denominator
+        }
+        // The integers enter exactly (see `rat_to_big`), so the only error left is the division's
+        // own rounding.
+        let error = Self::round_off(&value, prec);
+        HpBounded::new(value, error)
     }
 
-    pub fn sub(&self, o: &HpApprox, prec: usize) -> HpApprox {
+    /// An arbitrary-precision integer as an **exact** interval — the wide-frame (S4) entry point.
+    ///
+    /// [`crate::bigint_to_bigfloat`] converts at the integer's own bit length, so the value enters
+    /// whole and the radius is genuinely zero; downstream operations charge their own rounding,
+    /// exactly as [`Self::of_rat`]'s exact branch does.
+    pub fn of_bigint(x: &num_bigint::BigInt, prec: usize) -> Self {
+        HpBounded::exact(crate::bigint_to_bigfloat(x, prec))
+    }
+
+    /// The rounding a `prec`-bit operation adds to its own result: at most a half-ulp,
+    /// `|result| · 2⁻ᵖʳᵉᶜ` — [`Mag::ZERO`] for an exact zero, which rounding cannot move.
+    pub(crate) fn round_off(value: &BigFloat, prec: usize) -> Mag {
+        Mag::above(value).times(Mag::pow2(-(prec as i64)))
+    }
+
+    pub fn sub(&self, o: &HpBounded, prec: usize) -> HpBounded {
         let value = self.value.sub(&o.value, prec, HP_RM);
         let error = self.error.plus(o.error).plus(Self::round_off(&value, prec));
-        HpApprox::new(value, error)
+        HpBounded::new(value, error)
     }
 
-    pub fn add(&self, o: &HpApprox, prec: usize) -> HpApprox {
+    pub fn add(&self, o: &HpBounded, prec: usize) -> HpBounded {
         let value = self.value.add(&o.value, prec, HP_RM);
         let error = self.error.plus(o.error).plus(Self::round_off(&value, prec));
-        HpApprox::new(value, error)
+        HpBounded::new(value, error)
     }
 
-    pub fn mul(&self, o: &HpApprox, prec: usize) -> HpApprox {
+    pub fn mul(&self, o: &HpBounded, prec: usize) -> HpBounded {
         let value = self.value.mul(&o.value, prec, HP_RM);
         // `|a|·rad_b + |b|·rad_a + rad_a·rad_b`, then the rounding of the product itself.
-        let error = ub(&self.value)
+        let error = Mag::above(&self.value)
             .times(o.error)
-            .plus(ub(&o.value).times(self.error))
+            .plus(Mag::above(&o.value).times(self.error))
             .plus(self.error.times(o.error))
             .plus(Self::round_off(&value, prec));
-        HpApprox::new(value, error)
+        HpBounded::new(value, error)
     }
 
     /// Division by an **exact** nonzero divisor — what a wide frame's origin (`num / den`)
     /// realizes through (S4). The dividend's radius scales by `1/|b| ≤ 2^(1−e_b)` (from
     /// `|b| ≥ 2^(e_b−1)`), and the division's own rounding is charged on top. The divisor
-    /// being exact is a premise (its producer is [`bigint_to_hp`]), so it is asserted rather
+    /// being exact is a premise (its producer is [`Self::of_bigint`]), so it is asserted rather
     /// than handled.
-    pub fn div_exact(&self, b: &HpApprox, prec: usize) -> Option<HpApprox> {
+    pub fn div_exact(&self, b: &HpBounded, prec: usize) -> Option<HpBounded> {
         debug_assert!(
             b.error.exp2().is_none(),
             "div_exact's divisor must carry a zero radius"
@@ -221,7 +200,7 @@ impl HpApprox {
             .error
             .times(Mag::pow2(1 - e))
             .plus(Self::round_off(&value, prec));
-        Some(HpApprox::new(value, error))
+        Some(HpBounded::new(value, error))
     }
 
     /// `Some(true)` if definitely positive, `Some(false)` if definitely negative, `None` if the
@@ -230,18 +209,18 @@ impl HpApprox {
     /// `None` is **"not decided at this precision"**, not "proved zero" — no finite precision
     /// proves a transcendental equality. The caller either climbs the ladder or says so.
     pub fn sign(&self) -> Option<bool> {
-        let low = lb(&self.value)?;
+        let low = Mag::below(&self.value)?;
         self.error.lt(low).then(|| self.value.is_positive())
     }
 
     /// A positive lower bound on this interval's true magnitude, or `None` when it may reach
-    /// zero — [`lb`]'s exponent floor on the computed value, minus the radius, in the
+    /// zero — [`Mag::below`]'s exponent floor on the computed value, minus the radius, in the
     /// rounded-toward-zero direction [`Mag::minus`] exists for.
     fn mag_lo(&self) -> Option<Mag> {
-        lb(&self.value)?.minus(self.error)
+        Mag::below(&self.value)?.minus(self.error)
     }
 
-    /// Division by an **interval** divisor — what [`HpApprox::div_exact`] refuses, made sound by
+    /// Division by an **interval** divisor — what [`HpBounded::div_exact`] refuses, made sound by
     /// bounding the divisor away from zero first.
     ///
     /// This is a *realization* operation (a frame's origin is the foot of a perpendicular,
@@ -254,18 +233,18 @@ impl HpApprox {
     /// `a/b − â/b̂ = (a−â)/b + (â/b̂)·(b̂−b)/b`, so the true-input error is at most
     /// `(r_a + |â/b̂|·r_b) / L`, and `|â/b̂| ≤ |q̂| + round_off`. `None` when the divisor's
     /// interval may reach zero — the caller climbs or rejects by name, never guesses.
-    pub fn div(&self, b: &HpApprox, prec: usize) -> Option<HpApprox> {
+    pub fn div(&self, b: &HpBounded, prec: usize) -> Option<HpBounded> {
         let lo = b.mag_lo()?;
         let value = self.value.div(&b.value, prec, HP_RM);
         let ro = Self::round_off(&value, prec);
-        let q = ub(&value).plus(ro);
+        let q = Mag::above(&value).plus(ro);
         let error = self.error.plus(q.times(b.error)).over(lo)?.plus(ro);
-        Some(HpApprox::new(value, error))
+        Some(HpBounded::new(value, error))
     }
 
-    /// `1/√x` of an **interval** — the judged-frame twin of [`nacre_scalar::inv_sqrt_bounded`]
-    /// (exact `Rat` input) and [`nacre_scalar::inv_sqrt_bigint_bounded`] (exact `BigInt` input):
-    /// same shape, an input that carries a radius.
+    /// `1/√x` of an **interval** — the judged-frame twin of [`crate::inv_sqrt_bounded`] (exact
+    /// `Rat` input) and [`crate::inv_sqrt_bigint_bounded`] (exact `BigInt` input): same shape, an
+    /// input that carries a radius.
     ///
     /// The input error's amplification comes from the derivative: `|d(1/√x)| = ½·x^(−3/2)`,
     /// largest at the interval's low end, so `error ≤ r / (2·L^(3/2))` with `L ≤ x` a positive
@@ -275,7 +254,7 @@ impl HpApprox {
     ///
     /// `None` when `x` may reach zero or is not positive — a degenerate normal has no direction,
     /// and the caller says so by name.
-    pub fn inv_sqrt(&self, prec: usize) -> Option<HpApprox> {
+    pub fn inv_sqrt(&self, prec: usize) -> Option<HpBounded> {
         if !self.value.is_positive() {
             return None;
         }
@@ -287,14 +266,14 @@ impl HpApprox {
         let denom = Mag::pow2(1 + (e - 1) + (e - 1).div_euclid(2));
         let ro = Self::round_off(&value, prec);
         let error = self.error.over(denom)?.plus(ro).plus(ro);
-        Some(HpApprox::new(value, error))
+        Some(HpBounded::new(value, error))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nacre_scalar::{Angle, Mag};
+    use crate::Angle;
 
     /// An upper `f64` reading of a [`Mag`], for comparisons in tests only.
     fn mag_f64(m: Mag) -> f64 {
@@ -324,8 +303,8 @@ mod tests {
             (1e12, 1e-6, -2.5e-3, 1e-12),
             (0.1, 1e-30, 12345.678, 1e-18),
         ] {
-            let av = HpApprox::new(big(a, prec), Mag::of(ra));
-            let bv = HpApprox::new(big(b, prec), Mag::of(rb));
+            let av = HpBounded::new(big(a, prec), Mag::of(ra));
+            let bv = HpBounded::new(big(b, prec), Mag::of(rb));
             let q = av.div(&bv, prec).expect("divisor clears zero");
             if ra == 0.0 && rb == 0.0 {
                 // The exact route answers the same value, bit for bit — same BigFloat division.
@@ -357,15 +336,15 @@ mod tests {
         let prec = 192;
         let gt = 512;
         for (x, r) in [(2.0, 0.0), (0.09, 1e-22), (1e20, 1.0), (5.0e-7, 1e-27)] {
-            let xv = HpApprox::new(big(x, prec), Mag::of(r));
+            let xv = HpBounded::new(big(x, prec), Mag::of(r));
             let s = xv.inv_sqrt(prec).expect("bounded away from zero");
             if r == 0.0 {
                 // Against the exact-rational route on a value both can state.
-                let rat = nacre_scalar::Rat::from_decimal(x).expect("in the window");
-                let (m, br) = nacre_scalar::inv_sqrt_bounded(rat, prec).expect("positive");
-                let err = resid(&s.value, &m, prec);
+                let rat = Rat::from_decimal(x).expect("in the window");
+                let exact = crate::inv_sqrt_bounded(rat, prec).expect("positive");
+                let err = resid(&s.value, &exact.value, prec);
                 assert!(
-                    err <= mag_f64(s.error) + mag_f64(br),
+                    err <= mag_f64(s.error) + mag_f64(exact.error),
                     "exact input {x}: the two routes disagree by {err:e}"
                 );
             }
@@ -388,11 +367,11 @@ mod tests {
     #[test]
     fn a_quantity_that_may_reach_zero_is_refused_not_bounded() {
         let prec = 128;
-        let wide = HpApprox::new(big(1e-10, prec), Mag::of(1.0)); // straddles zero
-        let a = HpApprox::exact(big(1.0, prec));
+        let wide = HpBounded::new(big(1e-10, prec), Mag::of(1.0)); // straddles zero
+        let a = HpBounded::exact(big(1.0, prec));
         assert!(a.div(&wide, prec).is_none(), "divisor may reach zero");
         assert!(wide.inv_sqrt(prec).is_none(), "radicand may reach zero");
-        let neg = HpApprox::exact(big(-4.0, prec));
+        let neg = HpBounded::exact(big(-4.0, prec));
         assert!(neg.inv_sqrt(prec).is_none(), "a negative has no real root");
     }
 
@@ -434,7 +413,7 @@ mod tests {
     /// measured value means a degraded platform no longer fails anything — it just escalates more
     /// and runs slower, invisibly. This line is what keeps that visible.
     ///
-    /// What it does not do: it checks one input. `frame3::tol_bounds_error_over_random_chains`
+    /// What it does not do: it checks one input. `nacre-cip`'s `tol_bounds_error_over_random_chains`
     /// checks the conclusion — that `tol` bounds the error, second-order terms and all.
     #[test]
     fn the_measured_trig_error_bounds_the_real_one() {
@@ -456,8 +435,8 @@ mod tests {
             // dominates the error, so an angle whose conversion takes the other route has to be here.
             angles.push((rng(1, 1 << 62) * 360, rng(1 << 53, 1 << 62)));
         }
-        // ★ **Reported to the nearest ε, which needs a comparison rather than `bf_mag`.** `bf_mag`
-        // is `2^exponent` — an upper *octave*, up to 2× above the true magnitude — so a figure read
+        // ★ **Reported to the nearest ε, which needs a comparison rather than an octave reader.**
+        // `2^exponent` is an upper *octave*, up to 2× above the true magnitude — so a figure read
         // from it blurs exactly the range that matters. The smallest integer `k` with `x < k·ε` is
         // one comparison per candidate and says the thing plainly.
         //
@@ -496,12 +475,11 @@ mod tests {
             if dc == 0.0 && ds == 0.0 {
                 exact_seen += 1;
             }
-            let (hc, hs, rc, rs) = a.cos_sin_bounded(GT);
-            for (which, f, h, error, reported) in [("cos", c, &hc, rc, dc), ("sin", s, &hs, rs, ds)]
-            {
+            let (hc, hs) = a.cos_sin_bounded(GT);
+            for (which, f, h, reported) in [("cos", c, &hc, dc), ("sin", s, &hs, ds)] {
                 // |f64 − true| ≤ |f64 − deep midpoint| + that realization's own radius.
-                let truth = big(f, GT).sub(h, GT, HP_RM).abs().add(
-                    &big(error.exp2().map_or(0.0, |e| 2f64.powi(e as i32)), GT),
+                let truth = big(f, GT).sub(&h.value, GT, HP_RM).abs().add(
+                    &big(h.error.exp2().map_or(0.0, |e| 2f64.powi(e as i32)), GT),
                     GT,
                     HP_RM,
                 );
@@ -543,8 +521,8 @@ mod tests {
         // to stay inside `prec` bits of the operands, or the subtraction is exactly zero and the
         // test proves nothing.
         let error = Mag::of(1.0e-10);
-        let a = HpApprox::new(big(1.0e30, prec), error);
-        let b = HpApprox::new(
+        let a = HpBounded::new(big(1.0e30, prec), error);
+        let b = HpBounded::new(
             big(1.0e30, prec).sub(&big(1.0e-20, prec), prec, HP_RM),
             error,
         );
@@ -565,8 +543,8 @@ mod tests {
     #[test]
     fn a_value_clear_of_its_radius_still_decides() {
         let prec = 200;
-        let a = HpApprox::new(big(3.0, prec), Mag::pow2(-100));
-        let b = HpApprox::new(big(2.0, prec), Mag::pow2(-100));
+        let a = HpBounded::new(big(3.0, prec), Mag::pow2(-100));
+        let b = HpBounded::new(big(2.0, prec), Mag::pow2(-100));
         assert_eq!(a.sub(&b, prec).sign(), Some(true));
         assert_eq!(b.sub(&a, prec).sign(), Some(false));
         assert_eq!(a.mul(&b, prec).sign(), Some(true));
@@ -577,15 +555,15 @@ mod tests {
     #[test]
     fn a_deep_rung_does_not_lose_the_radius() {
         let prec = 2048;
-        let tiny = HpApprox::new(big(1.0, prec), Mag::pow2(-(prec as i64)));
+        let tiny = HpBounded::new(big(1.0, prec), Mag::pow2(-(prec as i64)));
         let p = tiny.mul(&tiny, prec);
         assert!(!p.error.is_zero(), "the radius vanished at {prec} bits");
         // A difference of exactly that size is therefore undecided, not positive.
-        let q = HpApprox::new(
+        let q = HpBounded::new(
             big(1.0, prec).add(&BigFloat::from_f64(1.0, prec), prec, HP_RM),
             Mag::pow2(-(prec as i64) + 4),
         );
-        let r = HpApprox::new(big(2.0, prec), Mag::pow2(-(prec as i64) + 4));
+        let r = HpBounded::new(big(2.0, prec), Mag::pow2(-(prec as i64) + 4));
         assert_eq!(q.sub(&r, prec).sign(), None);
     }
 
@@ -599,8 +577,8 @@ mod tests {
     #[test]
     fn exact_inputs_keep_a_radius_only_from_rounding() {
         let prec = 200;
-        let a = HpApprox::exact(big(0.5, prec));
-        let b = HpApprox::exact(big(0.25, prec));
+        let a = HpBounded::exact(big(0.5, prec));
+        let b = HpBounded::exact(big(0.25, prec));
         assert!(
             a.error.is_zero() && b.error.is_zero(),
             "an exact input carried a radius"
@@ -615,5 +593,24 @@ mod tests {
         // Exactly equal inputs are the case that cannot be settled here: the difference is zero
         // and zero has no sign to read.
         assert_eq!(a.sub(&a, prec).sign(), None);
+    }
+
+    /// The one place the zero guard shows: rounding an exact zero costs nothing, so a product or
+    /// sum that lands exactly on zero from exact inputs reports the radius it earned — none.
+    /// [`Mag::above`] answers `ZERO` there where a guard-less exponent reader would not.
+    #[test]
+    fn an_exact_zero_is_charged_no_rounding() {
+        let prec = 128;
+        let zero = HpBounded::exact(big(0.0, prec));
+        let one = HpBounded::exact(big(1.0, prec));
+        assert!(
+            zero.mul(&one, prec).error.is_zero(),
+            "0·1 charged a rounding"
+        );
+        assert!(
+            one.sub(&one, prec).error.is_zero(),
+            "1−1 charged a rounding"
+        );
+        assert_eq!(HpBounded::round_off(&big(0.0, prec), prec), Mag::ZERO);
     }
 }

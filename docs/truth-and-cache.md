@@ -476,11 +476,14 @@ pub struct Model {
 pub struct Mag { m: f64, e: i64 }                                  // f64 밖 범위의 보수적 크기(0에서 먼 쪽)
 
 // ── 계단 1: «원자» — 값 하나 + 그 반경. ────────────────────────────────
-pub struct Bounded   { value: f64,      error: f64 }              // ⏳ 오늘 `Approx`(cip, 50곳)
-pub struct HpBounded { value: BigFloat, error: Mag }              // ⏳ 오늘 `HpApprox`(cip, 115곳)
-//   ⏳ scalar 의 튜플 `Bounded = (BigFloat, Mag)` 는 `HpBounded` 가 흡수. 산술 20개도 scalar 로 이사.
+pub struct Bounded   { value: f64,      error: f64 }              // ✔ 2026-09-15 (cip 의 `Approx` 였다)
+pub struct HpBounded { value: BigFloat, error: Mag }              // ✔ 2026-09-15 (cip 의 `HpApprox` 였다)
+//   ✔ scalar 의 튜플 `Bounded = (BigFloat, Mag)` 는 `HpBounded` 가 흡수했고, 산술은 `scalar/src/bounded.rs` 로
+//     이사했다(열린 항목 23, 1단계). ★ 실측으로 드러난 것: scalar 엔 이미 같은 산술의 **둘째 철자**가 있었고
+//     (`rat_bounded`·`mul_bounded`·`add_bounded`·`upper`·`half_ulp`), 그 크기 읽기엔 0 가드가 없어 정확한 0 에
+//     반올림을 청구했다 — 「|x| 의 상계」 네 철자가 `Mag::above` 하나가 됐다.
 
-// ── 계단 2: «경계 지어진 점» — 원자 셋(축별). realize 가 이미 `[Bounded;3]` 로 든다. ──
+// ── 계단 2: «경계 지어진 점» — 원자 셋(축별). realize 가 이미 `[HpBounded;3]` 로 든다. ──
 //   ★ 값과 오차를 «묶어» 든다(따로 든 배열 둘이 아니라). 그래야 «참값 ∈ value±error» 가 구조로 서고
 //     transform 이 값만 옮기고 오차를 안 옮기는 desync 가 **불가능**해진다.
 pub enum PointCache {                                             // ✔ 2026-09-15 (열린 항목 23, 3단계)
@@ -667,6 +670,8 @@ m.edge_cache(e).curve()          -> &Curve                     // (오차 err �
 - ✔ `HpIv` → `HpApprox`, 그리고 짝이 강제한 ✔ `Iv` → `Approx`(수치층 규칙 — 같은 것의 다른
   정밀도는 `Hp` 접두사 하나로만 다르다) + 필드 `mid`/`rad` → `value`/`error`, ✔ `Bound` → `Mag`
   (캐시 절의 철자 그대로 — `HpApprox { value: BigFloat, error: Mag }`)
+  ✔ 그리고 2026-09-15(열린 항목 23): `Approx`/`HpApprox` → **`Bounded`/`HpBounded`**, 집은
+  `nacre-scalar/src/bounded.rs` — 이름이 «근사»가 아니라 «참값이 반경 안에 갇힘»을 말한다.
 - ✔ `PlaneGeom` → `WorkingPlane`(모양은 오늘 것 그대로 — 최종 모양은 열린 항목 16이 만든다)
 - ★★★ **`FaceInfo` 는 따라가지 않았다 — 여기 적혀 있던 «둘 다 `WorkingPlane`» 은 정정한다.**
   면/평면 분리가 오늘 하중을 진다: `orient_sign`(이 면의) vs `frame_sign`(그 클래스의)은
@@ -679,7 +684,7 @@ m.edge_cache(e).curve()          -> &Curve                     // (오차 err �
   `[WitnessPoint; 3]` 다(코드 실측: `WorkingPlaneDef` 없음).
 - `Standard` → `ProofStandard`: 같은 계열(모양이 다르다 — `same_within` 유도로의 재구성) — 대응
   명시가 없어 유예. **기준: 이 목록에 명시된 것만 기계적 개명이다.**
-(점 실현 묶음 `HpPointCache` 는 아직 타입으로 없음 — 오늘은 `(usize, [HpApprox; 3])` 튜플.)
+(점 실현 묶음 `HpPointCache` 는 아직 타입으로 없음 — 오늘은 `(usize, [HpBounded; 3])` 튜플.)
 
 ```rust
 /// 판정용 평면 — `Surface::Plane` 의 쌍둥이. 정의를 펼쳐 들고 두 실현을 메모한다.
@@ -733,7 +738,7 @@ pub struct WitnessPoint {
 /// 메모에서 재계산한다(두 번째 원천을 만들면 어긋날 수 있다).
 pub struct WorkingVertex<'a> {
     pub planes: [&'a WorkingPlane; 3],
-    homog: OnceCell<[Approx; 4]>,             // f64 층만 — 고정밀은 평면 메모에서 재계산
+    homog: OnceCell<[Bounded; 4]>,            // f64 층만 — 고정밀은 평면 메모에서 재계산
 }
 
 /// 이 연산이 무엇을 증명으로 인정하나 — 전부 모델에서 유도, 설정 없음.
@@ -773,7 +778,7 @@ pub enum Decision {
   동차좌표로 만들고 그 위에서 계수를 구간으로 유도한다(**차수 9** — 위 참조) — 정확성 위험이
   아니라 비용 위험이었고, ★ **이제 기계가 있어 쟀다**(S5(ii)-2a, `frame3.rs` 단위 테스트):
   - **깊이 1 은 필터가 산다.** 생성 200 사례 전부 결정, 계수 800개 중 미결 **0**, 최악 상대
-    반경 **6.3e-10**. 차수 9 가 `Approx` 의 여유를 먹지 않는다 — 재기 전에는 몰랐던 것이고,
+    반경 **6.3e-10**. 차수 9 가 `Bounded` 의 여유를 먹지 않는다 — 재기 전에는 몰랐던 것이고,
     이것이 이 단계의 진짜 관문이었다.
   - ★★★ **깊이 2 는 필터가 없다.** 담체가 또 `Through` 면 차수가 **81** 이 되고, 계수가
     `f64` 범위를 **8/8 전부** 벗어난다(고정밀 쪽은 멀쩡하다). 함수는 그때 `None` 을 돌려
@@ -783,7 +788,7 @@ pub enum Decision {
     남은 것은 비용뿐이다).
   - ★★ **배율의 부호는 값 안에서 없앤다.** join 은 행에 대해 다중선형이라 결과가 참 평면의
     `D0·D1·D2` 배이고, 음수면 **평면 방향이 뒤집힌다**(`frame_sign`·바깥 법선·라벨 프레임이
-    전부 그 위에 있다). `Judge::plane_iv(k) -> [Approx;4]` 에 부호를 실을 자리가 없으므로 —
+    전부 그 위에 있다). `Judge::plane_iv(k) -> [Bounded;4]` 에 부호를 실을 자리가 없으므로 —
     실을 곳 없는 값은 아무도 안 쓰는 값이다 — 함수가 스스로 정규화한다. 생성 200 중 **172**가
     음수 `D` 를 지나므로 그 이빨은 실제로 물렸고, 정규화를 지우면 대조 테스트가 깨진다(확인).
   - `D` 가 0 을 품으면 `None` → 상승 → 안 갈라지면 이름 붙은 거절. 조용한 폴백은 없다.
@@ -1245,7 +1250,7 @@ STEP 출력, undo/replay.
    ### ✔ 16-1 (2026-08-09, `cdff866`..`9922b1f`) — 순수-혼합 population 이 끝-대-끝으로 열렸다
 
    **정점들이 서로 다른 프레임**(각 정점은 자기 프레임에서 유리수)인 쪽:
-   - **cip**: `HpApprox::div`(구간 분모 — `denom_lo` 로 0에서 떼고 몫 법칙)·`inv_sqrt`(도함수
+   - **cip**: `HpBounded::div`(구간 분모 — `denom_lo` 로 0에서 떼고 몫 법칙)·`inv_sqrt`(도함수
      상한, 분모가 2의 거듭제곱이라 `Mag::over` 가 정확) + **`MoveNode::FrameThrough`** — 평면의
      정의점 셋(사슬 이종 허용)을 싣고 정준 기저를 **구간으로 유도**한다(수선의 발 — 동결 규약
      그대로, 그래서 구간 나눗셈이 필요했다; «원점 = points[0]» 대안은 규약 동결이 기각).
@@ -1366,7 +1371,7 @@ STEP 출력, undo/replay.
     그 캐시는 자기 오차를 `PointCache.tol` 로 들고 있다(즉 **최근접 f64 가 아닐 수 있다**).
     ⇒ 화면에는 충분하지만, 내보내기(OBJ·STEP)는 **고정밀 실현 → 한 번만 반올림**을 원한다.
 
-    ☑ **기계는 이미 있다**: `nacre-cip` 의 `HpApprox`(`add`/`sub`/`mul`/`div`/`inv_sqrt` 전부
+    ☑ **기계는 이미 있다**: `nacre-scalar` 의 `HpBounded`(`add`/`sub`/`mul`/`div`/`inv_sqrt` 전부
     `prec: usize` 를 받는다) · `WitnessPoint::hp_coord(prec)`(**`pub(crate)`**) ·
     `judge_precision`/`trial_bound`(정밀도 «고르기»는 `pub`). 그리고 «정확 반올림이라 실현이
     유일»하므로 **같은 정밀도면 답이 하나**다 — 결정적이고 오라클을 갖는다.

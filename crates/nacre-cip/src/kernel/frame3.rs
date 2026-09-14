@@ -21,10 +21,8 @@
 //! error (astro-float ground truth) over random heterogeneous-rotation configs.
 
 use super::HP_RM;
-use super::interval::{Approx, HpApprox};
-use super::interval::{bf_mag, bigint_to_hp, rat_to_big, rat_to_hp};
 use astro_float::BigFloat;
-use nacre_scalar::{Angle, Axis, Mag, Orient, Rat};
+use nacre_scalar::{Angle, Axis, Bounded, HpBounded, Mag, Orient, Rat, rat_to_big};
 #[cfg(feature = "parallel")]
 use std::sync::{Arc as HpRc, OnceLock as HpOnce};
 #[cfg(not(feature = "parallel"))]
@@ -41,7 +39,7 @@ use std::{cell::OnceCell as HpOnce, rc::Rc as HpRc};
 ///
 /// Otherwise it is `Rc<OnceCell>` — single-threaded, no atomic overhead. `get_or_init` has
 /// the identical signature on both, so the consumer ([`WitnessPoint::hp_coord`]) is unchanged.
-type HpCell = HpRc<HpOnce<(usize, [HpApprox; 3])>>;
+type HpCell = HpRc<HpOnce<(usize, [HpBounded; 3])>>;
 
 /// One motion in a point's definition. `Rotate` turns about `axis` (the line through the
 /// rational pivot `point`) by the rational `angle` — `point = [0,0,0]` is the origin-pivot case.
@@ -340,15 +338,15 @@ pub enum JudgedPoint {
 /// the projective join takes. A pure point is the special case `[p : 1]` (`D` exactly one); a
 /// meet realizes each carrier's interval coefficients ([`plane_hp`] — three points, chains free
 /// to differ) and runs Cramer ([`cramer_hp`]). No division anywhere.
-fn judged_homog(p: &JudgedPoint, prec: usize) -> (HpApprox, [HpApprox; 3]) {
+fn judged_homog(p: &JudgedPoint, prec: usize) -> (HpBounded, [HpBounded; 3]) {
     match p {
         JudgedPoint::Pure(wp) => (
-            HpApprox::exact(BigFloat::from_f64(1.0, prec)),
+            HpBounded::exact(BigFloat::from_f64(1.0, prec)),
             wp.hp_coord(prec),
         ),
         JudgedPoint::Meet(carriers) => {
             let plane =
-                |t: &[WitnessPoint; 3]| -> [HpApprox; 4] { plane_hp(&t[0], &t[1], &t[2], prec) };
+                |t: &[WitnessPoint; 3]| -> [HpBounded; 4] { plane_hp(&t[0], &t[1], &t[2], prec) };
             let planes = [
                 plane(&carriers[0]),
                 plane(&carriers[1]),
@@ -375,10 +373,10 @@ impl FrameThrough {
     pub fn of(points: [JudgedPoint; 3], flip: bool) -> Option<FrameThrough> {
         let p = Self::RUNG;
         let c = judged_coeffs(&points, false, p)?;
-        let sq_sum = |a: &HpApprox, b: &HpApprox| a.mul(a, p).add(&b.mul(b, p), p);
+        let sq_sum = |a: &HpBounded, b: &HpBounded| a.mul(a, p).add(&b.mul(b, p), p);
         // |ẑ×n|² = n₀²+n₁², |ŷ×n|² = n₂²+n₀². `flip` negates every coefficient, which no
         // squared length can see, so the decision is flip-invariant by construction.
-        let proven = |x: &HpApprox| x.sign() == Some(true);
+        let proven = |x: &HpBounded| x.sign() == Some(true);
         let vertical = if proven(&sq_sum(&c[0], &c[1])) {
             false
         } else if proven(&sq_sum(&c[2], &c[0])) {
@@ -427,7 +425,7 @@ impl FrameThrough {
 /// `(D, Dvec)` ([`judged_homog`]) and the plane through them by the projective join
 /// ([`plane_hp_through`] — 2a's machine, called at last). `None` when any meet's `D` sign is
 /// undecided at this precision — the join's normalization has nothing to stand on then.
-fn judged_coeffs(points: &[JudgedPoint; 3], flip: bool, prec: usize) -> Option<[HpApprox; 4]> {
+fn judged_coeffs(points: &[JudgedPoint; 3], flip: bool, prec: usize) -> Option<[HpBounded; 4]> {
     let mut c = if let [
         JudgedPoint::Pure(p0),
         JudgedPoint::Pure(p1),
@@ -447,7 +445,7 @@ fn judged_coeffs(points: &[JudgedPoint; 3], flip: bool, prec: usize) -> Option<[
         )?
     };
     if flip {
-        let zero = HpApprox::exact(BigFloat::from_f64(0.0, prec));
+        let zero = HpBounded::exact(BigFloat::from_f64(0.0, prec));
         for k in &mut c {
             *k = zero.sub(k, prec);
         }
@@ -459,9 +457,9 @@ fn judged_coeffs(points: &[JudgedPoint; 3], flip: bool, prec: usize) -> Option<[
 /// error its own derivation incurred. The one place the derivation is spelled, so the f64 cache
 /// ([`WitnessPoint::frame_through`]) and the escalation ([`WitnessPoint::hp_coord`]) cannot
 /// disagree about what the frame *is*.
-fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpApprox; 3]; 4]> {
-    let zero = || HpApprox::exact(BigFloat::from_f64(0.0, prec));
-    let neg = |x: &HpApprox| zero().sub(x, prec);
+fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpBounded; 3]; 4]> {
+    let zero = || HpBounded::exact(BigFloat::from_f64(0.0, prec));
+    let neg = |x: &HpBounded| zero().sub(x, prec);
     let c = judged_coeffs(&f.points, f.flip, prec)?;
     let [n0, n1, n2, d] = c;
     let u_raw = if f.vertical {
@@ -470,7 +468,7 @@ fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpApprox; 3]; 4]> {
         [neg(&n1), n0.clone(), zero()] // ẑ × n
     };
     let n = [n0, n1, n2];
-    let dot = |a: &[HpApprox; 3], b: &[HpApprox; 3]| {
+    let dot = |a: &[HpBounded; 3], b: &[HpBounded; 3]| {
         a[0].mul(&b[0], prec)
             .add(&a[1].mul(&b[1], prec), prec)
             .add(&a[2].mul(&b[2], prec), prec)
@@ -479,7 +477,7 @@ fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpApprox; 3]; 4]> {
     let nn = dot(&n, &n);
     let iu = uu.inv_sqrt(prec)?;
     let iw = nn.inv_sqrt(prec)?;
-    let scale = |v: &[HpApprox; 3], s: &HpApprox| [0, 1, 2].map(|k| v[k].mul(s, prec));
+    let scale = |v: &[HpBounded; 3], s: &HpBounded| [0, 1, 2].map(|k| v[k].mul(s, prec));
     let u = scale(&u_raw, &iu);
     let w = scale(&n, &iw);
     // v̂ = ŵ × û — right-handed by construction, so the node is proper (`det = +1`) and
@@ -535,6 +533,17 @@ impl PartialEq for WitnessPoint {
     }
 }
 impl Eq for WitnessPoint {}
+
+/// Magnitude of a `BigFloat` as an f64 power of two (0 when exactly zero) — the `f64` reading of
+/// the bound [`Mag::above`] carries, for the tol arithmetic in this file, which is `f64`. Kept as
+/// its own reader rather than `2^(Mag::exp2)`: that reads one octave high for a power of two.
+fn bf_mag(bf: &BigFloat) -> f64 {
+    if bf.is_zero() {
+        0.0
+    } else {
+        2f64.powi(bf.exponent().unwrap_or(0))
+    }
+}
 
 /// **How far a rational's f64 image sits from the rational** — measured at high precision, `0`
 /// when the value is exactly representable.
@@ -898,7 +907,7 @@ impl WitnessPoint {
     /// [`WitnessPoint::frame`] for a [`WideFrame`] (S4) — the same propagation, with the axis and origin
     /// `(value, error)` pairs taken from a fixed-precision arbitrary-precision realization
     /// instead of `inv_sqrt_f64`/`axis_comp`. No new f64 error derivation exists here: every
-    /// rounding on the way is inside an `HpApprox`, and the final narrowing to f64 charges itself.
+    /// rounding on the way is inside an `HpBounded`, and the final narrowing to f64 charges itself.
     ///
     /// ★ The axes are realized per applied point. The wide population is a fraction of a percent
     /// of pushes, so that cost is accepted rather than memoized — a measure-later item.
@@ -909,22 +918,21 @@ impl WitnessPoint {
         // The fixed rung for the f64 cache of a wide frame — the ladder's first rung, the same
         // one `inv_sqrt_f64` starts at. The judgment path re-realizes at its own precision.
         const P: usize = 128;
-        let inv = |v: &num_bigint::BigInt| -> Option<HpApprox> {
-            let (m, r) = nacre_scalar::inv_sqrt_bigint_bounded(v, P)?;
-            Some(HpApprox::new(m, r))
-        };
+        let inv = |v: &num_bigint::BigInt| nacre_scalar::inv_sqrt_bigint_bounded(v, P);
         let (iu, iv2, iw) = (inv(&f.uu)?, inv(&f.vv)?, inv(&f.nn)?);
-        let comp =
-            |raw: &num_bigint::BigInt, s: &HpApprox| narrow_hp(&bigint_to_hp(raw, P).mul(s, P));
+        let comp = |raw: &num_bigint::BigInt, s: &HpBounded| {
+            narrow_hp(&HpBounded::of_bigint(raw, P).mul(s, P))
+        };
         let (mut uh, mut vh, mut wh) = ([0.0; 3], [0.0; 3], [0.0; 3]);
         let (mut eu, mut ev, mut ew) = ([0.0; 3], [0.0; 3], [0.0; 3]);
         let (mut oh, mut eo) = ([0.0; 3], [0.0; 3]);
-        let od = bigint_to_hp(&f.origin_den, P);
+        let od = HpBounded::of_bigint(&f.origin_den, P);
         for k in 0..3 {
             (uh[k], eu[k]) = comp(&f.u_raw[k], &iu);
             (vh[k], ev[k]) = comp(&f.v_raw[k], &iv2);
             (wh[k], ew[k]) = comp(&f.n[k], &iw);
-            (oh[k], eo[k]) = narrow_hp(&bigint_to_hp(&f.origin_num[k], P).div_exact(&od, P)?);
+            (oh[k], eo[k]) =
+                narrow_hp(&HpBounded::of_bigint(&f.origin_num[k], P).div_exact(&od, P)?);
         }
         // The same propagation as `WitnessPoint::frame`, with the realized origin's own error in place
         // of `rat_round_tol`.
@@ -995,7 +1003,7 @@ impl WitnessPoint {
     /// escalation realization. The result is memoized in
     /// [`WitnessPoint::hp`] and shared across clones of the same definition, so a definition-point pays
     /// the astro-float cos/sin once per boolean rather than once per predicate.
-    pub(crate) fn hp_coord(&self, prec: usize) -> [HpApprox; 3] {
+    pub(crate) fn hp_coord(&self, prec: usize) -> [HpBounded; 3] {
         // **Keyed by precision, and that key is load-bearing.** The precision is chosen per
         // boolean, so within one operation every call arrives with the same value and the cell is
         // filled once — which is the whole point, since re-realizing a definition per predicate
@@ -1010,18 +1018,18 @@ impl WitnessPoint {
     }
 
     /// **The coordinate realized at `prec` bits from the definition, with the error it carries** —
-    /// the door [`Self::hp_coord`] is behind, in the pair shape this workspace already hands out
-    /// publicly (`nacre_scalar::inv_sqrt_bounded` returns the same `(BigFloat, Mag)`).
+    /// the door [`Self::hp_coord`] is behind, in the type this workspace hands out publicly
+    /// (`nacre_scalar::HpBounded`, what `inv_sqrt_bounded` returns too).
     ///
     /// ★ **The radius is half the answer.** A value without the bound its realization cost cannot
-    /// be rounded honestly — see [`HpApprox`]'s contract: a radius invented for convenience makes
+    /// be rounded honestly — see [`HpBounded`]'s contract: a radius invented for convenience makes
     /// every sign above it unearned. Callers round with `nacre_scalar::round_to_f64` /
     /// `round_to_digits`, which report *undecided* rather than picking when `prec` is short.
     ///
     /// ★★ Calling this at a precision the boolean is not using is safe: [`Self::hp_coord`]'s memo
     /// is keyed by precision and recomputes rather than disturbing the cached value.
-    pub fn realize(&self, prec: usize) -> [nacre_scalar::Bounded; 3] {
-        self.hp_coord(prec).map(|a| (a.value, a.error))
+    pub fn realize(&self, prec: usize) -> [HpBounded; 3] {
+        self.hp_coord(prec)
     }
 
     /// The uncached realization (the body of [`Self::hp_coord`]), **with the error it carries**.
@@ -1031,19 +1039,21 @@ impl WitnessPoint {
     /// cost. Nothing here is a chosen constant — the base contributes its own rounding (zero when
     /// the rational lands on a `prec`-bit dyadic), each `cos`/`sin` contributes the bound
     /// [`Angle::cos_sin_bounded`] derives, and every arithmetic operation adds its half-ulp.
-    fn compute_hp(&self, prec: usize) -> [HpApprox; 3] {
+    fn compute_hp(&self, prec: usize) -> [HpBounded; 3] {
         let mut p = [
-            rat_to_hp(self.base[0], prec),
-            rat_to_hp(self.base[1], prec),
-            rat_to_hp(self.base[2], prec),
+            HpBounded::of_rat(self.base[0], prec),
+            HpBounded::of_rat(self.base[1], prec),
+            HpBounded::of_rat(self.base[2], prec),
         ];
         for node in self.chain.iter() {
             match node {
                 MoveNode::Rotate { axis, angle, point } => {
                     let (i, j) = axis.plane();
-                    let (c, s, bc, bs) = angle.cos_sin_bounded(prec);
-                    let (c, s) = (HpApprox::new(c, bc), HpApprox::new(s, bs));
-                    let (px, py) = (rat_to_hp(point[i], prec), rat_to_hp(point[j], prec));
+                    let (c, s) = angle.cos_sin_bounded(prec);
+                    let (px, py) = (
+                        HpBounded::of_rat(point[i], prec),
+                        HpBounded::of_rat(point[j], prec),
+                    );
                     // pivot-relative: u = p − pivot, rotate, shift back.
                     let u = p[i].sub(&px, prec);
                     let v = p[j].sub(&py, prec);
@@ -1054,32 +1064,30 @@ impl WitnessPoint {
                 // rounding and the add's half-ulp, both of which the interval carries.
                 MoveNode::Translate { offset } => {
                     for k in 0..3 {
-                        p[k] = p[k].add(&rat_to_hp(offset[k], prec), prec);
+                        p[k] = p[k].add(&HpBounded::of_rat(offset[k], prec), prec);
                     }
                 }
                 // `2·offset − x` on one coordinate: exact input, so the interval carries only its
                 // own rounding. The other two coordinates are untouched.
                 MoveNode::Mirror { axis, offset } => {
                     let k = axis.index();
-                    let c = rat_to_hp(*offset, prec);
+                    let c = HpBounded::of_rat(*offset, prec);
                     p[k] = c.add(&c, prec).sub(&p[k], prec);
                 }
                 // The same derivation as [`WitnessPoint::frame`], in the domain that carries its own
                 // error: two `1/√` intervals, two scaled basis vectors, their cross product, and
                 // the combination. Nothing is charged by hand — every rounding is inside an
-                // `HpApprox`, which is the point of realizing here rather than trusting the f64 tol.
+                // `HpBounded`, which is the point of realizing here rather than trusting the f64 tol.
                 //
                 // A degenerate frame cannot arise here: `WitnessPoint::frame` is the only producer of this
                 // node and it refuses a non-positive squared length, so the chain never holds one.
                 MoveNode::Frame { frame } => {
-                    let inv = |v: Rat| {
-                        nacre_scalar::inv_sqrt_bounded(v, prec).map(|(m, r)| HpApprox::new(m, r))
-                    };
+                    let inv = |v: Rat| nacre_scalar::inv_sqrt_bounded(v, prec);
                     let (Some(iu), Some(iw)) = (inv(frame.uu), inv(frame.nn)) else {
                         continue; // unreachable — `plane_frame` refuses a non-positive length
                     };
-                    let scaled = |v: [Rat; 3], s: &HpApprox| {
-                        [0, 1, 2].map(|k| rat_to_hp(v[k], prec).mul(s, prec))
+                    let scaled = |v: [Rat; 3], s: &HpBounded| {
+                        [0, 1, 2].map(|k| HpBounded::of_rat(v[k], prec).mul(s, prec))
                     };
                     let (uh, wh) = (scaled(frame.u_raw, &iu), scaled(frame.n, &iw));
                     // The same two routes `WitnessPoint::frame` takes, in the domain that carries its own
@@ -1092,7 +1100,7 @@ impl WitnessPoint {
                         }),
                     };
                     p = [0, 1, 2].map(|k| {
-                        rat_to_hp(frame.origin[k], prec)
+                        HpBounded::of_rat(frame.origin[k], prec)
                             .add(&p[0].mul(&uh[k], prec), prec)
                             .add(&p[1].mul(&vh[k], prec), prec)
                             .add(&p[2].mul(&wh[k], prec), prec)
@@ -1102,26 +1110,25 @@ impl WitnessPoint {
                 // `v_raw`/`vv` always exist (nothing overflows a `BigInt`), so there is no
                 // cross-product fallback branch here.
                 MoveNode::FrameWide(f) => {
-                    let inv = |v: &num_bigint::BigInt| {
-                        let (m, r) = nacre_scalar::inv_sqrt_bigint_bounded(v, prec)?;
-                        Some(HpApprox::new(m, r))
-                    };
+                    let inv =
+                        |v: &num_bigint::BigInt| nacre_scalar::inv_sqrt_bigint_bounded(v, prec);
                     let (Some(iu), Some(iv2), Some(iw)) = (inv(&f.uu), inv(&f.vv), inv(&f.nn))
                     else {
                         continue; // unreachable — the builder derives positive squared lengths
                     };
-                    let scaled = |v: &[num_bigint::BigInt; 3], s: &HpApprox| {
-                        [0, 1, 2].map(|k| bigint_to_hp(&v[k], prec).mul(s, prec))
+                    let scaled = |v: &[num_bigint::BigInt; 3], s: &HpBounded| {
+                        [0, 1, 2].map(|k| HpBounded::of_bigint(&v[k], prec).mul(s, prec))
                     };
                     let (uh, vh, wh) = (
                         scaled(&f.u_raw, &iu),
                         scaled(&f.v_raw, &iv2),
                         scaled(&f.n, &iw),
                     );
-                    let od = bigint_to_hp(&f.origin_den, prec);
+                    let od = HpBounded::of_bigint(&f.origin_den, prec);
                     let origin = (|| {
-                        let o =
-                            |k: usize| bigint_to_hp(&f.origin_num[k], prec).div_exact(&od, prec);
+                        let o = |k: usize| {
+                            HpBounded::of_bigint(&f.origin_num[k], prec).div_exact(&od, prec)
+                        };
                         Some([o(0)?, o(1)?, o(2)?])
                     })();
                     let Some(o) = origin else {
@@ -1164,7 +1171,7 @@ impl WitnessPoint {
 /// error is the radius plus the value's own half-ulp); an undecided or out-of-normal-range value
 /// flushes to zero with its whole magnitude charged — sound, and reachable only for axis
 /// components below f64's normal floor.
-fn narrow_hp(x: &HpApprox) -> (f64, f64) {
+fn narrow_hp(x: &HpBounded) -> (f64, f64) {
     match nacre_scalar::round_to_f64(&x.value, x.error, 128) {
         Some(v) => (v, rad_f64(x.error) + v.abs() * f64::EPSILON),
         None => (0.0, rad_f64(x.error) + bf_mag(&x.value)),
@@ -1281,8 +1288,8 @@ enum Gap {
 ///
 /// The mantissa is deliberately not read: `lb` is an exponent bound, so `short` is generous by up
 /// to a bit — in the direction that costs a word, not correctness.
-fn denom_lo(v: &HpApprox) -> Result<Mag, Gap> {
-    let Some(lo) = super::interval::lb(&v.value) else {
+fn denom_lo(v: &HpBounded) -> Result<Mag, Gap> {
+    let Some(lo) = Mag::below(&v.value) else {
         return Err(Gap::Vanished); // the midpoint is exactly zero
     };
     match lo.minus(v.error) {
@@ -1510,9 +1517,9 @@ pub fn precision_for(worst: Mag, limit: Mag) -> usize {
 /// uncertain, so its **lower** bound is what divides. When the area term cannot be bounded away
 /// from zero the answer is the [`Gap`] saying which failure it is: a triangle that has collapsed
 /// has no plane to be a distance from, while one that is merely unresolved is a matter of depth.
-fn distance_bound(det_rad: Mag, cross: &[HpApprox; 3], prec: usize) -> Gap {
+fn distance_bound(det_rad: Mag, cross: &[HpBounded; 3], prec: usize) -> Gap {
     // `|cross|² = Σ cross[k]²`, and a lower bound on the norm needs a lower bound on the sum.
-    let mut lo = HpApprox::exact(BigFloat::from_f64(0.0, prec));
+    let mut lo = HpBounded::exact(BigFloat::from_f64(0.0, prec));
     for c in cross {
         lo = lo.add(&c.mul(c, prec), prec);
     }
@@ -1607,11 +1614,11 @@ fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
 ///
 /// The entries come in **by reference**, and that is not a micro-optimization: Cramer's four
 /// matrices are the same nine or twelve values in different arrangements, so a signature that
-/// owns its rows makes the caller copy each value up to three times over. An `HpApprox` copy is a
+/// owns its rows makes the caller copy each value up to three times over. An `HpBounded` copy is a
 /// mantissa heap allocation, and this determinant is the hot path — [`cramer_hp`] alone made
 /// forty-five of them per call for values it only ever read.
-fn det3_big(r: [[&HpApprox; 3]; 3], prec: usize) -> HpApprox {
-    let mul = |x: &HpApprox, y: &HpApprox| x.mul(y, prec);
+fn det3_big(r: [[&HpBounded; 3]; 3], prec: usize) -> HpBounded {
+    let mul = |x: &HpBounded, y: &HpBounded| x.mul(y, prec);
     let m0 = mul(r[1][1], r[2][2]).sub(&mul(r[1][2], r[2][1]), prec);
     let m1 = mul(r[1][0], r[2][2]).sub(&mul(r[1][2], r[2][0]), prec);
     let m2 = mul(r[1][0], r[2][1]).sub(&mul(r[1][1], r[2][0]), prec);
@@ -1621,7 +1628,7 @@ fn det3_big(r: [[&HpApprox; 3]; 3], prec: usize) -> HpApprox {
 }
 
 /// [`det3_big`] over rows the caller already owns — the borrow, spelled once.
-fn det3_big_rows(r: &[[HpApprox; 3]; 3], prec: usize) -> HpApprox {
+fn det3_big_rows(r: &[[HpBounded; 3]; 3], prec: usize) -> HpBounded {
     det3_big(
         [
             [&r[0][0], &r[0][1], &r[0][2]],
@@ -1640,14 +1647,14 @@ fn det3_hp(
     pc: &WitnessPoint,
     pd: &WitnessPoint,
     prec: usize,
-) -> HpApprox {
+) -> HpBounded {
     let (a, b, c, d) = (
         pa.hp_coord(prec),
         pb.hp_coord(prec),
         pc.hp_coord(prec),
         pd.hp_coord(prec),
     );
-    let sub = |x: &HpApprox, y: &HpApprox| x.sub(y, prec);
+    let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
     let rows = [
         [sub(&a[0], &d[0]), sub(&a[1], &d[1]), sub(&a[2], &d[2])],
         [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
@@ -1788,9 +1795,14 @@ pub fn orient3d_judge(
 
 /// `(b−d) × (c−d)` at `prec` bits — the area term that turns [`orient3d_judge`]'s determinant
 /// into a height above the plane through `b, c, d`.
-fn cross_of(pb: &WitnessPoint, pc: &WitnessPoint, pd: &WitnessPoint, prec: usize) -> [HpApprox; 3] {
+fn cross_of(
+    pb: &WitnessPoint,
+    pc: &WitnessPoint,
+    pd: &WitnessPoint,
+    prec: usize,
+) -> [HpBounded; 3] {
     let (b, c, d) = (pb.hp_coord(prec), pc.hp_coord(prec), pd.hp_coord(prec));
-    let sub = |x: &HpApprox, y: &HpApprox| x.sub(y, prec);
+    let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
     let (u, v) = (
         [sub(&b[0], &d[0]), sub(&b[1], &d[1]), sub(&b[2], &d[2])],
         [sub(&c[0], &d[0]), sub(&c[1], &d[1]), sub(&c[2], &d[2])],
@@ -1848,7 +1860,8 @@ pub fn dir_orient3d_judge(
 ) -> Orient {
     let dp = WitnessPoint::at(d);
     let (bi, xi, yi, di) = (pt_iv(base), pt_iv(x), pt_iv(y), pt_iv(&dp));
-    let sub_iv = |u: [Approx; 3], v: [Approx; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
+    let sub_iv =
+        |u: [Bounded; 3], v: [Bounded; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
     if let Some(pos) = det3_iv([di, sub_iv(xi, bi), sub_iv(yi, bi)]).sign() {
         return orient_of(pos);
     }
@@ -1859,7 +1872,7 @@ pub fn dir_orient3d_judge(
         y.hp_coord(prec),
         dp.hp_coord(prec),
     );
-    let sub_hp = |u: &HpApprox, v: &HpApprox| u.sub(v, prec);
+    let sub_hp = |u: &HpBounded, v: &HpBounded| u.sub(v, prec);
     let rows = [
         dh,
         [
@@ -1914,7 +1927,7 @@ pub fn orient3d_ray(
 // explicit `16·scale³` floor of [`orient3d_judge`]).
 
 /// 3×3 determinant of interval rows.
-fn det3_iv(r: [[Approx; 3]; 3]) -> Approx {
+fn det3_iv(r: [[Bounded; 3]; 3]) -> Bounded {
     let m0 = r[1][1].mul(r[2][2]).sub(r[1][2].mul(r[2][1]));
     let m1 = r[1][0].mul(r[2][2]).sub(r[1][2].mul(r[2][0]));
     let m2 = r[1][0].mul(r[2][1]).sub(r[1][1].mul(r[2][0]));
@@ -1923,11 +1936,11 @@ fn det3_iv(r: [[Approx; 3]; 3]) -> Approx {
 
 /// A point's coord+tol as an interval per component (the pivot is already folded into
 /// `coord`/`tol` by [`WitnessPoint::rotate_about`]).
-fn pt_iv(p: &WitnessPoint) -> [Approx; 3] {
+fn pt_iv(p: &WitnessPoint) -> [Bounded; 3] {
     [
-        Approx::new(p.coord[0], p.tol[0]),
-        Approx::new(p.coord[1], p.tol[1]),
-        Approx::new(p.coord[2], p.tol[2]),
+        Bounded::new(p.coord[0], p.tol[0]),
+        Bounded::new(p.coord[1], p.tol[1]),
+        Bounded::new(p.coord[2], p.tol[2]),
     ]
 }
 
@@ -1935,7 +1948,7 @@ fn pt_iv(p: &WitnessPoint) -> [Approx; 3] {
 /// (p1−p0)×(p2−p0)`, `d = −n·p0`. Coefficient tol propagates from the point tols
 /// through the subtraction/cross/dot — "coefficient tol is a corollary of point tol"
 /// (§CIP ②). Validated H-b.
-pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) -> [Approx; 4] {
+pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) -> [Bounded; 4] {
     let (a, b, c) = (pt_iv(p0), pt_iv(p1), pt_iv(p2));
     let e1 = [b[0].sub(a[0]), b[1].sub(a[1]), b[2].sub(a[2])];
     let e2 = [c[0].sub(a[0]), c[1].sub(a[1]), c[2].sub(a[2])];
@@ -1944,7 +1957,7 @@ pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) 
         e1[2].mul(e2[0]).sub(e1[0].mul(e2[2])),
         e1[0].mul(e2[1]).sub(e1[1].mul(e2[0])),
     ];
-    let d = Approx::new(0.0, 0.0)
+    let d = Bounded::new(0.0, 0.0)
         .sub(n[0].mul(a[0]))
         .sub(n[1].mul(a[1]))
         .sub(n[2].mul(a[2]));
@@ -1954,10 +1967,15 @@ pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) 
 /// The plane's four coefficients realized at `prec` bits from the definitions
 /// (ground truth for the coefficient tol; no trig of its own — consumes point
 /// `hp_coord`).
-fn plane_hp(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint, prec: usize) -> [HpApprox; 4] {
+fn plane_hp(
+    p0: &WitnessPoint,
+    p1: &WitnessPoint,
+    p2: &WitnessPoint,
+    prec: usize,
+) -> [HpBounded; 4] {
     let (a, b, c) = (p0.hp_coord(prec), p1.hp_coord(prec), p2.hp_coord(prec));
-    let sub = |x: &HpApprox, y: &HpApprox| x.sub(y, prec);
-    let mul = |x: &HpApprox, y: &HpApprox| x.mul(y, prec);
+    let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
+    let mul = |x: &HpBounded, y: &HpBounded| x.mul(y, prec);
     let e1 = [sub(&b[0], &a[0]), sub(&b[1], &a[1]), sub(&b[2], &a[2])];
     let e2 = [sub(&c[0], &a[0]), sub(&c[1], &a[1]), sub(&c[2], &a[2])];
     let n = [
@@ -1965,7 +1983,7 @@ fn plane_hp(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint, prec: usize
         mul(&e1[2], &e2[0]).sub(&mul(&e1[0], &e2[2]), prec),
         mul(&e1[0], &e2[1]).sub(&mul(&e1[1], &e2[0]), prec),
     ];
-    let d = HpApprox::exact(BigFloat::from_f64(0.0, prec))
+    let d = HpBounded::exact(BigFloat::from_f64(0.0, prec))
         .sub(&mul(&n[0], &a[0]), prec)
         .sub(&mul(&n[1], &a[1]), prec)
         .sub(&mul(&n[2], &a[2]), prec);
@@ -2003,12 +2021,15 @@ fn negatives_odd(signs: [bool; 3]) -> bool {
 /// planes meet in a point, so there is nothing to normalize against and the caller must climb.
 /// Degree 9 in the nine input coefficients.
 ///
-/// (Its f64/`Approx` filter twin, `plane_iv_through`, retired unconsumed in 16-3 — the judging
+/// (Its f64/`Bounded` filter twin, `plane_iv_through`, retired unconsumed in 16-3 — the judging
 /// table turned out to need no interval-coefficient route at all. The dev-log records the
 /// restoration path; the lock lives in 16-2's Pure-vs-Meet differential, which pins this
 /// function's basis against the affine shortcut end to end.)
-fn plane_hp_through(pts: [(&HpApprox, &[HpApprox; 3]); 3], prec: usize) -> Option<[HpApprox; 4]> {
-    let zero = HpApprox::exact(BigFloat::from_f64(0.0, prec));
+fn plane_hp_through(
+    pts: [(&HpBounded, &[HpBounded; 3]); 3],
+    prec: usize,
+) -> Option<[HpBounded; 4]> {
+    let zero = HpBounded::exact(BigFloat::from_f64(0.0, prec));
     let row = |i: usize| {
         let (d, v) = pts[i];
         [&v[0], &v[1], &v[2], d]
@@ -2054,9 +2075,9 @@ fn combine(dsign: Option<bool>, msign: Option<bool>) -> Option<Orient> {
 /// and the numerator vector `Dvec` (column `j` replaced by `h = −d`), so `V[j] =
 /// Dvec[j]/D` (no division taken here). Shared by `indirect_filter` (orient3d) and
 /// [`cmp_filter`] (cmp_coord).
-pub(crate) fn cramer_iv(planes: [[Approx; 4]; 3]) -> (Approx, [Approx; 3]) {
+pub(crate) fn cramer_iv(planes: [[Bounded; 4]; 3]) -> (Bounded, [Bounded; 3]) {
     let n = |k: usize| [planes[k][0], planes[k][1], planes[k][2]];
-    let h = |k: usize| Approx::new(0.0, 0.0).sub(planes[k][3]); // n·X = h, h = −d
+    let h = |k: usize| Bounded::new(0.0, 0.0).sub(planes[k][3]); // n·X = h, h = −d
     let (n0, n1, n2) = (n(0), n(1), n(2));
     let d = det3_iv([n0, n1, n2]);
     // Cramer numerators Dvec: replace column j with h.
@@ -2087,14 +2108,14 @@ pub(crate) fn cramer_iv(planes: [[Approx; 4]; 3]) -> (Approx, [Approx; 3]) {
 /// determinants and the `h` column for the three it does not need. [`dir_sign_judge`] asks exactly
 /// this question ("how does the line `a ∩ b` run relative to `c`"), and it used to throw away
 /// three-quarters of the work on every call.
-fn normals_det_iv(planes: [[Approx; 4]; 3]) -> Approx {
+fn normals_det_iv(planes: [[Bounded; 4]; 3]) -> Bounded {
     let n = |k: usize| [planes[k][0], planes[k][1], planes[k][2]];
     det3_iv([n(0), n(1), n(2)])
 }
 
 /// [`normals_det_iv`] at `prec` bits — the `d` half of [`cramer_hp`] without its `h` column or its
 /// three `Dvec` determinants. The escalation is where a wasted determinant costs the most.
-fn normals_det_hp(planes: &[[HpApprox; 4]; 3], prec: usize) -> HpApprox {
+fn normals_det_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> HpBounded {
     let n = |k: usize, j: usize| &planes[k][j];
     det3_big(
         [
@@ -2110,10 +2131,10 @@ fn normals_det_hp(planes: &[[HpApprox; 4]; 3], prec: usize) -> HpApprox {
 /// either `D` or `M` straddles 0 (escalate). Coefficient-direct (no division).
 #[cfg(test)]
 fn indirect_filter(
-    planes: [[Approx; 4]; 3],
-    q: [Approx; 3],
-    r: [Approx; 3],
-    s: [Approx; 3],
+    planes: [[Bounded; 4]; 3],
+    q: [Bounded; 3],
+    r: [Bounded; 3],
+    s: [Bounded; 3],
 ) -> Option<Orient> {
     filter_from_cramer(cramer_iv(planes), q, r, s)
 }
@@ -2125,10 +2146,10 @@ fn indirect_filter(
 /// crossing collector asks twice in a row (a segment's two endpoints), which is what
 /// [`crate::predicate::ImplicitPoint`] exploits.
 fn filter_from_cramer(
-    (d, dvec): (Approx, [Approx; 3]),
-    q: [Approx; 3],
-    r: [Approx; 3],
-    s: [Approx; 3],
+    (d, dvec): (Bounded, [Bounded; 3]),
+    q: [Bounded; 3],
+    r: [Bounded; 3],
+    s: [Bounded; 3],
 ) -> Option<Orient> {
     // row1 = Dvec − D·s ; cross = (q−s)×(r−s) ; M = row1·cross.
     let row1 = [
@@ -2157,9 +2178,9 @@ fn filter_from_cramer(
 /// The magnitude bounds these used to return alongside are gone: the radius rides *with* the
 /// value now, so there is nothing left for a caller to forget to use — which is exactly how the
 /// indirect judge came to bound `M` by a scale that had already cancelled.
-fn cramer_hp(planes: &[[HpApprox; 4]; 3], prec: usize) -> (HpApprox, [HpApprox; 3]) {
-    let sub = |x: &HpApprox, y: &HpApprox| x.sub(y, prec);
-    let zero = HpApprox::exact(BigFloat::from_f64(0.0, prec));
+fn cramer_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> (HpBounded, [HpBounded; 3]) {
+    let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
+    let zero = HpBounded::exact(BigFloat::from_f64(0.0, prec));
     // The four matrices are the same twelve values rearranged, so they are built as *views* of
     // the coefficients rather than copies of them — see [`det3_big`].
     let n = |k: usize, j: usize| &planes[k][j];
@@ -2216,15 +2237,15 @@ fn cramer_hp(planes: &[[HpApprox; 4]; 3], prec: usize) -> (HpApprox, [HpApprox; 
 /// cannot make that mistake: the radius of `row1` is the sum of what went into it, and a
 /// subtraction that cancels leaves the radius behind.
 fn indirect_hp(
-    planes: [[HpApprox; 4]; 3],
-    q: [HpApprox; 3],
-    r: [HpApprox; 3],
-    s: [HpApprox; 3],
+    planes: [[HpBounded; 4]; 3],
+    q: [HpBounded; 3],
+    r: [HpBounded; 3],
+    s: [HpBounded; 3],
     prec: usize,
-) -> (HpApprox, HpApprox, [HpApprox; 3]) {
-    let sub = |x: &HpApprox, y: &HpApprox| x.sub(y, prec);
-    let mul = |x: &HpApprox, y: &HpApprox| x.mul(y, prec);
-    let add = |x: &HpApprox, y: &HpApprox| x.add(y, prec);
+) -> (HpBounded, HpBounded, [HpBounded; 3]) {
+    let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
+    let mul = |x: &HpBounded, y: &HpBounded| x.mul(y, prec);
+    let add = |x: &HpBounded, y: &HpBounded| x.add(y, prec);
     let (d, dvec) = cramer_hp(&planes, prec);
     let row1 = [
         sub(&dvec[0], &mul(&d, &s[0])),
@@ -2261,7 +2282,7 @@ fn indirect_hp(
 /// from `M`'s radius and below by the denominators' own lower bounds. `None` when either cannot
 /// be kept away from zero — three near-parallel planes have no well-defined meeting point, and a
 /// degenerate triangle no plane.
-fn plane_gap(m: &HpApprox, d: &HpApprox, cross: &[HpApprox; 3], prec: usize) -> Gap {
+fn plane_gap(m: &HpBounded, d: &HpBounded, cross: &[HpBounded; 3], prec: usize) -> Gap {
     let d_lo = match denom_lo(d) {
         Ok(b) => b,
         Err(g) => return g,
@@ -2307,7 +2328,7 @@ pub fn indirect_orient3d_judge(
 /// the fact.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn orient3d_from_cramer(
-    cr: (Approx, [Approx; 3]),
+    cr: (Bounded, [Bounded; 3]),
     plane_a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     plane_b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     plane_c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
@@ -2368,7 +2389,7 @@ fn cmp_combine(sm: Option<bool>, sda: Option<bool>, sdb: Option<bool>) -> Option
 
 /// The interval f64 filter for `cmp_coord(a, b, axis)` — the sign of `a[axis] −
 /// b[axis]` between two implicit points. `None` if any of `M`, `D_a`, `D_b` straddles 0.
-fn cmp_filter(a: [[Approx; 4]; 3], b: [[Approx; 4]; 3], axis: usize) -> Option<Orient> {
+fn cmp_filter(a: [[Bounded; 4]; 3], b: [[Bounded; 4]; 3], axis: usize) -> Option<Orient> {
     let (da, dva) = cramer_iv(a);
     let (db, dvb) = cramer_iv(b);
     let m = dva[axis].mul(db).sub(dvb[axis].mul(da));
@@ -2385,8 +2406,8 @@ fn cmp_filter(a: [[Approx; 4]; 3], b: [[Approx; 4]; 3], axis: usize) -> Option<O
 /// denominator cannot be bounded away from zero, which is the near-parallel-planes case where
 /// the implicit point itself is not well defined.
 fn cmp_hp_with_gap(
-    a: [[HpApprox; 4]; 3],
-    b: [[HpApprox; 4]; 3],
+    a: [[HpBounded; 4]; 3],
+    b: [[HpBounded; 4]; 3],
     axis: usize,
     prec: usize,
 ) -> Result<Orient, Gap> {
@@ -2403,7 +2424,7 @@ fn cmp_hp_with_gap(
 
 /// `|M| / |D_a · D_b|`, the separation `M` stands for — bounded above from `M`'s own radius, and
 /// below by the denominators' lower bounds (dividing by an upper bound would understate the gap).
-fn coord_gap(m: &HpApprox, da: &HpApprox, db: &HpApprox) -> Gap {
+fn coord_gap(m: &HpBounded, da: &HpBounded, db: &HpBounded) -> Gap {
     let (lo_a, lo_b) = match (denom_lo(da), denom_lo(db)) {
         (Ok(a), Ok(b)) => (a, b),
         // Both may be short; the deeper shortfall is the one that has to be covered.
@@ -2529,7 +2550,7 @@ pub fn dir_sign_judge(
 /// A caller compares it against `coincidence_precision / scale`: the angle a deviation of the
 /// coincidence limit subtends across the model. `None` when a normal cannot be bounded away from
 /// zero — a degenerate plane has no direction to be off by.
-fn dir_gap(d: &HpApprox, planes: &[[HpApprox; 4]; 3], prec: usize) -> Gap {
+fn dir_gap(d: &HpBounded, planes: &[[HpBounded; 4]; 3], prec: usize) -> Gap {
     let mut denom = Mag::of(1.0);
     for p in planes {
         // `|n| ≥ max|n_k|`, which is enough and needs no square root. One component clearing zero
@@ -2861,7 +2882,7 @@ mod tests {
                     );
                     let a = p(0, 0, (hn, hd));
                     let det = det3_hp(&a, &b, &c, &d, prec);
-                    let sub = |x: &HpApprox, y: &HpApprox| x.sub(y, prec);
+                    let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
                     let (bh, ch, dh) = (b.hp_coord(prec), c.hp_coord(prec), d.hp_coord(prec));
                     let (u, v) = (
                         [
@@ -2918,11 +2939,11 @@ mod tests {
                 // apart. Coefficients scaled by `k` — the same planes, differently written.
                 let pl = |c: [i128; 4]| {
                     [
-                        HpApprox::exact(BigFloat::from_i128(c[0] * k, prec)),
-                        HpApprox::exact(BigFloat::from_i128(c[1] * k, prec)),
-                        HpApprox::exact(BigFloat::from_i128(c[2] * k, prec)),
+                        HpBounded::exact(BigFloat::from_i128(c[0] * k, prec)),
+                        HpBounded::exact(BigFloat::from_i128(c[1] * k, prec)),
+                        HpBounded::exact(BigFloat::from_i128(c[2] * k, prec)),
                         // `d` carries the offset, which must not be scaled away: `g = gn/gd`.
-                        HpApprox::new(
+                        HpBounded::new(
                             BigFloat::from_i128(c[3] * k, prec).div(
                                 &BigFloat::from_i128(gd, prec),
                                 prec,
@@ -2966,7 +2987,7 @@ mod tests {
     #[test]
     fn the_normalized_indirect_orient3d_is_a_distance() {
         let prec = 256;
-        let big = |v: i128| HpApprox::exact(BigFloat::from_i128(v, prec));
+        let big = |v: i128| HpBounded::exact(BigFloat::from_i128(v, prec));
         for (hn, hd) in [(1i128, 1i128), (3, 100), (1, 1_000_000)] {
             for k in [1i128, 1_000] {
                 for t in [1i128, 1_000] {
@@ -2977,7 +2998,7 @@ mod tests {
                             big(c[0] * k),
                             big(c[1] * k),
                             big(c[2] * k),
-                            HpApprox::new(
+                            HpBounded::new(
                                 BigFloat::from_i128(d.0 * k, prec).div(
                                     &BigFloat::from_i128(d.1, prec),
                                     prec,
@@ -3027,10 +3048,10 @@ mod tests {
     #[test]
     fn the_normalized_dir_sign_is_an_angle() {
         let prec = 256;
-        let big = |v: i128| HpApprox::exact(BigFloat::from_i128(v, prec));
+        let big = |v: i128| HpBounded::exact(BigFloat::from_i128(v, prec));
         for (en, ed) in [(1i128, 1i128), (1, 1_000), (1, 1_000_000_000)] {
             for k in [1i128, 1_000] {
-                let eps = HpApprox::new(
+                let eps = HpBounded::new(
                     BigFloat::from_i128(en * k, prec).div(
                         &BigFloat::from_i128(ed, prec),
                         prec,
@@ -3110,7 +3131,7 @@ mod tests {
     /// The f64 value's distance from the high-precision realization's **midpoint** — what the
     /// f64 tol has to bound. (The realization's own radius is a separate, far smaller quantity;
     /// `GT` is deep enough that it does not enter these comparisons.)
-    fn abs_err(f: f64, truth: &HpApprox, gt: usize) -> f64 {
+    fn abs_err(f: f64, truth: &HpBounded, gt: usize) -> f64 {
         bf_mag(&BigFloat::from_f64(f, gt).sub(&truth.value, gt, HP_RM).abs())
     }
 
@@ -3833,9 +3854,12 @@ mod tests {
                     .expect("a frame with positive lengths");
                 let hp = p.hp_coord(GT);
                 // a·x + b·y + c·z + d, realized — its interval must contain zero.
-                let mut e = HpApprox::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
+                let mut e = HpBounded::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
                 for k in 0..3 {
-                    e = e.add(&hp[k].mul(&rat_to_hp(Rat::from_int(c[k]), GT), GT), GT);
+                    e = e.add(
+                        &hp[k].mul(&HpBounded::of_rat(Rat::from_int(c[k]), GT), GT),
+                        GT,
+                    );
                 }
                 let mag = bf_mag(&e.value.abs());
                 let error = e.error.exp2().map_or(0.0, |x| 2f64.powi(x as i32));
@@ -3926,9 +3950,12 @@ mod tests {
                     .frame(fr)
                     .expect("a frame with positive lengths");
                 let hp = p.hp_coord(GT);
-                let mut e = HpApprox::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
+                let mut e = HpBounded::new(BigFloat::from_i128(c[3], GT), Mag::ZERO);
                 for k in 0..3 {
-                    e = e.add(&hp[k].mul(&rat_to_hp(Rat::from_int(c[k]), GT), GT), GT);
+                    e = e.add(
+                        &hp[k].mul(&HpBounded::of_rat(Rat::from_int(c[k]), GT), GT),
+                        GT,
+                    );
                 }
                 let mag = bf_mag(&e.value.abs());
                 let error = e.error.exp2().map_or(0.0, |x| 2f64.powi(x as i32));
@@ -4022,9 +4049,9 @@ mod tests {
                 .expect("a wide frame has positive lengths");
             let hp = p.hp_coord(GT);
             // a·x + b·y + c·z + d, realized — its interval must contain zero.
-            let mut e = HpApprox::exact(nacre_scalar::bigint_to_bigfloat(&c[3], GT));
+            let mut e = HpBounded::exact(nacre_scalar::bigint_to_bigfloat(&c[3], GT));
             for k in 0..3 {
-                e = e.add(&hp[k].mul(&bigint_to_hp(&c[k], GT), GT), GT);
+                e = e.add(&hp[k].mul(&HpBounded::of_bigint(&c[k], GT), GT), GT);
             }
             let mag = bf_mag(&e.value.abs());
             let error = e.error.exp2().map_or(0.0, |x| 2f64.powi(x as i32));
@@ -4428,18 +4455,18 @@ mod tests {
 
     // ---- indirect orient3d (2c-i) ----
 
-    /// `Approx` arithmetic keeps a sound radius (worst-case interval), and `sign` is
+    /// `Bounded` arithmetic keeps a sound radius (worst-case interval), and `sign` is
     /// definite exactly when the interval clears 0.
     #[test]
     fn iv_arithmetic_is_sound_and_sign_decides() {
-        let (a, b) = (Approx::new(3.0, 0.1), Approx::new(-2.0, 0.2));
+        let (a, b) = (Bounded::new(3.0, 0.1), Bounded::new(-2.0, 0.2));
         // sub radius ≥ sum of input radii.
         assert!(a.sub(b).error >= 0.1 + 0.2);
         // mul radius ≥ |mid_a|·rad_b + |mid_b|·rad_a (+ error·error + rounding).
         assert!(a.mul(b).error >= 3.0 * 0.2 + 2.0 * 0.1);
-        assert_eq!(Approx::new(1.0, 0.5).sign(), Some(true));
-        assert_eq!(Approx::new(-1.0, 0.5).sign(), Some(false));
-        assert_eq!(Approx::new(0.3, 0.5).sign(), None); // straddles 0 → escalate
+        assert_eq!(Bounded::new(1.0, 0.5).sign(), Some(true));
+        assert_eq!(Bounded::new(-1.0, 0.5).sign(), Some(false));
+        assert_eq!(Bounded::new(0.3, 0.5).sign(), None); // straddles 0 → escalate
     }
 
     /// Sanity: three coordinate planes meet at the origin `V=(0,0,0)`; `orient3d(V,q,r,s)`
@@ -5316,7 +5343,7 @@ mod tests {
         prec: usize,
     ) -> Option<bool> {
         let dp = WitnessPoint::at(d);
-        let sub = |u: &HpApprox, v: &HpApprox| u.sub(v, prec);
+        let sub = |u: &HpBounded, v: &HpBounded| u.sub(v, prec);
         let (bh, xh, yh, dh) = (
             base.hp_coord(prec),
             x.hp_coord(prec),
@@ -5460,11 +5487,11 @@ mod tests {
                 [comp(0), comp(1), comp(2)]
             };
             let judged = dir_orient3d_judge(d, &base, &x, &y, FIXTURE_PREC);
-            // Recompute the Approx filter to tally which path resolved (mirrors the judge).
+            // Recompute the Bounded filter to tally which path resolved (mirrors the judge).
             let dp = WitnessPoint::at(d);
             let (bi, xi, yi, di) = (pt_iv(&base), pt_iv(&x), pt_iv(&y), pt_iv(&dp));
             let subi =
-                |u: [Approx; 3], v: [Approx; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
+                |u: [Bounded; 3], v: [Bounded; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
             if det3_iv([di, subi(xi, bi), subi(yi, bi)]).sign().is_none() {
                 escalated += 1;
             } else {

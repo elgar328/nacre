@@ -25,7 +25,7 @@
 
 use crate::rotated_vertex::{motion_chain, replay};
 use nacre_cip::WitnessPoint;
-use nacre_scalar::{Bounded, Mag, MeetPoint};
+use nacre_scalar::{HpBounded, Mag, MeetPoint};
 use nacre_store::Handle;
 use nacre_topo::{Model, Surface, Vertex};
 use num_bigint::BigInt;
@@ -59,7 +59,7 @@ enum Arm {
     /// Approached: value and error radius per coordinate, **with the precision that produced
     /// them** — the rounding predicates need it, and re-deriving it at the rounding site is how a
     /// climbed ladder silently rounds at the bottom rung.
-    Approached([Bounded; 3], usize),
+    Approached([HpBounded; 3], usize),
 }
 
 /// Why a vertex could not be realized. **Never falls back to the cache** — a measurement that
@@ -134,12 +134,12 @@ impl Realized {
                 let mut v = [0.0; 3];
                 let mut e = [Mag::ZERO; 3];
                 for k in 0..3 {
-                    v[k] = nacre_scalar::round_to_f64(&p[k].0, p[k].1, *prec)?;
+                    v[k] = nacre_scalar::round_to_f64(&p[k].value, p[k].error, *prec)?;
                     // The realization's own radius, handed over unchanged — no conversion, so
                     // nothing to underflow. That is what `Mag` is for: its own test records
                     // that an `f64` cannot hold `2⁻²⁰⁴⁸` and a deep rung's radius is exactly
                     // that small. An earlier spelling converted here and reported `0e0`.
-                    e[k] = p[k].1;
+                    e[k] = p[k].error;
                 }
                 Some((v, e))
             }
@@ -156,7 +156,7 @@ impl Realized {
             Arm::Approached(p, _) => {
                 let mut out = [const { String::new() }; 3];
                 for k in 0..3 {
-                    out[k] = nacre_scalar::round_to_digits(&p[k].0, p[k].1, places)?;
+                    out[k] = nacre_scalar::round_to_digits(&p[k].value, p[k].error, places)?;
                 }
                 Some(out)
             }
@@ -237,7 +237,7 @@ fn build(model: &Model, v: Handle<Vertex>, bits: usize) -> Result<Realized, Real
     }
 }
 
-fn curved(p: Option<[Bounded; 3]>, bits: usize) -> Result<Realized, RealizeError> {
+fn curved(p: Option<[HpBounded; 3]>, bits: usize) -> Result<Realized, RealizeError> {
     Ok(Realized(Arm::Approached(
         p.ok_or(RealizeError::NoCurvedPoint)?,
         bits,
@@ -253,7 +253,7 @@ fn seam_point(
     cyl: Handle<Surface>,
     cap: Handle<Surface>,
     bits: usize,
-) -> Option<[Bounded; 3]> {
+) -> Option<[HpBounded; 3]> {
     let def = crate::planes::world_cylinder_def(model, cyl)?;
     let coeffs = crate::planes::world_plane_coeffs(model, cap)?;
     let (o, m, r, e) = (def.origin(), def.dir(), def.radius(), def.ref_dir());
@@ -273,7 +273,7 @@ fn pierce_point(
     cylinder: Handle<Surface>,
     root: nacre_topo::QuadRoot,
     bits: usize,
-) -> Option<[Bounded; 3]> {
+) -> Option<[HpBounded; 3]> {
     let def = crate::planes::world_cylinder_def(model, cylinder)?;
     let (o, m, r) = (def.origin(), def.dir(), def.radius());
     let c0 = crate::planes::world_plane_coeffs(model, planes[0])?;
@@ -419,8 +419,8 @@ mod tests {
             let sb = nacre_scalar::realize_quad(q, 256).expect("realized");
             let (b, d) = (line.base(), line.dir());
             let c = |k: usize| {
-                let (v, e) = nacre_scalar::affine_bounded(b[k], d[k], &sb, 256).expect("affine");
-                nacre_scalar::round_to_digits(&v, e, 20)
+                let s = nacre_scalar::affine_bounded(b[k], d[k], &sb, 256).expect("affine");
+                nacre_scalar::round_to_digits(&s.value, s.error, 20)
                     .expect("decided")
                     .parse::<f64>()
                     .expect("a decimal")

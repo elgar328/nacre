@@ -367,14 +367,17 @@ pub struct Judge<'a, W> {
     /// arrangement's crossing collector hands in the same three definitions hundreds of times.
     ///
     /// ★ **Why it is here and not on the witness, where [`Witness::tri_pt3`] says caches go.**
-    /// `Approx` is `pub(crate)`, and so is the module it lives in. A `PlaneWitness` method returning
-    /// `[Approx; 4]` would make the interval type — the precision kernel's working representation —
-    /// part of this crate's public API, for every consumer, forever. `frame_sign` and `coeffs` are
-    /// `i8` and `[f64; 4]`, so they *do* live on the witness; this one cannot follow them.
+    /// [`PlaneWitness`] is a trait its consumers implement. A method on it returning `[Bounded; 4]`
+    /// would ask every implementor to *produce* intervals — to supply radii that actually bound
+    /// the coefficients — and the soundness contract that type carries would leave this crate
+    /// with it. The type itself is public vocabulary (`nacre_scalar::Bounded`, beside `Mag` and
+    /// `Rat`); the obligation to mint one correctly stays behind this crate's own constructors.
+    /// `frame_sign` and `coeffs` are `i8` and `[f64; 4]`, so they *do* live on the witness; this
+    /// one cannot follow them.
     ///
     /// Two workers racing to fill one cell compute the same value, so the answer does not depend on
     /// who won — the same argument `HpCell` rests on.
-    iv: Vec<ApproxCell>,
+    iv: Vec<BoundedCell>,
     /// ★★★ **Whether each plane's stored coefficients and its witness triangle describe the same
     /// plane** — the condition under which the exact route may be taken.
     ///
@@ -393,9 +396,9 @@ pub struct Judge<'a, W> {
 /// Lazily-filled cell for one plane's interval coefficients — `OnceLock` under `parallel` because
 /// the boolean hands every worker the same `&Judge`, `OnceCell` otherwise.
 #[cfg(feature = "parallel")]
-type ApproxCell = std::sync::OnceLock<[crate::kernel::interval::Approx; 4]>;
+type BoundedCell = std::sync::OnceLock<[nacre_scalar::Bounded; 4]>;
 #[cfg(not(feature = "parallel"))]
-type ApproxCell = std::cell::OnceCell<[crate::kernel::interval::Approx; 4]>;
+type BoundedCell = std::cell::OnceCell<[nacre_scalar::Bounded; 4]>;
 
 #[cfg(feature = "parallel")]
 type OkCell = std::sync::OnceLock<bool>;
@@ -408,7 +411,7 @@ impl<'a, W> Judge<'a, W> {
             planes,
             standard,
             notes,
-            iv: (0..planes.len()).map(|_| ApproxCell::new()).collect(),
+            iv: (0..planes.len()).map(|_| BoundedCell::new()).collect(),
             coeff_ok: (0..planes.len()).map(|_| OkCell::new()).collect(),
             normal_ok: (0..planes.len()).map(|_| OkCell::new()).collect(),
         }
@@ -437,10 +440,10 @@ impl<'a, W> Judge<'a, W> {
 impl<W: Witness> Judge<'_, W> {
     /// Plane `k`'s interval coefficients, built once and copied thereafter.
     ///
-    /// Returns a copy rather than a borrow because `[Approx; 4]` is four pairs of `f64` — cheaper to
+    /// Returns a copy rather than a borrow because `[Bounded; 4]` is four pairs of `f64` — cheaper to
     /// move than to keep a reference alive across the judge call, and it keeps the cell's borrow
     /// from outliving the lookup.
-    fn plane_iv(&self, k: usize) -> [crate::kernel::interval::Approx; 4] {
+    fn plane_iv(&self, k: usize) -> [nacre_scalar::Bounded; 4] {
         *self.iv[k].get_or_init(|| {
             let d = plane_def(self.planes, k);
             crate::kernel::frame3::plane_iv(&d[0], &d[1], &d[2])
@@ -761,12 +764,9 @@ pub struct ImplicitPoint<'a, W> {
     cramer: std::cell::OnceCell<CramerParts>,
 }
 
-/// `(D, Dvec)`. ★ Kept out of every public signature because [`crate::kernel::interval::Approx`] is
-/// `pub(crate)` and must stay so — see [`Judge`]'s `iv` field for why.
-type CramerParts = (
-    crate::kernel::interval::Approx,
-    [crate::kernel::interval::Approx; 3],
-);
+/// `(D, Dvec)`. ★ Kept out of every public signature — an interval in a public signature asks its
+/// caller to reason about radii; see [`Judge`]'s `iv` field for why that stays inside.
+type CramerParts = (nacre_scalar::Bounded, [nacre_scalar::Bounded; 3]);
 
 impl<W: PlaneWitness> ImplicitPoint<'_, W> {
     /// Which side of plane `j` this point lies on — [`Judge::orient3d`] for the same four planes,

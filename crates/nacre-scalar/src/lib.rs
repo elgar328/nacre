@@ -33,8 +33,10 @@
 //! Ported from an isolated 2D experiment that verified it first.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
+pub mod bounded;
 pub mod mag;
 pub mod quad;
+pub use bounded::{Bounded, HpBounded, rat_to_big};
 pub use mag::Mag;
 pub use quad::{
     QuadVal, biquad_sign, cylinder_radial_side, cylinders_clear, cylinders_nested,
@@ -54,7 +56,10 @@ use std::collections::HashMap;
 /// (`HP_PREC = 160`) with `cos_hp`/`sin_hp` reading it, and nothing outside this crate's own
 /// tests ever called them — a hand-picked depth waiting to be wired into a judgement whose
 /// precision belongs to the *model* (`nacre_cip::judge_precision`). Callers pass `prec`.
-pub(crate) const HP_RM: RoundingMode = RoundingMode::ToEven;
+///
+/// Public because the judge (`nacre-cip`) rounds with it too — it used to carry an identical
+/// private copy, and one mode in two places is one more thing that can drift.
+pub const HP_RM: RoundingMode = RoundingMode::ToEven;
 
 thread_local! {
     /// Transcendental-constant cache (π, …) for the high-precision layer.
@@ -123,7 +128,7 @@ thread_local! {
     /// result is a pure function of the key, so the memo cannot move an answer; and `prec` is in
     /// the key, so a model judged more deeply lands on a different entry rather than reading one
     /// realized too shallowly.
-    static INV_SQRT: RefCell<HashMap<(Rat, usize), (BigFloat, Mag)>> =
+    static INV_SQRT: RefCell<HashMap<(Rat, usize), HpBounded>> =
         RefCell::new(HashMap::new());
 
     /// **The f64 realization of `1/√v`, keyed by the rational alone** — see [`inv_sqrt_f64`].
@@ -139,7 +144,7 @@ thread_local! {
 }
 
 /// One `(angle, precision)` realization: `(cos, sin, |Δcos|, |Δsin|)`.
-type TrigAt = (BigFloat, BigFloat, Mag, Mag);
+type TrigAt = (HpBounded, HpBounded);
 
 /// **The `f64` nearest the true value that `mid ± rad` encloses — or `None` when `mid ± rad` is
 /// not narrow enough to say.**
@@ -275,13 +280,6 @@ fn to_f64_exact(x: &BigFloat) -> Option<f64> {
 // ---------------------------------------------------------------------------------------------
 // Decimal places — the twin of `round_to_f64`, and the one long division both arms share
 // ---------------------------------------------------------------------------------------------
-
-/// **A realized value and the error it carries** — the pair this crate already hands out
-/// (`inv_sqrt_bounded`), named so a consumer can hold one without naming astro-float.
-///
-/// The radius is not decoration: `round_to_f64` and `round_to_digits` both need it to say whether
-/// an answer is determined, and a value without it can only be rounded by guessing.
-pub type Bounded = (BigFloat, Mag);
 
 /// The precision `x` actually carries, in bits — the mantissa the words spell.
 fn bits_of(x: &BigFloat) -> usize {
@@ -521,58 +519,22 @@ pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String
 // ---------------------------------------------------------------------------------------------
 // Realizing an algebraic coordinate at a precision — the arithmetic behind a curved vertex
 // ---------------------------------------------------------------------------------------------
-
-/// A rational realized at `p` bits, with the rounding it cost (`Mag::ZERO` when it landed exactly).
-fn rat_bounded(r: Rat, p: usize) -> Bounded {
-    let (n, d) = (r.numer(), r.denom());
-    let v = BigFloat::from_i128(n, p).div(&BigFloat::from_i128(d, p), p, HP_RM);
-    // A quotient of two exactly-representable integers costs at most a half-ulp of the result.
-    (v.clone(), half_ulp(&v, p))
-}
-
-/// `|x| · 2^-p` — the most a `p`-bit operation can add to its own result.
-fn half_ulp(x: &BigFloat, p: usize) -> Mag {
-    match x.exponent() {
-        Some(e) => Mag::pow2(i64::from(e) - p as i64),
-        None => Mag::ZERO,
-    }
-}
-
-/// `a * b` with its error — `(va ± ra)(vb ± rb)` widened by the product's own rounding.
-fn mul_bounded(a: &Bounded, b: &Bounded, p: usize) -> Bounded {
-    let v = a.0.mul(&b.0, p, HP_RM);
-    let (ua, ub) = (upper(&a.0), upper(&b.0));
-    // |va·rb| + |vb·ra| + ra·rb, then the rounding of the product itself.
-    let e = ua
-        .times(b.1)
-        .plus(ub.times(a.1))
-        .plus(a.1.times(b.1))
-        .plus(half_ulp(&v, p));
-    (v, e)
-}
-
-/// `a + b` with its error.
-fn add_bounded(a: &Bounded, b: &Bounded, p: usize) -> Bounded {
-    let v = a.0.add(&b.0, p, HP_RM);
-    (v.clone(), a.1.plus(b.1).plus(half_ulp(&v, p)))
-}
-
-/// An upper bound on `|x|`.
-fn upper(x: &BigFloat) -> Mag {
-    match x.exponent() {
-        Some(e) => Mag::pow2(i64::from(e)),
-        None => Mag::ZERO,
-    }
-}
+//
+// The arithmetic itself is [`HpBounded`]'s (`bounded.rs`) — what lives here are the realizations
+// that drive it. A second spelling of that arithmetic used to sit here (a tuple alias and five
+// free functions); its magnitude reader charged an exact zero a rounding and its rational entry
+// truncated below 128 bits, both of which the one spelling does not.
 
 /// **`√v` realized at `p` bits, with its error** — `v · (1/√v)`, so the one radical primitive this
 /// crate already has ([`inv_sqrt_bounded`]) is the only place a square root is approached.
-pub fn sqrt_bounded(v: Rat, p: usize) -> Option<Bounded> {
+///
+/// Crate-private: its only consumer is [`realize_quad`] (measured — no caller outside this crate).
+pub(crate) fn sqrt_bounded(v: Rat, p: usize) -> Option<HpBounded> {
     if v == Rat::from_int(0) {
-        return Some((BigFloat::from_f64(0.0, p), Mag::ZERO));
+        return Some(HpBounded::exact(BigFloat::from_f64(0.0, p)));
     }
     let inv = inv_sqrt_bounded(v, p)?;
-    Some(mul_bounded(&rat_bounded(v, p), &inv, p))
+    Some(HpBounded::of_rat(v, p).mul(&inv, p))
 }
 
 /// **A quadratic algebraic scalar `a + b√c` realized at `p` bits, with its error.**
@@ -580,22 +542,25 @@ pub fn sqrt_bounded(v: Rat, p: usize) -> Option<Bounded> {
 /// ★ Exact when the radical vanishes or resolves ([`quad::QuadVal::as_rat`]) — the value is asked,
 /// not its provenance, so a tangency's rational root takes the rational road even though it
 /// arrived through the same variant as an irrational one.
-pub fn realize_quad(q: &quad::QuadVal, p: usize) -> Option<Bounded> {
+pub fn realize_quad(q: &quad::QuadVal, p: usize) -> Option<HpBounded> {
     if let Some(r) = q.as_rat() {
-        let (v, _) = rat_bounded(r, p);
-        // The rational is the value; the only error is this realization's own rounding.
-        return Some((v.clone(), half_ulp(&v, p)));
+        // The rational is the value; the only error is this realization's own rounding — charged
+        // unconditionally rather than through `HpBounded::of_rat`'s exact branch, so that this
+        // arm never hands an approached coordinate a zero radius (its consumer reads a zero as the
+        // exact arm's answer).
+        let v = rat_to_big(r, p);
+        return Some(HpBounded::new(v.clone(), HpBounded::round_off(&v, p)));
     }
     let root = sqrt_bounded(q.c(), p)?;
-    let term = mul_bounded(&rat_bounded(q.b(), p), &root, p);
-    Some(add_bounded(&rat_bounded(q.a(), p), &term, p))
+    let term = HpBounded::of_rat(q.b(), p).mul(&root, p);
+    Some(HpBounded::of_rat(q.a(), p).add(&term, p))
 }
 
 /// `base + dir·s` for exact rational `base`/`dir` and a realized `s` — the last step of a point
 /// that lives at a parameter along an exactly-stated line.
-pub fn affine_bounded(base: Rat, dir: Rat, s: &Bounded, p: usize) -> Option<Bounded> {
-    let term = mul_bounded(&rat_bounded(dir, p), s, p);
-    Some(add_bounded(&rat_bounded(base, p), &term, p))
+pub fn affine_bounded(base: Rat, dir: Rat, s: &HpBounded, p: usize) -> Option<HpBounded> {
+    let term = HpBounded::of_rat(dir, p).mul(s, p);
+    Some(HpBounded::of_rat(base, p).add(&term, p))
 }
 
 /// **A point on a circle's `+ref` seam, realized at `p` bits.**
@@ -608,16 +573,16 @@ pub fn realize_seam_point(
     e1: [Rat; 3],
     radius: Rat,
     p: usize,
-) -> Option<[Bounded; 3]> {
+) -> Option<[HpBounded; 3]> {
     let mut sq = Rat::from_int(0);
     for c in &e1 {
         sq = sq.checked_add(c.checked_mul(*c)?)?;
     }
     let inv = inv_sqrt_bounded(sq, p)?;
-    let scale = mul_bounded(&rat_bounded(radius, p), &inv, p);
+    let scale = HpBounded::of_rat(radius, p).mul(&inv, p);
     let coord = |k: usize| {
-        let radial = mul_bounded(&rat_bounded(e1[k], p), &scale, p);
-        add_bounded(&rat_bounded(centre[k], p), &radial, p)
+        let radial = HpBounded::of_rat(e1[k], p).mul(&scale, p);
+        HpBounded::of_rat(centre[k], p).add(&radial, p)
     };
     Some([coord(0), coord(1), coord(2)])
 }
@@ -2645,7 +2610,7 @@ pub fn inv_sqrt_exact(v: Rat) -> Option<Rat> {
 ///
 /// `None` when `v ≤ 0` — there is no frame normal with a non-positive squared length, so that is a
 /// broken premise rather than an unusual input.
-pub fn inv_sqrt_bounded(v: Rat, prec: usize) -> Option<(BigFloat, Mag)> {
+pub fn inv_sqrt_bounded(v: Rat, prec: usize) -> Option<HpBounded> {
     if v <= Rat::from_int(0) {
         return None;
     }
@@ -2691,7 +2656,7 @@ pub fn bigint_to_bigfloat(x: &num_bigint::BigInt, prec_floor: usize) -> BigFloat
 ///
 /// **Uncached** — the wide population is a fraction of a percent of pushes and the memo key
 /// would be a `BigInt`; measured before optimizing, per the cache philosophy.
-pub fn inv_sqrt_bigint_bounded(v: &num_bigint::BigInt, prec: usize) -> Option<(BigFloat, Mag)> {
+pub fn inv_sqrt_bigint_bounded(v: &num_bigint::BigInt, prec: usize) -> Option<HpBounded> {
     if v.sign() != num_bigint::Sign::Plus {
         return None;
     }
@@ -2701,16 +2666,13 @@ pub fn inv_sqrt_bigint_bounded(v: &num_bigint::BigInt, prec: usize) -> Option<(B
     let z = one.div(&x.sqrt(prec, HP_RM), prec, HP_RM);
     let u = Mag::pow2(-(prec as i64));
     let rel = u.times(Mag::of(4.0));
-    let mag = match z.exponent() {
-        Some(e) if !z.is_zero() => Mag::pow2(e as i64),
-        _ => Mag::ZERO,
-    };
-    Some((z, mag.times(rel)))
+    let error = Mag::above(&z).times(rel);
+    Some(HpBounded::new(z, error))
 }
 
 /// [`inv_sqrt_bounded`] without the memo — the evaluation itself, kept separate so no `INV_SQRT`
 /// borrow is held across the arbitrary-precision work.
-fn realize_inv_sqrt(v: Rat, prec: usize) -> (BigFloat, Mag) {
+fn realize_inv_sqrt(v: Rat, prec: usize) -> HpBounded {
     // As `i128`, not through `f64`: the loss would happen before astro-float saw the value.
     let ip = prec.max(128);
     let n = BigFloat::from_i128(*v.0.numer(), ip);
@@ -2721,11 +2683,8 @@ fn realize_inv_sqrt(v: Rat, prec: usize) -> (BigFloat, Mag) {
     let u = Mag::pow2(-(prec as i64));
     // `½ + 1 + 1 = 2.5`, rounded up. Relative, so it is scaled by the result's magnitude below.
     let rel = u.times(Mag::of(4.0));
-    let mag = match z.exponent() {
-        Some(e) if !z.is_zero() => Mag::pow2(e as i64), // `|x| < 2^exponent`
-        _ => Mag::ZERO,
-    };
-    (z, mag.times(rel))
+    let error = Mag::above(&z).times(rel); // `|x| < 2^exponent`
+    HpBounded::new(z, error)
 }
 
 /// **`1/√v` as the `f64` nearest the true value**, or `None` when `v ≤ 0`.
@@ -2768,7 +2727,10 @@ pub fn inv_sqrt_f64(v: Rat) -> Option<f64> {
 /// [`inv_sqrt_f64`]'s general branch without the memo or the exact test.
 fn realize_inv_sqrt_rounded(v: Rat) -> f64 {
     for (i, prec) in [128usize, 256].into_iter().enumerate() {
-        let (z, rad) = realize_inv_sqrt_memoized(v, prec);
+        let HpBounded {
+            value: z,
+            error: rad,
+        } = realize_inv_sqrt_memoized(v, prec);
         if let Some(f) = round_to_f64(&z, rad, prec) {
             if i > 0 {
                 INV_SQRT_ESCALATED.with_borrow_mut(|(e, _)| *e += 1);
@@ -2777,12 +2739,12 @@ fn realize_inv_sqrt_rounded(v: Rat) -> f64 {
         }
     }
     INV_SQRT_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
-    let (z, _) = realize_inv_sqrt_memoized(v, 256);
+    let z = realize_inv_sqrt_memoized(v, 256).value;
     to_f64_exact(&z).unwrap_or(f64::NAN)
 }
 
 /// [`inv_sqrt_bounded`] for a `v` already known positive.
-fn realize_inv_sqrt_memoized(v: Rat, prec: usize) -> (BigFloat, Mag) {
+fn realize_inv_sqrt_memoized(v: Rat, prec: usize) -> HpBounded {
     inv_sqrt_bounded(v, prec).expect("v > 0 checked by the caller")
 }
 
@@ -2836,7 +2798,10 @@ pub fn inv_sqrt_error_of(v: Rat, f: f64) -> Option<f64> {
         }
     }
     const P: usize = 128; // the hp radius is then ~2⁻¹²⁸ against an ε-scale quantity
-    let (h, rad) = inv_sqrt_bounded(v, P)?;
+    let HpBounded {
+        value: h,
+        error: rad,
+    } = inv_sqrt_bounded(v, P)?;
     let diff = BigFloat::from_f64(f, P).sub(&h, P, HP_RM);
     let mag = if diff.is_zero() {
         0.0
@@ -3035,8 +3000,8 @@ impl Angle {
     /// property of the model it judges, not of this crate. (numer/denom pass through f64, exact
     /// for the small values used here; a general large-rational path would build from a string.)
     pub fn cos_sin_at(self, prec: usize) -> (BigFloat, BigFloat) {
-        let (c, s, _, _) = self.cos_sin_bounded(prec);
-        (c, s)
+        let (c, s) = self.cos_sin_bounded(prec);
+        (c.value, s.value)
     }
 
     /// `(cos, sin)` at `prec` bits **with an upper bound on how far each may be from the true
@@ -3063,8 +3028,8 @@ impl Angle {
     /// two, and a rotation's realization asks for the same angle once per point. See [`TRIG`] for
     /// why a process-wide memo is sound here and a handle-keyed one would not be.
     ///
-    /// Returns `(cos, sin, |Δcos|, |Δsin|)`.
-    pub fn cos_sin_bounded(self, prec: usize) -> (BigFloat, BigFloat, Mag, Mag) {
+    /// Returns `(cos, sin)`, each with the radius it carries.
+    pub fn cos_sin_bounded(self, prec: usize) -> (HpBounded, HpBounded) {
         if let Some(hit) = TRIG.with_borrow(|t| t.get(&(self, prec)).cloned()) {
             return hit;
         }
@@ -3078,7 +3043,7 @@ impl Angle {
     /// **Separate so no `TRIG` borrow is held across it.** `HP_CONSTS` is borrowed for the whole
     /// realization and the trig calls are the slow part; nesting the memo's borrow around that is
     /// how a re-entrant call would panic rather than merely be slow.
-    fn realize_cos_sin(self, prec: usize) -> (BigFloat, BigFloat, Mag, Mag) {
+    fn realize_cos_sin(self, prec: usize) -> (HpBounded, HpBounded) {
         HP_CONSTS.with_borrow_mut(|cc| {
             let pi = cc.pi(prec, HP_RM);
             let d180 = BigFloat::from_f64(180.0, prec);
@@ -3099,22 +3064,14 @@ impl Angle {
             // division, and π itself). The integers contribute nothing — they go in exactly.
             let rel = u.times(Mag::of(4.0));
             // `|θ|` in radians, over-estimated from its exponent (`|x| < 2^exponent`).
-            let theta = match rad.exponent() {
-                Some(e) if !rad.is_zero() => Mag::pow2(e as i64),
-                _ => Mag::ZERO,
-            };
-            let d_theta = theta.times(rel);
+            let d_theta = Mag::above(&rad).times(rel);
             let (c, s) = (rad.cos(prec, HP_RM, cc), rad.sin(prec, HP_RM, cc));
             // `|x| < 2^exponent` — the slope of the *other* function, and the scale of the
             // half-ulp of this one.
-            let ub = |x: &BigFloat| match x.exponent() {
-                Some(e) if !x.is_zero() => Mag::pow2(e as i64),
-                _ => Mag::ZERO,
-            };
-            let (uc, us) = (ub(&c), ub(&s));
+            let (uc, us) = (Mag::above(&c), Mag::above(&s));
             let err_cos = us.times(d_theta).plus(uc.times(u));
             let err_sin = uc.times(d_theta).plus(us.times(u));
-            (c, s, err_cos, err_sin)
+            (HpBounded::new(c, err_cos), HpBounded::new(s, err_sin))
         })
     }
 
@@ -3209,8 +3166,11 @@ impl Angle {
     /// 256-bit midpoint is. It is counted so that "can't happen" does not quietly become "happens".
     fn realize_rounded_f64(self) -> (f64, f64) {
         for (i, prec) in [128usize, 256].into_iter().enumerate() {
-            let (c, s, rc, rs) = self.cos_sin_bounded(prec);
-            if let (Some(cf), Some(sf)) = (round_to_f64(&c, rc, prec), round_to_f64(&s, rs, prec)) {
+            let (c, s) = self.cos_sin_bounded(prec);
+            if let (Some(cf), Some(sf)) = (
+                round_to_f64(&c.value, c.error, prec),
+                round_to_f64(&s.value, s.error, prec),
+            ) {
                 if i > 0 {
                     ROUND_ESCALATED.with_borrow_mut(|(e, _)| *e += 1);
                 }
@@ -3218,10 +3178,10 @@ impl Angle {
             }
         }
         ROUND_ESCALATED.with_borrow_mut(|(_, f)| *f += 1);
-        let (c, s, _, _) = self.cos_sin_bounded(256);
+        let (c, s) = self.cos_sin_bounded(256);
         (
-            to_f64_exact(&c).unwrap_or(f64::NAN),
-            to_f64_exact(&s).unwrap_or(f64::NAN),
+            to_f64_exact(&c.value).unwrap_or(f64::NAN),
+            to_f64_exact(&s.value).unwrap_or(f64::NAN),
         )
     }
 
@@ -3255,7 +3215,7 @@ impl Angle {
     /// `f64` to zero and a zero radius claims exactness; this quantity is always ε-scale, so that
     /// hazard is absent — and the consumer is `WitnessPoint::tol`, which is `f64`.
     ///
-    /// The reading is at octave granularity (`bf_mag` is `2^exponent`), so it can sit up to 2×
+    /// The reading is at octave granularity (`2^exponent` of the residual), so it can sit up to 2×
     /// above the true error. Conservative in the sound direction, and still a measurement.
     pub fn realization_error_of(self, c: f64, s: f64) -> (f64, f64) {
         let key = (self, c.to_bits(), s.to_bits());
@@ -3281,7 +3241,9 @@ impl Angle {
         {
             return (0.0, 0.0);
         }
-        let (hc, hs, rc, rs) = self.cos_sin_bounded(P);
+        let (hc, hs) = self.cos_sin_bounded(P);
+        let (rc, rs) = (hc.error, hs.error);
+        let (hc, hs) = (hc.value, hs.value);
         let gap = |f: f64, h: &BigFloat, rad: Mag| {
             let diff = BigFloat::from_f64(f, P).sub(h, P, HP_RM);
             let mag = if diff.is_zero() {
@@ -5523,7 +5485,8 @@ mod tests {
     #[test]
     fn the_rounding_check_refuses_an_undecidable_interval() {
         let a = Angle::from_deg(Rat::new(37, 1).unwrap()).unwrap();
-        let (c, _, rc, _) = a.cos_sin_bounded(128);
+        let (c, _) = a.cos_sin_bounded(128);
+        let (c, rc) = (c.value, c.error);
         assert!(
             round_to_f64(&c, rc, 128).is_some(),
             "a 2^-128 radius is decidable"
@@ -5534,7 +5497,8 @@ mod tests {
         // straddles zero forever. This is why `cos_sin_f64` resolves the family first.
         let a90 = Angle::from_deg(Rat::from_int(90)).unwrap();
         for prec in [128usize, 256, 512] {
-            let (c90, _, r90, _) = a90.cos_sin_bounded(prec);
+            let (c90, _) = a90.cos_sin_bounded(prec);
+            let (c90, r90) = (c90.value, c90.error);
             assert!(
                 round_to_f64(&c90, r90, prec).is_none(),
                 "cos 90 became decidable at {prec}, which would make the quadrantal branch optional"
@@ -5750,8 +5714,8 @@ mod tests {
             "the second ask must be answered, not recomputed"
         );
         assert_eq!(
-            (first.0.clone(), first.2),
-            (again.0.clone(), again.2),
+            (first.0.value.clone(), first.0.error),
+            (again.0.value.clone(), again.0.error),
             "and answered with the same value"
         );
 
@@ -5762,14 +5726,17 @@ mod tests {
             before + 1,
             "74/2 is 37/1: a second entry means the key is the spelling, not the angle"
         );
-        assert_eq!((first.0, first.2), (spelled.0, spelled.2));
+        assert_eq!(
+            (first.0.value.clone(), first.0.error),
+            (spelled.0.value.clone(), spelled.0.error)
+        );
 
         // …and precision *is* part of the key: a different depth is a different answer, so reusing
         // an entry across depths would hand back coordinates realized at the wrong one.
         let deeper = deg(37, 1).cos_sin_bounded(prec + 64);
         assert_eq!(trig_entries(), before + 2, "precision must key the memo");
         assert_ne!(
-            deeper.2, again.2,
+            deeper.0.error, again.0.error,
             "a deeper realization has a smaller bound"
         );
     }
@@ -5818,7 +5785,9 @@ mod tests {
         for prec in [128usize, 200, 256, 512, 1024] {
             for (num, den) in angles {
                 let a = Angle::from_deg(Rat::new(num, den).unwrap()).unwrap();
-                let (c, s, bc, bs) = a.cos_sin_bounded(prec);
+                let (c, s) = a.cos_sin_bounded(prec);
+                let (bc, bs) = (c.error, s.error);
+                let (c, s) = (c.value, s.value);
                 let deep = prec + 512;
                 let (rc, rs) = a.cos_sin_at(deep);
                 for (got, reference, bound, what) in [(&c, &rc, bc, "cos"), (&s, &rs, bs, "sin")] {
@@ -5908,9 +5877,12 @@ mod tests {
         for prec in [128usize, 256, 512] {
             for (num, den) in INV_SQRT_CASES {
                 let v = Rat::new(num, den).unwrap();
-                let (z, bound) = inv_sqrt_bounded(v, prec).unwrap();
+                let HpBounded {
+                    value: z,
+                    error: bound,
+                } = inv_sqrt_bounded(v, prec).unwrap();
                 let deep = prec + 512;
-                let (rz, _) = inv_sqrt_bounded(v, deep).unwrap();
+                let rz = inv_sqrt_bounded(v, deep).unwrap().value;
                 let diff = z.sub(&rz, deep, HP_RM);
                 let Some(de) = (if diff.is_zero() {
                     None
@@ -5985,7 +5957,7 @@ mod tests {
             let r = Rat::new(v.0, v.1).unwrap();
             assert_eq!(inv_sqrt_exact(r), None);
             assert_eq!(inv_sqrt_f64(r), None);
-            assert_eq!(inv_sqrt_bounded(r, 128), None);
+            assert!(inv_sqrt_bounded(r, 128).is_none());
         }
     }
 
@@ -5999,7 +5971,7 @@ mod tests {
         let before = INV_SQRT_ESCALATED.with_borrow(|c| *c);
         for (num, den) in INV_SQRT_CASES {
             let v = Rat::new(num, den).unwrap();
-            let (deep, _) = inv_sqrt_bounded(v, 1024).unwrap();
+            let deep = inv_sqrt_bounded(v, 1024).unwrap().value;
             let want = to_f64_exact(&deep).unwrap();
             assert_eq!(
                 inv_sqrt_f64(v),
@@ -6030,7 +6002,10 @@ mod tests {
             let v = Rat::new(num, den).unwrap();
             let f = inv_sqrt_f64(v).unwrap();
             let reported = inv_sqrt_error_of(v, f).unwrap();
-            let (deep, deep_rad) = inv_sqrt_bounded(v, 1024).unwrap();
+            let HpBounded {
+                value: deep,
+                error: deep_rad,
+            } = inv_sqrt_bounded(v, 1024).unwrap();
             let true_err = hp_err_exp(&deep, f);
             // A `BigFloat` is `m · 2^e` with `m ∈ [0.5, 1)`, so the exponent gives
             // `2^(e−1) ≤ |f − deep| < 2^e` — the *lower* end is what a bound has to clear. Using
@@ -6451,20 +6426,21 @@ mod decimal_realization {
         // the rounding is done here by hand, so this is an oracle and not a restatement.
         let want = "1.4142135623730950488016887242096980785697";
         for p in [256usize, 512, 1024] {
-            let (v, e) = sqrt_bounded(two, p).expect("a positive radicand");
+            let HpBounded { value: v, error: e } =
+                sqrt_bounded(two, p).expect("a positive radicand");
             let d = round_to_digits(&v, e, 40).expect("40 places at this precision");
             assert_eq!(d, want, "prec {p}");
         }
         // A rational-valued QuadVal takes the exact road.
         let q = quad::QuadVal::from_rat(Rat::new(1, 8).unwrap());
-        let (v, e) = realize_quad(&q, 256).expect("rational");
+        let HpBounded { value: v, error: e } = realize_quad(&q, 256).expect("rational");
         assert_eq!(
             round_to_digits(&v, e, 20).as_deref(),
             Some("0.12500000000000000000")
         );
         // A perfect square resolves rather than being approached: 3 + 2·√4 = 7.
         let q = quad::QuadVal::new(Rat::from_int(3), Rat::from_int(2), Rat::from_int(4)).unwrap();
-        let (v, e) = realize_quad(&q, 256).expect("resolves");
+        let HpBounded { value: v, error: e } = realize_quad(&q, 256).expect("resolves");
         assert_eq!(round_to_digits(&v, e, 5).as_deref(), Some("7.00000"));
     }
 
@@ -6476,12 +6452,12 @@ mod decimal_realization {
         let out = realize_seam_point([r(0); 3], [r(1), r(0), r(0)], r(5), 256).expect("ok");
         let got: Vec<_> = out
             .iter()
-            .map(|(v, e)| round_to_digits(v, *e, 10).expect("decided"))
+            .map(|b| round_to_digits(&b.value, b.error, 10).expect("decided"))
             .collect();
         assert_eq!(got, ["5.0000000000", "0.0000000000", "0.0000000000"]);
         // e1 = (1,1,0): the seam is at radius/√2 on each of x and y.
         let out = realize_seam_point([r(0); 3], [r(1), r(1), r(0)], r(1), 512).expect("ok");
-        let x = round_to_digits(&out[0].0, out[0].1, 20).expect("decided");
+        let x = round_to_digits(&out[0].value, out[0].error, 20).expect("decided");
         assert_eq!(x, "0.70710678118654752440");
     }
 

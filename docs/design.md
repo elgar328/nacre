@@ -1525,7 +1525,7 @@ plane_hp_through}` — 동차점 `[Dvec : D]` 셋의 **사영 join**(3×4 의 �
 (`docs/truth-and-cache.md` 열린 항목 16).
 
 ★★★★ **16-1 (2026-08-09) — 프레임 벽이 순수-혼합 population 에 열렸다.** 새 부품:
-`HpApprox::{div, inv_sqrt}`(구간 나눗셈·역제곱근 — 실현은 나눠도 된다, 금지는 술어의 부호
+`HpBounded::{div, inv_sqrt}`(구간 나눗셈·역제곱근 — 실현은 나눠도 된다, 금지는 술어의 부호
 질문), **`MoveNode::FrameThrough`**(정의점 셋을 싣고 정준 기저를 구간으로 유도 — 분기는 고정
 128비트 실현에서 한 번 판정해 저장), topo 의 **진술 interning**(`surface_through_ids`), ops 의
 원인 3분기 + `frame_chain` 제3 도로 + `collect_planes` 이종-사슬 가지(`plane_iv`/`plane_hp` 는
@@ -1545,8 +1545,8 @@ population 100% 가 됐다. ★★★★★ **16-3 (2026-08-09) — 열린 항�
 걸친-datum 위의 **불리언이 열렸다**(Common 통과·부피 정확·434 climbs — Wide 와 같은 자릿수).
 클래스 병합은 probe 의 동일 사슬 → `shared_base` 증명된 0. 판정층 새 기계 0.
 `plane_iv_through` 는 소비자 없이 은퇴(잠금은 Pure-대-Meet 차등으로 이사).
-- **나누지 않는다.** `Dvec/D` 로 아핀 좌표를 만드는 것은 무리수를 제조하는 일이고, `Approx` 에
-  나눗셈이 없고 `HpApprox::div_exact` 가 반경 0 을 요구하는 것이 그 규율의 집행이다.
+- **나누지 않는다.** `Dvec/D` 로 아핀 좌표를 만드는 것은 무리수를 제조하는 일이고, `Bounded` 에
+  나눗셈이 없고 `HpBounded::div_exact` 가 반경 0 을 요구하는 것이 그 규율의 집행이다.
 - **차수 9**(아핀 외적 경로는 15) — 구간 폭과 요구 정밀도가 그만큼 준다.
 - **배율 부호는 값 안에서 없앤다** — 결과가 참 평면의 `D0·D1·D2` 배라 음수면 방향이 뒤집히고,
   `Judge::plane_iv` 시그니처에 부호를 실을 자리가 없다.
