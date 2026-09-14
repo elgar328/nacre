@@ -554,13 +554,13 @@ pub struct EdgeCache     { curve: Curve }                          // 평가 가
 // |---|---|---|
 // | `Plane::distance_eps(p)` | **이 거리 계산**의 f64 반올림, `3ε·Σ|pᵢ−oᵢ|` — **`p` 에 의존**(두 연산자) | ✔ 있음, **저장 불가** |
 // | `SurfaceCache.tol`       | **이 평면 자신**이 참 평면에서 얼마나 떨어졌나 — 평면의 성질(한 연산자) | ✗ 없음 **+ 동기 미확인**(아래) |
-// | `PointCache.tol`         | 같은 것의 정점판(*"measured residual"*)                                  | ✔ 있음 |
+// | `PointCache::Measured.residual` | 같은 것의 정점판(*"measured residual"*; 2026-09-15 까지 `PointCache.tol`)   | ✔ 있음 |
 //
 // ⚠ 「곡면당 저장하는 tol 은 틀린 양」은 **첫째에만** 맞다. 그 근거는 코드가 적어 뒀다 —
 //   *"the tolerance it has to hand is the vertex's … a point that is exactly on the plane can
 //   still produce a nonzero residual"*, 그리고 그 사고가 실재했다(*"residual **exactly equal** to
 //   the claimed tolerance, saved only by the comparison being strict"*).
-// ☑ 반면 **둘째는 `PointCache.tol` 의 곡면판**이므로 저장하는 게 옳고, **없는 것은 「대체됐다」가
+// ☑ 반면 **둘째는 `PointCache::Measured.residual` 의 곡면판**이므로 저장하는 게 옳고, **없는 것은 「대체됐다」가
 //   아니라 「아직 안 지었다」**다. 만드는 법은 이 절이 이미 적었다(아래: 세 정점의 실현에서 유도).
 // ☑ `inv_norm` 도 «없는 게 아니라 다른 배치»다: 오늘 `Plane` 은 **단위 법선**(구성 시 한 번 정규화)
 //   + `raw`(정확 계수용)를 들어 같은 정보를 갖는다. 계수 우선 캐시를 고를 때만 필요한 필드다.
@@ -624,7 +624,8 @@ m.surface_cache(h).name()        -> Option<&PlaneName>
 m.surface_cache(h).tol()         -> ⏸ 「8·캐시 실형」
 m.surface_cache(h).distance(p)   -> f64                         // 다형 질의는 캐시가 가른다
 m.vertex_cache(v)                -> &PointCache                 // 변종(Unmeasured | Measured) — §캐시
-//   조각은 그 위에서 `match` — 발견이면 `[Bounded;3]`, 구성이면 좌표만. (오늘은 coord()/tol() 둘로 갈렸다.)
+//   조각은 그 위에서 `match` — `Measured { coord, residual }` 면 잔차 하나, `Unmeasured` 면 좌표만(✔ 2026-09-15;
+//   «발견이면 `[Bounded;3]`» 이라 적혀 있었는데 §캐시가 반증한 그 처방이었다). 오늘 `vertex_point()`/`vertex_tol()` 도 산다.
 m.edge_cache(e).curve()          -> &Curve                     // (오차 err 은 M7 후보 — 위 §캐시)
 ```
 
@@ -902,7 +903,7 @@ pub enum Decision {
 (진실 enum = `Surface`, 아레나가 그것을 든다; 열린 항목 8). ⚠★★★ **`SurfaceCache.tol` 은 «안 지음»이
 아니라 «동기 미확인»이다**(2026-09-13 실측): 소비자 **0**, 그리고 정점과 달리 **곡면 진실은 정확**해
 (`Known` = 유리수 점 셋, 원통 = 유리수 `CylinderDef`) «참 곡면에서 떨어진 잔차»가 애초에 없다 — 발견
-정점은 세 평면의 f64 해라 면에서 떠 있지만(그래서 `PointCache.tol` 이 실물, 14 소비자), 곡면은 그렇지
+정점은 세 평면의 f64 해라 면에서 떠 있지만(그래서 `PointCache::Measured.residual` — `vertex_tol` — 이 실물, 14 소비자), 곡면은 그렇지
 않다. f64 계수의 반올림은 `distance_eps` 로 **질의 때** 나온다(저장 불가). 유일한 후보는 `Through` datum
 평면이 세 정점의 tol 을 유도해 무는 것인데 그나마 **하중 없는 지름길**이다. ⇒ 「곡면 실현」 칸은 필드를
 짓기 전에 **정말 필요한가부터** 확인한다(대칭이 만든 유령 필드일 수 있다 — 「소비자 없는 배관 금지」).
@@ -1370,7 +1371,7 @@ STEP 출력, undo/replay.
     | **B. 수치 정밀도** | 각 좌표를 몇 비트로 **실현**하나 | ✗ **없다** |
 
     실측: `nacre-tess/src/lib.rs:480` 이 `model.vertex_point(v)` 로 **f64 캐시**를 읽는다 —
-    그 캐시는 자기 오차를 `PointCache.tol` 로 들고 있다(즉 **최근접 f64 가 아닐 수 있다**).
+    그 캐시는 자기 오차를 `PointCache::Measured { residual }` 로 들고 있다(즉 **최근접 f64 가 아닐 수 있다**).
     ⇒ 화면에는 충분하지만, 내보내기(OBJ·STEP)는 **고정밀 실현 → 한 번만 반올림**을 원한다.
 
     ☑ **기계는 이미 있다**: `nacre-scalar` 의 `HpBounded`(`add`/`sub`/`mul`/`div`/`inv_sqrt` 전부
@@ -1657,7 +1658,7 @@ STEP 출력, undo/replay.
     | (안 셈) | `predicate.rs` 의 벽 *"`Approx` 는 `pub(crate)` 여야 한다"* — 지키던 건 가시성이 아니라 «`PlaneWitness`(ops 가 구현하는 trait)가 구현자에게 반경을 지어내라 하지 않는다»였다. 새 문장이 그것을 든다 |
 
     **한 것.** 3단계(`819df02`, 먼저 — 1·2 와 독립): `PointCache { coord, tol: Option<f64> }` →
-    **`Unmeasured(Point3) | Measured { coord, residual }`**, 문 `push_vertex(def, PointCache)`(34곳: 31 미측정 · 3 측정),
+    **`Unmeasured(Point3) | Measured { coord, residual }`**, 문 `push_vertex(def, PointCache)`(34곳: 리터럴 미측정 29 · 측정 3 · 변수 2),
     읽기 문 `vertex_cache(h)`(§문의 이름의 첫 사례). 1단계(`6f7bf23`): `Approx`/`HpApprox` → **`Bounded`/`HpBounded`**,
     집은 `nacre-scalar/src/bounded.rs`(서문 «두 기계는 한 파일에 산다» + 사고 기록이 함께 갔다); scalar 의 중복 다섯
     흡수, 「|x| 의 상계」 네 철자 → **`Mag::above`** 하나 + `Mag::below`, `HP_RM` 하나, `rat_to_hp`/`bigint_to_hp` →
@@ -1673,9 +1674,11 @@ STEP 출력, undo/replay.
     이었다 — 쓰는 쪽이 정했다.
 
     ★★ **0단계 — 흡수의 유일한 실제 위험을 «잠금 자신»으로 쟀다.** `Mag::above` 의 0 가드는 정확히 0 인 approached
-    좌표에 반경 0 을 주고, `realize_vertex.rs` 의 approached-팔 잠금은 «0 아님»을 단언한다. 실측: **초록 — 인구 0**
-    (`tilted_frame(1)` 에 그런 축이 오늘 없다; 인구가 오면 잠금을 정확 팔의 규칙 — readout 이 값이면 0 허용 — 으로
-    정밀화한다, 약화가 아니다). 「결정된 자릿수」 계기는 **408 → 450 checked, 0 wrong** — 조인 반경이 42개 비교를
+    좌표에 반경 0 을 주고, `realize_vertex.rs` 의 approached-팔 잠금은 «0 아님»을 단언했다. 실측: 잠금의 픽스처
+    `tilted_frame(1)` 엔 0 — 그러나 감사의 프로브가 **`cylinder()` 에 1** 을 찾았다(축 위 seam 점: 정확한 중심 0 ·
+    정확한 방향 0 ⇒ 청구할 반올림이 없다). ⇒ 잠금을 **정밀화**했다(약화가 아니다): 0 반경은 **값이 정확히 0 인 좌표에만**
+    허용 — 이 팔이 벌 수 있는 유일한 정확값(`add`/`mul` 은 결과가 0 일 때만 반올림을 안 청구한다) — 이고 `cylinder()` 를
+    픽스처에 넣어 그 정직한 0 을 양성 대조(`zero_earned > 0`)로 삼았다. 「결정된 자릿수」 계기는 **408 → 450 checked, 0 wrong** — 조인 반경이 42개 비교를
     더 결정했고 하나도 틀리지 않았다. perf 같은-세션 A/B 는 잡음 안, 에스컬레이션 계수 잠금 초록.
 
     ⏭ **넘김**: `SeamVertex { point, tol }`(「점 + 잔차」의 넷째 철자 — `PointCache::Measured` 를 그대로 들 수 있다,

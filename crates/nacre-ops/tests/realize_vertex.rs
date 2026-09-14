@@ -570,61 +570,81 @@ fn the_cache_is_not_always_nearest() {
 /// promise. An approached coordinate must not be able to say it: at 4096 bits the radius is near
 /// `2⁻⁴⁰⁹¹`, and reading it out through `2f64.powi` flushed every coordinate to `0e0`. Measured,
 /// shipped, and caught only by this file's audit — so the lock lives here now.
+///
+/// One exception, earned rather than claimed (2026-09-15): a coordinate that is exactly zero from
+/// exact inputs carries a zero radius honestly — `Mag::above`'s zero guard leaves nothing to
+/// charge — and zero is the only value this arm can earn that way, so a zero radius must sit on
+/// a zero value. The cylinder's axis seam is the fixture that has one; the tilted frame has none.
 #[test]
 fn an_approached_coordinate_never_claims_to_be_exact() {
-    let m = tilted_frame(1);
-    let (mut approached, mut exact) = (0usize, 0usize);
-    for vh in live_vertices(&m) {
-        for bits in [128usize, 512, 1024, 2048, 4096] {
-            let Ok(r) = realize_vertex(&m, vh, Precision::Bits(bits)) else {
-                continue;
-            };
-            let Some((v, e)) = r.to_f64() else { continue };
-            if r.is_exact() {
-                // ⚠ **Not `[0.0; 3]`.** An exact *realization* still rounds when it is read out
-                // at 53 bits, and the tilted family's coordinates are 59 bits wide. Zero is
-                // allowed only where the rational really is an `f64`; where it is not, the error
-                // must be positive and no wider than half an ulp. An earlier spelling of this
-                // lock asserted zero and so pinned the lie it was written to catch.
-                let d = r
-                    .to_decimal(60)
-                    .expect("an exact realization prints every place");
-                for k in 0..3 {
-                    let readout_is_the_value = format!("{:.60}", v[k]) == d[k];
-                    match readout_is_the_value {
-                        true => assert!(e[k].is_zero(), "a representable rational has no error"),
-                        false => {
-                            assert!(
-                                !e[k].is_zero(),
-                                "a rounded readout reported no error: {}",
-                                d[k]
-                            );
-                            assert!(
-                                e[k].lt(
-                                    nacre_scalar::Mag::of(v[k]).times(nacre_scalar::Mag::pow2(-51))
-                                ),
-                                "error {:?} is wider than an ulp of {}",
-                                e[k],
-                                v[k]
-                            );
+    let (mut approached, mut exact, mut zero_earned) = (0usize, 0usize, 0usize);
+    for m in [cylinder(), tilted_frame(1)] {
+        for vh in live_vertices(&m) {
+            for bits in [128usize, 512, 1024, 2048, 4096] {
+                let Ok(r) = realize_vertex(&m, vh, Precision::Bits(bits)) else {
+                    continue;
+                };
+                let Some((v, e)) = r.to_f64() else { continue };
+                if r.is_exact() {
+                    // ⚠ **Not `[0.0; 3]`.** An exact *realization* still rounds when it is read out
+                    // at 53 bits, and the tilted family's coordinates are 59 bits wide. Zero is
+                    // allowed only where the rational really is an `f64`; where it is not, the error
+                    // must be positive and no wider than half an ulp. An earlier spelling of this
+                    // lock asserted zero and so pinned the lie it was written to catch.
+                    let d = r
+                        .to_decimal(60)
+                        .expect("an exact realization prints every place");
+                    for k in 0..3 {
+                        let readout_is_the_value = format!("{:.60}", v[k]) == d[k];
+                        match readout_is_the_value {
+                            true => {
+                                assert!(e[k].is_zero(), "a representable rational has no error")
+                            }
+                            false => {
+                                assert!(
+                                    !e[k].is_zero(),
+                                    "a rounded readout reported no error: {}",
+                                    d[k]
+                                );
+                                assert!(
+                                    e[k].lt(nacre_scalar::Mag::of(v[k])
+                                        .times(nacre_scalar::Mag::pow2(-51))),
+                                    "error {:?} is wider than an ulp of {}",
+                                    e[k],
+                                    v[k]
+                                );
+                            }
                         }
                     }
+                    exact += 1;
+                    continue;
                 }
-                exact += 1;
-                continue;
+                // ★ A zero radius is allowed on this arm only where it is earned, and the machine
+                // can earn exactly one value: zero. Every `add`/`mul` charges `round_off(result)`,
+                // which `Mag::above`'s zero guard makes zero only for a zero result — so a seam
+                // point's axis coordinate (exact centre 0, exact direction 0) is exact and says
+                // so, while a flushed radius on any nonzero coordinate still fails here.
+                for k in 0..3 {
+                    if e[k].is_zero() {
+                        assert_eq!(
+                            v[k], 0.0,
+                            "a realization at {bits} bits reported no error on a nonzero \
+                             coordinate — the exact arm's answer, unearned"
+                        );
+                        zero_earned += 1;
+                    }
+                }
+                approached += 1;
             }
-            for c in e {
-                assert!(
-                    !c.is_zero(),
-                    "a realization at {bits} bits reported no error — that is the exact arm's \
-                     answer, and this coordinate is not exact"
-                );
-            }
-            approached += 1;
         }
     }
-    // Both arms have to be present, or this measures one of them and calls it both.
+    // Both arms have to be present, or this measures one of them and calls it both — and the
+    // earned zero has to occur, or the rule above is never exercised.
     assert!(approached > 8, "only {approached} approached readings");
+    assert!(
+        zero_earned > 0,
+        "no earned zero radius — the cylinder's axis seam is the positive control"
+    );
     assert!(
         exact > 0,
         "no exact reading — the negative control is missing"

@@ -20853,8 +20853,8 @@ census 태그 · **진짜 결함**. ☑ **인구에 있으면서 결함이 아�
 
 | 커밋 | 무엇 | 실측 |
 |---|---|---|
-| `819df02` 3단계 | `PointCache` 변종화, `push_vertex(def, PointCache)` 34곳(31 미측정·3 측정), `vertex_cache(h)`(§문의 이름의 첫 사례 — 접근자 셋 다 없었다), `vertex_point`/`vertex_tol` 서명 유지(소비자 132곳 무변) | census 398 ≡ · 스윕 델타 **0**(고유 이름 260→260) |
-| `6f7bf23` 1단계 | `bounded.rs` 신설(서문 «한 파일에 사는 이유» + 사고 기록 동반), `Bounded`/`HpBounded`, 중복 다섯 흡수, `Mag::above`/`below`, `HP_RM` 하나, `HpBounded::of_rat`/`of_bigint`, `realize` 가 `[HpBounded;3]` 그대로, `sqrt_bounded` `pub(crate)`, 벽 주석 둘 정정, `interval.rs` 소멸(테스트 8 이사 + `an_exact_zero_is_charged_no_rounding` 신설 = 9) | **0단계 인구 0**(잠금 초록) · 「결정된 자릿수」 **408 → 450 checked, 0 wrong**(`eprintln` 한 줄을 계기에 남김) · census 398 ≡ · perf A/B 잡음 안 · 스윕 **예측 +3, 실측 +7**(아래) |
+| `819df02` 3단계 | `PointCache` 변종화, `push_vertex(def, PointCache)` 34곳(리터럴 미측정 29·측정 3·변수 2), `vertex_cache(h)`(§문의 이름의 첫 사례 — 접근자 셋 다 없었다), `vertex_point`/`vertex_tol` 서명 유지(소비자 132곳 중 130 무변 — `reuse`·`validate` 둘은 일부러 변종을 직접 든다) | census 398 ≡ · 스윕 델타 **0**(고유 이름 260→260) |
+| `6f7bf23` 1단계 | `bounded.rs` 신설(서문 «한 파일에 사는 이유» + 사고 기록 동반), `Bounded`/`HpBounded`, 중복 다섯 흡수, `Mag::above`/`below`, `HP_RM` 하나, `HpBounded::of_rat`/`of_bigint`, `realize` 가 `[HpBounded;3]` 그대로, `sqrt_bounded` `pub(crate)`, 벽 주석 둘 정정, `interval.rs` 소멸(테스트 8 이사 + `an_exact_zero_is_charged_no_rounding` 신설 = 9) | **0단계: 잠금 초록 = 그 픽스처에서 인구 0**(⚠ 감사가 `cylinder()` 에서 1 을 찾았다 — 아래) · 「결정된 자릿수」 **408 → 450 checked, 0 wrong**(`eprintln` 한 줄을 계기에 남김) · census 398 ≡ · perf A/B 잡음 안 · 스윕 **예측 +3, 실측 +7**(아래) |
 | `b3f319c` 2단계 | `WitnessPoint { coord, tol }` → `realized: [Bounded;3]` + `coord()`/`tol()`; 축별 25+37, 통째 39+30(frame3) + 그 밖 29(ops 28 · cip `predicate` 1); **지퍼 `pt_iv` 소멸, 호출자 17곳 인라인** | census 398 ≡ |
 | 이 칸 4단계 | `WorkingCyl.cache` → `realized`(필드·리터럴 5·읽기 4), 항목 23 ✔, **항목 28**(STEP 통로), `칸 ㊸` 미래형 참조 셋 정정, «f64 가 둘» 문단·§판정 그림 정정 | census 398 ≡ |
 
@@ -20893,6 +20893,20 @@ census 태그 · **진짜 결함**. ☑ **인구에 있으면서 결함이 아�
 - 1단계 문서 스크립트가 10번째 편집에서 멈췄다(원문 들여쓰기 3칸) — 앞 아홉은 이미 적용된 채. 정확-문자열
   스크립트는 «하나씩 쓰고 다음을 검사»하므로 멈춘 자리부터 손으로 이었다.
 - `git stash -u` A/B 를 여섯 번(census ×4 · perf · `realize_vertex` 전후) — 복구 뒤 dirty 수를 매번 확인했다(`probe-revert` 사고의 부류).
+
+### ★★★★ 감사(사용자 요청) — 다섯을 고쳤고, 하나는 잠금을 정밀화했다
+
+| # | 무엇 | 부류 |
+|---|---|---|
+| ★ **1** | «0단계 인구 0» 은 **잠금의 픽스처에서만** 참이었다. 프로브(임시 테스트, 지움): `tilted_frame(1)` 0 · **`cylinder()` 1** — 축 위 seam 점, 값 0·반경 0. 잠금의 전제 «approached 는 결코 0 아님»이 실재 픽스처에서 거짓 ⇒ 플랜의 계약대로 **정밀화**: 0 반경은 값이 정확히 0 일 때만(이 팔이 벌 수 있는 유일한 정확값), `cylinder()` 를 픽스처에 넣어 양성 대조. ⚠ 첫 철자는 `to_decimal(60)`(점 **전체**가 결정될 때만 `Some`)로 비교해 **다른 두 좌표** 때문에 빨개졌다 — 규칙을 «값 == 0» 으로 다시 썼다 | 픽스처 밖의 인구 |
+| **2** | «34곳: 31 미측정 · 3 측정» → **리터럴 29 · 3 · 변수 2** — 변수 자리 둘을 `None` 으로 셌다 | 인구 세기 |
+| **3** | «소비자 132곳 무변» → **130** — `reuse`·`validate` 는 내가 일부러 바꿨다. 한 일을 «무변»이라 적었다 | 두 번 적힌 사실 |
+| **4** | «테스트 12 이사» → **8**(+신설 1). «stash 네 번» → 여섯. ops 재작성 수 재합산 | 안 센 값 |
+| **5** | 문서 다섯 줄이 없는 필드 `PointCache.tol` 을 현재형으로(`:557`·`:563`·`:905`·`:1373`·design `:347`), 그리고 §문의 이름 `:627` *"발견이면 `[Bounded;3]`"* — 1단계 `Bounded` 표에서 «f64, 무변»이라 분류한 그 줄이 **반증된 처방**이었다 | 이름은 살고 문장은 낡음 |
+
+☑ 맞았던 것: 인라인 0 가드 잔여 0 · `WorkingPlane.cache` 는 정정문의 인용뿐 · `point_width` 계기 출력이 파일 머리
+기록표와 일치(corner 16/16/7 · twice 32/32/7, 잔차 인구 `tol>0 max=0`) · `WorkingCyl` 5+4 · 항목 28 의 «10곳».
+★ 1번이 말하는 것: **«잠금 초록»은 «잠금의 픽스처에 없음»이지 «없음»이 아니다** — 인구는 잠금 밖 픽스처에서 따로 재야 한다.
 
 ### 넘기는 것
 `SeamVertex { point, tol }`(넷째 철자 — 항목 21) · `Seg3::Arc { cache }` · `bf_mag` · **항목 28** STEP 통로
