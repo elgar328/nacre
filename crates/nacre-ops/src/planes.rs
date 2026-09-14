@@ -329,7 +329,7 @@ pub(crate) fn collect_planes(
                             for (o, p) in out.iter_mut().zip(pts.iter()) {
                                 let q = crate::rotated_vertex::replay(WitnessPoint::at(*p), &chain)
                                     .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                                *o = Point3::from_array(q.coord);
+                                *o = Point3::from_array(q.coord());
                             }
                             out
                         }
@@ -356,8 +356,8 @@ pub(crate) fn collect_planes(
             // `orient3d` reads the side `tri_pt3` spans. So both arms wind it to agree with
             // *this* face's `n_out`.
             let wind = |mut w: [WitnessPoint; 3]| -> [WitnessPoint; 3] {
-                let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
-                let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
+                let e1 = Vector3::from_array(w[1].coord()) - Vector3::from_array(w[0].coord());
+                let e2 = Vector3::from_array(w[2].coord()) - Vector3::from_array(w[0].coord());
                 if e1.cross(e2).dot(n_out) < 0.0 {
                     w.swap(1, 2);
                 }
@@ -650,8 +650,8 @@ pub(crate) fn collect_planes(
                 .collect();
             let Some(w) = turned else { continue }; // conservative: keep the world description
             let mut w: [WitnessPoint; 3] = [w[0].clone(), w[1].clone(), w[2].clone()];
-            let e1 = Vector3::from_array(w[1].coord) - Vector3::from_array(w[0].coord);
-            let e2 = Vector3::from_array(w[2].coord) - Vector3::from_array(w[0].coord);
+            let e1 = Vector3::from_array(w[1].coord()) - Vector3::from_array(w[0].coord());
+            let e2 = Vector3::from_array(w[2].coord()) - Vector3::from_array(w[0].coord());
             if e1.cross(e2).dot(f.n_out) < 0.0 {
                 w.swap(1, 2);
             }
@@ -3350,7 +3350,7 @@ fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>) -> Mag {
 fn standard_from<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, worst: Mag) -> Standard {
     let mut scale = 1.0f64;
     for p in pts {
-        for c in p.coord {
+        for c in p.coord() {
             scale = scale.max(c.abs());
         }
     }

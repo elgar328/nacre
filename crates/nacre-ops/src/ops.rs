@@ -1402,7 +1402,7 @@ fn datum_plane(
                         .ok_or(OpError::PlaneWithoutExactForm)?;
                     let w = crate::rotated_vertex::replay(nacre_cip::WitnessPoint::at(*p), &chain)
                         .ok_or(OpError::PlaneWithoutExactForm)?;
-                    Point3::from_array(w.coord)
+                    Point3::from_array(w.coord())
                 }
                 (nacre_scalar::MeetPoint::Wide(_), _) => model.vertex_point(sorted[0]),
             };

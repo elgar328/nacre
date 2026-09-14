@@ -117,7 +117,7 @@ fn orient3d_is_rotation_invariant() {
 fn plane_def_from_face() {
     let on_plane = |pi: &crate::planes::WorkingPlane| {
         for d in &pi.tri_pt3 {
-            let dist = pi.plane.distance(Point3::from_array(d.coord));
+            let dist = pi.plane.distance(Point3::from_array(d.coord()));
             assert!(dist < 1e-9, "a witness point sits {dist:e} off its plane");
         }
     };
@@ -131,7 +131,7 @@ fn plane_def_from_face() {
         assert!(pi.rotated, "a rotated solid's planes are flagged rotated");
         on_plane(pi);
         assert!(
-            pi.tri_pt3.iter().any(|p| p.tol.iter().any(|&t| t > 0.0)),
+            pi.tri_pt3.iter().any(|p| p.tol().iter().any(|&t| t > 0.0)),
             "a rotated plane's def carries rotation tol"
         );
     }
@@ -143,7 +143,7 @@ fn plane_def_from_face() {
     for pi in &pu {
         on_plane(pi);
         for d in &pi.tri_pt3 {
-            assert_eq!(d.tol, [0.0; 3], "axis-aligned def is exact");
+            assert_eq!(d.tol(), [0.0; 3], "axis-aligned def is exact");
         }
     }
 }
@@ -371,7 +371,7 @@ fn mixed_rotation_handled() {
     // rotated one, and only the flag tells them apart.
     let bdef = plane_def(&planes, na);
     assert!(
-        bdef.iter().all(|d| d.tol == [0.0; 3]),
+        bdef.iter().all(|d| d.tol() == [0.0; 3]),
         "axis-aligned def is tol 0"
     );
     // A predicate spanning the rotated operand (Some) and axis-aligned operand (None)
@@ -494,7 +494,7 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
                 n_out: f.n_out,
                 orient_sign: f.orient_sign,
                 tri_pt3: std::array::from_fn(|i| {
-                    let c = f.tri_pt3[i].coord;
+                    let c = f.tri_pt3[i].coord();
                     let r = |v: f64| Rat::try_from_f64(v).expect("integer cuboid coordinate");
                     WitnessPoint::at([r(2.0 - c[0]), r(c[1]), r(c[2])])
                         .mirror(Axis::X, Rat::from_int(1))
@@ -507,14 +507,18 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
     for (a, b) in plain.iter().zip(&mirrored) {
         let (a, b) = (a.plane(), b.plane());
         for i in 0..3 {
-            assert_eq!(a.tri_pt3[i].coord, b.tri_pt3[i].coord, "same coordinates");
+            assert_eq!(
+                a.tri_pt3[i].coord(),
+                b.tri_pt3[i].coord(),
+                "same coordinates"
+            );
             // The *operation* is exact on these integers, but `tol` is an a-priori bound
             // (`ε·(|2c| + |x|)`), not the realized error — so it is a couple of ulp, not
             // zero. Sound, and it costs nothing here: the base frame is chosen on the
             // rational `base`, not on `tol`.
             for k in 0..3 {
-                let t = b.tri_pt3[i].tol[k];
-                let c = b.tri_pt3[i].coord[k].abs();
+                let t = b.tri_pt3[i].realized[k].error;
+                let c = b.tri_pt3[i].realized[k].value.abs();
                 assert!(
                     t <= 4.0 * f64::EPSILON * c.max(1.0),
                     "reflection tol stays within a few ulp"
@@ -1126,7 +1130,7 @@ fn two_caps_described_exactly_are_one_plane() {
     // A two-plane table over those definitions. `base_rat: None` keeps the composed-rotation
     // shortcut out of it, so what runs is the interval route the plan's stage C1 exercises.
     let mk = |d: [WitnessPoint; 3]| {
-        let tri = d.clone().map(|p| Point3::from_array(p.coord));
+        let tri = d.clone().map(|p| Point3::from_array(p.coord()));
         WorkingPlane {
             base_rat: None,
             world_rat: None,
@@ -1996,7 +2000,7 @@ mod wide_name_rescue {
                         name.clone()
                     };
                     let tri_pt3: [WitnessPoint; 3] = bases.map(WitnessPoint::at);
-                    let tri = std::array::from_fn(|i| Point3::from_array(tri_pt3[i].coord));
+                    let tri = std::array::from_fn(|i| Point3::from_array(tri_pt3[i].coord()));
                     WorkingPlane {
                         base_rat: None,
                         world_rat: None,

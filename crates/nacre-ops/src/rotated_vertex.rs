@@ -42,7 +42,7 @@ pub(crate) fn replay_chain_coord(
     let chain = motion_chain(model, leaf).ok_or(WitnessPointError::Downgrade)?;
     Ok(replay(WitnessPoint::at(coord_rat(base_point)?), &chain)
         .ok_or(WitnessPointError::Downgrade)?
-        .coord)
+        .coord())
 }
 
 /// `p` carried through `chain`, in the producer's own order and float operations — the one
@@ -348,7 +348,7 @@ pub(crate) fn frame_world_basis(
 ) -> Option<WorldBasis> {
     let chain = frame_chain(model, plane, placement, flip)?;
     let at = |p: [i128; 3]| -> Option<[f64; 3]> {
-        Some(replay(WitnessPoint::at(p.map(Rat::from_int)), &chain)?.coord)
+        Some(replay(WitnessPoint::at(p.map(Rat::from_int)), &chain)?.coord())
     };
     let o = at([0, 0, 0])?;
     let axis = |p: [i128; 3]| -> Option<[f64; 3]> {

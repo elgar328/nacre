@@ -511,7 +511,7 @@ pub enum PointCache {                                             // ✔ 2026-09
 //   ★★★★ `WitnessPoint = [Bounded;3](계단 2) + 정의(base:[Rat;3]·chain) + hp(메모)`. 그 «정의» 가
 //     정확 단계의 입력이라 캐시(`PointCache`)와 «같은 것»이 아니다 — 이 차이가 진실/캐시 경계 그 자체다.
 //     그래서 계단 1·2 는 합치되 이것은 캐시로 접지 않는다(접으면 경계가 지워진다).
-pub struct WitnessPoint  { base: [Rat; 3], chain: /*모션*/_, coord_tol: [Bounded; 3], hp: /*메모*/_ }
+pub struct WitnessPoint  { base: [Rat; 3], chain: /*모션*/_, realized: [Bounded; 3], hp: /*메모*/_ }  // ✔ 2026-09-15
 
 // ⏳ **한 곡면의 캐시 = 변종 «하나»** — 진실과 짝을 이룬다(`Surface::Plane` ↔ `SurfaceCache::Plane`).
 //    2026-09-12 확정, 아직 안 지음(오늘 코드는 `{ realized: geom::Surface }` + 곁표 `surface_name`).

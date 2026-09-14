@@ -463,7 +463,7 @@ pub(crate) fn prism_rings_in(
                     // one plane however their vertices round.
                     let b = crate::rotated_vertex::coord_rat(f.as_array()).ok()?;
                     let q = crate::rotated_vertex::replay(nacre_cip::WitnessPoint::at(b), c)?;
-                    Some(Point3::from_array(q.coord))
+                    Some(Point3::from_array(q.coord()))
                 })
                 .collect(),
         }

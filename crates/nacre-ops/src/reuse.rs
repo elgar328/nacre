@@ -516,7 +516,7 @@ mod tests {
                 assert!(!pts.is_empty(), "{what}: answered with no points");
                 for p in &pts {
                     assert!(
-                        p.coord.iter().all(|c| c.is_finite()),
+                        p.coord().iter().all(|c| c.is_finite()),
                         "{what}: a realized coordinate is not finite"
                     );
                 }
@@ -581,9 +581,9 @@ mod tests {
         assert_eq!(stored.len(), 8, "a prism has eight distinct corners");
         for p in &pts {
             assert!(
-                stored.contains(&p.coord.map(f64::to_bits)),
+                stored.contains(&p.coord().map(f64::to_bits)),
                 "a replayed corner {:?} is not any stored coordinate",
-                p.coord
+                p.coord()
             );
         }
 

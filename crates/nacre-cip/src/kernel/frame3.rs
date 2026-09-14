@@ -402,7 +402,7 @@ impl FrameThrough {
     /// this point's `D` sign.
     pub fn anchor_coord(&self) -> Option<[f64; 3]> {
         match &self.points[0] {
-            JudgedPoint::Pure(wp) => Some(wp.coord),
+            JudgedPoint::Pure(wp) => Some(wp.coord()),
             JudgedPoint::Meet(_) => {
                 let p = Self::RUNG;
                 let (d, dvec) = judged_homog(&self.points[0], p);
@@ -498,9 +498,10 @@ fn judged_basis(f: &FrameThrough, prec: usize) -> Option<[[HpBounded; 3]; 4]> {
 }
 
 /// A rational base point carried through a chain of axis rotations (§CIP ⑦ rotation
-/// history). `base` + `chain` are the exact **definition** (never lost); `coord` is
-/// the f64 realization (a cache), and `tol` bounds its error as a **direction-wise
-/// xyz vector** (§CIP ⑤). [`hp_coord`](Self::hp_coord) realizes the chain at
+/// history). `base` + `chain` are the exact **definition** (never lost); `realized` is
+/// the f64 realization (a cache) with, per axis, the bound on its error — a **direction-wise
+/// xyz vector** (§CIP ⑤) held beside the value it bounds, so the two cannot drift apart.
+/// [`hp_coord`](Self::hp_coord) realizes the chain at
 /// arbitrary precision from the definition, so two points with the same definition
 /// realize identically (path-independent — the soundness argument's root).
 #[derive(Clone, Debug)]
@@ -508,8 +509,7 @@ pub struct WitnessPoint {
     pub base: [Rat; 3],
     pub chain: HpRc<[MoveNode]>,
     // (equality is definitional — see the `PartialEq` impl below the struct)
-    pub coord: [f64; 3],
-    pub tol: [f64; 3],
+    pub realized: [Bounded; 3],
     /// Memoized `hp_coord` at the boolean's chosen precision — the astro-float realization
     /// once per definition and shared across clones (`Rc`). A judge escalates the *same*
     /// definition-point dozens of times per boolean (`plane_def` clones `tri_pt3` per call);
@@ -521,7 +521,7 @@ pub struct WitnessPoint {
     hp: HpCell,
 }
 
-/// **Definitional equality — `base` and `chain`, nothing else.** `coord`/`tol`/`hp` are caches,
+/// **Definitional equality — `base` and `chain`, nothing else.** `realized`/`hp` are caches,
 /// and realization is a pure function of the definition (path independence is this file's root
 /// soundness argument), so two points with equal definitions cannot honestly disagree in their
 /// caches. The consumer this exists for is [`shared_base`]'s whole-node chain comparison — it
@@ -558,6 +558,20 @@ fn rat_round_tol(r: Rat, f: f64) -> f64 {
 }
 
 impl WitnessPoint {
+    /// The realized coordinate — the values of [`Self::realized`], for readers that want the
+    /// point whole.
+    #[inline]
+    pub fn coord(&self) -> [f64; 3] {
+        self.realized.map(|b| b.value)
+    }
+
+    /// The per-axis error bounds — the radii of [`Self::realized`], for readers that want them
+    /// as a vector.
+    #[inline]
+    pub fn tol(&self) -> [f64; 3] {
+        self.realized.map(|b| b.error)
+    }
+
     /// A point at `base`, tol seeded with the base→f64 rounding (a division; exactly
     /// 0 for an f64-representable base, positive otherwise). An axis a later chain
     /// never rotates keeps exactly this, which a per-axis tol check needs.
@@ -596,10 +610,9 @@ impl WitnessPoint {
     /// rounding).
     pub fn at_with_tol(base: [Rat; 3], tol: [f64; 3]) -> Self {
         WitnessPoint {
-            coord: [base[0].to_f64(), base[1].to_f64(), base[2].to_f64()],
+            realized: [0, 1, 2].map(|k| Bounded::new(base[k].to_f64(), tol[k])),
             base,
             chain: HpRc::from([] as [MoveNode; 0]),
-            tol,
             hp: HpCell::default(),
         }
     }
@@ -633,7 +646,7 @@ impl WitnessPoint {
     pub fn rotate_about(mut self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let (i, j) = axis.plane();
         let (px, py) = (point[i].to_f64(), point[j].to_f64());
-        let (ci, cj) = (self.coord[i], self.coord[j]); // pre-rotation magnitudes for tol
+        let (ci, cj) = (self.realized[i].value, self.realized[j].value); // pre-rotation magnitudes for tol
         let (u, v) = (ci - px, cj - py);
         // cos/sin — exact (rational) for the 90°-family, else f64 (with realization tol).
         //
@@ -643,8 +656,8 @@ impl WitnessPoint {
         // exactly how the two would drift — silently, at the 90°-family, where one route snaps to
         // `0.0`/`±1.0` and the other lands `cos(90°) ≈ 6e-17`.
         let (c, s) = angle.cos_sin_f64();
-        self.coord[i] = px + u * c - v * s;
-        self.coord[j] = py + u * s + v * c;
+        self.realized[i].value = px + u * c - v * s;
+        self.realized[j].value = py + u * s + v * c;
         // **The rotation's own error — measured for this angle, not charged from a constant.**
         //
         // `dc`/`ds` are how far this platform's `cos`/`sin` land from the truth. That used to be a
@@ -713,9 +726,9 @@ impl WitnessPoint {
         } else {
             0.0
         };
-        let (ti, tj) = (self.tol[i], self.tol[j]);
-        self.tol[i] = c.abs() * ti + s.abs() * tj + rot_i + piv;
-        self.tol[j] = s.abs() * ti + c.abs() * tj + rot_j + piv;
+        let (ti, tj) = (self.realized[i].error, self.realized[j].error);
+        self.realized[i].error = c.abs() * ti + s.abs() * tj + rot_i + piv;
+        self.realized[j].error = s.abs() * ti + c.abs() * tj + rot_j + piv;
         // Rebuild the shared slice with the new node appended. This runs when a solid is
         // *transformed*, never on the judgment path, so the copy is not hot — and in exchange
         // `clone` becomes a refcount bump instead of an allocation, which the judgment path
@@ -745,12 +758,12 @@ impl WitnessPoint {
         // here is `4 = 2 (the doubling) × 2 (the same safety margin every other term carries)`.
         // Copying `translate`'s `2.0` looks right and is not: there the offset enters once, so its
         // `2.0` *was* the margin. Measured — a chain of two reflections overran the bound by 4%.
-        self.tol[k] += 4.0
+        self.realized[k].error += 4.0
             * bf_mag(&rat_to_big(offset, 120).sub(&BigFloat::from_f64(c, 120), 120, HP_RM)).abs()
-            + f64::EPSILON * (2.0 * c.abs() + self.coord[k].abs());
+            + f64::EPSILON * (2.0 * c.abs() + self.realized[k].value.abs());
         // The producer's own route (`AxisMirror::point`), operation for operation — a replay of
         // the definition has to reproduce the stored coordinate bit for bit.
-        self.coord[k] = 2.0 * c - self.coord[k];
+        self.realized[k].value = 2.0 * c - self.realized[k].value;
         let mut nodes = self.chain.to_vec();
         nodes.push(MoveNode::Mirror { axis, offset });
         self.chain = HpRc::from(nodes);
@@ -773,10 +786,10 @@ impl WitnessPoint {
         for (k, &off) in offset.iter().enumerate() {
             let t = off.to_f64();
             // The offset's realization error, plus the add's own half-ulp on the result.
-            self.tol[k] += 2.0
+            self.realized[k].error += 2.0
                 * bf_mag(&rat_to_big(off, 120).sub(&BigFloat::from_f64(t, 120), 120, HP_RM)).abs()
-                + f64::EPSILON * (self.coord[k].abs() + t.abs());
-            self.coord[k] += t;
+                + f64::EPSILON * (self.realized[k].value.abs() + t.abs());
+            self.realized[k].value += t;
         }
         let mut nodes = self.chain.to_vec();
         nodes.push(MoveNode::Translate { offset });
@@ -875,8 +888,8 @@ impl WitnessPoint {
                 .chain(&vh)
                 .chain(&wh)
                 .all(|c| *c == 0.0 || c.abs() == 1.0);
-        let p = self.coord;
-        let t = self.tol;
+        let p = self.coord();
+        let t = self.tol();
         for k in 0..3 {
             let ok = f.origin[k].to_f64();
             let terms = p[0] * uh[k] + p[1] * vh[k] + p[2] * wh[k];
@@ -894,8 +907,8 @@ impl WitnessPoint {
                             + (p[1] * vh[k]).abs()
                             + (p[2] * wh[k]).abs())
             };
-            self.coord[k] = ok + terms;
-            self.tol[k] = carried + realized + arith;
+            self.realized[k].value = ok + terms;
+            self.realized[k].error = carried + realized + arith;
         }
         let mut nodes = self.chain.to_vec();
         nodes.push(MoveNode::Frame { frame: f });
@@ -936,8 +949,8 @@ impl WitnessPoint {
         }
         // The same propagation as `WitnessPoint::frame`, with the realized origin's own error in place
         // of `rat_round_tol`.
-        let p = self.coord;
-        let t = self.tol;
+        let p = self.coord();
+        let t = self.tol();
         for k in 0..3 {
             let terms = p[0] * uh[k] + p[1] * vh[k] + p[2] * wh[k];
             let carried = uh[k].abs() * t[0] + vh[k].abs() * t[1] + wh[k].abs() * t[2];
@@ -949,8 +962,8 @@ impl WitnessPoint {
                         + (p[0] * uh[k]).abs()
                         + (p[1] * vh[k]).abs()
                         + (p[2] * wh[k]).abs());
-            self.coord[k] = oh[k] + terms;
-            self.tol[k] = carried + realized + arith;
+            self.realized[k].value = oh[k] + terms;
+            self.realized[k].error = carried + realized + arith;
         }
         let mut nodes = self.chain.to_vec();
         nodes.push(MoveNode::FrameWide(f.clone()));
@@ -974,8 +987,8 @@ impl WitnessPoint {
     pub fn frame_through(mut self, f: &FrameThrough) -> Option<Self> {
         let basis = judged_basis(f, FrameThrough::RUNG)?;
         let [o, u, v, w] = basis.map(|row| row.map(|c| narrow_hp(&c)));
-        let p = self.coord;
-        let t = self.tol;
+        let p = self.coord();
+        let t = self.tol();
         for k in 0..3 {
             let (uh, eu) = u[k];
             let (vh, ev) = v[k];
@@ -988,8 +1001,8 @@ impl WitnessPoint {
                 + 3.0
                     * f64::EPSILON
                     * (oh.abs() + (p[0] * uh).abs() + (p[1] * vh).abs() + (p[2] * wh).abs());
-            self.coord[k] = oh + terms;
-            self.tol[k] = carried + realized + arith;
+            self.realized[k].value = oh + terms;
+            self.realized[k].error = carried + realized + arith;
         }
         let mut nodes = self.chain.to_vec();
         nodes.push(MoveNode::FrameThrough(Box::new(f.clone())));
@@ -1745,9 +1758,9 @@ pub fn orient3d_filter(
     pc: &WitnessPoint,
     pd: &WitnessPoint,
 ) -> Option<Orient> {
-    let (a, b, c, d) = (pa.coord, pb.coord, pc.coord, pd.coord);
+    let (a, b, c, d) = (pa.coord(), pb.coord(), pc.coord(), pd.coord());
     let det = det3_f64(a, b, c, d);
-    let bound = det3_bound([a, b, c, d], [pa.tol, pb.tol, pc.tol, pd.tol]);
+    let bound = det3_bound([a, b, c, d], [pa.tol(), pb.tol(), pc.tol(), pd.tol()]);
     if det > bound {
         return Some(Orient::Positive);
     }
@@ -1859,7 +1872,7 @@ pub fn dir_orient3d_judge(
     prec: usize,
 ) -> Orient {
     let dp = WitnessPoint::at(d);
-    let (bi, xi, yi, di) = (pt_iv(base), pt_iv(x), pt_iv(y), pt_iv(&dp));
+    let (bi, xi, yi, di) = (base.realized, x.realized, y.realized, dp.realized);
     let sub_iv =
         |u: [Bounded; 3], v: [Bounded; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
     if let Some(pos) = det3_iv([di, sub_iv(xi, bi), sub_iv(yi, bi)]).sign() {
@@ -1934,22 +1947,12 @@ fn det3_iv(r: [[Bounded; 3]; 3]) -> Bounded {
     r[0][0].mul(m0).sub(r[0][1].mul(m1)).add(r[0][2].mul(m2))
 }
 
-/// A point's coord+tol as an interval per component (the pivot is already folded into
-/// `coord`/`tol` by [`WitnessPoint::rotate_about`]).
-fn pt_iv(p: &WitnessPoint) -> [Bounded; 3] {
-    [
-        Bounded::new(p.coord[0], p.tol[0]),
-        Bounded::new(p.coord[1], p.tol[1]),
-        Bounded::new(p.coord[2], p.tol[2]),
-    ]
-}
-
 /// Plane `[a,b,c,d]` (`n·X + d = 0`) through three points, as intervals: `n =
 /// (p1−p0)×(p2−p0)`, `d = −n·p0`. Coefficient tol propagates from the point tols
 /// through the subtraction/cross/dot — "coefficient tol is a corollary of point tol"
 /// (§CIP ②). Validated H-b.
 pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) -> [Bounded; 4] {
-    let (a, b, c) = (pt_iv(p0), pt_iv(p1), pt_iv(p2));
+    let (a, b, c) = (p0.realized, p1.realized, p2.realized);
     let e1 = [b[0].sub(a[0]), b[1].sub(a[1]), b[2].sub(a[2])];
     let e2 = [c[0].sub(a[0]), c[1].sub(a[1]), c[2].sub(a[2])];
     let n = [
@@ -2337,7 +2340,7 @@ pub(crate) fn orient3d_from_cramer(
     s: &WitnessPoint,
     j: Standard,
 ) -> Decision {
-    if let Some(o) = filter_from_cramer(cr, pt_iv(q), pt_iv(r), pt_iv(s)) {
+    if let Some(o) = filter_from_cramer(cr, q.realized, r.realized, s.realized) {
         return Decision::Sign(o);
     }
     // Escalate: the same two determinants at prec, each carrying the radius accumulated
@@ -3143,7 +3146,7 @@ mod tests {
                 .expect("probe coords are f64")
                 .frame_through(f)
                 .expect("a constructed node realizes")
-                .coord
+                .coord()
         };
         let o = ap([0.0, 0.0, 0.0]);
         let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -3161,7 +3164,7 @@ mod tests {
                 .expect("probe coords are f64")
                 .frame(pf)
                 .expect("a named frame realizes")
-                .coord
+                .coord()
         };
         let o = ap([0.0, 0.0, 0.0]);
         let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -3356,11 +3359,11 @@ mod tests {
             .expect("realizes");
         let hp = q.hp_coord(GT);
         for (k, h) in hp.iter().enumerate() {
-            let err = abs_err(q.coord[k], h, GT);
+            let err = abs_err(q.realized[k].value, h, GT);
             assert!(
-                err <= q.tol[k].max(1e-300),
+                err <= q.realized[k].error.max(1e-300),
                 "axis {k}: cache off by {err:e}, stated tol {:e}",
-                q.tol[k]
+                q.realized[k].error
             );
         }
         // Determinism — same statement, same node, same realization (replay's requirement).
@@ -3369,8 +3372,8 @@ mod tests {
         let q2 = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
             .frame_through(&ft2)
             .expect("realizes");
-        assert_eq!(q.coord, q2.coord);
-        assert_eq!(q.tol, q2.tol);
+        assert_eq!(q.coord(), q2.coord());
+        assert_eq!(q.tol(), q2.tol());
     }
 
     /// A meet whose carriers all pass through one line has no unique point — `D` straddles zero
@@ -3444,14 +3447,14 @@ mod tests {
             .expect("realizes");
         let hp = q.hp_coord(GT);
         for (k, h) in hp.iter().enumerate() {
-            let err = abs_err(q.coord[k], h, GT);
+            let err = abs_err(q.realized[k].value, h, GT);
             assert!(
-                err <= q.tol[k].max(1e-300),
+                err <= q.realized[k].error.max(1e-300),
                 "axis {k}: cache off the realization by {err:e}, stated tol {:e}",
-                q.tol[k]
+                q.realized[k].error
             );
             assert!(
-                q.tol[k] > 0.0,
+                q.realized[k].error > 0.0,
                 "a judged frame's image carries honest positive tol"
             );
         }
@@ -3463,8 +3466,8 @@ mod tests {
         let q2 = WitnessPoint::at([ri(1, 2), ri(1, 3), ri(2, 1)])
             .frame_through(&ft2)
             .expect("realizes");
-        assert_eq!(q.coord, q2.coord, "same statement, same realization");
-        assert_eq!(q.tol, q2.tol, "and the same stated error");
+        assert_eq!(q.coord(), q2.coord(), "same statement, same realization");
+        assert_eq!(q.tol(), q2.tol(), "and the same stated error");
     }
 
     /// **The shared-motion shortcut must answer the same question a reflection is in the chain.**
@@ -3602,7 +3605,7 @@ mod tests {
         let mut worst_desc = String::new();
         for _ in 0..2000 {
             let base = rand_base(&mut st);
-            let seed_free = WitnessPoint::at(base).tol == [0.0; 3];
+            let seed_free = WitnessPoint::at(base).tol() == [0.0; 3];
             let mut shape = Shape::default();
             let mut p = WitnessPoint::at(base);
             // **From one node, not two.** A single origin rotation of an exact base is the case
@@ -3665,20 +3668,20 @@ mod tests {
             }
             let hp = p.hp_coord(GT);
             for (axis, hp_a) in hp.iter().enumerate() {
-                let err = abs_err(p.coord[axis], hp_a, GT);
+                let err = abs_err(p.realized[axis].value, hp_a, GT);
                 // ★ **The chain belongs in the failure, not only in the summary below.** An
                 // exceeded bound means a term is missing, and the first thing needed is which
                 // links were involved — but the panic aborts before any summary prints, so the
                 // shape has to travel with the message. It is how the asymmetry in `rot` was
                 // found: the offending chain was `R M`, and nothing else was.
                 assert!(
-                    err <= p.tol[axis] || err < 1e-100,
+                    err <= p.realized[axis].error || err < 1e-100,
                     "tol must bound the error: axis {axis}, err {err:e} > tol {:e}, links:{}",
-                    p.tol[axis],
+                    p.realized[axis].error,
                     shape.desc
                 );
-                if p.tol[axis] > 0.0 {
-                    let r = err / p.tol[axis];
+                if p.realized[axis].error > 0.0 {
+                    let r = err / p.realized[axis].error;
                     ratio_sum += r;
                     ratio_n += 1;
                     if r > worst_ratio {
@@ -3795,14 +3798,14 @@ mod tests {
                 let (c, s) = angle.cos_sin_f64();
                 let (dc, ds) = angle.realization_error_of(c, s);
                 for (k, hp_k) in hp.iter().enumerate().take(2) {
-                    let err = abs_err(p.coord[k], hp_k, GT);
+                    let err = abs_err(p.realized[k].value, hp_k, GT);
                     // (1) the refuted tangential prediction: the *other* coordinate's magnitude.
-                    if err > [dc, ds][k] * p.coord[1 - k].abs() {
+                    if err > [dc, ds][k] * p.realized[1 - k].value.abs() {
                         tangential_sound = false;
                         first_break.get_or_insert((bxn, bxd, byn, byd, an, ad, k));
                     }
                     // (2) the adopted mixing tol, which is what `rotate_about` computes.
-                    if err > p.tol[k] {
+                    if err > p.realized[k].error {
                         mixing_sound = false;
                     }
                 }
@@ -3908,8 +3911,8 @@ mod tests {
         let q = WitnessPoint::at([Rat::from_int(0); 3])
             .frame(named)
             .unwrap();
-        let u = [0, 1, 2].map(|k| p.coord[k] - q.coord[k]);
-        assert!(p.coord[1].abs() < 1e-15, "on the plane y = 0");
+        let u = [0, 1, 2].map(|k| p.realized[k].value - q.realized[k].value);
+        assert!(p.realized[1].value.abs() < 1e-15, "on the plane y = 0");
         assert!((u[2] - 3.0).abs() < 1e-15, "+u ran along ẑ, got {u:?}");
 
         // ★ Two spellings of one direction, one frame.
@@ -3964,11 +3967,11 @@ mod tests {
                     "plane {c:?}, point ({u}, {v}): off the plane by {mag:e}, radius {error:e}"
                 );
                 for (k, h) in hp.iter().enumerate() {
-                    let err = abs_err(p.coord[k], h, GT);
+                    let err = abs_err(p.realized[k].value, h, GT);
                     assert!(
-                        err <= p.tol[k] || err < 1e-100,
+                        err <= p.realized[k].error || err < 1e-100,
                         "plane {c:?} axis {k}: err {err:e} > tol {:e}",
-                        p.tol[k]
+                        p.realized[k].error
                     );
                 }
             }
@@ -3992,14 +3995,14 @@ mod tests {
                 let p = WitnessPoint::at(base).frame(fr).unwrap();
                 let hp = p.hp_coord(GT);
                 for (k, h) in hp.iter().enumerate() {
-                    let err = abs_err(p.coord[k], h, GT);
+                    let err = abs_err(p.realized[k].value, h, GT);
                     assert!(
-                        err <= p.tol[k] || err < 1e-100,
+                        err <= p.realized[k].error || err < 1e-100,
                         "plane {c:?} at ({u},{v},{w}) axis {k}: err {err:e} > tol {:e}",
-                        p.tol[k]
+                        p.realized[k].error
                     );
-                    if p.tol[k] > 0.0 && err / p.tol[k] > worst {
-                        worst = err / p.tol[k];
+                    if p.realized[k].error > 0.0 && err / p.realized[k].error > worst {
+                        worst = err / p.realized[k].error;
                         worst_at = format!("plane {c:?} at ({u},{v},{w}) axis {k}");
                     }
                 }
@@ -4075,14 +4078,14 @@ mod tests {
             let p = WitnessPoint::at(base).frame_wide(&fr).unwrap();
             let hp = p.hp_coord(GT);
             for (k, h) in hp.iter().enumerate() {
-                let err = abs_err(p.coord[k], h, GT);
+                let err = abs_err(p.realized[k].value, h, GT);
                 assert!(
-                    err <= p.tol[k] || err < 1e-100,
+                    err <= p.realized[k].error || err < 1e-100,
                     "wide frame at ({u},{v},{w}) axis {k}: err {err:e} > tol {:e}",
-                    p.tol[k]
+                    p.realized[k].error
                 );
-                if p.tol[k] > 0.0 && err / p.tol[k] > worst {
-                    worst = err / p.tol[k];
+                if p.realized[k].error > 0.0 && err / p.realized[k].error > worst {
+                    worst = err / p.realized[k].error;
                     worst_at = format!("({u},{v},{w}) axis {k}");
                 }
             }
@@ -4106,7 +4109,7 @@ mod tests {
                 let p = WitnessPoint::at([ri(u, 1), ri(v, 1), ri(w, 1)])
                     .frame(fr)
                     .unwrap();
-                assert_eq!(p.tol, [0.0; 3], "plane {c:?} at ({u},{v},{w})");
+                assert_eq!(p.tol(), [0.0; 3], "plane {c:?} at ({u},{v},{w})");
             }
         }
         // …and the world XY frame is the identity, which is what makes a frame on it harmless.
@@ -4114,7 +4117,7 @@ mod tests {
         let p = WitnessPoint::at([ri(3, 1), ri(-7, 1), ri(2, 1)])
             .frame(fr)
             .unwrap();
-        assert_eq!(p.coord, [3.0, -7.0, 2.0]);
+        assert_eq!(p.coord(), [3.0, -7.0, 2.0]);
     }
 
     /// ★★★★ **The prize: two points sketched in one frame are judged *exactly*.**
@@ -4188,9 +4191,9 @@ mod tests {
             .rotate(Axis::Z, deg(90, 1))
             .rotate(Axis::X, deg(180, 1))
             .rotate(Axis::Y, deg(270, 1));
-        assert_eq!(p.tol, [0.0; 3]);
+        assert_eq!(p.tol(), [0.0; 3]);
         // and the realized coords are the exact permutation/negation (no spurious term).
-        assert_eq!(p.coord, [7.0, -3.0, -5.0]);
+        assert_eq!(p.coord(), [7.0, -3.0, -5.0]);
     }
 
     /// **`WitnessPoint::exact` states the tol that `WitnessPoint::at` would measure — the same value.**
@@ -4214,13 +4217,14 @@ mod tests {
             let fast = WitnessPoint::exact(c).expect("representable");
             let measured =
                 WitnessPoint::at(c.map(|x| Rat::try_from_f64(x).expect("representable")));
-            assert_eq!(fast.coord, c, "the coordinates round-trip: {c:?}");
-            assert_eq!(fast.coord, measured.coord, "same coord for {c:?}");
+            assert_eq!(fast.coord(), c, "the coordinates round-trip: {c:?}");
+            assert_eq!(fast.coord(), measured.coord(), "same coord for {c:?}");
             assert_eq!(
-                measured.tol, [0.0; 3],
+                measured.tol(),
+                [0.0; 3],
                 "`at` must measure exactly zero for an f64-derived base: {c:?}"
             );
-            assert_eq!(fast.tol, measured.tol, "same tol for {c:?}");
+            assert_eq!(fast.tol(), measured.tol(), "same tol for {c:?}");
         }
     }
 
@@ -4283,7 +4287,7 @@ mod tests {
         );
         // Zero is not a boundary case — it is special-cased and exact.
         assert_eq!(
-            WitnessPoint::exact([0.0; 3]).expect("zero is exact").tol,
+            WitnessPoint::exact([0.0; 3]).expect("zero is exact").tol(),
             [0.0; 3]
         );
     }
@@ -4293,11 +4297,11 @@ mod tests {
     #[test]
     fn at_seeds_base_rounding_tol() {
         assert_eq!(
-            WitnessPoint::at([ri(2, 1), ri(3, 1), ri(4, 1)]).tol,
+            WitnessPoint::at([ri(2, 1), ri(3, 1), ri(4, 1)]).tol(),
             [0.0; 3]
         );
         let third = WitnessPoint::at([ri(1, 3), ri(0, 1), ri(0, 1)]);
-        assert!(third.tol[0] > 0.0 && third.tol[1] == 0.0);
+        assert!(third.realized[0].error > 0.0 && third.realized[1].error == 0.0);
     }
 
     /// `at_with_tol` seeds a nonzero root tol (a Discovered seam) and the chain
@@ -4307,7 +4311,7 @@ mod tests {
         let p = WitnessPoint::at_with_tol([ri(1, 1), ri(0, 1), ri(0, 1)], [1e-9, 2e-9, 3e-9])
             .rotate(Axis::Z, deg(90, 1));
         // 90° about Z: |R| swaps x,y → tol[0]=old tol[1], tol[1]=old tol[0]; z unchanged.
-        assert_eq!(p.tol, [2e-9, 1e-9, 3e-9]);
+        assert_eq!(p.tol(), [2e-9, 1e-9, 3e-9]);
     }
 
     /// Same-axis bundling is tighter than incremental (H-e): K steps of θ amplify the
@@ -4323,10 +4327,11 @@ mod tests {
         let k_theta = theta.checked_mul(Rat::from_int(k)).unwrap();
         let bundled = WitnessPoint::at(base).rotate(Axis::Z, Angle::from_deg(k_theta).unwrap());
         assert!(
-            bundled.tol[0] < incr.tol[0] && bundled.tol[1] < incr.tol[1],
+            bundled.realized[0].error < incr.realized[0].error
+                && bundled.realized[1].error < incr.realized[1].error,
             "bundled {:?} must be tighter than incremental {:?}",
-            bundled.tol,
-            incr.tol
+            bundled.tol(),
+            incr.tol()
         );
     }
 
@@ -4365,12 +4370,12 @@ mod tests {
                 rand_point(&mut st),
                 rand_point(&mut st),
             );
-            let det = det3_f64(pa.coord, pb.coord, pc.coord, pd.coord);
+            let det = det3_f64(pa.coord(), pb.coord(), pc.coord(), pd.coord());
             let truth = det3_hp(&pa, &pb, &pc, &pd, GT);
             let err = abs_err(det, &truth, GT);
             let bound = det3_bound(
-                [pa.coord, pb.coord, pc.coord, pd.coord],
-                [pa.tol, pb.tol, pc.tol, pd.tol],
+                [pa.coord(), pb.coord(), pc.coord(), pd.coord()],
+                [pa.tol(), pb.tol(), pc.tol(), pd.tol()],
             );
             if err > bound {
                 bad += 1;
@@ -4400,11 +4405,11 @@ mod tests {
                 rand_point(&mut st),
                 rand_point(&mut st),
             );
-            let det = det3_f64(pa.coord, pb.coord, pc.coord, pd.coord);
+            let det = det3_f64(pa.coord(), pb.coord(), pc.coord(), pd.coord());
             let err = abs_err(det, &det3_hp(&pa, &pb, &pc, &pd, GT), GT);
             let bound = det3_bound(
-                [pa.coord, pb.coord, pc.coord, pd.coord],
-                [pa.tol, pb.tol, pc.tol, pd.tol],
+                [pa.coord(), pb.coord(), pc.coord(), pd.coord()],
+                [pa.tol(), pb.tol(), pc.tol(), pd.tol()],
             );
             assert!(err <= bound, "det3_bound {bound:e} < err {err:e}");
         }
@@ -4698,7 +4703,7 @@ mod tests {
                 plane_iv(b.0, b.1, b.2),
                 plane_iv(c.0, c.1, c.2),
             ];
-            if indirect_filter(planes, pt_iv(q), pt_iv(r), pt_iv(s)).is_none() {
+            if indirect_filter(planes, q.realized, r.realized, s.realized).is_none() {
                 escalated += 1;
             } else {
                 filter_resolved += 1;
@@ -5156,7 +5161,10 @@ mod tests {
     fn well_conditioned(p: &[WitnessPoint; 3]) -> bool {
         let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
         let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-        let (e1, e2) = (sub(p[1].coord, p[0].coord), sub(p[2].coord, p[0].coord));
+        let (e1, e2) = (
+            sub(p[1].coord(), p[0].coord()),
+            sub(p[2].coord(), p[0].coord()),
+        );
         let n = [
             e1[1] * e2[2] - e1[2] * e2[1],
             e1[2] * e2[0] - e1[0] * e2[2],
@@ -5483,13 +5491,18 @@ mod tests {
                 ]
             } else {
                 let big = rng(&mut st, 100_000_000, 9_000_000_000) as f64;
-                let comp = |k: usize| ri((big * (x.coord[k] - base.coord[k])).round() as i128, 1);
+                let comp = |k: usize| {
+                    ri(
+                        (big * (x.realized[k].value - base.realized[k].value)).round() as i128,
+                        1,
+                    )
+                };
                 [comp(0), comp(1), comp(2)]
             };
             let judged = dir_orient3d_judge(d, &base, &x, &y, FIXTURE_PREC);
             // Recompute the Bounded filter to tally which path resolved (mirrors the judge).
             let dp = WitnessPoint::at(d);
-            let (bi, xi, yi, di) = (pt_iv(&base), pt_iv(&x), pt_iv(&y), pt_iv(&dp));
+            let (bi, xi, yi, di) = (base.realized, x.realized, y.realized, dp.realized);
             let subi =
                 |u: [Bounded; 3], v: [Bounded; 3]| [u[0].sub(v[0]), u[1].sub(v[1]), u[2].sub(v[2])];
             if det3_iv([di, subi(xi, bi), subi(yi, bi)]).sign().is_none() {

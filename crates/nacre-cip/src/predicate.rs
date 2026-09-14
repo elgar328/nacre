@@ -1403,7 +1403,7 @@ mod tests {
                 p
             });
             let base = pts.map(|q| Point3::from_array([q[0] as f64, q[1] as f64, q[2] as f64]));
-            let tri: [Point3; 3] = std::array::from_fn(|i| Point3::from_array(def[i].coord));
+            let tri: [Point3; 3] = std::array::from_fn(|i| Point3::from_array(def[i].coord()));
             RW {
                 coeffs: plane_of(tri.map(|p| p.as_array())),
                 base_coeffs: plane_of(base.map(|p| p.as_array())),
