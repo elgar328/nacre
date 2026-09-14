@@ -839,7 +839,7 @@ pub enum Decision {
 | 3a | `Vertex.definition` 을 `point` 옆에 추가 — 세 origin 100% 커버 실측 | ✔ 2026-08-01 |
 | 2 | `Motion::Frame` — 기울어진 면 위 스케치가 그 평면 자신의 프레임에서 | ✔ 2026-08-03 |
 | 1″ | 평면의 진실을 점 셋으로 (계수는 유도된 이름으로 강등) | ✔ 2026-08-04 |
-| 3b | 좌표 재생 — **묻는 문은 섰고 덮어쓰기는 아직**(2026-09-11, 칸 ㊵). `nacre_ops::realize_vertex{,_decimal}` 이 정의에서 좌표를 실현하고 한 번만 반올림한다(변종 셋 전부: `ThreePlane`·`OnSeam`·`Branch`). ★ **그리고 재보고가 났다**: 축정렬 인구는 캐시가 이미 최근접 f64(48/48 비트 동일, 7비트 좌표), **기울어진 프레임 인구는 대조 가능한 12개 «전부» 최근접이 아니고 최대 4 ulp**. ⚠ 원인은 «맨티사를 넘음»이 **아니다**(좁은 인구에도 표현 불가 좌표가 16개 있고 전부 일치한다) — 그쪽 캐시가 더 긴 f64 유도에서 나와 아무것의 정확 반올림도 아니기 때문이다. 남은 절반은 캐시 덮어쓰기(`refine_caches`) | ⏸ |
+| 3b | 좌표 재생 — **묻는 문은 섰고 덮어쓰기는 아직**(2026-09-11, 칸 ㊵). `nacre_ops::realize_vertex{,_decimal}` 이 정의에서 좌표를 실현하고 한 번만 반올림한다(변종 셋 전부: `ThreePlane`·`OnSeam`·`Branch` — **오늘 이름은 `Pierce`**, 항목 24). ★ **그리고 재보고가 났다**: 축정렬 인구는 캐시가 이미 최근접 f64(48/48 비트 동일, 7비트 좌표), **기울어진 프레임 인구는 대조 가능한 12개 «전부» 최근접이 아니고 최대 4 ulp**. ⚠ 원인은 «맨티사를 넘음»이 **아니다**(좁은 인구에도 표현 불가 좌표가 16개 있고 전부 일치한다) — 그쪽 캐시가 더 긴 f64 유도에서 나와 아무것의 정확 반올림도 아니기 때문이다. 남은 절반은 캐시 덮어쓰기(`refine_caches`) | ⏸ |
 | S1 | `Store<Surface>`·`Store<MotionNode>` 봉인 — 좁은 접근자(`surface`/`surface_count`/`motion`) + `compile_fail,E0616` 잠금. 기록 없는 surface 는 크레이트 밖에서 표현 불가(테스트 전용 입구 `push_surface_unrecorded` 만 예외, `test-util` 게이트) | ✔ 2026-08-05 |
 | S2 | **임의정밀 이름** — `PlaneName{Narrow\|Wide}` 그릇(`plane_name_big` 꼬리의 `to_i128` 분기 하나), `surface_coeffs`→`surface_name` 개명, Wide 도 intern. **동일성 팔 절단**: 점 가진 평면의 이름 실패가 공선뿐이 됨 — ★ f64 폴백 연쇄의 **프레임 팔은 S4 몫**(Wide 는 `narrow()=None` 이라 프레임·지름길을 안 연다, 반증표 그대로). 잠금: 스칼라 2(`a_plane_too_wide…`·narrow/wide 합의) + topo 1(`a_wide_plane_interns_but_opens_no_shortcut`) | ✔ 2026-08-05 |
 | S4 | **프레임 팔 절단** — `Motion::Frame{plane, placement, flip}` + `FramePlacement{Canonical\|Named}`. `Canonical`(기본)은 사슬 펼침 시 유도: 좁으면 오늘의 `plane_frame_default` 그대로(비트 보존 — 유도의 이사), **넘치면 wide 도로**(`MoveNode::FrameWide` = `PlaneFrame` 의 BigInt 쌍둥이, 실현은 `HpIv` 전 구간 + f64 캐시는 128비트 실현의 좁힘). Wide 이름·`n·n` 넘침(1.6%) 인구의 프레임이 열려 §12 연쇄의 프레임 팔이 닫힘. 잠금: cip 2(on-plane·tol-bounds wide 쌍둥이) + ops 3(`a_wide_plane_hosts_a_canonical_frame`·nn-넘침 개통·**종단** `a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road`) + census `wf` 가족. ★ 계획의 "심기 + 공개 SketchFrame 통일"은 **S9 로 분리**(아래) | ✔ 2026-08-05 |
@@ -1670,8 +1670,12 @@ STEP 출력, undo/replay.
     순수 개명 · **census 비트 동일**(debug·release 양 프로파일, 398행).
 
     ⚠ **정정(2026-09-14): 개명이 `docs/` 를 안 훑었다.** 위 범위가 *"topo+ops+validate · 산문·테스트
-    라벨"* 인데 **문서가 빠져 있었고**, `design.md` 두 자리(`:51` 의 변종 목록 · `:658` 의 직선–호
-    꼭짓점)와 **이 문서 자신**(스케치 어휘 표)이 `Branch` 를 **현재형으로** 계속 들고 있었다. 오늘
+    라벨"* 인데 **문서가 빠져 있었고**, `design.md` 두 자리(§1 의 **변종 목록** · §6 의 **직선–호 꼭짓점**)와
+    **이 문서 자신 두 자리**(**스케치 어휘 표** · **§이행 3b 행의 「변종 셋 전부」**)가 `Branch` 를
+    **현재형으로** 계속 들고 있었다. ⚠ 둘째는 **감사가 잡았다** — 내 부류 훑기가 «이름 단위»라
+    같은 문서 안의 둘째 «자리»를 못 봤다(계기는 이름마다 첫 줄만 든다).
+    ⚠ 자리는 **줄 번호가 아니라 내용으로** 적는다 — 처음엔 번호를 적었는데 그것이 **내 편집 «후»의
+    번호**여서 그 커밋에서는 안 맞았다(같은 함정을 이 칸이 `§3:230` 에서 고치고 있었다). 오늘
     고쳤다. ⇒ **관문에 조건부 절차 한 줄**이 생겼다(`overview.md` 「관문」): **이름을 개명·은퇴시킨
     칸은 `docs/` 도 훑는다.** 계기는 `tools/deadname-sweep.py`.
 
@@ -1762,8 +1766,9 @@ STEP 출력, undo/replay.
     (*"…는 짓지 않았다"* — 은퇴 서술) · `design:70` 의 `Intersection`(**⚠ 정정 문장 안**이고, 오늘 그 이름을
     쓰는 것은 STEP 표준 쪽이다). ⚠ 처음엔 *"형제 리포에 12건"* 을 근거로 들었는데 **그 12건이 전부
     `node_modules/@types/three` 였다** — 계기가 `playground/web` 을 보고 있었고, `wasm` 크레이트만 보게 고쳤다.
-    ☑ **계기 자신의 이름도 인구에 든다** — 이 항목이 계기를 백틱으로 부르기 때문이다(관문 줄은 ```sh
-    펜스 «안»이라 안 잡힌다; `sweep` 은 `monotone.rs:352` 에 살아 있어 애초에 후보가 아니다).
+    ☑ **계기 자신의 이름도 인구에 든다** — `deadname` 이 항목 ⑱ 의 **정정 문단**에서 백틱으로 불리기
+    때문이다(관문 줄은 ```sh 펜스 «안»이라 안 잡히고, `sweep` 은 `monotone.rs:352` 에 살아 있어
+    애초에 후보가 아니다).
 
     ⇒ **이 항목의 일은 «분류»다.** 표본 다섯이 **각각 「무엇이 대체했나」를 따로 물어야 함**을 확인했다:
     `design:996` `hole_on_class`(어디에도 0건) · `:1038` `chord_on_class`(단서는 `planes.rs:1430` 주석) ·
