@@ -7,6 +7,7 @@ use nacre_geom::{AxisMirror, Cylinder, Plane};
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
+use nacre_topo::PointCache;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Shell, Solid, Surface, Vertex, VertexDef,
 };
@@ -878,15 +879,17 @@ fn transform_solid(
             }
         };
         let coord = motion.point(model.vertex_point(vh));
-        // Tolerance rule (S7, letter-preserving): an exact move of a history-less solid used to
-        // keep `Discovered { tol }` verbatim (`remap_origin`); a recorded move used to demote to
-        // `Moved` (checker epsilon — now `None`).
-        let tol = if keeps_tol {
-            model.vertex_tol(vh)
+        // Tolerance rule (S7, letter-preserving): an exact move of a history-less solid keeps
+        // the cache's knowledge whole (`remap_origin` kept `Discovered { tol }` verbatim); a
+        // recorded move demotes to `Unmeasured` (once `Moved` — checker epsilon). This site is
+        // why the variants are named by what the cache knows rather than by provenance: the
+        // vertex demoted here *was* discovered, and only "unmeasured" is true of it now.
+        let cache = if keeps_tol {
+            model.vertex_cache(vh).moved_to(coord)
         } else {
-            None
+            PointCache::Unmeasured(coord)
         };
-        vert_map.insert(vh, model.push_vertex(def, coord, tol));
+        vert_map.insert(vh, model.push_vertex(def, cache));
     }
 
     // Pass 4 — edges (carrier/vertex handles remapped; the curve cache derives from them).
@@ -1131,8 +1134,12 @@ mod tests {
             m.world_plane(Axis::X),
             m.world_plane(Axis::Y),
         ]);
-        let mk_v =
-            |m: &mut Model, x: f64| m.push_vertex(foreign, Point3::from_array([x, 0.0, 9.0]), None);
+        let mk_v = |m: &mut Model, x: f64| {
+            m.push_vertex(
+                foreign,
+                PointCache::Unmeasured(Point3::from_array([x, 0.0, 9.0])),
+            )
+        };
         let v0 = mk_v(&mut m, 0.0);
         let v1 = mk_v(&mut m, 1.0);
         let e = m
@@ -1293,8 +1300,7 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Lo,
             },
-            Point3::from_array([0.0, -2.0, 0.0]),
-            None,
+            PointCache::Unmeasured(Point3::from_array([0.0, -2.0, 0.0])),
         );
         let v_hi = m.push_vertex(
             VertexDef::Pierce {
@@ -1302,8 +1308,7 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Hi,
             },
-            Point3::from_array([0.0, 2.0, 0.0]),
-            None,
+            PointCache::Unmeasured(Point3::from_array([0.0, 2.0, 0.0])),
         );
         // Wire the vertices into the solid (a franken-face on the x = 0 seed): transform
         // remaps only what its face walk reaches, and `defs_are_remappable` requires every

@@ -14,7 +14,7 @@ use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{DatumDef, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, replay};
 use nacre_scalar::Axis;
-use nacre_topo::{FramePlacement, Model, PlanePoints, Surface};
+use nacre_topo::{FramePlacement, Model, PlanePoints, PointCache, Surface};
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
 /// when the plane is not one the model already holds (a seed, or a face's).
@@ -2184,8 +2184,7 @@ fn wide_meet_vertex(
     let coord = place([u.to_f64(), v.to_f64(), zw]);
     m.push_vertex(
         nacre_topo::VertexDef::ThreePlane([a, b, c]),
-        Point3::from_array(coord),
-        None,
+        PointCache::Unmeasured(Point3::from_array(coord)),
     )
 }
 

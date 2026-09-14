@@ -23,7 +23,7 @@ use crate::{BoolKind, he_start};
 use nacre_cip::{WitnessPoint, orient3d_filter};
 use nacre_scalar::Orient;
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, Vertex};
+use nacre_topo::{Model, PointCache, Solid, Vertex};
 use std::collections::HashMap;
 
 /// Whether a boolean may take the shortcut this module exists for.
@@ -87,7 +87,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     if !seen.insert(vh) {
                         continue;
                     }
-                    if model.vertex_tol(vh).is_some() {
+                    if matches!(model.vertex_cache(vh), PointCache::Measured { .. }) {
                         return None; // measured — an implicit point has no rational base
                     }
                     let tri = match model.vertices.get(vh).def {

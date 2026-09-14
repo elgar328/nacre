@@ -19,8 +19,9 @@
 //! this measures.
 //!
 //! Populations come from the kernel's own discriminator rather than from a story: `vertex_tol` is
-//! `Some` for a **discovered** vertex and `None` for a **constructed** one, which is exactly the
-//! set rule 1 is about. Constructed vertices ride along as the free control.
+//! `Some` for a **measured** vertex and `None` for an **unmeasured** one (constructed, or moved by a
+//! recorded motion), which is exactly the set rule 1 is about. Unmeasured vertices ride along as
+//! the free control.
 //!
 //! `OnSeam` vertices are excluded rather than counted as failures: that variant pins a curve, not
 //! a point, and its doc already records the coordinate cache as load-bearing there.
@@ -208,7 +209,7 @@ fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
 struct Tally {
     /// Every vertex walked.
     vertices: usize,
-    /// `vertex_tol` is `None` — a constructed vertex (the control).
+    /// `vertex_tol` is `None` — an unmeasured vertex (constructed; the control).
     constructed: usize,
     /// `vertex_tol` is `Some(0.0)` — discovered, residual measured exactly zero.
     discovered_exact: usize,

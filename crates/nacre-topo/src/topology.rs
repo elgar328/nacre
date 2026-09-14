@@ -115,7 +115,7 @@ pub struct Solid {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Model;
+    use crate::{Model, PointCache};
     use nacre_math::Point3;
 
     #[test]
@@ -126,8 +126,11 @@ mod tests {
             m.world_plane(nacre_scalar::Axis::X),
             m.world_plane(nacre_scalar::Axis::Y),
         ]);
-        let v0 = m.push_vertex(seeds, Point3::origin(), None);
-        let v1 = m.push_vertex(seeds, Point3::from_array([1.0, 0.0, 0.0]), None);
+        let v0 = m.push_vertex(seeds, PointCache::Unmeasured(Point3::origin()));
+        let v1 = m.push_vertex(
+            seeds,
+            PointCache::Unmeasured(Point3::from_array([1.0, 0.0, 0.0])),
+        );
         let r = nacre_scalar::Rat::from_int;
         let sa = m.push_plane_unregistered(
             nacre_geom::Plane::from_point_normal(

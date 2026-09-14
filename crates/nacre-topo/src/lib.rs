@@ -557,9 +557,10 @@ pub struct Model {
     /// cache entry desyncs the two — the accessor's debug_assert and validate's parallelism
     /// check watch for that (the store stays `pub` per the doc's final shape).
     edge_cache: Vec<EdgeCache>,
-    /// Per-vertex coordinate caches, index-parallel to `vertices` (S7) — the realized `coord`
-    /// and, for discovered vertices, the measured `tol`. Filled by [`Model::push_vertex`];
-    /// read through [`Model::vertex_point`] / [`Model::vertex_tol`]. No rebuild exists (3b ⏸):
+    /// Per-vertex coordinate caches, index-parallel to `vertices` (S7) — the realized coordinate
+    /// and, where one was measured, the residual. Filled by [`Model::push_vertex`]; read through
+    /// [`Model::vertex_cache`] or its pieces [`Model::vertex_point`] / [`Model::vertex_tol`].
+    /// No rebuild exists (3b ⏸):
     /// `nacre_ops::realize_vertex` can reproduce every variant from its definition (cell 41),
     /// but nothing writes that answer back here yet — today's coordinate is whatever the
     /// producer computed in f64.
@@ -641,15 +642,57 @@ pub struct Model {
     pub adj: Adjacency,
 }
 
-/// One vertex's realized coordinate and measured tolerance — a **cache** beside the vertex
-/// store (index-parallel), filled by [`Model::push_vertex`]. `tol: Some` is a discovered
-/// vertex's measured residual (kept exact — `0.0` means exactly zero); `None` is a constructed
-/// vertex (checkers apply their own epsilon). Unlike [`EdgeCache`] there is **no rebuild**:
-/// the coordinate is truth-bearing for seam vertices and hard-won for discovered ones (3b ⏸).
+/// One vertex's realized coordinate — a **cache** beside the vertex store (index-parallel),
+/// filled by [`Model::push_vertex`]. The variant says what the cache **knows**, not where the
+/// vertex came from: `Measured` carries the residual the arrangement measured when it made the
+/// coordinate (kept exact — `0.0` means exactly zero); `Unmeasured` carries no such number, and
+/// a checker applies its own construction epsilon. Knowledge rather than provenance because the
+/// writers say so: a discovered vertex that a *recorded* motion moves is pushed `Unmeasured`
+/// (`nacre_ops::transform` — its residual was measured against carriers that no longer sit
+/// there), and "constructed" would be a lie at that site where "unmeasured" is simply true.
+///
+/// The residual is **one number**, not a per-axis bound: it is the largest distance from the
+/// point to its carriers, which says nothing about how far each coordinate is from the truth
+/// (a near-degenerate carrier crossing can sit close to every carrier and still be far from the
+/// exact corner). A per-axis `[Bounded; 3]` here would claim a containment nobody proved.
+/// Unlike [`EdgeCache`] there is **no rebuild**: the coordinate is truth-bearing for seam
+/// vertices and hard-won for discovered ones (3b ⏸).
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct PointCache {
-    coord: Point3,
-    tol: Option<f64>,
+pub enum PointCache {
+    /// No measurement — a checker applies its own construction epsilon.
+    Unmeasured(Point3),
+    /// `residual` is the largest distance from `coord` to the carriers that made it.
+    Measured { coord: Point3, residual: f64 },
+}
+
+impl PointCache {
+    /// The realized coordinate, whichever the cache knows about it.
+    #[inline]
+    pub fn coord(&self) -> Point3 {
+        match *self {
+            PointCache::Unmeasured(c) | PointCache::Measured { coord: c, .. } => c,
+        }
+    }
+
+    /// The measured residual, `None` when nothing was measured.
+    #[inline]
+    pub fn residual(&self) -> Option<f64> {
+        match *self {
+            PointCache::Unmeasured(_) => None,
+            PointCache::Measured { residual, .. } => Some(residual),
+        }
+    }
+
+    /// The same knowledge at another coordinate. A rigid motion moves the point and its
+    /// carriers together, so a measured residual stays the residual — the letter-preserving
+    /// rule `nacre_ops::transform` keeps for an exact move; the variant travels whole.
+    #[inline]
+    pub fn moved_to(self, coord: Point3) -> Self {
+        match self {
+            PointCache::Unmeasured(_) => PointCache::Unmeasured(coord),
+            PointCache::Measured { residual, .. } => PointCache::Measured { coord, residual },
+        }
+    }
 }
 
 /// One edge's realized curve — a **cache** beside the edge store (index-parallel), derived
@@ -1510,10 +1553,11 @@ impl Model {
         self.shells.push(Shell { faces })
     }
 
-    /// A vertex's realized coordinate — **the one road to a coordinate from a vertex** (S7),
-    /// read from the index-parallel cache [`Model::push_vertex`] fills.
+    /// A vertex's cache — **the one road to a coordinate from a vertex** (S7), read from the
+    /// index-parallel store [`Model::push_vertex`] fills. The pieces are [`Model::vertex_point`]
+    /// and [`Model::vertex_tol`]; read the whole when the variant itself is the question.
     #[inline]
-    pub fn vertex_point(&self, vh: Handle<Vertex>) -> Point3 {
+    pub fn vertex_cache(&self, vh: Handle<Vertex>) -> &PointCache {
         #[cfg(debug_assertions)]
         Self::debug_guard(&self.vertices, vh);
         debug_assert_eq!(
@@ -1521,35 +1565,32 @@ impl Model {
             self.vertices.len(),
             "vertex cache out of step with the vertex store — push vertices through Model::push_vertex"
         );
-        self.vertex_cache[vh.index() as usize].coord
+        &self.vertex_cache[vh.index() as usize]
     }
 
-    /// A vertex's measured coordinate tolerance: `Some` for a discovered vertex (the residual
-    /// the arrangement measured when it made the coordinate — `0.0` means exactly zero, kept
-    /// exact), `None` for a constructed one (no measurement — a checker applies its own
-    /// construction epsilon).
+    /// A vertex's realized coordinate — [`Model::vertex_cache`]'s coordinate piece.
+    #[inline]
+    pub fn vertex_point(&self, vh: Handle<Vertex>) -> Point3 {
+        self.vertex_cache(vh).coord()
+    }
+
+    /// A vertex's measured residual: `Some` where the arrangement measured one when it made the
+    /// coordinate (`0.0` means exactly zero, kept exact), `None` where nothing was measured (a
+    /// checker applies its own construction epsilon) — [`Model::vertex_cache`]'s residual piece.
     #[inline]
     pub fn vertex_tol(&self, vh: Handle<Vertex>) -> Option<f64> {
-        #[cfg(debug_assertions)]
-        Self::debug_guard(&self.vertices, vh);
-        debug_assert_eq!(self.vertex_cache.len(), self.vertices.len());
-        self.vertex_cache[vh.index() as usize].tol
+        self.vertex_cache(vh).residual()
     }
 
-    /// Push a vertex: its definition (the truth) plus the realized coordinate and measured
-    /// tolerance (the cache, moved verbatim — S7 moves the field, it does not re-derive; the
-    /// coordinate re-derivation question is 3b, deliberately on hold). The one write road.
+    /// Push a vertex: its definition (the truth) plus its cache — the realized coordinate and
+    /// what was measured about it, moved verbatim (S7 moves the field, it does not re-derive;
+    /// the coordinate re-derivation question is 3b, deliberately on hold). The one write road.
     ///
     /// ★ There is **no `rebuild_vertex_cache`**: a discovered coordinate is the arrangement's
     /// carefully-made value (measured: 238 of 1,992 differ from a naive re-solve), and a seam
     /// vertex's coordinate is load-bearing (M6). The «discard and regenerate» warrant S8 gave
     /// edges is honestly absent here until then.
-    pub fn push_vertex(
-        &mut self,
-        def: VertexDef,
-        coord: Point3,
-        tol: Option<f64>,
-    ) -> Handle<Vertex> {
+    pub fn push_vertex(&mut self, def: VertexDef, cache: PointCache) -> Handle<Vertex> {
         match def {
             VertexDef::ThreePlane([a, b, c]) => debug_assert!(
                 a != b && b != c && a != c,
@@ -1568,7 +1609,7 @@ impl Model {
             ),
         }
         let h = self.vertices.push(Vertex { def });
-        self.vertex_cache.push(PointCache { coord, tol });
+        self.vertex_cache.push(cache);
         h
     }
 
@@ -1838,8 +1879,7 @@ impl Model {
             let along_y = if m >= 2 { 3 } else { 2 }; // Back +Y / Front −Y
             self.push_vertex(
                 VertexDef::ThreePlane([surf[cap].0, surf[along_y].0, surf[along_x].0]),
-                corners[i],
-                None,
+                PointCache::Unmeasured(corners[i]),
             )
         });
 
@@ -2194,13 +2234,11 @@ impl Model {
         // (see `VertexDef::OnSeam`; regenerating the cached coordinate stays deferred with 3b).
         let v_bot = self.push_vertex(
             VertexDef::OnSeam([lateral_surface, bottom_cap_surface]),
-            p_bot,
-            None,
+            PointCache::Unmeasured(p_bot),
         );
         let v_top = self.push_vertex(
             VertexDef::OnSeam([lateral_surface, top_cap_surface]),
-            p_top,
-            None,
+            PointCache::Unmeasured(p_top),
         );
 
         // Rims are full circles seamed at their vertex (start == end); the seam is
@@ -2440,8 +2478,7 @@ mod tests {
         let my = moved(&mut m, py, t2, [0.0, 1.0, 0.0], [0.0, 3.0, 0.0]);
         let v = m.push_vertex(
             VertexDef::ThreePlane([mx, my, pz]),
-            Point3::from_array([2.0, 3.0, 0.0]),
-            None,
+            PointCache::Unmeasured(Point3::from_array([2.0, 3.0, 0.0])),
         );
         let (p, frame) = m
             .vertex_meet(v)
@@ -2468,8 +2505,7 @@ mod tests {
         let turned = moved(&mut m, px, spin, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]);
         let v_turned = m.push_vertex(
             VertexDef::ThreePlane([turned, mx, pz]),
-            Point3::from_array([2.0, 0.0, 0.0]),
-            None,
+            PointCache::Unmeasured(Point3::from_array([2.0, 0.0, 0.0])),
         );
         assert!(
             m.vertex_meet(v_turned).is_none(),
@@ -2481,8 +2517,7 @@ mod tests {
         let my2 = moved(&mut m, py, t1, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]);
         let v_shared = m.push_vertex(
             VertexDef::ThreePlane([mx2, my2, pz]),
-            Point3::from_array([2.0, 0.0, 0.0]),
-            None,
+            PointCache::Unmeasured(Point3::from_array([2.0, 0.0, 0.0])),
         );
         let (_, frame) = m.vertex_meet(v_shared).expect("one chain, one frame");
         assert_eq!(
@@ -3689,7 +3724,7 @@ mod tests {
                 1.0 / c as f64,
                 (off.0 + 1) as f64 / b1 as f64,
             ]);
-            vs.push(m.push_vertex(VertexDef::ThreePlane(tri), coord, None));
+            vs.push(m.push_vertex(VertexDef::ThreePlane(tri), PointCache::Unmeasured(coord)));
         }
         vs.sort_by_key(|v| v.index());
         let out = [vs[0], vs[1], vs[2]];

@@ -13,6 +13,7 @@ use nacre_cip::Decision;
 use nacre_cip::predicate::{Evidence, Notes, Site};
 use nacre_math::Point3;
 use nacre_store::Handle;
+use nacre_topo::PointCache;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, Orientation, Shell, Solid, Surface, Vertex, VertexDef,
 };
@@ -2079,7 +2080,13 @@ pub(crate) fn reconstruct(
                             cylinder,
                             root,
                         };
-                        let h = model.push_vertex(def, sv.point, Some(tol));
+                        let h = model.push_vertex(
+                            def,
+                            PointCache::Measured {
+                                coord: sv.point,
+                                residual: tol,
+                            },
+                        );
                         vh.insert((g, node), h);
                         return Ok(h);
                     }
@@ -2113,7 +2120,13 @@ pub(crate) fn reconstruct(
                     .iter()
                     .map(|&i| model.surface(planes[i].surf).distance(sv.point))
                     .fold(sv.tol, f64::max);
-                model.push_vertex(def, sv.point, Some(tol))
+                model.push_vertex(
+                    def,
+                    PointCache::Measured {
+                        coord: sv.point,
+                        residual: tol,
+                    },
+                )
             };
             vh.insert((g, node), handle);
             Ok(handle)
@@ -2230,7 +2243,13 @@ pub(crate) fn reconstruct(
                 // point (a zero-length arc piece nothing downstream could see).
                 let v = match cut {
                     Some(cr) if cr.seam_is_node => vh[&(g, cr.nodes[0])],
-                    _ => model.push_vertex(VertexDef::OnSeam([lat, plane]), point, Some(tol)),
+                    _ => model.push_vertex(
+                        VertexDef::OnSeam([lat, plane]),
+                        PointCache::Measured {
+                            coord: point,
+                            residual: tol,
+                        },
+                    ),
                 };
                 let e = match cut {
                     Some(_) => None,

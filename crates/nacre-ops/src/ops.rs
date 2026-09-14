@@ -16,6 +16,7 @@ use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::CylinderDef;
+use nacre_topo::PointCache;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Shell, Solid, Surface, Vertex,
     VertexDef,
@@ -2099,7 +2100,7 @@ fn sweep_ring(
             .enumerate()
             .map(|(i, (p, at))| {
                 let def = define(model, i, cap, at)?;
-                Ok(model.push_vertex(def, *p, None))
+                Ok(model.push_vertex(def, PointCache::Unmeasured(*p)))
             })
             .collect()
     };

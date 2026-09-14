@@ -11,6 +11,7 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
+use nacre_topo::PointCache;
 use nacre_topo::{
     Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Surface, Vertex, VertexDef,
 };
@@ -255,12 +256,15 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     out
 }
 
-/// The tolerance a vertex's provenance grants (S7: read from the point cache): a measured
-/// tolerance where one exists (`Some` — a discovered vertex, `0.0` kept exact), else the
-/// construction epsilon [`EPS_CONSTRUCTED`].
+/// The tolerance a vertex's cache grants (S7: read from the point cache): the measured residual
+/// where one exists (`PointCache::Measured`, `0.0` kept exact), else the construction epsilon
+/// [`EPS_CONSTRUCTED`] for an unmeasured one.
 #[inline]
 fn tol_of(m: &Model, vh: Handle<Vertex>) -> f64 {
-    m.vertex_tol(vh).unwrap_or(EPS_CONSTRUCTED)
+    match *m.vertex_cache(vh) {
+        PointCache::Measured { residual, .. } => residual,
+        PointCache::Unmeasured(_) => EPS_CONSTRUCTED,
+    }
 }
 
 #[inline]
@@ -989,8 +993,10 @@ mod tests {
                 surface_handle_at(1),
                 surface_handle_at(9), // out of bounds — only 6 surfaces
             ]),
-            Point3::origin(),
-            Some(1e-9),
+            PointCache::Measured {
+                coord: Point3::origin(),
+                residual: 1e-9,
+            },
         );
         assert_eq!(
             validate(&m),
@@ -1023,8 +1029,7 @@ mod tests {
                 m.world_plane(nacre_scalar::Axis::X),
                 m.world_plane(nacre_scalar::Axis::Y),
             ]),
-            Point3::origin(),
-            None,
+            PointCache::Unmeasured(Point3::origin()),
         );
         assert!(validate(&m).is_empty());
     }
@@ -1153,12 +1158,15 @@ mod tests {
                     .filter(|(_, (tri, _))| tri.contains(&i))
                     .map(|(fi, _)| sh[fi])
                     .collect();
+                let coord = Point3::from_array(p);
                 m.push_vertex(
                     VertexDef::ThreePlane(
                         incident.try_into().expect("a tetra vertex is on 3 faces"),
                     ),
-                    Point3::from_array(p),
-                    tol,
+                    match tol {
+                        Some(residual) => PointCache::Measured { coord, residual },
+                        None => PointCache::Unmeasured(coord),
+                    },
                 )
             })
             .collect();
@@ -1363,8 +1371,7 @@ mod tests {
         let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
             m.push_vertex(
                 VertexDef::ThreePlane([sa, sb, sc]),
-                Point3::from_array(p),
-                None,
+                PointCache::Unmeasured(Point3::from_array(p)),
             )
         };
         let v0 = v(&mut m, [0.0, 0.0, 0.0]);
@@ -1442,8 +1449,7 @@ mod tests {
             let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
                 m.push_vertex(
                     VertexDef::ThreePlane([sa, sb, sc]),
-                    Point3::from_array(p),
-                    None,
+                    PointCache::Unmeasured(Point3::from_array(p)),
                 )
             };
             let v0 = v(&mut m, [0.0, 0.0, 0.0]);
@@ -1529,8 +1535,14 @@ mod tests {
             m.world_plane(nacre_scalar::Axis::Z),
             m.world_plane(nacre_scalar::Axis::X),
         );
-        let bad_three = m.push_vertex(VertexDef::ThreePlane([z0, x0, cyl]), Point3::origin(), None);
-        let bad_seam = m.push_vertex(VertexDef::OnSeam([z0, x0]), Point3::origin(), None);
+        let bad_three = m.push_vertex(
+            VertexDef::ThreePlane([z0, x0, cyl]),
+            PointCache::Unmeasured(Point3::origin()),
+        );
+        let bad_seam = m.push_vertex(
+            VertexDef::OnSeam([z0, x0]),
+            PointCache::Unmeasured(Point3::origin()),
+        );
         let vs = validate(&m);
         for bad in [bad_three, bad_seam] {
             assert!(
@@ -1732,8 +1744,7 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Lo,
             },
-            Point3::from_array([0.0, -2.0, 0.0]),
-            None,
+            PointCache::Unmeasured(Point3::from_array([0.0, -2.0, 0.0])),
         );
         assert_eq!(validate(&m), vec![], "a sound pierce statement is clean");
         // The lying coordinate, wired into a reachable face so the off-definition check
@@ -1744,8 +1755,7 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Hi,
             },
-            Point3::from_array([0.0, 2.001, 0.0]),
-            None,
+            PointCache::Unmeasured(Point3::from_array([0.0, 2.001, 0.0])),
         );
         let anchor = m.push_vertex(
             VertexDef::Pierce {
@@ -1753,8 +1763,7 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Lo,
             },
-            Point3::from_array([0.0, -2.0, 0.0]),
-            None,
+            PointCache::Unmeasured(Point3::from_array([0.0, -2.0, 0.0])),
         );
         let edge = m.push_edge([bottom, x0], [anchor, bad]).expect("a line");
         let face = m.faces.push(Face {
@@ -1811,8 +1820,7 @@ mod tests {
                 cylinder: x0,
                 root: QuadRoot::Lo,
             },
-            Point3::origin(),
-            None,
+            PointCache::Unmeasured(Point3::origin()),
         );
         let plane_in_cyl_slot = m.push_vertex(
             VertexDef::Pierce {
@@ -1820,8 +1828,7 @@ mod tests {
                 cylinder: m.world_plane(nacre_scalar::Axis::Y),
                 root: QuadRoot::Lo,
             },
-            Point3::origin(),
-            None,
+            PointCache::Unmeasured(Point3::origin()),
         );
         let vs = validate(&m);
         for bad in [cyl_in_plane_slot, plane_in_cyl_slot] {
@@ -1886,8 +1893,7 @@ mod tests {
         // endpoint always is; the coordinate is the part that lies.
         let bad = m.push_vertex(
             VertexDef::OnSeam([lateral, cap]),
-            Point3::from_array([2.001, 0.0, 0.0]),
-            None,
+            PointCache::Unmeasured(Point3::from_array([2.001, 0.0, 0.0])),
         );
         let rim = m
             .push_edge([lateral, cap], [bad, bad])

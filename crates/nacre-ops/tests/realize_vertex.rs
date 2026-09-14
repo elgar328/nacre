@@ -33,7 +33,7 @@ use nacre_ops::{
 };
 use nacre_scalar::Axis;
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, Surface, Vertex};
+use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
 fn p2(x: f64, y: f64) -> Point2 {
     Point2::from_array([x, y])
@@ -232,8 +232,10 @@ fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
                         cylinder,
                         root,
                     },
-                    Point3::from_array([0.0; 3]),
-                    Some(0.0),
+                    PointCache::Measured {
+                        coord: Point3::from_array([0.0; 3]),
+                        residual: 0.0,
+                    },
                 ));
             }
         }

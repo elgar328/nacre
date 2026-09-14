@@ -483,16 +483,24 @@ pub struct HpBounded { value: BigFloat, error: Mag }              // ⏳ 오늘 
 // ── 계단 2: «경계 지어진 점» — 원자 셋(축별). realize 가 이미 `[Bounded;3]` 로 든다. ──
 //   ★ 값과 오차를 «묶어» 든다(따로 든 배열 둘이 아니라). 그래야 «참값 ∈ value±error» 가 구조로 서고
 //     transform 이 값만 옮기고 오차를 안 옮기는 desync 가 **불가능**해진다.
-pub enum PointCache {                                             // ⏳ 오늘 `{coord: Point3, tol: Option<f64>}`
-    Constructed([f64; 3]),                                        //   좌표만 — 측정 없음(checker 가 자기 ε)
-    Discovered([Bounded; 3]),                                     //   값+오차 «묶음»(계단 2) — 발견 정점
+pub enum PointCache {                                             // ✔ 2026-09-15 (열린 항목 23, 3단계)
+    Unmeasured(Point3),                                           //   잰 것 없음 — checker 가 자기 ε
+    Measured { coord: Point3, residual: f64 },                    //   담체에서 잰 잔차 «하나»
 }
-//   ★★ **출처를 변종으로** — 오늘 `tol: Option<f64>` 의 `None`/`Some` 이 나르던 «구성/발견»을 타입이
-//     구조로 말한다(reuse 가 그 유무로 «유리수 base 없음»을 읽는다 — `matches!(Discovered)`). 값과 오차는
-//     발견 변종 안에서 [Bounded;3] 로 «묶여» desync 불가; 구성 변종엔 오차 자리가 아예 없다(있을 수 없는
-//     것을 표현 안 함 — `SurfaceCache` 변종과 같은 원칙). 좌표 중복 없음(발견의 coord = Bounded.value).
-//   ⏳ 오늘은 단일 struct 라 구성 정점도 `tol: None` 으로 «오차 자리»를 든다 — 칸 ㊸ 가 변종화하며
-//     스칼라 tol 을 축별 `[Bounded;3]` 로 바꾼다.
+//   ★★ **«잰 것이 있는지»를 변종으로** — `tol: Option<f64>` 의 `None`/`Some` 이 나르던 것을 타입이 구조로
+//     말한다(reuse 가 그것으로 «유리수 base 없음»을 읽는다 — `matches!(Measured)`). 미측정 변종엔 오차
+//     자리가 아예 없다(있을 수 없는 것을 표현 안 함 — `SurfaceCache` 변종과 같은 원칙).
+//   ★★★★ **이름은 «출처»(구성/발견)가 아니라 «캐시가 아는 것»이다** — 쓰는 쪽이 정했다. `transform` 은
+//     기록된 이동을 받은 «발견» 정점을 `None` 으로 강등해 왔으므로(*"a recorded move used to demote to
+//     `Moved`"*) `None` 은 «구성»이 아니라 «미측정»이었고, 2026-09-13 그림의 `Constructed` 로 이름했다면
+//     그 자리가 이동된 발견 정점을 «구성»이라 철자했을 것이다 — `None` 은 침묵했지만 이름은 거짓을 말한다.
+//   ★★★★ **`[Bounded; 3]` 가 아니다 — 잔차는 축별 경계가 아니다.** 2026-09-13 그림은 `Discovered([Bounded;3])`
+//     라 적었는데, 그것은 아래 「세 «오차»를 섞지 말 것」이 경고한 바로 그 혼동이었다: `PointCache` 의 오차는
+//     «저장된 점의 잔차(면에서 얼마나)» **하나**(`pierce_vertex_tol` = 담체 거리의 max)이고, `Bounded.error` 는
+//     «참값 ∈ 값±오차» 를 **증명한** 축별 반경이다. 잔차를 거기 넣으면 타입이 증명 안 된 포함을 주장한다
+//     (거의 퇴화한 담체 교차는 모든 담체에 가까우면서 정확한 코너에서 멀 수 있다). ⇒ **`PointCache` 는 계단
+//     2 가 아니다** — 계단 2(`[Bounded;3]`)는 `realize` 출력과 `WitnessPoint` 에만 산다. «묶음»의 이득(transform
+//     이 값만 옮기고 오차를 안 옮기는 desync 불가)은 변종이 그대로 준다 — `moved_to` 가 변종을 통째로 옮긴다.
 //   ⏸ 고정밀판은 아직 «타입»이 아니다: 연산 하나짜리 실현이라 이름이 «Cache» 가 아니다(항목 23) —
 //     `[HpBounded; 3]` 이거나 아래 `WitnessPoint` 자신이다(튜플 `(usize, [HpBounded;3])` 가 오늘 것).
 
@@ -531,7 +539,7 @@ pub enum SurfaceCache {
 //    원통으로 확장되지 않는다. `HpSurfaceCache{ coeffs, tol }` 도 같은 이유로 죽었다.
 pub struct EdgeCache     { curve: Curve }                          // 평가 가능한 담체 곡선
 // ★★★ **캐시는 «실현값 (+ 필요하면 그 오차)»** (2026-09-13 정정 — «셋 다 오차로 수렴»은 과했다):
-//    `PointCache{coord, tol}` ✔(정점은 발견 잔차가 실물) · `EdgeCache{curve, err?}`(M7 후보) ·
+//    `PointCache::Measured{coord, residual}` ✔(정점은 발견 잔차가 실물) · `EdgeCache{curve, err?}`(M7 후보) ·
 //    `SurfaceCache{realized, tol?}` **동기 미확인**(위 §최종 타입 — 곡면 진실은 정확해 잔차가 없다).
 //    ⇒ 오차 필드는 «소비자가 있으면» 붙지 대칭으로 붙지 않는다.
 //    그 빠진 필드는 이미 이름이 있다 — design §3 의 `Intersection.cache_err`(*"캐시가 진짜 교차에서
@@ -609,7 +617,7 @@ m.surface_cache(h).cylinder()    -> Option<&geom::Cylinder>
 m.surface_cache(h).name()        -> Option<&PlaneName>
 m.surface_cache(h).tol()         -> ⏸ 「8·캐시 실형」
 m.surface_cache(h).distance(p)   -> f64                         // 다형 질의는 캐시가 가른다
-m.vertex_cache(v)                -> &PointCache                 // 변종(Constructed | Discovered) — §캐시
+m.vertex_cache(v)                -> &PointCache                 // 변종(Unmeasured | Measured) — §캐시
 //   조각은 그 위에서 `match` — 발견이면 `[Bounded;3]`, 구성이면 좌표만. (오늘은 coord()/tol() 둘로 갈렸다.)
 m.edge_cache(e).curve()          -> &Curve                     // (오차 err 은 M7 후보 — 위 §캐시)
 ```
@@ -1127,6 +1135,9 @@ STEP 출력, undo/replay.
    (사다리 없음, 기울면 최대 4 ulp)인데, `realize_vertex(v, NearestF64)` 의 출력을 쓰면 «정확 반올림 +
    축별 경계 `[Mag;3]`»가 된다. 최초판 887행의 약속(*"STEP 은 정확 반올림해 낸다"*)이 그때 닫히고,
    `PointCache.tol` 의 뜻이 «잔차 하나»에서 «축별 경계 셋»으로 바뀐다(§캐시 «세 오차» 표 갱신 대상).
+   ⚠ 정정(2026-09-15, 항목 23 3단계): «바뀐다»가 아니라 **변종이 하나 더 생긴다** — `Measured { residual }` 는
+   담체 거리 하나이고 증명된 축별 경계가 아니므로(§캐시), `realize` 가 채운 정점은 자기 변종(`[Bounded;3]`)을
+   따로 가져야 한다. 두 생산자가 공존하는 동안 둘 다 산다.
    ⚠★★★ **정정(2026-09-13) — 「캐시를 판정 1단의 씨앗으로」는 이득이 작다, 그리고 이유는 «캐시가 정확성을
    진다»가 아니다.** 여기 그 대가를 그렇게 적었는데 부정확했다. 캐시의 오차는 엉터리가 아니다(㊸ 뒤면
    realize 통로에서 나온 건전한 `Mag`). 진짜는 **캐시가 실현의 «출력»(나눠 반올림한 f64)이고 판정의 정확
@@ -1471,7 +1482,9 @@ STEP 출력, undo/replay.
     «코드 1곳»으로 통과했는데 그 1곳이 *"since `ImprintSketch` retired"* 라는 주석). **«선언 또는 주석 제거
     후 사용»으로 교정하면 design.md 가 이름 짓는 타입 321개 중 죽은 것이 17이 아니라 47개다.**
     ⚠ 그리고 `Constructed`/`Discovered` 는 **죽은 낱말이 아니다** — `EPS_CONSTRUCTED` 는 살아 있는 공개
-    상수(사용 10곳)이고, 항목 23 이 그 낱말을 `PointCache::{Constructed, Discovered}` 변종으로 되살린다.
+    상수(사용 10곳)이다. (여기 *"항목 23 이 그 낱말을 `PointCache::{Constructed, Discovered}` 변종으로
+    되살린다"* 라 적었었는데, 3단계(2026-09-15)는 **`{Unmeasured, Measured}`** 를 골랐다 — 쓰는 쪽(`transform`)이
+    나르던 것이 «구성/발견»이 아니라 «미측정/측정»이었다. §캐시.)
     **죽은 것은 «어휘»가 아니라 «논지»다.**
 
     ✔ **닫힌 조각 — DNA (2026-09-14).** `overview.md` 는 `CLAUDE.md` 가 *"절대 원칙, 위반 금지"* 로
