@@ -14,9 +14,10 @@ use nacre_math::{Point3, Vector3};
 ///
 /// A `Circle` is the *full, unbounded* curve, parameterized by angle θ (radians)
 /// from `ref_dir`. An edge trims it to an arc via its endpoint vertices — a
-/// closed edge (`bounds: None`) is the whole circle — the same carrier-vs-trim
-/// split as [`Line`](crate::Line) + `Edge` (design §3). This matches the STEP
-/// `CIRCLE` (its `axis2_placement_3d` is exactly `center`/`normal`/`ref_dir`).
+/// closed edge is the whole circle — its two endpoint vertices are the same seam
+/// vertex (`[v, v]`), the same carrier-vs-trim split as [`Line`](crate::Line) +
+/// `Edge` (design §3). This matches the STEP `CIRCLE` (its `axis2_placement_3d`
+/// is exactly `center`/`normal`/`ref_dir`).
 ///
 /// Same `PartialEq` / no-`Eq` / no-`Hash` rationale as [`Line`](crate::Line):
 /// exact `==` is for tests only; on-circle queries use [`Circle::distance`] /

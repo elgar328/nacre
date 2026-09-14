@@ -6,8 +6,11 @@
 //! truth/cache split (design §5) — never the source of geometric truth.
 //!
 //! Scope boundaries:
-//! - **Scalar is concrete `f64`, not generic.** Extended precision
-//!   (double-double) belongs to `nacre-geom`'s relaxation ladder, not here.
+//! - **Scalar is concrete `f64`, not generic.** Extended precision does not live here:
+//!   exact values are `nacre-scalar`'s `Rat`, and a coordinate that needs more than
+//!   `f64` is realized from its definition at a chosen precision (`nacre-ops::realize`,
+//!   climbing with `astro-float`). The old note named `nacre-geom`'s relaxation ladder
+//!   and double-double; neither was built.
 //! - **`Transform`/matrices are deferred** to when they are first needed
 //!   (sketch-plane placement, M2); a future `transform.rs` will host them.
 //! - **Inputs are assumed finite.** No NaN/inf guarding in M1.

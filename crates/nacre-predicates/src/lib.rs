@@ -7,9 +7,10 @@
 //! adaptive-precision predicates, MIT/Apache), which exposes both the finished
 //! predicates (`orient3d`) **and** the adaptive floating-point arithmetic
 //! primitives (`two_product`, `two_sum`, `expansion_sum`, …). Those primitives
-//! are what the coming **indirect** predicates (M5-a: a sign of a determinant
-//! whose points are *implicit* — defined as plane intersections, never
-//! materialized as coordinates; Attene 2020) are built from.
+//! are what the **indirect** predicates are built from ([`indirect_orient3d`],
+//! [`indirect_cmp_coord`], [`indirect_plane_side`]: the sign of a determinant whose points
+//! are *implicit* — defined as plane intersections, never materialized as coordinates;
+//! Attene 2020).
 //!
 //! **Pure numeric layer (design §9 predicate-cycle decision).** Everything here
 //! takes plane coefficients and coordinates as plain `[f64; N]` arrays — never a

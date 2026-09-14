@@ -1,9 +1,10 @@
 //! b-rep topology cells (design.md §4).
 //!
 //! Every cell references exact geometry only by `Handle` — the topology never
-//! looks at coordinates. Identity is by `Handle`, so nothing here derives
-//! `Eq`/`Hash` if it transitively holds an `f64` (a `Point3`); those get
-//! `PartialEq` for tests only.
+//! looks at coordinates. Identity is by `Handle`, so a cell derives `Eq`/`Hash` only
+//! when every field is a handle or a flag; anything that could transitively hold an
+//! `f64` gets `PartialEq` for tests only. (No cell holds one today — the coordinate
+//! became a cache in S7 — but the rule is about what a cell is *allowed* to hold.)
 
 use crate::{Orientation, Surface, VertexDef};
 use nacre_store::Handle;

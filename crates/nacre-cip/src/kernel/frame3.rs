@@ -1934,7 +1934,7 @@ fn pt_iv(p: &WitnessPoint) -> [Approx; 3] {
 /// Plane `[a,b,c,d]` (`n·X + d = 0`) through three points, as intervals: `n =
 /// (p1−p0)×(p2−p0)`, `d = −n·p0`. Coefficient tol propagates from the point tols
 /// through the subtraction/cross/dot — "coefficient tol is a corollary of point tol"
-/// (§CIP ②, design.md §539). Validated H-b.
+/// (§CIP ②). Validated H-b.
 pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) -> [Approx; 4] {
     let (a, b, c) = (pt_iv(p0), pt_iv(p1), pt_iv(p2));
     let e1 = [b[0].sub(a[0]), b[1].sub(a[1]), b[2].sub(a[2])];

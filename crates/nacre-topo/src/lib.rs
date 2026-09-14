@@ -1510,17 +1510,6 @@ impl Model {
         self.shells.push(Shell { faces })
     }
 
-    /// The vertex a half-edge starts at: its edge's `vertices[0]` when the use runs
-    /// forward, `bounds[1]` when it runs back.
-    ///
-    /// A traversal accessor, not an analysis — the same kind of thing as
-    /// [`Model::reachable`], and the reason it lives here: walking a loop's
-    /// corners is the first thing every consumer above does, and it was written
-    /// twice (with two different failure policies) before this existed.
-    ///
-    /// `None` for an edge with no endpoints — the standalone full circle of §4,
-    /// which is a legitimate form but has no start. Callers pick their own
-    /// policy: a solid's loop edge is always bounded, so `nacre-ops` unwraps with
     /// A vertex's realized coordinate — **the one road to a coordinate from a vertex** (S7),
     /// read from the index-parallel cache [`Model::push_vertex`] fills.
     #[inline]
@@ -1628,7 +1617,20 @@ impl Model {
             .collect();
     }
 
-    /// that invariant while `nacre-props` reports it as unsupported input.
+    /// The vertex a half-edge starts at: its edge's `vertices[0]` when the use runs
+    /// forward, `vertices[1]` when it runs back.
+    ///
+    /// A traversal accessor, not an analysis — the same kind of thing as
+    /// [`Model::reachable`], and the reason it lives here: walking a loop's
+    /// corners is the first thing every consumer above does, and it was written
+    /// twice (with two different failure policies) before this existed.
+    ///
+    /// Total: every edge has both endpoints (S8 dropped the `Option`), and a closed rim
+    /// states that by repeating its seam vertex — `[v, v]`, so the start is `v` either way.
+    /// A standalone full circle with no seam would have no start, but the type does not
+    /// express that form: it is a wireframe/open-shell element and a v1 non-goal. Nothing
+    /// guards it any more because nothing can build it — S8 retired the `Option` here, and the
+    /// unsupported-boundary arms that used to catch it have nothing left to catch.
     #[inline]
     pub fn he_start(&self, he: HalfEdge) -> Handle<Vertex> {
         let [a, b] = self.edges.get(he.edge).vertices;
@@ -2145,8 +2147,8 @@ impl Model {
     /// seam edge twice (opposite orientation), and two planar caps (each a single-half-edge rim
     /// loop). This forms a valid CW-complex (Euler χ = 2) that
     /// [`validate`](../nacre_validate/fn.validate.html) accepts — a closed periodic surface
-    /// needs a seam vertex, so the rims are `Some([v, v])`, not `bounds: None` (that form is for
-    /// a standalone full circle; §4).
+    /// needs a seam vertex, so the rims repeat it as `[v, v]` — an endpointless edge (the
+    /// standalone full circle) is a form this type does not express (design §4).
     ///
     /// Returns the solid beside its three faces in push order (lateral, bottom cap, top cap).
     /// `None` if an edge cannot derive its curve from the carriers it states — each caller says

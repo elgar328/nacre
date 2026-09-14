@@ -65,11 +65,11 @@ X축은 `any_perpendicular` — **가장 작은 성분의 축과 외적**, Onsha
 
 **남는 한계**: 면의 *모양 자체*가 바뀌면 면적중심도 움직인다(면에 매인 어떤 규칙도 그렇다). 그리고 프레임은 f64다 — 축이 정규화를 거치므로 **유리수 법선에 수직인 단위벡터는 일반적으로 무리수**이고, 면 위 스케치의 정확성은 원점이 아니라 **축**이 벽이다(⑦).
 
-**디버그 뷰어는 커널 크레이트가 아니라 워크스페이스 밖 별도 앱이다.** 연산 로그를 입력받아 매 동작을 스텝별로 재생하며(append-only라 "N번째까지 replay"가 공짜), STEP에 안 담기는 nacre **내부 정보**(`Origin`의 `Constructed`/`Discovered`, `Discovered`의 tolerance 실측값, `Handle` 관계·인접 등)까지 시각화하는 인터랙티브 도구. 내부 자료구조에 접근해야 하므로 nacre를 **직접 링크**한다(개발 중 path 의존 → 안정화 후 version 의존, 버전별 디버깅도 자연스러워짐). 만드는 시점은 **`Discovered`/tolerance가 처음 등장하는 M5 즈음** — 그 전(M1~M4는 전부 `Constructed`)의 시각 확인은 정상 결과는 STEP→step-loupe(구조+검증), 중간·깨진 상태는 OBJ 덤프→맥 미리보기로 충분해, 인터랙티브 뷰어는 필요가 증명될 때까지 미룬다.
+**디버그 뷰어는 커널 크레이트가 아니라 워크스페이스 밖 별도 앱이다.** 연산 로그를 입력받아 매 동작을 스텝별로 재생하며(append-only라 "N번째까지 replay"가 공짜), STEP에 안 담기는 nacre **내부 정보**(정점의 정의와 그 실현 캐시 — 실측 tol 이 있으면 발견된 점, 없으면 구성된 점 — `Handle` 관계·인접 등)까지 시각화하는 인터랙티브 도구. 내부 자료구조에 접근해야 하므로 nacre를 **직접 링크**한다(개발 중 path 의존 → 안정화 후 version 의존, 버전별 디버깅도 자연스러워짐). 만드는 시점은 **발견된 점과 그 tolerance 가 처음 등장하는 M5 즈음** — 그 전(M1~M4 는 전부 구성된 점)의 시각 확인은 정상 결과는 STEP→step-loupe(구조+검증), 중간·깨진 상태는 OBJ 덤프→맥 미리보기로 충분해, 인터랙티브 뷰어는 필요가 증명될 때까지 미룬다.
 
 `Store`/`Handle`은 **최하위 `nacre-store`에 둔다.** typed-index 저장소는 기하·위상을 전혀 모르는 순수 인프라이므로 두 층보다 아래에 격리하고, 위의 모든 크레이트(topo의 아레나들·ops·validate·step)가 자유롭게 참조한다. ⚠ **정정(2026-09-11)**: 여기 근거가 *"geom도 Handle을 쓴다 — `Curve::Intersection`(§3)이 `Handle<Surface>`를 담으므로"* 라 적혀 있었다. **그렇게 되지 않는다**: 핸들은 아레나 항목을 이름 짓고, 곡면 아레나는 **진실**(`Handle<MotionNode>`를 든 topo 타입)을 들므로 topo 아래 크레이트는 그 타입을 이름 지을 수 없다 ⇒ geom은 `Handle`을 영구히 갖지 않는다(진실과캐시 열린 항목 19). 자리는 그대로 옳고 근거만 위 문장이다. (라이선스는 MIT/Apache-2.0 듀얼 — Manifold(Apache-2.0) 알고리즘 차용과 호환.)
 
-`nacre-scalar`는 **회전 오버홀의 근본 표현 — exact 유리수 스칼라**를 격리한다. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**으로, 오버플로가 §4 강등 **트리거**(값의 캐시를 f64/dd로 내리고 tol을 `Origin`에 기록; 정의는 op-log로 불변 보존). `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **★ `nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-scalar는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **의존 결정(오버홀 최초 새 외부 dep):** `num-rational`(+num-traits)을 채택 — 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **회전 좌표의 toleranced 부호 판정**(무리수 좌표라 exact 못 하지만 부호는 f64 필터→astro-float 상승→*증명된 일치 또는 정직한 미결*로 sound하게 정함, §9 ③)은 이제 **`nacre-cip::kernel`으로 분리**됐다 — nacre-math 독립 순수 술어층, predicates의 쌍둥이(§9). **범위:** exact 값 엔진까지. 통합 값+tol `Scalar`·판정 잔여 정책(§9 ③)·커널 배선은 후속 셀.
+`nacre-scalar`는 **회전 오버홀의 근본 표현 — exact 유리수 스칼라**를 격리한다. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**으로, 오버플로가 **강등 트리거**(값의 캐시를 f64/dd로 내리고 실측 tol 을 **정점의 실현 캐시**에 기록; 정의는 아레나가 불변 보존). `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **★ `nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-scalar는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **의존 결정(오버홀 최초 새 외부 dep):** `num-rational`(+num-traits)을 채택 — 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **회전 좌표의 toleranced 부호 판정**(무리수 좌표라 exact 못 하지만 부호는 f64 필터→astro-float 상승→*증명된 일치 또는 정직한 미결*로 sound하게 정함, §9 ③)은 이제 **`nacre-cip::kernel`으로 분리**됐다 — nacre-math 독립 순수 술어층, predicates의 쌍둥이(§9). **범위:** exact 값 엔진까지. 통합 값+tol `Scalar`·판정 잔여 정책(§9 ③)·커널 배선은 후속 셀.
 
 `nacre-predicates`는 **발견된 교차점의 부호 판정(내/외·orientation)을 좌표가 아니라 implicit point(정의)째로 하는 indirect predicates**를 격리한다(§3 정밀도 분업, §8 M5). 바닥의 적응 정밀 확장 산술은 `geometry-predicates`(MIT/Apache) 재사용, 그 위 implicit point 표현과 indirect 술어만 자체 구현. Rust 최초의 오픈소스 indirect predicates가 되도록 **nacre 밖으로 떼어낼 수 있게**(MIT/Apache 단독 공개 가능) 설계한다. 라이선스 엄수: 구현 참고처는 논문(Attene 2020, arXiv 2105.09772; Shewchuk 1997; Lévy PCK)과 `geometry-predicates` 소스로 한정하고, LGPL인 Attene 참조 구현 소스는 **작성 중 열람 금지 / 완성 후 실행 대조만 허용**(§8 M5·§7). M1~M4는 `Constructed`만 다뤄 이 크레이트가 불필요하므로 실제 구현은 M5.
 
@@ -88,7 +88,10 @@ impl<T> Store<T> {
 /// 번호표일 뿐(u32 인덱스). T는 "어느 store를 가리키는가"의 타입 라벨.
 /// derive를 쓰지 않는다 — `#[derive(Hash/Eq/Ord)]`는 T에 불필요한 바운드를
 /// 자동 추가하고, 그러면 `HashMap<Handle<Edge>>`(§4 Adjacency)가 `Edge: Hash`를
-/// 요구해 컴파일 실패한다(Edge는 f64 tol을 품어 Hash/Eq 불가). index만 비교/해시하는
+/// 요구해 컴파일 실패한다. ⚠ **정정(2026-09-14)**: 옛 근거는 *"Edge는 f64 tol을 품어
+/// Hash/Eq 불가"* 였는데 **오늘 어떤 위상 셀도 `Point3`를 들지 않는다**(`Edge{surfaces,
+/// vertices}`·`Vertex{def}`). 결론은 그대로 옳다 — 바운드는 **T와 무관해야** 하고, T가
+/// 무엇이 되든 Handle 이 그 바운드를 강요하면 안 된다. index만 비교/해시하는
 /// 수동 impl로 T 바운드를 끊는다. Copy 필수(정수 번호표), PhantomData<fn()->T>로
 /// T와 무관하게 Send+Sync·공변성 확보.
 pub struct Handle<T> { index: u32, _t: PhantomData<fn() -> T> }
@@ -209,29 +212,33 @@ replay(&log)`). 이 규율을 어긴 세션은 replay 가 재현할 수 없는 �
 
 ⚠ **이 절의 제목은 「정확 기하 층」이었다**(2026-09-11 정정). 이 크레이트는 **해석적**이지만
 **정확하지 않다** — 계수가 f64 다. 무엇이 진실인가는 `docs/truth-and-cache.md` 가 정한다:
-곡면의 진실은 `nacre_topo::Surface`(유리수 점 또는 `CylinderDef` + 모션)이고, 여기 있는
+곡면의 진실은 `nacre_topo::Surface`(평면은 `PlanePoints` — **유리수 세 점**(`Known`) 또는 **모델 정점 셋을 지난다**(`Through`, datum 평면 — 좌표로는 그 평면을 말할 수 없다) — 원통은 `CylinderDef`, 둘 다 모션 슬롯을 곁에 둔다)이고, 여기 있는
 `Surface`·`Curve` 는 그 **실현**이다. 산술이 닫힌 형태라는 것과 값이 정확하다는 것은 다른 말이다.
 
-핵심 결정: **교차 곡선을 1급 variant로, 이중 표현으로 둔다.** 상용 커널과 STEP이 공유하는 그 구조다.
-⚠ 그 「이중 표현」의 **핸들 절반은 이 층에 살 수 없다**(아래 `Intersection` 주석·열린 항목 19).
+옛 핵심 결정: *"교차 곡선을 1급 variant 로, 이중 표현으로 둔다"* — 상용 커널과 STEP 이 공유하는 구조다.
+⚠ **정정**: 반증된 것은 「핸들 절반」만이 아니라 **variant 전체**다 — 아레나 반전 뒤 `Curve::Intersection` 은
+**영구히 불가능**하고(geom 은 `Handle` 을 영원히 안 갖는다), 그 세 조각은 오늘 **`Edge` 의 진실(담체)**
+과 **`EdgeCache`** 로 갈라져 산다(아래 보존 주석 · 진실과캐시 **열린 항목 19**). **이중 표현이라는 착상은
+살아 있고, 그것을 담는 자리가 바뀌었다.**
 
 ```rust
 pub enum Surface {
     Plane(Plane),
     Cylinder(Cylinder),
-    Sphere(Sphere),
-    Nurbs(NurbsSurface),
-    // Cone, Torus, 회전면, 스윕면은 마일스톤 따라 추가
+    // `Nurbs(NurbsSurface)`(평가기는 이미 있다)·`Sphere` 는 **생산자가 붙는 날 온다**;
+    // Cone·Torus·회전면·스윕면은 마일스톤 따라. 그래서 이 타입은 처음부터 `Copy` 가 아니다
+    // — 올 `Nurbs` 변종이 힙 제어점을 소유한다.
 }
 
 pub enum Curve {
     Line(Line),
-    /// 전체 원 carrier(중심/법선/반경). 호 = Edge(circle) + 서로 다른 두 끝점,
-    /// 닫힌 엣지(bounds:None) = 전체 원 — Line+Edge와 동일한 carrier-vs-trim.
+    /// 전체 원 carrier(중심/법선/**ref_dir**/반경 — `ref_dir` 이 θ=0 앵커이고, M6-0 이 원통
+    /// seam 을 **+ref_dir** 에 고정한다). 호 = 이 담체 + 서로 다른 두 끝점 정점,
+    /// 온전한 원 = 같은 정점이 양 끝(`[v, v]`, §4 rim 규칙) — Line 과 같은 carrier-vs-trim.
     /// step-io CurveInput::Circle(끝점 동일 여부로 원/호 구분)과 정합.
     Circle(Circle),
-    Nurbs(NurbsCurve),
-    // ⚠★★★★ **이 변종은 이 절이 처음 쓰인 2026-07-07 의 것이고, 진실/캐시 분리 이전 설계다**
+    // `Nurbs(NurbsCurve)` 도 생산자가 붙는 날 온다(평가기는 이미 있다).
+    // ⚠★★★★ **아래 `Intersection` 변종은 이 절이 처음 쓰인 2026-07-07 의 것이고, 진실/캐시 분리 이전 설계다**
     //    (그때는 geom 의 `Surface` 가 «진실» 이었다). 반전 뒤 `Handle<Surface>` 는 topo 의 진실을
     //    이름 짓고 geom 은 그 타입을 이름 지을 수 없으므로, **이 모양으로는 지어지지 않는다.**
     //    세 조각이 오늘의 분리선 양쪽으로 갈라진다 — 「두 곡면」은 이미 `Edge` 의 진실(담체)이고,
@@ -241,115 +248,114 @@ pub enum Curve {
 }
 ```
 
-`Intersection`의 평가는 두 단계다: cache에서 대략적 점을 얻고, 두 곡면 위로 Newton relaxation하여 머신 정밀도로 수렴시킨다. 이 함수 하나가 "언제든 정확한 점을 되찾는" 능력의 전부다. ☑ **그 함수는 재배치에 무영향이다** — 아래 시그니처가 이미 `&Surface` 를 **참조로** 받으므로(핸들이 아니라), 두 곡면을 누가 들고 있든 그대로 쓰인다.
+**정의에서 좌표를 실현하는 일은 `nacre_ops::realize_vertex` 가 한다** — 정점의 **정의**를 받아 호출자가 고른
+정밀도에서 좌표를 만들고, **끝에서 딱 한 번 반올림한다**. 길은 `VertexDef` 변종이 아니라 **값**이 고른다:
+세 평면의 만남은 정확한 비율이라 긴 나눗셈 하나로 모든 자릿수가 점 자신의 자릿수이고, 모션이나 근호가
+닿는 것은 요구 비트에서 접근해 **구간이 자릿수를 결정할 때만** 찍는다. ⚠ **실패는 삼키지 않고 위로
+올린다** — 특히 접선·퇴화처럼 «판정이 아니라 정책»이 필요한 구역은 이름을 달아 보고한다. 조용히 넘기는
+순간 디버깅 불가능한 커널이 된다.
+
+정밀도 분업 원칙: **판정(부호)에는 적응 정밀 술어**(`geometry-predicates` — 쉬운 케이스 f64, 아슬아슬할 때만 확장, 부호는 항상 정확), **반복 구성(좌표)에는 «확장» 부동소수점**. 임의 정밀 유리수(rug/malachite)는 술어에는 완벽하지만 Newton 반복에 넣으면 비트 길이가 반복마다 폭발하므로 구성에는 쓰지 않는다. 이 투자는 평균이 아니라 꼬리를 산다 — 호출 빈도가 낮은 악조건 케이스만 정확히 개선되고, tolerance가 "상수"가 아니라 "실측 보증값"이 된다.
+
+⚠ **정정(2026-09-14) — 이 원칙에 붙어 있던 두 절이 반증됐다.**
+① 원문은 *"반복 구성에는 **고정폭** 확장 부동소수점(**double-double**)"* 이었다. **double-double 은
+지어진 적이 없다** — 워크스페이스에 그 의존이 **0**이고, **§9 의 CIP 절 「아직 정하지 않은 것」 6번이 그것을 실측으로 떨어뜨렸다**:
+twofloat 의 삼각함수가 *"preliminary"* 라 **영점 근처 cos 오차 ~1.8e-16** 으로 정확도 게이트(~1e-30)를
+못 넘었고 — 부호 판정이 일어나는 near-degenerate 가 곧 영점 근처다 — `astro-float`(임의정밀)로 갔다
+(160비트에서 ~1e-58). 그리고 **정밀도가 dial 가능이라 double-double 의 ~1e-32 천장이 사라졌다.**
+실제로 선 실현 길도 그것이다 — `realize_vertex` 가 **호출자가 고른** 정밀도에서 사다리를 오른다(`Precision` 은 *"always stated, never defaulted"*). 판정 층의 정밀도는 모델이 정하고(§9), 실현은 호출자가 정한다 — **둘은 다른 손잡이다.**
+⇒ 남는 것은 «반복 구성은 확장 산술로, 유리수로는 안 한다»이고 **«고정폭»이라는 부분이 죽었다.**
+② 원문은 **「유리수 경계 규칙」**으로 *"유리수는 입력 표현일 뿐 **계산 매체가 아니다** — 불리언·반복·혼합이
+닿는 순간 f64/double-double 로 강등한다"* 고 적었다. **반증됐다** — 오늘 배열·불리언은 **끝까지 유리수로
+돈다**(`Rat` 비주석 사용 **1853 자리**; `planes`·`combinatorics`·`arrangement` 가 그 위에 선다(같은 계기로 148·130·84)).
+비트 폭발 경고가 겨눈 것은 **Newton 반복**이고 그 길은 아직 안 지어졌다.
+⇒ **오늘의 경계는 「반복이면 확장 산술, 아니면 유리수」이지 「불리언이면 f64」가 아니다.**
+
+판정 술어는 다시 둘로 나뉜다: **명시 좌표점(f64 격자 위)은 direct 술어**(orient3d 등, 좌표를 직접 받음)로, **교차로 정의된 점은 indirect 술어**(implicit point = "어느 원시 요소들의 교차인지"라는 정의를 받아 좌표를 만들지 않고 부호를 정확히 계산 — Attene 2020)로 판정한다. 이유: 교차점을 f64 좌표로 만드는 순간 오차가 끼고, "정확한 direct 술어 × 부정확한 입력 = 부정확한 답"이 되기 때문. indirect 술어는 그 구멍을 닫는다(정의째 받으므로 부정확한 중간 좌표가 없음). 둘은 같은 확장 산술 바닥(`geometry-predicates`)을 공유하며, indirect 층은 `nacre-predicates`가 그 위에 쌓는다(§1) — `indirect_orient3d`·`indirect_cmp_coord`·`indirect_plane_side` 가 그것이다. indirect predicate가 작동하려면 점이 "정의를 보유"해야 하므로, **점이 정의를 갖는다**는 결정(§4)이 그 전제다 — 판정이 필요하면 indirect 술어, 좌표가 필요하면 **정의에서 실현한다**(위 `realize`; 둘은 대체가 아니라 역할 분담).
+
+STEP 연결(예고): **위 은퇴 보존본의** `Intersection` 이 겨눈 것은 `surface_curve`/`intersection_curve`(3D curve + 곡면별 pcurve + master 지정)와의 1:1 대응이었다. ⚠ **그 variant 는 영구히 불가능하므로 pcurve 가 갈 자리도 «같은 variant»가 아니다** — 진실과캐시 **열린 항목 19** 가 자리를 지정한다: *"M7 이 마친 교차를 실제로 만들 때 `EdgeCache` 를 `{curve, err}` 로 키우는 것이 그 자리다."* STEP 쪽 엔티티 묶음의 보존·복원은 **그때** 검증 대상이 된다(오늘 `nacre-step` 의 커버리지는 **평면 + 원통**이고 그 엔티티는 0건).
+
+## 4. 위상 층 (`nacre-topo`)
+
+b-rep 의 셀이 사는 층이다. **모든 셀은 정확 기하를 `Handle` 로만 참조하고, 위상은 좌표를 보지 않는다.**
+진실 타입 자신의 **모양**은 `docs/truth-and-cache.md` 「최종 타입」이 정한다 — 곡면(`Surface`·
+`PlanePoints`)·정점·간선, 그리고 **모션 삼종**(`Motion`·`FramePlacement`·`MotionNode`)까지 일곱이다.
+여기는 그 위에 선 **규칙과, 아직 움직이지 않는 셀들**(`Face`·`HalfEdge`·`Loop`·`Shell`·`Solid`·
+`Adjacency`)을 적는다. ⚠ 모션 삼종은 이 층에 살고 아레나가 **진실로** 들지만(`motions: Store<MotionNode>`)
+모양은 저기가 정한다 — 아래 「서피스는 자기 leaf 에서 이어진다」가 그 노드 위에 선다.
+
+⚠ **정정(2026-09-14)**: 이 절의 제목은 「— tolerance를 **타입**에 새기기」였고 본문은 정점·엣지의
+「출신」을 enum(`Origin::Constructed`/`Discovered`)으로 구분했다. **그 태그는 정확성을 뜻한 적이 없어
+죽었다**(`76a07b2`). 원칙(§0 다섯째)은 그대로이고 **새기는 자리만 바뀌었다** — 구분은 정점의 실현
+캐시가 든다. 아래는 그 뒤의 모양이다.
+
+**★ 정확 기하는 정점만이 아니라 «면»에도 적용된다.** 위 원칙은 오래 **정점에만** 지켜졌고 서피스는 아무 말도 하지 않았다. 그런데 비-90° 회전은 평면의 계수를 **무리수로** 만든다 — 저장된 `Plane{origin, normal, raw}`은 그 순간 진실이 아니라 **반올림된 상**이 되는데, 그 사실을 적을 곳이 없으니 커널은 기본값으로 "정확하다"고 답했다. 그것이 거짓이 되는 지점이 정확히 문제가 되는 지점이었다: **그때** 불리언 결과는 회전 이력을 하나도 안 들고 다녔고(결과 정점은 전부 «발견된» 점이다 — 이건 오늘도 참이다), 그래서 결과의 모든 면이 **반올림된 삼각형을 정확하다고 선언**했고, 한 벽의 두 사본이 ~1e-16 어긋난 채 *확정적으로* "공면 아님" 판정을 받아 **한 평면이 두 클래스**가 됐다. 그 아래로 가짜 교선·1e15 거리의 정점·반대칭을 잃은 `order_along`이 줄줄이 따라왔다(핀 배열 대장 8/90). ⇒ **오늘은 곡면의 진실이 자기 `motion` 을 든다** — 그것이 이 문단이 만든 규칙이다.
+
+**★ 간선의 진실은 «담체 둘 + 끝점 둘»이다.** 실현된 곡선은 필드가 아니라 곁의 캐시(`Model::edge_cache`)다
+— 담체와 끝점이 그것을 정한다(S8).
 
 ```rust
-/// cache 위 파라미터 t의 점을 실제 교차점으로 정련한다 — 적응 정밀도 사다리.
-/// 반환: 정련된 점과 "실제 달성한 정확도" (이 값이 정점 캐시의 측정 tol 이 된다).
-pub fn relax_to_intersection(
-    p0: Point<3>, s1: &Surface, s2: &Surface,
-) -> Result<(Point<3>, f64), RelaxError>;
-// 1단: f64 Newton — 횡단(정상) 교차의 99%. 머신 정밀도 근처까지 수렴.
-// 2단: 수렴 정체 감지(잔차가 √ε_f64 ≈ 1e-8 근처에서 멈춤 = 접선/스침 의심) 시
-//      double-double(twofloat/qd 크레이트)로 재시도. √ε_dd ≈ 1e-16이므로
-//      악조건에서도 f64 저장 한계까지 꽉 채운 좌표를 얻는다.
-// 3단: 그래도 판정 불가 → RelaxError::Tangential로 분류해 위로 보고.
-//      좌표가 아니라 위상 정책(접촉 처리, 기호적 섭동 등)이 필요한 구역.
-
-pub enum RelaxError {
-    Tangential { best: Point<3>, residual: f64 }, // 접선/퇴화 — 정책 결정 필요
-    Diverged,                                     // 초기값 불량 — cache 재행진 대상
-}
-```
-
-`RelaxError`는 삼키지 않고 위로 올린다. 3층 실패는 여기서 시작되므로, 실패를 조용히 넘기는 순간 디버깅 불가능한 커널이 된다.
-
-정밀도 분업 원칙: **판정(부호)에는 적응 정밀 술어**(`geometry-predicates` — 쉬운 케이스 f64, 아슬아슬할 때만 확장, 부호는 항상 정확), **반복 구성(좌표)에는 고정폭 확장 부동소수점**(double-double). 임의 정밀 유리수(rug/malachite)는 술어에는 완벽하지만 Newton 반복에 넣으면 비트 길이가 반복마다 폭발하므로 구성에는 쓰지 않는다. 이 투자는 평균이 아니라 꼬리를 산다 — 호출 빈도가 낮은 악조건 케이스만 정확히 개선되고, tolerance가 "상수"가 아니라 "실측 보증값"이 된다. (**유리수 경계 규칙**(회전 오버홀 §9): 유리수는 **입력 표현**일 뿐 계산 매체가 아니다 — 입력·유리수-순수 파생에만 살고, 불리언·반복·혼합이 닿는 순간 f64/double-double로 강등해 이 비트 폭발 경고와 정합한다.)
-
-판정 술어는 다시 둘로 나뉜다: **명시 좌표점(f64 격자 위 — `Constructed`)은 direct 술어**(orient3d 등, 좌표를 직접 받음)로, **교차로 생긴 점(`Discovered`)은 indirect 술어**(implicit point = "어느 원시 요소들의 교차인지"라는 정의를 받아 좌표를 만들지 않고 부호를 정확히 계산 — Attene 2020)로 판정한다. 이유: 교차점을 f64 좌표로 만드는 순간 오차가 끼고, "정확한 direct 술어 × 부정확한 입력 = 부정확한 답"이 되기 때문. indirect 술어는 그 구멍을 닫는다(정의째 받으므로 부정확한 중간 좌표가 없음). 둘은 같은 확장 산술 바닥(`geometry-predicates`)을 공유하며, indirect 층은 `nacre-predicates`가 그 위에 쌓는다(§1). indirect predicate가 작동하려면 점이 "정의를 보유"해야 하므로, `Discovered`가 정의를 갖는다는 결정(§4)이 그 전제다 — 판정이 필요하면 indirect 술어, 좌표가 필요하면 relaxation으로 정의에서 뽑는다(둘은 대체가 아니라 역할 분담).
-
-STEP 연결: 이 variant는 `surface_curve`/`intersection_curve`(3D curve + 곡면별 pcurve + master 지정)와 1:1로 대응한다. pcurve가 필요해지는 시점(트리밍 구현 시)에 `pcurves: [NurbsCurve2d; 2]`를 같은 variant에 추가한다. 기존 stepio 코드젠에서 이 엔티티 묶음의 보존·복원을 우선 검증 대상으로 삼는다.
-
-## 4. 위상 층 (`nacre-topo`) — tolerance를 타입에 새기기
-
-이 설계에서 가장 의견이 들어간 결정. 정점·엣지의 "출신"을 enum으로 구분한다.
-
-```rust
-pub enum Origin {
-    /// 구성 시점에 정의됨 (스케치 점, 스윕 결과 등).
-    /// 동일성은 Handle로 완결 — tolerance 개념이 없다. 여기선 point가 곧 진실.
-    Constructed,
-    /// 교차 계산으로 발견됨. **정의(implicit point — "어느 원시 요소들의
-    /// 교차인지")를 보유하며, 그 정의가 진실이고 Vertex.point 좌표는 캐시다**
-    /// (진실/캐시 분리에 점이 뒤늦게 합류 — §3). 부호 판정은 좌표가 아니라
-    /// 이 정의를 indirect 술어에 넣어 얻고(§3, §8 M5), 좌표가 필요할 때만
-    /// 정의에서 relaxation으로 뽑는다. 국소 tolerance도 가진다: tol은 임의 상수가
-    /// 아니라 relax_to_intersection이 반환한 실측 달성 정확도에서 온다.
-    /// 정의의 구체 형태 = **위상 계층 enum `VertexDef`**(M5-prep 확정). M5 다면체
-    /// 꼭짓점은 평면 3장 교차라 초기 형태 `ThreePlane([Handle<Surface>; 3])`.
-    /// 부호 판정 시 geom이 Handle→평면 계수를 뽑아 `nacre-predicates`(순수 수치,
-    /// 계수만 받음 — §9)에 넘긴다. 실제 `definition` 필드 추가는 Discovered 점이
-    /// 처음 생기는 M5-c(PolyhedralBoolean) — 그전엔 원칙만 고정.
-    Discovered { tol: f64 /*, definition: VertexDef (M5-c) */ },
-}
-
-pub struct Vertex {
-    /// f64 좌표. Constructed면 이게 진실, Discovered면 정의에서 뽑은 캐시 (§2·§3).
-    pub point: Point<3>,    // 인라인 — 점 저장소 없음 (§2)
-    pub origin: Origin,
-}
-```
-
-**★ 정확 기하는 정점만이 아니라 면에도 적용된다 (`SurfaceDef`).** 위 원칙은 오래 **정점에만** 지켜졌고 서피스는 아무 말도 하지 않았다. 그런데 비-90° 회전은 평면의 계수를 **무리수로** 만든다 — 저장된 `Plane{origin, normal, raw}`은 그 순간 진실이 아니라 **반올림된 상**이 되는데, 그 사실을 적을 곳이 없으니 커널은 기본값으로 "정확하다"고 답했다. 그것이 거짓이 되는 지점이 정확히 문제가 되는 지점이다: 불리언 **결과**는 회전 이력을 하나도 안 들고 다니므로(결과 정점은 전부 `Discovered`), 그 결과의 모든 면이 **반올림된 삼각형을 정확하다고 선언**하고, 한 벽의 두 사본이 ~1e-16 어긋난 채 *확정적으로* "공면 아님" 판정을 받아 **한 평면이 두 클래스**가 됐다. 그 아래로 가짜 교선·1e15 거리의 정점·반대칭을 잃은 `order_along`이 줄줄이 따라왔다(핀 배열 대장 8/90).
-
-```rust
-pub enum SurfaceDef {
-    /// 계수가 곧 진실 — 구성된 표면, 또는 정확성을 보존하는 운동(이동·90°계열)의 상.
-    Constructed,
-    /// 모션 이력의 상. 진실은 `(witness, motion)`이고 계수는 캐시다.
-    /// `witness`는 **회전 이전**의 비공선 세 점(그 면에서 그 자리에 붙잡는다 —
-    /// 정의가 모델의 다른 부분이 살아남는 데 의존하면 안 된다),
-    /// `motion`은 `Model::motions` 포리스트의 leaf — 모션은 면이 든다(정점은 자기 평면을 따라간다).
-    Moved { witness: [Point3; 3], motion: Handle<MotionNode> },
-    /// **정확히 기술할 수 없다** — 오늘은 `push_surface`를 우회해 출처가 기록되지 않은 표면뿐이다.
-    /// (S6b 에서 소멸 — 정확한 형태가 없는 표면은 표현 불가능해졌고,
-    /// f64 폴백은 이름 붙은 거절이 됐다.)
-}
-
 pub struct Edge {
-    pub curve: Handle<Curve>,
-    /// 끝점 정점 둘. **닫힌 솔리드의 원형 rim은 seam 정점을 써 `[v, v]`(start == end)로
-    /// 둔다** — 그래야 b-rep이 유효 CW-복합체(V−E+F=2)로 남아 validate의 오일러-푸앵카레를
-    /// 통과한다(실린더 rim이 대표 사례). ★ 설계 초안의 `bounds: Option<…>`(끝점 없는 독립
-    /// 전체 원 = `None`)은 구현되지 않았다 — 와이어프레임/열린 면 요소는 v1 비목표(§9)라
-    /// 타입이 그 상태를 표현하지 않는다(2026-09-02 정정: 코드의 필드명은 `vertices`).
+    /// **이 간선이 경계 짓는 두 면의 곡면** — 담체.
+    pub surfaces: [Handle<Surface>; 2],
+    /// 끝점 정점 둘 — 경계. **모든 간선이 둘 다 든다**(S8 이 `Option` 을 버렸다).
+    /// ★ **rim 규칙**: 닫힌 솔리드의 원형 rim 은 seam 정점을 써 `[v, v]`(start == end)다
+    /// — 그래야 b-rep 이 유효 CW-복합체로 남아 validate 의 오일러-푸앵카레를 통과한다
+    /// (실린더 rim 이 대표). ⚠ **기준은 `V−E+F=2` 가 아니다** — `validate` 는
+    /// **χ = V − E + F − L_i**(면의 내부 루프 수)를 세어 **짝수인지**와
+    /// **genus = S − χ/2 ≥ 0** 인지를 본다. 뚫린 솔리드는 genus 1 이라 χ = 0 이고,
+    /// 커널이 실제로 그것을 만든다. 끝점 없는 독립 전체 원은 **이 타입이 표현하지
+    /// 않는다** — 와이어프레임/열린 면 요소는 v1 비목표(§9)다.
     pub vertices: [Handle<Vertex>; 2],
-    pub origin: Origin,
-}
-
-pub struct Face {
-    pub surface: Handle<Surface>,
-    pub outer: Loop,            // half-edge 순환
-    pub inner: Vec<Loop>,       // 구멍
-    pub orientation: Orientation,
 }
 ```
 
-`SurfaceDef`는 곁표(`Model::surface_defs`)에 산다 — `Surface`는 `nacre-geom` 타입이라 `Handle<MotionNode>`를 이름 붙일 수 없다. 입구는 `Model::push_surface` 하나이고, **강제는 privacy가 아니라 불변식으로** 한다: `validate`가 *"live 모델의 모든 면은 정의를 가진 표면 위에 있다"* 를 검사하므로(디버그에서 매 연산 뒤 도는 검사) 기록을 빠뜨리면 즉시 터진다. `Reachable`이 surfaces를 추적하지 않으므로 순회는 **면을 통해** 돈다.
+★★★★★ **담체는 «끝점의 면집합»에서 유도할 수 없다.** 한 점에 평면 넷이 모이면 두 끝점의 삼중 교집합이
+그 간선이 **타지 않는** 평면을 이름 지을 수 있고, **조용히** 그런다(4평면 동시성). 그래서 **생산자마다
+자기가 짓고 있는 면에서 담체를 진술하고, 절대 유도하지 않는다.** 「선을 담기만 하는 평면」도 담체가
+아니다 — 세 평면이 한 **선**을 공유할 때 셋째 평면은 그 간선을 담지만 경계 짓지 않는다. 담체는 «인접»의
+답, 즉 **그 간선을 쓰는 두 면**이다. 저장은 **핸들 오름차순**(집합이지 순서가 아니다)이고, 원통 솔기는
+**self-adjacent** — 양쪽이 같은 옆면이다(한 면의 매개화 이음매라는 문장의 정직한 담체 형태).
+어기면 `validate` 가 `EdgeCarrierMismatch` 로 잡는다.
 
-**★ 서피스는 솔리드의 leaf가 아니라 자기 leaf에서 이어진다.** 한 솔리드에 회전 이력이 하나라는 전제가 틀렸다 — 서로 다른 각도로 회전한 두 피연산자의 불리언 결과는 벽마다 다른 이력을 갖는다. 그리고 결과의 정점은 전부 `Discovered`라 정점에게 "이 솔리드는 어느 회전에 있나"를 물으면 `None`이 나오고, 다음 회전이 **뿌리부터 다시 시작**해 회전 이전 witness에 두 번째 회전만 태우게 된다(존재하지 않는 평면). 그래서 `transform`은 변환마다 노드 하나가 아니라 **서로 다른 parent leaf마다 노드 하나**를 만든다.
+**★ 출처가 기록되지 않은 표면은 «타입이» 표현 불가능하게 만든다.** 곡면의 진실은 아레나 항목 그 자체이고
+(`Model::surface_truth`), 진실 없는 곡면은 **핸들이 이름 지을 수 없다** — 그것이 `SurfaceDef::Inexact`
+와 `UndefinedSurface` 위반을 **함께 은퇴시킨 것**이다. ⚠ 「그래서 `validate` 검사가 없다」로 나가면
+거짓이다: `VertexDefCarrierMismatch`·`EdgeCarrierMismatch`·`VertexOffDefinition` 은 그대로 돈다.
+표면의 **정의 유무**만 타입으로 승격했다.
 
-**따라오는 단순화.** 서피스가 스스로 말하게 되자 그 침묵을 메우려 있던 코드가 통째로 없어졌다 — 면의 평면을 정점 provenance에서 사냥하던 `face_plane_witness`·`plane_pts`, 솔리드 단위 추측 `solid_is_rotated`, 그리고 그 사냥이 실패했을 때의 거절 `RotatedUnderdetermined`. 회전 뒤 이동은 그 뒤 **모션 포리스트**가 이름을 갖게 되어 거절이 아니라 결과가 됐다(아래).
+**★ 곡면을 미는 문은 여럿이되 «하나의 비공개 깔때기»로 모인다** — `push_plane`·`push_plane_through`·
+`push_cylinder`·`push_plane_unregistered` 가 전부 사설 `push_raw` 를 지나고, 그 자리에서 **진실과 f64
+캐시가 한 동작으로 함께 들어간다**(*"the truth and its cache enter together or not at all"*). 둘이
+떨어질 수 없게 하는 것이 요점이지 문의 개수가 아니다.
 
-효과가 세 가지다. 첫째, 케이스 A(만나는 자리를 아는 구성 연산)만 쓰는 한 모델 전체가 `Constructed`로만 이루어지고, tolerance 코드 경로가 아예 실행되지 않는다 — Fornjot의 "무-tolerance 단순함"이 그 안전지대 안에서 그대로 재현된다. 둘째, `Discovered`가 처음 등장하는 지점이 곧 3층 코드가 개입한 지점이므로, 디버깅·검증에서 "어디부터 위험한가"를 데이터가 스스로 말해준다. 셋째, 검증 규칙을 출신별로 다르게 걸 수 있다(`Constructed`는 정확 일치 요구, `Discovered`는 tol 이내 요구).
+**★ 정의가 진실이고 좌표는 «측정된 tol 안의» 캐시다.** 정점은 자기 정의이고(`Vertex { def }`), 실현된
+좌표와 그 실측 tol 은 인덱스 병렬 캐시가 든다. `validate` 는 **모든 살아 있는 정점**이 자기 정의가
+주장하는 모든 곡면 위에 tol 안으로 앉아 있는지 검사한다 — ★ **S7 이 이 검사를 「측정된 점」에서 «전원»
+으로 넓혔다.** 출신별로 다른 규칙이 아니다: 물음은 하나이고, 쓰는 tol 만 실측치(발견된 점)이거나 구성
+epsilon(구성된 점)이다.
 
-**정의가 진실 → indirect predicate·봉합 우회(무게중심 이동).** `Discovered`가 좌표가 아니라 정의(implicit point)를 진실로 삼는다는 것은, 부호 판정을 좌표를 만들지 않고 indirect 술어로 정확히 하기 위한 전제다(§3, §8 M5; Attene 2020). 이 결정이 실제로 해소하는 것은 과장 없이 셋: (1) **조합적 결정의 불일치**(orient 부호가 여기선 +, 저기선 −로 모순돼 위상이 깨지는 것 — 불리언 실패의 주원인), (2) "정확한 술어에 부정확한 입력" 구멍, (3) 판정에서의 tolerance 튜닝 취약성(부호 판정엔 tolerance 값 자체가 안 쓰임). **봉합 문제도 대부분 해소된다**: 세 평면이 만나는 꼭짓점을 하나의 `Vertex`로 만들고 정의를 "P₁∩P₂∩P₃"로 두면, 세 엣지가 그 하나의 Vertex Handle을 공유하므로 "세 곡선이 한 점에서 만나는가?"가 좌표 비교가 아니라 Handle 비교(`h==h==h`)가 되고 — 봉합의 본체(어긋난 세 후보를 tolerance로 화해)가 사라진다. 좌표를 f64로 뽑을 때도 하나의 Vertex 좌표만 뽑으므로 세 어긋난 좌표가 안 생긴다. 잔여물은 "그 하나의 f64 좌표가 세 평면 위에 정확히 안 놓인다"는 반 ulp 오차뿐(f64 저장의 바닥, 대부분 무해, 극단적으로 조밀한 형상에서만 문제). **해소 못 하는 것**: 접선·퇴화 교차의 위상 정책(부호 0일 때 "접하냐/스치냐"는 판정이 아니라 정책 — `RelaxError::Tangential`로 올리는 구역 그대로), 좌표 정밀도 자체, 공간 인덱스·SSI·성능 등 다른 축. 곡면 적용도(M6~7)는 열어둔다(§9).
+**`Reachable` 은 surfaces 를 추적하지 않는다** — 그래서 곡면 순회는 **면을 통해** 돈다.
+
+**★ 서피스는 솔리드의 leaf가 아니라 자기 leaf에서 이어진다.** 한 솔리드에 회전 이력이 하나라는 전제가 틀렸다 — 서로 다른 각도로 회전한 두 피연산자의 불리언 결과는 벽마다 다른 이력을 갖는다. 그리고 결과의 정점은 전부 **발견된 점**이라 정점에게 "이 솔리드는 어느 회전에 있나"를 물으면 `None`이 나오고, 다음 회전이 **뿌리부터 다시 시작**해 회전 이전 witness에 두 번째 회전만 태우게 된다(존재하지 않는 평면). 그래서 `transform`은 변환마다 노드 하나가 아니라 **서로 다른 parent leaf마다 노드 하나**를 만든다.
+
+**따라오는 것 둘.** 첫째, 케이스 A(만나는 자리를 아는 구성 연산)만 쓰는 한 모델의 모든 점이 **구성된 점**이라 **실측 tol 이 하나도 없다**(`PointCache.tol` 이 전부 비어 있다). ⚠ 그렇다고 **tolerance 가 사라지는 것은 아니다** — 검사는 그대로 돌고 `validate` 의 `tol_of` 가 없는 tol 을 **상수 `EPS_CONSTRUCTED`(1e-9)로 대체**한다. 사라지는 것은 **모델이 들고 다니는 tol** 이지 비교가 아니다: Fornjot 의 "무-tolerance 단순함"은 «저장된 tol 이 없다»는 뜻으로만 재현된다. 둘째, **발견된 점이 처음 등장하는 지점**이 곧 3층 코드가 개입한 지점이므로, 디버깅·검증에서 "어디부터 위험한가"를 데이터가 스스로 말해준다. ⚠ **셋째가 있었고 반증됐다** — *"검증 규칙을 출신별로 다르게 걸 수 있다"* 였는데, **S7 이 그 검사를 전원으로 넓혔다**: 물음은 모든 정점에 같고 쓰는 tol 만 다르다(위 규칙).
+
+**정의가 진실 → indirect predicate·봉합 우회.** 점이 좌표가 아니라 정의(implicit point)를 진실로 삼는다는 것은, 부호 판정을 좌표를 만들지 않고 indirect 술어로 정확히 하기 위한 전제다(§3, §8 M5; Attene 2020). 이 결정이 실제로 해소하는 것은 과장 없이 셋: (1) **조합적 결정의 불일치**(orient 부호가 여기선 +, 저기선 −로 모순돼 위상이 깨지는 것 — 불리언 실패의 주원인), (2) "정확한 술어에 부정확한 입력" 구멍, (3) 판정에서의 tolerance 튜닝 취약성(부호 판정엔 tolerance 값 자체가 안 쓰임). **봉합 문제도 대부분 해소된다 — 단 «한 불리언이 민팅하는 코너»에 대해서다**: 세 평면이 만나는 꼭짓점을 하나의 `Vertex`로 만들고 정의를 "P₁∩P₂∩P₃"로 두면, 세 엣지가 그 하나의 Vertex Handle을 공유하므로 "세 곡선이 한 점에서 만나는가?"가 좌표 비교가 아니라 Handle 비교(`h==h==h`)가 되고 — 봉합의 본체(어긋난 세 후보를 tolerance로 화해)가 사라진다. 배열의 병합도 같은 말을 한다: `merge_coincident` 의 키는 **(벽, 정렬된 끝점 «이름» 쌍)** — 둘 다 정준으로 접은 뒤다 — 이지 **좌표가 아니다**(평면이 동시적이면 두 생산자가 **벽도 끝점 이름도** 다르게 적을 수 있어 **두 접기가 다 있어야** 키가 같아진다). ⚠ 끝점 이름은 세 평면만이 아니다 — M6-1 부터 관통점(`NodeId::Pierce`)도 이름이다. ⚠ **연산을 가로지르는 동일성은 별개 물음이다** — 정점은 interning 하지 않는다(`docs/truth-and-cache.md` 「정점 — interning 하지 않는다」: 인접 면 집합이 자라므로 저장 시점에 키를 못 잡는다). 좌표를 f64로 뽑을 때도 하나의 Vertex 좌표만 뽑으므로 세 어긋난 좌표가 안 생긴다. 잔여물은 "그 하나의 f64 좌표가 세 평면 위에 정확히 안 놓인다"는 반 ulp 오차뿐(f64 저장의 바닥, 대부분 무해, 극단적으로 조밀한 형상에서만 문제). **해소 못 하는 것**: 접선·퇴화 교차의 위상 정책(부호 0일 때 "접하냐/스치냐"는 **판정이 아니라 정책**이고, 그 구역은 삼키지 않고 위로 올린다), 좌표 정밀도 자체, 공간 인덱스·SSI·성능 등 다른 축. 곡면 적용도(M6~7)는 열어둔다(§9).
 
 half-edge는 교과서 구조를 따르되 Fornjot 신설계처럼 공유 `Edge` + 방향 참조로 둔다:
 
 ```rust
 pub struct HalfEdge { pub edge: Handle<Edge>, pub forward: bool }
 pub struct Loop { pub half_edges: Vec<HalfEdge> }
+
+/// 2-셀 — 곡면 조각. 외곽 루프 하나 + 구멍 루프 N개.
+pub struct Face {
+    pub surface: Handle<Surface>,
+    pub outer: Loop,
+    pub inner: Vec<Loop>,
+    pub orientation: Orientation,
+}
 
 /// 닫힌 면 집합 — 하나의 경계 곡면을 이룬다.
 pub struct Shell { pub faces: Vec<Handle<Face>> }
@@ -370,9 +376,9 @@ pub struct Adjacency {
 
 (구현은 M1에서 `SmallVec` 대신 평범한 `Vec`으로 시작한다 — 의존성 하나를 아끼고, 인라인 저장 이득은 프로파일링으로 정당화되면 나중에 도입한다. 다양체 케이스를 힙 없이 담는 최적화라 정확성과 무관.)
 
-`Adjacency`는 진실이 아니라 캐시라는 점이 중요하다 — 위상 store들이 진실이고, 인덱스는 연산과 함께 증분 갱신되며 불일치 시 재구성한다(M1은 from-scratch 재구축만, 증분 갱신은 ops 로그가 생기는 M2). (진실/캐시 분리 패턴의 네 번째 반복.)
+`Adjacency`는 진실이 아니라 캐시라는 점이 중요하다 — 위상 store들이 진실이고, 인덱스는 **버리고 재생**한다. ⚠ **정정(2026-09-14)**: 원문은 *"인덱스는 연산과 함께 **증분 갱신**되며 … 증분 갱신은 ops 로그가 생기는 **M2**"* 였다. **ops 로그는 M2 에 왔고 증분 갱신은 안 왔다** — 오늘 `adj` 에 쓰는 자리는 `Model::rebuild_adjacency` **하나**이고 그것은 통째 교체다(`edge_uses`/`vertex_edges` 를 증분으로 건드리는 코드 0줄). 소비자가 **일괄 추가 뒤 손으로 한 번** 부른다(*"the cache is otherwise stale"*). 증분 갱신은 **필요가 증명될 때** 짓는다. (진실/캐시 분리 패턴의 네 번째 반복.)
 
-**Adjacency는 store 전체가 아니라 live 도달가능 셀만 인덱싱한다(§2 supersede 의미론).** `rebuild`는 `model.faces`/`model.edges` 전체가 아니라 `live_solids`에서 도달 가능한 면·엣지만 순회한다 — 그래야 supersede된 옛 면의 엣지가 `edge_uses`를 오염시켜 manifold 검사(엣지 정확히 2회)를 깨뜨리지 않는다. 위상 참조가 하향 단방향·비순환이라(§2 전제) 도달가능성 순회는 유한·안전하다. `Adjacency`가 유일한 역방향 인덱스이지만 캐시이므로 도달가능성 진실을 침해하지 않는다.
+**Adjacency는 store 전체가 아니라 live 도달가능 셀만 인덱싱한다(§2 supersede 의미론).** `rebuild`는 `model.faces`/`model.edges` 전체가 아니라 `live_solids`에서 도달 가능한 면·엣지만 순회한다 — 그래야 supersede된 옛 면의 엣지가 `edge_uses`를 오염시켜 manifold 검사(엣지 정확히 2회)를 깨뜨리지 않는다. 위상 참조가 하향 단방향·비순환이라(§2 전제) 도달가능성 순회는 유한·안전하다. `Adjacency`는 **위상 셀의** 역방향 인덱스이고 캐시이므로 도달가능성 진실을 침해하지 않는다. ⚠ **정정(2026-09-14)**: 원문은 *"**유일한** 역방향 인덱스"* 였는데 그 뒤 interning 표 넷이 들어왔다(`motion_ids`·`surface_ids`·`surface_through_ids`·`cylinder_ids` — 키 → `Handle`). 그것들은 «값으로 핸들을 찾는» 표라 성격이 다르고, **`Adjacency` 와 달리 도달가능성으로 걸러지지 않는다.**
 
 ## 5. Tessellation 층 (`nacre-tess`) — 출처 태그 파생물
 
@@ -739,7 +745,7 @@ census 키가 `detail`을 드는 이유: `TraceDeclined`의 11개 kind가 전부
 
 ### 6.1 M5 불리언 — 두 메커니즘을 regime로 라우팅 (합성 아님)
 
-> **★ 방향 전환(2026-07-20, 사용자 결정 — 이 절은 이행기 서술).** 아래 "공면 접촉 유무로 배타 라우팅"(detector + 공면 생존표)은 케이스가 늘수록 **경우의 수가 폭발**한다(same_ground·single-shared·containment로 실증). 그래서 design.md가 **M7**(하이브리드, §426 exact ray casting)에 두던 **arrangement/winding 통합 분류 방식을 M5 평면으로 앞당긴다** — 평면은 메시·SSI 불요라 M7 분류법을 exact plane-triple에 그대로 적용. **M5의 목표 = winding 기반 단일 arrangement 엔진**(면당 세분 → sub-face를 in/out/on 분류 → op별 Requicha keep 균일 적용; 글로벌 detector·이중 경로 소거, Requicha 규칙은 유지). 이 방식은 커토버로 프로덕션 엔진(`nacre-ops::arrangement`)이 됐다 — 면당 평면 cell-복합체(트레이스→분할→셀→중첩→라벨→방출→조립). **잔여 커버리지 갭:** ~~containment(seam 없는 포함)·cavity 접촉(현재 outer shell 순회)~~ — 둘 다
+> **★ 방향 전환(2026-07-20, 사용자 결정 — 이 절은 이행기 서술).** 아래 "공면 접촉 유무로 배타 라우팅"(detector + 공면 생존표)은 케이스가 늘수록 **경우의 수가 폭발**한다(same_ground·single-shared·containment로 실증). 그래서 design.md가 **M7**(하이브리드, exact ray casting)에 두던 **arrangement/winding 통합 분류 방식을 M5 평면으로 앞당긴다** — 평면은 메시·SSI 불요라 M7 분류법을 exact plane-triple에 그대로 적용. **M5의 목표 = winding 기반 단일 arrangement 엔진**(면당 세분 → sub-face를 in/out/on 분류 → op별 Requicha keep 균일 적용; 글로벌 detector·이중 경로 소거, Requicha 규칙은 유지). 이 방식은 커토버로 프로덕션 엔진(`nacre-ops::arrangement`)이 됐다 — 면당 평면 cell-복합체(트레이스→분할→셀→중첩→라벨→방출→조립). **잔여 커버리지 갭:** ~~containment(seam 없는 포함)·cavity 접촉(현재 outer shell 순회)~~ — 둘 다
 닫혔다(2026-08-15 실측 확인). containment 는 fuse/cut/common 셋 다 정확한 부피를 내고
 `coverage/coplanar.rs` 와 `coverage/invariants.rs` 의 proptest 가 상설로 잰다; 공동은 안으로
 파고들기·벽에 공면으로 앉히기·정확히 메워 공동을 없애기가 모두 정확하다. 회전된 «두 몸통» 사이의
@@ -755,7 +761,7 @@ census 키가 `detail`을 드는 이유: `TraceDeclined`의 11개 kind가 전부
 `CoplanarPinch` 는 생후 2일에 고아화되어 삭제 — 증상 이름이 죽고 진실 이름이 대신하는, 오류
 사다리의 목표 상태. figure-8 «재봉합» 기능은 소비자가 없다(전역 검사 둘을 다 통과하는 핀치
 인구가 나타나는 날이 그 첫 소비자다). 잠금: `rotation_sweep.rs::the_other_rejections_are_untouched`
-(세그먼트의 캡-스팬·수직성), `reject_census` fold-45. ~~회전 접촉~~ — 실체는 회전이 아니라 **칼날 접촉**(모서리가 상대 면 평면 위, 두 면이 한쪽으로만 떠남)이었고 2026-08-11 에 닫혔다: `edge_mask` 의 스침 결합이 합집합→**홀짝**(같은 쪽 쌍 = 꼬집힘/노치 = 무소식), all-false 모서리는 골격에서 제외(`drop_newsless` — 점 접촉 `touches` 의 1D 판). 모서리-만 접촉 fuse 는 **몸통 둘로 나온다**(2026-08-14) — §824 가 *"엣지 접촉 Fuse가 전부 정상 결과"* 로 이미 정해 뒀던 줄의 이행이다. 면을 잇는 것은 **다양체 접촉(정확히 두 면이 쓰는 링 모서리)뿐**이라, 선·점으로만 닿는 두 몸통은 서로 다른 성분에 놓이고 각자의 핸들을 받는다. 핸들을 가르는 단위는 성분이 아니라 **출력 솔리드**(재료 성분 + 그 공동들)여야 한다 — 공동이 host 껍질에 닿는 경우 성분별로 가르면 핀치가 셀 수 없어져 두께 0 솔리드가 조용히 통과한다(실측). 자기와 닿는 «한» 몸통은 재료가 접촉을 돌아가므로 성분이 하나로 남아 기존 거절이 그대로 발화한다(잠금: `tests/contact_separates.rs`, `tests/knife_edge.rs`).
+(세그먼트의 캡-스팬·수직성), `reject_census` fold-45. ~~회전 접촉~~ — 실체는 회전이 아니라 **칼날 접촉**(모서리가 상대 면 평면 위, 두 면이 한쪽으로만 떠남)이었고 2026-08-11 에 닫혔다: `edge_mask` 의 스침 결합이 합집합→**홀짝**(같은 쪽 쌍 = 꼬집힘/노치 = 무소식), all-false 모서리는 골격에서 제외(`drop_newsless` — 점 접촉 `touches` 의 1D 판). 모서리-만 접촉 fuse 는 **몸통 둘로 나온다**(2026-08-14) — §9 가 *"엣지 접촉 Fuse가 전부 정상 결과"* 로 이미 정해 뒀던 줄의 이행이다. 면을 잇는 것은 **다양체 접촉(정확히 두 면이 쓰는 링 모서리)뿐**이라, 선·점으로만 닿는 두 몸통은 서로 다른 성분에 놓이고 각자의 핸들을 받는다. 핸들을 가르는 단위는 성분이 아니라 **출력 솔리드**(재료 성분 + 그 공동들)여야 한다 — 공동이 host 껍질에 닿는 경우 성분별로 가르면 핀치가 셀 수 없어져 두께 0 솔리드가 조용히 통과한다(실측). 자기와 닿는 «한» 몸통은 재료가 접촉을 돌아가므로 성분이 하나로 남아 기존 거절이 그대로 발화한다(잠금: `tests/contact_separates.rs`, `tests/knife_edge.rs`).
 >
 > **★★ 갱신(F2 — detector 붕괴 완료).** 위 "경우의 수 폭발"의 실체가 **라우팅뿐**이었음이 실증됐다: 케이스별 detector 7종이 **전부 같은 `coplanar_result_unified`를 호출** — 결과 생성기는 이미 통합돼 있었다. 그래서 dispatch를 **하나의 exact 질문**(`coplanar_contact_count >= 1`, "진짜 공면 접촉인가")으로 붕괴시키고 detector 12종·지원 타입 ~775줄을 삭제했다. 부수적으로 그 좁은 게이트들이 막던 케이스가 열렸고(비볼록 오버행 footprint, 관통 slot/corner cut), 라우팅이 넓어지며 드러난 "성공하되 열린 셸" 한 건은 **`assemble_fuse_cut`의 닫힘 가드**(모든 모서리 정확히 2회 사용, 위반 시 `NON_MANIFOLD_EDGE` 정직 거절)로 차단했다. ∴ **아래 배타-라우팅 서술은 여전히 유효하되 "detector 다발"이 아니라 "질문 하나"이며**, 두 메커니즘(seam / coplanar)의 공존은 폐기 대상이 아니라 **구조적 필연**이다 — (단계4 SoS Cell 4) 실측이 "seam 하나로 통일"을 반증했다(공면 접촉 모서리는 공유 평면에 통째로 누워 transversal seam 자체가 부재 = 구조적 공면성, 섭동으로 해소 불가). 남은 winding 작업은 엔진 대체가 아니라 **커버리지 확장**(공면 arm의 회전·cavity·containment)이다.
 
@@ -1338,15 +1344,15 @@ STEP 라운드트립(자기 출력 되읽기): nacre가 쓴 STEP을 step-io **�
 
 **M3 — 곡선 기하.** Arc, Cylinder, NurbsCurve/Surface 평가(The NURBS Book 기준 구현 + 수치 미분 대조 테스트). tess 출처 태그 완성, tolerance 재계산 데모(같은 모델, tol 3단). proptest 도입.
 
-**M4 — 면 위 작업.** ImprintSketch, PadOnFace — "만나는 자리를 아는" 연산의 완성. 여기까지 모델 전체가 `Constructed`. nacre-oracle 가동(nacre 쪽 부피·면적은 `nacre-props` 해석적 계산, OCCT와 diff). 시각 확인은 M1과 동일하게 기존 뷰어에 위임(STEP→step-loupe, OBJ→맥 미리보기). 커널 내부를 보는 인터랙티브 디버그 뷰어(면 클릭→Handle·Origin, 법선 화살표, 엣지 polyline·tolerance 공, validate 위반 하이라이트, 로그 스텝별 재생)는 워크스페이스 밖 별도 앱으로 **M5 즈음**(`Discovered`/tolerance가 처음 등장해 STEP에 안 담기는 내부 정보의 시각화가 실제로 필요해질 때) 만든다(§1) — 그것이 M6 불리언 디버깅의 생명줄이 된다.
+**M4 — 면 위 작업.** ImprintSketch, PadOnFace — "만나는 자리를 아는" 연산의 완성. 여기까지 모델의 모든 점이 **구성된 점**이다(실측 tol 0). nacre-oracle 가동(nacre 쪽 부피·면적은 `nacre-props` 해석적 계산, OCCT와 diff). 시각 확인은 M1과 동일하게 기존 뷰어에 위임(STEP→step-loupe, OBJ→맥 미리보기). 커널 내부를 보는 인터랙티브 디버그 뷰어(면 클릭→Handle·정의, 법선 화살표, 엣지 polyline·tolerance 공, validate 위반 하이라이트, 로그 스텝별 재생)는 워크스페이스 밖 별도 앱으로 **M5 즈음**(**발견된 점**/tolerance가 처음 등장해 STEP에 안 담기는 내부 정보의 시각화가 실제로 필요해질 때) 만든다(§1) — 그것이 M6 불리언 디버깅의 생명줄이 된다.
 
 **M5 — 자체 불리언 1단: 다면체.** `PolyhedralBoolean` — 모든 면이 평면인 솔리드 간 fuse/cut/common을 자체 구현한다. 평면-평면 교차는 닫힌 형식의 직선(SSI 행진·Newton·캐시 불필요). 꼭짓점은 평면 3장 교차를 **좌표로 만들어 병합하지 않고 implicit point로 두고**, 내/외·orientation 부호는 그 정의를 **indirect orient3d**(좌표 안 만듦)에 넣어 정확히 판정한다 — 좌표를 만드는 순간의 오차·불일치를 원천 차단(§3·§4; Attene 2020). 세 엣지가 하나의 Vertex Handle을 공유하게 해 봉합 문제의 본체를 우회한다(§4). 이 세계에서 강건 불리언은 연구가 아니라 꼼꼼한 케이스워크(공면, 엣지-엣지 퇴화)다. 하이브리드 파이프라인(출처태그 메시 → 조합 결정 → 스냅백)을 스냅백이 자명한 평면에서 첫 완성. 선·평면(다항식) 교차점은 indirect predicate 이론이 가장 깔끔하게 도는 영역이라 M5가 논문 대표 예시와 정확히 겹친다 — 딱 필요한 만큼 구현.
 
 **indirect predicates 자체 구현(clean-room).** `nacre-predicates`(§1)에 implicit point 표현과 indirect 술어를 자체 구현하되, 확장 산술 바닥은 `geometry-predicates`(MIT/Apache) 재사용. **라이선스 엄수** — Attene 참조 구현(LGPL)은 "돌려서 답 비교는 자유, 열어서 코드 보는 건 MIT/Apache 소스만": (a) **작성 중 소스 열람 금지**(LGPL C++를 열어 함수 대응·로직 흐름을 따라가면 2차적 저작물), 참고처는 논문(Attene 2020, arXiv 2105.09772; Cherchi 2020 mesh arrangements·2022 interactive booleans; Lévy 2024; Shewchuk 1997)과 `geometry-predicates` 소스로 한정. (b) **완성 후 실행 대조는 허용·권장**(dev-only, `tools/` 격리, 우리 크레이트에 링크 금지 — OCCT 오라클과 동일 논리). indirect predicate는 틀려도 대부분 입력에선 맞는 답이 나와 버그가 숨기 쉬우므로 저자 구현을 정답지로 쓰는 게 강력한 검증(§7).
 
-**exact-arithmetic 바닥 확정(M5-prep, 코드로 실증).** `geometry-predicates`(elrnv, 0.3, MIT/Apache)가 finished `orient3d`뿐 아니라 **Shewchuk expansion primitive**(`two_product`·`two_sum`·`expansion_sum`·`scale_expansion_zeroelim` 등, `predicates` 모듈에 공개)를 노출함을 `nacre-predicates` 뼈대가 실제 호출로 확인 → 그 위에 indirect 술어를 쌓을 수 있고 expansion 산술 자체 구현이 불필요. (primitive는 `[lo, hi]` 순서. orient3d 부호 규약 = `det[a−d, b−d, c−d]`, 뼈대 golden으로 고정.) **M5 서브유닛 사다리:** ① `nacre-predicates`(뼈대→implicit point[3-plane]+indirect orient3d, direct 대조 property test) → ② `nacre-geom::intersect`(평면∩평면=닫힌형식 직선, 3-평면 꼭짓점) → ③ `PolyhedralBoolean`(fuse/cut/common, 세 엣지가 한 Vertex Handle 공유로 봉합 우회, `Origin::Discovered.definition` 필드 도입, 커버리지 밖 `Rejected` 거절) + 오라클 부피·불리언대수 proptest.
+**exact-arithmetic 바닥 확정(M5-prep, 코드로 실증).** `geometry-predicates`(elrnv, 0.3, MIT/Apache)가 finished `orient3d`뿐 아니라 **Shewchuk expansion primitive**(`two_product`·`two_sum`·`expansion_sum`·`scale_expansion_zeroelim` 등, `predicates` 모듈에 공개)를 노출함을 `nacre-predicates` 뼈대가 실제 호출로 확인 → 그 위에 indirect 술어를 쌓을 수 있고 expansion 산술 자체 구현이 불필요. (primitive는 `[lo, hi]` 순서. orient3d 부호 규약 = `det[a−d, b−d, c−d]`, 뼈대 golden으로 고정.) **M5 서브유닛 사다리:** ① `nacre-predicates`(뼈대→implicit point[3-plane]+indirect orient3d, direct 대조 property test) → ② `nacre-geom::intersect`(평면∩평면=닫힌형식 직선, 3-평면 꼭짓점) → ③ `PolyhedralBoolean`(fuse/cut/common, 세 엣지가 한 Vertex Handle 공유로 봉합 우회, **정점이 자기 정의를 든다**(오늘의 `VertexDef`), 커버리지 밖 `Rejected` 거절) + 오라클 부피·불리언대수 proptest.
 
-알고리즘 참고: Manifold(Apache-2.0 — 차용·번역 가능), Hoffmann 등 문헌. 커버리지 밖 곡면 불리언은 명시적 미지원 에러로 정직하게 거절. `Discovered` 경로·국소 tolerance·relaxation 실전 투입. 이 시점에 "OCCT 없이 직동하는, 실용적 기계 부품(평면 위주)을 STEP으로 내보내는" 진짜 커널이 된다. 참고: Truck 대비 벤치마크·정밀도 비교(전역 1e-6 폴리라인 vs 정점별 실측 tol + 닫힌 형식)는 수치로 보여줄 수 있는 차별점 — 공개 지표 후보.
+알고리즘 참고: Manifold(Apache-2.0 — 차용·번역 가능), Hoffmann 등 문헌. 커버리지 밖 곡면 불리언은 명시적 미지원 에러로 정직하게 거절. **발견된 점**의 경로·국소 tolerance·정의에서의 실현 실전 투입. 이 시점에 "OCCT 없이 직동하는, 실용적 기계 부품(평면 위주)을 STEP으로 내보내는" 진짜 커널이 된다. 참고: Truck 대비 벤치마크·정밀도 비교(전역 1e-6 폴리라인 vs 정점별 실측 tol + 닫힌 형식)는 수치로 보여줄 수 있는 차별점 — 공개 지표 후보.
 
 **M6 — 자체 불리언 2단: 이차곡면.** 평면∩실린더(타원), 평면∩구(원), 평면∩원뿔 — 여전히 닫힌 형식이라 행진 불필요. 실린더∩실린더는 특수 케이스(직교 등)부터. 실제 기계 부품 면의 대다수가 평면+실린더+원뿔이므로, 여기까지로 실용 커버리지의 대부분을 확보한다. ★ **정정(칸 ⑧, 2026-09-05)**: 원통 쌍 가운데 **면이 만나지 않는** 쌍(십자로 관통한 두 스터드처럼 축은 만나도 남은 면은 비킨 것)은 새 기하가 아니라 **게이트의 명제** 문제였다 — 옆면의 축 구간으로 비켰음을 증명하면 배열이 이미 조립한다. 여기 남는 것은 면이 **만나는** 쌍(4차 곡선)뿐이다.
 
@@ -1354,7 +1360,7 @@ STEP 라운드트립(자기 출력 되읽기): nacre가 쓴 STEP을 step-io **�
 
 **M7 — 자체 불리언 3단: 일반 SSI (연구 구간).** nacre-geom::intersect에 SSI 행진 구현 → 일반 곡면쌍의 `HybridBoolean` 완성: 출처태그 tess에 강건 메시 불리언(exact predicates) → 조합 결정 추출 → 살아남은 면은 정확 곡면 유지, 신규 엣지는 국소 SSI 스냅백. OCCT 오라클과 상시 diff. 실패 케이스 코퍼스 축적.
 
-**M7 내/외 분류 = exact ray casting (1순위 후보).** 하이브리드 파이프라인("출처태그 메시 → 조합 결정 → 정확 곡면 스냅백")에서 "이 patch가 최종 솔리드 안인가 밖인가"를 분류하는 단계에 exact ray casting을 쓴다. 메커니즘: 레이가 삼각형 **내부**를 지나면 삼각형 방향(정점 순서)으로 정확 판정, 꼭짓점·엣지·접선(coplanar) 같은 애매한 케이스는 레이를 **수치 섭동**해 항상 "내부 통과"로 되돌린다(Simulation of Simplicity, Edelsbrunner–Mücke 1990). 1순위 이유: (a) **우리 계보와 정합** — 핵심이 orient 술어(채택)+섭동(`RelaxError::Tangential`로 올리기로 한 퇴화 구역의 정석)이라 새 수학을 안 들인다; (b) **검증됨** — Cherchi 2022(Interactive and Robust Mesh Booleans)가 핵심으로 채택, 수백만 삼각형·수백 입력 variadic까지 테스트하며 GWN류를 명시적으로 제침; (c) **파이프라인에 그대로 꽂힘** — 우리 하이브리드는 이미 메시를 경유하므로 분류를 메시 단계에서 함(Cherchi 검증 형태 그대로), 곡면 직접 판정 불필요라 GWN의 trimmed NURBS 확장(최신·검증 진행 중)을 우회.
+**M7 내/외 분류 = exact ray casting (1순위 후보).** 하이브리드 파이프라인("출처태그 메시 → 조합 결정 → 정확 곡면 스냅백")에서 "이 patch가 최종 솔리드 안인가 밖인가"를 분류하는 단계에 exact ray casting을 쓴다. 메커니즘: 레이가 삼각형 **내부**를 지나면 삼각형 방향(정점 순서)으로 정확 판정, 꼭짓점·엣지·접선(coplanar) 같은 애매한 케이스는 레이를 **수치 섭동**해 항상 "내부 통과"로 되돌린다(Simulation of Simplicity, Edelsbrunner–Mücke 1990). 1순위 이유: (a) **우리 계보와 정합** — 핵심이 orient 술어(채택)+섭동(퇴화 구역을 **판정이 아니라 정책**으로 올리기로 한 그 방침의 정석)이라 새 수학을 안 들인다; (b) **검증됨** — Cherchi 2022(Interactive and Robust Mesh Booleans)가 핵심으로 채택, 수백만 삼각형·수백 입력 variadic까지 테스트하며 GWN류를 명시적으로 제침; (c) **파이프라인에 그대로 꽂힘** — 우리 하이브리드는 이미 메시를 경유하므로 분류를 메시 단계에서 함(Cherchi 검증 형태 그대로), 곡면 직접 판정 불필요라 GWN의 trimmed NURBS 확장(최신·검증 진행 중)을 우회.
 
 **오해 방지 셋.** (1) **Truck 방식이 아니다** — 표면적으로 메시를 쓰나 정반대다: Truck은 교차를 폴리라인 근사로 표현해 그 근사가 **최종 결과**(전역 1e-6), 우리는 메시를 **분류용 임시 도구로만** 쓰고 exact 술어로 분류 후 **정확 곡면으로 스냅백**. 차이는 "메시를 쓰느냐"가 아니라 "메시가 최종이냐(Truck) vs 임시냐(우리)". (2) **indirect predicates의 대체·확장이 아니다** — indirect predicates=M5 **점** 부호 판정(평면·국소·교차 계산 중), exact ray casting=M7 **patch** 내/외 분류(전역·분류 단계). 대상(점 vs 덩어리)도 마일스톤(M5 vs M7)도 다른 별개 부품. (3) **"어려운 케이스에만 켜는 정밀 모드"가 아니다** — relaxation 사다리·적응 술어는 케이스 단위로 "어려우면 더 정밀하게", ray casting은 M7에서 **상시 도는 분류 단계**. "선택적"의 단위는 케이스가 아니라 **마일스톤**(M5·M6엔 닫힌 형식이라 불필요, M7에서 켜짐).
 
@@ -1368,7 +1374,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 
 트리밍 곡면의 pcurve 표현 시점(M3에 선행 도입 vs M5까지 지연), 닫힌 엣지의 seam 처리(방식 확정 — 아래 "원통 seam: A vs B" 항목), Sketch 제약 솔버의 범위(초기엔 무제약 프로파일만), OpRef 계보 참조의 도입 시점과 직렬화 포맷 여유분, `Store` 스냅샷·직렬화 포맷(자체 vs STEP 재활용) — 이와 함께 **세션 중 메모리 관리: compact보다 재구축(rebuild-from-log) 우선**(§2 "재검토 예정 (v2)" 참조; 재구축=주력 정리·undo 유지, live 폐포 필터링=저장, compact=비상 회수), OCCT history → 출처 매핑의 실제 충실도(M5에서 실측 필요), 멀티스레딩 경계(Store가 &mut 독점인 설계라 연산 단위 병렬은 미지원 — 의도적 단순화).
 
-**원통 seam: A(seam 엣지) vs B(seamless periodic) — A 채택 (M3.3a에서 확정).** 주기 곡면(원통·구·토러스)의 옆면을 b-rep로 담는 두 방식이 있고, 둘 다 유효 AP242·유효 CW-복합체다(초기 판단에서 "B는 오일러가 깨진다"고 봤으나 **오류** — 깨지는 건 정점조차 없는 제3의 변형 C[`bounds:None`, V0]이고, B는 각 원을 seam 정점 `Some([v,v])`로 두고 옆면을 두 루프[outer=아래원, inner=위원]로 담아 `V−E+F−L_i = 2−2+3−1 = 2`로 통과한다).
+**원통 seam: A(seam 엣지) vs B(seamless periodic) — A 채택 (M3.3a에서 확정).** 주기 곡면(원통·구·토러스)의 옆면을 b-rep로 담는 두 방식이 있고, 둘 다 유효 AP242·유효 CW-복합체다(초기 판단에서 "B는 오일러가 깨진다"고 봤으나 **오류** — 깨지는 건 정점조차 없는 제3의 변형 C(끝점 없는 독립 전체 원 — **커널은 그 형태를 표현하지 않는다**, V0)이고, B는 각 원을 seam 정점 `[v, v]`로 두고 옆면을 두 루프[outer=아래원, inner=위원]로 담아 `V−E+F−L_i = 2−2+3−1 = 2`로 통과한다).
 - **A(채택):** 위 원 + 아래 원 + **세로 seam 직선 엣지**, 옆면 = 4-엣지 단일 닫힌 루프 `[bottom, seam, top⁻, seam⁻]`(seam이 같은 면에서 2회 반대 — self-adjacent). 원통 생성자(`cylinder_solid`)가 이 방식. STEP 출력도 A(OCCT 계열이 생산·기대하는 형태; step-io 검증 테스트와 동형).
 - **B(미채택):** seam 엣지 없이 위·아래 원 두 개로만 옆면 경계(옆면이 두 루프). NIST 샘플 계열.
 
@@ -1452,11 +1458,11 @@ M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/c
 
 **지금 정하지 않는 이유:** M5에서 indirect predicates를 실제 구현해보면 "이것이 이차곡면으로 얼마나 확장되는지"에 대한 감이 생기고, 그 감이 M6 방법 선택을 정확하게 만든다. 지금 확정하면 "M5 구현 경험 없이 미리 상세 설계"라는 함정. M1~M5 진행 중에는 인지만 해두고, M6 직전에 재조사해 확정한다.
 
-**`nacre-predicates`의 geom 타입 참조 — 순환 의존 확인 (M5 직전).** indirect predicate의 implicit point는 "어느 원시 요소들의 교차인지"를 정의로 보유하는데(§4 `Origin::Discovered`), 그 정의가 `Handle<Surface>`(예: 평면 3장 교차 `[Handle<Surface>; 3]`)를 담으면 문제가 생긴다 — `Surface`는 `nacre-geom`에 있고 `nacre-predicates`는 geom보다 **아래** 층(§1)이라, predicates가 `Handle<Surface>`를 참조하면 geom→predicates→geom 순환이 된다. 이는 §1에서 `Store`/`Handle`을 최하위 `nacre-store`로 내려 푼 것과 **동일한 구조의 문제**다. M5 구현 직전에 정한다: (a) predicates가 `Handle<Surface>`를 직접 담지 않고 **좌표·평면 방정식(계수)만 값으로 받는다**(가장 단순 — predicates가 geom을 전혀 모름), 또는 (b) implicit point 정의를 geom 쪽(또는 store 같은 하위 공용 층)에 두고 predicates는 그 위에서 술어만 제공, 또는 (c) store 패턴처럼 공용 최하위 타입으로 분리. 현재 유력안은 (a) — indirect orient3d는 결국 평면 계수들의 다항식 부호이므로, Handle이 아니라 평면 방정식 계수를 넘기면 predicates가 순수 수치 계층으로 남아 순환이 원천 차단된다. **→ 옵션 (a) 확정(M5-prep).** `nacre-predicates`는 평면 계수·좌표 `[f64;N]`만 받는 순수 수치층(커널 타입 무의존, standalone 분리 가능). implicit point의 Handle 기반 정의(`VertexDef::ThreePlane([Handle<Surface>;3])`)는 위상 계층(§4 `Origin::Discovered`)에 두고, 부호 판정 시 geom이 Handle→계수를 뽑아 predicates에 넘긴다. 순환 원천 차단.
+**`nacre-predicates`의 geom 타입 참조 — 순환 의존 확인 (M5 직전).** indirect predicate의 implicit point는 "어느 원시 요소들의 교차인지"를 정의로 보유하는데(§4 — 점은 자기 정의다), 그 정의가 `Handle<Surface>`(예: 평면 3장 교차 `[Handle<Surface>; 3]`)를 담으면 문제가 생긴다 — `Surface`는 `nacre-geom`에 있고 `nacre-predicates`는 geom보다 **아래** 층(§1)이라, predicates가 `Handle<Surface>`를 참조하면 geom→predicates→geom 순환이 된다. 이는 §1에서 `Store`/`Handle`을 최하위 `nacre-store`로 내려 푼 것과 **동일한 구조의 문제**다. M5 구현 직전에 정한다: (a) predicates가 `Handle<Surface>`를 직접 담지 않고 **좌표·평면 방정식(계수)만 값으로 받는다**(가장 단순 — predicates가 geom을 전혀 모름), 또는 (b) implicit point 정의를 geom 쪽(또는 store 같은 하위 공용 층)에 두고 predicates는 그 위에서 술어만 제공, 또는 (c) store 패턴처럼 공용 최하위 타입으로 분리. 현재 유력안은 (a) — indirect orient3d는 결국 평면 계수들의 다항식 부호이므로, Handle이 아니라 평면 방정식 계수를 넘기면 predicates가 순수 수치 계층으로 남아 순환이 원천 차단된다. **→ 옵션 (a) 확정(M5-prep).** `nacre-predicates`는 평면 계수·좌표 `[f64;N]`만 받는 순수 수치층(커널 타입 무의존, standalone 분리 가능). implicit point의 Handle 기반 정의(`VertexDef::ThreePlane([Handle<Surface>;3])`)는 위상 계층(§4)에 두고, 부호 판정 시 geom이 Handle→계수를 뽑아 predicates에 넘긴다. 순환 원천 차단.
 
 **곡면 내/외 판정 후보 (M6 직전 실측 결정).** 셋 다 M6~M7 "내/외 분류"의 후보이며 SSI 해법이 아니다(§8 M7 한계). 1순위 **exact ray casting**(§8 M7 — 우리 계보 정합, Cherchi 2022 검증, 메시 경유라 곡면 직접 판정 우회). 2순위 **GWN**(generalized winding number, Jacobson 2013 — 메시/point cloud in-out은 10년+ 검증된 성숙 기법, libigl·Axom[BSD] 구현 존재; watertight 무관 강건성이 강점이나 우리 always-closed에선 덜 필요, 느림·경계 round-off, trimmed NURBS 정확 GWN 확장은 최신[Spainhour 2024~26, 검증 진행 중] — "메시 경유 없이 곡면에서 직접 판정하고 싶어질 때"의 대안으로 보류). 참고 **graph cuts**(Diazzi/Attene 2021 — 일부 모호한 자기교차 케이스 우수), **EMBER winding number vector**(Trettner 2022). **라이선스**: 채택 전 확인, Cherchi/Attene 계열 LGPL 주의 — indirect predicates와 동일 규율(논문·MIT/Apache 소스만 참고, LGPL 소스 열람 금지, 실행 대조만 허용).
 
-**CIP — Certified Indirect Predicates (회전 시의 부호 판정 층. 구현됨 — 오버홀 stage 1~3 완료, 수식 ②는 아래 :566에서 소진.)**
+**CIP — Certified Indirect Predicates (회전 시의 부호 판정 층. 구현됨 — 오버홀 stage 1~3 완료, 수식 ②는 이 절 아래에서 소진.)**
 
 **왜 필요한가.** 축정렬 판정은 좌표가 유리수라 exact다. 그러나 **회전이 들어오면 좌표가 무리수가 된다** — 유리수 각도라도 cos·sin은 무리수이고(Niven), 임의 각도는 초월수다. exact 산술로 표현할 수 없으므로 회전 좌표는 f64 근사일 수밖에 없다. **회전은 오버홀(stage 1~3)로 지원된다** — 모델링 변환·각도 스케치가 회전 좌표를 만들고, 그때 **판정만은 조용히 틀리지 않게** 지키는 것이 CIP다.
 
@@ -1474,7 +1480,7 @@ M5 불리언의 **위상 결정**(어느 것이 안/밖·볼록·공면·outer/c
    ```
    앞선 회전일수록 뒤 이동이 많아 기여가 크다. **분리 계산은 삼각부등식 |a+b| ≤ |a|+|b|로 정당하다**(최악 상한이므로 실제보다 작아지지 않는다 — 터지지 않는다). **★ 교정(H4-soundness, 아래 미확정①)**: 위 `da × 거리`(접선형)는 **각도 불확실성** 항만 맞고, v1의 **실현 반올림(이산화) 새-오차는 접선형이 아니라 좌표혼합 `(|x|+|y|)·da`**다(독립 cos/sin 반올림의 방사 성분; 접선형은 좌표 0 근처서 과소평가—실측 반증). 유리수 각의 v1은 `da_각도=0`이라 위 둘째 항이 0이고 새 오차는 좌표혼합 항이 담당한다.
 4. **★ 캐시 가능한 부분과 아닌 부분이 갈린다.** 이산화·직선 tol은 **적용점 무관**(점의 고정 속성) → 점에 값으로 캐시. **회전 tol은 적용점 의존**(같은 회전도 판정점이 멀면 tol이 커진다) → **캐시 불가, 판정 시 계산**. 그러려면 점의 **부모·조상**을 알아야 하고 조상 중 회전이 어디에 몇 번인지 알아야 한다. → **모션 이력 트리**(노드 = 모션 + 부모 링크; 여러 점이 공통 조상을 공유하는 forest).
-   **★ 개정(실측 2026-07-28): 이동도, 반사도 담는다.** 원안은 *"이동·교차는 담지 않는다 — tol에 기여하지 않으므로"* 였다. 전제는 맞다 — 이동은 tol을 거의 늘리지 않는다. 틀린 것은 **결론**이다: 트리가 하는 일은 tol 계산만이 아니라 **정의의 합성**이고, 이동이 빠지면 `T(7/11)`한 벽과 `T(18/11)`한 벽이 같은 평면임을 말할 방법이 없어진다(측정: 1 ULP 갈라짐 → 한 부품이 두 몸통, OCCT는 하나). 그리고 `R` 다음 `T`는 아예 표현 불가라 거절이었다(15/15). 반사도 같은 이유로 들어왔고(§4 `Mirror`), 그래서 모션의 어휘가 **회전·이동·반사로 완결**된다 — 하나의 사슬, 하나의 규칙. 반사만 비고유라 지름길에 패리티 보정이 붙는다(§4). 교차는 여전히 담지 않는다(그건 `VertexDef`의 몫). 판정 시 노드에서 상위로 순회하며 (각도오차 × 판정점까지 거리)를 합산한다.
+   **★ 개정(실측 2026-07-28): 이동도, 반사도 담는다.** 원안은 *"이동·교차는 담지 않는다 — tol에 기여하지 않으므로"* 였다. 전제는 맞다 — 이동은 tol을 거의 늘리지 않는다. 틀린 것은 **결론**이다: 트리가 하는 일은 tol 계산만이 아니라 **정의의 합성**이고, 이동이 빠지면 `T(7/11)`한 벽과 `T(18/11)`한 벽이 같은 평면임을 말할 방법이 없어진다(측정: 1 ULP 갈라짐 → 한 부품이 두 몸통, OCCT는 하나). 그리고 `R` 다음 `T`는 아예 표현 불가라 거절이었다(15/15). 반사도 같은 이유로 들어왔고(모션 어휘의 `Mirror`), 그래서 모션의 어휘가 **회전·이동·반사** 위에 선다 — 하나의 사슬, 하나의 규칙. ⚠ **정정(2026-09-14)**: 원문은 *"…로 **완결**된다"* 였는데 `Motion` 은 **넷**이다 — `Frame`(2026-08-03 도착)이 같은 사슬·같은 패리티 규칙을 공유한다. 반사만 비고유라 지름길에 패리티 보정이 붙는다. 교차는 여전히 담지 않는다(그건 `VertexDef`의 몫). 판정 시 노드에서 상위로 순회하며 (각도오차 × 판정점까지 거리)를 합산한다.
 5. **★ 방향별 tol(x·y·z)이 필요하다.** 행렬식에서 각 방향의 오차가 **서로 다른 계수로 증폭**된다(2D orient에서 `a`의 x-tol은 `(by−cy)`와, y-tol은 `(bx−cx)`와 곱해진다). 하나로 뭉치면 정확히 증폭할 수 없다. **CGAL Lazy_kernel이 좌표를 구간(interval)으로 드는 이유가 이것**이고, 우리는 구간 산술 대신 **방향별 tol 값 + 미리 유도한 오차 한계 공식**을 쓴다(술어가 소수·고정이므로 유도가 가능하다 — CGAL은 범용이라 술어가 수백 개라 유도가 불가능해 구간을 택했다. 우리는 특화 커널이라 Shewchuk/Attene 계열의 "오차 한계 미리"가 더 빠르다). **→ 확정(미확정①): 스칼라 tol 탈락, 모든 tol을 xyz 벡터로. 회전 각도오차 환산 공식은 위 미확정① 참조.**
 6. **직선 구간은 fraction 강체로 묶는다.** *(실측 확인 2026-07-28: 아래 예측이 그대로 관측됐다 — `1.0 + to_f64(7/11)`와 `to_f64(18/11)`이 1 ULP 어긋나 한 벽이 두 평면 클래스가 됐다. 다만 고친 방법은 좌표를 다시 실현하는 것이 **아니라** 이동을 정의에 넣는 것이었다: 두 벽의 정의가 같은 값을 실현하면 f64 캐시가 어긋난 채여도 판정이 일치를 증명한다. 캐시는 고칠 대상이 아니었고, 그래서 좌표는 한 비트도 안 움직였다.)* 연속된 직선 이동을 유리수로 먼저 합산하면 그 구간의 **연산 오차 = 0**이고 이산화는 **회전과 만나는 지점에서 1회**뿐이다. 순차로 f64 덧셈하면 이동마다 이산화가 붙는다((a+b)+c는 이산화 2회, a+(b+c)는 1회). 회전 결과는 무리수라 fraction으로 못 담으므로 **회전 경계의 f64 덧셈 오차는 피할 수 없다** — 피할 수 있는 것만 피한다. **(일반화 — 기준은 "직선/회전"이 아니라 "유리수/무리수"다. 직선이라서 tol 0이 아니라 유리수라서 tol 0이며, 강체 묶기는 직선뿐 아니라 **같은 축의 연속 유리수-각도 회전**에도 적용된다[각도를 유리수로 합산해 누적 각을 1회만 실현 — 2D는 항상 한 축, 3D는 같은 축만]. 유도된 무리수[√ 거리·구속 솔버 해·3D 축 변경 합성]가 섞이면 그 구간은 fraction으로 못 묶는다. tol 공식의 거리·각도 항은 지우지 말고 0으로 둔다. **★ 번들링은 필수(H4-amplification 실측): un-bundled 증분 실현은 전파 `|R|`의 행합 `|cos|+|sin|≥1`을 매 스텝 곱해 tol 바운드가 지수 폭발[실측 30스텝에 실제 오차의 ~20만 배; 실제 오차는 R 노름보존이라 평평]. 누적각 1회 실현이 차단. 폭발해도 sound 최악-보장이라 조용히 안 틀리고 상승/거절로만 간다[항목 8].)**
 7. **판정 = 필터 + 정밀도 상승 + lazy 캐싱.** 점들의 tol로 이번 판정의 오차 한계를 계산(변 길이로 증폭) → `|행렬식| > 오차 한계`면 f64로 확정(대부분) → 애매하면 정밀도 상승. 관련 점이 **tol = 0(평면 교차점)뿐이면 exact 폴백**(현행 indirect predicates), **회전 점이 끼면 임의 정밀도로 상승**한다 — *초안은 여기를 "f128"이라 적었고 그건 틀렸다*(⑥): 고정 폭은 모델의 회전 이력이 얼마나 길 수 있는지를 조용히 결정하므로, 폭을 고르지 않고 **모자란 비트를 계산해 한 번에 점프**한다(astro-float, 상한 `JUDGE_PREC_CAP`). 한 번 고정밀 계산한 **값**은 캐시해 재사용하고(판정 결과가 아니라 점의 값 — 여러 판정에서 재사용된다), 재계산 시 **회전 지점만** 다시 계산하고 직선 구간은 fraction을 그 정밀도로 이산화해 잇는다. **판정에 필요한 점만 정밀화한다** — 중간 경유점은 정의로만 남긴다.

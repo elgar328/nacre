@@ -24,8 +24,12 @@ pub struct Adjacency {
 impl Adjacency {
     /// Build a fresh index from a model's topology stores. Scans every face's
     /// outer + inner loops → half-edges → edges (recording `forward`), and every
-    /// bounded edge → its two endpoint vertices. From scratch — cheap, always
-    /// correct; incremental maintenance lands with the operation log (M2).
+    /// bounded edge → its two endpoint vertices. From scratch — cheap, always correct.
+    ///
+    /// ★ **Rebuild is the whole story.** An earlier note promised incremental maintenance
+    /// "with the operation log (M2)"; the log arrived and the incremental path did not, and
+    /// nothing has needed it: [`Model::rebuild_adjacency`] replaces the index wholesale and
+    /// callers run it once after a batch. Build it when a profile asks for it, not before.
     pub fn rebuild(model: &Model) -> Adjacency {
         // Only the live model is indexed (design §2): superseded cells left in
         // the arena must not pollute edge use-counts. Iterate the stores in

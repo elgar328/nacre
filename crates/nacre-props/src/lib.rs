@@ -523,8 +523,9 @@ fn loop_points(model: &Model, outer: &Loop) -> Result<Vec<Point3>, PropsError> {
         .collect()
 }
 
-/// [`Model::he_start`], kept as a local name. (Its `Result` wrapper died with S8: every edge
-/// is bounded by type, so the unsupported-boundary arm had nothing left to catch.)
+/// [`Model::he_start`], kept as a local name. (The `Result` is now always `Ok`: S8 made every
+/// edge bounded by type, so the unsupported-boundary arm had nothing left to catch. The wrapper
+/// stays because five callers still `?` it; collapsing it is a separate change.)
 fn he_start(
     model: &Model,
     he: nacre_topo::HalfEdge,

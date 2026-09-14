@@ -20,7 +20,7 @@ nacre = 진주층(자개). 한 겹씩 침착만 되고 이미 만든 겹은 절�
 
 순수 기하 커널만: 기하·위상·수치봉합·연산·tessellation·검증까지. **제외:** GD&T/PMI(제작공차), 스타일·색상·레이어·visibility, 제작자·승인·날짜, 제품구조·조립·리비전. 코드-CAD 스크립트가 요구하는 편의(다중 솔리드 값, 다인수 불리언, 패턴·미러, 값 의미론)도 커널 밖 — **편의 레이어**(`nacre-kit`, 워크스페이스 밖 별도 리포)의 몫이다. 이들은 응용 영역 — 커널은 영구 Handle만 제공하고 응용이 사이드카(`HashMap<Handle<_>, 응용데이터>`)로 매단다.
 
-**설탕 vs 커널 판별 기준 (2026-07-26 결정 — 앞으로 모든 편의 기능에 적용).** *편의 레이어는 커널 op을 **조합**만 한다. 새로운 exact 술어 판단(내/외·일치·방향)이 필요해지는 순간 그것은 커널(또는 커널 측) 몫이다.* 근거: exactness 규율(indirect predicates·`Origin`·`validate`)이 전부 커널에 살아서, 앱이 f64로 포함 판정을 시작하면 커널이 없앤 "조용히 틀림"이 한 층 위에서, 소비자마다 다르게 부활한다. 적용 예 — 다인수 fuse/cut/common(fold)·다중 솔리드 값·섬마다 extrude 호출 = **설탕**; 구멍 있는 스케치(`Profile2d` 다중 루프)·링 중첩 판정(`point_in_ring`) = **커널**. nacre-step은 커널 Model을 AP242(Ed2) 형상 서브셋 엔티티로 번역하는 **어댑터** — 직렬화 백엔드는 교체 가능(커널 무지; 개발 중 step-io, 최종 경량 라이터). STEP 가져오기(외부 파일 열기)는 v1 비목표(healing·근사→정확 승격·히스토리 없는 dumb solid를 동반, 앱 레이어 전제).
+**설탕 vs 커널 판별 기준 (2026-07-26 결정 — 앞으로 모든 편의 기능에 적용).** *편의 레이어는 커널 op을 **조합**만 한다. 새로운 exact 술어 판단(내/외·일치·방향)이 필요해지는 순간 그것은 커널(또는 커널 측) 몫이다.* 근거: exactness 규율(indirect predicates·**정점의 정의**·`validate`)이 전부 커널에 살아서, 앱이 f64로 포함 판정을 시작하면 커널이 없앤 "조용히 틀림"이 한 층 위에서, 소비자마다 다르게 부활한다. 적용 예 — 다인수 fuse/cut/common(fold)·다중 솔리드 값·섬마다 extrude 호출 = **설탕**; 구멍 있는 스케치(`Profile2d` 다중 루프)·링 중첩 판정(`point_in_ring`) = **커널**. nacre-step은 커널 Model을 AP242(Ed2) 형상 서브셋 엔티티로 번역하는 **어댑터** — 직렬화 백엔드는 교체 가능(커널 무지; 개발 중 step-io, 최종 경량 라이터). STEP 가져오기(외부 파일 열기)는 v1 비목표(healing·근사→정확 승격·히스토리 없는 dumb solid를 동반, 앱 레이어 전제).
 
 ## 불리언 전략 (핵심)
 
@@ -55,7 +55,7 @@ nacre = 진주층(자개). 한 겹씩 침착만 되고 이미 만든 겹은 절�
 
 ## 마일스톤 (docs/design.md §8 참조)
 
-M1 뼈대(Store/Handle, Plane/Line, 정육면체, validate, OBJ덤프·STEP출력→기존 뷰어에 위임) → M2 스케치·extrude·replay·STEP → M3 곡선기하(NURBS·Arc·Cylinder, tess 출처태그) → M4 면 위 작업(imprint·pad, 여기까지 전부 Constructed, 오라클 가동) → M5~M7 불리언 사다리(이 즈음 워크스페이스 밖 인터랙티브 디버그 뷰어 — §design 1).
+M1 뼈대(Store/Handle, Plane/Line, 정육면체, validate, OBJ덤프·STEP출력→기존 뷰어에 위임) → M2 스케치·extrude·replay·STEP → M3 곡선기하(NURBS·Arc·Cylinder, tess 출처태그) → M4 면 위 작업(imprint·pad, 여기까지 전부 **구성된 점**, 오라클 가동) → M5~M7 불리언 사다리(이 즈음 워크스페이스 밖 인터랙티브 디버그 뷰어 — `design.md` 「크레이트 구조」).
 
 **인프라(검증·테스트)가 코드보다 먼저**라는 게 이 프로젝트의 방법론이다 — M1이 `Store<T>`/`Handle<T>`를 proptest와 함께 시작한 이유이고, 지금도 새 단위마다 같다. **현재 위치는 `docs/dev-log.md`의 마지막 셀이 말한다**(이 파일에 적으면 반드시 낡는다).
 

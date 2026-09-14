@@ -5,7 +5,7 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "exact analytic geometry (Surface/Curve, Plane/Line) for the nacre CAD kernel — the truth layer; coordinates are cache, tolerance is caller-supplied"
+description = "analytic geometry (Plane, Cylinder, Line, Circle) for the nacre CAD kernel — the realization layer: closed-form in shape, f64 in its coefficients; the exact truth lives in nacre-topo"
 
 [dependencies]
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
