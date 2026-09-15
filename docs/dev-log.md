@@ -20957,7 +20957,7 @@ census 태그 · **진짜 결함**. ☑ **인구에 있으면서 결함이 아�
 |---|---|---|---|
 | nacre | `9292559` | 조각 타입 하나 `Edge2d { Line \| Arc { center, radius, ccw } }`(geom::mixed, 옛 `Seg2d` 개명); 옛 입력 enum·문 6·`from_edges`·사슬 재발견·`OpenChain`·`BranchingVertex`·`DuplicateEdge` 소멸; `from_rings`·`classify`·`normalized` 무변 | fmt·clippy·**1302**·no-default·census **398행 HEAD≡debug≡release 비트 동일**·reject·ignored 133·perf |
 | nacre-kit | `bc49a56` | `Loose` 소멸; `Step::Sketch { plane, paths: Vec<Path> }`, `Path { Pen(PenPath) \| Circle { center, size } }`; 펜 걷기·코너 처리는 그대로, 방출만 (정점, 변) → `Ring2d::new`; 원통 원시체는 `Path::Circle`; `syntax.md` §5.5 은퇴·`decisions.md` §20 | fmt·clippy·**96** |
-| nacre-playground | (아래) | `sketch(plane, lines)` 오버로드·`line`·느슨한 `arc`·`LooseSeg`·`Loose` 삭제; 스텝은 `{ plane, paths: Path[] }`; 둘째 인자는 무시가 아니라 **이름 붙여 거절**; 치트시트 뭉치 예시 2 → 「생성 코드가 펜을 굴린다」 1 | wasm:all·tsc·vitest **269**·wasm clippy/fmt |
+| nacre-playground | `df96aec` | `sketch(plane, lines)` 오버로드·`line`·느슨한 `arc`·`LooseSeg`·`Loose` 삭제; 스텝은 `{ plane, paths: Path[] }`; 둘째 인자는 무시가 아니라 **이름 붙여 거절**; 치트시트 뭉치 예시 2 → 「생성 코드가 펜을 굴린다」 1 | wasm:all·tsc·vitest **269**·wasm clippy/fmt |
 
 ### 실측이 플랜을 고친 자리
 - **픽스처 50 을 손으로 다시 쓰지 않았다** — 테스트 쪽 순서 어댑터 `stated(vec![line(..), arc_turns(..),
