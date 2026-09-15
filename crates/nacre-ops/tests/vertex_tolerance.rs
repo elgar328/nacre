@@ -18,10 +18,13 @@
 //! the **proposition**, on shapes chosen because they must exercise it.
 
 use nacre_math::{Point2, Point3};
-use nacre_ops::{BoolKind, Operation, Profile2d, SketchFrame, apply, boolean};
+use nacre_ops::{
+    BoolKind, Operation, Precision, Profile2d, SketchFrame, apply, boolean, realize_vertex,
+};
 use nacre_scalar::Axis;
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid};
+use nacre_topo::{Model, PointCache, Solid};
+use nacre_validate::EPS_CONSTRUCTED;
 
 fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
     let profile =
@@ -50,8 +53,26 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
 fn every_vertex_matches_its_definition(m: &Model) -> usize {
     let mut measured = 0;
     for (vh, v) in m.vertices.iter() {
-        let Some(tol) = m.vertex_tol(vh) else {
-            continue; // no measured figure: the checker uses its own epsilon, not this proposition
+        // What the cache knows, and the figure it is held to: a measured residual directly; a
+        // realized coordinate (cell 52) to the realization bit for bit, and to its carriers within
+        // the construction epsilon `nacre-validate` applies to it (its bound speaks of the
+        // coordinate, not of the cached carriers).
+        let tol = match *m.vertex_cache(vh) {
+            PointCache::Unmeasured(_) => continue,
+            PointCache::Measured { residual, .. } => residual,
+            PointCache::Bounded { coord, .. } => {
+                let (realized, _) = realize_vertex(m, vh, Precision::NearestF64)
+                    .expect("a Bounded vertex realizes")
+                    .to_f64()
+                    .expect("decided");
+                assert_eq!(
+                    coord.as_array(),
+                    realized,
+                    "vertex {}: the cache is the realization",
+                    vh.index()
+                );
+                EPS_CONSTRUCTED
+            }
         };
         measured += 1;
         for sh in v.def.carriers() {

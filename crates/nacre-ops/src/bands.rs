@@ -268,6 +268,29 @@ mod tests {
     use nacre_topo::Surface;
     use nacre_topo::{Model, Solid};
 
+    /// What the cache knows about a minted vertex holds it within `1e-12` of its definition:
+    /// realized (`Bounded`, cell 52) within the rounding, or, where the realization declined,
+    /// the residual the arrangement measured.
+    fn knowledge_is_tight(m: &Model, h: Handle<nacre_topo::Vertex>) {
+        match m.vertex_cache(h) {
+            nacre_topo::PointCache::Bounded { bound, .. } => assert!(
+                bound
+                    .iter()
+                    .all(|b| nacre_scalar::Mag::lt(*b, nacre_scalar::Mag::of(1e-12))),
+                "realized within rounding: {bound:?}"
+            ),
+            nacre_topo::PointCache::Measured { residual, .. } => {
+                assert!(
+                    *residual < 1e-12,
+                    "measured against what defines it: {residual}"
+                )
+            }
+            nacre_topo::PointCache::Unmeasured(_) => {
+                panic!("a minted vertex is realized or measured")
+            }
+        }
+    }
+
     /// **The existence rule's whole truth table** — [`face_spans`] against marks written by hand.
     ///
     /// The production lock reaches this through an entire boolean, and a boolean exercises two of
@@ -2019,10 +2042,7 @@ mod tests {
                         .any(|c| (0..3).all(|i| (p.as_array()[i] - c[i]).abs() < 1e-9)),
                     "a minted pierce vertex sits on a derived crossing: {p:?}"
                 );
-                let tol = m
-                    .vertex_tol(h)
-                    .expect("a discovered vertex carries its tol");
-                assert!(tol < 1e-12, "measured against what defines it: {tol}");
+                knowledge_is_tight(&m, h);
             }
         }
     }
@@ -2155,8 +2175,7 @@ mod tests {
                         (0..3).all(|i| (p.as_array()[i] - sp[i]).abs() < 1e-12),
                         "S sits on the derived seam point: {p:?}"
                     );
-                    let tol = m.vertex_tol(on_seam[0]).expect("S is discovered");
-                    assert!(tol < 1e-12, "measured against what defines it: {tol}");
+                    knowledge_is_tight(&m, on_seam[0]);
                 }
             }
             // The minted OnSeam census: the uncut far rim's vertex, plus S when it stands —

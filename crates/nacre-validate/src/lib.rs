@@ -258,12 +258,18 @@ pub fn validate(model: &Model) -> Vec<Violation> {
 
 /// The tolerance a vertex's cache grants (S7: read from the point cache): the measured residual
 /// where one exists (`PointCache::Measured`, `0.0` kept exact), else the construction epsilon
-/// [`EPS_CONSTRUCTED`] for an unmeasured one.
+/// [`EPS_CONSTRUCTED`].
+///
+/// A realized coordinate (`PointCache::Bounded`) takes the epsilon too, deliberately: its bound
+/// says how far the *coordinate* is from the truth (half an ulp or the ladder's radius), not how
+/// far the cached point sits from the cached carriers — that distance also carries the carriers'
+/// own realization error, which nothing records yet (`SurfaceCache` has no `tol`). Measured over
+/// the census corpus: at most 1.07e-14, five orders under the epsilon.
 #[inline]
 fn tol_of(m: &Model, vh: Handle<Vertex>) -> f64 {
     match *m.vertex_cache(vh) {
         PointCache::Measured { residual, .. } => residual,
-        PointCache::Unmeasured(_) => EPS_CONSTRUCTED,
+        PointCache::Unmeasured(_) | PointCache::Bounded { .. } => EPS_CONSTRUCTED,
     }
 }
 

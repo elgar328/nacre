@@ -2080,7 +2080,8 @@ pub(crate) fn reconstruct(
                             cylinder,
                             root,
                         };
-                        let h = model.push_vertex(
+                        let h = crate::realize::push_vertex_realized(
+                            model,
                             def,
                             PointCache::Measured {
                                 coord: sv.point,
@@ -2120,7 +2121,8 @@ pub(crate) fn reconstruct(
                     .iter()
                     .map(|&i| model.surface(planes[i].surf).distance(sv.point))
                     .fold(sv.tol, f64::max);
-                model.push_vertex(
+                crate::realize::push_vertex_realized(
+                    model,
                     def,
                     PointCache::Measured {
                         coord: sv.point,
@@ -2243,7 +2245,8 @@ pub(crate) fn reconstruct(
                 // point (a zero-length arc piece nothing downstream could see).
                 let v = match cut {
                     Some(cr) if cr.seam_is_node => vh[&(g, cr.nodes[0])],
-                    _ => model.push_vertex(
+                    _ => crate::realize::push_vertex_realized(
+                        model,
                         VertexDef::OnSeam([lat, plane]),
                         PointCache::Measured {
                             coord: point,

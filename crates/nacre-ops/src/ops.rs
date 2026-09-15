@@ -2102,7 +2102,11 @@ fn sweep_ring(
             .enumerate()
             .map(|(i, (p, at))| {
                 let def = define(model, i, cap, at)?;
-                Ok(model.push_vertex(def, PointCache::Unmeasured(*p)))
+                Ok(crate::realize::push_vertex_realized(
+                    model,
+                    def,
+                    PointCache::Unmeasured(*p),
+                ))
             })
             .collect()
     };

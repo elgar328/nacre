@@ -557,7 +557,31 @@ mod tests {
                             leaf,
                         )
                         .unwrap();
-                        assert_eq!(replayed, m.vertex_point(vh).as_array());
+                        // ★ The stored coordinate is the *realization* of the definition
+                        // (cell 52): the exact pre-motion base carried through the chain at 128
+                        // bits and rounded once. The f64 replay of the same chain agrees with it
+                        // to the rounding of its own arithmetic, not bit for bit — so the lock
+                        // is: cache == realization, and replay within the construction epsilon.
+                        let stored = m.vertex_point(vh).as_array();
+                        assert!(
+                            matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
+                            "a moved corner is realized from its definition"
+                        );
+                        let (realized, _) =
+                            crate::realize_vertex(&m, vh, crate::Precision::NearestF64)
+                                .expect("the def road realizes what it solves")
+                                .to_f64()
+                                .expect("decided");
+                        assert_eq!(
+                            realized, stored,
+                            "the cache is the realization, bit for bit"
+                        );
+                        for k in 0..3 {
+                            assert!(
+                                (replayed[k] - stored[k]).abs() <= 1e-9 * (1.0 + stored[k].abs()),
+                                "f64 replay within the construction epsilon: {replayed:?} vs {stored:?}"
+                            );
+                        }
                         checked += 1;
                     }
                 }

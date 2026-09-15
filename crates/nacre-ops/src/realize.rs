@@ -1,8 +1,10 @@
 //! **Asking a vertex for its coordinate at a precision you choose.**
 //!
-//! Everything the kernel shows today — the viewport, the tessellation, a report row — reads the
-//! f64 point cache, which carries its own error (`PointCache.tol`) and is *not* promised to be the
-//! nearest f64 to the truth. Printing more digits of it would print the rounding, not the point.
+//! Everything the kernel shows — the viewport, the tessellation, a report row, the STEP file —
+//! reads the f64 point cache. Since the cache became this module's memo (`push_vertex_realized`:
+//! a vertex is realized from its definition the moment an operation pushes it) that cache *is* the
+//! nearest f64 wherever the first rung decides it; printing more digits of it would still print
+//! the rounding, not the point, which is what `realize_vertex_decimal` is for.
 //!
 //! This module goes the other way: it takes the vertex's **definition** and realizes a coordinate
 //! from it, rounding exactly once at the end. Two roads meet here and they are chosen by the
@@ -25,9 +27,10 @@
 
 use crate::rotated_vertex::{motion_chain, replay};
 use nacre_cip::WitnessPoint;
+use nacre_math::Point3;
 use nacre_scalar::{HpBounded, Mag, MeetPoint};
 use nacre_store::Handle;
-use nacre_topo::{Model, Surface, Vertex};
+use nacre_topo::{Model, PointCache, Surface, Vertex, VertexDef};
 use num_bigint::BigInt;
 
 /// How precisely to realize — always stated, never defaulted.
@@ -176,10 +179,72 @@ pub fn realize_vertex(
     v: Handle<Vertex>,
     p: Precision,
 ) -> Result<Realized, RealizeError> {
+    realize_def(model, &model.vertices.get(v).def, p)
+}
+
+/// [`realize_vertex`] on a definition that has not been pushed yet — the road every vertex an
+/// operation makes takes *before* it exists, so its cache is the realization from the start.
+pub(crate) fn realize_def(
+    model: &Model,
+    def: &VertexDef,
+    p: Precision,
+) -> Result<Realized, RealizeError> {
     match p {
-        Precision::Bits(bits) => build(model, v, bits),
-        Precision::NearestF64 => climb(model, v, |r| r.to_f64().map(|_| r)),
+        Precision::Bits(bits) => build(model, def, bits),
+        Precision::NearestF64 => climb(model, def, |r| r.to_f64().map(|_| r)),
     }
+}
+
+/// The deepest motion history the cache road replays. The error a replayed point carries grows
+/// about one bit per turn, so past this depth the first rung cannot name an `f64` anyway — and a
+/// replay costs the depth: a 4,200-turn history realized on every push turned a 1.5 s test into
+/// minutes. Beyond it the construction's own figure stands, and a caller who wants the point
+/// exactly still has [`realize_vertex`], which climbs.
+const CACHE_REPLAY_DEPTH: usize = 64;
+
+/// **The cache's own road** — what [`Model::vertex_point`] holds for every vertex an operation
+/// makes: the definition realized on the ladder's first rung and rounded once, or `None` where
+/// that rung does not name an `f64` (a realization that declines by name, an interval too wide at
+/// 128 bits, a motion history deeper than [`CACHE_REPLAY_DEPTH`]).
+///
+/// One rung, deliberately: a coordinate the first rung decides is the same nearest `f64` any
+/// higher rung would name, so where this answers it agrees with [`realize_vertex`] at
+/// `NearestF64` bit for bit; where it does not, the cost of climbing on every push is not paid,
+/// and the cache says so by carrying the construction's figure instead. Public so an instrument
+/// can ask the same question the push funnel asked and hold the cache to it.
+pub fn realize_cache(model: &Model, def: &VertexDef) -> Option<([f64; 3], [Mag; 3])> {
+    if def
+        .carriers()
+        .filter_map(|h| model.plane_motion(h))
+        .any(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_DEPTH))
+    {
+        return None;
+    }
+    realize_def(model, def, Precision::Bits(LADDER[0]))
+        .ok()?
+        .to_f64()
+}
+
+/// Push a vertex whose cache is **realized from its definition** — the one road every vertex an
+/// operation makes takes, so `Model::vertex_point` is the realization's memo from the moment the
+/// vertex exists (design: *"the cache is what `realize` produced, never a second truth"*).
+///
+/// `fallback` is what the construction site measured or computed, and it stands only where
+/// [`realize_cache`] answers `None`. A refusal leaves no trace in the cache; an instrument asks
+/// [`realize_cache`] again to count it.
+pub(crate) fn push_vertex_realized(
+    model: &mut Model,
+    def: VertexDef,
+    fallback: PointCache,
+) -> Handle<Vertex> {
+    let cache = match realize_cache(model, &def) {
+        Some((coord, bound)) => PointCache::Bounded {
+            coord: Point3::from_array(coord),
+            bound,
+        },
+        None => fallback,
+    };
+    model.push_vertex(def, cache)
 }
 
 /// `places` decimal places, escalating until the realization determines them.
@@ -193,7 +258,9 @@ pub fn realize_vertex_decimal(
     v: Handle<Vertex>,
     places: usize,
 ) -> Result<[String; 3], RealizeError> {
-    let out = climb(model, v, |r| r.to_decimal(places).map(|_| r))?;
+    let out = climb(model, &model.vertices.get(v).def, |r| {
+        r.to_decimal(places).map(|_| r)
+    })?;
     out.to_decimal(places).ok_or(RealizeError::Undecided)
 }
 
@@ -201,11 +268,11 @@ pub fn realize_vertex_decimal(
 /// whatever is asked, so a rational vertex never climbs.
 fn climb(
     model: &Model,
-    v: Handle<Vertex>,
+    def: &VertexDef,
     decided: impl Fn(Realized) -> Option<Realized>,
 ) -> Result<Realized, RealizeError> {
     for bits in LADDER {
-        match build(model, v, bits) {
+        match build(model, def, bits) {
             Ok(r) => {
                 if r.is_exact() {
                     return Ok(r);
@@ -223,9 +290,9 @@ fn climb(
 }
 
 /// One realization at `bits`, from the definition.
-fn build(model: &Model, v: Handle<Vertex>, bits: usize) -> Result<Realized, RealizeError> {
-    match model.vertices.get(v).def {
-        nacre_topo::VertexDef::ThreePlane(_) => build_three_plane(model, v, bits),
+fn build(model: &Model, def: &VertexDef, bits: usize) -> Result<Realized, RealizeError> {
+    match *def {
+        nacre_topo::VertexDef::ThreePlane(_) => build_three_plane(model, def, bits),
         nacre_topo::VertexDef::OnSeam([cyl, cap]) => {
             curved(seam_point(model, cyl, cap, bits), bits)
         }
@@ -292,10 +359,10 @@ fn pierce_point(
 
 fn build_three_plane(
     model: &Model,
-    v: Handle<Vertex>,
+    def: &VertexDef,
     bits: usize,
 ) -> Result<Realized, RealizeError> {
-    let (meet, frame) = model.vertex_meet(v).ok_or(RealizeError::NoMeet)?;
+    let (meet, frame) = model.vertex_meet_of(def).ok_or(RealizeError::NoMeet)?;
     let Some(node) = frame else {
         // No motion: the meet *is* the coordinate, and `lift` states it as integers whatever its
         // width — so `Wide` is not a refusal on this road.

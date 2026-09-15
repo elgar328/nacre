@@ -13,7 +13,7 @@ use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, from_rings};
 use nacre_scalar::Axis;
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid};
+use nacre_topo::{Model, PointCache, Solid};
 
 /// `[0,4]²` with a `[1,3]²` hole, extruded 1 high: volume 16 − 4 = 12.
 fn donut_profile() -> Profile2d {
@@ -100,6 +100,10 @@ fn a_swept_hole_is_constructed_throughout() {
                     assert!(
                         m.vertex_tol(*vh).is_none(),
                         "a swept vertex carries no tolerance"
+                    );
+                    assert!(
+                        matches!(m.vertex_cache(*vh), PointCache::Bounded { .. }),
+                        "a swept vertex is realized from its definition (cell 52)"
                     );
                 }
             }

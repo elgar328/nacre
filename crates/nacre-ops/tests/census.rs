@@ -46,7 +46,7 @@ mod stated;
 use nacre_ops::{DatumDef, SketchFrame, SketchPlane};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid};
+use nacre_topo::{Model, PointCache, Solid};
 use stated::*;
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
@@ -198,6 +198,52 @@ fn record(
                 ));
             }
             println!("{} {}", v.len(), parts.join(" "));
+            // ★ **The cache is the realization** (cell 52): every result vertex the push funnel
+            // could realize on the ladder's first rung is `Bounded` with that value bit for bit,
+            // and every one it could not is not `Bounded`. Asked again here with the funnel's own
+            // question, so the row cannot pass by measuring nothing; `r` counts the refusals.
+            let mut seen = std::collections::HashSet::new();
+            let (mut realized, mut kept) = (0usize, 0usize);
+            for &s in v {
+                let src = m.solids.get(s).clone();
+                for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
+                    for &fh in &m.shells.get(sh).faces {
+                        let face = m.faces.get(fh);
+                        for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+                            for he in &lp.half_edges {
+                                for &vh in m.edges.get(he.edge).vertices.iter() {
+                                    if !seen.insert(vh) {
+                                        continue;
+                                    }
+                                    match nacre_ops::realize_cache(m, &m.vertices.get(vh).def) {
+                                        Some((c, _)) => {
+                                            realized += 1;
+                                            assert!(
+                                                matches!(m.vertex_cache(vh), PointCache::Bounded { coord, .. } if coord.as_array() == c),
+                                                "{tag}: vertex {} is not the realization: {:?} vs {c:?}",
+                                                vh.index(),
+                                                m.vertex_cache(vh)
+                                            );
+                                        }
+                                        None => {
+                                            kept += 1;
+                                            assert!(
+                                                !matches!(
+                                                    m.vertex_cache(vh),
+                                                    PointCache::Bounded { .. }
+                                                ),
+                                                "{tag}: vertex {} is Bounded but the cache road declines",
+                                                vh.index()
+                                            );
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            println!("r {tag} realized={realized} kept={kept}");
         }
     }
 }

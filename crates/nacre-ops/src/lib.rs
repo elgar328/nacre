@@ -44,7 +44,9 @@ pub use ops::{
     BoolKind, DatumDef, LogCell, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing,
     Ring2d, SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,
 };
-pub use realize::{Precision, RealizeError, Realized, realize_vertex, realize_vertex_decimal};
+pub use realize::{
+    Precision, RealizeError, Realized, realize_cache, realize_vertex, realize_vertex_decimal,
+};
 pub use sketch::{SketchError, arc_to_rat, arc_turns, arc_turns_rat, from_paths, from_rings};
 
 impl SketchPlane {

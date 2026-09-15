@@ -106,6 +106,14 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
             },
         );
         push(
+            "vertex.bound",
+            i,
+            match m.vertex_cache(vh).bound() {
+                Some(b) => format!("{b:?}"),
+                None => "-".to_owned(),
+            },
+        );
+        push(
             "vertex.def",
             i,
             match v.def {

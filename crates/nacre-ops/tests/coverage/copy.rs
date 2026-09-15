@@ -9,7 +9,7 @@ use crate::common::*;
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpError, OpOutput, Operation, apply, boolean};
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, VertexDef};
+use nacre_topo::{Model, PointCache, Solid, VertexDef};
 
 /// `apply(Copy)` through the public API, asserting the output shape.
 fn copy_solid(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
@@ -24,14 +24,15 @@ fn unit_cube(m: &mut Model) -> Handle<Solid> {
     m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]))
 }
 
-/// Measured (boolean-made) vertices of a solid — the count is how the `ThreePlane` remap is
-/// observed (S7: the measured tolerance is what "discovered" now means).
+/// Vertices the kernel vouches for — realized from their definition (`Bounded`) or measured —
+/// the count is how the `ThreePlane` remap is observed: a remapped definition that did not
+/// solve would leave the copy's vertex on the construction fallback.
 fn discovered_count(m: &Model, s: Handle<Solid>) -> usize {
     let mut n = 0;
     for &fh in &m.shells.get(m.solids.get(s).outer).faces {
         for he in &m.faces.get(fh).outer.half_edges {
             for vh in m.edges.get(he.edge).vertices {
-                if m.vertex_tol(vh).is_some() {
+                if !matches!(m.vertex_cache(vh), PointCache::Unmeasured(_)) {
                     n += 1;
                 }
             }

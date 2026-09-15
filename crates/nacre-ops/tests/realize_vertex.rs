@@ -29,7 +29,7 @@
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{
     BoolKind, DatumDef, OpOutput, Operation, Precision, Profile2d, RealizeError, SketchFrame,
-    SketchPlane, apply, boolean, realize_vertex, realize_vertex_decimal,
+    SketchPlane, apply, boolean, realize_cache, realize_vertex, realize_vertex_decimal,
 };
 #[path = "support/stated.rs"]
 mod stated;
@@ -527,44 +527,112 @@ fn a_curved_vertex_agrees_with_the_cache_it_did_not_use() {
     );
 }
 
-/// ★★★ **What the cache costs — the measurement this door was built to make.**
-///
-/// Not `#[ignore]`d: it carries an assertion about the *narrow* populations, which is the half
-/// that must never regress. The tilted row is printed rather than pinned, because it is a
-/// statement about today's cache and the point of the door is to make it false eventually.
+/// ★★★ **An operation's cache is the realization** (cell 52) — what `the_cache_is_not_always_nearest`
+/// measured until then. That test printed the tilted row rather than pinning it, *"because it is a
+/// statement about today's cache and the point of the door is to make it false eventually"*; this
+/// is that day. Every vertex the push funnel could realize on the ladder's first rung carries
+/// `Bounded` with that realization bit for bit; every one it could not is not `Bounded`.
 #[test]
-fn the_cache_is_not_always_nearest() {
+fn an_operations_cache_is_the_realization() {
     for (what, m) in [
         ("axis-aligned box", boolean_corner()),
         ("boolean'd twice", boolean_twice()),
         ("tilted frame", tilted_frame(1)),
     ] {
-        let (mut compared, mut nearest, mut worst_ulp) = (0usize, 0usize, 0i64);
+        let (mut realized, mut kept) = (0usize, 0usize);
         for vh in live_vertices(&m) {
-            let Ok(r) = realize_vertex(&m, vh, Precision::NearestF64) else {
-                continue;
-            };
-            let Some((v, _)) = r.to_f64() else { continue };
-            compared += 1;
-            let cached = m.vertex_point(vh).as_array();
-            let mut ok = true;
-            for k in 0..3 {
-                if v[k] != cached[k] {
-                    ok = false;
-                    let d = (v[k].to_bits() as i64 - cached[k].to_bits() as i64).abs();
-                    worst_ulp = worst_ulp.max(d);
+            match realize_cache(&m, &m.vertices.get(vh).def) {
+                Some((v, bound)) => {
+                    realized += 1;
+                    let PointCache::Bounded { coord, bound: b } = *m.vertex_cache(vh) else {
+                        panic!(
+                            "{what}: a realizable vertex is not Bounded: {:?}",
+                            m.vertex_cache(vh)
+                        );
+                    };
+                    assert_eq!(
+                        coord.as_array(),
+                        v,
+                        "{what}: the cache is the realization, bit for bit"
+                    );
+                    assert_eq!(b, bound, "{what}: and carries its bound");
+                }
+                None => {
+                    kept += 1;
+                    assert!(
+                        !matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+                        "{what}: a refused vertex cannot be Bounded"
+                    );
                 }
             }
-            nearest += usize::from(ok);
         }
-        println!("{what:<18} compared={compared:<3} nearest={nearest:<3} worst_ulp={worst_ulp}");
-        if what != "tilted frame" {
-            assert_eq!(
-                nearest, compared,
-                "{what}: a 7-bit coordinate is an f64 exactly, so the cache cannot differ"
-            );
+        println!("{what:<18} realized={realized} kept={kept}");
+        assert!(realized > 0, "{what}: nothing realized — the road is dead");
+    }
+}
+
+/// ★ **The edge cache is already the derivation of the realized endpoints.** An edge is pushed
+/// after its vertices, so `push_edge` derives its line from realized coordinates; rebuilding every
+/// edge curve afterwards changes nothing — the S8 proof, standing on realized endpoints.
+#[test]
+fn the_edge_cache_is_the_derivation_of_realized_endpoints() {
+    let mut m = tilted_frame(1);
+    let before: Vec<_> = m
+        .edges
+        .iter()
+        .map(|(h, _)| m.edge_curve(h).clone())
+        .collect();
+    m.rebuild_edge_cache();
+    let after: Vec<_> = m
+        .edges
+        .iter()
+        .map(|(h, _)| m.edge_curve(h).clone())
+        .collect();
+    assert_eq!(before, after);
+}
+
+/// ★ **A moved solid is realized from its moved definition** — not from the moved `f64`. A
+/// rational translation of the tilted prism: every moved vertex the road can realize is `Bounded`
+/// and bit for bit the realization; the rest keep the construction's figure, counted.
+#[test]
+fn a_moved_solid_is_realized_from_its_moved_definition() {
+    let mut m = tilted_frame(1);
+    let solid = m.live_solids[0];
+    let OpOutput::Transform { solid: moved } = apply(
+        &mut m,
+        &Operation::Transform {
+            solid,
+            isometry: nacre_scalar::Isometry::translation([
+                nacre_scalar::Rat::new(7, 11).unwrap(),
+                nacre_scalar::Rat::from_int(-2),
+                nacre_scalar::Rat::new(1, 4).unwrap(),
+            ]),
+        },
+    )
+    .expect("a rational translation moves the prism") else {
+        unreachable!()
+    };
+    m.rebuild_adjacency();
+    assert_eq!(m.live_solids, vec![moved]);
+    let (mut bounded, mut kept) = (0usize, 0usize);
+    for vh in live_vertices(&m) {
+        match *m.vertex_cache(vh) {
+            PointCache::Bounded { coord, .. } => {
+                bounded += 1;
+                let (v, _) = realize_vertex(&m, vh, Precision::NearestF64)
+                    .expect("a Bounded vertex realizes")
+                    .to_f64()
+                    .expect("decided");
+                assert_eq!(coord.as_array(), v);
+            }
+            _ => kept += 1,
         }
     }
+    println!("moved tilted prism: bounded={bounded} kept={kept}");
+    assert!(
+        bounded > 0,
+        "nothing realized after the move — the road is dead"
+    );
 }
 
 /// ★★★ **A realized coordinate never reports the error an exact one does.**

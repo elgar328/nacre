@@ -499,6 +499,27 @@ pub(crate) enum Xform<'a> {
 }
 
 impl Xform<'_> {
+    /// A direction carried through the motion's linear part, exactly — `None` where the motion
+    /// has no exact statement (an irrational turn).
+    fn dir_rat(&self, v: [Rat; 3]) -> Option<[Rat; 3]> {
+        match self {
+            Xform::Rigid(iso) => {
+                let moved = iso.point_rat(v)?;
+                let origin = iso.point_rat([Rat::from_int(0); 3])?;
+                Some([
+                    moved[0].checked_sub(origin[0])?,
+                    moved[1].checked_sub(origin[1])?,
+                    moved[2].checked_sub(origin[2])?,
+                ])
+            }
+            Xform::Mirror { axis, .. } => {
+                let mut out = v;
+                out[axis.index()] = Rat::from_int(0).checked_sub(v[axis.index()])?;
+                Some(out)
+            }
+        }
+    }
+
     /// The reflection in `axis = offset`, with its `f64` map **derived** from the exact plane
     /// rather than handed in beside it.
     fn mirror(axis: Axis, offset: Rat) -> Xform<'static> {
@@ -589,6 +610,44 @@ fn transform_surface(
 /// what the `Orientation` flag records.
 ///
 /// `Err` only when the motion has no image for some cell's geometry (a mirrored cylinder).
+/// **Does the moved pierce pair's meet line run the other way?** `ℓ = n₁ × n₂` of the new pair
+/// (in its stored, ascending order) against the old pair's `ℓ` carried through the motion as a
+/// direction — exact, in the world names. `None` when a name is not narrow or the motion has no
+/// exact statement; the caller then keeps the order-only restatement.
+fn pierce_line_reversed(
+    model: &Model,
+    old: [Handle<Surface>; 2],
+    new: [Handle<Surface>; 2],
+    motion: &Xform<'_>,
+) -> Option<bool> {
+    let normal = |h: Handle<Surface>| -> Option<[Rat; 3]> {
+        let c = *model.world_plane_name(h)?.narrow()?;
+        Some([c[0], c[1], c[2]])
+    };
+    let cross = |a: [Rat; 3], b: [Rat; 3]| -> Option<[Rat; 3]> {
+        Some([
+            a[1].checked_mul(b[2])?
+                .checked_sub(a[2].checked_mul(b[1])?)?,
+            a[2].checked_mul(b[0])?
+                .checked_sub(a[0].checked_mul(b[2])?)?,
+            a[0].checked_mul(b[1])?
+                .checked_sub(a[1].checked_mul(b[0])?)?,
+        ])
+    };
+    let l_old = cross(normal(old[0])?, normal(old[1])?)?;
+    let l_new = cross(normal(new[0])?, normal(new[1])?)?;
+    let carried = motion.dir_rat(l_old)?;
+    let dot = l_new[0]
+        .checked_mul(carried[0])?
+        .checked_add(l_new[1].checked_mul(carried[1])?)?
+        .checked_add(l_new[2].checked_mul(carried[2])?)?;
+    // The same line either way, so a zero here is a contradiction, not an answer.
+    if dot.numer() == 0 {
+        return None;
+    }
+    Some(dot.numer() < 0)
+}
+
 fn transform_solid(
     model: &mut Model,
     solid: Handle<Solid>,
@@ -870,9 +929,30 @@ fn transform_solid(
                 cylinder,
                 root,
             } => {
-                let (planes, root) = nacre_topo::QuadRoot::canonical([remap(p0), remap(p1)], root);
+                // ★★★ **The sign half, which this site owed and did not pay.** `canonical` counts
+                // the swap; but a restatement may spell a moved plane with the *opposite* normal
+                // (its world name is canonical over four coefficients), and a reflection reverses
+                // every cross product — each reverses `ℓ = n₁ × n₂`, and `Lo`/`Hi` trade names
+                // once per reversal (`QuadRoot::canonical`'s doc: *"flip once per reversal"*).
+                // Decided exactly from the world names: the new pair's `ℓ` against the old pair's
+                // `ℓ` carried through the motion, which folds the swap in as well. Measured, by the
+                // commutation oracle: with the realized cache reading the definition, a boss
+                // turned 90° named the *other* crossing on 18 quadrantal cells — the stored `f64`
+                // had hidden the wrong label since the day it was written.
+                //
+                // Unavailable (a chain the world cannot state exactly) means nothing was restated
+                // — the spellings travelled whole — so the order-only answer stands.
+                let new_pair = {
+                    let [a, b] = [remap(p0), remap(p1)];
+                    if b < a { [b, a] } else { [a, b] }
+                };
+                let root = match pierce_line_reversed(model, [p0, p1], new_pair, motion) {
+                    Some(true) => root.flipped(),
+                    Some(false) => root,
+                    None => nacre_topo::QuadRoot::canonical([remap(p0), remap(p1)], root).1,
+                };
                 VertexDef::Pierce {
-                    planes,
+                    planes: new_pair,
                     cylinder: remap(cylinder),
                     root,
                 }
@@ -889,7 +969,7 @@ fn transform_solid(
         } else {
             PointCache::Unmeasured(coord)
         };
-        vert_map.insert(vh, model.push_vertex(def, cache));
+        vert_map.insert(vh, crate::realize::push_vertex_realized(model, def, cache));
     }
 
     // Pass 4 — edges (carrier/vertex handles remapped; the curve cache derives from them).
@@ -964,6 +1044,84 @@ fn transform_solid(
 mod tests {
     use super::*;
     use nacre_scalar::Angle;
+
+    /// ★★ **A moved pierce vertex names the crossing it moved to.** A definition's root is an
+    /// order along `ℓ = n₁ × n₂`, and a restatement may spell a moved plane with the opposite
+    /// normal — one reversal, trading `Lo` and `Hi`. Found by the commutation oracle the moment
+    /// the cache started reading the definition (cell 52): under a 90° turn a boss's four pierce
+    /// vertices realized to the *other* crossing, half a boss away, and the stored `f64` had hidden
+    /// the wrong label since it was written. Locked on three quadrantal turns; the reflection half
+    /// of the rule is paid at the same site but a mirrored cylinder has no exact world statement
+    /// yet, so its pierce vertices keep the construction's figure and cannot be asked here.
+    #[test]
+    fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
+        use nacre_scalar::{Isometry, Rotation};
+        for (what, axis, deg) in [
+            ("turned 90° about x", Axis::X, 90),
+            ("turned 90° about z", Axis::Z, 90),
+            ("turned 270° about y", Axis::Y, 270),
+        ] {
+            let iso = Isometry::rotation(Rotation {
+                axis,
+                point: [Rat::from_int(0); 3],
+                angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
+            });
+            let motion = Xform::Rigid(&iso);
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(
+                Point3::from_array([4.0, 4.0, -1.0]),
+                Vector3::from_array([0.0, 0.0, 1.0]),
+                0.5,
+                4.0,
+            );
+            m.rebuild_adjacency();
+            let fused = crate::boolean::boolean(&mut m, crate::BoolKind::Fuse, plate, boss)
+                .expect("a boss fuses onto its plate");
+            m.rebuild_adjacency();
+            let pierce_points = |m: &Model, s: Handle<Solid>| -> Vec<Point3> {
+                let mut out = Vec::new();
+                for &fh in &m.shells.get(m.solids.get(s).outer).faces {
+                    for he in &m.faces.get(fh).outer.half_edges {
+                        for vh in m.edges.get(he.edge).vertices {
+                            if matches!(m.vertices.get(vh).def, VertexDef::Pierce { .. }) {
+                                assert!(
+                                    matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+                                    "{what}: a pierce vertex realizes: {:?}",
+                                    m.vertex_cache(vh)
+                                );
+                                out.push(m.vertex_point(vh));
+                            }
+                        }
+                    }
+                }
+                out
+            };
+            let images: Vec<Point3> = pierce_points(&m, fused[0])
+                .into_iter()
+                .map(|p| motion.point(p))
+                .collect();
+            assert!(!images.is_empty(), "{what}: the boss pierces its plate");
+            let moved = transform_solid(&mut m, fused[0], &motion).expect("a quadrantal turn");
+            m.rebuild_adjacency();
+            let after = pierce_points(&m, moved);
+            assert_eq!(after.len(), images.len(), "{what}");
+            for p in &after {
+                // The other crossing is half a boss away; the right one is within rounding.
+                let nearest = images
+                    .iter()
+                    .map(|q| (*p - *q).norm())
+                    .fold(f64::INFINITY, f64::min);
+                assert!(
+                    nearest < 1e-9,
+                    "{what}: a moved pierce vertex realized {nearest:e} from every image — the other crossing"
+                );
+            }
+        }
+    }
 
     /// **"This step kept it exact" never excuses a chain from recording it.**
     ///

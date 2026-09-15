@@ -76,7 +76,15 @@ use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{BoolKind, DatumDef, OpOutput, Operation, Profile2d, SketchFrame, SketchPlane};
 use nacre_ops::{apply, boolean};
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, Vertex};
+use nacre_topo::{Model, PointCache, Solid, Vertex};
+
+/// A vertex the kernel vouches for beyond the construction's bare figure — realized from its
+/// definition (`Bounded`, cell 52) or carrying a measured residual. Before cell 52 this read the
+/// residual alone ("discovered"); a boolean's vertices now realize, and so do a prism's, so the
+/// population this file draws triples from is wider than the one its numbers were measured on.
+fn vouched(m: &Model, v: Handle<Vertex>) -> bool {
+    !matches!(m.vertex_cache(v), PointCache::Unmeasured(_))
+}
 
 fn p2(x: f64, y: f64) -> Point2 {
     Point2::from_array([x, y])
@@ -221,7 +229,7 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
     let mut wide = 0usize;
     let solvable: Vec<_> = live_verts(&m)
         .into_iter()
-        .filter(|v| m.vertex_tol(*v).is_some())
+        .filter(|v| vouched(&m, *v))
         .collect();
     for i in 0..solvable.len() {
         for j in (i + 1)..solvable.len() {
@@ -350,7 +358,7 @@ fn what_a_datum_bearing_boolean_costs() {
         // refuses, and an arm that only ever hit the reject would be an UNBUILDABLE lie.
         let solvable: Vec<_> = live_verts(&m)
             .into_iter()
-            .filter(|v| mode == "nameless" || m.vertex_tol(*v).is_some())
+            .filter(|v| mode == "nameless" || vouched(&m, *v))
             .collect();
 
         let mut tool = None;
@@ -460,7 +468,7 @@ fn what_a_second_generation_boolean_costs() {
         // that only the datum plane itself reaches the cuboid below.
         let solvable: Vec<_> = live_verts(&m)
             .into_iter()
-            .filter(|v| m.vertex_tol(*v).is_some())
+            .filter(|v| vouched(&m, *v))
             .collect();
         let mut slab = None;
         'pick: for i in 0..solvable.len() {

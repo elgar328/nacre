@@ -1991,8 +1991,8 @@ fn an_unrotated_boolean_names_every_vertex_by_its_plane_triple() {
                     }
                     assert!(
                         matches!(m.vertices.get(vh).def, VertexDef::ThreePlane(_))
-                            && m.vertex_tol(vh).is_some(),
-                        "vertex {:?} is {:?}, not a measured plane triple",
+                            && matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
+                        "vertex {:?} is {:?}, not a realized plane triple",
                         m.vertex_point(vh).as_array(),
                         m.vertices.get(vh).def
                     );
@@ -2988,6 +2988,10 @@ fn bbox_lo(m: &Model, s: Handle<Solid>) -> [f64; 3] {
     lo
 }
 
+/// Vertices the kernel vouches for beyond the construction's bare figure: realized from their
+/// definition (`Bounded`, cell 52) or carrying a measured residual. Before cell 52 "discovered"
+/// was read off the residual alone; a boolean's vertices now realize, so the count is the same
+/// population under the name the cache gives it.
 fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
     let mut seen = std::collections::HashSet::new();
     let mut n = 0;
@@ -2996,7 +3000,9 @@ fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
         for he in &m.faces.get(fh).outer.half_edges {
             {
                 for vh in m.edges.get(he.edge).vertices {
-                    if seen.insert(vh) && m.vertex_tol(vh).is_some() {
+                    if seen.insert(vh)
+                        && !matches!(m.vertex_cache(vh), nacre_topo::PointCache::Unmeasured(_))
+                    {
                         n += 1;
                     }
                 }
@@ -4979,11 +4985,27 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
                     rotation,
                 )
                 .expect("the root coordinate lifts to an exact rational");
-                assert_eq!(
-                    replayed,
-                    m.vertex_point(*vh).as_array(),
-                    "definition reproduces the stored coordinate bit for bit"
+                // ★ The stored coordinate is the realization of the definition (cell 52); the
+                // f64 replay agrees with it to its own rounding, not bit for bit.
+                let stored = m.vertex_point(*vh).as_array();
+                assert!(
+                    matches!(m.vertex_cache(*vh), nacre_topo::PointCache::Bounded { .. }),
+                    "a mirrored, rotated corner is realized from its definition"
                 );
+                let (realized, _) = crate::realize_vertex(&m, *vh, crate::Precision::NearestF64)
+                    .expect("the def road realizes what it solves")
+                    .to_f64()
+                    .expect("decided");
+                assert_eq!(
+                    realized, stored,
+                    "the cache is the realization, bit for bit"
+                );
+                for k in 0..3 {
+                    assert!(
+                        (replayed[k] - stored[k]).abs() <= 1e-9 * (1.0 + stored[k].abs()),
+                        "f64 replay within the construction epsilon: {replayed:?} vs {stored:?}"
+                    );
+                }
                 checked += 1;
             }
         }
@@ -15178,4 +15200,69 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
             "{kind:?}: {out:?}"
         );
     }
+}
+
+/// ★ **The push funnel realizes; the fallback stands only where the realization declines** (cell
+/// 52). Pushing a realizable definition again with a fallback that is wrong by three ulp gives a
+/// `Bounded` cache holding the realization, not the fallback; a definition the road declines by
+/// name — a cylinder's seam under an irrational turn, which has no exact world statement — keeps
+/// the fallback it was handed.
+#[test]
+fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
+    let (mut m, l) = l_prism();
+    let fh = m.shells.get(m.solids.get(l).outer).faces[0];
+    let vh = m
+        .edges
+        .get(m.faces.get(fh).outer.half_edges[0].edge)
+        .vertices[0];
+    let def = m.vertices.get(vh).def;
+    let p = m.vertex_point(vh).as_array();
+    let wrong = Point3::from_array([f64::from_bits(p[0].to_bits() + 3), p[1], p[2]]);
+    let h = crate::realize::push_vertex_realized(
+        &mut m,
+        def,
+        nacre_topo::PointCache::Unmeasured(wrong),
+    );
+    assert!(matches!(
+        m.vertex_cache(h),
+        nacre_topo::PointCache::Bounded { .. }
+    ));
+    assert_eq!(
+        m.vertex_point(h).as_array(),
+        p,
+        "the realization, not the fallback"
+    );
+    assert_ne!(m.vertex_point(h), wrong);
+
+    let mut m = Model::new();
+    let c = m.add_cylinder(
+        Point3::origin(),
+        Vector3::from_array([0.0, 0.0, 1.0]),
+        1.0,
+        2.0,
+    );
+    let turned =
+        transform(&mut m, c, &rot_iso(Axis::Y, 37)).expect("an irrational turn records a motion");
+    m.rebuild_adjacency();
+    let mut seams = 0;
+    for &fh in &m.shells.get(m.solids.get(turned).outer).faces {
+        for he in &m.faces.get(fh).outer.half_edges {
+            for vh in m.edges.get(he.edge).vertices {
+                if !matches!(m.vertices.get(vh).def, VertexDef::OnSeam(_)) {
+                    continue;
+                }
+                seams += 1;
+                assert!(
+                    matches!(m.vertex_cache(vh), nacre_topo::PointCache::Unmeasured(_)),
+                    "{:?}",
+                    m.vertex_cache(vh)
+                );
+                assert_eq!(
+                    crate::realize_vertex(&m, vh, crate::Precision::NearestF64).err(),
+                    Some(crate::RealizeError::NoCurvedPoint)
+                );
+            }
+        }
+    }
+    assert!(seams > 0, "the turned cylinder has seam vertices");
 }

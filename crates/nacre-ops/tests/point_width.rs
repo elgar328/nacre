@@ -175,7 +175,7 @@ use nacre_ops::{BoolKind, DatumDef, OpOutput, Operation, Profile2d, SketchFrame,
 use nacre_ops::{apply, boolean};
 use nacre_scalar::{Angle, Axis, Isometry, MeetPoint, PlaneName, Rat, Rotation};
 use nacre_store::Handle;
-use nacre_topo::{Model, Solid, Surface, Vertex, VertexDef};
+use nacre_topo::{Model, PointCache, Solid, Surface, Vertex, VertexDef};
 
 // ---------------------------------------------------------------------------------------------
 // fixtures — the shapes `tests/points_coverage.rs` already uses
@@ -215,6 +215,10 @@ struct Tally {
     discovered_exact: usize,
     /// `vertex_tol` is `Some(t)`, `t > 0` — discovered, genuinely inexact.
     discovered_inexact: usize,
+    /// Realized from the definition (`Bounded`, cell 52): exact where every bound is zero.
+    realized_exact: usize,
+    /// Realized, with a nonzero bound on some axis (an irrational or non-representable point).
+    realized_inexact: usize,
     /// `OnSeam` — excluded from the width question, not a failure.
     on_seam: usize,
     /// A carrier had no recorded name at all.
@@ -248,11 +252,13 @@ impl Tally {
 
     fn report(&self, what: &str) {
         println!(
-            "stat {what:22} vertices={} constructed={} discovered(exact0={} inexact={}) seam={}",
+            "stat {what:22} vertices={} constructed={} discovered(exact0={} inexact={}) realized(exact0={} inexact={}) seam={}",
             self.vertices,
             self.constructed,
             self.discovered_exact,
             self.discovered_inexact,
+            self.realized_exact,
+            self.realized_inexact,
             self.on_seam
         );
         println!(
@@ -311,11 +317,14 @@ fn measure(m: &Model) -> Tally {
     let mut t = Tally::default();
     for vh in live_vertices(m) {
         t.vertices += 1;
-        let tol = m.vertex_tol(vh);
-        match tol {
-            None => t.constructed += 1,
-            Some(0.0) => t.discovered_exact += 1,
-            Some(_) => t.discovered_inexact += 1,
+        match m.vertex_cache(vh) {
+            PointCache::Unmeasured(_) => t.constructed += 1,
+            PointCache::Measured { residual, .. } if *residual == 0.0 => t.discovered_exact += 1,
+            PointCache::Measured { .. } => t.discovered_inexact += 1,
+            PointCache::Bounded { bound, .. } if bound.iter().all(|b| b.is_zero()) => {
+                t.realized_exact += 1
+            }
+            PointCache::Bounded { .. } => t.realized_inexact += 1,
         }
 
         let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
@@ -352,10 +361,15 @@ fn measure(m: &Model) -> Tally {
         };
         let w = point.width_bits();
         t.widths.push(w);
-        match tol {
-            Some(0.0) => t.widths_exact.push(w),
-            Some(_) => t.widths_inexact.push(w),
-            None => {}
+        // Split by what the cache knows: exact (a zero residual, or a realization with every
+        // bound zero) against inexact; a constructed fallback is counted in neither.
+        match m.vertex_cache(vh) {
+            PointCache::Measured { residual, .. } if *residual == 0.0 => t.widths_exact.push(w),
+            PointCache::Bounded { bound, .. } if bound.iter().all(|b| b.is_zero()) => {
+                t.widths_exact.push(w)
+            }
+            PointCache::Measured { .. } | PointCache::Bounded { .. } => t.widths_inexact.push(w),
+            PointCache::Unmeasured(_) => {}
         }
 
         // ★★ The split the whole measurement turns on. The narrow route only runs when every
@@ -747,12 +761,13 @@ fn tilted_frame(passes: usize) -> Model {
 // (ii) — is the f64 road a different plane?
 // ---------------------------------------------------------------------------------------------
 
-/// Every discovered vertex that solves to a `Rat` triple, paired with its handle.
+/// Every vouched-for vertex (realized from its definition, or measured) that solves to a `Rat`
+/// triple, paired with its handle.
 fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
     let mut out = Vec::new();
     for vh in live_vertices(m) {
-        if m.vertex_tol(vh).is_none() {
-            continue; // constructed — the control lives in its own fixture below
+        if matches!(m.vertex_cache(vh), PointCache::Unmeasured(_)) {
+            continue; // the construction's bare figure — the control lives in its own fixture below
         }
         let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
             continue;
@@ -807,9 +822,10 @@ fn triple_verdicts(m: &Model, solved: &[([Rat; 3], Handle<Vertex>)]) -> (usize, 
 /// ★★★★★ **The capability gap, stated as a counterexample.**
 ///
 /// "A plane through those three corners" is an ordinary CAD request, and today it can only be
-/// spelled in coordinates. Where a discovered vertex's cache is not its exact coordinate, the
-/// plane that spelling produces is **a different plane** — not a nearby one, a different name,
-/// which interns to a different handle and answers exact identity with "no".
+/// spelled in coordinates. Where a vertex's exact coordinate is not an `f64` — and since cell 52
+/// the cache *is* its nearest `f64`, which is the closest a coordinate can come — the plane that
+/// spelling produces is **a different plane**: not a nearby one, a different name, which interns
+/// to a different handle and answers exact identity with "no".
 ///
 /// ★ The assertion is **existence of a counterexample**, never "always different": a corpus
 /// cannot carry a universal. The axis-aligned fixture is the negative control that keeps the
@@ -989,7 +1005,8 @@ fn how_wide_a_discovered_coordinate_is() {
     ] {
         let t = measure(&m);
         t.report(what);
-        discovered += t.discovered_exact + t.discovered_inexact;
+        discovered +=
+            t.discovered_exact + t.discovered_inexact + t.realized_exact + t.realized_inexact;
         solved += t.widths.len();
     }
     assert!(
