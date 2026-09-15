@@ -137,7 +137,12 @@ fn the_z_axis_cylinder_is_bit_identical_and_its_truth_is_the_statement() {
     assert_eq!(def.origin(), [rat(0.5), rat(-1.25), rat(2.0)]);
     assert_eq!(def.dir(), [rat(0.0), rat(0.0), rat(1.0)]);
     assert_eq!(def.ref_dir(), [rat(0.0), rat(-1.0), rat(0.0)]);
-    assert_eq!(def.radius(), rat(1.5));
+    assert_eq!(
+        *def.r2(),
+        nacre_scalar::BigRat::from(rat(2.25)),
+        "r² of the stated 1.5"
+    );
+    assert_eq!(def.radius_exact(), Some(rat(1.5)));
     // Exactly normalizable → the def's realization is the cache's ref_dir, bit for bit.
     assert_eq!(
         bits3(realized_ref_dir(&def).as_array()),
@@ -295,7 +300,7 @@ fn the_same_statement_interns_and_a_different_ref_dir_does_not() {
         [zero(), zero(), zero()],
         [zero(), zero(), rat(1.0)],
         [zero(), rat(-1.0), zero()],
-        rat(1.0),
+        nacre_scalar::BigRat::from(rat(1.0)),
     )
     .expect("non-degenerate");
     let a = m.push_cylinder(cache, def.clone(), None);
@@ -308,7 +313,7 @@ fn the_same_statement_interns_and_a_different_ref_dir_does_not() {
         [zero(), zero(), zero()],
         [zero(), zero(), rat(1.0)],
         [rat(1.0), zero(), zero()],
-        rat(1.0),
+        nacre_scalar::BigRat::from(rat(1.0)),
     )
     .expect("non-degenerate");
     let c = m.push_cylinder(cache, other, None);
@@ -321,18 +326,30 @@ fn the_checked_constructor_refuses_what_means_no_cylinder() {
     let o = [zero(), zero(), zero()];
     let z = [zero(), zero(), rat(1.0)];
     let r = [rat(1.0), zero(), zero()];
-    assert!(CylinderDef::new(o, o, r, rat(1.0)).is_none(), "zero axis");
-    assert!(CylinderDef::new(o, z, r, zero()).is_none(), "zero radius");
     assert!(
-        CylinderDef::new(o, z, r, rat(-1.0)).is_none(),
+        CylinderDef::new(o, o, r, nacre_scalar::BigRat::from(rat(1.0))).is_none(),
+        "zero axis"
+    );
+    assert!(
+        CylinderDef::new(o, z, r, nacre_scalar::BigRat::from(zero())).is_none(),
+        "zero radius"
+    );
+    assert!(
+        CylinderDef::new(o, z, r, nacre_scalar::BigRat::from(rat(-1.0))).is_none(),
         "negative radius"
     );
     assert!(
-        CylinderDef::new(o, z, [zero(), zero(), rat(2.0)], rat(1.0)).is_none(),
+        CylinderDef::new(
+            o,
+            z,
+            [zero(), zero(), rat(2.0)],
+            nacre_scalar::BigRat::from(rat(1.0))
+        )
+        .is_none(),
         "ref_dir parallel to the axis pins no seam"
     );
     assert!(
-        CylinderDef::new(o, z, r, rat(1.0)).is_some(),
+        CylinderDef::new(o, z, r, nacre_scalar::BigRat::from(rat(1.0))).is_some(),
         "the sane statement stands"
     );
 }
@@ -367,7 +384,7 @@ fn a_wide_decimal_axis_is_a_cylinder_not_a_refusal() {
         };
         let ref_dir = [zero(), neg(axis[2]), axis[1]];
         assert!(
-            CylinderDef::new(o, axis, ref_dir, r).is_some(),
+            CylinderDef::new(o, axis, ref_dir, nacre_scalar::BigRat::from(r)).is_some(),
             "a wide-decimal axis states a cylinder: {axis:?}"
         );
     }
@@ -387,11 +404,17 @@ fn a_wide_parallel_ref_dir_is_still_refused() {
         axis[2].checked_add(axis[2]).expect("small doubling"),
     ];
     assert!(
-        CylinderDef::new(o, axis, doubled, rat(1.0)).is_none(),
+        CylinderDef::new(o, axis, doubled, nacre_scalar::BigRat::from(rat(1.0))).is_none(),
         "a parallel ref_dir pins no seam, however wide its spelling"
     );
     assert!(
-        CylinderDef::new(o, axis, [zero(), zero(), zero()], rat(1.0)).is_none(),
+        CylinderDef::new(
+            o,
+            axis,
+            [zero(), zero(), zero()],
+            nacre_scalar::BigRat::from(rat(1.0))
+        )
+        .is_none(),
         "a zero ref_dir pins no seam either"
     );
 }
@@ -455,7 +478,7 @@ fn both_roads_state_the_same_z_axis_cylinder() {
     assert_eq!(def.origin(), def_f64.origin(), "same axis point");
     assert_eq!(def.dir(), def_f64.dir(), "same axis direction");
     assert_eq!(def.ref_dir(), def_f64.ref_dir(), "same seam reference");
-    assert_eq!(def.radius(), def_f64.radius(), "same radius");
+    assert_eq!(def.r2(), def_f64.r2(), "same squared radius");
     assert_eq!(bits3(bot.as_array()), bits3(bot_f64.as_array()));
     assert_eq!(bits3(top.as_array()), bits3(top_f64.as_array()));
 }

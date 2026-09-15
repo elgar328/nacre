@@ -641,3 +641,97 @@ fn a_slot_prism_tessellates_and_exports() {
         assert!(step.contains(needle), "missing {needle}");
     }
 }
+
+// --- the radius is a square (open item 25, step 1) ---
+
+/// ★ **The truth of a circle is its squared radius.** A quarter arc about the origin from
+/// `(1, 1)` to `(−1, 1)` has `r² = 2` and no rational radius; until 2026-09-15 the sketch door
+/// refused it by name (`ArcRadiusNotRational`) although no predicate ever needed the radius
+/// unsquared. Now it is a ring — the circular segment above the chord `y = 1` — and extrudes to
+/// a solid whose volume is `(π/2 − 1)·h`, its lateral cylinder's cache carrying `√2` correctly
+/// rounded.
+#[test]
+fn a_non_pythagorean_arc_is_stated_and_extruded() {
+    use nacre_ops::{Edge2d, Ring2d, arc_to_rat, arc_turns, from_paths};
+    use nacre_scalar::Rat;
+    let r = |n: i128| Rat::from_int(n);
+    let p = |x: f64, y: f64| Point2::from_array([x, y]);
+    // Both step doors state the same arc: the quarter turn lands where the stated end is.
+    let (turned, end) = arc_turns(p(0.0, 0.0), p(1.0, 1.0), 1).expect("r² = 2 is a circle");
+    assert_eq!(end, [r(-1), r(1)]);
+    let stated =
+        arc_to_rat([r(0), r(0)], [r(1), r(1)], [r(-1), r(1)], true).expect("on the circle");
+    assert_eq!(turned, stated);
+    assert!(matches!(stated, Edge2d::Arc { r2, .. } if r2 == r(2)));
+    // The segment: the arc over the top, the chord back along `y = 1` — counter-clockwise.
+    let ring = Ring2d::new(
+        vec![[r(1), r(1)], [r(-1), r(1)]],
+        vec![stated, Edge2d::Line],
+    )
+    .expect("a ring of one arc and one line");
+    let mut profiles = from_paths(vec![ring]).expect("one region");
+    let profile = profiles.pop().expect("one profile");
+    assert!(profiles.is_empty());
+
+    let mut m = Model::new();
+    let s = extrude(&mut m, profile, 1.0);
+    let violations = nacre_validate::validate(&m);
+    assert!(violations.is_empty(), "{violations:?}");
+    let want = std::f64::consts::FRAC_PI_2 - 1.0; // (r²/2)(θ − sin θ) with r² = 2, θ = π/2
+    let got = volume(&m, s);
+    assert!((got - want).abs() < 1e-9, "volume {got}, want {want}");
+    // The lateral face's cache is the truth realized: √2, correctly rounded.
+    let radii: Vec<f64> = m
+        .faces
+        .iter()
+        .filter_map(|(_, f)| match m.surface(f.surface) {
+            nacre_geom::Surface::Cylinder(c) => Some(c.radius()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(radii.len(), 1, "one lateral cylinder");
+    assert_eq!(radii[0].to_bits(), 2f64.sqrt().to_bits());
+}
+
+/// The probe the cell records: the segment prism above, cut by a box — does the boolean road
+/// carry `r² = 2` end to end, or which named refusal is the first wall? Green means the road is
+/// open and this is the lock; a refusal is reported in the panic so the cell can write it down.
+#[test]
+fn a_non_pythagorean_prism_is_cut_by_a_box() {
+    use nacre_ops::{Edge2d, Ring2d, arc_to_rat, from_paths};
+    use nacre_scalar::Rat;
+    let r = |n: i128| Rat::from_int(n);
+    let stated =
+        arc_to_rat([r(0), r(0)], [r(1), r(1)], [r(-1), r(1)], true).expect("on the circle");
+    let ring = Ring2d::new(
+        vec![[r(1), r(1)], [r(-1), r(1)]],
+        vec![stated, Edge2d::Line],
+    )
+    .unwrap();
+    let profile = from_paths(vec![ring]).unwrap().pop().unwrap();
+    let mut m = Model::new();
+    let prism = extrude(&mut m, profile, 1.0);
+    // A box covering `x ≥ 0`: the cut leaves the left half of the segment.
+    let cutter = m.add_cuboid(
+        Point3::from_array([0.0, 0.0, -1.0]),
+        Point3::from_array([3.0, 3.0, 2.0]),
+    );
+    match apply(
+        &mut m,
+        &Operation::Boolean {
+            kind: BoolKind::Cut,
+            a: prism,
+            b: cutter,
+        },
+    ) {
+        Ok(OpOutput::Boolean { solids }) => {
+            let violations = nacre_validate::validate(&m);
+            assert!(violations.is_empty(), "{violations:?}");
+            let total: f64 = solids.iter().map(|&s| volume(&m, s)).sum();
+            let want = (std::f64::consts::FRAC_PI_2 - 1.0) / 2.0;
+            assert!((total - want).abs() < 1e-9, "volume {total}, want {want}");
+        }
+        Ok(other) => panic!("unexpected output {other:?}"),
+        Err(e) => panic!("the boolean road refused r² = 2: {e:?}"),
+    }
+}

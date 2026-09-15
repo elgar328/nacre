@@ -167,12 +167,12 @@ impl Ring2d {
                     (
                         Edge2d::Arc {
                             center: c1,
-                            radius: r1,
+                            r2: r1,
                             ccw: w1,
                         },
                         Edge2d::Arc {
                             center: c2,
-                            radius: r2,
+                            r2,
                             ccw: w2,
                         },
                     ) => c1 == c2 && r1 == r2 && w1 == w2,
@@ -230,13 +230,9 @@ impl Ring2d {
             let (s0, e0) = (self.vertices[i], self.vertices[(i + 1) % n]);
             match self.edges[i] {
                 Edge2d::Line => lines.push([s0, e0]),
-                Edge2d::Arc {
+                Edge2d::Arc { center, r2, ccw } => arcs.push(nacre_scalar::QuarterArc {
                     center,
-                    radius,
-                    ccw,
-                } => arcs.push(nacre_scalar::QuarterArc {
-                    center,
-                    radius,
+                    r2,
                     start: s0,
                     end: e0,
                     ccw,
@@ -1118,7 +1114,7 @@ fn pierce_def(
         return Err(OpError::PlaneWithoutExactForm);
     }
     let meet =
-        nacre_scalar::quad::plane_plane_cylinder(&pa, &pb, &def.origin(), &def.dir(), def.radius())
+        nacre_scalar::quad::plane_plane_cylinder(&pa, &pb, &def.origin(), &def.dir(), def.r2())
             .ok_or(OpError::PlaneWithoutExactForm)?;
     // This point's parameter along the meet line: `(at − base)·dir / dir·dir`.
     let param = |line: &nacre_scalar::quad::MeetLine| -> Option<nacre_scalar::Rat> {
@@ -1974,13 +1970,18 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
                 // decided by `push_walls` from the arc's turn.
                 Seg3::Arc {
                     center,
-                    radius,
+                    r2,
                     ref_dir,
                     cache,
                     ..
                 } => {
-                    let def = CylinderDef::new(*center, ring.exact.normal, *ref_dir, *radius)
-                        .ok_or(OpError::DegenerateGeometry)?;
+                    let def = CylinderDef::new(
+                        *center,
+                        ring.exact.normal,
+                        *ref_dir,
+                        nacre_scalar::BigRat::from(*r2),
+                    )
+                    .ok_or(OpError::DegenerateGeometry)?;
                     Ok((model.push_cylinder(*cache, def, ring.exact.motion), false))
                 }
             }

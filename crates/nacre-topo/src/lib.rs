@@ -411,7 +411,8 @@ pub enum PlanePoints {
 }
 
 /// **A cylinder's exact truth** (M6-0): the lateral surface as its producer stated it — origin,
-/// axis direction, seam reference direction and radius, all rational, in the pre-motion frame.
+/// axis direction, seam reference direction and **squared** radius, all rational, in the
+/// pre-motion frame.
 ///
 /// ★ `dir` and `ref_dir` are **raw, unnormalized** — the `normal_def` precedent: normalizing
 /// divides by an irrational length and would destroy the exact form. The f64 cache
@@ -431,13 +432,19 @@ pub struct CylinderDef {
     origin: [Rat; 3],
     dir: [Rat; 3],
     ref_dir: [Rat; 3],
-    radius: Rat,
+    /// `r²`, not `r`: the square of the distance from the axis to any rational point on the
+    /// surface is rational, the radius itself need not be, and no exact predicate ever asks for
+    /// the radius unsquared. A radius wanted as a number is a realization ([`Self::radius_f64`]),
+    /// or the exact rational when the square has one ([`Self::radius_exact`]). **Wide**, because
+    /// the square of a stated `Rat` need not fit `i128` (a 16-digit decimal below `1e-4`) and a
+    /// statement is never refused for the width of its square.
+    r2: nacre_scalar::BigRat,
 }
 
 impl CylinderDef {
     /// The checked constructor — `None` when the statement means no cylinder, and **only then**:
-    /// a zero `dir`, a non-positive `radius`, or a `ref_dir` with no component perpendicular to
-    /// the axis (`ref_dir × dir = 0`, which a zero `ref_dir` satisfies too).
+    /// a zero `dir`, a non-positive squared radius `r2`, or a `ref_dir` with no component
+    /// perpendicular to the axis (`ref_dir × dir = 0`, which a zero `ref_dir` satisfies too).
     ///
     /// ★ **Width is not a cause.** The parallelism test runs in
     /// [`nacre_scalar::parallel_rat`], which clears denominators and answers in integers, so it
@@ -447,9 +454,14 @@ impl CylinderDef {
     /// with a long decimal (denominator ~10²⁰, whose square leaves `i128`) crashed the
     /// constructor's `expect`. Measured population: 80% of computed near-axis-aligned
     /// directions, 0% of hand-written short decimals.
-    pub fn new(origin: [Rat; 3], dir: [Rat; 3], ref_dir: [Rat; 3], radius: Rat) -> Option<Self> {
+    pub fn new(
+        origin: [Rat; 3],
+        dir: [Rat; 3],
+        ref_dir: [Rat; 3],
+        r2: nacre_scalar::BigRat,
+    ) -> Option<Self> {
         let zero = Rat::from_int(0);
-        if dir.iter().all(|c| *c == zero) || radius <= zero {
+        if dir.iter().all(|c| *c == zero) || !r2.is_positive() {
             return None;
         }
         if nacre_scalar::parallel_rat(&ref_dir, &dir) {
@@ -459,7 +471,7 @@ impl CylinderDef {
             origin,
             dir,
             ref_dir,
-            radius,
+            r2,
         })
     }
 
@@ -479,9 +491,23 @@ impl CylinderDef {
         self.ref_dir
     }
 
-    /// The radius, exact. Positive by construction.
-    pub fn radius(&self) -> Rat {
-        self.radius
+    /// The squared radius, exact. Positive by construction.
+    pub fn r2(&self) -> &nacre_scalar::BigRat {
+        &self.r2
+    }
+
+    /// The radius as an exact rational, when the squared radius has one — true of every radius a
+    /// caller stated as a number, and of any arc through rational points whose `|start − centre|²`
+    /// is a rational's square. `None` is not a refusal: the cylinder is as well-defined as any
+    /// other, its radius merely has no rational spelling.
+    pub fn radius_exact(&self) -> Option<Rat> {
+        nacre_scalar::rat_sqrt_exact_big(&self.r2)
+    }
+
+    /// The radius realized as an `f64`, correctly rounded — a rational radius' own `to_f64`,
+    /// otherwise `√r²` at 128 → 256 bits (`nacre_scalar::sqrt_f64`). The cache's number.
+    pub fn radius_f64(&self) -> f64 {
+        nacre_scalar::sqrt_f64(&self.r2).expect("r² > 0 by construction")
     }
 }
 
@@ -2035,7 +2061,7 @@ impl Model {
                 base.as_array().map(lift),
                 a.map(lift),
                 ref_dir,
-                lift(radius),
+                nacre_scalar::BigRat::square_of(lift(radius)),
             )
             .expect("non-degenerate cylinder")
         };
@@ -2152,7 +2178,10 @@ impl Model {
         let (bottom_points, top_points) =
             (cap_points(&c0).ok_or(over)?, cap_points(&c1).ok_or(over)?);
         let (p_bot, p_top) = (bottom_points[1], top_points[1]);
-        let def = CylinderDef::new(base, axis, ref_dir, radius).ok_or(CylinderError::Degenerate)?;
+        // The truth carries the squared radius; a stated `radius` is squared once, here — wide,
+        // so no radius is refused for the width of its square.
+        let def = CylinderDef::new(base, axis, ref_dir, nacre_scalar::BigRat::square_of(radius))
+            .ok_or(CylinderError::Degenerate)?;
 
         // The caches are the realization of exactly these statements — nothing here is measured
         // or re-derived, so a cache cannot disagree with the truth beside it.
@@ -3829,7 +3858,8 @@ mod tests {
         let x0 = [r(1), r(0), r(0), r(0)];
         let (origin, dir) = ([r(0), r(0), r(0)], [r(1), r(0), r(0)]);
         let solve = |p1: &[Rat; 4], p2: &[Rat; 4]| {
-            let meet = plane_plane_cylinder(p1, p2, &origin, &dir, r(2));
+            let meet =
+                plane_plane_cylinder(p1, p2, &origin, &dir, &nacre_scalar::BigRat::from(r(4))); // radius 2, as r²
             match meet {
                 Some(CylinderMeet::Pair { line, s }) => (line, s),
                 other => panic!("the y-axis crosses this cylinder twice: {other:?}"),

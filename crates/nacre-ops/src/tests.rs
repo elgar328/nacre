@@ -3885,7 +3885,7 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
             nacre_scalar::point_plane_clearance_rat(
                 &coeffs,
                 &setup.cyls[ci].def.origin(),
-                nacre_scalar::Rat::from_int(0)
+                &nacre_scalar::BigRat::zero()
             ),
             nacre_scalar::Orient::Zero,
             "the recorded pair is a cylinder seated exactly on that class's plane"
@@ -8642,7 +8642,12 @@ fn a_cylinder_op_states_its_axis_and_seam_as_integers() {
         [rat(1, 2), rat(1, 4), int(0)],
         "the centre, placed"
     );
-    assert_eq!(def.radius(), rat(1, 10));
+    assert_eq!(
+        *def.r2(),
+        nacre_scalar::BigRat::from(rat(1, 100)),
+        "r² of the stated 1/10"
+    );
+    assert_eq!(def.radius_exact(), Some(rat(1, 10)));
     assert_eq!(faces.len(), 3, "bottom cap, top cap, lateral");
 }
 
@@ -13953,7 +13958,7 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
             [zero, zero, zero],
             [zero, zero, q(1)],
             [q(1), zero, zero],
-            q(r),
+            nacre_scalar::BigRat::from(q(r * r)), // the radius, stated as its square
         )
         .expect("a coaxial bore")
     };
@@ -14018,10 +14023,13 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
     };
     let wall = class(&|k: &[nacre_scalar::Rat; 4]| k[1] == zero && k[2] == zero && k[0] != zero);
     let cap = class(&|k: &[nacre_scalar::Rat; 4]| k[0] == zero && k[1] == zero && k[2] != zero);
-    let def =
-        |o: [nacre_scalar::Rat; 3], d: [nacre_scalar::Rat; 3], e: [nacre_scalar::Rat; 3], r| {
-            nacre_topo::CylinderDef::new(o, d, e, q(r)).expect("a statable cylinder")
-        };
+    let def = |o: [nacre_scalar::Rat; 3],
+               d: [nacre_scalar::Rat; 3],
+               e: [nacre_scalar::Rat; 3],
+               r: i128| {
+        nacre_topo::CylinderDef::new(o, d, e, nacre_scalar::BigRat::from(q(r * r)))
+            .expect("a statable cylinder")
+    };
 
     // ⊥: the four rim witnesses stand, as cell 21 built them.
     let upright = def([zero; 3], [zero, zero, q(1)], [q(1), zero, zero], 2);
@@ -14076,12 +14084,14 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     // Same axis for both, so the two section centres differ by exactly the origins' difference.
     let axis = [q(3), q(4), zero];
     let seam = [zero, zero, q(1)];
-    let small = nacre_topo::CylinderDef::new([zero; 3], axis, seam, q(1)).expect("small");
+    let small =
+        nacre_topo::CylinderDef::new([zero; 3], axis, seam, nacre_scalar::BigRat::from(q(1)))
+            .expect("small");
     let big = nacre_topo::CylinderDef::new(
         [zero, nacre_scalar::Rat::new(4, 3).unwrap(), zero],
         axis,
         seam,
-        q(2),
+        nacre_scalar::BigRat::from(q(4)), // radius 2, as r²
     )
     .expect("big");
     // The offset really is `4/3` along `ŷ`, in the class — stated so the fixture cannot drift.
@@ -14241,14 +14251,16 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
         "û₂ is m × ê, already unit"
     );
     // The post-condition the supply asserts where it mints: a rim point is on the rim, exactly.
-    let r = def.radius();
+    let r = def
+        .radius_exact()
+        .expect("a stated radius has a rational spelling");
     for u in [u1, u2] {
         let mut p = def.origin();
         for k in 0..3 {
             p[k] = p[k].checked_add(r.checked_mul(u[k]).unwrap()).unwrap();
         }
         assert_eq!(
-            nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r),
+            nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
             nacre_scalar::Orient::Zero,
         );
     }
@@ -14795,6 +14807,7 @@ fn the_users_script_builds_the_same_body_after_a_motion() {
 fn the_extent_form_agrees_with_the_disk_it_generalizes() {
     use nacre_scalar::{MeetPoint, Rat, cylinder_ruling_reached, cylinder_ruling_reached_extent};
     let r = |v: i128| Rat::from_int(v);
+    let b = |v: i128| nacre_scalar::BigRat::from(Rat::from_int(v)); // a squared radius or margin
     let wall = [r(1), r(0), r(0), r(0)];
     let axis = [r(0), r(0), r(1)];
     for ox in [3i128, 5, 7] {
@@ -14804,17 +14817,24 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
                     for side in [-1i8, 0, 1] {
                         let p = MeetPoint::Narrow([r(0), r(y), r(0)]);
                         let o = [r(ox), r(0), r(0)];
-                        let disk =
-                            cylinder_ruling_reached(&wall, &p, r(rho), &o, &axis, r(rad), side);
+                        let disk = cylinder_ruling_reached(
+                            &wall,
+                            &p,
+                            &b(rho * rho),
+                            &o,
+                            &axis,
+                            &b(rad * rad),
+                            side,
+                        );
                         let both = cylinder_ruling_reached_extent(
                             &wall,
                             &nacre_scalar::StripReach {
-                                lo: (&p, r(rho)),
-                                hi: Some((&p, r(rho))),
+                                lo: (&p, &b(rho * rho)),
+                                hi: Some((&p, &b(rho * rho))),
                             },
                             &o,
                             &axis,
-                            r(rad),
+                            &b(rad * rad),
                             side,
                             true,
                         );
@@ -14826,12 +14846,12 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
                         let crossed = cylinder_ruling_reached_extent(
                             &wall,
                             &nacre_scalar::StripReach {
-                                lo: (&p, r(rho)),
-                                hi: Some((&p, r(rho))),
+                                lo: (&p, &b(rho * rho)),
+                                hi: Some((&p, &b(rho * rho))),
                             },
                             &o,
                             &axis,
-                            r(rad),
+                            &b(rad * rad),
                             side,
                             false,
                         );
@@ -14854,12 +14874,12 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
         cylinder_ruling_reached_extent(
             &wall,
             &nacre_scalar::StripReach {
-                lo: (&hi, r(0)),
-                hi: Some((&lo, r(0))),
+                lo: (&hi, &b(0)),
+                hi: Some((&lo, &b(0))),
             },
             &o,
             &axis,
-            r(5),
+            &b(25), // radius 5, as r²
             side,
             touch_counts,
         )
@@ -14882,12 +14902,12 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
         cylinder_ruling_reached_extent(
             &wall,
             &nacre_scalar::StripReach {
-                lo: (&tangent, r(2)),
+                lo: (&tangent, &b(4)), // ρ = 2, as ρ²
                 hi: None,
             },
             &o,
             &axis,
-            r(5),
+            &b(25),
             -1,
             touch_counts,
         )
@@ -14905,6 +14925,7 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
 fn a_circle_and_a_ruling_meet_or_clear() {
     use nacre_scalar::{MeetPoint, Rat, cylinder_ruling_reached as reaches};
     let r = |v: i128| Rat::from_int(v);
+    let b = |v: i128| nacre_scalar::BigRat::from(Rat::from_int(v)); // a squared radius or margin
     // The class `x = 0`; a cylinder about `z` at `x = 3` with radius 5, so its two rulings stand
     // at `y = ±4`; and a circle centred on that plane whose radius is walked across each of them.
     let wall = [r(1), r(0), r(0), r(0)];
@@ -14912,7 +14933,16 @@ fn a_circle_and_a_ruling_meet_or_clear() {
     let at = |x: i128| [r(x), r(0), r(0)];
     let centre = |y: i128| MeetPoint::Narrow([r(0), r(y), r(0)]);
     let meets = |ox: i128, rad: i128, y: i128, rho: i128, side: i8| {
-        reaches(&wall, &centre(y), r(rho), &at(ox), &axis, r(rad), side)
+        // The doors take the radii as squares.
+        reaches(
+            &wall,
+            &centre(y),
+            &b(rho * rho),
+            &at(ox),
+            &axis,
+            &b(rad * rad),
+            side,
+        )
     };
     // ★ Sides here are the **scalar** family's: the sign of `(p − o)·(n × m)`, which for this
     // wall and axis points along `−y`. So a circle centred at `y = 5` sits on the `−` side, and
@@ -14949,6 +14979,7 @@ fn a_circle_and_a_ruling_meet_or_clear() {
 fn a_disk_clears_a_strip_or_spans_it() {
     use nacre_scalar::{MeetPoint, Rat, StripSide, cylinder_strip_side_margin as side};
     let r = |v: i128| Rat::from_int(v);
+    let b = |v: i128| nacre_scalar::BigRat::from(Rat::from_int(v)); // a squared radius or margin
     let wall = [r(1), r(0), r(0), r(0)];
     let axis = [r(0), r(0), r(1)];
     let at = [r(3), r(0), r(0)];
@@ -14956,10 +14987,10 @@ fn a_disk_clears_a_strip_or_spans_it() {
         side(
             &wall,
             &MeetPoint::Narrow([r(0), r(y), r(0)]),
-            r(rho),
+            &b(rho * rho), // the doors take the radii as squares
             &at,
             &axis,
-            r(5),
+            &b(25),
         )
     };
     // Ten away with a radius of two: clear, and on the `−(n × m)` side.
@@ -14983,7 +15014,7 @@ fn a_disk_clears_a_strip_or_spans_it() {
             &MeetPoint::Narrow([r(0), r(4), r(0)]),
             &at,
             &axis,
-            r(5)
+            &b(25)
         )
     );
 }

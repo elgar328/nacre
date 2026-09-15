@@ -26,7 +26,7 @@ use nacre_geom::mixed::{
     point_in_mixed_ring,
 };
 use nacre_math::Point2;
-use nacre_scalar::{Rat, rat_sqrt_exact};
+use nacre_scalar::Rat;
 
 /// Why a ring, or a set of rings, is not a valid set of profiles.
 #[derive(Clone, Debug, PartialEq)]
@@ -51,18 +51,15 @@ pub enum SketchError {
     /// value) has no rational truth for the kernel to keep — the sketch-layer twin of
     /// `OpError::ProfileOutsideDecimalWindow`. `at` is the offending point.
     OutsideDecimalWindow { at: [f64; 2] },
-    /// An arc's radius is not rational: `|start − center|²` is not the square of a rational, so
-    /// the cylinder this arc would stand has no exact radius. A start axis-aligned from the centre
-    /// always passes; so does any `3-4-5`-like point.
-    ArcRadiusNotRational { center: [f64; 2], start: [f64; 2] },
     /// An arc's end is not on the circle its centre and start define.
     ArcEndOffCircle {
         center: [f64; 2],
         start: [f64; 2],
         end: [f64; 2],
     },
-    /// An arc step was handed to [`Ring2d::new`] with a `radius` that is not the distance from its
-    /// centre to the vertex it leaves — the stated step and the ring disagree about the circle.
+    /// An arc step was handed to [`Ring2d::new`] with an `r2` that is not the squared distance
+    /// from its centre to the vertex it leaves — the stated step and the ring disagree about the
+    /// circle. `stated` is the step's radius, `√r2`, as a number.
     ArcRadiusMismatch {
         center: [f64; 2],
         start: [f64; 2],
@@ -117,20 +114,17 @@ fn turned(center: [Rat; 2], v: [Rat; 2], quarter_turns: i32) -> Option<[Rat; 2]>
     Some([center[0].checked_add(d[0])?, center[1].checked_add(d[1])?])
 }
 
-/// The rational radius `|start − center|`, or the named refusal.
-fn radius_of(center: [Rat; 2], start: [Rat; 2]) -> Result<Rat, SketchError> {
+/// The squared radius `|start − center|²` — rational for any two rational points, so no circle
+/// is refused for its radius being irrational — or the named refusal for a zero one.
+fn r2_of(center: [Rat; 2], start: [Rat; 2]) -> Result<Rat, SketchError> {
     let r2 = dist2(start, center).ok_or(SketchError::Undecidable)?;
-    match rat_sqrt_exact(r2) {
-        Some(r) if r > Rat::from_int(0) => Ok(r),
-        Some(_) => Err(SketchError::NonPositiveRadius {
+    if r2 <= Rat::from_int(0) {
+        return Err(SketchError::NonPositiveRadius {
             center: f2(center),
             radius: 0.0,
-        }),
-        None => Err(SketchError::ArcRadiusNotRational {
-            center: f2(center),
-            start: f2(start),
-        }),
+        });
     }
+    Ok(r2)
 }
 
 // ---- step doors: an arc as the step it is, with the vertex it ends on ----
@@ -161,13 +155,13 @@ pub fn arc_turns_rat(
             turns: quarter_turns,
         });
     }
-    let radius = radius_of(center, start)?;
+    let r2 = r2_of(center, start)?;
     let v = sub2(start, center).ok_or(SketchError::Undecidable)?;
     let end = turned(center, v, quarter_turns).ok_or(SketchError::Undecidable)?;
     Ok((
         Edge2d::Arc {
             center,
-            radius,
+            r2,
             ccw: quarter_turns > 0,
         },
         end,
@@ -176,8 +170,8 @@ pub fn arc_turns_rat(
 
 /// A proper arc from exact data — the door for computed coordinates (a fillet's tangent points
 /// and centre, say). Checks what [`arc_turns`] guarantees by construction: `end` on the circle,
-/// the radius rational, `start ≠ end`. The step it returns runs `start → end` in a ring that
-/// states those two vertices.
+/// `start ≠ end`. The step it returns runs `start → end` in a ring that states those two
+/// vertices.
 pub fn arc_to_rat(
     center: [Rat; 2],
     start: [Rat; 2],
@@ -187,8 +181,7 @@ pub fn arc_to_rat(
     if start == end {
         return Err(SketchError::ZeroLengthArc { at: f2(start) });
     }
-    let radius = radius_of(center, start)?;
-    let r2 = radius.checked_mul(radius).ok_or(SketchError::Undecidable)?;
+    let r2 = r2_of(center, start)?;
     if dist2(end, center).ok_or(SketchError::Undecidable)? != r2 {
         return Err(SketchError::ArcEndOffCircle {
             center: f2(center),
@@ -196,11 +189,7 @@ pub fn arc_to_rat(
             end: f2(end),
         });
     }
-    Ok(Edge2d::Arc {
-        center,
-        radius,
-        ccw,
-    })
+    Ok(Edge2d::Arc { center, r2, ccw })
 }
 
 impl Ring2d {
@@ -209,7 +198,7 @@ impl Ring2d {
     ///
     /// What is checked is what a stated step can get wrong: the two lists pair up
     /// ([`SketchError::UnevenRing`]); a straight step does not start where it ends
-    /// ([`SketchError::ZeroLengthEdge`]); an arc's stated `radius` is the distance from its
+    /// ([`SketchError::ZeroLengthEdge`]); an arc's stated `r2` is the squared distance from its
     /// centre to the vertex it leaves ([`SketchError::ArcRadiusMismatch`]) and the vertex it
     /// arrives on lies on that circle ([`SketchError::ArcEndOffCircle`]); an arc between one and
     /// the same point is the whole circle only when it is the ring's sole step. Whether the ring
@@ -230,24 +219,23 @@ impl Ring2d {
                         return Err(SketchError::ZeroLengthEdge { edge: i });
                     }
                 }
-                Edge2d::Arc { center, radius, .. } => {
-                    if radius <= Rat::from_int(0) {
+                Edge2d::Arc { center, r2, .. } => {
+                    if r2 <= Rat::from_int(0) {
                         return Err(SketchError::NonPositiveRadius {
                             center: f2(center),
-                            radius: radius.to_f64(),
+                            radius: r2.to_f64().signum() * r2.to_f64().abs().sqrt(),
                         });
                     }
-                    if radius_of(center, a)? != radius {
+                    if r2_of(center, a)? != r2 {
                         return Err(SketchError::ArcRadiusMismatch {
                             center: f2(center),
                             start: f2(a),
-                            stated: radius.to_f64(),
+                            stated: r2.to_f64().sqrt(),
                         });
                     }
                     if a == b && n > 1 {
                         return Err(SketchError::ZeroLengthArc { at: f2(a) });
                     }
-                    let r2 = radius.checked_mul(radius).ok_or(SketchError::Undecidable)?;
                     if dist2(b, center).ok_or(SketchError::Undecidable)? != r2 {
                         return Err(SketchError::ArcEndOffCircle {
                             center: f2(center),
@@ -301,7 +289,7 @@ impl Ring2d {
             vec![seam],
             vec![Edge2d::Arc {
                 center,
-                radius,
+                r2: radius.checked_mul(radius).ok_or(SketchError::Undecidable)?,
                 ccw: true,
             }],
         ))
@@ -567,10 +555,10 @@ mod tests {
             .unwrap_err(),
             SketchError::ZeroLengthEdge { edge: 0 }
         );
-        // An arc step whose stated radius is not |start − centre|.
+        // An arc step whose stated r² is not |start − centre|².
         let bad_radius = Edge2d::Arc {
             center: [r(0), r(0)],
-            radius: r(3),
+            r2: r(3),
             ccw: true,
         };
         assert!(matches!(
@@ -703,10 +691,11 @@ mod tests {
 
     #[test]
     fn arcs_that_cannot_be_stated_are_refused_by_name() {
-        assert!(matches!(
-            arc_turns(pt(1.0, 1.0), pt(0.0, 0.0), 1),
-            Err(SketchError::ArcRadiusNotRational { .. })
-        )); // r² = 2
+        // r² = 2: no rational radius, and no refusal either — the truth is the square. The
+        // quarter turn about (1, 1) from the origin lands on (2, 0).
+        let (arc, end) = arc_turns(pt(1.0, 1.0), pt(0.0, 0.0), 1).expect("r² = 2 is a circle");
+        assert_eq!(end, [r(2), r(0)]);
+        assert!(matches!(arc, Edge2d::Arc { r2, .. } if r2 == r(2)));
         assert!(matches!(
             arc_turns(pt(0.0, 0.0), pt(5.0, 0.0), 0),
             Err(SketchError::ArcTurnsOutOfRange { turns: 0 })

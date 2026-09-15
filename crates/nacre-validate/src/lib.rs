@@ -784,7 +784,7 @@ fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
                 });
             }
         };
-        flag("radius", def.radius().to_f64(), cy.radius());
+        flag("radius", def.radius_f64(), cy.radius());
         if motion.is_some() {
             continue;
         }
@@ -1701,7 +1701,7 @@ mod tests {
             [r(0.0), r(0.0), r(0.0)],
             [r(0.0), r(0.0), r(1.0)],
             [r(0.0), r(-1.0), r(0.0)],
-            r(2.0), // the lie — the cache's radius is 1
+            nacre_scalar::BigRat::from(r(4.0)), // the lie: r² = 4, where the cache's radius is 1
         )
         .expect("well-formed statement");
         let liar = m.push_cylinder(cache, lying, None);

@@ -246,7 +246,7 @@ pub(crate) enum Seg3 {
     Line,
     Arc {
         center: [Rat; 3],
-        radius: Rat,
+        r2: Rat,
         ccw: bool,
         /// The seam direction the wall is stated with: the frame's `x̂`, or for a whole circle the
         /// direction from the centre to its one vertex (which is then the seam, at `+ref_dir`).
@@ -262,13 +262,13 @@ impl Seg3 {
             Seg3::Line => Seg3::Line,
             Seg3::Arc {
                 center,
-                radius,
+                r2,
                 ccw,
                 ref_dir,
                 cache,
             } => Seg3::Arc {
                 center: *center,
-                radius: *radius,
+                r2: *r2,
                 ccw: !ccw,
                 ref_dir: *ref_dir,
                 cache: *cache,
@@ -490,20 +490,22 @@ pub(crate) fn prism_rings_in(
             .enumerate()
             .map(|(i, seg)| match seg {
                 Edge2d::Line => Some(Seg3::Line),
-                Edge2d::Arc {
-                    center,
-                    radius,
-                    ccw,
-                } => {
+                Edge2d::Arc { center, r2, ccw } => {
                     let c = f.ring(&[*center])?.pop()?;
                     // The seam reference: a whole circle seams at its one vertex, an arc's wall
                     // is stated with the frame's `x̂` so every arc of one circle interns to one
-                    // surface.
+                    // surface. The circle's chord from centre to vertex is divided by the radius
+                    // when there is a rational one (the unit-length statement the cylinder
+                    // primitive makes, so the two roads intern alike); otherwise it stands raw —
+                    // `ref_dir` is a direction, and the truth does not ask for its length.
                     let ref_dir = if r.len() == 1 {
-                        scale(
-                            &sub(&base[i], &c)?,
-                            Rat::new(radius.denom(), radius.numer())?,
-                        )?
+                        let chord = sub(&base[i], &c)?;
+                        match nacre_scalar::rat_sqrt_exact(*r2) {
+                            Some(radius) => {
+                                scale(&chord, Rat::new(radius.denom(), radius.numer())?)?
+                            }
+                            None => chord,
+                        }
                     } else {
                         f.x
                     };
@@ -513,11 +515,15 @@ pub(crate) fn prism_rings_in(
                     let c_f64 = at(&c)?;
                     let axis = at(&add(&c, &normal)?)? - c_f64;
                     let refd = at(&add(&c, &ref_dir)?)? - c_f64;
-                    let cache =
-                        nacre_geom::Cylinder::from_axis(c_f64, axis, refd, radius.to_f64())?;
+                    let cache = nacre_geom::Cylinder::from_axis(
+                        c_f64,
+                        axis,
+                        refd,
+                        nacre_scalar::sqrt_f64(&nacre_scalar::BigRat::from(*r2))?,
+                    )?;
                     Some(Seg3::Arc {
                         center: c,
-                        radius: *radius,
+                        r2: *r2,
                         ccw: *ccw,
                         ref_dir,
                         cache,

@@ -256,13 +256,13 @@ fn seam_point(
 ) -> Option<[HpBounded; 3]> {
     let def = crate::planes::world_cylinder_def(model, cyl)?;
     let coeffs = crate::planes::world_plane_coeffs(model, cap)?;
-    let (o, m, r, e) = (def.origin(), def.dir(), def.radius(), def.ref_dir());
+    let (o, m, r2, e) = (def.origin(), def.dir(), def.r2(), def.ref_dir());
     let t = crate::planes::axis_param_of_plane(&coeffs, &def)?;
     let mut centre = o;
     for k in 0..3 {
         centre[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
     }
-    nacre_scalar::realize_seam_point(centre, perp_component(&e, &m)?, r, bits)
+    nacre_scalar::realize_seam_point(centre, perp_component(&e, &m)?, r2, bits)
 }
 
 /// **A pierce vertex is the meet line's point at its root** — the two cutting planes give the
@@ -275,11 +275,11 @@ fn pierce_point(
     bits: usize,
 ) -> Option<[HpBounded; 3]> {
     let def = crate::planes::world_cylinder_def(model, cylinder)?;
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let c0 = crate::planes::world_plane_coeffs(model, planes[0])?;
     let c1 = crate::planes::world_plane_coeffs(model, planes[1])?;
     let (line, sv) = pick_root(
-        &nacre_scalar::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r)?,
+        &nacre_scalar::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)?,
         root,
     )?;
     // `point = base + s·dir`, with `s` the quadratic root realized at `bits` — the only step that
@@ -399,12 +399,18 @@ mod tests {
     fn lo_and_hi_run_along_the_line() {
         use nacre_scalar::quad::CylinderMeet;
         use nacre_topo::QuadRoot;
-        let (o, m, rad) = ([r(2), r(2), r(0)], [r(0), r(0), r(1)], r(3));
+        let (o, m, rad) = ([r(2), r(2), r(0)], [r(0), r(0), r(1)], r(9)); // radius 3, as r²
         // x = 0 and z = 0: the meet line runs along +y and crosses the cylinder twice.
         let c0 = [r(1), r(0), r(0), r(0)];
         let c1 = [r(0), r(0), r(1), r(0)];
-        let meet =
-            nacre_scalar::quad::plane_plane_cylinder(&c0, &c1, &o, &m, rad).expect("a crossing");
+        let meet = nacre_scalar::quad::plane_plane_cylinder(
+            &c0,
+            &c1,
+            &o,
+            &m,
+            &nacre_scalar::BigRat::from(rad),
+        )
+        .expect("a crossing");
         assert!(
             matches!(meet, CylinderMeet::Pair { .. }),
             "expected two roots"

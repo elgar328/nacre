@@ -2509,14 +2509,14 @@ fn chord_nodes(
     // gate's, asserted rather than re-derived. (A *tangent* plane has one root and is never
     // listed; see `planes::Tangency`.)
     debug_assert_eq!(
-        nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.radius()),
+        nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
         nacre_scalar::Orient::Negative,
         "a recorded pair's plane runs within the radius"
     );
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(ChordFail::Unstatable)?;
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let Some(CylinderMeet::Pair { .. }) =
-        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
+        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
     else {
         return Err(ChordFail::Unstatable);
     };
@@ -2628,12 +2628,12 @@ pub(crate) fn crossing_on_ruling(
     let no = DeclineKind::CurvedRingWall;
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     if !nacre_scalar::parallel_rat(&[w[0], w[1], w[2]], &m) {
         return Err(no);
     }
     // ★ A **tangent** wall (`side == 0`, cell ⑩) has one ruling and one root — `Double`.
-    let meet = nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r);
+    let meet = nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r2);
     if side == 0 {
         return match meet {
             Some(CylinderMeet::Tangent { .. }) => {
@@ -2689,9 +2689,9 @@ pub(crate) fn crossing_on_arc(
     let no = DeclineKind::CurvedRingWall;
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let Some(CylinderMeet::Pair { s, .. }) =
-        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)
+        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
     else {
         return Err(no);
     };
@@ -2740,10 +2740,10 @@ fn corner_sides<'a>(
     cell: &'a Cell,
     def: &'a nacre_topo::CylinderDef,
 ) -> impl Iterator<Item = bool> + 'a {
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     cell.half_edges.iter().filter_map(move |&h| {
         let p = combinatorics::node_coords_rat(jd, edges.origin(h))?;
-        match nacre_scalar::cylinder_radial_side(&p, &o, &m, r) {
+        match nacre_scalar::cylinder_radial_side(&p, &o, &m, r2) {
             nacre_scalar::Orient::Negative => Some(true),
             nacre_scalar::Orient::Positive => Some(false),
             nacre_scalar::Orient::Zero => None,
@@ -2896,7 +2896,7 @@ pub(crate) mod crossing_probe {
         let h = d[0] * m[0] + d[1] * m[1] + d[2] * m[2];
         let perp: [f64; 3] = core::array::from_fn(|i| d[i] - h * m[i]);
         let rho = (perp[0] * perp[0] + perp[1] * perp[1] + perp[2] * perp[2]).sqrt();
-        let cyl_off = (rho - def.radius().to_f64()).abs();
+        let cyl_off = (rho - def.radius_f64()).abs();
         let c = [
             m[1] * v[2] - m[2] * v[1],
             m[2] * v[0] - m[0] * v[2],
@@ -2970,7 +2970,7 @@ fn rulings_on_class(
     // the tangent wall opening (cell ⑥) precisely because a tangency is written to `tangencies`
     // and **not** to `crossings`: "within" still means within.
     debug_assert_eq!(
-        nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.radius()),
+        nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
         nacre_scalar::Orient::Negative,
         "a recorded pair's plane runs within the radius"
     );
@@ -4405,7 +4405,7 @@ fn split_circles(
         .map(|s| s.end.map(|t| combinatorics::node_coords_rat(jd, t)))
         .collect();
     for (ci, circ) in circles.iter().enumerate() {
-        let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
+        let (o, m, r2) = (circ.def.origin(), circ.def.dir(), circ.def.r2());
         for (si, sg) in segs.iter().enumerate() {
             // A segment whose two ends are one point cuts nothing. Asked by **name**, which is the
             // identity: two spellings of one point are refused upstream, not tolerated here.
@@ -4419,7 +4419,7 @@ fn split_circles(
             // one is a pierce point the question goes straight to `circle_crossings`, which answers
             // `Miss` exactly when the line misses. Losing the filter costs a solve, never an answer.
             if let [Some(p0), Some(p1)] = &seg_coords[si]
-                && (p0 == p1 || !nacre_scalar::segment_meets_cylinder(p0, p1, &o, &m, r))
+                && (p0 == p1 || !nacre_scalar::segment_meets_cylinder(p0, p1, &o, &m, r2))
             {
                 continue;
             }
@@ -5077,8 +5077,8 @@ fn circle_crossings(
     use nacre_topo::QuadRoot;
     let w = combinatorics::class_coeffs_rat(jd, wc)?;
     let v = combinatorics::class_coeffs_rat(jd, sg.wall)?;
-    let (o, m, r) = (circ.def.origin(), circ.def.dir(), circ.def.radius());
-    let roots = match nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r)? {
+    let (o, m, r2) = (circ.def.origin(), circ.def.dir(), circ.def.r2());
+    let roots = match nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)? {
         CylinderMeet::Pair { s, .. } => vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])],
         // ★ `Double`, not `Lo`: the two roots coincide, so a re-sort must leave the name alone.
         CylinderMeet::Tangent { s, .. } => vec![(QuadRoot::Double, QuadVal::from_rat(s))],
@@ -5343,8 +5343,8 @@ fn lateral_crossings(
     let Some(v) = combinatorics::class_coeffs_rat(jd, sg.wall) else {
         return Ok(None);
     };
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
-    let (line, roots) = match nacre_scalar::quad::plane_plane_cylinder(w, &v, &o, &m, r) {
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
+    let (line, roots) = match nacre_scalar::quad::plane_plane_cylinder(w, &v, &o, &m, r2) {
         Some(CylinderMeet::Pair { line, s }) => {
             (line, vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])])
         }
@@ -5854,7 +5854,7 @@ fn circle_crosses_ruling(
 ) -> Option<bool> {
     let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
     let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
-    let (o, m, r) = (ruling.def.origin(), ruling.def.dir(), ruling.def.radius());
+    let (o, m, r2) = (ruling.def.origin(), ruling.def.dir(), ruling.def.r2());
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     // The predicate's own precondition, asked rather than assumed: a class that is not parallel
     // to the axis carries no ruling of it, and the decomposition would be about other geometry.
@@ -5864,22 +5864,17 @@ fn circle_crosses_ruling(
     // The strip runs along `e = n × m`, so that is the direction a piece states its reach in.
     let e = combinatorics::cross3_rat(&n, &m)?;
     let ask = |arc: Option<&crate::planes::RimArc>| -> Option<bool> {
-        let (lo, hi) = crate::planes::arc_ends_along(
-            &centre,
-            circle.def.radius(),
-            &circle.def.dir(),
-            arc,
-            &e,
-        )?;
+        let (lo, hi) =
+            crate::planes::arc_ends_along(&centre, circle.def.r2(), &circle.def.dir(), arc, &e)?;
         Some(nacre_scalar::cylinder_ruling_reached_extent(
             &coeffs,
             &nacre_scalar::StripReach {
-                lo: (&nacre_scalar::MeetPoint::Narrow(lo.0), lo.1),
-                hi: Some((&nacre_scalar::MeetPoint::Narrow(hi.0), hi.1)),
+                lo: (&nacre_scalar::MeetPoint::Narrow(lo.0), &lo.1),
+                hi: Some((&nacre_scalar::MeetPoint::Narrow(hi.0), &hi.1)),
             },
             &o,
             &m,
-            r,
+            r2,
             // ★ **The two vocabularies are opposite.** `ruling.side` is measured against `m × n`
             // (`ruling_side_signed`), and the scalar family writes its sides about `n × m`. The
             // restatement is one negation, and it belongs here — at the boundary between the two
@@ -5959,7 +5954,7 @@ fn circle_inside_strip(
 ) -> Option<bool> {
     let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
     let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
-    let (o, m, r) = (ruling.def.origin(), ruling.def.dir(), ruling.def.radius());
+    let (o, m, r2) = (ruling.def.origin(), ruling.def.dir(), ruling.def.r2());
     if nacre_scalar::dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m)
         != nacre_scalar::Orient::Zero
     {
@@ -5969,10 +5964,10 @@ fn circle_inside_strip(
         nacre_scalar::cylinder_strip_side_margin(
             &coeffs,
             &nacre_scalar::MeetPoint::Narrow(centre),
-            circle.def.radius(),
+            circle.def.r2(),
             &o,
             &m,
-            r,
+            r2,
         ),
         nacre_scalar::StripSide::Inside
     ))
@@ -9730,7 +9725,8 @@ mod tests {
                    dir: [nacre_scalar::Rat; 3],
                    e: [nacre_scalar::Rat; 3],
                    r: nacre_scalar::Rat| {
-            nacre_topo::CylinderDef::new(o, dir, e, r).unwrap()
+            // `r` is the radius; the truth takes its square.
+            nacre_topo::CylinderDef::new(o, dir, e, nacre_scalar::BigRat::square_of(r)).unwrap()
         };
         // ⊥ the shared cap: a circle of radius 6/5 about `(3/2, 3/2)` on that plane.
         //
@@ -11502,7 +11498,7 @@ mod tests {
             assert_eq!(rims.len(), 2, "the caps' two whole circles");
             assert_eq!(loops.len(), 3, "and the notch as one ring");
         }
-        let (o, mm, r) = (def.origin(), def.dir(), def.radius());
+        let (o, mm, r2) = (def.origin(), def.dir(), def.r2());
         let rat = |k: i128| Rat::new(k, 2).unwrap();
         let ri = Rat::from_int;
         let zero = ri(0);
@@ -11563,7 +11559,7 @@ mod tests {
         // on face, off (hole), boundary, tangent, station on-ruling, station on-face, seam ties
         let mut n = [0usize; 7];
         let mut ask = |pa: [Rat; 4], pb: [Rat; 4], z0: Rat, station: bool| {
-            let roots = match plane_plane_cylinder(&pa, &pb, &o, &mm, r).unwrap() {
+            let roots = match plane_plane_cylinder(&pa, &pb, &o, &mm, r2).unwrap() {
                 CylinderMeet::Pair { line, s } => (line, s),
                 CylinderMeet::Tangent { .. } => {
                     n[3] += 1;
@@ -12077,7 +12073,7 @@ mod tests {
             let def = cyls
                 .iter()
                 .map(|c| &c.def)
-                .find(|d| d.radius() == Rat::from_int(5))
+                .find(|d| *d.r2() == nacre_scalar::BigRat::from(Rat::from_int(25)))
                 .expect("the bitten circle");
             let (mut swept, mut on_boundary) = (0usize, 0usize);
             let (mut abstained, mut inside_seen) = (0usize, 0usize);
@@ -12093,7 +12089,7 @@ mod tests {
                         &p,
                         &def.origin(),
                         &def.dir(),
-                        def.radius(),
+                        def.r2(),
                     );
                     // The chord is the plate's wall `x = 40`; the bite keeps `x < 40`.
                     let wall = p[0].checked_sub(Rat::from_int(40)).unwrap();
@@ -12364,7 +12360,7 @@ mod tests {
                     let def = cyls
                         .iter()
                         .map(|c| &c.def)
-                        .find(|d| d.radius() == Rat::from_int(5))
+                        .find(|d| *d.r2() == nacre_scalar::BigRat::from(Rat::from_int(25)))
                         .expect("the cut circle");
                     let decided0 = combinatorics::tie_probe::arc_end_decisions_here();
                     let (mut swept, mut abstained, mut inside_seen, mut boundary) =
@@ -12378,7 +12374,7 @@ mod tests {
                                 &p,
                                 &def.origin(),
                                 &def.dir(),
-                                def.radius(),
+                                def.r2(),
                             );
                             let (x, y) = (p[0], p[1]);
                             let (wx, wy) = (x == Rat::from_int(40), y == Rat::from_int(24));

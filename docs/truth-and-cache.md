@@ -104,7 +104,7 @@ pub enum Surface {
     /// M6 ✔ **도착했다** — 예고가 아니다. 성분형이 옳은 이유·`ref_dir` 원시 규칙은 design.md
     /// 원통 절이 상세히 적는다.
     Cylinder {
-        def: CylinderDef,                     // { origin, dir, ref_dir, radius } 전부 Rat
+        def: CylinderDef,                     // { origin, dir, ref_dir } Rat + r2: BigRat — 반지름은 «제곱», 폭은 BigInt(2026-09-15)
         motion: Option<Handle<MotionNode>>,
     },
 }
@@ -269,12 +269,12 @@ pub struct Ring2d {                           // 정점 + 변. edges[i] = vertic
 }
 pub enum Edge2d {                             // 조각 «하나» — 순서 있는 고리라 시작=앞 꼭짓점 (geom::mixed)
     Line,
-    Arc { center: [Rat; 2], radius: Rat, ccw: bool },  // ⏳25 radius→r²·중심 정의화는 미정 마일스톤
+    Arc { center: [Rat; 2], r2: Rat, ccw: bool },      // ✔ r² (2026-09-15, 항목 25 · 1단계); 중심의 정의화는 2·3단계
 }
 // ✔ **조각 타입은 하나**(2026-09-15, 열린 항목 26): 뭉치 입력 `Edge2d{Line{from,to} | Arc{..start,end..}}` 와
 //    사슬 재발견(`from_edges`)은 kit 문법 §5.5 「선 뭉치」와 함께 은퇴했고, 저장 타입 `Seg2d` 가 `Edge2d` 라는
 //    이름을 물려받았다. ★ **커널의 문은 «고리»다, «펜»이 아니다** — `Ring2d::new(vertices, edges)`(검증: 짝 맞음·
-//    영길이·호의 반지름·다음 정점이 원 위)·`Ring2d::circle`·`Ring2d::polygon_decimal` + 단계 문 `arc_turns(_rat)`
+//    영길이·호의 r²·다음 정점이 원 위)·`Ring2d::circle`·`Ring2d::polygon_decimal` + 단계 문 `arc_turns(_rat)`
 //    (변, 끝점)·`arc_to_rat`, 그리고 `from_paths(Vec<Ring2d>)`. 펜은 kit 의 것이고, 제약 해석기·외부 데이터가
 //    와도 같은 문으로 온다 — 커널은 «어떻게 그렸나»를 모른다.
 // 링 더미 → 짝수 깊이 = 재료(even-odd) → 섬마다 Profile2d 하나 — from_rings/from_paths, 현행 유지.
@@ -870,7 +870,7 @@ pub enum Decision {
 | S8 | **Edge 최종형** — `Edge{surfaces: [Handle<Surface>;2], vertices: [Handle<Vertex>;2]}`: 담체 두 면(오름차순 정렬 쌍) + 경계 두 점, `curve`·`bounds: Option`·`origin` 사망. `Store<Curve>` → `edge_cache: Vec<EdgeCache>`(인덱스-평행 캐시): 유일 입구 `push_edge`(eager 파생, 퇴화 검사는 **팔별** — rim `[v,v]` 는 합법) + `rebuild_edge_cache`(«버리고 재생» 잠금이 비트 동일 증명) + `edge_curve` 접근자·`derive_edge_curve`(직선 = 끝점 through_points, rim 원 = 담체에서 — 신설 geom `line_plane`, seam = 자기-인접 `[cyl,cyl]` 잠정 표기). transform pass 2(곡선 이동) 통째 소멸. validate: 신설 `EdgeCarrierMismatch`(담체 ≠ 인접 관측, `[plane,plane]` 자기쌍 검출) + `UnboundedEdgeInLoop`·`RefKind::EdgeCurve`·`StepError::UnboundedEdge` 순삭. ★ 구현 중 발견 2건: ① **담체는 wall 로 추측하면 틀린다** — 세 평면이 한 직선을 공유하는 인구(해결된 4-평면 동시성)에서 각 면의 arrangement 는 제3의 평면을 wall 로 (옳게) 지목 — 담체는 **전 링 선-주사한 인접성**에서 읽는다(실측: debug_assert 발화가 잡음). ② «전 생산 직선 비트 동일» 주장이 이동 경로에서 반박 — pass 2 는 방향을 직접 회전, 파생은 끝점 차 재정규화라 방향 ~1 ulp(실측 2.8e-16, 직선 83/84 비트 동일, 원 최대 2.2e-16 — 직선 기하는 비관측이라 무해). ③ VertexOffCurve 의 직선 갈래는 **타입상 항진**이 됐다(끝점이 자기 직선 위) — 검사는 원(rim)으로 이빨 유지, `.max(tol_of(edge.origin))` 은 상수 `EPS_CONSTRUCTED` 로 재철자(**무-행동이 아니었다** — `Discovered{tol:0}` 정점의 하한을 edge 항이 받치고 있었음, 실측). census 전 커밋 비트 동일 | ✔ 2026-08-06 |
 | S7 | **`Origin` 소멸 — 정점은 자기 정의를 들고, 좌표는 캐시가 된다** — `Vertex{def: VertexDef{ThreePlane([3]) \| OnSeam([2])}}`(Q3 수정: seam 정점이 단일형을 반박 — 반증표), `point`·`Origin`(3변종) 사망, `vertex_cache: Vec<PointCache{coord, tol: Option<f64>}>` 인덱스-평행 + 유일 입구 `push_vertex` + 접근자 `vertex_point`/`vertex_tol`. **`rebuild_vertex_cache` 는 없다**(3b ⏸ — 발견 좌표는 배열이 공들인 값 1992 중 238 이 순진 Cramer 와 다르고, seam 좌표는 load-bearing. ⚠ **그 근거는 2026-09-11 에 지나갔다 — 열린 항목 12 의 정정을 볼 것**; 이 행은 2026-08-07 당시의 기록으로 남긴다): S8 이 모서리에서 얻은 «버리고 재생» 보증은 정점엔 아직 없음을 정직 기록. 소멸한 기계: 스케치 프레임 base 정점(Q2 — 프레임 공유 세 평면의 유리수 Cramer + 사슬 재생이 저장 좌표를 **비트 동일**로 재현, 8/8 실측을 영구 잠금으로 승격)·`remap_origin`·`solid_motion`+정점용 `move_node`(면이 자기 leaf 를 든다 — 규칙 3)·한-홉 base 불변식(타입이 흡수: 중복 적용이 표현 불가)·`exact.rs::base_f64/top_f64`. reuse `solid_points` 는 def 경로로(구성=`Pt3::exact` 문자 동일, 발견=포기 문자 동일, 이동=세 이름의 checked-i128 Cramer→replay; **혼합 프레임은 정직한 decline** = 기록된 유일한 차이). 게이트 `origins_are_remappable`→`defs_are_remappable` 전 정점 확장(발화 0 + **양성 대조**), validate: `tol_of` 1식화·`VertexOffDefinition` **전 정점 확장**(+양성 대조)·신설 `VertexDefCarrierMismatch`(변종 ⇔ 담체 종류). 신설 `nacre_scalar::three_planes_rat`. census **전 커밋 비트 동일**(좌표 verbatim 이사 — 재기준 없음) | ✔ 2026-08-07 |
 
-| M6-0 | **원통의 진실** — `SurfaceTruth::Cylinder { def: CylinderDef, motion }`, `CylinderDef { origin, dir, ref_dir, radius }` 전부 유리수(dir·ref_dir 은 **비정규화 원시** — normalize 가 정확형을 파괴하는 `normal_def` 선례; 성분형은 «유도된 곱» 이 아니라 사용자 어휘의 리프트+셔플이라 반증표 무저촉). ref_dir 원시는 `any_perpendicular` **자신의 규칙을 유리수로**(최소-\|성분\| 축, 동률 X→Y→Z; ★ 축 선택은 **정규화된 `d`** — 캐시의 실제 입력 — 를 읽어 구조적 일치. 첫 철자의 «양수 배는 순서 보존» 은 실수-산술 논증이라 반증됨: f64 나눗셈 반올림이 강부등호를 동률로 붕괴 — 실측 축 `[0.34, 0.33999999999999997, 1]` 에서 원시=Y·`d`=X 로 seam ~90° 어긋남, 회귀 픽스처로 박제. 외적은 원시 정확 성분 그대로라 seam 방향 보존). interning 은 **보수적**(`cylinder_ids` 별도 맵, def 문자 동일 + motion — 다른 ref_dir 을 합치면 seam 이 갈라지므로 위험 0 키로 시작, 기하 동일성은 M6-1 술어 몫). **seam 은 모델 기하라 여기서 영구 고정**(+ref_dir, θ=0) — M6-1 의 유리수 반각 차트가 자기 배제점을 seam 에 맞춘다(역방향 절대 금지). OnSeam = "rim ∩ +ref_dir ray" 로 정의 완성(좌표 캐시 load-bearing 해제 선언 — 재생 기계는 3b 와 함께 유예), `[s,s]` 자기-인접 확정. 규약 전문 design.md §9. 관문: 사전-측정 비트 리터럴 4픽스처(축정렬·피타고라스 비트 동일, 기울면 ≤1ulp), census 원통 가족(+`CylinderFace` 거절 줄), validate `CylinderTruthCacheMismatch`(혼합 절대/상대 — ulp 계량은 전폭 축의 Gram–Schmidt 0-자리 스미어에 반증됨), step-io 독립 왕복 클린 | ✔ 2026-08-17 |
+| M6-0 | **원통의 진실** — `SurfaceTruth::Cylinder { def: CylinderDef, motion }`, `CylinderDef { origin, dir, ref_dir, r2 }`(2026-09-15 부터 반지름은 **제곱**; 당시 `radius`) 전부 유리수(dir·ref_dir 은 **비정규화 원시** — normalize 가 정확형을 파괴하는 `normal_def` 선례; 성분형은 «유도된 곱» 이 아니라 사용자 어휘의 리프트+셔플이라 반증표 무저촉). ref_dir 원시는 `any_perpendicular` **자신의 규칙을 유리수로**(최소-\|성분\| 축, 동률 X→Y→Z; ★ 축 선택은 **정규화된 `d`** — 캐시의 실제 입력 — 를 읽어 구조적 일치. 첫 철자의 «양수 배는 순서 보존» 은 실수-산술 논증이라 반증됨: f64 나눗셈 반올림이 강부등호를 동률로 붕괴 — 실측 축 `[0.34, 0.33999999999999997, 1]` 에서 원시=Y·`d`=X 로 seam ~90° 어긋남, 회귀 픽스처로 박제. 외적은 원시 정확 성분 그대로라 seam 방향 보존). interning 은 **보수적**(`cylinder_ids` 별도 맵, def 문자 동일 + motion — 다른 ref_dir 을 합치면 seam 이 갈라지므로 위험 0 키로 시작, 기하 동일성은 M6-1 술어 몫). **seam 은 모델 기하라 여기서 영구 고정**(+ref_dir, θ=0) — M6-1 의 유리수 반각 차트가 자기 배제점을 seam 에 맞춘다(역방향 절대 금지). OnSeam = "rim ∩ +ref_dir ray" 로 정의 완성(좌표 캐시 load-bearing 해제 선언 — 재생 기계는 3b 와 함께 유예), `[s,s]` 자기-인접 확정. 규약 전문 design.md §9. 관문: 사전-측정 비트 리터럴 4픽스처(축정렬·피타고라스 비트 동일, 기울면 ≤1ulp), census 원통 가족(+`CylinderFace` 거절 줄), validate `CylinderTruthCacheMismatch`(혼합 절대/상대 — ulp 계량은 전폭 축의 Gram–Schmidt 0-자리 스미어에 반증됨), step-io 독립 왕복 클린 | ✔ 2026-08-17 |
 
 | M6-1 | **판정의 스칼라 원시 + branch 정점** — `nacre-scalar/quad.rs`: `QuadVal`(a+b√c, c≥0, `PartialEq` 비파생 — √8=2√2 정준화는 소인수분해라 값 동등은 sign 탑 몫), sign 탑은 BigInt 코어로 **total**(sign1: c=0 최우선, 상반은 `sign(a)·sign(a²−b²c)` 곱; `biquad_sign`: ℚ(√u,√v) 4항 — 원형 순서가 여기로 환원), `plane_plane_cylinder`(퇴화 사다리 전 변종 명명), **점 = MeetLine + s**(같은 라디칼 공유가 구조적), `circular_order_about_seam`(4계급, seam 모선은 순위 아닌 `SeamIncident` 이름; API 모양은 M6-2 후보). `VertexDef::Branch { planes, cylinder, root: QuadRoot }` — remap은 재정렬+**스왑 시 root 토글**(red 실측 잠금). ★ **정정(2026-08-21)**: 그 토글이 **무조건**이라 접점에서 틀렸다 — 중근은 스왑해도 같은 점(`disc=0` ⇒ `s=mid`, `mid↦−mid` 와 `ℓ↦−ℓ` 가 상쇄)인데 토글하면 한 점이 두 이름을 갖는다. 그리고 저장된 `Lo` 가 「둘 중 작은 쪽」인지 「유일한 쪽」인지 말하지 못해 정의를 든 쪽이 알 방법이 없었다 ⇒ `QuadRoot` 에 **`Double`** 을 더하고 규칙을 `QuadRoot::canonical`(인덱스 공간에 제네릭 — 핸들과 클래스 둘 다 답한다) 한 곳으로 모았다, 흡수 let-else 5곳 명시 match화, `carriers()` 한 철자. 관문: Pell 수렴자 자기-검증 사다리(~1e-73)·512-bit 차등 오라클·1e-18 분리에서 f64 초과 실증·census 비트 동일. ★ 발견: "sign1 하나로 닫힌다"는 과장 — 원형 순서는 sign2(설계 문서 정정) | ✔ 2026-08-18 |
 
@@ -1727,7 +1727,7 @@ STEP 출력, undo/replay.
     고쳤다. ⇒ **관문에 조건부 절차 한 줄**이 생겼다(`overview.md` 「관문」): **이름을 개명·은퇴시킨
     칸은 `docs/` 도 훑는다.** 계기는 `tools/deadname-sweep.py`.
 
-25. ⏳★★★★ **원/원호의 진실은 «실현값»이 아니라 «정의»여야 한다 — 평면의 normal-vs-coefficients 와 같은 갈래**
+25. ⏳★★★★(1단계 ✔ 2026-09-15) **원/원호의 진실은 «실현값»이 아니라 «정의»여야 한다 — 평면의 normal-vs-coefficients 와 같은 갈래**
     (2026-09-13 진단, 곡선 마일스톤 입력).
 
     오늘 원호는 «실현된 값»으로 저장된다: `Edge2d::Arc{center: [Rat;2], radius: Rat, ccw}`(2026-09-15 까지 `Seg2d`) ·
@@ -1792,6 +1792,28 @@ STEP 출력, undo/replay.
       정제 + 분리 한계. 저장 타입은 (2) 에 한 번 정해지고 그 뒤 바뀌지 않는다. ⚠ 열린 비용: 같은 원을 다른
       정의로 두 번 만들었을 때의 동일성(정의 해시로는 다르고, 대수적 동일성은 `sign(a−b)=0` 판정 — 인턴은 정의
       기준으로 두고 기하 동일성은 불리언의 일치 판정에 맡기는 것이 평면과 같은 길).
+
+    ✔ **1단계 닫힘 (2026-09-15, 칸 51).** `Edge2d::Arc { center, r2: Rat, ccw }` · `CylinderDef { origin, dir, ref_dir,
+    r2: BigRat }` · `ArcSpec.r2`·`QuarterArc.r2`·`Corner::Round.rho2`. 스칼라 문 12 가 r² 를 받고(`&BigRat`), 그중
+    반지름의 합/차를 쓰던 셋(`cylinders_clear` 평행 팔·`cylinders_nested`·`skew_axes_clear`)은 이미 있던
+    `sqrt_root_sum_cmp`(√a > √b + √c ⟺ a−b−c > 0 ∧ (a−b−c)² > 4bc) 로 — 근호를 만들지 않는다. `realize_seam_point` 와
+    신설 `sqrt_f64`(`inv_sqrt_f64` 의 쌍둥이)는 «완전제곱이면 옛 길(비트 동일), 아니면 √ 실현». 스케치 문 `r2_of` 는
+    dist² 를 그대로 — `ArcRadiusNotRational`·`radius_of` 소멸. `radius()` 삭제로 컴파일러가 38 자리를 짚었고, 같은
+    `Rat` 타입이라 못 짚은 자리 **하나**(nesting 의 림 증인 단언이 정확 반지름을 r² 문에 넘김)는 관문이 잡았다 —
+    디버그 census 행 수 398 → 160 이 첫 신호.
+    ★★ **위 «폭» 문단은 틀렸었다 — 분자만 셌다.** 16자리 십진 반지름은 ~1e-4 아래에서 r² 의 **분모**가 i128 을 넘는다
+    (5.000000000000001e-8 → 분모 10²³, 제곱 10⁴⁶). 그 인구는 이미 잠겨 있었다(`a_bored_cube_builds_at_any_size…` 의
+    17자리 가수 일곱 자릿수, `reject_census` 의 `cylinder_wide_axis`) — 「폭은 원인이 아니다」의 잠금들. 사용자 결정:
+    창을 좁히지 않고 **넓은 타입**으로 — `nacre_scalar::BigRat`(BigInt 유리수, `MeetPoint::Wide` 의 선례;
+    `square_of(Rat)` 은 절대 넘치지 않는다). 스케치의 `Edge2d::Arc.r2` 는 `Rat` 그대로(dist² 가 오늘도 `Rat` 이어야
+    문을 지난다). ops 에서 `Rat` 산술을 하던 자리 넷(`arc_extent`·격자 탐침의 λ·`t_cap`·`ArcSpec`)은 `narrow()?` 로 —
+    옛 `r·r` 이 넘치던 **바로 그 자리**에서 같은 거절. 「유리수 점을 r 로 짓는 자리 여섯」은 `radius_exact()`
+    (`rat_sqrt_exact_big`) 뒤에 그대로 서 있다 — 2·3단계의 방문 목록.
+    ☑ 잠금: census 398행 HEAD≡debug≡release 비트 동일 · `a_non_pythagorean_arc_is_stated_and_extruded`(활꼴 부피
+    π/2−1, 옆면 캐시 √2 비트 동일) · **상자 `cut` 탐침이 초록이라 잠금으로 승격**(`a_non_pythagorean_prism_is_cut_by_a_box`
+    — 불리언 길이 r²=2 를 끝까지 지난다) · `sqrt_f64` 완전제곱 250 + 비완전제곱 7 + 넓은 제곱 1 · 비완전제곱 반지름
+    쌍(r²=2, 3)의 `cylinders_clear/nested` · 넓은 제곱의 솔기 실현 · kit 의 «√2 반지름 호» 거절 테스트가 수용 잠금으로.
+    죽은-이름 스윕: 예측 «은퇴 서술 둘» = 실제.
 
 26. ✔★★★ **입력을 «순서 있는 고리»로 통일한다 — `Edge2d`/`Seg2d` 가 하나가 되고 `from_edges` 의
     순서 재발견이 사라진다** (2026-09-13 진단 → 2026-09-15 닫힘, 칸 ㊿ — 전제가 한 번 반증됐고 문법 결정으로

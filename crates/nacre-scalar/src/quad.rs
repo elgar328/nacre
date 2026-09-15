@@ -21,7 +21,7 @@
 //! Value equality is the sign tower's job (`x.checked_sub(y)?.sign() == Orient::Zero`);
 //! structural equality is deliberately not offered until a consumer needs it by name.
 
-use crate::{MeetPoint, Orient, Rat};
+use crate::{BigRat, MeetPoint, Orient, Rat};
 use num_bigint::BigInt;
 
 /// A quadratic algebraic scalar `a + b·√c`, exact.
@@ -619,9 +619,10 @@ pub enum CylinderMeet {
 
 /// The exact meet of two planes and a cylinder's lateral surface.
 ///
-/// `dir`/`radius` are the cylinder's **raw** rational axis direction and radius
-/// (`CylinderDef`'s fields); preconditions `dir ≠ 0`, `radius > 0` are the caller's
-/// (doc + debug_assert — this pure-numeric door is outside `CylinderDef::new`'s guard).
+/// `dir`/`r2` are the cylinder's **raw** rational axis direction and **squared** radius
+/// (`CylinderDef`'s fields — the truth holds `r²`, which is rational for every circle through
+/// rational points); preconditions `dir ≠ 0`, `r2 > 0` are the caller's (doc + debug_assert —
+/// this pure-numeric door is outside `CylinderDef::new`'s guard).
 ///
 /// `None` means checked-`Rat` overflow — an honest decline, never a wrong variant.
 pub fn plane_plane_cylinder(
@@ -629,11 +630,11 @@ pub fn plane_plane_cylinder(
     p2: &[Rat; 4],
     origin: &V3,
     dir: &V3,
-    radius: Rat,
+    r2: &BigRat,
 ) -> Option<CylinderMeet> {
     let zero = Rat::from_int(0);
     debug_assert!(!is_zero3(dir), "cylinder axis must be nonzero");
-    debug_assert!(radius > zero, "cylinder radius must be positive");
+    debug_assert!(r2.is_positive(), "cylinder squared radius must be positive");
     let n1 = [p1[0], p1[1], p1[2]];
     let n2 = [p2[0], p2[1], p2[2]];
     let l = cross3(&n1, &n2)?;
@@ -679,7 +680,7 @@ pub fn plane_plane_cylinder(
     let c = w0w0
         .checked_mul(mm)?
         .checked_sub(w0m.checked_mul(w0m)?)?
-        .checked_sub(radius.checked_mul(radius)?.checked_mul(mm)?)?;
+        .checked_sub(r2.narrow()?.checked_mul(mm)?)?; // a wide square declines here, as `r·r` did
 
     if a == zero {
         // ℓ ∥ axis: substituting ℓ = k·m makes B vanish identically — checked, not assumed.
@@ -718,7 +719,7 @@ pub fn plane_plane_cylinder(
 /// inside, zero on the surface, positive outside. Exact and **total**:
 /// `sign(|w|²|m|² − (w·m)² − r²|m|²)` with `w = p − origin` — the same constant term the meet
 /// quadratic carries, scaled by the positive `|m|²` so no normalization is needed.
-/// Preconditions `dir ≠ 0`, `radius > 0` as in [`plane_plane_cylinder`].
+/// Preconditions `dir ≠ 0`, `r2 > 0` as in [`plane_plane_cylinder`] (the radius arrives squared).
 ///
 /// This is the "axis distance² vs r²" question the M6-2a population gate and the circle
 /// containment tests ask; the axial (z-range) half of point-vs-cylinder-solid is
@@ -728,18 +729,17 @@ pub fn plane_plane_cylinder(
 /// is one sign, and a sign has no width — only the road to it did. Denominators are cleared once
 /// and the arithmetic runs in `BigInt`, so a caller's decline now means the geometry (a point on
 /// the surface), never the arithmetic. The scales are **carried, not dropped**: the `r²|m|²` term
-/// makes the expression inhomogeneous in `w`, so `w`'s denominator `Dw` and the radius' `S` ride
-/// in — `sign(S²(|W|²|M|² − (W·M)²) − R²|M|²Dw²)`, with `Dm²` cancelling as a positive factor.
-pub fn cylinder_radial_side(p: &V3, origin: &V3, dir: &V3, radius: Rat) -> Orient {
+/// makes the expression inhomogeneous in `w`, so `w`'s denominator `Dw` and the squared radius'
+/// `S` ride in — `sign(S(|W|²|M|² − (W·M)²) − R|M|²Dw²)` for `r² = R/S`, with `Dm²` cancelling as
+/// a positive factor.
+pub fn cylinder_radial_side(p: &V3, origin: &V3, dir: &V3, r2: &BigRat) -> Orient {
     debug_assert!(!is_zero3(dir), "cylinder axis must be nonzero");
-    debug_assert!(
-        radius > Rat::from_int(0),
-        "cylinder radius must be positive"
-    );
-    radial_side_int(p, origin, dir, &[radius])
+    debug_assert!(r2.is_positive(), "cylinder squared radius must be positive");
+    radial_side_int(p, origin, dir, r2)
 }
 
-/// **Does a segment come within `r` of a cylinder's axis?** — exact, and total at any width.
+/// **Does a segment come within `r` of a cylinder's axis?** (`r2 = r²`) — exact, and total at any
+/// width.
 ///
 /// The segment must lie in a plane **perpendicular to the axis**, which is what makes this a
 /// three-sign question instead of a general line–line distance: `dist(q, axis)² = |q−o|² −
@@ -756,14 +756,14 @@ pub fn cylinder_radial_side(p: &V3, origin: &V3, dir: &V3, radius: Rat) -> Orien
 /// segment makes the comparison `0 vs 0` and would answer "meets", which is a degeneracy, not a
 /// verdict; a segment that is not perpendicular to the axis breaks the constant-term argument
 /// this rests on.
-pub fn segment_meets_cylinder(p0: &V3, p1: &V3, origin: &V3, dir: &V3, radius: Rat) -> bool {
+pub fn segment_meets_cylinder(p0: &V3, p1: &V3, origin: &V3, dir: &V3, r2: &BigRat) -> bool {
     use num_bigint::BigInt;
     use num_integer::Integer;
     debug_assert!(p0 != p1, "a zero-length segment has no distance to give");
     // Either endpoint already inside (or on) the cylinder settles it — and that is exactly the
     // question `cylinder_radial_side` answers, so it is asked rather than re-derived.
     for p in [p0, p1] {
-        if cylinder_radial_side(p, origin, dir, radius) != Orient::Positive {
+        if cylinder_radial_side(p, origin, dir, r2) != Orient::Positive {
             return true;
         }
     }
@@ -807,25 +807,22 @@ pub fn segment_meets_cylinder(p0: &V3, p1: &V3, origin: &V3, dir: &V3, radius: R
     if f0 > BigInt::from(0) || f1 < BigInt::from(0) {
         return false; // the nearest point of the segment is an end, and both are outside
     }
-    let (rn, rd) = (BigInt::from(radius.numer()), BigInt::from(radius.denom()));
+    let (rn, rd): (BigInt, BigInt) = (r2.numer().clone(), r2.denom().clone());
     let (ww, dvdv, mm) = (dot(&w0, &w0), dot(&dv, &dv), dot(&m, &m));
     let (w0d, w0m) = (dot(&w0, &dv), dot(&w0, &m));
-    // `dist²_min ≤ r²`, multiplied through by `dd²·(d·d)·(m·m)·rd² > 0`:
-    //   rd²·[ |w₀|²(d·d)(m·m) − (w₀·d)²(m·m) − (w₀·m)²(d·d) ]  ≤  rn²·dd²·(d·d)(m·m)
-    let lhs = &rd * &rd * (&ww * &dvdv * &mm - &w0d * &w0d * &mm - &w0m * &w0m * &dvdv);
-    let rhs = &rn * &rn * (&dd * &dd) * &dvdv * &mm;
+    // `dist²_min ≤ r²` with `r² = rn/rd`, multiplied through by `dd²·(d·d)·(m·m)·rd > 0`:
+    //   rd·[ |w₀|²(d·d)(m·m) − (w₀·d)²(m·m) − (w₀·m)²(d·d) ]  ≤  rn·dd²·(d·d)(m·m)
+    let lhs = &rd * (&ww * &dvdv * &mm - &w0d * &w0d * &mm - &w0m * &w0m * &dvdv);
+    let rhs = &rn * (&dd * &dd) * &dvdv * &mm;
     lhs <= rhs
 }
 
-/// [`cylinder_radial_side`]'s body, with the radius given as **parts to be summed** — one part
-/// for the point-vs-cylinder question, two for [`cylinders_clear`], where the comparison is
-/// against `r₁ + r₂` and forming that sum in `Rat` first would reintroduce the ceiling this
-/// function exists to remove.
-fn radial_side_int(p: &V3, origin: &V3, dir: &V3, radii: &[Rat]) -> Orient {
-    use num_bigint::BigInt;
+/// **`dist(p, axis)²` as an exact integer fraction `(num, den)`**, `den > 0`:
+/// `|w|²|m|² − (w·m)²` over `|m|²·Dw²`, with `w = p − origin` lifted over one common denominator so
+/// the subtraction is exact without a `Rat` step that could overflow. Every radial question below
+/// compares this against a squared radius, or against a sum of the roots of two.
+fn radial_dist2_int(p: &V3, origin: &V3, dir: &V3) -> (BigInt, BigInt) {
     use num_integer::Integer;
-    // `w = p − origin` as integers: one common denominator for both points, so the subtraction
-    // is exact without a `Rat` step that could overflow.
     let lift = |v: &V3| -> ([BigInt; 3], BigInt) {
         let den: [BigInt; 3] = core::array::from_fn(|i| BigInt::from(v[i].denom()));
         let d = den.iter().fold(BigInt::from(1), |l, x| l.lcm(x));
@@ -839,21 +836,51 @@ fn radial_side_int(p: &V3, origin: &V3, dir: &V3, radii: &[Rat]) -> Orient {
     let dw = &dp * &doo;
     let w: [BigInt; 3] = core::array::from_fn(|i| &pi[i] * &doo - &oi[i] * &dp);
     let (m, _dm) = lift(dir);
-    // The radius sum over a common denominator, kept as (numerator, denominator).
-    let (mut rn, mut rd) = (BigInt::from(0), BigInt::from(1));
-    for r in radii {
-        let (n, d) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
-        rn = &rn * &d + &n * &rd;
-        rd *= d;
-    }
     let ww: BigInt = (0..3).map(|i| &w[i] * &w[i]).sum();
     let mm: BigInt = (0..3).map(|i| &m[i] * &m[i]).sum();
     let wm: BigInt = (0..3).map(|i| &w[i] * &m[i]).sum();
-    let val = &rd * &rd * (&ww * &mm - &wm * &wm) - &rn * &rn * &mm * (&dw * &dw);
-    match val.sign() {
+    (&ww * &mm - &wm * &wm, &mm * (&dw * &dw))
+}
+
+fn sign_of(x: &BigInt) -> Orient {
+    match x.sign() {
         num_bigint::Sign::Minus => Orient::Negative,
         num_bigint::Sign::NoSign => Orient::Zero,
         num_bigint::Sign::Plus => Orient::Positive,
+    }
+}
+
+/// [`cylinder_radial_side`]'s body: `sign(dist² − r²)` in integers, `sign(num·S − R·den)` for
+/// `r² = R/S`.
+fn radial_side_int(p: &V3, origin: &V3, dir: &V3, r2: &BigRat) -> Orient {
+    let (num, den) = radial_dist2_int(p, origin, dir);
+    sign_of(&(&num * r2.denom() - r2.numer() * &den))
+}
+
+/// **Three radicands on one integer scale**: `dist² = num/den` and the two squared radii `a`, `b`,
+/// each multiplied by `L² = (den·Ad·Bd)²` so that `√x·L = √(x·L²)` — the step that lets
+/// [`sqrt_root_sum_cmp`] compare `√dist²` with `√a ± √b` without a radical ever being formed.
+fn root_scale(num: &BigInt, den: &BigInt, a: &BigRat, b: &BigRat) -> (BigInt, BigInt, BigInt) {
+    let (an, ad) = (a.numer(), a.denom());
+    let (bn, bd) = (b.numer(), b.denom());
+    (
+        num * den * (ad * ad) * (bd * bd),
+        an * ad * (den * den) * (bd * bd),
+        bn * bd * (den * den) * (ad * ad),
+    )
+}
+
+/// `sign(√dist² − (√a + √b))` — the axis distance against a **radius sum** whose two radii are
+/// stated as squares: `Positive` clear of the sum, `Zero` at it, `Negative` inside it. Two
+/// readings of [`sqrt_root_sum_cmp`] (strict, then closed) name the boundary.
+fn root_sum_side(num: &BigInt, den: &BigInt, a: &BigRat, b: &BigRat) -> Orient {
+    let (x, aa, bb) = root_scale(num, den, a, b);
+    if sqrt_root_sum_cmp(&x, &aa, &bb, true) {
+        Orient::Positive
+    } else if sqrt_root_sum_cmp(&x, &aa, &bb, false) {
+        Orient::Zero
+    } else {
+        Orient::Negative
     }
 }
 
@@ -864,19 +891,20 @@ fn radial_side_int(p: &V3, origin: &V3, dir: &V3, radii: &[Rat]) -> Orient {
 /// One proposition, two arithmetics, because the distance between two lines is written
 /// differently depending on whether they are parallel:
 ///
-/// * **parallel** — the distance from `b`'s origin to `a`'s axis, which is the quadratic
-///   [`cylinder_radial_side`] already evaluates, with the **radius sum** as the radius.
+/// * **parallel** — the distance from `b`'s origin to `a`'s axis, the quantity
+///   [`cylinder_radial_side`] already evaluates, against the **radius sum**.
 /// * **otherwise** — the common perpendicular: `d = |W·C| / (Dw·|C|)` with `W = o_b − o_a` and
-///   `C = m_a × m_b`, so the test is `sign((W·C)²·rd² − rn²·Dw²·(C·C))`. Crossing axes
-///   (`W·C = 0`) fall out as distance zero, which is a refusal, as it should be.
+///   `C = m_a × m_b`, so `d² = (W·C)² / (Dw²·(C·C))`. Crossing axes (`W·C = 0`) fall out as
+///   distance zero, which is a refusal, as it should be.
 ///
 /// ★ The direction vectors' own denominators **cancel** in that ratio, and so does their
 /// magnitude — no normalization, and the numerators alone carry the answer (the same reason
-/// [`radial_side_int`] drops `_dm`).
+/// [`radial_dist2_int`] drops `_dm`).
 ///
-/// ★ The radius sum is formed **inside** the integer arithmetic in both branches —
-/// `r_a.checked_add(r_b)` would put an `i128` ceiling back in front of a question that has no
-/// width.
+/// ★ **The radii arrive as squares, so `r_a + r_b` is `√a + √b` and is never formed.** Both
+/// branches compare the distance with that sum through [`sqrt_root_sum_cmp`] — one subtraction and
+/// one squaring in integers — which is also what keeps an `i128` ceiling out of a question that
+/// has no width.
 ///
 /// Why this is one function rather than a parallel-only one plus a precondition: the caller
 /// that had to establish "these are parallel" answered the *other* case by refusing it, which
@@ -893,19 +921,27 @@ fn radial_side_int(p: &V3, origin: &V3, dir: &V3, radii: &[Rat]) -> Orient {
 /// no span and `planes::separated` along `C` reduces to `|W·C| > (r_a + r_b)|C|`, which is the
 /// line below; a face that reaches less than its circle — a fillet's quarter — then clears where
 /// the surface cannot. Same question, one rung down, and `nacre-ops` freezes the agreement.
-pub fn cylinders_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Rat) -> Orient {
+pub fn cylinders_clear(
+    o_a: &V3,
+    m_a: &V3,
+    r2_a: &BigRat,
+    o_b: &V3,
+    m_b: &V3,
+    r2_b: &BigRat,
+) -> Orient {
     debug_assert!(
         !is_zero3(m_a) && !is_zero3(m_b),
         "cylinder axis must be nonzero"
     );
     debug_assert!(
-        r_a > Rat::from_int(0) && r_b > Rat::from_int(0),
-        "cylinder radii must be positive"
+        r2_a.is_positive() && r2_b.is_positive(),
+        "cylinder squared radii must be positive"
     );
     if crate::parallel_rat(m_a, m_b) {
-        return radial_side_int(o_b, o_a, m_a, &[r_a, r_b]);
+        let (num, den) = radial_dist2_int(o_b, o_a, m_a);
+        return root_sum_side(&num, &den, r2_a, r2_b);
     }
-    skew_axes_clear(o_a, m_a, r_a, o_b, m_b, r_b)
+    skew_axes_clear(o_a, m_a, r2_a, o_b, m_b, r2_b)
 }
 
 /// **Is one of two parallel cylinders strictly inside the other?** — the sign of the axis distance
@@ -913,23 +949,34 @@ pub fn cylinders_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Ra
 /// strictly inside the other (a pin in a bore, a smaller pin on a boss), so the two never meet;
 /// `Zero` is an internal tangency (they touch along one line); `Positive` is neither, and says
 /// nothing on its own. The second sufficient clearance for a parallel pair beside
-/// [`cylinders_clear`]'s `dist > r_a + r_b`; the caller establishes parallelism. Same `BigInt`
-/// spelling as the sum, with the radii passed as parts `[r_a, −r_b]`.
-pub fn cylinders_nested(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, r_b: Rat) -> Orient {
+/// [`cylinders_clear`]'s `dist > r_a + r_b`; the caller establishes parallelism. With the radii
+/// stated as squares, `|√a − √b|` is `√big − √small`, so `dist < |r_a − r_b|` reads
+/// `√big > √dist² + √small` — [`sqrt_root_sum_cmp`] again, the difference never formed.
+pub fn cylinders_nested(o_a: &V3, m_a: &V3, r2_a: &BigRat, o_b: &V3, r2_b: &BigRat) -> Orient {
     debug_assert!(!is_zero3(m_a), "cylinder axis must be nonzero");
     debug_assert!(
-        r_a > Rat::from_int(0) && r_b > Rat::from_int(0),
-        "cylinder radii must be positive"
+        r2_a.is_positive() && r2_b.is_positive(),
+        "cylinder squared radii must be positive"
     );
-    let Some(neg_b) = Rat::from_int(0).checked_sub(r_b) else {
-        return Orient::Positive;
+    let (num, den) = radial_dist2_int(o_b, o_a, m_a);
+    let (big, small) = if r2_a >= r2_b {
+        (r2_a, r2_b)
+    } else {
+        (r2_b, r2_a)
     };
-    radial_side_int(o_b, o_a, m_a, &[r_a, neg_b])
+    let (x, bb, ss) = root_scale(&num, &den, big, small);
+    if sqrt_root_sum_cmp(&bb, &x, &ss, true) {
+        Orient::Negative
+    } else if sqrt_root_sum_cmp(&bb, &x, &ss, false) {
+        Orient::Zero
+    } else {
+        Orient::Positive
+    }
 }
 
 /// [`cylinders_clear`]'s non-parallel branch: the common-perpendicular distance against the
-/// radius sum, in `BigInt`.
-fn skew_axes_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Rat) -> Orient {
+/// radius sum, in `BigInt`, the radii as squares.
+fn skew_axes_clear(o_a: &V3, m_a: &V3, r2_a: &BigRat, o_b: &V3, m_b: &V3, r2_b: &BigRat) -> Orient {
     use num_bigint::BigInt;
     use num_integer::Integer;
     let lift = |v: &V3| -> ([BigInt; 3], BigInt) {
@@ -953,21 +1000,10 @@ fn skew_axes_clear(o_a: &V3, m_a: &V3, r_a: Rat, o_b: &V3, m_b: &V3, r_b: Rat) -
         &ma[2] * &mb[0] - &ma[0] * &mb[2],
         &ma[0] * &mb[1] - &ma[1] * &mb[0],
     ];
-    // The radius sum over a common denominator, kept as (numerator, denominator).
-    let (mut rn, mut rd) = (BigInt::from(0), BigInt::from(1));
-    for r in [r_a, r_b] {
-        let (n, d) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
-        rn = &rn * &d + &n * &rd;
-        rd *= d;
-    }
     let wc: BigInt = (0..3).map(|i| &w[i] * &c[i]).sum();
     let cc: BigInt = (0..3).map(|i| &c[i] * &c[i]).sum();
-    let val = &wc * &wc * (&rd * &rd) - &rn * &rn * (&dw * &dw) * &cc;
-    match val.sign() {
-        num_bigint::Sign::Minus => Orient::Negative,
-        num_bigint::Sign::NoSign => Orient::Zero,
-        num_bigint::Sign::Plus => Orient::Positive,
-    }
+    // `d² = (W·C)² / (Dw²·|C|²)`, against `√a + √b`.
+    root_sum_side(&(&wc * &wc), &(&dw * &dw * &cc), r2_a, r2_b)
 }
 
 /// The side of `plane` a line-point lies on — `n·p + d = (n·base + d) + s·(n·dir)`, then the sign

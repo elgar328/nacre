@@ -528,13 +528,31 @@ pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String
 /// **`√v` realized at `p` bits, with its error** — `v · (1/√v)`, so the one radical primitive this
 /// crate already has ([`inv_sqrt_bounded`]) is the only place a square root is approached.
 ///
-/// Crate-private: its only consumer is [`realize_quad`] (measured — no caller outside this crate).
-pub(crate) fn sqrt_bounded(v: Rat, p: usize) -> Option<HpBounded> {
+/// Consumers: [`realize_quad`], [`realize_seam_point`]'s irrational arm and [`sqrt_f64`] — every
+/// place a radius stated as its square is realized. `None` for a negative `v`.
+pub fn sqrt_bounded(v: Rat, p: usize) -> Option<HpBounded> {
+    if v < Rat::from_int(0) {
+        return None;
+    }
     if v == Rat::from_int(0) {
         return Some(HpBounded::exact(BigFloat::from_f64(0.0, p)));
     }
     let inv = inv_sqrt_bounded(v, p)?;
     Some(HpBounded::of_rat(v, p).mul(&inv, p))
+}
+
+/// [`sqrt_bounded`] for a wide radicand — `√(n/d) = n · (1/√(n·d))`, so the one `BigInt` radical
+/// primitive ([`inv_sqrt_bigint_bounded`]) is the only place a root is approached.
+pub fn sqrt_bounded_big(v: &BigRat, p: usize) -> Option<HpBounded> {
+    if v.is_negative() {
+        return None;
+    }
+    if v.is_zero() {
+        return Some(HpBounded::exact(BigFloat::from_f64(0.0, p)));
+    }
+    let nd = v.numer() * v.denom();
+    let inv = inv_sqrt_bigint_bounded(&nd, p)?;
+    Some(HpBounded::of_bigint(v.numer(), p).mul(&inv, p))
 }
 
 /// **A quadratic algebraic scalar `a + b√c` realized at `p` bits, with its error.**
@@ -566,12 +584,14 @@ pub fn affine_bounded(base: Rat, dir: Rat, s: &HpBounded, p: usize) -> Option<Hp
 /// **A point on a circle's `+ref` seam, realized at `p` bits.**
 ///
 /// `centre + r · e₁/|e₁|`, where `e₁` is the reference direction's component perpendicular to the
-/// axis. All of `centre`, `e₁` and `r` are exact rationals; the single irrational step is
-/// `1/|e₁|`, which is why this is one `inv_sqrt_bounded` and some exact arithmetic around it.
+/// axis and the radius is stated as its square `r2` (the cylinder truth's form). `centre`, `e₁`
+/// and `r2` are exact rationals. When `r2` is a rational's square — every radius a user writes —
+/// the single irrational step is `1/|e₁|`, one `inv_sqrt_bounded` with exact arithmetic around it,
+/// the road this always took; otherwise `√r2` is realized beside it.
 pub fn realize_seam_point(
     centre: [Rat; 3],
     e1: [Rat; 3],
-    radius: Rat,
+    r2: &BigRat,
     p: usize,
 ) -> Option<[HpBounded; 3]> {
     let mut sq = Rat::from_int(0);
@@ -579,7 +599,10 @@ pub fn realize_seam_point(
         sq = sq.checked_add(c.checked_mul(*c)?)?;
     }
     let inv = inv_sqrt_bounded(sq, p)?;
-    let scale = HpBounded::of_rat(radius, p).mul(&inv, p);
+    let scale = match rat_sqrt_exact_big(r2) {
+        Some(radius) => HpBounded::of_rat(radius, p).mul(&inv, p),
+        None => sqrt_bounded_big(r2, p)?.mul(&inv, p),
+    };
     let coord = |k: usize| {
         let radial = HpBounded::of_rat(e1[k], p).mul(&scale, p);
         HpBounded::of_rat(centre[k], p).add(&radial, p)
@@ -1269,9 +1292,9 @@ pub fn cyl_unit_frame(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([Rat; 3], [
     ))
 }
 
-/// **How a point's distance from a plane compares with `r`** — [`Orient::Negative`] inside the
-/// slab of half-width `r` about the plane, [`Orient::Zero`] exactly at distance `r`,
-/// [`Orient::Positive`] clear of it. Exact and total.
+/// **How a point's distance from a plane compares with `r`**, the radius stated as its square
+/// `r2` — [`Orient::Negative`] inside the slab of half-width `r` about the plane, [`Orient::Zero`]
+/// exactly at distance `r`, [`Orient::Positive`] clear of it. Exact and total.
 ///
 /// `sign((n·p + d)² − r²|n|²)`, which is `sign(dist² − r²)` scaled by the positive `|n|²` — no
 /// normalization and no square root. Stated in **plane** vocabulary on purpose: the cylinder
@@ -1279,26 +1302,24 @@ pub fn cyl_unit_frame(dir: &[Rat; 3], ref_dir: &[Rat; 3]) -> Option<([Rat; 3], [
 /// point of it), but nothing here is about cylinders.
 ///
 /// ★ **Not homogeneous in `p`** — the `d` term is why — so `p`'s denominator and the radius'
-/// ride into the formula instead of dropping out: for `coeffs = C/Dc`, `p = P/Dp`, `r = R/S`
-/// the answer is `sign(S²(C₀₋₂·P + C₃·Dp)² − R²|C₀₋₂|²Dp²)` (`Dc²` *is* a positive common factor
+/// ride into the formula instead of dropping out: for `coeffs = C/Dc`, `p = P/Dp`, `r² = R/S`
+/// the answer is `sign(S(C₀₋₂·P + C₃·Dp)² − R|C₀₋₂|²Dp²)` (`Dc²` *is* a positive common factor
 /// and does cancel). Dropping `Dp` instead — the obvious spelling — states a different
 /// proposition, and disagrees with the truth on 1.3% of mixed-denominator inputs (measured).
 ///
-/// **Precondition:** `r ≥ 0`; a negative radius has no distance to compare with.
-pub fn point_plane_clearance_rat(coeffs: &[Rat; 4], p: &[Rat; 3], r: Rat) -> Orient {
+/// **Precondition:** `r2 ≥ 0`; a negative squared radius has no distance to compare with.
+pub fn point_plane_clearance_rat(coeffs: &[Rat; 4], p: &[Rat; 3], r2: &BigRat) -> Orient {
     use num_bigint::BigInt;
     debug_assert!(
-        r >= Rat::from_int(0),
-        "clearance compares against a non-negative radius"
+        !r2.is_negative(),
+        "clearance compares against a non-negative squared radius"
     );
     let (c, _dc) = lift4(coeffs);
     let (pp, dp) = lift3(p);
-    let (rn, rd) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
+    let (rn, rd): (BigInt, BigInt) = (r2.numer().clone(), r2.denom().clone());
     let dot: BigInt = (0..3).map(|i| &c[i] * &pp[i]).sum::<BigInt>() + &c[3] * &dp;
     let nn: BigInt = (0..3).map(|i| &c[i] * &c[i]).sum();
-    orient_of(big_sign(
-        &(&rd * &rd * (&dot * &dot) - &rn * &rn * nn * (&dp * &dp)),
-    ))
+    orient_of(big_sign(&(&rd * (&dot * &dot) - &rn * nn * (&dp * &dp))))
 }
 
 /// **Does `p` satisfy these coefficients exactly?** — `n·p + c = 0`, at any width.
@@ -1363,8 +1384,8 @@ pub enum StripSide {
 /// [`point_plane_clearance_rat`], which is the cheaper question and the one that decides
 /// emptiness. That ordering makes this function total with no precondition to forget.
 ///
-/// **Preconditions:** `r ≥ 0`; `n · m = 0` (a plane that is not parallel to the axis cuts a conic,
-/// not a strip); and **`p` lies on that plane** — the decomposition takes the perpendicular
+/// **Preconditions:** `r2 ≥ 0` (the radius stated as its square); `n · m = 0` (a plane that is not
+/// parallel to the axis cuts a conic, not a strip); and **`p` lies on that plane** — the decomposition takes the perpendicular
 /// distance from the *axis*, so an off-plane point would be judged against a distance that is not
 /// its own. All three are `debug_assert`ed.
 pub fn cylinder_strip_side(
@@ -1372,13 +1393,13 @@ pub fn cylinder_strip_side(
     p: &MeetPoint,
     o: &[Rat; 3],
     m: &[Rat; 3],
-    r: Rat,
+    r2: &BigRat,
 ) -> StripSide {
     // ★ **A door, so the two can never drift.** A point is a disk of radius zero, and at that
     // radius the margin form's answers collapse onto this one exactly: `Crosses` needs a strictly
     // positive width to be possible at all, and the remaining comparison is term-for-term the one
     // this function used to spell for itself.
-    cylinder_strip_side_margin(coeffs, p, Rat::from_int(0), o, m, r)
+    cylinder_strip_side_margin(coeffs, p, &BigRat::zero(), o, m, r2)
 }
 
 /// The three squared quantities the strip questions compare, in **one common positive scale** —
@@ -1391,9 +1412,10 @@ pub fn cylinder_strip_side(
 /// ```
 ///
 /// A disk of radius `ρ` about `p` sweeps `U ± ρ'`, and the cylinder's two rulings stand at
-/// `U = ±W`; every question below is a comparison among those three. Cleared of denominators the
-/// scale is `dp²·d_o²·rd²·sd²` times the `1/(dc²dm²)` the plane's and direction's own
-/// denominators contribute — positive throughout, so only signs survive.
+/// `U = ±W`; every question below is a comparison among those three. The radii arrive **squared**
+/// (`r2 = r²`, `rho2 = ρ²`, the form every radius takes in this family), so cleared of
+/// denominators the scale is `dp²·d_o²·rd·sd` times the `1/(dc²dm²)` the plane's and direction's
+/// own denominators contribute — positive throughout, so only signs survive.
 struct StripScale {
     /// `sign(U)` — which side of the axis plane the centre is on.
     u_sign: Orient,
@@ -1407,14 +1429,14 @@ struct StripScale {
 fn strip_scale(
     coeffs: &[Rat; 4],
     p: &MeetPoint,
-    rho: Rat,
+    rho2: &BigRat,
     o: &[Rat; 3],
     m: &[Rat; 3],
-    r: Rat,
+    r2: &BigRat,
 ) -> StripScale {
     use num_bigint::BigInt;
-    debug_assert!(r >= Rat::from_int(0), "a radius is not negative");
-    debug_assert!(rho >= Rat::from_int(0), "a margin is not negative");
+    debug_assert!(!r2.is_negative(), "a squared radius is not negative");
+    debug_assert!(!rho2.is_negative(), "a squared margin is not negative");
     debug_assert!(
         dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], m) == Orient::Zero,
         "the strip only exists on a plane parallel to the axis"
@@ -1427,8 +1449,8 @@ fn strip_scale(
     let (oo, d_o) = lift3(o);
     let (mm, _dm) = lift3(m);
     let (pp, dp) = p.lift();
-    let (rn, rd) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
-    let (sn, sd) = (BigInt::from(rho.numer()), BigInt::from(rho.denom()));
+    let (rn, rd): (BigInt, BigInt) = (r2.numer().clone(), r2.denom().clone());
+    let (sn, sd): (BigInt, BigInt) = (rho2.numer().clone(), rho2.denom().clone());
     let n = [c[0].clone(), c[1].clone(), c[2].clone()];
     let dot = |x: &[BigInt; 3], y: &[BigInt; 3]| -> BigInt {
         (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
@@ -1452,17 +1474,14 @@ fn strip_scale(
     let m2 = dot(&mm, &mm);
     StripScale {
         u_sign: orient_of(big_sign(&u)),
-        uu: &u * &u * (&rd * &rd) * (&sd * &sd),
-        ww: (&rn * &rn * &nn * (&d_o * &d_o) - &g * &g * (&rd * &rd))
-            * &m2
-            * (&dp * &dp)
-            * (&sd * &sd),
-        rr: (&sn * &sn) * &nn * &m2 * (&dp * &dp) * (&d_o * &d_o) * (&rd * &rd),
+        uu: &u * &u * &rd * &sd,
+        ww: (&rn * &nn * (&d_o * &d_o) - &g * &g * &rd) * &m2 * (&dp * &dp) * &sd,
+        rr: &sn * &nn * &m2 * (&dp * &dp) * (&d_o * &d_o) * &rd,
     }
 }
 
-/// **Where a disk of radius `rho` about `p`, lying on the plane, stands relative to the strip.**
-/// Exact and total, at any width and any margin.
+/// **Where a disk of squared radius `rho2` about `p`, lying on the plane, stands relative to the
+/// strip.** Exact and total, at any width and any margin.
 ///
 /// The four answers are what a piece with **extent** can say where a point could only say three:
 /// clear on the `+` side, clear on the `−` side, reaching the strip without spanning a boundary,
@@ -1482,37 +1501,37 @@ fn strip_scale(
 pub fn cylinder_strip_side_margin(
     coeffs: &[Rat; 4],
     p: &MeetPoint,
-    rho: Rat,
+    rho2: &BigRat,
     o: &[Rat; 3],
     m: &[Rat; 3],
-    r: Rat,
+    r2: &BigRat,
 ) -> StripSide {
     cylinder_strip_side_extent(
         coeffs,
         &StripReach {
-            lo: (p, rho),
+            lo: (p, rho2),
             hi: None,
         },
         o,
         m,
-        r,
+        r2,
     )
 }
 
 /// **A piece's reach across the strip, as its two ends** — each end a point on the plane and the
-/// margin the doors add to it.
+/// **square** of the margin the doors add to it (`ρ²`, the form every radius takes in this family).
 ///
 /// `hi = None` is the symmetric piece a point or a disk is: one end answers both. An arc's ends
 /// differ, and stating them is the only way that shape can ask these questions at all (cells ⑱·⑲).
 pub struct StripReach<'a> {
-    pub lo: (&'a MeetPoint, Rat),
-    pub hi: Option<(&'a MeetPoint, Rat)>,
+    pub lo: (&'a MeetPoint, &'a BigRat),
+    pub hi: Option<(&'a MeetPoint, &'a BigRat)>,
 }
 
 /// **Where a piece whose extent across the strip is stated by its two *ends* stands** — the
 /// general form of [`cylinder_strip_side_margin`], and the only one an **arc** can use.
 ///
-/// An end is a point on the plane and a margin: the low end is `U(p_lo) − ρ_lo'`, the high end
+/// An end is a point on the plane and a squared margin: the low end is `U(p_lo) − ρ_lo'`, the high end
 /// `U(p_hi) + ρ_hi'`. A point is both ends with no margin, a disk is one point with the same
 /// margin twice — those pass `hi = None` — and an arc's two ends differ, because its angular
 /// extent reaches further one way than the other.
@@ -1529,7 +1548,7 @@ pub fn cylinder_strip_side_extent(
     reach: &StripReach<'_>,
     o: &[Rat; 3],
     m: &[Rat; 3],
-    r: Rat,
+    r2: &BigRat,
 ) -> StripSide {
     use num_bigint::BigInt;
     let (lo, hi) = (reach.lo, reach.hi);
@@ -1538,7 +1557,7 @@ pub fn cylinder_strip_side_extent(
         Orient::Negative => StripSide::Minus,
         Orient::Zero => StripSide::Inside,
     };
-    let s = strip_scale(coeffs, lo.0, lo.1, o, m, r);
+    let s = strip_scale(coeffs, lo.0, lo.1, o, m, r2);
     // The plane clears the cylinder: no strip exists, so nothing can reach it.
     if s.ww.sign() == num_bigint::Sign::Minus {
         return side(s.u_sign);
@@ -1564,7 +1583,7 @@ pub fn cylinder_strip_side_extent(
     if s.u_sign == Orient::Positive && crate::quad::sqrt_exceeds_root_sum(&s.uu, &s.ww, &s.rr) {
         return StripSide::Plus;
     }
-    let t = strip_scale(coeffs, hi.0, hi.1, o, m, r);
+    let t = strip_scale(coeffs, hi.0, hi.1, o, m, r2);
     if t.ww.sign() == num_bigint::Sign::Minus {
         return side(t.u_sign);
     }
@@ -1589,21 +1608,21 @@ pub fn cylinder_strip_side_extent(
 pub fn cylinder_ruling_reached(
     coeffs: &[Rat; 4],
     p: &MeetPoint,
-    rho: Rat,
+    rho2: &BigRat,
     o: &[Rat; 3],
     m: &[Rat; 3],
-    r: Rat,
+    r2: &BigRat,
     side: i8,
 ) -> bool {
     cylinder_ruling_reached_extent(
         coeffs,
         &StripReach {
-            lo: (p, rho),
+            lo: (p, rho2),
             hi: None,
         },
         o,
         m,
-        r,
+        r2,
         side,
         true,
     )
@@ -1631,13 +1650,13 @@ pub fn cylinder_ruling_reached_extent(
     reach: &StripReach<'_>,
     o: &[Rat; 3],
     m: &[Rat; 3],
-    r: Rat,
+    r2: &BigRat,
     side: i8,
     touch_counts: bool,
 ) -> bool {
     use num_bigint::Sign;
     let (lo, hi) = (reach.lo, reach.hi);
-    let s_lo = strip_scale(coeffs, lo.0, lo.1, o, m, r);
+    let s_lo = strip_scale(coeffs, lo.0, lo.1, o, m, r2);
     if s_lo.ww.sign() == Sign::Minus {
         return false; // the plane clears the cylinder — it has no ruling here at all
     }
@@ -1650,7 +1669,7 @@ pub fn cylinder_ruling_reached_extent(
     let s_hi = match hi {
         None => s_lo,
         Some(h) => {
-            let t = strip_scale(coeffs, h.0, h.1, o, m, r);
+            let t = strip_scale(coeffs, h.0, h.1, o, m, r2);
             if t.ww.sign() == Sign::Minus {
                 return false;
             }
@@ -1805,10 +1824,10 @@ pub fn cylinder_strip_side_branch(
     s: &quad::QuadVal,
     o: &[Rat; 3],
     m: &[Rat; 3],
-    r: Rat,
+    r2: &BigRat,
 ) -> StripSide {
     use num_bigint::BigInt;
-    debug_assert!(r >= Rat::from_int(0), "a radius is not negative");
+    debug_assert!(!r2.is_negative(), "a squared radius is not negative");
     debug_assert!(
         dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], m) == Orient::Zero,
         "the strip only exists on a plane parallel to the axis"
@@ -1817,7 +1836,7 @@ pub fn cylinder_strip_side_branch(
     let (oo, d_o) = lift3(o);
     let (mm, _dm) = lift3(m);
     let (pa, pb, dp, big_c) = lift_branch(line, s);
-    let (rn, rd) = (BigInt::from(r.numer()), BigInt::from(r.denom()));
+    let (rn, rd): (BigInt, BigInt) = (r2.numer().clone(), r2.denom().clone());
     let n = [c[0].clone(), c[1].clone(), c[2].clone()];
     let dot = |x: &[BigInt; 3], y: &[BigInt; 3]| -> BigInt {
         (0..3).map(|i| &x[i] * &y[i]).sum::<BigInt>()
@@ -1839,11 +1858,10 @@ pub fn cylinder_strip_side_branch(
     let nn = dot(&n, &n);
     let m2 = dot(&mm, &mm);
     // `U² = (Ua² + Ub²C) + 2·Ua·Ub·√C`, and the right-hand side is rational — so the difference
-    // is one `X + Y√C` and the tower reads its sign.
-    let rd2 = &rd * &rd;
-    let rhs = (&rn * &rn * &nn * (&d_o * &d_o) - &g * &g * &rd2) * &m2 * (&dp * &dp);
-    let x = (&ua * &ua + &ub * &ub * &big_c) * &rd2 - rhs;
-    let y = BigInt::from(2) * &ua * &ub * &rd2;
+    // is one `X + Y√C` and the tower reads its sign. `rd` is the squared radius' denominator.
+    let rhs = (&rn * &nn * (&d_o * &d_o) - &g * &g * &rd) * &m2 * (&dp * &dp);
+    let x = (&ua * &ua + &ub * &ub * &big_c) * &rd - rhs;
+    let y = BigInt::from(2) * &ua * &ub * &rd;
     match quad::sign1_int(&x, &y, &big_c) {
         Orient::Positive if u_sign == Orient::Positive => StripSide::Plus,
         Orient::Positive => StripSide::Minus,
@@ -2472,11 +2490,12 @@ pub fn sign_a_plus_b_pi_int(a: &num_bigint::BigInt, b: &num_bigint::BigInt) -> O
 }
 
 /// A circular arc for [`winding_sign_quarter_arcs`]: `start → end` about `center`,
-/// counter-clockwise when `ccw`; `start == end` is the whole circle.
+/// counter-clockwise when `ccw`; `start == end` is the whole circle. `r2` is the squared radius —
+/// the form the sketch truth holds, and the one the area term wants.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QuarterArc {
     pub center: [Rat; 2],
-    pub radius: Rat,
+    pub r2: Rat,
     pub start: [Rat; 2],
     pub end: [Rat; 2],
     pub ccw: bool,
@@ -2510,7 +2529,7 @@ pub fn winding_sign_quarter_arcs(lines: &[[[Rat; 2]; 2]], arcs: &[QuarterArc]) -
         for c in a.center.iter().chain(a.start.iter()).chain(a.end.iter()) {
             fold(c);
         }
-        fold(&a.radius);
+        fold(&a.r2);
     }
     let int = |r: &Rat| -> BigInt { BigInt::from(r.numer()) * (&den / BigInt::from(r.denom())) };
     let pt = |p: &[Rat; 2]| -> [BigInt; 2] { [int(&p[0]), int(&p[1])] };
@@ -2544,8 +2563,9 @@ pub fn winding_sign_quarter_arcs(lines: &[[[Rat; 2]; 2]], arcs: &[QuarterArc]) -
             (false, 4) => -4,
             (false, q) => q - 4,
         };
-        let r = int(&arc.radius);
-        b_int += &r * &r * BigInt::from(k);
+        // `r²` is stated, so `int` puts it in units of `den`; one more `den` brings it to the
+        // `den²` the area terms carry.
+        b_int += int(&arc.r2) * &den * BigInt::from(k);
     }
     sign_a_plus_b_pi_int(&a_int, &b_int)
 }
@@ -2557,6 +2577,92 @@ pub fn sign_a_plus_b_pi(a: Rat, b: Rat) -> Option<Orient> {
     let (an, ad) = (BigInt::from(a.numer()), BigInt::from(a.denom()));
     let (bn, bd) = (BigInt::from(b.numer()), BigInt::from(b.denom()));
     sign_a_plus_b_pi_int(&(an * &bd), &(bn * &ad))
+}
+
+/// **A rational of any width** — the truth's spelling for a quantity that is the *square* of a
+/// stated number: a cylinder's `r²`. Every `Rat` has a square, and this is where it fits when
+/// `i128` does not (a 16-digit decimal below `1e-4` has a denominator whose square leaves `i128`),
+/// so a statement is never refused for its square being wide — the reason `MeetPoint::Wide`
+/// stands beside `Narrow`. Lowest terms, positive denominator (`Ratio`'s invariant).
+///
+/// A *storage and door* type: the exact predicates lift to `BigInt` anyway and take it directly;
+/// the few `Rat` arithmetic sites on a squared radius ask [`BigRat::narrow`] and decline exactly
+/// where they used to overflow on `r·r`.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BigRat(Ratio<num_bigint::BigInt>);
+
+impl BigRat {
+    pub fn from_rat(r: Rat) -> BigRat {
+        BigRat(Ratio::new(
+            num_bigint::BigInt::from(r.numer()),
+            num_bigint::BigInt::from(r.denom()),
+        ))
+    }
+
+    /// `r²`, exactly — the one product this type exists for. Never overflows; `r` in lowest terms
+    /// makes `r²` so too.
+    pub fn square_of(r: Rat) -> BigRat {
+        let (n, d) = (
+            num_bigint::BigInt::from(r.numer()),
+            num_bigint::BigInt::from(r.denom()),
+        );
+        BigRat(Ratio::new_raw(&n * &n, &d * &d))
+    }
+
+    pub fn zero() -> BigRat {
+        BigRat(Ratio::from_integer(num_bigint::BigInt::from(0)))
+    }
+
+    pub fn numer(&self) -> &num_bigint::BigInt {
+        self.0.numer()
+    }
+
+    pub fn denom(&self) -> &num_bigint::BigInt {
+        self.0.denom()
+    }
+
+    /// The `Rat` this is, when both parts fit `i128` — `None` is width, not a value.
+    pub fn narrow(&self) -> Option<Rat> {
+        use num_traits::ToPrimitive;
+        Rat::new(self.0.numer().to_i128()?, self.0.denom().to_i128()?)
+    }
+
+    pub fn is_positive(&self) -> bool {
+        self.0.numer().sign() == num_bigint::Sign::Plus
+    }
+
+    pub fn is_negative(&self) -> bool {
+        self.0.numer().sign() == num_bigint::Sign::Minus
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.0.numer().sign() == num_bigint::Sign::NoSign
+    }
+
+    /// `self · r`, exactly.
+    pub fn mul_rat(&self, r: Rat) -> BigRat {
+        BigRat(&self.0 * BigRat::from_rat(r).0)
+    }
+}
+
+impl From<Rat> for BigRat {
+    fn from(r: Rat) -> BigRat {
+        BigRat::from_rat(r)
+    }
+}
+
+/// [`rat_sqrt_exact`] for a wide radicand: the root, when it is rational **and** fits `Rat` —
+/// which every stated radius does, its square being what widened.
+pub fn rat_sqrt_exact_big(v: &BigRat) -> Option<Rat> {
+    if v.is_negative() {
+        return None;
+    }
+    let (n, d) = (v.numer(), v.denom());
+    let (rn, rd) = (n.sqrt(), d.sqrt());
+    if &rn * &rn != *n || &rd * &rd != *d {
+        return None;
+    }
+    BigRat(Ratio::new_raw(rn, rd)).narrow()
 }
 
 pub fn rat_sqrt_exact(v: Rat) -> Option<Rat> {
@@ -2746,6 +2852,35 @@ fn realize_inv_sqrt_rounded(v: Rat) -> f64 {
 /// [`inv_sqrt_bounded`] for a `v` already known positive.
 fn realize_inv_sqrt_memoized(v: Rat, prec: usize) -> HpBounded {
     inv_sqrt_bounded(v, prec).expect("v > 0 checked by the caller")
+}
+
+/// **`√v` as the `f64` nearest the true value**, or `None` when `v < 0` — the f64 realization of
+/// a radius stated as its square, at any width.
+///
+/// The twin of [`inv_sqrt_f64`]: the exact branch runs first ([`rat_sqrt_exact`] — every radius a
+/// user writes as a decimal lands here, and comes back as the `to_f64` of the rational it always
+/// was, bit for bit), and only a genuinely irrational root reaches the 128 → 256 bit ladder, under
+/// the same correct-rounding contract. `√v` is nonzero for `v > 0`, so the interval never
+/// straddles zero and [`round_to_f64`] cannot decline forever; the documented fallback to the
+/// midpoint is kept for the same reason the inverse has it.
+pub fn sqrt_f64(v: &BigRat) -> Option<f64> {
+    if v.is_negative() {
+        return None;
+    }
+    if let Some(r) = rat_sqrt_exact_big(v) {
+        return Some(r.to_f64());
+    }
+    for prec in [128usize, 256] {
+        let HpBounded {
+            value: z,
+            error: rad,
+        } = sqrt_bounded_big(v, prec)?;
+        if let Some(f) = round_to_f64(&z, rad, prec) {
+            return Some(f);
+        }
+    }
+    let z = sqrt_bounded_big(v, 256)?.value;
+    Some(to_f64_exact(&z).unwrap_or(f64::NAN))
 }
 
 /// **How far the `1/√v` the caller was handed sits from the true one** — measured against an
@@ -3634,7 +3769,7 @@ mod tests {
         // A whole circle's winding: no straight steps, one full turn — 2·area = 2πr².
         let circle = QuarterArc {
             center: [r(0), r(0)],
-            radius: r(5),
+            r2: r(25),
             start: [r(5), r(0)],
             end: [r(5), r(0)],
             ccw: true,
@@ -3666,14 +3801,14 @@ mod tests {
         let slot_arcs = [
             QuarterArc {
                 center: [r(30), r(0)],
-                radius: r(5),
+                r2: r(25),
                 start: [r(30), r(-5)],
                 end: [r(30), r(5)],
                 ccw: true,
             },
             QuarterArc {
                 center: [r(0), r(0)],
-                radius: r(5),
+                r2: r(25),
                 start: [r(0), r(5)],
                 end: [r(0), r(-5)],
                 ccw: true,
@@ -3686,7 +3821,7 @@ mod tests {
         // A 60° arc is not a quarter-turn multiple: undecided, not guessed.
         let sixty = QuarterArc {
             center: [r(0), r(0)],
-            radius: r(2),
+            r2: r(4),
             start: [r(2), r(0)],
             end: [r(1), r(1)], // not even on the circle — the shape of the refusal is the same
             ccw: true,
@@ -4652,7 +4787,7 @@ mod tests {
                 })
             })();
             if let Some(want) = truth {
-                prop_assert_eq!(point_plane_clearance_rat(&coeffs, &p, r), want,
+                prop_assert_eq!(point_plane_clearance_rat(&coeffs, &p, &BigRat::square_of(r)), want,
                     "coeffs {:?} p {:?} r {:?}", coeffs, p, r);
             }
         }
@@ -6149,7 +6284,7 @@ mod tests {
                 p,
                 &r3([ox, 10, -1]),
                 &r3([0, 0, 1]),
-                Rat::from_int(3),
+                &BigRat::from(Rat::from_int(9)), // r = 3, stated as r²
             )
         }
 
@@ -6249,7 +6384,7 @@ mod tests {
                 &p,
                 &r3([8, 10, -1]),
                 &r3([0, 0, 7]),
-                Rat::from_int(3),
+                &BigRat::from(Rat::from_int(9)),
             );
             assert_eq!(plain, scaled);
         }
@@ -6444,21 +6579,86 @@ mod decimal_realization {
         assert_eq!(round_to_digits(&v, e, 5).as_deref(), Some("7.00000"));
     }
 
-    /// A seam point is the centre plus a radius along the normalized perpendicular.
+    /// A seam point is the centre plus a radius along the normalized perpendicular — the radius
+    /// stated as its square, exact when that square has a rational root and realized otherwise.
     #[test]
     fn a_seam_point_lands_on_the_rim() {
         let r = |n: i128| Rat::from_int(n);
-        // centre at origin, e1 = +x (already unit), radius 5 -> (5, 0, 0) exactly.
-        let out = realize_seam_point([r(0); 3], [r(1), r(0), r(0)], r(5), 256).expect("ok");
+        // centre at origin, e1 = +x (already unit), r² = 25 -> (5, 0, 0) exactly.
+        let big = |n: i128| BigRat::from(r(n));
+        let out = realize_seam_point([r(0); 3], [r(1), r(0), r(0)], &big(25), 256).expect("ok");
         let got: Vec<_> = out
             .iter()
             .map(|b| round_to_digits(&b.value, b.error, 10).expect("decided"))
             .collect();
         assert_eq!(got, ["5.0000000000", "0.0000000000", "0.0000000000"]);
         // e1 = (1,1,0): the seam is at radius/√2 on each of x and y.
-        let out = realize_seam_point([r(0); 3], [r(1), r(1), r(0)], r(1), 512).expect("ok");
+        let out = realize_seam_point([r(0); 3], [r(1), r(1), r(0)], &big(1), 512).expect("ok");
         let x = round_to_digits(&out[0].value, out[0].error, 20).expect("decided");
         assert_eq!(x, "0.70710678118654752440");
+        // r² = 2 with e1 = +x: no rational radius exists, and the seam is at √2, realized.
+        let out = realize_seam_point([r(0); 3], [r(1), r(0), r(0)], &big(2), 512).expect("ok");
+        let x = round_to_digits(&out[0].value, out[0].error, 20).expect("decided");
+        assert_eq!(x, "1.41421356237309504880");
+        // A wide square: `r = 5.000000000000001e-8` has a square no `Rat` holds, and the seam is
+        // its exact `r` again — the road a stated radius always took.
+        let wide = Rat::from_decimal(5.000000000000001e-8).expect("in the window");
+        assert!(
+            wide.checked_mul(wide).is_none(),
+            "the fixture's square must leave i128"
+        );
+        let out = realize_seam_point([r(0); 3], [r(1), r(0), r(0)], &BigRat::square_of(wide), 256)
+            .expect("ok");
+        assert_eq!(
+            round_to_digits(&out[0].value, out[0].error, 24).expect("decided"),
+            "0.000000050000000000000010"
+        );
+    }
+
+    /// `sqrt_f64`: a rational's square comes back as that rational's own `to_f64`, bit for bit —
+    /// the road every stated radius takes — and a non-square radicand as the correctly rounded
+    /// root. The oracle for the second half is the hardware `sqrt`, which is correctly rounded
+    /// **when its input is exact**, so the radicands are dyadic (`n / 2^k`) on purpose: a
+    /// radicand that itself rounds would compare two roundings against one.
+    #[test]
+    fn sqrt_f64_is_exact_on_squares_and_correctly_rounded_otherwise() {
+        for k in 1..=50i128 {
+            for d in [1i128, 3, 7, 10, 1000] {
+                let r = Rat::new(k, d).unwrap();
+                assert_eq!(
+                    sqrt_f64(&BigRat::square_of(r)).map(f64::to_bits),
+                    Some(r.to_f64().to_bits()),
+                    "{r:?}"
+                );
+            }
+        }
+        for (n, d) in [
+            (2i128, 1i128),
+            (3, 1),
+            (1, 2),
+            (5, 4),
+            (7, 8),
+            (10_000_000_019, 1),
+            (3, 1 << 40),
+        ] {
+            let v = Rat::new(n, d).unwrap();
+            assert!(rat_sqrt_exact(v).is_none(), "{v:?} must not be a square");
+            let want = (n as f64 / d as f64).sqrt(); // exact quotient, then one correct rounding
+            assert_eq!(
+                sqrt_f64(&BigRat::from(v)).map(f64::to_bits),
+                Some(want.to_bits()),
+                "{v:?}"
+            );
+        }
+        assert_eq!(sqrt_f64(&BigRat::zero()), Some(0.0));
+        assert_eq!(sqrt_f64(&BigRat::from(Rat::from_int(-1))), None);
+        // A wide square's root is the stated radius, bit for bit — the cache's number for a
+        // sub-micron cylinder stated to f64's last digit.
+        let wide = Rat::from_decimal(5.000000000000001e-8).expect("in the window");
+        assert_eq!(
+            sqrt_f64(&BigRat::square_of(wide)).map(f64::to_bits),
+            Some(wide.to_f64().to_bits())
+        );
     }
 
     /// A sweep for the carry and tie cases the hand-picked table cannot reach.

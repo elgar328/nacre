@@ -316,8 +316,13 @@ mod props {
 // ──────────────────── plane · plane · cylinder (commit 2) ────────────────────
 
 /// The unit z-cylinder at the origin, radius 1 — the degenerate ladder's stage.
-fn zcyl() -> ([Rat; 3], [Rat; 3], Rat) {
-    ([ri(0), ri(0), ri(0)], [ri(0), ri(0), ri(1)], ri(1))
+fn zcyl() -> ([Rat; 3], [Rat; 3], crate::BigRat) {
+    ([ri(0), ri(0), ri(0)], [ri(0), ri(0), ri(1)], big(1))
+}
+
+/// A squared radius stated as a small integer.
+fn big(r2: i128) -> crate::BigRat {
+    crate::BigRat::from(ri(r2))
 }
 
 fn plane(a: i128, b: i128, c: i128, d: i128) -> [Rat; 4] {
@@ -329,7 +334,7 @@ fn plane(a: i128, b: i128, c: i128, d: i128) -> [Rat; 4] {
 fn the_degenerate_ladder_names_every_outcome() {
     let (o, m, r1) = zcyl();
     let meet = |p1: &[Rat; 4], p2: &[Rat; 4]| {
-        plane_plane_cylinder(p1, p2, &o, &m, r1).expect("no overflow in fixtures")
+        plane_plane_cylinder(p1, p2, &o, &m, &r1).expect("no overflow in fixtures")
     };
     // One plane, two spellings (x = 1 and 2x = 2).
     assert!(matches!(
@@ -395,10 +400,10 @@ fn the_degenerate_ladder_names_every_outcome() {
 fn a_tilted_meet_realizes_onto_its_carriers() {
     let o = [ri(1), r(-1, 2), ri(2)];
     let m = [ri(1), ri(2), ri(2)];
-    let radius = r(3, 2);
+    let radius = crate::BigRat::from(r(9, 4)); // r = 3/2, stated as r²
     let p1 = plane(1, 0, 0, -1); // x = 1 (contains the base point)
     let p2 = plane(0, 0, 1, -2); // z = 2
-    match plane_plane_cylinder(&p1, &p2, &o, &m, radius).expect("fits") {
+    match plane_plane_cylinder(&p1, &p2, &o, &m, &radius).expect("fits") {
         CylinderMeet::Pair { line, s } => {
             for sv in &s {
                 let p = line.point_f64(sv);
@@ -429,7 +434,7 @@ fn the_circular_order_matches_the_realized_angles() {
     let mut points: Vec<(MeetLine, QuadVal)> = Vec::new();
     for (cn, cd) in [(-9, 10), (-1, 2), (0, 1), (1, 2), (9, 10)] {
         let cut = [ri(1), ri(0), ri(0), r(-cn, cd)]; // x = cn/cd
-        match plane_plane_cylinder(&cut, &plane(0, 0, 1, 0), &o, &m, radius).expect("fits") {
+        match plane_plane_cylinder(&cut, &plane(0, 0, 1, 0), &o, &m, &radius).expect("fits") {
             CylinderMeet::Pair { line, s } => {
                 for sv in s {
                     points.push((line.clone(), sv));
@@ -477,8 +482,8 @@ fn the_seam_point_is_surfaced_not_ranked() {
     let (o, m, radius) = zcyl();
     let ref_dir = [ri(1), ri(0), ri(0)];
     // y = 0 ∧ z = 0: the diameter through the seam — points (±1, 0, 0).
-    let meet =
-        plane_plane_cylinder(&plane(0, 1, 0, 0), &plane(0, 0, 1, 0), &o, &m, radius).expect("fits");
+    let meet = plane_plane_cylinder(&plane(0, 1, 0, 0), &plane(0, 0, 1, 0), &o, &m, &radius)
+        .expect("fits");
     let CylinderMeet::Pair { line, s } = meet else {
         panic!("expected Pair, got {meet:?}");
     };
@@ -512,7 +517,7 @@ fn the_exact_order_outresolves_f64() {
     let c2 = r(500_000_000_000_000_001, 1_000_000_000_000_000_000); // 1/2 + 1e−18
     let upper = |c: Rat| -> (MeetLine, QuadVal) {
         let cut = [ri(1), ri(0), ri(0), ri(0).checked_sub(c).unwrap()];
-        match plane_plane_cylinder(&cut, &z0, &o, &m, radius).expect("fits") {
+        match plane_plane_cylinder(&cut, &z0, &o, &m, &radius).expect("fits") {
             CylinderMeet::Pair { line, s } => {
                 let sv = if line.point_f64(&s[0])[1] > 0.0 {
                     s[0]
@@ -553,7 +558,7 @@ fn the_radial_side_knows_its_shell() {
     ];
     for (p, want) in cases {
         assert_eq!(
-            cylinder_radial_side(&p, &o, &m, radius),
+            cylinder_radial_side(&p, &o, &m, &radius),
             want,
             "point {p:?}"
         );
@@ -561,14 +566,14 @@ fn the_radial_side_knows_its_shell() {
     // A tilted rational axis: cross-check against the f64 realization.
     let o2 = [ri(1), r(-1, 2), ri(2)];
     let m2 = [ri(1), ri(2), ri(2)];
-    let r2 = r(3, 2);
+    let r2 = crate::BigRat::from(r(9, 4)); // r = 3/2, stated as r²
     for p in [
         [ri(1), ri(1), ri(1)],
         [ri(3), ri(3), ri(3)],
         [ri(1), r(-1, 2), ri(2)],
         [r(5, 2), r(5, 2), ri(5)],
     ] {
-        let got = cylinder_radial_side(&p, &o2, &m2, r2);
+        let got = cylinder_radial_side(&p, &o2, &m2, &r2);
         let pf: Vec<f64> = p.iter().map(|x| x.to_f64()).collect();
         let w = [pf[0] - 1.0, pf[1] + 0.5, pf[2] - 2.0];
         let mf = [1.0, 2.0, 2.0];
@@ -588,8 +593,11 @@ fn the_radial_side_knows_its_shell() {
 /// **The radial side answers where the checked spelling had to give up.** A point and an axis
 /// whose coordinates carry ~10²³ denominators: `|w|²|m|²` alone leaves `i128`, so the retired
 /// `Option` version returned `None` and its callers rejected for the arithmetic. The total one
-/// answers, and the answer is checked against the geometry by hand — the point sits at radius
-/// `2·r` from the axis, so it is outside; halving that puts it inside.
+/// answers, and the answer is checked against the geometry by hand — the point sits `2·r` from
+/// the axis, so it is outside; one fifth of that puts it inside. The radius itself is a short
+/// decimal (the truth holds it squared, which a 16-digit decimal this small could not fit into
+/// `Rat`); the width is the **points'** own — each is a full-digit literal whose difference from
+/// the axis point still carries the 10²³ denominator, so `|w|²` leaves `i128` as before.
 #[test]
 fn the_radial_side_answers_where_the_checked_one_could_not() {
     let wide = |x: f64| Rat::from_decimal(x).expect("in the decimal window");
@@ -600,7 +608,8 @@ fn the_radial_side_answers_where_the_checked_one_could_not() {
         ri(0),
     ];
     let m = [ri(0), ri(0), ri(1)];
-    let radius = wide(5.000000000000001e-8);
+    let radius = wide(5e-8);
+    let r2 = crate::BigRat::square_of(radius);
     // The retired spelling, verbatim — it cannot even form `|w|²`.
     let checked = |p: &[Rat; 3]| -> Option<Orient> {
         let w = [
@@ -625,19 +634,10 @@ fn the_radial_side_answers_where_the_checked_one_could_not() {
             core::cmp::Ordering::Greater => Orient::Positive,
         })
     };
-    let outside = [
-        o[0].checked_add(radius)
-            .and_then(|x| x.checked_add(radius))
-            .expect("small sum"),
-        o[1],
-        ri(3),
-    ];
-    let inside = [
-        o[0].checked_add(Rat::new(radius.numer(), radius.denom() * 2).expect("half r"))
-            .expect("small sum"),
-        o[1],
-        ri(-4),
-    ];
+    // `2.0000000000000004e-7 − o[0]` is `1.0000000000000002e-7`, exactly `2·r` and wide;
+    // `1.1000000000000003e-7 − o[0]` is `1.000000000000001e-8`, a fifth of `r` and wide.
+    let outside = [wide(2.0000000000000004e-7), o[1], ri(3)];
+    let inside = [wide(1.1000000000000003e-7), o[1], ri(-4)];
     assert_eq!(
         checked(&outside),
         None,
@@ -645,47 +645,87 @@ fn the_radial_side_answers_where_the_checked_one_could_not() {
     );
     assert_eq!(checked(&inside), None, "…on both witnesses");
     assert_eq!(
-        cylinder_radial_side(&outside, &o, &m, radius),
+        cylinder_radial_side(&outside, &o, &m, &r2),
         Orient::Positive
     );
-    assert_eq!(
-        cylinder_radial_side(&inside, &o, &m, radius),
-        Orient::Negative
-    );
+    assert_eq!(cylinder_radial_side(&inside, &o, &m, &r2), Orient::Negative);
     // And exactly on the shell — the case only exact arithmetic can witness.
     let on = [o[0].checked_add(radius).expect("small sum"), o[1], ri(9)];
-    assert_eq!(cylinder_radial_side(&on, &o, &m, radius), Orient::Zero);
+    assert_eq!(cylinder_radial_side(&on, &o, &m, &r2), Orient::Zero);
 }
 
 /// Two **parallel** axes: clear when their distance exceeds `r₁ + r₂`, tangent at equality, and
-/// overlapping below it — **with the sum formed inside the integer arithmetic**. The radii here
-/// are wide enough that `r₁.checked_add(r₂)` still works but `(r₁+r₂)²·|m|²` does not, which is
-/// what the retired gate computed.
+/// overlapping below it — **with the sum never formed**: the radii arrive as squares and the
+/// comparison is the root-sum identity in integers. The far origin is a wide point (a 10²³
+/// denominator, where `|w|²` alone leaves `i128`); the radii are short decimals, since the truth
+/// holds them squared and a 16-digit decimal this small has no square in `Rat`.
 #[test]
 fn parallel_axes_clear_compares_against_the_radius_sum() {
     let wide = |x: f64| Rat::from_decimal(x).expect("in the decimal window");
     let m = [ri(0), ri(0), ri(1)];
-    let (ra, rb) = (wide(5.000000000000001e-8), wide(3.000000000000001e-8));
+    let (ra, rb) = (wide(5e-8), wide(3e-8));
+    let (ra2, rb2) = (crate::BigRat::square_of(ra), crate::BigRat::square_of(rb));
     let o_a = [ri(0), ri(0), ri(0)];
     let far = [wide(1.0000000000000002e-7), ri(0), ri(5)];
     // Short on purpose: `near` only has to sit inside the radius sum — the width that matters
     // is in `ra`, `rb` and `far`, which is where the old arithmetic gave out.
     let near = [wide(7e-8), ri(0), ri(5)];
     assert_eq!(
-        crate::cylinders_clear(&o_a, &m, ra, &far, &m, rb),
+        crate::cylinders_clear(&o_a, &m, &ra2, &far, &m, &rb2),
         Orient::Positive,
         "1e-7 apart, radii summing to 8e-8: clear"
     );
     assert_eq!(
-        crate::cylinders_clear(&o_a, &m, ra, &near, &m, rb),
+        crate::cylinders_clear(&o_a, &m, &ra2, &near, &m, &rb2),
         Orient::Negative,
         "7e-8 apart, radii summing to 8e-8: overlapping"
     );
     let touching = [ra.checked_add(rb).expect("small sum"), ri(0), ri(5)];
     assert_eq!(
-        crate::cylinders_clear(&o_a, &m, ra, &touching, &m, rb),
+        crate::cylinders_clear(&o_a, &m, &ra2, &touching, &m, &rb2),
         Orient::Zero,
         "exactly tangent"
+    );
+}
+
+/// ★ **Radii with no rational root** — the population the squared truth opens. `r² = 2` beside
+/// `r² = 3`: `√2 + √3 ≈ 3.146`, so parallel axes `3` apart overlap and `4` apart clear; and the
+/// same pair nests when the axes stand closer than `√3 − √2 ≈ 0.318`. The retired `r: Rat` doors
+/// could not state either cylinder.
+#[test]
+fn non_square_radii_are_compared_without_a_root_being_formed() {
+    let m = [ri(0), ri(0), ri(1)];
+    let o_a = [ri(0), ri(0), ri(0)];
+    let (two, three) = (big(2), big(3));
+    assert_eq!(
+        crate::cylinders_clear(&o_a, &m, &two, &[ri(3), ri(0), ri(0)], &m, &three),
+        Orient::Negative,
+        "3 < √2 + √3"
+    );
+    assert_eq!(
+        crate::cylinders_clear(&o_a, &m, &two, &[ri(4), ri(0), ri(0)], &m, &three),
+        Orient::Positive,
+        "4 > √2 + √3"
+    );
+    assert_eq!(
+        crate::cylinders_nested(&o_a, &m, &two, &[r(3, 10), ri(0), ri(0)], &three),
+        Orient::Negative,
+        "0.3 < √3 − √2: nested"
+    );
+    assert_eq!(
+        crate::cylinders_nested(&o_a, &m, &two, &[r(1, 3), ri(0), ri(0)], &three),
+        Orient::Positive,
+        "1/3 > √3 − √2: not nested"
+    );
+    // And a square pair still answers as the old arithmetic did — tangent at exactly r₁ + r₂.
+    assert_eq!(
+        crate::cylinders_clear(&o_a, &m, &big(9), &[ri(4), ri(0), ri(0)], &m, &big(1)),
+        Orient::Zero
+    );
+    assert_eq!(
+        crate::cylinders_nested(&o_a, &m, &big(9), &[ri(2), ri(0), ri(0)], &big(1)),
+        Orient::Zero,
+        "internally tangent at exactly r₁ − r₂"
     );
 }
 
@@ -701,26 +741,26 @@ fn skew_axes_are_compared_by_their_common_perpendicular() {
     let z = [ri(0), ri(0), ri(1)];
     let y = [ri(0), ri(1), ri(0)];
     let o_a = [ri(0), ri(0), ri(0)]; // the vertical bore
-    let (ra, rb) = (ri(3), ri(1));
+    let (ra, rb) = (big(9), big(1)); // radii 3 and 1, stated as squares
     // The user's own model: a horizontal tunnel six away from a vertical bore.
     assert_eq!(
-        crate::cylinders_clear(&o_a, &z, ra, &[ri(-6), ri(0), ri(0)], &y, rb),
+        crate::cylinders_clear(&o_a, &z, &ra, &[ri(-6), ri(0), ri(0)], &y, &rb),
         Orient::Positive,
         "six apart, radii summing to four: clear"
     );
     assert_eq!(
-        crate::cylinders_clear(&o_a, &z, ra, &[ri(-4), ri(0), ri(0)], &y, rb),
+        crate::cylinders_clear(&o_a, &z, &ra, &[ri(-4), ri(0), ri(0)], &y, &rb),
         Orient::Zero,
         "exactly four apart: tangent, which is contact"
     );
     assert_eq!(
-        crate::cylinders_clear(&o_a, &z, ra, &[ri(-2), ri(0), ri(0)], &y, rb),
+        crate::cylinders_clear(&o_a, &z, &ra, &[ri(-2), ri(0), ri(0)], &y, &rb),
         Orient::Negative,
         "two apart: the surfaces cut through each other"
     );
     // Axes that actually meet are distance zero, whatever the radii.
     assert_eq!(
-        crate::cylinders_clear(&o_a, &z, ra, &[ri(0), ri(0), ri(0)], &y, rb),
+        crate::cylinders_clear(&o_a, &z, &ra, &[ri(0), ri(0), ri(0)], &y, &rb),
         Orient::Negative,
         "crossing axes cannot be clear"
     );
@@ -728,7 +768,7 @@ fn skew_axes_are_compared_by_their_common_perpendicular() {
     // own axis each cylinder is measured from.
     let long_y = [ri(0), ri(17), ri(0)];
     assert_eq!(
-        crate::cylinders_clear(&o_a, &z, ra, &[ri(-6), ri(40), ri(0)], &long_y, rb),
+        crate::cylinders_clear(&o_a, &z, &ra, &[ri(-6), ri(40), ri(0)], &long_y, &rb),
         Orient::Positive,
         "scale and axial offset change nothing"
     );
@@ -745,7 +785,7 @@ fn seg_meets(p0: [i128; 3], p1: [i128; 3], radius: i128) -> bool {
         &p1.map(ri),
         &[ri(0), ri(0), ri(0)],
         &[ri(0), ri(0), ri(1)],
-        ri(radius),
+        &big(radius * radius),
     )
 }
 
@@ -793,14 +833,14 @@ fn the_answer_does_not_depend_on_scale() {
         &[r(10, 1), r(1, 1), ri(0)],
         &[ri(0), ri(0), ri(0)],
         &[ri(0), ri(0), ri(1)],
-        ri(3),
+        &big(9),
     );
     let scaled = crate::segment_meets_cylinder(
         &[r(-20, 2), r(2, 2), ri(0)],
         &[r(20, 2), r(2, 2), ri(0)],
         &[ri(0), ri(0), ri(0)],
         &long_axis,
-        ri(3),
+        &big(9),
     );
     assert_eq!(plain, scaled);
 }
@@ -817,14 +857,14 @@ fn moving_the_axis_moves_the_answer() {
         &seg.1,
         &[ri(0), ri(0), ri(0)],
         &z,
-        ri(3)
+        &big(9)
     ));
     assert!(!crate::segment_meets_cylinder(
         &seg.0,
         &seg.1,
         &[ri(0), ri(40), ri(0)],
         &z,
-        ri(3)
+        &big(9)
     ));
 }
 
@@ -846,7 +886,7 @@ fn the_two_roads_agree_where_a_crossing_is_rational() {
     let cut = plane(1, 0, 0, 0); // x = 0
     let lid = plane(0, 0, 1, -3); // z = 3
     let CylinderMeet::Pair { line, s } =
-        plane_plane_cylinder(&cut, &lid, &o, &m, radius).expect("fits")
+        plane_plane_cylinder(&cut, &lid, &o, &m, &radius).expect("fits")
     else {
         panic!("x = 0 crosses the unit cylinder twice");
     };
@@ -900,7 +940,7 @@ fn a_rational_point_is_placed_between_two_irrational_ones() {
     let (o, m, radius) = zcyl();
     let cut = plane(2, 0, 0, -1); // x = 1/2
     let CylinderMeet::Pair { line, s } =
-        plane_plane_cylinder(&cut, &plane(0, 0, 1, 0), &o, &m, radius).expect("fits")
+        plane_plane_cylinder(&cut, &plane(0, 0, 1, 0), &o, &m, &radius).expect("fits")
     else {
         panic!("x = 1/2 crosses twice");
     };
@@ -949,7 +989,7 @@ fn two_points_from_different_cuts_order_on_the_second_storey() {
     let roots = |a: i128, b: i128| {
         let cut = plane(b, 0, 0, -a); // x = a/b
         let CylinderMeet::Pair { line, s } =
-            plane_plane_cylinder(&cut, &lid, &o, &m, radius).expect("fits")
+            plane_plane_cylinder(&cut, &lid, &o, &m, &radius).expect("fits")
         else {
             panic!("crosses twice");
         };
@@ -985,7 +1025,7 @@ fn a_wide_three_plane_point_is_still_placed() {
     let cut = plane(1, 0, 0, 0);
     let lid = plane(0, 0, 1, 0);
     let CylinderMeet::Pair { line, s } =
-        plane_plane_cylinder(&cut, &lid, &o, &m, radius).expect("fits")
+        plane_plane_cylinder(&cut, &lid, &o, &m, &radius).expect("fits")
     else {
         panic!("crosses twice");
     };
@@ -1027,7 +1067,7 @@ fn an_axis_the_line_does_not_move_along_is_rational() {
     let cut = plane(2, 0, 0, -1); // x = 1/2 — the line runs in y, not x or z
     let lid = plane(0, 0, 1, -5); // z = 5
     let CylinderMeet::Pair { line, s } =
-        plane_plane_cylinder(&cut, &lid, &o, &m, radius).expect("fits")
+        plane_plane_cylinder(&cut, &lid, &o, &m, &radius).expect("fits")
     else {
         panic!("crosses twice");
     };
@@ -1064,7 +1104,7 @@ fn an_axis_the_line_does_not_move_along_is_rational() {
 #[test]
 fn the_branch_footprint_predicates_include_the_rational_ones() {
     let (o, m, _) = zcyl();
-    let radius = r(3, 2);
+    let radius = crate::BigRat::from(r(9, 4)); // r = 3/2, stated as r²
     // A line whose points stay rational: `base + s·dir` with `s` rational.
     let line = MeetLine {
         base: [ri(0), ri(0), ri(0)],
@@ -1077,10 +1117,10 @@ fn the_branch_footprint_predicates_include_the_rational_ones() {
     for k in [-7, -3, -1, 0, 1, 3, 7] {
         let s = QuadVal::from_rat(r(k, 4));
         let p = crate::MeetPoint::Narrow([r(k, 4), ri(0), r(k, 4)]);
-        let got = crate::cylinder_strip_side_branch(&coeffs, &line, &s, &o, &m, radius);
+        let got = crate::cylinder_strip_side_branch(&coeffs, &line, &s, &o, &m, &radius);
         assert_eq!(
             got,
-            crate::cylinder_strip_side(&coeffs, &p, &o, &m, radius),
+            crate::cylinder_strip_side(&coeffs, &p, &o, &m, &radius),
             "strip side at k = {k}"
         );
         sides.push(got);
@@ -1124,7 +1164,7 @@ fn a_branch_points_two_roots_can_straddle_a_strip() {
     let (o, m, radius) = zcyl();
     let cut = [ri(0), ri(1), ri(0), ri(0).checked_sub(r(1, 2)).unwrap()];
     let cap = plane(0, 0, 1, -3);
-    let CylinderMeet::Pair { line, s } = plane_plane_cylinder(&cut, &cap, &o, &m, radius).unwrap()
+    let CylinderMeet::Pair { line, s } = plane_plane_cylinder(&cut, &cap, &o, &m, &radius).unwrap()
     else {
         panic!("a plane through the interior meets the cylinder twice")
     };
@@ -1137,12 +1177,12 @@ fn a_branch_points_two_roots_can_straddle_a_strip() {
     };
     let b_axis = [ri(1), ri(0), ri(0)];
     assert_eq!(
-        crate::cylinder_strip_side_branch(&cut, &line, &pos, &b_axis, &m, radius),
+        crate::cylinder_strip_side_branch(&cut, &line, &pos, &b_axis, &m, &radius),
         crate::StripSide::Inside,
         "+√3/2 sits inside the second cylinder's strip"
     );
     assert_eq!(
-        crate::cylinder_strip_side_branch(&cut, &line, &neg, &b_axis, &m, radius),
+        crate::cylinder_strip_side_branch(&cut, &line, &neg, &b_axis, &m, &radius),
         crate::StripSide::Minus,
         "−√3/2 clears it"
     );

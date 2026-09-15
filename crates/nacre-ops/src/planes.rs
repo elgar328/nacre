@@ -714,7 +714,7 @@ pub(crate) fn world_cylinder_def(
             }
             // The three invariants of a translation, so `new`'s checks cannot newly fail here —
             // it is called rather than bypassed because the type's constructor is the only way in.
-            nacre_topo::CylinderDef::new(o, def.dir(), def.ref_dir(), def.radius())?
+            nacre_topo::CylinderDef::new(o, def.dir(), def.ref_dir(), def.r2().clone())?
         }
     };
     debug_assert!(
@@ -725,7 +725,7 @@ pub(crate) fn world_cylinder_def(
             let o = Point3::from_array(out.origin().map(|r| r.to_f64()));
             let scale = 1.0 + o.as_array().iter().fold(0.0, |m: f64, c| m.max(c.abs()));
             cache.axis().distance(o) <= 1e-9 * scale
-                && (cache.radius() - out.radius().to_f64()).abs() <= 1e-9 * scale
+                && (cache.radius() - out.radius_f64()).abs() <= 1e-9 * scale
         },
         "{}",
         ONE_CYLINDER
@@ -862,7 +862,7 @@ fn lateral_theta_extent(
     use nacre_scalar::Rat;
     use nacre_scalar::quad::CylinderMeet;
     use nacre_topo::{QuadRoot, VertexDef};
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let world_coeffs = |plane: Handle<Surface>| -> Option<[Rat; 4]> {
         let coeffs = *model.surface_name.get(&plane)?.narrow()?;
         match model.plane_motion(plane) {
@@ -900,9 +900,14 @@ fn lateral_theta_extent(
                 for k in 0..3 {
                     e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
                 }
+                // `r/|e₁|` read as `√(r²/|e₁|²)`: the same rational when both roots are, and a
+                // rational where neither is alone (`r = √2` on `|e₁| = √2`).
+                let ee = dot3(&e1, &e1)?;
                 scaled(
                     &e1,
-                    r.checked_mul(nacre_scalar::inv_sqrt_exact(dot3(&e1, &e1)?)?)?,
+                    nacre_scalar::rat_sqrt_exact_big(
+                        &r2.mul_rat(Rat::new(ee.denom(), ee.numer())?),
+                    )?,
                 )
             }
             VertexDef::Pierce {
@@ -918,7 +923,7 @@ fn lateral_theta_extent(
                 // only the constants, so the normals — and the order — are the stored ones.
                 let (c0, c1) = (world_coeffs(planes[0])?, world_coeffs(planes[1])?);
                 let (line, sv) =
-                    match nacre_scalar::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r)? {
+                    match nacre_scalar::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)? {
                         CylinderMeet::Pair { line, s } => match root {
                             QuadRoot::Lo => (line, s[0].as_rat()?),
                             QuadRoot::Hi => (line, s[1].as_rat()?),
@@ -1320,7 +1325,7 @@ pub(crate) fn cylinder_gate(
     );
 
     for (ci, cyl) in cyls.iter().enumerate() {
-        let (o, m, r) = (cyl.def.origin(), cyl.def.dir(), cyl.def.radius());
+        let (o, m, r2) = (cyl.def.origin(), cyl.def.dir(), cyl.def.r2());
         // The footprint's second axis, gathered **lazily and at most once** per cylinder: it does
         // not depend on the plane class the loop below walks, but almost no boolean ever asks for
         // it — the plane-level test decides first. ★ Measured before this was made lazy: one cut
@@ -1385,7 +1390,7 @@ pub(crate) fn cylinder_gate(
                 // ★★ What a face is asked is whether it misses the **rectangle** this cylinder
                 // occupies in that plane: the strip across, the lateral face's span along. See
                 // [`face_clears_footprint`].
-                if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) != Orient::Positive {
+                if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r2) != Orient::Positive {
                     // ★ The face-level test reads each face's own vertices, which are realized
                     // world coordinates — so it needs no frame guard of its own; `coeffs` above is
                     // already the world description (a class without one never reaches here). The
@@ -1396,7 +1401,7 @@ pub(crate) fn cylinder_gate(
                         .iter()
                         .map(|f| f.span.expect("a listed footprint has a span"))
                         .collect();
-                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r, &spans)? {
+                    if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r2, &spans)? {
                         // ★ **The record-and-pass arm** (rulings ladder, cell 4; widened in
                         // cell ③): a wall whose plane runs **within** the radius — any
                         // `0 ≤ d < r`, the through-axis wall included — and whose faces did not
@@ -1436,7 +1441,8 @@ pub(crate) fn cylinder_gate(
                         // about the operation — so the geometry is stated in a row and
                         // `boolean::tangency_reject` asks `keep` — beside `self_touch_reject`,
                         // where the grouping can also say whether the pieces share a solid.
-                        if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r) == Orient::Zero {
+                        if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r2) == Orient::Zero
+                        {
                             tangencies.extend(tangency_rows(
                                 model, faces, plane_ix, geom, n_a, c, ci, &coeffs, &cyl.def,
                                 cyl.surf, cyl.owner,
@@ -1444,7 +1450,7 @@ pub(crate) fn cylinder_gate(
                         } else {
                             crossings.insert((c, ci));
                         }
-                    } else if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r)
+                    } else if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r2)
                         == Orient::Negative
                         && {
                             // ★ Only a footprint that can be **stated** proves a cut; an
@@ -1511,10 +1517,10 @@ pub(crate) fn cylinder_gate(
             let clear = match nacre_scalar::cylinders_clear(
                 &a.def.origin(),
                 &a.def.dir(),
-                a.def.radius(),
+                a.def.r2(),
                 &b.def.origin(),
                 &b.def.dir(),
-                b.def.radius(),
+                b.def.r2(),
             ) {
                 Orient::Positive => true,
                 _ if same_surface(&a.def, &b.def) => false,
@@ -1525,9 +1531,9 @@ pub(crate) fn cylinder_gate(
                     && nacre_scalar::cylinders_nested(
                         &a.def.origin(),
                         &a.def.dir(),
-                        a.def.radius(),
+                        a.def.r2(),
                         &b.def.origin(),
-                        b.def.radius(),
+                        b.def.r2(),
                     ) == Orient::Negative =>
                 {
                     true
@@ -1580,7 +1586,7 @@ fn wall_faces_clear(
     coeffs: &[nacre_scalar::Rat; 4],
     o: &[nacre_scalar::Rat; 3],
     m: &[nacre_scalar::Rat; 3],
-    r: nacre_scalar::Rat,
+    r2: &nacre_scalar::BigRat,
     spans: &[[nacre_scalar::Rat; 2]],
 ) -> Result<bool, BoolError> {
     let mut seen = 0usize;
@@ -1595,7 +1601,7 @@ fn wall_faces_clear(
             return Err(reject(RejectReason::CylinderGateUndecided));
         };
         seen += 1;
-        if !face_clears_footprint(model, model.faces.get(fh), coeffs, o, m, r, spans)? {
+        if !face_clears_footprint(model, model.faces.get(fh), coeffs, o, m, r2, spans)? {
             return Ok(false);
         }
     }
@@ -1768,7 +1774,7 @@ fn tangency_rows(
     surf: Handle<Surface>,
     owner: SolidSide,
 ) -> Vec<Tangency> {
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let side_of = |i: usize| {
         if i < n_a { SolidSide::A } else { SolidSide::B }
     };
@@ -1822,7 +1828,7 @@ fn tangency_rows(
             .face
             .map(|fh| {
                 let got =
-                    face_clears_footprint(model, model.faces.get(fh), coeffs, &o, &m, r, &spans);
+                    face_clears_footprint(model, model.faces.get(fh), coeffs, &o, &m, r2, &spans);
                 #[cfg(feature = "tangency-trace")]
                 if got.is_err() {
                     let f = model.faces.get(fh);
@@ -1870,7 +1876,7 @@ fn tangency_rows(
         // A property of the wall face and the line, not of which lateral is paired with it.
         let straddles = fi
             .face
-            .map(|fh| face_straddles_line(model, model.faces.get(fh), coeffs, &o, &m, r))
+            .map(|fh| face_straddles_line(model, model.faces.get(fh), coeffs, &o, &m, r2))
             .unwrap_or(false);
         for (cy_ix, cf) in &laterals {
             let witness = base.as_ref().zip(cf.footprint.span).and_then(|(b, span)| {
@@ -1938,7 +1944,7 @@ fn face_straddles_line(
     coeffs: &[nacre_scalar::Rat; 4],
     o: &[nacre_scalar::Rat; 3],
     m: &[nacre_scalar::Rat; 3],
-    r: nacre_scalar::Rat,
+    r2: &nacre_scalar::BigRat,
 ) -> bool {
     use nacre_scalar::StripSide;
     let (mut plus, mut minus) = (false, false);
@@ -1954,7 +1960,7 @@ fn face_straddles_line(
         if !corner.on_plane(coeffs) {
             continue;
         }
-        match corner.strip_side(coeffs, o, m, r) {
+        match corner.strip_side(coeffs, o, m, r2) {
             StripSide::Plus => plus = true,
             StripSide::Minus => minus = true,
             // A corner sitting *on* the line spans nothing, and neither does a piece that reaches
@@ -2052,7 +2058,7 @@ fn lateral_reach(
 ) -> Option<Reach> {
     use nacre_scalar::Rat;
     let zero = Rat::from_int(0);
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let dm = dot3(d, &m)?;
     let base = dot3(d, &o)?;
     let (lo, hi) = if dm == zero {
@@ -2062,7 +2068,7 @@ fn lateral_reach(
         let (a, b) = (s0.checked_mul(dm)?, s1.checked_mul(dm)?);
         (base.checked_add(a.min(b))?, base.checked_add(a.max(b))?)
     };
-    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(fp.theta.as_ref(), r, &m, d)?;
+    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(fp.theta.as_ref(), r2, &m, d)?;
     Some(Reach {
         lo: lo.checked_add(lo_off)?,
         hi: hi.checked_add(hi_off)?,
@@ -2089,7 +2095,7 @@ fn lateral_reach(
 /// `arc = None` is the whole circle, and `d ∥ axis` leaves no radial term at all.
 fn arc_extent(
     arc: Option<&RimArc>,
-    radius: nacre_scalar::Rat,
+    r2: &nacre_scalar::BigRat,
     axis: &[nacre_scalar::Rat; 3],
     d: &[nacre_scalar::Rat; 3],
 ) -> Option<(
@@ -2108,7 +2114,8 @@ fn arc_extent(
         dperp[i] = dperp[i].checked_sub(k.checked_mul(axis[i])?)?;
     }
     let dperp2 = dot3(&dperp, &dperp)?;
-    let rho2 = radius.checked_mul(radius)?.checked_mul(dperp2)?;
+    // A wide square declines here, exactly where `r·r` used to overflow.
+    let rho2 = r2.narrow()?.checked_mul(dperp2)?;
     match arc {
         _ if dperp2 == zero => Some((zero, zero, zero, zero)), // `d ∥ axis`
         None => Some((zero, rho2, zero, rho2)),
@@ -2195,7 +2202,7 @@ fn oblique_plane_clears(
 /// pair rule refuses them as the coincident pair they are. Overflow answers `true` — "not shown
 /// distinct" refuses, it never lets a pair through.
 fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> bool {
-    if !nacre_scalar::parallel_rat(&a.dir(), &b.dir()) || a.radius() != b.radius() {
+    if !nacre_scalar::parallel_rat(&a.dir(), &b.dir()) || a.r2() != b.r2() {
         return false;
     }
     let (oa, ob) = (a.origin(), b.origin());
@@ -2353,20 +2360,24 @@ fn cross_sections_clear(
     };
     let spec = |c: &WorkingCyl, fp: &Footprint| -> Option<ArcSpec> {
         let centre = chart(&c.def.origin())?;
-        let radius = c.def.radius();
+        // The 2-D arc court works in `Rat`; a wide square is not judged here (`None`).
+        let r2 = c.def.r2().narrow()?;
         let (start, end) = match &fp.theta {
             Some(arc) => (
                 add2(centre, [dot3(&arc.from, &u1)?, dot3(&arc.from, &u2)?])?,
                 add2(centre, [dot3(&arc.to, &u1)?, dot3(&arc.to, &u2)?])?,
             ),
             None => {
-                let p = add2(centre, [radius, zero])?;
+                // A whole circle's seam, `centre + (r, 0)`, is a rational point only for a
+                // rational radius; without one this pair is not judged here (`None`, the
+                // caller's honest road).
+                let p = add2(centre, [c.def.radius_exact()?, zero])?;
                 (p, p)
             }
         };
         Some(ArcSpec {
             centre,
-            radius,
+            r2,
             start,
             end,
         })
@@ -2444,7 +2455,8 @@ enum Corner {
     /// piece but a different set.
     Round {
         centre: [nacre_scalar::Rat; 3],
-        rho: nacre_scalar::Rat,
+        /// The carrier's squared radius.
+        rho2: nacre_scalar::BigRat,
         axis: [nacre_scalar::Rat; 3],
         arc: Option<RimArc>,
     },
@@ -2470,12 +2482,12 @@ impl Corner {
         coeffs: &[nacre_scalar::Rat; 4],
         o: &[nacre_scalar::Rat; 3],
         m: &[nacre_scalar::Rat; 3],
-        r: nacre_scalar::Rat,
+        r2: &nacre_scalar::BigRat,
     ) -> nacre_scalar::StripSide {
         match self {
-            Self::Rational(p) => nacre_scalar::cylinder_strip_side(coeffs, p, o, m, r),
+            Self::Rational(p) => nacre_scalar::cylinder_strip_side(coeffs, p, o, m, r2),
             Self::Pierce(line, s) => {
-                nacre_scalar::cylinder_strip_side_branch(coeffs, line, s, o, m, r)
+                nacre_scalar::cylinder_strip_side_branch(coeffs, line, s, o, m, r2)
             }
             // ★ The strip runs along `e = n × m`, so **that** is the direction the piece's extent
             // is asked for. A whole circle reaches `±ρ|e|` alike and takes the symmetric door,
@@ -2483,7 +2495,7 @@ impl Corner {
             // general one. `None` from the extent is `Inside` — reached the strip, spanned
             // nothing — which is the safe reading for both consumers.
             Self::Round { .. } => {
-                round_strip_side(self, coeffs, o, m, r).unwrap_or(nacre_scalar::StripSide::Inside)
+                round_strip_side(self, coeffs, o, m, r2).unwrap_or(nacre_scalar::StripSide::Inside)
             }
         }
     }
@@ -2520,7 +2532,7 @@ impl Corner {
             // ★ Overflow answers **`true`**: "not shown to clear" is this test's safe direction.
             Self::Round {
                 centre,
-                rho,
+                rho2,
                 axis,
                 arc,
             } => {
@@ -2533,7 +2545,7 @@ impl Corner {
                     let mm = dot3(m, m)?;
                     let q = dot3(&rel, m)?.checked_sub(t.checked_mul(mm)?)?;
                     let (lo_off, rho2_lo, hi_off, rho2_hi) =
-                        arc_extent(arc.as_ref(), *rho, axis, m)?;
+                        arc_extent(arc.as_ref(), rho2, axis, m)?;
                     Some(match want {
                         nacre_scalar::Orient::Positive => (q.checked_add(hi_off)?, rho2_hi),
                         _ => (q.checked_add(lo_off)?, rho2_lo),
@@ -2578,9 +2590,9 @@ fn pierce_corner(
     let p1 = *model.world_plane_name(planes[0])?.narrow()?;
     let p2 = *model.world_plane_name(planes[1])?.narrow()?;
     let def = world_cylinder_def(model, cylinder)?;
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let (line, s) = match (
-        nacre_scalar::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r)?,
+        nacre_scalar::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2)?,
         root,
     ) {
         (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => (line, s[0]),
@@ -2680,7 +2692,7 @@ fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Co
 /// direction says nothing about which arc this is, and two faces sharing the edge see the same one.
 fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corner> {
     let Corner::Round {
-        centre, rho, axis, ..
+        centre, rho2, axis, ..
     } = disk_of(model, face, he)?
     else {
         return None;
@@ -2696,7 +2708,7 @@ fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corne
     };
     Some(Corner::Round {
         centre,
-        rho,
+        rho2,
         axis,
         arc: Some(RimArc {
             from: radial(a)?,
@@ -2759,65 +2771,65 @@ fn round_strip_side(
     coeffs: &[nacre_scalar::Rat; 4],
     o: &[nacre_scalar::Rat; 3],
     m: &[nacre_scalar::Rat; 3],
-    r: nacre_scalar::Rat,
+    r2: &nacre_scalar::BigRat,
 ) -> Option<nacre_scalar::StripSide> {
     use nacre_scalar::MeetPoint;
     let Corner::Round {
         centre,
-        rho,
+        rho2,
         axis,
         arc,
     } = piece
     else {
         return None;
     };
-    let (rho, arc) = (*rho, arc.as_ref());
+    let arc = arc.as_ref();
     if arc.is_none() {
         // A whole circle reaches alike both ways: the symmetric door, complete answer and all.
         return Some(nacre_scalar::cylinder_strip_side_margin(
             coeffs,
             &MeetPoint::Narrow(*centre),
-            rho,
+            rho2,
             o,
             m,
-            r,
+            r2,
         ));
     }
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let e = combinatorics::cross3_rat(&n, m)?;
-    let (lo, hi) = arc_ends_along(centre, rho, axis, arc, &e)?;
+    let (lo, hi) = arc_ends_along(centre, rho2, axis, arc, &e)?;
     Some(nacre_scalar::cylinder_strip_side_extent(
         coeffs,
         &nacre_scalar::StripReach {
-            lo: (&MeetPoint::Narrow(lo.0), lo.1),
-            hi: Some((&MeetPoint::Narrow(hi.0), hi.1)),
+            lo: (&MeetPoint::Narrow(lo.0), &lo.1),
+            hi: Some((&MeetPoint::Narrow(hi.0), &hi.1)),
         },
         o,
         m,
-        r,
+        r2,
     ))
 }
 
 /// One end of a round piece's reach along a direction: a point on the piece's plane and the
-/// margin the doors add to it — `(p, ρ)`, the pair every scalar door here already takes.
-pub(crate) type ArcEnd = ([nacre_scalar::Rat; 3], nacre_scalar::Rat);
+/// **squared** margin the doors add to it — `(p, ρ²)`, the pair every scalar door here takes.
+pub(crate) type ArcEnd = ([nacre_scalar::Rat; 3], nacre_scalar::BigRat);
 
 /// **The two ends of a round piece's reach along `d`, each as a point and a margin** — the form
 /// both scalar doors take (cell ⑲).
 ///
 /// [`arc_extent`] states the reach as offsets and squared radicals about the centre; the doors
-/// want `(point, ρ)` pairs. The bridge is exact and needs no new arithmetic:
+/// want `(point, ρ²)` pairs. The bridge is exact and needs no new arithmetic:
 /// * an offset becomes a **moved point** — `centre + off/(d·d)·d` stays on the piece's plane and
 ///   moves `d·p` by exactly `off`, whatever origin the door measures from;
-/// * a side that reaches its full radial peak has margin `ρ` (because the piece's plane has the
-///   carrier's axis as its normal, `d⊥ = d` there and `√rho2 = ρ|d|`), and a side an arc end
+/// * a side that reaches its full radial peak has margin `ρ²` (because the piece's plane has the
+///   carrier's axis as its normal, `d⊥ = d` there and `rho2 = ρ²|d|²`), and a side an arc end
 ///   stopped has margin `0` with the offset carrying it.
 ///
 /// `arc = None` is the whole circle: both ends are the centre with margin `ρ`, which is what the
 /// symmetric doors have always been handed.
 pub(crate) fn arc_ends_along(
     centre: &[nacre_scalar::Rat; 3],
-    rho: nacre_scalar::Rat,
+    rho2: &nacre_scalar::BigRat,
     axis: &[nacre_scalar::Rat; 3],
     arc: Option<&RimArc>,
     d: &[nacre_scalar::Rat; 3],
@@ -2825,7 +2837,7 @@ pub(crate) fn arc_ends_along(
     use nacre_scalar::Rat;
     let zero = Rat::from_int(0);
     let dd = dot3(d, d)?;
-    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(arc, rho, axis, d)?;
+    let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(arc, rho2, axis, d)?;
     let shifted = |off: Rat| -> Option<[Rat; 3]> {
         if off == zero {
             return Some(*centre);
@@ -2837,7 +2849,13 @@ pub(crate) fn arc_ends_along(
         }
         Some(p)
     };
-    let margin = |rho2: Rat| if rho2 == zero { zero } else { rho };
+    let margin = |reach2: Rat| {
+        if reach2 == zero {
+            nacre_scalar::BigRat::zero()
+        } else {
+            rho2.clone()
+        }
+    };
     Some((
         (shifted(lo_off)?, margin(rho2_lo)),
         (shifted(hi_off)?, margin(rho2_hi)),
@@ -2884,7 +2902,7 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
     }
     Some(Corner::Round {
         centre,
-        rho: def.radius(),
+        rho2: def.r2().clone(),
         axis: m,
         arc: None,
     })
@@ -2897,7 +2915,7 @@ fn face_clears_footprint(
     coeffs: &[nacre_scalar::Rat; 4],
     o: &[nacre_scalar::Rat; 3],
     m: &[nacre_scalar::Rat; 3],
-    r: nacre_scalar::Rat,
+    r2: &nacre_scalar::BigRat,
     spans: &[[nacre_scalar::Rat; 2]],
 ) -> Result<bool, BoolError> {
     use nacre_scalar::{Orient, StripSide};
@@ -2977,7 +2995,7 @@ fn face_clears_footprint(
         // to grow is the opposite one (a piece with width can straddle the strip by itself), which
         // a catch-all would record as a side and let the face pass. Written this way the compiler
         // asks the question at every new variant instead.
-        match corner.strip_side(coeffs, o, m, r) {
+        match corner.strip_side(coeffs, o, m, r2) {
             // Reaching the strip and spanning it are different facts (the tangency road needs them
             // apart), but for *clearing a rectangle* they are the same one: not clear.
             StripSide::Inside | StripSide::Crosses => across = false,
@@ -3909,7 +3927,7 @@ mod tests {
         let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
         let z = |v: i128| Rat::from_int(v);
         let cyl = |o: [Rat; 3], m: [Rat; 3], e: [Rat; 3]| {
-            nacre_topo::CylinderDef::new(o, m, e, q(1, 5)).unwrap()
+            nacre_topo::CylinderDef::new(o, m, e, nacre_scalar::BigRat::from(q(1, 25))).unwrap() // radius 1/5, as r²
         };
         let a = cyl([z(0); 3], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
         let fp = |span: [i128; 2]| Footprint {
@@ -3955,7 +3973,7 @@ mod tests {
         let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
         let z = |v: i128| Rat::from_int(v);
         let cyl = |o: [Rat; 3], m: [Rat; 3], e: [Rat; 3]| {
-            nacre_topo::CylinderDef::new(o, m, e, q(1, 5)).unwrap()
+            nacre_topo::CylinderDef::new(o, m, e, nacre_scalar::BigRat::from(q(1, 25))).unwrap() // radius 1/5, as r²
         };
         let a = cyl([z(0); 3], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
         let unbounded = Footprint {
@@ -3974,10 +3992,10 @@ mod tests {
             let surface = nacre_scalar::cylinders_clear(
                 &a.origin(),
                 &a.dir(),
-                a.radius(),
+                a.r2(),
                 &b.origin(),
                 &b.dir(),
-                b.radius(),
+                b.r2(),
             ) == nacre_scalar::Orient::Positive;
             assert_eq!(face, Some(surface), "offset {n}/{d}");
         }
@@ -4003,21 +4021,25 @@ mod tests {
         let z = |v: i128| Rat::from_int(v);
         let coeffs = [z(0), z(0), z(1), z(0)]; // the plane `z = 0`
         let axis = [z(0), z(0), z(1)]; // the circle's carrier
-        let (o, m, r) = ([z(0); 3], [z(1), z(0), z(0)], z(1)); // the ruling cylinder, along `x`
+        let (o, m, r) = (
+            [z(0); 3],
+            [z(1), z(0), z(0)],
+            nacre_scalar::BigRat::from(z(1)),
+        ); // the ruling cylinder, along `x`
         let e = [z(0), z(1), z(0)]; // `n × m`
         let centre = [z(0); 3];
-        let rho = q(6, 5);
+        let rho2 = nacre_scalar::BigRat::from(q(36, 25)); // ρ = 6/5, stated as its square
         let holds = |arc: Option<&RimArc>, side: i8| {
-            let (lo, hi) = arc_ends_along(&centre, rho, &axis, arc, &e).expect("an extent");
+            let (lo, hi) = arc_ends_along(&centre, &rho2, &axis, arc, &e).expect("an extent");
             cylinder_ruling_reached_extent(
                 &coeffs,
                 &nacre_scalar::StripReach {
-                    lo: (&MeetPoint::Narrow(lo.0), lo.1),
-                    hi: Some((&MeetPoint::Narrow(hi.0), hi.1)),
+                    lo: (&MeetPoint::Narrow(lo.0), &lo.1),
+                    hi: Some((&MeetPoint::Narrow(hi.0), &hi.1)),
                 },
                 &o,
                 &m,
-                r,
+                &r,
                 side,
                 // Production's question: a crossing, not a touch (cell ⑳). Every case below is
                 // clear of the boundary either way, which is why the boundary has its own lock.
@@ -4059,6 +4081,7 @@ mod tests {
     #[test]
     fn an_arcs_reach_is_its_own_and_not_its_complements() {
         let z = |v: i128| Rat::from_int(v);
+        let one = nacre_scalar::BigRat::from(z(1)); // r² = 1
         let axis = [z(0), z(0), z(1)];
         let quadrant = RimArc {
             from: [z(1), z(0), z(0)],
@@ -4067,21 +4090,21 @@ mod tests {
         // Along `+x̂`: the peak is on the arc (it is `from`), so that end carries the radical and
         // the other stops at an end of the arc — `[0, 1]`, the quadrant's own span in `x`.
         assert_eq!(
-            arc_extent(Some(&quadrant), z(1), &axis, &[z(1), z(0), z(0)]),
+            arc_extent(Some(&quadrant), &one, &axis, &[z(1), z(0), z(0)]),
             Some((z(0), z(0), z(0), z(1)))
         );
         // Along the diagonal: `[1, √2]`. `ρ² = r²|d⊥|² = 2`, and the low end is the rational `1`.
         assert_eq!(
-            arc_extent(Some(&quadrant), z(1), &axis, &[z(1), z(1), z(0)]),
+            arc_extent(Some(&quadrant), &one, &axis, &[z(1), z(1), z(0)]),
             Some((z(1), z(0), z(0), z(2)))
         );
         // A whole circle reaches alike both ways, and `d ∥ axis` has no radial term at all.
         assert_eq!(
-            arc_extent(None, z(1), &axis, &[z(1), z(0), z(0)]),
+            arc_extent(None, &one, &axis, &[z(1), z(0), z(0)]),
             Some((z(0), z(1), z(0), z(1)))
         );
         assert_eq!(
-            arc_extent(Some(&quadrant), z(1), &axis, &axis),
+            arc_extent(Some(&quadrant), &one, &axis, &axis),
             Some((z(0), z(0), z(0), z(0)))
         );
         // ★ The complement is a different set: `[−1, 1]`, not `[0, 1]`.
@@ -4090,7 +4113,7 @@ mod tests {
             to: quadrant.from,
         };
         assert_eq!(
-            arc_extent(Some(&rest), z(1), &axis, &[z(1), z(0), z(0)]),
+            arc_extent(Some(&rest), &one, &axis, &[z(1), z(0), z(0)]),
             Some((z(0), z(1), z(0), z(1)))
         );
     }
@@ -4110,7 +4133,7 @@ mod tests {
             [z(0); 3],
             [z(0), z(0), z(1)],
             [z(1), z(0), z(0)],
-            q(1, 5),
+            nacre_scalar::BigRat::from(q(1, 25)), // radius 1/5, as r²
         )
         .unwrap();
         let fp = |span: Option<[Rat; 2]>| Footprint { span, theta: None };
@@ -4233,12 +4256,13 @@ mod tests {
         let (setup, cyl_surfs) = plane_index_setup_inner(&m, cube, cyl).expect("setup");
         let surf = cyl_surfs[0];
         let def = world_cylinder_def(&m, surf).expect("a world cylinder");
-        let (o, r) = (def.origin(), def.radius());
+        let (o, r2) = (def.origin(), def.r2());
         // The tangent class, found the gate's own way: one clearance call per class.
         let c = (0..setup.geom.len())
             .find(|&k| {
                 setup.geom[k].world_rat.is_some_and(|w| {
-                    nacre_scalar::point_plane_clearance_rat(&w, &o, r) == nacre_scalar::Orient::Zero
+                    nacre_scalar::point_plane_clearance_rat(&w, &o, r2)
+                        == nacre_scalar::Orient::Zero
                 })
             })
             .expect("the wall x = 0 is exactly r from the axis");

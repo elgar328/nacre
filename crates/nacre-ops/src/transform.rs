@@ -422,7 +422,7 @@ fn transport_cylinder(
             iso.point_rat(def.origin())?,
             iso.dir_rat(def.dir())?,
             iso.dir_rat(def.ref_dir())?,
-            def.radius(),
+            def.r2().clone(),
         ),
         Xform::Mirror { .. } => None,
     }
@@ -1419,7 +1419,11 @@ mod tests {
                     [d(1.0), d(0.0), d(0.0)],
                     "seam turned with it"
                 );
-                assert_eq!(def.radius(), d(1.5), "radius is rigid-invariant");
+                assert_eq!(
+                    *def.r2(),
+                    nacre_scalar::BigRat::from(d(2.25)),
+                    "the squared radius is rigid-invariant"
+                );
             }
             other => panic!("an exact turn must transport, not record — got {other:?}"),
         }

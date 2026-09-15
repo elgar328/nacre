@@ -3468,9 +3468,9 @@ fn point_in_mixed_ring_inner(
             Carrier::Arc(arc) => {
                 // The ray's own plane: e2·p − qy = 0 (rational).
                 let ray_plane = [e2[0], e2[1], e2[2], Rat::from_int(0).checked_sub(qy)?];
-                let (o, m, r) = (arc.def.origin(), arc.def.dir(), arc.def.radius());
+                let (o, m, r2) = (arc.def.origin(), arc.def.dir(), arc.def.r2());
                 let roots = match nacre_scalar::quad::plane_plane_cylinder(
-                    wc_coeffs, &ray_plane, &o, &m, r,
+                    wc_coeffs, &ray_plane, &o, &m, r2,
                 )? {
                     CylinderMeet::Pair { line, s } => Some((line, s)),
                     CylinderMeet::Miss(_) | CylinderMeet::AxisParallelMiss(_) => None,
@@ -3804,7 +3804,7 @@ fn ring_interior_candidates(
     let chart = Chart2dRat::of_normal(&n)?;
     let (e1, e2) = chart.axes();
     let mut out = vec![*centre];
-    let r = def.radius();
+    let r2 = def.r2();
     let sum = |a: &[Rat; 3], b: &[Rat; 3], neg: bool| -> Option<[Rat; 3]> {
         let mut v = [Rat::from_int(0); 3];
         for i in 0..3 {
@@ -3829,11 +3829,28 @@ fn ring_interior_candidates(
     let dirs: Vec<&[Rat; 3]> = [e1, e2].into_iter().chain(diag.iter()).collect();
     for e in dirs {
         let len2 = dot3_rat(e, e)?;
-        let lam = Rat::new(
-            r.numer().checked_mul(len2.denom())?,
-            r.denom()
-                .checked_mul(len2.numer().checked_add(len2.denom())?)?,
-        )?;
+        // A step strictly inside the circle along `e`. With a rational radius it is `r/(|e|²+1)`
+        // — the spelling the corpus was measured with, kept verbatim so a stated radius walks the
+        // same points it always did. Without one it is `min(r², 1)/(2(|e|²+1))`, inside because
+        // `λ|e| ≤ 1/4 < 1 ≤ r` when `r ≥ 1` and `λ|e| ≤ r²/4 < r` when `r < 1`; the assertion
+        // below is the judge either way.
+        let lam = match nacre_scalar::rat_sqrt_exact_big(r2) {
+            Some(r) => Rat::new(
+                r.numer().checked_mul(len2.denom())?,
+                r.denom()
+                    .checked_mul(len2.numer().checked_add(len2.denom())?)?,
+            )?,
+            None => {
+                let one = Rat::from_int(1);
+                let top = if *r2 < nacre_scalar::BigRat::from(one) {
+                    r2.narrow()?
+                } else {
+                    one
+                };
+                let bottom = Rat::from_int(2).checked_mul(len2.checked_add(one)?)?;
+                top.checked_mul(Rat::new(bottom.denom(), bottom.numer())?)?
+            }
+        };
         for sign in [
             Rat::from_int(1),
             Rat::from_int(0).checked_sub(Rat::from_int(1))?,
@@ -3844,7 +3861,7 @@ fn ring_interior_candidates(
                 p[i] = p[i].checked_add(k.checked_mul(e[i])?)?;
             }
             debug_assert_eq!(
-                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r),
+                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r2),
                 nacre_scalar::Orient::Negative,
                 "a step of r/(|e|^2+1) along a chart axis stays strictly inside the circle"
             );
@@ -3875,7 +3892,7 @@ fn ring_interior_candidates(
             if q == zero {
                 return None; // through the centre: the axis steps' case
             }
-            let t_cap = r.checked_mul(r)?.checked_mul(recip(nn)?)?;
+            let t_cap = r2.narrow()?.checked_mul(recip(nn)?)?;
             let q2 = q.checked_mul(q)?;
             let t_far = Rat::from_int(2)
                 .checked_mul(q)?
@@ -3892,7 +3909,7 @@ fn ring_interior_candidates(
                 p[i] = p[i].checked_sub(t.checked_mul(wn[i])?)?;
             }
             debug_assert_eq!(
-                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r),
+                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r2),
                 nacre_scalar::Orient::Negative,
                 "a chord's near and far points stay strictly inside the circle"
             );
@@ -4136,12 +4153,15 @@ fn holed_cap_witness(
     let u2 = scale(&cross3_rat(&m, &e)?, inv_me)?;
     let neg = |v: &[Rat; 3]| scale(v, Rat::from_int(-1));
     let dirs = [u1, neg(&u1)?, u2, neg(&u2)?];
-    let big_r = def.radius();
+    // Probe circles midway between the outer rim and each hole's, at rational radii — which
+    // needs the radii themselves. A face whose squared radii have no rational root is not probed
+    // this way; `None` is the answer this function already gives when it cannot form a witness.
+    let big_r = def.radius_exact()?;
     let half = Rat::new(1, 2)?;
     let mut radii = vec![big_r.checked_mul(half)?];
     for hole in &f.inner {
         if let BoundEdges::Circle(h) = hole {
-            radii.push(big_r.checked_add(h.radius())?.checked_mul(half)?);
+            radii.push(big_r.checked_add(h.radius_exact()?)?.checked_mul(half)?);
         }
     }
     let coeffs = class_coeffs_rat(jd, plane);
@@ -4149,7 +4169,7 @@ fn holed_cap_witness(
     let on_face = |p: &[Rat; 3]| -> Option<bool> {
         let inside_outer = match &f.outer {
             BoundEdges::Circle(_) => {
-                cylinder_radial_side(p, &def.origin(), &def.dir(), def.radius()) == Orient::Negative
+                cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) == Orient::Negative
             }
             BoundEdges::Ring(r) => point_in_mixed_ring(jd, cyls, coeffs.as_ref()?, p, r)?,
             BoundEdges::Lateral(_) => return None,
@@ -4160,7 +4180,7 @@ fn holed_cap_witness(
         for hole in &f.inner {
             let inside_hole = match hole {
                 BoundEdges::Circle(h) => {
-                    cylinder_radial_side(p, &h.origin(), &h.dir(), h.radius()) != Orient::Positive
+                    cylinder_radial_side(p, &h.origin(), &h.dir(), h.r2()) != Orient::Positive
                 }
                 BoundEdges::Ring(r) => point_in_mixed_ring(jd, cyls, coeffs.as_ref()?, p, r)?,
                 BoundEdges::Lateral(_) => return None,
@@ -4412,7 +4432,7 @@ pub(crate) fn point_in_faces_rat(
 /// ★ The rule is `cylinder_radial_side`'s, the one the nesting engine reads for a disk target —
 /// a circle bound is `cylinder ∩ plane`, so "inside the disk" is "inside the cylinder's radius".
 fn point_in_disk(p: &[nacre_scalar::Rat; 3], def: &nacre_topo::CylinderDef) -> Option<bool> {
-    match nacre_scalar::cylinder_radial_side(p, &def.origin(), &def.dir(), def.radius()) {
+    match nacre_scalar::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
         nacre_scalar::Orient::Negative => Some(true),
         nacre_scalar::Orient::Positive => Some(false),
         nacre_scalar::Orient::Zero => None,
@@ -4671,9 +4691,9 @@ pub(crate) fn lateral_face_crossings(
 ) -> Option<CurvedHit> {
     use nacre_scalar::Orient;
     use nacre_scalar::quad::{CylinderMeet, QuadVal};
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let (meet, roots): (_, [QuadVal; 2]) =
-        match nacre_scalar::quad::plane_plane_cylinder(line[0], line[1], &o, &m, r)? {
+        match nacre_scalar::quad::plane_plane_cylinder(line[0], line[1], &o, &m, r2)? {
             CylinderMeet::Pair { line, s } => (line, s),
             CylinderMeet::Tangent { .. } | CylinderMeet::OnRuling(_) => {
                 return Some(CurvedHit::Graze);
@@ -5108,7 +5128,7 @@ fn arc_extremum_winding(
         {
             arcs += 1;
         }
-        let (m, r) = (ac.def.dir(), ac.def.radius());
+        let (m, r2) = (ac.def.dir(), ac.def.r2());
         // The first world axis the circle spans; the minimum is rational iff the axis is ⊥ to it.
         let a = usize::from(m[1] == zero && m[2] == zero);
         if m[a] != zero {
@@ -5127,7 +5147,10 @@ fn arc_extremum_winding(
             continue;
         };
         let c = ad.centre;
-        let Some(ex) = c[a].checked_sub(r) else {
+        // The extreme is `c − r`, which needs the radius itself: a squared radius with no rational
+        // root leaves the extent undecided — the honest answer this loop already has.
+        let Some(ex) = nacre_scalar::rat_sqrt_exact_big(r2).and_then(|r| c[a].checked_sub(r))
+        else {
             #[cfg(test)]
             {
                 undecided += 1;
@@ -6180,7 +6203,7 @@ pub(crate) fn conjugate_midpoint(
         "a chord midpoint is on both of its planes"
     );
     debug_assert_eq!(
-        nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.radius()),
+        nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
         nacre_scalar::Orient::Negative,
         "a chord midpoint is strictly inside the cylinder"
     );
@@ -6257,9 +6280,9 @@ pub(crate) fn pierce_meet(
         class_coeffs_rat(jd, planes[0])?,
         class_coeffs_rat(jd, planes[1])?,
     );
-    let (o, m, r) = (def.origin(), def.dir(), def.radius());
+    let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let (line, s) = match (
-        nacre_scalar::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r)?,
+        nacre_scalar::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2)?,
         root,
     ) {
         (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => (line, s[0]),

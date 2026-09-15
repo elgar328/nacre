@@ -20983,3 +20983,41 @@ census 태그 · **진짜 결함**. ☑ **인구에 있으면서 결함이 아�
 ### 넘기는 것
 항목 25(반지름 → r², 이제 `Edge2d`·`CylinderDef` **둘**) · 항목 28 · 항목 21. 항목 27 의 예시 `BranchingVertex` 는
 이제 정말 죽은 이름이다(그 항목이 다룬다).
+
+## 칸 51 — 원의 진실은 r² (항목 25 · 1단계): 반지름이 아니라 «반지름 제곱», 그리고 그 제곱은 넓다 (2026-09-15)
+
+항목 25 의 첫 계단. 오늘 원호·원통은 `radius: Rat` 을 진실로 들어 반지름이 무리수인 순간 막혔는데, 맨 r 을
+유리수로 요구하는 곳은 `sketch::radius_of` 의 `rat_sqrt_exact` 하나뿐이고 정확 술어는 전부 r 을 제곱해 쓴다
+(실측 — 스칼라 문 11 이 안에서 제곱, 셋이 반지름의 합/차). r² = |start − center|² 는 항상 유리수다.
+
+### 한 것
+- 진실 `Edge2d::Arc { center, r2, ccw }`(`Rat`) · `CylinderDef { …, r2: BigRat }` · `Seg3::Arc.r2` · `ArcSpec.r2` ·
+  `QuarterArc.r2` · `Corner::Round.rho2`. `radius()` 삭제 — 컴파일러가 38 자리를 짚었다.
+- 스칼라 문 12 → `r2: &BigRat`. 합/차 셋(`cylinders_clear` 평행 팔·`cylinders_nested`·`skew_axes_clear`)은 세 근호를 한
+  정수 눈금(L²)에 올려 기존 `sqrt_root_sum_cmp` 로 — 유일한 새 산술. `realize_seam_point`·신설 `sqrt_f64`·`sqrt_bounded_big`·
+  `rat_sqrt_exact_big` 은 «완전제곱이면 옛 길, 아니면 √». 스케치 문 `r2_of`; `ArcRadiusNotRational` 소멸(생산자 0).
+- «유리수 점을 r 로 짓는 자리 여섯»: `radius_exact()` 가 `Some` 이면 오늘의 산술 글자 그대로(census 의 근거는 «같은 값»),
+  `None` 이면 r²-꼴 대안(격자 탐침 λ) 또는 그 자리의 기존 거절. 솔기 하나는 `√(r²/|e₁|²)` 로 무조건 — 같은 유리수.
+- kit: `translate` 의 죽은 팔 삭제, «√2 반지름 호» 거절 테스트 → 수용 잠금(활꼴 부피), 문서 셋. playground 무변.
+
+### 실측이 플랜을 둘 고쳤다
+1. ★★ **폭.** 플랜은 «17자리 십진 r → r² 분자 ~10³⁴ < i128» 이라 적었다 — 분자만 세고 **분모**를 안 셌다. 16자리
+   십진 반지름은 ~1e-4 아래에서 제곱의 분모가 i128 을 넘고(5.000000000000001e-8 → 10²³ → 10⁴⁶), 그 인구를 잠근
+   테스트 둘(`a_bored_cube_builds_at_any_size…`·`reject_census` 의 `cylinder_wide_axis`)이 빨개졌다. 사용자 결정: 창을
+   좁히지 않고 **`BigRat`**(BigInt 유리수) 로. 문이 이미 BigInt 로 계산하므로 자연스럽고, ops 의 `Rat` 산술 자리 넷은
+   `narrow()?` 로 옛 `r·r` 이 넘치던 자리에서 같은 거절. → 기억 [a-square-doubles-the-denominator].
+2. **같은 타입이라 컴파일러가 못 짚은 자리 하나** — nesting 의 림 증인 `debug_assert` 가 `radius_exact()` 의 `Rat` r 을
+   r² 문에 넘겼다. 관문이 잡았다: 117 실패, 디버그 census 398 → 160 행(단언 패닉이 모델을 못 만들게 함), release 는
+   398 행이지만 다름. 플랜의 «컴파일 주도 감사»는 접근자엔 맞고 «값의 뜻»엔 눈이 먼다 — 그래서 census 가 심판이다.
+
+### 관문
+fmt · clippy · **1306** · no-default · census **398 HEAD≡debug≡release 비트 동일** · reject · ignored 133 · perf 평상 ·
+스윕 순증 = 예측(`ArcRadiusNotRational`·`radius_of` 은퇴 서술). 새 잠금: 비피타고라스 호(정점 (1,1)·(−1,1), r²=2) 의
+돌출 — validate 0, 부피 π/2−1, 캐시 √2 비트 동일; **상자 `cut` 탐침이 초록이라 잠금으로 승격**; `sqrt_f64` 완전제곱
+250·비완전제곱 7·넓은 제곱 1; 비완전제곱 쌍(r²=2, 3)의 `cylinders_clear/nested`; 넓은 제곱의 솔기 실현. 뒤집힌 테스트
+둘(ops `arcs_that_cannot_be_stated…` 의 첫 절, kit `arcs.rs` 의 radius 절)은 «거절»에서 «수용»으로.
+
+### 넘기는 것
+2·3단계(`NumDef`): 여섯 자리가 `radius_exact()` 뒤에 그대로. 온전한 원의 문 `circle_rat(c, r)` 은 r 을 받는다(솔기가
+유리수 점). `ArcSpec`/2-D 호 법정은 `Rat` 이라 넓은 제곱의 원은 거기서 `None` — 오늘 인구 0(원통 원시체의 온전한
+원 림이 다른 넓은 원통과 만나는 경우), 2단계의 입력.

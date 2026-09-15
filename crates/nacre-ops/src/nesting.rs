@@ -165,20 +165,16 @@ pub(crate) fn disk_in_disk(
     {
         return Err(reject(RejectReason::ObliqueCircleClass));
     }
-    let (ra, rb) = (a.radius(), b.radius());
-    if ra >= rb {
+    let (ra2, rb2) = (a.r2(), b.r2());
+    if ra2 >= rb2 {
         return Ok(false);
     }
-    let dr = rb.checked_sub(ra).ok_or_else(undecided)?;
-    let mut dist2 = nacre_scalar::Rat::from_int(0);
-    for k in 0..3 {
-        let d = pb[k].checked_sub(pa[k]).ok_or_else(undecided)?;
-        dist2 = dist2
-            .checked_add(d.checked_mul(d).ok_or_else(undecided)?)
-            .ok_or_else(undecided)?;
-    }
-    let dr2 = dr.checked_mul(dr).ok_or_else(undecided)?;
-    Ok(dr2 > dist2)
+    // `dist < r_b − r_a` with the radii as squares: the difference is never formed — the scalar
+    // door reads `√rb² > √dist² + √ra²` through the root-sum identity, in integers. Both centres
+    // lie on the class plane the axis is normal to, so the distance from `pb` to `a`'s axis is
+    // the distance between the centres, which is what this always compared.
+    Ok(nacre_scalar::cylinders_nested(&pa, &a.dir(), ra2, &pb, rb2)
+        == nacre_scalar::Orient::Negative)
 }
 
 /// **Which cell a question is about** — a loop of the class's arrangement, or a whole disk.
@@ -307,8 +303,13 @@ fn rim_and_centre<'a>(
     // `RingHasNoWitness` rather than to a wrong answer, which is the direction this kernel takes.
     let carries = combinatorics::class_coeffs_rat(jd, wc)
         .is_some_and(|c| combinatorics::class_carries_circle(&[c[0], c[1], c[2]], &def.dir()));
-    if carries && let Some((u1, u2)) = nacre_scalar::cyl_unit_frame(&def.dir(), &def.ref_dir()) {
-        let r = def.radius();
+    // Rim witnesses at `centre + r·u` need the radius itself; a cell whose squared radius has no
+    // rational root is simply not offered them — it keeps its centre, exactly as when a witness's
+    // arithmetic leaves `i128` below.
+    if carries
+        && let Some((u1, u2)) = nacre_scalar::cyl_unit_frame(&def.dir(), &def.ref_dir())
+        && let Some(r) = def.radius_exact()
+    {
         let neg = |v: &[nacre_scalar::Rat; 3]| -> Option<[nacre_scalar::Rat; 3]> {
             let z = nacre_scalar::Rat::from_int(0);
             Some([
@@ -331,7 +332,7 @@ fn rim_and_centre<'a>(
                 continue;
             };
             debug_assert_eq!(
-                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r),
+                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
                 nacre_scalar::Orient::Zero,
                 "a rim witness is on its own rim"
             );
@@ -455,7 +456,7 @@ fn ask(
     target: Cell<'_>,
 ) -> Said {
     let radial = |p: &[nacre_scalar::Rat; 3], def: &nacre_topo::CylinderDef| {
-        match nacre_scalar::cylinder_radial_side(p, &def.origin(), &def.dir(), def.radius()) {
+        match nacre_scalar::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
             nacre_scalar::Orient::Negative => Said::In,
             nacre_scalar::Orient::Positive => Said::Out,
             // On the rim. The ring road has always read this as "this witness says nothing, the

@@ -18,8 +18,8 @@
 //! rings over named nodes (`nacre-ops`, the mixed-ring parity); this module is that rule over
 //! rational 2-D data, spelled here because the two cannot share code.
 //!
-//! **Contract on arcs.** A [`Edge2d::Arc`] states its centre and radius; both of the step's
-//! vertices lie on that circle and the radius is positive. That is the caller's contract
+//! **Contract on arcs.** A [`Edge2d::Arc`] states its centre and squared radius `r2`; both of the
+//! step's vertices lie on that circle and `r2` is positive. That is the caller's contract
 //! (`nacre-ops` checks it once, at construction), `debug_assert`ed here.
 
 use crate::intersect::{
@@ -33,16 +33,17 @@ use nacre_scalar::{Orient, Rat};
 pub enum Edge2d {
     Line,
     /// The arc from this step's vertex to the next, around `center`, counter-clockwise when
-    /// `ccw`. `radius` is **derived once at the door and stored** — `nacre-ops`'s step doors and
-    /// `Ring2d::new` compute `|start − center|²` and accept only a rational square root
-    /// (`rat_sqrt_exact`, else `ArcRadiusNotRational`), and check the next vertex against it
-    /// (`ArcEndOffCircle`). It is kept because the cylinder truth needs it as a `Rat` and
-    /// recomputing it is a `√` away from the points; `Ring2d`'s private `edges` is what keeps a
-    /// hand-built `Arc` from bypassing that door. A step whose two vertices are one point is the
-    /// whole circle (its vertex is the seam).
+    /// `ccw`. `r2` is the **squared** radius, derived once at the door and stored — `nacre-ops`'s
+    /// step doors and `Ring2d::new` compute `|start − center|²`, which is rational for every circle
+    /// through rational points (no square root is taken, so no radius is refused for being
+    /// irrational), and check the next vertex against it (`ArcEndOffCircle`). It is the square
+    /// because that is what every exact predicate compares against and what the cylinder truth
+    /// carries; a radius wanted as a number is `√r2`, a realization. `Ring2d`'s private `edges` is
+    /// what keeps a hand-built `Arc` from bypassing the door. A step whose two vertices are one
+    /// point is the whole circle (its vertex is the seam).
     Arc {
         center: [Rat; 2],
-        radius: Rat,
+        r2: Rat,
         ccw: bool,
     },
 }
@@ -157,12 +158,13 @@ fn sign_rat(x: Rat) -> Orient {
 
 // ─── arcs ─────────────────────────────────────────────────────────────────────────────────────
 
-/// An arc as the predicates read it: centre, radius, and its two ends in **counter-clockwise**
-/// order (a clockwise step is the same set of points read from its other end).
+/// An arc as the predicates read it: centre, squared radius, and its two ends in
+/// **counter-clockwise** order (a clockwise step is the same set of points read from its other
+/// end).
 #[derive(Clone, Copy, Debug)]
 struct Arc {
     c: [Rat; 2],
-    r: Rat,
+    r2: Rat,
     /// Counter-clockwise start and end. `s == e` is the whole circle.
     s: [Rat; 2],
     e: [Rat; 2],
@@ -171,19 +173,12 @@ struct Arc {
 impl Arc {
     fn of(step: &Step) -> Option<Arc> {
         match step.seg {
-            Edge2d::Arc {
-                center,
-                radius,
-                ccw,
-            } => {
-                debug_assert!(radius > Rat::from_int(0), "an arc's radius is positive");
+            Edge2d::Arc { center, r2, ccw } => {
+                debug_assert!(r2 > Rat::from_int(0), "an arc's squared radius is positive");
                 debug_assert!(
-                    {
-                        let r2 = radius.checked_mul(radius);
-                        [step.from, step.to]
-                            .iter()
-                            .all(|v| dist2(*v, center).is_none() || dist2(*v, center) == r2)
-                    },
+                    [step.from, step.to]
+                        .iter()
+                        .all(|v| dist2(*v, center).is_none() || dist2(*v, center) == Some(r2)),
                     "an arc's vertices lie on its circle (the caller's contract)"
                 );
                 let (s, e) = if ccw {
@@ -193,7 +188,7 @@ impl Arc {
                 };
                 Some(Arc {
                     c: center,
-                    r: radius,
+                    r2,
                     s,
                     e,
                 })
@@ -204,10 +199,6 @@ impl Arc {
 
     fn is_full(&self) -> bool {
         self.s == self.e
-    }
-
-    fn r2(&self) -> Option<Rat> {
-        self.r.checked_mul(self.r)
     }
 
     /// Is `p` — a point **on this circle** — on the arc, ends included?
@@ -299,7 +290,7 @@ fn line_circle_params(p: [Rat; 2], d: [Rat; 2], c: [Rat; 2], r2: Rat) -> Option<
 fn segment_meets_arc(p: [Rat; 2], qq: [Rat; 2], arc: &Arc, skip: &[[Rat; 2]]) -> Option<bool> {
     let d = sub2(qq, p)?;
     let one = QuadVal::from_rat(Rat::from_int(1));
-    for t in line_circle_params(p, d, arc.c, arc.r2()?)? {
+    for t in line_circle_params(p, d, arc.c, arc.r2)? {
         if t.sign() == Orient::Negative || one.checked_sub(&t)?.sign() == Orient::Negative {
             continue; // outside the segment
         }
@@ -325,12 +316,13 @@ fn skipped(x: &QPt, skip: &[[Rat; 2]]) -> Option<bool> {
 
 /// Do two arcs meet anywhere except at the points in `skip`? Touching counts.
 /// One circular arc of the plane, stated for [`arcs_share_a_point`]: `start → end` runs
-/// counter-clockwise on the circle `(centre, radius)`, and `start == end` is the whole circle. The
-/// points are on the circle — the caller's contract, as for every arc in this module.
+/// counter-clockwise on the circle `(centre, √r2)` — the radius stated as its square, the form
+/// the truth holds — and `start == end` is the whole circle. The points are on the circle — the
+/// caller's contract, as for every arc in this module.
 #[derive(Clone, Copy, Debug)]
 pub struct ArcSpec {
     pub centre: [Rat; 2],
-    pub radius: Rat,
+    pub r2: Rat,
     pub start: [Rat; 2],
     pub end: [Rat; 2],
 }
@@ -342,7 +334,7 @@ pub struct ArcSpec {
 pub fn arcs_share_a_point(a: &ArcSpec, b: &ArcSpec) -> Option<bool> {
     let arc = |x: &ArcSpec| Arc {
         c: x.centre,
-        r: x.radius,
+        r2: x.r2,
         s: x.start,
         e: x.end,
     };
@@ -351,7 +343,7 @@ pub fn arcs_share_a_point(a: &ArcSpec, b: &ArcSpec) -> Option<bool> {
 
 fn arcs_meet(a: &Arc, b: &Arc, skip: &[[Rat; 2]]) -> Option<bool> {
     if a.c == b.c {
-        if a.r != b.r {
+        if a.r2 != b.r2 {
             return Some(false); // concentric, distinct radii: disjoint circles
         }
         // One circle: the arcs overlap iff an end of one lies on the other (a full circle
@@ -375,8 +367,8 @@ fn arcs_meet(a: &Arc, b: &Arc, skip: &[[Rat; 2]]) -> Option<bool> {
     let d = sub2(b.c, a.c)?;
     let d2 = dot2(d, d)?;
     let h = d2
-        .checked_add(a.r2()?)?
-        .checked_sub(b.r2()?)?
+        .checked_add(a.r2)?
+        .checked_sub(b.r2)?
         .checked_mul(Rat::new(1, 2)?)?;
     let k = h.checked_mul(recip(d2)?)?;
     let base = [
@@ -384,7 +376,7 @@ fn arcs_meet(a: &Arc, b: &Arc, skip: &[[Rat; 2]]) -> Option<bool> {
         a.c[1].checked_add(k.checked_mul(d[1])?)?,
     ];
     let perp = [Rat::from_int(0).checked_sub(d[1])?, d[0]];
-    for t in line_circle_params(base, perp, a.c, a.r2()?)? {
+    for t in line_circle_params(base, perp, a.c, a.r2)? {
         let x = point_at(base, perp, &t)?;
         if skipped(&x, skip)? {
             continue;
@@ -448,7 +440,7 @@ fn point_in_mixed_ring_opt(p: [Rat; 2], ring: MixedRing<'_>) -> Option<RingSide>
                 }
             }
             Some(arc) => {
-                let r2 = arc.r2()?;
+                let r2 = arc.r2;
                 // The probe on the arc is boundary, whatever the ray says.
                 if dist2(p, arc.c)? == r2 && arc.contains(&q(p))? {
                     return Some(RingSide::OnBoundary);
@@ -599,7 +591,7 @@ mod tests {
     fn arc(cx: i128, cy: i128, radius: i128, ccw: bool) -> Edge2d {
         Edge2d::Arc {
             center: pt(cx, cy),
-            radius: r(radius),
+            r2: r(radius * radius),
             ccw,
         }
     }
