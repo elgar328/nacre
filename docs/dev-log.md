@@ -21022,3 +21022,100 @@ fmt · clippy · **1306** · no-default · census **398 HEAD≡debug≡release �
 2·3단계(`NumDef`): 여섯 자리가 `radius_exact()` 뒤에 그대로. 온전한 원의 문 `circle_rat(c, r)` 은 r 을 받는다(솔기가
 유리수 점). `ArcSpec`/2-D 호 법정은 `Rat` 이라 넓은 제곱의 원은 거기서 `None` — 오늘 인구 0(원통 원시체의 온전한
 원 림이 다른 넓은 원통과 만나는 경우), 2단계의 입력.
+
+## 칸 52 — 캐시는 실현의 메모다: 정점은 태어날 때 정의에서 실현된다, reuse 는 캐시를 읽지 않는다 (2026-09-15)
+
+**항목 28(STEP 정확 반올림 통로)을 열려다 3b 후반(정점판)을 닫았고, 그 길에 규칙 위반 하나와 잠복 결함 하나를
+잡았다.** 커밋 셋: `04c5e75`(reuse) · 실현 캐시 · 문서.
+
+### 플랜이 세 번 뒤집혔다 — 둘은 사용자가
+- 첫 초안: «STEP 이 `realize_vertex` 를 직접 부르고 캐시는 그대로». t-a-c 원칙 4(«실현 통로는 하나, 표에서 읽는다»)와
+  「설계 (2026-09-10)」 절이 **이미 두 번 반증해 둔** 오답이었다(*«출력 전용 실현이 유일한 안전한 길» → 불필요*).
+  게다가 그 길에서 step↔ops 의존 퍼즐이 생겨 한 라운드를 그것에 썼다 — 옳은 길이면 nacre-step 은 한 줄도 안 바뀐다.
+- 둘째 초안: «연산 끝에 캐시를 덮어쓴다(`refine_from`)». 사용자: *«애초에 실현값으로 만들면 고칠 것도 없지 않나 —
+  append-only 로»*. 맞다: `realize` 의 본체는 정의만 읽고, 간선은 끝점 뒤에 서므로, **push 시점에 실현하면** 둘째
+  쓰기 문도 꼬리 정제도 간선 재유도도 없다.
+- 셋째: 플랜의 reuse 절이 «캐시 f64 를 경계와 함께 올리자»였는데 사용자가 물었다 — *«f64 → Rat 리프트는 사용자
+  입력만 예외로 금지하지 않았나?»* design §6.0 이 그렇다. 정의에서 짓는다.
+
+### 실측 (탐침, release · 되돌림)
+| | 불리언 결과 정점 | 피연산자 정점 |
+|---|---|---|
+| 정점 (모델/쌍) | 4,924 (325) | 6,988 (395 쌍) |
+| realize 성공 / 거절 | 4,578 / `NoMeet` 346 | 6,784 / `NoMeet` 192 · `NoCurvedPoint` 12 (`xy turned` 의 회전 원통 seam) |
+| 캐시와 다름 | 527 (86 모델), 최대 27 ulp | 607 (103 쌍), 최대 58 ulp |
+| 변종 | 전부 `Measured`; **잔차 0.0 인데 움직이는 것 172** (26 모델) | `Unmeasured` 5,456 — **실현이 정확 유리수인데 f64 가 그 값이 아닌 것 316** (32 쌍: `aa` 0.3/0.7 · `fw` · `tangentline` · `rot X` · `xy` · `wf` · `ex`) |
+| 실현값↔담체 캐시 거리 | 최대 1.07e-14 (오늘 캐시 3.6e-15) | 같음 |
+| realize 비용 | 3.3 µs/정점(평면) · 4.1 µs(곡면) · 코퍼스 17 ms | 3.2 µs |
+| `fourplane apex` 4 모델 | 캐시 −2.6e-16 → 실현 정확히 0 | |
+⇒ 기록의 전제 셋이 뒤집혔다: «128비트 실현은 훨씬 느리다 ⇒ 명시적 연산»(4 µs), «정점만 하면 파일이 자기모순»(1e-14),
+«잔차가 있으면 발견된 점»(정제 뒤엔 거의 전부 `Bounded`).
+
+### 1단계 — reuse 는 정의에서 (`04c5e75`)
+`solid_points` 의 world 팔이 `WitnessPoint::exact(vertex_point)` 로 캐시 f64 를 **허용오차 0 의 유리수**로 올리고 있었다.
+`exact` 는 2026-07-27 «축정렬 = f64 가 곧 유리수» 인 경우의 perf 지름길(`at` 의 120비트 tol 측정이 실행 시간의 77%)
+이었고, S7 이 world 팔을 옛 `Constructed` 팔과 *"letter-identical"* 로 두면서 0.3 같은 보통 십진 좌표에도 그 길을 태웠다.
+타이에서 «엄격히 한쪽»이라는 틀린 답이 가능한 잠재 불건전성(관측된 오답 0). 이제 두 팔이 한 모양이다: 세 이름 →
+`three_planes_rat` → **`WitnessPoint::at_nearest`**(새 문, cip: tol 은 `Rat::to_f64` 의 계약에서 — 표현 가능하면 0, 아니면
+`|x|·2⁻⁵³`; `planes.rs` 가 인라인으로 쓰던 철자를 한 자리로), 모션이 있으면 체인 재생. 「측정 좌표면 `None`」 게이트는
+정의 도로에 근거가 없어 죽었다 — 불리언 결과가 다음 불리언의 피연산자여도 후보다. **A/B**: census 비트 동일(debug =
+release = HEAD); 계획 인구 Arrange 1483 → 1460 · PassThrough 680 → 695 · Empty 360 → 368(디버그가 Off/Proved 를 둘 다
+돌려 대조); perf 잡음 안. ☑ 플랜은 `WitnessPoint::exact` 를 은퇴시키려 했는데 `planes.rs` 가 (전제조건을 검사하고)
+쓰고 있었고 ops 테스트 픽스처도 쓴다 — 제품 호출자 0 으로 두고 남긴다.
+
+### 2단계 — 정점은 태어날 때 실현된다
+- `PointCache::Bounded { coord, bound: [Mag;3] }`(캐시가 «아는 것»으로 이름 — `Realized` 는 출처다). `residual()`/
+  `vertex_tol()` 은 `Bounded → None`(경계는 잔차가 아니다); `bound()` 신설; `moved_to` 는 `Bounded → Unmeasured`(f64 로
+  옮긴 값은 최근접이 아니다 — transform 이 다시 실현하고, 이것은 그 폴백).
+- `Model::vertex_meet_of(&VertexDef)`(`vertex_meet(v)` 가 위임) · ops `realize_def`(`build` 는 def 만 읽는다) ·
+  **`realize_cache(model, &def) -> Option<([f64;3],[Mag;3])>`**: 첫 단(128비트)만, **모션 깊이 > 64 면 시도 안 함**,
+  못 정하면 `None` · `push_vertex_realized(model, def, fallback)`: ops 의 push 자리 다섯(boolean 3 · ops 1 · transform 1)
+  이 전부 지난다 — `Bounded` 를 쓰는 철자는 하나.
+- ⚠ **깊이 가드가 필요했던 이유**: `NearestF64` 사다리를 push 마다 오르니 4,200회 회전 픽스처
+  (`a_rotation_history_past_the_budget…`)가 1.5초에서 **분 단위**로 — 회전당 ~1비트씩 오차가 자라 첫 단이 못 정하고
+  6단을 다 오른 뒤 `Undecided`, 그것을 8 정점 × 4,200 단계. 첫 단 + 깊이 64 로 5.5초(HEAD 5.65초). «코퍼스 최대는
+  타입의 한계가 아니다» — 코퍼스는 깊이 ≤ 2 였다.
+- validate: `Bounded → EPS_CONSTRUCTED`(경계는 캐시 담체와의 거리가 아니고 `SurfaceCache.tol` 은 없다; 실측 1.07e-14).
+- **잠금 3 을 심어서 확인**: 변종 없이(옛 잔차 그대로, 좌표만 실현값) 밀면 ops 단위 테스트 **16개 빨강**,
+  `VertexOffDefinition` 12 · `VertexOffSurface` 1 — 셋째 변종은 필요했다.
+
+### 잡은 잠복 결함 — 이동한 pierce 정점이 «다른 교차점»을 이름 짓고 있었다
+캐시가 정의를 읽기 시작하자 가환성 오라클(`the_boolean_commutes_with_rigid_motion`)의 quadrantal 셀 **18개**가
+`Identical` → `PiercelessIdentical` 로 갔다. 탐침: 보스를 90° 돌린 뒤의 pierce 정점이 `root: Hi` 로 **반대편 교차점**
+(3.5 → 4.5, 반 보스 거리)에 실현됐다. `transform` 의 `Pierce` 재사상이 `QuadRoot::canonical`(핸들 순서의 교환)만 하고
+**부호 절반**을 안 냈다 — 재진술된 평면의 정준 이름은 법선 부호를 뒤집을 수 있고, 반사는 모든 외적을 뒤집는다;
+`canonical` 의 doc 이 *"flip once per reversal … 부호 절반은 호출자의 몫"* 이라 적어 둔 그 빚이다. 옛 캐시(이동한
+f64)는 맞는 자리에 있어 정의의 틀린 이름표가 보이지 않았다 — «두 거짓이 상쇄» 부류. 수리: `pierce_line_reversed` —
+새 쌍의 `ℓ = n₁ × n₂` 와 옛 쌍의 `ℓ` 을 모션의 선형부로 나른 것(`Xform::dir_rat`, `Isometry::point_rat` 로 정확)의
+내적 부호 — 정확하지 않으면(무리수 체인) 재진술이 없었으므로 순서 규칙 그대로. 잠금:
+`a_moved_pierce_vertex_names_the_crossing_it_moved_to`(x·z 90°, y 270°) + 오라클 18 셀 다시 `Identical`. ⚠ 반사 절반은
+같은 자리에서 내지만 잠글 수 없다 — 반사된 원통은 `world_cylinder_def`(순수 이동만)가 못 적어 pierce 정점이 구성
+폴백으로 남는다(항목 14).
+
+### 테스트 열둘이 «잔차가 있음 = 발견됨»을 표지로 쓰고 있었다
+컴파일은 통과하고 인구가 무너지는 부류(플랜은 «컴파일이 가리키는 곳»이라 적었다 — 틀렸다). 각각 명제를 다시 재단:
+bands 2(`knowledge_is_tight`: `Bounded` 면 경계 < 1e-12, `Measured` 면 잔차) · `rotated_vertex` 1 + `tests.rs`
+mirrored 1(«정의가 저장 좌표를 비트 동일하게 재생» → «캐시 = 실현, f64 재생은 구성 ε 안») · `tests.rs` 3
+(`count_discovered` = `Unmeasured` 가 아닌 것) · `copy.rs` · `vertex_tolerance.rs`(`Bounded` 는 실현과 비트 동일 +
+담체 ε) · `point_width.rs` 3(`realized(exact0/inexact)` 열 추가, `solved_discovered` 의 필터) · `wide_datum_cost.rs` 3
+(`vouched`) · `sketch.rs`(«실현됐다»로 강화) · `replay.rs`(다이제스트에 `vertex.bound`).
+
+### 잠금·A/B
+- census `r <tag> realized= kept=` 행 + 매 행 단언 «`Bounded` ⇔ `realize_cache` 가 답함, 비트 동일»: **realized 4,578 ·
+  kept 346** — 탐침 그대로(첫 단으로 잃은 것 0). `c` 행: **117 행이 움직였고, 움직인 집합 = 탐침이 예측한 집합(결과
+  정점이 움직인 모델 ∪ 피연산자가 움직인 쌍)과 정확히 같다**(0/0 불일치); debug = release.
+- 단위: `an_operations_cache_is_the_realization`(옛 `the_cache_is_not_always_nearest` 의 재단 — «오늘의 캐시에 대한
+  진술이고 이 문의 목적은 그것을 거짓으로 만드는 것» 이라던 그날) · `the_edge_cache_is_the_derivation_of_realized_endpoints`
+  (rebuild 무동작) · `a_moved_solid_is_realized_from_its_moved_definition` · `the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal`
+  (폴백을 3 ulp 틀리게 줘도 캐시는 실현값; 회전 원통 seam 은 `NoCurvedPoint` 로 폴백) · reuse 둘(0.3 상자의 증인 tol > 0,
+  불리언 결과가 답함) · cip `at_nearest`.
+- perf(release, 같은 세션): **+~10%** — fold 80 rotated 1.00 → 1.11 s · axis 692 → 773 ms · ring 80 1.54 → 1.69 s ·
+  small 568 → 618 µs. 정점당 3~4 µs 가 결과 정점마다 든다 — 열린 항목 30(배열의 정확 meet 를 push 에 넘기기 · 뻔한
+  거절 건너뛰기).
+- 관문 전량 초록. 스윕: 은퇴 없음(조건부 밖).
+
+### 넘기는 것
+`NoMeet` 346/192 · `NoCurvedPoint` 12 · 반사된 원통(항목 14) · 곡면 캐시의 실현(항목 8) · reuse 의 `OnSeam`/`Pierce`
+증인 · `at` 69곳의 측정 → 계약 경계(perf 가 부르면) · Wide 이름 정점의 증인 · **pad/pocket → kit 설탕(항목 29)** ·
+push 시점 실현의 비용(항목 30).
+
