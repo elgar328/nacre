@@ -23,7 +23,7 @@ use crate::{BoolKind, he_start};
 use nacre_cip::{WitnessPoint, orient3d_filter};
 use nacre_scalar::Orient;
 use nacre_store::Handle;
-use nacre_topo::{Model, PointCache, Solid, Vertex};
+use nacre_topo::{Model, Solid, Vertex};
 use std::collections::HashMap;
 
 /// Whether a boolean may take the shortcut this module exists for.
@@ -52,16 +52,22 @@ pub(crate) enum ClassPlan {
 /// Every vertex of a solid as an exact [`WitnessPoint`], from its **definition** — or `None` when one
 /// declines, and the class falls back to [`ClassPlan::Arrange`] (slower, never wrong).
 ///
-/// Three branches (measured against the pre-S7 `Origin` road, bit-identical where both
-/// answered — the C2 differential):
-/// * measured vertex (`vertex_tol` Some) — decline, an implicit point has no rational base;
-/// * all three defining surfaces world-stated (`motion: None`) — the coordinate is the
-///   statement, `WitnessPoint::exact`, letter-identical to the old `Constructed` arm;
+/// One road for every vertex: its base is **solved from its definition** — the three carriers'
+/// narrow names, in the frame the planes are stated in ([`nacre_scalar::three_planes_rat`]) —
+/// and the coordinate handed to the predicates is that base's own nearest `f64` with the
+/// rounding it carries ([`WitnessPoint::at_nearest`]). Two arms after that:
+/// * all three carriers world-stated (`motion: None`) — the base is the world point, done;
 /// * the moved carriers sharing one motion, any world-stated carrier **fixed by that
-///   chain** — solve the triple's **narrow names in the shared pre-motion frame**
-///   ([`nacre_scalar::three_planes_rat`]) and replay the chain: the very computation
-///   measured bit-identical to the stored base-and-replay road (8/8). (A fixed plane's
-///   world equation *is* its pre-motion equation, which is what admits a restated cap.)
+///   chain** — the base is the pre-motion point; replay the chain (measured bit-identical to
+///   the stored base-and-replay road, 8/8). (A fixed plane's world equation *is* its
+///   pre-motion equation, which is what admits a restated cap.)
+///
+/// ★ **The cache is never read here.** The world arm used to hand `vertex_point` to
+/// `WitnessPoint::exact` — the rounded `f64` lifted back to a rational with tol 0 — which names
+/// a different point for every coordinate `f64` cannot hold (measured: 316 of a census corpus's
+/// 6,988 operand vertices, `0.3` among them). A boolean's own result vertices used to decline
+/// wholesale on the same ground ("an implicit point has no rational base"); their definition
+/// has one, so they take the road too.
 ///
 /// ★ **Mixed frames decline — unless the odd carrier is provably fixed.** Since the
 /// invariant-plane restatement, a turned block's corner is a restated world cap × two
@@ -87,9 +93,6 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     if !seen.insert(vh) {
                         continue;
                     }
-                    if matches!(model.vertex_cache(vh), PointCache::Measured { .. }) {
-                        return None; // measured — an implicit point has no rational base
-                    }
                     let tri = match model.vertices.get(vh).def {
                         VertexDef::ThreePlane(tri) => tri,
                         // No rational base point: OnSeam and Pierce coordinates are not
@@ -99,36 +102,43 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                         // not.
                         VertexDef::OnSeam(_) | VertexDef::Pierce { .. } => return None,
                     };
+                    // The base is the definition's: the three narrow names, solved in the frame
+                    // the planes are stated in. A wide or missing name declines.
+                    let mut coeffs = [[nacre_scalar::Rat::from_int(0); 4]; 3];
+                    for (o, h) in coeffs.iter_mut().zip(tri) {
+                        *o = *model.surface_name.get(&h)?.narrow()?;
+                    }
                     let motions = tri.map(|h| model.plane_motion(h));
-                    out.push(if motions.iter().all(Option::is_none) {
-                        WitnessPoint::exact(model.vertex_point(vh).as_array())?
-                    } else {
-                        // One shared leaf among the moved carriers, or a decline.
-                        let mut leaf = None;
-                        for m in motions.iter().flatten() {
-                            match leaf {
-                                None => leaf = Some(*m),
-                                Some(l) if l == *m => {}
-                                Some(_) => return None, // two histories — no shared frame
-                            }
+                    // One shared leaf among the moved carriers, or a decline.
+                    let mut leaf = None;
+                    for m in motions.iter().flatten() {
+                        match leaf {
+                            None => leaf = Some(*m),
+                            Some(l) if l == *m => {}
+                            Some(_) => return None, // two histories — no shared frame
                         }
-                        let leaf = leaf.expect("not the all-world arm");
-                        let mut coeffs = [[nacre_scalar::Rat::from_int(0); 4]; 3];
-                        for (o, h) in coeffs.iter_mut().zip(tri) {
-                            *o = *model.surface_name.get(&h)?.narrow()?;
+                    }
+                    let Some(leaf) = leaf else {
+                        // World-stated throughout: the base is the world point itself.
+                        out.push(WitnessPoint::at_nearest(nacre_scalar::three_planes_rat(
+                            coeffs,
+                        )?));
+                        continue;
+                    };
+                    // A world-stated carrier among chained ones is admissible iff the
+                    // chain fixes it — then its equation holds in the pre-motion frame
+                    // too. Otherwise: mixed frames, decline (see the doc).
+                    for (c, m) in coeffs.iter().zip(&motions) {
+                        if m.is_none() && !model.chain_fixes_plane(leaf, c) {
+                            return None;
                         }
-                        // A world-stated carrier among chained ones is admissible iff the
-                        // chain fixes it — then its equation holds in the pre-motion frame
-                        // too. Otherwise: mixed frames, decline (see the doc).
-                        for (c, m) in coeffs.iter().zip(&motions) {
-                            if m.is_none() && !model.chain_fixes_plane(leaf, c) {
-                                return None;
-                            }
-                        }
-                        let base = nacre_scalar::three_planes_rat(coeffs)?;
-                        let chain = crate::rotated_vertex::motion_chain(model, leaf)?;
-                        crate::rotated_vertex::replay(WitnessPoint::at(base), &chain)?
-                    });
+                    }
+                    let base = nacre_scalar::three_planes_rat(coeffs)?;
+                    let chain = crate::rotated_vertex::motion_chain(model, leaf)?;
+                    out.push(crate::rotated_vertex::replay(
+                        WitnessPoint::at(base),
+                        &chain,
+                    )?);
                 }
             }
         }
@@ -504,6 +514,61 @@ mod tests {
         .unwrap()
     }
 
+    /// ★ **Witnesses are solved from the definition, not lifted from the cache.** A box stated at
+    /// `0.3` has corners `f64` cannot hold; the old road handed the rounded cache to
+    /// `WitnessPoint::exact` — a different point, claimed with tol 0. The definition road solves
+    /// the corner from its three plane names and states the rounding it carries: nonzero here,
+    /// exactly zero for an integer box.
+    #[test]
+    fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
+        let mut m = Model::new();
+        let unit = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let dec = m.add_cuboid(
+            Point3::from_array([0.3, -1.0, 0.3]),
+            Point3::from_array([0.7, 2.0, 0.7]),
+        );
+        m.rebuild_adjacency();
+
+        let unit_pts = solid_points(&m, unit).expect("an integer box answers");
+        assert_eq!(unit_pts.len(), 8);
+        assert!(
+            unit_pts.iter().all(|p| p.tol() == [0.0; 3]),
+            "an integer corner is an f64: tol 0"
+        );
+
+        let dec_pts = solid_points(&m, dec).expect("a decimal box answers");
+        assert_eq!(dec_pts.len(), 8);
+        for p in &dec_pts {
+            // The coordinate is the definition's nearest f64 — for a constructed box the same
+            // value the cache holds, so what the road changes is the *tolerance*, not the point.
+            let c = p.coord();
+            assert!(c.iter().all(|x| [0.3, 0.7, -1.0, 2.0].contains(x)), "{c:?}");
+            assert!(
+                p.tol().iter().all(|&t| t > 0.0),
+                "0.3/0.7 are not f64 — the witness must say so on every axis: {:?}",
+                p.tol()
+            );
+        }
+    }
+
+    /// ★ **A boolean's result answers too.** Its vertices used to decline wholesale ("an implicit
+    /// point has no rational base"); their definition has one. Measured on the census corpus:
+    /// 23 more classes proved, and not one row moved.
+    #[test]
+    fn a_boolean_result_answers_from_its_definition() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([2.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
+        m.rebuild_adjacency();
+        let out = crate::boolean::boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse");
+        m.rebuild_adjacency();
+        assert_eq!(out.len(), 1);
+        let pts =
+            solid_points(&m, out[0]).expect("a result's vertices are three-plane meets with names");
+        assert!(pts.len() >= 8, "{}", pts.len());
+        assert!(pts.iter().all(|p| p.tol() == [0.0; 3]), "integer corners");
+    }
+
     /// The def road's answer on one solid: `Some` with every point realized finite, or `None`.
     fn assert_answers(m: &Model, s: Handle<Solid>, want_some: bool, what: &str) {
         match solid_points(m, s) {
@@ -619,10 +684,11 @@ mod tests {
 
     /// ★★ S7: **which populations the def road answers for**, pinned per producer. Measured
     /// against the pre-S7 `Origin` road while both existed (C2): constructed and moved agree
-    /// **bit for bit**; discovered declines on both. The one recorded difference is the
-    /// mixed-frame population (④): the `Origin` road answered it through the sketch-frame base
-    /// vertex S7 dissolves, and the def road declines honestly — reuse falls back to Arrange,
-    /// which is slower and never wrong.
+    /// **bit for bit**. Discovered declined on both — until the road stopped reading the cache
+    /// (2026-09-15): a result's corner is a three-plane meet with names like any other, so ③
+    /// answers now. The one recorded difference is the mixed-frame population (④): the `Origin`
+    /// road answered it through the sketch-frame base vertex S7 dissolves, and the def road
+    /// declines honestly — reuse falls back to Arrange, which is slower and never wrong.
     #[test]
     fn the_def_road_answers_for_the_populations_it_can_name() {
         let mut m = Model::new();
@@ -660,7 +726,8 @@ mod tests {
         m.rebuild_adjacency();
         assert_answers(&m, turned, true, "moved (rotated cuboid)");
 
-        // ③ Discovered: a fuse's result declines on both roads.
+        // ③ Discovered: a fuse's result — declined while the road read the cache (a measured
+        //    point "has no rational base"); its definition has one, so it answers.
         let c = m.add_cuboid(
             Point3::from_array([0.5, 0.5, 0.5]),
             Point3::from_array([1.5, 2.5, 3.5]),
@@ -681,7 +748,7 @@ mod tests {
             solids[0]
         };
         m.rebuild_adjacency();
-        assert_answers(&m, fused, false, "discovered (a fused result)");
+        assert_answers(&m, fused, true, "discovered (a fused result)");
 
         // ④ The recorded difference, pinned: a tilted-frame prism's base ring sits under a
         //    world-stated cap (mixed frames), and no rational pullback exists — so the def road

@@ -373,43 +373,17 @@ pub(crate) fn collect_planes(
                 // which also held a rotated plane — where the claim is actually consulted. The
                 // plane's recorded points are construction points, so no such claim is made.
                 //
-                // ★ `WitnessPoint::exact` is kept for a point that **is** an f64: it states the same thing
-                // and skips the nine BigFloat operations `WitnessPoint::at` spends measuring a zero. The
-                // round-trip test is the one `BaseFrame` already uses.
+                // ★ `WitnessPoint::at_nearest` states a representable point with tol 0 (what
+                // `WitnessPoint::exact` did here) and a non-representable one with the ½-ulp bound
+                // `Rat::to_f64` promises — one spelling for a point that came from a rational.
                 nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),
                     motion: None,
                 } => {
-                    let w = pts.map(|b| {
-                        let f = b.map(|r| r.to_f64());
-                        match WitnessPoint::exact(f).filter(|_| {
-                            b.iter()
-                                .zip(f)
-                                .all(|(&r, x)| nacre_scalar::Rat::try_from_f64(x) == Some(r))
-                        }) {
-                            Some(p) => p,
-                            // ★★★ **The bound is free; measuring it is not.** `WitnessPoint::at` reads
-                            // the rounding at 120 bits — nine BigFloat operations per point,
-                            // and 38.3% of these points are not f64, so the suite paid 6% for
-                            // it. `Rat::to_f64` is documented as *"the **nearest** f64 … ties
-                            // to even"*, so `|r − to_f64(r)| ≤ ½ ulp` holds by its contract and
-                            // `|x|·2⁻⁵³` is an upper bound on that for every normal `x`.
-                            //
-                            // ★ The cost is looseness: a filter interval slightly wider than
-                            // the truth escalates slightly more often. Never unsound — a tol
-                            // that overstates the error can only make a definite answer
-                            // indefinite, never the other way round.
-                            None => {
-                                let bound = |x: f64| {
-                                    (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE)
-                                };
-                                WitnessPoint::at_with_tol(
-                                    b,
-                                    [bound(f[0]), bound(f[1]), bound(f[2])],
-                                )
-                            }
-                        }
-                    });
+                    // ★★★ **The bound is free; measuring it is not** — `at_nearest` states the
+                    // rounding from `Rat::to_f64`'s contract (measured here once: 38.3% of these
+                    // points are not f64, and measuring them at 120 bits cost the suite 6%).
+                    let w = pts.map(WitnessPoint::at_nearest);
                     (wind(w), false, None)
                 }
                 nacre_topo::Surface::Plane {

@@ -604,6 +604,34 @@ impl WitnessPoint {
         ))
     }
 
+    /// A point at a rational `base`, its coordinate the nearest `f64` and its tol **from that
+    /// contract rather than measured**: exactly `0` where the coordinate is representable, else
+    /// `|x|·2⁻⁵³` (floored at `f64::MIN_POSITIVE`) — `Rat::to_f64` is documented as *"the
+    /// **nearest** f64 … ties to even"*, so `|r − to_f64(r)| ≤ ½ ulp` holds for every normal
+    /// `x` without anyone computing it.
+    ///
+    /// [`at`](Self::at) learns the same number by measuring at 120 bits — nine BigFloat
+    /// operations per point. This is the spelling `nacre-ops` uses where the base is a
+    /// **definition** (a plane's own points, a solid's vertices solved from their carriers): the
+    /// bound is free, and its looseness can only turn a definite filter answer into "escalate",
+    /// never the other way round.
+    ///
+    /// ★ **This is how a point that came from a rational reaches the predicates** — not by
+    /// lifting the rounded `f64` back into a `Rat` (that names a different point, with a
+    /// tolerance of zero on top).
+    pub fn at_nearest(base: [Rat; 3]) -> Self {
+        let f = base.map(|r| r.to_f64());
+        let representable = base
+            .iter()
+            .zip(f)
+            .all(|(&r, x)| Rat::try_from_f64(x) == Some(r));
+        if representable {
+            return Self::at_with_tol(base, [0.0; 3]);
+        }
+        let bound = |x: f64| (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE);
+        Self::at_with_tol(base, [bound(f[0]), bound(f[1]), bound(f[2])])
+    }
+
     /// A point at `base` with an explicit initial `tol` — for a root that already
     /// carries tol (a `Discovered` boolean seam), whose tol the chain then transports
     /// (`|R|·old`). [`at`](Self::at) is the Constructed case (initial tol = base
@@ -4225,6 +4253,44 @@ mod tests {
                 "`at` must measure exactly zero for an f64-derived base: {c:?}"
             );
             assert_eq!(fast.tol(), measured.tol(), "same tol for {c:?}");
+        }
+    }
+
+    /// **`at_nearest` states the tol from `Rat::to_f64`'s contract: zero where the coordinate is an
+    /// f64, `|x|·2⁻⁵³` where it is not — and never below what `at` measures.**
+    #[test]
+    fn at_nearest_states_zero_for_an_f64_and_the_contract_bound_otherwise() {
+        let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
+        // Representable throughout: identical to `exact`, and to what `at` measures.
+        let base = [r(1, 2), r(-3, 1), r(1, 8)];
+        let p = WitnessPoint::at_nearest(base);
+        assert_eq!(p.tol(), [0.0; 3]);
+        assert_eq!(p.coord(), [0.5, -3.0, 0.125]);
+        assert_eq!(p.tol(), WitnessPoint::at(base).tol());
+        // One coordinate `f64` cannot hold: the contract bound on every axis, never below the
+        // measured rounding, and the coordinate is the nearest f64 of the base itself.
+        let base = [r(3, 10), r(1, 1), r(7, 10)];
+        let p = WitnessPoint::at_nearest(base);
+        let measured = WitnessPoint::at(base);
+        assert_eq!(p.coord(), measured.coord());
+        assert_eq!(p.coord(), [0.3, 1.0, 0.7]);
+        assert!(
+            measured.tol()[0] > 0.0,
+            "0.3 is not an f64 — the measurement must see it"
+        );
+        for k in 0..3 {
+            let x = p.coord()[k];
+            let want = (x.abs() * (f64::EPSILON * 0.5)).max(f64::MIN_POSITIVE);
+            assert_eq!(p.tol()[k], want, "axis {k}");
+            // The contract: `to_f64` is nearest, so the rounding is at most half an ulp of the
+            // value it produced — and the stated bound covers that. (`at`'s measurement is
+            // *inflated* by 2 for conservatism, so it is not the yardstick here.)
+            let half_ulp = 0.5 * (f64::from_bits(x.to_bits() + 1) - x);
+            assert!(
+                p.tol()[k] >= half_ulp,
+                "the contract bound covers half an ulp on axis {k}: {} < {half_ulp}",
+                p.tol()[k]
+            );
         }
     }
 
