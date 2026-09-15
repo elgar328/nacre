@@ -101,8 +101,9 @@ pub mod prelude {
     pub use nacre_math::{Point2, Point3, Vector3};
     pub use nacre_ops::{
         BoolError, BoolKind, DatumDef, Edge2d, OpError, OpOutput, Operation, Profile2d,
-        RejectClass, RejectReason, RejectWhere, Ring2d, Seg2d, SketchError, SketchFrame,
-        SketchPlane, apply, boolean, face_plane, face_sketch_frame, from_edges, from_rings, replay,
+        RejectClass, RejectReason, RejectWhere, Ring2d, SketchError, SketchFrame, SketchPlane,
+        apply, arc_to_rat, arc_turns, arc_turns_rat, boolean, face_plane, face_sketch_frame,
+        from_paths, from_rings, replay,
     };
     pub use nacre_props::{
         FaceProps, MassProps, bounds, centroid, face_normal_at, face_props, mass_props,

@@ -1,28 +1,34 @@
-//! Turning loose edges into profiles — the nesting policy on top of geom's exact predicates.
+//! Rings into profiles — the nesting policy on top of geom's exact predicates.
 //!
 //! A sketch is drawn as closed paths; which of them are material, which are holes, and which are
 //! islands inside holes is **not** declared by the author but decided from containment, the way
 //! every CAD sketcher does it. The classification itself (is this point inside that ring? do two
 //! rings meet?) is a robustness-sensitive sign question and lives in `nacre-geom` (design §1
 //! isolates that — [`nacre_geom::intersect`] for polygons, [`nacre_geom::mixed`] once arcs are
-//! in); what is here is the policy — depth parity — and the assembly.
+//! in); what is here is the policy — depth parity — and the doors.
 //!
-//! **Edges are stated, not derived.** A straight edge is its two ends; an arc is its centre, its
-//! radius and its two ends, all rational, and the constructors here are the only place a
-//! coordinate is computed — the end of a quarter-turn arc is the start rotated in `Rat`, never an
-//! f64 that was rounded on the way. The f64 doors take what the author *wrote* (their decimals
-//! become the rationals they spell); the `Rat` doors take what a caller computed exactly.
+//! **The door is the ring, not the pen.** The kernel takes what every way of drawing ends in — an
+//! ordered ring of exact vertices with the step leaving each ([`Ring2d::new`]) — and knows nothing
+//! about how it was drawn. A pen, a constraint solver, an imported file all arrive here the same
+//! way. There is no chaining of loose edges: order is the caller's, stated once, and an open or
+//! branching outline is not a thing this door can be handed.
+//!
+//! **Edges are stated, not derived.** An arc is its centre, its radius and its two vertices, all
+//! rational, and the step doors here are the only place a coordinate is computed — the end of a
+//! quarter-turn arc is the start rotated in `Rat`, never an f64 that was rounded on the way. The
+//! f64 doors take what the author *wrote* (their decimals become the rationals they spell); the
+//! `Rat` doors take what a caller computed exactly.
 
 use crate::{Profile2d, Ring2d};
 use nacre_geom::intersect::RingSide;
 use nacre_geom::mixed::{
-    MixedRing, Seg2d, Undecidable, mixed_ring_self_intersection, mixed_rings_cross,
+    Edge2d, MixedRing, Undecidable, mixed_ring_self_intersection, mixed_rings_cross,
     point_in_mixed_ring,
 };
 use nacre_math::Point2;
 use nacre_scalar::{Rat, rat_sqrt_exact};
 
-/// Why a set of rings or edges is not a valid set of profiles.
+/// Why a ring, or a set of rings, is not a valid set of profiles.
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum SketchError {
@@ -31,23 +37,15 @@ pub enum SketchError {
     /// Two rings touch or cross. A hole must lie strictly inside its outer ring and strictly
     /// outside its siblings; anything else has no unambiguous inside.
     RingsMeet { a: usize, b: usize },
-    /// A straight edge starts where it ends.
+    /// A ring's vertices and edges do not pair up — one edge leaves each vertex.
+    UnevenRing { vertices: usize, edges: usize },
+    /// A straight step whose two vertices are one point. `edge` is its index in the ring.
     ZeroLengthEdge { edge: usize },
-    /// The same edge appears twice (the same set of points, either way round).
-    DuplicateEdge { a: usize, b: usize },
-    /// A chain ran out of edges before closing. `at` is the endpoint left dangling and `gap` the
-    /// distance to the nearest other free endpoint — reported because "you meant to close this
-    /// and missed by 1e-9" is the likely story, and the kernel will not close it for you: an
-    /// endpoint either *is* the same point or is not (overview 절대원칙 4).
-    OpenChain { at: [f64; 2], gap: Option<f64> },
-    /// Three or more edges meet at one point, so the chain has no unambiguous continuation.
-    BranchingVertex { at: [f64; 2] },
     /// A ring meets itself — it crosses, touches, or doubles back over its own edge. Such a ring
     /// has no unambiguous inside, so it cannot be sorted into a profile at all.
     ///
-    /// Reported as the two offending edges' **chord midpoints**, not as indices: [`from_edges`]
-    /// chains the edges into rings in walk order, so a ring's edge index says nothing about where
-    /// the author's input went wrong. Points are what the rest of this enum reports too.
+    /// Reported as the two offending edges' **chord midpoints** — points are what the rest of
+    /// this enum reports too, and a point is what an editor can put a marker on.
     RingSelfIntersects { ring: usize, at: [[f64; 2]; 2] },
     /// A coordinate outside the decimal window (`~1e38` above, `~1e-22` below for a full-width
     /// value) has no rational truth for the kernel to keep — the sketch-layer twin of
@@ -63,36 +61,24 @@ pub enum SketchError {
         start: [f64; 2],
         end: [f64; 2],
     },
-    /// An arc from a point back to itself is a whole circle, which [`Edge2d::circle`] states;
+    /// An arc step was handed to [`Ring2d::new`] with a `radius` that is not the distance from its
+    /// centre to the vertex it leaves — the stated step and the ring disagree about the circle.
+    ArcRadiusMismatch {
+        center: [f64; 2],
+        start: [f64; 2],
+        stated: f64,
+    },
+    /// An arc from a point back to itself is a whole circle, which [`Ring2d::circle`] states;
     /// this door asked for a proper arc.
     ZeroLengthArc { at: [f64; 2] },
     /// A quarter-turn count outside `±1..=±3` — `0` is no arc, `±4` is a whole circle
-    /// ([`Edge2d::circle`]).
+    /// ([`Ring2d::circle`]).
     ArcTurnsOutOfRange { turns: i32 },
     /// A circle or arc with a radius that is not positive.
     NonPositiveRadius { center: [f64; 2], radius: f64 },
     /// Checked `Rat` arithmetic overflowed while classifying: the question has an answer the
     /// kernel cannot state here. Refused by name; nothing guesses.
     Undecidable,
-}
-
-/// A 2-D sketch edge, stated exactly. The `Line`/`Arc` split is the segment vocabulary the
-/// kernel's prism builder and the profile predicates read; `Nurbs` will join it in M7.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum Edge2d {
-    /// Straight, `from → to`.
-    Line { from: [Rat; 2], to: [Rat; 2] },
-    /// Circular, `start → end` around `center`, counter-clockwise when `ccw`. `radius` is the
-    /// rational `|start − center|`, checked at construction along with `end` being on the circle.
-    /// `start == end` is the whole circle, whose one vertex is the seam.
-    Arc {
-        center: [Rat; 2],
-        radius: Rat,
-        start: [Rat; 2],
-        end: [Rat; 2],
-        ccw: bool,
-    },
 }
 
 fn lift(p: Point2) -> Result<[Rat; 2], SketchError> {
@@ -131,207 +117,6 @@ fn turned(center: [Rat; 2], v: [Rat; 2], quarter_turns: i32) -> Option<[Rat; 2]>
     Some([center[0].checked_add(d[0])?, center[1].checked_add(d[1])?])
 }
 
-impl Edge2d {
-    /// A straight edge between two written points.
-    pub fn line(from: Point2, to: Point2) -> Result<Edge2d, SketchError> {
-        Ok(Edge2d::Line {
-            from: lift(from)?,
-            to: lift(to)?,
-        })
-    }
-
-    /// A straight edge between two exact points — the door for computed coordinates.
-    pub fn line_rat(from: [Rat; 2], to: [Rat; 2]) -> Edge2d {
-        Edge2d::Line { from, to }
-    }
-
-    /// The arc from `start` around `center` through `quarter_turns` right angles — positive is
-    /// counter-clockwise (`+x → +y` in the sketch's own frame), `±1..=±3`. The end is the start
-    /// **rotated in `Rat`**: it lies on the circle by construction, and no computed value passes
-    /// through f64. Today's whole arc vocabulary is this door and [`Edge2d::circle`]; an arbitrary
-    /// angle is a point the kernel would have to *name* (a start turned by θ), which is a later
-    /// vocabulary, not a rounding.
-    pub fn arc_turns(
-        center: Point2,
-        start: Point2,
-        quarter_turns: i32,
-    ) -> Result<Edge2d, SketchError> {
-        Self::arc_turns_rat(lift(center)?, lift(start)?, quarter_turns)
-    }
-
-    /// [`Edge2d::arc_turns`] for computed points: the centre and the start as `Rat` — the door a
-    /// pen takes when it already stands on an exact point (after a fillet's retreat, after an arc).
-    pub fn arc_turns_rat(
-        center: [Rat; 2],
-        start: [Rat; 2],
-        quarter_turns: i32,
-    ) -> Result<Edge2d, SketchError> {
-        if !(1..=3).contains(&quarter_turns.unsigned_abs()) {
-            return Err(SketchError::ArcTurnsOutOfRange {
-                turns: quarter_turns,
-            });
-        }
-        let radius = radius_of(center, start)?;
-        let v = sub2(start, center).ok_or(SketchError::Undecidable)?;
-        let end = turned(center, v, quarter_turns).ok_or(SketchError::Undecidable)?;
-        Ok(Edge2d::Arc {
-            center,
-            radius,
-            start,
-            end,
-            ccw: quarter_turns > 0,
-        })
-    }
-
-    /// The whole circle of `radius` about `center`, counter-clockwise, its seam at `center + (r, 0)`
-    /// — the same point the cylinder primitive seams at (`+ref_dir`), which is what lets the two
-    /// roads state one solid.
-    pub fn circle(center: Point2, radius: f64) -> Result<Edge2d, SketchError> {
-        let c = lift(center)?;
-        let r = Rat::from_decimal(radius)
-            .ok_or(SketchError::OutsideDecimalWindow { at: [radius, 0.0] })?;
-        Self::circle_rat(c, r)
-    }
-
-    /// [`Edge2d::circle`] for a computed radius — a diameter halved in `Rat`, say — and a
-    /// computed centre.
-    pub fn circle_rat(center: [Rat; 2], radius: Rat) -> Result<Edge2d, SketchError> {
-        if radius <= Rat::from_int(0) {
-            return Err(SketchError::NonPositiveRadius {
-                center: f2(center),
-                radius: radius.to_f64(),
-            });
-        }
-        let seam = [
-            center[0]
-                .checked_add(radius)
-                .ok_or(SketchError::Undecidable)?,
-            center[1],
-        ];
-        Ok(Edge2d::Arc {
-            center,
-            radius,
-            start: seam,
-            end: seam,
-            ccw: true,
-        })
-    }
-
-    /// A proper arc from exact data — the door for computed coordinates (a fillet's tangent
-    /// points and centre, say). Checks what the f64 doors guarantee by construction: `end` on the
-    /// circle, the radius rational, `start ≠ end`.
-    pub fn arc_rat(
-        center: [Rat; 2],
-        start: [Rat; 2],
-        end: [Rat; 2],
-        ccw: bool,
-    ) -> Result<Edge2d, SketchError> {
-        if start == end {
-            return Err(SketchError::ZeroLengthArc { at: f2(start) });
-        }
-        let radius = radius_of(center, start)?;
-        let r2 = radius.checked_mul(radius).ok_or(SketchError::Undecidable)?;
-        if dist2(end, center).ok_or(SketchError::Undecidable)? != r2 {
-            return Err(SketchError::ArcEndOffCircle {
-                center: f2(center),
-                start: f2(start),
-                end: f2(end),
-            });
-        }
-        Ok(Edge2d::Arc {
-            center,
-            radius,
-            start,
-            end,
-            ccw,
-        })
-    }
-
-    /// The edge's first vertex.
-    pub fn start(&self) -> [Rat; 2] {
-        match *self {
-            Edge2d::Line { from, .. } => from,
-            Edge2d::Arc { start, .. } => start,
-        }
-    }
-
-    /// The edge's last vertex.
-    pub fn end(&self) -> [Rat; 2] {
-        match *self {
-            Edge2d::Line { to, .. } => to,
-            Edge2d::Arc { end, .. } => end,
-        }
-    }
-
-    /// The step this edge is when walked `start → end`.
-    pub fn seg(&self) -> Seg2d {
-        match *self {
-            Edge2d::Line { .. } => Seg2d::Line,
-            Edge2d::Arc {
-                center,
-                radius,
-                ccw,
-                ..
-            } => Seg2d::Arc {
-                center,
-                radius,
-                ccw,
-            },
-        }
-    }
-
-    /// The step this edge is when walked `end → start`.
-    fn seg_reversed(&self) -> Seg2d {
-        match self.seg() {
-            Seg2d::Line => Seg2d::Line,
-            Seg2d::Arc {
-                center,
-                radius,
-                ccw,
-            } => Seg2d::Arc {
-                center,
-                radius,
-                ccw: !ccw,
-            },
-        }
-    }
-
-    /// An arc from a point to itself: one vertex, the seam, and the whole circle.
-    pub fn is_whole_circle(&self) -> bool {
-        matches!(self, Edge2d::Arc { start, end, .. } if start == end)
-    }
-
-    /// The same set of points, walked either way.
-    fn same_points(&self, other: &Edge2d) -> bool {
-        match (self, other) {
-            (Edge2d::Line { from: a, to: b }, Edge2d::Line { from: c, to: d }) => {
-                (a == c && b == d) || (a == d && b == c)
-            }
-            (
-                Edge2d::Arc {
-                    center: c1,
-                    radius: r1,
-                    start: s1,
-                    end: e1,
-                    ccw: w1,
-                },
-                Edge2d::Arc {
-                    center: c2,
-                    radius: r2,
-                    start: s2,
-                    end: e2,
-                    ccw: w2,
-                },
-            ) => {
-                c1 == c2
-                    && r1 == r2
-                    && ((s1 == s2 && e1 == e2 && w1 == w2) || (s1 == e2 && e1 == s2 && w1 != w2))
-            }
-            _ => false,
-        }
-    }
-}
-
 /// The rational radius `|start − center|`, or the named refusal.
 fn radius_of(center: [Rat; 2], start: [Rat; 2]) -> Result<Rat, SketchError> {
     let r2 = dist2(start, center).ok_or(SketchError::Undecidable)?;
@@ -345,6 +130,196 @@ fn radius_of(center: [Rat; 2], start: [Rat; 2]) -> Result<Rat, SketchError> {
             center: f2(center),
             start: f2(start),
         }),
+    }
+}
+
+// ---- step doors: an arc as the step it is, with the vertex it ends on ----
+
+/// The arc from `start` around `center` through `quarter_turns` right angles — positive is
+/// counter-clockwise (`+x → +y` in the sketch's own frame), `±1..=±3` — as the step it is and
+/// **the vertex it ends on**. The end is the start **rotated in `Rat`**: it lies on the circle by
+/// construction, and no computed value passes through f64. Today's whole arc vocabulary is this
+/// door, [`arc_to_rat`] and [`Ring2d::circle`]; an arbitrary angle is a point the kernel would
+/// have to *name* (a start turned by θ), which is a later vocabulary, not a rounding.
+pub fn arc_turns(
+    center: Point2,
+    start: Point2,
+    quarter_turns: i32,
+) -> Result<(Edge2d, [Rat; 2]), SketchError> {
+    arc_turns_rat(lift(center)?, lift(start)?, quarter_turns)
+}
+
+/// [`arc_turns`] for computed points: the centre and the start as `Rat` — the door a pen takes
+/// when it already stands on an exact point (after a fillet's retreat, after an arc).
+pub fn arc_turns_rat(
+    center: [Rat; 2],
+    start: [Rat; 2],
+    quarter_turns: i32,
+) -> Result<(Edge2d, [Rat; 2]), SketchError> {
+    if !(1..=3).contains(&quarter_turns.unsigned_abs()) {
+        return Err(SketchError::ArcTurnsOutOfRange {
+            turns: quarter_turns,
+        });
+    }
+    let radius = radius_of(center, start)?;
+    let v = sub2(start, center).ok_or(SketchError::Undecidable)?;
+    let end = turned(center, v, quarter_turns).ok_or(SketchError::Undecidable)?;
+    Ok((
+        Edge2d::Arc {
+            center,
+            radius,
+            ccw: quarter_turns > 0,
+        },
+        end,
+    ))
+}
+
+/// A proper arc from exact data — the door for computed coordinates (a fillet's tangent points
+/// and centre, say). Checks what [`arc_turns`] guarantees by construction: `end` on the circle,
+/// the radius rational, `start ≠ end`. The step it returns runs `start → end` in a ring that
+/// states those two vertices.
+pub fn arc_to_rat(
+    center: [Rat; 2],
+    start: [Rat; 2],
+    end: [Rat; 2],
+    ccw: bool,
+) -> Result<Edge2d, SketchError> {
+    if start == end {
+        return Err(SketchError::ZeroLengthArc { at: f2(start) });
+    }
+    let radius = radius_of(center, start)?;
+    let r2 = radius.checked_mul(radius).ok_or(SketchError::Undecidable)?;
+    if dist2(end, center).ok_or(SketchError::Undecidable)? != r2 {
+        return Err(SketchError::ArcEndOffCircle {
+            center: f2(center),
+            start: f2(start),
+            end: f2(end),
+        });
+    }
+    Ok(Edge2d::Arc {
+        center,
+        radius,
+        ccw,
+    })
+}
+
+impl Ring2d {
+    /// A ring from its vertices and the step leaving each — `edges[i]` runs
+    /// `vertices[i] → vertices[(i + 1) % n]` — checked and put in normal form.
+    ///
+    /// What is checked is what a stated step can get wrong: the two lists pair up
+    /// ([`SketchError::UnevenRing`]); a straight step does not start where it ends
+    /// ([`SketchError::ZeroLengthEdge`]); an arc's stated `radius` is the distance from its
+    /// centre to the vertex it leaves ([`SketchError::ArcRadiusMismatch`]) and the vertex it
+    /// arrives on lies on that circle ([`SketchError::ArcEndOffCircle`]); an arc between one and
+    /// the same point is the whole circle only when it is the ring's sole step. Whether the ring
+    /// encloses anything, meets itself, or meets another is [`from_paths`]'s question.
+    pub fn new(vertices: Vec<[Rat; 2]>, edges: Vec<Edge2d>) -> Result<Ring2d, SketchError> {
+        if vertices.len() != edges.len() {
+            return Err(SketchError::UnevenRing {
+                vertices: vertices.len(),
+                edges: edges.len(),
+            });
+        }
+        let n = vertices.len();
+        for (i, edge) in edges.iter().enumerate() {
+            let (a, b) = (vertices[i], vertices[(i + 1) % n]);
+            match *edge {
+                Edge2d::Line => {
+                    if a == b {
+                        return Err(SketchError::ZeroLengthEdge { edge: i });
+                    }
+                }
+                Edge2d::Arc { center, radius, .. } => {
+                    if radius <= Rat::from_int(0) {
+                        return Err(SketchError::NonPositiveRadius {
+                            center: f2(center),
+                            radius: radius.to_f64(),
+                        });
+                    }
+                    if radius_of(center, a)? != radius {
+                        return Err(SketchError::ArcRadiusMismatch {
+                            center: f2(center),
+                            start: f2(a),
+                            stated: radius.to_f64(),
+                        });
+                    }
+                    if a == b && n > 1 {
+                        return Err(SketchError::ZeroLengthArc { at: f2(a) });
+                    }
+                    let r2 = radius.checked_mul(radius).ok_or(SketchError::Undecidable)?;
+                    if dist2(b, center).ok_or(SketchError::Undecidable)? != r2 {
+                        return Err(SketchError::ArcEndOffCircle {
+                            center: f2(center),
+                            start: f2(a),
+                            end: f2(b),
+                        });
+                    }
+                }
+            }
+        }
+        Ok(Ring2d::normalized(vertices, edges))
+    }
+
+    /// A polygon ring from the points the author wrote — the per-ring half of [`from_rings`]
+    /// (their decimals become the rationals they spell; a repeated point is left for
+    /// [`Profile2d::check`] to name, as `from_rings` leaves it).
+    pub fn polygon_decimal(points: Vec<Point2>) -> Result<Ring2d, SketchError> {
+        let lifted = points
+            .iter()
+            .map(|p| lift(*p))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Ring2d::polygon(lifted))
+    }
+
+    /// The whole circle of `radius` about `center`, counter-clockwise, as the ring of one vertex
+    /// it is — its seam at `center + (r, 0)`, the same point the cylinder primitive seams at
+    /// (`+ref_dir`), which is what lets the two roads state one solid.
+    pub fn circle(center: Point2, radius: f64) -> Result<Ring2d, SketchError> {
+        let c = lift(center)?;
+        let r = Rat::from_decimal(radius)
+            .ok_or(SketchError::OutsideDecimalWindow { at: [radius, 0.0] })?;
+        Ring2d::circle_rat(c, r)
+    }
+
+    /// [`Ring2d::circle`] for a computed radius — a diameter halved in `Rat`, say — and a
+    /// computed centre.
+    pub fn circle_rat(center: [Rat; 2], radius: Rat) -> Result<Ring2d, SketchError> {
+        if radius <= Rat::from_int(0) {
+            return Err(SketchError::NonPositiveRadius {
+                center: f2(center),
+                radius: radius.to_f64(),
+            });
+        }
+        let seam = [
+            center[0]
+                .checked_add(radius)
+                .ok_or(SketchError::Undecidable)?,
+            center[1],
+        ];
+        Ok(Ring2d::normalized(
+            vec![seam],
+            vec![Edge2d::Arc {
+                center,
+                radius,
+                ccw: true,
+            }],
+        ))
+    }
+
+    /// A ring's view for the predicates.
+    pub(crate) fn mixed(&self) -> MixedRing<'_> {
+        MixedRing {
+            vertices: self.vertices(),
+            segs: self.edges(),
+        }
+    }
+
+    /// The f64 midpoint of step `i`'s chord — diagnostic material for a message.
+    fn chord_midpoint(&self, i: usize) -> [f64; 2] {
+        let n = self.len();
+        let (p, q) = (f2(self.vertices()[i]), f2(self.vertices()[(i + 1) % n]));
+        [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0]
     }
 }
 
@@ -376,6 +351,14 @@ pub fn from_rings(rings: Vec<Vec<Point2>>) -> Result<Vec<Profile2d>, SketchError
         })
         .collect::<Result<_, _>>()?;
     classify(lifted)
+}
+
+/// Sort rings — straight or arc-bearing, each already checked and in normal form
+/// ([`Ring2d::new`], [`Ring2d::circle`], [`Ring2d::polygon_decimal`]) — into profiles by
+/// containment depth: [`from_rings`]'s policy for every kind of ring. Ring indices in the errors
+/// are positions in `rings`.
+pub fn from_paths(rings: Vec<Ring2d>) -> Result<Vec<Profile2d>, SketchError> {
+    classify(rings)
 }
 
 /// Sort normalized rings — straight or arc-bearing — into profiles by containment depth. The
@@ -443,157 +426,16 @@ fn classify(rings: Vec<Ring2d>) -> Result<Vec<Profile2d>, SketchError> {
     Ok(out)
 }
 
-/// Chain loose edges into closed rings, then sort those into profiles ([`from_rings`]).
-///
-/// The edges may arrive in any order and pointing either way — this is the shape a generator or
-/// an imported file produces. Endpoints must **coincide exactly**; nothing here snaps a near-miss
-/// shut. Tolerance is for intersections the kernel *discovers*, never for what a caller
-/// constructs (overview 절대원칙 4), and a sketch that silently welds a 1e-9 gap is a sketch
-/// whose meaning the kernel invented.
-///
-/// An arc walked against its stated direction is the same points the other way round, so the
-/// ring it lands in carries it with `ccw` flipped. A whole circle is a ring by itself: it has no
-/// end to chain. The rings then take their normal form ([`Ring2d::normalized`]) before the
-/// predicates read them.
-pub fn from_edges(edges: Vec<Edge2d>) -> Result<Vec<Profile2d>, SketchError> {
-    for (i, e) in edges.iter().enumerate() {
-        if matches!(e, Edge2d::Line { .. }) && e.start() == e.end() {
-            return Err(SketchError::ZeroLengthEdge { edge: i });
-        }
-    }
-    for i in 0..edges.len() {
-        for j in (i + 1)..edges.len() {
-            if edges[i].same_points(&edges[j]) {
-                return Err(SketchError::DuplicateEdge { a: i, b: j });
-            }
-        }
-    }
-
-    let mut rings: Vec<Ring2d> = Vec::new();
-    // Whole circles first, as they come: each is its own ring.
-    let mut open: Vec<usize> = Vec::new();
-    for (i, e) in edges.iter().enumerate() {
-        if e.is_whole_circle() {
-            rings.push(Ring2d::normalized(vec![e.start()], vec![e.seg()]));
-        } else {
-            open.push(i);
-        }
-    }
-
-    // Endpoint → the edges touching it. Exactly two is a corner; more has no single continuation.
-    let mut at: Vec<([Rat; 2], Vec<usize>)> = Vec::new();
-    let slot = |at: &mut Vec<([Rat; 2], Vec<usize>)>, p: [Rat; 2]| -> usize {
-        match at.iter().position(|(q, _)| *q == p) {
-            Some(k) => k,
-            None => {
-                at.push((p, Vec::new()));
-                at.len() - 1
-            }
-        }
-    };
-    let ends: Vec<(usize, usize)> = open
-        .iter()
-        .map(|&i| {
-            (
-                slot(&mut at, edges[i].start()),
-                slot(&mut at, edges[i].end()),
-            )
-        })
-        .collect();
-    for (k, (s, t)) in ends.iter().enumerate() {
-        at[*s].1.push(k);
-        at[*t].1.push(k);
-    }
-    // Most specific first: a branch says *which* junction is ambiguous, while a dangling end only
-    // says the outline is open — and a branch always leaves an odd end somewhere, so checking in
-    // the other order would report the vaguer of the two. (`check_result_topology` orders its
-    // defects the same way.)
-    if let Some((p, _)) = at.iter().find(|(_, touching)| touching.len() > 2) {
-        return Err(SketchError::BranchingVertex { at: f2(*p) });
-    }
-    if let Some((p, _)) = at.iter().find(|(_, touching)| touching.len() == 1) {
-        return Err(SketchError::OpenChain {
-            at: f2(*p),
-            gap: nearest_free_gap(*p, &at),
-        });
-    }
-
-    // Walk each cycle: from an unused edge, hop endpoint to endpoint until back at the start,
-    // recording each step in the direction it was walked.
-    let mut used = vec![false; open.len()];
-    for seed in 0..open.len() {
-        if used[seed] {
-            continue;
-        }
-        let (first, _) = ends[seed];
-        let mut here = first;
-        let mut k = seed;
-        let (mut vertices, mut segs) = (vec![at[first].0], Vec::new());
-        loop {
-            used[k] = true;
-            let e = &edges[open[k]];
-            let (s, t) = ends[k];
-            let (seg, next) = if s == here {
-                (e.seg(), t)
-            } else {
-                (e.seg_reversed(), s)
-            };
-            segs.push(seg);
-            here = next;
-            let Some(&n) = at[here].1.iter().find(|&&e| !used[e]) else {
-                break;
-            };
-            vertices.push(at[here].0);
-            k = n;
-        }
-        // The walk returns to its start, so the vertex it closed on is the first one.
-        debug_assert_eq!(here, first, "a closed chain returns to its seed");
-        rings.push(Ring2d::normalized(vertices, segs));
-    }
-    classify(rings)
-}
-
-/// The distance from `p` to the nearest *other* endpoint that is also dangling — the size of the
-/// gap the author probably meant to close.
-fn nearest_free_gap(p: [Rat; 2], at: &[([Rat; 2], Vec<usize>)]) -> Option<f64> {
-    let pf = f2(p);
-    at.iter()
-        .filter(|(q, touching)| touching.len() == 1 && *q != p)
-        .map(|(q, _)| {
-            let qf = f2(*q);
-            ((qf[0] - pf[0]).powi(2) + (qf[1] - pf[1]).powi(2)).sqrt()
-        })
-        .min_by(|a, b| a.total_cmp(b))
-}
-
-/// A ring's view for the predicates.
-impl Ring2d {
-    pub(crate) fn mixed(&self) -> MixedRing<'_> {
-        MixedRing {
-            vertices: self.vertices(),
-            segs: self.segs(),
-        }
-    }
-
-    /// The f64 midpoint of step `i`'s chord — diagnostic material for a message.
-    fn chord_midpoint(&self, i: usize) -> [f64; 2] {
-        let n = self.len();
-        let (p, q) = (f2(self.vertices()[i]), f2(self.vertices()[(i + 1) % n]));
-        [(p[0] + q[0]) / 2.0, (p[1] + q[1]) / 2.0]
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn pt(x: f64, y: f64) -> Point2 {
+        Point2::from_array([x, y])
+    }
+
     fn sq(a: f64, b: f64) -> Vec<Point2> {
-        vec![
-            Point2::from_array([a, a]),
-            Point2::from_array([b, a]),
-            Point2::from_array([b, b]),
-            Point2::from_array([a, b]),
-        ]
+        vec![pt(a, a), pt(b, a), pt(b, b), pt(a, b)]
     }
 
     #[test]
@@ -672,97 +514,8 @@ mod tests {
 
     #[test]
     fn a_two_point_ring_is_rejected() {
-        let err = from_rings(vec![vec![
-            Point2::from_array([0.0, 0.0]),
-            Point2::from_array([1.0, 0.0]),
-        ]])
-        .unwrap_err();
+        let err = from_rings(vec![vec![pt(0.0, 0.0), pt(1.0, 0.0)]]).unwrap_err();
         assert_eq!(err, SketchError::DegenerateRing { ring: 0 });
-    }
-
-    fn seg(a: [f64; 2], b: [f64; 2]) -> Edge2d {
-        Edge2d::line(Point2::from_array(a), Point2::from_array(b)).unwrap()
-    }
-
-    /// Edges in scrambled order, some drawn backwards — the shape a generator emits.
-    #[test]
-    fn loose_edges_chain_into_a_ring() {
-        let p = from_edges(vec![
-            seg([4.0, 0.0], [4.0, 4.0]),
-            seg([0.0, 4.0], [0.0, 0.0]),
-            seg([0.0, 0.0], [4.0, 0.0]),
-            seg([0.0, 4.0], [4.0, 4.0]), // drawn right-to-left
-        ])
-        .unwrap();
-        assert_eq!(p.len(), 1);
-        assert_eq!(p[0].outer().vertices().len(), 4);
-        assert!(p[0].holes().is_empty());
-    }
-
-    /// Two cycles at once, one inside the other: chaining and nesting compose.
-    #[test]
-    fn two_chains_become_a_profile_with_a_hole() {
-        let ring = |a: f64, b: f64| {
-            vec![
-                seg([a, a], [b, a]),
-                seg([b, a], [b, b]),
-                seg([b, b], [a, b]),
-                seg([a, b], [a, a]),
-            ]
-        };
-        let mut edges = ring(0.0, 4.0);
-        edges.extend(ring(1.0, 3.0));
-        let p = from_edges(edges).unwrap();
-        assert_eq!(p.len(), 1);
-        assert_eq!(p[0].holes().len(), 1);
-    }
-
-    /// A gap is not closed for the author — it is measured and handed back.
-    #[test]
-    fn an_unclosed_chain_reports_the_gap() {
-        let err = from_edges(vec![
-            seg([0.0, 0.0], [4.0, 0.0]),
-            seg([4.0, 0.0], [4.0, 4.0]),
-            seg([4.0, 4.0], [0.0, 4.0]),
-            seg([0.0, 4.0], [0.0, 0.25]), // 0.25 short of the start
-        ])
-        .unwrap_err();
-        let SketchError::OpenChain { gap, .. } = err else {
-            panic!("{err:?}");
-        };
-        assert!((gap.unwrap() - 0.25).abs() < 1e-12, "{gap:?}");
-    }
-
-    #[test]
-    fn a_zero_length_edge_is_rejected() {
-        let err = from_edges(vec![seg([1.0, 1.0], [1.0, 1.0])]).unwrap_err();
-        assert_eq!(err, SketchError::ZeroLengthEdge { edge: 0 });
-    }
-
-    #[test]
-    fn a_repeated_edge_is_rejected() {
-        let err = from_edges(vec![
-            seg([0.0, 0.0], [4.0, 0.0]),
-            seg([4.0, 0.0], [0.0, 0.0]), // the same segment, reversed
-            seg([4.0, 0.0], [4.0, 4.0]),
-        ])
-        .unwrap_err();
-        assert!(matches!(err, SketchError::DuplicateEdge { .. }), "{err:?}");
-    }
-
-    /// A T-junction has no single continuation, so the walk refuses rather than picking one.
-    #[test]
-    fn a_branching_vertex_is_rejected() {
-        let err = from_edges(vec![
-            seg([0.0, 0.0], [4.0, 0.0]),
-            seg([4.0, 0.0], [4.0, 4.0]),
-            seg([4.0, 0.0], [8.0, 0.0]),
-        ])
-        .unwrap_err();
-        assert!(
-            matches!(err, SketchError::BranchingVertex { .. }),
-            "{err:?}"
-        );
     }
 
     /// Containment must not depend on the rings' winding — the author draws in whatever direction
@@ -776,13 +529,71 @@ mod tests {
         assert_eq!(p[0].holes().len(), 1);
     }
 
-    fn pt(x: f64, y: f64) -> Point2 {
-        Point2::from_array([x, y])
+    // ---- the ring door ----
+
+    fn r(n: i128) -> Rat {
+        Rat::from_int(n)
+    }
+
+    /// A ring stated as vertices and steps — the same square `from_rings` builds, bit for bit.
+    #[test]
+    fn a_stated_ring_is_the_polygon_door_s_ring() {
+        let stated = Ring2d::new(
+            vec![[r(0), r(0)], [r(4), r(0)], [r(4), r(4)], [r(0), r(4)]],
+            vec![Edge2d::Line; 4],
+        )
+        .unwrap();
+        assert_eq!(stated, Ring2d::polygon_decimal(sq(0.0, 4.0)).unwrap());
+        let p = from_paths(vec![stated]).unwrap();
+        assert_eq!(p, from_rings(vec![sq(0.0, 4.0)]).unwrap());
+    }
+
+    /// What a stated ring can get wrong is refused at the door, by name.
+    #[test]
+    fn a_stated_ring_is_checked_at_the_door() {
+        let v = vec![[r(0), r(0)], [r(4), r(0)], [r(4), r(4)]];
+        assert_eq!(
+            Ring2d::new(v.clone(), vec![Edge2d::Line; 2]).unwrap_err(),
+            SketchError::UnevenRing {
+                vertices: 3,
+                edges: 2
+            }
+        );
+        assert_eq!(
+            Ring2d::new(
+                vec![[r(1), r(1)], [r(1), r(1)], [r(4), r(0)]],
+                vec![Edge2d::Line; 3]
+            )
+            .unwrap_err(),
+            SketchError::ZeroLengthEdge { edge: 0 }
+        );
+        // An arc step whose stated radius is not |start − centre|.
+        let bad_radius = Edge2d::Arc {
+            center: [r(0), r(0)],
+            radius: r(3),
+            ccw: true,
+        };
+        assert!(matches!(
+            Ring2d::new(
+                vec![[r(4), r(0)], [r(0), r(4)], [r(0), r(0)]],
+                vec![bad_radius, Edge2d::Line, Edge2d::Line]
+            ),
+            Err(SketchError::ArcRadiusMismatch { .. })
+        ));
+        // An arc step whose next vertex is off its circle.
+        let (quarter, _) = arc_turns(pt(0.0, 0.0), pt(4.0, 0.0), 1).unwrap();
+        assert!(matches!(
+            Ring2d::new(
+                vec![[r(4), r(0)], [r(0), r(3)], [r(0), r(0)]],
+                vec![quarter, Edge2d::Line, Edge2d::Line]
+            ),
+            Err(SketchError::ArcEndOffCircle { .. })
+        ));
     }
 
     #[test]
     fn a_circle_is_a_ring_of_one_vertex_at_its_seam() {
-        let p = from_edges(vec![Edge2d::circle(pt(1.0, 2.0), 3.0).unwrap()]).unwrap();
+        let p = from_paths(vec![Ring2d::circle(pt(1.0, 2.0), 3.0).unwrap()]).unwrap();
         assert_eq!(p.len(), 1);
         let outer = p[0].outer();
         assert_eq!(outer.len(), 1);
@@ -791,15 +602,15 @@ mod tests {
             [Rat::from_int(4), Rat::from_int(2)],
             "seam at +x"
         );
-        assert!(matches!(outer.segs()[0], Seg2d::Arc { ccw: true, .. }));
+        assert!(matches!(outer.edges()[0], Edge2d::Arc { ccw: true, .. }));
         assert!(p[0].has_arcs());
         p[0].check().unwrap();
     }
 
     #[test]
     fn concentric_circles_nest_like_squares() {
-        let c = |r: f64| Edge2d::circle(pt(0.0, 0.0), r).unwrap();
-        let p = from_edges(vec![c(4.0), c(20.0), c(12.0)]).unwrap();
+        let c = |r: f64| Ring2d::circle(pt(0.0, 0.0), r).unwrap();
+        let p = from_paths(vec![c(4.0), c(20.0), c(12.0)]).unwrap();
         assert_eq!(p.len(), 2, "a ring and an island");
         let ring = p
             .iter()
@@ -814,24 +625,28 @@ mod tests {
         assert!(island.holes().is_empty());
     }
 
+    /// A slot: two lines and two half circles, stated in order, the arcs' ends handed back by the
+    /// step door and used as the next vertices.
     #[test]
-    fn a_slot_chains_lines_and_arcs_whichever_way_they_were_drawn() {
-        // Centres (0,0) and (30,0), r 5: two lines and two half circles, scrambled, one arc
-        // stated clockwise — the walk turns it round.
-        let edges = vec![
-            Edge2d::arc_turns(pt(30.0, 0.0), pt(30.0, -5.0), 2).unwrap(), // (30,−5) → (30,5)
-            Edge2d::line(pt(0.0, 5.0), pt(30.0, 5.0)).unwrap(),
-            Edge2d::arc_turns(pt(0.0, 0.0), pt(0.0, -5.0), -2).unwrap(), // (0,−5) → (0,5), clockwise
-            Edge2d::line(pt(0.0, -5.0), pt(30.0, -5.0)).unwrap(),
-        ];
-        let p = from_edges(edges).unwrap();
+    fn a_slot_of_lines_and_arcs_is_one_ring() {
+        // Centres (0,0) and (30,0), r 5. Start at (0,−5), east along the bottom.
+        let (right, top_right) = arc_turns(pt(30.0, 0.0), pt(30.0, -5.0), 2).unwrap(); // → (30,5)
+        let (left, bottom_left) = arc_turns(pt(0.0, 0.0), pt(0.0, 5.0), 2).unwrap(); // → (0,−5)
+        assert_eq!(top_right, [r(30), r(5)]);
+        assert_eq!(bottom_left, [r(0), r(-5)]);
+        let ring = Ring2d::new(
+            vec![bottom_left, [r(30), r(-5)], top_right, [r(0), r(5)]],
+            vec![Edge2d::Line, right, Edge2d::Line, left],
+        )
+        .unwrap();
+        let p = from_paths(vec![ring]).unwrap();
         assert_eq!(p.len(), 1);
         let o = p[0].outer();
         assert_eq!(o.len(), 4);
         assert_eq!(
-            o.segs()
+            o.edges()
                 .iter()
-                .filter(|s| matches!(s, Seg2d::Arc { .. }))
+                .filter(|s| matches!(s, Edge2d::Arc { .. }))
                 .count(),
             2
         );
@@ -840,17 +655,17 @@ mod tests {
 
     #[test]
     fn two_half_circles_are_one_circle_in_normal_form() {
-        let e = vec![
-            Edge2d::arc_turns(pt(0.0, 0.0), pt(5.0, 0.0), 2).unwrap(), // (5,0) → (−5,0)
-            Edge2d::arc_turns(pt(0.0, 0.0), pt(-5.0, 0.0), 2).unwrap(), // (−5,0) → (5,0)
-        ];
-        let p = from_edges(e).unwrap();
+        let (a, mid) = arc_turns(pt(0.0, 0.0), pt(5.0, 0.0), 2).unwrap(); // (5,0) → (−5,0)
+        let (b, back) = arc_turns(pt(0.0, 0.0), pt(-5.0, 0.0), 2).unwrap(); // (−5,0) → (5,0)
+        assert_eq!(back, [r(5), r(0)]);
+        let ring = Ring2d::new(vec![[r(5), r(0)], mid], vec![a, b]).unwrap();
+        let p = from_paths(vec![ring]).unwrap();
         assert_eq!(p[0].outer().len(), 1, "merged into a whole circle");
         assert_eq!(
             p[0].outer().vertices()[0],
             [Rat::from_int(5), Rat::from_int(0)]
         );
-        let c = from_edges(vec![Edge2d::circle(pt(0.0, 0.0), 5.0).unwrap()]).unwrap();
+        let c = from_paths(vec![Ring2d::circle(pt(0.0, 0.0), 5.0).unwrap()]).unwrap();
         assert_eq!(p, c, "the same profile `circle` states");
     }
 
@@ -858,19 +673,19 @@ mod tests {
     fn equal_fillets_on_a_short_side_merge_into_a_half_circle() {
         // A 30 × 10 rectangle rounded r = 5 at every corner: the short sides vanish into half
         // circles — the slot, drawn as four lines and four quarter arcs.
-        let l = |a: [f64; 2], b: [f64; 2]| Edge2d::line(pt(a[0], a[1]), pt(b[0], b[1])).unwrap();
-        let q = |c: [f64; 2], s: [f64; 2]| {
-            Edge2d::arc_turns(pt(c[0], c[1]), pt(s[0], s[1]), 1).unwrap()
-        };
-        let e = vec![
-            l([5.0, 0.0], [25.0, 0.0]),
-            q([25.0, 5.0], [25.0, 0.0]), // (25,0) → (30,5)
-            q([25.0, 5.0], [30.0, 5.0]), // (30,5) → (25,10)
-            l([25.0, 10.0], [5.0, 10.0]),
-            q([5.0, 5.0], [5.0, 10.0]), // (5,10) → (0,5)
-            q([5.0, 5.0], [0.0, 5.0]),  // (0,5) → (5,0)
-        ];
-        let p = from_edges(e).unwrap();
+        let q = |c: [f64; 2], s: [f64; 2]| arc_turns(pt(c[0], c[1]), pt(s[0], s[1]), 1).unwrap();
+        let (q1, e1) = q([25.0, 5.0], [25.0, 0.0]); // (25,0) → (30,5)
+        let (q2, e2) = q([25.0, 5.0], [30.0, 5.0]); // (30,5) → (25,10)
+        let (q3, e3) = q([5.0, 5.0], [5.0, 10.0]); // (5,10) → (0,5)
+        let (q4, e4) = q([5.0, 5.0], [0.0, 5.0]); // (0,5) → (5,0)
+        assert_eq!((e1, e2), ([r(30), r(5)], [r(25), r(10)]));
+        assert_eq!((e3, e4), ([r(0), r(5)], [r(5), r(0)]));
+        let ring = Ring2d::new(
+            vec![[r(5), r(0)], [r(25), r(0)], e1, e2, [r(5), r(10)], e3],
+            vec![Edge2d::Line, q1, q2, Edge2d::Line, q3, q4],
+        )
+        .unwrap();
+        let p = from_paths(vec![ring]).unwrap();
         assert_eq!(
             p[0].outer().len(),
             4,
@@ -878,9 +693,9 @@ mod tests {
         );
         assert_eq!(
             p[0].outer()
-                .segs()
+                .edges()
                 .iter()
-                .filter(|s| matches!(s, Seg2d::Arc { .. }))
+                .filter(|s| matches!(s, Edge2d::Arc { .. }))
                 .count(),
             2
         );
@@ -889,73 +704,72 @@ mod tests {
     #[test]
     fn arcs_that_cannot_be_stated_are_refused_by_name() {
         assert!(matches!(
-            Edge2d::arc_turns(pt(1.0, 1.0), pt(0.0, 0.0), 1),
+            arc_turns(pt(1.0, 1.0), pt(0.0, 0.0), 1),
             Err(SketchError::ArcRadiusNotRational { .. })
         )); // r² = 2
         assert!(matches!(
-            Edge2d::arc_turns(pt(0.0, 0.0), pt(5.0, 0.0), 0),
+            arc_turns(pt(0.0, 0.0), pt(5.0, 0.0), 0),
             Err(SketchError::ArcTurnsOutOfRange { turns: 0 })
         ));
         assert!(matches!(
-            Edge2d::arc_turns(pt(0.0, 0.0), pt(5.0, 0.0), 4),
+            arc_turns(pt(0.0, 0.0), pt(5.0, 0.0), 4),
             Err(SketchError::ArcTurnsOutOfRange { turns: 4 })
         ));
         assert!(matches!(
-            Edge2d::circle(pt(0.0, 0.0), 0.0),
+            Ring2d::circle(pt(0.0, 0.0), 0.0),
             Err(SketchError::NonPositiveRadius { .. })
         ));
-        let r = |n: i128| Rat::from_int(n);
         assert!(matches!(
-            Edge2d::arc_rat([r(0), r(0)], [r(5), r(0)], [r(0), r(4)], true),
+            arc_to_rat([r(0), r(0)], [r(5), r(0)], [r(0), r(4)], true),
             Err(SketchError::ArcEndOffCircle { .. })
         ));
         assert!(matches!(
-            Edge2d::arc_rat([r(0), r(0)], [r(5), r(0)], [r(5), r(0)], true),
+            arc_to_rat([r(0), r(0)], [r(5), r(0)], [r(5), r(0)], true),
             Err(SketchError::ZeroLengthArc { .. })
         ));
         // 3-4-5: a rational radius off the axes is fine.
-        assert!(Edge2d::arc_rat([r(0), r(0)], [r(3), r(4)], [r(-4), r(3)], true).is_ok());
+        assert!(arc_to_rat([r(0), r(0)], [r(3), r(4)], [r(-4), r(3)], true).is_ok());
     }
 
     #[test]
     fn a_lens_of_two_arcs_is_a_valid_region() {
         // Two arcs between (0,0) and (6,0), centres (3,4) and (3,−4), r 5 — a lens.
-        let r = |n: i128| Rat::from_int(n);
-        let e = vec![
-            Edge2d::arc_rat([r(3), r(4)], [r(0), r(0)], [r(6), r(0)], true).unwrap(),
-            Edge2d::arc_rat([r(3), r(-4)], [r(6), r(0)], [r(0), r(0)], true).unwrap(),
-        ];
-        let p = from_edges(e).unwrap();
+        let up = arc_to_rat([r(3), r(4)], [r(0), r(0)], [r(6), r(0)], true).unwrap();
+        let down = arc_to_rat([r(3), r(-4)], [r(6), r(0)], [r(0), r(0)], true).unwrap();
+        let ring = Ring2d::new(vec![[r(0), r(0)], [r(6), r(0)]], vec![up, down]).unwrap();
+        let p = from_paths(vec![ring]).unwrap();
         assert_eq!(p[0].outer().len(), 2);
         p[0].check().unwrap();
     }
 
     #[test]
     fn hole_containment_reads_arcs_on_either_side() {
-        let sq = |a: f64, b: f64| -> Vec<Edge2d> {
-            vec![
-                Edge2d::line(pt(a, a), pt(b, a)).unwrap(),
-                Edge2d::line(pt(b, a), pt(b, b)).unwrap(),
-                Edge2d::line(pt(b, b), pt(a, b)).unwrap(),
-                Edge2d::line(pt(a, b), pt(a, a)).unwrap(),
-            ]
-        };
+        let square = |a: f64, b: f64| Ring2d::polygon_decimal(sq(a, b)).unwrap();
         // A round hole in a square plate.
-        let mut e = sq(0.0, 10.0);
-        e.push(Edge2d::circle(pt(5.0, 5.0), 2.0).unwrap());
-        let p = from_edges(e).unwrap();
+        let p = from_paths(vec![
+            square(0.0, 10.0),
+            Ring2d::circle(pt(5.0, 5.0), 2.0).unwrap(),
+        ])
+        .unwrap();
         assert_eq!((p.len(), p[0].holes().len()), (1, 1));
         assert!(!p[0].holes()[0].is_polygon());
         // A square hole in a round disk.
-        let mut e = sq(-2.0, 2.0);
-        e.push(Edge2d::circle(pt(0.0, 0.0), 10.0).unwrap());
-        let p = from_edges(e).unwrap();
+        let p = from_paths(vec![
+            square(-2.0, 2.0),
+            Ring2d::circle(pt(0.0, 0.0), 10.0).unwrap(),
+        ])
+        .unwrap();
         assert_eq!((p.len(), p[0].holes().len()), (1, 1));
         assert!(!p[0].outer().is_polygon());
         assert!(p[0].holes()[0].is_polygon());
         // A circle crossing the square: the rings meet.
-        let mut e = sq(0.0, 10.0);
-        e.push(Edge2d::circle(pt(10.0, 5.0), 2.0).unwrap());
-        assert!(matches!(from_edges(e), Err(SketchError::RingsMeet { .. })));
+        let rings = vec![
+            square(0.0, 10.0),
+            Ring2d::circle(pt(10.0, 5.0), 2.0).unwrap(),
+        ];
+        assert!(matches!(
+            from_paths(rings),
+            Err(SketchError::RingsMeet { .. })
+        ));
     }
 }

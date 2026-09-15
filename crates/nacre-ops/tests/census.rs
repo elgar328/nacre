@@ -40,11 +40,14 @@
 //! as evidence only about the population present.**
 
 use nacre_math::Point3;
-use nacre_ops::{BoolKind, Edge2d, OpOutput, Operation, apply, boolean, from_edges};
+use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
+#[path = "support/stated.rs"]
+mod stated;
 use nacre_ops::{DatumDef, SketchFrame, SketchPlane};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
+use stated::*;
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
 /// when the plane is not one the model already holds (a seed, or a face's).
@@ -1386,8 +1389,8 @@ fn dump() {
     // cylinders, the ruling the tracer has no side for — its rows record that refusal by name.
     {
         let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-        let sketch = |m: &mut Model, edges: Vec<Edge2d>, dist: f64| -> Handle<Solid> {
-            let profile = from_edges(edges).expect("a valid profile").remove(0);
+        let sketch = |m: &mut Model, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {
+            let profile = stated(edges).expect("a valid profile").remove(0);
             let frame = SketchFrame::world(m, Axis::Z);
             let OpOutput::Extrude { solid, .. } = apply(
                 m,
@@ -1410,8 +1413,8 @@ fn dump() {
                     sketch(
                         m,
                         vec![
-                            Edge2d::line(p2(2.0, 5.0), p2(2.0, -1.0)).unwrap(),
-                            Edge2d::arc_turns(p2(2.0, 2.0), p2(2.0, -1.0), 2).unwrap(),
+                            line(p2(2.0, 5.0), p2(2.0, -1.0)),
+                            arc_turns(p2(2.0, 2.0), p2(2.0, -1.0), 2),
                         ],
                         3.0,
                     )
@@ -1422,10 +1425,7 @@ fn dump() {
                 Box::new(move |m| {
                     sketch(
                         m,
-                        vec![
-                            Edge2d::circle(p2(2.0, 2.0), 3.0).unwrap(),
-                            Edge2d::circle(p2(2.0, 2.0), 1.5).unwrap(),
-                        ],
+                        vec![circle(p2(2.0, 2.0), 3.0), circle(p2(2.0, 2.0), 1.5)],
                         3.0,
                     )
                 }),
@@ -1436,11 +1436,11 @@ fn dump() {
                     sketch(
                         m,
                         vec![
-                            Edge2d::line(p2(-1.0, -1.0), p2(5.0, -1.0)).unwrap(),
-                            Edge2d::line(p2(5.0, -1.0), p2(5.0, 5.0)).unwrap(),
-                            Edge2d::line(p2(5.0, 5.0), p2(-1.0, 5.0)).unwrap(),
-                            Edge2d::line(p2(-1.0, 5.0), p2(-1.0, -1.0)).unwrap(),
-                            Edge2d::circle(p2(2.0, 2.0), 1.0).unwrap(),
+                            line(p2(-1.0, -1.0), p2(5.0, -1.0)),
+                            line(p2(5.0, -1.0), p2(5.0, 5.0)),
+                            line(p2(5.0, 5.0), p2(-1.0, 5.0)),
+                            line(p2(-1.0, 5.0), p2(-1.0, -1.0)),
+                            circle(p2(2.0, 2.0), 1.0),
                         ],
                         3.0,
                     )
@@ -1452,10 +1452,10 @@ fn dump() {
                     sketch(
                         m,
                         vec![
-                            Edge2d::line(p2(0.0, 1.0), p2(4.0, 1.0)).unwrap(),
-                            Edge2d::arc_turns(p2(4.0, 2.0), p2(4.0, 1.0), 2).unwrap(),
-                            Edge2d::line(p2(4.0, 3.0), p2(0.0, 3.0)).unwrap(),
-                            Edge2d::arc_turns(p2(0.0, 2.0), p2(0.0, 3.0), 2).unwrap(),
+                            line(p2(0.0, 1.0), p2(4.0, 1.0)),
+                            arc_turns(p2(4.0, 2.0), p2(4.0, 1.0), 2),
+                            line(p2(4.0, 3.0), p2(0.0, 3.0)),
+                            arc_turns(p2(0.0, 2.0), p2(0.0, 3.0), 2),
                         ],
                         3.0,
                     )
@@ -1491,8 +1491,8 @@ fn dump() {
         fn p2(x: f64, y: f64) -> nacre_math::Point2 {
             nacre_math::Point2::from_array([x, y])
         }
-        fn prism(m: &mut Model, axis: Axis, edges: Vec<Edge2d>, dist: f64) -> Handle<Solid> {
-            let profile = from_edges(edges).expect("a valid profile").remove(0);
+        fn prism(m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64) -> Handle<Solid> {
+            let profile = stated(edges).expect("a valid profile").remove(0);
             let frame = SketchFrame::world(m, axis);
             let OpOutput::Extrude { solid, .. } = apply(
                 m,
@@ -1519,12 +1519,7 @@ fn dump() {
             )
         }
         fn circle_prism(m: &mut Model, c: [f64; 2], r: f64, dist: f64) -> Handle<Solid> {
-            prism(
-                m,
-                Axis::Z,
-                vec![Edge2d::circle(p2(c[0], c[1]), r).unwrap()],
-                dist,
-            )
+            prism(m, Axis::Z, vec![circle(p2(c[0], c[1]), r)], dist)
         }
         // p1: the plate, bottom corners filleted r 2 with the holes centred on the fillet axes.
         let p1 = |m: &mut Model| {
@@ -1532,14 +1527,14 @@ fn dump() {
                 m,
                 Axis::Z,
                 vec![
-                    Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
-                    Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
-                    Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
-                    Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
-                    Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
-                    Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                    line(p2(-1.5, -4.0), p2(1.5, -4.0)),
+                    arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1),
+                    line(p2(3.5, -2.0), p2(3.5, 4.0)),
+                    line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+                    line(p2(-3.5, 4.0), p2(-3.5, -2.0)),
+                    arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1),
+                    circle(p2(-1.5, -2.0), 1.0),
+                    circle(p2(1.5, -2.0), 1.0),
                 ],
                 1.0,
             )
@@ -1550,14 +1545,14 @@ fn dump() {
                 m,
                 Axis::Y,
                 vec![
-                    Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
-                    Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
-                    Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
-                    Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
-                    Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
-                    Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
-                    Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
-                    Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+                    line(p2(1.0, -3.5), p2(6.0, -3.5)),
+                    line(p2(6.0, -3.5), p2(6.0, 3.5)),
+                    line(p2(6.0, 3.5), p2(1.0, 3.5)),
+                    line(p2(1.0, 3.5), p2(1.0, -3.5)),
+                    line(p2(3.0, -0.5), p2(4.0, -0.5)),
+                    arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2),
+                    line(p2(4.0, 0.5), p2(3.0, 0.5)),
+                    arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2),
                 ],
                 1.0,
             );
@@ -1569,9 +1564,9 @@ fn dump() {
                 m,
                 Axis::X,
                 vec![
-                    Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
-                    Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
-                    Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+                    line(p2(0.0, 1.0), p2(3.0, 1.0)),
+                    line(p2(3.0, 1.0), p2(3.0, 6.0)),
+                    line(p2(3.0, 6.0), p2(0.0, 1.0)),
                 ],
                 1.0,
             );
@@ -1583,12 +1578,12 @@ fn dump() {
                 m,
                 Axis::Z,
                 vec![
-                    Edge2d::line(p2(-2.0, -4.0), p2(2.0, -4.0)).unwrap(),
-                    Edge2d::arc_turns(p2(2.0, -2.5), p2(2.0, -4.0), 1).unwrap(),
-                    Edge2d::line(p2(3.5, -2.5), p2(3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.5)).unwrap(),
-                    Edge2d::arc_turns(p2(-2.0, -2.5), p2(-3.5, -2.5), 1).unwrap(),
+                    line(p2(-2.0, -4.0), p2(2.0, -4.0)),
+                    arc_turns(p2(2.0, -2.5), p2(2.0, -4.0), 1),
+                    line(p2(3.5, -2.5), p2(3.5, 4.0)),
+                    line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+                    line(p2(-3.5, 4.0), p2(-3.5, -2.5)),
+                    arc_turns(p2(-2.0, -2.5), p2(-3.5, -2.5), 1),
                 ],
                 1.0,
             )
@@ -1598,10 +1593,10 @@ fn dump() {
                 m,
                 Axis::Z,
                 vec![
-                    Edge2d::line(p2(0.0, -5.0), p2(30.0, -5.0)).unwrap(),
-                    Edge2d::arc_turns(p2(30.0, 0.0), p2(30.0, -5.0), 2).unwrap(),
-                    Edge2d::line(p2(30.0, 5.0), p2(0.0, 5.0)).unwrap(),
-                    Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, 5.0), 2).unwrap(),
+                    line(p2(0.0, -5.0), p2(30.0, -5.0)),
+                    arc_turns(p2(30.0, 0.0), p2(30.0, -5.0), 2),
+                    line(p2(30.0, 5.0), p2(0.0, 5.0)),
+                    arc_turns(p2(0.0, 0.0), p2(0.0, 5.0), 2),
                 ],
                 2.0,
             )
@@ -1611,12 +1606,12 @@ fn dump() {
                 m,
                 Axis::Z,
                 vec![
-                    Edge2d::line(p2(-3.5, -4.0), p2(3.5, -4.0)).unwrap(),
-                    Edge2d::line(p2(3.5, -4.0), p2(3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -4.0)).unwrap(),
-                    Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
-                    Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                    line(p2(-3.5, -4.0), p2(3.5, -4.0)),
+                    line(p2(3.5, -4.0), p2(3.5, 4.0)),
+                    line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+                    line(p2(-3.5, 4.0), p2(-3.5, -4.0)),
+                    circle(p2(-1.5, -2.0), 1.0),
+                    circle(p2(1.5, -2.0), 1.0),
                 ],
                 1.0,
             )
@@ -1626,14 +1621,14 @@ fn dump() {
                 m,
                 Axis::Z,
                 vec![
-                    Edge2d::line(p2(2.0, 0.0), p2(8.0, 0.0)).unwrap(),
-                    Edge2d::arc_turns(p2(8.0, 2.0), p2(8.0, 0.0), 1).unwrap(),
-                    Edge2d::line(p2(10.0, 2.0), p2(10.0, 6.0)).unwrap(),
-                    Edge2d::arc_turns(p2(8.0, 6.0), p2(10.0, 6.0), 1).unwrap(),
-                    Edge2d::line(p2(8.0, 8.0), p2(2.0, 8.0)).unwrap(),
-                    Edge2d::arc_turns(p2(2.0, 6.0), p2(2.0, 8.0), 1).unwrap(),
-                    Edge2d::line(p2(0.0, 6.0), p2(0.0, 2.0)).unwrap(),
-                    Edge2d::arc_turns(p2(2.0, 2.0), p2(0.0, 2.0), 1).unwrap(),
+                    line(p2(2.0, 0.0), p2(8.0, 0.0)),
+                    arc_turns(p2(8.0, 2.0), p2(8.0, 0.0), 1),
+                    line(p2(10.0, 2.0), p2(10.0, 6.0)),
+                    arc_turns(p2(8.0, 6.0), p2(10.0, 6.0), 1),
+                    line(p2(8.0, 8.0), p2(2.0, 8.0)),
+                    arc_turns(p2(2.0, 6.0), p2(2.0, 8.0), 1),
+                    line(p2(0.0, 6.0), p2(0.0, 2.0)),
+                    arc_turns(p2(2.0, 2.0), p2(0.0, 2.0), 1),
                 ],
                 3.0,
             )
@@ -1642,10 +1637,7 @@ fn dump() {
             prism(
                 m,
                 Axis::Z,
-                vec![
-                    Edge2d::circle(p2(2.0, 2.0), 3.0).unwrap(),
-                    Edge2d::circle(p2(2.0, 2.0), 1.5).unwrap(),
-                ],
+                vec![circle(p2(2.0, 2.0), 3.0), circle(p2(2.0, 2.0), 1.5)],
                 3.0,
             )
         };
@@ -1718,8 +1710,8 @@ fn dump() {
         fn p2(x: f64, y: f64) -> nacre_math::Point2 {
             nacre_math::Point2::from_array([x, y])
         }
-        fn prism(m: &mut Model, axis: Axis, edges: Vec<Edge2d>, dist: f64) -> Handle<Solid> {
-            let profile = from_edges(edges).expect("a valid profile").remove(0);
+        fn prism(m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64) -> Handle<Solid> {
+            let profile = stated(edges).expect("a valid profile").remove(0);
             let frame = SketchFrame::world(m, axis);
             let OpOutput::Extrude { solid, .. } = apply(
                 m,
@@ -1765,10 +1757,10 @@ fn dump() {
                 m,
                 Axis::Y,
                 vec![
-                    Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
-                    Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
-                    Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
-                    Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+                    line(p2(1.0, -3.5), p2(6.0, -3.5)),
+                    line(p2(6.0, -3.5), p2(6.0, 3.5)),
+                    line(p2(6.0, 3.5), p2(1.0, 3.5)),
+                    line(p2(1.0, 3.5), p2(1.0, -3.5)),
                 ],
                 1.0,
             );
@@ -1780,14 +1772,14 @@ fn dump() {
                 m,
                 Axis::Y,
                 vec![
-                    Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
-                    Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
-                    Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
-                    Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
-                    Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
-                    Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
-                    Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
-                    Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+                    line(p2(1.0, -3.5), p2(6.0, -3.5)),
+                    line(p2(6.0, -3.5), p2(6.0, 3.5)),
+                    line(p2(6.0, 3.5), p2(1.0, 3.5)),
+                    line(p2(1.0, 3.5), p2(1.0, -3.5)),
+                    line(p2(3.0, -0.5), p2(4.0, -0.5)),
+                    arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2),
+                    line(p2(4.0, 0.5), p2(3.0, 0.5)),
+                    arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2),
                 ],
                 1.0,
             );
@@ -1799,14 +1791,14 @@ fn dump() {
                 m,
                 Axis::Z,
                 vec![
-                    Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
-                    Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
-                    Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
-                    Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
-                    Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
-                    Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                    line(p2(-1.5, -4.0), p2(1.5, -4.0)),
+                    arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1),
+                    line(p2(3.5, -2.0), p2(3.5, 4.0)),
+                    line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+                    line(p2(-3.5, 4.0), p2(-3.5, -2.0)),
+                    arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1),
+                    circle(p2(-1.5, -2.0), 1.0),
+                    circle(p2(1.5, -2.0), 1.0),
                 ],
                 1.0,
             )
@@ -1817,9 +1809,9 @@ fn dump() {
                 m,
                 Axis::X,
                 vec![
-                    Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
-                    Edge2d::line(p2(3.0, 1.0), p2(3.0, apex)).unwrap(),
-                    Edge2d::line(p2(3.0, apex), p2(0.0, 1.0)).unwrap(),
+                    line(p2(0.0, 1.0), p2(3.0, 1.0)),
+                    line(p2(3.0, 1.0), p2(3.0, apex)),
+                    line(p2(3.0, apex), p2(0.0, 1.0)),
                 ],
                 1.0,
             );
@@ -1933,8 +1925,8 @@ fn dump() {
         fn p2(x: f64, y: f64) -> nacre_math::Point2 {
             nacre_math::Point2::from_array([x, y])
         }
-        fn prism(m: &mut Model, axis: Axis, edges: Vec<Edge2d>, dist: f64) -> Handle<Solid> {
-            let profile = from_edges(edges).expect("a valid profile").remove(0);
+        fn prism(m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64) -> Handle<Solid> {
+            let profile = stated(edges).expect("a valid profile").remove(0);
             let frame = SketchFrame::world(m, axis);
             let OpOutput::Extrude { solid, .. } = apply(
                 m,
@@ -1966,11 +1958,11 @@ fn dump() {
                 m,
                 Axis::Z,
                 vec![
-                    Edge2d::line(p2(-3.5, -4.0), p2(1.5, -4.0)).unwrap(),
-                    Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
-                    Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -4.0)).unwrap(),
+                    line(p2(-3.5, -4.0), p2(1.5, -4.0)),
+                    arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1),
+                    line(p2(3.5, -2.0), p2(3.5, 4.0)),
+                    line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+                    line(p2(-3.5, 4.0), p2(-3.5, -4.0)),
                 ],
                 1.0,
             )
@@ -1984,14 +1976,14 @@ fn dump() {
                 m,
                 Axis::Z,
                 vec![
-                    Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
-                    Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
-                    Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-                    Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
-                    Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
-                    Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
-                    Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                    line(p2(-1.5, -4.0), p2(1.5, -4.0)),
+                    arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1),
+                    line(p2(3.5, -2.0), p2(3.5, 4.0)),
+                    line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+                    line(p2(-3.5, 4.0), p2(-3.5, -2.0)),
+                    arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1),
+                    circle(p2(-1.5, -2.0), 1.0),
+                    circle(p2(1.5, -2.0), 1.0),
                 ],
                 1.0,
             )
@@ -2001,14 +1993,14 @@ fn dump() {
                 m,
                 Axis::Y,
                 vec![
-                    Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
-                    Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
-                    Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
-                    Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
-                    Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
-                    Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
-                    Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
-                    Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+                    line(p2(1.0, -3.5), p2(6.0, -3.5)),
+                    line(p2(6.0, -3.5), p2(6.0, 3.5)),
+                    line(p2(6.0, 3.5), p2(1.0, 3.5)),
+                    line(p2(1.0, 3.5), p2(1.0, -3.5)),
+                    line(p2(3.0, -0.5), p2(4.0, -0.5)),
+                    arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2),
+                    line(p2(4.0, 0.5), p2(3.0, 0.5)),
+                    arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2),
                 ],
                 1.0,
             );
@@ -2019,9 +2011,9 @@ fn dump() {
                 m,
                 Axis::X,
                 vec![
-                    Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
-                    Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
-                    Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+                    line(p2(0.0, 1.0), p2(3.0, 1.0)),
+                    line(p2(3.0, 1.0), p2(3.0, 6.0)),
+                    line(p2(3.0, 6.0), p2(0.0, 1.0)),
                 ],
                 1.0,
             );
@@ -2095,8 +2087,8 @@ fn dump() {
         fn p2(x: f64, y: f64) -> nacre_math::Point2 {
             nacre_math::Point2::from_array([x, y])
         }
-        fn prism(m: &mut Model, axis: Axis, edges: Vec<Edge2d>, dist: f64) -> Handle<Solid> {
-            let profile = from_edges(edges).expect("a valid profile").remove(0);
+        fn prism(m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64) -> Handle<Solid> {
+            let profile = stated(edges).expect("a valid profile").remove(0);
             let frame = SketchFrame::world(m, axis);
             let OpOutput::Extrude { solid, .. } = apply(
                 m,
@@ -2127,7 +2119,7 @@ fn dump() {
                 ([-45.0, -25.0], [0.0, -1.0], [1.0, 0.0]),
             ];
             let r = 5.0;
-            let mut edges: Vec<Edge2d> = Vec::new();
+            let mut edges: Vec<Stated> = Vec::new();
             // Where the previous corner left the pen.
             let mut at = {
                 let (c, _, d_out) = corner[3];
@@ -2141,13 +2133,11 @@ fn dump() {
                 if i < fillets {
                     let tin = [c[0] - r * d_in[0], c[1] - r * d_in[1]];
                     let centre = [tin[0] + r * d_out[0], tin[1] + r * d_out[1]];
-                    edges.push(Edge2d::line(p2(at[0], at[1]), p2(tin[0], tin[1])).unwrap());
-                    edges.push(
-                        Edge2d::arc_turns(p2(centre[0], centre[1]), p2(tin[0], tin[1]), 1).unwrap(),
-                    );
+                    edges.push(line(p2(at[0], at[1]), p2(tin[0], tin[1])));
+                    edges.push(arc_turns(p2(centre[0], centre[1]), p2(tin[0], tin[1]), 1));
                     at = [c[0] + r * d_out[0], c[1] + r * d_out[1]];
                 } else {
-                    edges.push(Edge2d::line(p2(at[0], at[1]), p2(c[0], c[1])).unwrap());
+                    edges.push(line(p2(at[0], at[1]), p2(c[0], c[1])));
                     at = c;
                 }
             }
@@ -2155,7 +2145,7 @@ fn dump() {
                 .iter()
                 .take(bores)
             {
-                edges.push(Edge2d::circle(p2(x, y), 3.5).unwrap());
+                edges.push(circle(p2(x, y), 3.5));
             }
             prism(m, Axis::Z, edges, 12.0)
         }
@@ -2165,15 +2155,15 @@ fn dump() {
                 m,
                 Axis::Y,
                 vec![
-                    Edge2d::line(p2(12.0, 0.0), p2(12.0, 7.5)).unwrap(),
-                    Edge2d::line(p2(12.0, 7.5), p2(27.0, 7.5)).unwrap(),
-                    Edge2d::line(p2(27.0, 7.5), p2(27.0, 5.5)).unwrap(),
-                    Edge2d::line(p2(27.0, 5.5), p2(62.0, 5.5)).unwrap(),
-                    Edge2d::line(p2(62.0, 5.5), p2(62.0, -5.5)).unwrap(),
-                    Edge2d::line(p2(62.0, -5.5), p2(27.0, -5.5)).unwrap(),
-                    Edge2d::line(p2(27.0, -5.5), p2(27.0, -7.5)).unwrap(),
-                    Edge2d::line(p2(27.0, -7.5), p2(12.0, -7.5)).unwrap(),
-                    Edge2d::line(p2(12.0, -7.5), p2(12.0, 0.0)).unwrap(),
+                    line(p2(12.0, 0.0), p2(12.0, 7.5)),
+                    line(p2(12.0, 7.5), p2(27.0, 7.5)),
+                    line(p2(27.0, 7.5), p2(27.0, 5.5)),
+                    line(p2(27.0, 5.5), p2(62.0, 5.5)),
+                    line(p2(62.0, 5.5), p2(62.0, -5.5)),
+                    line(p2(62.0, -5.5), p2(27.0, -5.5)),
+                    line(p2(27.0, -5.5), p2(27.0, -7.5)),
+                    line(p2(27.0, -7.5), p2(12.0, -7.5)),
+                    line(p2(12.0, -7.5), p2(12.0, 0.0)),
                 ],
                 40.0,
             );
@@ -2251,12 +2241,7 @@ fn dump() {
                     let r2 = rib(m, -17.5);
                     m.rebuild_adjacency();
                     let abc = boolean(m, BoolKind::Fuse, ab, r2).expect("+ the second rib")[0];
-                    let c = prism(
-                        m,
-                        Axis::Z,
-                        vec![Edge2d::circle(p2(0.0, 0.0), 10.0).unwrap()],
-                        90.0,
-                    );
+                    let c = prism(m, Axis::Z, vec![circle(p2(0.0, 0.0), 10.0)], 90.0);
                     let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
                     let turned = xf(
                         m,
@@ -2284,12 +2269,7 @@ fn dump() {
             (
                 "disk across the tangent",
                 Box::new(|m| {
-                    let c = prism(
-                        m,
-                        Axis::Z,
-                        vec![Edge2d::circle(p2(0.0, 0.0), 10.0).unwrap()],
-                        90.0,
-                    );
+                    let c = prism(m, Axis::Z, vec![circle(p2(0.0, 0.0), 10.0)], 90.0);
                     let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");
                     let turned = xf(
                         m,
@@ -2312,7 +2292,7 @@ fn dump() {
             (
                 "crossing cylinders",
                 Box::new(|m| {
-                    let circle = |r: f64| vec![Edge2d::circle(p2(0.0, 0.0), r).unwrap()];
+                    let circle = |r: f64| vec![circle(p2(0.0, 0.0), r)];
                     let up = prism(m, Axis::Z, circle(5.0), 20.0);
                     let across = prism(m, Axis::Z, circle(5.0), 20.0);
                     let r = |x: f64| Rat::from_decimal(x).expect("a short decimal");

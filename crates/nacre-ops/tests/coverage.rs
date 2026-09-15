@@ -9,6 +9,8 @@
 
 #[path = "coverage/common.rs"]
 mod common;
+#[path = "support/stated.rs"]
+mod stated;
 
 #[path = "coverage/convex.rs"]
 mod convex;

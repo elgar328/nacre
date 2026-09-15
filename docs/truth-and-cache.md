@@ -263,18 +263,21 @@ pub struct Profile2d {                        // 한 재료 영역 — 현행 �
     outer: Ring2d,
     holes: Vec<Ring2d>,
 }
-pub struct Ring2d {                           // 정점 + 조각. segs[i] = vertices[i] → vertices[i+1 mod n]
+pub struct Ring2d {                           // 정점 + 변. edges[i] = vertices[i] → vertices[i+1 mod n]
     vertices: Vec<[Rat; 2]>,                  //   온전한 원 = 정점 1 + Arc 1 (정점 = 솔기)
-    edges: Vec<Edge2d>,                       //   ⏳ 오늘 코드는 `segs: Vec<Seg2d>` — 열린 항목 26
+    edges: Vec<Edge2d>,                       //   ✔ 2026-09-15 (열린 항목 26)
 }
-pub enum Edge2d {                             // 조각 «하나» — 순서 있는 고리라 시작=앞 꼭짓점
+pub enum Edge2d {                             // 조각 «하나» — 순서 있는 고리라 시작=앞 꼭짓점 (geom::mixed)
     Line,
     Arc { center: [Rat; 2], radius: Rat, ccw: bool },  // ⏳25 radius→r²·중심 정의화는 미정 마일스톤
 }
-// ⏳★★ **오늘 코드는 조각 타입이 둘**이다: 입력 `Edge2d{Line{from,to} | Arc{..start,end..}}`(양끝을 자기가
-//    들어 순서 없이 흩어져 들어옴) + 저장 `Seg2d{Line | Arc{center,radius,ccw}}`. 열린 항목 26 이 kit 펜의
-//    순서를 살려 둘을 합치고 `start`/`end` 를 없앤다(살아남는 이름 = `Edge2d`). 위 그림이 그 최종형이다.
-// 링 더미 → 짝수 깊이 = 재료(even-odd) → 섬마다 Profile2d 하나 — from_rings, 현행 유지.
+// ✔ **조각 타입은 하나**(2026-09-15, 열린 항목 26): 뭉치 입력 `Edge2d{Line{from,to} | Arc{..start,end..}}` 와
+//    사슬 재발견(`from_edges`)은 kit 문법 §5.5 「선 뭉치」와 함께 은퇴했고, 저장 타입 `Seg2d` 가 `Edge2d` 라는
+//    이름을 물려받았다. ★ **커널의 문은 «고리»다, «펜»이 아니다** — `Ring2d::new(vertices, edges)`(검증: 짝 맞음·
+//    영길이·호의 반지름·다음 정점이 원 위)·`Ring2d::circle`·`Ring2d::polygon_decimal` + 단계 문 `arc_turns(_rat)`
+//    (변, 끝점)·`arc_to_rat`, 그리고 `from_paths(Vec<Ring2d>)`. 펜은 kit 의 것이고, 제약 해석기·외부 데이터가
+//    와도 같은 문으로 온다 — 커널은 «어떻게 그렸나»를 모른다.
+// 링 더미 → 짝수 깊이 = 재료(even-odd) → 섬마다 Profile2d 하나 — from_rings/from_paths, 현행 유지.
 
 // ─── 배치 — 어떤 평면 위 + 배치(기본은 정준 유도, 명시하면 값). ──
 
@@ -1727,7 +1730,7 @@ STEP 출력, undo/replay.
 25. ⏳★★★★ **원/원호의 진실은 «실현값»이 아니라 «정의»여야 한다 — 평면의 normal-vs-coefficients 와 같은 갈래**
     (2026-09-13 진단, 곡선 마일스톤 입력).
 
-    오늘 원호는 «실현된 값»으로 저장된다: `Seg2d::Arc{center: [Rat;2], radius: Rat, ccw}` ·
+    오늘 원호는 «실현된 값»으로 저장된다: `Edge2d::Arc{center: [Rat;2], radius: Rat, ccw}`(2026-09-15 까지 `Seg2d`) ·
     `CylinderDef{.., radius: Rat}`. 그래서 **무리수가 되는 두 양**에서 막힌다.
 
     **① 반지름 — 저장하는 양이 틀렸다.** `radius_of` 는 `r² = |start−center|²`(분수끼리라 **항상 유리수**)를
@@ -1745,12 +1748,13 @@ STEP 출력, undo/replay.
 
     ⇒ **뿌리는 하나**: 원/원호가 평면이 S6/S7 에서 지나온 «정의 vs 실현» 분리를 아직 안 지났다. 「다 만들 수
     있어야 한다」가 옳고, 길은 평면이 간 길이다. ⚠ 크기는 doc 한 줄이 아니라 **곡선 마일스톤**(진실 필드
-    `radius`→`r²` 를 `Seg2d::Arc`·`CylinderDef` 에서 함께 + 중심의 정의 기반 표현 신설) — 지금 고치는 게
+    `radius`→`r²` 를 `Edge2d::Arc`·`CylinderDef` **둘**에서 함께(항목 26 이 조각 타입을 하나로 만들어 셋이 둘이 됐다) + 중심의 정의 기반 표현 신설) — 지금 고치는 게
     아니라 그 계획의 입력이다. ★ `arc_turns`/`arc_rat` 이 갈린 것은 이것과 무관한 편의 설탕(끝점을 90°k 로
     유도 vs 받음)이고, 정의 기반이 되면 둘 다 «정의를 진술하는 한 방법»으로 자연히 정리된다.
 
-26. ⏳★★★ **입력을 «순서 있는 고리»로 통일한다 — `Edge2d`/`Seg2d` 가 하나가 되고 `from_edges` 의
-    순서 재발견이 사라진다** (2026-09-13 진단).
+26. ✔★★★ **입력을 «순서 있는 고리»로 통일한다 — `Edge2d`/`Seg2d` 가 하나가 되고 `from_edges` 의
+    순서 재발견이 사라진다** (2026-09-13 진단 → 2026-09-15 닫힘, 칸 ㊿ — 전제가 한 번 반증됐고 문법 결정으로
+    다시 섰다; 아래 진단은 그대로 두고 끝에 무엇이 틀렸었는지 적는다).
 
     오늘 스케치 조각은 **둘**이다: 입력 `Edge2d::Arc{center, radius, start, end, ccw}`(양끝을 자기가 든다) ·
     저장 `Seg2d::Arc{center, radius, ccw}`(시작=앞 꼭짓점, 끝=다음 꼭짓점). 차이는 **«양끝을 자기가 드느냐»**
@@ -1772,6 +1776,29 @@ STEP 출력, undo/replay.
     ☑ **열린 항목 25 를 쉽게 만든다**: radius→r² 를 오늘은 `Edge2d`·`Seg2d`·`CylinderDef` **셋**에서
     해야 하는데, (c) 뒤엔 **둘**이다. ⚠ 실제 코드 변경이라 자기 칸이 필요하고, kit 쪽은 «펜을 `Edge2d`
     목록으로 펼치는 단계»를 없애 펜을 커널의 고리 문에 직접 넘기는 것이 자연스럽다.
+
+    ★★★ **2026-09-15 조사가 전제를 반증했다.** «코드캐드라 그 층이 필요 없다»는 거짓이었다 — kit 의 `Loose`
+    (문법 §5.5 «선 뭉치 — 순서 무관»: playground 의 `line(a,b)`·느슨한 `arc`, kit 잠금 «펜과 뭉치는 한 법정»)가
+    그 층에 **하중을 싣고** 있었다. `from_edges` 는 헛돌음이 아니라 뭉치 길의 엔진이었고, 그 길이 사는 한 (b)는
+    못 한다. ⇒ **사용자 결정(2026-09-15): 선 뭉치 길 자체를 은퇴시켜 정식 문법을 펜 하나로 줄인다** — 생성
+    코드는 펜을 프로그램으로 굴린다. 그러면 (a)(b)(c) 가 다시 성립한다.
+
+    ★★★ **커널의 문은 «고리»이지 «펜»이 아니다** — 사용자 검토가 초안을 고쳤다(초안은 문법의 펜을 커널 문으로
+    못박으려 했고, 그러면 나중에 제약 기반 스케치(접선·평행·대칭·통과점)를 얹을 때 «커널이 펜을 기대한다»는
+    벽이 된다). 커널은 «어떻게 그렸나»를 모른다: `Ring2d::new(vertices, edges)`(검증: 짝 맞음·영길이·호의
+    반지름 유리수·다음 정점이 원 위) · `Ring2d::circle(_rat)` · `Ring2d::polygon_decimal` + 단계 문
+    `arc_turns(_rat)`→(변, 끝점)·`arc_to_rat`, 그리고 `from_paths(Vec<Ring2d>)`(= `classify`). 펜은 kit 의 것으로
+    남고, 제약 해석기·외부 데이터가 와도 같은 문으로 온다. 그때 막는 것은 이 문이 아니라 **무리수 좌표**이고
+    답은 항목 25(정의 기반 곡선)다 — 이 칸과 독립.
+
+    ☑ **한 것(칸 ㊿)**: 조각 타입 **하나** `Edge2d { Line | Arc { center, radius, ccw } }`(`geom::mixed`, 옛
+    `Seg2d` 개명 — «살아남는 이름» 예측은 맞았으나 이유가 달랐다: 검증 문이 붙어서가 아니라 «고리의 변»이
+    그 이름의 뜻이고 술어가 읽어야 하므로 집이 geom 이다). 옛 입력 enum·문 6·`from_edges`·사슬 재발견·
+    `OpenChain`·`BranchingVertex`·`DuplicateEdge` 소멸(고리 문에서 열린 사슬·분기는 **표현 불가**).
+    `from_rings`·`classify`·`normalized`·호 산술 무변. 픽스처 50 은 손으로 다시 쓰지 않고 **테스트 쪽 순서
+    어댑터** `stated(vec![line(..), arc_turns(..), circle(..)])` 로 옮겼다 — 이전 변의 끝에서 시작하지 않으면
+    단언으로 죽는데, 옛 픽스처 **전부**가 이미 순서대로 적혀 있었다(단언이 잡은 건 «순서 무관»을 일부러 시연한
+    커버리지 테스트 하나뿐 → 삭제). census 398행 비트 동일. 항목 25 는 이제 **둘**(`Edge2d`·`CylinderDef`).
 
 27. ⏳★★★★ **«주장» 부류 — 두 필독 문서가 «코드에 없는 이름»을 현재형으로 드는 자리** (2026-09-14,
     인구만 재고 분류는 안 함).

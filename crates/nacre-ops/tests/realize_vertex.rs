@@ -28,12 +28,15 @@
 
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{
-    BoolKind, DatumDef, Edge2d, OpOutput, Operation, Precision, Profile2d, RealizeError,
-    SketchFrame, SketchPlane, apply, boolean, from_edges, realize_vertex, realize_vertex_decimal,
+    BoolKind, DatumDef, OpOutput, Operation, Precision, Profile2d, RealizeError, SketchFrame,
+    SketchPlane, apply, boolean, realize_vertex, realize_vertex_decimal,
 };
+#[path = "support/stated.rs"]
+mod stated;
 use nacre_scalar::Axis;
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
+use stated::*;
 
 fn p2(x: f64, y: f64) -> Point2 {
     Point2::from_array([x, y])
@@ -148,7 +151,7 @@ fn tilted_frame(passes: usize) -> Model {
 /// A plain cylinder — a circle extruded. Its rim corners are `VertexDef::OnSeam`.
 fn cylinder() -> Model {
     let mut m = Model::new();
-    let profile = from_edges(vec![Edge2d::circle(p2(2.0, 2.0), 3.0).unwrap()])
+    let profile = stated(vec![circle(p2(2.0, 2.0), 3.0)])
         .expect("a circle is a profile")
         .remove(0);
     let frame = SketchFrame::world(&m, Axis::Z);
@@ -170,12 +173,12 @@ fn cylinder() -> Model {
 /// A box with a bore through it — the wall/bore crossings are `VertexDef::Pierce`.
 fn bored_plate() -> Model {
     let mut m = Model::new();
-    let profile = from_edges(vec![
-        Edge2d::line(p2(-1.0, -1.0), p2(5.0, -1.0)).unwrap(),
-        Edge2d::line(p2(5.0, -1.0), p2(5.0, 5.0)).unwrap(),
-        Edge2d::line(p2(5.0, 5.0), p2(-1.0, 5.0)).unwrap(),
-        Edge2d::line(p2(-1.0, 5.0), p2(-1.0, -1.0)).unwrap(),
-        Edge2d::circle(p2(2.0, 2.0), 1.0).unwrap(),
+    let profile = stated(vec![
+        line(p2(-1.0, -1.0), p2(5.0, -1.0)),
+        line(p2(5.0, -1.0), p2(5.0, 5.0)),
+        line(p2(5.0, 5.0), p2(-1.0, 5.0)),
+        line(p2(-1.0, 5.0), p2(-1.0, -1.0)),
+        circle(p2(2.0, 2.0), 1.0),
     ])
     .expect("a plate with a bore")
     .remove(0);

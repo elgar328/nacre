@@ -10,7 +10,7 @@ use crate::transform::transform;
 use nacre_geom::Plane;
 use nacre_geom::intersect::{RingSide, orient2d_rat, plane_side};
 use nacre_geom::mixed::{
-    Seg2d, mixed_ring_self_intersection, mixed_rings_cross, point_in_mixed_ring,
+    Edge2d, mixed_ring_self_intersection, mixed_rings_cross, point_in_mixed_ring,
 };
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_scalar::{Axis, Isometry, Rat};
@@ -102,9 +102,10 @@ impl PlaneDef {
 }
 
 /// One closed ring of a [`Profile2d`], stored as its rational truth: its vertices and the step
-/// leaving each — straight to the next vertex, or an arc around a stated centre ([`Seg2d`],
-/// `nacre-geom`'s vocabulary, which is also what its predicates read). `segs[i]` runs
-/// `vertices[i] → vertices[(i + 1) % n]`.
+/// leaving each — straight to the next vertex, or an arc around a stated centre ([`Edge2d`],
+/// `nacre-geom`'s vocabulary, which is also what its predicates read). `edges[i]` runs
+/// `vertices[i] → vertices[(i + 1) % n]`. Built by `Ring2d::new` (a stated ring, checked), by
+/// `Ring2d::circle`, or by the polygon doors; the fields are private so nothing bypasses them.
 ///
 /// The coordinates are what the author's decimals *spelled* (`Rat::from_decimal`), not the f64s
 /// that carried them — the same truth/cache split every dimension in the kernel gets
@@ -120,21 +121,21 @@ impl PlaneDef {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Ring2d {
     vertices: Vec<[Rat; 2]>,
-    segs: Vec<Seg2d>,
+    edges: Vec<Edge2d>,
 }
 
 impl Ring2d {
     /// A polygon ring, in normal form.
     pub(crate) fn polygon(points: Vec<[Rat; 2]>) -> Ring2d {
         let n = points.len();
-        Ring2d::normalized(points, vec![Seg2d::Line; n])
+        Ring2d::normalized(points, vec![Edge2d::Line; n])
     }
 
-    /// The normal form of `segs[i]: vertices[i] → vertices[i + 1]` — see the type doc. Runs to a
+    /// The normal form of `edges[i]: vertices[i] → vertices[i + 1]` — see the type doc. Runs to a
     /// fixpoint; each pass removes at most one vertex, and a ring of one or two vertices is left
     /// for [`Profile2d::check`] to judge (one vertex with an arc is a whole circle).
-    pub(crate) fn normalized(mut vertices: Vec<[Rat; 2]>, mut segs: Vec<Seg2d>) -> Ring2d {
-        debug_assert_eq!(vertices.len(), segs.len(), "one step leaves each vertex");
+    pub(crate) fn normalized(mut vertices: Vec<[Rat; 2]>, mut edges: Vec<Edge2d>) -> Ring2d {
+        debug_assert_eq!(vertices.len(), edges.len(), "one step leaves each vertex");
         loop {
             let n = vertices.len();
             if n < 2 {
@@ -152,11 +153,11 @@ impl Ring2d {
             for k in (1..n).chain(std::iter::once(0)) {
                 let prev = (k + n - 1) % n;
                 let next = (k + 1) % n;
-                let flat = match (segs[prev], segs[k]) {
+                let flat = match (edges[prev], edges[k]) {
                     // Strictly mid-run: collinear and between its neighbours, and neither of
                     // them — a repeated point is a zero-length edge for `check` to name, not a
                     // corner to dissolve.
-                    (Seg2d::Line, Seg2d::Line) => {
+                    (Edge2d::Line, Edge2d::Line) => {
                         n >= 3
                             && vertices[k] != vertices[prev]
                             && vertices[k] != vertices[next]
@@ -164,12 +165,12 @@ impl Ring2d {
                             && between(vertices[prev], vertices[next], vertices[k])
                     }
                     (
-                        Seg2d::Arc {
+                        Edge2d::Arc {
                             center: c1,
                             radius: r1,
                             ccw: w1,
                         },
-                        Seg2d::Arc {
+                        Edge2d::Arc {
                             center: c2,
                             radius: r2,
                             ccw: w2,
@@ -181,7 +182,7 @@ impl Ring2d {
                     // The step arriving at `k` runs on to `next`; the vertex and the step that
                     // left it go.
                     vertices.remove(k);
-                    segs.remove(k);
+                    edges.remove(k);
                     dropped = true;
                     break;
                 }
@@ -190,15 +191,15 @@ impl Ring2d {
                 break;
             }
         }
-        Ring2d { vertices, segs }
+        Ring2d { vertices, edges }
     }
 
     pub fn vertices(&self) -> &[[Rat; 2]] {
         &self.vertices
     }
 
-    pub fn segs(&self) -> &[Seg2d] {
-        &self.segs
+    pub fn edges(&self) -> &[Edge2d] {
+        &self.edges
     }
 
     pub fn len(&self) -> usize {
@@ -211,7 +212,7 @@ impl Ring2d {
 
     /// Straight steps only.
     pub fn is_polygon(&self) -> bool {
-        self.segs.iter().all(|s| matches!(s, Seg2d::Line))
+        self.edges.iter().all(|s| matches!(s, Edge2d::Line))
     }
 
     /// **Which way the ring runs**, exactly: `Positive` is counter-clockwise (`+x → +y`) — the
@@ -227,9 +228,9 @@ impl Ring2d {
         let (mut lines, mut arcs) = (Vec::new(), Vec::new());
         for i in 0..n {
             let (s0, e0) = (self.vertices[i], self.vertices[(i + 1) % n]);
-            match self.segs[i] {
-                Seg2d::Line => lines.push([s0, e0]),
-                Seg2d::Arc {
+            match self.edges[i] {
+                Edge2d::Line => lines.push([s0, e0]),
+                Edge2d::Arc {
                     center,
                     radius,
                     ccw,
@@ -265,8 +266,8 @@ impl Ring2d {
 ///
 /// The constructors do **not** run [`Profile2d::check`]; that contract (simplicity, disjoint
 /// rings, hole containment) is `O(n²)` and **every operation that consumes a profile runs it
-/// first**, so the kernel never works from an unverified one. `sketch::from_rings` is the
-/// checking constructor for loose rings.
+/// first**, so the kernel never works from an unverified one. `sketch::from_rings` and
+/// `sketch::from_paths` are the checking constructors — the sketch doors.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Profile2d {
     outer: Ring2d,
@@ -1538,7 +1539,7 @@ fn refuse_non_quarter_arcs(profile: &Profile2d) -> Result<(), OpError> {
     let quarter = |r: &Ring2d| -> Result<(), OpError> {
         let n = r.len();
         for i in 0..n {
-            let Seg2d::Arc { center, .. } = r.segs()[i] else {
+            let Edge2d::Arc { center, .. } = r.edges()[i] else {
                 continue;
             };
             let (s0, e0) = (r.vertices()[i], r.vertices()[(i + 1) % n]);

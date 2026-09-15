@@ -18,7 +18,7 @@
 //! rings over named nodes (`nacre-ops`, the mixed-ring parity); this module is that rule over
 //! rational 2-D data, spelled here because the two cannot share code.
 //!
-//! **Contract on arcs.** A [`Seg2d::Arc`] states its centre and radius; both of the step's
+//! **Contract on arcs.** A [`Edge2d::Arc`] states its centre and radius; both of the step's
 //! vertices lie on that circle and the radius is positive. That is the caller's contract
 //! (`nacre-ops` checks it once, at construction), `debug_assert`ed here.
 
@@ -30,15 +30,16 @@ use nacre_scalar::{Orient, Rat};
 
 /// The step leaving a ring vertex: straight to the next vertex, or an arc around `center`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Seg2d {
+pub enum Edge2d {
     Line,
     /// The arc from this step's vertex to the next, around `center`, counter-clockwise when
-    /// `ccw`. `radius` is **derived once at the door and stored** — `Edge2d`'s constructors compute
-    /// `|start − center|²` and accept only a rational square root (`rat_sqrt_exact`, else
-    /// `ArcRadiusNotRational`), and check `end` against it (`ArcEndOffCircle`). It is kept
-    /// because the cylinder truth needs it as a `Rat` and recomputing it is a `√` away from the
-    /// points; `Ring2d`'s private `segs` is what keeps a hand-built `Arc` from bypassing that door. A step whose two vertices are one
-    /// point is the whole circle (its vertex is the seam).
+    /// `ccw`. `radius` is **derived once at the door and stored** — `nacre-ops`'s step doors and
+    /// `Ring2d::new` compute `|start − center|²` and accept only a rational square root
+    /// (`rat_sqrt_exact`, else `ArcRadiusNotRational`), and check the next vertex against it
+    /// (`ArcEndOffCircle`). It is kept because the cylinder truth needs it as a `Rat` and
+    /// recomputing it is a `√` away from the points; `Ring2d`'s private `edges` is what keeps a
+    /// hand-built `Arc` from bypassing that door. A step whose two vertices are one point is the
+    /// whole circle (its vertex is the seam).
     Arc {
         center: [Rat; 2],
         radius: Rat,
@@ -51,7 +52,7 @@ pub enum Seg2d {
 #[derive(Clone, Copy, Debug)]
 pub struct MixedRing<'a> {
     pub vertices: &'a [[Rat; 2]],
-    pub segs: &'a [Seg2d],
+    pub segs: &'a [Edge2d],
 }
 
 /// Checked `Rat`/`QuadVal` arithmetic overflowed: the question has an answer this arithmetic
@@ -66,7 +67,7 @@ type QPt = [QuadVal; 2];
 struct Step {
     from: [Rat; 2],
     to: [Rat; 2],
-    seg: Seg2d,
+    seg: Edge2d,
 }
 
 impl MixedRing<'_> {
@@ -170,7 +171,7 @@ struct Arc {
 impl Arc {
     fn of(step: &Step) -> Option<Arc> {
         match step.seg {
-            Seg2d::Arc {
+            Edge2d::Arc {
                 center,
                 radius,
                 ccw,
@@ -197,7 +198,7 @@ impl Arc {
                     e,
                 })
             }
-            Seg2d::Line => None,
+            Edge2d::Line => None,
         }
     }
 
@@ -480,7 +481,7 @@ fn point_in_mixed_ring_opt(p: [Rat; 2], ring: MixedRing<'_>) -> Option<RingSide>
                     // `st.from → st.to`; the arc's ccw reading may have swapped them.
                     let at_from = eq_q(&pt, st.from)?;
                     let at_to = eq_q(&pt, st.to)?;
-                    let ccw = matches!(st.seg, Seg2d::Arc { ccw: true, .. });
+                    let ccw = matches!(st.seg, Edge2d::Arc { ccw: true, .. });
                     let mut toggles = 0u8;
                     if at_from {
                         // Leaves `from` upward?
@@ -537,7 +538,7 @@ pub fn mixed_ring_self_intersection(
     }
     for i in 0..n {
         let st = ring.step(i);
-        let whole_circle = st.is_closed() && matches!(st.seg, Seg2d::Arc { .. });
+        let whole_circle = st.is_closed() && matches!(st.seg, Edge2d::Arc { .. });
         if st.is_closed() && !(whole_circle && n == 1) {
             return Ok(Some((i, i)));
         }
@@ -595,8 +596,8 @@ mod tests {
     fn pt(x: i128, y: i128) -> [Rat; 2] {
         [r(x), r(y)]
     }
-    fn arc(cx: i128, cy: i128, radius: i128, ccw: bool) -> Seg2d {
-        Seg2d::Arc {
+    fn arc(cx: i128, cy: i128, radius: i128, ccw: bool) -> Edge2d {
+        Edge2d::Arc {
             center: pt(cx, cy),
             radius: r(radius),
             ccw,
@@ -604,24 +605,24 @@ mod tests {
     }
 
     /// A slot: centres `(0,0)` and `(30,0)`, radius 5, counter-clockwise.
-    fn slot() -> (Vec<[Rat; 2]>, Vec<Seg2d>) {
+    fn slot() -> (Vec<[Rat; 2]>, Vec<Edge2d>) {
         (
             vec![pt(0, -5), pt(30, -5), pt(30, 5), pt(0, 5)],
             vec![
-                Seg2d::Line,
+                Edge2d::Line,
                 arc(30, 0, 5, true),
-                Seg2d::Line,
+                Edge2d::Line,
                 arc(0, 0, 5, true),
             ],
         )
     }
 
     /// A whole circle of radius 5 about `(cx, cy)`, seam at `+x`.
-    fn circle(cx: i128, cy: i128, radius: i128, ccw: bool) -> (Vec<[Rat; 2]>, Vec<Seg2d>) {
+    fn circle(cx: i128, cy: i128, radius: i128, ccw: bool) -> (Vec<[Rat; 2]>, Vec<Edge2d>) {
         (vec![pt(cx + radius, cy)], vec![arc(cx, cy, radius, ccw)])
     }
 
-    fn mk<'a>(v: &'a [[Rat; 2]], s: &'a [Seg2d]) -> MixedRing<'a> {
+    fn mk<'a>(v: &'a [[Rat; 2]], s: &'a [Edge2d]) -> MixedRing<'a> {
         MixedRing {
             vertices: v,
             segs: s,
@@ -707,13 +708,13 @@ mod tests {
             pt(0, 5),
         ];
         let s = vec![
-            Seg2d::Line,
+            Edge2d::Line,
             arc(35, 5, 5, true),
-            Seg2d::Line,
+            Edge2d::Line,
             arc(35, 15, 5, true),
-            Seg2d::Line,
+            Edge2d::Line,
             arc(5, 15, 5, true),
-            Seg2d::Line,
+            Edge2d::Line,
             arc(5, 5, 5, true),
         ];
         let ring = mk(&v, &s);
@@ -740,10 +741,10 @@ mod tests {
         assert_eq!(mixed_rings_cross(c1, mk(&c5v, &c5s)), Ok(false));
         assert_eq!(mixed_rings_cross(c1, mk(&c6v, &c6s)), Ok(true));
         // A square through a circle, a square around it, a square inside it.
-        let sq = |a: i128, b: i128| -> (Vec<[Rat; 2]>, Vec<Seg2d>) {
+        let sq = |a: i128, b: i128| -> (Vec<[Rat; 2]>, Vec<Edge2d>) {
             (
                 vec![pt(a, a), pt(b, a), pt(b, b), pt(a, b)],
-                vec![Seg2d::Line; 4],
+                vec![Edge2d::Line; 4],
             )
         };
         let (tv, ts) = sq(3, 9);
@@ -755,13 +756,13 @@ mod tests {
         // A square whose corner touches the circle at (3, 4): touching counts.
         let (kv, ks) = (
             vec![pt(3, 4), pt(9, 4), pt(9, 9), pt(3, 9)],
-            vec![Seg2d::Line; 4],
+            vec![Edge2d::Line; 4],
         );
         assert_eq!(mixed_rings_cross(c1, mk(&kv, &ks)), Ok(true));
         // A line tangent to the circle at its top: touching counts too.
         let (lv, ls) = (
             vec![pt(-9, 5), pt(9, 5), pt(9, 9), pt(-9, 9)],
-            vec![Seg2d::Line; 4],
+            vec![Edge2d::Line; 4],
         );
         assert_eq!(mixed_rings_cross(c1, mk(&lv, &ls)), Ok(true));
     }
@@ -772,35 +773,45 @@ mod tests {
         // clockwise arc (0,5) → (0,−5) about the origin passes through (5,0), the first arc's
         // other end — an overlap beyond the shared vertex.
         let v = vec![pt(5, 0), pt(0, 5), pt(0, -5)];
-        let s = vec![arc(0, 0, 5, true), arc(0, 0, 5, false), Seg2d::Line];
+        let s = vec![arc(0, 0, 5, true), arc(0, 0, 5, false), Edge2d::Line];
         assert_eq!(mixed_ring_self_intersection(mk(&v, &s)), Ok(Some((0, 1))));
         // The slot with its two straight sides crossed (a bow tie with round ends).
         let v = vec![pt(0, -5), pt(30, 5), pt(30, -5), pt(0, 5)];
         let s = vec![
-            Seg2d::Line,
+            Edge2d::Line,
             arc(30, 0, 5, false),
-            Seg2d::Line,
+            Edge2d::Line,
             arc(0, 0, 5, true),
         ];
         assert_eq!(mixed_ring_self_intersection(mk(&v, &s)), Ok(Some((0, 2))));
         // A square whose right side is replaced by an arc bulging *inward* (clockwise about
         // (10,5), reaching x = 5): still simple.
         let v = vec![pt(0, 0), pt(10, 0), pt(10, 10), pt(0, 10)];
-        let s = vec![Seg2d::Line, arc(10, 5, 5, false), Seg2d::Line, Seg2d::Line];
+        let s = vec![
+            Edge2d::Line,
+            arc(10, 5, 5, false),
+            Edge2d::Line,
+            Edge2d::Line,
+        ];
         assert_eq!(mixed_ring_self_intersection(mk(&v, &s)), Ok(None));
         // Pull the left side in to x = 7: it now cuts that bulge.
         let v = vec![pt(10, 0), pt(10, 10), pt(7, 10), pt(7, 0)];
-        let s = vec![arc(10, 5, 5, false), Seg2d::Line, Seg2d::Line, Seg2d::Line];
+        let s = vec![
+            arc(10, 5, 5, false),
+            Edge2d::Line,
+            Edge2d::Line,
+            Edge2d::Line,
+        ];
         assert_eq!(mixed_ring_self_intersection(mk(&v, &s)), Ok(Some((0, 2))));
     }
 
     #[test]
     fn a_whole_circle_step_inside_a_longer_ring_and_a_zero_length_line_are_degenerate() {
         let v = vec![pt(5, 0), pt(5, 0)];
-        let s = vec![arc(0, 0, 5, true), Seg2d::Line];
+        let s = vec![arc(0, 0, 5, true), Edge2d::Line];
         assert_eq!(mixed_ring_self_intersection(mk(&v, &s)), Ok(Some((0, 0))));
         let v = vec![pt(0, 0), pt(0, 0), pt(1, 1)];
-        let s = vec![Seg2d::Line; 3];
+        let s = vec![Edge2d::Line; 3];
         assert_eq!(mixed_ring_self_intersection(mk(&v, &s)), Ok(Some((0, 0))));
     }
 
@@ -836,9 +847,9 @@ mod tests {
         // Quarter arc (5,0)→(0,5) ccw and a line from (1,1) to (9,9): the crossing is at
         // (5/√2, 5/√2) — irrational — and it is on the arc.
         let av = vec![pt(5, 0), pt(0, 5), pt(0, 0)];
-        let as_ = vec![arc(0, 0, 5, true), Seg2d::Line, Seg2d::Line];
+        let as_ = vec![arc(0, 0, 5, true), Edge2d::Line, Edge2d::Line];
         let lv = vec![pt(1, 1), pt(9, 9), pt(9, 1)];
-        let ls = vec![Seg2d::Line; 3];
+        let ls = vec![Edge2d::Line; 3];
         assert_eq!(
             mixed_rings_cross(
                 MixedRing {
@@ -855,7 +866,7 @@ mod tests {
         // The same line against the quarter arc (5,0)→(0,−5) clockwise — the other quadrant —
         // misses the arc although it crosses the circle.
         let bv = vec![pt(5, 0), pt(0, -5), pt(0, 0)];
-        let bs = vec![arc(0, 0, 5, false), Seg2d::Line, Seg2d::Line];
+        let bs = vec![arc(0, 0, 5, false), Edge2d::Line, Edge2d::Line];
         assert_eq!(
             mixed_rings_cross(
                 MixedRing {
@@ -881,8 +892,8 @@ mod tests {
         /// answer — the arc road did not move the straight one.
         #[test]
         fn polygon_rings_answer_exactly_as_before(a in poly_strategy(), b in poly_strategy(), px in -8i128..=8, py in -8i128..=8) {
-            let sa = vec![Seg2d::Line; a.len()];
-            let sb = vec![Seg2d::Line; b.len()];
+            let sa = vec![Edge2d::Line; a.len()];
+            let sb = vec![Edge2d::Line; b.len()];
             let ra = MixedRing { vertices: &a, segs: &sa };
             let rb = MixedRing { vertices: &b, segs: &sb };
             prop_assert_eq!(mixed_ring_self_intersection(ra).unwrap(), ring_self_intersection_rat(&a));

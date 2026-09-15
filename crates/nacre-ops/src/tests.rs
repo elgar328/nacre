@@ -1,3 +1,126 @@
+/// The fixture vocabulary — see `tests/support/stated.rs` (the same adapter, for the lib's own tests).
+#[allow(dead_code)]
+mod stated {
+    // The retired `from_edges` fixture vocabulary — kept for the fixtures, **ordered**.
+    //
+    // Every fixture that used the soup door was written as a chain anyway: each edge starting where
+    // the previous one ended, a circle on its own. The kernel now takes rings, not soups
+    // (`Ring2d::new`, `from_paths`), so this walks the edges in the order they were written and
+    // hands the rings over. Nothing here re-discovers an order; an edge that does not start where
+    // the pen stands is a fixture bug and panics. The ring order the old door produced is kept
+    // (whole circles first, then the chains as written, each seeded at its first edge's start) so
+    // the census reads the same models.
+
+    use crate::{Edge2d, Profile2d, Ring2d, SketchError, from_paths};
+    use nacre_math::Point2;
+    use nacre_scalar::Rat;
+
+    /// One edge as the old fixtures spelled it.
+    #[derive(Clone, Copy, Debug)]
+    pub enum Stated {
+        Line(Point2, Point2),
+        Arc {
+            center: Point2,
+            start: Point2,
+            turns: i32,
+        },
+        ArcRat {
+            center: [Rat; 2],
+            start: [Rat; 2],
+            end: [Rat; 2],
+            ccw: bool,
+        },
+        Circle {
+            center: Point2,
+            radius: f64,
+        },
+    }
+
+    pub fn line(from: Point2, to: Point2) -> Stated {
+        Stated::Line(from, to)
+    }
+
+    pub fn arc_turns(center: Point2, start: Point2, turns: i32) -> Stated {
+        Stated::Arc {
+            center,
+            start,
+            turns,
+        }
+    }
+
+    pub fn arc_rat(center: [Rat; 2], start: [Rat; 2], end: [Rat; 2], ccw: bool) -> Stated {
+        Stated::ArcRat {
+            center,
+            start,
+            end,
+            ccw,
+        }
+    }
+
+    pub fn circle(center: Point2, radius: f64) -> Stated {
+        Stated::Circle { center, radius }
+    }
+
+    fn lift(p: Point2) -> Result<[Rat; 2], SketchError> {
+        match (Rat::from_decimal(p[0]), Rat::from_decimal(p[1])) {
+            (Some(x), Some(y)) => Ok([x, y]),
+            _ => Err(SketchError::OutsideDecimalWindow { at: p.as_array() }),
+        }
+    }
+
+    /// The edges in the order written, walked into rings, then sorted into profiles.
+    pub fn stated(edges: Vec<Stated>) -> Result<Vec<Profile2d>, SketchError> {
+        let mut circles: Vec<Ring2d> = Vec::new();
+        let mut chains: Vec<Ring2d> = Vec::new();
+        let (mut vertices, mut steps): (Vec<[Rat; 2]>, Vec<Edge2d>) = (Vec::new(), Vec::new());
+        let mut here: Option<[Rat; 2]> = None;
+        for e in edges {
+            let (from, step, to) = match e {
+                Stated::Circle { center, radius } => {
+                    circles.push(Ring2d::circle(center, radius)?);
+                    continue;
+                }
+                Stated::Line(a, b) => (lift(a)?, Edge2d::Line, lift(b)?),
+                Stated::Arc {
+                    center,
+                    start,
+                    turns,
+                } => {
+                    let (c, s) = (lift(center)?, lift(start)?);
+                    let (step, end) = crate::arc_turns_rat(c, s, turns)?;
+                    (s, step, end)
+                }
+                Stated::ArcRat {
+                    center,
+                    start,
+                    end,
+                    ccw,
+                } => (start, crate::arc_to_rat(center, start, end, ccw)?, end),
+            };
+            if let Some(h) = here {
+                assert_eq!(
+                    h, from,
+                    "a fixture edge must start where the previous one ended"
+                );
+            }
+            vertices.push(from);
+            steps.push(step);
+            here = Some(to);
+            if to == vertices[0] {
+                chains.push(Ring2d::new(
+                    std::mem::take(&mut vertices),
+                    std::mem::take(&mut steps),
+                )?);
+                here = None;
+            }
+        }
+        assert!(here.is_none(), "a fixture chain did not close");
+        circles.extend(chains);
+        from_paths(circles)
+    }
+}
+use stated::{Stated, arc_turns, circle, line, stated};
+
 use super::*;
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
@@ -7057,9 +7180,10 @@ fn common_rejects_an_oblique_cylinder() {
             Vector3::from_array([-0.48, 0.36, 0.8]),
         ),
     );
-    let profile = crate::from_edges(vec![
-        crate::Edge2d::circle(nacre_math::Point2::from_array([0.0, 0.0]), 0.5).unwrap(),
-    ])
+    let profile = stated(vec![circle(
+        nacre_math::Point2::from_array([0.0, 0.0]),
+        0.5,
+    )])
     .unwrap()
     .remove(0);
     let OpOutput::Extrude { solid: cyl, .. } = apply(
@@ -8564,7 +8688,7 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
     for (center, radius) in [(p2(0.0, 0.0), 0.0), (p2(0.0, 0.0), -1.0)] {
         assert!(
             matches!(
-                crate::Edge2d::circle(center, radius),
+                crate::Ring2d::circle(center, radius),
                 Err(crate::SketchError::NonPositiveRadius { .. })
             ),
             "radius {radius}"
@@ -8573,7 +8697,7 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
     for (center, radius) in [(p2(0.0, 0.0), wide), (p2(wide, 0.0), 1.0)] {
         assert!(
             matches!(
-                crate::Edge2d::circle(center, radius),
+                crate::Ring2d::circle(center, radius),
                 Err(crate::SketchError::OutsideDecimalWindow { .. })
             ),
             "a number outside the decimal window"
@@ -11853,11 +11977,9 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
 }
 
 fn circle_profile(center: [f64; 2], radius: f64) -> Profile2d {
-    crate::from_edges(vec![
-        crate::Edge2d::circle(nacre_math::Point2::from_array(center), radius).unwrap(),
-    ])
-    .unwrap()
-    .remove(0)
+    stated(vec![circle(nacre_math::Point2::from_array(center), radius)])
+        .unwrap()
+        .remove(0)
 }
 
 /// ★★★★★ **The sugar claim, measured.** `cylinder()` is «a circle sketched, then extruded», so
@@ -11917,14 +12039,14 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let pi = std::f64::consts::PI;
     // A 10 × 10 × 1 plate with a bore of radius 2 at (5, 5).
-    let mut edges: Vec<crate::Edge2d> = vec![
-        crate::Edge2d::line(p2(0.0, 0.0), p2(10.0, 0.0)).unwrap(),
-        crate::Edge2d::line(p2(10.0, 0.0), p2(10.0, 10.0)).unwrap(),
-        crate::Edge2d::line(p2(10.0, 10.0), p2(0.0, 10.0)).unwrap(),
-        crate::Edge2d::line(p2(0.0, 10.0), p2(0.0, 0.0)).unwrap(),
+    let mut edges: Vec<Stated> = vec![
+        line(p2(0.0, 0.0), p2(10.0, 0.0)),
+        line(p2(10.0, 0.0), p2(10.0, 10.0)),
+        line(p2(10.0, 10.0), p2(0.0, 10.0)),
+        line(p2(0.0, 10.0), p2(0.0, 0.0)),
     ];
-    edges.push(crate::Edge2d::circle(p2(5.0, 5.0), 2.0).unwrap());
-    let profiles = crate::from_edges(edges).unwrap();
+    edges.push(stated::circle(p2(5.0, 5.0), 2.0));
+    let profiles = stated(edges).unwrap();
     assert_eq!(profiles.len(), 1);
     let mut m = Model::new();
     let frame = SketchFrame::world(&m, Axis::Z);
@@ -11971,9 +12093,9 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
     mesh_covers_faces("a plate with a round hole", &m, &[solid]);
 
     // An annulus: outer radius 5, inner 3, height 2.
-    let profiles = crate::from_edges(vec![
-        crate::Edge2d::circle(p2(0.0, 0.0), 5.0).unwrap(),
-        crate::Edge2d::circle(p2(0.0, 0.0), 3.0).unwrap(),
+    let profiles = stated(vec![
+        stated::circle(p2(0.0, 0.0), 5.0),
+        stated::circle(p2(0.0, 0.0), 3.0),
     ])
     .unwrap();
     assert_eq!((profiles.len(), profiles[0].holes().len()), (1, 1));
@@ -12136,17 +12258,17 @@ fn a_circle_prism_on_a_slanted_wall_builds_and_its_pad_declines_by_name() {
 
 // ─── K3b: arcs between vertices — slot, rounded rectangle, D ─────────────────────────────────
 
-fn edges_profile(edges: Vec<crate::Edge2d>) -> Profile2d {
-    crate::from_edges(edges).unwrap().remove(0)
+fn edges_profile(edges: Vec<Stated>) -> Profile2d {
+    stated(edges).unwrap().remove(0)
 }
 
 fn slot_profile(cx0: f64, cx1: f64, cy: f64, r: f64) -> Profile2d {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     edges_profile(vec![
-        crate::Edge2d::line(p2(cx0, cy - r), p2(cx1, cy - r)).unwrap(),
-        crate::Edge2d::arc_turns(p2(cx1, cy), p2(cx1, cy - r), 2).unwrap(),
-        crate::Edge2d::line(p2(cx1, cy + r), p2(cx0, cy + r)).unwrap(),
-        crate::Edge2d::arc_turns(p2(cx0, cy), p2(cx0, cy + r), 2).unwrap(),
+        line(p2(cx0, cy - r), p2(cx1, cy - r)),
+        arc_turns(p2(cx1, cy), p2(cx1, cy - r), 2),
+        line(p2(cx1, cy + r), p2(cx0, cy + r)),
+        arc_turns(p2(cx0, cy), p2(cx0, cy + r), 2),
     ])
 }
 
@@ -12217,10 +12339,8 @@ fn a_slot_extrudes_with_tangent_pierce_corners() {
 fn a_rounded_rectangle_extrudes() {
     let pi = std::f64::consts::PI;
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let l = |a: [f64; 2], b: [f64; 2]| crate::Edge2d::line(p2(a[0], a[1]), p2(b[0], b[1])).unwrap();
-    let q = |c: [f64; 2], s: [f64; 2]| {
-        crate::Edge2d::arc_turns(p2(c[0], c[1]), p2(s[0], s[1]), 1).unwrap()
-    };
+    let l = |a: [f64; 2], b: [f64; 2]| line(p2(a[0], a[1]), p2(b[0], b[1]));
+    let q = |c: [f64; 2], s: [f64; 2]| arc_turns(p2(c[0], c[1]), p2(s[0], s[1]), 1);
     let profile = edges_profile(vec![
         l([5.0, 0.0], [35.0, 0.0]),
         q([35.0, 5.0], [35.0, 0.0]),
@@ -12253,8 +12373,8 @@ fn a_half_disk_has_the_pair_roots_at_its_corners() {
     let pi = std::f64::consts::PI;
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let profile = edges_profile(vec![
-        crate::Edge2d::line(p2(0.0, 5.0), p2(0.0, -5.0)).unwrap(),
-        crate::Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, -5.0), 2).unwrap(), // through (5, 0)
+        line(p2(0.0, 5.0), p2(0.0, -5.0)),
+        arc_turns(p2(0.0, 0.0), p2(0.0, -5.0), 2), // through (5, 0)
     ]);
     let mut m = Model::new();
     let (solid, faces) = extrude_world_z(&mut m, profile, 2.0);
@@ -12356,8 +12476,8 @@ fn a_half_disk_boss_pads_onto_a_plate() {
     .unwrap();
     let (_, faces) = extrude_world_z(&mut m, square, 5.0);
     let d_shape = edges_profile(vec![
-        crate::Edge2d::line(p2(0.0, 5.0), p2(0.0, -5.0)).unwrap(),
-        crate::Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, -5.0), 2).unwrap(),
+        line(p2(0.0, 5.0), p2(0.0, -5.0)),
+        arc_turns(p2(0.0, 0.0), p2(0.0, -5.0), 2),
     ]);
     let r = apply(
         &mut m,
@@ -12391,11 +12511,11 @@ fn a_sketched_bored_plate_meets_a_box() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let bored = || {
         edges_profile(vec![
-            crate::Edge2d::line(p2(0.0, 0.0), p2(10.0, 0.0)).unwrap(),
-            crate::Edge2d::line(p2(10.0, 0.0), p2(10.0, 10.0)).unwrap(),
-            crate::Edge2d::line(p2(10.0, 10.0), p2(0.0, 10.0)).unwrap(),
-            crate::Edge2d::line(p2(0.0, 10.0), p2(0.0, 0.0)).unwrap(),
-            crate::Edge2d::circle(p2(5.0, 5.0), 2.0).unwrap(),
+            line(p2(0.0, 0.0), p2(10.0, 0.0)),
+            line(p2(10.0, 0.0), p2(10.0, 10.0)),
+            line(p2(10.0, 10.0), p2(0.0, 10.0)),
+            line(p2(0.0, 10.0), p2(0.0, 0.0)),
+            stated::circle(p2(5.0, 5.0), 2.0),
         ])
     };
     for (kind, want) in [
@@ -12438,14 +12558,14 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
     const TAG: &str = "fillets_tangent_ruling";
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let edges = vec![
-        crate::Edge2d::line(p2(-2.0, -4.0), p2(2.0, -4.0)).unwrap(),
-        crate::Edge2d::arc_turns(p2(2.0, -2.5), p2(2.0, -4.0), 1).unwrap(),
-        crate::Edge2d::line(p2(3.5, -2.5), p2(3.5, 4.0)).unwrap(),
-        crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-        crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.5)).unwrap(),
-        crate::Edge2d::arc_turns(p2(-2.0, -2.5), p2(-3.5, -2.5), 1).unwrap(),
+        line(p2(-2.0, -4.0), p2(2.0, -4.0)),
+        arc_turns(p2(2.0, -2.5), p2(2.0, -4.0), 1),
+        line(p2(3.5, -2.5), p2(3.5, 4.0)),
+        line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+        line(p2(-3.5, 4.0), p2(-3.5, -2.5)),
+        arc_turns(p2(-2.0, -2.5), p2(-3.5, -2.5), 1),
     ];
-    let profile = crate::from_edges(edges).unwrap().remove(0);
+    let profile = stated(edges).unwrap().remove(0);
     let mut m = Model::new();
     let frame = SketchFrame::world(&m, Axis::Z);
     let OpOutput::Extrude { solid: plate, .. } = apply(
@@ -12512,23 +12632,22 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
 #[test]
 fn the_users_plate_slot_and_gusset_fold() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let prism =
-        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
-            let profile = crate::from_edges(edges).unwrap().remove(0);
-            let frame = SketchFrame::world(m, axis);
-            let OpOutput::Extrude { solid, .. } = apply(
-                m,
-                &Operation::Extrude {
-                    frame,
-                    profile,
-                    dist,
-                },
-            )
-            .expect("the profile extrudes") else {
-                unreachable!()
-            };
-            solid
+    let prism = |m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {
+        let profile = stated(edges).unwrap().remove(0);
+        let frame = SketchFrame::world(m, axis);
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            },
+        )
+        .expect("the profile extrudes") else {
+            unreachable!()
         };
+        solid
+    };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
         let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
@@ -12548,14 +12667,14 @@ fn the_users_plate_slot_and_gusset_fold() {
             m,
             Axis::Z,
             vec![
-                crate::Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
-                crate::Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
-                crate::Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
-                crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-                crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
-                crate::Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
-                crate::Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
-                crate::Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                line(p2(-1.5, -4.0), p2(1.5, -4.0)),
+                arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1),
+                line(p2(3.5, -2.0), p2(3.5, 4.0)),
+                line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+                line(p2(-3.5, 4.0), p2(-3.5, -2.0)),
+                arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1),
+                stated::circle(p2(-1.5, -2.0), 1.0),
+                stated::circle(p2(1.5, -2.0), 1.0),
             ],
             1.0,
         )
@@ -12565,14 +12684,14 @@ fn the_users_plate_slot_and_gusset_fold() {
             m,
             Axis::Y,
             vec![
-                crate::Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
-                crate::Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
-                crate::Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
-                crate::Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
-                crate::Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
-                crate::Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
-                crate::Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
-                crate::Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+                line(p2(1.0, -3.5), p2(6.0, -3.5)),
+                line(p2(6.0, -3.5), p2(6.0, 3.5)),
+                line(p2(6.0, 3.5), p2(1.0, 3.5)),
+                line(p2(1.0, 3.5), p2(1.0, -3.5)),
+                line(p2(3.0, -0.5), p2(4.0, -0.5)),
+                arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2),
+                line(p2(4.0, 0.5), p2(3.0, 0.5)),
+                arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2),
             ],
             1.0,
         );
@@ -12583,9 +12702,9 @@ fn the_users_plate_slot_and_gusset_fold() {
             m,
             Axis::X,
             vec![
-                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+                line(p2(0.0, 1.0), p2(3.0, 1.0)),
+                line(p2(3.0, 1.0), p2(3.0, 6.0)),
+                line(p2(3.0, 6.0), p2(0.0, 1.0)),
             ],
             1.0,
         );
@@ -12642,23 +12761,22 @@ fn the_users_plate_slot_and_gusset_fold() {
 #[test]
 fn the_gate_reads_the_arc_not_the_circle() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let prism =
-        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
-            let profile = crate::from_edges(edges).unwrap().remove(0);
-            let frame = SketchFrame::world(m, axis);
-            let OpOutput::Extrude { solid, .. } = apply(
-                m,
-                &Operation::Extrude {
-                    frame,
-                    profile,
-                    dist,
-                },
-            )
-            .expect("the profile extrudes") else {
-                unreachable!()
-            };
-            solid
+    let prism = |m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {
+        let profile = stated(edges).unwrap().remove(0);
+        let frame = SketchFrame::world(m, axis);
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            },
+        )
+        .expect("the profile extrudes") else {
+            unreachable!()
         };
+        solid
+    };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
         let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
@@ -12698,9 +12816,9 @@ fn the_gate_reads_the_arc_not_the_circle() {
             m,
             Axis::Z,
             vec![
-                crate::Edge2d::line(p2(0.0, 0.0), p2(-1.5, 0.0)).unwrap(),
-                crate::Edge2d::arc_turns(p2(0.0, 0.0), p2(-1.5, 0.0), 1).unwrap(),
-                crate::Edge2d::line(p2(0.0, -1.5), p2(0.0, 0.0)).unwrap(),
+                line(p2(0.0, 0.0), p2(-1.5, 0.0)),
+                arc_turns(p2(0.0, 0.0), p2(-1.5, 0.0), 1),
+                line(p2(0.0, -1.5), p2(0.0, 0.0)),
             ],
             1.0,
         )
@@ -12710,9 +12828,9 @@ fn the_gate_reads_the_arc_not_the_circle() {
             m,
             Axis::X,
             vec![
-                crate::Edge2d::line(p2(0.75 * mirror_y, 0.0), p2(3.0 * mirror_y, 0.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0 * mirror_y, 0.0), p2(3.0 * mirror_y, 4.5)).unwrap(),
-                crate::Edge2d::line(p2(3.0 * mirror_y, 4.5), p2(0.75 * mirror_y, 0.0)).unwrap(),
+                line(p2(0.75 * mirror_y, 0.0), p2(3.0 * mirror_y, 0.0)),
+                line(p2(3.0 * mirror_y, 0.0), p2(3.0 * mirror_y, 4.5)),
+                line(p2(3.0 * mirror_y, 4.5), p2(0.75 * mirror_y, 0.0)),
             ],
             1.0,
         );
@@ -12748,17 +12866,14 @@ fn the_gate_reads_the_arc_not_the_circle() {
         // The chord is `x = cx`, `y ∈ [0, 3]`; the arc bulges toward `bulge · x`.
         let (top, bottom) = (p2(cx, 3.0), p2(cx, 0.0));
         let (start, chord) = if bulge < 0.0 {
-            (top, crate::Edge2d::line(bottom, top).unwrap())
+            (top, line(bottom, top))
         } else {
-            (bottom, crate::Edge2d::line(top, bottom).unwrap())
+            (bottom, line(top, bottom))
         };
         prism(
             m,
             Axis::Z,
-            vec![
-                crate::Edge2d::arc_turns(p2(cx, 1.5), start, 2).unwrap(),
-                chord,
-            ],
+            vec![arc_turns(p2(cx, 1.5), start, 2), chord],
             1.0,
         )
     };
@@ -12793,23 +12908,22 @@ fn the_gate_reads_the_arc_not_the_circle() {
 #[test]
 fn the_gate_reads_faces_at_every_site() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let prism =
-        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
-            let profile = crate::from_edges(edges).unwrap().remove(0);
-            let frame = SketchFrame::world(m, axis);
-            let OpOutput::Extrude { solid, .. } = apply(
-                m,
-                &Operation::Extrude {
-                    frame,
-                    profile,
-                    dist,
-                },
-            )
-            .expect("the profile extrudes") else {
-                unreachable!()
-            };
-            solid
+    let prism = |m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {
+        let profile = stated(edges).unwrap().remove(0);
+        let frame = SketchFrame::world(m, axis);
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            },
+        )
+        .expect("the profile extrudes") else {
+            unreachable!()
         };
+        solid
+    };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
         let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
@@ -12826,12 +12940,7 @@ fn the_gate_reads_faces_at_every_site() {
     };
     let volume = |m: &Model, s: Handle<Solid>| nacre_props::mass_props(m, s).expect("props").volume;
     let circle = |m: &mut Model, c: [f64; 2], r: f64, h: f64| {
-        prism(
-            m,
-            Axis::Z,
-            vec![crate::Edge2d::circle(p2(c[0], c[1]), r).unwrap()],
-            h,
-        )
+        prism(m, Axis::Z, vec![stated::circle(p2(c[0], c[1]), r)], h)
     };
     let clean = |m: &Model| {
         assert!(
@@ -12865,12 +12974,12 @@ fn the_gate_reads_faces_at_every_site() {
             m,
             Axis::Z,
             vec![
-                crate::Edge2d::line(p2(-3.5, -4.0), p2(3.5, -4.0)).unwrap(),
-                crate::Edge2d::line(p2(3.5, -4.0), p2(3.5, 4.0)).unwrap(),
-                crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-                crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -4.0)).unwrap(),
-                crate::Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
-                crate::Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                line(p2(-3.5, -4.0), p2(3.5, -4.0)),
+                line(p2(3.5, -4.0), p2(3.5, 4.0)),
+                line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+                line(p2(-3.5, 4.0), p2(-3.5, -4.0)),
+                stated::circle(p2(-1.5, -2.0), 1.0),
+                stated::circle(p2(1.5, -2.0), 1.0),
             ],
             1.0,
         )
@@ -12880,9 +12989,9 @@ fn the_gate_reads_faces_at_every_site() {
             m,
             Axis::X,
             vec![
-                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+                line(p2(0.0, 1.0), p2(3.0, 1.0)),
+                line(p2(3.0, 1.0), p2(3.0, 6.0)),
+                line(p2(3.0, 6.0), p2(0.0, 1.0)),
             ],
             1.0,
         );
@@ -12928,8 +13037,8 @@ fn the_gate_reads_faces_at_every_site() {
             m,
             Axis::Z,
             vec![
-                crate::Edge2d::circle(p2(2.0, 2.0), 3.0).unwrap(),
-                crate::Edge2d::circle(p2(2.0, 2.0), 1.5).unwrap(),
+                stated::circle(p2(2.0, 2.0), 3.0),
+                stated::circle(p2(2.0, 2.0), 1.5),
             ],
             3.0,
         )
@@ -12992,8 +13101,8 @@ fn the_gate_reads_faces_at_every_site() {
             m,
             Axis::Z,
             vec![
-                crate::Edge2d::circle(p2(2.0, 2.0), 3.0).unwrap(),
-                crate::Edge2d::circle(p2(2.0, 2.0), 1.5).unwrap(),
+                stated::circle(p2(2.0, 2.0), 3.0),
+                stated::circle(p2(2.0, 2.0), 1.5),
             ],
             3.0,
         )
@@ -13035,35 +13144,34 @@ fn the_gate_reads_faces_at_every_site() {
 #[test]
 fn only_the_common_perpendicular_separates_a_fillet_from_a_crosswise_drill() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let prism =
-        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
-            let profile = crate::from_edges(edges).unwrap().remove(0);
-            let frame = SketchFrame::world(m, axis);
-            let OpOutput::Extrude { solid, .. } = apply(
-                m,
-                &Operation::Extrude {
-                    frame,
-                    profile,
-                    dist,
-                },
-            )
-            .expect("the profile extrudes") else {
-                unreachable!()
-            };
-            solid
+    let prism = |m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {
+        let profile = stated(edges).unwrap().remove(0);
+        let frame = SketchFrame::world(m, axis);
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            },
+        )
+        .expect("the profile extrudes") else {
+            unreachable!()
         };
+        solid
+    };
     // The plate sits at `x ∈ [2, 22]` so the drill, which starts on the YZ plane, runs clear
     // through it: fillet axes at `(7, ±5)` and `(17, ±5)`.
     let (lo, hi, r) = (2.0, 22.0, 5.0);
     let plate_edges = vec![
-        crate::Edge2d::line(p2(lo + r, -10.0), p2(hi - r, -10.0)).unwrap(),
-        crate::Edge2d::arc_turns(p2(hi - r, -10.0 + r), p2(hi - r, -10.0), 1).unwrap(),
-        crate::Edge2d::line(p2(hi, -10.0 + r), p2(hi, 10.0 - r)).unwrap(),
-        crate::Edge2d::arc_turns(p2(hi - r, 10.0 - r), p2(hi, 10.0 - r), 1).unwrap(),
-        crate::Edge2d::line(p2(hi - r, 10.0), p2(lo + r, 10.0)).unwrap(),
-        crate::Edge2d::arc_turns(p2(lo + r, 10.0 - r), p2(lo + r, 10.0), 1).unwrap(),
-        crate::Edge2d::line(p2(lo, 10.0 - r), p2(lo, -10.0 + r)).unwrap(),
-        crate::Edge2d::arc_turns(p2(lo + r, -10.0 + r), p2(lo, -10.0 + r), 1).unwrap(),
+        line(p2(lo + r, -10.0), p2(hi - r, -10.0)),
+        arc_turns(p2(hi - r, -10.0 + r), p2(hi - r, -10.0), 1),
+        line(p2(hi, -10.0 + r), p2(hi, 10.0 - r)),
+        arc_turns(p2(hi - r, 10.0 - r), p2(hi, 10.0 - r), 1),
+        line(p2(hi - r, 10.0), p2(lo + r, 10.0)),
+        arc_turns(p2(lo + r, 10.0 - r), p2(lo + r, 10.0), 1),
+        line(p2(lo, 10.0 - r), p2(lo, -10.0 + r)),
+        arc_turns(p2(lo + r, -10.0 + r), p2(lo, -10.0 + r), 1),
     ];
     let mut m = Model::new();
     let plate = prism(&mut m, Axis::Z, plate_edges, 8.0);
@@ -13073,7 +13181,7 @@ fn only_the_common_perpendicular_separates_a_fillet_from_a_crosswise_drill() {
     let drill = prism(
         &mut m,
         Axis::X,
-        vec![crate::Edge2d::circle(p2(0.0, 4.0), 3.5).unwrap()],
+        vec![stated::circle(p2(0.0, 4.0), 3.5)],
         30.0,
     );
     m.rebuild_adjacency();
@@ -13104,23 +13212,22 @@ fn only_the_common_perpendicular_separates_a_fillet_from_a_crosswise_drill() {
 #[test]
 fn a_four_plane_operand_vertex_has_one_name() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let prism =
-        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
-            let profile = crate::from_edges(edges).unwrap().remove(0);
-            let frame = SketchFrame::world(m, axis);
-            let OpOutput::Extrude { solid, .. } = apply(
-                m,
-                &Operation::Extrude {
-                    frame,
-                    profile,
-                    dist,
-                },
-            )
-            .expect("the profile extrudes") else {
-                unreachable!()
-            };
-            solid
+    let prism = |m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {
+        let profile = stated(edges).unwrap().remove(0);
+        let frame = SketchFrame::world(m, axis);
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            },
+        )
+        .expect("the profile extrudes") else {
+            unreachable!()
         };
+        solid
+    };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
         let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
@@ -13140,10 +13247,10 @@ fn a_four_plane_operand_vertex_has_one_name() {
         &mut m,
         Axis::Y,
         vec![
-            crate::Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
-            crate::Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
-            crate::Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
-            crate::Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+            line(p2(1.0, -3.5), p2(6.0, -3.5)),
+            line(p2(6.0, -3.5), p2(6.0, 3.5)),
+            line(p2(6.0, 3.5), p2(1.0, 3.5)),
+            line(p2(1.0, 3.5), p2(1.0, -3.5)),
         ],
         1.0,
     );
@@ -13153,9 +13260,9 @@ fn a_four_plane_operand_vertex_has_one_name() {
             m,
             Axis::X,
             vec![
-                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+                line(p2(0.0, 1.0), p2(3.0, 1.0)),
+                line(p2(3.0, 1.0), p2(3.0, 6.0)),
+                line(p2(3.0, 6.0), p2(0.0, 1.0)),
             ],
             1.0,
         );
@@ -13234,8 +13341,8 @@ fn a_four_plane_operand_vertex_has_one_name() {
 fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (x1, x2, top) = (1.4, -2.4, 6.0);
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let prism = |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>| -> Handle<Solid> {
-        let profile = crate::from_edges(edges).unwrap().remove(0);
+    let prism = |m: &mut Model, axis: Axis, edges: Vec<Stated>| -> Handle<Solid> {
+        let profile = stated(edges).unwrap().remove(0);
         let frame = SketchFrame::world(m, axis);
         let OpOutput::Extrude { solid, .. } = apply(
             m,
@@ -13269,10 +13376,10 @@ fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
         &mut m,
         Axis::Y,
         vec![
-            crate::Edge2d::line(p2(1.0, -3.5), p2(top, -3.5)).unwrap(),
-            crate::Edge2d::line(p2(top, -3.5), p2(top, 3.5)).unwrap(),
-            crate::Edge2d::line(p2(top, 3.5), p2(1.0, 3.5)).unwrap(),
-            crate::Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
+            line(p2(1.0, -3.5), p2(top, -3.5)),
+            line(p2(top, -3.5), p2(top, 3.5)),
+            line(p2(top, 3.5), p2(1.0, 3.5)),
+            line(p2(1.0, 3.5), p2(1.0, -3.5)),
         ],
     );
     let w = shift(&mut m, w, [0.0, 3.0, 0.0]);
@@ -13281,9 +13388,9 @@ fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
             m,
             Axis::X,
             vec![
-                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, top)).unwrap(),
-                crate::Edge2d::line(p2(3.0, top), p2(0.0, 1.0)).unwrap(),
+                line(p2(0.0, 1.0), p2(3.0, 1.0)),
+                line(p2(3.0, 1.0), p2(3.0, top)),
+                line(p2(3.0, top), p2(0.0, 1.0)),
             ],
         );
         shift(m, g, [x, 0.0, 0.0])
@@ -13382,23 +13489,22 @@ fn a_four_plane_operand_vertex_fuses_in_either_order() {
 /// bit. Cell ⑪ locked it at `gx = 1.4`; cell ⑫ at the script's own `1.5`.
 fn users_four_part_fold_in_either_order(gx: f64) {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let prism =
-        |m: &mut Model, axis: Axis, edges: Vec<crate::Edge2d>, dist: f64| -> Handle<Solid> {
-            let profile = crate::from_edges(edges).unwrap().remove(0);
-            let frame = SketchFrame::world(m, axis);
-            let OpOutput::Extrude { solid, .. } = apply(
-                m,
-                &Operation::Extrude {
-                    frame,
-                    profile,
-                    dist,
-                },
-            )
-            .expect("the profile extrudes") else {
-                unreachable!()
-            };
-            solid
+    let prism = |m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {
+        let profile = stated(edges).unwrap().remove(0);
+        let frame = SketchFrame::world(m, axis);
+        let OpOutput::Extrude { solid, .. } = apply(
+            m,
+            &Operation::Extrude {
+                frame,
+                profile,
+                dist,
+            },
+        )
+        .expect("the profile extrudes") else {
+            unreachable!()
         };
+        solid
+    };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
         let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
@@ -13418,14 +13524,14 @@ fn users_four_part_fold_in_either_order(gx: f64) {
             m,
             Axis::Z,
             vec![
-                crate::Edge2d::line(p2(-1.5, -4.0), p2(1.5, -4.0)).unwrap(),
-                crate::Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
-                crate::Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
-                crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-                crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -2.0)).unwrap(),
-                crate::Edge2d::arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1).unwrap(),
-                crate::Edge2d::circle(p2(-1.5, -2.0), 1.0).unwrap(),
-                crate::Edge2d::circle(p2(1.5, -2.0), 1.0).unwrap(),
+                line(p2(-1.5, -4.0), p2(1.5, -4.0)),
+                arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1),
+                line(p2(3.5, -2.0), p2(3.5, 4.0)),
+                line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+                line(p2(-3.5, 4.0), p2(-3.5, -2.0)),
+                arc_turns(p2(-1.5, -2.0), p2(-3.5, -2.0), 1),
+                stated::circle(p2(-1.5, -2.0), 1.0),
+                stated::circle(p2(1.5, -2.0), 1.0),
             ],
             1.0,
         )
@@ -13435,14 +13541,14 @@ fn users_four_part_fold_in_either_order(gx: f64) {
             m,
             Axis::Y,
             vec![
-                crate::Edge2d::line(p2(1.0, -3.5), p2(6.0, -3.5)).unwrap(),
-                crate::Edge2d::line(p2(6.0, -3.5), p2(6.0, 3.5)).unwrap(),
-                crate::Edge2d::line(p2(6.0, 3.5), p2(1.0, 3.5)).unwrap(),
-                crate::Edge2d::line(p2(1.0, 3.5), p2(1.0, -3.5)).unwrap(),
-                crate::Edge2d::line(p2(3.0, -0.5), p2(4.0, -0.5)).unwrap(),
-                crate::Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2).unwrap(),
-                crate::Edge2d::line(p2(4.0, 0.5), p2(3.0, 0.5)).unwrap(),
-                crate::Edge2d::arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2).unwrap(),
+                line(p2(1.0, -3.5), p2(6.0, -3.5)),
+                line(p2(6.0, -3.5), p2(6.0, 3.5)),
+                line(p2(6.0, 3.5), p2(1.0, 3.5)),
+                line(p2(1.0, 3.5), p2(1.0, -3.5)),
+                line(p2(3.0, -0.5), p2(4.0, -0.5)),
+                arc_turns(p2(4.0, 0.0), p2(4.0, -0.5), 2),
+                line(p2(4.0, 0.5), p2(3.0, 0.5)),
+                arc_turns(p2(3.0, 0.0), p2(3.0, 0.5), 2),
             ],
             1.0,
         );
@@ -13453,9 +13559,9 @@ fn users_four_part_fold_in_either_order(gx: f64) {
             m,
             Axis::X,
             vec![
-                crate::Edge2d::line(p2(0.0, 1.0), p2(3.0, 1.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0, 1.0), p2(3.0, 6.0)).unwrap(),
-                crate::Edge2d::line(p2(3.0, 6.0), p2(0.0, 1.0)).unwrap(),
+                line(p2(0.0, 1.0), p2(3.0, 1.0)),
+                line(p2(3.0, 1.0), p2(3.0, 6.0)),
+                line(p2(3.0, 6.0), p2(0.0, 1.0)),
             ],
             1.0,
         );
@@ -13576,12 +13682,12 @@ fn a_four_plane_operand_vertex_has_one_name_under_rigid_motion() {
 fn fillet_plate_and_axis_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let mut m = Model::new();
-    let profile = crate::from_edges(vec![
-        crate::Edge2d::line(p2(-3.5, -4.0), p2(1.5, -4.0)).unwrap(),
-        crate::Edge2d::arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1).unwrap(),
-        crate::Edge2d::line(p2(3.5, -2.0), p2(3.5, 4.0)).unwrap(),
-        crate::Edge2d::line(p2(3.5, 4.0), p2(-3.5, 4.0)).unwrap(),
-        crate::Edge2d::line(p2(-3.5, 4.0), p2(-3.5, -4.0)).unwrap(),
+    let profile = stated(vec![
+        line(p2(-3.5, -4.0), p2(1.5, -4.0)),
+        arc_turns(p2(1.5, -2.0), p2(1.5, -4.0), 1),
+        line(p2(3.5, -2.0), p2(3.5, 4.0)),
+        line(p2(3.5, 4.0), p2(-3.5, 4.0)),
+        line(p2(-3.5, 4.0), p2(-3.5, -4.0)),
     ])
     .unwrap()
     .remove(0);
@@ -13763,7 +13869,7 @@ fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
         ([-45.0, -25.0], [0.0, -1.0], [1.0, 0.0]),
     ];
     let r = 5.0;
-    let mut edges: Vec<crate::Edge2d> = Vec::new();
+    let mut edges: Vec<Stated> = Vec::new();
     let mut at = {
         let (c, _, d_out) = corner[3];
         if fillets > 3 {
@@ -13776,13 +13882,11 @@ fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
         if i < fillets {
             let tin = [c[0] - r * d_in[0], c[1] - r * d_in[1]];
             let centre = [tin[0] + r * d_out[0], tin[1] + r * d_out[1]];
-            edges.push(crate::Edge2d::line(p2(at[0], at[1]), p2(tin[0], tin[1])).unwrap());
-            edges.push(
-                crate::Edge2d::arc_turns(p2(centre[0], centre[1]), p2(tin[0], tin[1]), 1).unwrap(),
-            );
+            edges.push(line(p2(at[0], at[1]), p2(tin[0], tin[1])));
+            edges.push(arc_turns(p2(centre[0], centre[1]), p2(tin[0], tin[1]), 1));
             at = [c[0] + r * d_out[0], c[1] + r * d_out[1]];
         } else {
-            edges.push(crate::Edge2d::line(p2(at[0], at[1]), p2(c[0], c[1])).unwrap());
+            edges.push(line(p2(at[0], at[1]), p2(c[0], c[1])));
             at = c;
         }
     }
@@ -13790,9 +13894,9 @@ fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
         .iter()
         .take(bores)
     {
-        edges.push(crate::Edge2d::circle(p2(x, y), 3.5).unwrap());
+        edges.push(stated::circle(p2(x, y), 3.5));
     }
-    let profile = crate::from_edges(edges).unwrap().remove(0);
+    let profile = stated(edges).unwrap().remove(0);
     let frame = SketchFrame::world(m, Axis::Z);
     let OpOutput::Extrude { solid, .. } = apply(
         m,
@@ -14293,12 +14397,12 @@ fn the_two_roads_never_disagree() {
 fn an_island_inside_a_round_hole_does_not_claim_the_hole() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let mut m = Model::new();
-    let profile = crate::from_edges(vec![
-        crate::Edge2d::line(p2(-20.0, -20.0), p2(20.0, -20.0)).unwrap(),
-        crate::Edge2d::line(p2(20.0, -20.0), p2(20.0, 20.0)).unwrap(),
-        crate::Edge2d::line(p2(20.0, 20.0), p2(-20.0, 20.0)).unwrap(),
-        crate::Edge2d::line(p2(-20.0, 20.0), p2(-20.0, -20.0)).unwrap(),
-        crate::Edge2d::circle(p2(0.0, 0.0), 10.0).unwrap(),
+    let profile = stated(vec![
+        line(p2(-20.0, -20.0), p2(20.0, -20.0)),
+        line(p2(20.0, -20.0), p2(20.0, 20.0)),
+        line(p2(20.0, 20.0), p2(-20.0, 20.0)),
+        line(p2(-20.0, 20.0), p2(-20.0, -20.0)),
+        stated::circle(p2(0.0, 0.0), 10.0),
     ])
     .unwrap()
     .remove(0);
@@ -14338,9 +14442,8 @@ fn an_island_inside_a_round_hole_does_not_claim_the_hole() {
 /// The user's rib: a stepped profile standing on the plate's top face, extruded ±20 in y.
 fn user_rib(m: &mut Model, x: f64) -> Handle<Solid> {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
-    let line =
-        |a: [f64; 2], b: [f64; 2]| crate::Edge2d::line(p2(a[0], a[1]), p2(b[0], b[1])).unwrap();
-    let profile = crate::from_edges(vec![
+    let line = |a: [f64; 2], b: [f64; 2]| line(p2(a[0], a[1]), p2(b[0], b[1]));
+    let profile = stated(vec![
         line([12.0, 0.0], [12.0, 7.5]),
         line([12.0, 7.5], [27.0, 7.5]),
         line([27.0, 7.5], [27.0, 5.5]),

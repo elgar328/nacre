@@ -86,18 +86,18 @@ fn the_whole_pipeline_runs_through_the_facade_alone() {
     );
 }
 
-/// The sketch front door and the face queries, also facade-only. `from_edges` takes
-/// loose segments in any order; `face_props` is what lets a caller *name* a face by its
-/// geometry rather than by an index.
+/// The sketch front door and the face queries, also facade-only. `from_rings` takes closed
+/// rings as written; `face_props` is what lets a caller *name* a face by its geometry rather
+/// than by an index.
 #[test]
 fn the_sketch_front_door_and_face_queries_are_reachable() {
     let p = |x: f64, y: f64| Point2::from_array([x, y]);
-    let profiles = from_edges(vec![
-        Edge2d::line(p(0.0, 0.0), p(4.0, 0.0)).unwrap(),
-        Edge2d::line(p(4.0, 0.0), p(4.0, 4.0)).unwrap(),
-        Edge2d::line(p(4.0, 4.0), p(0.0, 4.0)).unwrap(),
-        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)).unwrap(),
-    ])
+    let profiles = from_rings(vec![vec![
+        p(0.0, 0.0),
+        p(4.0, 0.0),
+        p(4.0, 4.0),
+        p(0.0, 4.0),
+    ]])
     .unwrap();
     assert_eq!(profiles.len(), 1);
 
@@ -130,12 +130,12 @@ fn the_sketch_front_door_and_face_queries_are_reachable() {
     );
 
     // A malformed sketch is refused by name, not silently built.
-    let bowtie = from_edges(vec![
-        Edge2d::line(p(0.0, 0.0), p(4.0, 4.0)).unwrap(),
-        Edge2d::line(p(4.0, 4.0), p(4.0, 0.0)).unwrap(),
-        Edge2d::line(p(4.0, 0.0), p(0.0, 4.0)).unwrap(),
-        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)).unwrap(),
-    ]);
+    let bowtie = from_rings(vec![vec![
+        p(0.0, 0.0),
+        p(4.0, 4.0),
+        p(4.0, 0.0),
+        p(0.0, 4.0),
+    ]]);
     assert!(matches!(
         bowtie,
         Err(SketchError::RingSelfIntersects { .. })

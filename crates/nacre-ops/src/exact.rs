@@ -24,7 +24,7 @@
 //! the same answer for the same reason.
 
 use crate::ops::{Profile2d, SketchPlane};
-use nacre_geom::mixed::Seg2d;
+use nacre_geom::mixed::Edge2d;
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::{Orient, Rat};
 use nacre_store::Handle;
@@ -485,12 +485,12 @@ pub(crate) fn prism_rings_in(
             (Orient::Zero, _) => Orient::Zero,
         };
         let segs = r
-            .segs()
+            .edges()
             .iter()
             .enumerate()
             .map(|(i, seg)| match seg {
-                Seg2d::Line => Some(Seg3::Line),
-                Seg2d::Arc {
+                Edge2d::Line => Some(Seg3::Line),
+                Edge2d::Arc {
                     center,
                     radius,
                     ccw,
@@ -562,21 +562,16 @@ mod tests {
     /// mirror. Volumes are the oracle: a 2-cube plus a 1×1×1 pad, minus a 1×1×½ pocket.
     #[test]
     fn a_pad_on_a_mirrored_tilted_face_stands_up() {
-        use crate::{Edge2d, OpOutput, Operation, SketchFrame, apply, from_edges};
+        use crate::{OpOutput, Operation, SketchFrame, apply, from_rings};
         use nacre_math::Point2;
         use nacre_scalar::{Angle, Axis, Isometry, Rotation};
         use nacre_topo::Model;
 
         let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
         let rect = |x0: f64, y0: f64, x1: f64, y1: f64| {
-            from_edges(vec![
-                Edge2d::line(p2(x0, y0), p2(x1, y0)).unwrap(),
-                Edge2d::line(p2(x1, y0), p2(x1, y1)).unwrap(),
-                Edge2d::line(p2(x1, y1), p2(x0, y1)).unwrap(),
-                Edge2d::line(p2(x0, y1), p2(x0, y0)).unwrap(),
-            ])
-            .unwrap()
-            .remove(0)
+            from_rings(vec![vec![p2(x0, y0), p2(x1, y0), p2(x1, y1), p2(x0, y1)]])
+                .unwrap()
+                .remove(0)
         };
         // A 2-cube centred on the origin, turned 15° about y (its planes leave the rational
         // world, so a face's sketch lives in the plane's own frame), then mirrored in x or not.

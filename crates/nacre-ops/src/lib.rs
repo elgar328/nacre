@@ -39,13 +39,13 @@ pub use boolean::{BoolReport, boolean, boolean_with_report};
 // so a consumer reads one crate, not two.
 pub use nacre_cip::Decision;
 pub use nacre_cip::predicate::{Evidence, Site};
-pub use nacre_geom::mixed::Seg2d;
+pub use nacre_geom::mixed::Edge2d;
 pub use ops::{
     BoolKind, DatumDef, LogCell, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing,
     Ring2d, SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,
 };
 pub use realize::{Precision, RealizeError, Realized, realize_vertex, realize_vertex_decimal};
-pub use sketch::{Edge2d, SketchError, from_edges, from_rings};
+pub use sketch::{SketchError, arc_to_rat, arc_turns, arc_turns_rat, from_paths, from_rings};
 
 impl SketchPlane {
     /// The world XY plane: `+u = x̂`, `+v = ŷ`, normal `+ẑ`.

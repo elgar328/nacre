@@ -7,9 +7,10 @@
 //! is not a number typed by hand but the two producers agreeing.
 
 use crate::common::*;
+use crate::stated::*;
 use nacre_math::{Point2, Point3};
 use nacre_ops::SketchFrame;
-use nacre_ops::{BoolKind, Edge2d, OpOutput, Operation, Profile2d, apply, from_edges, from_rings};
+use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, from_rings};
 use nacre_scalar::Axis;
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
@@ -277,10 +278,10 @@ fn nacre_topo_first_vertex(m: &Model, fh: Handle<nacre_topo::Face>) -> Handle<na
     if he.forward { a } else { b }
 }
 
-/// The whole point of the nesting step, through the front door: the caller hands over loose
-/// closed rings — no "this one is the hole" — and gets a solid with a hole in it.
+/// The whole point of the nesting step, through the front door: the caller hands over closed
+/// rings in any order — no "this one is the hole" — and gets a solid with a hole in it.
 #[test]
-fn loose_rings_become_a_donut_without_being_told_which_is_the_hole() {
+fn rings_in_any_order_become_a_donut_without_being_told_which_is_the_hole() {
     let sq = |a: f64, b: f64| {
         vec![
             Point2::from_array([a, a]),
@@ -324,31 +325,6 @@ fn an_island_extrudes_as_a_second_body() {
     assert!(nacre_validate::validate(&m).is_empty());
     // ring 0..9 minus hole 1..8 = 81 − 49 = 32, plus the island 2..7 = 25.
     assert!((total - (32.0 + 25.0)).abs() < 1e-12, "{total}");
-}
-
-/// The front door the syntax actually describes: hand over drawn segments, in any order, and get
-/// the solid. Nothing declares the hole and nothing declares the order.
-#[test]
-fn drawn_segments_become_a_donut() {
-    let ring = |a: f64, b: f64| {
-        let p = |x: f64, y: f64| Point2::from_array([x, y]);
-        vec![
-            Edge2d::line(p(a, a), p(b, a)).unwrap(),
-            Edge2d::line(p(b, b), p(b, a)).unwrap(), // backwards on purpose
-            Edge2d::line(p(b, b), p(a, b)).unwrap(),
-            Edge2d::line(p(a, b), p(a, a)).unwrap(),
-        ]
-    };
-    let mut edges = ring(1.0, 3.0); // the hole, drawn first
-    edges.extend(ring(0.0, 4.0));
-
-    let profiles = from_edges(edges).unwrap();
-    assert_eq!(profiles.len(), 1);
-
-    let mut m = Model::new();
-    let d = extrude(&mut m, profiles.into_iter().next().unwrap(), 1.0);
-    assert!(nacre_validate::validate(&m).is_empty());
-    assert!((volume(&m, d) - 12.0).abs() < 1e-12, "{}", volume(&m, d));
 }
 
 // --- the profile contract: what the kernel refuses to build from ---
@@ -456,19 +432,19 @@ fn touching_rings_are_refused_on_every_profile_entry_point() {
 
 /// The sketch layer refuses before it classifies, because it must: containment is decided by
 /// even-odd parity, which only means "inside" on a simple ring. Reported by **point**, not edge
-/// index — `from_edges` chains rings in walk order, so an index would name nothing the author
-/// wrote. The bowtie here is drawn as four loose segments, exactly how it reaches the front door.
+/// index — a point is what an editor can mark, and the enum's other rejections carry points too.
+/// The bowtie here is a stated ring of four lines, exactly how it reaches the front door.
 #[test]
 fn a_self_crossing_outline_is_refused_before_the_rings_are_sorted() {
     let p = |x: f64, y: f64| Point2::from_array([x, y]);
     let bowtie = vec![
-        Edge2d::line(p(0.0, 0.0), p(4.0, 4.0)).unwrap(),
-        Edge2d::line(p(4.0, 4.0), p(4.0, 0.0)).unwrap(),
-        Edge2d::line(p(4.0, 0.0), p(0.0, 4.0)).unwrap(),
-        Edge2d::line(p(0.0, 4.0), p(0.0, 0.0)).unwrap(),
+        line(p(0.0, 0.0), p(4.0, 4.0)),
+        line(p(4.0, 4.0), p(4.0, 0.0)),
+        line(p(4.0, 0.0), p(0.0, 4.0)),
+        line(p(0.0, 4.0), p(0.0, 0.0)),
     ];
     assert!(matches!(
-        from_edges(bowtie),
+        stated(bowtie),
         Err(nacre_ops::SketchError::RingSelfIntersects { .. })
     ));
 
@@ -576,17 +552,17 @@ fn a_corner_flat_in_decimal_but_not_in_binary_is_dissolved() {
 fn a_circle_and_a_slot_extrude_and_a_lens_is_refused_by_name() {
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
     let r = |n: i128| nacre_scalar::Rat::from_int(n);
-    let circle = from_edges(vec![Edge2d::circle(p2(0.0, 0.0), 1.0).unwrap()]).unwrap();
-    let slot = from_edges(vec![
-        Edge2d::line(p2(0.0, -1.0), p2(4.0, -1.0)).unwrap(),
-        Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -1.0), 2).unwrap(),
-        Edge2d::line(p2(4.0, 1.0), p2(0.0, 1.0)).unwrap(),
-        Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, 1.0), 2).unwrap(),
+    let circle = stated(vec![circle(p2(0.0, 0.0), 1.0)]).unwrap();
+    let slot = stated(vec![
+        line(p2(0.0, -1.0), p2(4.0, -1.0)),
+        arc_turns(p2(4.0, 0.0), p2(4.0, -1.0), 2),
+        line(p2(4.0, 1.0), p2(0.0, 1.0)),
+        arc_turns(p2(0.0, 0.0), p2(0.0, 1.0), 2),
     ])
     .unwrap();
-    let lens = from_edges(vec![
-        Edge2d::arc_rat([r(3), r(4)], [r(0), r(0)], [r(6), r(0)], true).unwrap(),
-        Edge2d::arc_rat([r(3), r(-4)], [r(6), r(0)], [r(0), r(0)], true).unwrap(),
+    let lens = stated(vec![
+        arc_rat([r(3), r(4)], [r(0), r(0)], [r(6), r(0)], true),
+        arc_rat([r(3), r(-4)], [r(6), r(0)], [r(0), r(0)], true),
     ])
     .unwrap();
     for profiles in [circle, slot] {
@@ -616,9 +592,9 @@ fn a_circle_and_a_slot_extrude_and_a_lens_is_refused_by_name() {
         Err(nacre_ops::OpError::ArcSweepNotQuarterTurn)
     );
     // A leaf: two quarter arcs of different circles between (0,0) and (5,5).
-    let leaf = from_edges(vec![
-        Edge2d::arc_turns(p2(5.0, 0.0), p2(0.0, 0.0), -1).unwrap(), // → (5,5), bulging up-left
-        Edge2d::arc_turns(p2(0.0, 5.0), p2(5.0, 5.0), -1).unwrap(), // → (0,0), bulging down-right
+    let leaf = stated(vec![
+        arc_turns(p2(5.0, 0.0), p2(0.0, 0.0), -1), // → (5,5), bulging up-left
+        arc_turns(p2(0.0, 5.0), p2(5.0, 5.0), -1), // → (0,0), bulging down-right
     ])
     .unwrap();
     let mut m = Model::new();
@@ -641,11 +617,11 @@ fn a_circle_and_a_slot_extrude_and_a_lens_is_refused_by_name() {
 #[test]
 fn a_slot_prism_tessellates_and_exports() {
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
-    let slot = from_edges(vec![
-        Edge2d::line(p2(0.0, -1.0), p2(4.0, -1.0)).unwrap(),
-        Edge2d::arc_turns(p2(4.0, 0.0), p2(4.0, -1.0), 2).unwrap(),
-        Edge2d::line(p2(4.0, 1.0), p2(0.0, 1.0)).unwrap(),
-        Edge2d::arc_turns(p2(0.0, 0.0), p2(0.0, 1.0), 2).unwrap(),
+    let slot = stated(vec![
+        line(p2(0.0, -1.0), p2(4.0, -1.0)),
+        arc_turns(p2(4.0, 0.0), p2(4.0, -1.0), 2),
+        line(p2(4.0, 1.0), p2(0.0, 1.0)),
+        arc_turns(p2(0.0, 0.0), p2(0.0, 1.0), 2),
     ])
     .unwrap();
     let mut m = Model::new();
