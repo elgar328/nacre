@@ -3224,16 +3224,18 @@ pub(crate) fn plane_of(r: &FaceRow) -> Option<&FaceInfo> {
 fn standard_for(rows: &[FaceRow]) -> Standard {
     // ★ **A face that was never moved contributes exactly nothing, so it is not asked.**
     //
-    // Its `tri_pt3` are `WitnessPoint::exact` of the face's own f64 triangle: base = `mantissa · 2^exp`, so
-    // the denominator is a power of two and the numerator fits `Rat`'s 127 bits, and the chain is
-    // empty — which is precisely when `rat_to_hp` returns an *exact* interval. The realization has
-    // no error to report (`an_exact_point_demands_no_precision` in `nacre-cip`, and the const
-    // assert at `TRIAL_PREC` that keeps it true).
+    // Its `tri_pt3` are `WitnessPoint::at_nearest` of the plane's own rational points and the chain
+    // is empty: an f64-representable point (base = `mantissa · 2^exp`, a power-of-two denominator
+    // and a numerator within `Rat`'s 127 bits) realizes as an *exact* interval, and a decimal one
+    // carries the ½-ulp bound it was stated with — nothing a replay could add. The realization has
+    // no rotation error to report (`an_exact_point_demands_no_precision` in `nacre-cip`, and the
+    // const assert at `TRIAL_PREC` that keeps it true).
     //
     // So the loop below used to spend a full high-precision replay per point to compute a zero —
     // measured, an axis-aligned 60-fin fold did that 24,120 times for 15.7ms and a `worst` of
-    // exactly `Mag::ZERO`. The same shape was removed one level down when `WitnessPoint::exact` replaced
-    // `WitnessPoint::at` for these points ("nine BigFloat operations to compute a zero").
+    // exactly `Mag::ZERO`. The same shape was removed one level down when a stated zero replaced
+    // `WitnessPoint::at`'s measurement for these points ("nine BigFloat operations to compute a
+    // zero").
     //
     // `max` over the empty set is `Mag::ZERO`, which is the right answer for a model with no
     // rotation history — `precision_for` reads that as "nothing to size" and returns `TRIAL_PREC`.

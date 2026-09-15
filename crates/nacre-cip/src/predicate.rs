@@ -1281,7 +1281,12 @@ mod tests {
     }
     impl W {
         fn new(tri: [Point3; 3], coeffs: [f64; 4]) -> W {
-            let def = tri.map(|p| WitnessPoint::exact(p.as_array()).expect("test coordinate"));
+            let def = tri.map(|p| {
+                WitnessPoint::at_nearest(
+                    p.as_array()
+                        .map(|x| nacre_scalar::Rat::try_from_f64(x).expect("test coordinate")),
+                )
+            });
             W { tri, coeffs, def }
         }
     }

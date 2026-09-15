@@ -220,7 +220,11 @@ fn planes_coplanar_guards_degeneracy_and_survives_rotation() {
             plane: pu[0].plane,
             tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],
             tri_pt3: std::array::from_fn(|_| {
-                WitnessPoint::exact([k as f64, 0.0, 0.0]).expect("exact")
+                WitnessPoint::at_nearest([
+                    nacre_scalar::Rat::try_from_f64(k as f64).expect("exact"),
+                    nacre_scalar::Rat::from_int(0),
+                    nacre_scalar::Rat::from_int(0),
+                ])
             }),
             rotated: false,
             frame_sign: pu[0].frame_sign,

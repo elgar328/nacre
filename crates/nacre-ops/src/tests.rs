@@ -2469,7 +2469,12 @@ fn shares_or_coplanar_uses_the_handle_branch() {
             n_out: Vector3::from_array([0.0; 3]),
             // Unread: this table only ever reaches `Judge::planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
-            tri_pt3: tri.map(|p| nacre_cip::WitnessPoint::exact(p.as_array()).expect("exact")),
+            tri_pt3: tri.map(|p| {
+                nacre_cip::WitnessPoint::at_nearest(
+                    p.as_array()
+                        .map(|x| nacre_scalar::Rat::try_from_f64(x).expect("exact")),
+                )
+            }),
             rotated: false,
         })
     };
@@ -5368,8 +5373,9 @@ fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_scalar:
 /// A rotated solid's face coordinates are rounded, so its planes are truthful only through an
 /// exact *definition* (`FaceInfo::tri_pt3` built from a rotation history). A boolean's *result*
 /// is just as rotated as its operands — but the result carries no rotation provenance, so
-/// `collect_planes` describes every one of its faces by `WitnessPoint::exact` of the rounded triangle
-/// and the kernel starts treating a rounded copy as the truth. That is what makes one wall
+/// `collect_planes` described every one of its faces by a tol-0 witness of the rounded triangle
+/// (the since-retired `WitnessPoint::exact`) and the kernel started treating a rounded copy as
+/// the truth. That is what makes one wall
 /// become two plane classes on the next operation.
 ///
 /// The invariant: **every face of a boolean between rotated operands is described by a
@@ -6234,7 +6240,12 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
         surf,
         plane,
         tri,
-        tri_pt3: tri.map(|p| nacre_cip::WitnessPoint::exact(p.as_array()).expect("exact")),
+        tri_pt3: tri.map(|p| {
+            nacre_cip::WitnessPoint::at_nearest(
+                p.as_array()
+                    .map(|x| nacre_scalar::Rat::try_from_f64(x).expect("exact")),
+            )
+        }),
         rotated: false,
         frame_sign: 1, // `plane` is built from `normal`, so the two agree
         exact_coeffs: WorkingPlane::reconcile(&plane, tri, false).0,

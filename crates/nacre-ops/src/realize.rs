@@ -197,7 +197,7 @@ pub(crate) fn realize_def(
 
 /// The deepest motion history the cache road replays. The error a replayed point carries grows
 /// about one bit per turn, so past this depth the first rung cannot name an `f64` anyway — and a
-/// replay costs the depth: a 4,200-turn history realized on every push turned a 1.5 s test into
+/// replay costs the depth: a 4,200-turn history realized on every push turned a 5.6 s test into
 /// minutes. Beyond it the construction's own figure stands, and a caller who wants the point
 /// exactly still has [`realize_vertex`], which climbs.
 const CACHE_REPLAY_DEPTH: usize = 64;

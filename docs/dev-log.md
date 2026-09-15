@@ -21072,8 +21072,9 @@ release = HEAD); 계획 인구 Arrange 1483 → 1460 · PassThrough 680 → 695 
   못 정하면 `None` · `push_vertex_realized(model, def, fallback)`: ops 의 push 자리 다섯(boolean 3 · ops 1 · transform 1)
   이 전부 지난다 — `Bounded` 를 쓰는 철자는 하나.
 - ⚠ **깊이 가드가 필요했던 이유**: `NearestF64` 사다리를 push 마다 오르니 4,200회 회전 픽스처
-  (`a_rotation_history_past_the_budget…`)가 1.5초에서 **분 단위**로 — 회전당 ~1비트씩 오차가 자라 첫 단이 못 정하고
-  6단을 다 오른 뒤 `Undecided`, 그것을 8 정점 × 4,200 단계. 첫 단 + 깊이 64 로 5.5초(HEAD 5.65초). «코퍼스 최대는
+  (`a_rotation_history_past_the_budget…`)가 5.6초에서 **분 단위**로 — 회전당 ~1비트씩 오차가 자라 첫 단이 못 정하고
+  6단을 다 오른 뒤 `Undecided`, 그것을 8 정점 × 4,200 단계. 첫 단 + 깊이 64 로 5.5초(HEAD 5.65초). (처음 보고에
+  «1.5초»라 적은 것은 다른 바이너리의 시간을 잘못 붙인 것 — 감사에서 정정.) «코퍼스 최대는
   타입의 한계가 아니다» — 코퍼스는 깊이 ≤ 2 였다.
 - validate: `Bounded → EPS_CONSTRUCTED`(경계는 캐시 담체와의 거리가 아니고 `SurfaceCache.tol` 은 없다; 실측 1.07e-14).
 - **잠금 3 을 심어서 확인**: 변종 없이(옛 잔차 그대로, 좌표만 실현값) 밀면 ops 단위 테스트 **16개 빨강**,

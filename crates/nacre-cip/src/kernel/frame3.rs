@@ -587,23 +587,6 @@ impl WitnessPoint {
         )
     }
 
-    /// A point whose coordinates are **exactly representable** as f64 — the axis-aligned case.
-    ///
-    /// `base` is that f64 (`try_from_f64` is exact: `mantissa · 2^exp`), so realizing it back
-    /// yields the same f64 and the rounding tol is **`0` by construction**. `None` if a
-    /// coordinate falls outside `Rat`'s exponent range.
-    ///
-    /// **Use this, not [`at`](Self::at), when the coordinates came from f64.** `at` *measures*
-    /// the rounding at 120 bits; for this case that is nine BigFloat operations to compute a
-    /// zero, and the boolean's hot path used to pay it hundreds of thousands of times.
-    pub fn exact(coord: [f64; 3]) -> Option<Self> {
-        let b = |x: f64| Rat::try_from_f64(x);
-        Some(Self::at_with_tol(
-            [b(coord[0])?, b(coord[1])?, b(coord[2])?],
-            [0.0; 3],
-        ))
-    }
-
     /// A point at a rational `base`, its coordinate the nearest `f64` and its tol **from that
     /// contract rather than measured**: exactly `0` where the coordinate is representable, else
     /// `|x|·2⁻⁵³` (floored at `f64::MIN_POSITIVE`) — `Rat::to_f64` is documented as *"the
@@ -1467,8 +1450,9 @@ const TRIAL_PREC: usize = 128;
 /// ★ **And deep enough that an exactly-representable point reads exactly zero.**
 ///
 /// A second requirement, once a caller is allowed to *skip* [`trial_bound`] for a definition it
-/// knows is exact. `WitnessPoint::exact`'s base is `Rat::try_from_f64` = `mantissa · 2^exp`, so the
-/// denominator is a power of two and the numerator is at most `Rat`'s own 127 bits — and
+/// knows is exact. An f64-representable base (`Rat::try_from_f64` = `mantissa · 2^exp`, the case
+/// `at_nearest` states with tol 0) has a power-of-two denominator and a numerator of at most
+/// `Rat`'s own 127 bits — and
 /// `rat_to_hp` returns an exact interval exactly when both hold *at this precision*. Below 127 a
 /// large exact coordinate would start carrying a bound again, and a caller that skipped the call on
 /// the strength of the zero would read a precision the model had not earned.
@@ -2623,6 +2607,16 @@ fn dir_gap(d: &HpBounded, planes: &[[HpBounded; 4]; 3], prec: usize) -> Gap {
 mod tests {
     use super::*;
 
+    /// A witness at an `f64`-representable point, stated as the rational it is — the fixture
+    /// spelling of what `WitnessPoint::exact` used to be. That door is retired: no production
+    /// caller, and a precondition ("exactly representable") no caller could check — the one
+    /// production site that handed it a rounded cache named a different point (nacre-ops
+    /// reuse, 2026-09-15). `at_nearest` states the same tol `0` here and stays honest elsewhere.
+    fn exact(c: [f64; 3]) -> Option<WitnessPoint> {
+        let b = |x: f64| Rat::try_from_f64(x);
+        Some(WitnessPoint::at_nearest([b(c[0])?, b(c[1])?, b(c[2])?]))
+    }
+
     /// The precision these fixtures judge at. Production chooses it per model
     /// ([`judge_precision`]); a fixture pins one so its expectations stay fixed.
     const FIXTURE_PREC: usize = 256;
@@ -3170,7 +3164,7 @@ mod tests {
     /// apply to the world origin and the three unit points, subtract.
     fn probe_through(f: &FrameThrough) -> [[f64; 3]; 4] {
         let ap = |c: [f64; 3]| {
-            WitnessPoint::exact(c)
+            exact(c)
                 .expect("probe coords are f64")
                 .frame_through(f)
                 .expect("a constructed node realizes")
@@ -3188,7 +3182,7 @@ mod tests {
 
     fn probe_named(pf: nacre_scalar::PlaneFrame) -> [[f64; 3]; 4] {
         let ap = |c: [f64; 3]| {
-            WitnessPoint::exact(c)
+            exact(c)
                 .expect("probe coords are f64")
                 .frame(pf)
                 .expect("a named frame realizes")
@@ -3215,9 +3209,9 @@ mod tests {
         // (0,0,1), (1,0,0), (0,1,1): n = (1,0,1), d = −1 — canonical letter for letter.
         let pts = || {
             [
-                WitnessPoint::exact([0.0, 0.0, 1.0]).unwrap(),
-                WitnessPoint::exact([1.0, 0.0, 0.0]).unwrap(),
-                WitnessPoint::exact([0.0, 1.0, 1.0]).unwrap(),
+                exact([0.0, 0.0, 1.0]).unwrap(),
+                exact([1.0, 0.0, 0.0]).unwrap(),
+                exact([0.0, 1.0, 1.0]).unwrap(),
             ]
         };
         let c = [ri(1, 1), ri(0, 1), ri(1, 1), ri(-1, 1)];
@@ -3259,9 +3253,9 @@ mod tests {
     #[test]
     fn the_judged_frame_takes_the_vertical_branch_where_the_named_road_does() {
         let pts = [
-            WitnessPoint::exact([0.0, 0.0, 5.0]).unwrap(),
-            WitnessPoint::exact([1.0, 0.0, 5.0]).unwrap(),
-            WitnessPoint::exact([0.0, 1.0, 5.0]).unwrap(),
+            exact([0.0, 0.0, 5.0]).unwrap(),
+            exact([1.0, 0.0, 5.0]).unwrap(),
+            exact([0.0, 1.0, 5.0]).unwrap(),
         ];
         let ft = FrameThrough::of(pts.map(JudgedPoint::Pure), false).expect("z = 5 frames");
         assert!(ft.vertical, "a horizontal plane must take ŷ×n");
@@ -3293,7 +3287,7 @@ mod tests {
             None => w,
             Some(deg) => w.rotate_about(Axis::Z, Angle::from_deg(ri(deg, 1)).unwrap(), zero3),
         };
-        let e = |x: f64, y: f64, z: f64| turn(WitnessPoint::exact([x, y, z]).unwrap());
+        let e = |x: f64, y: f64, z: f64| turn(exact([x, y, z]).unwrap());
         [
             [e(a, 0.0, 0.0), e(a, 1.0, 0.0), e(a, 0.0, 1.0)], // x = a
             [e(0.0, b, 0.0), e(1.0, b, 0.0), e(0.0, b, 1.0)], // y = b
@@ -3366,7 +3360,7 @@ mod tests {
         let zero3 = [ri(0, 1), ri(0, 1), ri(0, 1)];
         let deg = |d: i128| Angle::from_deg(ri(d, 1)).unwrap();
         // One carrier turned 37° about Z, the other two still: the meet straddles frames.
-        let e = |x: f64, y: f64, z: f64| WitnessPoint::exact([x, y, z]).unwrap();
+        let e = |x: f64, y: f64, z: f64| exact([x, y, z]).unwrap();
         let straddle = JudgedPoint::Meet(Box::new([
             [
                 e(1.0, 0.0, 0.0).rotate_about(Axis::Z, deg(37), zero3),
@@ -3409,7 +3403,7 @@ mod tests {
     /// refuse (the producer then rejects by name, without claiming degeneracy).
     #[test]
     fn a_meet_whose_carriers_share_a_line_is_refused() {
-        let e = |x: f64, y: f64, z: f64| WitnessPoint::exact([x, y, z]).unwrap();
+        let e = |x: f64, y: f64, z: f64| exact([x, y, z]).unwrap();
         // Three planes through the z-axis: x = 0, y = 0, x = y — D exactly 0.
         let sheaf = JudgedPoint::Meet(Box::new([
             [e(0.0, 0.0, 0.0), e(0.0, 1.0, 0.0), e(0.0, 0.0, 1.0)],
@@ -3434,9 +3428,9 @@ mod tests {
     #[test]
     fn a_definition_that_cannot_prove_a_basis_is_refused() {
         let pts = [
-            WitnessPoint::exact([0.0, 0.0, 0.0]).unwrap(),
-            WitnessPoint::exact([1.0, 1.0, 1.0]).unwrap(),
-            WitnessPoint::exact([2.0, 2.0, 2.0]).unwrap(),
+            exact([0.0, 0.0, 0.0]).unwrap(),
+            exact([1.0, 1.0, 1.0]).unwrap(),
+            exact([2.0, 2.0, 2.0]).unwrap(),
         ];
         assert!(
             FrameThrough::of(pts.map(JudgedPoint::Pure), false).is_none(),
@@ -3460,7 +3454,7 @@ mod tests {
                     deg(37),
                     zero3,
                 ),
-                WitnessPoint::exact([5.0, 1.0, 0.0]).unwrap(),
+                exact([5.0, 1.0, 0.0]).unwrap(),
                 WitnessPoint::at([ri(0, 1), ri(3, 1), ri(1, 1)]).rotate_about(
                     Axis::X,
                     deg(22),
@@ -4224,16 +4218,16 @@ mod tests {
         assert_eq!(p.coord(), [7.0, -3.0, -5.0]);
     }
 
-    /// **`WitnessPoint::exact` states the tol that `WitnessPoint::at` would measure — the same value.**
+    /// **A representable base measures exactly zero — `at` and `at_nearest` agree on it.**
     ///
-    /// This equivalence is what licenses the substitution on the boolean's hot path, where `at`
-    /// spent nine 120-bit BigFloat operations per call to arrive at zero. It rests on three
+    /// `at_nearest` states tol `0` for a base every coordinate of which is an `f64`, without
+    /// measuring; this pins that the measurement would have said the same. It rests on three
     /// links, and the third is the one worth a test: `try_from_f64` represents an f64 exactly,
     /// realizing that base back yields the same f64, and `bf_mag` of an exact zero is `0.0` (not
-    /// a floor). If any link broke, `at` would report a nonzero tol here and the fast
-    /// constructor would be silently changing geometry rather than skipping arithmetic.
+    /// a floor). If any link broke, `at` would report a nonzero tol here and the stated zero
+    /// would be silently changing geometry rather than skipping arithmetic.
     #[test]
-    fn exact_states_the_tol_that_at_would_measure() {
+    fn a_representable_base_measures_exactly_zero() {
         for c in [
             [0.0, 1.0, -1.0],         // integers, both signs
             [0.5, 0.25, -0.125],      // dyadic fractions
@@ -4242,7 +4236,7 @@ mod tests {
             [1e18, -4e17, 3.5e19],    // large, still inside Rat's exponent range
             [1e-20, -2.5e-21, 5e-18], // small, still inside it (the floor is 2^-74 ≈ 5.3e-23)
         ] {
-            let fast = WitnessPoint::exact(c).expect("representable");
+            let fast = exact(c).expect("representable");
             let measured =
                 WitnessPoint::at(c.map(|x| Rat::try_from_f64(x).expect("representable")));
             assert_eq!(fast.coord(), c, "the coordinates round-trip: {c:?}");
@@ -4301,7 +4295,7 @@ mod tests {
     /// with no rotation history asks for nothing, and a caller that already knows a point is
     /// `Constructed` can skip [`trial_bound`] rather than spend a realization computing a zero.
     ///
-    /// Not an accident of small numbers. `WitnessPoint::exact` builds its base with `Rat::try_from_f64` =
+    /// Not an accident of small numbers. The fixture builds its base with `Rat::try_from_f64` =
     /// `mantissa · 2^exp`, so the **denominator is a power of two** and the **numerator fits
     /// `i128`** — and `rat_to_hp` returns an exact interval exactly when those two hold at `prec`.
     /// The corpus therefore reaches **both ends of `Rat`'s range**: where the numerator is widest
@@ -4320,7 +4314,7 @@ mod tests {
             [1e-20, -2.5e-21, 5e-18], // small
             [1e-22, -2e-22, 1.0],     // ★ near Rat's floor (2^-74): the deepest denominator
         ] {
-            let p = WitnessPoint::exact(c).expect("representable");
+            let p = exact(c).expect("representable");
             assert!(
                 trial_bound(&p).is_zero(),
                 "an exact point must realize exactly: {c:?} gave {:?}",
@@ -4329,8 +4323,8 @@ mod tests {
         }
     }
 
-    /// Outside `Rat`'s exponent range there is no exact base, and `exact` says so instead of
-    /// panicking — the caller decides (an operation turns it into a named reject).
+    /// Outside `Rat`'s exponent range there is no exact base, and `Rat::try_from_f64` says so
+    /// instead of panicking — the caller decides (an operation turns it into a named reject).
     ///
     /// **The range is much narrower than f64's, at both ends** — easy to get wrong, and I did
     /// on the first attempt. `Rat` is `Ratio<i128>`, so `mantissa · 2^exp` must fit `i128`
@@ -4338,24 +4332,12 @@ mod tests {
     /// `|x| ≳ 2^-74 ≈ 5.3e-23`). Exact zero is special-cased and always representable.
     /// A CAD model at either extreme is not real; the limit is.
     #[test]
-    fn exact_declines_a_coordinate_it_cannot_represent() {
-        assert!(
-            WitnessPoint::exact([1e300, 0.0, 0.0]).is_none(),
-            "too large"
-        );
-        assert!(
-            WitnessPoint::exact([1e-30, 0.0, 0.0]).is_none(),
-            "below the 2^-74 floor"
-        );
-        assert!(
-            WitnessPoint::exact([f64::MIN_POSITIVE, 0.0, 0.0]).is_none(),
-            "subnormal"
-        );
+    fn a_coordinate_outside_rats_range_has_no_exact_base() {
+        assert!(exact([1e300, 0.0, 0.0]).is_none(), "too large");
+        assert!(exact([1e-30, 0.0, 0.0]).is_none(), "below the 2^-74 floor");
+        assert!(exact([f64::MIN_POSITIVE, 0.0, 0.0]).is_none(), "subnormal");
         // Zero is not a boundary case — it is special-cased and exact.
-        assert_eq!(
-            WitnessPoint::exact([0.0; 3]).expect("zero is exact").tol(),
-            [0.0; 3]
-        );
+        assert_eq!(exact([0.0; 3]).expect("zero is exact").tol(), [0.0; 3]);
     }
 
     /// `at` seeds the base→f64 rounding: 0 for an integer base, positive for a base

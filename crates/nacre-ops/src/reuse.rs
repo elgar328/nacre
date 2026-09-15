@@ -55,7 +55,8 @@ pub(crate) enum ClassPlan {
 /// One road for every vertex: its base is **solved from its definition** — the three carriers'
 /// narrow names, in the frame the planes are stated in ([`nacre_scalar::three_planes_rat`]) —
 /// and the coordinate handed to the predicates is that base's own nearest `f64` with the
-/// rounding it carries ([`WitnessPoint::at_nearest`]). Two arms after that:
+/// rounding it carries ([`WitnessPoint::at_nearest`] on the world arm; [`WitnessPoint::at`],
+/// measured, on the motion arm, whose replay transports it). Two arms after that:
 /// * all three carriers world-stated (`motion: None`) — the base is the world point, done;
 /// * the moved carriers sharing one motion, any world-stated carrier **fixed by that
 ///   chain** — the base is the pre-motion point; replay the chain (measured bit-identical to
@@ -64,8 +65,8 @@ pub(crate) enum ClassPlan {
 ///
 /// ★ **The cache is never read here.** The world arm used to hand `vertex_point` to
 /// `WitnessPoint::exact` — the rounded `f64` lifted back to a rational with tol 0 — which names
-/// a different point for every coordinate `f64` cannot hold (measured: 316 of a census corpus's
-/// 6,988 operand vertices, `0.3` among them). A boolean's own result vertices used to decline
+/// a different point for every coordinate `f64` cannot hold (measured: at most 316 of a census
+/// corpus's 6,988 operand vertices, `0.3` among them). A boolean's own result vertices used to decline
 /// wholesale on the same ground ("an implicit point has no rational base"); their definition
 /// has one, so they take the road too.
 ///
