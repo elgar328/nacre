@@ -1798,10 +1798,10 @@ STEP 출력, undo/replay.
     반지름의 합/차를 쓰던 셋(`cylinders_clear` 평행 팔·`cylinders_nested`·`skew_axes_clear`)은 이미 있던
     `sqrt_root_sum_cmp`(√a > √b + √c ⟺ a−b−c > 0 ∧ (a−b−c)² > 4bc) 로 — 근호를 만들지 않는다. `realize_seam_point` 와
     신설 `sqrt_f64`(`inv_sqrt_f64` 의 쌍둥이)는 «완전제곱이면 옛 길(비트 동일), 아니면 √ 실현». 스케치 문 `r2_of` 는
-    dist² 를 그대로 — `ArcRadiusNotRational`·`radius_of` 소멸. `radius()` 삭제로 컴파일러가 38 자리를 짚었고, 같은
-    `Rat` 타입이라 못 짚은 자리 **하나**(nesting 의 림 증인 단언이 정확 반지름을 r² 문에 넘김)는 관문이 잡았다 —
+    dist² 를 그대로 — `ArcRadiusNotRational`·`radius_of` 소멸. `radius()` 삭제로 컴파일러가 **58 자리**를 짚었고(제품 49 + 소스 내 테스트 9 — 플랜의 «38» 은 표를 더한 어림이었다;
+    캐시의 f64 `radius()` 둘은 남는다), 같은 `Rat` 타입이라 못 짚은 자리 **하나**(nesting 의 림 증인 단언이 정확 반지름을 r² 문에 넘김)는 관문이 잡았다 —
     디버그 census 행 수 398 → 160 이 첫 신호.
-    ★★ **위 «폭» 문단은 틀렸었다 — 분자만 셌다.** 16자리 십진 반지름은 ~1e-4 아래에서 r² 의 **분모**가 i128 을 넘는다
+    ★★ **플랜의 «폭» 주장은 틀렸었다 — 분자만 셌다.** 16자리 십진 반지름은 ~1e-4 아래에서 r² 의 **분모**가 i128 을 넘는다
     (5.000000000000001e-8 → 분모 10²³, 제곱 10⁴⁶). 그 인구는 이미 잠겨 있었다(`a_bored_cube_builds_at_any_size…` 의
     17자리 가수 일곱 자릿수, `reject_census` 의 `cylinder_wide_axis`) — 「폭은 원인이 아니다」의 잠금들. 사용자 결정:
     창을 좁히지 않고 **넓은 타입**으로 — `nacre_scalar::BigRat`(BigInt 유리수, `MeetPoint::Wide` 의 선례;

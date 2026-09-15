@@ -693,9 +693,10 @@ fn a_non_pythagorean_arc_is_stated_and_extruded() {
     assert_eq!(radii[0].to_bits(), 2f64.sqrt().to_bits());
 }
 
-/// The probe the cell records: the segment prism above, cut by a box — does the boolean road
-/// carry `r² = 2` end to end, or which named refusal is the first wall? Green means the road is
-/// open and this is the lock; a refusal is reported in the panic so the cell can write it down.
+/// ★ The boolean road carries `r² = 2` end to end: the segment prism above, cut by a box covering
+/// `x ≥ 0`, leaves the left half of the segment — validate clean, volume `(π/2 − 1)/2`. Written as
+/// the cell's probe («which named refusal is the first wall?») and promoted to a lock when it came
+/// back green; a refusal is still reported in the panic so a regression names itself.
 #[test]
 fn a_non_pythagorean_prism_is_cut_by_a_box() {
     use nacre_ops::{Edge2d, Ring2d, arc_to_rat, from_paths};

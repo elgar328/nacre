@@ -528,9 +528,9 @@ pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String
 /// **`√v` realized at `p` bits, with its error** — `v · (1/√v)`, so the one radical primitive this
 /// crate already has ([`inv_sqrt_bounded`]) is the only place a square root is approached.
 ///
-/// Consumers: [`realize_quad`], [`realize_seam_point`]'s irrational arm and [`sqrt_f64`] — every
-/// place a radius stated as its square is realized. `None` for a negative `v`.
-pub fn sqrt_bounded(v: Rat, p: usize) -> Option<HpBounded> {
+/// Crate-private: its consumer is [`realize_quad`] (measured); a radius stated as its square is
+/// wide and takes [`sqrt_bounded_big`]. `None` for a negative `v`.
+pub(crate) fn sqrt_bounded(v: Rat, p: usize) -> Option<HpBounded> {
     if v < Rat::from_int(0) {
         return None;
     }

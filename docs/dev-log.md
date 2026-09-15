@@ -20992,7 +20992,8 @@ census 태그 · **진짜 결함**. ☑ **인구에 있으면서 결함이 아�
 
 ### 한 것
 - 진실 `Edge2d::Arc { center, r2, ccw }`(`Rat`) · `CylinderDef { …, r2: BigRat }` · `Seg3::Arc.r2` · `ArcSpec.r2` ·
-  `QuarterArc.r2` · `Corner::Round.rho2`. `radius()` 삭제 — 컴파일러가 38 자리를 짚었다.
+  `QuarterArc.r2` · `Corner::Round.rho2`. `radius()` 삭제 — 컴파일러가 58 자리를 짚었다(제품 49 + 소스 내 테스트 9; 플랜의
+  «38» 은 표를 더한 어림).
 - 스칼라 문 12 → `r2: &BigRat`. 합/차 셋(`cylinders_clear` 평행 팔·`cylinders_nested`·`skew_axes_clear`)은 세 근호를 한
   정수 눈금(L²)에 올려 기존 `sqrt_root_sum_cmp` 로 — 유일한 새 산술. `realize_seam_point`·신설 `sqrt_f64`·`sqrt_bounded_big`·
   `rat_sqrt_exact_big` 은 «완전제곱이면 옛 길, 아니면 √». 스케치 문 `r2_of`; `ArcRadiusNotRational` 소멸(생산자 0).
