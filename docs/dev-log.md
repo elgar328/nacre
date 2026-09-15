@@ -20937,3 +20937,49 @@ census 태그 · **진짜 결함**. ☑ **인구에 있으면서 결함이 아�
 플랜 초안은 분할을 **셋**이라 적었다 — 계기가 `let`-`else` 만 셌고(`matches!` 누락), `return None` 을 «정직»
 으로 분류해 한 층 위의 조용한 `if let Some` 을 안 봤다. ⇒ 잠금에 «여섯째가 보이면 고치지 말고 표에 없는
 이유부터»를 넣었다.
+
+## 칸 ㊿ — 스케치 입력 길을 하나로: 문법은 «펜», 커널의 문은 «고리» (항목 26, 2026-09-15)
+
+항목 26(*"입력을 «순서 있는 고리»로 통일 — `Edge2d`/`Seg2d` 하나, `from_edges` 의 순서 재발견 소멸"*)을
+잡았더니 **전제가 반증됐다**: «코드캐드라 그 층이 필요 없다»는 kit 문법 §5.5 「선 뭉치 — 순서 무관」이
+그 층에 하중을 싣고 있어 거짓이었다(playground 의 `line(a,b)`·느슨한 `arc`, kit 잠금 «펜과 뭉치는 한 법정»).
+⇒ **사용자 결정: 선 뭉치 길 자체를 은퇴시켜 정식 문법을 펜 하나로 줄인다.** 그러면 (a)(b)(c) 가 다시 선다.
+
+★★★ **커널의 문은 «고리»이지 «펜»이 아니다** — 플랜 초안은 문법의 펜을 커널 문으로 못박으려 했고, 사용자
+검토가 그것을 고쳤다(«펜을 커널 기능으로 못박으면 나중에 제약 기반 스케치를 그릴 때 커널의 능력 부족이 벽이
+되지 않나»). 커널은 «어떻게 그렸나»를 모른다: `Ring2d::new(vertices, edges)` 가 짝 맞음·영길이·호의 반지름·
+다음 정점이 원 위임을 검사하고 정규형을 적용한다; `circle(_rat)`·`polygon_decimal`·단계 문 `arc_turns(_rat)`
+→ (변, 끝점)·`arc_to_rat`; `from_paths` 가 분류한다. 펜은 kit 의 것으로 남고, 제약 해석기가 와도 같은 문으로
+온다 — 그때 막는 건 무리수 좌표이고 답은 항목 25(정의 기반 곡선)다.
+
+### 세 리포, 리포 순서로 (kit 은 nacre 커밋 뒤 kit 커밋까지 빨강 — 한 칸 안에서 닫았다)
+| 리포 | 커밋 | 무엇 | 관문 |
+|---|---|---|---|
+| nacre | `9292559` | 조각 타입 하나 `Edge2d { Line \| Arc { center, radius, ccw } }`(geom::mixed, 옛 `Seg2d` 개명); 옛 입력 enum·문 6·`from_edges`·사슬 재발견·`OpenChain`·`BranchingVertex`·`DuplicateEdge` 소멸; `from_rings`·`classify`·`normalized` 무변 | fmt·clippy·**1302**·no-default·census **398행 HEAD≡debug≡release 비트 동일**·reject·ignored 133·perf |
+| nacre-kit | `bc49a56` | `Loose` 소멸; `Step::Sketch { plane, paths: Vec<Path> }`, `Path { Pen(PenPath) \| Circle { center, size } }`; 펜 걷기·코너 처리는 그대로, 방출만 (정점, 변) → `Ring2d::new`; 원통 원시체는 `Path::Circle`; `syntax.md` §5.5 은퇴·`decisions.md` §20 | fmt·clippy·**96** |
+| nacre-playground | (아래) | `sketch(plane, lines)` 오버로드·`line`·느슨한 `arc`·`LooseSeg`·`Loose` 삭제; 스텝은 `{ plane, paths: Path[] }`; 둘째 인자는 무시가 아니라 **이름 붙여 거절**; 치트시트 뭉치 예시 2 → 「생성 코드가 펜을 굴린다」 1 | wasm:all·tsc·vitest **269**·wasm clippy/fmt |
+
+### 실측이 플랜을 고친 자리
+- **픽스처 50 을 손으로 다시 쓰지 않았다** — 테스트 쪽 순서 어댑터 `stated(vec![line(..), arc_turns(..),
+  circle(..)])` 가 옛 어휘를 그대로 받아 «이전 변의 끝에서 시작하는가»를 단언하며 걷는다. ★ 옛 픽스처
+  **전부**가 이미 순서대로 적혀 있었다: 단언이 잡은 건 «순서 무관»을 일부러 시연한 커버리지 테스트 하나뿐
+  (`drawn_segments_become_a_donut`, 삭제). census 비트 동일이 그 증거다.
+- 플랜의 삭제 목록에 든 `loose_rings_become_a_donut…` 은 뭉치 테스트가 **아니었다** — 링 «목록»의 순서가
+  무의미하다는 `from_rings` 명제라 살렸다(`rings_in_any_order_become_a_donut…` 로 개명). 이름만 보고 분류했던 것.
+- `two_chains_become_a_profile_with_a_hole` 은 펜 꼴로 옮기지 않고 지웠다 — 그 명제(문을 지나 중첩이 결정된다)는
+  `a_ring_inside_a_ring_is_a_hole_either_way`(`from_rings`)·`concentric_circles_nest_like_squares`(`from_paths`)
+  가 들고, `a_stated_ring_is_the_polygon_door_s_ring` 이 `new` ≡ 다각형 링을 증명하므로 셋째는 같은 유도의 복사다.
+- ★ 플랜의 «kit 잠금을 새로 세운다»는 **이미 있었다**: `tests/arcs.rs::a_circle_sketch_is_the_cylinder` 가
+  원통 원시체 ↔ `.circle()` 돌출 비트 동일을 잰다. 플랜은 `tests/cylinder.rs` 만 보고 «없다»고 적었다 —
+  «생성자가 있다 ≠ 인구가 있다»의 반대 방향: 파일 하나만 세고 «없다»를 적었다. 그 테스트가 «한 법정»의 후계다.
+- kit 의 링 순서가 **적힌 순서**가 됐다(전엔 `from_edges` 가 원을 먼저 두는 우연). 부피·비트 잠금·면 인덱스
+  단언 어느 것도 눈치채지 못했다 — 소비자 0.
+- 죽은-이름 스윕 예측 «은퇴 서술 8» → 실제 **6**(`Seg2d`·`from_edges`·`OpenChain`·`BranchingVertex`·
+  `DuplicateEdge` + 형제 리포에 남았던 `Loose`). `arc_rat` 은 어댑터의 픽스처 함수로 살아 있고 `circle_rat` 은
+  메서드로 살아 있어 후보가 아니었다; `line_rat` 은 문서에 없었다.
+- 치트시트의 새 예시는 두 번 다시 썼다 — `reduce` 꼴은 타입 검사(`number[]` ≠ `Vec2`)에, 두 줄 꼴은
+  «값이 적힌 줄을 이름 짓는다» 검사에 걸렸다. 리터럴과 호출이 한 줄에 놓이는 `forEach(([x, y]) => …)` 로.
+
+### 넘기는 것
+항목 25(반지름 → r², 이제 `Edge2d`·`CylinderDef` **둘**) · 항목 28 · 항목 21. 항목 27 의 예시 `BranchingVertex` 는
+이제 정말 죽은 이름이다(그 항목이 다룬다).
