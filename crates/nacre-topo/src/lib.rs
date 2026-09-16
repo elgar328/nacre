@@ -941,12 +941,22 @@ impl Model {
 
     /// Drop every remembered prefix. Costs nothing but time: the next realization folds from the
     /// base and reaches the same bits (`Model::prefix_hp`'s contract).
+    ///
+    /// ☑ Production-facing on purpose even though nothing in this workspace calls it yet: it is
+    /// the door that makes "empty is always correct" usable rather than merely true, and a
+    /// consumer holding a long-lived model is the caller it is for.
     pub fn clear_prefix_hp(&mut self) {
         self.prefix_hp.clear();
     }
 
-    /// How many prefixes are remembered — for the measurement that the table stays bounded by the
-    /// live generation rather than by history length.
+    /// How many prefixes are remembered — the instrument behind "the table stays bounded by the
+    /// live generation, not by history length".
+    ///
+    /// ⚠ **Test-gated because it has no production consumer**, the same reason
+    /// [`Model::push_plane_unregistered`] is: this counts an accelerator's internals, which is a
+    /// thing to assert about, not a thing to build on. An ungated `pub` here would ship a
+    /// permanent public API through the `nacre` facade for a caller that does not exist.
+    #[cfg(any(test, feature = "test-util"))]
     #[inline]
     pub fn prefix_hp_len(&self) -> usize {
         self.prefix_hp.len()

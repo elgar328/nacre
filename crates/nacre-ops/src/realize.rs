@@ -282,13 +282,14 @@ pub(crate) fn realize_def_tracked(
 /// | ms per vertex, prefix hit | 0.044 | 0.187 | 0.583 | 0.826 |
 /// | ms per vertex, prefix miss | 0.247 | 1.285 | 3.937 | 5.375 |
 ///
-/// The miss column reproduces the 0.264 row above, which is what says the two instruments measure
-/// the same thing. But the hit is **not** constant — it grows linearly too, at about a sixth of
-/// the slope, so the 0.3 ms budget merely moves from depth ~192 to ~1540. And the guard runs on
-/// the chain's depth **before** anything knows whether a prefix will be there to hit, so it has to
-/// bound the road it cannot rule out — the miss, which cell 55 did not touch. ⇒ the derivation
-/// stands and the number does not move. What the accelerator changed is the common case, not the
-/// worst one.
+/// The miss column agrees with the 0.264 row above to within about 5 % (0.247 at depth 190, ~0.250
+/// scaled to 192), which is what says the two instruments measure the same thing — two different
+/// rigs landing on one number, not a reproduction to the digit. But the hit is **not** constant —
+/// it grows linearly too, at about a sixth of the slope, so the 0.3 ms budget merely moves from
+/// depth ~192 to ~1540. And the guard runs on the chain's depth **before** anything knows whether
+/// a prefix will be there to hit, so it must bound the road it cannot rule out — the miss, which
+/// cell 55 did not touch. ⇒ the derivation stands and the number does not move. What the
+/// accelerator changed is the common case, not the worst one.
 ///
 const CACHE_REPLAY_COST_CAP: usize = 192;
 
