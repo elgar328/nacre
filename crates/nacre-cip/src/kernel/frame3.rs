@@ -654,7 +654,15 @@ impl WitnessPoint {
     /// 356.65° turn, `sin` was eight times further out than `cos`, and the axis whose `u` met `sin`
     /// needed 2.4× what the other did. The old shared charge hid that; the ground-truth test found
     /// it the moment the constant left.
-    pub fn rotate_about(mut self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
+    pub fn rotate_about(self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
+        let mut p = self.rotated(axis, angle, point);
+        p.remember(MoveNode::Rotate { axis, angle, point });
+        p
+    }
+
+    /// [`Self::rotate_about`]'s numbers, without remembering the node — the step
+    /// [`Self::apply_chain`] folds.
+    fn rotated(mut self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let (i, j) = axis.plane();
         let (px, py) = (point[i].to_f64(), point[j].to_f64());
         let (ci, cj) = (self.realized[i].value, self.realized[j].value); // pre-rotation magnitudes for tol
@@ -740,17 +748,53 @@ impl WitnessPoint {
         let (ti, tj) = (self.realized[i].error, self.realized[j].error);
         self.realized[i].error = c.abs() * ti + s.abs() * tj + rot_i + piv;
         self.realized[j].error = s.abs() * ti + c.abs() * tj + rot_j + piv;
-        // Rebuild the shared slice with the new node appended. This runs when a solid is
-        // *transformed*, never on the judgment path, so the copy is not hot — and in exchange
-        // `clone` becomes a refcount bump instead of an allocation, which the judgment path
-        // does hundreds of thousands of times.
-        let mut nodes = self.chain.to_vec();
-        nodes.push(MoveNode::Rotate { axis, angle, point });
-        self.chain = HpRc::from(nodes);
-        // The definition changed — invalidate the memoized hp of the old definition. A fresh
-        // (unshared) cell, so clones made before this rotation keep their own cached value.
-        self.hp = HpCell::default();
         self
+    }
+
+    /// **Append one node to the remembered definition.**
+    ///
+    /// The slice is shared (`HpRc`) so a *clone* is a refcount bump rather than an allocation —
+    /// which the judgment path does hundreds of thousands of times. The price is here: appending
+    /// copies the slice, so applying `n` nodes one at a time costs `O(n²)`.
+    ///
+    /// ⚠★★★★ **That price was measured against the wrong caller, and the comment said so**: *"this
+    /// runs when a solid is transformed, never on the judgment path, so the copy is not hot."* Cell
+    /// 52 broke the premise — a vertex is now realized as it is pushed, which **replays a chain per
+    /// push** — and the copy became the dominant cost of a long history: a 4,200-turn fixture went
+    /// from 5.6 s to 563 s, and a 1,600-turn loop from 17 ms to 114 s. A caller holding a whole
+    /// chain must therefore use [`Self::apply_chain`], which folds the numbers and appends **once**.
+    fn remember(&mut self, node: MoveNode) {
+        let mut nodes = self.chain.to_vec();
+        nodes.push(node);
+        self.chain = HpRc::from(nodes);
+        // The definition changed — invalidate the memo of the old one. A fresh (unshared) cell, so
+        // clones made before this keep their own cached value.
+        self.hp = HpCell::default();
+    }
+
+    /// **The whole chain applied in one pass** — the numbers folded node by node, the definition
+    /// remembered once. Equivalent to applying each node through its own method, and measured so:
+    /// same coordinate, same tol, same high-precision realization, bit for bit.
+    ///
+    /// This is what a *replay* wants. Rebuilding the remembered chain per node (what the public
+    /// per-node methods must do, since each is a transform in its own right) makes a replay
+    /// quadratic in the history's length — see [`Self::remember`].
+    pub fn apply_chain(mut self, chain: &[MoveNode]) -> Option<Self> {
+        for n in chain {
+            self = match n {
+                MoveNode::Rotate { axis, angle, point } => self.rotated(*axis, *angle, *point),
+                MoveNode::Translate { offset } => self.translated(*offset),
+                MoveNode::Mirror { axis, offset } => self.mirrored(*axis, *offset),
+                MoveNode::Frame { frame } => self.framed(*frame)?,
+                MoveNode::FrameWide(f) => self.framed_wide(f)?,
+                MoveNode::FrameThrough(f) => self.framed_through(f)?,
+            };
+        }
+        let mut nodes = self.chain.to_vec();
+        nodes.extend(chain.iter().cloned());
+        self.chain = HpRc::from(nodes);
+        self.hp = HpCell::default();
+        Some(self)
     }
 
     /// The point reflected in `axis = offset` — one more link in the definition.
@@ -758,7 +802,14 @@ impl WitnessPoint {
     /// **`coord` follows the producer's own route** (`AxisMirror::point`), so a replay of the
     /// definition reproduces the stored coordinate bit for bit. The exact offset lives in the
     /// chain, where [`compute_hp`](Self::compute_hp) realizes it.
-    pub fn mirror(mut self, axis: Axis, offset: Rat) -> Self {
+    pub fn mirror(self, axis: Axis, offset: Rat) -> Self {
+        let mut p = self.mirrored(axis, offset);
+        p.remember(MoveNode::Mirror { axis, offset });
+        p
+    }
+
+    /// [`Self::mirror`]'s numbers, without remembering the node.
+    fn mirrored(mut self, axis: Axis, offset: Rat) -> Self {
         let k = axis.index();
         let c = offset.to_f64();
         // `2·c` is exact (a power-of-two multiply), so the new error is the offset's own
@@ -775,10 +826,6 @@ impl WitnessPoint {
         // The producer's own route (`AxisMirror::point`), operation for operation — a replay of
         // the definition has to reproduce the stored coordinate bit for bit.
         self.realized[k].value = 2.0 * c - self.realized[k].value;
-        let mut nodes = self.chain.to_vec();
-        nodes.push(MoveNode::Mirror { axis, offset });
-        self.chain = HpRc::from(nodes);
-        self.hp = HpCell::default();
         self
     }
 
@@ -793,7 +840,14 @@ impl WitnessPoint {
     /// That split is the whole point: two placements that reach the same real wall by different
     /// routes keep f64 coordinates an ulp apart, but their *definitions* realize to the same
     /// value, and it is the definition the judgment reads.
-    pub fn translate(mut self, offset: [Rat; 3]) -> Self {
+    pub fn translate(self, offset: [Rat; 3]) -> Self {
+        let mut p = self.translated(offset);
+        p.remember(MoveNode::Translate { offset });
+        p
+    }
+
+    /// [`Self::translate`]'s numbers, without remembering the node.
+    fn translated(mut self, offset: [Rat; 3]) -> Self {
         for (k, &off) in offset.iter().enumerate() {
             let t = off.to_f64();
             // The offset's realization error, plus the add's own half-ulp on the result.
@@ -802,10 +856,6 @@ impl WitnessPoint {
                 + f64::EPSILON * (self.realized[k].value.abs() + t.abs());
             self.realized[k].value += t;
         }
-        let mut nodes = self.chain.to_vec();
-        nodes.push(MoveNode::Translate { offset });
-        self.chain = HpRc::from(nodes);
-        self.hp = HpCell::default();
         self
     }
 
@@ -825,7 +875,14 @@ impl WitnessPoint {
     /// see there), and the f64 arithmetic that combines them. An axis-aligned frame has a signed
     /// permutation for a basis and every one of those terms vanishes: `±1` and `0` are exact, so
     /// the products are exact and the sums pick out one coordinate each.
-    pub fn frame(mut self, f: nacre_scalar::PlaneFrame) -> Option<Self> {
+    pub fn frame(self, f: nacre_scalar::PlaneFrame) -> Option<Self> {
+        let mut p = self.framed(f)?;
+        p.remember(MoveNode::Frame { frame: f });
+        Some(p)
+    }
+
+    /// [`Self::frame`]'s numbers, without remembering the node.
+    fn framed(mut self, f: nacre_scalar::PlaneFrame) -> Option<Self> {
         // One inverse square root per axis, each of an exact rational — see `plane_frame` for why
         // `v̂` gets its own instead of being a cross product of the other two.
         let inv = |v: Rat| -> Option<(f64, f64)> {
@@ -921,10 +978,6 @@ impl WitnessPoint {
             self.realized[k].value = ok + terms;
             self.realized[k].error = carried + realized + arith;
         }
-        let mut nodes = self.chain.to_vec();
-        nodes.push(MoveNode::Frame { frame: f });
-        self.chain = HpRc::from(nodes);
-        self.hp = HpCell::default();
         Some(self)
     }
 
@@ -938,7 +991,14 @@ impl WitnessPoint {
     ///
     /// ★ No exact-permutation shortcut: a wide frame is never an axis permutation (its squared
     /// lengths exceed `i128`), so the tol-0 branch `WitnessPoint::frame` has cannot apply.
-    pub fn frame_wide(mut self, f: &WideFrame) -> Option<Self> {
+    pub fn frame_wide(self, f: &WideFrame) -> Option<Self> {
+        let mut p = self.framed_wide(f)?;
+        p.remember(MoveNode::FrameWide(f.clone()));
+        Some(p)
+    }
+
+    /// [`Self::frame_wide`]'s numbers, without remembering the node.
+    fn framed_wide(mut self, f: &WideFrame) -> Option<Self> {
         // The fixed rung for the f64 cache of a wide frame — the ladder's first rung, the same
         // one `inv_sqrt_f64` starts at. The judgment path re-realizes at its own precision.
         const P: usize = 128;
@@ -976,10 +1036,6 @@ impl WitnessPoint {
             self.realized[k].value = oh[k] + terms;
             self.realized[k].error = carried + realized + arith;
         }
-        let mut nodes = self.chain.to_vec();
-        nodes.push(MoveNode::FrameWide(f.clone()));
-        self.chain = HpRc::from(nodes);
-        self.hp = HpCell::default();
         Some(self)
     }
 
@@ -995,7 +1051,14 @@ impl WitnessPoint {
     /// ★ Cost note: the node's points share their `hp` cells by `Rc`, so the cos/sin of their
     /// chains realize once per node, not once per applied point — what recurs per point is
     /// arithmetic, the same acceptance [`WitnessPoint::frame_wide`] records.
-    pub fn frame_through(mut self, f: &FrameThrough) -> Option<Self> {
+    pub fn frame_through(self, f: &FrameThrough) -> Option<Self> {
+        let mut p = self.framed_through(f)?;
+        p.remember(MoveNode::FrameThrough(Box::new(f.clone())));
+        Some(p)
+    }
+
+    /// [`Self::frame_through`]'s numbers, without remembering the node.
+    fn framed_through(mut self, f: &FrameThrough) -> Option<Self> {
         let basis = judged_basis(f, FrameThrough::RUNG)?;
         let [o, u, v, w] = basis.map(|row| row.map(|c| narrow_hp(&c)));
         let p = self.coord();
@@ -1015,10 +1078,6 @@ impl WitnessPoint {
             self.realized[k].value = oh + terms;
             self.realized[k].error = carried + realized + arith;
         }
-        let mut nodes = self.chain.to_vec();
-        nodes.push(MoveNode::FrameThrough(Box::new(f.clone())));
-        self.chain = HpRc::from(nodes);
-        self.hp = HpCell::default();
         Some(self)
     }
 
@@ -2615,6 +2674,90 @@ mod tests {
     fn exact(c: [f64; 3]) -> Option<WitnessPoint> {
         let b = |x: f64| Rat::try_from_f64(x);
         Some(WitnessPoint::at_nearest([b(c[0])?, b(c[1])?, b(c[2])?]))
+    }
+
+    /// ★★★★ **One pass equals node by node — coordinate, tol and realization, bit for bit.**
+    ///
+    /// [`WitnessPoint::apply_chain`] exists only to stop rebuilding the remembered chain per node
+    /// (`remember`'s doc has the measurement). It is allowed to be faster; it is not allowed to be
+    /// different, and "different" here means the last bit of a coordinate the cache will store.
+    #[test]
+    fn one_pass_equals_node_by_node() {
+        let r = Rat::from_int;
+        let deg = |d: i128| Angle::from_deg(r(d)).expect("a whole-degree angle");
+        let chains: Vec<Vec<MoveNode>> = vec![
+            // An irrational turn about an offset pivot, so the pivot arithmetic is charged too.
+            (0..40)
+                .map(|_| MoveNode::Rotate {
+                    axis: Axis::Z,
+                    angle: deg(37),
+                    point: [r(1), r(-2), r(0)],
+                })
+                .collect(),
+            // Exact inputs: translations and a mirror, whose radii must stay where they were.
+            (0..40)
+                .map(|i| match i % 2 {
+                    0 => MoveNode::Translate {
+                        offset: [Rat::new(1, 7).expect("1/7"), r(3), r(0)],
+                    },
+                    _ => MoveNode::Mirror {
+                        axis: Axis::X,
+                        offset: Rat::new(1, 2).expect("1/2"),
+                    },
+                })
+                .collect(),
+            // Mixed, and quadrantal turns among them (exact cos/sin — the tol-0 arm).
+            (0..40)
+                .map(|i| match i % 3 {
+                    0 => MoveNode::Rotate {
+                        axis: Axis::Y,
+                        angle: deg(90),
+                        point: [r(0); 3],
+                    },
+                    1 => MoveNode::Translate {
+                        offset: [r(0), r(0), Rat::new(2, 5).expect("2/5")],
+                    },
+                    _ => MoveNode::Rotate {
+                        axis: Axis::X,
+                        angle: deg(11),
+                        point: [r(0); 3],
+                    },
+                })
+                .collect(),
+        ];
+        for (i, chain) in chains.iter().enumerate() {
+            let base = [r(2), r(3), r(4)];
+            let one_pass = WitnessPoint::at(base).apply_chain(chain).expect("one pass");
+            let node_by_node = chain.iter().fold(WitnessPoint::at(base), |q, n| match n {
+                MoveNode::Rotate { axis, angle, point } => q.rotate_about(*axis, *angle, *point),
+                MoveNode::Translate { offset } => q.translate(*offset),
+                MoveNode::Mirror { axis, offset } => q.mirror(*axis, *offset),
+                _ => unreachable!("the fixtures above hold no frame node"),
+            });
+            assert_eq!(
+                one_pass.coord(),
+                node_by_node.coord(),
+                "chain {i}: coordinate"
+            );
+            assert_eq!(one_pass.tol(), node_by_node.tol(), "chain {i}: tol");
+            assert_eq!(
+                one_pass.chain.len(),
+                node_by_node.chain.len(),
+                "chain {i}: the definition is remembered whole"
+            );
+            for (a, b) in one_pass
+                .realize(256)
+                .iter()
+                .zip(node_by_node.realize(256).iter())
+            {
+                assert_eq!(a.error, b.error, "chain {i}: realization radius");
+                assert_eq!(
+                    nacre_scalar::round_to_f64(&a.value, a.error, 256),
+                    nacre_scalar::round_to_f64(&b.value, b.error, 256),
+                    "chain {i}: realized coordinate"
+                );
+            }
+        }
     }
 
     /// The precision these fixtures judge at. Production chooses it per model

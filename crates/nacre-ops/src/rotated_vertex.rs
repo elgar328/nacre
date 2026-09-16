@@ -52,14 +52,7 @@ pub(crate) fn replay_chain_coord(
 /// [`motion_chain`] already refuses to emit — so in practice this is infallible, and the `Option`
 /// is here so that "in practice" does not have to be an invariant spanning two crates.
 pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint> {
-    chain.iter().try_fold(p, |q, n| match n {
-        MoveNode::Rotate { axis, angle, point } => Some(q.rotate_about(*axis, *angle, *point)),
-        MoveNode::Translate { offset } => Some(q.translate(*offset)),
-        MoveNode::Mirror { axis, offset } => Some(q.mirror(*axis, *offset)),
-        MoveNode::Frame { frame } => q.frame(*frame),
-        MoveNode::FrameWide(f) => q.frame_wide(f),
-        MoveNode::FrameThrough(f) => q.frame_through(f),
-    })
+    p.apply_chain(chain)
 }
 
 /// **A surface's plane as its exact witness triangle** — the per-carrier building block of an
