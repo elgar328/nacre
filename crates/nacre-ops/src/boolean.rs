@@ -2079,6 +2079,7 @@ pub(crate) fn reconstruct(
                             model,
                             def,
                             PointCache::Unrealized { coord: sv.point },
+                            crate::realize::ChainLink::Fresh,
                         );
                         vh.insert((g, node), h);
                         return Ok(h);
@@ -2105,6 +2106,7 @@ pub(crate) fn reconstruct(
                     model,
                     def,
                     PointCache::Unrealized { coord: sv.point },
+                    crate::realize::ChainLink::Fresh,
                 )
             };
             vh.insert((g, node), handle);
@@ -2220,6 +2222,7 @@ pub(crate) fn reconstruct(
                         model,
                         VertexDef::OnSeam([lat, plane]),
                         PointCache::Unrealized { coord: point },
+                        crate::realize::ChainLink::Fresh,
                     ),
                 };
                 let e = match cut {

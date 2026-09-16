@@ -15235,6 +15235,7 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
         &mut m,
         def,
         nacre_topo::PointCache::Unrealized { coord: wrong },
+        crate::realize::ChainLink::Fresh,
     );
     assert!(matches!(
         m.vertex_cache(h),

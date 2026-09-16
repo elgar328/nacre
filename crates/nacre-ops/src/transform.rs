@@ -952,7 +952,17 @@ fn transform_solid(
         // the moved definition, so "no realization stands behind it" is the whole truth about it.
         // The realization of the moved definition runs next and replaces it wherever it answers.
         let cache = PointCache::Unrealized { coord };
-        vert_map.insert(vh, crate::realize::push_vertex_realized(model, def, cache));
+        // ★ The one site that extends a chain: this vertex *is* the image of `vh`, so the prefix
+        // `vh` already folded is exactly what this realization would otherwise walk again.
+        vert_map.insert(
+            vh,
+            crate::realize::push_vertex_realized(
+                model,
+                def,
+                cache,
+                crate::realize::ChainLink::Extends,
+            ),
+        );
     }
 
     // Pass 4 — edges (carrier/vertex handles remapped; the curve cache derives from them).

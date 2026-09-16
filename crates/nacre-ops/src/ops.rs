@@ -2106,6 +2106,7 @@ fn sweep_ring(
                     model,
                     def,
                     PointCache::Unrealized { coord: *p },
+                    crate::realize::ChainLink::Fresh,
                 ))
             })
             .collect()

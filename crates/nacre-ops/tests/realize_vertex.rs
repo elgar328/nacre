@@ -1144,3 +1144,166 @@ fn the_write_door_refuses_a_vertex_that_is_not_a_ceiling() {
     let coord = m.vertex_point(vh);
     m.refine_vertex_cache(vh, coord, [nacre_scalar::Mag::ZERO; 3]);
 }
+
+/// The same chain, built with the prefix table emptied before every step — so every realization
+/// folds from the base, the way it did before the accelerator existed.
+fn translated_chain_cold(n: usize) -> Model {
+    let mut m = Model::new();
+    let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    m.rebuild_adjacency();
+    for _ in 0..n {
+        m.clear_prefix_hp();
+        let iso = Isometry::translation([
+            Rat::new(1, 7).expect("1/7"),
+            Rat::from_int(0),
+            Rat::from_int(0),
+        ]);
+        s = moved(&mut m, s, iso);
+    }
+    m.rebuild_adjacency();
+    m
+}
+
+/// ★★★★ **The accelerator changes the clock and nothing else.**
+///
+/// Two builds of one chain — one carrying prefixes forward, one emptying the table before every
+/// step so each realization folds from the base — and every live vertex's cache must agree bit for
+/// bit. That is the whole contract: the fold is a left fold, so resuming from the value after `k`
+/// nodes reaches what folding all of them reaches.
+///
+/// ⚠ This lock is worth only as much as the accelerator's reach, so it also asserts the table was
+/// **used**: a run where nothing was ever remembered would pass while measuring nothing.
+#[test]
+fn the_prefix_table_changes_no_coordinate() {
+    let warm = translated_chain(100);
+    let cold = translated_chain_cold(100);
+
+    assert!(
+        warm.prefix_hp_len() > 0,
+        "nothing was remembered — this lock would pass without the accelerator running at all"
+    );
+    let (vw, vc) = (live_vertices(&warm), live_vertices(&cold));
+    assert_eq!(vw.len(), vc.len(), "the two builds disagree on topology");
+    assert!(!vw.is_empty());
+    for (&a, &b) in vw.iter().zip(&vc) {
+        assert_eq!(
+            warm.vertex_cache(a),
+            cold.vertex_cache(b),
+            "vertex {}: carrying the prefix forward moved the coordinate",
+            a.index()
+        );
+    }
+}
+
+/// **Emptying the table is always safe** — the realization that follows reaches the same value.
+#[test]
+fn clearing_the_prefix_table_costs_only_time() {
+    let mut m = translated_chain(60);
+    let before: Vec<_> = live_vertices(&m)
+        .into_iter()
+        .map(|vh| (vh, *m.vertex_cache(vh)))
+        .collect();
+    m.clear_prefix_hp();
+    assert_eq!(m.prefix_hp_len(), 0);
+    for (vh, cached) in before {
+        let (v, _) = realize_vertex(&m, vh, Precision::NearestF64)
+            .expect("a translated corner realizes")
+            .to_f64()
+            .expect("and names an f64");
+        assert_eq!(cached.coord().as_array(), v, "vertex {}", vh.index());
+    }
+}
+
+/// ★★★ **The table is bounded by the live generation, on both axes.**
+///
+/// Depth does not grow it: a prefix is read by exactly one successor, so the entry that was used is
+/// taken as the new one is left. Nor do booleans: an arrangement's vertex is nobody's prefix, and
+/// filing it would add an entry per boolean that no lookup could ever hit.
+#[test]
+fn the_prefix_table_stays_one_generation() {
+    for depth in [20usize, 60, 100] {
+        let m = translated_chain(depth);
+        assert_eq!(
+            m.prefix_hp_len(),
+            live_vertices(&m).len(),
+            "depth {depth}: the table should hold one entry per live vertex, not per node"
+        );
+    }
+
+    let mut m = Model::new();
+    for i in 0..8 {
+        let a = cuboid(&mut m, [0.0; 3], [10.0, 10.0, 10.0]);
+        let b = cuboid(
+            &mut m,
+            [3.3 + f64::from(i) * 0.01, 3.3, -1.0],
+            [7.7, 7.7, 11.0],
+        );
+        boolean(&mut m, BoolKind::Cut, a, b).expect("cut");
+    }
+    m.rebuild_adjacency();
+    assert_eq!(
+        m.prefix_hp_len(),
+        0,
+        "a boolean's result vertices are nobody's prefix and must file nothing"
+    );
+}
+
+/// **Where a motion does not extend a prefix, the accelerator misses and the answer is unchanged.**
+///
+/// Two of the three shapes are buildable here: a translation the statements absorb (an exact `f64`
+/// offset, so no node is recorded and the base itself moves) and a quarter turn about a box's own
+/// normal (which fixes each plane, so `transform` restates rather than records). Both must give the
+/// same coordinates as the same build with the table emptied throughout.
+///
+/// ⚠ The third — a triple that straddles two histories and solves through the world road, whose
+/// answer carries no leaf — is **not built here**. It needs two operands with different recorded
+/// chains meeting on one corner, and I did not get a fixture to stand; saying so is better than a
+/// lock that quietly covers two cases while claiming three.
+#[test]
+fn a_motion_that_does_not_extend_a_prefix_is_unaffected() {
+    for (what, exact_shift) in [("absorbed translation", true), ("quarter turn", false)] {
+        let build = |clear: bool| {
+            let mut m = Model::new();
+            let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+            m.rebuild_adjacency();
+            for _ in 0..6 {
+                if clear {
+                    m.clear_prefix_hp();
+                }
+                let iso = if exact_shift {
+                    Isometry::translation([
+                        Rat::new(1, 2).expect("1/2"),
+                        Rat::from_int(0),
+                        Rat::from_int(0),
+                    ])
+                } else {
+                    turn(Axis::Z, 90)
+                };
+                s = moved(&mut m, s, iso);
+            }
+            m.rebuild_adjacency();
+            m
+        };
+        let (warm, cold) = (build(false), build(true));
+        // ★ The guard that keeps this from being a third copy of the lock above. Neither motion
+        // records a node — one is absorbed into the statements, the other fixes every plane it
+        // touches — so there is no chain, nothing is ever filed, and the miss is structural rather
+        // than incidental. If either premise were wrong the table would be non-empty here and this
+        // test would be measuring ordinary hits while claiming to measure exceptions.
+        assert_eq!(
+            warm.prefix_hp_len(),
+            0,
+            "{what}: a motion that records no node cannot file a prefix"
+        );
+        let (vw, vc) = (live_vertices(&warm), live_vertices(&cold));
+        assert!(!vw.is_empty(), "{what}: no live vertices");
+        for (&a, &b) in vw.iter().zip(&vc) {
+            assert_eq!(
+                warm.vertex_cache(a),
+                cold.vertex_cache(b),
+                "{what}: vertex {} moved",
+                a.index()
+            );
+        }
+    }
+}

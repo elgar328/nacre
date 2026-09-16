@@ -30,7 +30,7 @@ use nacre_cip::WitnessPoint;
 use nacre_math::Point3;
 use nacre_scalar::{HpBounded, Mag, MeetPoint};
 use nacre_store::Handle;
-use nacre_topo::{Model, PointCache, Surface, Vertex, VertexDef};
+use nacre_topo::{Model, PointCache, PrefixKey, Surface, Vertex, VertexDef};
 use num_bigint::BigInt;
 
 /// How precisely to realize — always stated, never defaulted.
@@ -220,8 +220,22 @@ pub(crate) fn realize_def(
     def: &VertexDef,
     p: Precision,
 ) -> Result<Realized, RealizeError> {
+    realize_def_tracked(model, def, p, &mut None)
+}
+
+/// [`realize_def`] that also reports what the accelerator could keep.
+///
+/// ★ Only the fixed-precision road fills `out`. A climb asks the same definition at rung after
+/// rung, so whatever it learned at 128 bits is not what it returns, and filing the rung it happened
+/// to pass through would put a value under a key the next reader asks at a different precision.
+pub(crate) fn realize_def_tracked(
+    model: &Model,
+    def: &VertexDef,
+    p: Precision,
+    out: &mut Option<PrefixWrite>,
+) -> Result<Realized, RealizeError> {
     match p {
-        Precision::Bits(bits) => build(model, def, bits),
+        Precision::Bits(bits) => build(model, def, bits, out),
         Precision::NearestF64 => climb(model, def, |r| r.to_f64().map(|_| r)),
     }
 }
@@ -274,6 +288,20 @@ const CACHE_REPLAY_COST_CAP: usize = 192;
 /// below sort a vertex into [`PointCache::Ceiling`] (ask again, pay more) or
 /// [`PointCache::Unrealized`] (there is no road).
 pub fn realize_cache(model: &Model, def: &VertexDef) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
+    realize_cache_tracked(model, def, &mut None)
+}
+
+/// [`realize_cache`] that also reports what the accelerator could keep.
+///
+/// ★ The public door stays narrow on purpose: an instrument asks it the same question the funnel
+/// asks and holds the cache to the answer, and that question is about a coordinate, not about a
+/// side table. Only the funnel — which holds `&mut Model` and therefore can act on it — takes the
+/// wider one.
+pub(crate) fn realize_cache_tracked(
+    model: &Model,
+    def: &VertexDef,
+    out: &mut Option<PrefixWrite>,
+) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
     if def
         .carriers()
         .filter_map(|h| model.plane_motion(h))
@@ -281,7 +309,8 @@ pub fn realize_cache(model: &Model, def: &VertexDef) -> Result<([f64; 3], [Mag; 
     {
         return Err(CacheDecline::CostCap);
     }
-    let r = realize_def(model, def, Precision::Bits(LADDER[0])).map_err(CacheDecline::Cannot)?;
+    let r = realize_def_tracked(model, def, Precision::Bits(LADDER[0]), out)
+        .map_err(CacheDecline::Cannot)?;
     r.to_f64().ok_or(CacheDecline::Cannot(match r.is_exact() {
         // An exact value no `f64` names: more bits are not the missing thing.
         true => RealizeError::Unrepresentable,
@@ -307,8 +336,10 @@ pub(crate) fn push_vertex_realized(
     model: &mut Model,
     def: VertexDef,
     fallback: PointCache,
+    link: ChainLink,
 ) -> Handle<Vertex> {
-    let cache = match realize_cache(model, &def) {
+    let mut prefix = None;
+    let cache = match realize_cache_tracked(model, &def, &mut prefix) {
         Ok((coord, bound)) => PointCache::Bounded {
             coord: Point3::from_array(coord),
             bound,
@@ -329,6 +360,12 @@ pub(crate) fn push_vertex_realized(
             coord: fallback.coord(),
         },
     };
+    // ★ **Take what was used and leave what was made** — the handover that keeps the table at one
+    // live generation. A vertex minted here rather than carried forward files nothing: nobody will
+    // ever ask for its prefix, and an entry no reader can hit is a leak with a slow fuse.
+    if let (ChainLink::Extends, Some(w)) = (link, prefix) {
+        model.hand_over_prefix_hp(w.used, w.key, w.value);
+    }
     model.push_vertex(def, cache)
 }
 
@@ -421,7 +458,7 @@ fn climb(
     decided: impl Fn(Realized) -> Option<Realized>,
 ) -> Result<Realized, RealizeError> {
     for bits in LADDER {
-        match build(model, def, bits) {
+        match build(model, def, bits, &mut None) {
             Ok(r) => {
                 if r.is_exact() {
                     return Ok(r);
@@ -439,9 +476,16 @@ fn climb(
 }
 
 /// One realization at `bits`, from the definition.
-fn build(model: &Model, def: &VertexDef, bits: usize) -> Result<Realized, RealizeError> {
+/// `out` is the accelerator's channel and only the three-plane road fills it — a curved definition
+/// realizes from its own geometry, not by walking a chain, so it has no prefix to hand on.
+fn build(
+    model: &Model,
+    def: &VertexDef,
+    bits: usize,
+    out: &mut Option<PrefixWrite>,
+) -> Result<Realized, RealizeError> {
     match *def {
-        nacre_topo::VertexDef::ThreePlane(_) => build_three_plane(model, def, bits),
+        nacre_topo::VertexDef::ThreePlane(_) => build_three_plane(model, def, bits, out),
         nacre_topo::VertexDef::OnSeam([cyl, cap]) => {
             curved(seam_point(model, cyl, cap, bits), bits)
         }
@@ -510,6 +554,7 @@ fn build_three_plane(
     model: &Model,
     def: &VertexDef,
     bits: usize,
+    out: &mut Option<PrefixWrite>,
 ) -> Result<Realized, RealizeError> {
     let (meet, frame) = model.vertex_meet_of(def).ok_or(RealizeError::NoMeet)?;
     let Some(node) = frame else {
@@ -520,8 +565,75 @@ fn build_three_plane(
     };
     let base = *narrow_or(&meet)?;
     let chain = motion_chain(model, node).ok_or(RealizeError::NoMotionChain)?;
-    let wp = replay(WitnessPoint::at(base), &chain).ok_or(RealizeError::NoMotionChain)?;
-    Ok(Realized(Arm::Approached(wp.realize(bits), bits)))
+    let (point, used) = match remembered_prefix(model, base, node, bits) {
+        // The chain runs root-to-leaf, so what this point still owes is the tail past the prefix.
+        Some((used, folded, prefix)) => (
+            nacre_cip::fold_suffix(prefix, &chain[folded..], bits),
+            Some(used),
+        ),
+        None => (
+            replay(WitnessPoint::at(base), &chain)
+                .ok_or(RealizeError::NoMotionChain)?
+                .realize(bits),
+            None,
+        ),
+    };
+    *out = Some(PrefixWrite {
+        used,
+        key: (base, node, bits),
+        value: (chain.len(), point.clone()),
+    });
+    Ok(Realized(Arm::Approached(point, bits)))
+}
+
+/// **The deepest remembered prefix of this vertex's chain, within two motion nodes of its leaf.**
+///
+/// Returns the key it hit (so the caller that owns `&mut Model` can consume it), how many chain
+/// nodes that value already folded, and the value itself.
+///
+/// ⚠ **Two steps, and the bound is the producer's, not a round number.** `chain_motion` in
+/// `transform.rs` records at most two nodes for one call — a rotation and a translation — so two
+/// steps always reach the previous generation and a third could only reach a generation that was
+/// already consumed. Without a bound a miss would walk the whole history doing a failed lookup per
+/// node, and the paid door would pay that on every rung of the ladder.
+fn remembered_prefix(
+    model: &Model,
+    base: [nacre_scalar::Rat; 3],
+    leaf: Handle<nacre_topo::MotionNode>,
+    bits: usize,
+) -> Option<(PrefixKey, usize, [HpBounded; 3])> {
+    let mut anc = model.motion(leaf).parent;
+    for _ in 0..2 {
+        let a = anc?;
+        if let Some((folded, p)) = model.prefix_hp(base, a, bits) {
+            return Some(((base, a, bits), *folded, p.clone()));
+        }
+        anc = model.motion(a).parent;
+    }
+    None
+}
+
+/// What a realization learned that the accelerator could keep: the entry it consumed (if any) and
+/// the one it produced. Filled on the way down, acted on by whoever holds `&mut Model`.
+pub(crate) struct PrefixWrite {
+    pub(crate) used: Option<PrefixKey>,
+    pub(crate) key: PrefixKey,
+    pub(crate) value: (usize, [HpBounded; 3]),
+}
+
+/// **Whether this vertex continues a chain the accelerator is already following.**
+///
+/// ⚠ Not a `bool`. At a call site `true` says nothing about what is being claimed, and the claim
+/// here is specific: *the vertex being pushed is the image of one realized before, so its prefix is
+/// worth keeping for the next motion*. Only `transform` can say that. An arrangement's result
+/// vertex is nobody's prefix — remembering it would grow the table by an entry per boolean, for a
+/// lookup that can never hit.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ChainLink {
+    /// The image of a vertex that came before — file its prefix.
+    Extends,
+    /// Minted here. Read the table if it helps, but do not write to it.
+    Fresh,
 }
 
 fn narrow_or(meet: &MeetPoint) -> Result<&[nacre_scalar::Rat; 3], RealizeError> {

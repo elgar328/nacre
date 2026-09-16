@@ -679,8 +679,24 @@ pub struct Model {
     /// ☑ **Empty is always correct.** Nothing here is needed for an answer — drop it, and the next
     /// realization folds from the base as it always did, to the same bits. That is what makes it
     /// safe to evict on a hit, and why [`Model::clear_prefix_hp`] owes no one an explanation.
-    prefix_hp: HashMap<([Rat; 3], Handle<MotionNode>, usize), [HpBounded; 3]>,
+    prefix_hp: HashMap<PrefixKey, PrefixValue>,
 }
+
+/// What a remembered prefix is filed under — the **definition**, never a vertex: the rational base,
+/// the chain node it was folded to, and the precision it was folded at.
+///
+/// ★ Spelled here rather than in `nacre-ops` because this is the table's own shape, and the reader
+/// and the writer live in different crates. Two spellings of one key are two keys that drift.
+pub type PrefixKey = ([Rat; 3], Handle<MotionNode>, usize);
+
+/// A remembered prefix: **how many chain nodes were folded to reach it**, and the point.
+///
+/// ⚠ The count is not "how many motion nodes up". One `Motion::Frame` expands into several
+/// `MoveNode`s (`nacre_ops`'s `motion_chain` appends a whole sub-chain for it), so counting parent
+/// steps would slice the wrong suffix the moment a frame is in the history — and a solid built on a
+/// sketch frame and then moved has exactly that shape. The length is what the reader needs and what
+/// the writer already knows, so it travels with the value.
+pub type PrefixValue = (usize, [HpBounded; 3]);
 
 /// One vertex's realized coordinate — a **cache** beside the vertex store (index-parallel),
 /// filled by [`Model::push_vertex`]. The variant says what the cache **knows** about the
@@ -889,15 +905,15 @@ impl Model {
         m
     }
 
-    /// The prefix accelerator's value at one chain node, if it is remembered — see
-    /// [`Model::prefix_hp`]. `None` is never an error: the caller folds from the base instead.
+    /// The prefix accelerator's value at one chain node — `(nodes folded, the point)` — if it is
+    /// remembered. `None` is never an error: the caller folds from the base instead.
     #[inline]
     pub fn prefix_hp(
         &self,
         base: [Rat; 3],
         leaf: Handle<MotionNode>,
         prec: usize,
-    ) -> Option<&[HpBounded; 3]> {
+    ) -> Option<&PrefixValue> {
         self.prefix_hp.get(&(base, leaf, prec))
     }
 
@@ -913,9 +929,9 @@ impl Model {
     /// would grow the table by one entry per boolean, forever.
     pub fn hand_over_prefix_hp(
         &mut self,
-        used: Option<([Rat; 3], Handle<MotionNode>, usize)>,
-        key: ([Rat; 3], Handle<MotionNode>, usize),
-        value: [HpBounded; 3],
+        used: Option<PrefixKey>,
+        key: PrefixKey,
+        value: PrefixValue,
     ) {
         if let Some(used) = used {
             self.prefix_hp.remove(&used);
