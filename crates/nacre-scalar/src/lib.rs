@@ -455,7 +455,16 @@ pub fn nearest_f64_big_exact(
         true => (num << k as usize, &q * den),
         false => (num.clone(), (&q * den) << (-k) as usize),
     };
-    let exact = lhs == rhs;
+    // ⚠★★★★ **A flushed value is not an exact one.** `exact` is decided on `q · 2^-k`, but `v` is
+    // what the caller gets, and below the smallest subnormal the scaling loop flushes `v` to `0.0`
+    // while the rational is nowhere near zero. That came back as `(0.0, true)` — and
+    // [`Realized::to_f64`] turns the flag into `Mag::ZERO`, a *proven* bound — so the cache would
+    // have published "this coordinate is exactly zero" for `2⁻¹¹⁰⁰`.
+    //
+    // ★ Only the claim goes, not the value: `0.0` **is** the nearest `f64` there, and
+    // `a_tiny_rational_still_names_its_f64` locks that deliberately ("genuinely below the range").
+    // Refusing would have lost a correct answer and broken that lock.
+    let exact = lhs == rhs && !(v == 0.0 && num.sign() != num_bigint::Sign::NoSign);
     let _ = BigInt::from(0);
     v.is_finite().then_some((v, exact))
 }
@@ -6810,5 +6819,64 @@ mod decimal_realization {
         let fuzzy = Mag::pow2(-10); // ±~0.001 — cannot decide the 5th place
         assert_eq!(round_to_digits(&mid, fuzzy, 5), None);
         assert_eq!(round_to_digits(&mid, fuzzy, 1).as_deref(), Some("0.1"));
+    }
+
+    /// **Both ends of the exact door, and the band in the middle where its flag was lying.**
+    ///
+    /// This door had **no direct test at all** — its two callers only ever hand it coordinates
+    /// from the middle of the range, so nothing exercised either end. The ends here were *found*
+    /// by scanning, not computed from the `k` guard, and computing them would have been wrong:
+    ///
+    /// - **Large end is `2^1024`, not `2^1252`.** The `|k| > 1200` guard never gets to decide it:
+    ///   the scaled value goes infinite first and `is_finite` refuses. Reading the guard and
+    ///   solving for the value describes a branch nothing reaches.
+    /// - **Small end is `2^-1149`.** There the guard really is what refuses.
+    /// - ⚠ **Between `2^-1075` and that end, the flag lied.** The value is right — below the
+    ///   smallest subnormal the nearest `f64` genuinely is `0.0`, and
+    ///   `a_tiny_rational_still_names_its_f64` locks exactly that — but it came back marked
+    ///   *exact*, and [`Realized::to_f64`] turns that mark into a proven zero bound. The value
+    ///   stays; the claim is gone.
+    #[test]
+    fn the_exact_door_names_both_ends_and_stops_claiming_a_flushed_zero() {
+        let one = BigInt::from(1);
+        let small = |e: usize| nearest_f64_big_exact(&one, &(BigInt::from(1) << e));
+        let big = |e: usize| nearest_f64_big_exact(&(BigInt::from(1) << e), &one);
+
+        // Large end: the last power of two that names an `f64`, and the first that does not.
+        assert_eq!(big(1023), Some((8.98846567431158e307, true)));
+        assert_eq!(
+            big(1024),
+            None,
+            "2^1024 overflows — finiteness refuses first"
+        );
+        // Small end: exact all the way down to the smallest subnormal.
+        assert_eq!(small(1074), Some((f64::from_bits(1), true)));
+        // Below it the nearest `f64` is zero — the value is kept, the exactness claim is not.
+        for e in [1075usize, 1100, 1148] {
+            assert_eq!(
+                small(e),
+                Some((0.0, false)),
+                "1/2^{e} rounds to zero, and zero does not name it exactly"
+            );
+        }
+        assert_eq!(
+            small(1149),
+            None,
+            "past the guard there is no answer at all"
+        );
+
+        // A real zero is still exactly zero, and the flag still tells exact from rounded.
+        assert_eq!(
+            nearest_f64_big_exact(&BigInt::from(0), &BigInt::from(5)),
+            Some((0.0, true))
+        );
+        assert_eq!(
+            nearest_f64_big_exact(&one, &BigInt::from(4)),
+            Some((0.25, true))
+        );
+        let (third, exact) =
+            nearest_f64_big_exact(&one, &BigInt::from(3)).expect("1/3 is in range");
+        assert!(!exact, "1/3 is not an f64");
+        assert_eq!(third, 1.0 / 3.0);
     }
 }
