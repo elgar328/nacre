@@ -33,7 +33,7 @@ use nacre_ops::{
 };
 #[path = "support/stated.rs"]
 mod stated;
-use nacre_scalar::Axis;
+use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 use stated::*;
@@ -832,4 +832,101 @@ fn a_digit_this_door_decides_is_the_coordinates_own() {
         wrong, 0,
         "{wrong} of {checked} decided digits were not the coordinate's"
     );
+}
+
+fn moved(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
+    match apply(
+        m,
+        &Operation::Transform {
+            solid: s,
+            isometry: iso,
+        },
+    ) {
+        Ok(OpOutput::Transform { solid }) => solid,
+        other => panic!("transform: {other:?}"),
+    }
+}
+
+fn turn(axis: Axis, deg: i128) -> Isometry {
+    Isometry::rotation(Rotation {
+        axis,
+        point: [Rat::from_int(0); 3],
+        angle: Angle::from_deg(Rat::from_int(deg)).expect("a whole-degree angle"),
+    })
+}
+
+/// ★★★★ **A motion chain is held back for the bits it costs, never for its length** — the two
+/// shapes that prove the difference.
+///
+/// Cell 52 guarded the cache road with a depth constant (`CACHE_REPLAY_DEPTH = 64`) because a
+/// 4,200-turn history realized on every push turned a 5.6 s test into minutes. That constant was
+/// doing **two jobs** and only one of them was true. As a *cost* limit it was load-bearing —
+/// removing it took the same fixture to 30 s. As a *precision* rule it was measurably wrong: what
+/// costs precision is an **irrational turn**, and a rational translation costs nothing at all
+/// (`Angle::try_exact_cos_sin` answers only 0/90/180/270 — Niven, so those add no radius). So the
+/// guard held back chains that decide perfectly: rational translations by the hundred, and every
+/// 7° turn between the 65th and the 90th.
+///
+/// The limit is now named for the job it does (`CACHE_REPLAY_COST_CAP`, sized from measured cost
+/// against a stated per-vertex budget), and inside it the ladder's first rung decides. These two
+/// come back `Bounded`.
+///
+/// ★ Each row also asserts that some vertex **really replays a chain** (`!is_exact`): a fixture
+/// whose motion was folded away would pass this while measuring nothing, and that guard *bit twice
+/// while this was written*.
+///
+/// ⚠ **A pure quadrantal chain is not a third row, and finding out why corrected the claim.** A
+/// right-angle turn about the origin is exact, so `transform` carries it whole and restates the
+/// planes rather than recording a node: a hundred of them leave *no chain at all*, and the guard
+/// caught the empty measurement. Seeding one 37° turn to force a history then failed the other way
+/// — at 128 bits that coordinate is undecidable, full walk and all. The lesson is that "a
+/// quadrantal turn costs nothing" is true of the **angle** (`cos`/`sin` are exact, contributing no
+/// radius) and false of the **node**: interval arithmetic still charges its roundings, so a radius
+/// already in flight keeps compounding. Zero times anything is still zero, which is why a chain
+/// with an exact base decides forever — but such a chain is never recorded, so the depth guard
+/// never saw it either.
+#[test]
+fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
+    for (what, n, rotate) in [
+        ("150 rational translations", 150usize, false),
+        ("80 turns of 7°", 80, true),
+    ] {
+        let mut m = Model::new();
+        let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+        m.rebuild_adjacency();
+        for _ in 0..n {
+            let iso = if rotate {
+                turn(Axis::Z, 7)
+            } else {
+                Isometry::translation([
+                    Rat::new(1, 7).expect("1/7"),
+                    Rat::from_int(0),
+                    Rat::from_int(0),
+                ])
+            };
+            s = moved(&mut m, s, iso);
+        }
+        m.rebuild_adjacency();
+
+        let vs = live_vertices(&m);
+        assert!(!vs.is_empty(), "{what}: no live vertices");
+        for &vh in &vs {
+            assert!(
+                matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
+                "{what}: a chain the first rung decides must be realized, got {:?}",
+                m.vertex_cache(vh)
+            );
+        }
+        // The fixture has to *have* a chain, or "the bound survives it" is a claim about nothing.
+        let replayed = vs
+            .iter()
+            .filter(|&&vh| {
+                realize_vertex(&m, vh, Precision::Bits(128)).is_ok_and(|r| !r.is_exact())
+            })
+            .count();
+        assert!(
+            replayed > 0,
+            "{what}: every vertex realized exactly — no chain was replayed, so this measures nothing"
+        );
+    }
 }

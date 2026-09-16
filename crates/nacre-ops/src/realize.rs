@@ -94,7 +94,14 @@ pub enum RealizeError {
 
 /// The ladder. Doubling, so a value needing `n` bits pays at most `2n`; capped, because an
 /// unbounded climb on an undecidable ask is a hang rather than an answer.
-const LADDER: [usize; 6] = [128, 256, 512, 1024, 2048, 4096];
+///
+/// ★ The last rung **is** the judgement's own cap ([`crate::planes::JUDGE_PREC_CAP`]) rather than
+/// a second copy of the same digits: both name the precision this kernel is willing to pay for, so
+/// they move together instead of agreeing by coincidence. ⚠ The price of tying them, stated: a
+/// model past the judging cap can still be *exported*, so a realization deeper than this is not
+/// meaningless in principle — it is simply not offered, and the caller is told `Undecided` rather
+/// than made to wait.
+const LADDER: [usize; 6] = [128, 256, 512, 1024, 2048, crate::planes::JUDGE_PREC_CAP];
 
 impl Realized {
     /// The nearest `f64` per coordinate, with the error each carries. `None` where the
@@ -195,17 +202,43 @@ pub(crate) fn realize_def(
     }
 }
 
-/// The deepest motion history the cache road replays. The error a replayed point carries grows
-/// about one bit per turn, so past this depth the first rung cannot name an `f64` anyway — and a
-/// replay costs the depth: a 4,200-turn history realized on every push turned a 5.6 s test into
-/// minutes. Beyond it the construction's own figure stands, and a caller who wants the point
-/// exactly still has [`realize_vertex`], which climbs.
-const CACHE_REPLAY_DEPTH: usize = 64;
+/// **How deep a motion history the cache road replays — a `cost` limit, not a precision rule.**
+///
+/// ⚠★★★★ **That distinction is the whole of this constant, and collapsing it cost a cell.** The
+/// guard this replaces read as *"past here the arithmetic cannot decide anyway"*, and measured,
+/// that is **false**: 150 rational translations and 80 turns of 7° decide perfectly at 128 bits,
+/// while a single 37° turn stops deciding past the 63rd. What a node costs in bits depends on its
+/// **angle** (`Angle::try_exact_cos_sin` answers only 0/90/180/270 — Niven, so those add no
+/// radius), not on how many nodes came before it. Precision is decided by the first rung's own
+/// verdict; this number decides only **how much work a push is willing to do**.
+///
+/// **Where the value comes from** (measured 2026-09-16: one vertex realized at 128 bits, 200
+/// repetitions). The replay is linear at ~1.35 µs per node:
+///
+/// | depth | 1 | 128 | 192 | 208 | 224 | 256 |
+/// |---|---|---|---|---|---|---|
+/// | ms per vertex | 0.014 | 0.180 | **0.264** | 0.291 | 0.314 | 0.355 |
+///
+/// The budget is **one vertex stays under 0.3 ms**, which lands between 208 and 224. 192 sits
+/// inside it with room for the instrument's own 4 % spread, and is 18× what an ordinary vertex
+/// (depth ≤ 2) pays. Change the budget and the number follows — that is why the formula is
+/// written here and not just the digits.
+///
+/// ☑ **And the value carries no correctness load.** Real models measure depth ≤ 2 (census: 253 at
+/// 0, 116 at 1, 26 at 2), so every value above 2 behaves identically on them; what this decides is
+/// how much is done *eagerly*, at push time. Past it the construction's own figure stands, and a
+/// caller who wants the point exactly still has [`realize_vertex`], which climbs.
+///
+/// ⚠ **Not derived from [`crate::planes::JUDGE_PREC_CAP`].** That one caps the precision a
+/// *judgement* will pay for and bites at roughly four thousand turns; this one caps what a *cache*
+/// will pay for and bites two orders of magnitude earlier. Same kind of limit, different scale.
+const CACHE_REPLAY_COST_CAP: usize = 192;
 
 /// **The cache's own road** — what [`Model::vertex_point`] holds for every vertex an operation
 /// makes: the definition realized on the ladder's first rung and rounded once, or `None` where
 /// that rung does not name an `f64` (a realization that declines by name, an interval too wide at
-/// 128 bits, a motion history deeper than [`CACHE_REPLAY_DEPTH`]).
+/// 128 bits) — or where the road did not even walk, because the history is deeper than
+/// [`CACHE_REPLAY_COST_CAP`] is willing to pay for.
 ///
 /// One rung, deliberately: a coordinate the first rung decides is the same nearest `f64` any
 /// higher rung would name, so where this answers it agrees with [`realize_vertex`] at
@@ -216,7 +249,7 @@ pub fn realize_cache(model: &Model, def: &VertexDef) -> Option<([f64; 3], [Mag; 
     if def
         .carriers()
         .filter_map(|h| model.plane_motion(h))
-        .any(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_DEPTH))
+        .any(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
     {
         return None;
     }
