@@ -48,15 +48,20 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
 /// defined by** — the proposition `nacre-validate` enforces, asserted here directly so the failure
 /// names this file rather than arriving as a generic "model is invalid".
 ///
-/// Returns how many vertices carried a recorded tolerance, so a fixture that stopped producing any
-/// cannot pass by measuring nothing.
+/// Returns how many vertices were **realized from their definition**, so a fixture that stopped
+/// producing any cannot pass by measuring nothing.
+///
+/// ⚠ It used to count "vertices carrying a recorded tolerance". The cache stores none now (cell
+/// 54), so the population this walks is the realized one and everything else is skipped — the
+/// callers' `> 0` is what keeps the skip from swallowing the whole fixture.
 fn every_vertex_matches_its_definition(m: &Model) -> usize {
     let mut measured = 0;
     for (vh, v) in m.vertices.iter() {
-        // What the cache knows, and the figure it is held to: a measured residual directly; a
-        // realized coordinate (cell 52) to the realization bit for bit, and to its carriers within
-        // the construction epsilon `nacre-validate` applies to it (its bound speaks of the
-        // coordinate, not of the cached carriers).
+        // What the cache knows, and the figure it is held to: a realized coordinate to the
+        // realization bit for bit, and to its carriers within the construction epsilon
+        // `nacre-validate` applies to it (its bound speaks of the coordinate, not of the cached
+        // carriers). A coordinate with no realization behind it is skipped — the cache claims
+        // nothing about it, so there is nothing here to hold it to.
         let tol = match *m.vertex_cache(vh) {
             PointCache::Unrealized { .. } | PointCache::Ceiling { .. } => continue,
             PointCache::Bounded { coord, .. } => {

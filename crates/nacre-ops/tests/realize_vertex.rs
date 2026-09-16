@@ -741,17 +741,20 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
         match realize_vertex(&m, vh, Precision::NearestF64) {
             Ok(_) => ok += 1,
             Err(e) => {
-                assert!(
-                    matches!(
-                        e,
-                        RealizeError::NoMeet
-                            | RealizeError::WideUnderMotion
-                            | RealizeError::NoMotionChain
-                            | RealizeError::NoCurvedPoint
-                            | RealizeError::Undecided
-                    ),
-                    "unnamed refusal {e:?}"
-                );
+                // ★★★ **Exhaustive `match`, not `matches!`** — and the difference is not style.
+                // This site exists to notice when a refusal arrives without a name, so it has to
+                // be the thing that breaks when a variant is added. `matches!(e, A | B | C)`
+                // compiles happily forever: cell 54 added `Unrepresentable` and this list simply
+                // went stale, asserting "unnamed refusal" about a refusal that has a name. An
+                // exhaustive match makes the compiler point here instead.
+                match e {
+                    RealizeError::NoMeet
+                    | RealizeError::WideUnderMotion
+                    | RealizeError::NoMotionChain
+                    | RealizeError::NoCurvedPoint
+                    | RealizeError::Undecided
+                    | RealizeError::Unrepresentable => {}
+                }
                 refused += 1;
             }
         }
