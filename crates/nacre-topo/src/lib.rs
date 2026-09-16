@@ -19,7 +19,7 @@ pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};
 
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane};
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::{Angle, Axis, Mag, Rat};
+use nacre_scalar::{Angle, Axis, HpBounded, Mag, Rat};
 use nacre_store::{Handle, Store};
 use std::collections::{HashMap, HashSet};
 
@@ -662,6 +662,24 @@ pub struct Model {
     pub live_solids: Vec<Handle<Solid>>,
     // derived cache (rebuilt on demand)
     pub adj: Adjacency,
+    /// **A pure accelerator — the one thing here that is neither truth nor cache.**
+    ///
+    /// A vertex's coordinate is realized by folding its motion chain from its rational base, so a
+    /// solid whose history is `n` deep pays `1 + 2 + … + n` to build: every generation re-walks the
+    /// prefix the generation before it already walked. This table holds the high-precision value a
+    /// chain reaches at one node, so the next motion can carry on from it instead of starting over.
+    ///
+    /// ★ **The key is the definition** — `(base, leaf, prec)` — and everything else follows from
+    /// that. The value is a pure function of the key, and motion nodes are interned append-only, so
+    /// an entry **cannot go stale**: there is no invalidation rule to get wrong. A motion the
+    /// statements absorbed moves the base, so it lands on a *different* key and simply misses; a
+    /// motion that fixes its plane records no node; a world-stated triple has no leaf. All three
+    /// "do not extend the prefix" cases fall out of the key rather than out of a test.
+    ///
+    /// ☑ **Empty is always correct.** Nothing here is needed for an answer — drop it, and the next
+    /// realization folds from the base as it always did, to the same bits. That is what makes it
+    /// safe to evict on a hit, and why [`Model::clear_prefix_hp`] owes no one an explanation.
+    prefix_hp: HashMap<([Rat; 3], Handle<MotionNode>, usize), [HpBounded; 3]>,
 }
 
 /// One vertex's realized coordinate — a **cache** beside the vertex store (index-parallel),
@@ -838,6 +856,7 @@ impl Model {
             solids: Store::default(),
             live_solids: Vec::new(),
             adj: Adjacency::default(),
+            prefix_hp: HashMap::new(),
             world_planes: Vec::new(),
         };
         let r = nacre_scalar::Rat::from_int;
@@ -868,6 +887,53 @@ impl Model {
             "seed handles are deterministic"
         );
         m
+    }
+
+    /// The prefix accelerator's value at one chain node, if it is remembered — see
+    /// [`Model::prefix_hp`]. `None` is never an error: the caller folds from the base instead.
+    #[inline]
+    pub fn prefix_hp(
+        &self,
+        base: [Rat; 3],
+        leaf: Handle<MotionNode>,
+        prec: usize,
+    ) -> Option<&[HpBounded; 3]> {
+        self.prefix_hp.get(&(base, leaf, prec))
+    }
+
+    /// **Take one prefix value and leave another — "consumed" is how this table evicts.**
+    ///
+    /// A remembered prefix is read by exactly one successor (a transform maps one vertex to one
+    /// vertex), so removing what was used and inserting what was produced keeps the table at a
+    /// single live generation without tracking generations at all. `used` is the key a reader hit,
+    /// `None` when it folded from the base.
+    ///
+    /// ⚠ **Only a caller that is extending a chain may insert**, which is why this is one door and
+    /// not two: a vertex minted fresh by an arrangement is nobody's prefix, and remembering it
+    /// would grow the table by one entry per boolean, forever.
+    pub fn hand_over_prefix_hp(
+        &mut self,
+        used: Option<([Rat; 3], Handle<MotionNode>, usize)>,
+        key: ([Rat; 3], Handle<MotionNode>, usize),
+        value: [HpBounded; 3],
+    ) {
+        if let Some(used) = used {
+            self.prefix_hp.remove(&used);
+        }
+        self.prefix_hp.insert(key, value);
+    }
+
+    /// Drop every remembered prefix. Costs nothing but time: the next realization folds from the
+    /// base and reaches the same bits (`Model::prefix_hp`'s contract).
+    pub fn clear_prefix_hp(&mut self) {
+        self.prefix_hp.clear();
+    }
+
+    /// How many prefixes are remembered — for the measurement that the table stays bounded by the
+    /// live generation rather than by history length.
+    #[inline]
+    pub fn prefix_hp_len(&self) -> usize {
+        self.prefix_hp.len()
     }
 
     /// Recompute the [`Adjacency`] cache from the current topology stores.
