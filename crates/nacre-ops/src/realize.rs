@@ -332,6 +332,70 @@ pub(crate) fn push_vertex_realized(
     model.push_vertex(def, cache)
 }
 
+/// What [`refine_vertex_cache`] did: how many coordinates it raised, and how many it could not.
+///
+/// ★ `left` is not an error count. A vertex stays behind when the full ladder still does not name
+/// an `f64` for it — the only honest thing to report, and the number a caller watches if it wants
+/// to know whether the model has coordinates no precision will settle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RefineReport {
+    pub refined: usize,
+    pub left: usize,
+}
+
+/// **Pay for the realizations the cache road would not** — raise every [`PointCache::Ceiling`] in
+/// the live model to [`PointCache::Bounded`], climbing the whole ladder for each.
+///
+/// The cache road takes one rung and refuses a history past its cost cap, because it runs on
+/// *every* push. This door runs when a caller asks, so it can afford what that one cannot: a
+/// cost-capped chain is walked, and an undecided coordinate is climbed until it decides.
+///
+/// Only `Ceiling` is touched. `Bounded` is already the realization, and `Unrealized` means there is
+/// no road to one — re-trying those would conflate "this model is expensive" with "the kernel
+/// cannot do this", which is the distinction the two variants exist to keep.
+///
+/// ⚠★★★★ **Call this when you are done operating on the model.** After it, an operation can take a
+/// different — still valid — road than it would have before, because operations read the cache to
+/// decide things that become truth: a plane's stated normal and its `Wide` anchor
+/// (`push_plane_through`), the `flip` of a `Motion::Frame` (which is part of the interned
+/// `SurfaceKey`, so it is *handle identity*), and whether a motion is recorded at all (`carry_of`
+/// asks whether the coordinates realize exactly). None of those can be rebuilt afterwards, so this
+/// door does not pretend to: it is an export-time door, and the contract is stated rather than
+/// enforced.
+///
+/// Idempotent: a second call finds nothing to raise. Edge curves are re-derived once at the end,
+/// and only if something actually moved.
+pub fn refine_vertex_cache(model: &mut Model) -> RefineReport {
+    let todo: Vec<Handle<Vertex>> = model
+        .reachable()
+        .vertices
+        .into_iter()
+        .filter(|&vh| matches!(model.vertex_cache(vh), PointCache::Ceiling { .. }))
+        .collect();
+    let mut out = RefineReport {
+        refined: 0,
+        left: 0,
+    };
+    for vh in todo {
+        // ⚠ `Ok` is not enough on its own: `climb` returns early for an exact arm without asking
+        // whether an `f64` names it, so the answer can still be unrepresentable. That value cannot
+        // be a `Ceiling` (it is classified `Unrealized`), so this branch should not arrive — but
+        // that is an agreement between two functions, not something the types promise, and an
+        // `expect` here would turn the disagreement into a panic instead of a count.
+        match realize_vertex(model, vh, Precision::NearestF64).map(|r| r.to_f64()) {
+            Ok(Some((coord, bound))) => {
+                model.refine_vertex_cache(vh, Point3::from_array(coord), bound);
+                out.refined += 1;
+            }
+            _ => out.left += 1,
+        }
+    }
+    if out.refined > 0 {
+        model.rebuild_edge_cache();
+    }
+    out
+}
+
 /// `places` decimal places, escalating until the realization determines them.
 ///
 /// ★ This is the door the app and the kit call, and its contract is **"ask for `places`, get

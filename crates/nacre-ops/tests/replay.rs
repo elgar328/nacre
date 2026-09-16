@@ -323,6 +323,78 @@ fn a_transform_log_replays() {
     assert_same_arena(&replayed, &scratch, "transform");
 }
 
+/// `[Extrude, Transform × 200]` — deep enough that the cache road refuses on cost, so every live
+/// vertex lands on `PointCache::Ceiling` and there is something for the refine door to raise.
+fn deep_transform_log() -> (Vec<Operation>, Model) {
+    let mut m = Model::new();
+    let ex = extrude_op(&m, 0.0, 2.0, 1.0);
+    let OpOutput::Extrude { solid, .. } = apply(&mut m, &ex).expect("extrude") else {
+        unreachable!()
+    };
+    let mut log = vec![ex];
+    let mut solid = solid;
+    for _ in 0..200 {
+        let xf = Operation::Transform {
+            solid,
+            isometry: Isometry::translation([
+                Rat::new(1, 7).expect("1/7"),
+                Rat::from_int(0),
+                Rat::from_int(0),
+            ]),
+        };
+        let OpOutput::Transform { solid: next } = apply(&mut m, &xf).expect("translate") else {
+            unreachable!()
+        };
+        log.push(xf);
+        solid = next;
+    }
+    m.rebuild_adjacency();
+    (log, m)
+}
+
+/// ★★★★ **The refine door lives outside the op log — but only after the log has ended.**
+///
+/// Two lines, because one alone would be satisfied by a digest that cannot see the cache at all:
+///
+/// - **Called on both, they still agree.** The door realizes each vertex from its *definition*, so
+///   it cannot make two models that agreed disagree. That is what "outside the log" means: the
+///   truth is untouched and the caches move the same way on both sides.
+/// - **Called on one, they differ.** The negative control, and the reason `arena_sig` carries the
+///   cache *variant*: without that row a raised coordinate would still show up (the coordinate row
+///   moves), but a vertex that merely changed how it knows its coordinate would not.
+///
+/// ⚠ What is deliberately **not** locked: operating further on a refined model and expecting the
+/// log to replay identically. It need not — `carry_of`, `push_plane_through` and `Motion::Frame`'s
+/// `flip` all read the cache to decide things that become truth, which is why the door's contract
+/// says to call it when the operating is done.
+#[test]
+fn the_refine_door_is_outside_the_log_once_the_log_has_ended() {
+    let (log, scratch) = deep_transform_log();
+    let replayed = replay(&log).expect("a deep transform log replays");
+    assert_same_arena(&replayed, &scratch, "deep transform");
+
+    // Both sides: the door is a function of the definitions, so agreement survives it.
+    let (mut a, mut b) = (replayed, scratch);
+    let ra = nacre_ops::refine_vertex_cache(&mut a);
+    let rb = nacre_ops::refine_vertex_cache(&mut b);
+    assert!(
+        ra.refined > 0,
+        "the fixture must carry Ceilings, or this measures nothing"
+    );
+    assert_eq!(ra, rb, "the door does the same work on both sides");
+    assert_same_arena(&a, &b, "deep transform, both refined");
+
+    // One side only: the digest must notice. This is what the `vertex.cache` row is for.
+    let (log, scratch) = deep_transform_log();
+    let mut replayed = replay(&log).expect("a deep transform log replays");
+    assert!(nacre_ops::refine_vertex_cache(&mut replayed).refined > 0);
+    assert_ne!(
+        arena_sig(&replayed),
+        arena_sig(&scratch),
+        "refining one side and not the other must be visible in the signature"
+    );
+}
+
 /// ★ **The profiles agree now** — and that is the whole shape of the repair.
 ///
 /// `StoreId` is `#[cfg(debug_assertions)]`, so before the repair release was quietly correct

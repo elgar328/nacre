@@ -574,6 +574,11 @@ fn an_operations_cache_is_the_realization() {
 /// ★ **The edge cache is already the derivation of the realized endpoints.** An edge is pushed
 /// after its vertices, so `push_edge` derives its line from realized coordinates; rebuilding every
 /// edge curve afterwards changes nothing — the S8 proof, standing on realized endpoints.
+///
+/// ⚠ This is a statement about a model **nothing has refined**. `refine_vertex_cache` moves
+/// coordinates, and after it a rebuild is emphatically not a no-op — which is why that door
+/// re-derives the curves itself, and why `the_refine_door_carries_the_edges_with_it` asserts the
+/// rebuild is a no-op only *after* the door has already run.
 #[test]
 fn the_edge_cache_is_the_derivation_of_realized_endpoints() {
     let mut m = tilted_frame(1);
@@ -1017,4 +1022,122 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
         undecided > 0,
         "70 turns of 37° must leave the first rung undecided somewhere"
     );
+}
+
+/// A box carrying `n` recorded translation nodes — `1/7` is not an `f64`, so the statements cannot
+/// absorb it and every step records one.
+fn translated_chain(n: usize) -> Model {
+    let mut m = Model::new();
+    let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    m.rebuild_adjacency();
+    for _ in 0..n {
+        let iso = Isometry::translation([
+            Rat::new(1, 7).expect("1/7"),
+            Rat::from_int(0),
+            Rat::from_int(0),
+        ]);
+        s = moved(&mut m, s, iso);
+    }
+    m.rebuild_adjacency();
+    m
+}
+
+/// ★★★★ **The paid door raises every `Ceiling`, to exactly what the expensive road says, and
+/// touches nothing else.**
+///
+/// The fixture is 300 rational translations: past the cache road's cost cap, so every live vertex
+/// is `Ceiling` — and decidable at the first rung once something is willing to walk the chain, so
+/// the door must raise all of them rather than report them as left behind.
+#[test]
+fn the_refine_door_raises_every_ceiling_to_the_realization() {
+    let mut m = translated_chain(300);
+    let vs = live_vertices(&m);
+    let ceilings = vs
+        .iter()
+        .filter(|&&vh| matches!(m.vertex_cache(vh), PointCache::Ceiling { .. }))
+        .count();
+    assert!(ceilings > 0, "the fixture must produce Ceilings to raise");
+
+    // What the expensive road says, asked *before* the door runs so this is an independent oracle
+    // rather than a restatement of what the door wrote.
+    let want: Vec<[f64; 3]> = vs
+        .iter()
+        .map(|&vh| {
+            realize_vertex(&m, vh, Precision::NearestF64)
+                .expect("the paid road realizes a translated corner")
+                .to_f64()
+                .expect("and names an f64")
+                .0
+        })
+        .collect();
+
+    let report = nacre_ops::refine_vertex_cache(&mut m);
+    assert_eq!(report.refined, ceilings, "every Ceiling is raised");
+    assert_eq!(report.left, 0, "and none is left behind");
+    for (&vh, w) in vs.iter().zip(&want) {
+        let PointCache::Bounded { coord, .. } = *m.vertex_cache(vh) else {
+            panic!("a raised vertex is Bounded: {:?}", m.vertex_cache(vh));
+        };
+        assert_eq!(
+            coord.as_array(),
+            *w,
+            "and holds the realization, bit for bit"
+        );
+    }
+
+    // Idempotent: nothing is a `Ceiling` any more, so there is nothing to pay for.
+    assert_eq!(nacre_ops::refine_vertex_cache(&mut m).refined, 0);
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "and the refined model is still a valid b-rep"
+    );
+}
+
+/// ★★★★ **The door carries the edges with it** — the order problem cell 52 removed, back again.
+///
+/// An edge's curve is derived from its endpoints' coordinates when the edge is pushed. That was
+/// safe while coordinates never moved after the fact; this door moves them. So the door re-derives,
+/// and the proof is that a rebuild *afterwards* finds nothing left to do.
+#[test]
+fn the_refine_door_carries_the_edges_with_it() {
+    let mut m = translated_chain(300);
+    let before: Vec<_> = m
+        .edges
+        .iter()
+        .map(|(h, _)| m.edge_curve(h).clone())
+        .collect();
+    assert!(nacre_ops::refine_vertex_cache(&mut m).refined > 0);
+
+    let after: Vec<_> = m
+        .edges
+        .iter()
+        .map(|(h, _)| m.edge_curve(h).clone())
+        .collect();
+    assert_ne!(
+        before, after,
+        "if the curves did not move, this fixture proves nothing about carrying them"
+    );
+
+    m.rebuild_edge_cache();
+    let again: Vec<_> = m
+        .edges
+        .iter()
+        .map(|(h, _)| m.edge_curve(h).clone())
+        .collect();
+    assert_eq!(after, again, "the door already re-derived every live curve");
+}
+
+/// The write door raises a `Ceiling` and refuses anything else — the type keeping "only ever more
+/// accurate" true rather than the caller remembering it.
+#[test]
+#[cfg(debug_assertions)]
+#[should_panic(expected = "only a Ceiling is raised")]
+fn the_write_door_refuses_a_vertex_that_is_not_a_ceiling() {
+    let mut m = boolean_corner();
+    let vh = live_vertices(&m)
+        .into_iter()
+        .find(|&vh| matches!(m.vertex_cache(vh), PointCache::Bounded { .. }))
+        .expect("a boolean corner realizes its vertices");
+    let coord = m.vertex_point(vh);
+    m.refine_vertex_cache(vh, coord, [nacre_scalar::Mag::ZERO; 3]);
 }

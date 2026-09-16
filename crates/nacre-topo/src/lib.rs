@@ -1665,6 +1665,29 @@ impl Model {
         h
     }
 
+    /// **Raise a [`PointCache::Ceiling`] to [`PointCache::Bounded`]** — the second writer of the
+    /// vertex cache, and the only thing it can do is make a coordinate more accurate.
+    ///
+    /// ★ Deliberately not `set_vertex_cache`. It cannot reach the other two variants: an
+    /// `Unrealized` coordinate has no realization behind it (raising it would be inventing one) and
+    /// a `Bounded` one is already the realization. The debug assert is the type saying so out loud
+    /// — the caller that pays for the realization is `nacre_ops::refine_vertex_cache`, and its own
+    /// contract is that it looks at nothing else.
+    ///
+    /// ⚠ **Anything derived from this coordinate is now stale**, starting with the edge curves the
+    /// endpoints decide ([`Model::rebuild_edge_cache`]). The paying caller is responsible for that,
+    /// because it is the one that knows whether it moved anything at all.
+    pub fn refine_vertex_cache(&mut self, vh: Handle<Vertex>, coord: Point3, bound: [Mag; 3]) {
+        #[cfg(debug_assertions)]
+        Self::debug_guard(&self.vertices, vh);
+        let slot = &mut self.vertex_cache[vh.index() as usize];
+        debug_assert!(
+            matches!(slot, PointCache::Ceiling { .. }),
+            "only a Ceiling is raised, not {slot:?}"
+        );
+        *slot = PointCache::Bounded { coord, bound };
+    }
+
     /// An edge's curve — **the one road to a curve from an edge** (S8), read from the
     /// index-parallel cache [`Model::push_edge`] fills.
     #[inline]
@@ -1698,14 +1721,28 @@ impl Model {
 
     /// Discard every edge-curve cache and derive it afresh — the «cache, not truth» warrant
     /// (`docs/truth-and-cache.md`): nothing is lost, because nothing there was truth.
+    /// ⚠★★★ **Only the reachable edges are re-derived, and a superseded one keeps what it has.**
+    /// The arena is append-only, so most of what is in it is dead: measured, a boolean corner has
+    /// 24 dead edges of 48, a twice-cut one 60 of 108, a thrice-moved box 36 of 48. Re-deriving
+    /// those costs the work twice over and — once a caller can *move* a coordinate
+    /// ([`Model::refine_vertex_cache`]) — risks a dead cell's endpoints becoming coincident, where
+    /// the derivation answers `None` and this would die on the `expect`.
+    ///
+    /// ☑ That `None` does not happen today: measured over the same fixtures, **zero** stored edges
+    /// fail to derive, dead or live. The filter is not a workaround for a live failure — it is what
+    /// makes the failure structurally unreachable, because a superseded edge is never derived again.
     pub fn rebuild_edge_cache(&mut self) {
+        let reach = self.reachable();
         self.edge_cache = self
             .edges
             .iter()
-            .map(|(_, e)| EdgeCache {
-                curve: self
-                    .derive_edge_curve(e.surfaces, e.vertices)
-                    .expect("every stored edge derives its curve"),
+            .map(|(eh, e)| match reach.edges.contains(&eh) {
+                true => EdgeCache {
+                    curve: self
+                        .derive_edge_curve(e.surfaces, e.vertices)
+                        .expect("every live edge derives its curve"),
+                },
+                false => self.edge_cache[eh.index() as usize].clone(),
             })
             .collect();
     }
@@ -2854,6 +2891,9 @@ mod tests {
         };
         let before = snapshot(&m);
         m.rebuild_edge_cache();
+        // ⚠ True of a model nothing has refined. [`Model::refine_vertex_cache`] moves coordinates,
+        // and a rebuild after *that* is not a no-op — which is the whole reason the paying caller
+        // re-derives. This asserts the derivation is stable, not that rebuilding is always free.
         assert_eq!(
             before,
             snapshot(&m),
