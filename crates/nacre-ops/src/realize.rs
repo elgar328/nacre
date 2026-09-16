@@ -270,6 +270,26 @@ pub(crate) fn realize_def_tracked(
 /// ⚠ **Not derived from [`crate::planes::JUDGE_PREC_CAP`].** That one caps the precision a
 /// *judgement* will pay for and bites at roughly four thousand turns; this one caps what a *cache*
 /// will pay for and bites two orders of magnitude earlier. Same kind of limit, different scale.
+///
+/// ☑ **Cell 55 built the prefix accelerator and the value survived it — measured, not assumed.**
+/// The expectation going in was that this constant would lose its ground: if a realization can
+/// resume from a remembered prefix, one step should cost the same at any depth, and a budget in
+/// milliseconds would hold everywhere. Measured (release, timing **one** transform at depth rather
+/// than averaging a build, which halves every figure and is how the first pass misread this):
+///
+/// | depth | 190 | 1000 | 3000 | 4200 |
+/// |---|---|---|---|---|
+/// | ms per vertex, prefix hit | 0.044 | 0.187 | 0.583 | 0.826 |
+/// | ms per vertex, prefix miss | 0.247 | 1.285 | 3.937 | 5.375 |
+///
+/// The miss column reproduces the 0.264 row above, which is what says the two instruments measure
+/// the same thing. But the hit is **not** constant — it grows linearly too, at about a sixth of
+/// the slope, so the 0.3 ms budget merely moves from depth ~192 to ~1540. And the guard runs on
+/// the chain's depth **before** anything knows whether a prefix will be there to hit, so it has to
+/// bound the road it cannot rule out — the miss, which cell 55 did not touch. ⇒ the derivation
+/// stands and the number does not move. What the accelerator changed is the common case, not the
+/// worst one.
+///
 const CACHE_REPLAY_COST_CAP: usize = 192;
 
 /// **The cache's own road** — what [`Model::vertex_point`] holds for every vertex an operation
