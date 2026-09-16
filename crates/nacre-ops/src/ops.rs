@@ -2105,7 +2105,7 @@ fn sweep_ring(
                 Ok(crate::realize::push_vertex_realized(
                     model,
                     def,
-                    PointCache::Unmeasured(*p),
+                    PointCache::Unrealized { coord: *p },
                 ))
             })
             .collect()

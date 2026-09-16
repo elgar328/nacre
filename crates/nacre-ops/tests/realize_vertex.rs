@@ -28,8 +28,9 @@
 
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{
-    BoolKind, DatumDef, OpOutput, Operation, Precision, Profile2d, RealizeError, SketchFrame,
-    SketchPlane, apply, boolean, realize_cache, realize_vertex, realize_vertex_decimal,
+    BoolKind, CacheDecline, DatumDef, OpOutput, Operation, Precision, Profile2d, RealizeError,
+    SketchFrame, SketchPlane, apply, boolean, realize_cache, realize_vertex,
+    realize_vertex_decimal,
 };
 #[path = "support/stated.rs"]
 mod stated;
@@ -235,9 +236,8 @@ fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
                         cylinder,
                         root,
                     },
-                    PointCache::Measured {
+                    PointCache::Unrealized {
                         coord: Point3::from_array([0.0; 3]),
-                        residual: 0.0,
                     },
                 ));
             }
@@ -542,7 +542,7 @@ fn an_operations_cache_is_the_realization() {
         let (mut realized, mut kept) = (0usize, 0usize);
         for vh in live_vertices(&m) {
             match realize_cache(&m, &m.vertices.get(vh).def) {
-                Some((v, bound)) => {
+                Ok((v, bound)) => {
                     realized += 1;
                     let PointCache::Bounded { coord, bound: b } = *m.vertex_cache(vh) else {
                         panic!(
@@ -557,7 +557,7 @@ fn an_operations_cache_is_the_realization() {
                     );
                     assert_eq!(b, bound, "{what}: and carries its bound");
                 }
-                None => {
+                Err(_) => {
                     kept += 1;
                     assert!(
                         !matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
@@ -625,7 +625,9 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
                     .expect("decided");
                 assert_eq!(coord.as_array(), v);
             }
-            _ => kept += 1,
+            // ★ Named, not a catch-all: `Ceiling` and `Unrealized` are different reports, and a
+            // `_` here would have counted a cost-capped vertex as a refused one.
+            PointCache::Ceiling { .. } | PointCache::Unrealized { .. } => kept += 1,
         }
     }
     println!("moved tilted prism: bounded={bounded} kept={kept}");
@@ -917,7 +919,7 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
                 m.vertex_cache(vh)
             );
         }
-        // The fixture has to *have* a chain, or "the bound survives it" is a claim about nothing.
+        // The fixture has to *have* a chain, or "the first rung decides it" is about nothing.
         let replayed = vs
             .iter()
             .filter(|&&vh| {
@@ -929,4 +931,90 @@ fn a_chain_is_held_back_for_the_bits_it_costs_not_for_its_length() {
             "{what}: every vertex realized exactly — no chain was replayed, so this measures nothing"
         );
     }
+}
+
+/// ★★★★ **`Ceiling` has two walls, and this builds one of each** — otherwise the variant has no
+/// population at all to be wrong about (the census corpus measures **zero** of it: every real model
+/// there is two motions deep at most, and every coordinate decides on the first rung).
+///
+/// - **Cost.** 300 rational translations put the history past `CACHE_REPLAY_COST_CAP`, so the cache
+///   road never walks it — `CacheDecline::CostCap`.
+/// - **Bits.** 70 turns of 37° stay well inside that cap, so the road *does* walk, and the ladder's
+///   first rung cannot name an `f64` for the corners off the axis — `RealizeError::Undecided`.
+///
+/// ★★ **And the promise the variant makes is asserted, not assumed**: a road willing to pay still
+/// answers. That is the whole difference between `Ceiling` and `Unrealized` — one says "ask again
+/// with a bigger budget", the other says "there is no road" — and without this line the two would
+/// be distinguishable only by which branch produced them.
+///
+/// ⚠ `validate` runs on the cost-capped model too. Its vertices carry the construction's figure
+/// rather than a realization, which is exactly the population whose tolerance loosened when the
+/// cache stopped storing a measured residual; the checker must still find it clean.
+#[test]
+fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
+    // ── the cost wall ──────────────────────────────────────────────────────────────────────
+    let mut m = Model::new();
+    let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    m.rebuild_adjacency();
+    for _ in 0..300 {
+        let iso = Isometry::translation([
+            Rat::new(1, 7).expect("1/7"),
+            Rat::from_int(0),
+            Rat::from_int(0),
+        ]);
+        s = moved(&mut m, s, iso);
+    }
+    m.rebuild_adjacency();
+
+    let vs = live_vertices(&m);
+    assert!(!vs.is_empty(), "no live vertices");
+    for &vh in &vs {
+        assert!(
+            matches!(m.vertex_cache(vh), PointCache::Ceiling { .. }),
+            "past the cost cap the cache road stops: {:?}",
+            m.vertex_cache(vh)
+        );
+        assert!(
+            matches!(
+                realize_cache(&m, &m.vertices.get(vh).def),
+                Err(CacheDecline::CostCap)
+            ),
+            "and says so by name"
+        );
+        assert!(
+            realize_vertex(&m, vh, Precision::NearestF64)
+                .expect("the paid door walks the chain")
+                .to_f64()
+                .is_some(),
+            "a cost-capped vertex is not undecidable, only unpaid-for"
+        );
+    }
+    assert!(
+        nacre_validate::validate(&m).is_empty(),
+        "a model of Ceiling vertices is still a valid b-rep"
+    );
+
+    // ── the bits wall ──────────────────────────────────────────────────────────────────────
+    let mut m = Model::new();
+    let mut s = cuboid(&mut m, [0.0; 3], [2.0, 3.0, 4.0]);
+    m.rebuild_adjacency();
+    for _ in 0..70 {
+        s = moved(&mut m, s, turn(Axis::Z, 37));
+    }
+    m.rebuild_adjacency();
+
+    let undecided = live_vertices(&m)
+        .into_iter()
+        .filter(|&vh| {
+            matches!(m.vertex_cache(vh), PointCache::Ceiling { .. })
+                && matches!(
+                    realize_cache(&m, &m.vertices.get(vh).def),
+                    Err(CacheDecline::Cannot(RealizeError::Undecided))
+                )
+        })
+        .count();
+    assert!(
+        undecided > 0,
+        "70 turns of 37° must leave the first rung undecided somewhere"
+    );
 }

@@ -199,11 +199,16 @@ fn record(
             }
             println!("{} {}", v.len(), parts.join(" "));
             // ★ **The cache is the realization** (cell 52): every result vertex the push funnel
-            // could realize on the ladder's first rung is `Bounded` with that value bit for bit,
-            // and every one it could not is not `Bounded`. Asked again here with the funnel's own
-            // question, so the row cannot pass by measuring nothing; `r` counts the refusals.
+            // could realize on the ladder's first rung is `Bounded` with that value bit for bit.
+            // Asked again here with the funnel's own question, so the row cannot pass by measuring
+            // nothing.
+            //
+            // ★★ And the refusals are counted **by name**, not as one lump. "The cache road stopped
+            // and a paid road can answer" (`ceiling`) and "there is no road" (`unrealized`) are
+            // different reports — one is a cost, the other is a gap in the kernel — and a single
+            // `kept=` would hide the second behind the first as the population moves.
             let mut seen = std::collections::HashSet::new();
-            let (mut realized, mut kept) = (0usize, 0usize);
+            let (mut realized, mut kept, mut ceiling) = (0usize, 0usize, 0usize);
             for &s in v {
                 let src = m.solids.get(s).clone();
                 for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
@@ -215,8 +220,14 @@ fn record(
                                     if !seen.insert(vh) {
                                         continue;
                                     }
+                                    // ★★ The contract is now **answer ⇔ variant**, three ways: the
+                                    // road answers and the cache is `Bounded` with that very
+                                    // coordinate; the road stops for bits or cost and the cache is
+                                    // `Ceiling`; the road has no way there at all and the cache is
+                                    // `Unrealized`. Written out rather than as "not Bounded", so a
+                                    // vertex cannot drift between the two refusals unnoticed.
                                     match nacre_ops::realize_cache(m, &m.vertices.get(vh).def) {
-                                        Some((c, _)) => {
+                                        Ok((c, _)) => {
                                             realized += 1;
                                             assert!(
                                                 matches!(m.vertex_cache(vh), PointCache::Bounded { coord, .. } if coord.as_array() == c),
@@ -225,15 +236,26 @@ fn record(
                                                 m.vertex_cache(vh)
                                             );
                                         }
-                                        None => {
+                                        Err(d) => {
                                             kept += 1;
-                                            assert!(
-                                                !matches!(
-                                                    m.vertex_cache(vh),
-                                                    PointCache::Bounded { .. }
-                                                ),
-                                                "{tag}: vertex {} is Bounded but the cache road declines",
-                                                vh.index()
+                                            let want_ceiling = matches!(
+                                                d,
+                                                nacre_ops::CacheDecline::CostCap
+                                                    | nacre_ops::CacheDecline::Cannot(
+                                                        nacre_ops::RealizeError::Undecided
+                                                    )
+                                            );
+                                            let is_ceiling = matches!(
+                                                m.vertex_cache(vh),
+                                                PointCache::Ceiling { .. }
+                                            );
+                                            ceiling += usize::from(is_ceiling);
+                                            assert_eq!(
+                                                want_ceiling,
+                                                is_ceiling,
+                                                "{tag}: vertex {} declined with {d:?} but the cache says {:?}",
+                                                vh.index(),
+                                                m.vertex_cache(vh)
                                             );
                                         }
                                     }
@@ -243,7 +265,10 @@ fn record(
                     }
                 }
             }
-            println!("r {tag} realized={realized} kept={kept}");
+            println!(
+                "r {tag} realized={realized} ceiling={ceiling} unrealized={}",
+                kept - ceiling
+            );
         }
     }
 }

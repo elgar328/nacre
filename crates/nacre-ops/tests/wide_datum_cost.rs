@@ -78,12 +78,16 @@ use nacre_ops::{apply, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Vertex};
 
-/// A vertex the kernel vouches for beyond the construction's bare figure — realized from its
-/// definition (`Bounded`, cell 52) or carrying a measured residual. Before cell 52 this read the
-/// residual alone ("discovered"); a boolean's vertices now realize, and so do a prism's, so the
-/// population this file draws triples from is wider than the one its numbers were measured on.
+/// A vertex the kernel vouches for beyond the construction's bare figure — **realized from its
+/// definition**. Before cell 52 this read a measured residual ("discovered"); a boolean's vertices
+/// now realize, and so do a prism's, so the population this file draws triples from is wider than
+/// the one its numbers were measured on.
+///
+/// ⚠ Stated positively. It read "not the bare figure" while two variants counted as vouched for;
+/// with `Ceiling` in the enum that negative form would admit a vertex whose coordinate nothing has
+/// proven anything about — the cache road stopped on it.
 fn vouched(m: &Model, v: Handle<Vertex>) -> bool {
-    !matches!(m.vertex_cache(v), PointCache::Unmeasured(_))
+    matches!(m.vertex_cache(v), PointCache::Bounded { .. })
 }
 
 fn p2(x: f64, y: f64) -> Point2 {

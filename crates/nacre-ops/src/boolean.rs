@@ -2070,11 +2070,6 @@ pub(crate) fn reconstruct(
                             root,
                         );
                         let cylinder = cyls[cyl].surf;
-                        let tol = pair
-                            .iter()
-                            .chain(std::iter::once(&cylinder))
-                            .map(|&s| model.surface(s).distance(sv.point))
-                            .fold(sv.tol, f64::max);
                         let def = VertexDef::Pierce {
                             planes: pair,
                             cylinder,
@@ -2083,10 +2078,7 @@ pub(crate) fn reconstruct(
                         let h = crate::realize::push_vertex_realized(
                             model,
                             def,
-                            PointCache::Measured {
-                                coord: sv.point,
-                                residual: tol,
-                            },
+                            PointCache::Unrealized { coord: sv.point },
                         );
                         vh.insert((g, node), h);
                         return Ok(h);
@@ -2098,36 +2090,21 @@ pub(crate) fn reconstruct(
                     planes[tri[1]].surf,
                     planes[tri[2]].surf,
                 ]);
-                // ★★ **The tolerance measures the planes the vertex is *defined* by.**
+                // ★★ **The arrangement's figure is a fallback coordinate now, and nothing more.**
                 //
-                // The arrangement made the coordinate and `sv.tol` as a pair — `three_planes` on
-                // one triple, `vertex_tol` on the same one. The lines above then **re-name** the
-                // vertex in the result's own surfaces, which is a *different* triple wherever four
-                // planes concur (that is why the derivation exists). The old code carried the
-                // tolerance through that swap on the grounds that "every plane through the point
-                // contains it exactly" — **true only while nothing is rotated**. A rotated plane
-                // passes a realized point within an ulp or two, not through it, so the carried
-                // tolerance bounded a distance nobody was going to measure while `validate`
-                // measured a different one (found by `replay`'s proptest; 454 of 91,394 result
-                // vertices in the corpus were short, by at most 2.1e-14 — rounding, as it should
-                // be, but rounding the record has to admit to).
-                //
-                // ★ Measured on `model.surface(..)`, the very object `validate` reads — not on the
-                // class's own `plane` copy, or this would compare two descriptions of one plane
-                // again. And `max`ed with `sv.tol` rather than replacing it: the arrangement's
-                // figure also covers the pairwise meet lines, which is a real part of what this
-                // number means.
-                let tol = [tri[0], tri[1], tri[2]]
-                    .iter()
-                    .map(|&i| model.surface(planes[i].surf).distance(sv.point))
-                    .fold(sv.tol, f64::max);
+                // This site used to measure a residual here — the distance from `sv.point` to the
+                // planes the vertex is *re-named* in, `max`ed with `sv.tol` — and store it in the
+                // cache. It measured the right thing (the re-naming swaps the triple wherever four
+                // planes concur, and the old code's carried tolerance was short on 454 of 91,394
+                // corpus vertices), but a cache that stores a residual is storing the wrong *kind*
+                // of knowledge: a residual is one distance to the carriers and says nothing about
+                // how far the coordinate is from the truth. The realization answers that, and it
+                // runs first (`push_vertex_realized`). What the arrangement still owes the kernel
+                // is the seam table's `tol`, which the self-touch sieve reads directly.
                 crate::realize::push_vertex_realized(
                     model,
                     def,
-                    PointCache::Measured {
-                        coord: sv.point,
-                        residual: tol,
-                    },
+                    PointCache::Unrealized { coord: sv.point },
                 )
             };
             vh.insert((g, node), handle);
@@ -2227,12 +2204,6 @@ pub(crate) fn reconstruct(
                 )
                 .ok_or_else(|| reject(RejectReason::ThreePlanes))?;
                 let point = centre + realized.ref_dir() * realized.radius();
-                // The tolerance is measured, not assumed — the same rule the three-plane vertices
-                // above follow: how far the realized point sits from each surface that defines it.
-                let tol = model
-                    .surface(lat)
-                    .distance(point)
-                    .max(model.surface(plane).distance(point));
                 // ★★ **A cut circle mints no closed rim edge — but its seam vertex stands.**
                 // The `[v, v]` spelling is false for a cut circle (measured: both arc fixtures
                 // minted one that only the reject then discarded), while θ = 0 is still where the
@@ -2248,10 +2219,7 @@ pub(crate) fn reconstruct(
                     _ => crate::realize::push_vertex_realized(
                         model,
                         VertexDef::OnSeam([lat, plane]),
-                        PointCache::Measured {
-                            coord: point,
-                            residual: tol,
-                        },
+                        PointCache::Unrealized { coord: point },
                     ),
                 };
                 let e = match cut {

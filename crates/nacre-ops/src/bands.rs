@@ -268,9 +268,14 @@ mod tests {
     use nacre_topo::Surface;
     use nacre_topo::{Model, Solid};
 
-    /// What the cache knows about a minted vertex holds it within `1e-12` of its definition:
-    /// realized (`Bounded`, cell 52) within the rounding, or, where the realization declined,
-    /// the residual the arrangement measured.
+    /// A minted vertex sits within `1e-12` of its definition — asserted from the cache where the
+    /// cache proves it, and **measured here** where it does not.
+    ///
+    /// ★ The second half used to read a stored residual. The cache no longer stores one, and the
+    /// honest replacement is not "skip those" but "measure the same distance the residual was":
+    /// the point against the surfaces its definition names. Dropping to a bare `panic!` for the
+    /// unproven variants would have turned this from a measurement into a restatement of which
+    /// variant the funnel chose.
     fn knowledge_is_tight(m: &Model, h: Handle<nacre_topo::Vertex>) {
         match m.vertex_cache(h) {
             nacre_topo::PointCache::Bounded { bound, .. } => assert!(
@@ -279,14 +284,16 @@ mod tests {
                     .all(|b| nacre_scalar::Mag::lt(*b, nacre_scalar::Mag::of(1e-12))),
                 "realized within rounding: {bound:?}"
             ),
-            nacre_topo::PointCache::Measured { residual, .. } => {
-                assert!(
-                    *residual < 1e-12,
-                    "measured against what defines it: {residual}"
-                )
-            }
-            nacre_topo::PointCache::Unmeasured(_) => {
-                panic!("a minted vertex is realized or measured")
+            nacre_topo::PointCache::Ceiling { coord }
+            | nacre_topo::PointCache::Unrealized { coord } => {
+                for sh in m.vertices.get(h).def.carriers() {
+                    let d = m.surface(sh).distance(*coord);
+                    assert!(
+                        d < 1e-12,
+                        "unrealized, but {d:e} from surface {}",
+                        sh.index()
+                    );
+                }
             }
         }
     }

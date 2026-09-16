@@ -97,13 +97,18 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
                 p[2].to_bits()
             ),
         );
+        // ★ The variant, not a stored tolerance: what the cache *knows* is now part of the
+        // signature, so a replay that produced the same coordinate by a different road — realized
+        // here, fallback there — is caught rather than passing on the coordinate alone.
         push(
-            "vertex.tol",
+            "vertex.cache",
             i,
-            match m.vertex_tol(vh) {
-                Some(t) => format!("{:x}", t.to_bits()),
-                None => "-".to_owned(),
-            },
+            match m.vertex_cache(vh) {
+                nacre_topo::PointCache::Bounded { .. } => "bounded",
+                nacre_topo::PointCache::Ceiling { .. } => "ceiling",
+                nacre_topo::PointCache::Unrealized { .. } => "unrealized",
+            }
+            .to_owned(),
         );
         push(
             "vertex.bound",

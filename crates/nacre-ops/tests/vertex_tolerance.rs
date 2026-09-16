@@ -58,8 +58,7 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
         // the construction epsilon `nacre-validate` applies to it (its bound speaks of the
         // coordinate, not of the cached carriers).
         let tol = match *m.vertex_cache(vh) {
-            PointCache::Unmeasured(_) => continue,
-            PointCache::Measured { residual, .. } => residual,
+            PointCache::Unrealized { .. } | PointCache::Ceiling { .. } => continue,
             PointCache::Bounded { coord, .. } => {
                 let (realized, _) = realize_vertex(m, vh, Precision::NearestF64)
                     .expect("a Bounded vertex realizes")

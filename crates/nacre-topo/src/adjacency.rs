@@ -179,7 +179,12 @@ mod tests {
                 m.world_plane(nacre_scalar::Axis::X),
                 m.world_plane(nacre_scalar::Axis::Y),
             ]);
-            m.push_vertex(def, PointCache::Unmeasured(Point3::origin()))
+            m.push_vertex(
+                def,
+                PointCache::Unrealized {
+                    coord: Point3::origin(),
+                },
+            )
         };
         let mut vertex_edges: HashMap<Handle<Vertex>, Vec<Handle<Edge>>> = HashMap::new();
         let mut edge_uses: HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>> = HashMap::new();
@@ -244,7 +249,12 @@ mod tests {
                 m.world_plane(nacre_scalar::Axis::X),
                 m.world_plane(nacre_scalar::Axis::Y),
             ]);
-            m.push_vertex(def, PointCache::Unmeasured(Point3::from_array(p)))
+            m.push_vertex(
+                def,
+                PointCache::Unrealized {
+                    coord: Point3::from_array(p),
+                },
+            )
         };
         let v0 = mk_v(&mut m, [0.0, 0.0, 0.0]);
         let v1 = mk_v(&mut m, [1.0, 0.0, 0.0]);

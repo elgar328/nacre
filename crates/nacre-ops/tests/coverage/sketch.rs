@@ -98,10 +98,6 @@ fn a_swept_hole_is_constructed_throughout() {
             for he in &lp.half_edges {
                 for vh in m.edges.get(he.edge).vertices.iter() {
                     assert!(
-                        m.vertex_tol(*vh).is_none(),
-                        "a swept vertex carries no tolerance"
-                    );
-                    assert!(
                         matches!(m.vertex_cache(*vh), PointCache::Bounded { .. }),
                         "a swept vertex is realized from its definition (cell 52)"
                     );

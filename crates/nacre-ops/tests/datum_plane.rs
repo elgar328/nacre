@@ -2184,7 +2184,9 @@ fn wide_meet_vertex(
     let coord = place([u.to_f64(), v.to_f64(), zw]);
     m.push_vertex(
         nacre_topo::VertexDef::ThreePlane([a, b, c]),
-        PointCache::Unmeasured(Point3::from_array(coord)),
+        PointCache::Unrealized {
+            coord: Point3::from_array(coord),
+        },
     )
 }
 

@@ -9,12 +9,12 @@
 use crate::{Orientation, Surface, VertexDef};
 use nacre_store::Handle;
 
-/// A 0-cell: **its definition is all it is** (S7). The realized coordinate and its measured
-/// tolerance live in the index-parallel point cache (`Model::vertex_point` /
-/// `Model::vertex_tol`), filled by `Model::push_vertex` — definition first, coordinate second,
-/// the inversion `docs/truth-and-cache.md` builds toward. `Origin` (Constructed / Discovered /
-/// Moved) died here: the tag never meant exactness, the measured tolerance moved to the cache,
-/// and a moved vertex's motion was always the *faces'* motion (they record it themselves).
+/// A 0-cell: **its definition is all it is** (S7). The coordinate, and what has been proven about
+/// it, live in the index-parallel point cache (`Model::vertex_point` / `Model::vertex_cache`),
+/// filled by `Model::push_vertex` — definition first, coordinate second, the inversion
+/// `docs/truth-and-cache.md` builds toward. `Origin` (Constructed / Discovered / Moved) died here:
+/// the tag never meant exactness, and a moved vertex's motion was always the *faces'* motion (they
+/// record it themselves).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vertex {
     pub def: VertexDef,
@@ -126,10 +126,17 @@ mod tests {
             m.world_plane(nacre_scalar::Axis::X),
             m.world_plane(nacre_scalar::Axis::Y),
         ]);
-        let v0 = m.push_vertex(seeds, PointCache::Unmeasured(Point3::origin()));
+        let v0 = m.push_vertex(
+            seeds,
+            PointCache::Unrealized {
+                coord: Point3::origin(),
+            },
+        );
         let v1 = m.push_vertex(
             seeds,
-            PointCache::Unmeasured(Point3::from_array([1.0, 0.0, 0.0])),
+            PointCache::Unrealized {
+                coord: Point3::from_array([1.0, 0.0, 0.0]),
+            },
         );
         let r = nacre_scalar::Rat::from_int;
         let sa = m.push_plane_unregistered(

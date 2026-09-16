@@ -11,7 +11,6 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_math::{Point3, Vector3};
 use nacre_store::{Handle, Store};
-use nacre_topo::PointCache;
 use nacre_topo::{
     Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Surface, Vertex, VertexDef,
 };
@@ -256,22 +255,19 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     out
 }
 
-/// The tolerance a vertex's cache grants (S7: read from the point cache): the measured residual
-/// where one exists (`PointCache::Measured`, `0.0` kept exact), else the construction epsilon
-/// [`EPS_CONSTRUCTED`].
-///
-/// A realized coordinate (`PointCache::Bounded`) takes the epsilon too, deliberately: its bound
-/// says how far the *coordinate* is from the truth (half an ulp or the ladder's radius), not how
-/// far the cached point sits from the cached carriers — that distance also carries the carriers'
-/// own realization error, which nothing records yet (`SurfaceCache` has no `tol`). Measured over
-/// the census corpus: at most 1.07e-14, five orders under the epsilon.
-#[inline]
-fn tol_of(m: &Model, vh: Handle<Vertex>) -> f64 {
-    match *m.vertex_cache(vh) {
-        PointCache::Measured { residual, .. } => residual,
-        PointCache::Unmeasured(_) | PointCache::Bounded { .. } => EPS_CONSTRUCTED,
-    }
-}
+// ★★★ **There is no per-vertex tolerance to read any more — every vertex takes the construction
+// epsilon.** `tol_of` used to answer the residual the arrangement had measured, and the cache no
+// longer stores one: what a cache knows is now *whether the coordinate was realized* and, if so, a
+// per-axis bound on it. The bound is deliberately not used here. It says how far the **coordinate**
+// is from the truth (half an ulp, or the ladder's radius); this file asks how far the cached point
+// sits from the cached **carriers**, and that distance also carries the carriers' own realization
+// error, which nothing records yet (`SurfaceCache` has no `tol`).
+//
+// ⚠ **What that costs, stated.** The population that used to be held to a measured residual —
+// measured over the census corpus at **at most 1.07e-14** — is now held to [`EPS_CONSTRUCTED`],
+// five orders looser. The defect that residual caught (a re-named definition wearing the old
+// triple's tolerance) is structurally gone: the cache is the realization of the definition, and
+// the census asserts that vertex by vertex.
 
 #[inline]
 fn in_bounds<T>(h: Handle<T>, store: &Store<T>) -> bool {
@@ -826,13 +822,10 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
             let curve = m.edge_curve(eh);
             for vh in [a, b] {
                 let residual = curve.distance(m.vertex_point(vh));
-                // `.max(EPS_CONSTRUCTED)` is what `.max(tol_of(edge.origin))` always evaluated
-                // to (every producer wrote `Constructed`), spelled as the constant it was after
-                // `Edge.origin` died (S8). It is NOT redundant with the vertex term: a
-                // `Discovered { tol: 0.0 }` vertex (an exact-zero measured residual — a real
-                // population) relies on this floor to absorb the distance computation's own
-                // machine-scale noise.
-                let tol = tol_of(m, vh).max(EPS_CONSTRUCTED);
+                // The floor and the vertex term are the same constant now that no vertex carries a
+                // measured residual, so the `.max` that used to absorb an exact-zero residual has
+                // nothing left to absorb.
+                let tol = EPS_CONSTRUCTED;
                 if residual > tol {
                     out.push(Violation::VertexOffCurve {
                         edge: eh,
@@ -860,14 +853,14 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
                     let [a, b] = m.edges.get(he.edge).vertices;
                     let vh = if he.forward { a } else { b };
                     let residual = surface.distance(m.vertex_point(vh));
-                    // ★ Plus what the residual's *own* arithmetic can produce. `tol_of` describes
+                    // ★ Plus what the residual's *own* arithmetic can produce. The epsilon says
                     // where the vertex may sit; it says nothing about `Surface::distance`, so a
                     // vertex exactly on the surface can still report a machine-scale residual and
                     // be flagged for it. Measured: a four-plane concurrency whose vertex is
                     // genuinely on the plane sat at residual *exactly equal* to its tolerance, and
                     // passed only because the comparison is strict — the slack that had been
-                    // covering this term was the loose `Discovered` tolerances of the day.
-                    let tol = tol_of(m, vh) + surface.distance_eps(m.vertex_point(vh));
+                    // covering this term was the loose measured tolerances of the day.
+                    let tol = EPS_CONSTRUCTED + surface.distance_eps(m.vertex_point(vh));
                     if residual > tol {
                         out.push(Violation::VertexOffSurface {
                             face: fh,
@@ -896,7 +889,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         if !reach.vertices.contains(&vh) {
             continue;
         }
-        let tol = tol_of(m, vh);
+        let tol = EPS_CONSTRUCTED;
         for sh in vertex.def.carriers() {
             let residual = m.surface(sh).distance(m.vertex_point(vh));
             if residual > tol {
@@ -917,6 +910,7 @@ mod tests {
     use super::*;
     use nacre_geom::Plane;
     use nacre_math::Vector3;
+    use nacre_topo::PointCache;
     use nacre_topo::{HalfEdge, Orientation, Shell, Solid};
     use proptest::prelude::*;
 
@@ -1013,9 +1007,8 @@ mod tests {
                 surface_handle_at(1),
                 surface_handle_at(9), // out of bounds — only 6 surfaces
             ]),
-            PointCache::Measured {
+            PointCache::Unrealized {
                 coord: Point3::origin(),
-                residual: 1e-9,
             },
         );
         assert_eq!(
@@ -1049,7 +1042,9 @@ mod tests {
                 m.world_plane(nacre_scalar::Axis::X),
                 m.world_plane(nacre_scalar::Axis::Y),
             ]),
-            PointCache::Unmeasured(Point3::origin()),
+            PointCache::Unrealized {
+                coord: Point3::origin(),
+            },
         );
         assert!(validate(&m).is_empty());
     }
@@ -1118,10 +1113,12 @@ mod tests {
 
     #[derive(Default)]
     struct TetraOpts {
-        /// (vertex index, coordinate delta, measured tol) — moves a vertex off its
-        /// (un-moved) surfaces; `Some(tol)` marks it measured (the old `Discovered`),
-        /// `None` constructed.
-        nudge: Option<(usize, [f64; 3], Option<f64>)>,
+        /// (vertex index, coordinate delta) — moves a vertex off its (un-moved) surfaces.
+        ///
+        /// ⚠ It used to carry a third element, a tolerance to install on that vertex, because the
+        /// cache stored a measured residual and a checker read it. Nothing stores one now: every
+        /// vertex is held to [`EPS_CONSTRUCTED`], so a per-vertex knob would drive nothing.
+        nudge: Option<(usize, [f64; 3])>,
         drop_face: Option<usize>,
         flip_he: Option<(usize, usize)>, // (face, half-edge position)
         swap_he: Option<(usize, usize, usize)>, // (face, position a, position b)
@@ -1163,11 +1160,9 @@ mod tests {
         let vh: Vec<Handle<Vertex>> = (0..4)
             .map(|i| {
                 let mut p = corner(i).as_array();
-                let mut tol = None;
-                if let Some((vi, d, t)) = opts.nudge {
+                if let Some((vi, d)) = opts.nudge {
                     if vi == i {
                         p = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
-                        tol = t;
                     }
                 }
                 // Every vertex names the three tetra faces incident to it (S7: the
@@ -1183,10 +1178,7 @@ mod tests {
                     VertexDef::ThreePlane(
                         incident.try_into().expect("a tetra vertex is on 3 faces"),
                     ),
-                    match tol {
-                        Some(residual) => PointCache::Measured { coord, residual },
-                        None => PointCache::Unmeasured(coord),
-                    },
+                    PointCache::Unrealized { coord },
                 )
             })
             .collect();
@@ -1334,7 +1326,7 @@ mod tests {
     fn a_built_vertex_off_its_definition_is_caught() {
         let m = tetra_with(TetraOpts {
             // Constructed (tol `None` ⇒ EPS_CONSTRUCTED), nudged well past that epsilon.
-            nudge: Some((0, [0.0, 0.0, 1e-6], None)),
+            nudge: Some((0, [0.0, 0.0, 1e-6])),
             ..Default::default()
         });
         let vs = validate(&m);
@@ -1355,7 +1347,7 @@ mod tests {
         // construction — the check's remaining teeth are the circles, see
         // `vertex_off_its_rim_circle`.)
         let vs = validate(&tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 2.0 * EPS_CONSTRUCTED], None)),
+            nudge: Some((0, [0.0, 0.0, 2.0 * EPS_CONSTRUCTED])),
             ..Default::default()
         }));
         assert!(
@@ -1391,7 +1383,9 @@ mod tests {
         let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
             m.push_vertex(
                 VertexDef::ThreePlane([sa, sb, sc]),
-                PointCache::Unmeasured(Point3::from_array(p)),
+                PointCache::Unrealized {
+                    coord: Point3::from_array(p),
+                },
             )
         };
         let v0 = v(&mut m, [0.0, 0.0, 0.0]);
@@ -1469,7 +1463,9 @@ mod tests {
             let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
                 m.push_vertex(
                     VertexDef::ThreePlane([sa, sb, sc]),
-                    PointCache::Unmeasured(Point3::from_array(p)),
+                    PointCache::Unrealized {
+                        coord: Point3::from_array(p),
+                    },
                 )
             };
             let v0 = v(&mut m, [0.0, 0.0, 0.0]);
@@ -1557,11 +1553,15 @@ mod tests {
         );
         let bad_three = m.push_vertex(
             VertexDef::ThreePlane([z0, x0, cyl]),
-            PointCache::Unmeasured(Point3::origin()),
+            PointCache::Unrealized {
+                coord: Point3::origin(),
+            },
         );
         let bad_seam = m.push_vertex(
             VertexDef::OnSeam([z0, x0]),
-            PointCache::Unmeasured(Point3::origin()),
+            PointCache::Unrealized {
+                coord: Point3::origin(),
+            },
         );
         let vs = validate(&m);
         for bad in [bad_three, bad_seam] {
@@ -1764,7 +1764,9 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Lo,
             },
-            PointCache::Unmeasured(Point3::from_array([0.0, -2.0, 0.0])),
+            PointCache::Unrealized {
+                coord: Point3::from_array([0.0, -2.0, 0.0]),
+            },
         );
         assert_eq!(validate(&m), vec![], "a sound pierce statement is clean");
         // The lying coordinate, wired into a reachable face so the off-definition check
@@ -1775,7 +1777,9 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Hi,
             },
-            PointCache::Unmeasured(Point3::from_array([0.0, 2.001, 0.0])),
+            PointCache::Unrealized {
+                coord: Point3::from_array([0.0, 2.001, 0.0]),
+            },
         );
         let anchor = m.push_vertex(
             VertexDef::Pierce {
@@ -1783,7 +1787,9 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Lo,
             },
-            PointCache::Unmeasured(Point3::from_array([0.0, -2.0, 0.0])),
+            PointCache::Unrealized {
+                coord: Point3::from_array([0.0, -2.0, 0.0]),
+            },
         );
         let edge = m.push_edge([bottom, x0], [anchor, bad]).expect("a line");
         let face = m.faces.push(Face {
@@ -1840,7 +1846,9 @@ mod tests {
                 cylinder: x0,
                 root: QuadRoot::Lo,
             },
-            PointCache::Unmeasured(Point3::origin()),
+            PointCache::Unrealized {
+                coord: Point3::origin(),
+            },
         );
         let plane_in_cyl_slot = m.push_vertex(
             VertexDef::Pierce {
@@ -1848,7 +1856,9 @@ mod tests {
                 cylinder: m.world_plane(nacre_scalar::Axis::Y),
                 root: QuadRoot::Lo,
             },
-            PointCache::Unmeasured(Point3::origin()),
+            PointCache::Unrealized {
+                coord: Point3::origin(),
+            },
         );
         let vs = validate(&m);
         for bad in [cyl_in_plane_slot, plane_in_cyl_slot] {
@@ -1913,7 +1923,9 @@ mod tests {
         // endpoint always is; the coordinate is the part that lies.
         let bad = m.push_vertex(
             VertexDef::OnSeam([lateral, cap]),
-            PointCache::Unmeasured(Point3::from_array([2.001, 0.0, 0.0])),
+            PointCache::Unrealized {
+                coord: Point3::from_array([2.001, 0.0, 0.0]),
+            },
         );
         let rim = m
             .push_edge([lateral, cap], [bad, bad])
@@ -1942,21 +1954,17 @@ mod tests {
         );
     }
 
-    #[test]
-    fn discovered_vertex_within_tolerance_is_clean() {
-        let tol = 1e-6;
-        let m = tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 0.5 * tol], Some(tol))),
-            ..Default::default()
-        });
-        assert!(validate(&m).is_empty());
-    }
+    // ⚠★★★ **A third test stood here and its premise is gone, not its coverage.**
+    // `discovered_vertex_within_tolerance_is_clean` nudged a vertex by half of the tolerance it
+    // installed on that same vertex and asserted the model still validated. Nothing installs a
+    // per-vertex tolerance any more — every vertex is held to `EPS_CONSTRUCTED` — so the
+    // proposition "a vertex may sit within *its own recorded* tolerance" has no subject. The
+    // clean-model side is not lost: every fixture in this file that is *not* nudged asserts it.
 
     #[test]
-    fn discovered_vertex_outside_tolerance_flags() {
-        let tol = 1e-6;
+    fn a_vertex_nudged_off_its_surfaces_flags() {
         let vs = validate(&tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 2.0 * tol], Some(tol))),
+            nudge: Some((0, [0.0, 0.0, 2e-6])),
             ..Default::default()
         }));
         assert!(vs.iter().any(|v| matches!(
@@ -1966,13 +1974,12 @@ mod tests {
     }
 
     #[test]
-    fn discovered_vertex_off_its_definition_flags() {
-        // A discovered vertex nudged beyond tol is off its three definition
-        // planes (its incident faces). Assert the definition check specifically
-        // fires — not merely "some violation" (which VertexOffSurface satisfies).
-        let tol = 1e-6;
+    fn a_vertex_nudged_off_its_definition_flags() {
+        // Nudged past the epsilon, the vertex is off its three definition planes (its incident
+        // faces). Assert the *definition* check fires specifically — not merely "some violation",
+        // which `VertexOffSurface` alone would satisfy.
         let vs = validate(&tetra_with(TetraOpts {
-            nudge: Some((0, [0.0, 0.0, 2.0 * tol], Some(tol))),
+            nudge: Some((0, [0.0, 0.0, 2e-6])),
             ..Default::default()
         }));
         assert!(

@@ -3005,8 +3005,10 @@ fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
         for he in &m.faces.get(fh).outer.half_edges {
             {
                 for vh in m.edges.get(he.edge).vertices {
+                    // ★ Positive: "realized from its definition" is the claim, and the negative
+                    // form would let `Ceiling` in — a vertex the cache road stopped on.
                     if seen.insert(vh)
-                        && !matches!(m.vertex_cache(vh), nacre_topo::PointCache::Unmeasured(_))
+                        && matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. })
                     {
                         n += 1;
                     }
@@ -15232,7 +15234,7 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     let h = crate::realize::push_vertex_realized(
         &mut m,
         def,
-        nacre_topo::PointCache::Unmeasured(wrong),
+        nacre_topo::PointCache::Unrealized { coord: wrong },
     );
     assert!(matches!(
         m.vertex_cache(h),
@@ -15264,7 +15266,10 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
                 }
                 seams += 1;
                 assert!(
-                    matches!(m.vertex_cache(vh), nacre_topo::PointCache::Unmeasured(_)),
+                    matches!(
+                        m.vertex_cache(vh),
+                        nacre_topo::PointCache::Unrealized { coord: _ }
+                    ),
                     "{:?}",
                     m.vertex_cache(vh)
                 );

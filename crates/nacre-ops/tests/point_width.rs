@@ -18,10 +18,10 @@
 //! as is the one in the frame its carriers are stated in, which is what a plane name pins and what
 //! this measures.
 //!
-//! Populations come from the kernel's own discriminator rather than from a story: `vertex_tol` is
-//! `Some` for a **measured** vertex and `None` for an **unmeasured** one (constructed, or moved by a
-//! recorded motion), which is exactly the set rule 1 is about. Unmeasured vertices ride along as
-//! the free control.
+//! Populations come from the kernel's own discriminator rather than from a story: a vertex is
+//! `PointCache::Bounded` when it was realized from its definition, and anything else says the
+//! cache has no realization behind it — which is exactly the set rule 1 is about. Those ride along
+//! as the free control.
 //!
 //! `OnSeam` vertices are excluded rather than counted as failures: that variant pins a curve, not
 //! a point, and its doc already records the coordinate cache as load-bearing there.
@@ -209,12 +209,10 @@ fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
 struct Tally {
     /// Every vertex walked.
     vertices: usize,
-    /// `vertex_tol` is `None` — an unmeasured vertex (constructed; the control).
-    constructed: usize,
-    /// `vertex_tol` is `Some(0.0)` — discovered, residual measured exactly zero.
-    discovered_exact: usize,
-    /// `vertex_tol` is `Some(t)`, `t > 0` — discovered, genuinely inexact.
-    discovered_inexact: usize,
+    /// No realization stands behind the coordinate — the construction's own figure (the control).
+    unrealized: usize,
+    /// The cache road stopped: too few bits on its one rung, or a history past its cost cap.
+    ceiling: usize,
     /// Realized from the definition (`Bounded`, cell 52): exact where every bound is zero.
     realized_exact: usize,
     /// Realized, with a nonzero bound on some axis (an irrational or non-representable point).
@@ -252,11 +250,10 @@ impl Tally {
 
     fn report(&self, what: &str) {
         println!(
-            "stat {what:22} vertices={} constructed={} discovered(exact0={} inexact={}) realized(exact0={} inexact={}) seam={}",
+            "stat {what:22} vertices={} unrealized={} ceiling={} realized(exact0={} inexact={}) seam={}",
             self.vertices,
-            self.constructed,
-            self.discovered_exact,
-            self.discovered_inexact,
+            self.unrealized,
+            self.ceiling,
             self.realized_exact,
             self.realized_inexact,
             self.on_seam
@@ -318,9 +315,8 @@ fn measure(m: &Model) -> Tally {
     for vh in live_vertices(m) {
         t.vertices += 1;
         match m.vertex_cache(vh) {
-            PointCache::Unmeasured(_) => t.constructed += 1,
-            PointCache::Measured { residual, .. } if *residual == 0.0 => t.discovered_exact += 1,
-            PointCache::Measured { .. } => t.discovered_inexact += 1,
+            PointCache::Unrealized { .. } => t.unrealized += 1,
+            PointCache::Ceiling { .. } => t.ceiling += 1,
             PointCache::Bounded { bound, .. } if bound.iter().all(|b| b.is_zero()) => {
                 t.realized_exact += 1
             }
@@ -361,15 +357,14 @@ fn measure(m: &Model) -> Tally {
         };
         let w = point.width_bits();
         t.widths.push(w);
-        // Split by what the cache knows: exact (a zero residual, or a realization with every
-        // bound zero) against inexact; a constructed fallback is counted in neither.
+        // Split by what the cache knows: a realization with every bound zero is exact, one with a
+        // nonzero bound is not; a coordinate with no realization behind it is counted in neither.
         match m.vertex_cache(vh) {
-            PointCache::Measured { residual, .. } if *residual == 0.0 => t.widths_exact.push(w),
             PointCache::Bounded { bound, .. } if bound.iter().all(|b| b.is_zero()) => {
                 t.widths_exact.push(w)
             }
-            PointCache::Measured { .. } | PointCache::Bounded { .. } => t.widths_inexact.push(w),
-            PointCache::Unmeasured(_) => {}
+            PointCache::Bounded { .. } => t.widths_inexact.push(w),
+            PointCache::Ceiling { .. } | PointCache::Unrealized { .. } => {}
         }
 
         // ★★ The split the whole measurement turns on. The narrow route only runs when every
@@ -761,12 +756,15 @@ fn tilted_frame(passes: usize) -> Model {
 // (ii) — is the f64 road a different plane?
 // ---------------------------------------------------------------------------------------------
 
-/// Every vouched-for vertex (realized from its definition, or measured) that solves to a `Rat`
-/// triple, paired with its handle.
+/// Every vouched-for vertex — **realized from its definition** — that solves to a `Rat` triple,
+/// paired with its handle.
 fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
     let mut out = Vec::new();
     for vh in live_vertices(m) {
-        if matches!(m.vertex_cache(vh), PointCache::Unmeasured(_)) {
+        // ★ Stated positively on purpose. This read "not the bare figure" while there were two
+        // ways to be vouched for; with `Ceiling` in the enum the negative form would quietly admit
+        // a vertex nothing has proven anything about.
+        if !matches!(m.vertex_cache(vh), PointCache::Bounded { .. }) {
             continue; // the construction's bare figure — the control lives in its own fixture below
         }
         let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
@@ -1005,8 +1003,7 @@ fn how_wide_a_discovered_coordinate_is() {
     ] {
         let t = measure(&m);
         t.report(what);
-        discovered +=
-            t.discovered_exact + t.discovered_inexact + t.realized_exact + t.realized_inexact;
+        discovered += t.realized_exact + t.realized_inexact;
         solved += t.widths.len();
     }
     assert!(

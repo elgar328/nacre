@@ -32,7 +32,7 @@ fn discovered_count(m: &Model, s: Handle<Solid>) -> usize {
     for &fh in &m.shells.get(m.solids.get(s).outer).faces {
         for he in &m.faces.get(fh).outer.half_edges {
             for vh in m.edges.get(he.edge).vertices {
-                if !matches!(m.vertex_cache(vh), PointCache::Unmeasured(_)) {
+                if matches!(m.vertex_cache(vh), PointCache::Bounded { .. }) {
                     n += 1;
                 }
             }

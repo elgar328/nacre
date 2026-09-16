@@ -90,6 +90,30 @@ pub enum RealizeError {
     NoCurvedPoint,
     /// The realization ladder reached its ceiling without deciding what was asked.
     Undecided,
+    /// The value is an exact rational, and **no `f64` names it**: it is outside the range one can
+    /// hold. More bits cannot help — this is the one refusal a taller ladder does not answer.
+    ///
+    /// ⚠ Measured at both ends (`nacre_scalar`'s own lock): the large end refuses at `2^1024`,
+    /// where the scaled value stops being finite, and the small end at `2^-1149`. A carrier name
+    /// cannot reach either — the widest this repository has measured is 168 bits — so the
+    /// population is zero today. It has a name anyway, because the branch is real and
+    /// [`Self::Undecided`] would be a lie about it ("more bits would do it" — they would not).
+    Unrepresentable,
+}
+
+/// Why the **cache road** did not answer — two reasons, and only one of them is a failure.
+///
+/// ★ Deliberately not a `RealizeError` variant. That enum's own doc says it answers *"why a vertex
+/// could not be realized"*, and a chain refused for cost was never attempted: "did not" is not
+/// "cannot". Folding the two together would also hand every caller of [`realize_vertex`] a variant
+/// they can never receive.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum CacheDecline {
+    /// The motion history is deeper than [`CACHE_REPLAY_COST_CAP`] — the road did not walk it.
+    /// A paid realization still can, which is what `refine_vertex_cache` is for.
+    CostCap,
+    /// The realization itself declined, by name.
+    Cannot(RealizeError),
 }
 
 /// The ladder. Doubling, so a value needing `n` bits pays at most `2n`; capped, because an
@@ -245,37 +269,65 @@ const CACHE_REPLAY_COST_CAP: usize = 192;
 /// `NearestF64` bit for bit; where it does not, the cost of climbing on every push is not paid,
 /// and the cache says so by carrying the construction's figure instead. Public so an instrument
 /// can ask the same question the push funnel asked and hold the cache to it.
-pub fn realize_cache(model: &Model, def: &VertexDef) -> Option<([f64; 3], [Mag; 3])> {
+///
+/// ★ The `Err` says **which** of the two roads was not taken, and that is what lets the funnel
+/// below sort a vertex into [`PointCache::Ceiling`] (ask again, pay more) or
+/// [`PointCache::Unrealized`] (there is no road).
+pub fn realize_cache(model: &Model, def: &VertexDef) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
     if def
         .carriers()
         .filter_map(|h| model.plane_motion(h))
         .any(|leaf| model.motion_deeper_than(leaf, CACHE_REPLAY_COST_CAP))
     {
-        return None;
+        return Err(CacheDecline::CostCap);
     }
-    realize_def(model, def, Precision::Bits(LADDER[0]))
-        .ok()?
-        .to_f64()
+    let r = realize_def(model, def, Precision::Bits(LADDER[0])).map_err(CacheDecline::Cannot)?;
+    r.to_f64().ok_or(CacheDecline::Cannot(match r.is_exact() {
+        // An exact value no `f64` names: more bits are not the missing thing.
+        true => RealizeError::Unrepresentable,
+        // The interval was still too wide at the first rung: more bits are exactly the thing.
+        false => RealizeError::Undecided,
+    }))
 }
 
 /// Push a vertex whose cache is **realized from its definition** — the one road every vertex an
 /// operation makes takes, so `Model::vertex_point` is the realization's memo from the moment the
 /// vertex exists (design: *"the cache is what `realize` produced, never a second truth"*).
 ///
-/// `fallback` is what the construction site measured or computed, and it stands only where
-/// [`realize_cache`] answers `None`. A refusal leaves no trace in the cache; an instrument asks
-/// [`realize_cache`] again to count it.
+/// `fallback` is the coordinate the construction site computed, and it stands wherever
+/// [`realize_cache`] declines — but the *variant* is this funnel's to choose, not the caller's:
+/// the caller knows a figure, only the road knows why it was needed.
+///
+/// ★ **An exhaustive `match`, so a new reason cannot be folded silently into an old name.** The
+/// two reasons that mean "ask again and pay more" become [`PointCache::Ceiling`]; everything else
+/// means the kernel has no road, and becomes [`PointCache::Unrealized`]. That split exists for the
+/// reader: "this model is expensive" and "the kernel cannot do this" are different reports, and a
+/// single label would hide the second behind the first.
 pub(crate) fn push_vertex_realized(
     model: &mut Model,
     def: VertexDef,
     fallback: PointCache,
 ) -> Handle<Vertex> {
     let cache = match realize_cache(model, &def) {
-        Some((coord, bound)) => PointCache::Bounded {
+        Ok((coord, bound)) => PointCache::Bounded {
             coord: Point3::from_array(coord),
             bound,
         },
-        None => fallback,
+        // Bits or cost — either way a paid realization can still answer.
+        Err(CacheDecline::CostCap | CacheDecline::Cannot(RealizeError::Undecided)) => {
+            PointCache::Ceiling {
+                coord: fallback.coord(),
+            }
+        }
+        Err(CacheDecline::Cannot(
+            RealizeError::NoMeet
+            | RealizeError::WideUnderMotion
+            | RealizeError::NoMotionChain
+            | RealizeError::NoCurvedPoint
+            | RealizeError::Unrepresentable,
+        )) => PointCache::Unrealized {
+            coord: fallback.coord(),
+        },
     };
     model.push_vertex(def, cache)
 }

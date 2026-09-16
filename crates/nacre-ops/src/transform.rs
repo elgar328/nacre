@@ -685,21 +685,6 @@ fn transform_solid(
     // "exceptions lapse once the solid has a history" test: an exact move of a fresh solid
     // records nothing and keeps the measured tolerances verbatim; anything else re-realizes
     // coordinates, so a measured tolerance no longer describes them.
-    let prior_history = {
-        let src = model.solids.get(solid);
-        std::iter::once(src.outer)
-            .chain(src.cavities.iter().copied())
-            .flat_map(|sh| model.shells.get(sh).faces.clone())
-            .any(|fh| {
-                !matches!(
-                    model.surface_truth(model.faces.get(fh).surface),
-                    nacre_topo::Surface::Plane { motion: None, .. }
-                        | nacre_topo::Surface::Cylinder { motion: None, .. }
-                )
-            })
-    };
-    let keeps_tol = carry == Carry::Full && !prior_history;
-
     // Deterministic order: outer shell then cavities; each shell's faces in order.
     let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
         .chain(src.cavities.iter().copied())
@@ -959,16 +944,14 @@ fn transform_solid(
             }
         };
         let coord = motion.point(model.vertex_point(vh));
-        // Tolerance rule (S7, letter-preserving): an exact move of a history-less solid keeps
-        // the cache's knowledge whole (`remap_origin` kept `Discovered { tol }` verbatim); a
-        // recorded move demotes to `Unmeasured` (once `Moved` — checker epsilon). This site is
-        // why the variants are named by what the cache knows rather than by provenance: the
-        // vertex demoted here *was* discovered, and only "unmeasured" is true of it now.
-        let cache = if keeps_tol {
-            model.vertex_cache(vh).moved_to(coord)
-        } else {
-            PointCache::Unmeasured(coord)
-        };
+        // ★ **The moved figure is a fallback, and only a fallback.** This used to carry the old
+        // cache's knowledge across an exact move of a history-less solid (the letter-preserving
+        // rule) and demote otherwise — a rule that existed because a *measured residual* survives a
+        // rigid motion while a *bound* does not. With no residual in the cache there is nothing to
+        // preserve: this coordinate is `f64` arithmetic on the old one, never the nearest `f64` of
+        // the moved definition, so "no realization stands behind it" is the whole truth about it.
+        // The realization of the moved definition runs next and replaces it wherever it answers.
+        let cache = PointCache::Unrealized { coord };
         vert_map.insert(vh, crate::realize::push_vertex_realized(model, def, cache));
     }
 
@@ -1295,7 +1278,9 @@ mod tests {
         let mk_v = |m: &mut Model, x: f64| {
             m.push_vertex(
                 foreign,
-                PointCache::Unmeasured(Point3::from_array([x, 0.0, 9.0])),
+                PointCache::Unrealized {
+                    coord: Point3::from_array([x, 0.0, 9.0]),
+                },
             )
         };
         let v0 = mk_v(&mut m, 0.0);
@@ -1458,7 +1443,9 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Lo,
             },
-            PointCache::Unmeasured(Point3::from_array([0.0, -2.0, 0.0])),
+            PointCache::Unrealized {
+                coord: Point3::from_array([0.0, -2.0, 0.0]),
+            },
         );
         let v_hi = m.push_vertex(
             VertexDef::Pierce {
@@ -1466,7 +1453,9 @@ mod tests {
                 cylinder: lateral,
                 root: QuadRoot::Hi,
             },
-            PointCache::Unmeasured(Point3::from_array([0.0, 2.0, 0.0])),
+            PointCache::Unrealized {
+                coord: Point3::from_array([0.0, 2.0, 0.0]),
+            },
         );
         // Wire the vertices into the solid (a franken-face on the x = 0 seed): transform
         // remaps only what its face walk reaches, and `defs_are_remappable` requires every
