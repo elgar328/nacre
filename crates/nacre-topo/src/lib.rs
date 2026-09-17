@@ -1167,6 +1167,118 @@ impl Model {
         self.vertices.handle_at(index)
     }
 
+    /// The vertex a handle names — the **truth**, which for a vertex is its definition.
+    ///
+    /// ★ One door per entity per side, as `docs/truth-and-cache.md` §「문의 이름」 sets out:
+    /// `x(h)` is the arena entry itself, `x_cache(h)` is what was realized from it, and the pieces
+    /// underneath are reached by chaining on the returned type rather than by more doors here.
+    #[inline]
+    pub fn vertex(&self, h: Handle<Vertex>) -> &Vertex {
+        self.vertices.get(h)
+    }
+
+    /// The edge a handle names — the truth beside [`Model::edge_curve`]'s cache.
+    #[inline]
+    pub fn edge(&self, h: Handle<Edge>) -> &Edge {
+        self.edges.get(h)
+    }
+
+    /// The face a handle names. ★ There is no `face_cache`: a face has no realized twin, which is
+    /// why [`Model::push_face`] is worth an invariant rather than a cache pairing.
+    #[inline]
+    pub fn face(&self, h: Handle<Face>) -> &Face {
+        self.faces.get(h)
+    }
+
+    /// The shell a handle names — cache-less for the same reason as [`Model::face`].
+    #[inline]
+    pub fn shell(&self, h: Handle<Shell>) -> &Shell {
+        self.shells.get(h)
+    }
+
+    /// The solid a handle names. Which solids are *live* is a separate question —
+    /// [`Model::live_solids`] answers it; the arena keeps superseded ones forever.
+    #[inline]
+    pub fn solid(&self, h: Handle<Solid>) -> &Solid {
+        self.solids.get(h)
+    }
+
+    /// How many vertices the arena holds — live and superseded alike, like
+    /// [`Model::surface_count`].
+    #[inline]
+    pub fn vertex_count(&self) -> usize {
+        self.vertices.len()
+    }
+
+    /// How many edges the arena holds — live and superseded alike.
+    #[inline]
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
+
+    /// How many faces the arena holds — live and superseded alike.
+    #[inline]
+    pub fn face_count(&self) -> usize {
+        self.faces.len()
+    }
+
+    /// How many shells the arena holds — live and superseded alike.
+    #[inline]
+    pub fn shell_count(&self) -> usize {
+        self.shells.len()
+    }
+
+    /// How many solids the arena holds — live and superseded alike. Most of them are dead:
+    /// measured, a box moved 120 times leaves 120 superseded solids behind one live one.
+    #[inline]
+    pub fn solid_count(&self) -> usize {
+        self.solids.len()
+    }
+
+    /// The edge an **index** names — [`Model::surface_handle_at`]'s twin for edges.
+    ///
+    /// ★★★★ **This family is also how the whole arena is walked, and that is deliberate.** There
+    /// is no `iter()` door and there will not be one: exposing one invites treating the arena as
+    /// the model, when most of what it holds is superseded (measured: 99% of the vertices after a
+    /// box is moved 120 times). A consumer that wants the live model walks `live_solids` and the
+    /// faces under it.
+    ///
+    /// But a consumer that wants the **arena** — `validate`'s reference-integrity and vertex-def
+    /// checks — genuinely needs every cell, dead ones included: a torn page is torn whether or not
+    /// anything still points at it. Those checks walk `0..x_count()` through these doors. Filtering
+    /// them to the reachable set would make four planted-corruption tests pass while measuring
+    /// nothing, because each plants its corruption on an unreachable cell.
+    ///
+    /// ☑ Walking by index is not a weaker `iter()`: `nacre-store` locks `handle_at` and `iter`
+    /// to the same order, by unit test and by proptest, under the note that the door "grants no
+    /// new power".
+    #[inline]
+    #[must_use]
+    pub fn edge_handle_at(&self, index: u32) -> Option<Handle<Edge>> {
+        self.edges.handle_at(index)
+    }
+
+    /// The face an index names — see [`Model::edge_handle_at`] for why this family exists.
+    #[inline]
+    #[must_use]
+    pub fn face_handle_at(&self, index: u32) -> Option<Handle<Face>> {
+        self.faces.handle_at(index)
+    }
+
+    /// The shell an index names — see [`Model::edge_handle_at`].
+    #[inline]
+    #[must_use]
+    pub fn shell_handle_at(&self, index: u32) -> Option<Handle<Shell>> {
+        self.shells.handle_at(index)
+    }
+
+    /// The solid an index names — see [`Model::edge_handle_at`].
+    #[inline]
+    #[must_use]
+    pub fn solid_handle_at(&self, index: u32) -> Option<Handle<Solid>> {
+        self.solids.handle_at(index)
+    }
+
     /// The motion node a handle names. Same seal as [`Model::surface_cache`]: writing goes through
     /// [`Model::push_motion`] (interned), reading through here.
     #[inline]
