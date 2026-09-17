@@ -468,9 +468,17 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
 /// yes cannot show drift accumulating.
 ///
 /// If this ever fails, the repair is not "pass points instead of a handle" — that road is the same
-/// road (see the module doc). It is to derive the cache's anchor from the definition (the canonical
-/// foot of perpendicular, which is also the minimum-norm point on the plane and therefore the
-/// smallest rounding available), and that is a stage of its own.
+/// road (see the module doc). It is to derive the cache's anchor from the definition, and cell 58
+/// did exactly that.
+///
+/// ⚠★★★ **But not the way this note proposed.** It named the **foot of perpendicular** — "the
+/// minimum-norm point, therefore the smallest rounding available" — and that was measured out:
+/// the foot minimizes the rounding of `d`, not the residual at the face's own points, and it puts
+/// the anchor near the *world origin* while every consumer of an anchor (conditioning, STEP's
+/// required point, tess's chart) wants it near the **face**. Wired, it moved 32 census result
+/// rows, closed an exact-coefficient road, and overflowed `i128` on 8 planes because the
+/// projection squares the coefficients. What shipped is the truth's **first point**: 0 rows moved,
+/// 61 caches changed. See `which_surface_caches_two_anchors_leave_disagreeing` below.
 #[test]
 fn a_pre_pushed_plane_does_not_move_the_model() {
     let plain = wf_model(None);

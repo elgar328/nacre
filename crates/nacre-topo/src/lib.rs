@@ -1179,8 +1179,12 @@ impl Model {
     /// A plane's push (private): the exact truth and its f64 cache, index-parallel, in one
     /// motion — so the two cannot come apart.
     ///
-    /// ★ The truth comes first because the arena holds it; the cache is derived from it in
-    /// principle and handed in by the producer today (the derivation is the refinement pass's).
+    /// ★★★★ **The truth comes first because the arena holds it, and the cache is derived from it
+    /// here** (cell 58): this door calls [`Model::apply_derivation`], so what the producer hands
+    /// in survives only in the parts the truth does not decide — the row (`raw`) and with it the
+    /// sense — and wholesale where [`Model::derive_surface_cache`] declines.
+    /// ⚠ The anchor is the half that moved; «the door takes only the truth» is **not** reached
+    /// while `cache` is still a parameter.
     ///
     /// ★★★ **Two doors split by kind, rather than one taking both enums.** The predecessor
     /// `push_raw(truth: Surface, cache: nacre_geom::Surface)` could be handed a plane truth
@@ -1193,6 +1197,7 @@ impl Model {
     /// `compile_fail` doc-test cannot reach a private function to demonstrate it. The public
     /// doors ([`Model::push_plane`], [`Model::push_cylinder`]) already took narrow types; what
     /// was wide was this crate-internal one. Recorded rather than locked.
+    ///
     /// ★★★ **The name enters here too** (cell 58), for the same reason the cache does: this is
     /// the one place a plane reaches the arena, so it is the one place that can derive a cache
     /// from the truth — and the derivation reads the name. Interning used to insert it one line
