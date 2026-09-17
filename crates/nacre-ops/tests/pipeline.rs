@@ -748,12 +748,12 @@ fn only_the_signed_volume_sees_a_reversed_face() {
     for he in &mut outer.half_edges {
         he.forward = !he.forward;
     }
-    let bad = m.faces.push(Face { outer, ..f });
+    let bad = m.push_face(Face { outer, ..f });
     let swapped = faces
         .iter()
         .map(|&x| if x == victim { bad } else { x })
         .collect();
-    let shell = m.shells.push(Shell { faces: swapped });
+    let shell = m.push_shell(Shell { faces: swapped });
     let solid = m.push_solid(Solid {
         outer: shell,
         cavities: vec![],
@@ -859,12 +859,12 @@ fn a_flipped_island_loop_is_caught() {
     for he in &mut outer.half_edges {
         he.forward = !he.forward;
     }
-    let bad = m.faces.push(Face { outer, ..f });
+    let bad = m.push_face(Face { outer, ..f });
     let swapped = faces
         .iter()
         .map(|&x| if x == isle { bad } else { x })
         .collect();
-    let shell = m.shells.push(Shell { faces: swapped });
+    let shell = m.push_shell(Shell { faces: swapped });
     let solid = m.push_solid(Solid {
         outer: shell,
         cavities: vec![],

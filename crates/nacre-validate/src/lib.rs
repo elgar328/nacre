@@ -1008,7 +1008,7 @@ mod tests {
     fn dangling_reference_solid_shell() {
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         // shells.len() == 1; add a solid (index 1) pointing at shell index 5.
-        m.solids.push(Solid {
+        m.push_solid_unlisted(Solid {
             outer: shell_handle_at(5),
             cavities: vec![],
         });
@@ -1086,7 +1086,7 @@ mod tests {
         let old = m.live_solids[0];
         let old_shell = m.solid(old).outer;
         let faces = m.shell(old_shell).faces.clone();
-        let new_shell = m.shells.push(Shell { faces });
+        let new_shell = m.push_shell(Shell { faces });
         let new_solid = m.push_solid(Solid {
             outer: new_shell,
             cavities: vec![],
@@ -1114,7 +1114,7 @@ mod tests {
                 orientation: f0.orientation,
             }
         };
-        m.faces.push(dup);
+        m.push_face(dup);
         let v = validate(&m);
         assert!(v.is_empty(), "{v:?}");
     }
@@ -1249,7 +1249,7 @@ mod tests {
                     half_edges.swap(a, b);
                 }
             }
-            faces.push(m.faces.push(Face {
+            faces.push(m.push_face_unchecked(Face {
                 surface,
                 outer: Loop { half_edges },
                 inner: vec![],
@@ -1262,7 +1262,7 @@ mod tests {
     fn tetra_with(opts: TetraOpts) -> Model {
         let mut m = Model::new();
         let faces = push_tetra(&mut m, [0.0; 3], &opts);
-        let sh = m.shells.push(Shell { faces });
+        let sh = m.push_shell_unchecked(Shell { faces });
         m.push_solid(Solid {
             outer: sh,
             cavities: vec![],
@@ -1324,7 +1324,7 @@ mod tests {
         let mut m = Model::new();
         let mut faces = push_tetra(&mut m, [0.0; 3], &TetraOpts::default());
         faces.extend(push_tetra(&mut m, [5.0, 0.0, 0.0], &TetraOpts::default()));
-        let sh = m.shells.push(Shell { faces });
+        let sh = m.push_shell(Shell { faces });
         m.push_solid(Solid {
             outer: sh,
             cavities: vec![],
@@ -1424,7 +1424,7 @@ mod tests {
         let eb2 = m.push_edge([sa, sb], [v3, v0]).unwrap();
         let he = |edge, forward| HalfEdge { edge, forward };
         let face = |m: &mut nacre_topo::Model, surface, hes: Vec<HalfEdge>| {
-            m.faces.push(Face {
+            m.push_face(Face {
                 surface,
                 outer: Loop { half_edges: hes },
                 inner: vec![],
@@ -1441,7 +1441,7 @@ mod tests {
             sb,
             vec![he(e_shared, false), he(eb2, false), he(eb1, false)],
         );
-        let shell = m.shells.push(Shell {
+        let shell = m.push_shell(Shell {
             faces: vec![fa, fb],
         });
         m.push_solid(Solid {
@@ -1510,7 +1510,7 @@ mod tests {
             let eb2 = m.push_edge([sa, sb], [v3, v0]).unwrap();
             let he = |edge, forward| HalfEdge { edge, forward };
             let face = |m: &mut nacre_topo::Model, surface, hes: Vec<HalfEdge>| {
-                m.faces.push(Face {
+                m.push_face(Face {
                     surface,
                     outer: Loop { half_edges: hes },
                     inner: vec![],
@@ -1527,7 +1527,7 @@ mod tests {
                 sa,
                 vec![he(e_shared, false), he(eb2, false), he(eb1, false)],
             );
-            let shell = m.shells.push(Shell {
+            let shell = m.push_shell(Shell {
                 faces: vec![fa, fb],
             });
             m.push_solid(Solid {
@@ -1627,12 +1627,12 @@ mod tests {
             .expect("a cylinder has two disk caps");
         let twin = {
             let f = m.face(victim).clone();
-            m.faces.push(Face {
+            m.push_face(Face {
                 orientation: f.orientation.flipped(),
                 ..f
             })
         };
-        let sh = m.shells.push(Shell {
+        let sh = m.push_shell(Shell {
             faces: faces
                 .iter()
                 .map(|&h| if h == victim { twin } else { h })
@@ -1676,12 +1676,12 @@ mod tests {
         let victim = faces[0];
         let twin = {
             let f = m.face(victim).clone();
-            m.faces.push(Face {
+            m.push_face(Face {
                 orientation: f.orientation.flipped(),
                 ..f
             })
         };
-        let sh = m.shells.push(Shell {
+        let sh = m.push_shell(Shell {
             faces: faces
                 .iter()
                 .map(|&h| if h == victim { twin } else { h })
@@ -1737,9 +1737,9 @@ mod tests {
         let liar = m.push_cylinder(cache, lying, None);
         let twin = {
             let f = m.face(victim).clone();
-            m.faces.push(Face { surface: liar, ..f })
+            m.push_face(Face { surface: liar, ..f })
         };
-        let sh = m.shells.push(Shell {
+        let sh = m.push_shell(Shell {
             faces: faces
                 .iter()
                 .map(|&h| if h == victim { twin } else { h })
@@ -1816,7 +1816,7 @@ mod tests {
             },
         );
         let edge = m.push_edge([bottom, x0], [anchor, bad]).expect("a line");
-        let face = m.faces.push(Face {
+        let face = m.push_face_unchecked(Face {
             surface: x0,
             outer: Loop {
                 half_edges: vec![HalfEdge {
@@ -1827,7 +1827,7 @@ mod tests {
             inner: vec![],
             orientation: Orientation::Forward,
         });
-        let shell = m.shells.push(Shell { faces: vec![face] });
+        let shell = m.push_shell_unchecked(Shell { faces: vec![face] });
         m.push_solid(Solid {
             outer: shell,
             cavities: vec![],
@@ -1956,7 +1956,7 @@ mod tests {
         let rim = m
             .push_edge([lateral, cap], [bad, bad])
             .expect("a rim derives from its carriers, not its vertices");
-        let face = m.faces.push(Face {
+        let face = m.push_face(Face {
             surface: cap,
             outer: Loop {
                 half_edges: vec![HalfEdge {
@@ -1967,7 +1967,7 @@ mod tests {
             inner: vec![],
             orientation: Orientation::Forward,
         });
-        let shell = m.shells.push(Shell { faces: vec![face] });
+        let shell = m.push_shell(Shell { faces: vec![face] });
         m.push_solid(Solid {
             outer: shell,
             cavities: vec![],

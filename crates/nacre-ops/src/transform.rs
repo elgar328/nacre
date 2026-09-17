@@ -1294,7 +1294,7 @@ mod tests {
         let e = m
             .push_edge([own, m.world_plane(Axis::Z)], [v0, v1])
             .unwrap();
-        let f = m.faces.push(Face {
+        let f = m.push_face_unchecked(Face {
             surface: own,
             outer: Loop {
                 half_edges: vec![HalfEdge {
@@ -1305,7 +1305,7 @@ mod tests {
             inner: vec![],
             orientation: nacre_topo::Orientation::Forward,
         });
-        let sh = m.shells.push(Shell { faces: vec![f] });
+        let sh = m.push_shell_unchecked(Shell { faces: vec![f] });
         let s = m.push_solid(Solid {
             outer: sh,
             cavities: vec![],
@@ -1468,7 +1468,7 @@ mod tests {
         let edge = m
             .push_edge([bottom, x0], [v_lo, v_hi])
             .expect("a line through distinct endpoints");
-        let franken = m.faces.push(Face {
+        let franken = m.push_face(Face {
             surface: x0,
             outer: Loop {
                 // A closed degenerate loop: v_lo -> v_hi -> v_lo. One half-edge would not
@@ -1490,7 +1490,7 @@ mod tests {
         });
         let mut new_faces = faces.clone();
         new_faces.push(franken);
-        let sh = m.shells.push(Shell { faces: new_faces });
+        let sh = m.push_shell(Shell { faces: new_faces });
         let franken_solid = m.push_solid(Solid {
             outer: sh,
             cavities: vec![],

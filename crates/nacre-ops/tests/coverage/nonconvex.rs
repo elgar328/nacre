@@ -431,7 +431,7 @@ fn a_flipped_hole_loop_is_caught() {
     for he in &mut hole.half_edges {
         he.forward = !he.forward;
     }
-    let bad = m.faces.push(Face {
+    let bad = m.push_face(Face {
         inner: vec![hole],
         ..f
     });
@@ -439,7 +439,7 @@ fn a_flipped_hole_loop_is_caught() {
         .iter()
         .map(|&x| if x == holed { bad } else { x })
         .collect();
-    let shell = m.shells.push(Shell { faces: swapped });
+    let shell = m.push_shell(Shell { faces: swapped });
     let solid = m.push_solid(Solid {
         outer: shell,
         cavities: vec![],

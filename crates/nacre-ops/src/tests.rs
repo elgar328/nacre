@@ -2445,7 +2445,7 @@ fn shares_or_coplanar_uses_the_handle_branch() {
         Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0])).unwrap(),
         [[r(0); 3], [r(0), r(1), r(0)], [r(0), r(0), r(1)]],
     );
-    let fh = m.faces.push(Face {
+    let fh = m.push_face_unchecked(Face {
         surface: shared,
         outer: Loop { half_edges: vec![] },
         inner: vec![],
@@ -6218,7 +6218,7 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
         Point3::from_array(q)
     };
     let surf = m.push_plane_unregistered(plane, [lift(origin), lift(stepr(ti)), lift(stepr(tj))]);
-    let face = m.faces.push(Face {
+    let face = m.push_face_unchecked(Face {
         surface: surf,
         outer: Loop { half_edges: vec![] },
         inner: vec![],
@@ -9159,12 +9159,12 @@ fn a_holes_winding_is_checked_too() {
         .expect("a through hole leaves two drilled faces");
     let twin = {
         let f = m.face(victim).clone();
-        m.faces.push(nacre_topo::Face {
+        m.push_face(nacre_topo::Face {
             orientation: f.orientation.flipped(),
             ..f
         })
     };
-    let sh = m.shells.push(nacre_topo::Shell {
+    let sh = m.push_shell(nacre_topo::Shell {
         faces: faces
             .iter()
             .map(|&h| if h == victim { twin } else { h })
@@ -9238,12 +9238,12 @@ fn a_polygonal_holes_winding_is_checked_too() {
         .expect("a ring prism has two holed caps");
     let twin = {
         let f = m.face(victim).clone();
-        m.faces.push(nacre_topo::Face {
+        m.push_face(nacre_topo::Face {
             orientation: f.orientation.flipped(),
             ..f
         })
     };
-    let sh = m.shells.push(nacre_topo::Shell {
+    let sh = m.push_shell(nacre_topo::Shell {
         faces: faces
             .iter()
             .map(|&h| if h == victim { twin } else { h })

@@ -2002,6 +2002,34 @@ impl Model {
         self.faces.push(face)
     }
 
+    /// Push a face **without its invariant** — test-only.
+    ///
+    /// `validate`'s own tests have to plant models that are wrong: a loop that does not close, a
+    /// face duplicated onto another's loop, a winding deliberately reversed. Those cannot go
+    /// through [`Model::push_face`], whose assert dereferences the very edge being dangled. This
+    /// is the same exception [`Model::push_plane_unregistered`] is, and the only one that is ever
+    /// justified: something the product cannot express, kept for the tests that must express it.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn push_face_unchecked(&mut self, face: Face) -> Handle<Face> {
+        self.faces.push(face)
+    }
+
+    /// Push a shell **without its invariant** — test-only, see [`Model::push_face_unchecked`].
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn push_shell_unchecked(&mut self, shell: Shell) -> Handle<Shell> {
+        self.shells.push(shell)
+    }
+
+    /// Push a solid **without making it live** — test-only.
+    ///
+    /// ⚠ Not [`Model::push_solid`], and the difference is the whole point: that door marks the
+    /// solid live, while a planted dangling reference has to stay **unreachable**, because what it
+    /// proves is that the arena-wide checks see cells nothing points at.
+    #[cfg(any(test, feature = "test-util"))]
+    pub fn push_solid_unlisted(&mut self, solid: Solid) -> Handle<Solid> {
+        self.solids.push(solid)
+    }
+
     /// Push a shell — [`Model::push_face`]'s twin, and a cache-less door for the same reason.
     ///
     /// ☑ **Measured before it shipped**: across the same fixtures no shell the production road
