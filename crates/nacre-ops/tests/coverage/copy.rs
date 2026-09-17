@@ -176,7 +176,7 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
                 // and one restated cap — the moved provenance lives on the walls.
                 tri.iter().any(|&h| {
                     !matches!(
-                        m.surface_truth(h),
+                        m.surface(h),
                         nacre_topo::Surface::Plane { motion: None, .. }
                     )
                 })

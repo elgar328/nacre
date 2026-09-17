@@ -227,7 +227,7 @@ pub(crate) struct FaceInfo {
     /// read `[Rat; 4]` directly.
     pub(crate) name: Option<nacre_scalar::PlaneName>,
     /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
-    /// the surface's own truth (`Model::surface_truth`).
+    /// the surface's own truth (`Model::surface`).
     ///
     /// **Set together with `tri_pt3`, and only here.** It used to be decided per solid, by asking
     /// the vertices — which a boolean's result cannot answer, since its vertices are all
@@ -253,8 +253,7 @@ pub(crate) fn collect_planes(
                 // vocabulary. Whether it may *flow* is the population gate's question, asked
                 // in `plane_index_setup`, not a door slam here.
                 nacre_geom::Surface::Cylinder(_) => {
-                    let nacre_topo::Surface::Cylinder { motion, .. } =
-                        model.surface_truth(face.surface)
+                    let nacre_topo::Surface::Cylinder { motion, .. } = model.surface(face.surface)
                     else {
                         unreachable!("a cylinder cache carries a cylinder truth")
                     };
@@ -310,7 +309,7 @@ pub(crate) fn collect_planes(
                     let nacre_topo::Surface::Plane {
                         points: nacre_topo::PlanePoints::Known(pts),
                         motion: disk_motion,
-                    } = model.surface_truth(face.surface)
+                    } = model.surface(face.surface)
                     else {
                         return Err(reject(RejectReason::DegenerateFace));
                     };
@@ -363,7 +362,7 @@ pub(crate) fn collect_planes(
                 }
                 w
             };
-            let (tri_pt3, rotated, motion) = match model.surface_truth(face.surface) {
+            let (tri_pt3, rotated, motion) = match model.surface(face.surface) {
                 // ★★★★★ **The plane's own points state the plane — not the face's triangle.**
                 //
                 // The face's triangle is where this used to read from, and after a chain of
@@ -605,7 +604,7 @@ pub(crate) fn collect_planes(
             let nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(pts),
                 motion: None,
-            } = model.surface_truth(f.surf)
+            } = model.surface(f.surf)
             else {
                 continue;
             };
@@ -675,7 +674,7 @@ pub(crate) fn world_cylinder_def(
     model: &Model,
     surf: Handle<Surface>,
 ) -> Option<nacre_topo::CylinderDef> {
-    let nacre_topo::Surface::Cylinder { def, motion } = model.surface_truth(surf) else {
+    let nacre_topo::Surface::Cylinder { def, motion } = model.surface(surf) else {
         unreachable!("a cylinder surface carries a cylinder truth")
     };
     let out = match motion {

@@ -11205,7 +11205,7 @@ mod tests {
         let (mut setup, cyl_surfs) =
             crate::planes::plane_index_setup_inner(&m, plate, boss).unwrap();
         for &surf in &cyl_surfs {
-            let nacre_topo::Surface::Cylinder { def, .. } = m.surface_truth(surf) else {
+            let nacre_topo::Surface::Cylinder { def, .. } = m.surface(surf) else {
                 unreachable!("a cylinder row carries a cylinder truth")
             };
             let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {

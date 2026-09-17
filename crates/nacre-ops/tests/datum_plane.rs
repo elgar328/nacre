@@ -104,7 +104,7 @@ fn a_tilted_datum_records_the_points_the_caller_wrote() {
         unreachable!()
     };
 
-    let Surface::Plane { points, motion } = m.surface_truth(plane) else {
+    let Surface::Plane { points, motion } = m.surface(plane) else {
         unreachable!("a datum is a plane")
     };
     assert_eq!(*motion, None, "a world statement records no motion");
@@ -399,7 +399,7 @@ fn an_offset_of_a_world_plane_is_the_plane_the_world_already_names() {
         m.world_plane(Axis::Z),
         "z = 0 is the seeded XY plane, however it was reached"
     );
-    let Surface::Plane { motion, .. } = m.surface_truth(plane) else {
+    let Surface::Plane { motion, .. } = m.surface(plane) else {
         unreachable!()
     };
     assert_eq!(*motion, None, "a world-liftable offset makes no frame node");
@@ -413,7 +413,7 @@ fn an_offset_of_a_world_plane_is_the_plane_the_world_already_names() {
     };
     assert_eq!(m.surface_count(), before + 1, "z = 2 is new");
     assert_ne!(up, cap_plane);
-    let Surface::Plane { points, motion } = m.surface_truth(up) else {
+    let Surface::Plane { points, motion } = m.surface(up) else {
         unreachable!()
     };
     assert_eq!(*motion, None);
@@ -486,7 +486,7 @@ fn a_tilted_offset_is_exact_inside_the_frame() {
         unreachable!()
     };
 
-    let Surface::Plane { points, motion } = m.surface_truth(plane) else {
+    let Surface::Plane { points, motion } = m.surface(plane) else {
         unreachable!()
     };
     assert!(
@@ -1277,7 +1277,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     );
     assert!(
         matches!(
-            mx.surface_truth(plane),
+            mx.surface(plane),
             Surface::Plane {
                 points: PlanePoints::Through(_),
                 motion: None,
@@ -1799,7 +1799,7 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
         .copied()
         .find(|&f| {
             matches!(
-                m.surface_truth(m.faces.get(f).surface),
+                m.surface(m.faces.get(f).surface),
                 Surface::Plane {
                     points: PlanePoints::Through(_),
                     ..
@@ -1825,7 +1825,7 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
     let Surface::Plane {
         points: PlanePoints::Through(named),
         motion,
-    } = m.surface_truth(m.faces.get(cap).surface)
+    } = m.surface(m.faces.get(cap).surface)
     else {
         unreachable!()
     };
@@ -1924,7 +1924,7 @@ fn every_plane_still_has_a_name() {
     let mut i = 0u32;
     while let Some(h) = m.surface_handle_at(i) {
         i += 1;
-        if let Surface::Plane { points, .. } = m.surface_truth(h) {
+        if let Surface::Plane { points, .. } = m.surface(h) {
             planes += 1;
             assert!(
                 m.surface_name.contains_key(&h) || matches!(points, PlanePoints::Through(_)),
@@ -2014,7 +2014,7 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
         .map(|&f| m.faces.get(f).surface)
         .find(|s| {
             matches!(
-                m.surface_truth(*s),
+                m.surface(*s),
                 Surface::Plane {
                     motion: Some(_),
                     ..
@@ -2065,7 +2065,7 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
 
     // ★★ The truth says which frame its points are written in — the disambiguator that keeps the
     // two same-named planes apart.
-    let Surface::Plane { motion, .. } = m.surface_truth(plane) else {
+    let Surface::Plane { motion, .. } = m.surface(plane) else {
         unreachable!()
     };
     assert!(

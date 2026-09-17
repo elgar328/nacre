@@ -1094,7 +1094,7 @@ fn two_caps_described_exactly_are_one_plane() {
             .expect("a frame cap records its name")
             .narrow()
             .expect("a frame cap's name is narrow");
-        let motion = match m.surface_truth(surf) {
+        let motion = match m.surface(surf) {
             nacre_topo::Surface::Plane {
                 motion: Some(motion),
                 ..
@@ -1251,7 +1251,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
             let nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(pts),
                 ..
-            } = m.surface_truth(fi.surf())
+            } = m.surface(fi.surf())
             else {
                 without += 1;
                 continue;
@@ -1477,10 +1477,7 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
             // old "has points and is not Inexact" test collapses to "is a plane truth",
             // which the type now guarantees. The sweep stays as the retrospective record
             // of what this lock used to have to check.
-            let ok = matches!(
-                m.surface_truth(fi.surf()),
-                nacre_topo::Surface::Plane { .. }
-            );
+            let ok = matches!(m.surface(fi.surf()), nacre_topo::Surface::Plane { .. });
             if ok {
                 exact += 1;
             } else {
@@ -1489,7 +1486,7 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
                     "  {name}: {:?} named={} truth={:?}",
                     fi.surf(),
                     m.surface_name.contains_key(&fi.surf()),
-                    m.surface_truth(fi.surf())
+                    m.surface(fi.surf())
                 );
             }
         }

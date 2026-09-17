@@ -69,7 +69,7 @@ fn caps_and_walls(m: &Model, s: Handle<Solid>) -> (Vec<Handle<Surface>>, Vec<Han
         let Surface::Plane {
             points: PlanePoints::Known(p),
             ..
-        } = m.surface_truth(surf)
+        } = m.surface(surf)
         else {
             panic!("a block face states known points");
         };
@@ -105,7 +105,7 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
             "a turned cap must be its source handle, not a moved twin: {c:?} vs {src_caps:?}"
         );
         assert!(
-            matches!(m.surface_truth(*c), Surface::Plane { motion: None, .. }),
+            matches!(m.surface(*c), Surface::Plane { motion: None, .. }),
             "a fixed plane records no motion"
         );
     }
@@ -114,7 +114,7 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
     for w in &walls {
         assert!(
             matches!(
-                m.surface_truth(*w),
+                m.surface(*w),
                 Surface::Plane {
                     motion: Some(_),
                     ..
@@ -140,7 +140,7 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
     assert!(caps2.contains(&seed), "still the seed after a second turn");
     for c in &caps2 {
         assert!(
-            matches!(m.surface_truth(*c), Surface::Plane { motion: None, .. }),
+            matches!(m.surface(*c), Surface::Plane { motion: None, .. }),
             "a twice-turned cap still records no motion"
         );
     }

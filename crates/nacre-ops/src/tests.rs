@@ -2400,7 +2400,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
     let far_pts = [[r(0), r(0), r(3)], [r(1), r(0), r(3)], [r(0), r(1), r(3)]];
     let (m, surf) = prism(Some(far_pts));
     assert_eq!(
-        m.surface_truth(surf),
+        m.surface(surf),
         &nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Known(far_pts),
             motion: None,
@@ -2419,7 +2419,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
     // fallback is gone (S6b): the negative pins live at the operation as named rejects now.
     let (m, surf) = prism(None);
     assert!(
-        matches!(m.surface_truth(surf), nacre_topo::Surface::Plane { .. }),
+        matches!(m.surface(surf), nacre_topo::Surface::Plane { .. }),
         "the ring's triple is recorded"
     );
     assert_eq!(
@@ -4964,7 +4964,7 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
                 let VertexDef::ThreePlane(tri) = m.vertices.get(*vh).def else {
                     unreachable!("a cuboid corner is a three-plane point")
                 };
-                let motion_of = |h| match m.surface_truth(h) {
+                let motion_of = |h| match m.surface(h) {
                     nacre_topo::Surface::Plane { motion, .. } => *motion,
                     nacre_topo::Surface::Cylinder { motion, .. } => *motion,
                 };
@@ -5232,7 +5232,7 @@ fn transform_rotate_boolean_result_keeps_discovered_base() {
                 }
                 if tri.iter().any(|&h| {
                     !matches!(
-                        m.surface_truth(h),
+                        m.surface(h),
                         nacre_topo::Surface::Plane { motion: None, .. }
                     )
                 }) {
@@ -5310,7 +5310,7 @@ fn boundary_verts(m: &Model, s: Handle<Solid>) -> Vec<Handle<Vertex>> {
 fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
     m.shells.get(m.solids.get(s).outer).faces.iter().any(|&fh| {
         matches!(
-            m.surface_truth(m.faces.get(fh).surface),
+            m.surface(m.faces.get(fh).surface),
             nacre_topo::Surface::Plane {
                 motion: Some(_),
                 ..
@@ -5349,7 +5349,7 @@ fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_scalar:
         let &nacre_topo::Surface::Plane {
             motion: Some(rotation),
             ..
-        } = m.surface_truth(m.faces.get(fh).surface)
+        } = m.surface(m.faces.get(fh).surface)
         else {
             continue;
         };
@@ -5450,7 +5450,7 @@ fn the_same_motion_applied_twice_is_one_node() {
     fn leaf(m: &Model, s: Handle<Solid>) -> Handle<nacre_topo::MotionNode> {
         let sh = m.solids.get(s).outer;
         let fh = m.shells.get(sh).faces[0];
-        match m.surface_truth(m.faces.get(fh).surface) {
+        match m.surface(m.faces.get(fh).surface) {
             nacre_topo::Surface::Plane {
                 motion: Some(motion),
                 ..
@@ -5510,7 +5510,7 @@ fn a_rerotated_boolean_result_continues_each_walls_history() {
     let sh = m.solids.get(r).outer;
     for &fh in &m.shells.get(sh).faces {
         let s = m.faces.get(fh).surface;
-        match m.surface_truth(s) {
+        match m.surface(s) {
             &nacre_topo::Surface::Plane {
                 motion: Some(rotation),
                 ..
@@ -8301,7 +8301,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     );
     assert!(
         matches!(
-            m.surface_truth(m.faces.get(faces[0]).surface),
+            m.surface(m.faces.get(faces[0]).surface),
             nacre_topo::Surface::Plane { motion: None, .. }
         ),
         "★ and it carries no motion, so its judgment stays exact"
@@ -8422,7 +8422,7 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
     for &f in &m.shells.get(m.solids.get(solid).outer).faces {
         total += 1;
         if !matches!(
-            m.surface_truth(m.faces.get(f).surface),
+            m.surface(m.faces.get(f).surface),
             nacre_topo::Surface::Plane { .. }
         ) {
             missing += 1;
@@ -8493,7 +8493,7 @@ fn a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road() {
     for &f in &m.shells.get(m.solids.get(solid).outer).faces {
         total += 1;
         if !matches!(
-            m.surface_truth(m.faces.get(f).surface),
+            m.surface(m.faces.get(f).surface),
             nacre_topo::Surface::Plane { .. }
         ) {
             missing += 1;
@@ -8634,7 +8634,7 @@ fn lone_cylinder_def(m: &Model) -> nacre_topo::CylinderDef {
     let mut found = None;
     for (h, _) in m.faces.iter() {
         let s = m.faces.get(h).surface;
-        if let nacre_topo::Surface::Cylinder { def, .. } = m.surface_truth(s) {
+        if let nacre_topo::Surface::Cylinder { def, .. } = m.surface(s) {
             found = Some(def.clone());
         }
     }
@@ -8975,7 +8975,7 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
         panic!("an extrude answers with an extrude");
     };
     let lateral = m.faces.get(faces[2]).surface;
-    match m.surface_truth(lateral) {
+    match m.surface(lateral) {
         nacre_topo::Surface::Cylinder { motion, .. } => assert!(
             motion.is_some(),
             "a tilted frame states its cylinder inside a motion node"
@@ -10161,7 +10161,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                         for &fh in &m.shells.get(sh).faces {
                             let face = m.faces.get(fh);
                             let lateral = matches!(
-                                m.surface_truth(face.surface),
+                                m.surface(face.surface),
                                 nacre_topo::Surface::Cylinder { .. }
                             );
                             let joint = |lp: &nacre_topo::Loop| {
@@ -11944,8 +11944,7 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
                     plane_bits.push(pl.coefficients().map(f64::to_bits))
                 }
                 nacre_geom::Surface::Cylinder(_) => {
-                    if let nacre_topo::Surface::Cylinder { def, .. } = m.surface_truth(face.surface)
-                    {
+                    if let nacre_topo::Surface::Cylinder { def, .. } = m.surface(face.surface) {
                         cylinder_defs.push(format!("{def:?}"));
                     }
                 }

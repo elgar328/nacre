@@ -3537,7 +3537,7 @@ mod tests {
         for sh in std::iter::once(solid.outer).chain(solid.cavities.iter().copied()) {
             for &fh in &m.shells.get(sh).faces {
                 let surf = m.faces.get(fh).surface;
-                if matches!(m.surface_truth(surf), nacre_topo::Surface::Cylinder { .. }) {
+                if matches!(m.surface(surf), nacre_topo::Surface::Cylinder { .. }) {
                     *counts.entry(surf).or_default() += 1;
                 }
             }

@@ -331,7 +331,7 @@ fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
         // one here — the fallback arm would have swallowed the new variant silently, answering
         // for geometry it had never seen. Spelled as a match, the next variant (M6's) is a
         // compile error at exactly this decision.
-        match model.surface_truth(s) {
+        match model.surface(s) {
             nacre_topo::Surface::Plane {
                 points: nacre_topo::PlanePoints::Known(p),
                 ..
@@ -724,7 +724,7 @@ fn transform_solid(
         let moved = motion
             .surface(model.surface_cache(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
-        let src_truth = model.surface_truth(s).clone();
+        let src_truth = model.surface(s).clone();
         // ★ **A motion that fixes this plane restates nothing — the source statement already
         // states the image.** The per-plane sibling of `carry_of`'s whole-solid
         // decision: a rigid motion mapping this plane onto itself *as a set* (axis ∥
@@ -1232,7 +1232,7 @@ mod tests {
             .map(|&f| m.faces.get(f).surface)
             .find(|&s2| {
                 matches!(
-                    m.surface_truth(s2),
+                    m.surface(s2),
                     nacre_topo::Surface::Plane {
                         points: nacre_topo::PlanePoints::Known(p),
                         ..
@@ -1242,7 +1242,7 @@ mod tests {
             .expect("the deep triple must survive the move verbatim (pre-motion truth)");
         assert!(
             matches!(
-                m.surface_truth(moved_surf),
+                m.surface(moved_surf),
                 nacre_topo::Surface::Plane {
                     motion: Some(_),
                     ..
@@ -1391,7 +1391,7 @@ mod tests {
             .expect("a cylinder keeps its lateral face");
         // An inexact turn records a node, and the def is carried **verbatim** — the recorded
         // node states its cylinder before the motion (the plane rule, unchanged by M6-0).
-        match m.surface_truth(lateral) {
+        match m.surface(lateral) {
             nacre_topo::Surface::Cylinder {
                 def,
                 motion: Some(_),
@@ -1576,7 +1576,7 @@ mod tests {
         // transport the probe checked — origin through `point_rat`, directions through
         // `dir_rat` (the pivot cancels), radius invariant. (x, y) ↦ (−y, x).
         let d = |x: f64| Rat::from_decimal(x).expect("decimal");
-        match m.surface_truth(lateral) {
+        match m.surface(lateral) {
             nacre_topo::Surface::Cylinder { def, motion: None } => {
                 assert_eq!(def.origin(), [d(1.25), d(0.5), d(2.0)]);
                 assert_eq!(def.dir(), [d(0.0), d(0.0), d(1.0)]);

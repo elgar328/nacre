@@ -315,7 +315,7 @@ fn check_result_topology(
         for &eh in edge_uses.keys() {
             let e = model.edges.get(eh);
             let [s0, s1] = e.surfaces;
-            if s0 == s1 && matches!(model.surface_truth(s0), nacre_topo::Surface::Plane { .. }) {
+            if s0 == s1 && matches!(model.surface(s0), nacre_topo::Surface::Plane { .. }) {
                 same_plane.push(eh);
             }
         }

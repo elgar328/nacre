@@ -56,7 +56,7 @@ fn build(
         nacre_geom::Surface::Cylinder(c) => *c,
         _ => unreachable!(),
     };
-    let def = match m.surface_truth(lateral) {
+    let def = match m.surface(lateral) {
         Surface::Cylinder { def, motion } => {
             assert!(motion.is_none(), "construction states the world");
             def.clone()
@@ -436,7 +436,7 @@ type CylFaces = [nacre_store::Handle<nacre_topo::Face>; 3];
 /// The lateral surface's truth and the two seam coordinates of a model built exactly.
 fn read_exact(m: &Model, faces: CylFaces) -> (CylinderDef, Point3, Point3) {
     let lateral = m.faces.get(faces[0]).surface;
-    let def = match m.surface_truth(lateral) {
+    let def = match m.surface(lateral) {
         Surface::Cylinder { def, motion } => {
             assert!(motion.is_none(), "this fixture states the world");
             def.clone()

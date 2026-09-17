@@ -1107,7 +1107,7 @@ fn pierce_def(
             .ok_or(OpError::PlaneWithoutExactForm)
     };
     let (pa, pb) = (name(a)?, name(b)?);
-    let nacre_topo::Surface::Cylinder { def, motion } = model.surface_truth(cylinder) else {
+    let nacre_topo::Surface::Cylinder { def, motion } = model.surface(cylinder) else {
         return Err(OpError::DegenerateGeometry);
     };
     if model.plane_motion(a) != *motion || model.plane_motion(b) != *motion {
@@ -2574,7 +2574,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // `narrow()` gates the wide vessel out: a `Wide` name (S2) carries identity only, so it
     // keeps the f64 projection exactly as a missing name did.
     let world_stated = matches!(
-        model.surface_truth(surface_h),
+        model.surface(surface_h),
         nacre_topo::Surface::Plane { motion: None, .. }
     );
     let origin = match (
@@ -3313,7 +3313,7 @@ mod frame_differential {
         let mut seen = std::collections::BTreeSet::new();
         for i in 0..m.surface_count() as u32 {
             let h = m.surface_handle_at(i).expect("in range");
-            let motion = match m.surface_truth(h) {
+            let motion = match m.surface(h) {
                 Surface::Plane { motion, .. } | Surface::Cylinder { motion, .. } => *motion,
             };
             if let Some(node) = motion {

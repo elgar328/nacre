@@ -68,7 +68,7 @@ pub(crate) fn surface_witness_triangle(
     model: &Model,
     h: Handle<Surface>,
 ) -> Option<[WitnessPoint; 3]> {
-    let (base, motion) = match model.surface_truth(h) {
+    let (base, motion) = match model.surface(h) {
         nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Known(pts),
             motion,
@@ -244,7 +244,7 @@ pub(crate) fn frame_chain(
         let nacre_topo::Surface::Plane {
             points: nacre_topo::PlanePoints::Through(vs),
             motion,
-        } = model.surface_truth(plane)
+        } = model.surface(plane)
         else {
             return None;
         };
@@ -305,7 +305,7 @@ pub(crate) fn frame_chain(
         Some(MoveNode::FrameWide(wf))
     };
     let mut chain = vec![narrow_road().or_else(wide_road)?];
-    match model.surface_truth(plane) {
+    match model.surface(plane) {
         nacre_topo::Surface::Plane {
             motion: Some(m), ..
         }
@@ -514,7 +514,7 @@ mod tests {
                         let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
                             panic!("a cuboid corner is a three-plane point");
                         };
-                        let motion_of = |h| match m.surface_truth(h) {
+                        let motion_of = |h| match m.surface(h) {
                             nacre_topo::Surface::Plane { motion, .. } => *motion,
                             nacre_topo::Surface::Cylinder { motion, .. } => *motion,
                         };
@@ -621,7 +621,7 @@ mod tests {
             let &nacre_topo::Surface::Plane {
                 motion: Some(rotation),
                 ..
-            } = m.surface_truth(m.faces.get(fh).surface)
+            } = m.surface(m.faces.get(fh).surface)
             else {
                 panic!("every face of this solid records a motion");
             };

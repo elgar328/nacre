@@ -560,7 +560,7 @@ pub struct Model {
     /// ★ Private (stage S1, `docs/truth-and-cache.md`): a surface can only enter through
     /// [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth —
     /// a surface **without** a record is unrepresentable from outside this crate. Read through
-    /// [`Model::surface_truth`]/[`Model::surface_cache`]/[`Model::surface_count`]; there is
+    /// [`Model::surface`]/[`Model::surface_cache`]/[`Model::surface_count`]; there is
     /// deliberately no whole-store iterator (the arena keeps superseded surfaces — consumers
     /// walk the live faces).
     surfaces: Store<Surface>,
@@ -767,7 +767,7 @@ pub struct EdgeCache {
 }
 
 /// One surface's realized geometry — a **cache** beside the surface store (index-parallel),
-/// the f64 answer to what [`Model::surface_truth`] states exactly.
+/// the f64 answer to what [`Model::surface`] states exactly.
 ///
 /// ★ **[`EdgeCache`]'s mirror**: topo wraps, and the geometry's own methods stay in
 /// `nacre-geom` — `distance`, `normal_at`, `translated` and the rest dispatch on
@@ -1062,7 +1062,7 @@ impl Model {
     /// truth **is** the arena entry a handle names, which is what retired `SurfaceDef::Inexact`
     /// and the `UndefinedSurface` violation.
     #[inline]
-    pub fn surface_truth(&self, h: Handle<Surface>) -> &Surface {
+    pub fn surface(&self, h: Handle<Surface>) -> &Surface {
         self.surfaces.get(h)
     }
 
@@ -1077,7 +1077,7 @@ impl Model {
         };
         let h = self.world_planes[ix];
         debug_assert!(
-            matches!(self.surface_truth(h), Surface::Plane { motion: None, .. }),
+            matches!(self.surface(h), Surface::Plane { motion: None, .. }),
             "seed handles must stay the world planes"
         );
         h
@@ -1101,7 +1101,7 @@ impl Model {
         let _ = store.get(h);
     }
 
-    /// The surface a handle names, realized — the **f64 cache** of [`Model::surface_truth`]'s
+    /// The surface a handle names, realized — the **f64 cache** of [`Model::surface`]'s
     /// answer.
     ///
     /// Reading is open; **writing is not** — the store is private (S1), so a surface can only
@@ -1650,7 +1650,7 @@ impl Model {
     /// The motion a surface's truth records, whichever variant it is.
     #[inline]
     pub fn plane_motion(&self, h: Handle<Surface>) -> Option<Handle<MotionNode>> {
-        match self.surface_truth(h) {
+        match self.surface(h) {
             Surface::Plane { motion, .. } | Surface::Cylinder { motion, .. } => *motion,
         }
     }
@@ -2736,7 +2736,7 @@ mod tests {
             let Surface::Plane {
                 points: PlanePoints::Known(pts),
                 ..
-            } = m.surface_truth(src).clone()
+            } = m.surface(src).clone()
             else {
                 unreachable!("an axis plane states points")
             };
@@ -2990,8 +2990,8 @@ mod tests {
         refuses("surface_cache", &|| {
             let _ = a.surface_cache(surf);
         });
-        refuses("surface_truth", &|| {
-            let _ = a.surface_truth(surf);
+        refuses("surface", &|| {
+            let _ = a.surface(surf);
         });
         refuses("vertex_point", &|| {
             let _ = a.vertex_point(vert);
@@ -3019,7 +3019,7 @@ mod tests {
     fn the_surface_cache_is_writable_and_the_truth_is_not() {
         let mut m = Model::new();
         let h = m.world_plane(nacre_scalar::Axis::Z);
-        let truth_before = m.surface_truth(h).clone();
+        let truth_before = m.surface(h).clone();
         let cache_before = m.surface_cache(h).clone();
 
         // A different plane in the same slot — what a refinement at a higher precision does in
@@ -3046,7 +3046,7 @@ mod tests {
             "and it is not the old one"
         );
         assert_eq!(
-            *m.surface_truth(h),
+            *m.surface(h),
             truth_before,
             "the truth a handle names is untouched — it is the arena entry, and the arena is sealed"
         );
@@ -3659,10 +3659,7 @@ mod tests {
                     m.surface_name.get(&h),
                     Some(&nacre_scalar::PlaneName::Narrow(name))
                 );
-                assert!(matches!(
-                    m.surface_truth(h),
-                    Surface::Plane { motion: None, .. }
-                ));
+                assert!(matches!(m.surface(h), Surface::Plane { motion: None, .. }));
                 let nacre_geom::Surface::Plane(pl) = m.surface_cache(h) else {
                     panic!("a seed is a plane")
                 };
@@ -3775,7 +3772,7 @@ mod tests {
         assert_eq!(planar.len(), 2, "two caps");
         for s in &planar {
             assert!(
-                matches!(m.surface_truth(*s), Surface::Plane { .. }),
+                matches!(m.surface(*s), Surface::Plane { .. }),
                 "a cap without truth"
             );
             assert!(m.surface_name.contains_key(s), "a cap without a name");
@@ -3825,7 +3822,7 @@ mod tests {
             "x + y + z = 1 is the plane through those three corners"
         );
         assert!(matches!(
-            m.surface_truth(h),
+            m.surface(h),
             Surface::Plane {
                 points: PlanePoints::Through(_),
                 ..
@@ -3859,7 +3856,7 @@ mod tests {
         // ★ And the first statement wins, as interning is documented to: the truth still points
         // at vertices. Which variant a plane ends up with is arena history, not a promise.
         assert!(matches!(
-            m.surface_truth(known),
+            m.surface(known),
             Surface::Plane {
                 points: PlanePoints::Through(_),
                 ..
@@ -3882,7 +3879,7 @@ mod tests {
         let Surface::Plane {
             points: PlanePoints::Through(named),
             ..
-        } = m.surface_truth(h)
+        } = m.surface(h)
         else {
             unreachable!()
         };

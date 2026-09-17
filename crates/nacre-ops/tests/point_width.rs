@@ -281,7 +281,7 @@ impl Tally {
 }
 
 fn motion_of(m: &Model, h: Handle<Surface>) -> Option<Handle<nacre_topo::MotionNode>> {
-    match m.surface_truth(h) {
+    match m.surface(h) {
         Surface::Plane { motion, .. } => *motion,
         Surface::Cylinder { motion, .. } => *motion,
     }
@@ -889,7 +889,7 @@ fn name_census(m: &Model) -> (u64, usize, usize, usize) {
         distinct.insert(format!("{n:?}"));
         if let Surface::Plane {
             motion: Some(_), ..
-        } = m.surface_truth(*h)
+        } = m.surface(*h)
         {
             moved += 1;
         }

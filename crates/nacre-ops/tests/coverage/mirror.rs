@@ -272,7 +272,7 @@ fn an_exact_mirror_plane_records_no_motion_and_a_lossy_one_does() {
         let shell = m.solids.get(b).outer;
         let mut motions = Vec::new();
         for &fh in &m.shells.get(shell).faces {
-            motions.push(match m.surface_truth(m.faces.get(fh).surface) {
+            motions.push(match m.surface(m.faces.get(fh).surface) {
                 nacre_topo::Surface::Plane { motion, .. }
                 | nacre_topo::Surface::Cylinder { motion, .. } => motion.is_some(),
             });
@@ -348,7 +348,7 @@ fn a_rotated_solid_mirrors() {
             // provenance lives on the walls each corner also names.
             tri.iter().any(|&h| {
                 !matches!(
-                    m.surface_truth(h),
+                    m.surface(h),
                     nacre_topo::Surface::Plane { motion: None, .. }
                 )
             })

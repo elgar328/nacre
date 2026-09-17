@@ -768,7 +768,7 @@ fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
             // author decides what its truth check is.
             nacre_geom::Surface::Plane(_) => continue,
         };
-        let (def, motion) = match m.surface_truth(face.surface) {
+        let (def, motion) = match m.surface(face.surface) {
             nacre_topo::Surface::Cylinder { def, motion } => (def, motion),
             // The stores are index-parallel with one entry door, so a kind mismatch cannot
             // arise; it is transform's `unreachable!`, not this check's proposition.
