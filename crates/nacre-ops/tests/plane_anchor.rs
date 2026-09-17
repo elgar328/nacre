@@ -221,13 +221,19 @@ fn d_at(anchor: Point3, sp: &SketchPlane) -> f64 {
 // 1. Do two anchors even disagree?
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// **They do — by up to 22 ulps, and the disagreement is already live today.**
+/// **They do — by up to 22 ulps.**
 ///
 /// The anchors compared here are not "the datum's" versus "the prism's". They are the *sketch
 /// origin* and each of the *four ring points*, and `build_prism` anchors at the **oriented** ring's
-/// first point — which reversing the ring changes. So a tilted plane's stored `d` already depends
-/// on a winding decision made inside the prism builder, with no datum operation in sight. What a
-/// pre-existing plane does is make that choice deterministic, not introduce it.
+/// first point — which reversing the ring changes. So which `d` a *producer* hands in depends on a
+/// winding decision made inside the prism builder, with no datum operation in sight.
+///
+/// ⚠ **Cell 58 changed what happens next, not this.** This test builds its planes with
+/// `Plane::from_point_normal` and never pushes one, so it still measures what it always did: two
+/// anchors, two `d`s. What is no longer true is the sentence that used to end this paragraph —
+/// that the *stored* `d` inherits the producer's choice. `push_plane_raw` now derives the anchor
+/// from the truth, so the model keeps one `d` per plane however many anchors are offered;
+/// `which_surface_caches_two_anchors_leave_disagreeing` is where that is asserted.
 #[test]
 fn which_point_states_a_plane_changes_its_stored_d() {
     let sp = wf_plane();

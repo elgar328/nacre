@@ -324,9 +324,16 @@ pub static WIDE_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 /// that population too.
 pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// **How far the realization road reaches for surfaces** — the counters cell 58 measures before
-/// it wires anything (principle 4, "one road to a realization": a vertex reached it in cell 52,
-/// a surface still takes the f64 its producer hands in).
+/// **How far the realization road reaches for surfaces** — principle 4's "one road to a
+/// realization", counted push by push. A vertex reached it whole in cell 52; a plane reached it
+/// **halfway** in cell 58, where the anchor became a function of the truth and the row and the
+/// sense stayed the producer's.
+///
+/// ⚠ These were first added to measure *before* anything was wired, so that the census diff the
+/// wiring caused could be predicted. They kept their meaning afterwards because
+/// `Model::apply_derivation` (private, so not a link) counts before it overwrites: `differs`
+/// still reads "how far the
+/// producer's value was from the truth's", not "how far the cache moved after the fact".
 ///
 /// Read through [`surface_derive_counts`]; the census prints them as `stat` rows, the same
 /// falsifiability bridge [`WIDE_PLANES`] and [`SEEDED_HITS`] are. They are process-global and
@@ -1265,10 +1272,14 @@ impl Model {
     /// **The f64 cache this surface's truth realizes to** — principle 4's road, for surfaces.
     ///
     /// A vertex has had one since cell 52 (`push_vertex_realized` realizes the definition at
-    /// birth); a surface still stores whatever f64 its producer handed in, which is nobody's
-    /// exact rounding: measured over the suite, a tilted plane's cache anchor varies by up to
-    /// 22 ulps with which face asked for the plane first, and for 20 of 29 moved planes the
-    /// stored anchor does not satisfy the plane's own coefficients.
+    /// birth). A surface got **half** of one in cell 58: the anchor is derived here, the row and
+    /// the sense are still whatever the producer handed in.
+    ///
+    /// ★ **What that half ended** — the measurements this function was built from, kept in the
+    /// past tense because they no longer describe the stored cache: a tilted plane's anchor
+    /// varied by up to **22 ulps** with which face asked for the plane first, and for **20 of 29**
+    /// moved planes the stored anchor did not satisfy the plane's own coefficients. The anchor is
+    /// now a function of the truth, so neither varies with who asked.
     ///
     /// What it derives:
     /// * **Plane** — the **anchor**, and nothing else: the truth's first point, carried to the
