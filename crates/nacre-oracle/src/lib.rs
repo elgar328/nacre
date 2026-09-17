@@ -306,10 +306,10 @@ mod tests {
     /// Faces of one live solid, outer shell and cavities — the figure `OcctProps::faces` is
     /// compared against.
     fn face_count(model: &Model, s: Handle<Solid>) -> usize {
-        let sol = model.solids.get(s);
+        let sol = model.solid(s);
         std::iter::once(sol.outer)
             .chain(sol.cavities.iter().copied())
-            .map(|sh| model.shells.get(sh).faces.len())
+            .map(|sh| model.shell(sh).faces.len())
             .sum()
     }
 
@@ -1767,7 +1767,7 @@ centroid 1 1.5 2
             rotated_boolean_matches_occt(&mut m, a, b, BoolKind::Cut, &[rot_about(Axis::Z, 30)]);
         assert_eq!(solids.len(), 1, "one solid");
         assert_eq!(
-            m.solids.get(solids[0]).cavities.len(),
+            m.solid(solids[0]).cavities.len(),
             1,
             "the contained box is a cavity"
         );
@@ -1983,9 +1983,9 @@ centroid 1 1.5 2
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
         let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
-        let b_outer = m.solids.get(b).outer;
+        let b_outer = m.solid(b).outer;
         let void = m.reversed_shell(b_outer);
-        let a_outer = m.solids.get(a).outer;
+        let a_outer = m.solid(a).outer;
         let hollow = m.push_solid(Solid {
             outer: a_outer,
             cavities: vec![void],

@@ -71,7 +71,7 @@ fn build_step(model: &Model, solids: &[Handle<Solid>]) -> Result<String, StepErr
     // Export the given (live) solids, not the whole append-only store (design
     // §2): superseded solids linger in the arena but must not reach the file.
     for &solid_h in solids {
-        let solid = model.solids.get(solid_h);
+        let solid = model.solid(solid_h);
         let part = b.part("nacre_solid")?;
 
         // Deduped per export: a shared vertex/edge becomes one STEP entity.
@@ -118,8 +118,8 @@ fn build_shell_faces(
     emap: &mut HashMap<Handle<Edge>, EdgeCurveId>,
 ) -> Result<Vec<AdvancedFaceId>, StepError> {
     let mut face_ids = Vec::new();
-    for &fh in &model.shells.get(shell).faces {
-        let face = model.faces.get(fh);
+    for &fh in &model.shell(shell).faces {
+        let face = model.face(fh);
 
         // Surface → step-io SurfaceInput. Exhaustive match: future variants
         // (sphere, NURBS) must be handled here (else compile error).
@@ -183,7 +183,7 @@ fn build_edge(
     if let Some(&id) = emap.get(&eh) {
         return Ok(id);
     }
-    let edge = model.edges.get(eh);
+    let edge = model.edge(eh);
     let [v0, v1] = edge.vertices;
     // CurveInput::Line derives geometry from the two vertices; a circle carries
     // its own frame. A seam rim has v0 == v1, giving a closed STEP circle.
@@ -370,9 +370,9 @@ mod tests {
         let mut m = Model::new();
         let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([4.0; 3]));
         let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([3.0; 3]));
-        let b_outer = m.solids.get(b).outer;
+        let b_outer = m.solid(b).outer;
         let void = m.reversed_shell(b_outer);
-        let a_outer = m.solids.get(a).outer;
+        let a_outer = m.solid(a).outer;
         let hollow = m.push_solid(Solid {
             outer: a_outer,
             cavities: vec![void],

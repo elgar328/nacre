@@ -73,14 +73,14 @@ pub enum PropsError {
 /// independent of `R`, while choosing `R` near the solid removes the
 /// catastrophic cancellation a far-from-origin placement would otherwise cause.
 pub fn mass_props(model: &Model, solid: Handle<Solid>) -> Result<MassProps, PropsError> {
-    let solid = model.solids.get(solid);
-    let outer = model.shells.get(solid.outer);
+    let solid = model.solid(solid);
+    let outer = model.shell(solid.outer);
 
     // R = the first vertex of the first face of the outer shell; any vertex on
     // the solid works. The closed-surface identity ∮ n̂ dA = 0 holds over the
     // *full* boundary — outer shell plus every cavity shell — so V is
     // R-independent; keeping R on the outer shell keeps the numbers small.
-    let first_face = model.faces.get(outer.faces[0]);
+    let first_face = model.face(outer.faces[0]);
     let reference = model.vertex_point(he_start(model, first_face.outer.half_edges[0])?);
 
     let mut volume_flux = 0.0;
@@ -90,8 +90,8 @@ pub fn mass_props(model: &Model, solid: Handle<Solid>) -> Result<MassProps, Prop
     // containment), so its flux is negative and subtracts the void's volume;
     // its (unsigned) area adds — both surfaces bound material.
     for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
-        for &face in &model.shells.get(sh).faces {
-            let (a, flux) = face_contribution(model, model.faces.get(face), reference)?;
+        for &face in &model.shell(sh).faces {
+            let (a, flux) = face_contribution(model, model.face(face), reference)?;
             area += a;
             volume_flux += flux;
         }
@@ -136,14 +136,14 @@ pub struct FaceProps {
 /// point does. `None` only where the direction genuinely has no name — a point on a cylinder's
 /// own axis.
 pub fn face_normal_at(model: &Model, face: Handle<Face>, p: Point3) -> Option<Vector3> {
-    let f = model.faces.get(face);
+    let f = model.face(face);
     let sign = f64::from(f.orientation.sign());
     Some(model.surface_cache(f.surface).normal_at(p)? * sign)
 }
 
 /// [`FaceProps`] of one face.
 pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsError> {
-    let face = model.faces.get(face);
+    let face = model.face(face);
     let sign = f64::from(face.orientation.sign());
     match model.surface_cache(face.surface) {
         Surface::Plane(plane) => {
@@ -184,15 +184,15 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsE
 /// solid carrying any is refused rather than approximated — volume and area on
 /// the same solid keep working, which is why this is not a [`MassProps`] field.
 pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, PropsError> {
-    let solid = model.solids.get(solid);
-    let outer = model.shells.get(solid.outer);
-    let first_face = model.faces.get(outer.faces[0]);
+    let solid = model.solid(solid);
+    let outer = model.shell(solid.outer);
+    let first_face = model.face(outer.faces[0]);
     let reference = model.vertex_point(he_start(model, first_face.outer.half_edges[0])?);
 
     let mut volume = 0.0;
     let mut moment = Vector3::zero();
     for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
-        for &face in &model.shells.get(sh).faces {
+        for &face in &model.shell(sh).faces {
             let f = face_props(model, face)?;
             let normal = f.normal.ok_or(PropsError::CentroidOfCurvedFace)?;
             let arm = f.centroid - reference;
@@ -215,7 +215,7 @@ pub fn centroid(model: &Model, solid: Handle<Solid>) -> Result<Point3, PropsErro
 /// `±r·√(1 − (n̂·e)²)` along each axis `e`, which is exact; a cylinder band is
 /// bounded by its two rim circles, so walking every edge covers it.
 pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), PropsError> {
-    let solid = model.solids.get(solid);
+    let solid = model.solid(solid);
     let mut lo = [f64::INFINITY; 3];
     let mut hi = [f64::NEG_INFINITY; 3];
     let mut grow = |p: Point3, pad: [f64; 3]| {
@@ -226,8 +226,8 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
         }
     };
     // The outer shell bounds the solid; a cavity lies inside it by construction.
-    for &face in &model.shells.get(solid.outer).faces {
-        let f = model.faces.get(face);
+    for &face in &model.shell(solid.outer).faces {
+        let f = model.face(face);
         for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
             for &he in &lp.half_edges {
                 match edge_curve(model, he) {
@@ -367,7 +367,7 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
             let Curve::Circle(c) = edge_curve(model, *he) else {
                 continue;
             };
-            let [va, vb] = model.edges.get(he.edge).vertices;
+            let [va, vb] = model.edge(he.edge).vertices;
             let t0 = c.angle_of(model.vertex_point(va));
             let t1 = c.angle_of(model.vertex_point(vb));
             let dt = (t1 - t0).rem_euclid(std::f64::consts::TAU);
@@ -468,7 +468,7 @@ fn lateral_moments(
                 continue; // straight: a ruling or a seam piece, at one θ ⇒ dθ = 0
             };
             let z = axial_of(c.center()) - z0;
-            let [va, vb] = model.edges.get(he.edge).vertices;
+            let [va, vb] = model.edge(he.edge).vertices;
             // ★★★★★ **The travel comes from the edge's own stored order, never from a wrapped
             // angle difference.** An arc edge stores `[from, to]` **CCW about the axis**
             // (`EdgeKey::Arc`), and `he.forward` says which way this face walks it. A wrapped
@@ -591,14 +591,14 @@ mod tests {
             Point3::from_array([2.0, 3.0, 4.0]),
         );
         m.rebuild_adjacency();
-        let shell = m.solids.get(s).outer;
-        for &fh in &m.shells.get(shell).faces {
+        let shell = m.solid(s).outer;
+        for &fh in &m.shell(shell).faces {
             let whole = face_props(&m, fh)
                 .unwrap()
                 .normal
                 .expect("a box face is planar");
             // Two different points of the same face — its own centroid and a corner.
-            let corner = m.vertex_point(he_start(&m, m.faces.get(fh).outer.half_edges[0]).unwrap());
+            let corner = m.vertex_point(he_start(&m, m.face(fh).outer.half_edges[0]).unwrap());
             for p in [face_props(&m, fh).unwrap().centroid, corner] {
                 let at = face_normal_at(&m, fh, p).expect("a planar face has a normal anywhere");
                 assert!((at - whole).norm() < 1e-12, "{at:?} vs {whole:?}");
@@ -618,24 +618,19 @@ mod tests {
             5.0,
         );
         m.rebuild_adjacency();
-        let shell = m.solids.get(s).outer;
+        let shell = m.solid(s).outer;
         let wall = *m
             .shells
             .get(shell)
             .faces
             .iter()
-            .find(|&&fh| {
-                matches!(
-                    m.surface_cache(m.faces.get(fh).surface),
-                    Surface::Cylinder(_)
-                )
-            })
+            .find(|&&fh| matches!(m.surface_cache(m.face(fh).surface), Surface::Cylinder(_)))
             .expect("a lateral face");
         assert!(
             face_props(&m, wall).unwrap().normal.is_none(),
             "a curved face has no single normal — that is why the point door exists"
         );
-        let cyl = match m.surface_cache(m.faces.get(wall).surface) {
+        let cyl = match m.surface_cache(m.face(wall).surface) {
             Surface::Cylinder(c) => *c,
             _ => unreachable!(),
         };
@@ -718,7 +713,9 @@ mod tests {
         // And the vertex hull really is smaller — otherwise this test proves nothing.
         let mut vlo = [f64::INFINITY; 3];
         let mut vhi = [f64::NEG_INFINITY; 3];
-        for (vh, _) in m.vertices.iter() {
+        let mut i = 0u32;
+        while let Some(vh) = m.vertex_handle_at(i) {
+            i += 1;
             let p = m.vertex_point(vh).as_array();
             for i in 0..3 {
                 vlo[i] = vlo[i].min(p[i]);
@@ -757,7 +754,7 @@ mod tests {
         let up = Vector3::from_array([0.0, 0.0, 1.0]);
         let top = m
             .shells
-            .get(m.solids.get(s).outer)
+            .get(m.solid(s).outer)
             .faces
             .iter()
             .map(|&f| (f, face_props(&m, f).unwrap()))
@@ -999,9 +996,9 @@ mod tests {
         let inner_min = min + ext(gap);
         let b = m.add_cuboid(inner_min, inner_min + ext(inner));
 
-        let b_outer = m.solids.get(b).outer;
+        let b_outer = m.solid(b).outer;
         let void = m.reversed_shell(b_outer);
-        let a_outer = m.solids.get(a).outer;
+        let a_outer = m.solid(a).outer;
         let hollow = m.push_solid(Solid {
             outer: a_outer,
             cavities: vec![void],

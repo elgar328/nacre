@@ -252,7 +252,10 @@ fn sample_live_edges<'m>(
     reach: &nacre_topo::Reachable,
 ) -> Vec<(Handle<Face>, &'m Face)> {
     let mut vmap: HashMap<Handle<Vertex>, Handle<TessVertex>> = HashMap::new();
-    for (eh, edge) in model.edges.iter() {
+    let mut i = 0u32;
+    while let Some(eh) = model.edge_handle_at(i) {
+        i += 1;
+        let edge = model.edge(eh);
         if !reach.edges.contains(&eh) {
             continue;
         }
@@ -1304,7 +1307,7 @@ mod tests {
             let step = std::f64::consts::TAU / circle_segments(&cfg, r) as f64;
             let budget = r * (1.0 - (step / 2.0).cos());
             for (_, tri) in t.triangles.iter() {
-                let f = m.faces.get(tri.face);
+                let f = m.face(tri.face);
                 let Surface::Cylinder(cy) = m.surface_cache(f.surface) else {
                     continue;
                 };
@@ -1335,7 +1338,7 @@ mod tests {
 
     /// Build the chart `triangulate_face` would build, for one face.
     fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> Chart {
-        let face = m.faces.get(fh);
+        let face = m.face(fh);
         match m.surface_cache(face.surface) {
             Surface::Plane(p) => planar_chart(t, face, p).unwrap(),
             Surface::Cylinder(c) => cylinder_chart(t, m, cfg, face, c).unwrap(),
@@ -1364,7 +1367,10 @@ mod tests {
         let t = tessellate(&m, &cfg).unwrap();
         let reach = m.reachable();
         let mut faces = 0;
-        for (fh, face) in m.faces.iter() {
+        let mut i = 0u32;
+        while let Some(fh) = m.face_handle_at(i) {
+            i += 1;
+            let face = m.face(fh);
             if !reach.faces.contains(&fh) {
                 continue;
             }
@@ -1421,7 +1427,9 @@ mod tests {
         ] {
             let t = tessellate(&m, &cfg).unwrap();
             let reach = m.reachable();
-            for (fh, _) in m.faces.iter() {
+            let mut i = 0u32;
+            while let Some(fh) = m.face_handle_at(i) {
+                i += 1;
                 if !reach.faces.contains(&fh) {
                     continue;
                 }
@@ -1435,7 +1443,7 @@ mod tests {
                         chart.uv[i]
                     );
                     // And the parameters name the same point through the surface's own evaluator.
-                    if let Surface::Cylinder(c) = m.surface_cache(m.faces.get(fh).surface) {
+                    if let Surface::Cylinder(c) = m.surface_cache(m.face(fh).surface) {
                         assert!((c.point_at(params[0], params[1]) - want).norm() <= 1e-9);
                     }
                 }
@@ -1456,7 +1464,10 @@ mod tests {
         for axis in [[0.0, 0.0, 1.0], [1.0, 2.0, 3.0]] {
             let m = cylinder([1.0, -2.0, 0.5], axis, 2.0, 5.0);
             let t = tessellate(&m, &cfg).unwrap();
-            for (fh, face) in m.faces.iter() {
+            let mut i = 0u32;
+            while let Some(fh) = m.face_handle_at(i) {
+                i += 1;
+                let face = m.face(fh);
                 if !matches!(m.surface_cache(face.surface), Surface::Cylinder(_)) {
                     continue;
                 }

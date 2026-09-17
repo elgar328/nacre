@@ -109,7 +109,7 @@ fn the_sketch_front_door_and_face_queries_are_reachable() {
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let top = *model
         .shells
-        .get(model.solids.get(solid).outer)
+        .get(model.solid(solid).outer)
         .faces
         .iter()
         .find(|&&f| {
@@ -213,10 +213,10 @@ fn a_caller_can_name_vertices_and_build_a_datum_through_them() {
     // The walk. This is the whole vocabulary a caller has for "give me a corner".
     let mut corners = Vec::new();
     for &s in &m.live_solids {
-        let sol = m.solids.get(s);
+        let sol = m.solid(s);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                let f = m.faces.get(fh);
+            for &fh in &m.shell(sh).faces {
+                let f = m.face(fh);
                 for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                     for &he in &lp.half_edges {
                         let v = m.he_start(he);
