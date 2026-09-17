@@ -48,7 +48,7 @@ fn rot_z30(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
             solid: s,
             isometry: Isometry::rotation(Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(30)).expect("angle"),
             }),
         },

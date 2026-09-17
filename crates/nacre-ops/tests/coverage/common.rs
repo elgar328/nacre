@@ -169,7 +169,7 @@ pub fn rot30() -> Isometry {
     use nacre_scalar::{Angle, Rat, Rotation};
     Isometry::rotation(Rotation {
         axis: Axis::Z,
-        point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+        pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
     })
 }
@@ -179,7 +179,7 @@ pub fn rot_iso(axis: Axis, deg: i128) -> Isometry {
     use nacre_scalar::{Angle, Rat, Rotation};
     Isometry::rotation(Rotation {
         axis,
-        point: [Rat::from_int(0); 3],
+        pivot: [Rat::from_int(0); 3],
         angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
     })
 }
@@ -386,7 +386,7 @@ pub fn cube_and_spun_bar_x(
         bar,
         Isometry::rotation(Rotation {
             axis: Axis::Y,
-            point: [Rat::new(1, 2).unwrap(), Rat::from_int(0), pivot_z],
+            pivot: [Rat::new(1, 2).unwrap(), Rat::from_int(0), pivot_z],
             angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
         }),
     );
@@ -622,7 +622,7 @@ pub fn rigid_iso(axis: Axis, deg: i128, off: [i128; 3]) -> Isometry {
     Isometry::rigid(
         Rotation {
             axis,
-            point: [Rat::from_int(0); 3],
+            pivot: [Rat::from_int(0); 3],
             angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
         },
         [

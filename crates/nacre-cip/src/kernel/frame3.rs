@@ -55,7 +55,7 @@ pub enum MoveNode {
     Rotate {
         axis: Axis,
         angle: Angle,
-        point: [Rat; 3],
+        pivot: [Rat; 3],
     },
     /// An exact rational translation. Realized by adding the offset — see [`WitnessPoint::compute_hp`].
     Translate { offset: [Rat; 3] },
@@ -656,7 +656,11 @@ impl WitnessPoint {
     /// it the moment the constant left.
     pub fn rotate_about(self, axis: Axis, angle: Angle, point: [Rat; 3]) -> Self {
         let mut p = self.rotated(axis, angle, point);
-        p.remember(MoveNode::Rotate { axis, angle, point });
+        p.remember(MoveNode::Rotate {
+            axis,
+            angle,
+            pivot: point,
+        });
         p
     }
 
@@ -782,7 +786,7 @@ impl WitnessPoint {
     pub fn apply_chain(mut self, chain: &[MoveNode]) -> Option<Self> {
         for n in chain {
             self = match n {
-                MoveNode::Rotate { axis, angle, point } => self.rotated(*axis, *angle, *point),
+                MoveNode::Rotate { axis, angle, pivot } => self.rotated(*axis, *angle, *pivot),
                 MoveNode::Translate { offset } => self.translated(*offset),
                 MoveNode::Mirror { axis, offset } => self.mirrored(*axis, *offset),
                 MoveNode::Frame { frame } => self.framed(*frame)?,
@@ -1154,12 +1158,12 @@ pub fn fold_suffix(prefix: [HpBounded; 3], nodes: &[MoveNode], prec: usize) -> [
 /// they stay total rather than inventing a bound.
 fn fold_one(mut p: [HpBounded; 3], node: &MoveNode, prec: usize) -> [HpBounded; 3] {
     match node {
-        MoveNode::Rotate { axis, angle, point } => {
+        MoveNode::Rotate { axis, angle, pivot } => {
             let (i, j) = axis.plane();
             let (c, s) = angle.cos_sin_bounded(prec);
             let (px, py) = (
-                HpBounded::of_rat(point[i], prec),
-                HpBounded::of_rat(point[j], prec),
+                HpBounded::of_rat(pivot[i], prec),
+                HpBounded::of_rat(pivot[j], prec),
             );
             // pivot-relative: u = p − pivot, rotate, shift back.
             let u = p[i].sub(&px, prec);
@@ -2709,7 +2713,7 @@ mod tests {
                 .map(|_| MoveNode::Rotate {
                     axis: Axis::Z,
                     angle: deg(37),
-                    point: [r(1), r(-2), r(0)],
+                    pivot: [r(1), r(-2), r(0)],
                 })
                 .collect(),
             // Exact inputs: translations and a mirror, whose radii must stay where they were.
@@ -2730,7 +2734,7 @@ mod tests {
                     0 => MoveNode::Rotate {
                         axis: Axis::Y,
                         angle: deg(90),
-                        point: [r(0); 3],
+                        pivot: [r(0); 3],
                     },
                     1 => MoveNode::Translate {
                         offset: [r(0), r(0), Rat::new(2, 5).expect("2/5")],
@@ -2738,7 +2742,7 @@ mod tests {
                     _ => MoveNode::Rotate {
                         axis: Axis::X,
                         angle: deg(11),
-                        point: [r(0); 3],
+                        pivot: [r(0); 3],
                     },
                 })
                 .collect(),
@@ -2747,7 +2751,7 @@ mod tests {
             let base = [r(2), r(3), r(4)];
             let one_pass = WitnessPoint::at(base).apply_chain(chain).expect("one pass");
             let node_by_node = chain.iter().fold(WitnessPoint::at(base), |q, n| match n {
-                MoveNode::Rotate { axis, angle, point } => q.rotate_about(*axis, *angle, *point),
+                MoveNode::Rotate { axis, angle, pivot } => q.rotate_about(*axis, *angle, *pivot),
                 MoveNode::Translate { offset } => q.translate(*offset),
                 MoveNode::Mirror { axis, offset } => q.mirror(*axis, *offset),
                 _ => unreachable!("the fixtures above hold no frame node"),

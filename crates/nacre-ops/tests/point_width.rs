@@ -621,7 +621,7 @@ fn turned_after_the_cut() -> Model {
             solid: src,
             isometry: Isometry::rotation(Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
             }),
         },
@@ -652,7 +652,7 @@ fn boolean_rotated() -> Model {
     let b = cuboid(&mut m, [3.3, 3.3, -1.0], [7.7, 7.7, 11.0]);
     let iso = Isometry::rotation(Rotation {
         axis: Axis::Z,
-        point: [Rat::from_int(0); 3],
+        pivot: [Rat::from_int(0); 3],
         angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
     });
     let OpOutput::Transform { solid: b } = apply(
@@ -948,7 +948,7 @@ fn stacking_operations_does_not_widen_a_name() {
                     s,
                     Isometry::rotation(Rotation {
                         axis: Axis::Z,
-                        point: [dec(0.1), dec(0.7), Rat::from_int(0)],
+                        pivot: [dec(0.1), dec(0.7), Rat::from_int(0)],
                         angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
                     }),
                 );

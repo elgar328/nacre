@@ -323,7 +323,7 @@ fn dump() {
                     b,
                     Isometry::rotation(Rotation {
                         axis: ax,
-                        point: [Rat::from_int(1); 3],
+                        pivot: [Rat::from_int(1); 3],
                         angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
                     }),
                 );
@@ -442,7 +442,7 @@ fn dump() {
             tool,
             Isometry::rotation(Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
             }),
         );
@@ -723,7 +723,7 @@ fn dump() {
             c,
             Isometry::rotation(Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(90)).expect("angle"),
             }),
         );
@@ -733,7 +733,7 @@ fn dump() {
             turned,
             Isometry::rotation(Rotation {
                 axis: Axis::X,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(31)).expect("angle"),
             }),
         );
@@ -1106,7 +1106,7 @@ fn dump() {
         let rot = |ax: Axis, deg: i128| {
             Isometry::rotation(Rotation {
                 axis: ax,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
             })
         };
@@ -1124,7 +1124,7 @@ fn dump() {
                 Isometry::rigid(
                     Rotation {
                         axis: Axis::Z,
-                        point: [Rat::from_int(0); 3],
+                        pivot: [Rat::from_int(0); 3],
                         angle: Angle::from_deg(Rat::from_int(90)).expect("angle"),
                     },
                     [Rat::from_int(5), Rat::from_int(-3), Rat::from_int(2)],
@@ -1347,7 +1347,7 @@ fn dump() {
                 b,
                 Isometry::rotation(Rotation {
                     axis: Axis::Z,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
                 }),
             );
@@ -1382,7 +1382,7 @@ fn dump() {
             block,
             Isometry::rotation(nacre_scalar::Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
             }),
         );
@@ -2318,7 +2318,7 @@ fn dump() {
                         c,
                         Isometry::rotation(nacre_scalar::Rotation {
                             axis: Axis::Y,
-                            point: [r(0.0), r(0.0), r(0.0)],
+                            pivot: [r(0.0), r(0.0), r(0.0)],
                             angle: nacre_scalar::Angle::from_deg(Rat::from_int(90))
                                 .expect("a right angle"),
                         }),
@@ -2346,7 +2346,7 @@ fn dump() {
                         c,
                         Isometry::rotation(nacre_scalar::Rotation {
                             axis: Axis::Y,
-                            point: [r(0.0), r(0.0), r(0.0)],
+                            pivot: [r(0.0), r(0.0), r(0.0)],
                             angle: nacre_scalar::Angle::from_deg(Rat::from_int(90))
                                 .expect("a right angle"),
                         }),
@@ -2371,7 +2371,7 @@ fn dump() {
                         across,
                         Isometry::rotation(nacre_scalar::Rotation {
                             axis: Axis::Y,
-                            point: [r(0.0), r(0.0), r(0.0)],
+                            pivot: [r(0.0), r(0.0), r(0.0)],
                             angle: nacre_scalar::Angle::from_deg(Rat::from_int(90))
                                 .expect("a right angle"),
                         }),

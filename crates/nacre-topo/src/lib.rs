@@ -201,10 +201,13 @@ impl Vertex {
 /// then place" and "place then turn" are different motions and must stay tellable apart.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Motion {
-    /// One axis-aligned rotation about the line through the rational pivot `point`.
+    /// One axis-aligned rotation about the line through the rational `pivot`.
+    ///
+    /// ★ The field was called `point` while this very sentence called it the pivot — `Axis` gives
+    /// only a direction, so a rotation needs *which line*, and that is what this names.
     Rotate {
         axis: Axis,
-        point: [Rat; 3],
+        pivot: [Rat; 3],
         angle: Angle,
     },
     /// One exact rational translation.
@@ -2892,7 +2895,7 @@ mod tests {
         let spin = m.push_motion(
             Motion::Rotate {
                 axis: Axis::Z,
-                point: [r(0); 3],
+                pivot: [r(0); 3],
                 angle: Angle::from_deg(r(90)).expect("angle"),
             },
             None,

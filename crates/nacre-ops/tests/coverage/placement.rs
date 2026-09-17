@@ -105,7 +105,7 @@ fn rotate_then_place_builds() {
                 tool,
                 Isometry::rotation(Rotation {
                     axis: Axis::Z,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
                 }),
             );

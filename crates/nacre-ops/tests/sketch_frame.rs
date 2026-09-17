@@ -221,7 +221,7 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
                 solid: s,
                 isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
                     axis: Axis::Y,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: nacre_scalar::Angle::from_deg(Rat::from_int(30)).unwrap(),
                 }),
             },

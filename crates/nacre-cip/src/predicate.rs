@@ -1042,13 +1042,13 @@ fn single_rotation(def: &[WitnessPoint; 3]) -> Option<OneRotation> {
             MoveNode::Rotate {
                 axis: a,
                 angle,
-                point,
+                pivot: p,
             } => {
                 total = total.checked_add(angle.deg())?;
                 if *axis.get_or_insert(*a) != *a {
                     return None;
                 }
-                if *pivot.get_or_insert(*point) != *point {
+                if *pivot.get_or_insert(*p) != *p {
                     return None;
                 }
             }
@@ -1105,7 +1105,7 @@ fn coplanar_by_composed_rotation<W: Witness>(planes: &[W], i: usize, j: usize) -
     let delta = theta_a.checked_add(Rat::from_int(0).checked_sub(theta_b.deg())?)?;
     let iso = nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
         axis,
-        point: pivot,
+        pivot,
         angle: delta,
     });
     Some(iso.plane_coeffs(ca)? == cb)

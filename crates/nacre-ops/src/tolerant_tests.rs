@@ -44,7 +44,7 @@ fn cuboid() -> (Model, Handle<Solid>) {
 fn rotated(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
     let iso = Isometry::rotation(SRot {
         axis: Axis::Z,
-        point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+        pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
     });
     let out = apply(
@@ -783,7 +783,7 @@ fn two_caps_on_a_tilted_face(
                 solid: s,
                 isometry: Isometry::rotation(SRot {
                     axis,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
                 }),
             },

@@ -172,7 +172,7 @@ fn the_same_contact_is_found_after_a_rotation() {
     let turn = || {
         Isometry::rotation(nacre_scalar::Rotation {
             axis: Axis::Z,
-            point: [Rat::from_int(0); 3],
+            pivot: [Rat::from_int(0); 3],
             angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
         })
     };

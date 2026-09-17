@@ -3482,12 +3482,12 @@ pub fn mirror_fixes_plane(axis: Axis, offset: Rat, coeffs: &[Rat; 4]) -> bool {
 }
 
 /// An axis-aligned rigid rotation: turn about `axis` (the line through the rational
-/// `point`) by the rational `angle`. Exact for the 90°-family (`try_exact_cos_sin`);
+/// `pivot`) by the rational `angle`. Exact for the 90°-family (`try_exact_cos_sin`);
 /// otherwise the realized coordinate is irrational (cos/sin) and carries tol.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rotation {
     pub axis: Axis,
-    pub point: [Rat; 3],
+    pub pivot: [Rat; 3],
     pub angle: Angle,
 }
 
@@ -3574,7 +3574,7 @@ impl Isometry {
         let mut q = p;
         if let Some(r) = self.rotate {
             let (i, j) = r.axis.plane();
-            let (px, py) = (r.point[i].to_f64(), r.point[j].to_f64());
+            let (px, py) = (r.pivot[i].to_f64(), r.pivot[j].to_f64());
             let (c, s) = r.angle.cos_sin_f64();
             let (dx, dy) = (p[i] - px, p[j] - py);
             q[i] = px + dx * c - dy * s;
@@ -3626,7 +3626,7 @@ impl Isometry {
                 let mut m = n;
                 m[i] = n[i].checked_mul(cos)?.checked_sub(n[j].checked_mul(sin)?)?;
                 m[j] = n[i].checked_mul(sin)?.checked_add(n[j].checked_mul(cos)?)?;
-                (m, r.point)
+                (m, r.pivot)
             }
         };
         // d' = d + n·p − n'·(p + t)
@@ -3659,12 +3659,12 @@ impl Isometry {
                 let (cos, sin) = r.angle.try_exact_cos_sin()?;
                 let (i, j) = r.axis.plane();
                 // Pivot-relative, exactly as the realization does it: `u = x − p`, turn, shift back.
-                let u = x[i].checked_sub(r.point[i])?;
-                let v = x[j].checked_sub(r.point[j])?;
+                let u = x[i].checked_sub(r.pivot[i])?;
+                let v = x[j].checked_sub(r.pivot[j])?;
                 let mut m = x;
-                m[i] = r.point[i]
+                m[i] = r.pivot[i]
                     .checked_add(u.checked_mul(cos)?.checked_sub(v.checked_mul(sin)?)?)?;
-                m[j] = r.point[j]
+                m[j] = r.pivot[j]
                     .checked_add(u.checked_mul(sin)?.checked_add(v.checked_mul(cos)?)?)?;
                 m
             }
@@ -3858,7 +3858,7 @@ mod tests {
         fn rot(axis: Axis, deg: i128, point: [i128; 3]) -> Isometry {
             Isometry::rotation(Rotation {
                 axis,
-                point: point.map(Rat::from_int),
+                pivot: point.map(Rat::from_int),
                 angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
             })
         }
@@ -4422,13 +4422,13 @@ mod tests {
             Isometry::translation([r(1, 2), r(-3, 1), r(7, 5)]),
             Isometry::rotation(Rotation {
                 axis: Axis::X,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
             }),
             Isometry::rigid(
                 Rotation {
                     axis: Axis::Z,
-                    point: [r(1, 1), r(2, 1), r(0, 1)],
+                    pivot: [r(1, 1), r(2, 1), r(0, 1)],
                     angle: Angle::from_deg(Rat::from_int(270)).unwrap(),
                 },
                 [r(0, 1), r(5, 1), r(-1, 2)],
@@ -4464,7 +4464,7 @@ mod tests {
     fn an_inexact_rotation_declines() {
         let iso = Isometry::rotation(Rotation {
             axis: Axis::Z,
-            point: [Rat::from_int(0); 3],
+            pivot: [Rat::from_int(0); 3],
             angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
         });
         assert!(!iso.is_exact());
@@ -5738,7 +5738,7 @@ mod tests {
         let iso = |d| {
             Isometry::rotation(Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(d)).unwrap(),
             })
         };
@@ -5750,7 +5750,7 @@ mod tests {
         // Non-origin pivot (2,2): 90° maps (3,5)→pivot+R(1,3)=(2-3, 2+1)=(-1,3).
         let piv = Isometry::rotation(Rotation {
             axis: Axis::Z,
-            point: [Rat::from_int(2), Rat::from_int(2), Rat::from_int(0)],
+            pivot: [Rat::from_int(2), Rat::from_int(2), Rat::from_int(0)],
             angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
         });
         assert_eq!(piv.apply_point([3.0, 5.0, 0.0]), [-1.0, 3.0, 0.0]);

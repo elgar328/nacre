@@ -100,7 +100,7 @@ fn turn(m: &mut Model, s: Handle<Solid>, deg: Rat) -> Handle<Solid> {
             solid: s,
             isometry: Isometry::rotation(Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(deg).expect("angle"),
             }),
         },

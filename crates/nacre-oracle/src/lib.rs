@@ -849,7 +849,7 @@ centroid 1 1.5 2
         use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
         let iso = Isometry::rotation(Rotation {
             axis: Axis::Z,
-            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
             angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
         });
         let xf = |m: &mut Model, s: Handle<Solid>| -> Handle<Solid> {
@@ -1563,7 +1563,7 @@ centroid 1 1.5 2
         use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
         let rot30 = Isometry::rotation(Rotation {
             axis: Axis::Z,
-            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
             angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
         });
 
@@ -1644,7 +1644,7 @@ centroid 1 1.5 2
         use nacre_scalar::{Angle, Isometry, Rat, Rotation};
         Isometry::rotation(Rotation {
             axis,
-            point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+            pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
             angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
         })
     }
@@ -1787,7 +1787,7 @@ centroid 1 1.5 2
         let rot = |axis, deg: i128| {
             Isometry::rotation(Rotation {
                 axis,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
             })
         };
@@ -4011,7 +4011,7 @@ centroid 1 1.5 2
                 solid: bar,
                 isometry: Isometry::rotation(Rotation {
                     axis: Axis::Y,
-                    point: [Rat::new(1, 2).unwrap(), Rat::from_int(0), Rat::from_int(1)],
+                    pivot: [Rat::new(1, 2).unwrap(), Rat::from_int(0), Rat::from_int(1)],
                     angle: Angle::from_deg(Rat::from_int(45)).unwrap(),
                 }),
             },
@@ -4151,7 +4151,7 @@ centroid 1 1.5 2
                     tool,
                     Isometry::rotation(Rotation {
                         axis: Axis::Z,
-                        point: [Rat::from_int(0); 3],
+                        pivot: [Rat::from_int(0); 3],
                         angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
                     }),
                 );
@@ -4328,7 +4328,7 @@ centroid 1 1.5 2
                         solid: tool,
                         isometry: Isometry::rotation(Rotation {
                             axis: Axis::Z,
-                            point: [Rat::from_int(0); 3],
+                            pivot: [Rat::from_int(0); 3],
                             angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
                         }),
                     },
@@ -4388,7 +4388,7 @@ centroid 1 1.5 2
                         solid: fin,
                         isometry: Isometry::rotation(Rotation {
                             axis: Axis::Z,
-                            point: [Rat::from_int(0); 3],
+                            pivot: [Rat::from_int(0); 3],
                             angle: Angle::from_deg(
                                 Rat::new((deg * 100.0).round() as i128, 100).unwrap(),
                             )
@@ -4513,7 +4513,7 @@ centroid 1 1.5 2
                     solid: c,
                     isometry: Isometry::rotation(Rotation {
                         axis: Axis::Z,
-                        point: [Rat::from_int(0); 3],
+                        pivot: [Rat::from_int(0); 3],
                         angle: Angle::from_deg(Rat::from_int(deg as i128)).unwrap(),
                     }),
                 },

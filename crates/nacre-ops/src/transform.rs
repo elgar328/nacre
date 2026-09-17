@@ -202,7 +202,7 @@ fn chain_motion(
                 leaf = Some(model.push_motion(
                     Motion::Rotate {
                         axis: r.axis,
-                        point: r.point,
+                        pivot: r.pivot,
                         angle: r.angle,
                     },
                     leaf,
@@ -1054,7 +1054,7 @@ mod tests {
         ] {
             let iso = Isometry::rotation(Rotation {
                 axis,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
             });
             let motion = Xform::Rigid(&iso);
@@ -1129,7 +1129,7 @@ mod tests {
         let root = m.push_motion(
             Motion::Rotate {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
             },
             None,
@@ -1332,7 +1332,7 @@ mod tests {
         m.rebuild_adjacency();
         let iso = Isometry::rotation(nacre_scalar::Rotation {
             axis: Axis::Z,
-            point: [Rat::from_int(0); 3],
+            pivot: [Rat::from_int(0); 3],
             angle: nacre_scalar::Angle::from_deg(Rat::from_int(31)).expect("angle"),
         });
         let out = transform(&mut m, s, &iso).expect("rotate the cylinder");
@@ -1372,7 +1372,7 @@ mod tests {
         m.rebuild_adjacency();
         let iso = Isometry::rotation(nacre_scalar::Rotation {
             axis: Axis::Z,
-            point: [Rat::from_int(0); 3],
+            pivot: [Rat::from_int(0); 3],
             angle: nacre_scalar::Angle::from_deg(Rat::from_int(31)).expect("angle"),
         });
         let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
@@ -1554,7 +1554,7 @@ mod tests {
         m.rebuild_adjacency();
         let iso = Isometry::rotation(nacre_scalar::Rotation {
             axis: Axis::Z,
-            point: [Rat::from_int(0); 3],
+            pivot: [Rat::from_int(0); 3],
             angle: nacre_scalar::Angle::from_deg(Rat::from_int(90)).expect("angle"),
         });
         let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();

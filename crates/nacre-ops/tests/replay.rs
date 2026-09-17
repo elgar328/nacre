@@ -721,7 +721,7 @@ fn concretize(m: &Model, step: &Step) -> Option<Operation> {
             solid: pick(solid)?,
             isometry: Isometry::rotation(Rotation {
                 axis: axis_of(axis),
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(i128::from(deg) * 15))?,
             }),
         },

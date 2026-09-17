@@ -70,7 +70,7 @@ fn rot_z(m: &mut Model, s: Handle<Solid>, deg: i128) -> Result<Handle<Solid>, na
             solid: s,
             isometry: Isometry::rotation(nacre_scalar::Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
             }),
         },

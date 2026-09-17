@@ -744,7 +744,7 @@ fn face_plane_is_the_frame_pad_places_profiles_in_on_a_turned_face() {
                     solid,
                     isometry: Isometry::rotation(Rotation {
                         axis,
-                        point: [Rat::from_int(0); 3],
+                        pivot: [Rat::from_int(0); 3],
                         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
                     }),
                 },

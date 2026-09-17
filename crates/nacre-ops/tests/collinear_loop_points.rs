@@ -115,7 +115,7 @@ fn cell(axis: Axis, deg: i128, inset: f64) -> Result<(Model, Handle<Solid>, f64,
             solid,
             isometry: Isometry::rotation(Rotation {
                 axis,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(deg)).expect("a whole-degree angle"),
             }),
         },

@@ -421,7 +421,7 @@ fn a_forty_fin_ring_builds_despite_exact_mirror_symmetry() {
                 solid: fin,
                 isometry: Isometry::rotation(Rotation {
                     axis: Axis::Z,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: Angle::from_deg(Rat::new(9 * i, 1).unwrap()).expect("angle"),
                 }),
             },

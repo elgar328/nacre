@@ -44,7 +44,7 @@ fn hub_and_fins(angles: &[f64]) -> (Model, Handle<Solid>, Vec<Handle<Solid>>) {
                 f,
                 Isometry::rotation(Rotation {
                     axis: Axis::Z,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: Angle::from_deg(deg).expect("angle"),
                 }),
             )
@@ -137,7 +137,7 @@ fn the_whole_fin_array_with_bores_builds() {
             fin,
             Isometry::rotation(Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::new(i * 18, 1).unwrap()).expect("angle"),
             }),
         );

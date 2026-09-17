@@ -279,7 +279,7 @@ fn derived_curves_match_stored() {
             solid: moved,
             isometry: Isometry::rotation(Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
             }),
         },
@@ -410,7 +410,7 @@ fn edge_carriers_agree_with_adjacency() {
             solid: box2,
             isometry: Isometry::rotation(Rotation {
                 axis: Axis::Z,
-                point: [Rat::from_int(0); 3],
+                pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
             }),
         },

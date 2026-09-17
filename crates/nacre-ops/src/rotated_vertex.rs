@@ -193,8 +193,8 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
     while let Some(h) = cur {
         let n: &MotionNode = model.motion(h);
         match n.motion {
-            Motion::Rotate { axis, point, angle } => {
-                chain.push(MoveNode::Rotate { axis, angle, point })
+            Motion::Rotate { axis, pivot, angle } => {
+                chain.push(MoveNode::Rotate { axis, angle, pivot })
             }
             Motion::Translate { offset } => chain.push(MoveNode::Translate { offset }),
             Motion::Mirror { axis, offset } => chain.push(MoveNode::Mirror { axis, offset }),
@@ -369,7 +369,7 @@ mod tests {
     fn rot30z() -> Isometry {
         Isometry::rotation(SRot {
             axis: Axis::Z,
-            point: [R::from_int(1), R::from_int(1), R::from_int(0)],
+            pivot: [R::from_int(1), R::from_int(1), R::from_int(0)],
             angle: Angle::from_deg(R::from_int(30)).unwrap(),
         })
     }
@@ -407,7 +407,7 @@ mod tests {
     fn turn(axis: Axis, pivot: [i128; 3], (n, d): (i128, i128)) -> Isometry {
         Isometry::rotation(SRot {
             axis,
-            point: pivot.map(R::from_int),
+            pivot: pivot.map(R::from_int),
             angle: Angle::from_deg(R::new(n, d).unwrap()).unwrap(),
         })
     }
@@ -606,7 +606,7 @@ mod tests {
             r,
             &Isometry::rotation(SRot {
                 axis: Axis::X,
-                point: [R::from_int(0); 3],
+                pivot: [R::from_int(0); 3],
                 angle: Angle::from_deg(R::from_int(45)).unwrap(),
             }),
         );

@@ -454,7 +454,7 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
     use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     let iso = Isometry::rotation(Rotation {
         axis: Axis::Z,
-        point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+        pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
     });
     // `rotate`: None = axis-aligned (exact path); Some = the result and cutter tilted (CIP path).
@@ -551,7 +551,7 @@ fn rotated_result_witness_predicates_are_invariant() {
     use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     let iso = Isometry::rotation(Rotation {
         axis: Axis::Z,
-        point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+        pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
     });
     let mut m = Model::new();
@@ -611,7 +611,7 @@ fn a_rotated_boolean_result_can_be_cut_again() {
     use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     let iso = Isometry::rotation(Rotation {
         axis: Axis::Z,
-        point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+        pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
     });
     // Chain: R = Cut(A, B) removes a far-corner octant; then Cut(R, C) removes a near one.
@@ -686,7 +686,7 @@ fn rotated_result_reuse_stress() {
     let rot = |axis: Axis, deg: i128, piv: [i128; 3]| {
         Isometry::rotation(Rotation {
             axis,
-            point: [
+            pivot: [
                 Rat::from_int(piv[0]),
                 Rat::from_int(piv[1]),
                 Rat::from_int(piv[2]),
@@ -827,7 +827,7 @@ fn rotation_invariance_stress() {
     let rot = |axis: Axis, deg: i128, piv: [i128; 3]| {
         Isometry::rotation(Rotation {
             axis,
-            point: [
+            pivot: [
                 Rat::from_int(piv[0]),
                 Rat::from_int(piv[1]),
                 Rat::from_int(piv[2]),
@@ -1035,7 +1035,7 @@ fn parallel_boolean_is_thread_order_independent() {
                 fin,
                 &Isometry::rotation(Rotation {
                     axis: Axis::Z,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: Angle::from_deg(Rat::new(360 * i, n).unwrap()).unwrap(),
                 }),
             )
@@ -2681,7 +2681,7 @@ fn four_plane_model(half_z: f64, deg: i128) -> (Model, Handle<Solid>, Handle<Sol
         bar,
         &Isometry::rotation(Rotation {
             axis: Axis::Y,
-            point: [Rat::new(1, 2).unwrap(), Rat::from_int(0), Rat::from_int(1)],
+            pivot: [Rat::new(1, 2).unwrap(), Rat::from_int(0), Rat::from_int(1)],
             angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
         }),
     )
@@ -4810,7 +4810,7 @@ fn a_rotated_cylinder_is_still_undecided() {
         tool,
         &nacre_scalar::Isometry::rotation(Rotation {
             axis: Axis::Z,
-            point: [Rat::from_int(20), Rat::from_int(20), Rat::from_int(0)],
+            pivot: [Rat::from_int(20), Rat::from_int(20), Rat::from_int(0)],
             angle: Angle::from_deg(Rat::from_int(31)).unwrap(),
         }),
     )
@@ -5050,7 +5050,7 @@ fn rot30() -> nacre_scalar::Isometry {
     use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     Isometry::rotation(Rotation {
         axis: Axis::Z,
-        point: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
+        pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
         angle: Angle::from_deg(Rat::from_int(30)).unwrap(),
     })
 }
@@ -5148,7 +5148,7 @@ fn transform_rotate_90_is_exact_and_allows_boolean() {
     use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     let rot90 = Isometry::rotation(Rotation {
         axis: Axis::Z,
-        point: [Rat::from_int(0); 3],
+        pivot: [Rat::from_int(0); 3],
         angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
     });
     let mut m = Model::new();
@@ -5328,7 +5328,7 @@ fn rot_iso(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
     use nacre_scalar::{Angle, Isometry, Rat, Rotation as SRot};
     Isometry::rotation(SRot {
         axis,
-        point: [Rat::from_int(0); 3],
+        pivot: [Rat::from_int(0); 3],
         angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
     })
 }
@@ -5591,7 +5591,7 @@ fn rigid_iso(axis: nacre_scalar::Axis, deg: i128, off: [i128; 3]) -> nacre_scala
     Isometry::rigid(
         SRot {
             axis,
-            point: [Rat::from_int(0); 3],
+            pivot: [Rat::from_int(0); 3],
             angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
         },
         [
@@ -6034,7 +6034,7 @@ fn two_faces_of_one_judged_surface_are_one_class() {
             solid: b,
             isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
                 axis: nacre_scalar::Axis::Z,
-                point: [nacre_scalar::Rat::from_int(0); 3],
+                pivot: [nacre_scalar::Rat::from_int(0); 3],
                 angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
             }),
         },
@@ -6622,7 +6622,7 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
             solid: to_turn,
             isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
                 axis: nacre_scalar::Axis::Z,
-                point: [nacre_scalar::Rat::from_int(0); 3],
+                pivot: [nacre_scalar::Rat::from_int(0); 3],
                 angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
             }),
         },
@@ -7695,7 +7695,7 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
                 solid: s,
                 isometry: Isometry::rotation(Rotation {
                     axis,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
                 }),
             },
@@ -8038,7 +8038,7 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
                 solid: s,
                 isometry: Isometry::rotation(Rotation {
                     axis,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),
                 }),
             },
@@ -9802,7 +9802,7 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
                     b,
                     &Isometry::rotation(Rotation {
                         axis: Axis::Z,
-                        point: [Rat::from_int(0); 3],
+                        pivot: [Rat::from_int(0); 3],
                         angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
                     }),
                 )
@@ -11817,7 +11817,7 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
     };
     let turn = Rotation {
         axis: Axis::Z,
-        point: [Rat::from_int(0); 3],
+        pivot: [Rat::from_int(0); 3],
         angle: Angle::from_deg(Rat::from_int(90)).unwrap(),
     };
     let shift = [Rat::from_int(-4), Rat::from_int(8), Rat::from_int(0)];
@@ -14707,7 +14707,7 @@ fn turned_cylinder(m: &mut Model, r: f64, h: f64, shift: [f64; 3]) -> Handle<Sol
         solid,
         &nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
             axis: Axis::Y,
-            point: [q(0.0), q(0.0), q(0.0)],
+            pivot: [q(0.0), q(0.0), q(0.0)],
             angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(90))
                 .expect("a right angle"),
         }),

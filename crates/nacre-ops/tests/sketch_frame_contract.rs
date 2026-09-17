@@ -76,7 +76,7 @@ fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
 fn rot(axis: Axis, deg: i128) -> Isometry {
     Isometry::rotation(Rotation {
         axis,
-        point: [Rat::from_int(0); 3],
+        pivot: [Rat::from_int(0); 3],
         angle: Angle::from_deg(Rat::from_int(deg)).expect("angle"),
     })
 }

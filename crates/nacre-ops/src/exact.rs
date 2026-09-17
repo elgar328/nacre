@@ -615,7 +615,7 @@ mod tests {
                     solid,
                     isometry: Isometry::rotation(Rotation {
                         axis: Axis::Y,
-                        point: [Rat::from_int(0); 3],
+                        pivot: [Rat::from_int(0); 3],
                         angle: Angle::from_deg(Rat::from_int(15)).unwrap(),
                     }),
                 },

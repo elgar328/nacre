@@ -149,7 +149,7 @@ fn every_live_planar_face_records_its_points() {
                 solid: padded,
                 isometry: Isometry::rotation(Rotation {
                     axis: Axis::Z,
-                    point: [Rat::from_int(0); 3],
+                    pivot: [Rat::from_int(0); 3],
                     angle: Angle::from_deg(Rat::from_int(30)).expect("angle"),
                 }),
             },

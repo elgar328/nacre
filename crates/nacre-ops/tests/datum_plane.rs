@@ -1233,7 +1233,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
             solid: spun,
             isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
                 axis: Axis::Z,
-                point: [nacre_scalar::Rat::from_int(0); 3],
+                pivot: [nacre_scalar::Rat::from_int(0); 3],
                 angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
             }),
         },
@@ -1330,7 +1330,7 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
             solid: s2,
             isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
                 axis: Axis::Z,
-                point: [nacre_scalar::Rat::from_int(0); 3],
+                pivot: [nacre_scalar::Rat::from_int(0); 3],
                 angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
             }),
         },
@@ -1410,7 +1410,7 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
             solid: spun,
             isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
                 axis: Axis::Z,
-                point: [nacre_scalar::Rat::from_int(0); 3],
+                pivot: [nacre_scalar::Rat::from_int(0); 3],
                 angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
             }),
         },
@@ -1509,7 +1509,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
             solid: b,
             isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
                 axis: Axis::Z,
-                point: [nacre_scalar::Rat::from_int(0); 3],
+                pivot: [nacre_scalar::Rat::from_int(0); 3],
                 angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
             }),
         },
@@ -1695,7 +1695,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
             solid: b2,
             isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
                 axis: Axis::Z,
-                point: [nacre_scalar::Rat::from_int(0); 3],
+                pivot: [nacre_scalar::Rat::from_int(0); 3],
                 angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
             }),
         },
@@ -2337,7 +2337,7 @@ fn a_moved_wide_meet_datum_frames_and_replays() {
     let leaf = m.push_motion(
         nacre_topo::Motion::Rotate {
             axis: Axis::Z,
-            point: [Rat::from_int(0); 3],
+            pivot: [Rat::from_int(0); 3],
             angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
         },
         None,
@@ -2364,7 +2364,7 @@ fn a_moved_wide_meet_datum_frames_and_replays() {
     assert_eq!(m.surface_name.get(&plane), Some(&expected));
     let _ = Rotation {
         axis: Axis::Z,
-        point: [Rat::from_int(0); 3],
+        pivot: [Rat::from_int(0); 3],
         angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
     };
 }
@@ -2454,7 +2454,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
         solid: block,
         isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
             axis: Axis::Z,
-            point: [nacre_scalar::Rat::from_int(0); 3],
+            pivot: [nacre_scalar::Rat::from_int(0); 3],
             angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(deg)).unwrap(),
         }),
     };
@@ -2520,7 +2520,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
             solid: turned,
             isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
                 axis: Axis::Z,
-                point: [nacre_scalar::Rat::from_int(0); 3],
+                pivot: [nacre_scalar::Rat::from_int(0); 3],
                 angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(11)).unwrap(),
             }),
         },
