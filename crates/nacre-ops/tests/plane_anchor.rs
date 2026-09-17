@@ -15,11 +15,18 @@
 //!
 //! This file measures what is actually at stake, because a datum-plane operation
 //! (`docs/truth-and-cache.md` S5) makes "the plane already exists" ordinary rather than exotic.
-//! Three questions, in the order that lets the cheap one end the enquiry:
+//! Four questions, in the order that lets the cheap one end the enquiry:
 //!
 //! 1. **Do two anchors even disagree?** (`which_point_states_a_plane_changes_its_stored_d`)
 //! 2. **Does the judge read the part that disagrees?** (`no_anchor_lets_a_tilted_plane_carry_…`)
 //! 3. **Does the model move?** (`a_pre_pushed_plane_does_not_move_the_model`)
+//! 4. **Do the two models' surface caches agree?**
+//!    (`which_surface_caches_two_anchors_leave_disagreeing`)
+//!
+//! ★★ The fourth was added by cell 58 and is the only one that **sees** the disagreement. The
+//! first three all answer about things a boolean derives — topology, coordinates, volume — and
+//! those are bit-identical whichever anchor states the plane. The cache itself was never
+//! compared, so nothing in this repository witnessed the defect the cell exists to fix.
 //!
 //! The population is census's `wf` family — a fully tilted, exactly-orthonormal *decimal* frame.
 //! It is not chosen for being exotic but for being the only kind that can show anything: see
@@ -33,6 +40,94 @@ use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
 use nacre_scalar::Axis;
 use nacre_scalar::Rat;
 use nacre_topo::Model;
+
+/// **Which surface caches do two anchors leave disagreeing?** — the comparison this file never
+/// made, and the one that sees what the other three miss.
+///
+/// The two models state **one plane with one truth** (`wf_points()`) and differ only in the f64
+/// anchor the pre-statement plants; interning hands the datum the survivor's cache, so the
+/// disagreement is carried, not created. Handles 0–2 are the seeded world planes (their anchor is
+/// the origin either way) and **handle 3 is the `wf` datum itself** — which is why the answer is
+/// `[3]` rather than something larger.
+///
+/// ⚠★★★ **`[3]` is a transitional value, not a constant.** Cell 58's next commit derives the
+/// anchor from the truth's first point and both rows become `[]`; that one-line diff *is* the
+/// cell's proposition, and removing the derivation turns this red before anything else.
+/// ★ The `sketch_origin` row is the control that ships with the fixture: it is `[]` **today**, so
+/// the file shows what a lucky pass looks like beside the case that actually disagrees — the same
+/// service `an_axis_aligned_plane_is_anchor_blind` does for the other questions.
+/// ★ Counts are asserted **before** the element comparison: zipping two different lengths would
+/// silently stop at the shorter one, which is the trap `a_pre_pushed_plane_does_not_move_the_model`
+/// already records against itself.
+#[test]
+fn which_surface_caches_two_anchors_leave_disagreeing() {
+    let plain = wf_model(None);
+    let sp = wf_plane();
+    let bits = |m: &Model| -> Vec<[u64; 10]> {
+        (0..m.surface_count() as u32)
+            .filter_map(|i| m.surface_handle_at(i))
+            .map(|h| match m.surface_cache(h) {
+                nacre_geom::Surface::Plane(p) => {
+                    let o = p.origin().as_array();
+                    let n = p.normal().as_array();
+                    let c = p.coefficients();
+                    [
+                        o[0].to_bits(),
+                        o[1].to_bits(),
+                        o[2].to_bits(),
+                        n[0].to_bits(),
+                        n[1].to_bits(),
+                        n[2].to_bits(),
+                        c[0].to_bits(),
+                        c[1].to_bits(),
+                        c[2].to_bits(),
+                        c[3].to_bits(),
+                    ]
+                }
+                nacre_geom::Surface::Cylinder(cy) => {
+                    let o = cy.axis().origin().as_array();
+                    let d = cy.axis().direction().as_array();
+                    let r = cy.ref_dir().as_array();
+                    [
+                        o[0].to_bits(),
+                        o[1].to_bits(),
+                        o[2].to_bits(),
+                        d[0].to_bits(),
+                        d[1].to_bits(),
+                        d[2].to_bits(),
+                        r[0].to_bits(),
+                        r[1].to_bits(),
+                        r[2].to_bits(),
+                        cy.radius().to_bits(),
+                    ]
+                }
+            })
+            .collect()
+    };
+    for (what, anchor, want) in [
+        ("sketch_origin", sp.origin(), &[][..]),
+        (
+            "worst_ring",
+            wf_ring_point(WF_RING[1][0], WF_RING[1][1]),
+            &[3][..],
+        ),
+    ] {
+        let stated = wf_model(Some(anchor));
+        let (a, b) = (bits(&plain), bits(&stated));
+        assert_eq!(
+            a.len(),
+            b.len(),
+            "{what}: the two models hold different surface counts"
+        );
+        let diff: Vec<usize> = (0..a.len()).filter(|&i| a[i] != b[i]).collect();
+        assert_eq!(
+            diff.as_slice(),
+            want,
+            "{what}: which surface caches disagree has moved — see this test's doc before \
+             re-pinning, the value is transitional"
+        );
+    }
+}
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
 /// when the plane is not one the model already holds (a seed, or a face's).
