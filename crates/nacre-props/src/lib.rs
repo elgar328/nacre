@@ -138,14 +138,14 @@ pub struct FaceProps {
 pub fn face_normal_at(model: &Model, face: Handle<Face>, p: Point3) -> Option<Vector3> {
     let f = model.faces.get(face);
     let sign = f64::from(f.orientation.sign());
-    Some(model.surface(f.surface).normal_at(p)? * sign)
+    Some(model.surface_cache(f.surface).normal_at(p)? * sign)
 }
 
 /// [`FaceProps`] of one face.
 pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsError> {
     let face = model.faces.get(face);
     let sign = f64::from(face.orientation.sign());
-    match model.surface(face.surface) {
+    match model.surface_cache(face.surface) {
         Surface::Plane(plane) => {
             let (area, centroid) = planar_region(model, face)?;
             Ok(FaceProps {
@@ -260,7 +260,7 @@ fn face_contribution(
     reference: Point3,
 ) -> Result<(f64, f64), PropsError> {
     let sign = f64::from(face.orientation.sign());
-    match model.surface(face.surface) {
+    match model.surface_cache(face.surface) {
         Surface::Plane(plane) => {
             // Outer boundary, minus each inner loop (a hole): area and first
             // moment are additive, so both the area and the flux subtract the
@@ -624,13 +624,18 @@ mod tests {
             .get(shell)
             .faces
             .iter()
-            .find(|&&fh| matches!(m.surface(m.faces.get(fh).surface), Surface::Cylinder(_)))
+            .find(|&&fh| {
+                matches!(
+                    m.surface_cache(m.faces.get(fh).surface),
+                    Surface::Cylinder(_)
+                )
+            })
             .expect("a lateral face");
         assert!(
             face_props(&m, wall).unwrap().normal.is_none(),
             "a curved face has no single normal — that is why the point door exists"
         );
-        let cyl = match m.surface(m.faces.get(wall).surface) {
+        let cyl = match m.surface_cache(m.faces.get(wall).surface) {
             Surface::Cylinder(c) => *c,
             _ => unreachable!(),
         };

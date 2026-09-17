@@ -77,7 +77,7 @@ fn stating_a_world_plane_returns_the_seed_it_already_is() {
         );
         // The convention check, stated where it can fail: the seed's cache and the datum's face
         // the same way, so nothing downstream has to compensate.
-        let nacre_geom::Surface::Plane(p) = m.surface(h) else {
+        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
             unreachable!()
         };
         let axis_v = match axis {
@@ -508,10 +508,10 @@ fn a_tilted_offset_is_exact_inside_the_frame() {
     );
 
     // The realized geometry is d away from the base plane, measured against the base's own cache.
-    let nacre_geom::Surface::Plane(base_pl) = m.surface(frame.plane()) else {
+    let nacre_geom::Surface::Plane(base_pl) = m.surface_cache(frame.plane()) else {
         unreachable!()
     };
-    let nacre_geom::Surface::Plane(off_pl) = m.surface(plane) else {
+    let nacre_geom::Surface::Plane(off_pl) = m.surface_cache(plane) else {
         unreachable!()
     };
     let gap = base_pl.distance(off_pl.origin());
@@ -678,7 +678,7 @@ fn the_flip_fold_decides_which_side_and_it_bites() {
 
     // And the geometry says which is which: +d from the +z face is above, from the −z face below.
     let z_of = |h| {
-        let nacre_geom::Surface::Plane(p) = m.surface(h) else {
+        let nacre_geom::Surface::Plane(p) = m.surface_cache(h) else {
             unreachable!()
         };
         p.origin().as_array()[2]
@@ -711,10 +711,10 @@ fn frame_sweep_direction(m: &mut Model, frame: nacre_ops::SketchFrame) -> [f64; 
         unreachable!()
     };
     let _ = before;
-    let nacre_geom::Surface::Plane(base) = m.surface(frame.plane()) else {
+    let nacre_geom::Surface::Plane(base) = m.surface_cache(frame.plane()) else {
         unreachable!()
     };
-    let nacre_geom::Surface::Plane(off) = m.surface(up) else {
+    let nacre_geom::Surface::Plane(off) = m.surface_cache(up) else {
         unreachable!()
     };
     let (a, b) = (base.origin().as_array(), off.origin().as_array());
@@ -2412,7 +2412,7 @@ fn a_frame_says_where_it_is() {
 
     let sp = nacre_ops::frame_plane(&m, &frame).expect("a stated plane realizes");
     // Every point of the frame lies on the plane the frame names.
-    let normal = match m.surface(plane) {
+    let normal = match m.surface_cache(plane) {
         nacre_geom::Surface::Plane(p) => p.normal(),
         nacre_geom::Surface::Cylinder(_) => panic!("a datum is planar"),
     };

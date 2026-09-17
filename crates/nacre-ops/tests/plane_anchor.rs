@@ -455,7 +455,7 @@ fn a_pre_pushed_plane_does_not_move_the_model() {
 /// pre-statement actually moved `d`, instead of assuming which ring point won the winding.
 fn plain_base_anchor(m: &Model) -> Point3 {
     let f = m.shells.get(m.solids.get(m.live_solids[0]).outer).faces[0];
-    match m.surface(m.faces.get(f).surface) {
+    match m.surface_cache(m.faces.get(f).surface) {
         nacre_geom::Surface::Plane(p) => p.origin(),
         nacre_geom::Surface::Cylinder(_) => unreachable!("the wf base cap is planar"),
     }

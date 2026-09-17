@@ -287,7 +287,7 @@ mod tests {
             nacre_topo::PointCache::Ceiling { coord }
             | nacre_topo::PointCache::Unrealized { coord } => {
                 for sh in m.vertices.get(h).def.carriers() {
-                    let d = m.surface(sh).distance(*coord);
+                    let d = m.surface_cache(sh).distance(*coord);
                     assert!(
                         d < 1e-12,
                         "unrealized, but {d:e} from surface {}",
@@ -2117,7 +2117,7 @@ mod tests {
                 .expect("the cut-rim boolean builds");
             assert_eq!(out.len(), 1, "one fused solid");
             let minted: Vec<_> = m.edges.iter().skip(minted_from).collect();
-            let is_cyl = |sh| matches!(m.surface(sh), nacre_geom::Surface::Cylinder(_));
+            let is_cyl = |sh| matches!(m.surface_cache(sh), nacre_geom::Surface::Cylinder(_));
             // A circle-carrier edge is a **mixed** pair (the cap plane and the lateral); the
             // band's seam edge is `[lat, lat]` — both carriers the cylinder — and is not a
             // piece of any circle.
@@ -2290,7 +2290,9 @@ mod tests {
             // derived length, the seam edge once in each sense.
             let bands: Vec<_> = garbage
                 .iter()
-                .filter(|(_, f)| matches!(m.surface(f.surface), nacre_geom::Surface::Cylinder(_)))
+                .filter(|(_, f)| {
+                    matches!(m.surface_cache(f.surface), nacre_geom::Surface::Cylinder(_))
+                })
                 .collect();
             assert_eq!(bands.len(), 1, "one band face");
             let lp = &bands[0].1.outer;
@@ -2472,7 +2474,7 @@ mod tests {
             if origin == [4.0, 2.0, 2.0] {
                 let (mut top, mut digon) = (None, None);
                 for (h, f) in m.faces.iter().skip(faces_from) {
-                    let nacre_geom::Surface::Plane(p) = m.surface(f.surface) else {
+                    let nacre_geom::Surface::Plane(p) = m.surface_cache(f.surface) else {
                         continue;
                     };
                     if (p.normal().as_array()[2] - 1.0).abs() > 1e-9 {

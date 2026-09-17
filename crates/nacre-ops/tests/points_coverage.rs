@@ -65,7 +65,7 @@ fn assert_all_planes_record_points(m: &Model, what: &str) {
         for &sh in std::iter::once(&m.solids.get(s).outer).chain(m.solids.get(s).cavities.iter()) {
             for &fh in &m.shells.get(sh).faces {
                 let surf = m.faces.get(fh).surface;
-                match (m.surface(surf), m.surface_truth(surf)) {
+                match (m.surface_cache(surf), m.surface_truth(surf)) {
                     (nacre_geom::Surface::Plane(_), nacre_topo::Surface::Plane { .. }) => {
                         seen += 1;
                     }

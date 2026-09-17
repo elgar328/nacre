@@ -1587,7 +1587,7 @@ pub(crate) fn extrude_on_frame(
     // nothing — so a cylinder can reach here, which a `SketchPlane` never could. Reject it by name
     // rather than letting the frame derivation fail later for a reason that reads as something
     // else ("no exact form" when the truth is "not a plane").
-    match model.surface(frame.plane()) {
+    match model.surface_cache(frame.plane()) {
         nacre_geom::Surface::Plane(_) => {}
         nacre_geom::Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
     }
@@ -1707,7 +1707,7 @@ pub(crate) fn build_prism(
     // `orientation` travel together, and the reconstruction copies both.
     let (base_surface, base_orient) = match base_cap_surface {
         Some(h) => {
-            let n_h = match model.surface(h) {
+            let n_h = match model.surface_cache(h) {
                 nacre_geom::Surface::Plane(p) => p.normal(),
                 nacre_geom::Surface::Cylinder(_) => return Err(OpError::DegenerateGeometry),
             };
@@ -2544,7 +2544,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let f = model.faces.get(face);
     let surface_h = f.surface;
     let orientation = f.orientation;
-    let plane = match model.surface(surface_h) {
+    let plane = match model.surface_cache(surface_h) {
         nacre_geom::Surface::Plane(p) => *p,
         nacre_geom::Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
     };
@@ -2869,7 +2869,7 @@ pub(crate) fn find_face_coplanar_with(
     let shell = model.solids.get(solid).outer;
     model.shells.get(shell).faces.iter().copied().find(|&fh| {
         let face = model.faces.get(fh);
-        let nacre_geom::Surface::Plane(pl) = model.surface(face.surface) else {
+        let nacre_geom::Surface::Plane(pl) = model.surface_cache(face.surface) else {
             return false;
         };
         let coplanar = face.surface == ref_surf

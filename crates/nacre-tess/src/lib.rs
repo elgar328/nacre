@@ -341,7 +341,7 @@ fn bridge_shared_edges(
     // 1. Every bridgeable touch, read before anything is changed.
     let mut cands: Vec<Cand> = Vec::new();
     for &(fh, face) in live {
-        let plane = match model.surface(face.surface) {
+        let plane = match model.surface_cache(face.surface) {
             Surface::Plane(plane) => plane,
             // Bridges are defined on planar charts only. An arm rather than an `else`, so a third
             // surface kind is a compile error here and its author decides whether it bridges.
@@ -379,7 +379,12 @@ fn bridge_shared_edges(
     // 2. Which faces share each edge, and which of them are planar.
     let planar: HashMap<Handle<Face>, bool> = live
         .iter()
-        .map(|&(fh, f)| (fh, matches!(model.surface(f.surface), Surface::Plane(_))))
+        .map(|&(fh, f)| {
+            (
+                fh,
+                matches!(model.surface_cache(f.surface), Surface::Plane(_)),
+            )
+        })
         .collect();
     let mut faces_on: HashMap<Handle<Edge>, Vec<Handle<Face>>> = HashMap::new();
     for &(fh, face) in live {
@@ -916,7 +921,7 @@ fn triangulate_face(
     fh: Handle<Face>,
     face: &Face,
 ) -> Result<(), TessError> {
-    let surface = model.surface(face.surface);
+    let surface = model.surface_cache(face.surface);
     let Chart {
         mut uv,
         mut handles,
@@ -1300,7 +1305,7 @@ mod tests {
             let budget = r * (1.0 - (step / 2.0).cos());
             for (_, tri) in t.triangles.iter() {
                 let f = m.faces.get(tri.face);
-                let Surface::Cylinder(cy) = m.surface(f.surface) else {
+                let Surface::Cylinder(cy) = m.surface_cache(f.surface) else {
                     continue;
                 };
                 let (o, w) = (cy.axis().origin(), cy.axis().direction());
@@ -1331,7 +1336,7 @@ mod tests {
     /// Build the chart `triangulate_face` would build, for one face.
     fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> Chart {
         let face = m.faces.get(fh);
-        match m.surface(face.surface) {
+        match m.surface_cache(face.surface) {
             Surface::Plane(p) => planar_chart(t, face, p).unwrap(),
             Surface::Cylinder(c) => cylinder_chart(t, m, cfg, face, c).unwrap(),
         }
@@ -1363,7 +1368,7 @@ mod tests {
             if !reach.faces.contains(&fh) {
                 continue;
             }
-            let Surface::Plane(plane) = m.surface(face.surface) else {
+            let Surface::Plane(plane) = m.surface_cache(face.surface) else {
                 continue;
             };
             let tris = &t.by_face[&fh];
@@ -1430,7 +1435,7 @@ mod tests {
                         chart.uv[i]
                     );
                     // And the parameters name the same point through the surface's own evaluator.
-                    if let Surface::Cylinder(c) = m.surface(m.faces.get(fh).surface) {
+                    if let Surface::Cylinder(c) = m.surface_cache(m.faces.get(fh).surface) {
                         assert!((c.point_at(params[0], params[1]) - want).norm() <= 1e-9);
                     }
                 }
@@ -1452,7 +1457,7 @@ mod tests {
             let m = cylinder([1.0, -2.0, 0.5], axis, 2.0, 5.0);
             let t = tessellate(&m, &cfg).unwrap();
             for (fh, face) in m.faces.iter() {
-                if !matches!(m.surface(face.surface), Surface::Cylinder(_)) {
+                if !matches!(m.surface_cache(face.surface), Surface::Cylinder(_)) {
                     continue;
                 }
                 let chart = chart_of(&t, &m, &cfg, fh);

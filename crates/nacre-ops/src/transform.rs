@@ -358,7 +358,7 @@ fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
             let face = model.faces.get(fh);
             // Exhaustive for the same reason as `points_move`: a new `Surface` variant (M6's
             // sphere/cone) must be a compile error here, not a silently skipped probe.
-            match model.surface(face.surface) {
+            match model.surface_cache(face.surface) {
                 nacre_geom::Surface::Plane(pl) => probe(&mut ok, pl.origin()),
                 // ★ The cylinder's axis origin is a datum a judgment reads since M6 — the gate's
                 // clearance and `world_cylinder_def`'s postcondition compare it against the
@@ -722,7 +722,7 @@ fn transform_solid(
             continue;
         }
         let moved = motion
-            .surface(model.surface(s), offset)
+            .surface(model.surface_cache(s), offset)
             .ok_or(OpError::MirrorNotPlanar)?;
         let src_truth = model.surface_truth(s).clone();
         // ★ **A motion that fixes this plane restates nothing — the source statement already
@@ -1387,7 +1387,7 @@ mod tests {
             .faces
             .iter()
             .map(|&f| m.faces.get(f).surface)
-            .find(|&su| matches!(m.surface(su), nacre_geom::Surface::Cylinder(_)))
+            .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
             .expect("a cylinder keeps its lateral face");
         // An inexact turn records a node, and the def is carried **verbatim** — the recorded
         // node states its cylinder before the motion (the plane rule, unchanged by M6-0).
@@ -1440,7 +1440,7 @@ mod tests {
         let lateral = faces
             .iter()
             .map(|&f| m.faces.get(f).surface)
-            .find(|&su| matches!(m.surface(su), nacre_geom::Surface::Cylinder(_)))
+            .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
             .expect("lateral");
         let bottom = m.world_plane(Axis::Z); // the z = 0 cap interned onto the world seed
         let x0 = m.world_plane(Axis::X);
@@ -1570,7 +1570,7 @@ mod tests {
             .faces
             .iter()
             .map(|&f| m.faces.get(f).surface)
-            .find(|&su| matches!(m.surface(su), nacre_geom::Surface::Cylinder(_)))
+            .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
             .expect("a cylinder keeps its lateral face");
         // A 90°-family turn is exact: nothing is recorded, and the def rides the very
         // transport the probe checked — origin through `point_rat`, directions through

@@ -11208,7 +11208,7 @@ mod tests {
             let nacre_topo::Surface::Cylinder { def, .. } = m.surface_truth(surf) else {
                 unreachable!("a cylinder row carries a cylinder truth")
             };
-            let nacre_geom::Surface::Cylinder(cache) = m.surface(surf) else {
+            let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
                 unreachable!("a cylinder truth carries a cylinder cache")
             };
             setup.cyls.push(crate::planes::WorkingCyl {

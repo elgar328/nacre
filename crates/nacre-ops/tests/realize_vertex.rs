@@ -218,7 +218,7 @@ fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
         let Some(h) = m.surface_handle_at(i) else {
             continue;
         };
-        match m.surface(h) {
+        match m.surface_cache(h) {
             nacre_geom::Surface::Cylinder(_) => cyl = Some(h),
             nacre_geom::Surface::Plane(_) => planes.push(h),
         }

@@ -684,7 +684,7 @@ fn a_non_pythagorean_arc_is_stated_and_extruded() {
     let radii: Vec<f64> = m
         .faces
         .iter()
-        .filter_map(|(_, f)| match m.surface(f.surface) {
+        .filter_map(|(_, f)| match m.surface_cache(f.surface) {
             nacre_geom::Surface::Cylinder(c) => Some(c.radius()),
             _ => None,
         })

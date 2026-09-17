@@ -187,7 +187,7 @@ fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3) ->
     let shell = m.solids.get(solid).outer;
     m.shells.get(shell).faces.iter().any(|&fh| {
         let f = m.faces.get(fh);
-        let nacre_geom::Surface::Plane(plane) = m.surface(f.surface) else {
+        let nacre_geom::Surface::Plane(plane) = m.surface_cache(f.surface) else {
             return false;
         };
         let sign = f64::from(f.orientation.sign());
@@ -2346,7 +2346,7 @@ fn build_prism_base_cap_reuses_shared_surface() {
     // Shared handle (was a fresh push before overhaul #3).
     assert_eq!(cap.surface, sf, "base cap reuses the shared surface handle");
     // Orientation reconciled: materialized outward normal is −sweep (−z).
-    let nacre_geom::Surface::Plane(p) = m.surface(cap.surface) else {
+    let nacre_geom::Surface::Plane(p) = m.surface_cache(cap.surface) else {
         unreachable!()
     };
     let sign = f64::from(cap.orientation.sign());
@@ -3703,7 +3703,7 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
             for fh in m.shells.get(sh).faces.clone() {
                 total += 1;
                 let f = m.faces.get(fh);
-                if matches!(m.surface(f.surface), nacre_geom::Surface::Cylinder(_)) {
+                if matches!(m.surface_cache(f.surface), nacre_geom::Surface::Cylinder(_)) {
                     lateral += 1;
                     holes.push(f.inner.len());
                 }
@@ -4326,7 +4326,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
         .iter()
         .map(|&surf| {
             let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
-            let nacre_geom::Surface::Cylinder(cache) = m.surface(surf) else {
+            let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
                 unreachable!("a cylinder class names a cylinder")
             };
             crate::planes::WorkingCyl {
@@ -4530,7 +4530,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
         .iter()
         .map(|&surf| {
             let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
-            let nacre_geom::Surface::Cylinder(cache) = m.surface(surf) else {
+            let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
                 unreachable!()
             };
             crate::planes::WorkingCyl {
@@ -6672,7 +6672,7 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
                 continue; // a seam vertex names a curve, not a point — no solve to check
             };
             counts[kind].0 += 1;
-            let coeffs = planes.map(|s| match m.surface(s) {
+            let coeffs = planes.map(|s| match m.surface_cache(s) {
                 nacre_geom::Surface::Plane(p) => p.coefficients(),
                 nacre_geom::Surface::Cylinder(_) => panic!("ThreePlane named a cylinder"),
             });
@@ -6746,7 +6746,7 @@ fn a_wrong_plane_in_a_definition_is_caught() {
     let VertexDef::ThreePlane(mut planes) = m.vertices.get(corner).def else {
         panic!("a constructed corner has a definition")
     };
-    let good = solve_three_planes(planes.map(|h| match m.surface(h) {
+    let good = solve_three_planes(planes.map(|h| match m.surface_cache(h) {
         nacre_geom::Surface::Plane(p) => p.coefficients(),
         nacre_geom::Surface::Cylinder(_) => unreachable!(),
     }))
@@ -6758,7 +6758,7 @@ fn a_wrong_plane_in_a_definition_is_caught() {
         .find(|h| !planes.contains(h))
         .expect("a fourth face");
     planes[0] = other;
-    let bad = solve_three_planes(planes.map(|h| match m.surface(h) {
+    let bad = solve_three_planes(planes.map(|h| match m.surface_cache(h) {
         nacre_geom::Surface::Plane(p) => p.coefficients(),
         nacre_geom::Surface::Cylinder(_) => unreachable!(),
     }));
@@ -9017,7 +9017,7 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
 fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
     let outward = |m: &Model, fh: Handle<Face>| -> [f64; 3] {
         let f = m.faces.get(fh);
-        let nacre_geom::Surface::Plane(p) = m.surface(f.surface) else {
+        let nacre_geom::Surface::Plane(p) = m.surface_cache(f.surface) else {
             panic!("a cap is planar")
         };
         let s = f.orientation.sign() as f64;
@@ -9321,7 +9321,7 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
             .iter()
             .find(|&&fh| {
                 matches!(
-                    m.surface(m.faces.get(fh).surface),
+                    m.surface_cache(m.faces.get(fh).surface),
                     nacre_geom::Surface::Cylinder(_)
                 )
             })
@@ -10010,7 +10010,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
         .iter()
         .map(|&surf| {
             let def = crate::planes::world_cylinder_def(m, surf).expect("a world cylinder");
-            let nacre_geom::Surface::Cylinder(cache) = m.surface(surf) else {
+            let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
                 unreachable!()
             };
             crate::planes::WorkingCyl {
@@ -11848,7 +11848,7 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
             .faces
             .iter()
             .map(|&fh| m.faces.get(fh).surface)
-            .find(|&h| matches!(m.surface(h), nacre_geom::Surface::Cylinder(_)))
+            .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
             .expect("the boss has a lateral");
         crate::planes::world_cylinder_def(m, surf).expect("the chain folds to a world cylinder")
     };
@@ -11892,7 +11892,7 @@ fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
         .faces
         .iter()
         .map(|&fh| m.faces.get(fh).surface)
-        .find(|&h| matches!(m.surface(h), nacre_geom::Surface::Cylinder(_)))
+        .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
         .expect("the boss has a lateral");
     let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
     assert_eq!(def.origin().map(|x| x.to_f64()), [3.0, 1.3, 1.0]);
@@ -11926,7 +11926,7 @@ struct BrepDigest {
 
 fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
     let bits3 = |p: Point3| p.as_array().map(f64::to_bits);
-    let kind = |h: Handle<Surface>| match m.surface(h) {
+    let kind = |h: Handle<Surface>| match m.surface_cache(h) {
         nacre_geom::Surface::Plane(_) => "plane",
         nacre_geom::Surface::Cylinder(_) => "cylinder",
     };
@@ -11939,7 +11939,7 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
     for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
         for fh in m.shells.get(sh).faces.clone() {
             let face = m.faces.get(fh);
-            match m.surface(face.surface) {
+            match m.surface_cache(face.surface) {
                 nacre_geom::Surface::Plane(pl) => {
                     plane_bits.push(pl.coefficients().map(f64::to_bits))
                 }
@@ -12115,7 +12115,7 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
         .copied()
         .find(|&f| {
             matches!(
-                m.surface(m.faces.get(f).surface),
+                m.surface_cache(m.faces.get(f).surface),
                 nacre_geom::Surface::Cylinder(_)
             )
         })
@@ -12165,7 +12165,7 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
         .iter()
         .filter(|&&f| {
             matches!(
-                m.surface(m.faces.get(f).surface),
+                m.surface_cache(m.faces.get(f).surface),
                 nacre_geom::Surface::Cylinder(_)
             )
         })
@@ -12364,7 +12364,7 @@ fn a_slot_extrudes_with_tangent_pierce_corners() {
         .iter()
         .filter(|&&f| {
             matches!(
-                m.surface(m.faces.get(f).surface),
+                m.surface_cache(m.faces.get(f).surface),
                 nacre_geom::Surface::Cylinder(_)
             )
         })

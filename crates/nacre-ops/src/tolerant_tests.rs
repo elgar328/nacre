@@ -1033,7 +1033,7 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
             let Some(n_out) = (tri[1] - tri[0]).cross(tri[2] - tri[0]).normalize() else {
                 return false;
             };
-            let nacre_geom::Surface::Plane(pl) = m.surface(face.surface) else {
+            let nacre_geom::Surface::Plane(pl) = m.surface_cache(face.surface) else {
                 return false;
             };
             pl.normal().dot(n_out).abs() <= 0.5

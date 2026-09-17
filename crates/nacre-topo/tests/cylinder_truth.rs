@@ -50,9 +50,9 @@ fn build(
         .faces
         .iter()
         .map(|&f| m.faces.get(f).surface)
-        .find(|&su| matches!(m.surface(su), nacre_geom::Surface::Cylinder(_)))
+        .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
         .expect("a cylinder solid has a lateral face");
-    let cache = match m.surface(lateral) {
+    let cache = match m.surface_cache(lateral) {
         nacre_geom::Surface::Cylinder(c) => *c,
         _ => unreachable!(),
     };

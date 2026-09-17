@@ -246,7 +246,7 @@ pub(crate) fn collect_planes(
     for sh in solid_shell_handles(model, solid) {
         for &fh in &model.shells.get(sh).faces {
             let face = model.faces.get(fh);
-            let plane = match model.surface(face.surface) {
+            let plane = match model.surface_cache(face.surface) {
                 nacre_geom::Surface::Plane(p) => *p,
                 // A cylinder face sits in the table (M6-2a) — its row keeps the shared facts
                 // (surface, face, stated outward sign, motion leaf) and none of the plane
@@ -693,7 +693,7 @@ pub(crate) fn world_cylinder_def(
     };
     debug_assert!(
         {
-            let nacre_geom::Surface::Cylinder(cache) = model.surface(surf) else {
+            let nacre_geom::Surface::Cylinder(cache) = model.surface_cache(surf) else {
                 unreachable!("a cylinder truth carries a cylinder cache")
             };
             let o = Point3::from_array(out.origin().map(|r| r.to_f64()));
@@ -1260,7 +1260,7 @@ pub(crate) fn cylinder_gate(
         let Some(def) = world_cylinder_def(model, surf) else {
             return Err(undecided());
         };
-        let nacre_geom::Surface::Cylinder(cache) = model.surface(surf) else {
+        let nacre_geom::Surface::Cylinder(cache) = model.surface_cache(surf) else {
             unreachable!("a cylinder truth carries a cylinder cache")
         };
         // ★ **One surface, two solids.** Cylinders intern by their exact statement, so two operands
@@ -2848,7 +2848,10 @@ pub(crate) fn arc_ends_along(
 /// axis not perpendicular to the plane — that last one traces an **ellipse**, and this piece would
 /// be claiming to know a shape it does not.
 fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corner> {
-    if !matches!(model.surface(face.surface), nacre_geom::Surface::Plane(_)) {
+    if !matches!(
+        model.surface_cache(face.surface),
+        nacre_geom::Surface::Plane(_)
+    ) {
         return None;
     }
     let plane = *model.world_plane_name(face.surface)?.narrow()?;
@@ -2858,7 +2861,7 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
         .get(he.edge)
         .surfaces
         .iter()
-        .find(|&&s| matches!(model.surface(s), nacre_geom::Surface::Cylinder(_)))
+        .find(|&&s| matches!(model.surface_cache(s), nacre_geom::Surface::Cylinder(_)))
         .and_then(|&s| world_cylinder_def(model, s))?;
     let (o, m) = (def.origin(), def.dir());
     if !nacre_scalar::parallel_rat(&n, &m) {
@@ -2919,7 +2922,7 @@ fn face_clears_footprint(
                 .get(he.edge)
                 .surfaces
                 .iter()
-                .any(|&s| matches!(model.surface(s), nacre_geom::Surface::Cylinder(_)))
+                .any(|&s| matches!(model.surface_cache(s), nacre_geom::Surface::Cylinder(_)))
         });
     // ★★★★★ **Two refusals, split by cause rather than by the flag.** `unreadable` is for a shape
     // this road cannot spell at all — an arc edge, a seam vertex — and there

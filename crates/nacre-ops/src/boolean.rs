@@ -2199,7 +2199,7 @@ pub(crate) fn reconstruct(
                 let realized = cyls[k].realized;
                 let centre = nacre_geom::intersect::line_plane(
                     &realized.axis(),
-                    match model.surface(plane) {
+                    match model.surface_cache(plane) {
                         nacre_geom::Surface::Plane(p) => p,
                         _ => return Err(reject(RejectReason::ThreePlanes)),
                     },
@@ -3307,7 +3307,7 @@ mod region_tests {
             .copied()
             .filter(|&f| {
                 matches!(
-                    m.surface(m.faces.get(f).surface),
+                    m.surface_cache(m.faces.get(f).surface),
                     nacre_geom::Surface::Cylinder(_)
                 )
             })

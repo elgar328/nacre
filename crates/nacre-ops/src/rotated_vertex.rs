@@ -680,7 +680,7 @@ mod tests {
         assert!(dot(u, v).abs() < 1e-12, "{what}: u ⊥ v fails");
         assert!(dot(u, w).abs() < 1e-12, "{what}: u ⊥ w fails");
         assert!(dot(v, w).abs() < 1e-12, "{what}: v ⊥ w fails");
-        let nacre_geom::Surface::Plane(pl) = m.surface(h) else {
+        let nacre_geom::Surface::Plane(pl) = m.surface_cache(h) else {
             unreachable!()
         };
         assert!(

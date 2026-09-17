@@ -560,13 +560,13 @@ pub struct Model {
     /// ★ Private (stage S1, `docs/truth-and-cache.md`): a surface can only enter through
     /// [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth —
     /// a surface **without** a record is unrepresentable from outside this crate. Read through
-    /// [`Model::surface_truth`]/[`Model::surface`]/[`Model::surface_count`]; there is
+    /// [`Model::surface_truth`]/[`Model::surface_cache`]/[`Model::surface_count`]; there is
     /// deliberately no whole-store iterator (the arena keeps superseded surfaces — consumers
     /// walk the live faces).
     surfaces: Store<Surface>,
     /// Per-surface f64 caches, index-parallel to `surfaces` — **cache, not truth**: the truth
     /// above decides the realization, and a refinement pass may discard and regenerate the lot.
-    /// Filled eagerly by [`Model::push_raw`]; read through [`Model::surface`].
+    /// Filled eagerly by [`Model::push_raw`]; read through [`Model::surface_cache`].
     ///
     /// ★★ **Why this is a private `Vec` and not a second `Store`**: a `Store` is append-only and
     /// sealed, so nothing could ever rewrite a cache entry at a higher precision. The cache has
@@ -1058,7 +1058,7 @@ impl Model {
     }
 
     /// The surface's exact truth — what it *is*, beside the f64 realization
-    /// [`Model::surface`] returns. Total: a surface without a truth is unrepresentable — the
+    /// [`Model::surface_cache`] returns. Total: a surface without a truth is unrepresentable — the
     /// truth **is** the arena entry a handle names, which is what retired `SurfaceDef::Inexact`
     /// and the `UndefinedSurface` violation.
     #[inline]
@@ -1110,10 +1110,10 @@ impl Model {
     ///
     /// ```compile_fail,E0616
     /// let m = nacre_topo::Model::new();
-    /// let _ = m.surfaces.len(); // private field — read through `surface`/`surface_count`
+    /// let _ = m.surfaces.len(); // private field — read through `surface_cache`/`surface_count`
     /// ```
     #[inline]
-    pub fn surface(&self, h: Handle<Surface>) -> &nacre_geom::Surface {
+    pub fn surface_cache(&self, h: Handle<Surface>) -> &nacre_geom::Surface {
         #[cfg(debug_assertions)]
         Self::debug_guard(&self.surfaces, h);
         debug_assert_eq!(
@@ -1140,10 +1140,10 @@ impl Model {
     /// index back into a handle of its own arena before applying the operation. `None` past the
     /// end: existence, not legality.
     ///
-    /// **This does not open the store.** Reading was already open ([`Model::surface`],
+    /// **This does not open the store.** Reading was already open ([`Model::surface_cache`],
     /// [`Model::surface_count`]); writing still goes only through [`Model::push_plane`] /
     /// [`Model::push_cylinder`], which state the truth. The `compile_fail` lock on
-    /// [`Model::surface`] is untouched.
+    /// [`Model::surface_cache`] is untouched.
     ///
     /// The one legitimate shape is "re-anchor a log's index onto the model I am building" — using
     /// it to quiet a cross-model panic hides the bug instead of fixing it. Its consumer today is
@@ -1167,7 +1167,7 @@ impl Model {
         self.vertices.handle_at(index)
     }
 
-    /// The motion node a handle names. Same seal as [`Model::surface`]: writing goes through
+    /// The motion node a handle names. Same seal as [`Model::surface_cache`]: writing goes through
     /// [`Model::push_motion`] (interned), reading through here.
     #[inline]
     pub fn motion(&self, h: Handle<MotionNode>) -> &MotionNode {
@@ -1422,7 +1422,7 @@ impl Model {
     /// exact here: two caches of one plane have parallel normals, so the sign cannot be lost to
     /// rounding.
     fn flipped_against(&self, h: Handle<Surface>, cache: &nacre_geom::Plane) -> bool {
-        match self.surface(h) {
+        match self.surface_cache(h) {
             nacre_geom::Surface::Plane(p) => p.normal().dot(cache.normal()) < 0.0,
             nacre_geom::Surface::Cylinder(_) => false,
         }
@@ -1986,7 +1986,10 @@ impl Model {
             let p1 = self.vertex_point(vertices[1]);
             Some(Curve::Line(Line::through_points(p0, p1)?))
         };
-        match (self.surface(surfaces[0]), self.surface(surfaces[1])) {
+        match (
+            self.surface_cache(surfaces[0]),
+            self.surface_cache(surfaces[1]),
+        ) {
             (nacre_geom::Surface::Plane(_), nacre_geom::Surface::Plane(_)) => endpoints_line(),
             (nacre_geom::Surface::Cylinder(_), nacre_geom::Surface::Cylinder(_))
                 if surfaces[0] == surfaces[1] =>
@@ -2632,7 +2635,7 @@ mod tests {
                 .faces
                 .iter()
                 .map(|&fh| &m.faces.get(fh).surface)
-                .find(|&&sh| match m.surface(sh) {
+                .find(|&&sh| match m.surface_cache(sh) {
                     nacre_geom::Surface::Plane(p) => {
                         let [a, b, c, d] = p.coefficients();
                         b == 0.0 && c == 0.0 && a != 0.0 && (-d / a - want_x).abs() < 1e-12
@@ -2851,7 +2854,7 @@ mod tests {
         if he.forward { b } else { a }
     }
     fn face_plane_normal(m: &Model, f: &Face) -> Vector3 {
-        match m.surface(f.surface) {
+        match m.surface_cache(f.surface) {
             nacre_geom::Surface::Plane(p) => p.normal(),
             // Planar-only helper: callers filter to plane faces (caps), never cylinders.
             nacre_geom::Surface::Cylinder(_) => {
@@ -2984,8 +2987,8 @@ mod tests {
                 "{what}: a handle minted by another model must not read this model's cell"
             );
         };
-        refuses("surface", &|| {
-            let _ = a.surface(surf);
+        refuses("surface_cache", &|| {
+            let _ = a.surface_cache(surf);
         });
         refuses("surface_truth", &|| {
             let _ = a.surface_truth(surf);
@@ -3006,18 +3009,18 @@ mod tests {
     /// Before the arena held the truth, a refinement pass had nowhere to write — the realization
     /// lived in a `Store`, which is append-only and sealed, and the only mutable copy was the
     /// *truth*. This test is the warrant, and it could not have been written then: it rewrites a
-    /// cache entry in place and reads it back through [`Model::surface`], while the truth the same
+    /// cache entry in place and reads it back through [`Model::surface_cache`], while the truth the same
     /// handle names is untouched.
     ///
     /// ★ It writes through the private field on purpose — that is the door the refinement pass
     /// (`realize_surface`) will take, from inside this crate. Outside, there is no door at all,
-    /// which is the other half of the warrant and what [`Model::surface`]'s `compile_fail` pins.
+    /// which is the other half of the warrant and what [`Model::surface_cache`]'s `compile_fail` pins.
     #[test]
     fn the_surface_cache_is_writable_and_the_truth_is_not() {
         let mut m = Model::new();
         let h = m.world_plane(nacre_scalar::Axis::Z);
         let truth_before = m.surface_truth(h).clone();
-        let cache_before = m.surface(h).clone();
+        let cache_before = m.surface_cache(h).clone();
 
         // A different plane in the same slot — what a refinement at a higher precision does in
         // kind, if not in size.
@@ -3032,8 +3035,16 @@ mod tests {
             realized: refined.clone(),
         };
 
-        assert_eq!(*m.surface(h), refined, "the cache took the new realization");
-        assert_ne!(*m.surface(h), cache_before, "and it is not the old one");
+        assert_eq!(
+            *m.surface_cache(h),
+            refined,
+            "the cache took the new realization"
+        );
+        assert_ne!(
+            *m.surface_cache(h),
+            cache_before,
+            "and it is not the old one"
+        );
         assert_eq!(
             *m.surface_truth(h),
             truth_before,
@@ -3157,7 +3168,7 @@ mod tests {
         // Planar caps only (the lateral cylindrical face has no single normal).
         let mut caps = 0;
         for (_, f) in m.faces.iter() {
-            if matches!(m.surface(f.surface), nacre_geom::Surface::Plane(_)) {
+            if matches!(m.surface_cache(f.surface), nacre_geom::Surface::Plane(_)) {
                 let n = face_plane_normal(&m, f).as_array();
                 // Bottom cap → −Z, top cap → +Z (outward along the axis).
                 assert!(n == [0.0, 0.0, -1.0] || n == [0.0, 0.0, 1.0]);
@@ -3184,10 +3195,10 @@ mod tests {
                 panic!("a seam vertex carries OnSeam, got {d:?}")
             };
             assert!(
-                matches!(m.surface(*a), nacre_geom::Surface::Cylinder(_)),
+                matches!(m.surface_cache(*a), nacre_geom::Surface::Cylinder(_)),
                 "first carrier is the lateral cylinder"
             );
-            let nacre_geom::Surface::Plane(p) = m.surface(*b) else {
+            let nacre_geom::Surface::Plane(p) = m.surface_cache(*b) else {
                 panic!("second carrier is the cap plane")
             };
             // Bottom vertex names the bottom cap (through z = 0), top the top cap (z = 5).
@@ -3652,7 +3663,7 @@ mod tests {
                     m.surface_truth(h),
                     Surface::Plane { motion: None, .. }
                 ));
-                let nacre_geom::Surface::Plane(pl) = m.surface(h) else {
+                let nacre_geom::Surface::Plane(pl) = m.surface_cache(h) else {
                     panic!("a seed is a plane")
                 };
                 assert_eq!(
@@ -3703,7 +3714,7 @@ mod tests {
     /// surface could ever do.
     /// `surface_handle_at` gives back the handle the arena already issued, and nothing more.
     ///
-    /// The pair to this is [`Model::surface`]'s `compile_fail` lock, which still refuses to open
+    /// The pair to this is [`Model::surface_cache`]'s `compile_fail` lock, which still refuses to open
     /// the store: this adds a *name* for an index round-trip that `iter`-style access could
     /// already express, not a new power. Past the end is `None`, because the question it answers
     /// is existence.
@@ -3759,7 +3770,7 @@ mod tests {
             .faces
             .iter()
             .map(|&fh| m.faces.get(fh).surface)
-            .filter(|&s| matches!(m.surface(s), nacre_geom::Surface::Plane(_)))
+            .filter(|&s| matches!(m.surface_cache(s), nacre_geom::Surface::Plane(_)))
             .collect();
         assert_eq!(planar.len(), 2, "two caps");
         for s in &planar {

@@ -648,7 +648,7 @@ mod tests {
                 .iter()
                 .find(|&&fh| {
                     let f = m.faces.get(fh);
-                    let nacre_geom::Surface::Plane(pl) = m.surface(f.surface) else {
+                    let nacre_geom::Surface::Plane(pl) = m.surface_cache(f.surface) else {
                         return false;
                     };
                     let out = pl.normal() * f64::from(f.orientation.sign());

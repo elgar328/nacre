@@ -242,7 +242,7 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
         .max_by(|&a, &b| {
             let z = |fh| {
                 let f = m.faces.get(fh);
-                let p = match m.surface(f.surface) {
+                let p = match m.surface_cache(f.surface) {
                     nacre_geom::Surface::Plane(p) => *p,
                     _ => unreachable!(),
                 };

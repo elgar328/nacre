@@ -108,7 +108,7 @@ fn plane_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
     let src = m.solids.get(s).clone();
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
         for &fh in &m.shells.get(sh).faces {
-            match m.surface(m.faces.get(fh).surface) {
+            match m.surface_cache(m.faces.get(fh).surface) {
                 nacre_geom::Surface::Plane(pl) => {
                     bits.push(pl.coefficients().map(f64::to_bits));
                 }
