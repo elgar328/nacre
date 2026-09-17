@@ -2846,9 +2846,12 @@ pub(crate) fn arc_ends_along(
 /// axis not perpendicular to the plane — that last one traces an **ellipse**, and this piece would
 /// be claiming to know a shape it does not.
 fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corner> {
+    // ★ Asked of the **truth**, like the `world_plane_name` on the very next line: a face's
+    // kind is a fact about what it *is*, and the cache is a rounded copy of that. Before, this
+    // one function asked the cache what kind it was and then the truth what it said.
     if !matches!(
-        model.surface_cache(face.surface),
-        nacre_geom::Surface::Plane(_)
+        model.surface(face.surface),
+        nacre_topo::Surface::Plane { .. }
     ) {
         return None;
     }
@@ -2858,7 +2861,7 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
         .edge(he.edge)
         .surfaces
         .iter()
-        .find(|&&s| matches!(model.surface_cache(s), nacre_geom::Surface::Cylinder(_)))
+        .find(|&&s| matches!(model.surface(s), nacre_topo::Surface::Cylinder { .. }))
         .and_then(|&s| world_cylinder_def(model, s))?;
     let (o, m) = (def.origin(), def.dir());
     if !nacre_scalar::parallel_rat(&n, &m) {
@@ -2918,7 +2921,7 @@ fn face_clears_footprint(
                 .edge(he.edge)
                 .surfaces
                 .iter()
-                .any(|&s| matches!(model.surface_cache(s), nacre_geom::Surface::Cylinder(_)))
+                .any(|&s| matches!(model.surface(s), nacre_topo::Surface::Cylinder { .. }))
         });
     // ★★★★★ **Two refusals, split by cause rather than by the flag.** `unreadable` is for a shape
     // this road cannot spell at all — an arc edge, a seam vertex — and there

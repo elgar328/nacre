@@ -1584,9 +1584,9 @@ pub(crate) fn extrude_on_frame(
     // nothing — so a cylinder can reach here, which a `SketchPlane` never could. Reject it by name
     // rather than letting the frame derivation fail later for a reason that reads as something
     // else ("no exact form" when the truth is "not a plane").
-    match model.surface_cache(frame.plane()) {
-        nacre_geom::Surface::Plane(_) => {}
-        nacre_geom::Surface::Cylinder(_) => return Err(OpError::NonPlanarFace),
+    match model.surface(frame.plane()) {
+        nacre_topo::Surface::Plane { .. } => {}
+        nacre_topo::Surface::Cylinder { .. } => return Err(OpError::NonPlanarFace),
     }
     let (_, _, _, w) = crate::rotated_vertex::frame_world_basis(
         model,
