@@ -385,7 +385,11 @@ fn bridge_shared_edges(
         .map(|&(fh, f)| {
             (
                 fh,
-                matches!(model.surface_cache(f.surface), Surface::Plane(_)),
+                // ★ The **truth**, path-qualified: in this file the bare `Surface` is geom's
+                // (the cache), and aliasing the topo one in would give the truth a second
+                // vocabulary here. A face's kind is a fact about what it is, so the truth
+                // answers it — and a new surface kind lands there first.
+                matches!(model.surface(f.surface), nacre_topo::Surface::Plane { .. }),
             )
         })
         .collect();
