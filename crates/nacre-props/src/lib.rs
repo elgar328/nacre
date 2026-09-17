@@ -145,6 +145,9 @@ pub fn face_normal_at(model: &Model, face: Handle<Face>, p: Point3) -> Option<Ve
 pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsError> {
     let face = model.face(face);
     let sign = f64::from(face.orientation.sign());
+    // ★ The cache, because every answer below is an `f64` area or centroid: the integral is
+    // evaluated numerically, and an exact normal would be rounded into the same product a line
+    // later. Kind questions go to the truth (open item 34); this one's answer is a number.
     match model.surface_cache(face.surface) {
         Surface::Plane(plane) => {
             let (area, centroid) = planar_region(model, face)?;
@@ -260,6 +263,8 @@ fn face_contribution(
     reference: Point3,
 ) -> Result<(f64, f64), PropsError> {
     let sign = f64::from(face.orientation.sign());
+    // ★ The cache, for the same reason as `face_props`: the divergence theorem is being
+    // evaluated in `f64`, so the realization is the right description to read.
     match model.surface_cache(face.surface) {
         Surface::Plane(plane) => {
             // Outer boundary, minus each inner loop (a hole): area and first

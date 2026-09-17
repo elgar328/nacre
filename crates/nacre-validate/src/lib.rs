@@ -889,6 +889,10 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         if !reach.faces.contains(&fh) {
             continue;
         }
+        // ★ The **cache** is the proposition here, not a shortcut: this asks how far a cached
+        // vertex coordinate sits from its cached carrier — one rounded description against
+        // another. The truth-side question (does the definition match its carriers' kinds) is
+        // `check_vertex_def_carriers`, and it asks the truth.
         let surface = m.surface_cache(face.surface);
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
@@ -937,6 +941,10 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         }
         let tol = EPS_CONSTRUCTED;
         for sh in vertex.carriers() {
+            // ★ Cache against cache, deliberately — `vertex_point` is the cached coordinate,
+            // so its residual has to be measured against the cached carrier for the two to be
+            // the same description. Against the truth this would report the realization error
+            // of both, which is a different quantity and has no threshold here.
             let residual = m.surface_cache(sh).distance(m.vertex_point(vh));
             if residual > tol {
                 out.push(Violation::VertexOffDefinition {

@@ -1126,6 +1126,15 @@ impl Model {
     /// [`Model::surface_cache`] returns. Total: a surface without a truth is unrepresentable — the
     /// truth **is** the arena entry a handle names, which is what retired `SurfaceDef::Inexact`
     /// and the `UndefinedSurface` violation.
+    ///
+    /// ★★★★ **Which door answers which question** (open item 34, measured 2026-09-17).
+    /// **Classification, comparison and branching ask the truth**; display, tessellation,
+    /// bounding and measurement ask [`Model::surface_cache`]. A *kind* — "is this face planar"
+    /// — is a fact about what the surface **is**, so it is asked here even though the cache
+    /// would answer it correctly (the two can never disagree: `push_plane_raw` and
+    /// `push_cylinder_raw` pair them by type). The difference is when a wrong answer becomes
+    /// possible: a new surface kind lands in *this* enum first, so a `match` here goes red a
+    /// step before one on the cache does.
     #[inline]
     pub fn surface(&self, h: Handle<Surface>) -> &Surface {
         self.surfaces.get(h)
@@ -1168,6 +1177,11 @@ impl Model {
 
     /// The surface a handle names, realized — the **f64 cache** of [`Model::surface`]'s
     /// answer.
+    ///
+    /// ★★★★ **What belongs here** (open item 34): display, tessellation, bounding and
+    /// measurement — every question whose answer is a number a rounded copy can carry, plus the
+    /// one that compares a cached coordinate against its cached carrier. A *kind* question does
+    /// not, even though it would answer correctly; [`Model::surface`] says why.
     ///
     /// Reading is open; **writing is not** — the store is private (S1), so a surface can only
     /// enter through [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth. The
@@ -2173,6 +2187,11 @@ impl Model {
             let p1 = self.vertex_point(vertices[1]);
             Some(Curve::Line(Line::through_points(p0, p1)?))
         };
+        // ★★ **Both kinds asked of the cache here, deliberately** (open item 34). Every arm
+        // reads cache *values* out of the very binding it matched — `p.normal()`, `c.axis()`,
+        // `c.radius()` — so dispatching on the truth would double the lookups and leave two
+        // matches whose agreement no reader could check. The rule sends *kind questions* to the
+        // truth; this match's answer is a curve, and the kinds only choose how to derive it.
         match (
             self.surface_cache(surfaces[0]),
             self.surface_cache(surfaces[1]),

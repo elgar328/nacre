@@ -928,6 +928,8 @@ fn triangulate_face(
     fh: Handle<Face>,
     face: &Face,
 ) -> Result<(), TessError> {
+    // ★ The cache: a chart is sampled geometry for a mesh, which is what the realization is
+    // for. Nothing here classifies — the kind was decided upstream, on the truth.
     let surface = model.surface_cache(face.surface);
     let Chart {
         mut uv,

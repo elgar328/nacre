@@ -2866,6 +2866,10 @@ pub(crate) fn find_face_coplanar_with(
     let shell = model.solid(solid).outer;
     model.shell(shell).faces.iter().copied().find(|&fh| {
         let face = model.face(fh);
+        // ★ The cache, because what follows is an `f64` direction comparison against `want`
+        // (itself an `f64` vector from the caller). Asking the truth for the kind and the cache
+        // for the normal would read one surface twice to no end; the coplanarity beside it is
+        // decided exactly, by `plane_side` on the reference triangle.
         let nacre_geom::Surface::Plane(pl) = model.surface_cache(face.surface) else {
             return false;
         };
