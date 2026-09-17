@@ -3139,19 +3139,33 @@ mod tests {
     /// the second says the door has teeth. Only this test says the second, and without it the
     /// doors could assert nothing at all and every green would still be green.
     ///
-    /// Each case violates **exactly one** assertion, in the order the door checks them, so no
-    /// case can pass by tripping an earlier guard instead of its own. The assertions are
+    /// Each case violates **exactly one** assertion and the panic **message is checked**, because
+    /// the first draft of this test only asked "did it panic" and two cases were green for the
+    /// wrong reason: they cloned a face out of a *throwaway* model, so walking its loop hit
+    /// `Store`'s cross-model handle guard before ever reaching the door's own assertion. The face
+    /// now comes from the very model it is pushed into, and only the out-of-bounds handles are
+    /// strangers — those are read with `.index()`, which no guard sees. The assertions are
     /// `debug_assert`, so this test is `cfg(debug_assertions)` — the shape the foreign-handle
     /// lock above already uses. Panic output is left unsuppressed on purpose: swapping the
     /// panic hook is global state, and the suite runs its tests in parallel.
     #[test]
     #[cfg(debug_assertions)]
     fn the_write_doors_refuse_what_their_invariants_forbid() {
-        fn refuses(what: &str, call: impl FnOnce()) {
+        // The panic message is checked, not just the panic: the claim above is that each case
+        // trips *its own* assertion, and only the message can say which one bit.
+        fn refuses(what: &str, expect: &str, call: impl FnOnce()) {
             let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(call));
+            let e = r
+                .err()
+                .unwrap_or_else(|| panic!("{what}: the door let an invalid cell into the arena"));
+            let msg = e
+                .downcast_ref::<String>()
+                .map(String::as_str)
+                .or_else(|| e.downcast_ref::<&str>().copied())
+                .unwrap_or("<non-string panic>");
             assert!(
-                r.is_err(),
-                "{what}: the door let an invalid cell into the arena"
+                msg.contains(expect),
+                "{what}: tripped a different assertion — wanted {expect:?}, got {msg:?}"
             );
         }
         let cube = || build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
@@ -3175,50 +3189,78 @@ mod tests {
             .expect("the bigger model has faces");
 
         // (1) a face names a surface the arena does not hold
-        let (mut m, mut f) = (cube(), sample(&cube()));
+        let mut m = cube();
+        let mut f = sample(&m);
         f.surface = stranger_surface;
-        refuses("push_face / surface in bounds", || {
-            m.push_face(f);
-        });
+        refuses(
+            "push_face / surface in bounds",
+            "a face names a surface the arena does not hold",
+            || {
+                m.push_face(f);
+            },
+        );
 
         // (2) a face's outer loop has no half-edges
-        let (mut m, mut f) = (cube(), sample(&cube()));
+        let mut m = cube();
+        let mut f = sample(&m);
         f.outer.half_edges.clear();
-        refuses("push_face / outer loop non-empty", || {
-            m.push_face(f);
-        });
+        refuses(
+            "push_face / outer loop non-empty",
+            "a face's outer loop has no half-edges",
+            || {
+                m.push_face(f);
+            },
+        );
 
         // (3) a face's inner loop has no half-edges — the outer one is left intact so this
         //     case cannot be carried by (2).
-        let (mut m, mut f) = (cube(), sample(&cube()));
+        let mut m = cube();
+        let mut f = sample(&m);
         f.inner.push(Loop {
             half_edges: Vec::new(),
         });
-        refuses("push_face / inner loop non-empty", || {
-            m.push_face(f);
-        });
+        refuses(
+            "push_face / inner loop non-empty",
+            "a face's inner loop has no half-edges",
+            || {
+                m.push_face(f);
+            },
+        );
 
         // (4) a face loop does not close: flipping one half-edge swaps its end for its start,
         //     which is precisely what walking the loop is there to catch.
-        let (mut m, mut f) = (cube(), sample(&cube()));
+        let mut m = cube();
+        let mut f = sample(&m);
         f.outer.half_edges[0].forward = !f.outer.half_edges[0].forward;
-        refuses("push_face / loop closes", || {
-            m.push_face(f);
-        });
+        refuses(
+            "push_face / loop closes",
+            "a face loop does not close",
+            || {
+                m.push_face(f);
+            },
+        );
 
         // (5) a shell with no faces bounds nothing
         let mut m = cube();
-        refuses("push_shell / non-empty", || {
-            m.push_shell(Shell { faces: Vec::new() });
-        });
+        refuses(
+            "push_shell / non-empty",
+            "a shell with no faces bounds nothing",
+            || {
+                m.push_shell(Shell { faces: Vec::new() });
+            },
+        );
 
         // (6) a shell names a face the arena does not hold
         let mut m = cube();
-        refuses("push_shell / faces in bounds", || {
-            m.push_shell(Shell {
-                faces: vec![stranger_face],
-            });
-        });
+        refuses(
+            "push_shell / faces in bounds",
+            "a shell names a face the arena does not hold",
+            || {
+                m.push_shell(Shell {
+                    faces: vec![stranger_face],
+                });
+            },
+        );
     }
 
     /// ★★★ **A foreign handle does not read a cache** — the guard [`Store::get`] owns, kept on

@@ -267,6 +267,23 @@ pub fn validate(model: &Model) -> Vec<Violation> {
 // triple's tolerance) is structurally gone: the cache is the realization of the definition, and
 // the census asserts that vertex by vertex.
 
+/// ★★★★ **This check walks the whole arena on purpose — superseded cells included.**
+///
+/// Every other check in this file filters by [`Reachable`], and this one deliberately does not:
+/// a torn page is torn whether or not anything still points at it. An editing op supersedes old
+/// cells rather than removing them (design §2), so the dead share grows with history — measured
+/// at 0% for a fresh solid, ~50% after a boolean, and **99%** at depth 120 (960 of 968 vertices).
+/// Filtering here would make the check quieter, not cleaner.
+///
+/// ⚠ **The premise is not privacy, it is `Store` being append-only** — its public surface is
+/// `new·push·get·handle_at·len·is_empty·iter`, with no removal at all. So an index that was once
+/// valid stays valid forever and a bounds check cannot fire on a dead cell; the violations this
+/// finds are real dangling references, never arena residue.
+///
+/// ⚠⚠ **Do not "optimize" this by adding a `reach` filter.** Four tests plant corruption in cells
+/// that are *unreachable by construction* and go red the moment this stops looking:
+/// `dangling_reference_solid_shell`, `dangling_reference_vertex_definition`,
+/// `a_contradictory_pierce_def_is_flagged`, `a_contradictory_vertex_def_is_flagged`.
 fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
     let mut i = 0u32;
     while let Some(eh) = m.edge_handle_at(i) {
@@ -402,6 +419,10 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
 /// S7 structural check: each vertex definition's carrier kinds must match its variant —
 /// `ThreePlane` names planes only, `OnSeam` includes a non-plane. Runs after reference
 /// integrity (it dereferences surface handles).
+///
+/// ★ **Full-arena, like [`check_reference_integrity`] and for the same reason** — a definition
+/// that contradicts its own carriers is wrong whether or not a live solid still names that
+/// vertex. Two of the four planted-corruption tests land here.
 fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
     let mut i = 0u32;
     while let Some(vh) = m.vertex_handle_at(i) {
