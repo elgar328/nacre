@@ -1271,18 +1271,25 @@ impl Model {
         let rat3 = |v: [Rat; 3]| [v[0].to_f64(), v[1].to_f64(), v[2].to_f64()];
         match self.surface(h) {
             Surface::Plane { .. } => {
-                let c = *self.world_plane_name(h)?.narrow()?;
-                let foot = nacre_scalar::plane_origin_projection(c)?;
-                let raw = Vector3::from_array([c[0].to_f64(), c[1].to_f64(), c[2].to_f64()]);
+                let mut c = *self.world_plane_name(h)?.narrow()?;
                 let stated = match self.surface_cache(h) {
                     nacre_geom::Surface::Plane(p) => p,
                     nacre_geom::Surface::Cylinder(_) => return None,
                 };
-                let raw = if raw.dot(stated.normal()) < 0.0 {
-                    -raw
-                } else {
-                    raw
-                };
+                // ★★ **The sense is turned in the rationals, before anything realizes.** Negating
+                // the f64 vector instead puts `-0.0` in every zero component — numerically the
+                // same number and a different bit pattern, which is the one thing a cache that
+                // claims to be an exact rounding cannot afford. A rational has no signed zero, so
+                // `0` realizes to `+0.0` whichever way the plane ends up facing.
+                let facing = Vector3::from_array([c[0].to_f64(), c[1].to_f64(), c[2].to_f64()]);
+                if facing.dot(stated.normal()) < 0.0 {
+                    let zero = Rat::from_int(0);
+                    for k in c.iter_mut() {
+                        *k = zero.checked_sub(*k)?;
+                    }
+                }
+                let foot = nacre_scalar::plane_origin_projection(c)?;
+                let raw = Vector3::from_array([c[0].to_f64(), c[1].to_f64(), c[2].to_f64()]);
                 Plane::from_point_normal(Point3::from_array(rat3(foot)), raw)
                     .map(nacre_geom::Surface::Plane)
             }
@@ -4266,6 +4273,133 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// ★★★★★ **Cell 58's proposition, at its smallest**: a plane's realized cache is a function
+    /// of the **plane**, not of which points were used to state it.
+    ///
+    /// Two models state one tilted plane through two triples sharing no point. The caches their
+    /// producers build differ — asserted first, because without that this fixture would pass on
+    /// a derivation that simply returned the stated cache — and the derived ones are bit-equal,
+    /// down to being the plane's own canonical row and its foot of perpendicular.
+    #[test]
+    fn a_derived_plane_cache_does_not_depend_on_which_points_state_it() {
+        let r = nacre_scalar::Rat::from_int;
+        let f = |q: [nacre_scalar::Rat; 3]| {
+            Point3::from_array([q[0].to_f64(), q[1].to_f64(), q[2].to_f64()])
+        };
+        // 2x + 3y + 6z = 6, through its three axis intercepts and through three other exact
+        // points on it. Each triple is ordered so that (b − a) × (c − a) points the same way:
+        // the sense is the producer's, and two producers facing opposite ways describe two
+        // oppositely-facing caches **by design**.
+        let triples = [
+            [[r(3), r(0), r(0)], [r(0), r(2), r(0)], [r(0), r(0), r(1)]],
+            [
+                [r(6), r(-2), r(0)],
+                [r(-3), r(4), r(0)],
+                [r(0), r(-2), r(2)],
+            ],
+        ];
+        let mut stated = Vec::new();
+        let mut derived = Vec::new();
+        for pts in triples {
+            let mut m = Model::new();
+            let cache = nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2]))
+                .expect("three non-collinear points");
+            let (h, _) = m.push_plane(cache, pts, None);
+            stated.push(m.surface_cache(h).clone());
+            derived.push(
+                m.derive_surface_cache(h)
+                    .expect("a named world plane derives"),
+            );
+        }
+        assert_ne!(
+            stated[0], stated[1],
+            "the two producers already agree — this fixture measures nothing"
+        );
+        assert_eq!(
+            surface_bits(&derived[0]),
+            surface_bits(&derived[1]),
+            "one plane, two statements, two different realizations"
+        );
+        let nacre_geom::Surface::Plane(d) = &derived[0] else {
+            panic!("a plane derives a plane")
+        };
+        let c = d.coefficients();
+        assert_eq!(
+            [c[0], c[1], c[2]],
+            [2.0, 3.0, 6.0],
+            "`raw` is the plane's canonical row, not a cross product of whatever points came in"
+        );
+        assert_eq!(
+            d.origin().as_array(),
+            [12.0 / 49.0, 18.0 / 49.0, 36.0 / 49.0],
+            "the anchor is the foot of perpendicular, −d·n/(n·n)"
+        );
+    }
+
+    /// ★★★★ **The sense is the cache's to keep, and a seed is the reason.** A canonical name
+    /// carries no direction, and the truth's point order does not supply one either: the three
+    /// world planes are pushed with positively-ordered points and a **negated** cache normal.
+    /// Derive the sense from the name and they flip — and with them every `flipped` report an
+    /// interning hit on a seed makes, which is a face's outward direction.
+    #[test]
+    fn a_derived_seed_plane_keeps_the_sense_its_cache_states() {
+        let m = Model::new();
+        let want = [
+            (nacre_scalar::Axis::Z, [0.0, 0.0, -1.0]),
+            (nacre_scalar::Axis::X, [-1.0, 0.0, 0.0]),
+            (nacre_scalar::Axis::Y, [0.0, -1.0, 0.0]),
+        ];
+        for (axis, n) in want {
+            let h = m.world_plane(axis);
+            let derived = m
+                .derive_surface_cache(h)
+                .expect("a seed is named and unmoved");
+            let nacre_geom::Surface::Plane(d) = &derived else {
+                panic!("a seed is a plane")
+            };
+            assert_eq!(d.normal().as_array(), n, "a seed faces the −axis, still");
+            // ★ And no normal component is a **negative zero**: the sense is turned in the
+            // rationals, which have none, so a zero realizes to `+0.0` whichever way the plane
+            // ends up facing. Turning the f64 vector instead makes this red on all three seeds.
+            // (The fourth coefficient is `−raw·origin` and is legitimately `−0.0` here, so the
+            // claim is about the normal, which is what the sense rule touches.)
+            let c = d.coefficients();
+            for v in &c[..3] {
+                assert!(
+                    *v != 0.0 || v.is_sign_positive(),
+                    "a zero coefficient came back as −0.0"
+                );
+            }
+            assert_eq!(d.origin().as_array(), [0.0; 3], "the foot is the origin");
+        }
+    }
+
+    /// A cylinder's **position** descends exactly — `origin` from the statement's rational point
+    /// and `radius` from its correctly-rounded `√r²`. Its two directions do not: `from_axis`
+    /// normalizes both, which is the same `√` wall a plane's unit normal sits behind.
+    #[test]
+    fn a_derived_cylinder_restates_its_own_axis_and_radius() {
+        let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
+        let mut seen = 0;
+        let mut i = 0u32;
+        while let Some(sh) = m.surface_handle_at(i) {
+            i += 1;
+            if !matches!(m.surface(sh), Surface::Cylinder { .. }) {
+                continue;
+            }
+            seen += 1;
+            let derived = m
+                .derive_surface_cache(sh)
+                .expect("an unmoved cylinder derives");
+            assert_eq!(
+                surface_bits(&derived),
+                surface_bits(m.surface_cache(sh)),
+                "an axis-aligned cylinder's statement realizes to the cache it was pushed with"
+            );
+        }
+        assert_eq!(seen, 1, "one lateral surface");
     }
 
     /// ★★ S9: the seeds are the interning survivors — an origin cuboid's bottom/left/front
