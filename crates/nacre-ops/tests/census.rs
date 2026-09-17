@@ -2392,6 +2392,26 @@ fn dump() {
             }
         }
     }
+
+    // ★★★★ **Cell 58 — the realization road for surfaces, measured before it is wired.** These
+    // four cover *every* surface this process pushed (the counters are process-global and the
+    // dump is this binary's only test), so they are the prediction the wiring commit is checked
+    // against: `surface_cache_differs` is exactly how many `in:` plane digests may move, and a
+    // `c ` row that moves without it is not explained.
+    //
+    // ⚠ `cache_discarded_differing` is the one number nobody had measured. The claim "the same
+    // geometry, described twice, writes the same file" rests on it, and until now its only
+    // evidence was an experiment built on purpose to show it.
+    let d = nacre_topo::surface_derive_counts();
+    println!("stat surface_derived {}", d.derived);
+    println!("stat surface_declined {}", d.declined);
+    println!("stat surface_cache_differs {}", d.differs);
+    println!("stat cache_discarded_differing {}", d.discarded_differing);
+    println!("stat surface_declined_unnamed {}", d.declined_unnamed);
+    println!("stat surface_declined_wide {}", d.declined_wide);
+    println!("stat surface_declined_motion {}", d.declined_motion);
+    println!("stat surface_declined_arith {}", d.declined_arith);
+    println!("stat surface_declined_cylinder {}", d.declined_cylinder);
 }
 
 /// A square prism on a plane through the origin with normal `n` — the tilted twin of [`ex`].

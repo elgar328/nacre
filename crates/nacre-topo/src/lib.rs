@@ -324,6 +324,113 @@ pub static WIDE_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 /// that population too.
 pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
+/// **How far the realization road reaches for surfaces** — the counters cell 58 measures before
+/// it wires anything (principle 4, "one road to a realization": a vertex reached it in cell 52,
+/// a surface still takes the f64 its producer hands in).
+///
+/// Read through [`surface_derive_counts`]; the census prints them as `stat` rows, the same
+/// falsifiability bridge [`WIDE_PLANES`] and [`SEEDED_HITS`] are. They are process-global and
+/// never reset, so a number means "over everything this process built".
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct SurfaceDeriveCounts {
+    /// Pushes whose cache the truth could derive ([`Model::derive_surface_cache`]).
+    pub derived: u64,
+    /// Pushes where it declined — no name, a `Wide` name, a motion that is not a rational
+    /// translation chain, a moved cylinder, or an overflow. **This is the population that must
+    /// reach zero (or be justified) before `cache` can leave the push doors' signatures.**
+    pub declined: u64,
+    /// `declined`, split by cause. The split is what says *which* work removing the parameter
+    /// needs, and the causes are not interchangeable: an unnamed plane is a fixture door, a
+    /// `Wide` name wants an arbitrary-precision arm, a motion wants a chain folded to an
+    /// `Isometry` (rotations included — `nacre_scalar::Isometry::plane_coeffs` already carries
+    /// a plane through the 90° family), and arithmetic is an `i128` ceiling.
+    pub declined_unnamed: u64,
+    /// See [`SurfaceDeriveCounts::declined_unnamed`].
+    pub declined_wide: u64,
+    /// See [`SurfaceDeriveCounts::declined_unnamed`].
+    pub declined_motion: u64,
+    /// See [`SurfaceDeriveCounts::declined_unnamed`].
+    pub declined_arith: u64,
+    /// A cylinder whose statement is written before a motion — see
+    /// [`SurfaceDeriveCounts::declined_unnamed`]. (A statement `Cylinder::from_axis` itself
+    /// refuses would land here too; none has been seen.)
+    pub declined_cylinder: u64,
+    /// Of `derived`, how many differ bit-for-bit from what the producer stated — the census
+    /// `in:` diff this cell predicts before it causes it.
+    pub differs: u64,
+    /// Interning hits whose **discarded** cache differs bit-for-bit from the survivor's — the
+    /// only measurement of the determinism claim ("the same geometry writes the same file") on
+    /// the *product* population rather than on an experiment built to show it.
+    pub discarded_differing: u64,
+}
+
+static SURFACE_DERIVED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SURFACE_DECLINED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SURFACE_DIFFERS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SURFACE_DISCARDED_DIFFERING: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+static SURFACE_DECLINED_UNNAMED: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+static SURFACE_DECLINED_WIDE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SURFACE_DECLINED_MOTION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SURFACE_DECLINED_ARITH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SURFACE_DECLINED_CYLINDER: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
+/// A snapshot of [`SurfaceDeriveCounts`] — see its doc for what each number means.
+pub fn surface_derive_counts() -> SurfaceDeriveCounts {
+    use std::sync::atomic::Ordering::Relaxed;
+    SurfaceDeriveCounts {
+        derived: SURFACE_DERIVED.load(Relaxed),
+        declined: SURFACE_DECLINED.load(Relaxed),
+        differs: SURFACE_DIFFERS.load(Relaxed),
+        discarded_differing: SURFACE_DISCARDED_DIFFERING.load(Relaxed),
+        declined_unnamed: SURFACE_DECLINED_UNNAMED.load(Relaxed),
+        declined_wide: SURFACE_DECLINED_WIDE.load(Relaxed),
+        declined_motion: SURFACE_DECLINED_MOTION.load(Relaxed),
+        declined_arith: SURFACE_DECLINED_ARITH.load(Relaxed),
+        declined_cylinder: SURFACE_DECLINED_CYLINDER.load(Relaxed),
+    }
+}
+
+/// A realized surface's bits, in one array, so "identical" means *identical* and not
+/// `PartialEq`'s f64 equality (`-0.0 == 0.0`, and a `NaN` that never compares equal to itself).
+/// Ten numbers either way: a plane's origin, unit normal and four coefficients; a cylinder's
+/// axis origin and direction, its `ref_dir` and its radius.
+fn surface_bits(s: &nacre_geom::Surface) -> [u64; 10] {
+    let pack = |a: [f64; 3], b: [f64; 3], c: [f64; 3], d: f64| {
+        [
+            a[0].to_bits(),
+            a[1].to_bits(),
+            a[2].to_bits(),
+            b[0].to_bits(),
+            b[1].to_bits(),
+            b[2].to_bits(),
+            c[0].to_bits(),
+            c[1].to_bits(),
+            c[2].to_bits(),
+            d.to_bits(),
+        ]
+    };
+    match s {
+        nacre_geom::Surface::Plane(p) => {
+            let c = p.coefficients();
+            pack(
+                p.origin().as_array(),
+                p.normal().as_array(),
+                [c[0], c[1], c[2]],
+                c[3],
+            )
+        }
+        nacre_geom::Surface::Cylinder(cy) => pack(
+            cy.axis().origin().as_array(),
+            cy.axis().direction().as_array(),
+            cy.ref_dir().as_array(),
+            cy.radius(),
+        ),
+    }
+}
+
 /// Whether a face uses its surface normal as-is (`Forward`) or flipped
 /// (`Reversed`). A pure tag — full derives.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -1085,21 +1192,30 @@ impl Model {
     /// `compile_fail` doc-test cannot reach a private function to demonstrate it. The public
     /// doors ([`Model::push_plane`], [`Model::push_cylinder`]) already took narrow types; what
     /// was wide was this crate-internal one. Recorded rather than locked.
+    /// ★★★ **The name enters here too** (cell 58), for the same reason the cache does: this is
+    /// the one place a plane reaches the arena, so it is the one place that can derive a cache
+    /// from the truth — and the derivation reads the name. Interning used to insert it one line
+    /// later, which left a window in which a surface existed without the name that describes it.
     fn push_plane_raw(
         &mut self,
         points: PlanePoints,
         motion: Option<Handle<MotionNode>>,
+        name: Option<nacre_scalar::PlaneName>,
         cache: nacre_geom::Plane,
     ) -> Handle<Surface> {
         let h = self.surfaces.push(Surface::Plane { points, motion });
         self.surface_cache.push(SurfaceCache {
             realized: nacre_geom::Surface::Plane(cache),
         });
+        if let Some(n) = name {
+            self.surface_name.insert(h, n);
+        }
         debug_assert_eq!(
             self.surface_cache.len(),
             self.surfaces.len(),
             "the truth and its cache enter together or not at all"
         );
+        self.measure_derivation(h);
         h
     }
 
@@ -1120,7 +1236,117 @@ impl Model {
             self.surfaces.len(),
             "the truth and its cache enter together or not at all"
         );
+        self.measure_derivation(h);
         h
+    }
+
+    /// **The f64 cache this surface's truth realizes to** — principle 4's road, for surfaces.
+    ///
+    /// A vertex has had one since cell 52 (`push_vertex_realized` realizes the definition at
+    /// birth); a surface still stores whatever f64 its producer handed in, which is nobody's
+    /// exact rounding: measured over the suite, a tilted plane's cache anchor varies by up to
+    /// 22 ulps with which face asked for the plane first, and for 20 of 29 moved planes the
+    /// stored anchor does not satisfy the plane's own coefficients.
+    ///
+    /// What it derives:
+    /// * **Plane** — the world canonical name ([`Model::world_plane_name`], which follows a
+    ///   rational translation chain) gives primitive integer coefficients; the anchor is their
+    ///   **foot of perpendicular** ([`nacre_scalar::plane_origin_projection`], the plane's
+    ///   minimum-norm point) and `raw` is the coefficients themselves.
+    /// * **Cylinder** — `origin` and `radius` descend exactly from [`CylinderDef`]; the axis
+    ///   direction and `ref_dir` do not (`Cylinder::from_axis` normalizes both).
+    ///
+    /// ⚠★★★★ **The sense is read from the stored cache, not from the truth, and that is not a
+    /// shortcut.** Canonical coefficients carry **no direction** (`[0,0,1,−3]` and `[0,0,−1,3]`
+    /// canonicalize together — that is what makes them an interning key), and the truth's point
+    /// order does not supply it either: the three seeded world planes are pushed with positively
+    /// ordered points and a *negated* cache normal. Deriving the sense from the name would flip
+    /// them, and with them every `flipped` report an interning hit on a seed makes — which is a
+    /// face's outward direction. So this derives **where the plane is** and keeps **which way it
+    /// faces**; the sense is the one thing the cache knows that the truth does not.
+    ///
+    /// `None` — the caller keeps the cache it has — for an unnamed plane, a `Wide` name, a
+    /// motion that is not a rational translation chain, a moved cylinder, or an overflow.
+    fn derive_surface_cache(&self, h: Handle<Surface>) -> Option<nacre_geom::Surface> {
+        let rat3 = |v: [Rat; 3]| [v[0].to_f64(), v[1].to_f64(), v[2].to_f64()];
+        match self.surface(h) {
+            Surface::Plane { .. } => {
+                let c = *self.world_plane_name(h)?.narrow()?;
+                let foot = nacre_scalar::plane_origin_projection(c)?;
+                let raw = Vector3::from_array([c[0].to_f64(), c[1].to_f64(), c[2].to_f64()]);
+                let stated = match self.surface_cache(h) {
+                    nacre_geom::Surface::Plane(p) => p,
+                    nacre_geom::Surface::Cylinder(_) => return None,
+                };
+                let raw = if raw.dot(stated.normal()) < 0.0 {
+                    -raw
+                } else {
+                    raw
+                };
+                Plane::from_point_normal(Point3::from_array(rat3(foot)), raw)
+                    .map(nacre_geom::Surface::Plane)
+            }
+            Surface::Cylinder { def, motion } => {
+                motion.is_none().then_some(())?;
+                Cylinder::from_axis(
+                    Point3::from_array(rat3(def.origin())),
+                    Vector3::from_array(rat3(def.dir())),
+                    Vector3::from_array(rat3(def.ref_dir())),
+                    def.radius_f64(),
+                )
+                .map(nacre_geom::Surface::Cylinder)
+            }
+        }
+    }
+
+    /// Count what [`Model::derive_surface_cache`] would do at this push, and change nothing —
+    /// the measuring half of cell 58, which runs a commit before the wiring so that the census
+    /// diff the wiring causes is **predicted before it happens**.
+    fn measure_derivation(&self, h: Handle<Surface>) {
+        use std::sync::atomic::Ordering::Relaxed;
+        match self.derive_surface_cache(h) {
+            None => {
+                SURFACE_DECLINED.fetch_add(1, Relaxed);
+                self.decline_reason(h).fetch_add(1, Relaxed);
+            }
+            Some(d) => {
+                if surface_bits(&d) != surface_bits(self.surface_cache(h)) {
+                    SURFACE_DIFFERS.fetch_add(1, Relaxed);
+                }
+                SURFACE_DERIVED.fetch_add(1, Relaxed);
+            }
+        };
+    }
+
+    /// Which counter a decline belongs to — a **diagnosis of the road already taken**, not a
+    /// second derivation. [`Model::derive_surface_cache`] asks [`Model::world_plane_name`],
+    /// which folds every cause into one `None`; the populations have to be told apart because
+    /// they need different work, and only one of them (`Wide`) is arithmetic at all.
+    fn decline_reason(&self, h: Handle<Surface>) -> &'static std::sync::atomic::AtomicU64 {
+        match self.surface(h) {
+            Surface::Cylinder { .. } => &SURFACE_DECLINED_CYLINDER,
+            Surface::Plane { .. } => match self.surface_name.get(&h) {
+                None => &SURFACE_DECLINED_UNNAMED,
+                Some(n) => match (self.plane_motion(h), n.narrow()) {
+                    (_, None) => &SURFACE_DECLINED_WIDE,
+                    (Some(leaf), Some(_)) if self.chain_translation(leaf).is_none() => {
+                        &SURFACE_DECLINED_MOTION
+                    }
+                    _ => &SURFACE_DECLINED_ARITH,
+                },
+            },
+        }
+    }
+
+    /// Count an interning hit whose incoming cache is **discarded** in favour of the survivor's,
+    /// when the two are not the same bits — the product-population measurement of "the same
+    /// geometry, described twice, writes the same file".
+    fn count_discarded_cache(&self, h: Handle<Surface>, discarded: &nacre_geom::Plane) {
+        if surface_bits(self.surface_cache(h))
+            != surface_bits(&nacre_geom::Surface::Plane(*discarded))
+        {
+            SURFACE_DISCARDED_DIFFERING.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     /// The surface's exact truth — what it *is*, beside the f64 realization
@@ -1583,23 +1809,25 @@ impl Model {
         if name.as_ref().is_some_and(|n| n.narrow().is_none()) {
             WIDE_PLANES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
-        let key = name.map(|n| (n, motion));
+        let key = name.clone().map(|n| (n, motion));
         if let Some(k) = &key {
             if let Some(&h) = self.surface_ids.get(k) {
                 if (h.index() as usize) < 3 {
                     SEEDED_HITS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                 }
+                // ★ The cache the caller built is **dropped here** — the survivor's stands. That
+                // is what makes a plane's realization depend on which face asked first, and
+                // [`Model::count_discarded_cache`] is the only measurement of how often the two
+                // actually differ (cell 58).
+                self.count_discarded_cache(h, &cache);
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
                 // outward the other way round.
                 return (h, self.flipped_against(h, &cache));
             }
         }
-        let h = self.push_plane_raw(points, motion, cache);
-        if let Some((n, _)) = &key {
-            // One clone per push — the name is derived once here, never on a judging loop.
-            self.surface_name.insert(h, n.clone());
-        }
+        // One clone per push — the name is derived once here, never on a judging loop.
+        let h = self.push_plane_raw(points, motion, name, cache);
         if let Some(k) = key {
             self.surface_ids.insert(k, h);
         }
@@ -1661,7 +1889,7 @@ impl Model {
         if let Some(&h) = self.surface_through_ids.get(&(vertices, motion)) {
             return (h, self.flipped_against(h, &cache));
         }
-        let h = self.push_plane_raw(PlanePoints::Through(vertices), motion, cache);
+        let h = self.push_plane_raw(PlanePoints::Through(vertices), motion, None, cache);
         self.surface_through_ids.insert((vertices, motion), h);
         (h, false)
     }
@@ -1871,7 +2099,7 @@ impl Model {
         cache: nacre_geom::Plane,
         points: [[nacre_scalar::Rat; 3]; 3],
     ) -> Handle<Surface> {
-        self.push_plane_raw(PlanePoints::Known(points), None, cache)
+        self.push_plane_raw(PlanePoints::Known(points), None, None, cache)
     }
 
     /// A new shell whose faces are copies of `src`'s with their outward normals
