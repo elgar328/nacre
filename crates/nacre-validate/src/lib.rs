@@ -10,7 +10,7 @@
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_math::{Point3, Vector3};
-use nacre_store::{Handle, Store};
+use nacre_store::Handle;
 use nacre_topo::{
     Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Surface, Vertex, VertexDef,
 };
@@ -269,30 +269,31 @@ pub fn validate(model: &Model) -> Vec<Violation> {
 // triple's tolerance) is structurally gone: the cache is the realization of the definition, and
 // the census asserts that vertex by vertex.
 
-#[inline]
-fn in_bounds<T>(h: Handle<T>, store: &Store<T>) -> bool {
-    (h.index() as usize) < store.len()
-}
-
 fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
-    for (eh, edge) in m.edges.iter() {
+    let mut i = 0u32;
+    while let Some(eh) = m.edge_handle_at(i) {
+        i += 1;
+        let edge = m.edge(eh);
         // (The curve handle's own check died with `Store<Curve>` (S8): the curve is a cache
         // beside the store, not a reference an edge can dangle.)
         {
             for v in edge.vertices {
-                if !in_bounds(v, &m.vertices) {
+                if v.index() as usize >= m.vertex_count() {
                     out.push(Violation::DanglingReference {
                         kind: RefKind::EdgeBoundVertex,
                         owner_index: eh.index(),
                         target_index: v.index(),
-                        target_len: m.vertices.len() as u32,
+                        target_len: m.vertex_count() as u32,
                     });
                 }
             }
         }
     }
 
-    for (fh, face) in m.faces.iter() {
+    let mut i = 0u32;
+    while let Some(fh) = m.face_handle_at(i) {
+        i += 1;
+        let face = m.face(fh);
         // The surfaces store is private (S1) — bounds-check against its count.
         if face.surface.index() as usize >= m.surface_count() {
             out.push(Violation::DanglingReference {
@@ -304,39 +305,45 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
         }
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
-                if !in_bounds(he.edge, &m.edges) {
+                if he.edge.index() as usize >= m.edge_count() {
                     out.push(Violation::DanglingReference {
                         kind: RefKind::HalfEdgeEdge,
                         owner_index: fh.index(),
                         target_index: he.edge.index(),
-                        target_len: m.edges.len() as u32,
+                        target_len: m.edge_count() as u32,
                     });
                 }
             }
         }
     }
 
-    for (sh, shell) in m.shells.iter() {
+    let mut i = 0u32;
+    while let Some(sh) = m.shell_handle_at(i) {
+        i += 1;
+        let shell = m.shell(sh);
         for f in &shell.faces {
-            if !in_bounds(*f, &m.faces) {
+            if f.index() as usize >= m.face_count() {
                 out.push(Violation::DanglingReference {
                     kind: RefKind::ShellFace,
                     owner_index: sh.index(),
                     target_index: f.index(),
-                    target_len: m.faces.len() as u32,
+                    target_len: m.face_count() as u32,
                 });
             }
         }
     }
 
-    for (soh, solid) in m.solids.iter() {
+    let mut i = 0u32;
+    while let Some(soh) = m.solid_handle_at(i) {
+        i += 1;
+        let solid = m.solid(soh);
         for sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
-            if !in_bounds(*sh, &m.shells) {
+            if sh.index() as usize >= m.shell_count() {
                 out.push(Violation::DanglingReference {
                     kind: RefKind::SolidShell,
                     owner_index: soh.index(),
                     target_index: sh.index(),
-                    target_len: m.shells.len() as u32,
+                    target_len: m.shell_count() as u32,
                 });
             }
         }
@@ -344,7 +351,10 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
 
     // Every vertex's definition references surfaces by handle (S7: the definition is the
     // vertex, so this covers all of them, not just the discovered population).
-    for (vh, vertex) in m.vertices.iter() {
+    let mut i = 0u32;
+    while let Some(vh) = m.vertex_handle_at(i) {
+        i += 1;
+        let vertex = m.vertex(vh);
         for s in vertex.def.carriers() {
             if s.index() as usize >= m.surface_count() {
                 out.push(Violation::DanglingReference {
@@ -364,11 +374,7 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
     let e = reach.edges.len();
     let f = reach.faces.len();
     let s = reach.shells.len();
-    let inner_loops: usize = reach
-        .faces
-        .iter()
-        .map(|fh| m.faces.get(*fh).inner.len())
-        .sum();
+    let inner_loops: usize = reach.faces.iter().map(|fh| m.face(*fh).inner.len()).sum();
 
     // i64: E can exceed V + F. V - E + F - L_i = 2(S - G) for a closed 2-manifold.
     let chi = v as i64 - e as i64 + f as i64 - inner_loops as i64;
@@ -399,7 +405,10 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
 /// `ThreePlane` names planes only, `OnSeam` includes a non-plane. Runs after reference
 /// integrity (it dereferences surface handles).
 fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
-    for (vh, vertex) in m.vertices.iter() {
+    let mut i = 0u32;
+    while let Some(vh) = m.vertex_handle_at(i) {
+        i += 1;
+        let vertex = m.vertex(vh);
         let bad = match &vertex.def {
             VertexDef::ThreePlane(planes) => planes
                 .iter()
@@ -425,7 +434,10 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
 
 fn check_loop_closure(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
     // Store order (deterministic), filtered to the live faces.
-    for (fh, face) in m.faces.iter() {
+    let mut i = 0u32;
+    while let Some(fh) = m.face_handle_at(i) {
+        i += 1;
+        let face = m.face(fh);
         if !reach.faces.contains(&fh) {
             continue;
         }
@@ -452,7 +464,7 @@ fn check_loop(m: &Model, fh: Handle<Face>, kind: LoopKind, lp: &Loop, out: &mut 
     let ends: Vec<Option<(Handle<Vertex>, Handle<Vertex>)>> = hes
         .iter()
         .map(|he| {
-            let [a, b] = m.edges.get(he.edge).vertices;
+            let [a, b] = m.edge(he.edge).vertices;
             Some(if he.forward { (a, b) } else { (b, a) })
         })
         .collect();
@@ -474,7 +486,10 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
     // Live edges only (design §2): a superseded edge left in the store has 0 uses
     // in the live adjacency but is not a defect — skip it. Every reachable edge
     // is referenced by a live face, so it must be used exactly twice.
-    for (eh, _edge) in m.edges.iter() {
+    let mut i = 0u32;
+    while let Some(eh) = m.edge_handle_at(i) {
+        i += 1;
+        let _edge = m.edge(eh);
         if !reach.edges.contains(&eh) {
             continue;
         }
@@ -500,10 +515,7 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
             // which is the whole purpose of the check (wrong carriers ⇒ a silently wrong
             // curve cache). `[s, s]` on a plane stays reserved for cylinder seams.
             let stated = _edge.surfaces;
-            let mut observed = [
-                m.faces.get(uses[0].0).surface,
-                m.faces.get(uses[1].0).surface,
-            ];
+            let mut observed = [m.face(uses[0].0).surface, m.face(uses[1].0).surface];
             if observed[1].index() < observed[0].index() {
                 observed.swap(0, 1);
             }
@@ -538,10 +550,10 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
 /// reference-integrity short-circuit, so every dereferenced handle is in bounds.
 fn check_cavity_orientation(m: &Model, out: &mut Vec<Violation>) {
     for &sh in &m.live_solids {
-        if !in_bounds(sh, &m.solids) {
+        if sh.index() as usize >= m.solid_count() {
             continue;
         }
-        for &cavity in &m.solids.get(sh).cavities {
+        for &cavity in &m.solid(sh).cavities {
             if let Some(v) = shell_signed_volume(m, cavity) {
                 if v >= 0.0 {
                     out.push(Violation::CavityMisoriented {
@@ -563,13 +575,13 @@ fn check_cavity_orientation(m: &Model, out: &mut Vec<Violation>) {
 /// planar; a curved void is simply not checked). Mirrors `nacre-props`'
 /// `face_contribution`, duplicated to keep validate off the props layer.
 fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
-    let faces = &m.shells.get(shell).faces;
-    let first = m.faces.get(*faces.first()?);
+    let faces = &m.shell(shell).faces;
+    let first = m.face(*faces.first()?);
     let reference = m.vertex_point(loop_start(m, &first.outer)?);
 
     let mut flux = 0.0;
     for &fh in faces {
-        let face = m.faces.get(fh);
+        let face = m.face(fh);
         let plane = match m.surface_cache(face.surface) {
             nacre_geom::Surface::Plane(plane) => plane,
             // M5 cavities are planar; a curved void is simply not checked. An arm rather than an
@@ -636,7 +648,7 @@ fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
         return None;
     }
     let ends = |he: &nacre_topo::HalfEdge| {
-        let [a, b] = m.edges.get(he.edge).vertices;
+        let [a, b] = m.edge(he.edge).vertices;
         if he.forward { (a, b) } else { (b, a) }
     };
     let hes = &lp.half_edges;
@@ -650,7 +662,7 @@ fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
         let nacre_geom::Curve::Circle(c) = m.edge_curve(he.edge) else {
             unreachable!("filtered above");
         };
-        let [va, vb] = m.edges.get(he.edge).vertices;
+        let [va, vb] = m.edge(he.edge).vertices;
         let dt = (c.angle_of(m.vertex_point(vb)) - c.angle_of(m.vertex_point(va)))
             .rem_euclid(std::f64::consts::TAU);
         let sign = if he.forward { 1.0 } else { -1.0 };
@@ -670,7 +682,10 @@ fn loop_winding(m: &Model, lp: &Loop) -> Option<Vector3> {
 /// lateral normal changes from point to point, so "the face's normal" is not a
 /// question — and loops that witness nothing ([`loop_winding`] returns `None`).
 fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
-    for (fh, face) in m.faces.iter() {
+    let mut i = 0u32;
+    while let Some(fh) = m.face_handle_at(i) {
+        i += 1;
+        let face = m.face(fh);
         if !reach.faces.contains(&fh) {
             continue;
         }
@@ -708,7 +723,7 @@ fn check_face_orientation(m: &Model, reach: &Reachable, out: &mut Vec<Violation>
 /// The start vertex of a loop's first half-edge (`None` for an empty loop).
 fn loop_start(m: &Model, lp: &Loop) -> Option<Handle<Vertex>> {
     let he = lp.half_edges.first()?;
-    let [a, b] = m.edges.get(he.edge).vertices;
+    let [a, b] = m.edge(he.edge).vertices;
     Some(if he.forward { a } else { b })
 }
 
@@ -717,7 +732,7 @@ fn loop_points(m: &Model, lp: &Loop) -> Vec<Point3> {
     lp.half_edges
         .iter()
         .map(|he| {
-            let [a, b] = m.edges.get(he.edge).vertices;
+            let [a, b] = m.edge(he.edge).vertices;
             m.vertex_point(if he.forward { a } else { b })
         })
         .collect()
@@ -756,7 +771,10 @@ fn loop_area_centroid(m: &Model, lp: &Loop) -> Option<(f64, Point3)> {
 /// statement through its chain is machinery M6-0 deliberately does not build (3b's sibling).
 fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
     let mut seen: std::collections::HashSet<Handle<Surface>> = std::collections::HashSet::new();
-    for (fh, face) in m.faces.iter() {
+    let mut i = 0u32;
+    while let Some(fh) = m.face_handle_at(i) {
+        i += 1;
+        let face = m.face(fh);
         if !reach.faces.contains(&fh) || !seen.insert(face.surface) {
             continue;
         }
@@ -813,7 +831,10 @@ fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
 
 fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
     // Each live edge's bound vertices must lie on the edge's curve.
-    for (eh, edge) in m.edges.iter() {
+    let mut i = 0u32;
+    while let Some(eh) = m.edge_handle_at(i) {
+        i += 1;
+        let edge = m.edge(eh);
         if !reach.edges.contains(&eh) {
             continue;
         }
@@ -842,7 +863,10 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
     // Origin, so only the vertex's provenance relaxes the bound). Unbounded
     // edges have no start vertex here and are skipped (already flagged by
     // loop-closure).
-    for (fh, face) in m.faces.iter() {
+    let mut i = 0u32;
+    while let Some(fh) = m.face_handle_at(i) {
+        i += 1;
+        let face = m.face(fh);
         if !reach.faces.contains(&fh) {
             continue;
         }
@@ -850,7 +874,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
                 {
-                    let [a, b] = m.edges.get(he.edge).vertices;
+                    let [a, b] = m.edge(he.edge).vertices;
                     let vh = if he.forward { a } else { b };
                     let residual = surface.distance(m.vertex_point(vh));
                     // ★ Plus what the residual's *own* arithmetic can produce. The epsilon says
@@ -885,7 +909,10 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
     // (built). The doctrine this serves is the document's: the surfaces a vertex is defined by
     // are self-evidently near it, and the real question is whether the *coordinate* still
     // matches the definition after everything that has happened to it.
-    for (vh, vertex) in m.vertices.iter() {
+    let mut i = 0u32;
+    while let Some(vh) = m.vertex_handle_at(i) {
+        i += 1;
+        let vertex = m.vertex(vh);
         if !reach.vertices.contains(&vh) {
             continue;
         }
@@ -910,6 +937,7 @@ mod tests {
     use super::*;
     use nacre_geom::Plane;
     use nacre_math::Vector3;
+    use nacre_store::Store;
     use nacre_topo::PointCache;
     use nacre_topo::{HalfEdge, Orientation, Shell, Solid};
     use proptest::prelude::*;
@@ -1058,8 +1086,8 @@ mod tests {
         // (once per live face), not four times, and validate stays clean.
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         let old = m.live_solids[0];
-        let old_shell = m.solids.get(old).outer;
-        let faces = m.shells.get(old_shell).faces.clone();
+        let old_shell = m.solid(old).outer;
+        let faces = m.shell(old_shell).faces.clone();
         let new_shell = m.shells.push(Shell { faces });
         let new_solid = m.push_solid(Solid {
             outer: new_shell,
@@ -1080,7 +1108,7 @@ mod tests {
         // edges would be over-used (non-manifold) and F would rise by one.
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         let dup = {
-            let (_, f0) = m.faces.iter().next().unwrap();
+            let f0 = m.face(m.face_handle_at(0).expect("a face"));
             Face {
                 surface: f0.surface,
                 outer: f0.outer.clone(),
@@ -1590,19 +1618,19 @@ mod tests {
     fn a_cap_whose_flag_lies_is_caught_by_its_rim() {
         let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
         let solid = m.live_solids[0];
-        let shell = m.solids.get(solid).outer;
-        let faces = m.shells.get(shell).faces.clone();
+        let shell = m.solid(solid).outer;
+        let faces = m.shell(shell).faces.clone();
         // The bottom cap: a planar face whose outer loop is a single half-edge.
         let victim = *faces
             .iter()
             .find(|&&fh| {
-                let f = m.faces.get(fh);
+                let f = m.face(fh);
                 matches!(m.surface_cache(f.surface), nacre_geom::Surface::Plane(_))
                     && f.outer.half_edges.len() == 1
             })
             .expect("a cylinder has two disk caps");
         let twin = {
-            let f = m.faces.get(victim).clone();
+            let f = m.face(victim).clone();
             m.faces.push(Face {
                 orientation: f.orientation.flipped(),
                 ..f
@@ -1647,11 +1675,11 @@ mod tests {
     fn a_flipped_orientation_flag_is_caught() {
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         let solid = m.live_solids[0];
-        let shell = m.solids.get(solid).outer;
-        let faces = m.shells.get(shell).faces.clone();
+        let shell = m.solid(solid).outer;
+        let faces = m.shell(shell).faces.clone();
         let victim = faces[0];
         let twin = {
-            let f = m.faces.get(victim).clone();
+            let f = m.face(victim).clone();
             m.faces.push(Face {
                 orientation: f.orientation.flipped(),
                 ..f
@@ -1687,18 +1715,18 @@ mod tests {
     fn a_lying_cylinder_def_is_caught() {
         let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
         let solid = m.live_solids[0];
-        let shell = m.solids.get(solid).outer;
-        let faces = m.shells.get(shell).faces.clone();
+        let shell = m.solid(solid).outer;
+        let faces = m.shell(shell).faces.clone();
         let victim = *faces
             .iter()
             .find(|&&fh| {
                 matches!(
-                    m.surface_cache(m.faces.get(fh).surface),
+                    m.surface_cache(m.face(fh).surface),
                     nacre_geom::Surface::Cylinder(_)
                 )
             })
             .expect("the lateral face");
-        let cache = match m.surface_cache(m.faces.get(victim).surface) {
+        let cache = match m.surface_cache(m.face(victim).surface) {
             nacre_geom::Surface::Cylinder(c) => *c,
             _ => unreachable!(),
         };
@@ -1712,7 +1740,7 @@ mod tests {
         .expect("well-formed statement");
         let liar = m.push_cylinder(cache, lying, None);
         let twin = {
-            let f = m.faces.get(victim).clone();
+            let f = m.face(victim).clone();
             m.faces.push(Face { surface: liar, ..f })
         };
         let sh = m.shells.push(Shell {
@@ -2003,13 +2031,13 @@ mod tests {
         let a = m.add_cuboid(Point3::origin(), Point3::origin() + ext(outer));
         let inner_min = Point3::origin() + ext(0.5 * (outer - inner));
         let b = m.add_cuboid(inner_min, inner_min + ext(inner));
-        let b_outer = m.solids.get(b).outer;
+        let b_outer = m.solid(b).outer;
         let void = if reverse {
             m.reversed_shell(b_outer)
         } else {
             b_outer
         };
-        let a_outer = m.solids.get(a).outer;
+        let a_outer = m.solid(a).outer;
         let hollow = m.push_solid(Solid {
             outer: a_outer,
             cavities: vec![void],
