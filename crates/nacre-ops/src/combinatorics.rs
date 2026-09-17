@@ -513,7 +513,7 @@ fn order_located_quad(
 /// triple's lexicographic order, so every "smallest name wins" rule reads unchanged.
 ///
 /// This was `boolean::Node`, spoken only by the assembler. It lives here because the arrangement
-/// names the same vertices, and the variant is spelled like [`nacre_topo::VertexDef::ThreePlane`]
+/// names the same vertices, and the variant is spelled like [`nacre_topo::Vertex::ThreePlane`]
 /// so the arrangement, the assembler and the topology store call the thing by one name.
 ///
 /// Read it with `match`, never `let`-`else`: a new variant lights up the first and falls silently
@@ -522,7 +522,7 @@ fn order_located_quad(
 pub(crate) enum NodeId {
     ThreePlane([usize; 3]), // sorted triple (key into the seam map)
     /// Where two plane classes' meet line crosses a cylinder's lateral surface — the point
-    /// [`nacre_topo::VertexDef::Pierce`] names, and the point the next rung splits a circle
+    /// [`nacre_topo::Vertex::Pierce`] names, and the point the next rung splits a circle
     /// into arcs at.
     ///
     /// ★ **Two index spaces in one name.** `planes` are plane-class indices and `cyl` is a
@@ -2250,7 +2250,7 @@ fn loop_triples(
         // step of the ring: no triple, and the step's wall was pushed with its first leg. Total
         // over faces: a cap's bitten arc (legs on the cylinder) and a lateral hole's rim (legs on
         // the cap plane) read the same way.
-        if matches!(model.vertex(corner).def, nacre_topo::VertexDef::OnSeam(_)) {
+        if matches!(*model.vertex(corner), nacre_topo::Vertex::OnSeam(_)) {
             let prev = &hes[(i + n - 1) % n];
             debug_assert!(
                 matches!(model.edge_curve(prev.edge), nacre_geom::Curve::Circle(_))
@@ -5675,7 +5675,7 @@ fn curved_wall(
             // restates the comparison it replaces exactly, rather than growing a decline for a
             // case that has none.
             let other_param = |v: Handle<Vertex>| -> Option<nacre_scalar::Rat> {
-                let nacre_topo::VertexDef::Pierce { planes, .. } = model.vertex(v).def else {
+                let nacre_topo::Vertex::Pierce { planes, .. } = *model.vertex(v) else {
                     return None;
                 };
                 let mut cut = None;
@@ -5733,12 +5733,12 @@ fn plane_sense(a: &[nacre_scalar::Rat; 4], b: &[nacre_scalar::Rat; 4]) -> Option
 /// **An operand vertex's own pierce name, restated in this arrangement's class space.**
 ///
 /// ★★★★★ **The second half of a correspondence the forward direction gets for free.** When a
-/// boolean *mints* a [`nacre_topo::VertexDef::Pierce`] it writes the two planes as **its own
+/// boolean *mints* a [`nacre_topo::Vertex::Pierce`] it writes the two planes as **its own
 /// classes' representative surfaces**, so restating class order as handle order is the only
 /// correction it needs ([`nacre_topo::QuadRoot::canonical`], which `assemble` calls). Coming back
 /// the other way the handles are **given**, and they may be a surface that merged into a class
 /// under a different representative — and, because a class holds faces whose normals oppose, under
-/// the **opposite sign**. `VertexDef::Pierce`'s own doc says this correspondence "has to be
+/// the **opposite sign**. `Vertex::Pierce`'s own doc says this correspondence "has to be
 /// established a second time"; this is that time.
 ///
 /// ★★ **Both corrections are the same rule.** `Lo`/`Hi` are the order along `ℓ = n₁ × n₂`, and
@@ -5757,7 +5757,7 @@ pub(crate) fn pierce_name_from_def(
     cyl: usize,
     candidates: [usize; 2],
 ) -> Option<NodeId> {
-    let nacre_topo::VertexDef::Pierce { planes, root, .. } = model.vertex(v).def else {
+    let nacre_topo::Vertex::Pierce { planes, root, .. } = *model.vertex(v) else {
         return None;
     };
     // Which candidate class each stored handle *is*, and with which sense. The match decides the
@@ -5909,7 +5909,7 @@ pub(crate) fn node_coords_rat(
 /// doc predicts. The two roads it dispatches between are already both here, so this is where the
 /// third question about the same name belongs.
 ///
-/// ★ `cfg(test)` only while the audit is its one consumer. The seam table's `VertexDef` minting
+/// ★ `cfg(test)` only while the audit is its one consumer. The seam table's `Vertex` minting
 /// asks for the same pair of roads and will want it in production.
 #[cfg(test)]
 pub(crate) fn node_point_f64(

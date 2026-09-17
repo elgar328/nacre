@@ -14,9 +14,7 @@ use nacre_cip::predicate::{Evidence, Notes, Site};
 use nacre_math::Point3;
 use nacre_store::Handle;
 use nacre_topo::PointCache;
-use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Orientation, Shell, Solid, Surface, Vertex, VertexDef,
-};
+use nacre_topo::{Edge, Face, HalfEdge, Loop, Model, Orientation, Shell, Solid, Surface, Vertex};
 use std::collections::{HashMap, HashSet};
 
 /// Boolean of two live solids (design §8 M5, overview 불리언 전략 — 정직하게 거절).
@@ -1751,7 +1749,7 @@ fn rings_of(lf: &LocalFace) -> impl Iterator<Item = &Ring> {
 /// intercepts everything a plugged stopper would, so no
 /// reject name can testify that the naming completed — only a fence that calls it directly on the
 /// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
-/// **A result vertex's definition, in class space** — what the minting turns into a `VertexDef`.
+/// **A result vertex's definition, in class space** — what the minting turns into a `Vertex`.
 ///
 /// ★ `Three` is the derived triple the pre-pass has always built. `Pierce` is a **declaration,
 /// not a derivation**: `NodeId::Pierce` already names two result plane classes and the cylinder,
@@ -2045,7 +2043,7 @@ pub(crate) fn reconstruct(
                     // names two result plane classes and the cylinder, so this is the class→handle
                     // mapping and nothing else. That mapping is where `QuadRoot::canonical`
                     // answers a **second** time: `NodeId::Pierce` is canonical in *class* order,
-                    // `VertexDef::Pierce` in *handle* order, and the class→handle map is not
+                    // `Vertex::Pierce` in *handle* order, and the class→handle map is not
                     // monotone in general — a re-sort must carry the root through
                     // (`transform`'s remap already locks the same rule on the way back out).
                     // ★ The flip is unexercised **at this call**: dropping it leaves every fence
@@ -2070,7 +2068,7 @@ pub(crate) fn reconstruct(
                             root,
                         );
                         let cylinder = cyls[cyl].surf;
-                        let def = VertexDef::Pierce {
+                        let def = Vertex::Pierce {
                             planes: pair,
                             cylinder,
                             root,
@@ -2086,7 +2084,7 @@ pub(crate) fn reconstruct(
                     }
                     None => return Err(reject(RejectReason::StraightAngle)),
                 };
-                let def = VertexDef::ThreePlane([
+                let def = Vertex::ThreePlane([
                     planes[tri[0]].surf,
                     planes[tri[1]].surf,
                     planes[tri[2]].surf,
@@ -2220,7 +2218,7 @@ pub(crate) fn reconstruct(
                     Some(cr) if cr.seam_is_node => vh[&(g, cr.nodes[0])],
                     _ => crate::realize::push_vertex_realized(
                         model,
-                        VertexDef::OnSeam([lat, plane]),
+                        Vertex::OnSeam([lat, plane]),
                         PointCache::Unrealized { coord: point },
                         crate::realize::ChainLink::Fresh,
                     ),

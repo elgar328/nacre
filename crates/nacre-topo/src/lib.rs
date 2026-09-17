@@ -15,7 +15,7 @@ mod adjacency;
 mod topology;
 
 pub use adjacency::{Adjacency, nonmanifold_vertices};
-pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid, Vertex};
+pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid};
 
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane};
 use nacre_math::{Point3, Vector3};
@@ -32,8 +32,16 @@ use std::collections::{HashMap, HashSet};
 /// M5 polyhedral vertices are three-plane intersections; later milestones add
 /// variants (a line∩plane point, quadric intersections). `Handle<Surface>` is
 /// `Copy` regardless of `Surface`, so this stays `Copy`.
+///
+/// ★ **A 0-cell is its definition and nothing else** (S7, and the fold that finished it). The
+/// coordinate, and what has been proven about it, live in the index-parallel point cache
+/// ([`Model::vertex_point`] / [`Model::vertex_cache`]), filled by [`Model::push_vertex`] —
+/// definition first, coordinate second. `Origin` (Constructed / Discovered / Moved) died here: the
+/// tag never meant exactness, and a moved vertex's motion was always the *faces'* motion, which
+/// they record themselves. The one-field `Vertex { def }` wrapper that survived S7 is gone too —
+/// it made every reader write `.def` to reach the only thing that was ever there.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum VertexDef {
+pub enum Vertex {
     /// The intersection of three planes (their surface handles).
     ThreePlane([Handle<Surface>; 3]),
     /// A point on the intersection **curve** of two surfaces — the M3 cylinder seam vertex:
@@ -45,7 +53,7 @@ pub enum VertexDef {
     /// definition is complete and `nacre_ops::realize_vertex` regenerates the coordinate from
     /// it (cell 41); what remains (3b) is writing that back into the cache.
     /// M6 grows the vocabulary by variants, each stating its own truth — the invariants are
-    /// per-variant (Q5's doctrine); [`VertexDef::Pierce`] (M6-1) is the first.
+    /// per-variant (Q5's doctrine); [`Vertex::Pierce`] (M6-1) is the first.
     OnSeam([Handle<Surface>; 2]),
     /// One of the (at most two) points where two planes' meet line crosses a cylinder's
     /// lateral surface (M6-1) — the structure says the carrier kinds, deliberately not an
@@ -80,9 +88,9 @@ pub enum VertexDef {
     },
 }
 
-/// Which root of the two-point plane·plane·cylinder crossing a [`VertexDef::Pierce`] means —
+/// Which root of the two-point plane·plane·cylinder crossing a [`Vertex::Pierce`] means —
 /// ascending parameter along the canonical meet-line direction (see `Pierce`'s doc for the
-/// full convention). Definition vocabulary, so it lives here beside [`VertexDef`], not in
+/// full convention). Definition vocabulary, so it lives here beside [`Vertex`], not in
 /// scalar (whose pair is positional).
 ///
 /// ★ **The declaration order is load-bearing.** The derived `Ord` is `Lo < Hi`, which *is* the
@@ -123,7 +131,7 @@ impl QuadRoot {
 
     /// **The one place "which root is it, once the pair is put in canonical order" is answered.**
     ///
-    /// A [`VertexDef::Pierce`] stores its two plane carriers ascending, and its root is defined
+    /// A [`Vertex::Pierce`] stores its two plane carriers ascending, and its root is defined
     /// against the meet line `ℓ = n₁ × n₂` of *that* order. So anything holding a solver's
     /// `(pair, root)` in some other order has to restate the root — and the restatement is a
     /// **derivation, not a convention**. Swapping the two planes in
@@ -168,16 +176,16 @@ impl QuadRoot {
     }
 }
 
-impl VertexDef {
+impl Vertex {
     /// Every carrier handle the definition references, in stored order — the one spelling of
     /// "the surfaces this vertex is defined by" (reference integrity, the off-definition
     /// check and the remappability gate all ask exactly this; carrier *kinds* stay
     /// per-variant checks).
     pub fn carriers(&self) -> impl Iterator<Item = Handle<Surface>> {
         let (arr, n): ([Handle<Surface>; 3], usize) = match *self {
-            VertexDef::ThreePlane(s) => (s, 3),
-            VertexDef::OnSeam([a, b]) => ([a, b, b], 2),
-            VertexDef::Pierce {
+            Vertex::ThreePlane(s) => (s, 3),
+            Vertex::OnSeam([a, b]) => ([a, b, b], 2),
+            Vertex::Pierce {
                 planes: [a, b],
                 cylinder,
                 ..
@@ -1665,22 +1673,22 @@ impl Model {
         &self,
         v: Handle<Vertex>,
     ) -> Option<(nacre_scalar::MeetPoint, Option<Handle<MotionNode>>)> {
-        self.vertex_meet_of(&self.vertices.get(v).def)
+        self.vertex_meet_of(self.vertices.get(v))
     }
 
     /// [`Model::vertex_meet`] on a definition that has not been pushed yet — what an operation
     /// asks before it states a vertex, so the cache it pushes is already the realization.
     pub fn vertex_meet_of(
         &self,
-        def: &VertexDef,
+        def: &Vertex,
     ) -> Option<(nacre_scalar::MeetPoint, Option<Handle<MotionNode>>)> {
         let tri = match *def {
-            VertexDef::ThreePlane(tri) => tri,
+            Vertex::ThreePlane(tri) => tri,
             // OnSeam pins a curve, not a point; a Pierce *is* a point but its coordinates
             // are quadratic-irrational — neither has the rational meet a datum statement
             // needs, so both decline here (honest, and spelled per variant so the next
             // variant is a compile error, not a silent fall-through).
-            VertexDef::OnSeam(_) | VertexDef::Pierce { .. } => return None,
+            Vertex::OnSeam(_) | Vertex::Pierce { .. } => return None,
         };
         // ★★★ **The third door — solve in the world** (2026-08-24). The two below want *one*
         // frame: the world (nothing moved) or one shared chain. A second-generation array breaks
@@ -1875,16 +1883,16 @@ impl Model {
     /// lifts a `Ceiling` to `Bounded` by paying for the realization this road would not. It cannot
     /// reach the other variants and cannot move a coordinate anywhere but closer to the truth, so
     /// what stays true of the cache behind this door is *append-only in accuracy*, not in bytes.
-    pub fn push_vertex(&mut self, def: VertexDef, cache: PointCache) -> Handle<Vertex> {
+    pub fn push_vertex(&mut self, def: Vertex, cache: PointCache) -> Handle<Vertex> {
         match def {
-            VertexDef::ThreePlane([a, b, c]) => debug_assert!(
+            Vertex::ThreePlane([a, b, c]) => debug_assert!(
                 a != b && b != c && a != c,
                 "a three-plane definition needs three distinct planes"
             ),
-            VertexDef::OnSeam([a, b]) => {
+            Vertex::OnSeam([a, b]) => {
                 debug_assert!(a != b, "a seam vertex needs two distinct carriers")
             }
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes: [a, b],
                 cylinder,
                 ..
@@ -1893,7 +1901,7 @@ impl Model {
                 "a pierce definition needs two sorted distinct planes and a distinct cylinder"
             ),
         }
-        let h = self.vertices.push(Vertex { def });
+        let h = self.vertices.push(def);
         self.vertex_cache.push(cache);
         h
     }
@@ -2261,7 +2269,7 @@ impl Model {
             let along_x = if m == 1 || m == 2 { 5 } else { 4 }; // Right +X / Left −X
             let along_y = if m >= 2 { 3 } else { 2 }; // Back +Y / Front −Y
             self.push_vertex(
-                VertexDef::ThreePlane([surf[cap].0, surf[along_y].0, surf[along_x].0]),
+                Vertex::ThreePlane([surf[cap].0, surf[along_y].0, surf[along_x].0]),
                 PointCache::Unrealized { coord: corners[i] },
             )
         });
@@ -2617,13 +2625,13 @@ impl Model {
         // A seam vertex lies on two surfaces only — the rim circle's `θ = 0` point. `OnSeam`
         // states exactly that (S7), and since M6-0 the designation is complete: the cylinder's
         // truth carries `ref_dir`, so the pair means "rim ∩ the `+ref_dir` ray" — one point
-        // (see `VertexDef::OnSeam`; regenerating the cached coordinate stays deferred with 3b).
+        // (see `Vertex::OnSeam`; regenerating the cached coordinate stays deferred with 3b).
         let v_bot = self.push_vertex(
-            VertexDef::OnSeam([lateral_surface, bottom_cap_surface]),
+            Vertex::OnSeam([lateral_surface, bottom_cap_surface]),
             PointCache::Unrealized { coord: p_bot },
         );
         let v_top = self.push_vertex(
-            VertexDef::OnSeam([lateral_surface, top_cap_surface]),
+            Vertex::OnSeam([lateral_surface, top_cap_surface]),
             PointCache::Unrealized { coord: p_top },
         );
 
@@ -2862,7 +2870,7 @@ mod tests {
         let mx = moved(&mut m, px, t1, [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
         let my = moved(&mut m, py, t2, [0.0, 1.0, 0.0], [0.0, 3.0, 0.0]);
         let v = m.push_vertex(
-            VertexDef::ThreePlane([mx, my, pz]),
+            Vertex::ThreePlane([mx, my, pz]),
             PointCache::Unrealized {
                 coord: Point3::from_array([2.0, 3.0, 0.0]),
             },
@@ -2891,7 +2899,7 @@ mod tests {
         );
         let turned = moved(&mut m, px, spin, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]);
         let v_turned = m.push_vertex(
-            VertexDef::ThreePlane([turned, mx, pz]),
+            Vertex::ThreePlane([turned, mx, pz]),
             PointCache::Unrealized {
                 coord: Point3::from_array([2.0, 0.0, 0.0]),
             },
@@ -2905,7 +2913,7 @@ mod tests {
         let mx2 = moved(&mut m, px, t1, [1.0, 0.0, 0.0], [2.0, 0.0, 0.0]);
         let my2 = moved(&mut m, py, t1, [0.0, 1.0, 0.0], [0.0, 0.0, 0.0]);
         let v_shared = m.push_vertex(
-            VertexDef::ThreePlane([mx2, my2, pz]),
+            Vertex::ThreePlane([mx2, my2, pz]),
             PointCache::Unrealized {
                 coord: Point3::from_array([2.0, 0.0, 0.0]),
             },
@@ -3308,13 +3316,13 @@ mod tests {
 
     /// ★★ S7: **a seam vertex states its two carriers** — `OnSeam([lateral, its own cap])`.
     /// The pair pins the rim circle; the coordinate pins the point until M6's `ref_dir` truth
-    /// (see `VertexDef::OnSeam`). The lateral surface must be the cylinder, the other its cap.
+    /// (see `Vertex::OnSeam`). The lateral surface must be the cylinder, the other its cap.
     #[test]
     fn a_seam_vertex_states_its_rim_carriers() {
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
         let defs: Vec<_> = (0..m.vertex_count() as u32)
             .filter_map(|i| m.vertex_handle_at(i))
-            .map(|h| m.vertex(h).def)
+            .map(|h| *m.vertex(h))
             .collect();
         assert_eq!(
             defs.len(),
@@ -3322,7 +3330,7 @@ mod tests {
             "a cylinder has exactly its two seam vertices"
         );
         for (i, d) in defs.iter().enumerate() {
-            let VertexDef::OnSeam([a, b]) = d else {
+            let Vertex::OnSeam([a, b]) = d else {
                 panic!("a seam vertex carries OnSeam, got {d:?}")
             };
             assert!(
@@ -3705,9 +3713,9 @@ mod tests {
         let mut i = 0u32;
         while let Some(h) = m.vertex_handle_at(i) {
             i += 1;
-            if matches!(m.vertex(h).def, VertexDef::OnSeam(_)) && vs.len() < 2 {
+            if matches!(*m.vertex(h), Vertex::OnSeam(_)) && vs.len() < 2 {
                 vs.push(h);
-            } else if matches!(m.vertex(h).def, VertexDef::ThreePlane(_)) && vs.len() == 2 {
+            } else if matches!(*m.vertex(h), Vertex::ThreePlane(_)) && vs.len() == 2 {
                 vs.push(h);
                 break;
             }
@@ -4018,7 +4026,7 @@ mod tests {
         };
         for v in named {
             assert!(v.index() < m.vertex_count() as u32);
-            let VertexDef::ThreePlane(tri) = m.vertex(*v).def else {
+            let Vertex::ThreePlane(tri) = *m.vertex(*v) else {
                 unreachable!()
             };
             for s in tri {
@@ -4145,7 +4153,7 @@ mod tests {
                 1.0 / c as f64,
                 (off.0 + 1) as f64 / b1 as f64,
             ]);
-            vs.push(m.push_vertex(VertexDef::ThreePlane(tri), PointCache::Unrealized { coord }));
+            vs.push(m.push_vertex(Vertex::ThreePlane(tri), PointCache::Unrealized { coord }));
         }
         vs.sort_by_key(|v| v.index());
         let out = [vs[0], vs[1], vs[2]];

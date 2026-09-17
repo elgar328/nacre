@@ -9,7 +9,7 @@ use crate::common::*;
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpError, OpOutput, Operation, apply, boolean};
 use nacre_store::Handle;
-use nacre_topo::{Model, PointCache, Solid, VertexDef};
+use nacre_topo::{Model, PointCache, Solid, Vertex};
 
 /// `apply(Copy)` through the public API, asserting the output shape.
 fn copy_solid(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
@@ -167,7 +167,7 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
             .flat_map(|&fh| m.face(fh).outer.half_edges.clone())
             .flat_map(|he| m.edge(he.edge).vertices)
             .filter(|&vh| {
-                let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
+                let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                     return false;
                 };
                 // ★ `any`, not `all`: since the invariant-plane restatement the caps a

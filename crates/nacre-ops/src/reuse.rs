@@ -80,7 +80,7 @@ pub(crate) enum ClassPlan {
 /// irrational — still has no rational pullback and declines honestly (Arrange — slower,
 /// never wrong); C2's differential counts that population (open item 14).
 fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
-    use nacre_topo::VertexDef;
+    use nacre_topo::Vertex;
 
     let sol = model.solid(s);
     let mut seen: std::collections::HashSet<Handle<Vertex>> = std::collections::HashSet::new();
@@ -94,14 +94,14 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     if !seen.insert(vh) {
                         continue;
                     }
-                    let tri = match model.vertex(vh).def {
-                        VertexDef::ThreePlane(tri) => tri,
+                    let tri = match *model.vertex(vh) {
+                        Vertex::ThreePlane(tri) => tri,
                         // No rational base point: OnSeam and Pierce coordinates are not
                         // rational, so reuse declines and the boolean takes the slower road.
                         // ★ The old comment's premise ("a cylinder never reaches a boolean")
                         // expires at M6-2 — the decline stays correct then, the premise does
                         // not.
-                        VertexDef::OnSeam(_) | VertexDef::Pierce { .. } => return None,
+                        Vertex::OnSeam(_) | Vertex::Pierce { .. } => return None,
                     };
                     // The base is the definition's: the three narrow names, solved in the frame
                     // the planes are stated in. A wide or missing name declines.

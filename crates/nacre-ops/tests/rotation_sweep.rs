@@ -108,7 +108,7 @@ fn foreign_definitions(m: &Model, solid: Handle<Solid>) -> Vec<String> {
                         if !seen.insert(vh.index()) {
                             continue;
                         }
-                        let names: Vec<_> = m.vertex(*vh).def.carriers().collect();
+                        let names: Vec<_> = m.vertex(*vh).carriers().collect();
                         let missing: Vec<u32> = names
                             .iter()
                             .filter(|s| !mine.contains(s))

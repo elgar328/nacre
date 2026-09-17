@@ -5034,12 +5034,12 @@ fn cmp_along(
     })
 }
 
-/// **Where a segment crosses a circle**, exactly — the points a `VertexDef::Pierce` names.
+/// **Where a segment crosses a circle**, exactly — the points a `Vertex::Pierce` names.
 ///
 /// The segment rides `wc ∩ sg.wall` and the circle is `cylinder ∩ wc`, so a crossing is
 /// `plane ∩ plane ∩ cylinder` — the very shape [`nacre_scalar::quad::plane_plane_cylinder`]
 /// answers and
-/// [`nacre_topo::VertexDef::Pierce`] names. Solving along the segment instead would be shorter and
+/// [`nacre_topo::Vertex::Pierce`] names. Solving along the segment instead would be shorter and
 /// would yield a point with **no name**, which the next rung (splitting the circle into arcs)
 /// would have to re-derive.
 ///
@@ -7276,7 +7276,7 @@ pub(crate) fn seam_table(
                 //
                 // ★ The **vertex minting** past this table is `boolean`'s
                 // `def_triple`/`node_handle`, which names a pierce node's vertex as
-                // `VertexDef::Pierce` — a cut rim's node and the scan's crossing on a
+                // `Vertex::Pierce` — a cut rim's node and the scan's crossing on a
                 // ruling both travel that road.
                 if let Some(([p0, p1], cyl, _)) = combinatorics::pierce_name(node) {
                     let wcy = &cyls[cyl];
@@ -11947,7 +11947,7 @@ mod tests {
         let on_seam = reach
             .vertices
             .iter()
-            .filter(|&&v| matches!(m.vertex(v).def, nacre_topo::VertexDef::OnSeam(_)))
+            .filter(|&&v| matches!(*m.vertex(v), nacre_topo::Vertex::OnSeam(_)))
             .count();
         assert!(on_seam >= 1, "the outer panel's wrap arc split at the seam");
     }

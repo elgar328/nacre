@@ -339,7 +339,7 @@ fn a_rotated_solid_mirrors() {
         .flat_map(|&fh| m.face(fh).outer.half_edges.clone())
         .flat_map(|he| m.edge(he.edge).vertices)
         .filter(|&vh| {
-            let nacre_topo::VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
+            let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                 return false;
             };
             // ★ `any`, not `all`: the Z-fixed caps are world-stated since the invariant-plane

@@ -1165,11 +1165,11 @@ fn a_datum_through_vertices_refuses_by_cause() {
     cy.rebuild_adjacency();
     let seam = live_verts(&cy)
         .into_iter()
-        .find(|v| matches!(cy.vertex(*v).def, nacre_topo::VertexDef::OnSeam(_)))
+        .find(|v| matches!(*cy.vertex(*v), nacre_topo::Vertex::OnSeam(_)))
         .expect("a cylinder has seam vertices");
     let corners: Vec<_> = live_verts(&cy)
         .into_iter()
-        .filter(|v| matches!(cy.vertex(*v).def, nacre_topo::VertexDef::ThreePlane(_)))
+        .filter(|v| matches!(*cy.vertex(*v), nacre_topo::Vertex::ThreePlane(_)))
         .collect();
     assert_eq!(
         through(&mut cy, [seam, corners[0], corners[1]]),
@@ -1492,7 +1492,7 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
 /// whole of the cause.
 #[test]
 fn a_datum_on_straddling_carriers_has_no_name() {
-    use nacre_topo::VertexDef;
+    use nacre_topo::Vertex;
 
     let mut m = Model::new();
     let a = m.add_cuboid(
@@ -1558,7 +1558,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     // vertex that is not the population it names — green, and measuring something else.
     let (mut pure, mut straddling) = (Vec::new(), Vec::new());
     for vh in mine {
-        let VertexDef::ThreePlane(_) = m.vertex(vh).def else {
+        let Vertex::ThreePlane(_) = *m.vertex(vh) else {
             continue;
         };
         if m.vertex_meet(vh).is_none() {
@@ -2024,8 +2024,8 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
 
     let corners: Vec<_> = live_verts(&m)
         .into_iter()
-        .filter(|v| match m.vertex(*v).def {
-            nacre_topo::VertexDef::ThreePlane(tri) => tri.contains(&far_cap),
+        .filter(|v| match *m.vertex(*v) {
+            nacre_topo::Vertex::ThreePlane(tri) => tri.contains(&far_cap),
             _ => false,
         })
         .collect();
@@ -2172,7 +2172,7 @@ fn wide_meet_vertex(
         / base[2] as f64;
     let coord = place([u.to_f64(), v.to_f64(), zw]);
     m.push_vertex(
-        nacre_topo::VertexDef::ThreePlane([a, b, c]),
+        nacre_topo::Vertex::ThreePlane([a, b, c]),
         PointCache::Unrealized {
             coord: Point3::from_array(coord),
         },
@@ -2467,7 +2467,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
     // moved walls, or this measures the easy case. Without that mismatch the rescue is never
     // asked and the test would pass on a kernel that does not have it.
     let mixed = live_verts(&m).into_iter().any(|vh| {
-        let nacre_topo::VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
+        let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(vh) else {
             return false;
         };
         let f = m.plane_motion(tri[0]);

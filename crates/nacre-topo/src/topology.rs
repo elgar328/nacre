@@ -6,19 +6,8 @@
 //! `f64` gets `PartialEq` for tests only. (No cell holds one today — the coordinate
 //! became a cache in S7 — but the rule is about what a cell is *allowed* to hold.)
 
-use crate::{Orientation, Surface, VertexDef};
+use crate::{Orientation, Surface, Vertex};
 use nacre_store::Handle;
-
-/// A 0-cell: **its definition is all it is** (S7). The coordinate, and what has been proven about
-/// it, live in the index-parallel point cache (`Model::vertex_point` / `Model::vertex_cache`),
-/// filled by `Model::push_vertex` — definition first, coordinate second, the inversion
-/// `docs/truth-and-cache.md` builds toward. `Origin` (Constructed / Discovered / Moved) died here:
-/// the tag never meant exactness, and a moved vertex's motion was always the *faces'* motion (they
-/// record it themselves).
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Vertex {
-    pub def: VertexDef,
-}
 
 /// A 1-cell: a segment of the carriers' intersection, trimmed by its two endpoint vertices.
 /// The realized curve is a cache beside the store (`Model::edge_cache`), not a field — the
@@ -121,7 +110,7 @@ mod tests {
     #[test]
     fn cells_round_trip_their_fields() {
         let mut m = Model::new();
-        let seeds = crate::VertexDef::ThreePlane([
+        let seeds = crate::Vertex::ThreePlane([
             m.world_plane(nacre_scalar::Axis::Z),
             m.world_plane(nacre_scalar::Axis::X),
             m.world_plane(nacre_scalar::Axis::Y),

@@ -20,7 +20,7 @@
 
 use nacre_math::{Point3, Vector3};
 use nacre_scalar::Rat;
-use nacre_topo::{CylinderDef, Model, Surface, VertexDef};
+use nacre_topo::{CylinderDef, Model, Surface, Vertex};
 
 fn pt(x: f64, y: f64, z: f64) -> Point3 {
     Point3::from_array([x, y, z])
@@ -66,7 +66,7 @@ fn build(
     let mut seams: Vec<_> = (0..m.vertex_count() as u32)
         .filter_map(|i| m.vertex_handle_at(i))
         .map(|h| (h, m.vertex(h)))
-        .filter(|(_, v)| matches!(v.def, VertexDef::OnSeam(_)))
+        .filter(|(_, v)| matches!(**v, Vertex::OnSeam(_)))
         .map(|(h, _)| h)
         .collect();
     seams.sort_by_key(|h| h.index());
@@ -445,7 +445,7 @@ fn read_exact(m: &Model, faces: CylFaces) -> (CylinderDef, Point3, Point3) {
     let mut seams: Vec<_> = (0..m.vertex_count() as u32)
         .filter_map(|i| m.vertex_handle_at(i))
         .map(|h| (h, m.vertex(h)))
-        .filter(|(_, v)| matches!(v.def, VertexDef::OnSeam(_)))
+        .filter(|(_, v)| matches!(**v, Vertex::OnSeam(_)))
         .map(|(h, _)| h)
         .collect();
     seams.sort_by_key(|h| h.index());

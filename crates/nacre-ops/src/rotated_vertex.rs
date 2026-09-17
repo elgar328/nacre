@@ -125,13 +125,13 @@ pub(crate) fn through_judged_points(
     use nacre_cip::JudgedPoint;
     let mut out: [Option<JudgedPoint>; 3] = [None, None, None];
     for (o, vh) in out.iter_mut().zip(vs) {
-        let tri = match model.vertex(vh).def {
-            nacre_topo::VertexDef::ThreePlane(tri) => tri,
+        let tri = match *model.vertex(vh) {
+            nacre_topo::Vertex::ThreePlane(tri) => tri,
             // OnSeam pins a curve, not a point; a Pierce point's coordinates are
             // quadratic-irrational, and this table's witnesses are rational by type —
             // both decline, per variant (M6-2's judging of pierce points is new machinery,
             // not this road).
-            nacre_topo::VertexDef::OnSeam(_) | nacre_topo::VertexDef::Pierce { .. } => {
+            nacre_topo::Vertex::OnSeam(_) | nacre_topo::Vertex::Pierce { .. } => {
                 return None;
             }
         };
@@ -511,7 +511,7 @@ mod tests {
                         // and replaying that chain must reproduce the stored coordinate — the
                         // 8/8 measurement that let the base vertex die, now a permanent lock
                         // over every chain shape in this table.
-                        let nacre_topo::VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
+                        let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                             panic!("a cuboid corner is a three-plane point");
                         };
                         let motion_of = |h| match m.surface(h) {

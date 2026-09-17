@@ -286,7 +286,7 @@ mod tests {
             ),
             nacre_topo::PointCache::Ceiling { coord }
             | nacre_topo::PointCache::Unrealized { coord } => {
-                for sh in m.vertex(h).def.carriers() {
+                for sh in m.vertex(h).carriers() {
                     let d = m.surface_cache(sh).distance(*coord);
                     assert!(
                         d < 1e-12,
@@ -1989,14 +1989,14 @@ mod tests {
 
     /// **The pierce vertices are minted — canonical, measured, on the derived crossings.**
     ///
-    /// Before the boolean no `VertexDef::Pierce` exists anywhere in the model, so a whole-store
+    /// Before the boolean no `Vertex::Pierce` exists anywhere in the model, so a whole-store
     /// filter is position-independent; a wrong `QuadRoot` canonicalization moves the minted
     /// point itself, which is what keeps the old toggle-lock alive now that the reject (whose
     /// witness once carried it) is gone.
     ///
     /// ★ The coordinates are the fixtures' own crossing derivations (the same numbers the ring
     /// and seam fences pin) — nothing here is copied from a run. The tolerance is a bound, and
-    /// ascending handle order is `VertexDef::Pierce`'s own contract, minted through
+    /// ascending handle order is `Vertex::Pierce`'s own contract, minted through
     /// `QuadRoot::canonical`'s second answer.
     #[test]
     fn a_pierce_vertex_is_minted_and_measured() {
@@ -2034,11 +2034,11 @@ mod tests {
             let pierce: Vec<_> = (0..m.vertex_count() as u32)
                 .filter_map(|i| m.vertex_handle_at(i))
                 .map(|h| (h, m.vertex(h)))
-                .filter(|(_, v)| matches!(v.def, nacre_topo::VertexDef::Pierce { .. }))
+                .filter(|(_, v)| matches!(**v, nacre_topo::Vertex::Pierce { .. }))
                 .collect();
             assert_eq!(pierce.len(), 2, "both crossings minted, once each");
             for (h, v) in pierce {
-                let nacre_topo::VertexDef::Pierce { planes: [a, b], .. } = v.def else {
+                let nacre_topo::Vertex::Pierce { planes: [a, b], .. } = *v else {
                     unreachable!("filtered above");
                 };
                 assert!(a < b, "planes in ascending handle order: {a:?} vs {b:?}");
@@ -2160,9 +2160,9 @@ mod tests {
             // tolerance measured.
             let (mut pierce, mut on_seam) = (Vec::new(), Vec::new());
             for &v in succ.keys() {
-                match m.vertex(v).def {
-                    nacre_topo::VertexDef::Pierce { .. } => pierce.push(v),
-                    nacre_topo::VertexDef::OnSeam(_) => on_seam.push(v),
+                match *m.vertex(v) {
+                    nacre_topo::Vertex::Pierce { .. } => pierce.push(v),
+                    nacre_topo::Vertex::OnSeam(_) => on_seam.push(v),
                     ref d => panic!("an arc endpoint is neither pierce nor seam: {d:?}"),
                 }
             }
@@ -2194,7 +2194,7 @@ mod tests {
                 .filter_map(|i| m.vertex_handle_at(i))
                 .map(|h| (h, m.vertex(h)))
                 .skip(vertices_from)
-                .filter(|(_, v)| matches!(v.def, nacre_topo::VertexDef::OnSeam(_)))
+                .filter(|(_, v)| matches!(**v, nacre_topo::Vertex::OnSeam(_)))
                 .count();
             assert_eq!(
                 minted_on_seam,

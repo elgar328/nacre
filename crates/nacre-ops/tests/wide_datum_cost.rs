@@ -174,7 +174,7 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
     let far_cap_verts: Vec<_> = live_verts(&m)
         .into_iter()
         .filter(|v| {
-            let nacre_topo::VertexDef::ThreePlane(tri) = m.vertex(*v).def else {
+            let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(*v) else {
                 return false;
             };
             tri.iter().all(|h| m.plane_motion(*h).is_some())

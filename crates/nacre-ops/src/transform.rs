@@ -9,7 +9,7 @@ use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::PointCache;
 use nacre_topo::{
-    Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Shell, Solid, Surface, Vertex, VertexDef,
+    Edge, Face, HalfEdge, Loop, Model, Motion, MotionNode, Shell, Solid, Surface, Vertex,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -108,7 +108,7 @@ pub(crate) fn foreign_named_vertex(model: &Model, solid: Handle<Solid>) -> Optio
             surfs.insert(model.face(fh).surface);
         }
     }
-    let named = |def: &VertexDef| def.carriers().all(|s| surfs.contains(&s));
+    let named = |def: &Vertex| def.carriers().all(|s| surfs.contains(&s));
     let mut worst: Option<Handle<Vertex>> = None;
     for &sh in &shells {
         for &fh in &model.shell(sh).faces {
@@ -117,8 +117,7 @@ pub(crate) fn foreign_named_vertex(model: &Model, solid: Handle<Solid>) -> Optio
                 for he in &lp.half_edges {
                     let edge = model.edge(he.edge);
                     for vh in edge.vertices.iter() {
-                        if !named(&model.vertex(*vh).def)
-                            && worst.is_none_or(|w| vh.index() < w.index())
+                        if !named(model.vertex(*vh)) && worst.is_none_or(|w| vh.index() < w.index())
                         {
                             worst = Some(*vh);
                         }
@@ -901,15 +900,15 @@ fn transform_solid(
                 .get(&s)
                 .expect("a definition's surface must be a face surface of the solid")
         };
-        let def = match model.vertex(vh).def {
-            VertexDef::ThreePlane(planes) => VertexDef::ThreePlane(planes.map(remap)),
-            VertexDef::OnSeam(pair) => VertexDef::OnSeam(pair.map(remap)),
+        let def = match *model.vertex(vh) {
+            Vertex::ThreePlane(planes) => Vertex::ThreePlane(planes.map(remap)),
+            Vertex::OnSeam(pair) => Vertex::OnSeam(pair.map(remap)),
             // ★ `.map(remap)` alone would be wrong here: pass 1 issues new surface handles in
             // face-traversal order, so the two planes' handle order can invert, and the root is
             // defined against the meet line of the *stored* order. `QuadRoot::canonical` owns
             // that restatement — including the tangency, whose single point a swap fixes — and
             // this site reads it rather than spelling it again.
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes: [p0, p1],
                 cylinder,
                 root,
@@ -936,7 +935,7 @@ fn transform_solid(
                     Some(false) => root,
                     None => nacre_topo::QuadRoot::canonical([remap(p0), remap(p1)], root).1,
                 };
-                VertexDef::Pierce {
+                Vertex::Pierce {
                     planes: new_pair,
                     cylinder: remap(cylinder),
                     root,
@@ -1079,7 +1078,7 @@ mod tests {
                 for &fh in &m.shell(m.solid(s).outer).faces {
                     for he in &m.face(fh).outer.half_edges {
                         for vh in m.edge(he.edge).vertices {
-                            if matches!(m.vertex(vh).def, VertexDef::Pierce { .. }) {
+                            if matches!(*m.vertex(vh), Vertex::Pierce { .. }) {
                                 assert!(
                                     matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
                                     "{what}: a pierce vertex realizes: {:?}",
@@ -1277,7 +1276,7 @@ mod tests {
         );
         // ...and a vertex whose definition names the world seeds — surfaces this solid's face
         // set does not contain.
-        let foreign = VertexDef::ThreePlane([
+        let foreign = Vertex::ThreePlane([
             m.world_plane(Axis::Z),
             m.world_plane(Axis::X),
             m.world_plane(Axis::Y),
@@ -1347,7 +1346,7 @@ mod tests {
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
                     for &vh in &m.edge(he.edge).vertices {
-                        if let VertexDef::OnSeam(pair) = m.vertex(vh).def {
+                        if let Vertex::OnSeam(pair) = *m.vertex(vh) {
                             seams += 1;
                             assert!(
                                 pair.iter().all(|c| twin_surfs.contains(c)),
@@ -1444,7 +1443,7 @@ mod tests {
         // The two pierce points of {z = 0} ∧ {x = 0} against the cylinder: (0, ∓2, 0).
         // Canonical normals (0,0,1) × (1,0,0) = +y, so y = −2 is the smaller parameter: Lo.
         let v_lo = m.push_vertex(
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Lo,
@@ -1454,7 +1453,7 @@ mod tests {
             },
         );
         let v_hi = m.push_vertex(
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Hi,
@@ -1510,7 +1509,7 @@ mod tests {
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
                         for &vh in m.edge(he.edge).vertices.iter() {
-                            if let VertexDef::Pierce { planes, root, .. } = m.vertex(vh).def {
+                            if let Vertex::Pierce { planes, root, .. } = *m.vertex(vh) {
                                 seen.push((m.vertex_point(vh).as_array(), planes, root));
                             }
                         }

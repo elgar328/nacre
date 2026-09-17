@@ -12,7 +12,7 @@
 //! *the point does not fit* and *an intermediate overflowed on a point that would have*.
 //!
 //! ★★ **What is not measured here, and why.** Not the *world* coordinate — a moved point does not
-//! have one as a rational. A vertex's truth is `VertexDef::ThreePlane`, three surface handles and
+//! have one as a rational. A vertex's truth is `Vertex::ThreePlane`, three surface handles and
 //! **no coordinate at all**; the motion rides on the surface (number rule 3), and a general
 //! rotation's cos/sin are irrational. So the only rational a discovered point *could* be written
 //! as is the one in the frame its carriers are stated in, which is what a plane name pins and what
@@ -175,7 +175,7 @@ use nacre_ops::{BoolKind, DatumDef, OpOutput, Operation, Profile2d, SketchFrame,
 use nacre_ops::{apply, boolean};
 use nacre_scalar::{Angle, Axis, Isometry, MeetPoint, PlaneName, Rat, Rotation};
 use nacre_store::Handle;
-use nacre_topo::{Model, PointCache, Solid, Surface, Vertex, VertexDef};
+use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
 // ---------------------------------------------------------------------------------------------
 // fixtures — the shapes `tests/points_coverage.rs` already uses
@@ -323,7 +323,7 @@ fn measure(m: &Model) -> Tally {
             PointCache::Bounded { .. } => t.realized_inexact += 1,
         }
 
-        let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
+        let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
             t.on_seam += 1;
             continue;
         };
@@ -509,7 +509,7 @@ fn datum_reach(m: &Model) -> Reach {
     let reach: Vec<VertexReach> = verts
         .iter()
         .map(|&vh| {
-            let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
+            let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                 return VertexReach::Undefined;
             };
             let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();
@@ -766,7 +766,7 @@ fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
         if !matches!(m.vertex_cache(vh), PointCache::Bounded { .. }) {
             continue; // the construction's bare figure — the control lives in its own fixture below
         }
-        let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
+        let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
             continue;
         };
         let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();

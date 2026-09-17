@@ -61,7 +61,7 @@ fn foreign_definitions(m: &Model, s: Handle<Solid>) -> Vec<String> {
     for v in vertices_of(m, s) {
         // ★ `carriers()` is total over the variants by construction — the question here is
         // exactly "every surface the definition references", never a per-variant read.
-        for t in m.vertex(v).def.carriers() {
+        for t in m.vertex(v).carriers() {
             if !own.contains(&t) {
                 bad.push(format!("vertex {} names surface {}", v.index(), t.index()));
             }

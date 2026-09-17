@@ -148,7 +148,7 @@ fn tilted_frame(passes: usize) -> Model {
 // (ii) — is the f64 road a different plane?
 // ---------------------------------------------------------------------------------------------
 
-/// A plain cylinder — a circle extruded. Its rim corners are `VertexDef::OnSeam`.
+/// A plain cylinder — a circle extruded. Its rim corners are `Vertex::OnSeam`.
 fn cylinder() -> Model {
     let mut m = Model::new();
     let profile = stated(vec![circle(p2(2.0, 2.0), 3.0)])
@@ -170,7 +170,7 @@ fn cylinder() -> Model {
     m
 }
 
-/// A box with a bore through it — the wall/bore crossings are `VertexDef::Pierce`.
+/// A box with a bore through it — the wall/bore crossings are `Vertex::Pierce`.
 fn bored_plate() -> Model {
     let mut m = Model::new();
     let profile = stated(vec![
@@ -200,7 +200,7 @@ fn bored_plate() -> Model {
 
 /// **A hand-built `Pierce` vertex** — the kernel does not mint these yet.
 ///
-/// `VertexDef::Pierce`'s own doc records why: *"The producer arrives with M6-2's boolean; until
+/// `Vertex::Pierce`'s own doc records why: *"The producer arrives with M6-2's boolean; until
 /// then hand-built fixtures and validate are the consumers"* — the assembler declines to mint a
 /// pierce node because class order and handle order are canonical in different index spaces. So a
 /// fixture that waited for a boolean to produce one would measure nothing, forever.
@@ -210,7 +210,7 @@ fn bored_plate() -> Model {
 /// crosses the lateral surface answer, the rest refuse. Both outcomes are asserted, so this cannot
 /// pass by refusing everything.
 fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
-    use nacre_topo::{QuadRoot, VertexDef};
+    use nacre_topo::{QuadRoot, Vertex};
     let mut cyl = None;
     let mut planes = Vec::new();
     for i in 0..m.surface_count() as u32 {
@@ -230,7 +230,7 @@ fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
             let (p0, p1) = (planes[a], planes[b]);
             for root in [QuadRoot::Lo, QuadRoot::Hi, QuadRoot::Double] {
                 out.push(m.push_vertex(
-                    VertexDef::Pierce {
+                    Vertex::Pierce {
                         planes: [p0, p1],
                         cylinder,
                         root,
@@ -416,11 +416,11 @@ fn the_door_returns_the_places_it_was_asked_for() {
 /// is how deleting one arm shows up as something other than a smaller number nobody reads.
 #[test]
 fn every_vertex_variant_answers() {
-    use nacre_topo::VertexDef;
+    use nacre_topo::Vertex;
     let (mut seam, mut pierce, mut three) = (0usize, 0usize, 0usize);
     for m in [cylinder(), bored_plate(), boolean_corner()] {
         for vh in live_vertices(&m) {
-            let kind = m.vertex(vh).def;
+            let kind = *m.vertex(vh);
             let Ok(d) = realize_vertex_decimal(&m, vh, 25) else {
                 continue;
             };
@@ -428,9 +428,9 @@ fn every_vertex_variant_answers() {
                 assert_eq!(s.split_once('.').expect("a point").1.len(), 25);
             }
             match kind {
-                VertexDef::OnSeam(_) => seam += 1,
-                VertexDef::Pierce { .. } => pierce += 1,
-                VertexDef::ThreePlane(_) => three += 1,
+                Vertex::OnSeam(_) => seam += 1,
+                Vertex::Pierce { .. } => pierce += 1,
+                Vertex::ThreePlane(_) => three += 1,
             }
         }
     }
@@ -499,12 +499,12 @@ fn every_vertex_variant_answers() {
 /// derivation would not be (`tests/` has that failure on record).
 #[test]
 fn a_curved_vertex_agrees_with_the_cache_it_did_not_use() {
-    use nacre_topo::VertexDef;
+    use nacre_topo::Vertex;
     let mut checked = 0usize;
     let mut worst = 0.0f64;
     for m in [cylinder(), bored_plate()] {
         for vh in live_vertices(&m) {
-            if matches!(m.vertex(vh).def, VertexDef::ThreePlane(_)) {
+            if matches!(*m.vertex(vh), Vertex::ThreePlane(_)) {
                 continue;
             }
             let Ok(r) = realize_vertex(&m, vh, Precision::Bits(256)) else {
@@ -540,7 +540,7 @@ fn an_operations_cache_is_the_realization() {
     ] {
         let (mut realized, mut kept) = (0usize, 0usize);
         for vh in live_vertices(&m) {
-            match realize_cache(&m, &m.vertex(vh).def) {
+            match realize_cache(&m, m.vertex(vh)) {
                 Ok((v, bound)) => {
                     realized += 1;
                     let PointCache::Bounded { coord, bound: b } = *m.vertex_cache(vh) else {
@@ -982,10 +982,7 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
             m.vertex_cache(vh)
         );
         assert!(
-            matches!(
-                realize_cache(&m, &m.vertex(vh).def),
-                Err(CacheDecline::CostCap)
-            ),
+            matches!(realize_cache(&m, m.vertex(vh)), Err(CacheDecline::CostCap)),
             "and says so by name"
         );
         assert!(
@@ -1015,7 +1012,7 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
         .filter(|&vh| {
             matches!(m.vertex_cache(vh), PointCache::Ceiling { .. })
                 && matches!(
-                    realize_cache(&m, &m.vertex(vh).def),
+                    realize_cache(&m, m.vertex(vh)),
                     Err(CacheDecline::Cannot(RealizeError::Undecided))
                 )
         })

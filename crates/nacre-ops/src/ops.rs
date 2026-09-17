@@ -19,7 +19,6 @@ use nacre_topo::CylinderDef;
 use nacre_topo::PointCache;
 use nacre_topo::{
     Edge, Face, HalfEdge, Loop, Model, MotionNode, Orientation, Shell, Solid, Surface, Vertex,
-    VertexDef,
 };
 use std::borrow::Cow;
 
@@ -597,7 +596,7 @@ pub enum OpError {
     /// not stand it yet — that family opens with named points.
     ArcSweepNotQuarterTurn,
     /// Two arcs of different circles meet at a profile vertex. That corner is a point on two
-    /// cylinders and a plane, which no [`nacre_topo::VertexDef`] states yet, and the ruling between
+    /// cylinders and a plane, which no [`nacre_topo::Vertex`] states yet, and the ruling between
     /// the two cylinder walls has no curve the kernel derives (`derive_edge_curve` declines two
     /// distinct cylinders) — the same frontier as the cylinder–cylinder boolean (M6b). A lens, a
     /// cam lobe; a straight step between the arcs is what builds today.
@@ -1075,7 +1074,7 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
 
 /// **The definition of a corner where a straight wall meets an arc wall on a cap**: the wall's
 /// plane and the cap's plane meet in a line, and that line crosses the arc's cylinder at this
-/// point — [`VertexDef::Pierce`], the same definition the boolean mints for its pierce corners.
+/// point — [`Vertex::Pierce`], the same definition the boolean mints for its pierce corners.
 ///
 /// The root is read the way `QuadRoot` is defined: the two planes in **ascending handle order**,
 /// each by its **stored canonical name** (`surface_name`, the sign convention that fixes the meet
@@ -1091,7 +1090,7 @@ fn pierce_def(
     cap: Handle<Surface>,
     cylinder: Handle<Surface>,
     at: &[nacre_scalar::Rat; 3],
-) -> Result<VertexDef, OpError> {
+) -> Result<Vertex, OpError> {
     use nacre_scalar::quad::CylinderMeet;
     use nacre_topo::QuadRoot;
     let (a, b) = if plane.index() < cap.index() {
@@ -1151,7 +1150,7 @@ fn pierce_def(
         }
         _ => return Err(OpError::DegenerateGeometry),
     };
-    Ok(VertexDef::Pierce {
+    Ok(Vertex::Pierce {
         planes: [a, b],
         cylinder,
         root,
@@ -1240,12 +1239,12 @@ fn datum_plane(
         let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
         let mut frames = [None; 3];
         for (i, vh) in vs.iter().enumerate() {
-            let tri = match model.vertex(*vh).def {
-                nacre_topo::VertexDef::ThreePlane(tri) => tri,
+            let tri = match *model.vertex(*vh) {
+                nacre_topo::Vertex::ThreePlane(tri) => tri,
                 // A through-vertices datum needs three-plane meets; a seam vertex has no
                 // point-meet at all and a pierce point has no rational one — the same honest
                 // reject, spelled per variant.
-                nacre_topo::VertexDef::OnSeam(_) | nacre_topo::VertexDef::Pierce { .. } => {
+                nacre_topo::Vertex::OnSeam(_) | nacre_topo::Vertex::Pierce { .. } => {
                     return Err(OpError::VertexNotThreePlane);
                 }
             };
@@ -2063,7 +2062,7 @@ fn sweep_ring(
                   i: usize,
                   cap: Handle<Surface>,
                   at: &[nacre_scalar::Rat; 3]|
-     -> Result<VertexDef, OpError> {
+     -> Result<Vertex, OpError> {
         let prev = walls[(i + n - 1) % n].0;
         let here = walls[i].0;
         if here == cap || prev == cap {
@@ -2079,10 +2078,10 @@ fn sweep_ring(
                 if prev == here {
                     return Err(OpError::DegenerateGeometry);
                 }
-                Ok(VertexDef::ThreePlane([prev, here, cap]))
+                Ok(Vertex::ThreePlane([prev, here, cap]))
             }
             // A whole circle: one wall, one vertex — the rim's point at `+ref_dir`, the seam.
-            (true, true) if n == 1 => Ok(VertexDef::OnSeam([here, cap])),
+            (true, true) if n == 1 => Ok(Vertex::OnSeam([here, cap])),
             // Two arcs of one circle merged in the profile's normal form; two of different
             // circles are a corner the kernel does not define.
             (true, true) => Err(OpError::ArcsMeetAtVertex),

@@ -11,9 +11,7 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
-use nacre_topo::{
-    Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Surface, Vertex, VertexDef,
-};
+use nacre_topo::{Adjacency, Edge, Face, Loop, Model, Reachable, Shell, Solid, Surface, Vertex};
 
 /// Residual bound for a vertex with **no measured tolerance** lying on its reference
 /// curve/surface. Machine epsilon (~2.2e-16) is too tight — such a coordinate is the
@@ -32,7 +30,7 @@ pub enum RefKind {
     ShellFace,
     SolidShell,
     /// A vertex definition's surface handle.
-    VertexDefSurface,
+    VertexSurface,
 }
 
 /// Which loop of a face a defect was found in.
@@ -94,7 +92,7 @@ pub enum Violation {
     /// seam spelling would be hiding an expressible truth). The variants' invariants are
     /// per-variant (Q5), and this is the checker that keeps them so — the vertex sibling of
     /// [`Self::EdgeCarrierMismatch`].
-    VertexDefCarrierMismatch { vertex: Handle<Vertex> },
+    VertexCarrierMismatch { vertex: Handle<Vertex> },
 
     /// An edge's stated carriers disagree with adjacency (S8): the multiset of the two face
     /// surfaces using the edge is not the stored `Edge::surfaces` pair — or the pair is
@@ -355,10 +353,10 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
     while let Some(vh) = m.vertex_handle_at(i) {
         i += 1;
         let vertex = m.vertex(vh);
-        for s in vertex.def.carriers() {
+        for s in vertex.carriers() {
             if s.index() as usize >= m.surface_count() {
                 out.push(Violation::DanglingReference {
-                    kind: RefKind::VertexDefSurface,
+                    kind: RefKind::VertexSurface,
                     owner_index: vh.index(),
                     target_index: s.index(),
                     target_len: m.surface_count() as u32,
@@ -409,15 +407,15 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
     while let Some(vh) = m.vertex_handle_at(i) {
         i += 1;
         let vertex = m.vertex(vh);
-        let bad = match &vertex.def {
-            VertexDef::ThreePlane(planes) => planes
+        let bad = match vertex {
+            Vertex::ThreePlane(planes) => planes
                 .iter()
                 .any(|&s| !matches!(m.surface_cache(s), nacre_geom::Surface::Plane(_))),
-            VertexDef::OnSeam(pair) => pair
+            Vertex::OnSeam(pair) => pair
                 .iter()
                 .all(|&s| matches!(m.surface_cache(s), nacre_geom::Surface::Plane(_))),
             // The structure says the kinds (M6-1): two planes and one cylinder, positionally.
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes, cylinder, ..
             } => {
                 planes
@@ -427,7 +425,7 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
             }
         };
         if bad {
-            out.push(Violation::VertexDefCarrierMismatch { vertex: vh });
+            out.push(Violation::VertexCarrierMismatch { vertex: vh });
         }
     }
 }
@@ -917,7 +915,7 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
             continue;
         }
         let tol = EPS_CONSTRUCTED;
-        for sh in vertex.def.carriers() {
+        for sh in vertex.carriers() {
             let residual = m.surface_cache(sh).distance(m.vertex_point(vh));
             if residual > tol {
                 out.push(Violation::VertexOffDefinition {
@@ -1030,7 +1028,7 @@ mod tests {
         // A discovered vertex whose definition points past the surface store.
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]); // 6 surfaces, 8 vertices
         let vh = m.push_vertex(
-            VertexDef::ThreePlane([
+            Vertex::ThreePlane([
                 surface_handle_at(0),
                 surface_handle_at(1),
                 surface_handle_at(9), // out of bounds — only 6 surfaces
@@ -1042,7 +1040,7 @@ mod tests {
         assert_eq!(
             validate(&m),
             vec![Violation::DanglingReference {
-                kind: RefKind::VertexDefSurface,
+                kind: RefKind::VertexSurface,
                 owner_index: vh.index(),
                 target_index: 9,
                 target_len: 6,
@@ -1052,7 +1050,7 @@ mod tests {
 
     #[test]
     fn vertex_def_is_copy() {
-        let d = VertexDef::ThreePlane([surface_handle_at(0); 3]);
+        let d = Vertex::ThreePlane([surface_handle_at(0); 3]);
         let copy = d; // move-or-copy
         let _again = d; // still usable ⇒ Copy, not moved
         assert_eq!(d, copy);
@@ -1065,7 +1063,7 @@ mod tests {
         // (Under the old whole-store count this raised EulerParity{v:9}.)
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         m.push_vertex(
-            VertexDef::ThreePlane([
+            Vertex::ThreePlane([
                 m.world_plane(nacre_scalar::Axis::Z),
                 m.world_plane(nacre_scalar::Axis::X),
                 m.world_plane(nacre_scalar::Axis::Y),
@@ -1203,9 +1201,7 @@ mod tests {
                     .collect();
                 let coord = Point3::from_array(p);
                 m.push_vertex(
-                    VertexDef::ThreePlane(
-                        incident.try_into().expect("a tetra vertex is on 3 faces"),
-                    ),
+                    Vertex::ThreePlane(incident.try_into().expect("a tetra vertex is on 3 faces")),
                     PointCache::Unrealized { coord },
                 )
             })
@@ -1410,7 +1406,7 @@ mod tests {
         let sc = plane(&mut m, [1.0, 0.0, 1.0], [[0, 0, 0], [0, 1, 0], [1, 0, -1]]);
         let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
             m.push_vertex(
-                VertexDef::ThreePlane([sa, sb, sc]),
+                Vertex::ThreePlane([sa, sb, sc]),
                 PointCache::Unrealized {
                     coord: Point3::from_array(p),
                 },
@@ -1490,7 +1486,7 @@ mod tests {
             let sc = plane(&mut m, [1.0, 0.0, 1.0], [[0, 0, 0], [0, 1, 0], [1, 0, -1]]);
             let v = |m: &mut nacre_topo::Model, p: [f64; 3]| {
                 m.push_vertex(
-                    VertexDef::ThreePlane([sa, sb, sc]),
+                    Vertex::ThreePlane([sa, sb, sc]),
                     PointCache::Unrealized {
                         coord: Point3::from_array(p),
                     },
@@ -1580,13 +1576,13 @@ mod tests {
             m.world_plane(nacre_scalar::Axis::X),
         );
         let bad_three = m.push_vertex(
-            VertexDef::ThreePlane([z0, x0, cyl]),
+            Vertex::ThreePlane([z0, x0, cyl]),
             PointCache::Unrealized {
                 coord: Point3::origin(),
             },
         );
         let bad_seam = m.push_vertex(
-            VertexDef::OnSeam([z0, x0]),
+            Vertex::OnSeam([z0, x0]),
             PointCache::Unrealized {
                 coord: Point3::origin(),
             },
@@ -1595,7 +1591,7 @@ mod tests {
         for bad in [bad_three, bad_seam] {
             assert!(
                 vs.iter().any(
-                    |v| matches!(v, Violation::VertexDefCarrierMismatch { vertex } if *vertex == bad)
+                    |v| matches!(v, Violation::VertexCarrierMismatch { vertex } if *vertex == bad)
                 ),
                 "a contradictory def must be flagged: {vs:?}"
             );
@@ -1787,7 +1783,7 @@ mod tests {
         // The good statement, free-floating: reference integrity and the carrier-kind check
         // run over every vertex, and neither may fire.
         let _good = m.push_vertex(
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Lo,
@@ -1800,7 +1796,7 @@ mod tests {
         // The lying coordinate, wired into a reachable face so the off-definition check
         // sees it.
         let bad = m.push_vertex(
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Hi,
@@ -1810,7 +1806,7 @@ mod tests {
             },
         );
         let anchor = m.push_vertex(
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes: [bottom, x0],
                 cylinder: lateral,
                 root: QuadRoot::Lo,
@@ -1869,7 +1865,7 @@ mod tests {
         let bottom = m.world_plane(nacre_scalar::Axis::Z);
         let x0 = m.world_plane(nacre_scalar::Axis::X);
         let cyl_in_plane_slot = m.push_vertex(
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes: [bottom, lateral],
                 cylinder: x0,
                 root: QuadRoot::Lo,
@@ -1879,7 +1875,7 @@ mod tests {
             },
         );
         let plane_in_cyl_slot = m.push_vertex(
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes: [bottom, x0],
                 cylinder: m.world_plane(nacre_scalar::Axis::Y),
                 root: QuadRoot::Lo,
@@ -1892,7 +1888,7 @@ mod tests {
         for bad in [cyl_in_plane_slot, plane_in_cyl_slot] {
             assert!(
                 vs.iter().any(
-                    |v| matches!(v, Violation::VertexDefCarrierMismatch { vertex } if *vertex == bad)
+                    |v| matches!(v, Violation::VertexCarrierMismatch { vertex } if *vertex == bad)
                 ),
                 "a contradictory pierce def must be flagged: {vs:?}"
             );
@@ -1952,7 +1948,7 @@ mod tests {
         // definition is `OnSeam` (the lateral cylinder and its cap), which is what a rim's
         // endpoint always is; the coordinate is the part that lies.
         let bad = m.push_vertex(
-            VertexDef::OnSeam([lateral, cap]),
+            Vertex::OnSeam([lateral, cap]),
             PointCache::Unrealized {
                 coord: Point3::from_array([2.001, 0.0, 0.0]),
             },

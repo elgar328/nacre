@@ -22,7 +22,7 @@ use nacre_math::Point2;
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, replay};
 use nacre_scalar::{Isometry, Rat};
-use nacre_topo::{Model, VertexDef};
+use nacre_topo::{Model, Vertex};
 
 fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![
@@ -124,12 +124,12 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
         push(
             "vertex.def",
             i,
-            match v.def {
-                VertexDef::ThreePlane(s) => {
+            match *v {
+                Vertex::ThreePlane(s) => {
                     format!("3p[{},{},{}]", s[0].index(), s[1].index(), s[2].index())
                 }
-                VertexDef::OnSeam(s) => format!("seam[{},{}]", s[0].index(), s[1].index()),
-                VertexDef::Pierce {
+                Vertex::OnSeam(s) => format!("seam[{},{}]", s[0].index(), s[1].index()),
+                Vertex::Pierce {
                     planes,
                     cylinder,
                     root,

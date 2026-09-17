@@ -98,7 +98,7 @@ fn mirror(m: &mut Model, s: Handle<Solid>, axis: Axis, offset: Rat) -> Handle<So
 /// boolean actually reads.
 ///
 /// **Measured, not assumed:** a boolean's result vertices are all recomputed from plane triples
-/// (a measured `VertexDef::ThreePlane`), so the result carries *no* trace of the operands' vertex
+/// (a measured `Vertex::ThreePlane`), so the result carries *no* trace of the operands' vertex
 /// coordinates. A change that moves operand vertices but leaves the planes alone is therefore
 /// invisible in the result — which is exactly what happened the first time this census was used.
 /// Recording the operands is what makes the census see the change it exists to see.
@@ -226,7 +226,7 @@ fn record(
                                     // `Ceiling`; the road has no way there at all and the cache is
                                     // `Unrealized`. Written out rather than as "not Bounded", so a
                                     // vertex cannot drift between the two refusals unnoticed.
-                                    match nacre_ops::realize_cache(m, &m.vertex(vh).def) {
+                                    match nacre_ops::realize_cache(m, m.vertex(vh)) {
                                         Ok((c, _)) => {
                                             realized += 1;
                                             assert!(

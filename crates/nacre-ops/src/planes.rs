@@ -834,7 +834,7 @@ fn lateral_theta_extent(
 ) -> Option<RimArc> {
     use nacre_scalar::Rat;
     use nacre_scalar::quad::CylinderMeet;
-    use nacre_topo::{QuadRoot, VertexDef};
+    use nacre_topo::{QuadRoot, Vertex};
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let world_coeffs = |plane: Handle<Surface>| -> Option<[Rat; 4]> {
         let coeffs = *model.surface_name.get(&plane)?.narrow()?;
@@ -865,8 +865,8 @@ fn lateral_theta_extent(
         for k in 0..3 {
             centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
         }
-        match model.vertex(vh).def {
-            VertexDef::OnSeam(_) => {
+        match *model.vertex(vh) {
+            Vertex::OnSeam(_) => {
                 let e = def.ref_dir();
                 let (mm, em) = (dot3(&m, &m)?, dot3(&e, &m)?);
                 let mut e1 = [Rat::from_int(0); 3];
@@ -883,7 +883,7 @@ fn lateral_theta_extent(
                     )?,
                 )
             }
-            VertexDef::Pierce {
+            Vertex::Pierce {
                 planes,
                 cylinder,
                 root,
@@ -892,7 +892,7 @@ fn lateral_theta_extent(
                     return None;
                 }
                 // `planes` are stored in ascending-handle order and the roots run along
-                // `n₀ × n₁` (`VertexDef::Pierce`'s convention); the world statement translates
+                // `n₀ × n₁` (`Vertex::Pierce`'s convention); the world statement translates
                 // only the constants, so the normals — and the order — are the stored ones.
                 let (c0, c1) = (world_coeffs(planes[0])?, world_coeffs(planes[1])?);
                 let (line, sv) =
@@ -915,7 +915,7 @@ fn lateral_theta_extent(
                 }
                 sub(&p, &centre)
             }
-            VertexDef::ThreePlane(_) => None,
+            Vertex::ThreePlane(_) => None,
         }
     };
     let mut acc: Option<RimArc> = None;
@@ -2642,11 +2642,11 @@ fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Co
         // directly. An `OnSeam` vertex is a different matter — it pins a curve, not a point —
         // so it stays unreadable.
         None => {
-            let nacre_topo::VertexDef::Pierce {
+            let nacre_topo::Vertex::Pierce {
                 planes,
                 cylinder,
                 root,
-            } = model.vertex(vh).def
+            } = *model.vertex(vh)
             else {
                 return Err(CornerFail::Shape);
             };
@@ -2708,11 +2708,11 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_scalar::Rat;
             Some(w)
         }
         None => {
-            let nacre_topo::VertexDef::Pierce {
+            let nacre_topo::Vertex::Pierce {
                 planes,
                 cylinder,
                 root,
-            } = model.vertex(vh).def
+            } = *model.vertex(vh)
             else {
                 return None;
             };
@@ -3536,7 +3536,7 @@ pub(crate) struct WorkingPlane {
     /// world axis, and the one [`crate::combinatorics::class_coeffs_rat`] hands out.
     pub(crate) world_rat: Option<[nacre_scalar::Rat; 4]>,
     /// The class's representative surface — what `assemble_fuse_cut` records in a
-    /// `VertexDef::ThreePlane`.
+    /// `Vertex::ThreePlane`.
     pub(crate) surf: Handle<Surface>,
     /// Witness points on this plane (the root face's `tri`), outward-ordered for that face.
     pub(crate) tri: [Point3; 3],

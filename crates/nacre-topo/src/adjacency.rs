@@ -1,7 +1,8 @@
 //! `Adjacency` — the reverse index over the topology stores.
 
 use crate::Model;
-use crate::topology::{Edge, Face, Vertex};
+use crate::Vertex;
+use crate::topology::{Edge, Face};
 use nacre_store::Handle;
 use std::collections::HashMap;
 
@@ -180,7 +181,7 @@ mod tests {
         // Hand-built cells: the def names the three world seeds — real, distinct planes the
         // detector never dereferences (it reads only the maps).
         let mk_v = |m: &mut Model| {
-            let def = crate::VertexDef::ThreePlane([
+            let def = crate::Vertex::ThreePlane([
                 m.world_plane(nacre_scalar::Axis::Z),
                 m.world_plane(nacre_scalar::Axis::X),
                 m.world_plane(nacre_scalar::Axis::Y),
@@ -250,7 +251,7 @@ mod tests {
     fn rebuild_indexes_a_shared_edge() {
         let mut m = Model::new();
         let mk_v = |m: &mut Model, p: [f64; 3]| {
-            let def = crate::VertexDef::ThreePlane([
+            let def = crate::Vertex::ThreePlane([
                 m.world_plane(nacre_scalar::Axis::Z),
                 m.world_plane(nacre_scalar::Axis::X),
                 m.world_plane(nacre_scalar::Axis::Y),

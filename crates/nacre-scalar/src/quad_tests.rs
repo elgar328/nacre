@@ -1094,7 +1094,7 @@ fn an_axis_the_line_does_not_move_along_is_rational() {
 ///
 /// The gate's clearance test walks a face's corners and asks each one two things: which side of a
 /// cylinder's strip it stands on, and where it stands along that cylinder's axis. A corner a
-/// cylinder made has **no rational coordinates** (`VertexDef::Pierce` is quadratic-irrational), so
+/// cylinder made has **no rational coordinates** (`Vertex::Pierce` is quadratic-irrational), so
 /// the rational spellings decline it — and the whole face with it.
 ///
 /// The first instrument is **inclusion**: a rational point, handed in as a degenerate branch

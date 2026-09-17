@@ -82,7 +82,7 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
             }
         };
         measured += 1;
-        for sh in v.def.carriers() {
+        for sh in v.carriers() {
             let residual = m.surface_cache(sh).distance(m.vertex_point(vh));
             assert!(
                 residual <= tol,

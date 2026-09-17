@@ -8,7 +8,7 @@
 //!
 //! This module goes the other way: it takes the vertex's **definition** and realizes a coordinate
 //! from it, rounding exactly once at the end. Two roads meet here and they are chosen by the
-//! *value*, not by the `VertexDef` variant:
+//! *value*, not by the `Vertex` variant:
 //!
 //! - **rational** — a three-plane meet is an exact ratio ([`nacre_topo::Model::vertex_meet`]), so
 //!   its decimals come out of one long division and every digit printed is a digit of the
@@ -21,7 +21,7 @@
 //! first crate that sees both. The rounding itself lives one layer further down, in
 //! `nacre-scalar`, beside `round_to_f64` — cip realizes, scalar rounds, this module composes.
 //!
-//! ★★ **Migration 3b.** [`nacre_topo::VertexDef::OnSeam`]'s doc records the missing piece as *"the
+//! ★★ **Migration 3b.** [`nacre_topo::Vertex::OnSeam`]'s doc records the missing piece as *"the
 //! machinery that regenerates the cached coordinate"*, deferred with row 3b. This is the asking
 //! half of it. It does **not** overwrite the cache — that is the row's other half.
 
@@ -30,7 +30,7 @@ use nacre_cip::WitnessPoint;
 use nacre_math::Point3;
 use nacre_scalar::{HpBounded, Mag, MeetPoint};
 use nacre_store::Handle;
-use nacre_topo::{Model, PointCache, PrefixKey, Surface, Vertex, VertexDef};
+use nacre_topo::{Model, PointCache, PrefixKey, Surface, Vertex};
 use num_bigint::BigInt;
 
 /// How precisely to realize — always stated, never defaulted.
@@ -210,14 +210,14 @@ pub fn realize_vertex(
     v: Handle<Vertex>,
     p: Precision,
 ) -> Result<Realized, RealizeError> {
-    realize_def(model, &model.vertex(v).def, p)
+    realize_def(model, model.vertex(v), p)
 }
 
 /// [`realize_vertex`] on a definition that has not been pushed yet — the road every vertex an
 /// operation makes takes *before* it exists, so its cache is the realization from the start.
 pub(crate) fn realize_def(
     model: &Model,
-    def: &VertexDef,
+    def: &Vertex,
     p: Precision,
 ) -> Result<Realized, RealizeError> {
     realize_def_tracked(model, def, p, &mut None)
@@ -230,7 +230,7 @@ pub(crate) fn realize_def(
 /// to pass through would put a value under a key the next reader asks at a different precision.
 pub(crate) fn realize_def_tracked(
     model: &Model,
-    def: &VertexDef,
+    def: &Vertex,
     p: Precision,
     out: &mut Option<PrefixWrite>,
 ) -> Result<Realized, RealizeError> {
@@ -308,7 +308,7 @@ const CACHE_REPLAY_COST_CAP: usize = 192;
 /// ★ The `Err` says **which** of the two roads was not taken, and that is what lets the funnel
 /// below sort a vertex into [`PointCache::Ceiling`] (ask again, pay more) or
 /// [`PointCache::Unrealized`] (there is no road).
-pub fn realize_cache(model: &Model, def: &VertexDef) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
+pub fn realize_cache(model: &Model, def: &Vertex) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
     realize_cache_tracked(model, def, &mut None)
 }
 
@@ -320,7 +320,7 @@ pub fn realize_cache(model: &Model, def: &VertexDef) -> Result<([f64; 3], [Mag; 
 /// wider one.
 pub(crate) fn realize_cache_tracked(
     model: &Model,
-    def: &VertexDef,
+    def: &Vertex,
     out: &mut Option<PrefixWrite>,
 ) -> Result<([f64; 3], [Mag; 3]), CacheDecline> {
     if def
@@ -355,7 +355,7 @@ pub(crate) fn realize_cache_tracked(
 /// single label would hide the second behind the first.
 pub(crate) fn push_vertex_realized(
     model: &mut Model,
-    def: VertexDef,
+    def: Vertex,
     fallback: PointCache,
     link: ChainLink,
 ) -> Handle<Vertex> {
@@ -465,9 +465,7 @@ pub fn realize_vertex_decimal(
     v: Handle<Vertex>,
     places: usize,
 ) -> Result<[String; 3], RealizeError> {
-    let out = climb(model, &model.vertex(v).def, |r| {
-        r.to_decimal(places).map(|_| r)
-    })?;
+    let out = climb(model, model.vertex(v), |r| r.to_decimal(places).map(|_| r))?;
     out.to_decimal(places).ok_or(RealizeError::Undecided)
 }
 
@@ -475,7 +473,7 @@ pub fn realize_vertex_decimal(
 /// whatever is asked, so a rational vertex never climbs.
 fn climb(
     model: &Model,
-    def: &VertexDef,
+    def: &Vertex,
     decided: impl Fn(Realized) -> Option<Realized>,
 ) -> Result<Realized, RealizeError> {
     for bits in LADDER {
@@ -501,16 +499,14 @@ fn climb(
 /// realizes from its own geometry, not by walking a chain, so it has no prefix to hand on.
 fn build(
     model: &Model,
-    def: &VertexDef,
+    def: &Vertex,
     bits: usize,
     out: &mut Option<PrefixWrite>,
 ) -> Result<Realized, RealizeError> {
     match *def {
-        nacre_topo::VertexDef::ThreePlane(_) => build_three_plane(model, def, bits, out),
-        nacre_topo::VertexDef::OnSeam([cyl, cap]) => {
-            curved(seam_point(model, cyl, cap, bits), bits)
-        }
-        nacre_topo::VertexDef::Pierce {
+        nacre_topo::Vertex::ThreePlane(_) => build_three_plane(model, def, bits, out),
+        nacre_topo::Vertex::OnSeam([cyl, cap]) => curved(seam_point(model, cyl, cap, bits), bits),
+        nacre_topo::Vertex::Pierce {
             planes,
             cylinder,
             root,
@@ -526,7 +522,7 @@ fn curved(p: Option<[HpBounded; 3]>, bits: usize) -> Result<Realized, RealizeErr
 }
 
 /// **The seam vertex is the rim's `+ref_dir` point** — `centre + r·ê`, `ê` the reference
-/// direction's unit part perpendicular to the axis. `VertexDef::OnSeam`'s doc calls it *"a unique
+/// direction's unit part perpendicular to the axis. `Vertex::OnSeam`'s doc calls it *"a unique
 /// point, exactly designated"*; this realizes that designation instead of reading the cache, which
 /// is the half of migration row 3b that was recorded as missing.
 fn seam_point(
@@ -573,7 +569,7 @@ fn pierce_point(
 
 fn build_three_plane(
     model: &Model,
-    def: &VertexDef,
+    def: &Vertex,
     bits: usize,
     out: &mut Option<PrefixWrite>,
 ) -> Result<Realized, RealizeError> {
@@ -682,7 +678,7 @@ fn perp_component(
 }
 
 /// **Which of the crossings `root` names.** `Lo`/`Hi` are ascending parameter along the meet
-/// line's direction — `nacre_scalar::quad`'s pair order, which is `VertexDef::Pierce`'s stated
+/// line's direction — `nacre_scalar::quad`'s pair order, which is `Vertex::Pierce`'s stated
 /// convention — and a tangency is one point spelled `Double`, never `Lo`.
 ///
 /// ⚠ Split out because the integration oracle ("the point is on the cylinder") is satisfied by
@@ -742,7 +738,7 @@ mod tests {
     ///
     /// The oracle the integration test uses — "the point is on the cylinder" — is satisfied by
     /// *both* roots, so swapping them leaves it green (planted and measured). This asks the
-    /// question that actually distinguishes them, in the vocabulary `VertexDef::Pierce`'s doc
+    /// question that actually distinguishes them, in the vocabulary `Vertex::Pierce`'s doc
     /// defines: ascending parameter along `n₀ × n₁`.
     #[test]
     fn lo_and_hi_run_along_the_line() {

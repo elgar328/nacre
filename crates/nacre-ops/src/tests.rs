@@ -144,7 +144,7 @@ use nacre_cip::WitnessPoint;
 use nacre_geom::Plane;
 use nacre_geom::intersect::{planes_coplanar, three_planes};
 use nacre_scalar::Axis;
-use nacre_topo::{Loop, Orientation, Surface, VertexDef};
+use nacre_topo::{Loop, Orientation, Surface, Vertex};
 use proptest::prelude::*;
 use std::collections::HashMap;
 
@@ -1992,11 +1992,11 @@ fn an_unrotated_boolean_names_every_vertex_by_its_plane_triple() {
                         continue;
                     }
                     assert!(
-                        matches!(m.vertex(vh).def, VertexDef::ThreePlane(_))
+                        matches!(*m.vertex(vh), Vertex::ThreePlane(_))
                             && matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
                         "vertex {:?} is {:?}, not a realized plane triple",
                         m.vertex_point(vh).as_array(),
-                        m.vertex(vh).def
+                        *m.vertex(vh)
                     );
                 }
             }
@@ -4907,7 +4907,7 @@ fn transform_translate_preserves_discovered_definition() {
         // A measured tolerance survives an exact move and is dropped by a recorded one
         // (S7's tol rule), so what "still named" means here is the definition: every seam
         // vertex names three planes, whichever road it travelled.
-        .filter(|&vh| matches!(m.vertex(vh).def, VertexDef::ThreePlane(_)))
+        .filter(|&vh| matches!(*m.vertex(vh), Vertex::ThreePlane(_)))
         .count();
     assert_eq!(named, disc, "seam definitions preserved");
     let after = nacre_props::mass_props(&m, r2).unwrap().volume;
@@ -4964,7 +4964,7 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
                 // coordinate: solve the corner's three planes in the frame their names are
                 // stated in, replay the chain the *faces* record (S7 — the vertex has no
                 // motion of its own), and the answer is the stored coordinate bit for bit.
-                let VertexDef::ThreePlane(tri) = m.vertex(*vh).def else {
+                let Vertex::ThreePlane(tri) = *m.vertex(*vh) else {
                     unreachable!("a cuboid corner is a three-plane point")
                 };
                 let motion_of = |h| match m.surface(h) {
@@ -5219,7 +5219,7 @@ fn transform_rotate_boolean_result_keeps_discovered_base() {
     for &fh in &m.shell(sh).faces {
         for he in &m.face(fh).outer.half_edges {
             for vh in m.edge(he.edge).vertices {
-                let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
+                let Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                     continue;
                 };
                 // The carriers are the result's own planes — never a superseded
@@ -6054,7 +6054,7 @@ fn two_faces_of_one_judged_surface_are_one_class() {
             for lp in std::iter::once(&m.face(fh).outer).chain(m.face(fh).inner.iter()) {
                 for &he in &lp.half_edges {
                     let vh = m.he_start(he);
-                    let nacre_topo::VertexDef::ThreePlane(_) = m.vertex(vh).def else {
+                    let nacre_topo::Vertex::ThreePlane(_) = *m.vertex(vh) else {
                         continue;
                     };
                     // ★ The kernel says which corners it can place in one frame; comparing the
@@ -6670,7 +6670,7 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
                 diam = diam.max(c.abs());
             }
             counts[kind].1 += 1;
-            let VertexDef::ThreePlane(planes) = m.vertex(vh).def else {
+            let Vertex::ThreePlane(planes) = *m.vertex(vh) else {
                 continue; // a seam vertex names a curve, not a point — no solve to check
             };
             counts[kind].0 += 1;
@@ -6743,7 +6743,7 @@ fn a_wrong_plane_in_a_definition_is_caught() {
             m.edge(face.outer.half_edges[0].edge).vertices
         })
         .expect("a face with a loop")[0];
-    let VertexDef::ThreePlane(mut planes) = m.vertex(corner).def else {
+    let Vertex::ThreePlane(mut planes) = *m.vertex(corner) else {
         panic!("a constructed corner has a definition")
     };
     let good = solve_three_planes(planes.map(|h| match m.surface_cache(h) {
@@ -6862,7 +6862,7 @@ fn a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit() {
         i += 1;
         let v = split.vertex(h_);
         assert!(
-            matches!(v.def, VertexDef::ThreePlane(_)),
+            matches!(*v, Vertex::ThreePlane(_)),
             "a corner without a three-plane definition survived: {v:?}"
         );
     }
@@ -8922,7 +8922,7 @@ fn a_cylinder_on_a_face_frame_stands_outward() {
         .filter_map(|i| m.vertex_handle_at(i))
         .map(|h| (h, m.vertex(h)))
         .skip(before)
-        .filter(|(_, v)| matches!(v.def, VertexDef::OnSeam(_)))
+        .filter(|(_, v)| matches!(**v, Vertex::OnSeam(_)))
         .map(|(h, _)| m.vertex_point(h).as_array()[2])
         .collect();
     assert_eq!(seam_z.len(), 2, "one seam vertex per rim");
@@ -10168,8 +10168,8 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                                 lp.half_edges.len() >= 2
                                     && lp.half_edges.iter().any(|&he| {
                                         matches!(
-                                            m.vertex(m.he_start(he)).def,
-                                            nacre_topo::VertexDef::OnSeam(_)
+                                            *m.vertex(m.he_start(he)),
+                                            nacre_topo::Vertex::OnSeam(_)
                                         )
                                     })
                             };
@@ -11467,10 +11467,10 @@ fn sorted_vertex_bits(m: &Model, solids: &[Handle<Solid>]) -> Vec<(u8, [u64; 3])
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
                         for &vh in m.edge(he.edge).vertices.iter() {
-                            let kind = match &m.vertex(vh).def {
-                                VertexDef::ThreePlane(_) => 0u8,
-                                VertexDef::OnSeam(_) => 1,
-                                VertexDef::Pierce { .. } => 2,
+                            let kind = match m.vertex(vh) {
+                                Vertex::ThreePlane(_) => 0u8,
+                                Vertex::OnSeam(_) => 1,
+                                Vertex::Pierce { .. } => 2,
                             };
                             let p = m.vertex_point(vh).as_array();
                             out.push((kind, [p[0].to_bits(), p[1].to_bits(), p[2].to_bits()]));
@@ -11970,10 +11970,10 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
                         if !seen_vertices.contains(&vh) {
                             seen_vertices.push(vh);
                             vertex_bits.push(bits3(m.vertex_point(vh)));
-                            vertex_defs.push(match m.vertex(vh).def {
-                                VertexDef::ThreePlane(_) => "three-plane".to_string(),
-                                VertexDef::OnSeam(_) => "on-seam".to_string(),
-                                VertexDef::Pierce { root, .. } => format!("pierce {root:?}"),
+                            vertex_defs.push(match *m.vertex(vh) {
+                                Vertex::ThreePlane(_) => "three-plane".to_string(),
+                                Vertex::OnSeam(_) => "on-seam".to_string(),
+                                Vertex::Pierce { root, .. } => format!("pierce {root:?}"),
                             });
                         }
                     }
@@ -15222,7 +15222,7 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     let (mut m, l) = l_prism();
     let fh = m.shell(m.solid(l).outer).faces[0];
     let vh = m.edge(m.face(fh).outer.half_edges[0].edge).vertices[0];
-    let def = m.vertex(vh).def;
+    let def = *m.vertex(vh);
     let p = m.vertex_point(vh).as_array();
     let wrong = Point3::from_array([f64::from_bits(p[0].to_bits() + 3), p[1], p[2]]);
     let h = crate::realize::push_vertex_realized(
@@ -15256,7 +15256,7 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     for &fh in &m.shell(m.solid(turned).outer).faces {
         for he in &m.face(fh).outer.half_edges {
             for vh in m.edge(he.edge).vertices {
-                if !matches!(m.vertex(vh).def, VertexDef::OnSeam(_)) {
+                if !matches!(*m.vertex(vh), Vertex::OnSeam(_)) {
                     continue;
                 }
                 seams += 1;
