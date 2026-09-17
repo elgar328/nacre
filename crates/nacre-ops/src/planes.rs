@@ -255,7 +255,9 @@ pub(crate) fn collect_planes(
                 nacre_geom::Surface::Cylinder(_) => {
                     let nacre_topo::Surface::Cylinder { motion, .. } = model.surface(face.surface)
                     else {
-                        unreachable!("a cylinder cache carries a cylinder truth")
+                        unreachable!(
+                            "push_cylinder_raw pairs them, so a cylinder cache has a cylinder truth"
+                        )
                     };
                     // ★ **The world statement, not the stated frame's** — a translated cylinder's
                     // truth is written before its motion, and every consumer of this row (the
@@ -693,7 +695,9 @@ pub(crate) fn world_cylinder_def(
     debug_assert!(
         {
             let nacre_geom::Surface::Cylinder(cache) = model.surface_cache(surf) else {
-                unreachable!("a cylinder truth carries a cylinder cache")
+                unreachable!(
+                    "push_cylinder_raw pairs them, so a cylinder truth has a cylinder cache"
+                )
             };
             let o = Point3::from_array(out.origin().map(|r| r.to_f64()));
             let scale = 1.0 + o.as_array().iter().fold(0.0, |m: f64, c| m.max(c.abs()));
@@ -1260,7 +1264,7 @@ pub(crate) fn cylinder_gate(
             return Err(undecided());
         };
         let nacre_geom::Surface::Cylinder(cache) = model.surface_cache(surf) else {
-            unreachable!("a cylinder truth carries a cylinder cache")
+            unreachable!("push_cylinder_raw pairs them, so a cylinder truth has a cylinder cache")
         };
         // ★ **One surface, two solids.** Cylinders intern by their exact statement, so two operands
         // whose laterals coincide arrive as one class carrying rows of both — the coaxial pair of

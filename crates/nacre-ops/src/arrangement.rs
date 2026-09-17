@@ -11209,7 +11209,9 @@ mod tests {
                 unreachable!("a cylinder row carries a cylinder truth")
             };
             let nacre_geom::Surface::Cylinder(cache) = m.surface_cache(surf) else {
-                unreachable!("a cylinder truth carries a cylinder cache")
+                unreachable!(
+                    "push_cylinder_raw pairs them, so a cylinder truth has a cylinder cache"
+                )
             };
             setup.cyls.push(crate::planes::WorkingCyl {
                 surf,

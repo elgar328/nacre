@@ -1067,14 +1067,53 @@ impl Model {
         h
     }
 
-    /// The one push everything funnels through (private): the exact truth and its f64 cache,
-    /// index-parallel, in one motion — so the two cannot come apart.
+    /// A plane's push (private): the exact truth and its f64 cache, index-parallel, in one
+    /// motion — so the two cannot come apart.
     ///
     /// ★ The truth comes first because the arena holds it; the cache is derived from it in
     /// principle and handed in by the producer today (the derivation is the refinement pass's).
-    fn push_raw(&mut self, truth: Surface, cache: nacre_geom::Surface) -> Handle<Surface> {
-        let h = self.surfaces.push(truth);
-        self.surface_cache.push(SurfaceCache { realized: cache });
+    ///
+    /// ★★★ **Two doors split by kind, rather than one taking both enums.** The predecessor
+    /// `push_raw(truth: Surface, cache: nacre_geom::Surface)` could be handed a plane truth
+    /// beside a cylinder cache. Nothing ever did — measured: no such defect in the dev-log, and
+    /// the body never changed after it was written — but **four** sites downstream carried an
+    /// `unreachable!` to say the pairing holds. A typed door makes the mismatch unspellable, and
+    /// those four now cite the door instead of asserting the fact.
+    ///
+    /// ⚠ **No lock here, and this is why.** The proposition is the signature itself, and a
+    /// `compile_fail` doc-test cannot reach a private function to demonstrate it. The public
+    /// doors ([`Model::push_plane`], [`Model::push_cylinder`]) already took narrow types; what
+    /// was wide was this crate-internal one. Recorded rather than locked.
+    fn push_plane_raw(
+        &mut self,
+        points: PlanePoints,
+        motion: Option<Handle<MotionNode>>,
+        cache: nacre_geom::Plane,
+    ) -> Handle<Surface> {
+        let h = self.surfaces.push(Surface::Plane { points, motion });
+        self.surface_cache.push(SurfaceCache {
+            realized: nacre_geom::Surface::Plane(cache),
+        });
+        debug_assert_eq!(
+            self.surface_cache.len(),
+            self.surfaces.len(),
+            "the truth and its cache enter together or not at all"
+        );
+        h
+    }
+
+    /// A cylinder's push (private) — [`Model::push_plane_raw`]'s twin, and the other half of the
+    /// reason neither takes a `nacre_geom::Surface`.
+    fn push_cylinder_raw(
+        &mut self,
+        def: CylinderDef,
+        motion: Option<Handle<MotionNode>>,
+        cache: nacre_geom::Cylinder,
+    ) -> Handle<Surface> {
+        let h = self.surfaces.push(Surface::Cylinder { def, motion });
+        self.surface_cache.push(SurfaceCache {
+            realized: nacre_geom::Surface::Cylinder(cache),
+        });
         debug_assert_eq!(
             self.surface_cache.len(),
             self.surfaces.len(),
@@ -1541,10 +1580,7 @@ impl Model {
                 return (h, self.flipped_against(h, &cache));
             }
         }
-        let h = self.push_raw(
-            Surface::Plane { points, motion },
-            nacre_geom::Surface::Plane(cache),
-        );
+        let h = self.push_plane_raw(points, motion, cache);
         if let Some((n, _)) = &key {
             // One clone per push — the name is derived once here, never on a judging loop.
             self.surface_name.insert(h, n.clone());
@@ -1610,13 +1646,7 @@ impl Model {
         if let Some(&h) = self.surface_through_ids.get(&(vertices, motion)) {
             return (h, self.flipped_against(h, &cache));
         }
-        let h = self.push_raw(
-            Surface::Plane {
-                points: PlanePoints::Through(vertices),
-                motion,
-            },
-            nacre_geom::Surface::Plane(cache),
-        );
+        let h = self.push_plane_raw(PlanePoints::Through(vertices), motion, cache);
         self.surface_through_ids.insert((vertices, motion), h);
         (h, false)
     }
@@ -1808,10 +1838,7 @@ impl Model {
         if let Some(&h) = self.cylinder_ids.get(&key) {
             return h;
         }
-        let h = self.push_raw(
-            Surface::Cylinder { def, motion },
-            nacre_geom::Surface::Cylinder(cache),
-        );
+        let h = self.push_cylinder_raw(def, motion, cache);
         self.cylinder_ids.insert(key, h);
         h
     }
@@ -1829,13 +1856,7 @@ impl Model {
         cache: nacre_geom::Plane,
         points: [[nacre_scalar::Rat; 3]; 3],
     ) -> Handle<Surface> {
-        self.push_raw(
-            Surface::Plane {
-                points: PlanePoints::Known(points),
-                motion: None,
-            },
-            nacre_geom::Surface::Plane(cache),
-        )
+        self.push_plane_raw(PlanePoints::Known(points), None, cache)
     }
 
     /// A new shell whose faces are copies of `src`'s with their outward normals
