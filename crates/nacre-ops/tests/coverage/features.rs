@@ -60,7 +60,7 @@ fn cylinder_lateral(m: &mut Model) -> nacre_store::Handle<nacre_topo::Face> {
         2.0,
         5.0,
     );
-    let shell = m.solid(m.live_solids[0]).outer;
+    let shell = m.solid(m.live_solids()[0]).outer;
     *m.shell(shell)
         .faces
         .iter()
@@ -228,12 +228,12 @@ fn pad_overhang_off_the_face_is_rejected() {
     let (mut m, top) = cube_with_top();
     let far =
         Profile2d::polygon(vec![p2(1.8, 1.8), p2(2.2, 1.8), p2(2.2, 2.2), p2(1.8, 2.2)]).unwrap();
-    let before = m.live_solids.clone();
+    let before = m.live_solids().to_vec();
     assert_eq!(
         apply(&mut m, &pad_op(top, far, 0.3)),
         Err(OpError::PadMissesFace)
     );
-    let (mut a, mut b) = (before, m.live_solids.clone());
+    let (mut a, mut b) = (before, m.live_solids().to_vec());
     a.sort_by_key(|h| h.index());
     b.sort_by_key(|h| h.index());
     assert_eq!(a, b, "a rejected pad must leave the live model untouched");
@@ -805,7 +805,7 @@ fn face_plane_is_the_frame_pad_places_profiles_in_on_a_turned_face() {
 #[test]
 fn a_rotated_face_has_a_pinned_sketch_axis() {
     let (mut m, _) = cube_with_top();
-    let s = m.live_solids[0];
+    let s = m.live_solids()[0];
     let s = xf(&mut m, s, rot_iso(Axis::Z, 45));
     m.rebuild_adjacency();
 

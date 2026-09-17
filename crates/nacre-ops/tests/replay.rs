@@ -212,13 +212,13 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
     push(
         "live_solids",
         0,
-        m.live_solids
+        m.live_solids()
             .iter()
             .map(|h| h.index().to_string())
             .collect::<Vec<_>>()
             .join(","),
     );
-    for &s in &m.live_solids {
+    for &s in m.live_solids() {
         let v = nacre_props::mass_props(m, s)
             .map(|p| p.volume)
             .unwrap_or(f64::NAN);
@@ -626,7 +626,7 @@ fn faces_of(m: &Model, s: Handle<Solid>) -> Vec<Handle<Face>> {
 /// cannot host it at all (no live solid to name). A step that resolves but will be *rejected*
 /// still resolves — the reject is the operation's answer to give, not the generator's.
 fn concretize(m: &Model, step: &Step) -> Option<Operation> {
-    let live: Vec<Handle<Solid>> = m.live_solids.to_vec();
+    let live: Vec<Handle<Solid>> = m.live_solids().to_vec();
     let pick = |i: usize| live.get(i % live.len().max(1)).copied();
     Some(match *step {
         Step::DatumThroughVertices { solid, a, b, c } => {
@@ -966,7 +966,7 @@ fn a_log_using_every_handle_carrying_variant_replays() {
             dist: 0.5, // into a 1-thick boss: blind
         },
     );
-    let live: Vec<_> = m.live_solids.to_vec();
+    let live: Vec<_> = m.live_solids().to_vec();
     run(
         &mut m,
         Operation::Boolean {
@@ -1020,13 +1020,13 @@ fn a_late_reject_is_not_index_neutral() {
     let probe = |name: &str, setup: &dyn Fn() -> (Model, Operation)| -> Option<usize> {
         let (mut m, op) = setup();
         let before = arena_lengths(&m);
-        let live_before: Vec<_> = m.live_solids.to_vec();
+        let live_before: Vec<_> = m.live_solids().to_vec();
         let err = apply(&mut m, &op).err()?;
         // Every reject, early or late, leaves the live model exactly as it was — this is the
         // half of the contract `ops.rs` names ("no reject-after-commit") and the half that is
         // repaired. What follows measures the half that is not.
         assert_eq!(
-            m.live_solids.to_vec(),
+            m.live_solids().to_vec(),
             live_before,
             "{name}: a reject must not change the live model"
         );
@@ -1286,7 +1286,7 @@ fn a_pocket_that_is_not_blind_leaves_the_live_model_alone() {
     let OpOutput::Extrude { solid, faces } = apply(&mut m, &__seed).expect("seed") else {
         unreachable!()
     };
-    let live_before: Vec<_> = m.live_solids.to_vec();
+    let live_before: Vec<_> = m.live_solids().to_vec();
     let arena_before = arena_lengths(&m);
 
     let err = apply(
@@ -1301,11 +1301,11 @@ fn a_pocket_that_is_not_blind_leaves_the_live_model_alone() {
     assert!(matches!(err, nacre_ops::OpError::PocketNotBlind));
 
     assert!(
-        m.live_solids.contains(&solid),
+        m.live_solids().contains(&solid),
         "the declined pocket must leave the caller's solid live"
     );
     assert_eq!(
-        m.live_solids.to_vec(),
+        m.live_solids().to_vec(),
         live_before,
         "the live model after a reject is the one the caller had before it"
     );
@@ -1361,7 +1361,7 @@ fn a_foreign_handle_still_dies_at_the_door() {
     let op_b = extrude_op(&b, 0.0, 2.0, 1.0);
     apply(&mut b, &op_b).expect("b");
     assert!(
-        b.live_solids.contains(&solid),
+        b.live_solids().contains(&solid),
         "index-only equality: b agrees the foreign handle is live"
     );
 
@@ -1427,7 +1427,7 @@ fn an_extrude_naming_a_surface_that_does_not_exist_is_rejected_by_name() {
         },
     ];
     let replayed = replay(&full).expect("the whole log replays");
-    assert_eq!(replayed.live_solids.len(), 1);
+    assert_eq!(replayed.live_solids().len(), 1);
 }
 
 /// ★★★★★ **A vertex-naming datum, recorded after the session already rejected something.**
@@ -1477,7 +1477,7 @@ fn a_datum_naming_vertices_survives_a_session_that_rejected() {
     // ★ The rebuilt model is a *different* arena, so `solid` from before it must not be reused —
     // the cross-store guard says so, loudly, and it is right to.
     m = replay(&log).expect("the log so far replays");
-    let solid = m.live_solids[0];
+    let solid = m.live_solids()[0];
 
     // Now name three corners of the seed solid — the step whose handles are vertices.
     let mut vs = Vec::new();

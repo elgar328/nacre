@@ -39,7 +39,7 @@ fn cut_of_disjoint_is_a() {
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - vol_a).abs() < 1e-12, "volume {vol}");
-    assert_eq!(m.live_solids, vec![r]);
+    assert_eq!(m.live_solids().to_vec(), vec![r]);
 }
 
 #[test]
@@ -47,7 +47,7 @@ fn common_stacked_cubes_is_empty() {
     // The stack shares only its interface plane, so the intersection has no volume.
     let (mut m, a, b) = stacked_cubes();
     assert!(boolean(&mut m, BoolKind::Common, a, b).unwrap().is_empty());
-    assert!(m.live_solids.is_empty(), "both operands are consumed");
+    assert!(m.live_solids().is_empty(), "both operands are consumed");
 }
 
 #[test]
@@ -137,7 +137,7 @@ fn a_disjoint_common_is_empty_not_an_error() {
     let solids = boolean(&mut m, BoolKind::Common, a, b).expect("empty is not a failure");
     assert!(solids.is_empty());
     assert!(
-        m.live_solids.is_empty(),
+        m.live_solids().is_empty(),
         "a successful boolean consumes its operands"
     );
 }

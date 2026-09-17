@@ -402,7 +402,7 @@ centroid 1 1.5 2
         };
         apply(&mut model, &op).unwrap();
         model.rebuild_adjacency();
-        let live = model.live_solids[0];
+        let live = model.live_solids()[0];
         let p = occt_props_of(&model).unwrap();
         let c = nacre_props::centroid(&model, live).unwrap();
         for i in 0..3 {
@@ -1863,7 +1863,7 @@ centroid 1 1.5 2
             },
         )
         .unwrap();
-        let l = *m.live_solids.first().unwrap();
+        let l = *m.live_solids().first().unwrap();
         let b = m.add_cuboid(
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.5, 1.5, 0.5]),
@@ -1990,7 +1990,7 @@ centroid 1 1.5 2
             outer: a_outer,
             cavities: vec![void],
         });
-        m.live_solids.retain(|&s| s == hollow);
+        m.restore_live(vec![hollow]);
 
         let occt = occt_props_of(&m).unwrap();
         let nacre = mass_props(&m, hollow).unwrap();

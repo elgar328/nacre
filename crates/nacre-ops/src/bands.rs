@@ -879,7 +879,11 @@ mod tests {
         let out = crate::boolean(&mut m, kind, plate, boss).expect("the rulings road builds");
         assert_eq!(out.len(), 1, "one solid");
         m.rebuild_adjacency();
-        assert_eq!(m.live_solids, out, "the operands retired, the result lives");
+        assert_eq!(
+            m.live_solids().to_vec(),
+            out,
+            "the operands retired, the result lives"
+        );
         let issues = nacre_validate::validate(&m);
         assert!(issues.is_empty(), "{issues:?}");
         let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
@@ -1023,7 +1027,11 @@ mod tests {
                 .unwrap_or_else(|e| panic!("{kind:?} z0 {z0}: the half-height boss builds: {e:?}"));
             assert_eq!(out.len(), 1, "{kind:?}: one solid");
             m.rebuild_adjacency();
-            assert_eq!(m.live_solids, out, "{kind:?}: the operands retired");
+            assert_eq!(
+                m.live_solids().to_vec(),
+                out,
+                "{kind:?}: the operands retired"
+            );
             let issues = nacre_validate::validate(&m);
             assert!(issues.is_empty(), "{kind:?}: {issues:?}");
             let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
@@ -1079,7 +1087,11 @@ mod tests {
         let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
         assert_eq!(out.len(), 1, "one fused solid");
         m.rebuild_adjacency();
-        assert_eq!(m.live_solids, out, "the operands retired, the result lives");
+        assert_eq!(
+            m.live_solids().to_vec(),
+            out,
+            "the operands retired, the result lives"
+        );
         let issues = nacre_validate::validate(&m);
         assert!(issues.is_empty(), "{issues:?}");
         let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
@@ -2025,12 +2037,12 @@ mod tests {
                 1.0,
             );
             m.rebuild_adjacency();
-            let before = m.live_solids.clone();
+            let before = m.live_solids().to_vec();
             let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
                 .expect("the cut-rim boolean builds");
             assert_eq!(out.len(), 1, "one fused solid");
-            assert_ne!(m.live_solids, before, "the operands retired");
-            assert_eq!(m.live_solids, out, "the result lives");
+            assert_ne!(m.live_solids().to_vec(), before, "the operands retired");
+            assert_eq!(m.live_solids().to_vec(), out, "the result lives");
             let pierce: Vec<_> = (0..m.vertex_count() as u32)
                 .filter_map(|i| m.vertex_handle_at(i))
                 .map(|h| (h, m.vertex(h)))
@@ -2265,12 +2277,12 @@ mod tests {
             );
             m.rebuild_adjacency();
             let faces_from = m.face_count();
-            let before = m.live_solids.clone();
+            let before = m.live_solids().to_vec();
             let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
                 .expect("the cut-rim boolean builds");
             assert_eq!(out.len(), 1, "one fused solid");
-            assert_ne!(m.live_solids, before, "the operands retired");
-            assert_eq!(m.live_solids, out, "the result lives");
+            assert_ne!(m.live_solids().to_vec(), before, "the operands retired");
+            assert_eq!(m.live_solids().to_vec(), out, "the result lives");
             let garbage: Vec<_> = (faces_from as u32..m.face_count() as u32)
                 .filter_map(|i| m.face_handle_at(i))
                 .map(|h| (h, m.face(h)))
@@ -2443,12 +2455,12 @@ mod tests {
             );
             m.rebuild_adjacency();
             let (faces_from, solids_from) = (m.face_count(), m.solid_count());
-            let before = m.live_solids.clone();
+            let before = m.live_solids().to_vec();
             let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
                 .expect("the cut-rim boolean builds");
             assert_eq!(out.len(), 1, "one fused solid");
-            assert_ne!(m.live_solids, before, "the operands retired");
-            assert_eq!(m.live_solids, out, "the result lives");
+            assert_ne!(m.live_solids().to_vec(), before, "the operands retired");
+            assert_eq!(m.live_solids().to_vec(), out, "the result lives");
             let pushed: Vec<_> = (solids_from as u32..m.solid_count() as u32)
                 .filter_map(|i| m.solid_handle_at(i))
                 .map(|h| (h, m.solid(h)))
@@ -2574,7 +2586,11 @@ mod tests {
         let out = crate::boolean(&mut m, BoolKind::Fuse, bored, boss).expect("the boss fuses");
         assert_eq!(out.len(), 1, "one solid");
         m.rebuild_adjacency();
-        assert_eq!(m.live_solids, out, "the operands retired, the result lives");
+        assert_eq!(
+            m.live_solids().to_vec(),
+            out,
+            "the operands retired, the result lives"
+        );
         let issues = nacre_validate::validate(&m);
         assert!(issues.is_empty(), "{issues:?}");
         let mesh = nacre_tess::tessellate(&m, &nacre_tess::TessConfig::default())
@@ -4175,7 +4191,7 @@ mod tests {
         ])
         .unwrap();
         let mut m = crate::ops::replay(&[crate::tests::extrude_log_op(profile, 1.0)]).unwrap();
-        let a = m.live_solids[0];
+        let a = m.live_solids()[0];
         // In the notch (x,y ∈ [1,2]²), a slim drill standing clear of both notch walls.
         let b = m.add_cylinder(
             Point3::from_array([1.5, 1.5, -1.0]),

@@ -547,7 +547,7 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
 /// void points outward and would add to the solid's volume. Runs after the
 /// reference-integrity short-circuit, so every dereferenced handle is in bounds.
 fn check_cavity_orientation(m: &Model, out: &mut Vec<Violation>) {
-    for &sh in &m.live_solids {
+    for &sh in m.live_solids() {
         if sh.index() as usize >= m.solid_count() {
             continue;
         }
@@ -1083,7 +1083,7 @@ mod tests {
         // out of the reachable closure — so each shared edge is counted twice
         // (once per live face), not four times, and validate stays clean.
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        let old = m.live_solids[0];
+        let old = m.live_solids()[0];
         let old_shell = m.solid(old).outer;
         let faces = m.shell(old_shell).faces.clone();
         let new_shell = m.push_shell(Shell { faces });
@@ -1091,8 +1091,8 @@ mod tests {
             outer: new_shell,
             cavities: vec![],
         });
-        m.live_solids.retain(|&s| s != old); // supersede: only the new one is live
-        assert_eq!(m.live_solids, vec![new_solid]);
+        m.supersede_live(&[old]); // supersede: only the new one is live
+        assert_eq!(m.live_solids().to_vec(), vec![new_solid]);
         let v = validate(&m);
         assert!(v.is_empty(), "{v:?}");
     }
@@ -1613,7 +1613,7 @@ mod tests {
     #[test]
     fn a_cap_whose_flag_lies_is_caught_by_its_rim() {
         let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
-        let solid = m.live_solids[0];
+        let solid = m.live_solids()[0];
         let shell = m.solid(solid).outer;
         let faces = m.shell(shell).faces.clone();
         // The bottom cap: a planar face whose outer loop is a single half-edge.
@@ -1642,7 +1642,7 @@ mod tests {
             outer: sh,
             cavities: vec![],
         });
-        m.live_solids.retain(|&s| s == replaced);
+        m.restore_live(vec![replaced]);
         m.rebuild_adjacency();
         let vs = validate(&m);
         assert_eq!(vs.len(), 1, "only the flag lie should fire: {vs:?}");
@@ -1670,7 +1670,7 @@ mod tests {
     #[test]
     fn a_flipped_orientation_flag_is_caught() {
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        let solid = m.live_solids[0];
+        let solid = m.live_solids()[0];
         let shell = m.solid(solid).outer;
         let faces = m.shell(shell).faces.clone();
         let victim = faces[0];
@@ -1691,7 +1691,7 @@ mod tests {
             outer: sh,
             cavities: vec![],
         });
-        m.live_solids.retain(|&s| s == replaced);
+        m.restore_live(vec![replaced]);
         let vs = validate(&m);
         assert_eq!(vs.len(), 1, "only the flag lie should fire: {vs:?}");
         assert!(
@@ -1710,7 +1710,7 @@ mod tests {
     #[test]
     fn a_lying_cylinder_def_is_caught() {
         let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 1.0, 2.0);
-        let solid = m.live_solids[0];
+        let solid = m.live_solids()[0];
         let shell = m.solid(solid).outer;
         let faces = m.shell(shell).faces.clone();
         let victim = *faces
@@ -1749,7 +1749,7 @@ mod tests {
             outer: sh,
             cavities: vec![],
         });
-        m.live_solids.retain(|&s| s == replaced);
+        m.restore_live(vec![replaced]);
         let vs = validate(&m);
         assert!(
             vs.iter().any(|v| matches!(
@@ -2038,7 +2038,7 @@ mod tests {
             outer: a_outer,
             cavities: vec![void],
         });
-        m.live_solids.retain(|&s| s == hollow);
+        m.restore_live(vec![hollow]);
         m
     }
 

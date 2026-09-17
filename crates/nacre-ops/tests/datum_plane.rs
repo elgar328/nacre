@@ -209,14 +209,15 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
         "the instrument did not produce a nameless plane"
     );
 
-    let before = m.live_solids.clone();
+    let before = m.live_solids().to_vec();
     assert_eq!(
         apply(&mut m, &sketch(SketchFrame::canonical(nameless))).unwrap_err(),
         OpError::PlaneWithoutExactForm,
         "a sketch on a plane with no name must be a named reject"
     );
     assert_eq!(
-        m.live_solids, before,
+        m.live_solids().to_vec(),
+        before,
         "a refusal must leave the model alone"
     );
 
@@ -335,8 +336,8 @@ fn a_log_with_a_datum_replays_and_validates() {
     assert_eq!(replayed.vertex_count(), scratch.vertex_count());
     assert_eq!(replayed.face_count(), scratch.face_count());
     assert_eq!(
-        replayed.live_solids.to_vec(),
-        scratch.live_solids.to_vec(),
+        replayed.live_solids().to_vec(),
+        scratch.live_solids().to_vec(),
         "replay reproduces the live set, indices included"
     );
     assert!(nacre_validate::validate(&replayed).is_empty());
@@ -604,7 +605,7 @@ fn an_offset_log_replays_and_a_stale_handle_is_rejected_by_name() {
     ];
     let replayed = replay(&log).expect("an offset log replays");
     assert_eq!(replayed.surface_count(), m.surface_count());
-    assert_eq!(replayed.live_solids.to_vec(), m.live_solids.to_vec());
+    assert_eq!(replayed.live_solids().to_vec(), m.live_solids().to_vec());
     assert!(nacre_validate::validate(&replayed).is_empty());
 
     // The same operation with nothing built before it names a surface that does not exist.
@@ -984,7 +985,7 @@ fn tilted_prism_with_pocket() -> Model {
 fn live_verts(m: &Model) -> Vec<nacre_store::Handle<nacre_topo::Vertex>> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for &s in &m.live_solids {
+    for &s in m.live_solids() {
         let sol = m.solid(s);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
             for &fh in &m.shell(sh).faces {
@@ -1131,7 +1132,7 @@ fn reversing_the_vertex_order_keeps_the_handle_and_flips_the_frame() {
 fn a_datum_through_vertices_refuses_by_cause() {
     let mut m = tilted_prism_with_pocket();
     let [a, b, _] = three_solvable(&m);
-    let before = m.live_solids.clone();
+    let before = m.live_solids().to_vec();
     let through = |m: &mut Model, vs: [nacre_store::Handle<nacre_topo::Vertex>; 3]| {
         apply(
             m,
@@ -1144,7 +1145,8 @@ fn a_datum_through_vertices_refuses_by_cause() {
 
     assert_eq!(through(&mut m, [a, b, a]), OpError::DuplicateVertex);
     assert_eq!(
-        m.live_solids, before,
+        m.live_solids().to_vec(),
+        before,
         "a refusal must leave the model alone"
     );
 

@@ -351,7 +351,7 @@ pub enum BoolError {
         reason: RejectReason,
         at: Option<RejectWhere>,
     },
-    /// An input solid handle is not in `model.live_solids`.
+    /// An input solid handle is not in [`Model::live_solids`].
     InputNotLive,
 }
 

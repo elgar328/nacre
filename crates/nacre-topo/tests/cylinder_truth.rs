@@ -523,7 +523,7 @@ fn a_refused_statement_is_named_and_leaves_nothing_behind() {
         m.surface_count(),
         m.vertex_count(),
         m.edge_count(),
-        m.live_solids.len(),
+        m.live_solids().len(),
     );
     let two = Rat::from_int(2);
     let five = Rat::from_int(5);
@@ -581,7 +581,7 @@ fn a_refused_statement_is_named_and_leaves_nothing_behind() {
             m.surface_count(),
             m.vertex_count(),
             m.edge_count(),
-            m.live_solids.len()
+            m.live_solids().len()
         ),
         before,
         "a refusal is decided before anything is pushed"

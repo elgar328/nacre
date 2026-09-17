@@ -1012,6 +1012,21 @@ impl Model {
         self.live_solids.retain(|h| !drop.contains(h));
     }
 
+    /// **Make a solid that is already in the arena live again.**
+    ///
+    /// ★ [`Model::push_solid`]'s doc has always described this move — *"editing ops instead mutate
+    /// live_solids directly (drop the superseded solid, **add the new**)"* — but there was no door
+    /// for the second half, so callers reached for the field. The population is the reject paths
+    /// in `ops`, which retire the operands through a boolean and then have to put the original
+    /// back when the op itself refuses.
+    pub fn make_live(&mut self, h: Handle<Solid>) {
+        debug_assert!(
+            (h.index() as usize) < self.solids.len(),
+            "a solid the arena does not hold cannot be live"
+        );
+        self.live_solids.push(h);
+    }
+
     /// **Put the live set back** — the rollback half of a rejected operation.
     ///
     /// ★ This exists so the transaction has a name. The idiom it replaces (`let snapshot =

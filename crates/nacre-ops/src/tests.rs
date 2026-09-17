@@ -308,7 +308,7 @@ fn l_prism() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
-    let s = m.live_solids[0];
+    let s = m.live_solids()[0];
     (m, s)
 }
 
@@ -325,7 +325,7 @@ fn rotated_l_prism() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
-    let s = m.live_solids[0];
+    let s = m.live_solids()[0];
     (m, s)
 }
 
@@ -478,12 +478,16 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
         } else {
             (r, c)
         };
-        let live = m.live_solids.clone();
+        let live = m.live_solids().to_vec();
         assert_rejects(
             || boolean(&mut m, BoolKind::Cut, r, c),
             RejectReason::NonManifoldVertex,
         );
-        assert_eq!(m.live_solids, live, "reject must not mutate the live set");
+        assert_eq!(
+            m.live_solids().to_vec(),
+            live,
+            "reject must not mutate the live set"
+        );
     };
     run(false); // axis-aligned
     run(true); // rotated
@@ -1004,7 +1008,7 @@ fn parallel_boolean_is_thread_order_independent() {
             2.0,
         )])
         .unwrap();
-        let mut acc = m.live_solids[0];
+        let mut acc = m.live_solids()[0];
         let mut sig = String::new();
         for i in 0..n {
             let fin = {
@@ -1088,8 +1092,8 @@ fn parallel_boolean_is_thread_order_independent() {
             extrude_log_op(ngon(16, 2.0, 2.5, 0.5), 3.0),
         ])
         .unwrap();
-        let a = m.live_solids[0];
-        let b = m.live_solids[1];
+        let a = m.live_solids()[0];
+        let b = m.live_solids()[1];
         let up = Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::from_int(1)]);
         let b = transform(&mut m, b, &up).unwrap();
         m.rebuild_adjacency();
@@ -1178,7 +1182,7 @@ fn u_prism() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let m = replay(&[extrude_log_op(u, 1.0)]).unwrap();
-    let s = m.live_solids[0];
+    let s = m.live_solids()[0];
     (m, s)
 }
 
@@ -1825,7 +1829,7 @@ fn a_ring_inside_a_ring_is_what_nesting_looks_like() {
 fn grazed_plate(outline: &[[f64; 2]]) -> (Vec<WorkingPlane>, usize, Ring, Ring) {
     let profile = Profile2d::polygon(outline.iter().map(|&p| p2(p[0], p[1])).collect()).unwrap();
     let mut m = replay(&[extrude_log_op(profile, 12.0)]).unwrap();
-    let plate = m.live_solids[0];
+    let plate = m.live_solids()[0];
     // Through, so the cap really is holed rather than dimpled.
     let pocket = m.add_cuboid(
         Point3::from_array([20.0, 10.0, -1.0]),
@@ -4817,7 +4821,7 @@ fn a_rotated_cylinder_is_still_undecided() {
     .unwrap();
     m.rebuild_adjacency();
     assert!(carries_motion(&m, tool), "the turn records a chain");
-    let live = m.live_solids.clone();
+    let live = m.live_solids().to_vec();
     let err = boolean(&mut m, BoolKind::Cut, plate, tool).expect_err("no world description");
     assert!(
         matches!(
@@ -4829,7 +4833,11 @@ fn a_rotated_cylinder_is_still_undecided() {
         ),
         "{err:?}"
     );
-    assert_eq!(m.live_solids, live, "the live set survives the refusal");
+    assert_eq!(
+        m.live_solids().to_vec(),
+        live,
+        "the live set survives the refusal"
+    );
 }
 
 /// A rational translation supersedes a cuboid: rigid, so volume/area are
@@ -4849,7 +4857,7 @@ fn transform_translate_cuboid() {
     let c2 = transform(&mut m, c, &iso).unwrap();
     m.rebuild_adjacency();
 
-    assert_eq!(m.live_solids, vec![c2], "input superseded");
+    assert_eq!(m.live_solids().to_vec(), vec![c2], "input superseded");
     assert!(nacre_validate::validate(&m).is_empty());
     let after = nacre_props::mass_props(&m, c2).unwrap();
     assert!(
@@ -5038,7 +5046,7 @@ fn copy_is_deterministic() {
             Point3::from_array([2.0, 3.0, 4.0]),
         );
         let twin = crate::transform::copy(&mut m, c).unwrap();
-        (bbox_lo(&m, twin), twin, m.live_solids.clone())
+        (bbox_lo(&m, twin), twin, m.live_solids().to_vec())
     };
     assert_eq!(build(), build(), "same ops → same geometry and handles");
 }
@@ -5090,7 +5098,7 @@ fn transform_rotate_cuboid_tilts_and_cuts() {
     let c2 = transform(&mut m, c, &rot30()).unwrap();
     m.rebuild_adjacency();
 
-    assert_eq!(m.live_solids, vec![c2], "input superseded");
+    assert_eq!(m.live_solids().to_vec(), vec![c2], "input superseded");
     assert!(nacre_validate::validate(&m).is_empty());
     let after = nacre_props::mass_props(&m, c2).unwrap();
     assert!(
@@ -5285,7 +5293,7 @@ fn transform_rotate_op_applies() {
     let OpOutput::Transform { solid } = out else {
         panic!("expected Transform output, got {out:?}");
     };
-    assert_eq!(m.live_solids, vec![solid]);
+    assert_eq!(m.live_solids().to_vec(), vec![solid]);
     assert!(solid_is_rotated(&m, solid));
 }
 
@@ -7301,7 +7309,7 @@ proptest! {
             dist: 1.0,
         }])
         .unwrap();
-        let prism = *m.live_solids.first().unwrap();
+        let prism = *m.live_solids().first().unwrap();
         let vol_prism = nacre_props::mass_props(&m, prism).unwrap().volume;
         let c = m.add_cuboid(Point3::from_array([-10.0; 3]), Point3::from_array([10.0; 3]));
         let res = boolean_one(&mut m, BoolKind::Common, prism, c);
@@ -8750,7 +8758,7 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
         m.vertex_count(),
         m.edge_count(),
         m.face_count(),
-        m.live_solids.len(),
+        m.live_solids().len(),
     );
     let cases: [(Operation, OpError); 2] = [
         (
@@ -8775,7 +8783,7 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
             m.vertex_count(),
             m.edge_count(),
             m.face_count(),
-            m.live_solids.len()
+            m.live_solids().len()
         ),
         before,
         "a refusal is decided before anything is pushed"
@@ -8830,8 +8838,8 @@ fn a_logged_cylinder_cuts_a_through_hole() {
         },
     ];
     let m = replay(&log).expect("a logged drill");
-    assert_eq!(m.live_solids.len(), 1, "one drilled plate");
-    let v = nacre_props::mass_props(&m, m.live_solids[0])
+    assert_eq!(m.live_solids().len(), 1, "one drilled plate");
+    let v = nacre_props::mass_props(&m, m.live_solids()[0])
         .expect("props")
         .volume;
     let want = 4.0 * 4.0 * 2.0 - std::f64::consts::PI * 0.25 * 2.0;
@@ -9147,7 +9155,7 @@ fn a_holes_winding_is_checked_too() {
     );
 
     // A drilled face: an outer polygon with one rim hole.
-    let solid = m.live_solids[0];
+    let solid = m.live_solids()[0];
     let shell = m.solid(solid).outer;
     let faces = m.shell(shell).faces.clone();
     let victim = *faces
@@ -9174,7 +9182,7 @@ fn a_holes_winding_is_checked_too() {
         outer: sh,
         cavities: vec![],
     });
-    m.live_solids.retain(|&s| s == replaced);
+    m.restore_live(vec![replaced]);
     m.rebuild_adjacency();
 
     let vs = nacre_validate::validate(&m);
@@ -9253,7 +9261,7 @@ fn a_polygonal_holes_winding_is_checked_too() {
         outer: sh,
         cavities: vec![],
     });
-    m.live_solids.retain(|&s| s == replaced);
+    m.restore_live(vec![replaced]);
     m.rebuild_adjacency();
 
     let vs = nacre_validate::validate(&m);
@@ -9353,7 +9361,7 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
     ])
     .expect("a logged drill");
     assert!(
-        radial_sense(&m, m.live_solids[0]) < 0.0,
+        radial_sense(&m, m.live_solids()[0]) < 0.0,
         "a bore's wall faces its axis — the material is outside the wall"
     );
 }

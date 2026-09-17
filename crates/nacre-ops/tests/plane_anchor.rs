@@ -279,7 +279,7 @@ fn topo_sig(m: &Model) -> Vec<String> {
         ));
     }
     out.push(
-        m.live_solids
+        m.live_solids()
             .iter()
             .map(|h| h.index().to_string())
             .collect::<Vec<_>>()
@@ -407,7 +407,7 @@ fn a_pre_pushed_plane_does_not_move_the_model() {
         );
 
         let size = plain
-            .live_solids
+            .live_solids()
             .iter()
             .filter_map(|&s| nacre_props::bounds(&plain, s).ok())
             .map(|(lo, hi)| (hi - lo).as_array().iter().cloned().fold(0.0f64, f64::max))
@@ -429,7 +429,7 @@ fn a_pre_pushed_plane_does_not_move_the_model() {
         }
 
         let vol = |m: &Model| -> f64 {
-            m.live_solids
+            m.live_solids()
                 .iter()
                 .map(|&s| {
                     nacre_props::mass_props(m, s)
@@ -466,7 +466,7 @@ fn a_pre_pushed_plane_does_not_move_the_model() {
 /// The anchor `build_prism` chose for the base cap — read back so the report can say how far the
 /// pre-statement actually moved `d`, instead of assuming which ring point won the winding.
 fn plain_base_anchor(m: &Model) -> Point3 {
-    let f = m.shell(m.solid(m.live_solids[0]).outer).faces[0];
+    let f = m.shell(m.solid(m.live_solids()[0]).outer).faces[0];
     match m.surface_cache(m.face(f).surface) {
         nacre_geom::Surface::Plane(p) => p.origin(),
         nacre_geom::Surface::Cylinder(_) => unreachable!("the wf base cap is planar"),

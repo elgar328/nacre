@@ -35,7 +35,7 @@ fn square(a: f64, b: f64) -> Profile2d {
 /// The `Frame` motions the model's live faces sketch in — a wall's truth points at the node,
 /// and the node's `plane` is the sketch plane's handle (not the wall's own surface).
 fn frame_nodes(m: &Model) -> Vec<Motion> {
-    m.live_solids
+    m.live_solids()
         .iter()
         .flat_map(|&s| m.shell(m.solid(s).outer).faces.iter())
         .filter_map(|&fh| {

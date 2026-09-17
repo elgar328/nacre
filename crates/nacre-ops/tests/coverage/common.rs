@@ -198,7 +198,7 @@ pub fn l_prism() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
-    let s = m.live_solids[0];
+    let s = m.live_solids()[0];
     (m, s)
 }
 
@@ -215,7 +215,7 @@ pub fn rotated_l_prism() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
-    let s = m.live_solids[0];
+    let s = m.live_solids()[0];
     (m, s)
 }
 
@@ -290,7 +290,7 @@ pub fn u_prism() -> (Model, Handle<Solid>) {
     ])
     .unwrap();
     let m = replay(&[extrude_log_op(u, 1.0)]).unwrap();
-    let s = m.live_solids[0];
+    let s = m.live_solids()[0];
     (m, s)
 }
 

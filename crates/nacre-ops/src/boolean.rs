@@ -49,7 +49,7 @@ pub fn boolean_with_report(
     // no `T: Eq` bound to give). The guard is one step further in — the first `get` dies with the
     // cross-store message. Re-anchoring in `replay` restores the premise for a log; a handle
     // passed straight to `apply` from another model is a caller bug and stays one.
-    if !model.live_solids.contains(&a) || !model.live_solids.contains(&b) {
+    if !model.live_solids().contains(&a) || !model.live_solids().contains(&b) {
         return Err(BoolError::InputNotLive);
     }
     // The arrangement engine (`arrangement.rs`) is the sole boolean path: one per-plane-class 2D
@@ -61,11 +61,11 @@ pub fn boolean_with_report(
     // here makes the rule hold no matter where inside the engine a reject is raised or added later.
     // (Orphaned result cells stay in the append-only arena, unreachable, as any superseded solid's
     // do — the arena is not restored and is not meant to be.)
-    let snapshot = model.live_solids.clone();
+    let snapshot = model.live_solids().to_vec();
     let (result, notes, _class_of) = match crate::arrangement::boolean(model, kind, a, b) {
         Ok(v) => v,
         Err(e) => {
-            model.live_solids = snapshot;
+            model.restore_live(snapshot);
             return Err(surfacing(e));
         }
     };
@@ -73,7 +73,7 @@ pub fn boolean_with_report(
     // rather than return. Valid results always pass, so this never false-rejects; the traversal
     // reads the topology stores directly (no adjacency rebuild, no coordinates).
     if let Some((t, at)) = check_result_topology(model, &result) {
-        model.live_solids = snapshot;
+        model.restore_live(snapshot);
         return Err(surfacing(match at {
             Some(w) => crate::reject_at(t, w),
             None => reject(t),
@@ -170,16 +170,16 @@ pub(crate) fn boolean_with_classes(
 ) -> Result<(Vec<Handle<Solid>>, crate::arrangement::ClassOf), BoolError> {
     // The live-set restore is [`boolean`]'s rule, held here too: a reject leaves the live model
     // alone whichever entry point raised it.
-    let snapshot = model.live_solids.clone();
+    let snapshot = model.live_solids().to_vec();
     let (result, notes, class_of) = match crate::arrangement::boolean(model, kind, a, b) {
         Ok(v) => v,
         Err(e) => {
-            model.live_solids = snapshot;
+            model.restore_live(snapshot);
             return Err(surfacing(e));
         }
     };
     if let Some((t, at)) = check_result_topology(model, &result) {
-        model.live_solids = snapshot;
+        model.restore_live(snapshot);
         return Err(surfacing(match at {
             Some(w) => crate::reject_at(t, w),
             None => reject(t),
@@ -1567,7 +1567,7 @@ pub(crate) fn assemble_fuse_cut(
     tangencies: Tangencies<'_>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
     let out = reconstruct(model, jd, seam, faces, cyls, cut_rims, deferred, tangencies)?;
-    model.live_solids.retain(|&s| s != a && s != b);
+    model.supersede_live(&[a, b]);
     Ok(out)
 }
 

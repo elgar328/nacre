@@ -81,7 +81,7 @@ fn a_mirror_preserves_volume_and_stays_outward() {
     assert!((after.volume - before.volume).abs() < 1e-12);
     assert!((after.area - before.area).abs() < 1e-12);
     assert!(nacre_validate::validate(&m).is_empty());
-    assert!(!m.live_solids.contains(&a), "mirror supersedes its input");
+    assert!(!m.live_solids().contains(&a), "mirror supersedes its input");
 }
 
 /// The mirror actually moves the shape: an asymmetric solid's coordinates must change. Without

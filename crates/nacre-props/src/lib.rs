@@ -1001,7 +1001,7 @@ mod tests {
             outer: a_outer,
             cavities: vec![void],
         });
-        m.live_solids.retain(|&s| s == hollow); // supersede the two source cubes
+        m.restore_live(vec![hollow]); // supersede the two source cubes
         mass_props(&m, hollow).unwrap()
     }
 

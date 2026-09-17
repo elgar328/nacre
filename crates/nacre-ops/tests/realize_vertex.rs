@@ -70,7 +70,7 @@ fn boolean_corner() -> Model {
 
 fn boolean_twice() -> Model {
     let mut m = boolean_corner();
-    let a = m.live_solids[0];
+    let a = m.live_solids()[0];
     let b = cuboid(&mut m, [-1.0, 4.4, 4.4], [11.0, 8.8, 8.8]);
     boolean(&mut m, BoolKind::Cut, a, b).expect("second cut");
     m.rebuild_adjacency();
@@ -106,7 +106,7 @@ fn tilted_frame(passes: usize) -> Model {
 
     let mut done: Vec<Handle<Surface>> = Vec::new();
     for pass in 0..passes {
-        let live = m.live_solids[0];
+        let live = m.live_solids()[0];
         let wall = *m
             .shell(m.solid(live).outer)
             .faces
@@ -248,7 +248,7 @@ fn pierce_vertices(m: &mut Model) -> Vec<Handle<Vertex>> {
 fn live_vertices(m: &Model) -> Vec<Handle<Vertex>> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for &s in &m.live_solids {
+    for &s in m.live_solids() {
         let sol = m.solid(s);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
             for &fh in &m.shell(sh).faces {
@@ -601,7 +601,7 @@ fn the_edge_cache_is_the_derivation_of_realized_endpoints() {
 #[test]
 fn a_moved_solid_is_realized_from_its_moved_definition() {
     let mut m = tilted_frame(1);
-    let solid = m.live_solids[0];
+    let solid = m.live_solids()[0];
     let OpOutput::Transform { solid: moved } = apply(
         &mut m,
         &Operation::Transform {
@@ -617,7 +617,7 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
         unreachable!()
     };
     m.rebuild_adjacency();
-    assert_eq!(m.live_solids, vec![moved]);
+    assert_eq!(m.live_solids().to_vec(), vec![moved]);
     let (mut bounded, mut kept) = (0usize, 0usize);
     for vh in live_vertices(&m) {
         match *m.vertex_cache(vh) {

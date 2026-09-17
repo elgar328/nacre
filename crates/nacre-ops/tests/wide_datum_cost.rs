@@ -109,7 +109,7 @@ fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
 fn live_verts(m: &Model) -> Vec<Handle<Vertex>> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
-    for &s in &m.live_solids {
+    for &s in m.live_solids() {
         let sol = m.solid(s);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
             for &fh in &m.shell(sh).faces {
@@ -353,7 +353,7 @@ fn what_a_datum_bearing_boolean_costs() {
     // identical climb counts, because a datum nobody cuts with never reaches a plane table.
     let run = |mode: &str| -> Option<(u64, u64, u64)> {
         let mut m = wf_family_with_pocket();
-        let target = m.live_solids[0];
+        let target = m.live_solids()[0];
         // ★ The named arms measure over **discovered** vertices (their original question was the
         // width of discovered coordinates). The nameless arm lifts that filter: this family's
         // differ-population lives on *constructed* corners (prism corners in one frame, pocket

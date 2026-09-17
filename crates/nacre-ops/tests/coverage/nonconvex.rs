@@ -50,7 +50,7 @@ fn cut_box_inside_non_convex_is_empty() {
     // boolean succeeds with no solids — and consumes both operands like any other success.
     let (mut m, l, bx) = l_and_inner_box();
     assert!(boolean(&mut m, BoolKind::Cut, bx, l).unwrap().is_empty());
-    assert!(m.live_solids.is_empty(), "both operands are consumed");
+    assert!(m.live_solids().is_empty(), "both operands are consumed");
 }
 
 #[test]
@@ -444,7 +444,7 @@ fn a_flipped_hole_loop_is_caught() {
         outer: shell,
         cavities: vec![],
     });
-    m.live_solids = vec![solid];
+    m.restore_live(vec![solid]);
     m.rebuild_adjacency();
 
     let vs = nacre_validate::validate(&m);
@@ -614,7 +614,7 @@ fn transform_op_applies() {
     )
     .unwrap();
     match out {
-        OpOutput::Transform { solid } => assert_eq!(m.live_solids, vec![solid]),
+        OpOutput::Transform { solid } => assert_eq!(m.live_solids().to_vec(), vec![solid]),
         other => panic!("expected Transform output, got {other:?}"),
     }
 }
@@ -636,7 +636,7 @@ fn cut_containment_makes_a_cavity() {
     assert_eq!(reach.faces.len(), 12);
     assert_eq!(reach.vertices.len(), 16);
     assert_eq!(reach.edges.len(), 24);
-    assert_eq!(m.live_solids, vec![r]);
+    assert_eq!(m.live_solids().to_vec(), vec![r]);
 }
 
 #[test]
@@ -667,7 +667,7 @@ fn fuse_containment_is_the_container() {
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - vol_a).abs() < 1e-12, "volume {vol}");
     assert!(m.solid(r).cavities.is_empty());
-    assert_eq!(m.live_solids, vec![r]);
+    assert_eq!(m.live_solids().to_vec(), vec![r]);
 }
 
 #[test]
@@ -682,7 +682,7 @@ fn containment_symmetric_when_a_inside_b() {
             .unwrap()
             .is_empty()
     );
-    assert!(m.live_solids.is_empty(), "both operands are consumed");
+    assert!(m.live_solids().is_empty(), "both operands are consumed");
 
     // Fuse(inner ∪ outer) = outer.
     let (mut m, outer, inner) = nested_boxes();
@@ -824,7 +824,7 @@ fn boolean_topology_is_the_same_on_untidy_coordinates() {
 #[test]
 fn boolean_rejects_non_live_input() {
     let (mut m, a, b) = two_boxes();
-    m.live_solids.retain(|&s| s != b); // as if superseded
+    m.supersede_live(&[b]); // as if superseded
     assert_eq!(
         boolean_one(&mut m, BoolKind::Common, a, b),
         Err(BoolError::InputNotLive)
@@ -840,7 +840,7 @@ fn boolean_op_applies_and_wraps_error() {
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
-    m.live_solids.retain(|&s| s != b); // retire `b` behind the op's back
+    m.supersede_live(&[b]); // retire `b` behind the op's back
     assert_eq!(
         apply(
             &mut m,
@@ -872,5 +872,5 @@ fn boolean_op_passes_an_empty_result_through() {
     )
     .unwrap();
     assert_eq!(out, OpOutput::Boolean { solids: vec![] });
-    assert!(m.live_solids.is_empty(), "both operands are consumed");
+    assert!(m.live_solids().is_empty(), "both operands are consumed");
 }

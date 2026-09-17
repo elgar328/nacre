@@ -211,7 +211,7 @@ fn a_caller_can_name_vertices_and_build_a_datum_through_them() {
 
     // The walk. This is the whole vocabulary a caller has for "give me a corner".
     let mut corners = Vec::new();
-    for &s in &m.live_solids {
+    for &s in m.live_solids() {
         let sol = m.solid(s);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
             for &fh in &m.shell(sh).faces {

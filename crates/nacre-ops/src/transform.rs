@@ -25,14 +25,14 @@ pub(crate) fn transform(
     // no `T: Eq` bound to give). The guard is one step further in — the first `get` dies with the
     // cross-store message. Re-anchoring in `replay` restores the premise for a log; a handle
     // passed straight to `apply` from another model is a caller bug and stays one.
-    if !model.live_solids.contains(&solid) {
+    if !model.live_solids().contains(&solid) {
         return Err(OpError::SolidNotLive);
     }
     if !defs_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
     let out = transform_solid(model, solid, &Xform::Rigid(isometry))?;
-    model.live_solids.retain(|&s| s != solid);
+    model.supersede_live(&[solid]);
     Ok(out)
 }
 
@@ -57,7 +57,7 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
     // no `T: Eq` bound to give). The guard is one step further in — the first `get` dies with the
     // cross-store message. Re-anchoring in `replay` restores the premise for a log; a handle
     // passed straight to `apply` from another model is a caller bug and stays one.
-    if !model.live_solids.contains(&solid) {
+    if !model.live_solids().contains(&solid) {
         return Err(OpError::SolidNotLive);
     }
     if !defs_are_remappable(model, solid) {
@@ -148,14 +148,14 @@ pub(crate) fn mirror(
     // no `T: Eq` bound to give). The guard is one step further in — the first `get` dies with the
     // cross-store message. Re-anchoring in `replay` restores the premise for a log; a handle
     // passed straight to `apply` from another model is a caller bug and stays one.
-    if !model.live_solids.contains(&solid) {
+    if !model.live_solids().contains(&solid) {
         return Err(OpError::SolidNotLive);
     }
     if !defs_are_remappable(model, solid) {
         return Err(OpError::OriginNotOnSolid);
     }
     let out = transform_solid(model, solid, &Xform::mirror(axis, offset))?;
-    model.live_solids.retain(|&s| s != solid);
+    model.supersede_live(&[solid]);
     Ok(out)
 }
 
@@ -1495,7 +1495,7 @@ mod tests {
             outer: sh,
             cavities: vec![],
         });
-        m.live_solids.retain(|&x| x == franken_solid);
+        m.restore_live(vec![franken_solid]);
 
         let iso = Isometry::translation([Rat::from_int(0), Rat::from_int(0), Rat::from_int(1)]);
         let moved = transform_solid(&mut m, franken_solid, &Xform::Rigid(&iso)).expect("moves");

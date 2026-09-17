@@ -71,7 +71,7 @@ fn cube_and_wedge(tip_x: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
 }
 
 fn expect_self_touch(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>, what: &str) {
-    let live = m.live_solids.clone();
+    let live = m.live_solids().to_vec();
     let err = boolean(m, BoolKind::Cut, a, b).expect_err(what);
     assert!(
         matches!(
@@ -90,7 +90,7 @@ fn expect_self_touch(m: &mut Model, a: Handle<Solid>, b: Handle<Solid>, what: &s
     );
     // ★ This is the kernel's first reject raised on a fully assembled result, so it is the first
     // one that could have handed back a model with its operands consumed. It must not.
-    assert_eq!(*m.live_solids, live, "a reject retired the operands");
+    assert_eq!(m.live_solids(), live, "a reject retired the operands");
 }
 
 /// ★ **The case the reject is for.** The wedge's tip lands on `x = 1`; the cut leaves one body
@@ -126,7 +126,7 @@ fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
     m.rebuild_adjacency();
     // Not lifted, and as tall as the cube: the cut goes clean through.
     let b = prism(&mut m, &[[1.0, 0.5], [0.1, 0.1], [0.1, 0.9]], 1.0);
-    let live = m.live_solids.clone();
+    let live = m.live_solids().to_vec();
     assert!(
         matches!(
             boolean(&mut m, BoolKind::Cut, a, b).unwrap_err(),
@@ -137,7 +137,7 @@ fn a_wedge_cut_through_the_whole_block_is_not_a_solid() {
         ),
         "the through cut leaves the wall touching the pocket along a chord"
     );
-    assert_eq!(*m.live_solids, live, "a reject retired the operands");
+    assert_eq!(m.live_solids(), live, "a reject retired the operands");
 }
 
 /// The same through cut with the tip off the wall: an ordinary through slot, and it must build.

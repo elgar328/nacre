@@ -1662,7 +1662,7 @@ mod wide_name_rescue {
     fn live_verts(m: &Model) -> Vec<nacre_store::Handle<nacre_topo::Vertex>> {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
-        for &s in &m.live_solids {
+        for &s in m.live_solids() {
             let sol = m.solid(s);
             for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
                 for &fh in &m.shell(sh).faces {

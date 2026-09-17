@@ -255,7 +255,7 @@ fn u_prism() -> (Model, Handle<Solid>) {
         dist: 1.0,
     }])
     .unwrap();
-    let s = m.live_solids[0];
+    let s = m.live_solids()[0];
     (m, s)
 }
 
@@ -267,7 +267,7 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
         dist: 1.0,
     }])
     .unwrap();
-    let s = m.live_solids[0];
+    let s = m.live_solids()[0];
     let shell = m.solid(s).outer;
     let top = *m
         .shell(shell)
@@ -314,7 +314,7 @@ fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
         dist: 1.0,
     }])
     .unwrap();
-    let a = m.live_solids[0];
+    let a = m.live_solids()[0];
     let b = m.add_cuboid(
         Point3::from_array([0.3, 0.3, 0.5]),
         Point3::from_array([0.7, 0.7, 1.5]),
@@ -343,7 +343,7 @@ fn island_cut() -> (Model, Handle<Solid>) {
         dist: 1.0,
     }])
     .unwrap();
-    let a = m.live_solids[0];
+    let a = m.live_solids()[0];
     let b = m.add_cuboid(
         Point3::from_array([0.3, 0.3, 0.5]),
         Point3::from_array([0.7, 0.7, 1.5]),
@@ -398,7 +398,7 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
         },
     ])
     .unwrap();
-    let (a, b) = (m.live_solids[0], m.live_solids[1]);
+    let (a, b) = (m.live_solids()[0], m.live_solids()[1]);
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     m.rebuild_adjacency();
     (m, r)
@@ -449,7 +449,7 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
         },
     ])
     .unwrap();
-    let (a, b) = (m.live_solids[0], m.live_solids[1]);
+    let (a, b) = (m.live_solids()[0], m.live_solids()[1]);
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     m.rebuild_adjacency();
     (m, r)
@@ -521,7 +521,7 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
         },
     ])
     .unwrap();
-    let (a, b) = (m.live_solids[0], m.live_solids[1]);
+    let (a, b) = (m.live_solids()[0], m.live_solids()[1]);
     let r = boolean_one(&mut m, BoolKind::Cut, b, a).unwrap();
     m.rebuild_adjacency();
     (m, r)
@@ -758,7 +758,7 @@ fn only_the_signed_volume_sees_a_reversed_face() {
         outer: shell,
         cavities: vec![],
     });
-    m.live_solids = vec![solid];
+    m.restore_live(vec![solid]);
     m.rebuild_adjacency();
 
     let g = mesh_vs_props(&m, solid);
@@ -869,7 +869,7 @@ fn a_flipped_island_loop_is_caught() {
         outer: shell,
         cavities: vec![],
     });
-    m.live_solids = vec![solid];
+    m.restore_live(vec![solid]);
     m.rebuild_adjacency();
 
     assert!(
@@ -985,7 +985,7 @@ fn a_drilled_solid_meshes_watertight() {
         dist: 1.0,
     }])
     .unwrap();
-    let a = m.live_solids[0];
+    let a = m.live_solids()[0];
     let rod = m.add_cuboid(
         Point3::from_array([0.3, 0.3, -0.5]),
         Point3::from_array([0.5, 0.6, 1.5]),

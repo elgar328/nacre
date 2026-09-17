@@ -46,7 +46,7 @@ impl From<step_io::AuthorError> for StepError {
 /// solid with cavity shells is exported as a `BREP_WITH_VOIDS`. Coordinates are
 /// emitted in millimetres (nacre is unitless; STEP needs a unit).
 pub fn to_step(model: &Model) -> Result<String, StepError> {
-    build_step(model, &model.live_solids)
+    build_step(model, model.live_solids())
 }
 
 /// Export a single solid to AP242 (Ed2) STEP text — the solid's live closure
@@ -377,7 +377,7 @@ mod tests {
             outer: a_outer,
             cavities: vec![void],
         });
-        m.live_solids.retain(|&s| s == hollow); // supersede the two source cubes
+        m.restore_live(vec![hollow]); // supersede the two source cubes
 
         let text = to_step(&m).expect("export hollow");
         assert!(text.contains("BREP_WITH_VOIDS"), "no void entity in output");

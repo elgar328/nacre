@@ -22,7 +22,7 @@ fn cut_of_two_cubes() {
     assert!(vs.is_empty(), "{vs:?}");
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 0.875).abs() < 1e-12, "volume {vol}");
-    assert_eq!(m.live_solids, vec![r]);
+    assert_eq!(m.live_solids().to_vec(), vec![r]);
 }
 
 #[test]
@@ -35,7 +35,7 @@ fn fuse_of_two_cubes() {
     assert!(vs.is_empty(), "{vs:?}");
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 1.875).abs() < 1e-12, "volume {vol}");
-    assert_eq!(m.live_solids, vec![r]);
+    assert_eq!(m.live_solids().to_vec(), vec![r]);
 }
 
 #[test]
@@ -54,7 +54,7 @@ fn common_of_two_cubes_is_their_overlap() {
     assert_eq!(reach.faces.len(), 6);
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 0.125).abs() < 1e-12, "volume {vol}");
-    assert_eq!(m.live_solids, vec![r]); // A and B superseded
+    assert_eq!(m.live_solids().to_vec(), vec![r]); // A and B superseded
 }
 
 #[test]

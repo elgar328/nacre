@@ -40,7 +40,7 @@ fn square(a: f64, b: f64) -> Profile2d {
 /// Every live edge's stated carriers vs the multiset of face surfaces adjacency sees using it.
 fn assert_carriers_agree(m: &Model, what: &str) {
     let mut seen = 0usize;
-    for &s in &m.live_solids {
+    for &s in m.live_solids() {
         for &fh in &m.shell(m.solid(s).outer).faces {
             let f = m.face(fh);
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
@@ -58,7 +58,7 @@ fn assert_carriers_agree(m: &Model, what: &str) {
     }
     // And globally: collect uses per edge, compare multisets.
     let mut uses: std::collections::HashMap<_, Vec<_>> = std::collections::HashMap::new();
-    for &s in &m.live_solids {
+    for &s in m.live_solids() {
         for &fh in &m.shell(m.solid(s).outer).faces {
             let f = m.face(fh);
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
@@ -105,7 +105,7 @@ fn assert_derived_matches_stored(m: &Model, what: &str, st: &mut DeriveStats) {
 
     let rel = |a: f64, b: f64| (a - b).abs() / a.abs().max(b.abs()).max(1.0);
     let mut seen = std::collections::HashSet::new();
-    for &s in &m.live_solids {
+    for &s in m.live_solids() {
         for &fh in &m.shell(m.solid(s).outer).faces {
             let f = m.face(fh);
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {

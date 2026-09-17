@@ -52,8 +52,13 @@ fn a_copy_leaves_the_original_live() {
     let b = copy_solid(&mut m, a);
 
     assert_ne!(a, b, "the twin is a new solid");
-    assert_eq!(m.live_solids.len(), 2, "both live: {:?}", m.live_solids);
-    assert!(m.live_solids.contains(&a) && m.live_solids.contains(&b));
+    assert_eq!(
+        m.live_solids().len(),
+        2,
+        "both live: {:?}",
+        m.live_solids().to_vec()
+    );
+    assert!(m.live_solids().contains(&a) && m.live_solids().contains(&b));
     assert!((volume(&m, b) - volume(&m, a)).abs() < 1e-12);
     assert!(nacre_validate::validate(&m).is_empty());
 }

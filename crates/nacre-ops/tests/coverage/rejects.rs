@@ -184,17 +184,22 @@ fn a_rejected_boolean_leaves_the_operands_live() {
     let mut rejected = 0;
     for kind in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
         let (mut m, a, b) = pinched();
-        let before = m.live_solids.clone();
+        let before = m.live_solids().to_vec();
         match boolean(&mut m, kind, a, b) {
             Err(e) => {
                 rejected += 1;
                 assert_eq!(
-                    m.live_solids, before,
+                    m.live_solids().to_vec(),
+                    before,
                     "{kind:?} rejected with {e:?} and changed the live set"
                 );
             }
             // A success *must* move the live set on: the operands are consumed.
-            Ok(_) => assert_ne!(m.live_solids, before, "{kind:?} succeeded without retiring"),
+            Ok(_) => assert_ne!(
+                m.live_solids().to_vec(),
+                before,
+                "{kind:?} succeeded without retiring"
+            ),
         }
     }
     assert_ne!(rejected, 0, "no kind rejected — the assertion never ran");

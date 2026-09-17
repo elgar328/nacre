@@ -2533,7 +2533,7 @@ pub fn face_sketch_frame(model: &Model, face: Handle<Face>) -> Result<SketchFram
 /// `FaceNotInLiveSolid` if no live outer shell holds it.
 fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let (solid_h, _) = model
-        .live_solids
+        .live_solids()
         .iter()
         .map(|&s| (s, model.solid(s).outer))
         // Index-only equality again: a face handle from another model can match here. The
@@ -2720,7 +2720,7 @@ fn extrude_and_boolean(
     )?;
     let (solids, class_of) =
         crate::boolean::boolean_with_classes(model, kind, frame.solid_h, prism).map_err(|e| {
-            model.live_solids.retain(|&s| s != prism); // drop the transient prism (atomic on failure)
+            model.supersede_live(&[prism]); // drop the transient prism (atomic on failure)
             OpError::Boolean(e)
         })?;
     // A pad's prism must actually meet the face. Two live solids are each one outer shell, so a
@@ -2734,8 +2734,8 @@ fn extrude_and_boolean(
     // "no reject-after-commit" contract true from the outside: the model the caller sees is the one
     // it had before. Only `live_solids` is touched — the store stays append-only.
     if matches!(kind, BoolKind::Fuse) && solids.len() > 1 {
-        model.live_solids.retain(|s| !solids.contains(s));
-        model.live_solids.push(frame.solid_h);
+        model.supersede_live(&solids);
+        model.make_live(frame.solid_h);
         return Err(OpError::PadMissesFace);
     }
     // Exposed cap = the result face on the prism's far-cap plane (face plane offset by n·signed),
@@ -2776,8 +2776,8 @@ fn extrude_and_boolean(
                 !solids.is_empty() || matches!(kind, BoolKind::Cut),
                 "a Fuse cannot produce an empty result"
             );
-            model.live_solids.retain(|s| !solids.contains(s));
-            model.live_solids.push(frame.solid_h);
+            model.supersede_live(&solids);
+            model.make_live(frame.solid_h);
             Err(no_cap)
         }
     }
@@ -3305,7 +3305,7 @@ mod frame_differential {
         }
         out.push((
             "live".into(),
-            m.live_solids
+            m.live_solids()
                 .iter()
                 .map(|h| h.index().to_string())
                 .collect::<Vec<_>>()

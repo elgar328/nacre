@@ -262,7 +262,7 @@ fn a_corner_flush_common_keeps_the_non_convex_overlap() {
     ])
     .unwrap();
     let mut m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
-    let lsolid = *m.live_solids.first().unwrap();
+    let lsolid = *m.live_solids().first().unwrap();
     let b = m.add_cuboid(
         Point3::from_array([0.0; 3]),
         Point3::from_array([1.5, 1.5, 0.5]),

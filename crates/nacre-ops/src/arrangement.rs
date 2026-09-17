@@ -9050,8 +9050,8 @@ mod tests {
             Point3::from_array([11.0, 11.0, 11.0]),
         );
         m.rebuild_adjacency();
-        let a2 = m.live_solids[0];
-        let b2 = m.live_solids[1];
+        let a2 = m.live_solids()[0];
+        let b2 = m.live_solids()[1];
         let PlaneSetup {
             cyls,
             planes: faces_tab,
@@ -9170,8 +9170,8 @@ mod tests {
             Point3::from_array([11.0, 11.0, 11.0]),
         );
         m.rebuild_adjacency();
-        let a2 = m.live_solids[0];
-        let b2 = m.live_solids[1];
+        let a2 = m.live_solids()[0];
+        let b2 = m.live_solids()[1];
         let PlaneSetup {
             cyls,
             planes: faces_tab,
@@ -9278,7 +9278,7 @@ mod tests {
             dist: 1.0,
         }])
         .unwrap();
-        let a = m.live_solids[0];
+        let a = m.live_solids()[0];
         let faces_tab = collect_planes(&m, a).unwrap();
         // One prism: no two faces are coplanar, so `plane_ix` is the identity and a face index and
         // its plane id coincide. Built through the real path anyway, so the test cannot drift.
@@ -10622,7 +10622,7 @@ mod tests {
             dist: 1.0,
         }])
         .unwrap();
-        let u = m.live_solids[0];
+        let u = m.live_solids()[0];
         let slab = m.add_cuboid(
             Point3::from_array([-0.5, 1.5, -0.5]),
             Point3::from_array([3.5, 2.5, 1.5]),
@@ -11897,7 +11897,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(out.len(), 1, "one welded solid");
-        m.live_solids = out;
+        m.restore_live(out);
         m.rebuild_adjacency();
         (m, setup, wc)
     }
@@ -11963,7 +11963,7 @@ mod tests {
     #[test]
     fn the_armed_solids_mass_properties_are_exact() {
         let (m, _setup, _wc) = armed_assembled_through_boss();
-        let props = nacre_props::mass_props(&m, m.live_solids[0]).unwrap();
+        let props = nacre_props::mass_props(&m, m.live_solids()[0]).unwrap();
         let volume = 32000.0 + 1000.0 * std::f64::consts::PI;
         let area = 6200.0 + 425.0 * std::f64::consts::PI;
         assert!(

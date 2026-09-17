@@ -61,7 +61,7 @@ fn extrude(m: &mut Model, plane: SketchPlane, profile: Profile2d, dist: f64) {
 /// existed — plus the cache/truth variant agreement, which is not type-carried.
 fn assert_all_planes_record_points(m: &Model, what: &str) {
     let mut seen = 0usize;
-    for &s in &m.live_solids {
+    for &s in m.live_solids() {
         for &sh in std::iter::once(&m.solid(s).outer).chain(m.solid(s).cavities.iter()) {
             for &fh in &m.shell(sh).faces {
                 let surf = m.face(fh).surface;
@@ -227,7 +227,7 @@ fn the_world_sugar_names_the_seed_a_sketch_then_sits_on() {
     let m1 = nacre_ops::replay(&log).unwrap();
     let m2 = nacre_ops::replay(&log).unwrap();
     let cap_surface = |m: &Model| {
-        let s = m.live_solids[0];
+        let s = m.live_solids()[0];
         // faces[0] of the extrude output is the base cap; find via the z=0 name instead of
         // output plumbing.
         m.shell(m.solid(s).outer)
