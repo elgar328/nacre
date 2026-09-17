@@ -53,7 +53,7 @@ fn a_swept_hole_matches_the_same_shape_cut_out() {
     let mut m = Model::new();
     let swept = extrude(&mut m, donut_profile(), 1.0);
     let swept_props = nacre_props::mass_props(&m, swept).unwrap();
-    let swept_faces = m.shells.get(m.solids.get(swept).outer).faces.len();
+    let swept_faces = m.shell(m.solid(swept).outer).faces.len();
 
     let mut m2 = Model::new();
     let block = m2.add_cuboid(
@@ -68,7 +68,7 @@ fn a_swept_hole_matches_the_same_shape_cut_out() {
     let cut = boolean_one(&mut m2, BoolKind::Cut, block, bar).unwrap();
     m2.rebuild_adjacency();
     let cut_props = nacre_props::mass_props(&m2, cut).unwrap();
-    let cut_faces = m2.shells.get(m2.solids.get(cut).outer).faces.len();
+    let cut_faces = m2.shell(m2.solid(cut).outer).faces.len();
 
     assert!(
         (swept_props.volume - cut_props.volume).abs() < 1e-12,
@@ -92,11 +92,11 @@ fn a_swept_hole_matches_the_same_shape_cut_out() {
 fn a_swept_hole_is_constructed_throughout() {
     let mut m = Model::new();
     let d = extrude(&mut m, donut_profile(), 1.0);
-    for &fh in &m.shells.get(m.solids.get(d).outer).faces {
-        let face = m.faces.get(fh).clone();
+    for &fh in &m.shell(m.solid(d).outer).faces {
+        let face = m.face(fh).clone();
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
-                for vh in m.edges.get(he.edge).vertices.iter() {
+                for vh in m.edge(he.edge).vertices.iter() {
                     assert!(
                         matches!(m.vertex_cache(*vh), PointCache::Bounded { .. }),
                         "a swept vertex is realized from its definition (cell 52)"
@@ -118,9 +118,9 @@ fn a_donut_prism_is_a_valid_genus_one_solid() {
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
 
-    let faces = &m.shells.get(m.solids.get(d).outer).faces;
+    let faces = &m.shell(m.solid(d).outer).faces;
     assert_eq!(faces.len(), 10, "4 outer walls + 4 hole walls + 2 caps");
-    let inner_loops: usize = faces.iter().map(|&fh| m.faces.get(fh).inner.len()).sum();
+    let inner_loops: usize = faces.iter().map(|&fh| m.face(fh).inner.len()).sum();
     assert_eq!(inner_loops, 2, "one hole loop per cap");
     assert!((volume(&m, d) - 12.0).abs() < 1e-12, "{}", volume(&m, d));
 }
@@ -170,11 +170,10 @@ fn a_profile_with_two_holes() {
         volume(&m, d)
     );
     let inner_loops: usize = m
-        .shells
-        .get(m.solids.get(d).outer)
+        .shell(m.solid(d).outer)
         .faces
         .iter()
-        .map(|&fh| m.faces.get(fh).inner.len())
+        .map(|&fh| m.face(fh).inner.len())
         .sum();
     assert_eq!(inner_loops, 4, "two holes on each of two caps");
 }
@@ -217,8 +216,7 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
     );
     m.rebuild_adjacency();
     let top = m
-        .shells
-        .get(m.solids.get(block).outer)
+        .shell(m.solid(block).outer)
         .faces
         .iter()
         .copied()
@@ -228,7 +226,7 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
                 block,
                 Point3::from_array([5.0, 5.0, 4.0]),
                 nacre_math::Vector3::from_array([0.0, 0.0, 1.0]),
-            ) && m.faces.get(fh).outer.half_edges.len() == 4
+            ) && m.face(fh).outer.half_edges.len() == 4
                 && m.vertex_point(nacre_topo_first_vertex(&m, fh)).as_array()[2] == 4.0
         })
         .expect("top face");
@@ -273,8 +271,8 @@ fn a_pocket_with_a_hole_sweeps_the_other_way() {
 /// The first vertex of a face's outer loop — a local helper, kept out of `common` because only
 /// the pocket fixture above needs it.
 fn nacre_topo_first_vertex(m: &Model, fh: Handle<nacre_topo::Face>) -> Handle<nacre_topo::Vertex> {
-    let he = m.faces.get(fh).outer.half_edges[0];
-    let [a, b] = m.edges.get(he.edge).vertices;
+    let he = m.face(fh).outer.half_edges[0];
+    let [a, b] = m.edge(he.edge).vertices;
     if he.forward { a } else { b }
 }
 
@@ -416,7 +414,7 @@ fn touching_rings_are_refused_on_every_profile_entry_point() {
         Point3::from_array([10.0, 10.0, 1.0]),
     );
     m.rebuild_adjacency();
-    let top = *m.shells.get(m.solids.get(base).outer).faces.last().unwrap();
+    let top = *m.shell(m.solid(base).outer).faces.last().unwrap();
     assert!(matches!(
         apply(
             &mut m,
@@ -681,9 +679,9 @@ fn a_non_pythagorean_arc_is_stated_and_extruded() {
     let got = volume(&m, s);
     assert!((got - want).abs() < 1e-9, "volume {got}, want {want}");
     // The lateral face's cache is the truth realized: √2, correctly rounded.
-    let radii: Vec<f64> = m
-        .faces
-        .iter()
+    let radii: Vec<f64> = (0..m.face_count() as u32)
+        .filter_map(|i| m.face_handle_at(i))
+        .map(|h| (h, m.face(h)))
         .filter_map(|(_, f)| match m.surface_cache(f.surface) {
             nacre_geom::Surface::Cylinder(c) => Some(c.radius()),
             _ => None,

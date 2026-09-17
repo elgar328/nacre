@@ -641,13 +641,12 @@ mod tests {
         };
         // The face that was `x = +1`: its outward normal after the turn (and the mirror).
         let face_toward = |m: &Model, s: nacre_store::Handle<nacre_topo::Solid>, n: [f64; 3]| {
-            let shell = m.solids.get(s).outer;
-            *m.shells
-                .get(shell)
+            let shell = m.solid(s).outer;
+            *m.shell(shell)
                 .faces
                 .iter()
                 .find(|&&fh| {
-                    let f = m.faces.get(fh);
+                    let f = m.face(fh);
                     let nacre_geom::Surface::Plane(pl) = m.surface_cache(f.surface) else {
                         return false;
                     };

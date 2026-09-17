@@ -98,26 +98,26 @@ pub(crate) fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
 /// same whatever order the face walk visits it in), `None` when every definition re-solves.
 /// One walk answers both spellings so the two cannot drift.
 pub(crate) fn foreign_named_vertex(model: &Model, solid: Handle<Solid>) -> Option<Handle<Vertex>> {
-    let src = model.solids.get(solid);
+    let src = model.solid(solid);
     let shells: Vec<Handle<Shell>> = std::iter::once(src.outer)
         .chain(src.cavities.iter().copied())
         .collect();
     let mut surfs: HashSet<Handle<Surface>> = HashSet::new();
     for &sh in &shells {
-        for &fh in &model.shells.get(sh).faces {
-            surfs.insert(model.faces.get(fh).surface);
+        for &fh in &model.shell(sh).faces {
+            surfs.insert(model.face(fh).surface);
         }
     }
     let named = |def: &VertexDef| def.carriers().all(|s| surfs.contains(&s));
     let mut worst: Option<Handle<Vertex>> = None;
     for &sh in &shells {
-        for &fh in &model.shells.get(sh).faces {
-            let face = model.faces.get(fh);
+        for &fh in &model.shell(sh).faces {
+            let face = model.face(fh);
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
-                    let edge = model.edges.get(he.edge);
+                    let edge = model.edge(he.edge);
                     for vh in edge.vertices.iter() {
-                        if !named(&model.vertices.get(*vh).def)
+                        if !named(&model.vertex(*vh).def)
                             && worst.is_none_or(|w| vh.index() < w.index())
                         {
                             worst = Some(*vh);
@@ -317,7 +317,7 @@ fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
     let candidates: Vec<(Carry, &Xform<'_>)> = std::iter::once((Carry::Full, motion))
         .chain(turn_xform.as_ref().map(|x| (Carry::Rotation, x)))
         .collect();
-    let src = model.solids.get(solid);
+    let src = model.solid(solid);
     // ★ S6a: the surfaces' exact points must survive the no-node path too. An exact motion
     // carries a `Constructed` surface's rational triple through `point_rat`/`mirror_point_rat`,
     // and that arithmetic can overflow `i128` even when every f64 above is exact (the two
@@ -354,8 +354,8 @@ fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
         }
     };
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
-        for &fh in &model.shells.get(sh).faces {
-            let face = model.faces.get(fh);
+        for &fh in &model.shell(sh).faces {
+            let face = model.face(fh);
             // Exhaustive for the same reason as `points_move`: a new `Surface` variant (M6's
             // sphere/cone) must be a compile error here, not a silently skipped probe.
             match model.surface_cache(face.surface) {
@@ -373,7 +373,7 @@ fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
             }
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
-                    for &vh in model.edges.get(he.edge).vertices.iter() {
+                    for &vh in model.edge(he.edge).vertices.iter() {
                         probe(&mut ok, model.vertex_point(vh));
                     }
                 }
@@ -657,7 +657,7 @@ fn transform_solid(
         .rigid()
         .map(|iso| Vector3::from_array(iso.offset_f64()))
         .unwrap_or_else(Vector3::zero);
-    let src = model.solids.get(solid).clone();
+    let src = model.solid(solid).clone();
 
     // Decided once, for the whole solid — see [`carry_of`].
     let carry = carry_of(model, solid, motion);
@@ -691,7 +691,7 @@ fn transform_solid(
         .collect();
     let face_order: Vec<Handle<Face>> = shell_order
         .iter()
-        .flat_map(|&sh| model.shells.get(sh).faces.clone())
+        .flat_map(|&sh| model.shell(sh).faces.clone())
         .collect();
 
     // Pass 1 — surfaces (dedup, moved): needed before vertex `Origin` remap.
@@ -717,7 +717,7 @@ fn transform_solid(
     // interact (`Loop::reversed`'s doc spells out why a reflection touches only the winding).
     let mut surf_flip: HashMap<Handle<Surface>, bool> = HashMap::new();
     for &fh in &face_order {
-        let s = model.faces.get(fh).surface;
+        let s = model.face(fh).surface;
         if surf_map.contains_key(&s) {
             continue;
         }
@@ -869,7 +869,7 @@ fn transform_solid(
     let mut edge_order: Vec<Handle<Edge>> = Vec::new();
     let mut edge_seen: HashSet<Handle<Edge>> = HashSet::new();
     for &fh in &face_order {
-        let face = model.faces.get(fh).clone();
+        let face = model.face(fh).clone();
         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
             for he in &lp.half_edges {
                 if edge_seen.insert(he.edge) {
@@ -887,7 +887,7 @@ fn transform_solid(
     let mut vert_order: Vec<Handle<Vertex>> = Vec::new();
     let mut vert_seen: HashSet<Handle<Vertex>> = HashSet::new();
     for &eh in &edge_order {
-        for vh in model.edges.get(eh).vertices {
+        for vh in model.edge(eh).vertices {
             if vert_seen.insert(vh) {
                 vert_order.push(vh);
             }
@@ -901,7 +901,7 @@ fn transform_solid(
                 .get(&s)
                 .expect("a definition's surface must be a face surface of the solid")
         };
-        let def = match model.vertices.get(vh).def {
+        let def = match model.vertex(vh).def {
             VertexDef::ThreePlane(planes) => VertexDef::ThreePlane(planes.map(remap)),
             VertexDef::OnSeam(pair) => VertexDef::OnSeam(pair.map(remap)),
             // ★ `.map(remap)` alone would be wrong here: pass 1 issues new surface handles in
@@ -968,7 +968,7 @@ fn transform_solid(
     // Pass 4 — edges (carrier/vertex handles remapped; the curve cache derives from them).
     let mut edge_map: HashMap<Handle<Edge>, Handle<Edge>> = HashMap::new();
     for &eh in &edge_order {
-        let e = *model.edges.get(eh);
+        let e = *model.edge(eh);
         // The carriers move with the surfaces (pass 1 mapped every reachable one, so the
         // lookups cannot miss); `push_edge` re-canonicalizes the pair. A rigid image of a
         // non-degenerate edge cannot degenerate, so the `None` is unreachable in practice —
@@ -1000,7 +1000,7 @@ fn transform_solid(
     };
     let mut face_map: HashMap<Handle<Face>, Handle<Face>> = HashMap::new();
     for &fh in &face_order {
-        let face = model.faces.get(fh).clone();
+        let face = model.face(fh).clone();
         let new_f = Face {
             surface: surf_map[&face.surface],
             outer: map_loop(&face.outer),
@@ -1018,8 +1018,7 @@ fn transform_solid(
     let mut shell_map: HashMap<Handle<Shell>, Handle<Shell>> = HashMap::new();
     for &sh in &shell_order {
         let faces: Vec<Handle<Face>> = model
-            .shells
-            .get(sh)
+            .shell(sh)
             .faces
             .iter()
             .map(|fh| face_map[fh])
@@ -1077,10 +1076,10 @@ mod tests {
             m.rebuild_adjacency();
             let pierce_points = |m: &Model, s: Handle<Solid>| -> Vec<Point3> {
                 let mut out = Vec::new();
-                for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-                    for he in &m.faces.get(fh).outer.half_edges {
-                        for vh in m.edges.get(he.edge).vertices {
-                            if matches!(m.vertices.get(vh).def, VertexDef::Pierce { .. }) {
+                for &fh in &m.shell(m.solid(s).outer).faces {
+                    for he in &m.face(fh).outer.half_edges {
+                        for vh in m.edge(he.edge).vertices {
+                            if matches!(m.vertex(vh).def, VertexDef::Pierce { .. }) {
                                 assert!(
                                     matches!(m.vertex_cache(vh), PointCache::Bounded { .. }),
                                     "{what}: a pierce vertex realizes: {:?}",
@@ -1202,11 +1201,10 @@ mod tests {
             Point3::from_array([1.0, 1.0, 1.0]),
         );
         assert!(
-            m.shells
-                .get(m.solids.get(s).outer)
+            m.shell(m.solid(s).outer)
                 .faces
                 .iter()
-                .any(|&f| m.faces.get(f).surface == deep_surf),
+                .any(|&f| m.face(f).surface == deep_surf),
             "the cuboid's top cap must intern onto the deep statement"
         );
         // Fixture qualification: the f64 side is exact, the rational side overflows.
@@ -1225,11 +1223,10 @@ mod tests {
         let moved = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
         m.rebuild_adjacency();
         let moved_surf = m
-            .shells
-            .get(m.solids.get(moved).outer)
+            .shell(m.solid(moved).outer)
             .faces
             .iter()
-            .map(|&f| m.faces.get(f).surface)
+            .map(|&f| m.face(f).surface)
             .find(|&s2| {
                 matches!(
                     m.surface(s2),
@@ -1341,16 +1338,16 @@ mod tests {
         });
         let out = transform(&mut m, s, &iso).expect("rotate the cylinder");
         let mut twin_surfs = std::collections::HashSet::new();
-        for &fh in &m.shells.get(m.solids.get(out).outer).faces {
-            twin_surfs.insert(m.faces.get(fh).surface);
+        for &fh in &m.shell(m.solid(out).outer).faces {
+            twin_surfs.insert(m.face(fh).surface);
         }
         let mut seams = 0;
-        for &fh in &m.shells.get(m.solids.get(out).outer).faces {
-            let face = m.faces.get(fh);
+        for &fh in &m.shell(m.solid(out).outer).faces {
+            let face = m.face(fh);
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
-                    for &vh in &m.edges.get(he.edge).vertices {
-                        if let VertexDef::OnSeam(pair) = m.vertices.get(vh).def {
+                    for &vh in &m.edge(he.edge).vertices {
+                        if let VertexDef::OnSeam(pair) = m.vertex(vh).def {
                             seams += 1;
                             assert!(
                                 pair.iter().all(|c| twin_surfs.contains(c)),
@@ -1382,11 +1379,10 @@ mod tests {
         let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
         m.rebuild_adjacency();
         let lateral = m
-            .shells
-            .get(m.solids.get(turned).outer)
+            .shell(m.solid(turned).outer)
             .faces
             .iter()
-            .map(|&f| m.faces.get(f).surface)
+            .map(|&f| m.face(f).surface)
             .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
             .expect("a cylinder keeps its lateral face");
         // An inexact turn records a node, and the def is carried **verbatim** — the recorded
@@ -1435,11 +1431,11 @@ mod tests {
             5.0,
         );
         m.rebuild_adjacency();
-        let shell = m.solids.get(s).outer;
-        let faces = m.shells.get(shell).faces.clone();
+        let shell = m.solid(s).outer;
+        let faces = m.shell(shell).faces.clone();
         let lateral = faces
             .iter()
-            .map(|&f| m.faces.get(f).surface)
+            .map(|&f| m.face(f).surface)
             .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
             .expect("lateral");
         let bottom = m.world_plane(Axis::Z); // the z = 0 cap interned onto the world seed
@@ -1507,14 +1503,14 @@ mod tests {
 
         // Find the two pierce vertices of the moved solid and read their defs.
         let mut seen = Vec::new();
-        let solid = m.solids.get(moved).clone();
+        let solid = m.solid(moved).clone();
         for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                let face = m.faces.get(fh).clone();
+            for &fh in &m.shell(sh).faces {
+                let face = m.face(fh).clone();
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
-                        for &vh in m.edges.get(he.edge).vertices.iter() {
-                            if let VertexDef::Pierce { planes, root, .. } = m.vertices.get(vh).def {
+                        for &vh in m.edge(he.edge).vertices.iter() {
+                            if let VertexDef::Pierce { planes, root, .. } = m.vertex(vh).def {
                                 seen.push((m.vertex_point(vh).as_array(), planes, root));
                             }
                         }
@@ -1565,11 +1561,10 @@ mod tests {
         let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
         m.rebuild_adjacency();
         let lateral = m
-            .shells
-            .get(m.solids.get(turned).outer)
+            .shell(m.solid(turned).outer)
             .faces
             .iter()
-            .map(|&f| m.faces.get(f).surface)
+            .map(|&f| m.face(f).surface)
             .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
             .expect("a cylinder keeps its lateral face");
         // A 90°-family turn is exact: nothing is recorded, and the def rides the very

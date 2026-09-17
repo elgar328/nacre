@@ -36,7 +36,10 @@ impl Adjacency {
         // order (deterministic) filtered by the reachable closure.
         let reach = model.reachable();
         let mut edge_uses: HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>> = HashMap::new();
-        for (fh, face) in model.faces.iter() {
+        let mut i = 0u32;
+        while let Some(fh) = model.face_handle_at(i) {
+            i += 1;
+            let face = model.face(fh);
             if !reach.faces.contains(&fh) {
                 continue;
             }
@@ -47,7 +50,10 @@ impl Adjacency {
             }
         }
         let mut vertex_edges: HashMap<Handle<Vertex>, Vec<Handle<Edge>>> = HashMap::new();
-        for (eh, edge) in model.edges.iter() {
+        let mut i = 0u32;
+        while let Some(eh) = model.edge_handle_at(i) {
+            i += 1;
+            let edge = model.edge(eh);
             if !reach.edges.contains(&eh) {
                 continue;
             }

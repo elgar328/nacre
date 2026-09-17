@@ -2879,7 +2879,7 @@ mod tests {
             for &f in &faces {
                 let n = m
                     .surface_name
-                    .get(&m.faces.get(f).surface)
+                    .get(&m.face(f).surface)
                     .and_then(|nm| nm.narrow())
                     .copied()
                     .expect("a tilted prism's face states itself");

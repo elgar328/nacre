@@ -262,9 +262,9 @@ fn sample_live_edges<'m>(
         let polyline = sample_edge(t, &mut vmap, model, cfg, eh, edge);
         t.by_edge.insert(eh, polyline);
     }
-    model
-        .faces
-        .iter()
+    (0..model.face_count() as u32)
+        .filter_map(|i| model.face_handle_at(i))
+        .map(|h| (h, model.face(h)))
         .filter(|(fh, _)| reach.faces.contains(fh))
         .collect()
 }

@@ -143,7 +143,7 @@ fn fin_fold_full(n: i128) -> (std::time::Duration, usize, f64) {
         spent += t.elapsed();
         m.rebuild_adjacency();
     }
-    let faces = m.shells.get(m.solids.get(acc).outer).faces.len();
+    let faces = m.shell(m.solid(acc).outer).faces.len();
     let volume = nacre_props::mass_props(&m, acc).expect("props").volume;
     (spent, faces, volume)
 }
@@ -176,7 +176,7 @@ fn fin_ring(n: i128, hub_first: bool) -> (std::time::Duration, usize, f64) {
         spent += t.elapsed();
         m.rebuild_adjacency();
     }
-    let faces = m.shells.get(m.solids.get(acc).outer).faces.len();
+    let faces = m.shell(m.solid(acc).outer).faces.len();
     let volume = nacre_props::mass_props(&m, acc).expect("props").volume;
     (spent, faces, volume)
 }

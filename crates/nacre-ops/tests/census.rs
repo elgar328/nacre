@@ -105,10 +105,10 @@ fn mirror(m: &mut Model, s: Handle<Solid>, axis: Axis, offset: Rat) -> Handle<So
 fn plane_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
     use std::hash::{Hash, Hasher};
     let mut bits: Vec<[u64; 4]> = Vec::new();
-    let src = m.solids.get(s).clone();
+    let src = m.solid(s).clone();
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
-        for &fh in &m.shells.get(sh).faces {
-            match m.surface_cache(m.faces.get(fh).surface) {
+        for &fh in &m.shell(sh).faces {
+            match m.surface_cache(m.face(fh).surface) {
                 nacre_geom::Surface::Plane(pl) => {
                     bits.push(pl.coefficients().map(f64::to_bits));
                 }
@@ -138,13 +138,13 @@ fn operands(m: &Model, a: Handle<Solid>, b: Handle<Solid>) -> String {
 fn coord_digest(m: &Model, s: Handle<Solid>) -> (usize, u64) {
     use std::hash::{Hash, Hasher};
     let mut bits: Vec<[u64; 3]> = Vec::new();
-    let src = m.solids.get(s).clone();
+    let src = m.solid(s).clone();
     for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
-        for &fh in &m.shells.get(sh).faces {
-            let face = m.faces.get(fh);
+        for &fh in &m.shell(sh).faces {
+            let face = m.face(fh);
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
-                    for &vh in m.edges.get(he.edge).vertices.iter() {
+                    for &vh in m.edge(he.edge).vertices.iter() {
                         let p = m.vertex_point(vh).as_array();
                         bits.push([p[0].to_bits(), p[1].to_bits(), p[2].to_bits()]);
                     }
@@ -210,13 +210,13 @@ fn record(
             let mut seen = std::collections::HashSet::new();
             let (mut realized, mut kept, mut ceiling) = (0usize, 0usize, 0usize);
             for &s in v {
-                let src = m.solids.get(s).clone();
+                let src = m.solid(s).clone();
                 for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
-                    for &fh in &m.shells.get(sh).faces {
-                        let face = m.faces.get(fh);
+                    for &fh in &m.shell(sh).faces {
+                        let face = m.face(fh);
                         for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                             for he in &lp.half_edges {
-                                for &vh in m.edges.get(he.edge).vertices.iter() {
+                                for &vh in m.edge(he.edge).vertices.iter() {
                                     if !seen.insert(vh) {
                                         continue;
                                     }
@@ -226,7 +226,7 @@ fn record(
                                     // `Ceiling`; the road has no way there at all and the cache is
                                     // `Unrealized`. Written out rather than as "not Bounded", so a
                                     // vertex cannot drift between the two refusals unnoticed.
-                                    match nacre_ops::realize_cache(m, &m.vertices.get(vh).def) {
+                                    match nacre_ops::realize_cache(m, &m.vertex(vh).def) {
                                         Ok((c, _)) => {
                                             realized += 1;
                                             assert!(
@@ -595,12 +595,11 @@ fn dump() {
             // The family qualifies itself: a wall whose name is narrow but whose squared
             // lengths overflow — the exact population the narrow frame derivation declines.
             let wall = *m
-                .shells
-                .get(m.solids.get(solid).outer)
+                .shell(m.solid(solid).outer)
                 .faces
                 .iter()
                 .find(|&&f| {
-                    let s = m.faces.get(f).surface;
+                    let s = m.face(f).surface;
                     m.surface_name
                         .get(&s)
                         .and_then(|n| n.narrow())
@@ -1390,10 +1389,10 @@ fn dump() {
         // Three corners of the turned block, in handle order so the statement is replay-stable.
         let mut vs: Vec<Handle<nacre_topo::Vertex>> = Vec::new();
         {
-            let sol = m.solids.get(turned);
+            let sol = m.solid(turned);
             'pick: for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-                for &fh in &m.shells.get(sh).faces {
-                    for &he in &m.faces.get(fh).outer.half_edges {
+                for &fh in &m.shell(sh).faces {
+                    for &he in &m.face(fh).outer.half_edges {
                         let vh = m.he_start(he);
                         if !vs.contains(&vh) {
                             vs.push(vh);

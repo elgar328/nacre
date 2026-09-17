@@ -82,19 +82,19 @@ pub(crate) enum ClassPlan {
 fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
     use nacre_topo::VertexDef;
 
-    let sol = model.solids.get(s);
+    let sol = model.solid(s);
     let mut seen: std::collections::HashSet<Handle<Vertex>> = std::collections::HashSet::new();
     let mut out = Vec::new();
     for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-        for &fh in &model.shells.get(sh).faces {
-            let f = model.faces.get(fh);
+        for &fh in &model.shell(sh).faces {
+            let f = model.face(fh);
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for &he in &lp.half_edges {
                     let vh = he_start(model, he);
                     if !seen.insert(vh) {
                         continue;
                     }
-                    let tri = match model.vertices.get(vh).def {
+                    let tri = match model.vertex(vh).def {
                         VertexDef::ThreePlane(tri) => tri,
                         // No rational base point: OnSeam and Pierce coordinates are not
                         // rational, so reuse declines and the boolean takes the slower road.
@@ -257,9 +257,7 @@ impl VertexClasses {
         let mut edges: HashMap<Handle<nacre_topo::Edge>, Vec<usize>> = HashMap::new();
         for fi in range {
             let wc = plane_ix[fi].plane();
-            let f = model
-                .faces
-                .get(faces[fi].plane().face.expect("reuse only sees real faces"));
+            let f = model.face(faces[fi].plane().face.expect("reuse only sees real faces"));
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for &he in &lp.half_edges {
                     let e = vertices.entry(he_start(model, he)).or_default();
@@ -466,9 +464,7 @@ pub(crate) fn pass_through(
             }
             Some(crate::boolean::Ring::new(r, walls))
         };
-        let f = model
-            .faces
-            .get(fa.face().expect("reuse only sees real faces"));
+        let f = model.face(fa.face().expect("reuse only sees real faces"));
         out.push(LocalFace {
             surf: crate::planes::ClassIx::Plane(wc),
             outer: crate::boolean::Bound::Ring(ring(&f.outer)?),
@@ -632,10 +628,10 @@ mod tests {
         // coordinate, bit for bit. A ulp here would mean construction and replay realize one
         // rational through two roads — a finding, not a tolerance.
         let mut stored: std::collections::HashSet<[u64; 3]> = std::collections::HashSet::new();
-        let sol = m.solids.get(prism);
+        let sol = m.solid(prism);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                for &he in &m.faces.get(fh).outer.half_edges {
+            for &fh in &m.shell(sh).faces {
+                for &he in &m.face(fh).outer.half_edges {
                     stored.insert(
                         m.vertex_point(he_start(&m, he))
                             .as_array()

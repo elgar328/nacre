@@ -236,7 +236,7 @@ mod tests {
     fn the_key_is_as_fine_as_the_reasons_own_vocabulary() {
         let mut m = Model::new();
         let s = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
-        let face = m.shells.get(m.solids.get(s).outer).faces[0];
+        let face = m.shell(m.solid(s).outer).faces[0];
         let of = |kind| {
             ReasonId::of(RejectReason::TraceDeclined {
                 kind,

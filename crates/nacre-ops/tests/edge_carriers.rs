@@ -41,12 +41,12 @@ fn square(a: f64, b: f64) -> Profile2d {
 fn assert_carriers_agree(m: &Model, what: &str) {
     let mut seen = 0usize;
     for &s in &m.live_solids {
-        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-            let f = m.faces.get(fh);
+        for &fh in &m.shell(m.solid(s).outer).faces {
+            let f = m.face(fh);
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for he in &lp.half_edges {
                     seen += 1;
-                    let e = m.edges.get(he.edge);
+                    let e = m.edge(he.edge);
                     // This use's face surface must be one of the stated carriers.
                     assert!(
                         e.surfaces.contains(&f.surface),
@@ -59,8 +59,8 @@ fn assert_carriers_agree(m: &Model, what: &str) {
     // And globally: collect uses per edge, compare multisets.
     let mut uses: std::collections::HashMap<_, Vec<_>> = std::collections::HashMap::new();
     for &s in &m.live_solids {
-        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-            let f = m.faces.get(fh);
+        for &fh in &m.shell(m.solid(s).outer).faces {
+            let f = m.face(fh);
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for he in &lp.half_edges {
                     uses.entry(he.edge).or_default().push(f.surface);
@@ -77,7 +77,7 @@ fn assert_carriers_agree(m: &Model, what: &str) {
         face_surfs.sort_by_key(|h| h.index());
         assert_eq!(
             face_surfs[..],
-            m.edges.get(eh).surfaces[..],
+            m.edge(eh).surfaces[..],
             "{what}: stated carriers != observed adjacency"
         );
     }
@@ -106,14 +106,14 @@ fn assert_derived_matches_stored(m: &Model, what: &str, st: &mut DeriveStats) {
     let rel = |a: f64, b: f64| (a - b).abs() / a.abs().max(b.abs()).max(1.0);
     let mut seen = std::collections::HashSet::new();
     for &s in &m.live_solids {
-        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-            let f = m.faces.get(fh);
+        for &fh in &m.shell(m.solid(s).outer).faces {
+            let f = m.face(fh);
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for he in &lp.half_edges {
                     if !seen.insert(he.edge) {
                         continue;
                     }
-                    let e = m.edges.get(he.edge);
+                    let e = m.edge(he.edge);
                     let derived = m
                         .derive_edge_curve(e.surfaces, e.vertices)
                         .expect("a live edge's curve must derive");

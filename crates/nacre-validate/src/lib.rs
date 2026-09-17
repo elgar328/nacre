@@ -1569,9 +1569,9 @@ mod tests {
             2.0,
             5.0,
         );
-        let cyl = m
-            .faces
-            .iter()
+        let cyl = (0..m.face_count() as u32)
+            .filter_map(|i| m.face_handle_at(i))
+            .map(|h| (h, m.face(h)))
             .map(|(_, f)| f.surface)
             .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
             .expect("the lateral cylinder");
@@ -1776,9 +1776,9 @@ mod tests {
     fn a_pierce_vertex_is_held_to_its_cylinder() {
         use nacre_topo::QuadRoot;
         let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-        let lateral = m
-            .faces
-            .iter()
+        let lateral = (0..m.face_count() as u32)
+            .filter_map(|i| m.face_handle_at(i))
+            .map(|h| (h, m.face(h)))
             .map(|(_, f)| f.surface)
             .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
             .expect("lateral");
@@ -1860,9 +1860,9 @@ mod tests {
     fn a_contradictory_pierce_def_is_flagged() {
         use nacre_topo::QuadRoot;
         let mut m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-        let lateral = m
-            .faces
-            .iter()
+        let lateral = (0..m.face_count() as u32)
+            .filter_map(|i| m.face_handle_at(i))
+            .map(|h| (h, m.face(h)))
             .map(|(_, f)| f.surface)
             .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
             .expect("lateral");
@@ -1934,15 +1934,15 @@ mod tests {
             2.0,
             5.0,
         );
-        let lateral = m
-            .faces
-            .iter()
+        let lateral = (0..m.face_count() as u32)
+            .filter_map(|i| m.face_handle_at(i))
+            .map(|h| (h, m.face(h)))
             .map(|(_, f)| f.surface)
             .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
             .expect("the cylinder's lateral surface");
-        let cap = m
-            .faces
-            .iter()
+        let cap = (0..m.face_count() as u32)
+            .filter_map(|i| m.face_handle_at(i))
+            .map(|h| (h, m.face(h)))
             .map(|(_, f)| f.surface)
             .find(|&h| {
                 h != lateral && !matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_))

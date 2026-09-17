@@ -244,8 +244,8 @@ pub(crate) fn collect_planes(
 ) -> Result<Vec<FaceRow>, BoolError> {
     let mut out = Vec::new();
     for sh in solid_shell_handles(model, solid) {
-        for &fh in &model.shells.get(sh).faces {
-            let face = model.faces.get(fh);
+        for &fh in &model.shell(sh).faces {
+            let face = model.face(fh);
             let plane = match model.surface_cache(face.surface) {
                 nacre_geom::Surface::Plane(p) => *p,
                 // A cylinder face sits in the table (M6-2a) — its row keeps the shared facts
@@ -780,7 +780,7 @@ fn lateral_t_range(
     let m = def.dir();
     let mut ts: Vec<Rat> = Vec::new();
     for he in &face.outer.half_edges {
-        let e = model.edges.get(he.edge);
+        let e = model.edge(he.edge);
         let [a, b] = e.surfaces;
         let cap = if a == face.surface { b } else { a };
         if cap == face.surface {
@@ -865,7 +865,7 @@ fn lateral_theta_extent(
         for k in 0..3 {
             centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
         }
-        match model.vertices.get(vh).def {
+        match model.vertex(vh).def {
             VertexDef::OnSeam(_) => {
                 let e = def.ref_dir();
                 let (mm, em) = (dot3(&m, &m)?, dot3(&e, &m)?);
@@ -920,7 +920,7 @@ fn lateral_theta_extent(
     };
     let mut acc: Option<RimArc> = None;
     for he in &face.outer.half_edges {
-        let e = model.edges.get(he.edge);
+        let e = model.edge(he.edge);
         let [a, b] = e.surfaces;
         let cap = if a == face.surface { b } else { a };
         if cap == face.surface {
@@ -976,7 +976,7 @@ fn lateral_theta_extent(
 }
 
 pub(crate) fn solid_shell_handles(model: &Model, solid: Handle<Solid>) -> Vec<Handle<Shell>> {
-    let s = model.solids.get(solid);
+    let s = model.solid(solid);
     std::iter::once(s.outer)
         .chain(s.cavities.iter().copied())
         .collect()
@@ -1574,7 +1574,7 @@ fn wall_faces_clear(
             return Err(reject(RejectReason::CylinderGateUndecided));
         };
         seen += 1;
-        if !face_clears_footprint(model, model.faces.get(fh), coeffs, o, m, r2, spans)? {
+        if !face_clears_footprint(model, model.face(fh), coeffs, o, m, r2, spans)? {
             return Ok(false);
         }
     }
@@ -1800,11 +1800,10 @@ fn tangency_rows(
         let (cleared, unread) = fi
             .face
             .map(|fh| {
-                let got =
-                    face_clears_footprint(model, model.faces.get(fh), coeffs, &o, &m, r2, &spans);
+                let got = face_clears_footprint(model, model.face(fh), coeffs, &o, &m, r2, &spans);
                 #[cfg(feature = "tangency-trace")]
                 if got.is_err() {
-                    let f = model.faces.get(fh);
+                    let f = model.face(fh);
                     let arcs = f
                         .outer
                         .half_edges
@@ -1849,7 +1848,7 @@ fn tangency_rows(
         // A property of the wall face and the line, not of which lateral is paired with it.
         let straddles = fi
             .face
-            .map(|fh| face_straddles_line(model, model.faces.get(fh), coeffs, &o, &m, r2))
+            .map(|fh| face_straddles_line(model, model.face(fh), coeffs, &o, &m, r2))
             .unwrap_or(false);
         for (cy_ix, cf) in &laterals {
             let witness = base.as_ref().zip(cf.footprint.span).and_then(|(b, span)| {
@@ -2647,7 +2646,7 @@ fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Co
                 planes,
                 cylinder,
                 root,
-            } = model.vertices.get(vh).def
+            } = model.vertex(vh).def
             else {
                 return Err(CornerFail::Shape);
             };
@@ -2670,7 +2669,7 @@ fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corne
     else {
         return None;
     };
-    let [a, b] = model.edges.get(he.edge).vertices;
+    let [a, b] = model.edge(he.edge).vertices;
     let radial = |vh: Handle<Vertex>| -> Option<[nacre_scalar::Rat; 3]> {
         let p = vertex_point(model, vh)?;
         let mut v = p;
@@ -2713,7 +2712,7 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_scalar::Rat;
                 planes,
                 cylinder,
                 root,
-            } = model.vertices.get(vh).def
+            } = model.vertex(vh).def
             else {
                 return None;
             };
@@ -2856,8 +2855,7 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
     let plane = *model.world_plane_name(face.surface)?.narrow()?;
     let n = [plane[0], plane[1], plane[2]];
     let def = model
-        .edges
-        .get(he.edge)
+        .edge(he.edge)
         .surfaces
         .iter()
         .find(|&&s| matches!(model.surface_cache(s), nacre_geom::Surface::Cylinder(_)))
@@ -2917,8 +2915,7 @@ fn face_clears_footprint(
     let curved = face.outer.half_edges.len() > 1
         && face.outer.half_edges.iter().any(|he| {
             model
-                .edges
-                .get(he.edge)
+                .edge(he.edge)
                 .surfaces
                 .iter()
                 .any(|&s| matches!(model.surface_cache(s), nacre_geom::Surface::Cylinder(_)))
@@ -3750,11 +3747,11 @@ pub(crate) fn edge_incidence(
     let mut order: Vec<Handle<Edge>> = Vec::new();
     let mut map: HashMap<Handle<Edge>, ([Handle<Vertex>; 2], Vec<usize>)> = HashMap::new();
     for sh in solid_shell_handles(model, solid) {
-        for &fh in &model.shells.get(sh).faces {
-            let face = model.faces.get(fh);
+        for &fh in &model.shell(sh).faces {
+            let face = model.face(fh);
             let pidx = surf_ix[&fh];
             for he in face_half_edges(face) {
-                let bounds = model.edges.get(he.edge).vertices;
+                let bounds = model.edge(he.edge).vertices;
                 let entry = map.entry(he.edge).or_insert_with(|| {
                     order.push(he.edge);
                     (bounds, Vec::new())
@@ -4397,7 +4394,7 @@ mod tests {
         };
         m.rebuild_adjacency();
         // A pad covering part of the face: the walls around it inherit the split edge.
-        let face = m.shells.get(m.solids.get(solid).outer).faces[0];
+        let face = m.shell(m.solid(solid).outer).faces[0];
         let OpOutput::PadOnFace { solid, .. } = apply(
             &mut m,
             &Operation::PadOnFace {
@@ -4417,8 +4414,7 @@ mod tests {
             .iter()
             .filter(|f| {
                 let n = m
-                    .faces
-                    .get(f.face().expect("a model face"))
+                    .face(f.face().expect("a model face"))
                     .outer
                     .half_edges
                     .len();

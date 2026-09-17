@@ -1240,7 +1240,7 @@ fn datum_plane(
         let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
         let mut frames = [None; 3];
         for (i, vh) in vs.iter().enumerate() {
-            let tri = match model.vertices.get(*vh).def {
+            let tri = match model.vertex(*vh).def {
                 nacre_topo::VertexDef::ThreePlane(tri) => tri,
                 // A through-vertices datum needs three-plane meets; a seam vertex has no
                 // point-meet at all and a pierce point has no rational one — the same honest
@@ -2536,12 +2536,12 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     let (solid_h, _) = model
         .live_solids
         .iter()
-        .map(|&s| (s, model.solids.get(s).outer))
+        .map(|&s| (s, model.solid(s).outer))
         // Index-only equality again: a face handle from another model can match here. The
         // shell lookup that follows is where the cross-store guard fires.
-        .find(|&(_, sh)| model.shells.get(sh).faces.contains(&face))
+        .find(|&(_, sh)| model.shell(sh).faces.contains(&face))
         .ok_or(OpError::FaceNotInLiveSolid)?;
-    let f = model.faces.get(face);
+    let f = model.face(face);
     let surface_h = f.surface;
     let orientation = f.orientation;
     let plane = match model.surface_cache(surface_h) {
@@ -2755,7 +2755,7 @@ fn extrude_and_boolean(
     let want_surf = class_of
         .get(&far_cap)
         .copied()
-        .unwrap_or_else(|| model.faces.get(far_cap).surface);
+        .unwrap_or_else(|| model.face(far_cap).surface);
     match solids
         .iter()
         .find_map(|&s| find_face_coplanar_with(model, s, far_cap, want_surf, n).map(|c| (s, c)))
@@ -2865,10 +2865,10 @@ pub(crate) fn find_face_coplanar_with(
     ref_surf: Handle<Surface>,
     want: Vector3,
 ) -> Option<Handle<Face>> {
-    let ref_tri = outer_tri(model, model.faces.get(reference)).map(|(tri, _)| tri);
-    let shell = model.solids.get(solid).outer;
-    model.shells.get(shell).faces.iter().copied().find(|&fh| {
-        let face = model.faces.get(fh);
+    let ref_tri = outer_tri(model, model.face(reference)).map(|(tri, _)| tri);
+    let shell = model.solid(solid).outer;
+    model.shell(shell).faces.iter().copied().find(|&fh| {
+        let face = model.face(fh);
         let nacre_geom::Surface::Plane(pl) = model.surface_cache(face.surface) else {
             return false;
         };
@@ -3241,15 +3241,17 @@ mod frame_differential {
             "len".into(),
             format!(
                 "{} {} {} {} {} {}",
-                m.vertices.len(),
-                m.edges.len(),
-                m.faces.len(),
-                m.shells.len(),
-                m.solids.len(),
+                m.vertex_count(),
+                m.edge_count(),
+                m.face_count(),
+                m.shell_count(),
+                m.solid_count(),
                 m.surface_count()
             ),
         )];
-        for (h, _) in m.vertices.iter() {
+        let mut i = 0u32;
+        while let Some(h) = m.vertex_handle_at(i) {
+            i += 1;
             let p = m.vertex_point(h).as_array();
             out.push((
                 format!("v{}", h.index()),
@@ -3261,7 +3263,10 @@ mod frame_differential {
                 ),
             ));
         }
-        for (h, e) in m.edges.iter() {
+        let mut i = 0u32;
+        while let Some(h) = m.edge_handle_at(i) {
+            i += 1;
+            let e = m.edge(h);
             out.push((
                 format!("e{}", h.index()),
                 format!(
@@ -3273,7 +3278,10 @@ mod frame_differential {
                 ),
             ));
         }
-        for (h, f) in m.faces.iter() {
+        let mut i = 0u32;
+        while let Some(h) = m.face_handle_at(i) {
+            i += 1;
+            let f = m.face(h);
             let loops: Vec<String> = std::iter::once(&f.outer)
                 .chain(f.inner.iter())
                 .map(|lp| {

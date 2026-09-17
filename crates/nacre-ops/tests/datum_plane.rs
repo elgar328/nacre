@@ -273,7 +273,7 @@ fn an_extrudes_base_cap_is_the_frame_it_was_given() {
         unreachable!()
     };
     assert_eq!(
-        m.faces.get(faces[0]).surface,
+        m.face(faces[0]).surface,
         h,
         "the base cap is the plane the frame named, not a second one on the same geometry"
     );
@@ -332,8 +332,8 @@ fn a_log_with_a_datum_replays_and_validates() {
 
     let replayed = replay(&log).expect("a datum log replays");
     assert_eq!(replayed.surface_count(), scratch.surface_count());
-    assert_eq!(replayed.vertices.len(), scratch.vertices.len());
-    assert_eq!(replayed.faces.len(), scratch.faces.len());
+    assert_eq!(replayed.vertex_count(), scratch.vertex_count());
+    assert_eq!(replayed.face_count(), scratch.face_count());
     assert_eq!(
         replayed.live_solids.to_vec(),
         scratch.live_solids.to_vec(),
@@ -947,12 +947,11 @@ fn tilted_prism_with_pocket() -> Model {
     };
     m.rebuild_adjacency();
     let wall = *m
-        .shells
-        .get(m.solids.get(solid).outer)
+        .shell(m.solid(solid).outer)
         .faces
         .iter()
         .find(|&&f| {
-            let s = m.faces.get(f).surface;
+            let s = m.face(f).surface;
             m.surface_name
                 .get(&s)
                 .and_then(|n| n.narrow())
@@ -986,10 +985,10 @@ fn live_verts(m: &Model) -> Vec<nacre_store::Handle<nacre_topo::Vertex>> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for &s in &m.live_solids {
-        let sol = m.solids.get(s);
+        let sol = m.solid(s);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                let f = m.faces.get(fh);
+            for &fh in &m.shell(sh).faces {
+                let f = m.face(fh);
                 for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                     for &he in &lp.half_edges {
                         let vh = m.he_start(he);
@@ -1166,16 +1165,11 @@ fn a_datum_through_vertices_refuses_by_cause() {
     cy.rebuild_adjacency();
     let seam = live_verts(&cy)
         .into_iter()
-        .find(|v| matches!(cy.vertices.get(*v).def, nacre_topo::VertexDef::OnSeam(_)))
+        .find(|v| matches!(cy.vertex(*v).def, nacre_topo::VertexDef::OnSeam(_)))
         .expect("a cylinder has seam vertices");
     let corners: Vec<_> = live_verts(&cy)
         .into_iter()
-        .filter(|v| {
-            matches!(
-                cy.vertices.get(*v).def,
-                nacre_topo::VertexDef::ThreePlane(_)
-            )
-        })
+        .filter(|v| matches!(cy.vertex(*v).def, nacre_topo::VertexDef::ThreePlane(_)))
         .collect();
     assert_eq!(
         through(&mut cy, [seam, corners[0], corners[1]]),
@@ -1250,8 +1244,8 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
     mx.rebuild_adjacency();
     let of = |m: &Model, s| {
         let mut out = Vec::new();
-        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-            for lp in std::iter::once(&m.faces.get(fh).outer).chain(m.faces.get(fh).inner.iter()) {
+        for &fh in &m.shell(m.solid(s).outer).faces {
+            for lp in std::iter::once(&m.face(fh).outer).chain(m.face(fh).inner.iter()) {
                 for &he in &lp.half_edges {
                     out.push(m.he_start(he));
                 }
@@ -1427,8 +1421,8 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
     m.rebuild_adjacency();
     let corners = |m: &Model, s| {
         let mut out = Vec::new();
-        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-            for lp in std::iter::once(&m.faces.get(fh).outer).chain(m.faces.get(fh).inner.iter()) {
+        for &fh in &m.shell(m.solid(s).outer).faces {
+            for lp in std::iter::once(&m.face(fh).outer).chain(m.face(fh).inner.iter()) {
                 for &he in &lp.half_edges {
                     out.push(m.he_start(he));
                 }
@@ -1536,14 +1530,14 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         for &sh in cut
             .iter()
             .flat_map(|&sh| {
-                let s = m.solids.get(sh);
+                let s = m.solid(sh);
                 std::iter::once(s.outer).chain(s.cavities.iter().copied())
             })
             .collect::<Vec<_>>()
             .iter()
         {
-            for &fh in &m.shells.get(sh).faces {
-                let f = m.faces.get(fh);
+            for &fh in &m.shell(sh).faces {
+                let f = m.face(fh);
                 for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                     for &he in &lp.half_edges {
                         out.insert(m.he_start(he));
@@ -1564,7 +1558,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     // vertex that is not the population it names — green, and measuring something else.
     let (mut pure, mut straddling) = (Vec::new(), Vec::new());
     for vh in mine {
-        let VertexDef::ThreePlane(_) = m.vertices.get(vh).def else {
+        let VertexDef::ThreePlane(_) = m.vertex(vh).def else {
             continue;
         };
         if m.vertex_meet(vh).is_none() {
@@ -1792,14 +1786,13 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
     m.rebuild_adjacency();
 
     let cap = m
-        .shells
-        .get(m.solids.get(moved).outer)
+        .shell(m.solid(moved).outer)
         .faces
         .iter()
         .copied()
         .find(|&f| {
             matches!(
-                m.surface(m.faces.get(f).surface),
+                m.surface(m.face(f).surface),
                 Surface::Plane {
                     points: PlanePoints::Through(_),
                     ..
@@ -1825,7 +1818,7 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
     let Surface::Plane {
         points: PlanePoints::Through(named),
         motion,
-    } = m.surface(m.faces.get(cap).surface)
+    } = m.surface(m.face(cap).surface)
     else {
         unreachable!()
     };
@@ -1846,12 +1839,11 @@ fn base_cap(
     solid: nacre_store::Handle<nacre_topo::Solid>,
     plane: nacre_store::Handle<Surface>,
 ) -> nacre_store::Handle<nacre_topo::Face> {
-    m.shells
-        .get(m.solids.get(solid).outer)
+    m.shell(m.solid(solid).outer)
         .faces
         .iter()
         .copied()
-        .find(|&f| m.faces.get(f).surface == plane)
+        .find(|&f| m.face(f).surface == plane)
         .expect("the base cap is the datum's own plane")
 }
 
@@ -1990,11 +1982,10 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
     );
     m.rebuild_adjacency();
     let box_top = m
-        .shells
-        .get(m.solids.get(boxy).outer)
+        .shell(m.solid(boxy).outer)
         .faces
         .iter()
-        .map(|&f| m.faces.get(f).surface)
+        .map(|&f| m.face(f).surface)
         .find(|s| {
             m.surface_name
                 .get(s)
@@ -2007,11 +1998,10 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
     // three share a motion and the datum is buildable. (Base-cap corners would not: the base cap
     // is the stated plane with no motion, so those triples are mixed-frame and rejected.)
     let far_cap = m
-        .shells
-        .get(m.solids.get(solid).outer)
+        .shell(m.solid(solid).outer)
         .faces
         .iter()
-        .map(|&f| m.faces.get(f).surface)
+        .map(|&f| m.face(f).surface)
         .find(|s| {
             matches!(
                 m.surface(*s),
@@ -2034,7 +2024,7 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
 
     let corners: Vec<_> = live_verts(&m)
         .into_iter()
-        .filter(|v| match m.vertices.get(*v).def {
+        .filter(|v| match m.vertex(*v).def {
             nacre_topo::VertexDef::ThreePlane(tri) => tri.contains(&far_cap),
             _ => false,
         })
@@ -2077,11 +2067,10 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
     // anchor back through the definition and the residual must vanish. A cache built from frame
     // coordinates would land far off, which is the other half of the defect.
     let sp = nacre_ops::face_plane(&m, {
-        *m.shells
-            .get(m.solids.get(solid).outer)
+        *m.shell(m.solid(solid).outer)
             .faces
             .iter()
-            .find(|&&f| m.faces.get(f).surface == plane)
+            .find(|&&f| m.face(f).surface == plane)
             .expect("the far cap is a face of this prism")
     })
     .expect("planar");
@@ -2478,7 +2467,7 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
     // moved walls, or this measures the easy case. Without that mismatch the rescue is never
     // asked and the test would pass on a kernel that does not have it.
     let mixed = live_verts(&m).into_iter().any(|vh| {
-        let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+        let nacre_topo::VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
             return false;
         };
         let f = m.plane_motion(tri[0]);

@@ -7013,11 +7013,11 @@ fn face_box(model: &Model, fh: Handle<Face>) -> [[f64; 2]; 3] {
 ///
 #[cfg(test)]
 fn face_points(model: &Model, fh: Handle<Face>) -> Vec<[f64; 3]> {
-    let f = model.faces.get(fh);
+    let f = model.face(fh);
     let mut out = Vec::new();
     for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
         for he in &lp.half_edges {
-            for &vh in model.edges.get(he.edge).vertices.iter() {
+            for &vh in model.edge(he.edge).vertices.iter() {
                 out.push(model.vertex_point(vh).as_array());
             }
         }
@@ -7742,7 +7742,7 @@ pub(crate) fn concurrency_audit(
         for (solid, inc) in [(a, &inc_a), (b, &inc_b)] {
             let face_handles: Vec<Handle<Face>> = solid_shell_handles(model, solid)
                 .into_iter()
-                .flat_map(|sh| model.shells.get(sh).faces.clone())
+                .flat_map(|sh| model.shell(sh).faces.clone())
                 .collect();
             for fh in face_handles {
                 let Some(&fp) = surf_ix.get(&fh) else {
@@ -7977,7 +7977,7 @@ pub(crate) fn pierce_corner_audit(
         let mut seen: Vec<Handle<Vertex>> = Vec::new();
         let face_handles: Vec<Handle<Face>> = solid_shell_handles(model, solid)
             .into_iter()
-            .flat_map(|sh| model.shells.get(sh).faces.clone())
+            .flat_map(|sh| model.shell(sh).faces.clone())
             .collect();
         for fh in face_handles {
             let Some(&fp) = surf_ix.get(&fh) else {
@@ -7991,7 +7991,7 @@ pub(crate) fn pierce_corner_audit(
             let Some(nr) = lr.poly() else {
                 continue;
             };
-            let face = model.faces.get(fh);
+            let face = model.face(fh);
             if nr.triples.len() != face.outer.half_edges.len() {
                 continue;
             }
@@ -8123,7 +8123,7 @@ pub(crate) fn operand_vertex_audit(
         let mut names: HashMap<Handle<Vertex>, Vec<(usize, NodeId)>> = HashMap::new();
         let face_handles: Vec<Handle<Face>> = solid_shell_handles(model, solid)
             .into_iter()
-            .flat_map(|sh| model.shells.get(sh).faces.clone())
+            .flat_map(|sh| model.shell(sh).faces.clone())
             .collect();
         for fh in face_handles {
             let Some(&fp) = surf_ix.get(&fh) else {
@@ -8132,7 +8132,7 @@ pub(crate) fn operand_vertex_audit(
             let Some(fc) = plane_class(fp) else {
                 continue;
             };
-            let face = model.faces.get(fh);
+            let face = model.face(fh);
             let mut loops: Vec<(Vec<nacre_topo::HalfEdge>, Option<Vec<NodeId>>)> = Vec::new();
             loops.push((
                 face.outer.half_edges.clone(),
@@ -8939,7 +8939,7 @@ mod tests {
             .find(|&c| {
                 let seats = |s: Handle<Solid>| {
                     solid_shell_handles(&m, s).into_iter().any(|sh| {
-                        m.shells.get(sh).faces.iter().any(|fh| {
+                        m.shell(sh).faces.iter().any(|fh| {
                             plane_ix[surf_ix[fh]].plane() == c
                                 && face_on_z1(*fh, &surf_ix, &faces_tab)
                         })
@@ -10069,7 +10069,7 @@ mod tests {
         let wc = (0..planes.len())
             .find(|&c| {
                 solid_shell_handles(&m, b).into_iter().any(|sh| {
-                    m.shells.get(sh).faces.iter().any(|fh| {
+                    m.shell(sh).faces.iter().any(|fh| {
                         plane_ix[surf_ix[fh]].plane() == c && face_on_z1(*fh, &surf_ix, &faces_tab)
                     })
                 })
@@ -11070,7 +11070,7 @@ mod tests {
             .find(|&c| {
                 let seats = |s: Handle<Solid>| {
                     solid_shell_handles(m, s).into_iter().any(|sh| {
-                        m.shells.get(sh).faces.iter().any(|fh| {
+                        m.shell(sh).faces.iter().any(|fh| {
                             plane_ix[surf_ix[fh]].plane() == c && face_on_z1(*fh, surf_ix, faces)
                         })
                     })
@@ -11921,7 +11921,10 @@ mod tests {
         let wall_surf = setup.geom[wc].surf;
         let reach = m.reachable();
         let mut rulings = 0;
-        for (eh, e) in m.edges.iter() {
+        let mut i = 0u32;
+        while let Some(eh) = m.edge_handle_at(i) {
+            i += 1;
+            let e = m.edge(eh);
             if !reach.edges.contains(&eh) {
                 continue;
             }
@@ -11944,7 +11947,7 @@ mod tests {
         let on_seam = reach
             .vertices
             .iter()
-            .filter(|&&v| matches!(m.vertices.get(v).def, nacre_topo::VertexDef::OnSeam(_)))
+            .filter(|&&v| matches!(m.vertex(v).def, nacre_topo::VertexDef::OnSeam(_)))
             .count();
         assert!(on_seam >= 1, "the outer panel's wrap arc split at the seam");
     }

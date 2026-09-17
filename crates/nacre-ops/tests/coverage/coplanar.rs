@@ -43,7 +43,7 @@ fn cut_with_a_hollow_operand_far_from_the_void() {
     let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
     let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+    assert_eq!(m.solid(hollow).cavities.len(), 1);
     m.rebuild_adjacency();
     let cutter = m.add_cuboid(Point3::from_array([2.5; 3]), Point3::from_array([3.5; 3]));
     let r = boolean_one(&mut m, BoolKind::Cut, hollow, cutter).unwrap();
@@ -51,7 +51,7 @@ fn cut_with_a_hollow_operand_far_from_the_void() {
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 25.875).abs() < 1e-9, "volume {vol}");
-    assert_eq!(m.solids.get(r).cavities.len(), 1);
+    assert_eq!(m.solid(r).cavities.len(), 1);
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn a_slab_splits_a_hollow_box_into_two() {
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
     for &s in &solids {
-        assert_eq!(m.solids.get(s).cavities.len(), 0);
+        assert_eq!(m.solid(s).cavities.len(), 0);
     }
     // Hollow 26 (= 27 − 1 void); the slab removes 1.6 of material (8 area × 0.2 thick).
     let vol: f64 = solids
@@ -111,7 +111,7 @@ fn a_hollow_part_takes_a_coplanar_boss() {
     // 27 − 1 void + 0.25·0.25·1 boss.
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 26.0625).abs() < 1e-9, "volume {vol}");
-    assert_eq!(m.solids.get(r).cavities.len(), 1, "the void survives");
+    assert_eq!(m.solid(r).cavities.len(), 1, "the void survives");
 }
 
 #[test]
@@ -135,7 +135,7 @@ fn a_hollow_part_takes_a_coplanar_pocket() {
     // 27 − 1 void − 0.25·0.25·0.5 pocket.
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 25.96875).abs() < 1e-9, "volume {vol}");
-    assert_eq!(m.solids.get(r).cavities.len(), 1, "the void survives");
+    assert_eq!(m.solid(r).cavities.len(), 1, "the void survives");
 }
 
 #[test]
@@ -167,7 +167,7 @@ fn a_coplanar_boss_over_a_void_plane_is_solved() {
         props.volume
     );
     assert!((props.area - 60.8).abs() < 1e-9, "area {}", props.area);
-    assert_eq!(m.solids.get(r).cavities.len(), 1, "the void survives");
+    assert_eq!(m.solid(r).cavities.len(), 1, "the void survives");
 }
 
 #[test]
@@ -187,7 +187,7 @@ fn a_hollow_part_takes_a_second_far_cut() {
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 25.875).abs() < 1e-9, "volume {vol}");
-    assert_eq!(m.solids.get(r).cavities.len(), 1);
+    assert_eq!(m.solid(r).cavities.len(), 1);
 }
 
 #[test]
@@ -274,7 +274,7 @@ fn a_corner_flush_common_keeps_the_non_convex_overlap() {
     let p = nacre_props::mass_props(&m, r).unwrap();
     assert!((p.volume - 1.0).abs() < 1e-12, "volume {}", p.volume);
     assert!((p.area - 7.0).abs() < 1e-12, "area {}", p.area);
-    assert_eq!(m.solids.get(r).cavities.len(), 0);
+    assert_eq!(m.solid(r).cavities.len(), 0);
 }
 
 /// Two boxes that touch only along a single edge share a plane (`x = 4`) whose cross-section is

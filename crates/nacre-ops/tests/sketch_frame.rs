@@ -37,9 +37,9 @@ fn square(a: f64, b: f64) -> Profile2d {
 fn frame_nodes(m: &Model) -> Vec<Motion> {
     m.live_solids
         .iter()
-        .flat_map(|&s| m.shells.get(m.solids.get(s).outer).faces.iter())
+        .flat_map(|&s| m.shell(m.solid(s).outer).faces.iter())
         .filter_map(|&fh| {
-            let su = m.faces.get(fh).surface;
+            let su = m.face(fh).surface;
             let motion = match m.surface(su) {
                 nacre_topo::Surface::Plane {
                     motion: Some(h), ..
@@ -179,12 +179,11 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
 
     // Axis-aligned faces first: canonical placement, hand-checkable flips.
     let face_with_surface = |m: &Model, su| {
-        m.shells
-            .get(m.solids.get(s).outer)
+        m.shell(m.solid(s).outer)
             .faces
             .iter()
             .copied()
-            .find(|&fh| m.faces.get(fh).surface == su)
+            .find(|&fh| m.face(fh).surface == su)
             .expect("the cuboid face")
     };
     let bottom = face_with_surface(&m, m.world_plane(Axis::Z));
@@ -234,14 +233,13 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
     };
     m.rebuild_adjacency();
     let top = m
-        .shells
-        .get(m.solids.get(turned).outer)
+        .shell(m.solid(turned).outer)
         .faces
         .iter()
         .copied()
         .max_by(|&a, &b| {
             let z = |fh| {
-                let f = m.faces.get(fh);
+                let f = m.face(fh);
                 let p = match m.surface_cache(f.surface) {
                     nacre_geom::Surface::Plane(p) => *p,
                     _ => unreachable!(),

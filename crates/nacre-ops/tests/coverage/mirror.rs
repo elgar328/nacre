@@ -210,11 +210,11 @@ fn a_hollow_solid_mirrors_with_its_cavity() {
     m.rebuild_adjacency();
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+    assert_eq!(m.solid(hollow).cavities.len(), 1);
 
     let mirrored = mirror_solid(&mut m, hollow, Axis::X, 0);
 
-    assert_eq!(m.solids.get(mirrored).cavities.len(), 1, "void survives");
+    assert_eq!(m.solid(mirrored).cavities.len(), 1, "void survives");
     assert!((volume(&m, mirrored) - 26.0).abs() < 1e-9);
     assert!(nacre_validate::validate(&m).is_empty());
 }
@@ -269,10 +269,10 @@ fn an_exact_mirror_plane_records_no_motion_and_a_lossy_one_does() {
             unreachable!("Mirror yields a Mirror output")
         };
         m.rebuild_adjacency();
-        let shell = m.solids.get(b).outer;
+        let shell = m.solid(b).outer;
         let mut motions = Vec::new();
-        for &fh in &m.shells.get(shell).faces {
-            motions.push(match m.surface(m.faces.get(fh).surface) {
+        for &fh in &m.shell(shell).faces {
+            motions.push(match m.surface(m.face(fh).surface) {
                 nacre_topo::Surface::Plane { motion, .. }
                 | nacre_topo::Surface::Cylinder { motion, .. } => motion.is_some(),
             });
@@ -333,14 +333,13 @@ fn a_rotated_solid_mirrors() {
 
     assert!((volume(&m, mirrored) - before).abs() < 1e-12);
     let rotated_verts = m
-        .shells
-        .get(m.solids.get(mirrored).outer)
+        .shell(m.solid(mirrored).outer)
         .faces
         .iter()
-        .flat_map(|&fh| m.faces.get(fh).outer.half_edges.clone())
-        .flat_map(|he| m.edges.get(he.edge).vertices)
+        .flat_map(|&fh| m.face(fh).outer.half_edges.clone())
+        .flat_map(|he| m.edge(he.edge).vertices)
         .filter(|&vh| {
-            let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+            let nacre_topo::VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
                 return false;
             };
             // ★ `any`, not `all`: the Z-fixed caps are world-stated since the invariant-plane

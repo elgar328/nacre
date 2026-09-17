@@ -261,7 +261,7 @@ fn check_result_topology(
     solids: &[Handle<Solid>],
 ) -> Option<(RejectReason, Option<crate::RejectWhere>)> {
     for &sh in solids {
-        let solid = model.solids.get(sh);
+        let solid = model.solid(sh);
         let mut shells: HashSet<Handle<Shell>> = HashSet::new();
         let mut faces: HashSet<Handle<Face>> = HashSet::new();
         let mut edge_uses: HashMap<Handle<Edge>, Vec<(Handle<Face>, bool)>> = HashMap::new();
@@ -272,17 +272,17 @@ fn check_result_topology(
             if !shells.insert(shell_h) {
                 continue;
             }
-            for &fh in &model.shells.get(shell_h).faces {
+            for &fh in &model.shell(shell_h).faces {
                 if !faces.insert(fh) {
                     continue;
                 }
-                let face = model.faces.get(fh);
+                let face = model.face(fh);
                 inner_loops += face.inner.len() as i64;
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
                         edge_uses.entry(he.edge).or_default().push((fh, he.forward));
                         if edges_seen.insert(he.edge) {
-                            let [va, vb] = model.edges.get(he.edge).vertices;
+                            let [va, vb] = model.edge(he.edge).vertices;
                             vertex_edges.entry(va).or_default().push(he.edge);
                             vertex_edges.entry(vb).or_default().push(he.edge);
                         }
@@ -313,14 +313,14 @@ fn check_result_topology(
         // offending edge's first vertex, smallest edge handle for replay determinism.
         let mut same_plane: Vec<Handle<Edge>> = Vec::new();
         for &eh in edge_uses.keys() {
-            let e = model.edges.get(eh);
+            let e = model.edge(eh);
             let [s0, s1] = e.surfaces;
             if s0 == s1 && matches!(model.surface(s0), nacre_topo::Surface::Plane { .. }) {
                 same_plane.push(eh);
             }
         }
         if let Some(&eh) = same_plane.iter().min() {
-            let [va, _] = model.edges.get(eh).vertices;
+            let [va, _] = model.edge(eh).vertices;
             return Some((
                 RejectReason::CoplanarMerge,
                 Some(crate::RejectWhere::Point(model.vertex_point(va))),
@@ -960,7 +960,7 @@ fn group_faces(
 fn comp_key(model: &Model, faces: &[Handle<Face>]) -> Vec<[f64; 3]> {
     let mut pts: Vec<[f64; 3]> = faces
         .iter()
-        .flat_map(|&fh| model.faces.get(fh).outer.half_edges.iter().copied())
+        .flat_map(|&fh| model.face(fh).outer.half_edges.iter().copied())
         .map(|he| model.vertex_point(he_start(model, he)).as_array())
         .collect();
     pts.sort_by(|a, b| a.partial_cmp(b).expect("finite vertex coordinates"));
@@ -2457,7 +2457,7 @@ pub(crate) fn reconstruct(
                     Wall::Arc { cyl: k, ccw: true },
                     planes[c].surf,
                 )?;
-                let forward = model.edges.get(e).vertices[0] == u;
+                let forward = model.edge(e).vertices[0] == u;
                 chain.push(HalfEdge { edge: e, forward });
             }
             band_chains.insert((g, k, c), chain);
@@ -2518,7 +2518,7 @@ pub(crate) fn reconstruct(
                     )?;
                     // For an arc edge the stored order is CCW, so this reads back exactly the
                     // `ccw` bit the wall carried in.
-                    let forward = model.edges.get(e).vertices[0] == u;
+                    let forward = model.edge(e).vertices[0] == u;
                     half_edges.push(HalfEdge { edge: e, forward });
                 }
             }
@@ -2940,7 +2940,7 @@ pub(crate) fn reconstruct(
     {
         let mut uses: HashMap<Handle<Edge>, usize> = HashMap::new();
         for &fh in &face_handles {
-            let f = model.faces.get(fh);
+            let f = model.face(fh);
             for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for he in &l.half_edges {
                     *uses.entry(he.edge).or_default() += 1;
@@ -2958,7 +2958,7 @@ pub(crate) fn reconstruct(
             .map(|(&e, _)| e)
             .min_by_key(|e| e.index())
         {
-            let [va, vb] = model.edges.get(eh).vertices;
+            let [va, vb] = model.edge(eh).vertices;
             return Err(deferred.unwrap_or(crate::reject_at(
                 RejectReason::NonManifoldResultEdge,
                 crate::RejectWhere::Segment([model.vertex_point(va), model.vertex_point(vb)]),
@@ -3307,7 +3307,7 @@ mod region_tests {
             .copied()
             .filter(|&f| {
                 matches!(
-                    m.surface_cache(m.faces.get(f).surface),
+                    m.surface_cache(m.face(f).surface),
                     nacre_geom::Surface::Cylinder(_)
                 )
             })
@@ -3317,11 +3317,11 @@ mod region_tests {
             1,
             "one lateral face for the half-height boss"
         );
-        let outer = &m.faces.get(laterals[0]).outer;
+        let outer = &m.face(laterals[0]).outer;
         let (mut closed, mut arcs) = (0usize, 0usize);
         for he in &outer.half_edges {
             let circular = matches!(m.edge_curve(he.edge), nacre_geom::Curve::Circle(_));
-            let [a, b] = m.edges.get(he.edge).vertices;
+            let [a, b] = m.edge(he.edge).vertices;
             match (circular, a == b) {
                 (true, true) => closed += 1,
                 (true, false) => arcs += 1,

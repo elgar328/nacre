@@ -77,14 +77,17 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
     let mut push =
         |what: &'static str, at: usize, value: String| out.push(SigItem { what, at, value });
 
-    push("len.vertices", 0, m.vertices.len().to_string());
-    push("len.edges", 0, m.edges.len().to_string());
-    push("len.faces", 0, m.faces.len().to_string());
-    push("len.shells", 0, m.shells.len().to_string());
-    push("len.solids", 0, m.solids.len().to_string());
+    push("len.vertices", 0, m.vertex_count().to_string());
+    push("len.edges", 0, m.edge_count().to_string());
+    push("len.faces", 0, m.face_count().to_string());
+    push("len.shells", 0, m.shell_count().to_string());
+    push("len.solids", 0, m.solid_count().to_string());
     push("len.surfaces", 0, m.surface_count().to_string());
 
-    for (vh, v) in m.vertices.iter() {
+    let mut i = 0u32;
+    while let Some(vh) = m.vertex_handle_at(i) {
+        i += 1;
+        let v = m.vertex(vh);
         let i = vh.index() as usize;
         let p = m.vertex_point(vh).as_array();
         push(
@@ -139,7 +142,10 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
             },
         );
     }
-    for (eh, e) in m.edges.iter() {
+    let mut i = 0u32;
+    while let Some(eh) = m.edge_handle_at(i) {
+        i += 1;
+        let e = m.edge(eh);
         let i = eh.index() as usize;
         push(
             "edge.carriers",
@@ -152,7 +158,10 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
             format!("{},{}", e.vertices[0].index(), e.vertices[1].index()),
         );
     }
-    for (fh, f) in m.faces.iter() {
+    let mut i = 0u32;
+    while let Some(fh) = m.face_handle_at(i) {
+        i += 1;
+        let f = m.face(fh);
         let i = fh.index() as usize;
         push("face.surface", i, f.surface.index().to_string());
         push("face.orientation", i, format!("{:?}", f.orientation));
@@ -168,7 +177,10 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
             .collect();
         push("face.loops", i, loops.join(" | "));
     }
-    for (sh, shell) in m.shells.iter() {
+    let mut i = 0u32;
+    while let Some(sh) = m.shell_handle_at(i) {
+        i += 1;
+        let shell = m.shell(sh);
         push(
             "shell.faces",
             sh.index() as usize,
@@ -180,7 +192,10 @@ fn arena_sig(m: &Model) -> Vec<SigItem> {
                 .join(","),
         );
     }
-    for (sh, solid) in m.solids.iter() {
+    let mut i = 0u32;
+    while let Some(sh) = m.solid_handle_at(i) {
+        i += 1;
+        let solid = m.solid(sh);
         let i = sh.index() as usize;
         push("solid.outer", i, solid.outer.index().to_string());
         push(
@@ -604,7 +619,7 @@ fn axis_of(k: u8) -> Axis {
 
 /// Every face of a solid's outer shell, in shell order.
 fn faces_of(m: &Model, s: Handle<Solid>) -> Vec<Handle<Face>> {
-    m.shells.get(m.solids.get(s).outer).faces.clone()
+    m.shell(m.solid(s).outer).faces.clone()
 }
 
 /// Turn a [`Step`] into a concrete `Operation` against **this** model, or `None` if the model
@@ -617,10 +632,10 @@ fn concretize(m: &Model, step: &Step) -> Option<Operation> {
         Step::DatumThroughVertices { solid, a, b, c } => {
             let s = pick(solid)?;
             let mut vs = Vec::new();
-            let sol = m.solids.get(s);
+            let sol = m.solid(s);
             for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-                for &fh in &m.shells.get(sh).faces {
-                    let f = m.faces.get(fh);
+                for &fh in &m.shell(sh).faces {
+                    let f = m.face(fh);
                     for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                         for &he in &lp.half_edges {
                             let vh = m.he_start(he);
@@ -917,12 +932,11 @@ fn a_log_using_every_handle_carrying_variant_replays() {
     // The boss's top cap, found by geometry rather than by index — the solid has been copied,
     // translated and mirrored since it was built, so no remembered handle survives.
     let corners = |f: Handle<Face>| -> Vec<[f64; 3]> {
-        m.faces
-            .get(f)
+        m.face(f)
             .outer
             .half_edges
             .iter()
-            .map(|he| m.vertex_point(m.edges.get(he.edge).vertices[0]).as_array())
+            .map(|he| m.vertex_point(m.edge(he.edge).vertices[0]).as_array())
             .collect()
     };
     let cap = *faces_of(&m, b)
@@ -980,11 +994,11 @@ fn a_log_using_every_handle_carrying_variant_replays() {
 
 fn arena_lengths(m: &Model) -> [usize; 5] {
     [
-        m.vertices.len(),
-        m.edges.len(),
-        m.faces.len(),
-        m.shells.len(),
-        m.solids.len(),
+        m.vertex_count(),
+        m.edge_count(),
+        m.face_count(),
+        m.shell_count(),
+        m.solid_count(),
     ]
 }
 
@@ -1467,10 +1481,10 @@ fn a_datum_naming_vertices_survives_a_session_that_rejected() {
 
     // Now name three corners of the seed solid — the step whose handles are vertices.
     let mut vs = Vec::new();
-    let sol = m.solids.get(solid);
+    let sol = m.solid(solid);
     for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-        for &fh in &m.shells.get(sh).faces {
-            let f = m.faces.get(fh);
+        for &fh in &m.shell(sh).faces {
+            let f = m.face(fh);
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for &he in &lp.half_edges {
                     let vh = m.he_start(he);

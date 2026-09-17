@@ -61,7 +61,7 @@ fn multi_op_log_composes_through_export() {
     ])
     .unwrap();
 
-    assert_eq!(model.solids.len(), 2);
+    assert_eq!(model.solid_count(), 2);
     assert!(nacre_validate::validate(&model).is_empty());
     assert!(nacre_step::to_step(&model).is_ok());
 }
@@ -268,15 +268,14 @@ fn pocketed_cube() -> (Model, Handle<Solid>) {
     }])
     .unwrap();
     let s = m.live_solids[0];
-    let shell = m.solids.get(s).outer;
+    let shell = m.solid(s).outer;
     let top = *m
-        .shells
-        .get(shell)
+        .shell(shell)
         .faces
         .iter()
         .find(|&&fh| {
-            m.faces.get(fh).outer.half_edges.iter().all(|he| {
-                let b = m.edges.get(he.edge).vertices;
+            m.face(fh).outer.half_edges.iter().all(|he| {
+                let b = m.edge(he.edge).vertices;
                 b.iter().all(|&v| (m.vertex_point(v)[2] - 1.0).abs() < 1e-9)
             })
         })
@@ -627,7 +626,7 @@ fn a_sealed_cavity_meshes_watertight() {
         Point3::from_array([1.3, 1.2, 1.5]),
     );
     let s = boolean_one(&mut m, BoolKind::Fuse, slab, pc).unwrap();
-    assert_eq!(m.solids.get(s).cavities.len(), 1);
+    assert_eq!(m.solid(s).cavities.len(), 1);
     let g = mesh_vs_props(&m, s);
     assert_agrees(&g, "sealed cavity");
     assert!((nacre_props::mass_props(&m, s).unwrap().volume - 2.408).abs() < 1e-9);
@@ -741,9 +740,9 @@ fn only_the_signed_volume_sees_a_reversed_face() {
 
     // `Store` is append-only: push a replacement face, swap it into a fresh shell and
     // solid, and move the live handle. The original falls out of `reachable()`.
-    let faces = m.shells.get(m.solids.get(c).outer).faces.clone();
+    let faces = m.shell(m.solid(c).outer).faces.clone();
     let victim = faces[0];
-    let f = m.faces.get(victim).clone();
+    let f = m.face(victim).clone();
     let mut outer = f.outer.clone();
     outer.half_edges.reverse();
     for he in &mut outer.half_edges {
@@ -838,13 +837,13 @@ fn a_flipped_island_loop_is_caught() {
     // assertions below pass on any face, so only the signed volume noticed. Hence the
     // geometric predicate, and hence the count: the uniqueness this relies on is asserted,
     // not narrated.
-    let faces = m.shells.get(m.solids.get(s).outer).faces.clone();
+    let faces = m.shell(m.solid(s).outer).faces.clone();
     let isles: Vec<_> = faces
         .iter()
         .copied()
         .filter(|&f| {
-            m.faces.get(f).outer.half_edges.iter().all(|he| {
-                let b = m.edges.get(he.edge).vertices;
+            m.face(f).outer.half_edges.iter().all(|he| {
+                let b = m.edge(he.edge).vertices;
                 b.iter().all(|&v| (m.vertex_point(v)[2] - 1.0).abs() < 1e-9)
             })
         })
@@ -854,7 +853,7 @@ fn a_flipped_island_loop_is_caught() {
 
     // `Store` is append-only: push the reversed face, swap it into a fresh shell and
     // solid, move the live handle.
-    let f = m.faces.get(isle).clone();
+    let f = m.face(isle).clone();
     let mut outer = f.outer.clone();
     outer.half_edges.reverse();
     for he in &mut outer.half_edges {
@@ -1204,8 +1203,8 @@ fn a_split_dimension_meets_the_undivided_one() {
         props.volume
     );
 
-    let shell = m.solids.get(part).outer;
-    let faces = &m.shells.get(shell).faces;
+    let shell = m.solid(part).outer;
+    let faces = &m.shell(shell).faces;
     let smallest = faces
         .iter()
         .filter_map(|&fh| nacre_props::face_props(&m, fh).ok())
@@ -1246,10 +1245,9 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
         Profile2d::polygon(vec![p2(0.0, 0.0), p2(n, 0.0), p2(n, n), p2(0.0, n)]).unwrap()
     }
     fn top_face(m: &Model, s: Handle<Solid>) -> Handle<Face> {
-        let shell = m.solids.get(s).outer;
+        let shell = m.solid(s).outer;
         let up = |f: Handle<Face>| nacre_props::face_props(m, f).unwrap();
-        *m.shells
-            .get(shell)
+        *m.shell(shell)
             .faces
             .iter()
             .filter(|&&f| up(f).normal.map(|n| n[2] > 0.5).unwrap_or(false))

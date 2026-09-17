@@ -29,9 +29,9 @@ fn unit_cube(m: &mut Model) -> Handle<Solid> {
 /// solve would leave the copy's vertex on the construction fallback.
 fn discovered_count(m: &Model, s: Handle<Solid>) -> usize {
     let mut n = 0;
-    for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-        for he in &m.faces.get(fh).outer.half_edges {
-            for vh in m.edges.get(he.edge).vertices {
+    for &fh in &m.shell(m.solid(s).outer).faces {
+        for he in &m.face(fh).outer.half_edges {
+            for vh in m.edge(he.edge).vertices {
                 if matches!(m.vertex_cache(vh), PointCache::Bounded { .. }) {
                     n += 1;
                 }
@@ -161,14 +161,13 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
     let twin = copy_solid(&mut m, r);
 
     let rotated = |s: Handle<Solid>| {
-        m.shells
-            .get(m.solids.get(s).outer)
+        m.shell(m.solid(s).outer)
             .faces
             .iter()
-            .flat_map(|&fh| m.faces.get(fh).outer.half_edges.clone())
-            .flat_map(|he| m.edges.get(he.edge).vertices)
+            .flat_map(|&fh| m.face(fh).outer.half_edges.clone())
+            .flat_map(|he| m.edge(he.edge).vertices)
             .filter(|&vh| {
-                let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+                let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
                     return false;
                 };
                 // ★ `any`, not `all`: since the invariant-plane restatement the caps a
@@ -220,11 +219,11 @@ fn a_hollow_solid_copies_with_its_cavity() {
     m.rebuild_adjacency();
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+    assert_eq!(m.solid(hollow).cavities.len(), 1);
 
     let twin = copy_solid(&mut m, hollow);
 
-    assert_eq!(m.solids.get(twin).cavities.len(), 1, "the void survives");
+    assert_eq!(m.solid(twin).cavities.len(), 1, "the void survives");
     assert!(
         (volume(&m, twin) - 26.0).abs() < 1e-9,
         "{}",

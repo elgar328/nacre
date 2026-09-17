@@ -22,7 +22,7 @@ fn cut_non_convex_containment_makes_cavity() {
     assert!(vs.is_empty(), "{vs:?}");
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - (3.0 - 0.512)).abs() < 1e-9, "volume {vol}");
-    assert_eq!(m.solids.get(r).cavities.len(), 1);
+    assert_eq!(m.solid(r).cavities.len(), 1);
 }
 
 #[test]
@@ -33,7 +33,7 @@ fn fuse_non_convex_containment_is_container() {
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     assert!((nacre_props::mass_props(&m, r).unwrap().volume - vol_l).abs() < 1e-9);
-    assert!(m.solids.get(r).cavities.is_empty());
+    assert!(m.solid(r).cavities.is_empty());
 }
 
 #[test]
@@ -417,15 +417,15 @@ fn a_flipped_hole_loop_is_caught() {
     // its sibling in `pipeline.rs` said "the only face …" in prose, used `find`, and
     // silently flipped a different face once the engine stopped making the predicate
     // unique.
-    let faces = m.shells.get(m.solids.get(r).outer).faces.clone();
+    let faces = m.shell(m.solid(r).outer).faces.clone();
     let holed_faces: Vec<_> = faces
         .iter()
         .copied()
-        .filter(|&f| !m.faces.get(f).inner.is_empty())
+        .filter(|&f| !m.face(f).inner.is_empty())
         .collect();
     assert_eq!(holed_faces.len(), 1, "the L's top face carries the hole");
     let holed = holed_faces[0];
-    let f = m.faces.get(holed).clone();
+    let f = m.face(holed).clone();
     let mut hole = f.inner[0].clone();
     hole.half_edges.reverse();
     for he in &mut hole.half_edges {
@@ -498,7 +498,7 @@ fn a_boolean_result_stacks_as_an_operand() {
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 2.0).abs() < 1e-12, "volume {vol}");
-    assert_eq!(m.solids.get(r).cavities.len(), 0);
+    assert_eq!(m.solid(r).cavities.len(), 0);
 }
 
 #[test]
@@ -512,7 +512,7 @@ fn blind_hole_drills_into_a_void() {
     let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
     let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
-    assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+    assert_eq!(m.solid(hollow).cavities.len(), 1);
     m.rebuild_adjacency();
     let stub = m.add_cuboid(
         Point3::from_array([1.4, 1.4, -0.5]),
@@ -523,7 +523,7 @@ fn blind_hole_drills_into_a_void() {
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 25.96).abs() < 1e-9, "volume {vol}");
-    assert_eq!(m.solids.get(r).cavities.len(), 0); // the void opened to outside
+    assert_eq!(m.solid(r).cavities.len(), 0); // the void opened to outside
 }
 
 #[test]
@@ -546,7 +546,7 @@ fn a_tunnel_drilled_through_a_void() {
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 25.92).abs() < 1e-9, "volume {vol}");
-    assert_eq!(m.solids.get(r).cavities.len(), 0);
+    assert_eq!(m.solid(r).cavities.len(), 0);
 }
 
 #[test]
@@ -556,7 +556,7 @@ fn clockwise_input_is_auto_corrected() {
         Profile2d::polygon(vec![p2(0.0, 1.0), p2(1.0, 1.0), p2(1.0, 0.0), p2(0.0, 0.0)]).unwrap();
     let m = replay(&[extrude_log_op(cw, 1.0)]).unwrap();
     assert!(nacre_validate::validate(&m).is_empty());
-    assert_eq!(m.faces.len(), 6);
+    assert_eq!(m.face_count(), 6);
 }
 
 #[test]
@@ -630,7 +630,7 @@ fn cut_containment_makes_a_cavity() {
     assert!(vs.is_empty(), "{vs:?}");
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 26.0).abs() < 1e-12, "volume {vol}");
-    assert_eq!(m.solids.get(r).cavities.len(), 1);
+    assert_eq!(m.solid(r).cavities.len(), 1);
     let reach = m.reachable();
     assert_eq!(reach.shells.len(), 2);
     assert_eq!(reach.faces.len(), 12);
@@ -653,7 +653,7 @@ fn cut_containment_off_center_cavity() {
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - (64.0 - 6.0)).abs() < 1e-12, "volume {vol}"); // 4³ − 1·2·3
-    assert_eq!(m.solids.get(r).cavities.len(), 1);
+    assert_eq!(m.solid(r).cavities.len(), 1);
 }
 
 #[test]
@@ -666,7 +666,7 @@ fn fuse_containment_is_the_container() {
     assert!(nacre_validate::validate(&m).is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - vol_a).abs() < 1e-12, "volume {vol}");
-    assert!(m.solids.get(r).cavities.is_empty());
+    assert!(m.solid(r).cavities.is_empty());
     assert_eq!(m.live_solids, vec![r]);
 }
 
@@ -778,17 +778,17 @@ fn boolean_topology_is_the_same_on_untidy_coordinates() {
         let r = boolean_one(&mut m, kind, a, b).expect("stacked boxes fuse/cut");
         m.rebuild_adjacency();
         assert!(nacre_validate::validate(&m).is_empty());
-        let s = m.solids.get(r);
-        let sh = m.shells.get(s.outer);
+        let s = m.solid(r);
+        let sh = m.shell(s.outer);
         let faces = sh.faces.len();
         let mut edges = std::collections::HashSet::new();
         let mut verts = std::collections::HashSet::new();
         for &fh in &sh.faces {
-            let f = m.faces.get(fh);
+            let f = m.face(fh);
             for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for he in &l.half_edges {
                     edges.insert(he.edge);
-                    verts.extend(m.edges.get(he.edge).vertices);
+                    verts.extend(m.edge(he.edge).vertices);
                 }
             }
         }

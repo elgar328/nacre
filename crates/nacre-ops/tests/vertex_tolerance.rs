@@ -56,7 +56,10 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
 /// callers' `> 0` is what keeps the skip from swallowing the whole fixture.
 fn every_vertex_matches_its_definition(m: &Model) -> usize {
     let mut measured = 0;
-    for (vh, v) in m.vertices.iter() {
+    let mut i = 0u32;
+    while let Some(vh) = m.vertex_handle_at(i) {
+        i += 1;
+        let v = m.vertex(vh);
         // What the cache knows, and the figure it is held to: a realized coordinate to the
         // realization bit for bit, and to its carriers within the construction epsilon
         // `nacre-validate` applies to it (its bound speaks of the coordinate, not of the cached

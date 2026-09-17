@@ -134,7 +134,7 @@ fn the_returned_frame_realizes_to_the_pads_or_declines_by_name() {
     for (tag, m, s, want_declined) in flavours() {
         let mut declined = 0usize;
         for fi in 0..6 {
-            let f = m.shells.get(m.solids.get(s).outer).faces[fi];
+            let f = m.shell(m.solid(s).outer).faces[fi];
             let a = face_plane(&m, f).expect("planar");
             match face_sketch_frame(&m, f) {
                 Ok(sf) => {
@@ -189,7 +189,7 @@ fn an_extrude_in_the_returned_frame_lands_with_the_pad() {
         // face[0] = bottom (flip=true), face[1] = top (flip=false) on the plain block.
         let mut m = Model::new();
         let s = block(&mut m);
-        let f = m.shells.get(m.solids.get(s).outer).faces[fi];
+        let f = m.shell(m.solid(s).outer).faces[fi];
         let a = face_plane(&m, f).expect("planar");
         let d = nacre_props::face_props(&m, f).expect("props").centroid - a.origin();
         let (cu, cv) = (d.dot(a.x_axis()), d.dot(a.y_axis()));
@@ -215,7 +215,7 @@ fn an_extrude_in_the_returned_frame_lands_with_the_pad() {
 
         let mut m2 = Model::new();
         let s2 = block(&mut m2);
-        let f2 = m2.shells.get(m2.solids.get(s2).outer).faces[fi];
+        let f2 = m2.shell(m2.solid(s2).outer).faces[fi];
         let sf = face_sketch_frame(&m2, f2).expect("a representable face");
         let OpOutput::Extrude { solid: prism, .. } = apply(
             &mut m2,

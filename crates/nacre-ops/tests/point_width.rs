@@ -291,10 +291,10 @@ fn live_vertices(m: &Model) -> Vec<Handle<Vertex>> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for &s in &m.live_solids {
-        let sol = m.solids.get(s);
+        let sol = m.solid(s);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                let f = m.faces.get(fh);
+            for &fh in &m.shell(sh).faces {
+                let f = m.face(fh);
                 for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                     for &he in &lp.half_edges {
                         let vh = m.he_start(he);
@@ -323,7 +323,7 @@ fn measure(m: &Model) -> Tally {
             PointCache::Bounded { .. } => t.realized_inexact += 1,
         }
 
-        let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+        let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
             t.on_seam += 1;
             continue;
         };
@@ -509,7 +509,7 @@ fn datum_reach(m: &Model) -> Reach {
     let reach: Vec<VertexReach> = verts
         .iter()
         .map(|&vh| {
-            let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+            let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
                 return VertexReach::Undefined;
             };
             let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();
@@ -715,12 +715,11 @@ fn tilted_frame(passes: usize) -> Model {
     for pass in 0..passes {
         let live = m.live_solids[0];
         let wall = *m
-            .shells
-            .get(m.solids.get(live).outer)
+            .shell(m.solid(live).outer)
             .faces
             .iter()
             .find(|&&f| {
-                let s = m.faces.get(f).surface;
+                let s = m.face(f).surface;
                 !done.contains(&s)
                     && m.surface_name
                         .get(&s)
@@ -728,7 +727,7 @@ fn tilted_frame(passes: usize) -> Model {
                         .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
             })
             .unwrap_or_else(|| panic!("the wf population vanished on pass {pass}"));
-        done.push(m.faces.get(wall).surface);
+        done.push(m.face(wall).surface);
         let sp = nacre_ops::face_plane(&m, wall).expect("planar");
         let d = nacre_props::face_props(&m, wall).unwrap().centroid - sp.origin();
         let (cu, cv) = (d.dot(sp.x_axis()), d.dot(sp.y_axis()));
@@ -767,7 +766,7 @@ fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
         if !matches!(m.vertex_cache(vh), PointCache::Bounded { .. }) {
             continue; // the construction's bare figure — the control lives in its own fixture below
         }
-        let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+        let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
             continue;
         };
         let names: Vec<&PlaneName> = tri.iter().filter_map(|h| m.surface_name.get(h)).collect();

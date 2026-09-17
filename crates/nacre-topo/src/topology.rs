@@ -157,7 +157,7 @@ mod tests {
         );
         let e = m.push_edge([sb, sa], [v0, v1]).expect("distinct endpoints");
 
-        let stored = *m.edges.get(e);
+        let stored = *m.edge(e);
         assert_eq!(stored.surfaces, [sa, sb], "already ascending — kept as-is");
         assert_eq!(stored.vertices, [v0, v1]);
 

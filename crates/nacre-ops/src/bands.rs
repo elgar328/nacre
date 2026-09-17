@@ -286,7 +286,7 @@ mod tests {
             ),
             nacre_topo::PointCache::Ceiling { coord }
             | nacre_topo::PointCache::Unrealized { coord } => {
-                for sh in m.vertices.get(h).def.carriers() {
+                for sh in m.vertex(h).def.carriers() {
                     let d = m.surface_cache(sh).distance(*coord);
                     assert!(
                         d < 1e-12,
@@ -519,7 +519,7 @@ mod tests {
         );
         let faces = crate::planes::solid_shell_handles(&m, s)
             .into_iter()
-            .map(|sh| m.shells.get(sh).faces.len())
+            .map(|sh| m.shell(sh).faces.len())
             .sum::<usize>();
         assert_eq!(faces, 7, "4 walls + 2 drilled caps + the bore's wall");
         // ★ **Genus 1, re-derived rather than quoted.** An earlier plan wrote `V10−E15+F7−L2`
@@ -601,7 +601,7 @@ mod tests {
         let l: i64 = reach
             .faces
             .iter()
-            .map(|fh| m.faces.get(*fh).inner.len() as i64)
+            .map(|fh| m.face(*fh).inner.len() as i64)
             .sum();
         let chi =
             reach.vertices.len() as i64 - reach.edges.len() as i64 + reach.faces.len() as i64 - l;
@@ -1187,18 +1187,18 @@ mod tests {
     /// is broken). ⇒ **the surface is a 2-manifold there; only the face is pinched.**
     fn the_touch_is_a_slit(m: &Model, s: Handle<Solid>, at: [f64; 3]) {
         let p = Point3::from_array(at);
-        let sol = m.solids.get(s).clone();
+        let sol = m.solid(s).clone();
         let (mut vertices_at, mut whole_circle_through) = (0usize, 0usize);
         let mut seen = std::collections::HashSet::new();
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                let face = m.faces.get(fh);
+            for &fh in &m.shell(sh).faces {
+                let face = m.face(fh);
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
                         if !seen.insert(he.edge) {
                             continue;
                         }
-                        let e = m.edges.get(he.edge);
+                        let e = m.edge(he.edge);
                         for &vh in e.vertices.iter() {
                             if m.vertex_point(vh).distance(p) <= 1e-9 {
                                 vertices_at += 1;
@@ -2031,9 +2031,9 @@ mod tests {
             assert_eq!(out.len(), 1, "one fused solid");
             assert_ne!(m.live_solids, before, "the operands retired");
             assert_eq!(m.live_solids, out, "the result lives");
-            let pierce: Vec<_> = m
-                .vertices
-                .iter()
+            let pierce: Vec<_> = (0..m.vertex_count() as u32)
+                .filter_map(|i| m.vertex_handle_at(i))
+                .map(|h| (h, m.vertex(h)))
                 .filter(|(_, v)| matches!(v.def, nacre_topo::VertexDef::Pierce { .. }))
                 .collect();
             assert_eq!(pierce.len(), 2, "both crossings minted, once each");
@@ -2111,12 +2111,15 @@ mod tests {
                 height,
             );
             m.rebuild_adjacency();
-            let minted_from = m.edges.len();
-            let vertices_from = m.vertices.len();
+            let minted_from = m.edge_count();
+            let vertices_from = m.vertex_count();
             let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
                 .expect("the cut-rim boolean builds");
             assert_eq!(out.len(), 1, "one fused solid");
-            let minted: Vec<_> = m.edges.iter().skip(minted_from).collect();
+            let minted: Vec<_> = (minted_from as u32..m.edge_count() as u32)
+                .filter_map(|i| m.edge_handle_at(i))
+                .map(|h| (h, m.edge(h)))
+                .collect();
             let is_cyl = |sh| matches!(m.surface_cache(sh), nacre_geom::Surface::Cylinder(_));
             // A circle-carrier edge is a **mixed** pair (the cap plane and the lateral); the
             // band's seam edge is `[lat, lat]` — both carriers the cylinder — and is not a
@@ -2157,7 +2160,7 @@ mod tests {
             // tolerance measured.
             let (mut pierce, mut on_seam) = (Vec::new(), Vec::new());
             for &v in succ.keys() {
-                match m.vertices.get(v).def {
+                match m.vertex(v).def {
                     nacre_topo::VertexDef::Pierce { .. } => pierce.push(v),
                     nacre_topo::VertexDef::OnSeam(_) => on_seam.push(v),
                     ref d => panic!("an arc endpoint is neither pierce nor seam: {d:?}"),
@@ -2187,9 +2190,9 @@ mod tests {
             }
             // The minted OnSeam census: the uncut far rim's vertex, plus S when it stands —
             // and nothing else (a duplicate S at a seam-incident pierce vertex would show here).
-            let minted_on_seam = m
-                .vertices
-                .iter()
+            let minted_on_seam = (0..m.vertex_count() as u32)
+                .filter_map(|i| m.vertex_handle_at(i))
+                .map(|h| (h, m.vertex(h)))
                 .skip(vertices_from)
                 .filter(|(_, v)| matches!(v.def, nacre_topo::VertexDef::OnSeam(_)))
                 .count();
@@ -2261,14 +2264,17 @@ mod tests {
                 1.0,
             );
             m.rebuild_adjacency();
-            let faces_from = m.faces.len();
+            let faces_from = m.face_count();
             let before = m.live_solids.clone();
             let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
                 .expect("the cut-rim boolean builds");
             assert_eq!(out.len(), 1, "one fused solid");
             assert_ne!(m.live_solids, before, "the operands retired");
             assert_eq!(m.live_solids, out, "the result lives");
-            let garbage: Vec<_> = m.faces.iter().skip(faces_from).collect();
+            let garbage: Vec<_> = (faces_from as u32..m.face_count() as u32)
+                .filter_map(|i| m.face_handle_at(i))
+                .map(|h| (h, m.face(h)))
+                .collect();
             assert!(!garbage.is_empty(), "the face loop ran to completion");
 
             // Closure: every edge of the garbage faces is used exactly twice.
@@ -2298,7 +2304,7 @@ mod tests {
             let lp = &bands[0].1.outer;
             assert_eq!(lp.half_edges.len(), band_len, "the derived loop length");
             let ends = |he: &nacre_topo::HalfEdge| {
-                let [a, b] = m.edges.get(he.edge).vertices;
+                let [a, b] = m.edge(he.edge).vertices;
                 if he.forward { (a, b) } else { (b, a) }
             };
             for w in 0..lp.half_edges.len() {
@@ -2436,23 +2442,27 @@ mod tests {
                 1.0,
             );
             m.rebuild_adjacency();
-            let (faces_from, solids_from) = (m.faces.len(), m.solids.len());
+            let (faces_from, solids_from) = (m.face_count(), m.solid_count());
             let before = m.live_solids.clone();
             let out = crate::boolean(&mut m, BoolKind::Fuse, plate, boss)
                 .expect("the cut-rim boolean builds");
             assert_eq!(out.len(), 1, "one fused solid");
             assert_ne!(m.live_solids, before, "the operands retired");
             assert_eq!(m.live_solids, out, "the result lives");
-            let pushed: Vec<_> = m.solids.iter().skip(solids_from).collect();
+            let pushed: Vec<_> = (solids_from as u32..m.solid_count() as u32)
+                .filter_map(|i| m.solid_handle_at(i))
+                .map(|h| (h, m.solid(h)))
+                .collect();
             let [(sh, solid)] = pushed[..] else {
                 panic!("one result solid, got {}", pushed.len());
             };
             assert_eq!(sh, out[0], "the pushed solid is the returned one");
             assert!(solid.cavities.is_empty(), "one material piece, no cavity");
             let shell_faces: std::collections::HashSet<_> =
-                m.shells.get(solid.outer).faces.iter().copied().collect();
-            let minted: std::collections::HashSet<_> =
-                m.faces.iter().skip(faces_from).map(|(h, _)| h).collect();
+                m.shell(solid.outer).faces.iter().copied().collect();
+            let minted: std::collections::HashSet<_> = (faces_from as u32..m.face_count() as u32)
+                .filter_map(|i| m.face_handle_at(i))
+                .collect();
             assert_eq!(
                 shell_faces, minted,
                 "the outer shell is exactly the boolean's minted faces"
@@ -2473,7 +2483,10 @@ mod tests {
             // half-disk (π/8).
             if origin == [4.0, 2.0, 2.0] {
                 let (mut top, mut digon) = (None, None);
-                for (h, f) in m.faces.iter().skip(faces_from) {
+                let mut i = faces_from as u32;
+                while let Some(h) = m.face_handle_at(i) {
+                    i += 1;
+                    let f = m.face(h);
                     let nacre_geom::Surface::Plane(p) = m.surface_cache(f.surface) else {
                         continue;
                     };
@@ -2690,18 +2703,18 @@ mod tests {
     fn euler_counts(m: &Model, s: Handle<Solid>) -> (i64, i64, i64, i64) {
         let faces: Vec<_> = crate::planes::solid_shell_handles(m, s)
             .into_iter()
-            .flat_map(|sh| m.shells.get(sh).faces.clone())
+            .flat_map(|sh| m.shell(sh).faces.clone())
             .collect();
         let mut verts = std::collections::HashSet::new();
         let mut edges = std::collections::HashSet::new();
         let mut loops = 0i64;
         for &fh in &faces {
-            let f = m.faces.get(fh);
+            let f = m.face(fh);
             loops += f.inner.len() as i64;
             for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for he in &lp.half_edges {
                     edges.insert(he.edge);
-                    verts.extend(m.edges.get(he.edge).vertices);
+                    verts.extend(m.edge(he.edge).vertices);
                 }
             }
         }
@@ -3052,8 +3065,8 @@ mod tests {
             let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
             assert!((v - want).abs() < 1e-9, "{kind:?}: {v} vs {want}");
             if kind == BoolKind::Fuse {
-                let faces: usize = std::iter::once(m.solids.get(out[0]).outer)
-                    .map(|sh| m.shells.get(sh).faces.len())
+                let faces: usize = std::iter::once(m.solid(out[0]).outer)
+                    .map(|sh| m.shell(sh).faces.len())
                     .sum();
                 assert_eq!(
                     faces, 10,
@@ -3141,7 +3154,7 @@ mod tests {
                 let v = nacre_props::mass_props(&m, out[0]).unwrap().volume;
                 assert!((v - want).abs() < 1e-9, "{kind:?}: {v} vs {want}");
                 if let Some(n) = faces_want {
-                    let faces = m.shells.get(m.solids.get(out[0]).outer).faces.len();
+                    let faces = m.shell(m.solid(out[0]).outer).faces.len();
                     assert_eq!(faces, n, "{kind:?} (z first: {z_first})");
                 }
                 crate::tests::mesh_covers_faces("the user's cross studs", &m, &out);
@@ -3533,10 +3546,10 @@ mod tests {
     /// How many faces of `s` lie on cylinder surfaces, grouped by surface.
     fn lateral_face_counts(m: &Model, s: Handle<Solid>) -> Vec<usize> {
         let mut counts: std::collections::HashMap<Handle<Surface>, usize> = Default::default();
-        let solid = m.solids.get(s);
+        let solid = m.solid(s);
         for sh in std::iter::once(solid.outer).chain(solid.cavities.iter().copied()) {
-            for &fh in &m.shells.get(sh).faces {
-                let surf = m.faces.get(fh).surface;
+            for &fh in &m.shell(sh).faces {
+                let surf = m.face(fh).surface;
                 if matches!(m.surface(surf), nacre_topo::Surface::Cylinder { .. }) {
                     *counts.entry(surf).or_default() += 1;
                 }
@@ -3948,11 +3961,7 @@ mod tests {
             "{:?}",
             nacre_validate::validate(&m)
         );
-        assert_eq!(
-            m.solids.get(out[0]).cavities.len(),
-            1,
-            "the void is a cavity"
-        );
+        assert_eq!(m.solid(out[0]).cavities.len(), 1, "the void is a cavity");
         let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
         let want = 64.0 - std::f64::consts::PI * 0.25 * 2.0;
         assert!(
@@ -4004,11 +4013,7 @@ mod tests {
             "{:?}",
             nacre_validate::validate(&m)
         );
-        assert_eq!(
-            m.solids.get(out[0]).cavities.len(),
-            1,
-            "the void is a cavity"
-        );
+        assert_eq!(m.solid(out[0]).cavities.len(), 1, "the void is a cavity");
         let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
         let want = 128.0 - std::f64::consts::PI * 0.25 * 4.0 - std::f64::consts::PI * 0.25 * 2.0;
         assert!((v - want).abs() < 1e-9, "the box less both: {v} vs {want}");
@@ -4052,7 +4057,7 @@ mod tests {
             .map(|&s| {
                 (
                     nacre_props::mass_props(&m, s).expect("props").volume,
-                    m.solids.get(s).cavities.len(),
+                    m.solid(s).cavities.len(),
                 )
             })
             .collect();

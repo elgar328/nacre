@@ -184,9 +184,9 @@ fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3) ->
     let Some(target) = Plane::from_point_normal(pt, n) else {
         return false;
     };
-    let shell = m.solids.get(solid).outer;
-    m.shells.get(shell).faces.iter().any(|&fh| {
-        let f = m.faces.get(fh);
+    let shell = m.solid(solid).outer;
+    m.shell(shell).faces.iter().any(|&fh| {
+        let f = m.face(fh);
         let nacre_geom::Surface::Plane(plane) = m.surface_cache(f.surface) else {
             return false;
         };
@@ -232,14 +232,14 @@ fn regular_ngon(n: usize, r: f64) -> Profile2d {
 fn square_extrudes_to_a_cube() {
     let m = replay(&[extrude_log_op(square(), 1.0)]).unwrap();
     assert!(nacre_validate::validate(&m).is_empty());
-    assert_eq!(m.vertices.len(), 8);
-    assert_eq!(m.edges.len(), 12);
-    assert_eq!(m.faces.len(), 6);
-    assert_eq!(m.solids.len(), 1);
+    assert_eq!(m.vertex_count(), 8);
+    assert_eq!(m.edge_count(), 12);
+    assert_eq!(m.face_count(), 6);
+    assert_eq!(m.solid_count(), 1);
 
-    let mut got: Vec<[f64; 3]> = m
-        .vertices
-        .iter()
+    let mut got: Vec<[f64; 3]> = (0..m.vertex_count() as u32)
+        .filter_map(|i| m.vertex_handle_at(i))
+        .map(|h| (h, m.vertex(h)))
         .map(|(vh, _)| m.vertex_point(vh).as_array())
         .collect();
     let mut want = vec![
@@ -263,17 +263,17 @@ fn triangle_extrudes_to_a_prism() {
     let tri = Profile2d::polygon(vec![p2(0.0, 0.0), p2(2.0, 0.0), p2(1.0, 1.5)]).unwrap();
     let m = replay(&[extrude_log_op(tri, 3.0)]).unwrap();
     assert!(nacre_validate::validate(&m).is_empty());
-    assert_eq!(m.vertices.len(), 6);
-    assert_eq!(m.edges.len(), 9);
-    assert_eq!(m.faces.len(), 5);
+    assert_eq!(m.vertex_count(), 6);
+    assert_eq!(m.edge_count(), 9);
+    assert_eq!(m.face_count(), 5);
 }
 
 #[test]
 fn pentagon_extrudes_clean() {
     let m = replay(&[extrude_log_op(regular_ngon(5, 2.0), 1.0)]).unwrap();
     assert!(nacre_validate::validate(&m).is_empty());
-    assert_eq!(m.vertices.len(), 10);
-    assert_eq!(m.faces.len(), 7);
+    assert_eq!(m.vertex_count(), 10);
+    assert_eq!(m.face_count(), 7);
 }
 
 #[test]
@@ -290,8 +290,8 @@ fn concave_l_profile_is_valid() {
     .unwrap();
     let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
     assert!(nacre_validate::validate(&m).is_empty());
-    assert_eq!(m.vertices.len(), 12);
-    assert_eq!(m.faces.len(), 8);
+    assert_eq!(m.vertex_count(), 12);
+    assert_eq!(m.face_count(), 8);
 }
 
 /// The L-prism: profile `[(0,0),(2,0),(2,1),(1,1),(1,2),(0,2)]` extruded to
@@ -770,7 +770,7 @@ fn rotated_result_reuse_stress() {
                     .iter()
                     .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
                     .sum();
-                let cav: usize = solids.iter().map(|&s| m.solids.get(s).cavities.len()).sum();
+                let cav: usize = solids.iter().map(|&s| m.solid(s).cavities.len()).sum();
                 Out::Ok(vol, solids.len(), cav)
             }
             Err(_) => Out::Rej,
@@ -857,7 +857,7 @@ fn rotation_invariance_stress() {
                     .iter()
                     .map(|&s| nacre_props::mass_props(&m, s).unwrap().volume)
                     .sum();
-                let cav: usize = solids.iter().map(|&s| m.solids.get(s).cavities.len()).sum();
+                let cav: usize = solids.iter().map(|&s| m.solid(s).cavities.len()).sum();
                 Out::Ok(vol, solids.len(), cav)
             }
             Err(_) => Out::Rej,
@@ -946,7 +946,9 @@ fn model_sig(m: &Model, solids: &[Handle<Solid>]) -> String {
     use std::fmt::Write;
     let mut s = String::new();
     let _ = write!(s, "S{}", solids.len());
-    for (vh, _) in m.vertices.iter() {
+    let mut i = 0u32;
+    while let Some(vh) = m.vertex_handle_at(i) {
+        i += 1;
         let p = m.vertex_point(vh).as_array();
         let _ = write!(
             s,
@@ -956,7 +958,7 @@ fn model_sig(m: &Model, solids: &[Handle<Solid>]) -> String {
             p[2].to_bits()
         );
     }
-    let _ = write!(s, "|E{}F{}", m.edges.len(), m.faces.len());
+    let _ = write!(s, "|E{}F{}", m.edge_count(), m.face_count());
     let mut vols: Vec<u64> = solids
         .iter()
         .map(|&sh| nacre_props::mass_props(m, sh).unwrap().volume.to_bits())
@@ -1306,7 +1308,7 @@ fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
             "Fuse swap={swap}: {}",
             props.volume
         );
-        assert_eq!(m.solids.get(r).cavities.len(), 1, "Fuse swap={swap}");
+        assert_eq!(m.solid(r).cavities.len(), 1, "Fuse swap={swap}");
         assert_eq!(m.reachable().shells.len(), 2, "Fuse swap={swap}");
     }
 }
@@ -1639,7 +1641,7 @@ fn holed_face_rings_of(
     let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
     let (planes, plane_ix, _cyls) = dense_planes(&faces_tab, &canon);
     let inc = combinatorics::edge_faces(&m, r, &surf_ix).unwrap();
-    for &fh in &m.shells.get(m.solids.get(r).outer).faces {
+    for &fh in &m.shell(m.solid(r).outer).faces {
         let fp = surf_ix[&fh];
         let holes = combinatorics::hole_rings(
             &m,
@@ -1981,20 +1983,20 @@ fn an_unrotated_boolean_names_every_vertex_by_its_plane_triple() {
     let mut seen = std::collections::HashSet::new();
     let mut holed = 0;
     for sh in solid_shell_handles(&m, r) {
-        for &fh in &m.shells.get(sh).faces {
-            let face = m.faces.get(fh);
+        for &fh in &m.shell(sh).faces {
+            let face = m.face(fh);
             holed += usize::from(!face.inner.is_empty());
             for he in face_half_edges(face) {
-                for vh in m.edges.get(he.edge).vertices {
+                for vh in m.edge(he.edge).vertices {
                     if !seen.insert(vh) {
                         continue;
                     }
                     assert!(
-                        matches!(m.vertices.get(vh).def, VertexDef::ThreePlane(_))
+                        matches!(m.vertex(vh).def, VertexDef::ThreePlane(_))
                             && matches!(m.vertex_cache(vh), nacre_topo::PointCache::Bounded { .. }),
                         "vertex {:?} is {:?}, not a realized plane triple",
                         m.vertex_point(vh).as_array(),
-                        m.vertices.get(vh).def
+                        m.vertex(vh).def
                     );
                 }
             }
@@ -2032,7 +2034,7 @@ fn severed_with_cavity_assigns_the_void_to_its_piece() {
     );
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+    assert_eq!(m.solid(hollow).cavities.len(), 1);
     // A slab spanning full y,z, thin in x at x∈[2,2.2] — severs into x<2 (holds the void, vol
     // 2·3·3 − 4 = 14) and x>2 (solid, vol 0.8·3·3 = 7.2).
     let slab = m.add_cuboid(
@@ -2050,7 +2052,7 @@ fn severed_with_cavity_assigns_the_void_to_its_piece() {
     // Exactly one piece owns the void; volumes match the hand calculation.
     let with_cav: Vec<_> = solids
         .iter()
-        .filter(|&&s| !m.solids.get(s).cavities.is_empty())
+        .filter(|&&s| !m.solid(s).cavities.is_empty())
         .collect();
     assert_eq!(
         with_cav.len(),
@@ -2078,7 +2080,7 @@ fn a_cut_through_the_void_leaves_no_cavity() {
     let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3])); // void 1³
     let hollow = boolean_one(&mut m, BoolKind::Cut, big, inner).unwrap();
     m.rebuild_adjacency();
-    assert_eq!(m.solids.get(hollow).cavities.len(), 1);
+    assert_eq!(m.solid(hollow).cavities.len(), 1);
     // Slab x∈[1.4,1.6] passes through the void (x∈[1,2]) → severs AND opens the void.
     let slab = m.add_cuboid(
         Point3::from_array([1.4, -1.0, -1.0]),
@@ -2089,7 +2091,7 @@ fn a_cut_through_the_void_leaves_no_cavity() {
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     // The void is opened, so neither piece keeps a cavity; material = 26 − (1.8 − 0.2) = 24.4.
-    let total_cavities: usize = solids.iter().map(|&s| m.solids.get(s).cavities.len()).sum();
+    let total_cavities: usize = solids.iter().map(|&s| m.solid(s).cavities.len()).sum();
     assert_eq!(
         total_cavities, 0,
         "the cut opened the void — no surviving cavity"
@@ -2125,7 +2127,7 @@ fn a_void_nested_in_a_floating_island_goes_to_the_inner_solid() {
     let vol = |s| nacre_props::mass_props(&m, s).unwrap().volume;
     for &s in &solids {
         assert_eq!(
-            m.solids.get(s).cavities.len(),
+            m.solid(s).cavities.len(),
             1,
             "each piece keeps its own void"
         );
@@ -2142,14 +2144,15 @@ fn replay_is_deterministic() {
     let m1 = replay(&log).unwrap();
     let m2 = replay(&log).unwrap();
     let pts = |m: &Model| {
-        m.vertices
-            .iter()
+        (0..m.vertex_count() as u32)
+            .filter_map(|i| m.vertex_handle_at(i))
+            .map(|h| (h, m.vertex(h)))
             .map(|(vh, _)| m.vertex_point(vh).as_array())
             .collect::<Vec<_>>()
     };
     assert_eq!(pts(&m1), pts(&m2));
-    assert_eq!(m1.edges.len(), m2.edges.len());
-    assert_eq!(m1.faces.len(), m2.faces.len());
+    assert_eq!(m1.edge_count(), m2.edge_count());
+    assert_eq!(m1.face_count(), m2.face_count());
 }
 
 #[test]
@@ -2176,7 +2179,7 @@ fn two_extrudes_make_two_solids() {
         },
     ];
     let m = replay(&log).unwrap();
-    assert_eq!(m.solids.len(), 2);
+    assert_eq!(m.solid_count(), 2);
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
@@ -2342,7 +2345,7 @@ fn build_prism_base_cap_reuses_shared_surface() {
         None,
     )
     .unwrap();
-    let cap = m.faces.get(faces[0]); // base cap is pushed first
+    let cap = m.face(faces[0]); // base cap is pushed first
     // Shared handle (was a fresh push before overhaul #3).
     assert_eq!(cap.surface, sf, "base cap reuses the shared surface handle");
     // Orientation reconciled: materialized outward normal is −sweep (−z).
@@ -2391,7 +2394,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
             pts,
         )
         .unwrap();
-        let surf = m.faces.get(faces[0]).surface; // base cap is pushed first
+        let surf = m.face(faces[0]).surface; // base cap is pushed first
         (m, surf)
     };
 
@@ -2515,8 +2518,8 @@ proptest! {
     ) {
         let m = replay(&[extrude_log_op(regular_ngon(n, r), dist)]).unwrap();
         prop_assert!(nacre_validate::validate(&m).is_empty());
-        prop_assert_eq!(m.vertices.len(), 2 * n);
-        prop_assert_eq!(m.faces.len(), n + 2);
+        prop_assert_eq!(m.vertex_count(), 2 * n);
+        prop_assert_eq!(m.face_count(), n + 2);
     }
 
     #[test]
@@ -2542,7 +2545,7 @@ proptest! {
         }])
         .unwrap();
         prop_assert!(nacre_validate::validate(&m).is_empty());
-        prop_assert_eq!(m.faces.len(), n + 2);
+        prop_assert_eq!(m.face_count(), n + 2);
     }
 
     /// A blind pocket on a randomly-slanted face: the arrangement must give a valid solid of the
@@ -2977,11 +2980,11 @@ fn every_producer_states_its_side_in_the_label_frame() {
 /// tests: a rigid move shifts it by exactly the offset).
 fn bbox_lo(m: &Model, s: Handle<Solid>) -> [f64; 3] {
     let mut lo = [f64::INFINITY; 3];
-    let sh = m.solids.get(s).outer;
-    for &fh in &m.shells.get(sh).faces {
-        for he in &m.faces.get(fh).outer.half_edges {
+    let sh = m.solid(s).outer;
+    for &fh in &m.shell(sh).faces {
+        for he in &m.face(fh).outer.half_edges {
             {
-                for vh in m.edges.get(he.edge).vertices {
+                for vh in m.edge(he.edge).vertices {
                     let p = m.vertex_point(vh).as_array();
                     for k in 0..3 {
                         lo[k] = lo[k].min(p[k]);
@@ -3000,11 +3003,11 @@ fn bbox_lo(m: &Model, s: Handle<Solid>) -> [f64; 3] {
 fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
     let mut seen = std::collections::HashSet::new();
     let mut n = 0;
-    let sh = m.solids.get(s).outer;
-    for &fh in &m.shells.get(sh).faces {
-        for he in &m.faces.get(fh).outer.half_edges {
+    let sh = m.solid(s).outer;
+    for &fh in &m.shell(sh).faces {
+        for he in &m.face(fh).outer.half_edges {
             {
-                for vh in m.edges.get(he.edge).vertices {
+                for vh in m.edge(he.edge).vertices {
                     // ★ Positive: "realized from its definition" is the claim, and the negative
                     // form would let `Ceiling` in — a vertex the cache road stopped on.
                     if seen.insert(vh)
@@ -3038,8 +3041,8 @@ fn test_iso() -> (nacre_scalar::Isometry, [f64; 3]) {
 fn carries_motion(m: &Model, s: Handle<Solid>) -> bool {
     crate::planes::solid_shell_handles(m, s)
         .into_iter()
-        .flat_map(|sh| m.shells.get(sh).faces.clone())
-        .any(|fh| m.plane_motion(m.faces.get(fh).surface).is_some())
+        .flat_map(|sh| m.shell(sh).faces.clone())
+        .any(|fh| m.plane_motion(m.face(fh).surface).is_some())
 }
 
 /// A cylinder tool translated onto a plate, then cutting it — **the hole-pattern idiom**, and
@@ -3359,11 +3362,11 @@ fn a_two_by_two_grid_fuses() {
     let mut world: Vec<Handle<nacre_topo::Vertex>> = Vec::new();
     let mut framed = 0usize;
     {
-        let sol = m.solids.get(out[0]).clone();
+        let sol = m.solid(out[0]).clone();
         let mut seen: Vec<Handle<nacre_topo::Vertex>> = Vec::new();
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                for he in &m.faces.get(fh).outer.half_edges {
+            for &fh in &m.shell(sh).faces {
+                for he in &m.face(fh).outer.half_edges {
                     let vh = m.he_start(*he);
                     if seen.contains(&vh) {
                         continue;
@@ -3450,10 +3453,10 @@ fn a_boss_on_any_wall_weighs_the_same() {
             0,
             "the mesh is watertight"
         );
-        let sol = m.solids.get(out[0]).clone();
+        let sol = m.solid(out[0]).clone();
         let faces = std::iter::once(&sol.outer)
             .chain(sol.cavities.iter())
-            .map(|&sh| m.shells.get(sh).faces.len())
+            .map(|&sh| m.shell(sh).faces.len())
             .sum();
         (nacre_props::mass_props(&m, out[0]).unwrap().volume, faces)
     };
@@ -3532,10 +3535,10 @@ pub(crate) fn mesh_covers_faces(name: &str, m: &Model, solids: &[Handle<Solid>])
     const BUDGET: f64 = 1e-3;
     let mesh = nacre_tess::tessellate(m, &nacre_tess::TessConfig::default()).expect("tess");
     for &s in solids {
-        let sol = m.solids.get(s).clone();
+        let sol = m.solid(s).clone();
         let mut mesh_volume = 0.0f64;
         for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
-            for fh in m.shells.get(sh).faces.clone() {
+            for fh in m.shell(sh).faces.clone() {
                 let exact = nacre_props::face_props(m, fh)
                     .unwrap_or_else(|e| panic!("{name}: face_props {e:?}"))
                     .area;
@@ -3697,12 +3700,12 @@ fn a_boss_on_a_wall_has_one_lateral_face() {
             0,
             "the mesh is watertight {base:?}"
         );
-        let sol = m.solids.get(out[0]).clone();
+        let sol = m.solid(out[0]).clone();
         let (mut total, mut lateral, mut holes) = (0usize, 0usize, Vec::new());
         for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
-            for fh in m.shells.get(sh).faces.clone() {
+            for fh in m.shell(sh).faces.clone() {
                 total += 1;
-                let f = m.faces.get(fh);
+                let f = m.face(fh);
                 if matches!(m.surface_cache(f.surface), nacre_geom::Surface::Cylinder(_)) {
                     lateral += 1;
                     holes.push(f.inner.len());
@@ -4341,7 +4344,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
     let jd = crate::planes::test_judge(&planes);
     let (mut curved_walls, mut pierce_names) = (0usize, 0usize);
     let (mut ups, mut sides): (Vec<bool>, Vec<i8>) = (Vec::new(), Vec::new());
-    for &fh in &m.shells.get(m.solids.get(r).outer).faces {
+    for &fh in &m.shell(m.solid(r).outer).faces {
         let fp = surf_ix[&fh];
         if matches!(plane_ix[fp], crate::planes::ClassIx::Cyl(_)) {
             continue; // the tracer skips a lateral face; its loops are the rims
@@ -4349,7 +4352,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
         let ring = combinatorics::face_vertex_triples(&m, fh, fp, &inc, &jd, &plane_ix, &cyls)
             .unwrap_or_else(|e| panic!("face {:?}: {e:?}", fh.index()));
         let Some(nr) = ring.poly() else { continue };
-        let hes = &m.faces.get(fh).outer.half_edges;
+        let hes = &m.face(fh).outer.half_edges;
         let n = hes.len();
         assert_eq!(
             nr.triples.len(),
@@ -4357,7 +4360,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
             "face {:?}: one name per corner",
             fh.index()
         );
-        let ends = |k: usize| m.edges.get(hes[k].edge).vertices;
+        let ends = |k: usize| m.edge(hes[k].edge).vertices;
         // The corner the walk stands on when it starts edge `k` — the vertex edge `k-1` and edge
         // `k` share. Read off the ring rather than off either edge's stored pair, because a
         // ruling's pair carries no order (`edge_for` keys it unordered) and this is the walk.
@@ -4543,7 +4546,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
         .collect();
     let jd = crate::planes::test_judge(&planes);
     let mut pins = 0usize;
-    for &fh in &m.shells.get(m.solids.get(r).outer).faces {
+    for &fh in &m.shell(m.solid(r).outer).faces {
         let fp = surf_ix[&fh];
         let crate::planes::ClassIx::Plane(p) = plane_ix[fp] else {
             continue;
@@ -4653,10 +4656,10 @@ fn a_disk_merges_into_the_face_it_lies_in() {
         (a, b)
     };
     let faces_of = |m: &Model, s: Handle<Solid>| -> usize {
-        let sol = m.solids.get(s).clone();
+        let sol = m.solid(s).clone();
         std::iter::once(&sol.outer)
             .chain(sol.cavities.iter())
-            .map(|&sh| m.shells.get(sh).faces.len())
+            .map(|&sh| m.shell(sh).faces.len())
             .sum()
     };
     let run = |base: [f64; 3], h: f64, kind: BoolKind| -> (f64, usize) {
@@ -4904,7 +4907,7 @@ fn transform_translate_preserves_discovered_definition() {
         // A measured tolerance survives an exact move and is dropped by a recorded one
         // (S7's tol rule), so what "still named" means here is the definition: every seam
         // vertex names three planes, whichever road it travelled.
-        .filter(|&vh| matches!(m.vertices.get(vh).def, VertexDef::ThreePlane(_)))
+        .filter(|&vh| matches!(m.vertex(vh).def, VertexDef::ThreePlane(_)))
         .count();
     assert_eq!(named, disc, "seam definitions preserved");
     let after = nacre_props::mass_props(&m, r2).unwrap().volume;
@@ -4952,16 +4955,16 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
     let mirrored = crate::transform::mirror(&mut m, r, Axis::X, Rat::from_int(0)).unwrap();
     m.rebuild_adjacency();
 
-    let shell = m.solids.get(mirrored).outer;
+    let shell = m.solid(mirrored).outer;
     let mut checked = 0;
-    for &fh in &m.shells.get(shell).faces.clone() {
-        for he in &m.faces.get(fh).outer.half_edges.clone() {
-            for vh in m.edges.get(he.edge).vertices.iter() {
+    for &fh in &m.shell(shell).faces.clone() {
+        for he in &m.face(fh).outer.half_edges.clone() {
+            for vh in m.edge(he.edge).vertices.iter() {
                 // The image keeps its definition, and the definition reproduces the
                 // coordinate: solve the corner's three planes in the frame their names are
                 // stated in, replay the chain the *faces* record (S7 — the vertex has no
                 // motion of its own), and the answer is the stored coordinate bit for bit.
-                let VertexDef::ThreePlane(tri) = m.vertices.get(*vh).def else {
+                let VertexDef::ThreePlane(tri) = m.vertex(*vh).def else {
                     unreachable!("a cuboid corner is a three-plane point")
                 };
                 let motion_of = |h| match m.surface(h) {
@@ -5056,11 +5059,11 @@ fn rot30() -> nacre_scalar::Isometry {
 fn outer_points(m: &Model, s: Handle<Solid>) -> Vec<[f64; 3]> {
     let mut seen = std::collections::HashSet::new();
     let mut pts = Vec::new();
-    let sh = m.solids.get(s).outer;
-    for &fh in &m.shells.get(sh).faces {
-        for he in &m.faces.get(fh).outer.half_edges {
+    let sh = m.solid(s).outer;
+    for &fh in &m.shell(sh).faces {
+        for he in &m.face(fh).outer.half_edges {
             {
-                for vh in m.edges.get(he.edge).vertices {
+                for vh in m.edge(he.edge).vertices {
                     if seen.insert(vh) {
                         pts.push(m.vertex_point(vh).as_array());
                     }
@@ -5129,7 +5132,7 @@ fn transform_rotate_cuboid_tilts_and_cuts() {
         "mixed cut is valid"
     );
     assert_eq!(
-        m.solids.get(r).cavities.len(),
+        m.solid(r).cavities.len(),
         1,
         "the contained box is a cavity"
     );
@@ -5205,19 +5208,18 @@ fn transform_rotate_boolean_result_keeps_discovered_base() {
     // A seam vertex of the *moved* result still names three planes, and those planes are
     // the moved ones (S7: the vertex follows its faces' motion — there is no base vertex
     // left to chase).
-    let sh = m.solids.get(r2).outer;
+    let sh = m.solid(r2).outer;
     let own_surfaces: std::collections::HashSet<_> = m
-        .shells
-        .get(sh)
+        .shell(sh)
         .faces
         .iter()
-        .map(|&fh| m.faces.get(fh).surface)
+        .map(|&fh| m.face(fh).surface)
         .collect();
     let mut found_moved_carrier = false;
-    for &fh in &m.shells.get(sh).faces {
-        for he in &m.faces.get(fh).outer.half_edges {
-            for vh in m.edges.get(he.edge).vertices {
-                let VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+    for &fh in &m.shell(sh).faces {
+        for he in &m.face(fh).outer.half_edges {
+            for vh in m.edge(he.edge).vertices {
+                let VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
                     continue;
                 };
                 // The carriers are the result's own planes — never a superseded
@@ -5290,11 +5292,11 @@ fn transform_rotate_op_applies() {
 fn boundary_verts(m: &Model, s: Handle<Solid>) -> Vec<Handle<Vertex>> {
     let mut seen = std::collections::HashSet::new();
     let mut vs = Vec::new();
-    let sh = m.solids.get(s).outer;
-    for &fh in &m.shells.get(sh).faces {
-        for he in &m.faces.get(fh).outer.half_edges {
+    let sh = m.solid(s).outer;
+    for &fh in &m.shell(sh).faces {
+        for he in &m.face(fh).outer.half_edges {
             {
-                for vh in m.edges.get(he.edge).vertices {
+                for vh in m.edge(he.edge).vertices {
                     if seen.insert(vh) {
                         vs.push(vh);
                     }
@@ -5308,9 +5310,9 @@ fn boundary_verts(m: &Model, s: Handle<Solid>) -> Vec<Handle<Vertex>> {
 /// Whether any wall of `s` is a **rotated image** — what `planes::solid_is_rotated` used to
 /// ask of the vertices, now asked of the surfaces that actually record it.
 fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
-    m.shells.get(m.solids.get(s).outer).faces.iter().any(|&fh| {
+    m.shell(m.solid(s).outer).faces.iter().any(|&fh| {
         matches!(
-            m.surface(m.faces.get(fh).surface),
+            m.surface(m.face(fh).surface),
             nacre_topo::Surface::Plane {
                 motion: Some(_),
                 ..
@@ -5345,11 +5347,11 @@ fn rot_iso(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
 /// theatre.
 fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_scalar::Axis>)> {
     let mut best: Option<Vec<nacre_scalar::Axis>> = None;
-    for &fh in &m.shells.get(m.solids.get(s).outer).faces {
+    for &fh in &m.shell(m.solid(s).outer).faces {
         let &nacre_topo::Surface::Plane {
             motion: Some(rotation),
             ..
-        } = m.surface(m.faces.get(fh).surface)
+        } = m.surface(m.face(fh).surface)
         else {
             continue;
         };
@@ -5448,9 +5450,9 @@ fn the_same_motion_applied_twice_is_one_node() {
     let b = transform(&mut m, b, &rot_iso(Axis::X, 30)).unwrap();
     m.rebuild_adjacency();
     fn leaf(m: &Model, s: Handle<Solid>) -> Handle<nacre_topo::MotionNode> {
-        let sh = m.solids.get(s).outer;
-        let fh = m.shells.get(sh).faces[0];
-        match m.surface(m.faces.get(fh).surface) {
+        let sh = m.solid(s).outer;
+        let fh = m.shell(sh).faces[0];
+        match m.surface(m.face(fh).surface) {
             nacre_topo::Surface::Plane {
                 motion: Some(motion),
                 ..
@@ -5507,9 +5509,9 @@ fn a_rerotated_boolean_result_continues_each_walls_history() {
 
     let mut leaves = std::collections::HashSet::new();
     let mut caps = 0usize;
-    let sh = m.solids.get(r).outer;
-    for &fh in &m.shells.get(sh).faces {
-        let s = m.faces.get(fh).surface;
+    let sh = m.solid(r).outer;
+    for &fh in &m.shell(sh).faces {
+        let s = m.face(fh).surface;
         match m.surface(s) {
             &nacre_topo::Surface::Plane {
                 motion: Some(rotation),
@@ -6048,11 +6050,11 @@ fn two_faces_of_one_judged_surface_are_one_class() {
     let mut straddle = None;
     let mut pure = Vec::new();
     for &s in &cut {
-        for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-            for lp in std::iter::once(&m.faces.get(fh).outer).chain(m.faces.get(fh).inner.iter()) {
+        for &fh in &m.shell(m.solid(s).outer).faces {
+            for lp in std::iter::once(&m.face(fh).outer).chain(m.face(fh).inner.iter()) {
                 for &he in &lp.half_edges {
                     let vh = m.he_start(he);
-                    let nacre_topo::VertexDef::ThreePlane(_) = m.vertices.get(vh).def else {
+                    let nacre_topo::VertexDef::ThreePlane(_) = m.vertex(vh).def else {
                         continue;
                     };
                     // ★ The kernel says which corners it can place in one frame; comparing the
@@ -6648,13 +6650,13 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
     let mut worst = [0.0f64; 3];
     let mut diam = 0.0f64;
     for (kind, solid) in [plain, turned, fused].into_iter().enumerate() {
-        let shell = m.solids.get(solid).outer;
+        let shell = m.solid(solid).outer;
         let mut seen: Vec<Handle<Vertex>> = Vec::new();
-        for &fh in &m.shells.get(shell).faces {
-            let face = m.faces.get(fh);
+        for &fh in &m.shell(shell).faces {
+            let face = m.face(fh);
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
-                    for &vh in m.edges.get(he.edge).vertices.iter() {
+                    for &vh in m.edge(he.edge).vertices.iter() {
                         if !seen.contains(&vh) {
                             seen.push(vh);
                         }
@@ -6668,7 +6670,7 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
                 diam = diam.max(c.abs());
             }
             counts[kind].1 += 1;
-            let VertexDef::ThreePlane(planes) = m.vertices.get(vh).def else {
+            let VertexDef::ThreePlane(planes) = m.vertex(vh).def else {
                 continue; // a seam vertex names a curve, not a point — no solve to check
             };
             counts[kind].0 += 1;
@@ -6724,26 +6726,24 @@ fn a_wrong_plane_in_a_definition_is_caught() {
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([2.0, 3.0, 1.0]),
     );
-    let shell = m.solids.get(s).outer;
+    let shell = m.solid(s).outer;
     let surfaces: Vec<_> = m
-        .shells
-        .get(shell)
+        .shell(shell)
         .faces
         .iter()
-        .map(|&fh| m.faces.get(fh).surface)
+        .map(|&fh| m.face(fh).surface)
         .collect();
     // Take a real corner's triple and swap one plane for another face of the same box.
     let corner = m
-        .shells
-        .get(shell)
+        .shell(shell)
         .faces
         .first()
         .map(|&fh| {
-            let face = m.faces.get(fh);
-            m.edges.get(face.outer.half_edges[0].edge).vertices
+            let face = m.face(fh);
+            m.edge(face.outer.half_edges[0].edge).vertices
         })
         .expect("a face with a loop")[0];
-    let VertexDef::ThreePlane(mut planes) = m.vertices.get(corner).def else {
+    let VertexDef::ThreePlane(mut planes) = m.vertex(corner).def else {
         panic!("a constructed corner has a definition")
     };
     let good = solve_three_planes(planes.map(|h| match m.surface_cache(h) {
@@ -6838,20 +6838,29 @@ fn a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit() {
         Profile2d::polygon(vec![p(0.0, 0.0), p(1.0, 0.0), p(1.0, 1.0), p(0.0, 1.0)]).unwrap(),
     );
     // Bit-for-bit the same model: same counts, same coordinates, same surface wiring.
-    assert_eq!(split.faces.len(), clean.faces.len(), "6 faces, not 7");
-    assert_eq!(split.vertices.len(), clean.vertices.len());
-    for ((sv, _), (cv, _)) in split.vertices.iter().zip(clean.vertices.iter()) {
+    assert_eq!(split.face_count(), clean.face_count(), "6 faces, not 7");
+    assert_eq!(split.vertex_count(), clean.vertex_count());
+    for i in 0..split.vertex_count() as u32 {
+        let (sv, cv) = (
+            split.vertex_handle_at(i).expect("in range"),
+            clean.vertex_handle_at(i).expect("in range"),
+        );
         assert_eq!(
             split.vertex_point(sv).as_array(),
             clean.vertex_point(cv).as_array(),
             "coordinates"
         );
     }
-    for ((_, s), (_, c)) in split.faces.iter().zip(clean.faces.iter()) {
+    for i in 0..split.face_count() as u32 {
+        let s = split.face(split.face_handle_at(i).expect("in range"));
+        let c = clean.face(clean.face_handle_at(i).expect("in range"));
         assert_eq!(s.surface, c.surface, "surface wiring");
     }
     // And the corner population is whole: every vertex holds a three-plane definition.
-    for (_, v) in split.vertices.iter() {
+    let mut i = 0u32;
+    while let Some(h_) = split.vertex_handle_at(i) {
+        i += 1;
+        let v = split.vertex(h_);
         assert!(
             matches!(v.def, VertexDef::ThreePlane(_)),
             "a corner without a three-plane definition survived: {v:?}"
@@ -6898,13 +6907,12 @@ fn two_separated_collinear_walls_intern_to_one_surface() {
         unreachable!("extrude yields Extrude output")
     };
     m.rebuild_adjacency();
-    let shell = m.solids.get(solid).outer;
+    let shell = m.solid(solid).outer;
     let surfaces: Vec<_> = m
-        .shells
-        .get(shell)
+        .shell(shell)
         .faces
         .iter()
-        .map(|&fh| m.faces.get(fh).surface)
+        .map(|&fh| m.face(fh).surface)
         .collect();
     // Eight profile points ⇒ eight wall quads, plus two caps.
     assert_eq!(surfaces.len(), 10, "eight walls and two caps");
@@ -6958,7 +6966,7 @@ fn a_vertex_is_named_by_the_planes_that_touch_it() {
     let _ = &faces_tab;
     let mut checked = 0usize;
     for sh in solid_shell_handles(&m, overhung) {
-        for &fh in &m.shells.get(sh).faces {
+        for &fh in &m.shell(sh).faces {
             let p = surf_ix[&fh];
             let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix, &[])
                 .unwrap()
@@ -7090,7 +7098,7 @@ fn plane_triples_are_always_canon() {
     // check. What remains testable is that the ids are in range and sorted-distinct.
     let mut checked = 0usize;
     for sh in solid_shell_handles(&m, chained) {
-        for &fh in &m.shells.get(sh).faces {
+        for &fh in &m.shell(sh).faces {
             let p = surf_ix[&fh];
             let mut rings = vec![
                 combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix, &[])
@@ -7163,7 +7171,7 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
     );
     let mut on_plane = 0usize;
     for sh in solid_shell_handles(&m, chained) {
-        for &fh in &m.shells.get(sh).faces {
+        for &fh in &m.shell(sh).faces {
             let p = surf_ix[&fh];
             let tris = combinatorics::face_vertex_triples(&m, fh, p, &inc_a, &jd, &plane_ix, &[])
                 .unwrap()
@@ -7336,9 +7344,8 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
     m.rebuild_adjacency();
     // The topmost face pointing up. Everything here is axis-aligned, so this is unambiguous.
     let top = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
-        let shell = m.solids.get(s).outer;
-        *m.shells
-            .get(shell)
+        let shell = m.solid(s).outer;
+        *m.shell(shell)
             .faces
             .iter()
             .max_by(|&&a, &&b| {
@@ -7369,10 +7376,9 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
         m.rebuild_adjacency();
         solid = out;
     }
-    let shell = m.solids.get(solid).outer;
+    let shell = m.solid(solid).outer;
     let degenerate: Vec<_> = m
-        .shells
-        .get(shell)
+        .shell(shell)
         .faces
         .iter()
         .filter_map(|&f| {
@@ -7385,7 +7391,7 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
         "zero-area faces survived: {degenerate:?}"
     );
     // A plain box with one rib on top: 6 + 5 walls/cap, no leftovers from the seam.
-    assert_eq!(m.shells.get(shell).faces.len(), 11);
+    assert_eq!(m.shell(shell).faces.len(), 11);
 }
 /// ★★★★★ **The target: two ways of reaching one height land on one plane, far from the
 /// origin.**
@@ -7414,9 +7420,8 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
         .unwrap()
     };
     let top = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
-        let shell = m.solids.get(s).outer;
-        *m.shells
-            .get(shell)
+        let shell = m.solid(s).outer;
+        *m.shell(shell)
             .faces
             .iter()
             .max_by(|&&a, &&b| {
@@ -7471,10 +7476,9 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
         "7.7 and 1.1+6.6 disagree on the cap plane"
     );
     // And the two-step route left nothing degenerate behind.
-    let shell = m2.solids.get(two).outer;
+    let shell = m2.solid(two).outer;
     let degenerate: Vec<_> = m2
-        .shells
-        .get(shell)
+        .shell(shell)
         .faces
         .iter()
         .filter_map(|&f| {
@@ -7487,8 +7491,8 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
         "zero-area faces survived: {degenerate:?}"
     );
     assert_eq!(
-        m1.shells.get(m1.solids.get(one).outer).faces.len(),
-        m2.shells.get(shell).faces.len(),
+        m1.shell(m1.solid(one).outer).faces.len(),
+        m2.shell(shell).faces.len(),
         "the two routes did not build the same solid"
     );
 }
@@ -7516,8 +7520,7 @@ fn two_faces_of_one_plane_share_a_sketch_origin() {
     let r = boolean_one(&mut m, BoolKind::Cut, a, cutter).expect("cut");
     m.rebuild_adjacency();
     let lids: Vec<_> = m
-        .shells
-        .get(m.solids.get(r).outer)
+        .shell(m.solid(r).outer)
         .faces
         .iter()
         .filter(|&&f| {
@@ -7710,8 +7713,7 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
     // The **original** tilted face, not a boss raised on it: lowest along `up` among the faces
     // that point that way. Taking the highest would stack the second boss on the first.
     let facing = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
-        *m.shells
-            .get(m.solids.get(s).outer)
+        *m.shell(m.solid(s).outer)
             .faces
             .iter()
             .filter(|&&f| crate::ops::face_plane(m, f).is_ok_and(|sp| sp.normal().dot(up) > 0.99))
@@ -7806,7 +7808,7 @@ fn a_sketch_on_a_prism_side_wall_takes_the_f64_path_today() {
     let sp = crate::ops::face_plane(&m, wall).expect("planar");
     let c = m
         .surface_name
-        .get(&m.faces.get(wall).surface)
+        .get(&m.face(wall).surface)
         .expect("a world-frame wall has a name")
         .narrow()
         .expect("a world-frame wall's name is narrow");
@@ -7893,8 +7895,7 @@ fn a_sketch_on_a_wall_raised_from_a_slanted_wall_works_today() {
         .normal
         .unwrap();
     let side = *m
-        .shells
-        .get(m.solids.get(solid).outer)
+        .shell(m.solid(solid).outer)
         .faces
         .iter()
         .find(|&&f| {
@@ -7980,8 +7981,7 @@ fn prism_with_a_slanted_wall() -> (Model, Handle<Face>) {
     };
     m.rebuild_adjacency();
     let wall = *m
-        .shells
-        .get(m.solids.get(solid).outer)
+        .shell(m.solid(solid).outer)
         .faces
         .iter()
         .find(|&&f| {
@@ -8053,8 +8053,7 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
     let (sz, cz) = (17f64).to_radians().sin_cos();
     let up = Vector3::from_array([cz * sy, sz * sy, cy]);
     let facing = |m: &Model, s: Handle<Solid>| -> Handle<Face> {
-        *m.shells
-            .get(m.solids.get(s).outer)
+        *m.shell(m.solid(s).outer)
             .faces
             .iter()
             .filter(|&&f| crate::ops::face_plane(m, f).is_ok_and(|sp| sp.normal().dot(up) > 0.99))
@@ -8092,7 +8091,7 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
         };
         m.rebuild_adjacency();
         s = solid;
-        let su = m.faces.get(top_face).surface;
+        let su = m.face(top_face).surface;
         assert_eq!(
             m.surface_name
                 .get(&su)
@@ -8105,10 +8104,10 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
     }
     assert_eq!(caps[0], caps[1], "one plane, one handle, by name");
     // Rule audit: how many of the result's face surfaces state themselves exactly.
-    let sh = m.solids.get(s).outer;
+    let sh = m.solid(s).outer;
     let (mut with, mut without) = (0, 0);
-    for &f in &m.shells.get(sh).faces {
-        let su = m.faces.get(f).surface;
+    for &f in &m.shell(sh).faces {
+        let su = m.face(f).surface;
         if m.surface_name.contains_key(&su) {
             with += 1
         } else {
@@ -8290,7 +8289,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     };
     let coeffs = |f: Handle<Face>, m: &Model| {
         m.surface_name
-            .get(&m.faces.get(f).surface)
+            .get(&m.face(f).surface)
             .and_then(|n| n.narrow())
             .map(|c| c.map(|r| r.to_f64()))
     };
@@ -8301,7 +8300,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     );
     assert!(
         matches!(
-            m.surface(m.faces.get(faces[0]).surface),
+            m.surface(m.face(faces[0]).surface),
             nacre_topo::Surface::Plane { motion: None, .. }
         ),
         "★ and it carries no motion, so its judgment stays exact"
@@ -8332,7 +8331,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
         .expect("extrude") else {
             unreachable!()
         };
-        m.faces.get(faces[1]).surface
+        m.face(faces[1]).surface
     };
     let a = cap_of(&mut m, 2.5);
     let b = cap_of(&mut m, 2.5);
@@ -8389,14 +8388,13 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
     m.rebuild_adjacency();
     // Fixture qualification: a wall whose name is narrow but whose squared lengths are not
     // — the exact population the narrow frame derivation hard-declines.
-    let shell = m.solids.get(solid).outer;
+    let shell = m.solid(solid).outer;
     let wall = *m
-        .shells
-        .get(shell)
+        .shell(shell)
         .faces
         .iter()
         .find(|&&f| {
-            let s = m.faces.get(f).surface;
+            let s = m.face(f).surface;
             m.surface_name
                 .get(&s)
                 .and_then(|n| n.narrow())
@@ -8419,10 +8417,10 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
     // The chain is cut: every face of the result states its exact points.
     let mut missing = 0;
     let mut total = 0;
-    for &f in &m.shells.get(m.solids.get(solid).outer).faces {
+    for &f in &m.shell(m.solid(solid).outer).faces {
         total += 1;
         if !matches!(
-            m.surface(m.faces.get(f).surface),
+            m.surface(m.face(f).surface),
             nacre_topo::Surface::Plane { .. }
         ) {
             missing += 1;
@@ -8490,10 +8488,10 @@ fn a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road() {
     // The end-to-end claim: nothing fell to f64 — every face states its exact points.
     let mut missing = 0;
     let mut total = 0;
-    for &f in &m.shells.get(m.solids.get(solid).outer).faces {
+    for &f in &m.shell(m.solid(solid).outer).faces {
         total += 1;
         if !matches!(
-            m.surface(m.faces.get(f).surface),
+            m.surface(m.face(f).surface),
             nacre_topo::Surface::Plane { .. }
         ) {
             missing += 1;
@@ -8632,8 +8630,10 @@ fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
 /// The lateral surface's exact truth in a model holding exactly one cylinder.
 fn lone_cylinder_def(m: &Model) -> nacre_topo::CylinderDef {
     let mut found = None;
-    for (h, _) in m.faces.iter() {
-        let s = m.faces.get(h).surface;
+    let mut i = 0u32;
+    while let Some(h) = m.face_handle_at(i) {
+        i += 1;
+        let s = m.face(h).surface;
         if let nacre_topo::Surface::Cylinder { def, .. } = m.surface(s) {
             found = Some(def.clone());
         }
@@ -8696,13 +8696,14 @@ fn a_cylinder_op_replays_deterministically() {
     ];
     let (m1, m2) = (replay(&log).unwrap(), replay(&log).unwrap());
     let pts = |m: &Model| {
-        m.vertices
-            .iter()
+        (0..m.vertex_count() as u32)
+            .filter_map(|i| m.vertex_handle_at(i))
+            .map(|h| (h, m.vertex(h)))
             .map(|(vh, _)| m.vertex_point(vh).as_array())
             .collect::<Vec<_>>()
     };
     assert_eq!(pts(&m1), pts(&m2));
-    assert_eq!(m1.faces.len(), m2.faces.len());
+    assert_eq!(m1.face_count(), m2.face_count());
     assert_eq!(m1.surface_count(), m2.surface_count());
 }
 
@@ -8721,7 +8722,7 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
     else {
         panic!("an extrude answers with an extrude");
     };
-    let on_lateral = SketchFrame::canonical(m.faces.get(faces[2]).surface);
+    let on_lateral = SketchFrame::canonical(m.face(faces[2]).surface);
 
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let wide = 1e300;
@@ -8746,9 +8747,9 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
 
     let before = (
         m.surface_count(),
-        m.vertices.iter().count(),
-        m.edges.iter().count(),
-        m.faces.len(),
+        m.vertex_count(),
+        m.edge_count(),
+        m.face_count(),
         m.live_solids.len(),
     );
     let cases: [(Operation, OpError); 2] = [
@@ -8771,9 +8772,9 @@ fn a_refused_cylinder_op_is_named_and_leaves_nothing_behind() {
     assert_eq!(
         (
             m.surface_count(),
-            m.vertices.iter().count(),
-            m.edges.iter().count(),
-            m.faces.len(),
+            m.vertex_count(),
+            m.edge_count(),
+            m.face_count(),
             m.live_solids.len()
         ),
         before,
@@ -8910,16 +8911,16 @@ fn a_cylinder_on_a_face_frame_stands_outward() {
     };
     // faces[1] is the top cap; its frame is measured against that face's outward normal.
     let top = face_sketch_frame(&m, faces[1]).expect("a face has a frame");
-    let before = m.vertices.iter().count();
+    let before = m.vertex_count();
     let boss = Operation::Extrude {
         frame: top,
         profile: circle_profile([2.0, 2.0], 0.5),
         dist: 1.0,
     };
     apply(&mut m, &boss).expect("a cylinder on a face frame builds");
-    let seam_z: Vec<f64> = m
-        .vertices
-        .iter()
+    let seam_z: Vec<f64> = (0..m.vertex_count() as u32)
+        .filter_map(|i| m.vertex_handle_at(i))
+        .map(|h| (h, m.vertex(h)))
         .skip(before)
         .filter(|(_, v)| matches!(v.def, VertexDef::OnSeam(_)))
         .map(|(h, _)| m.vertex_point(h).as_array()[2])
@@ -8974,7 +8975,7 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
     else {
         panic!("an extrude answers with an extrude");
     };
-    let lateral = m.faces.get(faces[2]).surface;
+    let lateral = m.face(faces[2]).surface;
     match m.surface(lateral) {
         nacre_topo::Surface::Cylinder { motion, .. } => assert!(
             motion.is_some(),
@@ -9016,7 +9017,7 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
 #[test]
 fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
     let outward = |m: &Model, fh: Handle<Face>| -> [f64; 3] {
-        let f = m.faces.get(fh);
+        let f = m.face(fh);
         let nacre_geom::Surface::Plane(p) = m.surface_cache(f.surface) else {
             panic!("a cap is planar")
         };
@@ -9147,17 +9148,17 @@ fn a_holes_winding_is_checked_too() {
 
     // A drilled face: an outer polygon with one rim hole.
     let solid = m.live_solids[0];
-    let shell = m.solids.get(solid).outer;
-    let faces = m.shells.get(shell).faces.clone();
+    let shell = m.solid(solid).outer;
+    let faces = m.shell(shell).faces.clone();
     let victim = *faces
         .iter()
         .find(|&&fh| {
-            let f = m.faces.get(fh);
+            let f = m.face(fh);
             f.inner.len() == 1 && f.inner[0].half_edges.len() == 1
         })
         .expect("a through hole leaves two drilled faces");
     let twin = {
-        let f = m.faces.get(victim).clone();
+        let f = m.face(victim).clone();
         m.faces.push(nacre_topo::Face {
             orientation: f.orientation.flipped(),
             ..f
@@ -9226,17 +9227,17 @@ fn a_polygonal_holes_winding_is_checked_too() {
         nacre_validate::validate(&m)
     );
 
-    let shell = m.solids.get(solid).outer;
-    let faces = m.shells.get(shell).faces.clone();
+    let shell = m.solid(solid).outer;
+    let faces = m.shell(shell).faces.clone();
     let victim = *faces
         .iter()
         .find(|&&fh| {
-            let f = m.faces.get(fh);
+            let f = m.face(fh);
             f.inner.len() == 1 && f.inner[0].half_edges.len() >= 3
         })
         .expect("a ring prism has two holed caps");
     let twin = {
-        let f = m.faces.get(victim).clone();
+        let f = m.face(victim).clone();
         m.faces.push(nacre_topo::Face {
             orientation: f.orientation.flipped(),
             ..f
@@ -9313,22 +9314,21 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
     // The axis of both the bore and the free-standing drill, as a line to measure against.
     let axis_at = |z: f64| Point3::from_array([2.0, 2.0, z]);
     let radial_sense = |m: &Model, solid: Handle<Solid>| -> f64 {
-        let shell = m.solids.get(solid).outer;
+        let shell = m.solid(solid).outer;
         let wall = *m
-            .shells
-            .get(shell)
+            .shell(shell)
             .faces
             .iter()
             .find(|&&fh| {
                 matches!(
-                    m.surface_cache(m.faces.get(fh).surface),
+                    m.surface_cache(m.face(fh).surface),
                     nacre_geom::Surface::Cylinder(_)
                 )
             })
             .expect("a cylindrical wall");
         // A point on that wall: the seam vertex of one of its rims.
-        let he = m.faces.get(wall).outer.half_edges[0];
-        let p = m.vertex_point(m.edges.get(he.edge).vertices[0]);
+        let he = m.face(wall).outer.half_edges[0];
+        let p = m.vertex_point(m.edge(he.edge).vertices[0]);
         let n = nacre_props::face_normal_at(m, wall, p).expect("off the axis");
         let out = p - axis_at(p.as_array()[2]);
         n.dot(out)
@@ -10023,7 +10023,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
         .collect();
     let jd = crate::planes::test_judge(&planes);
     let mut tally = [0usize; 4];
-    for &fh in &m.shells.get(m.solids.get(r).outer).faces {
+    for &fh in &m.shell(m.solid(r).outer).faces {
         let fp = surf_ix[&fh];
         if !matches!(plane_ix[fp], crate::planes::ClassIx::Cyl(_)) {
             continue;
@@ -10156,10 +10156,10 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                 Result::Ok(out) => {
                     m.rebuild_adjacency();
                     // The seam-joint probe, over the result's faces.
-                    let solid = m.solids.get(out[0]);
+                    let solid = m.solid(out[0]);
                     for sh in std::iter::once(solid.outer).chain(solid.cavities.iter().copied()) {
-                        for &fh in &m.shells.get(sh).faces {
-                            let face = m.faces.get(fh);
+                        for &fh in &m.shell(sh).faces {
+                            let face = m.face(fh);
                             let lateral = matches!(
                                 m.surface(face.surface),
                                 nacre_topo::Surface::Cylinder { .. }
@@ -10168,7 +10168,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                                 lp.half_edges.len() >= 2
                                     && lp.half_edges.iter().any(|&he| {
                                         matches!(
-                                            m.vertices.get(m.he_start(he)).def,
+                                            m.vertex(m.he_start(he)).def,
                                             nacre_topo::VertexDef::OnSeam(_)
                                         )
                                     })
@@ -11400,20 +11400,20 @@ fn answer(m: &Model, r: &Result<Vec<Handle<Solid>>, BoolError>) -> Answer {
                     .map(|p| p.volume)
                     .unwrap_or(f64::NAN),
             );
-            let sol = m.solids.get(s);
+            let sol = m.solid(s);
             let (mut faces, mut edges, mut verts) = (
                 0usize,
                 std::collections::HashSet::new(),
                 std::collections::HashSet::new(),
             );
             for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
-                for &fh in &m.shells.get(sh).faces {
+                for &fh in &m.shell(sh).faces {
                     faces += 1;
-                    let face = m.faces.get(fh);
+                    let face = m.face(fh);
                     for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                         for he in &lp.half_edges {
                             edges.insert(he.edge);
-                            for &vh in m.edges.get(he.edge).vertices.iter() {
+                            for &vh in m.edge(he.edge).vertices.iter() {
                                 verts.insert(vh);
                             }
                         }
@@ -11460,14 +11460,14 @@ fn answers_agree(a: &Answer, b: &Answer) -> Result<(), String> {
 fn sorted_vertex_bits(m: &Model, solids: &[Handle<Solid>]) -> Vec<(u8, [u64; 3])> {
     let mut out = Vec::new();
     for &s in solids {
-        let src = m.solids.get(s).clone();
+        let src = m.solid(s).clone();
         for &sh in std::iter::once(&src.outer).chain(src.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                let face = m.faces.get(fh);
+            for &fh in &m.shell(sh).faces {
+                let face = m.face(fh);
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
-                        for &vh in m.edges.get(he.edge).vertices.iter() {
-                            let kind = match &m.vertices.get(vh).def {
+                        for &vh in m.edge(he.edge).vertices.iter() {
+                            let kind = match &m.vertex(vh).def {
                                 VertexDef::ThreePlane(_) => 0u8,
                                 VertexDef::OnSeam(_) => 1,
                                 VertexDef::Pierce { .. } => 2,
@@ -11841,13 +11841,12 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
     // «exact» here), and the chain folds to one world cylinder on both roads.
     assert!(carries_motion(&a, ba) && carries_motion(&b, bb));
     let lateral = |m: &Model, s: Handle<Solid>| -> nacre_topo::CylinderDef {
-        let sol = m.solids.get(s);
+        let sol = m.solid(s);
         let surf = m
-            .shells
-            .get(sol.outer)
+            .shell(sol.outer)
             .faces
             .iter()
-            .map(|&fh| m.faces.get(fh).surface)
+            .map(|&fh| m.face(fh).surface)
             .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
             .expect("the boss has a lateral");
         crate::planes::world_cylinder_def(m, surf).expect("the chain folds to a world cylinder")
@@ -11885,13 +11884,12 @@ fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
         !carries_motion(&m, boss),
         "the whole motion is exact on this data"
     );
-    let sol = m.solids.get(boss);
+    let sol = m.solid(boss);
     let surf = m
-        .shells
-        .get(sol.outer)
+        .shell(sol.outer)
         .faces
         .iter()
-        .map(|&fh| m.faces.get(fh).surface)
+        .map(|&fh| m.face(fh).surface)
         .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
         .expect("the boss has a lateral");
     let def = crate::planes::world_cylinder_def(&m, surf).expect("a world cylinder");
@@ -11930,15 +11928,15 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
         nacre_geom::Surface::Plane(_) => "plane",
         nacre_geom::Surface::Cylinder(_) => "cylinder",
     };
-    let sol = m.solids.get(s).clone();
+    let sol = m.solid(s).clone();
     let (mut vertex_bits, mut vertex_defs, mut plane_bits, mut cylinder_defs) =
         (Vec::new(), Vec::new(), Vec::new(), Vec::new());
     let (mut faces, mut edges) = (Vec::new(), Vec::new());
     let mut seen_edges: Vec<Handle<nacre_topo::Edge>> = Vec::new();
     let mut seen_vertices: Vec<Handle<Vertex>> = Vec::new();
     for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
-        for fh in m.shells.get(sh).faces.clone() {
-            let face = m.faces.get(fh);
+        for fh in m.shell(sh).faces.clone() {
+            let face = m.face(fh);
             match m.surface_cache(face.surface) {
                 nacre_geom::Surface::Plane(pl) => {
                     plane_bits.push(pl.coefficients().map(f64::to_bits))
@@ -11959,7 +11957,7 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
                 for he in &lp.half_edges {
                     if !seen_edges.contains(&he.edge) {
                         seen_edges.push(he.edge);
-                        let e = m.edges.get(he.edge);
+                        let e = m.edge(he.edge);
                         let mut carriers = [kind(e.surfaces[0]), kind(e.surfaces[1])];
                         carriers.sort_unstable();
                         let curve = match m.edge_curve(he.edge) {
@@ -11968,11 +11966,11 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
                         };
                         edges.push((carriers.join("+"), curve, e.vertices[0] == e.vertices[1]));
                     }
-                    for &vh in m.edges.get(he.edge).vertices.iter() {
+                    for &vh in m.edge(he.edge).vertices.iter() {
                         if !seen_vertices.contains(&vh) {
                             seen_vertices.push(vh);
                             vertex_bits.push(bits3(m.vertex_point(vh)));
-                            vertex_defs.push(match m.vertices.get(vh).def {
+                            vertex_defs.push(match m.vertex(vh).def {
                                 VertexDef::ThreePlane(_) => "three-plane".to_string(),
                                 VertexDef::OnSeam(_) => "on-seam".to_string(),
                                 VertexDef::Pierce { root, .. } => format!("pierce {root:?}"),
@@ -12114,19 +12112,19 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
         .copied()
         .find(|&f| {
             matches!(
-                m.surface_cache(m.faces.get(f).surface),
+                m.surface_cache(m.face(f).surface),
                 nacre_geom::Surface::Cylinder(_)
             )
         })
         .expect("a bore face");
     assert_eq!(
-        m.faces.get(bore).orientation,
+        m.face(bore).orientation,
         Orientation::Forward.flipped(),
         "the material is outside the bore"
     );
     let caps_with_a_hole = faces
         .iter()
-        .filter(|&&f| m.faces.get(f).inner.len() == 1)
+        .filter(|&&f| m.face(f).inner.len() == 1)
         .count();
     assert_eq!(caps_with_a_hole, 2);
     mesh_covers_faces("a plate with a round hole", &m, &[solid]);
@@ -12164,11 +12162,11 @@ fn a_round_hole_and_an_annulus_extrude_exactly() {
         .iter()
         .filter(|&&f| {
             matches!(
-                m.surface_cache(m.faces.get(f).surface),
+                m.surface_cache(m.face(f).surface),
                 nacre_geom::Surface::Cylinder(_)
             )
         })
-        .map(|&f| m.faces.get(f).orientation == Orientation::Forward)
+        .map(|&f| m.face(f).orientation == Orientation::Forward)
         .collect();
     senses.sort_unstable();
     assert_eq!(
@@ -12363,7 +12361,7 @@ fn a_slot_extrudes_with_tangent_pierce_corners() {
         .iter()
         .filter(|&&f| {
             matches!(
-                m.surface_cache(m.faces.get(f).surface),
+                m.surface_cache(m.face(f).surface),
                 nacre_geom::Surface::Cylinder(_)
             )
         })
@@ -13465,16 +13463,16 @@ fn a_four_plane_operand_vertex_fuses_in_either_order() {
         let v = nacre_props::mass_props(&m, out[0]).expect("props").volume;
         assert!((v - 50.0).abs() < 1e-9, "volume {v} (swapped {swapped})");
         // Every result vertex has its own coordinate.
-        let sol = m.solids.get(out[0]);
+        let sol = m.solid(out[0]);
         let mut points: Vec<[u64; 3]> = Vec::new();
         let mut apex_faces = 0usize;
         for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
-            for fh in m.shells.get(sh).faces.clone() {
-                let face = m.faces.get(fh);
+            for fh in m.shell(sh).faces.clone() {
+                let face = m.face(fh);
                 let mut seen: Vec<Handle<Vertex>> = Vec::new();
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
-                        for &vh in m.edges.get(he.edge).vertices.iter() {
+                        for &vh in m.edge(he.edge).vertices.iter() {
                             if seen.contains(&vh) {
                                 continue;
                             }
@@ -13497,11 +13495,11 @@ fn a_four_plane_operand_vertex_fuses_in_either_order() {
         }
         let mut vertices: Vec<Handle<Vertex>> = Vec::new();
         for sh in std::iter::once(sol.outer).chain(sol.cavities.iter().copied()) {
-            for fh in m.shells.get(sh).faces.clone() {
-                let face = m.faces.get(fh);
+            for fh in m.shell(sh).faces.clone() {
+                let face = m.face(fh);
                 for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                     for he in &lp.half_edges {
-                        for &vh in m.edges.get(he.edge).vertices.iter() {
+                        for &vh in m.edge(he.edge).vertices.iter() {
                             if !vertices.contains(&vh) {
                                 vertices.push(vh);
                             }
@@ -15222,12 +15220,9 @@ fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
 #[test]
 fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
     let (mut m, l) = l_prism();
-    let fh = m.shells.get(m.solids.get(l).outer).faces[0];
-    let vh = m
-        .edges
-        .get(m.faces.get(fh).outer.half_edges[0].edge)
-        .vertices[0];
-    let def = m.vertices.get(vh).def;
+    let fh = m.shell(m.solid(l).outer).faces[0];
+    let vh = m.edge(m.face(fh).outer.half_edges[0].edge).vertices[0];
+    let def = m.vertex(vh).def;
     let p = m.vertex_point(vh).as_array();
     let wrong = Point3::from_array([f64::from_bits(p[0].to_bits() + 3), p[1], p[2]]);
     let h = crate::realize::push_vertex_realized(
@@ -15258,10 +15253,10 @@ fn the_push_funnel_realizes_and_keeps_the_fallback_only_on_refusal() {
         transform(&mut m, c, &rot_iso(Axis::Y, 37)).expect("an irrational turn records a motion");
     m.rebuild_adjacency();
     let mut seams = 0;
-    for &fh in &m.shells.get(m.solids.get(turned).outer).faces {
-        for he in &m.faces.get(fh).outer.half_edges {
-            for vh in m.edges.get(he.edge).vertices {
-                if !matches!(m.vertices.get(vh).def, VertexDef::OnSeam(_)) {
+    for &fh in &m.shell(m.solid(turned).outer).faces {
+        for he in &m.face(fh).outer.half_edges {
+            for vh in m.edge(he.edge).vertices {
+                if !matches!(m.vertex(vh).def, VertexDef::OnSeam(_)) {
                     continue;
                 }
                 seams += 1;

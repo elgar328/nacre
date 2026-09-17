@@ -62,9 +62,9 @@ fn extrude(m: &mut Model, plane: SketchPlane, profile: Profile2d, dist: f64) {
 fn assert_all_planes_record_points(m: &Model, what: &str) {
     let mut seen = 0usize;
     for &s in &m.live_solids {
-        for &sh in std::iter::once(&m.solids.get(s).outer).chain(m.solids.get(s).cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                let surf = m.faces.get(fh).surface;
+        for &sh in std::iter::once(&m.solid(s).outer).chain(m.solid(s).cavities.iter()) {
+            for &fh in &m.shell(sh).faces {
+                let surf = m.face(fh).surface;
                 match (m.surface_cache(surf), m.surface(surf)) {
                     (nacre_geom::Surface::Plane(_), nacre_topo::Surface::Plane { .. }) => {
                         seen += 1;
@@ -115,12 +115,11 @@ fn every_live_planar_face_records_its_points() {
 
     // ③ Face features: pad and pocket share `extrude_and_boolean`.
     let top = *m
-        .shells
-        .get(m.solids.get(base).outer)
+        .shell(m.solid(base).outer)
         .faces
         .iter()
         .find(|&&fh| {
-            let s = m.faces.get(fh).surface;
+            let s = m.face(fh).surface;
             m.surface_name
                 .get(&s)
                 .and_then(|n| n.narrow())
@@ -231,11 +230,10 @@ fn the_world_sugar_names_the_seed_a_sketch_then_sits_on() {
         let s = m.live_solids[0];
         // faces[0] of the extrude output is the base cap; find via the z=0 name instead of
         // output plumbing.
-        m.shells
-            .get(m.solids.get(s).outer)
+        m.shell(m.solid(s).outer)
             .faces
             .iter()
-            .map(|&fh| m.faces.get(fh).surface)
+            .map(|&fh| m.face(fh).surface)
             .find(|su| su == &m.world_plane(nacre_scalar::Axis::Z))
             .expect("the z = 0 base cap must intern onto the seed")
     };

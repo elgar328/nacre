@@ -156,7 +156,7 @@ fn a_through_cut_that_stops_short_of_the_wall_builds() {
     m.rebuild_adjacency();
     assert_eq!(got.len(), 1);
     assert_eq!(
-        m.solids.get(got[0]).cavities.len(),
+        m.solid(got[0]).cavities.len(),
         0,
         "a through slot opens both caps, so there is no enclosed cavity"
     );
@@ -190,7 +190,7 @@ fn a_wedge_that_stops_short_of_the_wall_builds() {
         boolean(&mut m, BoolKind::Cut, a, b).expect("the cut with the tip off the wall builds");
     m.rebuild_adjacency();
     assert_eq!(got.len(), 1);
-    assert_eq!(m.solids.get(got[0]).cavities.len(), 1, "an enclosed cavity");
+    assert_eq!(m.solid(got[0]).cavities.len(), 1, "an enclosed cavity");
     assert!(nacre_props::mass_props(&m, got[0]).expect("props").volume > 0.0);
     assert!(nacre_validate::validate(&m).is_empty());
 }
@@ -258,7 +258,7 @@ fn an_area_contact_opens_the_wall_rather_than_touching_it() {
     m.rebuild_adjacency();
     assert_eq!(got.len(), 1);
     assert_eq!(
-        m.solids.get(got[0]).cavities.len(),
+        m.solid(got[0]).cavities.len(),
         0,
         "the pocket opened through the wall, so there is no enclosed cavity to touch it"
     );

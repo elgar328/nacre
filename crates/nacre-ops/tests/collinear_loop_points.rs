@@ -37,7 +37,7 @@ fn rect(a: f64, b: f64, c: f64, d: f64) -> Profile2d {
 }
 
 fn faces_of(m: &Model, s: Handle<Solid>) -> Vec<Handle<Face>> {
-    m.shells.get(m.solids.get(s).outer).faces.clone()
+    m.shell(m.solid(s).outer).faces.clone()
 }
 
 /// **The proposition, read from outside the kernel.**
@@ -50,7 +50,7 @@ fn faces_of(m: &Model, s: Handle<Solid>) -> Vec<Handle<Face>> {
 /// the *check*, and it must not share its derivation with the code under test.
 fn every_face_knows_which_way_it_faces(m: &Model, s: Handle<Solid>, cell: &str) {
     for (k, &fh) in faces_of(m, s).iter().enumerate() {
-        let face = m.faces.get(fh);
+        let face = m.face(fh);
         let pts: Vec<Point3> = face
             .outer
             .half_edges

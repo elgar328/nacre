@@ -210,7 +210,7 @@ pub fn realize_vertex(
     v: Handle<Vertex>,
     p: Precision,
 ) -> Result<Realized, RealizeError> {
-    realize_def(model, &model.vertices.get(v).def, p)
+    realize_def(model, &model.vertex(v).def, p)
 }
 
 /// [`realize_vertex`] on a definition that has not been pushed yet — the road every vertex an
@@ -465,7 +465,7 @@ pub fn realize_vertex_decimal(
     v: Handle<Vertex>,
     places: usize,
 ) -> Result<[String; 3], RealizeError> {
-    let out = climb(model, &model.vertices.get(v).def, |r| {
+    let out = climb(model, &model.vertex(v).def, |r| {
         r.to_decimal(places).map(|_| r)
     })?;
     out.to_decimal(places).ok_or(RealizeError::Undecided)

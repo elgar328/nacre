@@ -64,8 +64,8 @@ fn rot_z30(m: &mut Model, s: Handle<Solid>) -> Handle<Solid> {
 /// sharing one z) — not by handle order, which this test is about.
 fn caps_and_walls(m: &Model, s: Handle<Solid>) -> (Vec<Handle<Surface>>, Vec<Handle<Surface>>) {
     let (mut caps, mut walls) = (vec![], vec![]);
-    for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-        let surf = m.faces.get(fh).surface;
+    for &fh in &m.shell(m.solid(s).outer).faces {
+        let surf = m.face(fh).surface;
         let Surface::Plane {
             points: PlanePoints::Known(p),
             ..
@@ -127,8 +127,8 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
     // The dissolved refusal: both cap faces now answer their world frame (the contract sweep
     // verifies the returned frame realizes bit-identical to the pad's; here the lock is that
     // the answer exists at all where `FrameNotRepresentable` used to be).
-    for &fh in &m.shells.get(m.solids.get(s).outer).faces {
-        if caps.contains(&m.faces.get(fh).surface) {
+    for &fh in &m.shell(m.solid(s).outer).faces {
+        if caps.contains(&m.face(fh).surface) {
             face_sketch_frame(&m, fh).expect("a fixed cap hosts a sketch frame");
         }
     }

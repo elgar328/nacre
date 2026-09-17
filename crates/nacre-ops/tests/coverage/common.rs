@@ -105,9 +105,9 @@ pub fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3
     let Some(target) = Plane::from_point_normal(pt, n) else {
         return false;
     };
-    let shell = m.solids.get(solid).outer;
-    m.shells.get(shell).faces.iter().any(|&fh| {
-        let f = m.faces.get(fh);
+    let shell = m.solid(solid).outer;
+    m.shell(shell).faces.iter().any(|&fh| {
+        let f = m.face(fh);
         let Surface::Plane(plane) = m.surface_cache(f.surface) else {
             return false;
         };
@@ -247,11 +247,11 @@ pub fn l_and_inner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
 pub fn outer_points(m: &Model, s: Handle<Solid>) -> Vec<[f64; 3]> {
     let mut seen = std::collections::HashSet::new();
     let mut pts = Vec::new();
-    let sh = m.solids.get(s).outer;
-    for &fh in &m.shells.get(sh).faces {
-        for he in &m.faces.get(fh).outer.half_edges {
+    let sh = m.solid(s).outer;
+    for &fh in &m.shell(sh).faces {
+        for he in &m.face(fh).outer.half_edges {
             {
-                for vh in m.edges.get(he.edge).vertices {
+                for vh in m.edge(he.edge).vertices {
                     if seen.insert(vh) {
                         pts.push(m.vertex_point(vh).as_array());
                     }

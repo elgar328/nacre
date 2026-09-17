@@ -31,14 +31,14 @@ fn volume(m: &Model, s: Handle<Solid>) -> f64 {
 
 /// Every vertex handle a solid reaches, through its outer shell and its cavities.
 fn vertices_of(m: &Model, s: Handle<Solid>) -> Vec<Handle<nacre_topo::Vertex>> {
-    let solid = m.solids.get(s);
+    let solid = m.solid(s);
     let mut out = Vec::new();
     for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
-        for &fh in &m.shells.get(sh).faces {
-            let f = m.faces.get(fh);
+        for &fh in &m.shell(sh).faces {
+            let f = m.face(fh);
             for l in std::iter::once(&f.outer).chain(f.inner.iter()) {
                 for he in &l.half_edges {
-                    out.extend(m.edges.get(he.edge).vertices);
+                    out.extend(m.edge(he.edge).vertices);
                 }
             }
         }
@@ -50,18 +50,18 @@ fn vertices_of(m: &Model, s: Handle<Solid>) -> Vec<Handle<nacre_topo::Vertex>> {
 
 /// The surfaces a solid actually has faces on — what a vertex of it is allowed to be named by.
 fn foreign_definitions(m: &Model, s: Handle<Solid>) -> Vec<String> {
-    let solid = m.solids.get(s);
+    let solid = m.solid(s);
     let mut own = Vec::new();
     for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
-        for &fh in &m.shells.get(sh).faces {
-            own.push(m.faces.get(fh).surface);
+        for &fh in &m.shell(sh).faces {
+            own.push(m.face(fh).surface);
         }
     }
     let mut bad = Vec::new();
     for v in vertices_of(m, s) {
         // ★ `carriers()` is total over the variants by construction — the question here is
         // exactly "every surface the definition references", never a per-variant read.
-        for t in m.vertices.get(v).def.carriers() {
+        for t in m.vertex(v).def.carriers() {
             if !own.contains(&t) {
                 bad.push(format!("vertex {} names surface {}", v.index(), t.index()));
             }

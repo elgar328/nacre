@@ -108,12 +108,11 @@ fn tilted_frame(passes: usize) -> Model {
     for pass in 0..passes {
         let live = m.live_solids[0];
         let wall = *m
-            .shells
-            .get(m.solids.get(live).outer)
+            .shell(m.solid(live).outer)
             .faces
             .iter()
             .find(|&&f| {
-                let s = m.faces.get(f).surface;
+                let s = m.face(f).surface;
                 !done.contains(&s)
                     && m.surface_name
                         .get(&s)
@@ -121,7 +120,7 @@ fn tilted_frame(passes: usize) -> Model {
                         .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
             })
             .unwrap_or_else(|| panic!("the wf population vanished on pass {pass}"));
-        done.push(m.faces.get(wall).surface);
+        done.push(m.face(wall).surface);
         let sp = nacre_ops::face_plane(&m, wall).expect("planar");
         let d = nacre_props::face_props(&m, wall).unwrap().centroid - sp.origin();
         let (cu, cv) = (d.dot(sp.x_axis()), d.dot(sp.y_axis()));
@@ -250,10 +249,10 @@ fn live_vertices(m: &Model) -> Vec<Handle<Vertex>> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for &s in &m.live_solids {
-        let sol = m.solids.get(s);
+        let sol = m.solid(s);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                let f = m.faces.get(fh);
+            for &fh in &m.shell(sh).faces {
+                let f = m.face(fh);
                 for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                     for &he in &lp.half_edges {
                         let vh = m.he_start(he);
@@ -421,7 +420,7 @@ fn every_vertex_variant_answers() {
     let (mut seam, mut pierce, mut three) = (0usize, 0usize, 0usize);
     for m in [cylinder(), bored_plate(), boolean_corner()] {
         for vh in live_vertices(&m) {
-            let kind = m.vertices.get(vh).def;
+            let kind = m.vertex(vh).def;
             let Ok(d) = realize_vertex_decimal(&m, vh, 25) else {
                 continue;
             };
@@ -505,7 +504,7 @@ fn a_curved_vertex_agrees_with_the_cache_it_did_not_use() {
     let mut worst = 0.0f64;
     for m in [cylinder(), bored_plate()] {
         for vh in live_vertices(&m) {
-            if matches!(m.vertices.get(vh).def, VertexDef::ThreePlane(_)) {
+            if matches!(m.vertex(vh).def, VertexDef::ThreePlane(_)) {
                 continue;
             }
             let Ok(r) = realize_vertex(&m, vh, Precision::Bits(256)) else {
@@ -541,7 +540,7 @@ fn an_operations_cache_is_the_realization() {
     ] {
         let (mut realized, mut kept) = (0usize, 0usize);
         for vh in live_vertices(&m) {
-            match realize_cache(&m, &m.vertices.get(vh).def) {
+            match realize_cache(&m, &m.vertex(vh).def) {
                 Ok((v, bound)) => {
                     realized += 1;
                     let PointCache::Bounded { coord, bound: b } = *m.vertex_cache(vh) else {
@@ -582,15 +581,15 @@ fn an_operations_cache_is_the_realization() {
 #[test]
 fn the_edge_cache_is_the_derivation_of_realized_endpoints() {
     let mut m = tilted_frame(1);
-    let before: Vec<_> = m
-        .edges
-        .iter()
+    let before: Vec<_> = (0..m.edge_count() as u32)
+        .filter_map(|i| m.edge_handle_at(i))
+        .map(|h| (h, m.edge(h)))
         .map(|(h, _)| m.edge_curve(h).clone())
         .collect();
     m.rebuild_edge_cache();
-    let after: Vec<_> = m
-        .edges
-        .iter()
+    let after: Vec<_> = (0..m.edge_count() as u32)
+        .filter_map(|i| m.edge_handle_at(i))
+        .map(|h| (h, m.edge(h)))
         .map(|(h, _)| m.edge_curve(h).clone())
         .collect();
     assert_eq!(before, after);
@@ -984,7 +983,7 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
         );
         assert!(
             matches!(
-                realize_cache(&m, &m.vertices.get(vh).def),
+                realize_cache(&m, &m.vertex(vh).def),
                 Err(CacheDecline::CostCap)
             ),
             "and says so by name"
@@ -1016,7 +1015,7 @@ fn a_ceiling_is_reached_by_cost_and_by_bits_and_the_paid_door_still_answers() {
         .filter(|&vh| {
             matches!(m.vertex_cache(vh), PointCache::Ceiling { .. })
                 && matches!(
-                    realize_cache(&m, &m.vertices.get(vh).def),
+                    realize_cache(&m, &m.vertex(vh).def),
                     Err(CacheDecline::Cannot(RealizeError::Undecided))
                 )
         })
@@ -1104,16 +1103,16 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
 #[test]
 fn the_refine_door_carries_the_edges_with_it() {
     let mut m = translated_chain(300);
-    let before: Vec<_> = m
-        .edges
-        .iter()
+    let before: Vec<_> = (0..m.edge_count() as u32)
+        .filter_map(|i| m.edge_handle_at(i))
+        .map(|h| (h, m.edge(h)))
         .map(|(h, _)| m.edge_curve(h).clone())
         .collect();
     assert!(nacre_ops::refine_vertex_cache(&mut m).refined > 0);
 
-    let after: Vec<_> = m
-        .edges
-        .iter()
+    let after: Vec<_> = (0..m.edge_count() as u32)
+        .filter_map(|i| m.edge_handle_at(i))
+        .map(|h| (h, m.edge(h)))
         .map(|(h, _)| m.edge_curve(h).clone())
         .collect();
     assert_ne!(
@@ -1122,9 +1121,9 @@ fn the_refine_door_carries_the_edges_with_it() {
     );
 
     m.rebuild_edge_cache();
-    let again: Vec<_> = m
-        .edges
-        .iter()
+    let again: Vec<_> = (0..m.edge_count() as u32)
+        .filter_map(|i| m.edge_handle_at(i))
+        .map(|h| (h, m.edge(h)))
         .map(|(h, _)| m.edge_curve(h).clone())
         .collect();
     assert_eq!(after, again, "the door already re-derived every live curve");

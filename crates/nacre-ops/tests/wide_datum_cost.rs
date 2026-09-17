@@ -110,10 +110,10 @@ fn live_verts(m: &Model) -> Vec<Handle<Vertex>> {
     let mut seen = std::collections::HashSet::new();
     let mut out = Vec::new();
     for &s in &m.live_solids {
-        let sol = m.solids.get(s);
+        let sol = m.solid(s);
         for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-            for &fh in &m.shells.get(sh).faces {
-                let f = m.faces.get(fh);
+            for &fh in &m.shell(sh).faces {
+                let f = m.face(fh);
                 for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                     for &he in &lp.half_edges {
                         let vh = m.he_start(he);
@@ -174,7 +174,7 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
     let far_cap_verts: Vec<_> = live_verts(&m)
         .into_iter()
         .filter(|v| {
-            let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(*v).def else {
+            let nacre_topo::VertexDef::ThreePlane(tri) = m.vertex(*v).def else {
                 return false;
             };
             tri.iter().all(|h| m.plane_motion(*h).is_some())
@@ -298,12 +298,11 @@ fn wf_family_with_pocket() -> Model {
     };
     m.rebuild_adjacency();
     let wall = *m
-        .shells
-        .get(m.solids.get(solid).outer)
+        .shell(m.solid(solid).outer)
         .faces
         .iter()
         .find(|&&f| {
-            let s = m.faces.get(f).surface;
+            let s = m.face(f).surface;
             m.surface_name
                 .get(&s)
                 .and_then(|n| n.narrow())

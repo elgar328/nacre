@@ -62,7 +62,7 @@ fn lift(m: &mut Model, s: Handle<Solid>, num: i128, den: i128) -> Handle<Solid> 
 fn one_solid_with_a_cavity(m: &mut Model, got: Vec<Handle<Solid>>, volume: f64) {
     m.rebuild_adjacency();
     assert_eq!(got.len(), 1, "one body, not the operand plus its own void");
-    let s = m.solids.get(got[0]);
+    let s = m.solid(got[0]);
     assert_eq!(s.cavities.len(), 1, "the void is this solid's cavity");
     let v = nacre_props::mass_props(m, got[0]).expect("props").volume;
     assert!(

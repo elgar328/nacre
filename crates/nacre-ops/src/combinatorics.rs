@@ -1829,7 +1829,7 @@ pub(crate) fn face_vertex_triples(
 ) -> Result<LoopRing, BoolError> {
     loop_triples(
         model,
-        &model.faces.get(f).outer.half_edges,
+        &model.face(f).outer.half_edges,
         p,
         inc,
         jd,
@@ -1859,7 +1859,7 @@ pub(crate) fn lateral_cycles(
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Vec<(CycleKind, LoopRing)>, BoolError> {
     use nacre_topo::HalfEdge;
-    let face = model.faces.get(f);
+    let face = model.face(f);
     let hes = &face.outer.half_edges;
     let n = hes.len();
     let is_slit = |he: &HalfEdge| -> Result<bool, BoolError> {
@@ -1872,7 +1872,7 @@ pub(crate) fn lateral_cycles(
     let start_of = |piece: &[HalfEdge]| crate::he_start(model, piece[0]);
     let end_of = |piece: &[HalfEdge]| {
         let he = piece[piece.len() - 1];
-        let e = model.edges.get(he.edge);
+        let e = model.edge(he.edge);
         if he.forward {
             e.vertices[1]
         } else {
@@ -2086,7 +2086,7 @@ pub(crate) fn trace_input(
     let mut faces = [Vec::new(), Vec::new()];
     for (side, (solid, inc)) in operands.into_iter().enumerate() {
         for sh in crate::planes::solid_shell_handles(model, solid) {
-            for &fh in &model.shells.get(sh).faces {
+            for &fh in &model.shell(sh).faces {
                 let fp = surf_ix[&fh];
                 // ★ A **lateral face's outer loop** is not named as one loop: it is rims joined
                 // by the chart's seam, the slit edges are self-adjacent, and no triple describes
@@ -2140,8 +2140,7 @@ pub(crate) fn hole_rings(
     cyls: &[crate::planes::WorkingCyl],
 ) -> Result<Vec<LoopRing>, BoolError> {
     model
-        .faces
-        .get(f)
+        .face(f)
         .inner
         .iter()
         .map(|l| loop_triples(model, &l.half_edges, p, inc, jd, plane_ix, cyls))
@@ -2251,10 +2250,7 @@ fn loop_triples(
         // step of the ring: no triple, and the step's wall was pushed with its first leg. Total
         // over faces: a cap's bitten arc (legs on the cylinder) and a lateral hole's rim (legs on
         // the cap plane) read the same way.
-        if matches!(
-            model.vertices.get(corner).def,
-            nacre_topo::VertexDef::OnSeam(_)
-        ) {
+        if matches!(model.vertex(corner).def, nacre_topo::VertexDef::OnSeam(_)) {
             let prev = &hes[(i + n - 1) % n];
             debug_assert!(
                 matches!(model.edge_curve(prev.edge), nacre_geom::Curve::Circle(_))
@@ -5679,7 +5675,7 @@ fn curved_wall(
             // restates the comparison it replaces exactly, rather than growing a decline for a
             // case that has none.
             let other_param = |v: Handle<Vertex>| -> Option<nacre_scalar::Rat> {
-                let nacre_topo::VertexDef::Pierce { planes, .. } = model.vertices.get(v).def else {
+                let nacre_topo::VertexDef::Pierce { planes, .. } = model.vertex(v).def else {
                     return None;
                 };
                 let mut cut = None;
@@ -5695,7 +5691,7 @@ fn curved_wall(
                 }
                 crate::planes::axis_param_of_plane(&cut?, &def)
             };
-            let [v0, v1] = model.edges.get(he.edge).vertices;
+            let [v0, v1] = model.edge(he.edge).vertices;
             let (t0, t1) = (
                 other_param(v0).ok_or_else(curved)?,
                 other_param(v1).ok_or_else(curved)?,
@@ -5761,7 +5757,7 @@ pub(crate) fn pierce_name_from_def(
     cyl: usize,
     candidates: [usize; 2],
 ) -> Option<NodeId> {
-    let nacre_topo::VertexDef::Pierce { planes, root, .. } = model.vertices.get(v).def else {
+    let nacre_topo::VertexDef::Pierce { planes, root, .. } = model.vertex(v).def else {
         return None;
     };
     // Which candidate class each stored handle *is*, and with which sense. The match decides the

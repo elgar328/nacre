@@ -108,8 +108,7 @@ fn the_sketch_front_door_and_face_queries_are_reachable() {
     // Pick the face looking straight up, the way a script names one.
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
     let top = *model
-        .shells
-        .get(model.solid(solid).outer)
+        .shell(model.solid(solid).outer)
         .faces
         .iter()
         .find(|&&f| {

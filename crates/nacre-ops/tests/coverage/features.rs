@@ -27,11 +27,7 @@ fn pad_boss_on_cube_top() {
     assert_eq!(reach.faces.len(), 11);
     assert_eq!(reach.vertices.len(), 16); // 8 cube + 4 base + 4 top
     assert_eq!(reach.edges.len(), 24); // 12 cube + 4 base + 4 top + 4 vertical
-    let inner: usize = reach
-        .faces
-        .iter()
-        .map(|fh| m.faces.get(*fh).inner.len())
-        .sum();
+    let inner: usize = reach.faces.iter().map(|fh| m.face(*fh).inner.len()).sum();
     assert_eq!(inner, 1);
     assert!(reach.faces.contains(&top_face));
 }
@@ -51,11 +47,7 @@ fn pocket_on_cube_top() {
     assert_eq!(reach.faces.len(), 11);
     assert_eq!(reach.vertices.len(), 16);
     assert_eq!(reach.edges.len(), 24);
-    let inner: usize = reach
-        .faces
-        .iter()
-        .map(|fh| m.faces.get(*fh).inner.len())
-        .sum();
+    let inner: usize = reach.faces.iter().map(|fh| m.face(*fh).inner.len()).sum();
     assert_eq!(inner, 1);
     assert!(reach.faces.contains(&bottom_face));
 }
@@ -68,17 +60,11 @@ fn cylinder_lateral(m: &mut Model) -> nacre_store::Handle<nacre_topo::Face> {
         2.0,
         5.0,
     );
-    let shell = m.solids.get(m.live_solids[0]).outer;
-    *m.shells
-        .get(shell)
+    let shell = m.solid(m.live_solids[0]).outer;
+    *m.shell(shell)
         .faces
         .iter()
-        .find(|&&fh| {
-            matches!(
-                m.surface_cache(m.faces.get(fh).surface),
-                Surface::Cylinder(_)
-            )
-        })
+        .find(|&&fh| matches!(m.surface_cache(m.face(fh).surface), Surface::Cylinder(_)))
         .unwrap()
 }
 
@@ -165,7 +151,7 @@ fn cut_by_a_box_inside_the_pocket_is_a_no_op() {
     m.rebuild_adjacency();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");
-    assert!(m.solids.get(r).cavities.is_empty());
+    assert!(m.solid(r).cavities.is_empty());
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 0.92).abs() < 1e-9, "volume {vol}");
 }
@@ -494,9 +480,9 @@ fn cut_by_a_corner_overhanging_boss_removes_nothing() {
     assert!((vol - 1.0).abs() < 1e-12, "volume {vol}");
     // Structure, not just volume: the base comes through as itself. Six faces means the cap was
     // not split along ∂Q and the boss contributed nothing.
-    let s = m.solids.get(r);
+    let s = m.solid(r);
     assert!(s.cavities.is_empty());
-    assert_eq!(m.shells.get(s.outer).faces.len(), 6, "a clean cube");
+    assert_eq!(m.shell(s.outer).faces.len(), 6, "a clean cube");
 }
 
 /// A coplanar-contact undercut: the tool's boss annulus sits flush on the base's top (z=3, a
@@ -524,7 +510,7 @@ fn a_coplanar_boss_with_a_pin_undercuts_the_base() {
     let vol = nacre_props::mass_props(&m, r).unwrap().volume;
     assert!((vol - 26.0).abs() < 1e-12, "volume {vol}");
     assert!(
-        m.solids.get(r).cavities.is_empty(),
+        m.solid(r).cavities.is_empty(),
         "the notch is a surface indentation, not a void"
     );
 }
@@ -644,14 +630,14 @@ fn a_pocket_that_punches_through_drills_a_bore() {
     assert!((p.area - 7.5).abs() < 1e-12, "area {}", p.area);
     // A bore, not a void: no cavity shell, and both caps carry the hole (the top from the
     // coincident contact, the bottom from the section the tool cuts through it).
-    let s = m.solids.get(r);
+    let s = m.solid(r);
     assert!(s.cavities.is_empty(), "a through hole is not a cavity");
-    let faces = &m.shells.get(s.outer).faces;
+    let faces = &m.shell(s.outer).faces;
     assert_eq!(faces.len(), 10, "6 base faces + the bore's 4 walls");
     assert_eq!(
         faces
             .iter()
-            .filter(|&&fh| !m.faces.get(fh).inner.is_empty())
+            .filter(|&&fh| !m.face(fh).inner.is_empty())
             .count(),
         2,
         "both caps are annular"
@@ -680,13 +666,12 @@ fn a_boss_that_punches_through_keeps_the_stub() {
     let p = nacre_props::mass_props(&m, r).unwrap();
     assert!((p.volume - 1.125).abs() < 1e-12, "volume {}", p.volume);
     assert!((p.area - 7.0).abs() < 1e-12, "area {}", p.area);
-    let s = m.solids.get(r);
+    let s = m.solid(r);
     assert_eq!(
-        m.shells
-            .get(s.outer)
+        m.shell(s.outer)
             .faces
             .iter()
-            .filter(|&&fh| !m.faces.get(fh).inner.is_empty())
+            .filter(|&&fh| !m.face(fh).inner.is_empty())
             .count(),
         1,
         "only the bottom is annular — the flush top merges away"
@@ -768,7 +753,7 @@ fn face_plane_is_the_frame_pad_places_profiles_in_on_a_turned_face() {
                 unreachable!()
             };
             m.rebuild_adjacency();
-            let face = m.shells.get(m.solids.get(solid).outer).faces[fi];
+            let face = m.shell(m.solid(solid).outer).faces[fi];
 
             // Off-centre about the face's own centroid (the frame origin is a property of the
             // plane, not of the face, so absolute sketch coordinates can lie off the face
@@ -827,8 +812,7 @@ fn a_rotated_face_has_a_pinned_sketch_axis() {
     // The side face whose outward normal points into +x+y.
     let diag = Vector3::from_array([1.0, 1.0, 0.0]).normalize().unwrap();
     let face = *m
-        .shells
-        .get(m.solids.get(s).outer)
+        .shell(m.solid(s).outer)
         .faces
         .iter()
         .find(|&&f| {

@@ -620,8 +620,7 @@ mod tests {
         m.rebuild_adjacency();
         let shell = m.solid(s).outer;
         let wall = *m
-            .shells
-            .get(shell)
+            .shell(shell)
             .faces
             .iter()
             .find(|&&fh| matches!(m.surface_cache(m.face(fh).surface), Surface::Cylinder(_)))
@@ -753,8 +752,7 @@ mod tests {
         let s = m.add_cuboid(Point3::origin(), Point3::from_array([2.0, 3.0, 4.0]));
         let up = Vector3::from_array([0.0, 0.0, 1.0]);
         let top = m
-            .shells
-            .get(m.solid(s).outer)
+            .shell(m.solid(s).outer)
             .faces
             .iter()
             .map(|&f| (f, face_props(&m, f).unwrap()))

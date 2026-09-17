@@ -800,8 +800,7 @@ fn two_caps_on_a_tilted_face(
     // The **original** tilted face — lowest along `up` among the faces that point that way,
     // so the second boss is placed beside the first rather than on top of it.
     let facing = |m: &Model, s: Handle<Solid>| -> Handle<nacre_topo::Face> {
-        *m.shells
-            .get(m.solids.get(s).outer)
+        *m.shell(m.solid(s).outer)
             .faces
             .iter()
             .filter(|&&f| crate::ops::face_plane(m, f).is_ok_and(|sp| sp.normal().dot(up) > 0.99))
@@ -980,8 +979,7 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
     let up = tilt_up();
     let before = nacre_props::mass_props(&m, s).unwrap().volume;
     let cap = *m
-        .shells
-        .get(m.solids.get(s).outer)
+        .shell(m.solid(s).outer)
         .faces
         .iter()
         .filter(|&&f| crate::ops::face_plane(&m, f).is_ok_and(|sp| sp.normal().dot(up) > 0.99))
@@ -1021,12 +1019,11 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
     let valid = nacre_validate::validate(&m).is_empty();
     // `collect_planes` would assert on this; count it instead, so the test can say how many.
     let bad = m
-        .shells
-        .get(m.solids.get(solid).outer)
+        .shell(m.solid(solid).outer)
         .faces
         .iter()
         .filter(|&&f| {
-            let face = m.faces.get(f);
+            let face = m.face(f);
             let Some((tri, _)) = crate::planes::outer_tri(&m, face) else {
                 return false;
             };
@@ -1543,10 +1540,10 @@ fn two_walls_of_one_plane_become_one_surface() {
     let OpOutput::Extrude { faces, .. } = out else {
         panic!("extrude returned no faces")
     };
-    let mut surfaces: Vec<_> = faces.iter().map(|&f| m.faces.get(f).surface).collect();
+    let mut surfaces: Vec<_> = faces.iter().map(|&f| m.face(f).surface).collect();
     let named = faces
         .iter()
-        .filter(|&&f| m.surface_name.contains_key(&m.faces.get(f).surface))
+        .filter(|&&f| m.surface_name.contains_key(&m.face(f).surface))
         .count();
     let total = surfaces.len();
     surfaces.sort_unstable();
@@ -1615,12 +1612,11 @@ mod wide_name_rescue {
         };
         m.rebuild_adjacency();
         let wall = *m
-            .shells
-            .get(m.solids.get(solid).outer)
+            .shell(m.solid(solid).outer)
             .faces
             .iter()
             .find(|&&f| {
-                let s = m.faces.get(f).surface;
+                let s = m.face(f).surface;
                 m.surface_name
                     .get(&s)
                     .and_then(|n| n.narrow())
@@ -1631,8 +1627,7 @@ mod wide_name_rescue {
         // An interior point of the convex wall: its outer-loop vertex average (the
         // integration test uses the area centroid; any interior point serves).
         let pts: Vec<Point3> = m
-            .faces
-            .get(wall)
+            .face(wall)
             .outer
             .half_edges
             .iter()
@@ -1668,10 +1663,10 @@ mod wide_name_rescue {
         let mut seen = std::collections::HashSet::new();
         let mut out = Vec::new();
         for &s in &m.live_solids {
-            let sol = m.solids.get(s);
+            let sol = m.solid(s);
             for &sh in std::iter::once(&sol.outer).chain(sol.cavities.iter()) {
-                for &fh in &m.shells.get(sh).faces {
-                    let f = m.faces.get(fh);
+                for &fh in &m.shell(sh).faces {
+                    let f = m.face(fh);
                     for lp in std::iter::once(&f.outer).chain(f.inner.iter()) {
                         for &he in &lp.half_edges {
                             let vh = m.he_start(he);

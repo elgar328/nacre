@@ -43,13 +43,12 @@ fn build(
 ) -> (Point3, Point3, nacre_geom::Cylinder, CylinderDef) {
     let mut m = Model::new();
     let s = m.add_cylinder(base, axis, radius, height);
-    let shell = m.solids.get(s).outer;
+    let shell = m.solid(s).outer;
     let lateral = m
-        .shells
-        .get(shell)
+        .shell(shell)
         .faces
         .iter()
-        .map(|&f| m.faces.get(f).surface)
+        .map(|&f| m.face(f).surface)
         .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
         .expect("a cylinder solid has a lateral face");
     let cache = match m.surface_cache(lateral) {
@@ -64,9 +63,9 @@ fn build(
         _ => panic!("a lateral face carries a cylinder truth"),
     };
     // The two seam vertices, bottom first (lower vertex-store index).
-    let mut seams: Vec<_> = m
-        .vertices
-        .iter()
+    let mut seams: Vec<_> = (0..m.vertex_count() as u32)
+        .filter_map(|i| m.vertex_handle_at(i))
+        .map(|h| (h, m.vertex(h)))
         .filter(|(_, v)| matches!(v.def, VertexDef::OnSeam(_)))
         .map(|(h, _)| h)
         .collect();
@@ -435,7 +434,7 @@ type CylFaces = [nacre_store::Handle<nacre_topo::Face>; 3];
 
 /// The lateral surface's truth and the two seam coordinates of a model built exactly.
 fn read_exact(m: &Model, faces: CylFaces) -> (CylinderDef, Point3, Point3) {
-    let lateral = m.faces.get(faces[0]).surface;
+    let lateral = m.face(faces[0]).surface;
     let def = match m.surface(lateral) {
         Surface::Cylinder { def, motion } => {
             assert!(motion.is_none(), "this fixture states the world");
@@ -443,9 +442,9 @@ fn read_exact(m: &Model, faces: CylFaces) -> (CylinderDef, Point3, Point3) {
         }
         _ => panic!("the first face of a cylinder solid is its lateral"),
     };
-    let mut seams: Vec<_> = m
-        .vertices
-        .iter()
+    let mut seams: Vec<_> = (0..m.vertex_count() as u32)
+        .filter_map(|i| m.vertex_handle_at(i))
+        .map(|h| (h, m.vertex(h)))
         .filter(|(_, v)| matches!(v.def, VertexDef::OnSeam(_)))
         .map(|(h, _)| h)
         .collect();
@@ -522,8 +521,8 @@ fn a_refused_statement_is_named_and_leaves_nothing_behind() {
     let mut m = Model::new();
     let before = (
         m.surface_count(),
-        m.vertices.iter().count(),
-        m.edges.iter().count(),
+        m.vertex_count(),
+        m.edge_count(),
         m.live_solids.len(),
     );
     let two = Rat::from_int(2);
@@ -580,8 +579,8 @@ fn a_refused_statement_is_named_and_leaves_nothing_behind() {
     assert_eq!(
         (
             m.surface_count(),
-            m.vertices.iter().count(),
-            m.edges.iter().count(),
+            m.vertex_count(),
+            m.edge_count(),
             m.live_solids.len()
         ),
         before,

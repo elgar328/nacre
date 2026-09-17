@@ -125,7 +125,7 @@ pub(crate) fn through_judged_points(
     use nacre_cip::JudgedPoint;
     let mut out: [Option<JudgedPoint>; 3] = [None, None, None];
     for (o, vh) in out.iter_mut().zip(vs) {
-        let tri = match model.vertices.get(vh).def {
+        let tri = match model.vertex(vh).def {
             nacre_topo::VertexDef::ThreePlane(tri) => tri,
             // OnSeam pins a curve, not a point; a Pierce point's coordinates are
             // quadratic-irrational, and this table's witnesses are rational by type —
@@ -501,17 +501,17 @@ mod tests {
                     Step::Flip(axis, offset) => reflected(&mut m, r, *axis, *offset),
                 };
             }
-            let sh = m.solids.get(r).outer;
-            for &fh in &m.shells.get(sh).faces {
-                for he in &m.faces.get(fh).outer.half_edges {
-                    for &vh in m.edges.get(he.edge).vertices.iter() {
+            let sh = m.solid(r).outer;
+            for &fh in &m.shell(sh).faces {
+                for he in &m.face(fh).outer.half_edges {
+                    for &vh in m.edge(he.edge).vertices.iter() {
                         // ★★ S7 promoted this from "replay the stored base vertex" to
                         // **"solve the definition"**: the corner's three planes share one
                         // motion, so solving their pre-motion names exactly (rational Cramer)
                         // and replaying that chain must reproduce the stored coordinate — the
                         // 8/8 measurement that let the base vertex die, now a permanent lock
                         // over every chain shape in this table.
-                        let nacre_topo::VertexDef::ThreePlane(tri) = m.vertices.get(vh).def else {
+                        let nacre_topo::VertexDef::ThreePlane(tri) = m.vertex(vh).def else {
                             panic!("a cuboid corner is a three-plane point");
                         };
                         let motion_of = |h| match m.surface(h) {
@@ -615,13 +615,13 @@ mod tests {
         // Z turn (restated) and only joined at the X turn — so the order lock reads every
         // face: the walls' `[Z, X]` (never `[X, Z]` — the reversal this test exists to
         // forbid) and the caps' `[X]`.
-        let sh = m.solids.get(r).outer;
+        let sh = m.solid(r).outer;
         let mut counts: std::collections::HashMap<Vec<Axis>, usize> = Default::default();
-        for &fh in &m.shells.get(sh).faces {
+        for &fh in &m.shell(sh).faces {
             let &nacre_topo::Surface::Plane {
                 motion: Some(rotation),
                 ..
-            } = m.surface(m.faces.get(fh).surface)
+            } = m.surface(m.face(fh).surface)
             else {
                 panic!("every face of this solid records a motion");
             };

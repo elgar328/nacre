@@ -236,14 +236,17 @@ fn no_anchor_lets_a_tilted_plane_carry_its_coefficients() {
 fn topo_sig(m: &Model) -> Vec<String> {
     let mut out = vec![format!(
         "len {} {} {} {} {} {}",
-        m.vertices.len(),
-        m.edges.len(),
-        m.faces.len(),
-        m.shells.len(),
-        m.solids.len(),
+        m.vertex_count(),
+        m.edge_count(),
+        m.face_count(),
+        m.shell_count(),
+        m.solid_count(),
         m.surface_count()
     )];
-    for (h, e) in m.edges.iter() {
+    let mut i = 0u32;
+    while let Some(h) = m.edge_handle_at(i) {
+        i += 1;
+        let e = m.edge(h);
         out.push(format!(
             "e{} {},{} {},{}",
             h.index(),
@@ -253,7 +256,10 @@ fn topo_sig(m: &Model) -> Vec<String> {
             e.vertices[1].index()
         ));
     }
-    for (h, f) in m.faces.iter() {
+    let mut i = 0u32;
+    while let Some(h) = m.face_handle_at(i) {
+        i += 1;
+        let f = m.face(h);
         let loops: Vec<String> = std::iter::once(&f.outer)
             .chain(f.inner.iter())
             .map(|lp| {
@@ -409,7 +415,13 @@ fn a_pre_pushed_plane_does_not_move_the_model() {
         let eps = size * f64::powi(2.0, -40);
 
         let mut worst_coord = 0.0f64;
-        for ((ha, _), (hb, _)) in plain.vertices.iter().zip(stated.vertices.iter()) {
+        // `zip` stopped at the shorter side; the min keeps that exactly.
+        let n = plain.vertex_count().min(stated.vertex_count()) as u32;
+        for i in 0..n {
+            let (ha, hb) = (
+                plain.vertex_handle_at(i).expect("in range"),
+                stated.vertex_handle_at(i).expect("in range"),
+            );
             let (p, q) = (plain.vertex_point(ha), stated.vertex_point(hb));
             for k in 0..3 {
                 worst_coord = worst_coord.max((p.as_array()[k] - q.as_array()[k]).abs());
@@ -454,8 +466,8 @@ fn a_pre_pushed_plane_does_not_move_the_model() {
 /// The anchor `build_prism` chose for the base cap — read back so the report can say how far the
 /// pre-statement actually moved `d`, instead of assuming which ring point won the winding.
 fn plain_base_anchor(m: &Model) -> Point3 {
-    let f = m.shells.get(m.solids.get(m.live_solids[0]).outer).faces[0];
-    match m.surface_cache(m.faces.get(f).surface) {
+    let f = m.shell(m.solid(m.live_solids[0]).outer).faces[0];
+    match m.surface_cache(m.face(f).surface) {
         nacre_geom::Surface::Plane(p) => p.origin(),
         nacre_geom::Surface::Cylinder(_) => unreachable!("the wf base cap is planar"),
     }

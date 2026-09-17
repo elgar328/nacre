@@ -62,7 +62,7 @@ fn rotated_containment_cut_makes_cavity() {
     m.rebuild_adjacency();
     assert!(nacre_validate::validate(&m).is_empty());
     assert_eq!(
-        m.solids.get(r).cavities.len(),
+        m.solid(r).cavities.len(),
         1,
         "the inner box becomes a cavity"
     );

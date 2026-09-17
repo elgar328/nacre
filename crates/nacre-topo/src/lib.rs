@@ -2741,12 +2741,11 @@ mod tests {
         );
         // Each solid's face on x = 3: a's outward +X, b's outward −X.
         let face_on_x3 = |s: Handle<Solid>, want_x: f64| -> Handle<Surface> {
-            let shell = m.solids.get(s).outer;
-            *m.shells
-                .get(shell)
+            let shell = m.solid(s).outer;
+            *m.shell(shell)
                 .faces
                 .iter()
-                .map(|&fh| &m.faces.get(fh).surface)
+                .map(|&fh| &m.face(fh).surface)
                 .find(|&&sh| match m.surface_cache(sh) {
                     nacre_geom::Surface::Plane(p) => {
                         let [a, b, c, d] = p.coefficients();
@@ -2930,7 +2929,9 @@ mod tests {
     #[test]
     fn one_vertex_and_three_vertices_solve_the_same_meet() {
         let m = build([0.0; 3], [2.0, 3.0, 5.0]);
-        let vs: Vec<Handle<Vertex>> = m.vertices.iter().map(|(h, _)| h).collect();
+        let vs: Vec<Handle<Vertex>> = (0..m.vertex_count() as u32)
+            .filter_map(|i| m.vertex_handle_at(i))
+            .collect();
         assert!(vs.len() >= 3, "a box has corners");
         let tri = [vs[0], vs[1], vs[2]];
         let together = m
@@ -2958,11 +2959,11 @@ mod tests {
     }
 
     fn he_start(m: &Model, he: HalfEdge) -> Handle<Vertex> {
-        let [a, b] = m.edges.get(he.edge).vertices;
+        let [a, b] = m.edge(he.edge).vertices;
         if he.forward { a } else { b }
     }
     fn he_end(m: &Model, he: HalfEdge) -> Handle<Vertex> {
-        let [a, b] = m.edges.get(he.edge).vertices;
+        let [a, b] = m.edge(he.edge).vertices;
         if he.forward { b } else { a }
     }
     fn face_plane_normal(m: &Model, f: &Face) -> Vector3 {
@@ -2989,11 +2990,11 @@ mod tests {
     #[test]
     fn cuboid_counts() {
         let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        assert_eq!(m.vertices.len(), 8);
-        assert_eq!(m.edges.len(), 12);
-        assert_eq!(m.faces.len(), 6);
-        assert_eq!(m.shells.len(), 1);
-        assert_eq!(m.solids.len(), 1);
+        assert_eq!(m.vertex_count(), 8);
+        assert_eq!(m.edge_count(), 12);
+        assert_eq!(m.face_count(), 6);
+        assert_eq!(m.shell_count(), 1);
+        assert_eq!(m.solid_count(), 1);
         // Still 6 — but differently composed since S9: the origin box's bottom/left/front
         // faces intern onto the three seeded world planes (same name, same handle), so the
         // arena holds 3 seeds + 3 fresh (top/back/right). Seeding adds nothing here precisely
@@ -3001,7 +3002,7 @@ mod tests {
         assert_eq!(m.surfaces.len(), 6);
         assert_eq!(
             m.edge_cache.len(),
-            m.edges.len(),
+            m.edge_count(),
             "the curve cache stays index-parallel"
         );
     }
@@ -3019,9 +3020,9 @@ mod tests {
             [3.0, 4.0, 10.0],
             [-2.0, 4.0, 10.0],
         ];
-        let got: Vec<[f64; 3]> = m
-            .vertices
-            .iter()
+        let got: Vec<[f64; 3]> = (0..m.vertex_count() as u32)
+            .filter_map(|i| m.vertex_handle_at(i))
+            .map(|h| (h, m.vertex(h)))
             .map(|(vh, _)| m.vertex_point(vh).as_array())
             .collect();
         assert_eq!(got, expected);
@@ -3031,7 +3032,10 @@ mod tests {
     fn face_normals_point_outward() {
         let m = build([0.0, 0.0, 0.0], [2.0, 3.0, 4.0]);
         let center = Point3::origin().lerp(Point3::from_array([2.0, 3.0, 4.0]), 0.5);
-        for (_, f) in m.faces.iter() {
+        let mut i = 0u32;
+        while let Some(h_) = m.face_handle_at(i) {
+            i += 1;
+            let f = m.face(h_);
             let outward = face_plane_normal(&m, f).dot(face_centroid(&m, f) - center);
             assert!(outward > 0.0);
         }
@@ -3059,7 +3063,10 @@ mod tests {
     #[test]
     fn outer_loops_are_closed() {
         let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        for (_, f) in m.faces.iter() {
+        let mut i = 0u32;
+        while let Some(h_) = m.face_handle_at(i) {
+            i += 1;
+            let f = m.face(h_);
             let hes = &f.outer.half_edges;
             assert_eq!(hes.len(), 4);
             for i in 0..hes.len() {
@@ -3186,8 +3193,9 @@ mod tests {
             2.5,
         );
         let snapshot = |m: &Model| -> Vec<Curve> {
-            m.edges
-                .iter()
+            (0..m.edge_count() as u32)
+                .filter_map(|i| m.edge_handle_at(i))
+                .map(|h| (h, m.edge(h)))
                 .map(|(eh, _)| m.edge_curve(eh).clone())
                 .collect()
         };
@@ -3206,7 +3214,10 @@ mod tests {
     #[test]
     fn edge_endpoints_lie_on_their_curve() {
         let m = build([-2.0, 1.0, 0.0], [3.0, 4.0, 10.0]);
-        for (eh, e) in m.edges.iter() {
+        let mut i = 0u32;
+        while let Some(eh) = m.edge_handle_at(i) {
+            i += 1;
+            let e = m.edge(eh);
             let curve = m.edge_curve(eh);
             let [a, b] = e.vertices;
             assert!(curve.contains(m.vertex_point(a), 1e-9));
@@ -3218,9 +3229,9 @@ mod tests {
     fn euler_poincare_holds() {
         let m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         let (v, e, f) = (
-            m.vertices.len() as i64,
-            m.edges.len() as i64,
-            m.faces.len() as i64,
+            m.vertex_count() as i64,
+            m.edge_count() as i64,
+            m.face_count() as i64,
         );
         // V − E + F = 2(S − G) + L_i, with S=1, G=0, L_i=0. Formal validate:
         // nacre-validate (next unit).
@@ -3239,14 +3250,14 @@ mod tests {
     #[test]
     fn cylinder_counts_and_euler() {
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-        assert_eq!(m.vertices.len(), 2);
-        assert_eq!(m.edges.len(), 3);
-        assert_eq!(m.faces.len(), 3);
-        assert_eq!(m.shells.len(), 1);
-        assert_eq!(m.solids.len(), 1);
+        assert_eq!(m.vertex_count(), 2);
+        assert_eq!(m.edge_count(), 3);
+        assert_eq!(m.face_count(), 3);
+        assert_eq!(m.shell_count(), 1);
+        assert_eq!(m.solid_count(), 1);
         // Euler χ = V − E + F = 2 (one shell, genus 0, no inner loops).
         assert_eq!(
-            m.vertices.len() as i64 - m.edges.len() as i64 + m.faces.len() as i64,
+            m.vertex_count() as i64 - m.edge_count() as i64 + m.face_count() as i64,
             2
         );
     }
@@ -3255,9 +3266,9 @@ mod tests {
     fn cylinder_geometry() {
         // +Z axis, r=2, h=5. Seam direction is X (least-aligned axis of +Z).
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-        let pts: Vec<[f64; 3]> = m
-            .vertices
-            .iter()
+        let pts: Vec<[f64; 3]> = (0..m.vertex_count() as u32)
+            .filter_map(|i| m.vertex_handle_at(i))
+            .map(|h| (h, m.vertex(h)))
             .map(|(vh, _)| m.vertex_point(vh).as_array())
             .collect();
         // Seam direction for +Z is any_perpendicular([0,0,1]) = X×Z = [0,-1,0], so
@@ -3265,7 +3276,9 @@ mod tests {
         assert_eq!(pts, vec![[0.0, -2.0, 0.0], [0.0, -2.0, 5.0]]);
         // Two rim circles carry a Circle; the straight seam a Line.
         let mut circles = 0;
-        for (eh, _) in m.edges.iter() {
+        let mut i = 0u32;
+        while let Some(eh) = m.edge_handle_at(i) {
+            i += 1;
             if let Curve::Circle(c) = m.edge_curve(eh) {
                 assert_eq!(c.radius(), 2.0);
                 circles += 1;
@@ -3279,7 +3292,10 @@ mod tests {
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
         // Planar caps only (the lateral cylindrical face has no single normal).
         let mut caps = 0;
-        for (_, f) in m.faces.iter() {
+        let mut i = 0u32;
+        while let Some(h_) = m.face_handle_at(i) {
+            i += 1;
+            let f = m.face(h_);
             if matches!(m.surface_cache(f.surface), nacre_geom::Surface::Plane(_)) {
                 let n = face_plane_normal(&m, f).as_array();
                 // Bottom cap → −Z, top cap → +Z (outward along the axis).
@@ -3296,7 +3312,10 @@ mod tests {
     #[test]
     fn a_seam_vertex_states_its_rim_carriers() {
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
-        let defs: Vec<_> = m.vertices.iter().map(|(_, v)| v.def).collect();
+        let defs: Vec<_> = (0..m.vertex_count() as u32)
+            .filter_map(|i| m.vertex_handle_at(i))
+            .map(|h| m.vertex(h).def)
+            .collect();
         assert_eq!(
             defs.len(),
             2,
@@ -3326,12 +3345,14 @@ mod tests {
         // manifold seam). Every edge is still used exactly twice, opposite.
         let m = cylinder([0.0, 0.0, 0.0], [0.0, 0.0, 1.0], 2.0, 5.0);
         let mut seam_uses = None;
-        for (eh, _) in m.edges.iter() {
+        let mut i = 0u32;
+        while let Some(eh) = m.edge_handle_at(i) {
+            i += 1;
             let uses = &m.adj.edge_uses[&eh];
             assert_eq!(uses.len(), 2);
             assert_ne!(uses[0].1, uses[1].1); // opposite orientation
             // The seam's discriminator IS the new invariant: self-adjacent carriers (S8).
-            if m.edges.get(eh).surfaces[0] == m.edges.get(eh).surfaces[1] {
+            if m.edge(eh).surfaces[0] == m.edge(eh).surfaces[1] {
                 seam_uses = Some(uses.clone());
             }
         }
@@ -3356,9 +3377,9 @@ mod tests {
         #[test]
         fn prop_cuboid_structural((min, max) in box_strategy()) {
             let m = build(min, max);
-            prop_assert_eq!(m.vertices.len(), 8);
-            prop_assert_eq!(m.edges.len(), 12);
-            prop_assert_eq!(m.faces.len(), 6);
+            prop_assert_eq!(m.vertex_count(), 8);
+            prop_assert_eq!(m.edge_count(), 12);
+            prop_assert_eq!(m.face_count(), 6);
             prop_assert_eq!(m.adj.edge_uses.len(), 12);
             for uses in m.adj.edge_uses.values() {
                 prop_assert_eq!(uses.len(), 2);
@@ -3374,7 +3395,10 @@ mod tests {
         fn prop_cuboid_outward_normals((min, max) in box_strategy()) {
             let m = build(min, max);
             let center = Point3::from_array(min).lerp(Point3::from_array(max), 0.5);
-            for (_, f) in m.faces.iter() {
+            let mut i = 0u32;
+            while let Some(h_) = m.face_handle_at(i) {
+                i += 1;
+                let f = m.face(h_);
                 prop_assert!(face_plane_normal(&m, f).dot(face_centroid(&m, f) - center) > 0.0);
             }
         }
@@ -3383,7 +3407,10 @@ mod tests {
         fn prop_cuboid_endpoints_on_curves((min, max) in box_strategy()) {
             let m = build(min, max);
             let scale = 1e-6 * (max.iter().map(|x| x.abs()).fold(0.0, f64::max) + 1.0);
-            for (eh, e) in m.edges.iter() {
+            let mut i = 0u32;
+            while let Some(eh) = m.edge_handle_at(i) {
+                i += 1;
+                let e = m.edge(eh);
                 let curve = m.edge_curve(eh);
                 let [a, b] = e.vertices;
                 prop_assert!(curve.contains(m.vertex_point(a), scale));
@@ -3403,9 +3430,9 @@ mod tests {
             let mut m = Model::new();
             m.add_cylinder(Point3::from_array(base), axis, r, h);
             m.rebuild_adjacency();
-            prop_assert_eq!(m.vertices.len(), 2);
-            prop_assert_eq!(m.edges.len(), 3);
-            prop_assert_eq!(m.faces.len(), 3);
+            prop_assert_eq!(m.vertex_count(), 2);
+            prop_assert_eq!(m.edge_count(), 3);
+            prop_assert_eq!(m.face_count(), 3);
             // Every edge used exactly twice, opposite orientation (seam included).
             for uses in m.adj.edge_uses.values() {
                 prop_assert_eq!(uses.len(), 2);
@@ -3435,9 +3462,9 @@ mod tests {
             let mut m = Model::new();
             m.add_cylinder(Point3::origin(), axis, r, h);
             m.rebuild_adjacency();
-            prop_assert_eq!(m.vertices.len(), 2);
-            prop_assert_eq!(m.edges.len(), 3);
-            prop_assert_eq!(m.faces.len(), 3);
+            prop_assert_eq!(m.vertex_count(), 2);
+            prop_assert_eq!(m.edge_count(), 3);
+            prop_assert_eq!(m.face_count(), 3);
             for uses in m.adj.edge_uses.values() {
                 prop_assert_eq!(uses.len(), 2);
                 prop_assert_ne!(uses[0].1, uses[1].1);
@@ -3460,16 +3487,16 @@ mod tests {
     #[test]
     fn reversed_shell_toggles_orientation_and_reverses_loops() {
         let mut m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        let outer = m.solids.get(m.live_solids[0]).outer;
-        let f0 = m.shells.get(outer).faces[0];
-        let orig = m.faces.get(f0).clone();
+        let outer = m.solid(m.live_solids[0]).outer;
+        let f0 = m.shell(outer).faces[0];
+        let orig = m.face(f0).clone();
 
         let rev_shell = m.reversed_shell(outer);
         // Fresh cells (not reused faces), fresh shell.
         assert_ne!(rev_shell, outer);
-        let rf0 = m.shells.get(rev_shell).faces[0];
+        let rf0 = m.shell(rev_shell).faces[0];
         assert_ne!(rf0, f0);
-        let rev = m.faces.get(rf0);
+        let rev = m.face(rf0);
 
         assert_eq!(rev.surface, orig.surface); // surface reused
         assert_eq!(rev.orientation, orig.orientation.flipped());
@@ -3493,7 +3520,7 @@ mod tests {
         // superseded, so `Adjacency` (reachable-scoped) counts only the reversed
         // faces — no 4-use false positive.
         let mut m = build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
-        let outer = m.solids.get(m.live_solids[0]).outer;
+        let outer = m.solid(m.live_solids[0]).outer;
         let rev = m.reversed_shell(outer);
         let s = m.push_solid(Solid {
             outer: rev,
@@ -3678,9 +3705,9 @@ mod tests {
         let mut i = 0u32;
         while let Some(h) = m.vertex_handle_at(i) {
             i += 1;
-            if matches!(m.vertices.get(h).def, VertexDef::OnSeam(_)) && vs.len() < 2 {
+            if matches!(m.vertex(h).def, VertexDef::OnSeam(_)) && vs.len() < 2 {
                 vs.push(h);
-            } else if matches!(m.vertices.get(h).def, VertexDef::ThreePlane(_)) && vs.len() == 2 {
+            } else if matches!(m.vertex(h).def, VertexDef::ThreePlane(_)) && vs.len() == 2 {
                 vs.push(h);
                 break;
             }
@@ -3796,11 +3823,10 @@ mod tests {
         );
         m.rebuild_adjacency();
         let face_surfaces: Vec<_> = m
-            .shells
-            .get(m.solids.get(s).outer)
+            .shell(m.solid(s).outer)
             .faces
             .iter()
-            .map(|&fh| m.faces.get(fh).surface)
+            .map(|&fh| m.face(fh).surface)
             .collect();
         for axis in [
             nacre_scalar::Axis::Z,
@@ -3851,10 +3877,7 @@ mod tests {
             Point3::from_array([0.0; 3]),
             Point3::from_array([1.0, 1.0, 1.0]),
         );
-        let s = m
-            .faces
-            .get(m.shells.get(m.solids.get(cuboid).outer).faces[0])
-            .surface;
+        let s = m.face(m.shell(m.solid(cuboid).outer).faces[0]).surface;
         assert_eq!(m.surface_handle_at(s.index()), Some(s));
     }
 
@@ -3874,11 +3897,10 @@ mod tests {
         m.rebuild_adjacency();
         // Every planar face of the cylinder carries points and a derived name.
         let planar: Vec<_> = m
-            .shells
-            .get(m.solids.get(cyl).outer)
+            .shell(m.solid(cyl).outer)
             .faces
             .iter()
-            .map(|&fh| m.faces.get(fh).surface)
+            .map(|&fh| m.face(fh).surface)
             .filter(|&s| matches!(m.surface_cache(s), nacre_geom::Surface::Plane(_)))
             .collect();
         assert_eq!(planar.len(), 2, "two caps");
@@ -3892,11 +3914,10 @@ mod tests {
         // The top cap lies on `z = 2`, the same plane as the box's top face — one plane, one
         // handle, across two producers.
         let box_top = m
-            .shells
-            .get(m.solids.get(cuboid).outer)
+            .shell(m.solid(cuboid).outer)
             .faces
             .iter()
-            .map(|&fh| m.faces.get(fh).surface)
+            .map(|&fh| m.face(fh).surface)
             .find(|s| {
                 m.surface_name
                     .get(s)
@@ -3996,8 +4017,8 @@ mod tests {
             unreachable!()
         };
         for v in named {
-            assert!(v.index() < m.vertices.len() as u32);
-            let VertexDef::ThreePlane(tri) = m.vertices.get(*v).def else {
+            assert!(v.index() < m.vertex_count() as u32);
+            let VertexDef::ThreePlane(tri) = m.vertex(*v).def else {
                 unreachable!()
             };
             for s in tri {
@@ -4017,7 +4038,7 @@ mod tests {
             Point3::from_array([1.0, 1.0, 1.0]),
         );
         let mut want = Vec::new();
-        for i in 0..m.vertices.len() as u32 {
+        for i in 0..m.vertex_count() as u32 {
             let vh = m.vertices.handle_at(i).unwrap();
             let c = m.vertex_point(vh).as_array();
             if c.iter().filter(|x| **x == 1.0).count() == 1
@@ -4091,7 +4112,7 @@ mod tests {
             Point3::from_array([1.0, 1.0, 1.0]),
         );
         let mut want = Vec::new();
-        for i in 0..m.vertices.len() as u32 {
+        for i in 0..m.vertex_count() as u32 {
             let vh = m.vertices.handle_at(i).unwrap();
             if m.vertex_point(vh).as_array()[2] == 0.0 {
                 want.push(vh);

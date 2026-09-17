@@ -87,28 +87,28 @@ fn rot_z(m: &mut Model, s: Handle<Solid>, deg: i128) -> Result<Handle<Solid>, na
 /// so the test sees what any consumer would.
 fn foreign_definitions(m: &Model, solid: Handle<Solid>) -> Vec<String> {
     use std::collections::HashSet;
-    let s = m.solids.get(solid);
+    let s = m.solid(solid);
     let shells: Vec<_> = std::iter::once(s.outer)
         .chain(s.cavities.iter().copied())
         .collect();
     let mut mine: HashSet<_> = HashSet::new();
     for &sh in &shells {
-        for &fh in &m.shells.get(sh).faces {
-            mine.insert(m.faces.get(fh).surface);
+        for &fh in &m.shell(sh).faces {
+            mine.insert(m.face(fh).surface);
         }
     }
     let mut bad = Vec::new();
     let mut seen: HashSet<u32> = HashSet::new();
     for &sh in &shells {
-        for &fh in &m.shells.get(sh).faces {
-            let face = m.faces.get(fh);
+        for &fh in &m.shell(sh).faces {
+            let face = m.face(fh);
             for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
                 for he in &lp.half_edges {
-                    for vh in m.edges.get(he.edge).vertices.iter() {
+                    for vh in m.edge(he.edge).vertices.iter() {
                         if !seen.insert(vh.index()) {
                             continue;
                         }
-                        let names: Vec<_> = m.vertices.get(*vh).def.carriers().collect();
+                        let names: Vec<_> = m.vertex(*vh).def.carriers().collect();
                         let missing: Vec<u32> = names
                             .iter()
                             .filter(|s| !mine.contains(s))
