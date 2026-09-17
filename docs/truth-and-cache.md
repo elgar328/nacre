@@ -388,7 +388,7 @@ fn surface_key(&self, truth: &Surface) -> SurfaceKey {
 ```
 
 오늘은 `push_plane` → 표 ①, `push_plane_through` → 이름 있으면 ① 없으면 ②, `push_cylinder` → ③
-으로 **어느 문으로 들어왔는지가** 열쇠를 고른다. 위 모양은 **`push_raw` 한 자리**에서 진실을 보고
+으로 **어느 문으로 들어왔는지가** 열쇠를 고른다. 위 모양은 **사설 깔때기**에서 진실을 보고
 고르므로, 「이름이 있으면 이름으로, 없으면 그대로」가 **모든 곡면 종류에 자동으로** 적용된다.
 
 ★★ **`derive_name` 이 원통에 `None` 을 주는 것은 «없어서»가 아니라 «결정»이다.** 원통에 4계수형이
@@ -1010,8 +1010,8 @@ datum 은 새 복사본을 추적하지 않는다. 실제 규약은 **핸들을 
   본문은 design.md 「크레이트 구조」.
 - **병렬 불변식**: 병렬 구간에서 **곡면 push 금지**(재생 결정성). ⚠ **정정(2026-09-11)**: 이 규칙은
   `push_surface` 를 이름 짓고 있었는데 **그 함수는 없다**(S6b 에서 `push_surface(_with_points/
-  _unrecorded)` 사망, 실측 0건). 오늘의 문은 `Model::push_plane`·`push_cylinder`(사설 `push_raw` 로
-  모인다). ☑ **M6 뒤 재측정(2026-09-11)**: 워크스페이스의 진짜 병렬은 `par.rs` **한 파일 두 자리**
+  _unrecorded)` 사망, 실측 0건). 오늘의 문은 `Model::push_plane`·`push_cylinder`(사설 `push_plane_raw`·`push_cylinder_raw` 로
+  모인다 — 칸 57 이 종류별로 갈랐다). ☑ **M6 뒤 재측정(2026-09-11)**: 워크스페이스의 진짜 병렬은 `par.rs` **한 파일 두 자리**
   (`(0..n).into_par_iter().map(f)`)뿐이고, 그 클로저는 「인덱스 → 값」이라 **`&mut Model` 을 들 수 없다**
   ⇒ 병렬 구간의 곡면 push 는 **구조적으로 불가능**하다. 그 파일에 `push_plane`/`push_cylinder` **0건**, 그리고
   *"병렬이 두 곳에 살면 조용히 깨진다"* 는 텍스트 가드가 이미 그 한 파일을 지킨다. 규칙은 유지, 감시는
@@ -1168,7 +1168,11 @@ STEP 출력, undo/replay.
    `push_raw(truth, cache)` — **캐시를 호출자가 준다.** 캐시의 정의는 「진실에서 언제든 다시
    계산할 수 있는 것」인데, 받는 문은 **둘이 어긋난 상태를 표현 가능하게** 만든다. 그래서
    `points_coverage` 의 *"cache and truth disagree about what this surface is"* 검사가 **존재해야
-   했다**. 형제는 다르다: `push_edge` 는 캐시를 `derive_edge_curve` 로 **유도**하므로 간선은 그
+   했다**.
+   ✔ **절반은 칸 57 이 닫았다**: `push_raw` 가 `push_plane_raw`(`geom::Plane` 을 받는다)·
+   `push_cylinder_raw`(`geom::Cylinder`)로 갈려 **«종류가» 어긋난 상태는 표현 불가능**해졌다.
+   남은 것은 «같은 종류인데 값이 다른» 어긋남이고, 그것은 문이 캐시를 계속 받는 한 남는다 —
+   진짜 목표는 여전히 `realize_surface`(열린 항목 37)다. 형제는 다르다: `push_edge` 는 캐시를 `derive_edge_curve` 로 **유도**하므로 간선은 그
    어긋남이 **표현 불가**다.
    ★ 그리고 그 칸이 **모델 캐시에 처음으로 정밀도 계약을 준다** — 오늘 캐시는 «만들 때 나온 f64»
    (사다리 없음, 기울면 최대 4 ulp)인데, `realize_vertex(v, NearestF64)` 의 출력을 쓰면 «정확 반올림 +

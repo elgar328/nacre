@@ -577,7 +577,8 @@ pub struct Model {
     surfaces: Store<Surface>,
     /// Per-surface f64 caches, index-parallel to `surfaces` — **cache, not truth**: the truth
     /// above decides the realization, and a refinement pass may discard and regenerate the lot.
-    /// Filled eagerly by [`Model::push_raw`]; read through [`Model::surface_cache`].
+    /// Filled eagerly by [`Model::push_plane_raw`]/[`Model::push_cylinder_raw`]; read through
+    /// [`Model::surface_cache`].
     ///
     /// ★★ **Why this is a private `Vec` and not a second `Store`**: a `Store` is append-only and
     /// sealed, so nothing could ever rewrite a cache entry at a higher precision. The cache has

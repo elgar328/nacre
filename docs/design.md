@@ -334,8 +334,8 @@ pub struct Edge {
 표면의 **정의 유무**만 타입으로 승격했다.
 
 **★ 곡면을 미는 문은 여럿이되 «하나의 비공개 깔때기»로 모인다** — `push_plane`·`push_plane_through`·
-`push_cylinder`·`push_plane_unregistered` 가 전부 사설 `push_raw` 를 지나고, 그 자리에서 **진실과 f64
-캐시가 한 동작으로 함께 들어간다**(*"the truth and its cache enter together or not at all"*). 둘이
+`push_cylinder`·`push_plane_unregistered` 가 전부 사설 `push_plane_raw`·`push_cylinder_raw` 를 지나고,
+그 자리에서 **진실과 f64 캐시가 한 동작으로 함께 들어간다**(*"the truth and its cache enter together or not at all"*). 둘이
 떨어질 수 없게 하는 것이 요점이지 문의 개수가 아니다.
 
 **★ 정의가 진실이고 좌표는 «측정된 tol 안의» 캐시다.** 정점은 자기 정의이고(`Vertex { def }`), 실현된
