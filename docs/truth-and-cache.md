@@ -397,8 +397,8 @@ fn surface_key(&self, truth: &Surface) -> SurfaceKey {
 돌려주고 이유를 그 자리에 적는다; 새 종류(구·원뿔)도 «합칠 것인가»를 먼저 정하고 나서야 이름을 얻는다.
 
 ★★ **`surface_ids` 는 캐시다** — 아레나를 돌며 진실마다 `surface_key()` 를 다시 매기면 통째로 재생된다.
-그래서 `rebuild_surface_cache()` 의 형제로 «표도 버리고 재생 → 동일» 잠금이 서고, 그 잠금이
-`SurfaceCache::Plane.name == 표의 열쇠` 일치까지 증명한다. ⚠ **프로덕션에서만** 그렇다: test-only
+그래서 `rebuild_surface_names()`(열린 항목 36)의 형제로 «표도 버리고 재생 → 동일» 잠금이 서고,
+그 잠금이 `SurfaceCache::Plane.name == 표의 열쇠` 일치까지 증명한다. ⚠ **프로덕션에서만** 그렇다: test-only
 `push_plane_unregistered` 는 표를 **건너뛰므로**(실측: `insert` 0건 — 「한 평면을 두 핸들로」 픽스처가
 그것을 필요로 한다) test-util 아래에서는 재유도가 오늘 표와 다르다. 그 잠금은 프로덕션 생산자만 거친
 모델에서 돈다.
@@ -544,8 +544,12 @@ pub enum SurfaceCache {
 //    (`Through` 는 정점을 풀어서 `plane_name_through`). 그런데 오늘은 **`pub surface_name` 곁표**에
 //    따로 살아서, 같은 곡면의 캐시가 **두 벌**이고 그릇(`Vec`↔`HashMap`)·이름 규칙(`_cache`↔`_name`)·
 //    가시성(비공개↔**`pub`**)이 셋 다 어긋나 있다. 캐시로 접으면 `PointCache`·`EdgeCache` 와 같은
-//    「한 실체 = 한 캐시 구조체」가 되고, `rebuild_surface_cache()` **하나**가 실현과 이름을 같이
-//    재생하며 그 **비트 동일 잠금이 「이름은 캐시다」를 증명**한다(간선이 만든 선례).
+//    「한 실체 = 한 캐시 구조체」가 되고, 재생 문 하나의 **비트 동일 잠금이 「이름은 캐시다」를
+//    증명**한다(간선이 만든 선례).
+//    ⚠ **정정(2026-09-17, 칸 57): «실현과 이름을 같이 재생한다»는 못 한다.** 진실에서 f64 평면을
+//    유도하는 길이 트리에 없고(`push_plane_raw` 의 doc: *"handed in by the producer today"*),
+//    그 유도가 곧 열린 항목 37 이다. 재생할 수 있는 것은 **이름뿐**이므로 문 이름도
+//    `rebuild_surface_names()` 다 — 열린 항목 36.
 //    ☑ 실측(2026-09-12): `surface_name` 사용 44곳이 전부 «핸들로 조회»(`get` 24·`contains_key` 18·
 //    `len`·`iter`·`insert` 각 1) ⇒ `HashMap` 이어야 할 이유가 없다.
 // ★★ 접근자 이름은 §문의 이름이 정한다: 진실은 `surface(h)`, 캐시는 `surface_cache(h)`, 조각은
