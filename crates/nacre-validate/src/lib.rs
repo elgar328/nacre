@@ -431,18 +431,18 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
         let bad = match vertex {
             Vertex::ThreePlane(planes) => planes
                 .iter()
-                .any(|&s| !matches!(m.surface_cache(s), nacre_geom::Surface::Plane(_))),
+                .any(|&s| !matches!(m.surface(s), Surface::Plane { .. })),
             Vertex::OnSeam(pair) => pair
                 .iter()
-                .all(|&s| matches!(m.surface_cache(s), nacre_geom::Surface::Plane(_))),
+                .all(|&s| matches!(m.surface(s), Surface::Plane { .. })),
             // The structure says the kinds (M6-1): two planes and one cylinder, positionally.
             Vertex::Pierce {
                 planes, cylinder, ..
             } => {
                 planes
                     .iter()
-                    .any(|&s| !matches!(m.surface_cache(s), nacre_geom::Surface::Plane(_)))
-                    || !matches!(m.surface_cache(*cylinder), nacre_geom::Surface::Cylinder(_))
+                    .any(|&s| !matches!(m.surface(s), Surface::Plane { .. }))
+                    || !matches!(m.surface(*cylinder), Surface::Cylinder { .. })
             }
         };
         if bad {
@@ -538,8 +538,8 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
             if observed[1].index() < observed[0].index() {
                 observed.swap(0, 1);
             }
-            let plane_self_pair = stated[0] == stated[1]
-                && matches!(m.surface_cache(stated[0]), nacre_geom::Surface::Plane(_));
+            let plane_self_pair =
+                stated[0] == stated[1] && matches!(m.surface(stated[0]), Surface::Plane { .. });
             let agrees = if observed[0] == observed[1] {
                 stated.contains(&observed[0])
             } else {
