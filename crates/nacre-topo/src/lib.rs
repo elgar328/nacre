@@ -333,7 +333,8 @@ pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 /// never reset, so a number means "over everything this process built".
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SurfaceDeriveCounts {
-    /// Pushes whose cache the truth could derive ([`Model::derive_surface_cache`]).
+    /// Pushes whose cache the truth could derive (`Model::derive_surface_cache`, private — so
+    /// this is deliberately not a link: a public field's doc cannot point inside the crate).
     pub derived: u64,
     /// Pushes where it declined — no name, a `Wide` name, a motion that is not a rational
     /// translation chain, a moved cylinder, or an overflow. **This is the population that must
@@ -1295,6 +1296,11 @@ impl Model {
     /// motion that is not a rational translation chain, a `Through` truth, a moved cylinder, or
     /// an overflow. ⚠ The name is still required even though the anchor does not read it: every
     /// number above was measured with that gate on, and widening it is its own measurement.
+    ///
+    /// ⚠★★★ **One door still bypasses this entirely** — [`Model::push_plane_unregistered`], which
+    /// skips the name and therefore the derivation. It is the only remaining way for a surface's
+    /// truth and its cache to disagree about where the plane is anchored, and it is `cfg(test)`:
+    /// every call site is a fixture that wants one geometric plane held as two handles.
     fn derive_surface_cache(&self, h: Handle<Surface>) -> Option<nacre_geom::Surface> {
         let rat3 = |v: [Rat; 3]| [v[0].to_f64(), v[1].to_f64(), v[2].to_f64()];
         match self.surface(h) {
