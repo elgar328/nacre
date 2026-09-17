@@ -977,8 +977,7 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
     };
     let face = |h: Handle<Face>| {
         model
-            .faces
-            .handle_at(h.index())
+            .face_handle_at(h.index())
             .ok_or(OpError::LogHandleOutOfRange {
                 cell: LogCell::Face,
                 index: h.index(),
@@ -986,8 +985,7 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
     };
     let solid = |h: Handle<Solid>| {
         model
-            .solids
-            .handle_at(h.index())
+            .solid_handle_at(h.index())
             .ok_or(OpError::LogHandleOutOfRange {
                 cell: LogCell::Solid,
                 index: h.index(),

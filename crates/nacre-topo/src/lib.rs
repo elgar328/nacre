@@ -659,20 +659,20 @@ pub struct Model {
     /// [`CylinderKey`] for why the key is deliberately this literal.
     cylinder_ids: HashMap<CylinderKey, Handle<Surface>>,
     // topology (references geometry by Handle only)
-    pub vertices: Store<Vertex>,
-    pub edges: Store<Edge>,
-    pub faces: Store<Face>,
-    pub shells: Store<Shell>,
-    pub solids: Store<Solid>,
+    vertices: Store<Vertex>,
+    edges: Store<Edge>,
+    faces: Store<Face>,
+    shells: Store<Shell>,
+    solids: Store<Solid>,
     /// The live solids — the "current model" (design §2 supersede semantics).
     /// Editing ops supersede topology by pushing new cells and updating this
     /// list; the old cells stay in the append-only arena but, unreferenced by
     /// any live solid, drop out of the reachable closure. Producers register
     /// through [`Model::push_solid`]; `validate`/`Adjacency`/`nacre-step`
     /// traverse [`Model::reachable`], not the whole store.
-    pub live_solids: Vec<Handle<Solid>>,
+    live_solids: Vec<Handle<Solid>>,
     // derived cache (rebuilt on demand)
-    pub adj: Adjacency,
+    adj: Adjacency,
     /// **A pure accelerator — the one thing here that is neither truth nor cache.**
     ///
     /// A vertex's coordinate is realized by folding its motion chain from its rational base, so a
