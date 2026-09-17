@@ -50,9 +50,9 @@ use nacre_topo::Model;
 /// the origin either way) and **handle 3 is the `wf` datum itself** — which is why the answer is
 /// `[3]` rather than something larger.
 ///
-/// ⚠★★★ **`[3]` is a transitional value, not a constant.** Cell 58's next commit derives the
-/// anchor from the truth's first point and both rows become `[]`; that one-line diff *is* the
-/// cell's proposition, and removing the derivation turns this red before anything else.
+/// ☑ **Both rows are `[]` since cell 58 derived the anchor from the truth's first point.** The
+/// commit before it pinned `worst_ring` at `[3]` — that one-line diff *is* the cell's
+/// proposition, and removing the derivation turns this red before anything else.
 /// ★ The `sketch_origin` row is the control that ships with the fixture: it is `[]` **today**, so
 /// the file shows what a lucky pass looks like beside the case that actually disagrees — the same
 /// service `an_axis_aligned_plane_is_anchor_blind` does for the other questions.
@@ -109,7 +109,7 @@ fn which_surface_caches_two_anchors_leave_disagreeing() {
         (
             "worst_ring",
             wf_ring_point(WF_RING[1][0], WF_RING[1][1]),
-            &[3][..],
+            &[][..],
         ),
     ] {
         let stated = wf_model(Some(anchor));

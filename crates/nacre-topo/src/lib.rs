@@ -1215,8 +1215,24 @@ impl Model {
             self.surfaces.len(),
             "the truth and its cache enter together or not at all"
         );
-        self.measure_derivation(h);
+        self.apply_derivation(h);
         h
+    }
+
+    /// **Realize this surface's cache from its truth**, keeping the producer's value where the
+    /// truth cannot say ([`Model::derive_surface_cache`] declines) — cell 58's wiring.
+    ///
+    /// ★ Counting happens **first**, against the value the producer stated, so the census `stat`
+    /// rows keep meaning "how far the producer's value was from the truth's".
+    ///
+    /// ⚠ Planes only. [`Model::push_cylinder_raw`] still calls [`Model::measure_derivation`]:
+    /// the cylinder arm is derived and **thrown away**, deliberately, because a moved cylinder's
+    /// world statement lives in `nacre-ops` and this door cannot reach it.
+    fn apply_derivation(&mut self, h: Handle<Surface>) {
+        self.measure_derivation(h);
+        if let Some(realized) = self.derive_surface_cache(h) {
+            self.surface_cache[h.index() as usize] = SurfaceCache { realized };
+        }
     }
 
     /// A cylinder's push (private) — [`Model::push_plane_raw`]'s twin, and the other half of the
@@ -1249,48 +1265,64 @@ impl Model {
     /// stored anchor does not satisfy the plane's own coefficients.
     ///
     /// What it derives:
-    /// * **Plane** — the world canonical name ([`Model::world_plane_name`], which follows a
-    ///   rational translation chain) gives primitive integer coefficients; the anchor is their
-    ///   **foot of perpendicular** ([`nacre_scalar::plane_origin_projection`], the plane's
-    ///   minimum-norm point) and `raw` is the coefficients themselves.
+    /// * **Plane** — the **anchor**, and nothing else: the truth's first point, carried to the
+    ///   world and realized. The row (`raw`) and with it the sense are copied from the value the
+    ///   producer stated.
     /// * **Cylinder** — `origin` and `radius` descend exactly from [`CylinderDef`]; the axis
-    ///   direction and `ref_dir` do not (`Cylinder::from_axis` normalizes both).
+    ///   direction and `ref_dir` do not (`Cylinder::from_axis` normalizes both). ⚠ Nothing
+    ///   **applies** this arm today — [`Model::push_cylinder_raw`] only measures it.
     ///
-    /// ⚠★★★★ **The sense is read from the stored cache, not from the truth, and that is not a
-    /// shortcut.** Canonical coefficients carry **no direction** (`[0,0,1,−3]` and `[0,0,−1,3]`
-    /// canonicalize together — that is what makes them an interning key), and the truth's point
-    /// order does not supply it either: the three seeded world planes are pushed with positively
-    /// ordered points and a *negated* cache normal. Deriving the sense from the name would flip
-    /// them, and with them every `flipped` report an interning hit on a seed makes — which is a
-    /// face's outward direction. So this derives **where the plane is** and keeps **which way it
-    /// faces**; the sense is the one thing the cache knows that the truth does not.
+    /// ★★★★★ **Why the anchor and not the row** (cell 58, measured). A canonical row is the
+    /// tidier answer and it was tried: it moves 32 census result rows, costs an exact-coefficient
+    /// road (`WorkingPlane::reconcile` gates on `Plane::spans_exactly`, which a rescaled row
+    /// fails), and makes `plane_origin_projection` square the coefficients — which overflows for
+    /// 8 of this corpus's planes and spends half the `i128` width budget. The anchor costs none
+    /// of that: **0** census rows move, the exact road is untouched, and the arithmetic is one
+    /// addition. What it buys is the same thing: the cache becomes **recomputable from the
+    /// arena**, so two statements of one plane no longer disagree about where it is anchored.
+    ///
+    /// ⚠ **This is not «the cache is a function of the geometry».** The anchor is the *first*
+    /// point of the *first* pusher's triple; two files whose first pushers state the plane
+    /// differently still differ. Inside one model interning makes that unreachable — one name,
+    /// one handle, one truth. See `docs/truth-and-cache.md` for the boundary.
+    ///
+    /// ☑ **The sense cannot come from the truth** (measured): 342 non-seed `Known` planes carry a
+    /// cache normal opposing their own point order, so the point order does not name a direction.
+    /// Copying the row sidesteps the question — `flipped` and every face's outward spelling are
+    /// bit-unchanged by this derivation.
     ///
     /// `None` — the caller keeps the cache it has — for an unnamed plane, a `Wide` name, a
-    /// motion that is not a rational translation chain, a moved cylinder, or an overflow.
+    /// motion that is not a rational translation chain, a `Through` truth, a moved cylinder, or
+    /// an overflow. ⚠ The name is still required even though the anchor does not read it: every
+    /// number above was measured with that gate on, and widening it is its own measurement.
     fn derive_surface_cache(&self, h: Handle<Surface>) -> Option<nacre_geom::Surface> {
         let rat3 = |v: [Rat; 3]| [v[0].to_f64(), v[1].to_f64(), v[2].to_f64()];
         match self.surface(h) {
-            Surface::Plane { .. } => {
-                let mut c = *self.world_plane_name(h)?.narrow()?;
+            Surface::Plane { points, motion } => {
+                // The gate, kept verbatim: a plane the model cannot name in the world is one this
+                // derivation declines, and every measured number above assumes that population.
+                self.world_plane_name(h)?.narrow()?;
                 let stated = match self.surface_cache(h) {
-                    nacre_geom::Surface::Plane(p) => p,
+                    nacre_geom::Surface::Plane(p) => *p,
                     nacre_geom::Surface::Cylinder(_) => return None,
                 };
-                // ★★ **The sense is turned in the rationals, before anything realizes.** Negating
-                // the f64 vector instead puts `-0.0` in every zero component — numerically the
-                // same number and a different bit pattern, which is the one thing a cache that
-                // claims to be an exact rounding cannot afford. A rational has no signed zero, so
-                // `0` realizes to `+0.0` whichever way the plane ends up facing.
-                let facing = Vector3::from_array([c[0].to_f64(), c[1].to_f64(), c[2].to_f64()]);
-                if facing.dot(stated.normal()) < 0.0 {
-                    let zero = Rat::from_int(0);
-                    for k in c.iter_mut() {
-                        *k = zero.checked_sub(*k)?;
-                    }
+                let PlanePoints::Known(pts) = points else {
+                    // A `Through` truth names vertices, whose meet may not fit `Rat` at all.
+                    return None;
+                };
+                let t = match motion {
+                    None => [Rat::from_int(0); 3],
+                    Some(leaf) => self.chain_translation(*leaf)?,
+                };
+                let mut anchor = [0.0f64; 3];
+                for (k, a) in anchor.iter_mut().enumerate() {
+                    *a = pts[0][k].checked_add(t[k])?.to_f64();
                 }
-                let foot = nacre_scalar::plane_origin_projection(c)?;
-                let raw = Vector3::from_array([c[0].to_f64(), c[1].to_f64(), c[2].to_f64()]);
-                Plane::from_point_normal(Point3::from_array(rat3(foot)), raw)
+                // The row verbatim — `coefficients()` is `[raw, −raw·origin]`, so its first three
+                // are the `raw` the producer built, and copying them keeps the sense with it.
+                let c = stated.coefficients();
+                let raw = Vector3::from_array([c[0], c[1], c[2]]);
+                Plane::from_point_normal(Point3::from_array(anchor), raw)
                     .map(nacre_geom::Surface::Plane)
             }
             Surface::Cylinder { def, motion } => {
@@ -4275,83 +4307,87 @@ mod tests {
         }
     }
 
-    /// ★★★★★ **Cell 58's proposition, at its smallest**: a plane's realized cache is a function
-    /// of the **plane**, not of which points were used to state it.
+    /// ★★★★★ **Cell 58's proposition, at its smallest**: a plane's realized cache does not depend
+    /// on **which point of it the producer anchored at**.
     ///
-    /// Two models state one tilted plane through two triples sharing no point. The caches their
-    /// producers build differ — asserted first, because without that this fixture would pass on
-    /// a derivation that simply returned the stated cache — and the derived ones are bit-equal,
-    /// down to being the plane's own canonical row and its foot of perpendicular.
+    /// One truth, two producers: each builds its own `Plane` at a different point of that same
+    /// plane, facing the same way. Their values differ — asserted first, on what the *producers*
+    /// built, because the door now overwrites what it is handed and reading it back would compare
+    /// the derivation against itself.
+    ///
+    /// ⚠★★★ **The stronger claim this test used to make is gone, deliberately.** It stated one
+    /// plane through two *different* triples and demanded one cache. Interning folds two such
+    /// statements into **one handle and one truth** (the first pusher's), so no model can hold
+    /// them at once — the kernel never needed that property, and buying it meant a canonical row,
+    /// which cell 58 measured and rejected (32 census result rows moved, an exact-coefficient road
+    /// lost, `n·n` overflowing for 8 planes). What survives is the reachable half.
+    ///
+    /// ★ This lock watches the **door**; `plane_anchor.rs`'s
+    /// `which_surface_caches_two_anchors_leave_disagreeing` watches the **pipeline**. Fix the door
+    /// while an operation still routes around it and this one is green while that one is red.
     #[test]
-    fn a_derived_plane_cache_does_not_depend_on_which_points_state_it() {
+    fn a_derived_plane_cache_does_not_depend_on_which_anchor_states_it() {
         let r = nacre_scalar::Rat::from_int;
         let f = |q: [nacre_scalar::Rat; 3]| {
             Point3::from_array([q[0].to_f64(), q[1].to_f64(), q[2].to_f64()])
         };
-        // 2x + 3y + 6z = 6, through its three axis intercepts and through three other exact
-        // points on it. Each triple is ordered so that (b − a) × (c − a) points the same way:
-        // the sense is the producer's, and two producers facing opposite ways describe two
-        // oppositely-facing caches **by design**.
-        let triples = [
-            [[r(3), r(0), r(0)], [r(0), r(2), r(0)], [r(0), r(0), r(1)]],
-            [
-                [r(6), r(-2), r(0)],
-                [r(-3), r(4), r(0)],
-                [r(0), r(-2), r(2)],
-            ],
-        ];
+        // 2x + 3y + 6z = 6, stated through its three axis intercepts.
+        let pts = [[r(3), r(0), r(0)], [r(0), r(2), r(0)], [r(0), r(0), r(1)]];
+        let normal = Vector3::from_array([2.0, 3.0, 6.0]);
+        // Two anchors on that plane: the truth's own first point, and a point that is none of the
+        // three (2·1.5 + 3·1 + 6·0 = 6). The second is the one a producer picks by accident.
+        let anchors = [f(pts[0]), Point3::from_array([1.5, 1.0, 0.0])];
         let mut stated = Vec::new();
-        let mut derived = Vec::new();
-        for pts in triples {
+        let mut held = Vec::new();
+        for a in anchors {
             let mut m = Model::new();
-            let cache = nacre_geom::Plane::through_points(f(pts[0]), f(pts[1]), f(pts[2]))
-                .expect("three non-collinear points");
+            let cache = nacre_geom::Plane::from_point_normal(a, normal).expect("a nonzero normal");
             let (h, _) = m.push_plane(cache, pts, None);
-            stated.push(m.surface_cache(h).clone());
-            derived.push(
-                m.derive_surface_cache(h)
-                    .expect("a named world plane derives"),
-            );
+            stated.push(cache);
+            held.push(m.surface_cache(h).clone());
         }
+        // ⚠★★★ **Compared as whole caches, not by `coefficients()`.** On this plane both anchors
+        // give `d = −6` *exactly*, so the two rows are identical while the producers genuinely
+        // disagree — about the anchor, which is the only thing at stake here. A control built on
+        // `coefficients()` fires on a fixture that is perfectly good; the sibling file names the
+        // same blindness (`plane_anchor.rs`'s `an_axis_aligned_plane_is_anchor_blind`).
+        let whole = |p: nacre_geom::Plane| nacre_geom::Surface::Plane(p);
         assert_ne!(
-            stated[0], stated[1],
+            surface_bits(&whole(stated[0])),
+            surface_bits(&whole(stated[1])),
             "the two producers already agree — this fixture measures nothing"
         );
         assert_eq!(
-            surface_bits(&derived[0]),
-            surface_bits(&derived[1]),
-            "one plane, two statements, two different realizations"
+            surface_bits(&held[0]),
+            surface_bits(&held[1]),
+            "the door kept an anchor the producer chose"
         );
-        let nacre_geom::Surface::Plane(d) = &derived[0] else {
-            panic!("a plane derives a plane")
+        let nacre_geom::Surface::Plane(d) = &held[0] else {
+            panic!("a plane is stored as a plane")
         };
-        let c = d.coefficients();
-        assert_eq!(
-            [c[0], c[1], c[2]],
-            [2.0, 3.0, 6.0],
-            "`raw` is the plane's canonical row, not a cross product of whatever points came in"
-        );
         assert_eq!(
             d.origin().as_array(),
-            [12.0 / 49.0, 18.0 / 49.0, 36.0 / 49.0],
-            "the anchor is the foot of perpendicular, −d·n/(n·n)"
+            f(pts[0]).as_array(),
+            "the anchor is the truth's first point, realized"
         );
     }
 
-    /// ★★★★ **The sense is the cache's to keep, and a seed is the reason.** A canonical name
-    /// carries no direction, and the truth's point order does not supply one either: the three
-    /// world planes are pushed with positively-ordered points and a **negated** cache normal.
-    /// Derive the sense from the name and they flip — and with them every `flipped` report an
-    /// interning hit on a seed makes, which is a face's outward direction.
+    /// **A seed's anchor is its truth's first point**, which for the world planes is the origin —
+    /// and the seeds are the most-interned planes there are, so this is where a derivation that
+    /// moved anchors would be felt first.
+    ///
+    /// ⚠ This test used to assert that the derived **normal** matched the stored one and carried
+    /// no negative zero. Both were propositions about the *canonical-row* design that cell 58
+    /// measured and rejected; with the row copied verbatim they are **tautologies**, and a lock
+    /// that cannot fail is worse than no lock. Re-aimed at the one thing the derivation decides.
     #[test]
-    fn a_derived_seed_plane_keeps_the_sense_its_cache_states() {
+    fn a_derived_seed_plane_anchors_at_its_truths_first_point() {
         let m = Model::new();
-        let want = [
-            (nacre_scalar::Axis::Z, [0.0, 0.0, -1.0]),
-            (nacre_scalar::Axis::X, [-1.0, 0.0, 0.0]),
-            (nacre_scalar::Axis::Y, [0.0, -1.0, 0.0]),
-        ];
-        for (axis, n) in want {
+        for axis in [
+            nacre_scalar::Axis::Z,
+            nacre_scalar::Axis::X,
+            nacre_scalar::Axis::Y,
+        ] {
             let h = m.world_plane(axis);
             let derived = m
                 .derive_surface_cache(h)
@@ -4359,20 +4395,16 @@ mod tests {
             let nacre_geom::Surface::Plane(d) = &derived else {
                 panic!("a seed is a plane")
             };
-            assert_eq!(d.normal().as_array(), n, "a seed faces the −axis, still");
-            // ★ And no normal component is a **negative zero**: the sense is turned in the
-            // rationals, which have none, so a zero realizes to `+0.0` whichever way the plane
-            // ends up facing. Turning the f64 vector instead makes this red on all three seeds.
-            // (The fourth coefficient is `−raw·origin` and is legitimately `−0.0` here, so the
-            // claim is about the normal, which is what the sense rule touches.)
-            let c = d.coefficients();
-            for v in &c[..3] {
-                assert!(
-                    *v != 0.0 || v.is_sign_positive(),
-                    "a zero coefficient came back as −0.0"
-                );
-            }
-            assert_eq!(d.origin().as_array(), [0.0; 3], "the foot is the origin");
+            assert_eq!(
+                d.origin().as_array(),
+                [0.0; 3],
+                "a seed's truth is `[[0,0,0], u, v]`, so its anchor is the origin"
+            );
+            assert_eq!(
+                surface_bits(&derived),
+                surface_bits(m.surface_cache(h)),
+                "the seeds were already anchored there — this derivation must not move them"
+            );
         }
     }
 
