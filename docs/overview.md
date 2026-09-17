@@ -96,7 +96,15 @@ cargo test -p nacre-ops --test reject_census
 cargo test --workspace --no-fail-fast -- --ignored \
     --skip boolean_wall_clock --skip profile_check_wall_clock
 cargo test -p nacre-ops --release --test perf -- --ignored --nocapture   # 성능은 release로 따로
+cargo doc --workspace --no-deps                                          # intra-doc 링크 (칸 56 신설)
 ```
+★★★ **`cargo doc` 은 칸 56 이 세운 계기다.** 이 저장소는 intra-doc 링크를 2,000곳 넘게 쓰는데
+`fmt`·`clippy`·`test` 중 **무엇도 그것을 해석하지 않아서**, 개명이 링크를 깨도 아무도 몰랐다.
+⚠ **기준선은 0 이 아니라 72 다**(칸 56 이 처음 쟀다; 전부 «공개 문서가 비공개 항목을 링크» 부류).
+그러니 규칙은 «경고 0» 이 아니라 **«기준선보다 늘지 않는다»** 이고, unresolved link 는 **0 이어야 한다**.
+⚠⚠ 그리고 이 계기도 **한쪽 눈이다**: 이름이 사라져 «깨지는» 링크는 잡지만, 이름이 살아 있는데
+**가리키는 대상이 바뀌는** 링크는 못 잡는다(칸 56 실측: `Model::surface` 9곳이 캐시에서 진실로 옮겨
+갔는데 경고가 하나도 안 났다). 개명 칸은 그 부류를 **손으로** 훑고 그 수를 적는다.
 ★★ **조건부 — 이름을 «개명·은퇴»시킨 칸은 `docs/` 도 훑는다.** 코드에서 사라진 이름을 두 필독 문서가
 **현재형으로** 들고 있지 않은지. ⚠ **`truth-and-cache.md` 도 본다** — 타입의 진실이 사는 문서라
 개명이 가장 크게 닿는 자리다(실제로 한 칸이 그것을 빠뜨렸다):
