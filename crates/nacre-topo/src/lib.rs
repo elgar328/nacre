@@ -3129,6 +3129,98 @@ mod tests {
         }
     }
 
+    /// ★★★★ **The write doors bite** — the negative control for [`Model::push_face`] and
+    /// [`Model::push_shell`].
+    ///
+    /// ★ Cell 56 measured that *every face the product builds closes its loop*: one temporary
+    /// assertion, the whole suite, 1324 tests, a single red — and that one was a fixture whose
+    /// own comment called it a franken-face. That is a **different proposition** from *the
+    /// assertion refuses a face that does not close*. The first says the population is clean;
+    /// the second says the door has teeth. Only this test says the second, and without it the
+    /// doors could assert nothing at all and every green would still be green.
+    ///
+    /// Each case violates **exactly one** assertion, in the order the door checks them, so no
+    /// case can pass by tripping an earlier guard instead of its own. The assertions are
+    /// `debug_assert`, so this test is `cfg(debug_assertions)` — the shape the foreign-handle
+    /// lock above already uses. Panic output is left unsuppressed on purpose: swapping the
+    /// panic hook is global state, and the suite runs its tests in parallel.
+    #[test]
+    #[cfg(debug_assertions)]
+    fn the_write_doors_refuse_what_their_invariants_forbid() {
+        fn refuses(what: &str, call: impl FnOnce()) {
+            let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(call));
+            assert!(
+                r.is_err(),
+                "{what}: the door let an invalid cell into the arena"
+            );
+        }
+        let cube = || build([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
+        let sample = |m: &Model| {
+            m.face(m.face_handle_at(0).expect("a cuboid has faces"))
+                .clone()
+        };
+
+        // A bigger model mints handles this one does not hold. It is the only way to name an
+        // out-of-bounds cell: `handle_at` answers `None` past the end, by design.
+        let mut big = cube();
+        let _ = big.add_cuboid(
+            Point3::from_array([2.0, 2.0, 2.0]),
+            Point3::from_array([3.0, 3.0, 3.0]),
+        );
+        let stranger_surface = big
+            .surface_handle_at((big.surface_count() - 1) as u32)
+            .expect("the bigger model has surfaces");
+        let stranger_face = big
+            .face_handle_at((big.face_count() - 1) as u32)
+            .expect("the bigger model has faces");
+
+        // (1) a face names a surface the arena does not hold
+        let (mut m, mut f) = (cube(), sample(&cube()));
+        f.surface = stranger_surface;
+        refuses("push_face / surface in bounds", || {
+            m.push_face(f);
+        });
+
+        // (2) a face's outer loop has no half-edges
+        let (mut m, mut f) = (cube(), sample(&cube()));
+        f.outer.half_edges.clear();
+        refuses("push_face / outer loop non-empty", || {
+            m.push_face(f);
+        });
+
+        // (3) a face's inner loop has no half-edges — the outer one is left intact so this
+        //     case cannot be carried by (2).
+        let (mut m, mut f) = (cube(), sample(&cube()));
+        f.inner.push(Loop {
+            half_edges: Vec::new(),
+        });
+        refuses("push_face / inner loop non-empty", || {
+            m.push_face(f);
+        });
+
+        // (4) a face loop does not close: flipping one half-edge swaps its end for its start,
+        //     which is precisely what walking the loop is there to catch.
+        let (mut m, mut f) = (cube(), sample(&cube()));
+        f.outer.half_edges[0].forward = !f.outer.half_edges[0].forward;
+        refuses("push_face / loop closes", || {
+            m.push_face(f);
+        });
+
+        // (5) a shell with no faces bounds nothing
+        let mut m = cube();
+        refuses("push_shell / non-empty", || {
+            m.push_shell(Shell { faces: Vec::new() });
+        });
+
+        // (6) a shell names a face the arena does not hold
+        let mut m = cube();
+        refuses("push_shell / faces in bounds", || {
+            m.push_shell(Shell {
+                faces: vec![stranger_face],
+            });
+        });
+    }
+
     /// ★★★ **A foreign handle does not read a cache** — the guard [`Store::get`] owns, kept on
     /// the index-parallel cache reads too ([`Model::debug_guard`]).
     ///

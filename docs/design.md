@@ -48,7 +48,7 @@ nacre/                    # 워크스페이스. 최상위 `nacre` 크레이트�
 **편의 레이어 `nacre-kit` (워크스페이스 밖, 별도 리포 — 2026-07-26 결정, 미착수).** 코드-CAD 스크립트와 커널 사이의 층: 다중 솔리드 값(compound), 값 의미론(재사용 시 `Copy` 자동 삽입), 다인수 fuse/cut/common(fold), 프로파일 헬퍼와 섬-분해 호출, 패턴·미러, 에러의 사람용 매핑, 표시 메타데이터(색·투명도 — 커널 비목표라 여기가 제자리). **Rust로 두는 이유:** 헤드리스 `cargo test`가 되고, 술어 인접 로직이 exactness 도구가 있는 쪽에 남고, 프론트엔드를 교체해도 살아남고, wasm 경계가 함수 하나로 유지된다. 경계 규칙은 overview.md의 "설탕 vs 커널 판별 기준"이고, **문법·의미론과 그 결정 이유는 `nacre-kit` 리포의 `docs/syntax.md`·`docs/decisions.md`에 있다**(여기에 복사하지 않는다 — 두 곳에 같은 내용이 있으면 어긋난다). **전제였던 것 — ✅ 2026-07-27 해소:** 파사드 `nacre`가 채워져 소비자가 **한 줄**로 매단다(아래 §파사드).
 
 **공개 표면 조사 (2026-07-26, 코드 실측 — 다시 조사하지 말 것).** 외부 소비자 관점에서 무엇이 막혀 있는지 훑은 결과.
-- **이미 열려 있다(막혀 있다고 오해했던 것들):** ⚠ **정정(2026-09-14)**: 여기 *"`Model` 의 **모든** 필드가 `pub`"* 이라 적혀 있었는데 **S1 이 봉인한 뒤로 거짓**이다 — 오늘 `Model` 은 **비공개 10 · 공개 8**(곡면·모션·캐시·interning 표가 비공개; 열린 항목 21 이 나머지도 닫는 중). 위상 셀(`Vertex/Edge/Face/Shell/Solid`)의 필드는 `pub` 이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.vertices` → 좌표는 `Model::vertex_point(vh)` — ⚠ **정정(2026-09-11)**: 여기 `vertex.point` 라 적혀 있었는데 그 필드는 S7 이 캐시로 옮겼다(`76a07b2`)). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Vertex::def`(=`VertexDef{ThreePlane|OnSeam|Pierce}` — `Pierce` 는 M6 에서 도착)·`Model::{vertex_point, vertex_tol}`·`Model::motion(h)`(필드가 아니라 **좁은 문** — 전량 순회 문은 의도적으로 없다)(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`Tessellation::to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개(★ 자유 함수 `to_obj(&Model)`은 **칸 ㉓에서 삭제** — 아래). 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
+- **이미 열려 있다(막혀 있다고 오해했던 것들):** ⚠ **정정(2026-09-14)**: 여기 *"`Model` 의 **모든** 필드가 `pub`"* 이라 적혀 있었는데 **S1 이 봉인한 뒤로 거짓**이다 — 오늘 `Model` 은 **비공개 17 · 공개 1**(곡면·모션·캐시·interning 표가 비공개; **항목 21 은 칸 56 이 닫았다** — 남은 공개 필드는 `surface_name` 하나이고 그것은 「문의 이름」이 캐시 조각으로 접을 몫이다). 위상 셀(`Vertex/Edge/Face/Shell/Solid`)의 필드는 `pub` 이고 `Model::reachable()`→`Reachable{vertices,edges,faces,shells}`도 공개라 **위상 순회는 밖에서 된다**(`shell.faces → face.outer.half_edges → edge.vertices` → 좌표는 `Model::vertex_point(vh)` — ⚠ **정정(2026-09-11)**: 여기 `vertex.point` 라 적혀 있었는데 그 필드는 S7 이 캐시로 옮겼다(`76a07b2`)). 피킹용 `Tessellation{by_face,by_edge,…}`·`TessTriangle.face`·`TessOrigin`, 내부 정보 `Vertex{ThreePlane|OnSeam|Pierce}`(`Pierce` 는 M6 에서 도착 — ⚠ **정정(2026-09-17, 칸 56)**: 여기 `Vertex::def`(=`VertexDef{…}`) 라 적혀 있었는데 그 **한 필드 껍데기는 접혔고** 정의가 타입 이름을 가져갔다)·`Model::vertex_point`(⚠ 여기 `vertex_tol` 도 적혀 있었는데 **칸 54 가 죽였다** — 캐시에 잔차가 없다)·`Model::motion(h)`(필드가 아니라 **좁은 문** — 전량 순회 문은 의도적으로 없다)(⇒ 디버그 뷰어가 읽어야 할 것은 이미 다 읽힌다), `tessellate`·`Tessellation::to_obj`·`to_step`·`to_step_solid`·`validate`·`mass_props`도 공개(★ 자유 함수 `to_obj(&Model)`은 **칸 ㉓에서 삭제** — 아래). 플레이그라운드가 bounds를 얻으려 tessellate한 것은 불가능해서가 아니라 번거로워서였다.
 - **파생 값과 에러 표면 — ✅ 2026-07-26 공개.** `nacre-props`에 `bounds`·`centroid`·`face_props`(넓이·중심·법선), `nacre-ops`에 `face_plane`, `nacre-topo`에 `Model::he_start`. §6의 거절 이유는 그 앞에 끝났다. **원칙: 값을 돌려주는 읽기 전용 질의**(위상 순수성 유지). `TessConfig`는 `tol` 하나뿐 — 면별 override는 미래.
   - **`bounds`는 곡선을 인지한다.** 원통 옆면은 솔기 정점보다 바깥으로 볼록하므로 꼭짓점 min/max는 **조용히 작은 상자**를 준다. 반지름 `r`·법선 `n̂`인 원은 축 `e` 방향으로 `±r·√(1−(n̂·e)²)`만큼 뻗는다(정확). OCCT `bounding`이 심판하되 **등호로 비교하지 않는다** — DRAWEXE는 상자를 보수적으로 부풀린다(실측 ~1e-7).
   - **`centroid`는 새 적분이 아니다.** 솔리드는 기준점에서 각 평면 면으로 뻗은 **원뿔들의 부호합**이고, 원뿔의 중심은 밑면 모양과 무관하게 꼭짓점→밑면중심의 **3/4** 지점이다. 즉 `mass_props`가 이미 계산하는 `(Aᵢ, cᵢ, n̂ᵢ)`만으로 `C = R + Σ Vᵢ·¾(cᵢ−R)/ΣVᵢ`가 나온다. 곡면은 그 논증이 깨지므로 **이름 달고 거절**하고, 그래서 `MassProps`의 필드가 아니라 별도 함수다(곡면 솔리드의 부피·넓이는 계속 살아 있어야 한다).
@@ -249,7 +249,7 @@ pub enum Curve {
 ```
 
 **정의에서 좌표를 실현하는 일은 `nacre_ops::realize_vertex` 가 한다** — 정점의 **정의**를 받아 호출자가 고른
-정밀도에서 좌표를 만들고, **끝에서 딱 한 번 반올림한다**. 길은 `VertexDef` 변종이 아니라 **값**이 고른다:
+정밀도에서 좌표를 만들고, **끝에서 딱 한 번 반올림한다**. 길은 `Vertex` 변종이 아니라 **값**이 고른다:
 세 평면의 만남은 정확한 비율이라 긴 나눗셈 하나로 모든 자릿수가 점 자신의 자릿수이고, 모션이나 근호가
 닿는 것은 요구 비트에서 접근해 **구간이 자릿수를 결정할 때만** 찍는다. ⚠ **실패는 삼키지 않고 위로
 올린다** — 특히 접선·퇴화처럼 «판정이 아니라 정책»이 필요한 구역은 이름을 달아 보고한다. 조용히 넘기는
@@ -285,7 +285,7 @@ b-rep 의 셀이 사는 층이다. **모든 셀은 정확 기하를 `Handle` 로
 까지 일곱이다. 여기는 그 위에 선 **규칙**과, **규칙의 주어가 되는 셀**을 적는다.
 
 ⚠ **그래서 `Edge` 는 저기서도 여기서도 그려진다** — 그 둘은 다른 것을 정한다. 저기가 정하는 것은
-«도착점»(정점을 `enum` 으로 접는 일 따위, 열린 항목 21)이고, 여기가 그리는 것은 **아래 두 규칙의 주어**다:
+«도착점»(정점을 `enum` 으로 접는 일 따위 — ✔ 칸 56 이 했다)이고, 여기가 그리는 것은 **아래 두 규칙의 주어**다:
 rim 이 `[v, v]` 라는 것과 담체를 유도할 수 없다는 것은 **필드 값에 대한 문장**이라, 필드를 안 그리면
 «무엇이 둘인지»를 확인할 데가 없다. ⚠ 모션 삼종은 이 층에 살고 아레나가 **진실로** 들지만
 (`motions: Store<MotionNode>`) 규칙의 주어가 아니라 **이름만 짓고 넘긴다** — 아래 「서피스는 자기
@@ -326,9 +326,11 @@ pub struct Edge {
 어기면 `validate` 가 `EdgeCarrierMismatch` 로 잡는다.
 
 **★ 출처가 기록되지 않은 표면은 «타입이» 표현 불가능하게 만든다.** 곡면의 진실은 아레나 항목 그 자체이고
-(`Model::surface_truth`), 진실 없는 곡면은 **핸들이 이름 지을 수 없다** — 그것이 `SurfaceDef::Inexact`
+(`Model::surface`), 진실 없는 곡면은 **핸들이 이름 지을 수 없다** — 그것이 `SurfaceDef::Inexact`
 와 `UndefinedSurface` 위반을 **함께 은퇴시킨 것**이다. ⚠ 「그래서 `validate` 검사가 없다」로 나가면
-거짓이다: `VertexDefCarrierMismatch`·`EdgeCarrierMismatch`·`VertexOffDefinition` 은 그대로 돈다.
+거짓이다: `VertexCarrierMismatch`·`EdgeCarrierMismatch`·`VertexOffDefinition` 은 그대로 돈다.
+(⚠ 여기 `VertexDefCarrierMismatch` 라 적혀 있었는데 **그 이름은 코드에 있던 적이 없다** — 열린 항목 27 의
+«주장» 부류이고, 칸 56 의 개명 스윕이 `VertexDef` 를 훑다가 걸렸다. 2026-09-17 정정.)
 표면의 **정의 유무**만 타입으로 승격했다.
 
 **★ 곡면을 미는 문은 여럿이되 «하나의 비공개 깔때기»로 모인다** — `push_plane`·`push_plane_through`·
@@ -929,7 +931,7 @@ M5 `PolyhedralBoolean`은 **능력이 겹치는 두 메커니즘을 "공면 접�
   「두 면의 adjacency 답」이라 말한다). **그 road 의 예외(온전한 원)까지 함께** 나른다.
   ⇒ ★ **게이트 열기는 «도로를 짓는 칸의 마지막 걸음»이다** — 「그물이 덮는 만큼만 연다」는 등식은
   세 번 다 예외를 만났다(`OnSeam` 디스크 면 · subdivision 의 직진 정점 · 담체 등가의 동일 surface).
-- **굽은 링의 코너는 이름을 «유도»하지 않고 «재진술»한다.** 정점이 `VertexDef::Pierce` 로 이미 들고
+- **굽은 링의 코너는 이름을 «유도»하지 않고 «재진술»한다.** 정점이 `Vertex::Pierce` 로 이미 들고
   있으므로, handle 공간에서 이 배열의 class 공간으로 옮겨 적고 담체는 결과 쪽이 이미 쓰는
   `boolean::Wall` 로 적는다(두 번째 어휘를 만들지 않는다).
   - **재진술의 규칙 — 두 보정은 «같은 규칙»이다.** `Lo`/`Hi` 는 `ℓ = n₁ × n₂` 방향의 순서이고,
@@ -1403,7 +1405,7 @@ M7은 열린 연구임을 명시한다. M6까지가 "확실히 되는" 영역, M
 3. **interning은 보수적으로**: `cylinder_ids`(별도 맵), def **문자 동일**(ref_dir 포함) + motion 만 합침 — 같은 축·반지름·다른 ref_dir을 합치면 seam이 갈라지므로 잘못 합칠 위험 0인 키로 시작, 기하 동일성은 규칙 6대로 술어 몫(M6-1). 평면의 `flipped` 대응물 불요(문자-동일 키면 캐시 구성도 동일).
 4. **OnSeam 정점의 정의 완성**: OnSeam([원통, 캡]) = "rim ∩ +ref_dir 방향 ray" — ref_dir이 진실에 앉아 유일점을 정확히 지시한다(좌표 캐시의 load-bearing 해제; 좌표-재생 기계는 별도 유예).
 5. **seam 담체 `[s,s]` 확정** — "한 면의 매개화 이음매"의 정직한 철자(잠정 딱지 제거), validate «자기-인접 ⇔ 원통» 규칙이 지킨다.
-6. **branch 방향**: 평면∩평면∩원통 = 최대 2점 → `VertexDef` **새 변종**으로 받는다(Q3 정신 — 변종이 자기 진실을 말한다; 슬롯 재활용 금지). 구현은 M6-1. ★ **정정(2026-08-21)**: 그 «최대»가 근의 어휘에도 적용된다 — `QuadRoot` 는 `Lo|Hi` 둘이 아니라 **`Lo|Hi|Double` 셋**이다. 접점을 `Lo` 로 적는 M6-1 의 규약은 `Lo` 가 «둘 중 작은 쪽» 인지 «유일한 쪽» 인지 말하지 못하게 만들었고, 그래서 정의를 든 쪽이 재정렬 때 토글해야 하는지 알 수 없었다. 재정렬 규칙은 `QuadRoot::canonical` **한 곳**에 살고, 접점 예외는 `flipped(Double) = Double` 이라는 원시에서 저절로 나온다(스왑은 중근을 자기 자신으로 보낸다).
+6. **branch 방향**: 평면∩평면∩원통 = 최대 2점 → `Vertex` **새 변종**으로 받는다(Q3 정신 — 변종이 자기 진실을 말한다; 슬롯 재활용 금지). 구현은 M6-1. ★ **정정(2026-08-21)**: 그 «최대»가 근의 어휘에도 적용된다 — `QuadRoot` 는 `Lo|Hi` 둘이 아니라 **`Lo|Hi|Double` 셋**이다. 접점을 `Lo` 로 적는 M6-1 의 규약은 `Lo` 가 «둘 중 작은 쪽» 인지 «유일한 쪽» 인지 말하지 못하게 만들었고, 그래서 정의를 든 쪽이 재정렬 때 토글해야 하는지 알 수 없었다. 재정렬 규칙은 `QuadRoot::canonical` **한 곳**에 살고, 접점 예외는 `flipped(Double) = Double` 이라는 원시에서 저절로 나온다(스왑은 중근을 자기 자신으로 보낸다).
 
 **패드/포켓 ↔ 불리언 통합 — feature = tool body + boolean (✅ 완료).** `pad`/`pocket`은 상용 CAD와 동형으로 이미 통합됐다: **`pad` = 프로파일 압출 → `Fuse`, `pocket` = 압출 → `Cut`**(`extrude_and_boolean`), 패드/포켓은 불리언의 얇은 sugar다. `raise_region`(M4 직접 구성)은 폐기됐고, "프로파일이 면 안에 있어야 한다"는 컨테인먼트 제약도 제거돼(`extrude_and_boolean`이 미검사) 오버행 패드/포켓이 불리언의 공면-접촉·오버행 경로(`detect_contained_contact`·`detect_pocket_contact`·`detect_overhang_contact`)로 자동 처리된다. 공면 복잡도는 **불리언 하나로 집약**됐다. **남은 격차(후속)**: 오버행 `Cut`/`Common`의 비볼록 kept-solid는 아직 미검증(재보지 않았다). ★ **2026-07-22 갱신 — 셋 중 둘은 닫혔다:** 비볼록 오버행 footprint(옛 볼록 게이트)와 정확 flush-edge(프로파일 테두리 = 면 테두리 공유)를 **한 형상이 동시에** 통과한다 — `a_non_convex_pad_cantilevers_and_runs_flush`(부피 1.625·면적 9.75, 손계산과 일치). corner-flush `Common`(공면 3면, 옛 `vertex_on_face_plane` 거절)도 열렸고 **OCCT와 부피·면적이 일치**한다(`a_corner_flush_common_keeps_the_non_convex_overlap` + `corner_flush_common_matches_occt`). **잔존 직접-구성은 없다 (2026-07-22 은퇴).** `ImprintSketch`(면을 재료 가감 없이 분할하던 별개 op)가 마지막 직접-구성이었는데, `raise_region` 폐기 이후 **소비자가 하나도 없었다**(`region_face`를 읽는 코드 0). 연산과 `imprint`/`prepare_face_split`/`finish_split`/`placed_profile`(엄격 컨테인먼트)·`OpError::ProfileNotContainedInFace`를 제거했다. **그것이 커널 유일의 동일평면 인접면 생산자였으므로**(불리언 출력은 `unify_coplanar_faces`가 항상 정리한다) 불리언의 이음선 처리도 함께 제거했다 — 되살릴 근거(유도·측정)는 dev-log에 남아 있고, 복원은 그 두 커밋을 revert하는 것이 출발점이다. Split Face가 필요해지는 소비자(구역별 재질·FEA 경계조건·금형 파팅라인)는 아직 로드맵에 없다.
 
