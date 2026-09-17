@@ -321,6 +321,47 @@ mod tests {
         }
     }
 
+    /// ★★★★ **The live set's order reaches the exported file, so superseding may not permute it.**
+    ///
+    /// `to_step` walks `Model::live_solids` in order. Nothing else in the tree would catch a
+    /// permutation — the census reads the arena (never live order) and there is no golden STEP
+    /// text — so the export side locks it here, beside the door's own lock in `nacre-topo`.
+    ///
+    /// ⚠ The oracle is the **construction order and distinctive coordinates**, not a second call
+    /// to the same door: checking `supersede_live` against a hand-written `retain` would be one
+    /// implementation checking itself. The superseded solid's coordinate must also be *absent*,
+    /// which is what proves the drop happened at all.
+    #[test]
+    fn superseding_a_solid_leaves_the_export_order_alone() {
+        let mut m = Model::new();
+        m.add_cuboid(
+            Point3::from_array([111.0; 3]),
+            Point3::from_array([112.0; 3]),
+        );
+        let middle = m.add_cuboid(
+            Point3::from_array([777.0; 3]),
+            Point3::from_array([778.0; 3]),
+        );
+        m.add_cuboid(
+            Point3::from_array([333.0; 3]),
+            Point3::from_array([334.0; 3]),
+        );
+
+        m.supersede_live(&[middle]);
+        let text = to_step(&m).expect("export the two survivors");
+
+        assert!(
+            !text.contains("777."),
+            "the superseded solid still exported"
+        );
+        let first = text.find("111.").expect("first survivor's coordinate");
+        let third = text.find("333.").expect("second survivor's coordinate");
+        assert!(
+            first < third,
+            "the export reordered the live set: 111. at {first}, 333. at {third}"
+        );
+    }
+
     #[test]
     fn hollow_solid_round_trips_as_brep_with_voids() {
         // A 4-cube with a concentric 2-cube void, built with the cavity

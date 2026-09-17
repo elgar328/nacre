@@ -1011,7 +1011,7 @@ fn transform_solid(
                 face.orientation
             },
         };
-        face_map.insert(fh, model.faces.push(new_f));
+        face_map.insert(fh, model.push_face(new_f));
     }
 
     // Pass 6 — shells; Pass 7 — solid.
@@ -1024,7 +1024,7 @@ fn transform_solid(
             .iter()
             .map(|fh| face_map[fh])
             .collect();
-        shell_map.insert(sh, model.shells.push(Shell { faces }));
+        shell_map.insert(sh, model.push_shell(Shell { faces }));
     }
     let new_solid = Solid {
         outer: shell_map[&src.outer],
@@ -1476,10 +1476,19 @@ mod tests {
         let franken = m.faces.push(Face {
             surface: x0,
             outer: Loop {
-                half_edges: vec![HalfEdge {
-                    edge,
-                    forward: true,
-                }],
+                // A closed degenerate loop: v_lo -> v_hi -> v_lo. One half-edge would not
+                // close, and `Model::push_face` now says so — the scaffold this test needs is a
+                // face that *names the carriers*, never a malformed one.
+                half_edges: vec![
+                    HalfEdge {
+                        edge,
+                        forward: true,
+                    },
+                    HalfEdge {
+                        edge,
+                        forward: false,
+                    },
+                ],
             },
             inner: vec![],
             orientation: nacre_topo::Orientation::Forward,

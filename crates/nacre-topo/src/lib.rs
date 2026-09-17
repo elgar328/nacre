@@ -981,6 +981,35 @@ impl Model {
         h
     }
 
+    /// The live solids — the "current model" (design §2 supersede semantics).
+    #[inline]
+    pub fn live_solids(&self) -> &[Handle<Solid>] {
+        &self.live_solids
+    }
+
+    /// **Drop these solids from the live set** — supersede, the editing ops' half of design §2.
+    ///
+    /// ⚠★★★ **Order-preserving on the survivors, and that is load-bearing, not incidental.**
+    /// `nacre_step::to_step` exports the live set **in order**, so permuting it here would
+    /// silently permute the exported STEP entities — and nothing would catch that: the census
+    /// reads the arena (it never sees live order) and there is no golden STEP text anywhere.
+    /// `Vec::retain` keeps relative order, which is why this is spelled with it.
+    ///
+    /// ★ Takes what to **drop**, not a keep-predicate: every caller reads "supersede these", and a
+    /// predicate would make the call site say the opposite of the name.
+    pub fn supersede_live(&mut self, drop: &[Handle<Solid>]) {
+        self.live_solids.retain(|h| !drop.contains(h));
+    }
+
+    /// **Put the live set back** — the rollback half of a rejected operation.
+    ///
+    /// ★ This exists so the transaction has a name. The idiom it replaces (`let snapshot =
+    /// …clone()` … `model.live_solids = snapshot`) is syntactically just an assignment and says
+    /// nothing about what it is for; it is there because a rejected op once left the model changed.
+    pub fn restore_live(&mut self, snapshot: Vec<Handle<Solid>>) {
+        self.live_solids = snapshot;
+    }
+
     /// Push a motion node, **interned**: the same `(motion, parent)` always yields the same
     /// handle.
     ///
@@ -1809,6 +1838,64 @@ impl Model {
         let h = self.edges.push(Edge { surfaces, vertices });
         self.edge_cache.push(EdgeCache { curve });
         Some(h)
+    }
+
+    /// Push a face — **the door that carries the face invariant**.
+    ///
+    /// ★ Unlike [`Model::push_vertex`] this pairs no cache with the truth, because a face has
+    /// none (`surface_cache`/`edge_cache`/`vertex_cache` exist; a face cache does not). What this
+    /// door is worth is therefore the **invariant**, not cache-sync: a face whose loops do not
+    /// close is a face no consumer can walk, and until now nothing said so at the moment it was
+    /// built.
+    ///
+    /// ☑ **Measured before it shipped** — every face the production road builds satisfies this,
+    /// live or superseded, across the boolean / twice-cut / cylinder / tilted-frame fixtures. The
+    /// one fixture that did not was a deliberately malformed «franken» face in a `transform` test,
+    /// and it was reshaped rather than exempted, so the invariant holds with no hole behind it.
+    pub fn push_face(&mut self, face: Face) -> Handle<Face> {
+        debug_assert!(
+            (face.surface.index() as usize) < self.surfaces.len(),
+            "a face names a surface the arena does not hold"
+        );
+        debug_assert!(
+            !face.outer.half_edges.is_empty(),
+            "a face's outer loop has no half-edges"
+        );
+        for lp in std::iter::once(&face.outer).chain(face.inner.iter()) {
+            debug_assert!(
+                !lp.half_edges.is_empty(),
+                "a face's inner loop has no half-edges"
+            );
+            let n = lp.half_edges.len();
+            for i in 0..n {
+                let (he, nx) = (&lp.half_edges[i], &lp.half_edges[(i + 1) % n]);
+                let [a, b] = self.edges.get(he.edge).vertices;
+                let end = if he.forward { b } else { a };
+                let [c, d] = self.edges.get(nx.edge).vertices;
+                let start = if nx.forward { c } else { d };
+                debug_assert_eq!(end, start, "a face loop does not close at half-edge {i}");
+            }
+        }
+        self.faces.push(face)
+    }
+
+    /// Push a shell — [`Model::push_face`]'s twin, and a cache-less door for the same reason.
+    ///
+    /// ☑ **Measured before it shipped**: across the same fixtures no shell the production road
+    /// builds is empty or names a face outside the arena, live or superseded (36 shells, 0 and 0).
+    pub fn push_shell(&mut self, shell: Shell) -> Handle<Shell> {
+        debug_assert!(
+            !shell.faces.is_empty(),
+            "a shell with no faces bounds nothing"
+        );
+        debug_assert!(
+            shell
+                .faces
+                .iter()
+                .all(|f| (f.index() as usize) < self.faces.len()),
+            "a shell names a face the arena does not hold"
+        );
+        self.shells.push(shell)
     }
 
     /// Discard every edge-curve cache and derive it afresh — the «cache, not truth» warrant
@@ -4043,5 +4130,55 @@ mod tests {
             near(at(&l_ba, &s_ba[0]), [0.0, 2.0, 0.0]),
             "lo′ is the old hi"
         );
+    }
+
+    /// ★★★★ **`supersede_live` keeps the survivors in their original order — and nothing else in
+    /// this tree would notice if it did not.**
+    ///
+    /// `nacre_step::to_step` exports the live set *in order*, the census reads the **arena** (it
+    /// never sees live order), and there is no golden STEP text anywhere. So a permutation here
+    /// would travel all the way out to the exported file unseen. The order is therefore locked at
+    /// the door itself, and again on the export side (`nacre-step`'s
+    /// `superseding_a_solid_leaves_the_export_order_alone`).
+    ///
+    /// ⚠ The oracle is the **construction order**, not a second call to the same machinery —
+    /// comparing this against a hand-written `retain` would be one implementation checking itself.
+    #[test]
+    fn supersede_live_preserves_the_order_of_the_survivors() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
+        let c = m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
+        assert_eq!(
+            m.live_solids(),
+            [a, b, c].as_slice(),
+            "the fixture's premise"
+        );
+
+        m.supersede_live(&[b]);
+        assert_eq!(
+            m.live_solids(),
+            [a, c].as_slice(),
+            "the middle solid goes and the order stays"
+        );
+
+        // It drops sets, not only singletons — that is what the 19 `retain` call sites ask for.
+        m.supersede_live(&[a, c]);
+        assert!(m.live_solids().is_empty());
+    }
+
+    /// `restore_live` is the rollback half: what a rejected operation puts back.
+    #[test]
+    fn restore_live_puts_the_snapshot_back() {
+        let mut m = Model::new();
+        let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
+        let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));
+        let snapshot = m.live_solids().to_vec();
+
+        m.supersede_live(&[a]);
+        assert_eq!(m.live_solids(), [b].as_slice());
+
+        m.restore_live(snapshot);
+        assert_eq!(m.live_solids(), [a, b].as_slice(), "order comes back too");
     }
 }

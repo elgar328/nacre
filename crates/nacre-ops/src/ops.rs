@@ -1803,13 +1803,13 @@ pub(crate) fn build_prism(
 
     let mut faces =
         Vec::with_capacity(2 + outer.len() + holes.iter().map(|h| h.len()).sum::<usize>());
-    faces.push(model.faces.push(Face {
+    faces.push(model.push_face(Face {
         surface: base_surface,
         outer: outer.cap_loop(Cap::Base),
         inner: holes.iter().map(|h| h.cap_loop(Cap::Base)).collect(),
         orientation: base_orient,
     }));
-    faces.push(model.faces.push(Face {
+    faces.push(model.push_face(Face {
         surface: top_surface,
         outer: outer.cap_loop(Cap::Top),
         inner: holes.iter().map(|h| h.cap_loop(Cap::Top)).collect(),
@@ -1825,7 +1825,7 @@ pub(crate) fn build_prism(
         ring.push_walls(model, walls, &swept_pts.exact.segs, sweep_up, &mut faces);
     }
 
-    let shell = model.shells.push(Shell {
+    let shell = model.push_shell(Shell {
         faces: faces.clone(),
     });
     let solid = model.push_solid(Solid {
@@ -1933,7 +1933,7 @@ impl RingCells {
                     },
                 ],
             };
-            faces.push(model.faces.push(Face {
+            faces.push(model.push_face(Face {
                 surface,
                 outer,
                 inner: vec![],

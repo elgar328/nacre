@@ -2918,7 +2918,7 @@ pub(crate) fn reconstruct(
         } else {
             framed
         };
-        face_handles.push(model.faces.push(Face {
+        face_handles.push(model.push_face(Face {
             surface: face_surf,
             outer,
             inner,
@@ -2993,7 +2993,7 @@ pub(crate) fn reconstruct(
     let shells: Vec<Handle<Shell>> = by_comp
         .iter()
         .map(|faces| {
-            model.shells.push(Shell {
+            model.push_shell(Shell {
                 faces: faces.clone(),
             })
         })
