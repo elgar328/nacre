@@ -16,7 +16,7 @@ fn main() {
 
     let path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "cube.obj".to_string());
+        .unwrap_or_else(|| "target/cube.obj".to_string());
     let obj = tessellate(&model, &TessConfig::default())
         .expect("the model meshes")
         .to_obj();

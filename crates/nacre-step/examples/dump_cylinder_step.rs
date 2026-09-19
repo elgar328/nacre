@@ -22,7 +22,7 @@ fn main() {
     let step = to_step(&model).expect("export cylinder to STEP");
     let path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "cylinder.step".to_string());
+        .unwrap_or_else(|| "target/cylinder.step".to_string());
     std::fs::write(&path, step).expect("write STEP file");
     println!("wrote {path} — open in step-loupe or FreeCAD");
 }

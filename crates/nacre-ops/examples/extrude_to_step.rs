@@ -5,7 +5,7 @@
 //! writes both files for inspection.
 //!
 //! `cargo run -p nacre-ops --example extrude_to_step [prefix]`
-//! writes `<prefix>.step` and `<prefix>.obj` (default prefix `hex_prism`). Open the
+//! writes `<prefix>.step` and `<prefix>.obj` (default prefix `target/hex_prism`). Open the
 //! STEP in step-loupe (its report flags dropped/orphan entities) or FreeCAD (an
 //! independent OCCT reader — cross-check face orientation), and the OBJ in Quick Look.
 //!
@@ -48,7 +48,7 @@ fn main() {
 
     let prefix = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "hex_prism".to_string());
+        .unwrap_or_else(|| "target/hex_prism".to_string());
 
     let step = nacre_step::to_step(&model).expect("export to STEP");
     let step_path = format!("{prefix}.step");

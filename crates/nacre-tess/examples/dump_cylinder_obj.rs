@@ -2,7 +2,7 @@
 //!
 //! `cargo run -p nacre-tess --example dump_cylinder_obj [prefix]`
 //! writes `<prefix>_coarse.obj` and `<prefix>_fine.obj` (default prefix
-//! `cylinder`) — two tolerances, to show that tolerance drives mesh density.
+//! `target/cylinder`) — two tolerances, to show that tolerance drives mesh density.
 //! Open in Quick Look: the surface should be watertight and outward-facing, and
 //! the fine mesh visibly rounder than the coarse one.
 
@@ -22,7 +22,7 @@ fn main() {
 
     let prefix = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "cylinder".to_string());
+        .unwrap_or_else(|| "target/cylinder".to_string());
 
     // ★ Both budgets, because either one alone can be the binding constraint: the
     // angular one decides for ordinary radii and the sagitta one for very large

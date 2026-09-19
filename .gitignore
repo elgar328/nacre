@@ -1,1 +1,4 @@
 /target
+/*.obj
+/*.step
+__pycache__/
