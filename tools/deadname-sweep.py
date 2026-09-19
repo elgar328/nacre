@@ -14,7 +14,7 @@
     · 형제 리포 검사가 느슨 → `step-io` 주석과 `nacre-kit` 의 `BranchingVertex` 가 `Branch` 를 가림
   ⇒ **분류는 사람이, 계기는 재기만.**
 사용: python3 tools/deadname-sweep.py [문서…]   (리포 루트에서)
-     인자를 안 주면 기본값은 design.md · overview.md · truth-and-cache.md 셋 — 관문 줄과 같다.
+     인자를 안 주면 기본값은 design.md · overview.md · todo.md 셋 — 관문 줄과 같다.
 """
 import io,re,subprocess,glob,os,sys
 W=r'[A-Za-z0-9_]'
@@ -53,7 +53,7 @@ def sweep(doc):
                      bool(re.search(r'(?<![A-Za-z0-9_-])'+re.escape(n)+r'(?![A-Za-z0-9_-])',toml)),
                      sl))
     return len(cand),rows
-for d in sys.argv[1:] or ['docs/design.md','docs/overview.md','docs/truth-and-cache.md']:
+for d in sys.argv[1:] or ['docs/design.md','docs/overview.md','docs/todo.md']:
     tot,rows=sweep(d)
     print(f"\n## {d} — 백틱 식별자 {tot} · **crates 비주석 0건 = {len(rows)}**")
     print("| 줄 | 이름 | crates주석 | 파일명? | 의존? | 형제리포 |")
