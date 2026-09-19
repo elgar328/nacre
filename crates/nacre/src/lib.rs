@@ -27,10 +27,9 @@
 //!
 //! Two names need care:
 //!
-//! - **`Rotation` exists twice.** `scalar::Rotation` is the exact *definition* of a
-//!   rotation (axis, rational pivot, rational angle) and is what you build;
-//!   `topo::Rotation` is a node in the kernel's rotation-history forest, which the
-//!   kernel maintains. The [`prelude`] carries the `scalar` one.
+//! - **`Surface` exists twice.** `topo::Surface` is the *truth* — the exact definition a
+//!   face's handle points at; `geom::Surface` is its f64 *realization*, the cache the
+//!   numeric layers read. The [`prelude`] carries neither; name the module.
 //! - **`validate` is both a module and a function.** [`validate`] is the layer, so the
 //!   checker is `validate::validate`. The [`prelude`] carries the function.
 //!
@@ -108,7 +107,6 @@ pub mod prelude {
     pub use nacre_props::{
         FaceProps, MassProps, bounds, centroid, face_normal_at, face_props, mass_props,
     };
-    // `Rotation` here is the exact definition (`scalar`), not `topo`'s history node.
     pub use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     pub use nacre_store::Handle;
     pub use nacre_tess::{TessConfig, Tessellation, tessellate};

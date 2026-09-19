@@ -12,8 +12,8 @@ use nacre_math::{Point3, Vector3};
 /// `normal` (the pre-normalization normal), kept because [`Plane::coefficients`]
 /// — the handoff to the exact predicates — needs the cross product the plane was
 /// built from, not the `sqrt`-rounded unit normal. The predicates are
-/// scale-invariant, so `raw`'s length does not affect their sign (design §9;
-/// `prop_scaling_a_plane_is_invariant`). `origin` is any point on the plane and
+/// scale-invariant, so `raw`'s length does not affect their sign
+/// (`prop_scaling_a_plane_is_invariant`). `origin` is any point on the plane and
 /// is not canonicalized.
 ///
 /// ★★ **Keeping `raw` does not make the plane's own points satisfy its form exactly.** That
@@ -23,7 +23,7 @@ use nacre_math::{Point3, Vector3};
 ///
 /// Minimal by design (M1): no uv-frame / parametric `evaluate(u, v)` yet. A
 /// parametric frame (two in-plane basis vectors) arrives in M3, when tess
-/// uv-tagging (design §5) and NURBS need surface parameters.
+/// uv-tagging and NURBS need surface parameters.
 ///
 /// `PartialEq` is exact `f64` comparison (including `raw`) — for tests and
 /// literal coincidence only. "Is this point on the plane?" goes through
@@ -154,7 +154,7 @@ impl Plane {
     /// The coefficients `[a, b, c, d]` of the implicit form `a·X + b·Y + c·Z + d = 0`
     /// — `[raw, −(raw·origin)]`, using the **un-normalized** `raw` normal.
     ///
-    /// This is the handoff to `nacre-predicates` (design §9): the exact indirect
+    /// This is the handoff to `nacre-predicates`: the exact indirect
     /// predicates take plane coefficients as plain arrays, never kernel types, and
     /// are scale-invariant — so `raw`'s length does not affect their sign, only
     /// its exactness matters.

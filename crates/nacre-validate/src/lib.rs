@@ -1,11 +1,11 @@
-//! b-rep invariant checker for the nacre kernel (design.md §7).
+//! b-rep invariant checker for the nacre kernel.
 //!
 //! [`validate`] runs every M1 check over a [`Model`] and returns all
 //! [`Violation`]s it finds (an empty `Vec` means the model is valid). Checks:
 //! reference integrity, loop closure, half-edge manifold pairing, face
 //! orientation against loop winding, geometric incidence (vertices on their
 //! curves/surfaces), and Euler-Poincaré. The
-//! tessellation checks (§5, §7 — provenance coherence, crack-free) arrive in M3
+//! tessellation checks (provenance coherence, crack-free) arrive in M3
 //! when a `Tessellation` exists.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
@@ -86,15 +86,15 @@ pub enum Violation {
     /// edge is manifold. Detected by [`nacre_topo::nonmanifold_vertices`].
     NonManifoldVertex { vertex: Handle<Vertex> },
 
-    /// A vertex definition whose carrier kinds contradict its variant (S7): a `ThreePlane`
+    /// A vertex definition whose carrier kinds contradict its variant: a `ThreePlane`
     /// naming a cylinder (three *planes* is the claim), or an `OnSeam` naming two planes
     /// (two planes meet in a line — a line's point IS a three-plane intersection, so the
     /// seam spelling would be hiding an expressible truth). The variants' invariants are
-    /// per-variant (Q5), and this is the checker that keeps them so — the vertex sibling of
+    /// per-variant, and this is the checker that keeps them so — the vertex sibling of
     /// [`Self::EdgeCarrierMismatch`].
     VertexCarrierMismatch { vertex: Handle<Vertex> },
 
-    /// An edge's stated carriers disagree with adjacency (S8): the multiset of the two face
+    /// An edge's stated carriers disagree with adjacency: the multiset of the two face
     /// surfaces using the edge is not the stored `Edge::surfaces` pair — or the pair is
     /// self-adjacent (`[s, s]`) on a *plane*, a spelling reserved for a cylinder seam. The
     /// carriers are stated, never derived, so a mismatch is a producer bug, and the curve
@@ -125,8 +125,8 @@ pub enum Violation {
 
     /// A vertex does not lie on one of its definition's surfaces within tolerance — the
     /// definition is the truth, so the cached point must sit within `tol` of every surface it
-    /// is defined as meeting (design §4); `tol` is the measured one where there is one, else
-    /// [`EPS_CONSTRUCTED`]. Checked for **every** vertex since S7. `surface_index` is
+    /// is defined as meeting; `tol` is the measured one where there is one, else
+    /// [`EPS_CONSTRUCTED`]. Checked for **every** vertex. `surface_index` is
     /// type-erased (like [`Self::DanglingReference`]) so the checker never names geom's
     /// `Surface` (geom stays a dev-dependency).
     VertexOffDefinition {
@@ -162,7 +162,7 @@ pub enum Violation {
     /// A cavity (inner void) shell's faces do not point their outward normals
     /// into the void: its signed self-volume is `≥ 0` (a correct inward void is
     /// negative). Such a cavity would *add* to the solid's volume instead of
-    /// subtracting it (design §8 M5 containment). The other checks miss it — a
+    /// subtracting it (M5 containment). The other checks miss it — a
     /// globally-reversed shell keeps edge opposition (so `check_manifold`
     /// passes) and the same V/E/F/S (so Euler passes). Planar cavities only; a
     /// non-planar void is not checked here.
@@ -194,7 +194,7 @@ pub enum Violation {
     FaceMisoriented { face: Handle<Face>, cos: f64 },
 
     /// A cylinder's exact truth (`CylinderDef`) and its f64 cache describe **different
-    /// cylinders** — the two-descriptions net (M6-0): coefficients-beside-witness taught that
+    /// cylinders** — the two-descriptions net: coefficients-beside-witness shows that
     /// two exact-looking descriptions of one surface can drift apart, and the cure is a
     /// consumer-side postcondition, not trust in the producer. `field` names the disagreeing
     /// quantity (`"radius"`, `"origin"`, `"dir"`, `"ref_dir"`), the two values are the def's
@@ -236,7 +236,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
         return out;
     }
 
-    // The live model, not the whole append-only arena (design §2): superseded
+    // The live model, not the whole append-only arena: superseded
     // cells stay in the store but drop out here, so they neither break Euler nor
     // pollute manifold use-counts. Reference integrity ran first (and would have
     // short-circuited on a dangling handle), so this traversal is in-bounds.
@@ -271,7 +271,7 @@ pub fn validate(model: &Model) -> Vec<Violation> {
 ///
 /// Every other check in this file filters by [`Reachable`], and this one deliberately does not:
 /// a torn page is torn whether or not anything still points at it. An editing op supersedes old
-/// cells rather than removing them (design §2), so the dead share grows with history — measured
+/// cells rather than removing them, so the dead share grows with history — measured
 /// at 0% for a fresh solid, ~50% after a boolean, and **99%** at depth 120 (960 of 968 vertices).
 /// Filtering here would make the check quieter, not cleaner.
 ///
@@ -289,8 +289,8 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
     while let Some(eh) = m.edge_handle_at(i) {
         i += 1;
         let edge = m.edge(eh);
-        // (The curve handle's own check died with `Store<Curve>` (S8): the curve is a cache
-        // beside the store, not a reference an edge can dangle.)
+        // (There is no curve handle to check: the curve is a cache beside the store, not a
+        // reference an edge can dangle.)
         {
             for v in edge.vertices {
                 if v.index() as usize >= m.vertex_count() {
@@ -309,7 +309,7 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
     while let Some(fh) = m.face_handle_at(i) {
         i += 1;
         let face = m.face(fh);
-        // The surfaces store is private (S1) — bounds-check against its count.
+        // The surfaces store is private — bounds-check against its count.
         if face.surface.index() as usize >= m.surface_count() {
             out.push(Violation::DanglingReference {
                 kind: RefKind::FaceSurface,
@@ -364,7 +364,7 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
         }
     }
 
-    // Every vertex's definition references surfaces by handle (S7: the definition is the
+    // Every vertex's definition references surfaces by handle (the definition is the
     // vertex, so this covers all of them, not just the discovered population).
     let mut i = 0u32;
     while let Some(vh) = m.vertex_handle_at(i) {
@@ -384,7 +384,7 @@ fn check_reference_integrity(m: &Model, out: &mut Vec<Violation>) {
 }
 
 fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
-    // Count the live model only (design §2), not the append-only store lengths.
+    // Count the live model only, not the append-only store lengths.
     let v = reach.vertices.len();
     let e = reach.edges.len();
     let f = reach.faces.len();
@@ -416,7 +416,7 @@ fn check_euler_poincare(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) 
     }
 }
 
-/// S7 structural check: each vertex definition's carrier kinds must match its variant —
+/// Structural check: each vertex definition's carrier kinds must match its variant —
 /// `ThreePlane` names planes only, `OnSeam` includes a non-plane. Runs after reference
 /// integrity (it dereferences surface handles).
 ///
@@ -435,7 +435,7 @@ fn check_vertex_def_carriers(m: &Model, out: &mut Vec<Violation>) {
             Vertex::OnSeam(pair) => pair
                 .iter()
                 .all(|&s| matches!(m.surface(s), Surface::Plane { .. })),
-            // The structure says the kinds (M6-1): two planes and one cylinder, positionally.
+            // The structure says the kinds: two planes and one cylinder, positionally.
             Vertex::Pierce {
                 planes, cylinder, ..
             } => {
@@ -478,8 +478,8 @@ fn check_loop(m: &Model, fh: Handle<Face>, kind: LoopKind, lp: &Loop, out: &mut 
         });
         return;
     }
-    // Resolve each half-edge to (start, end). (Every edge is bounded by type since S8 —
-    // the `UnboundedEdgeInLoop` arm died with the `Option`.)
+    // Resolve each half-edge to (start, end). (Every edge is bounded by type, so
+    // there is no unbounded-edge arm.)
     let ends: Vec<Option<(Handle<Vertex>, Handle<Vertex>)>> = hes
         .iter()
         .map(|he| {
@@ -502,7 +502,7 @@ fn check_loop(m: &Model, fh: Handle<Face>, kind: LoopKind, lp: &Loop, out: &mut 
 }
 
 fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<Violation>) {
-    // Live edges only (design §2): a superseded edge left in the store has 0 uses
+    // Live edges only: a superseded edge left in the store has 0 uses
     // in the live adjacency but is not a defect — skip it. Every reachable edge
     // is referenced by a live face, so it must be used exactly twice.
     let mut i = 0u32;
@@ -525,10 +525,10 @@ fn check_manifold(m: &Model, adj: &Adjacency, reach: &Reachable, out: &mut Vec<V
                     faces: [uses[0].0, uses[1].0],
                 });
             }
-            // S8: the stated carriers must agree with adjacency. Two different using
-            // surfaces must *be* the stated pair (as a multiset — the original rule). Two
+            // The stated carriers must agree with adjacency. Two different using
+            // surfaces must *be* the stated pair (as a multiset). Two
             // using faces on **one** surface (a cylinder panel and its neighbouring band
-            // sharing an arc — the rulings ladder's first such population) cannot spell the
+            // sharing an arc) cannot spell the
             // carrier pair between them: the shared surface must be one of the stated two,
             // and the *other* stated carrier is what the curve derivation crosses it with —
             // which is the whole purpose of the check (wrong carriers ⇒ a silently wrong
@@ -641,12 +641,12 @@ fn shell_signed_volume(m: &Model, shell: Handle<Shell>) -> Option<f64> {
 /// noise beside it — the more-specific-defect-first rule), fewer than three
 /// points with no circle to fall back on, or a Newell sum of exactly zero.
 ///
-/// A loop mixing **arcs** with straight edges (M6-2b) adds each arc's witness the same way a
+/// A loop mixing **arcs** with straight edges adds each arc's witness the same way a
 /// full rim is one: the chord Newell sum alone reads an arc-dominated loop **backwards** (the
 /// turned boss's crescent — the region between chord and long arc lies on the chord's other
 /// side), so every circle half-edge contributes its **circular segment**'s area vector —
 /// `Circle::segment_area` about the circle's own normal, signed by traversal, with Δθ read from
-/// the edge's stored `[from, to]` order (CCW about the axis, the M6-2b convention;
+/// the edge's stored `[from, to]` order (CCW about the axis, the arc convention;
 /// `Circle::angle_of` is the one spelling). A digon (chord + arc, two points) has an empty
 /// Newell sum and one segment — which is why the too-few-points refusal only applies to
 /// all-line loops.
@@ -782,12 +782,12 @@ fn loop_area_centroid(m: &Model, lp: &Loop) -> Option<(f64, Point3)> {
     Some((0.5 * area_vec.norm(), base + weighted * (1.0 / weight)))
 }
 
-/// **The def and the cache must describe one cylinder** (M6-0) — see
+/// **The def and the cache must describe one cylinder** — see
 /// [`Violation::CylinderTruthCacheMismatch`]. The radius is compared on every cylinder (it is
 /// invariant under every rigid motion, and a mirrored cylinder cannot exist); the frame —
 /// origin, axis direction, seam direction — only where the statement is world-spoken
 /// (`motion: None`): a recorded chain states the def *before* the motion, and realizing a
-/// statement through its chain is machinery M6-0 deliberately does not build (3b's sibling).
+/// statement through its chain is machinery this net deliberately does not build.
 fn check_cylinder_truth(m: &Model, reach: &Reachable, out: &mut Vec<Violation>) {
     let mut seen: std::collections::HashSet<Handle<Surface>> = std::collections::HashSet::new();
     let mut i = 0u32;
@@ -922,14 +922,13 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
         }
     }
     // **Every** live vertex must lie within tolerance of every surface its definition claims
-    // it meets (design §4 — the definition is the truth, the point is a within-tol cache).
+    // it meets (the definition is the truth, the point is a within-tol cache).
     // Reference integrity ran first, so the definition's surface handles are in bounds.
     //
-    // ★ S7 widened this from the measured population to all of them. Before, a definition was
-    // something only a discovered vertex carried, so a constructed corner's claim went
-    // unchecked; now the definition *is* the vertex, and the checker asks the same question of
-    // every one — with the tolerance the vertex has (measured) or the construction epsilon
-    // (built). The doctrine this serves is the document's: the surfaces a vertex is defined by
+    // ★ This covers all of them, not just the measured population: the definition *is* the
+    // vertex, so a constructed corner's claim is checked too, and the checker asks the same
+    // question of every one — with the tolerance the vertex has (measured) or the construction
+    // epsilon (built). The doctrine this serves: the surfaces a vertex is defined by
     // are self-evidently near it, and the real question is whether the *coordinate* still
     // matches the definition after everything that has happened to it.
     let mut i = 0u32;
@@ -1088,8 +1087,8 @@ mod tests {
     #[test]
     fn stray_vertex_ignored() {
         // A vertex referenced by nothing is a dead arena item, not a defect: it
-        // is unreachable from the live cube, so validate ignores it (design §2).
-        // (Under the old whole-store count this raised EulerParity{v:9}.)
+        // is unreachable from the live cube, so validate ignores it.
+        // (A whole-store count would raise EulerParity{v:9}.)
         let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
         m.push_vertex(
             Vertex::ThreePlane([
@@ -1106,7 +1105,7 @@ mod tests {
 
     #[test]
     fn supersede_solid_reuses_cells() {
-        // What an editing op does (design §2): build a new solid that *reuses*
+        // What an editing op does: build a new solid that *reuses*
         // the old solid's cells, then drop the old solid from `live_solids`. The
         // old cells linger in the arena but, unreferenced by any live solid, fall
         // out of the reachable closure — so each shared edge is counted twice
@@ -1220,7 +1219,7 @@ mod tests {
                         p = [p[0] + d[0], p[1] + d[1], p[2] + d[2]];
                     }
                 }
-                // Every vertex names the three tetra faces incident to it (S7: the
+                // Every vertex names the three tetra faces incident to it (the
                 // definition is the vertex).
                 let incident: Vec<Handle<Surface>> = TETRA_FACES
                     .iter()
@@ -1240,8 +1239,8 @@ mod tests {
                 let (a, b) = TETRA_EDGES[i];
                 // The two faces whose loops use edge `i` — its carriers, read off the same
                 // table the loops are built from. `push_edge` derives the curve through the
-                // (possibly nudged) vertex points — an endpoint can no longer sit off its own
-                // line, which is the S8 point (see `vertex_off_its_rim_circle`).
+                // (possibly nudged) vertex points — an endpoint cannot sit off its own
+                // line (see `vertex_off_its_rim_circle`).
                 let carriers: Vec<Handle<Surface>> = TETRA_FACES
                     .iter()
                     .enumerate()
@@ -1371,10 +1370,10 @@ mod tests {
         );
     }
 
-    /// ★ S7 positive control for the **widened** definition check: a vertex with *no* measured
-    /// tolerance — the population that went entirely unchecked before — is caught when its
-    /// coordinate drifts off the surfaces its definition names. Without this, "the widening
-    /// fired zero times across the suite" could equally mean "the widening checks nothing".
+    /// ★ Positive control for the **all-vertex** definition check: a vertex with *no* measured
+    /// tolerance — the constructed population — is caught when its
+    /// coordinate drifts off the surfaces its definition names. Without this, "the check
+    /// fired zero times across the suite" could equally mean "the check sees nothing there".
     #[test]
     fn a_built_vertex_off_its_definition_is_caught() {
         let m = tetra_with(TetraOpts {
@@ -1395,7 +1394,7 @@ mod tests {
     #[test]
     fn vertex_off_surface_when_nudged() {
         // Vertex 0 moved by 2·EPS_CONSTRUCTED; the planes stay on the un-moved corners, so
-        // the vertex is off them. (`VertexOffCurve` cannot fire here since S8: a line edge's
+        // the vertex is off them. (`VertexOffCurve` cannot fire here: a line edge's
         // curve derives *through its endpoints*, so an endpoint is on its own line by
         // construction — the check's remaining teeth are the circles, see
         // `vertex_off_its_rim_circle`.)
@@ -1414,7 +1413,7 @@ mod tests {
         );
     }
 
-    /// ★ S8 negative control: an edge whose stated carriers disagree with the two faces
+    /// ★ Negative control: an edge whose stated carriers disagree with the two faces
     /// actually using it is flagged — and so is a self-adjacent *plane* pair (a spelling
     /// reserved for cylinder seams). Hand-built open surface: other violations fire too; the
     /// assertion is only that the carrier one is among them.
@@ -1491,7 +1490,7 @@ mod tests {
         );
     }
 
-    /// ★ The S8 same-surface arm (the rulings ladder's panel population): two faces on **one**
+    /// ★ The same-surface arm (the cylinder panel population): two faces on **one**
     /// surface sharing an edge cannot spell the carrier pair between them, so the rule there is
     /// membership — the shared surface must be one of the stated two (the *other* stated
     /// carrier is what the curve derivation crosses it with). Both directions: membership
@@ -1583,7 +1582,7 @@ mod tests {
         );
     }
 
-    /// ★ S7 negative controls: a definition variant whose carrier kinds contradict it is
+    /// ★ Negative controls: a definition variant whose carrier kinds contradict it is
     /// flagged — `ThreePlane` naming a cylinder, and `OnSeam` naming two planes.
     #[test]
     fn a_contradictory_vertex_def_is_flagged() {
@@ -1630,8 +1629,8 @@ mod tests {
     /// ★★ **The positive control for a cap** — the loop with no polygon in it.
     ///
     /// A cylinder cap's boundary is one closed rim, so the Newell path above has
-    /// nothing to wind and used to skip it. That skip let a cylinder ship with
-    /// **both caps facing the same way** (K2: a cap plane that interns with an
+    /// nothing to wind. Skipping it would let a cylinder ship with
+    /// **both caps facing the same way** (a cap plane that interns with an
     /// existing, oppositely-stated plane), a solid no other check here can see —
     /// edge opposition, Euler and the signed volume are all blind to it (the
     /// broken cylinder's signed volume stays positive, just wrong).
@@ -1729,7 +1728,7 @@ mod tests {
         );
     }
 
-    /// ★ M6-0 positive control: the def–cache net (`CylinderTruthCacheMismatch`) actually
+    /// ★ Positive control: the def–cache net (`CylinderTruthCacheMismatch`) actually
     /// bites. The stores are sealed, so the defect is *built* the `FaceMisoriented` way: a twin
     /// of the lateral face whose surface is the same cache pushed under a **lying def** (radius
     /// 2 where the cache says 1). Every geometric check still passes — the loop's vertices sit
@@ -1790,7 +1789,7 @@ mod tests {
         );
     }
 
-    /// ★ M6-1: a well-formed `Pierce` vertex passes every check, and its coordinate is held
+    /// ★ A well-formed `Pierce` vertex passes every check, and its coordinate is held
     /// to **all three** carriers — the cylinder included, which is the carrier the variant
     /// adds. The pierce points of {z = 0} ∧ {x = 0} against the r = 2 z-cylinder are
     /// (0, ∓2, 0); the good one is clean, the one 1e−3 off the cylinder is flagged by
@@ -1879,7 +1878,7 @@ mod tests {
         );
     }
 
-    /// ★ M6-1 negative controls: a `Pierce` whose carrier kinds contradict the structure is
+    /// ★ Negative controls: a `Pierce` whose carrier kinds contradict the structure is
     /// flagged — a cylinder in a plane slot, and a plane in the cylinder slot.
     #[test]
     fn a_contradictory_pierce_def_is_flagged() {
@@ -1924,11 +1923,11 @@ mod tests {
         }
     }
 
-    /// ★ M6-0: the population that refuted the net's first (ulp-based) metric, pinned. A
+    /// ★ The population that refutes an ulp-based metric for the net, pinned. A
     /// full-width random axis makes the cache's Gram–Schmidt smear ~1e−17 into the component
     /// the def's shuffle keeps at exactly `0.0` — ulps are meaningless across zero, so the
-    /// bound is mixed absolute/relative ([`CYL_TRUTH_EPS`]). This exact axis is the proptest's
-    /// minimal failing input from that refutation; it must stay clean.
+    /// bound is mixed absolute/relative ([`CYL_TRUTH_EPS`]). This exact axis is a proptest
+    /// minimal failing input under the ulp metric; it must stay clean.
     #[test]
     fn a_full_width_axis_survives_the_truth_net() {
         let m = cylinder(
@@ -1944,7 +1943,7 @@ mod tests {
         assert_eq!(validate(&m), vec![]);
     }
 
-    /// ★ S8: the check `VertexOffCurve` still has teeth where the curve does NOT derive from
+    /// ★ The check `VertexOffCurve` has teeth where the curve does NOT derive from
     /// the vertex — a rim circle comes from the carriers (cylinder axis × cap), so a seam
     /// vertex off the rim is caught. The stores are sealed against mutation, so the defect is
     /// *built*: a disk face whose rim edge carries a seam vertex at the wrong radius. (The

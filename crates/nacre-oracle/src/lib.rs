@@ -1,5 +1,5 @@
 //! OCCT oracle harness — nacre's primary defense against "plausible but wrong"
-//! geometry (design §7).
+//! geometry.
 //!
 //! This crate exports a [`Model`] to STEP and asks OpenCASCADE (OCCT) to score
 //! it: volume, surface area, face count, bounding box. OCCT is the *oracle*
@@ -281,7 +281,7 @@ mod tests {
     use nacre_props::mass_props;
     use std::f64::consts::PI;
 
-    /// Test shim: a boolean whose result is exactly one solid (cell 0.4 multi-solid).
+    /// Test shim: a boolean whose result is exactly one solid (a boolean may return several).
     fn boolean_one(
         model: &mut Model,
         kind: BoolKind,
@@ -475,7 +475,7 @@ centroid 1 1.5 2
         }
     }
 
-    /// ★ **The first curved boolean, scored by an independent kernel** (M6-2a C4b). A `[0,2]³`
+    /// ★ **The first curved boolean, scored by an independent kernel**. A `[0,2]³`
     /// box drilled through by a radius-0.5 bore: volume catches a bore that never opened, area
     /// catches a missing or inverted wall, and the face count catches a cap whose inner loop was
     /// dropped. Our own analytic figure (`8 − πr²h`) is not evidence about the *topology* — OCCT
@@ -516,15 +516,14 @@ centroid 1 1.5 2
         assert!((ours.volume - (8.0 - PI * 0.25 * 2.0)).abs() < 1e-9);
     }
 
-    /// **The tangency fixtures, scored by a second kernel** (cell ⑤).
+    /// **The tangency fixtures, scored by a second kernel**.
     ///
     /// Two booleans in `nacre-ops` produce a solid whose *face* is pinched at one point — a boss
     /// edge exactly tangent to a bore's rim, and a boss's base circle exactly tangent to the
-    /// plate's top edge. `validate` is clean and the volume is exact; the tessellator refused
-    /// (`TessError::SelfTouchingBoundary`) until cell ⑦c bridged the touch, and cell ㉓ left open
-    /// whether the **solid** is valid.
+    /// plate's top edge. `validate` is clean and the volume is exact; the question
+    /// is whether the **solid** is valid.
     ///
-    /// Cell ⑤ answered that from the geometry — the link of the boundary at the touch is a single
+    /// The geometry answers that — the link of the boundary at the touch is a single
     /// circle, so the surface is a 2-manifold there and only the *face* is pinched. **This is the
     /// independent confirmation**: a second kernel is given the same two operands and asked for
     /// the same union. If OCCT returns a body of the same volume, a commercial kernel agrees the
@@ -533,8 +532,8 @@ centroid 1 1.5 2
     /// ★ **Why the face count is recorded and not asserted.** OCCT splits periodic surfaces at
     /// its own seams and merges or divides faces across a STEP round trip, so an absolute count
     /// says nothing about the pinched face. The **ε-twin** (the same model with the tangency
-    /// broken by 0.01) is measured beside it so the difference has a control; both numbers go to
-    /// the dev-log rather than into an assertion.
+    /// broken by 0.01) is measured beside it so the difference has a control; both numbers are
+    /// printed rather than asserted.
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
@@ -584,10 +583,10 @@ centroid 1 1.5 2
         }
     }
 
-    /// ★★★★★ **The tangent *wall* — the user's own script, scored against OCCT** (cell ⑥). A unit
+    /// ★★★★★ **The tangent *wall* — the user's own script, scored against OCCT**. A unit
     /// cube and a stud whose axis stands `0.3` from the origin with `r = 0.2`, so the wall
     /// `x = 0.5` is exactly `r` away. The kernel used to refuse this outright; it now fuses, and
-    /// the question this asks is the same one cell ⑤ asked of a point tangency: **does a second
+    /// the question this asks is the same one asked of a point tangency: **does a second
     /// kernel agree the shape is a body?**
     ///
     /// ★ The twin (`0.35`, the stud pushed **through** the wall) is the control, and it is chosen
@@ -678,7 +677,7 @@ centroid 1 1.5 2
         }
     }
 
-    /// ★ **Two bores in one plate, scored independently** (M6-2a K1). The second cut's counterpart
+    /// ★ **Two bores in one plate, scored independently**. The second cut's counterpart
     /// already carries a cylinder face, which is the case the band pass was rebuilt for — and the
     /// case where assuming "a wall's own solid fills its cylinder" puts `keep` on the wrong
     /// chamber. Volume catches that directly; OCCT reading the STEP back catches a topology that
@@ -1310,7 +1309,7 @@ centroid 1 1.5 2
         );
     }
 
-    /// E1 same_ground union: A = [0,1]³ and B = [0.5,1.5]²×[0,1] overlap in volume and share the
+    /// same_ground union: A = [0,1]³ and B = [0.5,1.5]²×[0,1] overlap in volume and share the
     /// z=0 / z=1 planes with overlapping footprints. The union is an L-footprint prism: area
     /// (1 + 1 − 0.25) × height 1 = 1.75. OCCT confirms it independently — the oracle for nacre's
     /// general 2D coplanar merge (the driver's union-cell reconstruct + interpenetrating-wall clip).
@@ -1331,7 +1330,7 @@ centroid 1 1.5 2
         );
     }
 
-    /// E1 family Cut/Common of the same_ground config (A=[0,1]³, B=[0.5,1.5]²×[0,1]). A−B removes the
+    /// Cut/Common of the same_ground config (A=[0,1]³, B=[0.5,1.5]²×[0,1]). A−B removes the
     /// overlap column [0.5,1]²×[0,1] ⇒ L-prism 0.75; A∩B is that overlap box ⇒ 0.25. OCCT confirms
     /// both independently — the oracle for nacre's same_ground MinusQ/InterQ caps + wall clip.
     #[test]
@@ -1467,7 +1466,7 @@ centroid 1 1.5 2
     }
 
     /// A severing `Cut` returns two nacre solids; OCCT returns a COMPOUND of two solids for the
-    /// same inputs. Their aggregate volume and area agree — nacre's multi-solid output (cell 0.4)
+    /// same inputs. Their aggregate volume and area agree — nacre's multi-solid output
     /// matches OCCT. The bar threads the cube and out both ends, leaving two 1×1×1 stubs.
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
@@ -2119,14 +2118,14 @@ centroid 1 1.5 2
     }
 
     /// The box straddles the L's *reflex* corner `(1, 1)`: one chord with one reflex
-    /// bend, and that bend projects outside its chord's endpoints (M5-d3 cell 3d).
+    /// bend, and that bend projects outside its chord's endpoints.
     fn l_and_reflex_box() -> (Model, Handle<Solid>, Handle<Solid>) {
         l_prism_and_box([0.6, 0.6, 0.2], [1.6, 1.6, 1.4])
     }
 
     /// The box crosses the reflex corner and pops out the L's top: on its bottom face
-    /// the seam is a staircase whose two bends turn opposite ways. `strict` rejected
-    /// this until M5-d3 cell 3e-1; the reconstructed face is a correct simple polygon.
+    /// the seam is a staircase whose two bends turn opposite ways.
+    /// The reconstructed face is a correct simple polygon.
     fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
         l_prism_and_box([0.5, 0.5, 0.2], [2.5, 1.5, 1.2])
     }
@@ -2167,8 +2166,8 @@ centroid 1 1.5 2
         );
     }
 
-    /// The `Common` counterpart — cell 3g opened non-convex `Common` (the intersection is
-    /// the corner bite, `0.224`) and retired the convex `common`. Same seam as the Cut/Fuse
+    /// The `Common` counterpart — a non-convex `Common` (the intersection is
+    /// the corner bite, `0.224`). Same seam as the Cut/Fuse
     /// above, only the keep/flip table differs.
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
@@ -2969,8 +2968,7 @@ centroid 1 1.5 2
         );
     }
 
-    /// The two convex pokes cell (5b) opened, against OCCT. Both operands are convex; the
-    /// convex path rejected these as `poke_through` and cell (5b) routes them to the seam
+    /// The two convex pokes, against OCCT. Both operands are convex, and both go down the seam
     /// path. The notch is an edge crossed twice; the drill is a genus-1 solid.
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
@@ -3080,9 +3078,8 @@ centroid 1 1.5 2
         );
     }
 
-    /// The reflex-corner bite (M5-d3 cell 3d). The arc's single bend projects *outside*
-    /// its chord's endpoints, so the old projection sort was ordering it by luck. Fills
-    /// the OCCT gap that cell left.
+    /// The reflex-corner bite. The arc's single bend projects *outside*
+    /// its chord's endpoints, so a projection sort would order it only by luck.
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn reflex_bite_cut_matches_occt() {
@@ -3099,9 +3096,9 @@ centroid 1 1.5 2
         );
     }
 
-    /// The folded (staircase) arc admitted by M5-d3 cell 3e-1, `Cut`.
+    /// The folded (staircase) arc, `Cut`.
     ///
-    /// **This is the only gate on that cell.** A folded arc mis-ordered would build a
+    /// **This is the only gate on the folded arc.** A folded arc mis-ordered would build a
     /// self-intersecting face, and `validate` accepts one — still manifold, Euler holds.
     /// Only an independent kernel's volume says the face is right.
     #[test]
@@ -3139,12 +3136,12 @@ centroid 1 1.5 2
 
     /// A stub standing in the L's top face, its footprint strictly inside that face.
     /// The seam is a closed loop in the face interior, so the result has a face with
-    /// an inner loop — the shape M5-d3 cell 3f-1 opens.
+    /// an inner loop.
     fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
         l_prism_and_box([0.3, 0.3, 0.5], [0.7, 0.7, 1.5])
     }
 
-    /// nacre's first boolean result carrying a *hole* (M5-d3 cell 3f-1) vs OCCT: the
+    /// nacre's first boolean result carrying a *hole* vs OCCT: the
     /// L with a blind pocket. Area is scored alongside volume here — the hole is an
     /// area-visible feature, and nacre's own gates all read the same rings, so an
     /// independent kernel is what makes the hole's size a real claim.
@@ -3195,7 +3192,7 @@ centroid 1 1.5 2
     }
 
     /// The L-prism and an L-shaped bar lying in its notch, `z ∈ [0.5, 1.5]`, its two arm
-    /// ends biting the cap's convex corners. Two chords on one face (M5-d3 cell 3e-2).
+    /// ends biting the cap's convex corners. Two chords on one face.
     fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
         let raised = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
@@ -3216,7 +3213,7 @@ centroid 1 1.5 2
 
     /// The L-prism and a П-shaped staple drawn in the XZ plane and extruded along `−y`, so
     /// the L's cap is parallel to the extrusion axis and the staple's section there falls in
-    /// two: a loop wholly inside the cap, and an arc wrapping the reflex corner (cell 3f-4).
+    /// two: a loop wholly inside the cap, and an arc wrapping the reflex corner.
     fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
         use nacre_math::Vector3;
         let (mut m, l) = l_prism();
@@ -3341,7 +3338,6 @@ centroid 1 1.5 2
     /// Three diffs on one fixture, because the three reconstruct different things: two
     /// **islands** from one face (`Cut(u, slab)`), the same face's two **holes** on B
     /// (`Fuse`), and two holes on A with the U's caps split into cycles (`Cut(slab, u)`).
-    /// Cell 3f-3.
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn u_slab_cut_matches_occt() {
@@ -3409,7 +3405,7 @@ centroid 1 1.5 2
     }
 
     /// The L-prism with an L-shaped stub standing wholly inside its cap. The blind pocket's
-    /// lid carries the suite's first **non-convex** inner loop (M5-d3 cell 3h).
+    /// lid carries the suite's first **non-convex** inner loop.
     fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
         let (mut m, l) = l_prism();
         let raised = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
@@ -3431,7 +3427,7 @@ centroid 1 1.5 2
     /// An independent kernel on a hole that is not a rectangle. Volume scores the pocket;
     /// area scores its six walls, since the lid gives up exactly what the floor hands back.
     /// Neither can see the loop's *winding* — both kernels sum unsigned areas — which is why
-    /// cell 3h added a second source for that and did not lean on this diff.
+    /// the winding has a second source and does not lean on this diff.
     #[test]
     #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
     fn ell_dimple_cut_matches_occt() {
@@ -3454,7 +3450,7 @@ centroid 1 1.5 2
         );
     }
 
-    /// nacre's first face carrying more than one chord (M5-d3 cell 3e-2) vs OCCT, `Cut`.
+    /// nacre's first face carrying more than one chord vs OCCT, `Cut`.
     /// The L's cap keeps a single ring that uses both arcs, while the bar's floor splits
     /// into two faces — the two bites' floors. Volume scores the bites; area cannot, since
     /// a corner cut hands back exactly the faces it removes (14.0 either way).
@@ -3505,7 +3501,7 @@ centroid 1 1.5 2
         );
     }
 
-    /// nacre's first face whose outer loop is *all* seam (M5-d3 cell 3f-2) vs OCCT: the
+    /// nacre's first face whose outer loop is *all* seam vs OCCT: the
     /// stub cut by the L, leaving the `0.4 × 0.4 × 0.5` box above `z = 1`. Its floor is
     /// that island face.
     ///
@@ -3536,7 +3532,7 @@ centroid 1 1.5 2
         );
     }
 
-    /// nacre's hole-aware classification (M5-d3 cell 3a) vs OCCT: a pocketed cube
+    /// nacre's hole-aware classification vs OCCT: a pocketed cube
     /// cut by a box sitting wholly inside the pocket void. The two solids are
     /// disjoint, so the answer is the pocketed cube untouched — but only if the
     /// classifier reads the lid's inner loop. Fanning the lid's outer ring alone
@@ -3684,10 +3680,10 @@ centroid 1 1.5 2
         );
     }
 
-    /// A boolean composing on a shape a boolean can make (M5-d3 cell 3f-5). The seam bites
+    /// A boolean composing on a shape a boolean can make. The seam bites
     /// the holed lid's corner, and the hole is placed inside the region left behind.
     ///
-    /// The box is the symmetric one cell (5a) gave back: its vertical edge pierces the lid
+    /// The box is the symmetric one: its vertical edge pierces the lid
     /// at `(0.85, 0.85)`, on a fan diagonal from every apex. OCCT is asked the same question
     /// on the same coordinates, and it does not fan.
     #[test]
@@ -3714,7 +3710,7 @@ centroid 1 1.5 2
     }
 
     /// A corner box whose footprint overlaps the pocket, so its walls cross the lid's hole
-    /// rim (M5-d3 cell 3f-6). `∂(lid)` is two rings the seam threads into one notch, opening
+    /// rim. `∂(lid)` is two rings the seam threads into one notch, opening
     /// the pocket to the outside. Only an independent kernel makes the absorbed hole's area a
     /// real claim; OCCT is asked on the same coordinates. `Cut(pc, box) = 0.893`.
     #[test]
@@ -3741,7 +3737,7 @@ centroid 1 1.5 2
         );
     }
 
-    /// A slab through the pocket between its floor and its lid (M5-d3 cell 3f-7). Its underside
+    /// A slab through the pocket between its floor and its lid. Its underside
     /// carries the cube's cross-section as one loop with the pocket's nested inside it — a loop
     /// within a loop. `Cut(slab, pc) = 1.488`, the pocket loop hung in the slab region as a hole
     /// beside an island; the area is the independent claim that the nesting placed both rings.
@@ -3769,7 +3765,7 @@ centroid 1 1.5 2
         );
     }
 
-    /// `Fuse` of the same two seals the pocket into an enclosed cavity (cell 5c): material
+    /// `Fuse` of the same two seals the pocket into an enclosed cavity: material
     /// `2.408`, a void of `0.032`. OCCT builds the same hollow solid and its volume subtracts
     /// the void while its area adds both surfaces — the independent claim that the seam path
     /// assembled the void inward, not as a phantom outer piece.
@@ -3821,7 +3817,7 @@ centroid 1 1.5 2
     }
 
     /// A rod drilled clean through the L's bar: the first genus-1 solid this kernel makes
-    /// (M5-d3 cell 3e-3). Area is scored alongside volume — a tunnel's walls are area, and
+    /// Area is scored alongside volume — a tunnel's walls are area, and
     /// nacre's own gates all read the same rings, so only an independent kernel makes the
     /// hole's size a claim rather than a restatement.
     #[test]

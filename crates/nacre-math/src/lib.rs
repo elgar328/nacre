@@ -1,9 +1,9 @@
 //! Self-contained `f64` linear algebra for the nacre kernel.
 //!
 //! Ships only [`Point<D>`](Point) and [`Vector<D>`](Vector), both backed by
-//! `[f64; D]` (design.md §1). This is the plain-`f64` layer: it does the
+//! `[f64; D]`. This is the plain-`f64` layer: it does the
 //! *construction* arithmetic on coordinates, which are the "cache" side of the
-//! truth/cache split (design §5) — never the source of geometric truth.
+//! truth/cache split — never the source of geometric truth.
 //!
 //! Scope boundaries:
 //! - **Scalar is concrete `f64`, not generic.** Extended precision does not live here:

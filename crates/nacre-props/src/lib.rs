@@ -15,7 +15,7 @@
 //!
 //! Precondition: the solid is a valid closed, outward-oriented b-rep (what the
 //! producers emit and `validate` accepts). Coordinates are the cache side of the
-//! truth/cache split (design.md §0), so f64 arithmetic here is appropriate.
+//! truth/cache split, so f64 arithmetic here is appropriate.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_geom::{Curve, Surface};
@@ -86,8 +86,8 @@ pub fn mass_props(model: &Model, solid: Handle<Solid>) -> Result<MassProps, Prop
     let mut volume_flux = 0.0;
     let mut area = 0.0;
     // Outer boundary, then each inner cavity shell. A cavity's faces are wound
-    // with their outward normals pointing into the void (design §8 M5
-    // containment), so its flux is negative and subtracts the void's volume;
+    // with their outward normals pointing into the void
+    // (containment), so its flux is negative and subtracts the void's volume;
     // its (unsigned) area adds — both surfaces bound material.
     for &sh in std::iter::once(&solid.outer).chain(solid.cavities.iter()) {
         for &face in &model.shell(sh).faces {
@@ -147,7 +147,7 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsE
     let sign = f64::from(face.orientation.sign());
     // ★ The cache, because every answer below is an `f64` area or centroid: the integral is
     // evaluated numerically, and an exact normal would be rounded into the same product a line
-    // later. Kind questions go to the truth (open item 34); this one's answer is a number.
+    // later. Kind questions go to the truth; this one's answer is a number.
     match model.surface_cache(face.surface) {
         Surface::Plane(plane) => {
             let (area, centroid) = planar_region(model, face)?;
@@ -237,7 +237,7 @@ pub fn bounds(model: &Model, solid: Handle<Solid>) -> Result<(Point3, Point3), P
                     Curve::Line(_) => grow(model.vertex_point(he_start(model, he)?), [0.0; 3]),
                     Curve::Circle(circle) => {
                         // ★ The **whole** circle's extent, whatever the edge's endpoints say — so
-                        // an arc (M6-2b) grows the box too much, never too little. A bound that
+                        // an arc grows the box too much, never too little. A bound that
                         // errs outward stays a bound, which is why this one needs no change when
                         // arcs arrive; `sample_edge` in `nacre-tess` is the one that would not.
                         let n = circle.normal().as_array();
@@ -336,11 +336,11 @@ fn planar_face(model: &Model, outer: &Loop) -> Result<(f64, Point3), PropsError>
             _ => Err(PropsError::UnsupportedBoundary),
         }
     } else {
-        // ★ **The mixed arm** (M6-2b): a loop of chords and circular arcs. The chord polygon is
+        // ★ **The mixed arm**: a loop of chords and circular arcs. The chord polygon is
         // a signed fan from the first vertex; each arc half-edge then adds or removes its
         // **circular segment** — area `r²(Δθ − sin Δθ)/2`, centroid `4r·sin³(Δθ/2) /
         // (3(Δθ − sin Δθ))` out along the bisector — with Δθ read from the edge's stored
-        // `[from, to]` order (**CCW about the axis**, the M6-2b convention;
+        // `[from, to]` order (**CCW about the axis**, the arc convention;
         // [`Circle::angle_of`] is the one spelling of the angle) and the sign from which way
         // this traversal walks it. A digon (chord + arc) is the degenerate case the fan
         // contributes nothing to: one segment is the whole answer.
@@ -440,7 +440,7 @@ struct LateralMoments {
 /// positive.
 ///
 /// ☑ Unchanged assumption: a rim is a **circle** cut by a plane ⊥ the axis, so `z` is constant
-/// along an arc. An oblique cut gives an ellipse, and that is M6-3's business — the old spelling
+/// along an arc. An oblique cut gives an ellipse, and that is out of scope here — the old spelling
 /// grouped rim arcs by axial station on the same premise.
 fn lateral_moments(
     model: &Model,
@@ -528,8 +528,8 @@ fn loop_points(model: &Model, outer: &Loop) -> Result<Vec<Point3>, PropsError> {
         .collect()
 }
 
-/// [`Model::he_start`], kept as a local name. (The `Result` is now always `Ok`: S8 made every
-/// edge bounded by type, so the unsupported-boundary arm had nothing left to catch. The wrapper
+/// [`Model::he_start`], kept as a local name. (The `Result` is always `Ok`: every
+/// edge is bounded by type, so the unsupported-boundary arm has nothing to catch. The wrapper
 /// stays because five callers still `?` it; collapsing it is a separate change.)
 fn he_start(
     model: &Model,

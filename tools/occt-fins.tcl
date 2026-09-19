@@ -7,7 +7,7 @@
 # every copy sits deep inside its neighbours near the axis. The two fixtures disagree about
 # n-ary, which is exactly why both are kept -- one fixture is not a finding.
 #
-# Measured 2026-07-29 (14-core M-series, OCCT from Homebrew, `brunparallel 0`). Each pair is the
+# Measured (14-core M-series, OCCT from Homebrew, `brunparallel 0`). Each pair is the
 # same answer, so the times may be compared:
 #
 #                                    pairwise    n-ary    n-ary buys

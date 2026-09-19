@@ -1,4 +1,4 @@
-//! Analytic geometry — the **realization** layer of the nacre kernel (design.md §3).
+//! Analytic geometry — the **realization** layer of the nacre kernel.
 //!
 //! Surfaces and curves are kept in analytic form forever; meshes are derived
 //! (overview 절대원칙 1). But analytic is not the same as exact: coordinates here are
@@ -19,7 +19,7 @@
 //! **truth** (`nacre_topo::Surface`, which carries a motion handle) — a type below
 //! topo cannot name it. What that variant wanted splits along the truth/cache line
 //! instead: *which two surfaces* is already an edge's truth, and the approximating
-//! spline with its error is the edge's cache. See `docs/truth-and-cache.md`.
+//! spline with its error is the edge's cache.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod circle;

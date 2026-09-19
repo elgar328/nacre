@@ -223,12 +223,11 @@ pub trait PlaneWitness: Witness {
 
     /// The plane's **name integers, folded to the stored orientation** — built once by
     /// [`name_stored_ints`] where the witness is constructed, `None` when the plane has no name
-    /// (or the fold declined). This is what gives a *wide* name its exact shortcuts back
-    /// (truth-and-cache open item 15): [`Witness::base_coeffs_rat`] and
+    /// (or the fold declined). This is what gives a *wide* name its exact shortcuts back:
+    /// [`Witness::base_coeffs_rat`] and
     /// [`Self::base_coeffs`]/[`Self::exact_coeffs`] all read `PlaneName::narrow()` or `f64`, so
     /// a wide name answers `None` to every one of them and the judgement climbs — **1.9×** the
-    /// escalations (246 against 475, re-measured 2026-09-09; the `3.2×` this line used to quote
-    /// is from 2026-08-08 and the population has moved under it. The confound
+    /// escalations (246 against 475; the confound
     /// `wide_datum_cost.rs` states — the two arms pick different vertex triples — applies to
     /// either number, so read it as "several times", not as a coefficient).
     fn name_ints(&self) -> Option<&NameInts> {
@@ -313,7 +312,7 @@ pub fn name_stored_ints(
     let mut ints = name.coeff_ints();
     // The σ below is exact only when the witness bases lie exactly on the named plane — i.e.
     // when witness and name **speak the same frame**. A nonzero residual here is not a broken
-    // table: a named plane whose meets are wider than any witness base (open item 17) is
+    // table: a named plane whose meets are wider than any witness base is
     // witnessed by its own frame's probes, whose bases are frame-local coordinates — a
     // different frame from the name's. The fold then declines, `name_ints` stays `None`, and
     // the plane keeps the toleranced routes: slower, never wrong.

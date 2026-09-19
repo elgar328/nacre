@@ -3,7 +3,7 @@
 //! Every kernel object lives exactly once in a [`Store`] and is referenced only
 //! by a [`Handle`]. There is no removal or mutation: handles stay valid forever,
 //! and identity is an integer comparison (`h1 == h2`), never a floating-point
-//! coordinate comparison. See `docs/design.md` §2.
+//! coordinate comparison.
 //!
 //! `Store`/`Handle` live in this lowest crate on purpose: a typed-index arena knows
 //! nothing of geometry or topology, and everything above it — `nacre-topo`'s arenas,
@@ -98,7 +98,7 @@ impl<T> fmt::Debug for Handle<T> {
 
 /// Append-only storage for a single object type. Push returns a permanent
 /// [`Handle`]; there is no `remove`, so every handle stays valid for the life
-/// of the store. See `docs/design.md` §2.
+/// of the store.
 pub struct Store<T> {
     items: Vec<T>,
     /// Debug-only identity of this store, stamped into every handle it mints.
@@ -135,7 +135,7 @@ impl<T> Store<T> {
     /// Borrow the item a handle points to. Always valid — there is no removal.
     ///
     /// In debug builds this asserts the handle was minted by *this* store,
-    /// catching the "used model A's handle on model B" bug (`docs/design.md` §2).
+    /// catching the "used model A's handle on model B" bug.
     #[inline]
     pub fn get(&self, h: Handle<T>) -> &T {
         #[cfg(debug_assertions)]

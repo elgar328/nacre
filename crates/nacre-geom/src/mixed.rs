@@ -328,7 +328,7 @@ pub struct ArcSpec {
 }
 
 /// **Do two circular arcs of one plane share a point?** — the predicate the mixed ring already
-/// asks of two arc steps ([`arcs_meet`]), opened for the cylinder gate (cell ⑩): two lateral faces
+/// asks of two arc steps ([`arcs_meet`]), opened for the cylinder gate: two lateral faces
 /// on parallel axes share a point iff their rims' arcs do in the common cross-section. Touching
 /// counts as sharing. `None` is overflow.
 pub fn arcs_share_a_point(a: &ArcSpec, b: &ArcSpec) -> Option<bool> {

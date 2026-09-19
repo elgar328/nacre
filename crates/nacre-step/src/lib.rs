@@ -68,8 +68,8 @@ fn build_step(model: &Model, solids: &[Handle<Solid>]) -> Result<String, StepErr
         ..Default::default()
     });
 
-    // Export the given (live) solids, not the whole append-only store (design
-    // §2): superseded solids linger in the arena but must not reach the file.
+    // Export the given (live) solids, not the whole append-only store:
+    // superseded solids linger in the arena but must not reach the file.
     for &solid_h in solids {
         let solid = model.solid(solid_h);
         let part = b.part("nacre_solid")?;

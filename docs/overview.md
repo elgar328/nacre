@@ -99,4 +99,4 @@ cargo doc --workspace --no-deps                                          # intra
 - **카고는 한 번에 하나만** — 겹치면 서로 6배 느려진다. 커밋 훅이 스위트를 돌므로 커밋 중에는 다른 cargo 를 시작하지 않는다. `target/` 은 한 세션에 ~9GB 자라므로 주기적으로 `cargo clean` 한다.
 - **성능 비교는 같은 세션 A/B 로만 한다**(`git stash`). 저장된 기준선은 만료된 것으로 본다 — 한 줄도 안 건드린 단계가 +9% 움직인다. 구조적 변화는 trip 수가, 상수 인자는 시간이 말한다.
 - **관문 명령은 파이프로 감싸지 말고 파일로 받아 cargo 자신의 `$?` 를 읽는다** — `| tail` 의 exit code 는 `tail` 의 것이다.
-- 형제 리포: kit(`../nacre-kit`: fmt·clippy·test), 앱(`../nacre-playground/web`: `npm run wasm:all` + `npx tsc --noEmit` + `npx vitest run`, 그리고 `wasm/` 에 clippy). 커널만 바뀌어도 wasm 재빌드가 필요하다.
+- 형제 리포: kit(`../nacre-kit`: fmt·clippy·test), 앱(`../nacre-playground/web`: `npm run wasm:all` + `npx tsc --noEmit` + `npx vitest run`, 그리고 `wasm/` 에 clippy). 커널만 바뀌어도 wasm 재빌드가 필요하다. 거절 이유의 이름을 개명·분할한 커밋은 kit 의 `reason_sentence` 표도 함께 고친다(모르는 이름은 틀리지 않고 덜 풍부해질 뿐이지만, 조용히 그렇게 된다).

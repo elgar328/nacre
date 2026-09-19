@@ -16,7 +16,7 @@ use nacre_math::{Point3, Vector3};
 /// from `ref_dir`. An edge trims it to an arc via its endpoint vertices — a
 /// closed edge is the whole circle — its two endpoint vertices are the same seam
 /// vertex (`[v, v]`), the same carrier-vs-trim split as [`Line`](crate::Line) +
-/// `Edge` (design §3). This matches the STEP `CIRCLE` (its `axis2_placement_3d`
+/// `Edge`. This matches the STEP `CIRCLE` (its `axis2_placement_3d`
 /// is exactly `center`/`normal`/`ref_dir`).
 ///
 /// Same `PartialEq` / no-`Eq` / no-`Hash` rationale as [`Line`](crate::Line):
@@ -113,7 +113,7 @@ impl Circle {
     /// `atan2`'s own convention rather than refusing — callers pass realized edge endpoints,
     /// which the store guarantees off-axis.
     ///
-    /// ★ This is what turns the arc convention (M6-2b: an edge's stored `[from, to]` order is
+    /// ★ This is what turns the arc convention (an edge's stored `[from, to]` order is
     /// CCW about the axis) into numbers: consumers take `Δθ = (θ_to − θ_from).rem_euclid(τ)`
     /// and never re-derive direction from anything else.
     #[inline]
@@ -127,7 +127,7 @@ impl Circle {
     /// region between the chord and the arc: `r²(Δθ − sin Δθ)/2`. This is the one spelling of
     /// the number every arc consumer adds to a chord polygon (props' integrals, validate's
     /// winding witness); the sign — does this traversal add or remove the bulge — is the
-    /// caller's, read from the M6-2b `[from, to]`-CCW convention.
+    /// caller's, read from the `[from, to]`-CCW convention.
     #[inline]
     pub fn segment_area(self, dtheta: f64) -> f64 {
         0.5 * self.radius * self.radius * (dtheta - dtheta.sin())

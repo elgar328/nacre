@@ -40,7 +40,7 @@
 //!
 //! ★ **What the crack-free contract forbids is a vertex on the *boundary*, not one inside.** The
 //! chart above does add interior points where a face's own boundary fails to sample its curvature
-//! (design §5), and [`super::insert_interior`] places them — never splitting a constrained edge.
+//! and [`super::insert_interior`] places them — never splitting a constrained edge.
 //! This file still creates and removes nothing; it runs after those points have arrived, and their
 //! arrival is what gives it something to flip.
 

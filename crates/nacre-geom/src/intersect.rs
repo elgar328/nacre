@@ -1,8 +1,8 @@
-//! Closed-form intersections among analytic surfaces (design §3, §8 M5).
+//! Closed-form intersections among analytic surfaces.
 //!
 //! Robustness-sensitive intersection code is isolated in this one module
-//! (design §3). Everything here is the **construction (coordinate)** side of the
-//! precision split (design §3): the returned `Line`/`Point3` are f64 *caches* —
+//! Everything here is the **construction (coordinate)** side of the
+//! precision split: the returned `Line`/`Point3` are f64 *caches* —
 //! the defining surfaces are the truth. So near-degenerate inputs are gated by a
 //! conditioning threshold (there is no exact answer to cache), whereas exact
 //! **sign** decisions live in `nacre-predicates`.
@@ -26,7 +26,7 @@ const PARALLEL_EPS: f64 = 1e-16;
 /// The line where two planes meet, or `None` if they are parallel (or
 /// coincident).
 ///
-/// Closed form — no SSI march or spline cache (design §8 M5). Direction is
+/// Closed form — no SSI march or spline cache. Direction is
 /// `n1 × n2`; the base point is the point of the line closest to the origin.
 /// Returns a bare [`Line`] (the closed form), not a marched approximation — the M7
 /// shape for those is an open question this crate cannot spell (see the crate doc).
@@ -56,7 +56,7 @@ pub fn plane_plane(a: &Plane, b: &Plane) -> Option<Line> {
 /// `t = n·(o_p − o_l) / (n·d)`. `None` when `n·d` is exactly zero (the line runs in or
 /// parallel to the plane — no unique crossing).
 ///
-/// ★ The parallel test is **exact**, not toleranced: the production caller (S8's rim-circle
+/// ★ The parallel test is **exact**, not toleranced: the production caller (the rim-circle
 /// derivation, cylinder axis × cap plane) is perpendicular by construction, so `n·d ≈ ±|n|` is
 /// far from zero; a near-parallel pair would give a far-away but well-defined crossing, which
 /// is the honest answer to the question asked.
@@ -84,9 +84,9 @@ const COPLANAR_DET_EPS: f64 = 1e-9;
 /// `det = n1·(n2×n3)` (the scalar triple product = determinant of rows
 /// `[n1, n2, n3]`), `hᵢ = nᵢ·originᵢ`.
 ///
-/// The f64 coordinate is a **cache** — the three planes are the truth (design
-/// §3/§4). Its residual to the planes is the vertex cache's measured tolerance,
-/// which the caller (M5-c) measures when it forms the vertex (closed-form
+/// The f64 coordinate is a **cache** — the three planes are the truth.
+/// Its residual to the planes is the vertex cache's measured tolerance,
+/// which the caller measures when it forms the vertex (closed-form
 /// residual is recomputable, unlike an iterative solve's, so it is not returned
 /// here). The gate is the conditioning threshold [`COPLANAR_DET_EPS`], not the
 /// exact `det3_sign`: an exact-nonzero determinant can still round its f64
@@ -111,7 +111,7 @@ pub fn three_planes(a: &Plane, b: &Plane, c: &Plane) -> Option<Point3> {
 
 /// The exact sign of `orient3d(V, q, r, s)`, where `V` is the implicit point at
 /// which planes `a, b, c` meet and `q, r, s` are explicit points — the
-/// geom→predicates handoff (design §9).
+/// geom→predicates handoff.
 ///
 /// **Sign convention.** `orient3d(a,b,c,d) = det[a−d, b−d, c−d]`, so with `V`
 /// first this is `(V − s) · ((q − s) × (r − s))`, and `(q−s)×(r−s) = (r−q)×(s−q)`
@@ -128,7 +128,7 @@ pub fn three_planes(a: &Plane, b: &Plane, c: &Plane) -> Option<Point3> {
 /// [`nacre_predicates::ThreePlane`], keeping the predicate dependency inside
 /// geom (so `topo → geom → predicates`, and `topo` need not know predicates).
 /// `V` is never materialized — the sign is exact even though `V`'s coordinates
-/// are generally irrational (design §3, Attene 2020).
+/// are generally irrational (Attene 2020).
 ///
 /// **Precondition (inherited from [`nacre_predicates::indirect_orient3d`]):**
 /// `a, b, c` must meet in a single point (`det` of their normals ≠ 0), and
@@ -179,7 +179,7 @@ pub fn plane_side(tri: [Point3; 3], p: Point3) -> i8 {
 ///
 /// `0` means the coordinates are exactly equal. Neither point is materialized, and no
 /// tolerance is involved: this is the sign of a decision, so it belongs on the predicate
-/// side of the precision split (design §3), exactly like [`plane_pair_dir_sign`].
+/// side of the precision split, exactly like [`plane_pair_dir_sign`].
 ///
 /// **Precondition (inherited):** each triple meets in a single point (`det` of its normals
 /// ≠ 0), as for [`three_plane_orient3d`].
@@ -206,7 +206,7 @@ pub fn three_plane_cmp_coord(a: [&Plane; 3], b: [&Plane; 3], axis: usize) -> i8 
 /// Exact: `det3_sign` of the three normals as rows, since
 /// `det[nA; nB; nC] = nA · (nB × nC) = (nA × nB) · nC`. Not an f64 dot product —
 /// the sign of a decision, so it belongs to the predicate side of the precision
-/// split (design §3).
+/// split.
 ///
 /// **Reads the rows from [`Plane::coefficients`] (the un-normalized `raw`), not [`Plane::normal`].**
 /// `raw` is a positive multiple of `normal`, and a determinant's sign is invariant under scaling
@@ -215,8 +215,8 @@ pub fn three_plane_cmp_coord(a: [&Plane; 3], b: [&Plane; 3], axis: usize) -> i8 
 /// cancellation. Two exactly-parallel walls of a slanted prism have `raw` rows that are exact
 /// negatives (`det = 0`), but their unit rows round to `det = ±1`; the guard then admitted a triple
 /// its own consumer ([`three_plane_orient3d`], also on `coefficients`) rejects as `D = 0`, aborting.
-/// Feeding the guard the same `raw` the consumer reads keeps the two in lockstep. (Measured
-/// 2026-07-22; the invariant is already stated on `Plane`: exact predicates take `coefficients`.)
+/// Feeding the guard the same `raw` the consumer reads keeps the two in lockstep. (The
+/// invariant is already stated on `Plane`: exact predicates take `coefficients`.)
 pub fn plane_pair_dir_sign(a: &Plane, b: &Plane, c: &Plane) -> i8 {
     let row = |p: &Plane| {
         let [x, y, z, _] = p.coefficients();
@@ -231,7 +231,7 @@ pub fn plane_pair_dir_sign(a: &Plane, b: &Plane, c: &Plane) -> i8 {
 /// over each plane's exact (un-normalized) [`coefficients`](Plane::coefficients) and
 /// asks whether the two `[a, b, c, d]` rows are proportional (rank ≤ 1). Coplanarity
 /// is a topological decision, so it lives on the predicate side of the precision
-/// split (design §3), like [`plane_side`] and [`plane_pair_dir_sign`] — not a
+/// split, like [`plane_side`] and [`plane_pair_dir_sign`] — not a
 /// `Plane` method with a length tolerance. Scale-invariant and direction-agnostic:
 /// opposite normals still name the same plane.
 pub fn planes_coplanar(a: &Plane, b: &Plane) -> bool {
@@ -239,8 +239,8 @@ pub fn planes_coplanar(a: &Plane, b: &Plane) -> bool {
 }
 
 /// Exact forward-ray/triangle crossing for kernel types — the geom→predicates
-/// handoff for [`nacre_predicates::ray_triangle_cross`] (design §8 M5-d
-/// point-in-polyhedron). `d` is the ray direction; `tri` is a single triangle
+/// handoff for [`nacre_predicates::ray_triangle_cross`] (the
+/// point-in-polyhedron test). `d` is the ray direction; `tri` is a single triangle
 /// (a caller triangulates a face into these). See [`RayCross`] for the outcome.
 pub fn ray_face_cross(p: Point3, d: Vector3, tri: [Point3; 3]) -> RayCross {
     nacre_predicates::ray_triangle_cross(
@@ -568,7 +568,7 @@ pub fn ring_self_intersection_rat(ring: &[[Rat; 2]]) -> Option<(usize, usize)> {
 }
 
 /// The ring with every flat corner dissolved — the profile constructor's lossless
-/// normalization pass (`docs/truth-and-cache.md`: a collinear vertex's two walls are one plane,
+/// normalization pass (a collinear vertex's two walls are one plane,
 /// so the vertex has no three-plane definition; deleting it changes no geometry).
 ///
 /// A vertex dissolves only when it is **strictly interior** to the segment its neighbours span:
@@ -914,7 +914,7 @@ mod tests {
     }
 
     /// The two anti-parallel side walls of a `(1,1,1)`-slanted prism, as they actually came off
-    /// `build_prism` (measured 2026-07-22). Their `raw` rows sum to an exact zero in the 2×2 minors,
+    /// `build_prism`. Their `raw` rows sum to an exact zero in the 2×2 minors,
     /// so `det = 0` against any third plane — but the `sqrt`-rounded **unit** rows do not, and the
     /// old `normal()`-based predicate returned `±1`, admitting a triple its consumer rejects as
     /// `D = 0`. Pinned with the real coefficients so a regression to `normal()` fails with the
@@ -1327,7 +1327,7 @@ mod tests {
     /// `(0, 0.1) → (0.1, 0.2) → (0.2, 0.3)` is collinear in the decimals the author wrote
     /// (slope one), but not in the binary values the f64s hold: `0.2` is exactly `2·0.1bin`,
     /// while `0.3bin ≠ 3·0.1bin`, so Shewchuk's exact sign of the *binary* points is nonzero.
-    /// The truth is what was written (`docs/truth-and-cache.md`), which is why `Profile2d`
+    /// The truth is what was written, which is why `Profile2d`
     /// judges the rational side of this fork.
     #[test]
     fn a_decimal_collinearity_the_binary_points_do_not_have() {

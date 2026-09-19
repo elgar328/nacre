@@ -1,4 +1,4 @@
-//! b-rep topology and the truth-only `Model` aggregate (design.md §2, §4).
+//! b-rep topology and the truth-only `Model` aggregate.
 //!
 //! The topology (`Vertex`/`Edge`/`Face`/`Loop`/`HalfEdge`/`Shell`/`Solid`)
 //! references exact geometry only by `Handle` — geometry never knows about
@@ -6,7 +6,7 @@
 //!
 //! [`Model`] is the **truth**: exact geometry stores + topology stores + the
 //! derived [`Adjacency`] cache. It holds no tessellation and no operation log —
-//! a mesh cache and the op log are companions owned at higher layers (§0: "the
+//! a mesh cache and the op log are companions owned at higher layers ("the
 //! model is the replay result"; putting them here would make topo depend on
 //! tess/ops and break the truth/cache split).
 
@@ -24,39 +24,39 @@ use nacre_store::{Handle, Store};
 use std::collections::{HashMap, HashSet};
 
 /// How a discovered vertex is *defined* — the primitives whose intersection it
-/// is (design §4). This definition is the **truth**; the vertex's `f64` point is
+/// is. This definition is the **truth**; the vertex's `f64` point is
 /// a cache derived from it. Sign decisions (in/out, orientation) feed this
 /// definition to the indirect predicates rather than the cached coordinate
-/// (design §3, §8 M5), so a discovered vertex must carry it.
+/// (M5), so a discovered vertex must carry it.
 ///
 /// M5 polyhedral vertices are three-plane intersections; later milestones add
 /// variants (a line∩plane point, quadric intersections). `Handle<Surface>` is
 /// `Copy` regardless of `Surface`, so this stays `Copy`.
 ///
-/// ★ **A 0-cell is its definition and nothing else** (S7, and the fold that finished it). The
+/// ★ **A 0-cell is its definition and nothing else.** The
 /// coordinate, and what has been proven about it, live in the index-parallel point cache
 /// ([`Model::vertex_point`] / [`Model::vertex_cache`]), filled by [`Model::push_vertex`] —
-/// definition first, coordinate second. `Origin` (Constructed / Discovered / Moved) died here: the
-/// tag never meant exactness, and a moved vertex's motion was always the *faces'* motion, which
-/// they record themselves. The one-field `Vertex { def }` wrapper that survived S7 is gone too —
-/// it made every reader write `.def` to reach the only thing that was ever there.
+/// definition first, coordinate second. There is no origin tag (Constructed / Discovered /
+/// Moved): such a tag never means exactness, and a moved vertex's motion is always the *faces'*
+/// motion, which they record themselves. Nor is there a one-field `Vertex { def }` wrapper —
+/// it would make every reader write `.def` to reach the only thing there.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Vertex {
     /// The intersection of three planes (their surface handles).
     ThreePlane([Handle<Surface>; 3]),
     /// A point on the intersection **curve** of two surfaces — the M3 cylinder seam vertex:
-    /// the rim circle (lateral cylinder ∩ cap plane) at parameter `θ = 0` (S7).
+    /// the rim circle (lateral cylinder ∩ cap plane) at parameter `θ = 0`.
     ///
     /// ★ The pair pins a curve; what picks the point on it is the cylinder's `ref_dir`, which
-    /// sits in the cylinder's truth since M6-0 ([`CylinderDef`]): `OnSeam([cylinder, cap])`
+    /// sits in the cylinder's truth ([`CylinderDef`]): `OnSeam([cylinder, cap])`
     /// **is** "the rim ∩ the `+ref_dir` ray" — a unique point, exactly designated. The
     /// definition is complete and `nacre_ops::realize_vertex` regenerates the coordinate from
-    /// it (cell 41); what remains (3b) is writing that back into the cache.
+    /// it; what remains is writing that back into the cache.
     /// M6 grows the vocabulary by variants, each stating its own truth — the invariants are
-    /// per-variant (Q5's doctrine); [`Vertex::Pierce`] (M6-1) is the first.
+    /// per-variant; [`Vertex::Pierce`] is the first.
     OnSeam([Handle<Surface>; 2]),
     /// One of the (at most two) points where two planes' meet line crosses a cylinder's
-    /// lateral surface (M6-1) — the structure says the carrier kinds, deliberately not an
+    /// lateral surface — the structure says the carrier kinds, deliberately not an
     /// array of three lookalike handles (validate's carrier check becomes structural).
     ///
     /// ★ **`root` picks the point; its meaning is a convention.** The meet line's direction
@@ -65,19 +65,18 @@ pub enum Vertex {
     /// normal's sign ("first nonzero component positive"), so ℓ is deterministic; `Lo`/`Hi`
     /// is ascending parameter along ℓ (`nacre_scalar::quad`'s pair order). A tangency
     /// (double root) is one point and spells it [`QuadRoot::Double`] — **not `Lo`**, which
-    /// M6-1 chose and which left `Lo` unable to say which of the two it meant. ★★ Anything
+    /// would leave `Lo` unable to say which of the two it means. ★★ Anything
     /// that re-sorts the two plane handles (a transform remapping them, a mint site working in
     /// class indices) must restate `root` with it, and **[`QuadRoot::canonical`] is the one
     /// place that rule lives** — do not spell it again at the site.
     ///
-    /// Minted in production by `nacre-ops`' arrangement (15 sites) since the tangent-ruling
-    /// cells: the engine names the point as `NodeId::Pierce` in class-index space and the
+    /// Minted in production by `nacre-ops`' arrangement (15 sites):
+    /// the engine names the point as `NodeId::Pierce` in class-index space and the
     /// assembler restates it here in handle space — two canonical orders, one correspondence,
-    /// established at the mint site through [`QuadRoot::canonical`]. (An earlier note here said
-    /// the assembler declined these; that was true at M6-2b and is not now.)
+    /// established at the mint site through [`QuadRoot::canonical`].
     ///
     /// The name says what the point *is* — a line piercing a cylinder — not which root was
-    /// picked (that is `root`); "branch", the M6-1 placeholder, said only the latter.
+    /// picked (that is `root`); a name like "branch" would say only the latter.
     Pierce {
         /// The two cutting planes, ascending handle order (the `ThreePlane` precedent).
         planes: [Handle<Surface>; 2],
@@ -106,9 +105,9 @@ pub enum QuadRoot {
     /// **A tangency: the two roots coincide, so there is one point.**
     ///
     /// ★ It is a stored variant, not just a solver's report, because otherwise the stored value
-    /// cannot say which it is: spelling a tangency `Lo` (M6-1's original convention) leaves
+    /// cannot say which it is: spelling a tangency `Lo` leaves
     /// `Lo` meaning either "the smaller of two" or "the only one", and then nothing holding a
-    /// definition can tell whether a re-sort should toggle it. That ambiguity is what made the
+    /// definition can tell whether a re-sort should toggle it. That ambiguity would make the
     /// remap rule below wrong for a tangency.
     Double,
 }
@@ -160,11 +159,10 @@ impl QuadRoot {
     /// two orders of them) owes the sign half — `nacre-ops`' `pierce_name_from_def` is the one that
     /// does, coming back from handle space into class space.
     ///
-    /// ☑ **The swap half is measured at last (2026-08-26).** It was recorded as unexercised where
-    /// `assemble_fuse_cut` calls it, with a note that the population turning it red would be a boss
-    /// whose classes arrive in the other order. That population is a boolean's **result used as the
-    /// next operand** — a second boolean builds its classes afresh — and dropping the call there
-    /// turns `an_operand_bounded_by_a_cylinder_is_named_in_class_space` red.
+    /// ☑ **The swap half is measured.** Where `assemble_fuse_cut` calls it, the population that
+    /// exercises it is a boss whose classes arrive in the other order — a boolean's **result used
+    /// as the next operand** (a second boolean builds its classes afresh) — and dropping the
+    /// call there turns `an_operand_bounded_by_a_cylinder_is_named_in_class_space` red.
     #[inline]
     pub fn canonical<T: Ord>(pair: [T; 2], root: QuadRoot) -> ([T; 2], QuadRoot) {
         let [first, second] = pair;
@@ -228,7 +226,7 @@ pub enum Motion {
     /// *plane*, whose data is rational **in its own frame**. The recursion terminates
     /// because it walks down to a plane with no frame, which is where the world is.
     ///
-    /// ★★★ **Where the frame sits on the plane is [`FramePlacement`]** (S4): the derived
+    /// ★★★ **Where the frame sits on the plane is [`FramePlacement`]**: the derived
     /// `Canonical` convention by default, or the caller's `Named` values. See its own doc.
     ///
     /// ★★★ **`flip` is what makes the node a whole frame and not half of one.** Canonical plane
@@ -251,7 +249,7 @@ pub enum Motion {
 }
 
 /// Where a sketch frame sits on its plane — the derived convention, or the caller's values.
-/// The dichotomy mirrors `PlanePoints` (`docs/truth-and-cache.md`): state a value when it can
+/// The dichotomy mirrors `PlanePoints`: state a value when it can
 /// be written, derive when it cannot.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FramePlacement {
@@ -259,8 +257,8 @@ pub enum FramePlacement {
     /// origin's projection (`(−d/n·n)·n`), axes by the arbitrary-axis convention (`u = ẑ × n`,
     /// `ŷ × n` when the normal is exactly vertical) — derived when the chain is flattened and
     /// stored nowhere. That is what lets a plane whose canonical values overflow `i128` (or
-    /// whose name is `Wide`, S2) take the **same convention through arbitrary-precision
-    /// realization** instead of falling to f64: the S4 opening. One plane, one node — sketches
+    /// whose name is `Wide`) take the **same convention through arbitrary-precision
+    /// realization** instead of falling to f64. One plane, one node — sketches
     /// on one face share it automatically. The derivation convention is frozen spec (changing
     /// it would silently turn every stored sketch).
     Canonical,
@@ -285,31 +283,31 @@ pub struct MotionNode {
 }
 
 /// What makes two surfaces the same plane, for `Model::surface_ids`: the canonical name
-/// ([`nacre_scalar::PlaneName`] — `Narrow | Wide`, S2) and **the motion it is stated in**.
+/// ([`nacre_scalar::PlaneName`] — `Narrow | Wide`) and **the motion it is stated in**.
 /// Identical names under different motions are different planes, because `Constructed` names
 /// speak about the world and `Moved` ones about the pre-motion frame.
 pub type SurfaceKey = (nacre_scalar::PlaneName, Option<Handle<MotionNode>>);
 
-/// The statement key for a plane the name key cannot hold (open item 16): the sorted defining
+/// The statement key for a plane the name key cannot hold: the sorted defining
 /// triple and the motion it is stated under. See `Model::surface_through_ids`.
 type ThroughKey = ([Handle<Vertex>; 3], Option<Handle<MotionNode>>);
 
-/// The interning key for a cylinder — **deliberately conservative** (M6-0): the whole exact
+/// The interning key for a cylinder — **deliberately conservative**: the whole exact
 /// statement, `ref_dir` included, plus the motion it is stated under. Two statements of one
 /// geometric cylinder with different `ref_dir`s stay two handles, because merging them would
 /// split the seam (seam vertices and the seam edge cite the surface as their carrier). A key
 /// this literal cannot merge wrongly; geometric identity across different statements is the
-/// predicates' to answer per question (rule 6), starting M6-1. No `flipped` report either — a
+/// predicates' to answer per question (rule 6). No `flipped` report either — a
 /// literal-identical statement realizes to a literal-identical cache.
 type CylinderKey = (CylinderDef, Option<Handle<MotionNode>>);
 
 /// How many planes were named **`Wide`** — the canonical answer exceeded `i128` and took the
-/// arbitrary-precision vessel (S2). Before S2 these were the *unnamed* planes; now they intern
+/// arbitrary-precision vessel. They intern
 /// and carry identity like any other.
 ///
-/// ★ **What `Wide` still cannot do**: host a sketch frame (`ops::frame_chain` reads
-/// [`nacre_scalar::PlaneName::narrow`]) or ride the exact shortcuts — those decline exactly as
-/// they declined on a missing name, until S4's `Canonical` placement opens frames without names.
+/// ★ **What `Wide` cannot do**: ride the narrow shortcuts —
+/// [`nacre_scalar::PlaneName::narrow`] is `None`, so they decline exactly as they decline on a
+/// missing name. It does host a sketch frame, through the arbitrary-precision frame road.
 /// The non-rotated coplanarity test reads the faces' own triangles and never looks at a name.
 ///
 /// ★★ **Bounded by the type, not by the corpus.** A canonical name is a product of two point
@@ -319,20 +317,18 @@ type CylinderKey = (CylinderDef, Option<Handle<MotionNode>>);
 pub static WIDE_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// How many pushes interned onto a **seeded world plane** (handles 0–2) — the census stat that
-/// explains a plane-digest diff the wide counter cannot (S9): a seeding-shaped change moves
+/// explains a plane-digest diff the wide counter cannot: a seeding-shaped change moves
 /// survivors by *name collision*, not by width, and a falsifiability bridge needs a number for
 /// that population too.
 pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 /// **How far the realization road reaches for surfaces** — principle 4's "one road to a
-/// realization", counted push by push. A vertex reached it whole in cell 52; a plane reached it
-/// **halfway** in cell 58, where the anchor became a function of the truth and the row and the
-/// sense stayed the producer's.
+/// realization", counted push by push. A vertex reaches it whole; a plane reaches it
+/// **halfway**: the anchor is a function of the truth and the row and the
+/// sense stay the producer's.
 ///
-/// ⚠ These were first added to measure *before* anything was wired, so that the census diff the
-/// wiring caused could be predicted. They kept their meaning afterwards because
-/// `Model::apply_derivation` (private, so not a link) counts before it overwrites: `differs`
-/// still reads "how far the
+/// ⚠ `Model::apply_derivation` (private, so not a link) counts before it overwrites: `differs`
+/// reads "how far the
 /// producer's value was from the truth's", not "how far the cache moved after the fact".
 ///
 /// Read through [`surface_derive_counts`]; the census prints them as `stat` rows, the same
@@ -471,8 +467,7 @@ impl Orientation {
 }
 
 /// **A surface's exact truth** — what the surface *is*, as opposed to the f64
-/// [`Surface`](nacre_geom::Surface) beside it, which is its realization (S6b,
-/// `docs/truth-and-cache.md`).
+/// [`Surface`](nacre_geom::Surface) beside it, which is its realization.
 ///
 /// The `motion` field is what the retired `SurfaceDef` used to say from a side table: `None` is the
 /// world (`Constructed`), `Some` names the motion history the data is stated *before*
@@ -493,7 +488,7 @@ pub enum Surface {
         /// The motion history carrying the points out to the world; `None` = the world itself.
         motion: Option<Handle<MotionNode>>,
     },
-    /// A cylinder's exact truth (M6-0): the rational statement of its lateral surface, beside
+    /// A cylinder's exact truth: the rational statement of its lateral surface, beside
     /// the same motion slot a plane carries — a *moved* cylinder records its history instead of
     /// silently degrading (the old side-table path demoted it to `Inexact`).
     Cylinder {
@@ -506,7 +501,7 @@ pub enum Surface {
 
 /// A plane's three points — the kind of statement is the variant. `Known` carries values
 /// (construction planes — walls, caps, caller-stated planes); `Through` points at model vertices
-/// (datum planes — S5, `docs/truth-and-cache.md`).
+/// (datum planes).
 ///
 /// ★ **`Known` is nine `Rat` (288 B) beside three handles (24 B), and it stays unboxed.** The
 /// size gap is not new — every plane already pays it — and `Known` is very nearly the whole
@@ -536,7 +531,7 @@ pub enum PlanePoints {
     Through([nacre_store::Handle<Vertex>; 3]),
 }
 
-/// **A cylinder's exact truth** (M6-0): the lateral surface as its producer stated it — origin,
+/// **A cylinder's exact truth**: the lateral surface as its producer stated it — origin,
 /// axis direction, seam reference direction and **squared** radius, all rational, in the
 /// pre-motion frame.
 ///
@@ -544,11 +539,11 @@ pub enum PlanePoints {
 /// divides by an irrational length and would destroy the exact form. The f64 cache
 /// ([`nacre_geom::Cylinder`]) holds the realized unit frame; this holds what the cylinder *is*.
 /// The component form is the cylinder's analogue of a plane's *points* — a direct lift of the
-/// caller's vocabulary plus component shuffles, never a derived product (the shape the
-/// falsification table forbids for coefficients).
+/// caller's vocabulary plus component shuffles, never a derived product (the shape
+/// forbidden for coefficients).
 ///
 /// ★★ **`ref_dir` is model geometry, not a chart choice.** It fixes the seam permanently
-/// (`θ = 0` on the `+ref_dir` side of the axis); the rational half-angle chart (M6-1) places its
+/// (`θ = 0` on the `+ref_dir` side of the axis); the rational half-angle chart places its
 /// own excluded point *on* this seam — the chart adapts to the seam, never the reverse.
 ///
 /// Construction is checked ([`CylinderDef::new`]); fields are private so a literal cannot bypass
@@ -683,7 +678,7 @@ pub struct Model {
     /// not a realization of it. Total: a surface cannot enter without its truth, which is what
     /// retired `SurfaceDef`/`Inexact` and the point-less population.
     ///
-    /// ★ Private (stage S1, `docs/truth-and-cache.md`): a surface can only enter through
+    /// ★ Private: a surface can only enter through
     /// [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth —
     /// a surface **without** a record is unrepresentable from outside this crate. Read through
     /// [`Model::surface`]/[`Model::surface_cache`]/[`Model::surface_count`]; there is
@@ -703,20 +698,21 @@ pub struct Model {
     /// The three seeded world planes, in normal-axis order Z(XY)·X(YZ)·Y(ZX) — captured at
     /// [`Model::new`] so [`Model::world_plane`] needs no handle minting. Always length 3.
     world_planes: Vec<Handle<Surface>>,
-    /// Per-edge curve caches, index-parallel to `edges` (S8) — **cache, not truth**: the
+    /// Per-edge curve caches, index-parallel to `edges` — **cache, not truth**: the
     /// carriers and endpoints decide the curve ([`Model::derive_edge_curve`]), and
     /// [`Model::rebuild_edge_cache`] discards and regenerates the lot. Filled eagerly by
     /// [`Model::push_edge`]; read through [`Model::edge_curve`]. A raw `edges.push` without a
     /// cache entry desyncs the two — the accessor's debug_assert and validate's parallelism
-    /// check watch for that (the store stays `pub` per the doc's final shape).
+    /// check watch for that (the store stays `pub`).
     edge_cache: Vec<EdgeCache>,
-    /// Per-vertex coordinate caches, index-parallel to `vertices` (S7) — the coordinate and what
+    /// Per-vertex coordinate caches, index-parallel to `vertices` — the coordinate and what
     /// has been proven about it. Filled by [`Model::push_vertex`]; read through
     /// [`Model::vertex_cache`] or its coordinate piece [`Model::vertex_point`].
     vertex_cache: Vec<PointCache>,
-    /// The motion-history forest (§CIP ⑦): motion definitions named by moved surfaces. Not geometry — a definition store.
+    /// The motion-history forest: motion definitions named by moved surfaces. Not geometry — a
+    /// definition store.
     ///
-    /// **Interned** — private (S1), so writing through [`Model::push_motion`] is enforced by the
+    /// **Interned** — private, so writing through [`Model::push_motion`] is enforced by the
     /// type, not by discipline. Read through [`Model::motion`].
     motions: Store<MotionNode>,
     /// Interning table for [`Model::push_motion`]: the handle already issued for a given
@@ -729,7 +725,7 @@ pub struct Model {
     /// keeps an un-normalized normal whose length follows the *face's size*, so the same plane
     /// reaches `coefficients()` as `[2.2, 0, 0, −6.6000000000000005]` from one face and
     /// `[13.2, 0, 0, −39.599999999999994]` from another — not exactly proportional, because `d`
-    /// is a rounded product. Canonical names have no scale to disagree about, and since S2 the
+    /// is a rounded product. Canonical names have no scale to disagree about, and the
     /// vessel is arbitrary-precision (`Narrow | Wide`) so **width cannot lose a name either**.
     ///
     /// ★★ **Built from the dimensions the user wrote, never lifted from the f64 coefficients
@@ -740,8 +736,7 @@ pub struct Model {
     /// `motion: None`, and the **pre-motion** frame for a moved surface, whose world
     /// coefficients are irrational and so cannot be written
     /// down at all. A moved surface therefore inherits its source's name unchanged: the motion
-    /// is recorded beside it, not folded into it. (That pairing — an exact name plus a
-    /// motion — is the shape `docs/truth-and-cache.md` builds toward.)
+    /// is recorded beside it, not folded into it.
     ///
     /// Absent is ordinary — an f64 construction path (no points to derive from).
     /// Iterate through the faces, never over the map. Arithmetic consumers (frames, `base_rat`,
@@ -761,7 +756,7 @@ pub struct Model {
     /// normal — so it is not part of what makes two planes the same.
     surface_ids: HashMap<SurfaceKey, Handle<Surface>>,
     /// Interning for the planes the name key **cannot** hold: a `Through` statement whose exact
-    /// world coefficients are irrational (mixed-frame datum — open item 16) has no canonical
+    /// world coefficients are irrational (mixed-frame datum) has no canonical
     /// name, so it interns by the **statement itself**: the sorted vertex triple and the motion
     /// it is stated under.
     ///
@@ -771,7 +766,7 @@ pub struct Model {
     /// What this table guarantees is the same thing construction-time sorting guarantees one
     /// level down — **the same statement never becomes two handles.**
     surface_through_ids: HashMap<ThroughKey, Handle<Surface>>,
-    /// Interning for cylinders (M6-0) — by the whole exact statement plus motion; see
+    /// Interning for cylinders — by the whole exact statement plus motion; see
     /// [`CylinderKey`] for why the key is deliberately this literal.
     cylinder_ids: HashMap<CylinderKey, Handle<Surface>>,
     // topology (references geometry by Handle only)
@@ -780,7 +775,7 @@ pub struct Model {
     faces: Store<Face>,
     shells: Store<Shell>,
     solids: Store<Solid>,
-    /// The live solids — the "current model" (design §2 supersede semantics).
+    /// The live solids — the "current model" (supersede semantics).
     /// Editing ops supersede topology by pushing new cells and updating this
     /// list; the old cells stay in the append-only arena but, unreferenced by
     /// any live solid, drop out of the reachable closure. Producers register
@@ -906,13 +901,13 @@ pub struct SurfaceCache {
     realized: nacre_geom::Surface,
 }
 
-/// The handles reachable from a model's live solids — the live model (design §2).
+/// The handles reachable from a model's live solids — the live model.
 ///
 /// Only the sets consumers need today: `validate`'s Euler counts vertices/edges/
 /// faces/shells, and `Adjacency`/loop/incidence walk faces/edges. Surfaces and
 /// curves are not tracked: the M4 face ops never orphan a *used* one, and the three
-/// seeded world planes (S9) are deliberately face-less — traversal through
-/// definitions (world planes, datum references) is 열린 항목 4.
+/// seeded world planes are deliberately face-less — traversal through
+/// definitions (world planes, datum references) is not built.
 #[derive(Debug, Default)]
 pub struct Reachable {
     pub vertices: HashSet<Handle<Vertex>>,
@@ -953,8 +948,8 @@ impl Loop {
     }
 }
 
-/// `Default` is [`Model::new`] — **seeded**. The derive used to hand out an *empty* model,
-/// which after S9 would be one without the world planes: a public back door to the state the
+/// `Default` is [`Model::new`] — **seeded**. A derived `Default` would hand out an *empty* model —
+/// one without the world planes: a public back door to the state the
 /// seeding exists to remove. There is deliberately no unseeded constructor.
 impl Default for Model {
     fn default() -> Self {
@@ -965,7 +960,7 @@ impl Default for Model {
 impl Model {
     /// A model with the three **world axis planes pre-seeded** — surface handles 0 (XY, z = 0),
     /// 1 (YZ, x = 0), 2 (ZX, y = 0), deterministic so a replayed log and a live session name the
-    /// same planes (`docs/truth-and-cache.md` rule: 세계 축 평면 셋은 `Model::new()` 가 심는다).
+    /// same planes.
     ///
     /// Each seed's truth is the canonical triple `[0, u, v]` — the very points
     /// `SketchPlane::world_*` states — so any later producer of the same plane (a cuboid face on
@@ -1098,7 +1093,7 @@ impl Model {
         self.adj = adj;
     }
 
-    /// Push a solid into the store **and mark it live** (design §2). This is the
+    /// Push a solid into the store **and mark it live**. This is the
     /// blessed way for a producer to add a solid; the reachable closure
     /// ([`Model::reachable`]) grows to include it. Editing ops instead mutate
     /// [`Model::live_solids`] directly (drop the superseded solid, add the new).
@@ -1108,13 +1103,13 @@ impl Model {
         h
     }
 
-    /// The live solids — the "current model" (design §2 supersede semantics).
+    /// The live solids — the "current model" (supersede semantics).
     #[inline]
     pub fn live_solids(&self) -> &[Handle<Solid>] {
         &self.live_solids
     }
 
-    /// **Drop these solids from the live set** — supersede, the editing ops' half of design §2.
+    /// **Drop these solids from the live set** — supersede, the editing ops' half.
     ///
     /// ⚠★★★ **Order-preserving on the survivors, and that is load-bearing, not incidental.**
     /// `nacre_step::to_step` exports the live set **in order**, so permuting it here would
@@ -1187,28 +1182,28 @@ impl Model {
     /// motion — so the two cannot come apart.
     ///
     /// ★★★★ **The truth comes first because the arena holds it, and the cache is derived from it
-    /// here** (cell 58): this door calls [`Model::apply_derivation`], so what the producer hands
+    /// here**: this door calls [`Model::apply_derivation`], so what the producer hands
     /// in survives only in the parts the truth does not decide — the row (`raw`) and with it the
     /// sense — and wholesale where [`Model::derive_surface_cache`] declines.
-    /// ⚠ The anchor is the half that moved; «the door takes only the truth» is **not** reached
+    /// ⚠ Only the anchor is derived; «the door takes only the truth» is **not** reached
     /// while `cache` is still a parameter.
     ///
-    /// ★★★ **Two doors split by kind, rather than one taking both enums.** The predecessor
+    /// ★★★ **Two doors split by kind, rather than one taking both enums.** A single
     /// `push_raw(truth: Surface, cache: nacre_geom::Surface)` could be handed a plane truth
-    /// beside a cylinder cache. Nothing ever did — measured: no such defect in the dev-log, and
-    /// the body never changed after it was written — but **four** sites downstream carried an
-    /// `unreachable!` to say the pairing holds. A typed door makes the mismatch unspellable, and
-    /// those four now cite the door instead of asserting the fact.
+    /// beside a cylinder cache, and **four** sites downstream would need an `unreachable!` to
+    /// say the pairing holds. A typed door makes the mismatch unspellable, and those four cite
+    /// the door instead of asserting the fact.
     ///
     /// ⚠ **No lock here, and this is why.** The proposition is the signature itself, and a
     /// `compile_fail` doc-test cannot reach a private function to demonstrate it. The public
     /// doors ([`Model::push_plane`], [`Model::push_cylinder`]) already took narrow types; what
     /// was wide was this crate-internal one. Recorded rather than locked.
     ///
-    /// ★★★ **The name enters here too** (cell 58), for the same reason the cache does: this is
+    /// ★★★ **The name enters here too**, for the same reason the cache does: this is
     /// the one place a plane reaches the arena, so it is the one place that can derive a cache
-    /// from the truth — and the derivation reads the name. Interning used to insert it one line
-    /// later, which left a window in which a surface existed without the name that describes it.
+    /// from the truth — and the derivation reads the name. Inserting it one line later
+    /// (at interning) would leave a window in which a surface exists without the name that
+    /// describes it.
     fn push_plane_raw(
         &mut self,
         points: PlanePoints,
@@ -1233,7 +1228,7 @@ impl Model {
     }
 
     /// **Realize this surface's cache from its truth**, keeping the producer's value where the
-    /// truth cannot say ([`Model::derive_surface_cache`] declines) — cell 58's wiring.
+    /// truth cannot say ([`Model::derive_surface_cache`] declines).
     ///
     /// ★ Counting happens **first**, against the value the producer stated, so the census `stat`
     /// rows keep meaning "how far the producer's value was from the truth's".
@@ -1271,15 +1266,14 @@ impl Model {
 
     /// **The f64 cache this surface's truth realizes to** — principle 4's road, for surfaces.
     ///
-    /// A vertex has had one since cell 52 (`push_vertex_realized` realizes the definition at
-    /// birth). A surface got **half** of one in cell 58: the anchor is derived here, the row and
-    /// the sense are still whatever the producer handed in.
+    /// A vertex has a whole one (`push_vertex_realized` realizes the definition at
+    /// birth). A surface has **half** of one: the anchor is derived here, the row and
+    /// the sense are whatever the producer handed in.
     ///
-    /// ★ **What that half ended** — the measurements this function was built from, kept in the
-    /// past tense because they no longer describe the stored cache: a tilted plane's anchor
-    /// varied by up to **22 ulps** with which face asked for the plane first, and for **20 of 29**
-    /// moved planes the stored anchor did not satisfy the plane's own coefficients. The anchor is
-    /// now a function of the truth, so neither varies with who asked.
+    /// ★ **What that half buys** (measured): a producer-stated anchor on a tilted plane
+    /// varies by up to **22 ulps** with which face asked for the plane first, and for **20 of 29**
+    /// moved planes it does not satisfy the plane's own coefficients. The anchor is
+    /// a function of the truth, so neither varies with who asked.
     ///
     /// What it derives:
     /// * **Plane** — the **anchor**, and nothing else: the truth's first point, carried to the
@@ -1289,8 +1283,8 @@ impl Model {
     ///   direction and `ref_dir` do not (`Cylinder::from_axis` normalizes both). ⚠ Nothing
     ///   **applies** this arm today — [`Model::push_cylinder_raw`] only measures it.
     ///
-    /// ★★★★★ **Why the anchor and not the row** (cell 58, measured). A canonical row is the
-    /// tidier answer and it was tried: it moves 32 census result rows, costs an exact-coefficient
+    /// ★★★★★ **Why the anchor and not the row** (measured). A canonical row is the
+    /// tidier answer, but it moves 32 census result rows, costs an exact-coefficient
     /// road (`WorkingPlane::reconcile` gates on `Plane::spans_exactly`, which a rescaled row
     /// fails), and makes `plane_origin_projection` square the coefficients — which overflows for
     /// 8 of this corpus's planes and spends half the `i128` width budget. The anchor costs none
@@ -1301,7 +1295,7 @@ impl Model {
     /// ⚠ **This is not «the cache is a function of the geometry».** The anchor is the *first*
     /// point of the *first* pusher's triple; two files whose first pushers state the plane
     /// differently still differ. Inside one model interning makes that unreachable — one name,
-    /// one handle, one truth. See `docs/truth-and-cache.md` for the boundary.
+    /// one handle, one truth.
     ///
     /// ☑ **The sense cannot come from the truth** (measured): 342 non-seed `Known` planes carry a
     /// cache normal opposing their own point order, so the point order does not name a direction.
@@ -1361,8 +1355,7 @@ impl Model {
     }
 
     /// Count what [`Model::derive_surface_cache`] would do at this push, and change nothing —
-    /// the measuring half of cell 58, which runs a commit before the wiring so that the census
-    /// diff the wiring causes is **predicted before it happens**.
+    /// the measuring half of [`Model::apply_derivation`], for the doors that do not apply it.
     fn measure_derivation(&self, h: Handle<Surface>) {
         use std::sync::atomic::Ordering::Relaxed;
         match self.derive_surface_cache(h) {
@@ -1415,7 +1408,7 @@ impl Model {
     /// truth **is** the arena entry a handle names, which is what retired `SurfaceDef::Inexact`
     /// and the `UndefinedSurface` violation.
     ///
-    /// ★★★★ **Which door answers which question** (open item 34, measured 2026-09-17).
+    /// ★★★★ **Which door answers which question** (measured).
     /// **Classification, comparison and branching ask the truth**; display, tessellation,
     /// bounding and measurement ask [`Model::surface_cache`]. A *kind* — "is this face planar"
     /// — is a fact about what the surface **is**, so it is asked here even though the cache
@@ -1452,9 +1445,8 @@ impl Model {
     /// where that guard lives (*"Handle was minted by a different Store"*), so a cache read asks
     /// its store first and throws the answer away.
     ///
-    /// ★ Measured (2026-09-11): before the arena held the truth, `Model::surface` **was** a
-    /// `Store::get` and carried this guard for free; indexing the cache alone dropped it, while
-    /// `vertex_point`/`edge_curve` had never had it. A foreign handle reached all three without a
+    /// ★ Measured: a `Store::get` carries this guard for free; indexing a cache alone drops
+    /// it, and a foreign handle reaches `surface_cache`/`vertex_point`/`edge_curve` without a
     /// sound. Release builds pay nothing — `Store::get`'s assertion is `cfg(debug_assertions)`
     /// and so is this call.
     #[inline]
@@ -1466,12 +1458,12 @@ impl Model {
     /// The surface a handle names, realized — the **f64 cache** of [`Model::surface`]'s
     /// answer.
     ///
-    /// ★★★★ **What belongs here** (open item 34): display, tessellation, bounding and
+    /// ★★★★ **What belongs here**: display, tessellation, bounding and
     /// measurement — every question whose answer is a number a rounded copy can carry, plus the
     /// one that compares a cached coordinate against its cached carrier. A *kind* question does
     /// not, even though it would answer correctly; [`Model::surface`] says why.
     ///
-    /// Reading is open; **writing is not** — the store is private (S1), so a surface can only
+    /// Reading is open; **writing is not** — the store is private, so a surface can only
     /// enter through [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth. The
     /// lock:
     ///
@@ -1501,7 +1493,7 @@ impl Model {
     }
 
     /// The surface an **index** names — how a log's index vocabulary is re-anchored onto the model
-    /// being built (`docs/design.md` §2).
+    /// being built.
     ///
     /// A handle in an operation log carries only its index across models, so `replay` turns that
     /// index back into a handle of its own arena before applying the operation. `None` past the
@@ -1536,7 +1528,7 @@ impl Model {
 
     /// The vertex a handle names — the **truth**, which for a vertex is its definition.
     ///
-    /// ★ One door per entity per side, as `docs/truth-and-cache.md` §「문의 이름」 sets out:
+    /// ★ One door per entity per side:
     /// `x(h)` is the arena entry itself, `x_cache(h)` is what was realized from it, and the pieces
     /// underneath are reached by chaining on the returned type rather than by more doors here.
     #[inline]
@@ -1840,14 +1832,9 @@ impl Model {
     ) -> (Handle<Surface>, bool) {
         // ★★★★★ **The name is derived, so it cannot disagree with the thing it names.**
         // `plane_name_exact` computes the canonical form at unbounded precision — `None` only
-        // for collinear points (which no production `PlaneDef` can supply); since S2 the vessel
+        // for collinear points (which no production `PlaneDef` can supply); the vessel
         // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
         // ones included. [`WIDE_PLANES`] counts the names that took the wide vessel.
-        // ★★★★★ **The name is derived, so it cannot disagree with the thing it names.**
-        // `plane_name_exact` computes the canonical form at unbounded precision — `None` only
-        // for collinear points (which no production `PlaneDef` can supply); since S2 the vessel
-        // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
-        // ones included.
         let name = nacre_scalar::plane_name_exact(points[0], points[1], points[2]);
         self.intern_plane(cache, name, PlanePoints::Known(points), motion)
     }
@@ -1879,7 +1866,7 @@ impl Model {
                 // ★ The cache the caller built is **dropped here** — the survivor's stands. That
                 // is what makes a plane's realization depend on which face asked first, and
                 // [`Model::count_discarded_cache`] is the only measurement of how often the two
-                // actually differ (cell 58).
+                // actually differ.
                 self.count_discarded_cache(h, &cache);
                 // Same plane, already issued. The canonical form says nothing about direction, so
                 // report whether the survivor points the other way and let the caller spell its
@@ -1919,14 +1906,14 @@ impl Model {
     /// the same statement in any order). Direction is not lost: it lives in the frame's measured
     /// `flip`, exactly as it does for a stated plane.
     ///
-    /// ★★ **A statement the name key cannot hold still interns — by the statement itself**
-    /// (open item 16). A mixed-frame datum's exact world coefficients are irrational, so
+    /// ★★ **A statement the name key cannot hold still interns — by the statement itself.**
+    /// A mixed-frame datum's exact world coefficients are irrational, so
     /// [`Model::plane_name_through`] answers `None`; such a plane takes the second key
     /// (`surface_through_ids`) — the sorted triple and the motion. That is *statement*
     /// identity: the same three vertices under the same motion are one handle, and geometric
     /// identity across different statements is the predicates' to answer per question (rule 6's
     /// own qualification — *"interning 없이 술어가 매번 답한다"*). This is **not** the
-    /// record-less population S2 drained: the truth (handles + motion) is complete; what does
+    /// record-less population: the truth (handles + motion) is complete; what does
     /// not exist is a rational description of it.
     ///
     /// ★ The producer remains responsible for rejecting **before** pushing whatever it cannot
@@ -1961,7 +1948,7 @@ impl Model {
     ///
     /// `None` when any vertex is not a three-plane point, when the carriers do not share one
     /// motion (no frame holds a rational coordinate then), or when the three points are
-    /// collinear. ★ A meet too wide for `Rat` is **not** on the list since open item 17: the
+    /// collinear. ★ A meet too wide for `Rat` is **not** on the list: the
     /// name is derived from the meets at whatever width they need
     /// ([`nacre_scalar::plane_name_from_meets`]) — width was the arithmetic's problem, never
     /// the statement's.
@@ -2042,7 +2029,7 @@ impl Model {
             // variant is a compile error, not a silent fall-through).
             Vertex::OnSeam(_) | Vertex::Pierce { .. } => return None,
         };
-        // ★★★ **The third door — solve in the world** (2026-08-24). The two below want *one*
+        // ★★★ **The third door — solve in the world**. The two below want *one*
         // frame: the world (nothing moved) or one shared chain. A second-generation array breaks
         // both — an array fused in x and then moved in y puts carriers with chains `T2` and
         // `T1·T2` on one corner — and yet every one of those planes states the world exactly,
@@ -2127,7 +2114,7 @@ impl Model {
         }
     }
 
-    /// Push a **cylinder** — the lateral surface, stating its exact truth (M6-0), with
+    /// Push a **cylinder** — the lateral surface, stating its exact truth, with
     /// interning by the whole statement (see [`CylinderKey`] for why the key is deliberately
     /// that literal: merging two `ref_dir`s would split the seam). No `flipped` report — a
     /// literal-identical statement realizes to a literal-identical cache, so there is no other
@@ -2169,7 +2156,7 @@ impl Model {
     /// [`Shell`], but **reuses** `src`'s surfaces, edges, curves, and vertices —
     /// which stay valid handles after the source solid is superseded
     /// (append-only). This is the building block for a cavity (void) shell: the
-    /// boundary of a solid whose interior becomes empty space (design §8 M5
+    /// boundary of a solid whose interior becomes empty space (M5
     /// containment). The reversed winding keeps each shared edge used with
     /// opposed half-edges (a valid 2-manifold), and the toggled orientation makes
     /// the outward normal point into the void.
@@ -2190,7 +2177,7 @@ impl Model {
         self.shells.push(Shell { faces })
     }
 
-    /// A vertex's cache — **the one road to a coordinate from a vertex** (S7), read from the
+    /// A vertex's cache — **the one road to a coordinate from a vertex**, read from the
     /// index-parallel store [`Model::push_vertex`] fills. The coordinate piece is
     /// [`Model::vertex_point`] and the proven bound is [`PointCache::bound`]; read the whole when
     /// the variant itself — what the cache *knows* — is the question.
@@ -2272,7 +2259,7 @@ impl Model {
         *slot = PointCache::Bounded { coord, bound };
     }
 
-    /// An edge's curve — **the one road to a curve from an edge** (S8), read from the
+    /// An edge's curve — **the one road to a curve from an edge**, read from the
     /// index-parallel cache [`Model::push_edge`] fills.
     #[inline]
     pub fn edge_curve(&self, e: Handle<Edge>) -> &Curve {
@@ -2287,7 +2274,7 @@ impl Model {
     }
 
     /// Push an edge: canonicalize the carrier pair, derive its curve, fill the cache — the one
-    /// write road (S8). `None` when the curve does not derive, which for the line arms means
+    /// write road. `None` when the curve does not derive, which for the line arms means
     /// coincident endpoints (a zero-length edge); the caller maps that to its own reject
     /// (`DegenerateGeometry` / `ZeroLengthEdge`). ★ A rim is `[v, v]` and NOT degenerate — the
     /// circle arm never reads the endpoints (see [`Model::derive_edge_curve`]).
@@ -2389,8 +2376,8 @@ impl Model {
         self.shells.push(shell)
     }
 
-    /// Discard every edge-curve cache and derive it afresh — the «cache, not truth» warrant
-    /// (`docs/truth-and-cache.md`): nothing is lost, because nothing there was truth.
+    /// Discard every edge-curve cache and derive it afresh — the «cache, not truth» warrant:
+    /// nothing is lost, because nothing there was truth.
     /// ⚠★★★ **Only the reachable edges are re-derived, and a superseded one keeps what it has.**
     /// The arena is append-only, so most of what is in it is dead: measured, a boolean corner has
     /// 24 dead edges of 48, a twice-cut one 60 of 108, a thrice-moved box 36 of 48. Re-deriving
@@ -2425,26 +2412,25 @@ impl Model {
     /// corners is the first thing every consumer above does, and it was written
     /// twice (with two different failure policies) before this existed.
     ///
-    /// Total: every edge has both endpoints (S8 dropped the `Option`), and a closed rim
+    /// Total: every edge has both endpoints by type, and a closed rim
     /// states that by repeating its seam vertex — `[v, v]`, so the start is `v` either way.
     /// A standalone full circle with no seam would have no start, but the type does not
     /// express that form: it is a wireframe/open-shell element and a v1 non-goal. Nothing
-    /// guards it any more because nothing can build it — S8 retired the `Option` here, and the
-    /// unsupported-boundary arms that used to catch it have nothing left to catch.
+    /// guards it because nothing can build it.
     #[inline]
     pub fn he_start(&self, he: HalfEdge) -> Handle<Vertex> {
         let [a, b] = self.edges.get(he.edge).vertices;
         if he.forward { a } else { b }
     }
 
-    /// **An edge's curve, derived from what the model already holds** — the S8 shape of the
+    /// **An edge's curve, derived from what the model already holds** — the edge's
     /// truth/cache split: the carriers and the endpoints decide the curve, so the stored one
     /// is a cache that can be discarded and regenerated.
     ///
     /// Dispatch by carrier type:
     /// * **Plane × Plane** (and the self-adjacent cylinder **seam**): the line through the two
-    ///   endpoint coordinates — the very expression every producer used to build the stored
-    ///   curve, so the derivation is bit-identical, and an endpoint pair that coincides is the
+    ///   endpoint coordinates — the very expression a producer would build the stored
+    ///   curve with, so the derivation is bit-identical, and an endpoint pair that coincides is the
     ///   `None` (a degenerate line — the check lives in this arm only).
     /// * **Plane × Cylinder** (a rim, or an arc of one): the circle centred where the cylinder's
     ///   axis crosses the cap plane, with the **cylinder's** frame (`axis direction`, `ref_dir`,
@@ -2452,7 +2438,7 @@ impl Model {
     ///   tessellation's `θ` parameterization is preserved. The endpoints are not read: a full rim
     ///   is a closed edge (`[v, v]`), which is not a degeneracy.
     ///
-    ///   ★★ **On a circle carrier, the vertex *order* says which arc** (M6-2b): two distinct
+    ///   ★★ **On a circle carrier, the vertex *order* says which arc**: two distinct
     ///   endpoints cut a circle into two pieces the endpoints alone cannot tell apart, so
     ///   `[A, B]` means the piece from A to B **counter-clockwise about the axis direction**,
     ///   and the two complementary arcs between one vertex pair are the two orders. Producers
@@ -2460,8 +2446,7 @@ impl Model {
     ///   the whole circle either way. Both consumers read it the same way: tessellation's
     ///   `sample_edge` walks `θ(v0) → θ(v0) + Δθ` with `Circle::angle_of` as the one spelling of
     ///   θ, and `validate`'s `loop_winding` adds each arc's circular segment with Δθ from the
-    ///   same order — since `019dbd5`, the commit after this convention was written. (An earlier
-    ///   note here said neither consumer knew it yet; that was true for one commit.)
+    ///   same order.
     /// * **Cylinder × Cylinder**: no producer builds one before M6 — `None`, honestly.
     ///
     /// ★ The M3 rim population is axis-perpendicular by construction; a *tilted* plane over a
@@ -2477,7 +2462,7 @@ impl Model {
             let p1 = self.vertex_point(vertices[1]);
             Some(Curve::Line(Line::through_points(p0, p1)?))
         };
-        // ★★ **Both kinds asked of the cache here, deliberately** (open item 34). Every arm
+        // ★★ **Both kinds asked of the cache here, deliberately**. Every arm
         // reads cache *values* out of the very binding it matched — `p.normal()`, `c.axis()`,
         // `c.radius()` — so dispatching on the truth would double the lookups and leave two
         // matches whose agreement no reader could check. The rule sends *kind questions* to the
@@ -2527,7 +2512,7 @@ impl Model {
         }
     }
 
-    /// The handles reachable from the live solids — the live model (design §2).
+    /// The handles reachable from the live solids — the live model.
     ///
     /// Superseded cells left in the append-only arena are excluded (nothing live
     /// references them). Every step is bounds-guarded, so this is safe even on a
@@ -2749,14 +2734,14 @@ impl Model {
         let p_bot = c0 + u * radius; // seam point on the bottom rim (angle 0)
         let p_top = c1 + u * radius; // seam point on the top rim
 
-        // The exact truth (M6-0): a direct lift of the caller's statement — origin and the raw,
+        // The exact truth: a direct lift of the caller's statement — origin and the raw,
         // unnormalized axis (normalizing would destroy the exact form; the `normal_def`
         // precedent). `ref_dir` replicates `any_perpendicular`'s own rule in rationals: cross
         // the axis with the basis axis of its smallest |component| (ties X→Y→Z).
         //
         // ★ **The basis choice reads `d` — the very components `any_perpendicular` reads — so
-        // agreement is structural, not order-theoretic.** The first spelling compared the *raw*
-        // components and argued "one positive scale preserves |·| order"; that is a real-number
+        // agreement is structural, not order-theoretic.** Comparing the *raw*
+        // components on the argument "one positive scale preserves |·| order" is a real-number
         // argument, and f64 division rounds: a strict `|x| > |y|` can collapse to equality in
         // `d`, flipping which side of the `<=` tie-break each rule lands on (measured — axis
         // `[0.34, 0.33999999999999997, 1.0]`: raw picks Y, `d` picks X, seam ~90° apart, the
@@ -2958,7 +2943,7 @@ impl Model {
     /// loop). This forms a valid CW-complex (Euler χ = 2) that
     /// [`validate`](../nacre_validate/fn.validate.html) accepts — a closed periodic surface
     /// needs a seam vertex, so the rims repeat it as `[v, v]` — an endpointless edge (the
-    /// standalone full circle) is a form this type does not express (design §4).
+    /// standalone full circle) is a form this type does not express.
     ///
     /// Returns the solid beside its three faces in push order (lateral, bottom cap, top cap).
     /// `None` if an edge cannot derive its curve from the carriers it states — each caller says
@@ -2975,10 +2960,10 @@ impl Model {
             motion,
         } = parts;
 
-        // ★ **Surfaces before edges** (S8): an edge states its two carriers, so the lateral
+        // ★ **Surfaces before edges**: an edge states its two carriers, so the lateral
         // cylinder and both cap planes must exist first. Separate arenas — the interleaving
         // moves no handle; the surfaces' order among themselves (lateral → bottom cap → top
-        // cap) is what matters and it is unchanged (the `add_cuboid` precedent).
+        // cap) is what matters (the `add_cuboid` precedent).
         let lateral_surface = self.push_cylinder(lateral_cache, def, motion);
         // ★★★ **A cap's plane may already be in the model, facing the other way** — and it is the
         // *rule*, not the exception, once cylinders come from operations: the bottom cap lies on
@@ -2999,9 +2984,9 @@ impl Model {
         };
 
         // A seam vertex lies on two surfaces only — the rim circle's `θ = 0` point. `OnSeam`
-        // states exactly that (S7), and since M6-0 the designation is complete: the cylinder's
+        // states exactly that, and the designation is complete: the cylinder's
         // truth carries `ref_dir`, so the pair means "rim ∩ the `+ref_dir` ray" — one point
-        // (see `Vertex::OnSeam`; regenerating the cached coordinate stays deferred with 3b).
+        // (see `Vertex::OnSeam`; regenerating the cached coordinate is not done here).
         let v_bot = self.push_vertex(
             Vertex::OnSeam([lateral_surface, bottom_cap_surface]),
             PointCache::Unrealized { coord: p_bot },
@@ -3016,7 +3001,7 @@ impl Model {
         let bottom = self.push_edge([lateral_surface, bottom_cap_surface], [v_bot, v_bot])?;
         let top = self.push_edge([lateral_surface, top_cap_surface], [v_top, v_top])?;
         // Self-adjacent: a seam is a parameterization joint of ONE surface, not an
-        // intersection of two — the confirmed spelling (M6-0; see `Edge::surfaces`), guarded
+        // intersection of two — the confirmed spelling (see `Edge::surfaces`), guarded
         // by validate's "self-adjacent ⇔ cylinder" carrier rule.
         let seam = self.push_edge([lateral_surface, lateral_surface], [v_bot, v_top])?;
 
@@ -3104,7 +3089,7 @@ mod tests {
     /// rounded product on each side and the two coefficient vectors are **not exactly
     /// proportional** — the f64 test says "different planes" about one plane. Measured across the
     /// census, 18 pairs are merged only because a second test looks at the faces' coordinates
-    /// instead (`docs/dev-log.md`).
+    /// instead.
     ///
     /// The rational coefficients are built from the corners the caller wrote and canonicalized, so
     /// they have no scale to disagree about and come out **equal**.
@@ -3379,7 +3364,7 @@ mod tests {
         assert_eq!(m.face_count(), 6);
         assert_eq!(m.shell_count(), 1);
         assert_eq!(m.solid_count(), 1);
-        // Still 6 — but differently composed since S9: the origin box's bottom/left/front
+        // 6, composed with the seeds: the origin box's bottom/left/front
         // faces intern onto the three seeded world planes (same name, same handle), so the
         // arena holds 3 seeds + 3 fresh (top/back/right). Seeding adds nothing here precisely
         // because the seeds are these planes.
@@ -3462,7 +3447,7 @@ mod tests {
     /// ★★★★ **The write doors bite** — the negative control for [`Model::push_face`] and
     /// [`Model::push_shell`].
     ///
-    /// ★ Cell 56 measured that *every face the product builds closes its loop*: one temporary
+    /// ★ It is measured that *every face the product builds closes its loop*: one temporary
     /// assertion, the whole suite, 1324 tests, a single red — and that one was a fixture whose
     /// own comment called it a franken-face. That is a **different proposition** from *the
     /// assertion refuses a face that does not close*. The first says the population is clean;
@@ -3470,10 +3455,10 @@ mod tests {
     /// doors could assert nothing at all and every green would still be green.
     ///
     /// Each case violates **exactly one** assertion and the panic **message is checked**, because
-    /// the first draft of this test only asked "did it panic" and two cases were green for the
-    /// wrong reason: they cloned a face out of a *throwaway* model, so walking its loop hit
+    /// asking only "did it panic" lets a case go green for the wrong reason: a face
+    /// cloned out of a *throwaway* model makes walking its loop hit
     /// `Store`'s cross-model handle guard before ever reaching the door's own assertion. The face
-    /// now comes from the very model it is pushed into, and only the out-of-bounds handles are
+    /// comes from the very model it is pushed into, and only the out-of-bounds handles are
     /// strangers — those are read with `.index()`, which no guard sees. The assertions are
     /// `debug_assert`, so this test is `cfg(debug_assertions)` — the shape the foreign-handle
     /// lock above already uses. Panic output is left unsuppressed on purpose: swapping the
@@ -3694,7 +3679,7 @@ mod tests {
         );
     }
 
-    /// ★★ S8, the «discard and regenerate» warrant: the edge-curve cache rebuilt from the
+    /// ★★ The «discard and regenerate» warrant: the edge-curve cache rebuilt from the
     /// carriers and endpoints is bit-identical to the one `push_edge` filled eagerly — proof
     /// that nothing in it was truth.
     #[test]
@@ -3824,8 +3809,8 @@ mod tests {
         assert_eq!(caps, 2);
     }
 
-    /// ★★ S7: **a seam vertex states its two carriers** — `OnSeam([lateral, its own cap])`.
-    /// The pair pins the rim circle; the coordinate pins the point until M6's `ref_dir` truth
+    /// ★★ **A seam vertex states its two carriers** — `OnSeam([lateral, its own cap])`.
+    /// The pair pins the rim circle; the cylinder's `ref_dir` truth pins the point
     /// (see `Vertex::OnSeam`). The lateral surface must be the cylinder, the other its cap.
     #[test]
     fn a_seam_vertex_states_its_rim_carriers() {
@@ -3869,7 +3854,7 @@ mod tests {
             let uses = &m.adj.edge_uses[&eh];
             assert_eq!(uses.len(), 2);
             assert_ne!(uses[0].1, uses[1].1); // opposite orientation
-            // The seam's discriminator IS the new invariant: self-adjacent carriers (S8).
+            // The seam's discriminator IS the invariant: self-adjacent carriers.
             if m.edge(eh).surfaces[0] == m.edge(eh).surfaces[1] {
                 seam_uses = Some(uses.clone());
             }
@@ -4133,24 +4118,24 @@ mod tests {
         // name" arm retired with the old API; the type is the assertion now.)
     }
 
-    /// ★★★★★ **A wide name interns — and opens no shortcut** (S2's whole behavioral change).
+    /// ★★★★★ **A wide name interns — and opens no shortcut**.
     ///
     /// The fixture is a triple whose **canonical answer** exceeds `i128` (cross-product terms
     /// multiply two ~2^90 coprime numerators — the same triple `nacre-scalar` locks as `Wide`).
-    /// Before S2 such a plane got no name at all, so two statements of it were two handles;
-    /// now it interns like any other.
+    /// Without a name two statements of such a plane would be two handles;
+    /// it interns like any other.
     ///
     /// ★ Note the population: an axis-aligned cuboid — even on seventeen-digit corners — is NOT
     /// wide, because its canonical answers are tiny (`[10^13, 0, 0, −c]`); only the *narrow
-    /// route's intermediates* overflow there, and the big route has named those since it exists.
-    /// ★★ Measured while building S4's end-to-end lock: today's sketch→extrude walls cap out
+    /// route's intermediates* overflow there, and the big route names those.
+    /// ★★ Measured: today's sketch→extrude walls cap out
     /// around ~115 bits (the decimal window bounds the products), so a wide name currently
-    /// arises only from hand-stated triples like this one — datum planes (S5) are the coming
+    /// arises only from hand-stated triples like this one — datum planes are the
     /// production source.
     ///
     /// What a wide name still does not do: `narrow()` is `None`, so the **narrow shortcuts**
-    /// (`base_rat`, integer Shewchuk, `Isometry` transport) decline exactly as they did on a
-    /// missing name. Since S4 a wide name **does** host a sketch frame — through the
+    /// (`base_rat`, integer Shewchuk, `Isometry` transport) decline exactly as they do on a
+    /// missing name. A wide name **does** host a sketch frame — through the
     /// arbitrary-precision road (`FramePlacement::Canonical`, locked in nacre-ops) — so what
     /// this pins is the shortcut boundary, not a frame one.
     #[test]
@@ -4199,7 +4184,7 @@ mod tests {
         );
     }
 
-    /// ★★ **A statement the name key cannot hold interns by the statement** (open item 16).
+    /// ★★ **A statement the name key cannot hold interns by the statement**.
     ///
     /// The fixture reaches namelessness through `OnSeam` carriers — the cheapest population
     /// `plane_name_through` declines inside this crate. Semantically an ops producer would
@@ -4284,7 +4269,7 @@ mod tests {
         assert_ne!(h, moved, "the motion belongs in the statement key");
     }
 
-    /// ★★★ S9: **the three world planes are born with the model** — deterministic handles,
+    /// ★★★ **The three world planes are born with the model** — deterministic handles,
     /// canonical truth, −axis caches — and `Default` is the same seeded model (the unseeded
     /// back door is closed).
     #[test]
@@ -4329,19 +4314,19 @@ mod tests {
         }
     }
 
-    /// ★★★★★ **Cell 58's proposition, at its smallest**: a plane's realized cache does not depend
-    /// on **which point of it the producer anchored at**.
+    /// ★★★★★ **The anchor derivation's proposition, at its smallest**: a plane's realized cache
+    /// does not depend on **which point of it the producer anchored at**.
     ///
     /// One truth, two producers: each builds its own `Plane` at a different point of that same
     /// plane, facing the same way. Their values differ — asserted first, on what the *producers*
     /// built, because the door now overwrites what it is handed and reading it back would compare
     /// the derivation against itself.
     ///
-    /// ⚠★★★ **The stronger claim this test used to make is gone, deliberately.** It stated one
-    /// plane through two *different* triples and demanded one cache. Interning folds two such
+    /// ⚠★★★ **The stronger claim is not made, deliberately** — one
+    /// plane through two *different* triples demanding one cache. Interning folds two such
     /// statements into **one handle and one truth** (the first pusher's), so no model can hold
     /// them at once — the kernel never needed that property, and buying it meant a canonical row,
-    /// which cell 58 measured and rejected (32 census result rows moved, an exact-coefficient road
+    /// which is measured and rejected (32 census result rows moved, an exact-coefficient road
     /// lost, `n·n` overflowing for 8 planes). What survives is the reachable half.
     ///
     /// ★ This lock watches the **door**; `plane_anchor.rs`'s
@@ -4398,10 +4383,9 @@ mod tests {
     /// and the seeds are the most-interned planes there are, so this is where a derivation that
     /// moved anchors would be felt first.
     ///
-    /// ⚠ This test used to assert that the derived **normal** matched the stored one and carried
-    /// no negative zero. Both were propositions about the *canonical-row* design that cell 58
-    /// measured and rejected; with the row copied verbatim they are **tautologies**, and a lock
-    /// that cannot fail is worse than no lock. Re-aimed at the one thing the derivation decides.
+    /// ⚠ This does not assert that the derived **normal** matches the stored one or carries
+    /// no negative zero: with the row copied verbatim both are **tautologies**, and a lock
+    /// that cannot fail is worse than no lock. It aims at the one thing the derivation decides.
     #[test]
     fn a_derived_seed_plane_anchors_at_its_truths_first_point() {
         let m = Model::new();
@@ -4456,7 +4440,7 @@ mod tests {
         assert_eq!(seen, 1, "one lateral surface");
     }
 
-    /// ★★ S9: the seeds are the interning survivors — an origin cuboid's bottom/left/front
+    /// ★★ The seeds are the interning survivors — an origin cuboid's bottom/left/front
     /// faces carry the seed handles, so "the world plane" and "that face's plane" are one
     /// surface, stated once.
     #[test]
@@ -4863,8 +4847,8 @@ mod tests {
     /// **A tangency keeps its name through a swap** — its two roots coincide, so the swap sends
     /// the one point to itself.
     ///
-    /// ★ This is the case that had no spelling before: M6-1 stored a tangency as `Lo`, the remap
-    /// toggled it unconditionally, and the same point came back named `Hi` — one point, two
+    /// ★ This is the case `Double` exists for: with a tangency stored as `Lo`, a remap that
+    /// toggles unconditionally brings the same point back named `Hi` — one point, two
     /// names, which is exactly what canonicalization exists to prevent.
     #[test]
     fn a_tangency_keeps_its_name_through_a_swap() {

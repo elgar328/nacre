@@ -1,5 +1,5 @@
 //! [`QuadVal`] — a quadratic algebraic scalar `a + b·√c` (a, b, c rational, c ≥ 0), and the
-//! exact sign tower over it (M6-1).
+//! exact sign tower over it.
 //!
 //! **Why this type exists.** The intersection line of two rational planes meets a rational
 //! cylinder where a rational quadratic `As² + Bs + C = 0` vanishes, so every coordinate of a
@@ -157,7 +157,7 @@ impl QuadVal {
     ///
     /// ★ Judged on the **value**, never on `b == 0` alone: a perfect-square discriminant leaves
     /// `b ≠ 0` with a rational sum — a branch corner where a wall through the axis meets the rim,
-    /// for one (cell ⑩; `ops::branch_def` reads such a corner by comparing values, the same rule).
+    /// for one (`ops::branch_def` reads such a corner by comparing values, the same rule).
     pub fn as_rat(&self) -> Option<Rat> {
         if self.b == Rat::from_int(0) {
             return Some(self.a);
@@ -297,7 +297,7 @@ pub fn branch_point_f64(line: &MeetLine, s: &QuadVal) -> [f64; 3] {
 /// irrational coefficients and no rational name, and then there is nothing to lift. That case does
 /// not arise here because the cylinder gate refuses it upstream (`wp.rotated`, and a class with no
 /// `base_rat`), so this is the exact fast road **for the rational population** — not a universal
-/// comparison. When rotation opens (M6-3) the answer is the toleranced ladder in `nacre-cip`,
+/// comparison. When rotation opens the answer is the toleranced ladder in `nacre-cip`,
 /// which escalates precision and abstains *by name* rather than guessing, not this function
 /// stretched to fit.
 pub fn cmp_coord_meet_branch(m: &MeetPoint, line: &MeetLine, s: &QuadVal, axis: usize) -> Orient {
@@ -451,7 +451,7 @@ pub(crate) fn sqrt_root_sum_cmp(a: &BigInt, b: &BigInt, c: &BigInt, strict: bool
 ///
 /// The proposition two bounded reaches ask of each other: each end of a reach is a rational base
 /// and a radical, so "these two intervals are disjoint" is a gap against *two* roots, not one.
-/// `nacre-ops`' cylinder gate is the caller ([`crate::Rat`] units throughout, cell ⑰).
+/// `nacre-ops`' cylinder gate is the caller ([`crate::Rat`] units throughout).
 ///
 /// ★ **No new algebra**: it is [`biquad_sign`] with the coefficients this shape fixes —
 /// `sign(g − √p − √q)`, whose `√(p·q)` coefficient is zero. The degenerate `q = 0` (one root, the
@@ -512,9 +512,9 @@ fn biquad_sign_int(
     orient_mul(sp, sign1_int(&r_rat, &r_rad, u))
 }
 
-// ──────────────────── plane · plane · cylinder (M6-1, commit 2) ────────────────────
+// ──────────────────── plane · plane · cylinder ────────────────────
 //
-// Pure numeric, handle-ignorant (the S5-prep option-(a) precedent): planes arrive as
+// Pure numeric, handle-ignorant: planes arrive as
 // `[Rat; 4]` (n·x + d = 0), the cylinder as its raw rational fields. The producers in
 // topo/ops translate their handles down to these values.
 
@@ -721,7 +721,7 @@ pub fn plane_plane_cylinder(
 /// quadratic carries, scaled by the positive `|m|²` so no normalization is needed.
 /// Preconditions `dir ≠ 0`, `r2 > 0` as in [`plane_plane_cylinder`] (the radius arrives squared).
 ///
-/// This is the "axis distance² vs r²" question the M6-2a population gate and the circle
+/// This is the "axis distance² vs r²" question the cylinder population gate and the circle
 /// containment tests ask; the axial (z-range) half of point-vs-cylinder-solid is
 /// [`plane_side`]-against-the-caps, deliberately separate.
 ///
@@ -1056,8 +1056,8 @@ enum SeamClass {
     Lower,
 }
 
-/// The circular order of two cylinder-surface points about the seam — the comparator M6-2's
-/// sweep will sort with.
+/// The circular order of two cylinder-surface points about the seam — the comparator a
+/// sweep about the seam sorts with.
 ///
 /// ★ **The API shape is a candidate** (the math is not): the return type and calling
 /// convention are the sweep's to finalize; what is fixed here is the class ladder and the

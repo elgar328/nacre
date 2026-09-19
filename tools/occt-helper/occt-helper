@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# OCCT oracle backend (design §7). Out-of-process helper: reads STEP with DRAWEXE
+# OCCT oracle backend. Out-of-process helper: reads STEP with DRAWEXE
 # (Homebrew opencascade) and reports mass properties, so the kernel never links
 # OCCT — it is a dev-only scoring oracle (overview OCCT rules).
 #

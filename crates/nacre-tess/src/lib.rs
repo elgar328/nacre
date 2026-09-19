@@ -1,17 +1,14 @@
 //! Mesh export for the nacre kernel.
 //!
-//! **One path**: [`tessellate`] → [`Tessellation`] (design §5). Edges are sampled once into shared
+//! **One path**: [`tessellate`] → [`Tessellation`]. Edges are sampled once into shared
 //! polylines and every face is triangulated in a chart of its own surface — a plane drops an axis,
 //! a cylinder unrolls to `(z, r·θ)` — so adjacent faces meet crack-free and every mesh vertex
 //! carries its origin ([`TessOrigin`]). OBJ text comes from [`Tessellation::to_obj`].
 //!
-//! ★★★★★ **There used to be two, and the second one lied.** An M1 bootstrap `to_obj(&Model)`
-//! fan-triangulated planar faces **from half-edge start vertices**, which silently turns an arc
-//! into a chord; this header promised it was "kept until the existing planar callers migrate"
-//! (during M3). The migration landed in M6 instead, three milestones late, after that writer had
-//! produced a wrong answer a third time — twice recorded in the dev-log and stepped in again. The
-//! projection rule it carried (Newell → drop axis → repair handedness) lives once now, in
-//! `planar_chart`; the sweep below it was always shared.
+//! ★★★★★ **One, and only one.** A second writer that fan-triangulates planar faces **from
+//! half-edge start vertices** silently turns an arc into a chord. The projection rule
+//! (Newell → drop axis → repair handedness) lives once, in `planar_chart`; the sweep below it
+//! is shared.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 mod polygon;
@@ -55,7 +52,7 @@ pub enum TessError {
     /// non-adjacent part of its own. The region is pinched there, so it is not a disk with sibling
     /// holes and this decomposition has no triangulation of it *as two rings*.
     ///
-    /// ★★★★★ **Since cell ⑦c the common case is drawn, not refused.** A hole whose sample sits
+    /// ★★★★★ **The common case is drawn, not refused.** A hole whose sample sits
     /// strictly inside a straight edge shared by two planar faces (`self_touch`'s
     /// `Interior` + `Tangent`) has that sample put into the edge's polyline by [`tessellate`]'s
     /// bridge pre-pass, the two rings are spliced into one at that point, and the sweep orders the
@@ -68,14 +65,14 @@ pub enum TessError {
     /// ★★★★★ **This does not say the solid is wrong — and that is now measured, not hoped.** The
     /// population is an exact **tangency**: a hole touching another ring at one point, where a
     /// sampled circle vertex lands on the touch. Both fixtures are `validate`-clean with volumes
-    /// exact to `1e-9`, and cell ⑤ (2026-09-04) settled the question this doc used to defer —
+    /// exact to `1e-9`, and
     /// **the surface is a 2-manifold at the touch**: the link of the boundary on a small sphere
     /// there is a *single* circle, because the pinched face's two lobes are joined around through
     /// the neighbouring curved face; OCCT, given the same operands, returns a body of the same
     /// volume, area and face count. What is pinched is the **face**, not the surface, so the
     /// capability that owes an answer is **not** the non-manifold test (it was right) but this
     /// layer's own: a consistent symbolic order for coincident vertices in the sweep — which
-    /// cell ⑦c supplied (design.md's 「남은 능력」 is closed). ★ For what is still refused, the
+    /// `polygon::sos` supplies. ★ For what is still refused, the
     /// loss is larger than one face: [`tessellate`] walks the whole model and stops at the first
     /// refusal, so one pinched face erases every body in that session.
     ///
@@ -95,11 +92,11 @@ pub enum TessError {
 }
 
 // ---------------------------------------------------------------------------
-// Provenance-tagged tessellation (design §5)
+// Provenance-tagged tessellation
 // ---------------------------------------------------------------------------
 
-/// Where a tessellation vertex came from — the truth it can snap back to
-/// (design §5). `t`/`uv` are the exact curve/surface parameters.
+/// Where a tessellation vertex came from — the truth it can snap back to.
+/// `t`/`uv` are the exact curve/surface parameters.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum TessOrigin {
     OnVertex(Handle<Vertex>),
@@ -121,11 +118,11 @@ pub struct TessTriangle {
     pub face: Handle<Face>,
 }
 
-/// A provenance-tagged triangle mesh derived from a [`Model`] (design §5).
+/// A provenance-tagged triangle mesh derived from a [`Model`].
 ///
 /// `by_edge` holds each edge's shared polyline (the crack-free contract: faces
-/// consume these, never re-sample), `by_face` the triangles per face. (The
-/// incremental `stale` set of §5 is deferred — this is from-scratch, like
+/// consume these, never re-sample), `by_face` the triangles per face. (An
+/// incremental `stale` set is deferred — this is from-scratch, like
 /// `Adjacency`.)
 ///
 /// ★★★★★ **A closed edge's polyline does not repeat its first point — the closure is
@@ -135,7 +132,7 @@ pub struct TessTriangle {
 /// that walks a polyline **pairwise** gets `n − 1` steps for a ring of `n`, and must add the
 /// closing step itself; `edge.vertices[0] == edge.vertices[1]` is the fact to branch on — the
 /// very test `sample_edge` uses. ⚠ Written here because a consumer that did not know it drew
-/// every uncut rim with a gap in it (the playground's viewport, 2026-09-09), and the contract
+/// every uncut rim with a gap in it (the playground's viewport), and the contract
 /// was nowhere in this type's own words.
 #[derive(Debug, Default)]
 pub struct Tessellation {
@@ -210,13 +207,9 @@ impl Tessellation {
 ///
 /// **One road for every face**: each is laid flat in a chart of its own surface (`Chart`) and
 /// triangulated by the same sweep. Edge polylines are sampled once and shared, so adjacent faces
-/// meet watertight (design §5). Reads the loop winding, not the `Orientation`
+/// meet watertight. Reads the loop winding, not the `Orientation`
 /// flag — every producer winds loops outward, `Reversed` faces included
 /// (booleans emit both), and `validate` holds the two in agreement.
-///
-/// ★ This sentence used to read *"planar faces are fan-triangulated (convex only), cylindrical
-/// faces are sampled as a ruled band between their two rims"* — both halves died with the chart
-/// cell, and the doc outlived them.
 ///
 /// Only cells **reachable from `live_solids`** are meshed. `Store` is append-only
 /// and `boolean`/`pocket`/`pad` supersede rather than delete, so iterating the
@@ -224,7 +217,7 @@ impl Tessellation {
 pub fn tessellate(model: &Model, cfg: &TessConfig) -> Result<Tessellation, TessError> {
     let mut t = Tessellation::default();
     // `Reachable` is a `HashSet`; walk the stores in their own order and merely ask
-    // membership, so the mesh stays reproducible (design §2: replay).
+    // membership, so the mesh stays reproducible (replay).
     let reach = model.reachable();
 
     // 1. Sample every live edge into a shared polyline (the crack-free contract).
@@ -530,7 +523,7 @@ fn sample_edge(
                 }
                 ring
             } else {
-                // ★ **An arc** (M6-2b): the stored `[v0, v1]` order is CCW about the axis — the
+                // ★ **An arc**: the stored `[v0, v1]` order is CCW about the axis — the
                 // convention `derive_edge_curve`'s circle arm states — so the polyline walks
                 // θ(v0) → θ(v0) + Δθ with `Circle::angle_of` as the one spelling of θ. The
                 // segment count is the full circle's budget scaled by the arc's fraction (at
@@ -631,7 +624,7 @@ fn push_tri(t: &mut Tessellation, fh: Handle<Face>, vertices: [Handle<TessVertex
 /// sits, and `rings` indexes into both — the outer ring first, then the holes.
 ///
 /// ★★★★ **One road, one chart per surface.** Every face — planar or curved — is triangulated by
-/// the same sweep ([`polygon::triangulate_uv`], design §5); what differs per surface is only how
+/// the same sweep ([`polygon::triangulate_uv`]); what differs per surface is only how
 /// its boundary is laid flat. A plane drops an axis; a cylinder unrolls to `(z, r·θ)`. When a
 /// cone or a sphere arrives it adds a chart here and nothing else.
 struct Chart {
@@ -1273,7 +1266,7 @@ mod tests {
                     continue; // a straight edge has no turn to measure, however many samples
                 }
                 // Wrapping is right because every multi-point *curved* polyline here is a
-                // closed rim; an arc would need the two end turns left out (M6-3). A straight
+                // closed rim; an arc would need the two end turns left out. A straight
                 // edge can carry a third sample too (the bridge pre-pass), and is skipped above.
                 let p: Vec<Point3> = ring.iter().map(|&h| t.vertices.get(h).pos).collect();
                 for i in 0..p.len() {

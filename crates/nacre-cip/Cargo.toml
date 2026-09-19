@@ -12,7 +12,7 @@ nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
 astro-float = "0.9.5"
-# Wide frames (S4): a plane whose canonical data exceeds `i128` realizes from arbitrary-precision
+# Wide frames: a plane whose canonical data exceeds `i128` realizes from arbitrary-precision
 # integers. Pure Rust, and already in the product path via nacre-scalar.
 num-bigint = "0.4"
 num-integer = "0.1"

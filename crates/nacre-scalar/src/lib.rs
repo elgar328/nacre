@@ -851,8 +851,7 @@ pub fn plane_through_points(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<[Ra
 ///
 /// ★★ `Wide` carries **identity only**. Arithmetic shortcuts (frames, Shewchuk transports,
 /// `base_rat`) read [`PlaneName::narrow`] and decline on `None`, exactly as they declined on a
-/// missing name before — a wide name does not open a frame (measured refutation in
-/// `docs/truth-and-cache.md`'s refuted-answers table).
+/// missing name before — a wide name does not open a frame.
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum PlaneName {
     Narrow([Rat; 4]),
@@ -877,8 +876,8 @@ impl PlaneName {
     /// [`plane_name_exact`] normalizes to), so `numer()` is the value; a wide name already is
     /// the integers.
     ///
-    /// ⚠ **Primitive over *four* coefficients — the normal alone is not** (learned in `nacre-ops`
-    /// cell 23). The content divided out is `gcd(a,b,c,d)`, so `(a,b,c)` keeps a factor of
+    /// ⚠ **Primitive over *four* coefficients — the normal alone is not**.
+    /// The content divided out is `gcd(a,b,c,d)`, so `(a,b,c)` keeps a factor of
     /// `gcd(a,b,c)/gcd(a,b,c,d)`; for an axis-aligned plane at an offset needing a long decimal
     /// that factor is the offset's **denominator**, arbitrarily large on the plainest of planes.
     /// A consumer that reads only the normal **and multiplies** must divide it by its own gcd
@@ -1011,8 +1010,8 @@ fn plane_name_from_lifted(
 }
 
 /// **The canonical name of the plane through three meeting points, at whatever width the points
-/// needed** — what lets a datum through [`MeetPoint::Wide`] vertices keep a name (truth-and-cache
-/// open item 17). The same lift-and-join [`plane_name_big`] performs, with each point's
+/// needed** — what lets a datum through [`MeetPoint::Wide`] vertices keep a name.
+/// The same lift-and-join [`plane_name_big`] performs, with each point's
 /// denominators cleared from whichever vessel holds them; a plane is scale-free per point, so the
 /// per-point scale cannot move the canonical answer.
 ///
@@ -1531,7 +1530,7 @@ pub fn cylinder_strip_side_margin(
 /// **square** of the margin the doors add to it (`ρ²`, the form every radius takes in this family).
 ///
 /// `hi = None` is the symmetric piece a point or a disk is: one end answers both. An arc's ends
-/// differ, and stating them is the only way that shape can ask these questions at all (cells ⑱·⑲).
+/// differ, and stating them is the only way that shape can ask these questions at all.
 pub struct StripReach<'a> {
     pub lo: (&'a MeetPoint, &'a BigRat),
     pub hi: Option<(&'a MeetPoint, &'a BigRat)>,
@@ -1638,8 +1637,7 @@ pub fn cylinder_ruling_reached(
 }
 
 /// **Does a piece whose reach across the strip is stated by its two *ends* touch the named
-/// ruling?** — the general form of [`cylinder_ruling_reached`], and the only one an **arc** can use
-/// (cell ⑲).
+/// ruling?** — the general form of [`cylinder_ruling_reached`], and the only one an **arc** can use.
 ///
 /// The piece occupies `[U_lo − ρ_lo', U_hi + ρ_hi']` across the strip; the ruling sits at `σW`. It
 /// is touched unless the whole reach lies on one side, which is two comparisons of the same shape
@@ -1649,7 +1647,7 @@ pub fn cylinder_ruling_reached(
 /// `hi = None` is the symmetric piece (a point, a disk), which is what this door has always been
 /// handed; then one scale answers both ends and the verdict is the one it always gave.
 ///
-/// ★★ **`touch_counts` names the boundary rather than assuming one** (cell ⑳). Its predecessor is
+/// ★★ **`touch_counts` names the boundary rather than assuming one**. Its predecessor is
 /// closed — a piece touching the ruling at one point has *reached* it — and that is the right
 /// reading for a clearance. The arrangement's net wants the other one: what it cannot mint is a
 /// **crossing**, and an edge tangent to another divides nothing. Two propositions, one door, and
@@ -2025,13 +2023,13 @@ pub fn plane_origin_projection(coeffs: [Rat; 4]) -> Option<[Rat; 3]> {
 /// ([`MeetPoint::Wide`]). It used to also mean "an intermediate overflowed" — the rational
 /// cofactor expansion builds `a.num·b.den ± b.num·a.den` before it can reduce — and that
 /// conflation silently cost a decimal-framed tool its whole class reuse: its constructed
-/// corners solve to points that fit `Rat` (measured 8/8), but the road there overflowed
-/// (truth-and-cache open item 0). The fallback runs only on the decline path, so the narrow
+/// corners solve to points that fit `Rat` (measured 8/8), but the road there overflowed.
+/// The fallback runs only on the decline path, so the narrow
 /// route's cost and answers are untouched.
 ///
 /// This is what replaces a dissolved sketch-frame base vertex: the frame-shared triple of a
 /// prism corner, solved in the frame the planes are stated in, is the corner's exact base —
-/// measured bit-identical to the stored base-and-replay road (8/8, `docs/dev-log.md`).
+/// measured bit-identical to the stored base-and-replay road (8/8).
 pub fn three_planes_rat(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
     three_planes_rat_narrow(p).or_else(|| {
         use num_bigint::BigInt;
@@ -2047,7 +2045,7 @@ pub fn three_planes_rat(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
     })
 }
 
-/// [`three_planes_rat`]'s narrow route — Cramer over `Rat` with checked arithmetic (S7), whose
+/// [`three_planes_rat`]'s narrow route — Cramer over `Rat` with checked arithmetic, whose
 /// `None` still conflates "no unique point" with "an intermediate overflowed". That is fine
 /// *here*: the caller above resolves the conflation by asking the integer core.
 fn three_planes_rat_narrow(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
@@ -2740,7 +2738,7 @@ pub fn inv_sqrt_bounded(v: Rat, prec: usize) -> Option<HpBounded> {
 /// An arbitrary-precision integer as a `BigFloat`, **exactly** — the working precision is the
 /// integer's own bit length, so no digit is ever rounded away.
 ///
-/// The wide-frame realization (S4) feeds plane data wider than `i128` through this; keeping the
+/// The wide-frame realization feeds plane data wider than `i128` through this; keeping the
 /// conversion exact is what keeps [`inv_sqrt_bigint_bounded`]'s error budget identical to
 /// [`inv_sqrt_bounded`]'s: every rounding still happens *after* the value has entered whole,
 /// exactly as the narrow twin's `i128`s do.
@@ -2762,7 +2760,7 @@ pub fn bigint_to_bigfloat(x: &num_bigint::BigInt, prec_floor: usize) -> BigFloat
     acc
 }
 
-/// [`inv_sqrt_bounded`] for a squared length wider than `i128` — the wide-frame (S4) twin.
+/// [`inv_sqrt_bounded`] for a squared length wider than `i128` — the wide-frame twin.
 ///
 /// Same ladder, same derived bound: the integer enters **exactly** ([`bigint_to_bigfloat`] at
 /// its own bit length), the square root rounds once (halving the incoming relative error, which
@@ -2982,7 +2980,7 @@ fn gcd_u128(mut a: u128, mut b: u128) -> u128 {
 /// so two faces of the plane `x = 3` come out as `[2.2, 0, 0, −6.6000000000000005]` and
 /// `[13.2, 0, 0, −39.599999999999994]` — the same plane, not exactly proportional, because `d` was a
 /// rounded product. Measured: 18 pairs in the census are merged only because a *second* test looks at
-/// the faces' coordinates instead (`docs/dev-log.md`).
+/// the faces' coordinates instead.
 ///
 /// ★★★ **The input must be rational by construction, not lifted from those f64 coefficients.**
 /// Lifting is lossless but it preserves the drift: `2.2` and `6.6000000000000005` are different
@@ -3915,8 +3913,8 @@ mod tests {
         }
     }
 
-    /// [`plane_name_from_meets`] — the name of a plane through meets of any width (open
-    /// item 17), locked on both output widths with hand-known planes so the derivation is
+    /// [`plane_name_from_meets`] — the name of a plane through meets of any width,
+    /// locked on both output widths with hand-known planes so the derivation is
     /// never its own oracle.
     mod name_from_meets {
         use super::*;
@@ -5007,8 +5005,8 @@ mod tests {
         }
     }
 
-    /// ★★★★★ **An overflowing intermediate no longer costs the answer** — the repair of open
-    /// item 0, locked on the fixture that used to document the defect.
+    /// ★★★★★ **An overflowing intermediate no longer costs the answer** —
+    /// locked on the fixture that documents the overflow.
     ///
     /// These three planes meet at `(1, 1, 1)`, which fits `Rat` with room to spare. But their
     /// coefficients carry coprime denominators — a power of two and a power of five, what decimal
@@ -5145,7 +5143,7 @@ mod tests {
     }
 
     /// ★★★★★ **A canonical answer wider than `i128` is a name now, not a `None`** — and two
-    /// statements of that plane are one value. This is the S2 vessel change in miniature; the
+    /// statements of that plane are one value. The
     /// interning consequence is locked on the model side
     /// (`a_wide_plane_interns_but_opens_no_shortcut` in nacre-topo).
     #[test]
@@ -5164,8 +5162,8 @@ mod tests {
             "expected the narrow route to overflow"
         );
         let name = plane_name_exact(a, b, c).expect("collinear it is not — it must be named");
-        // ★ Wide carries identity only: the arithmetic shortcuts' door stays shut (S2/S4
-        // boundary — a wide name must NOT open a frame).
+        // ★ Wide carries identity only: the arithmetic shortcuts' door stays shut
+        // (a wide name must NOT open a frame).
         assert!(
             name.narrow().is_none(),
             "an answer past i128 must be stored Wide"
@@ -5292,7 +5290,7 @@ mod tests {
         assert_eq!(su, -sd, "opposite sides, opposite signs");
     }
 
-    /// ★ S7: `three_planes_rat` — the exact corner of three rational planes. Hand-checkable
+    /// ★ `three_planes_rat` — the exact corner of three rational planes. Hand-checkable
     /// fixture, a degenerate (line-sharing) triple, and an i128-overflow decline.
     #[test]
     fn three_rational_planes_meet_where_they_should() {
@@ -5323,8 +5321,7 @@ mod tests {
             None
         );
         // Coefficients near the i128 edge overflow the narrow Cramer — and the answer still
-        // fits `Rat` (denominator 2¹²⁶ + 1), so since open item 0 the fallback answers it.
-        // This clause used to assert the decline; the decline was the defect.
+        // fits `Rat` (denominator 2¹²⁶ + 1), so the fallback answers it: declining here would be a defect.
         let big = Rat::from_int(1 << 126);
         let edge = [
             [big, r(1), r(0), r(-1)],
@@ -6268,7 +6265,7 @@ mod tests {
             prop_assert!(a.deg() < Rat::from_int(360));
         }
     }
-    // ---- the cylinder's strip on a wall plane (M6-2b preparation) ----
+    // ---- the cylinder's strip on a wall plane ----
 
     /// The running fixture: the wall plane `y = 12`, and a cylinder on the vertical line
     /// `x = 8, y = 10` with `r = 3`. The axis stands `d = 2` from the plane, so the strip has
@@ -6417,7 +6414,7 @@ mod tests {
         }
     }
 
-    // ---- the same rectangle's other axis: along the cylinder (M6-2b preparation) ----
+    // ---- the same rectangle's other axis: along the cylinder ----
 
     /// The running fixture: the cylinder of `mod strip`, whose axis starts at `z = −1` and runs
     /// `+z`. With the raw direction `(0,0,1)` the parameter is simply `t = z + 1`.

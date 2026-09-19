@@ -11,7 +11,7 @@ use nacre_math::{Point3, Vector3};
 /// [`Line::distance`] / [`Line::contains`] with a caller-supplied tolerance.
 ///
 /// A `Line` is the *unbounded* curve. An edge trims it to a segment via its
-/// endpoint vertices (design §4) — the bounds live on the edge, not here.
+/// endpoint vertices — the bounds live on the edge, not here.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Line {
     origin: Point3,

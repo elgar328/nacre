@@ -1,4 +1,4 @@
-//! Gates for the quadratic sign tower (M6-1).
+//! Gates for the quadratic sign tower.
 //!
 //! Two instruments, deliberately different: the case fixtures carry **hand-derived** expected
 //! signs (the spec's ladder, exercised arm by arm), and the differential tests compare against
@@ -774,7 +774,7 @@ fn skew_axes_are_compared_by_their_common_perpendicular() {
     );
 }
 
-// ---- a segment against a cylinder's axis (M6-2b preparation) ----
+// ---- a segment against a cylinder's axis ----
 //
 // The running fixture: the axis is the vertical line through the origin with `r = 3`, and every
 // segment below lies in the plane `z = 0`, which is perpendicular to it.
@@ -868,7 +868,7 @@ fn moving_the_axis_moves_the_answer() {
     ));
 }
 
-// ---- One ruler for two kinds of point (M6-2b preparation) ----
+// ---- One ruler for two kinds of point ----
 //
 // ★★ An arrangement that carries arcs holds vertices of two shapes: a three-plane node, whose
 // coordinate is rational, and a plane·plane·cylinder node, whose coordinate is `a + b√c`. The
@@ -1204,7 +1204,7 @@ fn a_branch_points_two_roots_can_straddle_a_strip() {
     }
 }
 
-// ──────────────────── g > √p + √q (cell ⑰) ────────────────────
+// ──────────────────── g > √p + √q ────────────────────
 
 /// The gap against **two** roots, by hand — the shape a cylinder pair's two reaches ask.
 #[test]
@@ -1221,7 +1221,7 @@ fn a_gap_beyond_two_roots() {
     assert_eq!(exceeds_root_sum(ri(4), ri(4), ri(4)), Some(false));
     // A negative gap never clears, whatever the roots.
     assert_eq!(exceeds_root_sum(ri(-1), ri(0), ri(0)), Some(false));
-    // ★ The two calls cell ⑰'s own shape makes, and they are not the same door: a fillet whose
+    // ★ The two calls the cylinder pair's own shape makes, and they are not the same door: a fillet whose
     // reach is `5 + √25` against a drill's `0 ± √(49/4)`. One way round the gap is `5` against
     // the drill's root alone (the fillet's near end carries none) — one radical; the other way
     // it is `−5` against both — two, and negative, so it never had a chance.

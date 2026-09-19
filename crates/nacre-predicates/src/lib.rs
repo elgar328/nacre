@@ -1,8 +1,8 @@
-//! Exact geometric predicates for the nacre CAD kernel (design §3, §8 M5).
+//! Exact geometric predicates for the nacre CAD kernel.
 //!
 //! The M5 boolean ladder decides in/out and orientation by the **sign** of
 //! determinants, and those signs must be exact and mutually consistent or the
-//! combinatorial b-rep breaks (design §3 정밀도 분업). This crate is the sign
+//! combinatorial b-rep breaks. This crate is the sign
 //! layer. It builds on [`geometry_predicates`] (a safe Rust port of Shewchuk's
 //! adaptive-precision predicates, MIT/Apache), which exposes both the finished
 //! predicates (`orient3d`) **and** the adaptive floating-point arithmetic
@@ -12,11 +12,11 @@
 //! are *implicit* — defined as plane intersections, never materialized as coordinates;
 //! Attene 2020).
 //!
-//! **Pure numeric layer (design §9 predicate-cycle decision).** Everything here
+//! **Pure numeric layer.** Everything here
 //! takes plane coefficients and coordinates as plain `[f64; N]` arrays — never a
 //! kernel `Handle`/`Surface`. This keeps the crate free of `nacre-geom`/`-topo`
 //! (no `geom → predicates → geom` cycle) and extractable as a standalone crate
-//! (the goal of being Rust's first open-source indirect-predicates crate, §1).
+//! (the goal of being Rust's first open-source indirect-predicates crate).
 //! Callers (`nacre-geom`) convert their types to arrays at the boundary.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
@@ -67,7 +67,7 @@ pub fn incircle(a: [f64; 2], b: [f64; 2], c: [f64; 2], d: [f64; 2]) -> f64 {
 /// combine (a mere sign would not compose).
 ///
 /// The value is always exact — the expansions carry every bit. The *sign* is what
-/// gets a fast path: [`indirect_orient3d`] filters in `f64` first (cell (5b-0)) and
+/// gets a fast path: [`indirect_orient3d`] filters in `f64` first and
 /// only falls back to these expansions when the rounding bound cannot separate the
 /// sign from zero. The expansion arithmetic itself is unfiltered; a filtered
 /// coordinate representation would be a separate optimization. The inner list is
@@ -197,7 +197,7 @@ pub fn det3_sign(m: [[f64; 3]; 3]) -> i8 {
 /// name the same plane.
 ///
 /// This is a topological decision, so it sits on the predicate side of the precision
-/// split (design §3). Unlike an absolute-length coincidence tolerance it is
+/// split. Unlike an absolute-length coincidence tolerance it is
 /// scale-invariant (proportionality is unchanged by scaling either plane), so it
 /// neither false-merges near-but-distinct planes nor false-splits coincident ones.
 /// Each minor's exact sign comes from the same error-free `2×2` machinery as [`det3`].
@@ -286,7 +286,7 @@ pub fn planes_coplanar(a: [f64; 4], b: [f64; 4]) -> bool {
 /// meet in a single point that point is *implicit* — the indirect predicates
 /// decide signs about it without ever materializing its (generally irrational)
 /// coordinates. The result is invariant under scaling any plane's coefficients,
-/// so the normals need not be unit length (design §8 M5; Attene 2020).
+/// so the normals need not be unit length (Attene 2020).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ThreePlane(pub [[f64; 4]; 3]);
 
@@ -426,7 +426,7 @@ fn cramer_val(p: &ThreePlane) -> ([f64; 3], f64, [f64; 3], f64) {
 ///
 /// Attene 2020's implicit predicates are built this way, and without the filter
 /// the exact path runs on *every* call: measured at `1.46 µs`, against `~50 ns`
-/// here (design.md §9, cell (5b-0)).
+/// here.
 ///
 /// **The filter never returns a wrong sign.** `|fl(x) − x| ≤ εₓ·x̃` where `x̃` is the
 /// cancellation-free ([`det3_mag`]-style) evaluation, so `|fl(x)| > εₓ·x̃` forces `x`
@@ -589,8 +589,8 @@ fn add3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
 /// The outcome of casting a **forward** ray (half-line `p + t·d`, `t > 0`) at a
 /// triangle. `Cross(s)` carries the *oriented* crossing sign `s = sign(d · n)`
 /// (`n` = the triangle's right-hand normal `(v1−v0)×(v2−v0)`): summing these over
-/// a triangulated closed surface is its winding number about `p` (design §8 M5
-/// point-in-polyhedron). `Degenerate` means the ray grazes an edge/vertex or lies
+/// a triangulated closed surface is its winding number about `p` (the
+/// point-in-polyhedron test). `Degenerate` means the ray grazes an edge/vertex or lies
 /// in the triangle's plane — an incidence `orient3d` is exactly `0` — so the
 /// caller must retry with another direction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -646,7 +646,7 @@ pub fn ray_triangle_cross(
 /// The outcome of a **finite segment** `a→b` meeting a triangle. `Cross(s)` is the
 /// oriented crossing sign `s = sign((b−a)·n)`; `Degenerate` means an endpoint lies
 /// on the triangle's plane or the segment grazes an edge/vertex (an incidence
-/// `orient3d` is `0`) — the caller rejects such contacts (design §8 M5 coplanar /
+/// `orient3d` is `0`) — the caller rejects such contacts (coplanar /
 /// edge-edge casework).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SegCross {
@@ -928,7 +928,7 @@ mod tests {
         }
     }
 
-    // ---- planes_coplanar (M5 (5d)-2) ----
+    // ---- planes_coplanar ----
 
     #[test]
     fn planes_coplanar_names_the_same_plane() {

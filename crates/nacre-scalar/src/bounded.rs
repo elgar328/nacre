@@ -143,7 +143,7 @@ impl HpBounded {
         HpBounded::new(value, error)
     }
 
-    /// An arbitrary-precision integer as an **exact** interval — the wide-frame (S4) entry point.
+    /// An arbitrary-precision integer as an **exact** interval — the wide-frame entry point.
     ///
     /// [`crate::bigint_to_bigfloat`] converts at the integer's own bit length, so the value enters
     /// whole and the radius is genuinely zero; downstream operations charge their own rounding,
@@ -182,7 +182,7 @@ impl HpBounded {
     }
 
     /// Division by an **exact** nonzero divisor — what a wide frame's origin (`num / den`)
-    /// realizes through (S4). The dividend's radius scales by `1/|b| ≤ 2^(1−e_b)` (from
+    /// realizes through. The dividend's radius scales by `1/|b| ≤ 2^(1−e_b)` (from
     /// `|b| ≥ 2^(e_b−1)`), and the division's own rounding is charged on top. The divisor
     /// being exact is a premise (its producer is [`Self::of_bigint`]), so it is asserted rather
     /// than handled.

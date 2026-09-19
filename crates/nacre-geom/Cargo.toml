@@ -9,12 +9,12 @@ description = "analytic geometry (Plane, Cylinder, Line, Circle) for the nacre C
 
 [dependencies]
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
-# Exact indirect predicates for three-plane vertex sign decisions (design §9).
+# Exact indirect predicates for three-plane vertex sign decisions.
 # A pure numeric layer with no kernel-crate deps, so this edge is acyclic.
 nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
-# Exact rational scalars, for the Rat twins of the 2-D ring predicates: design §1 isolates
-# robustness-sharp classification in geom::intersect, and the profile's truth is rational
-# (truth-and-cache), so the predicates over that truth live here too. nacre-scalar sits at the
+# Exact rational scalars, for the Rat twins of the 2-D ring predicates: the design isolates
+# robustness-sharp classification in geom::intersect, and the profile's truth is rational,
+# so the predicates over that truth live here too. nacre-scalar sits at the
 # bottom of the dependency graph (no nacre-* deps), so this edge is acyclic.
 nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 

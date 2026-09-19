@@ -12,7 +12,7 @@
 #   - **pairwise** — 80 successive fuses, which is what nacre's fold does today
 #   - **n-ary**    — one `BOPAlgo` call with all 80 arguments, which nacre has no equivalent of
 #
-# Measured 2026-07-29 (14-core M-series, OCCT from Homebrew, DRAWEXE single-threaded):
+# Measured (14-core M-series, OCCT from Homebrew, DRAWEXE single-threaded):
 #
 #     nacre serial          11.51 s     407 faces
 #     nacre parallel         2.67 s     407 faces

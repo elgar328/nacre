@@ -1,8 +1,8 @@
-//! M6-0 gates for the cylinder's exact truth (`CylinderDef`).
+//! Gates for the cylinder's exact truth (`CylinderDef`).
 //!
 //! The bit literals below are **pre-change measurements**: the same four fixtures were probed
 //! on the code *before* `CylinderDef` existed, and their seam-vertex coordinates and lateral
-//! cache fields recorded as bit patterns. M6-0 adds truth beside the cache without touching how
+//! cache fields recorded as bit patterns. The def adds truth beside the cache without touching how
 //! the cache is realized, so every literal must still match bit-for-bit — this file is the eye
 //! the existing gates do not have (the bit census has no cylinder models, STEP asserts
 //! structure, tess is property-based; none of them would see an ulp drift here).
@@ -98,7 +98,7 @@ fn ulp_apart(a: f64, b: f64) -> u64 {
 #[test]
 fn the_z_axis_cylinder_is_bit_identical_and_its_truth_is_the_statement() {
     let (v0, v1, cache, def) = build(pt(0.5, -1.25, 2.0), vec(0.0, 0.0, 1.0), 1.5, 2.5);
-    // Pre-change bit literals (probe 2026-08-17).
+    // Pre-change bit literals.
     assert_eq!(
         bits3(v0.as_array()),
         [
@@ -210,7 +210,7 @@ fn a_tilted_axis_realizes_the_same_seam_within_one_ulp() {
     assert_eq!(def.ref_dir(), [rat(0.0), rat(-3.0), rat(2.0)]);
     // Irrational normalization: the def realizes through a different arithmetic order than the
     // cache (Gram–Schmidt on the rounded unit axis), so agreement is ≤ 1 ulp per component —
-    // and the direction itself is exact in the def, which is the point of M6-0.
+    // and the direction itself is exact in the def, which is the point of the def.
     let r = realized_ref_dir(&def);
     let c = cache.ref_dir();
     for k in 0..3 {
@@ -263,7 +263,7 @@ fn a_tie_born_of_rounding_picks_the_caches_basis() {
     // raw-reading rule picks basis Y; but f64 normalization rounds both to the SAME value, and
     // `any_perpendicular` (reading the normalized axis) tie-breaks to X. The rule must read
     // `d`'s components — the cache's actual inputs — or the seam lands ~90° from the cache's
-    // and the validate net fires on a healthy model (measured, 2026-08-17).
+    // and the validate net fires on a healthy model (measured).
     let (_, _, cache, def) = build(
         pt(0.0, 0.0, 0.0),
         vec(0.34, 0.33999999999999997, 1.0),
@@ -306,8 +306,8 @@ fn the_same_statement_interns_and_a_different_ref_dir_does_not() {
     let b = m.push_cylinder(cache, def, None);
     assert_eq!(a, b, "one statement, one handle");
     // Same axis and radius, different ref_dir: a merge would split the seam, so the
-    // conservative key deliberately keeps two handles (geometric identity is M6-1's,
-    // per predicate).
+    // conservative key deliberately keeps two handles (geometric identity is decided
+    // per predicate, not by the key).
     let other = CylinderDef::new(
         [zero(), zero(), zero()],
         [zero(), zero(), rat(1.0)],
@@ -418,7 +418,7 @@ fn a_wide_parallel_ref_dir_is_still_refused() {
     );
 }
 
-// ── K2: the exact entry ───────────────────────────────────────────────────────────────────────
+// ── The exact entry ───────────────────────────────────────────────────────────────────────────
 //
 // Everything above measures the f64 entry, which *derives* its truth by lifting computed floats.
 // `add_cylinder_exact` is handed the truth instead, and these gates measure what that buys:

@@ -13,7 +13,7 @@ Two things this measures that a stopwatch in the GUI cannot:
   - **CPU time next to it.** OCCT runs its booleans on many threads, and the ratio says whether a
     number is work or waiting.
 
-Measured 2026-07-29 (14-core M-series, FreeCAD 1.1.0):
+Measured (14-core M-series, FreeCAD 1.1.0):
 
     PolarPattern x80    wall 3.74 s    CPU 21.0 s    -> 5.6 cores average
     full recompute      wall 4.13 s

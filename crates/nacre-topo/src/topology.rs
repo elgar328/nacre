@@ -1,20 +1,20 @@
-//! b-rep topology cells (design.md §4).
+//! b-rep topology cells.
 //!
 //! Every cell references exact geometry only by `Handle` — the topology never
 //! looks at coordinates. Identity is by `Handle`, so a cell derives `Eq`/`Hash` only
 //! when every field is a handle or a flag; anything that could transitively hold an
 //! `f64` gets `PartialEq` for tests only. (No cell holds one today — the coordinate
-//! became a cache in S7 — but the rule is about what a cell is *allowed* to hold.)
+//! is a cache — but the rule is about what a cell is *allowed* to hold.)
 
 use crate::{Orientation, Surface, Vertex};
 use nacre_store::Handle;
 
 /// A 1-cell: a segment of the carriers' intersection, trimmed by its two endpoint vertices.
 /// The realized curve is a cache beside the store (`Model::edge_cache`), not a field — the
-/// carriers and endpoints decide it (S8).
+/// carriers and endpoints decide it.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Edge {
-    /// **The two surfaces whose faces this edge bounds** — the carriers (S8).
+    /// **The two surfaces whose faces this edge bounds** — the carriers.
     ///
     /// ★ Not derivable from the endpoints' surface triples: where four planes pass through one
     /// point, the triples' intersection can name a plane the edge does *not* ride — silently
@@ -28,17 +28,16 @@ pub struct Edge {
     ///
     /// Stored in ascending handle-index order — the pair is a set, not a sequence.
     /// A cylinder seam is self-adjacent: both entries are the lateral surface (its loop already
-    /// uses the seam edge twice) — the **confirmed** spelling (M6-0): a seam is a
+    /// uses the seam edge twice) — the **confirmed** spelling: a seam is a
     /// parameterization joint of one surface, and the self-pair is that sentence's honest
     /// carrier form, guarded by validate's "self-adjacent ⇔ cylinder" rule.
     pub surfaces: [Handle<Surface>; 2],
-    /// Endpoint vertices — the boundary (S8: no longer `Option`).
+    /// Endpoint vertices — the boundary (never optional).
     ///
     /// A closed **solid**'s circular rim carries a seam vertex and is `[v, v]` (start == end),
-    /// so the b-rep stays a valid CW-complex (`add_cylinder`; design §4). The old `None` was
-    /// reserved for a standalone full circle with no seam — a wireframe/open-shell element,
-    /// which is a v1 non-goal (§9) and had exactly one occupant: a validate fixture built to
-    /// test the reject. The type now says what the kernel always required.
+    /// so the b-rep stays a valid CW-complex (`add_cylinder`). A standalone full circle
+    /// with no seam would be a wireframe/open-shell element, which is a v1 non-goal, so the
+    /// type has no spelling for it: it says what the kernel requires.
     pub vertices: [Handle<Vertex>; 2],
 }
 

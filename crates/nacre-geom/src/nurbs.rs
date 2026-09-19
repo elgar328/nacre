@@ -1,4 +1,4 @@
-//! NURBS curves — rational B-spline evaluation (design §3).
+//! NURBS curves — rational B-spline evaluation.
 //!
 //! Implemented from *The NURBS Book* (Piegl & Tiller): FindSpan (A2.1),
 //! BasisFuns (A2.2), DersBasisFuns (A2.3), and the rational curve point /
@@ -264,7 +264,7 @@ fn ders_basis_funs(degree: usize, knots: &[f64], span: usize, u: f64, n: usize) 
 type ControlGrid = Vec<Vec<Point3>>;
 
 /// A rational B-spline (NURBS) **surface**: a tensor product of the curve
-/// construction in u and v (design §3). Same invariants as [`NurbsCurve`] in
+/// construction in u and v. Same invariants as [`NurbsCurve`] in
 /// each direction, over a rectangular control grid. **Not `Copy`** (heap grid).
 #[derive(Clone, Debug, PartialEq)]
 pub struct NurbsSurface {

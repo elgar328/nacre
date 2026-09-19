@@ -6,8 +6,8 @@ use crate::topology::{Edge, Face};
 use nacre_store::Handle;
 use std::collections::HashMap;
 
-/// Reverse index over the topology stores — a **cache, not truth** (design §4,
-/// overview 절대원칙 5). Rebuilt from scratch by scanning the stores; discard
+/// Reverse index over the topology stores — a **cache, not truth**
+/// (overview 절대원칙 5). Rebuilt from scratch by scanning the stores; discard
 /// and regenerate any time. Validation ("every edge used by exactly two faces
 /// in opposite directions") and adjacency queries read this.
 ///
@@ -32,7 +32,7 @@ impl Adjacency {
     /// nothing has needed it: [`Model::rebuild_adjacency`] replaces the index wholesale and
     /// callers run it once after a batch. Build it when a profile asks for it, not before.
     pub fn rebuild(model: &Model) -> Adjacency {
-        // Only the live model is indexed (design §2): superseded cells left in
+        // Only the live model is indexed: superseded cells left in
         // the arena must not pollute edge use-counts. Iterate the stores in
         // order (deterministic) filtered by the reachable closure.
         let reach = model.reachable();
@@ -339,7 +339,7 @@ mod tests {
         );
 
         // Wrap the two faces in a live solid — adjacency now indexes only the
-        // reachable closure (design §2), so loose faces would be invisible. This
+        // reachable closure, so loose faces would be invisible. This
         // pair is an open surface (validate would flag it), but the test only
         // inspects the rebuilt adjacency, which needs the faces reachable.
         let shell = m.shells.push(Shell {

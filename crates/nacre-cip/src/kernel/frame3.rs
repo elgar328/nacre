@@ -1,7 +1,7 @@
-//! The toleranced point + its `orient3d` judgment (design.md §9 CIP, stage 2).
+//! The toleranced point + its `orient3d` judgment.
 //!
 //! A rotated point cannot be held exactly (cos/sin are irrational), but its f64
-//! realization carries a **direction-wise xyz tol** (§CIP ⑤) that soundly bounds
+//! realization carries a **direction-wise xyz tol** that soundly bounds
 //! the error, accumulated as the definition is turned through a chain of
 //! axis-aligned rotations (§CIP ①: `new tol = |R|·old + mix`). [`orient3d_judge`]
 //! consumes that tol: an f64 determinant filter with a sound error bound
@@ -89,7 +89,7 @@ pub enum MoveNode {
     ///
     /// ★ **Proper** (`det = +1`), so it contributes nothing to a chain's mirror parity.
     Frame { frame: nacre_scalar::PlaneFrame },
-    /// [`MoveNode::Frame`] for a plane whose exact data does not fit `Rat` (S4) — a `Wide`
+    /// [`MoveNode::Frame`] for a plane whose exact data does not fit `Rat` — a `Wide`
     /// name, or a narrow one whose squared lengths overflow `i128`. Same realization shape,
     /// arbitrary-precision integers instead: **nothing here can overflow**, so unlike
     /// `PlaneFrame` there is no partial (`v: None`) form.
@@ -113,7 +113,7 @@ pub enum MoveNode {
 }
 
 /// The exact data of a wide sketch frame — [`nacre_scalar::PlaneFrame`]'s arbitrary-precision
-/// twin (S4). Built once when a motion chain is flattened; realized on demand.
+/// twin. Built once when a motion chain is flattened; realized on demand.
 ///
 /// `origin = origin_num / origin_den` (one exact rational, common denominator `n·n`); the
 /// `*_raw` vectors and squared lengths mirror `PlaneFrame` field for field. All integers, all
@@ -288,8 +288,7 @@ fn name_bigints(name: &nacre_scalar::PlaneName, flip: bool) -> [num_bigint::BigI
 }
 
 /// The judged frame of a plane that has **no name** — the canonical placement derived from the
-/// plane through three exact points whose motion chains need not agree (truth-and-cache open
-/// item 16, wall 1).
+/// plane through three exact points whose motion chains need not agree.
 ///
 /// [`MoveNode::Frame`] and [`MoveNode::FrameWide`] both demand exact coefficients (`Rat`,
 /// `BigInt`); a mixed-frame datum plane has neither, because its exact world coefficients are
@@ -319,15 +318,15 @@ pub struct FrameThrough {
 }
 
 /// One defining point of a judged frame — **how the point is stated**, mirroring the two mixed
-/// causes (16-1 / 16-2).
+/// causes.
 ///
 /// Equality is definitional throughout ([`WitnessPoint`]'s own `PartialEq`), which is what the
 /// statement-level determinism tests and `shared_base`'s whole-node comparison consume.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum JudgedPoint {
-    /// Exact in its own frame — a rational base carried by a chain. 16-1's whole population.
+    /// Exact in its own frame — a rational base carried by a chain.
     Pure(WitnessPoint),
-    /// ★ **The meet of its three carrier planes — a point with no coordinate anywhere** (16-2).
+    /// ★ **The meet of its three carrier planes — a point with no coordinate anywhere**.
     /// Each carrier is described by its own witness triangle; the point is realized as the
     /// homogeneous `[Dvec : D]` of the carriers' Cramer system and never divided until a
     /// realization explicitly asks for an affine value. Boxed: nine points dwarf one.
@@ -420,10 +419,10 @@ impl FrameThrough {
 /// [`judged_basis`], split out because [`FrameThrough::of`] needs the coefficients *before* a
 /// branch exists to build the rest of the basis with.
 ///
-/// All-pure triples keep 16-1's affine route ([`plane_hp`] — the road its two-road differential
+/// All-pure triples keep the affine route ([`plane_hp`] — the road its two-road differential
 /// locks); any meet switches the whole triple to the **homogeneous route**: every point as
 /// `(D, Dvec)` ([`judged_homog`]) and the plane through them by the projective join
-/// ([`plane_hp_through`] — 2a's machine, called at last). `None` when any meet's `D` sign is
+/// ([`plane_hp_through`]). `None` when any meet's `D` sign is
 /// undecided at this precision — the join's normalization has nothing to stand on then.
 fn judged_coeffs(points: &[JudgedPoint; 3], flip: bool, prec: usize) -> Option<[HpBounded; 4]> {
     let mut c = if let [
@@ -985,7 +984,7 @@ impl WitnessPoint {
         Some(self)
     }
 
-    /// [`WitnessPoint::frame`] for a [`WideFrame`] (S4) — the same propagation, with the axis and origin
+    /// [`WitnessPoint::frame`] for a [`WideFrame`] — the same propagation, with the axis and origin
     /// `(value, error)` pairs taken from a fixed-precision arbitrary-precision realization
     /// instead of `inv_sqrt_f64`/`axis_comp`. No new f64 error derivation exists here: every
     /// rounding on the way is inside an `HpBounded`, and the final narrowing to f64 charges itself.
@@ -1043,7 +1042,7 @@ impl WitnessPoint {
         Some(self)
     }
 
-    /// [`WitnessPoint::frame`] for a [`FrameThrough`] (open item 16) — the judged basis realized
+    /// [`WitnessPoint::frame`] for a [`FrameThrough`] — the judged basis realized
     /// at the fixed rung, narrowed to `(value, error)` pairs, then **the same propagation as
     /// [`WitnessPoint::frame_wide`]**: the incoming tol is turned by the basis, the basis's own
     /// realization error is scaled by the coordinates, and the combination charges its rounding.
@@ -2117,9 +2116,8 @@ fn negatives_odd(signs: [bool; 3]) -> bool {
 /// planes meet in a point, so there is nothing to normalize against and the caller must climb.
 /// Degree 9 in the nine input coefficients.
 ///
-/// (Its f64/`Bounded` filter twin, `plane_iv_through`, retired unconsumed in 16-3 — the judging
-/// table turned out to need no interval-coefficient route at all. The dev-log records the
-/// restoration path; the lock lives in 16-2's Pure-vs-Meet differential, which pins this
+/// (It has no f64/`Bounded` filter twin: the judging table needs no interval-coefficient route
+/// at all. The lock lives in the Pure-vs-Meet differential, which pins this
 /// function's basis against the affine shortcut end to end.)
 fn plane_hp_through(
     pts: [(&HpBounded, &[HpBounded; 3]); 3],
@@ -2599,7 +2597,7 @@ pub fn dir_sign_judge(
     // ★ **Not fed from `Judge`'s interval-plane cache, and that is measured.** Wiring it here
     // bought 1.007x on the crossing collector: this judgement's cost is almost entirely the
     // escalation below, because a *true* zero — the walls meeting `wc` in no point, 8.9% of the
-    // pairs the collector tests — can never be settled by an interval filter. See docs/dev-log.md.
+    // pairs the collector tests — can never be settled by an interval filter.
     //
     // ★★★ **And this is where the kernel's escalations come from.** Measured on `fin_fold(80)`:
     // this judgement is 5.4% of its own calls but **78% of every escalation in the boolean**, and
@@ -2692,7 +2690,7 @@ mod tests {
     /// spelling of what `WitnessPoint::exact` used to be. That door is retired: no production
     /// caller, and a precondition ("exactly representable") no caller could check — the one
     /// production site that handed it a rounded cache named a different point (nacre-ops
-    /// reuse, 2026-09-15). `at_nearest` states the same tol `0` here and stays honest elsewhere.
+    /// reuse). `at_nearest` states the same tol `0` here and stays honest elsewhere.
     fn exact(c: [f64; 3]) -> Option<WitnessPoint> {
         let b = |x: f64| Rat::try_from_f64(x);
         Some(WitnessPoint::at_nearest([b(c[0])?, b(c[1])?, b(c[2])?]))
@@ -3460,11 +3458,11 @@ mod tests {
         ]
     }
 
-    /// ★★★★★ **The Pure-vs-Meet differential — the tooth of stage 16-2** (`three_planes_big`'s
+    /// ★★★★★ **The Pure-vs-Meet differential — the tooth of the meet route** (`three_planes_big`'s
     /// pattern). A pure point can *also* be written as the meet of its three carriers, so the
     /// same three vertices spelled `[Pure; 3]` and `[Meet; 3]` must derive one basis — that is
-    /// the only proof that the affine shortcut (16-1's locked road) and the homogeneous join
-    /// (2a's machine, wired here) describe the same plane. The rotated variant is the hard
+    /// the only proof that the affine shortcut (the all-pure road) and the homogeneous join
+    /// describe the same plane. The rotated variant is the hard
     /// half: the carriers turn as planes, the pure spelling turns as a point, and the two meet
     /// only if the whole chain of machinery — carrier realization, Cramer, join, normalization —
     /// is right.
@@ -4201,9 +4199,9 @@ mod tests {
         assert!(worst > 1e-6, "the frame tol is never approached: {worst:e}");
     }
 
-    /// The S2 wide triple's plane — a canonical answer past `i128` — as its exact
+    /// The wide triple's plane — a canonical answer past `i128` — as its exact
     /// arbitrary-precision coefficients and the canonical [`WideFrame`] built on them.
-    /// The width is **asserted**, not assumed (the S2 census lesson: qualify the fixture).
+    /// The width is **asserted**, not assumed: qualify the fixture.
     fn wide_fixture() -> ([num_bigint::BigInt; 4], WideFrame) {
         let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
         let big1 = (1i128 << 90) + 1;
@@ -4224,7 +4222,7 @@ mod tests {
         (cs, fr)
     }
 
-    /// ★★★★ **The wide twin of `a_point_drawn_in_a_frame_lies_on_that_frame_s_plane`** (S4):
+    /// ★★★★ **The wide twin of `a_point_drawn_in_a_frame_lies_on_that_frame_s_plane`**:
     /// a point drawn at `w = 0` in a [`WideFrame`] is *on* that plane, checked on the
     /// high-precision realization against the exact arbitrary-precision coefficients. This is
     /// the property that lets a sketch land on a plane whose data exceeds `i128` at all.
@@ -4252,7 +4250,7 @@ mod tests {
         }
     }
 
-    /// **The wide twin of `a_frame_s_tol_bounds_its_own_realization`** (S4): the f64 `coord`
+    /// **The wide twin of `a_frame_s_tol_bounds_its_own_realization`**: the f64 `coord`
     /// a wide frame writes is within the `tol` it writes, measured against a far deeper
     /// realization of the same definition.
     #[test]

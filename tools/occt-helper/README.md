@@ -1,7 +1,7 @@
 # occt-helper — OCCT oracle backend
 
 An **out-of-process** helper that scores nacre's geometry against OpenCASCADE
-(OCCT), the dev oracle (design §7). OCCT is **never linked into the kernel** —
+(OCCT), the dev oracle. OCCT is **never linked into the kernel** —
 it is a dev-only test scorer, reached only through this helper + STEP files
 (overview "OCCT / 외부 코드 규칙"). A crash on adversarial input kills the helper,
 not the kernel.

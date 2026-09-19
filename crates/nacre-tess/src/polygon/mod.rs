@@ -1,4 +1,4 @@
-//! Planar polygon triangulation with holes (design §5).
+//! Planar polygon triangulation with holes.
 //!
 //! The mesh is a **cache**, so this works in `f64` — exact geometry is the truth
 //! and lives above. What it must never do is return a *wrong* mesh: a ring that
@@ -112,7 +112,7 @@ pub(crate) fn ring_orientation(ring: &[usize], uv: &[P2]) -> i8 {
 }
 
 /// Triangulate rings that are **already in a chart** — the chart-free core of this layer's one
-/// triangulation road (design §5): monotone decomposition, then the Lawson pass.
+/// triangulation road: monotone decomposition, then the Lawson pass.
 ///
 /// ★★ **Precondition: the outer ring is CCW and every hole is CW, in `uv`.** The repair is the
 /// *caller's* because charts differ in what a repair costs. A planar face's two axes are
