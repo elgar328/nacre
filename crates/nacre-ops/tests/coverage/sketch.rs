@@ -465,8 +465,9 @@ fn a_self_crossing_outline_is_refused_before_the_rings_are_sorted() {
 
 /// The other half of the contract: everything legitimate still goes through. A reflex outline, a
 /// donut, and a flat (collinear) corner are all simple polygons, and `check` must not reject
-/// them. The flat corner does not survive as *data* — construction dissolves it (that is S3's
-/// normalization, asserted below so the `Ok` is not vacuous) — but the author's input is legal.
+/// them. The flat corner does not survive as *data* — construction dissolves it (that is the
+/// constructor's normalization, asserted below so the `Ok` is not vacuous) — but the author's
+/// input is legal.
 #[test]
 fn the_contract_does_not_bite_legitimate_profiles() {
     let l = vec![
@@ -495,10 +496,10 @@ fn the_contract_does_not_bite_legitimate_profiles() {
     );
 }
 
-/// ★ **A coordinate outside the decimal window is a named error at construction** — S3's other
-/// half. It used to fall silently to the f64 path: the prism still built, but recorded no exact
+/// ★ **A coordinate outside the decimal window is a named error at construction** — the
+/// other half. Falling silently to the f64 path would still build the prism, but record no exact
 /// points, and its surfaces could not survive a motion undemoted. Both profile entry points name
-/// it now.
+/// it.
 #[test]
 fn a_dimension_outside_the_decimal_window_is_refused_at_construction() {
     let ring = vec![
@@ -640,12 +641,11 @@ fn a_slot_prism_tessellates_and_exports() {
     }
 }
 
-// --- the radius is a square (open item 25, step 1) ---
+// --- the radius is a square ---
 
 /// ★ **The truth of a circle is its squared radius.** A quarter arc about the origin from
-/// `(1, 1)` to `(−1, 1)` has `r² = 2` and no rational radius; until 2026-09-15 the sketch door
-/// refused it by name (`ArcRadiusNotRational`) although no predicate ever needed the radius
-/// unsquared. Now it is a ring — the circular segment above the chord `y = 1` — and extrudes to
+/// `(1, 1)` to `(−1, 1)` has `r² = 2` and no rational radius, and no predicate ever needs the
+/// radius unsquared. It is a ring — the circular segment above the chord `y = 1` — and extrudes to
 /// a solid whose volume is `(π/2 − 1)·h`, its lateral cylinder's cache carrying `√2` correctly
 /// rounded.
 #[test]

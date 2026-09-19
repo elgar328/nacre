@@ -5,7 +5,7 @@
 //! safe is not the absence of shared state — there is none to speak of — but **order**:
 //! `assemble_fuse_cut` assigns vertex handles by first appearance across the faces it is
 //! given, so `Store::push` order *is* handle identity, and handle identity is what replay
-//! determinism rests on (design §2). A result that depended on which worker finished first
+//! determinism rests on. A result that depended on which worker finished first
 //! would not be wrong once; it would be a different model every run.
 //!
 //! So every helper here **collects in index order**. Nothing reduces across items, and no

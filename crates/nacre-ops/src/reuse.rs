@@ -78,7 +78,7 @@ pub(crate) enum ClassPlan {
 /// frame and the chain replays as before. A mixed corner the chain does **not** fix — a
 /// prism's base ring under a caller-stated world plane, the frame realization being
 /// irrational — still has no rational pullback and declines honestly (Arrange — slower,
-/// never wrong); C2's differential counts that population (open item 14).
+/// never wrong).
 fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
     use nacre_topo::Vertex;
 
@@ -98,9 +98,6 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                         Vertex::ThreePlane(tri) => tri,
                         // No rational base point: OnSeam and Pierce coordinates are not
                         // rational, so reuse declines and the boolean takes the slower road.
-                        // ★ The old comment's premise ("a cylinder never reaches a boolean")
-                        // expires at M6-2 — the decline stays correct then, the premise does
-                        // not.
                         Vertex::OnSeam(_) | Vertex::Pierce { .. } => return None,
                     };
                     // The base is the definition's: the three narrow names, solved in the frame
@@ -234,7 +231,7 @@ pub(crate) fn class_plans(
 /// there. A vertex of a solid meets exactly the classes of the faces around it, so the same name
 /// is available without arranging anything.
 ///
-/// ★ That is *a* name, not the only one since M6-2b — the arrangement also names pierce points
+/// ★ That is *a* name, not the only one — the arrangement also names pierce points
 /// ([`crate::combinatorics::NodeId::Pierce`]). This table stays three-plane by construction: its
 /// population is the vertices a **solid already has**, and a solid gains a pierce vertex only when
 /// the arc split starts building them.
@@ -283,13 +280,13 @@ impl VertexClasses {
 
     /// The vertex's triple, or `None` when it is not three planes.
     ///
-    /// **Four or more is not a failure, it is a different question.** That is a concurrency. Since
-    /// cell ⑪ its name *is* reproducible from the solid alone — `canonical_triple` of the incident
+    /// **Four or more is not a failure, it is a different question.** That is a concurrency.
+    /// Its name *is* reproducible from the solid alone — `canonical_triple` of the incident
     /// classes, the rule the ring road and the alias table share — but this pass has no judge to
     /// ask (`class_plans` runs before one is made), and passing a class through around such a
     /// vertex also has to weld its faces to arranged ones by that name, which is unmeasured. So
     /// the class is arranged instead, which is always right and merely slower; how many classes
-    /// that costs is a number the next cell can read off the corpus before deciding.
+    /// that costs is a number to read off the corpus before deciding otherwise.
     fn triple(&self, v: Handle<Vertex>) -> Option<NodeId> {
         let c = self.vertices.get(&v)?;
         let [a, b, d] = c[..] else { return None };
@@ -307,13 +304,13 @@ impl VertexClasses {
 ///
 /// One element of a canonicalized bound: a node's name, or the class a curved bound is.
 ///
-/// ★ **The vessel widened rather than refusing** (M6-2b). The differential's job is to *separate*
+/// ★ **The vessel is wide rather than refusing.** The differential's job is to *separate*
 /// faces the two routes could disagree about, so a pierce node needs a spelling here — declining
-/// would silently stop covering every face that contains one, which is precisely the population
-/// being added. Making it an enum also **deletes the `usize::MAX` sentinels** a circle and a band
-/// used to be spelled with: those existed only because the vessel was a triple, which is the same
-/// defect one layer down. It separates strictly more than the sentinels did — a band with
-/// `lo == hi` used to collide with that class's circle.
+/// would silently stop covering every face that contains one.
+/// Being an enum also means **no `usize::MAX` sentinels** for a circle and a band:
+/// those exist only when the vessel is a triple, which is the same
+/// defect one layer down. It separates strictly more than sentinels would — a band with
+/// `lo == hi` would collide with that class's circle.
 /// A band's rim in the canonical key: its plane class, or a chain (whose nodes follow).
 #[cfg(any(debug_assertions, test))]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
@@ -587,11 +584,11 @@ mod tests {
         }
     }
 
-    /// ★★★ **Open item 0's lock on the population that reaches this module.** A decimal-framed
+    /// ★★★ **The lock on the population that reaches this module.** A decimal-framed
     /// prism's constructed corners solve from their carriers' in-frame names, whose rational
-    /// Cramer overflowed on every one (measured 8/8 — while all eight points fit `Rat`), and
+    /// Cramer overflows on every one (measured 8/8 — while all eight points fit `Rat`), and
     /// [`solid_points`] gives the whole solid up on the first failure — so a framed operand
-    /// used to cost a boolean its entire class reuse. The investigation probe, promoted.
+    /// would cost a boolean its entire class reuse.
     #[test]
     fn a_framed_prisms_corners_solve_for_reuse() {
         let mut m = Model::new();
@@ -679,12 +676,11 @@ mod tests {
         );
     }
 
-    /// ★★ S7: **which populations the def road answers for**, pinned per producer. Measured
-    /// against the pre-S7 `Origin` road while both existed (C2): constructed and moved agree
-    /// **bit for bit**. Discovered declined on both — until the road stopped reading the cache
-    /// (2026-09-15): a result's corner is a three-plane meet with names like any other, so ③
-    /// answers now. The one recorded difference is the mixed-frame population (④): the `Origin`
-    /// road answered it through the sketch-frame base vertex S7 dissolves, and the def road
+    /// ★★ **Which populations the def road answers for**, pinned per producer. Constructed and
+    /// moved answer; so does discovered — the road does not read the cache, and
+    /// a result's corner is a three-plane meet with names like any other, so ③
+    /// answers. The one recorded decline is the mixed-frame population (④): there is no
+    /// sketch-frame base vertex to answer it through, and the def road
     /// declines honestly — reuse falls back to Arrange, which is slower and never wrong.
     #[test]
     fn the_def_road_answers_for_the_populations_it_can_name() {
@@ -747,9 +743,9 @@ mod tests {
         m.rebuild_adjacency();
         assert_answers(&m, fused, true, "discovered (a fused result)");
 
-        // ④ The recorded difference, pinned: a tilted-frame prism's base ring sits under a
+        // ④ The recorded decline, pinned: a tilted-frame prism's base ring sits under a
         //    world-stated cap (mixed frames), and no rational pullback exists — so the def road
-        //    declines where the `Origin` road answered through the base vertex S7 dissolved.
+        //    declines.
         let tilted = crate::SketchPlane::from_origin_normal(
             Point3::from_array([0.25, -0.5, 1.5]),
             Vector3::from_array([0.3141592653589793, -0.2718281828459045, 1.0]),

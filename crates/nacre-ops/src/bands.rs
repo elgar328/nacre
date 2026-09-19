@@ -1,10 +1,8 @@
 //! **The lateral face's row, and the vocabulary the chart reads it with.**
 //!
-//! This file used to *decide* which parts of a cylinder's lateral surface survive a boolean (the
-//! band road, M6-2a C4b → M6-2's rulings ladder). Since the D2b cutover (2026-08-30) that decision
-//! is `cyl_chart::emit_lateral`'s, cell by cell; D3 deleted the band road (`band_faces`, `bands_of`,
-//! `chamber`, `panel_faces`) once the census had held the two emissions equal face by face. What
-//! stays here is what the chart reads, one spelling each: [`cyl_rows`]/[`CylRow`] (a face's span
+//! Which parts of a cylinder's lateral surface survive a boolean is
+//! `cyl_chart::emit_lateral`'s decision, cell by cell. What
+//! is here is what the chart reads, one spelling each: [`cyl_rows`]/[`CylRow`] (a face's span
 //! is the existence truth at an uncut end), [`face_spans`] (existence at a cut end), [`read_bits`]
 //! (which two bits of a label are a cell's chamber), [`keep_for`] (the wall is a boundary of its
 //! own solid) and [`axis_param`]. The prose below is the theory those spellings state — the
@@ -12,7 +10,7 @@
 //!
 //! The plane arrangement decides one plane class at a time; a cylinder's wall is not a plane, so
 //! it is decided here instead — and it is decided *coarsely*, because in this population it can
-//! be. The M6-2a gate admits only ⊥ cuts and ∥ walls whose **faces** stand clear of the lateral
+//! be. The gate admits only ⊥ cuts and ∥ walls whose **faces** stand clear of the lateral
 //! surface, and those two facts together give the **uniform-slab theorem**:
 //!
 //! > Between two consecutive ⊥ cuts, the other operand's boundary does not meet the open
@@ -46,7 +44,7 @@
 //! four bits on it: which solid's material lies immediately above and below that plane *inside the
 //! circle*. That is the band's chamber, stated by the engine that decided it.
 //!
-//! ★ This replaced a witness ray (C4a's `point_in_faces_rat`): a rational point on the axis, cast
+//! ★ This replaced a witness ray (`point_in_faces_rat`): a rational point on the axis, cast
 //! through the counterpart's faces, counting crossings. It gave the same answers, but it answered
 //! a **3D containment** question — the shape the *component* probe asks — when the band's question
 //! is the same shape as "does this face survive": two chambers either side of a boundary. Reading
@@ -95,8 +93,8 @@ pub(crate) struct CylRow {
 /// the contract generalizes rather than bends. With one face per class it *is* the old class-index
 /// order, which is why existing results do not move.
 ///
-/// ★★ **That disjointness used to hold because every lateral face that reached here was a
-/// band** — two whole rims and holes. Since E2-2 the tracer states a panel and a chain rim too
+/// ★★ **That disjointness holds where every lateral face that reaches here is a
+/// band** — two whole rims and holes. The tracer states a panel and a chain rim too
 /// (`arrangement::lateral_shape`), so two faces of one class *can* share a `t`; the tie then
 /// falls to the stable sort's face order — still deterministic, and the corpus so far carries one
 /// lateral per class (the cleaning pass merged the pieces one operation earlier). Named here so
@@ -198,10 +196,10 @@ pub(crate) fn param_opt(
 /// an **uncut** outer rim: it never becomes an [`ArcLabels`] entry at all (a whole circle goes to
 /// `DiskLabels` and the band road), so today only cut rims ask here.
 ///
-/// ☑ **How often each row actually fires** (whole binary, production calls only, measured on the
-/// band road 2026-08-29): `Transversal` **265** · `Graze` **13**, of which **1** reaches and **12**
+/// ☑ **How often each row actually fires** (whole binary, production calls only):
+/// `Transversal` **265** · `Graze` **13**, of which **1** reaches and **12**
 /// do not · nothing at all **0**. The chart reads it once per cut end (`cyl_chart::census`'s
-/// `arcs_read`, 756 over the lib suite in D3).
+/// `arcs_read`, 756 over the lib suite).
 /// The twelve are the six dropped sectors read at both rims, which is the cross-check that the
 /// sector census and this one describe the same events.
 pub(crate) fn face_spans(
@@ -214,7 +212,7 @@ pub(crate) fn face_spans(
     for (_, kind) in r.marks.iter().filter(|(s, _)| *s == side) {
         let reaches = match *kind {
             // A planar face's word — see `ArcLabel::marks`; a tangent ruling is a seated face's
-            // too (cell ⑩), and never a rim arc's mark.
+            // too, and never a rim arc's mark.
             SegKind::Seated { .. } | SegKind::Tangent { .. } => continue,
             SegKind::Transversal { .. } => true,
             SegKind::Graze { body_above } => body_above == band_is_above,
@@ -695,14 +693,14 @@ mod tests {
         assert!((v - 8.0).abs() < 1e-12, "the box is untouched: {v}");
     }
 
-    // ---- Seated caps: a cap flush on the other body's face (M6-2 finish) ----
+    // ---- Seated caps: a cap flush on the other body's face ----
     //
     // ★★ These five are the population the `SeatedCylinderCap` rule refused. What actually makes a
     // seated circle hard is its boundary meeting the counterpart's — and a boundary is either an
     // edge on a plane (parallel to the axis → the wall rule, oblique → asked to miss every lateral
-    // face since cell ⑩, else `ObliqueCylinderCut`) or another cylinder's rim (→ proved apart per
-    // face pair since cell ⑩, else `CylinderPairContact`). ★ The wall rule is no longer a *fence*:
-    // it records a crossing (cell ③) or a tangency (cell ⑥) and the roads behind it answer, so
+    // face, else `ObliqueCylinderCut`) or another cylinder's rim (→ proved apart per
+    // face pair, else `CylinderPairContact`). ★ The wall rule is not a *fence*:
+    // it records a crossing or a tangency and the roads behind it answer, so
     // what still stands at the end of this block is the oblique cut that does meet a face and the
     // cylinder pair whose faces do meet.
     //
@@ -906,8 +904,8 @@ mod tests {
     }
 
     /// ★ **The through-boss builds** — the rulings ladder's milestone: a boss standing through
-    /// the plate's wall (axis exactly on the `x = 40` plane), the app-measured refusal that
-    /// opened M6-2's remainder. Fuse keeps the outer half (plate + the boss outside it), cut
+    /// the plate's wall (axis exactly on the `x = 40` plane). Fuse keeps the outer half
+    /// (plate + the boss outside it), cut
     /// carves the notch, common keeps the inner half-cylinder — each an exact closed form, and
     /// the three exercise both complementary θ-sectors.
     #[test]
@@ -938,20 +936,18 @@ mod tests {
         through_boss_builds(BoolKind::Fuse, [40.0, 40.0, -10.0], 32000.0 + 1125.0 * pi);
     }
 
-    /// ★★★★★ **Both of this fence's exclusions are gone, and the tangent one took the longest
-    /// because its old sentence was *true*.** The **offset** crossing (`0 <` distance `< r`) stood
-    /// here on «walks to `OpenResultShell`», a measurement from before the region emitter, and
-    /// builds exactly since cell ③. The **tangent** wall (distance exactly `r`) stood on «assembles
-    /// a volume-correct zero-thickness pinch `validate` cannot see» — and cell ⑥ measured that this
+    /// ★★★★★ **Neither exclusion of this fence stands.** The **offset** crossing
+    /// (`0 <` distance `< r`) builds exactly.
+    /// The **tangent** wall (distance exactly `r`) «assembles
+    /// a volume-correct zero-thickness pinch `validate` cannot see» — and that sentence
     /// is *exactly right*: with the gate passing it, `Cut` returns `Ok`, `validate` is clean, and
-    /// nothing in the kernel sees the contact. So the answer was never to keep refusing at the
-    /// gate; it was to give that pinch a judge (`boolean::tangency_reject`), which is what this row
-    /// now exercises — the operation decides, and the ones that do not pinch build.
+    /// nothing in the kernel sees the contact. So the answer is not to keep refusing at the
+    /// gate; it is to give that pinch a judge (`boolean::tangency_reject`), which is what this row
+    /// exercises — the operation decides, and the ones that do not pinch build.
     ///
-    /// ★ A third row lived here until the D2b cutover: the **half-height** boss, whose upper cap
-    /// sits inside the plate's material — the band road's `chamber` had no sector answer for that
-    /// end and refused it `RulingBoundNotYet`. The chart reads it (a band below the plate, the
-    /// outer sector beside it), so it builds now — [`Self::a_half_height_boss_builds`].
+    /// ★ The **half-height** boss, whose upper cap
+    /// sits inside the plate's material, has its own row: the chart reads it (a band below the
+    /// plate, the outer sector beside it), so it builds — [`Self::a_half_height_boss_builds`].
     #[test]
     fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
         let seg = |d: f64, r: f64| r * r * (d / r).acos() - d * (r * r - d * d).sqrt();
@@ -985,7 +981,7 @@ mod tests {
         }
     }
 
-    /// ★★★★★ **The half-height boss builds — the capability the D2b cutover opened.** A boss
+    /// ★★★★★ **The half-height boss builds.** A boss
     /// through the plate's wall whose upper cap (z = 10) sits inside the plate: below the plate
     /// the lateral is a whole band, beside it only the outer sector survives, and the cap is a
     /// half-disk. The band road refused this end (`RulingBoundNotYet`); the chart's cells read
@@ -994,7 +990,7 @@ mod tests {
     /// the plate (`π·25·10/2 = 125π`); the boss inside the plate is the inner half over
     /// `z ∈ [0, 10]` (`125π`).
     ///
-    /// The lateral is **one** face (D4): the band and the outer panel merge into a band whose
+    /// The lateral is **one** face: the band and the outer panel merge into a band whose
     /// upper rim is a **wrapping chain** (the z = 0 inner arc, a ruling, the z = 10 outer arc,
     /// a ruling) — the cleaning pass used to abstain here, having no `Bound` for it. ★ Both
     /// senses: the boss with its cap inside the plate (`z0 = −10`, a `hi` chain) and its mirror
@@ -1059,7 +1055,7 @@ mod tests {
         }
     }
 
-    /// **The straddling boss builds.** The M6-2b milestone fence: a boss hanging over the
+    /// **The straddling boss builds.** A boss hanging over the
     /// plate's edge — its rim circle cut by the plate top's boundary segment — fuses into one
     /// valid solid. The ladder this closes, in the names its rungs wore: `WallMeetsLateral`
     /// (a reason since retired — the wall rule read the closed span) → `CircleMeetsSegment` →
@@ -1145,8 +1141,8 @@ mod tests {
         let out = crate::boolean(&mut m, BoolKind::Fuse, holed, boss).expect("a boss over a bore");
         // ★ The boss's whole footprint is inside the rim, so it stands over the **hole** and
         // touches no material: two bodies, not one. That is forced by the *geometry* — the
-        // footprint is strictly inside the rim, so there is no material to reach — and no longer
-        // by a refusal: the wall rule used to make the argument for us, and since cells ③ and ⑥ it
+        // footprint is strictly inside the rim, so there is no material to reach — and not
+        // by a refusal: the wall rule
         // serves that population instead of fencing it off.
         assert_eq!(out.len(), 2, "the boss touches nothing");
         assert!(
@@ -1179,8 +1175,8 @@ mod tests {
         assert_eq!(chi, vec![0, 2], "genus 1 and genus 0");
     }
 
-    /// **The tangency is a *slit*, not a cut — and that is why no combinatorial check can see it**
-    /// (cell ⑤). Two clauses, because either alone passes vacuously:
+    /// **The tangency is a *slit*, not a cut — and that is why no combinatorial check can see it.**
+    /// Two clauses, because either alone passes vacuously:
     ///
     /// 1. **No vertex within `1e-9` of the touch.** The arrangement names the point exactly
     ///    (`NodeId::pierce(.., QuadRoot::Double)`) and then *discards* it — a tangency touches
@@ -1288,11 +1284,11 @@ mod tests {
         // here. Deleting this assertion would lose the genus, not the manifold claim.
         m.rebuild_adjacency();
         the_touch_is_a_slit(&m, out[0], [11.0, 10.0, 5.0]);
-        // ★★★★★ **And the solid meshes — across a bridge, since cell ⑦c.** The boss's footprint
+        // ★★★★★ **And the solid meshes — across a bridge.** The boss's footprint
         // touches the bore's rim at exactly one point, so the plate's top face has two inner
-        // loops meeting there: its interior is pinched. Until ⑦c that was `SelfTouchingBoundary`
-        // — a statement about the *tessellator* (`validate` is clean above and the volume is
-        // exact). Now the touching sample is put into the straight edge it lies on, the two
+        // loops meeting there: its interior is pinched. `SelfTouchingBoundary` here would be
+        // a statement about the *tessellator* (`validate` is clean above and the volume is
+        // exact). Instead the touching sample is put into the straight edge it lies on, the two
         // holes are spliced into one at that point, and the sweep orders the twins symbolically.
         // ★ Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
         // census that only agreed with itself would be measuring when it looks rather than what
@@ -1363,7 +1359,7 @@ mod tests {
     /// Turning the boss onto `+X` inverts it: the rim lives on the box's `x = 4` face (class 5,
     /// interned last) and the segment it crosses is on the `z = 2` cap (class 1). The pair swaps.
     ///
-    /// ★ **A tangency, so there is exactly one root** — and since 2026-08-21 that also means the
+    /// ★ **A tangency, so there is exactly one root** — and that also means the
     /// circle is not separated, so this **builds** rather than refusing. The single root is still
     /// what makes the naming rule visible here (it is what the fixture was written for), and the
     /// witness it once asserted is now the *split point that never happens*. That matters: the
@@ -1416,7 +1412,7 @@ mod tests {
         // ★★★★★ **And the solid meshes — the same pinch, spelled inner-to-outer.** The boss's
         // base circle is tangent to the plate's `z = 2` edge at `(4, 2, 2)`, so the `x = 4` face's
         // hole touches its own outer ring at one point and the face's interior is pinched there.
-        // `validate` is clean above and the volume is exact; since cell ⑦c the touch is bridged
+        // `validate` is clean above and the volume is exact; the touch is bridged
         // and the face's triangles are held to its exact area.
         // ★ Rebuilt first, on purpose: `boolean`'s own census meshes *before* the rebuild, and a
         // census that only agreed with itself would be measuring when it looks rather than what
@@ -1893,8 +1889,7 @@ mod tests {
     /// ★ Both-ends-pierce keys used to be excluded too — the chord and the two arcs between one
     /// pierce pair folded into a single `norm_edge` key — but the carrier gave arcs their own
     /// ordered key, so the chord's line key counts exactly its two coplanar faces now (measured:
-    /// the exclusion removed, both fixtures stay green — the tightening the carrier cell's plan
-    /// predicted).
+    /// the exclusion removed, both fixtures stay green).
     ///
     /// red: with the subdivision disabled, the pre-split single-use keys come back.
     #[test]
@@ -2082,7 +2077,7 @@ mod tests {
     ///
     /// ★ The two populations differ on the chord, deliberately: the straddling boss's pierce
     /// pair is joined by the plate-top chord (welded with the subdivided middle piece into
-    /// **one** line edge used by both coplanar faces — the subdivision cell's promise realized
+    /// **one** line edge used by both coplanar faces — the subdivision's promise realized
     /// in the store), while the turned boss's pair sits across the plate corner, joined through
     /// it by split boundary edges — no chord at all. Scoped to the edges the boolean minted
     /// (a snapshot, not a whole-store filter: the input cylinder's own rims are `[v, v]` too).
@@ -2742,7 +2737,7 @@ mod tests {
         )
     }
 
-    // ---- Wall faces: the gate asks the boundary, not the infinite plane (M6-2b preparation) ----
+    // ---- Wall faces: the gate asks the boundary, not the infinite plane ----
     //
     // ★★ The uniform-slab theorem's premise is about the other operand's **boundary**. The gate
     // used to test the wall's infinite *plane*, which is a cheaper sufficient condition — and it
@@ -2789,7 +2784,7 @@ mod tests {
     }
 
     /// ★ **The d = 0 member of the family: the wall plane runs exactly through the bore's
-    /// axis** (M6-2 rulings ladder). The gate passes it the same way (the boss's face clears the
+    /// axis.** The gate passes it the same way (the boss's face clears the
     /// footprint along the span), and the rulings road stays **silent** — its trigger is the
     /// gate's carried `crossings` record, which is empty for every gate-passed pair. This
     /// geometry had no corpus row (its siblings are all d = 2), and it is the population an
@@ -2904,9 +2899,9 @@ mod tests {
         assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     }
 
-    /// **A wall face that really does cross the bore builds** (cell ③). The plate's own `y = 20`
+    /// **A wall face that really does cross the bore builds.** The plate's own `y = 20`
     /// wall would clear, so the tool here is a slab whose face runs right across the hole — the
-    /// wall rule's true population, and M6-2b's. It used to be the fence (`WallMeetsLateral`, a
+    /// wall rule's true population. It used to be the fence (`WallMeetsLateral`, a
     /// reason since retired); the gate records the pair now and the tracer cuts the bore's lateral
     /// along two rulings
     /// (2 from the axis, r = 3) and its caps along the chord: one body, the exact volume.
@@ -2945,8 +2940,8 @@ mod tests {
     }
 
     /// **Exact tangency, and the operation is what refuses it.** The slab's face stands exactly
-    /// `r` from the axis, so it touches the bore's lateral along one line. The gate passes that
-    /// now (cell ⑥) — what convicts this shape is the *verdict*: cutting the slab away leaves the
+    /// `r` from the axis, so it touches the bore's lateral along one line. The gate passes
+    /// that — what convicts this shape is the *verdict*: cutting the slab away leaves the
     /// material as the **two wedges** between the parabola and the plane, which meet only on the
     /// line, and both are bounded by the same faces so they are one solid. `SelfTouchingResult`.
     ///
@@ -2993,10 +2988,10 @@ mod tests {
     /// differ, and they differ without any of them being named — `keep` is asked about the three
     /// regions beside the tangent line and the answers fall out.
     ///
-    /// ★ This used to be called *the user's script*. It is not: the app's `cylinder({center})`
+    /// ★ This is not *the user's script*: the app's `cylinder({center})`
     /// anchors the cylinder at mid-height, so the user's stud runs `z ∈ [−1, 1]` **through** the
-    /// cube (cell ⑦b caught the difference). That model is the next test; this one — base at
-    /// `z = 0`, one cap pinched — is its blind neighbour, and the shape cell ⑥ and OCCT measured.
+    /// cube. That model is the next test; this one — base at
+    /// `z = 0`, one cap pinched — is its blind neighbour, and the shape OCCT measured.
     ///
     /// Volumes **derived, not copied**: the stud's footprint is `x ∈ [0.1, 0.5] × y ∈ [−0.2, 0.2]`,
     /// inside the cube's, and only `z ∈ [0, 0.5]` overlaps — so the shared volume is `π r² · 0.5`.
@@ -3048,7 +3043,7 @@ mod tests {
     /// ★★★★★ **The user's script — `cuboid()` fused with `cylinder({r: 0.2, h: 2, center: [0.3,0,0]})`
     /// — and its three answers.** `center` is mid-height, so the stud runs `z ∈ [−1, 1]` through
     /// the cube and is tangent to the wall `x = 0.5` along the cube's whole height. Both caps are
-    /// pinched (the stud's circle touches each square's edge at one point) — and since cell ⑦c
+    /// pinched (the stud's circle touches each square's edge at one point) — and
     /// both are bridged and drawn: this is the model the tessellator was opened for.
     ///
     /// Volumes derived: the stud is `π r² · 2`, the part inside the cube `π r² · 1`.
@@ -3470,14 +3465,14 @@ mod tests {
         assert!(!lumps_fall_apart(BoolKind::Cut, A, false, -1));
     }
 
-    /// ★★★★★ **The disk on a wall plane is read, and it clears** — cell ⑮.
+    /// ★★★★★ **The disk on a wall plane is read, and it clears.**
     ///
     /// The plate carries a **crosswise** bore, so the plane `x = 30` holds that bore's circular cap
     /// face: an outer loop of one arc and one seam vertex. That plane is also parallel to the
-    /// vertical drill's axis and passes within `r` of it, so the face test is reached. Until this
-    /// cell the road answered «cannot read this shape» and the boolean stopped there — the barrier
-    /// was sound (a rule reading vertices alone would have found "every vertex on one side" true
-    /// of a **single point**) but it turned away the true answer along with the false one.
+    /// vertical drill's axis and passes within `r` of it, so the face test is reached. Answering
+    /// «cannot read this shape» there would stop the boolean — a sound barrier
+    /// (a rule reading vertices alone would find "every vertex on one side" true
+    /// of a **single point**) but one that turns away the true answer along with the false one.
     ///
     /// ☑ The disk's own numbers: centre `(30, 10, 5)` radius `2`, against a strip centred on
     /// `y = 4` of half-width `√(9 − 1) ≈ 2.83`. Six apart, so it clears by more than its radius —
@@ -3711,7 +3706,7 @@ mod tests {
         );
     }
 
-    // ---- The footprint's other axis: along the cylinder (M6-2b preparation) ----
+    // ---- The footprint's other axis: along the cylinder ----
     //
     // ★★ A wall parallel to the axis meets the cylinder in a **rectangle** of the wall's own
     // plane — the strip across, a lateral face's span along — so "does this face miss it" is one
@@ -3760,7 +3755,7 @@ mod tests {
 
     /// ★★ **The two axes are one judgement, measured as one.** The same tool three ways against
     /// the same two-banded bore, with only the numbers moved: clearing *either* axis is enough,
-    /// and clearing neither is the **record** (cell ③ — it used to be the refusal). A rule that
+    /// and clearing neither is the **record**, not a refusal. A rule that
     /// had merely gained a second, independent test would pass (a) and (b) too — what this pins
     /// is (c), that the two are OR-ed rather than each able to wave a face through on its own
     /// terms: a face waved through is an unlisted pair the tracer stays silent for, and the bore
@@ -3791,8 +3786,8 @@ mod tests {
         crate::boolean(&mut m, BoolKind::Cut, s, along).expect("clear along the axis");
 
         // (c) Neither: full width *and* straddling both bands — a genuine crossing of both
-        // laterals (`y = 6`, 1 from the axis, r = 2), which the gate used to refuse and records
-        // now (cell ③): two ruling pieces per band at `x = 5 ± √3`, the chord on the caps and on
+        // laterals (`y = 6`, 1 from the axis, r = 2), which the gate
+        // records: two ruling pieces per band at `x = 5 ± √3`, the chord on the caps and on
         // the middle cut's ceiling and floor. One body, the exact volume.
         let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
         let neither = m.add_cuboid(

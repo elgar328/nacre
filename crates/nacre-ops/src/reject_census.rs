@@ -5,13 +5,13 @@
 //! that raised it, and separately the reasons that actually left a public entry point.
 //!
 //! ★★★ **The two columns are not the same population, and reading one for the other is how this
-//! measurement goes wrong.** Measured over the whole workspace suite **before E** (2026-08-15):
-//! 119 raises, 20 surfaced — 97 of them one swallowed guard, `no_clear_ray` from
-//! `point_in_component`, whose caller retried other nodes. A census keyed on raises alone would
+//! measurement goes wrong.** Measured over the whole workspace suite while `point_in_component`
+//! still raised `no_clear_ray` and its caller retried other nodes: 119 raises, 20 surfaced — 97
+//! of them that one swallowed guard. A census keyed on raises alone would
 //! have reported it as 82% of all rejects, which was false about everything a caller ever saw.
-//! ★ **E (2026-08-17) then removed that population on purpose** — the probe's "this node cannot
-//! decide" is a typed abstention now, not an error to swallow — so the columns' gap inverted its
-//! reading: it is the count of *remaining* swallowed raises, near-zero is the goal state, and a
+//! ★ **That population is gone on purpose** — the probe's "this node cannot
+//! decide" is a typed abstention now, not an error to swallow — so the columns' gap reads the
+//! other way: it is the count of *remaining* swallowed raises, near-zero is the goal state, and a
 //! gap reopening is news of a new swallow.
 //!
 //! ★★ **What this does *not* answer: which *site* surfaced.** A reject is raised on a rayon worker

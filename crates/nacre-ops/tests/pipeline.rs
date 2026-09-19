@@ -118,7 +118,7 @@ fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
     }
 }
 
-/// Test shim: a boolean whose result is exactly one solid (cell 0.4 multi-solid).
+/// Test shim: a boolean whose result is exactly one solid (a boolean may return several).
 fn boolean_one(
     model: &mut Model,
     kind: BoolKind,
@@ -214,7 +214,7 @@ fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)]).unwrap()
 }
 
-/// `PocketOnFace`'s profile lives in a frame **derived from the face** (design §6), not in world
+/// `PocketOnFace`'s profile lives in a frame **derived from the face**, not in world
 /// coordinates — but on the unit cube's lid the two coincide.
 ///
 /// The sketch origin is the world origin projected onto the face's plane, and the arbitrary-axis
@@ -326,7 +326,7 @@ fn l_and_dimple(kind: BoolKind) -> (Model, Handle<Solid>) {
 
 /// `Cut(stub, L)` — the operands of `l_and_dimple` reversed. The L's top face keeps only
 /// the stub's footprint, so the answer is a `0.4 × 0.4 × 0.5` box whose floor is that
-/// island face: an outer loop made of nothing but seam vertices (cell 3f-2).
+/// island face: an outer loop made of nothing but seam vertices.
 fn island_cut() -> (Model, Handle<Solid>) {
     let l = Profile2d::polygon(vec![
         p2(0.0, 0.0),
@@ -376,7 +376,7 @@ fn notch_bar_cut() -> (Model, Handle<Solid>) {
     .unwrap();
     // The second sketch is on a plane the model does not hold, so the log states it. The log is
     // assembled against a scratch model built the *same way*, because a datum's handle is not
-    // known until the datum runs — and `replay` re-anchors indices (design.md §2).
+    // known until the datum runs — and `replay` re-anchors indices.
     let __plane = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
     let mut __scratch216 = Model::new();
     let __first = Operation::Extrude {
@@ -427,7 +427,7 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
     .unwrap();
     // The second sketch is on a plane the model does not hold, so the log states it. The log is
     // assembled against a scratch model built the *same way*, because a datum's handle is not
-    // known until the datum runs — and `replay` re-anchors indices (design.md §2).
+    // known until the datum runs — and `replay` re-anchors indices.
     let __plane = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
     let mut __scratch214 = Model::new();
     let __first = Operation::Extrude {
@@ -457,7 +457,7 @@ fn ell_dimple_cut() -> (Model, Handle<Solid>) {
 
 /// `Cut(u, slab)` — the slab shears off both prong tops. Its `y = 1.5` face has its whole
 /// boundary dropped, so its two loops are **islands**: one input face, two output faces,
-/// both flipped, and they become the result's new end caps (cell 3f-3).
+/// both flipped, and they become the result's new end caps.
 fn u_cut_by_slab() -> (Model, Handle<Solid>) {
     let (mut m, u) = u_prism();
     let slab = m.add_cuboid(
@@ -471,7 +471,7 @@ fn u_cut_by_slab() -> (Model, Handle<Solid>) {
 
 /// `Cut(staple, L)` — a П drawn in the XZ plane, extruded along `−y`, minus the L-prism.
 /// The L's cap contributes two faces to the result: the kept region around the reflex corner,
-/// and an **island** where the near leg's footprint sits in a dropped region (cell 3f-4).
+/// and an **island** where the near leg's footprint sits in a dropped region.
 fn staple_cut_by_l() -> (Model, Handle<Solid>) {
     let l = Profile2d::polygon(vec![
         p2(0.0, 0.0),
@@ -495,7 +495,7 @@ fn staple_cut_by_l() -> (Model, Handle<Solid>) {
     .unwrap();
     // The second sketch is on a plane the model does not hold, so the log states it. The log is
     // assembled against a scratch model built the *same way*, because a datum's handle is not
-    // known until the datum runs — and `replay` re-anchors indices (design.md §2).
+    // known until the datum runs — and `replay` re-anchors indices.
     let __plane = SketchPlane::from_origin_normal(
         Point3::from_array([0.0, 1.3, 0.0]),
         Vector3::from_array([0.0, -1.0, 0.0]),
@@ -592,7 +592,7 @@ fn a_pocket_lid_carries_its_hole() {
 
 #[test]
 fn a_boolean_result_carries_its_hole() {
-    // The gate's first run on a boolean result. Cell 3f-1 gives the L's top face an
+    // The gate's run on a boolean result. The cut gives the L's top face an
     // inner loop, and the pocket's walls (or the boss's) hang off that loop's rim
     // edges — so watertight is what proves the rim is shared rather than duplicated.
     //
@@ -616,7 +616,7 @@ fn a_boolean_result_carries_its_hole() {
 
 #[test]
 fn a_sealed_cavity_meshes_watertight() {
-    // Cell 5c: fusing a slab across the pocket mouth seals it into an enclosed void, so the
+    // Fusing a slab across the pocket mouth seals it into an enclosed void, so the
     // result has two shells. The gate proves both close (watertight, no leaks between the
     // outer surface and the void's) and that the void's inward faces subtract in the mesh
     // volume exactly as they do in `props` — the cavity's `2.408` against the outer `2.44`.
@@ -634,7 +634,7 @@ fn a_sealed_cavity_meshes_watertight() {
 
 #[test]
 fn a_split_face_meshes_like_two() {
-    // Cell 3e-2's first shape whose bar floor becomes *two* b-rep faces. The signed volume
+    // A shape whose bar floor becomes *two* b-rep faces. The signed volume
     // is the only check here that looks at their orientation: each floor got its own
     // `Orientation` from `flip` and its own ring from the stitcher, and nothing else in
     // this file compares those two sources.
@@ -680,7 +680,7 @@ fn a_non_convex_hole_bridges_and_meshes() {
 
 #[test]
 fn two_islands_from_one_face_mesh_like_two() {
-    // Cell 3f-3's payoff on the gate. The slab's face yields two islands, and each took its
+    // Two islands on the gate. The slab's face yields two islands, and each took its
     // `Orientation` from `flip` and its ring from `orient_seam_loop`. The signed volume is
     // the only check here that compares those two sources; watertight and the unsigned area
     // would wave a reversed island through.
@@ -699,7 +699,8 @@ fn two_islands_from_one_face_mesh_like_two() {
 
 #[test]
 fn an_island_beside_an_arc_meshes() {
-    // Cell 3f-4 on the gate. One input face — the L's cap — gives the result a kept region
+    // An island beside a kept region, on the gate. One input face — the L's cap — gives the result
+    // a kept region
     // *and* an island, and the two were told apart by containment alone. Both are flipped
     // (`Cut`'s B-piece), and the signed mesh volume is the only check in this file that
     // compares each face's `Orientation` against its own ring.
@@ -791,7 +792,7 @@ fn only_the_signed_volume_sees_a_reversed_face() {
 fn an_island_face_meshes_like_any_other() {
     // The gate's first run on a face whose outer loop is *all* seam. It is a plain box —
     // 12 triangles, `2·0.16 + 4·0.4·0.5 = 1.12` of surface, 0.08 of volume — and that is
-    // the claim: cell 3f-2's island is not a special kind of face downstream.
+    // the claim: an island is not a special kind of face downstream.
     //
     // The signed volume is the one check with something new to say. `props` reads
     // `Face.orientation`, which `assemble_fuse_cut` set from the `flip` flag; `tess`
@@ -812,7 +813,7 @@ fn an_island_face_meshes_like_any_other() {
 
 #[test]
 fn a_flipped_island_loop_is_caught() {
-    // Cell 3f-1 showed that a flipped *hole* is caught by `validate` (topologically) and
+    // A flipped *hole* is caught by `validate` (topologically) and
     // by `tessellate` (geometrically, `HoleWinding`), while volume and OCCT see nothing.
     // The island inverts that, and the inversion was measured rather than assumed.
     //
@@ -907,7 +908,7 @@ fn a_boolean_result_meshes_only_the_live_solid() {
     assert_agrees(&g, "stacked fuse");
 }
 
-/// The gate on a holed *operand*. Cell 3f-5 lets a pocketed cube be cut, and the lid
+/// The gate on a holed *operand*. A pocketed cube can be cut, and the lid
 /// keeps its hole either by riding through `whole()` untouched or by being placed inside
 /// the region a seam arc leaves. Both roads end here.
 ///
@@ -915,7 +916,7 @@ fn a_boolean_result_meshes_only_the_live_solid() {
 /// props.volume` is the only one of the four that can see a hole ring reversed, since
 /// `props` reads the face's `orientation` and never the ring's winding.
 ///
-/// The bite is the symmetric `[0.85,1.15]³` cell (5a) gave back: its vertical edge pierces
+/// The bite is the symmetric `[0.85,1.15]³`: its vertical edge pierces
 /// the lid at `(0.85, 0.85)`, a point on the lid's fan diagonal from every apex, so the
 /// boolean's exact crossing test is what carries it here. The lid that comes out is holed
 /// *and* notched, and `nacre-tess` clips ears rather than fanning, so the gate is a second
@@ -1003,8 +1004,8 @@ fn a_drilled_solid_meshes_watertight() {
     );
 }
 
-/// A notch bitten from one edge of a cube: cell (5b) opened it (the convex path rejected
-/// it as `poke_through`). The kept region's boundary is a seam chord plus part of one
+/// A notch bitten from one edge of a cube. The kept region's boundary is a seam chord plus part of
+/// one
 /// edge — a run with no vertex — and that shape is new to the mesh gate, which had only
 /// ever fanned squares-with-square-holes and reflex caps. `10³ − 4·1.4·1.2`.
 #[test]

@@ -273,7 +273,7 @@ fn cylinder_wall_contact(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError>
 }
 
 /// The tangent wall: the axis sits exactly `r = 0.5` from the `x = 0` wall, so the wall touches
-/// the lateral along one line. The gate passes it (cell ⑥); this `Cut` is refused by the
+/// the lateral along one line. The gate passes it; this `Cut` is refused by the
 /// **verdict**, because what it leaves near the line is two wedges of one solid.
 fn cylinder_wall_tangent(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(m, [0.0; 3], [2.0; 3]);
@@ -321,11 +321,8 @@ fn cylinder_pair(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 
 /// ⑥ ★ **The target.** A part fused with a 45°-rotated copy of itself: one arm lands coplanar on
 /// another, giving a solid of zero thickness — a self-touch. What comes back is its truth,
-/// `SelfTouchingResult` (`Impossible`, the touching edge as the witness), since 2026-08-17: the
-/// merge abstains on a pinching group and the whole-result judgement runs before minting. (The
-/// two-day intermediate was `CoplanarPinch` — the merge guard's capability limit under its own
-/// name, which this census measured as the only firing site of the old shared `CoplanarMerge`
-/// label; both the name and its raise site are gone.)
+/// `SelfTouchingResult` (`Impossible`, the touching edge as the witness): the
+/// merge abstains on a pinching group and the whole-result judgement runs before minting.
 fn fold_45(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let plate = [
         [0.0, 0.0],
@@ -392,13 +389,12 @@ const CORPUS: [Fixture; 13] = [
     },
     Fixture {
         name: "diamond-void",
-        // ★ One site now, and it is the one the caller is told about. This fixture used to be
-        // the census's carrier of swallowed raises — its per-node probe rang `no_clear_ray` from
-        // `combinatorics.rs` 24 times per boolean and surfaced once — until E (2026-08-17) made
-        // the probe's "this node cannot decide" an abstention in its type (`Ok(None)`) instead
-        // of an error for the retry to catch. What rings now is what surfaces.
+        // ★ One site, and it is the one the caller is told about. The per-node probe's "this
+        // node cannot decide" is an abstention in its type (`Ok(None)`), not an error for the
+        // retry to catch (as an error it rang `no_clear_ray` 24 times per boolean and surfaced
+        // once). What rings is what surfaces.
         //
-        // ★★ **And since cell 24 what surfaces is the shape's own name.** `no_clear_ray` was the
+        // ★★ **And what surfaces is the shape's own name.** `no_clear_ray` was the
         // depth question running out of witnesses — a planar component was offered nothing but its
         // vertices, and here every one of them sits on the host's wall. Given the points its
         // **edges** name, the depth decides and the self-touch test says what this really is: a void
@@ -411,7 +407,7 @@ const CORPUS: [Fixture; 13] = [
         raised: &[("self_touching_result", None, BOOLEAN)],
         surfaced: &[("self_touching_result", None)],
     },
-    // ── The M6-2a population gate names its refusals (C2) — one fixture per cause. All are
+    // ── The cylinder population gate names its refusals — one fixture per cause. All are
     // raised while reading the operands (`plane_index_setup`), before any arrangement work.
     Fixture {
         name: "cylinder-operand",
@@ -428,10 +424,8 @@ const CORPUS: [Fixture; 13] = [
     },
     Fixture {
         name: "cylinder-notyet",
-        // ★ **This row is the diff C4b promised.** It stood as `CylinderBooleanNotYet` from C2
-        // through C4b-2 — the drill population passing the gate and waiting for the machinery —
-        // and it now **builds**: a through hole, walls clear (distance 1 > r = 0.5), caps
-        // unshared. The name it used to carry no longer exists in the code.
+        // ★ The drill population passes the gate and **builds**: a through hole, walls clear
+        // (distance 1 > r = 0.5), caps unshared.
         expect: None,
         run: cylinder_notyet,
         raised: &[],
@@ -439,12 +433,12 @@ const CORPUS: [Fixture; 13] = [
     },
     Fixture {
         name: "cylinder-wide-axis",
-        // ★ The same population spelled with long decimals. The **gate** answers it (S2 made its
-        // questions total), and the wall this input met next was the **value** path: the circle
+        // ★ The same population spelled with long decimals. The **gate** answers it (its
+        // questions are total), and the wall this input met next was the **value** path: the circle
         // nesting projects the ring's corners into the class's rational chart, and a sub-micron
         // model at full f64 precision left `Rat` there.
         //
-        // ★★ **It builds since cell 23, and the decline it froze was not about this model at
+        // ★★ **It builds, and the decline it once met was not about this model at
         // all.** The chart's second axis is `n x e1`, which squares the normal — and that normal
         // was carrying a factor the plane-name canonicalisation had not removed, because that
         // canonicalisation divides the content out of **four** coefficients while the chart reads
@@ -465,7 +459,7 @@ const CORPUS: [Fixture; 13] = [
     Fixture {
         name: "cylinder-wall-contact",
         // The axis sits 0.3 from the x = 0 wall with r = 0.5 — the wall pierces the lateral
-        // surface in two rulings (`y = 1 ± 0.4`). ★ It **builds** since cell ③ (the offset wall):
+        // surface in two rulings (`y = 1 ± 0.4`). ★ It **builds** (the offset wall):
         // the gate records the pair and the tracer cuts the lateral along the rulings and the
         // caps along the chord. The name it carried stays in the code for the tangent alone.
         expect: None,
@@ -476,10 +470,8 @@ const CORPUS: [Fixture; 13] = [
     Fixture {
         name: "cylinder-wall-tangent",
         // The axis exactly r from the wall: a zero-thickness contact along one line, which
-        // `validate` cannot see — measured in cell ⑥, which is why the answer is a verdict rather
-        // than a fence. ★ Two clauses stood here before and both are gone: "until capability C"
-        // (cell ⑤) and "what this waits on is the arrangement, a tangency is a double root" (cell
-        // ⑤'s ladder, measured with the crossing still recorded). The reason now comes from the
+        // `validate` cannot see, which is why the answer is a verdict rather
+        // than a fence. The reason comes from the
         // assembly, where the grouping can say the two wedges are one body.
         expect: Some(RejectReason::SelfTouchingResult),
         run: cylinder_wall_tangent,
@@ -492,7 +484,7 @@ const CORPUS: [Fixture; 13] = [
     },
     Fixture {
         name: "cylinder-oblique",
-        // A 30°-turned box: its planes are neither ⊥ nor ∥ to the axis — ellipses (M6-3).
+        // A 30°-turned box: its planes are neither ⊥ nor ∥ to the axis — ellipses.
         expect: Some(RejectReason::ObliqueCylinderCut),
         run: cylinder_oblique,
         raised: &[(
@@ -614,10 +606,8 @@ fn the_reject_census() {
     };
 
     // ★★ Assertion 4: **the fold's truth is one site, the whole-result judgement.** The
-    // point-contact merge guard it used to hit (`CoplanarPinch`, 2026-08-16, this census's own
-    // measurement) abstains since 2026-08-17 — the merge emits a pinching group unmerged and
-    // `self_touch_reject`, hoisted before minting, names the shape. Both baseline reds were the
-    // census working as designed: the vocabulary changes showed up in the diff. Distinct
+    // point-contact merge guard abstains — the merge emits a pinching group unmerged and
+    // `self_touch_reject`, hoisted before minting, names the shape. Distinct
     // *sites*, not raise counts: counts move with the build (`debug` re-runs every traced
     // boolean, `parallel` evaluates the classes a failing input would have skipped), and the
     // claim is about how many guards speak, not how often.
@@ -638,11 +628,10 @@ fn the_reject_census() {
         by("plain-fuse").report()
     );
 
-    // ★ What used to be Assertion 5 — "at least one reason is raised more often than it
-    // surfaces" — is gone **because the population it rode on was deliberately removed**: E
-    // (2026-08-17) turned the swallowed-raise champion (`point_in_component`'s per-node probe,
-    // 122 of the suite's 151 raises) into a typed abstention. The two columns still measure
-    // something, but the reading inverted: their gap is now the count of *remaining* swallowed
+    // ★ There is no Assertion 5 ("at least one reason is raised more often than it
+    // surfaces"): the swallowed-raise champion (`point_in_component`'s per-node probe,
+    // 122 of the suite's 151 raises) is a typed abstention. The two columns still measure
+    // something: their gap is the count of *remaining* swallowed
     // raises, and near-zero is the goal state — a gap reopening here is news of a new
     // swallow, visible in the whole-suite sweep (`--features reject-trace`).
 

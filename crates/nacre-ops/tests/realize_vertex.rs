@@ -23,8 +23,8 @@
 //! What actually separates the families: on the narrow ones both roads round *the same rational*
 //! the same way, so they cannot differ. On the tilted ones the cached coordinate comes out of a
 //! longer `f64` derivation that is not a correct rounding of anything — the 59-bit width is a
-//! proxy for how much arithmetic happened, not the mechanism. This is the first measurement of
-//! `truth-and-cache.md`'s *"최근접 f64 가 아닐 수 있다"* on vertices either way.
+//! proxy for how much arithmetic happened, not the mechanism. This measures, on vertices, that
+//! the cache may not be the nearest f64.
 
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{
@@ -200,8 +200,7 @@ fn bored_plate() -> Model {
 
 /// **A hand-built `Pierce` vertex** — the kernel does not mint these yet.
 ///
-/// `Vertex::Pierce`'s own doc records why: *"The producer arrives with M6-2's boolean; until
-/// then hand-built fixtures and validate are the consumers"* — the assembler declines to mint a
+/// Hand-built fixtures and validate are the consumers: the assembler declines to mint a
 /// pierce node because class order and handle order are canonical in different index spaces. So a
 /// fixture that waited for a boolean to produce one would measure nothing, forever.
 ///
@@ -526,11 +525,9 @@ fn a_curved_vertex_agrees_with_the_cache_it_did_not_use() {
     );
 }
 
-/// ★★★ **An operation's cache is the realization** (cell 52) — what `the_cache_is_not_always_nearest`
-/// measured until then. That test printed the tilted row rather than pinning it, *"because it is a
-/// statement about today's cache and the point of the door is to make it false eventually"*; this
-/// is that day. Every vertex the push funnel could realize on the ladder's first rung carries
-/// `Bounded` with that realization bit for bit; every one it could not is not `Bounded`.
+/// ★★★ **An operation's cache is the realization.** Every vertex the push funnel could realize
+/// on the ladder's first rung carries `Bounded` with that realization bit for bit; every one it
+/// could not is not `Bounded`.
 #[test]
 fn an_operations_cache_is_the_realization() {
     for (what, m) in [
@@ -572,7 +569,7 @@ fn an_operations_cache_is_the_realization() {
 
 /// ★ **The edge cache is already the derivation of the realized endpoints.** An edge is pushed
 /// after its vertices, so `push_edge` derives its line from realized coordinates; rebuilding every
-/// edge curve afterwards changes nothing — the S8 proof, standing on realized endpoints.
+/// edge curve afterwards changes nothing — the derivation, standing on realized endpoints.
 ///
 /// ⚠ This is a statement about a model **nothing has refined**. `refine_vertex_cache` moves
 /// coordinates, and after it a rebuild is emphatically not a no-op — which is why that door
@@ -648,7 +645,7 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
 /// `2⁻⁴⁰⁹¹`, and reading it out through `2f64.powi` flushed every coordinate to `0e0`. Measured,
 /// shipped, and caught only by this file's audit — so the lock lives here now.
 ///
-/// One exception, earned rather than claimed (2026-09-15): a coordinate that is exactly zero from
+/// One exception, earned rather than claimed: a coordinate that is exactly zero from
 /// exact inputs carries a zero radius honestly — `Mag::above`'s zero guard leaves nothing to
 /// charge — and zero is the only value this arm can earn that way, so a zero radius must sit on
 /// a zero value. The cylinder's axis seam is the fixture that has one; the tilted frame has none.
@@ -743,8 +740,8 @@ fn a_refusal_is_named_and_a_success_stands_beside_it() {
                 // ★★★ **Exhaustive `match`, not `matches!`** — and the difference is not style.
                 // This site exists to notice when a refusal arrives without a name, so it has to
                 // be the thing that breaks when a variant is added. `matches!(e, A | B | C)`
-                // compiles happily forever: cell 54 added `Unrepresentable` and this list simply
-                // went stale, asserting "unnamed refusal" about a refusal that has a name. An
+                // compiles happily forever: a new variant (`Unrepresentable`, say) leaves the list
+                // stale, asserting "unnamed refusal" about a refusal that has a name. An
                 // exhaustive match makes the compiler point here instead.
                 match e {
                     RealizeError::NoMeet
@@ -867,7 +864,7 @@ fn turn(axis: Axis, deg: i128) -> Isometry {
 /// ★★★★ **A motion chain is held back for the bits it costs, never for its length** — the two
 /// shapes that prove the difference.
 ///
-/// Cell 52 guarded the cache road with a depth constant (`CACHE_REPLAY_DEPTH = 64`) because a
+/// The cache road was guarded with a depth constant (`CACHE_REPLAY_DEPTH = 64`) because a
 /// 4,200-turn history realized on every push turned a 5.6 s test into minutes. That constant was
 /// doing **two jobs** and only one of them was true. As a *cost* limit it was load-bearing —
 /// removing it took the same fixture to 30 s. As a *precision* rule it was measurably wrong: what
@@ -1092,7 +1089,7 @@ fn the_refine_door_raises_every_ceiling_to_the_realization() {
     );
 }
 
-/// ★★★★ **The door carries the edges with it** — the order problem cell 52 removed, back again.
+/// ★★★★ **The door carries the edges with it** — the order problem, back again.
 ///
 /// An edge's curve is derived from its endpoints' coordinates when the edge is pushed. That was
 /// safe while coordinates never moved after the fact; this door moves them. So the door re-derives,

@@ -109,7 +109,7 @@ fn orient3d_is_rotation_invariant() {
 /// `collect_planes` on a rotated solid fills each plane's exact `WitnessPoint` triple, whose
 /// coordinates **span the face's own plane** and whose definition is rotated (tol > 0).
 ///
-/// ★ The witness is the surface's recorded triple, which is the *first pusher's* — since S9
+/// ★ The witness is the surface's recorded triple, which is the *first pusher's* —
 /// an origin cuboid's axis faces intern onto the seeded world planes, so the witness is the
 /// seed's `[0, u, v]` (rotated along), not this face's corners. "Matches `tri`" was a
 /// first-push coincidence, never the contract; on-plane is.
@@ -1340,14 +1340,12 @@ fn a_boolean_mints_no_surface() {
 /// ★★★★ **A named plane's triple names the caller's plane, full-width normals included —
 /// and the point order carries the caller's polarity.**
 ///
-/// History: this used to pin *"`c · p` is computable in `i128`"* and chose an axis-solved
-/// triple to keep every point coefficient-sized (a frame-walk triple's third point is
-/// `n × u`, a product, and 1,551 of 83,813 names went out unverified over it). That
-/// computability was a design constraint of the narrow-only pipeline; since S2 (wide names)
-/// and S4 (wide frames) an overflowing narrow derivation takes the arbitrary-precision road
-/// instead of failing, so `PlaneDef` states the *structural* triple `[o, o+u, o+v]` and the
-/// old property is retired. What must still hold, and is pinned here on the very normals
-/// whose widths used to break things:
+/// *"`c · p` is computable in `i128`"* is not a property of the triple (a frame-walk triple's
+/// third point is `n × u`, a product): with wide names and wide frames an overflowing narrow
+/// derivation takes the arbitrary-precision road
+/// instead of failing, so `PlaneDef` states the *structural* triple `[o, o+u, o+v]`.
+/// What must hold, and is pinned here on the very normals
+/// whose widths overflow the narrow road:
 ///
 /// - the definition **exists** (no width-based decline is left in `normal_def`),
 /// - the triple **names a plane** (`plane_name_exact` — total, `None ⇔ collinear`),
@@ -1563,7 +1561,7 @@ fn two_walls_of_one_plane_become_one_surface() {
     );
 }
 
-/// ★★ Open item 15 — a **wide** name's integer rescue, locked two ways: against the climb
+/// ★★ A **wide** name's integer rescue, locked two ways: against the climb
 /// on the real population (shared-motion gate, mirrored included), and by a starved judge
 /// that can answer *only* through the name (world gate, path proved from both sides).
 mod wide_name_rescue {

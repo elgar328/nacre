@@ -1,4 +1,4 @@
-//! S9 locks for the public [`SketchFrame`]: a `Named` placement is a *claim*, checked exactly at
+//! Locks for the public [`SketchFrame`]: a `Named` placement is a *claim*, checked exactly at
 //! construction and rejected by name — never silently replaced by `Canonical` — and the value a
 //! constructor accepts is letter-identical to what the operation road builds for the same words.
 

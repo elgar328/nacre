@@ -153,7 +153,7 @@ fn a_boolean_result_copies_with_its_discovered_vertices() {
 }
 
 /// A rotated solid's vertices keep their definitions, and those definitions name the **moved**
-/// surfaces — so the twin's corners are defined against the twin's own planes (S7: the motion
+/// surfaces — so the twin's corners are defined against the twin's own planes (the motion
 /// lives on the faces, and a vertex follows the planes it names).
 #[test]
 fn a_rotated_solid_copies_with_its_rotation_origin() {

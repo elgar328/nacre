@@ -1,6 +1,6 @@
 //! **The replay contract, measured.**
 //!
-//! `replay`'s doc (and `docs/design.md` §6) promises «the same log reproduces the same model
+//! `replay`'s doc promises «the same log reproduces the same model
 //! **down to handle indices**». Six of `Operation`'s seven variants carry a handle
 //! (`PadOnFace`·`PocketOnFace`·`Boolean`·`Transform`·`Mirror`·`Copy`) — and for those the
 //! promise is **false today**: `replay` starts from a fresh `Model::new()`, so the log's
@@ -11,7 +11,7 @@
 //! passed value-only `Extrude` logs, so replay determinism rested entirely on `Extrude` stating
 //! its plane by value.
 //!
-//! ★ **That sentence is now history.** S5(i)-b gave `Extrude` a `SketchFrame`, so **all seven
+//! ★ **That sentence is now history.** `Extrude` carries a `SketchFrame`, so **all seven
 //! variants carry a handle** and there is no value-only operation left. The premise this file was
 //! written to expose has been consumed; what it measures — that a log's indices are re-anchored
 //! onto the arena being built — is now load-bearing for every log there is.
@@ -52,8 +52,7 @@ fn extrude_op(m: &Model, a: f64, b: f64, dist: f64) -> Operation {
 ///
 /// A signature is a **vector of these**, not one string or hash: when two models differ, the
 /// interesting question is *where first*, and a comparator that answers only "different" hands
-/// that work back to a human. (`docs/dev-log.md`'s S9 ε-gate prints which line and which field
-/// moved by how much, for the same reason.)
+/// that work back to a human.
 #[derive(Clone, PartialEq, Debug)]
 struct SigItem {
     what: &'static str,
@@ -501,7 +500,7 @@ fn the_comparator_notices_a_difference() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The property that was promised — `docs/design.md` §7 (2)
+// The property that was promised
 // ─────────────────────────────────────────────────────────────────────────────
 
 use nacre_scalar::{Angle, Axis, Rotation};
@@ -779,9 +778,8 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
         st.attempted += 1;
         match apply(&mut model, &op) {
             Ok(_) => {
-                // ★ Every variant names a cell now (S5(i)-b gave `Extrude` a frame), so this
-                // counts accepted operations. It used to exclude `Extrude` because that was the
-                // one variant carrying nothing.
+                // ★ Every variant names a cell (`Extrude` carries a frame), so this counts
+                // accepted operations.
                 st.handle_carrying += 1;
                 st.accepted += 1;
                 if st.rejected > 0
@@ -804,11 +802,9 @@ fn run_recipe(steps: &[Step]) -> (Vec<Operation>, Model, Stats) {
         }
     }
 
-    // ★ Property (4) used to need a fallback here — if a recipe landed no handle-carrying
-    // operation, the session closed with a `Copy` so the case proved something. Since S5(i)-b
-    // there is no operation that carries no handle: `Extrude` names its plane, so the seed alone
-    // satisfies it. The counter below stays because the *report* is still worth having; the
-    // fallback is gone because it became unreachable.
+    // ★ Property (4) needs no fallback here: there is no operation that carries no handle —
+    // `Extrude` names its plane, so the seed alone satisfies it. The counter below stays
+    // because the *report* is still worth having.
     // The seed extrude names the world plane, so `handle_carrying >= 1` holds before any
     // generated step runs — property (4) is satisfied by construction rather than by a fallback.
     st.handle_carrying += 1;
@@ -830,11 +826,9 @@ proptest! {
     /// ★ **The gate of this stage.** Four properties on one generated session:
     ///
     /// 1. the session model is a valid b-rep,
-    /// 2. `replay` is **idempotent** — replaying twice lands on the same arena
-    ///    (`docs/design.md` §7 (2), promised and until now unimplemented),
+    /// 2. `replay` is **idempotent** — replaying twice lands on the same arena,
     /// 3. ★ `replay(log)` reproduces the session **down to handle indices** — the property the
-    ///    contract advertised and no call site had ever exercised, because every log in the
-    ///    workspace was value-only (which S5(i)-b then ended — every variant names a cell now),
+    ///    contract advertises (every variant names a cell, so every log exercises it),
     /// 4. every case carries at least one handle-bearing operation, guaranteed by construction
     ///    in [`run_recipe`], so (3) is never vacuously true.
     ///
@@ -1011,7 +1005,7 @@ fn arena_lengths(m: &Model) -> [usize; 5] {
 ///
 /// This measures the boundary rather than asserting it from memory: early rejects (decided from
 /// the request alone) leave Δ = 0, late rejects (decided from geometry that had to be built)
-/// leave Δ > 0. The numbers print so `docs/dev-log.md` quotes a measurement, not a belief.
+/// leave Δ > 0. The numbers print so the claim is a measurement, not a belief.
 #[test]
 fn a_late_reject_is_not_index_neutral() {
     let mut early = 0usize;
@@ -1376,10 +1370,9 @@ fn a_foreign_handle_still_dies_at_the_door() {
 
 /// ★ **An `Extrude` naming a surface that is not there is a named reject too.**
 ///
-/// `Extrude` was the one variant `rebind` could borrow rather than re-anchor, because it carried
-/// no handle. Since S5(i)-b it carries a `SketchFrame`, and forgetting to re-anchor it would have
-/// put the defect R repaired back into the **most common** operation in any log. This is the test
-/// that would have caught that.
+/// `Extrude` carries a `SketchFrame`, so `rebind` must re-anchor it rather than borrow it:
+/// forgetting to would put a stale handle into the **most common** operation in any log. This
+/// is the test that catches that.
 #[test]
 fn an_extrude_naming_a_surface_that_does_not_exist_is_rejected_by_name() {
     // A frame on a plane that only a datum creates — so a log that omits the datum names a

@@ -155,7 +155,7 @@ const NO_CYLS: &[crate::planes::WorkingCyl] = &[];
 
 /// Test shim: a boolean whose result is exactly one solid. Most tests operate on a single
 /// body; this asserts that and returns the lone handle, so call sites read as before while
-/// `boolean` itself returns the full `Vec` (cell 0.4 multi-solid).
+/// `boolean` itself returns the full `Vec`.
 fn boolean_one(
     model: &mut Model,
     kind: BoolKind,
@@ -202,8 +202,8 @@ fn square() -> Profile2d {
 /// A world-XY extrude for a log that is **replayed** rather than applied to a live model.
 ///
 /// ★ Its frame names a plane in a *throwaway* model, and that is sound for one reason: a
-/// log's handles are index vocabulary, and `replay` re-anchors them onto the model it builds
-/// (`docs/design.md` §2). The world planes are seeded at fixed indices, so `world(Axis::Z)`
+/// log's handles are index vocabulary, and `replay` re-anchors them onto the model it builds.
+/// The world planes are seeded at fixed indices, so `world(Axis::Z)`
 /// names the same plane in every model. Do **not** `apply` one of these to a live model —
 /// that is the cross-model misuse `Store::get`'s debug guard exists to catch.
 pub(crate) fn extrude_log_op(profile: Profile2d, dist: f64) -> Operation {
@@ -1210,7 +1210,7 @@ fn u_prism_is_valid() {
     assert!((vol - 5.3).abs() < 1e-9, "volume {vol}");
 }
 
-// ---- arrangement: seam segment gathering (M5-d3 cell 3b) ----
+// ---- arrangement: seam segment gathering ----
 
 fn near(a: Point3, b: [f64; 3]) -> bool {
     (a - Point3::from_array(b)).norm() < 1e-9
@@ -1221,7 +1221,7 @@ proptest! {}
 /// A big cube whose `y=0, z=0` edge is crossed **twice** by the seam: the notch
 /// spans `x∈[3,7]` and hangs below both `y=0` and `z=0`, so that one edge enters
 /// and leaves it. Extents are asymmetric so no crossing lands on a face centre or a
-/// fan diagonal — a debt to the fan, which cell (5a) deleted. Kept: one variable at
+/// fan diagonal — a debt to the fan, since deleted. Kept: one variable at
 /// a time.
 ///
 /// `edge_seam` maps an edge to *one* seam triple. This input is what that map
@@ -1267,8 +1267,7 @@ fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, slab, pc)
 }
 
-/// Nested loops, at last (cell 3f-7). Cell 3f-3 argued nesting was reachable and reached
-/// for a polyhedral torus; a pocket sliced between its floor and its lid is enough. The
+/// Nested loops: a pocket sliced between its floor and its lid is enough to reach them. The
 /// slab's underside carries the cube's cross-section as one loop and the pocket's inside
 /// it — a loop within a loop, which the pairwise guard over-rejected.
 ///
@@ -1279,7 +1278,7 @@ fn pocket_and_slab(z0: f64) -> (Model, Handle<Solid>, Handle<Solid>) {
 /// region and hangs the pocket loop in it as a hole beside an island.
 ///
 /// `Fuse` seals the pocket (`[0.3,0.7]² × [0.5,0.7]`, capped by the slab at `z = 0.7`) into
-/// an enclosed cavity — a second shell. Cell (5c) assembles it: the union material is
+/// an enclosed cavity — a second shell. The assembly builds it: the union material is
 /// `2.408` and the result carries one cavity of volume `0.032`, two shells, `validate`
 /// clean (the void's inward orientation). Both orders (Fuse is commutative).
 #[test]
@@ -1298,7 +1297,7 @@ fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
             props.volume
         );
     }
-    // Fuse seals the pocket into a cavity — a second shell, assembled by cell (5c).
+    // Fuse seals the pocket into a cavity — a second shell.
     for swap in [false, true] {
         let (mut m, slab, pc) = pocket_and_slab(0.7);
         let (x, y) = if swap { (pc, slab) } else { (slab, pc) };
@@ -1320,7 +1319,7 @@ fn a_slab_between_the_lid_and_the_floor_nests_two_loops() {
 /// The L with a box biting its reflex corner and poking out the top. The box top
 /// (z=1.2) clears the L's z=1 **deliberately**: sunk inside the L's slab, the L's
 /// vertical edges at (2,1) and (1,1) would pierce the box's bottom *and* top face,
-/// which `pierced_multi` used to reject. Cell 3e-3 supports it; the fixture keeps its
+/// which is a separate, supported case; the fixture keeps its
 /// clearance so that it goes on testing one thing.
 fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
@@ -2165,7 +2164,7 @@ fn two_extrudes_make_two_solids() {
     // ★ The second plane is not a seed, so the log has to state it — and a datum's handle is
     // not known until the datum runs. So the log is assembled against a **scratch model built
     // the same way**: a frame that names surface *N* there names surface *N* in the replay,
-    // because `replay` re-anchors indices (`docs/design.md` §2). That is what a recording
+    // because `replay` re-anchors indices. That is what a recording
     // session does, and R is what makes it sound.
     let mut scratch = Model::new();
     let first = extrude_op(&scratch, square(), 1.0);
@@ -2558,7 +2557,7 @@ proptest! {
     ///
     /// Was `#[ignore]`d for a residual `D = 0` panic on general normals: a triple naming one
     /// geometric plane through two coincident faces. Symmetric normals like `(1,1,1)` cleared
-    /// it, `(0.446, 0.737, 0.990)` did not. **Un-ignored 2026-07-22** — naming every plane by
+    /// it, `(0.446, 0.737, 0.990)` did not. **Un-ignored**: naming every plane by
     /// its class made those two faces one index, so the degenerate triple can no longer form.
     #[test]
     fn pocket_on_a_random_slanted_face_is_valid_or_rejects(
@@ -2849,7 +2848,7 @@ fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
 /// this class stays the corpus's only crossed-frame witness, so it is what would catch a
 /// producer that regresses to a raw `side_of`.
 ///
-/// What this pins, measured before the fix (2026-07-22):
+/// What this pins, measured before the fix:
 /// - the pocket fixture has 5 `orient_sign == -1` classes carrying seated *and* graze segments
 ///   (4 walls + the floor); every other fixture has **no** `Reversed` root at all, which is why
 ///   the whole corpus passed with the frames crossed and why converting cannot regress it;
@@ -3001,9 +3000,8 @@ fn bbox_lo(m: &Model, s: Handle<Solid>) -> [f64; 3] {
 }
 
 /// Vertices the kernel vouches for beyond the construction's bare figure: realized from their
-/// definition (`Bounded`, cell 52) or carrying a measured residual. Before cell 52 "discovered"
-/// was read off the residual alone; a boolean's vertices now realize, so the count is the same
-/// population under the name the cache gives it.
+/// definition (`Bounded`) or carrying a measured residual. A boolean's vertices realize, so the
+/// count is the population under the name the cache gives it.
 fn count_discovered(m: &Model, s: Handle<Solid>) -> usize {
     let mut seen = std::collections::HashSet::new();
     let mut n = 0;
@@ -3601,7 +3599,7 @@ fn the_mesh_covers_the_faces_it_approximates() {
         m.rebuild_adjacency();
         check("plate", &m, &[a]);
     }
-    // ★ The pinched caps (cell ⑦c): a stud tangent to the cube's wall. Blind (base anchored,
+    // ★ The pinched caps: a stud tangent to the cube's wall. Blind (base anchored,
     // one cap pinched) and through (`center` anchored — the user's own script — both caps
     // pinched). These are the first solids whose caps are triangulated across a bridge, and
     // this oracle is the only thing that would see a bridged cap come out the wrong shape.
@@ -3628,8 +3626,8 @@ fn the_mesh_covers_the_faces_it_approximates() {
         ("through", [2.0, 2.0, -1.0], 4.0),
         ("on top", [2.0, 2.0, 2.0], 1.0),
         ("flush", [2.0, 2.0, 0.0], 3.0),
-        // The half-height wall boss: its upper cap sits inside the plate (D2b opened it), and
-        // its mirror with the lower cap inside — one lateral face each since D4, whose chain
+        // The half-height wall boss: its upper cap sits inside the plate, and
+        // its mirror with the lower cap inside — one lateral face each, whose chain
         // rim passes the seam on a **wrap arc** here (the seam is at −y, outside the plate),
         // where the boss on the x = 40 wall in `bands` runs *along* the seam ruling.
         ("half wall", [2.0, 0.0, -1.0], 2.0),
@@ -3665,7 +3663,7 @@ fn the_mesh_covers_the_faces_it_approximates() {
 /// into: the band under the plate, the half-band beside it, the band above. The two circles
 /// between those pieces bound **nothing** — the surface runs smooth across them — so drawn they
 /// were a line ringing a boss that has none, which is what a user reported seeing. A cleaning
-/// pass (D4) erased them; since D5 the emitter builds the lateral as one **region** of its chart
+/// pass erased them; now the emitter builds the lateral as one **region** of its chart
 /// and there is nothing to erase — what comes out is a band with one notch punched out of its
 /// side.
 ///
@@ -4055,7 +4053,7 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     let b = m.add_cylinder(Point3::from_array([6.0, 2.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
     let _ = boolean(&mut m, BoolKind::Cut, first, b);
-    // ★ The ledger is the binary's: since E2-2 a panel's ruling (one graze) and a chain's (a
+    // ★ The ledger is the binary's: a panel's ruling (one graze) and a chain's (a
     // transversal then a graze) are recorded too. Read this fixture's boss — origin `(2, 0, −1)`,
     // rulings spanning `t ∈ [0, 4]` — and nothing else.
     let carved: Vec<Vec<crate::arrangement::SegKind>> = crate::arrangement::ruling_probe::CARVED
@@ -4166,7 +4164,7 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
         let _ = boolean(&mut m, BoolKind::Cut, first, b);
     }
     // ★ The ledger is the binary's, not this test's: every fixture that carves a cycle writes to
-    // it, and since E2-2 a panel's and a chain's arcs (which face any way) are carved too. Read
+    // it, and a panel's and a chain's arcs (which face any way) are carved too. Read
     // only this fixture's boss (`(2, 0, −1)`) and only its **hole** — the sentence is about holes.
     let mids: Vec<[f64; 3]> = crate::arrangement::arc_probe::MIDS
         .lock()
@@ -4245,8 +4243,8 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
     }
-    // ★★★ **And that the existence gate is what did it.** The band road's `panel_probe` used to
-    // record it here; since D3 the chart's census holds it where the cells are read:
+    // ★★★ **And that the existence gate is what did it.** The chart's census holds it where the
+    // cells are read:
     // `exist_marks_false` (a sector dropped because the face is not there — the four above, held
     // as growth ≥ 4 in `cyl_chart::tests::the_cells_read_their_chamber_from_the_horizontal_lines`)
     // and `arcs_no_mark`/`arcs_multi_mark` (every cut end read carries exactly one lateral mark of
@@ -4506,8 +4504,8 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
         pins += pinned_ends_ordered(at, dir, kind);
     }
     // ★ The count is the lock on the *population*: let the fixtures stop producing pierce-pinned
-    // ends and every assertion below would pass vacuously. 40 while a ring split at a seam joint
-    // was declined; **48** since E1 ③ names it — the `[6, 4, −1]` boss sits on the +y wall, so
+    // ends and every assertion below would pass vacuously. **48**, which counts the rings split at
+    // a seam joint — the `[6, 4, −1]` boss sits on the +y wall, so
     // its bite on the plate's caps wraps the seam (θ = 0 is at −y), and those rings' ends join.
     assert_eq!(pins, 48, "cylinder-pinned ring ends exercised");
 }
@@ -4913,7 +4911,7 @@ fn transform_translate_preserves_discovered_definition() {
     let named = boundary_verts(&m, r2)
         .into_iter()
         // A measured tolerance survives an exact move and is dropped by a recorded one
-        // (S7's tol rule), so what "still named" means here is the definition: every seam
+        // so what "still named" means here is the definition: every seam
         // vertex names three planes, whichever road it travelled.
         .filter(|&vh| matches!(*m.vertex(vh), Vertex::ThreePlane(_)))
         .count();
@@ -4970,7 +4968,7 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
             for vh in m.edge(he.edge).vertices.iter() {
                 // The image keeps its definition, and the definition reproduces the
                 // coordinate: solve the corner's three planes in the frame their names are
-                // stated in, replay the chain the *faces* record (S7 — the vertex has no
+                // stated in, replay the chain the *faces* record (the vertex has no
                 // motion of its own), and the answer is the stored coordinate bit for bit.
                 let Vertex::ThreePlane(tri) = *m.vertex(*vh) else {
                     unreachable!("a cuboid corner is a three-plane point")
@@ -5003,7 +5001,7 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
                     rotation,
                 )
                 .expect("the root coordinate lifts to an exact rational");
-                // ★ The stored coordinate is the realization of the definition (cell 52); the
+                // ★ The stored coordinate is the realization of the definition; the
                 // f64 replay agrees with it to its own rounding, not bit for bit.
                 let stored = m.vertex_point(*vh).as_array();
                 assert!(
@@ -5214,7 +5212,7 @@ fn transform_rotate_boolean_result_keeps_discovered_base() {
     assert!((after - before).abs() < 1e-9, "volume invariant");
 
     // A seam vertex of the *moved* result still names three planes, and those planes are
-    // the moved ones (S7: the vertex follows its faces' motion — there is no base vertex
+    // the moved ones (the vertex follows its faces' motion — there is no base vertex
     // left to chase).
     let sh = m.solid(r2).outer;
     let own_surfaces: std::collections::HashSet<_> = m
@@ -5347,7 +5345,7 @@ fn rot_iso(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
 /// begun by a later non-fixing motion) — the forest's story lives on the faces that
 /// genuinely moved. `None` when no face carries a rotation.
 ///
-/// ★ S7 dropped a third field, `base_is_rotated` — "does this vertex's base vertex itself
+/// ★ There is no third field `base_is_rotated` — "does this vertex's base vertex itself
 /// carry a motion?", the one-hop invariant that kept a replay from applying the same motion
 /// twice. There is no base vertex any more (a moved corner is the intersection of its moved
 /// planes), so double application is **unrepresentable** rather than merely untrue: the type
@@ -6021,7 +6019,7 @@ fn plane_classes_merge_a_shared_wall() {
     assert_eq!(canon[a_xp], a_xp.min(b_xm));
 }
 
-/// ★★★★ **Two faces of one judged surface are one class** (16-3). A nameless plane has no
+/// ★★★★ **Two faces of one judged surface are one class.** A nameless plane has no
 /// name to intern classes by, so its class merging rests on the probes: both faces carry the
 /// *same statement* → the same frame probes → identical chains → `shared_base` cancels the
 /// motion and the exact predicate answers a **proved zero**. This is the argument turned into
@@ -6597,7 +6595,7 @@ fn one_plane_is_one_class_whatever_the_face_size() {
 
 /// ★★★ **Solving a vertex's three planes lands on its coordinate.**
 ///
-/// This is the premise the whole of `docs/truth-and-cache.md` rests on: a point *is* the
+/// This is the premise the point types rest on: a point *is* the
 /// meeting of three surfaces, and the stored coordinate is a rounded answer to that question.
 /// Stage 0 measured it by reading the census; this asserts it on data the kernel itself built,
 /// which is a different claim — the definitions have to be *right*, not merely present.
@@ -6651,9 +6649,7 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
     let fused = boolean(&mut m, BoolKind::Fuse, a, b).expect("fuse")[0];
     m.rebuild_adjacency();
 
-    // Rows by **producer family** (S7: `Origin`'s three tags are gone, and the families
-    // they used to stand in for are exactly these three fixtures — a plainly built box, a
-    // rotated one, a boolean result).
+    // Rows by **producer family**: a plainly built box, a rotated one, a boolean result.
     let mut counts = [(0usize, 0usize); 3]; // (with a three-plane definition, total)
     let mut worst = [0.0f64; 3];
     let mut diam = 0.0f64;
@@ -6720,7 +6716,7 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
     }
     // ★ The **fused** row is the tautological one — a boolean vertex's coordinate *came
     // from* solving this very triple, so a zero there says nothing. `plain` and `turned`
-    // are the claims. (Same argument as before S7; the row moved from a tag to a producer.)
+    // are the claims.
     assert_eq!(worst[2], 0.0, "a boolean vertex is its own solve, exactly");
 }
 
@@ -6807,12 +6803,11 @@ fn solve_three_planes(p: [[f64; 4]; 3]) -> Option<[f64; 3]> {
 }
 
 /// ★ **A collinear midpoint is dissolved at construction, so the prism it builds is its
-/// clean twin's, bit for bit — and every corner keeps a three-plane definition** (S3; the
-/// last piece of `docs/truth-and-cache.md` Q2 ②).
+/// clean twin's, bit for bit — and every corner keeps a three-plane definition.**
 ///
-/// Before S3 this profile built *seven* faces whose split bottom edge's two walls interned to
+/// Undissolved, this profile builds *seven* faces whose split bottom edge's two walls intern to
 /// one surface handle — a vertex named `[S, S, cap]`, a line and not a point, `definition:
-/// None`. The constructor now deletes the flat corner (a lossless normalization: the shape is
+/// None`. The constructor deletes the flat corner (a lossless normalization: the shape is
 /// identical), so that population cannot reach the topology at all.
 #[test]
 fn a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit() {
@@ -6881,7 +6876,7 @@ fn a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit() {
 ///
 /// The dissolve pass only deletes flat corners (adjacent same-plane walls); two edges of a
 /// notched profile lying on one line are legitimate geometry, their walls are two statements
-/// of one plane, and interning makes them one handle (`docs/truth-and-cache.md`, 「남은 것」 3).
+/// of one plane, and interning makes them one handle.
 /// Adjacent walls can no longer collide, so this is where "same plane = same handle" stays
 /// pinned.
 #[test]
@@ -6941,7 +6936,7 @@ fn two_separated_collinear_walls_intern_to_one_surface() {
 /// (`z = 1`, opposite normals — `unify` rightly keeps them apart, `canon` rightly calls them one
 /// class). At `(1, 0.25, 1)` the side wall's loop runs straight through their shared line, so the
 /// old rule named that vertex with the same plane twice: a triple defining no point, which the
-/// exact predicates — whose precondition is `D ≠ 0` — aborted on. Measured 2026-07-22 as the only
+/// exact predicates — whose precondition is `D ≠ 0` — aborted on. Measured as the only
 /// path a degenerate triple reached them (16 arrivals in the OCCT suite, now 0).
 #[test]
 fn a_vertex_is_named_by_the_planes_that_touch_it() {
@@ -7214,8 +7209,8 @@ fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
 /// The oblique twin of the seated `Common` in `bands`: the same box, but the cylinder stands on a
 /// tilted rational frame (the Pythagorean axes `u = (0.6, 0.8, 0)`, `v = (−0.48, 0.36, 0.8)`,
 /// normal `(0.64, −0.48, 0.6)`), so none of the box's planes is either ⊥ or ∥ to its axis and its
-/// lateral face **meets** them. Every crossing is an ellipse — the population M6-3 opens, and the
-/// one this door still names. ★ Since cell ⑩ the oblique arm asks the faces first, so the fixture
+/// lateral face **meets** them. Every crossing is an ellipse — the population
+/// this door still names. ★ The oblique arm asks the faces first, so the fixture
 /// has to be one whose faces the planes actually cross — this one's base rim straddles `z = 0` —
 /// and stated on the production road: the test door's `add_cylinder` lifts irrational caps, and
 /// a class with no world description is `CylinderGateUndecided`, an honest but different fact.
@@ -7794,7 +7789,7 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
 
 /// A profile edge running `(1, 2)` sweeps a wall whose normal is `(2, 1, 0)` — and **no
 /// rational-degree rotation reaches it** (the angle is `atan(1/2)`). That is the case
-/// `docs/truth-and-cache.md` names for `Motion::Frame`.
+/// `Motion::Frame` exists for.
 ///
 /// What holds today and must keep holding:
 ///
@@ -7806,8 +7801,8 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
 ///   said "through the f64 path", which stopped being true then).
 ///
 /// What the final assertion pins is narrower than the test's old name suggests: the
-/// *reported* `SketchPlane`'s world axes are irrational, so `exact()` is `None` — true
-/// before S4 and after, because it is about the world lift, not about the frame road the
+/// *reported* `SketchPlane`'s world axes are irrational, so `exact()` is `None` — that
+/// is about the world lift, not about the frame road the
 /// operation actually takes. ★ The axes must **not** move — this plane's own frame is the
 /// world, so `ẑ × n` is the same vector before and after.
 #[test]
@@ -8347,7 +8342,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     assert_ne!(a, cap_of(&mut m, 2.6), "and a different height is not");
 }
 
-/// ★★★★★ **S4's end-to-end lock: the f64-fallback chain is cut on the `n·n`-overflow
+/// ★★★★★ **The end-to-end lock: the f64-fallback chain is cut on the `n·n`-overflow
 /// population** — the measured 1.6%, and the one today's producers actually reach.
 ///
 /// A prism raised on a fully tilted, exactly-orthonormal decimal frame from a 16-digit
@@ -8362,7 +8357,7 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
 /// faces do not arise from today's construction route at all** — the `Wide` opening is
 /// locked at the basis level (`a_wide_plane_hosts_a_canonical_frame`) and the end-to-end
 /// chain here on the population that exists. The fixture qualifies itself rather than
-/// assuming its population (the S2 census lesson).
+/// assuming its population.
 #[test]
 fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
@@ -8440,14 +8435,13 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
     );
 }
 
-/// ★★★★★ S6a terminal lock: **an axes-only tilted frame extrudes on the exact road.**
+/// ★★★★★ **An axes-only tilted frame extrudes on the exact road.**
 ///
 /// The sibling of `a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road`, for the
-/// population that S4 could not reach: a `from_axes` plane whose axes never lift to exact
-/// orthonormal rationals (a rotated frame — dev-log's "#28: the caller who only has axes",
-/// the first refutation of `Inexact`'s removal). Before S6a its `def` was `None` by design
-/// and the whole prism fell silently to f64 — every surface point-less, undemotable under
-/// any later motion. Now the axes' decimal truth is the definition, the canonical name is
+/// population that one cannot reach: a `from_axes` plane whose axes never lift to exact
+/// orthonormal rationals (a rotated frame — the caller who only has axes). With no definition
+/// the whole prism would fall silently to f64 — every surface point-less, undemotable under
+/// any later motion. The axes' decimal truth is the definition, the canonical name is
 /// `Wide` (asserted — the full-width crosses exceed `i128`), `WideFrame::named_of` realizes
 /// the frame, and **every face of the prism records its exact points**.
 #[test]
@@ -8590,7 +8584,7 @@ fn centred_on(m: &Model, face: Handle<Face>, half: f64) -> Profile2d {
     .unwrap()
 }
 
-/// ★★ S9, the node-omission normalization's ground: **a seeded world plane's canonical frame
+/// ★★ The node-omission normalization's ground: **a seeded world plane's canonical frame
 /// realizes bit-exactly on the unit axes** — origin `(0,0,0)`, every axis component `0.0` or
 /// `±1.0`, no rounding anywhere. Such a frame's axes lift to exact orthonormal rationals, so
 /// the operation's `exact()` gate elides the node (rule 207's normalization) and loses
@@ -8627,7 +8621,7 @@ fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
     }
 }
 
-// ── K2→⑨: a cylinder in the operation log is a circle extruded ────────────────────────────────
+// ── a cylinder in the operation log is a circle extruded ────────────────────────────────
 //
 // `Model::add_cylinder_exact` is a test convenience behind a feature; the road an application
 // takes is `Operation::Extrude` of a one-circle profile — `cylinder()` is that sugar, and the
@@ -8950,7 +8944,7 @@ fn a_cylinder_on_a_face_frame_stands_outward() {
 /// declines a *moved* cylinder by name, because its truth is stated before its motion.
 ///
 /// If the first half ever fails, the op stopped taking the frame-node road; if the second starts
-/// succeeding, M6-3 landed and this test should be re-read, not deleted.
+/// succeeding, moved cylinders are supported and this test should be re-read, not deleted.
 #[test]
 fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
     let mut m = Model::new();
@@ -9442,7 +9436,7 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
 /// **The mesh census is live** — the invariant itself is asserted where the fact is made.
 ///
 /// `boolean::tess_census::record` checks every result as it is produced ("every solid a boolean
-/// returns meshes" — since cell ⑦c, with no exemption), because a test reading the vector
+/// returns meshes" — with no exemption), because a test reading the vector
 /// afterwards sees only the booleans that ran before it. What is left for a test is that the
 /// census is **running at all**: a hook that silently stopped recording would take the whole
 /// guarantee with it and nothing would go red.
@@ -9475,7 +9469,7 @@ fn the_mesh_census_is_running() {
 /// `ruling_interior_is_even` composes three sentences already in the crate (`RulingCarrier::side`,
 /// the material-on-the-left convention in the **root face's frame** — `frame_sign` — and
 /// `world_rat_sense`'s lift between the rational name and the stored normal) into
-/// `side · κ · frame_sign` (the frame factor since cell ④). The check shares no step with that: **inside the cylinder
+/// `side · κ · frame_sign`. The check shares no step with that: **inside the cylinder
 /// the lateral's own solid has material and outside it does not**, which is the same content rule
 /// `ArcLabels`' doc set its own side by. It is asserted at the record, in `per_class`.
 ///
@@ -9535,10 +9529,10 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
     );
 }
 
-/// **The census's cylinder corpus, in the lib suite** (D3). `tests/census.rs` records these
+/// **The census's cylinder corpus, in the lib suite.** `tests/census.rs` records these
 /// families' digests, but it is an integration test and the lib is compiled without `cfg(test)`
-/// there — so the chart's census, which asserts where the facts are made, had never seen them.
-/// D2b learned that the hard way: `wal corner-lo` slipped past the shadow comparison. What these
+/// there — so the chart's census, which asserts where the facts are made, never sees them there
+/// (`wal corner-lo` slipped past the shadow comparison that way). What these
 /// lock is only the **outcome** (built, or the refusal's name); the geometry stays the digest's.
 /// Fixtures copied from `tests/census.rs` (`rul`, `wal`, `cap`, `ct2`, `trc` families).
 ///
@@ -9554,13 +9548,13 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 /// extremum (`combinatorics::arc_extremum_winding`) fixes it, and all three kinds build with
 /// their exact volumes.
 ///
-/// ★ `rul flush` (E3-b/c): a straddling boss whose caps sit flush with **both** plate planes. Cut
+/// ★ `rul flush`: a straddling boss whose caps sit flush with **both** plate planes. Cut
 /// and Common assemble clean and build; the Fuse's two cap chords are each an interior boundary
 /// between a half-disk 2-gon and its neighbour that the coplanar merge abstains on (the chord and
 /// its arcs collide in the node-pair edge key), and the shipped pair spelled a stated plane-self
 /// edge — validate's producer bug. The whole-result check refuses that shape by the cleaning's
-/// own name (`CoplanarMerge`, the chord's corner as witness) until the grouping-arm cell teaches
-/// the merge to thread mixed rings.
+/// own name (`CoplanarMerge`, the chord's corner as witness) until the merge learns
+/// to thread mixed rings.
 #[test]
 fn census_corpus_cylinder_families_build_or_refuse_by_name() {
     fn tr(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {
@@ -9847,7 +9841,7 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
 /// ★★★★★ **A tool that reaches the recovered band — the lock the far cube cannot be.** The
 /// re-operation census cuts each result with a cube far outside it, so a wrong band would pass
 /// it unseen. Here the wall +x boss's result (a band whose notch met the seam and was spliced
-/// into the outer walk; E2 reads it back as a hole) is cut by a cuboid whose walls clear the
+/// into the outer walk; read back as a hole) is cut by a cuboid whose walls clear the
 /// boss's strip and whose ⊥ caps meet the lateral. Volumes derived, not copied: the plate is
 /// 4·4·2 = 32; the boss `r = 0.5` on the wall `x = 4` adds its outer half over its height 4
 /// (`½·π/4·4 = π/2`) and its inner half outside the plate, below and above (`½·π/4·2 = π/4`) —
@@ -9861,8 +9855,8 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
 /// * A cuboid `[3, 6] × [−1, 5] × [0.5, 1.5]`: its caps run **through** the notch, where the
 ///   band's circle is only the outer half (the Crossing arm) — and through the plate's wall face
 ///   `x = 4`, whose ring carries the boss's **rulings**; the planar scan's crossing arm has no
-///   plane class beside a curved carrier and declines `CurvedRingWall` (E3's wall). Locked as
-///   the honest refusal it is today, so the day E3 opens it this test says so.
+///   plane class beside a curved carrier and declines `CurvedRingWall`. Locked as
+///   the honest refusal it is today, so the day it opens this test says so.
 #[test]
 fn a_spliced_band_is_cut_across_its_notch() {
     let pi = std::f64::consts::PI;
@@ -9910,7 +9904,7 @@ fn a_spliced_band_is_cut_across_its_notch() {
         );
     }
     // (b) caps through the notch: the plate's wall face carries the boss's rulings, and the
-    // caps' classes cross it there — the scan names each crossing as a pierce node (E3). The
+    // caps' classes cross it there — the scan names each crossing as a pierce node. The
     // tool takes the plate's `x ∈ [3, 4]` slab (4) and the boss's outer half over the slab's
     // height (π/8); its wall `x = 3` clears the boss (1 > r). Beside the volume, the probe: every
     // crossing named in this binary lies on its class, its face plane and the cylinder, on the
@@ -9974,7 +9968,7 @@ const BOSS_FAMILIES: [(&str, [f64; 3], f64); 17] = [
     ("half wall, cap below", [2.0, 0.0, 1.0], 2.0),
     ("half +x", [4.0, 2.0, -1.0], 2.0),
     ("half +x, cap below", [4.0, 2.0, 1.0], 2.0),
-    // ★ Cell ③ — the offset wall: the boss's axis stands off the plate's wall `x = 4` by less
+    // ★ The offset wall: the boss's axis stands off the plate's wall `x = 4` by less
     // than `r`, so the wall crosses the lateral in two rulings that are not a diameter's ends.
     // Outside by 0.3 (rational rulings, `y = 2 ± 0.4`; the part inside the plate a 0.2-deep
     // segment), inside by 0.3, outside by 0.2 (irrational rulings).
@@ -10050,7 +10044,7 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
     tally
 }
 
-/// **The re-operation census** (E1-0): can a boolean's *result* be an operand again? For every
+/// **The re-operation census**: can a boolean's *result* be an operand again? For every
 /// family × kind on a 4×4×2 plate with an r = 0.5 boss, the result is cut with a cube that lies
 /// far outside it (`[20, 21]³`) — the geometry cannot change, so the second boolean exercises only
 /// what an operand needs: every face named as rings, every lateral row stated. What is locked is
@@ -10064,33 +10058,33 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
 /// cylinder — no third surface names the joint) · first op refused 3 · empty 1**. The rungs that
 /// follow change this table one named cause at a time, and each predicts its cells:
 ///
-/// * E1 ②: a loop's corner is its half-edge's start and a circle-bounded face states its
+/// * a loop's corner is its half-edge's start and a circle-bounded face states its
 ///   triangle from the plane — `DegenerateFace` 14 → 0, every one landing on the lateral row's
 ///   `CylSpan` (those caps sit beside a panel or chain lateral, which the tracer reaches first);
 ///   Ok 9 unchanged.
-/// * E1 ③: a seam joint is not a corner — the two legs of a wrap arc are one step — `OuterRing`
+/// * a seam joint is not a corner — the two legs of a wrap arc are one step — `OuterRing`
 ///   5 → 0, all landing on `CylSpan` (wall +y's notch holds the seam and is spliced into the
-///   lateral's outer walk; the half walls' laterals are chains); Ok 9 unchanged. After E1 no
+///   lateral's outer walk; the half walls' laterals are chains); Ok 9 unchanged. After this no
 ///   row is `OuterRing`/`HoleRing`/`CylFaceHole`/`DegenerateFace`: every ring of a result face
-///   has a name, and what remains is the lateral's outer loop (E2).
-/// * E2 ②b: the tracer reads a lateral's boundary cycles (`FaceLoops::cycles`) instead of its
+///   has a name, and what remains is the lateral's outer loop.
+/// * the tracer reads a lateral's boundary cycles (`FaceLoops::cycles`) instead of its
 ///   span — a band's rims and holes, the spliced hole recovered — and declines a panel or a
 ///   chain rim by name until the chart can hold them: the five Fuse rows whose hole met the seam
 ///   (wall +y/−x/+x, corner, offmid) become **Ok**; `CylSpan` 29 → 24 (every Cut/Common row is a
 ///   panel, every half row a chain or a panel); Ok 9 → 14.
-/// * E2-2 ①: the circle road reads every cycle (a panel, a chain rim) with an optional outer
+/// * the circle road reads every cycle (a panel, a chain rim) with an optional outer
 ///   answer, while the rulings road still states bands only. The reported reject is the lowest
 ///   class's first declined face, and it moves: a panel's ⊥ classes no longer decline, so the
 ///   wall/offmid Common rows and every half row surface the **two-edge cap** leaving its chord's
-///   class — `CurvedDeparture` 17 (E3-c's population); the Cut rows and corner Common (a three-node
+///   class — `CurvedDeparture` 17; the Cut rows and corner Common (a three-node
 ///   cap) stay `CylSpan` on the rulings road: 24 → 7. Ok 14 unchanged.
-/// * E2-2 ②: the rulings road sweeps every cycle — the six Cut rows (a panel: the notch's wall)
+/// * the rulings road sweeps every cycle — the six Cut rows (a panel: the notch's wall)
 ///   and corner Common become **Ok** with their volumes unchanged; `CylSpan` 7 → 0, Ok 14 → 21.
-/// * E3-c: the ring walk names the side an arc departs to, so a half-disk cap is a graze along
+/// * the ring walk names the side an arc departs to, so a half-disk cap is a graze along
 ///   its chord — every half Fuse and Common row and the wall/offmid Common rows build with their
 ///   volumes unchanged (13 rows); the half **Cut** rows (a notch with a half-disk ceiling) reach
-///   the chart and its emitter refuses a cell it cannot read (`CylinderGateUndecided`, `End::Other`
-///   — E2-2's remaining item); Ok 21 → 34, `CurvedDeparture` 17 → 0 (the name is gone).
+///   the chart and its emitter refuses a cell it cannot read (`CylinderGateUndecided`,
+///   `End::Other`); Ok 21 → 34, `CurvedDeparture` 17 → 0 (the name is gone).
 /// * the arc label carries its own side: the disk-side cell is asked of the cells (a rational
 ///   corner's radial side) instead of derived from the class's stored frame, so a notch's
 ///   half-disk ceiling reads its chamber and the four half **Cut** rows build with their volumes
@@ -10139,7 +10133,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         ("half wall, cap below", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
         ("half +x", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
         ("half +x, cap below", [Ok, Ok, Ok], [CHAIN, PANEL, PANEL]),
-        // The offset wall (cell ③): a notch hole in the band, a panel for the cut and the common
+        // The offset wall: a notch hole in the band, a panel for the cut and the common
         // — the wall families' shape, with the chord off the diameter.
         ("offset-out", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
         ("offset-in", [Ok, Ok, Ok], [RIMS_HOLE, PANEL, PANEL]),
@@ -10187,7 +10181,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
                             seam_joints.1 += face.inner.iter().filter(|lp| joint(lp)).count();
                         }
                     }
-                    // E2-0: the lateral faces' boundary cycles, named as the tracer will read
+                    // The lateral faces' boundary cycles, named as the tracer will read
                     // them — the outer loop cut at its slits, the spliced hole recovered.
                     let got_cyc = lateral_cycle_census(&m, out[0]);
                     if got_cyc != want_cyc {
@@ -10246,7 +10240,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             .filter(|r| p(r))
             .count()
     };
-    // 41 → 50 (cell ③): the three offset families re-operate in every kind.
+    // 41 + 9: the three offset families re-operate in every kind.
     assert_eq!(count(|r| *r == Ok), 50, "{table:?}");
     // ★ The name is gone from this corpus (the arc-label cell): every family re-operates or is
     // refused at its first op. A new population must restate this zero.
@@ -10266,7 +10260,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         0,
         "every ring of a result face has a name"
     );
-    // 8 → 14 (cell ③): each offset family's Fuse carries two whole-circle rims that pass the
+    // 8 + 6: each offset family's Fuse carries two whole-circle rims that pass the
     // seam vertex — the wall families' seam sits on the wall itself (a chord end, a pierce
     // vertex), which is why they added none.
     assert_eq!(seam_joints, (14, 0), "seam-joint loops (outer, holes)");
@@ -10280,7 +10274,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
 /// never negative). `∫ min(c, s) dt` splits at `±√(r² − c²)`: `c` between, `s` outside, with
 /// `∫ s = (t·s + r²·asin(t/r))/2`. Exact in the sense the old `πr²/2ᵏ` was (a closed form in
 /// `π`, `asin`, `sqrt`), and it reads every rectangle — the edge through the centre (a halving),
-/// the edge off it (a segment, cell ③), two edges, a rectangle inside the disk.
+/// the edge off it (a segment), two edges, a rectangle inside the disk.
 ///
 /// ★ One spelling, read by [`removed_by`] and [`first_volume`] alike — they ask the same question
 /// about the same disk, and two copies would be free to drift. `disk_in_rect_is_the_closed_form`
@@ -10337,9 +10331,9 @@ fn disk_in_rect(base: [f64; 3], rect: [[f64; 2]; 2]) -> f64 {
     int_min(y1 - cy) + int_min(cy - y0)
 }
 
-/// [`disk_in_rect`] against the values the corpus has always used and the segments cell ③
-/// measured, then against a midpoint integration on rectangles of every shape (an oracle that
-/// shares nothing with the closed form).
+/// [`disk_in_rect`] against the values the corpus has always used and the offset wall's
+/// measured segments, then against a midpoint integration on rectangles of every shape (an oracle
+/// that shares nothing with the closed form).
 #[test]
 fn disk_in_rect_is_the_closed_form() {
     use std::f64::consts::PI;
@@ -10449,7 +10443,7 @@ fn first_volume(kind: BoolKind, base: [f64; 3], h: f64) -> f64 {
 /// box ∩ tool, the boss's disk ∩ the tool's footprint times the axial overlap, and the doubly
 /// counted disk ∩ plate ∩ tool — `Fuse = plate + boss − both`, `Cut = plate − both`,
 /// `Common = both`. A disk clipped by a rectangle is [`disk_in_rect`]'s closed form — `πr²/2ᵏ`
-/// for `k` edges through the centre, a segment for an edge off it (cell ③), whatever the corpus
+/// for `k` edges through the centre, a segment for an edge off it, whatever the corpus
 /// and panics rather than approximating.
 fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f64 {
     let seg = |a: [f64; 2], b: [f64; 2]| -> [f64; 2] { [a[0].max(b[0]), a[1].min(b[1])] };
@@ -10475,10 +10469,10 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
     }
 }
 
-/// **The crossing census** (E3-0): a boolean's result cut by a tool whose faces actually **cross**
+/// **The crossing census**: a boolean's result cut by a tool whose faces actually **cross**
 /// the result's rings — where the far cube of the re-operation census could see only whether the
 /// rows are stated. Four tools per family × kind: a slab through the plate's middle
-/// (`z ∈ [0.5, 1.5]`, its ⊥ caps crossing the wall faces that carry a boss's rulings — E3's wall),
+/// (`z ∈ [0.5, 1.5]`, its ⊥ caps crossing the wall faces that carry a boss's rulings),
 /// a slab above it (`[2.5, 3.5]`, crossing the bands standing on the plate), a slab below
 /// (`[−1.5, −0.5]`), and a box whose wall passes **through the boss's axis** (so it crosses the
 /// caps' arcs and cuts the lateral along two rulings). What is locked is the outcome by name —
@@ -10487,37 +10481,37 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 /// Today's table, measured before anything was built (168 cells): **Ok 36** (every band result ×
 /// slab; the mid slab leaves two solids) · **`CurvedRingWall` 11** — the wall-boss Fuse rows × mid
 /// slab (6: the ⊥ caps cross the plate's wall face on the boss's rulings) and × through-axis wall
-/// (5: the wall crosses the bitten cap's arc) · `CylSpan` 96 (panel and chain laterals, E2-2) ·
+/// (5: the wall crosses the bitten cap's arc) · `CylSpan` 96 (panel and chain laterals) ·
 /// `NoClearRay` 8 (an interior boss × through-axis wall: the wall halves the cap's circular hole;
 /// corner × its coplanar wall) · `PierceVertexUnnamed` 1 (offmid Fuse × top slab) · first op
 /// refused 12 · empty 4. The rungs that follow move this table one named cause at a time:
 ///
-/// * E3 ②: the scan names a crossing on a ruling as a pierce node, and a cell's nesting reads a
+/// * the scan names a crossing on a ruling as a pierce node, and a cell's nesting reads a
 ///   mixed ring. The **wall slab** column (added here, 210 cells) is the rung's own population:
 ///   wall ±x/±y and offmid Fuse × wall slab are **Ok(1)** with their exact volumes. The mid slab
 ///   crosses the same rulings and then splits the result in two, where the grouping road's
 ///   plane-walls shim refuses the mixed rings — `CurvedRingWall` 6 → `PierceVertexUnnamed` 5 +
-///   `RulingBoundNotYet` 1 (corner: the chart's `End::Other`, E2-2); the through-axis wall's
+///   `RulingBoundNotYet` 1 (corner: the chart's `End::Other`); the through-axis wall's
 ///   `NoClearRay` 8 → `PierceVertexUnnamed` 6 (the chord's cell has no cylinder for its corners,
 ///   `coord_key`) + 2 (Common). Ok 49 · `CurvedRingWall` 5 (arc crossings) · `CylSpan` 120 ·
 ///   `PierceVertexUnnamed` 12 · `RulingBoundNotYet` 2 · `NoClearRay` 2 · first 15 · empty 5.
-/// * E2-2 ①: the circle road reads panels and chains; the first reject moves off the ⊥ classes,
+/// * the circle road reads panels and chains; the first reject moves off the ⊥ classes,
 ///   and the rows whose result has a two-edge cap (wall/offmid Common, every half family) surface
 ///   `CurvedDeparture` on every tool — 85; `CylSpan` 120 → 35 (the Cut rows and corner Common,
 ///   still on the rulings road).
-/// * E2-2 ②: the rulings road sweeps every cycle, so a Cut result's panel is stated: the six wall
+/// * the rulings road sweeps every cycle, so a Cut result's panel is stated: the six wall
 ///   Cut rows read like the Fuse rows (top/bottom Ok(1), the **wall slab Ok(1) with its exact
 ///   volume**, the mid slab on the grouping road, the through-axis wall on the bite's arc) and the
 ///   corner's coplanar tool reaches the chord's cell; corner Common (a quarter cylinder alone)
 ///   builds under the top and bottom slabs and finds no clear ray once a slab parts it. `CylSpan`
 ///   0 · Ok 69 · `PierceVertexUnnamed` 19 · `CurvedRingWall` 10 · `NoClearRay` 4 ·
 ///   `CylinderGateUndecided` 1 (the chart's walk has an open end at a wall with one ruling).
-/// * E3-c: the half-disk caps are traced, so `CurvedDeparture` 85 → 0: the half Fuse rows read
+/// * the half-disk caps are traced, so `CurvedDeparture` 85 → 0: the half Fuse rows read
 ///   like the wall Fuse rows (top/bottom/wall slab Ok(1) with exact volumes), the Common rows and
 ///   the half Cut rows reach the next walls by name — the coplanar cleaning pass's plane-only ray
 ///   (`NoClearRay` 4 → 40) and the chart's unreadable cell (`CylinderGateUndecided` 1 → 17); the
-///   through-axis wall still crosses the caps' arcs (`CurvedRingWall` 10 → 27, E3-b). Ok 69 → 81.
-/// * E3-b: the scan names a crossing on an **arc**, the caps' chords join the overlay (so a
+///   through-axis wall still crosses the caps' arcs (`CurvedRingWall` 10 → 27). Ok 69 → 81.
+/// * the scan names a crossing on an **arc**, the caps' chords join the overlay (so a
 ///   through-axis tool wall splits them), and a chord's sense reads its canonical root — the
 ///   whole through-axis wall column completes its trace and lands on the chart's unreadable cell:
 ///   `CurvedRingWall` 27 → 0, `CylinderGateUndecided` 17 → 44. The name is gone from the corpus.
@@ -10529,7 +10523,7 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 ///   (`CylinderGateUndecided` 44 → 46). `PierceVertexUnnamed` 18 → 0.
 /// * miss-first: the label's ray solves before it asks for bounds, so a cylinder the ray
 ///   runs clear of counts 0 even where the face is a panel or a chain (`SpanAsk::MissOnly`,
-///   an ask cell ②-b retired when a lateral's loops became readable),
+///   an ask retired once a lateral's loops became readable),
 ///   and the per-solid dissolve keys walls by `ClassIx` — the mid column and offmid × top
 ///   classify and build (`NoClearRay` 56 → 41, Ok 86 → 101); corner Cut × mid stays: its
 ///   rays genuinely hit the quarter boss, and a hit without an axial statement stays an
@@ -10579,7 +10573,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     };
     // The wall slab: the mid slab's height, but only past the line one unit inside the wall the
     // boss stands on — its cap classes cross that wall face on the boss's rulings while the plate
-    // stays one solid (E3-a's own question, apart from the mid slab's second one: splitting the
+    // stays one solid (one question, apart from the mid slab's second one: splitting the
     // result). For an interior boss it clears the boss and is a control.
     let wall_slab = |b: [f64; 3]| -> [[f64; 3]; 2] {
         if b[0] == 4.0 {
@@ -10599,7 +10593,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     use RejectReason::{NoClearRay, PierceVertexUnnamed, RingHasNoWitness, RulingBoundNotYet};
     // A band result: the mid slab parts the plate into two solids, the top and bottom slabs cut
     // the standing boss, the wall slab clears the boss. The through-axis wall builds since the
-    // chord's cell reads its cylinder from the class table (E3-b/c). ★ The Common column used to
+    // chord's cell reads its cylinder from the class table. ★ The Common column used to
     // differ here and no longer does — the note that stood at this line said the point
     // classification finds no clear ray at the hole's diameter, but what actually refused was the
     // nesting's **wall panel** ring, which now names its own chord midpoint.
@@ -10609,7 +10603,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // hands over its **midpoint** now, so the two constants have nothing left to tell apart.
     const BAND_COMMON: [Cross; 5] = BAND;
     // A wall boss fused: the wall slab's caps cross the plate's wall face on the boss's
-    // **rulings** — named as pierce nodes since E3 — and the cut builds with its exact volume.
+    // **rulings** — named as pierce nodes — and the cut builds with its exact volume.
     // The mid slab does the same and then splits the result in two — and the label decides:
     // every deciding probe's rays run clear of the boss, and a miss now counts 0 against a
     // panel/chain lateral (miss-first), so both halves classify and build with their exact
@@ -10618,12 +10612,12 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     const WALL_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
     // A wall boss cut (its lateral a panel — the notch's wall): the top and bottom slabs miss
     // the result (nothing of the boss stands outside the plate), the wall slab crosses the
-    // panel's rulings and builds with its exact volume (E2-2's own population), the mid slab
+    // panel's rulings and builds with its exact volume, the mid slab
     // splits the result and both halves classify by miss-first rays (as WALL_FUSE), and
     // the through-axis wall crosses the bite's arcs and now reads its sectors as a **run** of the
     // rim's arcs (this rung), so it builds with its exact volume too.
     const PANEL_CUT: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
-    // A half boss fused (its lateral a chain, its top cap a half-disk): since E3-c the cap's
+    // A half boss fused (its lateral a chain, its top cap a half-disk): the cap's
     // chord is a graze on the wall class and the result builds — the top and bottom slabs miss
     // the boss, the wall slab crosses the chain's rulings with its exact volume, the mid slab
     // splits the result and both halves classify by miss-first rays (as WALL_FUSE), the
@@ -10675,11 +10669,11 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // **unchanged**. The **mid** slab parts the Fuse and the Cut in two, and the severed
         // halves' depth classification casts its rays from the plate's corner — every ray met a
         // ring corner there, and the mixed parity abstained on it until a corner on the ray
-        // became a decision (cell ②). The Common is a quarter cylinder alone, and either slab
+        // became a decision. The Common is a quarter cylinder alone, and either slab
         // (mid, or the wall slab — both z ∈ [½, 1½]) parts it in two; its halves' rays from the
         // axis vertex crossed the *other* half's **lateral** — a panel the ray could not read
         // («no axial statement», an abstention by name) — until a lateral's boundary loops
-        // answered the crossing question on the cylinder's own chart (cell ②-b): two solids,
+        // answered the crossing question on the cylinder's own chart: two solids,
         // decided on the first attempt. The through-axis wall cuts the other way and leaves one.
         [
             [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
@@ -10690,8 +10684,8 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // radii and the sector outside the plate is reflex at the centre — the ring's true
         // extremum is in an arc, not at a node. Since the winding is read there the first op
         // builds (it was `First` for every tool), and the tools land on the roads the other
-        // corner family sits on: the mid slab's Fuse and Cut decide at the corner (cell ②), the
-        // Common's halves at the other half's lateral (cell ②-b).
+        // corner family sits on: the mid slab's Fuse and Cut decide at the corner, the
+        // Common's halves at the other half's lateral.
         [
             [Ok(2), Ok(1), Ok(1), Ok(2), Ok(1)],
             [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
@@ -10706,7 +10700,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half wall, cap below
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half +x
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half +x, cap below
-        // ★ Cell ③ — the offset wall. Every tool builds as it does for the wall families: the
+        // ★ The offset wall. Every tool builds as it does for the wall families: the
         // mid slab parts the result, the through-axis wall (`y ≥ 2`, ⊥ to the plate's wall)
         // halves the segment. `offset-out`'s Common is a 0.2-deep segment prism whose halves
         // had **no witness** for one commit — corners that are pierce names (dropped by the
@@ -10726,7 +10720,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         {
             let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
             for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
-                // Cell ② stage 0 (P1): the mixed road's abstentions, attributed to this cell.
+                // The mixed road's abstentions, attributed to this cell.
                 let tie0 = crate::combinatorics::tie_probe::len();
                 let dec0 = crate::boolean::probe::deciding::ROWS
                     .lock()
@@ -10834,15 +10828,15 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // ★ `ring_in_ring`'s own refusals are **gone**: every one of them was a probe list that
     // started empty, and that fact now has its own name. What is left under this one is the other
     // road entirely — the 3D depth classification in `boolean.rs`, whose nodes really do run out.
-    // ★ 8 → 4 (cell ②): the corner families' Fuse and Cut × mid decided once a corner on the
-    // ray stopped being a tie. ★ 4 → 0 (cell ②-b): the corner Commons parted by a slab — the
+    // ★ 8 → 4: the corner families' Fuse and Cut × mid decided once a corner on the
+    // ray stopped being a tie. ★ 4 → 0: the corner Commons parted by a slab — the
     // diagnosis «their witnesses lie on a ring» was wrong; measured per attempt, two of every
     // probe's three rays met the other half's **lateral** and the face could not say whether the
     // crossing was on it (`MissOnly`), and only the third met the cap's corner. The lateral reads
     // its loops now. The name is gone from this corpus; a new population must restate this 0.
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 0);
     // ★ The name is gone from this corpus again: it came back for one commit with the offset
-    // wall (cell ③ — a thin segment prism's halves, pierce-named corners and no cap candidate
+    // wall (a thin segment prism's halves, pierce-named corners and no cap candidate
     // from the centre inside; two cells, by the name that says «no witness at all» rather than
     // «every witness blocked») and left when the cut cap offered two points per chord. A new
     // population must restate this 0.
@@ -10850,7 +10844,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
     // dies at ring construction (grouping-arm cell). A new population must restate this.
     assert_eq!(count(|c| *c == Rejected(PierceVertexUnnamed)), 0);
-    // ★ The name is gone from this corpus (D5): every one of its 15 cells was a run whose
+    // ★ The name is gone from this corpus: every one of its 15 cells was a run whose
     // boundary ruling had no node on the interval's z-line — a region crossing that line
     // transversally in one sector while ending on it in another, which the band vocabulary
     // could not spell and the region emitter walks. A new population must restate this 0.
@@ -10869,7 +10863,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     assert_eq!(count(|c| *c == Empty), 5);
 }
 
-/// **The ⊥ road runs on a panel and on a chain, and says what the walk-through predicts** (E2-2 ①).
+/// **The ⊥ road runs on a panel and on a chain, and says what the walk-through predicts.**
 /// Locked through the road's own ledger (`cycle_probe`) because neither face reaches a result yet:
 /// the panel is refused one road later (the rulings road still states bands only), the chain's
 /// re-operation is refused at its cap's chord (`CurvedDeparture`) — and every class is traced by
@@ -10944,12 +10938,12 @@ fn a_cycle_is_carved_on_its_classes() {
     check(chain, 2.0, absent, 1, 1);
 }
 
-/// **The rulings road sweeps a chain rim** (E2-2 ②): on the half wall boss's wall class `y = 0`,
+/// **The rulings road sweeps a chain rim**: on the half wall boss's wall class `y = 0`,
 /// each ruling is `Transversal` from the whole rim at `z = −1` up to the plate's bottom `z = 0`
 /// (both halves of the boss are there), then a `Graze` along the chain's own ruling edge up to
 /// the boss's top `z = 1` — the collinear run whose arcs arrive from the outer half and leave into
 /// the inner one toggles the face off above it. A lock of the **rule**, not of a result: every
-/// re-operation of a half boss is still refused at its cap's chord (`CurvedDeparture`, E3-c), so
+/// re-operation of a half boss is still refused at its cap's chord (`CurvedDeparture`), so
 /// the classes are traced by hand and the road's ledger is read for this boss (`origin
 /// (2, 0, −1)`, rulings spanning `t ∈ [0, 2]`).
 #[test]
@@ -10982,8 +10976,8 @@ fn a_chain_sweeps_its_rulings() {
     }
 }
 
-/// **The ring walk cuts a run where an arc departs, and the departure's side flanks the pieces**
-/// (E3-c). A hand-built ring on the unit cube's classes: `(0,0,0) → (1,0,0) → (1,1,0) → (1,1,1) →
+/// **The ring walk cuts a run where an arc departs, and the departure's side flanks the pieces.**
+/// A hand-built ring on the unit cube's classes: `(0,0,0) → (1,0,0) → (1,1,0) → (1,1,1) →
 /// (1,0,1) → (0,0,1)`, read against the class `x = 1` — four nodes on the line between two off it
 /// (both on the `x < 1` side). With the edge `(1,1,0) → (1,1,1)` declared a departure to side σ,
 /// the line is met in two runs, `[(1,0,0),(1,1,0)]` and `[(1,1,1),(1,0,1)]`: the first is flanked
@@ -11188,7 +11182,7 @@ fn a_ring_whose_arc_bulges_past_its_nodes_reads_the_winding_there() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════════════════
-// Cell ④ — **the boolean commutes with rigid motion.**
+// **The boolean commutes with rigid motion.**
 //
 // One oracle: build the operands and take the boolean; build them again, move **both** by the
 // same isometry, take the boolean; the two answers must be one answer up to that motion. The
@@ -11355,10 +11349,7 @@ fn expected_unmoved_volume(fam: &str, kind: BoolKind) -> Option<f64> {
         ("planar", BoolKind::Cut) => 8.0 - 2.88,
         ("planar", BoolKind::Common) => 2.88,
         // The slab's box less the bore's `y ≥ 12` segment (d = 2, r = 3), taken from the bored plate.
-        // ★ The bore families' **Fuse** is `Rejected(NoClearRay)` today, moved or not — the
-        // slab shares five of the plate's planes and the coplanar road's nesting finds no clear
-        // ray; the oracle locks that name (`expected_unmoved_name`) rather than a volume.
-        // ★ The two fuses build since cell ⑩ (the slab's wall halves the bore's rim; the pieces
+        // ★ The two fuses build (the slab's wall halves the bore's rim; the pieces
         // the split keeps and the witnesses the nesting has now read it): the bored plate plus
         // the slab's share of the bore.
         ("bore offset", BoolKind::Fuse) => bored + 5.0 * seg(2.0, 3.0),
@@ -11378,8 +11369,8 @@ fn expected_unmoved_volume(fam: &str, kind: BoolKind) -> Option<f64> {
 /// The unmoved answer's **name** where it is not a build — a reject the oracle keeps stable by
 /// name, so the day it builds is noticed and the row gets its closed form.
 fn expected_unmoved_name(fam: &str, kind: BoolKind) -> Option<&'static str> {
-    // ★ Empty since cell ⑩: the bore fuses it used to hold at `NoClearRay` build now and are
-    // locked by volume above. The door stays for the next family a reject is the honest answer for.
+    // ★ Empty: the bore fuses build and are locked by volume above. The door stays for the next
+    // family a reject is the honest answer for.
     let _ = (fam, kind);
     None
 }
@@ -11620,7 +11611,7 @@ const DIVERGES: &str = "<diverges silently>";
 /// determined). Commuting instead is red — the row must then be removed — and so is failing
 /// somewhere else.
 ///
-/// ★ Measured 2026-09-03 over the whole group (990 cells, 150 divergent at stage 0): the ∥
+/// ★ Measured over the whole group (990 cells, 150 divergent at stage 0): the ∥
 /// ruling label's missing chart-frame factor (`WRONG_SIDE` — every max-side family under
 /// `t(−4,−4,−2)`, the walls and half walls under the z-rotations that put the wall on a seed
 /// plane, corner-lo under most rotations: 105 cells, all commuting since `ruling_interior_is_even`
@@ -12444,9 +12435,9 @@ fn a_half_disk_has_the_pair_roots_at_its_corners() {
     mesh_covers_faces("a half disk", &m, &[solid]);
 }
 
-/// **A slot padded onto and pocketed into a plate** — the tangent ruling was the tracer's
-/// frontier (cell ⑨ locked both at `TraceDeclined{OuterRing}`), and cell ⑩ S3 gave the ruling a
-/// name (`side = 0`). The slot sits on the plate's corner: `cx ∈ [−10, 10]`, `r = 2` about the
+/// **A slot padded onto and pocketed into a plate** — the tangent ruling is a carrier with
+/// its own name (`side = 0`).
+/// The slot sits on the plate's corner: `cx ∈ [−10, 10]`, `r = 2` about the
 /// face's origin, so the part over the plate is a `10 × 2` strip plus a quarter disk. The pad
 /// adds the whole prism (it touches the plate along that part and hangs past its edges), the
 /// pocket removes the part inside: `8000 + 3·(80 + 4π)` and `8000 − 2·(20 + π)`.
@@ -12504,8 +12495,8 @@ fn a_slot_pads_and_pockets_at_the_tangent_ruling() {
 }
 
 /// **A half-disk boss pads onto a plate.** The D's chord wall crosses its own cylinder through
-/// the axis (`Lo`/`Hi` corners) and the cylinder carries only half its circle — cell ⑨ locked the
-/// pad at `LabelConflict`, and cell ⑩ S3's split (no phantom piece for the uncovered half) and
+/// the axis (`Lo`/`Hi` corners) and the cylinder carries only half its circle — the
+/// split (no phantom piece for the uncovered half) and the
 /// chart (an uncovered piece is the face's end) build it. Half the D hangs past the plate's
 /// `y = 0` edge; the pad adds the whole half disk: `8000 + 3·(π·25/2)`.
 #[test]
@@ -12590,9 +12581,8 @@ fn a_sketched_bored_plate_meets_a_box() {
     }
 }
 
-/// ★ Cell ⑩, S3 — **a filleted plate builds beside a far box, and the decline probe reads
-/// nothing.** S0 locked this fixture's refusal (`TraceDeclined{OuterRing}`, the wall faces that
-/// ride a tangent ruling handed no outer loop) and said S3 would flip it. It did: the tangent
+/// ★ **A filleted plate builds beside a far box, and the decline probe reads
+/// nothing.** The wall faces that ride a tangent ruling get their outer loop: the tangent
 /// ruling is a carrier with `side = 0`, the seated wall states its own piece, the split keeps no
 /// phantom arc, the angular order and the winding walk read the smooth corner as a half turn, and
 /// the chart reads an uncovered rim piece as the face's end. Two bodies, the plate's volume
@@ -12659,7 +12649,7 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
     );
 }
 
-/// ★ Cell ⑩, S3 — **the user's plate, slot plate and gusset fold into one body.** The filleted,
+/// ★ **The user's plate, slot plate and gusset fold into one body.** The filleted,
 /// bored plate (p1), the slot-windowed vertical plate standing on it (p2) and a triangular gusset
 /// (p3) — every wall the three walls found: the fillets' tangent rulings, the slot's tangent
 /// rulings, the plate's caps crossing the gusset's side plane inside the fillet's radius, the
@@ -12670,8 +12660,7 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
 ///
 /// ★ The gusset stands at `x = 1.6` here; at the user's `1.5` its side plane runs **through the
 /// fillet's axis** and so contains the fillet's tangent ruling — one line shared by two planes
-/// and a cylinder. That was the next capability when this lock was written (a `TraceDeclined`,
-/// locked as the honest name); cell ⑫ opened it, and the second arm below is the plate and the
+/// and a cylinder. The second arm below is the plate and the
 /// gusset at `1.5` fusing: `48 + 7.5`. The four-part fold at the script's own dimensions is
 /// `the_users_fold_builds_at_the_scripts_own_dimensions`.
 #[test]
@@ -12776,7 +12765,7 @@ fn the_users_plate_slot_and_gusset_fold() {
     let want = 48.0 + (34.0 - pi / 4.0) + 7.5;
     assert!((v - want).abs() < 1e-9, "the fold: {v} vs {want}");
 
-    // The gusset on the fillet's axis plane (cell ⑫): the shared line has one name, and the
+    // The gusset on the fillet's axis plane: the shared line has one name, and the
     // gusset stands on the plate — the volume is the sum.
     let mut m = Model::new();
     let a = plate(&mut m);
@@ -12797,7 +12786,7 @@ fn the_users_plate_slot_and_gusset_fold() {
     );
 }
 
-/// ★ Cell ⑩, S2 — **the gate reads the arc, not the circle.** A lateral face's footprint has an
+/// ★ **The gate reads the arc, not the circle.** A lateral face's footprint has an
 /// angular extent, and the two clearance questions that used to see a whole circle read it: the
 /// oblique plane's reach (a quarter-cylinder sector beside a gusset whose slanted plane runs
 /// within the radius but past the arc) and the parallel pair's cross-section (two half-cylinder
@@ -12945,7 +12934,7 @@ fn the_gate_reads_the_arc_not_the_circle() {
     );
 }
 
-/// ★ Cell ⑩, S1 — **the gate reads faces at every one of its four sites.** Three fixtures the old
+/// ★ **The gate reads faces at every one of its four sites.** Three fixtures the old
 /// gate refused for a fact about *surfaces*, and one it still refuses for a fact about faces —
 /// then the three shapes the refusal had been hiding from the arrangement: a solid with two
 /// coaxial cylinders sectioned by a wall (the annulus), a cap whose merged region is bounded by a
@@ -13173,7 +13162,7 @@ fn the_gate_reads_faces_at_every_site() {
     assert!(out.is_empty(), "{out:?}");
 }
 
-/// ★★★★★ **Cell ⑰ — the common perpendicular is the only direction that sees this pair apart.**
+/// ★★★★★ **The common perpendicular is the only direction that sees this pair apart.**
 ///
 /// A 20 × 20 plate 8 thick, every corner filleted `5`, and a `d 7` drill laid along `x` through
 /// it. Each fillet's axis stands `5` from the drill's — inside the radius sum `5 + 7/2`, so the
@@ -13182,8 +13171,8 @@ fn the_gate_reads_faces_at_every_site() {
 /// does separate them is the rulings' cross product, `ŷ`: a fillet's quarter arc reaches
 /// `y ∈ [−10, −5]` (or its mirror) and the drill only `[−7/2, 7/2]`.
 ///
-/// ★ **The kernel's own corpus reaches this predicate nowhere else** — measured at cell ⑰'s S0,
-/// where the whole suite made 67 face-pair questions and not one needed a third direction. So
+/// ★ **The kernel's own corpus reaches this predicate nowhere else** — measured:
+/// the whole suite made 67 face-pair questions and not one needed a third direction. So
 /// this fixture is the kernel's only end-to-end hold on the rule, and the volume is the oracle:
 /// the plate `(400 − 4(25 − 25π/4)) · 8` less the drill's `π(7/2)² · 20`.
 #[test]
@@ -13244,7 +13233,7 @@ fn only_the_common_perpendicular_separates_a_fillet_from_a_crosswise_drill() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★ Cell ⑪ — **a four-plane operand vertex has one name.** A gusset whose apex lands on the
+/// ★ **A four-plane operand vertex has one name.** A gusset whose apex lands on the
 /// wall's top edge leaves the fused operand with a vertex where four faces meet. The ring road
 /// used to name an operand vertex once per face loop — its own plane and the two edges' walls —
 /// so that vertex reached the tracer under **four names**, one of them (the top face's: front,
@@ -13448,7 +13437,7 @@ fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, wg, g2)
 }
 
-/// ★ Cell ⑪ — **the four-plane operand vertex fuses, in either operand order.** The fused wall
+/// ★ **The four-plane operand vertex fuses, in either operand order.** The fused wall
 /// and gusset carry two vertices where four faces meet; fusing the second gusset onto that solid
 /// used to be refused by whichever symptom the build order met first (`FourPlane`,
 /// `DegenerateWitness`) while the same parts fused in another order built. Now both operand
@@ -13531,7 +13520,7 @@ fn a_four_plane_operand_vertex_fuses_in_either_order() {
 /// The user's four parts — the filleted, bored plate, the slot plate standing on it, and two
 /// gussets at `gx` and `−(gx + 1)` — fused in both orders (slot plate second, slot plate last):
 /// one valid body of volume `48 + (34 − π/4) + 15` each time, and the two results equal to the
-/// bit. Cell ⑪ locked it at `gx = 1.4`; cell ⑫ at the script's own `1.5`.
+/// bit. Locked at `gx = 1.4` and at the script's own `1.5`.
 fn users_four_part_fold_in_either_order(gx: f64) {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let prism = |m: &mut Model, axis: Axis, edges: Vec<Stated>, dist: f64| -> Handle<Solid> {
@@ -13663,7 +13652,7 @@ fn users_four_part_fold_in_either_order(gx: f64) {
     assert_eq!(d0.triangle_bits, d1.triangle_bits, "and the same mesh");
 }
 
-/// ★ Cell ⑪ — **the user's four-part fold builds in script order**, and the two fold orders
+/// ★ **The user's four-part fold builds in script order**, and the two fold orders
 /// agree to the bit. The gussets at `1.4` and `−2.4`: the order that used to refuse left a
 /// four-plane vertex for the fourth fuse; the census measured the two results' digests identical,
 /// and this locks that measurement.
@@ -13672,17 +13661,17 @@ fn the_users_four_part_fold_builds_in_either_order() {
     users_four_part_fold_in_either_order(1.4);
 }
 
-/// ★ Cell ⑫ — **the user's fold builds at the script's own dimensions.** The gussets at `1.5`
+/// ★ **The user's fold builds at the script's own dimensions.** The gussets at `1.5`
 /// and `−2.5` stand with a side plane through each fillet's axis, so each such plane holds the
 /// fillet's tangent ruling with the plate's bottom wall — one line shared by two planes and a
-/// cylinder, refused by name (`TraceDeclined { Ruling }`) until this cell. Same volume, both
+/// cylinder. Same volume, both
 /// orders, to the bit.
 #[test]
 fn the_users_fold_builds_at_the_scripts_own_dimensions() {
     users_four_part_fold_in_either_order(1.5);
 }
 
-/// ★ Cell ⑪ — **one name under every rigid motion.** The four-plane operand vertex is named from
+/// ★ **One name under every rigid motion.** The four-plane operand vertex is named from
 /// its incident classes, which a motion permutes and renumbers; under each motion of the oracle's
 /// group the moved operands must still name each apex once, never by a dependent triple, with the
 /// alias fold landing on the vertex — and the moved fuse must build to the same volume. (Why this
@@ -13756,7 +13745,7 @@ fn fillet_plate_and_axis_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
     (m, plate, slab)
 }
 
-/// ★ Cell ⑫ — **a plane through a fillet's axis shares the fillet's tangent ruling.** The slab's
+/// ★ **A plane through a fillet's axis shares the fillet's tangent ruling.** The slab's
 /// face plane `x = 1.5` holds the fillet's axis and so contains the fillet's tangent ruling with
 /// the plate's bottom wall; the slab stands on the plate's top cap and overlaps it nowhere. Fuse
 /// is the sum, `(52 + π) + 3`; cut is the plate, `52 + π`, or the slab, `3`; common is empty —
@@ -13801,7 +13790,7 @@ fn a_plane_through_the_fillet_axis_shares_the_tangent_ruling() {
     }
 }
 
-/// ★ Cell ⑫ — **one name under every rigid motion.** The tangent corner's identity with the
+/// ★ **One name under every rigid motion.** The tangent corner's identity with the
 /// class's ruling crossing is read from the moved operands' own topology and the moved class
 /// table (`seed_from_operands`, `side_of`), so under each motion of the oracle's group the two
 /// corners on the axis plane must still fold onto one pierce representative, no class may
@@ -13848,7 +13837,7 @@ fn a_tangent_corner_has_one_name_under_rigid_motion() {
     }
 }
 
-/// ★ Cell ⑫ — **a point on a cylinder that a foreign class passes through has one name.** The
+/// ★ **A point on a cylinder that a foreign class passes through has one name.** The
 /// class plane `x = 1.5` holds the fillet's axis, so one of its two rulings on the fillet is the
 /// fillet's own tangent ruling with the plate's bottom wall, and the tangent corner at each cap
 /// is named three ways — its own `Pierce … Double`, the three-plane name of its planes with the
@@ -13957,7 +13946,7 @@ fn rounded_plate(m: &mut Model, fillets: usize, bores: usize) -> Handle<Solid> {
     solid
 }
 
-/// ★★★★★ **Cell 21 — a circle names witnesses on its own rim, and that opens a road that was
+/// ★★★★★ **A circle names witnesses on its own rim, and that opens a road that was
 /// structurally closed.**
 ///
 /// `inside`'s converse pass skips `Witness::In` without setting a flag, so a `Cell::Disk` in the
@@ -14028,9 +14017,9 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
     );
 }
 
-/// ★★★★★ **Cell 22 — a circle cell is a circle only where the class is ⊥ to the axis.**
+/// ★★★★★ **A circle cell is a circle only where the class is ⊥ to the axis.**
 ///
-/// Cell 21 gave `Cell::Disk` four rim witnesses, and their being *on the cell's boundary* rests on
+/// `Cell::Disk` has four rim witnesses, and their being *on the cell's boundary* rests on
 /// the class plane being perpendicular to the cylinder's axis — a premise nothing enforced. Off it
 /// the section is an ellipse: `û ⊥ axis` does not give `û ⊥ n`, so two of the four rim points leave
 /// the plane, and `inside` answers a boundary `In` **without the converse**. That is a silent wrong
@@ -14071,7 +14060,7 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
             .expect("a statable cylinder")
     };
 
-    // ⊥: the four rim witnesses stand, as cell 21 built them.
+    // ⊥: the four rim witnesses stand.
     let upright = def([zero; 3], [zero, zero, q(1)], [q(1), zero, zero], 2);
     assert_eq!(crate::nesting::rim_witness_count(&jd, cap, &upright), 4);
     // Oblique: the same cylinder statement, asked on a class its axis is not perpendicular to.
@@ -14089,7 +14078,7 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
     );
 }
 
-/// ★★★★★ **Cell 22 — and radii do not decide an ellipse.** `disk_in_disk` compares `(r_b − r_a)²`
+/// ★★★★★ **And radii do not decide an ellipse.** `disk_in_disk` compares `(r_b − r_a)²`
 /// with the centre distance, which is the right question only when both sections are circles.
 ///
 /// This fixture is the half where it is **silently wrong**, not merely conservative: both axes are
@@ -14160,7 +14149,7 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     );
 }
 
-/// ★★★★★ **Cell 24 — one rule for "the point this edge names", and its plainest arm was missing.**
+/// ★★★★★ **One rule for "the point this edge names", and its plainest arm was missing.**
 ///
 /// `nesting`'s witness supply and its diagnostic twin each chained two producers **verbatim**, its
 /// instrument counted the same pair a third time, and the component road one dimension up had no
@@ -14215,9 +14204,9 @@ fn a_straight_edge_between_rational_corners_names_its_own_midpoint() {
     );
 }
 
-/// ★★★★★ **Cell 23 — a plain bored cube builds at any size, and the answer is right.**
+/// ★★★★★ **A plain bored cube builds at any size, and the answer is right.**
 ///
-/// A bore through a cube is the least exotic input this kernel has, and until this cell it was
+/// A bore through a cube is the least exotic input this kernel has, and it was once
 /// **refused** — `WitnessNotRational` — whenever a coordinate needed a long decimal at a small
 /// scale. Measured boundary before the fix: `1/3` and `1/3·1e-3` built, `1/3·1e-4` and `1/7·1e-3`
 /// did not. Nothing about the geometry changed across that line; what changed was the plane
@@ -14226,7 +14215,7 @@ fn a_straight_edge_between_rational_corners_names_its_own_midpoint() {
 /// `primitive_normal`).
 ///
 /// The sizes below span **seven orders of magnitude**, each with a full 17-digit mantissa so the
-/// denominators are as bad as f64 can make them; the last two built before this cell and are here
+/// denominators are as bad as f64 can make them; the last two built before the fix and are here
 /// as the regression half. The oracle is `s³ − πr²s`.
 ///
 /// ⚠ **The tolerance is relative and it belongs to the oracle, not to the kernel.** At `s = 2e-7`
@@ -14271,7 +14260,7 @@ fn a_bored_cube_builds_at_any_size_and_its_volume_is_right() {
     }
 }
 
-/// ★ Cell 21 — **the rim witness is the point the cylinder's own statement names.** The extrude
+/// ★ **The rim witness is the point the cylinder's own statement names.** The extrude
 /// road states a unit, perpendicular frame (a sketch frame is checked orthonormal exactly, and a
 /// whole circle's `ref_dir` is a rim chord divided by its own radius), so the unit frame comes
 /// back as the statement itself and `centre + r·û₁` is that circle's seam point — not new
@@ -14306,7 +14295,7 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
     }
 }
 
-/// ★ Cell 13 — **a ring with no three-plane corner is answered by the witnesses it does have.**
+/// ★ **A ring with no three-plane corner is answered by the witnesses it does have.**
 /// A nesting question is answered by a witness of the source cell; the supply that names those
 /// witnesses used to be spelled four ways, and the spelling the *disk* arm held was one kind wide.
 /// With every corner filleted the plate's cap ring offers eight pierce corners, four edge-interior
@@ -14348,7 +14337,7 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
     // ★ The negative control: the instrument must *see* the failing shape, or its zeros mean
     // nothing. A ring with no three-plane name, asked against a disk.
-    // ★ Cell 21's follow-up: `route` first. A row from the shared-node or two-radii road
+    // ★ `route` first. A row from the shared-node or two-radii road
     // describes an offer nobody read, and 85% of the rows are of that kind.
     let nameless_vs_disk: Vec<_> = rows
         .iter()
@@ -14373,7 +14362,7 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
         assert!(!r.circle, "and the ring is not a circle: {r:?}");
         assert!(!r.b_mixed, "a disk target is not a mixed ring: {r:?}");
     }
-    // ★ Cell 21's blind spot, closed: a disk source now describes its own supply. Before the rim
+    // ★ A disk source describes its own supply. Before the rim
     // it read all zeros in a ring's vocabulary, so no row ever said what that arm had to offer —
     // which is how a population counted off these rows came out wrong.
     let disks: Vec<_> = rows
@@ -14389,8 +14378,8 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
     }
 }
 
-/// ★ Cell 13, S0 — **the premise, measured**: where both roads can answer one question, they agree.
-/// The engine this cell builds picks whichever witness comes first, so «any witness decides» has to
+/// ★ **The premise, measured**: where both roads can answer one question, they agree.
+/// The engine picks whichever witness comes first, so «any witness decides» has to
 /// be a fact and not a hope. A single disagreement would mean the answer depends on the witness,
 /// which is the one thing that would make the unification wrong.
 #[test]
@@ -14412,7 +14401,7 @@ fn the_two_roads_never_disagree() {
         rows.extend(nesting::nesting_probe::take());
     }
     nesting::nesting_probe::disable();
-    // ★ Cell 21-C: `route` first here too. A shared-node pair is «not comparable» — the engine
+    // ★ `route` first here too. A shared-node pair is «not comparable» — the engine
     // discards that question — so agreeing about it measures nothing the kernel acts on.
     let both: Vec<_> = rows
         .iter()
@@ -14432,12 +14421,12 @@ fn the_two_roads_never_disagree() {
     );
 }
 
-/// ★ Cell 13 — **an island standing inside a round hole**, a shape the corpus did not hold: two
+/// ★ **An island standing inside a round hole**, a shape the corpus did not hold: two
 /// bodies whose top faces are coplanar, one of them a ring that lies inside the other's circular
 /// hole and covers its centre.
 ///
 /// ★★ **It was built to walk the merge road's changed question and does not** — measured, and
-/// recorded rather than dressed up. Cell 13 gave that road the converse clause it lacked («a
+/// recorded rather than dressed up. That road has a converse clause («a
 /// centre inside a ring does not mean the disk is inside it»), and this is the shape that would
 /// make the old spelling claim two owners for one circle. It passes with the old spelling too:
 /// `unify_coplanar_faces` looks for a circle's owner **within its own edge-connected group**, and
@@ -14536,7 +14525,7 @@ fn rounded_plate_volume() -> f64 {
     (90.0 * 50.0 - 4.0 * (25.0 - pi * 25.0 / 4.0)) * 12.0 - 4.0 * pi * 3.5 * 3.5 * 12.0
 }
 
-/// ★ Cell 13 — **a fully rounded plate enters a boolean**, in every operation and either operand
+/// ★ **A fully rounded plate enters a boolean**, in every operation and either operand
 /// order. Its cap ring has no three-plane corner at all, so the arm that asks it against a bore's
 /// disk used to find no witness it would accept and refuse; the engine asks for the witnesses the
 /// ring actually has. The partner stands on the plate's top face and overlaps it nowhere, so every
@@ -14586,7 +14575,7 @@ fn a_fully_rounded_plate_with_bores_enters_a_boolean() {
     }
 }
 
-/// ★ Cell 13 — **the user's script fuses**: the rounded, bored plate and two stepped ribs standing
+/// ★ **The user's script fuses**: the rounded, bored plate and two stepped ribs standing
 /// on it. This is the model that reported the wall (a `witness_not_rational` on the very first
 /// fuse, with the cylinder that comes later having nothing to do with it). The ribs stand on the
 /// plate and overlap nothing, so the volume is the sum of the parts.
@@ -14618,23 +14607,20 @@ fn the_users_rib_plate_fuses() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★ Cell 13 — **the witnesses a ring offers are a fact about the ring, not about its bores.**
+/// ★ **The witnesses a ring offers are a fact about the ring, not about its bores.**
 ///
 /// The supply is read from the corners' own names and solves, so under a rigid motion the rounded
 /// plate must fare exactly as it did — and, more to the point, **exactly as the same plate without
-/// bores does**. Before this cell the bored one refused under *every* motion of the group
-/// (`WitnessNotRational`, this cell's wall, measured on the pre-engine tree); now the two sets are
-/// equal.
+/// bores does**: the two sets of refusals are equal.
 ///
-/// ★★ **The two sets were not zero, and that other wall is gone since cell 24.** A *filleted*
-/// outline used to refuse under **six** of the group's rotations with `NoClearRay` — every ray from
-/// its three-plane corners grazed — with and without bores alike, and this lock froze that number so
-/// a change in it would be loud. It was: giving a component the points its **edges** name (not only
-/// its corners) decides those depths, and all six build. **They are checked, not merely accepted** —
+/// ★★ **Both sets are empty.** Every ray from a *filleted* outline's three-plane corners grazes
+/// under **six** of the group's rotations, with and without bores alike; giving a component the
+/// points its **edges** name (not only its corners) decides those depths, and all six build.
+/// **They are checked, not merely accepted** —
 /// the `Ok` arm below asserts one body, a clean `validate`, and the exact volume, for every motion.
 ///
-/// So the number is now `0`, and this lock says two things at once: «the bores add nothing» (this
-/// cell's original claim) and «no motion of a filleted outline is refused» (cell 24's).
+/// So the number is `0`, and this lock says two things at once: «the bores add nothing» and
+/// «no motion of a filleted outline is refused».
 ///
 /// (Why no rigid-motion oracle row: see `wall_and_gusset_operand` — a slanted plane's realization
 /// differs in the last bit between the two paths, which a bit-exact digest cannot carry.)
@@ -14689,7 +14675,7 @@ fn bores_change_nothing_about_a_rounded_plate_under_rigid_motion() {
             "and the wall that remains is the filleted outline's own, not this cell's: {a}"
         );
     }
-    // ★ The population, held as a number so a change in it is loud: **none** since cell 24.
+    // ★ The population, held as a number so a change in it is loud: **none**.
     assert_eq!(bored.len(), 0, "{bored:?}");
 }
 
@@ -14745,18 +14731,17 @@ fn users_model(m: &mut Model) -> (Handle<Solid>, Handle<Solid>) {
     (abc, tool)
 }
 
-/// ★★★★★ **Cell ⑮ — the user's script builds, `cut` and all.**
+/// ★★★★★ **The user's script builds, `cut` and all.**
 ///
 /// The rounded, bored plate with both ribs fused on, and the cylinder that bores across them. It
-/// took three cells: cell ⑬ opened the fuse, cell ⑭ removed a refusal that stood where nothing
-/// could arrive, and this one taught the footprint reader to read a **disk** — the tool's own cap,
+/// rests on the footprint reader reading a **disk** — the tool's own cap,
 /// which sits on the plate's side plane and clears the corner fillet's tangent line by twice its
-/// radius. Until it could be read, that clearance was folded to "did not clear", a tangency row
-/// was written for a contact that is not there, and the verdict abstained on it.
+/// radius. Unread, that clearance folds to "did not clear", a tangency row
+/// is written for a contact that is not there, and the verdict abstains on it.
 ///
 /// The volume is the oracle: the fuse's `100695.2213` less the two rib bores `2·π·10²·11`.
 ///
-/// ★ **The audit's denominator rides along.** «No circle meets a ruling» (cell ⑭) is worth nothing
+/// ★ **The audit's denominator rides along.** «No circle meets a ruling» is worth nothing
 /// unless the instrument looked: this asserts it measured pairs, failed to measure none, and found
 /// no circle sitting inside a ruling strip — the shape the walk has never been handed.
 #[test]
@@ -14796,10 +14781,10 @@ fn the_users_script_builds() {
     }
 }
 
-/// ★★★★ **Cell ⑮ — and it builds the same body wherever it stands.**
+/// ★★★★ **And it builds the same body wherever it stands.**
 ///
-/// Two newly-admitted paths meet in this model (cell ⑭'s mixed class, arranged for real, and this
-/// cell's disk read from its own plane's exact statement), and a newly-admitted path is exactly
+/// Two newly-admitted paths meet in this model (the mixed class, arranged for real, and the
+/// disk read from its own plane's exact statement), and a newly-admitted path is exactly
 /// where a frame-dependent slip would hide. So the whole assembly is carried somewhere else by an
 /// exact translation and asked again — now with a volume to answer with, not just a wall's name.
 #[test]
@@ -14825,7 +14810,7 @@ fn the_users_script_builds_the_same_body_after_a_motion() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★★★★★ **Cell ⑭'s negative control — the net can see a crossing.**
+/// ★★★★★ **The negative control — the net can see a crossing.**
 ///
 /// The audit reports zero circle–ruling crossings over the corpus, and that number means
 /// «none there» only if the instrument can say «there». This drives the rational net directly,
@@ -14833,7 +14818,7 @@ fn the_users_script_builds_the_same_body_after_a_motion() {
 /// `z` at `x = 3` with radius `5` — so its two rulings stand at `y = ±4` — and a circle centred
 /// on that plane whose radius is walked across each of them.
 ///
-/// ★★★★★ **Cell ⑲ — the extent form and the disk form are one door.**
+/// ★★★★★ **The extent form and the disk form are one door.**
 ///
 /// [`nacre_scalar::cylinder_ruling_reached_extent`] answers for a piece stated by its two ends;
 /// a disk is that piece with both ends the same. Handing it the **same** point and margin twice
@@ -14879,7 +14864,7 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
                             true,
                         );
                         assert_eq!(disk, both, "ox {ox} rad {rad} y {y} rho {rho} side {side}");
-                        // ★★ Cell ⑳ — **crossing implies reaching, everywhere.** The open
+                        // ★★ **Crossing implies reaching, everywhere.** The open
                         // reading is the closed one minus its boundary, so it can never say
                         // *more*. This is what sweeps the hand-written arms of the sign table
                         // the named boundary threads through; nothing else exercises them in bulk.
@@ -14930,9 +14915,9 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
         "the reach ends on the ruling, and a touch counts"
     );
     assert!(!reach(1, true), "and never comes near the other one");
-    // ★★ Cell ⑳ — **and the same reach does not *cross* it.** The arrangement's net asks about a
+    // ★★ **And the same reach does not *cross* it.** The arrangement's net asks about a
     // crossing, because a node no road mints is one; an edge tangent to another divides nothing,
-    // which is the sentence cell ⑤ wrote for a tangency at a vertex.
+    // which is the same sentence as for a tangency at a vertex.
     assert!(!reach(-1, false), "ending on the ruling is not crossing it");
     assert!(!reach(1, false));
     // ★ And for a **disk**, where the two readings are the only thing separating a tangency from
@@ -15006,7 +14991,7 @@ fn a_circle_and_a_ruling_meet_or_clear() {
     // an off-axis class through the door.
 }
 
-/// ★★★★★ **Cell ⑮ — a disk clears the strip, spans it, or floats inside it, and the three are
+/// ★★★★★ **A disk clears the strip, spans it, or floats inside it, and the three are
 /// told apart.** The gate's disk arm rests on this, and a predicate that answered one of them
 /// always would still pass every model in the corpus.
 ///
@@ -15059,7 +15044,7 @@ fn a_disk_clears_a_strip_or_spans_it() {
     );
 }
 
-/// ★★★★★ **Cell ⑭ — why the net's population is empty today, frozen by name.**
+/// ★★★★★ **Why the net's population is empty today, frozen by name.**
 ///
 /// A circle and a ruling of one class meet only if two lateral faces share a point, and the
 /// cylinder-pair gate refuses that before any arrangement runs. This is that gate seen from
@@ -15102,7 +15087,7 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
     }
 }
 
-/// ★★★★ **Cell ⑭ — the one shape the walk has never seen, and why no fixture stands for it.**
+/// ★★★★ **The one shape the walk has never seen, and why no fixture stands for it.**
 ///
 /// A class carrying a circle **inside** a ruling cylinder's strip would put a disk afloat in a
 /// ruling-bounded region: the arrangement's four edge kinds allow it, and nothing downstream has
@@ -15116,10 +15101,10 @@ fn two_crossing_cylinders_are_refused_by_the_pair_gate() {
 /// not admit yet. One placement is not a population claim, which is why this freezes the placement
 /// by name rather than asserting anything wider.
 ///
-/// ★ Cell ⑮ moved which sentence the gate uses. With the caps readable the plane-level questions
+/// ★ With the caps readable the plane-level questions
 /// are answered instead of declined, and the pair rule gets to speak: these two cylinders really
-/// do share points, so `CylinderPairContact` is the true name and `CylinderGateUndecided` was the
-/// road running out before reaching it.
+/// do share points, so `CylinderPairContact` is the true name and `CylinderGateUndecided` would be
+/// the road running out before reaching it.
 #[test]
 fn a_cylinder_nested_across_another_waits_at_the_gate() {
     let mut m = Model::new();
@@ -15162,7 +15147,7 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
     }
 }
 
-/// ★★★★ **Cell ⑮ — the shape that makes a disk *span* a tangent line, and why no verdict sees it
+/// ★★★★ **The shape that makes a disk *span* a tangent line, and why no verdict sees it
 /// yet.**
 ///
 /// A boss tangent to the box's wall `x = 0`, and a bar ending exactly on that wall whose cap is a
@@ -15174,12 +15159,12 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
 /// ☑ **The two cannot be separated today.** For the row to be written at all the disk must overlap
 /// the boss's axis span; overlapping it puts the bar's own lateral inside the boss's reach, which
 /// is exactly what `lateral_faces_clear` denies. So the spanning fold is exercised but no
-/// *outcome* depends on it — the same shape as cell ⑭'s «circle inside a strip». This freezes the
-/// geometry so the cell that opens `CylinderPairContact` finds it waiting.
+/// *outcome* depends on it — the same shape as the «circle inside a strip». This freezes the
+/// geometry so the work that opens `CylinderPairContact` finds it waiting.
 ///
-/// ★ Cell ⑰ widened what the pair rule can clear (a third separating direction) and cell ⑱ opened
-/// the reader in front of it, so «cannot be separated today» is a statement about *this* geometry
-/// and no longer about the rule in general. The freeze is what says so if that changes.
+/// ★ The pair rule can clear by a third separating direction and a reader stands in front of it,
+/// so «cannot be separated today» is a statement about *this* geometry
+/// and not about the rule in general. The freeze is what says so if that changes.
 #[test]
 fn a_disk_spanning_a_tangent_line_is_seen_before_the_pair_rule_speaks() {
     let mut m = Model::new();

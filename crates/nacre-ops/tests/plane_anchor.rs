@@ -6,15 +6,15 @@
 //! and the first pusher's survives. So the moment a plane exists before the operation that would
 //! have created it, that operation inherits someone else's `d`.
 //!
-//! `docs/dev-log.md`'s W1 cell (2026-08-03) measured a volume going wrong when `extrude` was made
-//! to issue its base-cap surface up front, and the recorded response was "hand coefficients, not a
-//! handle". But `build_prism` still takes a surface handle and **pad/pocket passes one every day**
+//! A volume was measured going wrong when `extrude` was made to issue its base-cap surface up
+//! front, and the tempting response is "hand coefficients, not a handle". But `build_prism`
+//! still takes a surface handle and **pad/pocket passes one every day**
 //! — the two roads are the same road: `Some(h)` picks its orientation from `n_h·(−N) > 0`, and the
 //! `None` road gets `flipped = n_h·(−N) < 0` back from the intern and flips. So "pass points, not a
 //! handle" is not an escape. It never was.
 //!
 //! This file measures what is actually at stake, because a datum-plane operation
-//! (`docs/truth-and-cache.md` S5) makes "the plane already exists" ordinary rather than exotic.
+//! makes "the plane already exists" ordinary rather than exotic.
 //! Four questions, in the order that lets the cheap one end the enquiry:
 //!
 //! 1. **Do two anchors even disagree?** (`which_point_states_a_plane_changes_its_stored_d`)
@@ -23,10 +23,10 @@
 //! 4. **Do the two models' surface caches agree?**
 //!    (`which_surface_caches_two_anchors_leave_disagreeing`)
 //!
-//! ★★ The fourth was added by cell 58 and is the only one that **sees** the disagreement. The
+//! ★★ The fourth is the only one that **sees** the disagreement. The
 //! first three all answer about things a boolean derives — topology, coordinates, volume — and
-//! those are bit-identical whichever anchor states the plane. The cache itself was never
-//! compared, so nothing in this repository witnessed the defect the cell exists to fix.
+//! those are bit-identical whichever anchor states the plane. Without the fourth the cache
+//! itself is never compared, and nothing in this repository witnesses the defect.
 //!
 //! The population is census's `wf` family — a fully tilted, exactly-orthonormal *decimal* frame.
 //! It is not chosen for being exotic but for being the only kind that can show anything: see
@@ -50,9 +50,8 @@ use nacre_topo::Model;
 /// the origin either way) and **handle 3 is the `wf` datum itself** — which is why the answer is
 /// `[3]` rather than something larger.
 ///
-/// ☑ **Both rows are `[]` since cell 58 derived the anchor from the truth's first point.** The
-/// commit before it pinned `worst_ring` at `[3]` — that one-line diff *is* the cell's
-/// proposition, and removing the derivation turns this red before anything else.
+/// ☑ **Both rows are `[]` because the anchor is derived from the truth's first point.** Without
+/// the derivation `worst_ring` is `[3]`, and removing it turns this red before anything else.
 /// ★ The `sketch_origin` row is the control that ships with the fixture: it is `[]` **today**, so
 /// the file shows what a lucky pass looks like beside the case that actually disagrees — the same
 /// service `an_axis_aligned_plane_is_anchor_blind` does for the other questions.
@@ -228,10 +227,9 @@ fn d_at(anchor: Point3, sp: &SketchPlane) -> f64 {
 /// first point — which reversing the ring changes. So which `d` a *producer* hands in depends on a
 /// winding decision made inside the prism builder, with no datum operation in sight.
 ///
-/// ⚠ **Cell 58 changed what happens next, not this.** This test builds its planes with
-/// `Plane::from_point_normal` and never pushes one, so it still measures what it always did: two
-/// anchors, two `d`s. What is no longer true is the sentence that used to end this paragraph —
-/// that the *stored* `d` inherits the producer's choice. `push_plane_raw` now derives the anchor
+/// ⚠ **The stored `d` does not inherit this.** This test builds its planes with
+/// `Plane::from_point_normal` and never pushes one, so it measures two anchors, two `d`s.
+/// The *stored* `d` does not inherit the producer's choice: `push_plane_raw` derives the anchor
 /// from the truth, so the model keeps one `d` per plane however many anchors are offered;
 /// `which_surface_caches_two_anchors_leave_disagreeing` is where that is asserted.
 #[test]
@@ -400,7 +398,7 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
     let mut m = Model::new();
     let sp = wf_plane();
     // ★★ **Both arms now state the plane** — an extrude names its plane, so "without a
-    // pre-existing plane" stopped being expressible (S5(i)-b). What still varies, and what this
+    // pre-existing plane" is not expressible. What still varies, and what this
     // file measures, is **which point anchors the cache**: `None` lets the datum anchor at the
     // caller's sketch origin, `Some(p)` plants the same plane at `p` first so the datum interns
     // onto it and inherits that anchor. Two production roads, one of them deliberately worse.
@@ -463,7 +461,7 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
 
 /// ★★ **The gate: which point anchors a plane's cache does not move the model.**
 ///
-/// Since S5(i)-b an extrude *names* its plane, so "the plane did not exist yet" is no longer a
+/// An extrude *names* its plane, so "the plane did not exist yet" is no longer a
 /// thing that can happen — both arms below state it. What varies is the anchor: the datum's own
 /// (the caller's sketch origin) against one planted deliberately at the worst ring point. Both are
 /// production roads now, which makes this a stronger comparison than the one it replaced, not a
@@ -474,11 +472,11 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
 /// yes cannot show drift accumulating.
 ///
 /// If this ever fails, the repair is not "pass points instead of a handle" — that road is the same
-/// road (see the module doc). It is to derive the cache's anchor from the definition, and cell 58
-/// did exactly that.
+/// road (see the module doc). It is to derive the cache's anchor from the definition, which is
+/// what ships.
 ///
-/// ⚠★★★ **But not the way this note proposed.** It named the **foot of perpendicular** — "the
-/// minimum-norm point, therefore the smallest rounding available" — and that was measured out:
+/// ⚠★★★ **But not from the foot of perpendicular** — "the
+/// minimum-norm point, therefore the smallest rounding available" — which was measured out:
 /// the foot minimizes the rounding of `d`, not the residual at the face's own points, and it puts
 /// the anchor near the *world origin* while every consumer of an anchor (conditioning, STEP's
 /// required point, tess's chart) wants it near the **face**. Wired, it moved 32 census result

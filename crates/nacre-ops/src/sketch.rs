@@ -3,7 +3,7 @@
 //! A sketch is drawn as closed paths; which of them are material, which are holes, and which are
 //! islands inside holes is **not** declared by the author but decided from containment, the way
 //! every CAD sketcher does it. The classification itself (is this point inside that ring? do two
-//! rings meet?) is a robustness-sensitive sign question and lives in `nacre-geom` (design §1
+//! rings meet?) is a robustness-sensitive sign question and lives in `nacre-geom` (the design
 //! isolates that — [`nacre_geom::intersect`] for polygons, [`nacre_geom::mixed`] once arcs are
 //! in); what is here is the policy — depth parity — and the doors.
 //!

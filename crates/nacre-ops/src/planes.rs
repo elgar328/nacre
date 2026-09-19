@@ -22,7 +22,7 @@ use std::collections::HashMap;
 /// — and the loop's winding is held to it by a `debug_assert` at construction
 /// and by `validate`'s `FaceMisoriented` at every op. Every sign test here reads
 /// `n_out` (or `tri`), and the two agree by that enforcement.
-/// One row of the boolean's face table — the face vocabulary the engine reads (M6-2a).
+/// One row of the boolean's face table — the face vocabulary the engine reads.
 ///
 /// The table used to be `Vec<FaceInfo>` with a hard `CylinderFace` reject at the door; the row
 /// is now an enum so a cylinder face can *sit in the table* (keeping the face-index space that
@@ -55,7 +55,7 @@ impl FaceRow {
     }
 
     /// The row's surface, whichever kind it is.
-    // Test consumers today; the first production consumer is C2's population gate.
+    // Test consumers today; the first production consumer is the population gate.
     #[allow(dead_code)]
     #[inline]
     pub(crate) fn surf(&self) -> Handle<Surface> {
@@ -75,10 +75,10 @@ impl FaceRow {
     }
 }
 
-/// A cylinder face's table row (M6-2a): what `collect_planes` can state about a lateral face
+/// A cylinder face's table row: what `collect_planes` can state about a lateral face
 /// without pretending it has a plane's four-piece description (`plane`/`tri`/`n_out`/`tri_pt3`
 /// are constant-normal vocabulary — a dummy would be the type lying). The class index and the
-/// exact def live in the cylinder class table (`ClassIx::Cyl`, C2).
+/// exact def live in the cylinder class table (`ClassIx::Cyl`).
 #[derive(Clone, Debug)]
 pub(crate) struct CylFaceInfo {
     pub(crate) surf: Handle<Surface>,
@@ -104,7 +104,7 @@ pub(crate) struct CylFaceInfo {
     /// band — two whole rims and holes — is `combinatorics::FaceLoops::cycles`' question
     /// (`arrangement::lateral_shape`), and the two lateral roads ask it there before they read anything; a face
     /// that is not a band (a panel, a chain rim) declines by name (`CylSpan`) until the chart can
-    /// hold it (E2-2). The range is what the population gate's rectangle reads
+    /// hold it. The range is what the population gate's rectangle reads
     /// (`lateral_spans`) — a wider rectangle only refuses more — and what the chart's rows carry
     /// once the tracer has cut every circle the face covers only partly.
     ///
@@ -113,13 +113,13 @@ pub(crate) struct CylFaceInfo {
     /// none, and `circle_on_class` planted whole circles inside a `Some` — which is why the
     /// widening waited for the cycles.
     ///
-    /// ★ Cell ⑩: this range is the first axis of the face's [`Footprint`] on its own chart; the
+    /// ★ This range is the first axis of the face's [`Footprint`] on its own chart; the
     /// second, θ, joins with the angular extent.
     pub(crate) footprint: Footprint,
 }
 
-/// **A lateral face's footprint on its own chart `(t, θ)`** (cell ⑩) — the bounding rectangle of
-/// the region the face occupies there (D5: a lateral *is* a region of its chart). Conservative for
+/// **A lateral face's footprint on its own chart `(t, θ)`** — the bounding rectangle of
+/// the region the face occupies there (a lateral *is* a region of its chart). Conservative for
 /// a chain rim or a notched face: wider, never narrower, so a clearance proved against it holds
 /// for the face. Every clearance the gate asks of a lateral is a two-axis question against this
 /// rectangle — the shape [`face_clears_footprint`] already has for a plane's faces.
@@ -131,7 +131,7 @@ pub(crate) struct Footprint {
     /// cylinder's radius from the axis, `from → to` counter-clockwise about the axis direction
     /// ([`lateral_theta_extent`]). `None` is a whole circle, or an extent this road could not
     /// state (an irrational corner, rims that do not chain into one arc) — read as the whole
-    /// circle, which is the answer before cell ⑩ and conservative.
+    /// circle, which is conservative.
     pub(crate) theta: Option<RimArc>,
 }
 
@@ -180,9 +180,10 @@ pub(crate) struct FaceInfo {
     /// `Surface` (a Cut splits one face into disjoint pieces reusing its surface —
     /// cell coplanar-narrow), which `surf` alone collapses. `surf_ix` keys on this.
     ///
-    /// ★ **`None` has no producer today.** It was the cap a half-space clip put on an operand — a
-    /// face that lives for one boolean and is never emitted — and the subdivision that minted those
-    /// is gone (see `docs/dev-log.md`). Every constructor writes `Some`, so every read `expect`s.
+    /// ★ **`None` has no producer today.** It stands for a cap a half-space clip puts on an
+    /// operand — a
+    /// face that lives for one boolean and is never emitted — and nothing mints those.
+    /// Every constructor writes `Some`, so every read `expect`s.
     /// Kept as an `Option` because the table is the natural home for a face the model does not own,
     /// and the next engine that needs one should not have to re-thread the type.
     pub(crate) face: Option<Handle<Face>>,
@@ -199,9 +200,9 @@ pub(crate) struct FaceInfo {
     /// face is `Reversed` and the two oppose — the `Orientation` flag as a sign.
     ///
     /// **This face's**, not its plane class's. The class-frame twin is [`WorkingPlane::frame_sign`],
-    /// and the two used to be one function called with either kind of index — the single place the
-    /// face/plane convention could not be asserted, because both readings were legitimate
-    /// (dev-log, normalization cell). Separate names, separate questions.
+    /// and one function called with either kind of index would be the single place the
+    /// face/plane convention cannot be asserted, because both readings are legitimate.
+    /// Separate names, separate questions.
     pub(crate) orient_sign: i8,
     /// The three `tri` points as **exact `WitnessPoint` definitions**, in the same order as `tri`.
     /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
@@ -248,7 +249,7 @@ pub(crate) fn collect_planes(
             let face = model.face(fh);
             let plane = match model.surface_cache(face.surface) {
                 nacre_geom::Surface::Plane(p) => *p,
-                // A cylinder face sits in the table (M6-2a) — its row keeps the shared facts
+                // A cylinder face sits in the table — its row keeps the shared facts
                 // (surface, face, stated outward sign, motion leaf) and none of the plane
                 // vocabulary. Whether it may *flow* is the population gate's question, asked
                 // in `plane_index_setup`, not a door slam here.
@@ -319,8 +320,8 @@ pub(crate) fn collect_planes(
                     // on a slanted wall's frame is in that frame's coordinates. Realized through
                     // the motion, as every other witness here is, before being wound to the
                     // face's *world* outward; naive f64 of the frame-stated points compared a
-                    // frame triangle against a world normal and asserted on the first such face
-                    // (measured 2026-09-05: a circle padded on a slanted wall).
+                    // frame triangle against a world normal and asserts on the first such face
+                    // (a circle padded on a slanted wall).
                     let mut tri = match disk_motion {
                         None => pts.map(|p| Point3::from_array(p.map(|x| x.to_f64()))),
                         Some(m) => {
@@ -424,18 +425,18 @@ pub(crate) fn collect_planes(
                 // give a triangle indistinguishable from a stated one, so every predicate below
                 // runs unchanged.
                 //
-                // ★★★ **The nameless branch (open item 16, second wall — heterogeneous half).**
+                // ★★★ **The nameless branch (the heterogeneous half).**
                 // A pure-mixed datum's vertices are each exact *in their own frame*, so its
                 // witness triangle exists — three `WitnessPoint`s whose chains simply differ.
                 // The judging layer never required them to agree: `plane_iv`/`plane_hp` realize
-                // each point independently, so the whole toleranced route (C4) runs unchanged,
+                // each point independently, so the whole toleranced route runs unchanged,
                 // and `standard_for` sizes the operation from these very points. What such a
                 // plane has none of is exact f64 coefficients — so it is flagged `rotated`
                 // (the routing signal means "no exact description", not "carries a motion"),
                 // which makes every exact shortcut decline and `reconcile` carry nothing.
                 //
                 // A *straddling*-vertex datum has no witness triangle **from its vertices** —
-                // its witness is the judged frame's probes, built in the branch below (16-3).
+                // its witness is the judged frame's probes, built in the branch below.
                 nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Through(vs),
                     motion,
@@ -465,11 +466,11 @@ pub(crate) fn collect_planes(
                         None => {
                             let j = crate::rotated_vertex::through_judged_points(model, *vs)
                                 .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                            // ★ All-pure unwraps to 16-1's heterogeneous triangle, letter for
+                            // ★ All-pure unwraps to the heterogeneous triangle, letter for
                             // letter — that road is locked by its own tests and stays.
                             //
                             // ★★★★ **Any implicit point: the witness is the plane's own judged
-                            // frame** (16-3). The table's contract has been "three exact points
+                            // frame**. The table's contract has been "three exact points
                             // *on the plane*, wound to n_out" since S6b — never "the face's
                             // corners" — and a judged plane has such points by definition: its
                             // canonical frame's probes `(0,0,0)·(1,0,0)·(0,1,0)`, the same ones
@@ -492,7 +493,7 @@ pub(crate) fn collect_planes(
                                 let w = w.map(|o| o.expect("all pure"));
                                 let w = match motion {
                                     // ★ The plane's own later motion appends to each point's
-                                    // own chain — motions add, never multiply (S5(ii)-1).
+                                    // own chain — motions add, never multiply.
                                     None => w,
                                     Some(m) => replay_all(w, m)?,
                                 };
@@ -597,7 +598,7 @@ pub(crate) fn collect_planes(
     if !leaves.is_empty() {
         for row in out.iter_mut() {
             // The restatement mirror is a plane story — a motion-fixed *cylinder*'s
-            // restatement is separately deferred (M6-0's handover list).
+            // restatement is separately deferred.
             let FaceRow::Plane(f) = row else { continue };
             if f.motion.is_some() {
                 continue;
@@ -711,11 +712,11 @@ pub(crate) fn world_cylinder_def(
 }
 
 /// The sentence [`world_cylinder_def`]'s postcondition panics with — one spelling, shared with
-/// the commuting oracle's `KNOWN` list (cell ④), which names a panic site by its sentence.
+/// the commuting oracle's `KNOWN` list, which names a panic site by its sentence.
 pub(crate) const ONE_CYLINDER: &str =
     "the world statement and the realized cache describe one cylinder";
 
-/// A lateral face's axis-parameter span, read off its rim carrier planes (M6-2a).
+/// A lateral face's axis-parameter span, read off its rim carrier planes.
 ///
 /// Each rim edge's carrier pair is `[lateral, cap-plane]`; the cap plane meets the axis
 /// `o + t·m` at `t = −(n·o + d)/(n·m)` — rational whenever the plane has a narrow name (its
@@ -816,9 +817,9 @@ fn lateral_t_range(
 }
 
 /// All shells of a solid — outer first, then cavities. The boolean seam
-/// front-end walks these so a cavitied operand's void walls are seen (cell
-/// (5c-in)); a non-hollow solid yields just its outer shell, unchanged.
-/// **The angular extent of a lateral face** (cell ⑩) — the union of the arcs its outer loop's rim
+/// front-end walks these so a cavitied operand's void walls are seen;
+/// a non-hollow solid yields just its outer shell, unchanged.
+/// **The angular extent of a lateral face** — the union of the arcs its outer loop's rim
 /// edges trace on the cross-section, as one counter-clockwise arc of radial vectors
 /// ([`RimArc`]). A rim edge is one whose other carrier is a cap (a plane ⊥ the axis); its two
 /// vertices are the arc's ends in the producer's own order (`derive_edge_curve`: `[A, B]` is A to
@@ -1111,7 +1112,7 @@ fn class_owners(plane_ix: &[ClassIx], n_a: usize, n_class: usize) -> Vec<Option<
     let mut out: Vec<Option<SolidSide>> = vec![None; n_class];
     let mut seen = vec![false; n_class];
     for (fi, &ci) in plane_ix.iter().enumerate() {
-        // Cylinder classes get their own owner table with the cylinder class table (C2).
+        // Cylinder classes get their own owner table with the cylinder class table.
         let ClassIx::Plane(c) = ci else { continue };
         let side = if fi < n_a { SolidSide::A } else { SolidSide::B };
         if !seen[c] {
@@ -1124,14 +1125,14 @@ fn class_owners(plane_ix: &[ClassIx], n_a: usize, n_class: usize) -> Vec<Option<
     out
 }
 
-/// A face's class in the arrangement — **which index space the face's surface lives in** (M6-2a).
+/// A face's class in the arrangement — **which index space the face's surface lives in**.
 /// The old `plane_ix: Vec<usize>` presumed every class is a plane; the enum makes a cylinder
 /// class unrepresentable as a plane index instead of smuggling it through a sentinel.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum ClassIx {
     /// An index into the dense plane-class table (`PlaneSetup::geom`).
     Plane(usize),
-    /// An index into the cylinder-class table (C2). The index space predates the table — it
+    /// An index into the cylinder-class table. The index space predates the table — it
     /// existed first so the type was total before the table had entries.
     Cyl(usize),
 }
@@ -1160,7 +1161,7 @@ impl ClassIx {
     }
 }
 
-/// A cylinder class of one boolean (M6-2a): the exact statement the population gate reasons
+/// A cylinder class of one boolean: the exact statement the population gate reasons
 /// about, beside its f64 cache. One entry per distinct lateral surface, in [`ClassIx::Cyl`]
 /// numbering order.
 pub(crate) struct WorkingCyl {
@@ -1171,7 +1172,7 @@ pub(crate) struct WorkingCyl {
     /// measures a pierce realization against this surface), while every decision reads `def`. Not
     /// a cache of the model: it lives for one operation, like `WitnessPoint::realized`.
     pub(crate) realized: nacre_geom::Cylinder,
-    /// Which operand states this class (cell ⑩). The pair loop asks only pairs of **different**
+    /// Which operand states this class. The pair loop asks only pairs of **different**
     /// owners: two classes of one valid solid keep their faces apart by construction, and the
     /// arrangement has no cylinder–cylinder road that would need the proof. One surface stated by
     /// both solids — the coincident pair by another spelling — never reaches this table: the class
@@ -1179,7 +1180,7 @@ pub(crate) struct WorkingCyl {
     pub(crate) owner: SolidSide,
 }
 
-/// **The M6-2a population gate** — decides, exactly, whether this operand pair stays inside
+/// **The population gate** — decides, exactly, whether this operand pair stays inside
 /// the axis-perpendicular population the cylinder arrangement serves, and names the refusal
 /// otherwise. All arithmetic is checked `Rat` on world-stated descriptions; anything the gate
 /// cannot decide exactly is [`RejectReason::CylinderGateUndecided`] — a conservative honest
@@ -1199,8 +1200,8 @@ pub(crate) struct WorkingCyl {
 ///
 ///   ★★★★★ **One clearance call, three records, and that is the whole rule.** `Positive` clears
 ///   and writes nothing; `Negative` writes a crossing (two rulings); `Zero` writes a tangency (one
-///   grazing line). The refusal that used to stand on the third arm is gone — cell ⑤'s measurement
-///   («lifting it assembles nothing») was made with the `crossings.insert` *left in*, which put the
+///   grazing line). The third arm does not refuse, and it does not `crossings.insert` either:
+///   that would put the
 ///   pair on the ruling road, and three roads there spell "two distinct roots". Not recording it
 ///   keeps every one of those sentences true and the arrangement unchanged: ☑ of 21 measured
 ///   cells **15 assemble**, `validate` clean and volumes exact; the other 6 are the third-plane
@@ -1209,9 +1210,9 @@ pub(crate) struct WorkingCyl {
 /// - anything else — an oblique plane. It passes when every lateral face of the cylinder
 ///   provably misses the plane — the face's reach along `n` against the plane's station
 ///   ([`lateral_reach`], [`oblique_plane_clears`]) — and is otherwise recorded and refused as
-///   [`RejectReason::ObliqueCylinderCut`] (an ellipse, M6-3). ★ Since cell ⑩ every one of the
+///   [`RejectReason::ObliqueCylinderCut`] (an ellipse). ★ Every one of the
 ///   gate's four sites speaks about faces; a gusset whose slanted plane runs past a plate's holes
-///   used to be refused here for the plane alone.
+///   is not refused here for the plane alone.
 ///
 /// Per cylinder pair **of different owners** (two classes of one valid solid keep their faces
 /// apart by construction and are not asked): axes clear of each other (`dist > r₁+r₂`, whatever
@@ -1246,11 +1247,11 @@ pub(crate) fn cylinder_gate(
 
     let mut crossings = std::collections::HashSet::new();
     let mut tangencies: Vec<Tangency> = Vec::new();
-    // ★ **Two more records, read once each** (cell ⑩): the (plane, cylinder) pairs the oblique
+    // ★ **Two more records, read once each**: the (plane, cylinder) pairs the oblique
     // arm could not show apart, and the cylinder pairs the pair rule could not. Today their one
-    // reader is the refusal below each loop; the day the ellipse road (M6-3) and the
+    // reader is the refusal below each loop; the day the ellipse road and the
     // cylinder–cylinder road (M6b) arrive, that reader becomes a hand-over — the graduation
-    // `crossings` (cell ③) and `tangencies` (cell ⑥) already made from a refusal to a record.
+    // `crossings` and `tangencies` already made from a refusal to a record.
     // They stay local: nothing downstream reads them yet, and a field no one reads is not built.
     let mut oblique: std::collections::HashSet<(usize, usize)> = std::collections::HashSet::new();
     let mut cyls = Vec::with_capacity(cyl_surfs.len());
@@ -1270,9 +1271,9 @@ pub(crate) fn cylinder_gate(
         // whose laterals coincide arrive as one class carrying rows of both — the coaxial pair of
         // equal radius, by another spelling. The chart reads a class as one solid's surface
         // (`cyl_chart::chart_of`), so this is refused here, by the name the pair rule gives that
-        // pair, instead of asserting inside the chart. Measured (2026-09-05): two identical
-        // circle prisms fused reached that assertion before this arm existed. Otherwise the side
-        // that owns the class is written on it — the pair loop reads it (cell ⑩).
+        // pair, instead of asserting inside the chart: two identical
+        // circle prisms fused would reach that assertion. Otherwise the side
+        // that owns the class is written on it — the pair loop reads it.
         let owned = |rows: &[FaceRow]| {
             rows.iter()
                 .any(|r| matches!(r, FaceRow::Cylinder(cf) if cf.surf == surf))
@@ -1342,7 +1343,7 @@ pub(crate) fn cylinder_gate(
             // degenerate seating reaches the arrangement unnamed.
             if !nacre_scalar::parallel_rat(&n, &m) {
                 if nacre_scalar::dot_sign_rat(&n, &m) != Orient::Zero {
-                    // ★ **The oblique arm asks the faces** (cell ⑩) — the fourth of the gate's
+                    // ★ **The oblique arm asks the faces** — the fourth of the gate's
                     // four sites to speak about faces rather than surfaces. The plane's station
                     // `n·p = −d` against every lateral face's reach along `n` ([`lateral_reach`],
                     // the question its doc was written for): if every face provably misses the
@@ -1379,8 +1380,8 @@ pub(crate) fn cylinder_gate(
                         .map(|f| f.span.expect("a listed footprint has a span"))
                         .collect();
                     if !wall_faces_clear(model, faces, plane_ix, c, &coeffs, &o, &m, r2, &spans)? {
-                        // ★ **The record-and-pass arm** (rulings ladder, cell 4; widened in
-                        // cell ③): a wall whose plane runs **within** the radius — any
+                        // ★ **The record-and-pass arm**: a wall whose plane runs **within**
+                        // the radius — any
                         // `0 ≤ d < r`, the through-axis wall included — and whose faces did not
                         // clear the strip is recorded and passed; the tracer's ruling/chord arms
                         // fire only on recorded pairs and read the *faces* (a ruling piece comes
@@ -1388,23 +1389,21 @@ pub(crate) fn cylinder_gate(
                         // plane with the disk), so a recorded face that misses the lateral
                         // contributes nothing. The record is «may meet; the tracer decides».
                         //
-                        // ★ The offset (`0 < d < r`) used to keep this refusal on a measurement
-                        // made before the region emitter (D5) — «walks to `OpenResultShell`».
-                        // Measured again after it: bosses and bores, rational and irrational
+                        // ★ The offset (`0 < d < r`) keeps no refusal: with the region
+                        // emitter, bosses and bores, rational and irrational
                         // rulings, axis inside or outside the plate, a split bore — every one
                         // assembles, validates clean and answers the exact volume oracle. The
                         // arithmetic (`plane_plane_cylinder`'s roots, `ruling_side`, the chart's
                         // circular order) never assumed the diameter; only the vocabulary did.
                         //
-                        // ★★ **Nothing keeps a refusal here any more, and the two sentences this
-                        // replaces are both worth remembering.** The first — *"lifting it assembles
-                        // a volume-correct solid … validate cannot see the contact"* — is **true**
-                        // (cell ⑥ measured it: `Cut` returns `Ok`, `validate` clean, no net sees
-                        // the line), which is why the answer is a judge and not a fence. The second
-                        // — cell ⑤'s *"lifting it assembles **nothing**, a tangency is a double
-                        // root and three roads spell two distinct roots"* — was measured with the
-                        // `crossings.insert` below **left in**, which put the pair on the ruling
-                        // road; not recording it never reaches those roads.
+                        // ★★ **Nothing keeps a refusal here.** Lifting it assembles
+                        // a volume-correct solid and `validate` cannot see the contact
+                        // (`Cut` returns `Ok`, `validate` clean, no net sees
+                        // the line), which is why the answer is a judge and not a fence. A
+                        // tangency is a double
+                        // root and three roads spell two distinct roots, so a
+                        // `crossings.insert` here would put the pair on the ruling
+                        // road and assemble nothing; not recording it never reaches those roads.
                         //
                         // ★★★★★ **A tangency is a graze, not a crossing** — so it passes, and it
                         // is **not** recorded. `crossings`' proposition is "the plane runs *within*
@@ -1440,7 +1439,7 @@ pub(crate) fn cylinder_gate(
                         }
                     {
                         // ★ **The class cuts this lateral face though no face of the other solid touches
-                        // it** (cell ⑩, S3): the refusal question is face against face and it is clear, but
+                        // it**: the refusal question is face against face and it is clear, but
                         // the arrangement on this class still needs the ruling — every face of *this* solid
                         // that crosses the class ends on it (a cap's section ends where its rim arc meets
                         // the plane), and without the ruling that end dangles and the walk doubles back
@@ -1462,12 +1461,13 @@ pub(crate) fn cylinder_gate(
     // ★★★★★ **The pair rule asks classes of different owners whether their faces share a point,
     // and writes what it cannot prove.** The proposition is "the two classes share no face". Three
     // things decide it, in order of cost. Two classes of one solid share none by construction — a
-    // valid solid's faces meet only along their edges — so those pairs are not asked (cell ⑩; the
+    // valid solid's faces meet only along their edges — so those pairs are not asked (the
     // fillets of one plate, the two half cylinders of one slot). The distance between the axes
     // exceeding the radius **sum** proves it for the two infinite surfaces, whatever their
-    // orientation, and decides most inputs. ★ It used to be the whole rule, and that made a fact
+    // orientation, and decides most inputs. ★ It is not the whole rule — that would make a fact
     // about surfaces read as a fact about faces: a stud fused through a cube and then a second stud
-    // across it were refused because their *axes* cross, though the first stud's remaining faces
+    // across it would be refused because their *axes* cross, though the first stud's remaining
+    // faces
     // sit past `|z| = 0.5` and the second's whole surface within `|z| = 0.2`. So a pair the
     // distance cannot clear asks the faces themselves — the same question the plane–cylinder arm
     // asks per face (`face_clears_footprint`), spelled for a lateral face's reach against the
@@ -1525,7 +1525,7 @@ pub(crate) fn cylinder_gate(
     // The pair record's one reader today — the place that hands the record to the
     // cylinder–cylinder road when it exists.
     //
-    // ★★★★★ **An obligation the cell that opens this refusal inherits** (cell ⑭). The arrangement
+    // ★★★★★ **An obligation the cell that opens this refusal inherits**. The arrangement
     // leans on this line for a proposition of its own: a class may carry a circle (⊥ one
     // cylinder) and rulings (∥ another) at once, and that is safe **only while the two never
     // meet** — neither split cuts the other's kind, so a crossing they both walked past would be
@@ -1550,7 +1550,7 @@ pub(crate) fn cylinder_gate(
 ///
 /// ★ **No table is built for this.** The scan runs only on the class that failed the plane test —
 /// rare — so walking the face rows there costs nothing on the common path and allocates nothing.
-/// A per-class face table computed for every boolean would be the shape M6-2's `caps` had, built
+/// A per-class face table computed for every boolean would be built
 /// for everyone and read by almost no one. ★★ The `spans` this takes is held to the same rule: the
 /// caller builds it on first use, not per cylinder — measured, an ordinary cut over a 16-bore
 /// plate wants it **zero** times.
@@ -1621,7 +1621,7 @@ pub(crate) struct Tangency {
     /// [`CylFaceInfo::orient_sign`].
     pub(crate) cyl_orient: i8,
     /// **The wall face has vertices on both sides of the tangent line** — so the contact is a
-    /// *segment*, not a corner grazing it at a point. Cell ⑤ measured that a point tangency is a
+    /// *segment*, not a corner grazing it at a point. A point tangency is a
     /// valid solid, so without this the verdict would accuse a shape it cannot convict. ★ Needed
     /// because [`nacre_scalar::cylinder_strip_side`] answers `StripSide::Inside` for `U = 0`,
     /// which its own doc calls *"merely conservative"* on an empty strip — and a tangent plane's
@@ -1637,10 +1637,9 @@ pub(crate) struct Tangency {
     /// picture is then **six** regions, not three, the two wedges can take different `keep`s, and
     /// the record below cannot speak.
     ///
-    /// ★ Cell ⑮ emptied this arm's population without touching it: every row that reached it was
-    /// written for a wall face the footprint reader could not read — a whole **disk**, and each of
-    /// them clearing the tangent line by more than its own radius. Reading the disk means no row is
-    /// written at all, so what is left here is the abstention's true subject. Abstain rather than answer. (☑ Both constructed members of
+    /// ★ A whole **disk** wall face clearing the tangent line is read by the footprint reader
+    /// and writes no row at all, so what reaches here is the abstention's true subject.
+    /// Abstain rather than answer. (☑ Both constructed members of
     /// this population reach `CoincidentNodes` in the arrangement anyway — two samples are not a
     /// population claim, so the abstention stands.)
     pub(crate) line_in_another_plane: bool,
@@ -1790,7 +1789,7 @@ fn tangency_rows(
         if k != c {
             continue;
         }
-        // ★ **Same-solid pairs write no row** (cell ⑩). A wall tangent to its own solid's
+        // ★ **Same-solid pairs write no row**. A wall tangent to its own solid's
         // cylinder is that solid's smooth edge — a fillet — not a contact between operands. The
         // judge would skip such a row anyway (`straddles` is false for a face that ends on the
         // line), but a row it could not decide would refuse the boolean by a name that is about
@@ -1902,7 +1901,7 @@ fn tangency_rows(
 }
 
 /// **Does the face reach across the tangent line?** — the proof that the contact is a *segment*
-/// rather than a corner grazing the line at one point (the valid tangency cell ⑤ measured).
+/// rather than a corner grazing the line at one point (a valid tangency).
 /// `StripSide::Plus`/`Minus` are the two sides of the zero-width strip a tangent plane cuts, and
 /// a face with a corner on each has the line running through its hull.
 ///
@@ -1971,7 +1970,7 @@ fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar:
 }
 
 /// **The footprints of a cylinder class's lateral faces** — [`lateral_spans`]' rule with the
-/// angular extent alongside (cell ⑩): empty if any face's span could not be stated, else one
+/// angular extent alongside: empty if any face's span could not be stated, else one
 /// footprint per face.
 fn lateral_footprints(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint> {
     let mut out: Vec<Footprint> = Vec::new();
@@ -2011,12 +2010,12 @@ fn lateral_footprints(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint
 /// is still bounded when `d·m = 0` — the projection is a point whatever `s` is — and unbounded
 /// otherwise, which is `None`: nothing proved. ★ That `d·m = 0` case is not a branch of its own;
 /// it is the general formula with the `s` term vanishing — and it is what makes the **common
-/// perpendicular** answerable at all (cell ⑰: `d ⊥ m` for both cylinders, so neither needs a span).
-/// The `d·m ≠ 0` arm is what the oblique plane arm reads (`d = n`, cell ⑩) and what a cylinder
+/// perpendicular** answerable at all (`d ⊥ m` for both cylinders, so neither needs a span).
+/// The `d·m ≠ 0` arm is what the oblique plane arm reads (`d = n`) and what a cylinder
 /// reads along **its own** axis, where the radial term vanishes instead and the reach is the span
 /// itself. `None` is also `Rat` overflow.
 /// The reach is `[lo − √rho2_lo, hi + √rho2_hi]`: each end is a rational base and a radical the
-/// arc may or may not add. ★ With an angular extent (cell ⑩) the radial term `r·(d·û)` over the
+/// arc may or may not add. ★ With an angular extent the radial term `r·(d·û)` over the
 /// face's arc peaks at the direction of `d⊥` when the arc holds it — `√ρ²`, as before — and at an
 /// **end** of the arc otherwise, where it is `d·v` for the end's radial vector, a rational folded
 /// into the base with a zero radical. One root at most on each end, and no new arithmetic.
@@ -2053,8 +2052,8 @@ fn lateral_reach(
     })
 }
 
-/// **How far an arc reaches either side of its centre, along `d`** — the rule cell ⑩ wrote for a
-/// cylinder's lateral face, said once so a **planar** face's arc piece can ask it too (cell ⑱).
+/// **How far an arc reaches either side of its centre, along `d`** — the rule for a
+/// cylinder's lateral face, said once so a **planar** face's arc piece can ask it too.
 ///
 /// `(lo_off, rho2_lo, hi_off, rho2_hi)`: the arc occupies
 /// `[d·centre + lo_off − √rho2_lo, d·centre + hi_off + √rho2_hi]`. The radial term `r·(d·û)` peaks
@@ -2150,7 +2149,7 @@ fn reach_clears(reach: &Reach, lo: nacre_scalar::Rat, hi: nacre_scalar::Rat) -> 
 }
 
 /// **Does every lateral face of this cylinder provably miss the plane `n·p + d = 0`?** — the oblique
-/// arm's face question (cell ⑩). The plane's station in `n·p` units is `−d`; a face clears when
+/// arm's face question. The plane's station in `n·p` units is `−d`; a face clears when
 /// its reach along `n` ([`lateral_reach`]) is disjoint from that one point. An empty span list is
 /// "unusable" ([`lateral_spans`]'s doc), never clear; so is overflow.
 fn oblique_plane_clears(
@@ -2241,7 +2240,7 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
 }
 
 /// **The separating directions a cylinder pair can state rationally** — and why these are all of
-/// them (cell ⑰).
+/// them.
 ///
 /// What a footprint describes is a box in `(axis parameter × angle)`, and the boundary of such a
 /// face is made of **cap planes** (normal = the axis), **rulings** (direction = the axis) and
@@ -2289,7 +2288,7 @@ fn separated(
 }
 
 /// **Two lateral faces on parallel axes: do their rims' arcs miss each other in the common
-/// cross-section?** (cell ⑩). The chart is `a`'s: `û₁` the reference direction's unit part ⊥
+/// cross-section?**. The chart is `a`'s: `û₁` the reference direction's unit part ⊥
 /// the axis, `û₂ = m̂ × û₁` — rational exactly when both norms are (`inv_sqrt_exact`; every prism
 /// on a world frame), else `None`. Each face's arc is its angular extent, or the whole circle
 /// when none is stated; the question is [`nacre_geom::mixed::arcs_share_a_point`]'s, and a
@@ -2391,7 +2390,7 @@ fn cross_sections_clear(
 /// out of is not, and neither is a slanted or L-shaped one; those are refused as "not shown to
 /// clear", which is true. Completing the test means adding the face's own edge normals as further
 /// axes — the same test with more axes, not a different machine — and waits for a shape that
-/// needs it. ★ The cylinder **pair**'s version of this sentence was closed in cell ⑰
+/// needs it. ★ The cylinder **pair**'s version of this sentence is closed
 /// ([`separating_dirs`]); this arm, the plane's, still waits.
 ///
 /// **Only the outer loop is walked**, and that is sound: a face is contained in the convex hull of
@@ -2400,16 +2399,16 @@ fn cross_sections_clear(
 /// is also what keeps the test reachable — a wall drilled by a crosswise bore carries that bore's
 /// rim as an inner loop, whose vertices have no rational meet at all.
 ///
-/// ★★ **The straight-edge demand was soundness, and cell ⑮ paid for it rather than kept it.** This
+/// ★★ **A straight-edge demand would be soundness, and it is paid for rather than kept.** This
 /// plane may be some *other* cylinder's cap plane (one whose axis is perpendicular to it), and
 /// such a cap face's outer loop is a single circle with one seam vertex — "all vertices on one
 /// side" would be satisfied by a single **point** and would pass a disk that crosses the strip.
-/// The barrier that stopped it also stopped every disk that genuinely clears, and folded to
-/// «did not clear» wrote tangency rows for contacts that are not there. So the piece answers for
-/// its own **extent** now ([`Corner::Disk`]): the hull statement below holds because a face is
+/// A barrier that stops it also stops every disk that genuinely clears, and folded to
+/// «did not clear» writes tangency rows for contacts that are not there. So the piece answers for
+/// its own **extent** ([`Corner::Disk`]): the hull statement below holds because a face is
 /// contained in the hull of its boundary, and each boundary piece reports how far it reaches.
 /// Anything else curved is still refused — an arc that is only part of a loop bulges past a hull
-/// this road cannot state, and that is the next cell's case of the same function.
+/// this road cannot state.
 /// **A face corner, in whichever exact spelling it has** — the footprint test's currency.
 ///
 /// Three plane-carried corners have rational coordinates; a corner a cylinder made does not, and
@@ -2419,7 +2418,7 @@ enum Corner {
     Rational(nacre_scalar::MeetPoint),
     Pierce(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
     /// **A piece of a circle in the face's own plane** — the whole disk a single-circle loop *is*
-    /// (`arc: None`), or one **arc** of a loop that mixes lines and arcs (`arc: Some`, cell ⑱).
+    /// (`arc: None`), or one **arc** of a loop that mixes lines and arcs (`arc: Some`).
     ///
     /// ★ The name «corner» is historical: what this type carries is a **boundary piece's reach**,
     /// and a vertex is the piece with no width. Written this way the loops below do not learn a
@@ -2581,8 +2580,8 @@ fn pierce_corner(
 
 /// Why a boundary piece could not be read — the two causes the footprint road keeps apart.
 enum CornerFail {
-    /// A shape this road cannot spell at all — a seam vertex. ★ It used to include *an arc that
-    /// is not a whole disk*, and that was the everyday one; cell ⑱ made an arc a piece, so what is
+    /// A shape this road cannot spell at all — a seam vertex. ★ An arc that
+    /// is not a whole disk is a piece, so what is
     /// left here is a vertex with no exact name of any kind.
     Shape,
     /// The description ran out: a chain that will not fold, a name that is not narrow.
@@ -2611,7 +2610,7 @@ fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Co
         nacre_geom::Curve::Circle(_) if face.outer.half_edges.len() == 1 => {
             return disk_of(model, face, he).ok_or(CornerFail::Shape);
         }
-        // ★★★★★ **An arc is a piece too** (cell ⑱). A loop that mixes lines and arcs — a filleted
+        // ★★★★★ **An arc is a piece too**. A loop that mixes lines and arcs — a filleted
         // outline is the everyday one — used to be unreadable here whatever the arc was or where
         // it sat, and a face the reader cannot spell refuses the boolean. The shape is spellable:
         // the same circle a whole loop would be, cut to the extent its two ends name. So a failure
@@ -2659,7 +2658,7 @@ fn corner_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Result<Co
     }
 }
 
-/// **One arc of a face's outer loop, as the round piece it is** (cell ⑱).
+/// **One arc of a face's outer loop, as the round piece it is**.
 ///
 /// Centre, radius and axis are [`disk_of`]'s — the same derivation a whole circle takes — and the
 /// extent is the arc's two ends as **radial vectors**, which is the vocabulary [`RimArc`] and
@@ -2791,7 +2790,7 @@ fn round_strip_side(
 pub(crate) type ArcEnd = ([nacre_scalar::Rat; 3], nacre_scalar::BigRat);
 
 /// **The two ends of a round piece's reach along `d`, each as a point and a margin** — the form
-/// both scalar doors take (cell ⑲).
+/// both scalar doors take.
 ///
 /// [`arc_extent`] states the reach as offsets and squared radicals about the centre; the doors
 /// want `(point, ρ²)` pairs. The bridge is exact and needs no new arithmetic:
@@ -3038,7 +3037,7 @@ pub(crate) struct PlaneSetup {
     /// boolean. Filled by the population gate, which is also what refuses the interactions this
     /// milestone does not build.
     pub(crate) cyls: Vec<WorkingCyl>,
-    /// The gate's carried answer for the rulings road (M6-2): `(plane class, cylinder class)`
+    /// The gate's carried answer for the rulings road: `(plane class, cylinder class)`
     /// pairs allowed through **without** a clearance proof — see
     /// [`combinatorics::TraceInput::crossings`]. ★ It used to say "always empty while the wall rule
     /// refuses that population" — the gate-opening cell arrived, and the `crossings.insert` below
@@ -3107,8 +3106,7 @@ pub(crate) fn plane_index_setup(
     let (mut setup, cyl_surfs) = plane_index_setup_inner(model, a, b)?;
     // ★ The cylinder door: the population gate decides **by name** what stands in the way (an
     // oblique cut, a wall touching the lateral surface, an undecidable pair), and what passes now
-    // goes on to be arranged. The `CylinderBooleanNotYet` stopper that stood here from C2 to
-    // C4b-2 is gone — the bands and the assembly that serve this population landed.
+    // goes on to be arranged.
     if !cyl_surfs.is_empty() {
         let (cyls, crossings, tangencies) = cylinder_gate(
             model,
@@ -3226,7 +3224,7 @@ pub(crate) fn plane_of(r: &FaceRow) -> Option<&FaceInfo> {
 
 // A cylinder row contributes no witness points to the standard — structurally right, not an
 // omission: an axis-aligned-grade rational cylinder is the `rotated == false` case (its exact
-// def needs no high-precision realization); the rotated-cylinder story is M6-3's (CIP).
+// def needs no high-precision realization); the rotated-cylinder story is CIP's.
 fn standard_for(rows: &[FaceRow]) -> Standard {
     // ★ **A face that was never moved contributes exactly nothing, so it is not asked.**
     //
@@ -3564,7 +3562,7 @@ pub(crate) struct WorkingPlane {
     /// cut-circle disk side in `emit_faces`, the ∥ road's `ruling_interior_is_even`), and this
     /// sentence is their one home; its population is a face lying on a **seed plane** with its
     /// outward along +axis (`Model::new` plants x = 0, y = 0, z = 0 with cache direction −axis),
-    /// which a max-side face reaches by a translation or a rotation (cell ④).
+    /// which a max-side face reaches by a translation or a rotation.
     pub(crate) frame_sign: i8,
     /// The pre-rotation twin — see [`BaseFrame`].
     pub(crate) base: BaseFrame,
@@ -3593,7 +3591,7 @@ pub(crate) struct WorkingPlane {
     pub(crate) exact_normal: Option<[f64; 3]>,
     /// The class root's name integers, folded to the stored orientation
     /// ([`nacre_cip::predicate::name_stored_ints`]) — what gives a **wide** name its exact
-    /// judging shortcuts back (truth-and-cache open item 15). `None` when the root's surface
+    /// judging shortcuts back. `None` when the root's surface
     /// has no name.
     pub(crate) name_ints: Option<nacre_cip::predicate::NameInts>,
 }
@@ -3644,7 +3642,7 @@ pub(crate) fn dense_planes(
     canon: &[usize],
 ) -> (Vec<WorkingPlane>, Vec<ClassIx>, Vec<Handle<Surface>>) {
     // Plane classes densify from the union-find roots; cylinder rows never entered the
-    // union-find (their identity question is the cylinder class table's, C2), so here they
+    // union-find (their identity question is the cylinder class table's), so here they
     // number by first-seen surface — the index space exists before the table does.
     let mut roots: Vec<usize> = canon
         .iter()
@@ -3841,7 +3839,7 @@ pub(crate) fn plane_classes(jd: &Judge<'_, FaceRow>) -> Vec<usize> {
     let n = planes.len();
     let mut parent: Vec<usize> = (0..n).collect();
     // Cylinder rows stay self-rooted: their identity question belongs to the cylinder class
-    // table (C2), not the coplanarity union-find — they simply never enter `reps` below.
+    // table, not the coplanarity union-find — they simply never enter `reps` below.
 
     // **Merge by `Surface` handle first, then compare only one face per distinct surface.**
     //
@@ -3898,7 +3896,7 @@ mod tests {
     use super::*;
     use nacre_scalar::{Angle, Axis, Rat};
 
-    /// **Three directions, and each one is the only one that answers** (cell ⑰).
+    /// **Three directions, and each one is the only one that answers**.
     ///
     /// `A` stands on the `z` axis through the origin, radius `1/5`, `z ∈ [0, 2]`. `B` lies along
     /// `x`, same radius — and where it is put decides which direction sees it apart. The fourth
@@ -3983,7 +3981,7 @@ mod tests {
         }
     }
 
-    /// ★★★★★ **Cell ⑲ — the same circle and the same ruling, and the arc decides.**
+    /// ★★★★★ **The same circle and the same ruling, and the arc decides.**
     ///
     /// The unit-ish circle of radius `6/5` about the origin in `z = 0`, and a cylinder along `x`
     /// through the origin with radius `1` — so that plane cuts it in the two rulings `y = ±1`, and
@@ -3994,7 +3992,7 @@ mod tests {
     /// `−x̂` and holds neither `±ŷ` — reaches only `[−18/25, 18/25]` and holds neither. A **top**
     /// arc holds `+ŷ`, so it reaches `+6/5` and holds the `+1` ruling but not the `−1`.
     ///
-    /// That is the whole of cell ⑲ in one place: cell ⑱ asked the circle and refused a plate whose
+    /// Asking the circle instead would refuse a plate whose
     /// corner fillets never come near the drill's rulings.
     #[test]
     fn the_arc_decides_which_ruling_a_circle_holds() {
@@ -4023,7 +4021,7 @@ mod tests {
                 &m,
                 &r,
                 side,
-                // Production's question: a crossing, not a touch (cell ⑳). Every case below is
+                // Production's question: a crossing, not a touch. Every case below is
                 // clear of the boundary either way, which is why the boundary has its own lock.
                 false,
             )
@@ -4049,7 +4047,7 @@ mod tests {
         assert!(!holds(Some(&top), -1), "and never the `−1` one");
     }
 
-    /// ★★★★★ **Cell ⑱ — an arc's reach, by hand, and which arc it is.**
+    /// ★★★★★ **An arc's reach, by hand, and which arc it is.**
     ///
     /// The unit circle about the origin in the plane `z = 0`, axis `+ẑ`, and the **first quadrant**
     /// as `from = (1,0) → to = (0,1)` (counter-clockwise about that axis). Its points are
@@ -4155,7 +4153,7 @@ mod tests {
         assert_eq!(reach_clears(&reach, q(-1, 10), q(1, 10)), Some(false)); // inside
         assert_eq!(reach_clears(&reach, q(-1, 10), z(1)), Some(false)); // straddles
 
-        // ★ Cell ⑩: **an arc reaches less than its circle.** The quarter arc from `(−r, 0)` to
+        // ★ **An arc reaches less than its circle.** The quarter arc from `(−r, 0)` to
         // `(0, −r)` — the third quadrant, counter-clockwise about `+z`.
         let m = [z(0), z(0), z(1)];
         let arc = RimArc {

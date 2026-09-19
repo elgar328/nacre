@@ -1,9 +1,8 @@
 //! **How wide a discovered coordinate actually is — measured.**
 //!
-//! `docs/truth-and-cache.md`'s rule 1 says the truth is a rational *or* a handle, and that values
-//! which do not fit `Rat` — *"발견된 좌표 160–480 비트"* — are pointed at rather than stored. That
-//! number decides whether the last migration row needs a new plane variant or not, and it had
-//! never been measured in this kernel. This is that measurement.
+//! The truth is a rational *or* a handle, and values which do not fit `Rat` — discovered
+//! coordinates were predicted at 160–480 bits — are pointed at rather than stored. That
+//! number decides whether a new plane variant is needed or not. This is its measurement.
 //!
 //! ★ **What the instrument had to be.** `three_planes_rat` cannot answer the question it is
 //! about: it is `checked_*` throughout, so the widest thing it can report is ~127 bits and
@@ -26,7 +25,7 @@
 //! `OnSeam` vertices are excluded rather than counted as failures: that variant pins a curve, not
 //! a point, and its doc already records the coordinate cache as load-bearing there.
 //!
-//! # What it measured (2026-08-07)
+//! # What it measured
 //!
 //! | population | vertices | solved | **width max** | over 127 | narrow declined, point fits |
 //! |---|---|---|---|---|---|
@@ -39,7 +38,7 @@
 //! ★★★ **Two things came out, and neither was predicted.**
 //!
 //! 1. **Nothing is wide.** The prediction written before the run was 150–170 bits growing with
-//!    depth, from the neighbouring 2026-08-04 measurement (coefficients ~50 bits, Cramer
+//!    depth, from the neighbouring measurement (coefficients ~50 bits, Cramer
 //!    multiplying three of them). The corpus maximum is **59 bits**, and a second feature on the
 //!    already-awkward tilted population moved it **not at all** (59 → 59), and stacking forty
 //!    motions leaves the widest *name* exactly where it started
@@ -72,7 +71,7 @@
 //! That is the capability gap a vertex-naming datum closes, and it is a fact about the population
 //! (the control shows the two roads agreeing wherever the cache is exact), not about the probe.
 //!
-//! # And how much of that vocabulary is unreachable today (2026-08-08)
+//! # And how much of that vocabulary is unreachable behind the frame wall
 //!
 //! A datum needs **three** vertices, so the vertex-level column above cannot answer it. Of the
 //! triples the frame wall decides (`accepted + blocked`; collinear and undefined ones are refused
@@ -101,15 +100,15 @@
 //! the accepted road (8 of 560 on the boxes, 0 on the tilted ones) is the only estimate of that
 //! contamination, which is why it is printed.
 //!
-//! # After 16-1 (2026-08-09) — the wall moved, and the meter moved with it
+//! # The pure-mixed statement is accepted — the wall moved, and the meter moved with it
 //!
-//! Stage 16-1 accepts the pure-mixed statement (each vertex exact in its own frame), namelessly,
+//! The kernel accepts the pure-mixed statement (each vertex exact in its own frame), namelessly,
 //! so `vertices_differ` is re-labelled `accepted_nameless` — a classifier that kept calling an
 //! accepted population "blocked" would report yesterday's kernel. Measured after the change:
 //!
 //! | population | accepted (named) | **accepted nameless** | blocked (straddle) |
 //! |---|---|---|---|
-//! | `boolean_rotated`  | 4.9%  | **0%** | 95.1% — all straddle, stage 16-2's population |
+//! | `boolean_rotated`  | 4.9%  | **0%** | 95.1% — all straddle |
 //! | `tilted_frame`     | 10.7% | **28.6%** | 60.7% |
 //! | `tilted_frame_x2`  | 3.2%  | **24.5%** | 72.3% |
 //!
@@ -119,9 +118,9 @@
 //! wide name's 454 and a narrow name's 110, exhausted 0 — a cost of the same order as `Wide`,
 //! not a cliff.
 //!
-//! # After 16-2 (2026-08-09) — the straddle bucket opens too
+//! # The straddle bucket opens too
 //!
-//! Stage 16-2 accepts the straddling vertex as the **meet of its carriers** (an implicit point),
+//! The kernel accepts the straddling vertex as the **meet of its carriers** (an implicit point),
 //! so `carriers_straddle` re-labels `accepted_straddle` — again an upper bound (the op can refuse
 //! an individual statement as `ThroughFrameUndecided`). Measured after the change, of the triples
 //! the frame question decides:
@@ -133,11 +132,10 @@
 //! | `tilted_frame_x2`  | 3.2%  | 24.5% | **72.3%** | **0** |
 //!
 //! ★ The datum-vocabulary wall is fully open at this level: every geometrically sound triple in
-//! every population classifies as acceptable. What is NOT open is the boolean over such a datum's
-//! own face — at the time `ImplicitPlaneUnsupported`, a boundary 16-3 then removed by seating an
-//! implicit-point plane (open item 16-3).
+//! every population classifies as acceptable. The boolean over such a datum's own face is a
+//! separate boundary, opened by seating an implicit-point plane.
 //!
-//! # A regression this file caught, and what fixing it moved (2026-08-20)
+//! # A regression this file caught, and what fixing it moved
 //!
 //! ★★★★★ **The `turned_after_the_cut` row above stopped being true, and only this file knew.**
 //! The invariant-plane restatement (`0dbab39`) stopped minting a motion node for a plane the
@@ -155,9 +153,9 @@
 //!
 //! ★★ **And it opened a population that was never open**: a seam corner whose odd carrier is the
 //! *still* operand's cap is admissible when the turn fixes that cap. So `boolean_rotated` now
-//! exceeds its own 2026-08-08 record rather than merely returning to it:
+//! exceeds its own first record rather than merely returning to it:
 //!
-//! | `boolean_rotated` | 2026-08-08 | 2026-08-17..20 (regressed) | now |
+//! | `boolean_rotated` | first table | regressed | now |
 //! |---|---|---|---|
 //! | solved / pure | 8 | 8 | **12** |
 //! | `mixed_motion` | 12 | 12 | **8** |
@@ -213,7 +211,7 @@ struct Tally {
     unrealized: usize,
     /// The cache road stopped: too few bits on its one rung, or a history past its cost cap.
     ceiling: usize,
-    /// Realized from the definition (`Bounded`, cell 52): exact where every bound is zero.
+    /// Realized from the definition (`Bounded`): exact where every bound is zero.
     realized_exact: usize,
     /// Realized, with a nonzero bound on some axis (an irrational or non-representable point).
     realized_inexact: usize,
@@ -407,9 +405,8 @@ fn measure(m: &Model) -> Tally {
 #[allow(clippy::large_enum_variant)] // a per-vertex scratch value in a measurement walk
 enum VertexReach {
     /// Carriers share one motion — the frame it is written in, and the meet **at whatever width
-    /// it needs** (★ re-unified when open item 17 landed: a meet wider than `Rat` used to be its
-    /// own `TooWide` kind and block its triple; the named road accepts it now, so width stopped
-    /// being a reach distinction — exactly mirroring the producer).
+    /// it needs** (★ a meet wider than `Rat` is not its own kind: the named road accepts it,
+    /// so width is not a reach distinction — exactly mirroring the producer).
     Pure(Option<Handle<nacre_topo::MotionNode>>, MeetPoint),
     /// The door cannot place this vertex in any one frame. **The kernel makes these**, not the
     /// caller: a cut between a turned operand and a still one leaves corners where an unmoved wall
@@ -436,18 +433,17 @@ struct Reach {
     pure_frames: usize,
     triples: usize,
     accepted: usize,
-    /// ★ Re-labelled when 16-2 landed: a straddling vertex used to block its triple; the meet
-    /// road accepts it now (the op can still refuse an individual statement with
+    /// ★ A straddling vertex does not block its triple: the meet
+    /// road accepts it (the op can still refuse an individual statement with
     /// `ThroughFrameUndecided`, so like the other buckets this is the classifier's answer — an
     /// upper bound on op-level acceptance).
     accepted_straddle: usize,
-    /// ★ Re-labelled when 16-1 landed: pure vertices in differing frames used to be
-    /// `vertices_differ` (blocked); the judged frame accepts them now, namelessly. The op can
+    /// ★ Pure vertices in differing frames: the judged frame accepts them, namelessly. The op can
     /// still refuse an individual one (`ThroughFrameUndecided`), so this is the *classifier's*
     /// answer, same as `accepted`.
     accepted_nameless: usize,
     /// Accepted triples in which at least one meet needed the wide vessel — visibility for the
-    /// population `VertexPointTooWide` used to refuse (open item 17), kept as a count so
+    /// population of meets too wide for `Rat`, kept as a count so
     /// "still 0 in this corpus" stays a statement the table makes rather than an assumption.
     accepted_wide: usize,
     undefined: usize,
@@ -819,7 +815,7 @@ fn triple_verdicts(m: &Model, solved: &[([Rat; 3], Handle<Vertex>)]) -> (usize, 
 /// ★★★★★ **The capability gap, stated as a counterexample.**
 ///
 /// "A plane through those three corners" is an ordinary CAD request, and today it can only be
-/// spelled in coordinates. Where a vertex's exact coordinate is not an `f64` — and since cell 52
+/// spelled in coordinates. Where a vertex's exact coordinate is not an `f64` — and
 /// the cache *is* its nearest `f64`, which is the closest a coordinate can come — the plane that
 /// spelling produces is **a different plane**: not a nearby one, a different name, which interns
 /// to a different handle and answers exact identity with "no".
@@ -1026,7 +1022,7 @@ fn how_wide_a_discovered_coordinate_is() {
 /// solvable in that one frame — the caps stay world-stated because the turn **fixes** them, and a
 /// fixed plane's world equation is its pre-motion equation. That is the arm where a zero is
 /// evidence, and it is the arm that went red for 169 commits when the kernel read the caps'
-/// `motion: None` as a straddle (see the module doc's 2026-08-20 section).
+/// `motion: None` as a straddle (see the module doc's regression section).
 /// ★★★ **Not `#[ignore]`d, unlike its two neighbours** — this one carries an *assertion*, and
 /// hiding an assertion behind a flag the commit hook never passes is how the regression above
 /// lived for 169 commits. It costs ~0.3s and its table is captured unless it fails, so the price

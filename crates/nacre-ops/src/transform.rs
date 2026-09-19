@@ -37,7 +37,7 @@ pub(crate) fn transform(
 }
 
 /// An independent twin of `solid` at the same place — **the one operation that only adds to
-/// `live_solids`** (design §2 supersede semantics). Every other edit supersedes: `transform` and
+/// `live_solids`** (supersede semantics). Every other edit supersedes: `transform` and
 /// `boolean` drop their inputs, so without this the kernel can *move* a solid but never *copy* one,
 /// and "cut with the same tool twice" or "keep the original and a moved copy" cannot be expressed.
 ///
@@ -45,10 +45,10 @@ pub(crate) fn transform(
 /// must not share cells — a shared edge would read as four face uses and break the manifold check)
 /// while the geometry is rebuilt bit-for-bit (a pure translation keeps a plane's exact `raw`).
 ///
-/// **The carried measured tolerance is exact here, not provisional.** A copy keeps `tol`
-/// unchanged, and its point and three planes are bit-identical, so the measured residual
-/// cannot have changed. (A *recorded* move re-realizes coordinates and drops the measurement
-/// instead — see the tol rule in pass 3.)
+/// **Nothing of the source's point cache is carried.** Like every walk, the copy pushes each
+/// vertex as [`PointCache::Unrealized`] holding the moved `f64` figure and re-realizes it from
+/// the remapped definition; the figure stands only where that realization does not answer (see
+/// pass 3).
 ///
 /// A non-live input is rejected rather than resurrected: reusing a superseded handle is a caller
 /// bug, and letting it succeed would hide it.
@@ -74,9 +74,8 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
 /// rather than abort ("honest-reject > silent-wrong"; `assemble_fuse_cut` takes the same line at
 /// its own naming failure), so the three entry points check first and reject.
 ///
-/// ★ **Widened from `Discovered`-only to every `Some(definition)` (S7)** — the old gate
-/// inspected discovered vertices because only that road panicked; with the definition becoming
-/// the vertex's identity, every def must remap. The widening is expected to fire **zero** times
+/// ★ **Every definition is checked** — the definition is
+/// the vertex's identity, so every def must remap. The gate is expected to fire **zero** times
 /// (every producer writes definitions from its own face surfaces — the coverage gate measures
 /// 100%), and the suite staying green is that evidence: a firing here is a new rejection, which
 /// is a failing test. The positive control (`a_foreign_definition_is_rejected`) shows the gate
@@ -233,7 +232,7 @@ fn chain_motion(
 }
 
 /// **What of a motion a solid carries into its statements exactly** — the rest is recorded as
-/// motion nodes. The law (cell ④): `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)` — one
+/// motion nodes. The law: `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)` — one
 /// operation behaves as its two would, so an exact turn is transported into the statements and a
 /// translation that rounds is recorded behind it, and the chain never describes a datum as it
 /// was *before a part the statements already absorbed*.
@@ -679,11 +678,10 @@ fn transform_solid(
         Carry::None => None,
     };
     // Whether the source already carries a motion history (any face surface's truth records
-    // one). With the vertex-side motion gone (S7 — the faces record it themselves, and a
-    // vertex's motion was always its faces'), this is what remains of the old
+    // one). There is no vertex-side motion (the faces record it themselves, and a
+    // vertex's motion is its faces'), so this is the whole of the
     // "exceptions lapse once the solid has a history" test: an exact move of a fresh solid
-    // records nothing and keeps the measured tolerances verbatim; anything else re-realizes
-    // coordinates, so a measured tolerance no longer describes them.
+    // records nothing; anything else is recorded.
     // Deterministic order: outer shell then cavities; each shell's faces in order.
     let shell_order: Vec<Handle<Shell>> = std::iter::once(src.outer)
         .chain(src.cavities.iter().copied())
@@ -813,11 +811,11 @@ fn transform_solid(
                 // the other case, where a node is missing because the walk thought it could carry
                 // points that do not exist.
                 //
-                // ★★ **A second road to `None` opened in 2026-08-20 and is still not reachable
+                // ★★ **A second road to `None` exists and has not been reached
                 // here — recorded rather than assumed away.** The `invariant` test above reads
-                // the plane's *name*, and `Through` planes had none until the fixed-carrier
-                // licence gave a turned solid's datums one back. So `invariant = true` became
-                // possible for this arm for the first time. It needs the datum's plane to be
+                // the plane's *name*, and the fixed-carrier
+                // licence gives a turned solid's `Through` datums one. So `invariant = true` is
+                // possible for this arm. It needs the datum's plane to be
                 // fixed by the motion — for a rotation that means its normal lies along the
                 // axis — **and** to have stayed a `Through` truth.
                 //
@@ -878,11 +876,11 @@ fn transform_solid(
         }
     }
 
-    // (The old pass 2 — moving curves — died with `Store<Curve>` (S8): the moved edge's
-    // curve now derives from its moved carriers and endpoints in pass 4's `push_edge`.)
+    // (There is no pass 2 — curves are not stored: the moved edge's
+    // curve derives from its moved carriers and endpoints in pass 4's `push_edge`.)
 
     // Pass 3 — vertices (dedup): the definition's handles re-pointed onto the moved surfaces,
-    // the coordinate moved, the measured tolerance kept only when nothing was re-realized.
+    // the coordinate moved as a fallback figure, the point re-realized from the definition.
     let mut vert_order: Vec<Handle<Vertex>> = Vec::new();
     let mut vert_seen: HashSet<Handle<Vertex>> = HashSet::new();
     for &eh in &edge_order {
@@ -1039,7 +1037,7 @@ mod tests {
     /// ★★ **A moved pierce vertex names the crossing it moved to.** A definition's root is an
     /// order along `ℓ = n₁ × n₂`, and a restatement may spell a moved plane with the opposite
     /// normal — one reversal, trading `Lo` and `Hi`. Found by the commutation oracle the moment
-    /// the cache started reading the definition (cell 52): under a 90° turn a boss's four pierce
+    /// the cache started reading the definition: under a 90° turn a boss's four pierce
     /// vertices realized to the *other* crossing, half a boss away, and the stored `f64` had hidden
     /// the wrong label since it was written. Locked on three quadrantal turns; the reflection half
     /// of the rule is paid at the same site but a mirrored cylinder has no exact world statement
@@ -1248,14 +1246,11 @@ mod tests {
         );
     }
 
-    /// ★★ S6b: **a moved cylinder records its history instead of silently degrading.** The old
-    /// `SurfaceDef` path read the lateral surface as `Constructed`-without-points, so a rotated
-    /// cylinder's move demoted it to `Inexact` — reachable in production, pinned by nothing.
+    /// ★★ **A moved cylinder records its history instead of silently degrading.**
     /// The truth variant has a motion slot of its own, and this is it working.
-    /// ★ S7 C2 positive control: the widened gate **bites** — a walkable solid whose vertex
-    /// definition names a foreign surface is rejected with `OriginNotOnSolid`. The old
-    /// (`Discovered`-only) gate passed this fixture (the vertex is `Constructed`), so this is
-    /// specifically the widening's teeth; without it, "the gate fired zero times across the
+    /// ★ Positive control: the remap gate **bites** — a walkable solid whose vertex
+    /// definition names a foreign surface is rejected with `OriginNotOnSolid`.
+    /// Without it, "the gate fired zero times across the
     /// suite" would be indistinguishable from "the gate checks nothing".
     #[test]
     fn a_foreign_definition_is_rejected() {
@@ -1318,7 +1313,7 @@ mod tests {
         );
     }
 
-    /// ★★ S7: a moved cylinder's seam vertices carry `OnSeam` re-pointed at the **twin's own**
+    /// ★★ A moved cylinder's seam vertices carry `OnSeam` re-pointed at the **twin's own**
     /// surfaces — the carrier pair moves with the solid, like every other definition.
     #[test]
     fn a_moved_cylinders_seam_defs_repoint_to_the_twin() {
@@ -1385,7 +1380,7 @@ mod tests {
             .find(|&su| matches!(m.surface_cache(su), nacre_geom::Surface::Cylinder(_)))
             .expect("a cylinder keeps its lateral face");
         // An inexact turn records a node, and the def is carried **verbatim** — the recorded
-        // node states its cylinder before the motion (the plane rule, unchanged by M6-0).
+        // node states its cylinder before the motion (the plane rule).
         match m.surface(lateral) {
             nacre_topo::Surface::Cylinder {
                 def,
@@ -1408,7 +1403,7 @@ mod tests {
         );
     }
 
-    /// ★ M6-1: the remap of a `Pierce` definition is not `.map(remap)` — pass 1 issues new
+    /// ★ The remap of a `Pierce` definition is not `.map(remap)` — pass 1 issues new
     /// surface handles in face-traversal order, so the two planes' handle order can invert,
     /// and re-sorting flips the canonical line direction ℓ = n₁×n₂, so the root must toggle
     /// with the swap or `Lo` silently names the other point.

@@ -250,7 +250,7 @@ pub(crate) fn realize_def_tracked(
 /// radius), not on how many nodes came before it. Precision is decided by the first rung's own
 /// verdict; this number decides only **how much work a push is willing to do**.
 ///
-/// **Where the value comes from** (measured 2026-09-16: one vertex realized at 128 bits, 200
+/// **Where the value comes from** (measured: one vertex realized at 128 bits, 200
 /// repetitions). The replay is linear at ~1.35 µs per node:
 ///
 /// | depth | 1 | 128 | 192 | 208 | 224 | 256 |
@@ -271,11 +271,11 @@ pub(crate) fn realize_def_tracked(
 /// *judgement* will pay for and bites at roughly four thousand turns; this one caps what a *cache*
 /// will pay for and bites two orders of magnitude earlier. Same kind of limit, different scale.
 ///
-/// ☑ **Cell 55 built the prefix accelerator and the value survived it — measured, not assumed.**
-/// The expectation going in was that this constant would lose its ground: if a realization can
+/// ☑ **The value survives the prefix accelerator — measured, not assumed.**
+/// The expectation would be that this constant loses its ground: if a realization can
 /// resume from a remembered prefix, one step should cost the same at any depth, and a budget in
 /// milliseconds would hold everywhere. Measured (release, timing **one** transform at depth rather
-/// than averaging a build, which halves every figure and is how the first pass misread this):
+/// than averaging a build, which halves every figure):
 ///
 /// | depth | 190 | 1000 | 3000 | 4200 |
 /// |---|---|---|---|---|
@@ -288,8 +288,8 @@ pub(crate) fn realize_def_tracked(
 /// it grows linearly too, at about a sixth of the slope, so the 0.3 ms budget merely moves from
 /// depth ~192 to ~1540. And the guard runs on the chain's depth **before** anything knows whether
 /// a prefix will be there to hit, so it must bound the road it cannot rule out — the miss, which
-/// cell 55 did not touch. ⇒ the derivation stands and the number does not move. What the
-/// accelerator changed is the common case, not the worst one.
+/// the accelerator does not touch. ⇒ the derivation stands and the number does not move. What the
+/// accelerator changes is the common case, not the worst one.
 ///
 const CACHE_REPLAY_COST_CAP: usize = 192;
 

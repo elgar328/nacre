@@ -1,4 +1,4 @@
-//! What the kernel had to assume, reported — `boolean_with_report` (design §9 ③).
+//! What the kernel had to assume, reported — `boolean_with_report`.
 //!
 //! Rotated geometry has no exact zero, so "these two faces are one plane" is proved *to within a
 //! distance*, never outright. These fix what the report says about that: that it says nothing when

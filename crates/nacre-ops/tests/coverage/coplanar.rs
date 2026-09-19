@@ -35,7 +35,7 @@ fn containment_boolean_already_keeps_a_pocket() {
 #[test]
 fn cut_with_a_hollow_operand_far_from_the_void() {
     // A cavitied operand whose seam misses the void: the corner cut is far from
-    // the [1,2]³ void, so the void is carried through and preserved (cell (5c-in)).
+    // the [1,2]³ void, so the void is carried through and preserved.
     // The seam front-end walks all shells, so the void no longer silently vanishes
     // (it used to read as convex and return vol 26.875, cavities 0). Now: correct
     // 25.875 (27 − 1 void − 0.125 corner) with the cavity intact.
@@ -56,9 +56,9 @@ fn cut_with_a_hollow_operand_far_from_the_void() {
 
 #[test]
 fn a_slab_splits_a_hollow_box_into_two() {
-    // A slab cut through the whole box (and its void) severs it into two solids (cell 0.4).
+    // A slab cut through the whole box (and its void) severs it into two solids.
     // The slab spans the full cross-section, so it opens the void — both pieces are
-    // cavity-free. (Before cell 0.4 this was rejected as `DISCONNECTED_RESULT`.)
+    // cavity-free.
     let mut m = Model::new();
     let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
     let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
@@ -87,7 +87,7 @@ fn a_slab_splits_a_hollow_box_into_two() {
 // A hollow operand in a COPLANAR contact — the combination nothing covered until now. The
 // cavity goldens above all take the seam path (transversal cuts) and every coplanar golden uses
 // solid operands, so the intersection of the two was a blind spot, and the coplanar driver had
-// never received the all-shell patch the seam front-end got in cell (5c-in). It emitted only
+// never received the all-shell patch the seam front-end got. It emitted only
 // outer-shell faces, so the void vanished: the fuse read 27.0625 — the *un-hollowed* cube plus
 // the boss — with `cavities: 0` and a clean `validate`, because what remained was still a
 // closed shell. Silent-wrong, invisible to every guard. Now the driver walks all shells.

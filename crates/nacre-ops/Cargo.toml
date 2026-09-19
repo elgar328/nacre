@@ -44,7 +44,7 @@ parallel = ["dep:rayon", "nacre-cip/parallel"]
 #   cargo test --workspace --features nacre-ops/reject-trace -- --nocapture 2>&1 | grep '^RAISE '
 # The census itself is unconditional; only the printing is behind this.
 reject-trace = []
-# Cell 15's population instrument: print one line per tangency row, and one per wall face the
+# The tangency population instrument: print one line per tangency row, and one per wall face the
 # footprint reader could not read. Off by default, and behind a feature rather than `cfg(test)`
 # because the population worth counting lives in the **integration** corpus (`tests/census.rs`),
 # where `cfg(test)` is not set for this crate — a trap this repo has hit twice:

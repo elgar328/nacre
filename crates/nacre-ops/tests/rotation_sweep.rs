@@ -257,11 +257,11 @@ fn the_thirty_degree_sweep_runs_to_completion() {
 /// reading was right about the *single* body the reconstruction used to weld, and wrong about the
 /// answer.
 ///
-/// ★★★ **45° says its truth now** (2026-08-17): the arm landing coplanar on its own body is a
+/// ★★★ **45° says its truth**: the arm landing coplanar on its own body is a
 /// self-touch, and since the merge abstains on a pinching group (nothing to re-thread) and the
 /// whole-result judgement runs before minting, the reject is `SelfTouchingResult` — `Impossible`,
-/// with the touching edge itself as the witness — where for two days it was `CoplanarPinch`
-/// (`NotSupported`, a capability-limit name raised by a site that could not see the whole result).
+/// with the touching edge itself as the witness — not `CoplanarPinch` (`NotSupported`, a
+/// capability-limit name raised by a site that could not see the whole result).
 #[test]
 fn the_other_rejections_are_untouched() {
     let cases: [(usize, RejectReason); 1] = [(45, RejectReason::SelfTouchingResult)];
@@ -351,7 +351,7 @@ fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
 ///
 /// The retry that answers "is this ring inside that one" used to live in the callers — spelled
 /// two ways in the arrangement, missing entirely in the cleaning pass. It lived in `ring_in_ring`
-/// after that, and since cell 13 it lives in `nesting::cell_inside`, whose loop walks **one**
+/// after that, and now it lives in `nesting::cell_inside`, whose loop walks **one**
 /// witness list to the end. A caller that goes around it is a caller that will quietly lack the
 /// retry again, so the source says so.
 ///
@@ -366,7 +366,7 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
         "src/combinatorics.rs",
         "src/arrangement.rs",
         "src/boolean.rs",
-        // ★ Cell 13 moved the nesting question into its own module. A file this scan does not
+        // ★ The nesting question lives in its own module. A file this scan does not
         // read is a file the rule does not cover, and the engine is exactly where the shared
         // predicate is called — so the list follows the code.
         "src/nesting.rs",
@@ -394,7 +394,7 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
             }
         }
     }
-    // The engine's own per-witness door is the one ring-vs-ring caller (cell 13 — `nesting::ask`,
+    // The engine's own per-witness door is the one ring-vs-ring caller (`nesting::ask`,
     // whose retry is the loop in `cell_inside` above it), and `point_in_component` casts its own
     // rays in 3D. `inside_trimmed_face` asks about a single vertex — see this test's note.
     offenders.retain(|o| {
@@ -428,7 +428,7 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
         "src/combinatorics.rs",
         "src/arrangement.rs",
         "src/boolean.rs",
-        // ★ Cell 13 moved the nesting question into its own module. A file this scan does not
+        // ★ The nesting question lives in its own module. A file this scan does not
         // read is a file the rule does not cover, and the engine is exactly where the shared
         // predicate is called — so the list follows the code.
         "src/nesting.rs",
@@ -451,8 +451,9 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
     // the plane the ray lies in"), and the alias seed ("does this vertex lie on that class").
     // None reads a sign sequence, so none is a walk.
     //
-    // ★ Cell ⑪: a three-plane name is minted through `Canon3` (`NodeId::three_planes(Canon3::three(..))`),
-    // so the two point-question spellings below carry that wrapper.
+    // ★ A three-plane name is minted through `Canon3`
+    // (`NodeId::three_planes(Canon3::three(..))`), so the two point-question spellings below
+    // carry that wrapper.
     // ★ **The text now says which is which, twice over.** `side_of` takes a `NodeId`, so a *point*
     // question wraps its own triple (`NodeId::three_planes(..)`) while the walk hands over a ring
     // member it was given; and it takes a cylinder table, so a road that has none passes `&[]` —

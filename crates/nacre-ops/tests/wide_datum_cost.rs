@@ -1,14 +1,14 @@
-//! **What a wide-named datum costs the judge — open item 1, half of it.**
+//! **What a wide-named datum costs the judge.**
 //!
-//! `docs/truth-and-cache.md` §판정 says a rational-closure datum judges exactly and for free:
-//! *"`Wide` 이름이 곧 정확 계수라 분모 털어 `Expansion` 으로 정확 판정 … 공짜"*.
+//! A rational-closure datum is meant to judge exactly and for free: a `Wide` name *is* the exact
+//! coefficients, so clearing denominators gives an exact `Expansion` judgement.
 //!
 //! ★★★ **When this file was written that route did not exist** — the predicates asked for
 //! coefficients through `exact_coeffs()`/`base_coeffs()`, both of which read
 //! `PlaneName::narrow()`, so a `Wide` name answered `None` to every one and the judgement took
 //! the toleranced route that climbs.
 //!
-//! ☑ **It exists now** (re-read 2026-09-09): `nacre_cip::predicate::NameInts { ints, wide }` and
+//! ☑ **It exists now**: `nacre_cip::predicate::NameInts { ints, wide }` and
 //! `Judge::name_rescue` carry a wide name's integer coefficients into the three sign predicates
 //! that read coefficients at all — `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign` — and the
 //! gate is written so that an all-narrow question keeps its existing route to the bit.
@@ -16,7 +16,7 @@
 //! asks only for a [`Witness`], deliberately deciding on the faces' own coordinates rather than on
 //! derived coefficients. ⇒ **the decision this file's header asks for has been made and shipped**,
 //! and what the numbers below measure is not "the missing exact route" but the cost of the
-//! toleranced route an **irrational motion** still takes. Re-measured today: `narrow_name` 246
+//! toleranced route an **irrational motion** still takes. Re-measured: `narrow_name` 246
 //! climbs against `wide_name` 475 — **1.9×**, not the 3.2× recorded below.
 //!
 //! So the number below is not "how many `Expansion` pieces": it is **what the missing exact route
@@ -32,18 +32,18 @@
 //! `climb_census::take()` is a **process-global** take-and-reset, and both measurements here
 //! bracket their own boolean with it. Run in parallel — the default — one test's `take()` walks
 //! off with the other's accumulated climbs, and every printed number is still plausible while
-//! being attributed to the wrong arm. Measured 2026-08-20: the same tree printed
+//! being attributed to the wrong arm. Measured: the same tree printed
 //! `narrow_name=415 / wide_name=0` on one parallel run and `narrow_name=414 / wide_name=917` on
 //! the next, which is how a comparison against a saved baseline invents a change that never
 //! happened. Serialized, the same tree prints the same table twice.
 //!
 //! ★ What is **not** measured here: the irrational-motion branch (homogeneous lifting, degree
-//! ~12). Its machinery is what S5(ii)-2 builds, so its cost cannot be taken before it exists —
-//! the doc's "measure the cost, then build" ordering does not apply to that half.
+//! ~12). Its cost cannot be taken before its machinery exists, so "measure the cost, then
+//! build" does not apply to that half.
 //!
-//! # What it measured (2026-08-08)
+//! # What it measured
 //!
-//! **The population exists, and the datum is its first producer** — as open item 2b predicted.
+//! **The population exists, and the datum is its first producer.**
 //! Of 60 triples over the `wf` family's discovered vertices, **24 name a plane the wide vessel has
 //! to hold**, the widest at **168 bits**. No construction path had ever produced one (`stat
 //! wide_planes` is 0 across the corpus).
@@ -79,8 +79,8 @@ use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Vertex};
 
 /// A vertex the kernel vouches for beyond the construction's bare figure — **realized from its
-/// definition**. Before cell 52 this read a measured residual ("discovered"); a boolean's vertices
-/// now realize, and so do a prism's, so the population this file draws triples from is wider than
+/// definition**. A boolean's vertices
+/// realize, and so do a prism's, so the population this file draws triples from is wider than
 /// the one its numbers were measured on.
 ///
 /// ⚠ Stated positively. It read "not the bare figure" while two variants counted as vouched for;
@@ -162,7 +162,7 @@ fn tilted_prism(m: &mut Model, dist: f64) -> Handle<Solid> {
 ///
 /// A vertex-named datum's coefficients come from three solved points, so they are roughly three
 /// times as wide as a coordinate — the prediction is that this is the kernel's first producer of a
-/// `Wide` *name*, which open item 2b anticipated (*"the first producer is the datum (S5)"*) and no
+/// `Wide` *name*, which no
 /// construction path has ever reached (`stat wide_planes` is 0 across the corpus).
 ///
 /// If it turns out narrow, this file stops here and says so rather than inventing a cost for a
@@ -357,8 +357,8 @@ fn what_a_datum_bearing_boolean_costs() {
         // ★ The named arms measure over **discovered** vertices (their original question was the
         // width of discovered coordinates). The nameless arm lifts that filter: this family's
         // differ-population lives on *constructed* corners (prism corners in one frame, pocket
-        // corners in another) — the discovered ones here all straddle, which stage 16-1 still
-        // refuses, and an arm that only ever hit the reject would be an UNBUILDABLE lie.
+        // corners in another) — the discovered ones here all straddle, which is still
+        // refused, and an arm that only ever hit the reject would be an UNBUILDABLE lie.
         let solvable: Vec<_> = live_verts(&m)
             .into_iter()
             .filter(|v| mode == "nameless" || vouched(&m, *v))

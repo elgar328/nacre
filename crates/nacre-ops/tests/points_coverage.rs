@@ -1,14 +1,12 @@
-//! **The S6b precondition, asserted: every live planar face records its exact points.**
+//! **Every live planar face records its exact points.**
 //!
-//! S6a drained the point-less-plane producers one by one — `from_axes` lifts its axes,
-//! `add_cylinder` records its caps, an overflowing exact move records a node — and this is the
-//! gate that kept them drained: one model per producer path, and a sweep at the end that
-//! refused any live planar face without recorded points. S6b then absorbed the points into the
-//! surface's truth variant, so the type now guarantees what the sweep used to check — the
-//! battery stays as the producer-path smoke test and the cache/truth agreement sweep.
+//! No producer makes a point-less plane — `from_axes` lifts its axes, `add_cylinder` records
+//! its caps, an overflowing exact move records a node. The points live in the surface's truth
+//! variant, so the type guarantees it; this battery is the producer-path smoke test — one model
+//! per producer path — and the cache/truth agreement sweep.
 //!
 //! Cylinder *lateral* surfaces are the deliberate exception: a curved surface's truth arrives
-//! with M6, and booleans still hold it behind the M6-2a population gate.
+//! with M6, and booleans still hold it behind the population gate.
 
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::DatumDef;
@@ -40,7 +38,7 @@ fn square(a: f64, b: f64) -> Profile2d {
 }
 
 fn extrude(m: &mut Model, plane: SketchPlane, profile: Profile2d, dist: f64) {
-    // The plane is stated first — a sketch names a plane the model holds (S5(i)-b).
+    // The plane is stated first — a sketch names a plane the model holds.
     let frame = datum_frame(m, plane);
     let out = apply(
         m,
@@ -206,15 +204,13 @@ fn every_live_planar_face_records_its_points() {
 
 /// **The world sugar names the seeded plane, and a sketch on it sits on that very handle.**
 ///
-/// Before S5(i)-b this said something stronger: an extrude's base cap *interned onto* the seed,
-/// discovered after the fact by comparing names. Now the frame **names** the seed up front, so
-/// "the base cap is the seed" is true by construction and asserting it alone would be a
-/// tautology (the shape S8 met when `VertexOffCurve`'s line arm became one).
+/// The frame **names** the seed up front, so "the base cap is the seed" is true by
+/// construction and asserting it alone would be a tautology.
 ///
 /// What still has teeth is the sugar: `SketchFrame::world` must name the seed the model planted,
 /// not some other plane on the same geometry — and a sketch placed through it must land on that
 /// handle. If the seeding or the arbitrary-axis convention moved, this is what notices.
-/// ★★ S9: a `z = 0` sketch's base cap **is** the seeded XY plane — the operation and the
+/// ★★ A `z = 0` sketch's base cap **is** the seeded XY plane — the operation and the
 /// pre-seeded vocabulary meet at one handle. And replay determinism holds with seeds included:
 /// the same log twice gives the same handles.
 #[test]

@@ -61,11 +61,9 @@ fn cut_stacked_cubes_is_a() {
 }
 
 /// The same two solids the other way round: the bar severs the rod, and `Cut` answers with
-/// two solids (cell 0.4). Each severed stub is its own genus-0 box, so `validate` is clean —
-/// the pieces share no vertices or edges. (Before cell 0.4 this was `DISCONNECTED_RESULT`:
-/// one handle could not name two solids, and forcing both into one shell read as
-/// `NegativeGenus { genus: -1 }`. `pierced_multi` had been hiding it: severing A takes an
-/// edge of A through B.)
+/// two solids. Each severed stub is its own genus-0 box, so `validate` is clean —
+/// the pieces share no vertices or edges. (One handle cannot name two solids, and forcing
+/// both into one shell would read as `NegativeGenus { genus: -1 }`.)
 #[test]
 fn cut_rod_by_l_severs_into_two() {
     let (mut m, l, rod) = l_and_rod();
@@ -82,10 +80,9 @@ fn cut_rod_by_l_severs_into_two() {
 }
 
 /// An edge of one convex solid, threading the other, severs it. The bar runs through the
-/// cube and out both ends, so `Cut(bar, cube)` leaves the bar in two 1×1×1 stubs — two solids
-/// (cell 0.4), each a clean genus-0 box (`validate` clean, pieces share nothing). The convex
-/// path rejected this as `poke_through`; the seam path returns both pieces. (Before cell 0.4
-/// this was `disconnected_result`; cell 3e-3's non-convex sibling was `Cut(rod, L)`.)
+/// cube and out both ends, so `Cut(bar, cube)` leaves the bar in two 1×1×1 stubs — two solids,
+/// each a clean genus-0 box (`validate` clean, pieces share nothing). The seam path returns
+/// both pieces. (The non-convex sibling is `Cut(rod, L)`.)
 #[test]
 fn a_convex_cut_severs_its_operand() {
     let mut m = Model::new();
@@ -127,7 +124,7 @@ fn cut_a_seated_block_by_the_part_below_it() {
 /// **An empty result is an answer.** Two solids that miss each other have no intersection, and
 /// that is what `Common` reports: `Ok` with no solids, both operands consumed like any other
 /// successful boolean. Stated on its own because the name is the contract — if someone makes
-/// this an error again, the failure points straight at what was decided (2026-07-22), and the
+/// this an error again, the failure points straight at what was decided, and the
 /// `live_solids` assertion pins the retire that an early return would otherwise skip.
 #[test]
 fn a_disjoint_common_is_empty_not_an_error() {

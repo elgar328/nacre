@@ -331,7 +331,7 @@ fn cut_staple_by_l() {
     // cap's kept region becomes the corner bite alone; the loop lies outside it, in a
     // dropped region, so its interior is what survives.
     //
-    // Cell 3f-3's counterexample made flesh: a hole and an island wind oppositely without
+    // The counterexample made flesh: a hole and an island wind oppositely without
     // nesting, so no winding could have told these two apart. Position did.
     //
     // `0.7605 − 0.311`, and the three volumes close inclusion–exclusion exactly.
@@ -505,7 +505,7 @@ fn a_boolean_result_stacks_as_an_operand() {
 fn blind_hole_drills_into_a_void() {
     // A cut reaching *into* a void: a stub drilled from below the hollow box up into
     // its void. The void loses its enclosure and merges with the outer shell (an
-    // open pocket, cavities 0). The seam machinery (all-shells) + the (5c) component
+    // open pocket, cavities 0). The seam machinery (all-shells) + the component
     // split reconstruct it exactly: remove the channel [1.4,1.6]²×[0,1]=0.04 through
     // the floor, void interior removes nothing ⇒ 26 − 0.04 = 25.96.
     let mut m = Model::new();

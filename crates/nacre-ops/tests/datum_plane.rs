@@ -49,7 +49,7 @@ fn square(a: f64, b: f64) -> Profile2d {
 /// ★ **Stating a world plane returns the seed, and the arena does not grow.**
 ///
 /// This is the lock on the cache-normal convention. `Model::new` seeds the world planes facing
-/// `−axis` (S9 measured that `+axis` flipped 781 stored cap normals for nothing), `extrude` pushes
+/// `−axis` (`+axis` flips 781 stored cap normals for nothing), `extrude` pushes
 /// its base cap as `−plane.normal()`, and `WorkingPlane::frame_sign` reads a stored normal against a
 /// root face's outward — which for a base cap is `−N`. A datum that pushed `+normal` would still
 /// intern, but it would come back `flipped`, and every face built on it afterwards would have to
@@ -161,10 +161,9 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
     );
 }
 
-/// ★★★★★ **A plane the model cannot name cannot host a sketch — and that is the wall the last
-/// migration row actually stands behind.**
+/// ★★★★★ **A plane the model cannot name cannot host a sketch.**
 ///
-/// `docs/truth-and-cache.md` recorded S5(ii)-2 as judging-layer work. It is not. A datum through
+/// This is not judging-layer work. A datum through
 /// vertices in mixed frames has no exact name, and from there:
 ///
 /// ```text
@@ -242,10 +241,8 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
 
 /// ★★ **The seam this stage opened, now closed: an extrude's base cap *is* the frame's plane.**
 ///
-/// Before S5(i)-b this compared two roads — "state the plane first" against "let the extrude
-/// create it" — and measured that they met at one handle. That comparison no longer exists,
-/// because an extrude names its plane and there is no road where the plane is absent. What
-/// remains, and is still not free, is the claim underneath it: the operation **reuses** the
+/// An extrude names its plane, and there is no road where the plane is absent. What
+/// remains, and is not free, is the claim underneath: the operation **reuses** the
 /// handle it was given rather than pushing a second plane on the same geometry, and stating that
 /// plane again afterwards mints nothing.
 ///
@@ -915,7 +912,7 @@ fn the_datums_flip_and_the_offsets_fold_agree() {
 }
 
 // =================================================================================================
-// A datum that names vertices instead of coordinates (S5(ii), stage 1)
+// A datum that names vertices instead of coordinates
 // =================================================================================================
 
 /// Three corners of a **tilted** prism whose vertices are discovered — the population where the
@@ -1124,9 +1121,7 @@ fn reversing_the_vertex_order_keeps_the_handle_and_flips_the_frame() {
 /// no fixture is a cause that was never measured — and `VerticesInMixedFrames` in particular is
 /// how the next stage will count what it is opening.
 ///
-/// ★ `VertexPointTooWide` no longer exists to list: open item 17 removed the requirement and
-/// the variant with it, exactly as this note used to predict ("the stage that removes the
-/// requirement removes the variant") — a meet wider than `Rat` now names its plane through
+/// ★ There is no `VertexPointTooWide` to list: a meet wider than `Rat` names its plane through
 /// `plane_name_from_meets`, locked by `a_datum_through_wide_meets_keeps_its_name` below.
 #[test]
 fn a_datum_through_vertices_refuses_by_cause() {
@@ -1203,18 +1198,18 @@ fn a_datum_through_vertices_refuses_by_cause() {
         OpError::CollinearVertices
     );
 
-    // ★ The pure-vertices-in-different-frames shape is **no longer on this list** — open item
-    // 16's first wall opened it, and `a_nameless_datum_hosts_a_sketch_end_to_end` is where it
-    // now lives as an acceptance. What stays refused under `VerticesInMixedFrames` is a single
+    // ★ The pure-vertices-in-different-frames shape is **not on this list** — it is accepted,
+    // and `a_nameless_datum_hosts_a_sketch_end_to_end` is where it lives. What stays refused under
+    // `VerticesInMixedFrames` is a single
     // vertex whose own carriers straddle (`a_datum_on_straddling_carriers_has_no_name`).
 }
 
-/// ★★★★★ **The first wall of open item 16, opened end to end**: a datum through three vertices
+/// ★★★★★ **A nameless datum, end to end**: a datum through three vertices
 /// that are each exact in their own frame — but not in each other's — gets a *judged* frame,
 /// hosts a sketch, and the whole thing replays.
 ///
-/// The population S5(ii)-1 refused with `VerticesInMixedFrames` splits: this (the caller's
-/// vertices differ) is now accepted; a single straddling vertex still refuses. The plane has
+/// The `VerticesInMixedFrames` population splits: this (the caller's
+/// vertices differ) is accepted; a single straddling vertex still refuses. The plane has
 /// **no name** — its exact world coefficients are irrational — so it interns by statement, and
 /// the frame is derived from the defining points as intervals at a fixed rung.
 #[test]
@@ -1590,10 +1585,10 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         .find(|t| m.through_points_rat(*t).is_some())
         .expect("three pure vertices that share one frame");
 
-    // ★★★★★ **16-2: the straddling vertex is accepted** — its definition (the meet of its three
-    // carriers) is complete even though its coordinate exists in no frame at all. This block used
-    // to assert `VerticesInMixedFrames`; the acceptance below is the same fixture with the wall
-    // moved, end to end: datum → sketch → extrude → validate → deterministic rebuild.
+    // ★★★★★ **The straddling vertex is accepted** — its definition (the meet of its three
+    // carriers) is complete even though its coordinate exists in no frame at all. The
+    // acceptance below runs end to end: datum → sketch → extrude → validate → deterministic
+    // rebuild.
     //
     // ★ The straddler is chosen for **not being collinear** with the two pure corners, which is a
     // property of the triple and nothing to do with the proposition — three points on one line
@@ -1653,10 +1648,9 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         "the prism on a straddle datum must be a valid closed b-rep"
     );
 
-    // ★★★★ **16-3: the boolean opens.** The base cap's plane is defined through an implicit
+    // ★★★★ **The boolean opens.** The base cap's plane is defined through an implicit
     // point, and its witness in the judging table is the plane's **own frame's probes** — three
-    // exact on-plane definitions the escalation realizes at any precision. The refusal this
-    // block used to assert (`ImplicitPlaneUnsupported`) died with the wall; `Common` against a
+    // exact on-plane definitions the escalation realizes at any precision. `Common` against a
     // swallowing box is the same crisp oracle the pure-mixed e2e uses: the result is the prism,
     // volume exactly as the sketch stated it.
     let block = m.add_cuboid(
@@ -1893,11 +1887,11 @@ fn a_solid_on_a_vertex_named_datum_can_be_copied() {
     );
 }
 
-/// ★★★★ **The invariant S2 established, re-scoped for open item 16.** What S2 drained was the
+/// ★★★★ **The naming invariant, scoped.** What no producer makes is the
 /// *record-less* plane — no points, no truth to derive anything from. A nameless `Through`
 /// statement (mixed frames — its exact world coefficients are irrational) is not that: the truth
-/// is complete, only a rational description of it does not exist, and rule 6 wrote that
-/// population into the design from the start. So the invariant is now: **a plane without a name
+/// is complete, only a rational description of it does not exist. So the invariant is: **a plane
+/// without a name
 /// is exactly a `Through` statement, and everything else keeps its name.** This model holds no
 /// nameless planes at all (the datum here is rational-closure), so the sweep also proves the
 /// named road did not lose anyone.
@@ -1912,7 +1906,7 @@ fn every_plane_still_has_a_name() {
         },
     )
     .expect("datum");
-    // ★ Walked through `surface_handle_at`, which is the only door out of S1's seal — the store
+    // ★ Walked through `surface_handle_at`, which is the only door out of the seal — the store
     // itself is private, so this sweep sees exactly what a caller can.
     let mut planes = 0;
     let mut i = 0u32;
@@ -2093,7 +2087,7 @@ fn a_datum_through_frame_local_vertices_is_not_a_world_plane() {
 }
 
 // ---------------------------------------------------------------------------------------------
-// open item 17 — a datum through meets wider than `Rat` keeps its name
+// a datum through meets wider than `Rat` keeps its name
 // ---------------------------------------------------------------------------------------------
 
 /// One vertex whose three narrow-named carriers meet at a point **wider than `Rat`**, lying on
@@ -2196,7 +2190,7 @@ fn wide_meet_triple(
     ]
 }
 
-/// ★★★ **Open item 17's lock**: the wall the producer used to reject (`VertexPointTooWide`)
+/// ★★★ **The wide-meet lock**: the wall of meets too wide for a witness
 /// is crossed — `through_points_rat` still says the meets fit no witness (`None`), and the
 /// name is derived anyway, equal to the hand-known plane `T: 7x + 11y − 13z + 1 = 0` the
 /// meets were constructed to lie on. Then the plane lives a full life: interned by name on
@@ -2443,8 +2437,7 @@ fn a_frame_says_where_it_is() {
 /// The three assertions are the three things that road buys, and nothing else says them: the
 /// plane has a **name**, the same statement comes back as the **same handle**, and the whole
 /// thing survives a further motion. A volume or a coordinate check would pass either way — this
-/// is the "did it take the exact road" test `docs/truth-and-cache.md`'s gate rule asks for beside
-/// every ε comparison.
+/// is the "did it take the exact road" test that belongs beside every ε comparison.
 #[test]
 fn a_turn_does_not_cost_a_solid_its_named_datum() {
     let mut m = Model::new();

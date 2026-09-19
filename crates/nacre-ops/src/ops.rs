@@ -1,4 +1,4 @@
-//! Feature operations (design §7): the public sketch/extrude/pad/pocket API and the `apply`/
+//! Feature operations: the public sketch/extrude/pad/pocket API and the `apply`/
 //! `replay` driver. The top layer — it composes the boolean engine ([`crate::boolean`]) and rigid
 //! transform ([`crate::transform`]) over the plane substrate below.
 
@@ -60,8 +60,8 @@ pub struct SketchPlane {
 /// - the normal's direction is `(p1 − p0) × (p2 − p0)` — the point order carries the polarity.
 ///
 /// Nothing is left to check, and nothing can disagree. The canonical coefficients are *derived*
-/// (`nacre_scalar::plane_name_exact` — total since S2, `Narrow | Wide`), which also removes the
-/// old constructors' failure class "the coefficients do not fit `i128`": three in-window points
+/// (`nacre_scalar::plane_name_exact` — total, `Narrow | Wide`), so there is no
+/// failure class "the coefficients do not fit `i128`": three in-window points
 /// always name their plane, however wide its canonical form.
 ///
 /// ★ `ref_dir()` is **not** a unit vector and is not projected; the normalization a frame needs
@@ -107,8 +107,8 @@ impl PlaneDef {
 /// `Ring2d::circle`, or by the polygon doors; the fields are private so nothing bypasses them.
 ///
 /// The coordinates are what the author's decimals *spelled* (`Rat::from_decimal`), not the f64s
-/// that carried them — the same truth/cache split every dimension in the kernel gets
-/// (`docs/truth-and-cache.md`). A computed coordinate (an arc's far end) is computed in `Rat` and
+/// that carried them — the same truth/cache split every dimension in the kernel gets.
+/// A computed coordinate (an arc's far end) is computed in `Rat` and
 /// never rounds through f64.
 ///
 /// **Normal form** ([`Ring2d::normalized`]). A vertex strictly mid-run on a straight edge is
@@ -251,7 +251,7 @@ impl Ring2d {
 /// "counter-clockwise" means). Fixing the winding here as well would put that decision in two
 /// places, which is exactly how the holes and the outer ring come to disagree.
 ///
-/// **The constructors take the boundary f64s and keep the truth** (`docs/truth-and-cache.md`):
+/// **The constructors take the boundary f64s and keep the truth**:
 /// each coordinate becomes the rational its shortest decimal spells, a dimension outside the
 /// decimal window (`~1e38` above, `~1e-22` below for a 17-digit value) is a named error
 /// **at construction** rather than a silent f64 fallback downstream, and every **flat corner**
@@ -355,7 +355,7 @@ impl Profile2d {
     /// of points and pay well under a millisecond; a generator emitting thousands of points per
     /// ring is now firmly outside this function's comfort, and the named follow-ups — an exact
     /// bounding-box prefilter for the segment pairs, or an f64 filter with a sound error bound
-    /// escalating to `Rat` — live in `docs/truth-and-cache.md`'s open items, deliberately
+    /// escalating to `Rat` — are deliberately
     /// unbuilt until that population exists.
     pub fn check(&self) -> Result<(), OpError> {
         let rings = || {
@@ -442,7 +442,7 @@ pub enum Operation {
     ///
     /// ★ **It is an operation, not a plain function, because `replay` must reproduce the handle.**
     /// A plane minted outside the log leaves a model that is not self-contained, and the
-    /// "handles in a log are index vocabulary" contract (`docs/design.md` §2) is false for it.
+    /// "handles in a log are index vocabulary" contract (see `docs/design.md`) is false for it.
     ///
     /// The plane may already exist — planes are the one thing interned at construction — in which
     /// case this returns the handle that exists and the arena does not grow. That is the intended
@@ -468,7 +468,7 @@ pub enum Operation {
     /// `dist`) and `Fuse` it onto the solid — boolean sugar over [`Operation::Boolean`],
     /// not a direct face-split. No "profile inside the face" constraint: an overhanging
     /// footprint is handled by the boolean's coplanar-contact / overhang path. Adds
-    /// material (design §6).
+    /// material.
     PadOnFace {
         face: Handle<Face>,
         profile: Profile2d,
@@ -478,14 +478,13 @@ pub enum Operation {
     /// (depth `dist`) and `Cut` it from the solid — boolean sugar over
     /// [`Operation::Boolean`], not a direct face-split. No "profile inside the face"
     /// constraint (overhang footprints route through the boolean). A cut that would
-    /// punch through is rejected as not-blind. Removes material (design §6).
+    /// punch through is rejected as not-blind. Removes material.
     PocketOnFace {
         face: Handle<Face>,
         profile: Profile2d,
         dist: f64,
     },
-    /// Boolean of two live solids (design §8 M5). M5-c3 implements only
-    /// `Common` (intersection) of convex planar solids; other kinds/inputs are
+    /// Boolean of two live solids (M5). Inputs the engine cannot answer are
     /// rejected with [`BoolError`].
     Boolean {
         kind: BoolKind,
@@ -510,7 +509,7 @@ pub enum Operation {
         offset: Rat,
     },
     /// Duplicate `solid` in place, keeping the original live — **the only operation that adds to
-    /// `live_solids` without removing anything** (design §2). Every other edit supersedes its
+    /// `live_solids` without removing anything**. Every other edit supersedes its
     /// input, so this is what makes "cut with the same tool twice", "keep the original and a moved
     /// copy", and pattern/mirror sugar expressible at all.
     Copy { solid: Handle<Solid> },
@@ -624,7 +623,7 @@ pub enum OpError {
     /// means "the pre-motion frame, then the motion" — stating the world axes in it would need
     /// the motion's inverse image, which is irrational. Defined by **verification failure**
     /// (no candidate's realization matches), not by that condition — which is how the
-    /// invariant-plane restatement (2026-08-17) shrank it without a code change here: a plane
+    /// invariant-plane restatement shrinks it without a code change here: a plane
     /// its motion *fixes* keeps the world statement and verifies. What remains recorded, and
     /// so still lands here: exactly-statable-but-shifted images (a normal-wise translation
     /// after a turn), mirror chains, and moved sources re-moved (stage-1 boundaries).
@@ -660,7 +659,7 @@ pub enum OpError {
     /// (a base and a detached boss). Use `Operation::Boolean` directly if two disjoint solids are
     /// what you want. An overhanging footprint still touches and is not this error.
     PadMissesFace,
-    /// A boolean operation failed (design §8 M5).
+    /// A boolean operation failed (M5).
     Boolean(BoolError),
     /// A `Transform` input solid is not live (a stale or non-live handle).
     SolidNotLive,
@@ -675,7 +674,7 @@ pub enum OpError {
     /// should take is a curved-geometry decision, so it is declined rather than guessed.
     MirrorNotPlanar,
     /// The log names a cell this model does not have. A log's handles are an **index
-    /// vocabulary** (`docs/design.md` §2): [`replay`] re-anchors each one onto the model it is
+    /// vocabulary** (see `docs/design.md`): [`replay`] re-anchors each one onto the model it is
     /// building, and an index past the end of the store means the log is not the one that built
     /// this arena — a hand-written handle, a truncated log, a log spliced from another session,
     /// or a session that kept recording after a *late* reject left arena cells the log does not
@@ -712,9 +711,8 @@ pub enum OpError {
     /// where an unmoved wall meets two turned ones, and measured, 12 of that solid's 20 vertices
     /// are in that state (`tests/point_width.rs`, `a_datum_on_straddling_carriers_has_no_name`).
     ///
-    /// ★★★★ **Corrected 2026-08-08 — what opens this is not the judging layer.** This used to say
-    /// the next stage's homogeneous lift opened the population. It does not, and the lift's
-    /// machinery was built long before anything could reach it. Such
+    /// ★★★★ **What opens this is not the judging layer.** The homogeneous lift
+    /// does not open the population. Such
     /// a plane has **no exact name**, and from there:
     ///
     /// ```text
@@ -724,7 +722,7 @@ pub enum OpError {
     /// so it never gets as far as being judged. What would open it is a **frame for a nameless
     /// plane** — a realization that takes the plane's coefficients as intervals at a precision
     /// rather than as exact rationals or `BigInt`s, which is what `MoveNode::Frame` and
-    /// `FrameWide` both require today. `docs/truth-and-cache.md`'s open item says so, and
+    /// `FrameWide` both require today;
     /// `a_plane_with_no_name_cannot_host_a_sketch` runs the chain.
     ///
     /// It is named separately so that "how much does this cost us today" stays countable.
@@ -747,7 +745,7 @@ pub enum OpError {
     },
 }
 
-/// Which store an operation-log handle indexes. (`Surface` joins when datum ops arrive — S5.)
+/// Which store an operation-log handle indexes. (`Surface` is what datum ops name.)
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum LogCell {
     Face,
@@ -785,10 +783,8 @@ pub enum DatumDef {
     ///
     /// Rejects by cause rather than by one blanket failure, because the causes have different
     /// futures: [`OpError::VerticesInMixedFrames`] waits on a frame for a nameless plane (see
-    /// there — this used to say "what the next stage opens", and that stage turned out not to be
-    /// the one that opens it), and the rest are the caller's. (`VertexPointTooWide` retired with
-    /// open item 17: a meet wider than `Rat` names its plane through `plane_name_from_meets`,
-    /// so width stopped being a cause.)
+    /// there), and the rest are the caller's. (Width is not a cause:
+    /// a meet wider than `Rat` names its plane through `plane_name_from_meets`.)
     ThroughVertices([Handle<Vertex>; 3]),
     /// **`dist` away from a plane the model already holds**, stated inside that plane's own frame
     /// as the rational triple `(0,0,d), (1,0,d), (0,1,d)`.
@@ -797,7 +793,7 @@ pub enum DatumDef {
     /// normal" of a tilted plane is `p + d·n̂` — irrational, because `n̂` carries a square root.
     /// Inside the frame the same plane is `w = d` and every coordinate is a written decimal; the
     /// irrationality lives in the frame's realization, which is machinery the kernel already has.
-    /// It is also what `docs/truth-and-cache.md` prescribes instead of floating a sketch origin off
+    /// It is also the alternative to floating a sketch origin off
     /// its plane.
     ///
     /// `frame` is taken rather than a bare handle so a caller can say **which side**: `+dist` runs
@@ -840,7 +836,7 @@ pub enum OpOutput {
         bottom_face: Handle<Face>,
     },
     /// The boolean result solids (supersede both inputs). Usually one; a boolean that severs the
-    /// body yields several (cell 0.4), and `Cut(A, A)` (deferred) would yield none.
+    /// body yields several, and `Cut(A, A)` (deferred) would yield none.
     Boolean { solids: Vec<Handle<Solid>> },
     /// The transformed solid (supersedes the input).
     Transform { solid: Handle<Solid> },
@@ -1170,7 +1166,7 @@ fn push_line_edge(
 ///
 /// ★★ **The cache faces `−normal`, and that is a convention with two independent reasons.**
 /// (i) It is the sense a base cap gets: `extrude` pushes `−plane.normal()` and `Model::new` seeds
-/// the world planes along `−axis`; S9 measured that seeding `+axis` instead flipped 781 stored
+/// the world planes along `−axis`; measured, seeding `+axis` instead flips 781 stored
 /// cap normals for nothing. (ii) `WorkingPlane::frame_sign` records whether a plane's *stored* normal
 /// agrees with its root face's outward normal, and a base cap's outward is `−N` — so `−normal`
 /// leaves that sign exactly where it is today. A datum that later becomes a base cap therefore
@@ -1207,15 +1203,15 @@ fn datum_plane(
     /// `PlanePoints`: it lives for one call on one stack frame, and boxing would buy nothing.)
     #[allow(clippy::large_enum_variant)]
     enum ThroughStatement {
-        /// One shared frame — the named road (S5(ii)-1): the vertices' meets in that frame
-        /// (**any width** since open item 17 — a meet wider than `Rat` still names its plane
+        /// One shared frame — the named road: the vertices' meets in that frame
+        /// (**any width** — a meet wider than `Rat` still names its plane
         /// through `plane_name_from_meets`), and the frame.
         Named(
             [nacre_scalar::MeetPoint; 3],
             Option<Handle<nacre_topo::MotionNode>>,
         ),
-        /// ★ No one frame holds all three: either a vertex the door cannot place at all (16-2's
-        /// straddle) or three placeable vertices whose frames differ (16-1's first wall). No
+        /// ★ No one frame holds all three: either a vertex the door cannot place at all (a
+        /// straddle) or three placeable vertices whose frames differ. No
         /// rational triple, no name, and the plane takes the judged road.
         Nameless,
     }
@@ -1249,14 +1245,14 @@ fn datum_plane(
             if tri.iter().any(|h| !model.surface_name.contains_key(h)) {
                 // ★★ The one population still refused here: a carrier that is itself a nameless
                 // datum (a datum on a nameless datum — depth). Its triangle needs the judged
-                // machinery recursively, which is open item 16-3's depth question. This is now
+                // machinery recursively, which is the depth question. This is
                 // the **only** thing `VerticesInMixedFrames` names; measure before splitting
                 // the label further.
                 return Err(OpError::VerticesInMixedFrames);
             }
             let Some((meet, frame)) = model.vertex_meet(*vh) else {
                 // ★ A straddling vertex — no rational coordinate anywhere, but a complete
-                // definition (the meet of its carriers). The judged road takes it (16-2), as
+                // definition (the meet of its carriers). The judged road takes it, as
                 // long as every carrier can hand out a witness triangle of its own.
                 //
                 // ★★★ **"The carriers meet" is not assertable here, and finding that out cost a
@@ -1278,7 +1274,7 @@ fn datum_plane(
         if !(frames[1] == frames[0] && frames[2] == frames[0]) {
             return Ok(ThroughStatement::Nameless);
         }
-        // ★ The meets are kept at whatever width they need (open item 17) — the name is a
+        // ★ The meets are kept at whatever width they need — the name is a
         // function of the *plane*, and `plane_name_from_meets` derives it without ever asking a
         // coordinate to fit `Rat`.
         let meets = pts.map(|p| p.expect("filled above"));
@@ -1314,8 +1310,8 @@ fn datum_plane(
             // own point order fixes — makes the returned frame mean what they said, which is what
             // lets an operation take a frame where it used to take a plane and sweep the same way.
             //
-            // This is still S9's rule, not an exception to it: `flip` is *measured*, never stated,
-            // and `measured_frame` is the one place that measures.
+            // This is still the frame rule, not an exception to it: `flip` is *measured*, never
+            // stated, and `measured_frame` is the one place that measures.
             let frame = measured_frame(model, plane, placement, sp.normal())
                 .ok_or(OpError::PlaneWithoutExactForm)?;
             Ok((plane, frame))
@@ -1346,7 +1342,7 @@ fn datum_plane(
                 .ok_or(OpError::CollinearVertices)?;
 
             let ThroughStatement::Named(meets, motion) = statement else {
-                // ★★★ **The judged road** (open item 16, first wall): every vertex pure, frames
+                // ★★★ **The judged road**: every vertex pure, frames
                 // differing — no name exists, and the frame is derived from the defining points
                 // as intervals. **Validation comes before the push**: the judged constructor can
                 // refuse (an undecidable basis), and rejecting after `push_plane_through` would
@@ -1379,7 +1375,7 @@ fn datum_plane(
             // different planes.
             //
             // ★ **Split by width so the narrow bits stay put**: a `Narrow` meet takes the road
-            // this arm always took, letter for letter. A `Wide` meet (open item 17) has no
+            // letter for letter. A `Wide` meet has no
             // `Rat` triple to replay — and no f64 realization of it survives an exact lift
             // either (a value like 5⁻⁴⁰ rounds to a dyadic whose denominator leaves `i128`) —
             // so its cache anchors at the **first stored vertex's own world cache**: the
@@ -1443,7 +1439,7 @@ fn datum_plane(
             };
 
             // ★★ **Say it in the world when the world can hold it** — the same node-omission
-            // normalization S9 froze for frames. A plane stated under a frame node lives at the
+            // normalization frames use. A plane stated under a frame node lives at the
             // key `(name, Some(node))`, so an offset of the world XY plane would *not* intern with
             // a box's cap on the same plane. Where the canonical basis lifts to exact rational
             // orthonormal axes, the offset plane is rational in the world and is stated there.
@@ -1986,11 +1982,13 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
         .collect()
 }
 
-/// `pts` wound counter-clockwise about `normal` when `ccw`, clockwise when not. The test is the
-/// polygon's area vector against `normal`, so it does not care which axis dominates.
-/// **Requires a nonzero area.** The winding is read from the sign of the area vector, and a ring
-/// that encloses nothing gives zero — the comparison below would then pick a side by accident.
-/// [`Profile2d::check`] is what guarantees it: a simple polygon cannot have zero area, and a ring
+/// The ring wound counter-clockwise about the sweep when `ccw`, clockwise when not. The test is
+/// the ring's **exact winding** (`ring.exact.winding`), so it does not care which axis dominates;
+/// the polygon's f64 area vector appears only inside a `debug_assert` that cross-checks it on an
+/// arc-free ring.
+/// **A zero winding is rejected** (`DegenerateProfile`): a ring that encloses nothing has no
+/// side to pick. [`Profile2d::check`] is what keeps it from arising: a simple polygon cannot have
+/// zero area, and a ring
 /// that folds back on itself (a symmetric bowtie cancels to exactly zero) is not simple.
 /// Normalize a ring's direction about the **sweep**: `ccw` for the outer ring, its opposite for a
 /// hole. The winding is read exactly ([`crate::exact::SweptRat::winding`], about the ring's world
@@ -2040,22 +2038,21 @@ fn sweep_ring(
     // Corner `i` is where the wall before it, the wall after it, and the cap meet.
     //
     // ★ **Two walls that are one plane would name a line, not a point** — and since surfaces are
-    // interned, "one plane" *is* "one handle", so the check is a comparison. Since S3 this is a
-    // guard on an invariant, not a live case: the only producer of adjacent same-plane walls was
-    // a profile with a collinear midpoint, and `Profile2d`'s constructor now dissolves those, so
+    // interned, "one plane" *is* "one handle", so the check is a comparison. This is a
+    // guard on an invariant, not a live case: the only producer of adjacent same-plane walls is
+    // a profile with a collinear midpoint, and `Profile2d`'s constructor dissolves those, so
     // every corner gets its three-plane definition (locked by
     // `a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit`). Non-adjacent walls may
     // still legitimately share a plane (a notch), which never lands `prev == here`.
-    // ★ Total since S7: the guard's `None` (adjacent same-plane walls) is unreachable — S3's
+    // ★ Total: the guard's `None` (adjacent same-plane walls) is unreachable — the
     // profile constructor dissolves collinear midpoints — and a wall can never equal a cap (a
     // wall contains the sweep direction, a cap has it as normal). The honest reject stands in
     // for the unreachable arm; the suite is what would refute "unreachable".
     //
-    // (The frame base vertex died here (S7, Q2): a frame-drawn corner is the intersection of
+    // (There is no frame base vertex: a frame-drawn corner is the intersection of
     // three planes sharing the frame's motion, and solving them in that frame and replaying
     // the chain reproduces the stored coordinate bit for bit — measured 8/8, re-measured
-    // suite-wide by the reuse differential. The shell-less base-vertex scaffolding went
-    // with it.)
+    // suite-wide by the reuse differential.)
     let define = |model: &Model,
                   i: usize,
                   cap: Handle<Surface>,
@@ -2150,13 +2147,13 @@ fn sweep_ring(
 /// **Which frame a sketch lives in** — the plane (a handle: one statement of the plane, shared
 /// with every face on it), its [`nacre_topo::FramePlacement`], and whether the plane's canonical
 /// coefficients need negating to face the way the sketch does. Everything a
-/// [`nacre_topo::Motion::Frame`] node needs, before the model has one (S9).
+/// [`nacre_topo::Motion::Frame`] node needs, before the model has one.
 ///
 /// ★★ **The fields are private and the constructors validate** — the reason this type is not a
 /// plain record. A `Named` placement is a *claim*: "this origin lies on that plane, this
 /// direction crosses its normal". [`SketchFrame::named`] checks the claim exactly, at
 /// construction, and rejects by name — silently substituting `Canonical` would move a caller's
-/// sketch and answer a question they did not ask (`docs/truth-and-cache.md`'s rule). A public
+/// sketch and answer a question they did not ask. A public
 /// field would let a literal walk around the check.
 ///
 /// ★ **`flip` is not the caller's to state** — the canonical coefficients carry no direction, so
@@ -2193,7 +2190,7 @@ impl SketchFrame {
     ///
     /// ★ **`flip` is `false` and that is a measurement, not a derivation**: each seed's canonical
     /// `ŵ` realizes to `+axis` because of how `Model::new` writes the seeds' points and how the
-    /// canonical name normalizes — pinned by `a_world_frame_faces_its_axis`, and by S9's
+    /// canonical name normalizes — pinned by `a_world_frame_faces_its_axis`, and by
     /// `a_seeded_planes_canonical_frame_is_the_world_basis_exactly` underneath it. Re-seed the
     /// world planes differently and this turns silently; the tests are what stop that.
     ///
@@ -2308,7 +2305,7 @@ impl SketchFrame {
 
 /// A [`SketchFrame`] with its `flip` measured — the placement's realized `ŵ` dotted against the
 /// direction the sketch must face (a sweep's sense, a face's outward normal). This is the one
-/// place `flip` is decided (S9): every road calls it, so no two can measure differently. `None`
+/// place `flip` is decided: every road calls it, so no two can measure differently. `None`
 /// when the chain cannot realize a basis (a plane with no name).
 ///
 /// ★★★ **Only the frame comes back — deliberately.** The basis realized here to measure `flip`
@@ -2463,7 +2460,7 @@ pub fn frame_plane(model: &Model, frame: &SketchFrame) -> Option<SketchPlane> {
 /// A planar face's sketch frame **as a [`SketchFrame`]** — the plane handle, placement, and
 /// measured flip that [`Operation::PadOnFace`] / [`Operation::PocketOnFace`] sketch in. Where
 /// [`face_plane`] projects that frame to realized f64 axes for a caller to *look at*, this is
-/// the exact vocabulary itself (S9): the same value `face_frame` builds internally, no longer
+/// the exact vocabulary itself: the same value `face_frame` builds internally, not
 /// thrown away at the boundary.
 ///
 /// ★★★ **What comes back is verified against the pad's frame, by realization, to the bit.** On a
@@ -2478,7 +2475,7 @@ pub fn frame_plane(model: &Model, frame: &SketchFrame) -> Option<SketchPlane> {
 ///
 /// A face has no caller to name a placement, so the canonical frame is tried first (the stronger
 /// normal form); where it realizes elsewhere, the pad's axes are transcribed as a `Named`
-/// placement (origin + `ref_dir`, S9's vocabulary) with `flip` measured as everywhere else.
+/// placement (origin + `ref_dir`) with `flip` measured as everywhere else.
 ///
 /// Errors as [`face_plane`]: `NonPlanarFace`, `FaceNotInLiveSolid`; `PlaneWithoutExactForm` when
 /// the plane carries no name to derive a frame from (a test-only unregistered surface); and
@@ -2568,7 +2565,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // surface records its **pre-motion** frame, so projecting those gives a pre-motion point —
     // measured `0.29` away from the world plane, not a rounding but a different place. Those
     // keep the f64 projection, which is the same rule computed from the description available.
-    // `narrow()` gates the wide vessel out: a `Wide` name (S2) carries identity only, so it
+    // `narrow()` gates the wide vessel out: a `Wide` name carries identity only, so it
     // keeps the f64 projection exactly as a missing name did.
     let world_stated = matches!(
         model.surface(surface_h),
@@ -2594,7 +2591,7 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // not the same intent: take the frame only when the world axes do not lift to exact
     // orthonormal rationals. Axis-aligned faces therefore never go near it and are untouched.
     //
-    // ★ **`flip` is measured, not derived** — by `measured_frame`, the one measuring place (S9).
+    // ★ **`flip` is measured, not derived** — by `measured_frame`, the one measuring place.
     // ★★★ **The axes are then realized *with* that flip, by the same function the operation's
     // prism replays through.** They used to be read off the unflipped basis with the sign applied
     // by hand here, as a half-turn about `v̂` — but the realization (`frame_chain`) half-turns
@@ -2602,10 +2599,10 @@ fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame, OpError> {
     // so every flip=true face was reported a frame point-symmetric to the one the pad built in.
     // Asking `frame_world_basis` with the measured flip leaves the geometry of `flip` written in
     // exactly one place; for flip=false the call is bit-identical to the measuring one.
-    // ★★ A face has no caller to name a frame, so its placement is `Canonical` (S4) — derived
+    // ★★ A face has no caller to name a frame, so its placement is `Canonical` — derived
     // when the chain is flattened, stored nowhere. That is also what opens this branch for a
     // plane whose name is `Wide` or whose canonical values overflow `i128`: `frame_world_basis`
-    // succeeds through the arbitrary-precision road where the old narrow derivation declined.
+    // succeeds through the arbitrary-precision road where a narrow derivation would decline.
     let world = realized_plane(origin, x, y);
     let sketch = (world.exact().is_none())
         .then(|| measured_frame(model, surface_h, nacre_topo::FramePlacement::Canonical, n))
@@ -2830,7 +2827,7 @@ pub(crate) fn pocket(
 /// it does (`n·p` is one coordinate) and for a slanted one it does not. With a face in hand the
 /// question is answered the way the kernel answers identity everywhere else:
 ///
-/// 1. **the same `Surface` handle** — integers, not coordinates (overview §2). `assemble_fuse_cut`
+/// 1. **the same `Surface` handle** — integers, not coordinates. `assemble_fuse_cut`
 ///    gives a result face the surface of the operand plane it came from, so the surviving cap
 ///    normally lands here.
 /// 2. **the faces' own coordinates, exactly** — every `outer_tri` point of the candidate lies on
@@ -2851,8 +2848,8 @@ pub(crate) fn pocket(
 /// If the cap survives as several faces they all satisfy this, and the first is returned; the
 /// coefficient test had the same ambiguity.
 ///
-/// **Measured (2026-07-22): the corpus does not separate the two branches** — disabling either one
-/// leaves the whole suite at 207 passed / 23 failed. So branch 2 has no firing test today and is a
+/// **Measured: the corpus does not separate the two branches** — disabling either one
+/// leaves the whole suite's results unchanged. So branch 2 has no firing test today and is a
 /// documented backstop (cf. `NON_MANIFOLD_EDGE`); branch 1 is kept because handle identity is the
 /// strongest answer available and is the path a surviving cap normally takes.
 pub(crate) fn find_face_coplanar_with(

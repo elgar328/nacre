@@ -7,19 +7,17 @@
 //!
 //! Not an assertion — a dump. Run it on two commits and `diff`:
 //!
-//! ★ **Re-baselined once at S9** (world-plane seeding): the seeds intern with every
-//! origin-touching producer, so the survivor's f64 plane cache — and with it the `in:` plane
-//! digest — moved on the origin-touching lines. The switch was gated by an ε-equivalence check
-//! (topology exact, volumes/areas/centroids within 2⁻⁴⁰ relative, vertex hashes byte-equal) and
-//! the measured deviations are in `docs/dev-log.md`. `stat seeded_hits` below is the
-//! falsifiability bridge for that population.
+//! ★ **World-plane seeding**: the seeds intern with every origin-touching producer, so the
+//! survivor's f64 plane cache — and with it the `in:` plane digest — is the seed's on the
+//! origin-touching lines. `stat seeded_hits` below is the falsifiability bridge for that
+//! population.
 //!
 //! ```text
 //! cargo test -p nacre-ops --release --test census -- --ignored --nocapture | grep '^c '
 //! ```
 //!
 //! ★★★ **Diff it across *profiles* too, not only across commits.** Drop `--release` and the same
-//! lines must come out — they do, measured (398 of them on 2026-09-11; the claim is *the same
+//! lines must come out — they do, measured (398 of them at one count; the claim is *the same
 //! lines*, not a number, because the corpus grows). That is not a formality: `Angle`'s f64 route is
 //! `(deg.to_f64() * PI / 180.0).cos()`, and LLVM evaluates that at compile time wherever it can see
 //! the angle, one ulp away from what libm returns at run time. Two builds disagreeing here would
@@ -35,8 +33,8 @@
 //! a population it does not contain. The first 130 lines are all *short* decimals, which is why a
 //! regression that closed the exact path for every arbitrarily-tilted plane crossed this file
 //! bit-identical, twice. The `fw` (full-width coordinates) and `tp` (tilted sketch plane) families
-//! exist for that reason, and so does `mot` (the boss corpus under rigid motion — cell ④):
-//! until it was added, no row held a **rotated** cylinder boolean at all. **Read "bit-identical"
+//! exist for that reason, and so does `mot` (the boss corpus under rigid motion):
+//! without it, no row holds a **rotated** cylinder boolean at all. **Read "bit-identical"
 //! as evidence only about the population present.**
 
 use nacre_math::Point3;
@@ -198,7 +196,7 @@ fn record(
                 ));
             }
             println!("{} {}", v.len(), parts.join(" "));
-            // ★ **The cache is the realization** (cell 52): every result vertex the push funnel
+            // ★ **The cache is the realization**: every result vertex the push funnel
             // could realize on the ladder's first rung is `Bounded` with that value bit for bit.
             // Asked again here with the funnel's own question, so the row cannot pass by measuring
             // nothing.
@@ -557,12 +555,12 @@ fn dump() {
         }
     }
 
-    // ── **A framed sketch on an `n·n`-overflow wall** (`wf`) — the population S4 opens, which
-    // no family above contains: `fw` is all-narrow (measured at S2) and `tp`'s walls are
+    // ── **A framed sketch on an `n·n`-overflow wall** (`wf`) — a population which
+    // no family above contains: `fw` is all-narrow (measured) and `tp`'s walls are
     // in-frame narrow. A prism on a fully tilted, exactly-orthonormal *decimal* frame has walls
     // whose names run ~110 bits — narrow, with squared lengths past `i128` — and a pad or
-    // pocket on such a wall used to fall to the f64 path. Without this family a regression in
-    // the wide-frame road would cross this file bit-identical (the 8b lesson, a third time).
+    // pocket on such a wall must not fall to the f64 path. Without this family a regression in
+    // the wide-frame road would cross this file bit-identical.
     {
         use nacre_math::{Point2, Vector3};
         let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
@@ -696,10 +694,10 @@ fn dump() {
         m.rebuild_adjacency();
         record("ct ring-pinch fuse", &m, &inputs, &out);
     }
-    // ── Cylinders (M6-0): the truth rides beside the cache. Solo and moved bodies are digest
-    // lines (a boolean never runs); the boolean rows record the honest refusal — that reject
-    // string is part of the corpus, so the day M6-2 admits cylinders, these lines change from
-    // ERR to results *in the diff*, not silently.
+    // ── Cylinders: the truth rides beside the cache. Solo and moved bodies are digest
+    // lines (a boolean never runs); the boolean rows record the answer, refusals included — a
+    // reject string is part of the corpus, so a change in what is admitted moves these lines
+    // between ERR and results *in the diff*, not silently.
     {
         use nacre_math::Vector3;
         let solo = |m: &Model, s: Handle<Solid>| {
@@ -757,7 +755,7 @@ fn dump() {
             m.rebuild_adjacency();
             record(&format!("cyl {kn}"), &m, &inputs, &out);
         }
-        // ── **Cut rims** (M6-2b green): a boss whose circle a boundary segment cuts — the arc
+        // ── **Cut rims**: a boss whose circle a boundary segment cuts — the arc
         // population. Three placements: straddling the plate's top edge (seam ≡ pierce), turned
         // over the corner (the seam splits the wrap arc), and hung under the bottom edge (the
         // cut circle is the band's hi end).
@@ -815,10 +813,10 @@ fn dump() {
             m.rebuild_adjacency();
             record(&format!("arc bored straddle {kn}"), &m, &inputs, &out);
         }
-        // ── **The rulings road** (cell 4, the gate's record-and-pass arm): a boss whose axis
+        // ── **The rulings road** (the gate's record-and-pass arm): a boss whose axis
         // lies exactly on the plate's wall plane builds (through, the corner's two walls, an
-        // asymmetric station); the arm's deliberate exclusions are gone — offset (`0 < d < r`,
-        // cell ③) and tangent (`d = r`, cell ⑥) both pass the gate now, and the tangent row's
+        // asymmetric station); offset (`0 < d < r`)
+        // and tangent (`d = r`) both pass the gate too, and the tangent row's
         // three kinds are where the *verdict* answers (`Fuse` builds, `Cut` pinches).
         for (pn, base, h) in [
             ("through", [40.0, 20.0, -10.0], 50.0),
@@ -1077,17 +1075,17 @@ fn dump() {
             record(&format!("wal {pn} fuse"), &m, &inputs, &out);
         }
     }
-    // ── **The boss corpus under rigid motion** (`mot`, cell ④): the production-side rows of the
+    // ── **The boss corpus under rigid motion** (`mot`): the production-side rows of the
     // commuting oracle (`tests.rs::the_boolean_commutes_with_rigid_motion`), one per sign class
     // the oracle names — ∥ wall classes with `frame_sign = −1` (a max-side wall put on a seed
     // plane by a translation; a wall turned onto one by rz90), ⊥ classes with `(axis_up, frame)`
     // `= (true, −1)` (corner-lo with the axis turned to −y) and `(false, −1)` (the top cap put on
     // z = 0), the transport's exactness boundary (the offset boss under a rigid motion) and the
     // recorded path (a non-dyadic translation). ★ Rows were added only where **both** profiles
-    // dump them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) came with the
-    // transport law (cell ④ stage 3) — before it, `world_cylinder_def`'s postcondition (a
-    // `debug_assert`) took the dev census down there while release answered «disjoint» (Fuse 2
-    // bodies, Cut the plate untouched, Common empty): the silent wrong answer the law closed.
+    // dump them: the transport row (`offset-out` under `rz90 + t(5,−3,2)`) rests on the
+    // transport law — without it, `world_cylinder_def`'s postcondition (a
+    // `debug_assert`) takes the dev census down there while release answers «disjoint» (Fuse 2
+    // bodies, Cut the plate untouched, Common empty): the silent wrong answer the law closes.
     {
         let boss = |m: &mut Model, base: [f64; 3]| -> (Handle<Solid>, Handle<Solid>) {
             let plate = m.add_cuboid(
@@ -1363,7 +1361,7 @@ fn dump() {
     // datum above is `DatumDef::Stated`; nothing in this corpus stated one **through vertices**,
     // so when the invariant-plane restatement made `vertex_meet` read a turned solid's corners as
     // straddling — costing every one of them the named datum road — the census crossed it
-    // bit-identical and said nothing. The rule (`docs/truth-and-cache.md`, gate 8b) is to put the
+    // bit-identical and said nothing. The rule is to put the
     // population a change touches into the ledger, and this is that population.
     //
     // ★★ **It does not stop at making the datum.** The plane a `ThroughVertices` datum mints is
@@ -1437,8 +1435,8 @@ fn dump() {
         record(&format!("dt {kn}"), &m, &inputs, &out);
     }
 
-    // ★★★★★ **The link that turns "interning explains it" into something falsifiable.** Since S2
-    // every plane with points is named (wide ones in the arbitrary-precision vessel), so a
+    // ★★★★★ **The link that turns "interning explains it" into something falsifiable.**
+    // Every plane with points is named (wide ones in the arbitrary-precision vessel), so a
     // coordinate can move only when wide planes *merge* — a `c ` line that moves must come with
     // a nonzero count here. If the coordinates move and this stays zero, the cause is something
     // else and the diff is not explained.
@@ -1446,14 +1444,14 @@ fn dump() {
         "stat wide_planes {}",
         nacre_topo::WIDE_PLANES.load(std::sync::atomic::Ordering::Relaxed)
     );
-    // S9: the falsifiability bridge for seeding-shaped changes. A `c ` diff that the wide
+    // The falsifiability bridge for seeding-shaped changes. A `c ` diff that the wide
     // counter cannot explain (name-collision populations are narrow) must come with a nonzero
     // count here instead — pushes that interned onto a seeded world plane.
     println!(
         "stat seeded_hits {}",
         nacre_topo::SEEDED_HITS.load(std::sync::atomic::Ordering::Relaxed)
     );
-    // ── **Arc profiles** (cell ⑨): sketched circles and arcs extruded, then met by a box. The
+    // ── **Arc profiles**: sketched circles and arcs extruded, then met by a box. The
     // half disk's chord wall *crosses* its cylinder (pierce corners `Lo`/`Hi`), the annulus and
     // the bored plate have only whole circles; the slot's straight walls are *tangent* to its half
     // cylinders, the ruling the tracer has no side for — its rows record that refusal by name.
@@ -1549,12 +1547,11 @@ fn dump() {
         }
     }
 
-    // ── **Arc walls** (cell ⑩): the user's first assembly and its controls. A filleted plate
+    // ── **Arc walls**: the user's first assembly and its controls. A filleted plate
     // with two holes (XY), a standing plate with a slot window (ZX, moved to y ∈ [3, 4]) and two
     // triangular gussets (YZ) met three walls at once — same-solid parallel cylinder pairs, the
     // oblique gusset plane, and the fillets' tangent rulings. Every row is a pair the assembly's
-    // fold visits or a control that isolates one wall; the plan's prediction table names what
-    // each stage flips.
+    // fold visits or a control that isolates one wall.
     {
         // Helpers as items, not closures: the shape builders below are boxed and `move`d, and a
         // closure they borrowed would not live long enough.
@@ -1767,12 +1764,12 @@ fn dump() {
             }
         }
     }
-    // ── **Four-plane operand vertices** (cell ⑪): a gusset whose apex lands exactly on a wall's top
+    // ── **Four-plane operand vertices**: a gusset whose apex lands exactly on a wall's top
     // edge makes a result vertex where **four faces** meet. Fed back as an operand, that vertex
-    // used to be named once per face — four names, one of them a triple whose planes share a
-    // line — and the next boolean refused by whichever symptom its build order met first
-    // (`DegenerateWitness` in the parallel build, `FourPlane` sequentially; measured at S0). Since
-    // S1 the vertex names itself from its incident classes and every pair builds. The rows hold
+    // named once per face would carry four names, one of them a triple whose planes share a
+    // line — and the next boolean would refuse by whichever symptom its build order met first
+    // (`DegenerateWitness` in the parallel build, `FourPlane` sequentially; measured). The
+    // vertex names itself from its incident classes and every pair builds. The rows hold
     // both operand orders, the user's four-part fold in both fold orders, the
     // near misses (apex above and below the edge), a box that shares only the top plane's class,
     // and the mirrored fold (class numbers permuted).
@@ -1984,7 +1981,7 @@ fn dump() {
             }
         }
     }
-    // ── **A plane through a fillet's axis** (cell ⑫): a class plane that holds a fillet's axis
+    // ── **A plane through a fillet's axis**: a class plane that holds a fillet's axis
     // has two rulings on the fillet, and one of them can be the fillet's own tangent ruling with
     // the plate's wall. That line then carries names from two vocabularies — the operand's tangent
     // corner (`Pierce … Double`) and the class's ruling crossing (`Pierce … Lo/Hi`) — with nothing
@@ -2145,14 +2142,13 @@ fn dump() {
             }
         }
     }
-    // ── **A fully rounded outline** (cell ⑬): fillet *every* corner of a plate and its cap ring
+    // ── **A fully rounded outline**: fillet *every* corner of a plate and its cap ring
     // has no three-plane corner left — eight tangencies and nothing else. The predicate that asks
     // "is this ring inside that bore's disk" looks for a witness among three-plane names only, so
     // it finds none and refuses, and the plate cannot enter **any** boolean. The rows say exactly
     // that: three partners that share nothing but the plate (one standing on it, one overlapping,
     // one a hundred units away), and two controls that differ in one thing each — one corner left
-    // sharp, and no bores. The last row carries the user's own script, whose *next* wall this cell
-    // hands on to the one after it.
+    // sharp, and no bores. The last row carries the user's own script.
     {
         fn p2(x: f64, y: f64) -> nacre_math::Point2 {
             nacre_math::Point2::from_array([x, y])
@@ -2330,7 +2326,7 @@ fn dump() {
                     (abc, shift(m, turned, [-45.0, 0.0, 47.0]))
                 }),
             ),
-            // ★ Cell ⑮ — **a disk that clears *neither* axis of the footprint.** The tool's cap
+            // ★ **A disk that clears *neither* axis of the footprint.** The tool's cap
             // sits on the plate's own side plane, and there it crosses a corner fillet's tangent
             // line (5 away, radius 10) while overlapping the plate's z-span. So the wall rule's
             // answer for it is «does not clear» — the other half of the pair whose first half is
@@ -2354,7 +2350,7 @@ fn dump() {
                     (plate(m, 4, 0), shift(m, turned, [-45.0, -15.0, 6.0]))
                 }),
             ),
-            // ★ Cell ⑭ — **why the class-edge net's population is empty, held as a row.** Two
+            // ★ **Why the class-edge net's population is empty, held as a row.** Two
             // cylinders on crossing axes, one per operand, whose surfaces meet. A class could
             // otherwise carry one's circle and the other's rulings *touching*, which no split
             // cuts; the pair gate refuses the pair (`CylinderPairContact`) before any arrangement
@@ -2393,10 +2389,10 @@ fn dump() {
         }
     }
 
-    // ★★★★ **Cell 58 — the realization road for surfaces, measured before it is wired.** These
-    // four cover *every* surface this process pushed (the counters are process-global and the
-    // dump is this binary's only test), so they are the prediction the wiring commit is checked
-    // against: `surface_cache_differs` is exactly how many `in:` plane digests may move, and a
+    // ★★★★ **The realization road for surfaces, measured.** These
+    // counters cover *every* surface this process pushed (they are process-global and the
+    // dump is this binary's only test): `surface_cache_differs` is exactly how many `in:` plane
+    // digests may move, and a
     // `c ` row that moves without it is not explained.
     //
     // ⚠ `cache_discarded_differing` is the one number nobody had measured. The claim "the same

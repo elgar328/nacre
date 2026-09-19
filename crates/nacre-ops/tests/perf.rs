@@ -5,7 +5,7 @@
 //! commit message of whatever change moved them, next to the census diff that says the
 //! answers did not change.
 //!
-//! ★★★ **Run it `--release`, and it is skipped by the routine `--ignored` sweep** (2026-08-22).
+//! ★★★ **Run it `--release`, and it is skipped by the routine `--ignored` sweep**.
 //! Measured: this file's two tests were **1673 of the sweep's 1802 seconds — 93%** — and they ran
 //! in a *debug* build, so the numbers they printed were not the ones anyone wants. `--release`
 //! turns 28 minutes into 4, and the gate skips them by name (`overview.md` carries the command).
@@ -244,7 +244,7 @@ fn boolean_wall_clock() {
 }
 
 /// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing
-/// short-circuits — and since S3 the predicates run on the rational truth (`orient2d_rat`,
+/// short-circuits — and the predicates run on the rational truth (`orient2d_rat`,
 /// narrow-first), so this is the price of exactness-on-the-truth over the old f64 signs.
 #[test]
 #[ignore]

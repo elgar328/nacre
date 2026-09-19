@@ -17,10 +17,9 @@
 //! agreement is exact when it holds and a threshold would only paper over a third derivation.
 //!
 //! ★★ The refusal population is pinned per flavour below. It is defined by *verification
-//! failure*, not by a condition list — and the invariant-plane restatement (2026-08-17)
-//! delivered the intended news exactly as this header once predicted: a plane the rotation
-//! maps onto itself keeps its world statement instead of carrying the motion, those cells
-//! now verify bit-for-bit, and the rotated pins measured 2 → 0.
+//! failure*, not by a condition list. A plane the rotation maps onto itself keeps its world
+//! statement instead of carrying the motion, so those cells verify bit-for-bit and the
+//! rotated pins are 0.
 
 use nacre_math::Point2;
 use nacre_ops::{

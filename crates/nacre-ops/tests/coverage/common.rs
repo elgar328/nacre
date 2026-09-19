@@ -91,7 +91,7 @@ pub fn extrude_op(m: &Model, profile: Profile2d, dist: f64) -> Operation {
 }
 
 /// The same, for a log that is **replayed**: the frame names a throwaway model's seed, which
-/// `replay` re-anchors onto the model it builds (`docs/design.md` §2). Applying one of these to a
+/// `replay` re-anchors onto the model it builds. Applying one of these to a
 /// live model is the cross-model misuse the debug guard catches.
 pub fn extrude_log_op(profile: Profile2d, dist: f64) -> Operation {
     extrude_op(&Model::new(), profile, dist)

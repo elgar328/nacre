@@ -56,14 +56,14 @@ pub(crate) fn replay(p: WitnessPoint, chain: &[MoveNode]) -> Option<WitnessPoint
 }
 
 /// **A surface's plane as its exact witness triangle** — the per-carrier building block of an
-/// implicit point (16-2). The same computation `collect_planes`' arms perform per face, spelled
+/// implicit point. The same computation `collect_planes`' arms perform per face, spelled
 /// once for the per-carrier consumer: `Known` points replay through the surface's own motion; a
 /// **named** `Through` plane (rational closure) solves through `through_points_rat` and replays
-/// the same way. ★ A named `Through` plane whose meets are wider than any witness base (open
-/// item 17) gets its **own frame's canonical probes** instead — on-plane exact definitions, the
+/// the same way. ★ A named `Through` plane whose meets are wider than any witness base
+/// gets its **own frame's canonical probes** instead — on-plane exact definitions, the
 /// same witness `collect_planes`' probe branch builds; `frame_chain` already carries the
 /// plane's later motion, so those return directly. `None` for a nameless `Through` carrier
-/// (a datum on a nameless datum — depth, open item 16-3's question) and for a cylinder.
+/// (a datum on a nameless datum — depth) and for a cylinder.
 pub(crate) fn surface_witness_triangle(
     model: &Model,
     h: Handle<Surface>,
@@ -108,10 +108,10 @@ pub(crate) fn surface_witness_triangle(
 /// what was validated and what gets framed cannot drift.
 ///
 /// Per vertex: **pure** (its three carriers share one motion, and the solve fits `Rat`) becomes
-/// [`nacre_cip::JudgedPoint::Pure`] — 16-1's whole population; anything else that is still a
+/// [`nacre_cip::JudgedPoint::Pure`]; anything else that is still a
 /// well-defined
 /// three-plane meet becomes [`nacre_cip::JudgedPoint::Meet`] of its carriers' witness triangles — the
-/// straddling population (16-2), **and** the pure-but-too-wide one, which a meet represents
+/// straddling population, **and** the pure-but-too-wide one, which a meet represents
 /// without ever asking the coordinate to fit anything.
 ///
 /// `None` for a seam vertex, or a carrier that has no witness triangle of its own (a nameless
@@ -129,7 +129,7 @@ pub(crate) fn through_judged_points(
             nacre_topo::Vertex::ThreePlane(tri) => tri,
             // OnSeam pins a curve, not a point; a Pierce point's coordinates are
             // quadratic-irrational, and this table's witnesses are rational by type —
-            // both decline, per variant (M6-2's judging of pierce points is new machinery,
+            // both decline, per variant (the judging of pierce points is its own machinery,
             // not this road).
             nacre_topo::Vertex::OnSeam(_) | nacre_topo::Vertex::Pierce { .. } => {
                 return None;
@@ -177,16 +177,14 @@ pub(crate) fn through_judged_points(
 /// with no frame, which is the world.
 ///
 /// `None` when a frame cannot be built exactly — no name recorded at all, or a degenerate plane.
-/// ★ Width is **not** on that list since S4: a `Wide` name or overflowing squared lengths take the
+/// ★ Width is **not** on that list: a `Wide` name or overflowing squared lengths take the
 /// arbitrary-precision road (`MoveNode::FrameWide`) instead of declining.
 ///
-/// ★★ **This used to say the caller "falls back to the f64 path it was on before frames existed".
-/// That is stale, and it misled a later plan into inventing a precondition.** No such fallback
-/// remains: `planes.rs` turns this `None` into `RejectReason::FrameOutOfRange`, `exact.rs` into
-/// `OpError::PlaneWithoutExactForm` (S6b deleted the f64 prism road), `reuse.rs` declines to the
+/// ★★ **No caller falls back to an f64 path on this `None`.**
+/// `planes.rs` turns this `None` into `RejectReason::FrameOutOfRange`, `exact.rs` into
+/// `OpError::PlaneWithoutExactForm` (there is no f64 prism road), `reuse.rs` declines to the
 /// arrangement — an equally correct road, not a degraded one — and `replay_chain_coord` names
-/// `WitnessPointError::Downgrade`. Every consumer is honest; and since S2 the branch is unreachable anyway,
-/// because every plane has a name.
+/// `WitnessPointError::Downgrade`. Every consumer is honest.
 pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Vec<MoveNode>> {
     let mut chain = Vec::new();
     let mut cur = Some(leaf);
@@ -233,7 +231,7 @@ pub(crate) fn frame_chain(
 ) -> Option<Vec<MoveNode>> {
     use nacre_topo::FramePlacement;
     let Some(name) = model.surface_name.get(&plane) else {
-        // ★★★ **The judged road** (open item 16, first wall): a plane with no name at all — a
+        // ★★★ **The judged road**: a plane with no name at all — a
         // mixed-frame `Through` statement, whose exact world coefficients are irrational. Its
         // frame is derived from the defining points as intervals ([`nacre_cip::FrameThrough`]),
         // with the branch decided once at the fixed rung, so the same statement always frames
@@ -267,10 +265,9 @@ pub(crate) fn frame_chain(
     // direction, so the node carries the sense in `flip`, and both roads below spend it on the
     // coefficients just before building the frame.
     //
-    // **The narrow road** — bit for bit the pre-S4 frame. For `Canonical` the placement pair is
+    // **The narrow road.** For `Canonical` the placement pair is
     // derived from the canonical (unflipped) coefficients first and the sign is applied after —
-    // the same split `face_frame`/`frame_chain` had before the derivation moved here, and a
-    // correctness condition: `ref_dir = ẑ × n` is sign-sensitive.
+    // a correctness condition: `ref_dir = ẑ × n` is sign-sensitive.
     let narrow_road = || -> Option<MoveNode> {
         let c = *name.narrow()?;
         let (origin, ref_dir) = match placement {
@@ -291,10 +288,10 @@ pub(crate) fn frame_chain(
             frame: nacre_scalar::plane_frame_named(c, origin, ref_dir)?,
         })
     };
-    // **The wide road** (S4) — the same convention through arbitrary precision, where nothing
+    // **The wide road** — the same convention through arbitrary precision, where nothing
     // can overflow. Taken when the name is `Wide` or when any narrow derivation step hits
-    // `i128` (the measured 1.6% `n·n` population). This is the frame arm of the f64-fallback
-    // chain closing: a plane with a name can now always host a sketch.
+    // `i128` (the measured 1.6% `n·n` population). So
+    // a plane with a name can always host a sketch.
     let wide_road = || -> Option<MoveNode> {
         let wf = match placement {
             FramePlacement::Canonical => nacre_cip::WideFrame::canonical_of(name, flip)?,
@@ -505,12 +502,10 @@ mod tests {
             for &fh in &m.shell(sh).faces {
                 for he in &m.face(fh).outer.half_edges {
                     for &vh in m.edge(he.edge).vertices.iter() {
-                        // ★★ S7 promoted this from "replay the stored base vertex" to
-                        // **"solve the definition"**: the corner's three planes share one
+                        // ★★ **Solve the definition**: the corner's three planes share one
                         // motion, so solving their pre-motion names exactly (rational Cramer)
-                        // and replaying that chain must reproduce the stored coordinate — the
-                        // 8/8 measurement that let the base vertex die, now a permanent lock
-                        // over every chain shape in this table.
+                        // and replaying that chain must reproduce the stored coordinate —
+                        // a lock over every chain shape in this table.
                         let nacre_topo::Vertex::ThreePlane(tri) = *m.vertex(vh) else {
                             panic!("a cuboid corner is a three-plane point");
                         };
@@ -550,8 +545,8 @@ mod tests {
                             leaf,
                         )
                         .unwrap();
-                        // ★ The stored coordinate is the *realization* of the definition
-                        // (cell 52): the exact pre-motion base carried through the chain at 128
+                        // ★ The stored coordinate is the *realization* of the definition:
+                        // the exact pre-motion base carried through the chain at 128
                         // bits and rounded once. The f64 replay of the same chain agrees with it
                         // to the rounding of its own arithmetic, not bit for bit — so the lock
                         // is: cache == realization, and replay within the construction epsilon.
@@ -610,7 +605,7 @@ mod tests {
                 angle: Angle::from_deg(R::from_int(45)).unwrap(),
             }),
         );
-        // The motion is the *face's* (S7: surfaces record it; vertices follow their planes).
+        // The motion is the *face's* (surfaces record it; vertices follow their planes).
         // Faces carry different depths since the restatement — the caps were fixed by the
         // Z turn (restated) and only joined at the X turn — so the order lock reads every
         // face: the walls' `[Z, X]` (never `[X, Z]` — the reversal this test exists to
@@ -701,8 +696,8 @@ mod tests {
         );
     }
 
-    /// ★★★★★ S4: **a `Wide` name opens a frame.** The population `frame_chain` declined at
-    /// `narrow()` — a plane whose canonical answer exceeds `i128` — now realizes its canonical
+    /// ★★★★★ **A `Wide` name opens a frame.** The population that fails
+    /// `narrow()` — a plane whose canonical answer exceeds `i128` — realizes its canonical
     /// placement through the arbitrary-precision road, and the basis is a real frame on the
     /// real plane. (What stays closed for `Wide` is the *narrow shortcuts* — `base_rat`,
     /// Shewchuk, `Isometry` transport — locked on the topo side.)
@@ -716,7 +711,7 @@ mod tests {
             [q(-big2, 5), q(big1, 11), q(0, 1)],
             [q(1, 13), q(1, 17), q(1, 19)],
         ];
-        // Fixture qualification (the S2 census lesson): genuinely wide.
+        // Fixture qualification: genuinely wide.
         let name = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
         assert!(name.narrow().is_none(), "the fixture must be wide");
         let mut m = Model::new();
@@ -724,9 +719,9 @@ mod tests {
         assert_frame_shape(&m, h, &nacre_topo::FramePlacement::Canonical, "wide plane");
     }
 
-    /// ★★★★ S4: **a narrow name whose squared lengths overflow `i128` opens too** — the
+    /// ★★★★ **A narrow name whose squared lengths overflow `i128` opens too** — the
     /// measured 1.6% population (`n·n` is a square, so it overflows long before the name).
-    /// Before S4 this was `plane_frame_named`'s hard `None`; the v-fallback never applied.
+    /// On the narrow road alone this is `plane_frame_named`'s hard `None`.
     #[test]
     fn a_narrow_name_with_wide_squares_hosts_a_frame() {
         let q = |n: i128, d: i128| R::new(n, d).unwrap();
@@ -756,16 +751,16 @@ mod tests {
         );
     }
 
-    /// ★★★ S6a: **a `Named` placement opens on a `Wide` name too.** S4's locks covered the
+    /// ★★★ **A `Named` placement opens on a `Wide` name too.** The locks above cover the
     /// canonical road; the axes-only population (`from_axes`, a tilted full-width frame) is
     /// exactly the other pairing — a caller-stated origin/`ref_dir` on a plane whose canonical
     /// name exceeds `i128` — and it goes through `WideFrame::named_of`.
     ///
-    /// ★ The fixture is that population, not the S2 `2^90` triple: full-width *decimal* axes at
+    /// ★ The fixture is that population, not the `2^90` triple above: full-width *decimal* axes at
     /// CAD scale. Their cross runs the denominators to `10^48`, so the canonical name is
     /// genuinely `Wide` (asserted), while the geometry stays near `1` — which matters, because
     /// a frame's unit axes are invisible in f64 next to a `2^90` origin (an ulp there is
-    /// `~6e10`), and the first version of this test proved it by accident.
+    /// `~6e10`).
     #[test]
     fn a_wide_plane_hosts_a_named_frame() {
         let d = |x: f64| R::from_decimal(x).unwrap();

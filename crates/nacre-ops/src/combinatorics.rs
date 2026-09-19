@@ -1,13 +1,13 @@
-//! Combinatorial queries over the per-face planar arrangement (design §8 M5, sub-unit 3).
+//! Combinatorial queries over the per-face planar arrangement.
 //!
 //! This module answers combinatorial questions about how one solid's boundary cuts
 //! a face of the other. It lives in `nacre-ops` and not in `nacre-geom` because it
-//! needs `Model`/`Face`/`Edge`, and geom sits below topo (design §1: dependencies
+//! needs `Model`/`Face`/`Edge`, and geom sits below topo (dependencies
 //! flow upward only).
 //!
 //! Everything decided here is decided by an exact predicate. Coordinates that
 //! appear (`three_planes`' cache) are never the basis of a decision — the truth of
-//! a seam point is its plane triple, as it is for a measured vertex (design §4).
+//! a seam point is its plane triple, as it is for a measured vertex.
 //!
 //! # One `usize`, two meanings — now two tables
 //!
@@ -40,9 +40,9 @@ use std::collections::HashMap;
 /// that name is how a face index gets read as a plane one. The face→plane step is `plane_ix`, and
 /// it happens in `loop_triples`, nowhere else.
 ///
-/// ★ Cell ⑪: it also holds **every vertex's incident faces**, read off the same walk. That table
+/// ★ It also holds **every vertex's incident faces**, read off the same walk. That table
 /// is what lets a ring vertex be named from *all* the planes through it rather than from the one
-/// face loop asking — the set the 2026-07-27 record thought would take an `O(V·P)` query. The
+/// face loop asking — and that set takes no `O(V·P)` query: the
 /// operand's own topology knows it, and the edge walk visits every (vertex, face) pair anyway.
 /// One edge's incidence: its two bounding vertices and the two faces (table slots) using it.
 pub(crate) type EdgeIncidence = ([Handle<Vertex>; 2], [usize; 2]);
@@ -219,7 +219,7 @@ impl PointOn {
 ///
 /// ★★ **Both sides are `Located`, and the symmetry is load-bearing.** A draft took one side bare
 /// plus a separate `b_ds: Option<i8>`, which is a value that has to match arguments it cannot see
-/// — the same shape as a bug this cell's review caught (passing the wrong `q`). Built here, `ds`
+/// — the shape of a real bug (passing the wrong `q`). Built here, `ds`
 /// cannot disagree with the `(p, q)` it was built for. And the symmetry pays again: a segment
 /// endpoint's `Located` is built once per segment, so a pierce end's [`pierce_meet`] is never
 /// re-solved per (split point × segment).
@@ -601,17 +601,16 @@ impl NodeId {
 /// ```
 ///
 /// It must be empty. Spelling a variant anywhere else means a site went around the door instead of
-/// answering — the same gate found **fifteen** of those in the previous cell with the whole suite
+/// answering — the same gate once found **fifteen** of those with the whole suite
 /// already green, and it costs nothing and does not break on a rename.
 ///
-/// ★★★ **Empty again since [`pierce_name`] exists** (2026-08-22). Three sites in `arrangement`
-/// used to open the `Pierce` variant directly — `arc_split_witness`' `separates` closure and two
-/// inside `split_circles` — because this door answers only the three-plane half and its twin did
-/// not exist. The seam table becoming a fourth consumer is what finally paid for the twin; all
-/// four go through it now.
+/// ★★★ **[`pierce_name`] is this door's twin.** This door answers only the three-plane half;
+/// the sites in `arrangement` that need the `Pierce` half — `arc_split_witness`' `separates`
+/// closure, two inside `split_circles`, and the seam table — go through the twin rather than
+/// opening the variant directly.
 ///
-/// ★ Not automated, and that is how it rotted: the three arrived a cell ago and nothing ran the
-/// check, then a fourth was nearly added with the suite green. `tests/rotation_sweep.rs`'
+/// ★ Not automated, and that is how it rots: three sites can arrive with nothing running the
+/// check, and a fourth be nearly added with the suite green. `tests/rotation_sweep.rs`'
 /// `side_of` guard is the precedent for making a source scan a test.
 pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
     match n {
@@ -723,7 +722,7 @@ pub(crate) struct ArcCarrier {
     pub ccw: bool,
 }
 
-/// The **ruling** a straight lateral edge rides (the M6-2 rulings ladder): a wall plane parallel
+/// The **ruling** a straight lateral edge rides: a wall plane parallel
 /// to a cylinder's axis meets the lateral surface in up to two axis-parallel lines, and
 /// `(cyl, side)` names which of the two this is.
 ///
@@ -737,7 +736,7 @@ pub(crate) struct RulingCarrier {
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
     /// Which of the two parallel rulings, by the sign convention above — or `0`, the single
-    /// ruling of a **tangent** wall (cell ⑩, S3): an identity key like the other two values, never
+    /// ruling of a **tangent** wall: an identity key like the other two values, never
     /// a sign to multiply by (the sign consumers assert it away).
     pub side: i8,
     /// `true` when travel runs along `+m` — the sense the ruling split builds every
@@ -798,9 +797,9 @@ pub(crate) struct RingEdge {
 /// Recover a ring's edges from its vertex names — the classic derivation, now in **one** place.
 ///
 /// Sound exactly while each name lists all three of its planes and no more (see [`RingEdge`]).
-/// ★ **Test-only since 2026-08-17**: the last production consumer (the tracer's crossed-edge
-/// wall) reads the wall the producer carries (`NamedRing`) instead, so no production path
-/// derives ring geometry from names any more. Kept for hand-built test rings, whose vertices
+/// ★ **Test-only**: the tracer's crossed-edge
+/// wall reads the wall the producer carries (`NamedRing`) instead, so no production path
+/// derives ring geometry from names. Kept for hand-built test rings, whose vertices
 /// are clean three-plane points by construction.
 /// ★ It takes bare triples, not [`NodeId`]s, because it is a **fixture constructor**: its callers
 /// hold hand-written literals, so this is where those become names (`NodeId::three_planes`).
@@ -869,7 +868,7 @@ pub(crate) fn pin_on_line(
         .find(|&c| c != a && c != b && jd.plane_pair_dir_sign(a, b, c) != 0)
 }
 
-/// **A three-plane name that went through the rule** (cell ⑪) — the only thing
+/// **A three-plane name that went through the rule** — the only thing
 /// [`NodeId::three_planes`] accepts.
 ///
 /// Two ways in, both here: [`canonical_triple`] for a *set* of planes known to pass through a
@@ -895,7 +894,7 @@ impl Canon3 {
     }
 }
 
-/// **The one rule that names a point from the planes through it** (cell ⑪).
+/// **The one rule that names a point from the planes through it.**
 ///
 /// `s` is every plane class known to pass through one point, sorted and deduplicated. The name is
 /// the lexicographically first triple of `s` that is **independent** — three planes sharing a line
@@ -908,12 +907,12 @@ impl Canon3 {
 /// (`arrangement::Aliases`) is the minimum of its union-find, i.e. this very triple, so a vertex
 /// an operand names here and a point the arrangement discovers fold onto the same name.
 ///
-/// ★ **Why one function.** The rule was spelled six times between 2026-07-27 and 2026-09-06 —
+/// ★ **Why one function.** The rule has many users —
 /// the arrangement's run-vertex discovery, its alias representative, the result vertex's
-/// definition, a line's wall family, an edge's end triples — each on the face of the problem a
-/// fixture had just shown, and each time the operand's own vertices kept a rule of their own (a
-/// triple per face loop). A concurrency then arrived under four names, one of them dependent,
-/// and the judge read the dependent one as lying on every class.
+/// definition, a line's wall family, an edge's end triples. Spelled once per user, with
+/// the operand's own vertices keeping a rule of their own (a
+/// triple per face loop), a concurrency arrives under four names, one of them dependent,
+/// and the judge reads the dependent one as lying on every class.
 ///
 /// ★ **Completeness** — why an operand's set plus the arrangement's `{wc} ∪ t` records make one
 /// component: with `|F| = 4` planes through a point every record *is* `F`, so the union-find has
@@ -943,7 +942,7 @@ pub(crate) fn canonical_triple(jd: &Judge<'_, WorkingPlane>, s: &[usize]) -> Opt
     }
 }
 
-/// **What pins a named point on the line `a ∩ b`** (cell ⑫) — the one rule, read from the name.
+/// **What pins a named point on the line `a ∩ b`** — the one rule, read from the name.
 ///
 /// A three-plane name is pinned by whichever of its planes cuts the line ([`pin_on_line`]). A
 /// pierce name whose pair *is* the line's is pinned by its cylinder ([`EndPin::Cylinder`] — the
@@ -982,8 +981,8 @@ pub(crate) fn pin_for(
 /// ★★★ **The fields are private, and that is the whole point.** Every rule that reads this
 /// representation — [`turn`], [`antiparallel`], [`parallel_carriers`] via [`continuation`] — lives
 /// in this module, and Rust's module privacy is what keeps it that way: a sibling module cannot
-/// reach in even by accident. The previous cell had to catch fifteen such bypasses with a `rg`
-/// gate because the identity it raised was an enum whose variants were nameable everywhere; here
+/// reach in even by accident. The node identity needs a `rg` gate (it caught fifteen bypasses)
+/// because it is an enum whose variants are nameable everywhere; here
 /// the boundary is a compile error instead of a grep.
 ///
 /// ★★ **A test that must read a direction is not a violation — it is an oracle.** It should read
@@ -1397,7 +1396,7 @@ pub(crate) enum Continuation {
 /// would weaken "the whole run goes one way" into "each neighbouring pair does", and those differ
 /// on a run that reverses twice.
 ///
-/// ★★ **Measured 2026-08-21: nothing in the suite reaches `DoublesBack`** — `straight_angle` is
+/// ★★ **Measured: nothing in the suite reaches `DoublesBack`** — `straight_angle` is
 /// raised nowhere at all (`--features reject-trace` over the workspace: 13 reasons, 48 raises, this
 /// one zero), and it is not in the reject census's frozen corpus either. It is an unfired backstop
 /// like `angular_order`'s `UnorderedEdges`, kept because upstream is *supposed* to make it
@@ -1447,7 +1446,7 @@ pub(crate) fn continuation(
                 Continuation::DoublesBack
             }
         }
-        // ★ A line and an arc **tangent** at the shared node (cell ⑩, S3 — a fillet's smooth
+        // ★ A line and an arc **tangent** at the shared node (a fillet's smooth
         // corner): the turn is `0`, and whether the ring runs on or doubles back is the travel
         // directions' agreement ([`tangent_travel_agrees`]).
         (EdgeDir::Line { carrier, sense }, EdgeDir::Arc(arc))
@@ -1594,7 +1593,7 @@ pub(crate) fn turn(
         }
         // Two arcs of one circle at one node are tangent: no turn to read. (Two *different*
         // circles cannot meet at a node: faces of different operands are proved apart by the
-        // gate, per face pair since cell ⑩, and one valid operand's own faces do not cross —
+        // gate, per face pair, and one valid operand's own faces do not cross —
         // the sketch refuses an arc–arc join, `ArcsMeetAtVertex`.)
         (EdgeDir::Arc(_), EdgeDir::Arc(_)) => 0,
         // ★★ **A segment against a ruling collapses the same way the arc arm did.** The ruling's
@@ -1621,7 +1620,7 @@ pub(crate) fn turn(
         (EdgeDir::Ruling(_), EdgeDir::Ruling(_)) => 0,
         // A ruling and an arc cannot meet at a node: their classes demand the axis parallel and
         // perpendicular to `P` respectively, so the node would lie on two distinct cylinders —
-        // faces the gate proved apart (different operands, cell ⑩) or faces of one valid
+        // faces the gate proved apart (different operands) or faces of one valid
         // operand, which do not cross. `0` sends a surprise to the bucket whose
         // walk names it (`UnorderedEdges`) rather than ranking it.
         (EdgeDir::Ruling(_), EdgeDir::Arc(_)) | (EdgeDir::Arc(_), EdgeDir::Ruling(_)) => 0,
@@ -1631,10 +1630,10 @@ pub(crate) fn turn(
 /// `turn(line, ruling)` with the line's sense factored out — the `−sign(m · n_carrier)` the
 /// derivation above collapses to, times the ruling's travel.
 ///
-/// ★ **The overall sign is measured** (cell 4): negating it turns the through-boss volume
-/// oracles red (all five production fixtures) — the watcher the 2026-08-24 self-check said was
-/// missing. It stood on the BAC-CAB derivation alone while the walk's both-handedness try
-/// absorbed a global flip; the panel population reads it for real now.
+/// ★ **The overall sign is measured**: negating it turns the through-boss volume
+/// oracles red (all five production fixtures). The BAC-CAB derivation alone would not lock it —
+/// the walk's both-handedness try
+/// absorbs a global flip; the panel population reads it for real.
 fn ruling_line_turn(
     jd: &Judge<'_, WorkingPlane>,
     p: usize,
@@ -1686,22 +1685,23 @@ fn ruling_line_turn(
 /// | `ccw` | drop it | **locked** — the two arcs at a crossing collapse into one bucket, `UnorderedEdges` |
 /// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus disagrees, and that class's walk merges four cells into one 8-half-edge orbit. ★ It used to be *accepted* there: the contour count passes it, and `arrangement::walk_cells`' Euler condition — added because of this probe — is what refuses it |
 /// | `axis_up` | drop it | **locked** — the unmoved corpus already: the disk-side watcher (`disk_side_probe::record`, *"the disk-side rule and the cell's own corners disagree"*) dies on the first boolean |
-/// | `frame_sign` | drop it | **locked since cell ④** (2026-09-03) — the commuting oracle's always-on subset turns red on 250 of 396 cells (`t(−4,−4,−2)` puts the plate's caps on a seed plane, `frame_sign = −1`), at the same watcher |
+/// | `frame_sign` | drop it | **locked** — the commuting oracle's always-on subset turns red on 250 of 396 cells (`t(−4,−4,−2)` puts the plate's caps on a seed plane, `frame_sign = −1`), at the same watcher |
 ///
 /// The last two are derived, not guessed (the algebra is above). ★ Both rows read
-/// «unexercised — `+1`/`true` on every class reached» until cell ④: a face lies on a seed plane
-/// with its outward along +axis under a translation as ordinary as `t(−4,−4,−2)`, and no fixture
-/// had made one — the corpus does not contain the population a rule needs until a cell adds it.
+/// «unexercised — `+1`/`true` on every class reached» without a fixture made for them: a face
+/// lies on a seed plane
+/// with its outward along +axis under a translation as ordinary as `t(−4,−4,−2)`, but the
+/// corpus does not contain the population a rule needs until a fixture adds it.
 ///
-/// ★★★ **The `sense` gap that used to be named here is CLOSED** (2026-08-22). Flipping the sense a
+/// ★★★ **The `sense` a split carries is locked too.** Flipping the sense a
 /// split carries onto its sub-segments (`Carrier::Plane::sense`) attaches the arcs to the wrong
 /// cells, and nothing in the walk sees it — the cell count and the contour count both come out
-/// right. Two guesses at its first reader were wrong in turn (`nest_cells`' root choice, then
-/// `label_cells`' keep decision: every order-independent summary of the labels is identical
+/// right. Its first reader is neither `nest_cells`' root choice nor
+/// `label_cells`' keep decision (every order-independent summary of the labels is identical
 /// because the two 3-cells *swap* labels). It is `emit_faces`, where the ring comes out the exact
 /// reverse, and `bands`' arc fence pins it there through `ClassAudit::outer_rings`.
 ///
-/// ★ The table's first row was re-measured against that new lock and still holds: negating the
+/// ★ The table's first row holds against that lock too: negating the
 /// whole result leaves the whole crate green. A global flip really is absorbed.
 /// **At a node where a line and an arc are tangent, do their travel directions agree?** — the
 /// sign of `d · t`: `d` the line's travel direction (`sense` along `cross(n_p, n_wall)` of the
@@ -1716,8 +1716,8 @@ fn ruling_line_turn(
 /// **curvature** question this crate does not order yet (two tangent circles, M6b's shape). `None`
 /// is a zero dot (not tangent after all) or overflow.
 ///
-/// ★ Cell ⑩, S3: a fillet's or a slot's wall meets its cylinder exactly so, at a corner whose
-/// root is `Double`; the angular order read the pair as a tie (`UnorderedEdges`) and the winding
+/// ★ A fillet's or a slot's wall meets its cylinder exactly so, at a corner whose
+/// root is `Double`; the angular order reads the pair as a tie (`UnorderedEdges`) and the winding
 /// walk as doubling back (`StraightAngle`) because [`antiparallel`] has no line–arc arm — the
 /// structure cannot tell, only the geometry can, and this is where it is asked once.
 pub(crate) fn tangent_travel_agrees(
@@ -1838,7 +1838,7 @@ pub(crate) fn face_vertex_triples(
     )
 }
 
-/// **A lateral face's boundary cycles** (E2-0): the outer loop cut at its slit edges — the
+/// **A lateral face's boundary cycles**: the outer loop cut at its slit edges — the
 /// self-adjacent `[lateral, lateral]` edges the assembly's outer walk climbs and descends the seam
 /// on — into the pieces that walk was made of, then the pieces read back as cycles: a piece that
 /// closes on itself is a rim circle or a wrapping chain; two open pieces that end where the other
@@ -1960,10 +1960,10 @@ pub(crate) struct NamedRing {
     /// half-edge as `curved_wall` reads it for a plane face's arc. `None` on a plane face's ring
     /// and on a ruling. ★ Carried because the flank of an on-class run says which side the ring's
     /// *interior* is, which is the arc's direction only for a convex hole; a wrapping rim has no
-    /// interior side. `cycle_on_class`'s Run arm reads this (E2-0 measured it equal to the flank's
-    /// reading on every on-class arc of today's holes before the rule moved).
+    /// interior side. `cycle_on_class`'s Run arm reads this (measured equal to the flank's
+    /// reading on every on-class arc of today's holes).
     pub arc_ccw: Vec<Option<bool>>,
-    /// ★ Cell ⑪: every **concurrency** this loop's corners revealed — a corner with four or more
+    /// ★ Every **concurrency** this loop's corners revealed — a corner with four or more
     /// plane classes incident, as the full sorted class set. Its name in `triples` is
     /// [`canonical_triple`] of that set; the set itself goes to the arrangement's alias table
     /// (`arrangement::Aliases`) before any class is traced, so the arrangement's own discoveries
@@ -1971,10 +1971,10 @@ pub(crate) struct NamedRing {
     pub concurrencies: Vec<Vec<usize>>,
 }
 
-/// One loop of a face, in the vocabulary the tracer speaks (M6-2a): a polygon of three-plane
+/// One loop of a face, in the vocabulary the tracer speaks: a polygon of three-plane
 /// triples, a **full circle** — one rim edge whose far face is a cylinder, named by that
 /// cylinder's class — or, on a lateral face, a **rim** — one closed rim edge whose far face is
-/// a cap plane, named by that plane's class (E2). Neither closed loop has triples, walls or
+/// a cap plane, named by that plane's class. Neither closed loop has triples, walls or
 /// endpoints; forcing them through `NamedRing` was `RingNaming`'s job before the vocabulary
 /// existed.
 #[derive(Clone, Debug)]
@@ -2003,7 +2003,7 @@ pub(crate) enum CycleKind {
     /// A whole rim circle: one closed edge whose far face is a cap plane.
     Rim,
     /// A closed piece between two slits that is not a whole circle: a wrapping chain of arcs and
-    /// rulings (D4's chain rim).
+    /// rulings (the chain rim).
     Chain,
     /// The whole outer loop with no slit at all: a face that does not wrap the cylinder.
     Panel,
@@ -2052,17 +2052,15 @@ pub(crate) struct TraceInput {
     /// its loops makes the length the number of faces actually traced, which is what lets a caller
     /// hand the tracer a *subset* without the table's size leaking into the cost.
     pub faces: [Vec<(usize, FaceLoops)>; 2],
-    /// **The population gate's own answer, carried — never re-derived** (M6-2 rulings ladder):
+    /// **The population gate's own answer, carried — never re-derived**:
     /// the `(plane class, cylinder class)` pairs the gate let through **without** proving the
     /// class's faces clear of the lateral. The tracer's ruling and chord arms fire only on pairs
     /// listed here.
     ///
-    /// ★★ **It said "always empty in production" and that went stale** — the gate-opening cell
-    /// arrived and the record-and-pass arm fills it for a wall whose plane holds the axis exactly
-    /// (`planes.rs`, `crossings.insert`). ☑ Re-measured: listed for the wall/boss pair 2 times in
-    /// a plate-and-wall-boss fuse and 16 in the operation after it. A note that says what a
-    /// population *is* expires when the population changes; this one is dated by its measurement
-    /// instead.
+    /// ★★ **It is not always empty in production**: the record-and-pass arm fills it for a
+    /// wall whose plane holds the axis exactly
+    /// (`planes.rs`, `crossings.insert`). ☑ Measured: listed for the wall/boss pair 2 times in
+    /// a plate-and-wall-boss fuse and 16 in the operation after it.
     pub crossings: std::collections::HashSet<(usize, usize)>,
 }
 
@@ -2091,7 +2089,7 @@ pub(crate) fn trace_input(
                 // ★ A **lateral face's outer loop** is not named as one loop: it is rims joined
                 // by the chart's seam, the slit edges are self-adjacent, and no triple describes
                 // their corners. `cycles` carries it cut at the slits into its rims and holes
-                // (E2), and the tracer's cylinder roads read those. So `outer` stays `None`
+                // and the tracer's cylinder roads read those. So `outer` stays `None`
                 // here; it is a skip, not a decline.
                 //
                 // ★★★★★ **Its holes are named like every other face's.** A fuse can burn a hole
@@ -2150,21 +2148,22 @@ pub(crate) fn hole_rings(
 /// A loop's vertices as names — a three-plane triple, or a pierce point where a cylinder is one of
 /// the three surfaces (the face's own, or a neighbour's).
 ///
-/// ★ Cell ⑪: **a plane vertex names itself, not the loop.** Its name is [`canonical_triple`] of the
+/// ★ **A plane vertex names itself, not the loop.** Its name is [`canonical_triple`] of the
 /// plane classes of its incident faces — the set the incidence table carries ([`EdgeFaces`]) — so
 /// every loop that visits the vertex hands the tracer the same name. Three classes is the ordinary
 /// corner and its name is the face's own plane with the two neighbours' (what the loop used to
 /// build, bit for bit, and no judgement asked). Four or more is a concurrency: one name, and the
 /// class set travels in [`NamedRing::concurrencies`] to the arrangement's alias table.
 ///
-/// Before that, the name came from the loop — the face's own plane and the two neighbours the
-/// meeting edges carry — with a fallback to every plane touching the vertex only when both
-/// neighbours lay on one plane (a loop running straight through a shared line). A four-plane vertex
-/// whose neighbours differed therefore got a name per face, and from the face whose two edges ride
-/// the planes that share a line with its own, a triple that names no point: the judge read that
-/// «point» as lying on every class and the alias table folded everything onto a corner elsewhere.
-/// The straight-through case is still the one place a three-class corner is asked about
-/// independence ([`Judge::plane_pair_dir_sign`]), as it has been since 2026-07-22.
+/// Naming from the loop instead — the face's own plane and the two neighbours the
+/// meeting edges carry, with a fallback to every plane touching the vertex only when both
+/// neighbours lie on one plane (a loop running straight through a shared line) — gives a
+/// four-plane vertex
+/// whose neighbours differ a name per face, and from the face whose two edges ride
+/// the planes that share a line with its own, a triple that names no point: the judge reads that
+/// «point» as lying on every class and the alias table folds everything onto a corner elsewhere.
+/// The straight-through case is the one place a three-class corner is asked about
+/// independence ([`Judge::plane_pair_dir_sign`]).
 #[allow(clippy::too_many_arguments)]
 fn loop_triples(
     model: &Model,
@@ -2182,7 +2181,7 @@ fn loop_triples(
     };
     let other = |pair: [usize; 2]| if pair[0] == p { pair[1] } else { pair[0] };
     let n = hes.len();
-    // A **full-circle loop** (M6-2a): one rim edge whose far face is a cylinder — no triples,
+    // A **full-circle loop**: one rim edge whose far face is a cylinder — no triples,
     // no walls, no endpoints; it is named by the cylinder's class. Detected structurally
     // (`[v, v]` rims are the only single-edge loops a producer makes), so no curve is read.
     if n == 1 {
@@ -2190,7 +2189,7 @@ fn loop_triples(
         match (plane_ix[p], plane_ix[other(pair)]) {
             (_, ClassIx::Cyl(k)) => return Ok(LoopRing::Circle { cyl: k }),
             // A lateral face's own whole rim: one closed edge whose far face is a cap plane —
-            // a cycle of its outer loop (E2), named by the plane it rides.
+            // a cycle of its outer loop, named by the plane it rides.
             (ClassIx::Cyl(_), ClassIx::Plane(w)) => return Ok(LoopRing::Rim { plane: w }),
             _ => {}
         }
@@ -2316,7 +2315,7 @@ fn loop_triples(
         else {
             unreachable!("the curved arms are handled above")
         };
-        // ★ Cell ⑪ — **the vertex names itself, not the face loop.** The classes through this
+        // ★ **The vertex names itself, not the face loop.** The classes through this
         // corner are the classes of its incident faces, which the incidence table knows, and the
         // name is [`canonical_triple`] of that set. Three classes is the ordinary corner, and its
         // name is exactly the `[near, far, wall]` this arm used to build (the face's own plane and
@@ -2340,8 +2339,8 @@ fn loop_triples(
         classes.dedup();
         let Some(t) = canonical_triple(jd, &classes) else {
             // Fewer than three classes: the vertex lies on fewer than three planes, so no triple
-            // names it — a genuine straight angle (or a coplanar seam, which no producer makes
-            // since `ImprintSketch` retired; see the 2026-07-22 cells). Three or more with no
+            // names it — a genuine straight angle (or a coplanar seam, which no producer
+            // makes). Three or more with no
             // independent triple cannot happen: two distinct planes through a point meet in a
             // line, and a third off that line completes the point.
             return Err(reject(if classes.len() >= 3 {
@@ -2409,7 +2408,7 @@ fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
     Some(k * jd.planes[q].frame_sign)
 }
 
-/// **Which side of `q` an arc leaves to** (E3-c): the arc starts at `node` — a pierce point of
+/// **Which side of `q` an arc leaves to**: the arc starts at `node` — a pierce point of
 /// cylinder `cyl` on the line `q` cuts — and travels counter-clockwise about the axis when `ccw`.
 /// Its tangent there is `±m̂ × (a − c)`, and the side of `q` that points to is the side the whole
 /// excursion lies on (a circle meets a plane in two points).
@@ -2501,7 +2500,7 @@ pub(crate) fn side_of(
 ///
 /// ★ There used to be a fourth outcome, `CurvedDeparture`: a ring leaving the meet along a curved
 /// edge between two on-meet nodes, whose side the walk could not name. The caller names it now
-/// ([`EdgeMeet::Departs`], E3-c), and the walk reads the departure as one more off-line entry.
+/// ([`EdgeMeet::Departs`]), and the walk reads the departure as one more off-line entry.
 pub(crate) enum RingWalk {
     /// Where the ring meets the line, in ring order from the first off-`q` node.
     Met(Vec<Feature>),
@@ -2559,7 +2558,7 @@ pub(crate) enum Feature {
     ///
     /// ★ A stretch that begins where the ring *returned* to the meet is preceded by the departure
     /// itself, and that side is the departure's σ ([`EdgeMeet::Departs`]) — so there is always a
-    /// neighbour to read, and the number is never a plausible stand-in (E3-c).
+    /// neighbour to read, and the number is never a plausible stand-in.
     Run {
         first: usize,
         len: usize,
@@ -2613,7 +2612,7 @@ pub(crate) enum EdgeMeet {
 /// tangent points, [`arc_departure_side`]) and a lateral face in a **circle** (so an arc carried
 /// by that very class is `On`). `None` is "no exact description" and answers [`RingWalk::Unnameable`].
 ///
-/// ★★★★★ **A departing edge is read as one more off-line entry, of the departure's side** (E3-c).
+/// ★★★★★ **A departing edge is read as one more off-line entry, of the departure's side.**
 /// The ring's sign sequence is then nodes and departures alike, and the two rules the walk has
 /// always had — a sign change between neighbours is a crossing, a maximal run of zeros is an
 /// on-line interval flanked by its neighbours — apply unchanged: a run is cut where the ring
@@ -2699,7 +2698,7 @@ pub(crate) fn ring_against_plane(
 /// **A ray, cast along a line we already have.** Every ring edge lies on `P ∩ R`, and `v`
 /// lies on `P ∩ Q_a` for either of its own two planes. Those two lines meet at
 /// `X = {P, Q_a, R}`, which is *itself* a three-plane point — so "is `X` inside the edge"
-/// and "is `X` ahead of `v`" are both [`order_along`], the comparator cell 3d already built
+/// and "is `X` ahead of `v`" are both [`order_along`], the comparator already built
 /// for two three-plane points on one line. **No coordinate is read and no point is built.**
 ///
 /// **The flanks delete the special case, not the choice of ray.** A ring node *on* the ray's line
@@ -2735,9 +2734,8 @@ pub(crate) fn point_in_ring(
         .ok_or_else(|| reject(RejectReason::NoClearRay))
 }
 
-/// How often the two roads ask a **cylinder** face (cell ②-b's ledger line). At stage 0 this
-/// also counted the holed laterals asked — **one**, in the crossing census — which the dev-log
-/// records; since 1a a lateral's holes are among its loops and that count has no meaning.
+/// How often the two roads ask a **cylinder** face (a ledger line). A lateral's holes are
+/// among its loops, so holed laterals are not counted apart.
 #[cfg(test)]
 pub(crate) mod cylinder_asks {
     use std::sync::Mutex;
@@ -2749,14 +2747,14 @@ pub(crate) mod cylinder_asks {
     }
 }
 
-/// Cell ③ stage 0 (P1): how often a cut cap's candidate list holds **no** point the ring says is
+/// How often a cut cap's candidate list holds **no** point the ring says is
 /// inside — the fall-through `ring_interior_candidates`' doc calls a guard without a population.
 #[cfg(test)]
 pub(crate) mod witness_probe {
     use std::sync::Mutex;
     pub(crate) static NO_CANDIDATE: Mutex<Vec<String>> = Mutex::new(Vec::new());
     /// Which candidate the ring accepted: `[centre, an axis step, a chord point]` — the axis
-    /// steps are the eight after the centre, the chord points follow (cell ③, 1b).
+    /// steps are the eight after the centre, the chord points follow.
     pub(crate) static ANSWERED: Mutex<[usize; 3]> = Mutex::new([0; 3]);
     pub(crate) fn answered(i: usize) {
         let k = match i {
@@ -2776,9 +2774,9 @@ pub(crate) mod witness_probe {
     }
 }
 
-/// Cell ② stage 0: how many failed judgements the ring-vs-ring retry swallowed (predicted 0).
-/// ★ Cell 13 moved that retry into `nesting::cell_inside`, and this counter with it — the ledger
-/// line it feeds is the same one.
+/// How many failed judgements the ring-vs-ring retry swallowed (predicted 0).
+/// ★ That retry lives in `nesting::cell_inside`, and this counter's push with it; it feeds a
+/// ledger line.
 #[cfg(test)]
 pub(crate) mod swallowed_probe {
     use std::sync::Mutex;
@@ -2828,8 +2826,8 @@ pub(crate) fn every_ray(
         // ★ The meet here is a **line** (`p ∩ Q_a`), and two points fix a line — so a straight
         // edge between two on-line nodes is on it and a curved one is not. Same reading as
         // `arrangement::trace_transversal_face`'s, which walks the same kind of ring.
-        // ★ An arc between two on-line nodes would need a cylinder table to side (E3-c's
-        // `arc_departure_side`), and this road carries none — `None` is the honest answer,
+        // ★ An arc between two on-line nodes would need a cylinder table to side
+        // (`arc_departure_side`), and this road carries none — `None` is the honest answer,
         // and the walk's `Unnameable` is the same refusal a pierce node already meets here.
         let on_meet =
             |i: usize| (!matches!(ring[i].carrier, Carrier::Arc(_))).then_some(EdgeMeet::On);
@@ -3035,8 +3033,8 @@ pub(crate) fn segment_meets_face(
 /// returns `inc`'s pairs verbatim, and those are faces. Its one caller maps them through
 /// `plane_ix`.)
 pub(crate) fn vertex_face_indices(vh: Handle<Vertex>, inc: &EdgeFaces) -> Vec<usize> {
-    // ★ Cell ⑪: a lookup — the incidence table carries the vertex → faces map (built once per
-    // operand), where this used to scan every edge for every vertex asked.
+    // ★ A lookup — the incidence table carries the vertex → faces map (built once per
+    // operand), rather than a scan of every edge for every vertex asked.
     inc.faces_at(vh).to_vec()
 }
 
@@ -3106,13 +3104,13 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
 ///   arc's CCW span (`circular_order_about_seam` on the carrier's own `end` pair, cyclic with
 ///   the wrap arm).
 ///
-/// **A corner on the ray is a decision, not a tie** (cell ②): the rule is the planar roads'
+/// **A corner on the ray is a decision, not a tie**: the rule is the planar roads'
 /// half-open one, spelled once in [`nacre_geom::intersect::ray_step_crossing`] — the corner is
 /// counted by the step that leaves it upward. A line step reads that off its other end's sign;
 /// an arc whose root is its own end reads it off its tangent there (the CCW tangent's side of
 /// the ray's plane is minus [`crate::arrangement::ruling_side`], `arc_departure_side`'s
-/// convention). Before this cell the corner abstained in both arms, and the crossing census's
-/// last eight `NoClearRay` cells were exactly that abstention exhausting every probe.
+/// convention). Abstaining at the corner in both arms is not harmless: eight `NoClearRay`
+/// cells of the crossing census were exactly that abstention exhausting every probe.
 ///
 /// `None` is an honest abstention — the probe *on* the ring (at a corner, on a step along or
 /// across the ray, at an arc root), a tangent ray, a horizontal tangent at an arc end the root
@@ -3243,7 +3241,7 @@ pub(crate) fn point_in_mixed_ring(
     out
 }
 
-/// **Why the mixed road abstains** (cell ②), one row per `None`, by the site that said it: the
+/// **Why the mixed road abstains**, one row per `None`, by the site that said it: the
 /// probe *at* a ring corner, the probe *on* a step (along the ray or across it), a tangent ray,
 /// a root at the probe, a seam-incident root, two seam ends, a horizontal tangent at an arc end
 /// the root lands on, a zero-span arc — or `Other` for the silent `?` arms (no chart, overflow).
@@ -3266,8 +3264,8 @@ pub(crate) mod tie_probe {
         TangentAtEnd,
         ZeroSpanArc,
         Other,
-        /// The lateral road's abstentions (cell ②-b): the crossing on a whole-circle rim, on an
-        /// arc, on a ruling piece; an arc whose ends name no ⊥ class (a tilted cut, M6-3); a
+        /// The lateral road's abstentions: the crossing on a whole-circle rim, on an
+        /// arc, on a ruling piece; an arc whose ends name no ⊥ class (a tilted cut); a
         /// loop edge the road cannot read (a plane carrier on a lateral, a corner without a
         /// wall class).
         OnRim,
@@ -3374,7 +3372,7 @@ fn point_in_mixed_ring_inner(
     let (qx, qy) = (q[0], q[1]);
     // The ring's cylinders, for evaluating pierce corners — an arc or a ruling both carry theirs.
     // The class table is the identity's source; a chord-bounded ring carries no cylinder of its
-    // own (E3-b), so the ring's carriers cannot be the door.
+    // own, so the ring's carriers cannot be the door.
     let def_of = |cyl: usize| cyls.get(cyl).map(|c| &c.def);
     let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
         x[0].checked_mul(y[0])?
@@ -3589,7 +3587,7 @@ pub(crate) enum BoundEdges {
     /// bored face's hole. Boxed for the same reason [`CompSurf::Cylinder`] is.
     Circle(Box<nacre_topo::CylinderDef>),
     /// A lateral face's **whole** boundary as loops on the cylinder's chart — a band's two rims,
-    /// a panel's ring, a chain rim, the holes — outer and holes alike in one list (cell ②-b).
+    /// a panel's ring, a chain rim, the holes — outer and holes alike in one list.
     ///
     /// ★ One list and not «outer, then holes» because the chart is an annulus: a loop that
     /// wraps the cylinder has no inside, and a face between two chain rims is emitted as
@@ -3723,7 +3721,7 @@ pub(crate) fn probe_in_component(
 /// so says `None` for a **cut** cap, which is a disk just the same with a chord across it. What a
 /// face needs in order to name a point of its own interior is only *which circle bounds it*, and
 /// that is: the ring's **arcs all ride one cylinder**, and the face's plane is **perpendicular to
-/// that axis** (so the section really is a circle rather than an ellipse the M6-2 gate would have
+/// that axis** (so the section really is a circle rather than an ellipse the gate would have
 /// refused anyway). A ring with no arc at all has no circle — which is how a **wall panel**
 /// (`[plane, ruling, plane, ruling]`) is turned away here rather than guessed at.
 ///
@@ -3737,11 +3735,11 @@ pub(crate) fn probe_in_component(
 /// circle and put the "centre" off the face — and a producer that stops holding either proposition
 /// should be caught here rather than two layers down.
 ///
-/// ⚠ **The sentence that used to stand here — "the gate refuses an oblique cylinder cut today" —
-/// has been false since cell ⑩**: the gate lets an oblique plane through when every lateral face
-/// of the cylinder provably misses it. The conclusion survives on a narrower fact: this ring holds
+/// ⚠ **"The gate refuses an oblique cylinder cut" is false as a blanket sentence**:
+/// the gate lets an oblique plane through when every lateral face
+/// of the cylinder provably misses it. The conclusion stands on a narrower fact: this ring holds
 /// an **arc** of that cylinder, so the plane does not miss it, and an oblique pair that meets is
-/// what the gate refuses. [`class_carries_circle`] carries the argument now.
+/// what the gate refuses. [`class_carries_circle`] carries the argument.
 fn face_circle<'a>(
     jd: &Judge<'_, WorkingPlane>,
     plane: usize,
@@ -3775,7 +3773,7 @@ fn face_circle<'a>(
 /// inequality, no magic constant and no halving loop. Which of them is inside the **face** is the
 /// ring's question, not this one's.
 ///
-/// ★ **And two points per chord** (cell ③): a cap the wall cuts *off* the diameter can be a
+/// ★ **And two points per chord**: a cap the wall cuts *off* the diameter can be a
 /// segment thinner than any step from the centre reaches (an offset boss's Common, 0.2 deep
 /// against `r/2 = 0.25`), and its corners are pierce names the vertex probe drops — the first
 /// face with no witness at all. On the line through the centre along a chord's normal `n`,
@@ -3922,11 +3920,12 @@ fn ring_interior_candidates(
 /// a class's position along an axis with ([`axis_param_of_plane`](crate::planes::axis_param_of_plane)).
 /// It is strictly inside the circle for any positive radius, so nothing needs to test that.
 ///
-/// ★ **A holed cap names a point between its rims** ([`holed_cap_witness`], cell ⑩). The centre
+/// ★ **A holed cap names a point between its rims** ([`holed_cap_witness`]). The centre
 /// of an annulus is in its hole, not on the face, and a witness that is not on the boundary is a
-/// confidently wrong depth rather than an abstention — so a holed cap used to be passed over, which
-/// left a **tube** (two annular caps, two bands, no vertex anywhere) with no witness at all and the
-/// multi-body fuse refused `RingHasNoWitness` (measured, the bushing). The remedy is the one the
+/// confidently wrong depth rather than an abstention — but passing a holed cap over
+/// leaves a **tube** (two annular caps, two bands, no vertex anywhere) with no witness at all and
+/// the multi-body fuse refused `RingHasNoWitness` (measured, the bushing). The remedy is the one
+/// the
 /// cut cap already uses: candidates derived from the face's own radii, and the **face asked** which
 /// is on it. A face none of them is on is still passed over.
 ///
@@ -3994,7 +3993,7 @@ pub(crate) fn coord_probes(
                     // ([`point_in_mixed_ring`]), and an abstention just moves to the next candidate. The
                     // centre goes first, so a cap the wall cuts off-centre still answers with it.
                     //
-                    // ☑ Measured (cell ③): the centre and the axis steps answer 40 of 40 faces of the
+                    // ☑ Measured: the centre and the axis steps answer 40 of 40 faces of the
                     // through-axis corpus; the offset wall's thin segment answers by a chord point (8
                     // faces), and the fall-through below is the named residual — a segment cut again
                     // along the chord's own normal line.
@@ -4038,7 +4037,7 @@ pub(crate) fn coord_probes(
 
 /// The directions a coordinate probe casts along: the axis both ways and one perpendicular both
 /// ways — several, because one ray can graze and the remedy is another direction; the order is not
-/// load-bearing. One spelling for [`coord_probes`], [`corner_probes`], and (cell 24) the component
+/// load-bearing. One spelling for [`coord_probes`], [`corner_probes`], and the component
 /// road's edge supply, which hands in a **plane's normal** where the other two hand in a cylinder's
 /// axis: the argument is only "a nonzero direction to build a frame from".
 pub(crate) fn probe_dirs(m: &[nacre_scalar::Rat; 3]) -> Vec<[nacre_scalar::Rat; 3]> {
@@ -4069,7 +4068,7 @@ pub(crate) fn probe_dirs(m: &[nacre_scalar::Rat; 3]) -> Vec<[nacre_scalar::Rat; 
     dirs
 }
 
-/// **Coordinate probes at a component's rational pierce corners** (cell ⑩) — the corners a
+/// **Coordinate probes at a component's rational pierce corners** — the corners a
 /// prism with arcs has where its walls meet its cylinders (a slot's, a fillet's, a D-prism's:
 /// no three-plane name anywhere, and [`coord_probes`]' cap witness is not always on the face).
 /// A corner whose root is rational ([`pierce_coords_rat`]) is a point of the boundary as exact as
@@ -4249,10 +4248,6 @@ fn planes_through_line(
 /// axial span, the abandon-on-boundary policy — is the same rule and is called, not restated.
 /// Restating it is how the two would come to disagree about a graze.
 ///
-/// This road was `98e949a`'s casualty: K1 retired it when the band pass stopped needing it, and
-/// its own note said it answered *"a 3D containment question — the shape the component probe
-/// asks"*. It is back for that shape, with the curved arms it never had.
-///
 /// ★★ **What is measured, and what is owed.** `an_enclosed_cylindrical_void_is_a_cavity` is the
 /// fixture that makes this road say `true`, and it goes red if the road is stubbed to `false` —
 /// two *disjoint* bodies would not, since their answer is "outside" whatever the road does.
@@ -4261,13 +4256,13 @@ fn planes_through_line(
 /// the suite and mostly looks at no cylinder face at all (the other component is all planes —
 /// the void fixture's is a box); where it does (`two_cylinders_with_coplanar_caps_fuse_apart`)
 /// the ray misses. Nor can a fixture with parallel axes do better: the gate refuses any boolean
-/// whose two cylinders' faces it cannot prove apart (spans and arcs, cell ⑩), so a ray from one
+/// whose two cylinders' faces it cannot prove apart (spans and arcs), so a ray from one
 /// cap's centre crosses the other lateral **0 or 2 times** and the parity is the same. What loads the lateral
-/// road ([`lateral_face_crossings`], cell ②-b) is the **named** road's probes — the crossing
+/// road ([`lateral_face_crossings`]) is the **named** road's probes — the crossing
 /// census's corner Commons, whose vertex rays cross the other half's panel — and the lattice
 /// oracle on the through-boss; a real `k = 1` from a coordinate probe wants a ∥ wall inside the
-/// strip — a population the gate **serves** rather than refuses (a crossing since cell ③, a
-/// tangency since cell ⑥), so what owes this arm a fixture is the rulings road, not a refusal.
+/// strip — a population the gate **serves** rather than refuses (a crossing or a
+/// tangency), so what owes this arm a fixture is the rulings road, not a refusal.
 ///
 /// `Ok(None)` = this ray grazed; the caller has other directions to try.
 pub(crate) fn point_in_faces_rat(
@@ -4499,7 +4494,7 @@ fn rim_plane(
 /// The axis parameter of the ⊥ class among a pierce corner's two naming planes — the `z` of
 /// the arc that ends there, or of a ruling piece's end. Exactly one of the two is ⊥ in this
 /// population (two ⊥ planes never meet, and [`crate::planes::axis_param_of_plane`] answers only
-/// for `n · m ≠ 0`); `None` names a corner without one — a tilted cut (M6-3) or a three-plane
+/// for `n · m ≠ 0`); `None` names a corner without one — a tilted cut or a three-plane
 /// name where a pierce was expected.
 fn corner_axis_param(
     jd: &Judge<'_, WorkingPlane>,
@@ -4514,7 +4509,7 @@ fn corner_axis_param(
 
 /// The ∥ class among a pierce corner's naming planes — the wall a ruling piece ending there
 /// rides: the one whose normal is ⊥ to the axis (`n · m = 0`), through the axis or offset from
-/// it (cell ③); the other name is the ⊥ class the arc rides.
+/// it; the other name is the ⊥ class the arc rides.
 fn corner_wall_class(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
@@ -4530,7 +4525,7 @@ fn corner_wall_class(
 }
 
 /// **Is the cylinder point `x` on the lateral face these loops bound?** — the parity of the
-/// ray up the axis from `x` against the boundary loops, on the chart `(θ, z)` (cell ②-b).
+/// ray up the axis from `x` against the boundary loops, on the chart `(θ, z)`.
 ///
 /// The rule is the planar rings' half-open rule read on this chart. A whole-circle rim is
 /// crossed iff it is above `x`. A ring's **arc** (z = const, a CCW span in θ) is crossed iff
@@ -4658,7 +4653,7 @@ pub(crate) fn loop_parity(
 }
 
 /// **Where the line `line[0] ∩ line[1]` crosses one lateral face, and how many of those lie on
-/// the half the caller is counting** (cell ②-b).
+/// the half the caller is counting.**
 ///
 /// ★★★ **One copy, two roads.** The named-point probe and the coordinate-point road both state
 /// their ray as *two rational planes*, so both ask this. Writing the arms twice is how the two
@@ -4883,9 +4878,9 @@ enum CoordKey {
 ///
 /// ★ **The cylinder comes from the class table.** The name says which cylinder
 /// (`NodeId::Pierce` carries the class), and the table's def is the statement every carrier's
-/// def is a clone of. This used to search the ring's own arc/ruling carriers instead — "a pierce
-/// node is an arc endpoint" — which a **chord** refuted (E3-b): a cell bounded by a cap's chord
-/// alone has pierce corners and only plane carriers, and the search refused an honestly-named
+/// def is a clone of. Searching the ring's own arc/ruling carriers instead — "a pierce
+/// node is an arc endpoint" — is what a **chord** refutes: a cell bounded by a cap's chord
+/// alone has pierce corners and only plane carriers, and the search refuses an honestly-named
 /// point (`PierceVertexUnnamed` on the straddling flush corpus, measured).
 fn coord_key(
     jd: &Judge<'_, WorkingPlane>,
@@ -5016,10 +5011,9 @@ pub(crate) fn pierce_between(
     Some(mid.into_iter().map(|(n, _)| n).collect())
 }
 
-/// **STAGE-0 (this cell): does the ring's lexicographic minimum node really support the ring?**
+/// **Does the ring's lexicographic minimum node really support the ring?**
 /// `loop_winding` reads the turn there and its doc argues the node is a hull vertex — true for a
-/// polygon, and an open question the moment an edge is an arc. Counts only; removed or promoted
-/// when the cell closes.
+/// polygon, and an open question the moment an edge is an arc. Counts only.
 #[cfg(test)]
 pub(crate) mod hull_probe {
     use std::sync::Mutex;
@@ -5030,7 +5024,7 @@ pub(crate) mod hull_probe {
         Mutex::new((0, 0, 0, 0, 0));
 
     /// Arcs whose circle's minimum is irrational — the axis is not ⊥ to the first world axis the
-    /// circle spans — so this instrument says nothing about them (M6-3's population).
+    /// circle spans — so this instrument says nothing about them.
     pub(crate) static TILTED: Mutex<usize> = Mutex::new(0);
 
     pub(crate) fn note(arcs: usize, below: usize, undecided: usize, inside: usize, tilted: usize) {
@@ -5073,12 +5067,12 @@ pub(crate) mod hull_probe {
 /// lexicographic minimum is its point of least coordinate `a`, and that point is rational —
 /// `c − r·ê_a` — exactly when the axis is perpendicular to `ê_a` (`m[a] = 0`); otherwise it is
 /// irrational and this says nothing, leaving today's path (`hull_probe::TILTED` counts those —
-/// M6-3's population, the axis tilted *toward* `ê_a`). ★ It used to require the axis to be world
-/// **z**, and counted every other axis as tilted: 84 arcs over the suite were left to the
-/// node's turn that way, and the commuting oracle (cell ④) found the three cells where the turn
-/// was wrong — a boss on the plate's corner turned so its axis runs along −y, whose 270° arc
-/// bulges past the minimum node, took the unbounded cell for a bounded one and seeded the labels
-/// inside out (`NOT_OWN_SOLID`). The halves are the circle's own now (below), so nothing here
+/// the axis tilted *toward* `ê_a`). ★ Requiring the axis to be world
+/// **z**, and counting every other axis as tilted, leaves 84 arcs over the suite to the
+/// node's turn, and the commuting oracle has three cells where that turn
+/// is wrong — a boss on the plate's corner turned so its axis runs along −y, whose 270° arc
+/// bulges past the minimum node, takes the unbounded cell for a bounded one and seeds the labels
+/// inside out (`NOT_OWN_SOLID`). The halves are the circle's own (below), so nothing here
 /// depends on which world axis the cylinder stands along.
 fn arc_extremum_winding(
     jd: &Judge<'_, WorkingPlane>,
@@ -5321,7 +5315,7 @@ fn arc_extremum_winding(
 /// on its hull (fold each side of a pentagon slightly inward), so no such edge is guaranteed.
 /// A hull *vertex* always exists.
 ///
-/// ★★ **Where arcs touched this** (M6-2b, done): the turn is read at **one** node, so a curved edge
+/// ★★ **Where arcs touch this**: the turn is read at **one** node, so a curved edge
 /// needs no angle sum — only its tangent's direction at that node. The other two sites that read
 /// the direction's *representation* each got their own answer: the walk-back below asks
 /// [`continuation`], which has a curved arm ("are the tangents parallel" is "same circle, same
@@ -5502,7 +5496,7 @@ pub(crate) fn loop_winding(
                 }
                 return Ok(smooth_extremum_winding(jd, p, l));
             }
-            // ★ A smooth **line–arc** join at the extremum (cell ⑩, S3 — a fillet's corner is
+            // ★ A smooth **line–arc** join at the extremum (a fillet's corner is
             // the rounded rectangle's extreme node): the ring turns there only at second order,
             // and the arc's bending is that turn.
             Continuation::Straight
@@ -5566,7 +5560,7 @@ pub(crate) fn loop_winding(
 /// lock names them. Dropping `frame_sign` changes nothing: it is `+1` on every class that reaches
 /// this rule today, which is the same shape [`turn`]'s own note records for its factor — the
 /// difference being that `turn`'s corpus does reach `Reversed` faces and this rule's does not yet.
-/// ☑ Re-measured under cell ④'s motion group (2026-09-03): still not caught — the commuting
+/// ☑ Under the motion group it is still not caught — the commuting
 /// oracle's 396 always-on cells stay green with the factor dropped, so a ring whose lexicographic
 /// minimum is a smooth arc node on a `frame_sign = −1` class is a population no fixture has yet
 /// (the arc extremum rung reads the smooth minimum *inside* an arc, [`arc_extremum_winding`],
@@ -5595,7 +5589,7 @@ pub(crate) fn dir_sign(jd: &Judge<'_, WorkingPlane>, p: usize, q: usize, r: usiz
 }
 
 // ---------------------------------------------------------------------------
-// The **rational road** (M6-2a C4a): the same containment questions as above, asked about a
+// The **rational road**: the same containment questions as above, asked about a
 // point that has coordinates instead of a name.
 //
 // Everything else in this module names a point by three planes, which is what makes it exact.
@@ -5645,10 +5639,10 @@ fn curved_wall(
             let def = cyls.get(cyl).ok_or_else(curved)?.def.clone();
             let at = pierce_meet(jd, cyl, &def, end).ok_or_else(curved)?;
             let w = class_coeffs_rat(jd, near).ok_or_else(curved)?;
-            // ★ **A tangent wall has one ruling, and its side is `0`** (cell ⑩, S3). A fillet's
-            // or a slot's own walls are tangent to their cylinder, so every such operand used to
-            // fall here as `CurvedOperandBoundary` (cell ⑩'s measured first decline).
-            // ★ Cell ⑫ moved the reading from the corner's **root** to the **point**
+            // ★ **A tangent wall has one ruling, and its side is `0`.** A fillet's
+            // or a slot's own walls are tangent to their cylinder, so without this every such
+            // operand falls here as `CurvedOperandBoundary`.
+            // ★ The reading is the **point**'s, not the corner's **root**'s
             // ([`crate::arrangement::ruling_side_signed`], which answers the axis plane instead
             // of abstaining as `ruling_side` does for the ray caster's sake): the root says `0`
             // only when `near` is the very wall the name pairs, and `near` may be a plane through
@@ -5669,7 +5663,7 @@ fn curved_wall(
             //
             // ☑ **The two parameters cannot tie**: a plane that *meets* this cylinder's faces is
             // parallel to the axis or perpendicular to it — the gate admits an oblique class only
-            // after proving it misses every lateral face (cell ⑩), so no pierce vertex names one
+            // after proving it misses every lateral face, so no pierce vertex names one
             // — and a parallel plane cannot cut a ruling. So both cutting planes are caps, and
             // distinct caps cross the axis at distinct parameters. The strict `>` therefore
             // restates the comparison it replaces exactly, rather than growing a decline for a
@@ -5793,20 +5787,20 @@ pub(crate) fn pierce_name_from_def(
 /// Nine sites reason from "a circle's class is ⊥ to its axis" — [`crate::nesting`]'s rim witnesses
 /// and `disk_in_disk`, the segment-vs-arc turn sign below, `segment_meets_cylinder`'s
 /// precondition, `circle_crosses_ruling`'s extent derivation, an `unreachable!` in the
-/// arrangement's circle crossings, and three of the merge road's f64 arguments — and until this
-/// cell **none of them checked**; the proposition was held by the gate alone.
+/// arrangement's circle crossings, and three of the merge road's f64 arguments — and the
+/// proposition they share is held by the gate.
 ///
 /// **What actually holds it** ([`crate::planes::cylinder_gate`]): the gate runs whenever the input
 /// has a cylinder at all and sweeps **every (plane class × cylinder)** pair; an oblique pair whose
 /// lateral faces cannot be *proved* to miss the plane is refused
-/// ([`crate::RejectReason::ObliqueCylinderCut`] — the section would be an ellipse, M6-3). So a
+/// ([`crate::RejectReason::ObliqueCylinderCut`] — the section would be an ellipse). So a
 /// class that carries a circle is a class whose plane **meets** that cylinder, and had it been
 /// oblique the gate would already have refused. ★ The seated producer has a second, stronger
 /// reason that survives a gate change: `LoopRing::Circle` is minted only from a **single closed
 /// edge**, so the cell's boundary is a whole circle lying in the class — and a circle determines
 /// its own plane, while a cylinder's *circular* section is ⊥ to the axis.
 ///
-/// ⚠ **The argument has been misread three times** (all in one session, all by the same author),
+/// ⚠ **The argument is easy to misread**,
 /// which is why the two consumers that would answer *silently wrong* now ask instead of assume.
 /// ⚠ `parallel_rat` calls a **zero** vector parallel to everything, so a zero normal or axis
 /// answers `true` here — "carries" is the positive reading and a guard spelled `!` fails **open**.
@@ -5833,7 +5827,7 @@ pub(crate) fn class_carries_circle(
 ///
 /// ★★ It lives here, beside [`class_coeffs_rat`] which it reads, because it has **two** consumers
 /// and belongs to neither: `nesting`'s witness supply asks it for a circle's own point, and the
-/// arrangement's mixed-class net (cell ⑭) asks it for the circle to measure against a ruling.
+/// arrangement's mixed-class net asks it for the circle to measure against a ruling.
 /// Keeping it inside `nesting` would have meant either a second spelling or opening that module's
 /// witness atoms, and both are the shape those atoms were made private to prevent.
 pub(crate) fn circle_centre_rat(
@@ -5973,9 +5967,8 @@ pub(crate) fn pierce_point(
 /// is a type fact ("the coordinate is `a + b√c`") that its callers route on, and it must stay so.
 /// This answers a different question — "is there a rational point *here* to cast from?" — and is
 /// total over its input: the corners it cannot state simply do not join the probe list, the way a
-/// chord's midpoint ([`crate::arrangement`]'s `chord_midpoint_rat`) abstains per edge. Cell ⑩: a
-/// half-cylinder prism's cap has two corners, both pierce, both rational, and no other point —
-/// the population `RingHasNoWitness`'s own doc said would arrive.
+/// chord's midpoint ([`crate::arrangement`]'s `chord_midpoint_rat`) abstains per edge. A
+/// half-cylinder prism's cap has two corners, both pierce, both rational, and no other point.
 pub(crate) fn pierce_coords_rat(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -5994,11 +5987,11 @@ pub(crate) fn pierce_coords_rat(
 /// **Every rational point that names the interior of this *straight* ring edge** — the one rule,
 /// with one arm per way the two ends can be described.
 ///
-/// ★★★★★ **This was four spellings of one sentence** (cell 24). `nesting`'s witness supply and its
-/// diagnostic twin each chained `chord_midpoint_rat` after `edge_interior_rat` **verbatim**, its
-/// instrument counted the same producers a third time, and the component road one dimension up had
-/// no edge witness at all — so a planar component whose every corner grazed had nothing left to
-/// say and refused `NoClearRay` where the shape's truth was `SelfTouchingResult`. The two names
+/// ★★★★★ **One sentence, which must not be four spellings.** With `nesting`'s witness supply and
+/// its diagnostic twin each chaining `chord_midpoint_rat` after `edge_interior_rat` **verbatim**,
+/// its instrument counting the same producers a third time, and the component road one dimension
+/// up having no edge witness at all, a planar component whose every corner grazes has nothing left
+/// to say and refuses `NoClearRay` where the shape's truth is `SelfTouchingResult`. The two names
 /// were never two rules: the "chord" one **refuses `Carrier::Arc`** in as many words, so both were
 /// always *a point inside a straight edge*, differing only in how the ends were named.
 ///
@@ -6014,12 +6007,12 @@ pub(crate) fn pierce_coords_rat(
 /// points (a shared `mid` against a realized-then-verified midpoint). Folding them into one answer
 /// would delete a witness silently.
 ///
-/// ☑ **Measured over the lib + census corpus** (cell 24), because the argument above is read off the
+/// ☑ **Measured over the lib + census corpus**, because the argument above is read off the
 /// guards and a reader should not have to re-derive it: **284** edges where the first two arms both
 /// answer and **0** where the first answers alone — so a fold to "the first arm that matches" would
 /// drop 284 points. Those two are **stable across runs**; the other two are not, because proptest
 /// fixtures reach this function, so they are given as orders: ~2·10³ edges where only the second arm
-/// answers, and **~10⁴** where only the third — the arm this cell added, and by a wide margin the
+/// answers, and **~10⁴** where only the third — by a wide margin the
 /// largest supply. (Three runs of the same tree: 10,963 / 13,027 / 11,075 for the third.)
 ///
 /// ★ **Order is today's**: conjugate, then between, then the rational midpoint (which is disjoint
@@ -6043,7 +6036,8 @@ pub(crate) fn edge_interior_points(
 }
 
 /// **Arm b of [`edge_interior_points`] — a rational point strictly inside a straight edge whose
-/// two ends are pierce corners on one line** (cell ⑩). The chord witness needs the two ends to be one solve's two roots; a cap's
+/// two ends are pierce corners on one line.** The chord witness needs the two ends to be one
+/// solve's two roots; a cap's
 /// section between the rulings of two *coaxial* cylinders — a bore inside a fillet, cut by a wall
 /// within both radii — has its ends on two solves, one radical each, and every corner of that cell
 /// irrational. Both ends still lie on one rational line (the pair `{wc, wall}`'s meet, the same
@@ -6117,9 +6111,9 @@ fn rational_between(
 /// **Every rational point a ring edge offers a witness supply** — its start corner, then the points
 /// its interior names ([`edge_interior_points`]).
 ///
-/// ★ **The whole per-edge chain, in one place** (cell 24). `nesting`'s witness supply and its
-/// diagnostic twin held this verbatim, and the interior half being one rule left the *corner* half
-/// still written twice. The order is the one they had: the corner first — rational if the node has
+/// ★ **The whole per-edge chain, in one place**, so that `nesting`'s witness supply and its
+/// diagnostic twin do not each hold a copy — the interior half being one rule would still leave
+/// the *corner* half written twice. The order: the corner first — rational if the node has
 /// a three-plane name, else the pierce root's coordinates — then the interior arms.
 ///
 /// ⚠ **The component road one dimension up does not call this**: it already offers every corner as
@@ -6206,7 +6200,7 @@ pub(crate) fn conjugate_midpoint(
     Some(p)
 }
 
-/// **The midpoint of a straight ring edge whose two ends are rational** (cell 24) — the arm the
+/// **The midpoint of a straight ring edge whose two ends are rational** — the arm the
 /// other two never covered, because both of them start by asking for a pierce name.
 ///
 /// The plainest case there is, and the one a planar component is made of: two three-plane corners
@@ -6315,7 +6309,7 @@ pub(crate) fn cross3_rat(
 /// **A plane's normal in primitive form** — divided by the gcd of its own three components.
 ///
 /// ★★★★★ **The canonicalisation that made the name narrow was over *four* coefficients, and a
-/// reader of three does not inherit it** (cell 23). A [`nacre_scalar::PlaneName`] is normalised by
+/// reader of three does not inherit it.** A [`nacre_scalar::PlaneName`] is normalised by
 /// clearing denominators, dividing out the **content of all four**, and fixing a sign; so the
 /// normal `(a, b, c)` keeps a factor of `gcd(a,b,c) / gcd(a,b,c,d)`. For an axis-aligned class at
 /// an offset that needs a long decimal — `z = s`, coefficients `(0, 0, D, −N)` with `gcd(D,N) = 1`
@@ -6370,7 +6364,7 @@ fn primitive_normal(n: &[nacre_scalar::Rat; 3]) -> [nacre_scalar::Rat; 3] {
 /// about which side of a ring a point is on.
 ///
 /// ★★★★★ **"Not orthonormal" is not "not orthogonal", and three cheaper charts die on the
-/// difference** (cell 23). `e₁·e₂ = e₁·(n × e₁) = 0`, so this is an **orthogonal, non-unit frame
+/// difference.** `e₁·e₂ = e₁·(n × e₁) = 0`, so this is an **orthogonal, non-unit frame
 /// of the plane** — and that is what makes [`Self::axes`]'s sentence ("the parity walks its ray
 /// along `e₁`") a true statement about the *world*: in a skew frame the direction of "y fixed, x
 /// increasing" is not `e₁`. Measured refutations, so the next reader does not re-derive them:
@@ -6397,7 +6391,7 @@ impl Chart2dRat {
     /// leaves `i128` — which after [`primitive_normal`] means the **primitive** normal is itself
     /// past ~2⁶³, not that a spurious factor rode in on it.
     ///
-    /// ★ **The rescale is first, and it is why this is not a behaviour change** (cell 23):
+    /// ★ **The rescale is first, and it is why this is not a behaviour change**:
     /// `ê_k × n` cannot overflow (its factors are 0 and 1) and parallelism is scale-invariant, so
     /// `k` is the same index either way, and both axes come out along the same directions — only
     /// narrower. What the corpus met before was never geometry: an axis-aligned class at an offset
@@ -6549,7 +6543,7 @@ mod tests {
         );
     }
 
-    /// ★★★★★ **Cell 23 — the chart's shape, stated from the rule rather than from itself.**
+    /// ★★★★★ **The chart's shape, stated from the rule rather than from itself.**
     ///
     /// One normal carries every clause: `n = 3e19 * (1, 2, 3)` is **wide** (a component of `9e19`,
     /// whose square leaves `i128`, so an unrescaled `e2` is `None`) and **tilted** (`n_k != 0` for

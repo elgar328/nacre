@@ -291,12 +291,12 @@ fn a_cavity_touching_its_host_s_wall_is_still_a_reject() {
     assert!(hit, "witness off the corner edge: {seg:?}");
 }
 
-/// ⑤c ★★★★★ **Every candidate node grazes — and the shape still has a name** (cell 24).
+/// ⑤c ★★★★★ **Every candidate node grazes — and the shape still has a name**.
 ///
 /// A diamond void whose four corners sit on the four walls. A component's nesting depth is cast
 /// from one of its own nodes, and here **every one of them** lies on the block's boundary, so the
-/// vertex supply runs out. Until cell 24 that was the whole answer: `NoClearRay`, "I could not find
-/// a ray". But the depth is not the question a caller asked, and the shape's own truth is the one
+/// vertex supply runs out. `NoClearRay` — "I could not find a ray" — would be the whole answer
+/// then. But the depth is not the question a caller asked, and the shape's own truth is the one
 /// ⑤b above already reports for its **single**-grazing-corner sibling — the surface meets itself
 /// along the corner's edge. The two inputs differ only in *how many* corners are degenerate, which
 /// is a fact about the witness supply and not about the geometry; giving the component the points
@@ -370,7 +370,7 @@ fn a_void_whose_every_corner_grazes_still_names_its_self_touch() {
     }
 }
 
-/// ⑤d ★★ **The all-grazing population, not one shape of it** (cell 24). ⑤c's diamond was `n = 1`
+/// ⑤d ★★ **The all-grazing population, not one shape of it**. ⑤c's diamond was `n = 1`
 /// evidence that the new supply decides *and* decides right; these are the rest of the axis.
 ///
 /// Each void's every corner sits on a wall of the host, so the vertex supply is exhausted in every
