@@ -5,6 +5,8 @@
 #[path = "support/fixtures.rs"]
 mod fixtures;
 
+#[path = "instruments/module_graph.rs"]
+mod module_graph;
 #[path = "instruments/plane_anchor.rs"]
 mod plane_anchor;
 #[path = "instruments/point_width.rs"]
