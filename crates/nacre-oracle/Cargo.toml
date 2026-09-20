@@ -5,6 +5,8 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+# Dev-only: the OCCT oracle harness is never published. design.md says so; this enforces it.
+publish = false
 description = "Dev-only OCCT oracle harness for the nacre CAD kernel — exports a Model to STEP and scores its mass properties against OpenCASCADE out-of-process via tools/occt-helper. Never published; OCCT is never linked into the kernel"
 
 [dependencies]
