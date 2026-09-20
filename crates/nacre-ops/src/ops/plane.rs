@@ -1,6 +1,29 @@
-//! The named sketch planes: the constructors of [`SketchPlane`].
-
 use super::*;
+/// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
+/// The axes are unit and orthogonal (the constructors ensure it); the normal is `x × y`.
+///
+/// ★★★★★ **The fields are private, and that is the whole point.** They used to be `pub`, so a
+/// caller handed the kernel three *normalized* f64 vectors — and normalizing is where the
+/// exactness dies: a plane with normal `(1, 1, 1)` has coefficients `[1, 1, 1, 0]`, three
+/// integers, but its unit axes square to `0.9999999999999999…` and no exact form survives. The
+/// kernel then had nothing to build on and dropped the whole prism to f64.
+///
+/// So a plane is built through a constructor that **keeps what the caller stated**
+/// ([`PlaneDef`]), and the axes below are the *realization* of that. The two cannot describe
+/// different planes because only one of them is written down.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SketchPlane {
+    // `pub(crate)`, not `pub`: the constructors live in this crate's `lib.rs`, and what has to be
+    // closed is the **public** surface — a caller outside must not be able to hand in three
+    // normalized axes and call that a plane.
+    pub(crate) origin: Point3,
+    pub(crate) x_axis: Vector3,
+    pub(crate) y_axis: Vector3,
+    /// What the caller stated, exactly — `None` when they stated only axes (a frame the kernel
+    /// cannot reconstruct, which then takes the f64 path it always took).
+    pub(crate) def: Option<PlaneDef>,
+}
+
 impl SketchPlane {
     /// The world XY plane: `+u = x̂`, `+v = ŷ`, normal `+ẑ`.
     pub fn world_xy() -> Self {
@@ -61,7 +84,7 @@ impl SketchPlane {
     /// so this constructor is **never stricter than it was**.
     pub fn from_origin_normal(origin: Point3, normal: Vector3) -> Option<Self> {
         let n = normal.normalize()?;
-        let (x_axis, y_axis) = ops::frame_axes(n)?;
+        let (x_axis, y_axis) = frame_axes(n)?;
         Some(Self {
             origin,
             x_axis,
@@ -271,5 +294,58 @@ impl SketchPlane {
     #[inline]
     pub fn normal(&self) -> Vector3 {
         self.x_axis.cross(self.y_axis)
+    }
+}
+
+/// **A sketch plane as its author stated it** — the exact truth behind [`SketchPlane`]'s f64 axes.
+///
+/// ★★★ **One field, and the invariants are structural.** This used to carry coefficients, an
+/// origin, and a reference direction as three halves that every constructor had to keep agreeing
+/// ("an origin that is not on `coeffs` is a definition describing two different planes", which
+/// cost 0.04 of volume the one time it happened). Now the definition is the three points alone:
+///
+/// - the sketch's `(0, 0)` **is** `points[0]`,
+/// - `+u` **is** `points[1] − points[0]` — a difference of two points of the plane, so it lies in
+///   the plane by definition,
+/// - the normal's direction is `(p1 − p0) × (p2 − p0)` — the point order carries the polarity.
+///
+/// Nothing is left to check, and nothing can disagree. The canonical coefficients are *derived*
+/// (`nacre_scalar::plane_name_exact` — total, `Narrow | Wide`), so there is no
+/// failure class "the coefficients do not fit `i128`": three in-window points
+/// always name their plane, however wide its canonical form.
+///
+/// ★ `ref_dir()` is **not** a unit vector and is not projected; the normalization a frame needs
+/// is exactly one `1/√(rational)` at realization time — never something stored.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlaneDef {
+    /// Three points of the plane, non-collinear (`plane_name_exact` is what verified it — every
+    /// constructor rejects a collinear triple as "no plane"). `points[0]` is the sketch origin,
+    /// `points[1] − points[0]` the `+u` direction, and the order fixes the normal's sign.
+    pub(crate) points: [[nacre_scalar::Rat; 3]; 3],
+}
+
+impl PlaneDef {
+    /// The three defining points — the sketch origin first, then the point `+u` runs toward,
+    /// then the point fixing the normal's side.
+    pub fn points(&self) -> [[nacre_scalar::Rat; 3]; 3] {
+        self.points
+    }
+
+    /// Where the sketch's `(0, 0)` sits — the first defining point.
+    pub fn origin(&self) -> [nacre_scalar::Rat; 3] {
+        self.points[0]
+    }
+
+    /// The `+u` direction, in the plane, not unit length — `points[1] − points[0]`.
+    ///
+    /// The subtraction cannot overflow: both points passed through a constructor, and every
+    /// constructor either lifted decimals (narrow) or added one lifted decimal to another —
+    /// widths nowhere near `i128`'s ceiling.
+    pub fn ref_dir(&self) -> [nacre_scalar::Rat; 3] {
+        core::array::from_fn(|i| {
+            self.points[1][i]
+                .checked_sub(self.points[0][i])
+                .expect("constructor-bounded widths")
+        })
     }
 }

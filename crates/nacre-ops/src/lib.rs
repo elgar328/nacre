@@ -8,7 +8,10 @@
 //! `nacre-validate` applies fully.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-use nacre_math::{Point2, Point3, Vector3};
+use nacre_math::Point3;
+// The test modules read the root's names through their globs.
+#[cfg(test)]
+use nacre_math::{Point2, Vector3};
 use nacre_scalar::Rat;
 use nacre_store::Handle;
 use nacre_topo::{Face, HalfEdge, Model, Solid, Vertex};
@@ -32,7 +35,6 @@ pub mod reject_census;
 mod reuse;
 mod rotated_vertex;
 mod sketch;
-mod sketch_plane;
 mod tolerant;
 mod transform;
 
