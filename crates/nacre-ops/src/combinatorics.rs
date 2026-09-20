@@ -610,7 +610,7 @@ impl NodeId {
 /// opening the variant directly.
 ///
 /// ★ Not automated, and that is how it rots: three sites can arrive with nothing running the
-/// check, and a fourth be nearly added with the suite green. `tests/rotation_sweep.rs`'
+/// check, and a fourth be nearly added with the suite green. `tests/probes/rotation_sweep.rs`'
 /// `side_of` guard is the precedent for making a source scan a test.
 pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
     match n {

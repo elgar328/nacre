@@ -71,7 +71,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 **면의 스케치 좌표계 — `face_plane`.** 비공개 `face_frame` 의 f64 사영이고, **`PadOnFace`/`PocketOnFace`가 실제로 프로파일을 놓는 바로 그 프레임**이다(두 번째 유도가 아니라 같은 함수의 사영 — 갈라지면 앱이 계산한 위치와 보스가 어긋난다. 테스트가 비대칭 프로파일로 고정한다).
 
-**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 `face_frame`이 내부에서 만드는 값을 그대로 내주는 이음새다(`face_plane`은 같은 프레임의 f64 사영). **world-분기(노드 생략) 면에서는 «받아쓰고 실현으로 검증»한다** — pad 는 그 면들을 canonical 프레임이 아니라 법선 유도 세계축(`frame_axes(n)`)에 스케치하므로, 반환 후보(canonical, 그다음 pad 축의 `Named` 받아쓰기)의 실현이 `face_plane` 과 **비트 동일**할 때만 반환하고, 아무 철자도 검증을 못 통과하면 `FrameNotRepresentable` 로 이름 붙여 거절한다(그 인구 = motion 이 기록된 world-분기 면. 잔여 = 정확-진술-가능하지만 불변 아닌 상·mirror 사슬·2세대 이동). 계약은 `tests/sketch_frame_contract.rs` 가 4배치 × 6면으로 잠근다. flip 측정은 `measured_frame`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `world_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
+**공개 스케치 어휘 — `SketchFrame` + `face_sketch_frame`.** `SketchFrame{plane: Handle<Surface>, placement, flip}`은 공개 타입이되 필드는 비공개이고, 생성자가 검증한다: `canonical(plane)`은 유도라 검사 없음, `named(model, plane, origin, ref_dir)`는 구성 시점에 정확 검사해 이름 붙은 거절을 낸다(`FrameOutsideDecimalWindow`·`OriginNotOnPlane` — scalar의 `plane_residual_sign`, Wide 이름은 BigInt 팔 —·`RefDirParallelToNormal`). `face_sketch_frame`은 `face_frame`이 내부에서 만드는 값을 그대로 내주는 이음새다(`face_plane`은 같은 프레임의 f64 사영). **world-분기(노드 생략) 면에서는 «받아쓰고 실현으로 검증»한다** — pad 는 그 면들을 canonical 프레임이 아니라 법선 유도 세계축(`frame_axes(n)`)에 스케치하므로, 반환 후보(canonical, 그다음 pad 축의 `Named` 받아쓰기)의 실현이 `face_plane` 과 **비트 동일**할 때만 반환하고, 아무 철자도 검증을 못 통과하면 `FrameNotRepresentable` 로 이름 붙여 거절한다(그 인구 = motion 이 기록된 world-분기 면. 잔여 = 정확-진술-가능하지만 불변 아닌 상·mirror 사슬·2세대 이동). 계약은 `tests/invariants/sketch_frame_contract.rs` 가 4배치 × 6면으로 잠근다. flip 측정은 `measured_frame`, 노드 push는 `push_frame_node` 한 곳으로 통일돼 extrude·face 두 도로가 한 모양이다. `Operation`은 평면을 핸들로 싣는다(`Extrude { frame: SketchFrame, .. }`, `DatumPlane { def: DatumDef }`) — replay 자기완결성: 로그 속 평면 핸들의 합법 표적은 씨앗·기존 면·datum뿐이다. 그리고 `Model::new()`가 세계 축 평면 셋을 심는다(핸들 0·1·2, 캐시 방향 −축, `world_plane(Axis)` 접근자, `Default`는 `new()` 위임) — 세계 평면 위 스케치와 원점 상자의 축 면이 같은 surface 핸들을 공유한다.
 
 **면 프레임의 원점은 꼭짓점 평균이 아니라 면의 *면적중심*이다.** 꼭짓점 평균은 오목한 면에서 면적중심이 아니고, 더 나쁘게는 **직선 도중에 꼭짓점이 하나 늘면 움직인다** — 면의 모양은 그대로인데 보스가 다른 자리에 앉는다. 면적중심은 **영역의 성질**이라 이산화에 무관하다. *(월드 원점 정사영(Onshape 방식)은 채택하지 않는다: 안정적이지만 원점에서 먼 면에 `pad`하면 프로파일이 면 밖에 앉아 대개 실패한다. Onshape는 사용자가 스케치를 모서리에 구속으로 붙이지만 스크립트엔 그 단계가 없다.)*
 
@@ -1304,7 +1304,7 @@ pub enum Operation {
 ///
 /// 로그를 처음부터 재생. 보장: 동일 로그 → 동일 모델(인덱스까지 재현).
 /// **8변종 전부**에서 성립한다(값-전용 변종은 없다) — replay 가 연산 하나마다 로그의 핸들을
-/// 인덱스로 재고정하기 때문이며(「인덱스 어휘」), 잠금은 `tests/replay.rs` 다.
+/// 인덱스로 재고정하기 때문이며(「인덱스 어휘」), 잠금은 `tests/invariants/replay.rs` 다.
 /// `apply` 는 재고정하지 않는다 — 그 모델은 호출자의 것이고, 거기서 조용히 재고정하면 진짜
 /// 남의 핸들을 세탁해 교차-모델 가드를 무력화한다.
 /// 로그 중간 파라미터를 수정한 재생은 v1 에서 미지원 — Operation 이 원시 Handle 을
@@ -1331,7 +1331,7 @@ pub fn replay(ops: &[Operation]) -> Result<Model, OpError>;
 
 **datum 평면의 규칙.** 평면을 만드는 연산은 `DatumPlane` **하나**이고, 불리언은 평면을 만들지 않는다(깊이 불변식, `a_boolean_mints_no_surface`).
 
-**정점을 이름 부르는 datum.** `ThroughVertices([Handle<Vertex>; 3])` 는 값 어휘로는 말할 수 없는 하나다 — 발견 정점의 좌표는 반올림이라, 그 좌표로 평면을 지으면 **다른 평면**이 나온다(기울어진 인구 220/220, 축정렬 음성 대조 552/0; `tests/point_width.rs`). 진실 쪽은 `PlanePoints::Through` 로 **핸들을 든다**.
+**정점을 이름 부르는 datum.** `ThroughVertices([Handle<Vertex>; 3])` 는 값 어휘로는 말할 수 없는 하나다 — 발견 정점의 좌표는 반올림이라, 그 좌표로 평면을 지으면 **다른 평면**이 나온다(기울어진 인구 220/220, 축정렬 음성 대조 552/0; `tests/instruments/point_width.rs`). 진실 쪽은 `PlanePoints::Through` 로 **핸들을 든다**.
 
 - **어휘가 여기서만 자란다** — «새 공개 생성자 없음»은 *값으로 말할 수 있는 것*에 걸리는 원칙이고, 핸들은 순수 값 타입인 `SketchPlane` 에 들어갈 수 없다.
 - **정렬은 키에만, 방향은 호출자의 정점 순서.** `dist` 가 양수 전용이라 순서가 방향의 유일한 입구이고, 두 개를 바꾸면 «같은 핸들 + 반대 프레임»이다(`measured_frame` 이 재는 것은 `Stated` 와 같은 기계).
@@ -1450,9 +1450,9 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
 
 **45°/315° 폴드의 거절은 갭이 아니라 «정답»이다.** 그 각도에서 부품의 한 팔이 **자기 자신에** 공면으로 닿아 두께 0 인 솔리드가 나온다 — 존재할 수 없는 물건이고, `SelfTouchingResult`(`Impossible`)가 옳다.
 
-**칼날 접촉**(모서리가 상대 면 평면 위, 두 면이 한쪽으로만 떠남): `edge_mask` 의 스침 결합은 **홀짝**이다(같은 쪽 쌍 = 꼬집힘/노치 = 무소식), all-false 모서리는 골격에서 제외한다(`drop_newsless` — 점 접촉 `touches` 의 1D 판). 모서리-만 접촉 fuse 는 **몸통 둘로 나온다**. 면을 잇는 것은 **다양체 접촉(정확히 두 면이 쓰는 링 모서리)뿐**이라, 선·점으로만 닿는 두 몸통은 서로 다른 성분에 놓이고 각자의 핸들을 받는다. 핸들을 가르는 단위는 성분이 아니라 **출력 솔리드**(재료 성분 + 그 공동들)여야 한다 — 공동이 host 껍질에 닿는 경우 성분별로 가르면 핀치가 셀 수 없어져 두께 0 솔리드가 조용히 통과한다. 자기와 닿는 «한» 몸통은 재료가 접촉을 돌아가므로 성분이 하나로 남아 거절이 그대로 발화한다(잠금: `tests/contact_separates.rs`, `tests/knife_edge.rs`).
+**칼날 접촉**(모서리가 상대 면 평면 위, 두 면이 한쪽으로만 떠남): `edge_mask` 의 스침 결합은 **홀짝**이다(같은 쪽 쌍 = 꼬집힘/노치 = 무소식), all-false 모서리는 골격에서 제외한다(`drop_newsless` — 점 접촉 `touches` 의 1D 판). 모서리-만 접촉 fuse 는 **몸통 둘로 나온다**. 면을 잇는 것은 **다양체 접촉(정확히 두 면이 쓰는 링 모서리)뿐**이라, 선·점으로만 닿는 두 몸통은 서로 다른 성분에 놓이고 각자의 핸들을 받는다. 핸들을 가르는 단위는 성분이 아니라 **출력 솔리드**(재료 성분 + 그 공동들)여야 한다 — 공동이 host 껍질에 닿는 경우 성분별로 가르면 핀치가 셀 수 없어져 두께 0 솔리드가 조용히 통과한다. 자기와 닿는 «한» 몸통은 재료가 접촉을 돌아가므로 성분이 하나로 남아 거절이 그대로 발화한다(잠금: `tests/probes/contact_separates.rs`, `tests/probes/knife_edge.rs`).
 
-**4평면 동시성의 세 갈래.** 한 점에 평면 넷이 모이면 이름이 여러 개 생기고, 배열은 그것을 하나로 접는다(`Aliases`). 발견 경로는 셋이다: ① **입력 면의 꼭짓점**에서의 동시성 — 링을 걸으며 `third_on_l` 이 본다. ② 배열이 만든 점에서 **선을 가로지르는** 두 평면이 겹치는 경우 — `split_at_crossings` 가 「두 handle 이 같은 자리로 정렬된다」로 본다. ③ 배열이 만든 점에서 **그 선을 «담은»** 평면 — 그 평면은 선과 같은 방향 family 라 handle 이 되지 않으므로 ①②가 **구조적으로 못 본다**. 셋째는 따로 찾지 않는다: 벽 둘을 한 선으로 접었다는 기록이 곧 「두 번째 평면이 이 선을 담는다」는 진술이므로, 그 선 위 분할점마다 벽 family 를 되읽어 신고한다. 놓치면 한 점이 두 이름으로 seam 표에 도착해 `SeamAlias`(`SuspectedDefect`)로 거절되는데, **그건 유효한 입력을 두고 커널이 자기를 탓하는 것**이다. 잠금은 `tests/concurrent_line.rs`.
+**4평면 동시성의 세 갈래.** 한 점에 평면 넷이 모이면 이름이 여러 개 생기고, 배열은 그것을 하나로 접는다(`Aliases`). 발견 경로는 셋이다: ① **입력 면의 꼭짓점**에서의 동시성 — 링을 걸으며 `third_on_l` 이 본다. ② 배열이 만든 점에서 **선을 가로지르는** 두 평면이 겹치는 경우 — `split_at_crossings` 가 「두 handle 이 같은 자리로 정렬된다」로 본다. ③ 배열이 만든 점에서 **그 선을 «담은»** 평면 — 그 평면은 선과 같은 방향 family 라 handle 이 되지 않으므로 ①②가 **구조적으로 못 본다**. 셋째는 따로 찾지 않는다: 벽 둘을 한 선으로 접었다는 기록이 곧 「두 번째 평면이 이 선을 담는다」는 진술이므로, 그 선 위 분할점마다 벽 family 를 되읽어 신고한다. 놓치면 한 점이 두 이름으로 seam 표에 도착해 `SeamAlias`(`SuspectedDefect`)로 거절되는데, **그건 유효한 입력을 두고 커널이 자기를 탓하는 것**이다. 잠금은 `tests/probes/concurrent_line.rs`.
 
 **결과 계약: 표면이 자기와 닿는 솔리드는 만들지 않는다.** 조립이 내놓은 결과 솔리드(바깥 껍질 + 공동)에 대해 *"이 솔리드의 모서리가 같은 솔리드의 어떤 면의 «내부»에 있는가"* 를 묻고, 참이면 `SelfTouchingResult`(`Impossible`)로 거절한다. 이런 몸체는 연결돼 있고 부피가 맞고 **모든 위상 계수를 통과한다** — 접촉선에서 면이 쪼개지지 않아 모든 모서리가 여전히 두 번씩 쓰이므로 `check_result_topology` 도 `validate` 도 보지 못한다. 방향은 Parasolid 기준이다: OCCT 는 이런 몸체를 받지만 따르지 않는다. **대가**는 자연스러운 모델링 동작 하나가 막히는 것이다(쐐기 포켓의 끝이 마침 반대 벽에 닿는 경우). 다른 커널이 *"zero thickness geometry"* 라 부르는 조건과 같다.
 

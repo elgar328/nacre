@@ -3730,7 +3730,7 @@ mod symprobe {
     use crate::{Angle, Rat};
     #[test]
     #[ignore = "probe"]
-    fn mirror_pairs() {
+    fn measure_mirror_pairs() {
         let a = |d: i128| Angle::from_deg(Rat::from_int(d)).unwrap();
         for (x, y) in [(72i128, 288i128), (9, 351), (117, 243), (45, 315)] {
             let (cx, sx) = a(x).cos_sin_f64();

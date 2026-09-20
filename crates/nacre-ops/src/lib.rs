@@ -438,7 +438,8 @@ pub enum RejectReason {
     /// uses each and there is nothing here to count. What is left is the case where the material
     /// **runs around** the contact: cut the pinch and one piece remains, so no pair of solids
     /// exists to hand back and the reject is `Impossible` at any milestone. A square block with two
-    /// square voids meeting along a line is the smallest example (`tests/contact_separates.rs`).
+    /// square voids meeting along a line is the smallest example
+    /// (`tests/probes/contact_separates.rs`).
     ///
     /// Two sampled boxes sharing exactly an edge are **not** this: those are answers,
     /// and the grid proptest scores them against inclusion-exclusion instead of skipping them.
@@ -630,7 +631,8 @@ pub enum RejectReason {
     /// the wrong thing** — a property of the input reported at the class that says "report a bug".
     /// The arrangement folds those names now, including the pierce that was missing: a plane which
     /// *carries* an arrangement line rather than crossing it (`Aliases::wall_family`, and
-    /// `tests/concurrent_line.rs` for the shape). What remains here is meant to be a real defect.
+    /// `tests/probes/concurrent_line.rs` for the shape). What remains here is meant to be a real
+    /// defect.
     SeamAlias,
     /// A result loop asked for an edge between two vertices at the same coordinate. Every ring node
     /// is a distinct arrangement vertex, so this cannot happen for well-named input — it is the
@@ -852,7 +854,7 @@ pub enum RejectReason {
     /// *every* corner sits on a wall — a
     /// diamond inscribed in a square block — leaves no candidate that does not graze. The retry
     /// over the other nodes is what keeps ordinary contacts (a cube corner: one node of eight)
-    /// clear. Locked in `tests/contact_separates.rs`.
+    /// clear. Locked in `tests/probes/contact_separates.rs`.
     ///
     /// ★★ **Raised only where the retries actually run out.** A single node
     /// failing to decide is an *abstention*, not an error — `point_in_component` says so in its

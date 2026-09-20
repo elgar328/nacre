@@ -59,6 +59,10 @@ M1 뼈대(Store/Handle, 평면·직선, 정육면체, validate, OBJ·STEP 출력
 - 큰 덩어리 말고 작은 단위로. 각 단위는 테스트를 남기고 끝낸다. **인프라(검증·테스트)가 코드보다 먼저다.**
 - 커밋은 작게, 의미 단위로. **커밋 본문이 그 단위의 기록이다** — 무엇을 재고 무엇이 반증됐는지는 거기 적는다.
 - 크레이트는 필요해질 때 추가한다.
+- **테스트의 자리.** 단위 테스트는 제품 파일 안이 아니라 `src/tests/<모듈>.rs` 에 산다(제품 모듈의 자식으로 남도록 `#[path]` 로 선언한다 — private 항목을 본다). 2,000줄을 넘으면 `src/tests/<모듈>/` 폴더로 주제별로 나눈다. 200줄 미만이고 proptest 가 없으면 인라인으로 둬도 된다. 테스트를 한 단 깊은 모듈로 옮기면 `super::` 의 뜻이 바뀐다 — 옮긴 뒤 `super::`·`self::` 경로를 훑는다.
+- **proptest 시드는 테스트 파일 옆에 자동으로 기록되고 커밋한다**(`<파일>.proptest-regressions`). 단위 테스트의 `proptest!` 블록은 `WithSource` 설정을 달고 `src/tests/` 아래에만 산다 — 기본 설정은 시드를 크레이트 루트의 별도 트리에 써서, 파일을 옮기면 조용히 끊긴다.
+- **픽스처는 한 벌** — `crates/nacre-ops/tests/support/`(`fixtures.rs`·`stated.rs`)를 단위·통합 테스트가 함께 읽는다. 본문이 같은 헬퍼만 합친다(같은 이름 ≠ 같은 일). `census.rs`·`reject_census.rs` 는 코퍼스를 동결하려고 자기 픽스처를 든다.
+- **프로세스 전역 상태를 읽는 테스트는 자기 바이너리를 갖는다**(`census`·`reject_census`·`wide_datum_cost`) — 같은 프로세스의 어떤 불리언이든 그 카운터를 움직인다. 같은 바이너리 안에서 전역 계측을 읽어야 하면 계측이 내주는 독점 세션을 잡고, 개수가 아니라 존재·전칭만 단언한다.
 - 기하 코드 버그는 눈으로 잡는다 — 애매하면 예제로 OBJ를 덤프해서 확인한다(출력은 `target/` 아래).
 
 ### 문서 규칙
@@ -86,14 +90,14 @@ cargo test -p nacre-ops --no-default-features
 cargo test -p nacre-ops --test census -- --ignored --nocapture | grep '^c '          # 두 프로파일 diff
 cargo test -p nacre-ops --release --test census -- --ignored --nocapture | grep '^c '
 cargo test -p nacre-ops --test reject_census
-cargo test --workspace --no-fail-fast -- --ignored \
-    --skip boolean_wall_clock --skip profile_check_wall_clock
+cargo test --workspace --no-fail-fast -- --ignored --skip measure_
 cargo test -p nacre-ops --release --test perf -- --ignored --nocapture   # 성능은 release로 따로
 cargo doc --workspace --no-deps                                          # intra-doc 링크
 ```
 
 - **`cargo doc`**: 이 저장소는 intra-doc 링크를 2,000곳 넘게 쓰고 `fmt`·`clippy`·`test` 중 무엇도 그것을 해석하지 않는다. 경고의 기준선은 **72**(전부 「공개 문서가 비공개 항목을 링크」 부류)이고 규칙은 「기준선보다 늘지 않는다」, unresolved link 는 **0**. 이 계기는 이름이 사라져 깨지는 링크만 잡는다 — 이름이 살아 있는데 가리키는 대상이 바뀐 링크는 개명한 사람이 손으로 훑는다.
 - **이름을 개명·은퇴시켰으면 문서도 훑는다**: `python3 tools/deadname-sweep.py` (기본 인자 = 세 문서). 이 계기는 한 물음만 답한다 — 「`crates/` 비주석 사용이 0인가」. 출력은 후보지 작업 목록이 아니다(수식 기호·외부 도구가 섞인다). 값(개수·변종 수)이 바뀐 변경은 이름이 아니라 **옛 숫자**로 문서를 훑는다.
+- **이름이 `measure_` 로 시작하는 테스트는 스윕에서 빠진다.** 단언 없이 표를 찍는 계측·스파이크다(스윕에서는 출력이 캡처돼 시간만 쓰고, 전역 타이머를 읽는 것은 병렬이면 숫자가 틀린다). 따로 돌린다: `cargo test -p nacre-ops <이름> -- --ignored --nocapture --test-threads=1`. `#[ignore]` 가 붙었어도 **단언이 있는 테스트에는 이 접두사를 주지 않는다** — 스윕이 그 단언이 도는 유일한 자리다.
 - **`perf.rs` 는 스윕에서 빠지고 release 로 따로 돈다** — debug 스윕 시간의 93%가 그 파일의 테스트 둘이고 debug 시간 숫자는 의미가 없다. 다만 그 둘은 큰 회전 fold 를 수십 번 쌓는 커버리지이기도 하므로(release 에서는 `debug_assert!` 가 꺼진다) 가끔 debug 로도 돌린다: `cargo test -p nacre-ops --test perf -- --ignored` (28분).
 - **dev·test 프로파일은 `opt-level = 2`, `debug = 1`** 이다. 안쪽 루프가 정확 산술이라 `opt-level = 0` 에서 9배 느리다(스위트 475s → 81s). 증분 컴파일은 느려지지 않고, census 는 비트 동일하며, 패닉의 `file:line` 은 그대로다.
 - **카고는 한 번에 하나만** — 겹치면 서로 6배 느려진다. 커밋 훅이 스위트를 돌므로 커밋 중에는 다른 cargo 를 시작하지 않는다. `target/` 은 한 세션에 ~9GB 자라므로 주기적으로 `cargo clean` 한다.

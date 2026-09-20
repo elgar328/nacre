@@ -235,7 +235,7 @@ fn a_plane_with_no_name_cannot_host_a_sketch() {
 /// plane again afterwards mints nothing.
 ///
 /// (The other half — that which point anchored the plane's cache does not move the result — is
-/// `tests/plane_anchor.rs`, where both arms are now production roads.)
+/// `tests/instruments/plane_anchor.rs`, where both arms are now production roads.)
 #[test]
 fn an_extrudes_base_cap_is_the_frame_it_was_given() {
     let sp = SketchPlane::world_xy().with_origin(Point3::from_array([0.0, 0.0, 0.5]));
@@ -904,7 +904,7 @@ fn the_datums_flip_and_the_offsets_fold_agree() {
 // =================================================================================================
 
 /// Three corners of a **tilted** prism whose vertices are discovered — the population where the
-/// coordinate road is measured to produce a different plane (`tests/point_width.rs`).
+/// coordinate road is measured to produce a different plane (`tests/instruments/point_width.rs`).
 fn tilted_prism_with_pocket() -> Model {
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
     let mut m = Model::new();
@@ -1031,7 +1031,8 @@ fn three_solvable(m: &Model) -> [nacre_store::Handle<nacre_topo::Vertex>; 3] {
 /// ★★★★★ **The capability, closed.** The datum built by *naming* three vertices is the plane
 /// actually through them — and it is **not** the plane their coordinates produce.
 ///
-/// `tests/point_width.rs` measured the second half of that: on this population, all 220 triples
+/// `tests/instruments/point_width.rs` measured the second half of that: on this population, all
+/// 220 triples
 /// spelled in coordinates name a different plane. This is the other side — the same three
 /// vertices, named, landing on the exact one.
 #[test]
@@ -1469,7 +1470,8 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
 /// *solids*, which a caller chooses to do. The population that actually dominates is the other
 /// one: a boolean between a turned operand and a still one hands back **one** solid whose corners
 /// are the meeting of an unmoved wall and two turned ones, so a single vertex straddles. Measured,
-/// **12 of that solid's 20 vertices** are in that state (`tests/point_width.rs`), and until this
+/// **12 of that solid's 20 vertices** are in that state (`tests/instruments/point_width.rs`), and
+/// until this
 /// there was no fixture for it — the label was only ever fired by the caller-error shape.
 ///
 /// ★ **The control is the minimal difference**: three vertices that solve, and the same triple with

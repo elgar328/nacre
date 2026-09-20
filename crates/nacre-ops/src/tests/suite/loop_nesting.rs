@@ -2,8 +2,6 @@
 
 use super::*;
 
-proptest! {}
-
 /// A slab over the pocketed cube, its underside at height `z0`. The rectangle is
 /// asymmetric so that the cube's four vertical edges, which pierce the underside at
 /// `(0,0)`, `(1,0)`, `(1,1)`, `(0,1)`, miss its fan diagonals; a square slab has all

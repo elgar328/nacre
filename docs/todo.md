@@ -399,7 +399,7 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 ## 정리 로드맵
 
 1. 문서 재편(진행 중) — 세 문서·현재형·역사는 git.
-2. 테스트 재편 — 불변식(proptest·validate·replay) / 코퍼스(census·테이블 구동) / 회귀 탐침 셋으로 가르고, 탐침은 «지키는 코드를 깨 보면 앞의 둘이 빨개지는가»로 중복을 판정해 걷는다. `nacre-ops/src/tests.rs`(15,287줄)를 모듈별로 쪼갠다. 그때 함께 볼 주석의 빚: `tests.rs` 의 재연산 census·crossing census doc 은 단계별 수치 변화(「14 → 0」)를 적은 서사체라 수치를 다시 재서 현재형 표 하나로 고친다; doc 이 「아직 거절된다」고 말하는데 본문은 이미 빌드해 부피를 검사하는 테스트가 있다(`CurvedRingWall` 언급 자리); `tests/wide_datum_cost.rs` 의 「걸친 정점은 여전히 거절된다」는 `tests/datum_plane.rs` 의 수용 서술과 어긋난다 — 어느 쪽이 참인지 돌려서 확인; `tests/edge_carriers.rs` 의 한국어 주석을 영어로.
+2. 테스트 재편 — 불변식(proptest·validate·replay) / 코퍼스(census·테이블 구동) / 회귀 탐침 셋으로 가르고, 탐침은 «지키는 코드를 깨 보면 앞의 둘이 빨개지는가»로 중복을 판정해 걷는다. `nacre-ops/src/tests.rs`(15,287줄)를 모듈별로 쪼갠다. 그때 함께 볼 주석의 빚: `tests.rs` 의 재연산 census·crossing census doc 은 단계별 수치 변화(「14 → 0」)를 적은 서사체라 수치를 다시 재서 현재형 표 하나로 고친다; doc 이 「아직 거절된다」고 말하는데 본문은 이미 빌드해 부피를 검사하는 테스트가 있다(`CurvedRingWall` 언급 자리); `tests/wide_datum_cost.rs` 의 「걸친 정점은 여전히 거절된다」는 `tests/invariants/datum_plane.rs` 의 수용 서술과 어긋난다 — 어느 쪽이 참인지 돌려서 확인; `tests/invariants/edge_carriers.rs` 의 한국어 주석을 영어로.
 3. 거대 파일 분할 — 동작 무변의 순수 이동. `arrangement.rs`(13,800줄)부터.
 4. 구현 단순화 — 위 「f64 는 실현 통로 하나로」를 컴파일 단계에서 강제하고, 무거운 경로(캐시 사다리·tracked/memoized 변종)를 누가 쓰는지 재고 걷는다.
 5. undo·체크포인트 설계 — append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 O(1)이고, 로그 중간 편집은 체크포인트부터의 재생 + (연산, 입력) 메모다. 재생 후 핸들 안정성(로그가 면을 핸들 번호가 아니라 출처로 가리키는가)이 먼저 확인할 위험.

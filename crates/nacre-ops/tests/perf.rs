@@ -199,7 +199,7 @@ fn small_booleans(reps: usize) -> std::time::Duration {
 
 #[test]
 #[ignore = "a measurement, not an assertion (run with --ignored --nocapture)"]
-fn boolean_wall_clock() {
+fn measure_boolean_wall_clock() {
     let threads = std::thread::available_parallelism().map_or(0, |n| n.get());
     let mode = if cfg!(feature = "parallel") {
         "parallel"
@@ -248,7 +248,7 @@ fn boolean_wall_clock() {
 /// narrow-first), so this is the price of exactness-on-the-truth over the old f64 signs.
 #[test]
 #[ignore]
-fn profile_check_wall_clock() {
+fn measure_profile_check_wall_clock() {
     for n in [100usize, 1_000, 5_000] {
         let ring: Vec<Point2> = (0..n)
             .map(|i| {

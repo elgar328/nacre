@@ -778,25 +778,42 @@ fn transform_translate_preserves_discovered_definition() {
     assert!((after - before).abs() < 1e-12, "volume invariant");
 }
 
-/// Replay determinism (DNA 3): the same construction + transform reproduces the
-/// same geometry and the same handle down to the index.
+/// Replay determinism: the same construction and motions reproduce the same geometry **and** the
+/// same handle, down to the index — for a rigid motion with a translation in it, a lone tilted
+/// rotation, and a rotation of a rotated solid.
 ///
-/// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is
-/// legal only because `Handle`'s equality is its index — the very premise `replay` now
-/// relies on. `tests/replay.rs` measures that premise directly instead of assuming it.
+/// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is legal
+/// only because `Handle`'s equality is its index — the very premise `replay` relies on.
+/// `tests/invariants/replay.rs` measures that premise directly instead of assuming it.
 #[test]
-fn transform_is_deterministic() {
-    let (iso, _) = test_iso();
-    let build = || {
-        let mut m = Model::new();
-        let c = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0, 3.0, 4.0]),
+fn a_chain_of_motions_is_deterministic() {
+    use nacre_scalar::Axis;
+    let chains: [(&str, Vec<nacre_scalar::Isometry>); 3] = [
+        ("rigid motion", vec![test_iso().0]),
+        ("30° about Z", vec![rot30()]),
+        (
+            "30° about Z, then 45° about X",
+            vec![rot_iso(Axis::Z, 30), rot_iso(Axis::X, 45)],
+        ),
+    ];
+    for (name, chain) in &chains {
+        let build = || {
+            let mut m = Model::new();
+            let mut s = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([2.0, 3.0, 4.0]),
+            );
+            for iso in chain {
+                s = transform(&mut m, s, iso).unwrap();
+            }
+            (bbox_lo(&m, s), s)
+        };
+        assert_eq!(
+            build(),
+            build(),
+            "{name}: same ops → same geometry and handle"
         );
-        let c2 = transform(&mut m, c, &iso).unwrap();
-        (bbox_lo(&m, c2), c2)
-    };
-    assert_eq!(build(), build(), "same ops → same geometry and handle");
+    }
 }
 
 /// The bit-identity guard, on the one producer that can break it.
@@ -892,7 +909,7 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
 ///
 /// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is
 /// legal only because `Handle`'s equality is its index — the very premise `replay` now
-/// relies on. `tests/replay.rs` measures that premise directly instead of assuming it.
+/// relies on. `tests/invariants/replay.rs` measures that premise directly instead of assuming it.
 #[test]
 fn copy_is_deterministic() {
     let build = || {
@@ -1092,26 +1109,6 @@ fn transform_rotate_boolean_result_keeps_discovered_base() {
         found_moved_carrier,
         "a moved result's vertices name its moved planes"
     );
-}
-
-/// Replay determinism (DNA 3): the same construction + rotation reproduces the
-/// same geometry and the same handle.
-///
-/// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is
-/// legal only because `Handle`'s equality is its index — the very premise `replay` now
-/// relies on. `tests/replay.rs` measures that premise directly instead of assuming it.
-#[test]
-fn transform_rotate_is_deterministic() {
-    let build = || {
-        let mut m = Model::new();
-        let c = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0, 3.0, 4.0]),
-        );
-        let c2 = transform(&mut m, c, &rot30()).unwrap();
-        (bbox_lo(&m, c2), c2)
-    };
-    assert_eq!(build(), build(), "same ops → same geometry and handle");
 }
 
 /// A rotation `Transform` flows through `apply` and marks the result Rotated.
@@ -1637,26 +1634,4 @@ fn fresh_rotation_of_constructed_unchanged() {
     assert!(!solid_is_rotated(&m, c1), "fresh 90° stays Constructed");
     assert!(nacre_validate::validate(&m).is_empty());
     assert_eq!(forest_probe(&m, c1), None, "no rotation node");
-}
-
-/// Replay determinism (DNA 3): a re-rotation sequence reproduces the same forest
-/// and handles.
-///
-/// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is
-/// legal only because `Handle`'s equality is its index — the very premise `replay` now
-/// relies on. `tests/replay.rs` measures that premise directly instead of assuming it.
-#[test]
-fn rerotate_is_deterministic() {
-    use nacre_scalar::Axis;
-    let build = || {
-        let mut m = Model::new();
-        let c = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([2.0, 3.0, 4.0]),
-        );
-        let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
-        let c2 = transform(&mut m, c1, &rot_iso(Axis::X, 45)).unwrap();
-        (bbox_lo(&m, c2), c2)
-    };
-    assert_eq!(build(), build(), "same ops → same geometry and handle");
 }

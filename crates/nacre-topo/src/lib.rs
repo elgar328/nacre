@@ -1067,6 +1067,7 @@ impl Model {
     /// ☑ Production-facing on purpose even though nothing in this workspace calls it yet: it is
     /// the door that makes "empty is always correct" usable rather than merely true, and a
     /// consumer holding a long-lived model is the caller it is for.
+    #[cfg(any(test, feature = "test-util"))]
     pub fn clear_prefix_hp(&mut self) {
         self.prefix_hp.clear();
     }
@@ -2160,6 +2161,7 @@ impl Model {
     /// containment). The reversed winding keeps each shared edge used with
     /// opposed half-edges (a valid 2-manifold), and the toggled orientation makes
     /// the outward normal point into the void.
+    #[cfg(any(test, feature = "test-util"))]
     pub fn reversed_shell(&mut self, src: Handle<Shell>) -> Handle<Shell> {
         let src_faces = self.shells.get(src).faces.clone();
         let faces: Vec<Handle<Face>> = src_faces
@@ -2846,6 +2848,7 @@ impl Model {
     ///
     /// Returns the solid beside its three faces (lateral, bottom cap, top cap). Does **not**
     /// rebuild adjacency.
+    #[cfg(any(test, feature = "test-util"))]
     pub fn add_cylinder_exact(
         &mut self,
         base: [Rat; 3],

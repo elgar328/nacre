@@ -268,7 +268,8 @@ fn a_box_realizes_to_exactly_what_the_cache_holds() {
         let cached = m.vertex_point(vh).as_array();
         assert_eq!(v, cached, "vertex {vh:?}");
         // ⚠ **Width is not representability.** These corners are 7 bits wide by
-        // `tests/point_width.rs`'s metric, and `boolean_corner` cuts at 3.3 and 7.7 — `33/10` is
+        // `tests/instruments/point_width.rs`'s metric, and `boolean_corner` cuts at 3.3 and 7.7 —
+        // `33/10` is
         // an exact `Rat` and no `f64` at all. So the readout rounds, and the error says so; a
         // coordinate that *is* dyadic (0, 10, …) reports zero. Asserting `[0.0; 3]` here passed
         // only because the arm used to claim it unconditionally.
@@ -353,7 +354,8 @@ fn too_few_bits_report_undecided_rather_than_guessing() {
 /// ★★★ **Counted per fixture, and refusals are counted too.** An earlier spelling wrote
 /// `let Ok(d) = … else { continue }` and asserted a total — which drops exactly the vertices a
 /// broken ladder would fail on, and stays green while the population shrinks under it. That is the
-/// failure `tests/point_width.rs` records in its own module doc; this shape cannot have it.
+/// failure `tests/instruments/point_width.rs` records in its own module doc; this shape cannot
+/// have it.
 #[test]
 fn the_door_returns_the_places_it_was_asked_for() {
     // 120 places is past what the first rung decides (128 bits is ~38 decimal digits), so the

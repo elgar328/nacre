@@ -178,7 +178,7 @@ use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 use crate::fixtures::{datum_frame, p2};
 
 // ---------------------------------------------------------------------------------------------
-// fixtures — the shapes `tests/points_coverage.rs` already uses
+// fixtures — the shapes `tests/invariants/points_coverage.rs` already uses
 // ---------------------------------------------------------------------------------------------
 
 fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {

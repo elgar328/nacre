@@ -64,7 +64,7 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
 /// the two bodies it was handed. ★ This used to be `NON_MANIFOLD_VERTEX` — true of the single
 /// welded body the reconstruction built then, and beside the point once the pieces are minted
 /// per solid. The pinch reject is still there for a body that touches *itself*
-/// (`tests/contact_separates.rs`).
+/// (`tests/probes/contact_separates.rs`).
 #[test]
 fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {
     let mut m = Model::new();

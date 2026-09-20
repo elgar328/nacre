@@ -1919,28 +1919,6 @@ fn cross_of(
     ]
 }
 
-/// How far `pa` may be from the plane through `pb, pc, pd`, in the model's own length units.
-///
-/// This is [`orient3d_judge`]'s determinant turned into a distance by [`distance_bound`]. When
-/// the judge cannot decide a sign, this is the honest statement of what it *did* establish: not
-/// "these are the same", but "`pa` is within **this much** of that plane". `None` when the three
-/// plane points are too near collinear for a distance to mean anything.
-pub fn orient3d_distance(
-    pa: &WitnessPoint,
-    pb: &WitnessPoint,
-    pc: &WitnessPoint,
-    pd: &WitnessPoint,
-    prec: usize,
-) -> Option<Mag> {
-    let det = det3_hp(pa, pb, pc, pd, prec);
-    // The *value* the judge could not separate from zero is somewhere in `±error`, so the distance
-    // it bounds is `error / |cross|`.
-    match distance_bound(det.error, &cross_of(pb, pc, pd, prec), prec) {
-        Gap::Of(b) => Some(b),
-        _ => None,
-    }
-}
-
 /// CIP `dir_orient3d`: the sign of `det[d, x−base, y−base] = d·((x−base)×(y−base))` — the
 /// orientation of the ray direction `d` against the edge fan `(base→x, base→y)`. The
 /// **direction analogue** of [`orient3d_judge`]: `point_in_solid`'s ray-triangle test asks

@@ -279,7 +279,7 @@ const KINDS: [(&str, BoolKind); 3] = [
 
 #[test]
 #[ignore = "census dump, not an assertion (run with --ignored --nocapture)"]
-fn dump() {
+fn measure_census() {
     // ── Axis-aligned, no motion at all: the untouched baseline.
     let boxes: [([f64; 3], [f64; 3]); 6] = [
         ([0.5, 0.5, 0.5], [2.5, 2.5, 2.5]),

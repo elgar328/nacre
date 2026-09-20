@@ -214,7 +214,8 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
     // handful of bits. Frames exist to make exactly that true.
     //
     // The widest coordinates this kernel produces came from the decimal `wf` family's **discovered**
-    // vertices (59 bits, `tests/point_width.rs`). Three of those should give a name near three
+    // vertices (59 bits, `tests/instruments/point_width.rs`). Three of those should give a name
+    // near three
     // times as wide — that is the population to ask.
     let m = wf_family_with_pocket();
     let mut widths = Vec::new();

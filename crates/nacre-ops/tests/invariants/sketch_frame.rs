@@ -182,7 +182,8 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
     // realizes point-symmetric to the axes the pad sketches this face in (the node is elided on
     // an axis-aligned face, and the pad uses the world axes derived from the outward normal).
     // The contract is the realization: the frame this returns must land, bit for bit, on the
-    // plane `face_plane` reports — which is what the pad reads. `tests/sketch_frame_contract.rs`
+    // plane `face_plane` reports — which is what the pad reads.
+    // `tests/invariants/sketch_frame_contract.rs`
     // sweeps this same proposition over four placements × six faces.
     let realized = nacre_ops::frame_plane(&m, &fb).expect("the returned frame realizes");
     let reported = nacre_ops::face_plane(&m, bottom).expect("planar");

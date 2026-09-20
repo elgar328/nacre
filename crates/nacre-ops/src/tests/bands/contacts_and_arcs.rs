@@ -1373,7 +1373,7 @@ fn a_cut_rim_boolean_builds_a_complete_solid() {
 
 #[test]
 #[ignore = "scratch OBJ dump for eyeballing — run on demand"]
-fn dump_straddling_boss_obj() {
+fn measure_dump_straddling_boss_obj() {
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),

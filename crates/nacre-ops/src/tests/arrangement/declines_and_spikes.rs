@@ -210,7 +210,7 @@ fn direction_families_partition_the_walls() {
 /// Timers live on the production path (`phase::` in this module), not in a replica of it.
 #[test]
 #[ignore = "spike"]
-fn spike_where_the_boolean_spends_it() {
+fn measure_spike_where_the_boolean_spends_it() {
     for rotated in [true, false] {
         spend(60, rotated);
     }
@@ -349,7 +349,7 @@ fn spend(n: i128, rotated: bool) {
 /// question fewer times moves it. The answer must not move; the count may.
 #[test]
 #[ignore = "spike"]
-fn spike_report_after_hoisting() {
+fn measure_spike_report_after_hoisting() {
     let n = 24i128;
     let mut m = Model::new();
     let mut acc = m.add_cuboid(
@@ -389,7 +389,7 @@ fn spike_report_after_hoisting() {
 /// not quiet).
 #[test]
 #[ignore = "spike"]
-fn spike_cull_potential() {
+fn measure_spike_cull_potential() {
     let n = 60i128;
     let mut m = Model::new();
     let mut acc = m.add_cuboid(

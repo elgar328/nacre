@@ -455,7 +455,7 @@ fn pierce_vertex_tol_measures_and_each_term_moves() {
 /// witness triangle every predicate borrows, and which side of the plane holds material.
 ///
 /// Asserted on `collect_planes`' own output rather than through `debug_assert`, so it is a
-/// measurement in release too. `tests/collinear_loop_points.rs` sweeps the same proposition
+/// measurement in release too. `tests/probes/collinear_loop_points.rs` sweeps the same proposition
 /// from outside the crate over a band of angles.
 #[test]
 fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {

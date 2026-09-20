@@ -1,7 +1,7 @@
 /// The chart ledgers' column sums (`cyl_chart::probe`), printed.
 #[test]
 #[ignore = "measurement — prints the D-ladder ledger sums; run last, single-threaded"]
-fn dump_the_d_ladder_ledgers() {
+fn measure_d_ladder_ledgers() {
     let d1 = crate::cyl_chart::probe::ROWS
         .lock()
         .expect("the probe's lock is never held across a panic")

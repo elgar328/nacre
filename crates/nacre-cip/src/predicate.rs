@@ -377,19 +377,6 @@ pub struct Judge<'a, W> {
     /// Two workers racing to fill one cell compute the same value, so the answer does not depend on
     /// who won — the same argument `HpCell` rests on.
     iv: Vec<BoundedCell>,
-    /// ★★★ **Whether each plane's stored coefficients and its witness triangle describe the same
-    /// plane** — the condition under which the exact route may be taken.
-    ///
-    /// The two are *both* exact descriptions, and they need not agree: `coefficients()` is exact
-    /// integer arithmetic only when the defining vertices are integers, and a face inherited
-    /// through a boolean has `Discovered` vertices that are not. Measured, the witness of such a
-    /// plane sits `2⁻⁵⁴` off its own coefficients. Routing by the *question* then describes one
-    /// plane two ways, and answers composed across the two are not even an order.
-    ///
-    /// Same cell shape and same race argument as [`Judge::iv`].
-    coeff_ok: Vec<OkCell>,
-    /// The weaker agreement — normals only. See [`coeff_normal_ok`].
-    normal_ok: Vec<OkCell>,
 }
 
 /// Lazily-filled cell for one plane's interval coefficients — `OnceLock` under `parallel` because
@@ -399,11 +386,6 @@ type BoundedCell = std::sync::OnceLock<[nacre_scalar::Bounded; 4]>;
 #[cfg(not(feature = "parallel"))]
 type BoundedCell = std::cell::OnceCell<[nacre_scalar::Bounded; 4]>;
 
-#[cfg(feature = "parallel")]
-type OkCell = std::sync::OnceLock<bool>;
-#[cfg(not(feature = "parallel"))]
-type OkCell = std::cell::OnceCell<bool>;
-
 impl<'a, W> Judge<'a, W> {
     pub fn new(planes: &'a [W], standard: Standard, notes: &'a Notes) -> Judge<'a, W> {
         Judge {
@@ -411,8 +393,6 @@ impl<'a, W> Judge<'a, W> {
             standard,
             notes,
             iv: (0..planes.len()).map(|_| BoundedCell::new()).collect(),
-            coeff_ok: (0..planes.len()).map(|_| OkCell::new()).collect(),
-            normal_ok: (0..planes.len()).map(|_| OkCell::new()).collect(),
         }
     }
 
@@ -469,36 +449,6 @@ impl<W: PlaneWitness> Judge<'_, W> {
             Some(o) => o,
             None => self.orient3d_given(self.cramer_of(p, q, r), p, q, r, j),
         }
-    }
-
-    /// Every route of [`Judge::orient3d`] **except** the certified one, or `None` when only that one
-    /// is left.
-    ///
-    /// ★ **The routing lives here and nowhere else.** `Judge::orient3d_pair` needs to know whether
-    /// two questions will both reach the certified path — that is the only branch with anything to
-    /// share — and asking it by re-testing `any_rotated`/`shared_motion` would put the route
-    /// selection in two places, free to drift into two different answers for one question.
-    /// **May the exact route describe these planes?** — no rotation *and* every one of them
-    /// coefficient-exact, so both routes would be talking about the same geometry.
-    ///
-    /// The rotation test alone is what this replaced, and it is not enough: it says the toleranced
-    /// route is *needed*, not that the exact route is *equivalent*.
-    pub fn exact_route_ok(&self, idx: &[usize]) -> bool {
-        !any_rotated(self.planes, idx) && idx.iter().all(|&k| self.coeff_exact(k))
-    }
-
-    /// Plane `k`'s witness triangle sits exactly on its own stored coefficients — computed once.
-    fn coeff_exact(&self, k: usize) -> bool {
-        *self.coeff_ok[k].get_or_init(|| coeff_exact(self.planes, k))
-    }
-
-    /// **The route test for a predicate that reads only normals** — `d` cannot reach it, so the
-    /// weaker agreement is what has to hold.
-    pub fn exact_normal_route_ok(&self, idx: &[usize]) -> bool {
-        !any_rotated(self.planes, idx)
-            && idx
-                .iter()
-                .all(|&k| *self.normal_ok[k].get_or_init(|| coeff_normal_ok(self.planes, k)))
     }
 
     fn orient3d_cheap(&self, p: usize, q: usize, r: usize, j: usize) -> Option<i8> {

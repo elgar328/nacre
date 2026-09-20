@@ -349,7 +349,8 @@ impl Profile2d {
     ///
     /// `O(n²)` in the ring size, and it runs on every extrude and every replay of one. Measured
     /// on a convex ring of 17-digit coordinates (the worst case — nothing short-circuits;
-    /// `profile_check_wall_clock` in `tests/perf.rs`): **34 ms at 100 points, 3.2 s at 1 000** —
+    /// `measure_profile_check_wall_clock` in `tests/perf.rs`): **34 ms at 100 points, 3.2 s at 1
+    /// 000** —
     /// each rational sign costs ~1.7 µs (the narrow route's gcd reductions; such coordinates stay
     /// inside `i128`) against the old f64 predicate's nanoseconds. Hand-drawn sketches are tens
     /// of points and pay well under a millisecond; a generator emitting thousands of points per
@@ -709,7 +710,8 @@ pub enum OpError {
     /// ★ This is not a caller mistake. The dominant shape is not two solids combined by hand but a
     /// **single boolean result**: a cut between a turned operand and a still one leaves corners
     /// where an unmoved wall meets two turned ones, and measured, 12 of that solid's 20 vertices
-    /// are in that state (`tests/point_width.rs`, `a_datum_on_straddling_carriers_has_no_name`).
+    /// are in that state (`tests/instruments/point_width.rs`,
+    /// `a_datum_on_straddling_carriers_has_no_name`).
     ///
     /// ★★★★ **What opens this is not the judging layer.** The homogeneous lift
     /// does not open the population. Such
@@ -773,7 +775,7 @@ pub enum DatumDef {
     /// through those three corners" can only read their coordinates today, and a discovered
     /// vertex's coordinate is rounded: measured on tilted geometry, **every one of 220 triples**
     /// produced a plane with a *different name* than the plane actually through them
-    /// (`tests/point_width.rs`). Naming the vertices keeps the statement exact.
+    /// (`tests/instruments/point_width.rs`). Naming the vertices keeps the statement exact.
     ///
     /// ★ **The order is the direction.** The three are sorted before they are stored — the same
     /// vertices are the same plane in any order — but the caller's order fixes a normal by the
@@ -1173,7 +1175,8 @@ fn push_line_edge(
 /// interns with `flipped == false` and nothing downstream has to compensate.
 ///
 /// Which point anchors the cache is a choice the arena keeps (interning discards the newcomer's
-/// cache), and `tests/plane_anchor.rs` measures what that choice costs: on the tilted population
+/// cache), and `tests/instruments/plane_anchor.rs` measures what that choice costs: on the tilted
+/// population
 /// where anchors can disagree at all, the judgment path does not read the disagreeing part and the
 /// result holds to 1.1e-15 at the worst anchor.
 fn datum_plane(
@@ -2765,7 +2768,7 @@ fn extrude_and_boolean(
         // its place. Putting `live_solids` back is what makes the reject true from the outside —
         // the same move `PadMissesFace` makes above, for the same reason. (The arena keeps the
         // prism's cells; the store is append-only. That residue is why a session must rebuild
-        // from its log before recording again — see `tests/replay.rs`.)
+        // from its log before recording again — see `tests/invariants/replay.rs`.)
         None => {
             debug_assert!(
                 !solids.is_empty() || matches!(kind, BoolKind::Cut),
