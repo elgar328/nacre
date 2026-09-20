@@ -257,5 +257,5 @@ pub fn occt_boolean_of(
 }
 
 #[cfg(test)]
-#[path = "tests/lib.rs"]
+#[path = "tests/lib/mod.rs"]
 mod tests;

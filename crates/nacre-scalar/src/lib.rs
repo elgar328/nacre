@@ -3722,7 +3722,7 @@ pub fn mirror_plane_coeffs(c: [Rat; 4], axis: Axis, offset: Rat) -> Option<[Rat;
 }
 
 #[cfg(test)]
-#[path = "tests/lib.rs"]
+#[path = "tests/lib/mod.rs"]
 mod tests;
 
 #[cfg(test)]

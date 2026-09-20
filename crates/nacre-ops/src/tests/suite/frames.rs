@@ -1,4 +1,5 @@
-//! Sketch frames and tilted faces: frame axes, the pole convention, pads and pockets on slanted walls.
+//! Sketch frames and tilted faces: frame axes, the pole convention, pads and pockets on slanted
+//! walls.
 
 use super::*;
 

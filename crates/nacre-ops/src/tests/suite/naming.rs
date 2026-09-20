@@ -1,4 +1,5 @@
-//! What a result is called: vertex plane triples, which piece a void belongs to, replay determinism,
+//! What a result is called: vertex plane triples, which piece a void belongs to, replay
+//! determinism,
 //! plane classes and interning, canonical triples.
 
 use super::*;

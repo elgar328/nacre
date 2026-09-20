@@ -258,5 +258,5 @@ pub(crate) fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: 
 }
 
 #[cfg(test)]
-#[path = "tests/bands.rs"]
+#[path = "tests/bands/mod.rs"]
 mod tests;

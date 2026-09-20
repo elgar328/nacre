@@ -2683,5 +2683,5 @@ fn dir_gap(d: &HpBounded, planes: &[[HpBounded; 4]; 3], prec: usize) -> Gap {
 }
 
 #[cfg(test)]
-#[path = "tests/frame3.rs"]
+#[path = "tests/frame3/mod.rs"]
 mod tests;

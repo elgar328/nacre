@@ -8767,5 +8767,5 @@ fn undecided_reject(notes: &Notes) -> Result<(), BoolError> {
 }
 
 #[cfg(test)]
-#[path = "tests/arrangement.rs"]
+#[path = "tests/arrangement/mod.rs"]
 mod tests;
