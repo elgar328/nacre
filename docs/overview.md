@@ -93,8 +93,10 @@ cargo test -p nacre-ops --test reject_census
 cargo test --workspace --no-fail-fast -- --ignored --skip measure_
 cargo test -p nacre-ops --release --test perf -- --ignored --nocapture   # 성능은 release로 따로
 cargo doc --workspace --no-deps                                          # intra-doc 링크
+cargo build --workspace                                                  # 테스트 기능을 끈 제품 빌드 — 경고 0
 ```
 
+- **커밋 훅이 못 보는 것 둘.** 훅은 `clippy --all-targets` 와 `test` 를 돈다 — dev-의존이 `test-util` 을 켠 채로다. 그래서 (1) 어떤 항목을 `test-util` 뒤로 보내 제품 빌드에서 그 항목만 쓰던 헬퍼가 죽은 코드가 돼도 훅은 초록이고(맨 `cargo build --workspace` 가 경고한다), (2) 그 항목을 가리키던 intra-doc 링크가 깨져도 훅은 모른다(`cargo doc`). 가시성·게이트를 건드린 변경은 둘 다 돌린다.
 - **`cargo doc`**: 이 저장소는 intra-doc 링크를 2,000곳 넘게 쓰고 `fmt`·`clippy`·`test` 중 무엇도 그것을 해석하지 않는다. 경고의 기준선은 **72**(전부 「공개 문서가 비공개 항목을 링크」 부류)이고 규칙은 「기준선보다 늘지 않는다」, unresolved link 는 **0**. 이 계기는 이름이 사라져 깨지는 링크만 잡는다 — 이름이 살아 있는데 가리키는 대상이 바뀐 링크는 개명한 사람이 손으로 훑는다.
 - **이름을 개명·은퇴시켰으면 문서도 훑는다**: `python3 tools/deadname-sweep.py` (기본 인자 = 세 문서). 이 계기는 한 물음만 답한다 — 「`crates/` 비주석 사용이 0인가」. 출력은 후보지 작업 목록이 아니다(수식 기호·외부 도구가 섞인다). 값(개수·변종 수)이 바뀐 변경은 이름이 아니라 **옛 숫자**로 문서를 훑는다.
 - **이름이 `measure_` 로 시작하는 테스트는 스윕에서 빠진다.** 단언 없이 표를 찍는 계측·스파이크다(스윕에서는 출력이 캡처돼 시간만 쓰고, 전역 타이머를 읽는 것은 병렬이면 숫자가 틀린다). 따로 돌린다: `cargo test -p nacre-ops <이름> -- --ignored --nocapture --test-threads=1`. `#[ignore]` 가 붙었어도 **단언이 있는 테스트에는 이 접두사를 주지 않는다** — 스윕이 그 단언이 도는 유일한 자리다.
