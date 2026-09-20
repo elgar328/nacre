@@ -799,11 +799,36 @@ pub(crate) mod nesting_probe {
     pub(crate) fn on() -> bool {
         ENABLED.load(Ordering::Relaxed)
     }
-    pub(crate) fn enable() {
+    fn enable() {
         ENABLED.store(true, Ordering::Relaxed);
     }
-    pub(crate) fn disable() {
+    fn disable() {
         ENABLED.store(false, Ordering::Relaxed);
+    }
+
+    /// One reader at a time. The switch and the row list are process-global, and the test
+    /// harness runs tests on several threads: two readers that each enable, take and disable
+    /// switch each other off and take each other's rows. Holding a session serializes them;
+    /// it starts with the probe on and the list empty, and turns the probe off when dropped.
+    ///
+    /// Rows pushed meanwhile by *other* tests' booleans still land in the list, so a reader
+    /// may assert that a row exists, or that every row satisfies something true of every
+    /// question — never a count.
+    pub(crate) struct Session(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
+
+    pub(crate) fn session() -> Session {
+        static READER: Mutex<()> = Mutex::new(());
+        // A reader that panicked (a failed assertion) poisons the lock; the next one still runs.
+        let guard = READER.lock().unwrap_or_else(|e| e.into_inner());
+        enable();
+        let _ = take();
+        Session(guard)
+    }
+
+    impl Drop for Session {
+        fn drop(&mut self) {
+            disable();
+        }
     }
 
     fn rows() -> &'static Mutex<Vec<Row>> {

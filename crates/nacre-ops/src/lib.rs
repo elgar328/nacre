@@ -1538,6 +1538,7 @@ fn unordered(a: usize, b: usize) -> (usize, usize) {
 }
 
 #[cfg(test)]
+#[path = "tests/suite/mod.rs"]
 pub mod tests;
 
 /// **Ledger totals, printed** — a measurement, not an assertion. Run last, single-threaded, so
