@@ -16,9 +16,7 @@ use nacre_ops::{DatumDef, OpError, OpOutput, Operation, Profile2d, SketchPlane, 
 use nacre_scalar::Axis;
 use nacre_topo::{FramePlacement, Model, PlanePoints, PointCache, Surface};
 
-#[path = "support/fixtures.rs"]
-mod fixtures;
-use fixtures::datum_frame;
+use crate::fixtures::datum_frame;
 
 fn datum(plane: SketchPlane) -> Operation {
     Operation::DatumPlane {

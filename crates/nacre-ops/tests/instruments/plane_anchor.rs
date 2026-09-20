@@ -40,9 +40,7 @@ use nacre_scalar::Axis;
 use nacre_scalar::Rat;
 use nacre_topo::Model;
 
-#[path = "support/fixtures.rs"]
-mod fixtures;
-use fixtures::datum_frame;
+use crate::fixtures::datum_frame;
 
 /// **Which surface caches do two anchors leave disagreeing?** — the comparison this file never
 /// made, and the one that sees what the other three miss.

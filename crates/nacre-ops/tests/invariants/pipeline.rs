@@ -104,9 +104,7 @@ use nacre_store::Handle;
 use nacre_tess::{TessConfig, Tessellation, tessellate};
 use nacre_topo::{Face, Model, Shell, Solid};
 
-#[path = "support/fixtures.rs"]
-mod fixtures;
-use fixtures::{boolean_one, datum_frame, p2};
+use crate::fixtures::{boolean_one, datum_frame, p2};
 
 /// Σ |triangle area| — unsigned on purpose.
 fn mesh_area(t: &Tessellation) -> f64 {

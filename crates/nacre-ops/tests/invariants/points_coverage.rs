@@ -14,9 +14,7 @@ use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_topo::Model;
 
-#[path = "support/fixtures.rs"]
-mod fixtures;
-use fixtures::{datum_frame, p2};
+use crate::fixtures::{datum_frame, p2};
 
 fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)]).unwrap()

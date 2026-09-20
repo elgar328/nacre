@@ -175,9 +175,7 @@ use nacre_scalar::{Angle, Axis, Isometry, MeetPoint, PlaneName, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
-#[path = "support/fixtures.rs"]
-mod fixtures;
-use fixtures::{datum_frame, p2};
+use crate::fixtures::{datum_frame, p2};
 
 // ---------------------------------------------------------------------------------------------
 // fixtures — the shapes `tests/points_coverage.rs` already uses

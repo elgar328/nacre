@@ -7,9 +7,7 @@ use nacre_ops::{OpError, OpOutput, Operation, Profile2d, SketchFrame, SketchPlan
 use nacre_scalar::{Axis, Rat};
 use nacre_topo::{FramePlacement, Model, Motion};
 
-#[path = "support/fixtures.rs"]
-mod fixtures;
-use fixtures::datum_frame;
+use crate::fixtures::datum_frame;
 
 fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![
