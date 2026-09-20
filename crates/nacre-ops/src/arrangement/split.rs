@@ -431,7 +431,7 @@ pub(super) fn split_at_crossings(
 /// CCW cyclic order of the edges around one arrangement vertex on plane class `w`, **read from no
 /// coordinate**. Each edge rides a line `w ∩ fp` and runs in direction `s·(n_w × n_fp)`; it is
 /// given as `(fp, s)`. The signed turn between edges i and j is `turn_at`'s atom
-/// `s_i·s_j·plane_pair_dir_sign(w, fp_i, fp_j)·orient_sign(w)` (combinatorics.rs).
+/// `s_i·s_j·plane_pair_dir_sign(w, fp_i, fp_j)·orient_sign(w)` (combinatorics).
 ///
 /// The turn sign is transitive only *within an open half-plane* (span < π), where it reproduces
 /// the angle order exactly — the textbook Graham-scan fact. So: bucket every edge by its turn

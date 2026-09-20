@@ -34,7 +34,7 @@ pub fn boolean_with_report(
     if !model.live_solids().contains(&a) || !model.live_solids().contains(&b) {
         return Err(BoolError::InputNotLive);
     }
-    // The arrangement engine (`arrangement.rs`) is the sole boolean path: one per-plane-class 2D
+    // The arrangement engine (`arrangement`) is the sole boolean path: one per-plane-class 2D
     // arrangement handles transverse, coplanar-contact, coincident, contained and disjoint cases,
     // and cleans its own output (coplanar-face merge) so results are chainable.
     // ★ **A rejected boolean leaves the live set as it found it** — every reject, not just the

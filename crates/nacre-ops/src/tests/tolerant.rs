@@ -1292,7 +1292,7 @@ fn every_plane_that_can_records_its_three_exact_points() {
 ///
 /// It holds because the arrangement reuses its operands' surface handles: the classes it
 /// computes are over the planes it was handed, and a result face carries the handle of
-/// whichever operand face it came from. Only `ops.rs` (construction) and `transform.rs`
+/// whichever operand face it came from. Only `ops` (construction) and `transform.rs`
 /// (moving one) ever push.
 ///
 /// ★ Asserted rather than argued: the grep that says so today is not a thing the compiler

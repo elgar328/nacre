@@ -29,7 +29,7 @@ pub(crate) fn census(
         // clipped span. The chart has one line set for the whole class.
         let mine: Vec<&crate::bands::CylRow> = rows.iter().filter(|r| r.class == k).collect();
         // The cell reader's inputs: the lines by parameter, and whose solid this class
-        // is. ★ One class is one solid's surface — `planes.rs` interns cylinders by handle and
+        // is. ★ One class is one solid's surface — `planes` interns cylinders by handle and
         // two solids share none — asserted where it is relied on rather than assumed.
         let Ok(lines) = Lines::of(jd, k, &cyls[k].def, curved) else {
             continue;

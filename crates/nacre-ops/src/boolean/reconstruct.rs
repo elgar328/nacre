@@ -233,7 +233,7 @@ pub(crate) fn reconstruct(
                         // cylinder's rows live in `cyls` (`WorkingCyl`) — and `c` indexes the
                         // cutting plane of a `cut_rims` key. The reject is kept rather than
                         // `unreachable!` because that is a **table** invariant, not a type one:
-                        // `planes.rs`'s `unreachable!("a cylinder truth carries a cylinder
+                        // `planes`'s `unreachable!("a cylinder truth carries a cylinder
                         // cache")` is the type-guaranteed shape, and this is not that.
                         //
                         // ⚠ The reason's wording ("three planes that should meet do not") does

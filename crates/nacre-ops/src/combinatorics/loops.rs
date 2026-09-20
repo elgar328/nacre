@@ -247,7 +247,7 @@ pub(crate) struct TraceInput {
     ///
     /// ★★ **It is not always empty in production**: the record-and-pass arm fills it for a
     /// wall whose plane holds the axis exactly
-    /// (`planes.rs`, `crossings.insert`). ☑ Measured: listed for the wall/boss pair 2 times in
+    /// (`planes`, `crossings.insert`). ☑ Measured: listed for the wall/boss pair 2 times in
     /// a plate-and-wall-boss fuse and 16 in the operation after it.
     pub crossings: std::collections::HashSet<(usize, usize)>,
 }

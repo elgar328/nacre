@@ -3,7 +3,7 @@
 //! The plane side long ago stopped walking faces by hand: each plane class gets a **cell complex**
 //! (`arrangement`'s `walk_cells → nest_cells → label_cells → emit_faces`) and the case-work went
 //! with it. The cylinder side follows: this module emits the lateral's faces, and the merge
-//! reads one rule (a cycle's winding, `seam_step`); of the hand-written walks only `boolean.rs`'
+//! reads one rule (a cycle's winding, `seam_step`); of the hand-written walks only `boolean`'
 //! `band_loop` slit-leg remains, generalized to a chain rim.
 //!
 //! `docs/design.md` names the way out: the lateral has an **isometric chart** `(z, r·θ)`, so the
@@ -13,7 +13,7 @@
 //!
 //! ## Why the lines are orthogonal — a derivation, not a measurement
 //!
-//! The population gate (`planes.rs`) sorts every `(plane class, cylinder class)` pair into
+//! The population gate (`planes`) sorts every `(plane class, cylinder class)` pair into
 //! five, and only two leave a mark on the lateral:
 //!
 //! | plane vs axis | distance | on the lateral | ☑ suite |
@@ -362,7 +362,7 @@ pub(crate) fn boundary_lines(
 /// face at all**, and on a chart that gap is simply a cell that keeps nothing — the argument the
 /// plane side already makes for its unbounded cells.
 ///
-/// ★ The cylinder class itself is one solid's surface, not both operands': `planes.rs` interns
+/// ★ The cylinder class itself is one solid's surface, not both operands': `planes` interns
 /// cylinders by `Handle<Surface>` (planes by geometry), and two solids share no handles. That is
 /// sound here only because a **coincident pair is refused** — one handle carrying rows of both
 /// solids, or one surface stated under two handles (`same_surface`), both `CylinderPairContact` at

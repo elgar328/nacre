@@ -227,7 +227,7 @@ pub(crate) fn cylinder_gate(
                         // ★★★★★ **A tangency is a graze, not a crossing** — so it passes, and it
                         // is **not** recorded. `crossings`' proposition is "the plane runs *within*
                         // the radius", which a tangent plane does not; the three roads gated on
-                        // that record assert it in a `debug_assert` (`arrangement.rs`' circular-
+                        // that record assert it in a `debug_assert` (`arrangement`' circular-
                         // hole arm, `chord_on_class`, `rulings_on_class`), and all three stay true
                         // because this pair never reaches them. The arrangement then sees nothing here, which is right: the line
                         // divides no cell of this plane and stations no sector of the chart.
@@ -729,7 +729,7 @@ pub(super) fn tangency_rows(
 /// clears *neither* axis: not across the strip **and**, for every lateral span, not wholly at or
 /// below its start nor wholly at or above its end. The second half is the overlap, already proved.
 /// Re-testing it with [`Corner::reaches`] would be worse than redundant: the span is read **open**
-/// (`planes.rs`'s own note), so a face whose corners sit exactly on the cap planes — a slab cut
+/// (`planes`'s own note), so a face whose corners sit exactly on the cap planes — a slab cut
 /// flush with a bore's own height, the frozen `bore-slab` shape — would have every corner dropped
 /// and the straddle read as absent. ☑ Measured: that is exactly what happened.
 fn face_straddles_line(

@@ -998,7 +998,7 @@ fn arena_lengths(m: &Model) -> [usize; 5] {
 
 /// ★ **A reject is atomic on the live model, but not on the arena.**
 ///
-/// `ops.rs` says it in one line — "only `live_solids` is touched, the store stays append-only" —
+/// `ops` says it in one line — "only `live_solids` is touched, the store stays append-only" —
 /// and that line is the whole hazard: an operation that builds a tool prism and *then* declines
 /// has already grown the stores. The declined operation is not in the log, so a session that
 /// keeps recording afterwards hands `replay` indices it can never reproduce.
@@ -1017,7 +1017,7 @@ fn a_late_reject_is_not_index_neutral() {
         let live_before: Vec<_> = m.live_solids().to_vec();
         let err = apply(&mut m, &op).err()?;
         // Every reject, early or late, leaves the live model exactly as it was — this is the
-        // half of the contract `ops.rs` names ("no reject-after-commit") and the half that is
+        // half of the contract `ops` names ("no reject-after-commit") and the half that is
         // repaired. What follows measures the half that is not.
         assert_eq!(
             m.live_solids().to_vec(),
@@ -1196,7 +1196,7 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
     // A late reject: builds the tool prism, then declines. Not recorded — but its cells stay.
     let before = arena_lengths(&m);
     // `PadMissesFace` is used deliberately: it is the late reject that *does* restore
-    // `live_solids` (`ops.rs`, "no reject-after-commit"), so what is left is arena residue and
+    // `live_solids` (`ops`, "no reject-after-commit"), so what is left is arena residue and
     // nothing else. The reject that fails to restore is a separate defect, witnessed by
     // [`a_pocket_that_is_not_blind_rejects_after_committing`].
     let declined = Operation::PadOnFace {
@@ -1263,7 +1263,7 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
 
 /// ★ **A reject does not commit — including the one that used to.**
 ///
-/// `ops.rs` names this contract where `PadMissesFace` restores `live_solids`: "the model the
+/// `ops` names this contract where `PadMissesFace` restores `live_solids`: "the model the
 /// caller sees is the one it had before". `PocketNotBlind` used to break it — it was raised in
 /// `pocket` *after* `extrude_and_boolean` returned `Ok`, by which point the boolean had already
 /// retired the caller's solid and installed the through-cut result in its place, so the caller

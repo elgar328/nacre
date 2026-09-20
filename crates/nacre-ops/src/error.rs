@@ -540,9 +540,9 @@ pub enum RejectReason {
     /// type (`Ok(None)`); saying it with this reason instead measured 122 of the whole suite's
     /// 151 raises as that guard being caught and swallowed by
     /// its own retry loop. What raises this reason today is the caller whose node supply is
-    /// exhausted (the 3D depth/cavity classification in `boolean.rs`) — and, same shape one
+    /// exhausted (the 3D depth/cavity classification in `boolean`) — and, same shape one
     /// dimension down, `point_in_ring`'s rayless case, the nesting engine's exhausted offer, and the
-    /// coplanar cleaning pass's own mirror of that road (`boolean.rs`, which names the empty
+    /// coplanar cleaning pass's own mirror of that road (`boolean`, which names the empty
     /// list [`Self::RingHasNoWitness`] and the exhausted one this, as the arrangement's
     /// `cell_in_cell` does; neither has a population there).
     ///

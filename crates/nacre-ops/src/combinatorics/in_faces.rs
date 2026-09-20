@@ -205,7 +205,7 @@ fn curved_count(
     loops: &[LateralLoop],
 ) -> Result<Option<usize>, BoolError> {
     // ★ The cylinder gate refuses any class that is rotated or has no narrow rational name
-    // (`planes.rs`), so in a boolean that has a cylinder these are always `Some`. A `None` here
+    // (`planes`), so in a boolean that has a cylinder these are always `Some`. A `None` here
     // would mean that gate let something through — assert it, then abstain rather than guess.
     let Some(((ca, cb), cc)) = class_coeffs_rat(jd, a)
         .zip(class_coeffs_rat(jd, b))

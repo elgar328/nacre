@@ -181,7 +181,7 @@ pub(crate) fn through_judged_points(
 /// arbitrary-precision road (`MoveNode::FrameWide`) instead of declining.
 ///
 /// ★★ **No caller falls back to an f64 path on this `None`.**
-/// `planes.rs` turns this `None` into `RejectReason::FrameOutOfRange`, `exact.rs` into
+/// `planes` turns this `None` into `RejectReason::FrameOutOfRange`, `exact.rs` into
 /// `OpError::PlaneWithoutExactForm` (there is no f64 prism road), `reuse.rs` declines to the
 /// arrangement — an equally correct road, not a degraded one — and `replay_chain_coord` names
 /// `WitnessPointError::Downgrade`. Every consumer is honest.

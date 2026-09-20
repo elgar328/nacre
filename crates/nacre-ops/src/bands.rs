@@ -26,7 +26,7 @@
 //! ★★ **A wall face is asked about a rectangle, and the "consecutive cuts" above are per face.**
 //! What a ∥ plane meets of the solid cylinder is a rectangle of that plane: the strip across, a
 //! lateral face's axis-parameter span along. So the gate reads two separating axes, and a wall
-//! clear on either one misses the rectangle (`planes.rs`' `face_clears_footprint`). With several
+//! clear on either one misses the rectangle (`planes`' `face_clears_footprint`). With several
 //! lateral faces there are several rectangles, and that is exactly the granularity the theorem
 //! needs: a row's span is the existence truth at an uncut end and its ends are band boundaries
 //! (`cyl_chart::boundary_lines`), so no band is ever built in the gap between two of them, and a
@@ -63,7 +63,7 @@ use nacre_scalar::Rat;
 /// **One lateral face**, as the band pass reads it.
 ///
 /// ★★ **The row is a face, not a class.** A cylinder *class* is one lateral `Surface` handle
-/// (`planes.rs`' `cyl_ix.entry(cf.surf)`), and one surface can carry **several faces of one
+/// (`planes`' `cyl_ix.entry(cf.surf)`), and one surface can carry **several faces of one
 /// solid** — bore a plate through and then cut away the middle of the bore, and its wall becomes
 /// two disjoint bands. "Which parts survive" is a question about a face; the class only says which
 /// surface that face lies on.

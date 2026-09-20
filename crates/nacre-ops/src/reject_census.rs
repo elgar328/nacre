@@ -39,7 +39,7 @@
 //!   ```
 //!
 //! ★ **Raise *counts* are not stable; the *sets* are.** `debug` runs every traced boolean twice
-//! (`arrangement.rs`'s `#[cfg(debug_assertions)]` reference run), and `parallel` evaluates the
+//! (`arrangement`'s `#[cfg(debug_assertions)]` reference run), and `parallel` evaluates the
 //! remaining plane classes of a failing input while `serial` stops at the first
 //! (`crate::par::try_map_range`). Surfacing is unaffected: that same function returns the
 //! **lowest-index** error by construction, so *which* reason comes back is schedule-independent.

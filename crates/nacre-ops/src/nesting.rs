@@ -56,7 +56,7 @@ use crate::tolerant::Judge;
 /// empty probe list is either such a chain — and each of those the circle's own centre answers —
 /// or a wall panel with no circle at all, which still refuses and now by its own name
 /// ([`crate::RejectReason::RingHasNoWitness`]). In cells: the crossing census's `NoClearRay` 44
-/// became **8 built** and **20 renamed**, the rest being the other road's (`boolean.rs`).
+/// became **8 built** and **20 renamed**, the rest being the other road's (`boolean`).
 /// ★ Counted as *cells*, not as raises — a traced boolean runs twice in `debug`, and
 /// `reject_census`'s own note forbids reading raise counts as populations.
 fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_topo::CylinderDef> {
@@ -744,7 +744,7 @@ pub(crate) enum Route {
 ///    an offer nobody read. Filter on [`Row::route`] before counting anything,
 ///    and never read a raw row count as a population (the rule `reject_census` states for raises,
 ///    one layer in).
-/// 2. **The merge road is invisible.** `boolean.rs` calls [`cell_inside`] directly, so those
+/// 2. **The merge road is invisible.** `boolean` calls [`cell_inside`] directly, so those
 ///    questions never pass here at all — sampled at **~1% of engine questions in the lib suite and
 ///    ~3% in census**, which is why this is a footnote rather than the headline.
 ///

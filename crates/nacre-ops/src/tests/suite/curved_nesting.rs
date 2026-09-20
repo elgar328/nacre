@@ -835,7 +835,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     assert_eq!(count(|c| matches!(c, Ok(_))), 250, "{tally:?}");
     // ★ `ring_in_ring`'s own refusals are **gone**: every one of them was a probe list that
     // started empty, and that fact now has its own name. What is left under this one is the other
-    // road entirely — the 3D depth classification in `boolean.rs`, whose nodes really do run out.
+    // road entirely — the 3D depth classification in `boolean`, whose nodes really do run out.
     // ★ 8 → 4: the corner families' Fuse and Cut × mid decided once a corner on the
     // ray stopped being a tie. ★ 4 → 0: the corner Commons parted by a slab — the
     // diagnosis «their witnesses lie on a ring» was wrong; measured per attempt, two of every
@@ -1199,7 +1199,7 @@ fn a_ring_whose_arc_bulges_past_its_nodes_reads_the_winding_there() {
 /// converse, and the converse used to refuse.
 ///
 /// Both adapters answer disk↔disk with `disk_in_disk` before the engine sees it
-/// (`nesting::cell_in_cell`, `boolean.rs`'s merge road), so this configuration reaches
+/// (`nesting::cell_in_cell`, `boolean`'s merge road), so this configuration reaches
 /// `cell_inside` **only from a test** — which is exactly why the road needs one.
 ///
 /// With the rim in the supply the question never gets that far: a boundary witness that lands

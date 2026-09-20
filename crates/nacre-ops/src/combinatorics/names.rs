@@ -86,11 +86,11 @@ impl NodeId {
 /// builds a comparison key, and its answer is that the key's vessel widens (`CanonNode`), not that
 /// the question is refused.
 ///
-/// ★★ **The gate that keeps this honest**, and the two files it exempts:
+/// ★★ **The gate that keeps this honest**, and what it exempts — this module and one file:
 ///
 /// ```text
 /// rg 'NodeId::(ThreePlane|Pierce)' crates/ \
-///   -g '!**/combinatorics.rs' -g '!**/reuse.rs' | grep -vE ':\s*//'
+///   -g '!**/combinatorics/**' -g '!**/reuse.rs' | grep -vE ':\s*//'
 /// ```
 ///
 /// It must be empty. Spelling a variant anywhere else means a site went around the door instead of
