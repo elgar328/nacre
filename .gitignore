@@ -2,3 +2,8 @@
 /*.obj
 /*.step
 __pycache__/
+
+# graft
+/graft/
+/.mcp.json
+/.ignore
