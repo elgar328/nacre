@@ -899,7 +899,7 @@ fn moved(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
 /// motions leave the maximum name width **exactly where it started**, and the reason is visible in
 /// the same table: the surface count climbs by six per operation while the count of **distinct
 /// names stays put**. Every moved face is the *same name* under a new motion handle — number rule
-/// 3, "모션은 면이 든다", doing precisely what it says.
+/// 3, "the face carries the motion", doing precisely what it says.
 ///
 /// Three facts close the question together, and the other two are structural rather than
 /// measured here:

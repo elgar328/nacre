@@ -1242,9 +1242,9 @@ fn census_corpus_xy_generations_build_or_refuse_by_name() {
 ///   refuses `NoClearRay` today — a coplanar-contact containment question, not this road's.)
 /// * A cuboid `[3, 6] × [−1, 5] × [0.5, 1.5]`: its caps run **through** the notch, where the
 ///   band's circle is only the outer half (the Crossing arm) — and through the plate's wall face
-///   `x = 4`, whose ring carries the boss's **rulings**; the planar scan's crossing arm has no
-///   plane class beside a curved carrier and declines `CurvedRingWall`. Locked as
-///   the honest refusal it is today, so the day it opens this test says so.
+///   `x = 4`, whose ring carries the boss's **rulings**; the scan names each crossing there as
+///   a pierce node. It removes the plate's `x ∈ [3, 4]` slab and the boss's outer half over the
+///   slab's height: `4 + π/8`.
 #[test]
 fn a_spliced_band_is_cut_across_its_notch() {
     let pi = std::f64::consts::PI;

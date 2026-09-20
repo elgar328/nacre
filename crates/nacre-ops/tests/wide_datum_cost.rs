@@ -346,8 +346,9 @@ fn what_a_datum_bearing_boolean_costs() {
         // ★ The named arms measure over **discovered** vertices (their original question was the
         // width of discovered coordinates). The nameless arm lifts that filter: this family's
         // differ-population lives on *constructed* corners (prism corners in one frame, pocket
-        // corners in another) — the discovered ones here all straddle, which is still
-        // refused, and an arm that only ever hit the reject would be an UNBUILDABLE lie.
+        // corners in another) — the discovered ones here all straddle, which is a different
+        // population (a datum through a straddler is accepted through the judged meet,
+        // `a_datum_on_straddling_carriers_has_no_name`), not the one this arm measures.
         let solvable: Vec<_> = live_verts(&m)
             .into_iter()
             .filter(|v| mode == "nameless" || vouched(&m, *v))

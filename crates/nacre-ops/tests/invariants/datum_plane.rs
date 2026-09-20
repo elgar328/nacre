@@ -1198,7 +1198,8 @@ fn a_datum_through_vertices_refuses_by_cause() {
 /// hosts a sketch, and the whole thing replays.
 ///
 /// The `VerticesInMixedFrames` population splits: this (the caller's
-/// vertices differ) is accepted; a single straddling vertex still refuses. The plane has
+/// vertices differ) is accepted, and so is a single straddling vertex
+/// (`a_datum_on_straddling_carriers_has_no_name`). The plane has
 /// **no name** — its exact world coefficients are irrational — so it interns by statement, and
 /// the frame is derived from the defining points as intervals at a fixed rung.
 #[test]
@@ -1602,7 +1603,7 @@ fn a_datum_on_straddling_carriers_has_no_name() {
             def: DatumDef::ThroughVertices(swapped),
         },
     )
-    .expect("a straddling-vertex datum is accepted now (16-2)") else {
+    .expect("a straddling-vertex datum is accepted") else {
         unreachable!()
     };
     assert!(

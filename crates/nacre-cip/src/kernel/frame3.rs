@@ -11,7 +11,7 @@
 //! limit ([`Standard`]): below it the coincidence is proved, above it the judgement climbs to the
 //! precision the shortfall names, and past the cap it is reported ([`Decision`]) instead of
 //! assumed. This is the judgment **layer only**
-//! ("층만") — wired into the boolean since the CIP stages that followed (`nacre-ops`'
+//! — wired into the boolean since the CIP stages that followed (`nacre-ops`'
 //! `tolerant` module is the seam), and it is the *tol > 0*
 //! path: a tol-0 (`Constructed`) config is faster/exact via `nacre-predicates`
 //! (Shewchuk), routed by a higher layer, not here.
@@ -2004,7 +2004,7 @@ pub fn orient3d_ray(
 // arithmetic is a sound worst-case bound by construction, so no per-predicate bound
 // formula is hand-derived. An interval straddling 0 escalates to astro-float from the
 // point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path, the
-// judgment **layer only** ("층만") — the boolean wiring (seam → plane `WitnessPoint`s) is
+// judgment **layer only** — the boolean wiring (seam → plane `WitnessPoint`s) is
 // stage 3. Validated before the port by the isolated 3D experiment (H-b coefficient
 // tol, H-c indirect soundness); the constant `mag`-floor policy is indirect-only (distinct from the
 // explicit `16·scale³` floor of [`orient3d_judge`]).

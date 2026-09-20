@@ -5955,7 +5955,8 @@ pub(crate) fn pierce_point(
 /// **The exact half of [`pierce_point`]** — the `(line, s)` the name designates, before it is
 /// realized.
 ///
-/// ★ «진실은 정의, 좌표는 캐시»: the pair *is* the point and the `[f64; 3]` beside it is its
+/// ★ «the definition is the truth, the coordinate a cache»: the pair *is* the point and the `[f64;
+/// 3]` beside it is its
 /// realization, so the two are one function split in the middle rather than two solves. Every
 /// exact question about a pierce point — its order along the line, its side of a plane, its θ about
 /// the seam — takes this and never the realization.

@@ -3,7 +3,7 @@
 //! The kernel could already *produce* a donut, by cutting a bar out of a box; what it could not do
 //! was **construct** one. That distinction is the point: the boolean route makes every corner a
 //! `Discovered` intersection with a measured tolerance, while extruding the profile directly makes
-//! them `Constructed` — exact by construction (overview 절대원칙 4). So the strongest check here
+//! them `Constructed` — exact by construction (overview, principle 4). So the strongest check here
 //! is not a number typed by hand but the two producers agreeing.
 
 use crate::common::*;

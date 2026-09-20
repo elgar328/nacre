@@ -805,8 +805,9 @@ fn group_faces(
     // and `validate` had nothing to say about it (measured).
     //
     // So ask the question the kernel already answers one dimension down. `sketch::from_rings`
-    // decides a ring by **containment depth — even is material, odd is a hole** (design.md: "채우기
-    // 규칙 파라미터는 두지 않는다 — 짝수-홀수가 유일한 규칙이다"), and the cavity-owner search
+    // decides a ring by **containment depth — even is material, odd is a hole** (design.md: there
+    // is no
+    // fill-rule parameter — even-odd is the only rule), and the cavity-owner search
     // below already picks the *innermost* container, the other half of that same rule. This is the
     // 3D reading of it, with `point_in_component` where the 2D one uses `point_in_ring`.
     //

@@ -398,8 +398,9 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 
 ## 정리 로드맵
 
-1. 문서 재편(진행 중) — 세 문서·현재형·역사는 git.
-2. 테스트 재편 — 불변식(proptest·validate·replay) / 코퍼스(census·테이블 구동) / 회귀 탐침 셋으로 가르고, 탐침은 «지키는 코드를 깨 보면 앞의 둘이 빨개지는가»로 중복을 판정해 걷는다. `nacre-ops/src/tests.rs`(15,287줄)를 모듈별로 쪼갠다. 그때 함께 볼 주석의 빚: `tests.rs` 의 재연산 census·crossing census doc 은 단계별 수치 변화(「14 → 0」)를 적은 서사체라 수치를 다시 재서 현재형 표 하나로 고친다; doc 이 「아직 거절된다」고 말하는데 본문은 이미 빌드해 부피를 검사하는 테스트가 있다(`CurvedRingWall` 언급 자리); `tests/wide_datum_cost.rs` 의 「걸친 정점은 여전히 거절된다」는 `tests/invariants/datum_plane.rs` 의 수용 서술과 어긋난다 — 어느 쪽이 참인지 돌려서 확인; `tests/invariants/edge_carriers.rs` 의 한국어 주석을 영어로.
-3. 거대 파일 분할 — 동작 무변의 순수 이동. `arrangement.rs`(13,800줄)부터.
-4. 구현 단순화 — 위 「f64 는 실현 통로 하나로」를 컴파일 단계에서 강제하고, 무거운 경로(캐시 사다리·tracked/memoized 변종)를 누가 쓰는지 재고 걷는다.
-5. undo·체크포인트 설계 — append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 O(1)이고, 로그 중간 편집은 체크포인트부터의 재생 + (연산, 입력) 메모다. 재생 후 핸들 안정성(로그가 면을 핸들 번호가 아니라 출처로 가리키는가)이 먼저 확인할 위험.
+1. 거대 파일 분할 — 동작 무변의 순수 이동. 테스트를 빼고 난 제품 파일의 크기: `arrangement.rs` 8,771 · `combinatorics.rs` 6,590 · `boolean.rs` 4,006 · `planes.rs` 3,896 · `nacre-scalar/lib.rs` 3,749 · `nacre-topo/lib.rs` 3,084 · `ops.rs` 2,923 · `frame3.rs` 2,665. 입력:
+   - 제품 영역에 섞여 있는 `#[cfg(test)]` 계측 모듈(약 4,000줄 — `arrangement.rs` 의 `phase`·`*_probe`·`*_audit`, `cyl_chart.rs` 의 `census`·`probe`, `combinatorics.rs` 의 `tie_probe` 등)이 제품 파일을 부풀린다. 계측은 지우지 않고(다음 단계의 성능·인구 계기다) 모듈 옆 파일로 뺀다.
+   - 모듈을 한 단 깊게 옮기면 `super::` 의 뜻이 바뀌고, 새 모듈 이름이 크레이트 모듈을 가릴 수 있다(overview 「테스트의 자리」).
+   - `tests/suite/curved_nesting.rs` 의 재연산 census·crossing census doc 은 「14 → 0」 식의 사다리 서사다. 본문의 기대표는 거의 전부 `Ok(n)` 이 됐다. 서사 속의 살아 있는 규칙(섹터는 가장 가까운 rim 노드 사이의 호 run 으로 읽는다 등)을 `design.md` 「원통」 절과 대조해 없는 것만 옮기고, doc 은 현재 표 하나로 줄인다. 같은 부류로 남은 표지: 「Stage 0」·「2b's corpus」·「rule 207」, 그리고 이름이 낡은 테스트 `a_sketch_on_a_prism_side_wall_takes_the_f64_path_today`(지금 단언하는 것은 보고된 `SketchPlane` 의 `exact()` 가 `None` 이라는 것뿐이다).
+2. 구현 단순화 — 위 「f64 는 실현 통로 하나로」를 컴파일 단계에서 강제하고, 같은 일을 하는 길이 여러 갈래인 자리를 누가 쓰는지 재고 걷는다. 조사된 변종 가족(제품 호출 / 테스트 호출 수는 그때 다시 센다): `realize_def`·`realize_cache` 와 그 `_tracked`(실제 본체) · `realize_inv_sqrt` → `_rounded` → `_memoized`(각각 호출처 하나인 3단 포장) · `det3` 다섯 벌(`det3`·`_sign`·`_f64`·`_hp`, 그리고 두 크레이트에 있는 `_big`) · `point_in_mixed_ring` 의 두 크레이트 구현(`_inner` 198줄 / geom `_opt` 89줄) · `base_coeffs_rat` 세 정의 · `three_planes` 의 `_rat`·`_big` 사다리 · `boolean` 은 `boolean_with_report` 의 얇은 포장. `nacre-cip` 의 `pub fn coeff_exact`·`coeff_normal_ok` 는 테스트만 부른다(그 보증은 평면이 `exact_coeffs`·`exact_normal` 을 믿을 수 있을 때만 든다는 타입으로 옮겨 갔다).
+3. undo·체크포인트 설계 — append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 O(1)이고, 로그 중간 편집은 체크포인트부터의 재생 + (연산, 입력) 메모다. 먼저 확인할 위험은 재생 후 핸들 안정성이다: 로그 속 핸들은 인덱스 어휘라 **통째 재생에서만** 성립하고 중간 수정은 하류 인덱스를 밀어낸다(`design.md` 「저장소와 동일성」).

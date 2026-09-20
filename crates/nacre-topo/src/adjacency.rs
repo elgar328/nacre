@@ -7,7 +7,7 @@ use nacre_store::Handle;
 use std::collections::HashMap;
 
 /// Reverse index over the topology stores — a **cache, not truth**
-/// (overview 절대원칙 5). Rebuilt from scratch by scanning the stores; discard
+/// (overview, principle 5). Rebuilt from scratch by scanning the stores; discard
 /// and regenerate any time. Validation ("every edge used by exactly two faces
 /// in opposite directions") and adjacency queries read this.
 ///

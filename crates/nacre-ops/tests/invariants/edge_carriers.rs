@@ -1,11 +1,12 @@
-//! 잠금: **모서리의 담체는 인접성과 일치한다** — 모든 생산 경로에서, 살아 있는
-//! 모든 모서리에 대해, `edge.surfaces` (생산자가 실어 준 쌍) == 그 모서리를 쓰는 두 면의
-//! surface 다중집합 (인접성이 관측한 쌍). seam 은 같은 면이 두 번 쓰므로 [cyl, cyl] 로
-//! 일치한다.
+//! Lock: **an edge's carriers agree with adjacency** — on every production path, for every live
+//! edge, `edge.surfaces` (the pair its producer stated) equals the multiset of surfaces of the two
+//! faces that use the edge (the pair adjacency observes). A seam is used twice by one face, so it
+//! agrees as `[cyl, cyl]`.
 //!
-//! 담체는 파생이 아니라 진술이므로(4평면 동시성 — `Ring.walls` doc), 이 잠금은 진술과
-//! 관측이 갈라지는 순간을 생산 경로별로 잡는 반증 장치다. 특히 boolean 은 정리 패스
-//! (`unify_coplanar_faces`)가 면-surface 를 재배선한 **뒤의** 결과를 검사한다.
+//! Carriers are a statement, not a derivation (four-plane concurrency — see `Ring.walls`' doc),
+//! so this lock is the falsifier that catches, per production path, the moment statement and
+//! observation part. For a boolean in particular it checks the result **after** the cleaning pass
+//! (`unify_coplanar_faces`) has rewired the faces' surfaces.
 
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::SketchFrame;
@@ -73,15 +74,16 @@ fn assert_carriers_agree(m: &Model, what: &str) {
     assert!(seen > 0, "{what}: the sweep saw no half-edges at all");
 }
 
-/// 잠금: **파생 곡선 == 저장 곡선** — 담체·끝점에서 `derive_edge_curve` 로 다시
-/// 이끌어낸 곡선이, 생산자가 저장한 곡선과 일치한다.
+/// Lock: **derived curve == stored curve** — the curve re-derived from the carriers and the end
+/// points by `derive_edge_curve` agrees with the one the producer stored.
 ///
-/// * 직선: **원점 비트 동일** + 방향 상대 편차 ≤ 1e-12. 첫-구성 직선은 방향까지 비트
-///   동일하다(파생이 생산자와 같은 표현식·같은 끝점 순서 — 카운터가 센다). **이동된**
-///   직선은 다르다 — 실측 반박: transform pass 2 는 방향 벡터를 직접 회전하고 파생은
-///   이동된 끝점 차의 재정규화라 마지막 ulp 가 갈린다. 직선 기하는 어디서도 좌표로
-///   관측되지 않으므로 ulp 는 무해하고, 여기서 수치로 못박는다.
-/// * 원: 상대 편차 ≤ 1e-12 (코퍼스-수치 게이트; 최대 편차를 찍는다 — 관문 규칙).
+/// * Line: **origin bit-identical**, direction within a relative 1e-12. A first-construction line
+///   is bit-identical in direction too (the derivation uses the producer's expression and end-point
+///   order — the counter counts them). A **moved** line is not: transform's second pass rotates
+///   the direction vector itself, while the derivation re-normalizes the difference of the moved
+///   end points, and the last ulp differs. A line's geometry is never observed through coordinates,
+///   so the ulp is harmless, and it is pinned here as a number.
+/// * Circle: within a relative 1e-12 (a corpus-number gate; the largest deviation is printed).
 struct DeriveStats {
     max_circle_dev: f64,
     max_line_dir_dev: f64,

@@ -2,7 +2,7 @@
 //!
 //! The topology (`Vertex`/`Edge`/`Face`/`Loop`/`HalfEdge`/`Shell`/`Solid`)
 //! references exact geometry only by `Handle` — geometry never knows about
-//! topology, topology never inspects coordinates (overview 절대원칙 2).
+//! topology, topology never inspects coordinates (overview, principle 2).
 //!
 //! [`Model`] is the **truth**: exact geometry stores + topology stores + the
 //! derived [`Adjacency`] cache. It holds no tessellation and no operation log —
@@ -632,7 +632,8 @@ impl CylinderDef {
     }
 }
 
-/// Why [`Model::add_cylinder_exact`] refused a statement — **every way in, named**.
+/// Why `Model::add_cylinder_exact` (a `test-util` door) refused a statement — **every way in,
+/// named**.
 ///
 /// The entry promises no panics: an application's numbers are input, not a caller bug, and a
 /// panic in wasm is a dead session rather than a sentence. The first three are the caller's
@@ -659,6 +660,7 @@ pub enum CylinderError {
 /// ([`Model::add_cylinder_exact`]) — so the b-rep below is written once. The f64 road cannot
 /// simply delegate to the exact one: its axis comes out of `normalize()`, and a normalized f64
 /// direction has no rational form to hand over.
+#[cfg(any(test, feature = "test-util"))]
 struct CylinderParts {
     def: CylinderDef,
     lateral: Cylinder,
@@ -929,7 +931,8 @@ impl Loop {
     /// implies, and flipping each `forward` keeps every edge used once in each direction, so two
     /// faces that share an edge stay opposed when both are reversed (still a valid 2-manifold).
     ///
-    /// Two callers want it for opposite reasons. [`Model::reversed_shell`] pairs it with an
+    /// Two callers want it for opposite reasons. `Model::reversed_shell` (a `test-util` door)
+    /// pairs it with an
     /// [`Orientation`] toggle to turn a boundary inward (a cavity). A **reflection** pairs it with
     /// nothing: mirroring negates the normal a winding implies, so rewinding restores it and the
     /// orientation flag stays as it was.
@@ -1913,7 +1916,8 @@ impl Model {
     /// (`surface_through_ids`) — the sorted triple and the motion. That is *statement*
     /// identity: the same three vertices under the same motion are one handle, and geometric
     /// identity across different statements is the predicates' to answer per question (rule 6's
-    /// own qualification — *"interning 없이 술어가 매번 답한다"*). This is **not** the
+    /// own qualification — *"without interning, the predicate answers every time"*). This is
+    /// **not** the
     /// record-less population: the truth (handles + motion) is complete; what does
     /// not exist is a rational description of it.
     ///
@@ -2951,6 +2955,7 @@ impl Model {
     /// Returns the solid beside its three faces in push order (lateral, bottom cap, top cap).
     /// `None` if an edge cannot derive its curve from the carriers it states — each caller says
     /// what that means for it. Does **not** rebuild adjacency.
+    #[cfg(any(test, feature = "test-util"))]
     fn cylinder_solid(
         &mut self,
         parts: CylinderParts,

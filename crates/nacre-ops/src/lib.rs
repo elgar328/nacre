@@ -324,8 +324,8 @@ impl SketchPlane {
 }
 
 /// Why a boolean could not be computed. The engine rejects out-of-coverage
-/// input honestly rather than returning a plausibly-wrong solid (overview
-/// 불리언 전략).
+/// input honestly rather than returning a plausibly-wrong solid (overview,
+/// the boolean strategy).
 /// Exhaustive on purpose: new failure modes become [`RejectReason`] variants, not new variants
 /// here, so a consumer can handle this enum completely and still not be broken by growth.
 ///
