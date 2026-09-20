@@ -180,7 +180,7 @@ fn circle_crosses_ruling(
         return None;
     }
     // The strip runs along `e = n × m`, so that is the direction a piece states its reach in.
-    let e = combinatorics::cross3_rat(&n, &m)?;
+    let e = nacre_exact::cross3_rat(&n, &m)?;
     let ask = |arc: Option<&crate::planes::RimArc>| -> Option<bool> {
         let (lo, hi) =
             crate::planes::arc_ends_along(&centre, circle.def.r2(), &circle.def.dir(), arc, &e)?;

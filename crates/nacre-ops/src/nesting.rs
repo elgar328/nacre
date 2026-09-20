@@ -342,7 +342,7 @@ fn rim_and_centre<'a>(
             debug_assert!(
                 combinatorics::class_coeffs_rat(jd, wc).is_none_or(|c| {
                     let n = [c[0], c[1], c[2]];
-                    crate::planes::dot3(&n, &p)
+                    nacre_exact::dot3_rat(&n, &p)
                         .and_then(|d| d.checked_add(c[3]))
                         .is_none_or(|v| v == nacre_exact::Rat::from_int(0))
                 }),

@@ -41,7 +41,7 @@ fn face_circle<'a>(
     // The face's plane must be perpendicular to the axis: its normal is parallel to `m`.
     let coeffs = class_coeffs_rat(jd, plane)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let c = cross3_rat(&n, &first.def.dir())?;
+    let c = nacre_exact::cross3_rat(&n, &first.def.dir())?;
     let zero = nacre_exact::Rat::from_int(0);
     if c.iter().any(|v| *v != zero) {
         return None;
@@ -107,7 +107,7 @@ fn ring_interior_candidates(
         .collect();
     let dirs: Vec<&[Rat; 3]> = [e1, e2].into_iter().chain(diag.iter()).collect();
     for e in dirs {
-        let len2 = dot3_rat(e, e)?;
+        let len2 = nacre_exact::dot3_rat(e, e)?;
         // A step strictly inside the circle along `e`. With a rational radius it is `r/(|e|²+1)`
         // — the spelling the corpus was measured with, kept verbatim so a stated radius walks the
         // same points it always did. Without one it is `min(r², 1)/(2(|e|²+1))`, inside because
@@ -164,8 +164,8 @@ fn ring_interior_candidates(
         };
         let wn = [w[0], w[1], w[2]];
         let Some(chord) = (|| {
-            let nn = dot3_rat(&wn, &wn)?;
-            let q = dot3_rat(&wn, centre)?
+            let nn = nacre_exact::dot3_rat(&wn, &wn)?;
+            let q = nacre_exact::dot3_rat(&wn, centre)?
                 .checked_add(w[3])?
                 .checked_mul(recip(nn)?)?;
             if q == zero {
@@ -341,7 +341,7 @@ pub(crate) fn probe_dirs(m: &[nacre_exact::Rat; 3]) -> Vec<[nacre_exact::Rat; 3]
     for k in 0..3 {
         let mut e = [zero; 3];
         e[k] = Rat::from_int(1);
-        match cross3_rat(&e, m) {
+        match nacre_exact::cross3_rat(&e, m) {
             Some(w) if nonzero(&w) => {
                 dirs.push(w);
                 dirs.extend(neg(&w));
@@ -430,7 +430,7 @@ fn holed_cap_witness(
     let inv_e = inv_sqrt_exact(dot(&e, &e)?)?;
     let inv_me = inv_e.checked_mul(inv_sqrt_exact(dot(&m, &m)?)?)?;
     let u1 = scale(&e, inv_e)?;
-    let u2 = scale(&cross3_rat(&m, &e)?, inv_me)?;
+    let u2 = scale(&nacre_exact::cross3_rat(&m, &e)?, inv_me)?;
     let neg = |v: &[Rat; 3]| scale(v, Rat::from_int(-1));
     let dirs = [u1, neg(&u1)?, u2, neg(&u2)?];
     // Probe circles midway between the outer rim and each hole's, at rational radii — which
@@ -504,10 +504,11 @@ pub(super) fn planes_through_line(
     };
     let mut ns: Vec<[Rat; 3]> = Vec::new();
     for k in 0..3 {
-        if let Some(n) = cross3_rat(&basis(k), dir) {
+        if let Some(n) = nacre_exact::cross3_rat(&basis(k), dir) {
             if n.iter().any(|c| *c != zero)
                 && (ns.is_empty()
-                    || cross3_rat(&ns[0], &n).is_some_and(|c| c.iter().any(|v| *v != zero)))
+                    || nacre_exact::cross3_rat(&ns[0], &n)
+                        .is_some_and(|c| c.iter().any(|v| *v != zero)))
             {
                 ns.push(n);
             }
@@ -518,7 +519,12 @@ pub(super) fn planes_through_line(
     }
     let [n0, n1] = <[[Rat; 3]; 2]>::try_from(ns).ok()?;
     let plane = |n: [Rat; 3]| -> Option<[Rat; 4]> {
-        Some([n[0], n[1], n[2], zero.checked_sub(dot3_rat(&n, p)?)?])
+        Some([
+            n[0],
+            n[1],
+            n[2],
+            zero.checked_sub(nacre_exact::dot3_rat(&n, p)?)?,
+        ])
     };
     Some([plane(n0)?, plane(n1)?])
 }

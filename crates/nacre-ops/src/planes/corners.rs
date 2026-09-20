@@ -155,8 +155,8 @@ impl Corner {
                     for k in 0..3 {
                         rel[k] = centre[k].checked_sub(o[k])?;
                     }
-                    let mm = dot3(m, m)?;
-                    let q = dot3(&rel, m)?.checked_sub(t.checked_mul(mm)?)?;
+                    let mm = nacre_exact::dot3_rat(m, m)?;
+                    let q = nacre_exact::dot3_rat(&rel, m)?.checked_sub(t.checked_mul(mm)?)?;
                     let (lo_off, rho2_lo, hi_off, rho2_hi) =
                         arc_extent(arc.as_ref(), rho2, axis, m)?;
                     Some(match want {
@@ -413,7 +413,7 @@ fn round_strip_side(
         ));
     }
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let e = combinatorics::cross3_rat(&n, m)?;
+    let e = nacre_exact::cross3_rat(&n, m)?;
     let (lo, hi) = arc_ends_along(centre, rho2, axis, arc, &e)?;
     Some(nacre_exact::cylinder_strip_side_extent(
         coeffs,
@@ -453,7 +453,7 @@ pub(crate) fn arc_ends_along(
 ) -> Option<(ArcEnd, ArcEnd)> {
     use nacre_exact::Rat;
     let zero = Rat::from_int(0);
-    let dd = dot3(d, d)?;
+    let dd = nacre_exact::dot3_rat(d, d)?;
     let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(arc, rho2, axis, d)?;
     let shifted = |off: Rat| -> Option<[Rat; 3]> {
         if off == zero {
@@ -513,8 +513,8 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
         return None;
     }
     // `n·(o + t·m) + d = 0`, and `n·m ≠ 0` because the axis is along the normal.
-    let nm = dot3(&n, &m)?;
-    let no_d = dot3(&n, &o)?.checked_add(plane[3])?;
+    let nm = nacre_exact::dot3_rat(&n, &m)?;
+    let no_d = nacre_exact::dot3_rat(&n, &o)?.checked_add(plane[3])?;
     let t = nacre_exact::Rat::from_int(0)
         .checked_sub(no_d)?
         .checked_mul(nacre_exact::Rat::new(nm.denom(), nm.numer())?)?;

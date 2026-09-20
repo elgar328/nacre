@@ -173,8 +173,9 @@ fn arc_contains(
 ) -> Option<bool> {
     use nacre_exact::Rat;
     let zero = Rat::from_int(0);
-    let turn =
-        |u: &[Rat; 3], v: &[Rat; 3]| -> Option<Rat> { dot3(&combinatorics::cross3_rat(u, v)?, m) };
+    let turn = |u: &[Rat; 3], v: &[Rat; 3]| -> Option<Rat> {
+        nacre_exact::dot3_rat(&nacre_exact::cross3_rat(u, v)?, m)
+    };
     let ft = turn(&arc.from, &arc.to)?;
     let fx = turn(&arc.from, x)?;
     let xt = turn(x, &arc.to)?;
@@ -182,7 +183,7 @@ fn arc_contains(
         fx >= zero && xt >= zero
     } else if ft < zero {
         !(turn(&arc.to, x)? > zero && turn(x, &arc.from)? > zero)
-    } else if dot3(&arc.from, &arc.to)? > zero {
+    } else if nacre_exact::dot3_rat(&arc.from, &arc.to)? > zero {
         true // `from` and `to` point the same way: the whole circle
     } else {
         fx >= zero // exactly a half turn

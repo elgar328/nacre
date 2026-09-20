@@ -676,16 +676,16 @@ pub(crate) fn tangent_travel_agrees(
 ) -> Option<bool> {
     use nacre_exact::{Orient, quad::QuadVal};
     let (np, nw) = (stored_coeffs_rat(jd, p)?, stored_coeffs_rat(jd, carrier)?);
-    let d = cross3_rat(&[np[0], np[1], np[2]], &[nw[0], nw[1], nw[2]])?;
+    let d = nacre_exact::cross3_rat(&[np[0], np[1], np[2]], &[nw[0], nw[1], nw[2]])?;
     let (line, s) = &arc.at;
     let mut rel = line.base();
     for (r, c) in rel.iter_mut().zip(arc.centre.iter()) {
         *r = r.checked_sub(*c)?;
     }
-    let u = cross3_rat(&arc.axis, &rel)?;
-    let v = cross3_rat(&arc.axis, &line.dir())?;
-    let dot =
-        QuadVal::from_rat(dot3_rat(&d, &u)?).checked_add(&s.checked_mul_rat(dot3_rat(&d, &v)?)?)?;
+    let u = nacre_exact::cross3_rat(&arc.axis, &rel)?;
+    let v = nacre_exact::cross3_rat(&arc.axis, &line.dir())?;
+    let dot = QuadVal::from_rat(nacre_exact::dot3_rat(&d, &u)?)
+        .checked_add(&s.checked_mul_rat(nacre_exact::dot3_rat(&d, &v)?)?)?;
     let way = if arc.ccw { 1i8 } else { -1 };
     match dot.sign() {
         Orient::Positive => Some(sense * way > 0),
@@ -735,13 +735,14 @@ fn arc_side(
     let (Some(np), Some(nw)) = (stored_coeffs_rat(jd, p), stored_coeffs_rat(jd, carrier)) else {
         return Err(wide());
     };
-    let d = cross3_rat(&[np[0], np[1], np[2]], &[nw[0], nw[1], nw[2]]).ok_or_else(wide)?;
+    let d =
+        nacre_exact::cross3_rat(&[np[0], np[1], np[2]], &[nw[0], nw[1], nw[2]]).ok_or_else(wide)?;
     let plane = (|| -> Option<[Rat; 4]> {
         Some([
             d[0],
             d[1],
             d[2],
-            Rat::from_int(0).checked_sub(dot3_rat(&d, centre)?)?,
+            Rat::from_int(0).checked_sub(nacre_exact::dot3_rat(&d, centre)?)?,
         ])
     })()
     .ok_or_else(wide)?;

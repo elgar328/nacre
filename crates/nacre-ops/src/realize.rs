@@ -669,7 +669,7 @@ fn perp_component(
     e: &[nacre_exact::Rat; 3],
     m: &[nacre_exact::Rat; 3],
 ) -> Option<[nacre_exact::Rat; 3]> {
-    let (mm, em) = (crate::planes::dot3(m, m)?, crate::planes::dot3(e, m)?);
+    let (mm, em) = (nacre_exact::dot3_rat(m, m)?, nacre_exact::dot3_rat(e, m)?);
     let mut out = [nacre_exact::Rat::from_int(0); 3];
     for k in 0..3 {
         out[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;

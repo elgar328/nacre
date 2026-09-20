@@ -1431,7 +1431,7 @@ fn the_two_roads_agree_on_every_rational_ring() {
         // Axis-aligned classes: unit chart axes and a unit normal, so a chart point
         // `(X, Y)` lifts to `X·e1 + Y·e2 − d·n`.
         for e in [e1, e2, &n] {
-            assert_eq!(combinatorics::dot3_rat(e, e), Some(Rat::from_int(1)));
+            assert_eq!(nacre_exact::dot3_rat(e, e), Some(Rat::from_int(1)));
         }
         let lift = |xy: [Rat; 2]| -> [Rat; 3] {
             let mut p = [Rat::from_int(0); 3];

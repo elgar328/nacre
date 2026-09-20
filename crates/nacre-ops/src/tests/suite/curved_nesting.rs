@@ -1517,7 +1517,7 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
     assert_eq!(u1, def.ref_dir(), "û₁ is the statement's own ref_dir");
     assert_eq!(
         u2,
-        combinatorics::cross3_rat(&def.dir(), &def.ref_dir()).expect("m × ê"),
+        nacre_exact::cross3_rat(&def.dir(), &def.ref_dir()).expect("m × ê"),
         "û₂ is m × ê, already unit"
     );
     // The post-condition the supply asserts where it mints: a rim point is on the rim, exactly.

@@ -822,8 +822,8 @@ pub(super) fn lateral_reach(
     use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let dm = dot3(d, &m)?;
-    let base = dot3(d, &o)?;
+    let dm = nacre_exact::dot3_rat(d, &m)?;
+    let base = nacre_exact::dot3_rat(d, &o)?;
     let (lo, hi) = if dm == zero {
         (base, base)
     } else {
@@ -919,7 +919,7 @@ fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> boo
     })();
     let Some(d) = d else { return true };
     let zero = nacre_exact::Rat::from_int(0);
-    match crate::combinatorics::cross3_rat(&d, &a.dir()) {
+    match nacre_exact::cross3_rat(&d, &a.dir()) {
         Some(c) => c.iter().all(|x| *x == zero),
         None => true,
     }
@@ -994,7 +994,7 @@ pub(super) fn separating_dirs(
     let (ma, mb) = (a.dir(), b.dir());
     let mut out = vec![ma, mb];
     if !nacre_exact::parallel_rat(&ma, &mb) {
-        if let Some(perp) = combinatorics::cross3_rat(&ma, &mb) {
+        if let Some(perp) = nacre_exact::cross3_rat(&ma, &mb) {
             out.push(perp);
         }
     }
@@ -1033,12 +1033,15 @@ fn cross_sections_clear(
     use nacre_geom::mixed::ArcSpec;
     let zero = Rat::from_int(0);
     let (o, m, e) = (a.def.origin(), a.def.dir(), a.def.ref_dir());
-    let (mm, em) = (dot3(&m, &m)?, dot3(&e, &m)?);
+    let (mm, em) = (
+        nacre_exact::dot3_rat(&m, &m)?,
+        nacre_exact::dot3_rat(&e, &m)?,
+    );
     let mut e1 = [zero; 3];
     for k in 0..3 {
         e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
     }
-    let inv_e1 = nacre_exact::inv_sqrt_exact(dot3(&e1, &e1)?)?;
+    let inv_e1 = nacre_exact::inv_sqrt_exact(nacre_exact::dot3_rat(&e1, &e1)?)?;
     let inv_m = nacre_exact::inv_sqrt_exact(mm)?;
     let scaled = |v: &[Rat; 3], k: Rat| -> Option<[Rat; 3]> {
         Some([
@@ -1049,7 +1052,7 @@ fn cross_sections_clear(
     };
     let u1 = scaled(&e1, inv_e1)?;
     let u2 = scaled(
-        &combinatorics::cross3_rat(&m, &e1)?,
+        &nacre_exact::cross3_rat(&m, &e1)?,
         inv_m.checked_mul(inv_e1)?,
     )?;
     let chart = |p: &[Rat; 3]| -> Option<[Rat; 2]> {
@@ -1057,7 +1060,10 @@ fn cross_sections_clear(
         for k in 0..3 {
             v[k] = v[k].checked_sub(o[k])?;
         }
-        Some([dot3(&v, &u1)?, dot3(&v, &u2)?])
+        Some([
+            nacre_exact::dot3_rat(&v, &u1)?,
+            nacre_exact::dot3_rat(&v, &u2)?,
+        ])
     };
     let add2 = |p: [Rat; 2], q: [Rat; 2]| -> Option<[Rat; 2]> {
         Some([p[0].checked_add(q[0])?, p[1].checked_add(q[1])?])
@@ -1068,8 +1074,20 @@ fn cross_sections_clear(
         let r2 = c.def.r2().narrow()?;
         let (start, end) = match &fp.theta {
             Some(arc) => (
-                add2(centre, [dot3(&arc.from, &u1)?, dot3(&arc.from, &u2)?])?,
-                add2(centre, [dot3(&arc.to, &u1)?, dot3(&arc.to, &u2)?])?,
+                add2(
+                    centre,
+                    [
+                        nacre_exact::dot3_rat(&arc.from, &u1)?,
+                        nacre_exact::dot3_rat(&arc.from, &u2)?,
+                    ],
+                )?,
+                add2(
+                    centre,
+                    [
+                        nacre_exact::dot3_rat(&arc.to, &u1)?,
+                        nacre_exact::dot3_rat(&arc.to, &u2)?,
+                    ],
+                )?,
             ),
             None => {
                 // A whole circle's seam, `centre + (r, 0)`, is a rational point only for a

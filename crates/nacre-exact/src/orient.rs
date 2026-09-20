@@ -185,6 +185,32 @@ pub fn int_cmp_coord(
     big_sign(&(&na[axis] * &db - &nb[axis] * &da)) * big_sign(&da) * big_sign(&db)
 }
 
+/// `x·y` in checked [`Rat`] — `None` is overflow, which every reader takes as "not stated".
+///
+/// The value twin of [`dot_sign_rat`], which answers only the sign and never overflows because it
+/// lifts to `BigInt`. A caller that needs the number takes this and handles the `None`.
+pub fn dot3_rat(x: &[Rat; 3], y: &[Rat; 3]) -> Option<Rat> {
+    x[0].checked_mul(y[0])?
+        .checked_add(x[1].checked_mul(y[1])?)?
+        .checked_add(x[2].checked_mul(y[2])?)
+}
+
+/// `x × y` in checked [`Rat`] — `None` is overflow.
+///
+/// Exact and in ℚ, so the result is a normal of the plane the two vectors span whenever they are
+/// independent; a zero vector back means they are parallel, which [`parallel_rat`] answers
+/// without the multiplications.
+pub fn cross3_rat(x: &[Rat; 3], y: &[Rat; 3]) -> Option<[Rat; 3]> {
+    Some([
+        x[1].checked_mul(y[2])?
+            .checked_sub(x[2].checked_mul(y[1])?)?,
+        x[2].checked_mul(y[0])?
+            .checked_sub(x[0].checked_mul(y[2])?)?,
+        x[0].checked_mul(y[1])?
+            .checked_sub(x[1].checked_mul(y[0])?)?,
+    ])
+}
+
 /// `sign(det[n₀; n₁; n₂])` over the three planes' integer normals — how the line `p ∩ a` runs
 /// relative to plane `b`, the integer twin of `nacre_predicates::det3_sign` on plane normals
 /// (`d` never enters). Direction-sensitive in every row: negating one normal negates the

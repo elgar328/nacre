@@ -49,7 +49,12 @@ pub(crate) fn point_in_faces_rat(
             zero.checked_sub(dir[1])?,
             zero.checked_sub(dir[2])?,
         ];
-        Some([n[0], n[1], n[2], zero.checked_sub(dot3_rat(&n, p)?)?])
+        Some([
+            n[0],
+            n[1],
+            n[2],
+            zero.checked_sub(nacre_exact::dot3_rat(&n, p)?)?,
+        ])
     })()
     .ok_or_else(not_rational)?;
     let line = planes_through_line(p, dir).ok_or_else(not_rational)?;
@@ -77,8 +82,8 @@ pub(crate) fn point_in_faces_rat(
         };
         let coeffs = class_coeffs_rat(jd, q).ok_or_else(not_rational)?;
         let n = [coeffs[0], coeffs[1], coeffs[2]];
-        let nd = dot3_rat(&n, dir).ok_or_else(not_rational)?;
-        let residual = dot3_rat(&n, p)
+        let nd = nacre_exact::dot3_rat(&n, dir).ok_or_else(not_rational)?;
+        let residual = nacre_exact::dot3_rat(&n, p)
             .and_then(|v| v.checked_add(coeffs[3]))
             .ok_or_else(not_rational)?;
         // ★ **Parallel is the origin's question, not the ray's.** `nd == 0` and a nonzero
@@ -220,9 +225,9 @@ fn curved_count(
     // The cut plane through the ray's origin, normal `n_a × n_b` — the very direction
     // `plane_plane_cylinder` gives its meet line, so "negative side" is "behind the query".
     let Some(half) = (|| {
-        let d = cross3_rat(&[ca[0], ca[1], ca[2]], &[cb[0], cb[1], cb[2]])?;
+        let d = nacre_exact::cross3_rat(&[ca[0], ca[1], ca[2]], &[cb[0], cb[1], cb[2]])?;
         let at = nacre_exact::three_planes_rat([ca, cb, cc])?;
-        let d0 = nacre_exact::Rat::from_int(0).checked_sub(dot3_rat(&d, &at)?)?;
+        let d0 = nacre_exact::Rat::from_int(0).checked_sub(nacre_exact::dot3_rat(&d, &at)?)?;
         Some([d[0], d[1], d[2], d0])
     })() else {
         return Ok(None);
@@ -277,7 +282,7 @@ fn corner_wall_class(
     let m = def.dir();
     planes.iter().copied().find(|&c| {
         class_coeffs_rat(jd, c).is_some_and(|w| {
-            dot3_rat(&[w[0], w[1], w[2]], &m) == Some(nacre_exact::Rat::from_int(0))
+            nacre_exact::dot3_rat(&[w[0], w[1], w[2]], &m) == Some(nacre_exact::Rat::from_int(0))
         })
     })
 }

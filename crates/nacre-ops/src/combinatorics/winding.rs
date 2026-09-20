@@ -308,14 +308,14 @@ fn arc_extremum_winding(
         // it from the lower.
         let mut e_a = [zero; 3];
         e_a[a] = Rat::from_int(1);
-        let Some(n_h) = cross3_rat(&m, &e_a) else {
+        let Some(n_h) = nacre_exact::cross3_rat(&m, &e_a) else {
             #[cfg(test)]
             {
                 undecided += 1;
             }
             continue;
         };
-        let Some(h_plane) = dot3_rat(&n_h, &c)
+        let Some(h_plane) = nacre_exact::dot3_rat(&n_h, &c)
             .and_then(|d| zero.checked_sub(d))
             .map(|d| [n_h[0], n_h[1], n_h[2], d])
         else {
@@ -329,7 +329,7 @@ fn arc_extremum_winding(
             let o = match k {
                 CoordKey::Three(t) => {
                     let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))?;
-                    let v = dot3_rat(&[h_plane[0], h_plane[1], h_plane[2]], &q)?
+                    let v = nacre_exact::dot3_rat(&[h_plane[0], h_plane[1], h_plane[2]], &q)?
                         .checked_add(h_plane[3])?;
                     match v.partial_cmp(&zero)? {
                         std::cmp::Ordering::Greater => Orient::Positive,

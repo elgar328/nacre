@@ -135,9 +135,8 @@ pub(crate) fn circle_centre_rat(
     let coeffs = class_coeffs_rat(jd, wc)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let (o, m) = (def.origin(), def.dir());
-    let dot3 = crate::planes::dot3;
-    let nm = dot3(&n, &m)?;
-    let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
+    let nm = nacre_exact::dot3_rat(&n, &m)?;
+    let no_d = nacre_exact::dot3_rat(&n, &o)?.checked_add(coeffs[3])?;
     let t = Rat::from_int(0)
         .checked_sub(no_d)?
         .checked_mul(Rat::new(nm.denom(), nm.numer())?)?;
@@ -482,7 +481,7 @@ pub(crate) fn conjugate_midpoint(
         [pa[0], pa[1]].iter().all(|&k| {
             class_coeffs_rat(jd, k).is_none_or(|c| {
                 let n = [c[0], c[1], c[2]];
-                dot3_rat(&n, &p)
+                nacre_exact::dot3_rat(&n, &p)
                     .and_then(|v| v.checked_add(c[3]))
                     .is_none_or(|v| v == nacre_exact::Rat::from_int(0))
             })
@@ -529,7 +528,7 @@ fn rational_ends_midpoint(
                 ks.iter().all(|&k| {
                     class_coeffs_rat(jd, k).is_none_or(|c| {
                         let n = [c[0], c[1], c[2]];
-                        dot3_rat(&n, &p)
+                        nacre_exact::dot3_rat(&n, &p)
                             .and_then(|v| v.checked_add(c[3]))
                             .is_none_or(|v| v == nacre_exact::Rat::from_int(0))
                     })
@@ -578,29 +577,6 @@ pub(crate) fn pierce_meet(
         _ => return None,
     };
     Some((line, s))
-}
-
-pub(crate) fn dot3_rat(
-    x: &[nacre_exact::Rat; 3],
-    y: &[nacre_exact::Rat; 3],
-) -> Option<nacre_exact::Rat> {
-    x[0].checked_mul(y[0])?
-        .checked_add(x[1].checked_mul(y[1])?)?
-        .checked_add(x[2].checked_mul(y[2])?)
-}
-
-pub(crate) fn cross3_rat(
-    x: &[nacre_exact::Rat; 3],
-    y: &[nacre_exact::Rat; 3],
-) -> Option<[nacre_exact::Rat; 3]> {
-    Some([
-        x[1].checked_mul(y[2])?
-            .checked_sub(x[2].checked_mul(y[1])?)?,
-        x[2].checked_mul(y[0])?
-            .checked_sub(x[0].checked_mul(y[2])?)?,
-        x[0].checked_mul(y[1])?
-            .checked_sub(x[1].checked_mul(y[0])?)?,
-    ])
 }
 
 /// **A plane's normal in primitive form** — divided by the gcd of its own three components.
@@ -702,15 +678,18 @@ impl Chart2dRat {
         };
         let n = &primitive_normal(n);
         let e1 = (0..3)
-            .filter_map(|k| cross3_rat(&basis(k), n))
+            .filter_map(|k| nacre_exact::cross3_rat(&basis(k), n))
             .find(|e| e.iter().any(|c| *c != zero))?;
-        let e2 = cross3_rat(n, &e1)?;
+        let e2 = nacre_exact::cross3_rat(n, &e1)?;
         Some(Chart2dRat { e1, e2 })
     }
 
     /// A point's chart coordinates.
     pub(crate) fn project(&self, p: &[nacre_exact::Rat; 3]) -> Option<[nacre_exact::Rat; 2]> {
-        Some([dot3_rat(p, &self.e1)?, dot3_rat(p, &self.e2)?])
+        Some([
+            nacre_exact::dot3_rat(p, &self.e1)?,
+            nacre_exact::dot3_rat(p, &self.e2)?,
+        ])
     }
 
     /// The chart's two in-plane axes — the mixed-ring parity walks its ray along `e1` (one

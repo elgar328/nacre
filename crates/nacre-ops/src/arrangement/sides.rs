@@ -119,7 +119,7 @@ pub(crate) fn ruling_side_signed(
 ) -> Option<i8> {
     let (o, m) = (def.origin(), def.dir());
     let n = [w[0], w[1], w[2]];
-    let c = combinatorics::cross3_rat(&m, &n)?;
+    let c = nacre_exact::cross3_rat(&m, &n)?;
     let mut d = Rat::from_int(0);
     for k in 0..3 {
         d = d.checked_sub(c[k].checked_mul(o[k])?)?;

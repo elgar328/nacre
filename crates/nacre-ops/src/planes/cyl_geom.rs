@@ -109,16 +109,6 @@ pub(crate) fn plus_t_is_above(wp: &WorkingPlane, def: &nacre_topo::CylinderDef) 
     wp.plane.normal().dot(axis) > 0.0
 }
 
-/// `x·y` in checked `Rat` — `None` is overflow, which every reader here takes as "not stated".
-pub(crate) fn dot3(
-    x: &[nacre_exact::Rat; 3],
-    y: &[nacre_exact::Rat; 3],
-) -> Option<nacre_exact::Rat> {
-    x[0].checked_mul(y[0])?
-        .checked_add(x[1].checked_mul(y[1])?)?
-        .checked_add(x[2].checked_mul(y[2])?)
-}
-
 pub(crate) fn axis_param_of_plane(
     coeffs: &[nacre_exact::Rat; 4],
     def: &nacre_topo::CylinderDef,
@@ -126,11 +116,11 @@ pub(crate) fn axis_param_of_plane(
     use nacre_exact::Rat;
     let (o, m) = (def.origin(), def.dir());
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let nm = dot3(&n, &m)?;
+    let nm = nacre_exact::dot3_rat(&n, &m)?;
     if nm == Rat::from_int(0) {
         return None;
     }
-    let no_d = dot3(&n, &o)?.checked_add(coeffs[3])?;
+    let no_d = nacre_exact::dot3_rat(&n, &o)?.checked_add(coeffs[3])?;
     Rat::from_int(0)
         .checked_sub(no_d)?
         .checked_mul(Rat::new(nm.denom(), nm.numer())?)
@@ -233,14 +223,17 @@ pub(super) fn lateral_theta_extent(
         match *model.vertex(vh) {
             Vertex::OnSeam(_) => {
                 let e = def.ref_dir();
-                let (mm, em) = (dot3(&m, &m)?, dot3(&e, &m)?);
+                let (mm, em) = (
+                    nacre_exact::dot3_rat(&m, &m)?,
+                    nacre_exact::dot3_rat(&e, &m)?,
+                );
                 let mut e1 = [Rat::from_int(0); 3];
                 for k in 0..3 {
                     e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
                 }
                 // `r/|e₁|` read as `√(r²/|e₁|²)`: the same rational when both roots are, and a
                 // rational where neither is alone (`r = √2` on `|e₁| = √2`).
-                let ee = dot3(&e1, &e1)?;
+                let ee = nacre_exact::dot3_rat(&e1, &e1)?;
                 scaled(
                     &e1,
                     nacre_exact::rat_sqrt_exact_big(
@@ -369,21 +362,27 @@ pub(super) fn arc_extent(
 )> {
     use nacre_exact::Rat;
     let zero = Rat::from_int(0);
-    let (dm, mm) = (dot3(d, axis)?, dot3(axis, axis)?);
+    let (dm, mm) = (
+        nacre_exact::dot3_rat(d, axis)?,
+        nacre_exact::dot3_rat(axis, axis)?,
+    );
     // `d⊥ = d − (d·m / m·m) m`, the direction of the radial term's peak; `|d⊥|² = d·d − (d·m)²/m·m`.
     let k = dm.checked_mul(Rat::new(mm.denom(), mm.numer())?)?;
     let mut dperp = *d;
     for i in 0..3 {
         dperp[i] = dperp[i].checked_sub(k.checked_mul(axis[i])?)?;
     }
-    let dperp2 = dot3(&dperp, &dperp)?;
+    let dperp2 = nacre_exact::dot3_rat(&dperp, &dperp)?;
     // A wide square declines here, exactly where `r·r` used to overflow.
     let rho2 = r2.narrow()?.checked_mul(dperp2)?;
     match arc {
         _ if dperp2 == zero => Some((zero, zero, zero, zero)), // `d ∥ axis`
         None => Some((zero, rho2, zero, rho2)),
         Some(arc) => {
-            let (f, t) = (dot3(d, &arc.from)?, dot3(d, &arc.to)?);
+            let (f, t) = (
+                nacre_exact::dot3_rat(d, &arc.from)?,
+                nacre_exact::dot3_rat(d, &arc.to)?,
+            );
             let (hi_off, hi_rad) = if arc_contains(arc, &dperp, axis)? {
                 (zero, rho2)
             } else {
