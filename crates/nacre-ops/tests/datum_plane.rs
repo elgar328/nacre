@@ -16,19 +16,9 @@ use nacre_ops::{DatumDef, OpError, OpOutput, Operation, Profile2d, SketchPlane, 
 use nacre_scalar::Axis;
 use nacre_topo::{FramePlacement, Model, PlanePoints, PointCache, Surface};
 
-/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
-/// when the plane is not one the model already holds (a seed, or a face's).
-fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
-    match apply(
-        m,
-        &Operation::DatumPlane {
-            def: DatumDef::Stated(plane),
-        },
-    ) {
-        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
-        other => panic!("stating a plane: {other:?}"),
-    }
-}
+#[path = "support/fixtures.rs"]
+mod fixtures;
+use fixtures::datum_frame;
 
 fn datum(plane: SketchPlane) -> Operation {
     Operation::DatumPlane {

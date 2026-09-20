@@ -7,7 +7,7 @@
 //! One integration binary (submodules under `coverage/`, referenced by `#[path]`)
 //! rather than one binary per theme, to avoid re-linking the crate per file.
 
-#[path = "coverage/common.rs"]
+#[path = "support/fixtures.rs"]
 mod common;
 #[path = "support/stated.rs"]
 mod stated;

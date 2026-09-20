@@ -1,124 +1,17 @@
-/// The fixture vocabulary — see `tests/support/stated.rs` (the same adapter, for the lib's own tests).
-#[allow(dead_code)]
-mod stated {
-    // The retired `from_edges` fixture vocabulary — kept for the fixtures, **ordered**.
-    //
-    // Every fixture that used the soup door was written as a chain anyway: each edge starting where
-    // the previous one ended, a circle on its own. The kernel now takes rings, not soups
-    // (`Ring2d::new`, `from_paths`), so this walks the edges in the order they were written and
-    // hands the rings over. Nothing here re-discovers an order; an edge that does not start where
-    // the pen stands is a fixture bug and panics. The ring order the old door produced is kept
-    // (whole circles first, then the chains as written, each seeded at its first edge's start) so
-    // the census reads the same models.
-
-    use crate::{Edge2d, Profile2d, Ring2d, SketchError, from_paths};
-    use nacre_math::Point2;
-    use nacre_scalar::Rat;
-
-    /// One edge as the old fixtures spelled it.
-    #[derive(Clone, Copy, Debug)]
-    pub enum Stated {
-        Line(Point2, Point2),
-        Arc {
-            center: Point2,
-            start: Point2,
-            turns: i32,
-        },
-        ArcRat {
-            center: [Rat; 2],
-            start: [Rat; 2],
-            end: [Rat; 2],
-            ccw: bool,
-        },
-        Circle {
-            center: Point2,
-            radius: f64,
-        },
-    }
-
-    pub fn line(from: Point2, to: Point2) -> Stated {
-        Stated::Line(from, to)
-    }
-
-    pub fn arc_turns(center: Point2, start: Point2, turns: i32) -> Stated {
-        Stated::Arc {
-            center,
-            start,
-            turns,
-        }
-    }
-
-    pub fn arc_rat(center: [Rat; 2], start: [Rat; 2], end: [Rat; 2], ccw: bool) -> Stated {
-        Stated::ArcRat {
-            center,
-            start,
-            end,
-            ccw,
-        }
-    }
-
-    pub fn circle(center: Point2, radius: f64) -> Stated {
-        Stated::Circle { center, radius }
-    }
-
-    fn lift(p: Point2) -> Result<[Rat; 2], SketchError> {
-        match (Rat::from_decimal(p[0]), Rat::from_decimal(p[1])) {
-            (Some(x), Some(y)) => Ok([x, y]),
-            _ => Err(SketchError::OutsideDecimalWindow { at: p.as_array() }),
-        }
-    }
-
-    /// The edges in the order written, walked into rings, then sorted into profiles.
-    pub fn stated(edges: Vec<Stated>) -> Result<Vec<Profile2d>, SketchError> {
-        let mut circles: Vec<Ring2d> = Vec::new();
-        let mut chains: Vec<Ring2d> = Vec::new();
-        let (mut vertices, mut steps): (Vec<[Rat; 2]>, Vec<Edge2d>) = (Vec::new(), Vec::new());
-        let mut here: Option<[Rat; 2]> = None;
-        for e in edges {
-            let (from, step, to) = match e {
-                Stated::Circle { center, radius } => {
-                    circles.push(Ring2d::circle(center, radius)?);
-                    continue;
-                }
-                Stated::Line(a, b) => (lift(a)?, Edge2d::Line, lift(b)?),
-                Stated::Arc {
-                    center,
-                    start,
-                    turns,
-                } => {
-                    let (c, s) = (lift(center)?, lift(start)?);
-                    let (step, end) = crate::arc_turns_rat(c, s, turns)?;
-                    (s, step, end)
-                }
-                Stated::ArcRat {
-                    center,
-                    start,
-                    end,
-                    ccw,
-                } => (start, crate::arc_to_rat(center, start, end, ccw)?, end),
-            };
-            if let Some(h) = here {
-                assert_eq!(
-                    h, from,
-                    "a fixture edge must start where the previous one ended"
-                );
-            }
-            vertices.push(from);
-            steps.push(step);
-            here = Some(to);
-            if to == vertices[0] {
-                chains.push(Ring2d::new(
-                    std::mem::take(&mut vertices),
-                    std::mem::take(&mut steps),
-                )?);
-                here = None;
-            }
-        }
-        assert!(here.is_none(), "a fixture chain did not close");
-        circles.extend(chains);
-        from_paths(circles)
-    }
-}
+/// The shared solid fixtures (boxes, L/U prisms, pockets), one copy for unit and integration tests.
+#[path = "../../../tests/support/fixtures.rs"]
+mod fixtures;
+/// The fixture vocabulary, shared with the integration tests (one copy).
+#[path = "../../../tests/support/stated.rs"]
+mod stated;
+use fixtures::{
+    boolean_one, cube_and_notch, extrude_op, l_and_corner_box, l_and_dimple, l_and_inner_box,
+    l_and_popup_box, l_and_reflex_box, l_and_rod, l_prism, nested_boxes, outer_points, p2,
+    pocket_op, regular_ngon, rotated_l_prism, small_square, square, stacked_cubes, two_boxes,
+    u_and_slab, u_prism,
+};
+// Reached from outside this module (`bands`' tests) as `crate::tests::extrude_log_op`.
+pub(crate) use fixtures::extrude_log_op;
 use stated::{Stated, arc_turns, circle, line, stated};
 
 use super::*;
@@ -153,29 +46,6 @@ use std::collections::HashMap;
 /// and a bare `&[]` at a call site reads like something forgotten.
 const NO_CYLS: &[crate::planes::WorkingCyl] = &[];
 
-/// Test shim: a boolean whose result is exactly one solid. Most tests operate on a single
-/// body; this asserts that and returns the lone handle, so call sites read as before while
-/// `boolean` itself returns the full `Vec`.
-fn boolean_one(
-    model: &mut Model,
-    kind: BoolKind,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Result<Handle<Solid>, BoolError> {
-    let solids = boolean(model, kind, a, b)?;
-    assert_eq!(
-        solids.len(),
-        1,
-        "boolean_one: expected one solid, got {}",
-        solids.len()
-    );
-    Ok(solids[0])
-}
-
-fn p2(x: f64, y: f64) -> Point2 {
-    Point2::from_array([x, y])
-}
-
 /// Is there an outer-shell face on the plane through `pt` with normal `n`, oriented that way?
 /// The production path names a cap by the *face* that made it (`find_face_coplanar_with`); a
 /// test that wants to say "a face sits on z = 1.5 facing +z" has no such face in hand, and
@@ -195,122 +65,8 @@ fn has_face_on_plane(m: &Model, solid: Handle<Solid>, pt: Point3, n: Vector3) ->
     })
 }
 
-fn square() -> Profile2d {
-    Profile2d::polygon(vec![p2(0.0, 0.0), p2(1.0, 0.0), p2(1.0, 1.0), p2(0.0, 1.0)]).unwrap()
-}
-
-/// A world-XY extrude for a log that is **replayed** rather than applied to a live model.
-///
-/// ★ Its frame names a plane in a *throwaway* model, and that is sound for one reason: a
-/// log's handles are index vocabulary, and `replay` re-anchors them onto the model it builds.
-/// The world planes are seeded at fixed indices, so `world(Axis::Z)`
-/// names the same plane in every model. Do **not** `apply` one of these to a live model —
-/// that is the cross-model misuse `Store::get`'s debug guard exists to catch.
-pub(crate) fn extrude_log_op(profile: Profile2d, dist: f64) -> Operation {
-    extrude_op(&Model::new(), profile, dist)
-}
-
-fn extrude_op(m: &Model, profile: Profile2d, dist: f64) -> Operation {
-    Operation::Extrude {
-        frame: SketchFrame::world(m, Axis::Z),
-        profile,
-        dist,
-    }
-}
-
-fn regular_ngon(n: usize, r: f64) -> Profile2d {
-    let points = (0..n)
-        .map(|i| {
-            let a = std::f64::consts::TAU * (i as f64) / (n as f64);
-            p2(r * a.cos(), r * a.sin())
-        })
-        .collect();
-    Profile2d::polygon(points).unwrap()
-}
-
-/// The L-prism: profile `[(0,0),(2,0),(2,1),(1,1),(1,2),(0,2)]` extruded to
-/// z ∈ [0,1]. Material = bottom bar (x∈[0,2],y∈[0,1]) ∪ left bar (x∈[0,1],
-/// y∈[1,2]); the notch (x∈[1,2],y∈[1,2]) is empty.
-fn l_prism() -> (Model, Handle<Solid>) {
-    let l = Profile2d::polygon(vec![
-        p2(0.0, 0.0),
-        p2(2.0, 0.0),
-        p2(2.0, 1.0),
-        p2(1.0, 1.0),
-        p2(1.0, 2.0),
-        p2(0.0, 2.0),
-    ])
-    .unwrap();
-    let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
-    let s = m.live_solids()[0];
-    (m, s)
-}
-
-/// The L-prism with a `[0.1,0.9]³` box strictly inside its bottom bar
-/// (non-coplanar coordinates ⇒ no shared face planes). `V_L = 3`, `V_box =
-/// 0.512`.
-fn l_and_inner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let (mut m, l) = l_prism();
-    let bx = m.add_cuboid(Point3::from_array([0.1; 3]), Point3::from_array([0.9; 3]));
-    (m, l, bx)
-}
-
-/// The L-prism with a box biting its convex corner `(2, 0)` — the first
-/// non-convex *overlap* (a real single-chord seam), M5-d2. The box spans
-/// `x∈[1.3,2.4]`, `y∈[-0.3,0.4]`, `z∈[0.2,1.4]`: it straddles the corner in x
-/// and y, and its z-range pokes above the L (`z=1`) while its floor `z=0.2`
-/// sits inside — so every crossing edge is a clean straddle (no edge tunnels
-/// fully through the other) and no box face is coplanar with an L face. The
-/// span is deliberately asymmetric so no seam point lands on a face centre
-/// (where both fan diagonals cross and every apex would graze).
-/// Overlap = `x∈[1.3,2]·y∈[0,0.4]·z∈[0.2,1]` = `0.224`;
-/// `V_L=3`, `V_box=1.1·0.7·1.2=0.924`.
-fn l_and_corner_box() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let (mut m, l) = l_prism();
-    let bx = m.add_cuboid(
-        Point3::from_array([1.3, -0.3, 0.2]),
-        Point3::from_array([2.4, 0.4, 1.4]),
-    );
-    (m, l, bx)
-}
-
-/// A U-prism: a bottom bar `y∈[0,1]` with two prongs rising from it. The prong
-/// tops sit at *different* heights (y=2.3 and y=2.0) on purpose — level tops
-/// would be coplanar faces, which the pre-cutover `has_coplanar_pair` door guard
-/// rejected before the seam machinery ran. That guard is gone; the staggering stays
-/// as this fixture's pinned shape. Area 3 + 1 + 1.3, extruded 1.0 ⇒ volume 5.3.
-fn u_prism() -> (Model, Handle<Solid>) {
-    let u = Profile2d::polygon(vec![
-        p2(0.0, 0.0),
-        p2(3.0, 0.0),
-        p2(3.0, 2.3),
-        p2(2.0, 2.3),
-        p2(2.0, 1.0),
-        p2(1.0, 1.0),
-        p2(1.0, 2.0),
-        p2(0.0, 2.0),
-    ])
-    .unwrap();
-    let m = replay(&[extrude_log_op(u, 1.0)]).unwrap();
-    let s = m.live_solids()[0];
-    (m, s)
-}
-
 fn near(a: Point3, b: [f64; 3]) -> bool {
     (a - Point3::from_array(b)).norm() < 1e-9
-}
-
-/// A thin rod skewering the L's bottom bar in `z`, both ends outside. Each of its four
-/// vertical edges pierces the L's two caps, so the caps take a closed seam loop and the
-/// rod's walls take two chords apiece — and each wall's vertical edges are crossed
-/// **twice**, leaving runs with no vertex at all.
-fn l_and_rod() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let (mut m, l) = l_prism();
-    let rod = m.add_cuboid(
-        Point3::from_array([0.3, 0.3, -0.5]),
-        Point3::from_array([0.5, 0.6, 1.5]),
-    );
-    (m, l, rod)
 }
 
 /// The L-prism with an **L-shaped** stub standing wholly inside its top face,
@@ -434,19 +190,6 @@ fn holed_face_rings_of(
     panic!("no holed face");
 }
 
-/// The L with a stub rising out of its top face, footprint strictly inside that
-/// face. Unlike the rod of `drill_through_the_l`, the stub enters the L from within,
-/// so each of its vertical edges crosses exactly one face and its bottom ring stays
-/// inside — one chord, no tunnel, and the seam loop is the whole story.
-fn l_and_dimple() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let (mut m, l) = l_prism();
-    let stub = m.add_cuboid(
-        Point3::from_array([0.3, 0.3, 0.5]),
-        Point3::from_array([0.7, 0.7, 1.5]),
-    );
-    (m, l, stub)
-}
-
 /// The unit cube with a 0.4-square pocket, 0.5 deep, in its top face: the void
 /// is `[0.3,0.7]² × [0.5,1]` and the solid measures `1 − 0.16·0.5 = 0.92`. Its
 /// lid is the only face in the suite that carries an inner loop.
@@ -469,15 +212,6 @@ fn cube_with_top() -> (Model, Handle<Face>) {
     };
     let top = faces[1]; // base, top, sides…
     (m, top)
-}
-
-/// The `0.4` square on `[0.3, 0.7]²` of the unit cube's lid.
-///
-/// ★ **On a lid these are world coordinates.** The sketch origin is the world origin projected
-/// onto the plane, and the arbitrary-axis convention gives `n = ẑ` the axes `u = +x̂, v = +ŷ`,
-/// so a frame point `(a, b)` is world `(a, b, 1)`.
-fn small_square() -> Profile2d {
-    Profile2d::polygon(vec![p2(0.3, 0.7), p2(0.3, 0.3), p2(0.7, 0.3), p2(0.7, 0.7)]).unwrap()
 }
 
 /// An exact world-frame `Swept` from decimal f64 points — the truth-stating successor of the
@@ -546,27 +280,6 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
             motion: None,
         },
     }
-}
-
-fn pocket_op(face: Handle<Face>, profile: Profile2d, dist: f64) -> Operation {
-    Operation::PocketOnFace {
-        face,
-        profile,
-        dist,
-    }
-}
-
-fn two_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let mut m = Model::new();
-    let a = m.add_cuboid(
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = m.add_cuboid(
-        Point3::from_array([0.5, 0.5, 0.5]),
-        Point3::from_array([1.5, 1.5, 1.5]),
-    );
-    (m, a, b)
 }
 
 /// The reported four-plane model: a unit cube with a block fused on its top, and a bar spun

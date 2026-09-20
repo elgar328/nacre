@@ -8,30 +8,15 @@
 //! Cylinder *lateral* surfaces are the deliberate exception: a curved surface's truth arrives
 //! with M6, and booleans still hold it behind the population gate.
 
-use nacre_math::{Point2, Point3, Vector3};
-use nacre_ops::DatumDef;
+use nacre_math::{Point3, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_topo::Model;
 
-/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
-/// when the plane is not one the model already holds (a seed, or a face's).
-fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
-    match apply(
-        m,
-        &Operation::DatumPlane {
-            def: DatumDef::Stated(plane),
-        },
-    ) {
-        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
-        other => panic!("stating a plane: {other:?}"),
-    }
-}
-
-fn p2(x: f64, y: f64) -> Point2 {
-    Point2::from_array([x, y])
-}
+#[path = "support/fixtures.rs"]
+mod fixtures;
+use fixtures::{datum_frame, p2};
 
 fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![p2(a, a), p2(b, a), p2(b, b), p2(a, b)]).unwrap()

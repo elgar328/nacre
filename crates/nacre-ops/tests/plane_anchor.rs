@@ -34,12 +34,15 @@
 
 use nacre_geom::Plane;
 use nacre_math::{Point2, Point3, Vector3};
-use nacre_ops::DatumDef;
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
 use nacre_scalar::Axis;
 use nacre_scalar::Rat;
 use nacre_topo::Model;
+
+#[path = "support/fixtures.rs"]
+mod fixtures;
+use fixtures::datum_frame;
 
 /// **Which surface caches do two anchors leave disagreeing?** — the comparison this file never
 /// made, and the one that sees what the other three miss.
@@ -125,20 +128,6 @@ fn which_surface_caches_two_anchors_leave_disagreeing() {
             "{what}: which surface caches disagree has moved — see this test's doc before \
              re-pinning, the value is transitional"
         );
-    }
-}
-
-/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
-/// when the plane is not one the model already holds (a seed, or a face's).
-fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
-    match apply(
-        m,
-        &Operation::DatumPlane {
-            def: DatumDef::Stated(plane),
-        },
-    ) {
-        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
-        other => panic!("stating a plane: {other:?}"),
     }
 }
 

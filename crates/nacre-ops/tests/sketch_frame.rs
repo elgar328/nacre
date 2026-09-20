@@ -3,24 +3,13 @@
 //! constructor accepts is letter-identical to what the operation road builds for the same words.
 
 use nacre_math::{Point2, Point3, Vector3};
-use nacre_ops::DatumDef;
 use nacre_ops::{OpError, OpOutput, Operation, Profile2d, SketchFrame, SketchPlane, apply};
 use nacre_scalar::{Axis, Rat};
 use nacre_topo::{FramePlacement, Model, Motion};
 
-/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
-/// when the plane is not one the model already holds (a seed, or a face's).
-fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
-    match apply(
-        m,
-        &Operation::DatumPlane {
-            def: DatumDef::Stated(plane),
-        },
-    ) {
-        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
-        other => panic!("stating a plane: {other:?}"),
-    }
-}
+#[path = "support/fixtures.rs"]
+mod fixtures;
+use fixtures::datum_frame;
 
 fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![

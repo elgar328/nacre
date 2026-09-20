@@ -2,65 +2,6 @@
 
 use super::*;
 
-/// The L with a box straddling its reflex corner (1,1): a *single* chord with one
-/// reflex bend. The box vertex `(1.6,1.6,·)` sits in the L's notch — inside the
-/// convex hull, outside the L — exactly where a convex half-space test would
-/// misclassify it `Inside`. Overlap = `xy(1.0 − notch 0.36) · z(0.8)` = `0.512`.
-fn l_and_reflex_box() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let (mut m, l) = l_prism();
-    let bx = m.add_cuboid(
-        Point3::from_array([0.6, 0.6, 0.2]),
-        Point3::from_array([1.6, 1.6, 1.4]),
-    );
-    (m, l, bx)
-}
-
-/// The U with a slab shearing off both prong tops. The slab overhangs the U in
-/// x and z, so **every slab edge lies outside the U** (pierces nothing) and every
-/// U edge either straddles cleanly (one crossing of the slab's `y=1.5` face) or
-/// misses. No edge threads the other solid, so the arcs are the whole story.
-fn u_and_slab() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let (mut m, u) = u_prism();
-    let slab = m.add_cuboid(
-        Point3::from_array([-0.5, 1.5, -0.5]),
-        Point3::from_array([3.5, 2.5, 1.5]),
-    );
-    (m, u, slab)
-}
-
-/// A big cube whose `y=0, z=0` edge is crossed **twice** by the seam: the notch
-/// spans `x∈[3,7]` and hangs below both `y=0` and `z=0`, so that one edge enters
-/// and leaves it. Extents are asymmetric so no crossing lands on a face centre or a
-/// fan diagonal — a debt to the fan, since deleted. Kept: one variable at
-/// a time.
-///
-/// `edge_seam` maps an edge to *one* seam triple. This input is what that map
-/// cannot represent — and `boolean` rejects it today (see
-/// `an_edge_crossed_twice_is_rejected`).
-fn cube_and_notch() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([10.0; 3]));
-    let y = m.add_cuboid(
-        Point3::from_array([3.0, -1.0, -1.0]),
-        Point3::from_array([7.0, 1.4, 1.2]),
-    );
-    (m, a, y)
-}
-
-/// The L with a box biting its reflex corner and poking out the top. The box top
-/// (z=1.2) clears the L's z=1 **deliberately**: sunk inside the L's slab, the L's
-/// vertical edges at (2,1) and (1,1) would pierce the box's bottom *and* top face,
-/// which is a separate, supported case; the fixture keeps its
-/// clearance so that it goes on testing one thing.
-fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let (mut m, l) = l_prism();
-    let bx = m.add_cuboid(
-        Point3::from_array([0.5, 0.5, 0.2]),
-        Point3::from_array([2.5, 1.5, 1.2]),
-    );
-    (m, l, bx)
-}
-
 /// The L-prism and an L-shaped bar lying in its notch, biting two convex corners of
 /// the L's top face. The bar spans `z ∈ [0.5, 1.5]`, so its body clears the cap.
 ///
@@ -139,15 +80,6 @@ fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
         unreachable!("extrude yields Extrude output")
     };
     (m, l, st)
-}
-
-/// Outer A = [0,3]³ (volume 27) with inner B = [1,2]³ (volume 1) strictly
-/// inside it — the containment fixture (returns `(model, outer, inner)`).
-fn nested_boxes() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let mut m = Model::new();
-    let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
-    let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
-    (m, a, b)
 }
 
 /// **What the corpus actually contains in the way of concurrent vertices — and whether the
@@ -434,19 +366,6 @@ fn every_producer_states_its_side_in_the_label_frame() {
              the two side walls and the floor graze from x < 0.7"
     );
     assert_eq!(wall.failed_at, None, "the class labels consistently");
-}
-
-fn stacked_cubes() -> (Model, Handle<Solid>, Handle<Solid>) {
-    let mut m = Model::new();
-    let a = m.add_cuboid(
-        Point3::from_array([0.0; 3]),
-        Point3::from_array([1.0, 1.0, 1.0]),
-    );
-    let b = m.add_cuboid(
-        Point3::from_array([0.0, 0.0, 1.0]),
-        Point3::from_array([1.0, 1.0, 2.0]),
-    );
-    (m, a, b)
 }
 
 /// The oblique twin of the seated `Common` in `bands`: the same box, but the cylinder stands on a

@@ -68,23 +68,6 @@ fn concave_l_profile_is_valid() {
     assert_eq!(m.face_count(), 8);
 }
 
-/// The same L-prism, its profile started one vertex earlier so the reflex corner
-/// `(1,1)` lands at index 1 of the cap's loop. Geometrically identical.
-fn rotated_l_prism() -> (Model, Handle<Solid>) {
-    let l = Profile2d::polygon(vec![
-        p2(2.0, 1.0),
-        p2(1.0, 1.0),
-        p2(1.0, 2.0),
-        p2(0.0, 2.0),
-        p2(0.0, 0.0),
-        p2(2.0, 0.0),
-    ])
-    .unwrap();
-    let m = replay(&[extrude_log_op(l, 1.0)]).unwrap();
-    let s = m.live_solids()[0];
-    (m, s)
-}
-
 /// `FaceInfo::n_out` is documented as the single source of "outward". Two
 /// independent sources say which way that is: the ring, which winds CCW about the
 /// outward normal, and the b-rep's own `Surface` plus `Orientation`. They must agree

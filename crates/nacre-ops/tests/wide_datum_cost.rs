@@ -72,11 +72,15 @@
 //! a plane table; and counting bits only on the resolved return path gave a mean of exactly 0,
 //! because most climbs end in `Coincident` or a proved zero.
 
-use nacre_math::{Point2, Point3, Vector3};
-use nacre_ops::{BoolKind, DatumDef, OpOutput, Operation, Profile2d, SketchFrame, SketchPlane};
+use nacre_math::{Point3, Vector3};
+use nacre_ops::{BoolKind, DatumDef, OpOutput, Operation, Profile2d, SketchPlane};
 use nacre_ops::{apply, boolean};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Vertex};
+
+#[path = "support/fixtures.rs"]
+mod fixtures;
+use fixtures::{datum_frame, p2};
 
 /// A vertex the kernel vouches for beyond the construction's bare figure — **realized from its
 /// definition**. A boolean's vertices
@@ -88,22 +92,6 @@ use nacre_topo::{Model, PointCache, Solid, Vertex};
 /// proven anything about — the cache road stopped on it.
 fn vouched(m: &Model, v: Handle<Vertex>) -> bool {
     matches!(m.vertex_cache(v), PointCache::Bounded { .. })
-}
-
-fn p2(x: f64, y: f64) -> Point2 {
-    Point2::from_array([x, y])
-}
-
-fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
-    match apply(
-        m,
-        &Operation::DatumPlane {
-            def: DatumDef::Stated(plane),
-        },
-    ) {
-        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
-        other => panic!("stating a plane: {other:?}"),
-    }
 }
 
 fn live_verts(m: &Model) -> Vec<Handle<Vertex>> {

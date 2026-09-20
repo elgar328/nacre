@@ -99,41 +99,14 @@ fn multi_op_log_composes_through_export() {
 // ---------------------------------------------------------------------------
 
 use nacre_ops::DatumDef;
-use nacre_ops::{BoolError, BoolKind, OpOutput, apply, boolean};
+use nacre_ops::{BoolKind, OpOutput, apply};
 use nacre_store::Handle;
 use nacre_tess::{TessConfig, Tessellation, tessellate};
 use nacre_topo::{Face, Model, Shell, Solid};
 
-/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
-/// when the plane is not one the model already holds (a seed, or a face's).
-fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
-    match apply(
-        m,
-        &Operation::DatumPlane {
-            def: DatumDef::Stated(plane),
-        },
-    ) {
-        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
-        other => panic!("stating a plane: {other:?}"),
-    }
-}
-
-/// Test shim: a boolean whose result is exactly one solid (a boolean may return several).
-fn boolean_one(
-    model: &mut Model,
-    kind: BoolKind,
-    a: Handle<Solid>,
-    b: Handle<Solid>,
-) -> Result<Handle<Solid>, BoolError> {
-    let solids = boolean(model, kind, a, b)?;
-    assert_eq!(
-        solids.len(),
-        1,
-        "boolean_one: expected one solid, got {}",
-        solids.len()
-    );
-    Ok(solids[0])
-}
+#[path = "support/fixtures.rs"]
+mod fixtures;
+use fixtures::{boolean_one, datum_frame, p2};
 
 /// Σ |triangle area| — unsigned on purpose.
 fn mesh_area(t: &Tessellation) -> f64 {
@@ -229,10 +202,6 @@ fn centred_on_the_cube_lid(half: f64) -> Profile2d {
         p2(cx + half, cy + half),
     ])
     .unwrap()
-}
-
-fn p2(x: f64, y: f64) -> Point2 {
-    Point2::from_array([x, y])
 }
 
 /// The `u_prism` of the boolean suite: prong tops at different heights so no two

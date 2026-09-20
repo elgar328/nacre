@@ -26,11 +26,10 @@
 //! proxy for how much arithmetic happened, not the mechanism. This measures, on vertices, that
 //! the cache may not be the nearest f64.
 
-use nacre_math::{Point2, Point3, Vector3};
+use nacre_math::{Point3, Vector3};
 use nacre_ops::{
-    BoolKind, CacheDecline, DatumDef, OpOutput, Operation, Precision, Profile2d, RealizeError,
-    SketchFrame, SketchPlane, apply, boolean, realize_cache, realize_vertex,
-    realize_vertex_decimal,
+    BoolKind, CacheDecline, OpOutput, Operation, Precision, Profile2d, RealizeError, SketchFrame,
+    SketchPlane, apply, boolean, realize_cache, realize_vertex, realize_vertex_decimal,
 };
 #[path = "support/stated.rs"]
 mod stated;
@@ -39,21 +38,9 @@ use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 use stated::*;
 
-fn p2(x: f64, y: f64) -> Point2 {
-    Point2::from_array([x, y])
-}
-
-fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
-    match apply(
-        m,
-        &Operation::DatumPlane {
-            def: DatumDef::Stated(plane),
-        },
-    ) {
-        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
-        other => panic!("stating a plane: {other:?}"),
-    }
-}
+#[path = "support/fixtures.rs"]
+mod fixtures;
+use fixtures::{datum_frame, p2};
 
 fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
     m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))

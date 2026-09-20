@@ -1537,6 +1537,11 @@ fn unordered(a: usize, b: usize) -> (usize, usize) {
     (a.min(b), a.max(b))
 }
 
+// The lib's own tests share fixture files with the integration tests, which name this crate
+// `nacre_ops`; under `cfg(test)` the crate answers to that name too.
+#[cfg(test)]
+extern crate self as nacre_ops;
+
 #[cfg(test)]
 #[path = "tests/suite/mod.rs"]
 pub mod tests;

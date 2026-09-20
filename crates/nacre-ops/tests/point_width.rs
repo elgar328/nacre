@@ -168,32 +168,20 @@
 //! the shape to watch for here: this file's counters can shrink a population silently while every
 //! assertion stays green.
 
-use nacre_math::{Point2, Point3, Vector3};
-use nacre_ops::{BoolKind, DatumDef, OpOutput, Operation, Profile2d, SketchFrame, SketchPlane};
+use nacre_math::{Point3, Vector3};
+use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane};
 use nacre_ops::{apply, boolean};
 use nacre_scalar::{Angle, Axis, Isometry, MeetPoint, PlaneName, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
+#[path = "support/fixtures.rs"]
+mod fixtures;
+use fixtures::{datum_frame, p2};
+
 // ---------------------------------------------------------------------------------------------
 // fixtures — the shapes `tests/points_coverage.rs` already uses
 // ---------------------------------------------------------------------------------------------
-
-fn p2(x: f64, y: f64) -> Point2 {
-    Point2::from_array([x, y])
-}
-
-fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
-    match apply(
-        m,
-        &Operation::DatumPlane {
-            def: DatumDef::Stated(plane),
-        },
-    ) {
-        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
-        other => panic!("stating a plane: {other:?}"),
-    }
-}
 
 fn cuboid(m: &mut Model, lo: [f64; 3], hi: [f64; 3]) -> Handle<Solid> {
     m.add_cuboid(Point3::from_array(lo), Point3::from_array(hi))

@@ -919,25 +919,6 @@ fn rot30() -> nacre_scalar::Isometry {
     })
 }
 
-/// Distinct outer-shell vertex points of a solid (dedup by handle).
-fn outer_points(m: &Model, s: Handle<Solid>) -> Vec<[f64; 3]> {
-    let mut seen = std::collections::HashSet::new();
-    let mut pts = Vec::new();
-    let sh = m.solid(s).outer;
-    for &fh in &m.shell(sh).faces {
-        for he in &m.face(fh).outer.half_edges {
-            {
-                for vh in m.edge(he.edge).vertices {
-                    if seen.insert(vh) {
-                        pts.push(m.vertex_point(vh).as_array());
-                    }
-                }
-            }
-        }
-    }
-    pts
-}
-
 /// A non-90° rotation genuinely tilts the solid: rigid (volume/area invariant),
 /// validate/tess/STEP clean, a known corner lands at its exact rotated image, the
 /// faces record their motion (`solid_is_rotated`), and a boolean against it now

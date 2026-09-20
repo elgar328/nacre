@@ -8,24 +8,15 @@
 //! (`unify_coplanar_faces`)가 면-surface 를 재배선한 **뒤의** 결과를 검사한다.
 
 use nacre_math::{Point2, Point3, Vector3};
+use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
-use nacre_ops::{DatumDef, SketchFrame};
 
-/// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
-/// when the plane is not one the model already holds (a seed, or a face's).
-fn datum_frame(m: &mut Model, plane: SketchPlane) -> SketchFrame {
-    match apply(
-        m,
-        &Operation::DatumPlane {
-            def: DatumDef::Stated(plane),
-        },
-    ) {
-        Ok(OpOutput::DatumPlane { frame, .. }) => frame,
-        other => panic!("stating a plane: {other:?}"),
-    }
-}
 use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_topo::Model;
+
+#[path = "support/fixtures.rs"]
+mod fixtures;
+use fixtures::datum_frame;
 
 fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![
