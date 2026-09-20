@@ -95,7 +95,7 @@ pub(crate) fn boolean_with_classes(
     kind: BoolKind,
     a: Handle<Solid>,
     b: Handle<Solid>,
-) -> Result<(Vec<Handle<Solid>>, crate::arrangement::ClassOf), BoolError> {
+) -> Result<(Vec<Handle<Solid>>, crate::draft::ClassOf), BoolError> {
     // The live-set restore is [`boolean`]'s rule, held here too: a reject leaves the live model
     // alone whichever entry point raised it.
     let snapshot = model.live_solids().to_vec();

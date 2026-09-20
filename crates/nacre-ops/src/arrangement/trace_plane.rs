@@ -31,7 +31,7 @@ fn decline_of(f: RingFail) -> DeclineKind {
 /// that is the whole reason this function exists.
 pub(super) fn plane_ring(
     nr: &combinatorics::NamedRing,
-) -> Result<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>), RingFail> {
+) -> Result<(Vec<combinatorics::NodeId>, Vec<crate::combinatorics::Wall>), RingFail> {
     // ★★★★★ **Both refusals are gone, and the vessel is why they could go.** The corner used to
     // be projected to `[usize; 3]` and the carrier to a plane class, so a ring a cylinder touched
     // could not be *described* — the refusals here were the type running out, dressed as
@@ -88,7 +88,7 @@ fn trace_transversal_face(
     let mut circle_nodes: Vec<Node> = Vec::new();
     // The outer ring the scan walks — `None` for a circular outer, whose two chord ends are
     // already in `circle_nodes` and which has no polygon to walk.
-    let outer: Option<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>)> =
+    let outer: Option<(Vec<combinatorics::NodeId>, Vec<crate::combinatorics::Wall>)> =
         match loops.outer.as_ref().and_then(|r| r.poly()) {
             Some(nr) => match plane_ring(nr) {
                 Ok(pair) => Some(pair),
@@ -141,7 +141,7 @@ fn trace_transversal_face(
                 return;
             }
         };
-    let mut holes: Vec<(Vec<combinatorics::NodeId>, Vec<crate::boolean::Wall>)> = Vec::new();
+    let mut holes: Vec<(Vec<combinatorics::NodeId>, Vec<crate::combinatorics::Wall>)> = Vec::new();
     // A hole whose ring cannot be named is not "no hole" — swallowing the error would trace the
     // face as solid where it is pierced, which is a silent wrong answer rather than a reject.
     let Some(raw_holes) = &loops.holes else {
@@ -301,11 +301,11 @@ fn trace_transversal_face(
         // An arc between two on-line nodes leaves the line to the side its tangent points
         // ([`combinatorics::arc_departure_side`]); a straight edge stays on it.
         let on_meet = |i: usize| match walls[i] {
-            crate::boolean::Wall::Arc { cyl, ccw } => {
+            crate::combinatorics::Wall::Arc { cyl, ccw } => {
                 combinatorics::arc_departure_side(jd, cyls, ring[i], wc, cyl, ccw)
                     .map(combinatorics::EdgeMeet::Departs)
             }
-            crate::boolean::Wall::Plane(_) | crate::boolean::Wall::Ruling { .. } => {
+            crate::combinatorics::Wall::Plane(_) | crate::combinatorics::Wall::Ruling { .. } => {
                 Some(combinatorics::EdgeMeet::On)
             }
         };
@@ -342,11 +342,11 @@ fn trace_transversal_face(
                     // yet cut a ruling at a hole it does not carry on the class,
                     // so naming the arc's crossing here would meet a phantom ruling there.
                     let (id, pin) = match walls[edge] {
-                        crate::boolean::Wall::Plane(w) => (
+                        crate::combinatorics::Wall::Plane(w) => (
                             NodeId::three_planes(Canon3::three([wc, fc, w])),
                             combinatorics::EndPin::Class(w),
                         ),
-                        crate::boolean::Wall::Ruling { cyl, side, .. } => {
+                        crate::combinatorics::Wall::Ruling { cyl, side, .. } => {
                             let Some(wcy) = cyls.get(cyl) else {
                                 declined = Some(DeclineKind::CurvedRingWall);
                                 break 'rings;
@@ -364,7 +364,7 @@ fn trace_transversal_face(
                                 }
                             }
                         }
-                        crate::boolean::Wall::Arc { cyl, ccw } => {
+                        crate::combinatorics::Wall::Arc { cyl, ccw } => {
                             let Some(wcy) = cyls.get(cyl) else {
                                 declined = Some(DeclineKind::CurvedRingWall);
                                 break 'rings;
@@ -644,7 +644,7 @@ pub(super) fn trace_one(
     // ★ Every curved carrier a seated ring rode and this walk declined to re-emit, with the face
     // that rode it. Checked once at the end — a lateral face may be visited after the seated one,
     // so the question is only answerable when the solid's whole contribution is in.
-    let mut curves_owed: Vec<(usize, crate::boolean::Wall)> = Vec::new();
+    let mut curves_owed: Vec<(usize, crate::combinatorics::Wall)> = Vec::new();
     for (fp, fl) in faces_in {
         let fp = *fp;
         // A **lateral face** (a cylinder row): what it leaves on a ⊥ class is a **transversal**
@@ -702,7 +702,7 @@ pub(super) fn trace_one(
         // closed trace element ([`CircleTrace`]) rather than a segment ring.
         // ★ The **walls travel with the triples**. `plane_ring` has handed both back since the
         // vessel widened, and this caller dropped one of them on the floor.
-        let mut rings: Vec<(Vec<NodeId>, Vec<crate::boolean::Wall>)> = Vec::new();
+        let mut rings: Vec<(Vec<NodeId>, Vec<crate::combinatorics::Wall>)> = Vec::new();
         match &fl.outer {
             Some(combinatorics::LoopRing::Poly(nr)) => match plane_ring(nr) {
                 Ok(r) => rings.push(r),
@@ -760,7 +760,7 @@ pub(super) fn trace_one(
             continue;
         }
         let fc = plane_ix[fp].plane();
-        let mut emit_ring = |ns: &[combinatorics::NodeId], ws: &[crate::boolean::Wall]| {
+        let mut emit_ring = |ns: &[combinatorics::NodeId], ws: &[crate::combinatorics::Wall]| {
             // ★★★★★ **The carrier is taken, not derived.** It used to be re-read out of the two
             // endpoint *names* — "the class they share besides `fc`" — which is sound only while
             // every vertex lies on exactly three planes, and at a four-plane concurrency can hand
@@ -790,7 +790,7 @@ pub(super) fn trace_one(
                 // seated face is the only face on this class with that line as an edge, and it
                 // states the piece itself, `Seated` like its straight edges. `up` says which end
                 // is the lower one along the axis (`MergedRuling::end` ascends).
-                if let crate::boolean::Wall::Ruling { cyl, side: 0, up } = ws[i] {
+                if let crate::combinatorics::Wall::Ruling { cyl, side: 0, up } = ws[i] {
                     let (a, b) = (ns[i], ns[(i + 1) % n]);
                     // The axis side, in the label frame (`W`'s stored normal): the one bit a
                     // tangent edge flips ([`SegKind::Tangent`]).
@@ -819,7 +819,7 @@ pub(super) fn trace_one(
                     curves_owed.push((fp, ws[i]));
                     continue;
                 }
-                let crate::boolean::Wall::Plane(wall) = ws[i] else {
+                let crate::combinatorics::Wall::Plane(wall) = ws[i] else {
                     curves_owed.push((fp, ws[i]));
                     continue;
                 };
@@ -879,14 +879,16 @@ pub(super) fn trace_one(
     // one circle, so there the cylinder alone names it.
     for (fp, w) in curves_owed {
         let backed = match w {
-            crate::boolean::Wall::Ruling { cyl, side, .. } => out
+            crate::combinatorics::Wall::Ruling { cyl, side, .. } => out
                 .rulings
                 .iter()
                 .any(|r| r.cyl == cyl && r.side == side && r.solid == which),
-            crate::boolean::Wall::Arc { cyl, .. } => {
+            crate::combinatorics::Wall::Arc { cyl, .. } => {
                 out.circles.iter().any(|c| c.cyl == cyl && c.solid == which)
             }
-            crate::boolean::Wall::Plane(_) => unreachable!("only curved carriers are collected"),
+            crate::combinatorics::Wall::Plane(_) => {
+                unreachable!("only curved carriers are collected")
+            }
         };
         if !backed {
             out.declined.push((fp, DeclineKind::SeatedCurveUnbacked));

@@ -70,7 +70,7 @@ fn the_production_road_survives_a_cylinder_past_the_stopper() {
         .filter(|f| {
             f.inner
                 .iter()
-                .any(|b| matches!(b, crate::boolean::Bound::Circle { .. }))
+                .any(|b| matches!(b, crate::draft::Bound::Circle { .. }))
         })
         .count();
     assert_eq!(holed, 2, "both caps are drilled: {faces:?}");
@@ -646,18 +646,18 @@ fn a_cut_circle_bounds_the_bands() {
     assert_eq!(cut.len(), 1, "cut: one lateral face, the kept sector");
     let rim = &cut_rims[&(0, z0)];
     // The ccw arc a ring carries on the lower cut rim, as an ordered node pair.
-    let arc_on_z0 = |r: &crate::boolean::Ring| -> [NodeId; 2] {
+    let arc_on_z0 = |r: &crate::draft::Ring| -> [NodeId; 2] {
         let n = r.nodes.len();
         assert_eq!(n, 4, "two arcs and two rulings");
         let arcs = r
             .walls
             .iter()
-            .filter(|w| matches!(w, crate::boolean::Wall::Arc { .. }))
+            .filter(|w| matches!(w, crate::combinatorics::Wall::Arc { .. }))
             .count();
         assert_eq!(arcs, 2);
         for i in 0..n {
             let (a, b) = (r.nodes[i], r.nodes[(i + 1) % n]);
-            if let crate::boolean::Wall::Arc { ccw, .. } = r.walls[i]
+            if let crate::combinatorics::Wall::Arc { ccw, .. } = r.walls[i]
                 && rim.nodes.contains(&a)
                 && rim.nodes.contains(&b)
             {
@@ -666,16 +666,13 @@ fn a_cut_circle_bounds_the_bands() {
         }
         panic!("no arc on the lower cut rim");
     };
-    let crate::boolean::Bound::Band { lo, hi } = &fuse[0].outer else {
+    let crate::draft::Bound::Band { lo, hi } = &fuse[0].outer else {
         panic!("fuse: a band between the caps, got {:?}", fuse[0].outer);
     };
     assert!(
         matches!(
             (lo, hi),
-            (
-                crate::boolean::Rim::Circle(_),
-                crate::boolean::Rim::Circle(_)
-            )
+            (crate::draft::Rim::Circle(_), crate::draft::Rim::Circle(_))
         ),
         "the caps' whole circles are the band's rims"
     );
@@ -684,10 +681,10 @@ fn a_cut_circle_bounds_the_bands() {
         1,
         "the unkept sector is the band's one hole"
     );
-    let crate::boolean::Bound::Ring(hole) = &fuse[0].inner[0] else {
+    let crate::draft::Bound::Ring(hole) = &fuse[0].inner[0] else {
         panic!("a hole is a ring");
     };
-    let crate::boolean::Bound::Ring(panel) = &cut[0].outer else {
+    let crate::draft::Bound::Ring(panel) = &cut[0].outer else {
         panic!("cut: the kept sector is a ring, got {:?}", cut[0].outer);
     };
     assert!(cut[0].inner.is_empty());
@@ -1525,7 +1522,7 @@ fn class_at_z(planes: &[WorkingPlane], z: f64) -> usize {
 /// circle** — and the lateral, whose rim lies on this very plane, adds its **graze** beside it.
 /// The cell bricks turn the pair into a disk `+1` / contour `−1` pair whose labels say "body on
 /// the cap's inside", with no segments anywhere. The emitted face's outer is the circle itself
-/// ([`crate::boolean::Bound::Circle`]), the vocabulary the assembly consumes.
+/// ([`crate::draft::Bound::Circle`]), the vocabulary the assembly consumes.
 #[test]
 fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
     let mut m = Model::new();
@@ -1628,7 +1625,7 @@ fn a_cylinder_cap_is_a_seated_circle_and_a_disk_face() {
     assert_eq!(out.len(), 1, "{out:?}");
     assert!(matches!(
         out[0].outer,
-        crate::boolean::Bound::Circle { cyl: 0 }
+        crate::draft::Bound::Circle { cyl: 0 }
     ));
     assert!(out[0].inner.is_empty());
 }
@@ -1749,7 +1746,7 @@ fn a_drill_circle_is_a_hole_of_the_cap_ring() {
     assert_eq!(out.len(), 1, "one face: the drilled cap — {out:?}");
     assert_eq!(out[0].outer.expect_ring().len(), 4);
     assert!(
-        matches!(out[0].inner[..], [crate::boolean::Bound::Circle { cyl: 0 }]),
+        matches!(out[0].inner[..], [crate::draft::Bound::Circle { cyl: 0 }]),
         "{:?}",
         out[0].inner
     );

@@ -28,7 +28,7 @@ pub(crate) fn classify_cycles(
     rings: Vec<Ring>,
     rims_lo: Vec<usize>,
     rims_hi: Vec<usize>,
-    cut_rims: &crate::arrangement::CutRims,
+    cut_rims: &crate::draft::CutRims,
 ) -> Result<LocalFace, CurvedAbstain> {
     // A **contact** is a node the split put *on* the seam (`CutRim::seam_is_node`) or an arc
     // that wraps past it (the loop builder splits that one at the rim's seam vertex) — the two

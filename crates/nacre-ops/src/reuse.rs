@@ -16,8 +16,8 @@
 //! module existed. **So a missed proof costs time and nothing else, and no tolerance enters** —
 //! the same reason the kernel is allowed to have a fast path at all.
 
-use crate::boolean::LocalFace;
 use crate::combinatorics::{Canon3, NodeId};
+use crate::draft::LocalFace;
 use crate::planes::{ClassIx, FaceRow, SolidSide, WorkingPlane};
 use crate::{BoolKind, he_start};
 use nacre_exact::Orient;
@@ -238,7 +238,7 @@ pub(crate) fn class_plans(
 pub(crate) struct VertexClasses {
     vertices: HashMap<Handle<Vertex>, Vec<usize>>,
     /// Each edge's two plane classes — **the wall a ring edge rides**, from the incidence rather
-    /// than from the endpoint names (see `boolean::Ring`). Built in the same walk.
+    /// than from the endpoint names (see `draft::Ring`). Built in the same walk.
     edges: HashMap<Handle<nacre_topo::Edge>, Vec<usize>>,
 }
 
@@ -369,18 +369,18 @@ pub(crate) fn canonical(faces: &[LocalFace]) -> Vec<CanonFace> {
             // has none. The key still has to *separate* faces the two routes could disagree
             // about, so a circle contributes its cylinder class and a band its two rims —
             // spelled as one-element triples so they share the vessel with the node lists.
-            let canon_rim = |r: &crate::boolean::Rim| match r {
-                crate::boolean::Rim::Circle(c) => CanonRim::Circle(*c),
-                crate::boolean::Rim::Chain(_) => CanonRim::Chain,
+            let canon_rim = |r: &crate::draft::Rim| match r {
+                crate::draft::Rim::Circle(c) => CanonRim::Circle(*c),
+                crate::draft::Rim::Chain(_) => CanonRim::Chain,
             };
-            let ring_b = |b: &crate::boolean::Bound| match b {
-                crate::boolean::Bound::Ring(r) => ring(r),
-                crate::boolean::Bound::Circle { cyl } => vec![CanonNode::Circle(*cyl)],
+            let ring_b = |b: &crate::draft::Bound| match b {
+                crate::draft::Bound::Ring(r) => ring(r),
+                crate::draft::Bound::Circle { cyl } => vec![CanonNode::Circle(*cyl)],
                 // A chain rim's nodes follow the marker, so two bands differing only in a
                 // chain still separate.
-                crate::boolean::Bound::Band { lo, hi } => {
+                crate::draft::Bound::Band { lo, hi } => {
                     let mut v = vec![CanonNode::Band(canon_rim(lo), canon_rim(hi))];
-                    for r in [lo, hi].into_iter().filter_map(crate::boolean::Rim::ring) {
+                    for r in [lo, hi].into_iter().filter_map(crate::draft::Rim::ring) {
                         v.extend(ring(r));
                     }
                     v
@@ -436,18 +436,18 @@ pub(crate) fn pass_through(
             return None;
         }
         let same = d > 0.0;
-        let ring = |lp: &nacre_topo::Loop| -> Option<crate::boolean::Ring> {
+        let ring = |lp: &nacre_topo::Loop| -> Option<crate::draft::Ring> {
             let mut r: Vec<NodeId> = lp
                 .half_edges
                 .iter()
                 .map(|&he| Some(canon(vc.triple(he_start(model, he))?)))
                 .collect::<Option<_>>()?;
             // ★ The wall of the edge leaving vertex `i` is the plane of the face on the other side
-            // of that edge — carried, not derived (see `boolean::Ring`).
-            let mut walls: Vec<crate::boolean::Wall> = lp
+            // of that edge — carried, not derived (see `draft::Ring`).
+            let mut walls: Vec<crate::combinatorics::Wall> = lp
                 .half_edges
                 .iter()
-                .map(|he| Some(crate::boolean::Wall::Plane(vc.wall(he.edge, wc)?)))
+                .map(|he| Some(crate::combinatorics::Wall::Plane(vc.wall(he.edge, wc)?)))
                 .collect::<Option<_>>()?;
             // Rings are emitted CCW about the *class*'s outward normal (`emit_faces`), and `flip`
             // alone carries which chamber is material. A face wound against the class frame is
@@ -459,16 +459,16 @@ pub(crate) fn pass_through(
                 walls.reverse();
                 walls.rotate_left(1);
             }
-            Some(crate::boolean::Ring::new(r, walls))
+            Some(crate::draft::Ring::new(r, walls))
         };
         let f = model.face(fa.face().expect("reuse only sees real faces"));
         out.push(LocalFace {
             surf: crate::planes::ClassIx::Plane(wc),
-            outer: crate::boolean::Bound::Ring(ring(&f.outer)?),
+            outer: crate::draft::Bound::Ring(ring(&f.outer)?),
             inner: f
                 .inner
                 .iter()
-                .map(|l| Some(crate::boolean::Bound::Ring(ring(l)?)))
+                .map(|l| Some(crate::draft::Bound::Ring(ring(l)?)))
                 .collect::<Option<_>>()?,
             flip: !same,
         });

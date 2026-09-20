@@ -169,7 +169,7 @@ pub(super) fn lateral_shape(
                         if nr.arc_ccw[i].is_none() {
                             continue;
                         }
-                        let crate::boolean::Wall::Plane(c) = *w else {
+                        let crate::combinatorics::Wall::Plane(c) = *w else {
                             return Err(DeclineKind::CylSpan);
                         };
                         widen(station(c)?);
@@ -463,7 +463,7 @@ fn cycle_on_class(
                     // ("neither ⊥ nor ∥: an ellipse, outside this vocabulary") and that went with
                     // it; it belongs here, per edge, where the answer is actually used.
                     let edge = (first + k) % n;
-                    if nr.walls[edge] != crate::boolean::Wall::Plane(wc) {
+                    if nr.walls[edge] != crate::combinatorics::Wall::Plane(wc) {
                         return Err(DeclineKind::CylHoleFeature);
                     }
                     // An arc on the class with no stated sense is not a lateral's arc at all.
@@ -485,7 +485,7 @@ fn cycle_on_class(
             combinatorics::Feature::Crossing { edge, from } => {
                 // The crossed edge's carrier, **carried** from the producer rather than re-derived
                 // from the two endpoint names.
-                let crate::boolean::Wall::Plane(j) = nr.walls[edge] else {
+                let crate::combinatorics::Wall::Plane(j) = nr.walls[edge] else {
                     return Err(DeclineKind::CylHoleFeature);
                 };
                 let start = ring[edge];

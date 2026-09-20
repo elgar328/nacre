@@ -16,6 +16,7 @@
 use super::*;
 use crate::boolean::*;
 use crate::combinatorics::{Canon3, NodeId, three_plane_name};
+use crate::draft::*;
 use crate::planes::*;
 use crate::tolerant::Judge;
 #[cfg(test)]
@@ -23,7 +24,6 @@ use crate::transform::transform;
 use nacre_geom::intersect::three_planes;
 use nacre_judge::Decision;
 use nacre_judge::predicate::Notes;
-use nacre_topo::Surface;
 
 /// `phase::timed` where the counters exist, and a plain call where they do not.
 macro_rules! timed {
@@ -184,7 +184,7 @@ struct Carved {
 /// ★ Everything a wall knows travels with it. The alternative — a `Vec<usize>` of classes beside a
 /// `HashMap<class, Vec<usize>>` of segments beside a `Vec<usize>` of families indexed by *position* —
 /// is two or three index spaces read in one breath, which is the shape this crate has been bitten by
-/// four times (`combinatorics`'s "One `usize`, two meanings"). Same rule as `boolean::Ring` carrying
+/// four times (`combinatorics`'s "One `usize`, two meanings"). Same rule as `draft::Ring` carrying
 /// the wall each edge rides rather than deriving it.
 struct Wall {
     class: usize,
@@ -294,14 +294,10 @@ struct Nesting {
 /// classes (`canon3`), so a corner shared by three planes gets one identical [`combinatorics::NodeId`]
 /// regardless of which plane was the cut class W — `assemble_fuse_cut` welds them to one vertex.
 /// A four-plane concurrency would name it inconsistently, which is what the alias table settles
-/// and what `boolean::Ring`'s carried walls keep out of the naming in the first place.
+/// and what `draft::Ring`'s carried walls keep out of the naming in the first place.
 ///
 /// A class that declines (holes, degenerate) aborts the whole boolean: skipping it would drop real
 /// faces and silently produce a non-manifold or wrong-volume solid.
-/// What each input face's plane became: its **plane class's representative surface**, which is
-/// what every result face on that plane carries.
-pub(crate) type ClassOf = std::collections::HashMap<Handle<Face>, Handle<Surface>>;
-
 pub(crate) fn boolean(
     model: &mut Model,
     kind: BoolKind,

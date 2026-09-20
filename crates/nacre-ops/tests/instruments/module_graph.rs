@@ -152,41 +152,53 @@ fn edges() -> BTreeMap<String, BTreeMap<String, usize>> {
     out
 }
 
-/// ★★ **The calibration, and the reason it is spelled as strings.** Each case is a line that was
-/// actually in this crate when the graph was first measured, but it is pinned here as text: the
-/// subject under test is the parser, and a fixture that pointed at a file would go red when that
-/// file moves — a red that means nothing and looks like a real one.
+/// ★★ **The calibration, and why its module names are made up.**
 ///
-/// The fourth case is the one that matters. `std::ops::Deref` shares a name with this crate's
-/// `ops` module, and counting it put three phantom edges into the first measurement.
+/// The subject under test is [`targets`], and it does not know this crate: it takes the module
+/// set as an argument. So the fixtures name `alpha`/`beta`/`gamma`, which exist nowhere. That is
+/// not tidiness — it is the second thing that went wrong here.
+///
+/// The first was pinning fixtures to *files*: a fixture that points at `boolean/naming.rs` goes
+/// red the moment that file moves, and that red means nothing while looking exactly like a real
+/// one. So they became string literals. Then a bulk path rewrite (`crate::boolean::Wall` ->
+/// `crate::draft::Wall`) swept every `.rs` file in the crate and **edited the literals**, because
+/// a fixture that looks like code is code to a script. Names that no module has are immune to
+/// both.
+///
+/// The `std::ops::Deref` case keeps a real name on purpose: `ops` is a module of this crate, and
+/// reading that line as a reference to it put three phantom edges into the first measurement.
 #[test]
 fn the_parser_reads_what_it_should() {
-    let mods: BTreeSet<String> = ["arrangement", "boolean", "exact", "ops", "combinatorics"]
+    let mods: BTreeSet<String> = ["alpha", "beta", "gamma", "ops"]
         .iter()
         .map(|s| (*s).to_string())
         .collect();
-    let cases: [(&str, &str, &[&str]); 5] = [
+    let cases: [(&str, &str, &[&str]); 6] = [
+        // A pattern match through a full path: the head is `crate`, so the module is the second
+        // segment, and the type and variant after it are not modules.
         (
-            "            let crate::boolean::Wall::Plane(c) = *w else {",
-            "arrangement",
-            &["boolean"],
+            "            let crate::beta::Wall::Plane(c) = *w else {",
+            "alpha",
+            &["beta"],
         ),
+        // A borrowed type in a signature.
+        ("    cut_rims: &crate::alpha::CutRims,", "beta", &["alpha"]),
+        // A brace import names its module even though the braces stop the path.
         (
-            "    cut_rims: &crate::arrangement::CutRims,",
-            "boolean",
-            &["arrangement"],
+            "use crate::gamma::{Profile2d, SketchPlane};",
+            "alpha",
+            &["gamma"],
         ),
+        // ★ A foreign root that shares a name with a module of this crate. This is the case the
+        // whole calibration exists for.
+        ("impl std::ops::Deref for Ring {", "beta", &[]),
+        // A glob re-export names its module although no second segment follows.
+        ("pub use gamma::*;", "alpha", &["gamma"]),
+        // A module never names itself, and one line can name two.
         (
-            "use crate::ops::{Profile2d, SketchPlane};",
-            "exact",
-            &["ops"],
-        ),
-        ("impl std::ops::Deref for Ring {", "boolean", &[]),
-        // A glob re-export names its module even though no second segment follows.
-        (
-            "pub use combinatorics::*;",
-            "arrangement",
-            &["combinatorics"],
+            "    let x = alpha::f(beta::g(), gamma::h());",
+            "alpha",
+            &["beta", "gamma"],
         ),
     ];
     for (line, owner, want) in cases {

@@ -4,6 +4,7 @@ mod fixtures;
 /// The fixture vocabulary, shared with the integration tests (one copy).
 #[path = "../../../tests/support/stated.rs"]
 mod stated;
+use crate::draft::LocalFace;
 use fixtures::{
     boolean_one, cube_and_notch, extrude_op, l_and_corner_box, l_and_dimple, l_and_inner_box,
     l_and_popup_box, l_and_reflex_box, l_and_rod, l_prism, nested_boxes, outer_points, p2,
@@ -484,7 +485,7 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
         let Some(nr) = ring.poly() else { continue };
         let n = nr.triples.len();
         for i in 0..n {
-            let crate::boolean::Wall::Plane(q) = nr.walls[i] else {
+            let crate::combinatorics::Wall::Plane(q) = nr.walls[i] else {
                 continue;
             };
             let (a, b) = (nr.triples[i], nr.triples[(i + 1) % n]);
@@ -587,14 +588,10 @@ fn rigid_iso(axis: nacre_exact::Axis, deg: i128, off: [i128; 3]) -> nacre_exact:
 fn face(plane_idx: usize, nodes: Vec<NodeId>, inner: Vec<Vec<NodeId>>) -> LocalFace {
     LocalFace {
         surf: crate::planes::ClassIx::Plane(plane_idx),
-        outer: crate::boolean::Bound::Ring(crate::boolean::Ring::from_clean_names(
-            plane_idx, nodes,
-        )),
+        outer: crate::draft::Bound::Ring(crate::draft::Ring::from_clean_names(plane_idx, nodes)),
         inner: inner
             .into_iter()
-            .map(|r| {
-                crate::boolean::Bound::Ring(crate::boolean::Ring::from_clean_names(plane_idx, r))
-            })
+            .map(|r| crate::draft::Bound::Ring(crate::draft::Ring::from_clean_names(plane_idx, r)))
             .collect(),
         flip: false,
     }

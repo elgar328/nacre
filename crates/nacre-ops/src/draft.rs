@@ -1,4 +1,25 @@
-use super::*;
+//! **What the engine says a result face is, before anything is built.**
+//!
+//! The arrangement decides a face's boundary long before a `Handle` exists for any of it, and the
+//! assembly turns that description into b-rep. Both halves speak this vocabulary, so it belongs to
+//! neither: [`LocalFace`] with its [`Bound`]s, a [`Ring`] of [`NodeId`]s and the [`Wall`] each edge
+//! rides, a [`Rim`], a [`SeamVertex`], and the record a cut circle carries out of the split
+//! ([`CutRim`]). Alongside them the two terms that decide whether a draft face survives at all --
+//! [`BoolKind`] and [`keep`], one predicate on one chamber's `(inA, inB)`.
+//!
+//! ★ **This module is under the engine, not beside it.** It names `combinatorics` (a ring is a ring
+//! of names) and `planes` (a face lives in a class table) and nothing else in this crate -- no
+//! `arrangement`, no `assembly`, no `ops`. That is what a shared vocabulary means here, and the
+//! module-graph gate asserts exactly it.
+
+use crate::combinatorics::{NodeId, Wall};
+use crate::planes::{ClassIx, WorkingPlane};
+use crate::tolerant::Judge;
+use crate::{BoolError, RejectReason, combinatorics, reject};
+use nacre_math::Point3;
+use nacre_store::Handle;
+use nacre_topo::{Edge, Face, Surface, Vertex};
+use std::collections::HashMap;
 /// A seam vertex — a three-plane point on both `∂A` and `∂B` (2 A-planes + 1
 /// B-plane, or 1 A + 2 B). Shared (one `Handle`) by every incident result piece.
 pub(crate) struct SeamVertex {
@@ -21,52 +42,6 @@ pub(crate) struct Ring {
     pub(crate) nodes: Vec<NodeId>,
     /// `walls[i]` is the carrier of the edge `nodes[i] -> nodes[i+1]`.
     pub(crate) walls: Vec<Wall>,
-}
-
-/// **A ring edge's carrier** — the type half of "a line is unordered, a circle is ordered".
-///
-/// A plane-carried edge rides one wall class, as `Ring.walls` always said. An arc rides a
-/// cylinder, and for it the ring additionally remembers **which way around the axis this edge
-/// runs**: `ccw` restates `ClassEdges::edge_at`'s own convention (*"`MergedArc::end` runs
-/// counter-clockwise about the axis"* — the even half-edge travels that way, its twin the other),
-/// carried rather than re-derived. That bit is what will let `edge_for` tell the two
-/// complementary arcs between one pair of pierce vertices apart.
-///
-/// ★ Replacing the `usize::MAX` sentinel with a variant also kills a recorded hazard for free:
-/// `dissolve_straight_angles` folds on wall *equality*, and two arcs of different circles — or
-/// of one circle in different directions — now compare unequal instead of `MAX == MAX`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub(crate) enum Wall {
-    Plane(usize),
-    Arc {
-        cyl: usize,
-        ccw: bool,
-    },
-    /// A ruling piece: straight on the lateral, so like a line its ends
-    /// order it — but its carrier is the cylinder, and `(cyl, side)` names which of the two
-    /// parallel rulings ([`combinatorics::RulingCarrier::side`]; `0` is a **tangent** wall's
-    /// single ruling). `up` restates
-    /// `ClassEdges::edge_at`'s convention (`MergedRuling::end` ascends the axis; the even
-    /// half-edge travels up, its twin down), carried like `Arc::ccw`.
-    Ruling {
-        cyl: usize,
-        side: i8,
-        up: bool,
-    },
-}
-
-impl Wall {
-    /// The same carrier walked the other way: a plane wall is direction-blind, the same
-    /// arc walked back runs the other way about the axis, the same ruling piece descends.
-    /// The *complementary* arc between the same two nodes keeps its flag instead — which
-    /// is what lets a keyed lookup tell "this edge reversed" from "the other arc".
-    pub(crate) fn reversed(self) -> Self {
-        match self {
-            Wall::Plane(p) => Wall::Plane(p),
-            Wall::Arc { cyl, ccw } => Wall::Arc { cyl, ccw: !ccw },
-            Wall::Ruling { cyl, side, up } => Wall::Ruling { cyl, side, up: !up },
-        }
-    }
 }
 
 /// **The edge-welding key** — the key half of "a line is unordered, a circle is ordered"
@@ -402,7 +377,7 @@ pub(super) fn seam_step(
     a: NodeId,
     b: NodeId,
     wall: Wall,
-    cut_rims: &crate::arrangement::CutRims,
+    cut_rims: &crate::draft::CutRims,
 ) -> Result<Option<(usize, usize, i8)>, BoolError> {
     let Wall::Arc { cyl, ccw } = wall else {
         return Ok(None);
@@ -447,9 +422,50 @@ pub(super) fn wrapping_rim(
     a: NodeId,
     b: NodeId,
     wall: Wall,
-    cut_rims: &crate::arrangement::CutRims,
+    cut_rims: &crate::draft::CutRims,
 ) -> Result<Option<(usize, usize)>, BoolError> {
     Ok(seam_step(surf, a, b, wall, cut_rims)?
         .filter(|&(cyl, c, _)| !cut_rims[&(cyl, c)].seam_is_node)
         .map(|(cyl, c, _)| (cyl, c)))
 }
+
+/// Which boolean to compute.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoolKind {
+    /// A ∪ B.
+    Fuse,
+    /// A − B.
+    Cut,
+    /// A ∩ B.
+    Common,
+}
+
+/// The boolean keep predicate on one chamber's `(inA, inB)`.
+pub(crate) fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
+    match kind {
+        BoolKind::Fuse => in_a || in_b,
+        BoolKind::Cut => in_a && !in_b,
+        BoolKind::Common => in_a && in_b,
+    }
+}
+
+/// **A cut circle's seam datum — carried from the split, never re-derived.** `split_circles`
+/// already orders a cut circle's pierce nodes by θ about the seam and classifies a seam-incident
+/// node by name (`circular_order_about_seam`), so the one fact the assembly cannot re-derive
+/// cheaply — *where θ = 0 sits among the arcs* — travels from the place that computed it.
+#[derive(Clone, Debug)]
+pub(crate) struct CutRim {
+    /// The circle's pierce nodes in θ order (CCW about the axis). When `seam_is_node`, the
+    /// seam-incident node is first; otherwise θ = 0 lies inside the wrap arc
+    /// `nodes.last() → nodes[0]`.
+    pub(crate) nodes: Vec<combinatorics::NodeId>,
+    pub(crate) seam_is_node: bool,
+}
+
+/// Per `(cylinder class, plane class)`, the cut circles — presence in this map **is** the one
+/// source of "this rim is cut" (the assembly's rim skip and curved arms all read it).
+pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
+
+/// What each input face's plane became: its **plane class's representative surface**, which is
+/// what every result face on that plane carries.
+pub(crate) type ClassOf = std::collections::HashMap<Handle<Face>, Handle<Surface>>;

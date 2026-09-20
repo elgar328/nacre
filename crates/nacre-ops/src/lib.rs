@@ -23,6 +23,7 @@ mod boolean;
 mod combinatorics;
 /// The cylinder chart: the lateral faces' arrangement, emitted from cells (capability D).
 mod cyl_chart;
+mod draft;
 mod error;
 mod exact;
 mod nesting;
@@ -43,12 +44,13 @@ pub use error::{BoolError, DeclineKind, RejectClass, RejectReason, RejectWhere};
 pub(crate) use error::{reject, reject_at};
 // The report's vocabulary: what a judgement was asked about, and what it established. Re-exported
 // so a consumer reads one crate, not two.
+pub use draft::BoolKind;
 pub use nacre_geom::mixed::Edge2d;
 pub use nacre_judge::Decision;
 pub use nacre_judge::predicate::{Evidence, Site};
 pub use ops::{
-    BoolKind, DatumDef, LogCell, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing,
-    Ring2d, SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,
+    DatumDef, LogCell, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing, Ring2d,
+    SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,
 };
 pub use realize::{
     CacheDecline, Precision, RealizeError, Realized, RefineReport, realize_cache, realize_vertex,

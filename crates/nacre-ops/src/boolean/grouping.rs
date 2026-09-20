@@ -93,7 +93,7 @@ pub(super) fn group_faces(
     jd: &Judge<'_, WorkingPlane>,
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-    cut_rims: &crate::arrangement::CutRims,
+    cut_rims: &crate::draft::CutRims,
 ) -> Result<Grouping, BoolError> {
     let (labels, n) = face_components(faces, cut_rims);
     let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); n];

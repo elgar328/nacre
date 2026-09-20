@@ -167,7 +167,7 @@ fn ruling_sweep(
     which: SolidSide,
     aliases: &Aliases,
 ) -> Result<SweepOut, DeclineKind> {
-    use crate::boolean::Wall;
+    use crate::combinatorics::Wall;
     // ★ **The lateral's half of a plane-pair line.** An edge of this cycle can lie on
     // this ruling with the face *across* it being another plane `t` — the fillet's tangent edge,
     // when `wc` passes through the axis and so contains the tangent ruling. That line is a

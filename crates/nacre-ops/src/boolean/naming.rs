@@ -40,7 +40,7 @@ pub(crate) fn name_result_vertices(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-    cut_rims: &crate::arrangement::CutRims,
+    cut_rims: &crate::draft::CutRims,
 ) -> Result<Named, BoolError> {
     // ★★★ **The split-twin subdivision — every pierce node is cut into every edge it lies on.**
     // The arrangement cannot do this: a pierce point needs the cylinder, and the neighbouring

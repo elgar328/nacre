@@ -421,7 +421,7 @@ fn wall_faces_clear(
 /// What such a plane can still do is **pinch the result**: near the tangent line the material
 /// splits into three regions — the lens inside the cylinder, the **two** wedges between the
 /// parabola and the plane, and the far half-space — and whether the kept ones hang together is a
-/// question only [`crate::arrangement::keep`] can answer. So this is a *record*, not a verdict:
+/// question only [`crate::draft::keep`] can answer. So this is a *record*, not a verdict:
 /// the gate states the geometry, the operation decides.
 #[derive(Clone, Debug)]
 pub(crate) struct Tangency {

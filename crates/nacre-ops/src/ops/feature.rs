@@ -1,4 +1,5 @@
 use super::*;
+use crate::BoolKind;
 /// A face-local feature built as **tool body + boolean**: the profile
 /// extrudes off `face` into a top-flush prism, then `kind` fuses/cuts it against the face's solid.
 /// A **contained** footprint takes the contained-coplanar path (empty seam → all

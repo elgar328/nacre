@@ -160,7 +160,7 @@ impl Chart {
         t: Rat,
         x: usize,
         y: usize,
-        rim: &crate::arrangement::CutRim,
+        rim: &crate::draft::CutRim,
         arcs: &'a [ArcLabel],
         aliases: &crate::arrangement::Aliases,
     ) -> Result<Vec<&'a ArcLabel>, RunFail> {

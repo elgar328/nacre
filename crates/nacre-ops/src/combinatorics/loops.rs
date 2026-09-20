@@ -133,7 +133,7 @@ pub(crate) fn lateral_cycles(
 /// sound only while every vertex lies on exactly three planes, and the carried value is total
 /// even where the *names* degenerate (the fallback-named vertices still know their edges).
 ///
-/// ★★★★★ **A wall is a *carrier*, not a plane index** — the same [`crate::boolean::Wall`] the
+/// ★★★★★ **A wall is a *carrier*, not a plane index** — the same [`crate::combinatorics::Wall`] the
 /// result side's `Ring` uses, and deliberately not a second vocabulary. An operand can be a
 /// previous boolean's result, and then a face's ring runs along a cylinder: a boss on a wall bites
 /// an arc out of the plate's caps and splits the wall with its rulings. `usize` had nowhere to
@@ -141,7 +141,7 @@ pub(crate) fn lateral_cycles(
 #[derive(Clone, Debug)]
 pub(crate) struct NamedRing {
     pub triples: Vec<NodeId>,
-    pub walls: Vec<crate::boolean::Wall>,
+    pub walls: Vec<crate::combinatorics::Wall>,
     /// For an arc edge of a **lateral** face's ring, which way it runs about the axis — the
     /// producer's own convention (`derive_edge_curve`: a circle carrier's `[A, B]` is A to B
     /// counter-clockwise, so walking the edge `forward` is walking it CCW), read off the
@@ -475,7 +475,7 @@ fn loop_triples(
         // Edge `i`'s carried wall: the far face's class, read off `inc` — total even where the
         // vertex *names* below have to fall back or decline (see [`NamedRing`]).
         walls.push(match (plane_ix[b], plane_ix[p]) {
-            (ClassIx::Plane(w), _) => crate::boolean::Wall::Plane(w),
+            (ClassIx::Plane(w), _) => crate::combinatorics::Wall::Plane(w),
             (ClassIx::Cyl(k), ClassIx::Plane(near)) => {
                 let end = pierce.expect("a curved edge's corner is a pierce point");
                 curved_wall(model, jd, cyls, &hes[i], k, near, end)?
@@ -665,10 +665,10 @@ fn curved_wall(
     cyl: usize,
     near: usize,
     end: NodeId,
-) -> Result<crate::boolean::Wall, BoolError> {
+) -> Result<crate::combinatorics::Wall, BoolError> {
     let curved = || reject(RejectReason::CurvedOperandBoundary);
     match model.edge_curve(he.edge) {
-        nacre_geom::Curve::Circle(_) => Ok(crate::boolean::Wall::Arc {
+        nacre_geom::Curve::Circle(_) => Ok(crate::combinatorics::Wall::Arc {
             cyl,
             ccw: he.forward,
         }),
@@ -728,7 +728,7 @@ fn curved_wall(
                 other_param(v1).ok_or_else(curved)?,
             );
             let ascends = t1 > t0;
-            Ok(crate::boolean::Wall::Ruling {
+            Ok(crate::combinatorics::Wall::Ruling {
                 cyl,
                 side,
                 up: ascends == he.forward,

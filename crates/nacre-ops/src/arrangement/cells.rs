@@ -541,12 +541,3 @@ pub(super) fn label_cells(
     }
     Ok(out)
 }
-
-/// The boolean keep predicate on one chamber's `(inA, inB)`.
-pub(crate) fn keep(kind: BoolKind, in_a: bool, in_b: bool) -> bool {
-    match kind {
-        BoolKind::Fuse => in_a || in_b,
-        BoolKind::Cut => in_a && !in_b,
-        BoolKind::Common => in_a && in_b,
-    }
-}

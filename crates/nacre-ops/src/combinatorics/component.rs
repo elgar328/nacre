@@ -20,7 +20,7 @@ use super::*;
 /// "no clear ray" once every node hit it.
 /// One boundary of a component's face, with a polygon's edges already derived.
 ///
-/// ★★★ **It mirrors [`crate::boolean::Bound`] on purpose.** The probe used to read a *flattened*
+/// ★★★ **It mirrors [`crate::draft::Bound`] on purpose.** The probe used to read a *flattened*
 /// projection — `Vec<Vec<RingEdge>>`, which can only spell a polygon — so every circular and
 /// banded boundary was **dropped on the way in** (`LocalFace::poly_rings`) and the component the
 /// ray counted was not the component. Reading the engine's own boundary vocabulary is what lets

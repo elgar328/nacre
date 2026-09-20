@@ -56,7 +56,7 @@
 //! and the emitter's faces against the reads they came from ([`census`]).
 
 use crate::arrangement::{ArcLabel, Curved, Label, RulingExtent};
-use crate::boolean::{Bound, LocalFace};
+use crate::draft::{Bound, LocalFace};
 use crate::planes::{ClassIx, WorkingCyl, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, combinatorics, reject};

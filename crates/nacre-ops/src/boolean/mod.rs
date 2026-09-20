@@ -5,7 +5,8 @@
 //! [`crate::arrangement`]; the engine calls back into [`assemble_fuse_cut`] and
 //! [`unify_coplanar_faces`] to build and clean the shells (a legal module cycle).
 
-use crate::combinatorics::{self, NodeId};
+use crate::combinatorics::{self, NodeId, Wall};
+use crate::draft::*;
 use crate::planes::{ClassIx, WorkingPlane, uf_find};
 use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, he_start, reject, unordered};
@@ -25,7 +26,6 @@ mod naming;
 #[cfg(test)]
 pub(crate) mod probe;
 mod reconstruct;
-mod rings;
 mod self_touch;
 #[cfg(test)]
 pub(crate) mod tess_census;
@@ -37,7 +37,6 @@ pub use entry::*;
 pub(crate) use grouping::*;
 pub(crate) use naming::*;
 pub(crate) use reconstruct::*;
-pub(crate) use rings::*;
 pub(crate) use self_touch::*;
 use topology::*;
 

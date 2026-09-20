@@ -829,7 +829,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
                 let k = ring.nodes.len();
                 for t in 0..k {
                     let (a, b) = (ring.nodes[t], ring.nodes[(t + 1) % k]);
-                    if matches!(ring.walls[t], crate::boolean::Wall::Arc { .. }) {
+                    if matches!(ring.walls[t], crate::combinatorics::Wall::Arc { .. }) {
                         continue;
                     }
                     let key = crate::boolean::norm_edge(a, b);

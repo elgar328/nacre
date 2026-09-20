@@ -27,8 +27,9 @@
 
 use super::{Cell, CellRead, Chart, Lines};
 use crate::arrangement::Curved;
-use crate::boolean::{Bound, LocalFace, Ring, Wall};
 use crate::combinatorics::NodeId;
+use crate::combinatorics::Wall;
+use crate::draft::{Bound, LocalFace, Ring};
 use crate::planes::{ClassIx, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, reject};

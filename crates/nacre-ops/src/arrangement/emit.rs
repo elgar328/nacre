@@ -30,31 +30,31 @@ pub(super) fn emit_faces(
     // three-valued-scan struct, a *different* type that happens to share the word) shadows the
     // glob-imported name here, which is why the identity is always spelled out in full.
     // ★ The wall travels with the ring. A half-edge was *told* which plane its edge rides, and
-    // that is the one fact a name cannot always give back (see `boolean::Ring`). A circle cell
+    // that is the one fact a name cannot always give back (see `draft::Ring`). A circle cell
     // (pseudo-half-edge past the segment range) has no nodes — its boundary is the cylinder
     // class itself.
-    let bound_of = |cell: &Cell| -> crate::boolean::Bound {
+    let bound_of = |cell: &Cell| -> crate::draft::Bound {
         if let Some(&he) = cell.half_edges.first()
             && let HalfEdgeKind::Circle(i) = edges.kind(he)
         {
-            return crate::boolean::Bound::Circle {
+            return crate::draft::Bound::Circle {
                 cyl: edges.circles[i].cyl,
             };
         }
-        // ★★ `Ring.walls` is a carrier now (`boolean::Wall`), so an arc half-edge has something
+        // ★★ `Ring.walls` is a carrier now (`combinatorics::Wall`), so an arc half-edge has something
         // true to put here at last: its cylinder class and which way this side travels. What is
         // still missing is downstream — `edge_for` refuses an arc carrier by the population's
         // name until the arc-casting cell teaches it the ordered circle key.
-        crate::boolean::Bound::Ring(crate::boolean::Ring::new(
+        crate::draft::Bound::Ring(crate::draft::Ring::new(
             cell.half_edges.iter().map(|&he| edges.origin(he)).collect(),
             cell.half_edges
                 .iter()
                 .map(|&he| match edges.kind(he) {
-                    HalfEdgeKind::Seg(i) => crate::boolean::Wall::Plane(edges.segs[i].wall),
+                    HalfEdgeKind::Seg(i) => crate::combinatorics::Wall::Plane(edges.segs[i].wall),
                     // `edge_at`'s own convention, carried not re-derived: `MergedArc::end` runs
                     // counter-clockwise about the axis, so the even half-edge travels that way
                     // and its twin the other.
-                    HalfEdgeKind::Arc(i) => crate::boolean::Wall::Arc {
+                    HalfEdgeKind::Arc(i) => crate::combinatorics::Wall::Arc {
                         cyl: edges.arcs[i].cyl,
                         ccw: he % 2 == 0,
                     },
@@ -63,7 +63,7 @@ pub(super) fn emit_faces(
                     // name (`RulingBoundNotYet`) until the panel cell teaches it the key.
                     HalfEdgeKind::Ruling(i) => {
                         let r = &edges.rulings[i];
-                        crate::boolean::Wall::Ruling {
+                        crate::combinatorics::Wall::Ruling {
                             cyl: r.cyl,
                             side: r.side,
                             up: he % 2 == 0,
@@ -89,7 +89,7 @@ pub(super) fn emit_faces(
             continue; // material the same on both sides ⇒ not a result face here
         }
         let flip = keep_above == (planes[wc].frame_sign > 0);
-        let inner: Vec<crate::boolean::Bound> = holes
+        let inner: Vec<crate::draft::Bound> = holes
             .get(&c)
             .map(|hs| hs.iter().map(|&h| bound_of(&cells[h])).collect())
             .unwrap_or_default();

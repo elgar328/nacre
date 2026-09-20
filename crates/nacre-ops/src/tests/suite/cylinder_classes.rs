@@ -587,8 +587,8 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
             // wall must be an arc or a ruling of the cylinder its far face is on, never a plane.
             let straight = matches!(m.edge_curve(hes[i].edge), nacre_geom::Curve::Line(_));
             match nr.walls[i] {
-                crate::boolean::Wall::Plane(_) => {}
-                crate::boolean::Wall::Arc { .. } => {
+                crate::combinatorics::Wall::Plane(_) => {}
+                crate::combinatorics::Wall::Arc { .. } => {
                     assert!(
                         !straight,
                         "face {:?} edge {i}: an arc carrier on a straight curve",
@@ -603,7 +603,7 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
                 // realized coordinates on purpose — the code derives them without any (`side`
                 // exactly through `quad::plane_side`, `up` from the cutting planes' axial
                 // parameters), so the coordinate is a genuinely second road to the same bit.
-                crate::boolean::Wall::Ruling { cyl: k, side, up } => {
+                crate::combinatorics::Wall::Ruling { cyl: k, side, up } => {
                     assert!(
                         straight,
                         "face {:?} edge {i}: a ruling carrier on a curved curve",

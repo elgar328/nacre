@@ -25,8 +25,8 @@ fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
     let three =
         |a, b, c| combinatorics::NodeId::three_planes(combinatorics::Canon3::three([a, b, c]));
     let pierce = combinatorics::NodeId::pierce(0, 1, 0, nacre_topo::QuadRoot::Lo);
-    let plane = |c| crate::boolean::Wall::Plane(c);
-    let ruling = crate::boolean::Wall::Ruling {
+    let plane = |c| crate::combinatorics::Wall::Plane(c);
+    let ruling = crate::combinatorics::Wall::Ruling {
         cyl: 0,
         side: 1,
         up: true,

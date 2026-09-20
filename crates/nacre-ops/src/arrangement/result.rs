@@ -74,23 +74,6 @@ pub(crate) struct ArcLabel {
     pub(crate) marks: Vec<(SolidSide, SegKind)>,
 }
 
-/// **A cut circle's seam datum — carried from the split, never re-derived.** `split_circles`
-/// already orders a cut circle's pierce nodes by θ about the seam and classifies a seam-incident
-/// node by name (`circular_order_about_seam`), so the one fact the assembly cannot re-derive
-/// cheaply — *where θ = 0 sits among the arcs* — travels from the place that computed it.
-#[derive(Clone, Debug)]
-pub(crate) struct CutRim {
-    /// The circle's pierce nodes in θ order (CCW about the axis). When `seam_is_node`, the
-    /// seam-incident node is first; otherwise θ = 0 lies inside the wrap arc
-    /// `nodes.last() → nodes[0]`.
-    pub(crate) nodes: Vec<combinatorics::NodeId>,
-    pub(crate) seam_is_node: bool,
-}
-
-/// Per `(cylinder class, plane class)`, the cut circles — presence in this map **is** the one
-/// source of "this rim is cut" (the assembly's rim skip and curved arms all read it).
-pub(crate) type CutRims = HashMap<(usize, usize), CutRim>;
-
 /// **One ruling piece, as the cylinder's own chart needs it** — the wall it rides and the
 /// **axis interval** it spans.
 ///

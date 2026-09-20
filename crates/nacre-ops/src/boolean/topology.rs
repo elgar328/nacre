@@ -115,7 +115,7 @@ pub(super) fn check_result_topology(
 /// An enclosed void is its own component, as before — its boundary shares no edge with the outer.
 pub(super) fn face_components(
     faces: &[LocalFace],
-    cut_rims: &crate::arrangement::CutRims,
+    cut_rims: &crate::draft::CutRims,
 ) -> (Vec<usize>, usize) {
     fn find(p: &mut [usize], mut x: usize) -> usize {
         while p[x] != x {

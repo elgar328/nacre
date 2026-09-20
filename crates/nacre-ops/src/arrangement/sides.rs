@@ -141,7 +141,7 @@ pub(crate) fn ruling_side_signed(
 /// axis — or is tangent, which the gate passes but does **not** record, so no ruling of it ever
 /// reaches here), so the pair `{wc, fc}` cuts the cylinder in two
 /// points, one on each of `fc`'s two rulings, and `(cyl, side)` — the identity
-/// [`crate::boolean::Wall::Ruling`] carries, measured by [`ruling_side`] against `fc` when the
+/// [`crate::combinatorics::Wall::Ruling`] carries, measured by [`ruling_side`] against `fc` when the
 /// ring was named — says which. The same predicate asked of each root picks it. `wc` must be ⊥
 /// to the axis for the class to cross a ruling in a point at all (∥ contains it; a tilt is
 /// refused at the gate).

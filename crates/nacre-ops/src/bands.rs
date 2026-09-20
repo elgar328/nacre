@@ -51,9 +51,9 @@
 //! the label needs no coordinates, no ray direction, no abstention retry, and has no width
 //! ceiling, and it is why a cylinder may now stand on either side of the boolean.
 
-#[cfg(test)]
-use crate::boolean::{Bound, LocalFace};
 use crate::combinatorics;
+#[cfg(test)]
+use crate::draft::{Bound, LocalFace};
 use crate::planes::SolidSide;
 use crate::planes::{ClassIx, FaceRow, WorkingPlane, axis_param_of_plane};
 use crate::tolerant::Judge;
@@ -252,8 +252,8 @@ pub(crate) fn read_bits(
 /// so that solid's membership flips across it while the counterpart's does not.
 pub(crate) fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: bool) -> bool {
     match side {
-        SolidSide::A => crate::arrangement::keep(kind, in_own, in_other),
-        SolidSide::B => crate::arrangement::keep(kind, in_other, in_own),
+        SolidSide::A => crate::draft::keep(kind, in_own, in_other),
+        SolidSide::B => crate::draft::keep(kind, in_other, in_own),
     }
 }
 

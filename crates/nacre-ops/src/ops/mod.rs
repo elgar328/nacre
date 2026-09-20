@@ -3,6 +3,7 @@
 //! transform ([`crate::transform`]) over the plane substrate below.
 
 use crate::BoolError;
+use crate::BoolKind;
 use crate::boolean::boolean;
 use crate::exact::{Seg3, Swept};
 use crate::planes::outer_tri;
@@ -129,17 +130,6 @@ pub enum Operation {
     /// input, so this is what makes "cut with the same tool twice", "keep the original and a moved
     /// copy", and pattern/mirror sugar expressible at all.
     Copy { solid: Handle<Solid> },
-}
-
-/// Which boolean to compute.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BoolKind {
-    /// A ∪ B.
-    Fuse,
-    /// A − B.
-    Cut,
-    /// A ∩ B.
-    Common,
 }
 
 /// A failure while applying an operation.

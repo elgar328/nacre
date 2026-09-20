@@ -8,7 +8,7 @@ pub(crate) fn reconstruct(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-    cut_rims: &crate::arrangement::CutRims,
+    cut_rims: &crate::draft::CutRims,
     deferred: Option<BoolError>,
     tangencies: Tangencies<'_>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {

@@ -24,7 +24,7 @@ impl Tangencies<'_> {
 /// **A tangency pinches the result when the material it leaves is two lumps that meet only along
 /// the line — and both lumps end up in one solid.**
 ///
-/// ★★★★★ **The operation enters here and only here, through [`crate::arrangement::keep`].** Near
+/// ★★★★★ **The operation enters here and only here, through [`crate::draft::keep`].** Near
 /// the tangent line the material is three regions — the lens inside the cylinder, the **two**
 /// wedges between the parabola and the plane, and the far half-space — and the adjacencies are
 /// `L–W2` and `F–W2` only: `L` and `F` meet along the line itself and nowhere else, because at
@@ -50,7 +50,7 @@ impl Tangencies<'_> {
 /// boss standing in a notch, tangent to the notch's wall and overlapping the block beside it, comes
 /// back as one solid whose boundary touches itself, and nothing else in the kernel sees it.
 /// **Does the material near a tangent line fall into more than one piece?** — the three regions
-/// and their two adjacencies, asked through [`crate::arrangement::keep`] and nothing else.
+/// and their two adjacencies, asked through [`crate::draft::keep`] and nothing else.
 ///
 /// `lens_in_wall_solid` says whether the cylinder's side of the wall plane is the wall **face**'s
 /// material side; `cyl_orient` is `+1` for a boss (material inside) and `-1` for a bore. Those two
@@ -66,8 +66,8 @@ pub(crate) fn lumps_fall_apart(
         let w = in_lens_side == lens_in_wall_solid; // in the wall face's solid
         let c = inside_cyl == (cyl_orient > 0); // in the lateral face's solid
         match wall_solid {
-            SolidSide::A => crate::arrangement::keep(kind, w, c),
-            SolidSide::B => crate::arrangement::keep(kind, c, w),
+            SolidSide::A => crate::draft::keep(kind, w, c),
+            SolidSide::B => crate::draft::keep(kind, c, w),
         }
     };
     let (l, w2, f) = (
@@ -141,7 +141,7 @@ pub(crate) fn assemble_fuse_cut(
     seam: &[SeamVertex],
     faces: &[LocalFace],
     cyls: &[crate::planes::WorkingCyl],
-    cut_rims: &crate::arrangement::CutRims,
+    cut_rims: &crate::draft::CutRims,
     deferred: Option<BoolError>,
     tangencies: Tangencies<'_>,
 ) -> Result<Vec<Handle<Solid>>, BoolError> {
