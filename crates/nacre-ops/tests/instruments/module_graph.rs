@@ -2,7 +2,7 @@
 //!
 //! This crate is 35k lines of product code in eighteen top-level modules, and the question
 //! "can this be split" is really "is the graph acyclic". Nothing in `fmt`, `clippy` or the suite
-//! answers it, so the graph was invisible until it was measured: ten module pairs point at each
+//! answers it, so the graph was invisible until it was measured: nine module pairs point at each
 //! other, but only two of those are *behaviour* — the rest name a type that lives on the wrong
 //! side. The difference is the whole finding, and it is only visible if something counts.
 //!
