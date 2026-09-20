@@ -363,28 +363,31 @@ fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     boolean(m, BoolKind::Fuse, a, b)
 }
 
-const BOOLEAN: &str = "crates/nacre-ops/src/boolean.rs";
+// Where the assembly's guards ring from, one file per stage.
+const ENTRY: &str = "crates/nacre-ops/src/boolean/entry.rs";
+const RECONSTRUCT: &str = "crates/nacre-ops/src/boolean/reconstruct.rs";
+const SELF_TOUCH: &str = "crates/nacre-ops/src/boolean/self_touch.rs";
 
 const CORPUS: [Fixture; 13] = [
     Fixture {
         name: "pinched-vertex",
         expect: Some(RejectReason::NonManifoldVertex),
         run: pinched_vertex,
-        raised: &[("non_manifold_vertex", None, BOOLEAN)],
+        raised: &[("non_manifold_vertex", None, ENTRY)],
         surfaced: &[("non_manifold_vertex", None)],
     },
     Fixture {
         name: "pinched-edge",
         expect: Some(RejectReason::NonManifoldResultEdge),
         run: pinched_edge,
-        raised: &[("non_manifold_result_edge", None, BOOLEAN)],
+        raised: &[("non_manifold_result_edge", None, RECONSTRUCT)],
         surfaced: &[("non_manifold_result_edge", None)],
     },
     Fixture {
         name: "wedge-tip-on-wall",
         expect: Some(RejectReason::SelfTouchingResult),
         run: wedge_tip_on_wall,
-        raised: &[("self_touching_result", None, BOOLEAN)],
+        raised: &[("self_touching_result", None, SELF_TOUCH)],
         surfaced: &[("self_touching_result", None)],
     },
     Fixture {
@@ -404,7 +407,7 @@ const CORPUS: [Fixture; 13] = [
         // raises on the 2-D ring road and the `reject-trace` sweep is what keeps it visible.
         expect: Some(RejectReason::SelfTouchingResult),
         run: diamond_void,
-        raised: &[("self_touching_result", None, BOOLEAN)],
+        raised: &[("self_touching_result", None, SELF_TOUCH)],
         surfaced: &[("self_touching_result", None)],
     },
     // ── The cylinder population gate names its refusals — one fixture per cause. All are
@@ -475,11 +478,7 @@ const CORPUS: [Fixture; 13] = [
         // assembly, where the grouping can say the two wedges are one body.
         expect: Some(RejectReason::SelfTouchingResult),
         run: cylinder_wall_tangent,
-        raised: &[(
-            "self_touching_result",
-            None,
-            "crates/nacre-ops/src/boolean.rs",
-        )],
+        raised: &[("self_touching_result", None, SELF_TOUCH)],
         surfaced: &[("self_touching_result", None)],
     },
     Fixture {
@@ -510,7 +509,7 @@ const CORPUS: [Fixture; 13] = [
         name: "fold-45",
         expect: Some(RejectReason::SelfTouchingResult),
         run: fold_45,
-        raised: &[("self_touching_result", None, BOOLEAN)],
+        raised: &[("self_touching_result", None, SELF_TOUCH)],
         surfaced: &[("self_touching_result", None)],
     },
     Fixture {
@@ -649,7 +648,7 @@ fn instrument_answers_for_itself() {
     // else in this file would notice if that attribute were dropped, and every row of the table
     // would silently collapse onto one line in `error.rs`.
     // ★ The oblique cut, not the tangent wall: the tangency's reason now comes from the
-    // *assembly* (`boolean.rs`), and what this checks is that a **gate** guard names its own line.
+    // *assembly* (`boolean/self_touch.rs`), and what this checks is that a **gate** guard names its own line.
     let mut m = Model::new();
     let _ = cylinder_oblique(&mut m);
     let c = reject_census::take();

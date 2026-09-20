@@ -157,9 +157,22 @@ mod tests {
     #[test]
     fn the_parallel_switch_lives_only_here() {
         let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+        // Every file under `src`, folders included: a module that became a folder is still
+        // this crate's code, and a scan that stopped at the top level would go quiet about it.
+        let mut files = Vec::new();
+        let mut dirs = vec![src];
+        while let Some(dir) = dirs.pop() {
+            for entry in std::fs::read_dir(&dir).expect("src") {
+                let path = entry.expect("entry").path();
+                if path.is_dir() {
+                    dirs.push(path);
+                } else {
+                    files.push(path);
+                }
+            }
+        }
         let mut offenders = Vec::new();
-        for entry in std::fs::read_dir(&src).expect("src") {
-            let path = entry.expect("entry").path();
+        for path in files {
             if path.extension().is_some_and(|e| e == "rs")
                 && path.file_name().is_some_and(|f| f != "par.rs")
                 && {

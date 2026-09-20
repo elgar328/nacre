@@ -1,0 +1,230 @@
+use super::*;
+/// **Everything `reconstruct` decides before a single handle is minted** — the grouping (held,
+/// not raised), the per-solid straight-angle dissolve, the whole-result self-touch judgement, and
+/// every ring node's defining triple.
+///
+/// ★ A named function rather than the top of `reconstruct`, for the same reason `seam_table` is
+/// one: the deferred-stopper socket stands behind it (at the assembly's very end) and
+/// intercepts everything a plugged stopper would, so no
+/// reject name can testify that the naming completed — only a fence that calls it directly on the
+/// faces production feeds it can. Model-immutable by signature: nothing here takes `&mut Model`.
+/// **A result vertex's definition, in class space** — what the minting turns into a `Vertex`.
+///
+/// ★ `Three` is the derived triple the pre-pass has always built. `Pierce` is a **declaration,
+/// not a derivation**: `NodeId::Pierce` already names two result plane classes and the cylinder,
+/// so its def is the name's own payload (the class→handle mapping and `QuadRoot::canonical`'s
+/// second answer belong to the minting, which the deferred stopper still stands in front of).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Def {
+    Three(combinatorics::Canon3),
+    Pierce {
+        planes: [usize; 2],
+        cyl: usize,
+        root: nacre_topo::QuadRoot,
+    },
+}
+
+pub(crate) struct Named {
+    /// The grouping, **held** — raised where the old code raised it, deep in the minting.
+    /// (`pub(crate)`: the grouping fence reads the held result directly.)
+    pub(crate) grouping: Result<Grouping, BoolError>,
+    pub(crate) group_of: Vec<usize>,
+    /// The working face list where it differs from the caller's — the split-twin subdivision
+    /// and/or the per-solid dissolve rewrote rings. `None` = the caller's list stands.
+    pub(crate) per_solid: Option<Vec<LocalFace>>,
+    pub(crate) defs: HashMap<(usize, NodeId), Def>,
+}
+
+pub(crate) fn name_result_vertices(
+    jd: &Judge<'_, WorkingPlane>,
+    seam: &[SeamVertex],
+    faces: &[LocalFace],
+    cyls: &[crate::planes::WorkingCyl],
+    cut_rims: &crate::arrangement::CutRims,
+) -> Result<Named, BoolError> {
+    // ★★★ **The split-twin subdivision — every pierce node is cut into every edge it lies on.**
+    // The arrangement cannot do this: a pierce point needs the cylinder, and the neighbouring
+    // plane class has no circle (the cylinder is parallel to it), so no vocabulary for the point
+    // — measured, the T-junction finding. Only here, where every class's rings are in one hand,
+    // can the plate-top's whole edge learn that the arc class subdivided its twin. Without this,
+    // `norm_edge` keys never match across such a pair, the corner's incident-face set misses the
+    // twin's plane (a result vertex is defined from the planes of the faces whose rings
+    // visit it), and the future edge welding has no twins to weld.
+    //
+    // A pierce node lies on an edge's carrier line exactly when its plane pair *is* the edge's
+    // `{own, wall}` — a name fact, no geometry — and betweenness is `pierce_between`'s exact
+    // half. An edge whose order cannot be formed is left unsplit, which is precisely the
+    // behaviour before this pass (a corner short of a plane, `StraightAngle`); the conservative
+    // arm degrades to the state this pass improves, never to something new. Identity for every non-arc input:
+    // no pierce nodes, no pairs, no rewrite.
+    let mut by_pair: HashMap<[usize; 2], Vec<NodeId>> = HashMap::new();
+    for lf in faces {
+        for ring in lf.poly_rings() {
+            for &n in ring.iter() {
+                if let Some((pair, _, _)) = combinatorics::pierce_name(n) {
+                    let v = by_pair.entry(pair).or_default();
+                    if !v.contains(&n) {
+                        v.push(n);
+                    }
+                }
+            }
+        }
+    }
+    let subdivided: Option<Vec<LocalFace>> = if by_pair.is_empty() {
+        None
+    } else {
+        let mut v = faces.to_vec();
+        for lf in &mut v {
+            let ClassIx::Plane(own) = lf.surf else {
+                continue;
+            };
+            for ring in lf.poly_rings_mut() {
+                let k = ring.nodes.len();
+                let mut nodes = Vec::with_capacity(k);
+                let mut walls = Vec::with_capacity(k);
+                for t in 0..k {
+                    let (a, b, w) = (ring.nodes[t], ring.nodes[(t + 1) % k], ring.walls[t]);
+                    nodes.push(a);
+                    walls.push(w);
+                    let Wall::Plane(w) = w else {
+                        // An arc or ruling edge: the arrangement's own split made it, pierce
+                        // points and all — there is no whole twin to subdivide.
+                        continue;
+                    };
+                    let mut pair = [own, w];
+                    pair.sort_unstable();
+                    let Some(cands) = by_pair.get(&pair) else {
+                        continue;
+                    };
+                    if let Some(bet) = combinatorics::pierce_between(jd, cyls, a, b, cands) {
+                        for x in bet {
+                            nodes.push(x);
+                            walls.push(Wall::Plane(w));
+                        }
+                    }
+                }
+                ring.nodes = nodes;
+                ring.walls = walls;
+            }
+        }
+        Some(v)
+    };
+    let faces: &[LocalFace] = subdivided.as_deref().unwrap_or(faces);
+    // ★ **Which faces make one solid, decided before a single handle exists** — see [`Grouping`].
+    // Everything derived below (an edge's far plane, a vertex's defining triple, the handles
+    // themselves) is scoped to one group, so no result solid can be named by — or share a handle
+    // with — a solid it merely touches.
+    //
+    // ★★ **Held, not raised.** A failed grouping is reported further down, where the old code
+    // reported it, and until then every face is one group — which is exactly the keying this
+    // function used before groups existed. So a boolean that declines pushes the arena cells it
+    // always did (`replay::a_late_reject_is_not_index_neutral` measures that).
+    let grouping = group_faces(jd, faces, cyls, cut_rims);
+    let group_of: Vec<usize> = match &grouping {
+        Ok(g) => g.group_of.clone(),
+        Err(_) => vec![0; faces.len()],
+    };
+    // ★★ **A straight angle is a per-solid question, and only a result in several pieces can make
+    // the two answers differ.** The cleaning pass runs `dissolve_straight_angles` over the whole
+    // result, so it keeps a node that is a real corner *somewhere* — right while the result is one
+    // body. The moment it is two, the tip of one body's knife edge can land in the middle of
+    // another body's wall: a corner of the first, a straight run of the second. Left in the
+    // second's ring it is a vertex with no name there — only two of the three planes through it
+    // bound that solid — and the whole-result derivation used to fill the gap by borrowing the
+    // *other* body's plane, which is exactly the defect scoping the derivation closes. So each
+    // solid now drops the nodes that are straight runs **for it**.
+    let per_solid: Option<Vec<LocalFace>> = match &grouping {
+        Ok(g) if g.n > 1 => {
+            let mut v = faces.to_vec();
+            for gi in 0..g.positives.len() {
+                let which: Vec<usize> = (0..v.len()).filter(|&i| group_of[i] == gi).collect();
+                dissolve_straight_angles(&mut v, &which);
+            }
+            Some(v)
+        }
+        _ => None,
+    };
+    let faces: &[LocalFace] = per_solid.as_deref().unwrap_or(faces);
+    // ★ **The whole-result judgement runs before a single cell is minted.** Everything
+    // `self_touch_reject` reads — the seam table, the per-body component lists, the faces'
+    // rings — exists right here, and an impossible result must be named by its truth, not by
+    // whichever local derivation happens to fail first on its unnameable corners: a
+    // self-touching body's pinch line cannot be honestly named by any face-local rule (its
+    // in-plane edges are lobe-to-lobe, its touch edge carries four faces — measured).
+    // A held grouping error stays held (raised further
+    // down, where the old code raised it); the self-touch question is only askable of a
+    // grouping that answered.
+    if let Ok(g) = &grouping {
+        let body_comps: Vec<Vec<usize>> =
+            g.positives.iter().map(|m| g.comps_of[m].clone()).collect();
+        let mut by_comp_lf: Vec<Vec<&LocalFace>> = vec![Vec::new(); g.n];
+        for (i, lf) in faces.iter().enumerate() {
+            by_comp_lf[g.labels[i]].push(lf);
+        }
+        self_touch_reject(jd, cyls, seam, &body_comps, &by_comp_lf)?;
+    }
+    // ★★ **A result vertex is named by the faces that meet it.**
+    //
+    // The arrangement names a point by a canonical plane triple — lexicographically first among
+    // the planes through it — and where four planes concur that choice can land on a plane the
+    // result keeps **no face on**: a rotated copy's wall, say, buried inside the union it was
+    // fused into. The definition *is* the vertex's identity, so such a result cannot describe
+    // itself, and `transform`'s remap (which walks this solid's own face surfaces) refuses it two
+    // operations later — a reject whose cause is here.
+    //
+    // So the triple is derived the way this function already derives an edge's carriers
+    // (`pair_surfs` below: "read off the whole result, not guessed from one side") and the way
+    // `component_is_outward_tol` derives a corner's: **one incident face, plus the far planes of
+    // its two edges at that corner.** Those three are result faces by construction, so
+    // `defs_are_remappable` holds by construction — and their meet is exactly this vertex, since
+    // the two edge lines through it are distinct (checked, not assumed — see the corner guards).
+    // ★ **A result vertex is defined by the canonical triple of its incident faces'
+    // planes.** Every face whose ring visits the node passes through the point, so the planes of
+    // those faces are the result planes through it, and `canonical_triple` picks the name — the
+    // one rule the operand road and the alias table use. Over *incident* planes only, on purpose:
+    // the arrangement's alias representative ranges over every class, buried faces included, and
+    // a definition naming a surface the result has no face on is a defect
+    // (`defs_are_remappable` still stands guard, true by construction). A node fewer than
+    // three faces name is a straight corner and keeps `StraightAngle` below.
+    let mut planes_at: HashMap<(usize, NodeId), Vec<usize>> = HashMap::new();
+    let mut def_triple: HashMap<(usize, NodeId), Def> = HashMap::new();
+    for (fi, lf) in faces.iter().enumerate() {
+        let g = group_of[fi];
+        for ring in lf.poly_rings() {
+            for &node in &ring.nodes {
+                // ★ A pierce vertex's def is a **declaration, not a derivation** — the name
+                // already carries its two result plane classes and its cylinder.
+                if let Some((planes2, cyl, root)) = combinatorics::pierce_name(node) {
+                    def_triple.entry((g, node)).or_insert(Def::Pierce {
+                        planes: planes2,
+                        cyl,
+                        root,
+                    });
+                    continue;
+                }
+                let at = planes_at.entry((g, node)).or_default();
+                if !at.contains(&lf.surf.plane()) {
+                    at.push(lf.surf.plane());
+                }
+            }
+        }
+    }
+    let mut keys: Vec<(usize, NodeId)> = planes_at.keys().copied().collect();
+    keys.sort_unstable();
+    for key in keys {
+        let mut at = planes_at.remove(&key).unwrap_or_default();
+        at.sort_unstable();
+        if let Some(t) = combinatorics::canonical_triple(jd, &at) {
+            def_triple.insert(key, Def::Three(t));
+        }
+    }
+
+    Ok(Named {
+        grouping,
+        group_of,
+        // The dissolve's product already derives from the subdivided list (it cloned `faces`
+        // after the rebinding above), so the later layer wins and the earlier one backs it up.
+        per_solid: per_solid.or(subdivided),
+        defs: def_triple,
+    })
+}

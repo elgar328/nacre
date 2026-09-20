@@ -347,6 +347,37 @@ fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
     }
 }
 
+/// The engine's source files, for the two scans below. Each entry is a module: one file, or a
+/// folder of them.
+///
+/// ★ The nesting question lives in its own module. A file this scan does not read is a file the
+/// rule does not cover, and the engine is exactly where the shared predicate is called — so the
+/// list follows the code.
+fn engine_sources() -> Vec<String> {
+    let mut out = Vec::new();
+    for module in [
+        "src/combinatorics",
+        "src/arrangement",
+        "src/boolean",
+        "src/nesting",
+    ] {
+        let dir = std::path::Path::new(module);
+        if dir.is_dir() {
+            let mut files: Vec<_> = std::fs::read_dir(dir)
+                .expect("module folder")
+                .map(|e| e.expect("entry").path())
+                .filter(|p| p.extension().is_some_and(|x| x == "rs"))
+                .collect();
+            files.sort();
+            out.extend(files.into_iter().map(|p| p.to_string_lossy().into_owned()));
+        } else {
+            out.push(format!("{module}.rs"));
+        }
+    }
+    assert!(out.len() >= 4, "the scan found {} files", out.len());
+    out
+}
+
 /// ★ One implementation, and it stays one.
 ///
 /// The retry that answers "is this ring inside that one" used to live in the callers — spelled
@@ -362,17 +393,9 @@ fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
 /// below rather than left to a loose pattern.
 #[test]
 fn no_production_caller_reaches_past_the_shared_predicate() {
-    let src = [
-        "src/combinatorics.rs",
-        "src/arrangement.rs",
-        "src/boolean.rs",
-        // ★ The nesting question lives in its own module. A file this scan does not
-        // read is a file the rule does not cover, and the engine is exactly where the shared
-        // predicate is called — so the list follows the code.
-        "src/nesting.rs",
-    ];
+    let src = engine_sources();
     let mut offenders = Vec::new();
-    for file in src {
+    for file in &src {
         let text = std::fs::read_to_string(file).expect("source file");
         for (n, line) in text.lines().enumerate() {
             // ★ **On a word boundary, because the rule is about `point_in_ring` and not about any
@@ -424,17 +447,9 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
 /// own rung rather than hidden by a green grep.
 #[test]
 fn no_production_code_walks_a_ring_past_the_shared_walk() {
-    let src = [
-        "src/combinatorics.rs",
-        "src/arrangement.rs",
-        "src/boolean.rs",
-        // ★ The nesting question lives in its own module. A file this scan does not
-        // read is a file the rule does not cover, and the engine is exactly where the shared
-        // predicate is called — so the list follows the code.
-        "src/nesting.rs",
-    ];
+    let src = engine_sources();
     let mut offenders = Vec::new();
-    for file in src {
+    for file in &src {
         let text = std::fs::read_to_string(file).expect("source file");
         for (n, line) in text.lines().enumerate() {
             let calls = line.contains("side_of(");
