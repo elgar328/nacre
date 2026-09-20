@@ -1096,7 +1096,7 @@ m.rebuild_edge_cache() · m.rebuild_adjacency()             // 통째 재생
 맞나)은 다른 인덱스 공간의 다른 사실이고, 한 이름으로 합치면 규약을 단언할 수 없는 자리가 생긴다.
 
 ```rust
-// crates/nacre-ops/src/planes.rs — 판정용 평면 클래스. `Surface::Plane` 의 쌍둥이.
+// crates/nacre-ops/src/planes/frames.rs — 판정용 평면 클래스. `Surface::Plane` 의 쌍둥이.
 pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,                          // f64 실현
     pub(crate) base_rat:  Option<[Rat; 4]>,           // 클래스 뿌리의 정확 계수(모션 이전 프레임)

@@ -490,7 +490,7 @@ const CORPUS: [Fixture; 13] = [
         raised: &[(
             "oblique_cylinder_cut",
             None,
-            "crates/nacre-ops/src/planes.rs",
+            "crates/nacre-ops/src/planes/cyl_gate.rs",
         )],
         surfaced: &[("oblique_cylinder_cut", None)],
     },
@@ -502,7 +502,7 @@ const CORPUS: [Fixture; 13] = [
         raised: &[(
             "cylinder_pair_contact",
             None,
-            "crates/nacre-ops/src/planes.rs",
+            "crates/nacre-ops/src/planes/cyl_gate.rs",
         )],
         surfaced: &[("cylinder_pair_contact", None)],
     },
@@ -647,7 +647,7 @@ fn the_reject_census() {
 fn instrument_answers_for_itself() {
     // `#[track_caller]` on `reject()` must report the *guard's* line, not `reject`'s own. Nothing
     // else in this file would notice if that attribute were dropped, and every row of the table
-    // would silently collapse onto one line in `lib.rs`.
+    // would silently collapse onto one line in `error.rs`.
     // ★ The oblique cut, not the tangent wall: the tangency's reason now comes from the
     // *assembly* (`boolean.rs`), and what this checks is that a **gate** guard names its own line.
     let mut m = Model::new();
@@ -660,7 +660,7 @@ fn instrument_answers_for_itself() {
         .map(|(s, _)| *s)
         .expect("the cylinder guard rang");
     assert!(
-        site.file.ends_with("planes.rs"),
+        site.file.ends_with("planes/cyl_gate.rs"),
         "the raise site is reported as {}:{} — `#[track_caller]` is naming `reject()` itself, \
          not the guard",
         site.file,
