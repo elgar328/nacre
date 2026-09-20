@@ -17,11 +17,11 @@
 //! ★ The proptest seed that found it is kept, but a seed is a lucky draw. What this file asserts is
 //! the **proposition**, on shapes chosen because they must exercise it.
 
+use nacre_exact::Axis;
 use nacre_math::{Point2, Point3};
 use nacre_ops::{
     BoolKind, Operation, Precision, Profile2d, SketchFrame, apply, boolean, realize_vertex,
 };
-use nacre_scalar::Axis;
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid};
 use nacre_validate::EPS_CONSTRUCTED;

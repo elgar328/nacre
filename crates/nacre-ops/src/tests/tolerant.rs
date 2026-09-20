@@ -26,8 +26,8 @@ fn plane_table(m: &Model, s: Handle<Solid>) -> Vec<WorkingPlane> {
     let canon = crate::planes::plane_classes(&crate::planes::test_judge(&faces));
     crate::planes::dense_planes(&faces, &canon).0
 }
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation as SRot};
 use nacre_math::Point3;
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation as SRot};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 
@@ -221,9 +221,9 @@ fn planes_coplanar_guards_degeneracy_and_survives_rotation() {
             tri: [Point3::from_array([k as f64, 0.0, 0.0]); 3],
             tri_pt3: std::array::from_fn(|_| {
                 WitnessPoint::at_nearest([
-                    nacre_scalar::Rat::try_from_f64(k as f64).expect("exact"),
-                    nacre_scalar::Rat::from_int(0),
-                    nacre_scalar::Rat::from_int(0),
+                    nacre_exact::Rat::try_from_f64(k as f64).expect("exact"),
+                    nacre_exact::Rat::from_int(0),
+                    nacre_exact::Rat::from_int(0),
                 ])
             }),
             rotated: false,
@@ -1073,9 +1073,9 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
 /// ```
 #[test]
 fn two_caps_described_exactly_are_one_plane() {
+    use nacre_exact::Mag;
     use nacre_judge::predicate::{Judge, Notes};
     use nacre_judge::{Standard, WitnessPoint};
-    use nacre_scalar::Mag;
 
     let (m, s, _) = two_caps_on_a_tilted_face(Recipe::Split);
     let faces = collect_planes(&m, s).unwrap();
@@ -1368,16 +1368,16 @@ fn a_named_planes_points_name_the_callers_plane() {
         let p = SketchPlane::from_origin_normal(o, Vector3::from_array(n)).expect("a plane");
         let d = p.def.as_ref().expect("an exact definition");
         let pts = d.points();
-        let name = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2])
+        let name = nacre_exact::plane_name_exact(pts[0], pts[1], pts[2])
             .unwrap_or_else(|| panic!("{n:?}: the triple is collinear"));
 
         // Same plane as the coefficient route would have stated (both from the same lifts).
         let lift = |v: [f64; 3]| v.map(|x| Rat::from_decimal(x).unwrap());
-        let coeffs = nacre_scalar::plane_from_point_normal(lift(n), lift(o.as_array()))
+        let coeffs = nacre_exact::plane_from_point_normal(lift(n), lift(o.as_array()))
             .unwrap_or_else(|| panic!("{n:?}: the reference route overflowed"));
         assert_eq!(
             name,
-            nacre_scalar::PlaneName::Narrow(coeffs),
+            nacre_exact::PlaneName::Narrow(coeffs),
             "{n:?}: the points name a different plane than the caller's normal"
         );
 
@@ -1568,10 +1568,10 @@ mod wide_name_rescue {
     use super::*;
     use crate::planes::WorkingPlane;
     use crate::{DatumDef, OpOutput, Profile2d};
+    use nacre_exact::{Mag, PlaneName};
     use nacre_judge::Standard;
     use nacre_judge::predicate::{Judge, Notes, name_stored_ints};
     use nacre_math::Point2;
-    use nacre_scalar::{Mag, PlaneName};
     use num_bigint::BigInt;
 
     fn p2(x: f64, y: f64) -> Point2 {
@@ -1618,7 +1618,7 @@ mod wide_name_rescue {
                 m.surface_name
                     .get(&s)
                     .and_then(|n| n.narrow())
-                    .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+                    .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
             })
             .expect("the wf population");
         let sp = crate::face_plane(&m, wall).expect("planar");

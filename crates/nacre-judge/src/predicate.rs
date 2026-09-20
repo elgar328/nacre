@@ -24,12 +24,12 @@ use crate::kernel::frame3::{
     Decision, MoveNode, Standard, WitnessPoint, chain_parity, cramer_iv, dir_sign_judge,
     indirect_cmp_coord_judge, orient3d_from_cramer, orient3d_judge,
 };
+use nacre_exact::{Orient, Rat};
 use nacre_math::Point3;
 use nacre_predicates::{
     ThreePlane, det3_sign, indirect_cmp_coord, indirect_orient3d, indirect_plane_side, orient2d,
     orient3d,
 };
-use nacre_scalar::{Orient, Rat};
 use num_bigint::BigInt;
 
 /// **What a judgement was asked about**, in the only vocabulary this crate has: plane-table
@@ -139,7 +139,7 @@ pub trait Witness {
 
     /// The plane's **exact rational coefficients in the frame its provenance names** — the world
     /// when unmoved, the pre-motion frame when moved. `None` when the producer recorded none.
-    fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {
+    fn base_coeffs_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
         None
     }
 
@@ -286,7 +286,7 @@ impl NameInts {
 /// `base` points span no direction to compare against), in which case the rescue simply
 /// declines and the judgement keeps its toleranced route: slower, never wrong.
 pub fn name_stored_ints(
-    name: Option<&nacre_scalar::PlaneName>,
+    name: Option<&nacre_exact::PlaneName>,
     tri_pt3: &[WitnessPoint; 3],
     frame_sign: i8,
 ) -> Option<NameInts> {
@@ -369,7 +369,7 @@ pub struct Judge<'a, W> {
     /// [`PlaneWitness`] is a trait its consumers implement. A method on it returning `[Bounded; 4]`
     /// would ask every implementor to *produce* intervals — to supply radii that actually bound
     /// the coefficients — and the soundness contract that type carries would leave this crate
-    /// with it. The type itself is public vocabulary (`nacre_scalar::Bounded`, beside `Mag` and
+    /// with it. The type itself is public vocabulary (`nacre_exact::Bounded`, beside `Mag` and
     /// `Rat`); the obligation to mint one correctly stays behind this crate's own constructors.
     /// `frame_sign` and `coeffs` are `i8` and `[f64; 4]`, so they *do* live on the witness; this
     /// one cannot follow them.
@@ -382,9 +382,9 @@ pub struct Judge<'a, W> {
 /// Lazily-filled cell for one plane's interval coefficients — `OnceLock` under `parallel` because
 /// the boolean hands every worker the same `&Judge`, `OnceCell` otherwise.
 #[cfg(feature = "parallel")]
-type BoundedCell = std::sync::OnceLock<[nacre_scalar::Bounded; 4]>;
+type BoundedCell = std::sync::OnceLock<[nacre_exact::Bounded; 4]>;
 #[cfg(not(feature = "parallel"))]
-type BoundedCell = std::cell::OnceCell<[nacre_scalar::Bounded; 4]>;
+type BoundedCell = std::cell::OnceCell<[nacre_exact::Bounded; 4]>;
 
 impl<'a, W> Judge<'a, W> {
     pub fn new(planes: &'a [W], standard: Standard, notes: &'a Notes) -> Judge<'a, W> {
@@ -422,7 +422,7 @@ impl<W: Witness> Judge<'_, W> {
     /// Returns a copy rather than a borrow because `[Bounded; 4]` is four pairs of `f64` — cheaper to
     /// move than to keep a reference alive across the judge call, and it keeps the cell's borrow
     /// from outliving the lookup.
-    fn plane_iv(&self, k: usize) -> [nacre_scalar::Bounded; 4] {
+    fn plane_iv(&self, k: usize) -> [nacre_exact::Bounded; 4] {
         *self.iv[k].get_or_init(|| {
             let d = plane_def(self.planes, k);
             crate::kernel::frame3::plane_iv(&d[0], &d[1], &d[2])
@@ -504,7 +504,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
         // `p`/`q`/`r` row negates `D` and the dot together, so only `j`'s orientation matters).
         if let Some([bp, bq, br, bj]) = self.name_rescue([p, q, r, j], true) {
             return Some(
-                nacre_scalar::int_plane_side([&bp, &bq, &br], &bj) * self.planes[j].frame_sign(),
+                nacre_exact::int_plane_side([&bp, &bq, &br], &bj) * self.planes[j].frame_sign(),
             );
         }
         None
@@ -631,7 +631,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
         if let Some([a0, a1, a2, b0, b1, b2]) =
             self.name_rescue([a[0], a[1], a[2], b[0], b[1], b[2]], false)
         {
-            return nacre_scalar::int_cmp_coord([&a0, &a1, &a2], [&b0, &b1, &b2], axis);
+            return nacre_exact::int_cmp_coord([&a0, &a1, &a2], [&b0, &b1, &b2], axis);
         }
         let da = a.map(|k| plane_def(planes, k));
         let db = b.map(|k| plane_def(planes, k));
@@ -675,7 +675,7 @@ impl<W: PlaneWitness> Judge<'_, W> {
         // the `det3_sign` arms, and unlike the toleranced route below, which reads the outward
         // triangles and bridges back.
         if let Some([bp, ba, bb]) = self.name_rescue([p, a, b], true) {
-            return nacre_scalar::int_dir_sign([&bp, &ba, &bb]);
+            return nacre_exact::int_dir_sign([&bp, &ba, &bb]);
         }
         let (dp, da, db) = (
             plane_def(planes, p),
@@ -715,7 +715,7 @@ pub struct ImplicitPoint<'a, W> {
 
 /// `(D, Dvec)`. ★ Kept out of every public signature — an interval in a public signature asks its
 /// caller to reason about radii; see [`Judge`]'s `iv` field for why that stays inside.
-type CramerParts = (nacre_scalar::Bounded, [nacre_scalar::Bounded; 3]);
+type CramerParts = (nacre_exact::Bounded, [nacre_exact::Bounded; 3]);
 
 impl<W: PlaneWitness> ImplicitPoint<'_, W> {
     /// Which side of plane `j` this point lies on — [`Judge::orient3d`] for the same four planes,
@@ -977,15 +977,15 @@ fn cancel_cmp_coord<W: PlaneWitness>(
 ///
 /// `None` in the axis slot means the chain does not turn at all, which composes with anything.
 type OneRotation = (
-    Option<nacre_scalar::Axis>,
-    nacre_scalar::Angle,
+    Option<nacre_exact::Axis>,
+    nacre_exact::Angle,
     Option<[Rat; 3]>,
 );
 
 fn single_rotation(def: &[WitnessPoint; 3]) -> Option<OneRotation> {
-    let mut axis: Option<nacre_scalar::Axis> = None;
+    let mut axis: Option<nacre_exact::Axis> = None;
     let mut pivot: Option<[Rat; 3]> = None;
-    let mut total = nacre_scalar::Angle::from_deg(Rat::from_int(0))?;
+    let mut total = nacre_exact::Angle::from_deg(Rat::from_int(0))?;
     for n in def[0].chain.iter() {
         match n {
             MoveNode::Rotate {
@@ -1052,7 +1052,7 @@ fn coplanar_by_composed_rotation<W: Witness>(planes: &[W], i: usize, j: usize) -
         (None, None) => [Rat::from_int(0); 3],
     };
     let delta = theta_a.checked_add(Rat::from_int(0).checked_sub(theta_b.deg())?)?;
-    let iso = nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+    let iso = nacre_exact::Isometry::rotation(nacre_exact::Rotation {
         axis,
         pivot,
         angle: delta,
@@ -1075,12 +1075,10 @@ fn coplanar_by_composed_rotation<W: Witness>(planes: &[W], i: usize, j: usize) -
 /// rescue it either: their product is a half-turn, not a turn by the angles read here. So the
 /// declaration is that this shortcut is defined for **axis-preserving** motions, and anything
 /// else escalates. A conservative miss, never a wrong sign.
-fn single_axis_motion(
-    def: &[WitnessPoint; 3],
-) -> Option<(nacre_scalar::Axis, nacre_scalar::Angle)> {
+fn single_axis_motion(def: &[WitnessPoint; 3]) -> Option<(nacre_exact::Axis, nacre_exact::Angle)> {
     let chain = &def[0].chain;
-    let mut axis: Option<nacre_scalar::Axis> = None;
-    let mut total = nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(0))?;
+    let mut axis: Option<nacre_exact::Axis> = None;
+    let mut total = nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(0))?;
     for n in chain.iter() {
         let a = match n {
             MoveNode::Rotate { axis, angle, .. } => {

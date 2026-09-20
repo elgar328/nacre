@@ -41,8 +41,8 @@ use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
 #[path = "support/stated.rs"]
 mod stated;
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_ops::{DatumDef, SketchFrame, SketchPlane};
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid};
 use stated::*;
@@ -601,7 +601,7 @@ fn measure_census() {
                     m.surface_name
                         .get(&s)
                         .and_then(|n| n.narrow())
-                        .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+                        .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
                 })
                 .expect("the wf population vanished — retune the constants");
             // A small square centred on the wall, in its own sketch frame.
@@ -1378,7 +1378,7 @@ fn measure_census() {
         let turned = xf(
             &mut m,
             block,
-            Isometry::rotation(nacre_scalar::Rotation {
+            Isometry::rotation(nacre_exact::Rotation {
                 axis: Axis::Z,
                 pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(37)).unwrap(),
@@ -2312,10 +2312,10 @@ fn measure_census() {
                     let turned = xf(
                         m,
                         c,
-                        Isometry::rotation(nacre_scalar::Rotation {
+                        Isometry::rotation(nacre_exact::Rotation {
                             axis: Axis::Y,
                             pivot: [r(0.0), r(0.0), r(0.0)],
-                            angle: nacre_scalar::Angle::from_deg(Rat::from_int(90))
+                            angle: nacre_exact::Angle::from_deg(Rat::from_int(90))
                                 .expect("a right angle"),
                         }),
                     );
@@ -2340,10 +2340,10 @@ fn measure_census() {
                     let turned = xf(
                         m,
                         c,
-                        Isometry::rotation(nacre_scalar::Rotation {
+                        Isometry::rotation(nacre_exact::Rotation {
                             axis: Axis::Y,
                             pivot: [r(0.0), r(0.0), r(0.0)],
-                            angle: nacre_scalar::Angle::from_deg(Rat::from_int(90))
+                            angle: nacre_exact::Angle::from_deg(Rat::from_int(90))
                                 .expect("a right angle"),
                         }),
                     );
@@ -2365,10 +2365,10 @@ fn measure_census() {
                     let turned = xf(
                         m,
                         across,
-                        Isometry::rotation(nacre_scalar::Rotation {
+                        Isometry::rotation(nacre_exact::Rotation {
                             axis: Axis::Y,
                             pivot: [r(0.0), r(0.0), r(0.0)],
-                            angle: nacre_scalar::Angle::from_deg(Rat::from_int(90))
+                            angle: nacre_exact::Angle::from_deg(Rat::from_int(90))
                                 .expect("a right angle"),
                         }),
                     );

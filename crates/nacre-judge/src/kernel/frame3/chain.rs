@@ -56,7 +56,7 @@ fn fold_one(mut p: [HpBounded; 3], node: &MoveNode, prec: usize) -> [HpBounded; 
         // A degenerate frame cannot arise here: `WitnessPoint::frame` is the only producer of this
         // node and it refuses a non-positive squared length, so the chain never holds one.
         MoveNode::Frame { frame } => {
-            let inv = |v: Rat| nacre_scalar::inv_sqrt_bounded(v, prec);
+            let inv = |v: Rat| nacre_exact::inv_sqrt_bounded(v, prec);
             let (Some(iu), Some(iw)) = (inv(frame.uu), inv(frame.nn)) else {
                 return p; // unreachable — `plane_frame` refuses a non-positive length
             };
@@ -84,7 +84,7 @@ fn fold_one(mut p: [HpBounded; 3], node: &MoveNode, prec: usize) -> [HpBounded; 
         // `v_raw`/`vv` always exist (nothing overflows a `BigInt`), so there is no
         // cross-product fallback branch here.
         MoveNode::FrameWide(f) => {
-            let inv = |v: &num_bigint::BigInt| nacre_scalar::inv_sqrt_bigint_bounded(v, prec);
+            let inv = |v: &num_bigint::BigInt| nacre_exact::inv_sqrt_bigint_bounded(v, prec);
             let (Some(iu), Some(iv2), Some(iw)) = (inv(&f.uu), inv(&f.vv), inv(&f.nn)) else {
                 return p; // unreachable — the builder derives positive squared lengths
             };

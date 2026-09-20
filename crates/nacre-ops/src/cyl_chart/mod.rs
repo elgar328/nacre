@@ -60,7 +60,7 @@ use crate::boolean::{Bound, LocalFace};
 use crate::planes::{ClassIx, WorkingCyl, WorkingPlane};
 use crate::tolerant::Judge;
 use crate::{BoolError, RejectReason, combinatorics, reject};
-use nacre_scalar::Rat;
+use nacre_exact::Rat;
 
 #[cfg(test)]
 mod census;
@@ -388,7 +388,7 @@ pub(crate) fn chart_of(
         let Some(coeffs) = combinatorics::class_coeffs_rat(jd, c) else {
             continue;
         };
-        if nacre_scalar::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &def.dir()) {
+        if nacre_exact::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &def.dir()) {
             push(c, &mut classes);
         }
     }

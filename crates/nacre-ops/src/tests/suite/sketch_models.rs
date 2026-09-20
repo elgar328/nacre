@@ -125,7 +125,7 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
 fn a_circle_profile_extrude_states_the_cylinder_primitive_solid() {
     let (center, radius, dist) = ([0.5, 0.25], 0.1, 2.0);
     let mut a = Model::new();
-    let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+    let r = |x: f64| nacre_exact::Rat::from_decimal(x).unwrap();
     let (sa, _) = a
         .add_cylinder_exact(
             [r(center[0]), r(center[1]), r(0.0)],
@@ -313,7 +313,7 @@ fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
     // Two primitives — the same hazard predates the sketch road.
     let mut m = Model::new();
     let prim = |m: &mut Model| {
-        let r = |x: i128| nacre_scalar::Rat::from_int(x);
+        let r = |x: i128| nacre_exact::Rat::from_int(x);
         m.add_cylinder_exact(
             [r(0), r(0), r(0)],
             [r(0), r(0), r(1)],
@@ -778,12 +778,12 @@ fn the_users_plate_slot_and_gusset_fold() {
         solid
     };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
-        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let r = |x: f64| nacre_exact::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
             m,
             &Operation::Transform {
                 solid: s,
-                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+                isometry: nacre_exact::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
             },
         )
         .expect("the translation applies") else {
@@ -907,12 +907,12 @@ fn the_gate_reads_the_arc_not_the_circle() {
         solid
     };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
-        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let r = |x: f64| nacre_exact::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
             m,
             &Operation::Transform {
                 solid: s,
-                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+                isometry: nacre_exact::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
             },
         )
         .expect("the translation applies") else {
@@ -1054,12 +1054,12 @@ fn the_gate_reads_faces_at_every_site() {
         solid
     };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
-        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let r = |x: f64| nacre_exact::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
             m,
             &Operation::Transform {
                 solid: s,
-                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+                isometry: nacre_exact::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
             },
         )
         .expect("the translation applies") else {
@@ -1358,12 +1358,12 @@ fn a_four_plane_operand_vertex_has_one_name() {
         solid
     };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
-        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let r = |x: f64| nacre_exact::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
             m,
             &Operation::Transform {
                 solid: s,
-                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+                isometry: nacre_exact::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
             },
         )
         .expect("the translation applies") else {
@@ -1560,12 +1560,12 @@ fn users_four_part_fold_in_either_order(gx: f64) {
         solid
     };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
-        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let r = |x: f64| nacre_exact::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
             m,
             &Operation::Transform {
                 solid: s,
-                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+                isometry: nacre_exact::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
             },
         )
         .expect("the translation applies") else {

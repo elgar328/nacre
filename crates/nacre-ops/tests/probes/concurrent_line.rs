@@ -16,9 +16,9 @@
 //! file is that the refused model is **valid** — the prism stops at `y = 0.9` and the wall it is
 //! coplanar with lives at `y ∈ [1,2]`, so nothing touches anything.
 
+use nacre_exact::Axis;
 use nacre_math::Point2;
 use nacre_ops::{BoolKind, Operation, Profile2d, RejectReason, SketchFrame, apply, boolean};
-use nacre_scalar::Axis;
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 

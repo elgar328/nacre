@@ -263,7 +263,7 @@ fn the_zx_seed_without_the_sugar_turns_the_sketch() {
     .expect("the convention");
 
     let mut derived = Model::new();
-    let zx = derived.world_plane(nacre_scalar::Axis::Y);
+    let zx = derived.world_plane(nacre_exact::Axis::Y);
     extrude_on_frame(&mut derived, &SketchFrame::canonical(zx), &profile, 1.0)
         .expect("the derivation is a perfectly good frame — it is just a different one");
 
@@ -275,7 +275,7 @@ fn the_zx_seed_without_the_sugar_turns_the_sketch() {
     );
     // And the sugar is what closes it: same convention, same arena.
     let mut sugared = Model::new();
-    let f = SketchFrame::world(&sugared, nacre_scalar::Axis::Y);
+    let f = SketchFrame::world(&sugared, nacre_exact::Axis::Y);
     extrude_on_frame(&mut sugared, &f, &profile, 1.0).expect("the sugar");
     let c = arena(&sugared);
     for (x, y) in a.iter().zip(&c) {

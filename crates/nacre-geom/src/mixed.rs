@@ -5,7 +5,7 @@
 //! root: a line meets a circle where a quadratic with rational coefficients vanishes, and two
 //! circles meet where their radical line (rational) meets one of them, so every meeting point
 //! here is `a + b√c` with **one radical per question** — exactly what
-//! [`nacre_scalar::quad::QuadVal`] carries and signs exactly. Nothing is realized in f64, and
+//! [`nacre_exact::quad::QuadVal`] carries and signs exactly. Nothing is realized in f64, and
 //! nothing is snapped: an endpoint either is a point or is not.
 //!
 //! **The half-open ray rule is the one [`crate::intersect::ray_straddle`] states**, read on a
@@ -25,8 +25,8 @@
 use crate::intersect::{
     RingSide, on_segment_2d_rat, orient2d_rat, ray_step_crossing, segments_meet_2d_rat, spike_rat,
 };
-use nacre_scalar::quad::QuadVal;
-use nacre_scalar::{Orient, Rat};
+use nacre_exact::quad::QuadVal;
+use nacre_exact::{Orient, Rat};
 
 /// The step leaving a ring vertex: straight to the next vertex, or an arc around `center`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

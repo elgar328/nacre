@@ -42,7 +42,7 @@ fn face_circle<'a>(
     let coeffs = class_coeffs_rat(jd, plane)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let c = cross3_rat(&n, &first.def.dir())?;
-    let zero = nacre_scalar::Rat::from_int(0);
+    let zero = nacre_exact::Rat::from_int(0);
     if c.iter().any(|v| *v != zero) {
         return None;
     }
@@ -74,10 +74,10 @@ fn ring_interior_candidates(
     jd: &Judge<'_, WorkingPlane>,
     plane: usize,
     def: &nacre_topo::CylinderDef,
-    centre: &[nacre_scalar::Rat; 3],
+    centre: &[nacre_exact::Rat; 3],
     ring: &[RingEdge],
-) -> Option<Vec<[nacre_scalar::Rat; 3]>> {
-    use nacre_scalar::Rat;
+) -> Option<Vec<[nacre_exact::Rat; 3]>> {
+    use nacre_exact::Rat;
     let coeffs = class_coeffs_rat(jd, plane)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let chart = Chart2dRat::of_normal(&n)?;
@@ -113,7 +113,7 @@ fn ring_interior_candidates(
         // same points it always did. Without one it is `min(r², 1)/(2(|e|²+1))`, inside because
         // `λ|e| ≤ 1/4 < 1 ≤ r` when `r ≥ 1` and `λ|e| ≤ r²/4 < r` when `r < 1`; the assertion
         // below is the judge either way.
-        let lam = match nacre_scalar::rat_sqrt_exact_big(r2) {
+        let lam = match nacre_exact::rat_sqrt_exact_big(r2) {
             Some(r) => Rat::new(
                 r.numer().checked_mul(len2.denom())?,
                 r.denom()
@@ -121,7 +121,7 @@ fn ring_interior_candidates(
             )?,
             None => {
                 let one = Rat::from_int(1);
-                let top = if *r2 < nacre_scalar::BigRat::from(one) {
+                let top = if *r2 < nacre_exact::BigRat::from(one) {
                     r2.narrow()?
                 } else {
                     one
@@ -140,8 +140,8 @@ fn ring_interior_candidates(
                 p[i] = p[i].checked_add(k.checked_mul(e[i])?)?;
             }
             debug_assert_eq!(
-                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r2),
-                nacre_scalar::Orient::Negative,
+                nacre_exact::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r2),
+                nacre_exact::Orient::Negative,
                 "a step of r/(|e|^2+1) along a chart axis stays strictly inside the circle"
             );
             out.push(p);
@@ -188,8 +188,8 @@ fn ring_interior_candidates(
                 p[i] = p[i].checked_sub(t.checked_mul(wn[i])?)?;
             }
             debug_assert_eq!(
-                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r2),
-                nacre_scalar::Orient::Negative,
+                nacre_exact::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), r2),
+                nacre_exact::Orient::Negative,
                 "a chord's near and far points stay strictly inside the circle"
             );
             out.push(p);
@@ -221,7 +221,7 @@ pub(crate) fn coord_probes(
     cyls: &[crate::planes::WorkingCyl],
     faces: &[CompFace],
 ) -> Vec<Probe> {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let mut out = Vec::new();
     for f in faces {
@@ -325,8 +325,8 @@ pub(crate) fn coord_probes(
 /// load-bearing. One spelling for [`coord_probes`], [`corner_probes`], and the component
 /// road's edge supply, which hands in a **plane's normal** where the other two hand in a cylinder's
 /// axis: the argument is only "a nonzero direction to build a frame from".
-pub(crate) fn probe_dirs(m: &[nacre_scalar::Rat; 3]) -> Vec<[nacre_scalar::Rat; 3]> {
-    use nacre_scalar::Rat;
+pub(crate) fn probe_dirs(m: &[nacre_exact::Rat; 3]) -> Vec<[nacre_exact::Rat; 3]> {
+    use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let nonzero = |v: &[Rat; 3]| v.iter().any(|c| *c != zero);
     let neg = |v: &[Rat; 3]| -> Option<[Rat; 3]> {
@@ -407,10 +407,10 @@ fn holed_cap_witness(
     cyls: &[crate::planes::WorkingCyl],
     plane: usize,
     def: &nacre_topo::CylinderDef,
-    centre: &[nacre_scalar::Rat; 3],
+    centre: &[nacre_exact::Rat; 3],
     f: &CompFace,
-) -> Option<[nacre_scalar::Rat; 3]> {
-    use nacre_scalar::{Orient, Rat, inv_sqrt_exact, quad::cylinder_radial_side};
+) -> Option<[nacre_exact::Rat; 3]> {
+    use nacre_exact::{Orient, Rat, inv_sqrt_exact, quad::cylinder_radial_side};
     let dot = |a: &[Rat; 3], b: &[Rat; 3]| -> Option<Rat> {
         let mut acc = Rat::from_int(0);
         for k in 0..3 {
@@ -492,10 +492,10 @@ fn holed_cap_witness(
 /// no products, nothing to overflow. That is the same rule `SketchPlane::normal_def` states, and
 /// for the same reason: the "obvious" second direction `n × u` squares the inputs' widths.
 pub(super) fn planes_through_line(
-    p: &[nacre_scalar::Rat; 3],
-    dir: &[nacre_scalar::Rat; 3],
-) -> Option<[[nacre_scalar::Rat; 4]; 2]> {
-    use nacre_scalar::Rat;
+    p: &[nacre_exact::Rat; 3],
+    dir: &[nacre_exact::Rat; 3],
+) -> Option<[[nacre_exact::Rat; 4]; 2]> {
+    use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let basis = |k: usize| -> [Rat; 3] {
         let mut e = [zero; 3];

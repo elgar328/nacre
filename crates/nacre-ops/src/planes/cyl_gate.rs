@@ -39,7 +39,7 @@ use super::*;
 /// refused as the coincident pair it is; otherwise the pair passes when the **faces** of one class
 /// provably miss the other's — every lateral face's axis span against the other faces' reach
 /// along that axis ([`lateral_faces_clear`], either direction; for parallel axes one cylinder
-/// strictly inside the other clears outright, [`nacre_scalar::cylinders_nested`], and otherwise
+/// strictly inside the other clears outright, [`nacre_exact::cylinders_nested`], and otherwise
 /// the spans alone decide) — and a pair whose faces cannot be shown to miss is recorded and refused as
 /// [`RejectReason::CylinderPairContact`] (M6b, where the quartic intersection curve lives).
 #[allow(clippy::type_complexity)]
@@ -61,7 +61,7 @@ pub(crate) fn cylinder_gate(
     // ★ Every question below is a **sign**, and the scalar layer answers signs totally: the
     // local checked-`Rat` closures this used to carry declined on overflow, which put a width
     // limit inside `CylinderGateUndecided` and made that name say less than it claimed.
-    use nacre_scalar::Orient;
+    use nacre_exact::Orient;
     let undecided = || reject(RejectReason::CylinderGateUndecided);
 
     let mut crossings = std::collections::HashSet::new();
@@ -160,8 +160,8 @@ pub(crate) fn cylinder_gate(
             // tangent arm opened, a touch passes with a [`Tangency`] row and the *verdict* is
             // `boolean::tangency_reject`'s. What the sentence guarantees is unchanged — no
             // degenerate seating reaches the arrangement unnamed.
-            if !nacre_scalar::parallel_rat(&n, &m) {
-                if nacre_scalar::dot_sign_rat(&n, &m) != Orient::Zero {
+            if !nacre_exact::parallel_rat(&n, &m) {
+                if nacre_exact::dot_sign_rat(&n, &m) != Orient::Zero {
                     // ★ **The oblique arm asks the faces** — the fourth of the gate's
                     // four sites to speak about faces rather than surfaces. The plane's station
                     // `n·p = −d` against every lateral face's reach along `n` ([`lateral_reach`],
@@ -187,13 +187,13 @@ pub(crate) fn cylinder_gate(
                 // ★★ What a face is asked is whether it misses the **rectangle** this cylinder
                 // occupies in that plane: the strip across, the lateral face's span along. See
                 // [`face_clears_footprint`].
-                if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r2) != Orient::Positive {
+                if nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2) != Orient::Positive {
                     // ★ The face-level test reads each face's own vertices, which are realized
                     // world coordinates — so it needs no frame guard of its own; `coeffs` above is
                     // already the world description (a class without one never reaches here). The
                     // guard this replaces refused every moved class outright, which is what kept a
                     // translated body out of the cylinder roads.
-                    let spans: Vec<[nacre_scalar::Rat; 2]> = footprints
+                    let spans: Vec<[nacre_exact::Rat; 2]> = footprints
                         .get_or_insert_with(|| lateral_footprints(faces, cyl.surf))
                         .iter()
                         .map(|f| f.span.expect("a listed footprint has a span"))
@@ -236,8 +236,7 @@ pub(crate) fn cylinder_gate(
                         // about the operation — so the geometry is stated in a row and
                         // `boolean::tangency_reject` asks `keep` — beside `self_touch_reject`,
                         // where the grouping can also say whether the pieces share a solid.
-                        if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r2) == Orient::Zero
-                        {
+                        if nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2) == Orient::Zero {
                             tangencies.extend(tangency_rows(
                                 model, faces, plane_ix, geom, n_a, c, ci, &coeffs, &cyl.def,
                                 cyl.surf, cyl.owner,
@@ -245,7 +244,7 @@ pub(crate) fn cylinder_gate(
                         } else {
                             crossings.insert((c, ci));
                         }
-                    } else if nacre_scalar::point_plane_clearance_rat(&coeffs, &o, r2)
+                    } else if nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2)
                         == Orient::Negative
                         && {
                             // ★ Only a footprint that can be **stated** proves a cut; an
@@ -294,7 +293,7 @@ pub(crate) fn cylinder_gate(
     // [`separating_dirs`] — each axis, and for skew axes the common perpendicular, which is where
     // a fillet beside a crosswise drill is seen apart). Parallel axes take the same door, after
     // one more surface fact — one infinite cylinder strictly **inside** the other never meets it
-    // ([`nacre_scalar::cylinders_nested`]: a pin in a bore, a smaller pin stacked on a boss) —
+    // ([`nacre_exact::cylinders_nested`]: a pin in a bore, a smaller pin stacked on a boss) —
     // and the reach along a parallel axis has no radial term, so what is left is the axis spans.
     // ★ Except **one surface under
     // two handles** — parallel axes on one line, one radius ([`same_surface`]): a `translate`d twin
@@ -310,7 +309,7 @@ pub(crate) fn cylinder_gate(
             ) {
                 continue;
             }
-            let clear = match nacre_scalar::cylinders_clear(
+            let clear = match nacre_exact::cylinders_clear(
                 &a.def.origin(),
                 &a.def.dir(),
                 a.def.r2(),
@@ -323,8 +322,8 @@ pub(crate) fn cylinder_gate(
                 // Parallel axes with one infinite cylinder strictly inside the other — a pin in a
                 // bore, a boss under a smaller pin — never meet as surfaces either: the second
                 // sufficient condition the distance rule has for parallel pairs.
-                _ if nacre_scalar::parallel_rat(&a.def.dir(), &b.def.dir())
-                    && nacre_scalar::cylinders_nested(
+                _ if nacre_exact::parallel_rat(&a.def.dir(), &b.def.dir())
+                    && nacre_exact::cylinders_nested(
                         &a.def.origin(),
                         &a.def.dir(),
                         a.def.r2(),
@@ -379,11 +378,11 @@ fn wall_faces_clear(
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
     c: usize,
-    coeffs: &[nacre_scalar::Rat; 4],
-    o: &[nacre_scalar::Rat; 3],
-    m: &[nacre_scalar::Rat; 3],
-    r2: &nacre_scalar::BigRat,
-    spans: &[[nacre_scalar::Rat; 2]],
+    coeffs: &[nacre_exact::Rat; 4],
+    o: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
+    r2: &nacre_exact::BigRat,
+    spans: &[[nacre_exact::Rat; 2]],
 ) -> Result<bool, BoolError> {
     let mut seen = 0usize;
     for (i, row) in faces.iter().enumerate() {
@@ -442,7 +441,7 @@ pub(crate) struct Tangency {
     /// **The wall face has vertices on both sides of the tangent line** — so the contact is a
     /// *segment*, not a corner grazing it at a point. A point tangency is a
     /// valid solid, so without this the verdict would accuse a shape it cannot convict. ★ Needed
-    /// because [`nacre_scalar::cylinder_strip_side`] answers `StripSide::Inside` for `U = 0`,
+    /// because [`nacre_exact::cylinder_strip_side`] answers `StripSide::Inside` for `U = 0`,
     /// which its own doc calls *"merely conservative"* on an empty strip — and a tangent plane's
     /// strip is exactly that, so "not clear of the strip" says nothing on its own here.
     ///
@@ -475,9 +474,9 @@ pub(crate) struct Tangency {
 /// `arrangement::world_rat_sense`, asked of a face rather than a class root: both must be nonzero
 /// in the component compared, because `raw` is `f64` and a component it rounds to zero would hand
 /// back a sign with nothing behind it.
-fn rel_to_stored(coeffs: &[nacre_scalar::Rat; 4], plane: &Plane) -> Option<i8> {
+fn rel_to_stored(coeffs: &[nacre_exact::Rat; 4], plane: &Plane) -> Option<i8> {
     let raw = plane.coefficients();
-    let zero = nacre_scalar::Rat::from_int(0);
+    let zero = nacre_exact::Rat::from_int(0);
     let i = (0..4).find(|&i| coeffs[i] != zero && raw[i] != 0.0)?;
     Some(if (coeffs[i] > zero) == (raw[i] > 0.0) {
         1
@@ -487,12 +486,12 @@ fn rel_to_stored(coeffs: &[nacre_scalar::Rat; 4], plane: &Plane) -> Option<i8> {
 }
 
 /// Sign of `n·p + d` for a rational point — the side of the plane `p` is on. `None` on overflow.
-fn plane_side_of_rat(coeffs: &[nacre_scalar::Rat; 4], p: &[nacre_scalar::Rat; 3]) -> Option<i8> {
+fn plane_side_of_rat(coeffs: &[nacre_exact::Rat; 4], p: &[nacre_exact::Rat; 3]) -> Option<i8> {
     let mut acc = coeffs[3];
     for k in 0..3 {
         acc = acc.checked_add(coeffs[k].checked_mul(p[k])?)?;
     }
-    Some(match acc.cmp(&nacre_scalar::Rat::from_int(0)) {
+    Some(match acc.cmp(&nacre_exact::Rat::from_int(0)) {
         core::cmp::Ordering::Greater => 1,
         core::cmp::Ordering::Less => -1,
         core::cmp::Ordering::Equal => 0,
@@ -503,20 +502,20 @@ fn plane_side_of_rat(coeffs: &[nacre_scalar::Rat; 4], p: &[nacre_scalar::Rat; 3]
 /// `o - ((n·o + d)/(n·n))·n` and nothing there leaves the field. This is the tangency line's base
 /// point; the line itself is that point plus `t·m`.
 fn tangency_foot(
-    coeffs: &[nacre_scalar::Rat; 4],
-    o: &[nacre_scalar::Rat; 3],
-) -> Option<[nacre_scalar::Rat; 3]> {
+    coeffs: &[nacre_exact::Rat; 4],
+    o: &[nacre_exact::Rat; 3],
+) -> Option<[nacre_exact::Rat; 3]> {
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let mut num = coeffs[3];
-    let mut den = nacre_scalar::Rat::from_int(0);
+    let mut den = nacre_exact::Rat::from_int(0);
     for k in 0..3 {
         num = num.checked_add(n[k].checked_mul(o[k])?)?;
         den = den.checked_add(n[k].checked_mul(n[k])?)?;
     }
     // `Rat` has no division: the reciprocal is the exact inverse and `Rat::new` refuses `0`,
     // which is precisely the degenerate normal this must not divide by.
-    let q = num.checked_mul(nacre_scalar::Rat::new(den.denom(), den.numer())?)?;
-    let mut out = [nacre_scalar::Rat::from_int(0); 3];
+    let q = num.checked_mul(nacre_exact::Rat::new(den.denom(), den.numer())?)?;
+    let mut out = [nacre_exact::Rat::from_int(0); 3];
     for k in 0..3 {
         out[k] = o[k].checked_sub(q.checked_mul(n[k])?)?;
     }
@@ -529,15 +528,15 @@ fn tangency_foot(
 fn line_lies_in_another_class(
     geom: &[WorkingPlane],
     wall: usize,
-    base: &[nacre_scalar::Rat; 3],
-    m: &[nacre_scalar::Rat; 3],
+    base: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
 ) -> bool {
     for (k, wp) in geom.iter().enumerate() {
         if k == wall {
             continue;
         }
         let Some(w) = wp.world_rat else { continue };
-        if nacre_scalar::dot_sign_rat(&[w[0], w[1], w[2]], m) != nacre_scalar::Orient::Zero {
+        if nacre_exact::dot_sign_rat(&[w[0], w[1], w[2]], m) != nacre_exact::Orient::Zero {
             continue;
         }
         if plane_side_of_rat(&w, base) == Some(0) {
@@ -564,7 +563,7 @@ pub(super) fn tangency_rows(
     n_a: usize,
     c: usize,
     ci: usize,
-    coeffs: &[nacre_scalar::Rat; 4],
+    coeffs: &[nacre_exact::Rat; 4],
     def: &nacre_topo::CylinderDef,
     surf: Handle<Surface>,
     owner: SolidSide,
@@ -676,7 +675,7 @@ pub(super) fn tangency_rows(
             let witness = base.as_ref().zip(cf.footprint.span).and_then(|(b, span)| {
                 let mid = span[0]
                     .checked_add(span[1])?
-                    .checked_mul(nacre_scalar::Rat::new(1, 2)?)?;
+                    .checked_mul(nacre_exact::Rat::new(1, 2)?)?;
                 let mut p = [0.0f64; 3];
                 for j in 0..3 {
                     p[j] = b[j].checked_add(mid.checked_mul(m[j])?)?.to_f64();
@@ -735,12 +734,12 @@ pub(super) fn tangency_rows(
 fn face_straddles_line(
     model: &Model,
     face: &Face,
-    coeffs: &[nacre_scalar::Rat; 4],
-    o: &[nacre_scalar::Rat; 3],
-    m: &[nacre_scalar::Rat; 3],
-    r2: &nacre_scalar::BigRat,
+    coeffs: &[nacre_exact::Rat; 4],
+    o: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
+    r2: &nacre_exact::BigRat,
 ) -> bool {
-    use nacre_scalar::StripSide;
+    use nacre_exact::StripSide;
     let (mut plus, mut minus) = (false, false);
     for he in &face.outer.half_edges {
         // ★ **The same reader the clearance road uses.** This used to take rational vertices and
@@ -781,7 +780,7 @@ fn face_straddles_line(
 /// face in the table at all, both come back empty and leave the axis unused. The second could be
 /// argued safe (no lateral face, no band, nothing to protect), but that argument rests on the face
 /// table being complete here, which is a separate premise from the one this function is about.
-fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_scalar::Rat; 2]> {
+fn lateral_spans(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<[nacre_exact::Rat; 2]> {
     lateral_footprints(faces, surf)
         .into_iter()
         .map(|f| f.span.expect("a listed footprint has a span"))
@@ -818,9 +817,9 @@ fn lateral_footprints(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint
 pub(super) fn lateral_reach(
     def: &nacre_topo::CylinderDef,
     fp: &Footprint,
-    d: &[nacre_scalar::Rat; 3],
+    d: &[nacre_exact::Rat; 3],
 ) -> Option<Reach> {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let dm = dot3(d, &m)?;
@@ -845,7 +844,7 @@ pub(super) fn lateral_reach(
 ///
 /// Each end is a rational base and a radical, so a gap has to clear **two** roots:
 /// `b.lo − √b.rho2_lo > a.hi + √a.rho2_hi` is `g > √p + √q`, which
-/// [`nacre_scalar::exceeds_root_sum`] answers exactly. `None` is `Rat` overflow forming a gap.
+/// [`nacre_exact::exceeds_root_sum`] answers exactly. `None` is `Rat` overflow forming a gap.
 ///
 /// ★ **Closed against closed**: equality is one face's rim touching the other at a point, which is
 /// not clear. The footprint's *span* is read **open** instead, so the disk arm in
@@ -853,8 +852,8 @@ pub(super) fn lateral_reach(
 /// with the boundary the other way, and folding them together would move one convention silently.
 fn reaches_apart(a: &Reach, b: &Reach) -> Option<bool> {
     Some(
-        nacre_scalar::exceeds_root_sum(b.lo.checked_sub(a.hi)?, a.rho2_hi, b.rho2_lo)?
-            || nacre_scalar::exceeds_root_sum(a.lo.checked_sub(b.hi)?, b.rho2_hi, a.rho2_lo)?,
+        nacre_exact::exceeds_root_sum(b.lo.checked_sub(a.hi)?, a.rho2_hi, b.rho2_lo)?
+            || nacre_exact::exceeds_root_sum(a.lo.checked_sub(b.hi)?, b.rho2_hi, a.rho2_lo)?,
     )
 }
 
@@ -863,10 +862,10 @@ fn reaches_apart(a: &Reach, b: &Reach) -> Option<bool> {
 /// station a plane offers is such an interval of one point.
 pub(super) fn reach_clears(
     reach: &Reach,
-    lo: nacre_scalar::Rat,
-    hi: nacre_scalar::Rat,
+    lo: nacre_exact::Rat,
+    hi: nacre_exact::Rat,
 ) -> Option<bool> {
-    let zero = nacre_scalar::Rat::from_int(0);
+    let zero = nacre_exact::Rat::from_int(0);
     reaches_apart(
         &Reach {
             lo,
@@ -885,13 +884,13 @@ pub(super) fn reach_clears(
 fn oblique_plane_clears(
     def: &nacre_topo::CylinderDef,
     footprints: &[Footprint],
-    coeffs: &[nacre_scalar::Rat; 4],
+    coeffs: &[nacre_exact::Rat; 4],
 ) -> bool {
     if footprints.is_empty() {
         return false;
     }
     let n = [coeffs[0], coeffs[1], coeffs[2]];
-    let Some(station) = nacre_scalar::Rat::from_int(0).checked_sub(coeffs[3]) else {
+    let Some(station) = nacre_exact::Rat::from_int(0).checked_sub(coeffs[3]) else {
         return false;
     };
     footprints.iter().all(|fp| {
@@ -907,11 +906,11 @@ fn oblique_plane_clears(
 /// pair rule refuses them as the coincident pair they are. Overflow answers `true` — "not shown
 /// distinct" refuses, it never lets a pair through.
 fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> bool {
-    if !nacre_scalar::parallel_rat(&a.dir(), &b.dir()) || a.r2() != b.r2() {
+    if !nacre_exact::parallel_rat(&a.dir(), &b.dir()) || a.r2() != b.r2() {
         return false;
     }
     let (oa, ob) = (a.origin(), b.origin());
-    let d: Option<[nacre_scalar::Rat; 3]> = (|| {
+    let d: Option<[nacre_exact::Rat; 3]> = (|| {
         Some([
             ob[0].checked_sub(oa[0])?,
             ob[1].checked_sub(oa[1])?,
@@ -919,7 +918,7 @@ fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> boo
         ])
     })();
     let Some(d) = d else { return true };
-    let zero = nacre_scalar::Rat::from_int(0);
+    let zero = nacre_exact::Rat::from_int(0);
     match crate::combinatorics::cross3_rat(&d, &a.dir()) {
         Some(c) => c.iter().all(|x| *x == zero),
         None => true,
@@ -930,7 +929,7 @@ fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> boo
 /// lateral face of `b`, each pair asked along [`separating_dirs`]. A pair clears when **some**
 /// direction separates them; the classes clear when **every** pair does. Then no point of `b`'s
 /// faces lies on `a`'s, so the two classes share no face — the proposition the arrangement needs,
-/// which the surface distance ([`nacre_scalar::cylinders_clear`]) is only one sufficient
+/// which the surface distance ([`nacre_exact::cylinders_clear`]) is only one sufficient
 /// condition for.
 ///
 /// ★ The two axes used to be spelled here as two questions of different shapes — one class's
@@ -957,7 +956,7 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
         }
     };
     let (fa, fb) = (listed(a.surf), listed(b.surf));
-    let parallel = nacre_scalar::parallel_rat(&a.def.dir(), &b.def.dir());
+    let parallel = nacre_exact::parallel_rat(&a.def.dir(), &b.def.dir());
     let dirs = separating_dirs(&a.def, &b.def);
     fa.iter().all(|x| {
         fb.iter().all(|y| {
@@ -983,7 +982,7 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
 ///
 /// ★★ **The third direction is the face-level twin of a rung above it.** With a whole circle and
 /// no span, `d ⊥ m_a` and `d ⊥ m_b` make both reaches `d·o ± r|d|`, so "apart" reads
-/// `|d·(o_b − o_a)| > (r_a + r_b)|d|` — [`nacre_scalar::cylinders_clear`]'s skew branch, letter
+/// `|d·(o_b − o_a)| > (r_a + r_b)|d|` — [`nacre_exact::cylinders_clear`]'s skew branch, letter
 /// for letter. The faces answer the same question the infinite surfaces do, with their own extent.
 ///
 /// Parallel axes have no third direction (the cross product is zero, and the surface rung is the
@@ -991,10 +990,10 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
 pub(super) fn separating_dirs(
     a: &nacre_topo::CylinderDef,
     b: &nacre_topo::CylinderDef,
-) -> Vec<[nacre_scalar::Rat; 3]> {
+) -> Vec<[nacre_exact::Rat; 3]> {
     let (ma, mb) = (a.dir(), b.dir());
     let mut out = vec![ma, mb];
-    if !nacre_scalar::parallel_rat(&ma, &mb) {
+    if !nacre_exact::parallel_rat(&ma, &mb) {
         if let Some(perp) = combinatorics::cross3_rat(&ma, &mb) {
             out.push(perp);
         }
@@ -1012,7 +1011,7 @@ pub(super) fn separated(
     x: &Footprint,
     b: &nacre_topo::CylinderDef,
     y: &Footprint,
-    d: &[nacre_scalar::Rat; 3],
+    d: &[nacre_exact::Rat; 3],
 ) -> Option<bool> {
     reaches_apart(&lateral_reach(a, x, d)?, &lateral_reach(b, y, d)?)
 }
@@ -1030,8 +1029,8 @@ fn cross_sections_clear(
     b: &WorkingCyl,
     y: &Footprint,
 ) -> Option<bool> {
+    use nacre_exact::Rat;
     use nacre_geom::mixed::ArcSpec;
-    use nacre_scalar::Rat;
     let zero = Rat::from_int(0);
     let (o, m, e) = (a.def.origin(), a.def.dir(), a.def.ref_dir());
     let (mm, em) = (dot3(&m, &m)?, dot3(&e, &m)?);
@@ -1039,8 +1038,8 @@ fn cross_sections_clear(
     for k in 0..3 {
         e1[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
     }
-    let inv_e1 = nacre_scalar::inv_sqrt_exact(dot3(&e1, &e1)?)?;
-    let inv_m = nacre_scalar::inv_sqrt_exact(mm)?;
+    let inv_e1 = nacre_exact::inv_sqrt_exact(dot3(&e1, &e1)?)?;
+    let inv_m = nacre_exact::inv_sqrt_exact(mm)?;
     let scaled = |v: &[Rat; 3], k: Rat| -> Option<[Rat; 3]> {
         Some([
             v[0].checked_mul(k)?,

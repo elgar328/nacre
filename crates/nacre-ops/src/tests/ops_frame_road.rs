@@ -263,7 +263,7 @@ fn every_named_origin_survives_the_round_trip_it_is_relied_on_for() {
             panic!("{name}: a stated datum always names its placement");
         };
         for (k, r) in origin.iter().enumerate() {
-            let round = nacre_scalar::Rat::from_decimal(r.to_f64());
+            let round = nacre_exact::Rat::from_decimal(r.to_f64());
             assert_eq!(
                 round,
                 Some(*r),

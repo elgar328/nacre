@@ -51,7 +51,7 @@ use nacre_math::{Point3, Vector3};
 /// about the coordinate axes only): a reflection in a general plane needs an irrational unit
 /// normal, so its image could not be reproduced from an exact definition.
 ///
-/// The axis is an index rather than an enum because this crate does not depend on `nacre-scalar`
+/// The axis is an index rather than an enum because this crate does not depend on `nacre-exact`
 /// (whose `Axis` names a *rotation* axis); the caller maps its typed axis once, at the boundary.
 ///
 /// **Exactness:** `dir` only flips a sign, so it is always exact. `point` computes `2·offset − p`

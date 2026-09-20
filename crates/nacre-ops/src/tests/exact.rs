@@ -11,8 +11,8 @@ use nacre_math::Vector3;
 #[test]
 fn a_pad_on_a_mirrored_tilted_face_stands_up() {
     use crate::{OpOutput, Operation, SketchFrame, apply, from_rings};
+    use nacre_exact::{Angle, Axis, Isometry, Rotation};
     use nacre_math::Point2;
-    use nacre_scalar::{Angle, Axis, Isometry, Rotation};
     use nacre_topo::Model;
 
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);

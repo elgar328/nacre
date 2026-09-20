@@ -45,7 +45,7 @@ fn ruler_keys(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     keyed: &[(combinatorics::PointOn, NodeId, combinatorics::EndPin)],
-) -> Option<Vec<nacre_scalar::quad::QuadVal>> {
+) -> Option<Vec<nacre_exact::quad::QuadVal>> {
     let mut line = None;
     let mut out = vec![None; keyed.len()];
     for (i, k) in keyed.iter().enumerate() {

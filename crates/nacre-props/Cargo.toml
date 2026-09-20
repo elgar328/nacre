@@ -19,7 +19,7 @@ nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util
 # Builds a concave extruded prism to test the area-weighted centroid path.
 nacre-ops = { path = "../nacre-ops", version = "0.0.0" }
 # `Axis`, to name the world plane a test sketch sits on (an extrude names its plane).
-nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
+nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
 proptest.workspace = true
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

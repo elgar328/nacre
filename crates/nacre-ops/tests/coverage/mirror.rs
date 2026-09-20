@@ -8,9 +8,9 @@
 //! volume and the boolean.
 
 use crate::common::*;
+use nacre_exact::{Axis, Rat};
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, OpError, OpOutput, Operation, apply};
-use nacre_scalar::{Axis, Rat};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 

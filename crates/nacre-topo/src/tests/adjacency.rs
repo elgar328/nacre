@@ -12,7 +12,7 @@ use std::collections::HashMap;
 #[test]
 fn nonmanifold_vertices_flags_each_pinch_even_count() {
     let mut m = Model::new();
-    let r = nacre_scalar::Rat::from_int;
+    let r = nacre_exact::Rat::from_int;
     let surface = m.push_plane_unregistered(
         Plane::from_point_normal(
             Point3::origin(),
@@ -25,9 +25,9 @@ fn nonmanifold_vertices_flags_each_pinch_even_count() {
     // detector never dereferences (it reads only the maps).
     let mk_v = |m: &mut Model| {
         let def = crate::Vertex::ThreePlane([
-            m.world_plane(nacre_scalar::Axis::Z),
-            m.world_plane(nacre_scalar::Axis::X),
-            m.world_plane(nacre_scalar::Axis::Y),
+            m.world_plane(nacre_exact::Axis::Z),
+            m.world_plane(nacre_exact::Axis::X),
+            m.world_plane(nacre_exact::Axis::Y),
         ]);
         m.push_vertex(
             def,
@@ -95,9 +95,9 @@ fn rebuild_indexes_a_shared_edge() {
     let mut m = Model::new();
     let mk_v = |m: &mut Model, p: [f64; 3]| {
         let def = crate::Vertex::ThreePlane([
-            m.world_plane(nacre_scalar::Axis::Z),
-            m.world_plane(nacre_scalar::Axis::X),
-            m.world_plane(nacre_scalar::Axis::Y),
+            m.world_plane(nacre_exact::Axis::Z),
+            m.world_plane(nacre_exact::Axis::X),
+            m.world_plane(nacre_exact::Axis::Y),
         ]);
         m.push_vertex(
             def,
@@ -113,7 +113,7 @@ fn rebuild_indexes_a_shared_edge() {
 
     // rebuild never dereferences surface handles, so one dummy is enough for
     // every edge/face (raw `edges.push` — nothing here reads the curve cache).
-    let r = nacre_scalar::Rat::from_int;
+    let r = nacre_exact::Rat::from_int;
     let surface = m.push_plane_unregistered(
         Plane::from_point_normal(
             Point3::origin(),

@@ -31,15 +31,15 @@
 //!   than averaged away.
 //!
 //! **The first run of anything here is discarded.** Under `parallel` the first boolean pays
-//! rayon's pool start-up *and* — less obviously — `nacre-scalar`'s `HP_CONSTS` is a
+//! rayon's pool start-up *and* — less obviously — `nacre-exact`'s `HP_CONSTS` is a
 //! `thread_local`, so every worker builds its own π at the model's precision the first time
 //! it judges. Both are once-per-process; measuring them as if they were per-boolean is how
 //! one concludes that parallelism is slow.
 
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point2, Point3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, Operation, Profile2d, apply, boolean};
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 

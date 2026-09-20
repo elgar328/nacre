@@ -19,8 +19,8 @@ pub(crate) static DISAGREED: AtomicUsize = AtomicUsize::new(0);
 fn by_fences(
     jd: &Judge<'_, WorkingPlane>,
     sg: &MergedSeg,
-    ends: [&[nacre_scalar::Rat; 3]; 2],
-    meet: &(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    ends: [&[nacre_exact::Rat; 3]; 2],
+    meet: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
 ) -> Option<bool> {
     for k in 0..2 {
         let e = combinatorics::class_coeffs_rat(jd, sg.end_h[k].class()?)?;
@@ -30,10 +30,10 @@ fn by_fences(
             at_far = at_far.checked_add(e[i].checked_mul(far[i])?)?;
         }
         let want = at_far.numer().signum();
-        let got = match nacre_scalar::quad::plane_side(&e, &meet.0, &meet.1) {
-            nacre_scalar::Orient::Positive => 1,
-            nacre_scalar::Orient::Negative => -1,
-            nacre_scalar::Orient::Zero => 0,
+        let got = match nacre_exact::quad::plane_side(&e, &meet.0, &meet.1) {
+            nacre_exact::Orient::Positive => 1,
+            nacre_exact::Orient::Negative => -1,
+            nacre_exact::Orient::Zero => 0,
         };
         if got != 0 && got != want {
             return Some(false);
@@ -48,7 +48,7 @@ fn by_fences(
 pub(super) fn against_the_fences(
     jd: &Judge<'_, WorkingPlane>,
     sg: &MergedSeg,
-    ends: [&[nacre_scalar::Rat; 3]; 2],
+    ends: [&[nacre_exact::Rat; 3]; 2],
     n: combinatorics::NodeId,
     def: &nacre_topo::CylinderDef,
     at: &combinatorics::Located<'_>,

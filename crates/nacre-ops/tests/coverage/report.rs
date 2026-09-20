@@ -6,8 +6,8 @@
 //! is far below the coincidence limit rather than merely under it.
 
 use crate::common::*;
+use nacre_exact::Axis;
 use nacre_ops::{BoolKind, Decision, Site, boolean_with_report};
-use nacre_scalar::Axis;
 
 /// **An exact model assumes nothing, and the report says so.**
 ///
@@ -61,7 +61,7 @@ fn a_shared_rotation_still_assumes_nothing() {
 /// difference the composition genuinely cannot cancel.
 #[test]
 fn a_toleranced_plane_merge_is_reported_with_its_evidence() {
-    use nacre_scalar::{Isometry, Rat};
+    use nacre_exact::{Isometry, Rat};
     // Stacked cubes share the plane `z = 1`, and the turn is about X so that plane is *tilted* by
     // it. A plane perpendicular to the rotation axis would keep its coordinate exactly and the
     // merge would be proved rather than judged — a real outcome, but not this one.

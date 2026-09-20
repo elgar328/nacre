@@ -9,9 +9,9 @@
 //! the census reads the same models.
 #![allow(dead_code)]
 
+use nacre_exact::Rat;
 use nacre_math::Point2;
 use nacre_ops::{Edge2d, Profile2d, Ring2d, SketchError, from_paths};
-use nacre_scalar::Rat;
 
 /// One edge as the old fixtures spelled it.
 #[derive(Clone, Copy, Debug)]

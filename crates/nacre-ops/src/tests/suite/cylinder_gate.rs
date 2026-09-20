@@ -13,7 +13,7 @@ use super::*;
 ///
 /// ★★★★★ **The extent form and the disk form are one door.**
 ///
-/// [`nacre_scalar::cylinder_ruling_reached_extent`] answers for a piece stated by its two ends;
+/// [`nacre_exact::cylinder_ruling_reached_extent`] answers for a piece stated by its two ends;
 /// a disk is that piece with both ends the same. Handing it the **same** point and margin twice
 /// must reproduce the disk answer exactly — otherwise the general form has drifted from the case
 /// it generalizes, and every arc reading rests on it. Swept over centres, radii and both sides so
@@ -23,9 +23,9 @@ use super::*;
 /// the symmetric form cannot state, and they answer differently.
 #[test]
 fn the_extent_form_agrees_with_the_disk_it_generalizes() {
-    use nacre_scalar::{MeetPoint, Rat, cylinder_ruling_reached, cylinder_ruling_reached_extent};
+    use nacre_exact::{MeetPoint, Rat, cylinder_ruling_reached, cylinder_ruling_reached_extent};
     let r = |v: i128| Rat::from_int(v);
-    let b = |v: i128| nacre_scalar::BigRat::from(Rat::from_int(v)); // a squared radius or margin
+    let b = |v: i128| nacre_exact::BigRat::from(Rat::from_int(v)); // a squared radius or margin
     let wall = [r(1), r(0), r(0), r(0)];
     let axis = [r(0), r(0), r(1)];
     for ox in [3i128, 5, 7] {
@@ -46,7 +46,7 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
                         );
                         let both = cylinder_ruling_reached_extent(
                             &wall,
-                            &nacre_scalar::StripReach {
+                            &nacre_exact::StripReach {
                                 lo: (&p, &b(rho * rho)),
                                 hi: Some((&p, &b(rho * rho))),
                             },
@@ -63,7 +63,7 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
                         // the named boundary threads through; nothing else exercises them in bulk.
                         let crossed = cylinder_ruling_reached_extent(
                             &wall,
-                            &nacre_scalar::StripReach {
+                            &nacre_exact::StripReach {
                                 lo: (&p, &b(rho * rho)),
                                 hi: Some((&p, &b(rho * rho))),
                             },
@@ -91,7 +91,7 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
     let reach = |side, touch_counts| {
         cylinder_ruling_reached_extent(
             &wall,
-            &nacre_scalar::StripReach {
+            &nacre_exact::StripReach {
                 lo: (&hi, &b(0)),
                 hi: Some((&lo, &b(0))),
             },
@@ -119,7 +119,7 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
     let touching = |touch_counts| {
         cylinder_ruling_reached_extent(
             &wall,
-            &nacre_scalar::StripReach {
+            &nacre_exact::StripReach {
                 lo: (&tangent, &b(4)), // ρ = 2, as ρ²
                 hi: None,
             },
@@ -141,9 +141,9 @@ fn the_extent_form_agrees_with_the_disk_it_generalizes() {
 #[test]
 #[cfg(debug_assertions)]
 fn a_circle_and_a_ruling_meet_or_clear() {
-    use nacre_scalar::{MeetPoint, Rat, cylinder_ruling_reached as reaches};
+    use nacre_exact::{MeetPoint, Rat, cylinder_ruling_reached as reaches};
     let r = |v: i128| Rat::from_int(v);
-    let b = |v: i128| nacre_scalar::BigRat::from(Rat::from_int(v)); // a squared radius or margin
+    let b = |v: i128| nacre_exact::BigRat::from(Rat::from_int(v)); // a squared radius or margin
     // The class `x = 0`; a cylinder about `z` at `x = 3` with radius 5, so its two rulings stand
     // at `y = ±4`; and a circle centred on that plane whose radius is walked across each of them.
     let wall = [r(1), r(0), r(0), r(0)];
@@ -195,9 +195,9 @@ fn a_circle_and_a_ruling_meet_or_clear() {
 /// `Crosses` needs width and never comes back from the spellings a vertex takes.
 #[test]
 fn a_disk_clears_a_strip_or_spans_it() {
-    use nacre_scalar::{MeetPoint, Rat, StripSide, cylinder_strip_side_margin as side};
+    use nacre_exact::{MeetPoint, Rat, StripSide, cylinder_strip_side_margin as side};
     let r = |v: i128| Rat::from_int(v);
-    let b = |v: i128| nacre_scalar::BigRat::from(Rat::from_int(v)); // a squared radius or margin
+    let b = |v: i128| nacre_exact::BigRat::from(Rat::from_int(v)); // a squared radius or margin
     let wall = [r(1), r(0), r(0), r(0)];
     let axis = [r(0), r(0), r(1)];
     let at = [r(3), r(0), r(0)];
@@ -227,7 +227,7 @@ fn a_disk_clears_a_strip_or_spans_it() {
     assert_eq!(disk(4, 0), StripSide::Inside);
     assert_eq!(
         disk(4, 0),
-        nacre_scalar::cylinder_strip_side(
+        nacre_exact::cylinder_strip_side(
             &wall,
             &MeetPoint::Narrow([r(0), r(4), r(0)]),
             &at,
@@ -315,11 +315,11 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
         .expect("the big one extrudes") else {
             unreachable!()
         };
-        let z = |v: i128| nacre_scalar::Rat::from_int(v);
+        let z = |v: i128| nacre_exact::Rat::from_int(v);
         transform(
             &mut m,
             solid,
-            &nacre_scalar::Isometry::translation([z(0), z(0), z(-20)]),
+            &nacre_exact::Isometry::translation([z(0), z(0), z(-20)]),
         )
         .expect("centred on the origin")
     };
@@ -346,7 +346,7 @@ fn a_cylinder_nested_across_another_waits_at_the_gate() {
 /// A boss tangent to the box's wall `x = 0`, and a bar ending exactly on that wall whose cap is a
 /// disk **containing** the tangent line. The gate writes the tangency row (measured: `straddles`
 /// comes back **true**, and since that wall face is one disk the only way both sides get a vote is
-/// [`nacre_scalar::StripSide::Crosses`] — the fold this cell added), and then the cylinder-pair
+/// [`nacre_exact::StripSide::Crosses`] — the fold this cell added), and then the cylinder-pair
 /// rule speaks first and the operation stops.
 ///
 /// ☑ **The two cannot be separated today.** For the row to be written at all the disk must overlap

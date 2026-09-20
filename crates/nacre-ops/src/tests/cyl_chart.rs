@@ -1,7 +1,7 @@
 use super::probe::{ROWS, Row};
 use crate::BoolKind;
+use nacre_exact::Rat;
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::Rat;
 use nacre_topo::Model;
 
 /// **The chart census is live, and every chart it records has the shape a chart must have.**
@@ -453,9 +453,9 @@ fn the_chart_stands_on_a_tilted_axis() {
                 .copied()
                 .expect("a tilted prism's face states itself");
             let n = [n[0], n[1], n[2]];
-            let dot = nacre_scalar::dot_sign_rat(&n, &axis);
+            let dot = nacre_exact::dot_sign_rat(&n, &axis);
             assert!(
-                dot == nacre_scalar::Orient::Zero || nacre_scalar::parallel_rat(&n, &axis),
+                dot == nacre_exact::Orient::Zero || nacre_exact::parallel_rat(&n, &axis),
                 "a face neither ⊥ nor ∥ to the axis would be the oblique branch"
             );
         }

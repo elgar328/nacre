@@ -16,7 +16,7 @@ pub(crate) struct Hit {
 pub(crate) static HITS: Mutex<Vec<Hit>> = Mutex::new(Vec::new());
 
 pub(crate) fn record(
-    t: nacre_scalar::Rat,
+    t: nacre_exact::Rat,
     outer: Option<CylOnClass>,
     rims: usize,
     cycles: &[(combinatorics::CycleKind, combinatorics::LoopRing)],

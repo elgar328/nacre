@@ -32,12 +32,12 @@
 //! It is not chosen for being exotic but for being the only kind that can show anything: see
 //! [`an_axis_aligned_plane_is_anchor_blind`].
 
+use nacre_exact::Axis;
+use nacre_exact::Rat;
 use nacre_geom::Plane;
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
-use nacre_scalar::Axis;
-use nacre_scalar::Rat;
 use nacre_topo::Model;
 
 use crate::fixtures::datum_frame;

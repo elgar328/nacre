@@ -34,7 +34,7 @@ impl Model {
         &mut self,
         points: PlanePoints,
         motion: Option<Handle<MotionNode>>,
-        name: Option<nacre_scalar::PlaneName>,
+        name: Option<nacre_exact::PlaneName>,
         cache: nacre_geom::Plane,
     ) -> Handle<Surface> {
         let h = self.surfaces.push(Surface::Plane { points, motion });

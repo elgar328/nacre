@@ -8,10 +8,10 @@
 //! Cylinder *lateral* surfaces are the deliberate exception: a curved surface's truth arrives
 //! with M6, and booleans still hold it behind the population gate.
 
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point3, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_topo::Model;
 
 use crate::fixtures::{datum_frame, p2};
@@ -213,10 +213,10 @@ fn the_world_sugar_names_the_seed_a_sketch_then_sits_on() {
             .faces
             .iter()
             .map(|&fh| m.face(fh).surface)
-            .find(|su| su == &m.world_plane(nacre_scalar::Axis::Z))
+            .find(|su| su == &m.world_plane(nacre_exact::Axis::Z))
             .expect("the z = 0 base cap must intern onto the seed")
     };
     let (c1, c2) = (cap_surface(&m1), cap_surface(&m2));
-    assert_eq!(c1, m1.world_plane(nacre_scalar::Axis::Z));
+    assert_eq!(c1, m1.world_plane(nacre_exact::Axis::Z));
     assert_eq!(c1, c2, "replay is deterministic down to seeded handles");
 }

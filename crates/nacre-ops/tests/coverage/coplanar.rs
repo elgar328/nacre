@@ -2,13 +2,13 @@
 
 #![allow(unused_imports)]
 use crate::common::*;
+use nacre_exact::Axis;
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{
     BoolError, BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean,
     replay,
 };
-use nacre_scalar::Axis;
 use nacre_store::Handle;
 use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 

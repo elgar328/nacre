@@ -131,7 +131,7 @@ fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
     macro_rules! tilted {
         ($name:ident) => {{
             let (mut m, a, b) = $name();
-            let iso = rot_iso(nacre_scalar::Axis::Z, 30);
+            let iso = rot_iso(nacre_exact::Axis::Z, 30);
             let a = transform(&mut m, a, &iso).unwrap();
             m.rebuild_adjacency();
             let b = transform(&mut m, b, &iso).unwrap();

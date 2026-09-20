@@ -12,8 +12,8 @@
 //! (`crate::planes`) and
 //! the hunt is gone.
 
+use nacre_exact::Rat;
 use nacre_judge::{MoveNode, WitnessPoint};
-use nacre_scalar::Rat;
 use nacre_store::Handle;
 use nacre_topo::{Model, Motion, MotionNode, Surface};
 
@@ -80,7 +80,7 @@ pub(crate) fn surface_witness_triangle(
             Some(base) => (base, *motion),
             None if model.surface_name.contains_key(&h) => {
                 let chain = frame_chain(model, h, &nacre_topo::FramePlacement::Canonical, false)?;
-                let r = nacre_scalar::Rat::from_int;
+                let r = nacre_exact::Rat::from_int;
                 let probe = |u: i128, v: i128| replay(WitnessPoint::at([r(u), r(v), r(0)]), &chain);
                 return Some([probe(0, 0)?, probe(1, 0)?, probe(0, 1)?]);
             }
@@ -171,7 +171,7 @@ pub(crate) fn through_judged_points(
 /// ★★★ **A frame expands into more than one node, and that is the recursion.** `Motion::Frame`
 /// names a *plane*, not a basis, because a wall raised on a tilted face has no rational world
 /// normal to spell. Reading it means: take that plane's own rational coefficients, derive the
-/// frame from them ([`nacre_scalar::plane_frame`] — one spelling, so the exact route and the f64
+/// frame from them ([`nacre_exact::plane_frame`] — one spelling, so the exact route and the f64
 /// `frame_axes` cannot drift), and then keep going through **that plane's** motion, which is what
 /// carries the result out of its frame and into the next one down. The walk terminates at a plane
 /// with no frame, which is the world.
@@ -272,7 +272,7 @@ pub(crate) fn frame_chain(
         let c = *name.narrow()?;
         let (origin, ref_dir) = match placement {
             FramePlacement::Named { origin, ref_dir } => (*origin, *ref_dir),
-            FramePlacement::Canonical => nacre_scalar::plane_frame_default(c)?,
+            FramePlacement::Canonical => nacre_exact::plane_frame_default(c)?,
         };
         let zero = Rat::from_int(0);
         let c = if flip {
@@ -285,7 +285,7 @@ pub(crate) fn frame_chain(
             c
         };
         Some(MoveNode::Frame {
-            frame: nacre_scalar::plane_frame_named(c, origin, ref_dir)?,
+            frame: nacre_exact::plane_frame_named(c, origin, ref_dir)?,
         })
     };
     // **The wide road** — the same convention through arbitrary precision, where nothing

@@ -15,8 +15,8 @@ fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
 }
 
 use crate::{OpOutput, Operation, apply};
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point2, Point3, Vector3};
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 
 fn square(a: f64, b: f64) -> crate::Profile2d {
     crate::Profile2d::polygon(vec![

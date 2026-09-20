@@ -927,14 +927,14 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
     );
     let merged = merge_coincident(&jd, &tr.segs, wc, &Aliases::default());
     let split = split_at_crossings(&jd, NO_CYLS, wc, &merged, &mut Aliases::default()).unwrap();
-    let q = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
-    let z = |v: i128| nacre_scalar::Rat::from_int(v);
-    let def = |o: [nacre_scalar::Rat; 3],
-               dir: [nacre_scalar::Rat; 3],
-               e: [nacre_scalar::Rat; 3],
-               r: nacre_scalar::Rat| {
+    let q = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
+    let z = |v: i128| nacre_exact::Rat::from_int(v);
+    let def = |o: [nacre_exact::Rat; 3],
+               dir: [nacre_exact::Rat; 3],
+               e: [nacre_exact::Rat; 3],
+               r: nacre_exact::Rat| {
         // `r` is the radius; the truth takes its square.
-        nacre_topo::CylinderDef::new(o, dir, e, nacre_scalar::BigRat::square_of(r)).unwrap()
+        nacre_topo::CylinderDef::new(o, dir, e, nacre_exact::BigRat::square_of(r)).unwrap()
     };
     // ⊥ the shared cap: a circle of radius 6/5 about `(3/2, 3/2)` on that plane.
     //

@@ -108,7 +108,7 @@ pub(crate) struct RulingDir {
     /// [`continuation`], where "one carrier" means one line, not one cylinder.
     side: i8,
     /// The axis direction `m`, rational — the one geometric fact [`turn`] needs.
-    axis: [nacre_scalar::Rat; 3],
+    axis: [nacre_exact::Rat; 3],
     /// Travel runs along `+m`.
     up: bool,
 }
@@ -119,12 +119,12 @@ pub(crate) struct RulingDir {
 pub(crate) struct ArcDir {
     cyl: usize,
     /// The end this direction is taken at, exactly.
-    at: (nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    at: (nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
     /// The circle's centre on `P` — rational, because a circle bound's plane is ⊥ to the axis.
-    centre: [nacre_scalar::Rat; 3],
+    centre: [nacre_exact::Rat; 3],
     /// The cylinder's axis direction — what `ccw` is about, and what the travel tangent at `at`
     /// runs along as `m × (N − c)` ([`tangent_travel_agrees`]).
-    axis: [nacre_scalar::Rat; 3],
+    axis: [nacre_exact::Rat; 3],
     /// `n_P · m > 0`: the class's **stored** normal against the cylinder's axis.
     ///
     /// ★★ **It used to say "measured unexercised, `true` on every class the corpus reaches", and

@@ -21,7 +21,7 @@ use nacre_judge::predicate::plane_def;
 pub(crate) use nacre_judge::predicate::{ImplicitPoint, Judge};
 
 impl Witness for WorkingPlane {
-    fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {
+    fn base_coeffs_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
         self.base_rat
     }
     fn tri(&self) -> [Point3; 3] {
@@ -47,7 +47,7 @@ impl Witness for FaceRow {
     // discovery, and that sweep filters to plane rows before asking (a cylinder's identity is
     // the cylinder class table's question, C2). A panic here is an upstream filter bug made
     // loud, never a silently wrong plane answer.
-    fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {
+    fn base_coeffs_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
         self.plane().base_rat
     }
     fn tri(&self) -> [Point3; 3] {

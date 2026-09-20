@@ -370,8 +370,8 @@ fn the_lateral_parity_agrees_with_the_notch_it_bounds() {
 }
 
 fn lateral_lattice(staircase: bool) {
-    use nacre_scalar::quad::{CylinderMeet, plane_plane_cylinder, plane_side};
-    use nacre_scalar::{Orient, Rat};
+    use nacre_exact::quad::{CylinderMeet, plane_plane_cylinder, plane_side};
+    use nacre_exact::{Orient, Rat};
     let caps = if staircase {
         [10.0, 40.0]
     } else {
@@ -924,12 +924,12 @@ fn the_mixed_parity_reads_a_bitten_ring() {
         let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
         let rat = |x: i128, y: i128| {
             [
-                nacre_scalar::Rat::from_int(x),
-                nacre_scalar::Rat::from_int(y),
-                nacre_scalar::Rat::from_int(20),
+                nacre_exact::Rat::from_int(x),
+                nacre_exact::Rat::from_int(y),
+                nacre_exact::Rat::from_int(20),
             ]
         };
-        let ask = |ring: &[combinatorics::RingEdge], p: [nacre_scalar::Rat; 3]| {
+        let ask = |ring: &[combinatorics::RingEdge], p: [nacre_exact::Rat; 3]| {
             combinatorics::point_in_mixed_ring(jd, cyls, &coeffs, &p, ring)
         };
         assert_eq!(ask(big, rat(12, 12)), Some(true), "plain interior");
@@ -962,7 +962,7 @@ fn the_mixed_parity_reads_a_bitten_ring() {
 /// ★★★★★ **The digon's truth is known independently, so the parity can be swept rather than
 /// spot-checked.** A digon of a chord and an arc is `disk ∩ half-space`, and both halves are
 /// exact rational predicates the arrangement already owns —
-/// [`nacre_scalar::quad::cylinder_radial_side`] and the sign of the wall's plane equation. A
+/// [`nacre_exact::quad::cylinder_radial_side`] and the sign of the wall's plane equation. A
 /// grid over the circle's neighbourhood therefore checks **every** answer, and it is the only
 /// control here that crosses the straight arm, the arc arm **and their junction**: the
 /// non-mixed road's oracle cannot see an arc, and a whole circle's arm collapses to
@@ -978,13 +978,13 @@ fn the_mixed_parity_reads_a_bitten_ring() {
 /// arc-end arm, where a ray meets one end alone.
 #[test]
 fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
-    use nacre_scalar::{Orient, Rat};
+    use nacre_exact::{Orient, Rat};
     with_bitten_rings(|jd, cyls, wc, _big, overhang, bite| {
         let coeffs = combinatorics::class_coeffs_rat(jd, wc).unwrap();
         let def = cyls
             .iter()
             .map(|c| &c.def)
-            .find(|d| *d.r2() == nacre_scalar::BigRat::from(Rat::from_int(25)))
+            .find(|d| *d.r2() == nacre_exact::BigRat::from(Rat::from_int(25)))
             .expect("the bitten circle");
         let (mut swept, mut on_boundary) = (0usize, 0usize);
         let (mut abstained, mut inside_seen) = (0usize, 0usize);
@@ -996,7 +996,7 @@ fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
                     Rat::new(j.into(), 2).unwrap(),
                     Rat::from_int(20),
                 ];
-                let radial = nacre_scalar::quad::cylinder_radial_side(
+                let radial = nacre_exact::quad::cylinder_radial_side(
                     &p,
                     &def.origin(),
                     &def.dir(),
@@ -1119,7 +1119,7 @@ fn with_cut_rings(
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array(plate));
     let b = if seam_off {
-        use nacre_scalar::Rat;
+        use nacre_exact::Rat;
         let r = Rat::from_int;
         m.add_cylinder_exact(
             [r(40), r(20), r(20)],
@@ -1259,7 +1259,7 @@ fn with_cut_rings(
 /// the seam-incident arms and the `(false, false)` arm each decide an end.
 #[test]
 fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
-    use nacre_scalar::{Orient, Rat};
+    use nacre_exact::{Orient, Rat};
     for seam_off in [false, true] {
         with_cut_rings(
             [40.0, 24.0, 20.0],
@@ -1269,7 +1269,7 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                 let def = cyls
                     .iter()
                     .map(|c| &c.def)
-                    .find(|d| *d.r2() == nacre_scalar::BigRat::from(Rat::from_int(25)))
+                    .find(|d| *d.r2() == nacre_exact::BigRat::from(Rat::from_int(25)))
                     .expect("the cut circle");
                 let decided0 = combinatorics::tie_probe::arc_end_decisions_here();
                 let (mut swept, mut abstained, mut inside_seen, mut boundary) = (0usize, 0, 0, 0);
@@ -1278,7 +1278,7 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                 for i in 60..=100 {
                     for j in 20..=60 {
                         let p = [rat(i), rat(j), Rat::from_int(20)];
-                        let radial = nacre_scalar::quad::cylinder_radial_side(
+                        let radial = nacre_exact::quad::cylinder_radial_side(
                             &p,
                             &def.origin(),
                             &def.dir(),
@@ -1366,8 +1366,8 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
 /// serial sweep and is not kept — this lattice is the lock.
 #[test]
 fn the_two_roads_agree_on_every_rational_ring() {
+    use nacre_exact::Rat;
     use nacre_geom::intersect::{RingSide, point_in_ring_2d_rat};
-    use nacre_scalar::Rat;
     let mut m = Model::new();
     let a = m.add_cuboid(
         Point3::from_array([0.0; 3]),

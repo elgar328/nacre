@@ -3,12 +3,12 @@
 
 use crate::combinatorics;
 use crate::{BoolError, RejectReason, he_start, reject};
+use nacre_exact::Mag;
 use nacre_geom::Plane;
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
 use nacre_judge::predicate::{Judge, Notes};
 use nacre_judge::{Standard, WitnessPoint};
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::Mag;
 use nacre_store::Handle;
 use nacre_topo::{Edge, Face, HalfEdge, Model, Shell, Solid, Surface, Vertex};
 use std::collections::HashMap;
@@ -142,7 +142,7 @@ pub(crate) struct CylFaceInfo {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct Footprint {
     /// The axis-parameter extent — [`CylFaceInfo::footprint`]'s doc says how it is read.
-    pub(crate) span: Option<[nacre_scalar::Rat; 2]>,
+    pub(crate) span: Option<[nacre_exact::Rat; 2]>,
     /// The angular extent — the arc the face's rims trace, as two radial vectors of the
     /// cylinder's radius from the axis, `from → to` counter-clockwise about the axis direction
     /// ([`lateral_theta_extent`]). `None` is a whole circle, or an extent this road could not
@@ -155,11 +155,11 @@ pub(crate) struct Footprint {
 /// rim point minus the axis point on its cap — `from → to` counter-clockwise about the axis
 /// direction, `from == to` never (a whole circle is [`Footprint::theta`]'s `None`). Rational, as
 /// every corner a prism's rim has is: a seam point when the reference direction's norm is
-/// (`inv_sqrt_exact`), a pierce corner when its root is ([`nacre_scalar::quad::QuadVal::as_rat`]).
+/// (`inv_sqrt_exact`), a pierce corner when its root is ([`nacre_exact::quad::QuadVal::as_rat`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(crate) struct RimArc {
-    pub(crate) from: [nacre_scalar::Rat; 3],
-    pub(crate) to: [nacre_scalar::Rat; 3],
+    pub(crate) from: [nacre_exact::Rat; 3],
+    pub(crate) to: [nacre_exact::Rat; 3],
 }
 
 /// Whether the radial direction `x` lies on the arc `from → to` (counter-clockwise about `m`,
@@ -168,10 +168,10 @@ pub(crate) struct RimArc {
 /// the same three-way reading `nacre_geom::mixed`'s arc containment makes in 2D.
 fn arc_contains(
     arc: &RimArc,
-    x: &[nacre_scalar::Rat; 3],
-    m: &[nacre_scalar::Rat; 3],
+    x: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
 ) -> Option<bool> {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let turn =
         |u: &[Rat; 3], v: &[Rat; 3]| -> Option<Rat> { dot3(&combinatorics::cross3_rat(u, v)?, m) };
@@ -231,18 +231,18 @@ pub(crate) struct FaceInfo {
     /// (`Model::surface_name`) — the world when unmoved, the pre-motion frame when moved.
     /// `None` when the producer had no rational description. Read by [`BaseFrame`], which would
     /// otherwise re-derive a moved plane from its pre-motion triangle and round `d`.
-    pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
+    pub(crate) base_rat: Option<[nacre_exact::Rat; 4]>,
     /// The same plane as **exact rational coefficients in the world**, whatever frame the truth
     /// is written in — see [`world_plane_coeffs`]. `None` when no exact world description exists
     /// (a rotation, a frame, a wide name, an overflow). This is what the cylinder roads compare
     /// against a world axis; `base_rat` above answers the *other* question (the description in
     /// the frame the provenance names, which is what `BaseFrame` cancels).
-    pub(crate) world_rat: Option<[nacre_scalar::Rat; 4]>,
+    pub(crate) world_rat: Option<[nacre_exact::Rat; 4]>,
     /// The surface's full canonical name (`Model::surface_name`), **any width** — what
     /// [`WorkingPlane::name_ints`] is folded from. `base_rat` above is its narrow projection,
     /// kept beside it because the narrow consumers (`BaseFrame`, the composed-rotation route)
     /// read `[Rat; 4]` directly.
-    pub(crate) name: Option<nacre_scalar::PlaneName>,
+    pub(crate) name: Option<nacre_exact::PlaneName>,
     /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
     /// the surface's own truth (`Model::surface`).
     ///
@@ -477,10 +477,10 @@ pub(crate) struct WorkingCyl {
 /// **end** of the arc otherwise, where it is `d·v` for the end's radial vector, a rational folded
 /// into the base with a zero radical. One root at most on each end, and no new arithmetic.
 struct Reach {
-    lo: nacre_scalar::Rat,
-    hi: nacre_scalar::Rat,
-    rho2_lo: nacre_scalar::Rat,
-    rho2_hi: nacre_scalar::Rat,
+    lo: nacre_exact::Rat,
+    hi: nacre_exact::Rat,
+    rho2_lo: nacre_exact::Rat,
+    rho2_hi: nacre_exact::Rat,
 }
 
 #[cfg(test)]

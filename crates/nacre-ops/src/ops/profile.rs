@@ -115,20 +115,20 @@ impl Ring2d {
 
     /// **Which way the ring runs**, exactly: `Positive` is counter-clockwise (`+x → +y`) — the
     /// signed-area question over straight steps and quarter-turn arcs, answered in integers by
-    /// [`nacre_scalar::winding_sign_quarter_arcs`] on the profile's own coordinates (the author's
+    /// [`nacre_exact::winding_sign_quarter_arcs`] on the profile's own coordinates (the author's
     /// decimals, not a lifted frame's widths). `None` for an arc that is not a quarter-turn
     /// multiple. Reachable by type, unreached by any producer today: `Edge2d::arc_rat` accepts any
     /// angle, but its one production caller (the kit's fillet) only rounds axis-aligned corners,
     /// so every arc a profile brings here is a quarter-turn multiple. A `None` reaches
     /// `prism_rings_in` and is refused as `PlaneWithoutExactForm` — a wall with no one at it.
-    pub(crate) fn winding_sign(&self) -> Option<nacre_scalar::Orient> {
+    pub(crate) fn winding_sign(&self) -> Option<nacre_exact::Orient> {
         let n = self.vertices.len();
         let (mut lines, mut arcs) = (Vec::new(), Vec::new());
         for i in 0..n {
             let (s0, e0) = (self.vertices[i], self.vertices[(i + 1) % n]);
             match self.edges[i] {
                 Edge2d::Line => lines.push([s0, e0]),
-                Edge2d::Arc { center, r2, ccw } => arcs.push(nacre_scalar::QuarterArc {
+                Edge2d::Arc { center, r2, ccw } => arcs.push(nacre_exact::QuarterArc {
                     center,
                     r2,
                     start: s0,
@@ -137,7 +137,7 @@ impl Ring2d {
                 }),
             }
         }
-        nacre_scalar::winding_sign_quarter_arcs(&lines, &arcs)
+        nacre_exact::winding_sign_quarter_arcs(&lines, &arcs)
     }
 }
 

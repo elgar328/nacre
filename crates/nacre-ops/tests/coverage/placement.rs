@@ -13,9 +13,9 @@
 //! Both assertions describe today's behaviour and are expected to flip.
 
 use crate::common::*;
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point3;
 use nacre_ops::{BoolError, BoolKind, boolean};
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_topo::Model;
 
 /// Two unit cubes placed at `n/d` and `n/d + 1`, so they share the wall `x = (n+d)/d` exactly.

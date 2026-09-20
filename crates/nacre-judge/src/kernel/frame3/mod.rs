@@ -22,7 +22,7 @@
 
 use super::HP_RM;
 use astro_float::BigFloat;
-use nacre_scalar::{Angle, Axis, Bounded, HpBounded, Mag, Orient, Rat, rat_to_big};
+use nacre_exact::{Angle, Axis, Bounded, HpBounded, Mag, Orient, Rat, rat_to_big};
 #[cfg(feature = "parallel")]
 use std::sync::{Arc as HpRc, OnceLock as HpOnce};
 #[cfg(not(feature = "parallel"))]
@@ -96,17 +96,17 @@ pub enum MoveNode {
     /// product is perpendicular to both its arguments, so the projection a general `ref_dir`
     /// would need is not here, and `u_raw` need not be a unit vector for the frame to be exact.
     /// So the whole realization is **two `1/√(rational)` scalars**
-    /// ([`nacre_scalar::inv_sqrt_f64`]), which is why this can be judged at all.
+    /// ([`nacre_exact::inv_sqrt_f64`]), which is why this can be judged at all.
     ///
     /// ★★ **`v̂` is exact too, and that matters.** Realizing it as `ŵ × û` in f64 costs two
     /// roundings that do not cancel — a wall whose `v` is exactly `ẑ` came out three ulps short,
     /// which is a frame that is not quite orthonormal. `n ⊥ u_raw` by construction, so
     /// `|v_raw|² = |n|²·|u_raw|²` exactly, and one inverse square root of a rational lands it on
-    /// the nose. [`nacre_scalar::plane_frame`] checks that product fits `i128` before handing the
+    /// the nose. [`nacre_exact::plane_frame`] checks that product fits `i128` before handing the
     /// frame out, so the overflow is refused at the source rather than handled here.
     ///
     /// ★ **Proper** (`det = +1`), so it contributes nothing to a chain's mirror parity.
-    Frame { frame: nacre_scalar::PlaneFrame },
+    Frame { frame: nacre_exact::PlaneFrame },
     /// [`MoveNode::Frame`] for a plane whose exact data does not fit `Rat` — a `Wide`
     /// name, or a narrow one whose squared lengths overflow `i128`. Same realization shape,
     /// arbitrary-precision integers instead: **nothing here can overflow**, so unlike
@@ -136,7 +136,7 @@ pub enum MoveNode {
 /// flushes to zero with its whole magnitude charged — sound, and reachable only for axis
 /// components below f64's normal floor.
 fn narrow_hp(x: &HpBounded) -> (f64, f64) {
-    match nacre_scalar::round_to_f64(&x.value, x.error, 128) {
+    match nacre_exact::round_to_f64(&x.value, x.error, 128) {
         Some(v) => (v, rad_f64(x.error) + v.abs() * f64::EPSILON),
         None => (0.0, rad_f64(x.error) + bf_mag(&x.value)),
     }

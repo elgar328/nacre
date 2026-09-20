@@ -246,11 +246,11 @@ checksum = "88904434abc2901f197fe8cc55f0445e7ded921dba5911dad2e2b39b48e663c4"
 name = "nacre"
 version = "0.0.0"
 dependencies = [
+ "nacre-exact",
  "nacre-geom",
  "nacre-math",
  "nacre-ops",
  "nacre-props",
- "nacre-scalar",
  "nacre-step",
  "nacre-store",
  "nacre-tess",
@@ -259,12 +259,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "nacre-exact"
+version = "0.0.0"
+dependencies = [
+ "astro-float",
+ "nacre-predicates",
+ "num-bigint",
+ "num-integer",
+ "num-rational",
+ "num-traits",
+ "proptest",
+]
+
+[[package]]
 name = "nacre-geom"
 version = "0.0.0"
 dependencies = [
+ "nacre-exact",
  "nacre-math",
  "nacre-predicates",
- "nacre-scalar",
  "proptest",
 ]
 
@@ -273,9 +286,9 @@ name = "nacre-judge"
 version = "0.0.0"
 dependencies = [
  "astro-float",
+ "nacre-exact",
  "nacre-math",
  "nacre-predicates",
- "nacre-scalar",
  "num-bigint",
  "num-integer",
  "proptest",
@@ -292,11 +305,11 @@ dependencies = [
 name = "nacre-ops"
 version = "0.0.0"
 dependencies = [
+ "nacre-exact",
  "nacre-geom",
  "nacre-judge",
  "nacre-math",
  "nacre-props",
- "nacre-scalar",
  "nacre-step",
  "nacre-store",
  "nacre-tess",
@@ -311,10 +324,10 @@ dependencies = [
 name = "nacre-oracle"
 version = "0.0.0"
 dependencies = [
+ "nacre-exact",
  "nacre-math",
  "nacre-ops",
  "nacre-props",
- "nacre-scalar",
  "nacre-step",
  "nacre-store",
  "nacre-topo",
@@ -332,25 +345,12 @@ dependencies = [
 name = "nacre-props"
 version = "0.0.0"
 dependencies = [
+ "nacre-exact",
  "nacre-geom",
  "nacre-math",
  "nacre-ops",
- "nacre-scalar",
  "nacre-store",
  "nacre-topo",
- "proptest",
-]
-
-[[package]]
-name = "nacre-scalar"
-version = "0.0.0"
-dependencies = [
- "astro-float",
- "nacre-predicates",
- "num-bigint",
- "num-integer",
- "num-rational",
- "num-traits",
  "proptest",
 ]
 
@@ -389,9 +389,9 @@ dependencies = [
 name = "nacre-topo"
 version = "0.0.0"
 dependencies = [
+ "nacre-exact",
  "nacre-geom",
  "nacre-math",
- "nacre-scalar",
  "nacre-store",
  "nacre-topo",
  "proptest",
@@ -401,9 +401,9 @@ dependencies = [
 name = "nacre-validate"
 version = "0.0.0"
 dependencies = [
+ "nacre-exact",
  "nacre-geom",
  "nacre-math",
- "nacre-scalar",
  "nacre-store",
  "nacre-topo",
  "proptest",

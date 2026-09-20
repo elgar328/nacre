@@ -3,10 +3,10 @@ use super::*;
 ///
 /// `Some(+1)` same plane same sense, `Some(-1)` same plane opposite sense, `None` different planes
 /// (or overflow). The comparison is cross-multiplication against a nonzero component — the idiom
-/// [`nacre_scalar::quad::plane_plane_cylinder`]'s parallel arm already uses ("coincident iff the
+/// [`nacre_exact::quad::plane_plane_cylinder`]'s parallel arm already uses ("coincident iff the
 /// full 4-vectors are proportional"), spelled once here because a *second* caller now needs it.
-pub(super) fn plane_sense(a: &[nacre_scalar::Rat; 4], b: &[nacre_scalar::Rat; 4]) -> Option<i8> {
-    let zero = nacre_scalar::Rat::from_int(0);
+pub(super) fn plane_sense(a: &[nacre_exact::Rat; 4], b: &[nacre_exact::Rat; 4]) -> Option<i8> {
+    let zero = nacre_exact::Rat::from_int(0);
     let i = (0..3).find(|&k| a[k] != zero)?;
     if b[i] == zero {
         return None;
@@ -79,7 +79,7 @@ pub(crate) fn pierce_name_from_def(
 }
 
 /// **Does this class carry that cylinder's *circle*?** — its normal is parallel to the axis, so
-/// the section is a circle and not an ellipse. Exact and **total** ([`nacre_scalar::parallel_rat`]
+/// the section is a circle and not an ellipse. Exact and **total** ([`nacre_exact::parallel_rat`]
 /// clears denominators into `BigInt`), so a caller's `false` means the geometry, never the width.
 ///
 /// ★★★★★ **The one place this rule is named, and it is load-bearing far past its callers.**
@@ -106,11 +106,8 @@ pub(crate) fn pierce_name_from_def(
 /// Unreachable ([`nacre_topo::CylinderDef::new`] refuses a zero `dir`; the gate refuses a class
 /// with no rational description), and the eight inline spellings this will replace already inherit
 /// that convention — but the name reads the convention backwards, so it is written down here.
-pub(crate) fn class_carries_circle(
-    n: &[nacre_scalar::Rat; 3],
-    dir: &[nacre_scalar::Rat; 3],
-) -> bool {
-    nacre_scalar::parallel_rat(n, dir)
+pub(crate) fn class_carries_circle(n: &[nacre_exact::Rat; 3], dir: &[nacre_exact::Rat; 3]) -> bool {
+    nacre_exact::parallel_rat(n, dir)
 }
 
 /// **Where a cylinder's axis meets a plane class** — the centre of the circle that cylinder traces
@@ -133,8 +130,8 @@ pub(crate) fn circle_centre_rat(
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     def: &nacre_topo::CylinderDef,
-) -> Option<[nacre_scalar::Rat; 3]> {
-    use nacre_scalar::Rat;
+) -> Option<[nacre_exact::Rat; 3]> {
+    use nacre_exact::Rat;
     let coeffs = class_coeffs_rat(jd, wc)?;
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let (o, m) = (def.origin(), def.dir());
@@ -154,7 +151,7 @@ pub(crate) fn circle_centre_rat(
 pub(crate) fn class_coeffs_rat(
     jd: &Judge<'_, WorkingPlane>,
     c: usize,
-) -> Option<[nacre_scalar::Rat; 4]> {
+) -> Option<[nacre_exact::Rat; 4]> {
     jd.planes[c].world_rat
 }
 
@@ -182,10 +179,10 @@ pub(crate) fn class_coeffs_rat(
 pub(crate) fn node_coords_rat(
     jd: &Judge<'_, WorkingPlane>,
     n: NodeId,
-) -> Option<[nacre_scalar::Rat; 3]> {
+) -> Option<[nacre_exact::Rat; 3]> {
     match n {
         NodeId::Pierce { .. } => None,
-        NodeId::ThreePlane(t) => nacre_scalar::three_planes_rat([
+        NodeId::ThreePlane(t) => nacre_exact::three_planes_rat([
             class_coeffs_rat(jd, t[0])?,
             class_coeffs_rat(jd, t[1])?,
             class_coeffs_rat(jd, t[2])?,
@@ -248,7 +245,7 @@ pub(crate) fn pierce_point(
     n: NodeId,
 ) -> Option<[f64; 3]> {
     let (line, s) = pierce_meet(jd, cyl, def, n)?;
-    Some(nacre_scalar::quad::branch_point_f64(&line, &s))
+    Some(nacre_exact::quad::branch_point_f64(&line, &s))
 }
 
 /// **The exact half of [`pierce_point`]** — the `(line, s)` the name designates, before it is
@@ -260,7 +257,7 @@ pub(crate) fn pierce_point(
 /// exact question about a pierce point — its order along the line, its side of a plane, its θ about
 /// the seam — takes this and never the realization.
 /// **A pierce corner as a rational point, when it is one** — the meet line's point at its root,
-/// for a root [`nacre_scalar::quad::QuadVal::as_rat`] can state (a wall through or perpendicular
+/// for a root [`nacre_exact::quad::QuadVal::as_rat`] can state (a wall through or perpendicular
 /// to the axis, a tangent wall's double root); `None` for any other corner or name.
 ///
 /// ★ A **witness supply**, not a coordinate vessel: [`node_coords_rat`]'s `None` for a pierce node
@@ -273,7 +270,7 @@ pub(crate) fn pierce_coords_rat(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     n: NodeId,
-) -> Option<[nacre_scalar::Rat; 3]> {
+) -> Option<[nacre_exact::Rat; 3]> {
     let (_, cyl, _) = pierce_name(n)?;
     let (line, s) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
     let sv = s.as_rat()?;
@@ -325,7 +322,7 @@ pub(crate) fn edge_interior_points(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     e: &RingEdge,
-) -> impl Iterator<Item = [nacre_scalar::Rat; 3]> {
+) -> impl Iterator<Item = [nacre_exact::Rat; 3]> {
     [
         conjugate_midpoint(jd, cyls, e),
         pierce_ends_between(jd, cyls, e),
@@ -349,7 +346,7 @@ pub(crate) fn pierce_ends_between(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     e: &RingEdge,
-) -> Option<[nacre_scalar::Rat; 3]> {
+) -> Option<[nacre_exact::Rat; 3]> {
     if !matches!(e.carrier, Carrier::Plane { .. }) {
         return None;
     }
@@ -378,10 +375,10 @@ pub(crate) fn pierce_ends_between(
 /// midpoint lands outside (ends closer than the realization resolves), a few bisections toward
 /// the realized interval's middle are tried; `None` when none is inside.
 fn rational_between(
-    a: &nacre_scalar::quad::QuadVal,
-    b: &nacre_scalar::quad::QuadVal,
-) -> Option<nacre_scalar::Rat> {
-    use nacre_scalar::{Orient, Rat, quad::QuadVal};
+    a: &nacre_exact::quad::QuadVal,
+    b: &nacre_exact::quad::QuadVal,
+) -> Option<nacre_exact::Rat> {
+    use nacre_exact::{Orient, Rat, quad::QuadVal};
     let (mut lo, mut hi) = (a.to_f64(), b.to_f64());
     if lo > hi {
         std::mem::swap(&mut lo, &mut hi);
@@ -423,7 +420,7 @@ pub(crate) fn edge_witness_points(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     e: &RingEdge,
-) -> impl Iterator<Item = [nacre_scalar::Rat; 3]> {
+) -> impl Iterator<Item = [nacre_exact::Rat; 3]> {
     node_coords_rat(jd, e.node)
         .or_else(|| pierce_coords_rat(jd, cyls, e.node))
         .into_iter()
@@ -447,7 +444,7 @@ pub(crate) fn conjugate_midpoint(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     e: &RingEdge,
-) -> Option<[nacre_scalar::Rat; 3]> {
+) -> Option<[nacre_exact::Rat; 3]> {
     use nacre_topo::QuadRoot::{Hi, Lo};
     let (pa, ca, ra) = pierce_name(e.node)?;
     let (pb, cb, rb) = pierce_name(e.to)?;
@@ -487,14 +484,14 @@ pub(crate) fn conjugate_midpoint(
                 let n = [c[0], c[1], c[2]];
                 dot3_rat(&n, &p)
                     .and_then(|v| v.checked_add(c[3]))
-                    .is_none_or(|v| v == nacre_scalar::Rat::from_int(0))
+                    .is_none_or(|v| v == nacre_exact::Rat::from_int(0))
             })
         }),
         "a chord midpoint is on both of its planes"
     );
     debug_assert_eq!(
-        nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
-        nacre_scalar::Orient::Negative,
+        nacre_exact::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
+        nacre_exact::Orient::Negative,
         "a chord midpoint is strictly inside the cylinder"
     );
     Some(p)
@@ -510,13 +507,13 @@ pub(crate) fn conjugate_midpoint(
 fn rational_ends_midpoint(
     jd: &Judge<'_, WorkingPlane>,
     e: &RingEdge,
-) -> Option<[nacre_scalar::Rat; 3]> {
+) -> Option<[nacre_exact::Rat; 3]> {
     if !matches!(e.carrier, Carrier::Plane { .. }) {
         return None;
     }
     let (a, b) = (node_coords_rat(jd, e.node)?, node_coords_rat(jd, e.to)?);
-    let half = nacre_scalar::Rat::new(1, 2)?;
-    let mut p = [nacre_scalar::Rat::from_int(0); 3];
+    let half = nacre_exact::Rat::new(1, 2)?;
+    let mut p = [nacre_exact::Rat::from_int(0); 3];
     for k in 0..3 {
         p[k] = a[k].checked_add(b[k])?.checked_mul(half)?;
     }
@@ -534,7 +531,7 @@ fn rational_ends_midpoint(
                         let n = [c[0], c[1], c[2]];
                         dot3_rat(&n, &p)
                             .and_then(|v| v.checked_add(c[3]))
-                            .is_none_or(|v| v == nacre_scalar::Rat::from_int(0))
+                            .is_none_or(|v| v == nacre_exact::Rat::from_int(0))
                     })
                 })
             })
@@ -549,8 +546,8 @@ pub(crate) fn pierce_meet(
     cyl: usize,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
-) -> Option<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)> {
-    use nacre_scalar::quad::{CylinderMeet, QuadVal};
+) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
     let (planes, root) = match n {
         NodeId::Pierce {
@@ -572,7 +569,7 @@ pub(crate) fn pierce_meet(
     );
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let (line, s) = match (
-        nacre_scalar::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2)?,
+        nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2)?,
         root,
     ) {
         (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => (line, s[0]),
@@ -584,18 +581,18 @@ pub(crate) fn pierce_meet(
 }
 
 pub(crate) fn dot3_rat(
-    x: &[nacre_scalar::Rat; 3],
-    y: &[nacre_scalar::Rat; 3],
-) -> Option<nacre_scalar::Rat> {
+    x: &[nacre_exact::Rat; 3],
+    y: &[nacre_exact::Rat; 3],
+) -> Option<nacre_exact::Rat> {
     x[0].checked_mul(y[0])?
         .checked_add(x[1].checked_mul(y[1])?)?
         .checked_add(x[2].checked_mul(y[2])?)
 }
 
 pub(crate) fn cross3_rat(
-    x: &[nacre_scalar::Rat; 3],
-    y: &[nacre_scalar::Rat; 3],
-) -> Option<[nacre_scalar::Rat; 3]> {
+    x: &[nacre_exact::Rat; 3],
+    y: &[nacre_exact::Rat; 3],
+) -> Option<[nacre_exact::Rat; 3]> {
     Some([
         x[1].checked_mul(y[2])?
             .checked_sub(x[2].checked_mul(y[1])?)?,
@@ -609,7 +606,7 @@ pub(crate) fn cross3_rat(
 /// **A plane's normal in primitive form** — divided by the gcd of its own three components.
 ///
 /// ★★★★★ **The canonicalisation that made the name narrow was over *four* coefficients, and a
-/// reader of three does not inherit it.** A [`nacre_scalar::PlaneName`] is normalised by
+/// reader of three does not inherit it.** A [`nacre_exact::PlaneName`] is normalised by
 /// clearing denominators, dividing out the **content of all four**, and fixing a sign; so the
 /// normal `(a, b, c)` keeps a factor of `gcd(a,b,c) / gcd(a,b,c,d)`. For an axis-aligned class at
 /// an offset that needs a long decimal — `z = s`, coefficients `(0, 0, D, −N)` with `gcd(D,N) = 1`
@@ -624,7 +621,7 @@ pub(crate) fn cross3_rat(
 /// read of `world_rat`, which is `PlaneName::narrow()`), so the gcd is an integer one and the
 /// division is exact. A component that is somehow not an integer is returned untouched rather than
 /// guessed at — the structural argument can rot without this quietly changing an answer.
-fn primitive_normal(n: &[nacre_scalar::Rat; 3]) -> [nacre_scalar::Rat; 3] {
+fn primitive_normal(n: &[nacre_exact::Rat; 3]) -> [nacre_exact::Rat; 3] {
     // `unsigned_abs` rather than `abs`: the latter panics on `i128::MIN`, and a panic is a worse
     // answer than the wide arithmetic this exists to avoid.
     fn gcd(a: u128, b: u128) -> u128 {
@@ -652,7 +649,7 @@ fn primitive_normal(n: &[nacre_scalar::Rat; 3]) -> [nacre_scalar::Rat; 3] {
     if g == 1 {
         return *n;
     }
-    core::array::from_fn(|k| nacre_scalar::Rat::from_int(n[k].numer() / g))
+    core::array::from_fn(|k| nacre_exact::Rat::from_int(n[k].numer() / g))
 }
 
 /// **A rational 2D chart of a plane**, for running a parity test in it.
@@ -682,8 +679,8 @@ fn primitive_normal(n: &[nacre_scalar::Rat; 3]) -> [nacre_scalar::Rat; 3] {
 /// ⇒ the only change that provably moves nothing is a **positive rescale** of `n`, which is what
 /// [`primitive_normal`] does.
 pub(crate) struct Chart2dRat {
-    e1: [nacre_scalar::Rat; 3],
-    e2: [nacre_scalar::Rat; 3],
+    e1: [nacre_exact::Rat; 3],
+    e2: [nacre_exact::Rat; 3],
 }
 
 impl Chart2dRat {
@@ -696,11 +693,11 @@ impl Chart2dRat {
     /// `k` is the same index either way, and both axes come out along the same directions — only
     /// narrower. What the corpus met before was never geometry: an axis-aligned class at an offset
     /// with a long decimal carries that offset's denominator in its normal, and `e₂` squares it.
-    pub(crate) fn of_normal(n: &[nacre_scalar::Rat; 3]) -> Option<Self> {
-        let zero = nacre_scalar::Rat::from_int(0);
-        let basis = |k: usize| -> [nacre_scalar::Rat; 3] {
+    pub(crate) fn of_normal(n: &[nacre_exact::Rat; 3]) -> Option<Self> {
+        let zero = nacre_exact::Rat::from_int(0);
+        let basis = |k: usize| -> [nacre_exact::Rat; 3] {
             let mut e = [zero; 3];
-            e[k] = nacre_scalar::Rat::from_int(1);
+            e[k] = nacre_exact::Rat::from_int(1);
             e
         };
         let n = &primitive_normal(n);
@@ -712,13 +709,13 @@ impl Chart2dRat {
     }
 
     /// A point's chart coordinates.
-    pub(crate) fn project(&self, p: &[nacre_scalar::Rat; 3]) -> Option<[nacre_scalar::Rat; 2]> {
+    pub(crate) fn project(&self, p: &[nacre_exact::Rat; 3]) -> Option<[nacre_exact::Rat; 2]> {
         Some([dot3_rat(p, &self.e1)?, dot3_rat(p, &self.e2)?])
     }
 
     /// The chart's two in-plane axes — the mixed-ring parity walks its ray along `e1` (one
     /// decision rule with this chart, not a second spelling of a basis).
-    pub(crate) fn axes(&self) -> (&[nacre_scalar::Rat; 3], &[nacre_scalar::Rat; 3]) {
+    pub(crate) fn axes(&self) -> (&[nacre_exact::Rat; 3], &[nacre_exact::Rat; 3]) {
         (&self.e1, &self.e2)
     }
 
@@ -727,7 +724,7 @@ impl Chart2dRat {
         &self,
         jd: &Judge<'_, WorkingPlane>,
         ring: &[NodeId],
-    ) -> Option<Vec<[nacre_scalar::Rat; 2]>> {
+    ) -> Option<Vec<[nacre_exact::Rat; 2]>> {
         ring.iter()
             .map(|&n| self.project(&node_coords_rat(jd, n)?))
             .collect()

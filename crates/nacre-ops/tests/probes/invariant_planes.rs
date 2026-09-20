@@ -11,9 +11,9 @@
 //! `FrameNotRepresentable` refusal on those faces dissolves (`face_sketch_frame` answers the
 //! world frame and the contract sweep verifies it bit-for-bit).
 
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point2;
 use nacre_ops::{OpOutput, Operation, Profile2d, SketchFrame, apply, face_sketch_frame};
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, PlanePoints, Solid, Surface};
 

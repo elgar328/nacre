@@ -22,7 +22,7 @@ fn extrude_and_boolean(
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
-    if nacre_scalar::Rat::from_decimal(dist).is_none() {
+    if nacre_exact::Rat::from_decimal(dist).is_none() {
         return Err(OpError::DistOutsideDecimalWindow);
     }
     profile.check()?;

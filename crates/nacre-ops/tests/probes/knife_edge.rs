@@ -11,9 +11,9 @@
 //! label propagation as `LabelConflict`), and where the tangency was far from everything it
 //! dangled in the skeleton and broke the face walk (`RingOrientation`).
 
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point3;
 use nacre_ops::{BoolKind, Operation, apply, boolean};
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 

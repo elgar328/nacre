@@ -377,23 +377,23 @@ impl WitnessPoint {
     ///
     /// ★★★★ **Everything charged here is measured, and the exact cases really do reach zero.**
     /// The three sources are the rational inputs' own `Rat → f64` rounding, the two `1/√` values'
-    /// realization error ([`nacre_scalar::inv_sqrt_error_of`] — *not* a half-ulp taken on faith,
+    /// realization error ([`nacre_exact::inv_sqrt_error_of`] — *not* a half-ulp taken on faith,
     /// see there), and the f64 arithmetic that combines them. An axis-aligned frame has a signed
     /// permutation for a basis and every one of those terms vanishes: `±1` and `0` are exact, so
     /// the products are exact and the sums pick out one coordinate each.
-    pub fn frame(self, f: nacre_scalar::PlaneFrame) -> Option<Self> {
+    pub fn frame(self, f: nacre_exact::PlaneFrame) -> Option<Self> {
         let mut p = self.framed(f)?;
         p.remember(MoveNode::Frame { frame: f });
         Some(p)
     }
 
     /// [`Self::frame`]'s numbers, without remembering the node.
-    fn framed(mut self, f: nacre_scalar::PlaneFrame) -> Option<Self> {
+    fn framed(mut self, f: nacre_exact::PlaneFrame) -> Option<Self> {
         // One inverse square root per axis, each of an exact rational — see `plane_frame` for why
         // `v̂` gets its own instead of being a cross product of the other two.
         let inv = |v: Rat| -> Option<(f64, f64)> {
-            let x = nacre_scalar::inv_sqrt_f64(v)?;
-            Some((x, nacre_scalar::inv_sqrt_error_of(v, x)?))
+            let x = nacre_exact::inv_sqrt_f64(v)?;
+            Some((x, nacre_exact::inv_sqrt_error_of(v, x)?))
         };
         let ((iu, du), (iw, dw)) = (inv(f.uu)?, inv(f.nn)?);
         // A basis vector's component, and a bound on how far it lands from the true one: the
@@ -423,7 +423,7 @@ impl WitnessPoint {
         // The exact route is one rounding per component; the cross product is two that do not
         // cancel — a wall whose `v` is exactly `ẑ` comes out three ulps short through it. Both are
         // sound; the fallback is what this crate had before `v_raw` existed, and it is taken only
-        // when `|n|²·|u_raw|²` does not fit `i128` (see `nacre_scalar::plane_frame`).
+        // when `|n|²·|u_raw|²` does not fit `i128` (see `nacre_exact::plane_frame`).
         match f.v {
             Some((v_raw, vv)) => {
                 let (iv, dv) = inv(vv)?;
@@ -508,7 +508,7 @@ impl WitnessPoint {
         // The fixed rung for the f64 cache of a wide frame — the ladder's first rung, the same
         // one `inv_sqrt_f64` starts at. The judgment path re-realizes at its own precision.
         const P: usize = 128;
-        let inv = |v: &num_bigint::BigInt| nacre_scalar::inv_sqrt_bigint_bounded(v, P);
+        let inv = |v: &num_bigint::BigInt| nacre_exact::inv_sqrt_bigint_bounded(v, P);
         let (iu, iv2, iw) = (inv(&f.uu)?, inv(&f.vv)?, inv(&f.nn)?);
         let comp = |raw: &num_bigint::BigInt, s: &HpBounded| {
             narrow_hp(&HpBounded::of_bigint(raw, P).mul(s, P))
@@ -608,11 +608,11 @@ impl WitnessPoint {
 
     /// **The coordinate realized at `prec` bits from the definition, with the error it carries** —
     /// the door [`Self::hp_coord`] is behind, in the type this workspace hands out publicly
-    /// (`nacre_scalar::HpBounded`, what `inv_sqrt_bounded` returns too).
+    /// (`nacre_exact::HpBounded`, what `inv_sqrt_bounded` returns too).
     ///
     /// ★ **The radius is half the answer.** A value without the bound its realization cost cannot
     /// be rounded honestly — see [`HpBounded`]'s contract: a radius invented for convenience makes
-    /// every sign above it unearned. Callers round with `nacre_scalar::round_to_f64` /
+    /// every sign above it unearned. Callers round with `nacre_exact::round_to_f64` /
     /// `round_to_digits`, which report *undecided* rather than picking when `prec` is short.
     ///
     /// ★★ Calling this at a precision the boolean is not using is safe: [`Self::hp_coord`]'s memo

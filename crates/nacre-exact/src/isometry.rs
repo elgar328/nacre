@@ -87,7 +87,7 @@ pub struct Rotation {
 /// A rigid-body isometry (§ Transform): a rotation (optional) then a translation.
 /// The exact rational data is the **definition**; the `apply_*`/`offset_f64`
 /// realizers give the f64 cache. Math-type independent — operates on plain
-/// `[f64; 3]`, so `nacre-scalar` never depends on `nacre-math`; the caller
+/// `[f64; 3]`, so `nacre-exact` never depends on `nacre-math`; the caller
 /// (`nacre-ops`) applies it to `Point3`/`Plane`.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Isometry {

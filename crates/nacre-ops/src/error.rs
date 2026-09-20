@@ -417,7 +417,7 @@ pub enum RejectReason {
     /// intersection is a quartic curve, which is M6b's.
     ///
     /// ★ What the check must deliver for the name to be true, four ways. The distance is
-    /// measured for skew axes as well as *parallel* ones ([`nacre_scalar::cylinders_clear`]), so
+    /// measured for skew axes as well as *parallel* ones ([`nacre_exact::cylinders_clear`]), so
     /// a drill crossing a bore with room to spare passes. The distance is not the whole rule —
     /// it is a fact about two infinite
     /// surfaces: a stud fused through a cube and a second stud across it have crossing

@@ -2,7 +2,7 @@ use super::*;
 
 use nacre_ops::{DatumDef, OpOutput, Operation, SketchFrame, SketchPlane, apply};
 
-use nacre_scalar::Axis;
+use nacre_exact::Axis;
 
 /// State `plane` as a datum and hand back the frame it implies — the two steps a caller takes
 /// when the plane is not one the model already holds (a seed, or a face's).

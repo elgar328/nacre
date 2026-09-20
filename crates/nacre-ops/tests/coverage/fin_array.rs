@@ -12,9 +12,9 @@
 //! whole population builds. This file is the population, kept as the regression.
 
 use crate::common::*;
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point3;
 use nacre_ops::{BoolError, BoolKind, boolean};
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 

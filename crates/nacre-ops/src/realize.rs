@@ -19,16 +19,16 @@
 //! ★ **Where this sits.** `nacre-topo` does not depend on `nacre-judge`, so the composition
 //! `vertex_meet → WitnessPoint::at → replay → realize` cannot live on `Model`; `nacre-ops` is the
 //! first crate that sees both. The rounding itself lives one layer further down, in
-//! `nacre-scalar`, beside `round_to_f64` — cip realizes, scalar rounds, this module composes.
+//! `nacre-exact`, beside `round_to_f64` — cip realizes, scalar rounds, this module composes.
 //!
 //! ★★ **Migration 3b.** [`nacre_topo::Vertex::OnSeam`]'s doc records the missing piece as *"the
 //! machinery that regenerates the cached coordinate"*, deferred with row 3b. This is the asking
 //! half of it. It does **not** overwrite the cache — that is the row's other half.
 
 use crate::rotated_vertex::{motion_chain, replay};
+use nacre_exact::{HpBounded, Mag, MeetPoint};
 use nacre_judge::WitnessPoint;
 use nacre_math::Point3;
-use nacre_scalar::{HpBounded, Mag, MeetPoint};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, PrefixKey, Surface, Vertex};
 use num_bigint::BigInt;
@@ -50,7 +50,7 @@ pub enum Precision {
 /// A coordinate that has been realized, together with what it cost.
 ///
 /// Opaque: the arms are an implementation detail, and a caller that could see them would be
-/// coupled to astro-float's types through this crate as well as through `nacre-scalar`.
+/// coupled to astro-float's types through this crate as well as through `nacre-exact`.
 #[derive(Clone, Debug)]
 pub struct Realized(Arm);
 
@@ -93,7 +93,7 @@ pub enum RealizeError {
     /// The value is an exact rational, and **no `f64` names it**: it is outside the range one can
     /// hold. More bits cannot help — this is the one refusal a taller ladder does not answer.
     ///
-    /// ⚠ Measured at both ends (`nacre_scalar`'s own lock): the large end refuses at `2^1024`,
+    /// ⚠ Measured at both ends (`nacre_exact`'s own lock): the large end refuses at `2^1024`,
     /// where the scaled value stops being finite, and the small end at `2^-1149`. A carrier name
     /// cannot reach either — the widest this repository has measured is 168 bits — so the
     /// population is zero today. It has a name anyway, because the branch is real and
@@ -132,7 +132,7 @@ impl Realized {
     /// realization does not name one.
     ///
     /// ★★★ **The error comes back as [`Mag`], not `f64`, and that is what that type is for.**
-    /// `nacre-scalar`'s own test says so: *"the reason this type exists: a radius the ladder
+    /// `nacre-exact`'s own test says so: *"the reason this type exists: a radius the ladder
     /// actually produces must not become zero. An `f64` cannot hold `2⁻²⁰⁴⁸`."* A realization at
     /// 4096 bits carries exactly such a radius, so handing the bound over as an `f64` forces the
     /// conversion the type was built to prevent — an earlier spelling did, reported `0e0`, and
@@ -153,7 +153,7 @@ impl Realized {
                     // `0.130864196953086372` and its `f64` is `0.13086419695308637578…`. An
                     // earlier spelling reported `[0.0; 3]` here, which is the cache's own lie in
                     // a new place, and the audit lock written for it *enforced* the lie.
-                    let (val, no_loss) = nacre_scalar::nearest_f64_big_exact(&n[k], d)?;
+                    let (val, no_loss) = nacre_exact::nearest_f64_big_exact(&n[k], d)?;
                     v[k] = val;
                     // Half an ulp bounds a correct rounding — as a `Mag`, so a tiny coordinate's
                     // bound cannot vanish on the way out either.
@@ -168,7 +168,7 @@ impl Realized {
                 let mut v = [0.0; 3];
                 let mut e = [Mag::ZERO; 3];
                 for k in 0..3 {
-                    v[k] = nacre_scalar::round_to_f64(&p[k].value, p[k].error, *prec)?;
+                    v[k] = nacre_exact::round_to_f64(&p[k].value, p[k].error, *prec)?;
                     // The realization's own radius, handed over unchanged — no conversion, so
                     // nothing to underflow. That is what `Mag` is for: its own test records
                     // that an `f64` cannot hold `2⁻²⁰⁴⁸` and a deep rung's radius is exactly
@@ -185,12 +185,12 @@ impl Realized {
     pub fn to_decimal(&self, places: usize) -> Option<[String; 3]> {
         match &self.0 {
             Arm::Exact(n, d) => Some(core::array::from_fn(|k| {
-                nacre_scalar::decimals_of_ratio(&n[k], d, places)
+                nacre_exact::decimals_of_ratio(&n[k], d, places)
             })),
             Arm::Approached(p, _) => {
                 let mut out = [const { String::new() }; 3];
                 for k in 0..3 {
-                    out[k] = nacre_scalar::round_to_digits(&p[k].value, p[k].error, places)?;
+                    out[k] = nacre_exact::round_to_digits(&p[k].value, p[k].error, places)?;
                 }
                 Some(out)
             }
@@ -539,7 +539,7 @@ fn seam_point(
     for k in 0..3 {
         centre[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
     }
-    nacre_scalar::realize_seam_point(centre, perp_component(&e, &m)?, r2, bits)
+    nacre_exact::realize_seam_point(centre, perp_component(&e, &m)?, r2, bits)
 }
 
 /// **A pierce vertex is the meet line's point at its root** — the two cutting planes give the
@@ -556,14 +556,14 @@ fn pierce_point(
     let c0 = crate::planes::world_plane_coeffs(model, planes[0])?;
     let c1 = crate::planes::world_plane_coeffs(model, planes[1])?;
     let (line, sv) = pick_root(
-        &nacre_scalar::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)?,
+        &nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)?,
         root,
     )?;
     // `point = base + s·dir`, with `s` the quadratic root realized at `bits` — the only step that
     // is not exact rational arithmetic.
-    let sb = nacre_scalar::realize_quad(&sv, bits)?;
+    let sb = nacre_exact::realize_quad(&sv, bits)?;
     let (b, d) = (line.base(), line.dir());
-    let coord = |k: usize| nacre_scalar::affine_bounded(b[k], d[k], &sb, bits);
+    let coord = |k: usize| nacre_exact::affine_bounded(b[k], d[k], &sb, bits);
     Some([coord(0)?, coord(1)?, coord(2)?])
 }
 
@@ -615,7 +615,7 @@ fn build_three_plane(
 /// node, and the paid door would pay that on every rung of the ladder.
 fn remembered_prefix(
     model: &Model,
-    base: [nacre_scalar::Rat; 3],
+    base: [nacre_exact::Rat; 3],
     leaf: Handle<nacre_topo::MotionNode>,
     bits: usize,
 ) -> Option<(PrefixKey, usize, [HpBounded; 3])> {
@@ -653,7 +653,7 @@ pub(crate) enum ChainLink {
     Fresh,
 }
 
-fn narrow_or(meet: &MeetPoint) -> Result<&[nacre_scalar::Rat; 3], RealizeError> {
+fn narrow_or(meet: &MeetPoint) -> Result<&[nacre_exact::Rat; 3], RealizeError> {
     meet.narrow().ok_or(RealizeError::WideUnderMotion)
 }
 
@@ -666,11 +666,11 @@ fn narrow_or(meet: &MeetPoint) -> Result<&[nacre_scalar::Rat; 3], RealizeError> 
 /// `ref_dir × dir ≠ 0`: a slanted reference direction is a *representable* statement, and this is
 /// the step that stops it landing off the rim.
 fn perp_component(
-    e: &[nacre_scalar::Rat; 3],
-    m: &[nacre_scalar::Rat; 3],
-) -> Option<[nacre_scalar::Rat; 3]> {
+    e: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
+) -> Option<[nacre_exact::Rat; 3]> {
     let (mm, em) = (crate::planes::dot3(m, m)?, crate::planes::dot3(e, m)?);
-    let mut out = [nacre_scalar::Rat::from_int(0); 3];
+    let mut out = [nacre_exact::Rat::from_int(0); 3];
     for k in 0..3 {
         out[k] = mm.checked_mul(e[k])?.checked_sub(em.checked_mul(m[k])?)?;
     }
@@ -678,17 +678,17 @@ fn perp_component(
 }
 
 /// **Which of the crossings `root` names.** `Lo`/`Hi` are ascending parameter along the meet
-/// line's direction — `nacre_scalar::quad`'s pair order, which is `Vertex::Pierce`'s stated
+/// line's direction — `nacre_exact::quad`'s pair order, which is `Vertex::Pierce`'s stated
 /// convention — and a tangency is one point spelled `Double`, never `Lo`.
 ///
 /// ⚠ Split out because the integration oracle ("the point is on the cylinder") is satisfied by
 /// **both** roots: swapping them left the whole corpus green when planted. This is the piece a
 /// test can ask the distinguishing question of.
 fn pick_root(
-    meet: &nacre_scalar::quad::CylinderMeet,
+    meet: &nacre_exact::quad::CylinderMeet,
     root: nacre_topo::QuadRoot,
-) -> Option<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)> {
-    use nacre_scalar::quad::{CylinderMeet, QuadVal};
+) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
     match meet {
         CylinderMeet::Pair { line, s } => match root {
@@ -707,7 +707,7 @@ fn pick_root(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
 
     fn r(n: i128) -> Rat {
         Rat::from_int(n)
@@ -742,18 +742,18 @@ mod tests {
     /// defines: ascending parameter along `n₀ × n₁`.
     #[test]
     fn lo_and_hi_run_along_the_line() {
-        use nacre_scalar::quad::CylinderMeet;
+        use nacre_exact::quad::CylinderMeet;
         use nacre_topo::QuadRoot;
         let (o, m, rad) = ([r(2), r(2), r(0)], [r(0), r(0), r(1)], r(9)); // radius 3, as r²
         // x = 0 and z = 0: the meet line runs along +y and crosses the cylinder twice.
         let c0 = [r(1), r(0), r(0), r(0)];
         let c1 = [r(0), r(0), r(1), r(0)];
-        let meet = nacre_scalar::quad::plane_plane_cylinder(
+        let meet = nacre_exact::quad::plane_plane_cylinder(
             &c0,
             &c1,
             &o,
             &m,
-            &nacre_scalar::BigRat::from(rad),
+            &nacre_exact::BigRat::from(rad),
         )
         .expect("a crossing");
         assert!(
@@ -766,12 +766,12 @@ mod tests {
             pick_root(&meet, QuadRoot::Double).is_none(),
             "a pair is not a Double"
         );
-        let at = |q: &nacre_scalar::quad::QuadVal| {
-            let sb = nacre_scalar::realize_quad(q, 256).expect("realized");
+        let at = |q: &nacre_exact::quad::QuadVal| {
+            let sb = nacre_exact::realize_quad(q, 256).expect("realized");
             let (b, d) = (line.base(), line.dir());
             let c = |k: usize| {
-                let s = nacre_scalar::affine_bounded(b[k], d[k], &sb, 256).expect("affine");
-                nacre_scalar::round_to_digits(&s.value, s.error, 20)
+                let s = nacre_exact::affine_bounded(b[k], d[k], &sb, 256).expect("affine");
+                nacre_exact::round_to_digits(&s.value, s.error, 20)
                     .expect("decided")
                     .parse::<f64>()
                     .expect("a decimal")

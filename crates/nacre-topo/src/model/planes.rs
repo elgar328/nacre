@@ -9,7 +9,7 @@ impl Model {
     ///
     /// ★★★★★ **The points are the only thing a producer states.** The canonical name
     /// ([`Model::surface_name`]) is *derived* here, from those points, by
-    /// [`nacre_scalar::plane_name_exact`] — so a plane cannot be described two ways, because there
+    /// [`nacre_exact::plane_name_exact`] — so a plane cannot be described two ways, because there
     /// is only one place to describe it. (Producers used to hand in coefficients beside the
     /// points; before that parameter went away, every producer was compared against this
     /// derivation across the suite: **83,883 agreements, 0 disagreements**.)
@@ -30,7 +30,7 @@ impl Model {
     pub fn push_plane(
         &mut self,
         cache: nacre_geom::Plane,
-        points: [[nacre_scalar::Rat; 3]; 3],
+        points: [[nacre_exact::Rat; 3]; 3],
         motion: Option<Handle<MotionNode>>,
     ) -> (Handle<Surface>, bool) {
         // ★★★★★ **The name is derived, so it cannot disagree with the thing it names.**
@@ -38,7 +38,7 @@ impl Model {
         // for collinear points (which no production `PlaneDef` can supply); the vessel
         // (`PlaneName::Narrow | Wide`) always holds the answer, so every plane interns, wide
         // ones included. [`WIDE_PLANES`] counts the names that took the wide vessel.
-        let name = nacre_scalar::plane_name_exact(points[0], points[1], points[2]);
+        let name = nacre_exact::plane_name_exact(points[0], points[1], points[2]);
         self.intern_plane(cache, name, PlanePoints::Known(points), motion)
     }
 
@@ -53,7 +53,7 @@ impl Model {
     fn intern_plane(
         &mut self,
         cache: nacre_geom::Plane,
-        name: Option<nacre_scalar::PlaneName>,
+        name: Option<nacre_exact::PlaneName>,
         points: PlanePoints,
         motion: Option<Handle<MotionNode>>,
     ) -> (Handle<Surface>, bool) {
@@ -154,14 +154,14 @@ impl Model {
     /// motion (no frame holds a rational coordinate then), or when the three points are
     /// collinear. ★ A meet too wide for `Rat` is **not** on the list: the
     /// name is derived from the meets at whatever width they need
-    /// ([`nacre_scalar::plane_name_from_meets`]) — width was the arithmetic's problem, never
+    /// ([`nacre_exact::plane_name_from_meets`]) — width was the arithmetic's problem, never
     /// the statement's.
     pub fn plane_name_through(
         &self,
         vertices: [Handle<Vertex>; 3],
-    ) -> Option<nacre_scalar::PlaneName> {
+    ) -> Option<nacre_exact::PlaneName> {
         let m = self.through_meets(vertices)?;
-        nacre_scalar::plane_name_from_meets([&m[0], &m[1], &m[2]])
+        nacre_exact::plane_name_from_meets([&m[0], &m[1], &m[2]])
     }
 
     /// **The three vertices' exact meeting points, in the one frame they share** — the single
@@ -176,8 +176,8 @@ impl Model {
     pub fn through_meets(
         &self,
         vertices: [Handle<Vertex>; 3],
-    ) -> Option<[nacre_scalar::MeetPoint; 3]> {
-        let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
+    ) -> Option<[nacre_exact::MeetPoint; 3]> {
+        let mut pts: [Option<nacre_exact::MeetPoint>; 3] = [None, None, None];
         let mut frame = None;
         for (i, vh) in vertices.iter().enumerate() {
             let (p, mine) = self.vertex_meet(*vh)?;
@@ -215,7 +215,7 @@ impl Model {
     pub fn vertex_meet(
         &self,
         v: Handle<Vertex>,
-    ) -> Option<(nacre_scalar::MeetPoint, Option<Handle<MotionNode>>)> {
+    ) -> Option<(nacre_exact::MeetPoint, Option<Handle<MotionNode>>)> {
         self.vertex_meet_of(self.vertices.get(v))
     }
 
@@ -224,7 +224,7 @@ impl Model {
     pub fn vertex_meet_of(
         &self,
         def: &Vertex,
-    ) -> Option<(nacre_scalar::MeetPoint, Option<Handle<MotionNode>>)> {
+    ) -> Option<(nacre_exact::MeetPoint, Option<Handle<MotionNode>>)> {
         let tri = match *def {
             Vertex::ThreePlane(tri) => tri,
             // OnSeam pins a curve, not a point; a Pierce *is* a point but its coordinates
@@ -248,13 +248,13 @@ impl Model {
         // ★ It transports the **name**, never the point: `world_plane_name` moves each carrier's
         // equation into the world, and `three_planes_big` then meets three world planes. Nothing
         // here realizes a coordinate and shifts it.
-        let world_road = || -> Option<nacre_scalar::MeetPoint> {
+        let world_road = || -> Option<nacre_exact::MeetPoint> {
             let (a, b, c) = (
                 self.world_plane_name(tri[0])?,
                 self.world_plane_name(tri[1])?,
                 self.world_plane_name(tri[2])?,
             );
-            nacre_scalar::three_planes_big([&a, &b, &c])
+            nacre_exact::three_planes_big([&a, &b, &c])
         };
         let motions = tri.map(|h| self.plane_motion(h));
         // One shared leaf among the **moved** carriers; no moved carrier means the world.
@@ -291,19 +291,19 @@ impl Model {
                 }
             }
         }
-        Some((nacre_scalar::three_planes_big([a, b, c])?, leaf))
+        Some((nacre_exact::three_planes_big([a, b, c])?, leaf))
     }
 
     /// [`Model::through_meets`]' all-narrow projection — the form a **witness triangle** takes,
     /// since a witness base is a `[Rat; 3]` by type. `None` additionally when any meet is
-    /// [`nacre_scalar::MeetPoint::Wide`]; the judging table then builds its witness another way
+    /// [`nacre_exact::MeetPoint::Wide`]; the judging table then builds its witness another way
     /// (the plane's own frame probes), so this is a road fork, not a refusal.
     pub fn through_points_rat(
         &self,
         vertices: [Handle<Vertex>; 3],
-    ) -> Option<[[nacre_scalar::Rat; 3]; 3]> {
+    ) -> Option<[[nacre_exact::Rat; 3]; 3]> {
         let meets = self.through_meets(vertices)?;
-        let mut pts = [[nacre_scalar::Rat::from_int(0); 3]; 3];
+        let mut pts = [[nacre_exact::Rat::from_int(0); 3]; 3];
         for (o, m) in pts.iter_mut().zip(&meets) {
             *o = *m.narrow()?;
         }

@@ -78,8 +78,8 @@ fn one_pass_equals_node_by_node() {
         {
             assert_eq!(a.error, b.error, "chain {i}: realization radius");
             assert_eq!(
-                nacre_scalar::round_to_f64(&a.value, a.error, 256),
-                nacre_scalar::round_to_f64(&b.value, b.error, 256),
+                nacre_exact::round_to_f64(&a.value, a.error, 256),
+                nacre_exact::round_to_f64(&b.value, b.error, 256),
                 "chain {i}: realized coordinate"
             );
         }
@@ -583,7 +583,7 @@ fn probe_through(f: &FrameThrough) -> [[f64; 3]; 4] {
     ]
 }
 
-fn probe_named(pf: nacre_scalar::PlaneFrame) -> [[f64; 3]; 4] {
+fn probe_named(pf: nacre_exact::PlaneFrame) -> [[f64; 3]; 4] {
     let ap = |c: [f64; 3]| {
         exact(c)
             .expect("probe coords are f64")
@@ -618,8 +618,8 @@ fn the_judged_frame_agrees_with_the_named_road() {
         ]
     };
     let c = [ri(1, 1), ri(0, 1), ri(1, 1), ri(-1, 1)];
-    let (origin, ref_dir) = nacre_scalar::plane_frame_default(c).expect("derivable");
-    let pf = nacre_scalar::plane_frame_named(c, origin, ref_dir).expect("narrow frame");
+    let (origin, ref_dir) = nacre_exact::plane_frame_default(c).expect("derivable");
+    let pf = nacre_exact::plane_frame_named(c, origin, ref_dir).expect("narrow frame");
     let narrow = probe_named(pf);
 
     let ft = FrameThrough::of(pts().map(JudgedPoint::Pure), false).expect("a healthy plane frames");
@@ -664,8 +664,8 @@ fn the_judged_frame_takes_the_vertical_branch_where_the_named_road_does() {
     let judged = probe_through(&ft);
 
     let c = [ri(0, 1), ri(0, 1), ri(1, 1), ri(-5, 1)];
-    let (origin, ref_dir) = nacre_scalar::plane_frame_default(c).expect("derivable");
-    let pf = nacre_scalar::plane_frame_named(c, origin, ref_dir).expect("narrow frame");
+    let (origin, ref_dir) = nacre_exact::plane_frame_default(c).expect("derivable");
+    let pf = nacre_exact::plane_frame_named(c, origin, ref_dir).expect("narrow frame");
     let narrow = probe_named(pf);
     for (row, (n, j)) in narrow.iter().zip(&judged).enumerate() {
         for k in 0..3 {
@@ -1247,9 +1247,9 @@ const FRAME_PLANES: [[i128; 4]; 6] = [
     [2, -3, 7, 11],
 ];
 
-fn frame_of(c: [i128; 4]) -> nacre_scalar::PlaneFrame {
+fn frame_of(c: [i128; 4]) -> nacre_exact::PlaneFrame {
     let coeffs = c.map(Rat::from_int);
-    nacre_scalar::plane_frame(coeffs).expect("these planes all have exact frames")
+    nacre_exact::plane_frame(coeffs).expect("these planes all have exact frames")
 }
 
 /// ★★★★ **The property a frame exists to have: a point drawn at `w = 0` is *on* the plane.**
@@ -1302,7 +1302,7 @@ fn a_point_drawn_in_a_frame_lies_on_that_frame_s_plane() {
 #[test]
 fn a_named_frame_takes_its_own_origin_and_u() {
     let coeffs = [0, 1, 0, 0].map(Rat::from_int); // the ZX plane, y = 0
-    let (o_d, r_d) = nacre_scalar::plane_frame_default(coeffs).unwrap();
+    let (o_d, r_d) = nacre_exact::plane_frame_default(coeffs).unwrap();
     assert_eq!(
         r_d.map(|r| r.to_f64()),
         [-1.0, 0.0, 0.0],
@@ -1310,8 +1310,8 @@ fn a_named_frame_takes_its_own_origin_and_u() {
     );
 
     let zhat = [0, 0, 1].map(Rat::from_int);
-    let named = nacre_scalar::plane_frame_named(coeffs, o_d, zhat).unwrap();
-    let derived = nacre_scalar::plane_frame(coeffs).unwrap();
+    let named = nacre_exact::plane_frame_named(coeffs, o_d, zhat).unwrap();
+    let derived = nacre_exact::plane_frame(coeffs).unwrap();
     assert_ne!(
         named.u_raw, derived.u_raw,
         "naming +u must actually move it"
@@ -1332,7 +1332,7 @@ fn a_named_frame_takes_its_own_origin_and_u() {
     // ★ Two spellings of one direction, one frame.
     let long = [0, 0, 5].map(Rat::from_int);
     assert_eq!(
-        nacre_scalar::plane_frame_named(coeffs, o_d, long),
+        nacre_exact::plane_frame_named(coeffs, o_d, long),
         Some(named)
     );
 }
@@ -1438,12 +1438,12 @@ fn wide_fixture() -> ([num_bigint::BigInt; 4], WideFrame) {
     let a = [q(big1, 3), q(big2, 7), q(0, 1)];
     let b = [q(-big2, 5), q(big1, 11), q(0, 1)];
     let c = [q(1, 13), q(1, 17), q(1, 19)];
-    let name = nacre_scalar::plane_name_exact(a, b, c).expect("not collinear");
+    let name = nacre_exact::plane_name_exact(a, b, c).expect("not collinear");
     assert!(
         name.narrow().is_none(),
         "the fixture must be genuinely wide"
     );
-    let nacre_scalar::PlaneName::Wide(cs) = name else {
+    let nacre_exact::PlaneName::Wide(cs) = name else {
         unreachable!("narrow() said Wide")
     };
     let n = [cs[0].clone(), cs[1].clone(), cs[2].clone()];
@@ -1466,7 +1466,7 @@ fn a_point_drawn_in_a_wide_frame_lies_on_that_plane() {
             .expect("a wide frame has positive lengths");
         let hp = p.hp_coord(GT);
         // a·x + b·y + c·z + d, realized — its interval must contain zero.
-        let mut e = HpBounded::exact(nacre_scalar::bigint_to_bigfloat(&c[3], GT));
+        let mut e = HpBounded::exact(nacre_exact::bigint_to_bigfloat(&c[3], GT));
         for k in 0..3 {
             e = e.add(&hp[k].mul(&HpBounded::of_bigint(&c[k], GT), GT), GT);
         }

@@ -40,7 +40,7 @@ pub(super) fn circle_on_class(
     // ⊥ to the axis, decided **totally** (`parallel_rat` clears denominators and answers in
     // integers, so this cannot decline for want of bits). A non-⊥ class carries no circle at
     // all — a miss, like a parallel plane, not a decline.
-    if !nacre_scalar::parallel_rat(&n, &m) {
+    if !nacre_exact::parallel_rat(&n, &m) {
         return Ok(Vec::new());
     }
     // ★★★★★ **The face's boundary as the tracer names it — its cycles — and nothing else.** A
@@ -343,7 +343,7 @@ pub(crate) fn plus_theta_is_above(
 fn world_rat_sense(jd: &Judge<'_, WorkingPlane>, c: usize) -> Option<i8> {
     let co = combinatorics::class_coeffs_rat(jd, c)?;
     let raw = jd.planes[c].plane.coefficients();
-    let zero = nacre_scalar::Rat::from_int(0);
+    let zero = nacre_exact::Rat::from_int(0);
     // Both must be nonzero, not just the rational one: they are proportional so their zero sets
     // agree exactly, but `raw` is `f64` and a component it rounds to zero would hand back a sign
     // with nothing behind it.
@@ -369,7 +369,7 @@ fn world_rat_sense(jd: &Judge<'_, WorkingPlane>, c: usize) -> Option<i8> {
 ///
 /// **Derivation.** Write `r̂` for the cylinder's outward radial direction, `m̂` for its axis and `θ̂`
 /// for increasing θ (counter-clockwise about `m̂`, which is what
-/// `nacre_scalar::quad::circular_order_about_seam` ranks and what [`MergedArc::end`] runs along).
+/// `nacre_exact::quad::circular_order_about_seam` ranks and what [`MergedArc::end`] runs along).
 /// Cylindrical coordinates are right-handed, so `r̂ × θ̂ = m̂` and `r̂ × m̂ = −θ̂`. The face's outward
 /// is `σ·r̂` with `σ = ` [`crate::planes::CylFaceInfo::orient_sign`], and "left of travel" is
 /// `n_out × travel`.

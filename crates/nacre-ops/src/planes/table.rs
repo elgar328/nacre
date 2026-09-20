@@ -160,7 +160,7 @@ pub(crate) fn collect_planes(
                     // computation, in the same order, that a moved vertex's `WitnessPoint` performs.
                     let chain = crate::rotated_vertex::motion_chain(model, motion)
                         .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                    let turn = |base: [nacre_scalar::Rat; 3]| -> Result<WitnessPoint, BoolError> {
+                    let turn = |base: [nacre_exact::Rat; 3]| -> Result<WitnessPoint, BoolError> {
                         crate::rotated_vertex::replay(WitnessPoint::at(base), &chain)
                             .ok_or_else(|| reject(RejectReason::FrameOutOfRange))
                     };
@@ -268,7 +268,7 @@ pub(crate) fn collect_planes(
                                     false,
                                 )
                                 .ok_or_else(|| reject(RejectReason::FrameOutOfRange))?;
-                                let r = nacre_scalar::Rat::from_int;
+                                let r = nacre_exact::Rat::from_int;
                                 let probe = |u: i128, v: i128| {
                                     crate::rotated_vertex::replay(
                                         WitnessPoint::at([r(u), r(v), r(0)]),

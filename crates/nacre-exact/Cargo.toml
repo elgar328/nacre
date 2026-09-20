@@ -1,11 +1,11 @@
 [package]
-name = "nacre-scalar"
+name = "nacre-exact"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Exact rational scalars (dimensions, angles) — the overhaul's exact rational value engine"
+description = "Everything the nacre CAD kernel can answer exactly in rationals and integers — dimensions and angles that survive f64 (1.1 is 11/10), the canonical names of planes and their meets, quadratic values a + b*sqrt(c), and the exact sign predicates over them"
 
 [dependencies]
 num-rational = "0.4"

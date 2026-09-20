@@ -123,7 +123,7 @@ pub(crate) struct RulingExtent {
     /// one station that carries no label: nothing changes across it, the face ends there.
     pub(crate) side: i8,
     pub(crate) end: [NodeId; 2],
-    pub(crate) z: [nacre_scalar::Rat; 2],
+    pub(crate) z: [nacre_exact::Rat; 2],
     /// **The chart's vertical answer** (capability D, third rung): the label of the cell this
     /// ruling borders **inside** the cylinder, on the wall class this ruling lies on.
     ///

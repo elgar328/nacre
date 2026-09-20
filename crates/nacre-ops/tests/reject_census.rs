@@ -21,13 +21,13 @@
 //! 4200-turn chain) or `edge_occupancy_conflict` (measured: reachable only by calling `edge_mask`
 //! directly, never through `boolean()`).
 
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::reject_census::{self, Census, ReasonId};
 use nacre_ops::{
     BoolError, BoolKind, DatumDef, OpOutput, Operation, Profile2d, RejectReason, SketchFrame,
     SketchPlane, apply, boolean,
 };
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 use std::collections::BTreeSet;

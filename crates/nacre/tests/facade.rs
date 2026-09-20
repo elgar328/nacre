@@ -5,8 +5,8 @@
 //! lines proves nothing by itself.
 
 use nacre::prelude::*;
+use nacre_exact::Axis;
 use nacre_ops::SketchFrame;
-use nacre_scalar::Axis;
 
 fn square(a: f64, b: f64) -> Profile2d {
     Profile2d::polygon(vec![
@@ -36,7 +36,7 @@ fn extrude(m: &mut Model, profile: Profile2d, dist: f64) -> Handle<Solid> {
 /// with `use nacre::prelude::*` as the only import.
 ///
 /// The `Transform` step is not decoration. `Operation::Transform` carries a
-/// `scalar::Isometry`, so a facade that forgot to re-export `nacre-scalar` would leave
+/// `exact::Isometry`, so a facade that forgot to re-export `nacre-exact` would leave
 /// a consumer unable to *name* the value this operation needs — the one leak of a lower
 /// layer into `ops`' public API. Exercising it turns that claim into a compile-time
 /// fact. `bounds` is here for the same reason: the newest query layer must be reachable.

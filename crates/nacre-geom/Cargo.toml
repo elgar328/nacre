@@ -14,9 +14,9 @@ nacre-math = { path = "../nacre-math", version = "0.0.0" }
 nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
 # Exact rational scalars, for the Rat twins of the 2-D ring predicates: the design isolates
 # robustness-sharp classification in geom::intersect, and the profile's truth is rational,
-# so the predicates over that truth live here too. nacre-scalar sits at the
+# so the predicates over that truth live here too. nacre-exact sits at the
 # bottom of the dependency graph (no nacre-* deps), so this edge is acyclic.
-nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
+nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
 
 [dev-dependencies]
 proptest.workspace = true

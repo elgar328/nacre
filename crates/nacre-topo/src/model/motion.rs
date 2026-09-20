@@ -48,7 +48,7 @@ impl Model {
     pub fn chain_fixes_plane(
         &self,
         leaf: Handle<MotionNode>,
-        coeffs: &[nacre_scalar::Rat; 4],
+        coeffs: &[nacre_exact::Rat; 4],
     ) -> bool {
         self.chain_fixes(leaf, coeffs, false)
     }
@@ -59,7 +59,7 @@ impl Model {
     ///
     /// A rational translation maps a rational statement to a rational statement, so a chain made
     /// only of [`Motion::Translate`] nodes loses nothing: a plane's `d` shifts by `−n·t`
-    /// ([`nacre_scalar::Isometry::plane_coeffs`]), a cylinder's origin by `+t`. What such a move
+    /// ([`nacre_exact::Isometry::plane_coeffs`]), a cylinder's origin by `+t`. What such a move
     /// *does* lose is the exactness of the `f64` **cache** — which is why the producer still
     /// records the node (`transform`'s `carry_of`, and `nacre-ops`' reuse road reads a
     /// world-stated carrier's coordinate as the statement itself). So this answers a question
@@ -71,8 +71,8 @@ impl Model {
     /// is in that frame's coordinates — folding those as world translations is a different
     /// question. Translations commute and compose by addition, so no order is implied here.
     /// `None` on overflow too (checked throughout).
-    pub fn chain_translation(&self, leaf: Handle<MotionNode>) -> Option<[nacre_scalar::Rat; 3]> {
-        let mut total = [nacre_scalar::Rat::from_int(0); 3];
+    pub fn chain_translation(&self, leaf: Handle<MotionNode>) -> Option<[nacre_exact::Rat; 3]> {
+        let mut total = [nacre_exact::Rat::from_int(0); 3];
         let mut cur = Some(leaf);
         while let Some(h) = cur {
             let node = self.motion(h);
@@ -92,23 +92,23 @@ impl Model {
     ///
     /// Unmoved: the name itself, which is already world. Moved by a chain that folds to a
     /// rational translation ([`Model::chain_translation`]): that name carried out exactly
-    /// (`d' = d − n·t`, [`nacre_scalar::Isometry::plane_coeffs`], canonicalized). `None` for
-    /// anything else — a rotation, a frame node, a **moved** [`nacre_scalar::PlaneName::Wide`]
+    /// (`d' = d − n·t`, [`nacre_exact::Isometry::plane_coeffs`], canonicalized). `None` for
+    /// anything else — a rotation, a frame node, a **moved** [`nacre_exact::PlaneName::Wide`]
     /// (no narrow vessel for the transport to take), or an overflow — and the caller declines
     /// rather than guessing. An *unmoved* `Wide` name comes back verbatim: it is already world,
     /// and refusing it would switch off a capability that is locked elsewhere.
     ///
     /// **Planes only.** A cylinder surface has no entry in `surface_name`, so it answers `None`;
     /// its own world statement is `nacre-ops`' `world_cylinder_def`.
-    pub fn world_plane_name(&self, surf: Handle<Surface>) -> Option<nacre_scalar::PlaneName> {
+    pub fn world_plane_name(&self, surf: Handle<Surface>) -> Option<nacre_exact::PlaneName> {
         let name = self.surface_name.get(&surf)?;
         match self.plane_motion(surf) {
             None => Some(name.clone()),
             Some(leaf) => {
                 let t = self.chain_translation(leaf)?;
                 let c = name.narrow()?;
-                Some(nacre_scalar::PlaneName::Narrow(
-                    nacre_scalar::Isometry::translation(t).plane_coeffs(*c)?,
+                Some(nacre_exact::PlaneName::Narrow(
+                    nacre_exact::Isometry::translation(t).plane_coeffs(*c)?,
                 ))
             }
         }
@@ -123,7 +123,7 @@ impl Model {
     pub fn chain_preserves_plane_row(
         &self,
         leaf: Handle<MotionNode>,
-        coeffs: &[nacre_scalar::Rat; 4],
+        coeffs: &[nacre_exact::Rat; 4],
     ) -> bool {
         self.chain_fixes(leaf, coeffs, true)
     }
@@ -131,7 +131,7 @@ impl Model {
     fn chain_fixes(
         &self,
         leaf: Handle<MotionNode>,
-        coeffs: &[nacre_scalar::Rat; 4],
+        coeffs: &[nacre_exact::Rat; 4],
         rows_verbatim: bool,
     ) -> bool {
         let mut cur = Some(leaf);
@@ -139,20 +139,20 @@ impl Model {
             let n: &MotionNode = self.motion(h);
             let fixed = match &n.motion {
                 Motion::Rotate { axis, .. } => {
-                    nacre_scalar::axis_rotation_fixes_plane(*axis, coeffs)
+                    nacre_exact::axis_rotation_fixes_plane(*axis, coeffs)
                 }
                 Motion::Translate { offset } => {
-                    nacre_scalar::translation_fixes_plane(offset, coeffs)
+                    nacre_exact::translation_fixes_plane(offset, coeffs)
                 }
                 Motion::Mirror { axis, offset } => {
                     if rows_verbatim {
                         coeffs[match axis {
-                            nacre_scalar::Axis::X => 0,
-                            nacre_scalar::Axis::Y => 1,
-                            nacre_scalar::Axis::Z => 2,
-                        }] == nacre_scalar::Rat::from_int(0)
+                            nacre_exact::Axis::X => 0,
+                            nacre_exact::Axis::Y => 1,
+                            nacre_exact::Axis::Z => 2,
+                        }] == nacre_exact::Rat::from_int(0)
                     } else {
-                        nacre_scalar::mirror_fixes_plane(*axis, *offset, coeffs)
+                        nacre_exact::mirror_fixes_plane(*axis, *offset, coeffs)
                     }
                 }
                 Motion::Frame { .. } => false,

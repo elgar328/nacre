@@ -2,8 +2,8 @@ use super::*;
 /// Whether one planar face misses the **rectangle** this cylinder occupies in the face's plane.
 ///
 /// ★★ **One question, two separating axes.** A plane parallel to the axis meets the solid cylinder
-/// in a rectangle: the strip across ([`nacre_scalar::cylinder_strip_side`]) and a lateral face's
-/// axis-parameter span along ([`nacre_scalar::point_axis_side`]). A rectangle is the intersection
+/// in a rectangle: the strip across ([`nacre_exact::cylinder_strip_side`]) and a lateral face's
+/// axis-parameter span along ([`nacre_exact::point_axis_side`]). A rectangle is the intersection
 /// of those two bands, so clearing *either* axis clears it — these are not two rules to be
 /// weighed, they are the two axes of one. With several lateral faces there are several rectangles
 /// (the strip is shared, the spans are not), and the face must miss them all:
@@ -54,8 +54,8 @@ use super::*;
 /// is `line.base() + s·line.dir()` with `s` quadratic-irrational. The two spellings answer the
 /// same three questions, so they are asked through one type rather than branched at each call.
 pub(super) enum Corner {
-    Rational(nacre_scalar::MeetPoint),
-    Pierce(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    Rational(nacre_exact::MeetPoint),
+    Pierce(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
     /// **A piece of a circle in the face's own plane** — the whole disk a single-circle loop *is*
     /// (`arc: None`), or one **arc** of a loop that mixes lines and arcs (`arc: Some`).
     ///
@@ -68,40 +68,39 @@ pub(super) enum Corner {
     /// the other way; using it would name the **complementary** arc, which is not a bound on this
     /// piece but a different set.
     Round {
-        centre: [nacre_scalar::Rat; 3],
+        centre: [nacre_exact::Rat; 3],
         /// The carrier's squared radius.
-        rho2: nacre_scalar::BigRat,
-        axis: [nacre_scalar::Rat; 3],
+        rho2: nacre_exact::BigRat,
+        axis: [nacre_exact::Rat; 3],
         arc: Option<RimArc>,
     },
 }
 
 impl Corner {
-    /// Does this corner lie on the plane the class names? — [`nacre_scalar::cylinder_strip_side`]'s precondition.
-    pub(super) fn on_plane(&self, coeffs: &[nacre_scalar::Rat; 4]) -> bool {
+    /// Does this corner lie on the plane the class names? — [`nacre_exact::cylinder_strip_side`]'s precondition.
+    pub(super) fn on_plane(&self, coeffs: &[nacre_exact::Rat; 4]) -> bool {
         match self {
-            Self::Rational(p) => nacre_scalar::point_on_plane_exact(coeffs, p),
+            Self::Rational(p) => nacre_exact::point_on_plane_exact(coeffs, p),
             Self::Pierce(line, s) => {
-                nacre_scalar::quad::plane_side(coeffs, line, s) == nacre_scalar::Orient::Zero
+                nacre_exact::quad::plane_side(coeffs, line, s) == nacre_exact::Orient::Zero
             }
-            Self::Round { centre, .. } => nacre_scalar::point_on_plane_exact(
-                coeffs,
-                &nacre_scalar::MeetPoint::Narrow(*centre),
-            ),
+            Self::Round { centre, .. } => {
+                nacre_exact::point_on_plane_exact(coeffs, &nacre_exact::MeetPoint::Narrow(*centre))
+            }
         }
     }
 
     pub(super) fn strip_side(
         &self,
-        coeffs: &[nacre_scalar::Rat; 4],
-        o: &[nacre_scalar::Rat; 3],
-        m: &[nacre_scalar::Rat; 3],
-        r2: &nacre_scalar::BigRat,
-    ) -> nacre_scalar::StripSide {
+        coeffs: &[nacre_exact::Rat; 4],
+        o: &[nacre_exact::Rat; 3],
+        m: &[nacre_exact::Rat; 3],
+        r2: &nacre_exact::BigRat,
+    ) -> nacre_exact::StripSide {
         match self {
-            Self::Rational(p) => nacre_scalar::cylinder_strip_side(coeffs, p, o, m, r2),
+            Self::Rational(p) => nacre_exact::cylinder_strip_side(coeffs, p, o, m, r2),
             Self::Pierce(line, s) => {
-                nacre_scalar::cylinder_strip_side_branch(coeffs, line, s, o, m, r2)
+                nacre_exact::cylinder_strip_side_branch(coeffs, line, s, o, m, r2)
             }
             // ★ The strip runs along `e = n × m`, so **that** is the direction the piece's extent
             // is asked for. A whole circle reaches `±ρ|e|` alike and takes the symmetric door,
@@ -109,7 +108,7 @@ impl Corner {
             // general one. `None` from the extent is `Inside` — reached the strip, spanned
             // nothing — which is the safe reading for both consumers.
             Self::Round { .. } => {
-                round_strip_side(self, coeffs, o, m, r2).unwrap_or(nacre_scalar::StripSide::Inside)
+                round_strip_side(self, coeffs, o, m, r2).unwrap_or(nacre_exact::StripSide::Inside)
             }
         }
     }
@@ -129,14 +128,14 @@ impl Corner {
     /// the two together would move one convention silently.
     fn reaches(
         &self,
-        o: &[nacre_scalar::Rat; 3],
-        m: &[nacre_scalar::Rat; 3],
-        t: nacre_scalar::Rat,
-        want: nacre_scalar::Orient,
+        o: &[nacre_exact::Rat; 3],
+        m: &[nacre_exact::Rat; 3],
+        t: nacre_exact::Rat,
+        want: nacre_exact::Orient,
     ) -> bool {
         match self {
-            Self::Rational(p) => nacre_scalar::point_axis_side(p, o, m, t) == want,
-            Self::Pierce(line, s) => nacre_scalar::point_axis_side_branch(line, s, o, m, t) == want,
+            Self::Rational(p) => nacre_exact::point_axis_side(p, o, m, t) == want,
+            Self::Pierce(line, s) => nacre_exact::point_axis_side_branch(line, s, o, m, t) == want,
             // The comparison quantity is `q = (p − o)·m − t(m·m)`; over the piece it sweeps
             // `q_c + [lo_off − √rho2_lo, hi_off + √rho2_hi]` ([`arc_extent`]), so «reaches past»
             // is that end on the wanted side, or its radical covering the gap —
@@ -150,7 +149,7 @@ impl Corner {
                 axis,
                 arc,
             } => {
-                let zero = nacre_scalar::Rat::from_int(0);
+                let zero = nacre_exact::Rat::from_int(0);
                 let end = (|| {
                     let mut rel = [zero; 3];
                     for k in 0..3 {
@@ -161,16 +160,16 @@ impl Corner {
                     let (lo_off, rho2_lo, hi_off, rho2_hi) =
                         arc_extent(arc.as_ref(), rho2, axis, m)?;
                     Some(match want {
-                        nacre_scalar::Orient::Positive => (q.checked_add(hi_off)?, rho2_hi),
+                        nacre_exact::Orient::Positive => (q.checked_add(hi_off)?, rho2_hi),
                         _ => (q.checked_add(lo_off)?, rho2_lo),
                     })
                 })();
                 match (end, want) {
-                    (_, nacre_scalar::Orient::Zero) => false,
-                    (Some((e, rho2)), nacre_scalar::Orient::Positive) => {
+                    (_, nacre_exact::Orient::Zero) => false,
+                    (Some((e, rho2)), nacre_exact::Orient::Positive) => {
                         e > zero || e.checked_mul(e).is_none_or(|sq| rho2 > sq)
                     }
-                    (Some((e, rho2)), nacre_scalar::Orient::Negative) => {
+                    (Some((e, rho2)), nacre_exact::Orient::Negative) => {
                         e < zero || e.checked_mul(e).is_none_or(|sq| rho2 > sq)
                     }
                     (None, _) => true,
@@ -199,14 +198,14 @@ fn pierce_corner(
     cylinder: Handle<Surface>,
     root: nacre_topo::QuadRoot,
 ) -> Option<Corner> {
-    use nacre_scalar::quad::{CylinderMeet, QuadVal};
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
     let p1 = *model.world_plane_name(planes[0])?.narrow()?;
     let p2 = *model.world_plane_name(planes[1])?.narrow()?;
     let def = world_cylinder_def(model, cylinder)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let (line, s) = match (
-        nacre_scalar::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2)?,
+        nacre_exact::quad::plane_plane_cylinder(&p1, &p2, &o, &m, r2)?,
         root,
     ) {
         (CylinderMeet::Pair { line, s }, QuadRoot::Lo) => (line, s[0]),
@@ -279,7 +278,7 @@ pub(super) fn corner_of(
             for (c, d) in w.iter_mut().zip(t) {
                 *c = c.checked_add(d).ok_or(CornerFail::Arithmetic)?;
             }
-            Ok(Corner::Rational(nacre_scalar::MeetPoint::Narrow(w)))
+            Ok(Corner::Rational(nacre_exact::MeetPoint::Narrow(w)))
         }
         // ★★★★★ **A corner a cylinder made has no rational meet — and does not need one.**
         // `vertex_meet` declines a `Pierce` because its coordinates are quadratic-irrational,
@@ -316,7 +315,7 @@ fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corne
         return None;
     };
     let [a, b] = model.edge(he.edge).vertices;
-    let radial = |vh: Handle<Vertex>| -> Option<[nacre_scalar::Rat; 3]> {
+    let radial = |vh: Handle<Vertex>| -> Option<[nacre_exact::Rat; 3]> {
         let p = vertex_point(model, vh)?;
         let mut v = p;
         for k in 0..3 {
@@ -342,7 +341,7 @@ fn arc_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corne
 /// corner answers through its own line-and-root spelling. An arc's radial vector is arithmetic on
 /// coordinates, so it needs them — a `Wide` meet or a pierce whose root is irrational declines,
 /// and the caller says so by name.
-fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_scalar::Rat; 3]> {
+fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_exact::Rat; 3]> {
     match model.vertex_meet(vh) {
         Some((p, None)) => p.narrow().copied(),
         Some((p, Some(leaf))) => {
@@ -377,7 +376,7 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_scalar::Rat;
 }
 
 /// **Where a round piece stands relative to the strip** — the extent form of
-/// [`nacre_scalar::cylinder_strip_side_margin`], read along the strip's own direction `e = n × m`.
+/// [`nacre_exact::cylinder_strip_side_margin`], read along the strip's own direction `e = n × m`.
 ///
 /// The piece's reach along `e` is [`arc_extent`]'s, and because the arc lies in a plane whose
 /// normal is its own axis, `e ⊥ axis` makes `e⊥ = e` — so a side that reaches its full radial peak
@@ -386,12 +385,12 @@ fn vertex_point(model: &Model, vh: Handle<Vertex>) -> Option<[nacre_scalar::Rat;
 /// the centre by `off/(e·e) · e` stays on the plane and moves `U` by `off`.
 fn round_strip_side(
     piece: &Corner,
-    coeffs: &[nacre_scalar::Rat; 4],
-    o: &[nacre_scalar::Rat; 3],
-    m: &[nacre_scalar::Rat; 3],
-    r2: &nacre_scalar::BigRat,
-) -> Option<nacre_scalar::StripSide> {
-    use nacre_scalar::MeetPoint;
+    coeffs: &[nacre_exact::Rat; 4],
+    o: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
+    r2: &nacre_exact::BigRat,
+) -> Option<nacre_exact::StripSide> {
+    use nacre_exact::MeetPoint;
     let Corner::Round {
         centre,
         rho2,
@@ -404,7 +403,7 @@ fn round_strip_side(
     let arc = arc.as_ref();
     if arc.is_none() {
         // A whole circle reaches alike both ways: the symmetric door, complete answer and all.
-        return Some(nacre_scalar::cylinder_strip_side_margin(
+        return Some(nacre_exact::cylinder_strip_side_margin(
             coeffs,
             &MeetPoint::Narrow(*centre),
             rho2,
@@ -416,9 +415,9 @@ fn round_strip_side(
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let e = combinatorics::cross3_rat(&n, m)?;
     let (lo, hi) = arc_ends_along(centre, rho2, axis, arc, &e)?;
-    Some(nacre_scalar::cylinder_strip_side_extent(
+    Some(nacre_exact::cylinder_strip_side_extent(
         coeffs,
-        &nacre_scalar::StripReach {
+        &nacre_exact::StripReach {
             lo: (&MeetPoint::Narrow(lo.0), &lo.1),
             hi: Some((&MeetPoint::Narrow(hi.0), &hi.1)),
         },
@@ -430,7 +429,7 @@ fn round_strip_side(
 
 /// One end of a round piece's reach along a direction: a point on the piece's plane and the
 /// **squared** margin the doors add to it — `(p, ρ²)`, the pair every scalar door here takes.
-pub(crate) type ArcEnd = ([nacre_scalar::Rat; 3], nacre_scalar::BigRat);
+pub(crate) type ArcEnd = ([nacre_exact::Rat; 3], nacre_exact::BigRat);
 
 /// **The two ends of a round piece's reach along `d`, each as a point and a margin** — the form
 /// both scalar doors take.
@@ -446,13 +445,13 @@ pub(crate) type ArcEnd = ([nacre_scalar::Rat; 3], nacre_scalar::BigRat);
 /// `arc = None` is the whole circle: both ends are the centre with margin `ρ`, which is what the
 /// symmetric doors have always been handed.
 pub(crate) fn arc_ends_along(
-    centre: &[nacre_scalar::Rat; 3],
-    rho2: &nacre_scalar::BigRat,
-    axis: &[nacre_scalar::Rat; 3],
+    centre: &[nacre_exact::Rat; 3],
+    rho2: &nacre_exact::BigRat,
+    axis: &[nacre_exact::Rat; 3],
     arc: Option<&RimArc>,
-    d: &[nacre_scalar::Rat; 3],
+    d: &[nacre_exact::Rat; 3],
 ) -> Option<(ArcEnd, ArcEnd)> {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let dd = dot3(d, d)?;
     let (lo_off, rho2_lo, hi_off, rho2_hi) = arc_extent(arc, rho2, axis, d)?;
@@ -469,7 +468,7 @@ pub(crate) fn arc_ends_along(
     };
     let margin = |reach2: Rat| {
         if reach2 == zero {
-            nacre_scalar::BigRat::zero()
+            nacre_exact::BigRat::zero()
         } else {
             rho2.clone()
         }
@@ -510,15 +509,15 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
         .find(|&&s| matches!(model.surface(s), nacre_topo::Surface::Cylinder { .. }))
         .and_then(|&s| world_cylinder_def(model, s))?;
     let (o, m) = (def.origin(), def.dir());
-    if !nacre_scalar::parallel_rat(&n, &m) {
+    if !nacre_exact::parallel_rat(&n, &m) {
         return None;
     }
     // `n·(o + t·m) + d = 0`, and `n·m ≠ 0` because the axis is along the normal.
     let nm = dot3(&n, &m)?;
     let no_d = dot3(&n, &o)?.checked_add(plane[3])?;
-    let t = nacre_scalar::Rat::from_int(0)
+    let t = nacre_exact::Rat::from_int(0)
         .checked_sub(no_d)?
-        .checked_mul(nacre_scalar::Rat::new(nm.denom(), nm.numer())?)?;
+        .checked_mul(nacre_exact::Rat::new(nm.denom(), nm.numer())?)?;
     let mut centre = o;
     for k in 0..3 {
         centre[k] = centre[k].checked_add(t.checked_mul(m[k])?)?;
@@ -535,13 +534,13 @@ fn disk_of(model: &Model, face: &Face, he: &nacre_topo::HalfEdge) -> Option<Corn
 pub(super) fn face_clears_footprint(
     model: &Model,
     face: &Face,
-    coeffs: &[nacre_scalar::Rat; 4],
-    o: &[nacre_scalar::Rat; 3],
-    m: &[nacre_scalar::Rat; 3],
-    r2: &nacre_scalar::BigRat,
-    spans: &[[nacre_scalar::Rat; 2]],
+    coeffs: &[nacre_exact::Rat; 4],
+    o: &[nacre_exact::Rat; 3],
+    m: &[nacre_exact::Rat; 3],
+    r2: &nacre_exact::BigRat,
+    spans: &[[nacre_exact::Rat; 2]],
 ) -> Result<bool, BoolError> {
-    use nacre_scalar::{Orient, StripSide};
+    use nacre_exact::{Orient, StripSide};
     // ★★★★★ **Which refusal this is, decided once — the answer is not touched.**
     //
     // Every abstention below turns into a refusal at the caller, and until now they all wore

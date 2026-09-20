@@ -18,10 +18,10 @@
 #[test]
 fn a_chain_holding_a_frame_never_reaches_the_coefficient_transport() {
     use super::{WitnessPoint, single_rotation};
-    use nacre_scalar::{Angle, Axis, Rat};
+    use nacre_exact::{Angle, Axis, Rat};
     let ri = |n: i128, d: i128| Rat::new(n, d).unwrap();
     // A tilted plane's frame: 2x - 3y + 7z + 11 = 0.
-    let fr = nacre_scalar::plane_frame([2, -3, 7, 11].map(Rat::from_int)).unwrap();
+    let fr = nacre_exact::plane_frame([2, -3, 7, 11].map(Rat::from_int)).unwrap();
     let framed = |u: i128, v: i128, w: i128| {
         WitnessPoint::at([ri(u, 1), ri(v, 1), ri(w, 1)])
             .frame(fr)
@@ -51,7 +51,7 @@ fn a_chain_holding_a_frame_never_reaches_the_coefficient_transport() {
 }
 
 use super::*;
-use nacre_scalar::Mag;
+use nacre_exact::Mag;
 
 /// How these fixtures judge; production chooses both per model. The coincidence limit is the
 /// derived default for a unit-scale model — output resolution (`2⁻⁵²`) two words further down.
@@ -78,7 +78,7 @@ impl W {
         let def = tri.map(|p| {
             WitnessPoint::at_nearest(
                 p.as_array()
-                    .map(|x| nacre_scalar::Rat::try_from_f64(x).expect("test coordinate")),
+                    .map(|x| nacre_exact::Rat::try_from_f64(x).expect("test coordinate")),
             )
         });
         W { tri, coeffs, def }
@@ -264,10 +264,10 @@ fn jd<W>(planes: &[W]) -> Judge<'_, W> {
     Judge::new(planes, fixture(), Box::leak(Box::new(Notes::new())))
 }
 
-fn ri(n: i128, d: i128) -> nacre_scalar::Rat {
-    nacre_scalar::Rat::new(n, d).unwrap()
+fn ri(n: i128, d: i128) -> nacre_exact::Rat {
+    nacre_exact::Rat::new(n, d).unwrap()
 }
-use nacre_scalar::{Angle, Axis};
+use nacre_exact::{Angle, Axis};
 
 /// **The pre-rotation shortcut must give the answer the escalation gives.**
 ///

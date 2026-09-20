@@ -21,12 +21,12 @@
 //! statement instead of carrying the motion, so those cells verify bit-for-bit and the
 //! rotated pins are 0.
 
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::Point2;
 use nacre_ops::{
     OpError, OpOutput, Operation, Profile2d, SketchFrame, apply, face_plane, face_sketch_frame,
     frame_plane,
 };
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 

@@ -20,7 +20,7 @@
 nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre` 크레이트는 파사드(재수출 전용)
 ├── nacre-store      # typed-index 저장소: Store<T>/Handle<T> (기하·위상 무지, nacre-* 의존 없음)
 ├── nacre-math       # 자체 선형대수: Point<D>·Vector<D>·변환 (nacre-* 의존 없음)
-├── nacre-scalar     # exact 유리수 값 엔진: Rat·Angle·Axis/Rotation/Isometry·PlaneName·정확 술어 (nacre-* 의존 없음)
+├── nacre-exact      # 유리수·정수로 정확히 답할 수 있는 모든 것: Rat·Angle·Isometry·PlaneName·QuadVal·정확 술어 (nacre-* 의존 없음)
 ├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone (nacre-* 의존 없음)
 ├── nacre-judge      # 부호 판정: 정확히 답할 수 없는 회전 좌표를 f64 필터→상승→«증명 또는 미결»로 정한다
 │                    #   kernel(WitnessPoint) + predicate(질의를 정확 경로나 kernel 로 보내는 라우터)
@@ -44,15 +44,15 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
                         #   OCCT는 오라클 전용 — 제품 경로에 위임 없음
 ```
 
-제품 경로에서 `nacre-ops` 는 `nacre-tess`·`nacre-validate`·`nacre-props`·`nacre-step` 에 의존하지 않는다(테스트 전용 dev-dependency 로만 쓴다 — 발행되는 라이브러리의 의존 표면이 깨끗하게 남는다). `nacre-scalar` 도 `nacre-predicates` 를 dev-dependency 로만 쓴다(정수 부호 술어를 f64 쌍둥이와 차등 시험) — 제품 경로의 방향은 predicates 무의존이다.
+제품 경로에서 `nacre-ops` 는 `nacre-tess`·`nacre-validate`·`nacre-props`·`nacre-step` 에 의존하지 않는다(테스트 전용 dev-dependency 로만 쓴다 — 발행되는 라이브러리의 의존 표면이 깨끗하게 남는다). `nacre-exact` 도 `nacre-predicates` 를 dev-dependency 로만 쓴다(정수 부호 술어를 f64 쌍둥이와 차등 시험) — 제품 경로의 방향은 predicates 무의존이다.
 
 `nacre-geom`과 `nacre-topo`의 관계는 한 방향이다. 기하는 위상을 모르고(순수 수학), 위상은 기하를 **캐시 값으로** 든다(`SurfaceCache`·`EdgeCache` 가 geom 의 `Surface`·`Curve` 를 감싼다 — 진실은 topo 자신의 타입이고 geom 은 그 실현이다).
 
-**어느 크레이트에 두나 — 축은 «이름»이 아니라 «정확성»이다.** 크레이트 이름(scalar·geom·topo)이 그리는 지도는 「숫자는 scalar, 기하는 geom, 위상은 topo」인데, 실제 경계는 그것이 아니다: `nacre-scalar` 공개 이름 84개 중 **61개가 기하**(`cylinders_nested`·`SeamOrder`·`PlaneName`…)이고, 그 크레이트가 격리하는 것은 스칼라가 아니라 **«유리수·정수로 정확히 답할 수 있는 모든 것»**(값·술어·이름)이다. `nacre-geom` 은 같은 기하의 **f64 실현**을 맡는다 — 진실/캐시와 같은 축이다. 규칙: 「유도된 값 + 그 산술」→ `nacre-scalar`, 「아레나 항목의 진실」→ `nacre-topo`. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-judge` 는 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName` 이 topo 가 아니라 scalar 에 사는 이유). 이름이 내용의 26% 만 설명한다는 것은 미결이다. 분리 여부는 「한쪽만 쓰는 소비자가 있는가」로 재고, 그런 소비자는 **0** 이라 분리하지 않는다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
+**어느 크레이트에 두나 — 축은 «이름»이 아니라 «정확성»이다.** 주제로 그린 지도(「숫자·기하·위상」)는 경계를 설명하지 못한다 — `nacre-exact` 공개 이름 84개 중 **61개가 기하**(`cylinders_nested`·`SeamOrder`·`PlaneName`…)이고, 그 크레이트가 격리하는 것은 스칼라가 아니라 **«유리수·정수로 정확히 답할 수 있는 모든 것»**(값·술어·이름)이다. `nacre-geom` 은 같은 기하의 **f64 실현**을 맡는다 — 진실/캐시와 같은 축이다. 규칙: 「유도된 값 + 그 산술」→ `nacre-exact`, 「아레나 항목의 진실」→ `nacre-topo`. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-judge` 는 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName` 이 topo 가 아니라 scalar 에 사는 이유). 분리 여부는 「한쪽만 쓰는 소비자가 있는가」로 재고, 그런 소비자는 **0** 이라 분리하지 않는다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
 
 **파사드 `nacre`.** 열 개 층을 **모듈로** 재수출하고(`nacre::geom`·`math`·`ops`·`props`·`scalar`·`step`·`store`·`tess`·`topo`·`validate`), 자주 쓰는 것은 `nacre::prelude`에 담는다.
 - **평면(flat) 재수출은 하지 않는다.** **층 분리가 이 설계의 뼈대**여서 이름공간에 남긴다. 같은 맨이름이 층마다 다른 것을 뜻하기도 한다 — `topo::Surface` 는 진실, `geom::Surface` 는 그 f64 실현이다.
-- **`nacre-scalar` 재수출은 선택이 아니다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }`가 scalar 타입을 ops의 공개 API로 새어 보내므로, 없으면 소비자가 그 op을 만들 수조차 없다. 반대로 `nacre-judge`·`nacre-predicates`는 공개 API에 새지 않아 재수출하지 않는다(퍼블리시는 필요 — ops·geom 의 하드 의존).
+- **`nacre-exact` 재수출은 선택이 아니다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }`가 scalar 타입을 ops의 공개 API로 새어 보내므로, 없으면 소비자가 그 op을 만들 수조차 없다. 반대로 `nacre-judge`·`nacre-predicates`는 공개 API에 새지 않아 재수출하지 않는다(퍼블리시는 필요 — ops·geom 의 하드 의존).
 - **prelude의 기준은 확인 가능한 성질이다**: *"`Operation`의 모든 변이가 prelude 이름만으로 만들어진다."* 내용은 실제 소비자의 import 와, 그 소비자보다 나중에 생긴 표면(스케치 앞문·파생 조회·거절 사유)의 합집합이다 — 낡은 소비자만 보면 최신 API가 빠진다.
 - **기능**: `parallel`(기본 on)이 `nacre-ops/parallel`로 전달된다. `nacre-ops`를 **`default-features = false`로** 매달아야 소비자가 끌 수 있고, 그러지 않으면 `--no-default-features`에도 rayon이 들어온다. 이 속성은 매니페스트에 살아 훅이 검사하지 않으므로 **테스트가 `Cargo.toml`을 직접 확인**한다. `parallel`은 **`Sync` 스위치이기도 하다**(cip의 hp 캐시가 `Arc<OnceLock>`↔`Rc<OnceCell>` — 워커들이 평면표를 *공유*해야 하므로 하중은 공유 참조 쪽이다). `test-util`은 topo의 테스트 전용 `add_cuboid`를 전달한다. **순차 조합은 반드시 `-p nacre-ops --no-default-features`로 확인한다** — 워크스페이스를 통째로 지으면 `nacre-oracle`·`nacre-props`의 dev-dependency가 기본 피처를 도로 켜서 아무것도 안 재게 된다.
 - **검증은 "`nacre::` 경로만으로 끝까지 가기"다** — 크레이트 문서의 예제(doctest)와 `tests/facade.rs`. 재수출이 빠지면 컴파일이 깨진다. 문서 예제는 **프로덕션 API만** 쓴다(`test-util`이 필요한 예제는 독자가 실행할 수 없다).
@@ -84,7 +84,7 @@ X축은 `any_perpendicular` — **가장 작은 성분의 축과 외적**, Onsha
 
 `Store`/`Handle`은 **최하위 `nacre-store`에 둔다.** typed-index 저장소는 기하·위상을 전혀 모르는 순수 인프라이므로 두 층보다 아래에 격리하고, 위의 크레이트(topo의 아레나들·ops·validate·step·tess·props)가 자유롭게 참조한다. 핸들은 아레나 항목을 이름 짓고, 곡면 아레나는 **진실**(`Handle<MotionNode>`를 든 topo 타입)을 들므로 topo 아래 크레이트는 그 타입을 이름 지을 수 없다 ⇒ geom은 `Handle`을 영구히 갖지 않는다. (라이선스는 MIT/Apache-2.0 듀얼 — Manifold(Apache-2.0) 알고리즘 차용과 호환.)
 
-`nacre-scalar`는 **exact 유리수 스칼라**를 격리한다. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**이다 — 오버플로는 조용히 감기지 않고 드러나며, 넘친 유도는 임의 정밀도 정수로 다시 한다(`plane_name_exact`; `PlaneName` 은 `Narrow | Wide`). 정점의 정의는 아레나가 불변 보존하고, f64 좌표는 그 실현 캐시다. `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **`nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-scalar는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **외부 의존:** `num-rational`(+`num-traits`·`num-bigint`·`num-integer` — 뒤의 둘은 `num-rational` 기본 피처가 이미 끌어오는 것을 명시한 것)과 `astro-float`. 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문이다(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **회전 좌표의 toleranced 부호 판정**(무리수 좌표라 exact 못 하지만 부호는 f64 필터→astro-float 상승→*증명된 일치 또는 정직한 미결*로 sound하게 정함)은 **`nacre-judge::kernel`** 이 맡는다 — topo 아래의 순수 술어층, predicates의 쌍둥이(「판정」 절).
+`nacre-exact`는 **유리수·정수로 정확히 답할 수 있는 모든 것**을 격리한다 — 값(`Rat`·`Angle`)·이름(`PlaneName`·`MeetPoint`)·정확 술어, 그리고 ℚ 를 벗어나되 여전히 정확한 `QuadVal = a + b√c`. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**이다 — 오버플로는 조용히 감기지 않고 드러나며, 넘친 유도는 임의 정밀도 정수로 다시 한다(`plane_name_exact`; `PlaneName` 은 `Narrow | Wide`). 정점의 정의는 아레나가 불변 보존하고, f64 좌표는 그 실현 캐시다. `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **`nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-exact는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **외부 의존:** `num-rational`(+`num-traits`·`num-bigint`·`num-integer` — 뒤의 둘은 `num-rational` 기본 피처가 이미 끌어오는 것을 명시한 것)과 `astro-float`. 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문이다(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **회전 좌표의 toleranced 부호 판정**(무리수 좌표라 exact 못 하지만 부호는 f64 필터→astro-float 상승→*증명된 일치 또는 정직한 미결*로 sound하게 정함)은 **`nacre-judge::kernel`** 이 맡는다 — topo 아래의 순수 술어층, predicates의 쌍둥이(「판정」 절).
 
 `nacre-predicates`는 **발견된 교차점의 부호 판정(내/외·orientation)을 좌표가 아니라 implicit point(정의)째로 하는 indirect predicates**를 격리한다(「해석 기하 층」 절의 정밀도 분업). 바닥의 적응 정밀 확장 산술은 `geometry-predicates`(MIT/Apache) 재사용, 그 위 implicit point 표현과 indirect 술어만 자체 구현. Rust 최초의 오픈소스 indirect predicates가 되도록 **nacre 밖으로 떼어낼 수 있게**(MIT/Apache 단독 공개 가능) 설계한다 — 그래서 어떤 `nacre-*` 에도 의존하지 않는다. 라이선스 엄수: 구현 참고처는 논문(Attene 2020, arXiv 2105.09772; Shewchuk 1997; Lévy PCK)과 `geometry-predicates` 소스로 한정하고, LGPL인 Attene 참조 구현 소스는 **작성 중 열람 금지 / 완성 후 실행 대조만 허용**.
 
@@ -929,7 +929,7 @@ pub struct Model {
 // interning 표는 순회하지 않는다 — `HashMap` 의 순서가 결과에 닿으면 안 된다.
 
 // 수치 층 — 「값 + 그 값이 갇힌 오차」. 같은 것의 다른 정밀도는 `Hp` 접두사 하나로만 다르다.
-// crates/nacre-scalar/src
+// crates/nacre-exact/src
 pub struct Mag { m: f64, e: i64 }                                  // f64 밖 범위의 보수적 크기(0에서 먼 쪽)
 
 // ── 원자 — 값 하나 + 그 반경. «참값 ∈ value ± error» 가 증명된 것만 담는다. ──
@@ -1240,7 +1240,7 @@ pub enum Decision {
   `Handle<Surface>` 는 진실을, 맨 `Surface::Plane(p)` 는 캐시를 뜻해 한 단어가 표지 없이 두 가지가
   된다. 섞으면 **하드 오류**다(geom 은 tuple 변종, 진실은 struct 변종 ⇒ E0532) — 조용히 틀릴 자리가 0.
 - **타입을 바꾸는 변경은 「타입 구조」 부의 그림을 같은 커밋에서 고친다.**
-- **어느 크레이트에 두나** — 「유도된 값 + 그 산술」은 `nacre-scalar`(최하단; `nacre-judge` 가 닿아야
+- **어느 크레이트에 두나** — 「유도된 값 + 그 산술」은 `nacre-exact`(최하단; `nacre-judge` 가 닿아야
   하므로), 「아레나 항목의 진실」은 `nacre-topo`. 구조적 강제: **`nacre-judge` 는 `nacre-topo` 에
   의존하지 않는다** ⇒ 판정이 쓰는 타입은 전부 topo 아래에 있어야 한다(`PlaneName` 이 scalar 에 사는
   이유). 모델에서 판정 표를 짓는 타입(`WorkingPlane`·`WorkingCyl`·`FaceInfo`)은 둘을 다 아는
@@ -1370,7 +1370,7 @@ datum 일반:
 
 **경계:** 커널 `Extrude` 1회 = **연결된 덩어리 1개**(외곽 + 그 구멍들). 섬마다 호출해 결과를 묶는 것은 편의 레이어(overview.md 판별 기준)다. 그래서 `Extrude` 의 다중 바디 출력은 필요 없다. 구멍 있는 스케치(도넛)와 섬이 여러 개인 스케치는 코드-CAD 가 요구하는 것이다.
 
-**분류 술어는 `geom::intersect` 에 있다**(격리 규칙): `point_in_ring_2d`(exact `orient2d` 교차 패리티, `RingSide::{Inside, Outside, OnBoundary}`)와 `rings_cross`(적절 교차 + 접촉). 각 워커에 **Rat 쌍둥이**(`_rat` 접미 + `drop_collinear_midpoints`)가 같은 모듈에 나란히 산다 — 부호 원시는 `nacre_scalar::orient2d_rat`(narrow 우선 → BigInt 전역, 분모 청소로 부호 보존)이고, geom 은 scalar 에 의존한다(최하단 토대라 순환 없음). f64 판은 tess·f64 폴백이 쓴다. ops 에는 **정책(깊이 패리티)과 조립**만 남는다. 링이 서로 닿거나 교차하면 `SketchError::RingsMeet` 으로 거절한다 — 접촉도 실패다(엄밀한 안쪽이 없다).
+**분류 술어는 `geom::intersect` 에 있다**(격리 규칙): `point_in_ring_2d`(exact `orient2d` 교차 패리티, `RingSide::{Inside, Outside, OnBoundary}`)와 `rings_cross`(적절 교차 + 접촉). 각 워커에 **Rat 쌍둥이**(`_rat` 접미 + `drop_collinear_midpoints`)가 같은 모듈에 나란히 산다 — 부호 원시는 `nacre_exact::orient2d_rat`(narrow 우선 → BigInt 전역, 분모 청소로 부호 보존)이고, geom 은 scalar 에 의존한다(최하단 토대라 순환 없음). f64 판은 tess·f64 폴백이 쓴다. ops 에는 **정책(깊이 패리티)과 조립**만 남는다. 링이 서로 닿거나 교차하면 `SketchError::RingsMeet` 으로 거절한다 — 접촉도 실패다(엄밀한 안쪽이 없다).
 
 **자기교차는 중첩 분류보다 먼저 본다** — 메시지 품질이 아니라 전제조건이다: `point_in_ring_2d` 는 짝-홀 패리티로 답하고, 그건 단순한 링에서만 "안쪽"을 뜻한다. 술어는 `geom::intersect::ring_self_intersection`(인접하지 않은 변은 접촉만으로 실격, 인접한 변은 공선-겹침일 때만 = 되짚는 스파이크, 인접은 **순환**으로 판정). 스케치 층은 `RingSelfIntersects { ring, at }` 로 **점**(걸린 두 변의 현 중점)을 돌려준다 — 점은 편집기가 표식을 놓을 수 있는 것이고 이 enum 의 다른 거절도 점을 든다.
 
@@ -1973,10 +1973,10 @@ A 를 택한 근거:
 
 이차곡면 교차는 난이도가 갈린다. **평면∩이차곡면**(평면∩원통=타원, 평면∩구=원, 평면∩원뿔=원뿔곡선)은 닫힌 형식이라 쉬운 쪽이고, **이차곡면∩이차곡면**(일반적으로 4차 공간곡선)은 특수 케이스만 닫힌 형식이며 일반은 이미 SSI 에 가깝다. 그래서 이 영역은 「하나의 알고리즘」이 아니라 「어느 곡면쌍까지를 긋고 그 판정을 무엇으로 할지」의 선긋기다. 선은 이렇다: **원통부터**(평면∩원통), 그 뒤 구·원뿔. 일반 이차곡면쌍은 커버리지 밖으로 두고 `Rejected` 로 정직하게 거절한다 — 조용히 틀리는 길이 없으므로 「되는 데까지만 하고 나머지는 거절」이 안전하다.
 
-**판정 방법.** 평면∩원통 교차점은 좌표가 `a+b√c`(a, b, c 유리수) 꼴이다(nacre-scalar `QuadVal`).
+**판정 방법.** 평면∩원통 교차점은 좌표가 `a+b√c`(a, b, c 유리수) 꼴이다(nacre-exact `QuadVal`).
 
 - 점-대-평면 부호와 같은-판별식 비교는 `a+b√c` 의 부호(`QuadVal::sign`)로 닫힌다.
-- 원통 면 위 사건들의 원형 순서는 서로 다른 절단면(서로 다른 판별식 u, v)에서 온 두 점의 비교라 `ℚ(√u,√v)` 의 4항 원소 부호가 필요하다. 이것은 재귀 탑으로 닫힌형이다(`P+√v·Q` 분해 → 상반 부호면 `sign(P)·sign(P²−vQ²)` — nacre-scalar `quad.rs` 의 `biquad_sign`).
+- 원통 면 위 사건들의 원형 순서는 서로 다른 절단면(서로 다른 판별식 u, v)에서 온 두 점의 비교라 `ℚ(√u,√v)` 의 4항 원소 부호가 필요하다. 이것은 재귀 탑으로 닫힌형이다(`P+√v·Q` 분해 → 상반 부호면 `sign(P)·sign(P²−vQ²)` — nacre-exact `quad.rs` 의 `biquad_sign`).
 - 일반 대수적수 기계도, QI 의 pencil 분류도 원통에는 필요 없다.
 - **차트 t 의 수치는 실현(캐시)·문서화 전용이다.** t 값 비교는 노름 라디칼(`|d|`, `|e₁|`)까지 끌고 와 3-라디칼이 된다. 원형 순서는 **(seam 반평면 부호 `w·e₂`, 같은 반평면 안 외적 부호 `(w₁×w₂)·d`)** 두 술어로 판정한다(e₁ = `ref_dir` 의 축-수직 성분, e₂ = d×e₁ — 둘 다 유리수라 위 두 부호 원시로 닫힌다). 차트의 배제점 = seam 이고, seam 모선 위의 점(θ=0)은 순위가 아니라 **이름**(`SeamIncident`)으로 답한다.
 
@@ -2003,7 +2003,7 @@ A 를 택한 근거:
 
 - `nacre-predicates` 는 평면 계수·좌표를 **평범한 배열**로만 받는다(커널 타입 무의존, standalone 분리 가능).
 - Handle 기반 정의(`Vertex::ThreePlane([Handle<Surface>; 3])`)는 위상 계층(`nacre-topo`)에 살고, 부호 판정 시 위층이 Handle → 계수를 뽑아 술어에 넘긴다.
-- `nacre-judge` 도 같은 규율이다: `nacre-scalar`·`nacre-predicates`·`nacre-math` 에만 의존하고, 평면 표는 `Witness`/`PlaneWitness` **트레이트**로 받는다(구현은 `nacre-ops` 의 행 타입).
+- `nacre-judge` 도 같은 규율이다: `nacre-exact`·`nacre-predicates`·`nacre-math` 에만 의존하고, 평면 표는 `Witness`/`PlaneWitness` **트레이트**로 받는다(구현은 `nacre-ops` 의 행 타입).
 
 ## pad/pocket 은 extrude + 불리언
 
@@ -2044,7 +2044,7 @@ A 를 택한 근거:
 
 축정렬 전용의 한계를 넘어 회전(비정렬·마름모·각도 스케치)을 지원하는 설계의 결정들이다.
 
-1. **유리수 치수·각도 표현**(`nacre-scalar`). 유리수는 입력과 유리수-순수 파생에만 살고, 무리수·복잡 연산·비트 상한이 닿는 순간 캐시는 f64/고정밀 실현으로 내려간다. 정의는 불변이라 필요할 때 재계산으로 정확히 복원된다.
+1. **유리수 치수·각도 표현**(`nacre-exact`). 유리수는 입력과 유리수-순수 파생에만 살고, 무리수·복잡 연산·비트 상한이 닿는 순간 캐시는 f64/고정밀 실현으로 내려간다. 정의는 불변이라 필요할 때 재계산으로 정확히 복원된다.
 2. **명시 공유 — 전역 자동병합은 없다**(TNP 와 충돌한다). 면 위 스케치 = `Surface` Handle 재사용, 그리고 불리언이 계산한 접촉만 공유한다. 우연히 같은 좌표는 별개로 남고 불리언 시점에 판정된다. 「같다」고 판정되면 Handle 재사용으로 추이성 붕괴를 구조적으로 막는다.
 3. **판정 정책 — 묻지 않고, 근거를 붙여 보고한다.** 자세한 것은 CIP 절의 「판정 결과와 보고」.
 4. **계획: op-log 소유.** 상위 `Document` 가 `Vec<Operation>`(진실) + 파생 `Model` 을 소유하고 sugar(`PadOnFace` 등)를 그대로 기록한다(피처 트리). TNP 는 「치수 변경 = 자동 replay, 위상 변화 = 수동 재지정」. (`Document` 타입은 코드에 없다.)
@@ -2094,7 +2094,7 @@ pub enum MoveNode {
     Rotate { axis: Axis, angle: Angle, pivot: [Rat; 3] },
     Translate { offset: [Rat; 3] },
     Mirror { axis: Axis, offset: Rat },
-    Frame { frame: nacre_scalar::PlaneFrame },
+    Frame { frame: nacre_exact::PlaneFrame },
     FrameWide(WideFrame),
     FrameThrough(Box<FrameThrough>),
 }

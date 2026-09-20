@@ -142,8 +142,8 @@ pub(super) fn material_of(
 pub(crate) enum Probe {
     Named([usize; 3]),
     Coord {
-        p: [nacre_scalar::Rat; 3],
-        dir: [nacre_scalar::Rat; 3],
+        p: [nacre_exact::Rat; 3],
+        dir: [nacre_exact::Rat; 3],
     },
 }
 

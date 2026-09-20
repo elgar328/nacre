@@ -18,10 +18,10 @@
 //!
 //! This file is where the contract is *measured* rather than asserted by documentation.
 
+use nacre_exact::{Isometry, Rat};
 use nacre_math::Point2;
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, replay};
-use nacre_scalar::{Isometry, Rat};
 use nacre_topo::{Model, Vertex};
 
 fn square(a: f64, b: f64) -> Profile2d {
@@ -503,7 +503,7 @@ fn the_comparator_notices_a_difference() {
 // The property that was promised
 // ─────────────────────────────────────────────────────────────────────────────
 
-use nacre_scalar::{Angle, Axis, Rotation};
+use nacre_exact::{Angle, Axis, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Face, Solid};
 use proptest::prelude::*;

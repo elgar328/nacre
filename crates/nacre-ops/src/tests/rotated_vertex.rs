@@ -1,7 +1,7 @@
 use super::*;
 use crate::{OpOutput, Operation, apply};
+use nacre_exact::{Angle, Axis, Isometry, Rat as R, Rotation as SRot};
 use nacre_math::Point3;
-use nacre_scalar::{Angle, Axis, Isometry, Rat as R, Rotation as SRot};
 
 fn rot30z() -> Isometry {
     Isometry::rotation(SRot {
@@ -177,7 +177,7 @@ fn replay_reproduces_the_stored_coordinate() {
                             );
                         }
                     }
-                    let base = nacre_scalar::three_planes_rat(coeffs)
+                    let base = nacre_exact::three_planes_rat(coeffs)
                         .expect("three distinct planes of a cuboid corner meet");
                     let replayed = replay_chain_coord(
                         &m,
@@ -351,7 +351,7 @@ fn a_wide_plane_hosts_a_canonical_frame() {
         [q(1, 13), q(1, 17), q(1, 19)],
     ];
     // Fixture qualification: genuinely wide.
-    let name = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
+    let name = nacre_exact::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
     assert!(name.narrow().is_none(), "the fixture must be wide");
     let mut m = Model::new();
     let h = push_consistent(&mut m, pts);
@@ -374,10 +374,10 @@ fn a_narrow_name_with_wide_squares_hosts_a_frame() {
         [q(0, 1), q(0, 1), q(1, r)],
     ];
     // Fixture qualification: the name is narrow AND the narrow frame derivation dies on it.
-    let name = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
+    let name = nacre_exact::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
     let c = *name.narrow().expect("the name itself fits i128");
     assert!(
-        nacre_scalar::plane_frame_default(c).is_none(),
+        nacre_exact::plane_frame_default(c).is_none(),
         "the fixture must be in the nn-overflow population"
     );
     let mut m = Model::new();
@@ -423,7 +423,7 @@ fn a_wide_plane_hosts_a_named_frame() {
     };
     let pts = [o, add(o, x), add(o, y)];
     // Fixture qualification: genuinely wide, at unit scale.
-    let name = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
+    let name = nacre_exact::plane_name_exact(pts[0], pts[1], pts[2]).unwrap();
     assert!(
         name.narrow().is_none(),
         "the fixture must be wide — full-width crosses were expected to exceed i128"

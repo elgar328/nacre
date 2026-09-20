@@ -1,5 +1,5 @@
 use super::*;
-use nacre_scalar::{Angle, Axis, Rat};
+use nacre_exact::{Angle, Axis, Rat};
 
 /// **Three directions, and each one is the only one that answers**.
 ///
@@ -12,7 +12,7 @@ fn each_separating_direction_is_the_only_one_for_some_pair() {
     let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
     let z = |v: i128| Rat::from_int(v);
     let cyl = |o: [Rat; 3], m: [Rat; 3], e: [Rat; 3]| {
-        nacre_topo::CylinderDef::new(o, m, e, nacre_scalar::BigRat::from(q(1, 25))).unwrap() // radius 1/5, as r²
+        nacre_topo::CylinderDef::new(o, m, e, nacre_exact::BigRat::from(q(1, 25))).unwrap() // radius 1/5, as r²
     };
     let a = cyl([z(0); 3], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
     let fp = |span: [i128; 2]| Footprint {
@@ -51,14 +51,14 @@ fn each_separating_direction_is_the_only_one_for_some_pair() {
 
 /// ★★ **The third direction is the face-level twin of the surface rung.** With a whole circle
 /// and no span, `separated` along the common perpendicular says exactly what
-/// [`nacre_scalar::cylinders_clear`] says about the infinite surfaces — so the face test does
+/// [`nacre_exact::cylinders_clear`] says about the infinite surfaces — so the face test does
 /// not disagree with the rung that runs before it, it only knows more when a face knows more.
 #[test]
 fn the_common_perpendicular_degenerates_to_the_surface_rule() {
     let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
     let z = |v: i128| Rat::from_int(v);
     let cyl = |o: [Rat; 3], m: [Rat; 3], e: [Rat; 3]| {
-        nacre_topo::CylinderDef::new(o, m, e, nacre_scalar::BigRat::from(q(1, 25))).unwrap() // radius 1/5, as r²
+        nacre_topo::CylinderDef::new(o, m, e, nacre_exact::BigRat::from(q(1, 25))).unwrap() // radius 1/5, as r²
     };
     let a = cyl([z(0); 3], [z(0), z(0), z(1)], [z(1), z(0), z(0)]);
     let unbounded = Footprint {
@@ -74,14 +74,14 @@ fn the_common_perpendicular_degenerates_to_the_surface_rule() {
         );
         let perp = separating_dirs(&a, &b)[2];
         let face = separated(&a, &unbounded, &b, &unbounded, &perp);
-        let surface = nacre_scalar::cylinders_clear(
+        let surface = nacre_exact::cylinders_clear(
             &a.origin(),
             &a.dir(),
             a.r2(),
             &b.origin(),
             &b.dir(),
             b.r2(),
-        ) == nacre_scalar::Orient::Positive;
+        ) == nacre_exact::Orient::Positive;
         assert_eq!(face, Some(surface), "offset {n}/{d}");
     }
 }
@@ -101,7 +101,7 @@ fn the_common_perpendicular_degenerates_to_the_surface_rule() {
 /// corner fillets never come near the drill's rulings.
 #[test]
 fn the_arc_decides_which_ruling_a_circle_holds() {
-    use nacre_scalar::{MeetPoint, cylinder_ruling_reached_extent};
+    use nacre_exact::{MeetPoint, cylinder_ruling_reached_extent};
     let q = |n: i128, d: i128| Rat::new(n, d).unwrap();
     let z = |v: i128| Rat::from_int(v);
     let coeffs = [z(0), z(0), z(1), z(0)]; // the plane `z = 0`
@@ -109,16 +109,16 @@ fn the_arc_decides_which_ruling_a_circle_holds() {
     let (o, m, r) = (
         [z(0); 3],
         [z(1), z(0), z(0)],
-        nacre_scalar::BigRat::from(z(1)),
+        nacre_exact::BigRat::from(z(1)),
     ); // the ruling cylinder, along `x`
     let e = [z(0), z(1), z(0)]; // `n × m`
     let centre = [z(0); 3];
-    let rho2 = nacre_scalar::BigRat::from(q(36, 25)); // ρ = 6/5, stated as its square
+    let rho2 = nacre_exact::BigRat::from(q(36, 25)); // ρ = 6/5, stated as its square
     let holds = |arc: Option<&RimArc>, side: i8| {
         let (lo, hi) = arc_ends_along(&centre, &rho2, &axis, arc, &e).expect("an extent");
         cylinder_ruling_reached_extent(
             &coeffs,
-            &nacre_scalar::StripReach {
+            &nacre_exact::StripReach {
                 lo: (&MeetPoint::Narrow(lo.0), &lo.1),
                 hi: Some((&MeetPoint::Narrow(hi.0), &hi.1)),
             },
@@ -166,7 +166,7 @@ fn the_arc_decides_which_ruling_a_circle_holds() {
 #[test]
 fn an_arcs_reach_is_its_own_and_not_its_complements() {
     let z = |v: i128| Rat::from_int(v);
-    let one = nacre_scalar::BigRat::from(z(1)); // r² = 1
+    let one = nacre_exact::BigRat::from(z(1)); // r² = 1
     let axis = [z(0), z(0), z(1)];
     let quadrant = RimArc {
         from: [z(1), z(0), z(0)],
@@ -218,7 +218,7 @@ fn a_lateral_faces_reach_and_what_clears_it() {
         [z(0); 3],
         [z(0), z(0), z(1)],
         [z(1), z(0), z(0)],
-        nacre_scalar::BigRat::from(q(1, 25)), // radius 1/5, as r²
+        nacre_exact::BigRat::from(q(1, 25)), // radius 1/5, as r²
     )
     .unwrap();
     let fp = |span: Option<[Rat; 2]>| Footprint { span, theta: None };
@@ -346,7 +346,7 @@ fn the_tangent_wall_states_itself_exactly() {
     let c = (0..setup.geom.len())
         .find(|&k| {
             setup.geom[k].world_rat.is_some_and(|w| {
-                nacre_scalar::point_plane_clearance_rat(&w, &o, r2) == nacre_scalar::Orient::Zero
+                nacre_exact::point_plane_clearance_rat(&w, &o, r2) == nacre_exact::Orient::Zero
             })
         })
         .expect("the wall x = 0 is exactly r from the axis");
@@ -460,8 +460,8 @@ fn pierce_vertex_tol_measures_and_each_term_moves() {
 #[test]
 fn a_loop_whose_points_do_not_all_turn_still_faces_the_right_way() {
     use crate::{OpOutput, Operation, Profile2d, SketchFrame, apply};
+    use nacre_exact::{Isometry, Rotation};
     use nacre_math::Point2;
-    use nacre_scalar::{Isometry, Rotation};
 
     let rect = |a: f64, b: f64, c: f64, d: f64| {
         Profile2d::polygon(vec![

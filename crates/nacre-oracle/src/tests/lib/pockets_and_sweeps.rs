@@ -344,9 +344,9 @@ fn non_convex_overhang_cut_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn the_four_plane_cut_matches_occt() {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_math::Point2;
     use nacre_ops::{BoolKind, Operation, Profile2d, apply, boolean};
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
     let extrude = |m: &mut Model, poly: Vec<Point2>, z: f64, dist: f64| {
@@ -451,8 +451,8 @@ fn the_four_plane_cut_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn placement_matches_occt() {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 
     let shift = |m: &mut Model, s, x: Rat| {
         let OpOutput::Transform { solid } = apply(
@@ -585,8 +585,8 @@ fn placement_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn reflection_matches_occt() {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_ops::{BoolKind, OpOutput, Operation, apply, boolean};
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 
     let flip = |m: &mut Model, s, offset: Rat| {
         let OpOutput::Mirror { solid } = apply(
@@ -753,8 +753,8 @@ fn reflection_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn the_fin_array_matches_occt() {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_ops::{BoolKind, Operation, apply, boolean};
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 
     // The θ that each used to reject under: RunSplit, CoincidentNodes, UnreachedCell,
     // StraightAngle, LabelConflict ×3, TraceDeclined — the whole failing population.
@@ -837,9 +837,9 @@ fn the_rotation_sweeps_match_occt() {
 }
 
 fn sweep_matches_occt(step: usize) {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_math::Point2;
     use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchFrame, apply, boolean};
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 
     let prism = |m: &mut Model, pts: &[[f64; 2]], axis: Axis, dist: f64| {
         let profile =

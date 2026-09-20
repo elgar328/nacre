@@ -2,6 +2,7 @@
 
 #![allow(unused_imports)]
 use crate::common::*;
+use nacre_exact::Axis;
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::SketchFrame;
@@ -9,7 +10,6 @@ use nacre_ops::{
     BoolError, BoolKind, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean,
     replay,
 };
-use nacre_scalar::Axis;
 use nacre_store::Handle;
 use nacre_topo::{Face, Loop, Model, Orientation, Shell, Solid, Vertex};
 
@@ -222,7 +222,7 @@ fn rotated_result_coplanar_reuse_under_a_general_rotation() {
 /// break the neighbourhood it was reached through.
 #[test]
 fn the_near_misses_around_the_four_plane_reject_all_build() {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let on_plane = Rat::from_int(1);
     for (what, half_z, deg, pivot_z, fuse) in [
         ("44°, one degree short", 0.2, 44, on_plane, true),
@@ -301,7 +301,7 @@ fn the_near_misses_around_the_four_plane_reject_all_build() {
 ///    the cheapest way to notice one.
 #[test]
 fn a_tool_edge_lying_in_a_target_plane_builds_and_agrees_with_its_neighbours() {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let cut_volume = |ulps: i64| -> (f64, bool) {
         let (mut m, cube, bar) = cube_and_spun_bar_ulp(0.2, 45, Rat::from_int(1), ulps);
         let block = m.add_cuboid(
@@ -386,7 +386,7 @@ fn a_rotation_history_past_the_budget_is_rejected_by_name() {
 /// single ordering would fail the same way.
 #[test]
 fn a_forty_fin_ring_builds_despite_exact_mirror_symmetry() {
-    use nacre_scalar::{Angle, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Isometry, Rat, Rotation};
     let mut m = Model::new();
     let ring = |x0: f64, y0: f64, x1: f64, y1: f64| {
         vec![

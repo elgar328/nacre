@@ -16,7 +16,7 @@
 //! |---|---|
 //! | [`store`] | `Store<T>` / `Handle<T>` — append-only typed arenas |
 //! | [`math`] | `Point<D>` / `Vector<D>` — plain f64 linear algebra |
-//! | [`scalar`] | `Rat` / `Angle` / `Isometry` — **exact** rational dimensions and motions |
+//! | [`exact`] | `Rat` / `Angle` / `Isometry` / `PlaneName` — what is answered exactly in rationals |
 //! | [`geom`] | `Plane` / `Line` / `Circle` / `Cylinder`, and the isolated `intersect` predicates |
 //! | [`topo`] | `Model` and the b-rep cells — the truth aggregate |
 //! | [`ops`] | `Operation` / `apply` / `replay`, sketch profiles, extrude, pad, pocket, boolean |
@@ -79,11 +79,11 @@
 #![doc(html_root_url = "https://docs.rs/nacre")]
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
+pub use nacre_exact as exact;
 pub use nacre_geom as geom;
 pub use nacre_math as math;
 pub use nacre_ops as ops;
 pub use nacre_props as props;
-pub use nacre_scalar as scalar;
 pub use nacre_step as step;
 pub use nacre_store as store;
 pub use nacre_tess as tess;
@@ -97,6 +97,7 @@ pub use nacre_validate as validate;
 /// consumer imported, plus every name needed to **construct any `ops::Operation`
 /// variant** — so `use nacre::prelude::*` is enough to drive the kernel.
 pub mod prelude {
+    pub use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     pub use nacre_math::{Point2, Point3, Vector3};
     pub use nacre_ops::{
         BoolError, BoolKind, DatumDef, Edge2d, OpError, OpOutput, Operation, Profile2d,
@@ -107,7 +108,6 @@ pub mod prelude {
     pub use nacre_props::{
         FaceProps, MassProps, bounds, centroid, face_normal_at, face_props, mass_props,
     };
-    pub use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     pub use nacre_store::Handle;
     pub use nacre_tess::{TessConfig, Tessellation, tessellate};
     pub use nacre_topo::{Face, FramePlacement, Model, Solid};

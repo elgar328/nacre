@@ -47,8 +47,8 @@ pub(super) fn rulings_on_class(
     // the tangent wall opening precisely because a tangency is written to `tangencies`
     // and **not** to `crossings`: "within" still means within.
     debug_assert_eq!(
-        nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
-        nacre_scalar::Orient::Negative,
+        nacre_exact::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
+        nacre_exact::Orient::Negative,
         "a recorded pair's plane runs within the radius"
     );
     // The face's shape from its cycles — the same reading the ⊥ road makes.
@@ -429,7 +429,7 @@ fn ruling_sweep(
 pub(crate) fn node_ruling_side(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
-    w: &[nacre_scalar::Rat; 4],
+    w: &[nacre_exact::Rat; 4],
     n: NodeId,
 ) -> Option<i8> {
     let (_, cyl, _) = combinatorics::pierce_name(n)?;
@@ -448,7 +448,7 @@ pub(super) fn node_axis_param(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
-) -> Option<nacre_scalar::Rat> {
+) -> Option<nacre_exact::Rat> {
     let (planes, _, _) = combinatorics::pierce_name(n)?;
     planes.iter().find_map(|&c| {
         crate::planes::axis_param_of_plane(&combinatorics::class_coeffs_rat(jd, c)?, def)

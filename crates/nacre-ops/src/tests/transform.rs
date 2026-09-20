@@ -1,5 +1,5 @@
 use super::*;
-use nacre_scalar::Angle;
+use nacre_exact::Angle;
 
 /// ★★ **A moved pierce vertex names the crossing it moved to.** A definition's root is an
 /// order along `ℓ = n₁ × n₂`, and a restatement may spell a moved plane with the opposite
@@ -11,7 +11,7 @@ use nacre_scalar::Angle;
 /// yet, so its pierce vertices keep the construction's figure and cannot be asked here.
 #[test]
 fn a_moved_pierce_vertex_names_the_crossing_it_moved_to() {
-    use nacre_scalar::{Isometry, Rotation};
+    use nacre_exact::{Isometry, Rotation};
     for (what, axis, deg) in [
         ("turned 90° about x", Axis::X, 90),
         ("turned 90° about z", Axis::Z, 90),
@@ -292,10 +292,10 @@ fn a_moved_cylinders_seam_defs_repoint_to_the_twin() {
         3.0,
     );
     m.rebuild_adjacency();
-    let iso = Isometry::rotation(nacre_scalar::Rotation {
+    let iso = Isometry::rotation(nacre_exact::Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(0); 3],
-        angle: nacre_scalar::Angle::from_deg(Rat::from_int(31)).expect("angle"),
+        angle: nacre_exact::Angle::from_deg(Rat::from_int(31)).expect("angle"),
     });
     let out = transform(&mut m, s, &iso).expect("rotate the cylinder");
     let mut twin_surfs = std::collections::HashSet::new();
@@ -332,10 +332,10 @@ fn a_rotated_cylinder_records_its_motion() {
         2.0,
     );
     m.rebuild_adjacency();
-    let iso = Isometry::rotation(nacre_scalar::Rotation {
+    let iso = Isometry::rotation(nacre_exact::Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(0); 3],
-        angle: nacre_scalar::Angle::from_deg(Rat::from_int(31)).expect("angle"),
+        angle: nacre_exact::Angle::from_deg(Rat::from_int(31)).expect("angle"),
     });
     let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
     m.rebuild_adjacency();
@@ -514,10 +514,10 @@ fn an_exact_turn_transports_a_cylinders_truth_instead_of_recording() {
         2.5,
     );
     m.rebuild_adjacency();
-    let iso = Isometry::rotation(nacre_scalar::Rotation {
+    let iso = Isometry::rotation(nacre_exact::Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(0); 3],
-        angle: nacre_scalar::Angle::from_deg(Rat::from_int(90)).expect("angle"),
+        angle: nacre_exact::Angle::from_deg(Rat::from_int(90)).expect("angle"),
     });
     let turned = transform_solid(&mut m, s, &Xform::Rigid(&iso)).unwrap();
     m.rebuild_adjacency();
@@ -543,7 +543,7 @@ fn an_exact_turn_transports_a_cylinders_truth_instead_of_recording() {
             );
             assert_eq!(
                 *def.r2(),
-                nacre_scalar::BigRat::from(d(2.25)),
+                nacre_exact::BigRat::from(d(2.25)),
                 "the squared radius is rigid-invariant"
             );
         }

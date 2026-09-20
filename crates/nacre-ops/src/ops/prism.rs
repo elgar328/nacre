@@ -76,7 +76,7 @@ pub(crate) fn extrude_on_frame(
     if dist <= 0.0 {
         return Err(OpError::NonPositiveDistance);
     }
-    if nacre_scalar::Rat::from_decimal(dist).is_none() {
+    if nacre_exact::Rat::from_decimal(dist).is_none() {
         return Err(OpError::DistOutsideDecimalWindow);
     }
     profile.check()?;
@@ -172,7 +172,7 @@ pub(crate) fn build_prism(
     base_cap_surface: Option<Handle<Surface>>,
     // ★ The world points of the plane the caller named, when they named one. Its canonical name is
     // derived from these, so there is no second half that could travel separately.
-    base_cap_points: Option<[[nacre_scalar::Rat; 3]; 3]>,
+    base_cap_points: Option<[[nacre_exact::Rat; 3]; 3]>,
 ) -> Result<(Handle<Solid>, Vec<Handle<Face>>), OpError> {
     // A polygon needs three corners; a ring with an arc bounds area with one (a circle) or two
     // (a half disk, a slot's end drawn alone).
@@ -477,7 +477,7 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
                         *center,
                         ring.exact.normal,
                         *ref_dir,
-                        nacre_scalar::BigRat::from(*r2),
+                        nacre_exact::BigRat::from(*r2),
                     )
                     .ok_or(OpError::DegenerateGeometry)?;
                     Ok((model.push_cylinder(*cache, def, ring.exact.motion), false))
@@ -502,10 +502,10 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
 /// reads the same as before (`debug_assert`ed — the check that caught the mirrored pad).
 fn oriented_ring(ring: Swept, sweep_up: bool, ccw: bool) -> Result<Swept, OpError> {
     let about_normal = ring.exact.winding;
-    if about_normal == nacre_scalar::Orient::Zero {
+    if about_normal == nacre_exact::Orient::Zero {
         return Err(OpError::DegenerateProfile);
     }
-    let ccw_about_normal = about_normal == nacre_scalar::Orient::Positive;
+    let ccw_about_normal = about_normal == nacre_exact::Orient::Positive;
     debug_assert!(
         ring.exact.segs.iter().any(Seg3::is_arc) || {
             let v = &ring.base;
@@ -561,7 +561,7 @@ fn sweep_ring(
     let define = |model: &Model,
                   i: usize,
                   cap: Handle<Surface>,
-                  at: &[nacre_scalar::Rat; 3]|
+                  at: &[nacre_exact::Rat; 3]|
      -> Result<Vertex, OpError> {
         let prev = walls[(i + n - 1) % n].0;
         let here = walls[i].0;
@@ -593,7 +593,7 @@ fn sweep_ring(
     };
     let push_verts = |model: &mut Model,
                       ps: &[Point3],
-                      exact: &[[nacre_scalar::Rat; 3]],
+                      exact: &[[nacre_exact::Rat; 3]],
                       cap: Handle<Surface>|
      -> Result<Vec<Handle<Vertex>>, OpError> {
         ps.iter()

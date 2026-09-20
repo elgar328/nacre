@@ -2,7 +2,7 @@ use super::*;
 
 use crate::SketchFrame;
 
-use nacre_scalar::Axis;
+use nacre_exact::Axis;
 
 /// The engine entry with the evidence dropped — these tests assert geometry, and the report
 /// has its own tests. Shadows [`super::boolean`] so the call sites read as they always did.
@@ -21,8 +21,8 @@ fn boolean(
 // is in a sibling test module and unreachable here, so the isometries are built inline.
 
 /// 30° about `axis` through (1,1,0) — non-90°, so the motion is recorded (exact frame3 path).
-fn rot_iso(axis: nacre_scalar::Axis) -> nacre_scalar::Isometry {
-    use nacre_scalar::{Angle, Isometry, Rat, Rotation};
+fn rot_iso(axis: nacre_exact::Axis) -> nacre_exact::Isometry {
+    use nacre_exact::{Angle, Isometry, Rat, Rotation};
     Isometry::rotation(Rotation {
         axis,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
@@ -33,7 +33,7 @@ fn rot_iso(axis: nacre_scalar::Axis) -> nacre_scalar::Isometry {
 /// Rotate a solid by each axis in turn. A compound tilt needs `rebuild_adjacency` BETWEEN the
 /// transforms (matching the oracle's `rotated_boolean_matches_occt`), or the second reads a
 /// stale topology.
-fn tilt(m: &mut Model, mut s: Handle<Solid>, axes: &[nacre_scalar::Axis]) -> Handle<Solid> {
+fn tilt(m: &mut Model, mut s: Handle<Solid>, axes: &[nacre_exact::Axis]) -> Handle<Solid> {
     for &ax in axes {
         s = transform(m, s, &rot_iso(ax)).unwrap();
         m.rebuild_adjacency();

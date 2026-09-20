@@ -1216,7 +1216,7 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
     let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
     let (planes, _plane_ix, _cyls) = dense_planes(&faces_tab, &canon);
     let jd = crate::planes::test_judge(&planes);
-    let zero = nacre_scalar::Rat::from_int(0);
+    let zero = nacre_exact::Rat::from_int(0);
     // A class the z axis actually meets — a cap, not a wall.
     let wc = (0..planes.len())
         .find(|&c| {
@@ -1225,12 +1225,12 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
         })
         .expect("a cap class");
     let disk = |r: i128| {
-        let q = nacre_scalar::Rat::from_int;
+        let q = nacre_exact::Rat::from_int;
         nacre_topo::CylinderDef::new(
             [zero, zero, zero],
             [zero, zero, q(1)],
             [q(1), zero, zero],
-            nacre_scalar::BigRat::from(q(r * r)), // the radius, stated as its square
+            nacre_exact::BigRat::from(q(r * r)), // the radius, stated as its square
         )
         .expect("a coaxial bore")
     };
@@ -1276,7 +1276,7 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
 /// without the guard.
 #[test]
 fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
-    let q = nacre_scalar::Rat::from_int;
+    let q = nacre_exact::Rat::from_int;
     let zero = q(0);
     let mut m = Model::new();
     let s = m.add_cuboid(
@@ -1288,20 +1288,18 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
     let canon = plane_classes(&crate::planes::test_judge(&faces_tab));
     let (planes, _plane_ix, _cyls) = dense_planes(&faces_tab, &canon);
     let jd = crate::planes::test_judge(&planes);
-    let class = |pick: &dyn Fn(&[nacre_scalar::Rat; 4]) -> bool| {
+    let class = |pick: &dyn Fn(&[nacre_exact::Rat; 4]) -> bool| {
         (0..planes.len())
             .find(|&c| combinatorics::class_coeffs_rat(&jd, c).is_some_and(|k| pick(&k)))
             .expect("the cuboid has all three")
     };
-    let wall = class(&|k: &[nacre_scalar::Rat; 4]| k[1] == zero && k[2] == zero && k[0] != zero);
-    let cap = class(&|k: &[nacre_scalar::Rat; 4]| k[0] == zero && k[1] == zero && k[2] != zero);
-    let def = |o: [nacre_scalar::Rat; 3],
-               d: [nacre_scalar::Rat; 3],
-               e: [nacre_scalar::Rat; 3],
-               r: i128| {
-        nacre_topo::CylinderDef::new(o, d, e, nacre_scalar::BigRat::from(q(r * r)))
-            .expect("a statable cylinder")
-    };
+    let wall = class(&|k: &[nacre_exact::Rat; 4]| k[1] == zero && k[2] == zero && k[0] != zero);
+    let cap = class(&|k: &[nacre_exact::Rat; 4]| k[0] == zero && k[1] == zero && k[2] != zero);
+    let def =
+        |o: [nacre_exact::Rat; 3], d: [nacre_exact::Rat; 3], e: [nacre_exact::Rat; 3], r: i128| {
+            nacre_topo::CylinderDef::new(o, d, e, nacre_exact::BigRat::from(q(r * r)))
+                .expect("a statable cylinder")
+        };
 
     // ⊥: the four rim witnesses stand.
     let upright = def([zero; 3], [zero, zero, q(1)], [q(1), zero, zero], 2);
@@ -1310,7 +1308,7 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
     // The frame forms and the centre forms — only the premise fails, and only the rim goes.
     let slanted = def([zero; 3], [q(3), q(4), zero], [zero, zero, q(1)], 2);
     assert!(
-        nacre_scalar::cyl_unit_frame(&slanted.dir(), &slanted.ref_dir()).is_some(),
+        nacre_exact::cyl_unit_frame(&slanted.dir(), &slanted.ref_dir()).is_some(),
         "the fixture must be one where the frame stands, or it measures nothing"
     );
     assert!(combinatorics::circle_centre_rat(&jd, wall, &slanted).is_some());
@@ -1335,7 +1333,7 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
 /// the old road being wrong.
 #[test]
 fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
-    let q = nacre_scalar::Rat::from_int;
+    let q = nacre_exact::Rat::from_int;
     let zero = q(0);
     let mut m = Model::new();
     let s = m.add_cuboid(
@@ -1357,13 +1355,13 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     let axis = [q(3), q(4), zero];
     let seam = [zero, zero, q(1)];
     let small =
-        nacre_topo::CylinderDef::new([zero; 3], axis, seam, nacre_scalar::BigRat::from(q(1)))
+        nacre_topo::CylinderDef::new([zero; 3], axis, seam, nacre_exact::BigRat::from(q(1)))
             .expect("small");
     let big = nacre_topo::CylinderDef::new(
-        [zero, nacre_scalar::Rat::new(4, 3).unwrap(), zero],
+        [zero, nacre_exact::Rat::new(4, 3).unwrap(), zero],
         axis,
         seam,
-        nacre_scalar::BigRat::from(q(4)), // radius 2, as r²
+        nacre_exact::BigRat::from(q(4)), // radius 2, as r²
     )
     .expect("big");
     // The offset really is `4/3` along `ŷ`, in the class — stated so the fixture cannot drift.
@@ -1376,7 +1374,7 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
         .collect();
     assert_eq!(
         delta,
-        vec![zero, nacre_scalar::Rat::new(4, 3).unwrap(), zero]
+        vec![zero, nacre_exact::Rat::new(4, 3).unwrap(), zero]
     );
     let err = crate::nesting::disk_in_disk(&jd, wall, &small, &big)
         .expect_err("radii cannot decide an ellipse");
@@ -1409,7 +1407,7 @@ fn a_straight_edge_between_rational_corners_names_its_own_midpoint() {
     let (planes, p, outer, _hole) = holed_face_rings("dimple");
     let jd = crate::planes::test_judge(&planes);
     let ring = combinatorics::ring_from_names(p, &outer).unwrap();
-    let half = nacre_scalar::Rat::new(1, 2).unwrap();
+    let half = nacre_exact::Rat::new(1, 2).unwrap();
     let mut seen = 0usize;
     for e in &ring {
         let got: Vec<_> = combinatorics::edge_interior_points(&jd, NO_CYLS, e).collect();
@@ -1514,7 +1512,7 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
     let op = cylinder_op(&m, [3.0, -4.0], 2.5, 6.0);
     apply(&mut m, &op).expect("the cylinder extrudes");
     let def = lone_cylinder_def(&m);
-    let (u1, u2) = nacre_scalar::cyl_unit_frame(&def.dir(), &def.ref_dir())
+    let (u1, u2) = nacre_exact::cyl_unit_frame(&def.dir(), &def.ref_dir())
         .expect("the extrude road's frame is unit and perpendicular");
     assert_eq!(u1, def.ref_dir(), "û₁ is the statement's own ref_dir");
     assert_eq!(
@@ -1532,8 +1530,8 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
             p[k] = p[k].checked_add(r.checked_mul(u[k]).unwrap()).unwrap();
         }
         assert_eq!(
-            nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
-            nacre_scalar::Orient::Zero,
+            nacre_exact::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
+            nacre_exact::Orient::Zero,
         );
     }
 }

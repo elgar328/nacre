@@ -5,10 +5,10 @@
 //! stay owned by `nacre-step`'s own tests — here we only prove the pipeline hands
 //! a valid model through to real STEP/OBJ output.
 
+use nacre_exact::Axis;
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{Operation, Profile2d, SketchPlane, replay};
-use nacre_scalar::Axis;
 
 /// A regular hexagon of the given radius, centred on the sketch origin.
 fn hexagon(r: f64) -> Profile2d {
@@ -1052,7 +1052,7 @@ fn a_wall_with_two_windows_meshes() {
 /// entirely from `Discovered` vertices.
 #[test]
 fn the_fin_array_with_a_star_bore_meshes() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let turn = |m: &mut Model, s, deg: Rat| {
         let out = nacre_ops::apply(
             m,

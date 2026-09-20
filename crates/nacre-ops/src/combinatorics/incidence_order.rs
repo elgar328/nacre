@@ -210,7 +210,7 @@ pub(crate) enum OnLine {
     /// was the width and nothing else. One allocation on the cold road buys that back.
     Pierce {
         name: NodeId,
-        meet: Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>,
+        meet: Box<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>,
     },
 }
 
@@ -236,7 +236,7 @@ pub(crate) enum Located<'a> {
     },
     Pierce {
         name: NodeId,
-        meet: Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>,
+        meet: Box<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>,
     },
 }
 
@@ -421,8 +421,8 @@ fn order_located_quad(
     a: &Located<'_>,
     b: &OnLine,
 ) -> Option<i8> {
-    use nacre_scalar::Orient;
-    use nacre_scalar::quad::{cmp_coord_branch, cmp_coord_meet_branch};
+    use nacre_exact::Orient;
+    use nacre_exact::quad::{cmp_coord_branch, cmp_coord_meet_branch};
     let axis = |k: usize| {
         let mut n = [0.0; 3];
         n[k] = 1.0;
@@ -446,8 +446,8 @@ fn order_located_quad(
             Orient::Zero => 0,
         }
     };
-    let rat = |n: NodeId| -> Option<nacre_scalar::MeetPoint> {
-        node_coords_rat(jd, n).map(nacre_scalar::MeetPoint::Narrow)
+    let rat = |n: NodeId| -> Option<nacre_exact::MeetPoint> {
+        node_coords_rat(jd, n).map(nacre_exact::MeetPoint::Narrow)
     };
     let cmp = match (a, b) {
         // ☑ Unreachable — two plane-pinned points returned through the integer road above. Spelled

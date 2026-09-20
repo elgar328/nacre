@@ -58,7 +58,7 @@ use crate::planes::SolidSide;
 use crate::planes::{ClassIx, FaceRow, WorkingPlane, axis_param_of_plane};
 use crate::tolerant::Judge;
 use crate::{BoolError, BoolKind, RejectReason, reject};
-use nacre_scalar::Rat;
+use nacre_exact::Rat;
 
 /// **One lateral face**, as the band pass reads it.
 ///

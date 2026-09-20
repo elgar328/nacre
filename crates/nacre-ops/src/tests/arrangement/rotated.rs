@@ -84,7 +84,7 @@ fn the_audit_does_not_invent_failures() {
 /// would add/drop a cell and move the volume by O(0.1), far past 1e-9.
 #[test]
 fn rotated_overlapping_cubes_all_three() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let vol_of = |kind: BoolKind| -> f64 {
         let mut m = Model::new();
         let a = m.add_cuboid(
@@ -126,7 +126,7 @@ fn rotated_overlapping_cubes_all_three() {
 /// regression lock. The cube's own z=0/z=3 caps exercise the seated path under rotation.
 #[test]
 fn rotated_tunnel_cut_all_orientations() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let vol_of = |axes: &[Axis]| -> f64 {
         let mut m = Model::new();
         let a = m.add_cuboid(
@@ -168,7 +168,7 @@ fn rotated_tunnel_cut_all_orientations() {
 /// every undirected edge twice — proving the arrangement itself survived rotation.
 #[test]
 fn rotated_tunnel_area_and_faces() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let a = m.add_cuboid(
         Point3::from_array([0.0, 0.0, 0.0]),
@@ -276,7 +276,7 @@ fn rotated_tunnel_area_and_faces() {
 /// `Judge::orient3d` on-plane fix is reverted.
 #[test]
 fn rotated_tunnel_declines_nothing() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let a = m.add_cuboid(
         Point3::from_array([0.0, 0.0, 0.0]),

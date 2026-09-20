@@ -24,9 +24,9 @@
 //! the same answer for the same reason.
 
 use crate::ops::{Profile2d, SketchPlane};
+use nacre_exact::{Orient, Rat};
 use nacre_geom::mixed::Edge2d;
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::{Orient, Rat};
 use nacre_store::Handle;
 use nacre_topo::{Model, MotionNode};
 
@@ -117,18 +117,18 @@ impl RatFrame {
     /// ulp. Here `inv_sqrt_exact` answers in `Rat`: `Some` exactly when the axis lands on a
     /// rational, which is the whole question.
     ///
-    /// It is the same rule [`nacre_scalar::plane_frame_named`] states for `v̂`, applied one level
+    /// It is the same rule [`nacre_exact::plane_frame_named`] states for `v̂`, applied one level
     /// up: `v_raw` is carried exactly for this reason, so use it rather than crossing `ŵ × û`.
     ///
     /// `None` when either axis needs an irrational scale, when `v_raw` overflowed at construction
     /// (`PlaneFrame::v` is `None`), or on `i128` overflow — all of which mean the same thing here:
     /// this frame has no exact rational basis, so the sketch is written in the frame instead.
-    pub(crate) fn of_plane_frame(pf: &nacre_scalar::PlaneFrame) -> Option<RatFrame> {
+    pub(crate) fn of_plane_frame(pf: &nacre_exact::PlaneFrame) -> Option<RatFrame> {
         let (v_raw, vv) = pf.v.as_ref()?;
         Some(RatFrame {
             origin: pf.origin,
-            x: scale(&pf.u_raw, nacre_scalar::inv_sqrt_exact(pf.uu)?)?,
-            y: scale(v_raw, nacre_scalar::inv_sqrt_exact(*vv)?)?,
+            x: scale(&pf.u_raw, nacre_exact::inv_sqrt_exact(pf.uu)?)?,
+            y: scale(v_raw, nacre_exact::inv_sqrt_exact(*vv)?)?,
         })
     }
 
@@ -233,7 +233,7 @@ pub(crate) struct Swept {
 ///
 /// The f64 realization is a cache. These are the numbers the planes come from, and computing a
 /// plane here rather than from the realized points is what makes two faces of one plane carry
-/// **the same coefficients** — see [`nacre_scalar::canonical_plane_coeffs`].
+/// **the same coefficients** — see [`nacre_exact::canonical_plane_coeffs`].
 /// One step of a swept ring, `vertices[i] → vertices[i + 1]`: straight, or an arc around a point
 /// of the base plane, counter-clockwise about the frame normal when `ccw`. The `cache` is the f64
 /// cylinder the arc's wall will be stored under — realized in world coordinates where the ring's
@@ -500,7 +500,7 @@ pub(crate) fn prism_rings_in(
                     // `ref_dir` is a direction, and the truth does not ask for its length.
                     let ref_dir = if r.len() == 1 {
                         let chord = sub(&base[i], &c)?;
-                        match nacre_scalar::rat_sqrt_exact(*r2) {
+                        match nacre_exact::rat_sqrt_exact(*r2) {
                             Some(radius) => {
                                 scale(&chord, Rat::new(radius.denom(), radius.numer())?)?
                             }
@@ -519,7 +519,7 @@ pub(crate) fn prism_rings_in(
                         c_f64,
                         axis,
                         refd,
-                        nacre_scalar::sqrt_f64(&nacre_scalar::BigRat::from(*r2))?,
+                        nacre_exact::sqrt_f64(&nacre_exact::BigRat::from(*r2))?,
                     )?;
                     Some(Seg3::Arc {
                         center: c,

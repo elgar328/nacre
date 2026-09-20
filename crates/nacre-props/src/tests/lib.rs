@@ -1,8 +1,8 @@
 use super::*;
+use nacre_exact::Axis;
 use nacre_math::{Point2, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{OpOutput, Operation, Profile2d, apply};
-use nacre_scalar::Axis;
 
 /// Relative-or-absolute comparison sized for accumulated f64 error.
 fn close(got: f64, expected: f64) -> bool {

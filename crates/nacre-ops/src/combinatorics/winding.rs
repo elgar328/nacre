@@ -13,7 +13,7 @@ enum CoordKey {
     /// The point a plane pair cuts out of a cylinder: `base + s·dir` with `s = a + b√c`.
     /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
     /// common case.
-    Pierce(Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>),
+    Pierce(Box<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)>),
 }
 
 /// Build one ring node's key.
@@ -50,17 +50,17 @@ fn coord_key(
 
 /// Order two ring nodes along one world axis — `+1` when `a`'s coordinate is the larger.
 ///
-/// The mixed pair is `nacre_scalar::quad::cmp_coord_meet_branch`, which is exact and **total**:
+/// The mixed pair is `nacre_exact::quad::cmp_coord_meet_branch`, which is exact and **total**:
 /// both coordinates lift to one first-storey sign. It wants the three-plane side as a `MeetPoint`,
 /// and this crate builds one directly — `MeetPoint::Narrow` is a public variant, so no door has to
-/// be opened in `nacre-scalar` for it.
+/// be opened in `nacre-exact` for it.
 fn cmp_key(
     jd: &Judge<'_, WorkingPlane>,
     a: &CoordKey,
     b: &CoordKey,
     axis: usize,
 ) -> Result<i8, BoolError> {
-    use nacre_scalar::{Orient, quad};
+    use nacre_exact::{Orient, quad};
     let sign = |o: Orient| match o {
         Orient::Positive => 1i8,
         Orient::Negative => -1,
@@ -71,7 +71,7 @@ fn cmp_key(
     // three planes, so canonical order changes nothing.
     let meet = |t: [usize; 3]| {
         node_coords_rat(jd, NodeId::three_planes(Canon3::three(t)))
-            .map(nacre_scalar::MeetPoint::Narrow)
+            .map(nacre_exact::MeetPoint::Narrow)
             .ok_or_else(|| reject(RejectReason::WitnessNotRational))
     };
     Ok(match (a, b) {
@@ -193,7 +193,7 @@ fn arc_extremum_winding(
     keys: &[CoordKey],
     lo: usize,
 ) -> Result<Option<i8>, BoolError> {
-    use nacre_scalar::{Orient, Rat, quad};
+    use nacre_exact::{Orient, Rat, quad};
     let key = |i: usize| &keys[i];
     // A rational coordinate against a ring node's key, through the same two comparators `cmp_key`
     // dispatches to — so a pierce node is decided too.
@@ -209,7 +209,7 @@ fn arc_extremum_winding(
                 ext.partial_cmp(&q[a])
             }
             CoordKey::Pierce(b) => Some(ord(quad::cmp_coord_meet_branch(
-                &nacre_scalar::MeetPoint::Narrow([ext, ext, ext]),
+                &nacre_exact::MeetPoint::Narrow([ext, ext, ext]),
                 &b.0,
                 &b.1,
                 a,
@@ -250,8 +250,7 @@ fn arc_extremum_winding(
         let c = ad.centre;
         // The extreme is `c − r`, which needs the radius itself: a squared radius with no rational
         // root leaves the extent undecided — the honest answer this loop already has.
-        let Some(ex) = nacre_scalar::rat_sqrt_exact_big(r2).and_then(|r| c[a].checked_sub(r))
-        else {
+        let Some(ex) = nacre_exact::rat_sqrt_exact_big(r2).and_then(|r| c[a].checked_sub(r)) else {
             #[cfg(test)]
             {
                 undecided += 1;
@@ -463,7 +462,7 @@ pub(crate) fn loop_winding(
     // two sites that deliberately do not go through [`three_plane_name`]: `Judge::cmp_coord` speaks
     // three plane indices (it lives in `nacre-judge`, below this crate, so the name cannot travel
     // there), and a pierce point's coordinate is `a + b√c` with its own total comparators
-    // (`nacre_scalar::quad::cmp_coord_meet_branch` and `cmp_coord_branch`). **This dispatch is
+    // (`nacre_exact::quad::cmp_coord_meet_branch` and `cmp_coord_branch`). **This dispatch is
     // where that decision belongs** — the door's single answer is the wrong one here, and
     // `Judge::cmp_coord`'s four-rung ladder speaks neither `MeetLine` nor `QuadVal`.
     //

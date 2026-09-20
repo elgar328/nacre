@@ -110,9 +110,9 @@ mod tests {
     fn cells_round_trip_their_fields() {
         let mut m = Model::new();
         let seeds = crate::Vertex::ThreePlane([
-            m.world_plane(nacre_scalar::Axis::Z),
-            m.world_plane(nacre_scalar::Axis::X),
-            m.world_plane(nacre_scalar::Axis::Y),
+            m.world_plane(nacre_exact::Axis::Z),
+            m.world_plane(nacre_exact::Axis::X),
+            m.world_plane(nacre_exact::Axis::Y),
         ]);
         let v0 = m.push_vertex(
             seeds,
@@ -126,7 +126,7 @@ mod tests {
                 coord: Point3::from_array([1.0, 0.0, 0.0]),
             },
         );
-        let r = nacre_scalar::Rat::from_int;
+        let r = nacre_exact::Rat::from_int;
         let sa = m.push_plane_unregistered(
             nacre_geom::Plane::from_point_normal(
                 Point3::origin(),

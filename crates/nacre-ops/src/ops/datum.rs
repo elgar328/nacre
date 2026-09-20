@@ -5,7 +5,7 @@ use super::*;
 ///
 /// The root is read the way `QuadRoot` is defined: the two planes in **ascending handle order**,
 /// each by its **stored canonical name** (`surface_name`, the sign convention that fixes the meet
-/// line's direction), fed to [`nacre_scalar::quad::plane_plane_cylinder`] with the cylinder's own
+/// line's direction), fed to [`nacre_exact::quad::plane_plane_cylinder`] with the cylinder's own
 /// statement; the root whose parameter equals this point's is the name. A wall tangent to the
 /// cylinder — a fillet's, a slot's straight side — is the double root, one point. Every statement
 /// has to live in one frame for the meet to mean anything: a cap borrowed from another body in
@@ -16,16 +16,16 @@ pub(super) fn pierce_def(
     plane: Handle<Surface>,
     cap: Handle<Surface>,
     cylinder: Handle<Surface>,
-    at: &[nacre_scalar::Rat; 3],
+    at: &[nacre_exact::Rat; 3],
 ) -> Result<Vertex, OpError> {
-    use nacre_scalar::quad::CylinderMeet;
+    use nacre_exact::quad::CylinderMeet;
     use nacre_topo::QuadRoot;
     let (a, b) = if plane.index() < cap.index() {
         (plane, cap)
     } else {
         (cap, plane)
     };
-    let name = |h: Handle<Surface>| -> Result<[nacre_scalar::Rat; 4], OpError> {
+    let name = |h: Handle<Surface>| -> Result<[nacre_exact::Rat; 4], OpError> {
         model
             .surface_name
             .get(&h)
@@ -40,18 +40,18 @@ pub(super) fn pierce_def(
         return Err(OpError::PlaneWithoutExactForm);
     }
     let meet =
-        nacre_scalar::quad::plane_plane_cylinder(&pa, &pb, &def.origin(), &def.dir(), def.r2())
+        nacre_exact::quad::plane_plane_cylinder(&pa, &pb, &def.origin(), &def.dir(), def.r2())
             .ok_or(OpError::PlaneWithoutExactForm)?;
     // This point's parameter along the meet line: `(at − base)·dir / dir·dir`.
-    let param = |line: &nacre_scalar::quad::MeetLine| -> Option<nacre_scalar::Rat> {
+    let param = |line: &nacre_exact::quad::MeetLine| -> Option<nacre_exact::Rat> {
         let (bse, d) = (line.base(), line.dir());
-        let mut num = nacre_scalar::Rat::from_int(0);
-        let mut den = nacre_scalar::Rat::from_int(0);
+        let mut num = nacre_exact::Rat::from_int(0);
+        let mut den = nacre_exact::Rat::from_int(0);
         for k in 0..3 {
             num = num.checked_add(at[k].checked_sub(bse[k])?.checked_mul(d[k])?)?;
             den = den.checked_add(d[k].checked_mul(d[k])?)?;
         }
-        num.checked_mul(nacre_scalar::Rat::new(den.denom(), den.numer())?)
+        num.checked_mul(nacre_exact::Rat::new(den.denom(), den.numer())?)
     };
     let root = match meet {
         CylinderMeet::Tangent { line, s } => {
@@ -63,9 +63,9 @@ pub(super) fn pierce_def(
             // Compared as values: a rational root still arrives as `mid ± k·√disc` when the
             // discriminant is a perfect square, so `b == 0` is not the test — the difference's
             // sign is.
-            let is = |q: &nacre_scalar::quad::QuadVal| {
-                q.checked_sub(&nacre_scalar::quad::QuadVal::from_rat(t))
-                    .is_some_and(|d| d.sign() == nacre_scalar::Orient::Zero)
+            let is = |q: &nacre_exact::quad::QuadVal| {
+                q.checked_sub(&nacre_exact::quad::QuadVal::from_rat(t))
+                    .is_some_and(|d| d.sign() == nacre_exact::Orient::Zero)
             };
             if is(&s[0]) {
                 QuadRoot::Lo
@@ -141,7 +141,7 @@ pub(super) fn datum_plane(
         /// (**any width** — a meet wider than `Rat` still names its plane
         /// through `plane_name_from_meets`), and the frame.
         Named(
-            [nacre_scalar::MeetPoint; 3],
+            [nacre_exact::MeetPoint; 3],
             Option<Handle<nacre_topo::MotionNode>>,
         ),
         /// ★ No one frame holds all three: either a vertex the door cannot place at all (a
@@ -164,7 +164,7 @@ pub(super) fn datum_plane(
         // producer that says "no frame" while the door says "this one" files a frame-local name
         // as a world plane. That is the defect `a_datum_through_frame_local_vertices_is_not_a
         // _world_plane` exists to catch. One decision, one place.
-        let mut pts: [Option<nacre_scalar::MeetPoint>; 3] = [None, None, None];
+        let mut pts: [Option<nacre_exact::MeetPoint>; 3] = [None, None, None];
         let mut frames = [None; 3];
         for (i, vh) in vs.iter().enumerate() {
             let tri = match *model.vertex(*vh) {
@@ -212,7 +212,7 @@ pub(super) fn datum_plane(
         // function of the *plane*, and `plane_name_from_meets` derives it without ever asking a
         // coordinate to fit `Rat`.
         let meets = pts.map(|p| p.expect("filled above"));
-        if nacre_scalar::plane_name_from_meets([&meets[0], &meets[1], &meets[2]]).is_none() {
+        if nacre_exact::plane_name_from_meets([&meets[0], &meets[1], &meets[2]]).is_none() {
             return Err(OpError::CollinearVertices);
         }
         Ok(ThroughStatement::Named(meets, frames[0].flatten()))
@@ -318,10 +318,10 @@ pub(super) fn datum_plane(
             // anchor (`plane_anchor.rs` measured what anchor wobble costs — nothing the judging
             // reads).
             let anchor = match (&meets[0], motion) {
-                (nacre_scalar::MeetPoint::Narrow(p), None) => {
+                (nacre_exact::MeetPoint::Narrow(p), None) => {
                     Point3::from_array(p.map(|r| r.to_f64()))
                 }
-                (nacre_scalar::MeetPoint::Narrow(p), Some(leaf)) => {
+                (nacre_exact::MeetPoint::Narrow(p), Some(leaf)) => {
                     let chain = crate::rotated_vertex::motion_chain(model, leaf)
                         .ok_or(OpError::PlaneWithoutExactForm)?;
                     let w =
@@ -329,7 +329,7 @@ pub(super) fn datum_plane(
                             .ok_or(OpError::PlaneWithoutExactForm)?;
                     Point3::from_array(w.coord())
                 }
-                (nacre_scalar::MeetPoint::Wide(_), _) => model.vertex_point(sorted[0]),
+                (nacre_exact::MeetPoint::Wide(_), _) => model.vertex_point(sorted[0]),
             };
             let cache =
                 Plane::from_point_normal(anchor, -stated).ok_or(OpError::DegenerateGeometry)?;
@@ -345,7 +345,7 @@ pub(super) fn datum_plane(
                 return Err(OpError::ZeroOffset);
             }
             let d =
-                nacre_scalar::Rat::from_decimal(*dist).ok_or(OpError::DistOutsideDecimalWindow)?;
+                nacre_exact::Rat::from_decimal(*dist).ok_or(OpError::DistOutsideDecimalWindow)?;
             let base = frame.plane;
 
             // ★★ **Normalize to the plane's canonical frame, folding `flip` into the sign.** A
@@ -366,7 +366,7 @@ pub(super) fn datum_plane(
             .ok_or(OpError::PlaneWithoutExactForm)?;
             let same_side: f64 = (0..3).map(|k| cb.3[k] * sb.3[k]).sum();
             let d = if same_side < 0.0 {
-                nacre_scalar::Rat::from_int(0)
+                nacre_exact::Rat::from_int(0)
                     .checked_sub(d)
                     .ok_or(OpError::DistOutsideDecimalWindow)?
             } else {
@@ -395,8 +395,8 @@ pub(super) fn datum_plane(
                     None,
                 ),
                 None => {
-                    let zero = nacre_scalar::Rat::from_int(0);
-                    let one = nacre_scalar::Rat::from_int(1);
+                    let zero = nacre_exact::Rat::from_int(0);
+                    let one = nacre_exact::Rat::from_int(1);
                     let node = push_frame_node(
                         model,
                         SketchFrame {

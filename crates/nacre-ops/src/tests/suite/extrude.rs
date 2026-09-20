@@ -112,7 +112,7 @@ fn outward_normals_agree_with_their_orientation() {
 /// off the line) is never falsely called collinear (→ its crossing is kept, no silent-wrong).
 #[test]
 fn pt3_base_collinear_exact() {
-    use nacre_scalar::{Angle, Axis, Rat};
+    use nacre_exact::{Angle, Axis, Rat};
     let ang = Angle::from_deg(Rat::from_int(37)).unwrap();
     let piv = [Rat::from_int(2), Rat::from_int(-1), Rat::from_int(0)];
     let rp = |x: i128, y: i128, z: i128| {
@@ -139,7 +139,7 @@ fn pt3_base_collinear_exact() {
 fn build_prism_base_cap_reuses_shared_surface() {
     let mut m = Model::new();
     // A face-plane surface with outward normal +z (as a face on the base solid).
-    let r = nacre_scalar::Rat::from_int;
+    let r = nacre_exact::Rat::from_int;
     let (sf, _) = m.push_plane(
         Plane::from_point_normal(Point3::origin(), Vector3::from_array([0.0, 0.0, 1.0])).unwrap(),
         [[r(0); 3], [r(1), r(0), r(0)], [r(0), r(1), r(0)]],
@@ -191,14 +191,14 @@ fn build_prism_base_cap_reuses_shared_surface() {
 /// is what made the pairing structural; this pins what is left of the choice.
 #[test]
 fn a_prisms_base_cap_records_the_frame_its_def_names() {
-    let r = nacre_scalar::Rat::from_int;
+    let r = nacre_exact::Rat::from_int;
     let base_pts = [
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 0.0, 0.0]),
         Point3::from_array([1.0, 1.0, 0.0]),
         Point3::from_array([0.0, 1.0, 0.0]),
     ];
-    let prism = |pts: Option<[[nacre_scalar::Rat; 3]; 3]>| {
+    let prism = |pts: Option<[[nacre_exact::Rat; 3]; 3]>| {
         let mut m = Model::new();
         let (_prism, faces) = build_prism(
             &mut m,
@@ -227,7 +227,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
     );
     assert_eq!(
         m.surface_name.get(&surf),
-        Some(&nacre_scalar::PlaneName::Narrow([r(0), r(0), r(1), r(-3)])),
+        Some(&nacre_exact::PlaneName::Narrow([r(0), r(0), r(1), r(-3)])),
         "the name was not derived from the triple that was recorded"
     );
 
@@ -242,7 +242,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
     );
     assert_eq!(
         m.surface_name.get(&surf),
-        Some(&nacre_scalar::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
+        Some(&nacre_exact::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
         "the name is derived from the ring's own plane"
     );
 }
@@ -255,7 +255,7 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
 #[test]
 fn shares_or_coplanar_uses_the_handle_branch() {
     let mut m = Model::new();
-    let r = nacre_scalar::Rat::from_int;
+    let r = nacre_exact::Rat::from_int;
     let shared = m.push_plane_unregistered(
         Plane::from_point_normal(Point3::origin(), Vector3::from_array([1.0, 0.0, 0.0])).unwrap(),
         [[r(0); 3], [r(0), r(1), r(0)], [r(0), r(0), r(1)]],
@@ -290,7 +290,7 @@ fn shares_or_coplanar_uses_the_handle_branch() {
             tri_pt3: tri.map(|p| {
                 nacre_judge::WitnessPoint::at_nearest(
                     p.as_array()
-                        .map(|x| nacre_scalar::Rat::try_from_f64(x).expect("exact")),
+                        .map(|x| nacre_exact::Rat::try_from_f64(x).expect("exact")),
                 )
             }),
             rotated: false,

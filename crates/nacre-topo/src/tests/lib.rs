@@ -71,8 +71,8 @@ fn two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals() {
         pb.coefficients()
     );
     let rat = |dy: f64| {
-        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).expect("decimal");
-        nacre_scalar::plane_through_points(
+        let r = |x: f64| nacre_exact::Rat::from_decimal(x).expect("decimal");
+        nacre_exact::plane_through_points(
             [r(3.0), r(0.0), r(0.0)],
             [r(3.0), r(dy), r(0.0)],
             [r(3.0), r(0.0), r(1.0)],
@@ -100,7 +100,7 @@ fn two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals() {
 /// re-spelling of what already worked.
 #[test]
 fn a_corner_of_two_translation_chains_solves_in_the_world() {
-    use nacre_scalar::{Angle, Axis, Rat};
+    use nacre_exact::{Angle, Axis, Rat};
     let mut m = Model::new();
     let r = Rat::from_int;
     // Three axis planes through the origin, pushed as their own statements.
@@ -559,7 +559,7 @@ fn a_foreign_handle_cannot_read_a_cache() {
 #[test]
 fn the_surface_cache_is_writable_and_the_truth_is_not() {
     let mut m = Model::new();
-    let h = m.world_plane(nacre_scalar::Axis::Z);
+    let h = m.world_plane(nacre_exact::Axis::Z);
     let truth_before = m.surface(h).clone();
     let cache_before = m.surface_cache(h).clone();
 
@@ -973,7 +973,7 @@ fn reversed_shell_is_a_valid_manifold() {
 /// watched for is now unspellable.
 #[test]
 fn a_plane_is_named_by_its_points() {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let r = Rat::from_int;
     let pl = |z: f64| {
         nacre_geom::Plane::from_point_normal(
@@ -988,7 +988,7 @@ fn a_plane_is_named_by_its_points() {
     let (ok, _) = m.push_plane(pl(0.0), pts, None);
     assert_eq!(
         m.surface_name.get(&ok),
-        Some(&nacre_scalar::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
+        Some(&nacre_exact::PlaneName::Narrow([r(0), r(0), r(1), r(0)])),
         "the plane z = 0 was not named, or was named as something else"
     );
 
@@ -1000,14 +1000,14 @@ fn a_plane_is_named_by_its_points() {
     // ★ An earlier spelling here used points chosen to overflow the old **agreement check**
     // (`c · p`) and asserted the derivation gave up on them too. It does not: those are
     // different products, and the derivation went through. Two propositions, one fixture.
-    let q = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+    let q = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     let wide_pts = [
         [q(1, 1 << 53), r(0), r(0)],
         [r(0), q(1, 5i128.pow(23)), r(0)],
         [r(0), r(0), q(1, (1 << 40) * 5i128.pow(11))],
     ];
     assert_eq!(
-        nacre_scalar::plane_through_points(wide_pts[0], wide_pts[1], wide_pts[2]),
+        nacre_exact::plane_through_points(wide_pts[0], wide_pts[1], wide_pts[2]),
         None,
         "the narrow route was expected to overflow here — the case has stopped being the case"
     );
@@ -1043,7 +1043,7 @@ fn a_plane_is_named_by_its_points() {
 /// ★★★★★ **A wide name interns — and opens no shortcut**.
 ///
 /// The fixture is a triple whose **canonical answer** exceeds `i128` (cross-product terms
-/// multiply two ~2^90 coprime numerators — the same triple `nacre-scalar` locks as `Wide`).
+/// multiply two ~2^90 coprime numerators — the same triple `nacre-exact` locks as `Wide`).
 /// Without a name two statements of such a plane would be two handles;
 /// it interns like any other.
 ///
@@ -1062,7 +1062,7 @@ fn a_plane_is_named_by_its_points() {
 /// this pins is the shortcut boundary, not a frame one.
 #[test]
 fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
-    let q = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+    let q = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     let big1 = (1i128 << 90) + 1;
     let big2 = (1i128 << 90) + 3;
     let a = [q(big1, 3), q(big2, 7), q(0, 1)];
@@ -1070,7 +1070,7 @@ fn a_wide_plane_interns_but_opens_no_narrow_shortcut() {
     let c = [q(1, 13), q(1, 17), q(1, 19)];
     // Fixture qualification: the narrow route gives up on these points.
     assert_eq!(
-        nacre_scalar::plane_through_points(a, b, c),
+        nacre_exact::plane_through_points(a, b, c),
         None,
         "the narrow route was expected to overflow here — the case has stopped being the case"
     );
@@ -1180,9 +1180,9 @@ fn a_nameless_through_statement_interns_by_its_statement() {
     let node = m.push_motion(
         Motion::Translate {
             offset: [
-                nacre_scalar::Rat::from_int(1),
-                nacre_scalar::Rat::from_int(0),
-                nacre_scalar::Rat::from_int(0),
+                nacre_exact::Rat::from_int(1),
+                nacre_exact::Rat::from_int(0),
+                nacre_exact::Rat::from_int(0),
             ],
         },
         None,
@@ -1196,22 +1196,22 @@ fn a_nameless_through_statement_interns_by_its_statement() {
 /// back door is closed).
 #[test]
 fn a_new_model_carries_the_three_world_planes() {
-    let r = nacre_scalar::Rat::from_int;
+    let r = nacre_exact::Rat::from_int;
     for m in [Model::new(), Model::default()] {
         assert_eq!(m.surface_count(), 3);
         let want = [
             (
-                nacre_scalar::Axis::Z,
+                nacre_exact::Axis::Z,
                 [r(0), r(0), r(1), r(0)],
                 [0.0, 0.0, -1.0],
             ),
             (
-                nacre_scalar::Axis::X,
+                nacre_exact::Axis::X,
                 [r(1), r(0), r(0), r(0)],
                 [-1.0, 0.0, 0.0],
             ),
             (
-                nacre_scalar::Axis::Y,
+                nacre_exact::Axis::Y,
                 [r(0), r(1), r(0), r(0)],
                 [0.0, -1.0, 0.0],
             ),
@@ -1221,7 +1221,7 @@ fn a_new_model_carries_the_three_world_planes() {
             assert_eq!(h.index() as usize, i, "deterministic seed handles");
             assert_eq!(
                 m.surface_name.get(&h),
-                Some(&nacre_scalar::PlaneName::Narrow(name))
+                Some(&nacre_exact::PlaneName::Narrow(name))
             );
             assert!(matches!(m.surface(h), Surface::Plane { motion: None, .. }));
             let nacre_geom::Surface::Plane(pl) = m.surface_cache(h) else {
@@ -1256,8 +1256,8 @@ fn a_new_model_carries_the_three_world_planes() {
 /// while an operation still routes around it and this one is green while that one is red.
 #[test]
 fn a_derived_plane_cache_does_not_depend_on_which_anchor_states_it() {
-    let r = nacre_scalar::Rat::from_int;
-    let f = |q: [nacre_scalar::Rat; 3]| {
+    let r = nacre_exact::Rat::from_int;
+    let f = |q: [nacre_exact::Rat; 3]| {
         Point3::from_array([q[0].to_f64(), q[1].to_f64(), q[2].to_f64()])
     };
     // 2x + 3y + 6z = 6, stated through its three axis intercepts.
@@ -1312,9 +1312,9 @@ fn a_derived_plane_cache_does_not_depend_on_which_anchor_states_it() {
 fn a_derived_seed_plane_anchors_at_its_truths_first_point() {
     let m = Model::new();
     for axis in [
-        nacre_scalar::Axis::Z,
-        nacre_scalar::Axis::X,
-        nacre_scalar::Axis::Y,
+        nacre_exact::Axis::Z,
+        nacre_exact::Axis::X,
+        nacre_exact::Axis::Y,
     ] {
         let h = m.world_plane(axis);
         let derived = m
@@ -1380,9 +1380,9 @@ fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
         .map(|&fh| m.face(fh).surface)
         .collect();
     for axis in [
-        nacre_scalar::Axis::Z,
-        nacre_scalar::Axis::X,
-        nacre_scalar::Axis::Y,
+        nacre_exact::Axis::Z,
+        nacre_exact::Axis::X,
+        nacre_exact::Axis::Y,
     ] {
         assert!(
             face_surfaces.contains(&m.world_plane(axis)),
@@ -1408,9 +1408,9 @@ fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
 fn surface_handle_at_is_the_handle_the_arena_issued() {
     let mut m = Model::new();
     for axis in [
-        nacre_scalar::Axis::Z,
-        nacre_scalar::Axis::X,
-        nacre_scalar::Axis::Y,
+        nacre_exact::Axis::Z,
+        nacre_exact::Axis::X,
+        nacre_exact::Axis::Y,
     ] {
         let h = m.world_plane(axis);
         assert_eq!(
@@ -1526,7 +1526,7 @@ fn a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle() {
     )
     .unwrap();
     let (through, _) = m.push_plane_through(cache, vs, None);
-    let r = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+    let r = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     let (known, _) = m.push_plane(
         cache,
         [
@@ -1633,7 +1633,7 @@ fn a_through_plane_is_counted_by_both_bridges() {
 
     // ② A `Through` datum whose name needs the wide vessel. The carriers are stated with
     // coprime ~2^90 numerators, so the canonical coefficients leave `i128` with no content to
-    // divide out — the same construction `nacre-scalar` uses to reach that arm.
+    // divide out — the same construction `nacre-exact` uses to reach that arm.
     let wide_before = WIDE_PLANES.load(Relaxed);
     let (mut m2, vs2) = wide_named_corner();
     let cache2 = nacre_geom::Plane::from_point_normal(
@@ -1676,7 +1676,7 @@ fn seed_plane_corners() -> (Model, [Handle<Vertex>; 3]) {
 /// A model whose three planes meet at a corner and whose *plane through* those corners needs
 /// the wide vessel. Built through the test door so the fixture is exactly three planes.
 fn wide_named_corner() -> (Model, [Handle<Vertex>; 3]) {
-    let r = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+    let r = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     let (b1, b2) = ((1i128 << 90) + 1, (1i128 << 90) + 3);
     let mut m = Model::new();
     // Nine planes: three per vertex, each triple meeting at a point whose coordinates carry
@@ -1703,9 +1703,9 @@ fn wide_named_corner() -> (Model, [Handle<Vertex>; 3]) {
 }
 
 /// The plane `x_axis = value`, pushed with its exact triple.
-fn axis_plane_at(m: &mut Model, axis: usize, value: nacre_scalar::Rat) -> Handle<Surface> {
-    let z = nacre_scalar::Rat::from_int(0);
-    let one = nacre_scalar::Rat::from_int(1);
+fn axis_plane_at(m: &mut Model, axis: usize, value: nacre_exact::Rat) -> Handle<Surface> {
+    let z = nacre_exact::Rat::from_int(0);
+    let one = nacre_exact::Rat::from_int(1);
     let mut pts = [[z; 3]; 3];
     let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
     for (i, p) in pts.iter_mut().enumerate() {
@@ -1793,14 +1793,14 @@ fn a_tangency_keeps_its_name_through_a_swap() {
 /// and the algebra `lo′ = −hi`, `hi′ = −lo` says `s′[1]` names the *same point* as `s[0]`.
 #[test]
 fn swapping_the_planes_trades_the_two_roots_names() {
-    use nacre_scalar::Rat;
-    use nacre_scalar::quad::{CylinderMeet, branch_point_f64, plane_plane_cylinder};
+    use nacre_exact::Rat;
+    use nacre_exact::quad::{CylinderMeet, branch_point_f64, plane_plane_cylinder};
     let r = Rat::from_int;
     let z0 = [r(0), r(0), r(1), r(0)];
     let x0 = [r(1), r(0), r(0), r(0)];
     let (origin, dir) = ([r(0), r(0), r(0)], [r(1), r(0), r(0)]);
     let solve = |p1: &[Rat; 4], p2: &[Rat; 4]| {
-        let meet = plane_plane_cylinder(p1, p2, &origin, &dir, &nacre_scalar::BigRat::from(r(4))); // radius 2, as r²
+        let meet = plane_plane_cylinder(p1, p2, &origin, &dir, &nacre_exact::BigRat::from(r(4))); // radius 2, as r²
         match meet {
             Some(CylinderMeet::Pair { line, s }) => (line, s),
             other => panic!("the y-axis crosses this cylinder twice: {other:?}"),
@@ -1809,7 +1809,7 @@ fn swapping_the_planes_trades_the_two_roots_names() {
     let (l_ab, s_ab) = solve(&z0, &x0);
     let (l_ba, s_ba) = solve(&x0, &z0);
     let near = |p: [f64; 3], q: [f64; 3]| (0..3).all(|i| (p[i] - q[i]).abs() < 1e-12);
-    let at = |l: &nacre_scalar::quad::MeetLine, s| branch_point_f64(l, s);
+    let at = |l: &nacre_exact::quad::MeetLine, s| branch_point_f64(l, s);
     assert!(near(at(&l_ab, &s_ab[0]), [0.0, -2.0, 0.0]), "lo is y = −2");
     assert!(near(at(&l_ab, &s_ab[1]), [0.0, 2.0, 0.0]), "hi is y = +2");
     assert!(

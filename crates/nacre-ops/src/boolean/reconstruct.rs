@@ -672,7 +672,7 @@ pub(crate) fn reconstruct(
         let station_of = |k: usize,
                           contacts: &[(Handle<Vertex>, usize)],
                           v: Handle<Vertex>|
-         -> Option<nacre_scalar::Rat> {
+         -> Option<nacre_exact::Rat> {
             let c = contacts.iter().find(|&&(x, _)| x == v).map(|&(_, c)| c)?;
             crate::planes::axis_param_of_plane(
                 &crate::combinatorics::class_coeffs_rat(jd, c)?,
@@ -863,7 +863,7 @@ pub(crate) fn reconstruct(
                             }
                             Rim::Chain(r) => {
                                 let mut hes = ring(model, r)?.half_edges;
-                                let mut best: Option<(usize, nacre_scalar::Rat)> = None;
+                                let mut best: Option<(usize, nacre_exact::Rat)> = None;
                                 for (i, &he) in hes.iter().enumerate() {
                                     let v = model.he_start(he);
                                     if !contacts.iter().any(|&(x, _)| x == v) {

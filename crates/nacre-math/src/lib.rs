@@ -7,7 +7,7 @@
 //!
 //! Scope boundaries:
 //! - **Scalar is concrete `f64`, not generic.** Extended precision does not live here:
-//!   exact values are `nacre-scalar`'s `Rat`, and a coordinate that needs more than
+//!   exact values are `nacre-exact`'s `Rat`, and a coordinate that needs more than
 //!   `f64` is realized from its definition at a chosen precision (`nacre-ops::realize`,
 //!   climbing with `astro-float`). The old note named `nacre-geom`'s relaxation ladder
 //!   and double-double; neither was built.

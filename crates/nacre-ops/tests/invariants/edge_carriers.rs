@@ -12,7 +12,7 @@ use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply};
 
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_topo::Model;
 
 use crate::fixtures::datum_frame;

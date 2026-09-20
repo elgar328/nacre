@@ -97,7 +97,7 @@ fn rational_point_in_ring(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
-    p: &[nacre_scalar::Rat; 3],
+    p: &[nacre_exact::Rat; 3],
     ring: &[combinatorics::RingEdge],
 ) -> Result<Option<bool>, BoolError> {
     let undecided = || reject(RejectReason::WitnessNotRational);
@@ -173,8 +173,10 @@ pub(crate) fn disk_in_disk(
     // door reads `√rb² > √dist² + √ra²` through the root-sum identity, in integers. Both centres
     // lie on the class plane the axis is normal to, so the distance from `pb` to `a`'s axis is
     // the distance between the centres, which is what this always compared.
-    Ok(nacre_scalar::cylinders_nested(&pa, &a.dir(), ra2, &pb, rb2)
-        == nacre_scalar::Orient::Negative)
+    Ok(
+        nacre_exact::cylinders_nested(&pa, &a.dir(), ra2, &pb, rb2)
+            == nacre_exact::Orient::Negative,
+    )
 }
 
 /// **Which cell a question is about** — a loop of the class's arrangement, or a whole disk.
@@ -198,7 +200,7 @@ pub(crate) enum Cell<'a> {
 #[derive(Clone, Copy, Debug)]
 enum Where {
     Named([usize; 3]),
-    Coord([nacre_scalar::Rat; 3]),
+    Coord([nacre_exact::Rat; 3]),
 }
 
 /// **A point that can decide a nesting question — and how much it decides.**
@@ -235,7 +237,7 @@ enum Said {
 /// **A circle's own witnesses: four points on its rim, then its centre.**
 ///
 /// The rim points are `centre ± r·û₁` and `centre ± r·û₂` over the cylinder's rational unit
-/// cross-section frame ([`nacre_scalar::cyl_unit_frame`]). They are **boundary** witnesses, and
+/// cross-section frame ([`nacre_exact::cyl_unit_frame`]). They are **boundary** witnesses, and
 /// that is the whole point: a boundary witness that lands strictly inside settles the question at
 /// once, where the centre — an interior point — has to ask the converse, and a disk **cannot
 /// answer** a converse (`inside`'s `may_ask_interior` skips its one witness, so the reverse
@@ -305,18 +307,18 @@ fn rim_and_centre<'a>(
     // rational root is simply not offered them — it keeps its centre, exactly as when a witness's
     // arithmetic leaves `i128` below.
     if carries
-        && let Some((u1, u2)) = nacre_scalar::cyl_unit_frame(&def.dir(), &def.ref_dir())
+        && let Some((u1, u2)) = nacre_exact::cyl_unit_frame(&def.dir(), &def.ref_dir())
         && let Some(r) = def.radius_exact()
     {
-        let neg = |v: &[nacre_scalar::Rat; 3]| -> Option<[nacre_scalar::Rat; 3]> {
-            let z = nacre_scalar::Rat::from_int(0);
+        let neg = |v: &[nacre_exact::Rat; 3]| -> Option<[nacre_exact::Rat; 3]> {
+            let z = nacre_exact::Rat::from_int(0);
             Some([
                 z.checked_sub(v[0])?,
                 z.checked_sub(v[1])?,
                 z.checked_sub(v[2])?,
             ])
         };
-        let at = |u: &[nacre_scalar::Rat; 3]| -> Option<[nacre_scalar::Rat; 3]> {
+        let at = |u: &[nacre_exact::Rat; 3]| -> Option<[nacre_exact::Rat; 3]> {
             let mut p = centre;
             for k in 0..3 {
                 p[k] = p[k].checked_add(r.checked_mul(u[k])?)?;
@@ -330,8 +332,8 @@ fn rim_and_centre<'a>(
                 continue;
             };
             debug_assert_eq!(
-                nacre_scalar::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
-                nacre_scalar::Orient::Zero,
+                nacre_exact::quad::cylinder_radial_side(&p, &def.origin(), &def.dir(), def.r2()),
+                nacre_exact::Orient::Zero,
                 "a rim witness is on its own rim"
             );
             // ⚠ The guard above makes this unreachable **for its own cause** — a class that
@@ -342,7 +344,7 @@ fn rim_and_centre<'a>(
                     let n = [c[0], c[1], c[2]];
                     crate::planes::dot3(&n, &p)
                         .and_then(|d| d.checked_add(c[3]))
-                        .is_none_or(|v| v == nacre_scalar::Rat::from_int(0))
+                        .is_none_or(|v| v == nacre_exact::Rat::from_int(0))
                 }),
                 "a rim witness is on the class it is a witness of"
             );
@@ -450,13 +452,13 @@ fn ask(
     w: &Where,
     target: Cell<'_>,
 ) -> Said {
-    let radial = |p: &[nacre_scalar::Rat; 3], def: &nacre_topo::CylinderDef| {
-        match nacre_scalar::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
-            nacre_scalar::Orient::Negative => Said::In,
-            nacre_scalar::Orient::Positive => Said::Out,
+    let radial = |p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef| {
+        match nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
+            nacre_exact::Orient::Negative => Said::In,
+            nacre_exact::Orient::Positive => Said::Out,
             // On the rim. The ring road has always read this as "this witness says nothing, the
             // next may"; the disk road used to reject here, and the two are one road now.
-            nacre_scalar::Orient::Zero => Said::Abstain,
+            nacre_exact::Orient::Zero => Said::Abstain,
         }
     };
     match (w, target) {

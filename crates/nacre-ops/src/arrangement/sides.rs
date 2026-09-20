@@ -33,7 +33,7 @@ pub(super) fn chord_nodes(
     cyl: usize,
     crossings: &std::collections::HashSet<(usize, usize)>,
 ) -> Result<Option<[Node; 2]>, ChordFail> {
-    use nacre_scalar::quad::CylinderMeet;
+    use nacre_exact::quad::CylinderMeet;
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(ChordFail::NoCoefficients)?;
     if !crossings.contains(&(wc, cyl)) {
         return Ok(None);
@@ -51,14 +51,14 @@ pub(super) fn chord_nodes(
     // gate's, asserted rather than re-derived. (A *tangent* plane has one root and is never
     // listed; see `planes::Tangency`.)
     debug_assert_eq!(
-        nacre_scalar::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
-        nacre_scalar::Orient::Negative,
+        nacre_exact::point_plane_clearance_rat(&w, &def.origin(), def.r2()),
+        nacre_exact::Orient::Negative,
         "a recorded pair's plane runs within the radius"
     );
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(ChordFail::Unstatable)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let Some(CylinderMeet::Pair { .. }) =
-        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
+        nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
     else {
         return Err(ChordFail::Unstatable);
     };
@@ -79,8 +79,8 @@ pub(super) fn chord_nodes(
 
 /// Which of the two rulings a point of the lateral lies on: the sign of `(x − o) · (m × n̂)`,
 /// with `n̂` the class's **canonical** coefficients ([`combinatorics::RulingCarrier::side`] — the
-/// one spelling). The point arrives as `(line, s)` from [`nacre_scalar::quad::plane_plane_cylinder`],
-/// so the sign is one [`nacre_scalar::quad::plane_side`] against the plane through `o` with
+/// one spelling). The point arrives as `(line, s)` from [`nacre_exact::quad::plane_plane_cylinder`],
+/// so the sign is one [`nacre_exact::quad::plane_side`] against the plane through `o` with
 /// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
 /// tangent shape). ★ **The abstention is deliberate and this is the abstaining door**: this
 /// function's `None` is a *sign* fact the ray caster (`departs_across`) and the arc departure
@@ -92,7 +92,7 @@ pub(super) fn chord_nodes(
 pub(crate) fn ruling_side(
     w: &[Rat; 4],
     def: &nacre_topo::CylinderDef,
-    at: (&nacre_scalar::quad::MeetLine, &nacre_scalar::quad::QuadVal),
+    at: (&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal),
 ) -> Option<i8> {
     ruling_side_signed(w, def, at).filter(|&s| s != 0)
 }
@@ -115,7 +115,7 @@ pub(crate) fn ruling_side(
 pub(crate) fn ruling_side_signed(
     w: &[Rat; 4],
     def: &nacre_topo::CylinderDef,
-    at: (&nacre_scalar::quad::MeetLine, &nacre_scalar::quad::QuadVal),
+    at: (&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal),
 ) -> Option<i8> {
     let (o, m) = (def.origin(), def.dir());
     let n = [w[0], w[1], w[2]];
@@ -125,10 +125,10 @@ pub(crate) fn ruling_side_signed(
         d = d.checked_sub(c[k].checked_mul(o[k])?)?;
     }
     Some(
-        match nacre_scalar::quad::plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
-            nacre_scalar::Orient::Positive => 1,
-            nacre_scalar::Orient::Negative => -1,
-            nacre_scalar::Orient::Zero => 0,
+        match nacre_exact::quad::plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
+            nacre_exact::Orient::Positive => 1,
+            nacre_exact::Orient::Negative => -1,
+            nacre_exact::Orient::Zero => 0,
         },
     )
 }
@@ -166,16 +166,16 @@ pub(crate) fn crossing_on_ruling(
     cyl: usize,
     side: i8,
 ) -> Result<NodeId, DeclineKind> {
-    use nacre_scalar::quad::CylinderMeet;
+    use nacre_exact::quad::CylinderMeet;
     let no = DeclineKind::CurvedRingWall;
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    if !nacre_scalar::parallel_rat(&[w[0], w[1], w[2]], &m) {
+    if !nacre_exact::parallel_rat(&[w[0], w[1], w[2]], &m) {
         return Err(no);
     }
     // ★ A **tangent** wall (`side == 0`) has one ruling and one root — `Double`.
-    let meet = nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r2);
+    let meet = nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2);
     if side == 0 {
         return match meet {
             Some(CylinderMeet::Tangent { .. }) => {
@@ -227,13 +227,13 @@ pub(crate) fn crossing_on_arc(
     a: NodeId,
     b: NodeId,
 ) -> Result<NodeId, DeclineKind> {
-    use nacre_scalar::quad::CylinderMeet;
+    use nacre_exact::quad::CylinderMeet;
     let no = DeclineKind::CurvedRingWall;
     let w = combinatorics::class_coeffs_rat(jd, wc).ok_or(no)?;
     let v = combinatorics::class_coeffs_rat(jd, fc).ok_or(no)?;
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let Some(CylinderMeet::Pair { s, .. }) =
-        nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
+        nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)
     else {
         return Err(no);
     };
@@ -285,10 +285,10 @@ fn corner_sides<'a>(
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     cell.half_edges.iter().filter_map(move |&h| {
         let p = combinatorics::node_coords_rat(jd, edges.origin(h))?;
-        match nacre_scalar::cylinder_radial_side(&p, &o, &m, r2) {
-            nacre_scalar::Orient::Negative => Some(true),
-            nacre_scalar::Orient::Positive => Some(false),
-            nacre_scalar::Orient::Zero => None,
+        match nacre_exact::cylinder_radial_side(&p, &o, &m, r2) {
+            nacre_exact::Orient::Negative => Some(true),
+            nacre_exact::Orient::Positive => Some(false),
+            nacre_exact::Orient::Zero => None,
         }
     })
 }

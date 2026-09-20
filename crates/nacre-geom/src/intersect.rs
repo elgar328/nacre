@@ -17,7 +17,7 @@ use nacre_math::{Point2, Point3, Vector3};
 pub use nacre_predicates::{RayCross, SegCross, orient2d};
 // Re-exported for the same reason: `nacre-ops` consumes the rational ring predicates below and
 // states their coordinates in `Rat` without needing its own view of the sign primitive.
-pub use nacre_scalar::{Orient, Rat, orient2d_rat};
+pub use nacre_exact::{Orient, Rat, orient2d_rat};
 
 /// `sin²θ` below which two plane normals count as parallel. Unit normals make
 /// `‖n1 × n2‖² = sin²θ ∈ [0, 1]`, so this absolute cutoff is scale-free.
@@ -479,7 +479,7 @@ fn on_segment_2d(a: [f64; 2], b: [f64; 2], p: [f64; 2]) -> bool {
 // the line in binary. `Profile2d::check` and `sketch::from_rings` therefore judge the truth, and
 // these are the predicates they do it with — verbatim ports of the f64 versions above (which stay:
 // tessellation and the f64 fallback path still consume them), with `orient2d` swapped for the
-// total `nacre_scalar::orient2d_rat` and f64 comparisons for `Rat`'s exact `Ord`. Everything
+// total `nacre_exact::orient2d_rat` and f64 comparisons for `Rat`'s exact `Ord`. Everything
 // else in the originals is comparison, min/max, and array equality, so nothing changes meaning.
 // ---------------------------------------------------------------------------
 

@@ -108,10 +108,10 @@ fn one_tool_cuts_two_parts() {
     let r1 = boolean_one(&mut m, BoolKind::Cut, part1, tool).unwrap();
     m.rebuild_adjacency();
     // The copy is placed over part2 and cuts it the same way.
-    let shift = nacre_scalar::Isometry::translation([
-        nacre_scalar::Rat::from_int(5),
-        nacre_scalar::Rat::from_int(0),
-        nacre_scalar::Rat::from_int(0),
+    let shift = nacre_exact::Isometry::translation([
+        nacre_exact::Rat::from_int(5),
+        nacre_exact::Rat::from_int(0),
+        nacre_exact::Rat::from_int(0),
     ]);
     let tool2 = xf(&mut m, tool2, shift);
     let r2 = boolean_one(&mut m, BoolKind::Cut, part2, tool2).unwrap();

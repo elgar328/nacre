@@ -184,14 +184,14 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
                     continue;
                 };
                 let w = match &name {
-                    nacre_scalar::PlaneName::Narrow(c) => {
+                    nacre_exact::PlaneName::Narrow(c) => {
                         c.iter()
                             .flat_map(|r| [r.numer(), r.denom()])
                             .map(|v| 128 - v.unsigned_abs().leading_zeros())
                             .max()
                             .unwrap_or(0) as u64
                     }
-                    nacre_scalar::PlaneName::Wide(c) => {
+                    nacre_exact::PlaneName::Wide(c) => {
                         wide += 1;
                         c.iter().map(|x| x.bits()).max().unwrap_or(0)
                     }
@@ -233,14 +233,14 @@ fn does_a_vertex_named_datum_produce_a_wide_name() {
                     continue;
                 };
                 let w = match &name {
-                    nacre_scalar::PlaneName::Narrow(c) => {
+                    nacre_exact::PlaneName::Narrow(c) => {
                         c.iter()
                             .flat_map(|r| [r.numer(), r.denom()])
                             .map(|v| 128 - v.unsigned_abs().leading_zeros())
                             .max()
                             .unwrap_or(0) as u64
                     }
-                    nacre_scalar::PlaneName::Wide(c) => {
+                    nacre_exact::PlaneName::Wide(c) => {
                         wide += 1;
                         c.iter().map(|x| x.bits()).max().unwrap_or(0)
                     }
@@ -295,7 +295,7 @@ fn wf_family_with_pocket() -> Model {
             m.surface_name
                 .get(&s)
                 .and_then(|n| n.narrow())
-                .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+                .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
         })
         .expect("the wf population");
     let sp = nacre_ops::face_plane(&m, wall).expect("planar");

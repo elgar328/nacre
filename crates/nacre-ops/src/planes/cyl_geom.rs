@@ -12,7 +12,7 @@ use super::*;
 pub(crate) fn world_plane_coeffs(
     model: &Model,
     surf: Handle<Surface>,
-) -> Option<[nacre_scalar::Rat; 4]> {
+) -> Option<[nacre_exact::Rat; 4]> {
     model.world_plane_name(surf)?.narrow().copied()
 }
 
@@ -111,19 +111,19 @@ pub(crate) fn plus_t_is_above(wp: &WorkingPlane, def: &nacre_topo::CylinderDef) 
 
 /// `x·y` in checked `Rat` — `None` is overflow, which every reader here takes as "not stated".
 pub(crate) fn dot3(
-    x: &[nacre_scalar::Rat; 3],
-    y: &[nacre_scalar::Rat; 3],
-) -> Option<nacre_scalar::Rat> {
+    x: &[nacre_exact::Rat; 3],
+    y: &[nacre_exact::Rat; 3],
+) -> Option<nacre_exact::Rat> {
     x[0].checked_mul(y[0])?
         .checked_add(x[1].checked_mul(y[1])?)?
         .checked_add(x[2].checked_mul(y[2])?)
 }
 
 pub(crate) fn axis_param_of_plane(
-    coeffs: &[nacre_scalar::Rat; 4],
+    coeffs: &[nacre_exact::Rat; 4],
     def: &nacre_topo::CylinderDef,
-) -> Option<nacre_scalar::Rat> {
-    use nacre_scalar::Rat;
+) -> Option<nacre_exact::Rat> {
+    use nacre_exact::Rat;
     let (o, m) = (def.origin(), def.dir());
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     let nm = dot3(&n, &m)?;
@@ -140,8 +140,8 @@ pub(super) fn lateral_t_range(
     model: &Model,
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
-) -> Option<[nacre_scalar::Rat; 2]> {
-    use nacre_scalar::Rat;
+) -> Option<[nacre_exact::Rat; 2]> {
+    use nacre_exact::Rat;
     let m = def.dir();
     let mut ts: Vec<Rat> = Vec::new();
     for he in &face.outer.half_edges {
@@ -159,12 +159,12 @@ pub(super) fn lateral_t_range(
         let coeffs = *model.surface_name.get(&cap)?.narrow()?;
         let coeffs = match model.plane_motion(cap) {
             None => coeffs,
-            Some(leaf) => nacre_scalar::Isometry::translation(model.chain_translation(leaf)?)
+            Some(leaf) => nacre_exact::Isometry::translation(model.chain_translation(leaf)?)
                 .plane_coeffs(coeffs)?,
         };
         // A carrier parallel to the axis is a ruling's wall: it has no station and is not one.
         // Only a ⊥ carrier — an arc's cap plane — speaks here; `None` past that is overflow.
-        if !nacre_scalar::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
+        if !nacre_exact::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
             continue;
         }
         let t = axis_param_of_plane(&coeffs, def)?;
@@ -189,7 +189,7 @@ pub(super) fn lateral_t_range(
 ///
 /// A corner's radial vector is its point minus the axis point on the cap: a seam vertex is
 /// `r·ê` for `ê` the reference direction's unit part ⊥ the axis (rational when the norm is), a
-/// pierce corner is the meet line's point at its root ([`nacre_scalar::quad::QuadVal::as_rat`] —
+/// pierce corner is the meet line's point at its root ([`nacre_exact::quad::QuadVal::as_rat`] —
 /// rational for every wall through or perpendicular to the axis, and for a tangent wall's single
 /// root).
 pub(super) fn lateral_theta_extent(
@@ -197,15 +197,15 @@ pub(super) fn lateral_theta_extent(
     face: &nacre_topo::Face,
     def: &nacre_topo::CylinderDef,
 ) -> Option<RimArc> {
-    use nacre_scalar::Rat;
-    use nacre_scalar::quad::CylinderMeet;
+    use nacre_exact::Rat;
+    use nacre_exact::quad::CylinderMeet;
     use nacre_topo::{QuadRoot, Vertex};
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let world_coeffs = |plane: Handle<Surface>| -> Option<[Rat; 4]> {
         let coeffs = *model.surface_name.get(&plane)?.narrow()?;
         match model.plane_motion(plane) {
             None => Some(coeffs),
-            Some(leaf) => nacre_scalar::Isometry::translation(model.chain_translation(leaf)?)
+            Some(leaf) => nacre_exact::Isometry::translation(model.chain_translation(leaf)?)
                 .plane_coeffs(coeffs),
         }
     };
@@ -243,7 +243,7 @@ pub(super) fn lateral_theta_extent(
                 let ee = dot3(&e1, &e1)?;
                 scaled(
                     &e1,
-                    nacre_scalar::rat_sqrt_exact_big(
+                    nacre_exact::rat_sqrt_exact_big(
                         &r2.mul_rat(Rat::new(ee.denom(), ee.numer())?),
                     )?,
                 )
@@ -261,7 +261,7 @@ pub(super) fn lateral_theta_extent(
                 // only the constants, so the normals — and the order — are the stored ones.
                 let (c0, c1) = (world_coeffs(planes[0])?, world_coeffs(planes[1])?);
                 let (line, sv) =
-                    match nacre_scalar::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)? {
+                    match nacre_exact::quad::plane_plane_cylinder(&c0, &c1, &o, &m, r2)? {
                         CylinderMeet::Pair { line, s } => match root {
                             QuadRoot::Lo => (line, s[0].as_rat()?),
                             QuadRoot::Hi => (line, s[1].as_rat()?),
@@ -292,7 +292,7 @@ pub(super) fn lateral_theta_extent(
             continue; // the seam
         }
         let coeffs = world_coeffs(cap)?;
-        if !nacre_scalar::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
+        if !nacre_exact::parallel_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m) {
             continue; // a ruling on a wall, not a rim
         }
         let [va, vb] = e.vertices;
@@ -358,16 +358,16 @@ pub(super) fn lateral_theta_extent(
 /// `arc = None` is the whole circle, and `d ∥ axis` leaves no radial term at all.
 pub(super) fn arc_extent(
     arc: Option<&RimArc>,
-    r2: &nacre_scalar::BigRat,
-    axis: &[nacre_scalar::Rat; 3],
-    d: &[nacre_scalar::Rat; 3],
+    r2: &nacre_exact::BigRat,
+    axis: &[nacre_exact::Rat; 3],
+    d: &[nacre_exact::Rat; 3],
 ) -> Option<(
-    nacre_scalar::Rat,
-    nacre_scalar::Rat,
-    nacre_scalar::Rat,
-    nacre_scalar::Rat,
+    nacre_exact::Rat,
+    nacre_exact::Rat,
+    nacre_exact::Rat,
+    nacre_exact::Rat,
 )> {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let zero = Rat::from_int(0);
     let (dm, mm) = (dot3(d, axis)?, dot3(axis, axis)?);
     // `d⊥ = d − (d·m / m·m) m`, the direction of the radial term's peak; `|d⊥|² = d·d − (d·m)²/m·m`.

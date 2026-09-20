@@ -464,9 +464,9 @@ fn swept_hole_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn mirrored_solid_matches_occt() {
+    use nacre_exact::{Axis, Rat};
     use nacre_math::Point2;
     use nacre_ops::{OpOutput, Operation, apply};
-    use nacre_scalar::{Axis, Rat};
 
     // An L-prism, asymmetric so the mirror cannot be a no-op: area 4, height 1.
     let mut model = Model::new();
@@ -542,8 +542,8 @@ fn rotated_result_reuse_diff_occt() {
     // octant; rotate R and a fresh severing slab by 30° about Z, then Cut. OCCT computes the
     // same Cut of the two rotated STEP solids; the volumes must agree (nacre's exact
     // arrangement vs OCCT's independent kernel).
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_ops::{OpOutput, Operation, apply};
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     let iso = Isometry::rotation(Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],

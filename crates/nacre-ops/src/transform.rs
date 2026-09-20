@@ -3,9 +3,9 @@
 //! operand stays exactly defined. [`copy`] is the same walk with no motion at all.
 
 use crate::OpError;
+use nacre_exact::{Axis, Isometry, Rat};
 use nacre_geom::{AxisMirror, Cylinder, Plane};
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::PointCache;
 use nacre_topo::{
@@ -276,7 +276,7 @@ fn realizes_exactly(motion: &Xform<'_>, p: Point3) -> bool {
         ];
         match motion {
             Xform::Rigid(iso) => iso.point_rat(r),
-            Xform::Mirror { axis, offset, .. } => nacre_scalar::mirror_point_rat(r, *axis, *offset),
+            Xform::Mirror { axis, offset, .. } => nacre_exact::mirror_point_rat(r, *axis, *offset),
         }
     })() else {
         return false;
@@ -393,7 +393,7 @@ fn transport_points(motion: &Xform<'_>, p: [[Rat; 3]; 3]) -> Option<[[Rat; 3]; 3
     let each = |q: [Rat; 3]| -> Option<[Rat; 3]> {
         match motion {
             Xform::Rigid(iso) => iso.point_rat(q),
-            Xform::Mirror { axis, offset, .. } => nacre_scalar::mirror_point_rat(q, *axis, *offset),
+            Xform::Mirror { axis, offset, .. } => nacre_exact::mirror_point_rat(q, *axis, *offset),
         }
     };
     Some([each(p[0])?, each(p[1])?, each(p[2])?])

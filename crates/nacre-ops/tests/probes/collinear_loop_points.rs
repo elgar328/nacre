@@ -20,9 +20,9 @@
 //! for their own good reasons, now or later. It is that no cell comes back carrying a face whose
 //! stored plane disagrees with its own outward direction — build correctly, or decline by name.
 
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point2, Point3};
 use nacre_ops::{OpError, OpOutput, Operation, Profile2d, SketchFrame, apply, face_plane};
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Face, Model, Solid};
 

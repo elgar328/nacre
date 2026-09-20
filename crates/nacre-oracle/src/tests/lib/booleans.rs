@@ -325,8 +325,8 @@ fn sever_cut_matches_occt_compound() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn translated_solid_cut_matches_occt() {
+    use nacre_exact::{Isometry, Rat};
     use nacre_ops::{BoolKind, Operation, apply, boolean};
-    use nacre_scalar::{Isometry, Rat};
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     // Translate A by [3/10, 2/5, 1/2] ⇒ A' = [0.3,1.3]×[0.4,1.4]×[0.5,1.5].
@@ -378,8 +378,8 @@ fn translated_solid_cut_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn rotated_solid_props_match_occt() {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_ops::{Operation, apply};
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     let rot30 = Isometry::rotation(Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],

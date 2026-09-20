@@ -85,7 +85,7 @@ pub(crate) fn dense_planes(
 /// zero-area (collinear) test on the vertices' rotation definitions.
 #[cfg(test)]
 pub(crate) fn pt3_base_collinear(a: &WitnessPoint, b: &WitnessPoint, c: &WitnessPoint) -> bool {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let (a, b, c) = (&a.base, &b.base, &c.base);
     let proj_zero = |i: usize, j: usize| -> Option<bool> {
         let det = b[i]

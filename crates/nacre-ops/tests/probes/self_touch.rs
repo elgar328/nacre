@@ -14,12 +14,12 @@
 //! ★ The propositions here are paired: every fixture that must reject sits next to one that must
 //! build, because a check that rejects the wedge by rejecting *everything* would pass half of them.
 
+use nacre_exact::{Angle, Axis, Isometry, Rat};
 use nacre_math::{Point2, Point3};
 use nacre_ops::{
     BoolError, BoolKind, Operation, Profile2d, RejectClass, RejectReason, SketchFrame, apply,
     boolean,
 };
-use nacre_scalar::{Angle, Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 
@@ -170,7 +170,7 @@ fn a_through_cut_that_stops_short_of_the_wall_builds() {
 fn the_same_contact_is_found_after_a_rotation() {
     let (mut m, a, b) = cube_and_wedge(1.0);
     let turn = || {
-        Isometry::rotation(nacre_scalar::Rotation {
+        Isometry::rotation(nacre_exact::Rotation {
             axis: Axis::Z,
             pivot: [Rat::from_int(0); 3],
             angle: Angle::from_deg(Rat::from_int(30)).unwrap(),

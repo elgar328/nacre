@@ -16,10 +16,10 @@
 //! died when the monotone sweep replaced ear clipping (it **never merges rings**, which is the
 //! whole reason bridging went), and the comment outlived them by two cells.
 
+use nacre_exact::Axis;
 use nacre_math::Point2;
 use nacre_ops::SketchFrame;
 use nacre_ops::{Operation, Profile2d, replay};
-use nacre_scalar::Axis;
 use nacre_topo::Model;
 use std::f64::consts::TAU;
 

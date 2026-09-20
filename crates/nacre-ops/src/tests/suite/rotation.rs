@@ -18,7 +18,7 @@ use super::*;
 /// from a corner works — [`a_rotated_boolean_result_can_be_cut_again`].)
 #[test]
 fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let iso = Isometry::rotation(Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
@@ -119,7 +119,7 @@ fn validate_reports_the_non_manifold_pinch() {
 /// so `Judge::orient3d` agrees on every definite triple. A regression guard on the witness itself.
 #[test]
 fn rotated_result_witness_predicates_are_invariant() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let iso = Isometry::rotation(Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
@@ -179,7 +179,7 @@ fn rotated_result_witness_predicates_are_invariant() {
 /// chain's result matches the unrotated chain's (volume, solid count) and stays valid.
 #[test]
 fn a_rotated_boolean_result_can_be_cut_again() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let iso = Isometry::rotation(Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
@@ -248,7 +248,7 @@ fn a_rotated_boolean_result_can_be_cut_again() {
 #[test]
 #[ignore = "slow: rotated result-reuse booleans (run with --ignored)"]
 fn rotated_result_reuse_stress() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     #[derive(PartialEq, Debug)]
     enum Out {
         Rej,
@@ -389,7 +389,7 @@ fn rotated_result_reuse_stress() {
 #[test]
 #[ignore = "slow: rotated booleans ~2s each (run with --ignored)"]
 fn rotation_invariance_stress() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     #[derive(PartialEq, Debug)]
     enum Out {
         Rej,

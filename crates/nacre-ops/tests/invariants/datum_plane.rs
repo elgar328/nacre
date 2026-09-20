@@ -10,10 +10,10 @@
 //! always did**: the same plane keeps one handle, the stored truth is the caller's own points, and
 //! the whole thing replays.
 
+use nacre_exact::Axis;
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{DatumDef, OpError, OpOutput, Operation, Profile2d, SketchPlane, apply, replay};
-use nacre_scalar::Axis;
 use nacre_topo::{FramePlacement, Model, PlanePoints, PointCache, Surface};
 
 use crate::fixtures::datum_frame;
@@ -106,8 +106,8 @@ fn a_tilted_datum_records_the_points_the_caller_wrote() {
         "points[0] is the stated origin"
     );
     // Every recorded point satisfies the plane it names: `n·(p − o) == 0` in exact rationals.
-    let zero = nacre_scalar::Rat::from_int(0);
-    let n = [1i128, 1, 1].map(nacre_scalar::Rat::from_int);
+    let zero = nacre_exact::Rat::from_int(0);
+    let n = [1i128, 1, 1].map(nacre_exact::Rat::from_int);
     for p in pts.iter().skip(1) {
         let dot = (0..3).fold(zero, |acc, k| {
             let d = p[k].checked_sub(pts[0][k]).expect("small integers");
@@ -177,7 +177,7 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
 /// is what says so. A seed plane would not: it would answer "it extruded because it is world XY".
 #[test]
 fn a_plane_with_no_name_cannot_host_a_sketch() {
-    let r = nacre_scalar::Rat::from_int;
+    let r = nacre_exact::Rat::from_int;
     let pts = [[r(0), r(0), r(3)], [r(1), r(0), r(3)], [r(0), r(1), r(3)]];
     let origin = Point3::from_array([0.0, 0.0, 3.0]);
     // `−normal`, the convention every datum and base cap keeps.
@@ -482,11 +482,8 @@ fn a_tilted_offset_is_exact_inside_the_frame() {
     let PlanePoints::Known(pts) = points else {
         panic!("a stated datum records its points by value, not by handle")
     };
-    let half = nacre_scalar::Rat::from_decimal(0.5).unwrap();
-    let (zero, one) = (
-        nacre_scalar::Rat::from_int(0),
-        nacre_scalar::Rat::from_int(1),
-    );
+    let half = nacre_exact::Rat::from_decimal(0.5).unwrap();
+    let (zero, one) = (nacre_exact::Rat::from_int(0), nacre_exact::Rat::from_int(1));
     assert_eq!(
         *pts,
         [[zero, zero, half], [one, zero, half], [zero, one, half]],
@@ -941,7 +938,7 @@ fn tilted_prism_with_pocket() -> Model {
             m.surface_name
                 .get(&s)
                 .and_then(|n| n.narrow())
-                .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+                .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
         })
         .expect("the tilted-wall population");
     let sp = nacre_ops::face_plane(&m, wall).expect("planar");
@@ -1065,11 +1062,11 @@ fn a_datum_through_vertices_is_the_plane_the_coordinates_miss() {
         let a = m
             .vertex_point(vh)
             .as_array()
-            .map(nacre_scalar::Rat::from_decimal);
+            .map(nacre_exact::Rat::from_decimal);
         [a[0].unwrap(), a[1].unwrap(), a[2].unwrap()]
     };
     let rounded =
-        nacre_scalar::plane_name_exact(lift(vs[0]), lift(vs[1]), lift(vs[2])).expect("nameable");
+        nacre_exact::plane_name_exact(lift(vs[0]), lift(vs[1]), lift(vs[2])).expect("nameable");
     assert_ne!(
         exact, rounded,
         "this fixture cannot show the gap — the coordinate road happened to agree"
@@ -1218,10 +1215,10 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
         &mut mx,
         &Operation::Transform {
             solid: spun,
-            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
                 axis: Axis::Z,
-                pivot: [nacre_scalar::Rat::from_int(0); 3],
-                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(37)).unwrap(),
             }),
         },
     )
@@ -1315,10 +1312,10 @@ fn a_nameless_datum_hosts_a_sketch_end_to_end() {
         &mut scratch,
         &Operation::Transform {
             solid: s2,
-            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
                 axis: Axis::Z,
-                pivot: [nacre_scalar::Rat::from_int(0); 3],
-                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(37)).unwrap(),
             }),
         },
     )
@@ -1395,10 +1392,10 @@ fn a_prism_on_a_nameless_datum_survives_a_boolean() {
         &mut m,
         &Operation::Transform {
             solid: spun,
-            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
                 axis: Axis::Z,
-                pivot: [nacre_scalar::Rat::from_int(0); 3],
-                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(37)).unwrap(),
             }),
         },
     )
@@ -1495,10 +1492,10 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         &mut m,
         &Operation::Transform {
             solid: b,
-            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
                 axis: Axis::Z,
-                pivot: [nacre_scalar::Rat::from_int(0); 3],
-                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(37)).unwrap(),
             }),
         },
     )
@@ -1680,10 +1677,10 @@ fn a_datum_on_straddling_carriers_has_no_name() {
         &mut scratch,
         &Operation::Transform {
             solid: b2,
-            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
                 axis: Axis::Z,
-                pivot: [nacre_scalar::Rat::from_int(0); 3],
-                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(37)).unwrap(),
             }),
         },
     )
@@ -1762,8 +1759,8 @@ fn a_prism_on_a_vertex_named_datum_moves_exactly_once() {
         &mut m,
         &Operation::Transform {
             solid,
-            isometry: nacre_scalar::Isometry::translation(
-                shift.map(|x| nacre_scalar::Rat::from_decimal(x).unwrap()),
+            isometry: nacre_exact::Isometry::translation(
+                shift.map(|x| nacre_exact::Rat::from_decimal(x).unwrap()),
             ),
         },
     )
@@ -2099,7 +2096,7 @@ fn wide_meet_vertex(
     third: Option<nacre_store::Handle<Surface>>,
     place: impl Fn([f64; 3]) -> [f64; 3],
 ) -> nacre_store::Handle<nacre_topo::Vertex> {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
     let u = r(mnum, 1 << 80);
     let v = r(w, 5i128.pow(40));
@@ -2189,7 +2186,7 @@ fn wide_meet_triple(
 /// for a named plane whose meets no witness base can hold, run end to end.
 #[test]
 fn a_datum_through_wide_meets_keeps_its_name() {
-    use nacre_scalar::{MeetPoint, PlaneName, Rat};
+    use nacre_exact::{MeetPoint, PlaneName, Rat};
     let t = [7i128, 11, -13, 1];
     let mut m = Model::new();
     let vs = wide_meet_triple(&mut m, t, None, None, &|c| c);
@@ -2278,7 +2275,7 @@ fn a_datum_through_wide_meets_keeps_its_name() {
 /// statements collapse by name, wide meets or not.
 #[test]
 fn a_wide_meet_datum_interns_onto_the_plane_it_lies_on() {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let t = [7i128, 11, -13, 1];
     let mut m = Model::new();
     let r = |n: i128, d: i128| Rat::new(n, d).unwrap();
@@ -2318,7 +2315,7 @@ fn a_wide_meet_datum_interns_onto_the_plane_it_lies_on() {
 /// pre-motion frame and the cache anchors through the chain — the `Wide` anchor's own road.
 #[test]
 fn a_moved_wide_meet_datum_frames_and_replays() {
-    use nacre_scalar::{Angle, Rat, Rotation};
+    use nacre_exact::{Angle, Rat, Rotation};
     let t = [7i128, 11, -13, 1];
     let mut m = Model::new();
     let leaf = m.push_motion(
@@ -2342,7 +2339,7 @@ fn a_moved_wide_meet_datum_frames_and_replays() {
         panic!("a moved wide-meet datum is accepted — got {out:?}");
     };
     // The name speaks the pre-motion frame, exactly as an unmoved one's speaks the world.
-    let expected = nacre_scalar::PlaneName::Narrow([
+    let expected = nacre_exact::PlaneName::Narrow([
         Rat::from_int(7),
         Rat::from_int(11),
         Rat::from_int(-13),
@@ -2438,10 +2435,10 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
     );
     let turn = |deg: i128| Operation::Transform {
         solid: block,
-        isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+        isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
             axis: Axis::Z,
-            pivot: [nacre_scalar::Rat::from_int(0); 3],
-            angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(deg)).unwrap(),
+            pivot: [nacre_exact::Rat::from_int(0); 3],
+            angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(deg)).unwrap(),
         }),
     };
     let OpOutput::Transform { solid: turned } = apply(&mut m, &turn(37)).expect("turn") else {
@@ -2504,10 +2501,10 @@ fn a_turn_does_not_cost_a_solid_its_named_datum() {
         &mut m,
         &Operation::Transform {
             solid: turned,
-            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
                 axis: Axis::Z,
-                pivot: [nacre_scalar::Rat::from_int(0); 3],
-                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(11)).unwrap(),
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(11)).unwrap(),
             }),
         },
     )

@@ -10,8 +10,8 @@ use super::*;
 
 /// An axis-aligned rotation about the line through `(1,1,0)` by `deg` degrees (a non-90°
 /// degree makes cos/sin irrational, so the surfaces record the motion).
-fn rot_about(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
-    use nacre_scalar::{Angle, Isometry, Rat, Rotation};
+fn rot_about(axis: nacre_exact::Axis, deg: i128) -> nacre_exact::Isometry {
+    use nacre_exact::{Angle, Isometry, Rat, Rotation};
     Isometry::rotation(Rotation {
         axis,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
@@ -27,7 +27,7 @@ fn rotated_boolean_matches_occt(
     a: Handle<Solid>,
     b: Handle<Solid>,
     kind: BoolKind,
-    isos: &[nacre_scalar::Isometry],
+    isos: &[nacre_exact::Isometry],
 ) -> Vec<Handle<Solid>> {
     use nacre_ops::{OpOutput, Operation, apply};
     let rot = |m: &mut Model, mut s: Handle<Solid>| -> Handle<Solid> {
@@ -77,7 +77,7 @@ fn rotated_boolean_matches_occt(
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn rotated_overlap_cut_matches_occt() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
@@ -88,7 +88,7 @@ fn rotated_overlap_cut_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn rotated_overlap_fuse_matches_occt() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
@@ -98,7 +98,7 @@ fn rotated_overlap_fuse_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn rotated_overlap_common_matches_occt() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
@@ -112,7 +112,7 @@ fn rotated_overlap_common_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn rotated_sever_cut_matches_occt() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
     let bar = m.add_cuboid(
@@ -129,7 +129,7 @@ fn rotated_sever_cut_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn rotated_containment_cut_makes_cavity_matches_occt() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
     let b = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
@@ -152,8 +152,8 @@ fn rotated_containment_cut_makes_cavity_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn rerotated_solid_props_match_occt() {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_ops::{Operation, apply};
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
     let rot = |axis, deg: i128| {
         Isometry::rotation(Rotation {
             axis,

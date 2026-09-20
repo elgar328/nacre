@@ -586,7 +586,7 @@ fn loop_triples(
 pub(super) fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> {
     let co = class_coeffs_rat(jd, q)?;
     let raw = jd.planes[q].plane.coefficients();
-    let zero = nacre_scalar::Rat::from_int(0);
+    let zero = nacre_exact::Rat::from_int(0);
     let i = (0..4).find(|&i| co[i] != zero && raw[i] != 0.0)?;
     let k = if (co[i] > zero) == (raw[i] > 0.0) {
         1
@@ -705,7 +705,7 @@ fn curved_wall(
             // distinct caps cross the axis at distinct parameters. The strict `>` therefore
             // restates the comparison it replaces exactly, rather than growing a decline for a
             // case that has none.
-            let other_param = |v: Handle<Vertex>| -> Option<nacre_scalar::Rat> {
+            let other_param = |v: Handle<Vertex>| -> Option<nacre_exact::Rat> {
                 let nacre_topo::Vertex::Pierce { planes, .. } = *model.vertex(v) else {
                     return None;
                 };

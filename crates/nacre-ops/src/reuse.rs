@@ -20,8 +20,8 @@ use crate::boolean::LocalFace;
 use crate::combinatorics::{Canon3, NodeId};
 use crate::planes::{ClassIx, FaceRow, SolidSide, WorkingPlane};
 use crate::{BoolKind, he_start};
+use nacre_exact::Orient;
 use nacre_judge::{WitnessPoint, orient3d_filter};
-use nacre_scalar::Orient;
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid, Vertex};
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ pub(crate) enum ClassPlan {
 /// declines, and the class falls back to [`ClassPlan::Arrange`] (slower, never wrong).
 ///
 /// One road for every vertex: its base is **solved from its definition** — the three carriers'
-/// narrow names, in the frame the planes are stated in ([`nacre_scalar::three_planes_rat`]) —
+/// narrow names, in the frame the planes are stated in ([`nacre_exact::three_planes_rat`]) —
 /// and the coordinate handed to the predicates is that base's own nearest `f64` with the
 /// rounding it carries ([`WitnessPoint::at_nearest`] on the world arm; [`WitnessPoint::at`],
 /// measured, on the motion arm, whose replay transports it). Two arms after that:
@@ -102,7 +102,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     };
                     // The base is the definition's: the three narrow names, solved in the frame
                     // the planes are stated in. A wide or missing name declines.
-                    let mut coeffs = [[nacre_scalar::Rat::from_int(0); 4]; 3];
+                    let mut coeffs = [[nacre_exact::Rat::from_int(0); 4]; 3];
                     for (o, h) in coeffs.iter_mut().zip(tri) {
                         *o = *model.surface_name.get(&h)?.narrow()?;
                     }
@@ -118,7 +118,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                     }
                     let Some(leaf) = leaf else {
                         // World-stated throughout: the base is the world point itself.
-                        out.push(WitnessPoint::at_nearest(nacre_scalar::three_planes_rat(
+                        out.push(WitnessPoint::at_nearest(nacre_exact::three_planes_rat(
                             coeffs,
                         )?));
                         continue;
@@ -131,7 +131,7 @@ fn solid_points(model: &Model, s: Handle<Solid>) -> Option<Vec<WitnessPoint>> {
                             return None;
                         }
                     }
-                    let base = nacre_scalar::three_planes_rat(coeffs)?;
+                    let base = nacre_exact::three_planes_rat(coeffs)?;
                     let chain = crate::rotated_vertex::motion_chain(model, leaf)?;
                     out.push(crate::rotated_vertex::replay(
                         WitnessPoint::at(base),

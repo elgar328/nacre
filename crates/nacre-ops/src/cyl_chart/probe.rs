@@ -153,7 +153,7 @@ pub(crate) mod other {
 
     pub(crate) fn record_whole(
         cyl: usize,
-        t: nacre_scalar::Rat,
+        t: nacre_exact::Rat,
         end: usize,
         above: bool,
         bits: Vec<(bool, bool)>,

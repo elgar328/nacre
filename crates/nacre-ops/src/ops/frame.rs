@@ -261,7 +261,7 @@ pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame,
         world_stated,
         model.surface_name.get(&surface_h).and_then(|n| n.narrow()),
     ) {
-        (true, Some(&c)) => nacre_scalar::plane_origin_projection(c)
+        (true, Some(&c)) => nacre_exact::plane_origin_projection(c)
             .map(|p| Point3::from_array([p[0].to_f64(), p[1].to_f64(), p[2].to_f64()]))
             .unwrap_or_else(|| plane.project(Point3::origin())),
         _ => plane.project(Point3::origin()),

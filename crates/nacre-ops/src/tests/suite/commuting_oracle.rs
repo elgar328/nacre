@@ -198,7 +198,7 @@ fn panic_text(p: Box<dyn std::any::Any + Send>) -> String {
 fn boolean_commutes(
     build: &Build,
     kind: BoolKind,
-    iso: &nacre_scalar::Isometry,
+    iso: &nacre_exact::Isometry,
     class: MotionClass,
 ) -> (Answer, Outcome, Digest) {
     let (mut m0, a0, b0) = build();
@@ -469,7 +469,7 @@ fn the_boolean_commutes_with_every_motion_of_the_group() {
 /// tell the roads apart.
 #[test]
 fn a_rigid_motion_behaves_as_its_two_operations() {
-    use nacre_scalar::{Angle, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Isometry, Rat, Rotation};
     let build = |m: &mut Model| -> (Handle<Solid>, Handle<Solid>) {
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),

@@ -33,7 +33,7 @@ impl Model {
     pub fn push_plane_unregistered(
         &mut self,
         cache: nacre_geom::Plane,
-        points: [[nacre_scalar::Rat; 3]; 3],
+        points: [[nacre_exact::Rat; 3]; 3],
     ) -> Handle<Surface> {
         self.push_plane_raw(PlanePoints::Known(points), None, None, cache)
     }
@@ -141,12 +141,12 @@ impl Model {
             // The same three corners in rationals. `from_decimal` because a corner is a value the
             // caller *wrote* — lifting the f64 bit pattern instead would carry its drift in and
             // defeat the whole point (see `Model::surface_name`).
-            let rat_corner = |k: usize| -> Option<[nacre_scalar::Rat; 3]> {
+            let rat_corner = |k: usize| -> Option<[nacre_exact::Rat; 3]> {
                 let c = corners[k].as_array();
                 Some([
-                    nacre_scalar::Rat::from_decimal(c[0])?,
-                    nacre_scalar::Rat::from_decimal(c[1])?,
-                    nacre_scalar::Rat::from_decimal(c[2])?,
+                    nacre_exact::Rat::from_decimal(c[0])?,
+                    nacre_exact::Rat::from_decimal(c[1])?,
+                    nacre_exact::Rat::from_decimal(c[2])?,
                 ])
             };
             self.push_plane(
@@ -293,12 +293,11 @@ impl Model {
         // to `ê_k × d` whichever values chose `k` — so the seam direction stays exact.
         // A statement outside the decimal window is a caller bug → panic (the radius/height
         // precedent above).
-        let lift = |x: f64| -> nacre_scalar::Rat {
-            nacre_scalar::Rat::from_decimal(x)
-                .expect("cylinder statement inside the decimal window")
+        let lift = |x: f64| -> nacre_exact::Rat {
+            nacre_exact::Rat::from_decimal(x).expect("cylinder statement inside the decimal window")
         };
         let def = {
-            let zero = nacre_scalar::Rat::from_int(0);
+            let zero = nacre_exact::Rat::from_int(0);
             // Lift then negate (not lift the negated f64): `-0.0` has no decimal of its own.
             let neg = |x: f64| {
                 zero.checked_sub(lift(x))
@@ -329,7 +328,7 @@ impl Model {
                 base.as_array().map(lift),
                 a.map(lift),
                 ref_dir,
-                nacre_scalar::BigRat::square_of(lift(radius)),
+                nacre_exact::BigRat::square_of(lift(radius)),
             )
             .expect("non-degenerate cylinder")
         };
@@ -342,10 +341,10 @@ impl Model {
         // claims. A cap outside the decimal window is a caller bug (the radius/height
         // precedent above): the truth is not optional any more.
         let w = d.cross(u);
-        let cap_points = |c: Point3| -> [[nacre_scalar::Rat; 3]; 3] {
-            let lift = |p: Point3| -> [nacre_scalar::Rat; 3] {
+        let cap_points = |c: Point3| -> [[nacre_exact::Rat; 3]; 3] {
+            let lift = |p: Point3| -> [nacre_exact::Rat; 3] {
                 p.as_array().map(|x| {
-                    nacre_scalar::Rat::from_decimal(x)
+                    nacre_exact::Rat::from_decimal(x)
                         .expect("cylinder caps inside the decimal window")
                 })
             };
@@ -449,7 +448,7 @@ impl Model {
         let (p_bot, p_top) = (bottom_points[1], top_points[1]);
         // The truth carries the squared radius; a stated `radius` is squared once, here — wide,
         // so no radius is refused for the width of its square.
-        let def = CylinderDef::new(base, axis, ref_dir, nacre_scalar::BigRat::square_of(radius))
+        let def = CylinderDef::new(base, axis, ref_dir, nacre_exact::BigRat::square_of(radius))
             .ok_or(CylinderError::Degenerate)?;
 
         // The caches are the realization of exactly these statements — nothing here is measured

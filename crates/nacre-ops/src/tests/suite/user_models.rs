@@ -31,11 +31,11 @@ fn user_rib(m: &mut Model, x: f64) -> Handle<Solid> {
     .expect("the rib extrudes") else {
         unreachable!()
     };
-    let r = |v: f64| nacre_scalar::Rat::from_decimal(v).unwrap();
+    let r = |v: f64| nacre_exact::Rat::from_decimal(v).unwrap();
     transform(
         m,
         solid,
-        &nacre_scalar::Isometry::translation([r(x), r(-20.0), r(0.0)]),
+        &nacre_exact::Isometry::translation([r(x), r(-20.0), r(0.0)]),
     )
     .expect("the rib moves")
 }
@@ -277,8 +277,8 @@ fn the_users_script_builds() {
 fn the_users_script_builds_the_same_body_after_a_motion() {
     let mut m = Model::new();
     let (abc, tool) = users_model(&mut m);
-    let d = |v: f64| nacre_scalar::Rat::from_decimal(v).expect("a short decimal");
-    let iso = nacre_scalar::Isometry::translation([d(7.5), d(-13.0), d(4.25)]);
+    let d = |v: f64| nacre_exact::Rat::from_decimal(v).expect("a short decimal");
+    let iso = nacre_exact::Isometry::translation([d(7.5), d(-13.0), d(4.25)]);
     let abc = transform(&mut m, abc, &iso).expect("the body moves");
     let tool = transform(&mut m, tool, &iso).expect("the tool moves");
     m.rebuild_adjacency();

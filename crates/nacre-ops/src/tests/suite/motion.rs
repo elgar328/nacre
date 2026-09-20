@@ -22,10 +22,10 @@ fn bbox_lo(m: &Model, s: Handle<Solid>) -> [f64; 3] {
     lo
 }
 
-fn test_iso() -> (nacre_scalar::Isometry, [f64; 3]) {
-    use nacre_scalar::Rat;
+fn test_iso() -> (nacre_exact::Isometry, [f64; 3]) {
+    use nacre_exact::Rat;
     (
-        nacre_scalar::Isometry::translation([
+        nacre_exact::Isometry::translation([
             Rat::new(7, 2).unwrap(),
             Rat::from_int(-4),
             Rat::from_int(11),
@@ -40,7 +40,7 @@ fn test_iso() -> (nacre_scalar::Isometry, [f64; 3]) {
 /// world itself.
 #[test]
 fn a_translated_tool_cuts() {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -56,7 +56,7 @@ fn a_translated_tool_cuts() {
     let tool = transform(
         &mut m,
         tool,
-        &nacre_scalar::Isometry::translation([
+        &nacre_exact::Isometry::translation([
             Rat::try_from_f64(10.7).unwrap(),
             Rat::from_int(0),
             Rat::from_int(0),
@@ -79,12 +79,12 @@ fn a_translated_tool_cuts() {
 /// is stated at.
 #[test]
 fn a_chained_translation_folds() {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let shift = |m: &mut Model, s, x: f64| {
         let s = transform(
             m,
             s,
-            &nacre_scalar::Isometry::translation([
+            &nacre_exact::Isometry::translation([
                 Rat::try_from_f64(x).unwrap(),
                 Rat::from_int(0),
                 Rat::from_int(0),
@@ -123,7 +123,7 @@ fn a_chained_translation_folds() {
 /// wall is the contact family, another cell).
 #[test]
 fn a_translated_bored_body_fuses() {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let bored = |m: &mut Model| {
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -146,7 +146,7 @@ fn a_translated_bored_body_fuses() {
     let b = transform(
         &mut m,
         b,
-        &nacre_scalar::Isometry::translation(
+        &nacre_exact::Isometry::translation(
             [25.7, 3.3, 2.0].map(|c| Rat::try_from_f64(c).unwrap()),
         ),
     )
@@ -252,7 +252,7 @@ fn two_bored_plates_fuse_face_to_face() {
 /// population it exists to hold.
 #[test]
 fn a_two_by_two_grid_fuses() {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let cell = |m: &mut Model, at: [f64; 3]| {
         let plate = m.add_cuboid(
             Point3::from_array(at),
@@ -290,7 +290,7 @@ fn a_two_by_two_grid_fuses() {
         let s = transform(
             m,
             s,
-            &nacre_scalar::Isometry::translation(o.map(|c| Rat::try_from_f64(c).unwrap())),
+            &nacre_exact::Isometry::translation(o.map(|c| Rat::try_from_f64(c).unwrap())),
         )
         .unwrap();
         m.rebuild_adjacency();
@@ -787,8 +787,8 @@ fn transform_translate_preserves_discovered_definition() {
 /// `tests/invariants/replay.rs` measures that premise directly instead of assuming it.
 #[test]
 fn a_chain_of_motions_is_deterministic() {
-    use nacre_scalar::Axis;
-    let chains: [(&str, Vec<nacre_scalar::Isometry>); 3] = [
+    use nacre_exact::Axis;
+    let chains: [(&str, Vec<nacre_exact::Isometry>); 3] = [
         ("rigid motion", vec![test_iso().0]),
         ("30° about Z", vec![rot30()]),
         (
@@ -824,7 +824,7 @@ fn a_chain_of_motions_is_deterministic() {
 /// `AxisMirror::point` just walked — and a chain that ends in one is what this checks.
 #[test]
 fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
-    use nacre_scalar::{Axis, Rat};
+    use nacre_exact::{Axis, Rat};
     let mut m = Model::new();
     let c = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -868,7 +868,7 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
                 for (o, h) in coeffs.iter_mut().zip(tri) {
                     *o = *m.surface_name.get(&h).unwrap().narrow().unwrap();
                 }
-                let base = nacre_scalar::three_planes_rat(coeffs)
+                let base = nacre_exact::three_planes_rat(coeffs)
                     .expect("three distinct planes meet in a point");
                 let replayed = crate::rotated_vertex::replay_chain_coord(
                     &m,
@@ -927,8 +927,8 @@ fn copy_is_deterministic() {
 /// A genuinely tilted rigid rotation: 30° about Z through the rational axis
 /// point (1,1,0). Non-90° and non-axis-aligned, so it exercises the Rotated
 /// origin and the boolean reject guard (unlike the 90° family, which stays exact).
-fn rot30() -> nacre_scalar::Isometry {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+fn rot30() -> nacre_exact::Isometry {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     Isometry::rotation(Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
@@ -1007,7 +1007,7 @@ fn transform_rotate_cuboid_tilts_and_cuts() {
 /// still allowed — a following cut succeeds and validates.
 #[test]
 fn transform_rotate_90_is_exact_and_allows_boolean() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let rot90 = Isometry::rotation(Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(0); 3],
@@ -1178,8 +1178,8 @@ fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
 /// planes), so double application is **unrepresentable** rather than merely untrue: the type
 /// absorbed the invariant, and a probe field that could only ever read `false` would be
 /// theatre.
-fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_scalar::Axis>)> {
-    let mut best: Option<Vec<nacre_scalar::Axis>> = None;
+fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_exact::Axis>)> {
+    let mut best: Option<Vec<nacre_exact::Axis>> = None;
     for &fh in &m.shell(m.solid(s).outer).faces {
         let &nacre_topo::Surface::Plane {
             motion: Some(rotation),
@@ -1219,7 +1219,7 @@ fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_scalar:
 /// rotation definition, not by its rounded coordinates.**
 #[test]
 fn a_chained_boolean_keeps_its_faces_exact() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let a = m.add_cuboid(
         Point3::from_array([-1.0, -1.0, 0.0]),
@@ -1270,7 +1270,7 @@ fn a_chained_boolean_keeps_its_faces_exact() {
 /// question with full confidence.)
 #[test]
 fn the_same_motion_applied_twice_is_one_node() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let b = m.add_cuboid(
@@ -1319,7 +1319,7 @@ fn the_same_motion_applied_twice_is_one_node() {
 /// chains from its own leaf.
 #[test]
 fn a_rerotated_boolean_result_continues_each_walls_history() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let a = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -1364,8 +1364,7 @@ fn a_rerotated_boolean_result_continues_each_walls_history() {
             nacre_topo::Surface::Plane { motion: None, .. } => {
                 let n = m.surface_name.get(&s).unwrap().narrow().unwrap();
                 assert!(
-                    n[0] == nacre_scalar::Rat::from_int(0)
-                        && n[1] == nacre_scalar::Rat::from_int(0),
+                    n[0] == nacre_exact::Rat::from_int(0) && n[1] == nacre_exact::Rat::from_int(0),
                     "only a Z-fixed cap may go without a history here"
                 );
                 caps += 1;
@@ -1385,7 +1384,7 @@ fn a_rerotated_boolean_result_continues_each_walls_history() {
 /// original's. The identity is not a translation.
 #[test]
 fn a_copy_of_a_rotated_solid_answers_like_the_original() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let build = |use_copy: bool| {
         let mut m = Model::new();
         let hub = m.add_cuboid(
@@ -1418,7 +1417,7 @@ fn a_copy_of_a_rotated_solid_answers_like_the_original() {
 /// vertex−plane, so it does not reintroduce a residual).
 #[test]
 fn boolean_result_rotated_90_validates() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     for iso in [rot_iso(Axis::Z, 90), rigid_iso(Axis::Z, 90, [5, -3, 2])] {
         let (mut m, a, b) = two_boxes();
         let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
@@ -1440,7 +1439,7 @@ fn boolean_result_rotated_90_validates() {
 /// exactly (-3,2,4).
 #[test]
 fn rotate_90_lands_vertices_exactly() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let c = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -1463,7 +1462,7 @@ fn rotate_90_lands_vertices_exactly() {
 /// `Rotated` solid that validate/tess/STEP accept and a boolean now runs against.
 #[test]
 fn rerotate_same_axis_chains() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let c = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -1509,7 +1508,7 @@ fn rerotate_same_axis_chains() {
 /// rotation (root → Z → X), `base` still the root.
 #[test]
 fn rerotate_different_axis_chains() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let c = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -1537,7 +1536,7 @@ fn rerotate_different_axis_chains() {
 /// boolean-rejected.
 #[test]
 fn rerotate_exact_after_inexact_records_node() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let c = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -1566,7 +1565,7 @@ fn rerotate_exact_after_inexact_records_node() {
 /// its own node).
 #[test]
 fn rerotate_across_translation_chains() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let c = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -1593,7 +1592,7 @@ fn rerotate_across_translation_chains() {
 /// A three-axis chain records three nodes root→Z→X→Y.
 #[test]
 fn rerotate_deep_chain() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let mut m = Model::new();
     let c = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -1618,7 +1617,7 @@ fn rerotate_deep_chain() {
 /// boolean allowed). Guards that the B0/B1 split preserves fresh-rotation behavior.
 #[test]
 fn fresh_rotation_of_constructed_unchanged() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     // inexact → one root node, base = the cuboid's Constructed vertices.
     let mut m = Model::new();
     let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));

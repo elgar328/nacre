@@ -160,7 +160,7 @@ pub(super) fn per_class(
 /// ★ This is the check `RejectReason::CircleCrossesRuling` is raised from, so it ships.
 ///
 /// ★★ The comparison is exactly
-/// [`nacre_scalar::cylinder_ruling_reached`] — a disk of the circle's radius about its centre,
+/// [`nacre_exact::cylinder_ruling_reached`] — a disk of the circle's radius about its centre,
 /// against the one named ruling — so the net asks the predicate the gate asks, and there is
 /// one derivation rather than two. `None` stays "could not be measured", never "no".
 fn circle_crosses_ruling(
@@ -176,7 +176,7 @@ fn circle_crosses_ruling(
     let n = [coeffs[0], coeffs[1], coeffs[2]];
     // The predicate's own precondition, asked rather than assumed: a class that is not parallel
     // to the axis carries no ruling of it, and the decomposition would be about other geometry.
-    if nacre_scalar::dot_sign_rat(&n, &m) != nacre_scalar::Orient::Zero {
+    if nacre_exact::dot_sign_rat(&n, &m) != nacre_exact::Orient::Zero {
         return None;
     }
     // The strip runs along `e = n × m`, so that is the direction a piece states its reach in.
@@ -184,11 +184,11 @@ fn circle_crosses_ruling(
     let ask = |arc: Option<&crate::planes::RimArc>| -> Option<bool> {
         let (lo, hi) =
             crate::planes::arc_ends_along(&centre, circle.def.r2(), &circle.def.dir(), arc, &e)?;
-        Some(nacre_scalar::cylinder_ruling_reached_extent(
+        Some(nacre_exact::cylinder_ruling_reached_extent(
             &coeffs,
-            &nacre_scalar::StripReach {
-                lo: (&nacre_scalar::MeetPoint::Narrow(lo.0), &lo.1),
-                hi: Some((&nacre_scalar::MeetPoint::Narrow(hi.0), &hi.1)),
+            &nacre_exact::StripReach {
+                lo: (&nacre_exact::MeetPoint::Narrow(lo.0), &lo.1),
+                hi: Some((&nacre_exact::MeetPoint::Narrow(hi.0), &hi.1)),
             },
             &o,
             &m,
@@ -242,10 +242,10 @@ fn circle_crosses_ruling(
 fn rim_arc_of(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
-    centre: &[nacre_scalar::Rat; 3],
+    centre: &[nacre_exact::Rat; 3],
     ends: [NodeId; 2],
 ) -> Option<crate::planes::RimArc> {
-    let radial = |node: NodeId| -> Option<[nacre_scalar::Rat; 3]> {
+    let radial = |node: NodeId| -> Option<[nacre_exact::Rat; 3]> {
         let p = combinatorics::node_coords_rat(jd, node)
             .or_else(|| combinatorics::pierce_coords_rat(jd, cyls, node))?;
         let mut v = p;
@@ -273,21 +273,21 @@ fn circle_inside_strip(
     let coeffs = combinatorics::class_coeffs_rat(jd, wc)?;
     let centre = combinatorics::circle_centre_rat(jd, wc, &circle.def)?;
     let (o, m, r2) = (ruling.def.origin(), ruling.def.dir(), ruling.def.r2());
-    if nacre_scalar::dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m)
-        != nacre_scalar::Orient::Zero
+    if nacre_exact::dot_sign_rat(&[coeffs[0], coeffs[1], coeffs[2]], &m)
+        != nacre_exact::Orient::Zero
     {
         return None;
     }
     Some(matches!(
-        nacre_scalar::cylinder_strip_side_margin(
+        nacre_exact::cylinder_strip_side_margin(
             &coeffs,
-            &nacre_scalar::MeetPoint::Narrow(centre),
+            &nacre_exact::MeetPoint::Narrow(centre),
             circle.def.r2(),
             &o,
             &m,
             r2,
         ),
-        nacre_scalar::StripSide::Inside
+        nacre_exact::StripSide::Inside
     ))
 }
 

@@ -86,7 +86,7 @@ datum 도로를 얻는다(그 doc 의 *"인구를 열 수는 있어도 움직일
 
 ### 실현 함수가 세 갈래다
 
-규칙은 통로 하나(`정의 → 좌표`)인데 코드에는 실현이 세 곳에 있다: `nacre_ops::realize_vertex`(정점, `realize.rs`), `nacre-judge` `frame3` 의 `WitnessPoint::realize(prec)`(판정의 증인), `nacre-ops` `exact.rs` 의 `realize(pts)`(구성). 여기에 스칼라의 `to_f64` 가족과 `_tracked`·`_memoized`·`_rounded` 변종이 붙는다. 먼저 셀 것: 각 함수의 호출처와, 같은 정의를 두 갈래가 실현할 때 비트가 같은가. 목표 모양은 스칼라 → f64 하나(`nacre-scalar`), 정의 → 좌표 하나이고, 그 밖에서 f64 좌표를 짓는 것은 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다.
+규칙은 통로 하나(`정의 → 좌표`)인데 코드에는 실현이 세 곳에 있다: `nacre_ops::realize_vertex`(정점, `realize.rs`), `nacre-judge` `frame3` 의 `WitnessPoint::realize(prec)`(판정의 증인), `nacre-ops` `exact.rs` 의 `realize(pts)`(구성). 여기에 스칼라의 `to_f64` 가족과 `_tracked`·`_memoized`·`_rounded` 변종이 붙는다. 먼저 셀 것: 각 함수의 호출처와, 같은 정의를 두 갈래가 실현할 때 비트가 같은가. 목표 모양은 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나이고, 그 밖에서 f64 좌표를 짓는 것은 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다.
 
 ### 픽스처는 제품 도로로
 
@@ -142,7 +142,7 @@ census 가 «제품 도로의 census»가 된다. topo 의 `add_cuboid`/`add_cyl
   48 전부 최근접이다. 폭(7비트 vs 59비트)은 «산술이 얼마나 있었나»의 대리 지표이지 기제가 아니다.
 - **순서: B → 그 다음 자릿수 지정.** B 없이 「STEP 텍스트에 f64 보다 많은 자리」는 거짓말이다(f64 의
   17자리 뒤는 이진 반올림의 부산물). 거꾸로 하면 없는 정밀도를 출하한다.
-- **기계는 있다.** `nacre-scalar` 의 `HpBounded`(`add`/`sub`/`mul`/`div`/`inv_sqrt` 전부 `prec` 를 받는다) ·
+- **기계는 있다.** `nacre-exact` 의 `HpBounded`(`add`/`sub`/`mul`/`div`/`inv_sqrt` 전부 `prec` 를 받는다) ·
   `WitnessPoint::realize(prec)` · `round_to_f64`/`round_to_digits` · `sqrt_bounded`·`realize_quad`·
   `realize_seam_point`. 정확 반올림이라 실현이 유일하므로 **같은 정밀도면 답이 하나**다.
 - **잠금이 공짜로 딸려 온다.** 같은 모델은 **바이트 동일**한 파일을 내고, 실현 정밀도를 **두 배로 올려도
@@ -410,7 +410,7 @@ append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 
 
 - **같은 일을 하는 길이 여러 갈래인 자리**(제품 호출 / 테스트 호출 수는 그때 다시 센다): `realize_def`·`realize_cache` 와 그 `_tracked`(실제 본체) · `realize_inv_sqrt` → `_rounded` → `_memoized`(각각 호출처 하나인 3단 포장) · `det3` 다섯 벌(`det3`·`_sign`·`_f64`·`_hp`, 그리고 두 크레이트에 있는 `_big`) · `point_in_mixed_ring` 의 두 크레이트 구현(`_inner` 198줄 / geom `_opt` 89줄) · `base_coeffs_rat` 세 정의 · `three_planes` 의 `_rat`·`_big` 사다리 · `boolean` 은 `boolean_with_report` 의 얇은 포장. `nacre-judge` 의 `pub fn coeff_exact`·`coeff_normal_ok` 는 테스트만 부른다(그 보증은 평면이 `exact_coeffs`·`exact_normal` 을 믿을 수 있을 때만 든다는 타입으로 옮겨 갔다). 「f64 는 실현 통로 하나로」를 컴파일 단계에서 강제하는 것이 같은 갈래다.
 - **300줄이 넘는 함수 열둘**: `boolean/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `cyl_chart/census.rs` 의 `census` 496(테스트 전용) · `cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `boolean/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `boolean/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
-- **주석이 줄의 33~46%** 다(코드 / 주석: `arrangement` 5,585 / 3,014 · `combinatorics` 3,679 / 2,624 · `nacre-ops/src` 최상위 3,395 / 2,987 · `nacre-scalar` 3,130 / 2,150). `error.rs` 1,193줄의 대부분은 `RejectReason` 변종 doc 이고 그것은 사용자에게 가는 문서다 — 줄일 것은 함수 본문 안의 서사 주석이다.
+- **주석이 줄의 33~46%** 다(코드 / 주석: `arrangement` 5,585 / 3,014 · `combinatorics` 3,679 / 2,624 · `nacre-ops/src` 최상위 3,395 / 2,987 · `nacre-exact` 3,130 / 2,150). `error.rs` 1,193줄의 대부분은 `RejectReason` 변종 doc 이고 그것은 사용자에게 가는 문서다 — 줄일 것은 함수 본문 안의 서사 주석이다.
 - `pub(super)` 는 단계의 입구와 테스트가 이름으로 부르는 것에만 달려 있다. `frame3`(26)·`arrangement`(41) 가 가장 많고, 그 가운데 테스트만 부르는 것은 계측을 정리할 때 함께 내려간다.
 - `combinatorics/names.rs` 의 `NodeId` 철자 관문(`rg 'NodeId::(ThreePlane|Pierce)'`, 「비어 있어야 한다」)은 히트 여덟을 든다. `arrangement/aliases.rs` 와 `arrangement/split.rs:39` 는 변종을 **패턴으로** 읽고, 단위 테스트 다섯이 직접 짓는다. `split.rs:65` 는 생성이되 의도된 것이다 — 그 쌍은 이미 `{wc, w}` 로 정준이라 그대로 되돌리고, `NodeId::pierce` 를 거치면 `QuadRoot::canonical` 이 쌍 순서를 다시 매겨 root 가 뒤집힐 수 있다. 관문이 그 여덟을 면제하거나, 「비어 있어야 한다」가 무엇을 금지하는지 문장이 다시 말한다.
 - `tests/suite/curved_nesting.rs` 의 재연산 census·crossing census doc 은 「14 → 0」 식의 사다리 서사다. 본문의 기대표는 거의 전부 `Ok(n)` 이 됐다. 서사 속의 살아 있는 규칙(섹터는 가장 가까운 rim 노드 사이의 호 run 으로 읽는다 등)을 `design.md` 「원통」 절과 대조해 없는 것만 옮기고, doc 은 현재 표 하나로 줄인다. 같은 부류로 남은 표지: 「Stage 0」·「2b's corpus」·「rule 207」, 그리고 이름이 낡은 테스트 `a_sketch_on_a_prism_side_wall_takes_the_f64_path_today`(지금 단언하는 것은 보고된 `SketchPlane` 의 `exact()` 가 `None` 이라는 것뿐이다).

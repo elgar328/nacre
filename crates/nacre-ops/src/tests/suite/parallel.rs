@@ -52,7 +52,7 @@ fn model_sig(m: &Model, solids: &[Handle<Solid>]) -> String {
 #[cfg(feature = "parallel")]
 #[test]
 fn parallel_boolean_is_thread_order_independent() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 
     // A hub with fins arrayed around it — every fin is turned by an angle with no exact
     // f64, so every judgement is on the toleranced path and the report is non-empty.

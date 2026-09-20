@@ -14,7 +14,7 @@ use super::*;
 /// *points* carry the script triple; the *canonical frame* is the plane's own.
 #[test]
 fn a_seeded_planes_canonical_frame_is_the_world_basis_exactly() {
-    use nacre_scalar::Axis;
+    use nacre_exact::Axis;
     let m = Model::new();
     // (axis, expected û, v̂, ŵ) — ŵ is the +axis (the canonical name's own sign).
     let want = [
@@ -54,8 +54,8 @@ fn a_cylinder_op_states_its_axis_and_seam_as_integers() {
         panic!("an extrude answers with an extrude");
     };
     let def = lone_cylinder_def(&m);
-    let int = |n: i128| nacre_scalar::Rat::from_int(n);
-    let rat = |n: i128, d: i128| nacre_scalar::Rat::new(n, d).unwrap();
+    let int = |n: i128| nacre_exact::Rat::from_int(n);
+    let rat = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     assert_eq!(
         def.dir(),
         [int(0), int(0), int(1)],
@@ -69,7 +69,7 @@ fn a_cylinder_op_states_its_axis_and_seam_as_integers() {
     );
     assert_eq!(
         *def.r2(),
-        nacre_scalar::BigRat::from(rat(1, 100)),
+        nacre_exact::BigRat::from(rat(1, 100)),
         "r² of the stated 1/10"
     );
     assert_eq!(def.radius_exact(), Some(rat(1, 10)));
@@ -949,7 +949,7 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
         let s = transform(
             m,
             s,
-            &nacre_scalar::Isometry::translation(v.map(|x| Rat::try_from_f64(x).unwrap())),
+            &nacre_exact::Isometry::translation(v.map(|x| Rat::try_from_f64(x).unwrap())),
         )
         .unwrap();
         m.rebuild_adjacency();
@@ -1110,7 +1110,7 @@ fn census_corpus_cylinder_families_build_or_refuse_by_name() {
 /// [`census_corpus_cylinder_families_build_or_refuse_by_name`].
 #[test]
 fn census_corpus_xy_generations_build_or_refuse_by_name() {
-    use nacre_scalar::{Angle, Isometry, Rotation};
+    use nacre_exact::{Angle, Isometry, Rotation};
     fn tr(m: &mut Model, s: Handle<Solid>, v: [f64; 3]) -> Handle<Solid> {
         let s = transform(
             m,

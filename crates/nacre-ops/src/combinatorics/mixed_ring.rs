@@ -22,7 +22,7 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
 ///   step carries at most one circle's corners; two *different* circles' corners on one step
 ///   make `checked_mul` refuse the radical mismatch and the whole answer abstains honestly;
 /// * an **arc step** solves ray × circle exactly — the ray's plane `{ e2·p = q.y }` against the
-///   class plane and the cylinder is [`nacre_scalar::quad::plane_plane_cylinder`], the pierce
+///   class plane and the cylinder is [`nacre_exact::quad::plane_plane_cylinder`], the pierce
 ///   shape — and asks each root: right of the probe (chart-x as a `QuadVal`), and inside the
 ///   arc's CCW span (`circular_order_about_seam` on the carrier's own `end` pair, cyclic with
 ///   the wrap arm).
@@ -67,12 +67,12 @@ pub(crate) enum ArcSpan {
 /// `tie_probe` says which.
 pub(crate) fn arc_span(
     def: &nacre_topo::CylinderDef,
-    e_lo: &(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
-    e_hi: &(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
-    root: &(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal),
+    e_lo: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    e_hi: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
+    root: &(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal),
 ) -> Option<ArcSpan> {
     use core::cmp::Ordering;
-    use nacre_scalar::quad::{MeetLine, QuadVal, SeamOrder, circular_order_about_seam};
+    use nacre_exact::quad::{MeetLine, QuadVal, SeamOrder, circular_order_about_seam};
     let (o, m, rd) = (def.origin(), def.dir(), def.ref_dir());
     let on_seam = |p: &(MeetLine, QuadVal)| -> Option<bool> {
         match circular_order_about_seam(&o, &m, &rd, (&p.0, &p.1), (&p.0, &p.1))? {
@@ -150,8 +150,8 @@ pub(crate) fn arc_span(
 pub(crate) fn point_in_mixed_ring(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
-    wc_coeffs: &[nacre_scalar::Rat; 4],
-    probe: &[nacre_scalar::Rat; 3],
+    wc_coeffs: &[nacre_exact::Rat; 4],
+    probe: &[nacre_exact::Rat; 3],
     ring: &[RingEdge],
 ) -> Option<bool> {
     #[cfg(test)]
@@ -167,14 +167,14 @@ pub(crate) fn point_in_mixed_ring(
 fn point_in_mixed_ring_inner(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
-    wc_coeffs: &[nacre_scalar::Rat; 4],
-    probe: &[nacre_scalar::Rat; 3],
+    wc_coeffs: &[nacre_exact::Rat; 4],
+    probe: &[nacre_exact::Rat; 3],
     ring: &[RingEdge],
 ) -> Option<bool> {
+    use nacre_exact::Orient;
+    use nacre_exact::Rat;
+    use nacre_exact::quad::{CylinderMeet, MeetLine, QuadVal};
     use nacre_geom::intersect::{ray_step_crossing, ray_straddle};
-    use nacre_scalar::Orient;
-    use nacre_scalar::Rat;
-    use nacre_scalar::quad::{CylinderMeet, MeetLine, QuadVal};
     let n = [wc_coeffs[0], wc_coeffs[1], wc_coeffs[2]];
     let chart = Chart2dRat::of_normal(&n)?;
     let (e1, e2) = chart.axes();
@@ -273,7 +273,7 @@ fn point_in_mixed_ring_inner(
                 // The ray's own plane: e2·p − qy = 0 (rational).
                 let ray_plane = [e2[0], e2[1], e2[2], Rat::from_int(0).checked_sub(qy)?];
                 let (o, m, r2) = (arc.def.origin(), arc.def.dir(), arc.def.r2());
-                let roots = match nacre_scalar::quad::plane_plane_cylinder(
+                let roots = match nacre_exact::quad::plane_plane_cylinder(
                     wc_coeffs, &ray_plane, &o, &m, r2,
                 )? {
                     CylinderMeet::Pair { line, s } => Some((line, s)),

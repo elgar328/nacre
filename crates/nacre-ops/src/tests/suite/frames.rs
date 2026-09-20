@@ -369,7 +369,7 @@ fn the_zero_vector_has_no_frame_axes() {
 /// Now it asks the boolean instead.
 #[test]
 fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let mut m = Model::new();
     let mut s = m.add_cuboid(
@@ -663,7 +663,7 @@ fn a_pocket_in_a_slanted_wall_is_correct_today() {
 /// which is what this pins instead.
 #[test]
 fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let mut m = Model::new();
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let __w0 = SketchFrame::world(&m, Axis::Z);
@@ -782,7 +782,7 @@ fn a_named_plane_records_what_its_caller_stated() {
     // how the old coefficient assertions keep their meaning.
     let f = |d: &PlaneDef| {
         let p = d.points();
-        nacre_scalar::plane_name_exact(p[0], p[1], p[2])
+        nacre_exact::plane_name_exact(p[0], p[1], p[2])
             .expect("a definition names a plane")
             .narrow()
             .expect("these fixtures are narrow")
@@ -863,7 +863,7 @@ fn a_named_plane_records_what_its_caller_stated() {
     ] {
         let d = p.def.expect("stated");
         let pts = d.points();
-        let c = nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2])
+        let c = nacre_exact::plane_name_exact(pts[0], pts[1], pts[2])
             .expect("a definition names a plane")
             .narrow()
             .copied()
@@ -874,7 +874,7 @@ fn a_named_plane_records_what_its_caller_stated() {
         }
         assert_eq!(
             s,
-            nacre_scalar::Rat::from_int(0),
+            nacre_exact::Rat::from_int(0),
             "the origin must lie on the plane its points name: {:?} vs {:?}",
             c.map(|r| r.to_f64()),
             d.origin().map(|r| r.to_f64())
@@ -888,7 +888,7 @@ fn a_named_plane_records_what_its_caller_stated() {
         Vector3::from_array([1.0, 0.0, 0.0]),
         Vector3::from_array([0.0, 1.0, 0.0]),
     );
-    let r = |v: [f64; 3]| v.map(|x| nacre_scalar::Rat::from_decimal(x).unwrap());
+    let r = |v: [f64; 3]| v.map(|x| nacre_exact::Rat::from_decimal(x).unwrap());
     assert_eq!(
         axes.def.expect("axes state their truth").points(),
         [r([1.0, 2.0, 3.0]), r([2.0, 2.0, 3.0]), r([1.0, 3.0, 3.0])],
@@ -1048,7 +1048,7 @@ fn a_pad_on_a_wall_with_overflowing_squares_takes_the_exact_road() {
             m.surface_name
                 .get(&s)
                 .and_then(|n| n.narrow())
-                .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+                .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
         })
         .expect("an nn-overflow wall — retune the fixture constants if this fails");
     let profile = centred_on(&m, wall, 0.3);
@@ -1108,7 +1108,7 @@ fn a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road() {
     let d = plane.def.expect("S6a: axes state their decimal truth");
     let pts = d.points();
     assert!(
-        nacre_scalar::plane_name_exact(pts[0], pts[1], pts[2])
+        nacre_exact::plane_name_exact(pts[0], pts[1], pts[2])
             .expect("a plane")
             .narrow()
             .is_none(),

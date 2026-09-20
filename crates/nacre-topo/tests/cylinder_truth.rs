@@ -18,8 +18,8 @@
 //!   rule must copy from `any_perpendicular` — a wrong tie-break turns the seam 90°, an
 //!   O(radius) error no epsilon gate would forgive.
 
+use nacre_exact::Rat;
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::Rat;
 use nacre_topo::{CylinderDef, Model, Surface, Vertex};
 
 fn pt(x: f64, y: f64, z: f64) -> Point3 {
@@ -138,7 +138,7 @@ fn the_z_axis_cylinder_is_bit_identical_and_its_truth_is_the_statement() {
     assert_eq!(def.ref_dir(), [rat(0.0), rat(-1.0), rat(0.0)]);
     assert_eq!(
         *def.r2(),
-        nacre_scalar::BigRat::from(rat(2.25)),
+        nacre_exact::BigRat::from(rat(2.25)),
         "r² of the stated 1.5"
     );
     assert_eq!(def.radius_exact(), Some(rat(1.5)));
@@ -299,7 +299,7 @@ fn the_same_statement_interns_and_a_different_ref_dir_does_not() {
         [zero(), zero(), zero()],
         [zero(), zero(), rat(1.0)],
         [zero(), rat(-1.0), zero()],
-        nacre_scalar::BigRat::from(rat(1.0)),
+        nacre_exact::BigRat::from(rat(1.0)),
     )
     .expect("non-degenerate");
     let a = m.push_cylinder(cache, def.clone(), None);
@@ -312,7 +312,7 @@ fn the_same_statement_interns_and_a_different_ref_dir_does_not() {
         [zero(), zero(), zero()],
         [zero(), zero(), rat(1.0)],
         [rat(1.0), zero(), zero()],
-        nacre_scalar::BigRat::from(rat(1.0)),
+        nacre_exact::BigRat::from(rat(1.0)),
     )
     .expect("non-degenerate");
     let c = m.push_cylinder(cache, other, None);
@@ -326,15 +326,15 @@ fn the_checked_constructor_refuses_what_means_no_cylinder() {
     let z = [zero(), zero(), rat(1.0)];
     let r = [rat(1.0), zero(), zero()];
     assert!(
-        CylinderDef::new(o, o, r, nacre_scalar::BigRat::from(rat(1.0))).is_none(),
+        CylinderDef::new(o, o, r, nacre_exact::BigRat::from(rat(1.0))).is_none(),
         "zero axis"
     );
     assert!(
-        CylinderDef::new(o, z, r, nacre_scalar::BigRat::from(zero())).is_none(),
+        CylinderDef::new(o, z, r, nacre_exact::BigRat::from(zero())).is_none(),
         "zero radius"
     );
     assert!(
-        CylinderDef::new(o, z, r, nacre_scalar::BigRat::from(rat(-1.0))).is_none(),
+        CylinderDef::new(o, z, r, nacre_exact::BigRat::from(rat(-1.0))).is_none(),
         "negative radius"
     );
     assert!(
@@ -342,13 +342,13 @@ fn the_checked_constructor_refuses_what_means_no_cylinder() {
             o,
             z,
             [zero(), zero(), rat(2.0)],
-            nacre_scalar::BigRat::from(rat(1.0))
+            nacre_exact::BigRat::from(rat(1.0))
         )
         .is_none(),
         "ref_dir parallel to the axis pins no seam"
     );
     assert!(
-        CylinderDef::new(o, z, r, nacre_scalar::BigRat::from(rat(1.0))).is_some(),
+        CylinderDef::new(o, z, r, nacre_exact::BigRat::from(rat(1.0))).is_some(),
         "the sane statement stands"
     );
 }
@@ -383,7 +383,7 @@ fn a_wide_decimal_axis_is_a_cylinder_not_a_refusal() {
         };
         let ref_dir = [zero(), neg(axis[2]), axis[1]];
         assert!(
-            CylinderDef::new(o, axis, ref_dir, nacre_scalar::BigRat::from(r)).is_some(),
+            CylinderDef::new(o, axis, ref_dir, nacre_exact::BigRat::from(r)).is_some(),
             "a wide-decimal axis states a cylinder: {axis:?}"
         );
     }
@@ -403,7 +403,7 @@ fn a_wide_parallel_ref_dir_is_still_refused() {
         axis[2].checked_add(axis[2]).expect("small doubling"),
     ];
     assert!(
-        CylinderDef::new(o, axis, doubled, nacre_scalar::BigRat::from(rat(1.0))).is_none(),
+        CylinderDef::new(o, axis, doubled, nacre_exact::BigRat::from(rat(1.0))).is_none(),
         "a parallel ref_dir pins no seam, however wide its spelling"
     );
     assert!(
@@ -411,7 +411,7 @@ fn a_wide_parallel_ref_dir_is_still_refused() {
             o,
             axis,
             [zero(), zero(), zero()],
-            nacre_scalar::BigRat::from(rat(1.0))
+            nacre_exact::BigRat::from(rat(1.0))
         )
         .is_none(),
         "a zero ref_dir pins no seam either"

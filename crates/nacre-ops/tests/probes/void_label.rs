@@ -11,9 +11,9 @@
 //! The label is containment depth now — even is material, odd is a void — the rule
 //! `sketch::from_rings` already uses one dimension down.
 
+use nacre_exact::{Axis, Isometry, Rat};
 use nacre_math::{Point2, Point3};
 use nacre_ops::{BoolKind, Operation, Profile2d, SketchFrame, apply, boolean};
-use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 

@@ -121,7 +121,7 @@ fn the_two_variants_are_told_apart_and_ordered() {
 /// the same vector the cross product gives — two derivations, one answer.
 #[test]
 fn the_chart_is_an_orthogonal_in_plane_frame_along_the_normals_own_directions() {
-    use nacre_scalar::{Orient, Rat, dot_sign_rat, parallel_rat};
+    use nacre_exact::{Orient, Rat, dot_sign_rat, parallel_rat};
     let q = Rat::from_int;
     let k = 30_000_000_000_000_000_000i128; // 3e19
     let n = [q(k), q(2 * k), q(3 * k)];

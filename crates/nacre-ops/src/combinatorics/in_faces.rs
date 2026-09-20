@@ -29,12 +29,12 @@ use super::*;
 pub(crate) fn point_in_faces_rat(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
-    p: &[nacre_scalar::Rat; 3],
-    dir: &[nacre_scalar::Rat; 3],
+    p: &[nacre_exact::Rat; 3],
+    dir: &[nacre_exact::Rat; 3],
     faces: &[CompFace],
 ) -> Result<Option<bool>, BoolError> {
+    use nacre_exact::Rat;
     use nacre_geom::intersect::{RingSide, point_in_ring_2d_rat};
-    use nacre_scalar::Rat;
     let not_rational = || reject(RejectReason::WitnessNotRational);
     let zero = Rat::from_int(0);
     if dir.iter().all(|c| *c == zero) {
@@ -183,11 +183,11 @@ pub(crate) fn point_in_faces_rat(
 ///
 /// ★ The rule is `cylinder_radial_side`'s, the one the nesting engine reads for a disk target —
 /// a circle bound is `cylinder ∩ plane`, so "inside the disk" is "inside the cylinder's radius".
-fn point_in_disk(p: &[nacre_scalar::Rat; 3], def: &nacre_topo::CylinderDef) -> Option<bool> {
-    match nacre_scalar::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
-        nacre_scalar::Orient::Negative => Some(true),
-        nacre_scalar::Orient::Positive => Some(false),
-        nacre_scalar::Orient::Zero => None,
+fn point_in_disk(p: &[nacre_exact::Rat; 3], def: &nacre_topo::CylinderDef) -> Option<bool> {
+    match nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
+        nacre_exact::Orient::Negative => Some(true),
+        nacre_exact::Orient::Positive => Some(false),
+        nacre_exact::Orient::Zero => None,
     }
 }
 
@@ -221,8 +221,8 @@ fn curved_count(
     // `plane_plane_cylinder` gives its meet line, so "negative side" is "behind the query".
     let Some(half) = (|| {
         let d = cross3_rat(&[ca[0], ca[1], ca[2]], &[cb[0], cb[1], cb[2]])?;
-        let at = nacre_scalar::three_planes_rat([ca, cb, cc])?;
-        let d0 = nacre_scalar::Rat::from_int(0).checked_sub(dot3_rat(&d, &at)?)?;
+        let at = nacre_exact::three_planes_rat([ca, cb, cc])?;
+        let d0 = nacre_exact::Rat::from_int(0).checked_sub(dot3_rat(&d, &at)?)?;
         Some([d[0], d[1], d[2], d0])
     })() else {
         return Ok(None);
@@ -236,15 +236,12 @@ fn curved_count(
 }
 
 /// A rim's plane restated with the **axis** as its normal — `[m, −m·(o + t·m)]`, so
-/// [`nacre_scalar::quad::plane_side`] at a point of the cylinder is the sign of `z − t` along
+/// [`nacre_exact::quad::plane_side`] at a point of the cylinder is the sign of `z − t` along
 /// the axis. The banded arm built it this way before the cutover; the loops road builds it for
 /// every ⊥ class it meets.
-fn rim_plane(
-    def: &nacre_topo::CylinderDef,
-    t: nacre_scalar::Rat,
-) -> Option<[nacre_scalar::Rat; 4]> {
+fn rim_plane(def: &nacre_topo::CylinderDef, t: nacre_exact::Rat) -> Option<[nacre_exact::Rat; 4]> {
     let (o, m) = (def.origin(), def.dir());
-    let mut d0 = nacre_scalar::Rat::from_int(0);
+    let mut d0 = nacre_exact::Rat::from_int(0);
     for k in 0..3 {
         let at = o[k].checked_add(t.checked_mul(m[k])?)?;
         d0 = d0.checked_sub(m[k].checked_mul(at)?)?;
@@ -261,7 +258,7 @@ fn corner_axis_param(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     n: NodeId,
-) -> Option<nacre_scalar::Rat> {
+) -> Option<nacre_exact::Rat> {
     let (planes, _, _) = pierce_name(n)?;
     planes
         .iter()
@@ -280,7 +277,7 @@ fn corner_wall_class(
     let m = def.dir();
     planes.iter().copied().find(|&c| {
         class_coeffs_rat(jd, c).is_some_and(|w| {
-            dot3_rat(&[w[0], w[1], w[2]], &m) == Some(nacre_scalar::Rat::from_int(0))
+            dot3_rat(&[w[0], w[1], w[2]], &m) == Some(nacre_exact::Rat::from_int(0))
         })
     })
 }
@@ -295,7 +292,7 @@ fn corner_wall_class(
 /// ([`nacre_geom::intersect::ray_step_crossing`]`(Zero, ±, ±)`), and the ruling at that corner
 /// runs along the ray and never counts. A **ruling** piece is crossed by nothing; `x` on it is
 /// the boundary. Every comparison is one the arrangement already owns: `z` by
-/// [`nacre_scalar::quad::plane_side`] against [`rim_plane`], `θ` by [`arc_span`], a ruling by
+/// [`nacre_exact::quad::plane_side`] against [`rim_plane`], `θ` by [`arc_span`], a ruling by
 /// its own name (`plane_side(wall) == 0 ∧ ruling_side == side`, the predicate
 /// `crossing_on_ruling` names stations with).
 ///
@@ -307,13 +304,13 @@ pub(crate) fn loop_parity(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
     loops: &[LateralLoop],
-    meet: &nacre_scalar::quad::MeetLine,
-    s: &nacre_scalar::quad::QuadVal,
+    meet: &nacre_exact::quad::MeetLine,
+    s: &nacre_exact::quad::QuadVal,
 ) -> Option<bool> {
-    use nacre_scalar::Orient;
-    use nacre_scalar::quad::plane_side;
+    use nacre_exact::Orient;
+    use nacre_exact::quad::plane_side;
     let above =
-        |t: nacre_scalar::Rat| -> Option<Orient> { Some(plane_side(&rim_plane(def, t)?, meet, s)) };
+        |t: nacre_exact::Rat| -> Option<Orient> { Some(plane_side(&rim_plane(def, t)?, meet, s)) };
     let mut crossings = 0usize;
     for lp in loops {
         match lp {
@@ -436,16 +433,16 @@ pub(crate) fn loop_parity(
 /// `None` is checked-`Rat` arithmetic that could not answer — an honest decline, never a guess.
 pub(crate) fn lateral_face_crossings(
     jd: &Judge<'_, WorkingPlane>,
-    line: [&[nacre_scalar::Rat; 4]; 2],
+    line: [&[nacre_exact::Rat; 4]; 2],
     def: &nacre_topo::CylinderDef,
     loops: &[LateralLoop],
-    half: &[nacre_scalar::Rat; 4],
+    half: &[nacre_exact::Rat; 4],
 ) -> Option<CurvedHit> {
-    use nacre_scalar::Orient;
-    use nacre_scalar::quad::{CylinderMeet, QuadVal};
+    use nacre_exact::Orient;
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
     let (meet, roots): (_, [QuadVal; 2]) =
-        match nacre_scalar::quad::plane_plane_cylinder(line[0], line[1], &o, &m, r2)? {
+        match nacre_exact::quad::plane_plane_cylinder(line[0], line[1], &o, &m, r2)? {
             CylinderMeet::Pair { line, s } => (line, s),
             CylinderMeet::Tangent { .. } | CylinderMeet::OnRuling(_) => {
                 return Some(CurvedHit::Graze);
@@ -464,7 +461,7 @@ pub(crate) fn lateral_face_crossings(
             // cannot count this face — the banded arm's `Graze` on a rim, generalized.
             None => return Some(CurvedHit::Graze),
             Some(false) => continue,
-            Some(true) => match nacre_scalar::quad::plane_side(half, &meet, s) {
+            Some(true) => match nacre_exact::quad::plane_side(half, &meet, s) {
                 Orient::Zero => return Some(CurvedHit::Graze),
                 Orient::Negative => count += 1,
                 Orient::Positive => {}

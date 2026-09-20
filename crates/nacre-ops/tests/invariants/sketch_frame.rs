@@ -2,9 +2,9 @@
 //! construction and rejected by name — never silently replaced by `Canonical` — and the value a
 //! constructor accepts is letter-identical to what the operation road builds for the same words.
 
+use nacre_exact::{Axis, Rat};
 use nacre_math::{Point2, Point3, Vector3};
 use nacre_ops::{OpError, OpOutput, Operation, Profile2d, SketchFrame, SketchPlane, apply};
-use nacre_scalar::{Axis, Rat};
 use nacre_topo::{FramePlacement, Model, Motion};
 
 use crate::fixtures::datum_frame;
@@ -207,10 +207,10 @@ fn face_sketch_frame_reports_the_frame_the_pad_uses() {
             &mut m,
             &Operation::Transform {
                 solid: s,
-                isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+                isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
                     axis: Axis::Y,
                     pivot: [Rat::from_int(0); 3],
-                    angle: nacre_scalar::Angle::from_deg(Rat::from_int(30)).unwrap(),
+                    angle: nacre_exact::Angle::from_deg(Rat::from_int(30)).unwrap(),
                 }),
             },
         )

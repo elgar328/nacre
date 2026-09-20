@@ -1,6 +1,6 @@
 use super::*;
 /// **Where a segment crosses a cylinder's rulings on a ∥ class** — the straight sibling of
-/// [`circle_crossings`], same machinery ([`nacre_scalar::quad::plane_plane_cylinder`], the same
+/// [`circle_crossings`], same machinery ([`nacre_exact::quad::plane_plane_cylinder`], the same
 /// fences, the same names), different reachable arms: on a class **parallel** to the axis the
 /// meet can be tangent to the lateral — **skipped**, because a touch divides nothing and cutting
 /// there would make a zero-length piece — or lie on it, which the ladder refuses by name rather
@@ -16,13 +16,13 @@ fn lateral_crossings(
     def: &nacre_topo::CylinderDef,
     sg: &MergedSeg,
 ) -> Result<Option<Vec<LateralCrossing>>, BoolError> {
-    use nacre_scalar::quad::CylinderMeet;
+    use nacre_exact::quad::CylinderMeet;
     use nacre_topo::QuadRoot;
     let Some(v) = combinatorics::class_coeffs_rat(jd, sg.wall) else {
         return Ok(None);
     };
     let (o, m, r2) = (def.origin(), def.dir(), def.r2());
-    let (line, roots) = match nacre_scalar::quad::plane_plane_cylinder(w, &v, &o, &m, r2) {
+    let (line, roots) = match nacre_exact::quad::plane_plane_cylinder(w, &v, &o, &m, r2) {
         Some(CylinderMeet::Pair { line, s }) => {
             (line, vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])])
         }
@@ -33,7 +33,7 @@ fn lateral_crossings(
         // tangent piece (`side == 0`) is cut at, named as the scan names it.
         Some(CylinderMeet::Tangent { line, s }) => (
             line,
-            vec![(QuadRoot::Double, nacre_scalar::quad::QuadVal::from_rat(s))],
+            vec![(QuadRoot::Double, nacre_exact::quad::QuadVal::from_rat(s))],
         ),
         Some(CylinderMeet::Miss(_)) | Some(CylinderMeet::AxisParallelMiss(_)) => {
             return Ok(Some(Vec::new()));
@@ -67,8 +67,8 @@ fn lateral_crossings(
 /// solved at (the side and extent tests read it without re-solving).
 type LateralCrossing = (
     combinatorics::NodeId,
-    nacre_scalar::quad::MeetLine,
-    nacre_scalar::quad::QuadVal,
+    nacre_exact::quad::MeetLine,
+    nacre_exact::quad::QuadVal,
 );
 
 /// `split_rulings`' product — `None` when nothing crossed.
@@ -98,7 +98,7 @@ pub(super) fn split_rulings(
     rulings: &[MergedRuling],
     aliases: &Aliases,
 ) -> Result<SplitRulings, BoolError> {
-    use nacre_scalar::quad::QuadVal;
+    use nacre_exact::quad::QuadVal;
     let undecided = || reject(RejectReason::WitnessNotRational);
     if rulings.is_empty() {
         return Ok(None);
@@ -111,7 +111,7 @@ pub(super) fn split_rulings(
     };
     // A point's axis coordinate, from the exact `(line, s)` it was solved at.
     let coord_at = |def: &nacre_topo::CylinderDef,
-                    line: &nacre_scalar::quad::MeetLine,
+                    line: &nacre_exact::quad::MeetLine,
                     s: &QuadVal|
      -> Option<QuadVal> {
         let m = def.dir();

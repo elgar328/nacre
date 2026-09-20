@@ -156,8 +156,8 @@ fn arc_at(
     // need the stored-frame turn that `arc_side` does.
     let t = crate::planes::axis_param_of_plane(&coeffs, &a.def).ok_or_else(undecided)?;
     let (o, m) = (a.def.origin(), a.def.dir());
-    let centre: [nacre_scalar::Rat; 3] = (|| {
-        let mut c = [nacre_scalar::Rat::from_int(0); 3];
+    let centre: [nacre_exact::Rat; 3] = (|| {
+        let mut c = [nacre_exact::Rat::from_int(0); 3];
         for k in 0..3 {
             c[k] = o[k].checked_add(t.checked_mul(m[k])?)?;
         }
@@ -194,7 +194,7 @@ fn arc_at(
 pub(crate) fn stored_coeffs_rat(
     jd: &Judge<'_, WorkingPlane>,
     c: usize,
-) -> Option<[nacre_scalar::Rat; 4]> {
+) -> Option<[nacre_exact::Rat; 4]> {
     let coeffs = class_coeffs_rat(jd, c)?;
     let n = nacre_math::Vector3::from_array([
         coeffs[0].to_f64(),
@@ -204,7 +204,7 @@ pub(crate) fn stored_coeffs_rat(
     let agrees = jd.planes[c].plane.normal().dot(n) > 0.0;
     debug_assert!(
         jd.planes[c].name_ints.as_ref().is_none_or(|ni| {
-            let k = (0..4).find(|&k| coeffs[k] != nacre_scalar::Rat::from_int(0));
+            let k = (0..4).find(|&k| coeffs[k] != nacre_exact::Rat::from_int(0));
             // ★ Through `NameInts`' own accessor, not by touching the integers: production code
             // in this crate reaches `BigInt` only through `nacre-judge`'s types (the `num-bigint`
             // dependency is dev-only, and an assertion is not a reason to promote it).
@@ -215,7 +215,7 @@ pub(crate) fn stored_coeffs_rat(
     if agrees {
         return Some(coeffs);
     }
-    let zero = nacre_scalar::Rat::from_int(0);
+    let zero = nacre_exact::Rat::from_int(0);
     let mut out = [zero; 4];
     for k in 0..4 {
         out[k] = zero.checked_sub(coeffs[k])?;
@@ -591,8 +591,7 @@ fn ruling_line_turn(
     debug_assert!(
         class_coeffs_rat(jd, p)
             .map(|n| {
-                nacre_scalar::dot_sign_rat(&[n[0], n[1], n[2]], &r.axis)
-                    == nacre_scalar::Orient::Zero
+                nacre_exact::dot_sign_rat(&[n[0], n[1], n[2]], &r.axis) == nacre_exact::Orient::Zero
             })
             .unwrap_or(true),
         "a ruling direction on a class its axis does not lie in"
@@ -604,15 +603,15 @@ fn ruling_line_turn(
     let Some(n) = stored_coeffs_rat(jd, carrier) else {
         return Err(reject(RejectReason::WitnessNotRational));
     };
-    let dot = nacre_scalar::dot_sign_rat(&[n[0], n[1], n[2]], &r.axis);
+    let dot = nacre_exact::dot_sign_rat(&[n[0], n[1], n[2]], &r.axis);
     let up = if r.up { 1 } else { -1 };
     Ok(match dot {
-        nacre_scalar::Orient::Positive => -up,
-        nacre_scalar::Orient::Negative => up,
+        nacre_exact::Orient::Positive => -up,
+        nacre_exact::Orient::Negative => up,
         // `m · n_carrier = 0` means the segment's line is parallel to the ruling — no crossing
         // could have put them at one node, so a `0` here is the degenerate concurrency the
         // walk's `UnorderedEdges` bucket names.
-        nacre_scalar::Orient::Zero => 0,
+        nacre_exact::Orient::Zero => 0,
     })
 }
 
@@ -675,7 +674,7 @@ pub(crate) fn tangent_travel_agrees(
     sense: i8,
     arc: &ArcDir,
 ) -> Option<bool> {
-    use nacre_scalar::{Orient, quad::QuadVal};
+    use nacre_exact::{Orient, quad::QuadVal};
     let (np, nw) = (stored_coeffs_rat(jd, p)?, stored_coeffs_rat(jd, carrier)?);
     let d = cross3_rat(&[np[0], np[1], np[2]], &[nw[0], nw[1], nw[2]])?;
     let (line, s) = &arc.at;
@@ -721,7 +720,7 @@ fn arc_side(
     carrier: usize,
     arc: &ArcDir,
 ) -> Result<i8, BoolError> {
-    use nacre_scalar::{Orient, Rat};
+    use nacre_exact::{Orient, Rat};
     let wide = || reject(RejectReason::WitnessNotRational);
     let ArcDir {
         at,
@@ -746,7 +745,7 @@ fn arc_side(
         ])
     })()
     .ok_or_else(wide)?;
-    let side = match nacre_scalar::quad::plane_side(&plane, &at.0, &at.1) {
+    let side = match nacre_exact::quad::plane_side(&plane, &at.0, &at.1) {
         Orient::Positive => 1i8,
         Orient::Negative => -1,
         // The segment is **tangent** to the circle at this node. The split cuts only at

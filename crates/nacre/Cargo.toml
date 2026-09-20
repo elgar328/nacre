@@ -33,7 +33,7 @@ nacre-math = { path = "../nacre-math", version = "0.0.0" }
 # on. Wiring it with defaults would leave a consumer no way to turn it off.
 nacre-ops = { path = "../nacre-ops", version = "0.0.0", default-features = false }
 nacre-props = { path = "../nacre-props", version = "0.0.0" }
-nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
+nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
 nacre-step = { path = "../nacre-step", version = "0.0.0" }
 nacre-store = { path = "../nacre-store", version = "0.0.0" }
 nacre-tess = { path = "../nacre-tess", version = "0.0.0" }

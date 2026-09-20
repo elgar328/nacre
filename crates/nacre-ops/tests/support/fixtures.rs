@@ -8,6 +8,7 @@
 //! each module's own `#[cfg(test)] mod tests`.
 #![allow(dead_code)] // shared helpers: any one coverage module uses only some.
 
+use nacre_exact::{Axis, Isometry};
 use nacre_geom::intersect::planes_coplanar;
 use nacre_geom::{Plane, Surface};
 use nacre_math::{Point2, Point3, Vector3};
@@ -16,7 +17,6 @@ use nacre_ops::SketchFrame;
 use nacre_ops::{
     BoolError, BoolKind, OpOutput, Operation, Profile2d, SketchPlane, apply, boolean, replay,
 };
-use nacre_scalar::{Axis, Isometry};
 use nacre_store::Handle;
 use nacre_topo::{Face, Model, Solid};
 
@@ -166,7 +166,7 @@ pub fn xf(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
 
 /// 30° about Z through (1,1,0) — the standard oblique tilt for rotation-invariance.
 pub fn rot30() -> Isometry {
-    use nacre_scalar::{Angle, Rat, Rotation};
+    use nacre_exact::{Angle, Rat, Rotation};
     Isometry::rotation(Rotation {
         axis: Axis::Z,
         pivot: [Rat::from_int(1), Rat::from_int(1), Rat::from_int(0)],
@@ -176,7 +176,7 @@ pub fn rot30() -> Isometry {
 
 /// `deg`° about `axis` through the origin.
 pub fn rot_iso(axis: Axis, deg: i128) -> Isometry {
-    use nacre_scalar::{Angle, Rat, Rotation};
+    use nacre_exact::{Angle, Rat, Rotation};
     Isometry::rotation(Rotation {
         axis,
         pivot: [Rat::from_int(0); 3],
@@ -338,7 +338,7 @@ fn extrude_at_z(m: &mut Model, profile: Profile2d, z: f64, dist: f64) -> Handle<
 pub fn cube_and_spun_bar_ulp(
     half_z: f64,
     deg: i128,
-    pivot_z: nacre_scalar::Rat,
+    pivot_z: nacre_exact::Rat,
     ulps: i64,
 ) -> (Model, Handle<Solid>, Handle<Solid>) {
     let mut x_hi = 0.7f64;
@@ -355,7 +355,7 @@ pub fn cube_and_spun_bar_ulp(
 pub fn cube_and_spun_bar(
     half_z: f64,
     deg: i128,
-    pivot_z: nacre_scalar::Rat,
+    pivot_z: nacre_exact::Rat,
 ) -> (Model, Handle<Solid>, Handle<Solid>) {
     cube_and_spun_bar_x(half_z, deg, pivot_z, 0.7)
 }
@@ -363,10 +363,10 @@ pub fn cube_and_spun_bar(
 pub fn cube_and_spun_bar_x(
     half_z: f64,
     deg: i128,
-    pivot_z: nacre_scalar::Rat,
+    pivot_z: nacre_exact::Rat,
     x_hi: f64,
 ) -> (Model, Handle<Solid>, Handle<Solid>) {
-    use nacre_scalar::{Angle, Rat, Rotation};
+    use nacre_exact::{Angle, Rat, Rotation};
     let mut m = Model::new();
     let __op = extrude_op(&m, square(), 1.0);
     let OpOutput::Extrude { solid: cube, .. } = apply(&mut m, &__op).unwrap() else {
@@ -597,7 +597,7 @@ pub fn near(a: f64, b: f64) -> bool {
 }
 
 pub fn test_iso() -> (Isometry, [f64; 3]) {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     (
         Isometry::translation([
             Rat::new(7, 2).unwrap(),
@@ -609,7 +609,7 @@ pub fn test_iso() -> (Isometry, [f64; 3]) {
 }
 
 pub fn translate_iso(off: [i128; 3]) -> Isometry {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     Isometry::translation([
         Rat::from_int(off[0]),
         Rat::from_int(off[1]),
@@ -618,7 +618,7 @@ pub fn translate_iso(off: [i128; 3]) -> Isometry {
 }
 
 pub fn rigid_iso(axis: Axis, deg: i128, off: [i128; 3]) -> Isometry {
-    use nacre_scalar::{Angle, Rat, Rotation};
+    use nacre_exact::{Angle, Rat, Rotation};
     Isometry::rigid(
         Rotation {
             axis,

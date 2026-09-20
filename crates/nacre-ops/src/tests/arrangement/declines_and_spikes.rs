@@ -48,8 +48,8 @@ fn axis_aligned_cubes_decline_nothing() {
     }
 }
 
-fn tilt_by(m: &mut Model, s: Handle<Solid>, deg: nacre_scalar::Rat) -> Handle<Solid> {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+fn tilt_by(m: &mut Model, s: Handle<Solid>, deg: nacre_exact::Rat) -> Handle<Solid> {
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let out = transform(
         m,
         s,
@@ -105,7 +105,7 @@ fn direction_families_partition_the_walls() {
                     Point3::from_array([8.0, 0.4, 1.0]),
                 );
                 m.rebuild_adjacency();
-                tilt_by(&mut m, f, nacre_scalar::Rat::new(360 * i, n).unwrap())
+                tilt_by(&mut m, f, nacre_exact::Rat::new(360 * i, n).unwrap())
             } else {
                 let x = i as f64 * 0.5;
                 let f = m.add_cuboid(
@@ -253,7 +253,7 @@ fn spend(n: i128, rotated: bool) {
         };
         m.rebuild_adjacency();
         if rotated {
-            tilt_by(m, f, nacre_scalar::Rat::new(360 * i, n).unwrap())
+            tilt_by(m, f, nacre_exact::Rat::new(360 * i, n).unwrap())
         } else {
             f
         }
@@ -364,7 +364,7 @@ fn measure_spike_report_after_hoisting() {
             Point3::from_array([8.0, 0.4, 1.0]),
         );
         m.rebuild_adjacency();
-        let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(360 * i, n).unwrap());
+        let fin = tilt_by(&mut m, fin, nacre_exact::Rat::new(360 * i, n).unwrap());
         let (solids, report) =
             crate::boolean_with_report(&mut m, BoolKind::Fuse, acc, fin).unwrap();
         total += report.coincidences;
@@ -404,7 +404,7 @@ fn measure_spike_cull_potential() {
             Point3::from_array([8.0, 0.4, 1.0]),
         );
         m.rebuild_adjacency();
-        let fin = tilt_by(&mut m, fin, nacre_scalar::Rat::new(360 * i, n).unwrap());
+        let fin = tilt_by(&mut m, fin, nacre_exact::Rat::new(360 * i, n).unwrap());
         tot.add(&count_cull(&m, acc, fin));
         acc = super::super::boolean(&mut m, BoolKind::Fuse, acc, fin)
             .expect("fuse")

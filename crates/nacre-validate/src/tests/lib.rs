@@ -34,7 +34,7 @@ fn shell_handle_at(index: u32) -> Handle<Shell> {
 fn surface_handle_at(index: u32) -> Handle<Surface> {
     let plane = || Surface::Plane {
         points: nacre_topo::PlanePoints::Known(
-            [[0, 0, 0], [1, 0, 0], [0, 1, 0]].map(|p| p.map(nacre_scalar::Rat::from_int)),
+            [[0, 0, 0], [1, 0, 0], [0, 1, 0]].map(|p| p.map(nacre_exact::Rat::from_int)),
         ),
         motion: None,
     };
@@ -130,9 +130,9 @@ fn stray_vertex_ignored() {
     let mut m = cuboid([0.0, 0.0, 0.0], [1.0, 1.0, 1.0]);
     m.push_vertex(
         Vertex::ThreePlane([
-            m.world_plane(nacre_scalar::Axis::Z),
-            m.world_plane(nacre_scalar::Axis::X),
-            m.world_plane(nacre_scalar::Axis::Y),
+            m.world_plane(nacre_exact::Axis::Z),
+            m.world_plane(nacre_exact::Axis::X),
+            m.world_plane(nacre_exact::Axis::Y),
         ]),
         PointCache::Unrealized {
             coord: Point3::origin(),
@@ -235,7 +235,7 @@ fn push_tetra(m: &mut Model, t: [f64; 3], opts: &TetraOpts) -> Vec<Handle<Face>>
         .map(|(tri, _)| {
             let lift = |p: Point3| {
                 p.as_array()
-                    .map(|x| nacre_scalar::Rat::from_decimal(x).expect("tetra corners"))
+                    .map(|x| nacre_exact::Rat::from_decimal(x).expect("tetra corners"))
             };
             let (h, _) = m.push_plane(
                 Plane::through_points(corner(tri[0]), corner(tri[1]), corner(tri[2])).unwrap(),
@@ -458,7 +458,7 @@ fn vertex_off_surface_when_nudged() {
 #[test]
 fn edge_carrier_mismatch_is_flagged() {
     let mut m = nacre_topo::Model::new();
-    let r = nacre_scalar::Rat::from_int;
+    let r = nacre_exact::Rat::from_int;
     let plane = |m: &mut nacre_topo::Model, n: [f64; 3], pts: [[i128; 3]; 3]| {
         m.push_plane(
             Plane::from_point_normal(Point3::origin(), Vector3::from_array(n)).unwrap(),
@@ -537,7 +537,7 @@ fn same_surface_users_check_membership_not_equality() {
     // The arena is append-only, so each direction builds its own model.
     let build = |stated_second_is_sc: bool| {
         let mut m = nacre_topo::Model::new();
-        let r = nacre_scalar::Rat::from_int;
+        let r = nacre_exact::Rat::from_int;
         let plane = |m: &mut nacre_topo::Model, n: [f64; 3], pts: [[i128; 3]; 3]| {
             m.push_plane(
                 Plane::from_point_normal(Point3::origin(), Vector3::from_array(n)).unwrap(),
@@ -635,8 +635,8 @@ fn a_contradictory_vertex_def_is_flagged() {
         .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
         .expect("the lateral cylinder");
     let (z0, x0) = (
-        m.world_plane(nacre_scalar::Axis::Z),
-        m.world_plane(nacre_scalar::Axis::X),
+        m.world_plane(nacre_exact::Axis::Z),
+        m.world_plane(nacre_exact::Axis::X),
     );
     let bad_three = m.push_vertex(
         Vertex::ThreePlane([z0, x0, cyl]),
@@ -789,12 +789,12 @@ fn a_lying_cylinder_def_is_caught() {
         nacre_geom::Surface::Cylinder(c) => *c,
         _ => unreachable!(),
     };
-    let r = |x: f64| nacre_scalar::Rat::from_decimal(x).expect("decimal");
+    let r = |x: f64| nacre_exact::Rat::from_decimal(x).expect("decimal");
     let lying = nacre_topo::CylinderDef::new(
         [r(0.0), r(0.0), r(0.0)],
         [r(0.0), r(0.0), r(1.0)],
         [r(0.0), r(-1.0), r(0.0)],
-        nacre_scalar::BigRat::from(r(4.0)), // the lie: r² = 4, where the cache's radius is 1
+        nacre_exact::BigRat::from(r(4.0)), // the lie: r² = 4, where the cache's radius is 1
     )
     .expect("well-formed statement");
     let liar = m.push_cylinder(cache, lying, None);
@@ -841,8 +841,8 @@ fn a_pierce_vertex_is_held_to_its_cylinder() {
         .map(|(_, f)| f.surface)
         .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
         .expect("lateral");
-    let bottom = m.world_plane(nacre_scalar::Axis::Z);
-    let x0 = m.world_plane(nacre_scalar::Axis::X);
+    let bottom = m.world_plane(nacre_exact::Axis::Z);
+    let x0 = m.world_plane(nacre_exact::Axis::X);
     // The good statement, free-floating: reference integrity and the carrier-kind check
     // run over every vertex, and neither may fire.
     let _good = m.push_vertex(
@@ -925,8 +925,8 @@ fn a_contradictory_pierce_def_is_flagged() {
         .map(|(_, f)| f.surface)
         .find(|&h| matches!(m.surface_cache(h), nacre_geom::Surface::Cylinder(_)))
         .expect("lateral");
-    let bottom = m.world_plane(nacre_scalar::Axis::Z);
-    let x0 = m.world_plane(nacre_scalar::Axis::X);
+    let bottom = m.world_plane(nacre_exact::Axis::Z);
+    let x0 = m.world_plane(nacre_exact::Axis::X);
     let cyl_in_plane_slot = m.push_vertex(
         Vertex::Pierce {
             planes: [bottom, lateral],
@@ -940,7 +940,7 @@ fn a_contradictory_pierce_def_is_flagged() {
     let plane_in_cyl_slot = m.push_vertex(
         Vertex::Pierce {
             planes: [bottom, x0],
-            cylinder: m.world_plane(nacre_scalar::Axis::Y),
+            cylinder: m.world_plane(nacre_exact::Axis::Y),
             root: QuadRoot::Lo,
         },
         PointCache::Unrealized {

@@ -169,10 +169,10 @@ fn two_faces_of_one_judged_surface_are_one_class() {
         &mut m,
         &Operation::Transform {
             solid: b,
-            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
-                axis: nacre_scalar::Axis::Z,
-                pivot: [nacre_scalar::Rat::from_int(0); 3],
-                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
+                axis: nacre_exact::Axis::Z,
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(37)).unwrap(),
             }),
         },
     )
@@ -345,7 +345,7 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
     // computed below, lifted) is still stated — nothing point-less enters the arena.
     let lift = |p: Point3| {
         p.as_array()
-            .map(|x| nacre_scalar::Rat::from_decimal(x).unwrap())
+            .map(|x| nacre_exact::Rat::from_decimal(x).unwrap())
     };
     let (ti, tj) = ((axis + 1) % 3, (axis + 2) % 3);
     let (ti, tj) = if positive { (ti, tj) } else { (tj, ti) };
@@ -384,7 +384,7 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
         tri_pt3: tri.map(|p| {
             nacre_judge::WitnessPoint::at_nearest(
                 p.as_array()
-                    .map(|x| nacre_scalar::Rat::try_from_f64(x).expect("exact")),
+                    .map(|x| nacre_exact::Rat::try_from_f64(x).expect("exact")),
             )
         }),
         rotated: false,

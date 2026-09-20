@@ -37,7 +37,7 @@ impl BaseFrame {
         tri_pt3: &[WitnessPoint; 3],
         motion: Option<Handle<nacre_topo::MotionNode>>,
         frame_sign: i8,
-        base_rat: Option<[nacre_scalar::Rat; 4]>,
+        base_rat: Option<[nacre_exact::Rat; 4]>,
     ) -> Self {
         // **Identity by handle, not by hash.** This used to fold the chain into a 64-bit
         // `DefaultHasher` digest and compare digests — and a collision does not make a judgement
@@ -57,7 +57,7 @@ impl BaseFrame {
         };
         // 0 is reserved for "no motion", so never hand it out as an id.
         let chain_id = leaf.index() as u64 + 1;
-        let exact = |r: nacre_scalar::Rat| nacre_scalar::Rat::try_from_f64(r.to_f64()) == Some(r);
+        let exact = |r: nacre_exact::Rat| nacre_exact::Rat::try_from_f64(r.to_f64()) == Some(r);
         if !tri_pt3.iter().all(|p| p.base.iter().all(|&r| exact(r))) {
             return Self {
                 chain_id,
@@ -131,10 +131,10 @@ impl BaseFrame {
             // outright. Reflect the plane, then let the orientation step below settle the sign
             // (which is where reflecting-then-deriving and deriving-then-reflecting differ).
             let c = if improper {
-                nacre_scalar::mirror_plane_coeffs(
+                nacre_exact::mirror_plane_coeffs(
                     c,
-                    nacre_scalar::Axis::X,
-                    nacre_scalar::Rat::from_int(0),
+                    nacre_exact::Axis::X,
+                    nacre_exact::Rat::from_int(0),
                 )?
             } else {
                 c
@@ -144,7 +144,7 @@ impl BaseFrame {
             // realization is a rounding and buys nothing over the derivation.
             c.iter()
                 .zip(f)
-                .all(|(&r, x)| nacre_scalar::Rat::try_from_f64(x) == Some(r))
+                .all(|(&r, x)| nacre_exact::Rat::try_from_f64(x) == Some(r))
                 .then_some(f)
         });
         let coeffs = match (exact_coeffs, derived) {
@@ -166,11 +166,11 @@ impl BaseFrame {
 pub(crate) struct WorkingPlane {
     pub(crate) plane: Plane,
     /// The class root's exact rational coefficients — see [`FaceInfo::base_rat`].
-    pub(crate) base_rat: Option<[nacre_scalar::Rat; 4]>,
+    pub(crate) base_rat: Option<[nacre_exact::Rat; 4]>,
     /// The class root's exact rational coefficients **in the world** — see
     /// [`FaceInfo::world_rat`]. The one description the cylinder roads may compare against a
     /// world axis, and the one [`crate::combinatorics::class_coeffs_rat`] hands out.
-    pub(crate) world_rat: Option<[nacre_scalar::Rat; 4]>,
+    pub(crate) world_rat: Option<[nacre_exact::Rat; 4]>,
     /// The class's representative surface — what `assemble_fuse_cut` records in a
     /// `Vertex::ThreePlane`.
     pub(crate) surf: Handle<Surface>,

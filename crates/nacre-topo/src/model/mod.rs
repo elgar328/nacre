@@ -51,7 +51,7 @@ impl Model {
             prefix_hp: HashMap::new(),
             world_planes: Vec::new(),
         };
-        let r = nacre_scalar::Rat::from_int;
+        let r = nacre_exact::Rat::from_int;
         // (normal axis, +u, +v) for XY / YZ / ZX — the `SketchPlane::axis_plane` triples.
         let seeds: [([f64; 3], [i128; 3], [i128; 3]); 3] = [
             ([0.0, 0.0, 1.0], [1, 0, 0], [0, 1, 0]),

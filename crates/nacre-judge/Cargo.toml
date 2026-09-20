@@ -8,12 +8,12 @@ rust-version.workspace = true
 description = "Toleranced sign judgments for the nacre CAD kernel — the twin of nacre-predicates for rotated points, whose coordinates are irrational: an f64 filter escalates to arbitrary precision and returns a proved sign, a proved coincidence, or an honest undecided. Pure numeric; never reads the b-rep"
 
 [dependencies]
-nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
+nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
 nacre-predicates = { path = "../nacre-predicates", version = "0.0.0" }
 nacre-math = { path = "../nacre-math", version = "0.0.0" }
 astro-float = "0.9.5"
 # Wide frames: a plane whose canonical data exceeds `i128` realizes from arbitrary-precision
-# integers. Pure Rust, and already in the product path via nacre-scalar.
+# integers. Pure Rust, and already in the product path via nacre-exact.
 num-bigint = "0.4"
 num-integer = "0.1"
 

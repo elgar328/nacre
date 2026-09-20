@@ -1,5 +1,5 @@
 use super::*;
-/// The exact data of a wide sketch frame — [`nacre_scalar::PlaneFrame`]'s arbitrary-precision
+/// The exact data of a wide sketch frame — [`nacre_exact::PlaneFrame`]'s arbitrary-precision
 /// twin. Built once when a motion chain is flattened; realized on demand.
 ///
 /// `origin = origin_num / origin_den` (one exact rational, common denominator `n·n`); the
@@ -21,7 +21,7 @@ impl WideFrame {
     /// The **canonical placement's** frame for the plane `n·x + d = 0`: origin at the world
     /// origin's projection (`(−d/n·n)·n`, kept as `num/den`), axes by the arbitrary-axis
     /// convention (`u_raw = ẑ×n`, or `ŷ×n` when the normal is exactly vertical — the same
-    /// exact branch [`nacre_scalar::plane_frame_default`] takes). The narrow twin of this
+    /// exact branch [`nacre_exact::plane_frame_default`] takes). The narrow twin of this
     /// derivation is `plane_frame_default` + `plane_frame_named`; here nothing can overflow,
     /// so unlike them this cannot decline on width.
     ///
@@ -144,14 +144,14 @@ impl WideFrame {
     /// [`WideFrame::canonical`] from a plane's stored name, with the frame's `flip` spent here
     /// (negating the coefficients — the same place the narrow route spends it). `Narrow` names
     /// lift; `Wide` ones are already the right width.
-    pub fn canonical_of(name: &nacre_scalar::PlaneName, flip: bool) -> Option<WideFrame> {
+    pub fn canonical_of(name: &nacre_exact::PlaneName, flip: bool) -> Option<WideFrame> {
         let [c0, c1, c2, c3] = name_bigints(name, flip);
         WideFrame::canonical([c0, c1, c2], &c3)
     }
 
     /// [`WideFrame::named`] from a plane's stored name — see [`WideFrame::canonical_of`].
     pub fn named_of(
-        name: &nacre_scalar::PlaneName,
+        name: &nacre_exact::PlaneName,
         origin: &[Rat; 3],
         ref_dir: &[Rat; 3],
         flip: bool,
@@ -161,10 +161,10 @@ impl WideFrame {
     }
 }
 
-/// A [`nacre_scalar::PlaneName`]'s coefficients as `BigInt`s, negated when `flip` — the sign a
+/// A [`nacre_exact::PlaneName`]'s coefficients as `BigInt`s, negated when `flip` — the sign a
 /// frame node carries is spent on the coefficients, exactly as the narrow route spends it
 /// before `plane_frame_named`.
-fn name_bigints(name: &nacre_scalar::PlaneName, flip: bool) -> [num_bigint::BigInt; 4] {
+fn name_bigints(name: &nacre_exact::PlaneName, flip: bool) -> [num_bigint::BigInt; 4] {
     let mut cs = name.coeff_ints();
     if flip {
         for c in &mut cs {

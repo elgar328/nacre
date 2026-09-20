@@ -44,7 +44,7 @@
 //!    motions leaves the widest *name* exactly where it started
 //!    (`stacking_operations_does_not_widen_a_name`). ★ These are **corpus numbers, not bounds** —
 //!    the meter's negative control lives in
-//!    `nacre-scalar` (`the_width_meter_reports_a_point_no_rat_can_hold`, 201 bits), so `over127 =
+//!    `nacre-exact` (`the_width_meter_reports_a_point_no_rat_can_hold`, 201 bits), so `over127 =
 //!    0` is a fact about this population and not about a clamped instrument.
 //!
 //! 2. ★★ **The declines are not about width at all.** On the tilted decimal family
@@ -168,10 +168,10 @@
 //! the shape to watch for here: this file's counters can shrink a population silently while every
 //! assertion stays green.
 
+use nacre_exact::{Angle, Axis, Isometry, MeetPoint, PlaneName, Rat, Rotation};
 use nacre_math::{Point3, Vector3};
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, SketchPlane};
 use nacre_ops::{apply, boolean};
-use nacre_scalar::{Angle, Axis, Isometry, MeetPoint, PlaneName, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
@@ -361,7 +361,7 @@ fn measure(m: &Model) -> Tally {
             Some(rows)
         })();
         if let Some(rows) = narrow_in {
-            match nacre_scalar::three_planes_rat(rows) {
+            match nacre_exact::three_planes_rat(rows) {
                 Some(got) => {
                     t.narrow_answered += 1;
                     assert_eq!(
@@ -551,8 +551,7 @@ fn datum_reach(m: &Model) -> Reach {
                         .collect();
                     if f.clone().collect::<std::collections::HashSet<_>>().len() != 1 {
                         t.accepted_nameless += 1;
-                    } else if nacre_scalar::plane_name_from_meets([pts[0], pts[1], pts[2]])
-                        .is_none()
+                    } else if nacre_exact::plane_name_from_meets([pts[0], pts[1], pts[2]]).is_none()
                     {
                         t.collinear += 1;
                     } else {
@@ -706,7 +705,7 @@ fn tilted_frame(passes: usize) -> Model {
                     && m.surface_name
                         .get(&s)
                         .and_then(|n| n.narrow())
-                        .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+                        .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
             })
             .unwrap_or_else(|| panic!("the wf population vanished on pass {pass}"));
         done.push(m.face(wall).surface);
@@ -759,7 +758,7 @@ fn solved_discovered(m: &Model) -> Vec<([Rat; 3], Handle<Vertex>)> {
         if !(ms[0] == ms[1] && ms[1] == ms[2]) {
             continue; // mixed frames — no rational coordinate in any single frame
         }
-        if let Some(p) = nacre_scalar::three_planes_big([names[0], names[1], names[2]]) {
+        if let Some(p) = nacre_exact::three_planes_big([names[0], names[1], names[2]]) {
             if let Some(n) = p.narrow() {
                 out.push((*n, vh));
             }
@@ -779,9 +778,9 @@ fn triple_verdicts(m: &Model, solved: &[([Rat; 3], Handle<Vertex>)]) -> (usize, 
     for i in 0..solved.len() {
         for j in (i + 1)..solved.len() {
             for k in (j + 1)..solved.len() {
-                let exact = nacre_scalar::plane_name_exact(solved[i].0, solved[j].0, solved[k].0);
+                let exact = nacre_exact::plane_name_exact(solved[i].0, solved[j].0, solved[k].0);
                 let rounded = (|| {
-                    nacre_scalar::plane_name_exact(
+                    nacre_exact::plane_name_exact(
                         lift(solved[i].1)?,
                         lift(solved[j].1)?,
                         lift(solved[k].1)?,

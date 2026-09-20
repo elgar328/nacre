@@ -110,12 +110,12 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     for &(c, ci) in &setup.crossings {
         let coeffs = setup.geom[c].world_rat.expect("a named wall class");
         assert_eq!(
-            nacre_scalar::point_plane_clearance_rat(
+            nacre_exact::point_plane_clearance_rat(
                 &coeffs,
                 &setup.cyls[ci].def.origin(),
-                &nacre_scalar::BigRat::zero()
+                &nacre_exact::BigRat::zero()
             ),
-            nacre_scalar::Orient::Zero,
+            nacre_exact::Orient::Zero,
             "the recorded pair is a cylinder seated exactly on that class's plane"
         );
     }
@@ -831,7 +831,7 @@ fn a_disk_merges_into_the_face_it_lies_in() {
 /// array is this shape, and it stopped here after the class descriptions were carried out.
 #[test]
 fn a_moved_face_answers_the_clearance_test() {
-    use nacre_scalar::Rat;
+    use nacre_exact::Rat;
     let cell = |m: &mut Model| {
         let plate = m.add_cuboid(
             Point3::from_array([0.0; 3]),
@@ -861,7 +861,7 @@ fn a_moved_face_answers_the_clearance_test() {
     let b = transform(
         &mut m,
         b,
-        &nacre_scalar::Isometry::translation([
+        &nacre_exact::Isometry::translation([
             Rat::try_from_f64(100.3).unwrap(),
             Rat::from_int(0),
             Rat::from_int(0),
@@ -890,7 +890,7 @@ fn a_moved_face_answers_the_clearance_test() {
 /// datum exact and records nothing, so the angle here is one that does record.)
 #[test]
 fn a_rotated_cylinder_is_still_undecided() {
-    use nacre_scalar::{Angle, Rat, Rotation};
+    use nacre_exact::{Angle, Rat, Rotation};
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -906,7 +906,7 @@ fn a_rotated_cylinder_is_still_undecided() {
     let tool = transform(
         &mut m,
         tool,
-        &nacre_scalar::Isometry::rotation(Rotation {
+        &nacre_exact::Isometry::rotation(Rotation {
             axis: Axis::Z,
             pivot: [Rat::from_int(20), Rat::from_int(20), Rat::from_int(0)],
             angle: Angle::from_deg(Rat::from_int(31)).unwrap(),

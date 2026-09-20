@@ -171,7 +171,7 @@ impl SketchPlane {
             // a plane at all. `plane_name_exact` is total (Narrow | Wide), so `None` means
             // exactly one thing: collinear. There is no
             // "answer does not fit i128" failure class.
-            nacre_scalar::plane_name_exact(o, xp, yh)?;
+            nacre_exact::plane_name_exact(o, xp, yh)?;
             Some(PlaneDef {
                 points: [o, xp, yh],
             })
@@ -253,7 +253,7 @@ impl SketchPlane {
             let py = add(o, lift(y_axis.as_array())?)?;
             // Total: `None` means exactly one thing — the axes are parallel (or zero) in their
             // decimal truth, and name no plane.
-            nacre_scalar::plane_name_exact(o, px, py)?;
+            nacre_exact::plane_name_exact(o, px, py)?;
             Some(PlaneDef {
                 points: [o, px, py],
             })
@@ -310,7 +310,7 @@ impl SketchPlane {
 /// - the normal's direction is `(p1 − p0) × (p2 − p0)` — the point order carries the polarity.
 ///
 /// Nothing is left to check, and nothing can disagree. The canonical coefficients are *derived*
-/// (`nacre_scalar::plane_name_exact` — total, `Narrow | Wide`), so there is no
+/// (`nacre_exact::plane_name_exact` — total, `Narrow | Wide`), so there is no
 /// failure class "the coefficients do not fit `i128`": three in-window points
 /// always name their plane, however wide its canonical form.
 ///
@@ -321,18 +321,18 @@ pub struct PlaneDef {
     /// Three points of the plane, non-collinear (`plane_name_exact` is what verified it — every
     /// constructor rejects a collinear triple as "no plane"). `points[0]` is the sketch origin,
     /// `points[1] − points[0]` the `+u` direction, and the order fixes the normal's sign.
-    pub(crate) points: [[nacre_scalar::Rat; 3]; 3],
+    pub(crate) points: [[nacre_exact::Rat; 3]; 3],
 }
 
 impl PlaneDef {
     /// The three defining points — the sketch origin first, then the point `+u` runs toward,
     /// then the point fixing the normal's side.
-    pub fn points(&self) -> [[nacre_scalar::Rat; 3]; 3] {
+    pub fn points(&self) -> [[nacre_exact::Rat; 3]; 3] {
         self.points
     }
 
     /// Where the sketch's `(0, 0)` sits — the first defining point.
-    pub fn origin(&self) -> [nacre_scalar::Rat; 3] {
+    pub fn origin(&self) -> [nacre_exact::Rat; 3] {
         self.points[0]
     }
 
@@ -341,7 +341,7 @@ impl PlaneDef {
     /// The subtraction cannot overflow: both points passed through a constructor, and every
     /// constructor either lifted decimals (narrow) or added one lifted decimal to another —
     /// widths nowhere near `i128`'s ceiling.
-    pub fn ref_dir(&self) -> [nacre_scalar::Rat; 3] {
+    pub fn ref_dir(&self) -> [nacre_exact::Rat; 3] {
         core::array::from_fn(|i| {
             self.points[1][i]
                 .checked_sub(self.points[0][i])

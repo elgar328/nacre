@@ -16,7 +16,7 @@ fn knowledge_is_tight(m: &Model, h: Handle<nacre_topo::Vertex>) {
         nacre_topo::PointCache::Bounded { bound, .. } => assert!(
             bound
                 .iter()
-                .all(|b| nacre_scalar::Mag::lt(*b, nacre_scalar::Mag::of(1e-12))),
+                .all(|b| nacre_exact::Mag::lt(*b, nacre_exact::Mag::of(1e-12))),
             "realized within rounding: {bound:?}"
         ),
         nacre_topo::PointCache::Ceiling { coord }

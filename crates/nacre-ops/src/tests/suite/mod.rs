@@ -33,10 +33,10 @@ use crate::combinatorics::{Canon3, NodeId};
 use crate::tolerant::Judge;
 use crate::transform::transform;
 use crate::{boolean::*, ops::*, planes::*};
+use nacre_exact::Axis;
 use nacre_geom::Plane;
 use nacre_geom::intersect::{planes_coplanar, three_planes};
 use nacre_judge::WitnessPoint;
-use nacre_scalar::Axis;
 use nacre_topo::{Loop, Orientation, Surface, Vertex};
 use proptest::prelude::*;
 use std::collections::HashMap;
@@ -219,31 +219,30 @@ fn cube_with_top() -> (Model, Handle<Face>) {
 /// producer does. The f64 base is kept as handed in (decimals realize back bit-identically);
 /// the top is the realization of the exact sum.
 fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
-    let lift =
-        |p: [f64; 3]| p.map(|x| nacre_scalar::Rat::from_decimal(x).expect("decimal fixture"));
+    let lift = |p: [f64; 3]| p.map(|x| nacre_exact::Rat::from_decimal(x).expect("decimal fixture"));
     let sv = lift(sweep.as_array());
-    let rb: Vec<[nacre_scalar::Rat; 3]> = base.iter().map(|p| lift(p.as_array())).collect();
-    let rt: Vec<[nacre_scalar::Rat; 3]> = rb
+    let rb: Vec<[nacre_exact::Rat; 3]> = base.iter().map(|p| lift(p.as_array())).collect();
+    let rt: Vec<[nacre_exact::Rat; 3]> = rb
         .iter()
         .map(|b| core::array::from_fn(|i| b[i].checked_add(sv[i]).expect("fixture widths")))
         .collect();
     let top = crate::exact::realize(&rt);
     // The fixture's frame normal: the sweep's direction, which these fixtures keep axis-aligned.
-    let normal: [nacre_scalar::Rat; 3] = {
+    let normal: [nacre_exact::Rat; 3] = {
         let len2 = sv
             .iter()
             .map(|c| c.checked_mul(*c).unwrap())
-            .fold(nacre_scalar::Rat::from_int(0), |a, b| {
+            .fold(nacre_exact::Rat::from_int(0), |a, b| {
                 a.checked_add(b).unwrap()
             });
-        let inv = nacre_scalar::inv_sqrt_exact(len2).expect("an axis-aligned fixture sweep");
+        let inv = nacre_exact::inv_sqrt_exact(len2).expect("an axis-aligned fixture sweep");
         sv.map(|c| c.checked_mul(inv).unwrap())
     };
     let n = rb.len();
     // The fixture's winding, read exactly on its own (small) coordinates.
     let winding = {
         let cross =
-            |a: &[nacre_scalar::Rat; 3], b: &[nacre_scalar::Rat; 3]| -> [nacre_scalar::Rat; 3] {
+            |a: &[nacre_exact::Rat; 3], b: &[nacre_exact::Rat; 3]| -> [nacre_exact::Rat; 3] {
                 let t = |i: usize, j: usize| {
                     a[i].checked_mul(b[j])
                         .unwrap()
@@ -252,7 +251,7 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
                 };
                 [t(1, 2), t(2, 0), t(0, 1)]
             };
-        let mut acc = nacre_scalar::Rat::from_int(0);
+        let mut acc = nacre_exact::Rat::from_int(0);
         for i in 0..n {
             let c = cross(&rb[i], &rb[(i + 1) % n]);
             for k in 0..3 {
@@ -261,10 +260,10 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
                     .unwrap();
             }
         }
-        match acc.cmp(&nacre_scalar::Rat::from_int(0)) {
-            core::cmp::Ordering::Greater => nacre_scalar::Orient::Positive,
-            core::cmp::Ordering::Less => nacre_scalar::Orient::Negative,
-            core::cmp::Ordering::Equal => nacre_scalar::Orient::Zero,
+        match acc.cmp(&nacre_exact::Rat::from_int(0)) {
+            core::cmp::Ordering::Greater => nacre_exact::Orient::Positive,
+            core::cmp::Ordering::Less => nacre_exact::Orient::Negative,
+            core::cmp::Ordering::Equal => nacre_exact::Orient::Zero,
         }
     };
     crate::exact::Swept {
@@ -287,7 +286,7 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
 /// half-width and its pivot-to-bottom offset are equal, so its bottom corner edge lands in that
 /// plane and the y-planes cutting the edge become four-plane vertices.
 fn four_plane_model(half_z: f64, deg: i128) -> (Model, Handle<Solid>, Handle<Solid>) {
-    use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
+    use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     let mut m = Model::new();
     let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let block = m.add_cuboid(
@@ -549,8 +548,8 @@ fn pinned_ends_ordered(at: [f64; 3], dir: [f64; 3], kind: BoolKind) -> usize {
     pins
 }
 
-fn rot_iso(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
-    use nacre_scalar::{Angle, Isometry, Rat, Rotation as SRot};
+fn rot_iso(axis: nacre_exact::Axis, deg: i128) -> nacre_exact::Isometry {
+    use nacre_exact::{Angle, Isometry, Rat, Rotation as SRot};
     Isometry::rotation(SRot {
         axis,
         pivot: [Rat::from_int(0); 3],
@@ -558,8 +557,8 @@ fn rot_iso(axis: nacre_scalar::Axis, deg: i128) -> nacre_scalar::Isometry {
     })
 }
 
-fn translate_iso(off: [i128; 3]) -> nacre_scalar::Isometry {
-    use nacre_scalar::{Isometry, Rat};
+fn translate_iso(off: [i128; 3]) -> nacre_exact::Isometry {
+    use nacre_exact::{Isometry, Rat};
     Isometry::translation([
         Rat::from_int(off[0]),
         Rat::from_int(off[1]),
@@ -567,8 +566,8 @@ fn translate_iso(off: [i128; 3]) -> nacre_scalar::Isometry {
     ])
 }
 
-fn rigid_iso(axis: nacre_scalar::Axis, deg: i128, off: [i128; 3]) -> nacre_scalar::Isometry {
-    use nacre_scalar::{Angle, Isometry, Rat, Rotation as SRot};
+fn rigid_iso(axis: nacre_exact::Axis, deg: i128, off: [i128; 3]) -> nacre_exact::Isometry {
+    use nacre_exact::{Angle, Isometry, Rat, Rotation as SRot};
     Isometry::rigid(
         SRot {
             axis,
@@ -754,9 +753,9 @@ enum MotionClass {
     Recorded,
 }
 
-fn motion_group() -> Vec<(String, nacre_scalar::Isometry, MotionClass)> {
+fn motion_group() -> Vec<(String, nacre_exact::Isometry, MotionClass)> {
     use MotionClass::*;
-    use nacre_scalar::{Isometry, Rat};
+    use nacre_exact::{Isometry, Rat};
     let mut g = Vec::new();
     for (ax, an) in [(Axis::X, "x"), (Axis::Y, "y"), (Axis::Z, "z")] {
         for deg in [90i128, 180, 270] {
@@ -902,12 +901,12 @@ fn wall_and_gusset_operand() -> (Model, Handle<Solid>, Handle<Solid>) {
         solid
     };
     let shift = |m: &mut Model, s: Handle<Solid>, t: [f64; 3]| -> Handle<Solid> {
-        let r = |x: f64| nacre_scalar::Rat::from_decimal(x).unwrap();
+        let r = |x: f64| nacre_exact::Rat::from_decimal(x).unwrap();
         let OpOutput::Transform { solid } = apply(
             m,
             &Operation::Transform {
                 solid: s,
-                isometry: nacre_scalar::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
+                isometry: nacre_exact::Isometry::translation([r(t[0]), r(t[1]), r(t[2])]),
             },
         )
         .expect("the translation applies") else {
@@ -1018,14 +1017,14 @@ fn turned_cylinder(m: &mut Model, r: f64, h: f64, shift: [f64; 3]) -> Handle<Sol
     .expect("the cylinder extrudes") else {
         unreachable!()
     };
-    let q = |x: f64| nacre_scalar::Rat::from_decimal(x).expect("a short decimal");
+    let q = |x: f64| nacre_exact::Rat::from_decimal(x).expect("a short decimal");
     let turned = transform(
         m,
         solid,
-        &nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
+        &nacre_exact::Isometry::rotation(nacre_exact::Rotation {
             axis: Axis::Y,
             pivot: [q(0.0), q(0.0), q(0.0)],
-            angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(90))
+            angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(90))
                 .expect("a right angle"),
         }),
     )
@@ -1033,7 +1032,7 @@ fn turned_cylinder(m: &mut Model, r: f64, h: f64, shift: [f64; 3]) -> Handle<Sol
     transform(
         m,
         turned,
-        &nacre_scalar::Isometry::translation([q(shift[0]), q(shift[1]), q(shift[2])]),
+        &nacre_exact::Isometry::translation([q(shift[0]), q(shift[1]), q(shift[2])]),
     )
     .expect("the cylinder moves")
 }

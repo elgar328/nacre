@@ -27,12 +27,12 @@
 //! the cache may not be the nearest f64.
 
 use crate::stated::*;
+use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point3, Vector3};
 use nacre_ops::{
     BoolKind, CacheDecline, OpOutput, Operation, Precision, Profile2d, RealizeError, SketchFrame,
     SketchPlane, apply, boolean, realize_cache, realize_vertex, realize_vertex_decimal,
 };
-use nacre_scalar::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid, Surface, Vertex};
 
@@ -100,7 +100,7 @@ fn tilted_frame(passes: usize) -> Model {
                     && m.surface_name
                         .get(&s)
                         .and_then(|n| n.narrow())
-                        .is_some_and(|c| nacre_scalar::plane_frame_default(*c).is_none())
+                        .is_some_and(|c| nacre_exact::plane_frame_default(*c).is_none())
             })
             .unwrap_or_else(|| panic!("the wf population vanished on pass {pass}"));
         done.push(m.face(wall).surface);
@@ -588,10 +588,10 @@ fn a_moved_solid_is_realized_from_its_moved_definition() {
         &mut m,
         &Operation::Transform {
             solid,
-            isometry: nacre_scalar::Isometry::translation([
-                nacre_scalar::Rat::new(7, 11).unwrap(),
-                nacre_scalar::Rat::from_int(-2),
-                nacre_scalar::Rat::new(1, 4).unwrap(),
+            isometry: nacre_exact::Isometry::translation([
+                nacre_exact::Rat::new(7, 11).unwrap(),
+                nacre_exact::Rat::from_int(-2),
+                nacre_exact::Rat::new(1, 4).unwrap(),
             ]),
         },
     )
@@ -666,8 +666,8 @@ fn an_approached_coordinate_never_claims_to_be_exact() {
                                     d[k]
                                 );
                                 assert!(
-                                    e[k].lt(nacre_scalar::Mag::of(v[k])
-                                        .times(nacre_scalar::Mag::pow2(-51))),
+                                    e[k].lt(nacre_exact::Mag::of(v[k])
+                                        .times(nacre_exact::Mag::pow2(-51))),
                                     "error {:?} is wider than an ulp of {}",
                                     e[k],
                                     v[k]
@@ -1120,7 +1120,7 @@ fn the_write_door_refuses_a_vertex_that_is_not_a_ceiling() {
         .find(|&vh| matches!(m.vertex_cache(vh), PointCache::Bounded { .. }))
         .expect("a boolean corner realizes its vertices");
     let coord = m.vertex_point(vh);
-    m.refine_vertex_cache(vh, coord, [nacre_scalar::Mag::ZERO; 3]);
+    m.refine_vertex_cache(vh, coord, [nacre_exact::Mag::ZERO; 3]);
 }
 
 /// The same chain, built with the prefix table emptied before every step — so every realization

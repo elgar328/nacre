@@ -43,10 +43,10 @@ pub(crate) fn side_of(
             let co = class_coeffs_rat(jd, q)?;
             let fix = outward_fix(jd, q)?;
             Some(
-                fix * match nacre_scalar::quad::plane_side(&co, &line, &sv) {
-                    nacre_scalar::Orient::Positive => 1,
-                    nacre_scalar::Orient::Negative => -1,
-                    nacre_scalar::Orient::Zero => 0,
+                fix * match nacre_exact::quad::plane_side(&co, &line, &sv) {
+                    nacre_exact::Orient::Positive => 1,
+                    nacre_exact::Orient::Negative => -1,
+                    nacre_exact::Orient::Zero => 0,
                 },
             )
         }

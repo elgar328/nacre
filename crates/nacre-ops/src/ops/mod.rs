@@ -7,13 +7,13 @@ use crate::boolean::boolean;
 use crate::exact::{Seg3, Swept};
 use crate::planes::outer_tri;
 use crate::transform::transform;
+use nacre_exact::{Axis, Isometry, Rat};
 use nacre_geom::Plane;
 use nacre_geom::intersect::{RingSide, orient2d_rat, plane_side};
 use nacre_geom::mixed::{
     Edge2d, mixed_ring_self_intersection, mixed_rings_cross, point_in_mixed_ring,
 };
 use nacre_math::{Point2, Point3, Vector3};
-use nacre_scalar::{Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::CylinderDef;
 use nacre_topo::PointCache;
@@ -533,20 +533,20 @@ impl SketchFrame {
     /// To sketch facing the *other* way, state a plane facing that way
     /// ([`Operation::DatumPlane`] measures `flip` from the normal you state) — the same move as
     /// writing `SketchPlane::from_origin_normal(o, -ẑ)` today.
-    pub fn world(model: &Model, axis: nacre_scalar::Axis) -> SketchFrame {
+    pub fn world(model: &Model, axis: nacre_exact::Axis) -> SketchFrame {
         let plane = model.world_plane(axis);
         match axis {
             // The two whose derived frame already is the convention.
-            nacre_scalar::Axis::Z | nacre_scalar::Axis::X => SketchFrame::canonical(plane),
+            nacre_exact::Axis::Z | nacre_exact::Axis::X => SketchFrame::canonical(plane),
             // ZX: `+u = +ẑ`, stated because it cannot be derived.
-            nacre_scalar::Axis::Y => SketchFrame {
+            nacre_exact::Axis::Y => SketchFrame {
                 plane,
                 placement: nacre_topo::FramePlacement::Named {
-                    origin: [nacre_scalar::Rat::from_int(0); 3],
+                    origin: [nacre_exact::Rat::from_int(0); 3],
                     ref_dir: [
-                        nacre_scalar::Rat::from_int(0),
-                        nacre_scalar::Rat::from_int(0),
-                        nacre_scalar::Rat::from_int(1),
+                        nacre_exact::Rat::from_int(0),
+                        nacre_exact::Rat::from_int(0),
+                        nacre_exact::Rat::from_int(1),
                     ],
                 },
                 flip: false,
@@ -571,7 +571,7 @@ impl SketchFrame {
     ///   reaches this error one step later, inside the operation, and
     ///   `a_plane_with_no_name_cannot_host_a_sketch` pins that the two doors agree.
     /// * [`OpError::OriginNotOnPlane`] — the stated origin's residual against the plane's name
-    ///   is nonzero. Exact, total ([`nacre_scalar::plane_residual_sign`]): a `Wide` name checks
+    ///   is nonzero. Exact, total ([`nacre_exact::plane_residual_sign`]): a `Wide` name checks
     ///   through arbitrary precision, never a shrug.
     /// * [`OpError::RefDirParallelToNormal`] — `ref_dir`'s projection into the plane vanishes
     ///   (parallel to the normal, or zero), so it picks no `+u`.
@@ -584,11 +584,10 @@ impl SketchFrame {
         origin: Point3,
         ref_dir: Vector3,
     ) -> Result<SketchFrame, OpError> {
-        let lift = |v: [f64; 3]| -> Result<[nacre_scalar::Rat; 3], OpError> {
-            let mut out = [nacre_scalar::Rat::from_int(0); 3];
+        let lift = |v: [f64; 3]| -> Result<[nacre_exact::Rat; 3], OpError> {
+            let mut out = [nacre_exact::Rat::from_int(0); 3];
             for (o, c) in out.iter_mut().zip(v) {
-                *o =
-                    nacre_scalar::Rat::from_decimal(c).ok_or(OpError::FrameOutsideDecimalWindow)?;
+                *o = nacre_exact::Rat::from_decimal(c).ok_or(OpError::FrameOutsideDecimalWindow)?;
             }
             Ok(out)
         };
@@ -597,7 +596,7 @@ impl SketchFrame {
             .surface_name
             .get(&plane)
             .ok_or(OpError::PlaneWithoutExactForm)?;
-        if nacre_scalar::plane_residual_sign(name, origin) != 0 {
+        if nacre_exact::plane_residual_sign(name, origin) != 0 {
             return Err(OpError::OriginNotOnPlane);
         }
         // The existing frame machinery is the judge — `WideFrame::named_of` is total in width
@@ -664,7 +663,7 @@ struct FaceFrame {
 /// the plane would silently take the frame-node road, and the arena would gain motion nodes and
 /// write its points in frame coordinates: a *different but still valid* model. So the assertion
 /// order below matters — **same road first**, values second. This crate has been bitten by exactly
-/// this shape before: `nacre_scalar::plane_frame_named` records `v̂` realized as `ŵ × û` coming out
+/// this shape before: `nacre_exact::plane_frame_named` records `v̂` realized as `ŵ × û` coming out
 /// `0.999999999999999_7`, "an exact path quietly lost".
 ///
 /// The prediction is agreement, and it is structural rather than lucky: a datum's `ref_dir` is

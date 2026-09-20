@@ -10,11 +10,11 @@
 //!
 //! So the propositions here are about **what a result says about itself**, not about volume.
 
+use nacre_exact::{Angle, Axis, Isometry, Rat};
 use nacre_math::Point2;
 use nacre_ops::{
     BoolError, BoolKind, Operation, Profile2d, RejectReason, SketchFrame, apply, boolean,
 };
-use nacre_scalar::{Angle, Axis, Isometry, Rat};
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid};
 
@@ -68,7 +68,7 @@ fn rot_z(m: &mut Model, s: Handle<Solid>, deg: i128) -> Result<Handle<Solid>, na
         m,
         &Operation::Transform {
             solid: s,
-            isometry: Isometry::rotation(nacre_scalar::Rotation {
+            isometry: Isometry::rotation(nacre_exact::Rotation {
                 axis: Axis::Z,
                 pivot: [Rat::from_int(0); 3],
                 angle: Angle::from_deg(Rat::from_int(deg)).unwrap(),

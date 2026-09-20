@@ -347,10 +347,10 @@ fn a_vertex_definition_solves_to_its_own_coordinate() {
         &mut m,
         &Operation::Transform {
             solid: to_turn,
-            isometry: nacre_scalar::Isometry::rotation(nacre_scalar::Rotation {
-                axis: nacre_scalar::Axis::Z,
-                pivot: [nacre_scalar::Rat::from_int(0); 3],
-                angle: nacre_scalar::Angle::from_deg(nacre_scalar::Rat::from_int(37)).unwrap(),
+            isometry: nacre_exact::Isometry::rotation(nacre_exact::Rotation {
+                axis: nacre_exact::Axis::Z,
+                pivot: [nacre_exact::Rat::from_int(0); 3],
+                angle: nacre_exact::Angle::from_deg(nacre_exact::Rat::from_int(37)).unwrap(),
             }),
         },
     )

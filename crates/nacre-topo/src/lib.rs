@@ -18,9 +18,9 @@ mod topology;
 pub use adjacency::{Adjacency, nonmanifold_vertices};
 pub use topology::{Edge, Face, HalfEdge, Loop, Shell, Solid};
 
+use nacre_exact::{Angle, Axis, HpBounded, Mag, Rat};
 use nacre_geom::{Circle, Curve, Cylinder, Line, Plane};
 use nacre_math::{Point3, Vector3};
-use nacre_scalar::{Angle, Axis, HpBounded, Mag, Rat};
 use nacre_store::{Handle, Store};
 use std::collections::{HashMap, HashSet};
 
@@ -64,7 +64,7 @@ pub enum Vertex {
     /// is `ℓ = n₁ × n₂` where `n₁`/`n₂` are the **canonical-name normals** of `planes[0]`/
     /// `planes[1]` **in stored (ascending-handle) order** — canonicalization fixes each
     /// normal's sign ("first nonzero component positive"), so ℓ is deterministic; `Lo`/`Hi`
-    /// is ascending parameter along ℓ (`nacre_scalar::quad`'s pair order). A tangency
+    /// is ascending parameter along ℓ (`nacre_exact::quad`'s pair order). A tangency
     /// (double root) is one point and spells it [`QuadRoot::Double`] — **not `Lo`**, which
     /// would leave `Lo` unable to say which of the two it means. ★★ Anything
     /// that re-sorts the two plane handles (a transform remapping them, a mint site working in
@@ -135,7 +135,7 @@ impl QuadRoot {
     /// against the meet line `ℓ = n₁ × n₂` of *that* order. So anything holding a solver's
     /// `(pair, root)` in some other order has to restate the root — and the restatement is a
     /// **derivation, not a convention**. Swapping the two planes in
-    /// `nacre_scalar::quad::plane_plane_cylinder` sends `ℓ ↦ −ℓ` while `base` is invariant (the
+    /// `nacre_exact::quad::plane_plane_cylinder` sends `ℓ ↦ −ℓ` while `base` is invariant (the
     /// Cramer system's row swap and its row-2 sign change cancel in numerator and denominator
     /// alike), leaves `a`, `c` and the discriminant alone and sends `b ↦ −b`. So the roots become
     /// `lo′ = −hi` and `hi′ = −lo`, and `base + lo′·(−ℓ) = base + hi·ℓ`: the swapped `Lo` and the
@@ -284,10 +284,10 @@ pub struct MotionNode {
 }
 
 /// What makes two surfaces the same plane, for `Model::surface_ids`: the canonical name
-/// ([`nacre_scalar::PlaneName`] — `Narrow | Wide`) and **the motion it is stated in**.
+/// ([`nacre_exact::PlaneName`] — `Narrow | Wide`) and **the motion it is stated in**.
 /// Identical names under different motions are different planes, because `Constructed` names
 /// speak about the world and `Moved` ones about the pre-motion frame.
-pub type SurfaceKey = (nacre_scalar::PlaneName, Option<Handle<MotionNode>>);
+pub type SurfaceKey = (nacre_exact::PlaneName, Option<Handle<MotionNode>>);
 
 /// The statement key for a plane the name key cannot hold: the sorted defining
 /// triple and the motion it is stated under. See `Model::surface_through_ids`.
@@ -307,7 +307,7 @@ type CylinderKey = (CylinderDef, Option<Handle<MotionNode>>);
 /// and carry identity like any other.
 ///
 /// ★ **What `Wide` cannot do**: ride the narrow shortcuts —
-/// [`nacre_scalar::PlaneName::narrow`] is `None`, so they decline exactly as they decline on a
+/// [`nacre_exact::PlaneName::narrow`] is `None`, so they decline exactly as they decline on a
 /// missing name. It does host a sketch frame, through the arbitrary-precision frame road.
 /// The non-rotated coplanarity test reads the faces' own triangles and never looks at a name.
 ///
@@ -347,7 +347,7 @@ pub struct SurfaceDeriveCounts {
     /// `declined`, split by cause. The split is what says *which* work removing the parameter
     /// needs, and the causes are not interchangeable: an unnamed plane is a fixture door, a
     /// `Wide` name wants an arbitrary-precision arm, a motion wants a chain folded to an
-    /// `Isometry` (rotations included — `nacre_scalar::Isometry::plane_coeffs` already carries
+    /// `Isometry` (rotations included — `nacre_exact::Isometry::plane_coeffs` already carries
     /// a plane through the 90° family), and arithmetic is an `i128` ceiling.
     pub declined_unnamed: u64,
     /// See [`SurfaceDeriveCounts::declined_unnamed`].
@@ -513,7 +513,7 @@ pub enum Surface {
 #[derive(Clone, Debug, PartialEq)]
 pub enum PlanePoints {
     /// Three exact rational points, non-collinear, in the pre-motion frame.
-    Known([[nacre_scalar::Rat; 3]; 3]),
+    Known([[nacre_exact::Rat; 3]; 3]),
     /// **Three model vertices the plane passes through.** What a caller means by "the plane
     /// through those corners" — a coordinate read off a discovered vertex is rounded, and the
     /// plane built from rounded coordinates is a *different* plane (measured: on tilted geometry
@@ -560,7 +560,7 @@ pub struct CylinderDef {
     /// or the exact rational when the square has one ([`Self::radius_exact`]). **Wide**, because
     /// the square of a stated `Rat` need not fit `i128` (a 16-digit decimal below `1e-4`) and a
     /// statement is never refused for the width of its square.
-    r2: nacre_scalar::BigRat,
+    r2: nacre_exact::BigRat,
 }
 
 impl CylinderDef {
@@ -569,7 +569,7 @@ impl CylinderDef {
     /// perpendicular to the axis (`ref_dir × dir = 0`, which a zero `ref_dir` satisfies too).
     ///
     /// ★ **Width is not a cause.** The parallelism test runs in
-    /// [`nacre_scalar::parallel_rat`], which clears denominators and answers in integers, so it
+    /// [`nacre_exact::parallel_rat`], which clears denominators and answers in integers, so it
     /// cannot decline. It used to run in checked `Rat` and answer `None` on overflow — a
     /// "conservative refusal" that conflated *no cylinder* with *the arithmetic ran out*, and
     /// the callers below read it as the first: a statement whose axis carries a small component
@@ -580,13 +580,13 @@ impl CylinderDef {
         origin: [Rat; 3],
         dir: [Rat; 3],
         ref_dir: [Rat; 3],
-        r2: nacre_scalar::BigRat,
+        r2: nacre_exact::BigRat,
     ) -> Option<Self> {
         let zero = Rat::from_int(0);
         if dir.iter().all(|c| *c == zero) || !r2.is_positive() {
             return None;
         }
-        if nacre_scalar::parallel_rat(&ref_dir, &dir) {
+        if nacre_exact::parallel_rat(&ref_dir, &dir) {
             return None;
         }
         Some(CylinderDef {
@@ -614,7 +614,7 @@ impl CylinderDef {
     }
 
     /// The squared radius, exact. Positive by construction.
-    pub fn r2(&self) -> &nacre_scalar::BigRat {
+    pub fn r2(&self) -> &nacre_exact::BigRat {
         &self.r2
     }
 
@@ -623,13 +623,13 @@ impl CylinderDef {
     /// is a rational's square. `None` is not a refusal: the cylinder is as well-defined as any
     /// other, its radius merely has no rational spelling.
     pub fn radius_exact(&self) -> Option<Rat> {
-        nacre_scalar::rat_sqrt_exact_big(&self.r2)
+        nacre_exact::rat_sqrt_exact_big(&self.r2)
     }
 
     /// The radius realized as an `f64`, correctly rounded — a rational radius' own `to_f64`,
-    /// otherwise `√r²` at 128 → 256 bits (`nacre_scalar::sqrt_f64`). The cache's number.
+    /// otherwise `√r²` at 128 → 256 bits (`nacre_exact::sqrt_f64`). The cache's number.
     pub fn radius_f64(&self) -> f64 {
-        nacre_scalar::sqrt_f64(&self.r2).expect("r² > 0 by construction")
+        nacre_exact::sqrt_f64(&self.r2).expect("r² > 0 by construction")
     }
 }
 
@@ -702,7 +702,7 @@ pub struct Model {
     /// Interning table for [`Model::push_motion`]: the handle already issued for a given
     /// `(motion, parent)`. Not iterated (a `HashMap`'s order must never reach a result).
     motion_ids: HashMap<MotionNode, Handle<MotionNode>>,
-    /// Each surface's **canonical name** ([`nacre_scalar::PlaneName`]), derived from its points —
+    /// Each surface's **canonical name** ([`nacre_exact::PlaneName`]), derived from its points —
     /// present for every surface whose producer had a rational description to record.
     ///
     /// ★ **The point is that two statements of one plane get the same value.** `nacre_geom::Plane`
@@ -714,7 +714,7 @@ pub struct Model {
     ///
     /// ★★ **Built from the dimensions the user wrote, never lifted from the f64 coefficients
     /// above.** Lifting is lossless and useless here: it preserves the rounding, so the two
-    /// vectors stay different (`nacre_scalar::canonical_plane_coeffs`).
+    /// vectors stay different (`nacre_exact::canonical_plane_coeffs`).
     ///
     /// ★★★ **The name is stated in the frame this surface's truth names** — the world for
     /// `motion: None`, and the **pre-motion** frame for a moved surface, whose world
@@ -724,8 +724,8 @@ pub struct Model {
     ///
     /// Absent is ordinary — an f64 construction path (no points to derive from).
     /// Iterate through the faces, never over the map. Arithmetic consumers (frames, `base_rat`,
-    /// exact transports) read [`nacre_scalar::PlaneName::narrow`]; `Wide` carries identity only.
-    pub surface_name: HashMap<Handle<Surface>, nacre_scalar::PlaneName>,
+    /// exact transports) read [`nacre_exact::PlaneName::narrow`]; `Wide` carries identity only.
+    pub surface_name: HashMap<Handle<Surface>, nacre_exact::PlaneName>,
     /// Interning table for [`Model::push_plane`]: the handle already issued for a
     /// plane, keyed by its canonical coefficients **and the motion they are stated in**. The twin
     /// of [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result).

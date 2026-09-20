@@ -20,13 +20,13 @@
 //! `Rat` doors take what a caller computed exactly.
 
 use crate::{Profile2d, Ring2d};
+use nacre_exact::Rat;
 use nacre_geom::intersect::RingSide;
 use nacre_geom::mixed::{
     Edge2d, MixedRing, Undecidable, mixed_ring_self_intersection, mixed_rings_cross,
     point_in_mixed_ring,
 };
 use nacre_math::Point2;
-use nacre_scalar::Rat;
 
 /// Why a ring, or a set of rings, is not a valid set of profiles.
 #[derive(Clone, Debug, PartialEq)]

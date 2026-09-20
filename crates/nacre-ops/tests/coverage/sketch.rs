@@ -8,10 +8,10 @@
 
 use crate::common::*;
 use crate::stated::*;
+use nacre_exact::Axis;
 use nacre_math::{Point2, Point3};
 use nacre_ops::SketchFrame;
 use nacre_ops::{BoolKind, OpOutput, Operation, Profile2d, apply, from_rings};
-use nacre_scalar::Axis;
 use nacre_store::Handle;
 use nacre_topo::{Model, PointCache, Solid};
 
@@ -550,7 +550,7 @@ fn a_corner_flat_in_decimal_but_not_in_binary_is_dissolved() {
 #[test]
 fn a_circle_and_a_slot_extrude_and_a_lens_is_refused_by_name() {
     let p2 = |x: f64, y: f64| Point2::from_array([x, y]);
-    let r = |n: i128| nacre_scalar::Rat::from_int(n);
+    let r = |n: i128| nacre_exact::Rat::from_int(n);
     let circle = stated(vec![circle(p2(0.0, 0.0), 1.0)]).unwrap();
     let slot = stated(vec![
         line(p2(0.0, -1.0), p2(4.0, -1.0)),
@@ -650,8 +650,8 @@ fn a_slot_prism_tessellates_and_exports() {
 /// rounded.
 #[test]
 fn a_non_pythagorean_arc_is_stated_and_extruded() {
+    use nacre_exact::Rat;
     use nacre_ops::{Edge2d, Ring2d, arc_to_rat, arc_turns, from_paths};
-    use nacre_scalar::Rat;
     let r = |n: i128| Rat::from_int(n);
     let p = |x: f64, y: f64| Point2::from_array([x, y]);
     // Both step doors state the same arc: the quarter turn lands where the stated end is.
@@ -697,8 +697,8 @@ fn a_non_pythagorean_arc_is_stated_and_extruded() {
 /// back green; a refusal is still reported in the panic so a regression names itself.
 #[test]
 fn a_non_pythagorean_prism_is_cut_by_a_box() {
+    use nacre_exact::Rat;
     use nacre_ops::{Edge2d, Ring2d, arc_to_rat, from_paths};
-    use nacre_scalar::Rat;
     let r = |n: i128| Rat::from_int(n);
     let stated =
         arc_to_rat([r(0), r(0)], [r(1), r(1)], [r(-1), r(1)], true).expect("on the circle");

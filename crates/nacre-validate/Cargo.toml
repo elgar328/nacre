@@ -17,7 +17,7 @@ nacre-math = { path = "../nacre-math", version = "0.0.0" }
 nacre-geom = { path = "../nacre-geom", version = "0.0.0" }
 
 [dev-dependencies]
-nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
+nacre-exact = { path = "../nacre-exact", version = "0.0.0" }
 # Enables the topo test-only primitive `Model::add_cuboid` for building test solids.
 nacre-topo = { path = "../nacre-topo", version = "0.0.0", features = ["test-util"] }
 proptest.workspace = true

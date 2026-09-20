@@ -24,11 +24,11 @@ impl Model {
     /// The seeded world plane whose **normal** runs along `axis` — `Z` names the XY plane
     /// (z = 0), `X` the YZ plane, `Y` the ZX plane. Deterministic (handles 0–2, pushed by
     /// [`Model::new`]), so a handle in an op log and one from a live session agree.
-    pub fn world_plane(&self, axis: nacre_scalar::Axis) -> Handle<Surface> {
+    pub fn world_plane(&self, axis: nacre_exact::Axis) -> Handle<Surface> {
         let ix = match axis {
-            nacre_scalar::Axis::Z => 0usize,
-            nacre_scalar::Axis::X => 1,
-            nacre_scalar::Axis::Y => 2,
+            nacre_exact::Axis::Z => 0usize,
+            nacre_exact::Axis::X => 1,
+            nacre_exact::Axis::Y => 2,
         };
         let h = self.world_planes[ix];
         debug_assert!(

@@ -12,7 +12,7 @@ type SplitCircles = Option<(
 ///
 /// ★★★ This is the arc split. What it does *not* do is find the crossings — [`circle_crossings`]
 /// already names them, and has since the guard that used to refuse this population was written.
-/// The work here is ordering: around the circle (θ, [`nacre_scalar::quad::circular_order_about_seam`])
+/// The work here is ordering: around the circle (θ, [`nacre_exact::quad::circular_order_about_seam`])
 /// to make arcs, and along each segment (the line parameter, [`cmp_along`]) to make sub-segments.
 ///
 /// ★ A circle nothing crosses is returned **whole**, on the road it has always taken. The parallel
@@ -96,7 +96,7 @@ pub(super) fn split_circles(
             // one is a pierce point the question goes straight to `circle_crossings`, which answers
             // `Miss` exactly when the line misses. Losing the filter costs a solve, never an answer.
             if let [Some(p0), Some(p1)] = &seg_coords[si]
-                && (p0 == p1 || !nacre_scalar::segment_meets_cylinder(p0, p1, &o, &m, r2))
+                && (p0 == p1 || !nacre_exact::segment_meets_cylinder(p0, p1, &o, &m, r2))
             {
                 continue;
             }
@@ -406,7 +406,7 @@ pub(crate) fn circular_order(
     def: &nacre_topo::CylinderDef,
     nodes: &[NodeId],
 ) -> Result<(Vec<usize>, bool), CircleOrderFail> {
-    use nacre_scalar::quad::{SeamOrder, circular_order_about_seam};
+    use nacre_exact::quad::{SeamOrder, circular_order_about_seam};
     let meets = nodes
         .iter()
         .map(|&n| combinatorics::pierce_meet(jd, cyl, def, n).ok_or(CircleOrderFail::Undecided))
@@ -667,10 +667,10 @@ pub(super) fn split_segments_at(
 /// a *rational* point is the whole reason it had to go: an end a cylinder pins has none.
 #[cfg(test)]
 pub(super) fn along(
-    line: &nacre_scalar::quad::MeetLine,
+    line: &nacre_exact::quad::MeetLine,
     p: &[Rat; 3],
-) -> Option<nacre_scalar::quad::QuadVal> {
-    use nacre_scalar::quad::QuadVal;
+) -> Option<nacre_exact::quad::QuadVal> {
+    use nacre_exact::quad::QuadVal;
     let (base, dir) = (line.base(), line.dir());
     let dot = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<Rat> {
         x[0].checked_mul(y[0])?
@@ -690,15 +690,15 @@ pub(super) fn along(
 /// (two cylinders cutting one segment) land on `biquad_sign`, which answers there without
 /// declining. `None` is checked-`Rat` overflow — the road's own name, not a shape answer.
 pub(super) fn cmp_along(
-    a: &nacre_scalar::quad::QuadVal,
-    b: &nacre_scalar::quad::QuadVal,
+    a: &nacre_exact::quad::QuadVal,
+    b: &nacre_exact::quad::QuadVal,
 ) -> Option<core::cmp::Ordering> {
     use core::cmp::Ordering;
-    use nacre_scalar::Orient;
+    use nacre_exact::Orient;
     let orient = if a.c() == b.c() {
         a.checked_sub(b)?.sign()
     } else {
-        nacre_scalar::quad::biquad_sign(
+        nacre_exact::quad::biquad_sign(
             a.a().checked_sub(b.a())?,
             a.b(),
             Rat::from_int(0).checked_sub(b.b())?,
@@ -717,7 +717,7 @@ pub(super) fn cmp_along(
 /// **Where a segment crosses a circle**, exactly — the points a `Vertex::Pierce` names.
 ///
 /// The segment rides `wc ∩ sg.wall` and the circle is `cylinder ∩ wc`, so a crossing is
-/// `plane ∩ plane ∩ cylinder` — the very shape [`nacre_scalar::quad::plane_plane_cylinder`]
+/// `plane ∩ plane ∩ cylinder` — the very shape [`nacre_exact::quad::plane_plane_cylinder`]
 /// answers and
 /// [`nacre_topo::Vertex::Pierce`] names. Solving along the segment instead would be shorter and
 /// would yield a point with **no name**, which the next rung (splitting the circle into arcs)
@@ -753,12 +753,12 @@ fn circle_crossings(
     circ: &MergedCircle,
     sg: &MergedSeg,
 ) -> Option<Vec<combinatorics::NodeId>> {
-    use nacre_scalar::quad::{CylinderMeet, QuadVal};
+    use nacre_exact::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
     let w = combinatorics::class_coeffs_rat(jd, wc)?;
     let v = combinatorics::class_coeffs_rat(jd, sg.wall)?;
     let (o, m, r2) = (circ.def.origin(), circ.def.dir(), circ.def.r2());
-    let roots = match nacre_scalar::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)? {
+    let roots = match nacre_exact::quad::plane_plane_cylinder(&w, &v, &o, &m, r2)? {
         CylinderMeet::Pair { s, .. } => vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])],
         // ★ `Double`, not `Lo`: the two roots coincide, so a re-sort must leave the name alone.
         CylinderMeet::Tangent { s, .. } => vec![(QuadRoot::Double, QuadVal::from_rat(s))],
