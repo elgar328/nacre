@@ -1,0 +1,700 @@
+use super::*;
+/// **A ring node's coordinate, in whichever world names it** — the key
+/// [`loop_winding`]'s lexicographic scan orders by.
+///
+/// ★★★ **The two arms are not two widths of one thing, they are two *kinds*.** A three-plane node
+/// is the rational meet of three planes; a pierce node's coordinate is `a + b√c` and no rational
+/// vessel holds it. That is why this is an enum and not a `[Rat; 3]` with a decline: the second
+/// arm is not a precision failure to be lifted, it is a different number.
+enum CoordKey {
+    /// The three classes, handed to `Judge::cmp_coord` — which keeps its toleranced ladder and its
+    /// escalation, so the existing population's answers are bit-identical to before.
+    Three([usize; 3]),
+    /// The point a plane pair cuts out of a cylinder: `base + s·dir` with `s = a + b√c`.
+    /// Boxed: this arm is an order of magnitude wider than a name, and a ring of names is the
+    /// common case.
+    Pierce(Box<(nacre_scalar::quad::MeetLine, nacre_scalar::quad::QuadVal)>),
+}
+
+/// Build one ring node's key.
+///
+/// ★ **The cylinder comes from the class table.** The name says which cylinder
+/// (`NodeId::Pierce` carries the class), and the table's def is the statement every carrier's
+/// def is a clone of. Searching the ring's own arc/ruling carriers instead — "a pierce
+/// node is an arc endpoint" — is what a **chord** refutes: a cell bounded by a cap's chord
+/// alone has pierce corners and only plane carriers, and the search refuses an honestly-named
+/// point (`PierceVertexUnnamed` on the straddling flush corpus, measured).
+fn coord_key(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    ring: &[RingEdge],
+    i: usize,
+) -> Result<CoordKey, BoolError> {
+    let node = ring[i].node;
+    let NodeId::Pierce { cyl, .. } = node else {
+        // A `match` and not a fallback: a third variant must light this up rather than fall in
+        // here (`let`-`else` is what hid a new variant once already).
+        return match node {
+            NodeId::ThreePlane(t) => Ok(CoordKey::Three(t)),
+            NodeId::Pierce { .. } => unreachable!("the let-else above took every pierce node"),
+        };
+    };
+    let def = &cyls
+        .get(cyl)
+        .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?
+        .def;
+    let (line, s) =
+        pierce_meet(jd, cyl, def, node).ok_or_else(|| reject(RejectReason::WitnessNotRational))?;
+    Ok(CoordKey::Pierce(Box::new((line, s))))
+}
+
+/// Order two ring nodes along one world axis — `+1` when `a`'s coordinate is the larger.
+///
+/// The mixed pair is `nacre_scalar::quad::cmp_coord_meet_branch`, which is exact and **total**:
+/// both coordinates lift to one first-storey sign. It wants the three-plane side as a `MeetPoint`,
+/// and this crate builds one directly — `MeetPoint::Narrow` is a public variant, so no door has to
+/// be opened in `nacre-scalar` for it.
+fn cmp_key(
+    jd: &Judge<'_, WorkingPlane>,
+    a: &CoordKey,
+    b: &CoordKey,
+    axis: usize,
+) -> Result<i8, BoolError> {
+    use nacre_scalar::{Orient, quad};
+    let sign = |o: Orient| match o {
+        Orient::Positive => 1i8,
+        Orient::Negative => -1,
+        Orient::Zero => 0,
+    };
+    // ★ Through [`node_coords_rat`], not a second copy of the three-plane solve — the rational
+    // meet is stated once. The round-trip through the name is free: the solve is symmetric in its
+    // three planes, so canonical order changes nothing.
+    let meet = |t: [usize; 3]| {
+        node_coords_rat(jd, NodeId::three_planes(Canon3::three(t)))
+            .map(nacre_scalar::MeetPoint::Narrow)
+            .ok_or_else(|| reject(RejectReason::WitnessNotRational))
+    };
+    Ok(match (a, b) {
+        (CoordKey::Three(x), CoordKey::Three(y)) => jd.cmp_coord(*x, *y, axis),
+        (CoordKey::Three(x), CoordKey::Pierce(b)) => {
+            sign(quad::cmp_coord_meet_branch(&meet(*x)?, &b.0, &b.1, axis))
+        }
+        (CoordKey::Pierce(b), CoordKey::Three(y)) => {
+            -sign(quad::cmp_coord_meet_branch(&meet(*y)?, &b.0, &b.1, axis))
+        }
+        (CoordKey::Pierce(a), CoordKey::Pierce(b)) => {
+            sign(quad::cmp_coord_branch((&a.0, &a.1), (&b.0, &b.1), axis))
+        }
+    })
+}
+
+/// **The pierce nodes lying strictly between two ring nodes, in ring order** — the exact half of
+/// the split-twin subdivision (`boolean::name_result_vertices`' opening pass). The caller has
+/// already matched the candidates' plane pair to the edge's `{own, wall}`, so by name every
+/// candidate lies on the edge's own carrier line and single-axis order *is* order along it.
+///
+/// ★ **The axis is "wherever the endpoints differ", not the line's direction.** Two distinct
+/// points of one line differ on some axis, the line is strictly monotone on that axis, and
+/// betweenness is direction-blind — so no direction vector is read at all, and the choice is
+/// deterministic (first differing axis). This is [`cmp_key`]'s vocabulary end to end; nothing new
+/// is exact here.
+///
+/// `None` when an order cannot be formed (a coordinate outside the rational vessel, an
+/// escalation, a class with no coefficients). The caller leaves such an edge **unsplit**, which
+/// is today's behaviour exactly — the far-plane road starves there and the walls-fallback net
+/// answers — so the conservative arm degrades to the state this pass was built to improve, never
+/// to something new.
+pub(crate) fn pierce_between(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    a: NodeId,
+    b: NodeId,
+    candidates: &[NodeId],
+) -> Option<Vec<NodeId>> {
+    let key = |n: NodeId| -> Option<CoordKey> {
+        match n {
+            NodeId::ThreePlane(t) => Some(CoordKey::Three(t)),
+            NodeId::Pierce { cyl, .. } => {
+                let (line, s) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
+                Some(CoordKey::Pierce(Box::new((line, s))))
+            }
+        }
+    };
+    let (ka, kb) = (key(a)?, key(b)?);
+    let axis = (0..3).find(|&ax| matches!(cmp_key(jd, &ka, &kb, ax), Ok(s) if s != 0))?;
+    // `+1` = "the first is larger" (`cmp_key`), so `dir` is the a→b slope's sign on this axis and
+    // "strictly between" is both hops running the same way.
+    let dir = cmp_key(jd, &ka, &kb, axis).ok()?;
+    let mut mid: Vec<(NodeId, CoordKey)> = Vec::new();
+    for &c in candidates {
+        if c == a || c == b {
+            continue;
+        }
+        let kc = key(c)?;
+        if cmp_key(jd, &ka, &kc, axis).ok()? == dir && cmp_key(jd, &kc, &kb, axis).ok()? == dir {
+            mid.push((c, kc));
+        }
+    }
+    // Ring order: nearer to `a` first — along `dir`, the larger-toward-`a` side leads. A pair
+    // this cannot strictly order (an escalation, or two distinct nodes at one coordinate — which
+    // on a shared line would be two names for one point) makes the whole edge unsplittable.
+    let mut sortable = true;
+    mid.sort_by(|(_, x), (_, y)| match cmp_key(jd, x, y, axis) {
+        Ok(s) if s == dir => std::cmp::Ordering::Less,
+        Ok(s) if s == -dir => std::cmp::Ordering::Greater,
+        _ => {
+            sortable = false;
+            std::cmp::Ordering::Equal
+        }
+    });
+    if !sortable {
+        return None;
+    }
+    Some(mid.into_iter().map(|(n, _)| n).collect())
+}
+
+/// **The ring's own lexicographic minimum when it lies inside an arc**, and the winding read
+/// there — `None` when every arc's minimum is at a node (then [`loop_winding`]'s `lo` is the
+/// ring's minimum and its turn is the winding, as its doc argues).
+///
+/// ★★★★★ **Why this exists: `loop_winding`'s premise is about the *node set*, and a ring is not
+/// its nodes.** Its doc reads *"the lexicographically smallest node … is an extreme point of the
+/// node set, which is planar, so it is a vertex of the ring's hull"* — true for a polygon, and
+/// false the moment an edge is an **arc**, because the arc can bulge past every node. Then the
+/// turn at `lo` is read at a point the region does not support, and the sign comes back
+/// **confident**. ☑ Measured before this was built: over the lib suite, 1,465 of 9,102 rings with
+/// arcs have their true minimum inside an arc, and in **184** of them the turn read at `lo`
+/// disagrees with the arc's own answer — all 184 on one circle, the boss whose axis sits exactly
+/// on the plate's corner, whose booleans the kernel refused for it.
+///
+/// ★ **The answer was named three milestones ago** and is not a wider walk:
+/// [`RejectReason::CurvedStraightRun`](crate::RejectReason::CurvedStraightRun)'s doc says *"read
+/// the winding at the extremum of the **region**, which may lie in an arc's interior"*. This is
+/// that reading, and the winding there is [`smooth_extremum_winding`]'s product — the ring is
+/// smooth at an arc's interior point, so no turn is needed.
+///
+/// **What it can decide.** Let `ê_a` be the first world axis the circle **spans** (`ê₀`, unless
+/// the axis *is* `ê₀` — then every point shares `x` and the minimum is taken in `y`). The circle's
+/// lexicographic minimum is its point of least coordinate `a`, and that point is rational —
+/// `c − r·ê_a` — exactly when the axis is perpendicular to `ê_a` (`m[a] = 0`); otherwise it is
+/// irrational and this says nothing, leaving today's path (`hull_probe::TILTED` counts those —
+/// the axis tilted *toward* `ê_a`). ★ Requiring the axis to be world
+/// **z**, and counting every other axis as tilted, leaves 84 arcs over the suite to the
+/// node's turn, and the commuting oracle has three cells where that turn
+/// is wrong — a boss on the plate's corner turned so its axis runs along −y, whose 270° arc
+/// bulges past the minimum node, takes the unbounded cell for a bounded one and seeds the labels
+/// inside out (`NOT_OWN_SOLID`). The halves are the circle's own (below), so nothing here
+/// depends on which world axis the cylinder stands along.
+fn arc_extremum_winding(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    p: usize,
+    ring: &[RingEdge],
+    keys: &[CoordKey],
+    lo: usize,
+) -> Result<Option<i8>, BoolError> {
+    use nacre_scalar::{Orient, Rat, quad};
+    let key = |i: usize| &keys[i];
+    // A rational coordinate against a ring node's key, through the same two comparators `cmp_key`
+    // dispatches to — so a pierce node is decided too.
+    let cmp_rat = |ext: Rat, k: &CoordKey, a: usize| -> Option<std::cmp::Ordering> {
+        let ord = |o: Orient| match o {
+            Orient::Positive => std::cmp::Ordering::Greater,
+            Orient::Negative => std::cmp::Ordering::Less,
+            Orient::Zero => std::cmp::Ordering::Equal,
+        };
+        match k {
+            CoordKey::Three(t) => {
+                let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))?;
+                ext.partial_cmp(&q[a])
+            }
+            CoordKey::Pierce(b) => Some(ord(quad::cmp_coord_meet_branch(
+                &nacre_scalar::MeetPoint::Narrow([ext, ext, ext]),
+                &b.0,
+                &b.1,
+                a,
+            ))),
+        }
+    };
+    let n = ring.len();
+    let zero = Rat::from_int(0);
+    let mut best: Option<([Rat; 3], i8)> = None;
+    #[cfg(test)]
+    let (mut arcs, mut below, mut interior, mut tilted, mut undecided) = (0, 0, 0, 0, 0);
+    for (i, e) in ring.iter().enumerate() {
+        let Carrier::Arc(ac) = &e.carrier else {
+            continue;
+        };
+        #[cfg(test)]
+        {
+            arcs += 1;
+        }
+        let (m, r2) = (ac.def.dir(), ac.def.r2());
+        // The first world axis the circle spans; the minimum is rational iff the axis is ⊥ to it.
+        let a = usize::from(m[1] == zero && m[2] == zero);
+        if m[a] != zero {
+            #[cfg(test)]
+            {
+                tilted += 1;
+                undecided += 1;
+            }
+            continue;
+        }
+        let Ok(EdgeDir::Arc(ad)) = dir_at(jd, cyls, p, e, e.node) else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        let c = ad.centre;
+        // The extreme is `c − r`, which needs the radius itself: a squared radius with no rational
+        // root leaves the extent undecided — the honest answer this loop already has.
+        let Some(ex) = nacre_scalar::rat_sqrt_exact_big(r2).and_then(|r| c[a].checked_sub(r))
+        else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        let mut ext = c;
+        ext[a] = ex;
+        // Is the circle's minimum lexicographically below `lo`? ★ Three answers, not two: running
+        // out of axes with every one equal means it **is** `lo`, and the premise holds.
+        let mut lower = Some(false);
+        for (ax, v) in ext.iter().copied().enumerate() {
+            match cmp_rat(v, key(lo), ax) {
+                Some(std::cmp::Ordering::Less) => {
+                    lower = Some(true);
+                    break;
+                }
+                Some(std::cmp::Ordering::Greater) => break,
+                Some(std::cmp::Ordering::Equal) => {}
+                None => {
+                    lower = None;
+                    break;
+                }
+            }
+        }
+        let Some(true) = lower else {
+            #[cfg(test)]
+            if lower.is_none() {
+                undecided += 1;
+            }
+            continue;
+        };
+        #[cfg(test)]
+        {
+            below += 1;
+        }
+        // ★ **And is it in the arc's INTERIOR?** It cannot be an endpoint: `lo` is the smallest
+        // ring **node** and this point is smaller still, so it is no node of this ring at all.
+        // (☑ Measured before the argument was trusted: a check for it fired **0** times over the
+        // suite. That is also why a boss seated on a wall needs nothing special here — its circle
+        // is cut by a **diameter**, so this point *is* a node, and the comparison above already
+        // answered "not below".)
+        let (ka, kb) = (key(i), key((i + 1) % n));
+        // The walk below runs counter-clockwise **about the axis** — the arc's own sense, so the
+        // ends are taken in that order whichever way the ring traverses it.
+        let (ka, kb) = if ac.ccw { (ka, kb) } else { (kb, ka) };
+        // ★★ **The halves are the circle's own.** Split the circle by the plane through its centre
+        // with normal `n_h = m × ê_a`: at θ = 0 (`c + r·ê_a`) counter-clockwise travel runs along
+        // `m × ê_a = +n_h`, so the `+n_h` half is θ ∈ (0°, 180°) — where coordinate `a` falls — and
+        // the minimum θ = 180° (`c − r·ê_a`) is where the walk **arrives from** the `+n_h` half and
+        // **leaves into** the `−n_h` one. Nothing here reads a world picture, so no «as seen in a
+        // plane» correction is needed whichever way the axis points. ★ An end *on* the plane is
+        // θ = 0° — θ = 180° is the minimum itself, taken out above — and it belongs to the half
+        // the walk is in beside it: a start leaves θ = 0° into the upper half, an end arrives at
+        // it from the lower.
+        let mut e_a = [zero; 3];
+        e_a[a] = Rat::from_int(1);
+        let Some(n_h) = cross3_rat(&m, &e_a) else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        let Some(h_plane) = dot3_rat(&n_h, &c)
+            .and_then(|d| zero.checked_sub(d))
+            .map(|d| [n_h[0], n_h[1], n_h[2], d])
+        else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        let half = |k: &CoordKey, is_start: bool| -> Option<bool> {
+            let o = match k {
+                CoordKey::Three(t) => {
+                    let q = node_coords_rat(jd, NodeId::three_planes(Canon3::three(*t)))?;
+                    let v = dot3_rat(&[h_plane[0], h_plane[1], h_plane[2]], &q)?
+                        .checked_add(h_plane[3])?;
+                    match v.partial_cmp(&zero)? {
+                        std::cmp::Ordering::Greater => Orient::Positive,
+                        std::cmp::Ordering::Less => Orient::Negative,
+                        std::cmp::Ordering::Equal => Orient::Zero,
+                    }
+                }
+                CoordKey::Pierce(b) => quad::plane_side(&h_plane, &b.0, &b.1),
+            };
+            Some(match o {
+                Orient::Positive => true,
+                Orient::Negative => false,
+                Orient::Zero => is_start,
+            })
+        };
+        let (Some(ha), Some(hb)) = (half(ka, true), half(kb, false)) else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        // Walking CCW from the start, θ = 180° is reached iff the walk leaves the upper half, or
+        // wraps the whole way round inside one half — and θ's order inside a half is read off
+        // coordinate `a`: falling in the upper half, rising in the lower.
+        // ★ A declining comparison leaves today's road, exactly as every other thing this
+        // function cannot decide does — it must not become a **refusal**, which is what `?` here
+        // would have made of it (☑ measured 0 today; the shape is wrong all the same).
+        let Ok(x_cmp) = cmp_key(jd, ka, kb, a) else {
+            #[cfg(test)]
+            {
+                undecided += 1;
+            }
+            continue;
+        };
+        let hit = match (ha, hb) {
+            (true, false) => true,
+            (false, true) => false,
+            (true, true) => x_cmp <= 0,
+            (false, false) => x_cmp >= 0,
+        };
+        if !hit {
+            continue;
+        }
+        #[cfg(test)]
+        {
+            interior += 1;
+        }
+        // The winding read **there**: the ring is smooth at an arc's interior point, so this is
+        // [`smooth_extremum_winding`]'s product — the one spelling.
+        let sg = |b: bool| if b { 1i8 } else { -1 };
+        let w = sg(ad.ccw) * sg(ad.axis_up) * jd.planes[p].frame_sign;
+        // ★ **The minimum, not the first.** Two arcs of one ring can each dip below `lo` only if
+        // they ride different circles; the ring is supported at the lower of the two, and reading
+        // the other would ask about a point the region is not extreme at.
+        let take = match &best {
+            None => true,
+            Some((b, _)) => {
+                let mut lt = false;
+                for ax in 0..3 {
+                    match ext[ax].partial_cmp(&b[ax]) {
+                        Some(std::cmp::Ordering::Less) => {
+                            lt = true;
+                            break;
+                        }
+                        Some(std::cmp::Ordering::Greater) => break,
+                        _ => {}
+                    }
+                }
+                lt
+            }
+        };
+        if take {
+            best = Some((ext, w));
+        }
+    }
+    #[cfg(test)]
+    hull_probe::note(arcs, below, undecided, interior, tilted);
+    Ok(best.map(|(_, w)| w))
+}
+
+/// An ordered ring's winding about the face's outward normal: `-1` clockwise — the material
+/// is *outside* the ring, so it bounds a hole — and `+1` counter-clockwise, an island.
+///
+/// The turn at a convex-hull vertex is the winding, and the lexicographically smallest node
+/// is one: it is an extreme point of the node set, which is planar, so it is a vertex of the
+/// ring's hull. Finding it is the **only** thing here that needs two implicit points in one
+/// decision, and [`three_plane_cmp_coord`](nacre_geom::intersect::three_plane_cmp_coord) is that predicate.
+///
+/// A shortcut dies here, and is recorded so it is not walked twice: a *supporting edge* —
+/// one whose plane `Q_j` has every other node on one side — would give a hull vertex from
+/// the one-implicit `three_plane_orient3d` alone. But a simple polygon need not have an edge
+/// on its hull (fold each side of a pentagon slightly inward), so no such edge is guaranteed.
+/// A hull *vertex* always exists.
+///
+/// ★★ **Where arcs touch this**: the turn is read at **one** node, so a curved edge
+/// needs no angle sum — only its tangent's direction at that node. The other two sites that read
+/// the direction's *representation* each got their own answer: the walk-back below asks
+/// [`continuation`], which has a curved arm ("are the tangents parallel" is "same circle, same
+/// travel"), and the lexicographic minimum above runs on [`CoordKey`], which holds a pierce node's
+/// `a + b√c` coordinate beside a name and compares across the two through the quad tower.
+///
+/// A ring may be *non-simple* — visiting one node twice — and still be a legitimate face: the
+/// unbounded contour of two cells that meet at a single point pinches through that point, tracing
+/// a figure-8. The winding is read from the turn at the lexicographically smallest node, and a
+/// coincidence elsewhere in the ring does not affect that turn, so a repeated node is not by itself
+/// an error. (The old check rejected on the first coincidence with the running minimum, which made
+/// the verdict depend on the ring's arbitrary start index — one operand order rejected a pinch the
+/// other accepted.) Only a pinch *at* the extreme node itself leaves the turn ambiguous; that stays
+/// a `LOOP_ORIENT_MISMATCH`, decided by exact equality rather than by a tolerance.
+pub(crate) fn loop_winding(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    p: usize,
+    ring: &[RingEdge],
+) -> Result<i8, BoolError> {
+    // ★ **The floor reads the carriers.** Two straight edges between two points are one edge traced
+    // twice; two arcs are a lens and an arc with its chord is a circular segment. See the same rule
+    // at the walk's orbit length (`arrangement::walk_cells`).
+    if ring.len()
+        < if ring.iter().any(|e| matches!(e.carrier, Carrier::Arc(_))) {
+            2
+        } else {
+            3
+        }
+    {
+        return Err(reject(RejectReason::DegenerateRing));
+    }
+    // ★ **The comparator, in one place, reading the identity directly.** This is the second of the
+    // two sites that deliberately do not go through [`three_plane_name`]: `Judge::cmp_coord` speaks
+    // three plane indices (it lives in `nacre-cip`, below this crate, so the name cannot travel
+    // there), and a pierce point's coordinate is `a + b√c` with its own total comparators
+    // (`nacre_scalar::quad::cmp_coord_meet_branch` and `cmp_coord_branch`). **This dispatch is
+    // where that decision belongs** — the door's single answer is the wrong one here, and
+    // `Judge::cmp_coord`'s four-rung ladder speaks neither `MeetLine` nor `QuadVal`.
+    //
+    // ★★ **The keys are materialized, and that is a change of shape, not just of type.** The old
+    // spelling read `[usize; 3]` out of the name on every comparison — free. A pierce key is a
+    // *solve* ([`pierce_meet`] re-derives the point from the name), and the scan below asks for
+    // each node's key on the order of six times, so re-solving per read would multiply the exact
+    // work by that. One pass, one `Vec`.
+    let keys: Vec<CoordKey> = (0..ring.len())
+        .map(|i| coord_key(jd, cyls, ring, i))
+        .collect::<Result<_, BoolError>>()?;
+    let key = |i: usize| &keys[i];
+    // Lexicographically smallest node — a hull vertex, hence a valid turn site. A coincidence with
+    // the running minimum just means "not strictly smaller", so keep it; do not reject.
+    let mut lo = 0usize;
+    for i in 1..ring.len() {
+        let mut order = 0i8;
+        for axis in 0..3 {
+            order = cmp_key(jd, key(i), key(lo), axis)?;
+            if order != 0 {
+                break;
+            }
+        }
+        if order == -1 {
+            lo = i;
+        }
+    }
+    // ★★★ **The scan above is only a minimum if the relation is an order, and that is an
+    // assumption about the predicates, not about this loop.** It composes per-axis comparisons
+    // lexicographically; a per-axis answer that is not a fact about the geometry — one plane
+    // described two ways, say — makes the composition intransitive, and then a forward scan can
+    // stop at a node with something smaller behind it. That node is not extreme, the turn read
+    // there is not the winding, and the wrong sign comes back **confident**: the engine noticed
+    // only two layers later, as "no outer contour", and named the symptom.
+    //
+    // ★ This is the postcondition the algorithm actually needs — cheaper than asking whether the
+    // relation is transitive (`O(n)` against `O(n³)`, and rings here reach 95 nodes) and closer to
+    // the point. **It holds however the predicates behave; it is the net under them.**
+    // ★ A declining comparison makes no claim, so it cannot witness a violation either: `0` is
+    // "says nothing" here, not "equal".
+    let lex = |i: usize, j: usize| -> i8 {
+        (0..3)
+            .map(|axis| cmp_key(jd, key(i), key(j), axis).unwrap_or(0))
+            .find(|&c| c != 0)
+            .unwrap_or(0)
+    };
+    debug_assert!(
+        !(0..ring.len()).any(|i| i != lo && lex(i, lo) == -1),
+        "the lexicographic scan did not find a minimum — the comparison is not an order here"
+    );
+    // The turn is read at `lo`; if that exact point recurs the corner is a pinch and its turn is
+    // ambiguous — honest-reject rather than guess.
+    // ★ Stops at the first pinch, as the `any` it replaced did. Running on would ask comparisons
+    // the old spelling never made, and one of those could *decline* — turning a `CoincidentNodes`
+    // that was already decided into a width reject.
+    for i in 0..ring.len() {
+        let mut same = i != lo;
+        for axis in 0..3 {
+            same = same && cmp_key(jd, key(i), key(lo), axis)? == 0;
+        }
+        if same {
+            return Err(reject(RejectReason::CoincidentNodes));
+        }
+    }
+    // ★★★★★ **The ring's minimum may not be a node at all.** The scan above found the smallest
+    // **node**; an arc can bulge past it, and then `lo` is not a hull vertex and the turn read
+    // there is not the winding. [`arc_extremum_winding`] answers where that happens, from the arc
+    // itself — the reading `CurvedStraightRun`'s doc named.
+    if let Some(w) = arc_extremum_winding(jd, cyls, p, ring, &keys, lo)? {
+        return Ok(w);
+    }
+    // **A ring node need not be a corner.** The arrangement names a point wherever another feature
+    // crosses an edge, and `loop_triples` keeps such a vertex even when the loop runs straight
+    // through it — so one edge of the polygon can arrive as several collinear ring edges. Reading
+    // the turn at `lo` against its immediate predecessor then asks about two halves of one
+    // straight edge, which has no turn to give.
+    //
+    // The turn to read is the one between the directions the loop **actually** arrives and leaves
+    // on: walk back past the edges the loop runs straight through. `lo` stays a hull vertex — the
+    // stretch lies on one **line** through it, so the region is still on one side of that line.
+    // ★ That argument is the straight one, and the guard below is where it stops: two arcs of one
+    // circle are also "straight through", and a *circle* through `lo` does not put the region on
+    // one side of anything.
+    //
+    // **Only while the stretch keeps going the same way.** A collinear edge traversed the *other*
+    // way means the ring doubles back along the line it came in on — an antenna, whose tip has no
+    // turn and whose neighbours' turn belongs to a different vertex. Skipping past that would
+    // read a turn from somewhere else and call it this vertex's: a wrong winding, silently.
+    //
+    // ★★★ **The comparison is between neighbours, at the node they share** — it used to be between
+    // the candidate and `ring[lo]`, which is the same answer for straight edges (parallel and
+    // same-sense are both transitive along a chain of shared points) and **meaningless** the moment
+    // an edge is curved: a far arc's tangent is not `lo`'s tangent, so comparing them asks about
+    // two different places. An earlier note here worried that neighbour-only would *weaken* "the
+    // whole stretch runs one way"; transitivity is why it does not.
+    //
+    // ★★★★ **And the value carried out is the one already read at a shared node** — never an
+    // edge's direction at its own far start. For a straight edge the two are the same value, which
+    // is why the older spelling stood; on a **diameter** chord they are exactly opposite, and that
+    // is what a boss straddling a plate edge measured (both half-disks are `+1`; the half whose arc
+    // *arrives* came back `−1`). Where the stretch is curved the equality that licenses stepping at
+    // all fails, and the walk refuses by name rather than reading a winding from the wrong place.
+    let n = ring.len();
+    let leaving = dir_at(jd, cyls, p, &ring[lo], ring[lo].node)?;
+    let mut back = (lo + n - 1) % n;
+    // ★ The direction the loop arrives on, carried out of the walk — the edge that ends it is the
+    // one the turn is read against, and its direction is already in hand.
+    let arriving = loop {
+        let ahead = (back + 1) % n;
+        let shared = ring[ahead].node;
+        let earlier = dir_at(jd, cyls, p, &ring[back], shared)?;
+        let later = dir_at(jd, cyls, p, &ring[ahead], shared)?;
+        match continuation(jd, p, &earlier, &later)? {
+            // ★★★★ **`earlier`, and not `ring[back]`'s direction at its own start.** The two are
+            // the same value for a straight edge — a line's tangent does not change along it — and
+            // that equality is what let the older spelling stand. On an arc they differ by the
+            // whole turn of the arc, and on a *diameter* chord they are exactly opposite: measured,
+            // the two half-disks of a boss straddling a plate edge came back `+1` and `−1` where
+            // both are `+1`, because the half whose arc **arrives** read its tangent at the far
+            // end. This one is read at the node the loop actually passes through.
+            Continuation::Turns => break earlier,
+            Continuation::DoublesBack => return Err(reject(RejectReason::StraightAngle)),
+            // ★★★ **The step is licensed by the stretch being a *line*.** What the walk carries out
+            // is `ring[back]`'s direction at its own start, and that equals `lo`'s arriving
+            // direction only because a line's tangent is the same everywhere on it. Two arcs of one
+            // circle are tangent-continuous, so `continuation` answers `Straight` for them too —
+            // and stepping there would read the winding from a different point of the ring.
+            // ★★★★★ **At `lo` itself a smooth boundary still states a winding — by curvature.**
+            // The step past a straight run is licensed by the stretch being a *line*, and two arcs
+            // of one circle are tangent-continuous without being one; stepping there would read the
+            // winding from a different point of the ring. But at `lo` there is nothing to step
+            // past: the loop **is** smooth at the extreme node, and a smooth extremum's winding is
+            // the arc's own rotation. See [`smooth_extremum_winding`].
+            // Not curved here: an ordinary straight run through `lo`, walked back as before.
+            Continuation::Straight
+                if ahead == lo
+                    && let (EdgeDir::Arc(e), EdgeDir::Arc(l)) = (&earlier, &later) =>
+            {
+                if e.cyl != l.cyl || e.ccw != l.ccw || e.axis_up != l.axis_up {
+                    return Err(reject(RejectReason::CurvedStraightRun));
+                }
+                return Ok(smooth_extremum_winding(jd, p, l));
+            }
+            // ★ A smooth **line–arc** join at the extremum (a fillet's corner is
+            // the rounded rectangle's extreme node): the ring turns there only at second order,
+            // and the arc's bending is that turn.
+            Continuation::Straight
+                if ahead == lo
+                    && let (EdgeDir::Line { .. }, EdgeDir::Arc(a))
+                    | (EdgeDir::Arc(a), EdgeDir::Line { .. }) = (&earlier, &later) =>
+            {
+                return Ok(smooth_extremum_winding(jd, p, a));
+            }
+            Continuation::Straight
+                if matches!(earlier, EdgeDir::Arc(_)) || matches!(later, EdgeDir::Arc(_)) =>
+            {
+                return Err(reject(RejectReason::CurvedStraightRun));
+            }
+            Continuation::Straight => {}
+        }
+        back = (back + n - 1) % n;
+        if back == lo {
+            // Every edge of the ring lies on one line: it bounds nothing. ★ This is the *loop's*
+            // termination, not one of `continuation`'s answers — it is about having walked the
+            // whole ring, not about what any one edge does.
+            return Err(reject(RejectReason::DegenerateRing));
+        }
+    };
+    turn_between(jd, p, &arriving, &leaving)
+}
+
+/// **The winding of a ring that runs *smooth* through its extreme node** — curvature, not a turn.
+///
+/// ★★★★★ **This is not [`turn`]'s question, and that is why it is not [`turn`]'s arm.** `turn`
+/// answers "how much does the direction rotate at this node", and for two arcs of one circle the
+/// honest answer is `0`: they are tangent-continuous, nothing rotates *at* the node. What
+/// [`loop_winding`] needs there is a different fact — which way the boundary **curves** — and it is
+/// available only because the node is the ring's lexicographic minimum.
+///
+/// **Why the minimum makes it answerable.** `lo` is a hull vertex: the whole ring lies on one side
+/// of a supporting line through it. The boundary there is an arc, so the arc curves off that line
+/// into the side the ring is on — the region is locally convex at `lo`, and a locally convex point's
+/// turn carries the ring's orientation. For an arc that "turn" is spread along the arc rather than
+/// concentrated at a vertex, but its **sign** is the arc's own rotation, which is exactly the
+/// winding.
+///
+/// **The sign, in three factors.** Travel rotates about `s·m`, `s = +1` when `ccw`. The turn's
+/// reference is the face's **outward** normal, `n_out = frame_sign · n_P`, and `n_P · m > 0` is
+/// `axis_up`. So
+///
+/// ```text
+///   (s·m) · n_out = s · frame_sign · (n_P · m)
+///     ⇒  winding = ccw · axis_up · frame_sign
+/// ```
+///
+/// — no coordinate, no predicate, three signs the directions already carry.
+///
+/// The two arcs come from [`Continuation::Straight`], which for arcs means *one cylinder and the
+/// same travel sense*, so both agree on every factor; they are re-checked here rather than assumed,
+/// because this function's answer is a sign and a wrong one is silent.
+///
+/// ☑ **Which factors the population locks.** Negating the product, dropping `ccw`, and dropping
+/// `axis_up` each move the chained fixtures' wall (to `NonManifoldResultEdge`,
+/// [`RejectReason::RingOrientation`] and [`RejectReason::RulingBoundNotYet`] respectively), so the
+/// lock names them. Dropping `frame_sign` changes nothing: it is `+1` on every class that reaches
+/// this rule today, which is the same shape [`turn`]'s own note records for its factor — the
+/// difference being that `turn`'s corpus does reach `Reversed` faces and this rule's does not yet.
+/// ☑ Under the motion group it is still not caught — the commuting
+/// oracle's 396 always-on cells stay green with the factor dropped, so a ring whose lexicographic
+/// minimum is a smooth arc node on a `frame_sign = −1` class is a population no fixture has yet
+/// (the arc extremum rung reads the smooth minimum *inside* an arc, [`arc_extremum_winding`],
+/// which the oracle does exercise).
+fn smooth_extremum_winding(jd: &Judge<'_, WorkingPlane>, p: usize, arc: &ArcDir) -> i8 {
+    let sign = |b: bool| if b { 1i8 } else { -1 };
+    sign(arc.ccw) * sign(arc.axis_up) * jd.planes[p].frame_sign
+}
+
+/// `sign((n_P × n_Q) · N_R)`, where `N_R` is the right-hand normal of `R.tri`.
+///
+/// [`plane_pair_dir_sign`](nacre_geom::intersect::plane_pair_dir_sign) gives the sign against `R`'s *stored* normal, exactly.
+/// That normal is parallel to `N_R` but may oppose it on a `Reversed` face, so we
+/// correct with their dot — two parallel unit vectors, `|·| ≈ 1`, nowhere near the
+/// sign boundary.
+///
+/// The correction *is* the face's stated flag — since the stored-orientation
+/// cutover, `frame_sign` is `Forward`/`Reversed` as a sign, and
+/// "`Reversed` ⇔ `n_out = −plane.normal()`" holds by construction rather than by
+/// hope. What keeps it honest is the winding: `collect_planes` debug_asserts the
+/// witness triangle against `n_out`, and `validate` pins the loop itself as
+/// `FaceMisoriented`.
+pub(crate) fn dir_sign(jd: &Judge<'_, WorkingPlane>, p: usize, q: usize, r: usize) -> i8 {
+    let planes = jd.planes;
+    jd.plane_pair_dir_sign(p, q, r) * planes[r].frame_sign
+}
