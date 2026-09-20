@@ -91,5 +91,5 @@ impl PlaneWitness for WorkingPlane {
 }
 
 #[cfg(test)]
-#[path = "tolerant_tests.rs"]
+#[path = "tests/tolerant.rs"]
 mod tests;
