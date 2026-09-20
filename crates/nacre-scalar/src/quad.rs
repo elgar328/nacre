@@ -1181,5 +1181,5 @@ pub fn circular_order_about_seam(
 }
 
 #[cfg(test)]
-#[path = "quad_tests.rs"]
+#[path = "tests/quad.rs"]
 mod tests;

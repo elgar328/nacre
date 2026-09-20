@@ -291,6 +291,9 @@ mod props {
     use proptest::prelude::*;
 
     proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+            proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+        ))]
         /// Random rationals against the oracle — both storeys.
         #[test]
         fn sign1_matches_the_oracle(
@@ -1234,6 +1237,9 @@ fn a_gap_beyond_two_roots() {
 }
 
 proptest::proptest! {
+    #![proptest_config(proptest::test_runner::Config::with_failure_persistence(
+        proptest::test_runner::FileFailurePersistence::WithSource("proptest-regressions")
+    ))]
     /// Against the 512-bit oracle, over both roots — including the degenerate `q = 0`.
     #[test]
     fn root_sum_matches_the_oracle(
