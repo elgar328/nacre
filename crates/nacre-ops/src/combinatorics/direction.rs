@@ -188,7 +188,7 @@ fn arc_at(
 /// near-zero comparison. That is `plus_t_is_above`'s argument verbatim, and it is why this is total
 /// where the integer fold below is not.
 ///
-/// ★ **And it is cross-checked against that integer fold.** `nacre_cip::predicate::name_stored_ints`
+/// ★ **And it is cross-checked against that integer fold.** `nacre_judge::predicate::name_stored_ints`
 /// does the same turn exactly, in integers, on the classes it can (`None` for a wide name or a
 /// witness that speaks another frame) — so where it answers, the two must agree.
 pub(crate) fn stored_coeffs_rat(
@@ -206,7 +206,7 @@ pub(crate) fn stored_coeffs_rat(
         jd.planes[c].name_ints.as_ref().is_none_or(|ni| {
             let k = (0..4).find(|&k| coeffs[k] != nacre_scalar::Rat::from_int(0));
             // ★ Through `NameInts`' own accessor, not by touching the integers: production code
-            // in this crate reaches `BigInt` only through `nacre-cip`'s types (the `num-bigint`
+            // in this crate reaches `BigInt` only through `nacre-judge`'s types (the `num-bigint`
             // dependency is dev-only, and an assertion is not a reason to promote it).
             k.is_none_or(|k| ((ni.coeff_sign(k) > 0) == (coeffs[k].numer() > 0)) == agrees)
         }),

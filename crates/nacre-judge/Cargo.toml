@@ -1,11 +1,11 @@
 [package]
-name = "nacre-cip"
+name = "nacre-judge"
 version = "0.0.0"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
-description = "Rotated-vertex WitnessPoint assembly (§CIP) over the nacre b-rep Model — assembles a vertex's exact definition + directional tol from the rotation forest for the boolean's sign judges"
+description = "Toleranced sign judgments for the nacre CAD kernel — the twin of nacre-predicates for rotated points, whose coordinates are irrational: an f64 filter escalates to arbitrary precision and returns a proved sign, a proved coincidence, or an honest undecided. Pure numeric; never reads the b-rep"
 
 [dependencies]
 nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }

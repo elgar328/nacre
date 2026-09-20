@@ -1,6 +1,6 @@
 use super::*;
 /// The result of an orientation judgment (§CIP) — the shared sign vocabulary used by both
-/// the 2D and 3D toleranced-sign judges (now in `nacre-cip`) and their downstream consumers.
+/// the 2D and 3D toleranced-sign judges (now in `nacre-judge`) and their downstream consumers.
 /// A cross-cutting "judgment result" carried here as a fundamental value (a candidate to
 /// split into its own vocabulary type later).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -11,7 +11,7 @@ pub enum Orient {
     ///
     /// **Whether that was *proved* is not carried here.** This type is the sign the geometry
     /// consumes; a proved zero, a coincidence established within the judging standard, and a
-    /// judgement that ran out of precision all reach it looking alike. `nacre_cip::Decision`
+    /// judgement that ran out of precision all reach it looking alike. `nacre_judge::Decision`
     /// is what keeps them apart — and what turns the last of them into a named reject rather
     /// than a silent merge.
     Zero,

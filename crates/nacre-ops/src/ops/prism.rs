@@ -11,7 +11,7 @@ pub(super) fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::e
     let chain =
         crate::rotated_vertex::frame_chain(model, frame.plane(), frame.placement(), frame.flip())?;
     match chain.as_slice() {
-        [nacre_cip::MoveNode::Frame { frame: pf }] => crate::exact::RatFrame::of_plane_frame(pf),
+        [nacre_judge::MoveNode::Frame { frame: pf }] => crate::exact::RatFrame::of_plane_frame(pf),
         _ => None,
     }
 }

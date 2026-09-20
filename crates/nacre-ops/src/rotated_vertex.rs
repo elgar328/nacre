@@ -12,7 +12,7 @@
 //! (`crate::planes`) and
 //! the hunt is gone.
 
-use nacre_cip::{MoveNode, WitnessPoint};
+use nacre_judge::{MoveNode, WitnessPoint};
 use nacre_scalar::Rat;
 use nacre_store::Handle;
 use nacre_topo::{Model, Motion, MotionNode, Surface};
@@ -108,9 +108,9 @@ pub(crate) fn surface_witness_triangle(
 /// what was validated and what gets framed cannot drift.
 ///
 /// Per vertex: **pure** (its three carriers share one motion, and the solve fits `Rat`) becomes
-/// [`nacre_cip::JudgedPoint::Pure`]; anything else that is still a
+/// [`nacre_judge::JudgedPoint::Pure`]; anything else that is still a
 /// well-defined
-/// three-plane meet becomes [`nacre_cip::JudgedPoint::Meet`] of its carriers' witness triangles — the
+/// three-plane meet becomes [`nacre_judge::JudgedPoint::Meet`] of its carriers' witness triangles — the
 /// straddling population, **and** the pure-but-too-wide one, which a meet represents
 /// without ever asking the coordinate to fit anything.
 ///
@@ -121,8 +121,8 @@ pub(crate) fn surface_witness_triangle(
 pub(crate) fn through_judged_points(
     model: &Model,
     vs: [Handle<nacre_topo::Vertex>; 3],
-) -> Option<[nacre_cip::JudgedPoint; 3]> {
-    use nacre_cip::JudgedPoint;
+) -> Option<[nacre_judge::JudgedPoint; 3]> {
+    use nacre_judge::JudgedPoint;
     let mut out: [Option<JudgedPoint>; 3] = [None, None, None];
     for (o, vh) in out.iter_mut().zip(vs) {
         let tri = match *model.vertex(vh) {
@@ -233,7 +233,7 @@ pub(crate) fn frame_chain(
     let Some(name) = model.surface_name.get(&plane) else {
         // ★★★ **The judged road**: a plane with no name at all — a
         // mixed-frame `Through` statement, whose exact world coefficients are irrational. Its
-        // frame is derived from the defining points as intervals ([`nacre_cip::FrameThrough`]),
+        // frame is derived from the defining points as intervals ([`nacre_judge::FrameThrough`]),
         // with the branch decided once at the fixed rung, so the same statement always frames
         // the same way. `Named` placement is refused here defensively (`SketchFrame::named`
         // already rejects it by name at construction — an on-plane claim needs a name to verify
@@ -251,7 +251,7 @@ pub(crate) fn frame_chain(
         }
         let pts = through_judged_points(model, *vs)?;
         let mut chain = vec![MoveNode::FrameThrough(Box::new(
-            nacre_cip::FrameThrough::of(pts, flip)?,
+            nacre_judge::FrameThrough::of(pts, flip)?,
         ))];
         if let Some(m) = motion {
             chain.append(&mut motion_chain(model, *m)?);
@@ -294,9 +294,9 @@ pub(crate) fn frame_chain(
     // a plane with a name can always host a sketch.
     let wide_road = || -> Option<MoveNode> {
         let wf = match placement {
-            FramePlacement::Canonical => nacre_cip::WideFrame::canonical_of(name, flip)?,
+            FramePlacement::Canonical => nacre_judge::WideFrame::canonical_of(name, flip)?,
             FramePlacement::Named { origin, ref_dir } => {
-                nacre_cip::WideFrame::named_of(name, origin, ref_dir, flip)?
+                nacre_judge::WideFrame::named_of(name, origin, ref_dir, flip)?
             }
         };
         Some(MoveNode::FrameWide(wf))

@@ -286,7 +286,7 @@ pub(super) fn datum_plane(
                 // validated is what gets framed.
                 let jpts = crate::rotated_vertex::through_judged_points(model, sorted)
                     .ok_or(OpError::PlaneWithoutExactForm)?; // unreachable: causes told apart above
-                let ft = nacre_cip::FrameThrough::of(jpts, false)
+                let ft = nacre_judge::FrameThrough::of(jpts, false)
                     .ok_or(OpError::ThroughFrameUndecided)?;
                 // The cache anchors at the validated realization of the first stored vertex —
                 // the definition's own replay, same rule as the named road below.
@@ -324,8 +324,9 @@ pub(super) fn datum_plane(
                 (nacre_scalar::MeetPoint::Narrow(p), Some(leaf)) => {
                     let chain = crate::rotated_vertex::motion_chain(model, leaf)
                         .ok_or(OpError::PlaneWithoutExactForm)?;
-                    let w = crate::rotated_vertex::replay(nacre_cip::WitnessPoint::at(*p), &chain)
-                        .ok_or(OpError::PlaneWithoutExactForm)?;
+                    let w =
+                        crate::rotated_vertex::replay(nacre_judge::WitnessPoint::at(*p), &chain)
+                            .ok_or(OpError::PlaneWithoutExactForm)?;
                     Point3::from_array(w.coord())
                 }
                 (nacre_scalar::MeetPoint::Wide(_), _) => model.vertex_point(sorted[0]),

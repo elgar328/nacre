@@ -590,7 +590,7 @@ fn trace_transversal_face(
 /// run is the hole's edge) is the one the flank gets wrong.
 ///
 /// **Derivation.** `order_along` runs along `d = n_s(wc) × n_s(fc)` (stored normals — see
-/// [`combinatorics::dir_sign`] and [`Judge::plane_pair_dir_sign`](nacre_cip::predicate::Judge)), and the label frame's "above" is
+/// [`combinatorics::dir_sign`] and [`Judge::plane_pair_dir_sign`](nacre_judge::predicate::Judge)), and the label frame's "above" is
 /// `n_s(wc)` (see [`combinatorics::side_of`]). With `t = order_along(wc, fc, first, last)` the travel
 /// is `−t·d`, so material points along `n_out(fp) × (−t·d)`. Since `fp` is coplanar with its class
 /// root, `n_out(fp) = σ·n_s(fc)`, and the triple product collapses to

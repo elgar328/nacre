@@ -16,7 +16,7 @@
 //! - **realized** — anything a motion or a radical reaches is approached at `prec` bits with the
 //!   error the realization cost, and a digit is printed only once the interval decides it.
 //!
-//! ★ **Where this sits.** `nacre-topo` does not depend on `nacre-cip`, so the composition
+//! ★ **Where this sits.** `nacre-topo` does not depend on `nacre-judge`, so the composition
 //! `vertex_meet → WitnessPoint::at → replay → realize` cannot live on `Model`; `nacre-ops` is the
 //! first crate that sees both. The rounding itself lives one layer further down, in
 //! `nacre-scalar`, beside `round_to_f64` — cip realizes, scalar rounds, this module composes.
@@ -26,7 +26,7 @@
 //! half of it. It does **not** overwrite the cache — that is the row's other half.
 
 use crate::rotated_vertex::{motion_chain, replay};
-use nacre_cip::WitnessPoint;
+use nacre_judge::WitnessPoint;
 use nacre_math::Point3;
 use nacre_scalar::{HpBounded, Mag, MeetPoint};
 use nacre_store::Handle;
@@ -585,7 +585,7 @@ fn build_three_plane(
     let (point, used) = match remembered_prefix(model, base, node, bits) {
         // The chain runs root-to-leaf, so what this point still owes is the tail past the prefix.
         Some((used, folded, prefix)) => (
-            nacre_cip::fold_suffix(prefix, &chain[folded..], bits),
+            nacre_judge::fold_suffix(prefix, &chain[folded..], bits),
             Some(used),
         ),
         None => (

@@ -11,7 +11,7 @@
 //! nothing downstream can tell which route a face came by.
 //!
 //! **The proof is the whole design.** Separation is established with
-//! [`nacre_cip::orient3d_filter`], which returns a sign only when its error bound clears zero and
+//! [`nacre_judge::orient3d_filter`], which returns a sign only when its error bound clears zero and
 //! `None` otherwise; `None` means "arrange it after all", which is what the engine did before this
 //! module existed. **So a missed proof costs time and nothing else, and no tolerance enters** —
 //! the same reason the kernel is allowed to have a fast path at all.
@@ -20,7 +20,7 @@ use crate::boolean::LocalFace;
 use crate::combinatorics::{Canon3, NodeId};
 use crate::planes::{ClassIx, FaceRow, SolidSide, WorkingPlane};
 use crate::{BoolKind, he_start};
-use nacre_cip::{WitnessPoint, orient3d_filter};
+use nacre_judge::{WitnessPoint, orient3d_filter};
 use nacre_scalar::Orient;
 use nacre_store::Handle;
 use nacre_topo::{Model, Solid, Vertex};

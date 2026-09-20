@@ -139,7 +139,7 @@ fn big(x: f64, prec: usize) -> BigFloat {
 /// measured value means a degraded platform no longer fails anything — it just escalates more
 /// and runs slower, invisibly. This line is what keeps that visible.
 ///
-/// What it does not do: it checks one input. `nacre-cip`'s `tol_bounds_error_over_random_chains`
+/// What it does not do: it checks one input. `nacre-judge`'s `tol_bounds_error_over_random_chains`
 /// checks the conclusion — that `tol` bounds the error, second-order terms and all.
 #[test]
 fn the_measured_trig_error_bounds_the_real_one() {

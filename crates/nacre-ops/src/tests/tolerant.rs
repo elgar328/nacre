@@ -643,7 +643,7 @@ fn the_base_frame_is_actually_consulted() {
     );
 }
 
-/// `orient3d` — the shortcut ([`nacre_cip::frame3::shared_base`] via `Judge::orient3d`) is
+/// `orient3d` — the shortcut ([`nacre_judge::frame3::shared_base`] via `Judge::orient3d`) is
 /// answering the same question as the coordinates. See [`two_spellings`].
 #[test]
 fn a_reflected_spelling_orients_as_the_plain_one() {
@@ -1073,8 +1073,8 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
 /// ```
 #[test]
 fn two_caps_described_exactly_are_one_plane() {
-    use nacre_cip::predicate::{Judge, Notes};
-    use nacre_cip::{Standard, WitnessPoint};
+    use nacre_judge::predicate::{Judge, Notes};
+    use nacre_judge::{Standard, WitnessPoint};
     use nacre_scalar::Mag;
 
     let (m, s, _) = two_caps_on_a_tilted_face(Recipe::Split);
@@ -1164,8 +1164,8 @@ fn two_caps_described_exactly_are_one_plane() {
         let same = Judge::new(&planes, standard, &notes).planes_coplanar(0, 1);
         let ev = notes.sorted();
         let within = ev.first().and_then(|e| match e.outcome {
-            nacre_cip::Decision::Coincident { within } => Some(within),
-            nacre_cip::Decision::Exhausted { within, .. } => within,
+            nacre_judge::Decision::Coincident { within } => Some(within),
+            nacre_judge::Decision::Exhausted { within, .. } => within,
             _ => None,
         });
         assert!(same, "prec={prec}: no definite separation may be found");
@@ -1210,8 +1210,8 @@ fn two_caps_described_exactly_are_one_plane() {
         }
         let ev = notes.sorted();
         let w = match ev.first().and_then(|e| match e.outcome {
-            nacre_cip::Decision::Coincident { within } => Some(within),
-            nacre_cip::Decision::Exhausted { within, .. } => within,
+            nacre_judge::Decision::Coincident { within } => Some(within),
+            nacre_judge::Decision::Exhausted { within, .. } => within,
             _ => None,
         }) {
             Some(b) => b.exp2().expect("a bound"),
@@ -1568,8 +1568,8 @@ mod wide_name_rescue {
     use super::*;
     use crate::planes::WorkingPlane;
     use crate::{DatumDef, OpOutput, Profile2d};
-    use nacre_cip::Standard;
-    use nacre_cip::predicate::{Judge, Notes, name_stored_ints};
+    use nacre_judge::Standard;
+    use nacre_judge::predicate::{Judge, Notes, name_stored_ints};
     use nacre_math::Point2;
     use nacre_scalar::{Mag, PlaneName};
     use num_bigint::BigInt;
@@ -1894,7 +1894,7 @@ mod wide_name_rescue {
                     .find(|p| p.name_ints.as_ref().is_some_and(|w| w.wide))
                     .expect("a wide plane");
                 assert!(
-                    nacre_cip::chain_parity(&wide.tri_pt3[0].chain) < 0,
+                    nacre_judge::chain_parity(&wide.tri_pt3[0].chain) < 0,
                     "the mirrored arm must carry an odd chain"
                 );
             }

@@ -1,24 +1,24 @@
 //! The b-rep side of the toleranced predicates: `nacre-ops`'s arrangement tables
 //! ([`WorkingPlane`], [`crate::planes::FaceInfo`]) implement the [`Witness`]/[`PlaneWitness`]
 //! ports so the
-//! rotation-general sign predicates in [`nacre_cip::predicate`] can run over them.
+//! rotation-general sign predicates in [`nacre_judge::predicate`] can run over them.
 //!
 //! The tables are **pure description** — geometry and provenance, nothing about how this
 //! operation judges. That belongs to [`Judge`], which the engine builds once per boolean
 //! (`plane_index_setup` supplies the standard and the collector) and passes down; the predicates
 //! are its methods. The predicate logic itself (exact-vs-kernel routing, the frame3 judges) lives
-//! in `nacre-cip`.
+//! in `nacre-judge`.
 
 use crate::planes::{FaceRow, WorkingPlane};
-use nacre_cip::WitnessPoint;
-use nacre_cip::predicate::{PlaneWitness, Witness};
+use nacre_judge::WitnessPoint;
+use nacre_judge::predicate::{PlaneWitness, Witness};
 use nacre_math::Point3;
 
 // The judging context and the helpers the engine reaches for by name. The predicates themselves
 // are methods on `Judge`, so there is nothing else to re-export.
 #[cfg(test)]
-use nacre_cip::predicate::plane_def;
-pub(crate) use nacre_cip::predicate::{ImplicitPoint, Judge};
+use nacre_judge::predicate::plane_def;
+pub(crate) use nacre_judge::predicate::{ImplicitPoint, Judge};
 
 impl Witness for WorkingPlane {
     fn base_coeffs_rat(&self) -> Option<[nacre_scalar::Rat; 4]> {
@@ -85,7 +85,7 @@ impl PlaneWitness for WorkingPlane {
     fn base_coeffs(&self) -> Option<[f64; 4]> {
         self.base.coeffs
     }
-    fn name_ints(&self) -> Option<&nacre_cip::predicate::NameInts> {
+    fn name_ints(&self) -> Option<&nacre_judge::predicate::NameInts> {
         self.name_ints.as_ref()
     }
 }

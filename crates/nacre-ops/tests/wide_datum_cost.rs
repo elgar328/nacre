@@ -8,7 +8,7 @@
 //! `PlaneName::narrow()`, so a `Wide` name answered `None` to every one and the judgement took
 //! the toleranced route that climbs.
 //!
-//! ☑ **It exists now**: `nacre_cip::predicate::NameInts { ints, wide }` and
+//! ☑ **It exists now**: `nacre_judge::predicate::NameInts { ints, wide }` and
 //! `Judge::name_rescue` carry a wide name's integer coefficients into the three sign predicates
 //! that read coefficients at all — `orient3d_cheap`, `cmp_coord`, `plane_pair_dir_sign` — and the
 //! gate is written so that an all-narrow question keeps its existing route to the bit.
@@ -331,7 +331,7 @@ fn wf_family_with_pocket() -> Model {
 #[test]
 #[ignore = "measurement — run explicitly, prints the table"]
 fn what_a_datum_bearing_boolean_costs() {
-    use nacre_cip::kernel::frame3::climb_census;
+    use nacre_judge::kernel::frame3::climb_census;
 
     // ★★★ The control is **wide name vs narrow name**, not "datum vs no datum".
     //
@@ -453,7 +453,7 @@ fn what_a_datum_bearing_boolean_costs() {
 #[test]
 #[ignore = "measurement — run explicitly, prints the table"]
 fn what_a_second_generation_boolean_costs() {
-    use nacre_cip::kernel::frame3::climb_census;
+    use nacre_judge::kernel::frame3::climb_census;
 
     let run = |want_wide: bool| -> Option<(u64, u64, u64)> {
         let mut m = wf_family_with_pocket();

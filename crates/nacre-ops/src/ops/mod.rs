@@ -346,7 +346,7 @@ pub enum OpError {
     VerticesInMixedFrames,
     /// A mixed-frame datum's **judged frame could not be decided** at the fixed rung: no
     /// arbitrary-axis branch's squared length — or the normal's, or the origin's denominator —
-    /// could be bounded away from zero (`nacre_cip::FrameThrough::of`).
+    /// could be bounded away from zero (`nacre_judge::FrameThrough::of`).
     ///
     /// ★ Deliberately **not** [`OpError::CollinearVertices`] and not
     /// [`OpError::DegenerateGeometry`]: both claim the construction *is* degenerate, and an
@@ -605,7 +605,7 @@ impl SketchFrame {
         // the parallel-or-zero claim this constructor rejects. (The narrow `plane_frame_named`
         // is not consulted here: its `None` can mean `i128` overflow, which is a width fact,
         // not a defect in the claim.)
-        if nacre_cip::WideFrame::named_of(name, &origin, &ref_dir, false).is_none() {
+        if nacre_judge::WideFrame::named_of(name, &origin, &ref_dir, false).is_none() {
             return Err(OpError::RefDirParallelToNormal);
         }
         Ok(SketchFrame {

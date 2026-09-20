@@ -43,9 +43,9 @@ pub use error::{BoolError, DeclineKind, RejectClass, RejectReason, RejectWhere};
 pub(crate) use error::{reject, reject_at};
 // The report's vocabulary: what a judgement was asked about, and what it established. Re-exported
 // so a consumer reads one crate, not two.
-pub use nacre_cip::Decision;
-pub use nacre_cip::predicate::{Evidence, Site};
 pub use nacre_geom::mixed::Edge2d;
+pub use nacre_judge::Decision;
+pub use nacre_judge::predicate::{Evidence, Site};
 pub use ops::{
     BoolKind, DatumDef, LogCell, OpError, OpOutput, Operation, PlaneDef, Profile2d, ProfileRing,
     Ring2d, SketchFrame, SketchPlane, apply, face_plane, face_sketch_frame, frame_plane, replay,

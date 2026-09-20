@@ -30,7 +30,7 @@ use super::*;
 /// would make every `WitnessPoint::coord` literally `round(compute_hp)` and take `tol` to a half-ulp, and it
 /// was **declined**: that is arbitrary precision *per vertex*, where [`Angle::cos_sin_f64`]'s is
 /// per *angle* and memoised, so it would pay at construction for a precision that `WitnessPoint`'s lazy
-/// `compute_hp` already buys **only where a judgement actually needs it**. (`nacre-cip` depends on
+/// `compute_hp` already buys **only where a judgement actually needs it**. (`nacre-judge` depends on
 /// this crate, so that type cannot be named here as a link.) Cheaper ways to shrink that
 /// arithmetic (an FMA, a compensated
 /// evaluation) stay in `f64` and keep the laziness, so they are the candidates if the term ever

@@ -259,7 +259,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "nacre-cip"
+name = "nacre-geom"
+version = "0.0.0"
+dependencies = [
+ "nacre-math",
+ "nacre-predicates",
+ "nacre-scalar",
+ "proptest",
+]
+
+[[package]]
+name = "nacre-judge"
 version = "0.0.0"
 dependencies = [
  "astro-float",
@@ -268,16 +278,6 @@ dependencies = [
  "nacre-scalar",
  "num-bigint",
  "num-integer",
- "proptest",
-]
-
-[[package]]
-name = "nacre-geom"
-version = "0.0.0"
-dependencies = [
- "nacre-math",
- "nacre-predicates",
- "nacre-scalar",
  "proptest",
 ]
 
@@ -292,8 +292,8 @@ dependencies = [
 name = "nacre-ops"
 version = "0.0.0"
 dependencies = [
- "nacre-cip",
  "nacre-geom",
+ "nacre-judge",
  "nacre-math",
  "nacre-props",
  "nacre-scalar",

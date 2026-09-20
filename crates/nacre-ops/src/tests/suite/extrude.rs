@@ -288,7 +288,7 @@ fn shares_or_coplanar_uses_the_handle_branch() {
             // Unread: this table only ever reaches `Judge::planes_coplanar`, which decides on `tri`.
             orient_sign: 1,
             tri_pt3: tri.map(|p| {
-                nacre_cip::WitnessPoint::at_nearest(
+                nacre_judge::WitnessPoint::at_nearest(
                     p.as_array()
                         .map(|x| nacre_scalar::Rat::try_from_f64(x).expect("exact")),
                 )

@@ -197,7 +197,7 @@ pub(crate) fn plane_index_setup_inner(
 /// `scale` is the largest coordinate magnitude in either operand, taken over the whole table so
 /// the result does not depend on traversal order (replay must reproduce it exactly).
 ///
-/// The precision that reaches the target is then [`nacre_cip::judge_precision`]'s to compute;
+/// The precision that reaches the target is then [`nacre_judge::judge_precision`]'s to compute;
 /// [`JUDGE_PREC_CAP`] is where the kernel stops and says so instead, and [`CLIMB_HEADROOM`] is
 /// what a single hard judgement may spend on top of it.
 ///
@@ -225,7 +225,7 @@ fn standard_for(rows: &[FaceRow]) -> Standard {
     // is empty: an f64-representable point (base = `mantissa · 2^exp`, a power-of-two denominator
     // and a numerator within `Rat`'s 127 bits) realizes as an *exact* interval, and a decimal one
     // carries the ½-ulp bound it was stated with — nothing a replay could add. The realization has
-    // no rotation error to report (`an_exact_point_demands_no_precision` in `nacre-cip`, and the
+    // no rotation error to report (`an_exact_point_demands_no_precision` in `nacre-judge`, and the
     // const assert at `TRIAL_PREC` that keeps it true).
     //
     // So the loop below used to spend a full high-precision replay per point to compute a zero —
@@ -331,7 +331,7 @@ pub(crate) fn standard_for_points<'a>(
 /// a reassociated sum would.
 fn worst_trial<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>) -> Mag {
     let pts: Vec<&WitnessPoint> = pts.into_iter().collect();
-    let bounds = crate::par::map_range(pts.len(), |i| nacre_cip::trial_bound(pts[i]));
+    let bounds = crate::par::map_range(pts.len(), |i| nacre_judge::trial_bound(pts[i]));
     bounds
         .into_iter()
         .fold(Mag::ZERO, |w, b| if w.lt(b) { b } else { w })
@@ -349,7 +349,7 @@ fn standard_from<'a>(pts: impl IntoIterator<Item = &'a WitnessPoint>, worst: Mag
     let scale = Mag::of(scale);
     let output_precision = scale.times(Mag::pow2(-52));
     let coincidence = output_precision.times(Mag::pow2(-128));
-    let prec = nacre_cip::precision_for(worst, coincidence);
+    let prec = nacre_judge::precision_for(worst, coincidence);
     Standard {
         prec,
         coincidence,

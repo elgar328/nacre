@@ -461,7 +461,7 @@ pub(crate) fn loop_winding(
     }
     // ★ **The comparator, in one place, reading the identity directly.** This is the second of the
     // two sites that deliberately do not go through [`three_plane_name`]: `Judge::cmp_coord` speaks
-    // three plane indices (it lives in `nacre-cip`, below this crate, so the name cannot travel
+    // three plane indices (it lives in `nacre-judge`, below this crate, so the name cannot travel
     // there), and a pierce point's coordinate is `a + b√c` with its own total comparators
     // (`nacre_scalar::quad::cmp_coord_meet_branch` and `cmp_coord_branch`). **This dispatch is
     // where that decision belongs** — the door's single answer is the wrong one here, and

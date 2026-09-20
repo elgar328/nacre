@@ -1,6 +1,6 @@
 //! Exact rational scalars — the overhaul's exact rational value engine (`Rat`/`Angle`) and
 //! the axis/rotation/isometry value types the kernel builds on. (The toleranced-sign frame
-//! judgment this value engine enables now lives in `nacre-cip`.)
+//! judgment this value engine enables now lives in `nacre-judge`.)
 //!
 //! The truth layer for user-input dimensions and angles: a value the user typed
 //! is preserved *exactly*, so `1.1` stays `11/10` and `1.1 × 7` is exactly `7.7`
@@ -21,15 +21,15 @@
 //!   realize in arbitrary precision (astro-float) for the judgment path.
 //!
 //! Scope: the exact value engine (the toleranced-sign frame judgment it enabled now lives
-//! in `nacre-cip`). [`Rat::from_decimal`] carries this into *construction*: a prism's
+//! in `nacre-judge`). [`Rat::from_decimal`] carries this into *construction*: a prism's
 //! placement and sweep are done in the rationals the dimensions were **written** as, so
 //! `1.1` then `6.6` reaches the same plane as `7.7` (`nacre_ops::exact`). That holds where
 //! the sketch frame is exactly orthonormal — a rotated frame's axes are irrational, and
-//! there this crate has nothing to offer; `nacre-cip` is what keeps *judgments* sound
+//! there this crate has nothing to offer; `nacre-judge` is what keeps *judgments* sound
 //! there. Still deferred: the unified `Scalar { value, tol }` wrapper.
 //! **The declare-0 → user-confirmation policy that stood here is retired, not pending**:
 //! measurement refuted both halves, and an unprovable sign now leaves as a proved
-//! coincidence carrying its evidence, or as a reject named for its cause (`nacre-cip`).
+//! coincidence carrying its evidence, or as a reject named for its cause (`nacre-judge`).
 //! Ported from an isolated 2D experiment that verified it first.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
@@ -80,9 +80,9 @@ pub use winding::*;
 /// **There is no default precision here, on purpose.** A fixed one used to sit beside this
 /// (`HP_PREC = 160`) with `cos_hp`/`sin_hp` reading it, and nothing outside this crate's own
 /// tests ever called them — a hand-picked depth waiting to be wired into a judgement whose
-/// precision belongs to the *model* (`nacre_cip::judge_precision`). Callers pass `prec`.
+/// precision belongs to the *model* (`nacre_judge::judge_precision`). Callers pass `prec`.
 ///
-/// Public because the judge (`nacre-cip`) rounds with it too — it used to carry an identical
+/// Public because the judge (`nacre-judge`) rounds with it too — it used to carry an identical
 /// private copy, and one mode in two places is one more thing that can drift.
 pub const HP_RM: RoundingMode = RoundingMode::ToEven;
 

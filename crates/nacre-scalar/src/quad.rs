@@ -297,7 +297,7 @@ pub fn branch_point_f64(line: &MeetLine, s: &QuadVal) -> [f64; 3] {
 /// irrational coefficients and no rational name, and then there is nothing to lift. That case does
 /// not arise here because the cylinder gate refuses it upstream (`wp.rotated`, and a class with no
 /// `base_rat`), so this is the exact fast road **for the rational population** — not a universal
-/// comparison. When rotation opens the answer is the toleranced ladder in `nacre-cip`,
+/// comparison. When rotation opens the answer is the toleranced ladder in `nacre-judge`,
 /// which escalates precision and abstains *by name* rather than guessing, not this function
 /// stretched to fit.
 pub fn cmp_coord_meet_branch(m: &MeetPoint, line: &MeetLine, s: &QuadVal, axis: usize) -> Orient {

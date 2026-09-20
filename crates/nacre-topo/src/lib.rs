@@ -216,7 +216,7 @@ pub enum Motion {
     /// **Improper** — the only motion here with `det = −1`. It preserves lengths, distances and
     /// incidence like the others, but it *negates* every determinant of its images rather than
     /// leaving them alone. Judgments that answer a determinant question in a shared pre-motion
-    /// frame must account for that; see `nacre-ops`' `BaseFrame` and `nacre-cip`'s `shared_base`.
+    /// frame must account for that; see `nacre-ops`' `BaseFrame` and `nacre-judge`'s `shared_base`.
     Mirror { axis: Axis, offset: Rat },
     /// A change of basis **into a plane's own frame** — what makes a sketch on a tilted face
     /// exact. Coordinates written against this node are read as `(u, v, w)` in that plane's

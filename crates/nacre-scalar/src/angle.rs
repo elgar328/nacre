@@ -181,7 +181,7 @@ impl Angle {
     /// so `prec > 54 - e + 5`.
     ///
     /// - **128** covers every `|cos| > 2⁻⁶⁹`, which is every angle a model has ever held. It is also
-    ///   `nacre_cip`'s trial precision, so a model that goes on to be judged **shares this exact
+    ///   `nacre_judge`'s trial precision, so a model that goes on to be judged **shares this exact
     ///   realization** rather than paying for a second one at a different depth. That sharing is
     ///   why the ladder does not start lower: 64 bits would satisfy the inequality and measured no
     ///   cheaper (31.9µs against 32.3µs — the cost is setup, not bit count), but it would be a

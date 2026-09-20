@@ -244,11 +244,11 @@ pub(crate) fn collect_planes(
                             // needed; this is where that assumption died.
                             let all_pure = j
                                 .iter()
-                                .all(|p| matches!(p, nacre_cip::JudgedPoint::Pure(_)));
+                                .all(|p| matches!(p, nacre_judge::JudgedPoint::Pure(_)));
                             if all_pure {
                                 let mut w: [Option<WitnessPoint>; 3] = [None, None, None];
                                 for (o, jp) in w.iter_mut().zip(j) {
-                                    if let nacre_cip::JudgedPoint::Pure(wp) = jp {
+                                    if let nacre_judge::JudgedPoint::Pure(wp) = jp {
                                         *o = Some(wp);
                                     }
                                 }

@@ -214,7 +214,7 @@ fn realize_inv_sqrt(v: Rat, prec: usize) -> HpBounded {
 /// **The ladder is 128 then 256 bits, and it terminates.** Unlike `cos 90°`, `1/√v` is never zero
 /// for a positive `v`, so its interval never straddles zero and [`round_to_f64`] cannot answer
 /// `None` forever. The rungs match [`Angle::realize_rounded_f64`]'s so a judgement at
-/// `nacre_cip`'s trial precision shares this realization instead of paying for a second one.
+/// `nacre_judge`'s trial precision shares this realization instead of paying for a second one.
 ///
 /// ★ **Correct rounding is what keeps debug and release the same.** A faithfully-rounded value
 /// would let the two builds disagree by an ulp, which is the failure this crate already paid for

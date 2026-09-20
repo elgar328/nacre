@@ -382,7 +382,7 @@ fn mk_axis_plane(m: &mut Model, axis: usize, d: f64, positive: bool) -> WorkingP
         plane,
         tri,
         tri_pt3: tri.map(|p| {
-            nacre_cip::WitnessPoint::at_nearest(
+            nacre_judge::WitnessPoint::at_nearest(
                 p.as_array()
                     .map(|x| nacre_scalar::Rat::try_from_f64(x).expect("exact")),
             )

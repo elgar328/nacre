@@ -14,7 +14,7 @@
 //! its radius in one and not the other is visible.
 //!
 //! **And they live in this crate, not in the judge that runs them,** for the same reason. The
-//! judge (`nacre-cip`) used to hold both as crate-private types while this crate realized curved
+//! judge (`nacre-judge`) used to hold both as crate-private types while this crate realized curved
 //! coordinates with a second, looser spelling of the high-precision arithmetic — a tuple alias
 //! and five free functions whose magnitude reader had no zero guard and whose rational entry had
 //! no exact branch. Two spellings of one machine in two crates is how one of them drifts; one

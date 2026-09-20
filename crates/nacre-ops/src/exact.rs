@@ -294,7 +294,7 @@ pub(crate) struct SweptRat {
     /// decided exactly on the profile's own 2-D coordinates ([`crate::Ring2d::winding_sign`]) —
     /// `Positive` is counter-clockwise — and carried through the frame's motion: a **reflection**
     /// in the chain reverses every loop's sense, so the 2-D reading is multiplied by the chain's
-    /// parity ([`nacre_cip::chain_parity`]). Flipped by [`Swept::reversed`].
+    /// parity ([`nacre_judge::chain_parity`]). Flipped by [`Swept::reversed`].
     ///
     /// ★ Written in the frame's coordinates alone it was wrong for every pad on a mirrored
     /// solid's tilted face: the ring realized clockwise about its world normal while this said
@@ -462,7 +462,7 @@ pub(crate) fn prism_rings_in(
                     // computed from the decimal rationals above, so `7.7` and `1.1 + 6.6` name
                     // one plane however their vertices round.
                     let b = crate::rotated_vertex::coord_rat(f.as_array()).ok()?;
-                    let q = crate::rotated_vertex::replay(nacre_cip::WitnessPoint::at(b), c)?;
+                    let q = crate::rotated_vertex::replay(nacre_judge::WitnessPoint::at(b), c)?;
                     Some(Point3::from_array(q.coord()))
                 })
                 .collect(),
@@ -472,7 +472,7 @@ pub(crate) fn prism_rings_in(
     // The chain's handedness: a reflection reverses the sense of every loop it carries, and the
     // exact winding below is read on the profile's 2-D coordinates *before* the chain — so it is
     // turned into the world's sense here, once, where the chain is known.
-    let parity = chain.as_deref().map_or(1, nacre_cip::chain_parity);
+    let parity = chain.as_deref().map_or(1, nacre_judge::chain_parity);
     let ring = |r: &crate::Ring2d| -> Option<Swept> {
         let base = f.ring(r.vertices())?;
         let top = swept(&base, &sweep)?;

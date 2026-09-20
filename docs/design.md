@@ -22,7 +22,8 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 ├── nacre-math       # 자체 선형대수: Point<D>·Vector<D>·변환 (nacre-* 의존 없음)
 ├── nacre-scalar     # exact 유리수 값 엔진: Rat·Angle·Axis/Rotation/Isometry·PlaneName·정확 술어 (nacre-* 의존 없음)
 ├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone (nacre-* 의존 없음)
-├── nacre-cip        # toleranced 부호 술어(회전): kernel(WitnessPoint 판정) + predicate(평면 배열 술어). predicates의 쌍둥이
+├── nacre-judge      # 부호 판정: 정확히 답할 수 없는 회전 좌표를 f64 필터→상승→«증명 또는 미결»로 정한다
+│                    #   kernel(WitnessPoint) + predicate(질의를 정확 경로나 kernel 로 보내는 라우터)
 │                    #   ← scalar · predicates · math
 ├── nacre-geom       # f64 기하 «실현»(Surface·Curve)·교차(intersect 격리)
 │                    #   ← math · predicates · scalar(Rat 링 술어 쌍둥이)
@@ -47,11 +48,11 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 `nacre-geom`과 `nacre-topo`의 관계는 한 방향이다. 기하는 위상을 모르고(순수 수학), 위상은 기하를 **캐시 값으로** 든다(`SurfaceCache`·`EdgeCache` 가 geom 의 `Surface`·`Curve` 를 감싼다 — 진실은 topo 자신의 타입이고 geom 은 그 실현이다).
 
-**어느 크레이트에 두나 — 축은 «이름»이 아니라 «정확성»이다.** 크레이트 이름(scalar·geom·topo)이 그리는 지도는 「숫자는 scalar, 기하는 geom, 위상은 topo」인데, 실제 경계는 그것이 아니다: `nacre-scalar` 공개 이름 84개 중 **61개가 기하**(`cylinders_nested`·`SeamOrder`·`PlaneName`…)이고, 그 크레이트가 격리하는 것은 스칼라가 아니라 **«유리수·정수로 정확히 답할 수 있는 모든 것»**(값·술어·이름)이다. `nacre-geom` 은 같은 기하의 **f64 실현**을 맡는다 — 진실/캐시와 같은 축이다. 규칙: 「유도된 값 + 그 산술」→ `nacre-scalar`, 「아레나 항목의 진실」→ `nacre-topo`. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-cip` 은 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName` 이 topo 가 아니라 scalar 에 사는 이유). 이름이 내용의 26% 만 설명한다는 것은 미결이다. 분리 여부는 「한쪽만 쓰는 소비자가 있는가」로 재고, 그런 소비자는 **0** 이라 분리하지 않는다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
+**어느 크레이트에 두나 — 축은 «이름»이 아니라 «정확성»이다.** 크레이트 이름(scalar·geom·topo)이 그리는 지도는 「숫자는 scalar, 기하는 geom, 위상은 topo」인데, 실제 경계는 그것이 아니다: `nacre-scalar` 공개 이름 84개 중 **61개가 기하**(`cylinders_nested`·`SeamOrder`·`PlaneName`…)이고, 그 크레이트가 격리하는 것은 스칼라가 아니라 **«유리수·정수로 정확히 답할 수 있는 모든 것»**(값·술어·이름)이다. `nacre-geom` 은 같은 기하의 **f64 실현**을 맡는다 — 진실/캐시와 같은 축이다. 규칙: 「유도된 값 + 그 산술」→ `nacre-scalar`, 「아레나 항목의 진실」→ `nacre-topo`. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-judge` 는 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName` 이 topo 가 아니라 scalar 에 사는 이유). 이름이 내용의 26% 만 설명한다는 것은 미결이다. 분리 여부는 「한쪽만 쓰는 소비자가 있는가」로 재고, 그런 소비자는 **0** 이라 분리하지 않는다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
 
 **파사드 `nacre`.** 열 개 층을 **모듈로** 재수출하고(`nacre::geom`·`math`·`ops`·`props`·`scalar`·`step`·`store`·`tess`·`topo`·`validate`), 자주 쓰는 것은 `nacre::prelude`에 담는다.
 - **평면(flat) 재수출은 하지 않는다.** **층 분리가 이 설계의 뼈대**여서 이름공간에 남긴다. 같은 맨이름이 층마다 다른 것을 뜻하기도 한다 — `topo::Surface` 는 진실, `geom::Surface` 는 그 f64 실현이다.
-- **`nacre-scalar` 재수출은 선택이 아니다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }`가 scalar 타입을 ops의 공개 API로 새어 보내므로, 없으면 소비자가 그 op을 만들 수조차 없다. 반대로 `nacre-cip`·`nacre-predicates`는 공개 API에 새지 않아 재수출하지 않는다(퍼블리시는 필요 — ops·geom 의 하드 의존).
+- **`nacre-scalar` 재수출은 선택이 아니다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }`가 scalar 타입을 ops의 공개 API로 새어 보내므로, 없으면 소비자가 그 op을 만들 수조차 없다. 반대로 `nacre-judge`·`nacre-predicates`는 공개 API에 새지 않아 재수출하지 않는다(퍼블리시는 필요 — ops·geom 의 하드 의존).
 - **prelude의 기준은 확인 가능한 성질이다**: *"`Operation`의 모든 변이가 prelude 이름만으로 만들어진다."* 내용은 실제 소비자의 import 와, 그 소비자보다 나중에 생긴 표면(스케치 앞문·파생 조회·거절 사유)의 합집합이다 — 낡은 소비자만 보면 최신 API가 빠진다.
 - **기능**: `parallel`(기본 on)이 `nacre-ops/parallel`로 전달된다. `nacre-ops`를 **`default-features = false`로** 매달아야 소비자가 끌 수 있고, 그러지 않으면 `--no-default-features`에도 rayon이 들어온다. 이 속성은 매니페스트에 살아 훅이 검사하지 않으므로 **테스트가 `Cargo.toml`을 직접 확인**한다. `parallel`은 **`Sync` 스위치이기도 하다**(cip의 hp 캐시가 `Arc<OnceLock>`↔`Rc<OnceCell>` — 워커들이 평면표를 *공유*해야 하므로 하중은 공유 참조 쪽이다). `test-util`은 topo의 테스트 전용 `add_cuboid`를 전달한다. **순차 조합은 반드시 `-p nacre-ops --no-default-features`로 확인한다** — 워크스페이스를 통째로 지으면 `nacre-oracle`·`nacre-props`의 dev-dependency가 기본 피처를 도로 켜서 아무것도 안 재게 된다.
 - **검증은 "`nacre::` 경로만으로 끝까지 가기"다** — 크레이트 문서의 예제(doctest)와 `tests/facade.rs`. 재수출이 빠지면 컴파일이 깨진다. 문서 예제는 **프로덕션 API만** 쓴다(`test-util`이 필요한 예제는 독자가 실행할 수 없다).
@@ -83,7 +84,7 @@ X축은 `any_perpendicular` — **가장 작은 성분의 축과 외적**, Onsha
 
 `Store`/`Handle`은 **최하위 `nacre-store`에 둔다.** typed-index 저장소는 기하·위상을 전혀 모르는 순수 인프라이므로 두 층보다 아래에 격리하고, 위의 크레이트(topo의 아레나들·ops·validate·step·tess·props)가 자유롭게 참조한다. 핸들은 아레나 항목을 이름 짓고, 곡면 아레나는 **진실**(`Handle<MotionNode>`를 든 topo 타입)을 들므로 topo 아래 크레이트는 그 타입을 이름 지을 수 없다 ⇒ geom은 `Handle`을 영구히 갖지 않는다. (라이선스는 MIT/Apache-2.0 듀얼 — Manifold(Apache-2.0) 알고리즘 차용과 호환.)
 
-`nacre-scalar`는 **exact 유리수 스칼라**를 격리한다. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**이다 — 오버플로는 조용히 감기지 않고 드러나며, 넘친 유도는 임의 정밀도 정수로 다시 한다(`plane_name_exact`; `PlaneName` 은 `Narrow | Wide`). 정점의 정의는 아레나가 불변 보존하고, f64 좌표는 그 실현 캐시다. `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **`nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-scalar는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **외부 의존:** `num-rational`(+`num-traits`·`num-bigint`·`num-integer` — 뒤의 둘은 `num-rational` 기본 피처가 이미 끌어오는 것을 명시한 것)과 `astro-float`. 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문이다(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **회전 좌표의 toleranced 부호 판정**(무리수 좌표라 exact 못 하지만 부호는 f64 필터→astro-float 상승→*증명된 일치 또는 정직한 미결*로 sound하게 정함)은 **`nacre-cip::kernel`** 이 맡는다 — topo 아래의 순수 술어층, predicates의 쌍둥이(「판정」 절).
+`nacre-scalar`는 **exact 유리수 스칼라**를 격리한다. 사용자가 입력한 치수·각도를 f64 오차 없이 정확히 보존한다(`1.1`→`11/10`, `1.1×7`=정확히 `7.7` — "얇은 막" 문제의 근본 해결). `Rat`은 `Ratio<i128>` + **checked 산술**이다 — 오버플로는 조용히 감기지 않고 드러나며, 넘친 유도는 임의 정밀도 정수로 다시 한다(`plane_name_exact`; `PlaneName` 은 `Narrow | Wide`). 정점의 정의는 아레나가 불변 보존하고, f64 좌표는 그 실현 캐시다. `Angle`은 유리수 deg를 mod-360 **정확 누적**(한 바퀴가 정확히 0으로 닫힘 → 스케치 닫힘)하고 90°계열은 exact 유리수 cos/sin(회전 tol 0). **`nacre-predicates`와 상보(겹침 아님):** predicates는 기하 행렬식의 **부호를 exact 결정**(exact-부호), nacre-scalar는 **입력 값과 유리수-순수 누적을 exact 보존**(exact-값) — 역할이 갈려 이름·층이 분리된다. **외부 의존:** `num-rational`(+`num-traits`·`num-bigint`·`num-integer` — 뒤의 둘은 `num-rational` 기본 피처가 이미 끌어오는 것을 명시한 것)과 `astro-float`. 성숙한 checked 유리수+gcd 약분을 제공하고, exact 유리수를 손수 구현하면 버그가 exactness 목표를 훼손하기 때문이다(MIT/Apache·순수 Rust). 어떤 `nacre-*`에도 의존 않는 **의존 그래프 최하단 순수 토대**. **회전 좌표의 toleranced 부호 판정**(무리수 좌표라 exact 못 하지만 부호는 f64 필터→astro-float 상승→*증명된 일치 또는 정직한 미결*로 sound하게 정함)은 **`nacre-judge::kernel`** 이 맡는다 — topo 아래의 순수 술어층, predicates의 쌍둥이(「판정」 절).
 
 `nacre-predicates`는 **발견된 교차점의 부호 판정(내/외·orientation)을 좌표가 아니라 implicit point(정의)째로 하는 indirect predicates**를 격리한다(「해석 기하 층」 절의 정밀도 분업). 바닥의 적응 정밀 확장 산술은 `geometry-predicates`(MIT/Apache) 재사용, 그 위 implicit point 표현과 indirect 술어만 자체 구현. Rust 최초의 오픈소스 indirect predicates가 되도록 **nacre 밖으로 떼어낼 수 있게**(MIT/Apache 단독 공개 가능) 설계한다 — 그래서 어떤 `nacre-*` 에도 의존하지 않는다. 라이선스 엄수: 구현 참고처는 논문(Attene 2020, arXiv 2105.09772; Shewchuk 1997; Lévy PCK)과 `geometry-predicates` 소스로 한정하고, LGPL인 Attene 참조 구현 소스는 **작성 중 열람 금지 / 완성 후 실행 대조만 허용**.
 
@@ -967,7 +968,7 @@ pub enum PointCache {
 // 고정밀 점 실현은 이름 붙은 타입이 아니다 — 연산 하나짜리 실현이라 «Cache» 가 아니고, `[HpBounded; 3]`
 //   (메모는 `(usize, [HpBounded; 3])` = 정밀도와 값)으로 든다.
 
-// ── 경계 점 + 정의 — 판정 전용(nacre-cip). 경계 지어진 점의 상위집합이지 중복이 아니다. ──
+// ── 경계 점 + 정의 — 판정 전용(nacre-judge). 경계 지어진 점의 상위집합이지 중복이 아니다. ──
 //   `WitnessPoint = [Bounded;3] + 정의(base:[Rat;3]·chain) + hp(메모)`. 그 «정의» 가 정확 단계의
 //   입력이라 캐시(`PointCache`)와 «같은 것»이 아니다 — 이 차이가 진실/캐시 경계 그 자체다.
 //   그래서 이것은 캐시로 접지 않는다(접으면 경계가 지워진다). 정의는 「판정」 절.
@@ -1017,7 +1018,7 @@ f64 는 둘이고 둘은 만나지 않는다 — 모델의 캐시(표시·tess·
 | 오차 | 정점만 축별 경계 셋(`Bounded` 변종일 때). 곡면·간선엔 없다 | 축별 경계 셋 — «참값 ∈ 값 ± 경계» 증명됨 |
 | 누가 읽나 | 테셀레이션·STEP·물성·validate | 판정 1단(f64 필터) → 2단 정수 → 3단 상승 |
 | 수명 | 모델과 함께 | **연산 하나** |
-| 판정 경로에 | **없다** — `nacre-cip` 은 `nacre-topo` 에 의존하지 않아 읽을 수도 없다 | 그 자체 |
+| 판정 경로에 | **없다** — `nacre-judge` 는 `nacre-topo` 에 의존하지 않아 읽을 수도 없다 | 그 자체 |
 
 
 | 캐시 | 키 | **수명** | |
@@ -1081,10 +1082,10 @@ m.rebuild_edge_cache() · m.rebuild_adjacency()             // 통째 재생
 
 ## 판정 (연산 동안만 산다)
 
-판정 타입은 두 크레이트에 나뉘어 산다. **`nacre-cip`** 은 정의를 든 점(`WitnessPoint`)·모션의
+판정 타입은 두 크레이트에 나뉘어 산다. **`nacre-judge`** 는 정의를 든 점(`WitnessPoint`)·모션의
 펼침(`MoveNode`)·증명 기준(`Standard`)·결과(`Decision`)와, 평면 표에 던지는 질문(`Judge<W: Witness>`)을
 갖는다. **`nacre-ops`** 는 연산 하나 동안 모델에서 그 표를 짓는다(`pub(crate)` `FaceInfo`·`WorkingPlane`·
-`WorkingCyl`) — `nacre-cip` 은 `nacre-topo` 를 모르므로 핸들은 이 경계에서 해소된다.
+`WorkingCyl`) — `nacre-judge` 는 `nacre-topo` 를 모르므로 핸들은 이 경계에서 해소된다.
 
 이름 규칙: (1) **`Working*` = 모델 타입의 판정층 쌍둥이이자 표의 뿌리**(수명 = 연산 하나 — `Model` 에
 `Working…` 이 담기면 읽는 즉시 이상해 보여야 한다). 접두사는 수명 표식이 아니라 **뿌리 표식**이다 —
@@ -1131,7 +1132,7 @@ pub(crate) struct WorkingCyl {
 서술은 삼각형뿐이다. 믿을 수 없는 서술은 들지 않으므로 소비자가 검사를 기억할 필요가 없다.
 
 ```rust
-// crates/nacre-cip/src/kernel/frame3/witness.rs
+// crates/nacre-judge/src/kernel/frame3/witness.rs
 
 /// 증인 점 — 유리수 base 를 모션 사슬로 나른다. base + chain 이 정의, realized 는 f64 실현
 /// (축마다 값+경계 한 원자 — 모델 캐시가 아니라 연산 하나의 것), hp 는 고정밀 메모.
@@ -1239,8 +1240,8 @@ pub enum Decision {
   `Handle<Surface>` 는 진실을, 맨 `Surface::Plane(p)` 는 캐시를 뜻해 한 단어가 표지 없이 두 가지가
   된다. 섞으면 **하드 오류**다(geom 은 tuple 변종, 진실은 struct 변종 ⇒ E0532) — 조용히 틀릴 자리가 0.
 - **타입을 바꾸는 변경은 「타입 구조」 부의 그림을 같은 커밋에서 고친다.**
-- **어느 크레이트에 두나** — 「유도된 값 + 그 산술」은 `nacre-scalar`(최하단; `nacre-cip` 이 닿아야
-  하므로), 「아레나 항목의 진실」은 `nacre-topo`. 구조적 강제: **`nacre-cip` 은 `nacre-topo` 에
+- **어느 크레이트에 두나** — 「유도된 값 + 그 산술」은 `nacre-scalar`(최하단; `nacre-judge` 가 닿아야
+  하므로), 「아레나 항목의 진실」은 `nacre-topo`. 구조적 강제: **`nacre-judge` 는 `nacre-topo` 에
   의존하지 않는다** ⇒ 판정이 쓰는 타입은 전부 topo 아래에 있어야 한다(`PlaneName` 이 scalar 에 사는
   이유). 모델에서 판정 표를 짓는 타입(`WorkingPlane`·`WorkingCyl`·`FaceInfo`)은 둘을 다 아는
   `nacre-ops` 에 산다. 본문은 「크레이트 구조」 절.
@@ -1391,7 +1392,7 @@ OCCT 는 제품 경로에 등장하지 않는다 — 역할은 nacre-oracle 의 
 
 **«어디»는 사유 옆에 실려 나간다.** `at: Option<RejectWhere>`(`Point(Point3)` | `Segment([Point3; 2])`, 월드 f64)는 가드가 발화한 순간 보고 있던 **증인**이다(여럿이면 엔티티 자체 순서의 최솟값 — HashMap 순회로 뽑으면 실행마다 다른 좌표가 나온다). 위치를 `RejectReason` 변종 안에 넣지 않는 이유: 사유는 범주 어휘(census 키·테스트가 이름 대는 것, `Copy+Eq`·const-구성)이고 좌표는 측정값이다 — census 의 "측정값은 키 밖" 규칙의 오류-값 판. 좌표는 진단용 실현(캐시급)이라 `RejectWhere` 는 `Eq` 가 없고, 비교는 근사로만 한다(거절끼리 비교할 때는 `reason` 을 꺼내 비교한다). 표면화 사유 중 `self_touching_result`(위반 모서리)·`non_manifold_result_edge`(위반 모서리)·`non_manifold_vertex`(핀치 정점)가 싣고, `no_clear_ray`(분산적)·`precision_budget`(전-모델)·`cylinder_face_undecided`는 싣지 않는다(면이 증인인 사유가 필요해지면 `RejectWhere` 에 면 변종을 여는 것이 길이다).
 
-**어떤 사유가 실제로 발화하는지는 상설 census 가 답한다 — `nacre-ops::reject_census`.** `reject()`/`reject_at()` 쌍이 크레이트의 모든 `Rejected` 를 짓는 유일한 깔때기라, 거기 `#[track_caller]` 하나씩이 모든 호출 지점을 한꺼번에 계측한다. 무조건부(선례: `nacre-topo::WIDE_PLANES`, `nacre-cip::climb_census` — `#[cfg(test)]` 는 통합 테스트가 비-test 빌드를 링크해서 못 쓴다), 비용은 raise 1회당 **~11ns** 다.
+**어떤 사유가 실제로 발화하는지는 상설 census 가 답한다 — `nacre-ops::reject_census`.** `reject()`/`reject_at()` 쌍이 크레이트의 모든 `Rejected` 를 짓는 유일한 깔때기라, 거기 `#[track_caller]` 하나씩이 모든 호출 지점을 한꺼번에 계측한다. 무조건부(선례: `nacre-topo::WIDE_PLANES`, `nacre-judge::climb_census` — `#[cfg(test)]` 는 통합 테스트가 비-test 빌드를 링크해서 못 쓴다), 비용은 raise 1회당 **~11ns** 다.
 
 **두 열은 서로 다른 인구다.** 「울린 것(raise)」과 「밖으로 나간 것(surfaced)」을 따로 적는다. 호출자가 대안 경로로 재시도하며 삼키는 거절이 있으면 한 열 집계는 사용자가 보는 것에 대해 거짓을 말한다(`no_clear_ray` 가 울림의 82% 를 차지하면서 한 번도 표면화되지 않는 구성이 실제로 있었다). 그래서 `point_in_component` 의 «이 노드로는 못 정함»은 `Ok(None)` **기권**이지 삼켜질 오류가 아니다 — 두 열의 갭은 「남은 삼킴의 지표」이고 0 에 가까운 것이 목표 상태다(갭이 벌어지면 새 삼킴의 발견이다). 다만 census 는 **어느 사이트가 표면화했는지는 답하지 않는다** — 거절은 rayon 워커에서 울리고 메인 스레드에서 반환되므로 둘을 잇는 값싼 길이 없고, 「이 가드는 삼켜지는가」는 호출자를 읽으면 되는 **정적** 질문이라 필요도 없다.
 
@@ -1482,7 +1483,7 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
 
 그래서 **상대 솔리드와 떨어져 있음이 증명된 평면 클래스**는 배열하지 않고, 자기 솔리드의 면을 **배열 엔진의 어휘(평면 클래스 삼중항)로 다시 적어** 낸다. `nacre-ops::reuse` 한 모듈이고, `trace_result_faces` 의 출력 타입은 그대로 `Vec<LocalFace>` 라 **하류(조립·동일평면 병합·seam 표·검증기)는 이 지름길을 모른다**.
 
-- **건너뛰기는 추정이 아니라 정리(theorem)다.** 분리는 `nacre-cip::orient3d_filter` 로 **증명**한다 — 오차 한계가 0 을 넘길 때만 부호를 답하고, 아니면 `None`. `None` 은 "그냥 배열하라"이고 그건 이 모듈이 없을 때의 동작이다. ⇒ **증명 실패는 속도만 잃고 답은 못 바꾸며, 톨러런스가 들어오지 않는다.**
+- **건너뛰기는 추정이 아니라 정리(theorem)다.** 분리는 `nacre-judge::orient3d_filter` 로 **증명**한다 — 오차 한계가 0 을 넘길 때만 부호를 답하고, 아니면 `None`. `None` 은 "그냥 배열하라"이고 그건 이 모듈이 없을 때의 동작이다. ⇒ **증명 실패는 속도만 잃고 답은 못 바꾸며, 톨러런스가 들어오지 않는다.**
 - **필터는 새 술어가 아니라 기존 술어의 절반이다.** `orient3d_judge` 는 f64 필터 → 공유-모션 정확 경로 → 상승의 3단이고, 앞 두 단이 정확히 여기서 원하는 것이다. 그것이 `orient3d_filter` 이고 **판정이 그것을 호출한다**. 오차 예산을 아는 곳이 둘이 되지 않으므로, 건전성은 검사할 성질이 아니라 **같은 코드라는 사실의 귀결**이다.
 - **정점만 봐도 되는 이유, 그리고 그 전제.** 평면까지의 부호거리는 아핀이라 모든 정점이 한쪽이면 **볼록껍질 전체**가 한쪽이고, 평면 다각형은 (비볼록이어도) 자기 정점의 껍질 안에 있다. **이 논증은 모든 면이 평면일 때만 성립한다.** 논증을 떠받치는 것은 **"원통 클래스가 하나라도 있으면 reuse 를 통째로 끈다"**는 가드(`trace_result_faces` 진입)다 — 그래서 reuse 가 도는 동안에는 "모든 면이 평면"이 참이다. 곡면이 있는 입력에서 이 지름길을 쓰려면 껍질이 아니라 **곡면의 경계**를 봐야 한다.
 - **그 가드는 삼중 임무다 — reuse 를 만지기 전에 읽을 것.** ① 위 논증(평면 전제)을 살려 두고, ② `pass_through` 가 **평면 클래스 단위**로만 면을 옮기므로(어떤 클래스가 PassThrough 면 원통 측면이 **조용히 사라진다**) 그것을 막고, ③ **원통 밴드가 배열의 라벨을 읽을 수 있게** 한다(원통 밴드 절 — 라벨은 *배열된* 클래스에만 존재하고, PassThrough 클래스는 셀도 라벨도 만들지 않는다). 즉 원통 인구에 reuse 를 되살리는 일은 성능 작업이 아니라 **밴드의 소속 판정을 다시 설계하는 일**이다.
@@ -2002,7 +2003,7 @@ A 를 택한 근거:
 
 - `nacre-predicates` 는 평면 계수·좌표를 **평범한 배열**로만 받는다(커널 타입 무의존, standalone 분리 가능).
 - Handle 기반 정의(`Vertex::ThreePlane([Handle<Surface>; 3])`)는 위상 계층(`nacre-topo`)에 살고, 부호 판정 시 위층이 Handle → 계수를 뽑아 술어에 넘긴다.
-- `nacre-cip` 도 같은 규율이다: `nacre-scalar`·`nacre-predicates`·`nacre-math` 에만 의존하고, 평면 표는 `Witness`/`PlaneWitness` **트레이트**로 받는다(구현은 `nacre-ops` 의 행 타입).
+- `nacre-judge` 도 같은 규율이다: `nacre-scalar`·`nacre-predicates`·`nacre-math` 에만 의존하고, 평면 표는 `Witness`/`PlaneWitness` **트레이트**로 받는다(구현은 `nacre-ops` 의 행 타입).
 
 ## pad/pocket 은 extrude + 불리언
 
@@ -2051,7 +2052,7 @@ A 를 택한 근거:
 
 ## CIP — 허용오차 부호 술어
 
-`nacre-cip`(Certified Indirect Predicates)는 회전이 들어왔을 때의 부호 판정 층이다.
+`nacre-judge`(Certified Indirect Predicates)는 회전이 들어왔을 때의 부호 판정 층이다.
 
 ### 왜 필요한가
 

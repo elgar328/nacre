@@ -75,8 +75,8 @@ impl BaseFrame {
         // determinants they take. One more reflection puts the handedness back, and then the base
         // is related to the moved frame by a *proper* motion again — which is what every consumer
         // of this struct assumes. A sign flip on x is exact for every finite `f64`, and it is the
-        // same convention `nacre_cip::frame3::shared_base` applies to its own points.
-        let improper = nacre_cip::chain_parity(&tri_pt3[0].chain) < 0;
+        // same convention `nacre_judge::frame3::shared_base` applies to its own points.
+        let improper = nacre_judge::chain_parity(&tri_pt3[0].chain) < 0;
         let tri = if improper {
             tri.map(|p| {
                 let [x, y, z] = p.as_array();
@@ -221,10 +221,10 @@ pub(crate) struct WorkingPlane {
     /// nothing.
     pub(crate) exact_normal: Option<[f64; 3]>,
     /// The class root's name integers, folded to the stored orientation
-    /// ([`nacre_cip::predicate::name_stored_ints`]) — what gives a **wide** name its exact
+    /// ([`nacre_judge::predicate::name_stored_ints`]) — what gives a **wide** name its exact
     /// judging shortcuts back. `None` when the root's surface
     /// has no name.
-    pub(crate) name_ints: Option<nacre_cip::predicate::NameInts>,
+    pub(crate) name_ints: Option<nacre_judge::predicate::NameInts>,
 }
 
 impl WorkingPlane {

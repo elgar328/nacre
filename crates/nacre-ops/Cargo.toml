@@ -17,7 +17,7 @@ nacre-scalar = { path = "../nacre-scalar", version = "0.0.0" }
 # Read-only CIP analysis (rotated-vertex WitnessPoint + indirect judges) for the toleranced
 # boolean predicates (overhaul stage 3). tip's dep on nacre-ops is dev-only (a separate
 # target), so the lib dependency graph stays acyclic.
-nacre-cip = { path = "../nacre-cip", version = "0.0.0" }
+nacre-judge = { path = "../nacre-judge", version = "0.0.0" }
 # Data-parallel evaluation of the boolean's three independent phases: the arrangement's
 # per-plane-class trace/split and cell build (`arrangement::trace_result_faces`), and the
 # per-point precision reading (`planes::standard_for_points`). Optional + behind the
@@ -30,13 +30,13 @@ num-bigint = "0.4"
 
 [features]
 # Parallelize the boolean's three independent phases via rayon, and switch `WitnessPoint`'s hp cache
-# to `Arc<OnceLock>` (through `nacre-cip/parallel`) so the shared plane table is `Sync`. On
+# to `Arc<OnceLock>` (through `nacre-judge/parallel`) so the shared plane table is `Sync`. On
 # by default; `--no-default-features` gives the serial, rayon-free, `Rc<OnceCell>` build --
 # which is what the wasm playground takes, and which nothing else builds, so check it with
 # `cargo test -p nacre-ops --no-default-features` (a workspace build unifies `parallel` back
 # on through nacre-oracle's and nacre-props's dev-dependencies).
 default = ["parallel"]
-parallel = ["dep:rayon", "nacre-cip/parallel"]
+parallel = ["dep:rayon", "nacre-judge/parallel"]
 # Print every reject as it is raised and as it surfaces (`src/reject_census.rs`). Off by default,
 # so a product build compiles no printing at all — this is the one exception to the crate's
 # `deny(clippy::print_stderr)`. It exists because the in-memory census dies with its process and
@@ -66,7 +66,7 @@ nacre-tess = { path = "../nacre-tess", version = "0.0.0", features = ["test-util
 # Boolean tests diff result volumes against the analytic mass properties.
 nacre-props = { path = "../nacre-props", version = "0.0.0" }
 # The wide-name rescue tests hand-build synthetic `PlaneName::Wide` fixtures (production code
-# reaches BigInt only through nacre-cip's types).
+# reaches BigInt only through nacre-judge's types).
 num-bigint = "0.4"
 # NOTE: cargo-husky is intentionally NOT declared here. The repo-global git
 # pre-commit hook is owned solely by nacre-store; this crate inherits it.

@@ -86,7 +86,7 @@ datum 도로를 얻는다(그 doc 의 *"인구를 열 수는 있어도 움직일
 
 ### 실현 함수가 세 갈래다
 
-규칙은 통로 하나(`정의 → 좌표`)인데 코드에는 실현이 세 곳에 있다: `nacre_ops::realize_vertex`(정점, `realize.rs`), `nacre-cip` `frame3` 의 `WitnessPoint::realize(prec)`(판정의 증인), `nacre-ops` `exact.rs` 의 `realize(pts)`(구성). 여기에 스칼라의 `to_f64` 가족과 `_tracked`·`_memoized`·`_rounded` 변종이 붙는다. 먼저 셀 것: 각 함수의 호출처와, 같은 정의를 두 갈래가 실현할 때 비트가 같은가. 목표 모양은 스칼라 → f64 하나(`nacre-scalar`), 정의 → 좌표 하나이고, 그 밖에서 f64 좌표를 짓는 것은 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다.
+규칙은 통로 하나(`정의 → 좌표`)인데 코드에는 실현이 세 곳에 있다: `nacre_ops::realize_vertex`(정점, `realize.rs`), `nacre-judge` `frame3` 의 `WitnessPoint::realize(prec)`(판정의 증인), `nacre-ops` `exact.rs` 의 `realize(pts)`(구성). 여기에 스칼라의 `to_f64` 가족과 `_tracked`·`_memoized`·`_rounded` 변종이 붙는다. 먼저 셀 것: 각 함수의 호출처와, 같은 정의를 두 갈래가 실현할 때 비트가 같은가. 목표 모양은 스칼라 → f64 하나(`nacre-scalar`), 정의 → 좌표 하나이고, 그 밖에서 f64 좌표를 짓는 것은 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다.
 
 ### 픽스처는 제품 도로로
 
@@ -408,7 +408,7 @@ append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 
 
 거대 파일 분할은 끝났다. 남은 것은 **구현 단순화**이고 **방향은 미결이다** — 아래는 잰 것이지 계획이 아니다. 무엇을 어떻게 합칠지는 의논해서 정한다.
 
-- **같은 일을 하는 길이 여러 갈래인 자리**(제품 호출 / 테스트 호출 수는 그때 다시 센다): `realize_def`·`realize_cache` 와 그 `_tracked`(실제 본체) · `realize_inv_sqrt` → `_rounded` → `_memoized`(각각 호출처 하나인 3단 포장) · `det3` 다섯 벌(`det3`·`_sign`·`_f64`·`_hp`, 그리고 두 크레이트에 있는 `_big`) · `point_in_mixed_ring` 의 두 크레이트 구현(`_inner` 198줄 / geom `_opt` 89줄) · `base_coeffs_rat` 세 정의 · `three_planes` 의 `_rat`·`_big` 사다리 · `boolean` 은 `boolean_with_report` 의 얇은 포장. `nacre-cip` 의 `pub fn coeff_exact`·`coeff_normal_ok` 는 테스트만 부른다(그 보증은 평면이 `exact_coeffs`·`exact_normal` 을 믿을 수 있을 때만 든다는 타입으로 옮겨 갔다). 「f64 는 실현 통로 하나로」를 컴파일 단계에서 강제하는 것이 같은 갈래다.
+- **같은 일을 하는 길이 여러 갈래인 자리**(제품 호출 / 테스트 호출 수는 그때 다시 센다): `realize_def`·`realize_cache` 와 그 `_tracked`(실제 본체) · `realize_inv_sqrt` → `_rounded` → `_memoized`(각각 호출처 하나인 3단 포장) · `det3` 다섯 벌(`det3`·`_sign`·`_f64`·`_hp`, 그리고 두 크레이트에 있는 `_big`) · `point_in_mixed_ring` 의 두 크레이트 구현(`_inner` 198줄 / geom `_opt` 89줄) · `base_coeffs_rat` 세 정의 · `three_planes` 의 `_rat`·`_big` 사다리 · `boolean` 은 `boolean_with_report` 의 얇은 포장. `nacre-judge` 의 `pub fn coeff_exact`·`coeff_normal_ok` 는 테스트만 부른다(그 보증은 평면이 `exact_coeffs`·`exact_normal` 을 믿을 수 있을 때만 든다는 타입으로 옮겨 갔다). 「f64 는 실현 통로 하나로」를 컴파일 단계에서 강제하는 것이 같은 갈래다.
 - **300줄이 넘는 함수 열둘**: `boolean/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `cyl_chart/census.rs` 의 `census` 496(테스트 전용) · `cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `boolean/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `boolean/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
 - **주석이 줄의 33~46%** 다(코드 / 주석: `arrangement` 5,585 / 3,014 · `combinatorics` 3,679 / 2,624 · `nacre-ops/src` 최상위 3,395 / 2,987 · `nacre-scalar` 3,130 / 2,150). `error.rs` 1,193줄의 대부분은 `RejectReason` 변종 doc 이고 그것은 사용자에게 가는 문서다 — 줄일 것은 함수 본문 안의 서사 주석이다.
 - `pub(super)` 는 단계의 입구와 테스트가 이름으로 부르는 것에만 달려 있다. `frame3`(26)·`arrangement`(41) 가 가장 많고, 그 가운데 테스트만 부르는 것은 계측을 정리할 때 함께 내려간다.

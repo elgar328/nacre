@@ -20,9 +20,9 @@ use crate::planes::*;
 use crate::tolerant::Judge;
 #[cfg(test)]
 use crate::transform::transform;
-use nacre_cip::Decision;
-use nacre_cip::predicate::Notes;
 use nacre_geom::intersect::three_planes;
+use nacre_judge::Decision;
+use nacre_judge::predicate::Notes;
 use nacre_topo::Surface;
 
 /// `phase::timed` where the counters exist, and a plain call where they do not.
