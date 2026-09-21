@@ -461,7 +461,26 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
 단순화**이고 **방향은 미결이다** — 아래는 잰 것이지 계획이 아니다. 무엇을 어떻게 합칠지는
 의논해서 정한다.
 
-- **같은 일을 하는 길이 여러 갈래인 자리**(제품 호출 / 테스트 호출 수는 그때 다시 센다): `realize_def`·`realize_cache` 와 그 `_tracked`(실제 본체) · `realize_inv_sqrt` → `_rounded` → `_memoized`(각각 호출처 하나인 3단 포장) · `det3` 다섯 벌(`det3`·`_sign`·`_f64`·`_hp`, 그리고 두 크레이트에 있는 `_big`) · `point_in_mixed_ring` 의 두 크레이트 구현(`_inner` 198줄 / geom `_opt` 89줄) · `base_coeffs_rat` 세 정의 · `three_planes` 의 `_rat`·`_big` 사다리 · `boolean` 은 `boolean_with_report` 의 얇은 포장. `nacre-judge` 의 `pub fn coeff_exact`·`coeff_normal_ok` 는 테스트만 부른다(그 보증은 평면이 `exact_coeffs`·`exact_normal` 을 믿을 수 있을 때만 든다는 타입으로 옮겨 갔다). 「f64 는 실현 통로 하나로」를 컴파일 단계에서 강제하는 것이 같은 갈래다.
+- **«같은 일을 여러 갈래로 한다»는 재 보니 거의 전부 아니었다.** 일곱 갈래를 하나씩 열어
+  확인한 결과, 남은 진짜는 **0** 이다(마지막 하나였던 `nacre-judge` 의 `coeff_exact`·
+  `coeff_normal_ok` 는 `cfg(test)` 로 내려갔다). 틀린 이유는 하나다 — **이름을 세고 하는 일을
+  안 셌다.**
+  - `det3`(정의 **10개**, 4 크레이트)와 `three_planes` 의 `_rat`·`_big` 은 중복이 아니라
+    **정밀도 사다리**다: `Expansion`·`f64`·`Bounded`·`HpBounded`·`BigInt` 로 층마다 숫자 타입이
+    다르므로 함수도 따로여야 한다. 사다리를 중복으로 세면 커널 전체가 중복이다.
+  - `base_coeffs_rat` 의 «세 정의»는 **트레이트 기본 구현 하나 + impl 둘**이다.
+  - `point_in_mixed_ring` 의 두 크레이트 구현은 **다른 함수**다 — geom 은 `[Rat; 2]` 좌표를,
+    ops 는 `jd`·`cyls`·`RingEdge` 이름을 받는다. 규칙(짝수-홀수 광선 패리티)만 같고, 그
+    사실과 그것을 합칠 수 없는 이유는 `tests/probes/rotation_sweep.rs` 의 `side_of` 스캔 doc 이
+    이미 적어 뒀다.
+  - `boolean`·`realize_def`·`realize_cache` 의 «얇은 포장»은 전부 **한 줄짜리 편의 문이고 각자
+    doc 에 사유가 있다**(리포트를 원하는 건 30 호출 중 하나 / 공개 문은 좁게).
+  - `realize_inv_sqrt` 의 «3단»도 아니다 — `_memoized` 가 부르는 `inv_sqrt_bounded` 가
+    `INV_SQRT` 로 **실제로 메모한다**. 이름이 맞다.
+
+  **남은 갈래를 다시 물을 때의 규칙**: 접미사가 다른 형제를 세기 전에 **인자 타입**을 먼저 본다.
+  타입이 다르면 사다리이고, 사다리는 이 커널의 구조다. 「f64 는 실현 통로 하나로」는 여전히
+  살아 있는 물음이지만 그것은 중복이 아니라 **통로를 컴파일 단계에서 강제하는** 일이다.
 - **300줄이 넘는 함수 열둘**: `assembly/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `tests/probes/chart_census.rs` 의 `census` 496(테스트 전용) · `arrangement/cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `assembly/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `assembly/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
 - **주석이 줄의 33~46%** 다(코드 / 주석: `arrangement` 5,585 / 3,014 · `combinatorics` 3,679 / 2,624 · `nacre-ops/src` 최상위 3,395 / 2,987 · `nacre-exact` 3,130 / 2,150). `error.rs` 1,193줄의 대부분은 `RejectReason` 변종 doc 이고 그것은 사용자에게 가는 문서다 — 줄일 것은 함수 본문 안의 서사 주석이다.
 - `pub(super)` 는 단계의 입구와 테스트가 이름으로 부르는 것에만 달려 있다. `arrangement`(53)·`frame3`(28) 가 가장 많다. **계측 이사는 이것을 안 건드렸다** — `#[path]` 로 파일만 옮겨 모듈이 제자리에 남았으므로 가시성이 하나도 안 움직였다. 테스트만 부르는 `pub(super)` 가 몇인지는 따로 세야 한다.
