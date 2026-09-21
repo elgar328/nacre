@@ -6,7 +6,7 @@
 //!
 //! ★ **One table, so it sits under everything that charges it.** Two stages write here — the
 //! arrangement (`timed!`/`watch!`, and the scale counters in its split) and the plane setup
-//! (`planes::setup::Watch`) — and `all()` renders every counter in one ordered report, which is
+//! (`planes::standard::Watch`) — and `all()` renders every counter in one ordered report, which is
 //! the spike test's whole output. A table split per stage could not produce that report, so the
 //! table is one and lives below both rather than inside either.
 //!

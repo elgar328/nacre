@@ -140,7 +140,7 @@ impl<T> Eq for Handle<T> {}
 
 live 모델은 어느 쪽이든 **거절 전 상태로 복원된다** — 커밋 후 거절은 없다. 부울에서 이것은 우연이 아니라 **구조**다: 조립의 피연산자 은퇴는 「결과가 받아들여진 뒤 한 자리」에서만 일어나고(`assemble_fuse_cut` → `reconstruct`), 그와 별도로 `boolean`/`boolean_with_classes` 가 엔진의 **모든** `Err` 에 live set 스냅샷을 복원한다(`restore_live`; `coverage/rejects.rs` 와 `self_touch.rs` 가 단언한다). 그러나 아레나 길이는 되돌지 않으므로, **거절 뒤에도 기록을 이어가려면 모델을 로그로 다시 지어야 한다**(`model = replay(&log)`). 이 규율을 어긴 세션은 replay 가 재현할 수 없는 인덱스를 적게 되고, 결과는 **이름 붙은 거절이거나 발산**이며 — 패닉은 아니다(예: `LogHandleOutOfRange{Solid, 4}`).
 
-이 절의 주장은 전부 `crates/nacre-ops/tests/replay.rs` 가 측정한다.
+이 절의 주장은 전부 `crates/nacre-ops/tests/invariants/replay.rs` 가 측정한다.
 
 저장소는 도메인별로 나눈다.
 
@@ -535,7 +535,7 @@ T-정점이고 그건 크랙이다. 자리가 없는 후보는 **버린다**(강
    **폭은 사용자가 쓴 기하가 정하지 연산 횟수가 정하지 않는다** — 불리언은 평면을 새로 만들지
    않고 피연산자의 평면을 재사용하며(`a_boolean_mints_no_surface`), 모션은 계수를 건드리지 않고
    (모션 노드로 든다), 오프셋은 법선을 고정한 채 d 만 옮기므로 분모가 곱이 아니라 lcm 으로
-   자란다(`1.1 + 6.6 = 7.7`). `nacre-ops/tests/point_width.rs`
+   자란다(`1.1 + 6.6 = 7.7`). `nacre-ops/tests/instruments/point_width.rs`
    (`stacking_operations_does_not_widen_a_name`)가 이것을 잠근다.
 2. **화살표는 한 방향뿐이다.** `Rat → f64`(캐시), `Rat → BigFloat`(판정 상승). `f64 → 진실`은
    없다 — f64 를 들어올려 진실로 삼는 순간 반올림이 진실에 구워진다. 유일한 입구는
@@ -2204,7 +2204,7 @@ pub struct Standard {
 - 문턱은 **모델 단위의 길이**이지 비트 수가 아니다. 「256비트」는 회전 1회 모델에선 1e-76, 300회 모델에선 1e+15 를 뜻한다 — 비트로 노출하면 안 된다.
 - **`output_precision` = `scale · 2⁻⁵²`** — f64 좌표가 이 모델에서 볼 수 있는 가장 가는 눈금. **`coincidence` = `output_precision · 2⁻¹²⁸`** — 워드 둘 아래.
 - **`coincidence` 는 tolerance 가 아니다.** 전역 tol 은 *「이보다 가까우면 붙여라」*(모르는 채 뭉갬)이고, 이것은 *「이보다 가깝다고 **증명되어야** 일치」* 로 방향이 반대다. 무지 위에서 병합되는 것은 없다.
-- **`JUDGE_PREC_CAP = 4096`**(nacre-ops `planes/setup.rs`)은 정확성이 아니라 **비용** 한계이고 값의 근거는 측정된 비용이다(`C` 는 회전당 1비트 자란다; 회전 3200회·3456비트에서도 부피는 정확하고 90초; 4096비트 ≈ 약 4000회). 초과는 `RejectReason::PrecisionBudget { needed, cap }` 로 **평면 표가 서자마자** 거절한다 — 모델에는 아무 잘못이 없다.
+- **`JUDGE_PREC_CAP = 4096`**(nacre-ops `planes/standard.rs`)은 정확성이 아니라 **비용** 한계이고 값의 근거는 측정된 비용이다(`C` 는 회전당 1비트 자란다; 회전 3200회·3456비트에서도 부피는 정확하고 90초; 4096비트 ≈ 약 4000회). 초과는 `RejectReason::PrecisionBudget { needed, cap }` 로 **평면 표가 서자마자** 거절한다 — 모델에는 아무 잘못이 없다.
 - **모델의 깊이와 한 판정의 난이도는 별개 예산이다.** 판정이 오를 수 있는 여유 **`CLIMB_HEADROOM = 128`** 은 모델 정밀도에 대한 **상대값**이다(공유하면 회전이 많은 모델에서 여유가 0 이 되어 같은 얇은 증인이 회전 여부에 따라 판정되거나 포기된다). 물리적 의미는 **증인의 얇기 한계** `log₂(1/여인수)` — 모델 크기보다 `2¹²⁸` 배 퇴화한 증인까지 끝까지 판정한다. 측정값이 아니라 워드 둘인 이유는 오차의 비대칭이다: 너무 작으면 답이 있던 판정을 포기하고, 너무 크면 비트만 쓴다(회전 코퍼스와 100·800회 회전 모델에서 모델 정밀도보다 1비트라도 더 요구한 판정은 없다).
 - 설정으로 노출할 후보는 일치 정밀도 하나뿐이고, 정밀도·상한·여유는 전부 거기서 유도된다.
 
@@ -2356,7 +2356,7 @@ pub fn validate(model: &Model) -> Vec<Violation>;   // 빈 벡터 = 유효
 
 ### 속성 기반 테스트(proptest)
 
-랜덤 유효 연산열을 생성해 건다: (1) validate 통과, (2) replay 멱등성 — 같은 로그·같은 cfg → 동일 모델, 그리고 더 강한 «`replay(log)` == 세션 모델, 인덱스까지»(`nacre-ops/tests/replay.rs`), (3) 변환 불변량 — 강체변환 후 부피·면적 보존, (4) 불리언 대수 — `A ∪ A = A`, `A ∩ ∅ = ∅`, `vol(A∪B) + vol(A∩B) = vol(A) + vol(B)`.
+랜덤 유효 연산열을 생성해 건다: (1) validate 통과, (2) replay 멱등성 — 같은 로그·같은 cfg → 동일 모델, 그리고 더 강한 «`replay(log)` == 세션 모델, 인덱스까지»(`nacre-ops/tests/invariants/replay.rs`), (3) 변환 불변량 — 강체변환 후 부피·면적 보존, (4) 불리언 대수 — `A ∪ A = A`, `A ∩ ∅ = ∅`, `vol(A∪B) + vol(A∩B) = vol(A) + vol(B)`.
 
 ### OCCT 오라클(`nacre-oracle`)
 

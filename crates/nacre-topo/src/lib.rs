@@ -517,7 +517,7 @@ pub enum PlanePoints {
     /// **Three model vertices the plane passes through.** What a caller means by "the plane
     /// through those corners" — a coordinate read off a discovered vertex is rounded, and the
     /// plane built from rounded coordinates is a *different* plane (measured: on tilted geometry
-    /// every one of 220 triples, `nacre-ops/tests/point_width.rs`).
+    /// every one of 220 triples, `nacre-ops/tests/instruments/point_width.rs`).
     ///
     /// ★ **Sorted**, so that the same three vertices are the same statement whichever order they
     /// arrive in. Direction is *not* lost by sorting: a plane's canonical name carries none

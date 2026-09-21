@@ -85,7 +85,7 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
 /// origin.**
 ///
 /// The frame's origin is where the drift used to enter — `face_frame` took it from the face's
-/// area centroid, computed in f64 from the face's own vertices, and `exact.rs` lifted that as
+/// area centroid, computed in f64 from the face's own vertices, and `construct.rs` lifted that as
 /// truth. Padding the same footprint `1.1` then `6.6` put the second profile an ulp from the
 /// first and left faces of area `2.2e-16`.
 ///

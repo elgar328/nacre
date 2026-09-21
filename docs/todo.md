@@ -50,7 +50,7 @@
 - 거울의 패리티는 **이름이 흡수한다**: `canonical_plane_coeffs` 가 첫 비영 성분을 양으로 강제하므로
   정준 이름은 방향을 말하지 않는다 — 평행이동에서 그러는 것과 같다.
 - `chain_dir` 은 **거울을 만날 수 없다**: 방향을 옮기는 것은 원통뿐인데(평면은 계수로 움직인다)
-  `OpError::MirrorNotPlanar` 가 미러링을 먼저 거절한다(`nacre-ops/tests/edge_carriers.rs` 가
+  `OpError::MirrorNotPlanar` 가 미러링을 먼저 거절한다(`nacre-ops/tests/invariants/edge_carriers.rs` 가
   *"A mirrored cylinder has no population"* 으로 적어 뒀다).
 
 **이 일은 결과를 움직일 수 있다.** `derive_surface_cache` 가 `world_plane_name` 으로 게이트하므로
@@ -433,12 +433,18 @@ append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 
 ### 타이머가 세 철자다
 
 `phase::timed(c, f)`(클로저 끝) · `phase::Watch::new(&C)`(스코프 끝, drop) ·
-`planes::setup::Watch::new()` + `.charge(Sub::X)`(명시한 지점, 약 40줄). 셋째는 `planes` 가
-카운터를 직접 이름하지 않으려고 만든 우회이고 7자리 전부 `Sub` 를 정적으로 아는데,
-`phase` 가 최상위로 온 지금은 `crate::phase::Watch` 를 직접 쓸 수 있다.
+`planes::standard::Watch::new()` + `.charge(Sub::X)`(명시한 지점, 약 40줄). 셋째는 `planes` 가
+카운터를 직접 이름하지 않으려고 만든 우회이고, 호출 7자리(`arrangement/setup.rs` 다섯 ·
+`planes/table.rs` 둘)가 전부 `Sub` 를 정적으로 안다.
 
-접지 않은 이유는 비용이 아니라 **부과 지점이 다르기** 때문이다 — drop 과 명시 지점을 합치면
-시간이 어디에 실리는지가 움직인다. 계측을 고치려면 그 계측이 무엇을 재는지 먼저 물어야 한다.
+**`crate::phase::Watch` 로 그냥 갈아탈 수는 없다.** `mod phase` 는 통째로 `cfg(test)` 이고
+(릴리스 바이너리는 아무것도 안 든다), `standard::Watch` 는 **필드만** 그렇게 가려진 타입이라
+릴리스에도 서 있다 — 그 7자리는 릴리스에 컴파일되는 제품 코드다. 접으려면 호출 쪽도 `cfg` 로
+가리거나 `phase` 의 가시성이 바뀌어야 하고, 둘 다 이 칸보다 큰 결정이다.
+
+그리고 접지 않은 둘째 이유는 비용이 아니라 **부과 지점이 다르기** 때문이다 — drop 과 명시
+지점을 합치면 시간이 어디에 실리는지가 움직인다. 계측을 고치려면 그 계측이 무엇을 재는지 먼저
+물어야 한다.
 
 ### v2 로 미룬 것
 

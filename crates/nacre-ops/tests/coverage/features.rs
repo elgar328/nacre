@@ -842,7 +842,7 @@ fn a_rotated_face_has_a_pinned_sketch_axis() {
 /// face would then seat a boss somewhere else. A centroid does not move under subdivision, so that
 /// much was fixed.
 ///
-/// ★ Both rules read the face's `f64` vertices, though, and `exact.rs` lifts the frame origin with
+/// ★ Both rules read the face's `f64` vertices, though, and `construct.rs` lifts the frame origin with
 /// `Rat::from_decimal` — so a rounded cache became the truth, and padding one footprint twice left
 /// faces of area `2.2e-16`. The origin is now the **world origin projected onto the plane**, which
 /// does not read the face at all.

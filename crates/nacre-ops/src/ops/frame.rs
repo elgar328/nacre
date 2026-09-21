@@ -236,7 +236,7 @@ pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame,
     //
     // It used to be the face region's area centroid, chosen over the mean of the outer loop's
     // corners because a centroid does not move when a vertex is added along a straight edge. Both
-    // are computed in `f64` from the face's own vertices, though, and `exact.rs` lifts the frame
+    // are computed in `f64` from the face's own vertices, though, and `construct.rs` lifts the frame
     // origin with `Rat::from_decimal` — so a rounded cache became the truth. Padding one footprint
     // twice then placed the second profile an ulp from the first and left faces of area `2.2e-16`
     // that `validate` did not report.

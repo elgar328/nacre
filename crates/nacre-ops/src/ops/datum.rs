@@ -303,7 +303,7 @@ pub(super) fn datum_plane(
 
             // ★★★ **The cache is a world description, and the meets are not world coordinates
             // unless the carriers share no motion.** Realizing them means walking the very chain
-            // the definition names — `exact.rs` states the rule ("the realization must be the
+            // the definition names — `construct.rs` states the rule ("the realization must be the
             // definition's own replay, not a second route to the same real number"), and taking
             // any other road here is how a plane's cache and its truth end up describing
             // different planes.

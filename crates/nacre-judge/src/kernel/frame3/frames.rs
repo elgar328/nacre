@@ -282,7 +282,7 @@ impl FrameThrough {
     }
 
     /// The rung realization of defining point 0, as the affine `[f64; 3]` a cache anchors at —
-    /// the definition's own replay (`exact.rs`' rule), never a second route through a vertex
+    /// the definition's own replay (`construct.rs`' rule), never a second route through a vertex
     /// cache. For a meet this is the one place the homogeneous point is divided, and the divisor
     /// is safe by construction: [`FrameThrough::of`] proved the rung derivation, which includes
     /// this point's `D` sign.
