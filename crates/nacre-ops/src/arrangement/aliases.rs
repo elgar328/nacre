@@ -163,7 +163,8 @@ impl Aliases {
     /// folded here, in one place, so the ruling sweep and the plane roads — which mint the names
     /// on their own — never have to decide "same point" themselves.
     ///
-    /// The crossing's side is the corner's own: [`ruling_side`] of the corner's meet against
+    /// The crossing's side is the corner's own: [`crate::combinatorics::ruling_side`] of the
+    /// corner's meet against
     /// `wc`'s stored normal, the predicate the sweep uses to tell `wc`'s two rulings apart.
     pub(crate) fn record_on_cylinder(
         &mut self,
@@ -192,7 +193,7 @@ impl Aliases {
         let Some(meet) = combinatorics::pierce_meet(jd, cyl, def, corner) else {
             return;
         };
-        let Some(side) = ruling_side(&w, def, (&meet.0, &meet.1)) else {
+        let Some(side) = combinatorics::ruling_side(&w, def, (&meet.0, &meet.1)) else {
             return; // the corner sits on `wc`'s axis plane's own line: no ruling to name
         };
         for fc in planes {

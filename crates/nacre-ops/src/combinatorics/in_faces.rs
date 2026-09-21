@@ -394,8 +394,7 @@ pub(crate) fn loop_parity(
                             };
                             let w = class_coeffs_rat(jd, fc)?;
                             if plane_side(&w, meet, s) == Orient::Zero
-                                && crate::arrangement::ruling_side(&w, def, (meet, s))
-                                    == Some(rl.side)
+                                && ruling_side(&w, def, (meet, s)) == Some(rl.side)
                             {
                                 #[cfg(test)]
                                 tie_probe::push(tie_probe::Tie::OnRuling);

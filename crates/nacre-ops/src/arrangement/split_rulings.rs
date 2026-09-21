@@ -191,7 +191,8 @@ pub(super) fn split_rulings(
                 // cylinder), which is the same statement only while `wc` is the wall that
                 // touches: a line tangent to the cylinder can cross a `wc` that cuts it, and
                 // then the root's `0` matches no ruling of `wc` at all.
-                let side = ruling_side_signed(&w, def, (&line, &s)).ok_or_else(undecided)?;
+                let side = combinatorics::ruling_side_signed(&w, def, (&line, &s))
+                    .ok_or_else(undecided)?;
                 let Some(c) = coord_at(def, &line, &s) else {
                     return Err(undecided());
                 };

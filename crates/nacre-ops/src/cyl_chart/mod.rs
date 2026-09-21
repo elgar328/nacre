@@ -132,7 +132,7 @@ pub(crate) struct Chart {
 /// A ruling's **name**: the wall class that cut it, and which of the two roots it is.
 ///
 /// ★ One name, not two. `RulingExtent` also carries a `side`, but that is *derived* from the same
-/// pair (`arrangement::ruling_side`), and a second spelling of one identity is how this ladder
+/// pair (`combinatorics::ruling_side`), and a second spelling of one identity is how this ladder
 /// has been bitten before. `name_on` builds this key from the ruling's own pair, and it was the
 /// key the band road's rings were joined on while that road was the reference.
 type RulingName = (usize, i8);

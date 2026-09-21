@@ -77,62 +77,6 @@ pub(super) fn chord_nodes(
     ]))
 }
 
-/// Which of the two rulings a point of the lateral lies on: the sign of `(x − o) · (m × n̂)`,
-/// with `n̂` the class's **canonical** coefficients ([`combinatorics::RulingCarrier::side`] — the
-/// one spelling). The point arrives as `(line, s)` from [`nacre_exact::quad::plane_plane_cylinder`],
-/// so the sign is one [`nacre_exact::quad::plane_side`] against the plane through `o` with
-/// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
-/// tangent shape). ★ **The abstention is deliberate and this is the abstaining door**: this
-/// function's `None` is a *sign* fact the ray caster (`departs_across`) and the arc departure
-/// read as "abstain", and answering `Some(0)` here would drop a ray into the `Negative` arm in
-/// silence. Callers that want the tangent ruling *named* — "which ruling of this wall, `0` being
-/// its tangent one" — take [`ruling_side_signed`] instead ([`node_ruling_side`],
-/// [`combinatorics::curved_wall`] and the ruling split; the corner's root does not mean the
-/// same thing).
-pub(crate) fn ruling_side(
-    w: &[Rat; 4],
-    def: &nacre_topo::CylinderDef,
-    at: (&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal),
-) -> Option<i8> {
-    ruling_side_signed(w, def, at).filter(|&s| s != 0)
-}
-
-/// **Which ruling of `w` a point of the lateral is on, `0` being `w`'s tangent ruling** — the
-/// same sign as [`ruling_side`], with the axis plane answered rather than abstained on.
-///
-/// ★★★★★ **A side is a fact about the point and the wall, not about the point's own
-/// name.** Two sites used to read it off the name's root instead (`QuadRoot::Double ⇒ 0`:
-/// [`node_ruling_side`] and [`combinatorics::curved_wall`]), which is the same statement *only*
-/// when the wall asked about is the very wall the name pairs — the tangent wall the corner was
-/// minted on. It is not the same statement once the alias table can hand back a representative
-/// with another pair (a tangent corner a class through the axis also passes through, this cell's
-/// whole subject) or once a Double-rooted corner is asked about a *different* wall: then the
-/// root says `0` for a point that sits squarely on one of that wall's two rulings — silently, and
-/// with the sign the caller needs. Asked here, of the point, both cases answer correctly and the
-/// tangent wall still answers `0`.
-///
-/// `None` is checked-`Rat` overflow only.
-pub(crate) fn ruling_side_signed(
-    w: &[Rat; 4],
-    def: &nacre_topo::CylinderDef,
-    at: (&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal),
-) -> Option<i8> {
-    let (o, m) = (def.origin(), def.dir());
-    let n = [w[0], w[1], w[2]];
-    let c = nacre_exact::cross3_rat(&m, &n)?;
-    let mut d = Rat::from_int(0);
-    for k in 0..3 {
-        d = d.checked_sub(c[k].checked_mul(o[k])?)?;
-    }
-    Some(
-        match nacre_exact::quad::plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
-            nacre_exact::Orient::Positive => 1,
-            nacre_exact::Orient::Negative => -1,
-            nacre_exact::Orient::Zero => 0,
-        },
-    )
-}
-
 /// **The planar scan's crossing on a ruling** — the point where the class line `L = wc ∩ fc`
 /// leaves the face across an edge riding a cylinder's ruling, named as the pierce node
 /// `wc ∩ fc ∩ cyl` at the root that *is* this ruling.
@@ -141,7 +85,8 @@ pub(crate) fn ruling_side_signed(
 /// axis — or is tangent, which the gate passes but does **not** record, so no ruling of it ever
 /// reaches here), so the pair `{wc, fc}` cuts the cylinder in two
 /// points, one on each of `fc`'s two rulings, and `(cyl, side)` — the identity
-/// [`crate::combinatorics::Wall::Ruling`] carries, measured by [`ruling_side`] against `fc` when the
+/// [`crate::combinatorics::Wall::Ruling`] carries, measured by
+/// [`crate::combinatorics::ruling_side`] against `fc` when the
 /// ring was named — says which. The same predicate asked of each root picks it. `wc` must be ⊥
 /// to the axis for the class to cross a ruling in a point at all (∥ contains it; a tilt is
 /// refused at the gate).
@@ -192,7 +137,7 @@ pub(crate) fn crossing_on_ruling(
         (nacre_topo::QuadRoot::Lo, &s[0]),
         (nacre_topo::QuadRoot::Hi, &s[1]),
     ] {
-        if ruling_side(&v, def, (&line, sv)) == Some(side) {
+        if combinatorics::ruling_side(&v, def, (&line, sv)) == Some(side) {
             if found.is_some() {
                 return Err(no); // both roots on one side: not a pair of rulings
             }

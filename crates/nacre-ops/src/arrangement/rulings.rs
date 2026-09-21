@@ -421,11 +421,12 @@ fn ruling_sweep(
 }
 
 /// Which of the two rulings of `w` this pierce node sits on, `0` being a **tangent** wall's
-/// single ruling — [`ruling_side_signed`] asked of the point the name denotes. The one spelling:
+/// single ruling — [`crate::combinatorics::ruling_side_signed`] asked of the point the name
+/// denotes. The one spelling:
 /// the chart's `ruling_name` reads it too.
 ///
 /// ★ The `0` is asked of the point, not read off the name's root (`Double`): see
-/// [`ruling_side_signed`] for why the two do not agree.
+/// [`crate::combinatorics::ruling_side_signed`] for why the two do not agree.
 pub(crate) fn node_ruling_side(
     jd: &Judge<'_, WorkingPlane>,
     def: &nacre_topo::CylinderDef,
@@ -434,7 +435,7 @@ pub(crate) fn node_ruling_side(
 ) -> Option<i8> {
     let (_, cyl, _) = combinatorics::pierce_name(n)?;
     let (line, s) = combinatorics::pierce_meet(jd, cyl, def, n)?;
-    ruling_side_signed(w, def, (&line, &s))
+    combinatorics::ruling_side_signed(w, def, (&line, &s))
 }
 
 /// A pierce point's axis parameter: one of the two planes in its name is ⊥ the axis (a cap, a

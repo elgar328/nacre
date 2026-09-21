@@ -92,7 +92,8 @@ pub(crate) struct ArcLabel {
 /// ★★★★ **There is no `side` here, and that is the point.** The first spelling carried one, and
 /// when the cells arrived (D1b) nothing read it: a ruling's identity is `(wall class, root)`, and
 /// which of the two parallel rulings that is derives from it through the one production spelling
-/// ([`ruling_side`], which is how `cyl_chart::emit_lateral` gets it at emission time). A carried copy of a
+/// ([`crate::combinatorics::ruling_side`], which is how `cyl_chart::emit_lateral` gets it at
+/// emission time). A carried copy of a
 /// derived value is the second spelling this ladder keeps being bitten by.
 ///
 /// ★★★★★ **`cfg_attr(not(test), ...)`, not a blanket allow.** The only reader is `cyl_chart`,

@@ -265,22 +265,76 @@ pub(crate) struct ArcCarrier {
 /// to a cylinder's axis meets the lateral surface in up to two axis-parallel lines, and
 /// `(cyl, side)` names which of the two this is.
 ///
-/// `side` is the sign of `(x − o) · (m × n̂)` for any point `x` on the ruling, with `o`/`m` the
-/// cylinder's origin/axis and `n̂` the class's **canonical** coefficients
-/// ([`class_coeffs_rat`] — one spelling; the stored normal opposes the canonical one on half the
-/// classes, which is the `stored_coeffs_rat` lesson).
+/// `side` is what [`ruling_side_signed`] answers of any point `x` on the ruling — the one
+/// spelling, and the sign convention lives on it rather than being restated here.
 #[derive(Clone, Debug)]
 pub(crate) struct RulingCarrier {
     /// The cylinder class — the ruling's identity, with `side`.
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
-    /// Which of the two parallel rulings, by the sign convention above — or `0`, the single
-    /// ruling of a **tangent** wall: an identity key like the other two values, never
-    /// a sign to multiply by (the sign consumers assert it away).
+    /// Which of the two parallel rulings, by the convention [`ruling_side_signed`] states — or
+    /// `0`, the single ruling of a **tangent** wall: an identity key like the other two
+    /// values, never a sign to multiply by (the sign consumers assert it away).
     pub side: i8,
     /// `true` when travel runs along `+m` — the sense the ruling split builds every
     /// `MergedRuling` in (`end[0] → end[1]` ascends the axis), inverted for the twin half-edge.
     pub up: bool,
+}
+
+/// Which of the two rulings a point of the lateral lies on: the sign of `(x − o) · (m × n̂)`,
+/// with `n̂` the class's **canonical** coefficients ([`RulingCarrier::side`], the field this
+/// fills). The point arrives as `(line, s)` from [`nacre_exact::quad::plane_plane_cylinder`],
+/// so the sign is one [`nacre_exact::quad::plane_side`] against the plane through `o` with
+/// normal `m × n̂`. `None`: overflow, or the point is on the axis plane itself (no side — the
+/// tangent shape). ★ **The abstention is deliberate and this is the abstaining door**: this
+/// function's `None` is a *sign* fact the ray caster (`departs_across`) and the arc departure
+/// read as "abstain", and answering `Some(0)` here would drop a ray into the `Negative` arm in
+/// silence. Callers that want the tangent ruling *named* — "which ruling of this wall, `0` being
+/// its tangent one" — take [`ruling_side_signed`] instead ([`crate::arrangement::node_ruling_side`],
+/// `curved_wall` and the ruling split; the corner's root does not mean the same thing).
+pub(crate) fn ruling_side(
+    w: &[nacre_exact::Rat; 4],
+    def: &nacre_topo::CylinderDef,
+    at: (&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal),
+) -> Option<i8> {
+    ruling_side_signed(w, def, at).filter(|&s| s != 0)
+}
+
+/// **Which ruling of `w` a point of the lateral is on, `0` being `w`'s tangent ruling** — the
+/// same sign as [`ruling_side`], with the axis plane answered rather than abstained on.
+///
+/// ★★★★★ **A side is a fact about the point and the wall, not about the point's own
+/// name.** Two sites used to read it off the name's root instead (`QuadRoot::Double ⇒ 0`:
+/// [`crate::arrangement::node_ruling_side`] and `curved_wall`), which is
+/// the same statement *only*
+/// when the wall asked about is the very wall the name pairs — the tangent wall the corner was
+/// minted on. It is not the same statement once the alias table can hand back a representative
+/// with another pair (a tangent corner a class through the axis also passes through, this cell's
+/// whole subject) or once a Double-rooted corner is asked about a *different* wall: then the
+/// root says `0` for a point that sits squarely on one of that wall's two rulings — silently, and
+/// with the sign the caller needs. Asked here, of the point, both cases answer correctly and the
+/// tangent wall still answers `0`.
+///
+/// `None` is checked-`Rat` overflow only.
+pub(crate) fn ruling_side_signed(
+    w: &[nacre_exact::Rat; 4],
+    def: &nacre_topo::CylinderDef,
+    at: (&nacre_exact::quad::MeetLine, &nacre_exact::quad::QuadVal),
+) -> Option<i8> {
+    let (o, m) = (def.origin(), def.dir());
+    let n = [w[0], w[1], w[2]];
+    let c = nacre_exact::cross3_rat(&m, &n)?;
+    let mut d = nacre_exact::Rat::from_int(0);
+    for k in 0..3 {
+        d = d.checked_sub(c[k].checked_mul(o[k])?)?;
+    }
+    Some(
+        match nacre_exact::quad::plane_side(&[c[0], c[1], c[2], d], at.0, at.1) {
+            nacre_exact::Orient::Positive => 1,
+            nacre_exact::Orient::Negative => -1,
+            nacre_exact::Orient::Zero => 0,
+        },
+    )
 }
 
 impl Carrier {

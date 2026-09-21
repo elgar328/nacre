@@ -602,7 +602,7 @@ pub(super) fn outward_fix(jd: &Judge<'_, WorkingPlane>, q: usize) -> Option<i8> 
 /// excursion lies on (a circle meets a plane in two points).
 ///
 /// Coordinate-free: `(a − o) · (m × n_q) = −n_q · (m̂ × (a − c))` (the axial part of `a − o` drops
-/// against `m`), so the counter-clockwise tangent's side is **minus** [`arrangement::ruling_side`]
+/// against `m`), so the counter-clockwise tangent's side is **minus** [`ruling_side`]
 /// at `a` — the very predicate that names which ruling a lateral point lies on — and a clockwise
 /// arc's is plus. Then the same canonical → outward bridge as [`side_of`] ([`outward_fix`]), so
 /// the answer sits in the walk's frame. `None` when the arc is tangent to `q` at `a`
@@ -621,7 +621,7 @@ pub(crate) fn arc_departure_side(
     let def = &cyls.get(cyl)?.def;
     let w = class_coeffs_rat(jd, q)?;
     let (line, sv) = pierce_meet(jd, cyl, def, node)?;
-    let rs = crate::arrangement::ruling_side(&w, def, (&line, &sv))?;
+    let rs = ruling_side(&w, def, (&line, &sv))?;
     Some(outward_fix(jd, q)? * if ccw { -rs } else { rs })
 }
 
@@ -653,7 +653,7 @@ pub(crate) fn arc_departure_side(
 ///   *arrangement's* convention, so `up` is **derived** here from the two endpoints' axial
 ///   coordinate rather than read off a rule.
 ///
-/// `side` is [`crate::arrangement::ruling_side`]'s one spelling, and it needs a point on the ruling
+/// `side` is [`ruling_side`]'s one spelling, and it needs a point on the ruling
 /// *exactly* — which is why the pierce name comes in: [`pierce_meet`] realizes it as the `(line, s)`
 /// that function takes. A ruling whose end is not a pierce point (a seam end) has no such point and
 /// is refused rather than guessed.
@@ -680,12 +680,11 @@ fn curved_wall(
             // or a slot's own walls are tangent to their cylinder, so without this every such
             // operand falls here as `CurvedOperandBoundary`.
             // ★ The reading is the **point**'s, not the corner's **root**'s
-            // ([`crate::arrangement::ruling_side_signed`], which answers the axis plane instead
+            // ([`ruling_side_signed`], which answers the axis plane instead
             // of abstaining as `ruling_side` does for the ray caster's sake): the root says `0`
             // only when `near` is the very wall the name pairs, and `near` may be a plane through
             // the axis carrying that same corner on one of its two rulings.
-            let side = crate::arrangement::ruling_side_signed(&w, &def, (&at.0, &at.1))
-                .ok_or_else(curved)?;
+            let side = ruling_side_signed(&w, &def, (&at.0, &at.1)).ok_or_else(curved)?;
             // Which way travel runs along the axis: the stored edge ascends when its second
             // endpoint does, and `forward` says whether this half-edge walks it that way.
             //

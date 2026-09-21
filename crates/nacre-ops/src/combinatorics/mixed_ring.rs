@@ -31,7 +31,7 @@ pub(crate) fn ring_is_mixed(ring: &[RingEdge]) -> bool {
 /// half-open one, spelled once in [`nacre_geom::intersect::ray_step_crossing`] — the corner is
 /// counted by the step that leaves it upward. A line step reads that off its other end's sign;
 /// an arc whose root is its own end reads it off its tangent there (the CCW tangent's side of
-/// the ray's plane is minus [`crate::arrangement::ruling_side`], `arc_departure_side`'s
+/// the ray's plane is minus [`ruling_side`], `arc_departure_side`'s
 /// convention). Abstaining at the corner in both arms is not harmless: eight `NoClearRay`
 /// cells of the crossing census were exactly that abstention exhausting every probe.
 ///
@@ -326,9 +326,7 @@ fn point_in_mixed_ring_inner(
                     // `ray_step_crossing(Zero, ty, ty)` and no second cross product is spelled.
                     // A horizontal tangent (`rs` zero) is the genuine second-order tie.
                     let departs_across = |end: &(MeetLine, QuadVal), ccw: bool| -> Option<bool> {
-                        let Some(rs) =
-                            crate::arrangement::ruling_side(&ray_plane, &arc.def, (&end.0, &end.1))
-                        else {
+                        let Some(rs) = ruling_side(&ray_plane, &arc.def, (&end.0, &end.1)) else {
                             #[cfg(test)]
                             tie_probe::mark(tie_probe::Tie::TangentAtEnd);
                             return None;
