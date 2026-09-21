@@ -2,9 +2,10 @@
 //!
 //! This crate is 35k lines of product code in eighteen top-level modules, and the question
 //! "can this be split" is really "is the graph acyclic". Nothing in `fmt`, `clippy` or the suite
-//! answers it, so the graph was invisible until it was measured: nine module pairs point at each
-//! other, but only two of those are *behaviour* — the rest name a type that lives on the wrong
-//! side. The difference is the whole finding, and it is only visible if something counts.
+//! answers it, so the graph was invisible until it was measured: nine module pairs pointed at
+//! each other, and only two of those were *behaviour* — the rest named a type, or took an
+//! argument, that lived on the wrong side. The difference is the whole finding, and it is only
+//! visible if something counts. Five pairs are left.
 //!
 //! ★ **The parser is what gets calibrated, not the files.** An earlier hand-rolled version of this
 //! measurement was wrong three times — it counted `std::ops::Deref` as a reference to this crate's
@@ -209,10 +210,11 @@ fn the_parser_reads_what_it_should() {
 
 /// ★★★ **What this restructure established, asserted — and only that.**
 ///
-/// The graph is **not** a DAG and this does not pretend otherwise: seven module pairs still point
-/// at each other. What is settled is the boolean pipeline's shape, so that is what is locked.
-/// Each of these was a real edge before the work and is zero after it; an editor who reintroduces
-/// one is undoing something, not adding to it.
+/// The graph is **not** a DAG and this does not pretend otherwise: five module pairs still point
+/// at each other. What is settled is the boolean pipeline's shape and the direction of the two
+/// helpers under the engine, so that is what is locked. Each of these was a real edge before the
+/// work and is zero after it; an editor who reintroduces one is undoing something, not adding
+/// to it.
 #[test]
 fn the_pipeline_runs_one_way() {
     let e = edges();
@@ -250,6 +252,17 @@ fn the_pipeline_runs_one_way() {
         broken.push(format!(
             "assembly -> arrangement ({n}): the last stage is calling the engine"
         ));
+    }
+    // `bands` and `nesting` are helpers *under* the engine: the engine calls them, and they
+    // speak their own vocabulary back (a `CylinderDef`, a `CylRow`) rather than the engine's.
+    // A name pointing up here means a helper has started taking the caller's words again.
+    for helper in ["bands", "nesting"] {
+        let n = named(helper, "arrangement");
+        if n > 0 {
+            broken.push(format!(
+                "{helper} -> arrangement ({n}): a helper under the engine is naming the engine"
+            ));
+        }
     }
     // The front door is the first stage and lives above the engine, not inside it.
     let n = named("arrangement", "boolean");
@@ -307,16 +320,7 @@ fn no_module_edge_appears_that_is_not_recorded() {
                 "transform",
             ],
         ),
-        (
-            "bands",
-            &[
-                "arrangement",
-                "combinatorics",
-                "draft",
-                "planes",
-                "tolerant",
-            ],
-        ),
+        ("bands", &["combinatorics", "draft", "planes", "tolerant"]),
         (
             "boolean",
             &["arrangement", "assembly", "draft", "reject_census"],
@@ -337,10 +341,7 @@ fn no_module_edge_appears_that_is_not_recorded() {
         ("draft", &["combinatorics", "planes", "tolerant"]),
         ("error", &["reject_census"]),
         ("exact", &["ops", "rotated_vertex"]),
-        (
-            "nesting",
-            &["arrangement", "combinatorics", "planes", "tolerant"],
-        ),
+        ("nesting", &["combinatorics", "planes", "tolerant"]),
         (
             "ops",
             &[
