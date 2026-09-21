@@ -59,50 +59,14 @@ fn lateral_cycle_census(m: &Model, r: Handle<Solid>) -> [usize; 4] {
 /// the **outcome by name** (`Ok` with the volume unchanged, or the refusal's name — a
 /// `TraceDeclined` by its `kind`, the face handle being a witness rather than a lock).
 ///
-/// Today's table, measured before anything was built: **Ok 9 · `DegenerateFace` 14 (a two-edge
-/// cap: arc + chord, no three loop points to spread) · `CylSpan` 10 (a lateral whose outer loop is
-/// not two rims and the seam: a hole spliced into the outer walk, a panel, a chain rim) ·
-/// `OuterRing` 5 (a wrap arc split at its `OnSeam` vertex, whose two neighbours are arcs on one
-/// cylinder — no third surface names the joint) · first op refused 3 · empty 1**. The rungs that
-/// follow change this table one named cause at a time, and each predicts its cells:
-///
-/// * a loop's corner is its half-edge's start and a circle-bounded face states its
-///   triangle from the plane — `DegenerateFace` 14 → 0, every one landing on the lateral row's
-///   `CylSpan` (those caps sit beside a panel or chain lateral, which the tracer reaches first);
-///   Ok 9 unchanged.
-/// * a seam joint is not a corner — the two legs of a wrap arc are one step — `OuterRing`
-///   5 → 0, all landing on `CylSpan` (wall +y's notch holds the seam and is spliced into the
-///   lateral's outer walk; the half walls' laterals are chains); Ok 9 unchanged. After this no
-///   row is `OuterRing`/`HoleRing`/`CylFaceHole`/`DegenerateFace`: every ring of a result face
-///   has a name, and what remains is the lateral's outer loop.
-/// * the tracer reads a lateral's boundary cycles (`FaceLoops::cycles`) instead of its
-///   span — a band's rims and holes, the spliced hole recovered — and declines a panel or a
-///   chain rim by name until the chart can hold them: the five Fuse rows whose hole met the seam
-///   (wall +y/−x/+x, corner, offmid) become **Ok**; `CylSpan` 29 → 24 (every Cut/Common row is a
-///   panel, every half row a chain or a panel); Ok 9 → 14.
-/// * the circle road reads every cycle (a panel, a chain rim) with an optional outer
-///   answer, while the rulings road still states bands only. The reported reject is the lowest
-///   class's first declined face, and it moves: a panel's ⊥ classes no longer decline, so the
-///   wall/offmid Common rows and every half row surface the **two-edge cap** leaving its chord's
-///   class — `CurvedDeparture` 17; the Cut rows and corner Common (a three-node
-///   cap) stay `CylSpan` on the rulings road: 24 → 7. Ok 14 unchanged.
-/// * the rulings road sweeps every cycle — the six Cut rows (a panel: the notch's wall)
-///   and corner Common become **Ok** with their volumes unchanged; `CylSpan` 7 → 0, Ok 14 → 21.
-/// * the ring walk names the side an arc departs to, so a half-disk cap is a graze along
-///   its chord — every half Fuse and Common row and the wall/offmid Common rows build with their
-///   volumes unchanged (13 rows); the half **Cut** rows (a notch with a half-disk ceiling) reach
-///   the chart and its emitter refuses a cell it cannot read (`CylinderGateUndecided`,
-///   `End::Other`); Ok 21 → 34, `CurvedDeparture` 17 → 0 (the name is gone).
-/// * the arc label carries its own side: the disk-side cell is asked of the cells (a rational
-///   corner's radial side) instead of derived from the class's stored frame, so a notch's
-///   half-disk ceiling reads its chamber and the four half **Cut** rows build with their volumes
-///   unchanged — Ok 34 → 38, `CylinderGateUndecided` 4 → 0.
+/// The table in the body is the statement — one row per [`BOSS_FAMILIES`] entry, each kind's
+/// outcome beside the boundary cycles its result's laterals carry — and the distribution asserted
+/// at the end reads it as a whole, so a moved cell is seen beside its neighbours.
 ///
 /// ★ The probe beside it counts the loops carrying an `OnSeam` joint at any vertex — outer loops
 /// of plane faces and holes of every face (a lateral's outer loop is joined at the seam by
-/// construction, so it is not counted). Today: **8 outer, 0 holes** — the population the
-/// seam-joint rung reads, and the zero that says a hole never carries one (a hole touching the
-/// seam is spliced into the outer walk).
+/// construction, so it is not counted). Its hole count is the zero that says a hole never carries
+/// one: a hole touching the seam is spliced into the outer walk.
 #[test]
 fn reop_census_families_reoperate_or_decline_by_name() {
     #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -240,7 +204,7 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         "lateral cycles:\n{}",
         cycle_mismatches.join("\n")
     );
-    // The distribution the doc states, so a drift in the table is read as a whole.
+    // The distribution, so a drift in the table is read as a whole.
     let count = |p: fn(&Reop) -> bool| -> usize {
         families
             .iter()
@@ -248,14 +212,13 @@ fn reop_census_families_reoperate_or_decline_by_name() {
             .filter(|r| p(r))
             .count()
     };
-    // 41 + 9: the three offset families re-operate in every kind.
+    // Every kind of every family re-operates but one: `on top`'s Common, which is empty.
     assert_eq!(count(|r| *r == Ok), 50, "{table:?}");
-    // ★ The name is gone from this corpus (the arc-label cell): every family re-operates or is
-    // refused at its first op. A new population must restate this zero.
+    // ★ No row waits on the chart's reader. A new population must restate this zero.
     assert_eq!(
         count(|r| *r == Rejected(RejectReason::CylinderGateUndecided)),
         0,
-        "no row waits on the chart's reader any more"
+        "no row waits on the chart's reader"
     );
     assert_eq!(
         count(|r| *r == Rejected(RejectReason::DegenerateFace)),
@@ -268,9 +231,9 @@ fn reop_census_families_reoperate_or_decline_by_name() {
         0,
         "every ring of a result face has a name"
     );
-    // 8 + 6: each offset family's Fuse carries two whole-circle rims that pass the
-    // seam vertex — the wall families' seam sits on the wall itself (a chord end, a pierce
-    // vertex), which is why they added none.
+    // Six of the outer loops are the offset families' Fuse rows — two whole-circle rims each
+    // that pass the seam vertex. The wall families' seam sits on the wall itself (a chord end, a
+    // pierce vertex), which is why their Fuse rows add none of these.
     assert_eq!(seam_joints, (14, 0), "seam-joint loops (outer, holes)");
 }
 
@@ -479,83 +442,18 @@ fn removed_by(kind: BoolKind, base: [f64; 3], h: f64, tool: [[f64; 3]; 2]) -> f6
 
 /// **The crossing census**: a boolean's result cut by a tool whose faces actually **cross**
 /// the result's rings — where the far cube of the re-operation census could see only whether the
-/// rows are stated. Four tools per family × kind: a slab through the plate's middle
-/// (`z ∈ [0.5, 1.5]`, its ⊥ caps crossing the wall faces that carry a boss's rulings),
-/// a slab above it (`[2.5, 3.5]`, crossing the bands standing on the plate), a slab below
-/// (`[−1.5, −0.5]`), and a box whose wall passes **through the boss's axis** (so it crosses the
-/// caps' arcs and cuts the lateral along two rulings). What is locked is the outcome by name —
+/// rows are stated. Five tools per family × kind: a slab through the plate's middle
+/// (`z ∈ [0.5, 1.5]`, its ⊥ caps crossing the wall faces that carry a boss's rulings, and parting
+/// the result in two), a slab above it (`[2.5, 3.5]`, crossing the bands standing on the plate), a
+/// slab below (`[−1.5, −0.5]`), a box whose wall passes **through the boss's axis** (so it crosses
+/// the caps' arcs and cuts the lateral along two rulings), and a **wall slab** — the mid slab's
+/// height, past the line one unit inside the wall the boss stands on, so its caps cross that
+/// wall's rulings while the plate stays one solid. What is locked is the outcome by name —
 /// `Ok(n)` with the volume equal to the first result's minus [`removed_by`] — and the counts.
 ///
-/// Today's table, measured before anything was built (168 cells): **Ok 36** (every band result ×
-/// slab; the mid slab leaves two solids) · **`CurvedRingWall` 11** — the wall-boss Fuse rows × mid
-/// slab (6: the ⊥ caps cross the plate's wall face on the boss's rulings) and × through-axis wall
-/// (5: the wall crosses the bitten cap's arc) · `CylSpan` 96 (panel and chain laterals) ·
-/// `NoClearRay` 8 (an interior boss × through-axis wall: the wall halves the cap's circular hole;
-/// corner × its coplanar wall) · `PierceVertexUnnamed` 1 (offmid Fuse × top slab) · first op
-/// refused 12 · empty 4. The rungs that follow move this table one named cause at a time:
-///
-/// * the scan names a crossing on a ruling as a pierce node, and a cell's nesting reads a
-///   mixed ring. The **wall slab** column (added here, 210 cells) is the rung's own population:
-///   wall ±x/±y and offmid Fuse × wall slab are **Ok(1)** with their exact volumes. The mid slab
-///   crosses the same rulings and then splits the result in two, where the grouping road's
-///   plane-walls shim refuses the mixed rings — `CurvedRingWall` 6 → `PierceVertexUnnamed` 5 +
-///   `RulingBoundNotYet` 1 (corner: the chart's `End::Other`); the through-axis wall's
-///   `NoClearRay` 8 → `PierceVertexUnnamed` 6 (the chord's cell has no cylinder for its corners,
-///   `coord_key`) + 2 (Common). Ok 49 · `CurvedRingWall` 5 (arc crossings) · `CylSpan` 120 ·
-///   `PierceVertexUnnamed` 12 · `RulingBoundNotYet` 2 · `NoClearRay` 2 · first 15 · empty 5.
-/// * the circle road reads panels and chains; the first reject moves off the ⊥ classes,
-///   and the rows whose result has a two-edge cap (wall/offmid Common, every half family) surface
-///   `CurvedDeparture` on every tool — 85; `CylSpan` 120 → 35 (the Cut rows and corner Common,
-///   still on the rulings road).
-/// * the rulings road sweeps every cycle, so a Cut result's panel is stated: the six wall
-///   Cut rows read like the Fuse rows (top/bottom Ok(1), the **wall slab Ok(1) with its exact
-///   volume**, the mid slab on the grouping road, the through-axis wall on the bite's arc) and the
-///   corner's coplanar tool reaches the chord's cell; corner Common (a quarter cylinder alone)
-///   builds under the top and bottom slabs and finds no clear ray once a slab parts it. `CylSpan`
-///   0 · Ok 69 · `PierceVertexUnnamed` 19 · `CurvedRingWall` 10 · `NoClearRay` 4 ·
-///   `CylinderGateUndecided` 1 (the chart's walk has an open end at a wall with one ruling).
-/// * the half-disk caps are traced, so `CurvedDeparture` 85 → 0: the half Fuse rows read
-///   like the wall Fuse rows (top/bottom/wall slab Ok(1) with exact volumes), the Common rows and
-///   the half Cut rows reach the next walls by name — the coplanar cleaning pass's plane-only ray
-///   (`NoClearRay` 4 → 40) and the chart's unreadable cell (`CylinderGateUndecided` 1 → 17); the
-///   through-axis wall still crosses the caps' arcs (`CurvedRingWall` 10 → 27). Ok 69 → 81.
-/// * the scan names a crossing on an **arc**, the caps' chords join the overlay (so a
-///   through-axis tool wall splits them), and a chord's sense reads its canonical root — the
-///   whole through-axis wall column completes its trace and lands on the chart's unreadable cell:
-///   `CurvedRingWall` 27 → 0, `CylinderGateUndecided` 17 → 44. The name is gone from the corpus.
-/// * grouping-arm carrier-ization: `Ring::edges` builds carriers from its walls, the
-///   containment and coordinate roads fork mixed rings to the rational walk, and the
-///   construction-time refusal dies — the mid column and offmid × top land on the label's
-///   next wall (a split result's panel/chain lateral abstains the ray: `NoClearRay` 40 → 56),
-///   the corner × through-axis cells thread their merge and meet the chart's unreadable cell
-///   (`CylinderGateUndecided` 44 → 46). `PierceVertexUnnamed` 18 → 0.
-/// * miss-first: the label's ray solves before it asks for bounds, so a cylinder the ray
-///   runs clear of counts 0 even where the face is a panel or a chain (`SpanAsk::MissOnly`,
-///   an ask retired once a lateral's loops became readable),
-///   and the per-solid dissolve keys walls by `ClassIx` — the mid column and offmid × top
-///   classify and build (`NoClearRay` 56 → 41, Ok 86 → 101); corner Cut × mid stays: its
-///   rays genuinely hit the quarter boss, and a hit without an axial statement stays an
-///   abstention (the (z, θ) membership road, next).
-/// * the arc label carries its own side: a cut circle's per-arc label is taken from the cell the
-///   arc's **disk** side actually bounds — asked of a rational corner's radial side, not derived
-///   from the class's stored frame, which two classes with identical normals were measured to
-///   disagree about. The four half **Cut** families re-cut under every tool but the through-axis
-///   one (`CylinderGateUndecided` 46 → 30, Ok 101 → 117).
-/// * a sector that spans a rim node is read as the **run** of arcs between the nearest rim nodes
-///   at or outside it, and answers when they agree: the chart's θ lines come from the lateral's
-///   own sweep, so a wall's ruling on the side the face does not reach leaves no line and a cell
-///   is built across a station the rim knows. Twenty through-axis cells answer with their exact
-///   volumes and two reach the emitter's ladder (`CylinderGateUndecided` 22 → **0**,
-///   `RulingBoundNotYet` 10 → 12, Ok 117 → **137**). ★ The prediction said the **Common** rows
-///   would refuse like the band family's bore does; they answered — a bore's ray degeneracy does
-///   not transfer to a solid half-cylinder, and every moved cell is `Ok(1)`, so what the slabs
-///   refuse is the *severed* piece's nesting, not this cut.
-/// * a ruling's θ station is placed whether or not the rim lists it: a wall whose face stops
-///   short of the line leaves a station the rim's own arcs do not hold, and reading that as
-///   "unnameable" left the sector `End::Other`. Eight through-axis cells now read their sectors
-///   and land one road later, on the emitter's own ladder (`RulingBoundNotYet` 2 → 10,
-///   `CylinderGateUndecided` 30 → 22): its sector road wants **both** rims cut, and there one of
-///   them is a whole circle — the rim-station rung, next.
+/// The `want` table in the body is the statement, one row per [`BOSS_FAMILIES`] entry; the
+/// constants name the shapes several families share, and the distribution asserted at the end
+/// reads the table as a whole.
 #[test]
 fn crossing_census_slabs_and_through_axis_walls_by_name() {
     #[derive(Debug, PartialEq, Clone, Copy)]
@@ -600,73 +498,54 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     // Per family, per kind: the five tools' outcomes, in `TOOLS` order.
     use RejectReason::{NoClearRay, PierceVertexUnnamed, RingHasNoWitness, RulingBoundNotYet};
     // A band result: the mid slab parts the plate into two solids, the top and bottom slabs cut
-    // the standing boss, the wall slab clears the boss. The through-axis wall builds since the
-    // chord's cell reads its cylinder from the class table. ★ The Common column used to
-    // differ here and no longer does — the note that stood at this line said the point
-    // classification finds no clear ray at the hole's diameter, but what actually refused was the
-    // nesting's **wall panel** ring, which now names its own chord midpoint.
+    // the standing boss, the wall slab clears the boss. The through-axis wall builds: the chord's
+    // cell reads its cylinder from the class table, and a wall **panel** ring hands over the
+    // midpoint of an edge whose ends are one solve's two roots (`combinatorics::conjugate_midpoint`).
+    // The Common column reads the same.
     const BAND: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
-    // ★ It used to differ from `BAND` in exactly the through-axis cell, and the difference was a
-    // wall **panel** ring with no witness to name. A ring edge whose ends are one solve's two roots
-    // hands over its **midpoint** now, so the two constants have nothing left to tell apart.
-    const BAND_COMMON: [Cross; 5] = BAND;
     // A wall boss fused: the wall slab's caps cross the plate's wall face on the boss's
     // **rulings** — named as pierce nodes — and the cut builds with its exact volume.
-    // The mid slab does the same and then splits the result in two — and the label decides:
-    // every deciding probe's rays run clear of the boss, and a miss now counts 0 against a
-    // panel/chain lateral (miss-first), so both halves classify and build with their exact
-    // volumes; the through-axis wall crosses the bitten cap's **arc**, which waits on the
-    // lateral's ruling sweep.
+    // The mid slab does the same and then splits the result in two, and the label decides:
+    // every deciding probe's rays run clear of the boss, and a miss counts 0 against a
+    // panel/chain lateral, so both halves classify and build with their exact volumes. The
+    // through-axis wall crosses the bitten cap's **arc** and builds.
     const WALL_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
     // A wall boss cut (its lateral a panel — the notch's wall): the top and bottom slabs miss
     // the result (nothing of the boss stands outside the plate), the wall slab crosses the
-    // panel's rulings and builds with its exact volume, the mid slab
-    // splits the result and both halves classify by miss-first rays (as WALL_FUSE), and
-    // the through-axis wall crosses the bite's arcs and now reads its sectors as a **run** of the
-    // rim's arcs (this rung), so it builds with its exact volume too.
+    // panel's rulings and builds with its exact volume, the mid slab splits the result and both
+    // halves classify by rays that miss the boss (as `WALL_FUSE`), and the through-axis wall
+    // crosses the bite's arcs and reads each sector as the **run** of the rim's arcs it spans,
+    // so it builds with its exact volume too.
     const PANEL_CUT: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
     // A half boss fused (its lateral a chain, its top cap a half-disk): the cap's
     // chord is a graze on the wall class and the result builds — the top and bottom slabs miss
     // the boss, the wall slab crosses the chain's rulings with its exact volume, the mid slab
-    // splits the result and both halves classify by miss-first rays (as WALL_FUSE), the
-    // through-axis wall crosses the cap's arc.
+    // splits the result and both halves classify by rays that miss the boss (as `WALL_FUSE`),
+    // the through-axis wall crosses the cap's arc. The **cap below** variants, whose seated
+    // half-disk is the boss's *bottom* cap, read the same.
     const HALF_FUSE: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
-    // ★ The **cap below** variants used to stop one wall earlier — their seated half-disk is the
-    // boss's *bottom* cap, and the through-axis wall's chamber ends disagreed there. Reading the
-    // sector as a run of arcs closed that gap, so the constant that existed only to name the one
-    // differing cell is gone: they take `HALF_FUSE` whole.
-    // A Common result — the inner half-cylinder alone, two half-disk caps and a flat side. Under a
-    // **slab** the cut severs it in two and the coplanar cleaning pass nests the pieces' rings,
-    // where no probe decides at the half-disk's pierce corners (`NoClearRay` — the cleaning's own
-    // nesting road, a wall of its own beside the label's). The **through-axis wall** cuts the
-    // other way and leaves one solid, so it never reaches that road: since the sector reads as a
-    // run of arcs (this rung) it builds with its exact volume. ☑ Of the nine families that take
-    // this constant the tool removes real volume in every one, and each leaves `Ok(1)` — the
-    // vertical cut is the difference, measured. (The corner row above is the exception to the
-    // *mechanism*, not to the outcome: there the box clears the plate entirely.)
-    // ★ The **half** families' Common now builds under every tool: the two cells a slab severs it
-    // in were opened by the circle's own question (`arrangement::ring_own_circle`), and the two a
-    // wall panel blocked by the chord's midpoint (`arrangement::chord_midpoint_rat`).
-    //
-    // ★★★★★ **And the two cells the other road owned are open too.** A wall boss's Common is a
-    // half cylinder, so a slab parts it into two components whose faces are half-disc caps, a
-    // panel and a lateral — not one vertex among them, and `coord_probes` only knew how to take a
-    // **whole** circle's centre. It now reads a cut cap as the disk it is
-    // (`combinatorics::face_circle`) and offers points of that disk's own plane for the ring to
-    // choose from, so the depth classification has a witness and both cells build.
+    // A half boss's Common builds under every tool: a ring bounded by one circle names that
+    // circle's centre (`nesting::ring_own_circle`), and a wall panel's chord names its midpoint.
     const HALF_COMMON: [Cross; 5] = [Ok(1); 5];
+    // A wall boss's Common — the inner half-cylinder alone, two half-disk caps and a flat side.
+    // A **slab** parts it into two components whose faces are half-disk caps, a panel and a
+    // lateral — not one vertex among them — and the depth classification takes its witness from
+    // a cut cap read as the disk it is (`combinatorics::face_circle`, offered by
+    // `combinatorics::coord_probes`). The **through-axis wall** cuts the other way and leaves one
+    // solid, each sector read as the run of the rim's arcs it spans. ☑ In every family that
+    // takes this constant that tool removes real volume, so each `Ok(1)` is a real cut.
     const COMMON: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(2)];
-    // A half boss's Cut (a notch with a half-disk ceiling): since the arc label carries its own
-    // side, the ceiling's two ends agree and the notch re-cuts — the mid slab parts it in two,
-    // the others take one solid, all with their exact volumes. The through-axis wall's sector is
-    // not an adjacent node pair of the rim, and reading it as the **run** between the nearest rim
-    // nodes (this rung) lets it answer as well.
+    // A half boss's Cut (a notch with a half-disk ceiling): the arc label carries its own side,
+    // so the ceiling's two ends agree and the notch re-cuts — the mid slab parts it in two, the
+    // others take one solid, all with their exact volumes. The through-axis wall's sector is not
+    // an adjacent node pair of the rim; read as the **run** between the nearest rim nodes, it
+    // answers as well.
     const HALF_CUT: [Cross; 5] = [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)];
     let want: [[[Cross; 5]; 3]; 17] = [
-        [BAND, BAND, BAND_COMMON], // through
+        [BAND, BAND, BAND], // through
         // on top: the cut leaves the plate alone.
         [BAND, [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], [Empty; 5]],
-        [BAND, BAND, BAND_COMMON],      // flush
+        [BAND, BAND, BAND],             // flush
         [WALL_FUSE, PANEL_CUT, COMMON], // wall -y
         [WALL_FUSE, PANEL_CUT, COMMON], // wall +y
         [WALL_FUSE, PANEL_CUT, COMMON], // wall -x
@@ -675,14 +554,13 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         // contact), and the box lies wholly outside the plate beyond it, so `removed_by` is 0
         // for both kinds and what the volume oracle locks there is that the result is
         // **unchanged**. The **mid** slab parts the Fuse and the Cut in two, and the severed
-        // halves' depth classification casts its rays from the plate's corner — every ray met a
-        // ring corner there, and the mixed parity abstained on it until a corner on the ray
-        // became a decision. The Common is a quarter cylinder alone, and either slab
-        // (mid, or the wall slab — both z ∈ [½, 1½]) parts it in two; its halves' rays from the
-        // axis vertex crossed the *other* half's **lateral** — a panel the ray could not read
-        // («no axial statement», an abstention by name) — until a lateral's boundary loops
-        // answered the crossing question on the cylinder's own chart: two solids,
-        // decided on the first attempt. The through-axis wall cuts the other way and leaves one.
+        // halves' depth classification casts its rays from the plate's corner — every ray meets a
+        // ring corner there, and a corner on the ray is a decision, not a tie. The Common is a
+        // quarter cylinder alone, and either slab (mid, or the wall slab — both z ∈ [½, 1½])
+        // parts it in two; its halves' rays from the axis vertex cross the *other* half's
+        // **lateral**, a panel whose boundary loops answer the crossing question on the
+        // cylinder's own chart: two solids, decided on the first attempt. The through-axis wall
+        // cuts the other way and leaves one.
         [
             [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
             [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
@@ -690,10 +568,9 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         ],
         // corner-lo: its axis sits on **both** plate walls, so the chords through the circle are
         // radii and the sector outside the plate is reflex at the centre — the ring's true
-        // extremum is in an arc, not at a node. Since the winding is read there the first op
-        // builds (it was `First` for every tool), and the tools land on the roads the other
-        // corner family sits on: the mid slab's Fuse and Cut decide at the corner, the
-        // Common's halves at the other half's lateral.
+        // extremum is in an arc, not at a node, and the winding is read there. The tools land on
+        // the roads the other corner family sits on: the mid slab's Fuse and Cut decide at the
+        // corner, the Common's halves at the other half's lateral.
         [
             [Ok(2), Ok(1), Ok(1), Ok(2), Ok(1)],
             [Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)],
@@ -701,8 +578,8 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         ],
         // offmid: the top slab's cap at z = 2.5 meets the notch's rulings above the plate — the
         // severed top piece has no vertex, its coordinate probe forks the other component's
-        // mixed ring to the rational walk, and the miss-first rays decide (the one moved cell
-        // outside the mid column).
+        // mixed ring to the rational walk, and rays that miss the boss decide (the one cell
+        // outside the mid column that differs from `WALL_FUSE`).
         [[Ok(2), Ok(2), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON],
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half wall
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half wall, cap below
@@ -710,10 +587,10 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         [HALF_FUSE, HALF_CUT, HALF_COMMON], // half +x, cap below
         // ★ The offset wall. Every tool builds as it does for the wall families: the
         // mid slab parts the result, the through-axis wall (`y ≥ 2`, ⊥ to the plate's wall)
-        // halves the segment. `offset-out`'s Common is a 0.2-deep segment prism whose halves
-        // had **no witness** for one commit — corners that are pierce names (dropped by the
-        // vertex probe) and no candidate of the cut cap's centre-and-steps inside a segment
-        // thinner than `r/2` — until the cap offered two points per chord (1b): two solids.
+        // halves the segment. `offset-out`'s Common is a 0.2-deep segment prism: its halves'
+        // corners are pierce names (the vertex probe drops them) and the cut cap's centre lies
+        // outside a segment thinner than `r/2`, so the witness is one of the two points the cap
+        // offers per chord (`combinatorics::ring_interior_candidates`): two solids.
         [[Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON],
         [[Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON], // offset-in
         [[Ok(2), Ok(1), Ok(1), Ok(1), Ok(1)], PANEL_CUT, COMMON], // offset-irr
@@ -742,11 +619,11 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                     Result::Ok(out) => {
                         m.rebuild_adjacency();
                         let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
-                        // ★ The first result's own volume against the closed form — the baseline
-                        // `removed_by` subtracts from was never itself checked. Summed over the
+                        // ★ The first result's own volume against the closed form, so the
+                        // baseline `removed_by` subtracts from is itself checked. Summed over the
                         // whole result rather than guarded on one solid: a guard is a branch that
-                        // can go quietly untaken (☑ it never was, over all 42 cells), and the sum
-                        // is right however many pieces a first operation leaves.
+                        // can go quietly untaken, and the sum is right however many pieces a first
+                        // operation leaves.
                         let v_first: f64 = out
                             .iter()
                             .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
@@ -828,55 +705,45 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
         "crossing table:\n{}\n\ntally: {tally:?}",
         table.join("\n")
     );
-    // The distribution the doc states, so a moved cell is read as a whole: 210 cells.
+    // The distribution, so a moved cell is read as a whole.
     let count = |p: fn(&Cross) -> bool| -> usize {
         want.iter().flatten().flatten().filter(|c| p(c)).count()
     };
     assert_eq!(count(|c| matches!(c, Ok(_))), 250, "{tally:?}");
-    // ★ `ring_in_ring`'s own refusals are **gone**: every one of them was a probe list that
-    // started empty, and that fact now has its own name. What is left under this one is the other
-    // road entirely — the 3D depth classification in `boolean`, whose nodes really do run out.
-    // ★ 8 → 4: the corner families' Fuse and Cut × mid decided once a corner on the
-    // ray stopped being a tie. ★ 4 → 0: the corner Commons parted by a slab — the
-    // diagnosis «their witnesses lie on a ring» was wrong; measured per attempt, two of every
-    // probe's three rays met the other half's **lateral** and the face could not say whether the
-    // crossing was on it (`MissOnly`), and only the third met the cap's corner. The lateral reads
-    // its loops now. The name is gone from this corpus; a new population must restate this 0.
+    // ★ Each refusal name below is empty in this corpus, and each zero is an emptiness of *this*
+    // corpus, not of the road that names it — a new population must restate it.
+    //
+    // `NoClearRay`: every probe of the 3D depth classification abstained. Rays from a corner on
+    // the ray decide there, and a ray crossing a panel or chain lateral is answered by the
+    // lateral's own boundary loops.
     assert_eq!(count(|c| *c == Rejected(NoClearRay)), 0);
-    // ★ The name is gone from this corpus again: it came back for one commit with the offset
-    // wall (a thin segment prism's halves, pierce-named corners and no cap candidate
-    // from the centre inside; two cells, by the name that says «no witness at all» rather than
-    // «every witness blocked») and left when the cut cap offered two points per chord. A new
-    // population must restate this 0.
+    // `RingHasNoWitness`: a ring with no witness at all (not «every witness blocked») — a thin
+    // segment's cut cap offers two points per chord.
     assert_eq!(count(|c| *c == Rejected(RingHasNoWitness)), 0);
-    // ★ The name is gone from this corpus: the names-road builds carriers now, so nothing
-    // dies at ring construction (grouping-arm cell). A new population must restate this.
+    // `PierceVertexUnnamed`: the names road builds carriers from its walls, so nothing dies at
+    // ring construction.
     assert_eq!(count(|c| *c == Rejected(PierceVertexUnnamed)), 0);
-    // ★ The name is gone from this corpus: every one of its 15 cells was a run whose
-    // boundary ruling had no node on the interval's z-line — a region crossing that line
-    // transversally in one sector while ending on it in another, which the band vocabulary
-    // could not spell and the region emitter walks. A new population must restate this 0.
+    // `RulingBoundNotYet`: a run whose boundary ruling has no node on the interval's z-line — a
+    // region crossing that line transversally in one sector while ending on it in another, which
+    // the region emitter walks.
     assert_eq!(count(|c| *c == Rejected(RulingBoundNotYet)), 0);
-    // ★ The chart's own refusal is gone from this corpus: every sector it could not name as one
-    // arc is now read as the run of arcs it spans. A new population must restate this 0 — it is
-    // an emptiness of *this* corpus, not of the chart.
+    // `CylinderGateUndecided`, the chart's own refusal: a sector it cannot name as one arc is
+    // read as the run of arcs it spans.
     assert_eq!(
         count(|c| *c == Rejected(RejectReason::CylinderGateUndecided)),
         0
     );
-    // ★ **No family's first operation is refused any more.** `corner-lo` was the whole of this
-    // count: its axis on the plate's corner made a reflex sector whose winding was read at a node
-    // the ring bulges past. A new population must restate this 0.
+    // `First`: no family's first operation is refused — `corner-lo`'s reflex sector has its
+    // winding read at the region's extremum, not at a node the ring bulges past.
     assert_eq!(count(|c| *c == First), 0);
     assert_eq!(count(|c| *c == Empty), 5);
 }
 
 /// **The ⊥ road runs on a panel and on a chain, and says what the walk-through predicts.**
-/// Locked through the road's own ledger (`cycle_probe`) because neither face reaches a result yet:
-/// the panel is refused one road later (the rulings road still states bands only), the chain's
-/// re-operation is refused at its cap's chord (`CurvedDeparture`) — and every class is traced by
-/// hand (`trace_every_class`), since the production driver stops at the first decline and, in
-/// serial mode, would never reach the classes this reads. Stations are axis parameters from the
+/// Locked through the road's own ledger (`cycle_probe`) — the carved extents and spans are an
+/// intermediate no result shows — and every class is traced by hand (`trace_every_class`), since
+/// the production driver stops at the first decline and, in serial mode, would never reach the
+/// classes this reads. Stations are axis parameters from the
 /// boss's base (z = −1), so `t = z + 1`.
 ///
 /// Panel (wall +x Cut, cut by the wall slab): at `z = 0.5` the class runs strictly inside the
@@ -1191,14 +1058,14 @@ fn a_ring_whose_arc_bulges_past_its_nodes_reads_the_winding_there() {
     }
 }
 
-/// ★★★★★ **A circle names witnesses on its own rim, and that opens a road that was
-/// structurally closed.**
+/// ★★★★★ **A circle names witnesses on its own rim, so a disk has something to offer the
+/// converse.**
 ///
 /// `inside`'s converse pass skips `Witness::In` without setting a flag, so a `Cell::Disk` in the
-/// reverse position had **nothing to offer** and every such descent ended in
+/// reverse position offers **only** its rim — without it every such descent would end in
 /// [`crate::RejectReason::RingHasNoWitness`]. A nested pair of disks is the smallest shape that
-/// walks that road: the small disk's centre lands inside the big one, the engine asks the
-/// converse, and the converse used to refuse.
+/// walks that road: the small disk's centre lands inside the big one and the engine asks the
+/// converse.
 ///
 /// Both adapters answer disk↔disk with `disk_in_disk` before the engine sees it
 /// (`nesting::cell_in_cell`, `boolean`'s merge road), so this configuration reaches
@@ -1268,7 +1135,7 @@ fn a_disk_inside_a_disk_is_decided_by_its_rim() {
 /// the class plane being perpendicular to the cylinder's axis — a premise nothing enforced. Off it
 /// the section is an ellipse: `û ⊥ axis` does not give `û ⊥ n`, so two of the four rim points leave
 /// the plane, and `inside` answers a boundary `In` **without the converse**. That is a silent wrong
-/// answer, which is why the two consumers now ask.
+/// answer, which is why the two consumers ask.
 ///
 /// The fixture is the smallest oblique one that still forms everything: a cuboid's `x̂` class with
 /// `dir = (3,4,0)`, `ref_dir = (0,0,1)`. It is oblique (`n × m = (0,0,4) ≠ 0`), the centre still
@@ -1328,11 +1195,12 @@ fn an_oblique_class_carries_no_circle_and_so_offers_no_rim() {
 /// `(3,4,0)`, so each section is an ellipse elongated along `ŷ` (semi-minor `r`, semi-major `5r/3`),
 /// and the two centres are separated by `4/3` **along that major axis**. Shrinking `ŷ` by `3/5`
 /// turns both into circles and the offset into `4/5`, so `4/5 + 1 ≤ 2` — the small disk really is
-/// inside the big one. Today the kernel answers `Ok(false)`: `(2−1)² = 1` is not `> (4/3)² = 16/9`.
+/// inside the big one. Comparing radii would answer `Ok(false)` — `(2−1)² = 1` is not
+/// `> (4/3)² = 16/9` — so an oblique class is refused by name (`ObliqueCircleClass`).
 ///
 /// ⚠ Concentric or minor-axis offsets are answered **correctly** even on an oblique class, so a
 /// fixture that did not pin the offset's direction would show the guard "answering" rather than
-/// the old road being wrong.
+/// the radius comparison being wrong.
 #[test]
 fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     let q = nacre_exact::Rat::from_int;
@@ -1539,11 +1407,11 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
 }
 
 /// ★ **A ring with no three-plane corner is answered by the witnesses it does have.**
-/// A nesting question is answered by a witness of the source cell; the supply that names those
-/// witnesses used to be spelled four ways, and the spelling the *disk* arm held was one kind wide.
-/// With every corner filleted the plate's cap ring offers eight pierce corners, four edge-interior
-/// points and **no** three-plane name at all — so that arm found nothing and the plate could not
-/// enter any boolean, whatever the other solid was (this one is a hundred units away).
+/// A nesting question is answered by a witness of the source cell, and the supply that names
+/// those witnesses is one spelling for every arm. With every corner filleted the plate's cap ring
+/// offers eight pierce corners, four edge-interior points and **no** three-plane name at all — an
+/// arm that read only three-plane names would find nothing, and the plate could not enter any
+/// boolean, whatever the other solid was (this one is a hundred units away).
 ///
 /// The audit is also the negative control: it must *see* that shape, or its zeros mean nothing.
 #[test]
