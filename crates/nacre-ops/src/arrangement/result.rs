@@ -89,12 +89,11 @@ pub(crate) struct ArcLabel {
 /// ☑ Measured over the whole suite: **826 ruling pieces, every one with both ends named** — so a
 /// piece whose ends have no ⊥ partner (which would have no `z` at all) is not a population today.
 ///
-/// ★★★★ **There is no `side` here, and that is the point.** The first spelling carried one, and
-/// when the cells arrived (D1b) nothing read it: a ruling's identity is `(wall class, root)`, and
-/// which of the two parallel rulings that is derives from it through the one production spelling
-/// ([`crate::combinatorics::ruling_side`], which is how `cyl_chart::emit_lateral` gets it at
-/// emission time). A carried copy of a
-/// derived value is the second spelling this ladder keeps being bitten by.
+/// ★★★★ **There is no `side` here, and that is the point.** Nothing would read one: a ruling's
+/// identity is `(wall class, root)`, and which of the two parallel rulings that is derives from it
+/// through the one production spelling ([`crate::combinatorics::ruling_side`], which is how
+/// `cyl_chart::emit_lateral` gets it at emission time). A carried copy of a derived value is a
+/// second spelling of it.
 ///
 /// ★★★★★ **`cfg_attr(not(test), ...)`, not a blanket allow.** The only reader is `cyl_chart`,
 /// which is `#[cfg(test)]`, so outside a test build these fields have none — but *inside* one they
@@ -356,7 +355,7 @@ pub(super) fn trace_result_faces(
         // what leaves circles on the ⊥ classes), and a lateral surface *is* not a plane class —
         // asking which one it is has no answer, which is exactly what `ClassIx::plane`'s panic
         // says. Filtering here is the upstream filter that panic is a detector for; without it
-        // the first cylinder boolean past the C2 stopper aborts the kernel.
+        // the first cylinder boolean past the stopper aborts the kernel.
         let mut c: Vec<usize> = trace_in
             .faces
             .iter()

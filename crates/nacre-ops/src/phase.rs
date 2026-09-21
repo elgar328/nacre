@@ -58,9 +58,9 @@ counters! {
     ASSEMBLE   = "assemble_fuse_cut",
 }
 
-/// **Scale, not time.** The two ratios that decide whether S3b/S3c are worth building: how many
-/// segments a wall carries (a hull test over wall *pairs* buys nothing at 1), and how big the
-/// covering loop is against the collecting one.
+/// **Scale, not time.** The two ratios that decide whether a hull test over wall pairs or a
+/// tighter covering loop is worth building: how many segments a wall carries (the hull test buys
+/// nothing at 1), and how big the covering loop is against the collecting one.
 pub(crate) mod scale {
     use std::sync::atomic::{AtomicU64, Ordering};
     pub(crate) static SEGS: AtomicU64 = AtomicU64::new(0);

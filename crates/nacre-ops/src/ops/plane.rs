@@ -108,9 +108,8 @@ impl SketchPlane {
     /// scalar is negative makes the point order face the caller's normal, both signs, exactly.
     ///
     /// ★★★ **Why not `w = n × u`, the "obvious" second direction: its components are products.**
-    /// S6a shipped that and the checked arithmetic looked like a formality; the day the silent
-    /// f64 fallback stopped absorbing failures (S6b), a proptest found the window's
-    /// small-exponent corner — a `10²¹` denominator squares to `10⁴²`, and even the *primitive*
+    /// With no f64 fallback to absorb a failed construction, the checked arithmetic is not a
+    /// formality: a proptest found the window's small-exponent corner — a `10²¹` denominator squares to `10⁴²`, and even the *primitive*
     /// direction of that cross needs 137 bits. The retired `named_plane_points` solved an axis
     /// for the same reason. Basis crosses stay inside the inputs' own widths.
     fn normal_def(origin: Point3, normal: Vector3) -> Option<PlaneDef> {

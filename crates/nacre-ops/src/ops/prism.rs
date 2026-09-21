@@ -123,7 +123,7 @@ pub(crate) fn extrude_on_frame(
     )
 }
 
-/// Place a profile on its plane and sweep it — **exactly, or not at all** (S6b).
+/// Place a profile on its plane and sweep it — **exactly, or not at all**.
 ///
 /// The rational path is not an optimization: it is what makes `extrude(7.7)` and
 /// `extrude(1.1)` then `extrude(6.6)` put their caps on the same plane rather than an

@@ -214,9 +214,8 @@ pub enum OpError {
     DistOutsideDecimalWindow,
     /// The sketch plane (or the frame chain carrying it) has no exact form to build in: its
     /// axes fell outside the decimal window or were degenerate, or the placement arithmetic
-    /// overflowed `i128`. The prism this used to build silently in f64 recorded no exact
-    /// points, could not survive a motion, and is the population `Inexact` grew from — a named
-    /// reject is the honest answer (S6b).
+    /// overflowed `i128`. A prism built silently in f64 instead would record no exact points and
+    /// could not survive a motion — a named reject is the honest answer.
     PlaneWithoutExactForm,
     /// The face's sketch frame **exists** — [`face_plane`] reports it and the pad sketches in
     /// it — but no [`SketchFrame`] realizes to it, so [`face_sketch_frame`] has nothing true
@@ -340,8 +339,8 @@ pub enum OpError {
     /// ★ Deliberately **not** [`OpError::CollinearVertices`] and not
     /// [`OpError::DegenerateGeometry`]: both claim the construction *is* degenerate, and an
     /// interval that fails to clear zero proves nothing of the kind — the points may be exactly
-    /// collinear or merely too close to call. Failing to prove health is its own cause, so it
-    /// gets its own name (C7).
+    /// collinear or merely too close to call. Failing to prove health is its own cause, and a
+    /// refusal is named by its cause.
     ThroughFrameUndecided,
     LogHandleOutOfRange {
         /// Which store the index was meant for.

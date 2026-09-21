@@ -224,8 +224,8 @@ pub(crate) struct Swept {
     pub normal: Vector3,
     /// The same two rings **before** realization — the truth the f64 above is a cache of.
     /// Carried so the prism's planes can state themselves in rationals ([`SweptRat`]).
-    /// Not optional since S6b: the f64 fallback (`Swept::along`) is gone — a prism the exact
-    /// arithmetic cannot state is a named reject at the operation, not a point-less build.
+    /// Not optional: there is no f64 fallback — a prism the exact arithmetic cannot state is a
+    /// named reject at the operation, not a point-less build.
     pub exact: SweptRat,
 }
 

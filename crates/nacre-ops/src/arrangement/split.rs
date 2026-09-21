@@ -448,7 +448,7 @@ pub(super) fn split_at_crossings(
 /// one line — parallel plus a shared point — and then they have no cyclic order to read. Upstream
 /// makes that impossible in two places: `merge_coincident` folds an edge traced twice (its own doc
 /// names this bucket as the reason), and `Aliases::union_wall` folds two walls that carry one line
-/// so they arrive under a single `fp`. Collinear same-direction overlap (E5) is resolved earlier
+/// so they arrive under a single `fp`. Collinear same-direction overlap is resolved earlier
 /// still, by `split_at_crossings`.
 ///
 /// ★ **That reliance is checked, not assumed.** `Aliases::record` only folds where four or more

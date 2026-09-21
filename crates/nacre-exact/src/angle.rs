@@ -25,10 +25,10 @@ impl Angle {
         self.0
     }
 
-    /// `(cos, sin)` realized in arbitrary precision at `prec` bits — the judgment
-    /// path. astro-float replaces twofloat here (H1.5: twofloat's trig was
-    /// f64-level near zero-crossings). The depth is the caller's: a judgement's precision is a
-    /// property of the model it judges, not of this crate. (numer/denom pass through f64, exact
+    /// `(cos, sin)` realized in arbitrary precision at `prec` bits — the judgment path.
+    /// astro-float, not twofloat: twofloat's trig is only f64-level near zero-crossings. The depth
+    /// is the caller's: a judgement's precision is a property of the model it judges, not of this
+    /// crate. (numer/denom pass through f64, exact
     /// for the small values used here; a general large-rational path would build from a string.)
     pub fn cos_sin_at(self, prec: usize) -> (BigFloat, BigFloat) {
         let (c, s) = self.cos_sin_bounded(prec);

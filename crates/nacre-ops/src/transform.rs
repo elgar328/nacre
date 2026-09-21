@@ -316,12 +316,11 @@ fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
         .chain(turn_xform.as_ref().map(|x| (Carry::Rotation, x)))
         .collect();
     let src = model.solid(solid);
-    // ★ S6a: the surfaces' exact points must survive the no-node path too. An exact motion
+    // ★ The surfaces' exact points must survive the no-node path too. An exact motion
     // carries a `Constructed` surface's rational triple through `point_rat`/`mirror_point_rat`,
     // and that arithmetic can overflow `i128` even when every f64 above is exact (the two
-    // conditions are independent). Dropping the points — the old behaviour — is what minted the
-    // point-less population `Inexact` grows from; recording a node instead keeps the original
-    // triple as the pre-motion truth.
+    // conditions are independent). Dropping the points would leave a plane with no exact
+    // statement; recording a node instead keeps the original triple as the pre-motion truth.
     let points_move = |m: &Xform<'_>, s: Handle<Surface>| -> bool {
         // ★★★★★ **An exhaustive `match`, deliberately — this used to be the most dangerous
         // `let`-`else` in the file, and the compiler could not see it.** Adding
@@ -427,7 +426,7 @@ fn transport_cylinder(
 }
 
 /// The motion history a moved surface's image carries — the surface twin of the vertex
-/// `Origin` rules, in S6b form (the old `SurfaceDef` table collapsed to one field):
+/// `Origin` rules, held in the surface's own `motion` field:
 ///
 /// | source motion | `Carry::None` — the whole motion recorded | `Carry::Rotation` — the turn carried, the translation recorded | `Carry::Full` — nothing recorded |
 /// |---|---|---|---|

@@ -45,7 +45,7 @@ impl Witness for FaceRow {
     // ★ Every arm reads through [`FaceRow::plane`], which **panics on a cylinder row**: the
     // only predicate that runs on the face table is `Judge::planes_coplanar` during class
     // discovery, and that sweep filters to plane rows before asking (a cylinder's identity is
-    // the cylinder class table's question, C2). A panic here is an upstream filter bug made
+    // the cylinder class table's question). A panic here is an upstream filter bug made
     // loud, never a silently wrong plane answer.
     fn base_coeffs_rat(&self) -> Option<[nacre_exact::Rat; 4]> {
         self.plane().base_rat

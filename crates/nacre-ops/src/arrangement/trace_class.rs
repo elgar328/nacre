@@ -134,7 +134,7 @@ pub(crate) struct MergedSeg {
 
 /// Merge segments that are the **same geometric edge** — same `wall` and same endpoint-triple set
 /// (direction-independent) — into one `MergedSeg`, collecting their contributions. Partial overlap
-/// (same `wall`, *different* extent — the E5 case) is left for the per-wall interval overlay in
+/// (same `wall`, *different* extent) is left for the per-wall interval overlay in
 /// `split_at_crossings` to resolve into non-overlapping sub-segments with unioned contributions.
 pub(super) fn merge_coincident(
     jd: &Judge<'_, WorkingPlane>,

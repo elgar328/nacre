@@ -191,7 +191,7 @@ struct Carved {
 /// closed extent covers it. A crossing of two segments riding `W`/`o.wall` is the plane triple
 /// `{wc, W, o.wall}` — no new point species.
 ///
-/// This resolves E5 (same-wall partial overlap): where two segments overlap, the shared sub-interval
+/// This resolves same-wall partial overlap: where two segments overlap, the shared sub-interval
 /// carries both their contributions, which the label brick reads per solid. Because sub-intervals
 /// run between **distinct** points, no zero-length piece is ever emitted (a crossing coinciding with
 /// an endpoint is the same plane class, deduped away). A clean arrangement — no same-wall overlap —

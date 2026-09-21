@@ -111,8 +111,8 @@ pub(crate) fn collect_planes(
             // Both used to be decided per *solid* ("is this solid rotated?"), which a boolean's
             // result cannot answer — it carries no rotation provenance, so every result face was
             // described by `WitnessPoint::exact` of its rounded triangle and one wall became two plane
-            // classes on the next operation. The surface knows (its truth — points + motion,
-            // S6b), and a result face reuses its operand's surface handle, so the answer
+            // classes on the next operation. The surface knows (its truth — points + motion),
+            // and a result face reuses its operand's surface handle, so the answer
             // survives a chain of booleans.
             //
             // `tri_pt3` is an *oriented* plane witness, but the recorded triple belongs to the
@@ -232,9 +232,8 @@ pub(crate) fn collect_planes(
                             // letter — that road is locked by its own tests and stays.
                             //
                             // ★★★★ **Any implicit point: the witness is the plane's own judged
-                            // frame**. The table's contract has been "three exact points
-                            // *on the plane*, wound to n_out" since S6b — never "the face's
-                            // corners" — and a judged plane has such points by definition: its
+                            // frame**. The table's contract is "three exact points *on the
+                            // plane*, wound to n_out" — never "the face's corners" — and a judged plane has such points by definition: its
                             // canonical frame's probes `(0,0,0)·(1,0,0)·(0,1,0)`, the same ones
                             // `frame_world_basis` realizes. The origin is the foot of the
                             // perpendicular (on the plane exactly), û and v̂ are in-plane by

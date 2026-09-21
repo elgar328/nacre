@@ -4,8 +4,8 @@ use super::*;
 
 impl Model {
     /// Push a **plane**, stating its truth outright: the f64 cache, three exact points, and the
-    /// motion they are written before (`None` = the world). The truth is not optional — that is
-    /// the S6b point: a point-less plane, and with it `SurfaceDef::Inexact`, stopped existing.
+    /// motion they are written before (`None` = the world). The truth is not optional: there is no
+    /// point-less plane.
     ///
     /// ★★★★★ **The points are the only thing a producer states.** The canonical name
     /// ([`Model::surface_name`]) is *derived* here, from those points, by
