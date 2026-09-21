@@ -4,6 +4,12 @@
 //! the proposition next to the one that matters — the last profile of these phases was taken with
 //! `ClassReuse::Off` and read as if it were production's.
 //!
+//! ★ **One table, so it sits under everything that charges it.** Two stages write here — the
+//! arrangement (`timed!`/`watch!`, and the scale counters in its split) and the plane setup
+//! (`planes::setup::Watch`) — and `all()` renders every counter in one ordered report, which is
+//! the spike test's whole output. A table split per stage could not produce that report, so the
+//! table is one and lives below both rather than inside either.
+//!
 //! Read them with `--no-default-features`: parallel accumulation would sum CPU across threads, and a
 //! share of a wall-clock whole computed from a CPU sum is not a share of anything. (That mistake
 //! once made a part measure larger than its whole.) `cfg(test)` so release binaries carry nothing.

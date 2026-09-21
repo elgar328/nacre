@@ -50,7 +50,7 @@ pub(crate) struct PlaneSetup {
 }
 
 /// Which sub-phase of [`plane_index_setup`] a [`Watch`] charges — spike instrumentation, and only
-/// in a test build (see `arrangement::phase`).
+/// in a test build (see `crate::phase`).
 pub(crate) enum Sub {
     TriPt3,
     Std,
@@ -74,7 +74,7 @@ impl Watch {
     pub(crate) fn charge(self, which: Sub) {
         #[cfg(test)]
         {
-            use crate::arrangement::phase;
+            use crate::phase;
             let c = match which {
                 Sub::TriPt3 => &phase::S_TRIPT3,
                 Sub::Std => &phase::S_STD,

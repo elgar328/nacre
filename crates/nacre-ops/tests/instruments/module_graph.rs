@@ -302,6 +302,7 @@ fn no_module_edge_appears_that_is_not_recorded() {
                 "draft",
                 "nesting",
                 "par",
+                "phase",
                 "planes",
                 "reuse",
                 "tolerant",
@@ -355,7 +356,13 @@ fn no_module_edge_appears_that_is_not_recorded() {
         ),
         (
             "planes",
-            &["arrangement", "combinatorics", "par", "rotated_vertex"],
+            &[
+                "arrangement",
+                "combinatorics",
+                "par",
+                "phase",
+                "rotated_vertex",
+            ],
         ),
         ("realize", &["planes", "rotated_vertex"]),
         (

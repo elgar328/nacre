@@ -30,6 +30,9 @@ mod exact;
 mod nesting;
 mod ops;
 mod par;
+/// Phase timers — see the module docs. `cfg(test)`: a release binary carries nothing.
+#[cfg(test)]
+mod phase;
 mod planes;
 mod realize;
 /// Public because the measurements that read it live in other crates — see the module doc.

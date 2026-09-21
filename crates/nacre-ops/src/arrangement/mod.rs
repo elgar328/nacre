@@ -17,6 +17,8 @@ use super::*;
 use crate::assembly::*;
 use crate::combinatorics::{Canon3, NodeId, three_plane_name};
 use crate::draft::*;
+#[cfg(test)]
+use crate::phase;
 use crate::planes::*;
 use crate::tolerant::Judge;
 #[cfg(test)]
@@ -30,7 +32,7 @@ macro_rules! timed {
     ($c:ident, $e:expr) => {{
         #[cfg(test)]
         {
-            phase::timed(&phase::$c, || $e)
+            crate::phase::timed(&crate::phase::$c, || $e)
         }
         #[cfg(not(test))]
         {
@@ -44,7 +46,7 @@ macro_rules! timed {
 macro_rules! watch {
     ($c:ident) => {
         #[cfg(test)]
-        let _w = phase::Watch::new(&phase::$c);
+        let _w = crate::phase::Watch::new(&crate::phase::$c);
     };
 }
 
@@ -67,8 +69,6 @@ pub(crate) mod extent_probe;
 #[cfg(test)]
 pub(crate) mod order_probe;
 mod per_class;
-#[cfg(test)]
-pub(crate) mod phase;
 mod result;
 #[cfg(test)]
 pub(crate) mod ruling_probe;

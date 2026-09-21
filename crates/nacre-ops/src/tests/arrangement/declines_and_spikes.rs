@@ -207,7 +207,8 @@ fn direction_families_partition_the_walls() {
 ///    **Run it alone**: `cargo test -p nacre-ops --no-default-features spike_where -- --ignored
 ///    --nocapture --test-threads=1`.
 ///
-/// Timers live on the production path (`phase::` in this module), not in a replica of it.
+/// Timers live on the production path (`crate::phase`, charged from the stages themselves), not
+/// in a replica of it.
 #[test]
 #[ignore = "spike"]
 fn measure_spike_where_the_boolean_spends_it() {
