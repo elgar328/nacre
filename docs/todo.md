@@ -5,16 +5,16 @@
 
 ## 지금
 
-### 모듈 순환 3쌍 — `cyl_chart` 부터 조사한다
+### 모듈 순환 2쌍 — `cyl_chart` 를 조사한다
 
-`nacre-ops` 의 최상위 모듈 21개 사이에 **양방향 쌍이 셋** 남아 있다. 오늘의 표는
+`nacre-ops` 의 최상위 모듈 21개 사이에 **양방향 쌍이 둘** 남아 있고, 그중 답이 없는 것은
+**하나**다. 오늘의 표는
 `cargo test -p nacre-ops --test instruments measure_module_graph -- --ignored --nocapture` 가
 찍고, 관문(overview 「관문」)이 더 나빠지지 않게 든다.
 
 | 쌍 | 역방향의 정체 | 상태 |
 |---|---|---|
 | `arrangement ⇄ cyl_chart` (2 / 14) | 엔진이 `emit_lateral`·`census` 를 **부르고**(`arrangement/mod.rs:467·474`), 차트가 엔진의 어휘를 14번 **읽는다**(`ArcLabel`·`Label`·`SegKind`·`RulingExtent`·`Curved`) | **답이 없다 — 다음 할 일** |
-| `combinatorics ⇄ planes` (42 / 5) | `planes/setup.rs` 가 `combinatorics::edge_faces` 를 부르고 `EdgeFaces` 를 `PlaneSetup` 의 필드로 든다 | 성격이 흐리다 |
 | `exact ⇄ ops` (1 / 6) | `exact.rs:26` 이 `crate::ops::{Profile2d, SketchPlane}` 을 든다 | **문제가 아니다** — 같은 층의 도우미이고 엔진 어느 모듈도 안 쓴다. 건드리지 않는다 |
 
 **`arrangement ⇄ cyl_chart` 가 물어야 할 것.** 이 쌍은 도우미가 아니라 **파이프라인**이다 —

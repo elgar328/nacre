@@ -5,7 +5,7 @@
 //! answers it, so the graph was invisible until it was measured: nine module pairs pointed at
 //! each other, and only two of those were *behaviour* — the rest named a type, or took an
 //! argument, that lived on the wrong side. The difference is the whole finding, and it is only
-//! visible if something counts. Three pairs are left.
+//! visible if something counts. Two pairs are left.
 //!
 //! ★ **The parser is what gets calibrated, not the files.** An earlier hand-rolled version of this
 //! measurement was wrong three times — it counted `std::ops::Deref` as a reference to this crate's
@@ -210,7 +210,7 @@ fn the_parser_reads_what_it_should() {
 
 /// ★★★ **What this restructure established, asserted — and only that.**
 ///
-/// The graph is **not** a DAG and this does not pretend otherwise: three module pairs still
+/// The graph is **not** a DAG and this does not pretend otherwise: two module pairs still
 /// point at each other. What is settled is the boolean pipeline's shape and the direction of
 /// everything under the engine, so that is what is locked. Each of these was a real edge before
 /// the work and is zero after it; an editor who reintroduces one is undoing something, not
@@ -268,6 +268,16 @@ fn the_pipeline_runs_one_way() {
                 "{below} -> arrangement ({n}): something under the engine is naming the engine"
             ));
         }
+    }
+    // The class table is under the names that use it. `planes` holds per-face and
+    // per-plane-class rows; `combinatorics` is what names points and edges from them. A table
+    // calling the vocabulary built on it runs backwards -- which is what the plane setup did,
+    // by holding each solid's edge incidence for a consumer it never read it for.
+    let n = named("planes", "combinatorics");
+    if n > 0 {
+        broken.push(format!(
+            "planes -> combinatorics ({n}): the class table is naming what is built on it"
+        ));
     }
     // The front door is the first stage and lives above the engine, not inside it.
     let n = named("arrangement", "boolean");
@@ -359,10 +369,7 @@ fn no_module_edge_appears_that_is_not_recorded() {
                 "transform",
             ],
         ),
-        (
-            "planes",
-            &["combinatorics", "par", "phase", "rotated_vertex"],
-        ),
+        ("planes", &["par", "phase", "rotated_vertex"]),
         ("realize", &["planes", "rotated_vertex"]),
         (
             "reuse",
