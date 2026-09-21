@@ -90,7 +90,7 @@ impl Model {
         h
     }
 
-    /// **The f64 cache this surface's truth realizes to** — principle 4's road, for surfaces.
+    /// **The f64 cache this surface's truth realizes to** — the one realization road, for surfaces.
     ///
     /// A vertex has a whole one (`push_vertex_realized` realizes the definition at
     /// birth). A surface has **half** of one: the anchor is derived here, the row and

@@ -23,7 +23,7 @@ fn prod_err(va: f64, ta: f64, vb: f64, tb: f64, vc: f64, tc: f64) -> f64 {
 }
 
 /// Sound error bound on the f64 `orient3d` determinant from each point's directional
-/// tol (§CIP ②). The determinant is six signed triple-products of the edge entries;
+/// tol. The determinant is six signed triple-products of the edge entries;
 /// each entry `(a−d)[k]` carries tol `tol_a[k] + tol_d[k]`. The bound sums the six
 /// product radii (input-tol propagation, triangle-inequality worst case) plus a term
 /// for the f64 rounding of the determinant's own arithmetic. The 3D analogue of

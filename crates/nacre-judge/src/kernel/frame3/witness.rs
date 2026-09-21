@@ -1,8 +1,7 @@
 use super::*;
-/// A rational base point carried through a chain of axis rotations (§CIP ⑦ rotation
-/// history). `base` + `chain` are the exact **definition** (never lost); `realized` is
+/// A rational base point carried through a chain of axis rotations (a rotation history). `base` + `chain` are the exact **definition** (never lost); `realized` is
 /// the f64 realization (a cache) with, per axis, the bound on its error — a **direction-wise
-/// xyz vector** (§CIP ⑤) held beside the value it bounds, so the two cannot drift apart.
+/// xyz vector** held beside the value it bounds, so the two cannot drift apart.
 /// [`hp_coord`](Self::hp_coord) realizes the chain at
 /// arbitrary precision from the definition, so two points with the same definition
 /// realize identically (path-independent — the soundness argument's root).

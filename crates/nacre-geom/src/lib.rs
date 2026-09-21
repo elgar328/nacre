@@ -1,11 +1,11 @@
 //! Analytic geometry — the **realization** layer of the nacre kernel.
 //!
 //! Surfaces and curves are kept in analytic form forever; meshes are derived
-//! (overview, principle 1). But analytic is not the same as exact: coordinates here are
+//! from them. But analytic is not the same as exact: coordinates here are
 //! the *cache* side of the truth/cache split — what a surface or curve **is** lives in
 //! `nacre-topo`'s arenas, and this crate holds the f64 answer beside it. The arithmetic
 //! is closed-form and stores **no** tolerance: every containment query takes the
-//! caller's epsilon (overview, principle 4).
+//! caller's epsilon.
 //!
 //! M1 defined [`Plane`] and [`Line`]; M3 adds [`Circle`] (the full-circle
 //! carrier), [`Cylinder`], and [`NurbsCurve`]/[`NurbsSurface`] (rational B-spline

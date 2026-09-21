@@ -28,7 +28,7 @@ use nacre_math::{Point3, Vector3};
 /// `PartialEq` is exact `f64` comparison (including `raw`) — for tests and
 /// literal coincidence only. "Is this point on the plane?" goes through
 /// [`Plane::distance`] / [`Plane::contains`] with a caller-supplied tolerance,
-/// never `==` (overview, principle 2 & 4). `Eq`/`Hash` are deliberately not
+/// never `==`. `Eq`/`Hash` are deliberately not
 /// implemented.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Plane {

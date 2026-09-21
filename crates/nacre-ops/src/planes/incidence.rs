@@ -180,9 +180,8 @@ pub(crate) fn shares_or_coplanar(jd: &Judge<'_, FaceRow>, i: usize, j: usize) ->
 }
 
 /// Union-find root of `x` in `parent` (with path compression). Roots are the smallest index
-/// of their class, so the result is deterministic (replay, DNA §absolute-3).
-/// Union-find root with path compression. Drives component grouping in
-/// [`crate::assembly::unify_coplanar_faces`].
+/// of their class, so the result is deterministic — the same log replays to the same model.
+/// Drives component grouping in [`crate::assembly::unify_coplanar_faces`].
 pub(crate) fn uf_find(parent: &mut [usize], x: usize) -> usize {
     let mut r = x;
     while parent[r] != r {

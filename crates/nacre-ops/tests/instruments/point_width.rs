@@ -12,15 +12,15 @@
 //!
 //! ★★ **What is not measured here, and why.** Not the *world* coordinate — a moved point does not
 //! have one as a rational. A vertex's truth is `Vertex::ThreePlane`, three surface handles and
-//! **no coordinate at all**; the motion rides on the surface (number rule 3), and a general
+//! **no coordinate at all**; the motion rides on the surface, and a general
 //! rotation's cos/sin are irrational. So the only rational a discovered point *could* be written
 //! as is the one in the frame its carriers are stated in, which is what a plane name pins and what
 //! this measures.
 //!
 //! Populations come from the kernel's own discriminator rather than from a story: a vertex is
 //! `PointCache::Bounded` when it was realized from its definition, and anything else says the
-//! cache has no realization behind it — which is exactly the set rule 1 is about. Those ride along
-//! as the free control.
+//! cache has no realization behind it, as the cache itself says. Those ride along as the free
+//! control.
 //!
 //! `OnSeam` vertices are excluded rather than counted as failures: that variant pins a curve, not
 //! a point, and its doc already records the coordinate cache as load-bearing there.
@@ -897,8 +897,8 @@ fn moved(m: &mut Model, s: Handle<Solid>, iso: Isometry) -> Handle<Solid> {
 /// The width of a stored name does not depend on how many operations preceded it. Forty stacked
 /// motions leave the maximum name width **exactly where it started**, and the reason is visible in
 /// the same table: the surface count climbs by six per operation while the count of **distinct
-/// names stays put**. Every moved face is the *same name* under a new motion handle — number rule
-/// 3, "the face carries the motion", doing precisely what it says.
+/// names stays put**. Every moved face is the *same name* under a new motion handle — "the face
+/// carries the motion", doing precisely what it says.
 ///
 /// Three facts close the question together, and the other two are structural rather than
 /// measured here:

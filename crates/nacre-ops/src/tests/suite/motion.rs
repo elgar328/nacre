@@ -904,7 +904,7 @@ fn a_mirrored_rotated_vertex_reconstructs_from_its_definition() {
     assert!(checked > 0, "walked no vertices");
 }
 
-/// Replay determinism (DNA 3) for the one additive operation: a copy reproduces the same
+/// Replay determinism for the one additive operation: a copy reproduces the same
 /// geometry *and* the same handle index, and leaves the same live set behind it.
 ///
 /// The `assert_eq!` below compares handles minted by two *different* `Model`s, which is

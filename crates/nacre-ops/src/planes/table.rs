@@ -180,8 +180,8 @@ pub(crate) fn collect_planes(
                 //
                 // Its truth is handles, and the judging layer takes points — so the points are
                 // *derived* at the boundary, once per plane per operation, exactly like the name
-                // was derived once at push. That is not a rule-1 violation: this table lives for
-                // one operation and is a mirror, not truth.
+                // was derived once at push. That does not make the points a second truth: this
+                // table lives for one operation and is a mirror.
                 //
                 // The rational-closure branch: three vertices that solve to `Rat` give a
                 // triangle indistinguishable from a stated one, so every predicate below

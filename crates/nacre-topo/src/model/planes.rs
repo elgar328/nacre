@@ -114,10 +114,8 @@ impl Model {
     /// [`Model::plane_name_through`] answers `None`; such a plane takes the second key
     /// (`surface_through_ids`) — the sorted triple and the motion. That is *statement*
     /// identity: the same three vertices under the same motion are one handle, and geometric
-    /// identity across different statements is the predicates' to answer per question (rule 6's
-    /// own qualification — *"without interning, the predicate answers every time"*). This is
-    /// **not** the
-    /// record-less population: the truth (handles + motion) is complete; what does
+    /// identity across different statements is the predicates' to answer per question. This is
+    /// **not** the record-less population: the truth (handles + motion) is complete; what does
     /// not exist is a rational description of it.
     ///
     /// ★ The producer remains responsible for rejecting **before** pushing whatever it cannot

@@ -1,4 +1,4 @@
-//! Certified indirect predicates (§CIP) — the toleranced sign layer for the nacre kernel.
+//! Certified indirect predicates (CIP) — the toleranced sign layer for the nacre kernel.
 //!
 //! Two parts, both pure numeric (neither touches `nacre-topo`):
 //! - [`kernel`] — the toleranced-sign kernel: a rotated point ([`WitnessPoint`]) carries a sound

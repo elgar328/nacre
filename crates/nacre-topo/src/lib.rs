@@ -2,7 +2,7 @@
 //!
 //! The topology (`Vertex`/`Edge`/`Face`/`Loop`/`HalfEdge`/`Shell`/`Solid`)
 //! references exact geometry only by `Handle` — geometry never knows about
-//! topology, topology never inspects coordinates (overview, principle 2).
+//! topology, topology never inspects coordinates.
 //!
 //! [`Model`] is the **truth**: exact geometry stores + topology stores + the
 //! derived [`Adjacency`] cache. It holds no tessellation and no operation log —
@@ -270,7 +270,7 @@ pub enum FramePlacement {
     Named { origin: [Rat; 3], ref_dir: [Rat; 3] },
 }
 
-/// A node in the motion-history forest (design §CIP ⑦): one [`Motion`] applied to a solid, with a
+/// A node in the motion-history forest: one [`Motion`] applied to a solid, with a
 /// parent link so several points can share a history's tail.
 ///
 /// Stored in [`Model::motions`]; a moved surface's
@@ -298,7 +298,7 @@ type ThroughKey = ([Handle<Vertex>; 3], Option<Handle<MotionNode>>);
 /// geometric cylinder with different `ref_dir`s stay two handles, because merging them would
 /// split the seam (seam vertices and the seam edge cite the surface as their carrier). A key
 /// this literal cannot merge wrongly; geometric identity across different statements is the
-/// predicates' to answer per question (rule 6). No `flipped` report either — a
+/// predicates' to answer per question. No `flipped` report either — a
 /// literal-identical statement realizes to a literal-identical cache.
 type CylinderKey = (CylinderDef, Option<Handle<MotionNode>>);
 
@@ -323,8 +323,8 @@ pub static WIDE_PLANES: std::sync::atomic::AtomicU64 = std::sync::atomic::Atomic
 /// that population too.
 pub static SEEDED_HITS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// **How far the realization road reaches for surfaces** — principle 4's "one road to a
-/// realization", counted push by push. A vertex reaches it whole; a plane reaches it
+/// **How far the realization road reaches for surfaces** — the one road to a realization,
+/// counted push by push. A vertex reaches it whole; a plane reaches it
 /// **halfway**: the anchor is a function of the truth and the row and the
 /// sense stay the producer's.
 ///
@@ -745,8 +745,7 @@ pub struct Model {
     /// it is stated under.
     ///
     /// ★ This is statement identity, not geometric identity. Two *different* triples on one
-    /// geometric plane get two handles here, and rule 6's qualification is exactly that:
-    /// a nameless plane's geometric identity is the predicates' to answer, per question.
+    /// geometric plane get two handles here, by design: a nameless plane's geometric identity is the predicates' to answer, per question.
     /// What this table guarantees is the same thing construction-time sorting guarantees one
     /// level down — **the same statement never becomes two handles.**
     surface_through_ids: HashMap<ThroughKey, Handle<Surface>>,

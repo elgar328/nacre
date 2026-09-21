@@ -1,7 +1,6 @@
 use super::*;
-/// A coordinate axis — the fixed axis of an axis-aligned rotation (overhaul stage
-/// 1b restricts to `X`/`Y`/`Z`, the form `exact3d` validated; arbitrary rational
-/// axes via Rodrigues are a later extension).
+/// A coordinate axis — the fixed axis of an axis-aligned rotation. Rotations turn about
+/// `X`/`Y`/`Z` only; an arbitrary rational axis would take Rodrigues' formula.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Axis {
     X,
@@ -84,7 +83,7 @@ pub struct Rotation {
     pub angle: Angle,
 }
 
-/// A rigid-body isometry (§ Transform): a rotation (optional) then a translation.
+/// A rigid-body isometry: a rotation (optional) then a translation.
 /// The exact rational data is the **definition**; the `apply_*`/`offset_f64`
 /// realizers give the f64 cache. Math-type independent — operates on plain
 /// `[f64; 3]`, so `nacre-exact` never depends on `nacre-math`; the caller

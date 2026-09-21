@@ -1,5 +1,5 @@
 use super::*;
-/// The result of an orientation judgment (§CIP) — the shared sign vocabulary used by both
+/// The result of an orientation judgment — the shared sign vocabulary used by both
 /// the 2D and 3D toleranced-sign judges (now in `nacre-judge`) and their downstream consumers.
 /// A cross-cutting "judgment result" carried here as a fundamental value (a candidate to
 /// split into its own vocabulary type later).

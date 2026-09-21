@@ -12,7 +12,7 @@ use core::ops::{Add, AddAssign, Div, DivAssign, Index, Mul, MulAssign, Neg, Sub,
 /// `PartialEq` is **exact** `f64` comparison. Coordinates are the cache side of
 /// the truth/cache split, so exact `==` is meaningful only for tests and true-
 /// zero checks; geometric coincidence must be judged with `distance`/tolerance,
-/// never `==` (overview, principle 2). Hence `Eq`/`Hash` are deliberately not
+/// never `==`. Hence `Eq`/`Hash` are deliberately not
 /// implemented (`f64` has neither, and identity lives on `Handle`, not coords).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Vector<const D: usize> {

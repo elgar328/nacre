@@ -13,8 +13,8 @@ use core::ops::{Add, AddAssign, Index, Sub, SubAssign};
 ///
 /// `PartialEq` is **exact** `f64` comparison; use it only for tests and true
 /// coincidence of literal coordinates. Geometric coincidence must be judged
-/// with [`Point::distance`] against a tolerance, never `==` (overview, principle
-/// 2). `Eq`/`Hash` are deliberately not implemented.
+/// with [`Point::distance`] against a tolerance, never `==`. `Eq`/`Hash` are deliberately not
+/// implemented.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Point<const D: usize> {
     coords: [f64; D],

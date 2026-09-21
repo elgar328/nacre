@@ -6,7 +6,7 @@ use super::*;
 // The kernel decides `orient3d(V, q, r, s)` without materializing `V`:
 // `sign = sign(D)·sign(M)` where `D = det(normals)` and
 // `M = (Dvec − D·s)·((q−s)×(r−s))` (Cramer, no division). The f64 filter is over
-// **intervals** (value ± tol) — the design's "dynamic filter" (§CIP ⑨): interval
+// **intervals** (value ± tol) — a dynamic filter: interval
 // arithmetic is a sound worst-case bound by construction, so no per-predicate bound
 // formula is hand-derived. An interval straddling 0 escalates to astro-float from the
 // point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path; the boolean
@@ -26,7 +26,7 @@ pub(super) fn det3_iv(r: [[Bounded; 3]; 3]) -> Bounded {
 /// Plane `[a,b,c,d]` (`n·X + d = 0`) through three points, as intervals: `n =
 /// (p1−p0)×(p2−p0)`, `d = −n·p0`. Coefficient tol propagates from the point tols
 /// through the subtraction/cross/dot — "coefficient tol is a corollary of point tol"
-/// (§CIP ②). Validated H-b.
+/// Validated H-b.
 pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) -> [Bounded; 4] {
     let (a, b, c) = (p0.realized, p1.realized, p2.realized);
     let e1 = [b[0].sub(a[0]), b[1].sub(a[1]), b[2].sub(a[2])];

@@ -599,7 +599,7 @@ fn transform_surface(
 /// inner-loop holes, cavity shells, and each vertex/edge `Origin` (a `Discovered`
 /// definition's plane handles are remapped to the moved surfaces). Cells are pushed in a
 /// **deterministic traversal order** (shell → face → loop) with per-cell dedup maps, so the same
-/// op-log reproduces identical handles (replay determinism, DNA 3).
+/// op-log reproduces identical handles (replay determinism).
 ///
 /// Face orientation flags are carried unchanged for **both** kinds of motion. A rigid motion
 /// turns the normal and the winding together; a reflection negates the winding's implied normal,

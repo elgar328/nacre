@@ -3,9 +3,9 @@
 //! A rotated point cannot be held exactly (cos/sin are irrational), but its f64
 //! realization carries a **direction-wise xyz tol** that soundly bounds
 //! the error, accumulated as the definition is turned through a chain of
-//! axis-aligned rotations (§CIP ①: `new tol = |R|·old + mix`). [`orient3d_judge`]
+//! axis-aligned rotations (`new tol = |R|·old + mix`). [`orient3d_judge`]
 //! consumes that tol: an f64 determinant filter with a sound error bound
-//! ([`det3_bound`], §CIP ②) decides the easy cases, the ambiguous ones **escalate**
+//! ([`det3_bound`]) decides the easy cases, the ambiguous ones **escalate**
 //! to astro-float from the point definitions, and one whose interval still straddles zero is
 //! **normalized into the distance it stands for** and held against the operation's coincidence
 //! limit ([`Standard`]): below it the coincidence is proved, above it the judgement climbs to the
