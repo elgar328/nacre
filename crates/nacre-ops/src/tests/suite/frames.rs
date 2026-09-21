@@ -469,30 +469,27 @@ fn a_second_boss_on_a_tilted_face_keeps_its_cap() {
 }
 
 //
-// ★★★ These pin **today's** behaviour, not a wish. The suite had almost none of them, so the
-// stage that makes tilted frames exact would otherwise be built with nothing to measure against.
-// Each says which part 2b is expected to change and which part must not move.
+// ★★★ The slanted wall: what is exact about it, what is not, and that every face-based operation
+// on it gives the right answer — so a change to the frame road is measured against them.
 
 /// A profile edge running `(1, 2)` sweeps a wall whose normal is `(2, 1, 0)` — and **no
 /// rational-degree rotation reaches it** (the angle is `atan(1/2)`). That is the case
 /// `Motion::Frame` exists for.
 ///
-/// What holds today and must keep holding:
+/// What holds, and must keep holding:
 ///
 /// * the wall's **world coefficients are rational** — `[2, 1, 0, −10]`, so a frame built on it
 ///   has exact data to derive from;
 /// * its sketch frame follows the arbitrary-axis convention — origin at the world origin's
 ///   projection `(4, 2, 0) = (10/5)·(2,1,0)`, `u = ẑ × n` normalized, `v = +ẑ`;
-/// * a pad on it works — **through `Motion::Frame`**, since stage 2 (an earlier line here
-///   said "through the f64 path", which stopped being true then).
+/// * the *reported* `SketchPlane`'s world axes are irrational, so `exact()` is `None`. That is
+///   about the world lift, not about the road an operation takes — a pad on this wall builds
+///   through `Motion::Frame` (the next test).
 ///
-/// What the final assertion pins is narrower than the test's old name suggests: the
-/// *reported* `SketchPlane`'s world axes are irrational, so `exact()` is `None` — that
-/// is about the world lift, not about the frame road the
-/// operation actually takes. ★ The axes must **not** move — this plane's own frame is the
-/// world, so `ẑ × n` is the same vector before and after.
+/// ★ The axes must **not** move — this plane's own frame is the world, so `ẑ × n` is the same
+/// vector before and after.
 #[test]
-fn a_sketch_on_a_prism_side_wall_takes_the_f64_path_today() {
+fn a_slanted_walls_name_is_rational_and_its_reported_sketch_plane_is_not() {
     let (m, wall) = prism_with_a_slanted_wall();
     let sp = crate::ops::face_plane(&m, wall).expect("planar");
     let c = m
@@ -517,15 +514,16 @@ fn a_sketch_on_a_prism_side_wall_takes_the_f64_path_today() {
         "u is ẑ × n normalized, got {:?}",
         sp.x_axis.as_array()
     );
-    // ★ The gap 2b closes: the frame is not exact, so nothing built here records coefficients.
+    // ★ The reported plane's world lift: its axes are irrational.
     assert!(
         sp.exact().is_none(),
-        "a tilted frame has no rational form today"
+        "a tilted sketch plane's world axes have no rational form"
     );
 }
 
-/// The same wall, actually used: a boss on it comes out right through the f64 path. Pinned so
-/// that making the frame exact cannot change the **answer**, only how it is recorded.
+/// The same wall, actually used: a boss on it comes out right, built through `Motion::Frame` —
+/// every face the pad adds records a frame node. Pinned on the **answer** (volume, cap area), so a
+/// change to how the frame is recorded cannot move it.
 #[test]
 fn a_boss_on_a_slanted_wall_is_correct_today() {
     let (mut m, wall) = prism_with_a_slanted_wall();
@@ -560,8 +558,9 @@ fn a_boss_on_a_slanted_wall_is_correct_today() {
 /// redesigned for. The second wall's *world* normal is irrational, so its frame cannot be
 /// written down by naming a normal; only by naming the plane.
 ///
-/// It works today, through f64. Pinned because nesting is where a frame that names its plane
-/// by handle must terminate its recursion.
+/// It builds through f64: the raised boss's side face has no sketch frame of its own
+/// (`face_sketch_frame` declines), so the nested pad takes the realized plane. Pinned because
+/// nesting is where a frame that names its plane by handle must terminate its recursion.
 #[test]
 fn a_sketch_on_a_wall_raised_from_a_slanted_wall_works_today() {
     let (mut m, wall) = prism_with_a_slanted_wall();
@@ -644,8 +643,6 @@ fn a_pocket_in_a_slanted_wall_is_correct_today() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// A `2·half` square centred on `face`, in that face's own sketch frame. The frame is a
-/// function of the plane, so reading it once is enough even if the face is reshaped later.
 /// ★★★★★ **The payoff, and its limit — both measured.**
 ///
 /// Two bosses of the same height on one tilted face used to be two plane records that agreed
@@ -1217,6 +1214,8 @@ fn a_prism_the_exact_arithmetic_cannot_state_is_refused_by_name() {
     );
 }
 
+/// A `2·half` square centred on `face`, in that face's own sketch frame. The frame is a
+/// function of the plane, so reading it once is enough even if the face is reshaped later.
 fn centred_on(m: &Model, face: Handle<Face>, half: f64) -> Profile2d {
     let sp = crate::ops::face_plane(m, face).expect("planar");
     let d = nacre_props::face_props(m, face).unwrap().centroid - sp.origin;
