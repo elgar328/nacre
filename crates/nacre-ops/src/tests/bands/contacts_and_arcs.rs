@@ -583,8 +583,15 @@ fn the_seam_realizes_a_pierce_vertex_and_measures_it() {
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
         let mut faces = faces;
         faces.extend(
-            crate::cyl_chart::emit_lateral(BoolKind::Fuse, &jd, cyls, &faces, &curved, &rows)
-                .expect("the lateral faces emit"),
+            crate::arrangement::cyl_chart::emit_lateral(
+                BoolKind::Fuse,
+                &jd,
+                cyls,
+                &faces,
+                &curved,
+                &rows,
+            )
+            .expect("the lateral faces emit"),
         );
         let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
             .expect("the seam realizes pierce nodes");
@@ -680,8 +687,15 @@ fn every_result_vertex_of_the_arc_population_is_named() {
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
         let mut faces = faces;
         faces.extend(
-            crate::cyl_chart::emit_lateral(BoolKind::Fuse, &jd, cyls, &faces, &curved, &rows)
-                .expect("the lateral faces emit"),
+            crate::arrangement::cyl_chart::emit_lateral(
+                BoolKind::Fuse,
+                &jd,
+                cyls,
+                &faces,
+                &curved,
+                &rows,
+            )
+            .expect("the lateral faces emit"),
         );
         let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
         let named =
@@ -810,8 +824,15 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
         let mut faces = faces;
         faces.extend(
-            crate::cyl_chart::emit_lateral(BoolKind::Fuse, &jd, cyls, &faces, &curved, &rows)
-                .expect("the lateral faces emit"),
+            crate::arrangement::cyl_chart::emit_lateral(
+                BoolKind::Fuse,
+                &jd,
+                cyls,
+                &faces,
+                &curved,
+                &rows,
+            )
+            .expect("the lateral faces emit"),
         );
         let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
         let named =
@@ -1255,8 +1276,15 @@ fn the_grouping_joins_across_a_cut_rim() {
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
         let mut faces = faces;
         faces.extend(
-            crate::cyl_chart::emit_lateral(BoolKind::Fuse, &jd, cyls, &faces, &curved, &rows)
-                .expect("the lateral faces emit"),
+            crate::arrangement::cyl_chart::emit_lateral(
+                BoolKind::Fuse,
+                &jd,
+                cyls,
+                &faces,
+                &curved,
+                &rows,
+            )
+            .expect("the lateral faces emit"),
         );
         let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
             .expect("the seam realizes pierce nodes");

@@ -1,5 +1,8 @@
-//! The plane-class arrangement engine — the sole boolean path ([`boolean`], which `crate::boolean`
-//! delegates to). It traces each face of both solids onto every plane class as **line segments**
+//! The arrangement engine — the sole boolean path ([`boolean`], which `crate::boolean`
+//! delegates to). It has **two arms on one job**: every plane class here, and every cylinder
+//! class on its own chart ([`cyl_chart`]). Both end at the same `LocalFace` list.
+//!
+//! The plane arm traces each face of both solids onto every plane class as **line segments**
 //! (not closed loops), splits them at their crossings, extracts the cells, nests holes, labels
 //! in/out per operand, and emits the result faces. Geometry lying in a plane is *input*, not a
 //! degeneracy.
@@ -58,6 +61,9 @@ mod audits;
 mod cells;
 pub(crate) mod crossing_probe;
 pub(crate) mod cycle_probe;
+/// The cylinder chart: the lateral faces' arrangement, emitted from cells (capability D) --
+/// this engine's second arm, run on the cylinder's own chart rather than a plane class.
+pub(crate) mod cyl_chart;
 mod cyl_trace;
 #[cfg(test)]
 pub(crate) mod decline_probe;
@@ -465,15 +471,14 @@ pub(crate) fn boolean(
                 // ★ **The lateral faces come from the chart**: every cylinder
                 // class's cells, read off the plane arrangement's own labels and emitted in the
                 // band road's vocabulary.
-                let lateral =
-                    crate::cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows);
+                let lateral = cyl_chart::emit_lateral(kind, &jd, &cyls, &faces, &curved, &rows);
                 // ★★ The census sits *before* the curved cleaning pass on purpose: the cleaning
                 // merges pieces, which would blur the face-by-face question being asked.
                 // ★ The census holds the chart against its own rules (and the emitter against
                 // the census's independent count), in test builds; the emitter's refusal is
                 // handed to it before `?` decides, so a refused class is still recorded.
                 #[cfg(test)]
-                crate::cyl_chart::census(&jd, &cyls, kind, &faces, &curved, &rows, &lateral);
+                cyl_chart::census(&jd, &cyls, kind, &faces, &curved, &rows, &lateral);
                 let mut faces = faces;
                 faces.extend(lateral?);
                 // ★ No curved cleaning pass follows: the emitter's lateral faces are the

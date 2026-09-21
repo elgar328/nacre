@@ -2,11 +2,11 @@
 #[test]
 #[ignore = "measurement — prints the D-ladder ledger sums; run last, single-threaded"]
 fn measure_d_ladder_ledgers() {
-    let d1 = crate::cyl_chart::probe::ROWS
+    let d1 = crate::arrangement::cyl_chart::probe::ROWS
         .lock()
         .expect("the probe's lock is never held across a panic")
         .clone();
-    let d2b = crate::cyl_chart::probe::d2b::ROWS
+    let d2b = crate::arrangement::cyl_chart::probe::d2b::ROWS
         .lock()
         .expect("the probe's lock is never held across a panic")
         .clone();
@@ -19,8 +19,12 @@ fn measure_d_ladder_ledgers() {
         let t = *crate::combinatorics::hull_probe::TILTED.lock().unwrap();
         eprintln!("HULL irrational_extremum_arcs {t}");
     }
-    let s1 = |f: fn(&crate::cyl_chart::probe::Row) -> usize| d1.iter().map(f).sum::<usize>();
-    let s = |f: fn(&crate::cyl_chart::probe::d2b::Row) -> usize| d2b.iter().map(f).sum::<usize>();
+    let s1 = |f: fn(&crate::arrangement::cyl_chart::probe::Row) -> usize| {
+        d1.iter().map(f).sum::<usize>()
+    };
+    let s = |f: fn(&crate::arrangement::cyl_chart::probe::d2b::Row) -> usize| {
+        d2b.iter().map(f).sum::<usize>()
+    };
     eprintln!(
         "ledger D1b: charts {} refused {} cells {}",
         d1.len(),
@@ -75,7 +79,7 @@ fn measure_d_ladder_ledgers() {
         "ledger D5-1a: end_other {} of which single_cut {} — by cause {:?}",
         s(|r| r.end_other),
         s(|r| r.end_other_single_cut),
-        crate::cyl_chart::probe::other::COUNTS
+        crate::arrangement::cyl_chart::probe::other::COUNTS
             .lock()
             .expect("the probe's lock is never held across a panic")
             .clone(),
@@ -83,7 +87,7 @@ fn measure_d_ladder_ledgers() {
     {
         // The whole-circle disagreements, one line per (test, cyl, t, end, above, bits)
         // shape with its count — the population 1a leaves under `Other`.
-        let whole = crate::cyl_chart::probe::other::WHOLE
+        let whole = crate::arrangement::cyl_chart::probe::other::WHOLE
             .lock()
             .expect("the probe's lock is never held across a panic")
             .clone();
@@ -185,11 +189,11 @@ fn measure_d_ladder_ledgers() {
         );
     }
     {
-        let rows = crate::cyl_chart::probe::regions::ROWS
+        let rows = crate::arrangement::cyl_chart::probe::regions::ROWS
             .lock()
             .expect("the probe's lock is never held across a panic")
             .clone();
-        let sum = |f: fn(&crate::cyl_chart::probe::regions::Row) -> usize| {
+        let sum = |f: fn(&crate::arrangement::cyl_chart::probe::regions::Row) -> usize| {
             rows.iter().map(f).sum::<usize>()
         };
         eprintln!(

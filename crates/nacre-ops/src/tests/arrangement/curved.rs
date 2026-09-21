@@ -382,7 +382,7 @@ fn lateral_lattice(staircase: bool) {
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let (curved, plane_faces, rows, _) =
         armed_curved(&m, plate, boss, &setup, &jd, wc, &crossings, caps);
-    let fuse = crate::cyl_chart::emit_lateral(
+    let fuse = crate::arrangement::cyl_chart::emit_lateral(
         BoolKind::Fuse,
         &jd,
         &setup.cyls,
@@ -621,11 +621,13 @@ fn a_cut_circle_bounds_the_bands() {
     let t_of = |c: usize| crate::bands::axis_param(&jd, c, def).unwrap();
     let expect: Vec<Rat> = [cap_lo, z0, z20, cap_hi].map(t_of).to_vec();
     assert_eq!(
-        crate::cyl_chart::boundary_lines(&jd, 0, def, &plane_faces, &curved, &rows).unwrap(),
+        crate::arrangement::cyl_chart::boundary_lines(&jd, 0, def, &plane_faces, &curved, &rows)
+            .unwrap(),
         expect,
         "three intervals, cut circles included"
     );
-    let chart = crate::cyl_chart::chart_of(&jd, &setup.cyls, 0, &plane_faces, &curved).unwrap();
+    let chart = crate::arrangement::cyl_chart::chart_of(&jd, &setup.cyls, 0, &plane_faces, &curved)
+        .unwrap();
     assert_eq!(
         chart.z_lines.iter().map(|l| l.t).collect::<Vec<_>>(),
         expect,
@@ -639,8 +641,15 @@ fn a_cut_circle_bounds_the_bands() {
     // `Ring` face. Which sector is the outer one is the assembly's and the volume oracle's to
     // measure (the gate-opening cell), not this harness's to re-derive.
     let faces_for = |kind: BoolKind| -> Vec<LocalFace> {
-        crate::cyl_chart::emit_lateral(kind, &jd, &setup.cyls, &plane_faces, &curved, &rows)
-            .unwrap()
+        crate::arrangement::cyl_chart::emit_lateral(
+            kind,
+            &jd,
+            &setup.cyls,
+            &plane_faces,
+            &curved,
+            &rows,
+        )
+        .unwrap()
     };
     let (fuse, cut) = (faces_for(BoolKind::Fuse), faces_for(BoolKind::Cut));
     assert_eq!(fuse.len(), 1, "fuse: one lateral face, a band with a hole");
@@ -711,7 +720,7 @@ fn a_cut_circle_bounds_the_bands() {
     // says the weaker, truer thing: with the arcs gone the emitter still gets an answer, and
     // it is only when **both** axes are blinded that it refuses by name.
     assert!(
-        crate::cyl_chart::emit_lateral(
+        crate::arrangement::cyl_chart::emit_lateral(
             BoolKind::Fuse,
             &jd,
             &setup.cyls,
@@ -728,7 +737,7 @@ fn a_cut_circle_bounds_the_bands() {
         }
     }
     assert!(matches!(
-        crate::cyl_chart::emit_lateral(
+        crate::arrangement::cyl_chart::emit_lateral(
             BoolKind::Fuse,
             &jd,
             &setup.cyls,
@@ -787,8 +796,15 @@ fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usi
     let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
     let mut faces = faces;
     faces.extend(
-        crate::cyl_chart::emit_lateral(BoolKind::Fuse, &jd, &setup.cyls, &faces, &curved, &rows)
-            .unwrap(),
+        crate::arrangement::cyl_chart::emit_lateral(
+            BoolKind::Fuse,
+            &jd,
+            &setup.cyls,
+            &faces,
+            &curved,
+            &rows,
+        )
+        .unwrap(),
     );
     let seam = seam_table(&faces, &setup.cyls, &jd).unwrap();
     let out = crate::assembly::reconstruct(

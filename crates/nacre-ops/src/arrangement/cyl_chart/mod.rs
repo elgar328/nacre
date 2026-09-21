@@ -1,15 +1,17 @@
-//! **A cylinder's own chart, as an arrangement's line set** (capability D, first rung).
+//! **The arrangement's second arm: a cylinder's own chart** (capability D).
 //!
 //! The plane side long ago stopped walking faces by hand: each plane class gets a **cell complex**
-//! (`arrangement`'s `walk_cells → nest_cells → label_cells → emit_faces`) and the case-work went
-//! with it. The cylinder side follows: this module emits the lateral's faces, and the merge
-//! reads one rule (a cycle's winding, `seam_step`); of the hand-written walks only `boolean`'
+//! (`super`'s `walk_cells → nest_cells → label_cells → emit_faces`) and the case-work went
+//! with it. The cylinder side does the same on its own grid: the lateral has an **isometric
+//! chart** `(z, r·θ)` where the seam is only the chart's cut line, so notches, holes and
+//! θ-panels all become cells. This module runs the whole arm — the two axes, the cells
+//! (`read_cell`), the regions walk (`regions`) and the emit (`emit`) — and the merge
+//! reads one rule (a cycle's winding, `seam_step`); of the hand-written walks only the
 //! `band_loop` slit-leg remains, generalized to a chain rim.
 //!
-//! `docs/design.md` names the way out: the lateral has an **isometric chart** `(z, r·θ)`, so the
-//! same engine can run there — the seam is only the chart's cut line, and notches, holes and
-//! θ-panels all become cells. This module is that road's **first** piece: the arrangement's two
-//! axes, and nothing else.
+//! ★ **Same stages, not same code.** The chart is an annulus and rectilinear where the plane
+//! side is an unbounded DCEL ordered by angle, so it runs the stages on its own grid rather
+//! than calling the plane side's — `regions` states what that costs and why.
 //!
 //! ## Why the lines are orthogonal — a derivation, not a measurement
 //!
@@ -485,5 +487,5 @@ impl Lines {
 }
 
 #[cfg(test)]
-#[path = "../tests/cyl_chart.rs"]
+#[path = "../../tests/cyl_chart.rs"]
 mod tests;

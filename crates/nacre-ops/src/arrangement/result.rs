@@ -124,7 +124,7 @@ pub(crate) struct RulingExtent {
     /// ★ It ships, not an instrument — the emitter does not read the horizontal lines only: a
     /// cut end
     /// the reader cannot pair with its rim leaves a cell with no horizontal answer at all, and
-    /// this is what answers it ([`crate::cyl_chart::Chart::read_cell`]).
+    /// this is what answers it ([`crate::arrangement::cyl_chart::Chart::read_cell`]).
     pub(crate) label: Option<Label>,
     /// The `(solid, kind)` contributions that covered this piece — [`MergedRuling::merged`], the
     /// same list [`ArcLabel::marks`] carries for an arc.

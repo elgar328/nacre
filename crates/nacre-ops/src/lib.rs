@@ -22,8 +22,6 @@ mod assembly;
 mod bands;
 mod boolean;
 mod combinatorics;
-/// The cylinder chart: the lateral faces' arrangement, emitted from cells (capability D).
-mod cyl_chart;
 mod draft;
 mod error;
 mod exact;
