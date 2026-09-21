@@ -5,6 +5,30 @@
 
 ## 지금
 
+### 모듈 순환 3쌍 — `cyl_chart` 부터 조사한다
+
+`nacre-ops` 의 최상위 모듈 21개 사이에 **양방향 쌍이 셋** 남아 있다. 오늘의 표는
+`cargo test -p nacre-ops --test instruments measure_module_graph -- --ignored --nocapture` 가
+찍고, 관문(overview 「관문」)이 더 나빠지지 않게 든다.
+
+| 쌍 | 역방향의 정체 | 상태 |
+|---|---|---|
+| `arrangement ⇄ cyl_chart` (2 / 14) | 엔진이 `emit_lateral`·`census` 를 **부르고**(`arrangement/mod.rs:467·474`), 차트가 엔진의 어휘를 14번 **읽는다**(`ArcLabel`·`Label`·`SegKind`·`RulingExtent`·`Curved`) | **답이 없다 — 다음 할 일** |
+| `combinatorics ⇄ planes` (42 / 5) | `planes/setup.rs` 가 `combinatorics::edge_faces` 를 부르고 `EdgeFaces` 를 `PlaneSetup` 의 필드로 든다 | 성격이 흐리다 |
+| `exact ⇄ ops` (1 / 6) | `exact.rs:26` 이 `crate::ops::{Profile2d, SketchPlane}` 을 든다 | **문제가 아니다** — 같은 층의 도우미이고 엔진 어느 모듈도 안 쓴다. 건드리지 않는다 |
+
+**`arrangement ⇄ cyl_chart` 가 물어야 할 것.** 이 쌍은 도우미가 아니라 **파이프라인**이다 —
+차트는 배열의 *다음 단계*이고(엔진이 부른다), 다음 단계가 앞 단계의 산출 어휘를 읽는 것은
+`assembly` 가 `draft` 를 읽는 것과 **같은 방향**이다. 그러면 결함은 순환이 아니라 **그 어휘가
+앞 단계 «안»에 산다**는 것이고, 물음은 `draft` 를 지을 때와 같다: 넘어가는 타입 중 엔진 내부
+전용과 단계 간 어휘가 갈리는가.
+
+⚠ **어휘의 무게는 안에 있다.** `arrangement` 안의 참조 대 제품 코드에서 밖의 참조 —
+`SegKind` **42 : 12** · `Label` **22 : 8** · `ArcLabel` **12 : 9**. 그리고 밖은 **전부
+`cyl_chart`** 다(`SegKind` 한 건만 `combinatorics/ring_walk.rs:38` 의 주석). 「밖에서 읽으니
+내리면 된다」는 답은 `bands`(3참조 도우미)에 대해 한 번 반증됐다 — 소비자가 **단계**일 때도
+같은지는 재 보고 정한다. 조사부터, 계획은 그다음.
+
 ### 모션 사슬을 읽을 때 접는다
 
 **무엇이 문제인가.** `Model::chain_translation` 은 사슬의 **첫 비이동 노드에서 사퇴**하고, 그 사퇴가
@@ -400,13 +424,38 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 
 append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 O(1)이고, 로그 중간 편집은 체크포인트부터의 재생 + (연산, 입력) 메모다. 먼저 확인할 위험은 재생 후 핸들 안정성이다: 로그 속 핸들은 인덱스 어휘라 **통째 재생에서만** 성립하고 중간 수정은 하류 인덱스를 밀어낸다(`design.md` 「저장소와 동일성」).
 
+### 계측이 제품 모듈 안에 산다
+
+`cfg(test)` 계측·감사 모듈 **15개, 약 2,470줄**이 제품 모듈 안에 있다 — `arrangement/`
+아홉(`audits` 906 · `order_probe` 138 · `crossing_probe` 79 · `arc_probe` 78 · `extent_probe` 74 ·
+`ruling_probe` 69 · `disk_side_probe` 62 · `cycle_probe` 44 · `decline_probe` 40) ·
+`cyl_chart/` 둘(`census` 507 · `probe` 265) · `combinatorics/` 둘(`tie_probe` 110 ·
+`hull_probe` 27, 그리고 인라인 probe 셋) · `assembly/` 둘(`tess_census` 52 · `probe` 22).
+
+`phase`(타이머 표)는 최상위로 나왔고 그것이 만들던 순환 한 쌍이 사라졌다 — **나머지는 순환을
+만들지 않는다.** 그러므로 이 이사의 근거는 「순환」이 아니라 「계측에 집을 준다」이고, 그
+목적이 값어치 있는지가 먼저 정해져야 한다. 계측을 옮기면 `pub(super)` 정리도 함께 움직인다.
+
+### 타이머가 세 철자다
+
+`phase::timed(c, f)`(클로저 끝) · `phase::Watch::new(&C)`(스코프 끝, drop) ·
+`planes::setup::Watch::new()` + `.charge(Sub::X)`(명시한 지점, 약 40줄). 셋째는 `planes` 가
+카운터를 직접 이름하지 않으려고 만든 우회이고 7자리 전부 `Sub` 를 정적으로 아는데,
+`phase` 가 최상위로 온 지금은 `crate::phase::Watch` 를 직접 쓸 수 있다.
+
+접지 않은 이유는 비용이 아니라 **부과 지점이 다르기** 때문이다 — drop 과 명시 지점을 합치면
+시간이 어디에 실리는지가 움직인다. 계측을 고치려면 그 계측이 무엇을 재는지 먼저 물어야 한다.
+
 ### v2 로 미룬 것
 
 로그 중간 편집을 위한 계보 참조(`OpRef { op, output_slot }`)와 op 로그의 소유자(`Document`), `Store` 스냅샷·직렬화 포맷, 세션 메모리 관리(compact 보다 재구축 우선), 경량 STEP 라이터와 export 시 unseam 옵션, M7 SSI 의 방법 선택.
 
 ## 정리 로드맵
 
-거대 파일 분할은 끝났다. 남은 것은 **구현 단순화**이고 **방향은 미결이다** — 아래는 잰 것이지 계획이 아니다. 무엇을 어떻게 합칠지는 의논해서 정한다.
+거대 파일 분할도, 불리언 파이프라인의 모양도(`boolean.rs → arrangement/ → assembly/`, 모두
+`draft` 를 읽는다) 끝났다. 모듈 그래프는 「지금」의 항목이 든다. 여기 남은 것은 **구현
+단순화**이고 **방향은 미결이다** — 아래는 잰 것이지 계획이 아니다. 무엇을 어떻게 합칠지는
+의논해서 정한다.
 
 - **같은 일을 하는 길이 여러 갈래인 자리**(제품 호출 / 테스트 호출 수는 그때 다시 센다): `realize_def`·`realize_cache` 와 그 `_tracked`(실제 본체) · `realize_inv_sqrt` → `_rounded` → `_memoized`(각각 호출처 하나인 3단 포장) · `det3` 다섯 벌(`det3`·`_sign`·`_f64`·`_hp`, 그리고 두 크레이트에 있는 `_big`) · `point_in_mixed_ring` 의 두 크레이트 구현(`_inner` 198줄 / geom `_opt` 89줄) · `base_coeffs_rat` 세 정의 · `three_planes` 의 `_rat`·`_big` 사다리 · `boolean` 은 `boolean_with_report` 의 얇은 포장. `nacre-judge` 의 `pub fn coeff_exact`·`coeff_normal_ok` 는 테스트만 부른다(그 보증은 평면이 `exact_coeffs`·`exact_normal` 을 믿을 수 있을 때만 든다는 타입으로 옮겨 갔다). 「f64 는 실현 통로 하나로」를 컴파일 단계에서 강제하는 것이 같은 갈래다.
 - **300줄이 넘는 함수 열둘**: `assembly/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `cyl_chart/census.rs` 의 `census` 496(테스트 전용) · `cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `assembly/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `assembly/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
