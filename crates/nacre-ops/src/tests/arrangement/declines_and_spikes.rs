@@ -187,7 +187,7 @@ fn direction_families_partition_the_walls() {
     }
 }
 
-/// **S2a: where does a whole boolean's time go?** Every earlier profile answered a share *of a
+/// **Where does a whole boolean's time go?** Every earlier profile answered a share *of a
 /// phase* — and the one that mattered was never taken.
 ///
 /// ★ Two ways to be wrong that this is built against:
@@ -345,7 +345,7 @@ fn spend(n: i128, rotated: bool) {
     );
 }
 
-/// S3a gate: **what did hoisting the loop invariant do to the evidence?** `plane_pair_dir_sign`
+/// The loop-invariant hoist's gate: **what did hoisting it do to the evidence?** `plane_pair_dir_sign`
 /// records on the rotated path, and `BoolReport::coincidences` is a *count*, so asking the same
 /// question fewer times moves it. The answer must not move; the count may.
 #[test]
@@ -381,7 +381,7 @@ fn measure_spike_report_after_hoisting() {
     println!("  volume                        : {v:.9}");
 }
 
-/// B0: what is actually left to save, **in production's configuration**?
+/// What is actually left to save, **in production's configuration**?
 ///
 /// The earlier phase timing used `ClassReuse::Off`, so it counted work production never does —
 /// `reuse.rs` skips most classes outright. This counts what survives that, how much of it a

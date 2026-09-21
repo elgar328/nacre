@@ -798,7 +798,7 @@ fn split_cuts_the_cross_into_the_right_pieces() {
     assert_eq!(keys.len(), 4, "no coincident (fp,direction) — DCEL-ready");
 }
 
-/// Same-wall partial overlap (E5) is **resolved** by the per-wall overlay: a=[0,2], b=[1,3]
+/// Same-wall partial overlap is **resolved** by the per-wall overlay: a=[0,2], b=[1,3]
 /// share y=1, their chords overlap on x∈[1,2]. The overlay splits the y=1 wall into three
 /// non-overlapping pieces `[0,1] [1,2] [2,3]`, and the shared middle `[1,2]` carries a
 /// contribution from **both** solids (which the label brick then reads per solid), while the

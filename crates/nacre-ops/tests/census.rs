@@ -2104,12 +2104,12 @@ fn measure_census() {
                 "slab 1.6",
                 Box::new(|m| (plate1(m), slab(m, [1.6, -3.0, 1.0], [2.6, 0.0, 2.0]))),
             ),
-            // ★ Measured on the way (S0): a slab reaching the plate's bottom wall plane `y = −4`
+            // ★ A slab reaching the plate's bottom wall plane `y = −4`
             // — its face coplanar with the wall, not overlapping it, its bottom edge on the
             // wall's line past the tangent point — meets *other* walls: on the axis plane
             // `CoincidentNodes`, off it a **cut** that should leave the plate untouched answers
-            // `OpenResultShell` (an assembly defect, unfired before). Both frozen here by name
-            // for the cell that takes them; not this cell's proposition.
+            // `OpenResultShell` (an assembly defect). Both frozen here by name; neither is this
+            // row's proposition.
             (
                 "slab wall 1.5",
                 Box::new(|m| (plate1(m), slab(m, [1.5, -4.0, 1.0], [2.5, 0.0, 2.0]))),

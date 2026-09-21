@@ -129,9 +129,8 @@ pub(crate) fn extrude_on_frame(
 /// `extrude(1.1)` then `extrude(6.6)` put their caps on the same plane rather than an
 /// ulp apart. Where it does not apply — a plane with no exact statement (axes outside the
 /// decimal window, a degenerate pair), a frame the chain cannot realize, an i128 overflow in
-/// the placement arithmetic — the answer is a **named reject**, not the silent f64 prism this
-/// used to build: a point-less solid cannot state itself, cannot survive a motion, and is the
-/// population `Inexact` grew from. (Profile coordinates and `dist` outside the decimal window
+/// the placement arithmetic — the answer is a **named reject**, not a silent f64 prism: a
+/// point-less solid cannot state itself and cannot survive a motion. (Profile coordinates and `dist` outside the decimal window
 /// are named before this runs.)
 ///
 /// **Mapping only — no winding decision, and no containment check.** Forcing the outer

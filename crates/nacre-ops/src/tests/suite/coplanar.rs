@@ -109,7 +109,7 @@ fn cut_by_an_overhanging_boss_carrying_a_pin_owes_a_notch() {
     );
 }
 
-// A1: plane-class canonicalization — coplanar walls of the two operands fold into one line.
+// Plane-class canonicalization — coplanar walls of the two operands fold into one line.
 #[test]
 fn plane_classes_merge_a_shared_wall() {
     // Two unit cubes side by side share the plane x=1 (a's +x wall, b's -x wall — the same
@@ -290,9 +290,7 @@ fn two_faces_of_one_judged_surface_are_one_class() {
 
 #[test]
 fn overhang_boss_with_a_non_convex_footprint() {
-    // An L-shaped (non-convex) boss footprint overhanging a cube edge. The old convexity-gated
-    // overhang detector declined this, so it used to be an honest reject; the F2 dispatch
-    // collapse hands it to the unified coplanar driver, which builds it exactly. Volume =
+    // An L-shaped (non-convex) boss footprint overhanging a cube edge, built exactly. Volume =
     // cube 1.0 + L-prism (area 0.9·0.2 + 0.3·0.2 = 0.24) · height 0.4 = 1.096.
     let mut m = Model::new();
     let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));

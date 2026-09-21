@@ -507,7 +507,7 @@ fn edge_overhang_common_matches_occt() {
 }
 
 /// A `Common` whose small box is contained in the base's top face (same-normal coplanar cap) yet
-/// pokes out the bottom (E0). OCCT cross-checks the contained-InterQ-island result (vol 0.25).
+/// pokes out the bottom. OCCT cross-checks the result (vol 0.25).
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn contained_common_matches_occt() {

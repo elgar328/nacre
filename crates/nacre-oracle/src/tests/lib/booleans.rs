@@ -235,9 +235,9 @@ fn slab_overhang_matches_occt() {
     assert!(approx(common.volume, 0.1), "slab common {}", common.volume);
 }
 
-/// A flush-edge pocket (B4-R1b): the cutter sits flush on two adjacent base faces (top z=1 and
+/// A flush-edge pocket: the cutter sits flush on two adjacent base faces (top z=1 and
 /// front y=0), so its walls are coplanar with the part's walls along the shared boundary edge.
-/// OCCT confirms base − cutter = 0.92 independently — the oracle for nacre's flush handler.
+/// OCCT confirms base − cutter = 0.92 independently.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn flush_edge_pocket_cut_matches_occt() {
@@ -251,8 +251,8 @@ fn flush_edge_pocket_cut_matches_occt() {
     assert!(approx(cut.volume, 0.92), "flush cut {}", cut.volume);
 }
 
-/// A through-tunnel Cut (B4-R1b-part2c): a cutter spanning the bar's full height (top and bottom
-/// both flush) makes two parallel coplanar contacts, cut into a tunnel via the contained branch.
+/// A through-tunnel Cut: a cutter spanning the bar's full height (top and bottom both flush)
+/// makes two parallel coplanar contacts, cut into a tunnel.
 /// OCCT confirms bar − tunnel = 0.84 independently.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]

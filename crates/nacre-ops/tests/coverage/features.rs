@@ -414,9 +414,7 @@ fn a_corner_cut_off_a_pocketed_cube() {
 
 #[test]
 fn an_edge_slot_through_the_bottom() {
-    // The prism pokes out the base's bottom too, so the old convex/blind overhang-cut gate
-    // declined it and the seam path could not build it either (honest reject). The F2 dispatch
-    // collapse hands it to the unified coplanar driver, which carves the slot exactly:
+    // The prism pokes out the base's bottom too, and the boolean carves the slot exactly:
     // base 1.0 − (x∈[0.5,1] · y∈[0.25,0.75] · z∈[0,1]) = 1 − 0.25 = 0.75.
     let mut m = Model::new();
     let base = m.add_cuboid(

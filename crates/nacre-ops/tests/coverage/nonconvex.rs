@@ -710,9 +710,8 @@ fn common_containment_is_the_inner_solid() {
 
 #[test]
 fn a_corner_cut_through_the_bottom() {
-    // The corner prism pokes out the base's bottom, so the old blind gate declined it. The F2
-    // collapse routes it to the unified driver: base 1.0 − corner column (x,y ∈ [0.5,1], full
-    // height) = 1 − 0.25 = 0.75.
+    // The corner prism pokes out the base's bottom: base 1.0 − corner column (x,y ∈ [0.5,1],
+    // full height) = 1 − 0.25 = 0.75.
     let mut m = Model::new();
     let base = m.add_cuboid(
         Point3::from_array([0.0; 3]),

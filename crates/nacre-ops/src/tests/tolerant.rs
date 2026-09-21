@@ -1460,16 +1460,9 @@ fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
         let faces = collect_planes(&m, s).unwrap();
         let (mut exact, mut f64_only) = (0usize, 0usize);
         for fi in &faces {
-            // ★ **The points are the whole test.** A plane with an exact triple was reached by
-            // exact arithmetic; one without was computed in f64 and rounded. The `def` is a
-            // separate axis and both of its exact spellings are right here: the base cap is
-            // `Constructed` because it *is* the world plane the caller named exactly, and
-            // everything else is `Moved` against the sketch frame. Only `Inexact` — a plane
-            // the forest cannot replay — means the road was lost.
-            // S6b: the truth is total — a planar surface always carries points, so the
-            // old "has points and is not Inexact" test collapses to "is a plane truth",
-            // which the type now guarantees. The sweep stays as the retrospective record
-            // of what this lock used to have to check.
+            // ★ A plane truth *is* three exact points and a motion — the type guarantees the
+            // points, so the only way this face could have left the exact road is not to be a
+            // plane truth at all.
             let ok = matches!(m.surface(fi.surf()), nacre_topo::Surface::Plane { .. });
             if ok {
                 exact += 1;
@@ -1925,7 +1918,7 @@ mod wide_name_rescue {
 
         // Integer spellings of the five planes' canonical names, scaled by a ~201-bit odd
         // factor so every name is genuinely wide (the predicates are row-linear, so the
-        // scale is invisible to every answer — C1's lock).
+        // scale is invisible to every answer).
         let s_factor: BigInt = (BigInt::from(1) << 201) + 3;
         let wide_name =
             |c: [i128; 4]| -> PlaneName { PlaneName::Wide(c.map(|x| BigInt::from(x) * &s_factor)) };

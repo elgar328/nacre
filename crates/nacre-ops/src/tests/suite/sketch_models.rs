@@ -2,7 +2,7 @@
 
 use super::*;
 
-// ─── K3a: a whole circle extrudes into the cylinder primitive's own solid ───────────────────
+// ─── A whole circle extrudes into the cylinder primitive's own solid ────────────────────────
 
 /// **A solid's b-rep, position-canonically.** What two builders must agree on when they claim to
 /// state one solid, with handle numbering left out — the two push their arenas in different
@@ -387,7 +387,7 @@ fn a_circle_prism_on_a_slanted_wall_builds_and_its_pad_declines_by_name() {
     );
 }
 
-// ─── K3b: arcs between vertices — slot, rounded rectangle, D ─────────────────────────────────
+// ─── Arcs between vertices — slot, rounded rectangle, D ─────────────────────────────────────
 
 fn edges_profile(edges: Vec<Stated>) -> Profile2d {
     stated(edges).unwrap().remove(0)
@@ -1336,8 +1336,8 @@ fn only_the_common_perpendicular_separates_a_fillet_from_a_crosswise_drill() {
 /// lying on every class and the alias table folded everything onto the wall's far corner. Now
 /// the vertex names itself from the classes its topology knows (`canonical_triple`), every loop
 /// hands the tracer the same name, no name is dependent, and the alias fold of a full trace lands
-/// on the vertex. Locked through the audit (`operand_vertex_audit`), on the S0 instrument that
-/// measured the four names first.
+/// on the vertex. Locked through the audit (`operand_vertex_audit`), the instrument that counts
+/// the names.
 #[test]
 fn a_four_plane_operand_vertex_has_one_name() {
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
@@ -1864,8 +1864,8 @@ fn a_tangent_corner_has_one_name_under_rigid_motion() {
 /// class, and the class's ruling crossing at the same point. The seed (`seed_from_operands` →
 /// `Aliases::record_on_cylinder`) joins them before any trace, the representative is a pierce
 /// name (the point is represented on its cylinder), and the class's *other* root stays another
-/// point. S0 stated the opposite facts — four names unjoined and the lateral's sweep declining
-/// (`Ruling`, from `theta_between`'s coincidence) — and this is that instrument, flipped.
+/// point. Unjoined, the four names would leave the lateral's sweep declining (`Ruling`, from
+/// `theta_between`'s coincidence).
 #[test]
 fn a_tangent_corner_on_a_plane_through_the_axis_has_one_name() {
     let (m, plate, slab) = fillet_plate_and_axis_slab();

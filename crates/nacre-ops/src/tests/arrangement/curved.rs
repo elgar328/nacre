@@ -1374,10 +1374,10 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
 /// and L-shapes with reflex corners. A lattice at half steps shares a row with every corner
 /// and every horizontal step, so every corner-on-the-ray configuration the half-open rule
 /// distinguishes (both steps up, both down, one each, a step along the ray, the probe at
-/// the corner) is on the sweep. Before this cell the mixed road abstained at every such
-/// corner (5 abstentions where the chart road answered, over the whole suite's rational
-/// rings; 0 disagreements — P3); a whole-suite shadow of the two roads cost 61 % of the
-/// serial sweep and is not kept — this lattice is the lock.
+/// the corner) is on the sweep. A mixed road that abstained at such a corner would do so where
+/// the chart road answers (measured over the whole suite's rational rings: 5 such corners, 0
+/// disagreements); a whole-suite shadow of the two roads costs 61 % of the serial sweep and is
+/// not kept — this lattice is the lock.
 #[test]
 fn the_two_roads_agree_on_every_rational_ring() {
     use nacre_exact::Rat;
@@ -2037,7 +2037,7 @@ fn at_a_blind_bores_ceiling_the_graze_and_the_seated_circle_disagree() {
     assert!(!grazes[0], "the bore's wall is below its ceiling");
 }
 
-/// Partial overlap (E5) is NOT merged — different endpoints mean different edges. a and b share
+/// Partial overlap is NOT merged — different endpoints mean different edges. a and b share
 /// the y=1 plane; a's y=1 chord is x∈[0,2], b's is x∈[1,3] — overlapping on x∈[1,2] but not
 /// coincident. They must stay separate.
 #[test]

@@ -95,8 +95,8 @@ fn a_named_frame_rejects_each_bad_claim_by_name() {
 #[test]
 fn a_named_frame_states_what_the_extrude_road_builds() {
     let mut m = Model::new();
-    // The S6a terminal lock's fixture (`a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road`)
-    // — chosen there so the canonical name is genuinely Wide, asserted again below.
+    // The fixture of `a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road` — chosen there
+    // so the canonical name is genuinely Wide, asserted again below.
     let (origin, u, v) = (
         Point3::from_array([0.2547863291057384, -0.5123456789012345, 1.5432109876543211]),
         Vector3::from_array([0.7123456789012345, 0.5876543210987654, 0.4098765432101234]),

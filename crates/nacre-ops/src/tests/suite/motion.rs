@@ -1612,9 +1612,8 @@ fn rerotate_deep_chain() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// A fresh rotation of a Constructed solid is unchanged from 1b (B0): an inexact
-/// angle records a single root node; a 90°-family angle stays Constructed (no node,
-/// boolean allowed). Guards that the B0/B1 split preserves fresh-rotation behavior.
+/// A fresh rotation of a Constructed solid: an inexact angle records a single root node; a
+/// 90°-family angle stays Constructed (no node, boolean allowed).
 #[test]
 fn fresh_rotation_of_constructed_unchanged() {
     use nacre_exact::Axis;

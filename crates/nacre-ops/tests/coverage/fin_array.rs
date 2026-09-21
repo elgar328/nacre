@@ -7,8 +7,7 @@
 //!
 //! All five were one root: a boolean's *result* carried no rotation provenance, so its faces were
 //! described by their rounded coordinates and one wall became two plane classes on the next fuse.
-//! Surfaces state their own provenance now (their truth: points + motion — the retired
-//! `SurfaceDef` side table's successor, S6b), so a chained boolean keeps its faces exact and the
+//! Surfaces state their own provenance (their truth: points + motion), so a chained boolean keeps its faces exact and the
 //! whole population builds. This file is the population, kept as the regression.
 
 use crate::common::*;

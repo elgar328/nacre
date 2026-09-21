@@ -1393,8 +1393,7 @@ fn an_origin_cuboids_axis_faces_intern_onto_the_seeds() {
     assert_eq!(m.surface_count(), 6);
 }
 
-/// ★★★ S6a: **a cylinder's caps record their three exact points** — the `add_cuboid`
-/// precedent applied to the last un-gated production path that minted point-less planes.
+/// ★★★ **A cylinder's caps record their three exact points**, as `add_cuboid`'s faces do.
 /// The direct evidence that the record is a real name and not a dead entry: a cap that
 /// shares a plane with a box face **interns to the same handle**, which no point-less
 /// surface could ever do.
@@ -1548,7 +1547,7 @@ fn a_through_plane_and_a_known_plane_that_are_one_plane_share_a_handle() {
     ));
 }
 
-/// ★★★ **The reference goes backwards in time only (C5).** A datum is pushed after the
+/// ★★★ **The reference goes backwards in time only** — append-only storage. A datum is pushed after the
 /// vertices it names, and those vertices name surfaces pushed before *them* — so the walk
 /// plane → vertex → surface strictly descends in index and cannot cycle.
 #[test]

@@ -350,7 +350,7 @@ fn apply_point_exact_for_quadrantal() {
     );
 }
 
-/// H1.5: the arbitrary-precision cos/sin realization must be far more accurate
+/// The arbitrary-precision cos/sin realization must be far more accurate
 /// than any f64/double-double — the accuracy gate astro-float passes and the
 /// double-double `twofloat` failed (its trig degraded to ~1e-16 near zero-
 /// crossings). Error at rational angles must beat `2^-100` (~1e-30).

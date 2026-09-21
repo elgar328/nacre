@@ -128,14 +128,13 @@ fn an_exact_motion_is_still_recorded_once_there_is_a_history() {
         assert_eq!(got, kind, "a {what} records a {kind} node");
     }
 }
-/// ★★★ S6a: **an exact move whose rational point transport would overflow records a node
+/// ★★★ **An exact move whose rational point transport would overflow records a node
 /// instead of dropping the points.** The two exactness conditions are independent — every
 /// f64 here lands exactly (`t = 2⁻³⁰` on unit-scale corners), while one surface's stored
-/// triple has a `5⁴²` denominator, so `q + t` needs `lcm(5⁴², 2³⁰) ≈ 2.4e38 > i128`. The
-/// old behaviour kept the no-node path and silently pushed the moved surface point-less —
-/// the very population `Inexact` grows from; the `carry_of` probe now puts the whole
-/// solid on the recorded path, and the original triple survives verbatim as the pre-motion
-/// truth.
+/// triple has a `5⁴²` denominator, so `q + t` needs `lcm(5⁴², 2³⁰) ≈ 2.4e38 > i128`. Taking
+/// the no-node path would push the moved surface point-less; the `carry_of` probe puts the
+/// whole solid on the recorded path, and the original triple survives verbatim as the
+/// pre-motion truth.
 #[test]
 fn an_overflowing_exact_move_records_a_node_and_keeps_the_points() {
     let mut m = Model::new();

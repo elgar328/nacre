@@ -216,9 +216,8 @@ fn cube_with_top() -> (Model, Handle<Face>) {
     (m, top)
 }
 
-/// An exact world-frame `Swept` from decimal f64 points — the truth-stating successor of the
-/// retired `Swept::along` (S6b): the fallback is gone, so a test states its rings the way a
-/// producer does. The f64 base is kept as handed in (decimals realize back bit-identically);
+/// An exact world-frame `Swept` from decimal f64 points: there is no f64 fallback, so a test
+/// states its rings the way a producer does. The f64 base is kept as handed in (decimals realize back bit-identically);
 /// the top is the realization of the exact sum.
 fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::construct::Swept {
     let lift = |p: [f64; 3]| p.map(|x| nacre_exact::Rat::from_decimal(x).expect("decimal fixture"));

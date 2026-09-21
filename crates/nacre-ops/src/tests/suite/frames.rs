@@ -877,9 +877,8 @@ fn a_named_plane_records_what_its_caller_stated() {
             d.origin().map(|r| r.to_f64())
         );
     }
-    // ★ And the axes-only route records the axes' decimal truth (S6a — this used to assert
-    // `def.is_none()`, "honest about having no definition"; the honest statement now is the
-    // definition itself, `[o, o + x, o + y]`).
+    // ★ And the axes-only route records the axes' decimal truth — the definition itself,
+    // `[o, o + x, o + y]`.
     let axes = SketchPlane::from_axes(
         Point3::from_array([1.0, 2.0, 3.0]),
         Vector3::from_array([1.0, 0.0, 0.0]),
@@ -1169,11 +1168,11 @@ fn a_prism_on_an_axes_only_tilted_frame_takes_the_exact_road() {
     );
 }
 
-/// ★★★ S6b: **what the f64 fallback used to build silently is a named reject now.** A plane
-/// with no exact statement — axes outside the decimal window — and a sweep distance the
-/// window cannot hold each get their own name at the operation's door. The prisms these
-/// used to build recorded no exact points and could not survive a motion; the reject is the
-/// honest form of the same fact.
+/// ★★★ **What the exact arithmetic cannot state is a named reject, never a silent f64 build.**
+/// A plane with no exact statement — axes outside the decimal window — and a sweep distance the
+/// window cannot hold each get their own name at the operation's door. A prism built in f64
+/// would record no exact points and could not survive a motion; the reject is the honest form of
+/// the same fact.
 #[test]
 fn a_prism_the_exact_arithmetic_cannot_state_is_refused_by_name() {
     let p = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);

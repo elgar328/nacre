@@ -233,8 +233,8 @@ fn a_prisms_base_cap_records_the_frame_its_def_names() {
 
     // ★ And with no caller statement, the ring answers — its own exact cap triple, and the
     // name derived from it (`z = 0`, visibly different from the caller's `z = 3` above).
-    // This used to pin the *absence* of both — the f64 fallback's point-less cap — and the
-    // fallback is gone (S6b): the negative pins live at the operation as named rejects now.
+    // There is no f64 fallback, so there is no point-less cap to pin: the negative cases live
+    // at the operation as named rejects.
     let (m, surf) = prism(None);
     assert!(
         matches!(m.surface(surf), nacre_topo::Surface::Plane { .. }),

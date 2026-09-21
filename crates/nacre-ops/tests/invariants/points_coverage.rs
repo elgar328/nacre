@@ -5,8 +5,8 @@
 //! variant, so the type guarantees it; this battery is the producer-path smoke test — one model
 //! per producer path — and the cache/truth agreement sweep.
 //!
-//! Cylinder *lateral* surfaces are the deliberate exception: a curved surface's truth arrives
-//! with M6, and booleans still hold it behind the population gate.
+//! Cylinder *lateral* surfaces are not planes: their truth is a `CylinderDef`, so the sweep only
+//! checks that their cache and truth agree on the kind.
 
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
 use nacre_math::{Point3, Vector3};
@@ -37,9 +37,8 @@ fn extrude(m: &mut Model, plane: SketchPlane, profile: Profile2d, dist: f64) {
 }
 
 /// Every live planar face of `m` records its three exact points — asserted through the truth
-/// store. Since S6b the type guarantees it (a `Plane` truth *is* three points), so the sweep is
-/// a retrospective record of what this gate had to check while the point-less population still
-/// existed — plus the cache/truth variant agreement, which is not type-carried.
+/// store. The type guarantees the points (a `Plane` truth *is* three points); what the sweep
+/// adds is the cache/truth variant agreement, which is not type-carried.
 fn assert_all_planes_record_points(m: &Model, what: &str) {
     let mut seen = 0usize;
     for &s in m.live_solids() {
@@ -51,7 +50,7 @@ fn assert_all_planes_record_points(m: &Model, what: &str) {
                         seen += 1;
                     }
                     (nacre_geom::Surface::Cylinder(_), nacre_topo::Surface::Cylinder { .. }) => {
-                        // curved truth is M6's; booleans reject it honestly today
+                        // a lateral: its truth is a `CylinderDef`, not three points
                     }
                     (cache, truth) => panic!(
                         "{what}: cache and truth disagree about what this surface is: \
@@ -77,7 +76,7 @@ fn every_live_planar_face_records_its_points() {
     extrude(&mut m, SketchPlane::world_xy(), square(10.0, 12.0), 1.5);
     assert_all_planes_record_points(&m, "construction");
 
-    // ② The frame roads: a named tilted plane, and an axes-only tilted frame (S6a's opening).
+    // ② The frame roads: a named tilted plane, and an axes-only tilted frame.
     let named = SketchPlane::from_origin_normal(
         Point3::from_array([0.25, -0.5, 1.5]),
         Vector3::from_array([0.3141592653589793, -0.2718281828459045, 1.0]),
@@ -171,7 +170,7 @@ fn every_live_planar_face_records_its_points() {
     mb.rebuild_adjacency();
     assert_all_planes_record_points(&mb, "boolean");
 
-    // ⑥ Cylinder caps (S6a) — the lateral face is the skipped population, visibly.
+    // ⑥ Cylinder caps — the lateral face is the skipped population, visibly.
     let mut mc = Model::new();
     mc.add_cylinder(
         Point3::from_array([0.0, 0.0, 0.0]),

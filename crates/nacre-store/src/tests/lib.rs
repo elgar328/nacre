@@ -31,7 +31,7 @@ fn equality_is_by_index_only() {
     assert_eq!(a, a_copy);
 }
 
-/// The F1 regression: a `Handle` must be `Copy + Eq + Hash` even when the
+/// A `Handle` must be `Copy + Eq + Hash` even when the
 /// stored type is neither `Eq` nor `Hash`. `NotHashable` holds an `f64`, so
 /// if `Handle` derived its impls this would fail to compile — exactly the
 /// bug that would break topo's `HashMap<Handle<Edge>, _>`.

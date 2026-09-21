@@ -10,7 +10,7 @@ use nacre_topo::Surface;
 
 use nacre_topo::{Model, Solid};
 
-/// Run the plane arrangement past the C2 stopper and hand the band pass what it needs.
+/// Run the plane arrangement past the stopper and hand the band pass what it needs.
 /// Returns `(band faces, the plane classes' axis parameters keyed by class)`.
 fn bands(
     m: &Model,
