@@ -69,9 +69,8 @@ impl FaceRow {
         }
     }
 
-    /// The row's surface, whichever kind it is.
-    // Test consumers today; the first production consumer is the population gate.
-    #[allow(dead_code)]
+    /// The row's surface, whichever kind it is. Only tests ask this of a row.
+    #[cfg(test)]
     #[inline]
     pub(crate) fn surf(&self) -> Handle<Surface> {
         match self {
@@ -442,7 +441,6 @@ impl ClassIx {
 /// about, beside its f64 cache. One entry per distinct lateral surface, in [`ClassIx::Cyl`]
 /// numbering order.
 pub(crate) struct WorkingCyl {
-    #[allow(dead_code)] // the arrangement's circle elements read these from C3 on
     pub(crate) surf: Handle<Surface>,
     pub(crate) def: nacre_topo::CylinderDef,
     /// The f64 twin of `def` — its realization, what a *measurement* reads (`pierce_vertex_tol`

@@ -510,8 +510,12 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
   «지금 참인 문장»으로 고쳐 써야 한다 — 그러다 보면 거짓이 드러난다(`curved_nesting.rs`·`frames.rs` 를 정리할 때
   숫자 다섯과 «f64 경로» 하나가 그랬다). 서사가 가장 짙은 곳: `curved_nesting.rs` 의 나머지 doc(원판 근사식,
   «plainest arm», 구멍 뚫린 입방체의 경계), `tolerant.rs` 의 두 캡 절, `frames.rs` 의 두 보스 doc.
-- **문자-숫자 ID 가 든 주석이 98줄·47파일이다**(`S6a`·`W2`·`A4`·`E5` 식; 마일스톤 `M1–M7` 과 행렬 첨자 `P00–P11`
-  제외). 세 부류가 섞여 있어 자리마다 읽어야 한다: 작업 번호(규칙 6 위반 — 지운다), `design.md` 「제약」 표의
-  `C1–C8` 인용(문서 번호 인용 — 규칙의 내용으로 바꾼다), 지역 라벨(입방체의 `V0–V7` — 둔다). 실험 라벨
-  `H-a…H-i` 는 judge 테스트의 이름으로 살아 있으나 그 출처 `exact3d` 는 트리에 없고, `zzz_ledger` 의 `C2-P4`
-  식 라벨을 `curved_nesting.rs` 의 진단 `eprintln` 이 `P1`/`P4` 로 가리킨다.
+- **실험·계측 라벨이 작업 번호로 남아 있다.** 주석의 문자-숫자 작업 번호는 정리됐고(남은 `[A-Z][0-9]` 토큰은
+  입방체 꼭짓점 `V0–V7`·오일러 수·*The NURBS Book* 알고리즘 번호·수식 기호 같은 지역 라벨이다), 남은 것은 이름으로
+  쓰이는 셋이다: 실험 라벨 `H-a…H-i`(26곳·7파일 — judge 테스트 doc 머리와 출력, 그리고 제품 코드의 «Validated H-b»
+  식 인용; 출처 `exact3d` 는 트리에 없다), `zzz_ledger` 의 출력 라벨 13종(`D1b`·`D5-P4`·`C2-P1` 식)과 그것을 가리키는
+  진단 `eprintln` 의 `P1`/`P2`/`P4`, 그리고 계측 **모듈 이름** `probe::d2`/`probe::d2b` 와 `measure_d_ladder_ledgers`
+  («한 rung 에 계측 하나»). 고치려면 각 ledger 가 지금 무엇을 재는지 읽고 그 이름을 지어야 한다 — 개명 단위다.
+- **은퇴한 `Inexact` 가 주석 여섯 자리에 살아 있다**(`nacre-topo/src/lib.rs:476,494,663,735` ·
+  `nacre-ops/src/transform.rs:450` · `tests/suite/frames.rs:995`). `SurfaceDef` 와 함께 은퇴한 상태인데 `lib.rs:735`
+  «`Inexact` has no coefficients and never interns» 는 현재형 문장이다.
