@@ -11,3 +11,5 @@ mod module_graph;
 mod plane_anchor;
 #[path = "instruments/point_width.rs"]
 mod point_width;
+#[path = "instruments/silencers.rs"]
+mod silencers;
