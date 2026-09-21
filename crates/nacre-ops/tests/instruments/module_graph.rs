@@ -159,7 +159,7 @@ fn edges() -> BTreeMap<String, BTreeMap<String, usize>> {
 /// set as an argument. So the fixtures name `alpha`/`beta`/`gamma`, which exist nowhere. That is
 /// not tidiness — it is the second thing that went wrong here.
 ///
-/// The first was pinning fixtures to *files*: a fixture that points at `boolean/naming.rs` goes
+/// The first was pinning fixtures to *files*: a fixture that points at `assembly/naming.rs` goes
 /// red the moment that file moves, and that red means nothing while looking exactly like a real
 /// one. So they became string literals. Then a bulk path rewrite (`crate::assembly::Wall` ->
 /// `crate::draft::Wall`) swept every `.rs` file in the crate and **edited the literals**, because

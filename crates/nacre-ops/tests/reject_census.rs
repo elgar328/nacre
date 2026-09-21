@@ -648,7 +648,7 @@ fn instrument_answers_for_itself() {
     // else in this file would notice if that attribute were dropped, and every row of the table
     // would silently collapse onto one line in `error.rs`.
     // ★ The oblique cut, not the tangent wall: the tangency's reason now comes from the
-    // *assembly* (`boolean/self_touch.rs`), and what this checks is that a **gate** guard names its own line.
+    // *assembly* (`assembly/self_touch.rs`), and what this checks is that a **gate** guard names its own line.
     let mut m = Model::new();
     let _ = cylinder_oblique(&mut m);
     let c = reject_census::take();
