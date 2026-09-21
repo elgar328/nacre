@@ -247,7 +247,7 @@ fn a_corner_boss_fuses() {
 /// a volume-correct zero-thickness pinch `validate` cannot see» — and that sentence
 /// is *exactly right*: with the gate passing it, `Cut` returns `Ok`, `validate` is clean, and
 /// nothing in the kernel sees the contact. So the answer is not to keep refusing at the
-/// gate; it is to give that pinch a judge (`boolean::tangency_reject`), which is what this row
+/// gate; it is to give that pinch a judge (`assembly::tangency_reject`), which is what this row
 /// exercises — the operation decides, and the ones that do not pinch build.
 ///
 /// ★ The **half-height** boss, whose upper cap

@@ -119,7 +119,7 @@ fn measure_d_ladder_ledgers() {
             "ledger C2-P1: mixed abstentions {} by kind {hist:?}",
             ties.len()
         );
-        let dec = crate::boolean::probe::deciding::ROWS
+        let dec = crate::assembly::probe::deciding::ROWS
             .lock()
             .expect("the probe's lock is never held across a panic")
             .clone();

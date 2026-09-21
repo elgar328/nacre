@@ -11,7 +11,7 @@ use super::*;
 ///
 /// A boolean output is freshly built, so its cells never alias another live solid's — the scoped
 /// maps are exact.
-pub(super) fn check_result_topology(
+pub(crate) fn check_result_topology(
     model: &Model,
     solids: &[Handle<Solid>],
 ) -> Option<(RejectReason, Option<crate::RejectWhere>)> {

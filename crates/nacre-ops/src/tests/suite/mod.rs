@@ -33,7 +33,7 @@ fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
 use crate::combinatorics::{Canon3, NodeId};
 use crate::tolerant::Judge;
 use crate::transform::transform;
-use crate::{boolean::*, ops::*, planes::*};
+use crate::{assembly::*, ops::*, planes::*};
 use nacre_exact::Axis;
 use nacre_geom::Plane;
 use nacre_geom::intersect::{planes_coplanar, three_planes};

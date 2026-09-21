@@ -558,7 +558,7 @@ pub(crate) fn walk(
                 flip,
             }
         } else {
-            crate::boolean::classify_cycles(k, flip, rings, rims_lo, rims_hi, &curved.cut_rims)
+            crate::assembly::classify_cycles(k, flip, rings, rims_lo, rims_hi, &curved.cut_rims)
                 .map_err(|_| arc_ladder())?
         };
         faces.push(face);

@@ -5,7 +5,7 @@ use super::*;
 /// result vertex/edge; `Ord` gives the deterministic node order replay needs — and it is the bare
 /// triple's lexicographic order, so every "smallest name wins" rule reads unchanged.
 ///
-/// This was `boolean::Node`, spoken only by the assembler. It lives here because the arrangement
+/// This was `assembly::Node`, spoken only by the assembler. It lives here because the arrangement
 /// names the same vertices, and the variant is spelled like [`nacre_topo::Vertex::ThreePlane`]
 /// so the arrangement, the assembler and the topology store call the thing by one name.
 ///

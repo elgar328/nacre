@@ -33,7 +33,7 @@ fn the_audit_does_not_invent_failures() {
     //
     // So the fixture is now a pinch that **cannot** part: A and B meet only along the line
     // `x = 2, y = 2`, and a bridge overlapping both runs the material around the contact, so
-    // cutting there leaves one piece. The closed-shell guard in `boolean::reconstruct` rejects
+    // cutting there leaves one piece. The closed-shell guard in `assembly::reconstruct` rejects
     // it — after every class pipeline has run, which is the property this test needs.
     //
     // (This test once asserted the audit reports the boolean's *class-level* reject, on a

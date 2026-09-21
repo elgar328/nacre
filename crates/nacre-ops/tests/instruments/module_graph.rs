@@ -160,7 +160,7 @@ fn edges() -> BTreeMap<String, BTreeMap<String, usize>> {
 ///
 /// The first was pinning fixtures to *files*: a fixture that points at `boolean/naming.rs` goes
 /// red the moment that file moves, and that red means nothing while looking exactly like a real
-/// one. So they became string literals. Then a bulk path rewrite (`crate::boolean::Wall` ->
+/// one. So they became string literals. Then a bulk path rewrite (`crate::assembly::Wall` ->
 /// `crate::draft::Wall`) swept every `.rs` file in the crate and **edited the literals**, because
 /// a fixture that looks like code is code to a script. Names that no module has are immune to
 /// both.

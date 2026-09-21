@@ -358,7 +358,9 @@ fn engine_sources() -> Vec<String> {
     for module in [
         "src/combinatorics",
         "src/arrangement",
+        "src/assembly",
         "src/boolean",
+        "src/draft",
         "src/nesting",
     ] {
         let dir = std::path::Path::new(module);
@@ -374,7 +376,16 @@ fn engine_sources() -> Vec<String> {
             out.push(format!("{module}.rs"));
         }
     }
-    assert!(out.len() >= 4, "the scan found {} files", out.len());
+    // ★ The floor is today's file count, not a token. A module that becomes a folder, or a
+    // folder that becomes a file, silently changes what this scan reads -- and a `>= 4` floor
+    // would not have noticed `src/boolean` turning into a 171-line front door while twelve
+    // assembly files dropped out of the walk.
+    assert!(
+        out.len() >= 50,
+        "the scan found {} files, fewer than the 50+ it read when this floor was measured -- a \
+         module moved and the roots above did not follow",
+        out.len()
+    );
     out
 }
 

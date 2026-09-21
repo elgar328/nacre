@@ -158,7 +158,7 @@ pub(crate) fn cylinder_gate(
             // outright) or another cylinder's rim (the pair rule), so a tangency or a crossing is
             // **named** before the arrangement ever sees it. ★ Named, not refused: since the
             // tangent arm opened, a touch passes with a [`Tangency`] row and the *verdict* is
-            // `boolean::tangency_reject`'s. What the sentence guarantees is unchanged — no
+            // `assembly::tangency_reject`'s. What the sentence guarantees is unchanged — no
             // degenerate seating reaches the arrangement unnamed.
             if !nacre_exact::parallel_rat(&n, &m) {
                 if nacre_exact::dot_sign_rat(&n, &m) != Orient::Zero {
@@ -234,7 +234,7 @@ pub(crate) fn cylinder_gate(
                         //
                         // What the pair can still do is pinch the *result*, and that is a question
                         // about the operation — so the geometry is stated in a row and
-                        // `boolean::tangency_reject` asks `keep` — beside `self_touch_reject`,
+                        // `assembly::tangency_reject` asks `keep` — beside `self_touch_reject`,
                         // where the grouping can also say whether the pieces share a solid.
                         if nacre_exact::point_plane_clearance_rat(&coeffs, &o, r2) == Orient::Zero {
                             tangencies.extend(tangency_rows(

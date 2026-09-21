@@ -14,7 +14,7 @@
 //! from it".
 
 use super::*;
-use crate::boolean::*;
+use crate::assembly::*;
 use crate::combinatorics::{Canon3, NodeId, three_plane_name};
 use crate::draft::*;
 use crate::planes::*;
@@ -448,7 +448,7 @@ pub(crate) fn boolean(
             // chainable solid — a second boolean on it then sees no redundant coplanar planes.
             let faces = timed!(
                 UNIFY,
-                crate::boolean::unify_coplanar_faces(faces, &jd, &cyls)
+                crate::assembly::unify_coplanar_faces(faces, &jd, &cyls)
             )?;
 
             // ★ **The lateral bands, appended after the differential above**: reuse can
@@ -503,7 +503,7 @@ pub(crate) fn boolean(
                 &cyls,
                 &curved.cut_rims,
                 deferred,
-                crate::boolean::Tangencies {
+                crate::assembly::Tangencies {
                     kind,
                     rows: &tangencies
                 },

@@ -17,6 +17,7 @@ use nacre_store::Handle;
 use nacre_topo::{Face, HalfEdge, Model, Solid, Vertex};
 
 mod arrangement;
+mod assembly;
 /// The cylinder-band pass — see the module docs.
 mod bands;
 mod boolean;

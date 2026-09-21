@@ -89,7 +89,7 @@ fn cmp_key(
 }
 
 /// **The pierce nodes lying strictly between two ring nodes, in ring order** — the exact half of
-/// the split-twin subdivision (`boolean::name_result_vertices`' opening pass). The caller has
+/// the split-twin subdivision (`assembly::name_result_vertices`' opening pass). The caller has
 /// already matched the candidates' plane pair to the edge's `{own, wall}`, so by name every
 /// candidate lies on the edge's own carrier line and single-axis order *is* order along it.
 ///

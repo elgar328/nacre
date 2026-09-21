@@ -694,7 +694,7 @@ fn a_boss_tangent_in_a_notch_pinches_the_block_it_joins() {
 /// intersected with the wall's solid leaves the two wedges alone.
 #[test]
 fn the_pinch_formula_is_a_truth_table() {
-    use crate::boolean::lumps_fall_apart;
+    use crate::assembly::lumps_fall_apart;
     use crate::planes::SolidSide::{A, B};
     // (lens_in_wall_solid, cyl_orient, [Fuse, Cut, Common]) with the wall on side A.
     for (lens, orient, want) in [

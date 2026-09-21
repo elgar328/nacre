@@ -579,7 +579,7 @@ fn the_seam_realizes_a_pierce_vertex_and_measures_it() {
         // The stopper socket is empty since the population went green — nothing defers.
         assert!(deferred.is_none(), "{deferred:?}");
         let faces =
-            crate::boolean::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
+            crate::assembly::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
         let mut faces = faces;
         faces.extend(
@@ -676,7 +676,7 @@ fn every_result_vertex_of_the_arc_population_is_named() {
         )
         .expect("the arc population traces");
         let faces =
-            crate::boolean::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
+            crate::assembly::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
         let mut faces = faces;
         faces.extend(
@@ -685,7 +685,7 @@ fn every_result_vertex_of_the_arc_population_is_named() {
         );
         let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
         let named =
-            crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
+            crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
                 .expect("the naming stages run");
         let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
         // Completeness: every ring node has a definition.
@@ -703,14 +703,14 @@ fn every_result_vertex_of_the_arc_population_is_named() {
         let pierce_defs = named
             .defs
             .values()
-            .filter(|d| matches!(d, crate::boolean::Def::Pierce { .. }))
+            .filter(|d| matches!(d, crate::assembly::Def::Pierce { .. }))
             .count();
         assert_eq!(pierce_defs, 2, "both crossings are declared, once each");
         // The bitten corner's def names the right point: realize its three planes and land
         // on (4, 0, 2) — the fixture's own number, no class index copied.
         if bites_corner {
             let hit = named.defs.values().any(|d| {
-                let crate::boolean::Def::Three(t) = d else {
+                let crate::assembly::Def::Three(t) = d else {
                     return false;
                 };
                 let t = t.planes();
@@ -806,7 +806,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
         )
         .expect("the arc population traces");
         let faces =
-            crate::boolean::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
+            crate::assembly::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
         let mut faces = faces;
         faces.extend(
@@ -815,7 +815,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
         );
         let seam = crate::arrangement::seam_table(&faces, cyls, &jd).expect("seam");
         let named =
-            crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
+            crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
                 .expect("the naming stages run");
         let live: &[LocalFace] = named.per_solid.as_deref().unwrap_or(&faces);
         let mut uses: std::collections::HashMap<
@@ -832,7 +832,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
                     if matches!(ring.walls[t], crate::combinatorics::Wall::Arc { .. }) {
                         continue;
                     }
-                    let key = crate::boolean::norm_edge(a, b);
+                    let key = crate::assembly::norm_edge(a, b);
                     *uses.entry(key).or_insert(0) += 1;
                     if !plain.contains(&key) {
                         plain.push(key);
@@ -1251,7 +1251,7 @@ fn the_grouping_joins_across_a_cut_rim() {
         )
         .expect("the arc population traces");
         let faces =
-            crate::boolean::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
+            crate::assembly::unify_coplanar_faces(plane_faces, &jd, &setup.cyls).expect("unify");
         let rows = cyl_rows(faces_tab, plane_ix, *n_a).expect("rows");
         let mut faces = faces;
         faces.extend(
@@ -1261,7 +1261,7 @@ fn the_grouping_joins_across_a_cut_rim() {
         let seam = crate::arrangement::seam_table(&faces, cyls, &jd)
             .expect("the seam realizes pierce nodes");
         let named =
-            crate::boolean::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
+            crate::assembly::name_result_vertices(&jd, &seam, &faces, cyls, &curved.cut_rims)
                 .expect("the naming runs");
         let g = named
             .grouping

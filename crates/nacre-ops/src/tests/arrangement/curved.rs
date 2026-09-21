@@ -391,7 +391,7 @@ fn lateral_lattice(staircase: bool) {
     )
     .unwrap();
     assert_eq!(fuse.len(), 1);
-    let cf = crate::boolean::comp_face(&jd, &setup.cyls, &fuse[0]).unwrap();
+    let cf = crate::assembly::comp_face(&jd, &setup.cyls, &fuse[0]).unwrap();
     let combinatorics::CompSurf::Cylinder(def) = &cf.surf else {
         panic!("a lateral")
     };
@@ -782,7 +782,7 @@ fn armed_assembled_through_boss() -> (Model, crate::planes::PlaneSetup, usize) {
         cut_rims,
         rulings,
     };
-    let faces = crate::boolean::unify_coplanar_faces(faces, &jd, &setup.cyls).unwrap();
+    let faces = crate::assembly::unify_coplanar_faces(faces, &jd, &setup.cyls).unwrap();
     let rows = crate::bands::cyl_rows(&setup.planes, &setup.plane_ix, setup.n_a).unwrap();
     let mut faces = faces;
     faces.extend(
@@ -790,7 +790,7 @@ fn armed_assembled_through_boss() -> (Model, crate::planes::PlaneSetup, usize) {
             .unwrap(),
     );
     let seam = seam_table(&faces, &setup.cyls, &jd).unwrap();
-    let out = crate::boolean::reconstruct(
+    let out = crate::assembly::reconstruct(
         &mut m,
         &jd,
         &seam,
@@ -798,7 +798,7 @@ fn armed_assembled_through_boss() -> (Model, crate::planes::PlaneSetup, usize) {
         &setup.cyls,
         &curved.cut_rims,
         None,
-        crate::boolean::Tangencies::none(),
+        crate::assembly::Tangencies::none(),
     )
     .unwrap();
     assert_eq!(out.len(), 1, "one welded solid");

@@ -364,9 +364,9 @@ fn plain_fuse(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
 }
 
 // Where the assembly's guards ring from, one file per stage.
-const ENTRY: &str = "crates/nacre-ops/src/boolean/entry.rs";
-const RECONSTRUCT: &str = "crates/nacre-ops/src/boolean/reconstruct.rs";
-const SELF_TOUCH: &str = "crates/nacre-ops/src/boolean/self_touch.rs";
+const ENTRY: &str = "crates/nacre-ops/src/boolean.rs";
+const RECONSTRUCT: &str = "crates/nacre-ops/src/assembly/reconstruct.rs";
+const SELF_TOUCH: &str = "crates/nacre-ops/src/assembly/self_touch.rs";
 
 const CORPUS: [Fixture; 13] = [
     Fixture {

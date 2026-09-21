@@ -1,4 +1,20 @@
-use super::*;
+//! **The front door of the boolean.** Two live solids in, result solids out.
+//!
+//! This is the first stage, not the last: it validates, hands the operands to the arrangement
+//! engine ([`crate::arrangement::boolean`]), and reports. The engine calls the **assembly**
+//! ([`crate::assembly`]) when it has faces to build from, so the three read in the order they
+//! run -- `boolean` -> `arrangement` -> `assembly` -- rather than the round trip that showed
+//! while the front door and the assembly shared one module name.
+
+use crate::assembly::check_result_topology;
+#[cfg(test)]
+use crate::assembly::tess_census;
+use crate::draft::BoolKind;
+use crate::{BoolError, reject};
+use nacre_judge::Decision;
+use nacre_judge::predicate::{Evidence, Notes, Site};
+use nacre_store::Handle;
+use nacre_topo::{Model, Solid};
 /// Boolean of two live solids (M5; the honest-reject strategy).
 ///
 /// **Coverage:** planar solids. All three kinds go through the single per-plane-class arrangement

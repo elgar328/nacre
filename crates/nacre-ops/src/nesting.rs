@@ -3,7 +3,7 @@
 //!
 //! ★★★★★ **Why a module of its own.** The question is answered from two roads — the
 //! arrangement's nesting (`arrangement::nest_cells`, `innermost_host`) and the coplanar merge's
-//! ownership (`boolean::unify_coplanar_faces`) — and each had grown its own copy: five spellings
+//! ownership (`assembly::unify_coplanar_faces`) — and each had grown its own copy: five spellings
 //! of «what point may I use as a witness», four of «what does that point say about the target»,
 //! three of «try them until one decides, and name the failure honestly», and two of the four-arm
 //! dispatch itself. The copies drifted, and the shortest of them — the arm that asks a **ring**

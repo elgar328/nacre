@@ -135,7 +135,7 @@ pub enum RejectReason {
     /// asking what the material near the line is: three regions (the lens inside the cylinder, the
     /// **two** wedges beside it, the far half-space), adjacent only `L–W2` and `F–W2`, so the kept
     /// ones fall apart exactly when `(W2 ∧ ¬L ∧ ¬F)` or `(L ∧ F ∧ ¬W2)` — and the pieces land in
-    /// one body. See `boolean::tangency_reject`. ★ The second disjunct is *not* a defect on its
+    /// one body. See `assembly::tangency_reject`. ★ The second disjunct is *not* a defect on its
     /// own: two bodies touching along a line are two valid solids, and the kernel returns them.
     ///
     /// Distinct from [`Self::NonManifoldResultEdge`], whose proposition ("uses an edge more than

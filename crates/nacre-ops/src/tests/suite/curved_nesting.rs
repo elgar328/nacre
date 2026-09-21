@@ -730,7 +730,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
             for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
                 // The mixed road's abstentions, attributed to this cell.
                 let tie0 = crate::combinatorics::tie_probe::len();
-                let dec0 = crate::boolean::probe::deciding::ROWS
+                let dec0 = crate::assembly::probe::deciding::ROWS
                     .lock()
                     .expect("the probe's lock is never held across a panic")
                     .len();
@@ -790,7 +790,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 if got == Rejected(NoClearRay) {
                     let hist = crate::combinatorics::tie_probe::since(tie0);
                     eprintln!("P1 {name} {kind:?} x {tool_name}: {hist:?}");
-                    let dec = crate::boolean::probe::deciding::ROWS
+                    let dec = crate::assembly::probe::deciding::ROWS
                         .lock()
                         .expect("the probe's lock is never held across a panic");
                     for r in dec[dec0..].iter().filter(|r| !r.3) {
