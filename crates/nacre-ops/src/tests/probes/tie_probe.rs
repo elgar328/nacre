@@ -5,6 +5,10 @@
 //! Read by the crossing census (per cell) and the ledger (whole suite). A corner on the ray is
 //! no longer among them: the half-open rule decides it, and `ARC_END` counts the arc-end arm's
 //! decisions so a fixture can say it ran.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::combinatorics`] mounts it with `#[path]` as `tie_probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 use std::cell::Cell;
 use std::sync::Mutex;

@@ -1,6 +1,10 @@
 //! **Does the ring's lexicographic minimum node really support the ring?**
 //! `loop_winding` reads the turn there and its doc argues the node is a hull vertex — true for a
 //! polygon, and an open question the moment an edge is an arc. Counts only.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::combinatorics`] mounts it with `#[path]` as `hull_probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 use std::sync::Mutex;
 

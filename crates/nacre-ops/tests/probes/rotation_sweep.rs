@@ -400,8 +400,8 @@ fn engine_sources() -> Vec<String> {
         }
     }
     assert!(
-        out.len() >= 58,
-        "the scan found {} files, fewer than the 58 it read when this floor was measured -- a \
+        out.len() >= 44,
+        "the scan found {} files, fewer than the 44 it read when this floor was measured -- a \
          module moved and the roots above did not follow",
         out.len()
     );

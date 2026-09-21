@@ -1,3 +1,7 @@
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::arrangement`] mounts it with `#[path]` as `disk_side_probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
+
 use std::sync::Mutex;
 
 /// The sentence the disk-side check panics with — one spelling, shared with the commuting

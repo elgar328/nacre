@@ -5,6 +5,10 @@
 //! the census key stops at the kind, so a fixture could say *that* it was declined but not by
 //! which sentence. Test-only tally by producing site, keyed by thread name like `tie_probe` — a
 //! test reads its own rows and never a parallel test's.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::arrangement`] mounts it with `#[path]` as `decline_probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 use std::sync::Mutex;
 

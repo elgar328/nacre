@@ -9,6 +9,10 @@
 //!
 //! ☑ It expires with the gate: it needs both endpoints' rational coordinates, which is the very
 //! demand this cell is removing.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::arrangement`] mounts it with `#[path]` as `extent_probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{Judge, MergedSeg, WorkingPlane, combinatorics};
 use core::sync::atomic::{AtomicUsize, Ordering};

@@ -65,9 +65,11 @@ use crate::{BoolError, BoolKind, RejectReason, combinatorics, reject};
 use nacre_exact::Rat;
 
 #[cfg(test)]
+#[path = "../../tests/probes/chart_census.rs"]
 mod census;
 mod emit;
 #[cfg(test)]
+#[path = "../../tests/probes/chart_probe.rs"]
 pub(crate) mod probe;
 mod read_cell;
 pub(crate) mod regions;

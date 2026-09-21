@@ -1,3 +1,7 @@
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::arrangement::cyl_chart`] mounts it with `#[path]` as `probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
+
 use std::sync::Mutex;
 
 /// One chart's shape, and how today's emitted lateral faces cover its cells.

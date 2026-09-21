@@ -6,6 +6,10 @@
 //! answer — and today's fixtures stop at `loop_winding` before `label_cells` could notice. So every
 //! extent a hole carves is **realized here** and a lock judges it against the fixture's own
 //! geometry. The kernel reads no coordinate to choose an arc; this reads one afterwards, to check.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::arrangement`] mounts it with `#[path]` as `arc_probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{Judge, NodeId, WorkingPlane, combinatorics};
 use std::sync::Mutex;

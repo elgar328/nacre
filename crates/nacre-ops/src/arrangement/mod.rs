@@ -55,31 +55,39 @@ macro_rules! watch {
 
 mod aliases;
 #[cfg(test)]
+#[path = "../tests/probes/arc_probe.rs"]
 pub(crate) mod arc_probe;
 #[cfg(test)]
 #[path = "../tests/arrangement/audits.rs"]
 mod audits;
 mod cells;
 #[cfg(test)]
+#[path = "../tests/probes/crossing_probe.rs"]
 pub(crate) mod crossing_probe;
 #[cfg(test)]
+#[path = "../tests/probes/cycle_probe.rs"]
 pub(crate) mod cycle_probe;
 /// The cylinder chart: the lateral faces' arrangement, emitted from cells (capability D) --
 /// this engine's second arm, run on the cylinder's own chart rather than a plane class.
 pub(crate) mod cyl_chart;
 mod cyl_trace;
 #[cfg(test)]
+#[path = "../tests/probes/decline_probe.rs"]
 pub(crate) mod decline_probe;
 #[cfg(test)]
+#[path = "../tests/probes/disk_side_probe.rs"]
 pub(crate) mod disk_side_probe;
 mod emit;
 #[cfg(test)]
+#[path = "../tests/probes/extent_probe.rs"]
 pub(crate) mod extent_probe;
 #[cfg(test)]
+#[path = "../tests/probes/order_probe.rs"]
 pub(crate) mod order_probe;
 mod per_class;
 mod result;
 #[cfg(test)]
+#[path = "../tests/probes/ruling_probe.rs"]
 pub(crate) mod ruling_probe;
 mod rulings;
 mod setup;

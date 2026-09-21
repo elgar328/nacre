@@ -18,6 +18,10 @@
 //! have `wc > wall`, so the corpus does reach the case where the two orders are opposite calls —
 //! and by the paragraph above it does not matter which is taken, because swapping the pair can only
 //! turn "same" into "reversed" for a whole segment at once.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::arrangement`] mounts it with `#[path]` as `order_probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{Judge, MergedSeg, NodeId, WorkingPlane, along, cmp_along, combinatorics};
 use core::sync::atomic::{AtomicUsize, Ordering};

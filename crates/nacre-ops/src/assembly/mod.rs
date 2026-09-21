@@ -21,10 +21,12 @@ mod cycles;
 mod grouping;
 mod naming;
 #[cfg(test)]
+#[path = "../tests/probes/assembly_probe.rs"]
 pub(crate) mod probe;
 mod reconstruct;
 mod self_touch;
 #[cfg(test)]
+#[path = "../tests/probes/tess_census.rs"]
 pub(crate) mod tess_census;
 mod topology;
 

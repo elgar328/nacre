@@ -22,6 +22,10 @@
 //! ★★★ The **invariant** is checked in [`tess_census::record`] rather than in a test that reads
 //! the vector afterwards — see the note there. The test's job is only to say the census ran and
 //! that the known population is still in it.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::assembly`] mounts it with `#[path]` as `tess_census`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 use nacre_tess::TessError;
 use nacre_topo::Model;

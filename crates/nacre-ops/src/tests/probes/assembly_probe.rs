@@ -1,6 +1,10 @@
 //! How many probes a component's depth classification tried before one
 //! decided — `(test, tried, offered, decided)`. Expected 1 under the corner rule, more only
 //! where a tangent or boundary tie remains.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::assembly`] mounts it with `#[path]` as `probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 pub(crate) mod deciding {
     use crate::combinatorics::tie_probe::Tie;

@@ -3,6 +3,10 @@
 //! ★ This cell's result lives *inside* an operation that still refuses further down, so there is no
 //! solid to open and count faces on. The trace's own answer is the thing to hold, the way
 //! `arrangement`'s `sides == [-1, 1]` lock already holds the hole-free one.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::arrangement`] mounts it with `#[path]` as `ruling_probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{SegKind, combinatorics};
 use std::sync::Mutex;

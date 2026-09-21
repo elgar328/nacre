@@ -8,6 +8,10 @@
 //!
 //! ★★ **Nothing downstream reads [`HITS`]**, so the engine's answer is the same with this module
 //! compiled out; `cfg(test)` at the mount states that.
+//!
+//! ★ **An instrument, so the file lives in the test tree and the module does not.**
+//! [`crate::arrangement`] mounts it with `#[path]` as `cycle_probe`, which is what keeps `super::`
+//! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{CylOnClass, combinatorics};
 use std::sync::Mutex;

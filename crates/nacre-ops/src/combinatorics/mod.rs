@@ -36,6 +36,7 @@ use std::collections::HashMap;
 mod component;
 mod direction;
 #[cfg(test)]
+#[path = "../tests/probes/hull_probe.rs"]
 pub(crate) mod hull_probe;
 mod in_faces;
 mod incidence_order;
@@ -49,6 +50,7 @@ mod ring_walk;
 #[path = "../tests/combinatorics.rs"]
 mod tests;
 #[cfg(test)]
+#[path = "../tests/probes/tie_probe.rs"]
 pub(crate) mod tie_probe;
 mod winding;
 mod witnesses;

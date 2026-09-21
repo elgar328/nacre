@@ -418,17 +418,21 @@ append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 
 그 사이에 무엇을 배웠는지가 그 문단에 있다. `design.md` 「가지 말 것」 표에 이 건은 **없다**:
 재 보고 버린 길이 아니라 아직 안 물어본 물음이다.
 
-### 계측이 제품 모듈 안에 산다
+### 계측의 모듈은 못 옮긴다 — 순환이 두 쌍 는다
 
-`cfg(test)` 계측·감사 모듈 **15개, 약 2,470줄**이 제품 모듈 안에 있다 — `arrangement/`
-아홉(`audits` 906 · `order_probe` 138 · `crossing_probe` 79 · `arc_probe` 78 · `extent_probe` 74 ·
-`ruling_probe` 69 · `disk_side_probe` 62 · `cycle_probe` 44 · `decline_probe` 40) ·
-`cyl_chart/` 둘(`census` 507 · `probe` 265) · `combinatorics/` 둘(`tie_probe` 110 ·
-`hull_probe` 27, 그리고 인라인 probe 셋) · `assembly/` 둘(`tess_census` 52 · `probe` 22).
+`cfg(test)` 계측·감사 **15개, 약 2,470줄**의 **파일**은 `src/tests/`(프로브 열넷은
+`tests/probes/`, `audits` 904 는 `tests/arrangement/`)에 있고 **모듈은 제 엔진의 것**이다 —
+`arrangement::ruling_probe` · `cyl_chart::census` 처럼. `#[path]` 마운트가 둘을 떼어 놓는다.
 
-`phase`(타이머 표)는 최상위로 나왔고 그것이 만들던 순환 한 쌍이 사라졌다 — **나머지는 순환을
-만들지 않는다.** 그러므로 이 이사의 근거는 「순환」이 아니라 「계측에 집을 준다」이고, 그
-목적이 값어치 있는지가 먼저 정해져야 한다. 계측을 옮기면 `pub(super)` 정리도 함께 움직인다.
+**계측을 제 최상위 모듈로 올리는 길은 재 보고 막혔다.** 거는 쪽이
+`use crate::probes::X` 를 쓰고 프로브가 `crate::arrangement::MergedSeg` 를 쓰므로 간선이
+양방향으로 서고, `arrangement ⇄ probes` · `combinatorics ⇄ probes` **두 쌍이 생긴다**.
+`phase` 만 올라갈 수 있었던 것은 **아무것도 이름하지 않기** 때문이다(원자 카운터뿐) — 엔진의
+어휘를 이름하는 계측은 그 엔진의 모듈이 맞다.
+
+남은 물음은 자리가 아니라 **인구**다: 이 열다섯이 아직 제 단을 살고 있나. `chart_census` 507 줄의
+doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데 그 단은 이미 올라갔고,
+안에는 단언이 27개 있다. 「재려고 지은 것」이 「지키는 것」으로 졸업했는지는 읽어야 답이 나온다.
 
 ### 타이머가 세 철자다
 
@@ -458,7 +462,7 @@ append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 
 의논해서 정한다.
 
 - **같은 일을 하는 길이 여러 갈래인 자리**(제품 호출 / 테스트 호출 수는 그때 다시 센다): `realize_def`·`realize_cache` 와 그 `_tracked`(실제 본체) · `realize_inv_sqrt` → `_rounded` → `_memoized`(각각 호출처 하나인 3단 포장) · `det3` 다섯 벌(`det3`·`_sign`·`_f64`·`_hp`, 그리고 두 크레이트에 있는 `_big`) · `point_in_mixed_ring` 의 두 크레이트 구현(`_inner` 198줄 / geom `_opt` 89줄) · `base_coeffs_rat` 세 정의 · `three_planes` 의 `_rat`·`_big` 사다리 · `boolean` 은 `boolean_with_report` 의 얇은 포장. `nacre-judge` 의 `pub fn coeff_exact`·`coeff_normal_ok` 는 테스트만 부른다(그 보증은 평면이 `exact_coeffs`·`exact_normal` 을 믿을 수 있을 때만 든다는 타입으로 옮겨 갔다). 「f64 는 실현 통로 하나로」를 컴파일 단계에서 강제하는 것이 같은 갈래다.
-- **300줄이 넘는 함수 열둘**: `assembly/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `cyl_chart/census.rs` 의 `census` 496(테스트 전용) · `cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `assembly/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `assembly/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
+- **300줄이 넘는 함수 열둘**: `assembly/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `tests/probes/chart_census.rs` 의 `census` 496(테스트 전용) · `arrangement/cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `assembly/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `assembly/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
 - **주석이 줄의 33~46%** 다(코드 / 주석: `arrangement` 5,585 / 3,014 · `combinatorics` 3,679 / 2,624 · `nacre-ops/src` 최상위 3,395 / 2,987 · `nacre-exact` 3,130 / 2,150). `error.rs` 1,193줄의 대부분은 `RejectReason` 변종 doc 이고 그것은 사용자에게 가는 문서다 — 줄일 것은 함수 본문 안의 서사 주석이다.
 - `pub(super)` 는 단계의 입구와 테스트가 이름으로 부르는 것에만 달려 있다. `frame3`(26)·`arrangement`(41) 가 가장 많고, 그 가운데 테스트만 부르는 것은 계측을 정리할 때 함께 내려간다.
 - `combinatorics/names.rs` 의 `NodeId` 철자 관문(`rg 'NodeId::(ThreePlane|Pierce)'`, 「비어 있어야 한다」)은 히트 여덟을 든다. `arrangement/aliases.rs` 와 `arrangement/split.rs:39` 는 변종을 **패턴으로** 읽고, 단위 테스트 다섯이 직접 짓는다. `split.rs:65` 는 생성이되 의도된 것이다 — 그 쌍은 이미 `{wc, w}` 로 정준이라 그대로 되돌리고, `NodeId::pierce` 를 거치면 `QuadRoot::canonical` 이 쌍 순서를 다시 매겨 root 가 뒤집힐 수 있다. 관문이 그 여덟을 면제하거나, 「비어 있어야 한다」가 무엇을 금지하는지 문장이 다시 말한다.
