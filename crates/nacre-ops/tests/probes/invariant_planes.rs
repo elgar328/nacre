@@ -1,6 +1,6 @@
 //! **A motion that fixes a plane restates nothing — the plane keeps its world statement.**
 //!
-//! The invariant-plane restatement (stage 1): a rigid motion whose rotation axis is parallel
+//! The invariant-plane restatement: a rigid motion whose rotation axis is parallel
 //! to a plane's normal, and whose translation slides within it, maps the plane onto itself as
 //! a set. Such a plane's image is the source statement verbatim, so the transform pushes the
 //! same statement and interns back onto the **source handle** — the road `Copy` already takes
@@ -133,8 +133,8 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
         }
     }
 
-    // A second turn re-qualifies: the cap stayed world-stated, so stage 1's "source carries
-    // no motion" condition holds again and the caps remain history-free at depth 2.
+    // A second turn re-qualifies: the cap stayed world-stated, so the restatement's "source
+    // carries no motion" condition holds again and the caps remain history-free at depth 2.
     let s = rot_z30(&mut m, s);
     let (caps2, _) = caps_and_walls(&m, s);
     assert!(caps2.contains(&seed), "still the seed after a second turn");

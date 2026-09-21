@@ -174,7 +174,7 @@ fn sorted_vertex_bits(m: &Model, solids: &[Handle<Solid>]) -> Vec<(u8, [u64; 3])
 }
 
 /// What the commuting diagram's digest said for one cell — a statistic the ledger prints; which
-/// of its arms is a lock is decided by measurement (stage 0's P2).
+/// of its arms is a lock is decided by measurement.
 #[derive(Debug, Clone, PartialEq)]
 enum Digest {
     NotAsked,
@@ -274,33 +274,19 @@ fn boolean_commutes(
 /// the moved answer is simply a different answer. The most important rows of the ledger.
 const DIVERGES: &str = "<diverges silently>";
 
-/// **The ledger of cells the kernel does not commute on today** — `(family, motions, sites)`,
+/// **The ledger of cells the kernel does not commute on** — `(family, motions, sites)`,
 /// for all three kinds (measured: every divergence here is the same for Fuse, Cut and Common).
 /// A known cell must fail at one of `sites` (a set, because a boolean's classes are built in
 /// parallel and two of them may die at different sites; which payload surfaces is not
 /// determined). Commuting instead is red — the row must then be removed — and so is failing
 /// somewhere else.
 ///
-/// ★ Measured over the whole group (990 cells, 150 divergent at stage 0): the ∥
-/// ruling label's missing chart-frame factor (`WRONG_SIDE` — every max-side family under
-/// `t(−4,−4,−2)`, the walls and half walls under the z-rotations that put the wall on a seed
-/// plane, corner-lo under most rotations: 105 cells, all commuting since `ruling_interior_is_even`
-/// reads `frame_sign`), the arc extremum's world-z premise (`NOT_OWN_SOLID` — corner-lo where the
-/// axis turns to ±x/±y and its 270° arc bulges past the minimum node: 9 cells, commuting since
-/// `arc_extremum_winding` takes the minimum along the first axis the circle spans), and the transport's
-/// half-recorded chain (`ONE_CYLINDER` — the offset bosses under every rigid motion, whose seam
-/// vertex rounds when translated after the turn; and **silently** on the planar pair, whose
-/// `0.4`/`1.6` box does the same with no cylinder postcondition to catch it: 36 cells, commuting
-/// since `transform` carries the exact part of a motion and records the rest — the law
-/// `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)`). The ledger is empty; it stays here
-/// as the shape the next divergence is written in.
+/// ★ The ledger is empty: every cell of the whole group commutes. It stays here as the shape the
+/// next divergence is written in.
 const KNOWN: &[(&str, &[&str], &[&str])] = &[];
 
-/// The count lock: how many cells `KNOWN` names (three kinds per motion).
-/// Stage 0: 150 · stage 1 (the ∥ chart-frame factor): 45 — every `WRONG_SIDE` row commutes ·
-/// stage 2 (the arc extremum along the first spanned axis): 36 — the `NOT_OWN_SOLID` row too ·
-/// stage 3 (the transport law): **0** — the `ONE_CYLINDER` rows and the planar pair's silent
-/// divergences commute.
+/// The count lock: how many cells `KNOWN` names (three kinds per motion) — zero, since every
+/// cell commutes.
 const KNOWN_CELLS: usize = 0;
 
 fn known_sites(fam: &str, motion: &str) -> Option<&'static [&'static str]> {
@@ -385,7 +371,7 @@ fn run_commuting_oracle(labels: &[&str]) {
                     )),
                 }
                 // ★ The commuting diagram's digest is a lock where measurement said it holds
-                // (stage 0: every quadrantal cell bit-identical, 492/492; every exact-rigid cell
+                // (every quadrantal cell bit-identical, 492/492; every exact-rigid cell
                 // identical or identical without its pierce vertices, 240/240 of the commuting
                 // ones — the pierce vertices of the offset bosses round once more under a
                 // translation, as their `a + b√c` predicts).

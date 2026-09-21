@@ -741,12 +741,8 @@ fn a_reflected_spelling_compares_coordinates_the_same_way() {
     assert!(checked > 0, "no definite comparison in the corpus");
 }
 
-// ---- stage 0b: does the two-caps defect reproduce, and is it wrong or conservative? ----
+// ---- two caps on a tilted face, reached by different arithmetic ----
 
-/// Two bosses on one tilted face, raised to the same height by different arithmetic —
-/// `7.7` against `1.1` then `6.6`. Their caps are the same plane.
-///
-/// Returns the model, the solid, and the two cap faces.
 /// How each column reaches `7.7` — the only thing that varies between a run and its control.
 ///
 /// ★ **A shape-matched control is not available.** Raising *both* columns as `1.1 + 6.6` would
@@ -763,6 +759,10 @@ enum Recipe {
     Single,
 }
 
+/// Two bosses on one tilted face, raised to the same height by different arithmetic —
+/// `7.7` against `1.1` then `6.6`. Their caps are the same plane.
+///
+/// Returns the model, the solid, and the two cap faces.
 fn two_caps_on_a_tilted_face(
     recipe: Recipe,
 ) -> (Model, Handle<Solid>, [Handle<nacre_topo::Face>; 2]) {
@@ -904,13 +904,13 @@ fn cap_pair(m: &Model, faces: &[crate::planes::FaceRow]) -> (usize, usize) {
 /// number — `77/10` either way — but on a tilted face the cap is reached through an irrational
 /// frame, and the judge compares the plane's **witness**.
 ///
-/// ★★★ **This used to answer `Sign(Negative)` — two planes, with full confidence.** The
-/// witness was the exact ring points *realized*, and a third of those do not survive f64
-/// (`11/10` is not one), so the judge was describing the plane through three rounded points
-/// and answering correctly about the wrong plane. Now `Model::surface_points` carries the
-/// exact triple and the two caps meet.
+/// ★★★ **A realized witness answers `Sign(Negative)` — two planes, with full confidence.** A
+/// third of the exact ring points do not survive f64 (`11/10` is not one), so a judge reading
+/// them *realized* describes the plane through three rounded points and answers correctly about
+/// the wrong plane. The plane's own exact triple (`Surface::Plane`'s `points`) is the witness,
+/// and the two caps meet.
 ///
-/// The `Single` control (both columns raised in one pad) merged before and merges now.
+/// The `Single` control (both columns raised in one pad) merges too.
 #[test]
 fn two_caps_reached_by_different_arithmetic_are_one_plane() {
     for (recipe, want_same) in [(Recipe::Split, true), (Recipe::Single, true)] {
@@ -1039,30 +1039,28 @@ fn plate_across_caps(recipe: Recipe, span: bool) -> (usize, bool, bool) {
     (bad, volume_ok, valid)
 }
 
-// ---- stage 0g: the prediction the whole plan rests on ----
+// ---- the exact description: are the two caps one plane? ----
 
 /// ★★★★★ **Are the two caps *really* one plane?**
 ///
-/// The plan's premise is that describing each cap by **exact points** — rather than by the
-/// rounded f64 witness — makes the judge see one plane. That is an algebraic claim about the
-/// composed frames, and nothing has measured it.
+/// The exact triple rests on a premise: describing each cap by **exact points** — rather than
+/// by the rounded f64 witness — makes the judge see one plane. That is an algebraic claim about
+/// the composed frames, and this measures it.
 ///
-/// This measures it without changing any production type. Each cap already carries what the
-/// plan would store: exact **frame** coefficients (`Model::surface_name`) and the motion that
-/// carries them out (`SurfaceDef::Moved`). Three exact points on that frame plane, replayed
-/// through that motion, are the definition the plan proposes — for the *plane* question any
-/// non-collinear triple on the plane is equivalent, so the synthetic triple answers it.
+/// Each cap carries exact **frame** coefficients (`Model::surface_name`) and the motion that
+/// carries them out (`Surface::Plane`'s `motion`). Three exact points on that frame plane,
+/// replayed through that motion, are a definition — for the *plane* question any non-collinear
+/// triple on the plane is equivalent, so the synthetic triple answers it.
 ///
 /// The judge is then run with a **deliberately unreachable** coincidence limit, so it never
 /// short-circuits and instead reports the bound it achieved. Reading that across precisions:
 ///
 /// * falling like `2^-prec` ⇒ the true value is **0** ⇒ the caps are one plane ⇒ premise holds;
-/// * flattening at some nonzero value ⇒ they are genuinely different planes and the plan's
-///   diagnosis is wrong.
+/// * flattening at some nonzero value ⇒ they are genuinely different planes.
 ///
 /// ★★★★★ **Measured: it falls one bit per bit**, and the mantissa stays at `0.9338…` — the
 /// bound is `C · 2^-prec` with a constant `C`, exactly the model `escalate` derives its jump
-/// from. So the caps *are* one plane, and what splits them today is only the rounded witness.
+/// from. So the caps *are* one plane, and only a rounded witness could split them.
 ///
 /// ```text
 /// prec=128  within=2^-114
@@ -1129,7 +1127,7 @@ fn two_caps_described_exactly_are_one_plane() {
     let (da, db) = (define(ia, None), define(ib, None));
 
     // A two-plane table over those definitions. `base_rat: None` keeps the composed-rotation
-    // shortcut out of it, so what runs is the interval route the plan's stage C1 exercises.
+    // shortcut out of it, so what runs is the interval route.
     let mk = |d: [WitnessPoint; 3]| {
         let tri = d.clone().map(|p| Point3::from_array(p.coord()));
         WorkingPlane {

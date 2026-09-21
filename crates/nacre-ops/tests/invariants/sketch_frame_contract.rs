@@ -86,7 +86,7 @@ fn rot(axis: Axis, deg: i128) -> Isometry {
 /// rotation is about their own normal, the translation slides within them) keeps its world
 /// statement and no motion node, so its canonical frame verifies and **nothing declines** in
 /// any flavour. The declining population that remains for `FrameNotRepresentable` is the one
-/// stage 1 leaves recorded: exactly-statable-but-shifted images (a z-translation after the
+/// the restatement leaves recorded: exactly-statable-but-shifted images (a z-translation after the
 /// turn), mirror chains, and second-generation moved sources — none of which these flavours
 /// build. Everything must agree to the bit — including the flip=true axis-aligned faces the
 /// old fallback reported point-symmetric.

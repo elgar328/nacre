@@ -5,7 +5,7 @@ use super::*;
 /// ★★ The node-omission normalization's ground: **a seeded world plane's canonical frame
 /// realizes bit-exactly on the unit axes** — origin `(0,0,0)`, every axis component `0.0` or
 /// `±1.0`, no rounding anywhere. Such a frame's axes lift to exact orthonormal rationals, so
-/// the operation's `exact()` gate elides the node (rule 207's normalization) and loses
+/// the operation's `exact()` gate elides the node (the node-omission normalization) and loses
 /// nothing: the frame the node would state is the world statement already made.
 ///
 /// The expected axes are the **arbitrary-axis convention's**, not `axis_plane`'s script

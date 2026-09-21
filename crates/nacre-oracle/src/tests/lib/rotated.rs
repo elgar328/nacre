@@ -143,7 +143,7 @@ fn rotated_containment_cut_makes_cavity_matches_occt() {
     );
 }
 
-/// A **re-rotated** solid (overhaul stage 1c) is still a valid b-rep: rotate a
+/// A **re-rotated** solid is still a valid b-rep: rotate a
 /// cuboid 30° about Z, then 45° about X, so its vertices carry a two-node rotation
 /// chain. A rigid re-rotation leaves volume/area invariant, so OCCT must agree with
 /// nacre's `mass_props` — confirming the re-rotation multi-pass clone (chained

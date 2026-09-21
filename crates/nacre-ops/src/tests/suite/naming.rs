@@ -316,10 +316,9 @@ fn one_plane_is_one_class_whatever_the_face_size() {
 
 /// ★★★ **Solving a vertex's three planes lands on its coordinate.**
 ///
-/// This is the premise the point types rest on: a point *is* the
-/// meeting of three surfaces, and the stored coordinate is a rounded answer to that question.
-/// Stage 0 measured it by reading the census; this asserts it on data the kernel itself built,
-/// which is a different claim — the definitions have to be *right*, not merely present.
+/// This is the premise the point types rest on: a point *is* the meeting of three surfaces, and
+/// the stored coordinate is a rounded answer to that question. This asserts it on data the kernel
+/// itself built — the definitions have to be *right*, not merely present.
 ///
 /// ★ **Split by origin, because one row proves nothing.** A `Discovered` vertex's coordinate
 /// was produced by solving exactly this triple, so agreement there is an identity. The rows

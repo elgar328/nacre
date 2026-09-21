@@ -317,9 +317,8 @@ fn sever_cut_matches_occt_compound() {
     assert!(approx(area, occt.area), "area {area} vs occt {}", occt.area);
 }
 
-/// A `Transform`-translated solid composes correctly into a boolean (overhaul
-/// stage 1a): translate a cube by a rational offset, then `Cut` an overlapping
-/// cube from it. The moved geometry's boolean matches OCCT on the same inputs —
+/// A `Transform`-translated solid composes correctly into a boolean: translate a cube by a
+/// rational offset, then `Cut` an overlapping cube from it. The moved geometry's boolean matches OCCT on the same inputs —
 /// so the geometry-rewrite produced a boolean-valid solid, not just a
 /// volume-invariant one.
 #[test]
@@ -367,7 +366,7 @@ fn translated_solid_cut_matches_occt() {
     assert!(approx(area, occt.area), "area {area} vs occt {}", occt.area);
 }
 
-/// A `Transform`-rotated solid is a well-formed b-rep (overhaul stage 1b):
+/// A `Transform`-rotated solid is a well-formed b-rep:
 /// rotate a cuboid 30° about Z through a rational axis point, then export just
 /// that solid and ask OCCT for its volume/area. A rigid rotation leaves both
 /// invariant, so OCCT must agree with nacre's `mass_props` — proving the

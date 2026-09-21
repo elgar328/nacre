@@ -9,9 +9,9 @@ use super::*;
 // **intervals** (value ± tol) — the design's "dynamic filter" (§CIP ⑨): interval
 // arithmetic is a sound worst-case bound by construction, so no per-predicate bound
 // formula is hand-derived. An interval straddling 0 escalates to astro-float from the
-// point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path, the
-// judgment **layer only** — the boolean wiring (seam → plane `WitnessPoint`s) is
-// stage 3. Validated before the port by the isolated 3D experiment (H-b coefficient
+// point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path; the boolean
+// reaches it through `Judge::orient3d`, whose rotated arm hands the seam's planes over as
+// `WitnessPoint`s. Validated before the port by the isolated 3D experiment (H-b coefficient
 // tol, H-c indirect soundness); the constant `mag`-floor policy is indirect-only (distinct from the
 // explicit `16·scale³` floor of [`orient3d_judge`]).
 
@@ -378,7 +378,8 @@ fn plane_gap(m: &HpBounded, d: &HpBounded, cross: &[HpBounded; 3], prec: usize) 
 /// rotated points, the triangle three rotated points. Interval filter → astro-float
 /// escalation; an undecided `D` or `M` becomes the distance from the implicit point to the
 /// triangle's plane and is answered by [`escalate`]. The `Discovered`-seam analogue of
-/// [`orient3d_judge`]; boolean wiring is stage 3.
+/// [`orient3d_judge`]. The boolean reaches its body (`orient3d_from_cramer`) through
+/// [`crate::predicate::Judge::orient3d`].
 #[allow(clippy::too_many_arguments)]
 pub fn indirect_orient3d_judge(
     plane_a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),

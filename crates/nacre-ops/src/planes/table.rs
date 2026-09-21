@@ -183,8 +183,8 @@ pub(crate) fn collect_planes(
                 // was derived once at push. That is not a rule-1 violation: this table lives for
                 // one operation and is a mirror, not truth.
                 //
-                // The rational-closure branch is stage 1: three vertices that solve to `Rat`
-                // give a triangle indistinguishable from a stated one, so every predicate below
+                // The rational-closure branch: three vertices that solve to `Rat` give a
+                // triangle indistinguishable from a stated one, so every predicate below
                 // runs unchanged.
                 //
                 // ★★★ **The nameless branch (the heterogeneous half).**

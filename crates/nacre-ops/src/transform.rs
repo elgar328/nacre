@@ -1,6 +1,6 @@
-//! Rigid-body transform of a solid (design overhaul stage 1): copy a solid under an isometry,
-//! remapping every surface/curve and carrying each vertex's exact `Origin` forward so a rotated
-//! operand stays exactly defined. [`copy`] is the same walk with no motion at all.
+//! Rigid-body transform of a solid: copy a solid under an isometry, remapping every
+//! surface/curve and carrying each vertex's exact `Origin` forward so a rotated operand stays
+//! exactly defined. [`copy`] is the same walk with no motion at all.
 
 use crate::OpError;
 use nacre_exact::{Axis, Isometry, Rat};
@@ -13,8 +13,8 @@ use nacre_topo::{
 };
 use std::collections::{HashMap, HashSet};
 
-/// Supersede `solid` by its image under `isometry` (stage 1a: a rational
-/// translation). Clones the solid's cells with moved geometry ([`transform_solid`])
+/// Supersede `solid` by its image under `isometry` (a rotation, then a translation). Clones
+/// the solid's cells with moved geometry ([`transform_solid`])
 /// and drops the input from `live_solids` — the op-log is the truth.
 pub(crate) fn transform(
     model: &mut Model,
@@ -733,10 +733,9 @@ fn transform_solid(
         // predicates keep the exact roads.
         //
         // `Known` + narrow name only: a `Through` plane's truth is vertex handles in a
-        // separate intern table, and a source that already carries a motion keeps today's
-        // recorded path (stage 1 — under it a fixed plane never gains a history, so a
-        // second turn about the same normal restates again). A mirror never restates here:
-        // an improper motion's parity interactions deserve their own measured stage.
+        // separate intern table, and a source that already carries a motion keeps its
+        // recorded path — which costs a fixed plane nothing, since it never gains a history
+        // and a second turn about the same normal restates again. A mirror never restates here.
         let invariant = matches!(
             &src_truth,
             nacre_topo::Surface::Plane {

@@ -93,7 +93,8 @@ fn coord_gap(m: &HpBounded, da: &HpBounded, db: &HpBounded) -> Gap {
 /// b[axis]`, `Negative` = `<`, and a zero that is either **proved** or **proved within the
 /// coincidence limit** (unlike the exact `nacre_predicates::indirect_cmp_coord`, whose `0` means
 /// exactly equal — see [`Decision`] for which of the two this was). The
-/// two-implicit companion of [`indirect_orient3d_judge`]; boolean wiring is stage 3.
+/// two-implicit companion of [`indirect_orient3d_judge`]; the boolean reaches it through
+/// [`crate::predicate::Judge::cmp_coord`].
 pub fn indirect_cmp_coord_judge(
     a: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
     b: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],

@@ -1605,8 +1605,8 @@ fn box_corner_vertices() -> (Model, [Handle<Vertex>; 3]) {
 ///
 /// `push_plane_through` began as a copy of `push_plane`'s tail and the copy silently dropped
 /// [`WIDE_PLANES`] and [`SEEDED_HITS`] — the census bridges `stat wide_planes` and
-/// `stat seeded_hits` went blind on the road the design predicts will *feed* them (open item
-/// 2b: *"the first producer of a `Wide` name is the datum"*). Sharing one interning tail is
+/// `stat seeded_hits` went blind on a road that *feeds* them — a datum plane's name can be
+/// `Wide`. Sharing one interning tail is
 /// the fix; this is the observation that it worked, and it is two assertions because a
 /// counter that cannot move is indistinguishable from a population that never arrives.
 #[test]

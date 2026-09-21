@@ -568,8 +568,9 @@ fn the_trig_bound_holds_against_a_far_deeper_realization() {
             );
         }
     }
-    // …and the odd rung out proves why stage 4's rungs are multiples of 64: asking for 200
-    // bits buys 256, so ~56 bits of the result are paid for and then claimed away.
+    // …and the odd precision out proves why the realization ladder's rungs (`LADDER` in
+    // `nacre-ops`) are multiples of 64: asking for 200 bits buys 256, so ~56 bits of the result
+    // are paid for and then claimed away.
     let (slack_200, _) = &worst[&200];
     assert!(
         (40..=80).contains(slack_200),

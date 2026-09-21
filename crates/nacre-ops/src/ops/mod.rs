@@ -108,9 +108,8 @@ pub enum Operation {
         a: Handle<Solid>,
         b: Handle<Solid>,
     },
-    /// Rigid-body transform: supersede `solid` by its image under `isometry`
-    /// (overhaul stage 1). 1a realizes a rational translation; 1b adds rotation.
-    /// The `Isometry` is the exact definition (op-log truth); the geometry is a
+    /// Rigid-body transform: supersede `solid` by its image under `isometry` — a rotation, then
+    /// a translation. The `Isometry` is the exact definition (op-log truth); the geometry is a
     /// realized cache.
     Transform {
         solid: Handle<Solid>,
