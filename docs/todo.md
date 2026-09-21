@@ -391,6 +391,12 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 
 「모션 사슬을 읽을 때 접는다」에 적힌 대로, 인접쌍 인구가 생기면.
 
+### 거울의 불변 평면 재진술
+
+회전·이동이 평면을 자기 자신으로 보내면 `transform` 은 그 평면을 원래 핸들로 되돌린다(재진술). 거울은
+그러지 않는다 — 부호 반전(`det = −1`)이 방향과 어떻게 얽히는지 재지 않았다. 거울 평면에 놓인 면의 인구가
+생기면.
+
 ### `validate` 를 연산 직후 자동으로 돌릴 것인가
 
 `nacre-ops` 는 `nacre-validate` 에 dev-의존만 한다 — 연산은 validate 를 부르지 않고 테스트·census 가 부른다. 디버그 빌드에서 강제하려면 의존 방향(validate → topo, ops → validate)과 비용을 먼저 잰다. validate 의 tess 검사(crack-free·출처 정합)도 없다 — 그 검사는 `nacre-tess` 의 자기 테스트에 있다.
@@ -499,4 +505,13 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
 - **300줄이 넘는 함수 열둘**: `assembly/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `tests/probes/chart_census.rs` 의 `census` 496(테스트 전용) · `arrangement/cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `assembly/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `assembly/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
 - **주석이 줄의 33~46%** 다(코드 / 주석: `arrangement` 5,585 / 3,014 · `combinatorics` 3,679 / 2,624 · `nacre-ops/src` 최상위 3,395 / 2,987 · `nacre-exact` 3,130 / 2,150). `error.rs` 1,193줄의 대부분은 `RejectReason` 변종 doc 이고 그것은 사용자에게 가는 문서다 — 줄일 것은 함수 본문 안의 서사 주석이다.
 - `pub(super)` 는 단계의 입구와 테스트가 이름으로 부르는 것에만 달려 있다. `arrangement`(53)·`frame3`(28) 가 가장 많다. **계측 이사는 이것을 안 건드렸다** — `#[path]` 로 파일만 옮겨 모듈이 제자리에 남았으므로 가시성이 하나도 안 움직였다. 테스트만 부르는 `pub(super)` 가 몇인지는 따로 세야 한다.
-- `tests/suite/curved_nesting.rs` 의 재연산 census·crossing census doc 은 「14 → 0」 식의 사다리 서사다. 본문의 기대표는 거의 전부 `Ok(n)` 이 됐다. 서사 속의 살아 있는 규칙(섹터는 가장 가까운 rim 노드 사이의 호 run 으로 읽는다 등)을 `design.md` 「원통」 절과 대조해 없는 것만 옮기고, doc 은 현재 표 하나로 줄인다. 같은 부류로 남은 표지: 「Stage 0」·「2b's corpus」·「rule 207」, 그리고 이름이 낡은 테스트 `a_sketch_on_a_prism_side_wall_takes_the_f64_path_today`(지금 단언하는 것은 보고된 `SketchPlane` 의 `exact()` 가 `None` 이라는 것뿐이다).
+- **소스 주석의 경위 서사가 506줄·167파일 남아 있다**(`used to`·`today`·`no longer`·`before the fix` 가 든 주석 줄,
+  수동태 `is used to` 제외). 문서 규칙 1(현재형만)의 위반이지만 자연어라 기계로 가를 수 없고, 한 줄씩 읽어
+  «지금 참인 문장»으로 고쳐 써야 한다 — 그러다 보면 거짓이 드러난다(`curved_nesting.rs`·`frames.rs` 를 정리할 때
+  숫자 다섯과 «f64 경로» 하나가 그랬다). 서사가 가장 짙은 곳: `curved_nesting.rs` 의 나머지 doc(원판 근사식,
+  «plainest arm», 구멍 뚫린 입방체의 경계), `tolerant.rs` 의 두 캡 절, `frames.rs` 의 두 보스 doc.
+- **문자-숫자 ID 가 든 주석이 98줄·47파일이다**(`S6a`·`W2`·`A4`·`E5` 식; 마일스톤 `M1–M7` 과 행렬 첨자 `P00–P11`
+  제외). 세 부류가 섞여 있어 자리마다 읽어야 한다: 작업 번호(규칙 6 위반 — 지운다), `design.md` 「제약」 표의
+  `C1–C8` 인용(문서 번호 인용 — 규칙의 내용으로 바꾼다), 지역 라벨(입방체의 `V0–V7` — 둔다). 실험 라벨
+  `H-a…H-i` 는 judge 테스트의 이름으로 살아 있으나 그 출처 `exact3d` 는 트리에 없고, `zzz_ledger` 의 `C2-P4`
+  식 라벨을 `curved_nesting.rs` 의 진단 `eprintln` 이 `P1`/`P4` 로 가리킨다.
