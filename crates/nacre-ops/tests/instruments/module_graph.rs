@@ -207,6 +207,184 @@ fn the_parser_reads_what_it_should() {
     }
 }
 
+/// ★★★ **What this restructure established, asserted — and only that.**
+///
+/// The graph is **not** a DAG and this does not pretend otherwise: seven module pairs still point
+/// at each other. What is settled is the boolean pipeline's shape, so that is what is locked.
+/// Each of these was a real edge before the work and is zero after it; an editor who reintroduces
+/// one is undoing something, not adding to it.
+#[test]
+fn the_pipeline_runs_one_way() {
+    let e = edges();
+    let named = |owner: &str, target: &str| {
+        e.get(owner)
+            .and_then(|r| r.get(target))
+            .copied()
+            .unwrap_or(0)
+    };
+    let mut broken = Vec::new();
+
+    // `draft` is the vocabulary both halves speak, so it sits under them. It needs names
+    // (`combinatorics`), the class tables a face lives in (`planes`) and the judge wrapper
+    // (`tolerant`) -- and nothing above.
+    for above in [
+        "arrangement",
+        "assembly",
+        "boolean",
+        "ops",
+        "bands",
+        "cyl_chart",
+        "nesting",
+    ] {
+        let n = named("draft", above);
+        if n > 0 {
+            broken.push(format!(
+                "draft -> {above} ({n}): the floor is reaching upward"
+            ));
+        }
+    }
+    // The assembly is the last stage. It reads what the engine handed it; it does not ask the
+    // engine anything.
+    let n = named("assembly", "arrangement");
+    if n > 0 {
+        broken.push(format!(
+            "assembly -> arrangement ({n}): the last stage is calling the engine"
+        ));
+    }
+    // The front door is the first stage and lives above the engine, not inside it.
+    let n = named("arrangement", "boolean");
+    if n > 0 {
+        broken.push(format!(
+            "arrangement -> boolean ({n}): the engine is calling the front door"
+        ));
+    }
+
+    assert!(
+        broken.is_empty(),
+        "the boolean pipeline runs boolean -> arrangement -> assembly, all of them reading \
+         draft. These edges run the other way:\n  {}",
+        broken.join("\n  ")
+    );
+}
+
+/// **Everything else, frozen.** The seven surviving cycles are not claimed to be right -- they are
+/// claimed to be *known*, and this is the list.
+///
+/// ★ When it fires there are two answers and no third. Either the edge goes away, or it joins the
+/// table **and the commit body says why that direction is correct**. A gate that people only ever
+/// add to is a list, not a gate.
+#[test]
+fn no_module_edge_appears_that_is_not_recorded() {
+    // owner -> the modules it may name. Measured on the commit that split the front door from the
+    // assembly; counts deliberately left out, because a count that must be updated to add a call
+    // is a gate that gets edited until it is quiet.
+    const RECORDED: &[(&str, &[&str])] = &[
+        (
+            "arrangement",
+            &[
+                "assembly",
+                "bands",
+                "combinatorics",
+                "cyl_chart",
+                "draft",
+                "nesting",
+                "par",
+                "planes",
+                "reuse",
+                "tolerant",
+                "transform",
+            ],
+        ),
+        (
+            "assembly",
+            &[
+                "combinatorics",
+                "draft",
+                "nesting",
+                "planes",
+                "realize",
+                "tolerant",
+                "transform",
+            ],
+        ),
+        (
+            "bands",
+            &[
+                "arrangement",
+                "combinatorics",
+                "draft",
+                "planes",
+                "tolerant",
+            ],
+        ),
+        (
+            "boolean",
+            &["arrangement", "assembly", "draft", "reject_census"],
+        ),
+        ("combinatorics", &["arrangement", "planes", "tolerant"]),
+        (
+            "cyl_chart",
+            &[
+                "arrangement",
+                "assembly",
+                "bands",
+                "combinatorics",
+                "draft",
+                "planes",
+                "tolerant",
+            ],
+        ),
+        ("draft", &["combinatorics", "planes", "tolerant"]),
+        ("error", &["reject_census"]),
+        ("exact", &["ops", "rotated_vertex"]),
+        (
+            "nesting",
+            &["arrangement", "combinatorics", "planes", "tolerant"],
+        ),
+        (
+            "ops",
+            &[
+                "boolean",
+                "exact",
+                "planes",
+                "realize",
+                "rotated_vertex",
+                "transform",
+            ],
+        ),
+        (
+            "planes",
+            &["arrangement", "combinatorics", "par", "rotated_vertex"],
+        ),
+        ("realize", &["planes", "rotated_vertex"]),
+        (
+            "reuse",
+            &["combinatorics", "draft", "planes", "rotated_vertex"],
+        ),
+        ("tolerant", &["planes"]),
+        ("transform", &["realize"]),
+    ];
+    let recorded: BTreeMap<&str, BTreeSet<&str>> = RECORDED
+        .iter()
+        .map(|(o, ts)| (*o, ts.iter().copied().collect()))
+        .collect();
+    let mut fresh = Vec::new();
+    for (owner, row) in edges() {
+        let known = recorded.get(owner.as_str());
+        for (target, n) in row {
+            if !known.is_some_and(|k| k.contains(target.as_str())) {
+                fresh.push(format!("{owner} -> {target} ({n})"));
+            }
+        }
+    }
+    assert!(
+        fresh.is_empty(),
+        "a module edge that the table does not record:\n  {}\n\nRemove it, or add it to \
+         RECORDED and say in the commit body why that direction is right.",
+        fresh.join("\n  ")
+    );
+}
+
 /// The graph as it stands, printed for a reader. No assertion yet — this is the census the
 /// restructure is measured against, and the gate that freezes it comes once the edges it is
 /// meant to forbid are actually gone.
