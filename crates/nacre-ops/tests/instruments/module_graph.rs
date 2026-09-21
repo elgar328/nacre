@@ -1,11 +1,11 @@
 //! **Which top-level module names which** — the crate's own dependency graph, read off the source.
 //!
-//! This crate is 35k lines of product code in eighteen top-level modules, and the question
+//! This crate is 35k lines of product code in twenty top-level modules, and the question
 //! "can this be split" is really "is the graph acyclic". Nothing in `fmt`, `clippy` or the suite
 //! answers it, so the graph was invisible until it was measured: nine module pairs pointed at
 //! each other, and only two of those were *behaviour* — the rest named a type, or took an
 //! argument, that lived on the wrong side. The difference is the whole finding, and it is only
-//! visible if something counts. Two pairs are left.
+//! visible if something counts. One pair is left, and it is not a defect.
 //!
 //! ★ **The parser is what gets calibrated, not the files.** An earlier hand-rolled version of this
 //! measurement was wrong three times — it counted `std::ops::Deref` as a reference to this crate's
@@ -210,8 +210,9 @@ fn the_parser_reads_what_it_should() {
 
 /// ★★★ **What this restructure established, asserted — and only that.**
 ///
-/// The graph is **not** a DAG and this does not pretend otherwise: two module pairs still
-/// point at each other. What is settled is the boolean pipeline's shape and the direction of
+/// The graph is **not** a DAG and this does not pretend otherwise: `exact` and `ops` still
+/// point at each other -- one crate-layer helper and the layer it belongs to, which is a
+/// formality rather than a layering fault. What is settled is the boolean pipeline's shape and the direction of
 /// everything under the engine, so that is what is locked. Each of these was a real edge before
 /// the work and is zero after it; an editor who reintroduces one is undoing something, not
 /// adding to it.
@@ -235,7 +236,6 @@ fn the_pipeline_runs_one_way() {
         "boolean",
         "ops",
         "bands",
-        "cyl_chart",
         "nesting",
     ] {
         let n = named("draft", above);
@@ -259,8 +259,6 @@ fn the_pipeline_runs_one_way() {
     // engine's. The engine reads all four; none of them knows it exists. A name pointing up
     // here means something below has started taking the caller's words again.
     //
-    // `cyl_chart` is deliberately absent: it names `arrangement` 14 times, and a pair with no
-    // answer yet cannot be asserted to zero.
     for below in ["bands", "combinatorics", "nesting", "planes"] {
         let n = named(below, "arrangement");
         if n > 0 {
@@ -313,7 +311,6 @@ fn no_module_edge_appears_that_is_not_recorded() {
                 "assembly",
                 "bands",
                 "combinatorics",
-                "cyl_chart",
                 "draft",
                 "nesting",
                 "par",
@@ -342,18 +339,6 @@ fn no_module_edge_appears_that_is_not_recorded() {
             &["arrangement", "assembly", "draft", "reject_census"],
         ),
         ("combinatorics", &["planes", "tolerant"]),
-        (
-            "cyl_chart",
-            &[
-                "arrangement",
-                "assembly",
-                "bands",
-                "combinatorics",
-                "draft",
-                "planes",
-                "tolerant",
-            ],
-        ),
         ("draft", &["combinatorics", "planes", "tolerant"]),
         ("error", &["reject_census"]),
         ("exact", &["ops", "rotated_vertex"]),

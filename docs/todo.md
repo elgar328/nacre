@@ -5,30 +5,6 @@
 
 ## 지금
 
-### 모듈 순환 2쌍 — `cyl_chart` 를 조사한다
-
-`nacre-ops` 의 최상위 모듈 21개 사이에 **양방향 쌍이 둘** 남아 있고, 그중 답이 없는 것은
-**하나**다. 오늘의 표는
-`cargo test -p nacre-ops --test instruments measure_module_graph -- --ignored --nocapture` 가
-찍고, 관문(overview 「관문」)이 더 나빠지지 않게 든다.
-
-| 쌍 | 역방향의 정체 | 상태 |
-|---|---|---|
-| `arrangement ⇄ cyl_chart` (2 / 14) | 엔진이 `emit_lateral`·`census` 를 **부르고**(`arrangement/mod.rs:467·474`), 차트가 엔진의 어휘를 14번 **읽는다**(`ArcLabel`·`Label`·`SegKind`·`RulingExtent`·`Curved`) | **답이 없다 — 다음 할 일** |
-| `exact ⇄ ops` (1 / 6) | `exact.rs:26` 이 `crate::ops::{Profile2d, SketchPlane}` 을 든다 | **문제가 아니다** — 같은 층의 도우미이고 엔진 어느 모듈도 안 쓴다. 건드리지 않는다 |
-
-**`arrangement ⇄ cyl_chart` 가 물어야 할 것.** 이 쌍은 도우미가 아니라 **파이프라인**이다 —
-차트는 배열의 *다음 단계*이고(엔진이 부른다), 다음 단계가 앞 단계의 산출 어휘를 읽는 것은
-`assembly` 가 `draft` 를 읽는 것과 **같은 방향**이다. 그러면 결함은 순환이 아니라 **그 어휘가
-앞 단계 «안»에 산다**는 것이고, 물음은 `draft` 를 지을 때와 같다: 넘어가는 타입 중 엔진 내부
-전용과 단계 간 어휘가 갈리는가.
-
-⚠ **어휘의 무게는 안에 있다.** `arrangement` 안의 참조 대 제품 코드에서 밖의 참조 —
-`SegKind` **42 : 12** · `Label` **22 : 8** · `ArcLabel` **12 : 9**. 그리고 밖은 **전부
-`cyl_chart`** 다(`SegKind` 한 건만 `combinatorics/ring_walk.rs:38` 의 주석). 「밖에서 읽으니
-내리면 된다」는 답은 `bands`(3참조 도우미)에 대해 한 번 반증됐다 — 소비자가 **단계**일 때도
-같은지는 재 보고 정한다. 조사부터, 계획은 그다음.
-
 ### 모션 사슬을 읽을 때 접는다
 
 **무엇이 문제인가.** `Model::chain_translation` 은 사슬의 **첫 비이동 노드에서 사퇴**하고, 그 사퇴가
@@ -292,6 +268,18 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
 - 스케치의 임의 각도 호와 호–호 접합(`ArcSweepNotQuarterTurn`·`ArcsMeetAtVertex`).
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다.
 
+### 엔진 소스 스캔이 단어 경계를 안 본다
+
+`tests/probes/rotation_sweep.rs` 의 `no_production_code_walks_a_ring_past_the_shared_walk` 는
+`line.contains("side_of(")` 로 위반을 찾고 면제는 `contains("fn side_of")` 로 거른다. **둘 다
+단어 경계가 없다** — `ruling_side_of(` 가 첫째에 걸리고 `fn ruling_side_of` 는 둘째를 못 지난다.
+쌍둥이 스캔(`point_in_ring`)은 이미 고쳐져 있고 그 doc 이 *「맨 `contains` 가
+`rational_point_in_ring` 을 플래그했다」* 고 적는다 — **같은 결함이 형제에 안 고쳐진 채 남았다.**
+
+오늘 인구는 0 이다: `engine_sources()` 가 뿌리 폴더를 `read_dir` 로 **한 겹만** 읽으므로
+`arrangement/cyl_chart/`(`ruling_side_of` 가 사는 곳)는 두 스캔 밖에 있다. 차트가 엔진 코드가
+된 지금 그 하위폴더를 뿌리에 **넣어야 하고**, 넣으면 위 오탐이 즉시 빨개진다. 경계를 먼저 고친다.
+
 ### 발행 설정이 문서의 규칙을 집행하지 않는다
 
 `design.md` 는 `nacre-oracle` 을 「발행하지 않는 dev 전용 크레이트」라고 적지만, 워크스페이스 14개 크레이트 어느 `Cargo.toml` 에도 `publish` 키가 없다 — 전부 기본값 `true` 다. 지금 릴리스를 돌리면 오라클 하네스까지 나간다. 발행 전에 `publish = false` 를 단다.
@@ -423,6 +411,24 @@ reuse 가 추적·셀 패스를 건너뛰면서 남은 일이 169 클래스 중 
 ### undo·체크포인트
 
 append-only 에서 undo 는 연산별 (store 길이, 루트) 체크포인트로 O(1)이고, 로그 중간 편집은 체크포인트부터의 재생 + (연산, 입력) 메모다. 먼저 확인할 위험은 재생 후 핸들 안정성이다: 로그 속 핸들은 인덱스 어휘라 **통째 재생에서만** 성립하고 중간 수정은 하류 인덱스를 밀어낸다(`design.md` 「저장소와 동일성」).
+
+### 평면과 원통이 셀 기계를 두 벌 쓴다
+
+`arrangement/cyl_chart` 는 평면 쪽의 `walk_cells`·`nest_cells`·`label_cells`·`point_in_ring`·
+`angular_order` 를 **한 번도 안 부른다**(실측 0). 대신 `regions::walk` **485줄**로 전 단계를
+다시 쓴다 — 평면 쪽 `walk_cells` 는 **155줄**이다.
+
+`regions.rs` 가 이유를 적는다: 차트는 **환형**이라 딱지 전파를 시작할 무한 뿌리가 없고,
+**직교 격자**라 정점의 각도 순서가 필요 없다. 그 장벽은 진짜다.
+
+대조가 남는다 — **tess 는 같은 문제를 한 알고리즘으로 푼다**(design.md 「모든 면이 같은 길을
+탄다 … 분기는 하나이고 고르는 것은 알고리즘이 아니라 차트다」). 불리언만 두 벌이다.
+
+★ **야망과 지어진 것이 다르다는 사실이 이미 기록에 있다.** 첫 계단의 `cyl_chart/mod.rs` 는
+「같은 엔진이 거기서 돌 수 있다」로 시작했고, 여덟째 계단의 `regions.rs` 가 「«같은 엔진»이란
+같은 **단계**이지 같은 **코드**가 아니다」로 고쳐 적었다. 다시 물을 때는 **거기서 시작한다** —
+그 사이에 무엇을 배웠는지가 그 문단에 있다. `design.md` 「가지 말 것」 표에 이 건은 **없다**:
+재 보고 버린 길이 아니라 아직 안 물어본 물음이다.
 
 ### 계측이 제품 모듈 안에 산다
 
