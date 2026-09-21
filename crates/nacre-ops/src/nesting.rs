@@ -243,7 +243,7 @@ enum Said {
 /// descent has always ended in [`crate::RejectReason::RingHasNoWitness`]).
 ///
 /// ★ **This is not new geometry — it is the point the kernel already mints.** For a whole circle
-/// `crate::exact` states `ref_dir` as `(vertex − centre)/radius`, so `centre + radius·ref_dir`
+/// `crate::construct` states `ref_dir` as `(vertex − centre)/radius`, so `centre + radius·ref_dir`
 /// **is** that ring's one vertex, exactly, by construction; the same expression is what
 /// `add_cylinder_exact` stores as a seam point. What the arrangement drops is the *node*: an
 /// uncut circle carries no `NodeId`, which is why the corner supply above finds nothing and why

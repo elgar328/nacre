@@ -295,7 +295,7 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
     // direction that comes back is the rounding, not the plane: measured 90° off its own surface.
     //
     // **`0.0` is not a threshold in floating point** — "not zero" is not "well conditioned". The
-    // sibling that answers this same question already says so: `exact::cap_points` takes "the
+    // sibling that answers this same question already says so: `construct::Swept::cap_points` takes "the
     // widest turn ... so a nearly-collinear pair is not chosen when a better one exists", and
     // records there why the f64 realization is the right instrument for a *selection* (the points
     // kept are exact; only "which three are spread out" is being asked, and answering it in

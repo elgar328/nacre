@@ -5,7 +5,7 @@
 use crate::BoolError;
 use crate::BoolKind;
 use crate::boolean::boolean;
-use crate::exact::{Seg3, Swept};
+use crate::construct::{Seg3, Swept};
 use crate::planes::outer_tri;
 use crate::transform::transform;
 use nacre_exact::{Axis, Isometry, Rat};

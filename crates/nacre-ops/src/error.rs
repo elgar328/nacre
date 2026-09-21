@@ -348,7 +348,7 @@ pub enum RejectReason {
     /// because the determinant *is* zero at 200 bits, not because it fell below the coincidence
     /// limit (~55 orders of magnitude lower). Exact rational input would produce the same
     /// concurrency — this was never an artefact of `f64` construction, which is why exact
-    /// rational construction (`crate::exact`) left it exactly where it was.
+    /// rational construction (`crate::construct`) left it exactly where it was.
     FourPlane,
     /// A ring holds a vertex the arrangement names as a `plane ∩ plane ∩ cylinder` **pierce
     /// point**, on a path that speaks only three-plane names — the ring walks, the wall-and-handle

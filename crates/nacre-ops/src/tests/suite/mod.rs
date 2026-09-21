@@ -220,7 +220,7 @@ fn cube_with_top() -> (Model, Handle<Face>) {
 /// retired `Swept::along` (S6b): the fallback is gone, so a test states its rings the way a
 /// producer does. The f64 base is kept as handed in (decimals realize back bit-identically);
 /// the top is the realization of the exact sum.
-fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
+fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::construct::Swept {
     let lift = |p: [f64; 3]| p.map(|x| nacre_exact::Rat::from_decimal(x).expect("decimal fixture"));
     let sv = lift(sweep.as_array());
     let rb: Vec<[nacre_exact::Rat; 3]> = base.iter().map(|p| lift(p.as_array())).collect();
@@ -228,7 +228,7 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
         .iter()
         .map(|b| core::array::from_fn(|i| b[i].checked_add(sv[i]).expect("fixture widths")))
         .collect();
-    let top = crate::exact::realize(&rt);
+    let top = crate::construct::realize(&rt);
     // The fixture's frame normal: the sweep's direction, which these fixtures keep axis-aligned.
     let normal: [nacre_exact::Rat; 3] = {
         let len2 = sv
@@ -268,14 +268,14 @@ fn swept_world(base: Vec<Point3>, sweep: Vector3) -> crate::exact::Swept {
             core::cmp::Ordering::Equal => nacre_exact::Orient::Zero,
         }
     };
-    crate::exact::Swept {
+    crate::construct::Swept {
         base,
         top,
         normal: Vector3::from_array(normal.map(|c| c.to_f64())),
-        exact: crate::exact::SweptRat {
+        exact: crate::construct::SweptRat {
             base: rb,
             top: rt,
-            segs: vec![crate::exact::Seg3::Line; n],
+            segs: vec![crate::construct::Seg3::Line; n],
             normal,
             winding,
             motion: None,

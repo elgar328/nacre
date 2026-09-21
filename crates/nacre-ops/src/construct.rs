@@ -555,5 +555,5 @@ pub(crate) fn prism_rings_in(
 }
 
 #[cfg(test)]
-#[path = "tests/exact.rs"]
+#[path = "tests/construct.rs"]
 mod tests;

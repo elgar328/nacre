@@ -7,11 +7,16 @@ use super::*;
 /// chain of one narrow frame node is the whole population, and anything longer (or wide) declines.
 ///
 /// ★ Declining is not a failure — it is the frame-node road, the same one a tilted face takes.
-pub(super) fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::exact::RatFrame> {
+pub(super) fn exact_frame(
+    model: &Model,
+    frame: &SketchFrame,
+) -> Option<crate::construct::RatFrame> {
     let chain =
         crate::rotated_vertex::frame_chain(model, frame.plane(), frame.placement(), frame.flip())?;
     match chain.as_slice() {
-        [nacre_judge::MoveNode::Frame { frame: pf }] => crate::exact::RatFrame::of_plane_frame(pf),
+        [nacre_judge::MoveNode::Frame { frame: pf }] => {
+            crate::construct::RatFrame::of_plane_frame(pf)
+        }
         _ => None,
     }
 }
@@ -102,11 +107,11 @@ pub(crate) fn extrude_on_frame(
     let (rat, node) = match exact_frame(model, frame) {
         Some(f) => (f, None),
         None => (
-            crate::exact::RatFrame::identity(),
+            crate::construct::RatFrame::identity(),
             Some(push_frame_node(model, *frame)),
         ),
     };
-    let (outer, holes) = crate::exact::prism_rings_in(model, rat, profile, dist, node)
+    let (outer, holes) = crate::construct::prism_rings_in(model, rat, profile, dist, node)
         .ok_or(OpError::PlaneWithoutExactForm)?;
     build_prism(
         model,
@@ -142,7 +147,7 @@ pub(super) fn swept_profile(
     dist: f64,
     frame: Option<Handle<MotionNode>>,
 ) -> Result<(Swept, Vec<Swept>), OpError> {
-    crate::exact::prism_rings(model, plane, profile, dist, frame)
+    crate::construct::prism_rings(model, plane, profile, dist, frame)
         .ok_or(OpError::PlaneWithoutExactForm)
 }
 
@@ -496,7 +501,7 @@ fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>
 /// zero area, and a ring
 /// that folds back on itself (a symmetric bowtie cancels to exactly zero) is not simple.
 /// Normalize a ring's direction about the **sweep**: `ccw` for the outer ring, its opposite for a
-/// hole. The winding is read exactly ([`crate::exact::SweptRat::winding`], about the ring's world
+/// hole. The winding is read exactly ([`crate::construct::SweptRat::winding`], about the ring's world
 /// normal — the frame's motion, a reflection included, already folded in) and turned to the
 /// sweep's sense by `sweep_up`; a ring with arcs has no f64 polygon area to read, and a polygon's
 /// reads the same as before (`debug_assert`ed — the check that caught the mirrored pad).
@@ -529,7 +534,7 @@ fn oriented_ring(ring: Swept, sweep_up: bool, ccw: bool) -> Result<Swept, OpErro
 ///
 /// The top ring arrives already computed rather than being derived here as
 /// `base + sweep`: where the frame allows it that arithmetic is done in exact rationals
-/// (see [`crate::exact`]), and a dimension split into two then lands on the same points
+/// (see [`crate::construct`]), and a dimension split into two then lands on the same points
 /// as the undivided one instead of an ulp away.
 fn sweep_ring(
     model: &mut Model,

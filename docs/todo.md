@@ -86,7 +86,7 @@ datum 도로를 얻는다(그 doc 의 *"인구를 열 수는 있어도 움직일
 
 ### 실현 함수가 세 갈래다
 
-규칙은 통로 하나(`정의 → 좌표`)인데 코드에는 실현이 세 곳에 있다: `nacre_ops::realize_vertex`(정점, `realize.rs`), `nacre-judge` `frame3` 의 `WitnessPoint::realize(prec)`(판정의 증인), `nacre-ops` `exact.rs` 의 `realize(pts)`(구성). 여기에 스칼라의 `to_f64` 가족과 `_tracked`·`_memoized`·`_rounded` 변종이 붙는다. 먼저 셀 것: 각 함수의 호출처와, 같은 정의를 두 갈래가 실현할 때 비트가 같은가. 목표 모양은 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나이고, 그 밖에서 f64 좌표를 짓는 것은 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다.
+규칙은 통로 하나(`정의 → 좌표`)인데 코드에는 실현이 세 곳에 있다: `nacre_ops::realize_vertex`(정점, `realize.rs`), `nacre-judge` `frame3` 의 `WitnessPoint::realize(prec)`(판정의 증인), `nacre-ops` `construct.rs` 의 `realize(pts)`(구성). 여기에 스칼라의 `to_f64` 가족과 `_tracked`·`_memoized`·`_rounded` 변종이 붙는다. 먼저 셀 것: 각 함수의 호출처와, 같은 정의를 두 갈래가 실현할 때 비트가 같은가. 목표 모양은 스칼라 → f64 하나(`nacre-exact`), 정의 → 좌표 하나이고, 그 밖에서 f64 좌표를 짓는 것은 가시성이나 clippy `disallowed_methods` 로 컴파일 단계에서 막는다.
 
 ### 픽스처는 제품 도로로
 

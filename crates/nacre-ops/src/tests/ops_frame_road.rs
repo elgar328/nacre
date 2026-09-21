@@ -1,5 +1,5 @@
 use super::*;
-use crate::exact::RatFrame;
+use crate::construct::RatFrame;
 
 /// The frame road's realized basis, wrapped so `exact()` can be asked of it — the same two
 /// lines `extrude_on_frame` will run.

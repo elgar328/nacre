@@ -210,9 +210,9 @@ fn the_parser_reads_what_it_should() {
 
 /// ★★★ **What this restructure established, asserted — and only that.**
 ///
-/// The graph is **not** a DAG and this does not pretend otherwise: `exact` and `ops` still
-/// point at each other -- one crate-layer helper and the layer it belongs to, which is a
-/// formality rather than a layering fault. What is settled is the boolean pipeline's shape and the direction of
+/// The graph is **not** a DAG and this does not pretend otherwise: `construct` and `ops` still
+/// point at each other -- the ops layer's construction arithmetic and the layer it serves,
+/// which is a formality rather than a layering fault. What is settled is the boolean pipeline's shape and the direction of
 /// everything under the engine, so that is what is locked. Each of these was a real edge before
 /// the work and is zero after it; an editor who reintroduces one is undoing something, not
 /// adding to it.
@@ -339,15 +339,15 @@ fn no_module_edge_appears_that_is_not_recorded() {
             &["arrangement", "assembly", "draft", "reject_census"],
         ),
         ("combinatorics", &["planes", "tolerant"]),
+        ("construct", &["ops", "rotated_vertex"]),
         ("draft", &["combinatorics", "planes", "tolerant"]),
         ("error", &["reject_census"]),
-        ("exact", &["ops", "rotated_vertex"]),
         ("nesting", &["combinatorics", "planes", "tolerant"]),
         (
             "ops",
             &[
                 "boolean",
-                "exact",
+                "construct",
                 "planes",
                 "realize",
                 "rotated_vertex",
