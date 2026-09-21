@@ -808,7 +808,13 @@ impl<W: Witness> Judge<'_, W> {
 /// Measured, the failures are all of the shape `raw·origin` rounding — `3.5 × 0.2` landing on
 /// `0.7000000000000001` — which moves the plane without turning it. Demanding the stronger
 /// agreement here cost 4.7x on the axis-aligned fold for nothing.
-pub fn coeff_normal_ok<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
+///
+/// ★ **`cfg(test)`: this is the oracle, not the road.** A plane now *carries* whether its
+/// coefficients and normal can be trusted ([`PlaneWitness::exact_coeffs`],
+/// [`PlaneWitness::exact_normal`]), so production reads the answer instead of deriving it here.
+/// What is left is checking that a producer's claim is true, which is a test's question.
+#[cfg(test)]
+pub(crate) fn coeff_normal_ok<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
     use nacre_predicates::Expansion;
     let [ca, cb, cc, _] = planes[k].coeffs();
     let t = planes[k].tri().map(|p| p.as_array());
@@ -834,7 +840,11 @@ pub fn coeff_normal_ok<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
 
 /// Is plane `k`'s witness triangle exactly on its own stored coefficients? — the **full**
 /// agreement, `d` included, which the predicates that build implicit points need.
-pub fn coeff_exact<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
+///
+/// ★ **`cfg(test)`, for the reason [`coeff_normal_ok`] states**: the plane carries this answer
+/// now, and what remains here is the independent check of it.
+#[cfg(test)]
+pub(crate) fn coeff_exact<W: PlaneWitness>(planes: &[W], k: usize) -> bool {
     use nacre_predicates::Expansion;
     let [ca, cb, cc, cd] = planes[k].coeffs();
     planes[k].tri().iter().all(|q| {
