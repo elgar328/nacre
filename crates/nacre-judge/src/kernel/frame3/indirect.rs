@@ -11,8 +11,8 @@ use super::*;
 // formula is hand-derived. An interval straddling 0 escalates to astro-float from the
 // point definitions, exactly as [`orient3d_judge`]. This is the *tol > 0* path; the boolean
 // reaches it through `Judge::orient3d`, whose rotated arm hands the seam's planes over as
-// `WitnessPoint`s. Validated before the port by the isolated 3D experiment (H-b coefficient
-// tol, H-c indirect soundness); the constant `mag`-floor policy is indirect-only (distinct from the
+// `WitnessPoint`s. Soundness is tested by `plane_coefficient_tol_soundness` and
+// `indirect_orient3d_soundness`; the constant `mag`-floor policy is indirect-only (distinct from the
 // explicit `16·scale³` floor of [`orient3d_judge`]).
 
 /// 3×3 determinant of interval rows.
@@ -26,7 +26,7 @@ pub(super) fn det3_iv(r: [[Bounded; 3]; 3]) -> Bounded {
 /// Plane `[a,b,c,d]` (`n·X + d = 0`) through three points, as intervals: `n =
 /// (p1−p0)×(p2−p0)`, `d = −n·p0`. Coefficient tol propagates from the point tols
 /// through the subtraction/cross/dot — "coefficient tol is a corollary of point tol"
-/// Validated H-b.
+/// (checked by `plane_coefficient_tol_soundness`).
 pub(crate) fn plane_iv(p0: &WitnessPoint, p1: &WitnessPoint, p2: &WitnessPoint) -> [Bounded; 4] {
     let (a, b, c) = (p0.realized, p1.realized, p2.realized);
     let e1 = [b[0].sub(a[0]), b[1].sub(a[1]), b[2].sub(a[2])];

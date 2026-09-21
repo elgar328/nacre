@@ -72,7 +72,7 @@ fn normals_independent(planes: &[WorkingPlane], p: usize, q: usize, r: usize) ->
 /// Core: `orient3d` is rigid-rotation invariant, so the frame3 path over a rotated
 /// cuboid's exact `WitnessPoint` definitions must agree, on every definite config, with the
 /// geom path over the same cuboid unrotated. Validates the ops-side assembly + routing
-/// (predicate soundness itself is `frame3`'s H-c).
+/// (predicate soundness itself is `frame3`'s `indirect_orient3d_soundness`).
 #[test]
 fn orient3d_is_rotation_invariant() {
     let (mut m, s) = cuboid();

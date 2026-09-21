@@ -4,7 +4,7 @@ use super::*;
 
 /// A point rotated about one random axis (through a random pivot) by one **inexact**
 /// rational angle — generic non-degenerate, heterogeneous provenance (each point its
-/// own rotation), the H-a corpus shape. Inexact angles only (an exact/near-coplanar
+/// own rotation), `det3_bound_soundness`'s corpus shape. Inexact angles only (an exact/near-coplanar
 /// mix would expose the tol-0 GT noise floor — that is the declare-0 test's job).
 fn rand_point(st: &mut u64) -> WitnessPoint {
     let base = rand_base(st);
@@ -18,13 +18,12 @@ fn rand_point(st: &mut u64) -> WitnessPoint {
     WitnessPoint::at(base).rotate_about(axis, ang, pivot)
 }
 
-/// H-a — `det3_bound` soundness: over many random heterogeneous-rotation 4-point
-/// configs (inexact angles, arbitrary pivots), the bound must upper-bound the real
-/// error of the f64 determinant vs the astro-float truth — never exceeded. The
-/// production mirror of exact3d H-a. `#[ignore]`: slow (4× astro-float per sample).
+/// `det3_bound` soundness: over many random heterogeneous-rotation 4-point configs (inexact
+/// angles, arbitrary pivots), the bound must upper-bound the real error of the f64 determinant vs
+/// the astro-float truth — never exceeded. `#[ignore]`: slow (4× astro-float per sample).
 #[test]
 #[ignore = "slow astro-float ground truth (run with --ignored)"]
-fn h_a_det3_bound_soundness() {
+fn det3_bound_soundness() {
     const GT: usize = 512;
     let mut st = 0x3D00_1234_ABCD_EF01u64;
     let (mut bad, mut worst) = (0usize, 0.0_f64);
@@ -49,7 +48,7 @@ fn h_a_det3_bound_soundness() {
             worst = worst.max(err / bound);
         }
     }
-    eprintln!("[H-a N=5000] det3_bound violations: {bad}; worst tightness: {worst:.3}");
+    eprintln!("[det3_bound N=5000] violations: {bad}; worst tightness: {worst:.3}");
     assert_eq!(
         bad, 0,
         "det3_bound must bound the determinant error on every sample"
@@ -58,7 +57,7 @@ fn h_a_det3_bound_soundness() {
 
 /// Fast port check (default suite): a handful of random configs must not violate
 /// `det3_bound` (catches a transcription bug; the full statistical soundness is the
-/// `#[ignore]`d H-a + exact3d).
+/// `#[ignore]`d `det3_bound_soundness`).
 #[test]
 fn det3_bound_port_check() {
     const GT: usize = 512;
@@ -225,13 +224,13 @@ fn indirect_truth(
     (lo == hi && lo != Orient::Zero).then_some(lo)
 }
 
-/// H-b — rotated plane coefficient tol soundness. A plane's four coefficients
+/// Rotated plane coefficient tol soundness. A plane's four coefficients
 /// derive from three rotated points (subtraction/cross/dot); the interval `error` on
 /// each must upper-bound the real f64 error vs the astro-float truth. Corpus mixes
 /// origin and arbitrary pivots (`rand_point`). `#[ignore]`: slow astro-float GT.
 #[test]
 #[ignore = "slow astro-float ground truth (run with --ignored)"]
-fn h_b_plane_coefficient_tol_soundness() {
+fn plane_coefficient_tol_soundness() {
     const GT: usize = 512;
     const N: usize = 10_000;
     let mut st = 0xB0B0_5555_1111_2222u64;
@@ -254,7 +253,7 @@ fn h_b_plane_coefficient_tol_soundness() {
             }
         }
     }
-    eprintln!("[H-b N={N}] coefficient tol violations: {bad}; worst tightness: {worst:.3}");
+    eprintln!("[plane_coefficient_tol N={N}] violations: {bad}; worst tightness: {worst:.3}");
     assert_eq!(bad, 0, "plane coefficient tol must bound the error");
 }
 
@@ -340,7 +339,7 @@ fn one_concurrency_read_four_ways_gives_one_answer() {
     eprintln!("[form-invariance] {checked} concurrent configurations, all splittings agreed");
 }
 
-/// H-c — indirect orient3d soundness over heterogeneous provenance (corpus A) and a
+/// Indirect orient3d soundness over heterogeneous provenance (corpus A) and a
 /// near-coplanar escalation-forcing corpus (corpus B). The interval filter →
 /// astro-float judge must never claim a sign opposite to a GT-stable 512-bit truth.
 /// Asserts both paths are live: `escalated > 0` (filter defers) **and**
@@ -348,7 +347,7 @@ fn one_concurrency_read_four_ways_gives_one_answer() {
 /// wrong-sign 0 vacuously). `#[ignore]`: slow astro-float GT.
 #[test]
 #[ignore = "slow astro-float ground truth (run with --ignored)"]
-fn h_c_indirect_orient3d_soundness() {
+fn indirect_orient3d_soundness() {
     const GT: usize = 512;
     let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
         (0usize, 0, 0, 0, 0, 0);
@@ -507,7 +506,7 @@ fn h_c_indirect_orient3d_soundness() {
     }
 
     eprintln!(
-        "[H-c] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
+        "[indirect_orient3d] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
     );
     assert_eq!(
         wrong, 0,
@@ -522,7 +521,8 @@ fn h_c_indirect_orient3d_soundness() {
 
 /// Fast port check (default suite): a handful of generic configs — the indirect
 /// judge must match a moderate-precision truth (catches a transcription bug; full
-/// statistical soundness is the `#[ignore]`d H-b/H-c + exact3d).
+/// statistical soundness is the `#[ignore]`d `plane_coefficient_tol_soundness` and
+/// `indirect_orient3d_soundness`).
 #[test]
 fn indirect_port_check() {
     const GT: usize = 384;
@@ -663,7 +663,8 @@ fn cmp_sanity_axis_aligned() {
 }
 
 /// Fast port check: the cmp judge matches a moderate-precision truth on generic
-/// rotated configs (catches a transcription bug; full soundness is `#[ignore]`d H-g).
+/// rotated configs (catches a transcription bug; full soundness is the `#[ignore]`d
+/// `indirect_cmp_coord_soundness`).
 #[test]
 fn cmp_port_check() {
     const GT: usize = 384;
@@ -682,13 +683,13 @@ fn cmp_port_check() {
     }
 }
 
-/// H-g — indirect cmp_coord soundness over heterogeneous provenance (corpus A) and a
+/// Indirect cmp_coord soundness over heterogeneous provenance (corpus A) and a
 /// near-tie corpus (corpus B: two points sharing an axis coordinate up to ε, rotated
 /// about that same axis so the near-tie survives). The judge must never disagree with
 /// a GT-stable 512-bit truth; both the fast filter and the escalation are exercised.
 #[test]
 #[ignore = "slow astro-float ground truth (run with --ignored)"]
-fn h_g_indirect_cmp_coord_soundness() {
+fn indirect_cmp_coord_soundness() {
     const GT: usize = 512;
     let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
         (0usize, 0, 0, 0, 0, 0);
@@ -755,7 +756,7 @@ fn h_g_indirect_cmp_coord_soundness() {
     }
 
     eprintln!(
-        "[H-g] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
+        "[indirect_cmp_coord] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
     );
     assert_eq!(
         wrong, 0,
@@ -838,7 +839,7 @@ fn dir_d_sign_at(
 /// The **GT-stable** `dir_sign` truth: `Some` only when `prec` and `prec + 128` agree
 /// on a definite sign — otherwise the config is degenerate beyond what the ground
 /// truth itself resolves, so it is `None` (skip), not a spurious "wrong". (Mirrors
-/// exact3d's `indirect_truth` stability check.)
+/// `indirect_truth`'s stability check.)
 fn dir_sign_truth(
     a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
@@ -911,13 +912,13 @@ fn dir_sign_rotation_invariant() {
     }
 }
 
-/// H-i — dir_sign soundness over a **near-coplanar-normals** corpus (which H-c/H-g do
-/// not stress: they force `M ≈ 0`, not `D ≈ 0`). Three plane normals `n0, n1,
+/// `dir_sign` soundness over a **near-coplanar-normals** corpus (which the indirect orient3d and
+/// cmp_coord soundness tests do not stress: they force `M ≈ 0`, not `D ≈ 0`). Three plane normals `n0, n1,
 /// n2 = α·n0 + β·n1 + ε·(n0×n1)` (ε tiny → `D ≈ ε` → escalation), shared rotation. The
 /// judge must never disagree with a GT-stable 512-bit `D` sign; both paths exercised.
 #[test]
 #[ignore = "slow astro-float ground truth (run with --ignored)"]
-fn h_i_dir_sign_soundness() {
+fn dir_sign_soundness() {
     const GT: usize = 512;
     let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
         (0usize, 0, 0, 0, 0, 0);
@@ -977,7 +978,7 @@ fn h_i_dir_sign_soundness() {
         }
     }
     eprintln!(
-        "[H-i] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
+        "[dir_sign] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
     );
     assert_eq!(wrong, 0, "dir_sign must never disagree with GT (soundness)");
     assert!(escalated > 0, "corpus must exercise the escalation path");

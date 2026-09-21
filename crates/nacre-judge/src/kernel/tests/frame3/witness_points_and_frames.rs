@@ -971,8 +971,7 @@ fn the_shared_motion_shortcut_agrees_with_ground_truth() {
 
 /// Soundness: over random **motion** chains (mixed axes, arbitrary pivots, exact and inexact
 /// angles, **and rational translations and reflections interleaved**), the direction-wise tol
-/// must bound the true f64 error on every axis (astro-float 512-bit ground truth) — the
-/// production mirror of exact3d H-d/H-f. (An `err` below 1e-100 is 512-bit GT noise.)
+/// must bound the true f64 error on every axis (astro-float 512-bit ground truth). (An `err` below 1e-100 is 512-bit GT noise.)
 ///
 /// **Every node kind must appear here.** Each arrives with its own tol term, and nothing else
 /// in the suite checks that term is an upper bound — the whole judgment layer is sound only if
@@ -1753,7 +1752,7 @@ fn seeded_tol_transports_through_rotation() {
     assert_eq!(p.tol(), [2e-9, 1e-9, 3e-9]);
 }
 
-/// Same-axis bundling is tighter than incremental (H-e): K steps of θ amplify the
+/// Same-axis bundling is tighter than incremental: K steps of θ amplify the
 /// tol (each transported by |c|+|s| ≥ 1) vs one step of Kθ.
 #[test]
 fn bundling_is_tighter_than_incremental() {

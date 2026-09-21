@@ -28,8 +28,8 @@ fn prod_err(va: f64, ta: f64, vb: f64, tb: f64, vc: f64, tc: f64) -> f64 {
 /// product radii (input-tol propagation, triangle-inequality worst case) plus a term
 /// for the f64 rounding of the determinant's own arithmetic. The 3D analogue of
 /// the 2D `det_bound` the retired `frame2` module carried (the name is kept because the
-/// derivation is the same one; nothing links to it — that module is gone). Validated in
-/// exact3d (H-a).
+/// derivation is the same one; nothing links to it — that module is gone). Checked by
+/// `det3_bound_soundness`.
 pub(super) fn det3_bound(p: [[f64; 3]; 4], t: [[f64; 3]; 4]) -> f64 {
     let r = rows(p[0], p[1], p[2], p[3]);
     let td = t[3]; // apex tol adds to every edge on subtraction

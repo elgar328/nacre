@@ -140,7 +140,7 @@ impl WitnessPoint {
     /// coords are taken relative to the pivot, rotated, and shifted back. Same-axis
     /// 90°-family angles about the origin rotate exactly (tol 0, Niven). A non-origin
     /// pivot adds its own f64 rounding (`coord − p`, `p + …`, the pivot's Rat→f64) —
-    /// present even for an exact angle — covered by the `piv` term (validated H-f).
+    /// present even for an exact angle — covered by the `piv` term (checked by `tol_bounds_error_over_random_chains`).
     ///
     /// **Two error terms, and neither is a guess.** `rot` carries the one input here without a
     /// rounding contract (`f64::cos`) and charges what `Angle::realization_error_of` *measured* of

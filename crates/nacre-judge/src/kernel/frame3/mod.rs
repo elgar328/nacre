@@ -16,9 +16,10 @@
 //! path: a tol-0 (`Constructed`) config is faster/exact via `nacre-predicates`
 //! (Shewchuk), routed by a higher layer, not here.
 //!
-//! Validated before the port by an isolated 3D experiment (verdict: GO): H-a (`det3_bound`
-//! soundness), H-d/H-f (chain + arbitrary-pivot tol) — the bound never under-estimates the true
-//! error (astro-float ground truth) over random heterogeneous-rotation configs.
+//! Soundness is tested against astro-float ground truth over random heterogeneous-rotation
+//! configs — `det3_bound_soundness` (the determinant bound) and
+//! `tol_bounds_error_over_random_chains` (chain and arbitrary-pivot tol): the bound never
+//! under-estimates the true error.
 
 use super::HP_RM;
 use astro_float::BigFloat;
