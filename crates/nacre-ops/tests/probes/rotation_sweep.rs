@@ -400,8 +400,8 @@ fn engine_sources() -> Vec<String> {
         }
     }
     assert!(
-        out.len() >= 59,
-        "the scan found {} files, fewer than the 59 it read when this floor was measured -- a \
+        out.len() >= 58,
+        "the scan found {} files, fewer than the 58 it read when this floor was measured -- a \
          module moved and the roots above did not follow",
         out.len()
     );
@@ -450,9 +450,7 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
     // The engine's own per-witness door is the one ring-vs-ring caller (`nesting::ask`,
     // whose retry is the loop in `cell_inside` above it), and `point_in_component` casts its own
     // rays in 3D. `inside_trimmed_face` asks about a single vertex — see this test's note.
-    offenders.retain(|o| {
-        !o.contains("point_in_ring(jd, wc, *t, rb)") && !o.contains("point_in_ring(jd, q, t, ")
-    });
+    offenders.retain(|o| !o.contains("point_in_ring(jd, wc, *t, rb)"));
     assert_eq!(
         offenders,
         Vec::<String>::new(),
@@ -513,15 +511,13 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
     // ★ **The text now says which is which, twice over.** `side_of` takes a `NodeId`, so a *point*
     // question wraps its own triple (`NodeId::three_planes(..)`) while the walk hands over a ring
     // member it was given; and it takes a cylinder table, so a road that has none passes `&[]` —
-    // which is exactly the three that ask about a point or about a **result** cell's ring, where a
-    // pierce node declines as it always did. The one call with a real table is the walk.
+    // which is exactly the two that ask about a point. The alias seed carries a real table and is
+    // still a point question; the one call that reads a *sequence* is the walk.
     offenders.retain(|o| {
         !o.contains("side_of(jd, cyls, nodes[i], q)")
             && !o.contains("side_of(jd, &[], NodeId::three_planes(Canon3::three(v)), r)")
             && !o.contains("side_of(jd, &[], NodeId::three_planes(Canon3::three(vq)), q)")
-            && !o.contains("side_of(&jd, &[], n, wc)")
             && !o.contains("side_of(jd, cyls, corner, c)")
-            && !o.contains("side_of(&jd, &cyls, n, class)")
     });
     assert_eq!(
         offenders,

@@ -57,6 +57,7 @@ mod aliases;
 #[cfg(test)]
 pub(crate) mod arc_probe;
 #[cfg(test)]
+#[path = "../tests/arrangement/audits.rs"]
 mod audits;
 mod cells;
 #[cfg(test)]
