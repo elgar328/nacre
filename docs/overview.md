@@ -96,9 +96,10 @@ cargo test --workspace --no-fail-fast -- --ignored --skip measure_
 cargo test -p nacre-ops --release --test perf -- --ignored --nocapture   # 성능은 release로 따로
 cargo doc --workspace --no-deps                                          # intra-doc 링크
 cargo build --workspace                                                  # 테스트 기능을 끈 제품 빌드 — 경고 0
+cargo build --release -p nacre-ops                                       # debug_assertions 를 «끈» 빌드 — 경고 0
 ```
 
-- **커밋 훅이 못 보는 것 둘.** 훅은 `clippy --all-targets` 와 `test` 를 돈다 — dev-의존이 `test-util` 을 켠 채로다. 그래서 (1) 어떤 항목을 `test-util` 뒤로 보내 제품 빌드에서 그 항목만 쓰던 헬퍼가 죽은 코드가 돼도 훅은 초록이고(맨 `cargo build --workspace` 가 경고한다), (2) 그 항목을 가리키던 intra-doc 링크가 깨져도 훅은 모른다(`cargo doc`). 가시성·게이트를 건드린 변경은 둘 다 돌린다.
+- **커밋 훅이 못 보는 것 셋.** 훅은 `clippy --all-targets` 와 `test` 를 돈다 — dev-의존이 `test-util` 을 켠 채로고, `cfg(test)` 와 `debug_assertions` 가 **둘 다 켜진** 빌드다. 그래서 (1) 어떤 항목을 `test-util` 뒤로 보내 제품 빌드에서 그 항목만 쓰던 헬퍼가 죽은 코드가 돼도 훅은 초록이고(맨 `cargo build --workspace` 가 경고한다), (2) 그 항목을 가리키던 intra-doc 링크가 깨져도 훅은 모르며(`cargo doc`), (3) **`debug_assertions` 가 꺼져야 드러나는 것**은 훅도 `cargo build --workspace`(디버그)도 못 본다 — `cfg(debug_assertions)` 항목만 담던 glob 재수출이 릴리스에서 비거나, 그런 항목만 쓰던 `use` 가 릴리스에서 죽은 코드가 되는 부류다. **`cargo build --release` 가 그 눈이고, 훅 밖에 있다.** 가시성·`cfg`·게이트를 건드린 변경은 셋 다 돌린다.
 - **`cargo doc`**: 이 저장소는 intra-doc 링크를 2,000곳 넘게 쓰고 `fmt`·`clippy`·`test` 중 무엇도 그것을 해석하지 않는다. 경고의 기준선은 **72**(전부 「공개 문서가 비공개 항목을 링크」 부류)이고 규칙은 「기준선보다 늘지 않는다」, unresolved link 는 **0**. 이 계기는 이름이 사라져 깨지는 링크만 잡는다 — 이름이 살아 있는데 가리키는 대상이 바뀐 링크는 개명한 사람이 손으로 훑는다.
 - **모듈을 옮겼으면 그래프를 본다**: `cargo test -p nacre-ops --test instruments module_graph`. 두 겹이다 — 불리언 파이프라인이 한 방향으로 흐르는지(`draft` 는 바닥, `assembly` 는 엔진을 안 부른다, 엔진은 앞문을 안 부른다)와 엔진 **밑**의 넷(`bands`·`combinatorics`·`nesting`·`planes`)이 엔진을 안 부르는지와 클래스 표가 그 위의 이름을 안 부르는지(`planes` → `combinatorics`)를 **단언**하고, 나머지 간선은 **얼린 표**로 든다. 표에 없는 간선이 생기면 답은 둘뿐이다: 없애거나, 표에 넣고 **커밋 본문에 왜 그 방향이 맞는지 적는다**. 그래프는 DAG 가 아니다(순환 1쌍 — `construct ⇄ ops`, 같은 층이라 결함이 아니다 — 이 남아 있고 표가 그것을 든다) — 이 관문은 «더 나빠지지 않는다»를 지킨다. 오늘의 표는 `measure_module_graph` 가 찍는다.
 - **이름을 개명·은퇴시켰으면 문서도 훑는다**: `python3 tools/deadname-sweep.py` (기본 인자 = 세 문서). 이 계기는 한 물음만 답한다 — 「`crates/` 비주석 사용이 0인가」. 출력은 후보지 작업 목록이 아니다(수식 기호·외부 도구가 섞인다). 값(개수·변종 수)이 바뀐 변경은 이름이 아니라 **옛 숫자**로 문서를 훑는다.
