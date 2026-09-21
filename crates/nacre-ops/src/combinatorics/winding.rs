@@ -31,12 +31,12 @@ fn coord_key(
     i: usize,
 ) -> Result<CoordKey, BoolError> {
     let node = ring[i].node;
-    let NodeId::Pierce { cyl, .. } = node else {
+    let NodeKind::Pierce { cyl, .. } = node.kind() else {
         // A `match` and not a fallback: a third variant must light this up rather than fall in
         // here (`let`-`else` is what hid a new variant once already).
-        return match node {
-            NodeId::ThreePlane(t) => Ok(CoordKey::Three(t)),
-            NodeId::Pierce { .. } => unreachable!("the let-else above took every pierce node"),
+        return match node.kind() {
+            NodeKind::ThreePlane(t) => Ok(CoordKey::Three(t)),
+            NodeKind::Pierce { .. } => unreachable!("the let-else above took every pierce node"),
         };
     };
     let def = &cyls
@@ -112,9 +112,9 @@ pub(crate) fn pierce_between(
     candidates: &[NodeId],
 ) -> Option<Vec<NodeId>> {
     let key = |n: NodeId| -> Option<CoordKey> {
-        match n {
-            NodeId::ThreePlane(t) => Some(CoordKey::Three(t)),
-            NodeId::Pierce { cyl, .. } => {
+        match n.kind() {
+            NodeKind::ThreePlane(t) => Some(CoordKey::Three(t)),
+            NodeKind::Pierce { cyl, .. } => {
                 let (line, s) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
                 Some(CoordKey::Pierce(Box::new((line, s))))
             }

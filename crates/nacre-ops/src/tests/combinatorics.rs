@@ -7,7 +7,7 @@ use super::*;
 /// through the constructor would agree with the constructor however the constructor behaved.
 #[test]
 fn three_planes_names_one_vertex_however_it_is_spelled() {
-    let canonical = NodeId::ThreePlane([2, 5, 9]);
+    let canonical = NodeId(NodeKind::ThreePlane([2, 5, 9]));
     for spelling in [
         [2, 5, 9],
         [2, 9, 5],
@@ -47,7 +47,7 @@ fn a_name_orders_like_the_triple_it_is() {
         ([4, 4, 4], [4, 4, 4], Equal),
     ] {
         assert_eq!(
-            NodeId::ThreePlane(a).cmp(&NodeId::ThreePlane(b)),
+            NodeId(NodeKind::ThreePlane(a)).cmp(&NodeId(NodeKind::ThreePlane(b))),
             want,
             "{a:?} vs {b:?}"
         );

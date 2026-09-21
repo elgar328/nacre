@@ -146,7 +146,7 @@ pub(crate) fn point_in_faces_rat(
                     // not as arithmetic that ran out of room — the same split `every_ray` makes.
                     let nodes: Vec<NodeId> = r
                         .iter()
-                        .map(|e| three_plane_name(e.node).map(NodeId::ThreePlane))
+                        .map(|e| three_plane_name(e.node).map(|_| e.node))
                         .collect::<Option<_>>()
                         .ok_or_else(|| reject(RejectReason::PierceVertexUnnamed))?;
                     let ring2 = chart.ring(jd, &nodes).ok_or_else(not_rational)?;

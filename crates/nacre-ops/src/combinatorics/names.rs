@@ -3,16 +3,33 @@ use super::*;
 ///
 /// `Eq`/`Hash` give identity dedup so an A-piece and a B-piece that meet at a seam node share one
 /// result vertex/edge; `Ord` gives the deterministic node order replay needs — and it is the bare
-/// triple's lexicographic order, so every "smallest name wins" rule reads unchanged.
+/// [`NodeKind`]'s lexicographic order, so every "smallest name wins" rule reads unchanged.
 ///
 /// This was `assembly::Node`, spoken only by the assembler. It lives here because the arrangement
 /// names the same vertices, and the variant is spelled like [`nacre_topo::Vertex::ThreePlane`]
 /// so the arrangement, the assembler and the topology store call the thing by one name.
 ///
-/// Read it with `match`, never `let`-`else`: a new variant lights up the first and falls silently
-/// into the second — a defect this repository has already had.
+/// ★★★★★ **A newtype, and the private half is the whole point.** The field is `pub(super)`, so
+/// outside `combinatorics` a name can be **read** ([`NodeId::kind`]) but cannot be **made** — the
+/// two constructors below are the only way one comes into being, and "two spellings of one vertex
+/// are one name" holds because nothing can go around them. This used to be a plain `enum` guarded
+/// by an `rg` command written in a comment; that command found eight sites the day it was finally
+/// run, which is what a check that nobody runs is worth.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct NodeId(pub(super) NodeKind);
+
+/// **Which of the two things a [`NodeId`] names**, and what it carries.
+///
+/// ★★ **Read it with `match`, never a `_` arm and never `let`-`else`**: a third variant lights up
+/// an exhaustive `match` and falls silently into either of the others — a defect this repository
+/// has already had. A third is not hypothetical: [`nacre_topo::Vertex`] already has three
+/// (`ThreePlane`, `Pierce`, `OnSeam`). Where the happy path really wants `let`-`else`, the `else`
+/// carries a full `match` so the new variant still stops the build (`winding`'s `coord_key`).
+///
+/// ★ **The variant order is a decision, not a listing** — `Ord` runs over it and "smallest name
+/// wins" reads it, exactly as [`nacre_topo::QuadRoot`]'s doc says of its own two.
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
-pub(crate) enum NodeId {
+pub(crate) enum NodeKind {
     ThreePlane([usize; 3]), // sorted triple (key into the seam map)
     /// Where two plane classes' meet line crosses a cylinder's lateral surface — the point
     /// [`nacre_topo::Vertex::Pierce`] names, and the point the next rung splits a circle
@@ -23,7 +40,7 @@ pub(crate) enum NodeId {
     /// numberings and a value from one is meaningless in the other. `reuse::canonical` already
     /// carries both kinds in one key, so the precedent is the file's, not this type's.
     Pierce {
-        /// The two cutting plane classes, ascending — the [`NodeId::ThreePlane`] precedent, and
+        /// The two cutting plane classes, ascending — the [`NodeKind::ThreePlane`] precedent, and
         /// the order `root` is defined against.
         planes: [usize; 2],
         /// The cylinder class whose lateral surface the meet line crosses.
@@ -33,7 +50,21 @@ pub(crate) enum NodeId {
     },
 }
 
+/// Delegated so the newtype is invisible in output — `{n:?}` still reads `ThreePlane([0, 1, 2])`,
+/// which is what the reject messages and the probe ledgers were written against.
+impl std::fmt::Debug for NodeId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
 impl NodeId {
+    /// **What this name names** — the only way to read one from outside this module, and a full
+    /// `match` over it is how a third variant stops the build.
+    pub(crate) fn kind(self) -> NodeKind {
+        self.0
+    }
+
     /// The canonical name of the point where three plane classes meet — **the only way one is
     /// made**, so "two spellings of one vertex are one name" holds by construction.
     ///
@@ -46,7 +77,7 @@ impl NodeId {
     /// touching it — so making the constructor fallible would copy that fork to all eight minting
     /// sites.
     pub(crate) fn three_planes(t: Canon3) -> NodeId {
-        NodeId::ThreePlane(t.planes())
+        NodeId(NodeKind::ThreePlane(t.planes()))
     }
 
     /// The canonical name of a `plane ∩ plane ∩ cylinder` point — **the only way one is made**, so
@@ -66,7 +97,7 @@ impl NodeId {
         root: nacre_topo::QuadRoot,
     ) -> NodeId {
         let (planes, root) = nacre_topo::QuadRoot::canonical([first, second], root);
-        NodeId::Pierce { planes, cyl, root }
+        NodeId(NodeKind::Pierce { planes, cyl, root })
     }
 }
 
@@ -106,9 +137,9 @@ impl NodeId {
 /// check, and a fourth be nearly added with the suite green. `tests/probes/rotation_sweep.rs`'
 /// `side_of` guard is the precedent for making a source scan a test.
 pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
-    match n {
-        NodeId::ThreePlane(t) => Some(t),
-        NodeId::Pierce { .. } => None,
+    match n.kind() {
+        NodeKind::ThreePlane(t) => Some(t),
+        NodeKind::Pierce { .. } => None,
     }
 }
 
@@ -120,9 +151,9 @@ pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
 /// door is total over the enum, so a third variant becomes a compile error here rather than a
 /// silent fall-through at four call sites.
 pub(crate) fn pierce_name(n: NodeId) -> Option<([usize; 2], usize, nacre_topo::QuadRoot)> {
-    match n {
-        NodeId::ThreePlane(_) => None,
-        NodeId::Pierce { planes, cyl, root } => Some((planes, cyl, root)),
+    match n.kind() {
+        NodeKind::ThreePlane(_) => None,
+        NodeKind::Pierce { planes, cyl, root } => Some((planes, cyl, root)),
     }
 }
 
@@ -150,7 +181,7 @@ pub(crate) fn three_plane_probes(nodes: impl IntoIterator<Item = NodeId>) -> Vec
 /// ★ A traced segment's ends are always plane triples, so this had been a bare `usize` (the third
 /// plane class) everywhere. The arc split puts a **cylinder** crossing in the middle of a segment,
 /// and that point has no third *plane* — what pins it is the quadric, and its name is the
-/// [`NodeId::Pierce`] the edge already carries in its endpoint list. So the pin says **which kind**
+/// [`NodeKind::Pierce`] the edge already carries in its endpoint list. So the pin says **which kind**
 /// and the name is read from beside it, rather than a second copy living here.
 ///
 /// ★★ The two arms are two *orders*, not two spellings of one: [`order_along`] reads a class
@@ -161,7 +192,7 @@ pub(crate) fn three_plane_probes(nodes: impl IntoIterator<Item = NodeId>) -> Vec
 pub(crate) enum EndPin {
     /// The third plane class: the point is `P ∩ wall ∩ this`.
     Class(usize),
-    /// A cylinder crossing: the point is the [`NodeId::Pierce`] this endpoint is named by.
+    /// A cylinder crossing: the point is the [`NodeKind::Pierce`] this endpoint is named by.
     Cylinder,
 }
 
@@ -552,9 +583,9 @@ pub(crate) fn pin_for(
     b: usize,
     name: NodeId,
 ) -> Option<EndPin> {
-    match name {
-        NodeId::ThreePlane(t) => pin_on_line(jd, a, b, t).map(EndPin::Class),
-        NodeId::Pierce { planes, .. } => {
+    match name.kind() {
+        NodeKind::ThreePlane(t) => pin_on_line(jd, a, b, t).map(EndPin::Class),
+        NodeKind::Pierce { planes, .. } => {
             let mut line = [a, b];
             line.sort_unstable();
             if planes == line {

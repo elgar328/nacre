@@ -34,9 +34,9 @@ impl Split {
     /// door over: *"a loud panic beats a silently wrong plane."*
     /// ☑ Measured unexercised over the whole suite and the ignored sweep before it was made loud.
     pub(super) fn of(name: NodeId, pin: combinatorics::EndPin) -> Split {
-        match (name, pin) {
+        match (name.kind(), pin) {
             (_, combinatorics::EndPin::Class(r)) => Split::Class(r),
-            (NodeId::Pierce { cyl, root, .. }, combinatorics::EndPin::Cylinder) => {
+            (NodeKind::Pierce { cyl, root, .. }, combinatorics::EndPin::Cylinder) => {
                 Split::Pierce { cyl, root }
             }
             (n, combinatorics::EndPin::Cylinder) => unreachable!(
@@ -59,11 +59,11 @@ impl Split {
     fn name(self, p: usize, q: usize) -> NodeId {
         match self {
             Split::Class(r) => NodeId::three_planes(Canon3::three([p, q, r])),
-            Split::Pierce { cyl, root } => {
-                let mut planes = [p, q];
-                planes.sort_unstable();
-                NodeId::Pierce { planes, cyl, root }
-            }
+            // ★ The pair is sorted before the door, not after: `root` came out of a name and is
+            // already canonical against the sorted pair, so `QuadRoot::canonical` must find
+            // nothing to do. Handing it `(p, q)` in caller order would flip a root that is
+            // already right — and the classes do arrive out of order.
+            Split::Pierce { cyl, root } => NodeId::pierce(p.min(q), p.max(q), cyl, root),
         }
     }
 

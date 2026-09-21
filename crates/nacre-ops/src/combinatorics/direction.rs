@@ -146,9 +146,12 @@ fn arc_at(
     //
     // ★ Only the first is reachable from here: the other three would have stopped the split that
     // built this arc, since it re-solves the same pair of classes for the same cylinder.
-    let NodeId::Pierce { .. } = node else {
-        return Err(reject(RejectReason::RingNaming));
-    };
+    // ★ A `match` and not a fallback: a third variant must light this up rather than be
+    // rejected under a name that is not its own (`winding`'s `coord_key` states the rule).
+    match node.kind() {
+        NodeKind::Pierce { .. } => {}
+        NodeKind::ThreePlane(_) => return Err(reject(RejectReason::RingNaming)),
+    }
     let at = pierce_meet(jd, a.cyl, &a.def, node).ok_or_else(undecided)?;
     let coeffs = class_coeffs_rat(jd, p).ok_or_else(undecided)?;
     // The circle's centre: where the axis pierces this plane. ★ The canonical sign the coefficients

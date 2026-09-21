@@ -13,7 +13,7 @@ use super::*;
 /// so **a producer that turns raw `side_of` into an above/below *label* silently flips its bit on
 /// such a class**; multiply by `orient_sign(q)` if that is what you are computing. Reading a sign
 /// *difference* (does this edge cross `W`?) is frame-free and needs no correction.
-/// ★★ **`None` where the node is not three planes.** A [`NodeId::Pierce`] *is* a point, but its
+/// ★★ **`None` where the node is not three planes.** A [`NodeKind::Pierce`] *is* a point, but its
 /// coordinates are quadratic-irrational and `orient3d` is the plane-triple judge — so this says
 /// "not mine to answer" rather than guessing. Callers turn that into their own vocabulary (the
 /// tracer a [`crate::DeclineKind`], the ray caster a reject), which is why it is not a reject here.
@@ -31,14 +31,14 @@ pub(crate) fn side_of(
     n: NodeId,
     q: usize,
 ) -> Option<i8> {
-    match n {
-        NodeId::ThreePlane(t) => Some(jd.orient3d(t[0], t[1], t[2], q)),
+    match n.kind() {
+        NodeKind::ThreePlane(t) => Some(jd.orient3d(t[0], t[1], t[2], q)),
         // ★★ **A pierce point's side of a plane is one `a + b√c` sign.** The point is
         // `line.base() + s·line.dir()`, the plane's coefficients are rational, and
         // `quad::plane_side` is that sign — the same predicate `ruling_side` reads. `None` is a
         // missing description (a class with no world name, a cylinder with no world statement),
         // never a shape this cannot answer.
-        NodeId::Pierce { cyl, .. } => {
+        NodeKind::Pierce { cyl, .. } => {
             let (line, sv) = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, n)?;
             let co = class_coeffs_rat(jd, q)?;
             let fix = outward_fix(jd, q)?;
@@ -77,7 +77,7 @@ pub(crate) enum RingWalk {
     AllOn,
     /// A node whose side this walk cannot answer.
     ///
-    /// ★★ **It used to mean "a [`NodeId::Pierce`]", and it does not any more.** [`side_of`]'s
+    /// ★★ **It used to mean "a [`NodeKind::Pierce`]", and it does not any more.** [`side_of`]'s
     /// pierce arm answers, so a cylinder's corner is read like any other; what is left here is
     /// that arm's own `None` — a class with no narrow rational description, a cylinder missing
     /// from the table. ☑ Still never produced: measured **0** across the workspace suite.

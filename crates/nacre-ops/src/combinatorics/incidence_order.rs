@@ -145,7 +145,7 @@ pub(crate) fn order_on(
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum PointOn {
     Class(usize),
-    /// Must be a [`NodeId::Pierce`]; the quadric road reads its cylinder and root.
+    /// Must be a [`NodeKind::Pierce`]; the quadric road reads its cylinder and root.
     Pierce(NodeId),
 }
 
@@ -162,10 +162,13 @@ impl PointOn {
     fn of(pt: (NodeId, EndPin)) -> PointOn {
         match pt.1 {
             EndPin::Class(r) => PointOn::Class(r),
-            EndPin::Cylinder => match pt.0 {
-                NodeId::Pierce { .. } => PointOn::Pierce(pt.0),
-                n @ NodeId::ThreePlane(_) => {
-                    unreachable!("a cylinder pin was written beside a three-plane name: {n:?}")
+            EndPin::Cylinder => match pt.0.kind() {
+                NodeKind::Pierce { .. } => PointOn::Pierce(pt.0),
+                NodeKind::ThreePlane(_) => {
+                    unreachable!(
+                        "a cylinder pin was written beside a three-plane name: {:?}",
+                        pt.0
+                    )
                 }
             },
         }
@@ -341,8 +344,11 @@ pub(crate) fn on_line(
             ds: dir_sign(jd, p, q, pin),
         }),
         PointOn::Pierce(name) => {
-            let NodeId::Pierce { cyl, .. } = name else {
-                return None;
+            // ★ A `match` and not a fallback: a third variant must light this up rather than
+            // fall in with the three-plane one (`winding`'s `coord_key` states the rule).
+            let cyl = match name.kind() {
+                NodeKind::Pierce { cyl, .. } => cyl,
+                NodeKind::ThreePlane(_) => return None,
             };
             let meet = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
             Some(OnLine::Pierce {
@@ -371,8 +377,11 @@ pub(crate) fn locate<'j>(
             at: jd.point(p, q, pin),
         }),
         PointOn::Pierce(name) => {
-            let NodeId::Pierce { cyl, .. } = name else {
-                return None;
+            // ★ A `match` and not a fallback: a third variant must light this up rather than
+            // fall in with the three-plane one (`winding`'s `coord_key` states the rule).
+            let cyl = match name.kind() {
+                NodeKind::Pierce { cyl, .. } => cyl,
+                NodeKind::ThreePlane(_) => return None,
             };
             let meet = pierce_meet(jd, cyl, &cyls.get(cyl)?.def, name)?;
             Some(Located::Pierce {

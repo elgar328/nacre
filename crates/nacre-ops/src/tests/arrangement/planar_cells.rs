@@ -964,8 +964,12 @@ fn a_circle_meeting_a_ruling_is_refused_by_name() {
         ),
         side: 1,
         end: [
-            crate::combinatorics::NodeId::ThreePlane([0, 1, 2]),
-            crate::combinatorics::NodeId::ThreePlane([0, 1, 3]),
+            crate::combinatorics::NodeId::three_planes(crate::combinatorics::Canon3::three([
+                0, 1, 2,
+            ])),
+            crate::combinatorics::NodeId::three_planes(crate::combinatorics::Canon3::three([
+                0, 1, 3,
+            ])),
         ],
         merged: Vec::new(),
         orient: 1,

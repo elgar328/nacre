@@ -18,7 +18,7 @@
 
 use super::*;
 use crate::assembly::*;
-use crate::combinatorics::{Canon3, NodeId, three_plane_name};
+use crate::combinatorics::{Canon3, NodeId, NodeKind, three_plane_name};
 use crate::draft::*;
 #[cfg(test)]
 use crate::phase;

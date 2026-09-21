@@ -524,7 +524,7 @@ fn face_spans_reads_the_trace_not_the_label() {
     use crate::combinatorics;
     use crate::planes::SolidSide;
     use crate::{BoolError, RejectReason};
-    let n = combinatorics::NodeId::ThreePlane([0, 1, 2]);
+    let n = combinatorics::NodeId::three_planes(combinatorics::Canon3::three([0, 1, 2]));
     let row = |marks: Vec<(SolidSide, SegKind)>| ArcLabel {
         ends: [n, n],
         // Deliberately the label that says "material everywhere": nothing below may read it.

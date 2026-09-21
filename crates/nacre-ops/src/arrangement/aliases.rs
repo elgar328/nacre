@@ -225,7 +225,7 @@ impl Aliases {
     /// a key only. So a pierce name outranks a three-plane name; among pierce names the least.
     /// Either way the representative is a function of the class alone.
     fn rep_rank(n: NodeId) -> (u8, NodeId) {
-        (u8::from(matches!(n, NodeId::ThreePlane(_))), n)
+        (u8::from(matches!(n.kind(), NodeKind::ThreePlane(_))), n)
     }
 
     fn union_point(&mut self, a: NodeId, b: NodeId) {

@@ -179,9 +179,9 @@ pub(crate) fn node_coords_rat(
     jd: &Judge<'_, WorkingPlane>,
     n: NodeId,
 ) -> Option<[nacre_exact::Rat; 3]> {
-    match n {
-        NodeId::Pierce { .. } => None,
-        NodeId::ThreePlane(t) => nacre_exact::three_planes_rat([
+    match n.kind() {
+        NodeKind::Pierce { .. } => None,
+        NodeKind::ThreePlane(t) => nacre_exact::three_planes_rat([
             class_coeffs_rat(jd, t[0])?,
             class_coeffs_rat(jd, t[1])?,
             class_coeffs_rat(jd, t[2])?,
@@ -206,14 +206,14 @@ pub(crate) fn node_point_f64(
     cyls: &[crate::planes::WorkingCyl],
     n: NodeId,
 ) -> Option<[f64; 3]> {
-    match n {
-        NodeId::ThreePlane(t) => nacre_geom::intersect::three_planes(
+    match n.kind() {
+        NodeKind::ThreePlane(t) => nacre_geom::intersect::three_planes(
             &jd.planes[t[0]].plane,
             &jd.planes[t[1]].plane,
             &jd.planes[t[2]].plane,
         )
         .map(|p| p.as_array()),
-        NodeId::Pierce { cyl, .. } => pierce_point(jd, cyl, &cyls[cyl].def, n),
+        NodeKind::Pierce { cyl, .. } => pierce_point(jd, cyl, &cyls[cyl].def, n),
     }
 }
 
@@ -548,8 +548,8 @@ pub(crate) fn pierce_meet(
 ) -> Option<(nacre_exact::quad::MeetLine, nacre_exact::quad::QuadVal)> {
     use nacre_exact::quad::{CylinderMeet, QuadVal};
     use nacre_topo::QuadRoot;
-    let (planes, root) = match n {
-        NodeId::Pierce {
+    let (planes, root) = match n.kind() {
+        NodeKind::Pierce {
             planes,
             cyl: named,
             root,
@@ -560,7 +560,7 @@ pub(crate) fn pierce_meet(
             );
             (planes, root)
         }
-        NodeId::ThreePlane(_) => return None,
+        NodeKind::ThreePlane(_) => return None,
     };
     let (p1, p2) = (
         class_coeffs_rat(jd, planes[0])?,

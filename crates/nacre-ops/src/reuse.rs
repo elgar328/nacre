@@ -17,6 +17,11 @@
 //! the same reason the kernel is allowed to have a fast path at all.
 
 use crate::combinatorics::{Canon3, NodeId};
+// `NodeKind` is read by `CanonNode::of` alone, and that impl is `cfg(any(debug_assertions,
+// test))` — so the import carries the same condition rather than going unused in a release
+// build.
+#[cfg(any(debug_assertions, test))]
+use crate::combinatorics::NodeKind;
 use crate::draft::LocalFace;
 use crate::planes::{ClassIx, FaceRow, SolidSide, WorkingPlane};
 use crate::{BoolKind, he_start};
@@ -232,7 +237,7 @@ pub(crate) fn class_plans(
 /// is available without arranging anything.
 ///
 /// ★ That is *a* name, not the only one — the arrangement also names pierce points
-/// ([`crate::combinatorics::NodeId::Pierce`]). This table stays three-plane by construction: its
+/// ([`crate::combinatorics::NodeKind::Pierce`]). This table stays three-plane by construction: its
 /// population is the vertices a **solid already has**, and a solid gains a pierce vertex only when
 /// the arc split starts building them.
 pub(crate) struct VertexClasses {
@@ -343,9 +348,9 @@ impl CanonNode {
     /// `three_plane_name`: this caller's answer for a pierce node is not "refused" but "the key
     /// says which one it is", so the door's single answer is the wrong one here.
     fn of(n: NodeId) -> CanonNode {
-        match n {
-            NodeId::ThreePlane(t) => CanonNode::Three(t),
-            NodeId::Pierce { planes, cyl, root } => CanonNode::Pierce { planes, cyl, root },
+        match n.kind() {
+            NodeKind::ThreePlane(t) => CanonNode::Three(t),
+            NodeKind::Pierce { planes, cyl, root } => CanonNode::Pierce { planes, cyl, root },
         }
     }
 }
