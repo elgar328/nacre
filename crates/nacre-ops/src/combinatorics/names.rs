@@ -117,25 +117,20 @@ impl NodeId {
 /// builds a comparison key, and its answer is that the key's vessel widens (`CanonNode`), not that
 /// the question is refused.
 ///
-/// ★★ **The gate that keeps this honest**, and what it exempts — this module and one file:
+/// ★★ **What keeps this honest is the type, not a convention.** [`NodeId`]'s field is
+/// `pub(super)`, so outside `combinatorics` a name can be read ([`NodeId::kind`]) and cannot be
+/// made: the two constructors are the only way in, and the compiler says so. Going around this
+/// door is therefore not a thing a caller can do, only a thing it can decline to *use* — and the
+/// sites that decline are the four named above.
 ///
-/// ```text
-/// rg 'NodeId::(ThreePlane|Pierce)' crates/ \
-///   -g '!**/combinatorics/**' -g '!**/reuse.rs' | grep -vE ':\s*//'
-/// ```
-///
-/// It must be empty. Spelling a variant anywhere else means a site went around the door instead of
-/// answering — the same gate once found **fifteen** of those with the whole suite
-/// already green, and it costs nothing and does not break on a rename.
+/// This used to be an `rg` command written here and a sentence saying it must come back empty.
+/// It found **fifteen** sites the first time it was run with the whole suite already green, and
+/// eight more the last time — which is the measure of a check nobody runs.
 ///
 /// ★★★ **[`pierce_name`] is this door's twin.** This door answers only the three-plane half;
 /// the sites in `arrangement` that need the `Pierce` half — `arc_split_witness`' `separates`
 /// closure, two inside `split_circles`, and the seam table — go through the twin rather than
-/// opening the variant directly.
-///
-/// ★ Not automated, and that is how it rots: three sites can arrive with nothing running the
-/// check, and a fourth be nearly added with the suite green. `tests/probes/rotation_sweep.rs`'
-/// `side_of` guard is the precedent for making a source scan a test.
+/// asking for the whole [`NodeKind`].
 pub(crate) fn three_plane_name(n: NodeId) -> Option<[usize; 3]> {
     match n.kind() {
         NodeKind::ThreePlane(t) => Some(t),

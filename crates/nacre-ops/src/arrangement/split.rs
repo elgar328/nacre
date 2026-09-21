@@ -14,6 +14,10 @@ pub(super) enum Split {
     Class(usize),
     Pierce {
         cyl: usize,
+        /// ★ **Already canonical**, because it was read out of a [`NodeId`] rather than solved
+        /// here — which is why [`Split::name`] hands the door a *sorted* pair, where
+        /// `QuadRoot::canonical` has nothing to do. Passing `(p, q)` in caller order instead
+        /// would flip a root that is already right.
         root: nacre_topo::QuadRoot,
     },
 }
