@@ -354,7 +354,7 @@ pub(crate) fn cylinder_gate(
     if !cyl_pairs.is_empty() {
         return Err(reject(RejectReason::CylinderPairContact));
     }
-    // The rulings road's record rides out beside the table (`PlaneSetup::crossings`): the
+    // The rulings road's record rides out beside the table (`arrangement::PlaneSetup::crossings`): the
     // pairs the record-and-pass arm above admitted without a clearance proof. Empty for every
     // population outside the rulings road.
     Ok((cyls, crossings, tangencies))
@@ -411,7 +411,7 @@ fn wall_faces_clear(
 /// **A wall plane exactly `r` from a cylinder's axis, and everything a verdict needs about it.**
 ///
 /// ★★★★★ **A tangency is a graze, not a crossing.** The plane meets the lateral in one line and
-/// *divides nothing*, so it earns no [`PlaneSetup::crossings`] record — that set's proposition is
+/// *divides nothing*, so it earns no [`crate::arrangement::PlaneSetup::crossings`] record — that set's proposition is
 /// "the plane runs **within** the radius", and the three roads gated on it assert exactly that
 /// (☑ `crossings.contains` has three readers, each with the matching `debug_assert`). The
 /// arrangement therefore never sees this pair, which is why opening the gate needs no arrangement

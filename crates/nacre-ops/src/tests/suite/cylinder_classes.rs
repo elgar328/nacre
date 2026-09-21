@@ -98,7 +98,7 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     let b = m.add_cylinder(Point3::from_array([6.0, 2.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
     // ★ The gate *deciding* is half the claim — it used to stop at the first corner the boss made.
-    let setup = crate::planes::plane_index_setup(&m, first, b).expect("the gate decides");
+    let setup = crate::arrangement::plane_index_setup(&m, first, b).expect("the gate decides");
     // ★★ And recording is the other half. The boss sits **on** `y = 0`, so those faces are not
     // clear of it; that is what the record-and-pass arm is for, and a missing entry here means the
     // clearance test answered "clear" about a wall a cylinder is standing in.

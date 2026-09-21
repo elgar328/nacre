@@ -1004,7 +1004,7 @@ fn the_walk_cuts_a_run_at_a_departure() {
     );
     let b = m.add_cuboid(Point3::from_array([5.0; 3]), Point3::from_array([6.0; 3]));
     m.rebuild_adjacency();
-    let setup = crate::planes::plane_index_setup(&m, a, b).expect("setup");
+    let setup = crate::arrangement::plane_index_setup(&m, a, b).expect("setup");
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     // A class by the coordinate all three of its triangle's points share.
     let class = |axis: usize, at: f64| {

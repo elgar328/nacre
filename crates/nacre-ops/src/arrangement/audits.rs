@@ -276,7 +276,6 @@ pub(crate) fn trace_declines(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Vec<ClassDecline>, BoolError> {
-    use crate::planes::{PlaneSetup, plane_index_setup};
     let PlaneSetup {
         planes: faces_tab,
         surf_ix,
@@ -322,7 +321,6 @@ pub(crate) fn pierce_corner_audit(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Vec<PierceCornerReport>, BoolError> {
-    use crate::planes::{PlaneSetup, plane_index_setup};
     let PlaneSetup {
         planes: faces_tab,
         surf_ix,
@@ -445,7 +443,7 @@ pub(crate) fn operand_vertex_audit(
     a: Handle<Solid>,
     b: Handle<Solid>,
 ) -> Result<Vec<OperandVertexReport>, BoolError> {
-    use crate::planes::{ClassIx, PlaneSetup, plane_index_setup};
+    use crate::planes::ClassIx;
     let PlaneSetup {
         planes: faces_tab,
         surf_ix,

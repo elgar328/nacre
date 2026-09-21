@@ -87,7 +87,7 @@ fn armed_through_boss() -> (
     Model,
     Handle<Solid>,
     Handle<Solid>,
-    crate::planes::PlaneSetup,
+    crate::arrangement::PlaneSetup,
     usize,
     std::collections::HashSet<(usize, usize)>,
 ) {
@@ -107,7 +107,7 @@ fn armed_through_boss_z(
     Model,
     Handle<Solid>,
     Handle<Solid>,
-    crate::planes::PlaneSetup,
+    crate::arrangement::PlaneSetup,
     usize,
     std::collections::HashSet<(usize, usize)>,
 ) {
@@ -123,7 +123,8 @@ fn armed_through_boss_z(
         h,
     );
     m.rebuild_adjacency();
-    let (mut setup, cyl_surfs) = crate::planes::plane_index_setup_inner(&m, plate, boss).unwrap();
+    let (mut setup, cyl_surfs) =
+        crate::arrangement::plane_index_setup_inner(&m, plate, boss).unwrap();
     for &surf in &cyl_surfs {
         let nacre_topo::Surface::Cylinder { def, .. } = m.surface(surf) else {
             unreachable!("a cylinder row carries a cylinder truth")
@@ -294,7 +295,7 @@ fn armed_class_edges<'a>(
     m: &Model,
     plate: Handle<Solid>,
     boss: Handle<Solid>,
-    setup: &'a crate::planes::PlaneSetup,
+    setup: &'a crate::arrangement::PlaneSetup,
     jd: &Judge<'a, WorkingPlane>,
     wc: usize,
     crossings: &std::collections::HashSet<(usize, usize)>,
@@ -541,7 +542,7 @@ fn armed_curved(
     m: &Model,
     plate: Handle<Solid>,
     boss: Handle<Solid>,
-    setup: &crate::planes::PlaneSetup,
+    setup: &crate::arrangement::PlaneSetup,
     jd: &Judge<'_, WorkingPlane>,
     wc: usize,
     crossings: &std::collections::HashSet<(usize, usize)>,
@@ -747,7 +748,7 @@ fn a_cut_circle_bounds_the_bands() {
 /// open-rim merge) measure the very same solid through one spelling: every class's
 /// arrangement, the coplanar unify, the band/panel pass, the seam table, `reconstruct`.
 /// Returns the model with the one welded solid live, plus the setup and the wall class.
-fn armed_assembled_through_boss() -> (Model, crate::planes::PlaneSetup, usize) {
+fn armed_assembled_through_boss() -> (Model, crate::arrangement::PlaneSetup, usize) {
     let (mut m, plate, boss, setup, wc, crossings) = armed_through_boss();
     let jd = Judge::new(&setup.geom, setup.standard, &setup.notes);
     let mut faces: Vec<LocalFace> = Vec::new();

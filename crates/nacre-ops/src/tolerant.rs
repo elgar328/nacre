@@ -5,7 +5,7 @@
 //!
 //! The tables are **pure description** — geometry and provenance, nothing about how this
 //! operation judges. That belongs to [`Judge`], which the engine builds once per boolean
-//! (`plane_index_setup` supplies the standard and the collector) and passes down; the predicates
+//! (`arrangement::plane_index_setup` supplies the standard and the collector) and passes down; the predicates
 //! are its methods. The predicate logic itself (exact-vs-kernel routing, the frame3 judges) lives
 //! in `nacre-judge`.
 

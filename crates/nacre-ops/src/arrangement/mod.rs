@@ -73,6 +73,7 @@ mod result;
 #[cfg(test)]
 pub(crate) mod ruling_probe;
 mod rulings;
+mod setup;
 mod sides;
 mod split;
 mod split_circles;
@@ -90,6 +91,7 @@ use emit::*;
 pub(crate) use per_class::*;
 pub(crate) use result::*;
 pub(crate) use rulings::*;
+pub(crate) use setup::*;
 pub(crate) use sides::*;
 pub(crate) use split::*;
 pub(crate) use split_circles::*;

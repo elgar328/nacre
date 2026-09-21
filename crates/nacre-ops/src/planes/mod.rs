@@ -1,12 +1,11 @@
 //! The plane/face substrate: per-face (`FaceInfo`) and per-plane-class (`WorkingPlane`) tables and
 //! their construction. Everything the boolean engine and its combinatorial queries build on.
 
-use crate::combinatorics;
 use crate::{BoolError, RejectReason, he_start, reject};
 use nacre_exact::Mag;
 use nacre_geom::Plane;
 use nacre_geom::intersect::{plane_plane, planes_coplanar};
-use nacre_judge::predicate::{Judge, Notes};
+use nacre_judge::predicate::Judge;
 use nacre_judge::{Standard, WitnessPoint};
 use nacre_math::{Point3, Vector3};
 use nacre_store::Handle;
@@ -18,7 +17,7 @@ mod cyl_gate;
 mod cyl_geom;
 mod frames;
 mod incidence;
-mod setup;
+mod standard;
 mod table;
 
 pub(crate) use corners::*;
@@ -26,7 +25,7 @@ pub(crate) use cyl_gate::*;
 pub(crate) use cyl_geom::*;
 pub(crate) use frames::*;
 pub(crate) use incidence::*;
-pub(crate) use setup::*;
+pub(crate) use standard::*;
 pub(crate) use table::*;
 
 /// A face's supporting plane plus the exact in/out data the seam path needs.
@@ -382,7 +381,11 @@ pub(crate) enum SolidSide {
 ///
 /// **A `None` class is a coplanar contact** — the two solids meet on that plane — so nothing may
 /// treat it as belonging to one side.
-fn class_owners(plane_ix: &[ClassIx], n_a: usize, n_class: usize) -> Vec<Option<SolidSide>> {
+pub(crate) fn class_owners(
+    plane_ix: &[ClassIx],
+    n_a: usize,
+    n_class: usize,
+) -> Vec<Option<SolidSide>> {
     let mut out: Vec<Option<SolidSide>> = vec![None; n_class];
     let mut seen = vec![false; n_class];
     for (fi, &ci) in plane_ix.iter().enumerate() {
@@ -404,7 +407,7 @@ fn class_owners(plane_ix: &[ClassIx], n_a: usize, n_class: usize) -> Vec<Option<
 /// class unrepresentable as a plane index instead of smuggling it through a sentinel.
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub(crate) enum ClassIx {
-    /// An index into the dense plane-class table (`PlaneSetup::geom`).
+    /// An index into the dense plane-class table (`arrangement::PlaneSetup::geom`).
     Plane(usize),
     /// An index into the cylinder-class table. The index space predates the table — it
     /// existed first so the type was total before the table had entries.

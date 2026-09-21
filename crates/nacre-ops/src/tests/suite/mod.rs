@@ -30,6 +30,7 @@ fn datum_frame(m: &mut Model, plane: crate::SketchPlane) -> crate::SketchFrame {
         other => panic!("stating a plane: {other:?}"),
     }
 }
+use crate::arrangement::{PlaneSetup, plane_index_setup};
 use crate::combinatorics::{Canon3, NodeId};
 use crate::tolerant::Judge;
 use crate::transform::transform;

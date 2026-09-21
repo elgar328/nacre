@@ -14,7 +14,7 @@ pub(crate) fn collect_planes(
                 // A cylinder face sits in the table — its row keeps the shared facts
                 // (surface, face, stated outward sign, motion leaf) and none of the plane
                 // vocabulary. Whether it may *flow* is the population gate's question, asked
-                // in `plane_index_setup`, not a door slam here.
+                // in `arrangement::plane_index_setup`, not a door slam here.
                 nacre_geom::Surface::Cylinder(_) => {
                     let nacre_topo::Surface::Cylinder { motion, .. } = model.surface(face.surface)
                     else {

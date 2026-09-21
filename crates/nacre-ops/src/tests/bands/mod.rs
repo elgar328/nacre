@@ -1,6 +1,6 @@
 use super::*;
 
-use crate::planes::{PlaneSetup, plane_index_setup};
+use crate::arrangement::{PlaneSetup, plane_index_setup};
 
 use nacre_math::{Point3, Vector3};
 

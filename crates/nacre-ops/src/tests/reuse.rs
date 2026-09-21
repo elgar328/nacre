@@ -175,7 +175,7 @@ fn a_framed_prisms_corners_solve_for_reuse() {
         Point3::from_array([10.0, 10.0, 10.0]),
     );
     m.rebuild_adjacency();
-    let setup = crate::planes::plane_index_setup(&m, prism, cub).expect("plane setup");
+    let setup = crate::arrangement::plane_index_setup(&m, prism, cub).expect("plane setup");
     let plans = class_plans(
         &m,
         ClassReuse::Proved,
