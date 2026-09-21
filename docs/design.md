@@ -24,22 +24,24 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 ├── nacre-predicates # exact f64 부호 술어(indirect predicates); geometry-predicates 위·standalone (nacre-* 의존 없음)
 ├── nacre-judge      # 부호 판정: 정확히 답할 수 없는 회전 좌표를 f64 필터→상승→«증명 또는 미결»로 정한다
 │                    #   kernel(WitnessPoint) + predicate(질의를 정확 경로나 kernel 로 보내는 라우터)
-│                    #   ← scalar · predicates · math
+│                    #   ← exact · predicates · math
 ├── nacre-geom       # f64 기하 «실현»(Surface·Curve)·교차(intersect 격리)
-│                    #   ← math · predicates · scalar(Rat 링 술어 쌍둥이)
+│                    #   ← math · predicates · exact(Rat 링 술어 쌍둥이)
 │                    #   곡면의 진실은 topo 의 Surface — 맨이름은 진실, 실현은 nacre_geom::Surface
-├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model   ← store · geom · math · scalar
+├── nacre-topo       # b-rep 위상: Vertex/Edge/Face/Shell/Solid·half-edge·Model   ← store · geom · math · exact
 ├── nacre-tess       # tessellation: 출처 태그   ← store · topo · geom · math · predicates
 │   └── polygon      # 평면 다각형 삼각분할: y-단조 분해 + 단조 삼각분할 + Delaunay 플립
 ├── nacre-validate   # 불변식 검사: 오일러-푸앵카레·watertight·방향성·참조 무결성   ← topo · store · math · geom
 ├── nacre-props      # 질량 특성: 부피·면적(해석적, tess 무관)   ← topo · geom · math · store
 ├── nacre-ops        # 연산: datum 평면/sketch/extrude/pad/pocket/boolean/transform/mirror/copy
-│                    #   ← topo · geom · math · store · scalar · cip (+ 선택적 rayon)
+│                    #   불리언은 한 방향이다: boolean(앞문) → arrangement(엔진) → assembly(조립),
+│                    #   셋 다 draft(지어지기 전 면의 어휘)를 읽는다. 관문이 그 방향을 단언한다
+│                    #   ← topo · geom · math · store · exact · judge (+ 선택적 rayon)
 │                    #   부울 = 면당 평면 arrangement 엔진
 │                    #   reuse: 상대가 닿을 수 없다고 증명된 평면 클래스는 배열하지 않는다 (「연산 층」 절)
 ├── nacre-step       # Model→STEP(AP242) 내보내기 어댑터   ← topo · geom · math · store (+ step-io)
 ├── nacre-oracle     # [dev] OCCT 비교 하네스   ← topo · step · math · store
-├── nacre            # 파사드   ← geom · math · ops · props · scalar · step · store · tess · topo · validate
+├── nacre            # 파사드   ← exact · geom · math · ops · props · step · store · tess · topo · validate
 └── tools/occt-helper/  # 워크스페이스 밖 헬퍼: brew OCCT(1순위) 또는 uv+OCP(폴백) — 「검증·오라클 인프라」 절
                         #   OCCT는 오라클 전용 — 제품 경로에 위임 없음
 ```
@@ -50,7 +52,7 @@ nacre/                    # 워크스페이스(crates/ 아래). 최상위 `nacre
 
 **어느 크레이트에 두나 — 축은 «이름»이 아니라 «정확성»이다.** 주제로 그린 지도(「숫자·기하·위상」)는 경계를 설명하지 못한다 — `nacre-exact` 공개 이름 84개 중 **61개가 기하**(`cylinders_nested`·`SeamOrder`·`PlaneName`…)이고, 그 크레이트가 격리하는 것은 스칼라가 아니라 **«유리수·정수로 정확히 답할 수 있는 모든 것»**(값·술어·이름)이다. `nacre-geom` 은 같은 기하의 **f64 실현**을 맡는다 — 진실/캐시와 같은 축이다. 규칙: 「유도된 값 + 그 산술」→ `nacre-exact`, 「아레나 항목의 진실」→ `nacre-topo`. 이것을 강제하는 것은 취향이 아니라 의존 그래프다 — **`nacre-judge` 는 `nacre-topo` 에 의존하지 않으므로** 판정이 쓰는 타입은 topo 아래에 있어야 한다(`PlaneName` 이 topo 가 아니라 scalar 에 사는 이유). 분리 여부는 「한쪽만 쓰는 소비자가 있는가」로 재고, 그런 소비자는 **0** 이라 분리하지 않는다. robustness가 첨예한 코드(교차·분류)는 전부 `nacre-geom::intersect` 한 모듈에 격리한다. 사용자는 파사드 크레이트 `nacre` 하나만 의존하며, 인터랙티브 스크립트 앱 등은 이 워크스페이스 밖의 별도 프로젝트로 둔다.
 
-**파사드 `nacre`.** 열 개 층을 **모듈로** 재수출하고(`nacre::geom`·`math`·`ops`·`props`·`scalar`·`step`·`store`·`tess`·`topo`·`validate`), 자주 쓰는 것은 `nacre::prelude`에 담는다.
+**파사드 `nacre`.** 열 개 층을 **모듈로** 재수출하고(`nacre::exact`·`geom`·`math`·`ops`·`props`·`step`·`store`·`tess`·`topo`·`validate`), 자주 쓰는 것은 `nacre::prelude`에 담는다.
 - **평면(flat) 재수출은 하지 않는다.** **층 분리가 이 설계의 뼈대**여서 이름공간에 남긴다. 같은 맨이름이 층마다 다른 것을 뜻하기도 한다 — `topo::Surface` 는 진실, `geom::Surface` 는 그 f64 실현이다.
 - **`nacre-exact` 재수출은 선택이 아니다.** `Operation::Transform { isometry: Isometry }`·`Mirror { axis: Axis, offset: Rat }`가 scalar 타입을 ops의 공개 API로 새어 보내므로, 없으면 소비자가 그 op을 만들 수조차 없다. 반대로 `nacre-judge`·`nacre-predicates`는 공개 API에 새지 않아 재수출하지 않는다(퍼블리시는 필요 — ops·geom 의 하드 의존).
 - **prelude의 기준은 확인 가능한 성질이다**: *"`Operation`의 모든 변이가 prelude 이름만으로 만들어진다."* 내용은 실제 소비자의 import 와, 그 소비자보다 나중에 생긴 표면(스케치 앞문·파생 조회·거절 사유)의 합집합이다 — 낡은 소비자만 보면 최신 API가 빠진다.
@@ -1433,7 +1435,7 @@ census 키가 `detail` 을 드는 이유: `TraceDeclined` 의 모든 kind 가 **
 4. **셀 추출·중첩.** 분할된 선분에서 셀을 뽑고, 구멍 셀을 host 셀에 중첩시킨다(`+1` 감김 셀만 host 다 — `−1` 셀은 어떤 host 의 구멍이거나 빈 뿌리다).
 5. **라벨.** 셀마다 피연산자별·쪽별 재료 라벨 `Label = [A_above, A_below, B_above, B_below]` 을 단다. 모서리를 건널 때 그 모서리의 마스크가 라벨을 뒤집고, 전파가 끝나면 **모든** 모서리(트리·비트리)에서 뒤집힘 관계를 검증한다(`UnreachedCell`·`LabelConflict`). **"above" 는 클래스의 *저장된* 평면 법선 쪽**이다 — 클래스의 정준 유리수 이름(절반의 클래스에서 반대를 향한다)도, 루트 면의 바깥 법선도 아니다(`frame_sign` 이 둘을 잇고, 방출의 `flip` 이 그것을 되접는다).
 6. **생존 규칙·방출.** 아래.
-7. **조립·청소.** 엔진이 `boolean` 의 `assemble_fuse_cut` 과 `unify_coplanar_faces` 를 되불러 껍질을 짓고 청소한다(합법적인 모듈 순환). 입력은 `NodeId` seam 삼중으로 이름 붙은 면당 출력 `LocalFace` 다. `assemble_fuse_cut` 이 vertex handle 을 면의 first-appearance 로 배정한다.
+7. **조립·청소.** 엔진이 `assembly` 의 `assemble_fuse_cut` 과 `unify_coplanar_faces` 를 불러 껍질을 짓고 청소한다. 입력은 `NodeId` seam 삼중으로 이름 붙은 면당 출력 `draft::LocalFace` 다. `assemble_fuse_cut` 이 vertex handle 을 면의 first-appearance 로 배정한다.
 
 **생존 규칙.** 규칙은 한 챔버(평면 한쪽의 공간)의 `(inA, inB)` 에 대한 술어 하나다:
 
