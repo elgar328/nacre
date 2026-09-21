@@ -105,7 +105,15 @@ pub(crate) use audits::*;
 pub(crate) use cells::*;
 pub(crate) use cyl_trace::*;
 use emit::*;
-pub(crate) use per_class::*;
+// ★ Not a glob, because the two names crossing here cross for different reasons. The stage
+// entry is this module's own (`pub(super)`), so a plain `use` carries it to the children.
+// The mixed-class audit leaves `arrangement` for exactly one reader -- a test, and one that
+// only runs where `debug_assert!` does -- so it is re-exported under both conditions. A
+// `pub(crate)` glob claimed both at the wider visibility, which made it claim nothing at all
+// in a release build and say so.
+#[cfg(all(test, debug_assertions))]
+pub(crate) use per_class::MIXED_CLASS_AUDIT;
+use per_class::per_class;
 pub(crate) use result::*;
 pub(crate) use rulings::*;
 pub(crate) use setup::*;

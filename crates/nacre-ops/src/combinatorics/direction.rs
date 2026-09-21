@@ -242,9 +242,10 @@ pub(crate) fn stored_coeffs_rat(
 ///
 /// A ring is not convex, so this is **not** the winding — at a reflex node it is its
 /// opposite. [`loop_winding`] asks it at a hull vertex, where the two agree.
-// Used by `loop_winding`'s tests and by the winding goldens in `lib.rs`; production reads the
-// turn through `turn_between`, which lets the caller skip a straight stretch.
-#[cfg_attr(not(test), allow(dead_code))]
+// Production reads the turn through `turn_between`, which lets a caller skip a straight
+// stretch, so this per-node spelling has no product caller at all -- `loop_winding`'s tests
+// are the only ones, and they ask it at a hull vertex where the turn and the winding agree.
+#[cfg(test)]
 pub(crate) fn turn_at(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -456,8 +457,7 @@ pub(super) fn turn_between(
 /// ```
 ///
 /// where `sign(det[…])` is `plane_pair_dir_sign`, already exact. ★ The derivation is spelled
-/// **here and nowhere else**: it used to sit in [`turn_at`]'s doc while the product itself was
-/// written out twice, which is the shape this function exists to end.
+/// **here and nowhere else**, and this function is the one place the product computes it.
 ///
 /// ★★ **`0` comes back as `0`, on purpose.** Its two consumers want different things from it:
 /// `turn_between` calls it a [`RejectReason::StraightAngle`], and `arrangement`'s `angular_order`
