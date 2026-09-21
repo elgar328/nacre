@@ -5,7 +5,7 @@
 //! answers it, so the graph was invisible until it was measured: nine module pairs pointed at
 //! each other, and only two of those were *behaviour* — the rest named a type, or took an
 //! argument, that lived on the wrong side. The difference is the whole finding, and it is only
-//! visible if something counts. Five pairs are left.
+//! visible if something counts. Three pairs are left.
 //!
 //! ★ **The parser is what gets calibrated, not the files.** An earlier hand-rolled version of this
 //! measurement was wrong three times — it counted `std::ops::Deref` as a reference to this crate's
@@ -210,11 +210,11 @@ fn the_parser_reads_what_it_should() {
 
 /// ★★★ **What this restructure established, asserted — and only that.**
 ///
-/// The graph is **not** a DAG and this does not pretend otherwise: five module pairs still point
-/// at each other. What is settled is the boolean pipeline's shape and the direction of the two
-/// helpers under the engine, so that is what is locked. Each of these was a real edge before the
-/// work and is zero after it; an editor who reintroduces one is undoing something, not adding
-/// to it.
+/// The graph is **not** a DAG and this does not pretend otherwise: three module pairs still
+/// point at each other. What is settled is the boolean pipeline's shape and the direction of
+/// everything under the engine, so that is what is locked. Each of these was a real edge before
+/// the work and is zero after it; an editor who reintroduces one is undoing something, not
+/// adding to it.
 #[test]
 fn the_pipeline_runs_one_way() {
     let e = edges();
@@ -253,14 +253,19 @@ fn the_pipeline_runs_one_way() {
             "assembly -> arrangement ({n}): the last stage is calling the engine"
         ));
     }
-    // `bands` and `nesting` are helpers *under* the engine: the engine calls them, and they
-    // speak their own vocabulary back (a `CylinderDef`, a `CylRow`) rather than the engine's.
-    // A name pointing up here means a helper has started taking the caller's words again.
-    for helper in ["bands", "nesting"] {
-        let n = named(helper, "arrangement");
+    // Four modules live under the engine: the names and the class table it reads
+    // (`combinatorics`, `planes`), and the two helpers it calls (`bands`, `nesting`), which
+    // speak their own vocabulary back -- a `CylinderDef`, a `CylRow` -- rather than the
+    // engine's. The engine reads all four; none of them knows it exists. A name pointing up
+    // here means something below has started taking the caller's words again.
+    //
+    // `cyl_chart` is deliberately absent: it names `arrangement` 14 times, and a pair with no
+    // answer yet cannot be asserted to zero.
+    for below in ["bands", "combinatorics", "nesting", "planes"] {
+        let n = named(below, "arrangement");
         if n > 0 {
             broken.push(format!(
-                "{helper} -> arrangement ({n}): a helper under the engine is naming the engine"
+                "{below} -> arrangement ({n}): something under the engine is naming the engine"
             ));
         }
     }
@@ -326,7 +331,7 @@ fn no_module_edge_appears_that_is_not_recorded() {
             "boolean",
             &["arrangement", "assembly", "draft", "reject_census"],
         ),
-        ("combinatorics", &["arrangement", "planes", "tolerant"]),
+        ("combinatorics", &["planes", "tolerant"]),
         (
             "cyl_chart",
             &[
@@ -356,13 +361,7 @@ fn no_module_edge_appears_that_is_not_recorded() {
         ),
         (
             "planes",
-            &[
-                "arrangement",
-                "combinatorics",
-                "par",
-                "phase",
-                "rotated_vertex",
-            ],
+            &["combinatorics", "par", "phase", "rotated_vertex"],
         ),
         ("realize", &["planes", "rotated_vertex"]),
         (
