@@ -360,10 +360,13 @@ fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
 /// module graph's own walker has always descended (`instruments::module_graph`'s `sources_of`);
 /// this one now does too, skipping `tests` for the same reason it does.
 ///
-/// ★ **The floor cannot see this, and never could.** It watches the count go *down*, so a folder
-/// that gains a subfolder — or one that was never a root to begin with — leaves it green. What
-/// keeps the scan honest is the descent; the floor only catches a root dropping out of the list
-/// above.
+/// ★ **The floor could not see this, for two reasons at once.** A subfolder's files were never
+/// counted at all, so `cyl_chart` arriving under `arrangement` changed nothing the floor reads —
+/// it was never a root even while it was top-level. And the floor watches only for the count going
+/// *down*, which files moving one level deeper **would** have caused, had it not been slack by
+/// three (it said 50 where the scan read 53). What keeps this scan honest is the descent; the
+/// floor catches a root dropping out of the list above, and is worth exactly as much as it is
+/// tight.
 fn engine_sources() -> Vec<String> {
     let mut out = Vec::new();
     for module in [
