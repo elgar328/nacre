@@ -117,6 +117,7 @@ pub(super) fn circle_on_class(
     } else {
         assemble_spans(jd, cyl, &cyls[cyl].def, &carved, outer)?
     };
+    #[cfg(test)]
     cycle_probe::record(t, outer, rims.len(), &cycles, carved.len(), spans.len());
     Ok(spans)
 }

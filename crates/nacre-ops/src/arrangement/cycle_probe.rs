@@ -1,8 +1,18 @@
+//! **What one lateral face's cycles laid on one plane class** — the shape of the answer
+//! `cycle_on_class` produced, station by station.
+//!
+//! ★ **A ledger, not a check.** Each row states the class's axis station, whether the face's
+//! outer answer grazed or crossed, how the face's cycles broke down by kind, and how many
+//! carved runs became spans. A fixture reads the distribution to see which arms of the lateral
+//! road its models actually exercise — a zero here means *unexercised*, never *verified*.
+//!
+//! ★★ **Nothing downstream reads [`HITS`]**, so the engine's answer is the same with this module
+//! compiled out; `cfg(test)` at the mount states that.
+
 use super::{CylOnClass, combinatorics};
 use std::sync::Mutex;
 
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Hit {
     /// The class's axis station, realized.
     pub t: f64,

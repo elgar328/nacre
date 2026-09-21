@@ -353,6 +353,7 @@ fn trace_transversal_face(
                             };
                             match crossing_on_ruling(jd, &wcy.def, wc, fc, cyl, side) {
                                 Ok(id) => {
+                                    #[cfg(test)]
                                     crossing_probe::record(
                                         jd, &wcy.def, cyl, wc, fc, side, false, id,
                                     );
@@ -372,6 +373,7 @@ fn trace_transversal_face(
                             let b = ring[(edge + 1) % ring.len()];
                             match crossing_on_arc(jd, &wcy.def, wc, fc, cyl, ccw, ring[edge], b) {
                                 Ok(id) => {
+                                    #[cfg(test)]
                                     crossing_probe::record(jd, &wcy.def, cyl, wc, fc, 0, true, id);
                                     (id, combinatorics::EndPin::Cylinder)
                                 }

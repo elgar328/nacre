@@ -59,7 +59,9 @@ pub(crate) mod arc_probe;
 #[cfg(test)]
 mod audits;
 mod cells;
+#[cfg(test)]
 pub(crate) mod crossing_probe;
+#[cfg(test)]
 pub(crate) mod cycle_probe;
 /// The cylinder chart: the lateral faces' arrangement, emitted from cells (capability D) --
 /// this engine's second arm, run on the cylinder's own chart rather than a plane class.

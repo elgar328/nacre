@@ -1,8 +1,21 @@
+//! **Where a cylinder crossing actually landed, realized** — the f64 twin of the name the
+//! tracer minted for it.
+//!
+//! ★ **It checks a name against coordinates, which is the one thing the namer cannot do.**
+//! `crossing_on_ruling` and `crossing_on_arc` build a [`NodeId`] from exact predicates and never
+//! evaluate it; this realizes the point afterwards and records its distance to all three
+//! surfaces it is supposed to lie on, plus the ruling side read in f64 against the side the
+//! ring's edge carried. A fixture then asserts the offsets are zero and the two sides agree.
+//!
+//! ★★ **It does not decide anything, and it must not.** Nothing downstream reads [`HITS`]; the
+//! engine's answer is the same with this module compiled out, which is what `cfg(test)` at the
+//! mount states. What it cannot see is a name that is wrong *and* whose realization is wrong the
+//! same way — the twin check is independent only where the f64 road is.
+
 use super::{Judge, NodeId, WorkingPlane, combinatorics};
 use std::sync::Mutex;
 
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(not(test), allow(dead_code))]
 pub(crate) struct Hit {
     /// Read through `Debug` in the probe's messages.
     #[allow(dead_code)]
