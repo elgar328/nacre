@@ -48,18 +48,18 @@
 //!
 //! The two axes, the **cells** they cut, the vertical lines' answers, the
 //! **cell reader** ([`Chart::read_cell`]), which reads a cell's chamber off the lines at
-//! its ends (`DiskLabels`/`ArcLabels` through `bands::read_bits`, the rulings' labels where the
+//! its ends (`DiskLabels`/`ArcLabels` through `read_cell::read_bits`, the rulings' labels where the
 //! rims are silent) and its existence off the trace (`face_spans`), and the **emitter**
 //! ([`emit_lateral`]) — the **region walk** ([`regions`]): emitted cells → connected
 //! components → each component's boundary on the chart's grid → runs cut into the neighbouring
 //! class's own pieces → cycles → a `Bound`. The census holds the chart against its own rules
 //! and the emitter's faces against the reads they came from ([`census`]).
 
-use crate::arrangement::{ArcLabel, Curved, Label, RulingExtent};
+use crate::arrangement::{ArcLabel, Curved, Label, RulingExtent, SegKind};
 use crate::draft::{Bound, LocalFace};
-use crate::planes::{ClassIx, WorkingCyl, WorkingPlane};
+use crate::planes::{ClassIx, SolidSide, WorkingCyl, WorkingPlane};
 use crate::tolerant::Judge;
-use crate::{BoolError, RejectReason, combinatorics, reject};
+use crate::{BoolError, BoolKind, RejectReason, combinatorics, reject};
 use nacre_exact::Rat;
 
 #[cfg(test)]
@@ -109,11 +109,11 @@ pub(crate) struct ThetaSeg {
     /// cylinder, carried straight from [`RulingExtent::label`]. The horizontal lines' answers are
     /// `DiskLabels`/`ArcLabels`; this is the half they never had, and [`Chart::read_cell`] reads
     /// it where they are silent.
-    pub(crate) label: Option<crate::arrangement::Label>,
+    pub(crate) label: Option<Label>,
     /// Who traced this line — [`RulingExtent::marks`]. Membership is `label`'s question; whether
     /// this lateral face is even here is this one's.
     #[cfg(test)]
-    pub(crate) marks: Vec<(crate::planes::SolidSide, crate::arrangement::SegKind)>,
+    pub(crate) marks: Vec<(SolidSide, SegKind)>,
 }
 
 /// One cylinder class's chart: the two axes, and the cells they cut.

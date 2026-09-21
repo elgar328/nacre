@@ -510,3 +510,71 @@ fn the_chart_stands_on_a_tilted_axis() {
         );
     }
 }
+
+/// **The existence rule's whole truth table** — [`face_spans`] against marks written by hand.
+///
+/// The production lock reaches this through an entire boolean, and a boolean exercises two of
+/// the rows below: a `Transversal` that reaches and a `Graze` pointing away. The rule is one
+/// sentence about every rim, not a description of that fixture, so the rest are stated here —
+/// including the two that can only be reached from geometry the road does not build yet.
+#[test]
+fn face_spans_reads_the_trace_not_the_label() {
+    use super::read_cell::face_spans;
+    use crate::arrangement::{ArcLabel, SegKind};
+    use crate::combinatorics;
+    use crate::planes::SolidSide;
+    use crate::{BoolError, RejectReason};
+    let n = combinatorics::NodeId::ThreePlane([0, 1, 2]);
+    let row = |marks: Vec<(SolidSide, SegKind)>| ArcLabel {
+        ends: [n, n],
+        // Deliberately the label that says "material everywhere": nothing below may read it.
+        label: [true; 4],
+        marks,
+    };
+    let (a, b) = (SolidSide::A, SolidSide::B);
+    let spans = |marks, above| face_spans(&row(marks), a, above);
+    // A face running through the plane is on both sides of it.
+    for above in [true, false] {
+        assert!(spans(vec![(a, SegKind::Transversal { mat: 1 })], above).unwrap());
+    }
+    // A face whose boundary stops at the arc is on exactly the side it occupies.
+    for body_above in [true, false] {
+        for above in [true, false] {
+            assert_eq!(
+                spans(vec![(a, SegKind::Graze { body_above })], above).unwrap(),
+                body_above == above,
+                "graze body_above={body_above} against band above={above}"
+            );
+        }
+    }
+    // The counterpart's marks are not this row's face, whatever they say.
+    assert!(!spans(vec![(b, SegKind::Transversal { mat: 1 })], true).unwrap());
+    // A planar face's seated rim says nothing about the lateral — see `ArcLabel::marks`.
+    assert!(!spans(vec![(a, SegKind::Seated { body_above: true })], true).unwrap());
+    // No mark at all: the face stops short of this arc.
+    assert!(!spans(Vec::new(), true).unwrap());
+    // Two of this solid's faces on one arc: agreeing decides, disagreeing refuses by name.
+    assert!(
+        spans(
+            vec![
+                (a, SegKind::Graze { body_above: true }),
+                (a, SegKind::Transversal { mat: 1 }),
+            ],
+            true,
+        )
+        .unwrap()
+    );
+    assert!(matches!(
+        spans(
+            vec![
+                (a, SegKind::Graze { body_above: false }),
+                (a, SegKind::Transversal { mat: 1 }),
+            ],
+            true,
+        ),
+        Err(BoolError::Rejected {
+            reason: RejectReason::CylinderFaceUndecided,
+            ..
+        })
+    ));
+}

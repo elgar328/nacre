@@ -132,9 +132,10 @@ pub(crate) struct RulingExtent {
     /// holds on the ⊥ side: the chart collects **every** perpendicular class, and a ruling's
     /// extent is
     /// set by its *wall*, not by this lateral face — so a vertical line can be in the chart while
-    /// the face is not there at all. `bands::face_spans` already states the rule for exactly this
-    /// list, and it is carried beside the label for the reason `ArcLabel` carries both: split into
-    /// two maps they could disagree, and then nothing could say which was the truth.
+    /// the face is not there at all. `cyl_chart::read_cell`'s `face_spans` already states the
+    /// rule for exactly this list, and it is carried beside the label for the reason
+    /// `ArcLabel` carries both: split into two maps they could disagree, and then nothing
+    /// could say which was the truth.
     #[cfg(test)]
     pub(crate) marks: Vec<(crate::planes::SolidSide, SegKind)>,
 }

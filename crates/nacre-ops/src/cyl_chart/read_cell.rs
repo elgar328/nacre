@@ -35,7 +35,7 @@ pub(crate) enum End<'a> {
 
 impl End<'_> {
     /// **What this end says about the cell's chamber**, or `None` when it says nothing — which
-    /// now includes a run of arcs that do not agree. The read is `bands::read_bits`, the one
+    /// now includes a run of arcs that do not agree. The read is [`read_bits`], the one
     /// spelling, and it lives here so the two consumers below cannot drift into two.
     ///
     /// ☑ **Measured: the run case here is not exercised by the suite.** Making this answer `None`
@@ -44,8 +44,8 @@ impl End<'_> {
     /// is never asked for its chamber. This stays the general rule rather than a written-out
     /// refusal because it *is* the whole-circle arm's rule (see [`End::Disk`]'s site) with the
     /// sector's own arcs in place of the circle's; narrowing it would be the second spelling.
-    fn chamber(&self, side: crate::planes::SolidSide, above: bool) -> Option<(bool, bool)> {
-        let one = |l: &Label| crate::bands::read_bits(l, side, above);
+    fn chamber(&self, side: SolidSide, above: bool) -> Option<(bool, bool)> {
+        let one = |l: &Label| read_bits(l, side, above);
         match self {
             End::Disk(l) => Some(one(l)),
             End::Exact(arcs) => {
@@ -113,7 +113,7 @@ pub(crate) struct CellRead<'a> {
     pub(crate) chamber: Option<(bool, bool)>,
     pub(crate) src2_disagree: bool,
     /// Is this lateral face here at all — the existence question, answered by the trace
-    /// where an end is cut (`bands::face_spans`) and by the row's span where none is.
+    /// where an end is cut ([`face_spans`]) and by the row's span where none is.
     pub(crate) present: bool,
     /// The trace says the face is here while no row's span covers the cell — the one direction
     /// of disagreement that is a defect (the other is a hole in a spanned face).
@@ -266,7 +266,7 @@ impl Chart {
     ///
     /// No sign is derived here: `band_is_above` is `planes::plus_t_is_above` at the low end and
     /// its negation at the high end — the one spelling the band road's `chamber` and `panel_faces`
-    /// both used — and the bits come out through `bands::read_bits`. The ruling labels (the
+    /// both used — and the bits come out through [`read_bits`]. The ruling labels (the
     /// vertical lines) are not consulted: a face that is here has a circle at both its ends, so
     /// the horizontal lines always speak, and `census` asserts that (`src0_present`).
     #[allow(clippy::too_many_arguments)]
@@ -275,8 +275,8 @@ impl Chart {
         jd: &Judge<'_, WorkingPlane>,
         k: usize,
         def: &nacre_topo::CylinderDef,
-        kind: crate::BoolKind,
-        side: crate::planes::SolidSide,
+        kind: BoolKind,
+        side: SolidSide,
         cell: &Cell,
         curved: &'a Curved,
         lines: &Lines,
@@ -322,7 +322,7 @@ impl Chart {
                         #[cfg(test)]
                         let mut seen: Vec<(bool, bool)> = Vec::new();
                         for a in arcs {
-                            let b = crate::bands::read_bits(&a.label, side, above[e]);
+                            let b = read_bits(&a.label, side, above[e]);
                             same &= bits.replace(b).is_none_or(|p| p == b);
                             #[cfg(test)]
                             seen.push(b);
@@ -437,7 +437,7 @@ impl Chart {
                 // The sector leaves `x` counter-clockwise and arrives at `y`, so the two walls
                 // are read from opposite sides of their own rulings.
                 let above = crate::arrangement::plus_theta_is_above(jd, wall, sd)? == starts_here;
-                Some(crate::bands::read_bits(&l, side, above))
+                Some(read_bits(&l, side, above))
             };
             // ★ A cell whose two walls are **one** ruling (a circle opened at a single point) lies
             // on both sides of that wall, so the vertical line says nothing about it — the two
@@ -487,7 +487,7 @@ impl Chart {
                 // road's `panel_faces` refused it:
                 // the rims of a hole are band boundaries, so a sector exists over its whole height or
                 // not at all, and picking an end to believe is the guess this kernel does not make.
-                let v = crate::bands::face_spans(arc, side, above[e])?;
+                let v = face_spans(arc, side, above[e])?;
                 if span.replace(v).is_some_and(|p| p != v) {
                     return Err(reject(RejectReason::CylinderFaceUndecided));
                 }
@@ -528,7 +528,7 @@ impl Chart {
             Some(false)
         } else {
             chamber.map(|(own, other)| {
-                let keep = |in_own: bool| crate::bands::keep_for(kind, side, in_own, other);
+                let keep = |in_own: bool| keep_for(kind, side, in_own, other);
                 keep(own) != keep(!own)
             })
         };
@@ -540,5 +540,104 @@ impl Chart {
             exist_disagree,
             emit,
         })
+    }
+}
+
+/// **Does this row's lateral face reach into the interval, at this arc?** — the *existence*
+/// question, which no label answers.
+///
+/// A label states where material is. It is written about a **cell**, and it stays the same whether
+/// the cylinder's own face bounds that cell or some other face does. That is enough while a
+/// lateral marks a class over its whole circle; it stops being enough the moment a **holed**
+/// lateral comes back in as an operand, because then two sectors of one rim can carry a literally
+/// identical label and differ only in whether the face is there at all.
+///
+/// The trace already said which. One rule, no shapes counted:
+///
+/// | this face's mark on the arc | reaches into the interval |
+/// |---|---|
+/// | [`SegKind::Transversal`] | **yes** — the face passes through the plane here |
+/// | [`SegKind::Graze`] | only when `body_above` names the interval's side |
+/// | nothing | **no** — the face stops short of this arc |
+///
+/// `band_is_above` is the interval's side of this rim's plane in that plane's **stored** frame —
+/// the very argument [`read_bits`] takes, and produced by the same `toward_hi` the caller already
+/// holds. There is no second derivation of "which way is the band" here, deliberately: this
+/// ladder has been bitten four times by a sign re-derived one call away from its twin.
+///
+/// ★ [`SegKind::Seated`] is skipped because it is a *planar* face's word — see [`ArcLabel::marks`],
+/// where the type is what rules a lateral out, not a convention.
+///
+/// ★★ **The rule is not about holes.** An outer rim grazes too (`circle_on_class` says
+/// `Grazes { body_above: up }` at the face's own end), and there the interval on the face's side
+/// gets `true` from this same test — one sentence about every rim. What is out of reach is only
+/// an **uncut** outer rim: it never becomes an [`ArcLabels`] entry at all (a whole circle goes to
+/// `DiskLabels` and the band road), so today only cut rims ask here.
+///
+/// ☑ **How often each row actually fires** (whole binary, production calls only):
+/// `Transversal` **265** · `Graze` **13**, of which **1** reaches and **12**
+/// do not · nothing at all **0**. The chart reads it once per cut end (`cyl_chart::census`'s
+/// `arcs_read`, 756 over the lib suite).
+/// The twelve are the six dropped sectors read at both rims, which is the cross-check that the
+/// sector census and this one describe the same events.
+pub(crate) fn face_spans(
+    r: &ArcLabel,
+    side: SolidSide,
+    band_is_above: bool,
+) -> Result<bool, BoolError> {
+    let mut answer: Option<bool> = None;
+    for (_, kind) in r.marks.iter().filter(|(s, _)| *s == side) {
+        let reaches = match *kind {
+            // A planar face's word — see `ArcLabel::marks`; a tangent ruling is a seated face's
+            // too, and never a rim arc's mark.
+            SegKind::Seated { .. } | SegKind::Tangent { .. } => continue,
+            SegKind::Transversal { .. } => true,
+            SegKind::Graze { body_above } => body_above == band_is_above,
+        };
+        // ★★★ **Two of this solid's faces meeting at one arc and *disagreeing*: refused, and the
+        // refusal is a placeholder.** It takes one cylinder class carrying several faces that
+        // share a rim — reachable geometry (a split bore whose two bands touch), just not
+        // reachable today. The answer that day is almost certainly `.any()`: if any of the
+        // solid's faces reaches into the interval, a face is there. It is not written that way
+        // now because it cannot be measured, and this ladder has twice shipped an unmeasured rule
+        // that turned out wrong. Marks that **agree** decide nothing by themselves, so they are
+        // taken: refusing there would be refusing a case with no guess in it.
+        if answer.replace(reaches).is_some_and(|prev| prev != reaches) {
+            return Err(reject(RejectReason::CylinderFaceUndecided));
+        }
+    }
+    Ok(answer.unwrap_or(false))
+}
+
+/// The one spelling of "which two bits of a label are this cell's chamber": the row's own
+/// solid's bit and the counterpart's, on the side of the plane the cell occupies. Read for a disk
+/// end and an arc end alike (`Chart::read_cell`), so the two cannot drift.
+///
+/// ★★ **The chamber is read off the arrangement, not measured.** The plane arrangement already
+/// makes a **disk cell** for every circle a cylinder leaves on a class, and `label_cells` writes
+/// four bits on it: which solid's material lies immediately above and below that plane *inside the
+/// circle*. That is the band's chamber, stated by the engine that decided it.
+///
+/// ★ This replaced a witness ray (`point_in_faces_rat`): a rational point on the axis, cast
+/// through the counterpart's faces, counting crossings. It gave the same answers, but it answered
+/// a **3D containment** question — the shape the *component* probe asks — when the band's question
+/// is the same shape as "does this face survive": two chambers either side of a boundary. Reading
+/// the label needs no coordinates, no ray direction, no abstention retry, and has no width
+/// ceiling, and it is why a cylinder may now stand on either side of the boolean.
+pub(crate) fn read_bits(l: &Label, side: SolidSide, band_is_above: bool) -> (bool, bool) {
+    let (cyl_bit, other_bit) = match side {
+        SolidSide::A => (0usize, 2usize), // [A above, A below, B above, B below]
+        SolidSide::B => (2usize, 0usize),
+    };
+    let i = usize::from(!band_is_above);
+    (l[cyl_bit + i], l[other_bit + i])
+}
+
+/// The one spelling of the band's keep decision — the wall is a boundary face of its own solid,
+/// so that solid's membership flips across it while the counterpart's does not.
+pub(crate) fn keep_for(kind: BoolKind, side: SolidSide, in_own: bool, in_other: bool) -> bool {
+    match side {
+        SolidSide::A => crate::draft::keep(kind, in_own, in_other),
+        SolidSide::B => crate::draft::keep(kind, in_other, in_own),
     }
 }

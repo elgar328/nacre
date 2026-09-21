@@ -411,7 +411,8 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
 /// already own material, the two sectors' labels are **literally identical**, and both survived —
 /// filling the hole in and leaving its four boundary edges claimed once each. The trace had said
 /// which sector was a face all along, per arc, since the hole taught it to mark by angular extent:
-/// `Graze` where the face ends, `Transversal` where it runs through. `bands::face_spans` asks it.
+/// `Graze` where the face ends, `Transversal` where it runs through.
+/// `cyl_chart::read_cell`'s `face_spans` asks it.
 ///
 /// ☑ Measured across these four fixtures: **four** sectors dropped for existence, exactly one per
 /// operation — the buried half — and the volumes below are what says that count is right.

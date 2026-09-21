@@ -444,8 +444,9 @@ pub enum RejectReason {
     /// **The trace does not determine whether a lateral face is present over a sector.**
     ///
     /// A cell label says where *material* is; whether the cylinder's own face bounds it there is a
-    /// different proposition, answered by the contributions covering the rim arc (`bands`'
-    /// `face_spans`). This name is what that answer being *contradictory* is called, and it has
+    /// different proposition, answered by the contributions covering the rim arc
+    /// (`cyl_chart::read_cell`'s `face_spans`). This name is what that answer being *contradictory*
+    /// is called, and it has
     /// two spellings — both of them "the evidence points both ways", which is why they share one
     /// name rather than reporting the shape that produced it:
     ///

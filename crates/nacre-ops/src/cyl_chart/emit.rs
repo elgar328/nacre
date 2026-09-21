@@ -7,7 +7,7 @@ use super::*;
 /// disagreement, or a cell with no speaking end); the walk names its own.
 ///
 /// No sign is derived here: chambers come from [`Chart::read_cell`], the keep rule is
-/// `bands::keep_for`, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
+/// `read_cell::keep_for`, the ruling identity is [`Chart::ruling_name`], the rim's nodes are the
 /// split's (`CutRim`), and the winding is `seam_step`'s (`classify_cycles`).
 pub(crate) fn emit_lateral(
     kind: crate::BoolKind,

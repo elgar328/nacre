@@ -546,7 +546,7 @@ pub(crate) fn walk(
         let (own, other) = reads[members[0]]
             .chamber
             .expect("an emitted cell has a chamber");
-        let flip = !crate::bands::keep_for(kind, side, own, other);
+        let flip = !super::read_cell::keep_for(kind, side, own, other);
         let face = if rims_lo.is_empty() && rims_hi.is_empty() {
             let o = outer.ok_or_else(ruling_ladder)?;
             let mut rings = rings;
