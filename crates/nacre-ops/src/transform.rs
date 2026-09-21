@@ -442,13 +442,10 @@ fn transport_cylinder(
 /// source handle. Per plane, not per solid — the caps of a turned block take it while the
 /// walls land in this table.
 ///
-/// **One table for all three motions.** A reflection used to have its own column here, carrying a
-/// moved surface by conjugating its chain over a mirrored witness; it now appends a node like
-/// everything else, so the reflection is *in* the definition rather than folded into it.
+/// **One table for all three motions.** A reflection appends a node like everything else, so the
+/// reflection is *in* the definition rather than folded into it.
 ///
-/// A cylinder rides the same rows through its own motion slot — the old `SurfaceDef` path
-/// demoted a moved cylinder to `Inexact` (a `Constructed` source with no points to move); its
-/// history is simply recorded now.
+/// A cylinder rides the same rows through its own motion slot: its history is recorded.
 fn moved_surface_motion(
     model: &mut Model,
     src: Handle<Surface>,

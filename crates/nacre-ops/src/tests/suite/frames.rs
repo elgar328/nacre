@@ -985,15 +985,13 @@ fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     assert_ne!(a, cap_of(&mut m, 2.6), "and a different height is not");
 }
 
-/// ★★★★★ **The end-to-end lock: the f64-fallback chain is cut on the `n·n`-overflow
-/// population** — the measured 1.6%, and the one today's producers actually reach.
+/// ★★★★★ **The end-to-end lock on the `n·n`-overflow population** — the measured 1.6%, and the
+/// one the producers actually reach.
 ///
 /// A prism raised on a fully tilted, exactly-orthonormal decimal frame from a 16-digit
 /// profile has walls whose names run to ~110 bits: **narrow names whose squared lengths
-/// (~2^220) overflow `i128`**, so `plane_frame_default`/`plane_frame_named` hard-declined
-/// them and a pad on such a wall fell to `Swept::along` — every new face point-less, the
-/// chain that kept the `Inexact` state alive. Now the frame realizes through the wide
-/// road and **every face of the result states its exact points**.
+/// (~2^220) overflow `i128`**, past what a narrow derivation holds. The frame realizes through
+/// the wide road, and **every face of a pad on such a wall states its exact points**.
 ///
 /// ★ Probed while building this fixture: a sketch→extrude wall's canonical name caps out
 /// around ~115 bits (the profile's decimal window bounds the products), so **`Wide`-named

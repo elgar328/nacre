@@ -470,11 +470,10 @@ impl Orientation {
 /// **A surface's exact truth** — what the surface *is*, as opposed to the f64
 /// [`Surface`](nacre_geom::Surface) beside it, which is its realization.
 ///
-/// The `motion` field is what the retired `SurfaceDef` used to say from a side table: `None` is the
-/// world (`Constructed`), `Some` names the motion history the data is stated *before*
-/// (`Moved`). Holding it inside the variant is the point — a surface whose provenance is
-/// unrecorded, or whose exact form does not exist (`Inexact`), is **unrepresentable** here,
-/// which is what retires both.
+/// The `motion` field says where the data is stated: `None` is the world (`Constructed`), `Some`
+/// names the motion history the data is stated *before* (`Moved`). Holding it inside the variant
+/// is the point — a surface whose provenance is unrecorded, or whose exact form does not exist, is
+/// **unrepresentable** here.
 /// ★ **`Plane` is the large variant and it is not boxed** (the `Operation::Extrude`
 /// precedent): planes dominate the arena — a prism is all planes, a cylinder contributes one
 /// curved surface — so boxing the points would put an allocation and a pointer chase on the
@@ -490,8 +489,7 @@ pub enum Surface {
         motion: Option<Handle<MotionNode>>,
     },
     /// A cylinder's exact truth: the rational statement of its lateral surface, beside
-    /// the same motion slot a plane carries — a *moved* cylinder records its history instead of
-    /// silently degrading (the old side-table path demoted it to `Inexact`).
+    /// the same motion slot a plane carries — a *moved* cylinder records its history.
     Cylinder {
         /// The exact statement, in the frame `motion` names (the world when `None`).
         def: CylinderDef,
@@ -659,8 +657,8 @@ pub enum CylinderError {
 pub struct Model {
     // exact geometry (truth)
     /// ★★★ **The truth, in the arena** — so a `Handle<Surface>` names what the surface *is*,
-    /// not a realization of it. Total: a surface cannot enter without its truth, which is what
-    /// retired `SurfaceDef`/`Inexact` and the point-less population.
+    /// not a realization of it. Total: a surface cannot enter without its truth, so there is no
+    /// point-less surface.
     ///
     /// ★ Private: a surface can only enter through
     /// [`Model::push_plane`]/[`Model::push_cylinder`], which state its truth —
@@ -732,7 +730,7 @@ pub struct Model {
     ///
     /// ★ **The motion belongs in the key.** `Constructed` coefficients speak about the world and
     /// `Moved` ones about the pre-motion frame, so two identical arrays under different motions
-    /// are different planes. `Inexact` has no coefficients and never interns.
+    /// are different planes.
     ///
     /// ★★ **The witness does not.** Two faces of one plane sharing one moved
     /// witness is already how this works — `collect_planes` says the witness "was captured from
