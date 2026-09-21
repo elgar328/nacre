@@ -16,7 +16,6 @@
 //! outside it.
 
 use super::*;
-use crate::arrangement::MergedCircle;
 use crate::combinatorics::{self, NodeId};
 use crate::planes::*;
 use crate::tolerant::Judge;
@@ -381,7 +380,8 @@ pub(crate) fn rim_witness_count(
 ///
 /// ★★★★★ **A circle has no corner — and the conclusion drawn from that is false.**
 /// Every supply above reads the *arrangement*: names, nodes, chords, edge interiors. An uncut
-/// circle carries none of those (`MergedCircle`'s contributions state no `NodeId`), which is
+/// circle carries none of those — it arrives here as a `CylinderDef` and nothing else, and the
+/// contributions merged onto it upstream state no `NodeId` — which is
 /// true — and it is tempting to take the next step and conclude that such a cell has no
 /// boundary point that can be named at all. That step is wrong. A circle's boundary points are
 /// **geometric**, and they are exactly rational: [`rim_and_centre`].
@@ -575,7 +575,11 @@ fn inside(
 }
 
 /// **The arrangement's adapter onto [`cell_inside`]** — its cells arrive as indices into the
-/// walk's rings and circles, and two questions are settled before a witness is asked.
+/// walk's rings and circle defs, and two questions are settled before a witness is asked.
+///
+/// ★ **The indices are the caller's; the shapes are not.** [`Cell`] takes the shape itself
+/// rather than either road's container, and this adapter follows the same rule one level up: it
+/// is handed the exact statement of each circle, never the vessel the arrangement merged it in.
 ///
 /// `Ok(None)` is *not comparable*: two polygons that **share a node** touch rather than nest (a
 /// shared node is a split point, and that also excludes a contour's own `+1` partner, which
@@ -597,7 +601,7 @@ pub(crate) fn cell_in_cell(
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     rings: &[Vec<combinatorics::RingEdge>],
-    circles: &[MergedCircle],
+    circle_defs: &[&nacre_topo::CylinderDef],
     circle_ix: &[Option<usize>],
     a: usize,
     b: usize,
@@ -656,7 +660,7 @@ pub(crate) fn cell_in_cell(
         // **no row would describe the arm whose whole supply is its own**. Its rim is its
         // supply, so the row says how many it offered.
         let rim = match circle_ix[a] {
-            Some(c) => rim_and_centre(jd, wc, &circles[c].def)
+            Some(c) => rim_and_centre(jd, wc, circle_defs[c])
                 .iter()
                 .filter(|w| matches!(w, Witness::On(_)))
                 .count(),
@@ -709,11 +713,11 @@ pub(crate) fn cell_in_cell(
     match route {
         Route::SharedNode => Ok(None),
         Route::DiskPair { ca, cb } => {
-            disk_in_disk(jd, wc, &circles[ca].def, &circles[cb].def).map(Some)
+            disk_in_disk(jd, wc, circle_defs[ca], circle_defs[cb]).map(Some)
         }
         Route::Engine => {
             let cell = |i: usize| match circle_ix[i] {
-                Some(c) => Cell::Disk(&circles[c].def),
+                Some(c) => Cell::Disk(circle_defs[c]),
                 None => Cell::Ring(&rings[i]),
             };
             cell_inside(jd, cyls, wc, cell(a), cell(b)).map(Some)

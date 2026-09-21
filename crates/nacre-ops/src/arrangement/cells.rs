@@ -211,12 +211,15 @@ pub(super) fn nest_cells(
     }
 
     let circle_ix: Vec<Option<usize>> = cells.iter().map(circle_of).collect();
+    // The nesting engine asks a circle for its exact statement and nothing else, so it is
+    // handed the defs rather than this pass's merged circles.
+    let circle_defs: Vec<&nacre_topo::CylinderDef> = circles.iter().map(|c| &c.def).collect();
     let mut holes: HashMap<usize, Vec<usize>> = HashMap::new();
     let mut roots: Vec<usize> = Vec::new();
     for c in (0..n).filter(|&i| cells[i].winding == -1) {
         let mut hosts: Vec<usize> = Vec::new();
         for &r in &pos {
-            if crate::nesting::cell_in_cell(jd, cyls, wc, &rings, circles, &circle_ix, c, r)?
+            if crate::nesting::cell_in_cell(jd, cyls, wc, &rings, &circle_defs, &circle_ix, c, r)?
                 == Some(true)
             {
                 hosts.push(r);
@@ -230,7 +233,7 @@ pub(super) fn nest_cells(
             // which brings the population here, and dropping the host would send the
             // contour to `roots`, where `label_cells` seeds it **void** — the boss over a bore
             // would lose its base face and the shell would open.
-            let host = innermost_host(jd, cyls, wc, &rings, circles, &circle_ix, &hosts)?;
+            let host = innermost_host(jd, cyls, wc, &rings, &circle_defs, &circle_ix, &hosts)?;
             let (rc, rr) = (find(&mut parent, c), find(&mut parent, host));
             parent[rc] = rr;
             holes.entry(host).or_default().push(c);
@@ -273,7 +276,7 @@ fn innermost_host(
     cyls: &[crate::planes::WorkingCyl],
     wc: usize,
     rings: &[Vec<combinatorics::RingEdge>],
-    circles: &[MergedCircle],
+    circle_defs: &[&nacre_topo::CylinderDef],
     circle_ix: &[Option<usize>],
     hosts: &[usize],
 ) -> Result<usize, BoolError> {
@@ -286,7 +289,7 @@ fn innermost_host(
     // it used to hold a polygon-only copy of one arm, which was sound only while a disk was
     // filtered out before it got here. It is [`cell_in_cell`] now.
     let inside = |a: usize, b: usize| {
-        crate::nesting::cell_in_cell(jd, cyls, wc, rings, circles, circle_ix, a, b)
+        crate::nesting::cell_in_cell(jd, cyls, wc, rings, circle_defs, circle_ix, a, b)
     };
     let mut found = None;
     for &h in hosts {
