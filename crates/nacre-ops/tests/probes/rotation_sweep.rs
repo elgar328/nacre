@@ -348,11 +348,22 @@ fn the_hundred_and_twenty_degree_copy_is_two_bodies() {
 }
 
 /// The engine's source files, for the two scans below. Each entry is a module: one file, or a
-/// folder of them.
+/// folder of them, **to any depth**.
 ///
 /// ★ The nesting question lives in its own module. A file this scan does not read is a file the
 /// rule does not cover, and the engine is exactly where the shared predicate is called — so the
 /// list follows the code.
+///
+/// ★★ **It descends, because a module's files are not all one level down.** A single `read_dir`
+/// read the six roots and stopped, so `arrangement/cyl_chart`'s six files — engine code, and the
+/// home of the very name that made the twin scan below misread — were outside both rules. The
+/// module graph's own walker has always descended (`instruments::module_graph`'s `sources_of`);
+/// this one now does too, skipping `tests` for the same reason it does.
+///
+/// ★ **The floor cannot see this, and never could.** It watches the count go *down*, so a folder
+/// that gains a subfolder — or one that was never a root to begin with — leaves it green. What
+/// keeps the scan honest is the descent; the floor only catches a root dropping out of the list
+/// above.
 fn engine_sources() -> Vec<String> {
     let mut out = Vec::new();
     for module in [
@@ -365,24 +376,29 @@ fn engine_sources() -> Vec<String> {
     ] {
         let dir = std::path::Path::new(module);
         if dir.is_dir() {
-            let mut files: Vec<_> = std::fs::read_dir(dir)
-                .expect("module folder")
-                .map(|e| e.expect("entry").path())
-                .filter(|p| p.extension().is_some_and(|x| x == "rs"))
-                .collect();
+            let mut files = Vec::new();
+            let mut dirs = vec![dir.to_path_buf()];
+            while let Some(d) = dirs.pop() {
+                for entry in std::fs::read_dir(&d).expect("module folder") {
+                    let path = entry.expect("entry").path();
+                    if path.is_dir() {
+                        if path.file_name().is_some_and(|f| f != "tests") {
+                            dirs.push(path);
+                        }
+                    } else if path.extension().is_some_and(|x| x == "rs") {
+                        files.push(path);
+                    }
+                }
+            }
             files.sort();
             out.extend(files.into_iter().map(|p| p.to_string_lossy().into_owned()));
         } else {
             out.push(format!("{module}.rs"));
         }
     }
-    // ★ The floor is today's file count, not a token. A module that becomes a folder, or a
-    // folder that becomes a file, silently changes what this scan reads -- and a `>= 4` floor
-    // would not have noticed `src/boolean` turning into a 171-line front door while twelve
-    // assembly files dropped out of the walk.
     assert!(
-        out.len() >= 50,
-        "the scan found {} files, fewer than the 50+ it read when this floor was measured -- a \
+        out.len() >= 59,
+        "the scan found {} files, fewer than the 59 it read when this floor was measured -- a \
          module moved and the roots above did not follow",
         out.len()
     );
@@ -463,7 +479,18 @@ fn no_production_code_walks_a_ring_past_the_shared_walk() {
     for file in &src {
         let text = std::fs::read_to_string(file).expect("source file");
         for (n, line) in text.lines().enumerate() {
-            let calls = line.contains("side_of(");
+            // ★ **On a word boundary, for the reason the twin above states.** `ruling_side_of(`
+            // ends in this name without being it — it answers which side of a *ruling* a point
+            // falls, reads no ring, and its own definition would not have cleared the `fn side_of`
+            // exemption either. The population was zero only while the scan could not reach the
+            // file it lives in.
+            let calls = line.match_indices("side_of(").any(|(i, _)| {
+                i == 0
+                    || !line[..i]
+                        .chars()
+                        .next_back()
+                        .is_some_and(|c| c.is_alphanumeric() || c == '_')
+            });
             let is_definition = line.contains("fn side_of");
             let is_prose =
                 line.trim_start().starts_with("//") || line.trim_start().starts_with("///");

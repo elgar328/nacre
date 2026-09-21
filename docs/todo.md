@@ -268,18 +268,6 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
 - 스케치의 임의 각도 호와 호–호 접합(`ArcSweepNotQuarterTurn`·`ArcsMeetAtVertex`).
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다.
 
-### 엔진 소스 스캔이 단어 경계를 안 본다
-
-`tests/probes/rotation_sweep.rs` 의 `no_production_code_walks_a_ring_past_the_shared_walk` 는
-`line.contains("side_of(")` 로 위반을 찾고 면제는 `contains("fn side_of")` 로 거른다. **둘 다
-단어 경계가 없다** — `ruling_side_of(` 가 첫째에 걸리고 `fn ruling_side_of` 는 둘째를 못 지난다.
-쌍둥이 스캔(`point_in_ring`)은 이미 고쳐져 있고 그 doc 이 *「맨 `contains` 가
-`rational_point_in_ring` 을 플래그했다」* 고 적는다 — **같은 결함이 형제에 안 고쳐진 채 남았다.**
-
-오늘 인구는 0 이다: `engine_sources()` 가 뿌리 폴더를 `read_dir` 로 **한 겹만** 읽으므로
-`arrangement/cyl_chart/`(`ruling_side_of` 가 사는 곳)는 두 스캔 밖에 있다. 차트가 엔진 코드가
-된 지금 그 하위폴더를 뿌리에 **넣어야 하고**, 넣으면 위 오탐이 즉시 빨개진다. 경계를 먼저 고친다.
-
 ### 발행 설정이 문서의 규칙을 집행하지 않는다
 
 `design.md` 는 `nacre-oracle` 을 「발행하지 않는 dev 전용 크레이트」라고 적지만, 워크스페이스 14개 크레이트 어느 `Cargo.toml` 에도 `publish` 키가 없다 — 전부 기본값 `true` 다. 지금 릴리스를 돌리면 오라클 하네스까지 나간다. 발행 전에 `publish = false` 를 단다.
