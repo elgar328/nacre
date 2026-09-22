@@ -138,7 +138,7 @@ pub(super) fn plane_hp_through(
 }
 
 /// `sign(D)·sign(M)` combined into an orientation (both must be definite).
-pub(super) fn combine(dsign: Option<bool>, msign: Option<bool>) -> Option<Orient> {
+fn combine(dsign: Option<bool>, msign: Option<bool>) -> Option<Orient> {
     match (dsign, msign) {
         (Some(dp), Some(mp)) => Some(if dp == mp {
             Orient::Positive
@@ -314,7 +314,7 @@ pub(super) fn cramer_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> (HpBounded
 /// confident sign while two other ways of asking the same question answered zero. An interval
 /// cannot make that mistake: the radius of `row1` is the sum of what went into it, and a
 /// subtraction that cancels leaves the radius behind.
-pub(super) fn indirect_hp(
+fn indirect_hp(
     planes: [[HpBounded; 4]; 3],
     q: [HpBounded; 3],
     r: [HpBounded; 3],
@@ -437,3 +437,7 @@ pub(crate) fn orient3d_from_cramer(
         }
     })
 }
+
+#[cfg(test)]
+#[path = "../tests/frame3/indirect.rs"]
+mod tests;

@@ -171,7 +171,7 @@ fn stable(at: impl Fn(usize) -> Option<bool>, prec: usize) -> Option<Orient> {
 
 /// `orient3d(V, q, r, s)` for `V = ∩(a, b, c)`: the sign of `((q−s)×(r−s))·(V−s)` — the
 /// convention `indirect_orient3d_judge` reports (`sign(D)·sign(M)`, `M = D·(V−s)·cross`).
-pub(super) fn orient(
+pub(in crate::kernel::frame3) fn orient(
     a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
@@ -193,7 +193,7 @@ pub(super) fn orient(
 
 /// The sign of `A[axis] − B[axis]` for the two three-plane points — `Positive` when `A` is
 /// larger, as `indirect_cmp_coord_judge` reports.
-pub(super) fn cmp(
+pub(in crate::kernel::frame3) fn cmp(
     a: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
     b: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
     axis: usize,
@@ -209,7 +209,7 @@ pub(super) fn cmp(
 }
 
 /// The sign of `det[n_a; n_b; n_c]`, the three planes' normals in order — `dir_sign_judge`'s `D`.
-pub(super) fn dir_sign(
+pub(in crate::kernel::frame3) fn dir_sign(
     a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
     c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
@@ -225,7 +225,7 @@ pub(super) fn dir_sign(
 }
 
 /// The sign of `det[d; x−base; y−base]` — `dir_orient3d_judge`'s question.
-pub(super) fn dir_orient(
+pub(in crate::kernel::frame3) fn dir_orient(
     d: [Rat; 3],
     base: &WitnessPoint,
     x: &WitnessPoint,

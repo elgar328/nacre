@@ -13,11 +13,7 @@ use super::*;
 /// Combine the three definite signs of `M·D_a·D_b` (`true` = positive) into an
 /// ordering: `Positive` (`a[axis] > b[axis]`) iff an even number are negative; `None`
 /// if any sign is indefinite.
-pub(super) fn cmp_combine(
-    sm: Option<bool>,
-    sda: Option<bool>,
-    sdb: Option<bool>,
-) -> Option<Orient> {
+fn cmp_combine(sm: Option<bool>, sda: Option<bool>, sdb: Option<bool>) -> Option<Orient> {
     match (sm, sda, sdb) {
         (Some(m), Some(a), Some(b)) => {
             let negatives = [m, a, b].iter().filter(|&&s| !s).count();
@@ -33,11 +29,7 @@ pub(super) fn cmp_combine(
 
 /// The interval f64 filter for `cmp_coord(a, b, axis)` — the sign of `a[axis] −
 /// b[axis]` between two implicit points. `None` if any of `M`, `D_a`, `D_b` straddles 0.
-pub(super) fn cmp_filter(
-    a: [[Bounded; 4]; 3],
-    b: [[Bounded; 4]; 3],
-    axis: usize,
-) -> Option<Orient> {
+fn cmp_filter(a: [[Bounded; 4]; 3], b: [[Bounded; 4]; 3], axis: usize) -> Option<Orient> {
     let (da, dva) = cramer_iv(a);
     let (db, dvb) = cramer_iv(b);
     let m = dva[axis].mul(db).sub(dvb[axis].mul(da));
@@ -53,7 +45,7 @@ pub(super) fn cmp_filter(
 /// a threshold applied to it would move with the planes' scaling. The gap is `None` when either
 /// denominator cannot be bounded away from zero, which is the near-parallel-planes case where
 /// the implicit point itself is not well defined.
-pub(super) fn cmp_hp_with_gap(
+fn cmp_hp_with_gap(
     a: [[HpBounded; 4]; 3],
     b: [[HpBounded; 4]; 3],
     axis: usize,
@@ -236,3 +228,7 @@ fn dir_gap(d: &HpBounded, planes: &[[HpBounded; 4]; 3], prec: usize) -> Gap {
         None => Gap::Vanished,
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/frame3/coord.rs"]
+mod tests;
