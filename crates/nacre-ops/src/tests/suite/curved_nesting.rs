@@ -1023,10 +1023,9 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
 /// solid's material was flipped across the whole component; the emitter then refused every one of
 /// this family's booleans.
 ///
-/// ★★★★ **The lock is the outcome, not a counter.** An earlier draft snapshotted
-/// `combinatorics::hull_probe`'s totals around this body and asserted the delta — which is not
-/// sound: that ledger is process-global and every other test's booleans write to it in parallel,
-/// so the delta is not this population's. The behaviour is the honest lock, and it is a real one:
+/// ★★★★ **The lock is the outcome, not a counter.** A process-global counter snapshotted around
+/// this body would not measure it: every other test's booleans write to the same counter in
+/// parallel, so the delta is not this population's. The behaviour is the honest lock, and it is a real one:
 /// reverting `arc_extremum_winding`'s early return puts all three kinds back to
 /// `CylinderGateUndecided` here and in three censuses.
 #[test]

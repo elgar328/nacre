@@ -195,23 +195,7 @@ pub(crate) fn census(
                             }
                         }
                     }
-                    let (mut band, mut ring) = (0usize, 0usize);
-                    for f in &w.faces {
-                        match f.outer {
-                            Bound::Band { .. } => band += 1,
-                            _ => ring += 1,
-                        }
-                    }
                     d2b.emitted_faces = w.faces.len();
-                    probe::regions::push(probe::regions::Row {
-                        test: std::thread::current().name().unwrap_or("?").to_string(),
-                        cyl: k,
-                        emitter_refused: emission.is_err(),
-                        faces: w.faces.len(),
-                        band_faces: band,
-                        ring_faces: ring,
-                        emitted_cells: owner.iter().filter(|o| o.is_some()).count(),
-                    });
                 }
                 Err(_) => {
                     assert!(

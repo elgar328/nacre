@@ -10,15 +10,6 @@ fn measure_d_ladder_ledgers() {
         .lock()
         .expect("the probe's lock is never held across a panic")
         .clone();
-    {
-        let g = *crate::combinatorics::hull_probe::ROWS.lock().unwrap();
-        eprintln!(
-            "HULL rings {} arc_rings {} below {} undecided {} broken {}",
-            g.0, g.1, g.2, g.3, g.4
-        );
-        let t = *crate::combinatorics::hull_probe::TILTED.lock().unwrap();
-        eprintln!("HULL irrational_extremum_arcs {t}");
-    }
     let s1 = |f: fn(&crate::arrangement::cyl_chart::probe::Row) -> usize| {
         d1.iter().map(f).sum::<usize>()
     };
@@ -76,36 +67,10 @@ fn measure_d_ladder_ledgers() {
         s(|r| r.station_name_failures),
     );
     eprintln!(
-        "ledger D5-1a: end_other {} of which single_cut {} — by cause {:?}",
+        "ledger D5-1a: end_other {} of which single_cut {}",
         s(|r| r.end_other),
         s(|r| r.end_other_single_cut),
-        crate::arrangement::cyl_chart::probe::other::COUNTS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .clone(),
     );
-    {
-        // The whole-circle disagreements, one line per (test, cyl, t, end, above, bits)
-        // shape with its count — the population 1a leaves under `Other`.
-        let whole = crate::arrangement::cyl_chart::probe::other::WHOLE
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .clone();
-        let mut shapes: Vec<(String, usize)> = Vec::new();
-        for w in &whole {
-            let key = format!(
-                "{} cyl {} t {} end {} above {} bits {:?}",
-                w.test, w.cyl, w.t, w.end, w.above, w.bits
-            );
-            match shapes.iter_mut().find(|(k, _)| *k == key) {
-                Some((_, n)) => *n += 1,
-                None => shapes.push((key, 1)),
-            }
-        }
-        for (k, n) in shapes {
-            eprintln!("ledger D5-1a whole_disagree ×{n}: {k}");
-        }
-    }
     {
         // The tie probe's rows.
         let ties = crate::combinatorics::tie_probe::ROWS
@@ -155,59 +120,11 @@ fn measure_d_ladder_ledgers() {
                 r.0, r.2, r.4
             );
         }
-        {
-            let rows = crate::combinatorics::witness_probe::NO_CANDIDATE
-                .lock()
-                .expect("the probe's lock is never held across a panic")
-                .clone();
-            let ans = *crate::combinatorics::witness_probe::ANSWERED
-                .lock()
-                .expect("the probe's lock is never held across a panic");
-            eprintln!(
-                "ledger C3-P1: cut caps with no candidate inside {} — answered by centre {} \
-                     axis step {} chord point {}",
-                rows.len(),
-                ans[0],
-                ans[1],
-                ans[2]
-            );
-            for r in &rows {
-                eprintln!("ledger C3-P1 no-candidate: {r}");
-            }
-        }
-        eprintln!(
-            "ledger C2b-P3: cylinder faces asked {}",
-            *crate::combinatorics::cylinder_asks::COUNT
-                .lock()
-                .expect("the probe's lock is never held across a panic")
-        );
         eprintln!(
             "ledger C2-P5: the nesting retry swallowed non-abstention errors {}",
             *crate::combinatorics::swallowed_probe::COUNT
                 .lock()
                 .expect("the probe's lock is never held across a panic")
         );
-    }
-    {
-        let rows = crate::arrangement::cyl_chart::probe::regions::ROWS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .clone();
-        let sum = |f: fn(&crate::arrangement::cyl_chart::probe::regions::Row) -> usize| {
-            rows.iter().map(f).sum::<usize>()
-        };
-        eprintln!(
-            "ledger D5: rows {} emitter_refused {} faces {} band_faces {} ring_faces {} \
-                 emitted_cells {}",
-            rows.len(),
-            rows.iter().filter(|r| r.emitter_refused).count(),
-            sum(|r| r.faces),
-            sum(|r| r.band_faces),
-            sum(|r| r.ring_faces),
-            sum(|r| r.emitted_cells),
-        );
-        for r in rows.iter().filter(|r| r.emitter_refused) {
-            eprintln!("ledger D5 refused: {} cyl {}", r.test, r.cyl);
-        }
     }
 }

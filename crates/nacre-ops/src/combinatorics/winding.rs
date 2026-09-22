@@ -177,10 +177,9 @@ pub(crate) fn pierce_between(
 /// the axis *is* `ê₀` — then every point shares `x` and the minimum is taken in `y`). The circle's
 /// lexicographic minimum is its point of least coordinate `a`, and that point is rational —
 /// `c − r·ê_a` — exactly when the axis is perpendicular to `ê_a` (`m[a] = 0`); otherwise it is
-/// irrational and this says nothing, leaving today's path (`hull_probe::TILTED` counts those —
-/// the axis tilted *toward* `ê_a`). ★ Requiring the axis to be world
-/// **z**, and counting every other axis as tilted, leaves 84 arcs over the suite to the
-/// node's turn, and the commuting oracle has three cells where that turn
+/// irrational and this says nothing, leaving the node's turn (the axis tilted *toward* `ê_a`).
+/// ★ Requiring the axis to be world **z**, and counting every other axis as tilted, leaves 84 arcs
+/// over the suite to the node's turn, and the commuting oracle has three cells where that turn
 /// is wrong — a boss on the plate's corner turned so its axis runs along −y, whose 270° arc
 /// bulges past the minimum node, takes the unbounded cell for a bounded one and seeds the labels
 /// inside out (`NOT_OWN_SOLID`). The halves are the circle's own (below), so nothing here
@@ -219,42 +218,23 @@ fn arc_extremum_winding(
     let n = ring.len();
     let zero = Rat::from_int(0);
     let mut best: Option<([Rat; 3], i8)> = None;
-    #[cfg(test)]
-    let (mut arcs, mut below, mut interior, mut tilted, mut undecided) = (0, 0, 0, 0, 0);
     for (i, e) in ring.iter().enumerate() {
         let Carrier::Arc(ac) = &e.carrier else {
             continue;
         };
-        #[cfg(test)]
-        {
-            arcs += 1;
-        }
         let (m, r2) = (ac.def.dir(), ac.def.r2());
         // The first world axis the circle spans; the minimum is rational iff the axis is ⊥ to it.
         let a = usize::from(m[1] == zero && m[2] == zero);
         if m[a] != zero {
-            #[cfg(test)]
-            {
-                tilted += 1;
-                undecided += 1;
-            }
             continue;
         }
         let Ok(EdgeDir::Arc(ad)) = dir_at(jd, cyls, p, e, e.node) else {
-            #[cfg(test)]
-            {
-                undecided += 1;
-            }
             continue;
         };
         let c = ad.centre;
         // The extreme is `c − r`, which needs the radius itself: a squared radius with no rational
         // root leaves the extent undecided — the honest answer this loop already has.
         let Some(ex) = nacre_exact::rat_sqrt_exact_big(r2).and_then(|r| c[a].checked_sub(r)) else {
-            #[cfg(test)]
-            {
-                undecided += 1;
-            }
             continue;
         };
         let mut ext = c;
@@ -277,16 +257,8 @@ fn arc_extremum_winding(
             }
         }
         let Some(true) = lower else {
-            #[cfg(test)]
-            if lower.is_none() {
-                undecided += 1;
-            }
             continue;
         };
-        #[cfg(test)]
-        {
-            below += 1;
-        }
         // ★ **And is it in the arc's INTERIOR?** It cannot be an endpoint: `lo` is the smallest
         // ring **node** and this point is smaller still, so it is no node of this ring at all.
         // (☑ Measured before the argument was trusted: a check for it fired **0** times over the
@@ -309,20 +281,12 @@ fn arc_extremum_winding(
         let mut e_a = [zero; 3];
         e_a[a] = Rat::from_int(1);
         let Some(n_h) = nacre_exact::cross3_rat(&m, &e_a) else {
-            #[cfg(test)]
-            {
-                undecided += 1;
-            }
             continue;
         };
         let Some(h_plane) = nacre_exact::dot3_rat(&n_h, &c)
             .and_then(|d| zero.checked_sub(d))
             .map(|d| [n_h[0], n_h[1], n_h[2], d])
         else {
-            #[cfg(test)]
-            {
-                undecided += 1;
-            }
             continue;
         };
         let half = |k: &CoordKey, is_start: bool| -> Option<bool> {
@@ -346,10 +310,6 @@ fn arc_extremum_winding(
             })
         };
         let (Some(ha), Some(hb)) = (half(ka, true), half(kb, false)) else {
-            #[cfg(test)]
-            {
-                undecided += 1;
-            }
             continue;
         };
         // Walking CCW from the start, θ = 180° is reached iff the walk leaves the upper half, or
@@ -359,10 +319,6 @@ fn arc_extremum_winding(
         // function cannot decide does — it must not become a **refusal**, which is what `?` here
         // would have made of it (☑ measured 0 today; the shape is wrong all the same).
         let Ok(x_cmp) = cmp_key(jd, ka, kb, a) else {
-            #[cfg(test)]
-            {
-                undecided += 1;
-            }
             continue;
         };
         let hit = match (ha, hb) {
@@ -373,10 +329,6 @@ fn arc_extremum_winding(
         };
         if !hit {
             continue;
-        }
-        #[cfg(test)]
-        {
-            interior += 1;
         }
         // The winding read **there**: the ring is smooth at an arc's interior point, so this is
         // [`smooth_extremum_winding`]'s product — the one spelling.
@@ -406,8 +358,6 @@ fn arc_extremum_winding(
             best = Some((ext, w));
         }
     }
-    #[cfg(test)]
-    hull_probe::note(arcs, below, undecided, interior, tilted);
     Ok(best.map(|(_, w)| w))
 }
 

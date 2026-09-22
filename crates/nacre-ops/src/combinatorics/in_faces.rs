@@ -63,8 +63,6 @@ pub(crate) fn point_in_faces_rat(
     for f in faces {
         let q = match &f.surf {
             CompSurf::Cylinder(def) => {
-                #[cfg(test)]
-                cylinder_asks::asked(f);
                 // A circle or polygon outer on a cylinder face has no producer; refusing to
                 // guess costs the caller another direction, never a wrong answer.
                 let BoundEdges::Lateral(loops) = &f.outer else {
@@ -497,8 +495,6 @@ pub(crate) fn point_in_component(
             // quadratic, not three-plane points, and "inside the face" is an axial span when
             // the face states one, a bare miss-oracle when it does not.
             if let CompSurf::Cylinder(def) = &f.surf {
-                #[cfg(test)]
-                cylinder_asks::asked(f);
                 // A circle or polygon outer on a cylinder face has no producer; refusing
                 // to guess costs the caller another node, never a wrong answer.
                 let BoundEdges::Lateral(loops) = &f.outer else {

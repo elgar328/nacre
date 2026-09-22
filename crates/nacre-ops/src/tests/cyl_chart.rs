@@ -186,7 +186,7 @@ fn the_charts_vertical_answers_close() {
 /// `tests::a_chained_cylinder_bounded_by_the_first_builds`), arcs are read and faces are
 /// emitted. `end_other` is **measured, not unexercised**: every one of the suite's
 /// is a whole-circle interval beyond a face's span whose cut rim's arcs disagree about the
-/// far side (`OtherWhy::WholeDisagree`), on an absent cell; the single-cut arm is the one
+/// far side, on an absent cell; the single-cut arm is the one
 /// still without a population.
 #[test]
 fn the_cells_read_their_chamber_from_the_horizontal_lines() {

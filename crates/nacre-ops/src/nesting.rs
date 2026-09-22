@@ -465,9 +465,9 @@ fn ask(
         (Where::Named(t), Cell::Ring(rb)) => match combinatorics::point_in_ring(jd, wc, *t, rb) {
             Ok(true) => Said::In,
             Ok(false) => Said::Out,
-            // ★ Every error here is this probe's abstention, and the retry over the next probe is
-            // the remedy — which is exactly what `ring_in_ring` did with the same errors before
-            // this loop replaced it (its swallowed-error ledger moved here with it).
+            // ★ Every error here is taken as this probe's abstention, and the retry over the next
+            // probe as the remedy. That holds for `NoClearRay`; the others it swallows are
+            // counted by `swallowed_probe`, whose doc says what they are.
             Err(e) => {
                 #[cfg(test)]
                 if !matches!(

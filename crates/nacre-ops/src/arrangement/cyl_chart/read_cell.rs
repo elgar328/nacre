@@ -58,48 +58,13 @@ impl End<'_> {
     }
 }
 
-/// **Why an end reads `Other`** — one name per `None` site of [`Chart::arc_around`] and per
-/// `Other` arm of the whole-circle read, so the ledger's `end_other` is a table of causes rather
-/// than one number. The enum lives outside the instrument because the sites that name a
-/// cause are production code; the counting is `cfg(test)` (`probe::other`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-// The whole-circle arms record only under `cfg(test)`, so two variants are built nowhere in a
-// release build — stated per build rather than blanket-allowed, the `RulingExtent` precedent.
-#[cfg_attr(not(test), allow(dead_code))]
-pub(crate) enum OtherWhy {
-    /// Both walls one ruling: the sector is the whole circle less that ruling.
-    SingleCut,
-    /// A wall's station could not be named or placed in the order.
-    Unplaced,
-    /// `circular_order` refused the rim nodes plus the stations.
-    OrderFailed,
-    /// A run arc between two adjacent rim nodes is not among the split's arcs.
-    RowMissing,
-    /// The sector's two ends land on one rim node — no arc between them.
-    EmptyRun,
-    /// A whole-circle cell over a cut rim whose arcs disagree for this side.
-    WholeDisagree,
-    /// A whole-circle cell over a cut rim with no arcs at all.
-    WholeNoArcs,
-}
-
-/// `arc_around`'s `None`, with its reason counted: every `End::Other` the suite still produces
-/// is named at the site that produced it, so «what is left» is a table and not a guess.
 /// Why [`Chart::arc_around`] could not hand back a run.
 enum RunFail {
     /// Every piece of the run is one no contribution covers: the face is not over this sector
     /// — [`End::Uncovered`].
     AllMissing,
-    /// One of [`OtherWhy`]'s reasons, recorded — [`End::Other`].
+    /// The run cannot be named — [`End::Other`].
     Other,
-}
-
-fn run_fail<'a>(why: OtherWhy) -> Result<Vec<&'a ArcLabel>, RunFail> {
-    #[cfg(test)]
-    probe::other::record(why);
-    #[cfg(not(test))]
-    let _ = why;
-    Err(RunFail::Other)
 }
 
 /// One cell, read.
@@ -164,10 +129,9 @@ impl Chart {
         arcs: &'a [ArcLabel],
         aliases: &crate::arrangement::Aliases,
     ) -> Result<Vec<&'a ArcLabel>, RunFail> {
-        use OtherWhy as Why;
         let m = rim.nodes.len();
         if x == y && m >= 2 {
-            return run_fail(Why::SingleCut);
+            return Err(RunFail::Other);
         }
         let mut list: Vec<combinatorics::NodeId> = rim.nodes.clone();
         let mut index_of = |i: usize| -> Option<usize> {
@@ -189,23 +153,23 @@ impl Chart {
             }
         };
         let Some(ix) = index_of(x) else {
-            return run_fail(Why::Unplaced);
+            return Err(RunFail::Other);
         };
         let iy = if x == y {
             ix
         } else {
             match index_of(y) {
                 Some(i) => i,
-                None => return run_fail(Why::Unplaced),
+                None => return Err(RunFail::Other),
             }
         };
         let Ok((order, _)) = crate::arrangement::circular_order(jd, k, def, &list) else {
-            return run_fail(Why::OrderFailed);
+            return Err(RunFail::Other);
         };
         let n = order.len();
         let pos = |li: usize| order.iter().position(|&o| o == li);
         let (Some(px), Some(py)) = (pos(ix), pos(iy)) else {
-            return run_fail(Why::Unplaced);
+            return Err(RunFail::Other);
         };
         let is_rim = |p: usize| order[p] < m;
         // The run's ends: the nearest rim node at or before `x` (clockwise), and at or after `y`.
@@ -250,13 +214,13 @@ impl Chart {
             return if run.is_empty() {
                 Err(RunFail::AllMissing)
             } else {
-                run_fail(Why::RowMissing)
+                Err(RunFail::Other)
             };
         }
         // `a == b` means the sector's ends land on one rim node: no arc separates them, and the
         // caller has nothing to read here.
         if run.is_empty() {
-            return run_fail(Why::EmptyRun);
+            return Err(RunFail::Other);
         }
         Ok(run)
     }
@@ -319,26 +283,13 @@ impl Chart {
                         // *this* interval's side (the other half of a label is the neighbour's).
                         let mut bits: Option<(bool, bool)> = None;
                         let mut same = true;
-                        #[cfg(test)]
-                        let mut seen: Vec<(bool, bool)> = Vec::new();
                         for a in arcs {
                             let b = read_bits(&a.label, side, above[e]);
                             same &= bits.replace(b).is_none_or(|p| p == b);
-                            #[cfg(test)]
-                            seen.push(b);
                         }
                         match (same, arcs.first()) {
                             (true, Some(a)) => End::Disk(a.label),
-                            (false, _) => {
-                                #[cfg(test)]
-                                probe::other::record_whole(k, t[e], e, above[e], seen);
-                                End::Other
-                            }
-                            (true, None) => {
-                                #[cfg(test)]
-                                probe::other::record(OtherWhy::WholeNoArcs);
-                                End::Other
-                            }
+                            (false, _) | (true, None) => End::Other,
                         }
                     }
                     Some([x, y]) => {

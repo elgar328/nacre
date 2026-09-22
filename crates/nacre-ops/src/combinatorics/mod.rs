@@ -35,9 +35,6 @@ use std::collections::HashMap;
 
 mod component;
 mod direction;
-#[cfg(test)]
-#[path = "../tests/probes/hull_probe.rs"]
-pub(crate) mod hull_probe;
 mod in_faces;
 mod incidence_order;
 mod loops;
@@ -143,49 +140,12 @@ pub(crate) struct ArcDir {
     ccw: bool,
 }
 
-/// How often the two roads ask a **cylinder** face (a ledger line). A lateral's holes are
-/// among its loops, so holed laterals are not counted apart.
-#[cfg(test)]
-pub(crate) mod cylinder_asks {
-    use std::sync::Mutex;
-    pub(crate) static COUNT: Mutex<usize> = Mutex::new(0);
-    pub(crate) fn asked(_f: &super::CompFace) {
-        *COUNT
-            .lock()
-            .expect("the probe's lock is never held across a panic") += 1;
-    }
-}
-
-/// How often a cut cap's candidate list holds **no** point the ring says is
-/// inside — the fall-through `ring_interior_candidates`' doc calls a guard without a population.
-#[cfg(test)]
-pub(crate) mod witness_probe {
-    use std::sync::Mutex;
-    pub(crate) static NO_CANDIDATE: Mutex<Vec<String>> = Mutex::new(Vec::new());
-    /// Which candidate the ring accepted: `[centre, an axis step, a chord point]` — the axis
-    /// steps are the eight after the centre, the chord points follow.
-    pub(crate) static ANSWERED: Mutex<[usize; 3]> = Mutex::new([0; 3]);
-    pub(crate) fn answered(i: usize) {
-        let k = match i {
-            0 => 0,
-            1..=8 => 1,
-            _ => 2,
-        };
-        ANSWERED
-            .lock()
-            .expect("the probe's lock is never held across a panic")[k] += 1;
-    }
-    pub(crate) fn no_candidate() {
-        NO_CANDIDATE
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .push(std::thread::current().name().unwrap_or("?").to_string());
-    }
-}
-
-/// How many failed judgements the ring-vs-ring retry swallowed (predicted 0).
-/// ★ That retry lives in `nesting::cell_inside`, and this counter's push with it; it feeds a
-/// ledger line.
+/// How many judgements the ring-vs-ring retry swallowed that were not an abstention
+/// (`NoClearRay`). The retry lives in `nesting::cell_inside`, and this counter's push with it; it
+/// feeds a ledger line. ★ Not zero: over the lib suite it counts 21,206 — `DegenerateRing`
+/// 13,184 · `PierceVertexUnnamed` 7,414 · `PointOnRing` 608 — each treated as «this witness
+/// abstains, try the next». Only the last is an abstention by the witness rule («a point on the
+/// ring» is remedied by the next witness; «could not build the value» is not).
 #[cfg(test)]
 pub(crate) mod swallowed_probe {
     use std::sync::Mutex;

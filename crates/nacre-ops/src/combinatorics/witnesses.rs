@@ -255,62 +255,52 @@ pub(crate) fn coord_probes(
         else {
             continue;
         };
-        let p =
-            if !f.inner.is_empty() {
-                match holed_cap_witness(jd, cyls, *q, def, &centre, f) {
-                    Some(p) => p,
-                    None => continue,
-                }
-            } else {
-                match &f.outer {
-                    // A whole circle: the centre is strictly inside for any positive radius, and asking
-                    // would only add a road where none is needed. Today's answer, unchanged.
-                    BoundEdges::Circle(_) => centre,
-                    // ★ **Derived, not searched.** Each step is `centre ± λ·e` along the class chart's own
-                    // rational axes ([`Chart2dRat::axes`] — the one spelling for "a rational basis of this
-                    // plane"), with `λ = r / (|e|² + 1)`. Then `λ²|e|² = r²·x/(x+1)²` for `x = |e|²`, and
-                    // `x/(x+1)² ≤ 1/4` at its maximum, so every candidate is strictly inside the circle —
-                    // a rational inequality, no magic constant and no halving loop.
-                    //
-                    // ★★★★★ **Which one is inside the *face* is asked, not derived.** Deriving it would
-                    // mean spelling "the material side of the chord" in some frame, and this road has no
-                    // oracle for that sign; the ring already answers the question exactly
-                    // ([`point_in_mixed_ring`]), and an abstention just moves to the next candidate. The
-                    // centre goes first, so a cap the wall cuts off-centre still answers with it.
-                    //
-                    // ☑ Measured: the centre and the axis steps answer 40 of 40 faces of the
-                    // through-axis corpus; the offset wall's thin segment answers by a chord point (8
-                    // faces), and the fall-through below is the named residual — a segment cut again
-                    // along the chord's own normal line.
-                    _ => {
-                        let BoundEdges::Ring(r) = &f.outer else {
-                            continue;
-                        };
-                        let Some(cand) = ring_interior_candidates(jd, *q, def, &centre, r) else {
-                            continue;
-                        };
-                        let Some(coeffs) = class_coeffs_rat(jd, *q) else {
-                            continue;
-                        };
-                        match cand.into_iter().enumerate().find(|(_, c)| {
-                            point_in_mixed_ring(jd, cyls, &coeffs, c, r) == Some(true)
-                        }) {
-                            Some((i, c)) => {
-                                #[cfg(test)]
-                                witness_probe::answered(i);
-                                #[cfg(not(test))]
-                                let _ = i;
-                                c
-                            }
-                            None => {
-                                #[cfg(test)]
-                                witness_probe::no_candidate();
-                                continue;
-                            }
-                        }
+        let p = if !f.inner.is_empty() {
+            match holed_cap_witness(jd, cyls, *q, def, &centre, f) {
+                Some(p) => p,
+                None => continue,
+            }
+        } else {
+            match &f.outer {
+                // A whole circle: the centre is strictly inside for any positive radius, and asking
+                // would only add a road where none is needed. Today's answer, unchanged.
+                BoundEdges::Circle(_) => centre,
+                // ★ **Derived, not searched.** Each step is `centre ± λ·e` along the class chart's own
+                // rational axes ([`Chart2dRat::axes`] — the one spelling for "a rational basis of this
+                // plane"), with `λ = r / (|e|² + 1)`. Then `λ²|e|² = r²·x/(x+1)²` for `x = |e|²`, and
+                // `x/(x+1)² ≤ 1/4` at its maximum, so every candidate is strictly inside the circle —
+                // a rational inequality, no magic constant and no halving loop.
+                //
+                // ★★★★★ **Which one is inside the *face* is asked, not derived.** Deriving it would
+                // mean spelling "the material side of the chord" in some frame, and this road has no
+                // oracle for that sign; the ring already answers the question exactly
+                // ([`point_in_mixed_ring`]), and an abstention just moves to the next candidate. The
+                // centre goes first, so a cap the wall cuts off-centre still answers with it.
+                //
+                // ☑ Measured: the centre and the axis steps answer 40 of 40 faces of the
+                // through-axis corpus; the offset wall's thin segment answers by a chord point (8
+                // faces), and the fall-through below is the named residual — a segment cut again
+                // along the chord's own normal line.
+                _ => {
+                    let BoundEdges::Ring(r) = &f.outer else {
+                        continue;
+                    };
+                    let Some(cand) = ring_interior_candidates(jd, *q, def, &centre, r) else {
+                        continue;
+                    };
+                    let Some(coeffs) = class_coeffs_rat(jd, *q) else {
+                        continue;
+                    };
+                    match cand
+                        .into_iter()
+                        .find(|c| point_in_mixed_ring(jd, cyls, &coeffs, c, r) == Some(true))
+                    {
+                        Some(c) => c,
+                        None => continue,
                     }
                 }
-            };
+            }
+        };
         out.extend(
             probe_dirs(&def.dir())
                 .into_iter()
