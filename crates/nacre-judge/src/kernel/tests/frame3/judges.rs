@@ -298,7 +298,9 @@ fn one_concurrency_read_four_ways_gives_one_answer() {
 
 /// Indirect orient3d soundness over heterogeneous provenance (corpus A) and a
 /// near-coplanar escalation-forcing corpus (corpus B). The interval filter →
-/// astro-float judge must never claim a sign opposite to a GT-stable 512-bit truth.
+/// astro-float judge must never claim a sign opposite to a GT-stable 512-bit truth
+/// ([`truth::orient`]), and a constructed zero (corpus B's `ε = 0`, corpus C) must be judged
+/// `Zero` — no oracle is asked there (see `truth`).
 /// Asserts both paths are live: `escalated > 0` (filter defers) **and**
 /// `filter_resolved > 0` (fast path resolves — a filter stuck at `None` would pass
 /// wrong-sign 0 vacuously). `#[ignore]`: slow astro-float GT.
@@ -693,7 +695,8 @@ fn dir_sign_rotation_invariant() {
 /// `dir_sign` soundness over a **near-coplanar-normals** corpus (which the indirect orient3d and
 /// cmp_coord soundness tests do not stress: they force `M ≈ 0`, not `D ≈ 0`). Three plane normals `n0, n1,
 /// n2 = α·n0 + β·n1 + ε·(n0×n1)` (ε tiny → `D ≈ ε` → escalation), shared rotation. The
-/// judge must never disagree with a GT-stable 512-bit `D` sign; both paths exercised.
+/// judge must never disagree with a GT-stable 512-bit `D` sign ([`truth::dir_sign`]), and must
+/// judge the constructed zero `ε = 0` `Zero`; both paths exercised.
 #[test]
 #[ignore = "slow astro-float ground truth (run with --ignored)"]
 fn dir_sign_soundness() {

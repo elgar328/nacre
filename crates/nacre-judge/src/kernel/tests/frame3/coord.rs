@@ -26,7 +26,8 @@ fn cmp_combine_counts_negatives() {
 /// Indirect cmp_coord soundness over heterogeneous provenance (corpus A) and a
 /// near-tie corpus (corpus B: two points sharing an axis coordinate up to ε, rotated
 /// about that same axis so the near-tie survives). The judge must never disagree with
-/// a GT-stable 512-bit truth; both the fast filter and the escalation are exercised.
+/// a GT-stable 512-bit truth ([`truth::cmp`]), and must judge corpus B's constructed tie
+/// `ε = 0` `Zero`; both the fast filter and the escalation are exercised.
 #[test]
 #[ignore = "slow astro-float ground truth (run with --ignored)"]
 fn indirect_cmp_coord_soundness() {

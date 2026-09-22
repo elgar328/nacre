@@ -283,17 +283,6 @@ assert!(hits.len() >= 4, …);   // ← 부등호인 이유가 그것이다
 아니라 존재·전칭만 단언한다. 읽는 자리가 여럿이라 한 번에 고칠 일은 아니고, 어느 프로브부터
 세션을 줄지 정해야 한다.
 
-### `frame3` 소운드니스 오라클이 판정기의 고정밀 경로를 그대로 쓴다
-
-`nacre-judge` 의 소운드니스 테스트는 판정기의 답을 «GT-stable 512비트 정답»과 비교한다. 그런데 그 정답
-`indirect_truth` 는 `indirect_hp`+`combine` 으로, `cmp_truth` 는 `cmp_hp_with_gap` 으로 계산하고, 판정기가
-고정밀로 올라갈 때 쓰는 것도 같은 함수다(`frame3/indirect.rs` 의 `indirect_orient3d` 본체, `frame3/coord.rs` 의
-`cmp` 상승). 그래서 올라간 경우의 비교는 «같은 함수, 다른 정밀도»이고, 두 정밀도의 일치는 반올림 잡음만 거른다 —
-식 자체의 오류는 이 테스트로 보이지 않는다(필터가 답한 경우는 독립이다). 흔적: 그 함수들과 `cmp_combine`·`cmp_filter`
-가 테스트 때문에만 `pub(super)` 다(테스트가 `frame3::tests` 에 있어서). 처방의 방향: 정답을 판정기의 함수가 아니라
-정의에서 따로 — 예컨대 `hp_coord` 로 실현한 점들로 행렬식을 직접 — 계산하고, 그다음 단위 테스트를 `coord`·`indirect` 의
-자식으로 옮긴다(overview 「테스트의 자리」).
-
 ### nesting 재시도가 기권이 아닌 실패를 삼킨다
 
 `nesting::ask` 는 `point_in_ring` 의 **모든** 오류를 «이 증인이 기권한다 — 다음 증인이 답한다»로 받는다.
