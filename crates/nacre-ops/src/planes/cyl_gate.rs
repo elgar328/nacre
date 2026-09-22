@@ -555,7 +555,7 @@ fn line_lies_in_another_class(
 /// change which reason a tangency wears. Every failure here becomes `undecided` on the row
 /// instead — the verdict then abstains, which is the same answer with an honest name.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn tangency_rows(
+fn tangency_rows(
     model: &Model,
     faces: &[FaceRow],
     plane_ix: &[ClassIx],
@@ -814,7 +814,7 @@ fn lateral_footprints(faces: &[FaceRow], surf: Handle<Surface>) -> Vec<Footprint
     out
 }
 
-pub(super) fn lateral_reach(
+fn lateral_reach(
     def: &nacre_topo::CylinderDef,
     fp: &Footprint,
     d: &[nacre_exact::Rat; 3],
@@ -860,11 +860,7 @@ fn reaches_apart(a: &Reach, b: &Reach) -> Option<bool> {
 /// Is the closed interval `[lo, hi]` (in the reach's own `d·p` units) disjoint from the reach? —
 /// [`reaches_apart`] against the reach a rational interval **is**: no radical at either end. The
 /// station a plane offers is such an interval of one point.
-pub(super) fn reach_clears(
-    reach: &Reach,
-    lo: nacre_exact::Rat,
-    hi: nacre_exact::Rat,
-) -> Option<bool> {
+fn reach_clears(reach: &Reach, lo: nacre_exact::Rat, hi: nacre_exact::Rat) -> Option<bool> {
     let zero = nacre_exact::Rat::from_int(0);
     reaches_apart(
         &Reach {
@@ -987,7 +983,7 @@ fn lateral_faces_clear(faces: &[FaceRow], a: &WorkingCyl, b: &WorkingCyl) -> boo
 ///
 /// Parallel axes have no third direction (the cross product is zero, and the surface rung is the
 /// distance rule with its own parallel branch); overflow forming it simply leaves the list short.
-pub(super) fn separating_dirs(
+fn separating_dirs(
     a: &nacre_topo::CylinderDef,
     b: &nacre_topo::CylinderDef,
 ) -> Vec<[nacre_exact::Rat; 3]> {
@@ -1006,7 +1002,7 @@ pub(super) fn separating_dirs(
 /// any `d`: a reach is a bounding interval of the face's projection, and two sets whose
 /// projections miss cannot share a point. `None` is "not proved" — an unstatable span, or
 /// overflow.
-pub(super) fn separated(
+fn separated(
     a: &nacre_topo::CylinderDef,
     x: &Footprint,
     b: &nacre_topo::CylinderDef,
@@ -1106,3 +1102,7 @@ fn cross_sections_clear(
     };
     nacre_geom::mixed::arcs_share_a_point(&spec(a, x)?, &spec(b, y)?).map(|meet| !meet)
 }
+
+#[cfg(test)]
+#[path = "../tests/cyl_gate.rs"]
+mod tests;
