@@ -784,14 +784,17 @@ pub enum RejectReason {
     /// exactly: the ray's line meets an edge at `X`, and `X == v` strictly inside that edge means
     /// `v` is on the ring. Unfired.
     PointOnRing,
-    /// The trace arrangement on one plane class nested a hole whose containment depth exceeds one.
-    /// `nest_cells` resolves any number of holes at depth one inside one outer loop; deeper nesting
-    /// is honestly rejected until the general nesting cell lands. Distinct from [`Self::HoleRoots`]
-    /// so a refactor cannot silently merge the conditions.
+    /// **A hole's owner is not uniquely determined**: the rings that contain it do not nest into
+    /// one chain, so there is no innermost one (two candidates each inside neither, or none inside
+    /// all the others). Nesting itself is not the limit — `nest_cells` resolves any number of holes
+    /// at any depth; what it cannot do is order candidates that touch rather than nest. Distinct
+    /// from [`Self::HoleRoots`] so a refactor cannot silently merge the conditions. Not raised in
+    /// the whole-suite or census `reject-trace` sweeps.
     HoleDepth,
-    /// A plane class's arrangement produced no unbounded contour, or more than one. A closed figure
-    /// always has an outside, so "none" is impossible; "several" means several disjoint bodies on
-    /// the plane, which the nesting resolver does not cover yet.
+    /// A plane class's arrangement produced **no unbounded contour**. A closed figure always has an
+    /// outside, so this is the arrangement's own inconsistency, never the input's. Several unbounded
+    /// contours are fine — one per separate body on the plane. Not raised in the whole-suite or
+    /// census `reject-trace` sweeps.
     HoleRoots,
     /// A face whose boundary never crosses the seam, yet the seam lies on its plane — the
     /// convex path only.

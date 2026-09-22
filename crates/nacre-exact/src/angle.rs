@@ -1,10 +1,9 @@
 use super::*;
 impl Angle {
-    /// Normalize `deg` into `[0, 360)` (exact). `None` on overflow during
-    /// reduction (the downgrade trigger). Assumes `deg` is within a few turns
-    /// of the range — a multi-turn amount is the future `Sweep` type's job, so
-    /// this reduces by subtracting whole turns rather than a `360·denom` divide
-    /// (which would overflow at large denominators).
+    /// Normalize `deg` into `[0, 360)` (exact), in one division: the numerator's
+    /// remainder modulo one turn (`360·denom`), so any number of turns reduces in
+    /// one step. The result keeps no turn count — this is a direction. `None` when
+    /// `360·denom` overflows `i128`.
     pub fn from_deg(deg: Rat) -> Option<Self> {
         // Exact reduction mod 360, in one division. Subtracting a turn at a time is the same
         // arithmetic but costs one iteration per turn, so an input like `2⁶⁰` degrees — a value a

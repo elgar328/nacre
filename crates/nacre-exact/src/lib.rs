@@ -201,10 +201,9 @@ pub struct BigRat(Ratio<num_bigint::BigInt>);
 /// ([`Angle::cos_sin_at`]). The angle stays exact; only its realized coordinate
 /// carries tol.
 ///
-/// This is the direction type. A multi-turn *amount* (helix pitch × turns, revolve
-/// sweep > 360°) must preserve the turn count, so it belongs to a separate
-/// *unnormalized* `Sweep` type — flat 2D sketches never need it, so it is left as
-/// a documented companion, not built here.
+/// This is the direction type: it keeps no turn count. A multi-turn *amount* (helix
+/// pitch × turns, a revolve past 360°) must preserve its turns, so it cannot be an
+/// `Angle`; nothing in the kernel states one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Angle(Rat); // invariant: 0 <= inner < 360
 

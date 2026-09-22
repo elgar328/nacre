@@ -279,8 +279,8 @@ fn innermost_host(
     hosts: &[usize],
 ) -> Result<usize, BoolError> {
     // ★ **Two answers, two names.** "Adjacent, so not comparable" is `None` here; "every ray was
-    // spoiled" is `NoClearRay`, its cause — not `HoleDepth`, whose sentence is about nesting
-    // depth and is wrong for a spoiled ray.
+    // spoiled" is `NoClearRay`, its cause — not `HoleDepth`, whose sentence is "the candidates do
+    // not nest into one chain" and is wrong for a spoiled ray.
     //
     // ★★ **A disk can be a host, so this asks the same four-way question `nest_cells` does** —
     // [`cell_in_cell`], not a polygon-only copy of one arm (sound only while a disk is filtered
