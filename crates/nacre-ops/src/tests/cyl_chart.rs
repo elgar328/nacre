@@ -7,13 +7,13 @@ use nacre_topo::Model;
 /// **The chart census is live, and every chart it records has the shape a chart must have.**
 ///
 /// The real claim — "a chart covers its own class's rows" — is asserted in `census`, where the
-/// fact is made, because a test that reads the ledger sees only what ran before it.
+/// fact is made.
 ///
-/// ★★★★★ **And it may not read its *own* row out of that ledger.** The first spelling did
-/// (`rows.last()`), which is only its own under `--test-threads=1`; the workspace gate runs
-/// **parallel**, and a filtered run caught it immediately — the last row belonged to a
-/// `bands::tests` fixture (θ = 6 where a bore has 0). So what is asserted here is **universal
-/// over every recorded chart**, which no interleaving can break:
+/// ★★★★★ **The shape assertions are universal over every chart in the binary**, which is a
+/// stronger statement than one about this fixture and which no interleaving can break. What is
+/// this fixture's alone — how many charts it recorded — is counted on its own rows
+/// (`ledger::owned`), and a row of another test's can neither add to that count nor stand in
+/// for it. The universals:
 ///
 /// * `rows >= 1` — a cylinder class exists because a face made it (`cyl_rows` refuses
 ///   otherwise), so the hand-written road always has at least one row for it.
@@ -35,7 +35,6 @@ use nacre_topo::Model;
 ///   ☑ Measured 0 over 65 panels, which is what makes the exact-order join sound.
 #[test]
 fn the_chart_census_is_running() {
-    let before = ROWS.len();
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -48,12 +47,13 @@ fn the_chart_census_is_running() {
         4.0,
     );
     m.rebuild_adjacency();
-    crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore");
+    crate::ledger::owned(|| {
+        crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore")
+    });
     let rows = ROWS.all();
-    assert!(
-        rows.len() > before,
-        "a boolean with a cylinder recorded no chart"
-    );
+    // ★ **This bore's own charts, counted.** One cylinder means one class, and a class is one
+    // chart row — a count the ledger could not state while every test's rows shared the list.
+    assert_eq!(ROWS.mine().len(), 1, "a through bore records one chart");
     for r in &rows {
         let Row {
             z_lines,
@@ -106,7 +106,6 @@ fn the_chart_census_is_running() {
 /// the **kind** (`Graze` = the face stops here), and that has 12.
 #[test]
 fn the_charts_vertical_answers_close() {
-    let before = super::probe::rulings::ROWS.len();
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -119,12 +118,11 @@ fn the_charts_vertical_answers_close() {
         4.0,
     );
     m.rebuild_adjacency();
-    crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
+    crate::ledger::owned(|| {
+        crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds")
+    });
     let rows = super::probe::rulings::ROWS.all();
-    assert!(
-        rows.len() > before,
-        "a boolean recorded no vertical answers"
-    );
+    let mine = super::probe::rulings::ROWS.mine();
     // ★ Universal over every recorded chart, so no interleaving can break it.
     for r in &rows {
         assert_eq!(r.does_not_close, 0, "an interval did not close: {r:?}");
@@ -141,11 +139,25 @@ fn the_charts_vertical_answers_close() {
     }
     // ★★★★ And the counters are not vacuous — a zero above must mean "the population is
     // empty here", never "nothing was looked at".
-    let sum = |f: fn(&super::probe::rulings::Row) -> usize| rows.iter().map(f).sum::<usize>();
-    assert!(sum(|r| r.closes) > 0, "no interval was ever walked");
-    assert!(
-        sum(|r| r.wall_flips) > 0,
-        "no wall ever changed the material, so the check saw nothing"
+    // ★★★★ And the counters are not vacuous — a zero above must mean "the population is
+    // empty here", never "nothing was looked at". Counted on **this fixture's own rows**: the
+    // boss's lateral is one class, so one chart; its four z lines (the boss's two rims and the
+    // plate's two faces) make three intervals, and the wall through the axis cuts two rulings
+    // over each — six alive-ruling observations. All three intervals close. The wall changes
+    // the material on the two rulings of the interval buried in the plate, and on no other.
+    let sum = |f: fn(&super::probe::rulings::Row) -> usize| mine.iter().map(f).sum::<usize>();
+    assert_eq!(mine.len(), 1, "one class, one chart");
+    assert_eq!(sum(|r| r.rulings), 6, "three intervals of two rulings");
+    assert_eq!(sum(|r| r.closes), 3, "every interval closes");
+    assert_eq!(
+        sum(|r| r.wall_flips),
+        2,
+        "the buried interval's two rulings"
+    );
+    assert_eq!(
+        sum(|r| r.intervals_with_flip),
+        1,
+        "and they are one interval's"
     );
 }
 
@@ -169,13 +181,13 @@ fn the_charts_vertical_answers_close() {
 ///   an end that spans a run of the rim's arcs reads every one of them. (`arcs_no_mark` is no
 ///   longer 0: a ⊥ cap through a notch reads cut ends inside the lateral's hole.)
 ///
-/// And the counters are not vacuous: the fixtures below put every end kind on the ledger,
-/// the chained ones drop sectors for existence (**≥ 4**, the band road's own count,
-/// `tests::a_chained_cylinder_bounded_by_the_first_builds`), arcs are read and faces are
-/// emitted. `end_other` is **measured, not unexercised**: every one of the suite's
-/// is a whole-circle interval beyond a face's span whose cut rim's arcs disagree about the
-/// far side, on an absent cell; the single-cut arm is the one
-/// still without a population.
+/// And the counters are not vacuous, counted on **this test's own rows** (`ledger::owned`), so
+/// each number is a fact about the fixtures below and not about whatever else the binary ran:
+/// every end kind reaches the ledger, the chained pairs drop five sectors for existence, arcs
+/// are read and faces are emitted. `end_other` is **measured, not unexercised**: every one of
+/// the suite's is a whole-circle interval beyond a face's span whose cut rim's arcs disagree
+/// about the far side, on an absent cell; the single-cut arm is the one still without a
+/// population.
 #[test]
 fn the_cells_read_their_chamber_from_the_horizontal_lines() {
     use super::probe::cell_ends::ROWS as CELL_ENDS;
@@ -184,67 +196,66 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
                f: fn(&super::probe::cell_ends::Row) -> usize| {
         rows.iter().map(f).sum::<usize>()
     };
-    let before = snapshot();
     // A wall boss (exact arcs, θ- and z-merges), a corner boss and a boss on top (a line with
     // no circle of this cylinder, cells outside the face), and the chained pairs (sectors
     // dropped for existence).
     let up = Vector3::from_array([0.0, 0.0, 1.0]);
-    for (base, h) in [
-        ([2.0, 0.0, -1.0], 4.0),
-        ([4.0, 4.0, -1.0], 4.0),
-        ([2.0, 2.0, 2.0], 1.0),
-    ] {
-        let mut m = Model::new();
-        let plate = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
-        let boss = m.add_cylinder(Point3::from_array(base), up, 0.5, h);
-        m.rebuild_adjacency();
-        crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
-    }
-    // ★ A **through-axis wall** on the wall boss: its plane holds the axis, so it cuts the
-    // lateral along two rulings — and the chart has a θ line for only the one the face
-    // reaches. The sector between them spans a rim node, which is the only shape that makes
-    // an end read a *run* of arcs. The **Cut** is the kind that builds through it (the wall
-    // boss's Fuse waits on the emitter's rim-station ladder — `RulingBoundNotYet`). Without this the run equality below is vacuous (measured:
-    // the population above produced `exact_run_arcs == 0`).
-    {
-        let mut m = Model::new();
-        let plate = m.add_cuboid(
-            Point3::from_array([0.0; 3]),
-            Point3::from_array([4.0, 4.0, 2.0]),
-        );
-        let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
-        m.rebuild_adjacency();
-        let out = crate::boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
-        m.rebuild_adjacency();
-        let wall = m.add_cuboid(
-            Point3::from_array([2.0, -3.0, -2.0]),
-            Point3::from_array([5.0, 3.0, 6.0]),
-        );
-        m.rebuild_adjacency();
-        crate::boolean(&mut m, BoolKind::Cut, out[0], wall).expect("the through-axis wall cuts");
-    }
-    let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
-    for second in [
-        ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut),
-        ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse),
-        // A short boss whose cap (z = 2.5) is a ⊥ line strictly inside the wall boss's span:
-        // the wall boss's circle is traced there but bounds no face, so the line is not a
-        // boundary — the band-shaped merge population.
-        ([6.0, 2.0, 2.0], 0.5, BoolKind::Fuse),
-        ([6.0, 0.0, -1.0], 4.0, BoolKind::Fuse),
-        ([6.0, 0.0, -1.0], 4.0, BoolKind::Cut),
-    ] {
-        let (_, r) = crate::tests::chained(wall_boss, second);
-        r.expect("the chained pair builds");
-    }
+    crate::ledger::owned(|| {
+        for (base, h) in [
+            ([2.0, 0.0, -1.0], 4.0),
+            ([4.0, 4.0, -1.0], 4.0),
+            ([2.0, 2.0, 2.0], 1.0),
+        ] {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(Point3::from_array(base), up, 0.5, h);
+            m.rebuild_adjacency();
+            crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the boss builds");
+        }
+        // ★ A **through-axis wall** on the wall boss: its plane holds the axis, so it cuts the
+        // lateral along two rulings — and the chart has a θ line for only the one the face
+        // reaches. The **Cut** is the kind that builds through it (the wall boss's Fuse waits on
+        // the emitter's rim-station ladder — `RulingBoundNotYet`). ★★ It reads **no run of arcs**:
+        // measured over this test's own rows, `exact_run_arcs` is 0 here, and the run population
+        // belongs to the crossing census's through-axis walls instead.
+        {
+            let mut m = Model::new();
+            let plate = m.add_cuboid(
+                Point3::from_array([0.0; 3]),
+                Point3::from_array([4.0, 4.0, 2.0]),
+            );
+            let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
+            m.rebuild_adjacency();
+            let out = crate::boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
+            m.rebuild_adjacency();
+            let wall = m.add_cuboid(
+                Point3::from_array([2.0, -3.0, -2.0]),
+                Point3::from_array([5.0, 3.0, 6.0]),
+            );
+            m.rebuild_adjacency();
+            crate::boolean(&mut m, BoolKind::Cut, out[0], wall)
+                .expect("the through-axis wall cuts");
+        }
+        let wall_boss = ([2.0, 0.0, -1.0], 4.0, BoolKind::Fuse);
+        for second in [
+            ([6.0, 2.0, -1.0], 4.0, BoolKind::Cut),
+            ([6.0, 2.0, 2.0], 1.0, BoolKind::Fuse),
+            // A short boss whose cap (z = 2.5) is a ⊥ line strictly inside the wall boss's span:
+            // the wall boss's circle is traced there but bounds no face, so the line is not a
+            // boundary — the band-shaped merge population.
+            ([6.0, 2.0, 2.0], 0.5, BoolKind::Fuse),
+            ([6.0, 0.0, -1.0], 4.0, BoolKind::Fuse),
+            ([6.0, 0.0, -1.0], 4.0, BoolKind::Cut),
+        ] {
+            let (_, r) = crate::tests::chained(wall_boss, second);
+            r.expect("the chained pair builds");
+        }
+    });
     let rows = snapshot();
-    assert!(
-        rows.len() > before.len(),
-        "a boolean recorded no cell reads"
-    );
+    let mine = CELL_ENDS.mine();
 
     for r in &rows {
         assert!(
@@ -276,10 +287,8 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
             "a cut end read carries two lateral marks of one solid: {r:?}"
         );
         // ★★★★★ **A run is why this is not `arcs_read == end_exact`.** A sector may span several
-        // of the rim's arcs (the ledger measures 4,370 against 4,312 over the whole suite), and a
-        // lock in a `#[test]` sees only its own fixtures — what ran before it. The proposition
-        // that holds, and crosses the two loops that count these, carries the run's extra arcs by
-        // name.
+        // of the rim's arcs, and the proposition that holds over every row in the binary — the
+        // runs among them — carries the run's extra arcs by name.
         assert_eq!(
             r.arcs_read,
             r.end_exact + r.exact_run_arcs,
@@ -308,35 +317,37 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
     }
     // ★★★★ Non-vacuity — a zero above must mean "the population is empty", never "nothing
     // was looked at". `end_other` is deliberately not in this list.
-    assert!(sum(&rows, |r| r.end_disk) > 0, "no disk end was ever read");
-    assert!(
-        sum(&rows, |r| r.end_exact) > 0,
-        "no exact arc end was ever read"
-    );
-    assert!(
-        sum(&rows, |r| r.end_nocircle) > 0,
-        "no line without a circle was ever seen"
-    );
-    assert!(
-        sum(&rows, |r| r.emit) > 0,
-        "the reader never emitted a cell"
-    );
-    assert!(sum(&rows, |r| r.arcs_read) > 0, "no cut end was ever read");
+    // ★★★★ Non-vacuity — a zero above must mean "the population is empty", never "nothing was
+    // looked at" — and on **this test's own rows**, so no neighbour's fixture can stand in for
+    // one of these. `end_other` is deliberately not among them.
+    assert_eq!(mine.len(), 20, "the fixtures' charts");
+    assert_eq!(sum(&mine, |r| r.end_disk), 84, "disk ends read");
+    assert_eq!(sum(&mine, |r| r.end_exact), 132, "exact arc ends read");
+    assert_eq!(sum(&mine, |r| r.end_nocircle), 10, "lines with no circle");
+    assert_eq!(sum(&mine, |r| r.emit), 80, "cells the reader emitted");
+    assert_eq!(sum(&mine, |r| r.arcs_read), 132, "cut ends read");
     // ★ A sector spanning the **phantom** pieces of a half rim (a wall boss) reads `Uncovered`:
-    // those pieces are no edges. The non-vacuity here is that arm's, not a run count.
-    assert!(
-        sum(&rows, |r| r.end_uncovered) > 0,
-        "no end ever read an uncovered piece of a rim"
+    // those pieces are no edges.
+    assert_eq!(sum(&mine, |r| r.end_uncovered), 2, "uncovered rim pieces");
+    assert_eq!(
+        sum(&mine, |r| r.emitted_faces),
+        20,
+        "faces the emitter emitted"
     );
-    assert!(
-        sum(&rows, |r| r.emitted_faces) > 0,
-        "the emitter never emitted a face"
+    // The chained pairs drop sectors for existence; this is how many.
+    assert_eq!(
+        sum(&mine, |r| r.exist_marks_false),
+        5,
+        "sectors dropped for existence"
     );
-    // The chained pairs above drop exactly one sector per operation for existence (four),
-    // and other tests may add theirs in between — so what is held is the growth.
-    assert!(
-        sum(&rows, |r| r.exist_marks_false) >= sum(&before, |r| r.exist_marks_false) + 4,
-        "the chained pairs dropped fewer than four sectors for existence"
+    // ★★ **The run population is not this test's.** `exact_run_arcs` is 0 over every row here,
+    // including the through-axis wall's — the sector that spans a rim node is built by the
+    // crossing census's walls, and that is what keeps the equality above from being
+    // `arcs_read == end_exact` over the binary.
+    assert_eq!(
+        sum(&mine, |r| r.exact_run_arcs),
+        0,
+        "no end reads a run here"
     );
 }
 
@@ -451,8 +462,10 @@ fn the_chart_stands_on_a_tilted_axis() {
             )
             .expect("the exact road states a tilted cylinder");
         m.rebuild_adjacency();
-        let out = crate::boolean(&mut m, BoolKind::Cut, solid, cyl)
-            .unwrap_or_else(|e| panic!("{name}: {e:?}"));
+        let out = crate::ledger::owned(|| {
+            crate::boolean(&mut m, BoolKind::Cut, solid, cyl)
+                .unwrap_or_else(|e| panic!("{name}: {e:?}"))
+        });
         assert!(
             nacre_validate::validate(&m).is_empty(),
             "{name}: the tilted result must be sound"
@@ -469,20 +482,16 @@ fn the_chart_stands_on_a_tilted_axis() {
             (got - want_vol).abs() < 1e-9,
             "{name}: volume {got} vs {want_vol}"
         );
-        let rows = ROWS.all();
-        assert!(rows.len() > before, "{name}: no chart was recorded");
-        // ★★★ Read as a **set difference**, not `last()` (the gate
-        // runs this suite in parallel). ★ And it stays an
-        // *existential* claim over a **shared** ledger, so it can be diluted by a concurrent
-        // test but never carries the weight alone: what proves this fixture right is the
-        // volume above, on this model.
+        let mine = ROWS.mine_since(before);
         let want = if want_rulings { 6 } else { 0 };
-        assert!(
-            rows[before..]
-                .iter()
-                .any(|r| r.z_lines == 4 && r.theta == want),
-            "{name}: expected a chart with {want} rulings, got {:?}",
-            &rows[before..]
+        // ★ This fixture's own charts, read as a count — a shared ledger could only say the
+        // shape existed somewhere. The volume above is the other half: it proves the tilted
+        // boolean removed the right material, on this model.
+        assert_eq!(mine.len(), 1, "{name}: one tilted class, one chart");
+        assert_eq!(
+            (mine[0].z_lines, mine[0].theta),
+            (4, want),
+            "{name}: expected a chart with {want} rulings"
         );
     }
 }
