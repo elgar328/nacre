@@ -700,7 +700,7 @@ fn a_cut_circle_bounds_the_bands() {
     assert!(cut[0].inner.is_empty());
     // ★ **Fuse's hole is cut's panel**: the sector fuse drops (inside the plate) is exactly
     // the sector cut keeps (the groove's wall), so the two rings carry the same ccw arc on
-    // the lower cut rim — the old «complementary panels» claim, restated for regions.
+    // the lower cut rim — «complementary panels», stated for regions.
     let (pf, pc) = (arc_on_z0(hole), arc_on_z0(panel));
     assert_eq!(pf, pc, "fuse's hole is cut's panel");
     // Negative control: without the sector labels the both-cut interval's cells have no
@@ -715,9 +715,9 @@ fn a_cut_circle_bounds_the_bands() {
         rulings: curved.rulings.clone(),
     };
     blind.arc_labels.clear();
-    // ★ **Blinding one axis is no longer blinding the reader** — the chart has two, and the
-    // rulings answer where the rims are silent (the vertical read's own cell). So this now
-    // says the weaker, truer thing: with the arcs gone the emitter still gets an answer, and
+    // ★ **Blinding one axis is not blinding the reader** — the chart has two, and the rulings
+    // answer where the rims are silent (the vertical read's own cell). So this says the weaker,
+    // truer thing: with the arcs gone the emitter still gets an answer, and
     // it is only when **both** axes are blinded that it refuses by name.
     assert!(
         crate::arrangement::cyl_chart::emit_lateral(
@@ -1260,8 +1260,8 @@ fn with_cut_rings(
 /// fixture that reaches it.
 ///
 /// The bitten fixture cannot: its chord's ends are the seam and the tangent columns, and
-/// each abstains first (measured over the whole suite before this cell: `ArcRootAtEnd` 0
-/// while the straight arm's corner tie spoke for the same corners). The plate's second wall
+/// each abstains first (measured over the whole suite: the arc arm's end rule decides nothing
+/// there, while the straight arm's corner tie speaks for the same corners). The plate's second wall
 /// `y = 24` puts the corner `(40, 24)` inside the circle, so the bite's arc ends at
 /// `(37, 24)` — a 3-4-5 point, rational, off the seam `(40, 15)` and off the tangent
 /// columns `x = 35, 45` — and the lattice column `x = 37` sends its rays through that end

@@ -200,7 +200,7 @@ fn a_lateral_faces_reach_and_what_clears_it() {
     assert_eq!(whole(&along_arc), (z(0), z(2), z(0)));
 }
 
-/// **The tangency the gate used to refuse is now *stated*** — and every field of that
+/// **The tangency is *stated*** — and every field of that
 /// statement is asserted here, because the verdict downstream is only as good as this row.
 ///
 /// The frozen census shape (`cylinder-wall-tangent`): a `2³` cube and a cylinder of radius

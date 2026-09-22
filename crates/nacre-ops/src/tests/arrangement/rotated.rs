@@ -4,8 +4,8 @@ use super::*;
 
 /// The boolean's error and the class audit's `failed_at` are the **same** reject.
 ///
-/// They are two consumers of one `DeclineKind → RejectReason` mapping, and before
-/// `decline_to_reject` they were two copies of it. A copy that drifts makes the audit — the
+/// They are two consumers of one `DeclineKind → RejectReason` mapping (`decline_to_reject`). A
+/// copy that drifts would make the audit — the
 /// tool used to debug a reject — disagree with the reject being debugged, which is the worst
 /// possible time to be lying.
 ///
@@ -17,30 +17,16 @@ use super::*;
 #[test]
 fn the_audit_does_not_invent_failures() {
     // The audit's scope is the per-class pipeline, and its duty is to run **the pipeline the
-    // boolean runs** — with the alias fixpoint. Audited against an empty alias table it
-    // reported `UnorderedEdges` for three classes of this input (names two classes discover
-    // for each other were missing), failures the boolean never had: an instrument that
-    // invents readings. The boolean's own reject here (`StraightAngle`) comes from the
-    // assembly's vertex naming, after every class pipeline has run and outside the audit's
-    // scope — so the audit's honest answer for this input is "no class failed".
+    // boolean runs** — with the alias fixpoint. Audited against an empty alias table, an input
+    // reports failures the boolean never has (names two classes discover for each other go
+    // missing — `UnorderedEdges`, measured): an instrument that invents readings. The boolean's
+    // own reject here comes from the assembly, after every class pipeline has run and outside
+    // the audit's scope — so the audit's honest answer for this input is "no class failed".
     //
-    // ★ **The fixture has moved twice, exactly as the note above prescribes**, and each move
-    // is a capability the kernel gained. First it was the same pair at 30° with `Cut`,
-    // rejecting `DegenerateWitness` — a reject from the component outwardness test, which the
-    // nesting-parity label replaced. Then it was that pair at 60°, rejecting `StraightAngle`:
-    // two unit cubes that only *touch*, which now come back as the two bodies they are
-    // (measured: `Common` empty, fused volume 2.0, `validate` clean).
-    //
-    // So the fixture is now a pinch that **cannot** part: A and B meet only along the line
+    // The fixture is a pinch that **cannot** part: A and B meet only along the line
     // `x = 2, y = 2`, and a bridge overlapping both runs the material around the contact, so
     // cutting there leaves one piece. The closed-shell guard in `assembly::reconstruct` rejects
     // it — after every class pipeline has run, which is the property this test needs.
-    //
-    // (This test once asserted the audit reports the boolean's *class-level* reject, on a
-    // fixture chosen as "some input that rejects" — a bar rotated through an L-shaped
-    // target. The knife-edge fix turned that family, and every class-level-rejecting valid
-    // input we could construct, into answers; the shared mapping the old test guarded,
-    // `decline_to_reject`, is one function called by both consumers, so it cannot drift.)
     let build = || -> (Model, Handle<Solid>, Handle<Solid>) {
         let mut m = Model::new();
         let cub = |m: &mut Model, lo: [f64; 3], hi: [f64; 3]| {

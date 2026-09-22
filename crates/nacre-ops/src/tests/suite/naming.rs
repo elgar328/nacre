@@ -4,22 +4,21 @@
 
 use super::*;
 
-/// **`Origin` no longer tells result faces apart.** The arrangement names every vertex
-/// it emits by the three planes meeting there, so an operand corner the cut never touched
-/// comes back as `Discovered`, exactly like a seam vertex. Nothing carries over as
-/// `Constructed` (the arrangement builds no vertex from an original handle).
+/// **A vertex's provenance does not tell result faces apart.** The arrangement names every
+/// vertex it emits by the three planes meeting there (`Vertex::ThreePlane`), so an operand corner
+/// the cut never touched comes back exactly like a seam vertex; the arrangement builds no vertex
+/// from an original handle.
 ///
-/// This is a contract, not a curiosity: `pipeline.rs`'s island test selected a face by
-/// "all its vertices are `Discovered`", which was unique under the old engine and is
-/// now true of *every* face. It flipped the wrong face and only the last assertion
-/// noticed. Selecting a face by provenance is what this locks out.
+/// This is a contract, not a curiosity: a face selected by "all its vertices are
+/// arrangement-named" is *every* face, so such a selector flips the wrong face with only a late
+/// assertion to notice. Selecting a face by provenance is what this locks out.
 ///
 /// The subject is `Cut(l, stub)` — the **holed** result, so `face_half_edges` walks
 /// `inner` rings too (`count_discovered` walks only `outer` and would miss them).
 ///
-/// **Unrotated only.** Rotating a boolean result re-marks these vertices `Rotated` over
-/// a `Discovered` base — that is `transform_rotate_boolean_result_keeps_discovered_base`,
-/// and this lock must not be read as contradicting it.
+/// **Unrotated only.** Rotating a boolean result is
+/// `transform_rotate_boolean_result_keeps_discovered_base`'s subject, and this lock must not be
+/// read as contradicting it.
 #[test]
 fn an_unrotated_boolean_names_every_vertex_by_its_plane_triple() {
     let (mut m, l, stub) = l_and_dimple();
@@ -218,10 +217,10 @@ fn two_extrudes_make_two_solids() {
 
 /// **Chaining onto a fused boss.** The fuse leaves the base's `z=1` face a *ring* — a face with
 /// a hole where the boss sits — and the second boolean cuts through both. Every plane class the
-/// cut opens then meets that ring along the **hole's own edge**, which is the case that used to
-/// label inconsistently: the ring's neighbouring vertices there point *into* the hole, so
-/// reading the occupied side off a flank put the material on the wrong side of `W`. The side
-/// now comes from the ring's travel ([`arrangement::run_body_above`]), and the run leaves as its own
+/// cut opens then meets that ring along the **hole's own edge**, where the ring's neighbouring
+/// vertices point *into* the hole, so reading the occupied side off a flank puts the material on
+/// the wrong side of `W`. The side comes from the ring's travel ([`arrangement::run_body_above`]),
+/// and the run leaves as its own
 /// homogeneous segment rather than being swallowed by the straddling stretch beside it.
 ///
 /// Hand volume: `1 + 0.5·0.5·1` fused, less the cutter's `0.2·0.2` column over `z ∈ [0.5, 2]`
@@ -591,14 +590,12 @@ fn a_collinear_midpoint_profile_builds_its_clean_twin_bit_for_bit() {
     }
 }
 
-/// ★ **Two *separated* collinear walls still intern to one surface** — the re-pin of what
-/// `a_collinear_profile_vertex_gives_its_two_walls_one_surface` used to hold.
+/// ★ **Two *separated* collinear walls intern to one surface.**
 ///
 /// The dissolve pass only deletes flat corners (adjacent same-plane walls); two edges of a
 /// notched profile lying on one line are legitimate geometry, their walls are two statements
 /// of one plane, and interning makes them one handle.
-/// Adjacent walls can no longer collide, so this is where "same plane = same handle" stays
-/// pinned.
+/// Adjacent walls cannot collide, so this is where "same plane = same handle" is pinned.
 #[test]
 fn two_separated_collinear_walls_intern_to_one_surface() {
     let mut m = Model::new();
@@ -858,8 +855,8 @@ fn plane_triples_are_always_canon() {
 /// **A point reads zero on each of its three defining planes.** `Judge::orient3d`'s on-plane
 /// shortcut is a raw `==` against the triple, so a vertex on the query plane must name it by the
 /// same id the query uses. The face/plane split makes that automatic — a plane has exactly one
-/// id now, so the old failure (a vertex named by face 6 of the `z = 1` class invisible to a
-/// query about face 1 of it) cannot be expressed. What is left to check is the identity itself.
+/// id, so a vertex named by face 6 of the `z = 1` class invisible to a query about face 1 of it
+/// cannot be expressed. What is left to check is the identity itself.
 #[test]
 fn a_vertex_on_the_cut_plane_reads_zero_whichever_face_names_it() {
     let mut m = Model::new();

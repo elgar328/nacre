@@ -176,9 +176,9 @@ fn pierce_vertex_tol_measures_and_each_term_moves() {
 /// pad, and `outer_tri` has to survive it.
 ///
 /// ★ **Turned coordinates are the whole difficulty.** Axis-aligned collinear points cancel to
-/// exactly `0.0`, which the old "first corner that is not flat" rule skipped correctly. Turned,
-/// the cancellation leaves ~2⁻⁵³ — not zero, so it was taken, and the direction that came back
-/// was rounding: measured 90° off its own plane, which is `orient_sign`, the winding of the
+/// exactly `0.0`, which a "first corner that is not flat" rule skips correctly. Turned, the
+/// cancellation leaves ~2⁻⁵³ — not zero, so that rule takes it, and the direction that comes
+/// back is rounding: measured 90° off its own plane, which is `orient_sign`, the winding of the
 /// witness triangle every predicate borrows, and which side of the plane holds material.
 ///
 /// Asserted on `collect_planes`' own output rather than through `debug_assert`, so it is a

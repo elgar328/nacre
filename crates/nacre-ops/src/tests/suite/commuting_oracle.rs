@@ -447,7 +447,8 @@ fn the_boolean_commutes_with_every_motion_of_the_group() {
 
 /// **The transport law, as a lock**: `transform(rigid(R, t)) ≡ transform(T) ∘ transform(R)`.
 ///
-/// The fixture is the counterexample to the old probe — a boss whose seam vertex `(4.8, 0.5)`
+/// The fixture is the counterexample to an exactness probe that tests the translation on the
+/// pre-turn coordinates — a boss whose seam vertex `(4.8, 0.5)`
 /// is exact before the turn (`0.8`, `8.5` under `t = (−4, 8, 0)` alone) and rounds after it
 /// (`4.8 + 8 = 12.8` is not an f64): one rigid operation must leave the model the two operations
 /// leave — the turn absorbed into the statements, the translation recorded, the chain folding to
@@ -492,8 +493,8 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
     let bb = transform(&mut b, bb, &rot).unwrap();
     let bb = transform(&mut b, bb, &tr).unwrap();
     b.rebuild_adjacency();
-    // Both record the translation (the datum rounds after the turn — the old probe said
-    // «exact» here), and the chain folds to one world cylinder on both roads.
+    // Both record the translation (the datum rounds after the turn), and the chain folds to
+    // one world cylinder on both roads.
     assert!(carries_motion(&a, ba) && carries_motion(&b, bb));
     let lateral = |m: &Model, s: Handle<Solid>| -> nacre_topo::CylinderDef {
         let sol = m.solid(s);
@@ -526,8 +527,8 @@ fn a_rigid_motion_behaves_as_its_two_operations() {
 
 /// **The half-recorded chain's own fixture**: the offset boss under `rz90 + t(5, −3, 2)`. Its
 /// seam vertex `4.8 + 5` rounds *before* the turn and is exact *after* it, so the whole motion
-/// carries and nothing is recorded — and `world_cylinder_def`'s postcondition (truth == cache),
-/// which used to fire here in debug while release answered «disjoint», holds.
+/// carries and nothing is recorded — and `world_cylinder_def`'s postcondition (truth == cache)
+/// holds.
 #[test]
 fn the_offset_boss_under_a_rigid_motion_keeps_one_cylinder() {
     let (mut m, plate, boss) = boss_family([4.3, 2.0, -1.0], 4.0);

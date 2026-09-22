@@ -222,8 +222,8 @@ fn a_drilled_plate_can_be_cut_by_a_body_flush_with_its_faces() {
 
 /// **A cylinder standing far away, whose caps happen to land on the box's own planes.** Two
 /// coplanar planes are one class whichever way they sit, so this cylinder's *disks* share a
-/// class with the box's faces while touching nothing — the shape that made the retired seated
-/// rule mistake a shared class for a contact. `Cut` takes nothing away.
+/// class with the box's faces while touching nothing — a shared class, not a contact. `Cut`
+/// takes nothing away.
 #[test]
 fn a_distant_cap_on_the_boxs_own_plane_removes_nothing() {
     let mut m = Model::new();

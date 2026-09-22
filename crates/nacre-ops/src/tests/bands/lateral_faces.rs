@@ -58,10 +58,9 @@ fn a_bore_cut_across_the_middle_leaves_two_bands_on_one_surface() {
     assert!((v - want).abs() < 1e-9, "{v} vs {want}");
 }
 
-/// ★★ **Using it.** The two-banded solid as an operand. `cyl_rows` used to let the first
-/// lateral face speak for the class, so the second band's span was clipped away and never
-/// emitted — the result shell came back open (`OpenResultShell`), naming a symptom of our own
-/// omission rather than anything about the input.
+/// ★★ **Using it.** The two-banded solid as an operand. Letting the first lateral face speak for
+/// the class clips the second band's span away — the result shell comes back open
+/// (`OpenResultShell`), naming a symptom of our own omission rather than anything about the input.
 #[test]
 fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
     let (mut m, s) = plate_with_a_split_bore(2.0, 8.0);
@@ -103,7 +102,7 @@ fn a_solid_with_two_bands_on_one_surface_can_be_cut_again() {
 }
 
 /// ★ **The negative control.** Move the middle cut into a corner, away from the bore: the wall
-/// stays **one** face and the same three steps already worked before the fix. Without this, a
+/// stays **one** face and the same three steps work whatever the lateral rows say. Without this, a
 /// change that merely made *any* third boolean succeed would look like a repair.
 #[test]
 fn a_middle_cut_that_misses_the_bore_leaves_one_band() {
@@ -173,8 +172,8 @@ fn no_band_is_invented_where_the_solid_has_no_face() {
 //
 // ★★ A wall parallel to the axis meets the cylinder in a **rectangle** of the wall's own
 // plane — the strip across, a lateral face's span along — so "does this face miss it" is one
-// question with two separating axes. The gate used to read only the first, and refused every
-// wall that stood clear of the cylinder along its length.
+// question with two separating axes. Reading only the first refuses every wall that stands
+// clear of the cylinder along its length.
 //
 // ★ With several lateral faces there are several rectangles: the strip is shared, the spans
 // are not. That is why the gap between two bands is passable at all, and it is not a special

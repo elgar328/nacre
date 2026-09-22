@@ -316,10 +316,6 @@ fn every_clear_ray_agrees() {
     // The ring is simple, so the parity cannot depend on the ray. `every_ray` returns one
     // answer per usable candidate and they must be unanimous; a disagreement means the ray
     // choice leaked into the result.
-    //
-    // (Its ancestor also pinned that *half* the candidates were unusable — that count came
-    // from the retired staple fixture, whose loop and arc shared a plane. The holed L cap has
-    // no such sharing, so only the unanimity survives the move.)
     let (planes, p, outer, hole) = holed_face_rings("dimple");
     let rays = combinatorics::every_ray(
         &crate::planes::test_judge(&planes),
@@ -334,7 +330,8 @@ fn every_clear_ray_agrees() {
 
 #[test]
 fn a_ring_inside_a_ring_is_what_nesting_looks_like() {
-    // `nested_loops` has no operand in the suite that produces it — a polyhedral torus would.
+    // Nested loops on one face have no operand in the suite that produces them — a polyhedral
+    // torus would.
     // The detector can still be aimed at real geometry: a holed face *is* a ring inside a ring,
     // which fires exactly the condition the nesting brick asks about. It is the detector under
     // test, not the fixture.
@@ -388,15 +385,15 @@ fn node_at(planes: &[WorkingPlane], ring: &Ring, x: f64, y: f64) -> [usize; 3] {
 /// ★ **A ray that grazes a corner is still a ray** — the four ways a ring can meet the ray's
 /// line, each with an answer known by hand.
 ///
-/// A ring node *on* the line used to make the parity ambiguous, so the candidate was thrown
-/// away; with both of a vertex's candidates thrown away the whole question came back
-/// `NO_CLEAR_RAY`, and a band of rotation angles died of it. The rule that resolves it is the
-/// one `trace_transversal_face` has always used: look at the node's two off-line neighbours —
+/// A ring node *on* the line makes the parity ambiguous; throwing such a candidate away, and
+/// both of a vertex's candidates with it, sends the whole question back as `NoClearRay`, and a
+/// band of rotation angles dies of it. The rule that resolves it is the one
+/// `trace_transversal_face` uses: look at the node's two off-line neighbours —
 /// **opposite sides is a crossing, equal sides a touch**.
 ///
 /// So both fixtures block **both** candidates. That matters: with one candidate left clear the
-/// answer comes out anyway and the test would be green before the fix as well as after,
-/// measuring nothing. Here `point_in_ring` is `NO_CLEAR_RAY` before and the truth after.
+/// answer comes out anyway and the test would be green with or without the rule, measuring
+/// nothing. Here `point_in_ring` is `NoClearRay` without the rule and the truth with it.
 ///
 /// The outer outlines are chosen so that no vertex sits mid-run on a straight edge —
 /// `Profile2d` dissolves those at construction — and the ring lengths are asserted so that a

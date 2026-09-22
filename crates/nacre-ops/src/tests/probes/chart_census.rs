@@ -242,7 +242,7 @@ pub(crate) fn census(
             if r.present && r.ends.iter().any(|e| matches!(e, End::NoCircle)) {
                 ends.nocircle_present += 1;
             }
-            // ★ The one-mark contract the band road's `panel_probe` used to hold on its rim reads:
+            // ★ The one-mark contract on rim reads:
             // every cut end read carries exactly one lateral mark of its own solid (`Seated` is a
             // planar face's word — `face_spans` skips it for the same reason). Counted here, not
             // in `read_cell`, so the emitter's read and the census's read are not counted twice.
@@ -490,9 +490,7 @@ pub(crate) fn census(
         });
         // ── The emitter, seen from the census: its faces are the regions of the chart,
         // checked above against the reads they came from (every emitted cell in exactly one
-        // face, adjacent emitted cells in one face, no unkept cell in any). The terms
-        // `whole_emitted`, `full_runs`, `z_merge_bandlike` and `partial_runs` are
-        // ledger columns of the chart, not of the emitter.
+        // face, adjacent emitted cells in one face, no unkept cell in any).
         probe::cell_ends::push(ends);
     }
 }

@@ -243,8 +243,8 @@ fn reop_census_families_reoperate_or_decline_by_name() {
 /// `t ∈ [x₀ − cx, x₁ − cx]` clipped to where the chord meets `[y₀, y₁]` (`|t| ≤ √(r² − d²)`, `d`
 /// the centre's distance to that span, 0 when the centre is inside it — there `min(c, s)` is
 /// never negative). `∫ min(c, s) dt` splits at `±√(r² − c²)`: `c` between, `s` outside, with
-/// `∫ s = (t·s + r²·asin(t/r))/2`. Exact in the sense the old `πr²/2ᵏ` was (a closed form in
-/// `π`, `asin`, `sqrt`), and it reads every rectangle — the edge through the centre (a halving),
+/// `∫ s = (t·s + r²·asin(t/r))/2`. Exact as a closed form in `π`, `asin`, `sqrt`, and it reads
+/// every rectangle — the edge through the centre (a halving),
 /// the edge off it (a segment), two edges, a rectangle inside the disk.
 ///
 /// ★ One spelling, read by [`removed_by`] and [`first_volume`] alike — they ask the same question
@@ -818,7 +818,7 @@ fn a_cycle_is_carved_on_its_classes() {
 /// (both halves of the boss are there), then a `Graze` along the chain's own ruling edge up to
 /// the boss's top `z = 1` — the collinear run whose arcs arrive from the outer half and leave into
 /// the inner one toggles the face off above it. A lock of the **rule**, not of a result: every
-/// re-operation of a half boss is still refused at its cap's chord (`CurvedDeparture`), so
+/// re-operation of a half boss is still refused at its cap's chord, so
 /// the classes are traced by hand and the road's ledger is read for this boss (`origin
 /// (2, 0, −1)`, rulings spanning `t ∈ [0, 2]`).
 #[test]
@@ -1008,8 +1008,8 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
         both > 0,
         "no arc had a witness on both sides — that premise check never ran"
     );
-    // ★ The factor the original rule was missing must decide some arcs, or this corpus cannot
-    // tell the two rules apart.
+    // ★ The factor must decide some arcs, or this corpus cannot tell the rule from one without
+    // it.
     assert!(
         frame_neg > 0,
         "no class with frame_sign = -1 reached the rule — the factor is untested here"
@@ -1259,16 +1259,15 @@ fn an_oblique_class_refuses_two_disks_rather_than_comparing_radii() {
     );
 }
 
-/// ★★★★★ **One rule for "the point this edge names", and its plainest arm was missing.**
+/// ★★★★★ **One rule for "the point this edge names", with every arm — the plainest included.**
 ///
-/// `nesting`'s witness supply and its diagnostic twin each chained two producers **verbatim**, its
-/// instrument counted the same pair a third time, and the component road one dimension up had no
-/// edge witness at all — so a planar component whose every corner grazed ran out of witnesses and
-/// refused `NoClearRay` where the shape's own name was `SelfTouchingResult`
-/// (`contact_separates.rs`'s ⑤c). The two producers were never two rules: the "chord" one refuses
-/// `Carrier::Arc` in as many words, so both were always *a point inside a straight edge* — and
-/// **neither covered the plainest edge there is**, two three-plane corners joined by a straight
-/// step, because both start by asking for a pierce name.
+/// Spelled as producers per supply — chained verbatim in one, counted again in its instrument,
+/// absent on the component road one dimension up — a planar component whose every corner grazes
+/// runs out of witnesses and refuses `NoClearRay` where the shape's own name is
+/// `SelfTouchingResult` (`contact_separates.rs`'s ⑤c). "A chord's midpoint" and "an edge's
+/// interior point" are one rule — *a point inside a straight edge* — and it must cover **the
+/// plainest edge there is**, two three-plane corners joined by a straight step, which an arm
+/// that starts by asking for a pierce name misses.
 ///
 /// The oracle is computed **from the corners**, not by calling the arm a second time.
 #[test]
@@ -1316,17 +1315,16 @@ fn a_straight_edge_between_rational_corners_names_its_own_midpoint() {
 
 /// ★★★★★ **A plain bored cube builds at any size, and the answer is right.**
 ///
-/// A bore through a cube is the least exotic input this kernel has, and it was once
-/// **refused** — `WitnessNotRational` — whenever a coordinate needed a long decimal at a small
-/// scale. Measured boundary before the fix: `1/3` and `1/3·1e-3` built, `1/3·1e-4` and `1/7·1e-3`
-/// did not. Nothing about the geometry changed across that line; what changed was the plane
-/// offset's denominator passing `sqrt(i128)`, and it rode into the chart on a normal the
-/// four-coefficient canonicalisation had left non-primitive ([`crate::combinatorics`]'s
-/// `primitive_normal`).
+/// A bore through a cube is the least exotic input this kernel has, and it must not be
+/// **refused** (`WitnessNotRational`) because a coordinate needs a long decimal at a small scale.
+/// With a chart normal the four-coefficient canonicalisation leaves non-primitive, the plane
+/// offset's denominator passes `sqrt(i128)` between `1/3·1e-3` and `1/3·1e-4` (measured), with
+/// nothing about the geometry changing across that line; the chart reads a primitive normal
+/// ([`crate::combinatorics`]'s `primitive_normal`).
 ///
 /// The sizes below span **seven orders of magnitude**, each with a full 17-digit mantissa so the
-/// denominators are as bad as f64 can make them; the last two built before the fix and are here
-/// as the regression half. The oracle is `s³ − πr²s`.
+/// denominators are as bad as f64 can make them; the last two are the regression half. The oracle
+/// is `s³ − πr²s`.
 ///
 /// ⚠ **The tolerance is relative and it belongs to the oracle, not to the kernel.** At `s = 2e-7`
 /// the volume is ~6.4e-21, where any absolute epsilon is meaningless; and `π` does not cancel
@@ -1531,10 +1529,10 @@ fn the_two_roads_never_disagree() {
 /// bodies whose top faces are coplanar, one of them a ring that lies inside the other's circular
 /// hole and covers its centre.
 ///
-/// ★★ **It was built to walk the merge road's changed question and does not** — measured, and
-/// recorded rather than dressed up. That road has a converse clause («a
-/// centre inside a ring does not mean the disk is inside it»), and this is the shape that would
-/// make the old spelling claim two owners for one circle. It passes with the old spelling too:
+/// ★★ **It does not walk the merge road's converse clause** — measured, and recorded rather than
+/// dressed up. That road has a converse clause («a centre inside a ring does not mean the disk is
+/// inside it»), and this is the shape that would make a spelling without it claim two owners for
+/// one circle. It passes without the clause too:
 /// `unify_coplanar_faces` looks for a circle's owner **within its own edge-connected group**, and
 /// an island that does not touch the rim is not in that group. For a competing outer to be in it,
 /// something must reach the disk's face without cutting its rim — which no producer here makes.

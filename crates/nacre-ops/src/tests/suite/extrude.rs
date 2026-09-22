@@ -73,12 +73,12 @@ fn concave_l_profile_is_valid() {
 /// outward normal, and the b-rep's own `Surface` plus `Orientation`. They must agree
 /// on every face of every solid.
 ///
-/// `n_out` reads the second source now (the stored orientation), so what this
-/// pins is the first: the witness triangle `outer_tri` picks must span the ring's
-/// winding. `outer_tri` used to read the turn at the first non-collinear corner,
-/// which is the winding **only when that corner is convex**. The four fixtures
-/// below were safe by accident — none starts its cap loop one vertex before a
-/// reflex corner. `rotated_l_prism` does, and it is the same solid.
+/// `n_out` reads the second source (the stored orientation), so what this pins is
+/// the first: the witness triangle `outer_tri` picks must span the ring's winding.
+/// The turn at the first non-collinear corner is the winding **only when that corner
+/// is convex**, and the four fixtures below would pass that reading by accident —
+/// none starts its cap loop one vertex before a reflex corner. `rotated_l_prism`
+/// does, and it is the same solid.
 #[test]
 fn outward_normals_agree_with_their_orientation() {
     let mut cube = Model::new();
@@ -177,18 +177,18 @@ fn build_prism_base_cap_reuses_shared_surface() {
 
 /// ★★★★★ **A plane's record and its motion are one statement.**
 ///
-/// `Constructed` means *"these points speak about the world"*, `Moved` means *"about the
-/// pre-motion frame"* — so a base cap that takes the caller's world triple must be
-/// `Constructed`, and one that falls back to the prism's own ring must take the frame's `def`
-/// with it. There is nothing else to keep in step: the plane's canonical name is derived from
+/// No motion means *"these points speak about the world"*, a motion means *"about the
+/// pre-motion frame"* — so a base cap that takes the caller's world triple must carry no
+/// motion, and one that falls back to the prism's own ring must take the frame's motion with
+/// it. There is nothing else to keep in step: the plane's canonical name is derived from
 /// whichever triple is recorded.
 ///
-/// ★★ **It used to be three halves and they could come apart.** Coefficients were supplied
-/// beside the points and chosen by a **separate** `or_else`, so a caller whose points
-/// overflowed while their coefficients did not got world coefficients recorded beside the
-/// prism's own frame ring — one plane stated two ways. The agreement filter could not catch it
-/// either, since `c · p` overflows at exactly those widths. Removing the coefficient parameter
-/// is what made the pairing structural; this pins what is left of the choice.
+/// ★★ **Two halves, and they cannot come apart.** Coefficients supplied beside the points and
+/// chosen by a **separate** `or_else` would record world coefficients beside the prism's own
+/// frame ring whenever the points overflow and the coefficients do not — one plane stated two
+/// ways, which an agreement filter cannot catch either, since `c · p` overflows at exactly those
+/// widths. With no coefficient parameter the pairing is structural; this pins the choice that is
+/// left.
 #[test]
 fn a_prisms_base_cap_records_the_frame_its_def_names() {
     let r = nacre_exact::Rat::from_int;
@@ -362,10 +362,10 @@ proptest! {
     /// right volume or reject honestly — **never panic**. Drives general (non-axis) plane normals
     /// through the dir-sign guard and the `angular_order`/`turn_at` consumers that read its zeros.
     ///
-    /// Was `#[ignore]`d for a residual `D = 0` panic on general normals: a triple naming one
-    /// geometric plane through two coincident faces. Symmetric normals like `(1,1,1)` cleared
-    /// it, `(0.446, 0.737, 0.990)` did not. **Un-ignored**: naming every plane by
-    /// its class made those two faces one index, so the degenerate triple can no longer form.
+    /// Locks a `D = 0` panic on general normals: a triple naming one geometric plane through
+    /// two coincident faces (symmetric normals like `(1,1,1)` clear it, `(0.446, 0.737, 0.990)`
+    /// does not). Naming every plane by its class makes those two faces one index, so the
+    /// degenerate triple cannot form.
     #[test]
     fn pocket_on_a_random_slanted_face_is_valid_or_rejects(
         nx in -1.0f64..1.0,

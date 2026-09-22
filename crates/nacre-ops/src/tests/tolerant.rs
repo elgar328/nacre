@@ -562,10 +562,10 @@ fn two_spellings() -> (Vec<WorkingPlane>, Vec<WorkingPlane>) {
 /// sweep ever stops disagreeing, the shortcut has stopped firing and the tests above have
 /// gone vacuous.
 ///
-/// ★ **And the base *triangle* must now be inert.** `orient3d` used to ask the fourth plane
-/// with its pre-motion triangle while the other three spoke in coefficients, so a plane whose
-/// `d` was a rounded product was two planes inside one judgement. It asks all four in
-/// coefficients now, and reversing the triangles has to change nothing — that is the property,
+/// ★ **And the base *triangle* must be inert.** `orient3d` asks all four planes in coefficients
+/// — the fourth asked with its pre-motion triangle while the other three speak in coefficients
+/// makes a plane whose `d` is a rounded product two planes inside one judgement — so reversing
+/// the triangles has to change nothing — that is the property,
 /// not an accident, so it is asserted rather than left untested.
 ///
 /// A caution the first draft of this test walked into: not every perturbation is detectable.
@@ -1347,7 +1347,7 @@ fn a_boolean_mints_no_surface() {
 ///
 /// - the definition **exists** (no width-based decline is left in `normal_def`),
 /// - the triple **names a plane** (`plane_name_exact` — total, `None ⇔ collinear`),
-/// - the derived name is the same one the retired coefficient route computed
+/// - the derived name is the one a coefficient route computes
 ///   (`plane_from_point_normal` on the lifted normal — same plane, one name),
 /// - the point order faces the **caller's** normal (`u × v = |u|²·n` — checked through the
 ///   realization, far from degenerate, so the f64 sign is exact here).
@@ -1411,10 +1411,10 @@ fn a_named_planes_points_name_the_callers_plane() {
 /// every link in that chain is load-bearing. Break any one and the extrude quietly reverts to
 /// the f64 path, still producing a prism of the right volume.
 ///
-/// ★★★★★ Written because that is what happened: teaching `push_surface_with_coeffs` to drop a
-/// name it could not verify dropped it for *every* tilted plane (the check overflows on wide
-/// coefficients), which unhooked the frame and closed this road — and the whole suite, plus a
-/// bit-identical coordinate census, said nothing at all.
+/// ★★★★★ **Why a lock:** a producer that drops a name it cannot verify drops it for *every*
+/// tilted plane (the check overflows on wide coefficients), which unhooks the frame and closes
+/// this road — and the whole suite, plus a bit-identical coordinate census, says nothing at all
+/// (measured).
 #[test]
 fn a_prism_on_a_tilted_plane_takes_the_exact_road() {
     use crate::{OpOutput, Profile2d, SketchPlane};

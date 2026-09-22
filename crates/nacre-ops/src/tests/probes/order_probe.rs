@@ -1,4 +1,4 @@
-//! The retired ruler, kept so the order rule that replaced it can be **differenced against it**.
+//! A ruler production does not lay, kept so the order rule can be **differenced against it**.
 //!
 //! ★★★★★ **The two do not agree pointwise, and that is not a defect — it is measured, and it is
 //! the reason the difference has to be stated as a *shape* rather than as equality.** The ruler's

@@ -30,9 +30,9 @@ fn three_planes_names_one_vertex_however_it_is_spelled() {
 }
 
 /// ★ **`Ord` is the bare triple's lexicographic order** — the proposition the whole migration
-/// to this type stands on. Four rules read it and would answer differently if it moved:
-/// `Aliases::union_point`'s "smallest name wins", `merge_component`'s sorted ring starts,
-/// `reuse::canonical`'s ring rotation, and the reject witness's `Break::key`.
+/// to this type stands on. Rules read it that would answer differently if it moved:
+/// `Aliases::union_point`'s "smallest name wins", `merge_component`'s sorted ring starts, and
+/// `reuse::canonical`'s ring rotation.
 ///
 /// Each expected sign is written by hand from the pair, not computed from either operand, so
 /// the test cannot agree with a wrong implementation by sharing its derivation.

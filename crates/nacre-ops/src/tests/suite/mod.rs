@@ -76,7 +76,7 @@ fn near(a: Point3, b: [f64; 3]) -> bool {
 /// suite's first non-convex inner loop, and the shape a winding must be read from.
 ///
 /// Its coordinates dodge the cap's fan diagonals from `(0,0)` (`y = x`, `y = x/2`,
-/// `y = 2x`), which `segment_crosses_face` would graze.
+/// `y = 2x`), which a face-crossing test would graze.
 fn l_and_ell_stub() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
     let ell = Profile2d::polygon(vec![
@@ -123,10 +123,8 @@ fn names(ring: &[combinatorics::NodeId]) -> Ring {
 /// [`combinatorics::hole_rings`], which the boolean itself uses, so the fixture exercises only code
 /// the kernel runs.
 ///
-/// This replaces a helper that built its rings from `seam_paths_on`/`orient_seam_loop` — the
-/// retired seam engine. The *properties* below are about `point_in_ring`/`every_ray`, which are
-/// live and load-bearing (`nest_cells` picks a hole's host with them, `unify_coplanar_faces`
-/// groups by them), so they had to be re-homed rather than deleted with their old fixture.
+/// The *properties* below are about `point_in_ring`/`every_ray`, which are load-bearing
+/// (`nest_cells` picks a hole's host with them, `unify_coplanar_faces` groups by them).
 fn holed_face_rings(which: &str) -> (Vec<WorkingPlane>, usize, Ring, Ring) {
     let (m, l, stub) = if which == "dimple" {
         l_and_dimple()
@@ -352,7 +350,7 @@ fn carries_motion(m: &Model, s: Handle<Solid>) -> bool {
         .any(|fh| m.plane_motion(m.face(fh).surface).is_some())
 }
 
-/// ★★★★★ **The eye that was missing: does the mesh actually cover the face it approximates?**
+/// ★★★★★ **The eye on the mesh: does it actually cover the face it approximates?**
 ///
 /// A boolean result was once shipped whose lateral mesh lost **16% of its area** — four triangles
 /// spanned half a turn of the cylinder as flat chords, and the boss rendered as two cones. Every
@@ -639,8 +637,8 @@ fn prism_with_a_slanted_wall() -> (Model, Handle<Face>) {
 // ── a cylinder in the operation log is a circle extruded ────────────────────────────────
 //
 // `Model::add_cylinder_exact` is a test convenience behind a feature; the road an application
-// takes is `Operation::Extrude` of a one-circle profile — `cylinder()` is that sugar, and the
-// primitive operation retired once the two were measured identical. What the frame buys is that
+// takes is `Operation::Extrude` of a one-circle profile — `cylinder()` is that sugar, measured
+// identical to the primitive. What the frame buys is that
 // the statement never leaves the rationals: the axis is the frame's unit normal, the seam its
 // `+u`. The extrude's faces come in push order: bottom cap, top cap, then the lateral.
 

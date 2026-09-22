@@ -398,9 +398,8 @@ fn a_cylinder_on_a_tilted_frame_is_built_and_honestly_declined() {
 ///
 /// The bottom cap lies on the very plane the frame names, so it always interns; a plane's
 /// canonical name has no direction, so the surface handed back can be the one that faces the
-/// other way. Measured before the fix: a cylinder on a plate's top face came out with **both
-/// caps facing +Z**, because the b-rep body dropped `push_plane`'s `flipped` bit (the bit
-/// `add_cuboid` has always honoured). Not a solid at all, and no earlier fixture looked.
+/// other way. Dropping `push_plane`'s `flipped` bit puts **both caps facing +Z** on a cylinder
+/// on a plate's top face (measured) — not a solid at all.
 ///
 /// The three cases are the three ways a frame's plane can arrive: a seeded world plane, one a
 /// `DatumPlane` stated, and one an earlier face already put there.
@@ -480,7 +479,7 @@ fn a_cylinders_caps_face_opposite_ways_however_their_planes_arrived() {
 /// ★★ **A hole must wind the other way round, and now something checks it.**
 ///
 /// `build_prism` is the single place that decides winding — outer CCW about the
-/// sweep, holes the opposite — and until now nothing verified that decision:
+/// sweep, holes the opposite — and this verifies that decision:
 /// `shell_signed_volume` takes an *unsigned* area and subtracts, so it assumes the
 /// convention rather than reading it.
 ///
@@ -752,9 +751,9 @@ fn a_bores_wall_faces_its_axis_and_a_bosss_faces_away() {
 /// and the pair rule's real question.
 ///
 /// A plate, a vertical bore through it, and a horizontal tunnel six away with radii summing to
-/// four. Nothing touches, and the volume says so exactly. It used to be refused as "two
-/// cylinders touch or overlap" because the gate could only measure the distance between
-/// *parallel* axes and read its own blind spot as contact.
+/// four. Nothing touches, and the volume says so exactly. A gate that measures distance only
+/// between *parallel* axes reads its own blind spot here as contact ("two cylinders touch or
+/// overlap").
 ///
 /// ★ The pair rule fires on the **second** boolean — the first result already carries a
 /// cylindrical face — so a single cut would not exercise it at all.
@@ -830,8 +829,8 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
 /// guarantee with it and nothing would go red.
 ///
 /// ★ The count is deliberately not asserted. It is whatever the suite happened to run before this
-/// test, and it moves with every fixture added. The formerly refused population (the two tangency
-/// fixtures in `bands::tests`) is now held to its faces' exact areas there, through
+/// test, and it moves with every fixture added. The tangency population (the two tangency
+/// fixtures in `bands::tests`) is held to its faces' exact areas there, through
 /// [`mesh_covers_faces`].
 #[test]
 fn the_mesh_census_is_running() {
@@ -924,17 +923,14 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
 /// lock is only the **outcome** (built, or the refusal's name); the geometry stays the digest's.
 /// Fixtures copied from `tests/census.rs` (`rul`, `wal`, `cap`, `ct2`, `trc` families).
 ///
-/// ★★★★★ **`wal corner-lo` used to refuse here, and the reason written at this line was the
-/// symptom.** It read: *"the plate classes' disk cells carry no B material at the (0,0) corner
-/// while the caps do (an arrangement label defect) — the cells' ends disagree and the emitter
-/// refuses rather than read either."* The missing material was real, but it was not a labelling
-/// defect: that corner puts the boss's axis on **both** plate walls, so the chords through its
-/// circle are radii and the sector outside the plate is **reflex** at the centre. `loop_winding`
-/// read the turn at the lexicographically smallest **node** — the centre — which the arc bulges
-/// past, so the sign came back inverted, the void seed landed on a bounded sector, and one
-/// solid's material was flipped across the whole component. Reading the winding at the ring's own
-/// extremum (`combinatorics::arc_extremum_winding`) fixes it, and all three kinds build with
-/// their exact volumes.
+/// ★★★★★ **`wal corner-lo`: the winding is read at the ring's own extremum, not at its smallest
+/// node.** That corner puts the boss's axis on **both** plate walls, so the chords through its
+/// circle are radii and the sector outside the plate is **reflex** at the centre. Read at the
+/// lexicographically smallest **node** — the centre, which the arc bulges past — the turn comes
+/// back inverted, the void seed lands on a bounded sector, and one solid's material flips across
+/// the whole component (the plate classes' disk cells then carry no B material at the corner
+/// while the caps do). Read at the extremum (`combinatorics::arc_extremum_winding`), all three
+/// kinds build with their exact volumes.
 ///
 /// ★ `rul flush`: a straddling boss whose caps sit flush with **both** plate planes. Cut
 /// and Common assemble clean and build; the Fuse's two cap chords are each an interior boundary

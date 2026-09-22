@@ -3,7 +3,7 @@
 //! a root at the probe, a seam-incident root, two seam ends, a horizontal tangent at an arc end
 //! the root lands on, a zero-span arc — or `Other` for the silent `?` arms (no chart, overflow).
 //! Read by the crossing census (per cell) and the ledger (whole suite). A corner on the ray is
-//! no longer among them: the half-open rule decides it, and `ARC_END` counts the arc-end arm's
+//! not among them: the half-open rule decides it, and `ARC_END` counts the arc-end arm's
 //! decisions so a fixture can say it ran.
 //!
 //! ★ **An instrument, so the file lives in the test tree and the module does not.**

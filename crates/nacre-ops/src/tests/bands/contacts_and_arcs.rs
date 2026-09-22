@@ -6,9 +6,9 @@ use super::*;
 /// A minted vertex sits within `1e-12` of its definition — asserted from the cache where the
 /// cache proves it, and **measured here** where it does not.
 ///
-/// ★ The second half used to read a stored residual. The cache no longer stores one, and the
-/// honest replacement is not "skip those" but "measure the same distance the residual was":
-/// the point against the surfaces its definition names. Dropping to a bare `panic!` for the
+/// ★ The second half measures what a stored residual would say — the point against the surfaces
+/// its definition names — since the cache stores none; "skip those" would be the dishonest
+/// reading. Dropping to a bare `panic!` for the
 /// unproven variants would have turned this from a measurement into a restatement of which
 /// variant the funnel chose.
 fn knowledge_is_tight(m: &Model, h: Handle<nacre_topo::Vertex>) {
@@ -427,7 +427,7 @@ fn the_audit_and_the_boolean_agree_about_an_arc_class() {
         assert!(stopped.is_empty(), "no class stops: {stopped:?}");
         // ★ The whole audit, not just `produced`: the ring coordinates are a sibling field, and
         // joining two filtered lists by index is the seam where they could come from different
-        // classes. ★ By reference: `Produced` carries the labels now, so it is no longer `Copy`.
+        // classes. ★ By reference: `Produced` carries the labels, so it is not `Copy`.
         let cut: Vec<_> = audits
             .iter()
             .filter(|a| a.produced.as_ref().is_some_and(|p| p.arcs > 0))
@@ -755,10 +755,9 @@ fn every_result_vertex_of_the_arc_population_is_named() {
 /// > faces.
 ///
 /// Arc edges are excluded because their far side is the band, which contributes no ring.
-/// ★ Both-ends-pierce keys used to be excluded too — the chord and the two arcs between one
-/// pierce pair folded into a single `norm_edge` key — but the carrier gave arcs their own
-/// ordered key, so the chord's line key counts exactly its two coplanar faces now (measured:
-/// the exclusion removed, both fixtures stay green).
+/// ★ Both-ends-pierce keys are not excluded: the carrier gives arcs their own ordered key, so
+/// the chord and the two arcs between one pierce pair do not fold into a single `norm_edge` key,
+/// and the chord's line key counts exactly its two coplanar faces.
 ///
 /// red: with the subdivision disabled, the pre-split single-use keys come back.
 #[test]
@@ -874,8 +873,7 @@ fn a_subdivided_twin_matches_its_neighbour_edge_for_edge() {
 ///
 /// Before the boolean no `Vertex::Pierce` exists anywhere in the model, so a whole-store
 /// filter is position-independent; a wrong `QuadRoot` canonicalization moves the minted
-/// point itself, which is what keeps the old toggle-lock alive now that the reject (whose
-/// witness once carried it) is gone.
+/// point itself, which is what this toggle-lock watches.
 ///
 /// ★ The coordinates are the fixtures' own crossing derivations (the same numbers the ring
 /// and seam fences pin) — nothing here is copied from a run. The tolerance is a bound, and
@@ -1211,7 +1209,7 @@ fn the_bands_loop_is_one_continuous_cycle() {
 ///
 /// ★ Asserted on `name_result_vertices`' own product (the subdivision must run first for the
 /// chord's line key to match), across all three fixtures. red: the band's registration
-/// removed → n == 2 and the held grouping is the old `PierceVertexUnnamed`.
+/// removed → n == 2 and the held grouping is `PierceVertexUnnamed`.
 #[test]
 fn the_grouping_joins_across_a_cut_rim() {
     for (origin, axis) in [
@@ -1501,12 +1499,11 @@ fn a_bored_plate_hangs_a_straddling_boss() {
 
 /// ★ **The chained contact-cut builds clean** (grouping-arm cell). Cut the same chain
 /// instead of fusing: the boss only *touches* the bored plate's top, so the cut removes
-/// nothing — and the result is the bored plate, exactly. It used to refuse
-/// `VertexNamesAbsentSurface` here: the top ring's rim seam could not merge (the arc pair
-/// collided in the merge's node-pair key), the unmerged ring kept pierce vertices whose
-/// definitions name the boss's cylinder, and the result has no face on it. The two-pass
-/// erase removes the seam — and the vertices with it — so the honest refusal became the
-/// honest build. Volume and validate lock that the build is *right*, not merely green.
+/// nothing — and the result is the bored plate, exactly. The top ring's rim seam has to merge
+/// (an arc pair would collide in a node-pair key), or the unmerged ring keeps pierce vertices
+/// whose definitions name the boss's cylinder and the result, having no face on it, refuses
+/// `VertexNamesAbsentSurface`. The two-pass erase removes the seam — and the vertices with it.
+/// Volume and validate lock that the build is *right*, not merely green.
 #[test]
 fn a_chained_contact_cut_builds_clean() {
     let mut m = Model::new();

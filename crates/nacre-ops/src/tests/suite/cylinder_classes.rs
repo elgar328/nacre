@@ -60,9 +60,8 @@ fn chained_cylinder_operations_that_build_today_still_build() {
         let v = nacre_props::mass_props(&m, out[0]).expect("mass").volume;
         assert!((v - volume).abs() < 1e-9, "{name}: {v} vs {volume}");
     }
-    // ★ A wall boss as a *middle* operation used to be the one that could not follow. It builds
-    // now; its volumes live in `a_chained_cylinder_bounded_by_the_first_builds`, beside the
-    // mechanism that opened it.
+    // ★ A wall boss as a *middle* operation builds; its volumes live in
+    // `a_chained_cylinder_bounded_by_the_first_builds`, beside the mechanism that opens it.
 }
 
 /// ★★★★★ **The gate decides a boss-seated wall, and records the pair — and nothing else in the
@@ -97,7 +96,7 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
     m.rebuild_adjacency();
     let b = m.add_cylinder(Point3::from_array([6.0, 2.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
-    // ★ The gate *deciding* is half the claim — it used to stop at the first corner the boss made.
+    // ★ The gate *deciding* is half the claim — past the first corner the boss makes.
     let setup = crate::arrangement::plane_index_setup(&m, first, b).expect("the gate decides");
     // ★★ And recording is the other half. The boss sits **on** `y = 0`, so those faces are not
     // clear of it; that is what the record-and-pass arm is for, and a missing entry here means the
@@ -174,10 +173,11 @@ fn the_extent_rule_agrees_with_the_fences_it_replaced() {
     );
 }
 
-/// ★★★★★ **The order rule may read the retired ruler backwards, but it may never reshuffle it.**
+/// ★★★★★ **The order rule may read the ruler backwards, but it may never reshuffle it.**
 ///
-/// The arc split used to sort its points by their parameter on `pierce_meet`'s canonical meet line;
-/// it asks [`combinatorics::order_located`] now. The two do **not** agree pointwise — the ruler's
+/// The arc split asks [`combinatorics::order_located`], not the points' parameter on
+/// `pierce_meet`'s canonical meet line (the ruler). The two do **not** agree pointwise — the
+/// ruler's
 /// direction comes from the classes' rational coefficients and the rule's axis sign from the judge's
 /// stored planes, and those two spellings name the same plane without naming the same side. A
 /// wholesale reversal is harmless: the pieces come out in the comparator's own ascending order and
@@ -472,11 +472,10 @@ fn a_chained_cylinder_bounded_by_the_first_builds() {
 /// accessor is right to: for its forty-odd other callers a cylinder there is an upstream filter
 /// bug. This is the caller whose input is an *operand*, so this is where the filter belongs.
 ///
-/// ★ **Measured before the filter existed: this very call panicked** ("a plane-only path got
-/// cylinder class 0"). The population gate refuses such an operand long before the tracer sees it,
-/// so nothing in production reaches this today — which is exactly why the lock calls the function
-/// **directly**, the same way the ring-naming goldens next door do. The gate opens in the cell that
-/// builds the road; this is the net that has to be under it first.
+/// ★ **Without the filter this very call panics** ("a plane-only path got cylinder class 0",
+/// measured). The population gate refuses such an operand long before the tracer sees it, so
+/// nothing in production reaches this — which is exactly why the lock calls the function
+/// **directly**, the same way the ring-naming goldens next door do.
 ///
 /// The untouched walls are the negative control: they are still named, so the filter is a filter
 /// and not a blanket refusal.
@@ -683,10 +682,10 @@ fn named_in_class_space(at: [f64; 3]) -> (Vec<bool>, Vec<i8>) {
 
 /// ★★★★★ **A cylinder-pinned end is ordered, not refused — and the sense is the geometry's.**
 ///
-/// `edge_dir` is the one place a direction is made, and its cylinder arm used to say `RingNaming`
-/// by name: a pierce point has no third plane, and the integer predicate wants one. Measured
-/// before this landed — every one of the 40 pins below came back refused. Now they order through
-/// the `a + b√c` tower, and this fixes what the answer must be.
+/// `edge_dir` is the one place a direction is made. A pierce point has no third plane, and the
+/// integer predicate wants one, so its cylinder arm orders through the `a + b√c` tower; the 40
+/// pins below fix what the answer must be (an arm that refuses by `RingNaming` refuses every one
+/// of them, measured).
 ///
 /// ★★★ **The oracle is a second road, and only the half that matters is second.** The direction
 /// `n_p × n_q` is read from the same raw coefficients the code reads — deliberately, the way the
@@ -729,11 +728,10 @@ fn a_cylinder_pinned_end_orders_through_the_tower() {
 /// edge). That measurement is the oracle here; there is no sentence in the design documents that
 /// decides it.
 ///
-/// The cylinder twin used to refuse. Its result was already right — exact volume, `validate`
-/// clean — but the top plane came back as **two** faces: the plate's top with a circular hole, and
-/// the disk filling it. Nothing joined them, because a disk's boundary is a `Bound::Circle` with
-/// no nodes at all, so the merge's edge table could not see it; the corners left on that circle
-/// went on naming the tool's cylinder after every face of it was gone, and the assembly refused
+/// The cylinder twin, locked against the top plane coming back as **two** faces: the plate's top
+/// with a circular hole, and the disk filling it. A disk's boundary is a `Bound::Circle` with no
+/// nodes at all, so a merge that reads only its edge table cannot see it; the corners left on that
+/// circle then name the tool's cylinder after every face of it is gone, and the assembly refuses
 /// the whole boolean (`VertexNamesAbsentSurface`).
 ///
 /// What connects them is that the other face holds **the same cylinder class** as a hole — and one

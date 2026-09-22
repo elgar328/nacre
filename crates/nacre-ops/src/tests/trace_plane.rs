@@ -6,14 +6,10 @@ use super::*;
 ///
 /// ★★★★★ **The vessel carries a curved ring through, and only a *collapsed* name is refused.**
 ///
-/// This used to assert the opposite: a pierce corner was `RingFail::Pierce` and a curved
-/// carrier `RingFail::CurvedWall`, because the ring came out as plane ids and could not hold
-/// either. Both refusals were the type running out rather than a decision, and they are gone
-/// with the projections. What still stops here is a name that is degenerate *as a name* — two
+/// Refusing a pierce corner or a curved carrier would be the type running out — plane ids can
+/// hold neither — rather than a decision; the ring holds names. What stops here is a name that is
+/// degenerate *as a name* — two
 /// of its three planes equal — which is a fact about the triple and not about cylinders.
-///
-/// ★ Rewritten rather than patched: the old proposition ("the plane road cannot use such a
-/// ring") became false, and a lock whose sentence is false is worse than no lock.
 #[test]
 fn a_named_curved_ring_rides_through_and_only_a_collapsed_name_stops() {
     let three =

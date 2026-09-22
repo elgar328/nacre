@@ -261,8 +261,8 @@ fn the_cap_chord_stops_where_the_on_line_edge_begins() {
     // ★ Falsifiable core: the on-line edge does not merge into the chord that runs through the
     // cap's interior. x∈[0,1] is interior (the cap straddles y=1) and stays transversal;
     // x∈[1,2] is the cap's own boundary edge, so the cap is on one side there and it leaves as
-    // a graze — see `run_body_above`. A single chord spanning [0,2] would be the old,
-    // occupancy-blind bridging.
+    // a graze — see `run_body_above`. A single chord spanning [0,2] would be occupancy-blind
+    // bridging.
     assert_eq!(
         horiz_z0.len(),
         1,
@@ -1744,7 +1744,7 @@ fn tunnel_cut_emits_ten_faces_two_annular() {
 /// Multi-hole lock: a slab fused with a U (its two prongs pierce the slab) emits exactly one
 /// face with **two** inner rings — the y=2 slab annulus, holed by both prongs — and every
 /// undirected edge across all rings is used exactly twice (closed shell). This exercises
-/// `nest_cells`' multi-hole support (the dropped `HOLE_MULTI` reject).
+/// `nest_cells`' multi-hole support.
 #[test]
 fn u_slab_fuse_emits_a_two_hole_face() {
     let u_profile = Profile2d::polygon(vec![

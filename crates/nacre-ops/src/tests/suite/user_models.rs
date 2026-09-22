@@ -48,9 +48,9 @@ fn rounded_plate_volume() -> f64 {
 }
 
 /// ★ **A fully rounded plate enters a boolean**, in every operation and either operand
-/// order. Its cap ring has no three-plane corner at all, so the arm that asks it against a bore's
-/// disk used to find no witness it would accept and refuse; the engine asks for the witnesses the
-/// ring actually has. The partner stands on the plate's top face and overlaps it nowhere, so every
+/// order. Its cap ring has no three-plane corner at all, so an arm that asks for one against a
+/// bore's disk finds no witness and refuses; the engine asks for the witnesses the ring actually
+/// has. The partner stands on the plate's top face and overlaps it nowhere, so every
 /// answer is arithmetic.
 #[test]
 fn a_fully_rounded_plate_with_bores_enters_a_boolean() {

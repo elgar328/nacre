@@ -3,7 +3,7 @@
 use super::*;
 
 //
-// ★★ These five are the population the `SeatedCylinderCap` rule refused. What actually makes a
+// ★★ These five are the seated population. What actually makes a
 // seated circle hard is its boundary meeting the counterpart's — and a boundary is either an
 // edge on a plane (parallel to the axis → the wall rule, oblique → asked to miss every lateral
 // face, else `ObliqueCylinderCut`) or another cylinder's rim (→ proved apart per
@@ -77,7 +77,7 @@ fn a_blind_drill_seated_on_the_plates_base_bores_it() {
 }
 
 /// **(c) A boss standing on the plate.** `Fuse` with the cylinder's base cap flush on the
-/// plate's top face — the seating a person draws first, and the one the retired rule refused.
+/// plate's top face — the seating a person draws first.
 #[test]
 fn a_boss_seated_on_the_plate_fuses_to_it() {
     let mut m = Model::new();
@@ -297,7 +297,7 @@ fn one_chord_formula_covers_the_offset_wall_and_its_tangent_limit() {
 ///
 /// The lateral is **one** face: the band and the outer panel merge into a band whose
 /// upper rim is a **wrapping chain** (the z = 0 inner arc, a ruling, the z = 10 outer arc,
-/// a ruling) — the cleaning pass used to abstain here, having no `Bound` for it. ★ Both
+/// a ruling). ★ Both
 /// senses: the boss with its cap inside the plate (`z0 = −10`, a `hi` chain) and its mirror
 /// with its base inside (`z0 = 10`, a `lo` chain) — the walk's rotation rule is measured
 /// on each rather than assumed symmetric. Same volumes by symmetry.
@@ -362,10 +362,7 @@ fn a_half_height_boss_builds() {
 
 /// **The straddling boss builds.** A boss hanging over the
 /// plate's edge — its rim circle cut by the plate top's boundary segment — fuses into one
-/// valid solid. The ladder this closes, in the names its rungs wore: `WallMeetsLateral`
-/// (a reason since retired — the wall rule read the closed span) → `CircleMeetsSegment` →
-/// `ArcBoundNotYet` (the
-/// stopper, walked from the class arrangement to the very end of the assembly) → built.
+/// valid solid.
 ///
 /// The volume and the mixed-loop integrals are pinned by
 /// [`Self::a_cut_rim_boolean_builds_a_complete_solid`]; here the result answers the two
@@ -410,9 +407,7 @@ fn a_boss_overhanging_the_plates_edge_builds() {
 
 /// ★★ **A boss standing over a bore, its whole outline *inside* the rim.** No segment crosses
 /// the circle, so the circle keeps its closed cell — what the shape really asks is that the
-/// **disk cell host a polygon**, and `nest_cells` refused to (a `debug_assert` said a disk
-/// hosts nothing, for a reason that was already wrong: the guard actually keeping the
-/// population out was `circles_meet_no_segment`).
+/// **disk cell host a polygon**, which `nest_cells` does.
 ///
 /// ★★★ **The population immediately found a live defect in the nesting predicate.** With the
 /// disk allowed to host, the *circle*'s contour came back as a hole of the **square** — the

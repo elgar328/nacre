@@ -3,10 +3,10 @@
 use super::*;
 
 //
-// ★★ The uniform-slab theorem's premise is about the other operand's **boundary**. The gate
-// used to test the wall's infinite *plane*, which is a cheaper sufficient condition — and it
-// refused a whole family the engine serves: a body standing well clear of a bore whose wall
-// plane, extended, happens to pass through it. These lock what that opened and what it did not.
+// ★★ The uniform-slab theorem's premise is about the other operand's **boundary**. Testing the
+// wall's infinite *plane* is a cheaper sufficient condition — and it refuses a whole family the
+// engine serves: a body standing well clear of a bore whose wall plane, extended, happens to
+// pass through it. These lock what the boundary test opens and what it does not.
 
 /// A plate with a bore, fused to a boss standing far away in `x` — whose `y = 12` wall **plane**
 /// stands only 2 from the bore's axis (`r = 3`). The boss's face is 20 away; nothing meets.
@@ -164,8 +164,7 @@ fn one_wall_plane_may_cross_two_bores() {
 
 /// **A wall face that really does cross the bore builds.** The plate's own `y = 20`
 /// wall would clear, so the tool here is a slab whose face runs right across the hole — the
-/// wall rule's true population. It used to be the fence (`WallMeetsLateral`, a
-/// reason since retired); the gate records the pair now and the tracer cuts the bore's lateral
+/// wall rule's true population. The gate records the pair and the tracer cuts the bore's lateral
 /// along two rulings
 /// (2 from the axis, r = 3) and its caps along the chord: one body, the exact volume.
 #[test]
@@ -365,10 +364,9 @@ fn the_users_through_stud_gives_three_answers() {
 /// ★★★★★ **The user's cross studs — a stud along `z` and one along `y` through the cube,
 /// fused in either order.** After the first fuse the `z` stud's remaining lateral faces sit
 /// at `|z| ≥ 0.5` and the `y` stud's whole surface within `|z| ≤ 0.2`: the two cylinder
-/// classes share no face, and the arrangement builds the result — measured before the gate
-/// opened, with the pair let through by hand: 14 faces, volume `1 + 0.08π`, meshed. The
-/// gate used to refuse the pair on the distance between their *axes*, zero since they cross
-/// at the origin — a fact about two infinite surfaces, not about any face.
+/// classes share no face, and the arrangement builds the result: 14 faces, volume
+/// `1 + 0.08π`, meshed. Refusing the pair on the distance between their *axes* — zero, since
+/// they cross at the origin — would be a fact about two infinite surfaces, not about any face.
 ///
 /// Volumes: each stud is `0.08π`, half of it inside the cube; the second stud meets the
 /// first only inside the cube.

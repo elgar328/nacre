@@ -4,11 +4,11 @@ use super::*;
 
 //
 // ★★ A cylinder's lateral face touching a ⊥ class at its **rim** contributes a `Graze`, the
-// same as any planar wall meeting a class along an edge. It used to contribute nothing, and
-// `edge_mask`'s `Graze > Seated` precedence exists exactly for the corner where the two
-// disagree — a **blind bore's ceiling**. Missing it, the cap's seated rule flipped the wrong
-// label bit, the band's two ends contradicted each other, and the *next* boolean on that solid
-// came back `CylinderGateUndecided`. A through bore has no ceiling and was always fine.
+// same as any planar wall meeting a class along an edge, and `edge_mask`'s `Graze > Seated`
+// precedence exists exactly for the corner where the two disagree — a **blind bore's ceiling**.
+// Without the graze, the cap's seated rule flips the wrong label bit, the band's two ends
+// contradict each other, and the *next* boolean on that solid comes back
+// `CylinderGateUndecided`. A through bore has no ceiling.
 
 /// A plate bored to `hole_h` deep, ready to be operated on again.
 fn plate_with_a_bore(hole_h: f64) -> (Model, Handle<Solid>) {
@@ -137,8 +137,7 @@ fn a_through_bore_is_unaffected() {
 ///
 /// ★★★ **This is the population the coordinate probe exists for, and the only one that makes
 /// it say `true`.** The void's boundary is two disks and a band, so it carries no vertex at
-/// all and `nodes_of` came back empty — which is what `curved_component_depth`, now retired,
-/// used to refuse.
+/// all and `nodes_of` comes back empty.
 /// Two *disjoint* bodies exercise the same road, but their answer is "outside" either way, so
 /// a road that always said `false` would pass them; here it would make the void a **second
 /// solid** and the box's volume whole.
@@ -294,12 +293,10 @@ fn a_cylinder_that_misses_changes_nothing_and_fuses_apart() {
     let v = nacre_props::mass_props(&m, cut[0]).expect("props").volume;
     assert!((v - 8.0).abs() < 1e-12, "the box is untouched: {v}");
 
-    // ★★ **The fuse this test's name promises — and the case that used to abort the kernel.**
-    // Two disjoint bodies means `n = 2`, so each is classified by a ray probe. That probe
-    // first panicked (it asked a band face for its plane class), then refused by name
-    // (`curved_component_depth`, since retired), and now answers: the ray counts a
-    // cylinder's crossings, and
-    // the bare cylinder — whose boundary carries **no vertex at all** — is probed from a cap
+    // ★★ **The fuse this test's name promises.** Two disjoint bodies means `n = 2`, so each is
+    // classified by a ray probe — one that must not ask a band face for its plane class (a
+    // panic): the ray counts a cylinder's crossings, and the bare cylinder — whose boundary
+    // carries **no vertex at all** — is probed from a cap
     // disk's centre instead of from a corner.
     //
     // ★ The values are derived from the inputs, not read back from the result: a `[0,2]³` box

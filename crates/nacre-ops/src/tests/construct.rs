@@ -238,8 +238,8 @@ fn a_split_sweep_lands_on_the_same_points_as_the_whole_one() {
 fn a_frame_that_cannot_be_lifted_declines_before_any_arithmetic() {
     assert!(rotated(45.0).exact().is_none());
     // And so does a sweep distance outside the decimal window (design: i128) — the one
-    // decimal lift still performed here. (A profile coordinate out of window no longer
-    // reaches this module: `Profile2d`'s constructor names it.)
+    // decimal lift still performed here. (A profile coordinate out of window does not
+    // reach this module: `Profile2d`'s constructor names it.)
     let f = SketchPlane::world_xy().exact().unwrap();
     assert!(f.sweep(1e300).is_none());
     // Placement arithmetic that overflows i128 declines the same way: two in-window

@@ -39,9 +39,8 @@ fn model_sig(m: &Model, solids: &[Handle<Solid>]) -> String {
 ///
 /// **★ Two things this test has to keep honest about itself.**
 ///
-/// First, it passed for the whole stretch when there was *no* parallelism — the cutover
-/// took the old engine's `par_iter` calls with it, and a one-thread pool is trivially
-/// equal to a many-thread one when nothing forks. So the fixtures must have real
+/// First, a one-thread pool is trivially equal to a many-thread one when nothing forks, so
+/// the test passes with *no* parallelism at all. So the fixtures must have real
 /// parallel width: the fin fold below reaches into the dozens of plane classes, where
 /// the two-ngon fuse has barely a dozen.
 ///
@@ -226,8 +225,8 @@ fn parallel_boolean_is_thread_order_independent() {
 
 #[test]
 fn u_prism_is_valid() {
-    // Pin the fixture itself: a mistyped profile could still trip `multichord`
-    // below, for the wrong reason.
+    // Pin the fixture itself: a mistyped profile could trip the parallel test above for the
+    // wrong reason.
     let (m, u) = u_prism();
     let vs = nacre_validate::validate(&m);
     assert!(vs.is_empty(), "{vs:?}");

@@ -285,27 +285,25 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
             r.nocircle_present, 0,
             "a cell with a face meets a line with no circle: {r:?}"
         );
-        // ★ `arcs_no_mark` is no longer held at 0 here: a ⊥ cap through a wall boss's notch
+        // ★ `arcs_no_mark` is not held at 0 here: a ⊥ cap through a wall boss's notch
         // reads cut ends inside the lateral's hole, and those carry no mark by right.
         // The record site asserts the true proposition — none only where the cell is absent.
         assert_eq!(
             r.arcs_multi_mark, 0,
             "a cut end read carries two lateral marks of one solid: {r:?}"
         );
-        // ★★★★★ **A run expired the old equality.** This read `arcs_read == end_exact` until
-        // a sector was allowed to span several of the rim's arcs; the ledger then measured
-        // 4,370 against 4,312 over the whole suite while this assertion stayed green, because
-        // it sees only its own fixtures (the recorded trap: a lock in a `#[test]` watches what
-        // ran before it). The proposition that is still true — and still crosses the two loops
-        // that count these, which is what it is for — carries the run's extra arcs by name.
+        // ★★★★★ **A run is why this is not `arcs_read == end_exact`.** A sector may span several
+        // of the rim's arcs (the ledger measures 4,370 against 4,312 over the whole suite), and a
+        // lock in a `#[test]` sees only its own fixtures — what ran before it. The proposition
+        // that holds, and crosses the two loops that count these, carries the run's extra arcs by
+        // name.
         assert_eq!(
             r.arcs_read,
             r.end_exact + r.exact_run_arcs,
             "every exact end is a cut end read, and only those: {r:?}"
         );
-        // ★ The emitter's face count is no longer predicted by the band-road walk: its
-        // faces are the regions of the chart, asserted against the reads where the fact is
-        // made (`census`); the band road's terms stay as columns of the chart.
+        // ★ The emitter's face count is not predicted here: its faces are the regions of the
+        // chart, asserted against the reads where the fact is made (`census`).
         assert_eq!(
             r.end_swapped, 0,
             "a ruling arrived with z descending: {r:?}"
@@ -326,7 +324,7 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
         );
     }
     // ★★★★ Non-vacuity — a zero above must mean "the population is empty", never "nothing
-    // was looked at". `end_other` and `intervals_multi_run` are deliberately not in this list.
+    // was looked at". `end_other` is deliberately not in this list.
     assert!(sum(&rows, |r| r.end_disk) > 0, "no disk end was ever read");
     assert!(
         sum(&rows, |r| r.end_exact) > 0,
@@ -341,9 +339,8 @@ fn the_cells_read_their_chamber_from_the_horizontal_lines() {
         "the reader never emitted a cell"
     );
     assert!(sum(&rows, |r| r.arcs_read) > 0, "no cut end was ever read");
-    // ★ Runs of several arcs used to come from sectors spanning the **phantom** pieces of a
-    // half rim (a wall boss); those pieces are no edges now and such a sector reads
-    // `Uncovered`. The non-vacuity that replaces the run count is that arm's.
+    // ★ A sector spanning the **phantom** pieces of a half rim (a wall boss) reads `Uncovered`:
+    // those pieces are no edges. The non-vacuity here is that arm's, not a run count.
     assert!(
         sum(&rows, |r| r.end_uncovered) > 0,
         "no end ever read an uncovered piece of a rim"

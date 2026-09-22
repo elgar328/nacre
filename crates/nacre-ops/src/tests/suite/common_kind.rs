@@ -43,10 +43,9 @@ fn l_and_notch_bar() -> (Model, Handle<Solid>, Handle<Solid>) {
 /// `profile ∩ f` reaches `∂f`, and a face can never carry both an arc and a loop. Every
 /// earlier attempt at such a fixture died on that.
 ///
-/// Leg bottoms sit at `z = 0.5` and `z = 0.45`: two coplanar faces of *one* operand
-/// tripped the pre-cutover door guard, exactly as `u_prism`'s staggered prongs avoid.
-/// And the legs span `y ∈ [0.65, 1.3]`, not `[0.7, 1.3]`, because `(1.4, 0.7)` lies on
-/// the cap's fan diagonal `y = x/2` and `segment_crosses_face` would graze it.
+/// Leg bottoms sit at `z = 0.5` and `z = 0.45`, staggered as `u_prism`'s prongs are. And
+/// the legs span `y ∈ [0.65, 1.3]`, not `[0.7, 1.3]`, because `(1.4, 0.7)` lies on the
+/// cap's fan diagonal `y = x/2`, which a face-crossing test would graze.
 fn l_and_staple() -> (Model, Handle<Solid>, Handle<Solid>) {
     let (mut m, l) = l_prism();
     let staple = Profile2d::polygon(vec![
@@ -230,20 +229,20 @@ fn concurrent_vertices_are_four_planes_and_the_trace_sees_all_of_them() {
 /// `flip` are written against it). `combinatorics::side_of` answers in the root's **outward** frame
 /// instead, and the two are opposite exactly when the root face is `Reversed`
 /// (`orient_sign == -1`) — which no `add_cuboid` face ever is, but a face an earlier boolean
-/// re-emitted flipped is. `graze_above` read `side_of` raw, so on a pocket wall it flipped the
-/// wrong label bit. It no longer reads a point's side at all — [`arrangement::run_body_above`] derives
+/// re-emitted flipped is. Read raw, `side_of` flips the wrong label bit on a pocket wall. No
+/// point's side is read at all — [`arrangement::run_body_above`] derives
 /// the occupied side from the ring's travel, and the frame term cancels there because
 /// `order_along`'s direction and the label frame are defined by the same stored normal — but
 /// this class stays the corpus's only crossed-frame witness, so it is what would catch a
 /// producer that regresses to a raw `side_of`.
 ///
-/// What this pins, measured before the fix:
+/// What this pins, measured with the frames crossed:
 /// - the pocket fixture has 5 `orient_sign == -1` classes carrying seated *and* graze segments
 ///   (4 walls + the floor); every other fixture has **no** `Reversed` root at all, which is why
 ///   the whole corpus passed with the frames crossed and why converting cannot regress it;
-/// - the four wall classes stopped at `loop_orient_mismatch`; the floor class did **not** — its
-///   four rim edges all carry a graze, so seated and graze were wrong *together*, consistently,
-///   and the label survived verification while being inverted (a silent wrong, not a reject);
+/// - the four wall classes stop at a ring-orientation reject; the floor class does **not** — its
+///   four rim edges all carry a graze, so seated and graze are wrong *together*, consistently,
+///   and the label survives verification while being inverted (a silent wrong, not a reject);
 /// - the hand-derived sides on those classes, so a re-crossed frame fails here first.
 #[test]
 fn every_producer_states_its_side_in_the_label_frame() {
@@ -340,10 +339,10 @@ fn every_producer_states_its_side_in_the_label_frame() {
     //
     // The **box's top face** grazes it too, from `x > 0.7`: the pocket's opening makes that face
     // a notched region whose edge rides this plane with the material outside the pocket. That is
-    // a run whose flanks *differ*, which the engine used to read as a straddling transversal —
-    // this class is the corpus's only `Reversed` root, so it is also the only place the frame
-    // handling of `arrangement::run_body_above` is exercised against a crossed frame: the three
-    // `false` entries below are the pre-existing answers, unchanged by the new rule.
+    // a run whose flanks *differ*, which is not a straddling transversal — this class is the
+    // corpus's only `Reversed` root, so it is also the only place the frame handling of
+    // `arrangement::run_body_above` is exercised against a crossed frame: the three `false`
+    // entries below are its answers.
     let (m, pc, bx) = boxed
         .iter()
         .find_map(|(n, m, a, b)| (*n == "pocket_corner_cut").then_some((m, *a, *b)))

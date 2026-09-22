@@ -29,8 +29,8 @@ fn square(a: f64, b: f64) -> crate::Profile2d {
 }
 
 /// ★ **Witnesses are solved from the definition, not lifted from the cache.** A box stated at
-/// `0.3` has corners `f64` cannot hold; the old road handed the rounded cache to
-/// `WitnessPoint::exact` — a different point, claimed with tol 0. The definition road solves
+/// `0.3` has corners `f64` cannot hold; the rounded cache lifted back to a rational is a
+/// different point, claimed with tol 0. The definition road solves
 /// the corner from its three plane names and states the rounding it carries: nonzero here,
 /// exactly zero for an integer box.
 #[test]
@@ -65,9 +65,7 @@ fn witnesses_are_solved_from_the_definition_and_carry_their_rounding() {
     }
 }
 
-/// ★ **A boolean's result answers too.** Its vertices used to decline wholesale ("an implicit
-/// point has no rational base"); their definition has one. Measured on the census corpus:
-/// 23 more classes proved, and not one row moved.
+/// ★ **A boolean's result answers too**: its vertices' definition has a rational base.
 #[test]
 fn a_boolean_result_answers_from_its_definition() {
     let mut m = Model::new();
@@ -166,10 +164,9 @@ fn a_framed_prisms_corners_solve_for_reuse() {
         );
     }
 
-    // ③ The gate bites, in the consultation direction the ceiling used to close: a class
-    // owned by the world cuboid asks for the *prism's* points, so it can now leave
-    // `Arrange`. (The other direction — prism-owned classes consulting the cuboid — was
-    // always open, so it proves nothing here.)
+    // ③ The gate bites in the consultation direction that matters: a class owned by the world
+    // cuboid asks for the *prism's* points, so it can leave `Arrange`. (The other direction —
+    // prism-owned classes consulting the cuboid — proves nothing here.)
     let cub = m.add_cuboid(
         Point3::from_array([-2.0, -2.0, -2.0]),
         Point3::from_array([10.0, 10.0, 10.0]),

@@ -167,11 +167,11 @@ fn a_translated_bored_body_fuses() {
 
 /// ★★ **Two bored plates meeting face to face fuse.** The shared wall is interior, so the result
 /// keeps no face on it — and the corners that sat on it have to *dissolve*, which they can only do
-/// once each cell's bottom (and top) become **one** face. That merge used to be skipped outright
-/// whenever a member carried a circle hole, so the corners stayed corners, kept naming the dropped
-/// wall, and the assembly refused the whole boolean (`VertexNamesAbsentSurface` at the corner —
-/// measured). The merge now carries the circles through, and this pins the result the same way the
-/// pass's own charter should have: right volume, clean `validate`, watertight mesh.
+/// once each cell's bottom (and top) become **one** face. Skipping that merge whenever a member
+/// carries a circle hole leaves the corners corners, naming the dropped wall, and the assembly
+/// refuses the whole boolean (`VertexNamesAbsentSurface` at the corner — measured). The merge
+/// carries the circles through, and this pins the result: right volume, clean `validate`,
+/// watertight mesh.
 ///
 /// ★ **The merged face holds two circle holes** (one bore per cell), so the owner-assignment loop
 /// actually runs rather than falling out on a single candidate.
@@ -232,8 +232,8 @@ fn two_bored_plates_fuse_face_to_face() {
 /// ★★★ **A 2×2 grid: an array fused in x, then moved in y and fused again.** The second
 /// generation is what makes this hard — the first fuse leaves a body whose surfaces come from
 /// *two* provenances (the original cell, and the one that moved), so moving that result puts
-/// carriers with different chains on one corner. The exact-corner road used to want one shared
-/// frame and declined, and the population gate's face test then could not judge the face at all
+/// carriers with different chains on one corner. An exact-corner road that wants one shared frame
+/// declines here, and the population gate's face test then cannot judge the face at all
 /// (`CylinderGateUndecided`, measured on the user's script). Each carrier states the world, so
 /// the corner solves there.
 ///
@@ -450,11 +450,9 @@ fn a_boss_on_any_wall_weighs_the_same() {
         (nacre_props::mass_props(&m, out[0]).unwrap().volume, faces)
     };
     let mut fuse_faces: Vec<usize> = Vec::new();
-    // ★★ **All four walls, all three kinds.** `+y`'s cut and common used to answer `MissingSeam`
-    // and stood here as an exception: the cap's wrap arc had to be split at its rim's seam
-    // vertex, and that vertex existed only when a *band* happened to claim the same rim — which
-    // on this wall nothing does. Registering a rim from the arc that needs it (`wrapping_rim`)
-    // retired the exception; the two rows are exact against the same closed forms as the others.
+    // ★★ **All four walls, all three kinds.** On `+y` the cap's wrap arc is split at its rim's
+    // seam vertex and no *band* claims that rim; the rim is registered from the arc that needs
+    // it (`wrapping_rim`), so those rows are exact against the same closed forms as the others.
     for base in [
         [0.0, 2.0, -1.0], // -x wall
         [4.0, 2.0, -1.0], // +x
@@ -585,13 +583,11 @@ fn the_mesh_covers_the_faces_it_approximates() {
 
 /// ★★★ **A boss standing on a wall has ONE lateral face, not three.**
 ///
-/// The band pass used to emit a lateral surface in as many pieces as the arrangement cut it
-/// into: the band under the plate, the half-band beside it, the band above. The two circles
-/// between those pieces bound **nothing** — the surface runs smooth across them — so drawn they
-/// were a line ringing a boss that has none, which is what a user reported seeing. A cleaning
-/// pass erased them; now the emitter builds the lateral as one **region** of its chart
-/// and there is nothing to erase — what comes out is a band with one notch punched out of its
-/// side.
+/// Emitted in as many pieces as the arrangement cuts it into — the band under the plate, the
+/// half-band beside it, the band above — a lateral surface draws two circles between those pieces
+/// that bound **nothing** (the surface runs smooth across them): a line ringing a boss that has
+/// none. The emitter builds the lateral as one **region** of its chart, so what comes out is a
+/// band with one notch punched out of its side.
 ///
 /// The negative controls are the point of the test: a boss standing on the middle of the plate
 /// really *is* two lateral faces (the plate interrupts it), and a bore really is one. Both must
@@ -938,9 +934,9 @@ fn rot30() -> nacre_exact::Isometry {
 
 /// A non-90° rotation genuinely tilts the solid: rigid (volume/area invariant),
 /// validate/tess/STEP clean, a known corner lands at its exact rotated image, the
-/// faces record their motion (`solid_is_rotated`), and a boolean against it now
+/// faces record their motion (`solid_is_rotated`), and a boolean against it
 /// runs (a *mixed*-rotation cut: rotated `c2` minus an axis-aligned `d` it contains, so
-/// `d` becomes a cavity — overhaul 3d-i retired the `ROTATED_UNSUPPORTED` entry guard).
+/// `d` becomes a cavity).
 #[test]
 fn transform_rotate_cuboid_tilts_and_cuts() {
     let mut m = Model::new();
@@ -1149,8 +1145,8 @@ fn boundary_verts(m: &Model, s: Handle<Solid>) -> Vec<Handle<Vertex>> {
     vs
 }
 
-/// Whether any wall of `s` is a **rotated image** — what `planes::solid_is_rotated` used to
-/// ask of the vertices, now asked of the surfaces that actually record it.
+/// Whether any wall of `s` is a **rotated image** — asked of the surfaces that record it, not
+/// of the vertices.
 fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
     m.shell(m.solid(s).outer).faces.iter().any(|&fh| {
         matches!(
@@ -1167,8 +1163,8 @@ fn solid_is_rotated(m: &Model, s: Handle<Solid>) -> bool {
 }
 
 /// Chain: `(node_count, axes-root-to-leaf)` of the **fullest** face history of `s` — the
-/// walls', which go through every motion. It used to read `faces[0]`, but that is a cap,
-/// and a cap a rotation fixes is restated world-side now (no motion, or a shorter chain
+/// walls', which go through every motion. Not `faces[0]`: that is a cap, and a cap a
+/// rotation fixes is restated world-side (no motion, or a shorter chain
 /// begun by a later non-fixing motion) — the forest's story lives on the faces that
 /// genuinely moved. `None` when no face carries a rotation.
 ///
@@ -1210,10 +1206,8 @@ fn forest_probe(m: &Model, s: Handle<Solid>) -> Option<(usize, Vec<nacre_exact::
 /// A rotated solid's face coordinates are rounded, so its planes are truthful only through an
 /// exact *definition* (`FaceInfo::tri_pt3` built from a rotation history). A boolean's *result*
 /// is just as rotated as its operands — but the result carries no rotation provenance, so
-/// `collect_planes` described every one of its faces by a tol-0 witness of the rounded triangle
-/// (the since-retired `WitnessPoint::exact`) and the kernel started treating a rounded copy as
-/// the truth. That is what makes one wall
-/// become two plane classes on the next operation.
+/// describing its faces by a tol-0 witness of the rounded triangle treats a rounded copy as the
+/// truth, and one wall becomes two plane classes on the next operation.
 ///
 /// The invariant: **every face of a boolean between rotated operands is described by a
 /// rotation definition, not by its rounded coordinates.**
@@ -1493,7 +1487,7 @@ fn rerotate_same_axis_chains() {
             .contains("MANIFOLD_SOLID_BREP")
     );
     assert!(solid_is_rotated(&m, c2), "re-rotated solid stays Rotated");
-    // A boolean against the chain-rotated solid runs (guard retired, 3d-i): the axis-aligned
+    // A boolean against the chain-rotated solid runs: the axis-aligned
     // `d` inside the re-rotated `c2` is carved out, and the result is a valid solid.
     let d = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
     boolean_one(&mut m, BoolKind::Cut, c2, d).unwrap();

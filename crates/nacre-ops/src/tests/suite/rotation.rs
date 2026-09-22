@@ -11,7 +11,7 @@ use super::*;
 /// A cutter's convex corner landing exactly on the target's concave corner — three planes
 /// (x=1,y=1,z=1) meeting at one point (1,1,1), six faces there — makes a **non-manifold pinch**
 /// (two face-fans touching at the point). No valid 2-manifold solid exists, so `boolean` rejects
-/// with the clear `NON_MANIFOLD_VERTEX` reason (not the incidental `EULER_PARITY`), leaving the
+/// with the clear `NonManifoldVertex` reason (not the incidental `EulerParity`), leaving the
 /// live model untouched. **Rotation-independent**: both the axis-aligned and the rotated framings
 /// (exact and CIP-kernel paths) hit the same pinch and reject. R = a cube minus a far-corner
 /// octant; C = a cube whose +corner is that removed octant's inner corner. (Coplanar contact away
@@ -77,8 +77,8 @@ fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {
     assert_eq!(nacre_validate::validate(&m), Vec::new());
 }
 
-/// The kernel's validator catches the pinch too (it previously only exposed it indirectly as
-/// `EulerParity`). Bypass `boolean`'s reject via `arrangement::boolean` to obtain a malformed
+/// The kernel's validator catches the pinch too. Bypass `boolean`'s reject via
+/// `arrangement::boolean` to obtain a malformed
 /// solid, then confirm `validate` reports a `NonManifoldVertex`.
 ///
 /// ★ The shape has to be one that **cannot** part: two bodies touching at a corner now come
@@ -172,8 +172,8 @@ fn rotated_result_witness_predicates_are_invariant() {
     );
 }
 
-/// Rotating a boolean *result* and feeding it back into a boolean (was `ROTATED_UNSUPPORTED`):
-/// `collect_planes` now witnesses each rotated seam face's plane through provenance — its
+/// Rotating a boolean *result* and feeding it back into a boolean: `collect_planes`
+/// witnesses each rotated seam face's plane through provenance — its
 /// plane is `R(π)` for an operand plane `π`, recovered from the operand face still on `π` and
 /// rotated by the face's own chain. A boolean commutes with a rigid motion, so the rotated
 /// chain's result matches the unrotated chain's (volume, solid count) and stays valid.

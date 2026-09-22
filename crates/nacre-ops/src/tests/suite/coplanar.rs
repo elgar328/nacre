@@ -4,9 +4,8 @@ use super::*;
 
 #[test]
 fn fuse_a_boss_onto_a_non_convex_solid() {
-    // A contained boss on the top of an L-prism (non-convex kept `a`). The convexity gate
-    // used to decline this to the seam path, which rejected the seamless contact; the
-    // contained-coplanar Fuse now admits it. Volume 3 (L) + 0.4²·0.5 = 3.08.
+    // A contained boss on the top of an L-prism (non-convex kept `a`); the contained-coplanar
+    // Fuse admits it. Volume 3 (L) + 0.4²·0.5 = 3.08.
     let (mut m, l) = l_prism(); // L footprint area 3, height 1
     let boss = m.add_cuboid(
         Point3::from_array([0.3, 0.3, 1.0]),
@@ -29,8 +28,8 @@ fn fuse_a_boss_onto_a_non_convex_solid() {
 
 #[test]
 fn fuse_a_non_convex_profile_boss() {
-    // An L-shaped boss (non-convex cutter `b`) on a cube top. The gate used to decline the
-    // non-convex prism; the contained-coplanar Fuse now carries the L footprint as a hole.
+    // An L-shaped boss (non-convex cutter `b`) on a cube top; the contained-coplanar Fuse
+    // carries the L footprint as a hole.
     // Volume 1 (cube) + 0.12 (L area) · 0.4 = 1.048.
     let mut m = Model::new();
     let cube = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
@@ -399,8 +398,7 @@ fn unify_merges_a_coplanar_chain() {
     // straight-angle mid-edge vertices dissolve, leaving one 4-corner rectangle.
     //
     // Named the way the arrangement names things — every vertex is the meeting of three
-    // planes — because the straight-angle test reads those triples. (The old `Orig` fixture
-    // exercised a path the engine stopped producing when it went all-`Seam`.)
+    // planes — because the straight-angle test reads those triples.
     let mut m = Model::new();
     let p = vec![
         mk_axis_plane(&mut m, 2, 0.0, true),  // 0: z=0, the shared class
@@ -439,11 +437,8 @@ fn an_overhang_fuse_keeps_the_two_z1_caps_separate() {
     // fused into one face: their `flip` differs, so `unify`'s `(plane_idx, flip)` group key
     // keeps them apart.
     //
-    // This replaces two retired tests (`unify_keeps_opposite_normal_coplanar`,
-    // `unify_keeps_holed_faces`) that built pass-through faces (a retired second node variant) to
-    // exercise a passthrough the arrangement never triggers — every node it emits is a three-plane
-    // one. The real invariant is exercised here on
-    // the production path, in the default `cargo test` run: `overhang_fuse_then_cut_matches_occt`
+    // The invariant is exercised here on the production path, in the default `cargo test` run:
+    // `overhang_fuse_then_cut_matches_occt`
     // proves it against OCCT but is `#[ignore]`, so this hand-computed volume is the non-ignored
     // guard. A wrong merge collapses the topology — the volume shifts or `validate` speaks.
     let mut m = Model::new();
@@ -471,11 +466,7 @@ fn an_overhang_fuse_keeps_the_two_z1_caps_separate() {
 
 #[test]
 fn a_hole_filled_by_two_faces_still_merges() {
-    // Replaces `unify_skips_seam_shared_edges`, whose premise is gone twice over: the `Orig`
-    // gate it pinned was removed when the engine went all-`Seam`, and `splice_along`, whose
-    // panic it guarded against, no longer exists.
-    //
-    // What matters now is that the merge is not special-cased to "a hole filled by exactly one
+    // What matters is that the merge is not special-cased to "a hole filled by exactly one
     // neighbour". A [0,3]² face with a [1,2]² hole, and that hole filled by **two** pieces split
     // at x=1.5: every ring edge between them is carried in both directions, so erasing interior
     // boundary leaves only the outer square — one face, no hole, whatever the filling is cut

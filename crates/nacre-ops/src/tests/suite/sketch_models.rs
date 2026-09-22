@@ -115,7 +115,7 @@ fn brep_digest(m: &Model, s: Handle<Solid>) -> BrepDigest {
 
 /// ★★★★★ **The sugar claim, measured.** `cylinder()` is «a circle sketched, then extruded», so
 /// the extrude of a whole-circle profile must state the very solid the cylinder primitive states
-/// (`Model::add_cylinder_exact`, the test door the retired `Operation::Cylinder` stood on): the
+/// (`Model::add_cylinder_exact`, the test door): the
 /// same vertex coordinates (bits), the same two seam definitions, the same
 /// plane coefficients and cylinder definition, the same faces (kind, sense, loop shape), the same
 /// edges (carriers, curve, the circle closing on one vertex), the same volume bits and the same
@@ -332,9 +332,9 @@ fn identical_cylinders_are_one_surface_and_their_boolean_is_refused_by_name() {
 
 /// **A circle on a slanted wall's frame** — the measurement the plan asked for, locked at what it
 /// found. The prism alone is a valid solid: the arc wall's f64 cache is realized through the
-/// motion frame the way its vertices are, and the disk cap's winding check now realizes the
-/// plane's truth points the same way (before this it compared a frame triangle with a world
-/// normal and asserted — the first disk face ever to stand on a motion frame). Padding it onto the
+/// motion frame the way its vertices are, and the disk cap's winding check realizes the plane's
+/// truth points the same way (a frame triangle against a world normal would assert). Padding it
+/// onto the
 /// wall then declines by the name a tilted `cylinder()` primitive gets today: the cylinder gate
 /// cannot state a rotated cylinder against another body yet.
 #[test]
@@ -882,7 +882,7 @@ fn the_users_plate_slot_and_gusset_fold() {
 }
 
 /// ★ **The gate reads the arc, not the circle.** A lateral face's footprint has an
-/// angular extent, and the two clearance questions that used to see a whole circle read it: the
+/// angular extent, and the two clearance questions read it rather than a whole circle: the
 /// oblique plane's reach (a quarter-cylinder sector beside a gusset whose slanted plane runs
 /// within the radius but past the arc) and the parallel pair's cross-section (two half-cylinder
 /// prisms whose infinite surfaces cross while their arcs face away). Each has its negative
@@ -1029,9 +1029,9 @@ fn the_gate_reads_the_arc_not_the_circle() {
     );
 }
 
-/// ★ **The gate reads faces at every one of its four sites.** Three fixtures the old
-/// gate refused for a fact about *surfaces*, and one it still refuses for a fact about faces —
-/// then the three shapes the refusal had been hiding from the arrangement: a solid with two
+/// ★ **The gate reads faces at every one of its four sites.** Three fixtures a gate reading
+/// *surfaces* would refuse, and one the gate refuses for a fact about faces — then three shapes
+/// such a refusal hides from the arrangement: a solid with two
 /// coaxial cylinders sectioned by a wall (the annulus), a cap whose merged region is bounded by a
 /// circle (the stacked pin's cut), and a component with no vertex anywhere (the tube).
 #[test]
@@ -1329,13 +1329,13 @@ fn only_the_common_perpendicular_separates_a_fillet_from_a_crosswise_drill() {
 }
 
 /// ★ **A four-plane operand vertex has one name.** A gusset whose apex lands on the
-/// wall's top edge leaves the fused operand with a vertex where four faces meet. The ring road
-/// used to name an operand vertex once per face loop — its own plane and the two edges' walls —
-/// so that vertex reached the tracer under **four names**, one of them (the top face's: front,
-/// top, slant) three planes sharing a line that name no point; the judge read that «point» as
-/// lying on every class and the alias table folded everything onto the wall's far corner. Now
-/// the vertex names itself from the classes its topology knows (`canonical_triple`), every loop
-/// hands the tracer the same name, no name is dependent, and the alias fold of a full trace lands
+/// wall's top edge leaves the fused operand with a vertex where four faces meet. Named once per
+/// face loop — its own plane and the two edges' walls — that vertex would reach the tracer under
+/// **four names**, one of them (the top face's: front, top, slant) three planes sharing a line
+/// that name no point, which the judge reads as lying on every class, folding everything onto
+/// the wall's far corner. The vertex names itself from the classes its topology knows
+/// (`canonical_triple`), so every loop hands the tracer the same name, no name is dependent, and
+/// the alias fold of a full trace lands
 /// on the vertex. Locked through the audit (`operand_vertex_audit`), the instrument that counts
 /// the names.
 #[test]
@@ -1459,9 +1459,9 @@ fn a_four_plane_operand_vertex_has_one_name() {
 
 /// ★ **The four-plane operand vertex fuses, in either operand order.** The fused wall
 /// and gusset carry two vertices where four faces meet; fusing the second gusset onto that solid
-/// used to be refused by whichever symptom the build order met first (`FourPlane`,
-/// `DegenerateWitness`) while the same parts fused in another order built. Now both operand
-/// orders give one valid body of volume `35 + 2 · 7.5`, every result vertex has its own
+/// must not depend on the order (a symptom met first — `FourPlane`, `DegenerateWitness` — in one,
+/// a body in the other). Both operand orders give one valid body of volume `35 + 2 · 7.5`, every
+/// result vertex has its own
 /// coordinate (two names for one point would show here as two vertices at one place), and the
 /// apex keeps its four faces.
 #[test]
@@ -1673,8 +1673,8 @@ fn users_four_part_fold_in_either_order(gx: f64) {
 }
 
 /// ★ **The user's four-part fold builds in script order**, and the two fold orders
-/// agree to the bit. The gussets at `1.4` and `−2.4`: the order that used to refuse left a
-/// four-plane vertex for the fourth fuse; the census measured the two results' digests identical,
+/// agree to the bit. The gussets at `1.4` and `−2.4`: one order leaves a four-plane vertex for
+/// the fourth fuse; the census measured the two results' digests identical,
 /// and this locks that measurement.
 #[test]
 fn the_users_four_part_fold_builds_in_either_order() {

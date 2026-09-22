@@ -84,13 +84,13 @@ fn padding_one_footprint_twice_leaves_no_zero_area_face() {
 /// ★★★★★ **The target: two ways of reaching one height land on one plane, far from the
 /// origin.**
 ///
-/// The frame's origin is where the drift used to enter — `face_frame` took it from the face's
-/// area centroid, computed in f64 from the face's own vertices, and `construct.rs` lifted that as
-/// truth. Padding the same footprint `1.1` then `6.6` put the second profile an ulp from the
-/// first and left faces of area `2.2e-16`.
+/// The frame's origin is where drift would enter: an area centroid is computed in f64 from the
+/// face's own vertices, and `construct.rs` lifts the origin as truth — padding the same footprint
+/// `1.1` then `6.6` then puts the second profile an ulp from the first and leaves faces of area
+/// `2.2e-16`.
 ///
 /// Placed **far from the world origin**, because that is where the projected origin is least
-/// like the old centroid — if anything about the new rule were fragile with distance, a
+/// like a centroid — if anything about the projection were fragile with distance, a
 /// hundred units of it would show here.
 #[test]
 fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
@@ -187,8 +187,8 @@ fn two_routes_to_one_height_share_a_plane_far_from_the_origin() {
 
 /// ★★★ **One plane, one origin** — even when two faces of it were made by different operations.
 ///
-/// This is what the area centroid could not promise: it was a property of the *face*, so a
-/// boolean that reshaped one face moved its sketch origin away from its coplanar neighbour's.
+/// This is what an area centroid cannot promise: it is a property of the *face*, so a boolean
+/// that reshapes one face moves its sketch origin away from its coplanar neighbour's.
 /// The projection is a property of the plane, and surfaces are interned, so the two cannot
 /// disagree. Only the origin is asserted — the axes follow the face's `Orientation`, which is
 /// today's behaviour and a separate question.
@@ -354,7 +354,7 @@ fn the_zero_vector_has_no_frame_axes() {
     assert!(crate::ops::frame_axes(Vector3::zero()).is_none());
 }
 
-/// ★★★★★ **A boss on a tilted face, and another beside it — `pad` used to lose the second one.**
+/// ★★★★★ **A boss on a tilted face, and another beside it — `pad` must not lose the second one.**
 ///
 /// The prism's far cap and the first boss's cap are one plane, and the boolean says so: its
 /// classes are decided with evidence, and on a tilted face that evidence is a composed-rotation
@@ -645,11 +645,11 @@ fn a_pocket_in_a_slanted_wall_is_correct_today() {
 
 /// ★★★★★ **The payoff, and its limit — both measured.**
 ///
-/// Two bosses of the same height on one tilted face used to be two plane records that agreed
-/// only if their f64 coefficients happened to. Written in the plane's own frame they are both
+/// Two bosses of the same height on one tilted face are one plane, not two records that agree
+/// only if their f64 coefficients happen to. Written in the plane's own frame they are both
 /// `w = 7.7`, and `SurfaceKey` is `(coefficients, motion)` — so they are **one
 /// `Handle<Surface>` at construction**, before anything is compared. And every face of the
-/// result states itself exactly, where before a tilted sketch recorded nothing at all.
+/// result states itself exactly.
 ///
 /// ★★★ **What this does *not* buy, stated plainly**: `7.7` against `1.1 + 6.6` — the target
 /// the plan named. Stacking sketches the second boss on the **first boss's cap**, which is a
@@ -775,8 +775,8 @@ fn two_bosses_on_one_tilted_face_share_a_cap_plane_by_name() {
 /// old API stored only the axes and threw the normal away, so nothing exact survived the door.
 #[test]
 fn a_named_plane_records_what_its_caller_stated() {
-    // The canonical name is *derived* from the definition's points now; reading it back is
-    // how the old coefficient assertions keep their meaning.
+    // The canonical name is *derived* from the definition's points; reading it back is how
+    // coefficient assertions keep their meaning.
     let f = |d: &PlaneDef| {
         let p = d.points();
         nacre_exact::plane_name_exact(p[0], p[1], p[2])
@@ -838,9 +838,8 @@ fn a_named_plane_records_what_its_caller_stated() {
     let m = moved.def.unwrap();
     assert_eq!(f(&m), f(&d), "same plane");
     assert_eq!(m.origin().map(|r| r.to_f64()), [1.0, 5.0, 5.0]);
-    // ★★★★★ **The invariant that used to tie the two halves together — the origin is *on*
-    // the plane — is structural now: the origin IS `points[0]`, so there are no halves to
-    // disagree (the failure this guards against cost a boolean 0.04 of volume once). The
+    // ★★★★★ **The origin is *on* the plane by structure**: the origin IS `points[0]`, so there
+    // are no halves to disagree (disagreeing halves cost a boolean 0.04 of volume, measured). The
     // loop keeps the check as a derivation audit: substituting the origin into the *derived*
     // name must still give zero, or the derivation itself is wrong.
     for p in [
@@ -905,8 +904,8 @@ fn a_named_plane_records_what_its_caller_stated() {
 
 /// ★★★★★ **A prism raised on a named tilted plane states every one of its faces.**
 ///
-/// In world coordinates that plane's axes are irrational, so the whole prism used to drop to
-/// f64 and record nothing. Two things fixed it: the base cap **is** the plane the caller
+/// In world coordinates that plane's axes are irrational, so a prism built there would drop to
+/// f64 and record nothing. Two things keep it exact: the base cap **is** the plane the caller
 /// named, so it states itself in the world; and the walls and far cap are built **inside that
 /// plane's frame**, where the axes are `x̂`/`ŷ` and the profile's own decimals are the truth.
 ///
@@ -1187,7 +1186,7 @@ fn a_prism_the_exact_arithmetic_cannot_state_is_refused_by_name() {
         "fixture: no exact statement"
     );
     // A plane with no exact statement cannot even be stated as a datum, which is where the
-    // rejection now lands — one step earlier than it used to, and by the same name.
+    // rejection lands, by the same name.
     assert_eq!(
         apply(
             &mut Model::new(),

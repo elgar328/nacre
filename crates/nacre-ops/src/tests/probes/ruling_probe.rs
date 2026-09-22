@@ -1,4 +1,5 @@
-//! **What a holed lateral's ruling actually came out as** — the lock for [`ruling_grazes`].
+//! **What a holed lateral's ruling actually came out as** — the lock for
+//! `a_holed_laterals_ruling_grazes_where_the_hole_is`.
 //!
 //! ★ This cell's result lives *inside* an operation that still refuses further down, so there is no
 //! solid to open and count faces on. The trace's own answer is the thing to hold, the way

@@ -147,21 +147,19 @@ pub(crate) fn concurrency_audit(
                 // Only vertices the class would actually name: those lying on it (`side == 0`),
                 // which is exactly the run condition the trace's rule fires under.
                 //
-                // ★ The re-canonicalization that used to stand on both sides of this filter is
-                // gone: a ring's nodes are `NodeId`s, and the only constructor sorts.
-                // ★★ **The projection here was an `expect`, and it is gone with it.** A corner a
-                // cylinder made is *excluded* — the honest answer for a four-plane concurrency
-                // hunt — instead of panicking.
-                // ★★★★★ **And the exclusion is said, not left to an argument value.** It used to
-                // happen only because `side_of` was handed an empty cylinder table and so declined
-                // a pierce node; give that call a real table one day "for consistency" and the
-                // `expect` below turns into a panic. A concurrency is a fact about plane triples,
+                // ★ No re-canonicalization around this filter: a ring's nodes are `NodeId`s, and
+                // the only constructor sorts.
+                // ★★ **No `expect` on the projection.** A corner a cylinder made is *excluded* —
+                // the honest answer for a four-plane concurrency hunt — instead of panicking.
+                // ★★★★★ **And the exclusion is said, not left to an argument value.** Left to an
+                // empty cylinder table handed to `side_of` (which declines a pierce node without
+                // one), giving that call a real table "for consistency" would turn the `expect`
+                // below into a panic. A concurrency is a fact about plane triples,
                 // so scope is the reason and it belongs in the filter — after which `&[]` is
                 // provably never read, which is what the other two sites say by wrapping their own
                 // triple.
                 // ☑ Measured: it drops **0** nodes across the workspace suite — this audit's own
-                // corpus is plane-only, so the filter is a precondition made explicit, not a
-                // behaviour change.
+                // corpus is plane-only, so the filter is a precondition made explicit.
                 // ★ The call is one line because the source-text meta-test
                 // `no_production_code_walks_a_ring_past_the_shared_walk` allow-lists this site by
                 // its argument text, and it reads line by line.
