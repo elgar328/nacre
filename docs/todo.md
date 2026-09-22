@@ -268,6 +268,13 @@ kit 이 두 변종을 부르는 곳은 `build.rs` 한 자리다. 제거는 `Oper
 - 스케치의 임의 각도 호와 호–호 접합(`ArcSweepNotQuarterTurn`·`ArcsMeetAtVertex`).
 - 원통이 낀 입력에서는 클래스 reuse(닿을 수 없는 평면 건너뛰기)가 꺼진다 — 밴드 소속 판정의 재설계가 필요하다.
 
+### 다른 바이너리의 계측은 아직 「자랐나」만 묻는다
+
+`nacre-topo` 의 `WIDE_PLANES`·`SEEDED_HITS` 와 `nacre-judge` 의 `climb_census` 는 원자 카운터고, 읽는 테스트는
+`> before` 창으로 «움직였다»만 본다 — 같은 바이너리의 다른 테스트가 대신 채워 줄 수 있는 모양이다. nacre-ops 는
+행마다 주인을 싣는 `ledger::Ledger` 로 이 부류를 닫았다(`overview.md` 「프로세스 전역 상태를 읽는 테스트」). 두
+크레이트에 같은 것을 둘지는 그 계측을 다시 읽을 때 정한다.
+
 ### nesting 재시도가 기권이 아닌 실패를 삼킨다
 
 `nesting::ask` 는 `point_in_ring` 의 **모든** 오류를 «이 증인이 기권한다 — 다음 증인이 답한다»로 받는다.
