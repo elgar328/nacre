@@ -17,7 +17,7 @@
 //! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{Judge, NodeId, WorkingPlane, combinatorics};
-use std::sync::Mutex;
+use crate::ledger::Ledger;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Hit {
@@ -36,7 +36,7 @@ pub(crate) struct Hit {
     pub arc: bool,
 }
 
-pub(crate) static HITS: Mutex<Vec<Hit>> = Mutex::new(Vec::new());
+pub(crate) static HITS: Ledger<Hit> = Ledger::new();
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn record(
@@ -84,13 +84,11 @@ pub(crate) fn record(
     } else {
         0
     };
-    HITS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .push(Hit {
-            point: p,
-            off: [plane_off(w), plane_off(v), cyl_off],
-            side_f64,
-            side,
-            arc,
-        });
+    HITS.push(Hit {
+        point: p,
+        off: [plane_off(w), plane_off(v), cyl_off],
+        side_f64,
+        side,
+        arc,
+    });
 }

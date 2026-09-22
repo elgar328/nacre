@@ -834,10 +834,7 @@ fn a_tunnel_clear_of_a_bore_is_cut_and_one_through_it_is_refused() {
 /// [`mesh_covers_faces`].
 #[test]
 fn the_mesh_census_is_running() {
-    let seen = crate::assembly::tess_census::MESHED
-        .lock()
-        .expect("the census lock is never held across a panic")
-        .clone();
+    let seen = crate::assembly::tess_census::MESHED.all();
     assert!(!seen.is_empty(), "the census never ran");
     assert!(
         seen.iter().any(|r| r.is_ok()),
@@ -881,14 +878,8 @@ fn a_ruling_labels_the_cell_inside_the_cylinder() {
     let a = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
     boolean(&mut m, BoolKind::Fuse, plate, a).expect("the wall boss builds");
-    let lab = crate::arrangement::ruling_probe::LABELLED
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
-    let chk = crate::arrangement::ruling_probe::SIDE_CHECK
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
+    let lab = crate::arrangement::ruling_probe::LABELLED.all();
+    let chk = crate::arrangement::ruling_probe::SIDE_CHECK.all();
     assert!(
         !lab.is_empty(),
         "the probe never ran, so it measured nothing"
@@ -1312,10 +1303,7 @@ fn a_spliced_band_is_cut_across_its_notch() {
             "{v} vs {}",
             v0 - (4.0 + pi / 8.0)
         );
-        let hits = crate::arrangement::crossing_probe::HITS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .clone();
+        let hits = crate::arrangement::crossing_probe::HITS.all();
         // Two cap classes × the wall face's two halves, one ruling each.
         assert!(hits.len() >= 4, "the probe saw {} crossings", hits.len());
         for h in &hits {

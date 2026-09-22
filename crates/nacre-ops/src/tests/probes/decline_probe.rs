@@ -3,14 +3,14 @@
 //! many spans came out. What says the road ran on a panel or a chain, and what it said there.
 //! **Where an `OuterRing` decline was produced**. Three sites push that one kind and
 //! the census key stops at the kind, so a fixture could say *that* it was declined but not by
-//! which sentence. Test-only tally by producing site, keyed by thread name like `tie_probe` — a
-//! test reads its own rows and never a parallel test's.
+//! which sentence. Test-only tally by producing site: the rows carry their owner, so a test reads
+//! its own and never a parallel test's.
 //!
 //! ★ **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement`] mounts it with `#[path]` as `decline_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
-use std::sync::Mutex;
+use crate::ledger::Ledger;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Site {
@@ -22,23 +22,8 @@ pub(crate) enum Site {
     RimOrNone,
 }
 
-pub(crate) static ROWS: Mutex<Vec<(String, Site)>> = Mutex::new(Vec::new());
+pub(crate) static ROWS: Ledger<Site> = Ledger::new();
 
 pub(crate) fn mark(site: Site) {
-    let name = std::thread::current().name().unwrap_or("?").to_string();
-    ROWS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .push((name, site));
-}
-
-/// The sites produced on threads whose name contains `tag`, in order. The trace runs on
-/// rayon workers under `parallel`, so a test attributes rows by running its boolean in a pool
-/// named after itself; a sequential build's test thread carries the test's name already.
-pub(crate) fn named_like(tag: &str) -> Vec<Site> {
-    ROWS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .iter()
-        .filter(|(n, _)| n.contains(tag))
-        .map(|(_, s)| *s)
-        .collect()
+    ROWS.push(site);
 }

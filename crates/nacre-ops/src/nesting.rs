@@ -751,21 +751,17 @@ pub(crate) enum Route {
 ///    questions never pass here at all — sampled at **~1% of engine questions in the lib suite and
 ///    ~3% in census**, which is why this is a footnote rather than the headline.
 ///
-/// ⚠ **Two tests reading this cannot run concurrently.** `enable`/`take`/`disable` are global, so
-/// a second reader steals the first's rows and switches it off mid-collection.
-///
 /// The defect this instrument exists for is invisible for one reason: the corpus never put a
 /// **ring with no
 /// three-plane corner** against a **disk**, so the arm whose witness supply was truncated to that
 /// one kind never fired. A reject count could not have seen it. So the instrument measures the
 /// **population**: for each question, what the source cell had to offer and which road could answer.
 ///
-/// Off by default and switched on by the audit test — the road-agreement column runs *both* roads
-/// where both are available, which is work no ordinary test should pay for.
+/// Recorded only for work a test asked to own (`ledger::owned`) — the road-agreement column runs
+/// *both* roads where both are available, which is work no ordinary test should pay for.
 #[cfg(test)]
 pub(crate) mod nesting_probe {
-    use std::sync::atomic::{AtomicBool, Ordering};
-    use std::sync::{Mutex, OnceLock};
+    use crate::ledger::Ledger;
 
     /// One question, as it arrived.
     #[derive(Clone, Copy, Debug)]
@@ -797,59 +793,16 @@ pub(crate) mod nesting_probe {
         pub roads: Option<(bool, bool)>,
     }
 
-    static ENABLED: AtomicBool = AtomicBool::new(false);
+    /// One row per question, owned by the test whose work asked it.
+    pub(crate) static ROWS: Ledger<Row> = Ledger::new();
 
+    /// Whether to record here at all. A question is cheap; describing its **supply** is not, and
+    /// the suite asks tens of thousands of them, so only a test that came for these rows pays.
     pub(crate) fn on() -> bool {
-        ENABLED.load(Ordering::Relaxed)
-    }
-    fn enable() {
-        ENABLED.store(true, Ordering::Relaxed);
-    }
-    fn disable() {
-        ENABLED.store(false, Ordering::Relaxed);
+        crate::ledger::owned_thread()
     }
 
-    /// One reader at a time. The switch and the row list are process-global, and the test
-    /// harness runs tests on several threads: two readers that each enable, take and disable
-    /// switch each other off and take each other's rows. Holding a session serializes them;
-    /// it starts with the probe on and the list empty, and turns the probe off when dropped.
-    ///
-    /// Rows pushed meanwhile by *other* tests' booleans still land in the list, so a reader
-    /// may assert that a row exists, or that every row satisfies something true of every
-    /// question — never a count.
-    pub(crate) struct Session(#[allow(dead_code)] std::sync::MutexGuard<'static, ()>);
-
-    pub(crate) fn session() -> Session {
-        static READER: Mutex<()> = Mutex::new(());
-        // A reader that panicked (a failed assertion) poisons the lock; the next one still runs.
-        let guard = READER.lock().unwrap_or_else(|e| e.into_inner());
-        enable();
-        let _ = take();
-        Session(guard)
-    }
-
-    impl Drop for Session {
-        fn drop(&mut self) {
-            disable();
-        }
-    }
-
-    fn rows() -> &'static Mutex<Vec<Row>> {
-        static ROWS: OnceLock<Mutex<Vec<Row>>> = OnceLock::new();
-        ROWS.get_or_init(|| Mutex::new(Vec::new()))
-    }
     pub(crate) fn push(r: Row) {
-        rows()
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .push(r);
-    }
-    /// Take everything recorded so far, leaving the list empty.
-    pub(crate) fn take() -> Vec<Row> {
-        std::mem::take(
-            &mut *rows()
-                .lock()
-                .expect("the probe's lock is never held across a panic"),
-        )
+        ROWS.push(r);
     }
 }

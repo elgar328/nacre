@@ -14,7 +14,7 @@
 //! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{CylOnClass, combinatorics};
-use std::sync::Mutex;
+use crate::ledger::Ledger;
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Hit {
@@ -27,7 +27,7 @@ pub(crate) struct Hit {
     pub spans: usize,
 }
 
-pub(crate) static HITS: Mutex<Vec<Hit>> = Mutex::new(Vec::new());
+pub(crate) static HITS: Ledger<Hit> = Ledger::new();
 
 pub(crate) fn record(
     t: nacre_exact::Rat,
@@ -46,13 +46,11 @@ pub(crate) fn record(
             combinatorics::CycleKind::Hole => 3,
         }] += 1;
     }
-    HITS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .push(Hit {
-            t: t.to_f64(),
-            outer,
-            kinds,
-            carved,
-            spans,
-        });
+    HITS.push(Hit {
+        t: t.to_f64(),
+        outer,
+        kinds,
+        carved,
+        spans,
+    });
 }

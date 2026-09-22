@@ -146,9 +146,8 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
 /// need them, and the order rule does not.
 #[test]
 fn the_extent_rule_agrees_with_the_fences_it_replaced() {
-    use crate::arrangement::extent_probe::{ASKED, DISAGREED};
-    use core::sync::atomic::Ordering::Relaxed;
-    let before = (ASKED.load(Relaxed), DISAGREED.load(Relaxed));
+    use crate::arrangement::extent_probe::ASKS;
+    let before = ASKS.len();
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -158,18 +157,19 @@ fn the_extent_rule_agrees_with_the_fences_it_replaced() {
     let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
     boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
-    let after = (ASKED.load(Relaxed), DISAGREED.load(Relaxed));
+    let asks = ASKS.all();
     assert!(
-        after.0 > before.0,
-        "the probe never ran, so it measured nothing: asked {} -> {}",
-        before.0,
-        after.0
+        asks.len() > before,
+        "the probe never ran, so it measured nothing: asked {before} -> {}",
+        asks.len()
     );
+    let disagreed = asks.iter().filter(|d| **d).count();
     assert_eq!(
-        after.1, 0,
-        "the line-order rule and the plane fences disagreed on {} of the {} crossings this binary \
-         has examined",
-        after.1, after.0
+        disagreed,
+        0,
+        "the line-order rule and the plane fences disagreed on {disagreed} of the {} crossings \
+         this binary has examined",
+        asks.len()
     );
 }
 
@@ -189,10 +189,7 @@ fn the_extent_rule_agrees_with_the_fences_it_replaced() {
 /// between.** ☑ Flipping one comparison inside the probe turns this red.
 #[test]
 fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
-    use crate::arrangement::order_probe::{
-        EQUALITY_DISAGREED, REVERSED, SCRAMBLED, SEGMENTS, WC_ABOVE_WALL, WC_BELOW_WALL,
-    };
-    use core::sync::atomic::Ordering::Relaxed;
+    use crate::arrangement::order_probe::ROWS;
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -202,25 +199,22 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
     let boss = m.add_cylinder(Point3::from_array([2.0, 0.0, -1.0]), up, 0.5, 4.0);
     m.rebuild_adjacency();
     boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
-    assert!(
-        SEGMENTS.load(Relaxed) > 0,
-        "the probe never ran, so it measured nothing"
-    );
+    let rows = ROWS.all();
+    let compared = rows.iter().filter(|r| r.compared).count();
+    assert!(compared > 0, "the probe never ran, so it measured nothing");
+    let scrambled = rows.iter().filter(|r| r.scrambled).count();
     assert_eq!(
-        SCRAMBLED.load(Relaxed),
+        scrambled,
         0,
-        "{} of the {} segments this binary split came out neither in the ruler's order nor exactly \
-         reversed ({} were reversed)",
-        SCRAMBLED.load(Relaxed),
-        SEGMENTS.load(Relaxed),
-        REVERSED.load(Relaxed)
+        "{scrambled} of the {compared} segments this binary split came out neither in the ruler's \
+         order nor exactly reversed ({} were reversed)",
+        rows.iter().filter(|r| r.reversed).count()
     );
+    let equality_disagreed: usize = rows.iter().map(|r| r.equality_disagreed).sum();
     assert_eq!(
-        EQUALITY_DISAGREED.load(Relaxed),
-        0,
-        "the two roads disagreed {} times about whether two split points are the same place — the \
-         `CoincidentNodes` refusal is reachable from one and not the other",
-        EQUALITY_DISAGREED.load(Relaxed)
+        equality_disagreed, 0,
+        "the two roads disagreed {equality_disagreed} times about whether two split points are \
+         the same place — the `CoincidentNodes` refusal is reachable from one and not the other"
     );
     // ★★★ **Both plane orders are exercised, and the invariant above is why neither is "the right
     // one".** ☑ Measured over the whole binary: **36 of 256** segments have `wc > wall`, where the
@@ -232,7 +226,7 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
     // ★ That count is **recorded, not asserted**: these counters accumulate across the binary, and
     // this test cannot know what has run before it. Only the two "never" claims above are safe to
     // assert from here. The relation is read off `wc` and `wall`, which nothing in this cell moves.
-    let _ = (WC_ABOVE_WALL.load(Relaxed), WC_BELOW_WALL.load(Relaxed));
+    let _ = rows.iter().filter(|r| r.wc_above_wall).count();
 }
 
 /// ★★★★★ **A holed lateral's ruling comes out in three pieces, and the middle one grazes.**
@@ -267,8 +261,7 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     // transversal then a graze) are recorded too. Read this fixture's boss — origin `(2, 0, −1)`,
     // rulings spanning `t ∈ [0, 4]` — and nothing else.
     let carved: Vec<Vec<crate::arrangement::SegKind>> = crate::arrangement::ruling_probe::CARVED
-        .lock()
-        .expect("the probe's lock is never held across a panic")
+        .all()
         .iter()
         .filter(|c| c.origin == [2.0, 0.0, -1.0] && c.span == [0.0, 4.0])
         .map(|c| c.kinds.clone())
@@ -297,8 +290,7 @@ fn a_holed_laterals_ruling_grazes_where_the_hole_is() {
     // at `y < 0` — the stored-normal side exactly when that normal points at `−y`. ☑ Flipping any
     // factor of the derivation turns this red; nothing downstream does, yet.
     let sides: Vec<(bool, f64)> = crate::arrangement::ruling_probe::GRAZE_SIDE
-        .lock()
-        .expect("the probe's lock is never held across a panic")
+        .all()
         .iter()
         // ★ Only the **hole's** runs: the same boss's Cut result (the census's) puts a *panel* on
         // the same wall and span, and its face lies on the other side — measured (`body_above`
@@ -377,8 +369,7 @@ fn a_holes_arcs_run_the_way_the_hole_lies() {
     // it, and a panel's and a chain's arcs (which face any way) are carved too. Read
     // only this fixture's boss (`(2, 0, −1)`) and only its **hole** — the sentence is about holes.
     let mids: Vec<[f64; 3]> = crate::arrangement::arc_probe::MIDS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
+        .all()
         .iter()
         .filter(|m| m.kind == combinatorics::CycleKind::Hole && m.origin == [2.0, 0.0, -1.0])
         .map(|m| m.dir)

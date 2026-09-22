@@ -1074,12 +1074,9 @@ fn the_mixed_parity_agrees_with_the_digon_it_bounds() {
         assert!(abstained > 0, "abstentions: {abstained}");
         // What those abstentions were, by kind.
         {
-            let rows = combinatorics::tie_probe::ROWS
-                .lock()
-                .expect("the probe's lock is never held across a panic");
-            let me = std::thread::current().name().unwrap_or("?").to_string();
+            let rows = combinatorics::tie_probe::ROWS.mine();
             let mut hist: Vec<(combinatorics::tie_probe::Tie, usize)> = Vec::new();
-            for (_, t) in rows.iter().filter(|(n, _)| *n == me) {
+            for t in &rows {
                 match hist.iter_mut().find(|(k, _)| k == t) {
                     Some((_, c)) => *c += 1,
                     None => hist.push((*t, 1)),
@@ -1285,7 +1282,7 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                     .map(|c| &c.def)
                     .find(|d| *d.r2() == nacre_exact::BigRat::from(Rat::from_int(25)))
                     .expect("the cut circle");
-                let decided0 = combinatorics::tie_probe::arc_end_decisions_here();
+                let decided0 = combinatorics::tie_probe::arc_end_decisions_mine();
                 let (mut swept, mut abstained, mut inside_seen, mut boundary) = (0usize, 0, 0, 0);
                 let mut column = [0usize; 2];
                 let rat = |k: i128| Rat::new(k, 2).unwrap();
@@ -1345,7 +1342,7 @@ fn a_root_at_an_arc_end_is_a_corner_on_the_ray() {
                 // both rings — the shooting side through the end, the other side by a miss — and
                 // the end decided exactly once per point on the shooting side: 12 × 2 rings.
                 assert_eq!(column, [24, 24], "the single-end column is answered");
-                let decided = combinatorics::tie_probe::arc_end_decisions_here() - decided0;
+                let decided = combinatorics::tie_probe::arc_end_decisions_mine() - decided0;
                 eprintln!(
                     "arc-end sweep (seam_off {seam_off}): swept {swept} abstained {abstained} \
                  boundary {boundary} arc-end decisions {decided}"

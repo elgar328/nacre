@@ -27,12 +27,12 @@
 //! [`crate::assembly`] mounts it with `#[path]` as `tess_census`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
+use crate::ledger::Ledger;
 use nacre_tess::TessError;
 use nacre_topo::Model;
-use std::sync::Mutex;
 
 /// One entry per boolean that returned a solid: the triangle count, or why not.
-pub(crate) static MESHED: Mutex<Vec<Result<usize, TessError>>> = Mutex::new(Vec::new());
+pub(crate) static MESHED: Ledger<Result<usize, TessError>> = Ledger::new();
 
 pub(crate) fn record(model: &Model) {
     let r = nacre_tess::tessellate(model, &nacre_tess::TessConfig::default())
@@ -49,8 +49,5 @@ pub(crate) fn record(model: &Model) {
         r.is_ok(),
         "a boolean built a solid the mesher refuses: {r:?}"
     );
-    MESHED
-        .lock()
-        .expect("the census lock is never held across a panic")
-        .push(r);
+    MESHED.push(r);
 }

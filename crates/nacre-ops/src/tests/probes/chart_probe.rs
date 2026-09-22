@@ -2,7 +2,7 @@
 //! [`crate::arrangement::cyl_chart`] mounts it with `#[path]` as `probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
-use std::sync::Mutex;
+use crate::ledger::Ledger;
 
 /// One chart's shape, and how today's emitted lateral faces cover its cells.
 #[derive(Clone, Copy, Debug, Default)]
@@ -29,14 +29,14 @@ impl Row {
     }
 }
 
-pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+pub(crate) static ROWS: Ledger<Row> = Ledger::new();
 
 /// **The chart's vertical answers have their own ledger**, deliberately not more fields on
 /// [`Row`]. That one is already fourteen wide, and every field of it needs a reader or
 /// `dead_code` stops the build — which is how a table nobody can read grows contrived invariants
 /// to feed it. One instrument per question.
 pub(crate) mod rulings {
-    use std::sync::Mutex;
+    use crate::ledger::Ledger;
 
     /// One chart's vertical answers.
     #[derive(Clone, Copy, Debug, Default)]
@@ -62,19 +62,15 @@ pub(crate) mod rulings {
         pub(crate) grazing_rulings: usize,
     }
 
-    pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+    pub(crate) static ROWS: Ledger<Row> = Ledger::new();
 
     pub(crate) fn push(r: Row) {
-        ROWS.lock()
-            .expect("the probe's lock is never held across a panic")
-            .push(r);
+        ROWS.push(r);
     }
 }
 
 pub(crate) fn push(r: Row) {
-    ROWS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .push(r);
+    ROWS.push(r);
 }
 
 /// **The vertical answer beside the horizontal one** — the shadow the cutover is measured
@@ -126,7 +122,7 @@ pub(crate) mod shadow {
 /// ★ Compared **within a row** (`cells` is copied in), never row-by-row against another
 /// ledger: tests run in parallel and the ledgers interleave independently.
 pub(crate) mod cell_ends {
-    use std::sync::Mutex;
+    use crate::ledger::Ledger;
 
     #[derive(Clone, Debug, Default)]
     pub(crate) struct Row {
@@ -182,11 +178,9 @@ pub(crate) mod cell_ends {
         pub(crate) emitted_faces: usize,
     }
 
-    pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+    pub(crate) static ROWS: Ledger<Row> = Ledger::new();
 
     pub(crate) fn push(r: Row) {
-        ROWS.lock()
-            .expect("the probe's lock is never held across a panic")
-            .push(r);
+        ROWS.push(r);
     }
 }

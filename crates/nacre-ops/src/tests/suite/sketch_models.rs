@@ -684,8 +684,7 @@ fn a_sketched_bored_plate_meets_a_box() {
 /// `7·8 − 2·(1.5² − π·1.5²/4)` plus the box's 1.
 #[test]
 fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
-    use crate::arrangement::decline_probe::named_like;
-    const TAG: &str = "fillets_tangent_ruling";
+    use crate::arrangement::decline_probe::ROWS;
     let p2 = |x: f64, y: f64| nacre_math::Point2::from_array([x, y]);
     let edges = vec![
         line(p2(-2.0, -4.0), p2(2.0, -4.0)),
@@ -714,15 +713,8 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
         Point3::from_array([21.0, 21.0, 21.0]),
     );
     m.rebuild_adjacency();
-    #[cfg(feature = "parallel")]
-    let out = rayon::ThreadPoolBuilder::new()
-        .num_threads(2)
-        .thread_name(|i| format!("{TAG}-{i}"))
-        .build()
-        .expect("a probe pool")
-        .install(|| boolean(&mut m, BoolKind::Fuse, plate, far));
-    #[cfg(not(feature = "parallel"))]
-    let out = boolean(&mut m, BoolKind::Fuse, plate, far);
+    // Owned, so the declines this fixture would produce are this test's and not a neighbour's.
+    let out = crate::ledger::owned(|| boolean(&mut m, BoolKind::Fuse, plate, far));
     let out = out.expect("the filleted plate and the far box fuse");
     assert_eq!(out.len(), 2, "two bodies, apart");
     m.rebuild_adjacency();
@@ -738,9 +730,9 @@ fn a_filleted_plate_builds_and_the_decline_probe_reads_nothing() {
     let want = 56.0 - 2.0 * (2.25 - std::f64::consts::PI * 2.25 / 4.0) + 1.0;
     assert!((v - want).abs() < 1e-9, "plate + box: {v} vs {want}");
     assert!(
-        named_like(TAG).is_empty(),
+        ROWS.mine().is_empty(),
         "no decline was produced: {:?}",
-        named_like(TAG)
+        ROWS.mine()
     );
 }
 

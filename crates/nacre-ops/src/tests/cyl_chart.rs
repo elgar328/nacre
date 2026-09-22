@@ -35,10 +35,7 @@ use nacre_topo::Model;
 ///   ☑ Measured 0 over 65 panels, which is what makes the exact-order join sound.
 #[test]
 fn the_chart_census_is_running() {
-    let before = ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .len();
+    let before = ROWS.len();
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -52,10 +49,7 @@ fn the_chart_census_is_running() {
     );
     m.rebuild_adjacency();
     crate::boolean(&mut m, BoolKind::Cut, plate, drill).expect("a through bore");
-    let rows = ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
+    let rows = ROWS.all();
     assert!(
         rows.len() > before,
         "a boolean with a cylinder recorded no chart"
@@ -112,10 +106,7 @@ fn the_chart_census_is_running() {
 /// the **kind** (`Graze` = the face stops here), and that has 12.
 #[test]
 fn the_charts_vertical_answers_close() {
-    let before = super::probe::rulings::ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .len();
+    let before = super::probe::rulings::ROWS.len();
     let mut m = Model::new();
     let plate = m.add_cuboid(
         Point3::from_array([0.0; 3]),
@@ -129,10 +120,7 @@ fn the_charts_vertical_answers_close() {
     );
     m.rebuild_adjacency();
     crate::boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the wall boss builds");
-    let rows = super::probe::rulings::ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
+    let rows = super::probe::rulings::ROWS.all();
     assert!(
         rows.len() > before,
         "a boolean recorded no vertical answers"
@@ -191,12 +179,7 @@ fn the_charts_vertical_answers_close() {
 #[test]
 fn the_cells_read_their_chamber_from_the_horizontal_lines() {
     use super::probe::cell_ends::ROWS as CELL_ENDS;
-    let snapshot = || -> Vec<super::probe::cell_ends::Row> {
-        CELL_ENDS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .clone()
-    };
+    let snapshot = || -> Vec<super::probe::cell_ends::Row> { CELL_ENDS.all() };
     let sum = |rows: &[super::probe::cell_ends::Row],
                f: fn(&super::probe::cell_ends::Row) -> usize| {
         rows.iter().map(f).sum::<usize>()
@@ -402,10 +385,7 @@ fn the_chart_stands_on_a_tilted_axis() {
             4.0 - bore / 2.0,
         ),
     ] {
-        let before = ROWS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .len();
+        let before = ROWS.len();
         let mut m = Model::new();
         let plane = crate::SketchPlane::from_axes(
             Point3::from_array([0.0; 3]),
@@ -489,10 +469,7 @@ fn the_chart_stands_on_a_tilted_axis() {
             (got - want_vol).abs() < 1e-9,
             "{name}: volume {got} vs {want_vol}"
         );
-        let rows = ROWS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .clone();
+        let rows = ROWS.all();
         assert!(rows.len() > before, "{name}: no chart was recorded");
         // ★★★ Read as a **set difference**, not `last()` (the gate
         // runs this suite in parallel). ★ And it stays an

@@ -607,10 +607,7 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
             for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
                 // The mixed road's abstentions, attributed to this cell.
                 let tie0 = crate::combinatorics::tie_probe::len();
-                let dec0 = crate::assembly::probe::deciding::ROWS
-                    .lock()
-                    .expect("the probe's lock is never held across a panic")
-                    .len();
+                let dec0 = crate::assembly::probe::deciding::ROWS.len();
                 let (mut m, plate, boss) = boss_family(base, h);
                 let got = match boolean(&mut m, kind, plate, boss) {
                     Err(BoolError::Rejected { .. }) => First,
@@ -667,17 +664,14 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
                 if got == Rejected(NoClearRay) {
                     let hist = crate::combinatorics::tie_probe::since(tie0);
                     eprintln!("tie {name} {kind:?} x {tool_name}: {hist:?}");
-                    let dec = crate::assembly::probe::deciding::ROWS
-                        .lock()
-                        .expect("the probe's lock is never held across a panic");
-                    for r in dec[dec0..].iter().filter(|r| !r.3) {
+                    let dec = crate::assembly::probe::deciding::ROWS.mine_since(dec0);
+                    for r in dec.iter().filter(|r| !r.2) {
                         eprintln!(
                             "deciding {name} {kind:?} x {tool_name}: exhausted offered {} ties {:?}",
-                            r.2, r.4
+                            r.1, r.3
                         );
                     }
-                    let decided: Vec<usize> =
-                        dec[dec0..].iter().filter(|r| r.3).map(|r| r.1).collect();
+                    let decided: Vec<usize> = dec.iter().filter(|r| r.2).map(|r| r.0).collect();
                     eprintln!("deciding {name} {kind:?} x {tool_name}: decided tried {decided:?}");
                 }
                 match tally.iter_mut().find(|(c, _)| *c == got) {
@@ -775,10 +769,7 @@ fn a_cycle_is_carved_on_its_classes() {
         crate::arrangement::trace_every_class(&m, out[0], far).expect("the chain's classes trace");
     }
     use crate::arrangement::CylOnClass;
-    let hits = crate::arrangement::cycle_probe::HITS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
+    let hits = crate::arrangement::cycle_probe::HITS.all();
     // `kinds = [rims, chains, panels, holes]`; every recorded entry of the shape at the station
     // must read the same, and at least one must exist. A graze's `body_above` is written in the
     // class's stored frame, so the rim check asks only for the kind of answer.
@@ -830,8 +821,7 @@ fn a_chain_sweeps_its_rulings() {
     m.rebuild_adjacency();
     crate::arrangement::trace_every_class(&m, out[0], far).expect("the chain's classes trace");
     let rows: Vec<Vec<crate::arrangement::SegKind>> = crate::arrangement::ruling_probe::CARVED
-        .lock()
-        .expect("the probe's lock is never held across a panic")
+        .all()
         .iter()
         .filter(|c| c.origin == [2.0, 0.0, -1.0] && c.span == [0.0, 2.0])
         .map(|c| c.kinds.clone())
@@ -957,10 +947,7 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
     // `Reversed` root face: the **notch** a half boss leaves, whose ceiling class carries
     // `frame_sign = -1`. So it runs the boss corpus itself (each family's first op, then a slab
     // cut of the result) and reads the delta.
-    let before = crate::arrangement::disk_side_probe::ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .len();
+    let before = crate::arrangement::disk_side_probe::ROWS.len();
     for (_, base, h) in BOSS_FAMILIES {
         for kind in [BoolKind::Fuse, BoolKind::Cut] {
             let (mut m, plate, boss) = boss_family(base, h);
@@ -978,10 +965,7 @@ fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
             let _ = boolean(&mut m, BoolKind::Cut, out[0], t);
         }
     }
-    let all = crate::arrangement::disk_side_probe::ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
+    let all = crate::arrangement::disk_side_probe::ROWS.all();
     let rows = &all[before..];
     assert!(
         !rows.is_empty(),
@@ -1413,7 +1397,6 @@ fn a_rim_witness_is_the_statements_own_seam_point() {
 /// The audit is also the negative control: it must *see* that shape, or its zeros mean nothing.
 #[test]
 fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
-    let _session = nesting::nesting_probe::session();
     let mut m = Model::new();
     let plate = rounded_plate(&mut m, 4, 4);
     let far = m.add_cuboid(
@@ -1421,8 +1404,10 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
         Point3::from_array([210.0, 5.0, 5.0]),
     );
     m.rebuild_adjacency();
-    let out = boolean(&mut m, BoolKind::Fuse, plate, far);
-    let rows = nesting::nesting_probe::take();
+    // The probe records only work a test owns, and `mine` then reads this fixture's questions
+    // alone — no other test's boolean can put a row in this list.
+    let out = crate::ledger::owned(|| boolean(&mut m, BoolKind::Fuse, plate, far));
+    let rows = nesting::nesting_probe::ROWS.mine();
 
     // Two bodies: the plate and the far box, each untouched.
     let out = out.expect("the rounded plate enters a boolean");
@@ -1490,21 +1475,21 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
 /// which is the one thing that would make the unification wrong.
 #[test]
 fn the_two_roads_never_disagree() {
-    let _session = nesting::nesting_probe::session();
-    let mut rows = Vec::new();
-    for (fillets, bores) in [(3, 4), (4, 0), (3, 0)] {
-        for k in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
-            let mut m = Model::new();
-            let plate = rounded_plate(&mut m, fillets, bores);
-            let boss = m.add_cuboid(
-                Point3::from_array([10.0, -20.0, 12.0]),
-                Point3::from_array([25.0, 20.0, 62.0]),
-            );
-            m.rebuild_adjacency();
-            let _ = boolean(&mut m, k, plate, boss);
+    crate::ledger::owned(|| {
+        for (fillets, bores) in [(3, 4), (4, 0), (3, 0)] {
+            for k in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common] {
+                let mut m = Model::new();
+                let plate = rounded_plate(&mut m, fillets, bores);
+                let boss = m.add_cuboid(
+                    Point3::from_array([10.0, -20.0, 12.0]),
+                    Point3::from_array([25.0, 20.0, 62.0]),
+                );
+                m.rebuild_adjacency();
+                let _ = boolean(&mut m, k, plate, boss);
+            }
         }
-        rows.extend(nesting::nesting_probe::take());
-    }
+    });
+    let rows = nesting::nesting_probe::ROWS.mine();
     // ★ `route` first here too. A shared-node pair is «not comparable» — the engine
     // discards that question — so agreeing about it measures nothing the kernel acts on.
     let both: Vec<_> = rows

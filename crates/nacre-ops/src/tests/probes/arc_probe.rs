@@ -12,14 +12,14 @@
 //! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{Judge, NodeId, WorkingPlane, combinatorics};
-use std::sync::Mutex;
+use crate::ledger::Ledger;
 
 /// The direction, from the circle's centre, of the **midpoint of the stated counter-clockwise
 /// arc** — one entry per extent a cycle has carved out of a circle in this binary, whether the
 /// face grazes there (the cycle's own arc) or is absent (a hole's interior, a panel's outside).
 /// Beside it the cycle's kind and the cylinder's origin, so a reader can pick **its own**
 /// fixture's holes out of a ledger every test in the binary writes to.
-pub(crate) static MIDS: Mutex<Vec<Mid>> = Mutex::new(Vec::new());
+pub(crate) static MIDS: Ledger<Mid> = Ledger::new();
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Mid {
@@ -72,11 +72,9 @@ pub(crate) fn record(
         phi += core::f64::consts::TAU;
     }
     let (c, s) = ((phi / 2.0).cos(), (phi / 2.0).sin());
-    MIDS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .push(Mid {
-            dir: core::array::from_fn(|i| c * u[i] + s * w[i]),
-            kind,
-            origin: o,
-        });
+    MIDS.push(Mid {
+        dir: core::array::from_fn(|i| c * u[i] + s * w[i]),
+        kind,
+        origin: o,
+    });
 }

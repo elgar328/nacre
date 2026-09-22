@@ -69,14 +69,11 @@ pub(super) fn rulings_on_class(
         {
             let o = def.origin().map(|x| x.to_f64());
             let at = |n: NodeId| node_axis_param(jd, def, n).map_or(f64::NAN, |t| t.to_f64());
-            ruling_probe::CARVED
-                .lock()
-                .expect("the probe's lock is never held across a panic")
-                .push(ruling_probe::Carved {
-                    origin: o,
-                    span: [at(pieces[0].0[0]), at(pieces[pieces.len() - 1].0[1])],
-                    kinds: pieces.iter().map(|&(_, k)| k).collect(),
-                });
+            ruling_probe::CARVED.push(ruling_probe::Carved {
+                origin: o,
+                span: [at(pieces[0].0[0]), at(pieces[pieces.len() - 1].0[1])],
+                kinds: pieces.iter().map(|&(_, k)| k).collect(),
+            });
         }
         for (end, kind) in pieces {
             out.push(RulingTrace {
@@ -317,16 +314,13 @@ fn ruling_sweep(
                 ((tb, end), (ta, start))
             };
             #[cfg(test)]
-            ruling_probe::GRAZE_SIDE
-                .lock()
-                .expect("the probe's lock is never held across a panic")
-                .push(ruling_probe::GrazeSide {
-                    kind: *kind,
-                    body_above,
-                    ny: jd.planes[wc].plane.normal().as_array()[1],
-                    origin: def.origin().map(|x| x.to_f64()),
-                    span: [t_lo.to_f64(), t_hi.to_f64()],
-                });
+            ruling_probe::GRAZE_SIDE.push(ruling_probe::GrazeSide {
+                kind: *kind,
+                body_above,
+                ny: jd.planes[wc].plane.normal().as_array()[1],
+                origin: def.origin().map(|x| x.to_f64()),
+                span: [t_lo.to_f64(), t_hi.to_f64()],
+            });
             stations.push((t_lo, Event::GrazeStart { body_above }, n_lo));
             stations.push((t_hi, Event::GrazeEnd { toggle }, n_hi));
             run_nodes.push(start);

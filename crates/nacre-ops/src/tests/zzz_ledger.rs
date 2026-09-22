@@ -2,14 +2,8 @@
 #[test]
 #[ignore = "measurement — prints the probe ledger sums; run last, single-threaded"]
 fn measure_probe_ledgers() {
-    let chart = crate::arrangement::cyl_chart::probe::ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
-    let ends = crate::arrangement::cyl_chart::probe::cell_ends::ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
+    let chart = crate::arrangement::cyl_chart::probe::ROWS.all();
+    let ends = crate::arrangement::cyl_chart::probe::cell_ends::ROWS.all();
     let s1 = |f: fn(&crate::arrangement::cyl_chart::probe::Row) -> usize| {
         chart.iter().map(f).sum::<usize>()
     };
@@ -50,10 +44,7 @@ fn measure_probe_ledgers() {
         s(|r| r.arcs_multi_mark),
         s(|r| r.emitted_faces),
     );
-    let hits = crate::arrangement::crossing_probe::HITS
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .clone();
+    let hits = crate::arrangement::crossing_probe::HITS.all();
     eprintln!(
         "ledger crossing: ruling_crossings {} off_max {:e} side_disagree {}",
         hits.len(),
@@ -73,12 +64,9 @@ fn measure_probe_ledgers() {
     );
     {
         // The tie probe's rows.
-        let ties = crate::combinatorics::tie_probe::ROWS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .clone();
+        let ties = crate::combinatorics::tie_probe::ROWS.all();
         let mut hist: Vec<(crate::combinatorics::tie_probe::Tie, usize)> = Vec::new();
-        for (_, t) in &ties {
+        for t in &ties {
             match hist.iter_mut().find(|(k, _)| k == t) {
                 Some((_, c)) => *c += 1,
                 None => hist.push((*t, 1)),
@@ -88,12 +76,9 @@ fn measure_probe_ledgers() {
             "ledger tie: mixed abstentions {} by kind {hist:?}",
             ties.len()
         );
-        let dec = crate::assembly::probe::deciding::ROWS
-            .lock()
-            .expect("the probe's lock is never held across a panic")
-            .clone();
+        let dec = crate::assembly::probe::deciding::ROWS.all();
         let mut tried: Vec<(usize, usize)> = Vec::new();
-        for (_, t, ..) in dec.iter().filter(|r| r.3) {
+        for (t, ..) in dec.iter().filter(|r| r.2) {
             match tried.iter_mut().find(|(k, _)| *k == *t) {
                 Some((_, c)) => *c += 1,
                 None => tried.push((*t, 1)),
@@ -101,7 +86,7 @@ fn measure_probe_ledgers() {
         }
         tried.sort_unstable();
         let mut offered: Vec<(usize, usize)> = Vec::new();
-        for (_, _, o, ..) in &dec {
+        for (_, o, ..) in &dec {
             match offered.iter_mut().find(|(k, _)| *k == *o) {
                 Some((_, c)) => *c += 1,
                 None => offered.push((*o, 1)),
@@ -111,15 +96,37 @@ fn measure_probe_ledgers() {
         eprintln!(
             "ledger deciding: calls {} exhausted {} probes_tried histogram {tried:?} \
                  offered histogram {offered:?}",
-            dec.iter().filter(|r| r.3).count(),
-            dec.iter().filter(|r| !r.3).count()
+            dec.iter().filter(|r| r.2).count(),
+            dec.iter().filter(|r| !r.2).count()
         );
-        for r in dec.iter().filter(|r| !r.3) {
+        for (who, r) in crate::assembly::probe::deciding::ROWS
+            .all_owned()
+            .iter()
+            .filter(|(_, r)| !r.2)
+        {
             eprintln!(
-                "ledger deciding exhausted: {} offered {} ties {:?}",
-                r.0, r.2, r.4
+                "ledger deciding exhausted: {who} offered {} ties {:?}",
+                r.1, r.3
             );
         }
+        let order = crate::arrangement::order_probe::ROWS.all();
+        eprintln!(
+            "ledger order: calls {} compared {} reversed {} scrambled {} wc_above_wall {} \
+             ties both {} equality disagreed {}",
+            order.len(),
+            order.iter().filter(|r| r.compared).count(),
+            order.iter().filter(|r| r.reversed).count(),
+            order.iter().filter(|r| r.scrambled).count(),
+            order.iter().filter(|r| r.wc_above_wall).count(),
+            order.iter().map(|r| r.eq_both).sum::<usize>(),
+            order.iter().map(|r| r.equality_disagreed).sum::<usize>(),
+        );
+        let asks = crate::arrangement::extent_probe::ASKS.all();
+        eprintln!(
+            "ledger extent: asked {} disagreed {}",
+            asks.len(),
+            asks.iter().filter(|d| **d).count(),
+        );
         eprintln!(
             "ledger swallowed: the nesting retry swallowed non-abstention errors {}",
             *crate::combinatorics::swallowed_probe::COUNT

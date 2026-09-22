@@ -109,19 +109,13 @@ pub(super) fn per_class(
                                 ruling_probe::WRONG_SIDE,
                                 r.side
                             );
-                            ruling_probe::SIDE_CHECK
-                                .lock()
-                                .expect("the probe's lock is never held across a panic")
-                                .push(verdict);
+                            ruling_probe::SIDE_CHECK.push(verdict);
                         }
                     }
                     // A tangent piece (`side == 0`) carries no label by design; the
                     // ledger's proposition is about the rulings a chamber lies behind.
                     if r.side != 0 {
-                        ruling_probe::LABELLED
-                            .lock()
-                            .expect("the probe's lock is never held across a panic")
-                            .push(out.is_some());
+                        ruling_probe::LABELLED.push(out.is_some());
                     }
                 }
                 out

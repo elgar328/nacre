@@ -10,8 +10,8 @@
 //! [`crate::combinatorics`] mounts it with `#[path]` as `tie_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
+use crate::ledger::Ledger;
 use std::cell::Cell;
-use std::sync::Mutex;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum Tie {
@@ -35,28 +35,18 @@ pub(crate) enum Tie {
     Producer,
 }
 
-pub(crate) static ROWS: Mutex<Vec<(String, Tie)>> = Mutex::new(Vec::new());
+pub(crate) static ROWS: Ledger<Tie> = Ledger::new();
 
-/// One entry per arc-end departure the arc arm *decided*, by thread — so a test counts
-/// its own without seeing a parallel test's.
-pub(crate) static ARC_END: Mutex<Vec<String>> = Mutex::new(Vec::new());
+/// One entry per arc-end departure the arc arm *decided*.
+pub(crate) static ARC_END: Ledger<()> = Ledger::new();
 
 pub(crate) fn arc_end_decided() {
-    ARC_END
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .push(std::thread::current().name().unwrap_or("?").to_string());
+    ARC_END.push(());
 }
 
-/// This thread's arc-end decisions so far.
-pub(crate) fn arc_end_decisions_here() -> usize {
-    let me = std::thread::current().name().unwrap_or("?").to_string();
-    ARC_END
-        .lock()
-        .expect("the probe's lock is never held across a panic")
-        .iter()
-        .filter(|n| **n == me)
-        .count()
+/// This test's arc-end decisions so far.
+pub(crate) fn arc_end_decisions_mine() -> usize {
+    ARC_END.mine_len()
 }
 
 thread_local! {
@@ -80,18 +70,14 @@ pub(crate) fn flush_or(or: Tie) {
 
 /// A row recorded at once — the lateral road has no wrapper to flush `LAST`.
 pub(crate) fn push(t: Tie) {
-    ROWS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .push((std::thread::current().name().unwrap_or("?").to_string(), t));
+    ROWS.push(t);
 }
 
-/// The rows recorded since `from` (a snapshot of `ROWS.len()`), as a histogram by kind.
+/// **This test's** rows recorded since `from` (a snapshot of [`len`]), as a histogram by kind —
+/// a window alone would carry whatever a parallel test recorded in the same stretch.
 pub(crate) fn since(from: usize) -> Vec<(Tie, usize)> {
-    let rows = ROWS
-        .lock()
-        .expect("the probe's lock is never held across a panic");
     let mut hist: Vec<(Tie, usize)> = Vec::new();
-    for (_, t) in rows.iter().skip(from) {
+    for t in &ROWS.mine_since(from) {
         match hist.iter_mut().find(|(k, _)| k == t) {
             Some((_, c)) => *c += 1,
             None => hist.push((*t, 1)),
@@ -101,14 +87,10 @@ pub(crate) fn since(from: usize) -> Vec<(Tie, usize)> {
 }
 
 pub(crate) fn len() -> usize {
-    ROWS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .len()
+    ROWS.len()
 }
 
 pub(crate) fn abstained() {
     let t = LAST.with(|c| c.take()).unwrap_or(Tie::Other);
-    ROWS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .push((std::thread::current().name().unwrap_or("?").to_string(), t));
+    ROWS.push(t);
 }

@@ -100,6 +100,12 @@ pub mod tests;
 /// `cargo test -p nacre-ops --lib -- --include-ignored --test-threads=1 --nocapture zzz_ledger`
 /// is *not* it (a filter runs only this); the whole-suite run is
 /// `cargo test -p nacre-ops --lib -- --include-ignored --test-threads=1 --nocapture --skip stress --skip spike --skip direction_families`.
+/// Probe rows carry **whose work made them**, so a reader can count its own — the type and the
+/// `owned` wrapper both live here.
+#[cfg(test)]
+#[path = "tests/probes/ledger.rs"]
+pub(crate) mod ledger;
+
 #[cfg(test)]
 #[path = "tests/zzz_ledger.rs"]
 mod zzz_ledger;

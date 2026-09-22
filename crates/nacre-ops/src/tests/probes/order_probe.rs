@@ -24,23 +24,29 @@
 //! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{Judge, MergedSeg, NodeId, WorkingPlane, along, cmp_along, combinatorics};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use crate::ledger::Ledger;
 
-/// Segments where the ruler could be laid and every point compared.
-pub(crate) static SEGMENTS: AtomicUsize = AtomicUsize::new(0);
-/// …of which the rule read the ruler's order **exactly backwards** — benign, and the common case.
-pub(crate) static REVERSED: AtomicUsize = AtomicUsize::new(0);
-/// …of which the rule agreed with the ruler on some pairs and not others. **This is the defect.**
-pub(crate) static SCRAMBLED: AtomicUsize = AtomicUsize::new(0);
-/// Comparisons both roads called a tie — no direction in them, so they are counted apart.
-pub(crate) static EQ_BOTH: AtomicUsize = AtomicUsize::new(0);
-/// Comparisons where one road called two points **the same place** and the other did not — a
-/// claim about coincidence, not about sequence, so it is kept out of the two counts above.
-pub(crate) static EQUALITY_DISAGREED: AtomicUsize = AtomicUsize::new(0);
-/// Segments reached with `wc < wall`, and with `wc > wall` — the relation that decides whether
-/// the corpus can distinguish the sorted pair from the call-order one at all.
-pub(crate) static WC_BELOW_WALL: AtomicUsize = AtomicUsize::new(0);
-pub(crate) static WC_ABOVE_WALL: AtomicUsize = AtomicUsize::new(0);
+/// One row per segment the rule ordered, owned by the test whose work ordered it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Row {
+    /// Reached with `wc > wall` — where the sorted pair and the call-order pair are opposite
+    /// calls. The relation that decides whether the corpus can tell the two apart at all.
+    pub(crate) wc_above_wall: bool,
+    /// The ruler could be laid and **every** pair compared. The verdicts below describe a
+    /// segment only when this holds; the counts still carry what was read before it stopped.
+    pub(crate) compared: bool,
+    /// The rule read the ruler's order **exactly backwards** — benign, and the common case.
+    pub(crate) reversed: bool,
+    /// The rule agreed with the ruler on some pairs and not others. **This is the defect.**
+    pub(crate) scrambled: bool,
+    /// Comparisons both roads called a tie — no direction in them, so they are counted apart.
+    pub(crate) eq_both: usize,
+    /// Comparisons where one road called two points **the same place** and the other did not — a
+    /// claim about coincidence, not about sequence, so it is kept out of the verdicts above.
+    pub(crate) equality_disagreed: usize,
+}
+
+pub(crate) static ROWS: Ledger<Row> = Ledger::new();
 
 /// The old key: a crossing's parameter on the canonical meet line, an endpoint's `along` on the
 /// same line. `None` where the ruler could not be laid — which is the very shape this cell is
@@ -81,11 +87,27 @@ pub(crate) fn against_the_ruler(
     keyed: &[(combinatorics::PointOn, NodeId, combinatorics::EndPin)],
     pair: [usize; 2],
 ) {
-    if wc < sg.wall {
-        WC_BELOW_WALL.fetch_add(1, Ordering::Relaxed);
-    } else {
-        WC_ABOVE_WALL.fetch_add(1, Ordering::Relaxed);
-    }
+    let mut row = Row {
+        wc_above_wall: wc >= sg.wall,
+        compared: false,
+        reversed: false,
+        scrambled: false,
+        eq_both: 0,
+        equality_disagreed: 0,
+    };
+    // One row per call, whatever it reaches — a segment the ruler could not be laid on says so
+    // with `compared: false` rather than by being absent.
+    compare(jd, cyls, keyed, pair, &mut row);
+    ROWS.push(row);
+}
+
+fn compare(
+    jd: &Judge<'_, WorkingPlane>,
+    cyls: &[crate::planes::WorkingCyl],
+    keyed: &[(combinatorics::PointOn, NodeId, combinatorics::EndPin)],
+    pair: [usize; 2],
+    row: &mut Row,
+) {
     let Some(keys) = ruler_keys(jd, cyls, keyed) else {
         return;
     };
@@ -119,9 +141,9 @@ pub(crate) fn against_the_ruler(
                 // *coincidence*, and it carries no direction, so counting it as "same order"
                 // makes a wholly reversed segment look scrambled. (It did: one segment in the
                 // suite, and this is what it was.)
-                EQ_BOTH.fetch_add(1, Ordering::Relaxed);
+                row.eq_both += 1;
             } else if (want == Equal) != (got == Equal) {
-                EQUALITY_DISAGREED.fetch_add(1, Ordering::Relaxed);
+                row.equality_disagreed += 1;
             } else if got == want {
                 same += 1;
             } else {
@@ -129,14 +151,10 @@ pub(crate) fn against_the_ruler(
             }
         }
     }
-    SEGMENTS.fetch_add(1, Ordering::Relaxed);
+    row.compared = true;
     match (same, opposite) {
-        (0, n) if n > 0 => {
-            REVERSED.fetch_add(1, Ordering::Relaxed);
-        }
+        (0, n) if n > 0 => row.reversed = true,
         (_, 0) => {}
-        _ => {
-            SCRAMBLED.fetch_add(1, Ordering::Relaxed);
-        }
+        _ => row.scrambled = true,
     }
 }

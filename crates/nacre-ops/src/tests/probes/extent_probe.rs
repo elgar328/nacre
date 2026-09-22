@@ -15,10 +15,12 @@
 //! here meaning that module — moving this file did not move what it belongs to.
 
 use super::{Judge, MergedSeg, WorkingPlane, combinatorics};
-use core::sync::atomic::{AtomicUsize, Ordering};
+use crate::ledger::Ledger;
 
-pub(crate) static ASKED: AtomicUsize = AtomicUsize::new(0);
-pub(crate) static DISAGREED: AtomicUsize = AtomicUsize::new(0);
+/// One row per crossing both roads answered: whether they **disagreed** about it. Owned by the
+/// test whose work asked, so a reader can say its own fixture reached the rule, while the
+/// disagreement claim is read over the whole binary.
+pub(crate) static ASKS: Ledger<bool> = Ledger::new();
 
 fn by_fences(
     jd: &Judge<'_, WorkingPlane>,
@@ -70,9 +72,6 @@ pub(super) fn against_the_fences(
         combinatorics::closed_contains(jd, wc, sg.wall, at, seg_ends),
     );
     if let (Some(a), Some(b)) = (a, b) {
-        ASKED.fetch_add(1, Ordering::Relaxed);
-        if a != b {
-            DISAGREED.fetch_add(1, Ordering::Relaxed);
-        }
+        ASKS.push(a != b);
     }
 }

@@ -2,7 +2,7 @@
 //! [`crate::arrangement`] mounts it with `#[path]` as `disk_side_probe`, which is what keeps `super::`
 //! here meaning that module — moving this file did not move what it belongs to.
 
-use std::sync::Mutex;
+use crate::ledger::Ledger;
 
 /// The sentence the disk-side check panics with — one spelling, shared with the commuting
 /// oracle's `KNOWN` list.
@@ -19,7 +19,7 @@ pub(crate) struct Row {
     pub(crate) frame_negative: bool,
 }
 
-pub(crate) static ROWS: Mutex<Vec<Row>> = Mutex::new(Vec::new());
+pub(crate) static ROWS: Ledger<Row> = Ledger::new();
 
 /// Assert the premises **and** the rule, and record the row. Each side arrives as its
 /// **first** corner that names a side (`None` = no corner spoke, or the cell was not found).
@@ -56,11 +56,9 @@ pub(crate) fn record(even: Option<bool>, odd: Option<bool>, rule_says_even: bool
             "the disk-side rule and the cell's own corners disagree (frame_sign {frame_sign}, even {a:?}, odd {b:?})"
         );
     }
-    ROWS.lock()
-        .expect("the probe's lock is never held across a panic")
-        .push(Row {
-            checked: witness.is_some(),
-            both_spoke: a.is_some() && b.is_some(),
-            frame_negative: frame_sign < 0,
-        });
+    ROWS.push(Row {
+        checked: witness.is_some(),
+        both_spoke: a.is_some() && b.is_some(),
+        frame_negative: frame_sign < 0,
+    });
 }
