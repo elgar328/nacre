@@ -29,7 +29,7 @@ pub(crate) enum SegKind {
     /// segment flips **one** label — `body_above`, the side it fills, from [`run_body_above`].
     ///
     /// Not "the face merely touches `W`": a face may pass clean through `W` elsewhere and still fill
-    /// one arc over *this* stretch, which is what the name `Graze` originally missed. Kept distinct
+    /// one arc over *this* stretch. Kept distinct
     /// from `Seated` so `edge_mask` can let it override a coincident seated rim at a reflex
     /// dihedral, where the two disagree on which side flips.
     Graze { body_above: bool },
@@ -62,12 +62,10 @@ pub(crate) struct Seg {
 /// faces and circular holes lying in the class; transversal circles from a lateral surface
 /// crossing it, and circles join the arrangement only at the cell stage.
 ///
-/// ★★ **That it is *full* is checked, not inherited.** The population gate's wall rule used to
-/// keep this as a side effect — every ∥ wall face stands clear of the lateral, and a segment on
-/// this class is that face's own trace, so it inherited the clearance — which made a promise about
-/// *circles* rest on a rule about *walls*. [`split_circles`] asks it of the segments
-/// themselves now, so a crossed circle is **split into arcs** rather than treated as the
-/// closed cell it is not, and the wall rule is free to become precise about its own question.
+/// ★★ **That it is *full* is checked, not inherited.** [`split_circles`] asks it of the segments
+/// themselves, so a crossed circle is **split into arcs** rather than treated as the closed cell
+/// it is not. Inheriting it from the population gate's wall rule would make a promise about
+/// *circles* rest on a rule about *walls*.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct CircleTrace {
     /// The cylinder class ([`ClassIx::Cyl`] payload) whose circle this is.
@@ -122,7 +120,7 @@ impl MergedCircle {
 /// ★★ **A circle leaves the parallel road here.** An uncut circle is a one-edge closed cell that
 /// the orbit walk cannot express (orbits need ≥ 2 half-edges and a vertex to turn at), which is why
 /// [`walk_cells`] appends it *after* the walk on pseudo-half-edges. Cut, it has endpoints and is
-/// an ordinary edge — so the machinery it used to stand beside is the machinery it now uses.
+/// an ordinary edge of the walk.
 ///
 /// ★ `end` is in the arc's **own travel order**, `end[0]` → `end[1]` counter-clockwise about the
 /// circle's normal. That is not a convention this crate invents: STEP's `EDGE_CURVE` runs from
@@ -133,13 +131,11 @@ pub(crate) struct MergedArc {
     pub cyl: usize,
     pub def: nacre_topo::CylinderDef,
     pub end: [NodeId; 2],
-    /// The contributions that **cover this arc** — no longer the circle's list entire.
+    /// The contributions that **cover this arc** — not the circle's list entire.
     ///
-    /// ★★ It used to read "inherited whole from the circle: an arc is a piece of the same trace,
-    /// so it carries the same contributions". That was true while a lateral face could only mark a
-    /// class over its whole circle, and a face with a **hole** makes it false: over the hole the
-    /// face is not there at all, and along the hole's rim it grazes where the band around it
-    /// crosses. [`split_circles`] selects per arc; `edge_mask` still reads the result unchanged.
+    /// ★★ Not inherited whole from the circle: a face with a **hole** is not there at all over
+    /// the hole, and along the hole's rim it grazes where the band around it crosses.
+    /// [`split_circles`] selects per arc; `edge_mask` reads the result unchanged.
     ///
     /// ★ Read by `label_cells`' `mask_of`: crossing an arc flips the same bits crossing its circle
     /// would, which is what "a piece of the same trace" means. (It was carried before that consumer
@@ -214,7 +210,7 @@ pub(super) fn merge_circles(
 /// `end[0]` → `end[1]` ascends the axis, and both are Pierce names (`{wc, ⊥ plane, cyl, root}` —
 /// real classes, found by the tracer).
 ///
-/// ★★ **It used to say "spanning the face's own rims", and a hole makes that false.** Where the
+/// ★★ **Not "spanning the face's own rims" — a hole makes that false.** Where the
 /// face is buried in the other body it does not *cross* the wall its hole's vertical edges lie on
 /// — it ends at it — so one ruling comes in pieces of different [`SegKind`]s and each is its own
 /// trace. See [`ruling_sweep`]. A face with no hole still yields exactly one piece per ruling,
@@ -249,7 +245,7 @@ pub(crate) struct RulingTrace {
 /// whatever order the tracer emitted them in.
 ///
 /// ☑ Measured over the suite: **no `(cyl, side)` group carries more than one trace today**, so the
-/// fold below never actually fires and this key change moves nothing. Both facts are written for
+/// fold below never actually fires. Both facts are written for
 /// the population that has not arrived yet — a cylinder belongs to one operand, so two statements
 /// of one ruling need a shape nothing builds so far.
 pub(super) fn merge_rulings(

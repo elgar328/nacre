@@ -203,8 +203,7 @@ pub(crate) struct Curved {
 
 /// **The seam table — every node the result faces reference, realized to a coordinate and a
 /// measured tolerance.** The weld table `assemble_fuse_cut` reads; built directly from the
-/// emitted rings (no `build_seam`: that is raw-index and pierce-only), rejecting rather than
-/// panicking on a degenerate meet.
+/// emitted rings, rejecting rather than panicking on a degenerate meet.
 ///
 /// ★ A named function rather than a block for the same reason `per_class` is one: the arc fence
 /// calls it on the very faces production feeds it. The deferred stopper intercepts the whole
@@ -344,7 +343,7 @@ pub(super) fn trace_result_faces(
     // names and rejected as a `SeamAlias`, for a reason that is really "we asked too early".
     //
     // `split_at_crossings`' output does not depend on the table (it only writes to it), so pass A
-    // is a pure prefix of the old work rather than extra work — except that a *new* alias found
+    // is a prefix of the work rather than extra work — except that a *new* alias found
     // during a split leaves the merge that ran before it stale, so pass A repeats until the table
     // stops growing. Discoveries only accumulate and are bounded, so this terminates; a model with
     // no concurrency at all makes exactly one round.
@@ -376,13 +375,12 @@ pub(super) fn trace_result_faces(
     loop {
         let before = aliases.len();
         // **Every class in the round sees the table as it stood when the round began**, and
-        // its own discoveries on top — where the sequential loop also showed it whatever the
-        // lower-numbered classes had found meanwhile. The fixed point is the same, and for
+        // its own discoveries on top — not whatever lower-numbered classes found meanwhile, as
+        // a sequential loop would show it. The fixed point is the same, and for
         // two reasons that are both properties of `Aliases` rather than of the schedule:
         // a merged class's representative is its **minimum** element, so the final partition
         // does not depend on the order the unions happened in; and discoveries only
-        // accumulate, so a round that learns something later than it used to just costs one
-        // more round. The last round — the one whose splits are kept — runs on a table that
+        // accumulate, so learning something a round later just costs one more round. The last round — the one whose splits are kept — runs on a table that
         // has stopped growing either way.
         let snapshot = aliases.clone();
         // Class-major, so the reject a decline raises is still the lowest-numbered class's.
@@ -390,14 +388,12 @@ pub(super) fn trace_result_faces(
             let wc = work[k];
             // **Pass A runs for every class, including the ones pass B will not arrange.**
             //
-            // It used to skip them, and that was unsound: pass B's reuse can *decline* — a vertex
-            // where four planes meet has four possible names and only the alias table settles
-            // which, so the class falls back to arranging — and the fallback reads `splits[wc]`,
-            // which skipping pass A leaves empty. The class's faces would then vanish.
-            //
-            // Nothing in the code stopped that; it simply needed a model with a concurrency in a
-            // region the other operand cannot reach, and the corpus has none. The cheap repair is
-            // to keep the fallback a real one, which is what this does.
+            // Skipping them is unsound: pass B's reuse can *decline* — a vertex where four planes
+            // meet has four possible names and only the alias table settles which, so the class
+            // falls back to arranging — and the fallback reads `splits[wc]`, which skipping pass A
+            // leaves empty, so the class's faces would vanish. It takes a model with a concurrency
+            // in a region the other operand cannot reach, and the corpus has none; running pass A
+            // everywhere keeps the fallback a real one.
             let mut tr = timed!(
                 TRACE_ON,
                 trace_on_class(trace_in, wc, jd, cyls, faces, plane_ix, &snapshot)

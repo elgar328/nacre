@@ -131,7 +131,7 @@ pub(super) fn emit_faces(
     // ★ **A cut circle's labels, per arc** ([`ArcLabel`]) — same discipline as the disk labels
     // above: collected from the cells, outside the keep filter.
     //
-    // ★★★★★ **Which half-edge borders the disk side, derived — and the factor that was missing.**
+    // ★★★★★ **Which half-edge borders the disk side, derived.**
     // `MergedArc::end` runs counter-clockwise about the *axis*, so the even half-edge travels
     // `+θ̂`. The walk keeps a cell on the **left of its travel in the root face's frame**, whose
     // outward is `n_out = frame_sign · n_P` ([`crate::planes::WorkingPlane::frame_sign`] — the
@@ -167,8 +167,8 @@ pub(super) fn emit_faces(
         .iter()
         .enumerate()
         .filter_map(|(i, ma)| {
-            // ★ `plus_t_is_above` and nothing spelled beside it: the inline `normal().dot(axis)`
-            // that used to stand here was that function's second spelling, letter for letter.
+            // ★ `plus_t_is_above` and nothing spelled beside it: an inline `normal().dot(axis)`
+            // here would be that function's second spelling.
             let axis_up = crate::planes::plus_t_is_above(&jd.planes[wc], &ma.def);
             let even = ns_arcs + 2 * i;
             let he = even + usize::from(axis_up != (jd.planes[wc].frame_sign > 0));

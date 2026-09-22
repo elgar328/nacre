@@ -127,10 +127,9 @@ pub(crate) use traces::*;
 
 /// One feature node on the line `L = W ∩ fp` — **its own name, and what pins it there**.
 ///
-/// ★★ It used to be a bare third plane (`r`), which is the shape a three-plane point has and no
-/// other. The name is now carried whole ([`NodeId`], so a corner a cylinder made can be one) and
-/// the pin says **which kind** it is ([`combinatorics::EndPin`]) — the same pair a segment's ends
-/// already travel as. The crossing arm writes the other pair — `Pierce`/`Cylinder` — where the
+/// ★★ Not a bare third plane (`r`), which is the shape a three-plane point has and no other: the
+/// name is carried whole ([`NodeId`], so a corner a cylinder made can be one) and the pin says
+/// **which kind** it is ([`combinatorics::EndPin`]) — the same pair a segment's ends travel as. The crossing arm writes the other pair — `Pierce`/`Cylinder` — where the
 /// ring crosses the class line on a ruling ([`crossing_on_ruling`]).
 struct Node {
     /// The point's own name — what the arrangement calls it, and what a segment's end records.
@@ -199,9 +198,9 @@ struct Carved {
 /// per-segment split. No re-merge is needed: each `(wall, sub-interval)` is emitted once with its
 /// full union, so no two outputs can coincide.
 ///
-/// `Err` (honest reject) on: a degenerate endpoint name (`THREE_PLANES`), or two distinct plane
+/// `Err` (honest reject) on: a degenerate endpoint name (`ThreePlanes`), or two distinct plane
 /// classes coincident on a wall's line — a four-plane concurrency `{wc, W, a, b}` the 3-plane DCEL
-/// cannot name (`FOURPLANE`).
+/// cannot name (`FourPlane`).
 /// One wall of a class's arrangement: which plane class it is, the **direction family** its line on
 /// that class falls in, and the segments riding it.
 ///
@@ -254,12 +253,11 @@ struct Staged {
 /// - **uncut circles**, on pseudo-half-edges `2·(ns+na) + 2i` — a closed curve with no vertex is
 ///   not an orbit the walk can express, so [`walk_cells`] appends those cells *after* the walk.
 ///
-/// ★★★★ **The kind used to be asked with `he >= 2 * segs.len()`, in five places, and that sentence
-/// is now false.** Two ranges became three the day a circle could be cut, and every one of those
-/// five would read an arc as a circle — `nest_cells`' `ring_of` does it by indexing `segs[he / 2]`,
-/// which is not a wrong answer but an **index out of bounds** (measured). One type owns the
-/// numbering now, so the question is a `match` the compiler checks rather than an arithmetic
-/// comparison five readers each restate.
+/// ★★★★ **The kind is a `match`, not `he >= 2 * segs.len()`.** There are three ranges, not two —
+/// a cut circle's arcs sit between — so the arithmetic comparison reads an arc as a circle, and
+/// indexing `segs[he / 2]` with it is not a wrong answer but an **index out of bounds**
+/// (measured). One type owns the numbering, so the question is a `match` the compiler checks
+/// rather than an arithmetic comparison each reader restates.
 ///
 /// ★★ **It borrows or owns** (`Cow`). The split makes new `Vec`s; if this only borrowed, the
 /// caller would have to keep them alive and the whole preamble — split, build, walk — would be
@@ -318,7 +316,7 @@ struct Nesting {
 /// engine the public `crate::boolean` delegates to.
 ///
 /// Vertex welding is automatic: every result vertex is a sorted triple of three canon plane
-/// classes (`canon3`), so a corner shared by three planes gets one identical [`combinatorics::NodeId`]
+/// classes, so a corner shared by three planes gets one identical [`combinatorics::NodeId`]
 /// regardless of which plane was the cut class W — `assemble_fuse_cut` welds them to one vertex.
 /// A four-plane concurrency would name it inconsistently, which is what the alias table settles
 /// and what `draft::Ring`'s carried walls keep out of the naming in the first place.
@@ -412,7 +410,7 @@ pub(crate) fn boolean(
         // never traced never reports the concurrencies it would have found, and 17% of the alias
         // table is discovered only in classes the other operand cannot reach. That those names are
         // wanted by nobody is an argument, so it is checked rather than believed — and at the
-        // whole-boolean level, because per class there is no longer an arrangement to compare to.
+        // whole-boolean level, because per class there is no arrangement to compare to.
         //
         // The reference gets its own `Notes`: evidence is a side effect `undecided_reject` reads,
         // and a second run must not double it.
@@ -501,8 +499,8 @@ pub(crate) fn boolean(
                 let mut faces = faces;
                 faces.extend(lateral?);
                 // ★ No curved cleaning pass follows: the emitter's lateral faces are the
-                // regions of each chart already, so there is no phantom seam left to erase — the
-                // pass that used to run here measured `merged 0` over the suite and was deleted.
+                // regions of each chart already, so there is no phantom seam to erase (measured:
+                // a cleaning pass here merges nothing over the suite).
                 faces
             };
 
@@ -540,8 +538,8 @@ pub(crate) fn boolean(
     // **The cause outranks the symptom, on both paths.** An undecided judgement has already been
     // read as a `0` by everything downstream, so whatever the engine then complains about — a
     // loop that will not orient, a trace that will not close — is a consequence being reported as
-    // if it were the problem. That is the `LoopOrientMismatch`-hiding-precision-exhaustion trap,
-    // and checking the evidence *before* returning the symptom is what keeps it shut.
+    // if it were the problem — a precision shortage hiding behind a ring-orientation symptom — and
+    // checking the evidence *before* returning the symptom is what keeps it shut.
     undecided_reject(&notes)?;
     out.map(|solids| (solids, notes, class_of))
 }

@@ -6,7 +6,7 @@ use super::*;
 /// when two names are equal: such a triple defines no point (`three_planes` answers `None`, and the
 /// exact predicates need `D ≠ 0`), so the face is declined rather than fed a degenerate meet. A
 /// face→plane map still collapses — two faces of one solid meeting a vertex on one plane — so this
-/// guard outlives the old face/plane ambiguity it was born with.
+/// guard is needed.
 /// The reject a declined face reports to the caller.
 ///
 /// Most kinds *are* the answer — the tracer says what it could not do, and `face` says where.

@@ -136,9 +136,8 @@ pub(crate) struct Chart {
 /// A ruling's **name**: the wall class that cut it, and which of the two roots it is.
 ///
 /// ★ One name, not two. `RulingExtent` also carries a `side`, but that is *derived* from the same
-/// pair (`combinatorics::ruling_side`), and a second spelling of one identity is how this ladder
-/// has been bitten before. `name_on` builds this key from the ruling's own pair, and it was the
-/// key the band road's rings were joined on while that road was the reference.
+/// pair (`combinatorics::ruling_side`); a second spelling of one identity is where two copies
+/// drift apart.
 type RulingName = (usize, i8);
 
 /// **Which of a wall's two rulings a pierce node lies on** — `arrangement::node_ruling_side`, the
@@ -189,10 +188,9 @@ pub(crate) struct Cell {
     /// interval carries none and the cell is the whole circle. For a single cut the circle opens
     /// at one point and both are that ruling.
     ///
-    /// ★★★ **Indices, not names.** The first spelling kept the `(wall, side)` names here because
-    /// that was the key the band road's `panel_faces` joined on — but then the ruling's *label* could not be
-    /// reached from a cell without searching for it, and a second copy of one identity is what
-    /// this ladder keeps being bitten by. The name is one call away ([`Chart::ruling_name`]).
+    /// ★★★ **Indices, not names.** Kept as `(wall, side)` names, the ruling's *label* could not be
+    /// reached from a cell without searching for it. The name is one call away
+    /// ([`Chart::ruling_name`]).
     pub(crate) walls: Option<[usize; 2]>,
 }
 
@@ -297,8 +295,8 @@ impl Chart {
 
 /// **The plane classes where this cylinder's rim is a boundary the arrangement already made**:
 /// (i) the circles a plane face emitted as a `Bound::Circle`, and (ii) the cut rims, which emit
-/// arcs instead and so are invisible to (i). The band road's `bands_of` read both for the same
-/// reason; the chart's line set, its boundary rule and its census all read this one list.
+/// arcs instead and so are invisible to (i). The chart's line set, its boundary rule and its
+/// census all read this one list.
 pub(crate) fn rim_classes(k: usize, plane_faces: &[LocalFace], curved: &Curved) -> Vec<usize> {
     let mut classes: Vec<usize> = Vec::new();
     let mut push = |c: usize| {

@@ -142,16 +142,12 @@ pub(super) fn split_rulings(
     let mut on_ruling: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); rulings.len()];
     let mut on_seg: Vec<Vec<combinatorics::NodeId>> = vec![Vec::new(); segs.len()];
     for (si, sg) in segs.iter().enumerate() {
-        // ★★★★★ **The skip is gone with the reason it gave.** It said a segment whose end a
-        // cylinder pinned "carries no fence planes to test extent with" — true of the fences, which
-        // are retired; the extent question is `closed_contains` now and it answers for both kinds of
-        // end. The rest of that sentence ("such a segment shares only endpoints with a ruling") was
-        // an argument about one narrow population, never a measurement, and it is exactly the sort
-        // of claim that goes quietly false when the population widens. So it is asked instead of
-        // assumed.
-        // ☑ Measured: **200** segments now reach here that the skip dropped, and **392** crossings
-        // on them are examined. The census is bit-identical, so the skip's *conclusion* held — none
-        // of those crossings splits a ruling. It is a measurement now rather than an argument.
+        // ★★★★★ **No skip for a segment whose end a cylinder pins.** The extent question is
+        // `closed_contains`, which answers for both kinds of end, and «such a segment shares only
+        // endpoints with a ruling» is an argument about one narrow population — the sort of claim
+        // that goes quietly false when the population widens — so it is asked instead of assumed.
+        // ☑ Measured: **200** such segments reach here and **392** crossings on them are examined;
+        // none splits a ruling.
         //
         // A segment whose two ends are one point cuts nothing — asked by **name**, the identity,
         // rather than by a coordinate a pierce end does not have. ☑ Measured unexercised.

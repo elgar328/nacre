@@ -19,7 +19,7 @@ pub(crate) enum End<'a> {
     /// same chart line (the sector is the whole circle less a ruling), or its two ends snap to a
     /// single rim node, or the rim's θ order cannot be formed, or a row of the run is missing from
     /// the split's arcs. A whole-circle cell whose arcs disagree lands here too. ☑ Counted
-    /// (`end_other`); a sector that merely spans several arcs is no longer here — it is an
+    /// (`end_other`); a sector that merely spans several arcs is not here — it is an
     /// [`End::Exact`] run.
     Other,
     /// The circle is cut, the cell's sector runs between two **adjacent** rim nodes, and no arc
@@ -137,9 +137,9 @@ impl Chart {
         let mut index_of = |i: usize| -> Option<usize> {
             // A station the rim's own arc decomposition does not hold — the wall's face stops
             // short of the rim — joins the order as itself, under its canonical name, and the
-            // search below asks which arc contains it. ★ It used to join under a node of
-            // *another* line ([`Chart::station_on`]'s note), which the order refused wherever
-            // the rim did hold the station.
+            // search below asks which arc contains it. ★ Not under a node of *another* line
+            // ([`Chart::station_on`]'s note): the order refuses that wherever the rim does hold
+            // the station.
             let n = match self.node_on(i, t) {
                 Some(n) => n,
                 None => self.station_on(jd, k, def, c, i, aliases)?,
@@ -225,12 +225,11 @@ impl Chart {
         Ok(run)
     }
 
-    /// **Read one cell off the horizontal lines** — the function the cutover will call, measured
-    /// first against what the hand-written roads emit today.
+    /// **Read one cell off the horizontal lines** — what the chart's emitter reads every cell
+    /// with.
     ///
     /// No sign is derived here: `band_is_above` is `planes::plus_t_is_above` at the low end and
-    /// its negation at the high end — the one spelling the band road's `chamber` and `panel_faces`
-    /// both used — and the bits come out through [`read_bits`]. The ruling labels (the
+    /// its negation at the high end, and the bits come out through [`read_bits`]. The ruling labels (the
     /// vertical lines) are not consulted: a face that is here has a circle at both its ends, so
     /// the horizontal lines always speak, and `census` asserts that (`src0_present`).
     #[allow(clippy::too_many_arguments)]
@@ -258,7 +257,7 @@ impl Chart {
             let mut saw_arc = false;
             for &c in lines.classes(t[e]) {
                 // The band leaves the low line toward `+t` and arrives at the high line from
-                // `−t` — `chamber`'s `toward_hi(lo)` / `!toward_hi(hi)`.
+                // `−t`.
                 // ★ Bound to the class whose label is read, not to whichever class the loop
                 // visited last: one `t` is one plane and so one class today, but the sign and
                 // the label must come from the same row the day that stops being true.
@@ -301,9 +300,7 @@ impl Chart {
                         match nodes {
                             (Some(nx), Some(ny)) if adjacent(nx, ny) => {
                                 // ★ Adjacent rim nodes with no arc between them: the piece no face
-                                // covers. It used to be a producer-inconsistency refusal
-                                // (`RulingBoundNotYet`) because the split kept every piece; now
-                                // it says the face ends before this sector.
+                                // covers — the face ends before this sector.
                                 match arcs.iter().find(|a| a.ends == [nx, ny]) {
                                     Some(arc) => End::Exact(vec![arc]),
                                     None => End::Uncovered,
@@ -429,14 +426,13 @@ impl Chart {
             // geometry (the quadrant the chart could not name lies on the side the panel does not
             // reach). Forcing the run's answer to `true` here trips the record-site assertion
             // below with such an arc as its witness; forcing it to `false` changes nothing, which
-            // is the same fact from the other side. What this replaced was the `by_span`
-            // fallback — an axial span that knows no θ and so claimed every sector present.
+            // is the same fact from the other side. An axial span knows no θ, and so would claim
+            // every sector present.
             let mut span: Option<bool> = None;
             for arc in arcs {
                 // `face_spans` refuses by name (two of this solid's faces disagreeing on one arc), and
-                // two cut ends disagreeing with each other is `CylinderFaceUndecided`, as the band
-                // road's `panel_faces` refused it:
-                // the rims of a hole are band boundaries, so a sector exists over its whole height or
+                // two cut ends disagreeing with each other is `CylinderFaceUndecided`: the rims of
+                // a hole are band boundaries, so a sector exists over its whole height or
                 // not at all, and picking an end to believe is the guess this kernel does not make.
                 let v = face_spans(arc, side, above[e])?;
                 if span.replace(v).is_some_and(|p| p != v) {
@@ -512,9 +508,9 @@ impl Chart {
 /// | nothing | **no** — the face stops short of this arc |
 ///
 /// `band_is_above` is the interval's side of this rim's plane in that plane's **stored** frame —
-/// the very argument [`read_bits`] takes, and produced by the same `toward_hi` the caller already
-/// holds. There is no second derivation of "which way is the band" here, deliberately: this
-/// ladder has been bitten four times by a sign re-derived one call away from its twin.
+/// the very argument [`read_bits`] takes, as the caller already holds it. There is no second
+/// derivation of "which way is the band" here, deliberately: a sign re-derived one call away from
+/// its twin is where the two drift apart.
 ///
 /// ★ [`SegKind::Seated`] is skipped because it is a *planar* face's word — see [`ArcLabel::marks`],
 /// where the type is what rules a lateral out, not a convention.
@@ -550,8 +546,7 @@ pub(crate) fn face_spans(
         // share a rim — reachable geometry (a split bore whose two bands touch), just not
         // reachable today. The answer that day is almost certainly `.any()`: if any of the
         // solid's faces reaches into the interval, a face is there. It is not written that way
-        // now because it cannot be measured, and this ladder has twice shipped an unmeasured rule
-        // that turned out wrong. Marks that **agree** decide nothing by themselves, so they are
+        // because it cannot be measured, and an unmeasured rule is a guess. Marks that **agree** decide nothing by themselves, so they are
         // taken: refusing there would be refusing a case with no guess in it.
         if answer.replace(reaches).is_some_and(|prev| prev != reaches) {
             return Err(reject(RejectReason::CylinderFaceUndecided));

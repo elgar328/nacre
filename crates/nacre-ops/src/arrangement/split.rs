@@ -90,19 +90,18 @@ pub(super) fn split_at_crossings(
     // ★ **The direction sign of each endpoint, once per segment.** `order_along(wc, wall, i, j)`
     // factors into `orient3d(wc, wall, i, j) × dir_sign(wc, wall, j)`, and the second factor does
     // **not** mention `i` — for a segment's endpoints it is a property of the segment alone. The
-    // containment test below sweeps `i` over every wall, so leaving it inside asked the same
-    // question `|walls|` times over. (Measured: 1.5M `dir_sign` calls where 113k are distinct.)
-    // ★★★★★ **This pass is not plane-only, and the wall that said so is gone.** A split point is
+    // containment test below sweeps `i` over every wall, so asking it there would ask the same
+    // question `|walls|` times over (measured: 1.5M `dir_sign` calls where 113k are distinct).
+    // ★★★★★ **This pass is not plane-only.** A split point is
     // a [`Split`] — a plane class **or** which root of which cylinder — and the order comes from
     // [`combinatorics::order_located`], which takes both. The endpoints are not read as class ids
     // up front either: they are located as [`combinatorics::OnLine`]s, so an end a cylinder pinned
-    // has a form to be compared by. The refusal that used to stand here
-    // (`RejectReason::PierceVertexUnnamed`) went with it — [`Split::of`] and
+    // has a form to be compared by, and nothing here refuses: [`Split::of`] and
     // `combinatorics::PointOn::of` **panic** on a cylinder pin beside a three-plane name, because
     // those two halves disagreeing is this kernel's defect and not a shape a model can have.
-    // ★★ **Both ends of every segment, located on that segment's own line, once.** This is where
-    // `end_c` (the endpoint pins) and `end_ds` (their `dir_sign`s) used to live separately; a
-    // [`combinatorics::Located`] carries both, built for the pair `(wc, s.wall)` it will be asked
+    // ★★ **Both ends of every segment, located on that segment's own line, once.** A
+    // [`combinatorics::Located`] carries each endpoint's pin and its `dir_sign`, built for the
+    // pair `(wc, s.wall)` it will be asked
     // about. Building it here rather than per question is the hoist the containment loop below
     // rests on — measured, that loop runs 1.4–3.2M times per 60-fin fold.
     let end_l: Vec<[combinatorics::OnLine; 2]> = segs
@@ -189,10 +188,10 @@ pub(super) fn split_at_crossings(
         let w = wall.class;
         // Split points on W's line: every W-segment endpoint, plus every real different-wall
         // crossing (a segment on `o.wall` whose closed extent reaches W's line).
-        // ★★★★★ **A point, not a plane class.** These used to be `usize` — the third plane naming
-        // the point — which cannot say "a cylinder pins this one", and a `Vec<usize>` silently
-        // dropped such an endpoint: the two pieces either side of a boss then covered no interval
-        // and vanished, leaving the class's boundary open. Measured that way before it was fixed.
+        // ★★★★★ **A point, not a plane class.** A `usize` — the third plane naming the point —
+        // cannot say "a cylinder pins this one", and a `Vec<usize>` silently drops such an
+        // endpoint: the two pieces either side of a boss then cover no interval and vanish,
+        // leaving the class's boundary open (measured).
         //
         // ★★★★ **`Split`, not a `NodeId` — the name is derived.** On *this* line a point is either
         // a third plane or a root of a cylinder, so `{wc, w}` is common to every one of them and
@@ -212,14 +211,14 @@ pub(super) fn split_at_crossings(
                 }
             }
             // ★ **Wall-major, because the question is about walls.** What lands in `pts` is a *wall*
-            // — the class naming the crossing — so the loop that used to sweep every segment asked
-            // "is `w` parallel to this segment's wall?" once per segment when the answer depends
-            // only on the pair. And once one segment on `r` reaches `w`'s line, the rest cannot add
+            // — the class naming the crossing — so sweeping every segment would ask "is `w`
+            // parallel to this segment's wall?" once per segment when the answer depends only on
+            // the pair. And once one segment on `r` reaches `w`'s line, the rest cannot add
             // anything: `r` is already a split point.
             for other in &walls {
                 // ★ Same family ⇒ the two lines are parallel and meet in no point. This also
-                // subsumes `other.class == w`: a wall is in its own family, so one test does what
-                // an identity check and a predicate call used to.
+                // subsumes `other.class == w`: a wall is in its own family, so one test does the
+                // work of an identity check and a predicate call.
                 if other.dir == wall.dir {
                     continue;
                 }
@@ -249,8 +248,8 @@ pub(super) fn split_at_crossings(
         let pts = {
             watch!(SORT);
             // Distinct names (same name = same point), then ordered along the line.
-            // ★ Sorting by `NodeId` first keeps the old key's order: `{wc, w, r}`'s sorted triple
-            // is monotone in `r`, so a group of tied points still hands its **smallest class** to
+            // ★ Sorting by `NodeId` orders by `r` — `{wc, w, r}`'s sorted triple is monotone in
+            // `r` — so a group of tied points hands its **smallest class** to
             // `group.first()` below, which is the representative and so the emitted name.
             pts.sort_unstable();
             pts.dedup();
@@ -570,8 +569,8 @@ pub(super) fn angular_order(
 /// contributions make the mask non-false and the edge stays — a true boundary cannot be dropped
 /// by this filter.
 ///
-/// Mask evaluation moves ahead of the walk here, so a conflict (`EdgeOccupancyConflict`) that
-/// used to hide behind a walk-stage reject can now surface first — nearer its cause.
+/// Mask evaluation runs ahead of the walk here, so a conflict (`EdgeOccupancyConflict`) surfaces
+/// before any walk-stage reject — nearer its cause.
 pub(super) fn drop_newsless(segs: Vec<MergedSeg>) -> Result<Vec<MergedSeg>, BoolError> {
     let mut kept = Vec::with_capacity(segs.len());
     for s in segs {

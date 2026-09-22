@@ -26,17 +26,16 @@ fn decline_of(f: RingFail) -> DeclineKind {
 }
 
 /// ★ **The one place a ring of *names* becomes a ring of *plane data*** for the tracer, which asks
-/// only "which side, which wall, which third plane" of each vertex. The sort that used to stand
-/// here is gone — [`NodeId`]'s only constructor sorts — so what remains is the collapse check, and
-/// that is the whole reason this function exists.
+/// only "which side, which wall, which third plane" of each vertex. There is no sort here —
+/// [`NodeId`]'s only constructor sorts — so what this does is the collapse check, and that is the
+/// whole reason this function exists.
 fn plane_ring(
     nr: &combinatorics::NamedRing,
 ) -> Result<(Vec<combinatorics::NodeId>, Vec<crate::combinatorics::Wall>), RingFail> {
-    // ★★★★★ **Both refusals are gone, and the vessel is why they could go.** The corner used to
-    // be projected to `[usize; 3]` and the carrier to a plane class, so a ring a cylinder touched
-    // could not be *described* — the refusals here were the type running out, dressed as
-    // decisions. Two rungs widened the vessel; this one stops asking. What a curved ring now meets
-    // is the roads themselves, which answer or decline on their own terms.
+    // ★★★★★ **No refusal here, because the vessel can describe a curved ring.** Projected to
+    // `[usize; 3]` corners and plane-class carriers, a ring a cylinder touches could not be
+    // *described*, and a refusal here would be the type running out, dressed as a decision. What
+    // a curved ring meets is the roads themselves, which answer or decline on their own terms.
     let ts: Vec<combinatorics::NodeId> = nr
         .triples
         .iter()
@@ -77,7 +76,7 @@ fn trace_transversal_face(
 ) {
     // `fp` names a *face* (`n_out`, `orient`, the declined log); `fc` names the *plane class* it
     // lies on (triples, comparisons, predicate arguments). Every ring below is in class form, so
-    // the two must not be confused — see `canon_ring`.
+    // the two must not be confused.
     let fc = plane_ix[fp].plane();
     // Each ring pairs its class-form triples with the **carried walls** the producer read off
     // the model's edges (`NamedRing`) — the Crossing arm below names an edge's wall from the
@@ -102,12 +101,11 @@ fn trace_transversal_face(
             // the chord's two ends are flip nodes of the same parity sweep every polygon face
             // runs, so the face's **holes carve the chord** exactly as they carve a polygon's
             // section: a tube's annular cap sectioned by a wall is two pieces, not the whole
-            // chord across the bore. ★★ This arm used to emit the whole chord on a vessel of its
-            // own (`ChordTrace`) and *return before reading the holes* — "a circular outer is a
-            // disk face", true only while the gate refused every solid with two coaxial cylinders
-            // (annulus, tube); the day the pair rule read faces, the tube's bore came through as
-            // a chord piece the cap does not cover and the class refused `LabelConflict`
-            // (measured, the annulus × box rows). One road now; the vessel is gone.
+            // chord across the bore. ★★ Emitting the whole chord and *returning before reading
+            // the holes* («a circular outer is a disk face») is wrong for any solid with two
+            // coaxial cylinders (annulus, tube): the tube's bore comes through as a chord piece
+            // the cap does not cover and the class refuses `LabelConflict` (measured, the
+            // annulus × box rows). One road for both.
             //
             // Any other class misses or is left silent: another ⊥ class is parallel to the disk's
             // own and meets it nowhere, and a ∥-axis wall the gate did not record either clears
@@ -160,10 +158,10 @@ fn trace_transversal_face(
             // ★ A **circular hole meets the line in a chord, and then it flips parity twice**.
             // The population gate admits a ∥-axis wall clear of the hole's cylinder
             // (skip: the circle cannot meet `L`) or **recorded** — within the radius, through
-            // the axis or offset from it — and there the line cuts the hole in the
-            // chord's two pierce points, which used to be skipped "by proof": the proof covered
-            // the clear half only, and the planted full-width chord surfaced as `LabelConflict`
-            // on the through-family × through-axis tool (measured). The two roots are pushed as
+            // the axis or offset from it — and there the line cuts the hole in the chord's two
+            // pierce points. Skipping them "by proof" is wrong: the proof covers the clear half
+            // only, and the full-width chord then surfaces as `LabelConflict` on the
+            // through-family × through-axis tool (measured). The two roots are pushed as
             // flip nodes — the hole's own chord, named the same way a disk outer's is
             // ([`chord_nodes`], the one spelling for both).
             //
@@ -172,8 +170,8 @@ fn trace_transversal_face(
             // on this class, and the rulings road is silent for it — so planting flip nodes
             // would break the line against rulings that are (rightly) absent: measured, the
             // d = 0 boss-and-bore fixture walked its spur out and back and refused
-            // `StraightAngle`. Listed pairs get the nodes; unlisted pairs keep today's skip, and
-            // the two roads stay one rule.
+            // `StraightAngle`. Listed pairs get the nodes; unlisted pairs are skipped, and the
+            // two roads stay one rule.
             combinatorics::LoopRing::Circle { cyl } => {
                 match chord_nodes(jd, faces, plane_ix, wc, fc, *cyl, crossings) {
                     Ok(Some(pair)) => circle_nodes.extend(pair),
@@ -249,8 +247,8 @@ fn trace_transversal_face(
             // ★ The face's own plane need not appear in the name — a ring vertex is on
             // its face by topology, and a concurrency's canonical triple may name it by three
             // *other* planes. One question remains: does `wc` name it? If so the pin is whichever
-            // plane of `t` cuts `L` (`pin_on_line`; with `t = {fc, wc, r}` that is `r`, the old
-            // ordinary arm, measured identical). If not, `wc` is a further plane through the
+            // plane of `t` cuts `L` (`pin_on_line`; with `t = {fc, wc, r}` that is `r`). If not,
+            // `wc` is a further plane through the
             // point: record the concurrency, pin the same way, and call the point by the
             // canonical triple of what is now known through it — the rule the operand's ring
             // and the alias table use, so the three agree on the representative.
@@ -328,10 +326,10 @@ fn trace_transversal_face(
         for feature in features {
             match feature {
                 combinatorics::Feature::Crossing { edge, .. } => {
-                    // The crossed edge's wall, **carried** from the producer — it used to be
-                    // re-derived from the two endpoint names (`ring_from_names`), which is
-                    // sound only while every vertex lies on exactly three planes and could
-                    // hand back a plane the edge does not ride at a concurrency.
+                    // The crossed edge's wall, **carried** from the producer — not re-derived
+                    // from the two endpoint names, which is sound only while every vertex lies on
+                    // exactly three planes and can hand back a plane the edge does not ride at a
+                    // concurrency.
                     //
                     //
                     // ★ A crossing on a **ruling** is a point on the cylinder — a pierce node
@@ -584,8 +582,8 @@ fn trace_transversal_face(
 /// ring's direction of travel**. That holds for an outer ring, a hole ring, a notch, and a reflex
 /// corner alike — it does not care how the ring continues past the run.
 ///
-/// The earlier version read the side off the run's *flank* (the neighbouring off-line vertex)
-/// instead. That is only a proxy for "which way the ring bulges", and it is **inverted wherever the
+/// Not off the run's *flank* (the neighbouring off-line vertex): that is only a proxy for "which
+/// way the ring bulges", and it is **inverted wherever the
 /// ring turns away from material**: on a hole ring the neighbours point into the hole, and on an
 /// outer-ring notch they point across the notch — both void. Measured: over the whole corpus the
 /// two agree on 251 of 252 runs, and the one disagreement (a fused boss's `z=1` annulus, where the
@@ -601,8 +599,8 @@ fn trace_transversal_face(
 /// direction and the label frame are defined by the same stored normal.
 ///
 /// `σ` is an f64 dot of two **parallel** unit vectors (`fp` and `fc` are the same plane class), so
-/// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`FaceInfo::orient_sign`] and
-/// `trace_seated_face` already rely on. Everything else here is exact.
+/// `|σ| ≈ 1` — a full unit from the sign boundary, the same robustness [`FaceInfo::orient_sign`]
+/// relies on. Everything else here is exact.
 #[allow(clippy::too_many_arguments)]
 fn run_body_above(
     jd: &Judge<'_, WorkingPlane>,
@@ -625,9 +623,8 @@ fn run_body_above(
 /// Trace one solid on plane class `wc` (a canon root, i.e. an index into `planes`). This brick:
 /// seated faces → their boundary as segments; every other face → `declined`.
 ///
-/// `faces_in` is that solid's `(slot, rings)` pairs — see [`combinatorics::TraceInput`]. This walk
-/// used to read the shells out of the `Model` and derive the rings here, once per class; nothing
-/// about either depends on `wc`.
+/// `faces_in` is that solid's `(slot, rings)` pairs — see [`combinatorics::TraceInput`]. The rings
+/// are derived once, not per class here: nothing about them depends on `wc`.
 #[allow(clippy::too_many_arguments)]
 pub(super) fn trace_one(
     faces_in: &[(usize, combinatorics::FaceLoops)],
@@ -709,8 +706,7 @@ pub(super) fn trace_one(
             Some(combinatorics::LoopRing::Poly(nr)) => match plane_ring(nr) {
                 Ok(r) => rings.push(r),
                 // ★ `OuterRing` here, not `CollapsedTriple`: this caller reports *which loop*
-                // failed, which is the finer fact when a face has several. The two causes that
-                // used to keep their own names here were the vessel's, and went with it.
+                // failed, which is the finer fact when a face has several.
                 Err(RingFail::Collapsed) => {
                     #[cfg(test)]
                     decline_probe::mark(decline_probe::Site::PolyCollapsed);
@@ -763,14 +759,13 @@ pub(super) fn trace_one(
         }
         let fc = plane_ix[fp].plane();
         let mut emit_ring = |ns: &[combinatorics::NodeId], ws: &[crate::combinatorics::Wall]| {
-            // ★★★★★ **The carrier is taken, not derived.** It used to be re-read out of the two
-            // endpoint *names* — "the class they share besides `fc`" — which is sound only while
-            // every vertex lies on exactly three planes, and at a four-plane concurrency can hand
-            // back a plane the edge does not ride.
-            // `NamedRing.walls` is what the producer read off the **edge's own two faces**, total
-            // even where the vertex names fall back. Measured across the suite before the swap:
-            // the two agree 810,925 times and differ 0, and the carried one additionally answers
-            // 40 edges the derivation cannot name at all.
+            // ★★★★★ **The carrier is taken, not derived.** Re-reading it out of the two endpoint
+            // *names* — "the class they share besides `fc`" — is sound only while every vertex
+            // lies on exactly three planes, and at a four-plane concurrency can hand back a plane
+            // the edge does not ride. `NamedRing.walls` is what the producer read off the **edge's
+            // own two faces**, total even where the vertex names fall back. Measured across the
+            // suite: the two agree 810,925 times and differ 0, and the carried one also answers 40
+            // edges the derivation cannot name at all.
             //
             // ★ The corner keeps its own name too: `NodeId::three_planes(t)` was a round trip
             // through a projection, and `three_plane_name` is pure extraction of an already-sorted

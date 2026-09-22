@@ -19,8 +19,7 @@ pub(super) enum ChordFail {
 /// cannot state yet — today's silence, and the same trigger the rulings road reads.
 ///
 /// ★ **Written once because a disk's outer and a bored face's hole are the same circle asked the
-/// same question** — each used to have its own spelling (a `ChordTrace` vessel for the outer, an
-/// inline pair of nodes for the hole), and the outer's returned before the holes were read.
+/// same question.**
 ///
 /// The cylinder's statement comes from any face row on its class — the same table `merge_circles`
 /// indexes — so a caller that traces with no cylinder table (the test shims) is served too.
@@ -91,7 +90,7 @@ pub(super) fn chord_nodes(
 /// to the axis for the class to cross a ruling in a point at all (∥ contains it; a tilt is
 /// refused at the gate).
 ///
-/// ★ Solved in the caller's order `(wc, fc)`, as [`rulings_on_class`] and [`chord_on_class`]
+/// ★ Solved in the caller's order `(wc, fc)`, as [`rulings_on_class`] and [`chord_nodes`]
 /// spell it — [`NodeId::pierce`] canonicalizes the pair and the root together, so this is the one
 /// name every road gives the point. The lateral face names the same point when its hole ring
 /// crosses the class ([`cycle_on_class`]'s crossing arm restates the hole corner's own root to
@@ -238,12 +237,11 @@ fn corner_sides<'a>(
     })
 }
 
-/// **Which side of a circle a cell lies on, by its rational corners — when they agree.** The
-/// instrument used to take the *first* corner, on the premise that no cell has corners on both
-/// sides of a circle it borders. ★ A fillet refutes the premise: the cap face's cell is
-/// bounded by a **quarter** of the circle and reaches far beyond it, so its corners lie outside
-/// while the arc bounds it from the disk side. Such a cell has no single side and the witness
-/// abstains; a cell all of whose corners agree answers as before.
+/// **Which side of a circle a cell lies on, by its rational corners — when they agree.** Not by
+/// the *first* corner: a cell can have corners on both sides of a circle it borders. ★ A fillet
+/// does — the cap face's cell is bounded by a **quarter** of the circle and reaches far beyond
+/// it, so its corners lie outside while the arc bounds it from the disk side. Such a cell has no
+/// single side and the witness abstains; a cell all of whose corners agree answers.
 #[cfg(test)]
 pub(super) fn cell_side(
     jd: &Judge<'_, WorkingPlane>,

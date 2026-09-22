@@ -10,9 +10,8 @@ use super::*;
 /// for.** While a stopper occupies the caller's socket, it must run before this `Result` is
 /// unwrapped, so an out-of-coverage class carries the same name out however far the pipeline
 /// got. With the stages held separately that order had to be repeated per stage, and getting it
-/// wrong is silent — the suite stays green and only the reject's *name* changes, which is
-/// exactly what happened once (`f8eb935`). One `Result` leaves one place to put the `?`, and it
-/// is after the socket.
+/// wrong is silent — the suite stays green and only the reject's *name* changes. One `Result`
+/// leaves one place to put the `?`, and it is after the socket.
 ///
 /// ★ **`emit_faces` is the last stage, and it cannot fail.** Every other stage returns a
 /// `Result`; this one returns its product outright — so a probe of the socket's interception
@@ -430,7 +429,7 @@ impl<'a> ClassEdges<'a> {
         2 * (self.segs.len() + self.arcs.len() + self.rulings.len())
     }
 
-    /// **The one classifier.** Everything that used to compare against `2 * segs.len()` asks this.
+    /// **The one classifier.** Every reader of a half-edge's kind asks this.
     pub(super) fn kind(&self, he: usize) -> HalfEdgeKind {
         let ns = self.segs.len();
         let na = self.arcs.len();
@@ -459,11 +458,9 @@ impl<'a> ClassEdges<'a> {
 
     /// **The one place a `RingEdge` is made from a half-edge.**
     ///
-    /// ★★★★ It used to be written twice, and the two spellings **differed**: the walk passed the
-    /// sense a split carried onto its sub-segments, and `nest_cells`' ring builder passed
-    /// `Carrier::plane(wall)` — that is, `sense: None`. The answers agreed only because the second
-    /// never saw a split segment; the day it does, it would drop the one fact the endpoints can no
-    /// longer supply. One spelling, so there is nothing to drift.
+    /// ★★★★ **One spelling, so there is nothing to drift.** A second one that passes
+    /// `Carrier::plane(wall)` — that is, `sense: None` — drops the sense a split carries onto its
+    /// sub-segments, the one fact the endpoints cannot supply.
     pub(super) fn edge_at(&self, he: usize) -> combinatorics::RingEdge {
         let carrier = match self.kind(he) {
             // ★ `MergedArc::end` runs counter-clockwise about the axis, so the even half-edge

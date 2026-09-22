@@ -11,7 +11,7 @@ type SplitCircles = Option<(
 /// **Cut every circle a segment crosses into arcs, and the segments with it.**
 ///
 /// ★★★ This is the arc split. What it does *not* do is find the crossings — [`circle_crossings`]
-/// already names them, and has since the guard that used to refuse this population was written.
+/// names them.
 /// The work here is ordering: around the circle (θ, [`nacre_exact::quad::circular_order_about_seam`])
 /// to make arcs, and along each segment (the line parameter, [`cmp_along`]) to make sub-segments.
 ///
@@ -72,11 +72,9 @@ pub(super) fn split_circles(
             }
         }
     }
-    // ★★★★★ **Where a segment's ends are, asked once per segment — and a missing one is no longer
-    // fatal.** This used to sit inside the circle loop, re-solving the same two points once per
-    // circle, and it *stopped* the whole class when either end was a pierce point, which has no
-    // rational coordinate at any width. Nothing below needs a coordinate to decide anything now;
-    // the one thing left that reads it is a **filter**.
+    // ★★★★★ **Where a segment's ends are, asked once per segment — and a missing one is not
+    // fatal.** A pierce end has no rational coordinate at any width, and nothing below needs a
+    // coordinate to decide anything; the one thing that reads it is a **filter**.
     let seg_coords: Vec<[Option<[Rat; 3]>; 2]> = segs
         .iter()
         .map(|s| s.end.map(|t| combinatorics::node_coords_rat(jd, t)))
@@ -126,9 +124,9 @@ pub(super) fn split_circles(
                     continue;
                 }
                 // ★★★★★ **Whether the crossing is on this segment is asked here, in the one
-                // vocabulary that can answer it for both kinds of end.** It used to be two plane
-                // fences inside `circle_crossings`, which needed a *plane* through each endpoint
-                // and so could only be built where every end was three-plane named.
+                // vocabulary that can answer it for both kinds of end.** Two plane fences would
+                // need a *plane* through each endpoint, and so could only be built where every
+                // end is three-plane named.
                 let at =
                     combinatorics::locate(jd, cyls, wc, sg.wall, combinatorics::PointOn::Pierce(n))
                         .ok_or_else(undecided)?;
@@ -172,11 +170,11 @@ pub(super) fn split_circles(
     // at all**. `circle_crossings` names where the segment's *line* meets the whole
     // circle; but the class's circle is only where its arcs are (`MergedCircle::merged` — a
     // fillet's quarter, a slot's half), and a crossing on the circle's **continuation** lies on
-    // no edge of this class. It used to be cut anyway — a vertex on the segment where nothing
+    // no edge of this class. Cutting it anyway puts a vertex on the segment where nothing
     // crosses it (☑ measured: 4 per op on the `tangentline slab 1.6` controls, 16 on
-    // `rrect-box`, 0 on the 353 older census rows) — and where that point *is* a vertex of the
+    // `rrect-box`, 0 on the other 353 census rows), and where that point *is* a vertex of the
     // segment already (a face through the top of a fillet's circle: the user's gusset foot,
-    // `y = 0 = −2 + r`) the segment split refused it as two names for one point.
+    // `y = 0 = −2 + r`) the segment split refuses it as two names for one point.
     // **The rule: a crossing is a cut point iff it lies on an arc the class carries.** An arc's
     // own ends are cut points by construction (fed in above); a crossing is on an arc iff the
     // piece of circle before or after it is covered — being on an arc's boundary is being its
@@ -281,7 +279,7 @@ pub(super) fn split_circles(
             ordered.push(None);
             continue;
         }
-        // The reduced order is the old one filtered: the relative θ order is unchanged, and it
+        // The reduced order is the full one filtered: the relative θ order is unchanged, and it
         // still runs from the seam — which is a node only if it was one and stayed.
         let seam_is_node = seam_is_node && keep[0];
         let order: Vec<usize> = order
@@ -495,10 +493,10 @@ pub(super) fn split_segments_at(
         // the same question from the pair `{wc, sg.wall}` and the points' own names, so there is no
         // ruler to lay and nothing to convert.
         //
-        // ★★ **The pair is the sorted one, and that is not cosmetic.** The retired ruler was
-        // `pierce_meet`'s canonical line, whose direction is `n_min × n_max`; asking in call order
-        // would flip every comparison on a class where `wc > wall`, taking the emitted pieces and
-        // the sense with it. ☑ Differenced against the ruler below.
+        // ★★ **The pair is the sorted one, and that is not cosmetic.** `pierce_meet`'s canonical
+        // line runs along `n_min × n_max`; asking in call order would flip every comparison on a
+        // class where `wc > wall`, taking the emitted pieces and the sense with it. ☑ Differenced
+        // against that ruler (`order_probe`).
         //
         // ★★ **The guard that checked all crossings share one line becomes a check on their
         // *names*.** It was there because the sort silently mixed two rulers if it stopped holding;
@@ -659,12 +657,11 @@ pub(super) fn split_segments_at(
     Ok(out_segs)
 }
 
-/// **Where a rational point sits along a line** — the retired ruler's half for a three-plane end
-/// (a pierce end brought its own parameter from [`combinatorics::pierce_meet`]).
+/// **Where a rational point sits along a line** — a ruler's half for a three-plane end (a pierce
+/// end brings its own parameter from [`combinatorics::pierce_meet`]).
 ///
-/// ★★ **Production does not lay a ruler any more**, so this survives only inside
-/// [`order_probe`], which differences the order rule against what it used to compute. That it needs
-/// a *rational* point is the whole reason it had to go: an end a cylinder pins has none.
+/// ★★ **Production lays no ruler**: it needs a *rational* point, and an end a cylinder pins has
+/// none. This lives only inside [`order_probe`], which differences the order rule against it.
 #[cfg(test)]
 pub(super) fn along(
     line: &nacre_exact::quad::MeetLine,
@@ -739,11 +736,11 @@ pub(super) fn cmp_along(
 /// [`combinatorics::pierce_point`]). The pair is solved in this function's own call order —
 /// `(wc, sg.wall)` — and `NodeId::pierce` puts it in canonical order, restating the root with it.
 /// Solving in ascending order instead would make the correspondence true by construction and leave
-/// the canonicalization unexercised, which is where a wrong rule hides; the next mint site (the arc
-/// split, walking segments in DCEL order) will not have that luxury either.
+/// the canonicalization unexercised, which is where a wrong rule hides; the arc split, walking
+/// segments in DCEL order, does not have that luxury either.
 /// ★★★★★ **It names where the *line* crosses, and the caller says which of those are on the
-/// segment.** Both roots come back; two plane fences through the endpoints used to drop the ones
-/// outside, and a fence is a *plane*, which an end a cylinder pinned does not have. Extent is an
+/// segment.** Both roots come back: dropping the ones outside takes a fence through each
+/// endpoint, and a fence is a *plane*, which an end a cylinder pins does not have. Extent is an
 /// ordering question, so it belongs with the rule that answers ordering for both kinds of end
 /// ([`combinatorics::closed_contains`]) — and the caller already post-filters here anyway, for the
 /// tangency.
@@ -762,12 +759,11 @@ fn circle_crossings(
         CylinderMeet::Pair { s, .. } => vec![(QuadRoot::Lo, s[0]), (QuadRoot::Hi, s[1])],
         // ★ `Double`, not `Lo`: the two roots coincide, so a re-sort must leave the name alone.
         CylinderMeet::Tangent { s, .. } => vec![(QuadRoot::Double, QuadVal::from_rat(s))],
-        // ★★ **Reachable, and it always was the honest answer.** It used to be unreachable behind
-        // the caller's `segment_meets_cylinder` — a segment that meets the solid cylinder has a line
-        // that meets its surface. That filter needs both endpoints' coordinates, so it is skipped
-        // where one end is a pierce point, and the line genuinely can miss. "No crossings" is what
-        // a miss means; nothing about the arm changes but the sentence above it.
-        // ☑ Measured: **6** times over the suite, where the doc used to say never.
+        // ★★ **Reachable, and the honest answer.** The caller's `segment_meets_cylinder` filter (a
+        // segment that meets the solid cylinder has a line that meets its surface) needs both
+        // endpoints' coordinates, so it is skipped where one end is a pierce point, and there the
+        // line genuinely can miss. "No crossings" is what a miss means.
+        // ☑ Measured: **6** times over the suite.
         CylinderMeet::Miss(_) => return Some(Vec::new()),
         other => unreachable!(
             "a circle's class is ⊥ to the axis, so its meet with any wall is ⊥ to the axis and \

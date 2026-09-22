@@ -96,10 +96,9 @@ pub(super) fn circle_on_class(
         None
     };
     // ★★★★★ **The hole is read by the walk every other face's boundary is read by** — the face's
-    // own loop, against this class, through [`combinatorics::ring_against_plane`]. It used to be an
-    // interval derived from the loop's ⊥ carriers, which is exact for a chart rectangle and a
-    // *premise* for anything else; the walk asks the ring instead and needs no premise about the
-    // hole's shape.
+    // own loop, against this class, through [`combinatorics::ring_against_plane`]. An interval
+    // derived from the loop's ⊥ carriers would be exact for a chart rectangle and a *premise* for
+    // anything else; the walk asks the ring and needs no premise about the hole's shape.
     let mut carved: Vec<Carved> = Vec::new();
     for (kind, ring) in &cycles {
         // A one-edge loop whose far face is a cylinder is two laterals meeting: M6b's pair, not
@@ -442,11 +441,10 @@ fn cycle_on_class(
                     continue;
                 }
                 // ★★★★★ **Which way the arc runs, and so which side the face is on, is the
-                // producer's to say — not the flank's.** This used to read the flank (the side
-                // the ring's off-class neighbours sit on) and place the face opposite it, which
-                // is the ring's *interior* side — right for a convex hole and wrong for a
-                // wrapping rim, whose highest arc has both neighbours below it and the face
-                // below too. The arc's own direction about the axis (`NamedRing::arc_ccw`, the
+                // producer's to say — not the flank's.** The flank (the side the ring's
+                // off-class neighbours sit on) gives the ring's *interior* side — right for a
+                // convex hole and wrong for a wrapping rim, whose highest arc has both
+                // neighbours below it and the face below too. The arc's own direction about the axis (`NamedRing::arc_ccw`, the
                 // producer's convention) settles both: walked with sense `ν`, material lies
                 // along `σ·ν·m̂`, so the face is above the class exactly when that agrees with
                 // the class's stored normal (`up`), and the carved extent is the arc as walked.
@@ -460,9 +458,8 @@ fn cycle_on_class(
                     // lying on it. Taking that for a rim arc would state an extent along a curve
                     // that is not there. The carrier says it directly: an edge on the circle
                     // `wc ∩ cylinder` lies in `wc`, so its far face is of that class.
-                    // ★ This is the check `lateral_inner_loops` used to make from the row
-                    // ("neither ⊥ nor ∥: an ellipse, outside this vocabulary") and that went with
-                    // it; it belongs here, per edge, where the answer is actually used.
+                    // ★ The check belongs here, per edge, where the answer is used — not on the
+                    // row ("neither ⊥ nor ∥: an ellipse, outside this vocabulary").
                     let edge = (first + k) % n;
                     if nr.walls[edge] != crate::combinatorics::Wall::Plane(wc) {
                         return Err(DeclineKind::CylHoleFeature);

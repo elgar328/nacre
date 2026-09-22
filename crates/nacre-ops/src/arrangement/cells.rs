@@ -31,11 +31,10 @@ pub(super) fn walk_cells(
         {
             watch!(E_ORDER);
             for &he in outs {
-                // Direction sign away from `v` toward the far end. ★ This used to call
-                // `order_along(target, origin)` — the swapped-argument spelling of what
-                // `edge_dir` makes by inverting the result. The two agreed only by the
-                // antisymmetry of a difference cancelling an inversion; now there is one.
-                // ★ The maker pairs the carrier with the sense, so this site no longer can.
+                // Direction sign away from `v` toward the far end — one spelling, `edge_dir`'s (a
+                // swapped-argument `order_along(target, origin)` agrees with it only by the
+                // antisymmetry of a difference cancelling an inversion).
+                // ★ The maker pairs the carrier with the sense, so this site cannot pair them wrong.
                 // ★ The half-edge **leaves** `v`, so its direction is read at `v` — and `dir_at`
                 // is where that is checked. Built once per half-edge, which is the hoist the
                 // sort below rests on.
@@ -101,8 +100,8 @@ pub(super) fn walk_cells(
             }
             // The cell's edges come from the walk, which knows each one's carrier and both
             // handles. The endpoint names cannot supply them: a canonical name need not mention
-            // this line's planes at all, which is what retired the derivation check that used to
-            // stand here — and an arc's carrier is not a plane class it could name anyway.
+            // this line's planes at all, and an arc's carrier is not a plane class it could name
+            // anyway.
             let ring: Vec<combinatorics::RingEdge> = cyc.iter().map(|&h| edge_of(h)).collect();
             let w = combinatorics::loop_winding(jd, cyls, wc, &ring)?;
             cells.push(Cell {
@@ -168,8 +167,8 @@ pub(super) fn walk_cells(
 ///
 /// A root is a `-1` contour inside no `+1` ring at all, so the region it bounds lies outside every
 /// cell — that is the one unbounded region, however many cycles bound it. Having none of them is
-/// the only impossibility (a closed figure always has an outside), and that is `HOLE_ROOTS`. A hole
-/// whose owner is not uniquely determined is `HOLE_DEPTH` (see [`innermost_host`]).
+/// the only impossibility (a closed figure always has an outside), and that is `HoleRoots`. A hole
+/// whose owner is not uniquely determined is `HoleDepth` (see [`innermost_host`]).
 pub(super) fn nest_cells(
     jd: &Judge<'_, WorkingPlane>,
     cyls: &[crate::planes::WorkingCyl],
@@ -228,11 +227,9 @@ pub(super) fn nest_cells(
         if hosts.is_empty() {
             roots.push(c);
         } else {
-            // ★ **A disk may host.** What keeps a polygon out of a disk is not the gate's
-            // clearance proof: `circles_meet_no_segment` refuses only *separating* breaks,
-            // which brings the population here, and dropping the host would send the
-            // contour to `roots`, where `label_cells` seeds it **void** — the boss over a bore
-            // would lose its base face and the shell would open.
+            // ★ **A disk may host.** Dropping the host would send the contour to `roots`, where
+            // `label_cells` seeds it **void** — the boss over a bore would lose its base face and
+            // the shell would open.
             let host = innermost_host(jd, cyls, wc, &rings, &circle_defs, &circle_ix, &hosts)?;
             let (rc, rr) = (find(&mut parent, c), find(&mut parent, host));
             parent[rc] = rr;
@@ -280,14 +277,13 @@ fn innermost_host(
     circle_ix: &[Option<usize>],
     hosts: &[usize],
 ) -> Result<usize, BoolError> {
-    // ★ Two answers that used to be one. `None` meant *either* "adjacent, so not comparable" or
-    // "every ray was spoiled", and both left as `HoleDepth` — whose own doc reads "if this fires,
-    // rings are crossing and the fault is upstream", a diagnosis that is simply wrong for a
-    // spoiled ray. Adjacency stays `None` here; an exhausted ring is now `NoClearRay`, its cause.
+    // ★ **Two answers, two names.** "Adjacent, so not comparable" is `None` here; "every ray was
+    // spoiled" is `NoClearRay`, its cause — not `HoleDepth`, whose sentence is about nesting
+    // depth and is wrong for a spoiled ray.
     //
     // ★★ **A disk can be a host, so this asks the same four-way question `nest_cells` does** —
-    // it used to hold a polygon-only copy of one arm, which was sound only while a disk was
-    // filtered out before it got here. It is [`cell_in_cell`] now.
+    // [`cell_in_cell`], not a polygon-only copy of one arm (sound only while a disk is filtered
+    // out before it gets here).
     let inside = |a: usize, b: usize| {
         crate::nesting::cell_in_cell(jd, cyls, wc, rings, circle_defs, circle_ix, a, b)
     };
@@ -475,7 +471,7 @@ pub(super) fn disk_side_agrees(
 /// exactly because the arrangement covers the whole plane: `Nesting`'s unbounded region reaches
 /// infinity, where neither solid is. An arrangement restricted to a region of space cannot say
 /// that — its unbounded region is an artifact of the restriction — and must be told instead. That
-/// is the parameter's whole reason to exist; today's only caller still passes the old constant.
+/// is the parameter's whole reason to exist; the only caller passes `[false; 4]`.
 pub(super) fn label_cells(
     cells: &[Cell],
     face_of: &HashMap<usize, usize>,

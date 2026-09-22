@@ -35,9 +35,8 @@ pub(crate) struct PlaneSetup {
     pub(crate) cyls: Vec<WorkingCyl>,
     /// The gate's carried answer for the rulings road: `(plane class, cylinder class)`
     /// pairs allowed through **without** a clearance proof — see
-    /// [`crate::combinatorics::TraceInput::crossings`]. ★ It used to say "always empty while the wall rule
-    /// refuses that population" — the gate-opening cell arrived, and the `crossings.insert` below
-    /// fills it for a wall whose plane holds the axis exactly.
+    /// [`crate::combinatorics::TraceInput::crossings`]. The gate fills it for a wall whose plane
+    /// runs within the radius — through the axis or offset from it.
     pub(crate) crossings: std::collections::HashSet<(usize, usize)>,
     /// **The tangent `(wall face, lateral face)` pairs** — the graze twin of `crossings`, and the
     /// reason they are two sets rather than one: a recorded *crossing* says "this plane runs within

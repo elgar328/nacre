@@ -28,10 +28,9 @@ pub(super) fn rulings_on_class(
 ) -> Result<(Vec<RulingTrace>, Vec<Seg>), DeclineKind> {
     // ★ **The gate's answer, first** — see [`combinatorics::TraceInput::crossings`]. A pair not
     // listed there was proven clear (or never in question), and contributing its rectangle
-    // anyway is what broke the straddling family: the boss's own wall class is a d=0 pair, and
-    // its coplanar bottom cap's chord lands on a line the plate already traces. Silence for
-    // unlisted pairs is today's exact behavior; the gate-opening cell lists exactly the pairs
-    // that need the rectangle.
+    // anyway breaks the straddling family: the boss's own wall class is a d=0 pair, and its
+    // coplanar bottom cap's chord lands on a line the plate already traces. Unlisted pairs are
+    // silent; the gate lists exactly the pairs that need the rectangle.
     if !crossings.contains(&(wc, k)) {
         return Ok((Vec::new(), Vec::new()));
     }
