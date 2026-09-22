@@ -598,101 +598,110 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
     let mut table: Vec<String> = Vec::new();
     let mut mismatches = 0usize;
     let mut tally: Vec<(Cross, usize)> = Vec::new();
-    for (&(name, base, h), want) in BOSS_FAMILIES.iter().zip(want) {
-        for (kind, want) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
-            .into_iter()
-            .zip(want)
-        {
-            let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
-            for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
-                // The mixed road's abstentions, attributed to this cell.
-                let tie0 = crate::combinatorics::tie_probe::len();
-                let dec0 = crate::assembly::probe::deciding::ROWS.len();
-                let (mut m, plate, boss) = boss_family(base, h);
-                let got = match boolean(&mut m, kind, plate, boss) {
-                    Err(BoolError::Rejected { .. }) => First,
-                    Err(e) => panic!("{name} {kind:?}: first op {e:?}"),
-                    Result::Ok(out) if out.is_empty() => Empty,
-                    Result::Ok(out) => {
-                        m.rebuild_adjacency();
-                        let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
-                        // ★ The first result's own volume against the closed form, so the
-                        // baseline `removed_by` subtracts from is itself checked. Summed over the
-                        // whole result rather than guarded on one solid: a guard is a branch that
-                        // can go quietly untaken, and the sum is right however many pieces a first
-                        // operation leaves.
-                        let v_first: f64 = out
-                            .iter()
-                            .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
-                            .sum();
-                        let w = first_volume(kind, base, h);
-                        assert!(
-                            (v_first - w).abs() < 1e-9,
-                            "{name} {kind:?}: first volume {v_first} ≠ {w}"
-                        );
-                        let t =
-                            m.add_cuboid(Point3::from_array(tool[0]), Point3::from_array(tool[1]));
-                        m.rebuild_adjacency();
-                        match boolean(&mut m, BoolKind::Cut, out[0], t) {
-                            Result::Ok(r) => {
-                                m.rebuild_adjacency();
-                                let issues = nacre_validate::validate(&m);
-                                assert!(
-                                    issues.is_empty(),
-                                    "{name} {kind:?} × {tool_name}: {issues:?}"
-                                );
-                                let v: f64 = r
-                                    .iter()
-                                    .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
-                                    .sum();
-                                let expect = v0 - removed_by(kind, base, h, tool);
-                                assert!(
-                                    (v - expect).abs() < 1e-9,
-                                    "{name} {kind:?} × {tool_name}: volume {v} ≠ {v0} − removed = {expect}"
-                                );
-                                Ok(r.len())
+    // Owned, so the tie and deciding rows a refused case prints below are this corpus's own.
+    crate::ledger::owned(|| {
+        for (&(name, base, h), want) in BOSS_FAMILIES.iter().zip(want) {
+            for (kind, want) in [BoolKind::Fuse, BoolKind::Cut, BoolKind::Common]
+                .into_iter()
+                .zip(want)
+            {
+                let tools = [mid, top, bottom, axis_wall(base), wall_slab(base)];
+                for ((tool_name, tool), want) in TOOLS.into_iter().zip(tools).zip(want) {
+                    // The mixed road's abstentions, attributed to this cell.
+                    let tie0 = crate::combinatorics::tie_probe::len();
+                    let dec0 = crate::assembly::probe::deciding::ROWS.len();
+                    let (mut m, plate, boss) = boss_family(base, h);
+                    let got = match boolean(&mut m, kind, plate, boss) {
+                        Err(BoolError::Rejected { .. }) => First,
+                        Err(e) => panic!("{name} {kind:?}: first op {e:?}"),
+                        Result::Ok(out) if out.is_empty() => Empty,
+                        Result::Ok(out) => {
+                            m.rebuild_adjacency();
+                            let v0 = nacre_props::mass_props(&m, out[0]).expect("props").volume;
+                            // ★ The first result's own volume against the closed form, so the
+                            // baseline `removed_by` subtracts from is itself checked. Summed over the
+                            // whole result rather than guarded on one solid: a guard is a branch that
+                            // can go quietly untaken, and the sum is right however many pieces a first
+                            // operation leaves.
+                            let v_first: f64 = out
+                                .iter()
+                                .map(|&s| nacre_props::mass_props(&m, s).expect("props").volume)
+                                .sum();
+                            let w = first_volume(kind, base, h);
+                            assert!(
+                                (v_first - w).abs() < 1e-9,
+                                "{name} {kind:?}: first volume {v_first} ≠ {w}"
+                            );
+                            let t = m.add_cuboid(
+                                Point3::from_array(tool[0]),
+                                Point3::from_array(tool[1]),
+                            );
+                            m.rebuild_adjacency();
+                            match boolean(&mut m, BoolKind::Cut, out[0], t) {
+                                Result::Ok(r) => {
+                                    m.rebuild_adjacency();
+                                    let issues = nacre_validate::validate(&m);
+                                    assert!(
+                                        issues.is_empty(),
+                                        "{name} {kind:?} × {tool_name}: {issues:?}"
+                                    );
+                                    let v: f64 = r
+                                        .iter()
+                                        .map(|&s| {
+                                            nacre_props::mass_props(&m, s).expect("props").volume
+                                        })
+                                        .sum();
+                                    let expect = v0 - removed_by(kind, base, h, tool);
+                                    assert!(
+                                        (v - expect).abs() < 1e-9,
+                                        "{name} {kind:?} × {tool_name}: volume {v} ≠ {v0} − removed = {expect}"
+                                    );
+                                    Ok(r.len())
+                                }
+                                Err(BoolError::Rejected {
+                                    reason: RejectReason::TraceDeclined { kind, .. },
+                                    ..
+                                }) => Declined(kind),
+                                Err(BoolError::Rejected { reason, .. }) => Rejected(reason),
+                                Err(e) => panic!("{name} {kind:?} × {tool_name}: {e:?}"),
                             }
-                            Err(BoolError::Rejected {
-                                reason: RejectReason::TraceDeclined { kind, .. },
-                                ..
-                            }) => Declined(kind),
-                            Err(BoolError::Rejected { reason, .. }) => Rejected(reason),
-                            Err(e) => panic!("{name} {kind:?} × {tool_name}: {e:?}"),
                         }
-                    }
-                };
-                if got == Rejected(NoClearRay) {
-                    let hist = crate::combinatorics::tie_probe::since(tie0);
-                    eprintln!("tie {name} {kind:?} x {tool_name}: {hist:?}");
-                    let dec = crate::assembly::probe::deciding::ROWS.mine_since(dec0);
-                    for r in dec.iter().filter(|r| !r.2) {
+                    };
+                    if got == Rejected(NoClearRay) {
+                        let hist = crate::combinatorics::tie_probe::since(tie0);
+                        eprintln!("tie {name} {kind:?} x {tool_name}: {hist:?}");
+                        let dec = crate::assembly::probe::deciding::ROWS.mine_since(dec0);
+                        for r in dec.iter().filter(|r| !r.2) {
+                            eprintln!(
+                                "deciding {name} {kind:?} x {tool_name}: exhausted offered {} ties {:?}",
+                                r.1, r.3
+                            );
+                        }
+                        let decided: Vec<usize> = dec.iter().filter(|r| r.2).map(|r| r.0).collect();
                         eprintln!(
-                            "deciding {name} {kind:?} x {tool_name}: exhausted offered {} ties {:?}",
-                            r.1, r.3
+                            "deciding {name} {kind:?} x {tool_name}: decided tried {decided:?}"
                         );
                     }
-                    let decided: Vec<usize> = dec.iter().filter(|r| r.2).map(|r| r.0).collect();
-                    eprintln!("deciding {name} {kind:?} x {tool_name}: decided tried {decided:?}");
-                }
-                match tally.iter_mut().find(|(c, _)| *c == got) {
-                    Some((_, n)) => *n += 1,
-                    None => tally.push((got, 1)),
-                }
-                let ok = want == got;
-                table.push(format!(
-                    "{name} {kind:?} × {tool_name}: {got:?}{}",
-                    if ok {
-                        String::new()
-                    } else {
-                        format!("  ← want {want:?}")
+                    match tally.iter_mut().find(|(c, _)| *c == got) {
+                        Some((_, n)) => *n += 1,
+                        None => tally.push((got, 1)),
                     }
-                ));
-                if !ok {
-                    mismatches += 1;
+                    let ok = want == got;
+                    table.push(format!(
+                        "{name} {kind:?} × {tool_name}: {got:?}{}",
+                        if ok {
+                            String::new()
+                        } else {
+                            format!("  ← want {want:?}")
+                        }
+                    ));
+                    if !ok {
+                        mismatches += 1;
+                    }
                 }
             }
         }
-    }
+    });
     assert_eq!(
         mismatches,
         0,
@@ -749,30 +758,36 @@ fn crossing_census_slabs_and_through_axis_walls_by_name() {
 /// two spans; `z = 1` is the chain's top — no outer answer, the boss-top arc grazes, one span.
 #[test]
 fn a_cycle_is_carved_on_its_classes() {
-    {
-        let (mut m, plate, boss) = boss_family([4.0, 2.0, -1.0], 4.0);
-        let out = boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
-        m.rebuild_adjacency();
-        let t = m.add_cuboid(
-            Point3::from_array([3.0, -1.0, 0.5]),
-            Point3::from_array([6.0, 5.0, 1.5]),
-        );
-        m.rebuild_adjacency();
-        crate::arrangement::trace_every_class(&m, out[0], t).expect("the panel's classes trace");
-    }
-    {
-        let (mut m, plate, boss) = boss_family([2.0, 0.0, -1.0], 2.0);
-        let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the half boss builds");
-        m.rebuild_adjacency();
-        let far = m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
-        m.rebuild_adjacency();
-        crate::arrangement::trace_every_class(&m, out[0], far).expect("the chain's classes trace");
-    }
+    crate::ledger::owned(|| {
+        {
+            let (mut m, plate, boss) = boss_family([4.0, 2.0, -1.0], 4.0);
+            let out = boolean(&mut m, BoolKind::Cut, plate, boss).expect("the notch builds");
+            m.rebuild_adjacency();
+            let t = m.add_cuboid(
+                Point3::from_array([3.0, -1.0, 0.5]),
+                Point3::from_array([6.0, 5.0, 1.5]),
+            );
+            m.rebuild_adjacency();
+            crate::arrangement::trace_every_class(&m, out[0], t)
+                .expect("the panel's classes trace");
+        }
+        {
+            let (mut m, plate, boss) = boss_family([2.0, 0.0, -1.0], 2.0);
+            let out = boolean(&mut m, BoolKind::Fuse, plate, boss).expect("the half boss builds");
+            m.rebuild_adjacency();
+            let far = m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
+            m.rebuild_adjacency();
+            crate::arrangement::trace_every_class(&m, out[0], far)
+                .expect("the chain's classes trace");
+        }
+    });
     use crate::arrangement::CylOnClass;
-    let hits = crate::arrangement::cycle_probe::HITS.all();
+    // ★ This test's own records: the two traces above and nothing else, so a station's rows
+    // are its fixture's and can be counted rather than merely found.
+    let hits = crate::arrangement::cycle_probe::HITS.mine();
     // `kinds = [rims, chains, panels, holes]`; every recorded entry of the shape at the station
-    // must read the same, and at least one must exist. A graze's `body_above` is written in the
-    // class's stored frame, so the rim check asks only for the kind of answer.
+    // must read the same, and the station must have been reached. A graze's `body_above` is
+    // written in the class's stored frame, so the rim check asks only for the kind of answer.
     let check = |kinds: [usize; 4],
                  t: f64,
                  outer: fn(Option<CylOnClass>) -> bool,
@@ -819,14 +834,19 @@ fn a_chain_sweeps_its_rulings() {
     m.rebuild_adjacency();
     let far = m.add_cuboid(Point3::from_array([20.0; 3]), Point3::from_array([21.0; 3]));
     m.rebuild_adjacency();
-    crate::arrangement::trace_every_class(&m, out[0], far).expect("the chain's classes trace");
+    crate::ledger::owned(|| {
+        crate::arrangement::trace_every_class(&m, out[0], far).expect("the chain's classes trace")
+    });
+    // ★ This trace's own carvings. The origin and span still name the boss, because the trace
+    // carves other classes of the same model too.
     let rows: Vec<Vec<crate::arrangement::SegKind>> = crate::arrangement::ruling_probe::CARVED
-        .all()
+        .mine()
         .iter()
         .filter(|c| c.origin == [2.0, 0.0, -1.0] && c.span == [0.0, 2.0])
         .map(|c| c.kinds.clone())
         .collect();
-    assert!(rows.len() >= 2, "both rulings sweep: {rows:?}");
+    // Both rulings of the chain are swept, and only those two.
+    assert_eq!(rows.len(), 2, "both rulings sweep: {rows:?}");
     for kinds in &rows {
         assert!(
             matches!(
@@ -937,36 +957,37 @@ fn the_walk_cuts_a_run_at_a_departure() {
 /// exercised**. A rule whose deciding factor is constant over the corpus is a rule nothing has
 /// tested, which is exactly how it shipped wrong the first time.
 ///
-/// ★ Read as floors, not literals: a filtered or parallel run brings fewer rows, never different
-/// ones.
+/// ★ Read as floors, not literals. The rows are this test's own, but some of its operations are
+/// **refused**, and the two builds do not do the same amount of work on a refused input: the
+/// parallel one evaluates the remaining classes, the serial one stops at the first error. So the
+/// shape of the population is held, not its size.
 #[test]
 fn the_disk_side_rule_is_derived_and_the_cells_watch_it() {
-    // ★ **The test builds the population it measures.** Reading the ambient rows would see only
-    // what happened to finish before it (a parallel run's order is not a fact about the kernel —
-    // the ledger lesson this crate has been bitten by twice), and the very row this needs is a
-    // `Reversed` root face: the **notch** a half boss leaves, whose ceiling class carries
-    // `frame_sign = -1`. So it runs the boss corpus itself (each family's first op, then a slab
-    // cut of the result) and reads the delta.
-    let before = crate::arrangement::disk_side_probe::ROWS.len();
-    for (_, base, h) in BOSS_FAMILIES {
-        for kind in [BoolKind::Fuse, BoolKind::Cut] {
-            let (mut m, plate, boss) = boss_family(base, h);
-            let Result::Ok(out) = boolean(&mut m, kind, plate, boss) else {
-                continue;
-            };
-            // The second operation is what puts a `Reversed` root face on a cut circle's class
-            // (a notch's ceiling), which is where the frame factor decides.
-            m.rebuild_adjacency();
-            let t = m.add_cuboid(
-                Point3::from_array([-1.0, -1.0, 0.5]),
-                Point3::from_array([5.0, 5.0, 1.5]),
-            );
-            m.rebuild_adjacency();
-            let _ = boolean(&mut m, BoolKind::Cut, out[0], t);
+    // ★ **The test builds the population it measures**, and owns it: the very row this needs is a
+    // `Reversed` root face — the **notch** a half boss leaves, whose ceiling class carries
+    // `frame_sign = -1` — and a proportion read off the binary's rows would be diluted by
+    // whatever else was running. So it runs the boss corpus itself (each family's first op, then
+    // a slab cut of the result) and reads its own rows.
+    crate::ledger::owned(|| {
+        for (_, base, h) in BOSS_FAMILIES {
+            for kind in [BoolKind::Fuse, BoolKind::Cut] {
+                let (mut m, plate, boss) = boss_family(base, h);
+                let Result::Ok(out) = boolean(&mut m, kind, plate, boss) else {
+                    continue;
+                };
+                // The second operation is what puts a `Reversed` root face on a cut circle's
+                // class (a notch's ceiling), which is where the frame factor decides.
+                m.rebuild_adjacency();
+                let t = m.add_cuboid(
+                    Point3::from_array([-1.0, -1.0, 0.5]),
+                    Point3::from_array([5.0, 5.0, 1.5]),
+                );
+                m.rebuild_adjacency();
+                let _ = boolean(&mut m, BoolKind::Cut, out[0], t);
+            }
         }
-    }
-    let all = crate::arrangement::disk_side_probe::ROWS.all();
-    let rows = &all[before..];
+    });
+    let rows = crate::arrangement::disk_side_probe::ROWS.mine();
     assert!(
         !rows.is_empty(),
         "the fixture produced no arc labels at all"
@@ -1434,8 +1455,12 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
         .iter()
         .filter(|r| r.route == nesting::Route::Engine && !r.a_disk && r.named == 0 && r.b_disk)
         .collect();
-    assert!(
-        !nameless_vs_disk.is_empty(),
+    // ★ Counted on this boolean's own questions (224 of them): the plate's four bores each ask
+    // the cap ring — which has no three-plane corner — against a disk, from both caps and both
+    // sides of the comparison.
+    assert_eq!(
+        nameless_vs_disk.len(),
+        24,
         "the audit must see the ring that has no three-plane corner asked against a disk: {rows:?}"
     );
     // And those rings do have exact witnesses — of a kind this arm does not ask for.
@@ -1460,10 +1485,7 @@ fn a_ring_with_no_three_plane_corner_is_answered_by_the_witnesses_it_has() {
         .iter()
         .filter(|r| r.route == nesting::Route::Engine && r.a_disk)
         .collect();
-    assert!(
-        !disks.is_empty(),
-        "the plate's bores ask as disks: {rows:?}"
-    );
+    assert_eq!(disks.len(), 40, "the plate's bores ask as disks: {rows:?}");
     for r in &disks {
         assert_eq!(r.rim, 4, "a disk offers its four rim witnesses: {r:?}");
     }
@@ -1497,6 +1519,9 @@ fn the_two_roads_never_disagree() {
         .filter(|r| r.route == nesting::Route::Engine)
         .filter_map(|r| r.roads)
         .collect();
+    // ★ A floor, not a count: some of these operations are refused, and the parallel build
+    // evaluates the classes after the first error while the serial one stops there — so how many
+    // questions a refused case asks is a property of the build, not of the kernel.
     assert!(
         !both.is_empty(),
         "the fixtures must reach questions both roads can answer"
