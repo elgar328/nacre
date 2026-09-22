@@ -470,8 +470,8 @@ impl Orientation {
 /// **A surface's exact truth** — what the surface *is*, as opposed to the f64
 /// [`Surface`](nacre_geom::Surface) beside it, which is its realization.
 ///
-/// The `motion` field says where the data is stated: `None` is the world (`Constructed`), `Some`
-/// names the motion history the data is stated *before* (`Moved`). Holding it inside the variant
+/// The `motion` field says where the data is stated: `None` is the world, `Some` names the motion
+/// history the data is stated *before*. Holding it inside the variant
 /// is the point — a surface whose provenance is unrecorded, or whose exact form does not exist, is
 /// **unrepresentable** here.
 /// ★ **`Plane` is the large variant and it is not boxed** (the `Operation::Extrude`
@@ -728,8 +728,8 @@ pub struct Model {
     /// plane, keyed by its canonical coefficients **and the motion they are stated in**. The twin
     /// of [`Model::motion_ids`]; not iterated (a `HashMap`'s order must never reach a result).
     ///
-    /// ★ **The motion belongs in the key.** `Constructed` coefficients speak about the world and
-    /// `Moved` ones about the pre-motion frame, so two identical arrays under different motions
+    /// ★ **The motion belongs in the key.** Coefficients with no motion speak about the world and
+    /// those with one about the pre-motion frame, so two identical arrays under different motions
     /// are different planes.
     ///
     /// ★★ **The witness does not.** Two faces of one plane sharing one moved

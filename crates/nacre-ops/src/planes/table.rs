@@ -130,15 +130,14 @@ pub(crate) fn collect_planes(
             let (tri_pt3, rotated, motion) = match model.surface(face.surface) {
                 // ★★★★★ **The plane's own points state the plane — not the face's triangle.**
                 //
-                // The face's triangle is where this used to read from, and after a chain of
-                // booleans those corners are `Discovered`: seam points the kernel itself annotated
-                // with a tol, handed to `WitnessPoint::exact`, which states `tol = 0` **by construction**.
-                // Measured, 1,938 of 68,350 triangles carried one, in 162 plane tables, 77 of
-                // which also held a rotated plane — where the claim is actually consulted. The
-                // plane's recorded points are construction points, so no such claim is made.
+                // After a chain of booleans a face's corners are seam points the kernel itself
+                // annotated with a bound, and stating them as tol-0 witnesses claims an exactness
+                // they lack — measured, 1,938 of 68,350 triangles carried one, in 162 plane
+                // tables, 77 of which also held a rotated plane, where the claim is consulted.
+                // The plane's recorded points are construction points, so no such claim is made.
                 //
-                // ★ `WitnessPoint::at_nearest` states a representable point with tol 0 (what
-                // `WitnessPoint::exact` did here) and a non-representable one with the ½-ulp bound
+                // ★ `WitnessPoint::at_nearest` states a representable point with tol 0 and a
+                // non-representable one with the ½-ulp bound
                 // `Rat::to_f64` promises — one spelling for a point that came from a rational.
                 nacre_topo::Surface::Plane {
                     points: nacre_topo::PlanePoints::Known(pts),

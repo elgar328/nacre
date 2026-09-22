@@ -13,7 +13,7 @@
 //! assumed. This is the judgment **layer only**
 //! — wired into the boolean since the CIP stages that followed (`nacre-ops`'
 //! `tolerant` module is the seam), and it is the *tol > 0*
-//! path: a tol-0 (`Constructed`) config is faster/exact via `nacre-predicates`
+//! path: a tol-0 config is faster/exact via `nacre-predicates`
 //! (Shewchuk), routed by a higher layer, not here.
 //!
 //! Soundness is tested against astro-float ground truth over random heterogeneous-rotation

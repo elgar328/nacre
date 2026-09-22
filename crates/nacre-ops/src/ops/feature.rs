@@ -2,10 +2,8 @@ use super::*;
 use crate::BoolKind;
 /// A face-local feature built as **tool body + boolean**: the profile
 /// extrudes off `face` into a top-flush prism, then `kind` fuses/cuts it against the face's solid.
-/// A **contained** footprint takes the contained-coplanar path (empty seam → all
-/// no measured tolerance); one that **reaches past the face** routes to the overhang boolean
-/// sidecars (a boss cantilever / an edge slot; Discovered seam vertices). `Fuse` sweeps **outward**
-/// (a boss); `Cut` sweeps **inward** (a blind pocket). Returns the result solid and the feature's
+/// `Fuse` sweeps **outward** (a boss); `Cut` sweeps **inward** (a blind pocket). Returns the result
+/// solid and the feature's
 /// exposed cap — the boss top or the pocket floor, the outer-shell face on the prism's far-cap plane
 /// with outward normal `+n`. A cap that did not survive (a through-cut has no floor) is `no_cap`,
 /// **the caller's error raised here** rather than an `Option` the caller turns into one: only this

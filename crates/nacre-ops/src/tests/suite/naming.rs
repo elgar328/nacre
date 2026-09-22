@@ -319,17 +319,16 @@ fn one_plane_is_one_class_whatever_the_face_size() {
 /// the stored coordinate is a rounded answer to that question. This asserts it on data the kernel
 /// itself built — the definitions have to be *right*, not merely present.
 ///
-/// ★ **Split by origin, because one row proves nothing.** A `Discovered` vertex's coordinate
-/// was produced by solving exactly this triple, so agreement there is an identity. The rows
-/// that carry weight are `Constructed` and `Moved`, where the coordinate came from somewhere
-/// else entirely — construction arithmetic, or a motion replayed on a base point.
+/// ★ **Split by producer, because one row proves nothing.** A boolean's vertex coordinate is
+/// produced by solving exactly this triple, so agreement there is an identity. The rows that
+/// carry weight are a plain box's and a turned box's corners, where the coordinate came from
+/// somewhere else entirely — construction arithmetic, or a motion applied to it.
 #[test]
 fn a_vertex_definition_solves_to_its_own_coordinate() {
-    // ★ **Three solids, because one would not exercise three kinds of vertex.** The first
-    // draft of this test used a fused-then-turned-then-cut solid and reported
-    // `Constructed (0,0) Discovered (24,24) Moved (0,0)` with a worst error of exactly zero —
-    // a boolean recomputes every vertex it emits, so the only row present was the tautological
-    // one. A plain box keeps its constructed corners; a turned box keeps them as `Moved`.
+    // ★ **Three solids, because one would not exercise three kinds of vertex.** A
+    // fused-then-turned-then-cut solid alone gives a worst error of exactly zero — a boolean
+    // recomputes every vertex it emits, so the only row present is the tautological one. A plain
+    // box keeps its constructed corners; a turned box keeps them under its faces' motion.
     let mut m = Model::new();
     let plain = m.add_cuboid(
         Point3::from_array([0.0, 0.0, 0.0]),

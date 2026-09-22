@@ -353,7 +353,7 @@ fn cut_staple_by_l() {
 fn cut_the_stub_by_the_l_leaves_an_island_face() {
     // Swap the operands of `cut_blind_dimple` and the same loop lands on a face whose
     // boundary is *all* dropped: the kept region is the loop's interior alone. That
-    // face has no `∂f` at all — its outer loop *is* the seam ring, four `Discovered`
+    // face has no `∂f` at all — its outer loop *is* the seam ring, four arrangement-named
     // vertices and nothing else. The answer is the `0.4 × 0.4 × 0.5` box above `z = 1`.
     //
     // This is where `flip` first meets a discovered hole ring. It is wound CCW about the
@@ -473,9 +473,9 @@ fn fuse_blind_dimple() {
 }
 
 /// The first time a boolean result is fed back as an operand: the overlap box
-/// (Discovered corners) stacked on a third box merges through the coincident-
-/// interface path — which runs `is_convex` on that Discovered-cornered
-/// operand. Volume is the sum and the shell stays closed.
+/// (arrangement-named corners) stacked on a third box merges through the
+/// coincident-interface path — which runs `is_convex` on that operand. Volume is the sum and the
+/// shell stays closed.
 #[test]
 fn a_boolean_result_stacks_as_an_operand() {
     let mut m = Model::new();

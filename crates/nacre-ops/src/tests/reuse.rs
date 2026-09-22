@@ -194,7 +194,7 @@ fn a_framed_prisms_corners_solve_for_reuse() {
 }
 
 /// ★★ **Which populations the def road answers for**, pinned per producer. Constructed and
-/// moved answer; so does discovered — the road does not read the cache, and
+/// turned solids answer; so does a boolean's result — the road does not read the cache, and
 /// a result's corner is a three-plane meet with names like any other, so ③
 /// answers. The one recorded decline is the mixed-frame population (④): there is no
 /// sketch-frame base vertex to answer it through, and the def road
@@ -202,7 +202,7 @@ fn a_framed_prisms_corners_solve_for_reuse() {
 #[test]
 fn the_def_road_answers_for_the_populations_it_can_name() {
     let mut m = Model::new();
-    // ① Constructed, decimal-friendly and decimal-unfriendly corners.
+    // ① A constructed box, decimal-friendly and decimal-unfriendly corners.
     let a = m.add_cuboid(
         Point3::from_array([0.0, 0.0, 0.0]),
         Point3::from_array([1.0, 2.0, 3.0]),
@@ -215,7 +215,7 @@ fn the_def_road_answers_for_the_populations_it_can_name() {
     assert_answers(&m, a, true, "constructed (integer corners)");
     assert_answers(&m, b, true, "constructed (decimal corners)");
 
-    // ② Moved: an inexact rotation records a chain — the 8/8 population, now suite-wide.
+    // ② Turned: an inexact rotation records a chain.
     let turned = {
         let OpOutput::Transform { solid } = apply(
             &mut m,
@@ -236,8 +236,8 @@ fn the_def_road_answers_for_the_populations_it_can_name() {
     m.rebuild_adjacency();
     assert_answers(&m, turned, true, "moved (rotated cuboid)");
 
-    // ③ Discovered: a fuse's result — declined while the road read the cache (a measured
-    //    point "has no rational base"); its definition has one, so it answers.
+    // ③ A fuse's result: its definition has a rational base, so it answers (reading the
+    //    cache instead, a measured point "has no rational base").
     let c = m.add_cuboid(
         Point3::from_array([0.5, 0.5, 0.5]),
         Point3::from_array([1.5, 2.5, 3.5]),

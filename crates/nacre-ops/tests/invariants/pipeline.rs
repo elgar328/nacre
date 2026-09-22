@@ -1034,7 +1034,7 @@ fn a_wall_with_two_windows_meshes() {
 /// It is here for the shape, not the arithmetic: the two-window fixture above is the
 /// minimal reproduction and the one that explains the bug. This one proves the fix
 /// survives 22 booleans, rotations by an angle with no exact `f64`, and a face set built
-/// entirely from `Discovered` vertices.
+/// entirely from arrangement-named vertices.
 #[test]
 fn the_fin_array_with_a_star_bore_meshes() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};

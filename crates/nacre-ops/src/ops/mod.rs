@@ -267,7 +267,7 @@ pub enum OpError {
     Boolean(BoolError),
     /// A `Transform` input solid is not live (a stale or non-live handle).
     SolidNotLive,
-    /// A `Discovered` vertex or edge of a `Transform`/`Copy` input names a surface that is not one
+    /// A vertex or edge of a `Transform`/`Copy` input names a surface that is not one
     /// of that solid's face surfaces, so its exact definition cannot be carried onto the duplicate.
     /// The solid's provenance is inconsistent — declined rather than aborting the kernel, and
     /// unreached in the suite (the definitions and the result faces both name the plane class's

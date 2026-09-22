@@ -336,7 +336,7 @@ impl Model {
         // rim-direction offsets the construction already computed (the `add_cuboid` precedent —
         // the producer's own f64 is its statement). For an axis whose normalization is exact
         // (`ẑ`, a Pythagorean triple) these are exact by construction; for an irrational axis
-        // they are the truth of what was *built*, which is all a `Constructed` surface ever
+        // they are the truth of what was *built*, which is all a world-stated surface
         // claims. A cap outside the decimal window is a caller bug (the radius/height
         // precedent above): the truth is not optional any more.
         let w = d.cross(u);

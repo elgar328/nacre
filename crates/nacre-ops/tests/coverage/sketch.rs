@@ -1,10 +1,8 @@
 //! Profiles with holes — extruding a region that is not simply connected.
 //!
-//! The kernel could already *produce* a donut, by cutting a bar out of a box; what it could not do
-//! was **construct** one. That distinction is the point: the boolean route makes every corner a
-//! `Discovered` intersection with a measured tolerance, while extruding the profile directly makes
-//! them `Constructed` — exact by construction. So the strongest check here
-//! is not a number typed by hand but the two producers agreeing.
+//! The kernel can *produce* a donut by cutting a bar out of a box, and **construct** one by
+//! extruding a holed profile. So the strongest check here is not a number typed by hand but the
+//! two producers agreeing.
 
 use crate::common::*;
 use crate::stated::*;
@@ -85,9 +83,7 @@ fn a_swept_hole_matches_the_same_shape_cut_out() {
     assert_eq!(swept_faces, cut_faces, "face count");
 }
 
-/// The construction is exact where the boolean's is not: sweeping a profile makes every vertex
-/// `Constructed`, so no tolerance is recorded anywhere. This is the reason the kernel grows a
-/// producer for a shape it could already cut.
+/// Every vertex a sweep makes is realized from its definition (`Bounded`).
 #[test]
 fn a_swept_hole_is_constructed_throughout() {
     let mut m = Model::new();
@@ -99,7 +95,7 @@ fn a_swept_hole_is_constructed_throughout() {
                 for vh in m.edge(he.edge).vertices.iter() {
                     assert!(
                         matches!(m.vertex_cache(*vh), PointCache::Bounded { .. }),
-                        "a swept vertex is realized from its definition (cell 52)"
+                        "a swept vertex is realized from its definition"
                     );
                 }
             }

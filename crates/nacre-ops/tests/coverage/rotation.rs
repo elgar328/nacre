@@ -117,9 +117,9 @@ fn a_rotated_profile_is_the_same_solid_to_the_boolean() {
 
 #[test]
 fn rotated_coplanar_contact_boss_and_pocket_solve() {
-    // Rotated coplanar contact *away from a corner* is solved correctly (it was over-rejected by an
-    // earlier rotated-coplanar guard, now removed — the Euler-parity self-check only rejects
-    // genuinely malformed, odd-Euler results). A tilted boss fuses flush onto its base (z=1 shared);
+    // Rotated coplanar contact *away from a corner* is solved correctly (the Euler-parity
+    // self-check rejects only genuinely malformed, odd-Euler results). A tilted boss fuses flush
+    // onto its base (z=1 shared);
     // a tilted pocket carves flush into it. Both must succeed with the exact volume and stay valid.
     let tilt = |m: &mut Model, s| xf(m, s, rot_iso(Axis::X, 30));
     // boss fuse — fused volume 1.25.
@@ -162,7 +162,8 @@ fn rotated_coplanar_contact_boss_and_pocket_solve() {
 #[test]
 fn rotated_result_coplanar_reuse_under_a_general_rotation() {
     // The intersection of two separately-solved capabilities: reusing a boolean *result* (every
-    // vertex `Discovered`) *and* coplanar contact, taken through a **compound** rotation so the
+    // vertex arrangement-named) *and* coplanar contact, taken through a **compound** rotation so
+    // the
     // shared plane's normal is fully general (no zero component) — the axis-aligned or single-axis
     // tilt both leave one component zero, which under-tests the coplanar decision.
     //
@@ -371,8 +372,8 @@ fn a_rotation_history_past_the_budget_is_rejected_by_name() {
 /// pair by an ulp, and the arrangement met the symmetry for the first time. What it met there was
 /// **not a symmetry problem** — it was a plane described two ways.
 ///
-/// A `Constructed` plane carries its stored coefficients *and* a witness triangle, and the two need
-/// not describe the same plane: `d = −(raw·origin)` is an `f64` product, and `3.5 × 0.2` lands on
+/// A plane stated with coefficients *and* a witness triangle can hold two that do not describe the
+/// same plane: `d = −(raw·origin)` is an `f64` product, and `3.5 × 0.2` lands on
 /// `0.7000000000000001`. Predicates chose between the two descriptions by *the question* (does any
 /// plane in it rotate?), so one plane sat in two places depending on what was asked, and comparisons
 /// composed across the two were not even transitive. `loop_winding` then read its turn at a node

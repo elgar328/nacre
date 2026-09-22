@@ -117,8 +117,8 @@ impl WitnessPoint {
     }
 
     /// A point at `base` with an explicit initial `tol` — for a root that already
-    /// carries tol (a `Discovered` boolean seam), whose tol the chain then transports
-    /// (`|R|·old`). [`at`](Self::at) is the Constructed case (initial tol = base
+    /// carries tol (a boolean's seam vertex), whose tol the chain then transports
+    /// (`|R|·old`). [`at`](Self::at) is the constructed case (initial tol = base
     /// rounding).
     pub fn at_with_tol(base: [Rat; 3], tol: [f64; 3]) -> Self {
         WitnessPoint {

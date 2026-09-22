@@ -241,7 +241,7 @@ pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame,
     // The projection is `(−d / n·n)·n` from the plane's rational coefficients: one division, no
     // f64 in the derivation, and invariant under negating or scaling those coefficients — so two
     // faces of one plane cannot disagree about where `(0, 0)` is. Measured over the suite: for
-    // every `Constructed` surface the realized point lies on the f64 plane at distance exactly `0`
+    // every world-stated surface the realized point lies on the f64 plane at distance exactly `0`
     // (1121/1121), which the centroid does not always manage.
     //
     // Only a world-stated plane's coefficients are world truth (`motion: None`). A moved

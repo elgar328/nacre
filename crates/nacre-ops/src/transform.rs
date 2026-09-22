@@ -315,7 +315,7 @@ fn carry_of(model: &Model, solid: Handle<Solid>, motion: &Xform<'_>) -> Carry {
         .collect();
     let src = model.solid(solid);
     // ★ The surfaces' exact points must survive the no-node path too. An exact motion
-    // carries a `Constructed` surface's rational triple through `point_rat`/`mirror_point_rat`,
+    // carries a world-stated surface's rational triple through `point_rat`/`mirror_point_rat`,
     // and that arithmetic can overflow `i128` even when every f64 above is exact (the two
     // conditions are independent). Dropping the points would leave a plane with no exact
     // statement; recording a node instead keeps the original triple as the pre-motion truth.

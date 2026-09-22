@@ -1,7 +1,7 @@
 use super::*;
 // ---- indirect orient3d: three rotated planes meet at an implicit point ----
 //
-// A `Discovered` seam vertex is `∩` of three planes, each a plane through three
+// A boolean's seam vertex is `∩` of three planes, each a plane through three
 // rotated points, so its coordinates are never exact — an **implicit point** `V`.
 // The kernel decides `orient3d(V, q, r, s)` without materializing `V`:
 // `sign = sign(D)·sign(M)` where `D = det(normals)` and
@@ -377,7 +377,7 @@ fn plane_gap(m: &HpBounded, d: &HpBounded, cross: &[HpBounded; 3], prec: usize) 
 /// CIP indirect `orient3d(V, q, r, s)`, `V = ∩(3 planes)` — each plane through three
 /// rotated points, the triangle three rotated points. Interval filter → astro-float
 /// escalation; an undecided `D` or `M` becomes the distance from the implicit point to the
-/// triangle's plane and is answered by [`escalate`]. The `Discovered`-seam analogue of
+/// triangle's plane and is answered by [`escalate`]. The seam-vertex analogue of
 /// [`orient3d_judge`]. The boolean reaches its body (`orient3d_from_cramer`) through
 /// [`crate::predicate::Judge::orient3d`].
 #[allow(clippy::too_many_arguments)]

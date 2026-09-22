@@ -371,7 +371,7 @@ fn translated_solid_cut_matches_occt() {
 /// invariant, so OCCT must agree with nacre's `mass_props` — proving the
 /// rotation rewrite produced a valid solid, not merely a volume-preserving
 /// vertex shuffle. The same check on a rotated `Cut` result exercises the
-/// `Discovered`-vertex rotation path. Single-solid export (`to_step_solid`)
+/// rotation of arrangement-named vertices. Single-solid export (`to_step_solid`)
 /// avoids summing the superseded input still resident in the arena.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
@@ -416,7 +416,7 @@ fn rotated_solid_props_match_occt() {
         occt.area
     );
 
-    // (b) rotate a Cut result (Discovered seam vertices → Rotated).
+    // (b) rotate a Cut result.
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let b = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));

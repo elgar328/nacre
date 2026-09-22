@@ -128,10 +128,9 @@ impl Plane {
     /// Three differences, three products and two sums, each round-to-nearest at `≤ ε/2` of its own
     /// magnitude; with `|normal| = 1` an over-estimate of the whole is `3ε · Σ|pᵢ − oᵢ|`.
     ///
-    /// ★ It went unnoticed while `Discovered` tolerances were loose enough to absorb it. The one
-    /// place it surfaced — a four-plane concurrency whose vertex is genuinely *on* the plane — had
-    /// been passing with the residual *exactly equal* to the claimed tolerance, saved only by the
-    /// comparison being strict.
+    /// ★ A loose vertex tolerance absorbs an under-estimate here. The one place it shows — a
+    /// four-plane concurrency whose vertex is genuinely *on* the plane — puts the residual *exactly
+    /// equal* to the claimed tolerance, saved only by the comparison being strict.
     #[inline]
     pub fn distance_eps(self, p: Point3) -> f64 {
         let d = p - self.origin;

@@ -736,14 +736,13 @@ fn transform_translate_cuboid() {
     );
 }
 
-/// Transforming a boolean *result* (which carries `Discovered` seam vertices) does not
-/// **downgrade** those vertices to `Constructed` — the failure this guards.
+/// Transforming a boolean *result* keeps its seam vertices' three-plane definitions — the
+/// failure this guards is a vertex losing its definition in the move.
 ///
-/// A motion that records a forest node supersedes the origin with `Moved { base, motion }`,
-/// and the definition is preserved *through the base*: the base is the seam vertex, still in
-/// the arena with its `ThreePlane` definition, and the node says how it moved. A motion that
-/// records nothing instead remaps the definition's planes in place. Either way the truth
-/// survives; only its spelling depends on whether the motion was worth recording.
+/// A vertex carries no motion of its own: its definition names three planes, and the planes
+/// carry the motion (a recorded node, or planes remapped in place when the motion records
+/// nothing). Either way the truth survives; only its spelling depends on whether the motion was
+/// worth recording.
 #[test]
 fn transform_translate_preserves_discovered_definition() {
     let (iso, _) = test_iso();
@@ -751,17 +750,14 @@ fn transform_translate_preserves_discovered_definition() {
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
     let before = nacre_props::mass_props(&m, r).unwrap().volume;
     let disc = count_discovered(&m, r);
-    assert!(
-        disc > 0,
-        "the Cut result must have Discovered seam vertices"
-    );
+    assert!(disc > 0, "the Cut result must have realized seam vertices");
 
     let r2 = transform(&mut m, r, &iso).unwrap();
     m.rebuild_adjacency();
 
     assert!(nacre_validate::validate(&m).is_empty());
     // Every seam vertex still names its three-plane definition — directly, or through the
-    // base of the motion that moved it. None fell back to `Constructed`.
+    // base of the motion that moved it.
     let named = boundary_verts(&m, r2)
         .into_iter()
         // A measured tolerance survives an exact move and is dropped by a recorded one
@@ -921,8 +917,8 @@ fn copy_is_deterministic() {
 }
 
 /// A genuinely tilted rigid rotation: 30° about Z through the rational axis
-/// point (1,1,0). Non-90° and non-axis-aligned, so it exercises the Rotated
-/// origin and the boolean reject guard (unlike the 90° family, which stays exact).
+/// point (1,1,0). Non-90° and non-axis-aligned, so it records a motion node (unlike the 90°
+/// family, which stays exact).
 fn rot30() -> nacre_exact::Isometry {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     Isometry::rotation(Rotation {
@@ -998,9 +994,9 @@ fn transform_rotate_cuboid_tilts_and_cuts() {
     assert!((vol - 23.0).abs() < 1e-9, "volume {vol}");
 }
 
-/// A 90° rotation about Z is axis-aligned and exact: the solid stays
-/// `Constructed` (`solid_is_rotated` false), volume is exact, and boolean is
-/// still allowed — a following cut succeeds and validates.
+/// A 90° rotation about Z is axis-aligned and exact: the solid records no motion
+/// (`solid_is_rotated` false), volume is exact, and a following cut succeeds and
+/// validates.
 #[test]
 fn transform_rotate_90_is_exact_and_allows_boolean() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -1018,7 +1014,7 @@ fn transform_rotate_90_is_exact_and_allows_boolean() {
     m.rebuild_adjacency();
 
     assert!(nacre_validate::validate(&m).is_empty());
-    assert!(!solid_is_rotated(&m, c2), "90° stays exact (Constructed)");
+    assert!(!solid_is_rotated(&m, c2), "90° stays exact (no motion)");
     assert_eq!(
         nacre_props::mass_props(&m, c2).unwrap().volume,
         24.0,
@@ -1038,18 +1034,14 @@ fn transform_rotate_90_is_exact_and_allows_boolean() {
     assert!((vol - 23.0).abs() < 1e-9, "cut volume {vol}");
 }
 
-/// Rotating a boolean *result* marks its `Discovered` seam vertices `Rotated`
-/// over the pre-rotation vertex as base: validate stays clean, volume is
-/// invariant, and at least one Rotated base is a Discovered vertex (the seam
-/// definition is preserved through the rotation, not downgraded).
+/// Rotating a boolean *result*: validate stays clean, volume is invariant, and a seam vertex
+/// still names three planes — the moved ones (the seam definition is preserved through the
+/// rotation).
 #[test]
 fn transform_rotate_boolean_result_keeps_discovered_base() {
     let (mut m, a, b) = two_boxes();
     let r = boolean_one(&mut m, BoolKind::Cut, a, b).unwrap();
-    assert!(
-        count_discovered(&m, r) > 0,
-        "Cut result has Discovered seams"
-    );
+    assert!(count_discovered(&m, r) > 0, "Cut result has realized seams");
     let before = nacre_props::mass_props(&m, r).unwrap().volume;
 
     let r2 = transform(&mut m, r, &rot30()).unwrap();
@@ -1058,7 +1050,7 @@ fn transform_rotate_boolean_result_keeps_discovered_base() {
     assert!(nacre_validate::validate(&m).is_empty());
     assert!(
         solid_is_rotated(&m, r2),
-        "rotated result carries Rotated origin"
+        "rotated result records its motion"
     );
     let after = nacre_props::mass_props(&m, r2).unwrap().volume;
     assert!((after - before).abs() < 1e-9, "volume invariant");
@@ -1107,7 +1099,7 @@ fn transform_rotate_boolean_result_keeps_discovered_base() {
     );
 }
 
-/// A rotation `Transform` flows through `apply` and marks the result Rotated.
+/// A rotation `Transform` flows through `apply` and the result records its motion.
 #[test]
 fn transform_rotate_op_applies() {
     let mut m = Model::new();
@@ -1305,7 +1297,7 @@ fn the_same_motion_applied_twice_is_one_node() {
 
 /// **A boolean result rotated again continues its history — per wall.**
 ///
-/// One solid does not have one rotation history. A result's vertices are all `Discovered`, so
+/// One solid does not have one rotation history. A result's vertices carry no motion, so
 /// asking them "what rotation is this solid at" answers `None` and the next rotation would
 /// start a fresh root — replaying a pre-first-rotation witness through only the *second*
 /// rotation, which is a plane that does not exist. And its walls can come from operands
@@ -1403,10 +1395,9 @@ fn a_copy_of_a_rotated_solid_answers_like_the_original() {
     assert_eq!(build(true), build(false));
 }
 
-/// A boolean produces `Discovered` seam vertices with tol 0 (exact axis-aligned
-/// intersections). Before exact quadrantal realization, rotating them exactly 90°
-/// left an ~8e-17 f64 residual that exceeded tol 0 → `VertexOffSurface`. Now the
-/// rotation is exact, so the residual stays 0 and validate is clean — both for a
+/// A boolean produces seam vertices at exact axis-aligned intersections. A quadrantal
+/// rotation is realized exactly (an inexact 90° leaves an ~8e-17 f64 residual, which
+/// `VertexOffSurface` catches), so the residual stays 0 and validate is clean — both for a
 /// pure 90° rotation and for a rigid 90°+translation (the offset cancels in
 /// vertex−plane, so it does not reintroduce a residual).
 #[test]
@@ -1451,9 +1442,9 @@ fn rotate_90_lands_vertices_exactly() {
 }
 
 /// Re-rotating about the same axis chains a second forest node onto the first
-/// (this cell does not bundle): the leaf's parent is the earlier rotation, `base`
-/// stays the Constructed root, and the solid remains a rigid (volume/area-invariant)
-/// `Rotated` solid that validate/tess/STEP accept and a boolean now runs against.
+/// (same-axis nodes are not bundled): the leaf's parent is the earlier rotation, and the
+/// solid remains a rigid (volume/area-invariant) rotated solid that validate/tess/STEP accept
+/// and a boolean runs against.
 #[test]
 fn rerotate_same_axis_chains() {
     use nacre_exact::Axis;
@@ -1471,7 +1462,7 @@ fn rerotate_same_axis_chains() {
     assert_eq!(
         forest_probe(&m, c2),
         Some((2, vec![Axis::Z, Axis::Z])),
-        "two Z nodes chained, base = the Constructed root"
+        "two Z nodes chained"
     );
     assert!(nacre_validate::validate(&m).is_empty());
     let after = nacre_props::mass_props(&m, c2).unwrap();
@@ -1486,7 +1477,7 @@ fn rerotate_same_axis_chains() {
             .unwrap()
             .contains("MANIFOLD_SOLID_BREP")
     );
-    assert!(solid_is_rotated(&m, c2), "re-rotated solid stays Rotated");
+    assert!(solid_is_rotated(&m, c2), "re-rotated solid stays rotated");
     // A boolean against the chain-rotated solid runs: the axis-aligned
     // `d` inside the re-rotated `c2` is carved out, and the result is a valid solid.
     let d = m.add_cuboid(Point3::from_array([0.5; 3]), Point3::from_array([1.5; 3]));
@@ -1526,8 +1517,7 @@ fn rerotate_different_axis_chains() {
 
 /// An **exact** (90°-family) rotation applied to an already-rotated solid is still
 /// recorded as a chain node — the composite is inexact (an ancestor is), so the
-/// forest must stay complete (1b silently dropped it). The solid stays Rotated and
-/// boolean-rejected.
+/// forest must stay complete. The solid stays rotated.
 #[test]
 fn rerotate_exact_after_inexact_records_node() {
     use nacre_exact::Axis;
@@ -1548,7 +1538,7 @@ fn rerotate_exact_after_inexact_records_node() {
     );
     assert!(
         solid_is_rotated(&m, c2),
-        "composite is inexact → still Rotated"
+        "composite is inexact → still rotated"
     );
     assert!(nacre_validate::validate(&m).is_empty());
 }
@@ -1606,24 +1596,24 @@ fn rerotate_deep_chain() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// A fresh rotation of a Constructed solid: an inexact angle records a single root node; a
-/// 90°-family angle stays Constructed (no node, boolean allowed).
+/// A fresh rotation of an unmoved solid: an inexact angle records a single root node; a
+/// 90°-family angle records none.
 #[test]
 fn fresh_rotation_of_constructed_unchanged() {
     use nacre_exact::Axis;
-    // inexact → one root node, base = the cuboid's Constructed vertices.
+    // inexact → one root node over the cuboid.
     let mut m = Model::new();
     let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 30)).unwrap();
     m.rebuild_adjacency();
     assert_eq!(forest_probe(&m, c1), Some((1, vec![Axis::Z])));
 
-    // exact 90° → Constructed (no node), boolean allowed.
+    // exact 90° → no node.
     let mut m = Model::new();
     let c = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let c1 = transform(&mut m, c, &rot_iso(Axis::Z, 90)).unwrap();
     m.rebuild_adjacency();
-    assert!(!solid_is_rotated(&m, c1), "fresh 90° stays Constructed");
+    assert!(!solid_is_rotated(&m, c1), "fresh 90° records no motion");
     assert!(nacre_validate::validate(&m).is_empty());
     assert_eq!(forest_probe(&m, c1), None, "no rotation node");
 }

@@ -537,7 +537,7 @@ fn cylinder_matches_occt() {
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn rotated_result_reuse_diff_occt() {
-    // Rotate a boolean *result* (all-`Discovered` geometry) and feed it back into a boolean —
+    // Rotate a boolean *result* (every vertex arrangement-named) and feed it back into a boolean —
     // the capability the provenance plane-witness enables. R = a cube minus a far-corner
     // octant; rotate R and a fresh severing slab by 30° about Z, then Cut. OCCT computes the
     // same Cut of the two rotated STEP solids; the volumes must agree (nacre's exact

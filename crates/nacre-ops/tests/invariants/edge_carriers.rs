@@ -196,7 +196,7 @@ fn derived_curves_match_stored() {
     m.rebuild_adjacency();
     assert_derived_matches_stored(&m, "construction", &mut st);
 
-    // ② A tilted extrude and a boolean (Discovered edges).
+    // ② A tilted extrude and a boolean (arrangement-made edges).
     let tilted = SketchPlane::from_origin_normal(
         Point3::from_array([0.25, -0.5, 1.5]),
         Vector3::from_array([0.3141592653589793, -0.2718281828459045, 1.0]),

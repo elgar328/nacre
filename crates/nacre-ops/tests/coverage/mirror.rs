@@ -175,7 +175,8 @@ fn a_half_and_its_mirror_fuse_into_a_symmetric_part() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// A boolean result carries `Discovered` vertices whose definitions name three surfaces; mirroring
+/// A boolean result carries arrangement-named vertices whose definitions name three surfaces;
+/// mirroring
 /// has to remap those onto the reflected surfaces, and the result must still be usable.
 #[test]
 fn a_boolean_result_mirrors() {

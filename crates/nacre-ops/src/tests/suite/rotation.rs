@@ -242,9 +242,9 @@ fn a_rotated_boolean_result_can_be_cut_again() {
 /// boolean with a fresh cutter C — once unrotated, once with R and C rotated by the same
 /// isometry. A boolean commutes with a rigid motion, so the rotated reuse must equal the
 /// unrotated one (volume, solid count, cavity count) or be an honest reject — never silently
-/// wrong. This is the invariant on the newly-enabled rotated-*Discovered* geometry (every
-/// vertex of a boolean result is `Discovered`, so its rotation exercises the provenance
-/// witness on every face). `#[ignore]`: rotated booleans escalate to astro-float (~1–3 s).
+/// wrong. Every vertex of a boolean result is arrangement-named, so its rotation exercises the
+/// provenance witness on every face. `#[ignore]`: rotated booleans escalate to astro-float (~1–3
+/// s).
 #[test]
 #[ignore = "slow: rotated result-reuse booleans (run with --ignored)"]
 fn rotated_result_reuse_stress() {

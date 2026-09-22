@@ -122,7 +122,8 @@ fn one_tool_cuts_two_parts() {
     assert!(nacre_validate::validate(&m).is_empty());
 }
 
-/// A boolean *result* carries `Discovered` vertices whose definition names three surfaces; copying
+/// A boolean *result* carries arrangement-named vertices whose definition names three surfaces;
+/// copying
 /// has to remap those onto the twin's own surfaces. The copy is then fed back into a boolean,
 /// which only works if the remap produced usable definitions.
 #[test]
@@ -132,7 +133,7 @@ fn a_boolean_result_copies_with_its_discovered_vertices() {
     let fused = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
     m.rebuild_adjacency();
     let before = discovered_count(&m, fused);
-    assert!(before > 0, "a fuse produces Discovered corners");
+    assert!(before > 0, "a fuse produces realized corners");
 
     let twin = copy_solid(&mut m, fused);
 
@@ -197,8 +198,7 @@ fn a_rotated_solid_copies_with_its_rotation_origin() {
 }
 
 /// Rotation and boolean-result reuse are each covered on their own; their intersection is not.
-/// The expectation is *not* preserved `Rotated` provenance — a result is uniformly `Discovered` —
-/// but that the twin survives the remap and is still usable as an operand.
+/// The expectation is that the twin survives the remap and is still usable as an operand.
 #[test]
 fn a_rotated_boolean_result_copies_and_stays_usable() {
     let (mut m, a, b) = two_boxes();

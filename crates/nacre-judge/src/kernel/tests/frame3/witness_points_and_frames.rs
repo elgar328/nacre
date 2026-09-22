@@ -1617,7 +1617,7 @@ fn at_nearest_states_zero_for_an_f64_and_the_contract_bound_otherwise() {
 /// The twin of the test above, one level up: that one pins the `f64` tol, this one pins the
 /// *realization* bound, which is what [`judge_precision`] reads to size a model. So a model
 /// with no rotation history asks for nothing, and a caller that already knows a point is
-/// `Constructed` can skip [`trial_bound`] rather than spend a realization computing a zero.
+/// exact can skip [`trial_bound`] rather than spend a realization computing a zero.
 ///
 /// Not an accident of small numbers. The fixture builds its base with `Rat::try_from_f64` =
 /// `mantissa · 2^exp`, so the **denominator is a power of two** and the **numerator fits
@@ -1677,7 +1677,7 @@ fn at_seeds_base_rounding_tol() {
     assert!(third.realized[0].error > 0.0 && third.realized[1].error == 0.0);
 }
 
-/// `at_with_tol` seeds a nonzero root tol (a Discovered seam) and the chain
+/// `at_with_tol` seeds a nonzero root tol (a boolean's seam vertex) and the chain
 /// transports it (`|R|·old`): a 90° rotation about Z swaps the x/y tol components.
 #[test]
 fn seeded_tol_transports_through_rotation() {

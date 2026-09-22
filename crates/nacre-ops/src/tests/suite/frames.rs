@@ -911,8 +911,8 @@ fn a_named_plane_records_what_its_caller_stated() {
 ///
 /// ★★★ **The base cap stays in the world on purpose.** Writing it as `[0,0,1,0]` in this
 /// prism's frame would be a second exact description of one plane under a different
-/// `SurfaceKey` — the duplication this work exists to remove. Stated in the world it is
-/// `Constructed`, its judgment stays exact, and two extrudes share it whatever frames they chose.
+/// `SurfaceKey`. Stated in the world it carries no motion, its judgment stays exact, and two
+/// extrudes share it whatever frames they chose.
 #[test]
 fn a_prism_on_a_named_tilted_plane_states_all_of_its_faces() {
     let plane =

@@ -414,7 +414,7 @@ fn negative_genus_two_tetra_one_shell() {
 #[test]
 fn a_built_vertex_off_its_definition_is_caught() {
     let m = tetra_with(TetraOpts {
-        // Constructed (tol `None` ⇒ EPS_CONSTRUCTED), nudged well past that epsilon.
+        // Held to EPS_CONSTRUCTED like every vertex, nudged well past that epsilon.
         nudge: Some((0, [0.0, 0.0, 1e-6])),
         ..Default::default()
     });

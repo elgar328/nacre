@@ -21,7 +21,7 @@ pub(crate) enum WitnessPointError {
     Downgrade,
 }
 
-/// The coordinate a `Constructed`-rooted vertex would have with `base_point` as its root and
+/// The coordinate a vertex would have with `base_point` as its root and
 /// `leaf`'s chain applied — the *same* computation [`build`] performs, in the same order.
 ///
 /// **The invariant, not a producer.** Every producer reaches its coordinate by walking the motion
@@ -214,7 +214,7 @@ pub(crate) fn motion_chain(model: &Model, leaf: Handle<MotionNode>) -> Option<Ve
 ///
 /// ★★★ **The frame node and the plane's own motion are one chain, not two.** A plane states
 /// itself in *its* frame, so whatever moved that plane has to run after the frame — and the
-/// recursion ends at a `Constructed` plane, which states itself in the world.
+/// recursion ends at a plane with no motion, which states itself in the world.
 ///
 /// The single spelling of that, so [`motion_chain`] and the sketch frame `nacre-ops` reports to a
 /// caller cannot describe different frames — which they must not, because `face_plane`'s contract
