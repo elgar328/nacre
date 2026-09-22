@@ -211,7 +211,8 @@ pub(super) fn group_faces(
     // (`Ok(None)` — it grazed a boundary) is passed over for the next, and a failed judgement
     // (`Err`) propagates immediately. The last part is the point of the shape: an abstention has
     // other nodes as its remedy, a failed judgement does not — retrying on `Err(_)` too would let
-    // a real cause masquerade as `NoClearRay` once every node hit it. `Ok(None)` here means every node abstained; that being a reject is the *caller's*
+    // a real cause masquerade as `NoClearRay` once every node hit it. `Ok(None)` here means every
+    // node abstained; that being a reject is the *caller's*
     // proposition to raise.
     /// ★★ **Two stages, the second built only on exhaustion**: `more` is the supply that
     /// costs something to derive, and a component whose first corner decides never pays for it.
@@ -380,7 +381,8 @@ pub(super) fn group_faces(
                         // decided **before** the search, because the search closures speak
                         // bool and a failed judgement must propagate, not vanish into "not
                         // inside". A pair where every node abstains stays `false` — no
-                        // evidence places `c` inside `o`. (Nested containers are a rare population; deciding
+                        // evidence places `c` inside `o`. (Nested containers are a rare
+                        // population; deciding
                         // the few pairs up front costs nothing measurable.)
                         let mut inside = HashMap::new();
                         for &c in &containers {

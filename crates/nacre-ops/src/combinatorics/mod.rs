@@ -18,7 +18,8 @@
 //! answer was wrong *silently* — four times on this branch, most recently as 117748 predicate calls
 //! that read "different plane" for two faces of one plane and answered from rounding noise.
 //!
-//! That is held by the type, not by a naming convention (`fp` / `fc`): the predicates here take [`crate::planes::WorkingPlane`], which has no face geometry to offer, and
+//! That is held by the type, not by a naming convention (`fp` / `fc`): the predicates here take
+//! [`crate::planes::WorkingPlane`], which has no face geometry to offer, and
 //! `plane_ix` is the one place a face index becomes a plane index (in [`loop_triples`]).
 //!
 //! **Exception:** the code that *defines* the classes (`planes::plane_classes` →

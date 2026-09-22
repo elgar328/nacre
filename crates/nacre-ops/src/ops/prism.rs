@@ -221,7 +221,8 @@ pub(crate) fn build_prism(
             // ★★★★ **The caller's statement wins here, and the frame's is the fallback.**
             //
             // The base cap *is* the plane they named, and they named it in the world — so stating
-            // it that way keeps its `motion` `None`, keeps its judgment exact, and lets two extrudes
+            // it that way keeps its `motion` `None`, keeps its judgment exact, and lets two
+            // extrudes
             // on one plane share it **whatever frames they chose**. Writing it as `[0,0,1,0]` in
             // this prism's frame instead would be a second exact description of one plane, under a
             // different `SurfaceKey`.

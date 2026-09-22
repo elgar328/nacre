@@ -612,7 +612,8 @@ pub(crate) fn cell_in_cell(
     // and written down; whether it is right is an open question.
     // ★ **The route is one named decision.** Spelled as three fall-throughs with the instrument
     // below sitting above all of them, **85% of its rows describe questions no witness is asked
-    // for** (measured: 189,662 rows against 28,000 engine questions over the lib suite). A row that says "the source had N witnesses" about a
+    // for** (measured: 189,662 rows against 28,000 engine questions over the lib suite). A row
+    // that says "the source had N witnesses" about a
     // question answered by a shared node, or by two radii, is a lie the audit tests then read.
     let route = if circle_ix[a].is_none() && circle_ix[b].is_none() {
         let (ra, rb) = (&rings[a], &rings[b]);

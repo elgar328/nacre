@@ -34,7 +34,8 @@ pub(super) fn walk_cells(
                 // Direction sign away from `v` toward the far end — one spelling, `edge_dir`'s (a
                 // swapped-argument `order_along(target, origin)` agrees with it only by the
                 // antisymmetry of a difference cancelling an inversion).
-                // ★ The maker pairs the carrier with the sense, so this site cannot pair them wrong.
+                // ★ The maker pairs the carrier with the sense, so this site cannot pair them
+                // wrong.
                 // ★ The half-edge **leaves** `v`, so its direction is read at `v` — and `dir_at`
                 // is where that is checked. Built once per half-edge, which is the hoist the
                 // sort below rests on.

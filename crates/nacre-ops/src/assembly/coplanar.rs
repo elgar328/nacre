@@ -574,7 +574,8 @@ fn merge_component(
 /// ★★ **Arc-bearing rings flow through here, and the carrier keeps equality honest**.
 /// With one sentinel wall for every arc, two *consecutive arcs* would compare as "same wall" and
 /// the pierce vertex between them would dissolve. `Wall`'s derived equality rules that out: arcs
-/// of different circles, or of one circle in different directions, compare unequal. The one pair still equal — two *same-direction* arcs of one
+/// of different circles, or of one circle in different directions, compare unequal. The one pair
+/// still equal — two *same-direction* arcs of one
 /// circle — is the pair for which "no turn" is geometrically true on this face, so equality
 /// answers right there too; a crossing at such a vertex is kept by the other faces' rings
 /// (degree > 2), the function's own rule. No population produces that consecutive pair today.

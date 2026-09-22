@@ -149,7 +149,8 @@ pub(crate) fn name_result_vertices(
     // whichever local derivation happens to fail first on its unnameable corners: a
     // self-touching body's pinch line cannot be honestly named by any face-local rule (its
     // in-plane edges are lobe-to-lobe, its touch edge carries four faces — measured).
-    // A held grouping error stays held (raised further down); the self-touch question is only askable of a
+    // A held grouping error stays held (raised further down); the self-touch question is only
+    // askable of a
     // grouping that answered.
     if let Ok(g) = &grouping {
         let body_comps: Vec<Vec<usize>> =

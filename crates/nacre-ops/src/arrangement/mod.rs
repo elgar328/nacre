@@ -129,7 +129,8 @@ pub(crate) use traces::*;
 ///
 /// ★★ Not a bare third plane (`r`), which is the shape a three-plane point has and no other: the
 /// name is carried whole ([`NodeId`], so a corner a cylinder made can be one) and the pin says
-/// **which kind** it is ([`combinatorics::EndPin`]) — the same pair a segment's ends travel as. The crossing arm writes the other pair — `Pierce`/`Cylinder` — where the
+/// **which kind** it is ([`combinatorics::EndPin`]) — the same pair a segment's ends travel as.
+/// The crossing arm writes the other pair — `Pierce`/`Cylinder` — where the
 /// ring crosses the class line on a ruling ([`crossing_on_ruling`]).
 struct Node {
     /// The point's own name — what the arrangement calls it, and what a segment's end records.

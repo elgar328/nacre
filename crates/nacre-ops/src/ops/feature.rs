@@ -192,7 +192,8 @@ pub(crate) fn pocket(
 ///
 /// **Measured: the corpus does not separate the two branches** — disabling either one
 /// leaves the whole suite's results unchanged. So branch 2 has no firing test today and is a
-/// documented backstop (cf. `RejectReason::NonManifoldEdge`); branch 1 is kept because handle identity is the
+/// documented backstop (cf. `RejectReason::NonManifoldEdge`); branch 1 is kept because handle
+/// identity is the
 /// strongest answer available and is the path a surviving cap normally takes.
 pub(crate) fn find_face_coplanar_with(
     model: &Model,

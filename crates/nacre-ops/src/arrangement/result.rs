@@ -380,7 +380,8 @@ pub(super) fn trace_result_faces(
         // two reasons that are both properties of `Aliases` rather than of the schedule:
         // a merged class's representative is its **minimum** element, so the final partition
         // does not depend on the order the unions happened in; and discoveries only
-        // accumulate, so learning something a round later just costs one more round. The last round — the one whose splits are kept — runs on a table that
+        // accumulate, so learning something a round later just costs one more round. The last
+        // round — the one whose splits are kept — runs on a table that
         // has stopped growing either way.
         let snapshot = aliases.clone();
         // Class-major, so the reject a decline raises is still the lowest-numbered class's.

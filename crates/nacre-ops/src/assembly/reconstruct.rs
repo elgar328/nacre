@@ -120,7 +120,8 @@ pub(crate) fn reconstruct(
                 // No residual is measured here for the cache. A residual — the distance from
                 // `sv.point` to the planes the vertex is *re-named* in — is one distance to the
                 // carriers and says nothing about how far the coordinate is from the truth; the
-                // realization answers that, and it runs first (`push_vertex_realized`). What the arrangement still owes the kernel
+                // realization answers that, and it runs first (`push_vertex_realized`). What the
+                // arrangement still owes the kernel
                 // is the seam table's `tol`, which the self-touch sieve reads directly.
                 crate::realize::push_vertex_realized(
                     model,

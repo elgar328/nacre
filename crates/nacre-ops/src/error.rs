@@ -141,7 +141,8 @@ pub enum RejectReason {
     /// Distinct from [`Self::NonManifoldResultEdge`], whose proposition ("uses an edge more than
     /// twice") is **false** here: the face is not split at the contact, so every edge is still used
     /// exactly twice and the topology count sees nothing — ☑ measured: on a tangent `Cut` the count
-    /// alone returns `Ok` with `validate` clean and every net silent, which is why the curved witness
+    /// alone returns `Ok` with `validate` clean and every net silent, which is why the curved
+    /// witness
     /// has a rule of its own. Both are `Impossible`, and both stay because each states a different
     /// proposition about one solid's surface: an edge inside a face here, an edge four faces share
     /// there.
@@ -689,7 +690,8 @@ pub enum RejectReason {
     ///   ★★ **That second site is a backstop with no firings, and deliberately so.** The ring
     ///   naming restates an operand's pierce corner (`combinatorics::pierce_name_from_def`) and
     ///   writes a curved carrier, so the curved rings of the corpus are **described** rather than
-    ///   declined — measured, zero raises from this site across the whole suite. What can still reach it: a corner whose def is not
+    ///   declined — measured, zero raises from this site across the whole suite. What can still
+    ///   reach it: a corner whose def is not
     ///   `Pierce` (a ruling ending at a seam vertex — a seam *joint* between two legs of one
     ///   arc is read as one step, not as a corner), a plane with no *narrow* world
     ///   description (a wide or rotated chain), a handle that answers to both candidate classes

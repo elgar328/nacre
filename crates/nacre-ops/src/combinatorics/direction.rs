@@ -627,7 +627,9 @@ fn ruling_line_turn(
 /// |---|---|---|
 /// | the whole sign | negate the result | **invisible** — this same atom feeds both the cyclic order and the winding, and the walk tries both handednesses, so a *global* flip is absorbed by trying the other one |
 /// | `ccw` | drop it | **locked** — the two arcs at a crossing collapse into one bucket, `UnorderedEdges` |
-/// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus disagrees, and that class's walk merges four cells into one 8-half-edge orbit. ★ The contour count passes it; `arrangement::walk_cells`' Euler condition is what refuses it |
+/// | the canonical→stored turn | use [`class_coeffs_rat`] | **locked** — one class in the corpus
+/// disagrees, and that class's walk merges four cells into one 8-half-edge orbit. ★ The contour
+/// count passes it; `arrangement::walk_cells`' Euler condition is what refuses it |
 /// | `axis_up` | drop it | **locked** — the unmoved corpus already: the disk-side watcher (`disk_side_probe::record`, *"the disk-side rule and the cell's own corners disagree"*) dies on the first boolean |
 /// | `frame_sign` | drop it | **locked** — the commuting oracle's always-on subset turns red on 250 of 396 cells (`t(−4,−4,−2)` puts the plate's caps on a seed plane, `frame_sign = −1`), at the same watcher |
 ///

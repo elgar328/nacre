@@ -229,7 +229,8 @@ impl Chart {
     /// with.
     ///
     /// No sign is derived here: `band_is_above` is `planes::plus_t_is_above` at the low end and
-    /// its negation at the high end, and the bits come out through [`read_bits`]. The ruling labels (the
+    /// its negation at the high end, and the bits come out through [`read_bits`]. The ruling
+    /// labels (the
     /// vertical lines) are not consulted: a face that is here has a circle at both its ends, so
     /// the horizontal lines always speak, and `census` asserts that (`src0_present`).
     #[allow(clippy::too_many_arguments)]
@@ -546,7 +547,8 @@ pub(crate) fn face_spans(
         // share a rim — reachable geometry (a split bore whose two bands touch), just not
         // reachable today. The answer that day is almost certainly `.any()`: if any of the
         // solid's faces reaches into the interval, a face is there. It is not written that way
-        // because it cannot be measured, and an unmeasured rule is a guess. Marks that **agree** decide nothing by themselves, so they are
+        // because it cannot be measured, and an unmeasured rule is a guess. Marks that **agree**
+        // decide nothing by themselves, so they are
         // taken: refusing there would be refusing a case with no guess in it.
         if answer.replace(reaches).is_some_and(|prev| prev != reaches) {
             return Err(reject(RejectReason::CylinderFaceUndecided));

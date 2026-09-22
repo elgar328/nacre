@@ -444,7 +444,8 @@ fn cycle_on_class(
                 // producer's to say — not the flank's.** The flank (the side the ring's
                 // off-class neighbours sit on) gives the ring's *interior* side — right for a
                 // convex hole and wrong for a wrapping rim, whose highest arc has both
-                // neighbours below it and the face below too. The arc's own direction about the axis (`NamedRing::arc_ccw`, the
+                // neighbours below it and the face below too. The arc's own direction about the
+                // axis (`NamedRing::arc_ccw`, the
                 // producer's convention) settles both: walked with sense `ν`, material lies
                 // along `σ·ν·m̂`, so the face is above the class exactly when that agrees with
                 // the class's stored normal (`up`), and the carved extent is the arc as walked.
