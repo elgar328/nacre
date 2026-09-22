@@ -13,7 +13,7 @@
     · 백틱 스팬 길이 상한 → `RotNode`(스팬 112자)를 통째로 건너뜀
     · 형제 리포 검사가 느슨 → `step-io` 주석과 `nacre-kit` 의 `BranchingVertex` 가 `Branch` 를 가림
   ⇒ **분류는 사람이, 계기는 재기만.**
-사용: python3 tools/deadname-sweep.py [문서…]   (리포 루트에서)
+사용: python3 tools/deadname-sweep.py [문서…]   (리포 루트에서, `rg` 필요)
      인자를 안 주면 기본값은 design.md · overview.md · todo.md 셋 — 관문 줄과 같다.
 """
 import io,re,subprocess,glob,os,sys
@@ -29,7 +29,9 @@ toml=''.join(io.open(p,encoding='utf-8').read()
 def uses(name, roots, exts=('*.rs',)):
     """(비주석 사용, 주석 사용)"""
     pat=re.compile(r'(?<!'+W+r')'+re.escape(name)+r'(?!'+W+r')')
-    args=['grep','-rn']+[f'--include={e}' for e in exts]+[name]+list(roots)
+    # `--no-ignore`/`--hidden`: search what grep -r would, not what the ignore files admit (the
+    # repo's `.ignore` re-admits `graft/`). `-F`: a name is an identifier; `pat` checks the boundary.
+    args=['rg','-n','--no-heading','--no-ignore','--hidden','-F']+sum([['-g',e] for e in exts],[])+['--',name]+list(roots)
     out=subprocess.run(args,capture_output=True,text=True).stdout
     live=cmt=0
     for x in out.splitlines():
