@@ -78,11 +78,10 @@ pub(crate) struct CylRow {
 
 /// One row per lateral **face**, ordered by `(class, lower t)`.
 ///
-/// ★ That order was the band road's replay contract stated at the row level, and the chart's
-/// emitter keeps it (classes ascending, then lines ascending). A class's faces have
-/// disjoint spans, so sorting by `(class, span[0])` keeps each class's bands in ascending `t` —
-/// the contract generalizes rather than bends. With one face per class it *is* the old class-index
-/// order, which is why existing results do not move.
+/// ★ That order is the replay contract stated at the row level, and the chart's emitter keeps it
+/// (classes ascending, then lines ascending). A class's faces have disjoint spans, so sorting by
+/// `(class, span[0])` keeps each class's bands in ascending `t`; with one face per class it *is*
+/// class-index order.
 ///
 /// ★★ **That disjointness holds where every lateral face that reaches here is a
 /// band** — two whole rims and holes. The tracer states a panel and a chain rim too
@@ -126,8 +125,8 @@ pub(crate) fn cyl_rows(
         });
     }
     out.sort_by(|a, b| (a.class, a.span[0]).cmp(&(b.class, b.span[0])));
-    // ★ The guard the old per-class table carried, kept as its own sentence: a class exists
-    // because a face made it, so a class with no row is a wiring failure rather than an input.
+    // ★ A guard with its own sentence: a class exists because a face made it, so a class with no
+    // row is a wiring failure rather than an input.
     // It has never fired; an unfired *guard* stays (an unfired *name* would not).
     for k in 0..n_class {
         if !out.iter().any(|r| r.class == k) {

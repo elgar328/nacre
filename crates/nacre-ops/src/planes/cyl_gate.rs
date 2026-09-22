@@ -140,14 +140,14 @@ pub(crate) fn cylinder_gate(
             };
             let n = [coeffs[0], coeffs[1], coeffs[2]];
             // A perpendicular cut is the circle population, and it passes — **including a cap
-            // seated flush on the other body's face**. That seating used to be refused, and the
-            // refusal was wider than anything it could name: what makes a seated circle hard is
+            // seated flush on the other body's face**. Refusing that seating would be wider than
+            // anything the refusal could name: what makes a seated circle hard is
             // its boundary meeting the counterpart's boundary, and a boundary is either an edge
             // on a plane (that plane is parallel to the axis → the wall rule below, or oblique →
             // the oblique rule; both are already conservative because the wall rule judges the
             // *infinite* plane, not the face) or another cylinder's rim (two circles can only
-            // overlap when the axes stand closer than r₁+r₂ → the pair rule below). So what the
-            // seated rule turned away was exactly the population whose circle lies wholly inside
+            // overlap when the axes stand closer than r₁+r₂ → the pair rule below). So what a
+            // seated rule would turn away is exactly the population whose circle lies wholly inside
             // the counterpart's face — measured across the family (through hole, blind hole, boss
             // fuse, common, drilling a pocket floor): every one exact and validating clean.
             //
@@ -228,7 +228,7 @@ pub(crate) fn cylinder_gate(
                         // is **not** recorded. `crossings`' proposition is "the plane runs *within*
                         // the radius", which a tangent plane does not; the three roads gated on
                         // that record assert it in a `debug_assert` (`arrangement`' circular-
-                        // hole arm, `chord_on_class`, `rulings_on_class`), and all three stay true
+                        // hole arm, `chord_nodes`, `rulings_on_class`), and all three stay true
                         // because this pair never reaches them. The arrangement then sees nothing here, which is right: the line
                         // divides no cell of this plane and stations no sector of the chart.
                         //
@@ -249,8 +249,8 @@ pub(crate) fn cylinder_gate(
                         && {
                             // ★ Only a footprint that can be **stated** proves a cut; an
                             // unstatable one (a rotated class, no span) proves nothing either way
-                            // and keeps the old silence — recording on it drew rulings no face
-                            // has (measured, the rigid-motion oracle).
+                            // and records nothing — recording on it draws rulings no face has
+                            // (measured, the rigid-motion oracle).
                             let fps = footprints
                                 .get_or_insert_with(|| lateral_footprints(faces, cyl.surf));
                             !fps.is_empty() && !oblique_plane_clears(&cyl.def, fps, &coeffs)
@@ -928,11 +928,10 @@ fn same_surface(a: &nacre_topo::CylinderDef, b: &nacre_topo::CylinderDef) -> boo
 /// which the surface distance ([`nacre_exact::cylinders_clear`]) is only one sufficient
 /// condition for.
 ///
-/// ★ The two axes used to be spelled here as two questions of different shapes — one class's
-/// **span** against the other's **reach**, asked both ways round. They are the one question
-/// [`separated`] asks at `d = m_a` and `d = m_b`: along its own axis a face's reach *is* that
-/// span (`d ∥ m` leaves no radial term), so the interval the old spelling built by hand is what
-/// [`lateral_reach`] returns. One rule, a list of directions, and the asymmetry is gone.
+/// ★ The two axes are not two questions of different shapes — one class's **span** against the
+/// other's **reach**, asked both ways round. They are the one question [`separated`] asks at
+/// `d = m_a` and `d = m_b`: along its own axis a face's reach *is* that span (`d ∥ m` leaves no
+/// radial term), so the span is what [`lateral_reach`] returns. One rule, a list of directions.
 ///
 /// Empty [`lateral_spans`] is "unusable" (its doc), never clear: it becomes one footprint of
 /// unknown span, which the reach reads as unbounded along anything not perpendicular to the axis.

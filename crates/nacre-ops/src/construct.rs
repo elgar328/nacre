@@ -211,9 +211,9 @@ pub(crate) fn realize(pts: &[[Rat; 3]]) -> Vec<Point3> {
 /// A ring and the ring it sweeps to.
 ///
 /// The two travel together because the prism builder may **reverse** a ring to fix its
-/// winding, and the top has to follow — computing the top afterwards, as the builder
-/// used to, is only safe while the top is a pure function of the base, which is exactly
-/// what stops being true once the sweep is exact.
+/// winding, and the top has to follow — computing the top afterwards is only safe while
+/// the top is a pure function of the base, which is exactly what stops being true once the
+/// sweep is exact.
 #[derive(Clone, Debug)]
 pub(crate) struct Swept {
     pub base: Vec<Point3>,
@@ -336,11 +336,11 @@ impl SweptRat {
     /// `top[i]`, the same three `Plane::through_points` is given, so the exact record and the f64
     /// one describe the plane the same way round.
     ///
-    /// ★★★ **There is no coefficient twin of this any more.** There used to be a `wall_plane`
-    /// returning `(b − a) × (c − a)` canonicalized, which overflows `i128` far sooner than the
-    /// points themselves do (measured — coefficients to 213 bits, ring coordinates to 107) and so
-    /// left most walls unnamed. The name is now derived from these points where it is needed, at
-    /// whatever precision the derivation takes.
+    /// ★★★ **There is no coefficient twin of this.** Coefficients `(b − a) × (c − a)`
+    /// canonicalized overflow `i128` far sooner than the points themselves do (measured —
+    /// coefficients to 213 bits, ring coordinates to 107) and would leave most walls unnamed. The
+    /// name is derived from these points where it is needed, at whatever precision the derivation
+    /// takes.
     pub(crate) fn wall_points(&self, i: usize) -> [[Rat; 3]; 3] {
         let j = (i + 1) % self.base.len();
         [self.base[i], self.base[j], self.top[i]]
@@ -408,8 +408,8 @@ impl SweptRat {
 ///
 /// `None` when there is no exact form to compute in: a frame that is not exactly
 /// orthonormal, or i128 overflow in the placement arithmetic. Both mean the same thing
-/// to the caller, which is to keep its f64 path. (A dimension outside the decimal window
-/// used to be a third reason; the profile constructor now names it before it gets here.)
+/// to the caller, which is to keep its f64 path. (A dimension outside the decimal window is
+/// not a reason here: the profile constructor names it before it gets here.)
 pub(crate) fn prism_rings(
     model: &Model,
     plane: &SketchPlane,

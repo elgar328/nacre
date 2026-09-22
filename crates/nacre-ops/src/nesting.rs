@@ -80,10 +80,9 @@ fn ring_own_circle<'a>(ring: &'a [combinatorics::RingEdge]) -> Option<&'a nacre_
 /// **Is a rational point inside a ring?** — `Ok(None)` when *this point* cannot answer, `Err` when
 /// a **value** could not be formed exactly.
 ///
-/// ★★★★★ **The two are different facts and the split is the point of this function.** The body
-/// below used to sit in the disk-against-a-ring arm, where one witness is all there is, so a point
-/// that landed *on* the ring could be folded into the same refusal as a class with no rational
-/// description. A caller with **several** witnesses must not read them the same way: a
+/// ★★★★★ **The two are different facts and the split is the point of this function.** With one
+/// witness (a disk against a ring) a point *on* the ring and a class with no rational description
+/// can share a refusal; a caller with **several** witnesses must not read them the same way: a
 /// point on the ring has the **next witness as its remedy**, a value that cannot be formed does
 /// not — the lesson `point_in_component`'s doc states for the road one dimension up.
 ///
@@ -107,9 +106,9 @@ fn rational_point_in_ring(
     // parity is affine-invariant, so the basis need not be orthonormal.
     // ★ **A ring the chart road cannot name takes the mixed road**: pierce corners have no
     // rational coordinates and arc steps no straight chart
-    // image, so the parity walks the ring step by step in ℚ(√c) instead. Rings the old road
-    // could always name still take it — the mixed arm activates on exactly the population the
-    // old road refused, which is what keeps every green census row bit-identical.
+    // image, so the parity walks the ring step by step in ℚ(√c) instead. Rings the chart road
+    // can name still take it — the mixed arm runs on exactly the population the chart road
+    // cannot name.
     if combinatorics::ring_is_mixed(ring) {
         return Ok(combinatorics::point_in_mixed_ring(
             jd, cyls, &coeffs, &center, ring,
@@ -208,10 +207,9 @@ enum Where {
 /// cross, so a point of `a`'s **boundary** settles the question outright: `∂a` is connected and
 /// misses `∂b`, so all of `∂a` is on the side that point is on. A point of `a`'s **interior**
 /// settles something weaker — «this point is in `b`» — which is *not* the same claim, because
-/// `b` may sit inside `a` and then `a`'s interior points are in `b` while `a` is not. The old
-/// dispatch carried that as a hand-written second clause on one arm (`circle_center_in_ring` and
-/// then «and the ring is not inside the circle»), and the merge road, which had copied the arm,
-/// had left the second clause out.
+/// `b` may sit inside `a` and then `a`'s interior points are in `b` while `a` is not. Carried as
+/// a hand-written second clause on one arm («and the ring is not inside the circle»), that is one
+/// copy of the arm away from being left out; as a type, every witness says which kind it is.
 enum Witness {
     On(Where),
     In(Where),
@@ -456,8 +454,8 @@ fn ask(
         match nacre_exact::cylinder_radial_side(p, &def.origin(), &def.dir(), def.r2()) {
             nacre_exact::Orient::Negative => Said::In,
             nacre_exact::Orient::Positive => Said::Out,
-            // On the rim. The ring road has always read this as "this witness says nothing, the
-            // next may"; the disk road used to reject here, and the two are one road now.
+            // On the rim: this witness says nothing, the next may — one reading for the ring and
+            // the disk alike.
             nacre_exact::Orient::Zero => Said::Abstain,
         }
     };
@@ -530,13 +528,13 @@ fn inside(
     // into an infinite one.
     may_ask_interior: bool,
 ) -> Result<bool, BoolError> {
-    // ★★★★★ **The list is one list, and it is walked to the end.** Two road-choices used to cut it
-    // short, and both were statements about a *road* rather than about the question:
-    //   · a **mixed** target was never offered the ray road, because every ray answers
-    //     `Unnameable` at the first pierce corner — true, and now said by the ray itself, which
-    //     abstains and hands on to the next witness at no cost but its own;
-    //   · a plain ring target that named any probe answered on names **alone**, so a ring whose
-    //     every ray grazed was refused with coordinates still in hand.
+    // ★★★★★ **The list is one list, and it is walked to the end.** Two road-choices could cut it
+    // short, and both are statements about a *road* rather than about the question:
+    //   · skipping the ray road for a **mixed** target, because every ray answers `Unnameable` at
+    //     the first pierce corner — true, and said by the ray itself, which abstains and hands on
+    //     to the next witness at no cost but its own;
+    //   · answering a plain ring target on names **alone** once it names any probe, which refuses
+    //     a ring whose every ray grazed with coordinates still in hand.
     // Neither is a fact about *whether `a` is inside `b`*, and the premise that lets them go is
     // measured, not assumed: where both roads can answer they agree
     // (`the_two_roads_never_disagree`).
@@ -606,16 +604,15 @@ pub(crate) fn cell_in_cell(
     a: usize,
     b: usize,
 ) -> Result<Option<bool>, BoolError> {
-    // ★ **Adjacency stays a ring–ring rule, where it has always been.** A shared node is a split
+    // ★ **Adjacency stays a ring–ring rule.** A shared node is a split
     // point, so the two loops touch rather than one wrapping the other (that also excludes a
     // contour's own `+1` partner, which carries the same ring). It is *not* asked of the disk arms
     // today, and hoisting it into the engine would answer «not comparable» where they answer — and
     // would change the merge road, whose rings do share nodes. The asymmetry is left where it is
     // and written down; whether it is right is an open question.
-    // ★ **The route is one named decision.** As three
-    // fall-throughs with the instrument below sitting above all of them, **85% of its rows
-    // described questions no witness was ever asked for** (measured: 189,662 rows against 28,000
-    // engine questions over the lib suite). A row that says "the source had N witnesses" about a
+    // ★ **The route is one named decision.** Spelled as three fall-throughs with the instrument
+    // below sitting above all of them, **85% of its rows describe questions no witness is asked
+    // for** (measured: 189,662 rows against 28,000 engine questions over the lib suite). A row that says "the source had N witnesses" about a
     // question answered by a shared node, or by two radii, is a lie the audit tests then read.
     let route = if circle_ix[a].is_none() && circle_ix[b].is_none() {
         let (ra, rb) = (&rings[a], &rings[b]);
@@ -707,9 +704,8 @@ pub(crate) fn cell_in_cell(
     }
     // ★ **Two disks are not a witness question at all**: a disk lies inside another iff
     // its rim does, and the rims of two classes never meet, so the radii and the centre distance
-    // decide it exactly. ★ This arm used to answer `None`, which left two disk cells unnested and
-    // *silently* kept both operands' caps: a pin stacked on a boss fused into **two** untouched
-    // bodies. The old refusal was masking a gap.
+    // decide it exactly. ★ Answering `None` here leaves two disk cells unnested and *silently*
+    // keeps both operands' caps: a pin stacked on a boss fuses into **two** untouched bodies.
     match route {
         Route::SharedNode => Ok(None),
         Route::DiskPair { ca, cb } => {

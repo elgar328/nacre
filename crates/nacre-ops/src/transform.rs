@@ -1,5 +1,5 @@
 //! Rigid-body transform of a solid: copy a solid under an isometry, remapping every
-//! surface/curve and carrying each vertex's exact `Origin` forward so a rotated operand stays
+//! surface/curve and carrying each vertex's exact definition forward so a rotated operand stays
 //! exactly defined. [`copy`] is the same walk with no motion at all.
 
 use crate::OpError;
@@ -81,13 +81,11 @@ pub(crate) fn copy(model: &mut Model, solid: Handle<Solid>) -> Result<Handle<Sol
 /// is a failing test. The positive control (`a_foreign_definition_is_rejected`) shows the gate
 /// actually bites.
 ///
-/// ★★ **That expectation was once false, and is now enforced where it is made.** A boolean's
-/// assembly used to name a four-plane vertex by the arrangement's canonical triple, which could
-/// include a plane the result kept no face on; the solid built fine and refused to move, here,
-/// two operations after the mistake. `assemble_fuse_cut` now derives the name from the faces that
-/// meet the vertex *and* asserts this predicate on what it returns (debug builds), so the whole
-/// suite is the corpus for "every producer writes definitions from its own face surfaces" rather
-/// than this gate being the first to find out.
+/// ★★ **That expectation is enforced where definitions are made.** The assembly names a result
+/// vertex by the canonical triple of its incident faces' planes — not the arrangement's, which
+/// can include a plane the result keeps no face on — and refuses, in release builds too, a result
+/// whose definitions still name an absent surface (`VertexNamesAbsentSurface`). A solid that could
+/// not move is refused by the boolean that made it, not by this gate two operations later.
 pub(crate) fn defs_are_remappable(model: &Model, solid: Handle<Solid>) -> bool {
     foreign_named_vertex(model, solid).is_none()
 }
@@ -162,15 +160,15 @@ pub(crate) fn mirror(
 ///
 /// **One rule for all three motions.** An `Isometry` is "rotate about a pivot, then translate",
 /// so it contributes up to two nodes in that order — **order is the definition**, since the two
-/// do not commute. A reflection contributes one. A reflection used to be carried a second way
-/// entirely (conjugate the input's chain, `M ∘ R = (M R M⁻¹) ∘ M`, and mirror its root vertex),
-/// which meant two mechanisms for one question and a chain that could not hold the reflection it
-/// had just performed. It is a motion; it goes in the chain.
+/// do not commute. A reflection contributes one. Carrying a reflection a second way
+/// (conjugating the input's chain, `M ∘ R = (M R M⁻¹) ∘ M`, and mirroring its root vertex) would
+/// be two mechanisms for one question and a chain that cannot hold the reflection it has just
+/// performed. It is a motion; it goes in the chain.
 ///
 /// A node is *omitted* only when the motion changes nothing the definition needs to say: a zero
 /// translation is the identity (`copy` is `transform_solid` under one), a 90°-family rotation of
 /// an exact datum keeps it exact, and a translation that lands every coordinate back on an exact
-/// `f64` does too (`exact_translate`, which asks whether the translation is exact).
+/// `f64` does too (`realizes_exactly`, which asks whether the realized image is the exact one).
 ///
 /// **Both exceptions lapse once the datum already has a history.** "This motion kept the
 /// coordinates exact" is a statement about *this step*; it says nothing about the chain, and a
@@ -262,10 +260,10 @@ enum Carry {
 /// ([`transport_points`]' `each`), coordinate by coordinate. `false` when the exact image does
 /// not exist (an irrational turn, or `i128` overflow) — those are recorded.
 ///
-/// ★ It used to test the translation on the **pre-turn** coordinates (`p_i + t_i`), which is
-/// not the arithmetic the producer performs: a datum exact before the turn and rounding after
-/// it — `(4.8, 0.5) + (−4, 8)` under `rz90`: `0.8`, `8.5` exact, `12.8` rounds — was called
-/// exact, and its cache was one ulp off its truth.
+/// ★ The realized side is the producer's arithmetic itself, not the translation tested on the
+/// **pre-turn** coordinates (`p_i + t_i`): that test calls a datum exact that is exact before the
+/// turn and rounds after it — `(4.8, 0.5) + (−4, 8)` under `rz90`: `0.8`, `8.5` exact, `12.8`
+/// rounds — and its cache comes out one ulp off its truth.
 fn realizes_exactly(motion: &Xform<'_>, p: Point3) -> bool {
     let q = p.as_array();
     let Some(exact) = (|| {
@@ -426,7 +424,7 @@ fn transport_cylinder(
 }
 
 /// The motion history a moved surface's image carries — the surface twin of the vertex
-/// `Origin` rules, held in the surface's own `motion` field:
+/// definition rules, held in the surface's own `motion` field:
 ///
 /// | source motion | `Carry::None` — the whole motion recorded | `Carry::Rotation` — the turn carried, the translation recorded | `Carry::Full` — nothing recorded |
 /// |---|---|---|---|
@@ -482,9 +480,9 @@ pub(crate) enum Xform<'a> {
     ///
     /// The plane is carried **twice**: `m` is the `f64` map the coordinates actually go through,
     /// `(axis, offset)` the exact statement of the same plane that the motion history records.
-    /// They used to travel as separate arguments, and an `Option` that could in principle arrive
-    /// empty; one variant cannot lose half of itself. [`Xform::mirror`] is the only constructor,
-    /// so the two halves cannot be made to disagree either.
+    /// One variant carries both, so neither half can arrive without the other (as separate
+    /// arguments, one of them an `Option`, they could). [`Xform::mirror`] is the only
+    /// constructor, so the two halves cannot be made to disagree either.
     Mirror {
         m: AxisMirror,
         axis: Axis,
@@ -592,8 +590,8 @@ fn transform_surface(
 
 /// Clone `solid` into a new solid with every cell's geometry mapped by `motion`,
 /// preserving topology, shared cells (surfaces/curves/vertices/edges are deduped),
-/// inner-loop holes, cavity shells, and each vertex/edge `Origin` (a `Discovered`
-/// definition's plane handles are remapped to the moved surfaces). Cells are pushed in a
+/// inner-loop holes, cavity shells, and each vertex's definition (its plane handles are
+/// remapped to the moved surfaces). Cells are pushed in a
 /// **deterministic traversal order** (shell → face → loop) with per-cell dedup maps, so the same
 /// op-log reproduces identical handles (replay determinism).
 ///
@@ -687,18 +685,18 @@ fn transform_solid(
         .flat_map(|&sh| model.shell(sh).faces.clone())
         .collect();
 
-    // Pass 1 — surfaces (dedup, moved): needed before vertex `Origin` remap.
+    // Pass 1 — surfaces (dedup, moved): needed before the vertex definitions are remapped.
     //
     // A moved surface's coefficients are only the truth while the motion kept them exact, so each
-    // one states its provenance here (`SurfaceDef`). The witness for a rotation is the face's own
+    // one states its provenance here (its `motion`). The witness for a rotation is the face's own
     // **pre-rotation** triangle, read on the spot — the definition must not depend on anything
     // else in the model surviving, and those points are exactly the ones a rotated operand's
-    // `tri_pt3` is built from today, which is why this changes no answer.
+    // `tri_pt3` is built from.
     //
     // **A surface chains from its own leaf, not from the solid's.** One solid does not have one
     // rotation history: a boolean between differently-rotated operands hands back a result whose
-    // walls came from different rotations, and its vertices are all `Discovered`, so the
-    // vertex-side `solid_rotation` cannot answer for it at all. `surf_rot` memoizes one new forest
+    // walls came from different rotations, so there is no solid-wide rotation to answer for it.
+    // `surf_rot` memoizes one new forest
     // node per distinct parent leaf, so surfaces that did share a history still share it.
     let mut surf_rot: HashMap<Option<Handle<MotionNode>>, Option<Handle<MotionNode>>> =
         HashMap::new();
@@ -751,9 +749,7 @@ fn transform_solid(
             moved_surface_motion(model, s, motion, carry, &mut surf_rot)
         };
         // ★★★★★ **Only the points move.** The image's canonical name is derived from them by
-        // `Model::push_surface_with_points`, so there is no second description to keep in step —
-        // the agreement between points and coefficients was checked across the suite before the
-        // coefficient parameter went away (83,883 pushes, 0 disagreements) and is now structural.
+        // `Model::push_plane`, so there is no second description to keep in step.
         //
         // A recorded node states its plane **before** the motion, and the image's base is the
         // source's base — `moved_surface_motion` chains from the source's own leaf for the same
@@ -774,7 +770,8 @@ fn transform_solid(
                     ..
                 },
             ) => {
-                // ★ `invariant` must gate first: there `new_motion == *src_m == None`, and
+                // ★ `invariant` must gate first: there `new_motion` and the source's motion are
+                // both `None`, and
                 // the else arm's expect names a probe (`carry_of`) that never ran on
                 // this road — an irrational turn would panic in `transport_points`. The
                 // statement is the image's verbatim, so there is nothing to transport.
@@ -906,16 +903,15 @@ fn transform_solid(
                 cylinder,
                 root,
             } => {
-                // ★★★ **The sign half, which this site owed and did not pay.** `canonical` counts
+                // ★★★ **The sign half.** `canonical` counts
                 // the swap; but a restatement may spell a moved plane with the *opposite* normal
                 // (its world name is canonical over four coefficients), and a reflection reverses
                 // every cross product — each reverses `ℓ = n₁ × n₂`, and `Lo`/`Hi` trade names
                 // once per reversal (`QuadRoot::canonical`'s doc: *"flip once per reversal"*).
                 // Decided exactly from the world names: the new pair's `ℓ` against the old pair's
                 // `ℓ` carried through the motion, which folds the swap in as well. Measured, by the
-                // commutation oracle: with the realized cache reading the definition, a boss
-                // turned 90° named the *other* crossing on 18 quadrantal cells — the stored `f64`
-                // had hidden the wrong label since the day it was written.
+                // commutation oracle: counting the swap alone, a boss turned 90° names the *other*
+                // crossing on 18 quadrantal cells, and a stored `f64` hides the wrong label.
                 //
                 // Unavailable (a chain the world cannot state exactly) means nothing was restated
                 // — the spellings travelled whole — so the order-only answer stands.
@@ -936,12 +932,11 @@ fn transform_solid(
             }
         };
         let coord = motion.point(model.vertex_point(vh));
-        // ★ **The moved figure is a fallback, and only a fallback.** This used to carry the old
-        // cache's knowledge across an exact move of a history-less solid (the letter-preserving
-        // rule) and demote otherwise — a rule that existed because a *measured residual* survives a
-        // rigid motion while a *bound* does not. With no residual in the cache there is nothing to
-        // preserve: this coordinate is `f64` arithmetic on the old one, never the nearest `f64` of
-        // the moved definition, so "no realization stands behind it" is the whole truth about it.
+        // ★ **The moved figure is a fallback, and only a fallback.** A *measured residual* would
+        // survive a rigid motion, but the cache holds a *bound*, which does not — so there is
+        // nothing to carry across: this coordinate is `f64` arithmetic on the old one, never the
+        // nearest `f64` of the moved definition, so "no realization stands behind it" is the whole
+        // truth about it.
         // The realization of the moved definition runs next and replaces it wherever it answers.
         let cache = PointCache::Unrealized { coord };
         // ★ The one site that extends a chain: this vertex *is* the image of `vh`, so the prefix

@@ -39,8 +39,7 @@ pub(crate) use table::*;
 /// `n_out` (or `tri`), and the two agree by that enforcement.
 /// One row of the boolean's face table — the face vocabulary the engine reads.
 ///
-/// The table used to be `Vec<FaceInfo>` with a hard `CylinderFace` reject at the door; the row
-/// is now an enum so a cylinder face can *sit in the table* (keeping the face-index space that
+/// The row is an enum so a cylinder face can *sit in the table* (keeping the face-index space that
 /// `surf_ix`/`EdgeFaces`/`plane_ix` share) while the plane data keeps its own struct — plane
 /// consumers read through [`FaceRow::plane`], and the population gate decides what flows.
 /// ★ The size gap is the `Surface` trade taken again: planes dominate every table (a
@@ -122,10 +121,8 @@ pub(crate) struct CylFaceInfo {
     /// (`lateral_spans`) — a wider rectangle only refuses more — and what the chart's rows carry
     /// once the tracer has cut every circle the face covers only partly.
     ///
-    /// ★★ It used to be the two rims of an outer loop that had to be exactly two rims and the
-    /// seam (`lateral_axis_span`); a hole spliced into the outer walk, a panel or a chain rim had
-    /// none, and `circle_on_class` planted whole circles inside a `Some` — which is why the
-    /// widening waited for the cycles.
+    /// ★★ It is read from the ⊥ carriers' stations, not from "the two rims of the outer loop":
+    /// a hole spliced into the outer walk, a panel or a chain rim has no such pair.
     ///
     /// ★ This range is the first axis of the face's [`Footprint`] on its own chart; the
     /// second, θ, joins with the angular extent.
@@ -220,8 +217,8 @@ pub(crate) struct FaceInfo {
     /// Separate names, separate questions.
     pub(crate) orient_sign: i8,
     /// The three `tri` points as **exact `WitnessPoint` definitions**, in the same order as `tri`.
-    /// Built once here and borrowed by every predicate (`plane_def`) — it used to be rebuilt
-    /// per judgment, which dominated the boolean's runtime.
+    /// Built once here and borrowed by every predicate (`plane_def`) — rebuilt per judgment, it
+    /// dominates the boolean's runtime.
     pub(crate) tri_pt3: [WitnessPoint; 3],
     /// The motion-history leaf this face's plane was moved by, or `None` for a constructed one.
     /// **The canonical identity of "which motion"** — see [`BaseFrame`].
@@ -245,10 +242,9 @@ pub(crate) struct FaceInfo {
     /// Whether this face's plane is a *moved image* — the predicate-routing signal, read from
     /// the surface's own truth (`Model::surface`).
     ///
-    /// **Set together with `tri_pt3`, and only here.** It used to be decided per solid, by asking
-    /// the vertices — which a boolean's result cannot answer, since its vertices are all
-    /// `Discovered`. The surface answers for itself, and one solid can hold both kinds at once
-    /// (fuse an axis-aligned hub with a turned fin).
+    /// **Set together with `tri_pt3`, and only here.** The surface answers for itself, not its
+    /// solid's vertices, and one solid can hold both kinds at once (fuse an axis-aligned hub with
+    /// a turned fin).
     pub(crate) rotated: bool,
 }
 
@@ -311,7 +307,7 @@ pub(crate) fn outer_tri(model: &Model, face: &Face) -> Option<([Point3; 3], [Han
     }
     let (i0, i1, i2) = (i, (i + 1) % n, (i + 2) % n);
     let (a, b, c) = (pts[i0], pts[i1], pts[i2]);
-    // Same b/c swap for coords and handles, so `tri[k]` and `tri_verts[k]` stay aligned.
+    // Same b/c swap for coords and handles, so the k-th point and the k-th handle stay aligned.
     Some(if (b - a).cross(c - a).dot(newell) < 0.0 {
         ([a, c, b], [verts[i0], verts[i2], verts[i1]])
     } else {

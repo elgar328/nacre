@@ -86,8 +86,8 @@ fn extrude_and_boolean(
     // afterwards. Its plane classes are decided with evidence (an exact `orient3d`, a composed
     // rotation proof, or a coincidence within the limit), and a later comparison of handles or
     // coordinates can see none of that: on a tilted face the cap merges with a face of the other
-    // operand and the survivor carries *that* surface, which is exactly what `find_face_coplanar_with`
-    // was left to guess at. `pad` used to throw away a correct solid when the guess missed.
+    // operand and the survivor carries *that* surface, which `find_face_coplanar_with` can only
+    // guess at — and a missed guess throws away a correct solid.
     let want_surf = class_of
         .get(&far_cap)
         .copied()
@@ -192,7 +192,7 @@ pub(crate) fn pocket(
 ///
 /// **Measured: the corpus does not separate the two branches** — disabling either one
 /// leaves the whole suite's results unchanged. So branch 2 has no firing test today and is a
-/// documented backstop (cf. `NON_MANIFOLD_EDGE`); branch 1 is kept because handle identity is the
+/// documented backstop (cf. `RejectReason::NonManifoldEdge`); branch 1 is kept because handle identity is the
 /// strongest answer available and is the path a surviving cap normally takes.
 pub(crate) fn find_face_coplanar_with(
     model: &Model,

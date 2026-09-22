@@ -140,13 +140,11 @@ pub enum RejectReason {
     ///
     /// Distinct from [`Self::NonManifoldResultEdge`], whose proposition ("uses an edge more than
     /// twice") is **false** here: the face is not split at the contact, so every edge is still used
-    /// exactly twice and the topology count sees nothing. (That sentence was written for the planar
-    /// witness and is the reason the curved one needed a rule of its own — ☑ measured: a tangent
-    /// `Cut` returns `Ok` with `validate` clean and every net silent.) `Impossible` for the stronger reason —
-    /// that one is now about a single solid pinching *itself* along an edge — the day it named an
-    /// output shape the kernel might allow arrived, and several solids is what two touching bodies
-    /// get. Both survive because each states a different proposition about one solid's surface: an
-    /// edge inside a face here, an edge four faces share there.
+    /// exactly twice and the topology count sees nothing — ☑ measured: on a tangent `Cut` the count
+    /// alone returns `Ok` with `validate` clean and every net silent, which is why the curved witness
+    /// has a rule of its own. Both are `Impossible`, and both stay because each states a different
+    /// proposition about one solid's surface: an edge inside a face here, an edge four faces share
+    /// there.
     ///
     /// What produces it is two surfaces of the model meeting exactly, leaving the material between
     /// them no thickness at all: a pocket whose wedge tip lands on the far wall, a boss flush with
@@ -166,11 +164,9 @@ pub enum RejectReason {
     OpenResultShell,
     // ---- the arrangement's own consistency checks ----
     //
-    // These ten questions used to share one name, `LoopOrientMismatch`, raised from **22
-    // places** across three files — and its doc claimed it was unreachable, which measurement
-    // refuted. One label over that many questions makes a reject name a dead end: it says the
-    // engine is unhappy without saying about what, and a census cannot tell two causes apart.
-    // Each name below is one question, asked at one kind of place.
+    // Ten questions, ten names. One label over several questions makes a reject name a dead
+    // end: it says the engine is unhappy without saying about what, and a census cannot tell two
+    // causes apart. Each name below is one question, asked at one kind of place.
     /// **Two distinct plane triples name the same point.** A vertex is named by the three planes
     /// meeting there, so two names for one point means a **fourth** plane passes through it — the
     /// arrangement then holds an edge with no direction, or a loop whose extreme vertex recurs.
@@ -260,11 +256,6 @@ pub enum RejectReason {
         kind: DeclineKind,
         face: Option<Handle<Face>>,
     },
-    /// The result severs into two or more material solids *and* at least one enclosed void
-    /// (cavity) survives. Which outer shell owns which cavity needs a shell-scoped point-in-shell
-    /// test we do not have yet, so this is honestly rejected and deferred to a follow-on cell.
-    /// Reachable: `Cut` a hollow part with a cut that isolates the void into one severed piece.
-    /// Born with its firing test (`severed_with_cavity_is_rejected`).
     /// A surviving cavity that no material component contains — geometrically impossible for a
     /// valid boolean result (a void lies inside exactly one piece). A defensive backstop; cavity
     /// ownership is otherwise decided exactly by [`combinatorics::point_in_component`] containment.
@@ -306,17 +297,16 @@ pub enum RejectReason {
     /// zero-length edge. The known cause is a **split plane table** (one geometric plane carried by
     /// two classes).
     ///
-    /// ★ A genuine 4-plane concurrency used to reach here too, and that was **this reject naming
-    /// the wrong thing** — a property of the input reported at the class that says "report a bug".
-    /// The arrangement folds those names now, including the pierce that was missing: a plane which
-    /// *carries* an arrangement line rather than crossing it (`Aliases::wall_family`, and
-    /// `tests/probes/concurrent_line.rs` for the shape). What remains here is meant to be a real
-    /// defect.
+    /// ★ A genuine 4-plane concurrency is a property of the input, and reporting it here would put
+    /// it under the class that says "report a bug". The arrangement folds those names — including
+    /// a plane which *carries* an arrangement line rather than crossing it (`Aliases::wall_family`,
+    /// and `tests/probes/concurrent_line.rs` for the shape) — so what reaches here is meant to be a
+    /// real defect.
     SeamAlias,
     /// A result loop asked for an edge between two vertices at the same coordinate. Every ring node
-    /// is a distinct arrangement vertex, so this cannot happen for well-named input — it is the
-    /// backstop that keeps a degenerate one from aborting the kernel (`Line::through_points` used to
-    /// `expect`). `SeamAlias` catches the known cause earlier, so this has no firing test.
+    /// is a distinct arrangement vertex, so this cannot happen for well-named input — it is what
+    /// `Model::push_edge` refusing a zero-length line becomes, so a degenerate one is reported
+    /// rather than built. `SeamAlias` catches the known cause earlier, so this has no firing test.
     ZeroLengthEdge,
     /// Four planes concurrent at one point: two distinct plane triples name the same arrangement
     /// vertex, which the substrate cannot express.
@@ -363,7 +353,7 @@ pub enum RejectReason {
     /// ★ Its per-face sibling is `DeclineKind::PierceNode`: the tracer's decline structure carries
     /// a face handle, so the paths inside it say *where* instead of raising this.
     ///
-    /// ★★ **A ring may now hold a pierce node, and this no longer refuses one.**
+    /// ★★ **A ring may hold a pierce node; this refuses only the narrower case.**
     /// `loop_winding` compares pierce coordinates through the quad tower
     /// (`combinatorics::CoordKey`); what is left here is the narrower sentence — a pierce node
     /// whose *cylinder* is not on any of the ring's own carriers, so the point cannot be re-solved
@@ -461,18 +451,12 @@ pub enum RejectReason {
     /// arrangement decided every piece exactly and the pieces contradict each other.
     CylinderFaceUndecided,
     /// An operand face has no three non-collinear outer-loop points, so it spans no plane.
-    /// (Its sibling `DegenerateNormal` — a zero-length triangle normal — died when `n_out`
-    /// moved to the stored orientation: no triangle cross is taken, so there is nothing
-    /// left to degenerate.)
+    /// (There is no zero-length-normal sibling: `n_out` is the plane's normal signed by the
+    /// stored orientation, not a triangle cross, so there is nothing to degenerate.)
     DegenerateFace,
     /// A plane's own frame cannot be stated exactly, so a sketch built in it has no exact
     /// definition to judge from. Either the plane recorded no rational coefficients, or the
     /// squared lengths the frame's realization divides by do not fit `i128`.
-    ///
-    /// ★ **Distinct from the retired `InexactSurface` on purpose** (both ended with "no exact
-    /// definition here", but they say different things about *why*: that one names a surface with
-    /// no provenance, this one names a frame the rationals cannot hold. Sharing a label would
-    /// leave a firing pointing at the wrong producer.
     FrameOutOfRange,
     /// **The model's rotation history is longer than the judging budget.**
     ///
@@ -483,8 +467,8 @@ pub enum RejectReason {
     ///
     /// **Nothing is wrong with the model** — this is a cost limit, not a resolution one. The same
     /// solid turned fewer times builds, and raising the cap would build this one too, slowly.
-    /// It exists so the cause has a name: at a fixed 256 bits a solid turned 245 times used to
-    /// fail as `LoopOrientMismatch`, a symptom three layers away from the reason.
+    /// It exists so the cause has a name where it is known, rather than surfacing as a symptom
+    /// three layers away from the reason.
     PrecisionBudget { needed: usize, cap: usize },
     /// **A judgement ran out of bits.** A determinant could not be separated from zero even at
     /// the judging cap, and the separation it *did* bound is wider than the coincidence limit —
@@ -504,10 +488,10 @@ pub enum RejectReason {
     /// determinant was still bit-exactly zero 8192 bits deeper). The arrangement asked for a
     /// point that does not exist.
     ///
-    /// ★ **Unfired across the suite since the outwardness label became nesting parity.** The one
-    /// judgement the corpus ever came back degenerate on was the component material/void test,
-    /// which asked for the sign of a rotated plane's normal; the parity label asks containment
-    /// instead, which the substrate always answers. A sweep over three rotation axes, ten angles,
+    /// ★ **Unfired across the suite.** The outwardness label is nesting parity, which asks
+    /// containment — a question the substrate always answers. The one judgement the corpus has come
+    /// back degenerate on is the sign of a rotated plane's normal, which a material/void test would
+    /// ask and this label does not. A sweep over three rotation axes, ten angles,
     /// two operand shapes, four overlaps and all three kinds (720 booleans) found none, and none
     /// of `JudgeExhausted` either. `undecided_reject` is still wired and still the right shape —
     /// an undecided judgement must never reach the geometry as a zero — it simply has no fixture,
@@ -621,10 +605,9 @@ pub enum RejectReason {
     /// calls it), and the arrangement's split passes, where a point's own description — its
     /// `(line, s)` or its `dir_sign` — could not be formed.
     ///
-    /// ★ **It used to name the arc split's demand for both endpoints' coordinates, and that is
-    /// gone.** The arc split asked for a coordinate where it wanted an order; it asks for the order
-    /// now, so what is left under this name there is the honest cause — a description past `Rat` —
-    /// and not a shape the road cannot spell. A chained cylinder operand no longer stops here.
+    /// ★ **The arc split asks for an order, not for its endpoints' coordinates**, so what this
+    /// name means there is the honest cause — a description past `Rat` — and not a shape the road
+    /// cannot spell. A chained cylinder operand does not stop here.
     ///
     /// ★ **Distinct from the gate's own name on purpose.** The population gate asks *signs*, and
     /// those were made total (they clear denominators and answer in `BigInt`), so
@@ -639,8 +622,7 @@ pub enum RejectReason {
     /// normal past ~2⁶³, and the corpus has none. ⚠ It has raises but no frozen
     /// *surfacing* fixture; `reject-trace` is what keeps it visible.
     WitnessNotRational,
-    /// **An arc-bounded boundary this assembly cannot spell yet** — a backstop, no longer a
-    /// stopper.
+    /// **An arc-bounded boundary this assembly cannot spell yet** — a backstop, not a stopper.
     ///
     /// The arc population builds (the straddling boss — `bands`' fences), so no stopper
     /// carries this name. What keeps the name alive are its honest backstops:
@@ -683,23 +665,18 @@ pub enum RejectReason {
     /// names an operand the trace cannot **read**. Sharing either would put an input-side coverage
     /// limit under an output-side name, and the census keys on these.
     ///
-    /// ★★★★★ **Two sites, and neither of them fires today** — measured over the whole suite
-    /// (`--features reject-trace`: 86 raises across 15 reasons, this one **absent**). What a caller
-    /// meets on a chained operand has kept moving outward as the rungs went in, and the sentence
-    /// here has had to move with it four times: [`DeclineKind::PierceNode`] at the tracer's ring
-    /// naming, then [`Self::PierceVertexUnnamed`] at the arrangement's then-plane-only overlay,
-    /// then [`Self::WitnessNotRational`] at the arc split, which asked every segment for its two
-    /// ends' exact coordinates — and now [`Self::CurvedStraightRun`], **one stage further into the
-    /// arrangement**: its split passes all take a cylinder-pinned end, so a chained operand reaches
-    /// the *cell* stage, where `arrangement::walk_cells` asks `combinatorics::loop_winding` for a
-    /// ring's winding and its extreme-node walk steps past two tangent arcs of one circle.
-    /// ☑ Measured by backtrace, not inferred: the raise arrives through `walk_cells`/`per_class`.
+    /// ★★★★★ **Two sites, and neither of them fires** — measured over the whole suite
+    /// (`--features reject-trace`: 86 raises across 15 reasons, this one **absent**). A chained
+    /// operand is read, and what it meets is [`Self::CurvedStraightRun`] at the arrangement's
+    /// *cell* stage: the split passes all take a cylinder-pinned end, and `arrangement::walk_cells`
+    /// asks `combinatorics::loop_winding` for a ring's winding, whose extreme-node walk steps past
+    /// two tangent arcs of one circle. ☑ Measured by backtrace, not inferred: the raise arrives
+    /// through `walk_cells`/`per_class`.
     ///
-    /// * `planes::face_clears_footprint` — the population **gate**. It used to refuse the whole
-    ///   chained population here, because its clearance scan stopped at the first corner a
-    ///   cylinder made. That corner is now **read exactly** (a pierce point carries one radicand
-    ///   and everything it is measured against is rational), so what is left under this name is
-    ///   only what the scan genuinely cannot spell: an **arc** edge — whose bulge breaks the
+    /// * `planes::face_clears_footprint` — the population **gate**. A corner a cylinder makes is
+    ///   **read exactly** (a pierce point carries one radicand and everything it is measured
+    ///   against is rational), so what this name covers is only what the scan genuinely cannot
+    ///   spell: an **arc** edge — whose bulge breaks the
     ///   convex-hull argument the scan rests on — and an `OnSeam` vertex, which pins a curve
     ///   rather than a point. The gate's *arithmetic* failures are not this name: they wear
     ///   [`Self::CylinderGateUndecided`], whose sentence is true of them and false of these.
@@ -709,11 +686,10 @@ pub enum RejectReason {
     ///   face has several. The reject census still records the raise, so the cause is in the ledger
     ///   even where the surfaced label is the loop's.
     ///
-    ///   ★★ **That second site is now a backstop with no firings, and deliberately so.** Once the
-    ///   ring naming learned to restate an operand's pierce corner
-    ///   (`combinatorics::pierce_name_from_def`) and to write a curved carrier, the curved rings of
-    ///   today's population are **described** rather than declined — measured, zero raises from
-    ///   this site across the whole suite. What can still reach it: a corner whose def is not
+    ///   ★★ **That second site is a backstop with no firings, and deliberately so.** The ring
+    ///   naming restates an operand's pierce corner (`combinatorics::pierce_name_from_def`) and
+    ///   writes a curved carrier, so the curved rings of the corpus are **described** rather than
+    ///   declined — measured, zero raises from this site across the whole suite. What can still reach it: a corner whose def is not
     ///   `Pierce` (a ruling ending at a seam vertex — a seam *joint* between two legs of one
     ///   arc is read as one step, not as a corner), a plane with no *narrow* world
     ///   description (a wide or rotated chain), a handle that answers to both candidate classes
@@ -725,7 +701,7 @@ pub enum RejectReason {
     /// ★ The two ask the same question of a face in two vocabularies — the gate reads the edge's
     /// **carriers** from the model, the road reads the far face's **class** — and they were
     /// measured to pick the same faces (a face-by-face probe over wall, corner, bore and top-boss
-    /// operands). The road's side of that is now
+    /// operands). The road's side of that is
     /// `an_operand_bounded_by_a_cylinder_is_named_in_class_space`, which locks the naming rather
     /// than the decline.
     CurvedOperandBoundary,
@@ -818,18 +794,15 @@ pub enum RejectReason {
     /// A face whose boundary never crosses the seam, yet the seam lies on its plane — the
     /// convex path only.
     MissingSeam,
-    /// A `Whole`-survival contact face whose footprint OVERLAPS the other's (∂P × ∂Q cross) rather
-    /// than nesting, in the one such case still unbuilt. `Whole` has two entries: `Fuse`/same-normal,
-    /// which the same-ground union builds, and `Cut`/opposite-normal, which is exact whenever the
-    /// contact plane separates the two solids (nothing to remove). What is left is a `Cut` whose tool
-    /// reaches back across that plane — a pin below its own contact face — where the cut owes a notch
-    /// this path cannot yet cut. Honest reject rather than a whole cap that ignores the pin.
+    /// **The coplanar merge could not fold a group of same-class faces** — one of its defensive
+    /// guards spoke (`assembly::coplanar`), or a result edge still has the same plane on both
+    /// sides (`assembly::topology`), which the merge should have folded.
     ///
     /// ★ **Unfired across the suite (census).** Coplanar pieces meeting at a point during the
     /// merge are an **abstention**, not this (the merge emits a pinching
     /// group unmerged and the whole-result judgement, hoisted before minting, names the shape —
     /// `SelfTouchingResult` on every input that reaches it). What remains under this name are
-    /// the nine defensive guards of the coplanar merge, none with a known input.
+    /// those guards, none with a known input.
     CoplanarMerge,
 }
 
@@ -848,13 +821,9 @@ pub enum DeclineKind {
     /// A ring vertex is a `plane ∩ plane ∩ cylinder` **pierce point**, and something on the
     /// tracer's road could not take it.
     ///
-    /// ★★★★★ **It has narrowed to nothing, and that is the shape of two rungs.** Last cell this
-    /// read "four places could raise it and exactly one does, 20 raises — the seated road's
-    /// `emit_ring`". That road stopped deriving an edge's carrier from its corners' plane sets and
-    /// the raise went with it, leaving **three** sites: a walk with no exact side, a run whose body
-    /// it cannot place, an order it cannot form. ☑ Measured **0** across the workspace suite and
-    /// the ignored sweep — the name is now entirely unexercised, kept because each of those three
-    /// can still say it.
+    /// ★★★★★ **Three sites, none exercised**: a walk with no exact side, a run whose body it
+    /// cannot place, an order it cannot form. ☑ Measured **0** across the workspace suite and the
+    /// ignored sweep — kept because each of the three can still say it.
     ///
     /// ★ Distinct from [`Self::CollapsedTriple`] on purpose: that one's sentence is "two of its
     /// planes coincide", which is simply not what happened here. The census keys its `detail` on
@@ -898,15 +867,13 @@ pub enum DeclineKind {
     /// **A seated edge's carrier is the face's own plane class**, so `fc ∩ wall` is not a line and
     /// the segment cannot be named on it.
     ///
-    /// ★★ **Its sentence changed when the road stopped guessing.** It used to mean "the two
-    /// endpoint names share no single plane besides `fc`" — an artefact of *deriving* the carrier,
-    /// measured **0** and gone with the derivation. What replaces it is a fact about the carrier
-    /// the producer hands over: the face across this edge is in the same class as the face itself,
-    /// which the coplanar merge should have folded. One name, one proposition.
+    /// ★★ **A fact about the carrier the producer hands over**, not about the endpoint names: the
+    /// face across this edge is in the same class as the face itself, which the coplanar merge
+    /// should have folded. One name, one proposition.
     ///
-    /// ☑ Measured unexercised (`unreachable!()`, whole suite and ignored sweep green). The guard
-    /// exists because the derivation it replaced could not produce this case — it filtered
-    /// `c != fc` — and taking the carrier is what makes the case spellable at all.
+    /// ☑ Measured unexercised (`unreachable!()`, whole suite and ignored sweep green). The case is
+    /// spellable only because the carrier is taken rather than derived from the endpoint names — a
+    /// derivation filters `c != fc` and cannot produce it.
     SeatedEdgeNaming,
     /// **A seated face's ring rode a cylinder this class never received an element for.**
     ///
@@ -939,19 +906,17 @@ pub enum DeclineKind {
     ///
     /// A fuse can bury part of a lateral in the other body — a boss straddling a plate's edge keeps
     /// its band but loses the angles inside the plate — and what is left is a band with a hole in
-    /// the `(t, θ)` chart. The trace **speaks in arcs** now (`circle_on_class` walks the hole and
-    /// answers per angular extent), so what this name is left saying is narrower than it was: the
-    /// hole's loop could not be named at all, or a corner of it lies on a second cylinder, or the
-    /// ring walk could not decide a node's side.
+    /// the `(t, θ)` chart. The trace **speaks in arcs** (`circle_on_class` walks the hole and
+    /// answers per angular extent), so what this name says is narrow: the hole's loop could not be
+    /// named at all, or a corner of it lies on a second cylinder, or the ring walk could not decide
+    /// a node's side.
     ///
-    /// ★★★★★ **The name exists because the alternative was being silently wrong.** The face table
-    /// described a lateral by its **outer** span, so the trace used to answer "the class cuts a
-    /// full
-    /// circle" — false for the angles inside the hole. That falsehood did not fail here: it flowed
-    /// on, and two stages later `label_cells` found the flip relation broken and said
-    /// [`RejectReason::LabelConflict`] — a symptom, not the cause. The refusal belongs where the
-    /// false sentence is made, and once the road could state the truth the refusal shrank to what
-    /// it still cannot describe.
+    /// ★★★★★ **The name exists because the alternative is silently wrong.** Read by its **outer**
+    /// span, a lateral with a hole answers "the class cuts a full circle" — false for the angles
+    /// inside the hole — and that falsehood does not fail where it is made: it flows on until
+    /// `label_cells` finds the flip relation broken and says [`RejectReason::LabelConflict`], a
+    /// symptom, not the cause. The refusal belongs where the false sentence would be made, and it
+    /// covers only what the arc road cannot describe.
     ///
     /// ★ A feature the walk *found* but the arc road has no extent for is
     /// [`Self::CylHoleFeature`], not this — the two say different things about the same face.

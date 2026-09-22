@@ -95,11 +95,9 @@ pub(crate) fn standard_for(rows: &[FaceRow]) -> Standard {
     // no rotation error to report (`an_exact_point_demands_no_precision` in `nacre-judge`, and the
     // const assert at `TRIAL_PREC` that keeps it true).
     //
-    // So the loop below used to spend a full high-precision replay per point to compute a zero —
-    // measured, an axis-aligned 60-fin fold did that 24,120 times for 15.7ms and a `worst` of
-    // exactly `Mag::ZERO`. The same shape was removed one level down when a stated zero replaced
-    // `WitnessPoint::at`'s measurement for these points ("nine BigFloat operations to compute a
-    // zero").
+    // So the loop below does not spend a full high-precision replay per point to compute a zero —
+    // measured on a loop that does, an axis-aligned 60-fin fold spends 24,120 of them for 15.7ms
+    // and a `worst` of exactly `Mag::ZERO`.
     //
     // `max` over the empty set is `Mag::ZERO`, which is the right answer for a model with no
     // rotation history — `precision_for` reads that as "nothing to size" and returns `TRIAL_PREC`.

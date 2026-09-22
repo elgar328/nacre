@@ -68,12 +68,10 @@ pub(crate) enum ClassPlan {
 ///   the stored base-and-replay road, 8/8). (A fixed plane's world equation *is* its
 ///   pre-motion equation, which is what admits a restated cap.)
 ///
-/// ★ **The cache is never read here.** The world arm used to hand `vertex_point` to
-/// `WitnessPoint::exact` — the rounded `f64` lifted back to a rational with tol 0 — which names
-/// a different point for every coordinate `f64` cannot hold (measured: at most 316 of a census
-/// corpus's 6,988 operand vertices, `0.3` among them). A boolean's own result vertices used to decline
-/// wholesale on the same ground ("an implicit point has no rational base"); their definition
-/// has one, so they take the road too.
+/// ★ **The cache is never read here.** The rounded `f64` of `vertex_point`, lifted back to a
+/// rational with tol 0, names a different point for every coordinate `f64` cannot hold (measured:
+/// at most 316 of a census corpus's 6,988 operand vertices, `0.3` among them). A boolean's own
+/// result vertices take the road too: their definition has a rational base.
 ///
 /// ★ **Mixed frames decline — unless the odd carrier is provably fixed.** Since the
 /// invariant-plane restatement, a turned block's corner is a restated world cap × two

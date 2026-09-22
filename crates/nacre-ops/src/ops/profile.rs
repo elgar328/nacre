@@ -251,9 +251,9 @@ impl Profile2d {
     /// `measure_profile_check_wall_clock` in `tests/perf.rs`): **34 ms at 100 points, 3.2 s at 1
     /// 000** —
     /// each rational sign costs ~1.7 µs (the narrow route's gcd reductions; such coordinates stay
-    /// inside `i128`) against the old f64 predicate's nanoseconds. Hand-drawn sketches are tens
+    /// inside `i128`) against an f64 predicate's nanoseconds. Hand-drawn sketches are tens
     /// of points and pay well under a millisecond; a generator emitting thousands of points per
-    /// ring is now firmly outside this function's comfort, and the named follow-ups — an exact
+    /// ring is firmly outside this function's comfort, and the named follow-ups — an exact
     /// bounding-box prefilter for the segment pairs, or an f64 filter with a sound error bound
     /// escalating to `Rat` — are deliberately
     /// unbuilt until that population exists.

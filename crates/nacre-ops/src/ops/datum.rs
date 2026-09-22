@@ -156,11 +156,10 @@ pub(super) fn datum_plane(
         vs: [Handle<Vertex>; 3],
     ) -> Result<ThroughStatement, OpError> {
         // ★★★★ **Which frame a vertex is solvable in is [`nacre_topo::Model::vertex_meet`]'s
-        // answer, not a second copy of its rule.** This function used to compare
-        // `plane_motion(tri[0])` against the other two itself. That reading calls a turned
-        // solid's corner a straddle — the invariant-plane restatement leaves its cap
-        // world-stated while the walls carry a node — and, worse, it can now *disagree* with
-        // the door: `push_plane_through` derives the interning name through `vertex_meet`, so a
+        // answer, not a second copy of its rule.** Comparing `plane_motion(tri[0])` against the
+        // other two here would call a turned solid's corner a straddle — the invariant-plane
+        // restatement leaves its cap world-stated while the walls carry a node — and, worse,
+        // could *disagree* with the door: `push_plane_through` derives the interning name through `vertex_meet`, so a
         // producer that says "no frame" while the door says "this one" files a frame-local name
         // as a world plane. That is the defect `a_datum_through_frame_local_vertices_is_not_a
         // _world_plane` exists to catch. One decision, one place.
@@ -242,7 +241,7 @@ pub(super) fn datum_plane(
             // is `+ẑ`** (measured). So a frame built with `flip: false` would silently answer "up"
             // to a caller who said "down". Measuring against `sp.normal()` — the direction their
             // own point order fixes — makes the returned frame mean what they said, which is what
-            // lets an operation take a frame where it used to take a plane and sweep the same way.
+            // lets an operation take a frame rather than a plane and sweep the same way.
             //
             // This is still the frame rule, not an exception to it: `flip` is *measured*, never
             // stated, and `measured_frame` is the one place that measures.

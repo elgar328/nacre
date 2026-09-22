@@ -16,7 +16,7 @@
 //!
 //! ★★ **What this does *not* answer: which *site* surfaced.** A reject is raised on a rayon worker
 //! and returned from the main thread, so nothing cheap connects the two (a thread-local cannot
-//! cross the boundary — that is why the older tag-based census was retired). It is also not
+//! cross the boundary, so a tag-based census cannot see it). It is also not
 //! needed: "is this guard swallowed by its caller?" is a **static** question, answered by reading
 //! the caller, not by counting.
 //!

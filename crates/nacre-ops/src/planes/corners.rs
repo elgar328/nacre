@@ -228,18 +228,16 @@ pub(super) enum CornerFail {
 
 /// **One boundary piece of a face, in whichever exact spelling it has — the single reader.**
 ///
-/// ★★★★★ **It was written twice, and the second copy was an abbreviation.**
-/// `face_clears_footprint` folded motion chains and solved `Pierce` corners; `face_straddles_line`
-/// took rational vertices and *skipped* everything else — so a face ringed by tangent corners had
-/// its straddle read from nothing and answered «does not straddle», which acquits. One reader, and
-/// the two roads can no longer disagree about what a face says.
+/// ★★★★★ **One reader for both roads.** `face_clears_footprint` and `face_straddles_line` both
+/// read a face's corners here, where motion chains fold and `Pierce` corners solve. A second
+/// reader that took rational vertices and *skipped* everything else would read a face ringed by
+/// tangent corners from nothing and answer «does not straddle», which acquits.
 ///
 /// ★★ **A whole disk is a piece too.** A face whose outer loop is a single circle carried by a
 /// cylinder perpendicular to its plane *is* that disk, and its reach along any direction is
-/// `centre ± ρ`. The doc of [`face_clears_footprint`] named this shape as the reason its
-/// straight-edge demand was soundness rather than convenience — «all vertices on one side would be
-/// satisfied by a single point and would pass a disk that crosses the strip». The demand can go
-/// now because the piece answers for its own extent instead of for one point of it.
+/// `centre ± ρ`. A straight-edge demand is not needed: «all vertices on one side» would be
+/// satisfied by a single point and would pass a disk that crosses the strip, but the piece
+/// answers for its own extent instead of for one point of it.
 pub(super) fn corner_of(
     model: &Model,
     face: &Face,
@@ -253,10 +251,10 @@ pub(super) fn corner_of(
             return disk_of(model, face, he).ok_or(CornerFail::Shape);
         }
         // ★★★★★ **An arc is a piece too**. A loop that mixes lines and arcs — a filleted
-        // outline is the everyday one — used to be unreadable here whatever the arc was or where
-        // it sat, and a face the reader cannot spell refuses the boolean. The shape is spellable:
-        // the same circle a whole loop would be, cut to the extent its two ends name. So a failure
-        // now is `Arithmetic` — a value that could not be stated — and never `Shape`.
+        // outline is the everyday one — is spellable: the same circle a whole loop would be, cut
+        // to the extent its two ends name (a face the reader cannot spell refuses the boolean).
+        // So a failure here is `Arithmetic` — a value that could not be stated — and never
+        // `Shape`.
         nacre_geom::Curve::Circle(_) => {
             return arc_of(model, face, he).ok_or(CornerFail::Arithmetic);
         }
@@ -543,7 +541,7 @@ pub(super) fn face_clears_footprint(
     use nacre_exact::{Orient, StripSide};
     // ★★★★★ **Which refusal this is, decided once — the answer is not touched.**
     //
-    // Every abstention below turns into a refusal at the caller, and until now they all wore
+    // Every abstention below turns into a refusal at the caller, and not every one is
     // `CylinderGateUndecided`, whose sentence is "the gate could not decide exactly". For a face
     // whose ring runs along a cylinder that sentence is **false**: the gate can decide, and what
     // cannot read the shape is the road behind it — `combinatorics::loop_triples` declines such a

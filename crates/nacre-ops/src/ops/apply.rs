@@ -127,7 +127,7 @@ fn rebind<'a>(model: &Model, op: &'a Operation) -> Result<Cow<'a, Operation>, Op
             })
     };
     Ok(match op {
-        // ★ `Extrude` carries a handle now — it is no longer the one variant that does not.
+        // ★ `Extrude` carries a handle too — its frame's plane — so it is remapped like the rest.
         Operation::Extrude {
             frame,
             profile,

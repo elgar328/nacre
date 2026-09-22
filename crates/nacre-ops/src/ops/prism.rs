@@ -27,7 +27,7 @@ fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::construct::R
 ///
 /// `dist > 0` is a **thickness**; which way it goes is the frame's `ŵ`, measured by whoever built
 /// the frame (a datum against the caller's stated normal, a face against its outward). That is why
-/// this can take a frame where the operation used to take a plane and sweep the same way.
+/// this takes a frame rather than a plane and sweeps the same way.
 /// The builder's exact winding needs quarter-turn arcs (`Ring2d::winding_sign`); an arc of any
 /// other angle is refused by name here, before the builder reads the ring.
 pub(super) fn refuse_non_quarter_arcs(profile: &Profile2d) -> Result<(), OpError> {
@@ -221,24 +221,24 @@ pub(crate) fn build_prism(
             // ★★★★ **The caller's statement wins here, and the frame's is the fallback.**
             //
             // The base cap *is* the plane they named, and they named it in the world — so stating
-            // it that way keeps it `Constructed`, keeps its judgment exact, and lets two extrudes
+            // it that way keeps its `motion` `None`, keeps its judgment exact, and lets two extrudes
             // on one plane share it **whatever frames they chose**. Writing it as `[0,0,1,0]` in
             // this prism's frame instead would be a second exact description of one plane, under a
-            // different `SurfaceKey` — the very duplication this work removes.
+            // different `SurfaceKey`.
             //
             // The frame's answer is what a plane with no caller statement gets (an axis-aligned
             // sketch, where the two agree anyway).
             //
-            // ★★★★★ **One frame or the other, and the `def` goes with the points.**
-            // A plane's points and its `SurfaceDef` are two halves of one statement: `Constructed`
-            // means *"these speak about the world"* and `Moved` means *"about the pre-motion
-            // frame"*. There used to be a third half — coefficients, chosen by their own `or_else`,
-            // so a caller whose points overflowed while their coefficients did not got world
-            // coefficients beside the prism's **frame** ring. That half no longer exists: the name
-            // is derived from whichever points are recorded, so the two can no longer come apart.
+            // ★★★★★ **One frame or the other, and the `motion` goes with the points.**
+            // A plane's points and its `motion` are two halves of one statement: `None` means
+            // *"these speak about the world"* and `Some` means *"about the pre-motion frame"*.
+            // There is no third half: the name is derived from whichever points are recorded, so
+            // the two cannot come apart. (Coefficients chosen by their own `or_else` could — world
+            // coefficients beside the prism's **frame** ring, whenever the points overflowed and
+            // the coefficients did not.)
             //
-            // ★ The frame's `surface_def()` is the same one the top cap takes, and it agrees with
-            // `Constructed` wherever there is no motion — which is every case a missing caller
+            // ★ The frame's `motion` is the one the top cap takes, and where it is `None` the
+            // frame's points speak about the world too — which is every case a missing caller
             // statement can produce.
             let (base_motion, cap_pts) = match base_cap_points {
                 Some(p) => (None, p),
@@ -449,8 +449,7 @@ impl RingCells {
 }
 
 /// One plane per ring segment, pushed **before** any of the ring's topology exists — see
-/// `build_prism`. The same three points `push_walls` used to build them from, and in the same
-/// order, so the surface arena's numbering is untouched.
+/// `build_prism`.
 fn wall_surfaces(model: &mut Model, ring: &Swept) -> Result<Vec<(Handle<Surface>, bool)>, OpError> {
     let n = ring.base.len();
     (0..n)

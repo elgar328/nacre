@@ -6,11 +6,8 @@
 //! through it in the *same* order and float operations the producer used, which is what lets a
 //! consumer check a coordinate against its definition bit for bit.
 //!
-//! It used to also *hunt* for a rotated face's exact plane, working back through vertices and
-//! their `Discovered` three-plane definitions, because a `Surface` said nothing about where it
-//! came from. Surfaces carry their truth now (points + motion), so the plane is simply read
-//! (`crate::planes`) and
-//! the hunt is gone.
+//! A rotated face's exact plane is read, not hunted for through its vertices: surfaces carry
+//! their truth (points + motion), so the plane comes from `crate::planes`.
 
 use nacre_exact::Rat;
 use nacre_judge::{MoveNode, WitnessPoint};
@@ -30,9 +27,8 @@ pub(crate) enum WitnessPointError {
 /// **The invariant, not a producer.** Every producer reaches its coordinate by walking the motion
 /// it just recorded, so no caller needs this to *build* anything — what needs it is the check that
 /// the two agree **bit for bit**, which the predicates rely on and which two float routes to the
-/// same real number would not satisfy. Reflection used to be the exception (it derived a
-/// definition by conjugating the chain, a different route from reflecting the coordinate); it is
-/// a chain node now, so the exception is gone and only the assertions remain.
+/// same real number would not satisfy. Reflection is a chain node like the rest, so it takes the
+/// same route and needs no exception.
 #[cfg(test)]
 pub(crate) fn replay_chain_coord(
     model: &Model,

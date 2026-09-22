@@ -5,16 +5,14 @@ use super::*;
 /// when the chain cannot realize a basis (a plane with no name).
 ///
 /// ★★★ **Only the frame comes back — deliberately.** The basis realized here to measure `flip`
-/// is the *unflipped* one, and it used to ride along "so deciding and looking cost one
-/// realization, not two". That saving is what broke `face_plane`'s contract: the one caller who
-/// wanted the axes combined the measured `flip` with the unflipped basis **by hand**, as a
-/// half-turn about `v̂` — while the realization (`frame_chain`) half-turns about `û` — and every
-/// flip=true face was reported a frame point-symmetric to the one the pad actually built in
-/// (measured: a footprint centred on the face through `face_plane`'s own coordinates landed
-/// outside it, `PadMissesFace` on 2 of 6 faces of a turned block). A caller that needs the axes
-/// asks [`crate::rotated_vertex::frame_world_basis`] *with the measured flip*, so the geometry of
-/// `flip` is written in exactly one place; the second 4-point replay is one plain f64 chain per
-/// user operation, which is what the hand-combination was saving.
+/// is the *unflipped* one. Handed out to save a realization, it invites a caller to combine the
+/// measured `flip` with it **by hand**, as a half-turn about `v̂` — while the realization
+/// (`frame_chain`) half-turns about `û` — which reports every flip=true face a frame
+/// point-symmetric to the one the pad actually builds in (measured: a footprint centred on the
+/// face through such coordinates lands outside it, `PadMissesFace` on 2 of 6 faces of a turned
+/// block). A caller that needs the axes asks [`crate::rotated_vertex::frame_world_basis`] *with
+/// the measured flip*, so the geometry of `flip` is written in exactly one place; the second
+/// 4-point replay is one plain f64 chain per user operation.
 pub(super) fn measured_frame(
     model: &Model,
     plane: Handle<Surface>,
@@ -234,18 +232,17 @@ pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame,
     // ★ The origin is the **world origin projected onto the face's plane** — a property of the
     // plane, not of the face.
     //
-    // It used to be the face region's area centroid, chosen over the mean of the outer loop's
-    // corners because a centroid does not move when a vertex is added along a straight edge. Both
-    // are computed in `f64` from the face's own vertices, though, and `construct.rs` lifts the frame
-    // origin with `Rat::from_decimal` — so a rounded cache became the truth. Padding one footprint
-    // twice then placed the second profile an ulp from the first and left faces of area `2.2e-16`
-    // that `validate` did not report.
+    // Not the face region's area centroid, nor the mean of the outer loop's corners: both are
+    // computed in `f64` from the face's own vertices, and `construct.rs` lifts the frame origin
+    // with `Rat::from_decimal`, so a rounded cache would become the truth — measured with the
+    // centroid, padding one footprint twice places the second profile an ulp from the first and
+    // leaves faces of area `2.2e-16` that `validate` does not report.
     //
     // The projection is `(−d / n·n)·n` from the plane's rational coefficients: one division, no
     // f64 in the derivation, and invariant under negating or scaling those coefficients — so two
     // faces of one plane cannot disagree about where `(0, 0)` is. Measured over the suite: for
     // every `Constructed` surface the realized point lies on the f64 plane at distance exactly `0`
-    // (1121/1121), which the centroid did not always manage.
+    // (1121/1121), which the centroid does not always manage.
     //
     // Only a world-stated plane's coefficients are world truth (`motion: None`). A moved
     // surface records its **pre-motion** frame, so projecting those gives a pre-motion point —
@@ -279,12 +276,9 @@ pub(super) fn face_frame(model: &Model, face: Handle<Face>) -> Result<FaceFrame,
     //
     // ★ **`flip` is measured, not derived** — by `measured_frame`, the one measuring place.
     // ★★★ **The axes are then realized *with* that flip, by the same function the operation's
-    // prism replays through.** They used to be read off the unflipped basis with the sign applied
-    // by hand here, as a half-turn about `v̂` — but the realization (`frame_chain`) half-turns
-    // about `û` (its `ref_dir` is derived from the unflipped coefficients and survives the sign),
-    // so every flip=true face was reported a frame point-symmetric to the one the pad built in.
-    // Asking `frame_world_basis` with the measured flip leaves the geometry of `flip` written in
-    // exactly one place; for flip=false the call is bit-identical to the measuring one.
+    // prism replays through** — not combined by hand (see `measured_frame`: the realization
+    // half-turns about `û`, since its `ref_dir` is derived from the unflipped coefficients and
+    // survives the sign). For flip=false the call is bit-identical to the measuring one.
     // ★★ A face has no caller to name a frame, so its placement is `Canonical` — derived
     // when the chain is flattened, stored nowhere. That is also what opens this branch for a
     // plane whose name is `Wide` or whose canonical values overflow `i128`: `frame_world_basis`

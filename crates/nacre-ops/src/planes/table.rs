@@ -52,10 +52,10 @@ pub(crate) fn collect_planes(
             // **Outward is read off the face's statement, not re-derived from its loop.**
             // `orientation` relates the stored surface normal to "out of the solid" — the
             // same reading props and STEP already trust — so `n_out` is that product,
-            // exact in direction by construction. The triangle's cross used to be the
-            // source, and its conditioning was the pad-eats-material defect: on rotated
-            // near-collinear corners the direction that came back was the rounding. The
-            // winding is still consulted — as the cross-check below, not as the answer.
+            // exact in direction by construction. A triangle's cross is not the source: on
+            // rotated near-collinear corners the direction it gives back is the rounding (the
+            // pad-eats-material defect). The winding is consulted — as the cross-check below,
+            // not as the answer.
             let orient_sign = face.orientation.sign();
             let n_out = plane.normal() * f64::from(orient_sign);
             let tri = match outer_tri(model, face) {
@@ -108,9 +108,9 @@ pub(crate) fn collect_planes(
             };
             // **The plane's exact definition comes from the surface, not from the vertices.**
             //
-            // Both used to be decided per *solid* ("is this solid rotated?"), which a boolean's
-            // result cannot answer — it carries no rotation provenance, so every result face was
-            // described by `WitnessPoint::exact` of its rounded triangle and one wall became two plane
+            // Both are decided per surface, not per *solid* ("is this solid rotated?"): a
+            // boolean's result carries no rotation provenance, so asking the solid would describe
+            // every result face by its rounded triangle, and one wall would become two plane
             // classes on the next operation. The surface knows (its truth — points + motion),
             // and a result face reuses its operand's surface handle, so the answer
             // survives a chain of booleans.
@@ -166,12 +166,11 @@ pub(crate) fn collect_planes(
                     };
                     // ★★★★★ **The exact points the plane was built from — the only description.**
                     //
-                    // This arm used to fall back to a `witness: [Point3; 3]` beside the motion: the
-                    // same points *realized*, and a third of them do not survive the trip
-                    // (measured 34.5% — `11/10` is not an f64, so lifting the realization back
-                    // recovers a different rational). The judge then described the plane through
-                    // three rounded points, which is how two caps that are one plane were told
-                    // apart with full confidence.
+                    // No realized `witness: [Point3; 3]` rides beside the motion: a third of
+                    // realized points do not survive the trip (measured 34.5% — `11/10` is not an
+                    // f64, so lifting the realization back recovers a different rational), and a
+                    // plane described through three rounded points tells two caps that are one
+                    // plane apart with full confidence.
                     let w = [turn(pts[0])?, turn(pts[1])?, turn(pts[2])?];
                     _t.charge(Sub::TriPt3);
                     (wind(w), true, Some(motion))
@@ -239,8 +238,7 @@ pub(crate) fn collect_planes(
                             // perpendicular (on the plane exactly), û and v̂ are in-plane by
                             // construction, and `frame_chain` already appends the plane's own
                             // later motion — so the probes are exact definitions the escalation
-                            // realizes at any precision. No `WorkingPlaneDef::Through` was ever
-                            // needed; this is where that assumption died.
+                            // realizes at any precision.
                             let all_pure = j
                                 .iter()
                                 .all(|p| matches!(p, nacre_judge::JudgedPoint::Pure(_)));

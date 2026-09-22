@@ -2,11 +2,11 @@ use super::*;
 /// A sketch-plane frame: a 2-D point `(u, v)` maps to `origin + u·x + v·y`.
 /// The axes are unit and orthogonal (the constructors ensure it); the normal is `x × y`.
 ///
-/// ★★★★★ **The fields are private, and that is the whole point.** They used to be `pub`, so a
-/// caller handed the kernel three *normalized* f64 vectors — and normalizing is where the
+/// ★★★★★ **The fields are private, and that is the whole point.** Public fields would let a
+/// caller hand the kernel three *normalized* f64 vectors — and normalizing is where the
 /// exactness dies: a plane with normal `(1, 1, 1)` has coefficients `[1, 1, 1, 0]`, three
-/// integers, but its unit axes square to `0.9999999999999999…` and no exact form survives. The
-/// kernel then had nothing to build on and dropped the whole prism to f64.
+/// integers, but its unit axes square to `0.9999999999999999…` and no exact form survives,
+/// leaving the kernel nothing to build on.
 ///
 /// So a plane is built through a constructor that **keeps what the caller stated**
 /// ([`PlaneDef`]), and the axes below are the *realization* of that. The two cannot describe
@@ -46,7 +46,7 @@ impl SketchPlane {
 
     /// One of the three world planes, stated exactly: normal, `+u`, `+v` as integer triples.
     /// The defining points are `[0, u, v]` — `u × v = n` for all three world planes, so the
-    /// point order carries the same normal the coefficients used to state, and `points[1]`
+    /// point order carries the normal `n`, and `points[1]`
     /// carries the *named* `+u` (the `world_zx` convention `+u = ẑ` included).
     fn axis_plane(n: [i128; 3], u: [i128; 3], v: [i128; 3]) -> Self {
         let r = |a: [i128; 3]| a.map(Rat::from_int);
@@ -110,8 +110,7 @@ impl SketchPlane {
     /// ★★★ **Why not `w = n × u`, the "obvious" second direction: its components are products.**
     /// With no f64 fallback to absorb a failed construction, the checked arithmetic is not a
     /// formality: a proptest found the window's small-exponent corner — a `10²¹` denominator squares to `10⁴²`, and even the *primitive*
-    /// direction of that cross needs 137 bits. The retired `named_plane_points` solved an axis
-    /// for the same reason. Basis crosses stay inside the inputs' own widths.
+    /// direction of that cross needs 137 bits. Basis crosses stay inside the inputs' own widths.
     fn normal_def(origin: Point3, normal: Vector3) -> Option<PlaneDef> {
         let o = origin.as_array().map(Rat::from_decimal);
         let n = normal.as_array().map(Rat::from_decimal);
@@ -186,13 +185,13 @@ impl SketchPlane {
     /// The same plane **moved to pass through `p`**, with `p` as the sketch's `(0, 0)`.
     ///
     /// ★★★★ **The plane travels with the origin** — `plane(ZX, { origin: … })` sets the position
-    /// as well as the 2-D origin, and `SketchPlane { origin, ..world_xy() }` always meant that.
-    /// Keeping the plane in place while moving the origin would leave the definition describing
-    /// one plane and its origin sitting on another: measured, `world_xy().with_origin([0, 0, 0.5])`
-    /// recorded `z = 0` for a cap at `z = 0.5`, and a boolean built on that lost 0.04 of volume.
+    /// as well as the 2-D origin. Keeping the plane in place while moving the origin would leave
+    /// the definition describing one plane and its origin sitting on another: measured on that
+    /// reading, `world_xy().with_origin([0, 0, 0.5])` records `z = 0` for a cap at `z = 0.5`, and a
+    /// boolean built on it loses 0.04 of volume.
     /// Since the definition is three points and the origin is the first of them, the move is a
     /// translation of the whole triple: differences (`ref_dir`) and the normal are untouched,
-    /// exactly the "translation does not turn `+u`" the old form promised.
+    /// exactly "translation does not turn `+u`".
     pub fn with_origin(mut self, p: Point3) -> Self {
         self.origin = p;
         self.def = self.def.and_then(|d| {

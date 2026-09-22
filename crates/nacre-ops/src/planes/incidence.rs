@@ -80,7 +80,7 @@ pub(crate) fn dense_planes(
 /// vertices of one solid share a rotation chain, so their bases are comparable; all three
 /// coordinate-plane projections of `(b−a)×(c−a)` must vanish (exact `Rat`, no tolerance). An
 /// i128 overflow returns `false` (treat as non-collinear): a genuinely-collinear triangle then
-/// stays and is at worst rejected `RAY_DEGENERATE`, never falsely skipped (which would drop a
+/// stays and is at worst rejected, never falsely skipped (which would drop a
 /// real crossing — silent-wrong). Unrotated vertices carry `base == coord`, so this is the exact
 /// zero-area (collinear) test on the vertices' rotation definitions.
 #[cfg(test)]
@@ -198,8 +198,8 @@ pub(crate) fn uf_find(parent: &mut [usize], x: usize) -> usize {
 
 /// Canonicalize the combined plane table by coplanarity: two planes that are the same plane
 /// (shared `Surface` handle, or exact rank-1 [`planes_coplanar`]) are merged into one class, so
-/// a wall of `a` coplanar with a wall of `b` names a **single line** in a shared plane π. This is
-/// the one thing the seam engine cannot do (it rejects `order_along(R,R)==0` as `FOURPLANE`);
+/// a wall of `a` coplanar with a wall of `b` names a **single line** in a shared plane π. Without
+/// it a wall and its coplanar twin order against each other as one (`order_along(R, R) == 0`);
 /// canonicalizing turns that self-comparison into a real order. Returns `canon` where `canon[i]`
 /// is the class root (the smallest index in the class). Every decision is exact
 /// (`shares_or_coplanar`) — no coordinate. O(n²) scan over the (small) face count.

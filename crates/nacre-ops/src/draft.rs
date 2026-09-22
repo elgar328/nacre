@@ -126,14 +126,11 @@ impl Ring {
     /// This ring's edges, ready for the exact predicates - built from the walls the ring
     /// carries, in the engine's own vocabulary.
     ///
-    /// Until this cell the body was a legacy shim: walls flattened to plane indices (a curved
-    /// carrier to a sentinel) and handed to the plane-only derivation, whose pierce-node guard
-    /// refused every mixed ring at construction time - before any consumer could even abstain.
-    /// Now a wall becomes its carrier (`Wall::Arc` an [`combinatorics::ArcCarrier`] with the
-    /// class table's def - the same clone convention every producer follows), a pierce end is
-    /// pinned by its cylinder, and a three-plane end by `pin_on_line` exactly as the old road
-    /// pinned it - so a pure ring yields the same edges bit for bit, and a mixed ring yields
-    /// edges its consumers fork on (`ring_is_mixed`) instead of dying here.
+    /// A wall becomes its carrier (`Wall::Arc` an [`combinatorics::ArcCarrier`] with the class
+    /// table's def - the same clone convention every producer follows), a pierce end is pinned by
+    /// its cylinder, and a three-plane end by `pin_on_line` - so a mixed ring yields edges its
+    /// consumers fork on (`ring_is_mixed`). Flattening walls to plane indices for a plane-only
+    /// derivation would refuse every mixed ring here, before any consumer could abstain.
     ///
     /// `p` is the plane class the ring lies in, which pins a **three-plane** end on its edge's
     /// line; a lateral ring (on a cylinder) has none — its corners are pierce names — and passes

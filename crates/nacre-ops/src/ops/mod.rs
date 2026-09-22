@@ -45,8 +45,8 @@ pub use profile::*;
 /// its `Stated` arm, which holds a plane's exact rational definition (~400 bytes). An op log is
 /// tens of entries long and is walked once per replay, so the wasted space is measured in
 /// kilobytes; boxing would buy that back at the cost of an indirection on the one type a caller
-/// constructs by hand. (`Extrude` used to be that variant; naming its plane instead of carrying
-/// it made it small.)
+/// constructs by hand. (`Extrude` names its plane by handle, inside its [`SketchFrame`], which
+/// keeps it small.)
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum Operation {
@@ -254,8 +254,8 @@ pub enum OpError {
     FaceNotInLiveSolid,
     /// A pocket's depth reaches through the solid: the carved prism is not blind, so `Cut`
     /// produced a through-hole with no floor face. `pocket` requires `dist` less than the
-    /// thickness at the face (the boolean pocket path honestly rejects instead of the old
-    /// direct path's silent invalid result).
+    /// thickness at the face (the boolean pocket path rejects honestly rather than return a
+    /// solid with no floor).
     PocketNotBlind,
     /// A pad's footprint does not meet the face at all: the `Fuse` came back severed, which two
     /// one-shell solids can only do if they never touched. Like [`OpError::PocketNotBlind`] this is

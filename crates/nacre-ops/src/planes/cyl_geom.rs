@@ -373,7 +373,7 @@ pub(super) fn arc_extent(
         dperp[i] = dperp[i].checked_sub(k.checked_mul(axis[i])?)?;
     }
     let dperp2 = nacre_exact::dot3_rat(&dperp, &dperp)?;
-    // A wide square declines here, exactly where `r·r` used to overflow.
+    // A wide square (`r2` past `Rat`) declines here.
     let rho2 = r2.narrow()?.checked_mul(dperp2)?;
     match arc {
         _ if dperp2 == zero => Some((zero, zero, zero, zero)), // `d ∥ axis`
