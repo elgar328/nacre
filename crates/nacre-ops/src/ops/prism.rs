@@ -7,10 +7,7 @@ use super::*;
 /// chain of one narrow frame node is the whole population, and anything longer (or wide) declines.
 ///
 /// ★ Declining is not a failure — it is the frame-node road, the same one a tilted face takes.
-pub(super) fn exact_frame(
-    model: &Model,
-    frame: &SketchFrame,
-) -> Option<crate::construct::RatFrame> {
+fn exact_frame(model: &Model, frame: &SketchFrame) -> Option<crate::construct::RatFrame> {
     let chain =
         crate::rotated_vertex::frame_chain(model, frame.plane(), frame.placement(), frame.flip())?;
     match chain.as_slice() {
@@ -649,3 +646,26 @@ fn sweep_ring(
         along,
     })
 }
+
+/// **Do the two roads to a sketch frame agree?** — the measurement the vocabulary swap rests on.
+///
+/// Today an extrude reads its frame from the `SketchPlane` a caller handed in: `exact()` lifts the
+/// caller's f64 axes and, when they lift to exact orthonormal rationals, the whole prism is built
+/// in world coordinates with no motion node. When `Operation::Extrude` starts naming a
+/// [`SketchFrame`] instead, the axes will come from **realizing the frame's exact form** — a
+/// different route to the same real vectors.
+///
+/// ★★★ **A one-ulp disagreement there is not an ulp of error.** `exact()` would flip to `None`,
+/// the plane would silently take the frame-node road, and the arena would gain motion nodes and
+/// write its points in frame coordinates: a *different but still valid* model. So the assertion
+/// order below matters — **same road first**, values second. This crate has been bitten by exactly
+/// this shape before: `nacre_exact::plane_frame_named` records `v̂` realized as `ŵ × û` coming out
+/// `0.999999999999999_7`, "an exact path quietly lost".
+///
+/// The prediction is agreement, and it is structural rather than lucky: a datum's `ref_dir` is
+/// `points[1] − points[0]`, which *is* the caller's `+u`; for a unit rational axis `|u_raw|² = 1`
+/// so `inv_sqrt_exact` returns exactly one; and `v_raw` has its own exact form. But an argument is
+/// not a gate.
+#[cfg(test)]
+#[path = "../tests/ops_frame_road.rs"]
+mod frame_road;
