@@ -283,8 +283,8 @@ fn a_segment_tangent_to_a_rim_is_a_body_to_occt() {
 
 /// ★★★★★ **The tangent *wall* — the user's own script, scored against OCCT**. A unit
 /// cube and a stud whose axis stands `0.3` from the origin with `r = 0.2`, so the wall
-/// `x = 0.5` is exactly `r` away. The kernel used to refuse this outright; it now fuses, and
-/// the question this asks is the same one asked of a point tangency: **does a second
+/// `x = 0.5` is exactly `r` away. The kernel fuses it, and the question this asks is the same one
+/// asked of a point tangency: **does a second
 /// kernel agree the shape is a body?**
 ///
 /// ★ The twin (`0.35`, the stud pushed **through** the wall) is the control, and it is chosen

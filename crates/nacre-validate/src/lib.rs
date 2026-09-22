@@ -253,19 +253,18 @@ pub fn validate(model: &Model) -> Vec<Violation> {
     out
 }
 
-// ★★★ **There is no per-vertex tolerance to read any more — every vertex takes the construction
-// epsilon.** `tol_of` used to answer the residual the arrangement had measured, and the cache no
-// longer stores one: what a cache knows is now *whether the coordinate was realized* and, if so, a
-// per-axis bound on it. The bound is deliberately not used here. It says how far the **coordinate**
+// ★★★ **There is no per-vertex tolerance to read — every vertex takes the construction
+// epsilon.** The cache stores no measured residual: what it knows is *whether the coordinate was
+// realized* and, if so, a per-axis bound on it. The bound is deliberately not used here. It says
+// how far the **coordinate**
 // is from the truth (half an ulp, or the ladder's radius); this file asks how far the cached point
 // sits from the cached **carriers**, and that distance also carries the carriers' own realization
 // error, which nothing records yet (`SurfaceCache` has no `tol`).
 //
-// ⚠ **What that costs, stated.** The population that used to be held to a measured residual —
-// measured over the census corpus at **at most 1.07e-14** — is now held to [`EPS_CONSTRUCTED`],
-// five orders looser. The defect that residual caught (a re-named definition wearing the old
-// triple's tolerance) is structurally gone: the cache is the realization of the definition, and
-// the census asserts that vertex by vertex.
+// ⚠ **What that costs, stated.** Arrangement-born vertices, whose measured residual is **at most
+// 1.07e-14** over the census corpus, are held to [`EPS_CONSTRUCTED`], five orders looser. What a
+// residual would catch — a re-named definition wearing another triple's tolerance — cannot arise:
+// the cache is the realization of the definition, and the census asserts that vertex by vertex.
 
 /// ★★★★ **This check walks the whole arena on purpose — superseded cells included.**
 ///
@@ -862,9 +861,8 @@ fn check_geometric_incidence(m: &Model, reach: &Reachable, out: &mut Vec<Violati
             let curve = m.edge_curve(eh);
             for vh in [a, b] {
                 let residual = curve.distance(m.vertex_point(vh));
-                // The floor and the vertex term are the same constant now that no vertex carries a
-                // measured residual, so the `.max` that used to absorb an exact-zero residual has
-                // nothing left to absorb.
+                // The floor and the vertex term are the same constant: no vertex carries a
+                // measured residual.
                 let tol = EPS_CONSTRUCTED;
                 if residual > tol {
                     out.push(Violation::VertexOffCurve {

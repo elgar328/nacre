@@ -126,9 +126,9 @@ pub trait Witness {
     /// The three `tri` points as exact [`WitnessPoint`] definitions, **always present**.
     ///
     /// This is a *cache*: the definition is built once, where the witness is, and every predicate
-    /// borrows it. It used to be an `Option` whose emptiness *also* meant "not rotated" — one
-    /// field answering two questions, which is why it could not be filled in advance without
-    /// changing which predicate path runs. [`Witness::is_rotated`] is now that second question.
+    /// borrows it. It is not an `Option` whose emptiness *also* means "not rotated": one field
+    /// answering two questions could not be filled in advance without changing which predicate
+    /// path runs. [`Witness::is_rotated`] is that second question.
     fn tri_pt3(&self) -> &[WitnessPoint; 3];
     /// Whether this plane came from a rotated solid — the predicate-routing signal, and a
     /// **different fact** from "does the definition carry a rotation chain". Neither
@@ -343,10 +343,10 @@ pub fn name_stored_ints(
 /// **One operation's judging**: the witnesses it reasons over, the standard it holds them to, and
 /// where the evidence goes.
 ///
-/// These three are properties of the *operation*, not of a plane, and this is what says so. They
-/// used to be stamped on every table row — which meant a two-phase construction (build the rows,
-/// then stamp them), a placeholder for the gap between, and a guard for forgetting; a whole class
-/// of mistake that exists only when a fact is stored somewhere it does not belong.
+/// These three are properties of the *operation*, not of a plane, and this is what says so.
+/// Stamped on every table row, they would need a two-phase construction (build the rows, then
+/// stamp them), a placeholder for the gap between, and a guard for forgetting — a whole class of
+/// mistake that exists only when a fact is stored somewhere it does not belong.
 ///
 /// The witness table stays a **pure description** of geometry, which is what makes one
 /// implementation able to serve both index spaces (a plane class and a single face).

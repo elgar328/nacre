@@ -26,9 +26,8 @@ impl Model {
     ///
     /// Two fixture populations need this door: hand-built merge fixtures that deliberately hold
     /// *one geometric plane as two handles* (interning would collapse them), and dummy planes
-    /// whose handles are never dereferenced. The successor of the retired
-    /// `push_surface_unrecorded`, minus the unrecordedness — the truth is still stated, so
-    /// nothing point-less enters the arena even from tests.
+    /// whose handles are never dereferenced. The truth is still stated, so nothing point-less
+    /// enters the arena even from tests.
     #[cfg(any(test, feature = "test-util"))]
     pub fn push_plane_unregistered(
         &mut self,

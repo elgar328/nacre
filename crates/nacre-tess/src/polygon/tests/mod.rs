@@ -3,10 +3,8 @@ use std::collections::HashSet;
 
 /// The goldens below are written **as a chart** — the numbers are `uv` already.
 ///
-/// ★ They used to be lifted to `z = 0` and handed to `triangulate_polygon`, the projection
-/// wrapper the bootstrap OBJ writer needed. That wrapper is gone (the projection rule lives
-/// once, in `planar_chart`), and for a `z = 0` ring its projection was the identity — so no
-/// coordinate here changes.
+/// ★ No projection is involved: the projection rule lives once, in `planar_chart`, and these
+/// rings are already in its output space.
 fn pts(v: &[[f64; 2]]) -> Vec<P2> {
     v.to_vec()
 }
@@ -126,8 +124,8 @@ fn a_u_polygon_is_not_star_shaped_from_its_first_vertex() {
 
 #[test]
 fn a_reflex_corner_polygon() {
-    // The L-prism cap: star-shaped from (0,0), so even the old fan was right —
-    // which is exactly why the fan bug hid for so long.
+    // The L-prism cap: star-shaped from (0,0), so even a fan from vertex 0 is right —
+    // which is why a fan hides its defect on this shape.
     let p = pts(&[
         [0.0, 0.0],
         [2.0, 0.0],
@@ -184,7 +182,7 @@ fn two_holes() {
     check_partition(&t, &[0, 1, 2, 3], &[&h0, &h1]);
 }
 
-/// **The wall with two windows — the case that used to have no ear.**
+/// **The wall with two windows — a case ear clipping finds no ear in.**
 ///
 /// Both holes' first mutually visible ring vertex was the *same* outer corner, so
 /// the bridged ring visited it three times and the polygon was pinched there. A
@@ -194,8 +192,7 @@ fn two_holes() {
 ///
 /// Everything here is transcribed from the failing model (a hub wall with two fins
 /// through it, projected to its own plane) — coordinates, index layout, and the
-/// order the two inner loops arrive in, which is what decided where each bridge
-/// landed. Handing the same two holes in the other order used to triangulate fine.
+/// order the two inner loops arrive in, which decides where each bridge lands.
 #[test]
 fn a_wall_with_two_windows() {
     let p = pts(&[
@@ -227,7 +224,7 @@ fn a_wall_with_two_windows() {
     check_partition(&t, &[0, 1, 2, 3], &[&upper, &lower]);
 }
 
-/// **The corpus that measured the old triangulator's 27.6% failure rate**, now a
+/// **The corpus on which ear clipping fails 27.6% of the time** (measured), as a
 /// standing gate on the whole function: random axis-aligned rectangles with one to
 /// four non-overlapping rectangular holes on an integer grid.
 ///
@@ -425,10 +422,11 @@ fn a_boundary_that_meets_itself_is_named_by_how() {
     ));
 }
 
-/// ★★★★★ **A touch vouches for nothing — two ways the old check let a crossing through.**
+/// ★★★★★ **A touch vouches for nothing — two ways a check that trusts one lets a crossing
+/// through.**
 ///
-/// `self_touch` used to return on the *first* touch it found and only then, if it found none,
-/// scan for crossings. Two defects follow; this fixture is the first, the next test the second.
+/// Returning on the *first* touch found, and scanning for crossings only when there is none, has
+/// two defects; this fixture is the first, the next test the second.
 ///
 /// **A touch hides a crossing elsewhere.** A hole whose apex sits exactly on the outer ring's
 /// bottom edge (a genuine tangency — its two neighbours are both inside) *and* whose far side

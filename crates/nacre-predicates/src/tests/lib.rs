@@ -263,7 +263,7 @@ fn planes_coplanar_names_the_same_plane() {
     ));
 }
 
-/// The headline for retiring the old absolute-`1e-9` `coplanar` tolerance: two
+/// Why `coplanar` is not an absolute `1e-9` tolerance: two
 /// planes exactly `1e-9` apart (`z = 0` and `z = 1e-9`). An absolute
 /// `distance ≤ 1e-9` test **false-merges** them; the exact rank-1 test splits them
 /// (`minor(2,3) = 1e9·(−1) − 0·1e9 = −1e9 ≠ 0`). `two_product(1e9, 1)` is exact —

@@ -10,9 +10,7 @@ impl Model {
     /// ★★★★★ **The points are the only thing a producer states.** The canonical name
     /// ([`Model::surface_name`]) is *derived* here, from those points, by
     /// [`nacre_exact::plane_name_exact`] — so a plane cannot be described two ways, because there
-    /// is only one place to describe it. (Producers used to hand in coefficients beside the
-    /// points; before that parameter went away, every producer was compared against this
-    /// derivation across the suite: **83,883 agreements, 0 disagreements**.)
+    /// is only one place to describe it.
     ///
     /// ★ **Stated in the frame `motion` names** — the world for `None`, the pre-motion frame
     /// otherwise. An interned plane keeps the first pusher's triple.
@@ -198,13 +196,11 @@ impl Model {
     /// needs the three to *agree*, which is a weaker demand and would silently mix frames if it
     /// were copied.
     ///
-    /// ★★★ **"Carriers in one frame" is not "carriers with one `motion` field".** The sentence
-    /// that used to stand here — *`None` when the carriers do not share one motion, since then no
-    /// frame holds a rational coordinate at all* — became false with the invariant-plane
-    /// restatement, and reading it as still true cost every turned solid's corners their named
-    /// datum road for 169 commits. A motion that **fixes** a plane restates nothing, so that plane
-    /// stays world-stated beside carriers that moved; its world equation *is* its equation in
-    /// their pre-motion frame, and [`Model::chain_fixes_plane`] is what proves it.
+    /// ★★★ **"Carriers in one frame" is not "carriers with one `motion` field".** A motion that
+    /// **fixes** a plane restates nothing, so that plane stays world-stated beside carriers that
+    /// moved; its world equation *is* its equation in their pre-motion frame, and
+    /// [`Model::chain_fixes_plane`] is what proves it. Reading "no shared motion field" as "no
+    /// common frame" costs every turned solid's corners their named datum road.
     ///
     /// `None` on any of: a vertex that is not a three-plane point; carriers carrying **two**
     /// motion histories; a world-stated carrier the shared chain does not fix (or whose name is
@@ -241,7 +237,7 @@ impl Model {
         //
         // ★ **It is a fallback, deliberately.** Running it first would re-spell points the two
         // doors already answer, and those spellings are what the corpus is pinned on. Reached
-        // only where today's answer is `None`, it can open a population and cannot move one.
+        // only where the two doors answer `None`, it can open a population and cannot move one.
         //
         // ★ It transports the **name**, never the point: `world_plane_name` moves each carrier's
         // equation into the world, and `three_planes_big` then meets three world planes. Nothing

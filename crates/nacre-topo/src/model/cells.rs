@@ -121,8 +121,7 @@ impl Model {
     /// ★ Unlike [`Model::push_vertex`] this pairs no cache with the truth, because a face has
     /// none (`surface_cache`/`edge_cache`/`vertex_cache` exist; a face cache does not). What this
     /// door is worth is therefore the **invariant**, not cache-sync: a face whose loops do not
-    /// close is a face no consumer can walk, and until now nothing said so at the moment it was
-    /// built.
+    /// close is a face no consumer can walk, and this says so at the moment it is built.
     ///
     /// ☑ **Measured before it shipped** — every face the production road builds satisfies this,
     /// live or superseded, across the boolean / twice-cut / cylinder / tilted-frame fixtures. The

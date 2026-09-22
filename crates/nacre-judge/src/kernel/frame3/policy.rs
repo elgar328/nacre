@@ -194,7 +194,8 @@ const TRIAL_PREC: usize = 128;
 /// knows is exact. An f64-representable base (`Rat::try_from_f64` = `mantissa · 2^exp`, the case
 /// `at_nearest` states with tol 0) has a power-of-two denominator and a numerator of at most
 /// `Rat`'s own 127 bits — and
-/// `rat_to_hp` returns an exact interval exactly when both hold *at this precision*. Below 127 a
+/// `HpBounded::of_rat` returns an exact interval exactly when both hold *at this precision*. Below
+/// 127 a
 /// large exact coordinate would start carrying a bound again, and a caller that skipped the call on
 /// the strength of the zero would read a precision the model had not earned.
 /// See `an_exact_point_demands_no_precision`.

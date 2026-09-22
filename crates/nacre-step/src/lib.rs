@@ -3,8 +3,8 @@
 //! [`to_step`] is a thin **adapter**: it translates a kernel [`Model`] into
 //! AP242 entities and delegates serialization to a swappable backend
 //! (`step-io` during development). The rest of the kernel is backend-agnostic —
-//! `step-io` is confined to this crate, the same isolation used for
-//! `BooleanEngine` and the OCCT helper protocol.
+//! `step-io` is confined to this crate, the same isolation used for the OCCT
+//! helper protocol.
 //!
 //! Coverage: planar + cylindrical b-rep — `Surface::{Plane, Cylinder}` bounded by
 //! `Curve::{Line, Circle}` (a cylinder is the seam model of `add_cylinder`). The

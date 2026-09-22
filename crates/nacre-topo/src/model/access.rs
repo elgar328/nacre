@@ -5,8 +5,7 @@ use super::*;
 impl Model {
     /// The surface's exact truth — what it *is*, beside the f64 realization
     /// [`Model::surface_cache`] returns. Total: a surface without a truth is unrepresentable — the
-    /// truth **is** the arena entry a handle names, which is what retired `SurfaceDef::Inexact`
-    /// and the `UndefinedSurface` violation.
+    /// truth **is** the arena entry a handle names.
     ///
     /// ★★★★ **Which door answers which question** (measured).
     /// **Classification, comparison and branching ask the truth**; display, tessellation,

@@ -50,10 +50,10 @@ pub fn plane_origin_projection(coeffs: [Rat; 4]) -> Option<[Rat; 3]> {
 ///
 /// `None` means exactly two things, **neither of them the arithmetic**: the determinant is zero
 /// (no unique point — parallel or line-sharing planes), or the point itself does not fit `Rat`
-/// ([`MeetPoint::Wide`]). It used to also mean "an intermediate overflowed" — the rational
-/// cofactor expansion builds `a.num·b.den ± b.num·a.den` before it can reduce — and that
-/// conflation silently cost a decimal-framed tool its whole class reuse: its constructed
-/// corners solve to points that fit `Rat` (measured 8/8), but the road there overflowed.
+/// ([`MeetPoint::Wide`]). It does not mean "an intermediate overflowed" — the rational cofactor
+/// expansion builds `a.num·b.den ± b.num·a.den` before it can reduce, and reading that as "no
+/// point" would cost a decimal-framed tool its whole class reuse: its constructed corners solve
+/// to points that fit `Rat` (measured 8/8), but the road there overflows.
 /// The fallback runs only on the decline path, so the narrow
 /// route's cost and answers are untouched.
 ///
@@ -213,7 +213,7 @@ impl MeetPoint {
 /// scaling a row of a linear system leaves the same solution.
 ///
 /// Takes [`PlaneName`]s rather than `[Rat; 4]` rows so a `Wide` carrier — one whose canonical
-/// name no longer fits `Rat` — is solvable too. That population is invisible to
+/// name does not fit `Rat` — is solvable too. That population is invisible to
 /// [`three_planes_rat`], which reads [`PlaneName::narrow`] and so never sees it.
 ///
 /// `None` for a zero determinant only: parallel or line-sharing planes, no unique point.

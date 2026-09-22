@@ -21,9 +21,9 @@ fn l_and_popup_box() -> (Model, Handle<Solid>, Handle<Solid>) {
     l_prism_and_box([0.5, 0.5, 0.2], [2.5, 1.5, 1.2])
 }
 
-/// nacre's non-convex single-chord overlap (M5-d2) vs OCCT, `Cut`. The seam is
-/// a real boundary crossing, so this scores `overlap_fuse_cut`'s exact
-/// classification and seam reconstruction against an independent kernel.
+/// nacre's non-convex single-chord overlap vs OCCT, `Cut`. The seam is a real
+/// boundary crossing, so this scores the boolean's exact classification and seam
+/// reconstruction against an independent kernel.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn nonconvex_overlap_cut_matches_occt() {

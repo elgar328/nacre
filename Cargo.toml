@@ -1,5 +1,5 @@
-# nacre workspace. The top-level `nacre` facade crate is added later (re-export only).
-# Crates are added milestone by milestone — do not create all of them up front.
+# nacre workspace. The top-level `nacre` facade crate re-exports the layers.
+# A crate is added when a milestone needs it — not up front.
 [workspace]
 resolver = "3"
 members = ["crates/*"]
@@ -14,7 +14,7 @@ rust-version = "1.85"
 proptest = "1"
 rayon = "1"
 
-# ★★★★★ **The tests are the slow thing, and they were slow for one reason** (2026-09-08).
+# ★★★★★ **The tests are the slow thing, and they are slow for one reason: the optimizer level.**
 #
 # This kernel's inner loop is exact arithmetic — `i128` rationals, `BigInt` towers, sign
 # predicates evaluated hundreds of thousands of times per boolean — and at `opt-level = 0` that

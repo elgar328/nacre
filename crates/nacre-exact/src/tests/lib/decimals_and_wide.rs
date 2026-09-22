@@ -7,10 +7,9 @@ use super::*;
 ///
 /// It holds *because* `to_f64` is correctly rounded, and only because of that. The
 /// decimal is by construction a value whose nearest f64 is `x`; nearest rounding
-/// therefore has no choice. Rounding numerator and denominator separately first —
-/// what this function used to do — fails **17.4%** of the values below (measured),
-/// since a 17-digit decimal has a numerator past 2⁵³. That is the whole reason this
-/// cell touches `to_f64` at all.
+/// therefore has no choice. Rounding numerator and denominator separately first
+/// fails **17.4%** of the values below (measured), since a 17-digit decimal has a
+/// numerator past 2⁵³.
 #[test]
 fn a_shortest_decimal_realizes_back_to_its_own_f64() {
     let mut state = 0x243f_6a88_85a3_08d3u64;
@@ -196,10 +195,10 @@ proptest! {
     ))]
     /// ★★★★★ **The total predicate must answer what the checked one answered.**
     ///
-    /// `parallel_rat` replaced a checked-`Rat` cross that declined on overflow, and the
-    /// change is only sound if the two agree wherever the old one could speak at all. The
-    /// old spelling is kept here as the oracle — an independent derivation, not a call back
-    /// into the code under test — and compared on every input it can answer.
+    /// `parallel_rat` must agree with a checked-`Rat` cross wherever that cross can speak at
+    /// all (it declines on overflow). That spelling is kept here as the oracle — an independent
+    /// derivation, not a call back into the code under test — and compared on every input it
+    /// can answer.
     ///
     /// ★ **The width is drawn, not fixed**, because both halves of the range have to be
     /// visited: at `bits ≈ 30` the checked cross answers everything (so the two must agree),
@@ -224,7 +223,7 @@ proptest! {
             Rat::new(xs[i], (2 * ds[i] + 1).saturating_mul(scale)).unwrap()
         };
         let (a, b) = ([r(0), r(1), r(2)], [r(3), r(4), r(5)]);
-        // The retired spelling, verbatim: checked `Rat`, `None` on overflow.
+        // The checked spelling, verbatim: checked `Rat`, `None` on overflow.
         let checked = |x: &[Rat; 3], y: &[Rat; 3]| -> Option<bool> {
             let term = |i: usize, j: usize| -> Option<Rat> {
                 x[i].checked_mul(y[j])?.checked_sub(x[j].checked_mul(y[i])?)
@@ -407,7 +406,7 @@ proptest! {
         // ★★★★★ **The residual can overflow even when the name and the points both fit**, and
         // this test found that by asserting it could not. `c · p` multiplies a canonical
         // coefficient by a point coordinate, so it needs the *sum* of their widths — which is
-        // exactly the population `Model::push_surface_with_coeffs` cannot verify either. An
+        // exactly the population `Model::push_plane` cannot verify either. An
         // unevaluable check is not a failed one, here as there: skip it, never fail on it.
         if let Some(w) = wide.as_ref().and_then(|n| n.narrow()) {
             for p in [a, b, c] {
@@ -608,7 +607,7 @@ fn the_width_meter_reports_a_point_no_rat_can_hold() {
 /// ★★★★★ **A canonical answer wider than `i128` is a name now, not a `None`** — and two
 /// statements of that plane are one value. The
 /// interning consequence is locked on the model side
-/// (`a_wide_plane_interns_but_opens_no_shortcut` in nacre-topo).
+/// (`a_wide_plane_interns_but_opens_no_narrow_shortcut` in nacre-topo).
 #[test]
 fn a_plane_too_wide_for_i128_is_named_wide() {
     let r = |n: i128, d: i128| Rat::new(n, d).unwrap();

@@ -81,8 +81,7 @@ fn unit_cube_obj_shape() {
 /// ★ Ordered comparison would pass today (☑ measured: the mesh's vertices come out in the
 /// model's order for a cuboid, because `sample_edge` walks the edge store and dedups on first
 /// sight). It is not a contract, though — nothing promises that traversal — so asserting it
-/// would pin an artifact. The old test could compare ordered because the bootstrap writer
-/// emitted the vertex *store*; that writer is gone.
+/// would pin an artifact.
 #[test]
 fn vertices_round_trip() {
     let obj = tessellate(
@@ -159,9 +158,9 @@ fn cylinder_provenance_matches_positions() {
 }
 
 /// ★ **The radius is 20 so that the sagitta budget is the one being measured.**
-/// It used to be 2, and with the angular budget in place both tolerances would
-/// answer the same 180 segments there — the test would have compared a number
-/// with itself and passed on any `tol` at all. The angular term leads until
+/// At `r = 2`, with the angular budget in place, both tolerances answer the same
+/// 180 segments — the test would compare a number with itself and pass on any
+/// `tol` at all. The angular term leads until
 /// `r ≈ 66·(tol/0.01)`, so a radius past that is where "finer tolerance" still
 /// means something.
 #[test]
@@ -280,16 +279,13 @@ fn chart_of(t: &Tessellation, m: &Model, cfg: &TessConfig, fh: Handle<Face>) -> 
 /// ★★★★ **The chart follows the ring's own normal, on every plane — and the triangles follow
 /// the ring.**
 ///
-/// Two goldens used to say this one layer down, against `triangulate_polygon`: a square on
-/// `x = 5` wound CCW about `−x` (*"the projector must follow the ring's own normal, not a
-/// coordinate convention"*), and the same square handed both ways round (*"reversing the ring
-/// flips the Newell normal, and the same triangles come out with the opposite winding"*).
-/// That function is gone — the projection rule lives once now, in [`planar_chart`] — so the
-/// claims move here, where a cube states them **six times at once**, one per axis-aligned
-/// plane, with `drop_axis` returning each of its three answers.
+/// Two claims about the projection — *"the projector must follow the ring's own normal, not a
+/// coordinate convention"* and *"reversing the ring flips the Newell normal, and the same
+/// triangles come out with the opposite winding"* — stated where the projection rule lives
+/// once ([`planar_chart`]), on a cube that states them **six times at once**, one per
+/// axis-aligned plane, with `drop_axis` returning each of its three answers.
 ///
-/// ★ Stronger than what it replaces: the old test compared a ring against its own reversal
-/// and could only say the two disagreed. This says which way is right — every face's
+/// ★ Not just "a ring and its reversal disagree": this says which way is right — every face's
 /// triangles wind about the face's **outward** normal, which is the property the mesh's
 /// consumers actually rely on.
 #[test]
@@ -420,9 +416,9 @@ fn an_ordinary_band_is_offered_no_interior_points() {
 }
 
 /// ★ **Scale invariance**: the angular budget is a *relative* one, so a small
-/// circle and a large one are cut into the same number of pieces. Under the old
-/// absolute-only rule these were 10 and 100 — the very asymmetry that made small
-/// holes look like polygons.
+/// circle and a large one are cut into the same number of pieces. Under an
+/// absolute-only rule these are 10 and 100 — the asymmetry that makes small holes
+/// look like polygons.
 #[test]
 fn a_small_circle_is_cut_as_finely_as_a_large_one() {
     let cfg = TessConfig::default();

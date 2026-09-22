@@ -231,9 +231,9 @@ impl Angle {
     /// "the error describes the value that was used" hold by construction instead of by hope.
     ///
     /// ★★ **This is what lets the error accounting stop guessing.** `f64::cos` has no accuracy
-    /// contract — neither Rust nor any libm promises one — so the bound above it used to be a
-    /// measured-once constant with margin, sound only on platforms like the one it was taken on.
-    /// A kernel that ships to browsers cannot know that. Measuring instead means a worse libm
+    /// contract — neither Rust nor any libm promises one — so a measured-once constant with margin
+    /// would be sound only on platforms like the one it was taken on, which a kernel that ships to
+    /// browsers cannot know. Measuring instead means a worse libm
     /// simply reports a larger error and the tolerance grows to match: **the kernel adapts rather
     /// than assumes.**
     ///

@@ -127,8 +127,8 @@ pub(super) fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usiz
 /// actually produces: `face_rings` gives every ring its own index range, so two rings that touch
 /// do it with distinct indices at one point.
 ///
-/// Two scans, and **both always run** — the second used to be skipped whenever the first found
-/// anything, so one touch hid every crossing on the face:
+/// Two scans, and **both always run** — skipping the second whenever the first finds anything
+/// would let one touch hide every crossing on the face:
 ///
 /// 1. **A vertex on a segment it does not belong to** (`strictly_between`, or coincident with
 ///    one of the segment's ends). The two segments incident to the vertex are skipped — every
@@ -160,10 +160,10 @@ pub(super) fn link(n: usize, rings: &[&[usize]]) -> Result<(Vec<usize>, Vec<usiz
 /// [`TessError::DegenerateRing`]: any triangulation of it would be wrong — where a touch is a
 /// boundary this decomposition cannot draw. Neither name is a verdict on the solid.
 ///
-/// ☑ **The crossing scan is strict, and must be.** With the scan no longer short-circuited by a
-/// touch, an endpoint sitting exactly on the other segment's line (`orient2d == 0`) reaches it —
-/// and the old form, which folded a zero in with the negative side, called the measured tangency
-/// fixture a crossing. A zero at an endpoint means the segments meet the line only there, which
+/// ☑ **The crossing scan is strict, and must be.** With both scans running, an endpoint sitting
+/// exactly on the other segment's line (`orient2d == 0`) reaches it — and folding a zero in with
+/// the negative side calls the measured tangency fixture a crossing. A zero at an endpoint means
+/// the segments meet the line only there, which
 /// the touch scan already names; a straddle needs four non-zero signs.
 ///
 /// ☑ **That branch is here because the gap was measured, not imagined.** A self-crossing single

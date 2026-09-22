@@ -160,9 +160,8 @@ impl Plane {
     /// its exactness matters.
     ///
     /// ★★★ **"Exact" holds of the coefficients, not of any particular point on the plane.**
-    /// This doc used to claim that a plane built through exact vertices satisfies the form at
-    /// those vertices to *exactly zero*, by exact integer arithmetic. That is true when the
-    /// vertices are integers and false as soon as they are not: `d` is the `f64` product
+    /// A plane built through exact vertices satisfies the form at those vertices to *exactly
+    /// zero* only when the vertices are integers: `d` is the `f64` product
     /// `raw·origin`, and a face at `y = −0.2` with `raw = [0, −3.5, 0]` gets
     /// `d = 0.7000000000000001` — a plane `2⁻⁵⁴` from the one its own points span.
     ///

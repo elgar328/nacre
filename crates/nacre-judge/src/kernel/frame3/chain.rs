@@ -34,7 +34,7 @@ fn fold_one(mut p: [HpBounded; 3], node: &MoveNode, prec: usize) -> [HpBounded; 
             p[i] = px.add(&u.mul(&c, prec).sub(&v.mul(&s, prec), prec), prec);
             p[j] = py.add(&u.mul(&s, prec).add(&v.mul(&c, prec), prec), prec);
         }
-        // A translation is exact input: the only error is `rat_to_hp`'s own division
+        // A translation is exact input: the only error is `HpBounded::of_rat`'s own division
         // rounding and the add's half-ulp, both of which the interval carries.
         MoveNode::Translate { offset } => {
             for k in 0..3 {

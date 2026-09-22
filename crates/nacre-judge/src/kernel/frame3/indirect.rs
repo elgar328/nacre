@@ -184,8 +184,8 @@ pub(crate) fn cramer_iv(planes: [[Bounded; 4]; 3]) -> (Bounded, [Bounded; 3]) {
 ///
 /// ★ **A caller that wants only `D` must not go through [`cramer_iv`]**, which builds four
 /// determinants and the `h` column for the three it does not need. [`dir_sign_judge`] asks exactly
-/// this question ("how does the line `a ∩ b` run relative to `c`"), and it used to throw away
-/// three-quarters of the work on every call.
+/// this question ("how does the line `a ∩ b` run relative to `c`"), and going through
+/// [`cramer_iv`] would throw away three-quarters of the work on every call.
 pub(super) fn normals_det_iv(planes: [[Bounded; 4]; 3]) -> Bounded {
     let n = |k: usize| [planes[k][0], planes[k][1], planes[k][2]];
     det3_iv([n(0), n(1), n(2)])
@@ -253,9 +253,9 @@ fn filter_from_cramer(
 /// numerator vector, each carrying the error radius accumulated along the way. Shared by
 /// `indirect_hp` (orient3d) and `cmp_hp_with_gap` (cmp_coord).
 ///
-/// The magnitude bounds these used to return alongside are gone: the radius rides *with* the
-/// value now, so there is nothing left for a caller to forget to use — which is exactly how the
-/// indirect judge came to bound `M` by a scale that had already cancelled.
+/// No magnitude bound comes back alongside: the radius rides *with* the value, so there is
+/// nothing for a caller to forget to use — a separate bound is how a scale that has already
+/// cancelled ends up bounding `M`.
 pub(super) fn cramer_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> (HpBounded, [HpBounded; 3]) {
     let sub = |x: &HpBounded, y: &HpBounded| x.sub(y, prec);
     let zero = HpBounded::exact(BigFloat::from_f64(0.0, prec));
@@ -308,10 +308,10 @@ pub(super) fn cramer_hp(planes: &[[HpBounded; 4]; 3], prec: usize) -> (HpBounded
 /// escalation. Returns the two determinants as intervals; their radii are what decides whether
 /// either sign may be used.
 ///
-/// **This is where the cancellation bug lived.** `row1 = Dvec − D·s` collapses to nothing when
-/// the query point coincides with the implicit point, and the old code sized the declare-0 floor
-/// off that collapsed value, so a floor of `1e-131` let a `8.6e-78` rounding residue through as a
-/// confident sign while two other ways of asking the same question answered zero. An interval
+/// **Where the cancellation happens.** `row1 = Dvec − D·s` collapses to nothing when the query
+/// point coincides with the implicit point, and a declare-0 floor sized off that collapsed value
+/// lets a rounding residue through as a confident sign (measured: a floor of `1e-131` passed an
+/// `8.6e-78` residue while two other ways of asking the same question answered zero). An interval
 /// cannot make that mistake: the radius of `row1` is the sum of what went into it, and a
 /// subtraction that cancels leaves the radius behind.
 fn indirect_hp(

@@ -6,19 +6,16 @@
 //! instead of `2·ε`. Named for what the type promises — the truth lies within `value ± error` —
 //! not for what the value is (an approximation), because the promise is the whole point.
 //!
-//! **They live in one file on purpose.** The two used to be different kinds of machine: the filter
-//! propagated a radius, while the escalation compared a determinant against a hand-picked floor
-//! (`FLOOR_K · mag · 2⁻ᵖʳᵉᶜ`) built from a separately-maintained magnitude estimate. One of those
-//! estimates was read off a value that had already cancelled, the floor collapsed with it, and a
-//! rounding residue was reported as a confident sign. Side by side, an operation that propagates
-//! its radius in one and not the other is visible.
+//! **They live in one file on purpose.** Both are one kind of machine — each propagates a radius —
+//! and side by side, an operation that propagates its radius in one and not the other is visible.
+//! (The alternative, a determinant held against a hand-picked floor built from a
+//! separately-maintained magnitude estimate, collapses when the estimate is read off a value that
+//! has already cancelled, and reports a rounding residue as a confident sign.)
 //!
-//! **And they live in this crate, not in the judge that runs them,** for the same reason. The
-//! judge (`nacre-judge`) used to hold both as crate-private types while this crate realized curved
-//! coordinates with a second, looser spelling of the high-precision arithmetic — a tuple alias
-//! and five free functions whose magnitude reader had no zero guard and whose rational entry had
-//! no exact branch. Two spellings of one machine in two crates is how one of them drifts; one
-//! spelling here, and the judge imports it.
+//! **And they live in this crate, not in the judge that runs them,** for the same reason: this
+//! crate realizes curved coordinates with the same high-precision arithmetic, and two spellings of
+//! one machine in two crates is how one of them drifts. One spelling here, and the judge imports
+//! it.
 //!
 //! **The radius is a [`Mag`], not an `f64`.** At a deep rung `2⁻ᵖʳᵉᶜ` underflows an `f64` to
 //! zero, and a zero radius claims exactness — the same failure in new clothes. See [`Mag`]'s own

@@ -29,8 +29,9 @@
 //! high-precision path, that defect passed the tests this replaced (`indirect_orient3d`,
 //! `indirect_cmp_coord`) and fails these.
 //!
-//! What was *not* shown: that this oracle catches a defect on a **nonzero** answer the old one
-//! missed. The judge jumps straight to the precision its condition number asks for, so a nonzero
+//! What was *not* shown: that this oracle catches a defect on a **nonzero** answer that an oracle
+//! built from the judge's own functions would miss. The judge jumps straight to the precision its
+//! condition number asks for, so a nonzero
 //! case is decided with a margin no radius-sized planted error (even 256× the radius) reached — no
 //! plant changed a nonzero answer. A formula error in the high-precision path shows anyway, in the
 //! filter-resolved cases, where the judge does not use that path. The oracle is kept for what it

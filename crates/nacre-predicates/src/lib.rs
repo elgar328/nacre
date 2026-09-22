@@ -178,7 +178,7 @@ pub fn det3(m: [[f64; 3]; 3]) -> Expansion {
 /// `det[r0, r1, r2] = orient3d(r0, r1, r2, 0)`, and `geometry_predicates::orient3d`
 /// is already adaptive (filtered), so this borrows its fast path — no expansion is
 /// built unless the sign is too close to call. The value (not the sign) still comes
-/// from [`det3`], which [`cramer`] uses; `prop_det3_sign_matches_orient3d` pins the
+/// from [`det3`], which [`cramer`] uses; `prop_det3_sign_matches_the_expansion` pins the
 /// two together.
 #[inline]
 pub fn det3_sign(m: [[f64; 3]; 3]) -> i8 {

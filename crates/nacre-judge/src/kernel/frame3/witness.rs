@@ -184,10 +184,10 @@ impl WitnessPoint {
         self.realized[j].value = py + u * s + v * c;
         // **The rotation's own error — measured for this angle, not charged from a constant.**
         //
-        // `dc`/`ds` are how far this platform's `cos`/`sin` land from the truth. That used to be a
-        // constant measured once and written into a doc: sound only on machines like the one it was
-        // taken on, which a kernel that ships to browsers cannot assume. Measured, a worse platform
-        // reports a bigger number and the tolerance grows to match.
+        // `dc`/`ds` are how far this platform's `cos`/`sin` land from the truth — measured, not a
+        // constant measured once, which would be sound only on machines like the one it was taken
+        // on, and a kernel that ships to browsers cannot assume that. A worse platform reports a
+        // bigger number and the tolerance grows to match.
         //
         // ★ **Per axis, because the two coordinates mix the pair differently** — `u` meets `c` on
         // one and `s` on the other. See this function's doc for what that cost when it was shared.
@@ -219,18 +219,18 @@ impl WitnessPoint {
         };
         // **The pivot arithmetic, charged the way `translate` and `mirror` charge theirs.**
         //
-        // It used to take the trig constant — which existed *because `f64::cos` has no accuracy
-        // contract* — for three operations that all do have one. Its two siblings in this `impl`
-        // already do the right thing, and this now matches them: **measure** the rational's
-        // realization, **count** the round-to-nearest steps.
+        // Not a trig constant — which would exist only *because `f64::cos` has no accuracy
+        // contract* — for three operations that all do have one. Like its two siblings in this
+        // `impl`, it **measures** the rational's realization and **counts** the round-to-nearest
+        // steps.
         //
         // - The pivot's `Rat → f64` is measured, not counted, for the same reason they measure it:
         //   `Rat::to_f64` is one rounding for a numerator and denominator under `2⁵³` and takes
         //   another path above, so counting would mean knowing which. It enters **twice per axis
         //   with opposite signs** (`px + (ci − px)·c − …`) and partly cancels; `|1 − c| ≤ 2` and
         //   `|s| ≤ 1` bound the pair plainly, and the outer `2.0` is the margin every sibling
-        //   term carries. **Exactly zero for a dyadic pivot** — the common case, which the old
-        //   lumped charge still billed.
+        //   term carries. **Exactly zero for a dyadic pivot** — the common case, which a lumped
+        //   charge would still bill.
         // - **The roundings the pivot itself adds are three**: the two differences `ci − px` and
         //   `cj − py`, and the final sum `px + …`. (The products and their combination belong to
         //   `rot` above — they happen whether or not there is a pivot.) Each is `≤ ε/2` of a

@@ -383,9 +383,8 @@ fn high_precision_trig_meets_gate() {
 
 /// A large angle normalizes in one step, not one step per turn.
 ///
-/// Normalization used to subtract 360° in a loop, so `2⁶⁰` degrees needed ~3·10¹⁵ iterations —
-/// the kernel did not reject that input, it stopped responding to it. Found by execution: a
-/// trig corpus reached for a big numerator and the test never returned.
+/// Subtracting 360° in a loop, `2⁶⁰` degrees needs ~3·10¹⁵ iterations — the kernel would not
+/// reject that input, it would stop responding to it.
 #[test]
 fn a_huge_angle_normalizes_without_counting_turns() {
     let huge = Rat::new(1i128 << 60, 7).unwrap();

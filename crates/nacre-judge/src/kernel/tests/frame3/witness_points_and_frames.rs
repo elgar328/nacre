@@ -1329,7 +1329,7 @@ fn a_frame_whose_v_does_not_fit_falls_back_and_still_works() {
 }
 
 /// **`tol` bounds the error in the `coord` the frame actually wrote** — the same contract
-/// `a_rotation_chain_s_tol_bounds_its_realization` holds a rotation to, for the one motion
+/// `tol_bounds_error_over_random_chains` holds a rotation to, for the one motion
 /// whose realization is a square root rather than a cosine.
 #[test]
 fn a_frame_s_tol_bounds_its_own_realization() {
@@ -1621,7 +1621,8 @@ fn at_nearest_states_zero_for_an_f64_and_the_contract_bound_otherwise() {
 ///
 /// Not an accident of small numbers. The fixture builds its base with `Rat::try_from_f64` =
 /// `mantissa · 2^exp`, so the **denominator is a power of two** and the **numerator fits
-/// `i128`** — and `rat_to_hp` returns an exact interval exactly when those two hold at `prec`.
+/// `i128`** — and `HpBounded::of_rat` returns an exact interval exactly when those two hold at
+/// `prec`.
 /// The corpus therefore reaches **both ends of `Rat`'s range**: where the numerator is widest
 /// (a large integer, ~127 bits) and where the denominator is deepest (`2^126`).
 ///

@@ -8,12 +8,10 @@
 //! test harness (`version = "0.0.0"`, never published; overview OCCT rules). A
 //! crash on adversarial input kills the helper subprocess, not the kernel.
 //!
-//! v0 is `props` only (volume/area/faces/bbox of one solid). It validates that
-//! (1) our STEP is OCCT-valid, (2) a whole closed oriented solid was read (OCCT
-//! reports a positive analytic volume only then), and (3) the transport works —
-//! promoting the old manual FreeCAD check to an automated regression. The
-//! nacre-side volume/area (`nacre-props`) is now diffed directly against OCCT
-//! here (M4), and the boolean `fuse|cut|common` oracle beside it since M5.
+//! Scoring one solid's `props` (volume/area/faces/bbox) validates that (1) our STEP is
+//! OCCT-valid, (2) a whole closed oriented solid was read (OCCT reports a positive analytic
+//! volume only then), and (3) the transport works. The nacre-side volume/area (`nacre-props`) is
+//! diffed directly against OCCT here, and the boolean `fuse|cut|common` oracle sits beside it.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 use nacre_store::Handle;
@@ -195,7 +193,7 @@ impl OcctBool {
 ///
 /// Each input must be a single-solid STEP ([`nacre_step::to_step_solid`]); a
 /// multi-root STEP would have OCCT operate on only its first shape. This is the
-/// M5 boolean ground truth — the answer key for the nacre `PolyhedralBoolean`.
+/// Boolean ground truth — the answer key for nacre's boolean.
 pub fn occt_boolean(kind: OcctBool, a_step: &str, b_step: &str) -> Result<OcctProps, OracleError> {
     let helper = helper_path();
     if !helper.is_file() {

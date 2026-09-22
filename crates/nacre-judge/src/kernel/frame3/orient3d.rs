@@ -88,7 +88,7 @@ fn cross_of(
 
 /// CIP `dir_orient3d`: the sign of `det[d, x−base, y−base] = d·((x−base)×(y−base))` — the
 /// orientation of the ray direction `d` against the edge fan `(base→x, base→y)`. The
-/// **direction analogue** of [`orient3d_judge`]: `point_in_solid`'s ray-triangle test asks
+/// **direction analogue** of [`orient3d_judge`]: a ray-triangle test asks
 /// `orient3d(p, p+d, ·, ·)`, but `p+d` (a rotated point plus a rational offset) has no exact
 /// `base+chain` `WitnessPoint` (`R⁻¹d` is irrational). Every such determinant reduces to this form,
 /// where `d` enters as one **exact** (error-0) column and only `x, y, base` carry rotation tol.

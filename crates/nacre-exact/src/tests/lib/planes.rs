@@ -539,7 +539,7 @@ fn the_projected_origin_lies_exactly_on_its_plane() {
 }
 
 /// ★★★ **One plane, three spellings, one point.** The design rests on this: the canonical form
-/// carries no direction (`push_surface_with_coeffs` returns a `flipped` flag for exactly that
+/// carries no direction (`Model::push_plane` returns a `flipped` flag for exactly that
 /// reason), and a plane is scale-invariant, so an origin derived from the coefficients would be
 /// worthless if it moved when the coefficients were negated or scaled.
 #[test]

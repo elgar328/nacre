@@ -108,10 +108,10 @@ fn big(x: f64, prec: usize) -> BigFloat {
 /// **Does the error `Angle::realization_error_of` reports actually bound the real one?**
 ///
 /// `WitnessPoint::rotate_about` charges that number for the one input here without a rounding contract:
-/// neither Rust nor any libm promises an accuracy for `f64::cos`. It used to charge a constant
-/// measured once and written into a doc — sound only on machines like the one it was taken on,
-/// which a kernel that ships to browsers cannot assume. Now it measures, so **a worse platform
-/// reports a bigger number and the tolerance grows to match** rather than silently under-stating.
+/// neither Rust nor any libm promises an accuracy for `f64::cos`. It measures rather than charging
+/// a constant measured once — sound only on machines like the one it was taken on, which a kernel
+/// that ships to browsers cannot assume — so **a worse platform reports a bigger number and the
+/// tolerance grows to match** rather than silently under-stating.
 ///
 /// That moves the question. There is no budget left to overrun; what has to hold is that the
 /// measurement is an *upper* bound. So this compares production's answer — taken at 128 bits —
@@ -136,7 +136,7 @@ fn big(x: f64, prec: usize) -> BigFloat {
 /// would not fail loudly; it would quietly move those models. Here it has to be real.
 ///
 /// ★★ **It also still reports the worst error, though nothing depends on it.** Charging a
-/// measured value means a degraded platform no longer fails anything — it just escalates more
+/// measured value means a degraded platform fails nothing — it just escalates more
 /// and runs slower, invisibly. This line is what keeps that visible.
 ///
 /// What it does not do: it checks one input. `nacre-judge`'s `tol_bounds_error_over_random_chains`

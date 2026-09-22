@@ -210,8 +210,8 @@ impl Model {
     /// exactly in the pre-motion frame. That identity has to be *both* collision-free and free of
     /// false misses:
     ///
-    /// - it used to be a 64-bit hash of the chain's contents, and a collision would hand the exact
-    ///   predicate two incompatible frames and answer a different question with full confidence;
+    /// - a 64-bit hash of the chain's contents can collide, and a collision hands the exact
+    ///   predicate two incompatible frames and answers a different question with full confidence;
     /// - a raw `Store::push` per transform is collision-free but *misses*: turning two solids by
     ///   the same 30° would make two nodes, and their shared motion would stop cancelling — so
     ///   rotating a model would turn its exact questions into assumed ones (measured: it breaks

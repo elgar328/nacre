@@ -24,7 +24,7 @@ use std::fmt::Write;
 /// mesh is a cache, but a *wrong* cache is worse than none — silently fanning a
 /// ring that is not star-shaped puts triangles outside the solid.
 ///
-/// There is deliberately no `Fallback` variant. The old fan was one.
+/// There is deliberately no `Fallback` variant. A fan would be one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TessError {
     /// The rings are not a polygon with sibling holes, so no triangulation of them
@@ -32,18 +32,17 @@ pub enum TessError {
     /// **by index** or repeated within one, a spike, or **two segments passing through each
     /// other**.
     ///
-    /// ★ **The cases where two vertices meet in *coordinates* moved out**, to
-    /// [`Self::SelfTouchingBoundary`] — this doc used to list them here, and they are a different
-    /// proposition: those rings are exactly what the b-rep asked for, and it is this decomposition
-    /// that has no answer for them.
+    /// ★ **The cases where two vertices meet in *coordinates* are not here** but
+    /// [`Self::SelfTouchingBoundary`] — a different proposition: those rings are exactly what the
+    /// b-rep asked for, and it is this decomposition that has no answer for them.
     ///
     /// ☑ **The crossing clause is now true, and was not.** This doc has always claimed "a boundary
     /// that crosses itself", and for a single self-crossing ring the sweep did catch it. A **hole
     /// crossing its outer ring** did not: it came back `Ok` with eight confident, wrong triangles,
     /// measured. `monotone`'s `self_touch` closes that.
     ///
-    /// **The sweep detects these, where ear clipping used to notice them by accident**
-    /// (it stalled, and that stall was reported as `NoEar`). It is checked rather than
+    /// **The sweep detects these** — ear clipping would notice them only by accident, as a
+    /// stall. It is checked rather than
     /// assumed because the b-rep guarantees it and this layer cannot: a decomposition
     /// handed a self-crossing ring would otherwise return a confident, wrong mesh.
     DegenerateRing,
@@ -154,7 +153,8 @@ pub struct Tessellation {
 ///
 /// A single absolute budget is not "by curvature": it yields `n ≈ π√(r/2·tol)`, so a
 /// small circle gets *fewer* segments (its absolute error was small to begin with) and
-/// comes out visibly polygonal — a radius of `0.2` used to be a decagon. The angular
+/// comes out visibly polygonal — a radius of `0.2` is a decagon under that budget alone. The
+/// angular
 /// budget is what a small circle needs; the absolute one is what a circle much larger
 /// than the tolerance needs. Neither substitutes for the other, so the segment count
 /// takes whichever asks for more.

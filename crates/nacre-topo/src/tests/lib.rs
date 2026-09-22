@@ -50,8 +50,8 @@ fn two_faces_of_one_plane_disagree_in_f64_and_agree_in_the_rationals() {
     assert_eq!(sa, sb, "one plane, one surface");
     assert!(m.surface_name.contains_key(&sa), "and it is recorded");
 
-    // The f64 defect that made this necessary, shown on the planes themselves rather than
-    // through the model, since the model no longer holds two of them. `Plane` keeps an
+    // The f64 defect this guards against, shown on the planes themselves rather than
+    // through the model, since the model holds only one of them. `Plane` keeps an
     // un-normalized normal whose length follows the face's size, so `d = −raw·origin` is a
     // differently rounded product on each side and the two vectors are not exactly
     // proportional — the f64 test says "different planes" about one plane.
@@ -206,10 +206,9 @@ fn a_corner_of_two_translation_chains_solves_in_the_world() {
     );
 }
 
-/// ★ **Two doors, one fact.** `through_meets` used to solve each vertex inline; that body is
-/// now `vertex_meet`, and the three-vertex door is its caller. The two must agree point for
-/// point — otherwise the extraction quietly created a second spelling of the solve, which is
-/// this repo's dominant defect shape.
+/// ★ **Two doors, one fact.** The three-vertex door `through_meets` calls `vertex_meet` per
+/// vertex; the two must agree point for point — otherwise there is a second spelling of the
+/// solve, which is this repo's dominant defect shape.
 ///
 /// The frame comes back too, and on an unmoved box it is the world (`None`). That is the bit a
 /// consumer comparing against world coordinates has to demand: `through_meets` only asks the
@@ -500,10 +499,9 @@ fn the_write_doors_refuse_what_their_invariants_forbid() {
 /// ★★★ **A foreign handle does not read a cache** — the guard [`Store::get`] owns, kept on
 /// the index-parallel cache reads too ([`Model::debug_guard`]).
 ///
-/// ★ This is a **regression test with a measured history**: `Model::surface` used to be a
-/// `Store::get` and had the guard for free; the arena flip made it a `Vec` index and dropped
-/// it, and `vertex_point`/`edge_curve` had never had it — a handle from another model reached
-/// all three and answered with the wrong cell. The guard is `cfg(debug_assertions)`, so the
+/// ★ `Model::surface`, `vertex_point` and `edge_curve` index a `Vec`, so without the guard a
+/// handle from another model reaches all three and answers with the wrong cell. The guard is
+/// `cfg(debug_assertions)`, so the
 /// test is too. Panic output is left unsuppressed on purpose: swapping the panic hook is
 /// global state, and the suite runs tests in parallel.
 #[test]
@@ -868,8 +866,8 @@ proptest! {
     /// The same structure over the population that **actually stressed the exact
     /// arithmetic**: an axis a hair off `ẑ`, whose tiny components carry a full f64's worth
     /// of decimal digits and so lift to rationals with ~10²⁰ denominators. Squaring one of
-    /// those leaves `i128`, which is what the parallelism test used to refuse — and
-    /// `add_cylinder` read that refusal as "degenerate cylinder" and panicked.
+    /// those leaves `i128`, which a checked parallelism test refuses — and `add_cylinder`
+    /// would read that refusal as "degenerate cylinder" and panic.
     ///
     /// ★ The sibling above cannot stand in for this: its uniform axis reaches this family
     /// about **0.01%** of the time (measured), which is why the defect sat green for a
@@ -964,13 +962,12 @@ fn reversed_shell_is_a_valid_manifold() {
 ///
 /// The three assertions are the three ways this can go wrong. A name has to come out for an
 /// ordinary plane; it has to be the plane the points are **on**, not some other; and it has to
-/// come out even where the derivation's narrow route cannot reach — that last one is what a
-/// producer used to lose a name to, and losing a name closes the exact road for everything
-/// built on that plane.
+/// come out even where the derivation's narrow route cannot reach — that last one is where a
+/// producer would lose a name, and losing a name closes the exact road for everything built on
+/// that plane.
 ///
-/// ★ There is no "wrong name" case left to test. Coefficients are no longer something a
-/// producer can hand in, so a plane cannot be stated twice — the state the old agreement filter
-/// watched for is now unspellable.
+/// ★ There is no "wrong name" case to test. Coefficients are not something a producer can hand
+/// in, so a plane cannot be stated twice — a disagreement is unspellable.
 #[test]
 fn a_plane_is_named_by_its_points() {
     use nacre_exact::Rat;
@@ -997,9 +994,8 @@ fn a_plane_is_named_by_its_points() {
     // a triple of *coprime* denominators needs their product to state its plane — which
     // `(b − a) × (c − a)` then needs squared.
     //
-    // ★ An earlier spelling here used points chosen to overflow the old **agreement check**
-    // (`c · p`) and asserted the derivation gave up on them too. It does not: those are
-    // different products, and the derivation went through. Two propositions, one fixture.
+    // ★ Points chosen to overflow an **agreement check** (`c · p`) do not make the derivation
+    // give up: those are different products, and the derivation goes through.
     let q = |n: i128, d: i128| nacre_exact::Rat::new(n, d).unwrap();
     let wide_pts = [
         [q(1, 1 << 53), r(0), r(0)],
@@ -1036,8 +1032,7 @@ fn a_plane_is_named_by_its_points() {
         );
     }
 
-    // ★ (A plane with no points cannot be pushed at all any more — the "no points, no
-    // name" arm retired with the old API; the type is the assertion now.)
+    // ★ (A plane with no points cannot be pushed at all; the type is the assertion.)
 }
 
 /// ★★★★★ **A wide name interns — and opens no shortcut**.

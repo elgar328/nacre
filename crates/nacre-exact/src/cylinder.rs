@@ -157,8 +157,8 @@ pub fn cylinder_strip_side(
 ) -> StripSide {
     // ★ **A door, so the two can never drift.** A point is a disk of radius zero, and at that
     // radius the margin form's answers collapse onto this one exactly: `Crosses` needs a strictly
-    // positive width to be possible at all, and the remaining comparison is term-for-term the one
-    // this function used to spell for itself.
+    // positive width to be possible at all, and the remaining comparison is term-for-term this
+    // function's own.
     cylinder_strip_side_margin(coeffs, p, &BigRat::zero(), o, m, r2)
 }
 

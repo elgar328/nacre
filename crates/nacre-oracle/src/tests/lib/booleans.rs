@@ -32,7 +32,7 @@ fn boolean_volumes_match_occt() {
 /// **Area is the point.** The claim being checked is topological — that the exit face came out
 /// annular so the bore's walls have something to close against — and volume cannot see that.
 /// Cut: 0.75 + 0.75 + 4 + 2.0 (bore walls) = 7.5, against 6.0 for the untouched cube. Fuse:
-/// 1.0 + 0.75 + 4 + 1.0 + 0.25 = 7.0. Both used to be rejected outright.
+/// 1.0 + 0.75 + 4 + 1.0 + 0.25 = 7.0.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn punch_through_bore_matches_occt() {
@@ -56,9 +56,8 @@ fn punch_through_bore_matches_occt() {
 
 /// The Cut twin of the corner-overhang boss: base [0,1]³ and a boss [0.5,1.5]²×[1,2] seated on
 /// z=1 with an overhanging footprint. The boss lies entirely above the shared plane, so the cut
-/// removes nothing and the base survives whole — volume 1.0. nacre used to reject this
-/// (`coplanar_merge`) while building the Fuse of the very same pair, so the interesting claim is
-/// "nothing was removed", which is exactly the kind of answer worth hearing from a second kernel.
+/// removes nothing and the base survives whole — volume 1.0. The interesting claim is "nothing
+/// was removed", which is exactly the kind of answer worth hearing from a second kernel.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
 fn cut_by_a_corner_overhanging_boss_matches_occt() {
@@ -74,11 +73,11 @@ fn cut_by_a_corner_overhanging_boss_matches_occt() {
 
 /// A coplanar contact on a **cavitied** operand: a hollow box ([0,3]³ minus a [1,2]³ void,
 /// volume 26) with a top-flush boss on z=3 ([0.5,0.75]²×[3,4], volume 0.0625). The union keeps
-/// the void ⇒ 26.0625. This is the independent check on the all-shell fix: the coplanar driver
-/// used to emit outer-shell faces only, so the void vanished and the fuse read 27.0625 — the
-/// un-hollowed cube plus the boss — with a clean `validate`, since what remained was still a
-/// closed shell. Hand arithmetic and nacre agreeing would have proved nothing there; OCCT is a
-/// second kernel. (`hollow_solid_step_volume_matches_occt` already pins that a void survives the
+/// the void ⇒ 26.0625. This is the independent check that every shell is carried: emitting
+/// outer-shell faces only loses the void, and the fuse then reads 27.0625 — the un-hollowed cube
+/// plus the boss — with a clean `validate`, since what remains is still a closed shell. Hand
+/// arithmetic and nacre agreeing would prove nothing there; OCCT is a second kernel.
+/// (`hollow_solid_step_volume_matches_occt` already pins that a void survives the
 /// STEP round trip, so a failure here is about the boolean, not the transport.)
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]

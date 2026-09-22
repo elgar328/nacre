@@ -157,7 +157,7 @@ impl QuadVal {
     ///
     /// ★ Judged on the **value**, never on `b == 0` alone: a perfect-square discriminant leaves
     /// `b ≠ 0` with a rational sum — a branch corner where a wall through the axis meets the rim,
-    /// for one (`ops::branch_def` reads such a corner by comparing values, the same rule).
+    /// for one (such a corner is read by comparing values, the same rule).
     pub fn as_rat(&self) -> Option<Rat> {
         if self.b == Rat::from_int(0) {
             return Some(self.a);
@@ -725,9 +725,9 @@ pub fn plane_plane_cylinder(
 /// containment tests ask; the axial (z-range) half of point-vs-cylinder-solid is
 /// [`plane_side`]-against-the-caps, deliberately separate.
 ///
-/// ★ **It used to answer `None` on checked-`Rat` overflow, and no longer can.** The expression
-/// is one sign, and a sign has no width — only the road to it did. Denominators are cleared once
-/// and the arithmetic runs in `BigInt`, so a caller's decline now means the geometry (a point on
+/// ★ **It cannot answer `None` on overflow.** The expression is one sign, and a sign has no width
+/// — only a road to it can. Denominators are cleared once and the arithmetic runs in `BigInt`, so
+/// a caller's decline means the geometry (a point on
 /// the surface), never the arithmetic. The scales are **carried, not dropped**: the `r²|m|²` term
 /// makes the expression inhomogeneous in `w`, so `w`'s denominator `Dw` and the squared radius'
 /// `S` ride in — `sign(S(|W|²|M|² − (W·M)²) − R|M|²Dw²)` for `r² = R/S`, with `Dm²` cancelling as

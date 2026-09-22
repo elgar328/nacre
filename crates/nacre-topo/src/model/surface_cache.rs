@@ -116,7 +116,7 @@ impl Model {
     /// 8 of this corpus's planes and spends half the `i128` width budget. The anchor costs none
     /// of that: **0** census rows move, the exact road is untouched, and the arithmetic is one
     /// addition. What it buys is the same thing: the cache becomes **recomputable from the
-    /// arena**, so two statements of one plane no longer disagree about where it is anchored.
+    /// arena**, so two statements of one plane cannot disagree about where it is anchored.
     ///
     /// ⚠ **This is not «the cache is a function of the geometry».** The anchor is the *first*
     /// point of the *first* pusher's triple; two files whose first pushers state the plane

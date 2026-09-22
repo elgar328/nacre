@@ -594,8 +594,8 @@ fn the_radial_side_knows_its_shell() {
 }
 
 /// **The radial side answers where the checked spelling had to give up.** A point and an axis
-/// whose coordinates carry ~10²³ denominators: `|w|²|m|²` alone leaves `i128`, so the retired
-/// `Option` version returned `None` and its callers rejected for the arithmetic. The total one
+/// whose coordinates carry ~10²³ denominators: `|w|²|m|²` alone leaves `i128`, so a checked
+/// `Option` spelling returns `None` and its callers reject for the arithmetic. The total one
 /// answers, and the answer is checked against the geometry by hand — the point sits `2·r` from
 /// the axis, so it is outside; one fifth of that puts it inside. The radius itself is a short
 /// decimal (the truth holds it squared, which a 16-digit decimal this small could not fit into
@@ -613,7 +613,7 @@ fn the_radial_side_answers_where_the_checked_one_could_not() {
     let m = [ri(0), ri(0), ri(1)];
     let radius = wide(5e-8);
     let r2 = crate::BigRat::square_of(radius);
-    // The retired spelling, verbatim — it cannot even form `|w|²`.
+    // The checked spelling, verbatim — it cannot even form `|w|²`.
     let checked = |p: &[Rat; 3]| -> Option<Orient> {
         let w = [
             p[0].checked_sub(o[0])?,
@@ -671,7 +671,7 @@ fn parallel_axes_clear_compares_against_the_radius_sum() {
     let o_a = [ri(0), ri(0), ri(0)];
     let far = [wide(1.0000000000000002e-7), ri(0), ri(5)];
     // Short on purpose: `near` only has to sit inside the radius sum — the width that matters
-    // is in `ra`, `rb` and `far`, which is where the old arithmetic gave out.
+    // is in `ra`, `rb` and `far`, which is where checked arithmetic gives out.
     let near = [wide(7e-8), ri(0), ri(5)];
     assert_eq!(
         crate::cylinders_clear(&o_a, &m, &ra2, &far, &m, &rb2),
@@ -693,8 +693,8 @@ fn parallel_axes_clear_compares_against_the_radius_sum() {
 
 /// ★ **Radii with no rational root** — the population the squared truth opens. `r² = 2` beside
 /// `r² = 3`: `√2 + √3 ≈ 3.146`, so parallel axes `3` apart overlap and `4` apart clear; and the
-/// same pair nests when the axes stand closer than `√3 − √2 ≈ 0.318`. The retired `r: Rat` doors
-/// could not state either cylinder.
+/// same pair nests when the axes stand closer than `√3 − √2 ≈ 0.318`. An `r: Rat` door cannot
+/// state either cylinder.
 #[test]
 fn non_square_radii_are_compared_without_a_root_being_formed() {
     let m = [ri(0), ri(0), ri(1)];
@@ -720,7 +720,7 @@ fn non_square_radii_are_compared_without_a_root_being_formed() {
         Orient::Positive,
         "1/3 > √3 − √2: not nested"
     );
-    // And a square pair still answers as the old arithmetic did — tangent at exactly r₁ + r₂.
+    // And a square pair answers as checked arithmetic does — tangent at exactly r₁ + r₂.
     assert_eq!(
         crate::cylinders_clear(&o_a, &m, &big(9), &[ri(4), ri(0), ri(0)], &m, &big(1)),
         Orient::Zero
@@ -732,7 +732,7 @@ fn non_square_radii_are_compared_without_a_root_being_formed() {
     );
 }
 
-/// ★★ **Axes that are not parallel are the case the caller used to refuse outright.** The
+/// ★★ **Axes that are not parallel are the case a parallel-only check refuses outright.** The
 /// distance between two skew lines is their common perpendicular, and the same comparison
 /// against `r₁ + r₂` decides the pair — a drill crossing a bore six apart with radii summing to
 /// four does not touch it, whatever the angle between them.
@@ -880,8 +880,9 @@ fn moving_the_axis_moves_the_answer() {
 // unbuilt for a reason about arithmetic rather than about shape.
 
 /// The unit z-cylinder cut by `x = 0` gives `(0, ±1, z)` — **rational** roots, so the same two
-/// points can be named the other way too, by three planes. ★ That is the only place the new road
-/// and the old one answer about the *same value*, which makes it the one independent oracle
+/// points can be named the other way too, by three planes. ★ That is the only place the
+/// `a + b√c` road and the three-plane road answer about the *same value*, which makes it the one
+/// independent oracle
 /// available: everything else about `a + b√c` has no three-plane spelling at all.
 #[test]
 fn the_two_roads_agree_where_a_crossing_is_rational() {
@@ -1102,8 +1103,8 @@ fn an_axis_the_line_does_not_move_along_is_rational() {
 ///
 /// The first instrument is **inclusion**: a rational point, handed in as a degenerate branch
 /// (`s` rational, so `base + s·dir` is rational), must get the same answer from both spellings.
-/// A new road that did not reproduce the old one on the old road's own inputs would be a second
-/// rule, not a wider one.
+/// A wider road that did not reproduce the narrow one on the narrow road's own inputs would be a
+/// second rule, not a wider one.
 #[test]
 fn the_branch_footprint_predicates_include_the_rational_ones() {
     let (o, m, _) = zcyl();

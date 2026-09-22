@@ -160,8 +160,8 @@ pub fn face_props(model: &Model, face: Handle<Face>) -> Result<FaceProps, PropsE
         Surface::Cylinder(cyl) => {
             let m = lateral_moments(model, face, cyl)?;
             // The mean of `p = a₀ + z·axis + r·n̂(θ)` over the region: the axis point at the
-            // mean axial station, plus `r·∬n̂ / ∬1` radially (exactly zero for a full band —
-            // the old on-axis answer). Every `sign` cancels in a ratio of two moments.
+            // mean axial station, plus `r·∬n̂ / ∬1` radially (exactly zero for a full band, whose
+            // mean is on the axis). Every `sign` cancels in a ratio of two moments.
             Ok(FaceProps {
                 area: cyl.radius() * sign * m.j1,
                 centroid: cyl.axis().origin()
@@ -440,8 +440,7 @@ struct LateralMoments {
 /// positive.
 ///
 /// ☑ Unchanged assumption: a rim is a **circle** cut by a plane ⊥ the axis, so `z` is constant
-/// along an arc. An oblique cut gives an ellipse, and that is out of scope here — the old spelling
-/// grouped rim arcs by axial station on the same premise.
+/// along an arc. An oblique cut gives an ellipse, and that is out of scope here.
 fn lateral_moments(
     model: &Model,
     face: &Face,
@@ -456,8 +455,8 @@ fn lateral_moments(
         q.dot(w).atan2(q.dot(u))
     };
     let axial_of = |p: Point3| (p - a0).dot(axis);
-    // ★ `z` is measured from the face's first vertex, for the reason the old `axial_range` did the
-    // same: keep the magnitudes small wherever the solid sits. It is legal because `∮dθ`, `∮cos θ
+    // ★ `z` is measured from the face's first vertex, to keep the magnitudes small wherever the
+    // solid sits. It is legal because `∮dθ`, `∮cos θ
     // dθ` and `∮sin θ dθ` all vanish over a closed loop, so `z → z + c` moves neither `j1` nor
     // `jn`; only `jz` shifts, and `z0` travels with it to the one place it is read.
     let first = *face

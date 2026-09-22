@@ -113,7 +113,7 @@ pub enum MoveNode {
     /// arbitrary-precision integers instead: **nothing here can overflow**, so unlike
     /// `PlaneFrame` there is no partial (`v: None`) form.
     ///
-    /// ★ This variant is why `MoveNode` is no longer `Copy` — `BigInt` owns heap. The chain is
+    /// ★ This variant is why `MoveNode` is not `Copy` — `BigInt` owns heap. The chain is
     /// shared by `Rc`, so nothing hot copies nodes.
     ///
     /// ★ **Proper** (`det = +1`), like [`MoveNode::Frame`].

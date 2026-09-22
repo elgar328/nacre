@@ -59,9 +59,9 @@ pub(crate) fn newell(pts: &[Point3], ring: &[usize]) -> Vector3 {
 ///
 /// **Only the magnitude is read.** Any axis the polygon does not lie edge-on to gives
 /// a non-degenerate projection, and the normal's *sign* — which decides whether that
-/// projection preserves or reverses orientation — is not consulted at all. It used to
-/// be (`if a[k] >= 0.0 { .. } else { swap }`), which put the whole frame on an `f64`
-/// sign computed by summing `n` cross products. [`ring_orientation`] settles the same
+/// projection preserves or reverses orientation — is not consulted at all. Consulting it
+/// (`if a[k] >= 0.0 { .. } else { swap }`) would put the whole frame on an `f64` sign
+/// computed by summing `n` cross products. [`ring_orientation`] settles the same
 /// question afterwards with one exact predicate, on the ring itself.
 pub(crate) fn drop_axis(n: Vector3) -> (usize, usize) {
     let a = n.as_array();

@@ -383,9 +383,7 @@ pub fn round_to_digits(mid: &BigFloat, rad: Mag, places: usize) -> Option<String
 // ---------------------------------------------------------------------------------------------
 //
 // The arithmetic itself is [`HpBounded`]'s (`bounded.rs`) — what lives here are the realizations
-// that drive it. A second spelling of that arithmetic used to sit here (a tuple alias and five
-// free functions); its magnitude reader charged an exact zero a rounding and its rational entry
-// truncated below 128 bits, both of which the one spelling does not.
+// that drive it.
 
 /// **`√v` realized at `p` bits, with its error** — `v · (1/√v)`, so the one radical primitive this
 /// crate already has ([`inv_sqrt_bounded`]) is the only place a square root is approached.

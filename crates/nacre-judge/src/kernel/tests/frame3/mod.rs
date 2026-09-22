@@ -1,10 +1,9 @@
 use super::*;
 
-/// A witness at an `f64`-representable point, stated as the rational it is — the fixture
-/// spelling of what `WitnessPoint::exact` used to be. That door is retired: no production
-/// caller, and a precondition ("exactly representable") no caller could check — the one
-/// production site that handed it a rounded cache named a different point (nacre-ops
-/// reuse). `at_nearest` states the same tol `0` here and stays honest elsewhere.
+/// A witness at an `f64`-representable point, stated as the rational it is. Production has no
+/// such door: its precondition ("exactly representable") is one no caller can check, and a
+/// rounded cache handed to it names a different point. `at_nearest` states the same tol `0`
+/// here and stays honest elsewhere.
 fn exact(c: [f64; 3]) -> Option<WitnessPoint> {
     let b = |x: f64| Rat::try_from_f64(x);
     Some(WitnessPoint::at_nearest([b(c[0])?, b(c[1])?, b(c[2])?]))

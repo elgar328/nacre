@@ -9,8 +9,7 @@
 //! astro-float, never on `nacre-math`/`nacre-topo`.
 
 /// Rounding mode for the high-precision (astro-float) realization layer — `nacre-exact`'s, so a
-/// value rounded there and one rounded here never disagree by mode (this crate used to carry an
-/// identical private copy).
+/// value rounded there and one rounded here never disagree by mode.
 pub(crate) use nacre_exact::HP_RM;
 
 pub mod frame3;

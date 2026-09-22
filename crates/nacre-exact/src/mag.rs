@@ -91,8 +91,8 @@ impl Mag {
     /// An upper bound on `|x|` from its exponent (`|x| < 2^exponent`) — [`Mag::ZERO`] for an
     /// exact zero, which has no magnitude to bound. **The one spelling of this reading**: the
     /// interval arithmetic, the trig and the inverse-square-root realizations all charge their
-    /// rounding as a multiple of it. (Four spellings used to exist, and the one without the zero
-    /// guard charged an exact zero a rounding it never paid.)
+    /// rounding as a multiple of it. (A spelling without the zero guard charges an exact zero a
+    /// rounding it never paid.)
     pub fn above(x: &BigFloat) -> Mag {
         match x.exponent() {
             Some(e) if !x.is_zero() => Mag::pow2(i64::from(e)),

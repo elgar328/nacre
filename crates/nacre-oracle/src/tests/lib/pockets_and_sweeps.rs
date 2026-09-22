@@ -443,10 +443,10 @@ fn the_four_plane_cut_matches_occt() {
 
 /// **Placement, scored by a kernel that has never heard of a motion history.**
 ///
-/// Two things this cell changed have no prior expectation for the suite to violate: a
-/// placement that used to come back as *two* bodies now comes back as one, and "turn it, then
-/// put it there" used to be refused outright. A suite cannot catch a reject becoming an
-/// answer, so the answer gets an outside opinion — OCCT builds the same booleans from the same
+/// Two answers here have no prior expectation for the suite to violate: a placement whose shared
+/// wall's two f64 images differ by one ulp comes back as one body, not two, and "turn it, then
+/// put it there" builds. A suite cannot judge an answer it has no expectation for, so the answer
+/// gets an outside opinion — OCCT builds the same booleans from the same
 /// operands, through STEP, with its own arithmetic.
 #[test]
 #[ignore = "requires OCCT DRAWEXE (run with --ignored)"]
@@ -469,8 +469,8 @@ fn placement_matches_occt() {
         solid
     };
 
-    // (a) The shared wall whose two f64 images differ by one ulp — including the offsets that
-    // used to split the part in half, and dyadic ones that never did.
+    // (a) The shared wall whose two f64 images differ by one ulp — including the offsets where
+    // they do differ, and dyadic ones where they do not.
     for (n, d) in [
         (7i128, 11i128),
         (13, 23),
@@ -508,7 +508,7 @@ fn placement_matches_occt() {
         }
     }
 
-    // (b) Turn it, then put it there — the whole sweep that used to be refused.
+    // (b) Turn it, then put it there — the whole sweep.
     for deg in [7i128, 17, 30, 45, 63] {
         for off in [[3i128, 0, 0], [5, -3, 2], [0, 4, 0]] {
             let mut m = Model::new();
@@ -572,11 +572,10 @@ fn placement_matches_occt() {
 
 /// **Reflection, scored by a kernel that has never heard of a motion history.**
 ///
-/// A reflection is now a motion the chain records, which turned two things into answers the
-/// suite has no prior expectation for: a wall reached by reflection and a wall reached by
-/// translation used to be one ulp apart and split the part in two, and a mirrored *rotated*
-/// solid used to be carried by conjugating its chain rather than extending it. Both changed
-/// what the kernel decides, so both get an outside opinion.
+/// A reflection is a motion the chain records, which makes two answers the suite has no prior
+/// expectation for: a wall reached by reflection and a wall reached by translation are one wall,
+/// not two walls one ulp apart, and a mirrored *rotated* solid extends its chain rather than
+/// conjugating it. Both are decisions of the kernel, so both get an outside opinion.
 ///
 /// The mirror planes are deliberately **non-dyadic** (`1/3`, `7/22`, `5/7`): `2c − x` is exact
 /// for a dyadic `c`, so those are the cases where the reflection is recorded and the
@@ -740,14 +739,13 @@ fn reflection_matches_occt() {
     }
 }
 
-/// **The fin array, scored by a kernel that has never heard of `SurfaceDef`.**
+/// **The fin array, scored by a kernel that has never heard of nacre's surface provenance.**
 ///
-/// These eight arrangements did not build at all until surfaces carried their own provenance:
-/// a boolean's result used to describe its faces by their rounded coordinates, so the third
-/// fin's wall never merged with the wall the first two had already made. The coverage suite
-/// pins the new volumes, but those numbers came out of the very engine the fix changed — and a
-/// fix that turns a reject into an answer has no prior expectation to violate, which is exactly
-/// the shape of change a suite cannot catch.
+/// These eight arrangements build only because surfaces carry their own provenance: described
+/// by their rounded coordinates, a boolean's result faces never merge the third fin's wall with
+/// the wall the first two made. The coverage suite pins the volumes, but those numbers come out
+/// of the very engine under test — and an answer where a reject would otherwise stand has no
+/// prior expectation to violate, which is exactly the shape a suite cannot catch.
 ///
 /// So OCCT builds the same three fuses from the same operands, and scores the result.
 #[test]
@@ -756,8 +754,8 @@ fn the_fin_array_matches_occt() {
     use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
     use nacre_ops::{BoolKind, Operation, apply, boolean};
 
-    // The θ that each used to reject under: RunSplit, CoincidentNodes, UnreachedCell,
-    // StraightAngle, LabelConflict ×3, TraceDeclined — the whole failing population.
+    // What each θ meets without surface provenance: RunSplit, CoincidentNodes, UnreachedCell,
+    // StraightAngle, LabelConflict ×3, TraceDeclined.
     for theta in [16.0f64, 20.0, 23.0, 46.0, 50.0, 54.0, 59.0, 62.0] {
         let mut m = Model::new();
         let mut part = m.add_cuboid(

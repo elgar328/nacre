@@ -239,8 +239,8 @@ fn a_near_tie_axis_takes_the_same_tie_break_as_the_cache() {
             4608370063852310934
         ]
     );
-    // Measured before the change: the cache's ref_dir and the seam vertex already disagree by
-    // 1 ulp today (two normalization paths) — the literal records that honestly.
+    // The cache's ref_dir and the seam vertex disagree by 1 ulp (two normalization paths) — the
+    // literal records that honestly.
     assert_eq!(
         bits3(cache.ref_dir().as_array()),
         [0, 13829603540328246746, 4601727903846100442]
@@ -353,10 +353,11 @@ fn the_checked_constructor_refuses_what_means_no_cylinder() {
     );
 }
 
-/// **A statement the arithmetic used to lose.** The axis carries a component that is small and
+/// **A statement checked arithmetic loses.** The axis carries a component that is small and
 /// spelled with a full f64's digits, so its exact rational has a ~10²⁰ denominator; the
-/// parallelism test squares it, and in `i128` that overflowed. The old constructor answered
-/// `None` — "no cylinder" — and `add_cylinder`'s `expect` turned a width limit into a crash.
+/// parallelism test squares it, and in `i128` that overflows — a checked constructor would
+/// answer `None` ("no cylinder"), and `add_cylinder`'s `expect` would turn a width limit into a
+/// crash.
 ///
 /// The three inputs are one family, chosen from the algebra rather than a story: a tiny
 /// component at 1e-7 (the seed a proptest actually found), one at 1e-9, and one where **both**
@@ -391,7 +392,7 @@ fn a_wide_decimal_axis_is_a_cylinder_not_a_refusal() {
 
 /// The negative control for the totalization: making the test unable to overflow must not make
 /// it unable to **refuse**. A `ref_dir` parallel to the axis still pins no seam when both are
-/// written with wide decimals — where the old checked test could only shrug.
+/// written with wide decimals — where a checked test could only shrug.
 #[test]
 fn a_wide_parallel_ref_dir_is_still_refused() {
     let zero = || rat(0.0);

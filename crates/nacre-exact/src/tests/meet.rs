@@ -2,15 +2,15 @@
 
 use super::*;
 
-/// ★★★★★ **An overflowing intermediate no longer costs the answer** —
+/// ★★★★★ **An overflowing intermediate does not cost the answer** —
 /// locked on the fixture that documents the overflow.
 ///
 /// These three planes meet at `(1, 1, 1)`, which fits `Rat` with room to spare. But their
 /// coefficients carry coprime denominators — a power of two and a power of five, what decimal
 /// arithmetic produces once it reduces — and the determinant is their product: `2⁹³·5³⁴`, a
 /// ~172-bit denominator. The narrow Cramer multiplies before it can reduce, so it overflows;
-/// this fixture used to assert the resulting decline, and now asserts the fallback answers
-/// through the integer core instead — the hand-known point, so this is an independent oracle
+/// this fixture asserts the fallback answers through the integer core — the hand-known point, so
+/// this is an independent oracle
 /// and not the two routes agreeing with each other.
 ///
 /// ★ The private narrow route still declines here (asserted), so the fixture keeps proving

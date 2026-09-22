@@ -240,7 +240,7 @@ impl Isometry {
     /// overflow — so a caller that can move one description exactly can move the other.
     ///
     /// ★ **Why a plane needs it even though a plane is not a bag of points.** A plane's *truth* is
-    /// three points on it (`Model::surface_points`): its coefficients are a product of two point
+    /// three points on it (its stated points): its coefficients are a product of two point
     /// differences and overflow `i128` far sooner than the points do. Moving such a plane means
     /// moving its points, and carrying them through f64 would put a rounded coordinate back into a
     /// definition — the thing storing points was meant to stop.

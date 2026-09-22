@@ -106,7 +106,7 @@ fn rotated_overlap_common_matches_occt() {
 }
 
 /// The sever — a bar cut clean through a cube into two solids (OCCT COMPOUND) — under a full
-/// tilt. This is where a rotated `is_shell_outward` (3c-vi) bug would hide: both severed
+/// tilt. This is where a rotated outwardness bug would hide: both severed
 /// pieces must read outward, so OCCT's total volume/area confirms two material solids, not one
 /// with the other misjudged as a cavity.
 #[test]
@@ -201,8 +201,7 @@ fn rerotated_solid_props_match_occt() {
 
 /// A **corner-flush** `Common` scored against OCCT: an L-prism and a box that both start at
 /// the origin, so three of their face planes coincide (`z = 0`, `x = 0`, `y = 0`) and every
-/// vertex of the shared corner sits exactly on the other solid's planes. That configuration
-/// used to be an honest reject (`vertex_on_face_plane`); the ops-side lock
+/// vertex of the shared corner sits exactly on the other solid's planes. The ops-side lock
 /// `a_corner_flush_common_keeps_the_non_convex_overlap` pins the hand-derived volume 1.0 and
 /// area 7.0, and this scores the same shape against an independent kernel.
 #[test]

@@ -285,8 +285,8 @@ pub struct MotionNode {
 
 /// What makes two surfaces the same plane, for `Model::surface_ids`: the canonical name
 /// ([`nacre_exact::PlaneName`] — `Narrow | Wide`) and **the motion it is stated in**.
-/// Identical names under different motions are different planes, because `Constructed` names
-/// speak about the world and `Moved` ones about the pre-motion frame.
+/// Identical names under different motions are different planes, because a name with no
+/// motion speaks about the world and one with a motion about the pre-motion frame.
 pub type SurfaceKey = (nacre_exact::PlaneName, Option<Handle<MotionNode>>);
 
 /// The statement key for a plane the name key cannot hold: the sorted defining
@@ -456,8 +456,8 @@ impl Orientation {
 
     /// The flag as a sign: stored surface normal × `sign()` = the face's **stated outward**
     /// — the one reading props, STEP (`same_sense`) and the boolean engine all share. One
-    /// spelling, because the ±1 map used to live inline at six production sites and a copy
-    /// drifting is exactly how a face comes to lie about which way it faces.
+    /// spelling: a ±1 map inline at each production site is a copy that can drift, which is
+    /// exactly how a face comes to lie about which way it faces.
     #[inline]
     pub fn sign(self) -> i8 {
         match self {
@@ -483,7 +483,7 @@ impl Orientation {
 pub enum Surface {
     Plane {
         /// The plane's three exact points, stated in the frame `motion` names (the world when
-        /// `None`) — the value `Model::surface_points` used to carry.
+        /// `None`).
         points: PlanePoints,
         /// The motion history carrying the points out to the world; `None` = the world itself.
         motion: Option<Handle<MotionNode>>,
@@ -568,11 +568,11 @@ impl CylinderDef {
     ///
     /// ★ **Width is not a cause.** The parallelism test runs in
     /// [`nacre_exact::parallel_rat`], which clears denominators and answers in integers, so it
-    /// cannot decline. It used to run in checked `Rat` and answer `None` on overflow — a
-    /// "conservative refusal" that conflated *no cylinder* with *the arithmetic ran out*, and
-    /// the callers below read it as the first: a statement whose axis carries a small component
-    /// with a long decimal (denominator ~10²⁰, whose square leaves `i128`) crashed the
-    /// constructor's `expect`. Measured population: 80% of computed near-axis-aligned
+    /// cannot decline. Checked `Rat` would answer `None` on overflow — conflating *no cylinder*
+    /// with *the arithmetic ran out*, and the callers below read `None` as the first: a statement
+    /// whose axis carries a small component with a long decimal (denominator ~10²⁰, whose square
+    /// leaves `i128`) would crash the constructor's `expect`. Measured population: 80% of computed
+    /// near-axis-aligned
     /// directions, 0% of hand-written short decimals.
     pub fn new(
         origin: [Rat; 3],
@@ -817,13 +817,12 @@ pub type PrefixValue = (usize, [HpBounded; 3]);
 ///   to it (the realization declines by name), or nobody asked (a hand-built fixture). The figure
 ///   is the construction's own, and a checker applies its construction epsilon.
 ///
-/// ⚠★★★ **There is no stored tolerance, and the variant that held one is gone.** An earlier cut
-/// kept the residual the arrangement measured (`Measured { residual }`). That number is **not** a
+/// ⚠★★★ **There is no stored tolerance.** The residual the arrangement measures is **not** a
 /// bound: a residual is one distance, from the point to its carriers, and says nothing about how
 /// far each coordinate sits from the truth — a near-degenerate crossing can be close to every
-/// carrier and far from the exact corner. The arrangement still measures it (`SeamVertex.tol`,
-/// which the self-touch sieve reads); the *cache* no longer stores it, because what a cache is for
-/// is saying what has been **proven** about the coordinate.
+/// carrier and far from the exact corner. The arrangement measures it (`SeamVertex.tol`, which
+/// the self-touch sieve reads); the *cache* does not store it, because what a cache is for is
+/// saying what has been **proven** about the coordinate.
 ///
 /// Unlike [`EdgeCache`] there is no discard-and-rebuild: a vertex is realized when it is pushed, so
 /// the cache is the realization's memo from the start. What can happen later is a **refinement** —

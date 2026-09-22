@@ -121,8 +121,8 @@ fn the_wall_with_two_windows() {
     assert!(pieces.len() >= 3, "two holes need at least two cuts");
 }
 
-/// **The corpus that measured the old triangulator's 27.6% failure rate**, pointed
-/// at the decomposition instead: random axis-aligned rectangles with one to four
+/// **The corpus on which ear clipping fails 27.6% of the time** (measured), pointed
+/// at the decomposition: random axis-aligned rectangles with one to four
 /// non-overlapping rectangular holes on an integer grid.
 ///
 /// Hand-picked fixtures only cover the degeneracies someone thought of. This one

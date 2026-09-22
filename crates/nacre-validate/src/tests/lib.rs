@@ -207,9 +207,8 @@ const TETRA_FACES: [TetraFace; 4] = [
 struct TetraOpts {
     /// (vertex index, coordinate delta) — moves a vertex off its (un-moved) surfaces.
     ///
-    /// ⚠ It used to carry a third element, a tolerance to install on that vertex, because the
-    /// cache stored a measured residual and a checker read it. Nothing stores one now: every
-    /// vertex is held to [`EPS_CONSTRUCTED`], so a per-vertex knob would drive nothing.
+    /// ⚠ No third element (a per-vertex tolerance): nothing stores one — every vertex is held to
+    /// [`EPS_CONSTRUCTED`] — so a per-vertex knob would drive nothing.
     nudge: Option<(usize, [f64; 3])>,
     drop_face: Option<usize>,
     flip_he: Option<(usize, usize)>, // (face, half-edge position)
@@ -1040,13 +1039,6 @@ fn vertex_off_its_rim_circle() {
         "a seam vertex off its rim circle must be caught: {vs:?}"
     );
 }
-
-// ⚠★★★ **A third test stood here and its premise is gone, not its coverage.**
-// `discovered_vertex_within_tolerance_is_clean` nudged a vertex by half of the tolerance it
-// installed on that same vertex and asserted the model still validated. Nothing installs a
-// per-vertex tolerance any more — every vertex is held to `EPS_CONSTRUCTED` — so the
-// proposition "a vertex may sit within *its own recorded* tolerance" has no subject. The
-// clean-model side is not lost: every fixture in this file that is *not* nudged asserts it.
 
 #[test]
 fn a_vertex_nudged_off_its_surfaces_flags() {

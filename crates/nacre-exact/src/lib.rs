@@ -11,7 +11,7 @@
 //! - [`Rat`] — a rational scalar (tol 0). Fixed-width `Ratio<i128>` with
 //!   **checked** arithmetic: overflow is a *signal* (the downgrade trigger),
 //!   not a panic or silent wrap. The caller downgrades that value's cache to
-//!   f64 and records the tol on its `Origin`; the definition is never lost, so a
+//!   f64 and records its tol; the definition is never lost, so a
 //!   judgement can still realize it at whatever precision it needs.
 //! - [`Angle`] — rational degrees, normalized mod-360, with exact accumulation so
 //!   a full turn lands back on exactly `0` (no f64 drift — a sketch closes). The
@@ -20,17 +20,16 @@
 //!   so those rotations of a rational point stay tol 0; and `cos_sin_at`
 //!   realize in arbitrary precision (astro-float) for the judgment path.
 //!
-//! Scope: the exact value engine (the toleranced-sign frame judgment it enabled now lives
-//! in `nacre-judge`). [`Rat::from_decimal`] carries this into *construction*: a prism's
+//! Scope: the exact value engine (the toleranced-sign frame judgment lives in `nacre-judge`).
+//! [`Rat::from_decimal`] carries this into *construction*: a prism's
 //! placement and sweep are done in the rationals the dimensions were **written** as, so
 //! `1.1` then `6.6` reaches the same plane as `7.7` (`nacre_ops::exact`). That holds where
 //! the sketch frame is exactly orthonormal — a rotated frame's axes are irrational, and
 //! there this crate has nothing to offer; `nacre-judge` is what keeps *judgments* sound
 //! there. Still deferred: the unified `Scalar { value, tol }` wrapper.
-//! **The declare-0 → user-confirmation policy that stood here is retired, not pending**:
-//! measurement refuted both halves, and an unprovable sign now leaves as a proved
-//! coincidence carrying its evidence, or as a reject named for its cause (`nacre-judge`).
-//! Ported from an isolated 2D experiment that verified it first.
+//! An unprovable sign leaves as a proved coincidence carrying its evidence, or as a reject named
+//! for its cause (`nacre-judge`) — not as a declared zero awaiting user confirmation, which
+//! measurement refuted.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 pub mod bounded;
@@ -77,13 +76,12 @@ pub use winding::*;
 
 /// Rounding for the high-precision realization layer (astro-float).
 ///
-/// **There is no default precision here, on purpose.** A fixed one used to sit beside this
-/// (`HP_PREC = 160`) with `cos_hp`/`sin_hp` reading it, and nothing outside this crate's own
-/// tests ever called them — a hand-picked depth waiting to be wired into a judgement whose
-/// precision belongs to the *model* (`nacre_judge::judge_precision`). Callers pass `prec`.
+/// **There is no default precision here, on purpose.** A fixed one would be a hand-picked depth
+/// waiting to be wired into a judgement whose precision belongs to the *model*
+/// (`nacre_judge::judge_precision`). Callers pass `prec`.
 ///
-/// Public because the judge (`nacre-judge`) rounds with it too — it used to carry an identical
-/// private copy, and one mode in two places is one more thing that can drift.
+/// Public because the judge (`nacre-judge`) rounds with it too — one mode in two places is one
+/// more thing that can drift.
 pub const HP_RM: RoundingMode = RoundingMode::ToEven;
 
 thread_local! {
@@ -191,7 +189,7 @@ pub struct Rat(Ratio<i128>);
 ///
 /// A *storage and door* type: the exact predicates lift to `BigInt` anyway and take it directly;
 /// the few `Rat` arithmetic sites on a squared radius ask [`BigRat::narrow`] and decline exactly
-/// where they used to overflow on `r·r`.
+/// where `r·r` would overflow.
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct BigRat(Ratio<num_bigint::BigInt>);
 

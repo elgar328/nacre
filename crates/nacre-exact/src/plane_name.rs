@@ -88,7 +88,7 @@ impl PlaneName {
 /// The same answer [`plane_through_points`] gives, in a vessel that always holds it: `Narrow`
 /// when the canonical answer fits `i128`, `Wide` (arbitrary-precision integers) when it does
 /// not. `None` means exactly one thing — the points are collinear and name no plane. It is
-/// never a shrug about an intermediate, and no longer one about the answer's width either.
+/// never a shrug about an intermediate, nor about the answer's width.
 ///
 /// ★★★★★ **The distinction is not academic — it was most of the failures.** `plane_through_points`
 /// works in `Rat`, so `(b − a) × (c − a)` multiplies the points' denominators together and
@@ -107,7 +107,7 @@ impl PlaneName {
 ///
 /// ★ **Cost is paid only on the fallback.** The `Rat` route runs first and is the answer whenever
 /// it fits; `BigInt` is reached on the rest. Nothing here is on a boolean's inner loop — a plane is
-/// named once per `Model::push_surface_with_coeffs`.
+/// named once per `Model::push_plane`.
 pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneName> {
     plane_through_points(a, b, c)
         .map(PlaneName::Narrow)
@@ -120,7 +120,7 @@ pub fn plane_name_exact(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneNa
 /// **The same plane [`plane_through_points`] computes**, reached by clearing each point's
 /// denominators first so the arithmetic is integer throughout. The two agreeing wherever the narrow
 /// one answers is the correctness argument, and `the_wide_derivation_answers_what_the_narrow_one_does`
-/// is what holds it. `None` is collinearity, or a canonical component that no longer fits `Rat`.
+/// is what holds it. `None` is collinearity, or a canonical component that does not fit `Rat`.
 pub(crate) fn plane_name_big(a: [Rat; 3], b: [Rat; 3], c: [Rat; 3]) -> Option<PlaneName> {
     use num_bigint::BigInt;
     use num_integer::Integer;
