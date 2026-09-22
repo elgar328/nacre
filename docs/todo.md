@@ -283,6 +283,17 @@ assert!(hits.len() >= 4, …);   // ← 부등호인 이유가 그것이다
 아니라 존재·전칭만 단언한다. 읽는 자리가 여럿이라 한 번에 고칠 일은 아니고, 어느 프로브부터
 세션을 줄지 정해야 한다.
 
+### `frame3` 소운드니스 오라클이 판정기의 고정밀 경로를 그대로 쓴다
+
+`nacre-judge` 의 소운드니스 테스트는 판정기의 답을 «GT-stable 512비트 정답»과 비교한다. 그런데 그 정답
+`indirect_truth` 는 `indirect_hp`+`combine` 으로, `cmp_truth` 는 `cmp_hp_with_gap` 으로 계산하고, 판정기가
+고정밀로 올라갈 때 쓰는 것도 같은 함수다(`frame3/indirect.rs` 의 `indirect_orient3d` 본체, `frame3/coord.rs` 의
+`cmp` 상승). 그래서 올라간 경우의 비교는 «같은 함수, 다른 정밀도»이고, 두 정밀도의 일치는 반올림 잡음만 거른다 —
+식 자체의 오류는 이 테스트로 보이지 않는다(필터가 답한 경우는 독립이다). 흔적: 그 함수들과 `cmp_combine`·`cmp_filter`
+가 테스트 때문에만 `pub(super)` 다(테스트가 `frame3::tests` 에 있어서). 처방의 방향: 정답을 판정기의 함수가 아니라
+정의에서 따로 — 예컨대 `hp_coord` 로 실현한 점들로 행렬식을 직접 — 계산하고, 그다음 단위 테스트를 `coord`·`indirect` 의
+자식으로 옮긴다(overview 「테스트의 자리」).
+
 ### nesting 재시도가 기권이 아닌 실패를 삼킨다
 
 `nesting::ask` 는 `point_in_ring` 의 **모든** 오류를 «이 증인이 기권한다 — 다음 증인이 답한다»로 받는다.
@@ -514,7 +525,6 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
   살아 있는 물음이지만 그것은 중복이 아니라 **통로를 컴파일 단계에서 강제하는** 일이다.
 - **300줄이 넘는 함수 열둘**: `assembly/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `tests/probes/chart_census.rs` 의 `census` 496(테스트 전용) · `arrangement/cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `assembly/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `assembly/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
 - **주석이 줄의 33~46%** 다(코드 / 주석: `arrangement` 5,585 / 3,014 · `combinatorics` 3,679 / 2,624 · `nacre-ops/src` 최상위 3,395 / 2,987 · `nacre-exact` 3,130 / 2,150). `error.rs` 1,193줄의 대부분은 `RejectReason` 변종 doc 이고 그것은 사용자에게 가는 문서다 — 줄일 것은 함수 본문 안의 서사 주석이다.
-- `pub(super)` 는 단계의 입구와 테스트가 이름으로 부르는 것에만 달려 있다. `arrangement`(53)·`frame3`(28) 가 가장 많다. **계측 이사는 이것을 안 건드렸다** — `#[path]` 로 파일만 옮겨 모듈이 제자리에 남았으므로 가시성이 하나도 안 움직였다. 테스트만 부르는 `pub(super)` 가 몇인지는 따로 세야 한다.
 - **소스 주석의 경위 서사가 496줄·166파일 남아 있다**(`used to`·`today`·`no longer`·`before the fix` 가 든 주석 줄,
   수동태 `is used to` 제외). 문서 규칙 1(현재형만)의 위반이지만 자연어라 기계로 가를 수 없고, 한 줄씩 읽어
   «지금 참인 문장»으로 고쳐 써야 한다 — 그러다 보면 거짓이 드러난다(`curved_nesting.rs`·`frames.rs` 를 정리할 때
