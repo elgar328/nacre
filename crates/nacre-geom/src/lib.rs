@@ -7,18 +7,15 @@
 //! is closed-form and stores **no** tolerance: every containment query takes the
 //! caller's epsilon.
 //!
-//! M1 defined [`Plane`] and [`Line`]; M3 adds [`Circle`] (the full-circle
-//! carrier), [`Cylinder`], and [`NurbsCurve`]/[`NurbsSurface`] (rational B-spline
-//! evaluation), with `Sphere` and the `Curve::Intersection` variant to follow.
-//! ([`NurbsCurve`]/[`NurbsSurface`] are standalone evaluators for now — the
-//! `Curve::Nurbs`/`Surface::Nurbs` variants are wired with a producer later.)
+//! The types are [`Plane`], [`Line`], [`Circle`] (the full-circle carrier), [`Cylinder`], and
+//! the standalone rational B-spline evaluators [`NurbsCurve`]/[`NurbsSurface`]. A `Curve` or
+//! `Surface` variant is added with the producer that makes it.
 //!
-//! ★★ **This crate has no `Handle` and will not grow one.** The older note here said
-//! `Curve::Intersection` would hold `Handle<Surface>` and so make geom depend on
-//! `nacre-store`. A handle names an arena entry, and the arena holds the surface's
-//! **truth** (`nacre_topo::Surface`, which carries a motion handle) — a type below
-//! topo cannot name it. What that variant wanted splits along the truth/cache line
-//! instead: *which two surfaces* is already an edge's truth, and the approximating
+//! ★★ **This crate has no `Handle` and will not grow one.** A curve-intersection variant could
+//! not hold a `Handle<Surface>`: a handle names an arena entry, and the arena holds the surface's
+//! **truth** (`nacre_topo::Surface`, which carries a motion handle) — a type below topo cannot
+//! name it. What such a variant would want splits along the truth/cache line instead: *which two
+//! surfaces* is already an edge's truth, and the approximating
 //! spline with its error is the edge's cache.
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
@@ -93,11 +90,9 @@ impl AxisMirror {
 /// Exact in form (analytic, never a mesh) but f64 in its coefficients: what the surface *is*
 /// lives in `nacre_topo::Surface`, and this is the realization beside it.
 ///
-/// `Plane` and `Cylinder` are wired; a `Nurbs(NurbsSurface)` variant (the
-/// [`NurbsSurface`] evaluator already exists) and `Sphere` arrive when wired with
-/// a producer. **Not `Copy`**: the coming `Nurbs` variant owns heap-allocated
-/// control points, so this type is non-`Copy` from the start to match its
-/// eventual nature.
+/// `Plane` and `Cylinder` are the variants. **Not `Copy`**, so a variant that owns heap data
+/// (a NURBS surface's control points — the [`NurbsSurface`] evaluator exists) can be added
+/// without changing the type's contract.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Surface {
     Plane(Plane),
@@ -181,9 +176,9 @@ impl Surface {
 /// A curve, realized — the **cache** side of an edge's geometry, [`Surface`]'s sibling: the
 /// carriers and endpoints an edge records are the truth, and this is derived from them.
 ///
-/// `Line` and `Circle` (the full-circle carrier) are wired; `Nurbs` arrives later, and the
-/// marched intersections of M7 want a shape this crate cannot spell — see the crate doc.
-/// **Not `Copy`** (future heap-backed variants), same as [`Surface`].
+/// `Line` and `Circle` (the full-circle carrier) are the variants; a marched intersection wants a
+/// shape this crate cannot spell — see the crate doc. **Not `Copy`**, same as [`Surface`], so a
+/// heap-backed variant can be added without changing the type's contract.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Curve {
     Line(Line),

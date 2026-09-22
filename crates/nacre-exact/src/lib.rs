@@ -26,7 +26,7 @@
 //! `1.1` then `6.6` reaches the same plane as `7.7` (`nacre_ops::exact`). That holds where
 //! the sketch frame is exactly orthonormal — a rotated frame's axes are irrational, and
 //! there this crate has nothing to offer; `nacre-judge` is what keeps *judgments* sound
-//! there. Still deferred: the unified `Scalar { value, tol }` wrapper.
+//! there.
 //! An unprovable sign leaves as a proved coincidence carrying its evidence, or as a reject named
 //! for its cause (`nacre-judge`) — not as a declared zero awaiting user confirmation, which
 //! measurement refuted.
@@ -174,9 +174,9 @@ type TrigAt = (HpBounded, HpBounded);
 type RealizedAt = (Angle, u64, u64);
 
 /// A rational scalar (exact, tol 0). Arithmetic returns `None` on i128 overflow
-/// so the caller sees the downgrade trigger explicitly; on overflow the kernel
-/// switches that value's cache to f64 and tags its `Origin` with the resulting
-/// tol, while the definition (the op-log of input rationals) is preserved. Overflow is far from normal use — adversarial coprime-denominator
+/// so the caller sees the overflow explicitly and decides — declines, or takes a
+/// wider road — while the definition (the op-log of input rationals) is preserved. Overflow is far
+/// from normal use — adversarial coprime-denominator
 /// accumulation reaches it near the i128 ceiling (~122 bits).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Rat(Ratio<i128>);

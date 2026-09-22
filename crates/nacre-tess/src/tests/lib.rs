@@ -425,7 +425,7 @@ fn a_small_circle_is_cut_as_finely_as_a_large_one() {
     let n = |r| circle_segments(&cfg, r);
     assert_eq!(n(0.2), n(20.0));
     assert_eq!(n(0.2), 180, "360°/2°");
-    assert!(n(0.1) > 8, "a small circle is no longer the octagon floor");
+    assert!(n(0.1) > 8, "a small circle is not held to an octagon floor");
     // Past the crossover the sagitta budget leads and asks for more.
     assert!(n(1000.0) > n(20.0));
 }

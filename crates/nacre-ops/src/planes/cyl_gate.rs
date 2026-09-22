@@ -340,8 +340,7 @@ pub(crate) fn cylinder_gate(
             }
         }
     }
-    // The pair record's one reader today — the place that hands the record to the
-    // cylinder–cylinder road when it exists.
+    // The pair record's one reader: a recorded pair is refused (`CylinderPairContact`).
     //
     // ★★★★★ **An obligation the cell that opens this refusal inherits**. The arrangement
     // leans on this line for a proposition of its own: a class may carry a circle (⊥ one

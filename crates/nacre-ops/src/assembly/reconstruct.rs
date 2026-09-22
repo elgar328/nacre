@@ -1091,13 +1091,11 @@ pub(crate) fn reconstruct(
         return Err(d);
     }
     // ★★ **Every result vertex must re-solve from the result's own faces** — the property
-    // transform and replay stand on. It is a shipped check, not a debug_assert, because the
-    // chained contact-cut reaches it: a bored plate cut by a boss that only touches its top kept
-    // the
-    // top ring's pierce vertices, defs still naming the boss's cylinder with every boss face
-    // gone — right volume, wrong names, and release builds shipped it silently. Refusing here
-    // is the floor until the assembly learns to shed the stale corners; the garbage-solid
-    // residue is the same class every late reject leaves (see the raise above).
+    // transform and replay stand on. It is a shipped check, not a debug_assert: a vertex whose
+    // definition names a surface with no face in the result is a wrong name with the right
+    // volume, which a release build would otherwise ship silently (no input in the reject-trace
+    // sweeps reaches it — the coplanar merge dissolves such corners). The garbage-solid residue
+    // is the same class every late reject leaves (see the raise above).
     if let Ok(solids) = &out {
         for &s in solids {
             if let Some(vh) = crate::transform::foreign_named_vertex(model, s) {

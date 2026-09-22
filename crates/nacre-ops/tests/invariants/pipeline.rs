@@ -748,7 +748,7 @@ fn an_island_face_meshes_like_any_other() {
     //
     // The signed volume is the one check with something new to say. `props` reads
     // `Face.orientation`, which `assemble_fuse_cut` set from the `flip` flag; `tess`
-    // reads the ring, which `orient_seam_loop` wound and `flip` then reversed. Two
+    // reads the ring, which the arrangement wound and `flip` then reversed. Two
     // routes to the same face's outward direction, and they have to meet.
     let (m, s) = island_cut();
     let g = mesh_vs_props(&m, s);

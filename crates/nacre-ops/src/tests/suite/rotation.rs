@@ -61,9 +61,9 @@ fn a_corner_coincident_cut_is_rejected_not_silently_wrong() {
 }
 
 /// Two cubes touching only at the corner (1,1,1): nothing is joined, so the Fuse comes back as
-/// the two bodies it was handed. ★ This used to be `NON_MANIFOLD_VERTEX` — true of the single
-/// welded body the reconstruction built then, and beside the point once the pieces are minted
-/// per solid. The pinch reject is still there for a body that touches *itself*
+/// the two bodies it was handed. ★ Not `NonManifoldVertex`: that is true of a single welded body
+/// and beside the point when the pieces are minted per solid. The pinch reject is there for a
+/// body that touches *itself*
 /// (`tests/probes/contact_separates.rs`).
 #[test]
 fn two_cubes_touching_at_a_corner_fuse_to_two_bodies() {

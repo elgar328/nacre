@@ -543,16 +543,15 @@ fn a_foreign_handle_cannot_read_a_cache() {
     });
 }
 
-/// ★★★★ **What the flip bought: the surface cache is writable, and the truth is not.**
+/// ★★★★ **The surface cache is writable, and the truth is not.**
 ///
-/// Before the arena held the truth, a refinement pass had nowhere to write — the realization
-/// lived in a `Store`, which is append-only and sealed, and the only mutable copy was the
-/// *truth*. This test is the warrant, and it could not have been written then: it rewrites a
-/// cache entry in place and reads it back through [`Model::surface_cache`], while the truth the same
-/// handle names is untouched.
+/// The arena holds the truth, so the realization beside it can be rewritten in place — a
+/// refinement pass has somewhere to write. This test is the warrant: it rewrites a cache entry in
+/// place and reads it back through [`Model::surface_cache`], while the truth the same handle names
+/// is untouched.
 ///
-/// ★ It writes through the private field on purpose — that is the door the refinement pass
-/// (`realize_surface`) will take, from inside this crate. Outside, there is no door at all,
+/// ★ It writes through the private field on purpose — that is the door a surface refinement
+/// pass inside this crate would take. Outside, there is no door at all,
 /// which is the other half of the warrant and what [`Model::surface_cache`]'s `compile_fail` pins.
 #[test]
 fn the_surface_cache_is_writable_and_the_truth_is_not() {

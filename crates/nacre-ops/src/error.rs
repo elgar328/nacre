@@ -364,19 +364,13 @@ pub enum RejectReason {
     PierceVertexUnnamed,
     /// A **result** vertex's definition names a surface the finished solid keeps no face on, so
     /// the point could not be re-solved from the solid's own geometry — the property transform
-    /// and replay stand on (`defs_are_remappable`). Measured population: the
-    /// **contact-cut** — a plate cut by a boss that only touches its top face. The cut
-    /// removes no material, but the arrangement minted pierce vertices where the boss's rim
-    /// crossed the plate's edge, and the assembly kept them with definitions still saying
-    /// `wall ∩ boss cylinder` after every boss face was gone. The volume was already right; the
-    /// names were not. A shipped check rather than a debug_assert, because this population
-    /// reaches it — until the assembly learns to shed the stale corners, refusing is the floor.
-    ///
-    /// ★ **Two bodies meeting on a full wall are not this**: the wall is interior, so the
-    /// result keeps no face on it, but the coplanar merge carries a component's circle holes,
-    /// the corners that sat on the wall dissolve, and that
-    /// population builds. What is left under this name is the contact-cut: a definition naming a
-    /// surface the result has **no face on at all**, which no amount of merging repairs.
+    /// and replay stand on (`defs_are_remappable`). Not raised in the whole-suite or census
+    /// `reject-trace` sweeps: the coplanar merge dissolves the corners that sat on a surface the
+    /// result drops (two bodies meeting on a full wall, a contact-cut whose boss only touches the
+    /// plate), so the names the result keeps are its own. A shipped check rather than a
+    /// debug_assert all the same: a definition naming a surface the result has **no face on at
+    /// all** is a model that cannot describe itself, and in a release build it would ship
+    /// silently — right volume, wrong names.
     VertexNamesAbsentSurface,
     /// A plane class neither perpendicular nor parallel to a cylinder's axis whose lateral faces
     /// could not be shown to miss the plane — where they meet, the intersection is an ellipse
