@@ -490,8 +490,3 @@ doc 이 스스로 *"The numbers decide the next rung's design"* 이라 적는데
 
 - **300줄이 넘는 함수 열둘**: `assembly/reconstruct.rs` 의 `reconstruct` 1,113 · `arrangement/trace_plane.rs` 의 `trace_transversal_face` 510 · `tests/probes/chart_census.rs` 의 `census` 496(테스트 전용) · `arrangement/cyl_chart/regions.rs` 의 `walk` 485 · `planes/table.rs` 의 `collect_planes` 399 · `transform.rs` 의 `transform_solid` 382 · `assembly/coplanar.rs` 의 `merge_component` 363 · `arrangement/split_circles.rs` 의 `split_circles` 353 · `arrangement/split.rs` 의 `split_at_crossings` 351 · `assembly/grouping.rs` 의 `group_faces` 344 · `ops/datum.rs` 의 `datum_plane` 317 · `planes/cyl_gate.rs` 의 `cylinder_gate` 317. **줄 수는 신호지 규칙이 아니다**(overview 「모듈의 자리」) — 쪼갤 근거는 «안의 한 단계를 다른 호출자가 이름으로 부를 만한가»이고, 그 답을 이미 든 것은 셋이다: `split_at_crossings` 의 `timed!` 구간 넷 · `merge_component` 의 번호 매긴 절 · `reconstruct` 의 `'mat:`·`'faces:` 루프. 나머지 아홉은 긴 것뿐이다.
 - **주석이 줄의 33~46%** 다(코드 / 주석: `arrangement` 5,585 / 3,014 · `combinatorics` 3,679 / 2,624 · `nacre-ops/src` 최상위 3,395 / 2,987 · `nacre-exact` 3,130 / 2,150). `error.rs` 1,193줄의 대부분은 `RejectReason` 변종 doc 이고 그것은 사용자에게 가는 문서다 — 줄일 것은 함수 본문 안의 서사 주석이다.
-- **소스 주석의 경위 서사가 496줄·166파일 남아 있다**(`used to`·`today`·`no longer`·`before the fix` 가 든 주석 줄,
-  수동태 `is used to` 제외). 문서 규칙 1(현재형만)의 위반이지만 자연어라 기계로 가를 수 없고, 한 줄씩 읽어
-  «지금 참인 문장»으로 고쳐 써야 한다 — 그러다 보면 거짓이 드러난다(`curved_nesting.rs`·`frames.rs` 를 정리할 때
-  숫자 다섯과 «f64 경로» 하나가 그랬다). 서사가 가장 짙은 곳: `curved_nesting.rs` 의 나머지 doc(원판 근사식,
-  «plainest arm», 구멍 뚫린 입방체의 경계), `tolerant.rs` 의 두 캡 절, `frames.rs` 의 두 보스 doc.
