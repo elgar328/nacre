@@ -5,7 +5,7 @@
 //! definition and rounds once, where everything else in the kernel reads a cache that carries its
 //! own error.
 //!
-//! # What the cache actually costs (measured here, `the_cache_is_not_always_nearest`)
+//! # What the cache actually costs (measured here)
 //!
 //! | population | vertex width | compared | **cache is nearest** |
 //! |---|---|---|---|
@@ -271,8 +271,8 @@ fn a_box_realizes_to_exactly_what_the_cache_holds() {
         // `tests/instruments/point_width.rs`'s metric, and `boolean_corner` cuts at 3.3 and 7.7 —
         // `33/10` is
         // an exact `Rat` and no `f64` at all. So the readout rounds, and the error says so; a
-        // coordinate that *is* dyadic (0, 10, …) reports zero. Asserting `[0.0; 3]` here passed
-        // only because the arm used to claim it unconditionally.
+        // coordinate that *is* dyadic (0, 10, …) reports zero. Asserting `[0.0; 3]` here would pass
+        // only against an arm that claims it unconditionally.
         for k in 0..3 {
             let dyadic = format!("{:.60}", v[k]) == r.to_decimal(60).expect("exact")[k];
             assert_eq!(
@@ -772,9 +772,8 @@ fn an_exact_vertex_prints_exact_digits() {
 ///
 /// Everything else rests on the error radius really bounding the error — under-report it and
 /// `round_to_digits` accepts a place the definition never determined, which is a *wrong digit
-/// printed confidently*, the worst thing this feature could do. The radius comes from arithmetic
-/// written for this cell (`mul_bounded`/`add_bounded`/`rat_bounded`), so it is not something to
-/// take on faith.
+/// printed confidently*, the worst thing this feature could do. The radius comes from
+/// `HpBounded`'s arithmetic, so it is not something to take on faith.
 ///
 /// The oracle is the same door at 8192 bits. Compared in **decimal**: an `f64` comparison
 /// collapses every difference a high-precision radius is about, and an earlier spelling of this
@@ -849,18 +848,15 @@ fn turn(axis: Axis, deg: i128) -> Isometry {
 /// ★★★★ **A motion chain is held back for the bits it costs, never for its length** — the two
 /// shapes that prove the difference.
 ///
-/// The cache road was guarded with a depth constant (`CACHE_REPLAY_DEPTH = 64`) because a
-/// 4,200-turn history realized on every push turned a 5.6 s test into minutes. That constant was
-/// doing **two jobs** and only one of them was true. As a *cost* limit it was load-bearing —
-/// removing it took the same fixture to 30 s. As a *precision* rule it was measurably wrong: what
-/// costs precision is an **irrational turn**, and a rational translation costs nothing at all
-/// (`Angle::try_exact_cos_sin` answers only 0/90/180/270 — Niven, so those add no radius). So the
-/// guard held back chains that decide perfectly: rational translations by the hundred, and every
-/// 7° turn between the 65th and the 90th.
-///
-/// The limit is now named for the job it does (`CACHE_REPLAY_COST_CAP`, sized from measured cost
-/// against a stated per-vertex budget), and inside it the ladder's first rung decides. These two
-/// come back `Bounded`.
+/// The cache road's limit is a **cost** limit (`CACHE_REPLAY_COST_CAP`, sized from measured cost
+/// against a stated per-vertex budget), not a depth constant. A depth constant does **two jobs**
+/// and only one of them is true: as a *cost* limit it is load-bearing — a 4,200-turn history
+/// realized on every push turns a 5.6 s test into 30 s — but as a *precision* rule it is
+/// measurably wrong: what costs precision is an **irrational turn**, and a rational translation
+/// costs nothing at all (`Angle::try_exact_cos_sin` answers only 0/90/180/270 — Niven, so those
+/// add no radius). A depth of 64 holds back chains that decide perfectly: rational translations
+/// by the hundred, and every 7° turn between the 65th and the 90th. Inside the cost cap the
+/// ladder's first rung decides; these two come back `Bounded`.
 ///
 /// ★ Each row also asserts that some vertex **really replays a chain** (`!is_exact`): a fixture
 /// whose motion was folded away would pass this while measuring nothing, and that guard *bit twice

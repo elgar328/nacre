@@ -448,11 +448,9 @@ fn wf_model(pre_state_at: Option<Point3>) -> Model {
 
 /// ★★ **The gate: which point anchors a plane's cache does not move the model.**
 ///
-/// An extrude *names* its plane, so "the plane did not exist yet" is no longer a
-/// thing that can happen — both arms below state it. What varies is the anchor: the datum's own
-/// (the caller's sketch origin) against one planted deliberately at the worst ring point. Both are
-/// production roads now, which makes this a stronger comparison than the one it replaced, not a
-/// weaker one.
+/// An extrude *names* its plane, so "the plane did not exist yet" is not a thing that can happen
+/// — both arms below state it. What varies is the anchor: the datum's own (the caller's sketch
+/// origin) against one planted deliberately at the worst ring point. Both are production roads.
 ///
 /// Topology must match exactly; coordinates and volume are held to the project's ε (model size ×
 /// `2⁻⁴⁰`), and the deviation is *printed* rather than merely passed, because a gate that only says

@@ -236,8 +236,8 @@ fn fuse_notch_bar() {
 #[test]
 fn cut_staircase_seam_arc() {
     // On the box's bottom face the seam runs (2,0.5) → (2,1) → (1,1) → (1,1.5): a
-    // staircase whose two bends turn opposite ways. `strict` used to reject it,
-    // unable to tell a reflex turn from an arc folded back on itself.
+    // staircase whose two bends turn opposite ways — a reflex turn, not an arc folded back
+    // on itself.
     //
     // The reconstructed face there is (0.5,0.5) → (0.5,1.5) → (1,1.5) → (1,1) →
     // (2,1) → (2,0.5): the overlap footprint, area 1.0, reflex at (1,1). A correct
@@ -400,7 +400,7 @@ fn cut_blind_dimple() {
 
 #[test]
 fn a_flipped_hole_loop_is_caught() {
-    // `loop_orient_mismatch` cannot see a loop flipped as a whole, and `f2`'s golden
+    // A ring-orientation check cannot see a loop flipped as a whole, and `f2`'s golden
     // pins the derivation — but the two downstream detectors must actually fire on
     // *this* shape, not merely exist. They are different in kind: `validate` sees a
     // rim edge used twice the same way, `tessellate` sees a hole wound like its
@@ -674,8 +674,7 @@ fn fuse_containment_is_the_container() {
 fn containment_symmetric_when_a_inside_b() {
     // Arguments swapped: A = inner ⊂ B = outer.
     // Cut(inner − outer): inner is wholly removed ⇒ empty, which is an answer, not an error —
-    // and a successful boolean consumes its operands, so the Fuse below needs a fresh model
-    // (it used to reuse this one only because the empty Cut was an error that consumed nothing).
+    // and a successful boolean consumes its operands, so the Fuse below needs a fresh model.
     let (mut m, outer, inner) = nested_boxes();
     assert!(
         boolean(&mut m, BoolKind::Cut, inner, outer)
@@ -731,15 +730,13 @@ fn a_corner_cut_through_the_bottom() {
 
 #[test]
 fn a_fused_stack_chains_through_a_cut() {
-    // The dissolved 1×1×2 box (cell fuse-coplanar-merge) feeds a second boolean. Before
-    // the merge/dissolve this rejected — first as the old COPLANAR_PAIR, since replaced by
-    // `RejectReason::TraceDeclined` (the flat edges), then as
-    // LOOP_ORIENT_MISMATCH (the straight-angle interface corners). A clean box cuts.
+    // The dissolved 1×1×2 box feeds a second boolean: its flat edges and straight-angle
+    // interface corners are gone, and a clean box cuts.
     let (mut m, a, b) = stacked_cubes();
     let stack = boolean_one(&mut m, BoolKind::Fuse, a, b).unwrap();
     m.rebuild_adjacency();
-    // A cutter straddling z=1 (the fused interface) — the seam runs where the split
-    // vertical edges used to be. Result: 2 − 0.5·0.5·1.0.
+    // A cutter straddling z=1 (the fused interface) — the seam runs across the dissolved
+    // interface. Result: 2 − 0.5·0.5·1.0.
     let cutter = m.add_cuboid(
         Point3::from_array([0.5, 0.5, 0.5]),
         Point3::from_array([1.5, 1.5, 1.5]),
@@ -757,11 +754,11 @@ fn a_fused_stack_chains_through_a_cut() {
 /// dimensions that are not exact binary fractions — and both must give the same b-rep counts,
 /// with each volume matching its own formula.
 ///
-/// This is the invariant family #3 restored. Plane identity used to be read from the faces'
-/// *derived* coefficients, which are not exactly proportional for two differently-sized faces
-/// on one plane, so one plane became two classes and the arrangement named one point twice —
-/// but only when the arithmetic did not happen to cancel, which tidy coordinates hid
-/// (measured before the fix: 200/200 random stacked pairs under-merged, 12/600 ops aborted).
+/// Plane identity is not read from the faces' *derived* coefficients: those are not exactly
+/// proportional for two differently-sized faces on one plane, so one plane becomes two classes
+/// and the arrangement names one point twice — but only when the arithmetic does not happen to
+/// cancel, which tidy coordinates hide (measured on that reading: 200/200 random stacked pairs
+/// under-merge, 12/600 ops abort).
 #[test]
 fn boolean_topology_is_the_same_on_untidy_coordinates() {
     let counts = |dx: f64, dy: f64, z0: f64, h1: f64, h2: f64, kind: BoolKind| {
@@ -832,10 +829,9 @@ fn boolean_rejects_non_live_input() {
 
 #[test]
 fn boolean_op_applies_and_wraps_error() {
-    // A failing boolean's error is surfaced as `OpError::Boolean`. This used to be driven by a
-    // disjoint `Common`, but that is no longer an error (it is an empty result, see
-    // `boolean_op_passes_an_empty_result_through`), so the wrapping is exercised with a boolean
-    // that genuinely fails: a handle that is not live.
+    // A failing boolean's error is surfaced as `OpError::Boolean`. A disjoint `Common` is an
+    // empty result, not an error (see `boolean_op_passes_an_empty_result_through`), so the
+    // wrapping is exercised with a boolean that genuinely fails: a handle that is not live.
     let mut m = Model::new();
     let a = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([1.0; 3]));
     let b = m.add_cuboid(Point3::from_array([10.0; 3]), Point3::from_array([11.0; 3]));

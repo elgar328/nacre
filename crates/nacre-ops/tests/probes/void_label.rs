@@ -1,11 +1,12 @@
 //! **What makes a component material, and what makes it a void.**
 //!
-//! The label used to be read off the normals at the component's lexicographically-minimal vertex:
-//! outward iff *some* face there faced −x. That existential is a shortcut for "the face with the
-//! largest `|n_x|` faces −x", and the shortcut only holds while the normals are **axis-aligned**.
-//! A slanted sketch breaks it with no rotation in sight — and then a void came back as its own
-//! *material* solid of negative volume, with the operand unchanged beside it. `validate` had
-//! nothing to say about it, which is why the propositions here are about **what the model is**,
+//! The label is not read off the normals at the component's lexicographically-minimal vertex
+//! ("outward iff *some* face there faces −x"): that existential is a shortcut for "the face with
+//! the largest `|n_x|` faces −x", and the shortcut only holds while the normals are
+//! **axis-aligned**. A slanted sketch breaks it with no rotation in sight — a void comes back as
+//! its own *material* solid of negative volume, with the operand unchanged beside it, and
+//! `validate` has nothing to say about it, which is why the propositions here are about **what the
+//! model is**,
 //! not about whether the boolean returned `Ok`.
 //!
 //! The label is containment depth now — even is material, odd is a void — the rule
@@ -57,8 +58,8 @@ fn lift(m: &mut Model, s: Handle<Solid>, num: i128, den: i128) -> Handle<Solid> 
 }
 
 /// One solid, one cavity, the volume the set difference has — and **no body wound inside out**.
-/// The last one is the proposition the old label broke: it returned the cavity as a second
-/// "solid" whose volume was negative, and every other check was happy with that.
+/// The last one is the proposition a normal-reading label breaks: it returns the cavity as a
+/// second "solid" whose volume is negative, and every other check is happy with that.
 fn one_solid_with_a_cavity(m: &mut Model, got: Vec<Handle<Solid>>, volume: f64) {
     m.rebuild_adjacency();
     assert_eq!(got.len(), 1, "one body, not the operand plus its own void");
@@ -90,8 +91,8 @@ fn a_slanted_void_is_a_cavity_not_a_second_body() {
     one_solid_with_a_cavity(&mut m, got, 1.0 - 0.18 * 0.6);
 }
 
-/// The negative control: the **axis-aligned** void, which is the corpus the old rule was written
-/// for and which it got right. If this moves, the new label is wrong in the easy direction.
+/// The negative control: the **axis-aligned** void, which a normal-reading rule gets right. If
+/// this moves, the label is wrong in the easy direction.
 #[test]
 fn an_axis_aligned_void_is_unchanged() {
     let mut m = Model::new();

@@ -61,7 +61,7 @@ fn translate(m: &mut Model, s: Handle<Solid>, d: [i128; 3]) -> Handle<Solid> {
 }
 
 /// ① The phantom: the rotated copy is 300 away — no contact of any kind — yet its fixed edge
-/// still lies in the *plane* of A's wall, and the graze it traces there used to dangle in the
+/// still lies in the *plane* of A's wall, and the graze it traces there must not dangle in the
 /// skeleton and break the face walk. Two separate bodies is the whole answer.
 #[test]
 fn disjoint_phantom_graze_fuses_to_two_bodies() {
@@ -76,7 +76,7 @@ fn disjoint_phantom_graze_fuses_to_two_bodies() {
 
 /// ② The pivot on the boundary: the rotation's fixed line is A's own corner edge, so B's knife
 /// edge coincides with a true boundary. The union is a 130° material sector around that line —
-/// manifold, buildable, and previously `LabelConflict`. Volume is scored against inclusion-
+/// manifold and buildable. Volume is scored against inclusion-
 /// exclusion via Cut: |A| + |B| − |A∩B| must equal |A∪B|, all four measured.
 #[test]
 fn overlapping_rotated_copy_fuses() {
@@ -158,9 +158,9 @@ fn axis_aligned_knife_edge_fuses_to_two_bodies() {
 /// checked the way the criterion has to be checked: **by volume**. 4000 + 500 with nothing
 /// removed means the interiors are disjoint, which is what "two bodies" claims.
 ///
-/// ★ This used to be a `NonManifoldVertex` reject, on the reading that "the material sectors on
-/// the two sides of the plane are not adjacent — the union is genuinely non-manifold along the
-/// line". That reading was about a *single* union body; two bodies is the answer it was missing.
+/// ★ Not a `NonManifoldVertex` reject: "the material sectors on the two sides of the plane are
+/// not adjacent — the union is genuinely non-manifold along the line" is true of a *single* union
+/// body, and two bodies is the answer.
 #[test]
 fn edge_only_contact_separates_into_two_bodies() {
     let mut m = Model::new();
@@ -188,8 +188,8 @@ fn edge_only_contact_separates_into_two_bodies() {
     );
 }
 
-/// ⑤ The negative control: the centred pair worked before the fix (the pivot is interior, no
-/// edge meets a foreign plane) and its volume must not move.
+/// ⑤ The negative control: the centred pair (the pivot is interior, no edge meets a foreign
+/// plane), whose volume must not move.
 #[test]
 fn centred_rotated_copy_is_untouched() {
     let mut m = Model::new();

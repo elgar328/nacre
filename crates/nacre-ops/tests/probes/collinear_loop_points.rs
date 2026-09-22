@@ -5,16 +5,16 @@
 //! cannot be dropped — removing one would leave a T-vertex — so every partially-covering pad or
 //! pocket produces loops of this shape. It is a common population, not an exotic one.
 //!
-//! What used to break on it: `planes::outer_tri` took the first corner whose triangle was not
-//! *exactly* flat. Three collinear points span exactly zero area only in exact arithmetic; on
-//! rotated coordinates the f64 cancellation leaves ~2⁻⁵³, which passed that gate, and the
-//! direction that came back was the rounding rather than the plane — measured 90° off. Downstream
+//! What breaks on it: taking the first corner whose triangle is not *exactly* flat. Three
+//! collinear points span exactly zero area only in exact arithmetic; on rotated coordinates the
+//! f64 cancellation leaves ~2⁻⁵³, which passes that gate, and the direction that comes back is
+//! the rounding rather than the plane — measured 90° off. Downstream
 //! that is the face's `orient_sign`, the winding of the exact witness triangle every predicate
 //! borrows, and "which side of this plane is material".
 //!
-//! ★ **Two ingredients are needed to trigger it**, which is why it went unseen: rotation (an
-//! axis-aligned loop's collinear cross is exactly `0.0`, and the old rule then skipped it
-//! correctly) and the collinear run happening to come first in the loop's half-edge order.
+//! ★ **Two ingredients are needed to trigger it**, which is why it is easy to miss: rotation (an
+//! axis-aligned loop's collinear cross is exactly `0.0`, which that rule skips correctly) and the
+//! collinear run happening to come first in the loop's half-edge order.
 //!
 //! ★★ The proposition below is deliberately **not** "every cell builds": some angles may decline
 //! for their own good reasons, now or later. It is that no cell comes back carrying a face whose

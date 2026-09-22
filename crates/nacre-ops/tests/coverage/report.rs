@@ -39,8 +39,8 @@ fn a_shared_rotation_still_assumes_nothing() {
 /// **A plane-class merge decided on toleranced evidence is reported, with the evidence.**
 ///
 /// This is the most consequential judgement the kernel makes — a merge changes which planes exist
-/// before a single vertex is computed — and the one that used to be invisible, since
-/// `Judge::planes_coplanar` returns a bare `bool`.
+/// before a single vertex is computed — and one `Judge::planes_coplanar`'s bare `bool` would
+/// hide.
 ///
 /// The fixture is **one motion spelled two ways**: `30°` about X, against the same `30°` followed
 /// by a translation and its exact inverse. The net motion is identical, so the planes coincide —
@@ -53,12 +53,9 @@ fn a_shared_rotation_still_assumes_nothing() {
 /// earlier, cheaper route answers before this one is reached. The spelling has to differ in the
 /// arithmetic, not only in the record.
 ///
-/// ★ **The previous spelling stopped working, exactly as this comment predicted.** It was `30°`
-/// against `10°` then `20°`, and the note here said that if same-axis nodes were ever bundled the
-/// merge would go back to being exact and *this* assertion would be the one to fail. That is what
-/// `coplanar_by_composed_rotation` now does — it sums same-axis angles — so the old spelling is
-/// pinned in [`the_same_motion_two_ways_is_now_proved`] instead, and the fixture here moved to a
-/// difference the composition genuinely cannot cancel.
+/// ★ **The fixture is a difference the composition cannot cancel.** Same-axis rotations compose
+/// (`coplanar_by_composed_rotation` sums same-axis angles), so `30°` against `10°` then `20°` is
+/// exact — that pair is pinned in [`the_same_motion_two_ways_is_now_proved`].
 #[test]
 fn a_toleranced_plane_merge_is_reported_with_its_evidence() {
     use nacre_exact::{Isometry, Rat};
@@ -100,8 +97,8 @@ fn a_toleranced_plane_merge_is_reported_with_its_evidence() {
 ///
 /// `30°` about X against `10°` then `20°` about the same axis and pivot: the chains differ
 /// structurally, but they amount to the same rotation, and summing same-axis angles is exact
-/// (`Angle` is rational degrees). So the merge that used to rest on a coincidence now rests on
-/// `==` between two canonical rational planes, and there is nothing to report.
+/// (`Angle` is rational degrees). So the merge rests on `==` between two canonical rational
+/// planes, and there is nothing to report.
 ///
 /// This is the other half of [`a_toleranced_plane_merge_is_reported_with_its_evidence`]: that one
 /// proves the report speaks when the kernel assumed something, this one proves it stays quiet when

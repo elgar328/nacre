@@ -72,10 +72,9 @@ fn rotated_containment_cut_makes_cavity() {
 
 #[test]
 fn a_rotated_cut_result_can_be_cut_again() {
-    // Rotating a boolean *result* (every vertex `Discovered`) and feeding it back into a boolean
-    // used to reject (`ROTATED_UNSUPPORTED`) — `collect_planes` could not build the rotated seam
-    // faces' plane witnesses. Now each such plane is witnessed through its provenance (its plane
-    // is `R(π)` for an operand plane `π`). R = a cube minus a far-corner octant; rotate R and a
+    // Rotating a boolean *result* and feeding it back into a boolean: each rotated seam face's
+    // plane is witnessed through its provenance (its plane is `R(π)` for an operand plane `π`). R
+    // = a cube minus a far-corner octant; rotate R and a
     // fresh slab, then Cut. A boolean commutes with a rigid motion, so the volume matches the
     // unrotated chain (7 − 2 = 5) and the result stays valid.
     let mut m = Model::new();
@@ -283,8 +282,7 @@ fn the_near_misses_around_the_four_plane_reject_all_build() {
     }
 }
 
-/// ★ **The model that started the four-plane work now builds** — the switch the reject test used to
-/// hold open.
+/// ★ **The four-plane model builds.**
 ///
 /// A bar spun 45° whose bottom corner edge lands exactly in the plane the fused block supplies
 /// (`x = 0.5`): three planes then share that edge's line, and every plane crossing it makes a vertex

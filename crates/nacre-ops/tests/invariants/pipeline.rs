@@ -92,10 +92,7 @@ fn multi_op_log_composes_through_export() {
 //     Two different sources, compared. `validate` asks the same question
 //     topologically (a shared edge used twice the same way); this asks it
 //     geometrically, and neither stands in for the other.
-//
-// Several assertions below pin **today's bugs**, not today's contract. Each is
-// inverted by the commit that fixes it, so the fix shows up in the diff rather
-// than in a commit message (cf. `a_doubly_crossed_edge_breaks_the_transition_oracle`).
+
 // ---------------------------------------------------------------------------
 
 use nacre_ops::DatumDef;
@@ -521,10 +518,10 @@ fn a_convex_hole_free_solid_meshes_exactly() {
 
 #[test]
 fn a_non_star_shaped_cap_meshes_exactly() {
-    // The fan used to drag a triangle across the U's notch: clockwise, so the
-    // unsigned sum counted its 2.6 forwards instead of backwards, once per cap ⇒
-    // +5.2. Watertight saw nothing — the fan's edges still paired up. Only area
-    // spoke, which is why both checks are here.
+    // A fan drags a triangle across the U's notch: clockwise, so the unsigned sum
+    // counts its 2.6 forwards instead of backwards, once per cap ⇒ +5.2.
+    // Watertightness sees nothing — the fan's edges still pair up. Only area
+    // speaks, which is why both checks are here.
     //
     // Ear clipping owes nothing to `ring[0]`. Each cap is `8 − 2 = 6` triangles.
     let (m, s) = u_prism();
@@ -535,27 +532,15 @@ fn a_non_star_shaped_cap_meshes_exactly() {
 
 #[test]
 fn a_pocket_lid_carries_its_hole() {
-    // The lid used to be meshed solid (Δ +0.16), and its four rim edges were then
-    // used once by a pocket wall and never by the lid — the one bug watertight
-    // caught. Bridged and ear-clipped, the lid is `4 + 4 + 2·1 − 2 = 8` triangles;
+    // Meshed solid, the lid is off by Δ +0.16, and its four rim edges are used once
+    // by a pocket wall and never by the lid — the one defect watertightness
+    // catches. Bridged and ear-clipped, the lid is `4 + 4 + 2·1 − 2 = 8` triangles;
     // the solid comes to 28.
     let (m, s) = pocketed_cube();
     let g = mesh_vs_props(&m, s);
     assert_eq!(g.tris, 28);
     assert_agrees(&g, "pocketed cube");
 }
-
-// ★★★★★ **`the_bootstrap_obj_carries_holes_too` lived here, and it had to go.**
-//
-// It compared the bootstrap `to_obj(&Model)`'s `f` lines against `tessellate`'s triangle count —
-// a real check while those were two roads, and its comment said so: *"Both now share one
-// triangulator, so the lid's hole survives to Quick Look."* The bootstrap is deleted, `to_obj` is
-// the tessellation's own writer, and the two sides of that `assert_eq!` became **the same
-// expression**. A test that compares `f(x)` with `f(x)` measures nothing while still looking like
-// a gate, which is a defect this repository has shipped before.
-//
-// What survives of it is a claim about the *writer* — one `f` line per triangle — and that is
-// asserted where the writer lives (`nacre-tess`' `unit_cube_obj_shape`).
 
 #[test]
 fn a_boolean_result_carries_its_hole() {
@@ -627,7 +612,7 @@ fn a_split_face_meshes_like_two() {
 #[test]
 fn a_non_convex_hole_bridges_and_meshes() {
     // Every inner loop the triangulator has met was a rectangle. This one has a reflex
-    // node, so `bridge_holes` must find a mutually-visible pair across a ring that is not
+    // node, so the bridge must find a mutually-visible pair across a ring that is not
     // star-shaped from anywhere obvious, and ear clipping must survive the slit.
     //
     // 44 triangles: the bitten lid is `6 + 6 + 2·1 − 2 = 12`, the bottom cap `6 − 2 = 4`,
@@ -647,8 +632,8 @@ fn a_non_convex_hole_bridges_and_meshes() {
 
 #[test]
 fn two_islands_from_one_face_mesh_like_two() {
-    // Two islands on the gate. The slab's face yields two islands, and each took its
-    // `Orientation` from `flip` and its ring from `orient_seam_loop`. The signed volume is
+    // Two islands on the gate. The slab's face yields two islands, and each takes its
+    // `Orientation` from `flip` and its ring from the arrangement. The signed volume is
     // the only check here that compares those two sources; watertight and the unsigned area
     // would wave a reversed island through.
     //
@@ -798,11 +783,11 @@ fn a_flipped_island_loop_is_caught() {
     // The island is the face whose whole boundary *is* the cut's seam ring, so it is the
     // one face lying on the other operand's plane — the L's top, `z = 1`.
     //
-    // It used to be selected as "the only face all of whose vertices are `Discovered`".
-    // That died with the arrangement: every result vertex is now named by a plane triple
+    // Not selected as "the only face all of whose vertices are arrangement-named": every
+    // result vertex is named by a plane triple
     // (`an_unrotated_boolean_names_every_vertex_by_its_plane_triple`), so all six faces
-    // match and `find` silently took the `z = 1.5` top instead — five of the six
-    // assertions below pass on any face, so only the signed volume noticed. Hence the
+    // match and `find` would take the `z = 1.5` top — five of the six assertions below
+    // pass on any face, so only the signed volume would notice. Hence the
     // geometric predicate, and hence the count: the uniqueness this relies on is asserted,
     // not narrated.
     let faces = m.shell(m.solid(s).outer).faces.clone();
@@ -991,7 +976,7 @@ fn a_notched_cube_meshes() {
     assert!((vol - 993.28).abs() < 1e-9, "volume {vol}");
 }
 
-/// **A wall with two windows — the case the old triangulator could not mesh.**
+/// **A wall with two windows — the case ear clipping cannot mesh.**
 ///
 /// A hub box and two bars crossing its `x = −1` face, so that face carries two inner
 /// loops. The b-rep was always fine here (`validate` clean, analytic mass properties);
@@ -1111,9 +1096,9 @@ fn the_fin_array_with_a_star_bore_meshes() {
 /// **★ A dimension split into two lands exactly where the undivided one does.**
 ///
 /// Every number below is a literal a user typed, and the only arithmetic is the kernel's own.
-/// It used to be done in f64, where a prism raised from `z = 1.1` by `6.6` puts its top at
-/// `7.699999999999999` — one ULP below the `7.7` that the block beside it reached in a single
-/// step. Two planes where the model has one.
+/// In f64 a prism raised from `z = 1.1` by `6.6` puts its top at `7.699999999999999` — one ULP
+/// below the `7.7` that the block beside it reaches in a single step: two planes where the model
+/// has one.
 ///
 /// **That failure did not split anything and was not wrong**, which is what made it worth
 /// fixing: the volume came out exactly right and the fuse yielded one body — a body carrying a
@@ -1150,7 +1135,7 @@ fn a_split_dimension_meets_the_undivided_one() {
     }
 
     let mut m = Model::new();
-    // The stack: 1.1, then 6.6 starting at 1.1 — the path that used to miss 7.7 by an ULP.
+    // The stack: 1.1, then 6.6 starting at 1.1 — the path on which f64 misses 7.7 by an ULP.
     let lower = raise(&mut m, 0.0, 3.0, 4.0, 1.1);
     let upper = raise(&mut m, 1.1, 3.0, 4.0, 6.6);
     let stack = boolean_one(&mut m, BoolKind::Fuse, lower, upper).unwrap();
@@ -1267,12 +1252,11 @@ fn a_pad_split_in_two_reaches_the_plane_the_whole_one_does() {
     assert_eq!(za, zb, "the two pad paths reach different planes");
 }
 
-/// **A degenerate frame can no longer be handed in at all** — the refusal moved from the prism
-/// builder to the door.
+/// **A degenerate frame cannot be handed in at all** — the refusal is at the door, not in the
+/// prism builder.
 ///
-/// It used to be built as three raw axes and rejected inside `Plane::from_point_normal`, one
-/// layer into `build_prism`. `SketchPlane`'s fields are private now and every public constructor
-/// states a *plane*, so the degeneracies a caller can express are the ones checked here: a normal
+/// `SketchPlane`'s fields are private and every public constructor states a *plane*, so the
+/// degeneracies a caller can express are the ones checked here: a normal
 /// with no direction, and three points that do not span one. The inner guard still stands for the
 /// crate's own `from_axes`, but nothing outside can reach it.
 #[test]

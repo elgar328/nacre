@@ -73,12 +73,9 @@ fn stair_and_prism(step: f64, apex: f64, dist: f64) -> (Model, Handle<Solid>, Ha
     (m, a, b)
 }
 
-/// ★ Every case in this file validates. It did not always: at `apex = 0.7` a vertex used to land
-/// `5.55e-17` off one of its defining planes with a recorded tolerance of `0`, so this helper had a
-/// second copy that skipped `validate`. That was a **separate** defect — the tolerance measured the
-/// triple the arrangement computed the point with, while the definition named the triple the result
-/// re-derived — and it is fixed, so the exception is gone with it. Leaving it would have made this
-/// file quiet the next time the same thing broke.
+/// ★ **Every case in this file validates, with no skip.** A copy of this helper that skips
+/// `validate` would make this file quiet the next time a vertex lands off one of its defining
+/// planes (`apex = 0.7` is where a tolerance measured against the wrong triple did, measured).
 fn fused_volume(step: f64, apex: f64, dist: f64) -> f64 {
     let (mut m, a, b) = stair_and_prism(step, apex, dist);
     let got = boolean(&mut m, BoolKind::Fuse, a, b).expect("the fuse builds");

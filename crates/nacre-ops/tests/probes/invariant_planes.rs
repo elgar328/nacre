@@ -124,9 +124,8 @@ fn a_turned_cap_is_the_seed_plane_and_never_gains_a_history() {
         );
     }
 
-    // The dissolved refusal: both cap faces now answer their world frame (the contract sweep
-    // verifies the returned frame realizes bit-identical to the pad's; here the lock is that
-    // the answer exists at all where `FrameNotRepresentable` used to be).
+    // Both cap faces answer their world frame (the contract sweep verifies the returned frame
+    // realizes bit-identical to the pad's; here the lock is that the answer exists at all).
     for &fh in &m.shell(m.solid(s).outer).faces {
         if caps.contains(&m.face(fh).surface) {
             face_sketch_frame(&m, fh).expect("a fixed cap hosts a sketch frame");

@@ -243,7 +243,7 @@ fn an_offset_mirror_plane() {
 /// ordinary mirror on the exact path.**
 ///
 /// `2c − x` is exact for a dyadic `c` (and `c = 0`, the only form the script layer emits today),
-/// so the coefficients stay the truth and the surfaces stay `Constructed`. If this ever starts
+/// so the coefficients stay the truth and the surfaces carry no motion. If this ever starts
 /// recording a node, nothing in the suite would *fail* — every answer stays correct — but every
 /// mirrored model would quietly leave the exact `f64` predicates for the toleranced ones. That is
 /// the kind of regression only a direct assertion catches.

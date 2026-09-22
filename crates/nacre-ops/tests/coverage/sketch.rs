@@ -365,7 +365,7 @@ fn profiles_the_kernel_used_to_build_silently_wrong_are_now_refused() {
         try_extrude(Profile2d::polygon(bowtie).unwrap()),
         Err(nacre_ops::OpError::SelfIntersectingProfile { .. })
     ));
-    // A hole that misses the outline entirely: it used to be subtracted anyway.
+    // A hole that misses the outline entirely must not be subtracted.
     assert!(matches!(
         try_extrude(Profile2d::with_holes(sq(0.0, 4.0), vec![sq(10.0, 12.0)]).unwrap()),
         Err(nacre_ops::OpError::HoleNotInsideOuter { hole: 0 })
@@ -379,8 +379,8 @@ fn profiles_the_kernel_used_to_build_silently_wrong_are_now_refused() {
     ));
 }
 
-/// A ring that touches itself without crossing. There is no strict inside at the pinch, and the
-/// prism it used to build had a believable volume (14.0) and a clean `validate`.
+/// A ring that touches itself without crossing. There is no strict inside at the pinch, and a
+/// prism built from it has a believable volume (14.0) and a clean `validate`.
 #[test]
 fn a_pinched_ring_is_refused() {
     let pinch = vec![

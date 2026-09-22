@@ -322,11 +322,11 @@ fn measure(m: &Model) -> Tally {
         }
 
         // ★★★ **The kernel says which vertices have a frame; this table only labels the rest.**
-        // These lines used to compare the three carriers' motions here, which is `vertex_meet`'s
-        // rule written a second time — and once the invariant-plane restatement landed, the copy
-        // said "mixed" for every corner of a turned solid and **dropped them out of the width
-        // table entirely** (`continue`). The tables stayed green while measuring a smaller
-        // population than they claimed. Asking the door is what keeps the two in step.
+        // Comparing the three carriers' motions here would be `vertex_meet`'s rule written a
+        // second time — and with the invariant-plane restatement such a copy says "mixed" for
+        // every corner of a turned solid and **drops them out of the width table entirely**,
+        // green while measuring a smaller population than it claims. Asking the door keeps the
+        // two in step.
         let Some((point, _frame)) = m.vertex_meet(vh) else {
             // Two causes are left (the def kind and a missing name were handled above): no
             // shared frame, or — same frame, no meet — carriers on one line. The split is for
@@ -398,10 +398,9 @@ enum VertexReach {
     /// caller: a cut between a turned operand and a still one leaves corners where an unmoved wall
     /// meets two turned ones.
     ///
-    /// ★ Not simply "its three carriers carry different motions" — since the invariant-plane
-    /// restatement a *fixed* world-stated carrier sits beside moved ones and is placeable anyway
-    /// (`Model::chain_fixes_plane`). Counting those here is what made this table report a kernel
-    /// that no longer existed.
+    /// ★ Not simply "its three carriers carry different motions" — a *fixed* world-stated carrier
+    /// sits beside moved ones and is placeable anyway (`Model::chain_fixes_plane`); counting those
+    /// here would report a kernel that does not exist.
     Straddle,
     /// `OnSeam`, or a carrier with no name.
     Undefined,

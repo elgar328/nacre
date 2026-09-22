@@ -36,9 +36,8 @@ fn user_message(err: BoolError) -> String {
 /// pair of solids to hand back. The caller learns that much — the reason, its class, and a message
 /// — from the returned error alone.
 ///
-/// ★ The fixture used to be two cubes touching at a corner. Those separate now (they are two
-/// bodies and nothing joins them); what this test is about is the error *surface*, so it moved to
-/// a shape that still cannot part rather than losing the assertions.
+/// ★ The fixture is a shape that cannot part — two cubes touching at a corner are two bodies —
+/// because what this test is about is the error *surface*.
 #[test]
 fn a_pinched_fuse_tells_the_caller_why() {
     let mut m = Model::new();
@@ -76,9 +75,8 @@ fn a_pinched_fuse_tells_the_caller_why() {
 /// overlapping both takes the material around the contact. Four faces use that segment and the body
 /// cannot be parted there, which no 2-manifold boundary allows — `Impossible`, not a coverage limit.
 ///
-/// ★ The fixture used to be two cubes sharing one whole edge, which was "the reject the grid
-/// proptest lands on most often". Those are two bodies now, and the proptest scores them instead of
-/// skipping them.
+/// ★ Not two cubes sharing one whole edge: those are two bodies, and the grid proptest scores
+/// them.
 #[test]
 fn a_pinched_fuse_is_impossible_not_unsupported() {
     let mut m = Model::new();
@@ -131,27 +129,12 @@ fn a_stale_operand_is_not_a_reject_reason() {
     );
 }
 
-// ★ **Retired: `the_cause_is_named_instead_of_its_downstream_symptom`.**
-//
-// It locked "a reject names the cause, not the downstream symptom" on the one input of its family
-// that still declined — two overlapping unit boxes with one turned 60° about Z, which stopped in
-// the assembly's vertex naming as `StraightAngle`. Contacts separating answered that input: at 60°
-// the two boxes only *touch* (measured: `Common` empty, fused volume 2.0, `validate` clean), so
-// they come back as the two bodies they are.
-//
-// The sweep its note prescribed was re-run over the same family — three rotation axes, seventeen
-// angles, four overlaps, all three kinds, **612 booleans, and none declines**. Its first subject
-// (`DegenerateWitness`) had already gone the same way. A test with no input left measures nothing,
-// so it is gone rather than weakened, and what it was protecting is written where the next person
-// will look: `RejectReason::StraightAngle`'s own doc.
-
 /// **A rejected boolean leaves the live model exactly as it found it.**
 ///
 /// The operands are retired when the result is accepted, and a reject can be raised on either side
 /// of that — `check_result_topology` runs after the whole engine has. So "reject" has to mean the
 /// caller still holds the two solids it passed in, whichever step said no; otherwise a refused
-/// operation silently costs the user their model. The kernel already restored the live set for the
-/// topology reject and for nothing else, and nothing asserted the rule at all.
+/// operation silently costs the user their model.
 ///
 /// Only the *live set* is restored. Result cells the refused attempt appended to the arena stay
 /// there, unreachable — the arena is append-only by design and superseded solids leave the same

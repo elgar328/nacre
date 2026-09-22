@@ -36,9 +36,9 @@ fn containment_boolean_already_keeps_a_pocket() {
 fn cut_with_a_hollow_operand_far_from_the_void() {
     // A cavitied operand whose seam misses the void: the corner cut is far from
     // the [1,2]³ void, so the void is carried through and preserved.
-    // The seam front-end walks all shells, so the void no longer silently vanishes
-    // (it used to read as convex and return vol 26.875, cavities 0). Now: correct
-    // 25.875 (27 − 1 void − 0.125 corner) with the cavity intact.
+    // Every shell is walked, so the void does not vanish (dropping it reads as convex and
+    // returns vol 26.875, cavities 0): 25.875 (27 − 1 void − 0.125 corner) with the cavity
+    // intact.
     let mut m = Model::new();
     let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
     let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
@@ -84,13 +84,11 @@ fn a_slab_splits_a_hollow_box_into_two() {
     assert!((vol - 24.4).abs() < 1e-9, "total volume {vol}");
 }
 
-// A hollow operand in a COPLANAR contact — the combination nothing covered until now. The
-// cavity goldens above all take the seam path (transversal cuts) and every coplanar golden uses
-// solid operands, so the intersection of the two was a blind spot, and the coplanar driver had
-// never received the all-shell patch the seam front-end got. It emitted only
-// outer-shell faces, so the void vanished: the fuse read 27.0625 — the *un-hollowed* cube plus
-// the boss — with `cavities: 0` and a clean `validate`, because what remained was still a
-// closed shell. Silent-wrong, invisible to every guard. Now the driver walks all shells.
+// A hollow operand in a COPLANAR contact. The cavity goldens above take transversal cuts and
+// every coplanar golden uses solid operands, so this is the intersection of the two. Emitting
+// only outer-shell faces loses the void: the fuse reads 27.0625 — the *un-hollowed* cube plus the
+// boss — with `cavities: 0` and a clean `validate`, because what remains is still a closed
+// shell. Silent-wrong, invisible to every guard; every shell is walked.
 #[test]
 fn a_hollow_part_takes_a_coplanar_boss() {
     let mut m = Model::new();
@@ -117,7 +115,7 @@ fn a_hollow_part_takes_a_coplanar_boss() {
 #[test]
 fn a_hollow_part_takes_a_coplanar_pocket() {
     // The Cut twin of the boss case: a top-flush pocket sunk into a hollow part. Same blind
-    // spot, same silent-wrong before the fix (26.96875 with the void gone).
+    // spot, same silent-wrong with outer shells only (26.96875 with the void gone).
     let mut m = Model::new();
     let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
     let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
@@ -174,8 +172,7 @@ fn a_coplanar_boss_over_a_void_plane_is_solved() {
 fn a_hollow_part_takes_a_second_far_cut() {
     // The headline: keep cutting a part after it is hollow. A bore at the corner
     // opposite the void — the void survives, and the result is fed back as an
-    // operand (chaining past the first cavity-producing op, which the door used to
-    // block).
+    // operand (chaining past the first cavity-producing op).
     let mut m = Model::new();
     let big = m.add_cuboid(Point3::from_array([0.0; 3]), Point3::from_array([3.0; 3]));
     let inner = m.add_cuboid(Point3::from_array([1.0; 3]), Point3::from_array([2.0; 3]));
@@ -199,7 +196,6 @@ fn a_non_convex_pad_cantilevers_and_runs_flush() {
     //   2. **overhanging** — `y < 0` cantilevers past the cube's `y = 0` edge;
     //   3. **flush** — the edge `x = 1.0, y∈[0.25,0.75]` lies *exactly* on the face's `x = 1`
     //      boundary, the "profile rim shares the face rim" case.
-    // It used to reject because the overhang sidecars gated on convexity; that gate is gone.
     //
     // Hand-checked shape: footprint `0.25 + 0.375 = 0.625`, prism wholly above `z = 1`, so
     //   volume 1 + 0.625 = 1.625
@@ -239,9 +235,9 @@ fn a_non_convex_pad_cantilevers_and_runs_flush() {
 fn a_corner_flush_common_keeps_the_non_convex_overlap() {
     // A **corner-flush** `Common`: the L-prism and the box both start at the origin, so
     // **three** of their face planes coincide — `z = 0` (both floors), `x = 0`, `y = 0`. Every
-    // vertex of the shared corner lies exactly on the other solid's face planes, which is what
-    // the old reject tag said: `VERTEX_ON_FACE_PLANE`. The arrangement engine names such a
-    // point by its plane triple like any other, so the configuration is no longer special.
+    // vertex of the shared corner lies exactly on the other solid's face planes. The arrangement
+    // names such a point by its plane triple like any other, so the configuration is not
+    // special.
     //
     // Not covered by the other two non-convex `Common` locks:
     // `common_non_convex_overlap_is_their_intersection` (l_and_corner_box) and
@@ -281,7 +277,7 @@ fn a_corner_flush_common_keeps_the_non_convex_overlap() {
 /// two rectangles meeting at one point; the unbounded contour of that plane pinches through the
 /// point, tracing a figure-8. Their `Common` is empty (a measure-zero intersection), and it must
 /// be empty in **both** operand orders — the figure-8's winding is read at a lex-extreme corner,
-/// not at the pinch, so the verdict no longer depends on where the ring happens to start.
+/// not at the pinch, so the verdict does not depend on where the ring happens to start.
 #[test]
 fn edge_contact_common_is_empty_in_both_orders() {
     let build = || {

@@ -333,7 +333,7 @@ fn measure_census() {
         }
     }
 
-    // ── **Translated — what the previous census was missing entirely.**
+    // ── **Translated.**
     // Dyadic offsets (expected untouched by the motion work) and non-dyadic ones (expected to be
     // where every difference lands), on both operands so the *relative* placement varies too.
     let offsets: [(i128, i128); 10] = [
@@ -423,7 +423,7 @@ fn measure_census() {
         }
     }
 
-    // ── Rotate then place: refused today, expected to build after the motion work.
+    // ── Rotate then place.
     for deg in [7i128, 30, 45] {
         let mut m = Model::new();
         let base = m.add_cuboid(
@@ -494,10 +494,8 @@ fn measure_census() {
     // ★★ **Measured, and it picks the right target.** A cuboid on seventeen-digit corners
     // overflows `plane_through_points`' *intermediates* on two of its six faces — the
     // narrow-route population the wide derivation (`plane_name_big`) names, since their
-    // canonical answers are small. (An earlier reading here claimed those two faces went
-    // *unnamed*; that stopped being true when the wide derivation landed — the genuinely
-    // wide-vessel population lives in computed ring coordinates and is counted by
-    // `WIDE_PLANES`.) The proptests are where this population lives today
+    // canonical answers are small. (The genuinely wide-vessel population lives in computed ring
+    // coordinates and is counted by `WIDE_PLANES`.) The proptests are where this population lives
     // (`stacked_boxes_merge_volumes` and friends generate arbitrary `f64`), and a proptest
     // cannot be a census line: it has no fixed coordinates to diff. These constants are those
     // coordinates, pinned.
@@ -507,7 +505,7 @@ fn measure_census() {
             [1.4738264859372, 2.9384756293847, 0.8473625849372],
         ),
         // A stacked pair sharing one interface plane — the coplanar-contact route, on coordinates
-        // whose interface plane cannot be named today.
+        // whose interface plane the narrow route cannot name.
         (
             [-2.8374652839472, 1.0937465283947, 0.8473625849372],
             [1.4738264859372, 2.9384756293847, 2.1937465283947],
@@ -1014,17 +1012,9 @@ fn measure_census() {
     // the axis on a max-side wall. These rows put the same solid on all four, so the table can
     // see a rule that holds on one side and not the other.
     //
-    // ★ **Recorded before the fix, deliberately.** As this family lands, **eleven** of these
-    // twenty-two rows are refusals: six `RingOrientation` (the min-side walls, all three kinds),
-    // two `MissingSeam` (`+y` cut and common, where `+y` fuse builds), and three
-    // `OpenResultShell` (the min corner). Writing them down first is what makes the next commit's
-    // diff the evidence: without it the rows would be born green and the corpus could not say
-    // what changed.
-    //
-    // The box twins are the control that says what breaks needs the **cylinder's** edges: the
-    // same straddle with a cuboid tool builds on every wall, volume 35 exactly. ★ Which *kind* of
-    // cylinder edge it is, is not something this table can say — measured later, the wrong turn
-    // is read on a **ruling**, and `turn` itself is correct. A population fact is not a code fact.
+    // The box twins are the control: the same straddle with a cuboid tool builds on every wall,
+    // volume 35 exactly, so a row that breaks here needs the **cylinder's** edges. ★ Which *kind*
+    // of cylinder edge, this table cannot say — a population fact is not a code fact.
     // Fuse alone for the twins: the control only has to say that the planar straddle builds.
     {
         let plate = |m: &mut Model| {
@@ -2395,9 +2385,9 @@ fn measure_census() {
     // digests may move, and a
     // `c ` row that moves without it is not explained.
     //
-    // ⚠ `cache_discarded_differing` is the one number nobody had measured. The claim "the same
-    // geometry, described twice, writes the same file" rests on it, and until now its only
-    // evidence was an experiment built on purpose to show it.
+    // ⚠ `cache_discarded_differing` is what the claim "the same geometry, described twice, writes
+    // the same file" rests on — measured here over the corpus, not by an experiment built to
+    // show it.
     let d = nacre_topo::surface_derive_counts();
     println!("stat surface_derived {}", d.derived);
     println!("stat surface_declined {}", d.declined);

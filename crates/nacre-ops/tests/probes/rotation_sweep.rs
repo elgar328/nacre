@@ -83,7 +83,7 @@ fn rot_z(m: &mut Model, s: Handle<Solid>, deg: i128) -> Result<Handle<Solid>, na
 }
 
 /// Every vertex definition of `solid` that names a surface this solid has no face on — the
-/// property `transform` needs and the one the old naming broke. Walked through the public model
+/// property `transform` needs. Walked through the public model
 /// so the test sees what any consumer would.
 fn foreign_definitions(m: &Model, solid: Handle<Solid>) -> Vec<String> {
     use std::collections::HashSet;
@@ -144,8 +144,8 @@ fn a_fused_result_names_itself_in_its_own_surfaces() {
         Vec::<String>::new(),
         "a result must be describable in the surfaces it actually has"
     );
-    // …and the consequence, which is where the failure used to appear: the next rotation of that
-    // result is exactly the operation that returned `OriginNotOnSolid`.
+    // …and the consequence: the next rotation of that result is the operation that would
+    // refuse.
     rot_z(&mut m, fused, 30).expect("the result can be moved");
 }
 
@@ -173,7 +173,7 @@ fn sweep(step: usize) -> Result<(), (usize, BoolError)> {
     Ok(())
 }
 
-/// ★ The band that one arbitrary probe vertex used to cost us.
+/// ★ The band one arbitrary probe vertex costs.
 ///
 /// "Is this hole inside that ring" is answered by casting a ray from a vertex, and a ring node on
 /// the ray's line makes the parity ambiguous, so that candidate is dropped. The cleaning pass
@@ -181,7 +181,7 @@ fn sweep(step: usize) -> Result<(), (usize, BoolError)> {
 /// the same question, tried every node. A small change of angle leaves the topology alone, so the
 /// same unlucky first node persisted across a whole band of angles and took all of them down.
 ///
-/// 41° is the cheapest angle that used to fail, so it is the one the default suite runs; the
+/// 41° is the cheapest angle in the band, so it is the one the default suite runs; the
 /// rest of the band lives in the sweep below, which is slow enough to be opt-in.
 #[test]
 fn the_band_of_angles_a_single_probe_used_to_cost() {
@@ -192,10 +192,10 @@ fn the_band_of_angles_a_single_probe_used_to_cost() {
 
 /// ★ The angles the retry alone could not save — where **every** candidate ray was blocked.
 ///
-/// A ring node sitting on the ray's line used to be abandoned rather than judged, and at 38–40°
-/// the arrangement puts one on every line a probe can cast along: five isolated corners and one
-/// whole edge, measured. The node's two off-line neighbours settle it — opposite sides is a
-/// crossing, equal sides a touch — which is the rule the tracer had all along.
+/// A ring node sitting on the ray's line is judged, not abandoned: at 38–40° the arrangement puts
+/// one on every line a probe can cast along — five isolated corners and one whole edge,
+/// measured. The node's two off-line neighbours settle it — opposite sides is a crossing, equal
+/// sides a touch — the tracer's own rule.
 ///
 /// This carries the *second* fix the way the test above carries the first; they lock different
 /// things, so both stay in the default suite.
@@ -251,11 +251,8 @@ fn the_thirty_degree_sweep_runs_to_completion() {
 /// ③ ★ The negative control: a step angle that rejects for an *other* reason, which renaming
 /// vertices must not touch. If it moves, the fix reached further than its argument says it does.
 ///
-/// ★★ It used to carry `120°` as well, on the reading "two bodies meeting along one line — no
-/// 2-manifold contains it". Two bodies meeting along one line are two bodies now, and that first
-/// copy comes back as two of them (`the_hundred_and_twenty_degree_copy_is_two_bodies`). The
-/// reading was right about the *single* body the reconstruction used to weld, and wrong about the
-/// answer.
+/// ★★ Not `120°`: two bodies meeting along one line are two bodies, and that copy comes back as
+/// two of them (`the_hundred_and_twenty_degree_copy_is_two_bodies`).
 ///
 /// ★★★ **45° says its truth**: the arm landing coplanar on its own body is a
 /// self-touch, and since the merge abstains on a pinching group (nothing to re-thread) and the
@@ -315,7 +312,7 @@ fn the_other_rejections_are_untouched() {
     }
 }
 
-/// ④ ★ **The 120° copy, which used to be a reject.** It meets the part along one line and nowhere
+/// ④ ★ **The 120° copy.** It meets the part along one line and nowhere
 /// else, so the fuse is the two bodies it was handed — on a real part, not a pair of cubes.
 ///
 /// ★★ Written as its own statement rather than through `sweep`, because `sweep` is a *fold* and
@@ -410,17 +407,15 @@ fn engine_sources() -> Vec<String> {
 
 /// ★ One implementation, and it stays one.
 ///
-/// The retry that answers "is this ring inside that one" used to live in the callers — spelled
-/// two ways in the arrangement, missing entirely in the cleaning pass. It lived in `ring_in_ring`
-/// after that, and now it lives in `nesting::cell_inside`, whose loop walks **one**
-/// witness list to the end. A caller that goes around it is a caller that will quietly lack the
-/// retry again, so the source says so.
+/// The retry that answers "is this ring inside that one" lives in `nesting::cell_inside`, whose
+/// loop walks **one** witness list to the end. A caller that goes around it quietly lacks the
+/// retry, so the source says so.
 ///
 /// ★ **The exceptions are listed, not implied.** The retry's value is picking *another witness*
 /// when one grazes, so the rule binds anything asking "is this ring inside that one". A caller
 /// asking about **one named vertex** has no other node to offer, and the retry would have nothing
-/// to retry with — `inside_trimmed_face` (the self-touch check) is that, and it is spelled out
-/// below rather than left to a loose pattern.
+/// to retry with — the self-touch check is that (`point_in_ring(jd, wc, *t, rb)`), and it is
+/// spelled out below rather than left to a loose pattern.
 #[test]
 fn no_production_caller_reaches_past_the_shared_predicate() {
     let src = engine_sources();
@@ -449,7 +444,7 @@ fn no_production_caller_reaches_past_the_shared_predicate() {
     }
     // The engine's own per-witness door is the one ring-vs-ring caller (`nesting::ask`,
     // whose retry is the loop in `cell_inside` above it), and `point_in_component` casts its own
-    // rays in 3D. `inside_trimmed_face` asks about a single vertex — see this test's note.
+    // rays in 3D. The self-touch check asks about a single vertex — see this test's note.
     offenders.retain(|o| !o.contains("point_in_ring(jd, wc, *t, rb)"));
     assert_eq!(
         offenders,

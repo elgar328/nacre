@@ -198,8 +198,7 @@ fn diamond_void(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     boolean(m, BoolKind::Cut, b, diamond)
 }
 
-/// ⑤ A non-planar operand — the coverage limit named at the plane table, not in the assembly
-/// (`lib.rs::common_rejects_non_planar_input`).
+/// ⑤ A non-planar operand — the coverage limit named at the plane table, not in the assembly.
 fn cylinder_operand(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     let a = cub(m, [0.0; 3], [2.0; 3]);
     let cyl = m.add_cylinder(
@@ -224,7 +223,7 @@ fn cylinder_notyet(m: &mut Model) -> Result<Vec<Handle<Solid>>, BoolError> {
     boolean(m, BoolKind::Cut, a, cyl)
 }
 
-/// **The same drill, at a scale where the exact arithmetic used to run out.** Geometry decides
+/// **The same drill, at a scale where checked exact arithmetic runs out.** Geometry decides
 /// nothing new here — an axis-aligned box with an axis-aligned bore through it, walls clear of
 /// the lateral surface — but every coordinate is a sub-micron value carried to a full f64's
 /// digits, so its exact rational has a ~10²³ denominator and the gate's `(n·o+d)² vs r²|n|²`
@@ -416,10 +415,9 @@ const CORPUS: [Fixture; 13] = [
         name: "cylinder-operand",
         // ★ **The seated-cap row, and the second diff of that kind.** Flush caps: the cylinder's
         // z ∈ [0,2] caps intern onto the box's own cap planes, so every ⊥ class carries faces of
-        // both operands. That used to be `SeatedCylinderCap` — a rule wider than anything it
-        // could name, since what makes a seated circle hard is its *boundary*, and every way a
-        // boundary can be met is already refused by the wall, oblique or pair rule. It **builds**
-        // now, and the name it carried no longer exists in the code.
+        // both operands. A seated-cap rule would be wider than anything it could name, since
+        // what makes a seated circle hard is its *boundary*, and every way a boundary can be met
+        // is already refused by the wall, oblique or pair rule. It **builds**.
         expect: None,
         run: cylinder_operand,
         raised: &[],

@@ -245,7 +245,7 @@ fn measure_boolean_wall_clock() {
 
 /// Where `Profile2d::check`'s doc numbers come from. A convex ring is the worst case — nothing
 /// short-circuits — and the predicates run on the rational truth (`orient2d_rat`,
-/// narrow-first), so this is the price of exactness-on-the-truth over the old f64 signs.
+/// narrow-first), so this is the price of exactness-on-the-truth over f64 signs.
 #[test]
 #[ignore]
 fn measure_profile_check_wall_clock() {

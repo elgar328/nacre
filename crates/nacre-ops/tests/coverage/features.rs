@@ -251,7 +251,7 @@ fn a_touchless_boss_fuses_into_two_solids() {
         Point3::from_array([1.0, 1.0, 1.0]),
     );
     // Shares the z = 1 plane class with the base's top, but sits far away in x/y — so the plane
-    // carries two separate bodies, which is exactly what `hole_roots` used to refuse.
+    // carries two separate bodies.
     let boss = m.add_cuboid(
         Point3::from_array([1.8, 1.8, 1.0]),
         Point3::from_array([2.2, 2.2, 1.3]),
@@ -455,12 +455,9 @@ fn a_boss_that_pierces_the_base_is_not_an_overhang() {
     assert!((vol - 1.625).abs() < 1e-12, "volume {vol}");
 }
 
-// The Cut and Common twins of `fuse_a_corner_overhanging_boss` below — the same two solids,
+// The Cut and Common twins of the corner-overhanging boss fuse below — the same two solids,
 // the same shared z=1 plane. The boss sits entirely above it, so it removes nothing and shares
-// nothing: Cut is the base untouched and Common is empty. Both used to be rejected
-// (`coplanar_merge` for Cut; Common's every face dropped, which assembly reported as
-// `no_outward_shell`). The `Whole` survival cell now checks whether the contact plane actually
-// separates the solids, which is what makes the whole cap correct here.
+// nothing: Cut is the base untouched and Common is empty.
 #[test]
 fn cut_by_a_corner_overhanging_boss_removes_nothing() {
     let mut m = Model::new();
@@ -485,8 +482,8 @@ fn cut_by_a_corner_overhanging_boss_removes_nothing() {
 
 /// A coplanar-contact undercut: the tool's boss annulus sits flush on the base's top (z=3, a
 /// contact that removes nothing) while its pin reaches back below that plane into the base and
-/// carves a notch. The old coplanar path rejected the reach-back (`COPLANAR_MERGE`); the
-/// arrangement cuts the notch (27 − 1 = 26) and keeps the flush contact a no-op.
+/// carves a notch. The arrangement cuts the notch (27 − 1 = 26) and keeps the flush contact a
+/// no-op.
 #[test]
 fn a_coplanar_boss_with_a_pin_undercuts_the_base() {
     let mut m = Model::new();
@@ -533,9 +530,7 @@ fn common_with_a_corner_overhanging_boss_is_empty() {
 #[test]
 fn fuse_an_overhanging_boss_onto_a_non_convex_solid() {
     // A boss cantilevers off the +x side face of a top-pocketed cube (non-convex solid),
-    // overhanging the bottom edge. The whole-solid gate used to block it; the contact face
-    // (+x side) is a convex square, so the footprint gate admits it and the Fuse reconstruction
-    // is local (the far pocket is verbatim-copied). Volume: pocketed 0.92 + boss 0.25 = 1.17.
+    // overhanging the bottom edge. Volume: pocketed 0.92 + boss 0.25 = 1.17.
     let (mut m, pc) = top_pocketed_cube();
     let boss = m.add_cuboid(
         Point3::from_array([1.0, 0.25, -0.25]),
@@ -835,15 +830,12 @@ fn a_rotated_face_has_a_pinned_sketch_axis() {
 
 /// **Why the sketch origin does not come from the face at all.**
 ///
-/// It used to be the face region's area centroid, itself chosen over a mean of the outer loop's
-/// corners because a mean drags sideways when a vertex is added along a straight edge — the same
-/// face would then seat a boss somewhere else. A centroid does not move under subdivision, so that
-/// much was fixed.
-///
-/// ★ Both rules read the face's `f64` vertices, though, and `construct.rs` lifts the frame origin with
-/// `Rat::from_decimal` — so a rounded cache became the truth, and padding one footprint twice left
-/// faces of area `2.2e-16`. The origin is now the **world origin projected onto the plane**, which
-/// does not read the face at all.
+/// A mean of the outer loop's corners drags sideways when a vertex is added along a straight edge
+/// — the same face would then seat a boss somewhere else — and the face region's area centroid,
+/// which does not move under subdivision, still reads the face's `f64` vertices: `construct.rs`
+/// lifts the frame origin with `Rat::from_decimal`, so a rounded cache becomes the truth, and
+/// padding one footprint twice leaves faces of area `2.2e-16`. The origin is the **world origin
+/// projected onto the plane**, which does not read the face at all.
 ///
 /// That is strictly stronger, and this test says so: subdividing an edge cannot move it, and
 /// neither can replacing the outline with a different shape on the same plane. The old rule fails
@@ -896,7 +888,7 @@ fn the_sketch_origin_does_not_depend_on_the_outline_at_all() {
     // It is the world origin projected onto the cap's plane — exactly, not nearly.
     assert_eq!(a.as_array(), [0.0, 0.0, 1.0], "{a:?}");
 
-    // Both retired rules read the outline, so both would have failed above: the area centroid of
+    // An outline-reading rule fails above, either one: the area centroid of
     // the L is (5/3, 5/3) and of the far rectangle (8, 8.25); the corner mean sits at (2, 2) on
     // the plain L and moves to (1.75, 1.5) once subdivided.
     let mean = |pts: &[Point2]| {

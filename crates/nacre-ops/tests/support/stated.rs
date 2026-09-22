@@ -1,19 +1,18 @@
-//! The retired `from_edges` fixture vocabulary — kept for the fixtures, **ordered**.
+//! Fixture profiles stated as edge lists (`line`, `arc_turns`, `arc_rat`, `circle`), **ordered**.
 //!
-//! Every fixture that used the soup door was written as a chain anyway: each edge starting where
-//! the previous one ended, a circle on its own. The kernel now takes rings, not soups
-//! (`Ring2d::new`, `from_paths`), so this walks the edges in the order they were written and
-//! hands the rings over. Nothing here re-discovers an order; an edge that does not start where
-//! the pen stands is a fixture bug and panics. The ring order the old door produced is kept
-//! (whole circles first, then the chains as written, each seeded at its first edge's start) so
-//! the census reads the same models.
+//! Every fixture written with it is a chain: each edge starting where the previous one ended, a
+//! circle on its own. The kernel takes rings, not soups (`Ring2d::new`, `from_paths`), so this
+//! walks the edges in the order they were written and hands the rings over. Nothing here
+//! re-discovers an order; an edge that does not start where the pen stands is a fixture bug and
+//! panics. Ring order is whole circles first, then the chains as written, each seeded at its
+//! first edge's start.
 #![allow(dead_code)]
 
 use nacre_exact::Rat;
 use nacre_math::Point2;
 use nacre_ops::{Edge2d, Profile2d, Ring2d, SketchError, from_paths};
 
-/// One edge as the old fixtures spelled it.
+/// One edge as a fixture spells it.
 #[derive(Clone, Copy, Debug)]
 pub enum Stated {
     Line(Point2, Point2),

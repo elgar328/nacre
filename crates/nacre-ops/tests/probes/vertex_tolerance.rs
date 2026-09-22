@@ -51,9 +51,9 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
 /// Returns how many vertices were **realized from their definition**, so a fixture that stopped
 /// producing any cannot pass by measuring nothing.
 ///
-/// ⚠ It used to count "vertices carrying a recorded tolerance". The cache stores none now (cell
-/// 54), so the population this walks is the realized one and everything else is skipped — the
-/// callers' `> 0` is what keeps the skip from swallowing the whole fixture.
+/// ⚠ The cache stores no recorded tolerance, so the population this walks is the realized one
+/// and everything else is skipped — the callers' `> 0` is what keeps the skip from swallowing the
+/// whole fixture.
 fn every_vertex_matches_its_definition(m: &Model) -> usize {
     let mut measured = 0;
     let mut i = 0u32;

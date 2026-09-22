@@ -244,8 +244,7 @@ fn derived_curves_match_stored() {
     m.rebuild_adjacency();
     assert_derived_matches_stored(&m, "extrude+cut", &mut st);
 
-    // ③ ★ Moved cylinders — the one commit where pass 2 (`transform_curve`) still exists, so
-    //    «derive from moved caches» vs «pass 2's directly-transformed circle» can be compared.
+    // ③ ★ Moved cylinders: «derive from moved caches» against the stored circle.
     //    (A mirrored cylinder has no population: `MirrorNotPlanar` rejects it.)
     let moved = {
         let OpOutput::Transform { solid } = apply(

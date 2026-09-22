@@ -1,20 +1,10 @@
 //! **The replay contract, measured.**
 //!
-//! `replay`'s doc promises «the same log reproduces the same model
-//! **down to handle indices**». Six of `Operation`'s seven variants carry a handle
-//! (`PadOnFace`·`PocketOnFace`·`Boolean`·`Transform`·`Mirror`·`Copy`) — and for those the
-//! promise is **false today**: `replay` starts from a fresh `Model::new()`, so the log's
-//! handles carry the *original* model's `StoreId` and `Store::get`'s debug guard fires before
-//! the index is ever used.
-//!
-//! Nothing noticed because nothing walked that path: every `replay` call site in the workspace
-//! passed value-only `Extrude` logs, so replay determinism rested entirely on `Extrude` stating
-//! its plane by value.
-//!
-//! ★ **That sentence is now history.** `Extrude` carries a `SketchFrame`, so **all seven
-//! variants carry a handle** and there is no value-only operation left. The premise this file was
-//! written to expose has been consumed; what it measures — that a log's indices are re-anchored
-//! onto the arena being built — is now load-bearing for every log there is.
+//! `replay`'s doc promises «the same log reproduces the same model **down to handle indices**».
+//! The operations that name a solid, a face or a plane carry a handle — `Extrude` too, through its
+//! `SketchFrame` — and `replay` starts from a fresh `Model::new()`, whose `StoreId` is another; so
+//! the promise rests on `replay` re-anchoring a log's indices onto the arena it builds, where a
+//! foreign handle would trip `Store::get`'s debug guard.
 //!
 //! This file is where the contract is *measured* rather than asserted by documentation.
 
@@ -303,17 +293,12 @@ fn transform_log() -> (Vec<Operation>, Model) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// The contract, now kept
+// The contract
 // ─────────────────────────────────────────────────────────────────────────────
 //
-// These three used to be `#[should_panic(expected = "different Store")]` witnesses: each log
-// died in `Store::get`'s guard, reached through the op's first dereference (pad at `shells.get`,
-// boolean and transform at `solids.get`). What got *past* first is worth remembering —
 // `live_solids.contains(&h)` and `faces.contains(&f)` compare handles by index only, so a
-// foreign handle answered "yes, I am live"; the guard was never the door, it was one step
-// inside it.
-//
-// `replay` now re-anchors the log's indices onto the model it is building, so the same three
+// foreign handle answers "yes, I am live" — `Store::get`'s guard is one step inside the door, not
+// the door. `replay` re-anchors the log's indices onto the model it is building, so these three
 // logs reproduce their scratch-built twins — arena for arena, in both profiles.
 
 #[test]
@@ -461,8 +446,8 @@ fn a_log_naming_a_cell_that_does_not_exist_is_rejected_by_name() {
     }
 }
 
-/// The comparator's own check: a value-only log (the population that *does* replay today)
-/// reproduces its scratch-built twin item for item, and replaying twice is stable.
+/// The comparator's own check: a value-only log reproduces its scratch-built twin item for item,
+/// and replaying twice is stable.
 #[test]
 fn the_comparator_agrees_on_a_value_only_log() {
     let mut scratch = Model::new();
@@ -1197,8 +1182,8 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
     let before = arena_lengths(&m);
     // `PadMissesFace` is used deliberately: it is the late reject that *does* restore
     // `live_solids` (`ops`, "no reject-after-commit"), so what is left is arena residue and
-    // nothing else. The reject that fails to restore is a separate defect, witnessed by
-    // [`a_pocket_that_is_not_blind_rejects_after_committing`].
+    // nothing else. The reject decided after the commit is `PocketNotBlind`'s
+    // ([`a_pocket_that_is_not_blind_leaves_the_live_model_alone`]).
     let declined = Operation::PadOnFace {
         face: faces[1],
         profile: rect(20.0, 20.0, 21.0, 21.0),
@@ -1261,14 +1246,13 @@ fn a_session_that_keeps_recording_after_a_late_reject_diverges() {
     }
 }
 
-/// ★ **A reject does not commit — including the one that used to.**
+/// ★ **A reject does not commit.**
 ///
 /// `ops` names this contract where `PadMissesFace` restores `live_solids`: "the model the
-/// caller sees is the one it had before". `PocketNotBlind` used to break it — it was raised in
-/// `pocket` *after* `extrude_and_boolean` returned `Ok`, by which point the boolean had already
-/// retired the caller's solid and installed the through-cut result in its place, so the caller
-/// got an `Err` **and** a different live model. Measured here first, then repaired by moving the
-/// missing-cap verdict into the scope that still holds the result solids.
+/// caller sees is the one it had before". `PocketNotBlind` is the case to watch: its verdict
+/// comes after the boolean has retired the caller's solid and installed the through-cut result
+/// in its place, so it must be raised in the scope that still holds the result solids —
+/// otherwise the caller gets an `Err` **and** a different live model.
 ///
 /// What a late reject still leaves is **arena residue** — the store is append-only and the
 /// prism's cells stay. That is the honest remainder, and the reason a session must rebuild from

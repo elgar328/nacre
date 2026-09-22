@@ -1,9 +1,7 @@
 //! **A fin array — three walls landing on what the previous two built.**
 //!
-//! A hub with bars fused around it is the shape a code-CAD user writes in a loop, and it is where
-//! the rotated arrangement used to run out of cases. Three fins reproduce it: fuse a diametric
-//! pair, then a third at an angle. A sweep of the pair's angle used to fail 8 times in 90, under
-//! five different reject names.
+//! A hub with bars fused around it is the shape a code-CAD user writes in a loop. Three fins
+//! reproduce it: fuse a diametric pair, then a third at an angle.
 //!
 //! All five were one root: a boolean's *result* carried no rotation provenance, so its faces were
 //! described by their rounded coordinates and one wall became two plane classes on the next fuse.
@@ -63,7 +61,7 @@ fn fuse_fins(angles: &[f64]) -> Result<f64, BoolError> {
     Ok(nacre_props::mass_props(&m, part).expect("props").volume)
 }
 
-/// **The three arrangements that used to decline, each by a different name.**
+/// **Three arrangements, each of which a narrower engine declines by a different name.**
 ///
 /// All three are the same shape of input — a diametric pair, then a third fin — and all three
 /// failed on that third fuse, under `TraceDeclined{RunSplit}`, `CoincidentNodes` and

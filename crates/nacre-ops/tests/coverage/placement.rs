@@ -1,16 +1,13 @@
-//! **Placing a part: what an exact rational move loses on the way in.**
+//! **Placing a part: an exact rational move and the f64 images it leaves.**
 //!
-//! A motion's translation is an exact rational (`Isometry::translate: [Rat; 3]`), but the kernel
-//! spends it in f64 — `to_f64(t)` and then an f64 add, two roundings — and then treats the result
-//! as the truth. These tests pin what that costs, as it stands today:
+//! A motion's translation is an exact rational (`Isometry::translate: [Rat; 3]`), but the cache
+//! spends it in f64 — `to_f64(t)` and then an f64 add, two roundings. These tests pin that the
+//! model does not take that result for the truth:
 //!
-//! - two parts placed so they share a wall exactly can end up with the wall **1 ULP apart**, so a
-//!   `Fuse` returns two disjoint bodies where one is right (and a caller taking `[0]` silently
-//!   keeps half the part);
-//! - a part that is **rotated and then placed** cannot be described exactly at all, so every
-//!   boolean on it is refused.
-//!
-//! Both assertions describe today's behaviour and are expected to flip.
+//! - two parts placed so they share a wall exactly are **one body**, even where the wall's two
+//!   f64 images are 1 ULP apart (a `Fuse` returning two disjoint bodies there would let a caller
+//!   taking `[0]` silently keep half the part);
+//! - a part that is **rotated and then placed** is described exactly, so a boolean on it builds.
 
 use crate::common::*;
 use nacre_exact::{Angle, Axis, Isometry, Rat, Rotation};
@@ -41,12 +38,12 @@ fn place_and_fuse(n: i128, d: i128) -> Result<Vec<f64>, BoolError> {
     Ok(out.into_iter().map(|s| volume(&m, s)).collect())
 }
 
-/// **One body, though the two walls' f64 coordinates still differ.**
+/// **One body, though the two walls' f64 coordinates differ.**
 ///
 /// `x = 1` moved by `7/11` and `x = 0` moved by `18/11` are the same real number, and their f64
-/// images differ in the last place — they still do. What changed is that each wall now carries its
-/// motion in its *definition*, so the judgment realizes both at high precision, finds them the
-/// same plane, and merges. The cache was never the thing to fix.
+/// images differ in the last place. Each wall carries its motion in its *definition*, so the
+/// judgment realizes both at high precision, finds them the same plane, and merges. The cache is
+/// not the thing to fix.
 #[test]
 fn a_shared_wall_merges_though_its_f64_images_differ() {
     for (n, d) in [(7i128, 11i128), (13, 23)] {
@@ -58,8 +55,8 @@ fn a_shared_wall_merges_though_its_f64_images_differ() {
 
 /// **Offsets whose wall survives the two roundings still build one body.**
 ///
-/// Pinned beside the failure so the next reader can see the split is not "non-dyadic offsets are
-/// unsupported" — most of them are fine. It is the ones where the two roundings disagree.
+/// The control for the test above: most non-dyadic offsets round alike on both walls; the ones
+/// where the two roundings disagree are the ones that test.
 #[test]
 fn most_placements_still_build_one_body() {
     for (n, d) in [
@@ -82,9 +79,9 @@ fn most_placements_still_build_one_body() {
 
 /// **Rotate, then place — builds, every time.**
 ///
-/// The history used to record rotations only, so `R` then `T` had no node to name and the plane
-/// could not be stated exactly; "make a feature, turn it, put it where it goes" — ordinary
-/// modelling — was refused 15/15. The chain names both motions now, in order.
+/// The chain names both motions, in order. A history recording rotations only has no node to
+/// name for `R` then `T`, and "make a feature, turn it, put it where it goes" — ordinary
+/// modelling — is then refused 15/15 (measured).
 #[test]
 fn rotate_then_place_builds() {
     let mut built = 0;
@@ -130,14 +127,13 @@ fn rotate_then_place_builds() {
 /// exact (a power of two), so the split needed a *second, independent* route to the same plane:
 /// here one wall arrives by reflection and the other by translation. Two roundings each, taken in
 /// a different order, and the `f64` images disagree in the last place — the same shape as
-/// [`a_shared_wall_one_ulp_apart_splits_the_part`], through the mirror.
+/// [`a_shared_wall_merges_though_its_f64_images_differ`], through the mirror.
 ///
-/// This used to fuse into **two** bodies. A reflection is improper (`det = −1`), so it was not a
-/// `Motion` the chain could hold: the kernel carried it by *conjugating* an existing chain, and a
-/// `Constructed` surface has no chain to conjugate, so its mirror image was declared exact and the
-/// two walls stayed apart. The chain holds reflections now — `1/3` is not dyadic, so the node is
-/// recorded — and the two definitions realize to the same plane. Nothing about the `f64`
-/// coordinates changed; they still differ in the last place, and they still should.
+/// The chain holds reflections — `1/3` is not dyadic, so the node is recorded — and the two
+/// definitions realize to the same plane. (Carried instead by *conjugating* an existing chain, a
+/// surface with no chain has nothing to conjugate, its mirror image is declared exact, and the
+/// part fuses into **two** bodies.) The `f64` coordinates differ in the last place, and they
+/// should.
 #[test]
 fn a_mirrored_wall_and_a_placed_wall_merge_the_part() {
     // Reflect `x = 1` in `x = 1/3`: the image is `−1/3`, computed as `2·fl(1/3) − 1`.

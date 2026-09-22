@@ -158,8 +158,8 @@ fn a_plane_without_an_exact_form_is_rejected_by_name() {
 /// no name → frame_chain declines → no SketchFrame → never a base cap → never in a plane table
 /// ```
 ///
-/// so `WorkingPlaneDef::Through` has no producer and cannot have one until a nameless plane can be
-/// framed. That was read out of the code; this runs it.
+/// so a nameless plane never reaches a plane table. That was read out of the code; this runs
+/// it.
 ///
 /// ★ **Not a backstop for a future stage.** `Model::push_plane` is `pub` and leaves a nameless
 /// plane behind for a collinear triple (`intern_plane` builds no key), and `SketchFrame::canonical`
@@ -709,7 +709,7 @@ fn frame_sweep_direction(m: &mut Model, frame: nacre_ops::SketchFrame) -> [f64; 
 /// A plane's canonical name has no direction and planes intern, so stating `z = 0` facing `+ẑ`
 /// and stating it facing `−ẑ` produce **one handle**. If the frame handed back carried
 /// `flip: false` in both cases, the second caller would be answered "up" when they said "down" —
-/// and an operation that took a frame where it used to take a plane would sweep the wrong way.
+/// and an operation that takes a frame rather than a plane would sweep the wrong way.
 ///
 /// So `DatumPlane` measures `flip` against the normal the caller's own point order fixes. Same
 /// handle, opposite flips, and each frame faces the way its caller stated.
@@ -1536,10 +1536,10 @@ fn a_datum_on_straddling_carriers_has_no_name() {
     // Split them by whether the kernel can place them in one frame.
     //
     // ★★ **Ask the door, do not compare the three carriers' motions here.** That comparison is
-    // `Model::vertex_meet`'s rule written a second time, and since the invariant-plane
-    // restatement it over-counts: a turned solid's corner mixes a *fixed* world-stated cap with
-    // moved walls, and the chain-fixes licence places it in the walls' frame. A copy of the old
-    // rule would file such a corner as "straddling" and this test would go on asserting about a
+    // `Model::vertex_meet`'s rule written a second time, and it over-counts: a turned solid's
+    // corner mixes a *fixed* world-stated cap with moved walls, and the chain-fixes licence
+    // places it in the walls' frame. A copy of that rule would file such a corner as "straddling"
+    // and this test would go on asserting about a
     // vertex that is not the population it names — green, and measuring something else.
     let (mut pure, mut straddling) = (Vec::new(), Vec::new());
     for vh in mine {

@@ -3,8 +3,8 @@
 //! The returned `SketchFrame` is not a report to read and discard: it is a value the kernel
 //! accepts back (`Operation::Extrude { frame }`, `DatumDef::Offset { frame }`), so a wrong one is
 //! worse than a wrong number — a sketch built in it lands somewhere the caller did not ask for.
-//! Measured before the fix this file locks: on a plain axis-aligned block the returned frame put
-//! the same footprint point-symmetric to the pad's, 2.55 apart.
+//! The failure this file locks: on a plain axis-aligned block, a frame combined by hand puts the
+//! same footprint point-symmetric to the pad's, 2.55 apart (measured).
 //!
 //! The contract asserted here is the realization itself, bit for bit:
 //!
