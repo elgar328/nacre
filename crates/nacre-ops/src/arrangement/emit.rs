@@ -153,9 +153,7 @@ pub(super) fn emit_faces(
     // ceiling is `Reversed`, so `frame_sign` is the one thing that differs. The label that comes
     // back without it is the annulus cell's, all four bits true, which no disk-side cell there
     // can be. Over the lib suite the factor decides **112** of some 4,300 arcs, and without it
-    // every one of them is wrong, silently: the only consumer is the chart's `read_cell`,
-    // which mostly refuses
-    // before reading a cut end.
+    // every one of them is wrong silently — the only consumer is the chart's `read_cell`.
     //
     // ★★ **The geometry still watches it, on every arc** ([`disk_side_probe`]): a cell cannot
     // straddle the circle, so a rational corner's radial side names the side that whole cell is

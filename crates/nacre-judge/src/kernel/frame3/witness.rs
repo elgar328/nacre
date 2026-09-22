@@ -184,10 +184,9 @@ impl WitnessPoint {
         self.realized[j].value = py + u * s + v * c;
         // **The rotation's own error — measured for this angle, not charged from a constant.**
         //
-        // `dc`/`ds` are how far this platform's `cos`/`sin` land from the truth — measured, not a
-        // constant measured once, which would be sound only on machines like the one it was taken
-        // on, and a kernel that ships to browsers cannot assume that. A worse platform reports a
-        // bigger number and the tolerance grows to match.
+        // `dc`/`ds` are how far this platform's `cos`/`sin` land from the truth — measured here,
+        // never a constant taken once on one machine, which a kernel that ships to browsers cannot
+        // assume. A worse platform reports a bigger number and the tolerance grows to match.
         //
         // ★ **Per axis, because the two coordinates mix the pair differently** — `u` meets `c` on
         // one and `s` on the other. See this function's doc for what that cost when it was shared.

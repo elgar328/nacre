@@ -508,10 +508,9 @@ pub(crate) fn loop_winding(
     // stretch runs one way".
     //
     // ★★★★ **And the value carried out is the one already read at a shared node** — never an
-    // edge's direction at its own far start. For a straight edge the two are the same value, which
-    // is why the older spelling stood; on a **diameter** chord they are exactly opposite, and that
-    // is what a boss straddling a plate edge measured (both half-disks are `+1`; the half whose arc
-    // *arrives* came back `−1`). Where the stretch is curved the equality that licenses stepping at
+    // edge's direction at its own far start. For a straight edge the two agree; on a **diameter**
+    // chord they are exactly opposite, and that is what a boss straddling a plate edge measured
+    // (both half-disks are `+1`; the half whose arc *arrives* came back `−1`). Where the stretch is curved the equality that licenses stepping at
     // all fails, and the walk refuses by name rather than reading a winding from the wrong place.
     let n = ring.len();
     let leaving = dir_at(jd, cyls, p, &ring[lo], ring[lo].node)?;

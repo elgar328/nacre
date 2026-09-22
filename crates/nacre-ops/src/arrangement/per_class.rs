@@ -336,28 +336,24 @@ impl<'a> ClassEdges<'a> {
         // circles in one sketch do make one body with intersecting cylinders — with **parallel**
         // axes, which never put a circle and a ruling on one class.)
         //
-        // ★ So the check below is a **net over an argument, not a filter over a population**, and
-        // it lived under `debug_assertions` for that reason: shipping it in release would have been
-        // a device behind a wall nothing could reach. The day the cylinder-pair refusal opens, this
-        // population becomes real — and the obligation to carry a *shipped* check then was written
-        // at that refusal, where it would be read.
+        // ★★★ **So the check below is a net over an argument, not a filter over a population**,
+        // and it ships rather than sitting under `debug_assertions`: the day the cylinder-pair
+        // refusal opens, this population becomes real, and the obligation to carry a shipped check
+        // then is written at that refusal, where it would be read.
         //
-        // ★★★ **The check is here, and the argument above is why it never fires**.
-        // Read about the whole **circle** — which is not an edge of any face
-        // when the face uses a quarter of it — it refuses a plate whose corner fillets never come
-        // near a crosswise drill. The question is asked of the arc a contribution states,
-        // and with that reading the argument holds: an arc reaching a ruling is inside the other
+        // ★ **The question is asked of the arc a contribution states**, not of the whole circle —
+        // which is not an edge of any face when the face uses a quarter of it, and reading it that
+        // way refuses a plate whose corner fillets never come near a crosswise drill. With the
+        // arc's reading the argument holds: an arc reaching a ruling is inside the other
         // cylinder's own reach (a ruling sits at `√(r² − h²) < r` from its axis), so the pair rule
         // speaks first.
         //
-        // ★★ **One sentence covers all three uncut pairs.** `split_at_crossings` cuts segments
-        // against segments, [`split_circles`] circles against segments, [`split_rulings`] rulings
-        // against segments — so circle×circle, circle×ruling and ruling×ruling are never cut by
-        // anything. All three are safe for the same reason: **a class's edge is some face's
-        // boundary**, so two of them from different cylinders meeting puts two lateral faces on
-        // one point. Only this pair carries a check, because only this pair has a cheap exact
-        // predicate; the other two rest on the sentence alone, and building detectors for
-        // populations that cannot arrive measures nothing.
+        // ★★ **One sentence covers all three uncut pairs.** Circle×circle, circle×ruling and
+        // ruling×ruling are cut by nothing, and all three are safe for the same reason: **a
+        // class's edge is some face's boundary**, so two of them from different cylinders meeting
+        // puts two lateral faces on one point. Only this pair carries a check, because only this
+        // pair has a cheap exact predicate; building detectors for populations that cannot arrive
+        // measures nothing.
         //
         // `None` — the decomposition could not be stated — refuses with the same name:
         // honest-reject over silent-wrong, and measured to fire on nothing today (`unmeasured` is

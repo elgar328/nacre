@@ -208,29 +208,26 @@ pub(crate) fn cylinder_gate(
                         // plane with the disk), so a recorded face that misses the lateral
                         // contributes nothing. The record is «may meet; the tracer decides».
                         //
-                        // ★ The offset (`0 < d < r`) keeps no refusal: with the region
-                        // emitter, bosses and bores, rational and irrational
-                        // rulings, axis inside or outside the plate, a split bore — every one
-                        // assembles, validates clean and answers the exact volume oracle. The
-                        // arithmetic (`plane_plane_cylinder`'s roots, `ruling_side`, the chart's
-                        // circular order) never assumed the diameter; only the vocabulary did.
-                        //
-                        // ★★ **Nothing keeps a refusal here.** Lifting it assembles
-                        // a volume-correct solid and `validate` cannot see the contact
-                        // (`Cut` returns `Ok`, `validate` clean, no net sees
-                        // the line), which is why the answer is a judge and not a fence. A
-                        // tangency is a double
-                        // root and three roads spell two distinct roots, so a
-                        // `crossings.insert` here would put the pair on the ruling
-                        // road and assemble nothing; not recording it never reaches those roads.
+                        // ★★ **No offset keeps a refusal** (`0 < d < r`): with the region emitter,
+                        // bosses and bores, rational and irrational rulings, axis inside or
+                        // outside the plate, a split bore — every one assembles, validates clean
+                        // and answers the exact volume oracle. The arithmetic
+                        // (`plane_plane_cylinder`'s roots, `ruling_side`, the chart's circular
+                        // order) never assumed the diameter; only the vocabulary did. And a
+                        // contact is a question a fence cannot answer: `validate` cannot see it
+                        // (`Cut` returns `Ok`, no net sees the line), which is why the answer is a
+                        // judge.
                         //
                         // ★★★★★ **A tangency is a graze, not a crossing** — so it passes, and it
                         // is **not** recorded. `crossings`' proposition is "the plane runs *within*
                         // the radius", which a tangent plane does not; the three roads gated on
                         // that record assert it in a `debug_assert` (`arrangement`' circular-
                         // hole arm, `chord_nodes`, `rulings_on_class`), and all three stay true
-                        // because this pair never reaches them. The arrangement then sees nothing here, which is right: the line
-                        // divides no cell of this plane and stations no sector of the chart.
+                        // because this pair never reaches them — a tangency is a double root where
+                        // those roads spell two distinct ones, so recording it would put the pair
+                        // on the ruling road and assemble nothing. The arrangement then sees
+                        // nothing here, which is right: the line divides no cell of this plane and
+                        // stations no sector of the chart.
                         //
                         // What the pair can still do is pinch the *result*, and that is a question
                         // about the operation — so the geometry is stated in a row and

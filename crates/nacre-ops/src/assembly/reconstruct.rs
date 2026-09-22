@@ -569,10 +569,10 @@ pub(crate) fn reconstruct(
         // because an inner loop keeps the material on its left by winding against the outer.
         //
         // The face's outward normal is the stored surface normal when the face is `Forward` and
-        // its negation when `Reversed`, which is the `flip` decision made below — so the sign is
-        // read off `frame_sign` and `flip` here rather than carried in from anywhere.
-        // The **unflipped** face normal against the axis: `flip` is applied once, to every kind of
-        // bound, right below — reading it here too would toggle the winding twice.
+        // its negation when `Reversed` — the `flip` decision made below — so the sign is read off
+        // `frame_sign` and `flip` here rather than carried in from anywhere, and the normal read
+        // against the axis is the **unflipped** one: `flip` is applied once to every kind of bound
+        // right below, and reading it here too would toggle the winding twice.
         //
         // ★★★★★ **This `f64` stays, and `world_rat` cannot replace it.** Every other axial
         // decision on this road was moved onto exact descriptions, because they all ask *where* a

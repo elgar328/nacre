@@ -400,13 +400,13 @@ fn loop_triples(
         // read below are plane-only — the carried wall and the vertex's three-plane name — so the
         // honest answer is to decline the ring rather than to name it wrongly or to abort.
         //
-        // The one curved loop this road *does* speak is the full circle handled above.
         // ★★★★★ **A curved neighbour is described now, not declined.** The two questions are
         // **independent**: edge `i`'s carrier is `b`'s business, and the corner's name is both
         // neighbours' — a ruling can arrive at this corner and a plane leave it. What this road
         // lacked was the vertex's restatement into class space ([`pierce_name_from_def`] — the
         // vertex already carries its own name) and somewhere to write a curved carrier
-        // ([`NamedRing`]'s `Wall`). The one curved loop answered before this point is the circle.
+        // ([`NamedRing`]'s `Wall`). The one curved loop answered before this point is the full
+        // circle handled above.
         //
         // ★★★★★ **And the face itself may be the cylinder.** A lateral face's *hole* is a loop
         // like any other — a rectangle of two arcs and two rulings in the chart — and its corners
