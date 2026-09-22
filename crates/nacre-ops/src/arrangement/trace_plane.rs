@@ -10,7 +10,7 @@ use super::*;
 /// What is left is a name that is degenerate **as a name**, which is a fact about the triple and
 /// has nothing to do with cylinders — so it survives, alone, and says only itself.
 #[derive(Debug)]
-pub(super) enum RingFail {
+enum RingFail {
     /// Two of a vertex's three planes coincide, so the name denotes no point.
     Collapsed,
 }
@@ -29,7 +29,7 @@ fn decline_of(f: RingFail) -> DeclineKind {
 /// only "which side, which wall, which third plane" of each vertex. The sort that used to stand
 /// here is gone — [`NodeId`]'s only constructor sorts — so what remains is the collapse check, and
 /// that is the whole reason this function exists.
-pub(super) fn plane_ring(
+fn plane_ring(
     nr: &combinatorics::NamedRing,
 ) -> Result<(Vec<combinatorics::NodeId>, Vec<crate::combinatorics::Wall>), RingFail> {
     // ★★★★★ **Both refusals are gone, and the vessel is why they could go.** The corner used to
@@ -897,3 +897,7 @@ pub(super) fn trace_one(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../tests/trace_plane.rs"]
+mod tests;
