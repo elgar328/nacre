@@ -78,7 +78,7 @@ pub fn three_planes_rat(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
 /// [`three_planes_rat`]'s narrow route — Cramer over `Rat` with checked arithmetic, whose
 /// `None` still conflates "no unique point" with "an intermediate overflowed". That is fine
 /// *here*: the caller above resolves the conflation by asking the integer core.
-pub(super) fn three_planes_rat_narrow(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
+fn three_planes_rat_narrow(p: [[Rat; 4]; 3]) -> Option<[Rat; 3]> {
     let zero = Rat::from_int(0);
     // 3×3 determinant by cofactor expansion, all checked.
     let det3 = |m: [[Rat; 3]; 3]| -> Option<Rat> {
@@ -328,3 +328,7 @@ pub fn plane_offset(coeffs: [Rat; 4], t: Rat) -> Option<[Rat; 4]> {
         coeffs[3].checked_sub(t.checked_mul(len)?)?,
     ])
 }
+
+#[cfg(test)]
+#[path = "tests/meet.rs"]
+mod tests;

@@ -151,7 +151,7 @@ fn bits_of(x: &BigFloat) -> usize {
 /// whole words and reports that padded length, so the two agree everywhere. Deriving it from the
 /// same words the integer is assembled from keeps them agreeing by construction rather than by
 /// coincidence.
-pub(super) fn big_to_ratio(x: &BigFloat) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
+fn big_to_ratio(x: &BigFloat) -> Option<(num_bigint::BigInt, num_bigint::BigInt)> {
     use num_bigint::BigInt;
     if x.is_zero() {
         return Some((BigInt::from(0), BigInt::from(1)));
@@ -550,3 +550,7 @@ pub(super) fn nearest_f64(n: u128, d: u128) -> f64 {
     // as long as the result stays normal — which it does, since `|e| ≤ 127` here.
     mant as f64 * (2.0f64).powi(e - 52)
 }
+
+#[cfg(test)]
+#[path = "tests/decimal_realization.rs"]
+mod decimal_realization;

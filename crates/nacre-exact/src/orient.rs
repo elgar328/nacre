@@ -97,7 +97,7 @@ pub fn plane_residual_sign(name: &PlaneName, p: [Rat; 3]) -> i8 {
 /// [`plane_residual_sign`]'s unbounded arm — integer coefficients (which both name forms reduce
 /// to), a rational point. Clearing the point's denominators multiplies the residual by a
 /// positive factor, which cannot move the sign.
-pub(super) fn residual_sign_big(ci: &[num_bigint::BigInt; 4], p: [Rat; 3]) -> i8 {
+fn residual_sign_big(ci: &[num_bigint::BigInt; 4], p: [Rat; 3]) -> i8 {
     use num_bigint::{BigInt, Sign};
     use num_integer::Integer;
     let den = p.map(|r| BigInt::from(r.denom()));
@@ -218,3 +218,7 @@ pub fn cross3_rat(x: &[Rat; 3], y: &[Rat; 3]) -> Option<[Rat; 3]> {
 pub fn int_dir_sign(n: [&[num_bigint::BigInt; 4]; 3]) -> i8 {
     big_sign(&det3_big(n.map(|r| [&r[0], &r[1], &r[2]])))
 }
+
+#[cfg(test)]
+#[path = "tests/orient.rs"]
+mod tests;

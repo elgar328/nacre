@@ -232,7 +232,3 @@ mod symprobe {
         }
     }
 }
-
-#[cfg(test)]
-#[path = "tests/decimal_realization.rs"]
-mod decimal_realization;
