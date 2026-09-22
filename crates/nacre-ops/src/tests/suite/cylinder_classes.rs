@@ -239,15 +239,14 @@ fn the_order_rule_never_reshuffles_the_ruler_it_replaced() {
          the same place — the `CoincidentNodes` refusal is reachable from one and not the other"
     );
     // ★★★ **Both plane orders are exercised, and the invariant above is why neither is "the right
-    // one".** ☑ Measured over the whole binary: **36 of 256** segments have `wc > wall`, where the
+    // one".** ☑ Measured over the whole binary: **9,946 of 20,453** segments have `wc > wall`, where the
     // sorted pair and the call-order pair are opposite calls. Swapping the pair flips *every*
     // comparison on a segment, so it can only turn "same" into "reversed" — which the assertion
     // above already says is harmless. The sorted pair is chosen for agreeing with
     // `NodeId::Pierce`'s convention, not because a fixture prefers it.
     //
-    // ★ That count is **recorded, not asserted**: these counters accumulate across the binary, and
-    // this test cannot know what has run before it. Only the two "never" claims above are safe to
-    // assert from here. The relation is read off `wc` and `wall`, which nothing in this cell moves.
+    // ★ The binary's count is **recorded, not asserted**: it moves with every fixture added.
+    // What this test asserts about the relation is its own four segments, above.
     let _ = rows.iter().filter(|r| r.wc_above_wall).count();
 }
 

@@ -5,8 +5,8 @@
 //! direction is `n₁ × n₂` built from the classes' **rational coefficients**;
 //! [`combinatorics::order_located`] takes its axis sign from the judge's **stored** planes. Those
 //! two spellings name the same plane but not the same *side*, so on a class where one of them is
-//! stored negated the whole comparison flips. ☑ Measured over the suite: 1222 of 3571 comparisons
-//! read the other way.
+//! stored negated the whole comparison flips. ☑ Measured over the suite: 9,630 of 20,453 segments
+//! come out read the other way.
 //!
 //! So what must hold is not "same answer" but **"same or exactly opposite, per segment"** — a
 //! wholesale reversal cancels, because the pieces are emitted in the comparator's own ascending
@@ -14,8 +14,8 @@
 //! a genuine reshuffle and would put the sub-segments in the wrong places. That is what is counted.
 //!
 //! ★ The pair handed to the rule is the **sorted** one, matching `NodeId::Pierce`'s own convention
-//! (`planes` ascending, and `root` defined against that order). ☑ Measured: **36 of 256** segments
-//! have `wc > wall`, so the corpus does reach the case where the two orders are opposite calls —
+//! (`planes` ascending, and `root` defined against that order). ☑ Measured: **9,946 of 20,453**
+//! segments have `wc > wall`, so the corpus reaches the case where the two orders are opposite —
 //! and by the paragraph above it does not matter which is taken, because swapping the pair can only
 //! turn "same" into "reversed" for a whole segment at once.
 //!
@@ -139,8 +139,9 @@ fn compare(
             if want == Equal && got == Equal {
                 // ★ Both roads put the two points in the same place. That is agreement about
                 // *coincidence*, and it carries no direction, so counting it as "same order"
-                // makes a wholly reversed segment look scrambled. (It did: one segment in the
-                // suite, and this is what it was.)
+                // would make a wholly reversed segment look scrambled. ☑ Measured 0 over the
+                // suite: the class is kept because it is a different claim, not because a
+                // fixture reaches it.
                 row.eq_both += 1;
             } else if (want == Equal) != (got == Equal) {
                 row.equality_disagreed += 1;

@@ -121,6 +121,20 @@ fn measure_probe_ledgers() {
             order.iter().map(|r| r.eq_both).sum::<usize>(),
             order.iter().map(|r| r.equality_disagreed).sum::<usize>(),
         );
+        let lab = crate::arrangement::ruling_probe::LABELLED.all();
+        let chk = crate::arrangement::ruling_probe::SIDE_CHECK.all();
+        eprintln!(
+            "ledger ruling: pieces {} labelled {} checks {} agree {} contradict {} blind {} \
+             carved {} graze_side {}",
+            lab.len(),
+            lab.iter().filter(|b| **b).count(),
+            chk.len(),
+            chk.iter().filter(|c| **c == Some(true)).count(),
+            chk.iter().filter(|c| **c == Some(false)).count(),
+            chk.iter().filter(|c| c.is_none()).count(),
+            crate::arrangement::ruling_probe::CARVED.len(),
+            crate::arrangement::ruling_probe::GRAZE_SIDE.len(),
+        );
         let asks = crate::arrangement::extent_probe::ASKS.all();
         eprintln!(
             "ledger extent: asked {} disagreed {}",
