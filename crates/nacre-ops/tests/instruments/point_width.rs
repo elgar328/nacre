@@ -1,14 +1,14 @@
 //! **How wide a discovered coordinate actually is — measured.**
 //!
-//! The truth is a rational *or* a handle, and values which do not fit `Rat` — discovered
-//! coordinates were predicted at 160–480 bits — are pointed at rather than stored. That
-//! number decides whether a new plane variant is needed or not. This is its measurement.
+//! The truth is a rational *or* a handle, and values which do not fit `Rat` are pointed at rather
+//! than stored. How wide a discovered coordinate is decides whether a new plane variant is needed
+//! or not. This is its measurement.
 //!
-//! ★ **What the instrument had to be.** `three_planes_rat` cannot answer the question it is
-//! about: it is `checked_*` throughout, so the widest thing it can report is ~127 bits and
-//! everything it reports fits by construction. `three_planes_big` (scalar) removes the ceiling,
-//! which also splits its predecessor's `None` into the two different facts it was conflating —
-//! *the point does not fit* and *an intermediate overflowed on a point that would have*.
+//! ★ **What the instrument has to be.** `three_planes_rat` cannot answer the question it is
+//! about: it answers only where the point fits `Rat`, so everything it reports fits by
+//! construction. `three_planes_big` has no ceiling, and it separates the two facts a checked
+//! `None` would conflate — *the point does not fit* and *an intermediate overflowed on a point
+//! that would have*.
 //!
 //! ★★ **What is not measured here, and why.** Not the *world* coordinate — a moved point does not
 //! have one as a rational. A vertex's truth is `Vertex::ThreePlane`, three surface handles and
@@ -25,148 +25,73 @@
 //! `OnSeam` vertices are excluded rather than counted as failures: that variant pins a curve, not
 //! a point, and its doc already records the coordinate cache as load-bearing there.
 //!
-//! # What it measured
+//! # What it measures
 //!
 //! | population | vertices | solved | **width max** | over 127 | narrow declined, point fits |
 //! |---|---|---|---|---|---|
 //! | `boolean_corner`   | 16 | 16 |  **7** | 0 | 0 |
 //! | `boolean_twice`    | 32 | 32 |  **7** | 0 | 0 |
-//! | `boolean_rotated`  | 20 |  8 |  **4** | 0 | 0 |
-//! | `tilted_frame`     | 16 | 12 | **59** | 0 | **8 of 12** |
-//! | `tilted_frame_x2`  | 24 | 16 | **59** | 0 | **8 of 16** |
+//! | `boolean_rotated`  | 20 | 12 |  **7** | 0 | 0 |
+//! | `tilted_frame`     | 16 | 12 | **59** | 0 | 0 |
+//! | `tilted_frame_x2`  | 24 | 16 | **59** | 0 | 0 |
 //!
-//! ★★★ **Two things came out, and neither was predicted.**
+//! ★★★ **Nothing is wide.** The corpus maximum is **59 bits**; a second feature on the tilted
+//! population does not move it (59 → 59), and stacking forty motions leaves the widest *name*
+//! exactly where it started (`stacking_operations_does_not_widen_a_name`). ★ These are **corpus
+//! numbers, not bounds** — the meter's negative control lives in `nacre-exact`
+//! (`the_width_meter_reports_a_point_no_rat_can_hold`, 201 bits), so `over127 = 0` is a fact
+//! about this population and not about a clamped instrument. The narrow route answers every
+//! solved vertex (`declined_but_fits = 0`).
 //!
-//! 1. **Nothing is wide.** The prediction written before the run was 150–170 bits growing with
-//!    depth, from the neighbouring measurement (coefficients ~50 bits, Cramer
-//!    multiplying three of them). The corpus maximum is **59 bits**, and a second feature on the
-//!    already-awkward tilted population moved it **not at all** (59 → 59), and stacking forty
-//!    motions leaves the widest *name* exactly where it started
-//!    (`stacking_operations_does_not_widen_a_name`). ★ These are **corpus numbers, not bounds** —
-//!    the meter's negative control lives in
-//!    `nacre-exact` (`the_width_meter_reports_a_point_no_rat_can_hold`, 201 bits), so `over127 =
-//!    0` is a fact about this population and not about a clamped instrument.
-//!
-//! 2. ★★ **The declines are not about width at all.** On the tilted decimal family
-//!    `three_planes_rat` gives up on two thirds of the vertices it is offered, and for **every
-//!    one of them the point fits `Rat`** (`declined_and_wide = 0`). Its `None` there means its
-//!    own rational cofactor expansion overflowed, not that the coordinate is unstorable.
-//!
-//! ★ **The corpus is small** — five models, 108 vertices — where the adjacent measurement it is
-//! being compared against had 83,821 samples. It is enough to establish the decline split and to
-//! exhibit counterexamples. It is **not** enough to say what the widest coordinate this kernel can
-//! produce is, and a corpus maximum is not a bound in any case: the width a `Rat` must hold is a
-//! property of the *type* (`PlaneName` is `Narrow | Wide`, so a solved coordinate can be
-//! arbitrarily wide), and these numbers only say which branch today's models take.
+//! ★ **The corpus is small** — five models, 108 vertices. It is enough to exhibit counterexamples.
+//! It is **not** enough to say what the widest coordinate this kernel can produce is, and a corpus
+//! maximum is not a bound in any case: the width a `Rat` must hold is a property of the *type*
+//! (`PlaneName` is `Narrow | Wide`, so a solved coordinate can be arbitrarily wide), and these
+//! numbers only say which branch today's models take.
 //!
 //! # And what the f64 road does with those coordinates
 //!
-//! | population | solved | cache is exact | triples agreeing | **different plane** |
-//! |---|---|---|---|---|
-//! | `boolean_corner` | 16 | 16/16 | 552 | **0** (negative control) |
-//! | `tilted_frame`   | 12 | **0/12** | 0 | **220 — every one** |
+//! | population | solved | triples agreeing | **different plane** |
+//! |---|---|---|---|
+//! | `boolean_corner` | 16 | 552 | **0** (negative control) |
+//! | `tilted_frame`   | 12 | 0 | **220 — every one** |
 //!
 //! ★★★ Spelling "the plane through those three corners" in **coordinates** produces a plane with a
 //! **different name** on tilted geometry — a different handle, and exact identity answers "no".
 //! That is the capability gap a vertex-naming datum closes, and it is a fact about the population
-//! (the control shows the two roads agreeing wherever the cache is exact), not about the probe.
+//! (the control shows the two roads agreeing on every triple), not about the probe.
 //!
-//! # And how much of that vocabulary is unreachable behind the frame wall
+//! # And how much of that vocabulary the frame question reaches
 //!
 //! A datum needs **three** vertices, so the vertex-level column above cannot answer it. Of the
-//! triples the frame wall decides (`accepted + blocked`; collinear and undefined ones are refused
-//! whatever happens to frames):
+//! triples the frame question decides (`accepted + accepted_nameless + accepted_straddle`;
+//! collinear and undefined ones are refused whatever happens to frames):
 //!
-//! | population | vertices | pure | **pure frames** | accepted | blocked | straddle / differ |
-//! |---|---|---|---|---|---|---|
-//! | `boolean_corner`       | 16 | 16 | 1 | **100%** | 0 | 0 / 0 — no motion, cannot fail |
-//! | `turned_after_the_cut` | 16 | 16 | 1 | **100%** | 0 | 0 / 0 — **motion, all shared** |
-//! | `boolean_rotated`      | 20 |  8 | 1 | **4.9%** | 95.1% | 1084 / **0** |
-//! | `tilted_frame`         | 16 | 12 | **2** | **10.7%** | 89.3% | 340 / **160** |
-//! | `tilted_frame_x2`      | 24 | 16 | **3** | **3.2%** | 96.8% | 1464 / **496** |
+//! | population | vertices | pure | **pure frames** | named | pure-mixed | straddle | collinear |
+//! |---|---|---|---|---|---|---|---|
+//! | `boolean_corner`       | 16 | 16 | 1 | **100%** | 0 | 0 | 8 |
+//! | `turned_after_the_cut` | 16 | 16 | 1 | **100%** | 0 | 0 | 8 |
+//! | `boolean_rotated`      | 20 | 12 | **2** | **5.3%** | 14.0% | 80.7% | 0 |
+//! | `tilted_frame`         | 16 | 12 | **2** | **10.7%** | 28.6% | 60.7% | 0 |
+//! | `tilted_frame_x2`      | 24 | 16 | **3** | **3.2%** | 24.5% | 72.3% | 0 |
 //!
-//! ★ The prediction written first was 4.9% for `boolean_rotated` — `C(8,3)/C(20,3)`, on the guess
-//! that the 8 pure vertices are the still operand's own corners and so share one frame. They are,
-//! `pure_frames = 1`, and the bound is met exactly.
+//! ★ Every geometrically sound triple in every population classifies as acceptable — named, a
+//! pure-mixed statement (each vertex exact in its own frame), or a straddling vertex taken as the
+//! **meet of its carriers** (the op can still refuse an individual statement as
+//! `ThroughFrameUndecided`). The boolean over such a datum's own face is a separate boundary.
 //!
-//! ★★★★ **What was not predicted: `vertices_differ` is real.** The guess was that it would be ~0
-//! because everything is measured inside one solid. It is 0 for rotation-against-world — but a
-//! prism on a tilted frame with a feature on a *wall* spans **two** frames of pure vertices, and
-//! two passes span three. So the two mixed causes are not one cause wearing two names: the second
-//! has its own population, and anything that lifts the wall has to answer both.
+//! ★★ **Pure-mixed is its own cause.** Rotation against the world spans the still operand's frame
+//! and the turned one's; a prism on a tilted frame with a feature on a *wall* spans **two** frames
+//! of pure vertices, and two passes span three.
 //!
-//! ★★ The blocked column is an **upper bound** on what lifting the wall would free — a blocked
-//! triple is classified before anything can ask whether it is also collinear. The collinear rate on
-//! the accepted road (8 of 560 on the boxes, 0 on the tilted ones) is the only estimate of that
-//! contamination, which is why it is printed.
-//!
-//! # The pure-mixed statement is accepted — the wall moved, and the meter moved with it
-//!
-//! The kernel accepts the pure-mixed statement (each vertex exact in its own frame), namelessly,
-//! so `vertices_differ` is re-labelled `accepted_nameless` — a classifier that kept calling an
-//! accepted population "blocked" would report yesterday's kernel. Measured after the change:
-//!
-//! | population | accepted (named) | **accepted nameless** | blocked (straddle) |
-//! |---|---|---|---|
-//! | `boolean_rotated`  | 4.9%  | **0%** | 95.1% — all straddle |
-//! | `tilted_frame`     | 10.7% | **28.6%** | 60.7% |
-//! | `tilted_frame_x2`  | 3.2%  | **24.5%** | 72.3% |
-//!
-//! Reachable vocabulary moved 10.7% → 39.3% and 3.2% → 27.7% on the frame-on-frame family, and
-//! 0 on the rotation-against-world family — exactly the split the two mixed causes predicted.
-//! The judged class's judging cost, measured in `wide_datum_cost.rs`: **416 climbs** beside a
-//! wide name's 454 and a narrow name's 110, exhausted 0 — a cost of the same order as `Wide`,
-//! not a cliff.
-//!
-//! # The straddle bucket opens too
-//!
-//! The kernel accepts the straddling vertex as the **meet of its carriers** (an implicit point),
-//! so `carriers_straddle` re-labels `accepted_straddle` — again an upper bound (the op can refuse
-//! an individual statement as `ThroughFrameUndecided`). Measured after the change, of the triples
-//! the frame question decides:
-//!
-//! | population | named | nameless (pure-mixed) | **nameless (straddle)** | blocked |
-//! |---|---|---|---|---|
-//! | `boolean_rotated`  | 4.9%  | 0%    | **95.1%** | **0** |
-//! | `tilted_frame`     | 10.7% | 28.6% | **60.7%** | **0** |
-//! | `tilted_frame_x2`  | 3.2%  | 24.5% | **72.3%** | **0** |
-//!
-//! ★ The datum-vocabulary wall is fully open at this level: every geometrically sound triple in
-//! every population classifies as acceptable. The boolean over such a datum's own face is a
-//! separate boundary, opened by seating an implicit-point plane.
-//!
-//! # A regression this file caught, and what fixing it moved
-//!
-//! ★★★★★ **The `turned_after_the_cut` row above stopped being true, and only this file knew.**
-//! The invariant-plane restatement (`0dbab39`) stopped minting a motion node for a plane the
-//! motion *fixes*, so a Z-turned block's caps stay world-stated while its walls carry a node.
-//! Every corner is two walls and one cap, so `Model::vertex_meet` — reading "all three carriers
-//! share one motion" — called all 16 of them straddling: `pure` 16 → 0, `accepted_straddle`
-//! 0 → 560. The kernel had drifted away from a number this doc recorded correctly, for 169
-//! commits, behind `#[ignore]`.
-//!
-//! The rule that tells the two apart already existed in the same commit
-//! (`Model::chain_fixes_plane`: a world-stated carrier is usable in the chain's frame **iff** the
-//! chain fixes it) and had been applied to exactly one of the places that needed it. Applying it
-//! at the door restores the row — `turned_after_the_cut` is now letter-identical to
-//! `boolean_corner`, which is the invariance a rigid motion owes.
-//!
-//! ★★ **And it opened a population that was never open**: a seam corner whose odd carrier is the
-//! *still* operand's cap is admissible when the turn fixes that cap. So `boolean_rotated` now
-//! exceeds its own first record rather than merely returning to it:
-//!
-//! | `boolean_rotated` | first table | regressed | now |
-//! |---|---|---|---|
-//! | solved / pure | 8 | 8 | **12** |
-//! | `mixed_motion` | 12 | 12 | **8** |
-//! | width max (bits) | 4 | 4 | **7** |
-//! | `pure_frames` | 1 | 1 | **2** |
-//! | accepted (named) | 4.9% | 4.9% | **5.3%** |
-//!
-//! ★ The 4-bit maximum in the first table was therefore a **number about a smaller population**
-//! than its row claimed — the wider corners were being dropped before they were measured. That is
-//! the shape to watch for here: this file's counters can shrink a population silently while every
-//! assertion stays green.
+//! ★★★★★ **`turned_after_the_cut` is letter-identical to `boolean_corner`**, which is the
+//! invariance a rigid motion owes. A Z-turned block's caps stay world-stated while its walls carry
+//! a node — a motion that *fixes* a plane restates nothing — so every corner is two walls and one
+//! cap. Read as "all three carriers share one motion", all 16 corners would be straddling; the
+//! rule that tells them apart is `Model::chain_fixes_plane` (a world-stated carrier is usable in
+//! the chain's frame **iff** the chain fixes it), and this file asks `Model::vertex_meet` rather
+//! than restating it. That is the shape to watch for here: a counter that restates a kernel rule
+//! can shrink a population silently while every assertion stays green.
 
 use nacre_exact::{Angle, Axis, Isometry, MeetPoint, PlaneName, Rat, Rotation};
 use nacre_math::{Point3, Vector3};
@@ -475,11 +400,11 @@ impl Reach {
 ///
 /// ★★★ **The denominator is stated, not assumed.** `collinear` and `undefined` are refused
 /// whatever happens to frames, so they are outside the question; the reported percentage is over
-/// `accepted + blocked_by_frame` — *"of the triples the frame wall decides, how many does it
-/// refuse"*. ★ It is an **upper bound** on what solving the wall would free: a blocked triple is
-/// classified before anything can ask whether it is also collinear, so the blocked bucket holds an
-/// unknown number that would fail anyway. `collinear`'s rate on the accepted road is the only
-/// estimate of that contamination, and it is printed for exactly that reason.
+/// `accepted + accepted_nameless + accepted_straddle` — *"of the triples the frame question
+/// decides, how is each accepted"*. ★ A nameless triple is classified before anything asks
+/// whether it is also collinear, so the nameless buckets can hold triples that would fail anyway.
+/// `collinear`'s rate on the named road is the only estimate of that contamination, and it is
+/// printed for exactly that reason.
 ///
 /// ★ Causes are assigned by **priority**, not by which would fire first in the producer's
 /// per-vertex loop — a triple can carry more than one, and a per-triple bucket has to pick. The

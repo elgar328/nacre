@@ -1,5 +1,5 @@
-//! The retired plane-fence extent test, kept for one commit so the rule that replaced it can be
-//! **differenced against it** rather than argued equal to it.
+//! A plane-fence extent test production does not use, kept so the order rule the arc split does
+//! use is **differenced against it** rather than argued equal to it.
 //!
 //! The two are the same predicate wherever the fence is well posed: the fence plane is the class
 //! that pins one end, so it crosses the line exactly *at* that end, and "the side the far endpoint
@@ -7,8 +7,8 @@
 //! the fence plane, so `want == 0` and every nonzero side is read as outside — the two disagree, and
 //! that is what the counters below are for.
 //!
-//! ☑ It expires with the gate: it needs both endpoints' rational coordinates, which is the very
-//! demand this cell is removing.
+//! ☑ It runs only where both endpoints have rational coordinates — the fences need them, and the
+//! order rule does not.
 //!
 //! ★ **An instrument, so the file lives in the test tree and the module does not.**
 //! [`crate::arrangement`] mounts it with `#[path]` as `extent_probe`, which is what keeps `super::`

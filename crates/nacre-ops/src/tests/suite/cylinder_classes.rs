@@ -142,8 +142,8 @@ fn the_gate_records_a_wall_the_boss_is_seated_on() {
 /// ★ The disagreement half is asserted **globally**, not as a delta: any fixture anywhere in this
 /// binary that does reach an out-of-extent crossing has to agree too, whatever order it runs in.
 ///
-/// ★ It expires with the gate: the fences need both endpoints' rational coordinates, which is the
-/// demand the next rung removes.
+/// ★ It covers only crossings whose segment has both endpoints' rational coordinates: the fences
+/// need them, and the order rule does not.
 #[test]
 fn the_extent_rule_agrees_with_the_fences_it_replaced() {
     use crate::arrangement::extent_probe::{ASKED, DISAGREED};

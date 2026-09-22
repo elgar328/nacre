@@ -1,18 +1,16 @@
-//! **A vertex's recorded tolerance measures the planes that vertex is defined by.**
+//! **A realized vertex sits on the surfaces it is defined by.**
 //!
-//! The coordinate is a cache; the truth is "where these three surfaces meet". The tolerance is the
-//! bridge — it says how far the cache sits from the truth — and `nacre-validate` holds the model to
-//! it. So the number has to be measured against the surfaces the vertex is *defined* by, and for a
-//! while it was not: the arrangement computed the point from one plane triple and measured the
-//! tolerance against that triple, then the assembly **re-named** the vertex in the result's own
-//! surfaces — a different triple wherever four planes concur — and carried the old figure across.
+//! The coordinate is a cache; the truth is "where these three surfaces meet". A realized cache is
+//! the definition's nearest `f64`, bit for bit, and `nacre-validate` holds it within the
+//! construction epsilon (`EPS_CONSTRUCTED`) of those surfaces. So the distance is measured against
+//! the surfaces the vertex is *defined* by — the result's own, which the assembly **re-names** it
+//! in
+//! wherever four planes concur — not against the triple the arrangement computed the point with.
 //!
-//! The carried figure was fine while nothing was rotated: an axis-aligned plane passes exactly
-//! through the points it defines, so re-naming changed nothing to measure. A rotated plane passes
-//! within an ulp or two instead, and then the tolerance bounded a distance nobody would check while
-//! the checker measured a different one. 454 of 91,394 result vertices in the corpus were short
-//! (by at most 2.1e-14, about two ulps at these coordinates) — and a `replay` proptest run
-//! eventually drew one and failed.
+//! On an axis-aligned plane the two agree exactly. A rotated plane passes within an ulp or two, so
+//! a figure measured against the computing triple bounds a distance nobody checks while the checker
+//! measures a different one: 454 of 91,394 result vertices in the corpus, short by at most 2.1e-14
+//! (about two ulps at these coordinates), and a `replay` proptest run drew one.
 //!
 //! ★ The proptest seed that found it is kept, but a seed is a lucky draw. What this file asserts is
 //! the **proposition**, on shapes chosen because they must exercise it.
@@ -44,16 +42,16 @@ fn prism(m: &mut Model, pts: &[[f64; 2]], h: f64) -> Handle<Solid> {
     solid
 }
 
-/// **Every vertex of the model sits within its own recorded tolerance of every surface it is
-/// defined by** — the proposition `nacre-validate` enforces, asserted here directly so the failure
-/// names this file rather than arriving as a generic "model is invalid".
+/// **Every realized vertex is its definition's realization, bit for bit, and sits within
+/// `EPS_CONSTRUCTED` of every surface it is defined by** — the proposition `nacre-validate`
+/// enforces, asserted here directly so the failure names this file rather than arriving as a
+/// generic "model is invalid".
 ///
 /// Returns how many vertices were **realized from their definition**, so a fixture that stopped
 /// producing any cannot pass by measuring nothing.
 ///
-/// ⚠ The cache stores no recorded tolerance, so the population this walks is the realized one
-/// and everything else is skipped — the callers' `> 0` is what keeps the skip from swallowing the
-/// whole fixture.
+/// ⚠ Only realized (`Bounded`) vertices are walked — the cache claims nothing about the rest — and
+/// the callers' `> 0` is what keeps the skip from swallowing the whole fixture.
 fn every_vertex_matches_its_definition(m: &Model) -> usize {
     let mut measured = 0;
     let mut i = 0u32;
@@ -86,7 +84,7 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
             let residual = m.surface_cache(sh).distance(m.vertex_point(vh));
             assert!(
                 residual <= tol,
-                "vertex {} at {:?} is {residual:e} from surface {} but records tol {tol:e}",
+                "vertex {} at {:?} is {residual:e} from surface {} but is held to {tol:e}",
                 vh.index(),
                 m.vertex_point(vh).as_array(),
                 sh.index(),
@@ -96,18 +94,18 @@ fn every_vertex_matches_its_definition(m: &Model) -> usize {
     measured
 }
 
-/// ★ **The shape that actually produces a short tolerance.**
+/// ★ **The shape that re-names a vertex onto a rotated plane.**
 ///
-/// Chosen by measurement, not by reasoning: my first attempt here was two boxes with one rotated
-/// 30/45/60°, which reads like the right thing and **passes without the fix** — it never makes a
-/// vertex whose definition is re-derived onto a plane the tolerance never measured. This one does.
-/// It is the staircase and prism of `concurrent_line.rs`: the prism's apex edge pierces the
-/// staircase's step face, four planes meet at that point, and the assembly re-names the vertex.
+/// Chosen by measurement, not by reasoning: two boxes with one rotated 30/45/60° read like the
+/// right thing but never make a vertex whose definition is re-derived onto another plane, so they
+/// pass either way. This does. It is the staircase and prism of `concurrent_line.rs`: the prism's
+/// apex edge pierces the staircase's step face, four planes meet at that point, and the assembly
+/// re-names the vertex.
 ///
-/// ★★ Verified by removing the fix and watching this go red. A lock that stays green either way
-/// measures nothing, which is how the first version of this file was written.
+/// ★★ Measured against the computing triple instead, this goes red. A lock that stays green either
+/// way measures nothing.
 #[test]
-fn a_pierced_step_records_tolerances_that_hold() {
+fn a_pierced_step_realizes_on_its_defining_planes() {
     for apex in [0.7_f64, 1.05, 1.2] {
         let mut m = Model::new();
         let a = prism(
@@ -149,13 +147,13 @@ fn a_pierced_step_records_tolerances_that_hold() {
         m.rebuild_adjacency();
         assert!(!got.is_empty());
         let n = every_vertex_matches_its_definition(&m);
-        assert!(n > 0, "apex {apex}: no vertex carried a measured tolerance");
+        assert!(n > 0, "apex {apex}: no vertex was realized");
         assert!(nacre_validate::validate(&m).is_empty(), "apex {apex}");
     }
 }
 
-/// The negative control: axis-aligned, where the carried figure was always right. If this ever
-/// fails, the fix broke the ordinary case rather than the rotated one.
+/// The negative control: axis-aligned, where the computing triple and the re-named one agree
+/// exactly. If this fails, the ordinary case broke rather than the rotated one.
 #[test]
 fn an_axis_aligned_fuse_is_unchanged() {
     let mut m = Model::new();
