@@ -80,4 +80,5 @@ fn tr(t: &[[WitnessPoint; 3]; 3]) -> [(&WitnessPoint, &WitnessPoint, &WitnessPoi
 }
 
 mod judges;
+mod truth;
 mod witness_points_and_frames;

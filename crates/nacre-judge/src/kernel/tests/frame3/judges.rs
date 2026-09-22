@@ -181,49 +181,6 @@ fn indirect_sanity_and_rotation_invariance() {
     );
 }
 
-/// The high-precision indirect truth with a stability flag: `None` if even the
-/// ground truth cannot resolve `D` or `M` above its floor (a genuine degeneracy).
-#[allow(clippy::too_many_arguments)]
-/// Ground truth for the indirect judge — and **not** by running the judge harder.
-///
-/// It used to call `sign_with_floor` with the judge's own `mag`, differing only in precision.
-/// A floor that is wrong is then wrong identically in both, so the two agree and the test
-/// passes: the oracle shared the defect it existed to find, which is how the `mag`-collapse
-/// bug survived a soundness suite. Here the verdict comes from **comparing two precisions**
-/// instead: a sign is trusted only when `prec` and `2·prec` produce the same nonzero sign, and
-/// anything else is `None` (not asserted against). That borrows no formula from the judge.
-fn indirect_truth(
-    pa: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    pb: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    pc: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    q: &WitnessPoint,
-    r: &WitnessPoint,
-    s: &WitnessPoint,
-    prec: usize,
-) -> Option<Orient> {
-    let at = |prec: usize| -> Orient {
-        let ph = |t: (&WitnessPoint, &WitnessPoint, &WitnessPoint)| plane_hp(t.0, t.1, t.2, prec);
-        let (d, m, _gap) = indirect_hp(
-            [ph(pa), ph(pb), ph(pc)],
-            q.hp_coord(prec),
-            r.hp_coord(prec),
-            s.hp_coord(prec),
-            prec,
-        );
-        // Raw signs, no floor: the agreement between two precisions is what filters noise.
-        let raw = |x: &BigFloat| {
-            if x.is_zero() {
-                None
-            } else {
-                Some(x.is_positive())
-            }
-        };
-        combine(raw(&d.value), raw(&m.value)).unwrap_or(Orient::Zero)
-    };
-    let (lo, hi) = (at(prec), at(2 * prec));
-    (lo == hi && lo != Orient::Zero).then_some(lo)
-}
-
 /// Rotated plane coefficient tol soundness. A plane's four coefficients
 /// derive from three rotated points (subtraction/cross/dot); the interval `error` on
 /// each must upper-bound the real f64 error vs the astro-float truth. Corpus mixes
@@ -351,12 +308,14 @@ fn indirect_orient3d_soundness() {
     const GT: usize = 512;
     let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
         (0usize, 0, 0, 0, 0, 0);
+    let (mut zero_asserted, mut zero_signed) = (0usize, Vec::<Orient>::new());
     let mut check = |a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
                      b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
                      c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
                      q: &WitnessPoint,
                      r: &WitnessPoint,
-                     s: &WitnessPoint| {
+                     s: &WitnessPoint,
+                     zero: bool| {
         let judged = indirect_orient3d_judge(a, b, c, q, r, s, fixture()).orient();
         let planes = [
             plane_iv(a.0, a.1, a.2),
@@ -368,7 +327,14 @@ fn indirect_orient3d_soundness() {
         } else {
             filter_resolved += 1;
         }
-        match indirect_truth(a, b, c, q, r, s, GT) {
+        if zero {
+            zero_asserted += 1;
+            if judged != Orient::Zero {
+                zero_signed.push(judged);
+            }
+            return;
+        }
+        match truth::orient(a, b, c, q, r, s, GT) {
             None => skipped += 1,
             Some(truth) => {
                 tested += 1;
@@ -393,6 +359,7 @@ fn indirect_orient3d_soundness() {
             &p[9],
             &p[10],
             &p[11],
+            false,
         );
     }
 
@@ -474,6 +441,7 @@ fn indirect_orient3d_soundness() {
             &q,
             &r,
             &s,
+            eps == ri(0, 1),
         );
     }
 
@@ -501,13 +469,25 @@ fn indirect_orient3d_soundness() {
                 &sp[qi][0],
                 &sp[qi][1],
                 &p,
+                true,
             );
         }
     }
 
     eprintln!(
-        "[indirect_orient3d] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
+        "[indirect_orient3d] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}; zero_asserted: {zero_asserted}"
     );
+    assert!(
+        zero_asserted > 0,
+        "corpus must exercise the constructed-zero path"
+    );
+    assert!(
+        zero_signed.is_empty(),
+        "indirect_orient3d: a constructed zero was judged with a sign — {} of {zero_asserted}, first {:?}",
+        zero_signed.len(),
+        &zero_signed[..zero_signed.len().min(5)]
+    );
+
     assert_eq!(
         wrong, 0,
         "indirect judge must never disagree with GT (soundness)"
@@ -533,7 +513,7 @@ fn indirect_port_check() {
         let b = (&p[3], &p[4], &p[5]);
         let c = (&p[6], &p[7], &p[8]);
         let judged = indirect_orient3d_judge(a, b, c, &p[9], &p[10], &p[11], fixture()).orient();
-        if let Some(truth) = indirect_truth(a, b, c, &p[9], &p[10], &p[11], GT) {
+        if let Some(truth) = truth::orient(a, b, c, &p[9], &p[10], &p[11], GT) {
             assert!(
                 judged == truth || judged == Orient::Zero,
                 "indirect judge {judged:?} disagrees with truth {truth:?}"
@@ -600,24 +580,6 @@ fn axis_planes(p: [i128; 3]) -> [[WitnessPoint; 3]; 3] {
     ]
 }
 
-/// The high-precision cmp truth (`None` when the coordinates are equal or below the
-/// GT floor — a genuine tie).
-fn cmp_truth(
-    a: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
-    b: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3],
-    axis: usize,
-    prec: usize,
-) -> Option<Orient> {
-    let hp = |t: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3]| {
-        [
-            plane_hp(t[0].0, t[0].1, t[0].2, prec),
-            plane_hp(t[1].0, t[1].1, t[1].2, prec),
-            plane_hp(t[2].0, t[2].1, t[2].2, prec),
-        ]
-    };
-    cmp_hp_with_gap(hp(a), hp(b), axis, prec).ok()
-}
-
 /// `cmp_combine` maps the parity of negative signs to the ordering.
 #[test]
 fn cmp_combine_counts_negatives() {
@@ -674,7 +636,7 @@ fn cmp_port_check() {
         let b = rand_triple(&mut st);
         let axis = rng(&mut st, 0, 2) as usize;
         let judged = indirect_cmp_coord_judge(tr(&a), tr(&b), axis, fixture()).orient();
-        if let Some(truth) = cmp_truth(tr(&a), tr(&b), axis, GT) {
+        if let Some(truth) = truth::cmp(tr(&a), tr(&b), axis, GT) {
             assert!(
                 judged == truth || judged == Orient::Zero,
                 "cmp judge {judged:?} disagrees with truth {truth:?}"
@@ -693,40 +655,49 @@ fn indirect_cmp_coord_soundness() {
     const GT: usize = 512;
     let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
         (0usize, 0, 0, 0, 0, 0);
-    let mut check = |a: &[[WitnessPoint; 3]; 3], b: &[[WitnessPoint; 3]; 3], axis: usize| {
-        let (ta, tb) = (tr(a), tr(b));
-        let judged = indirect_cmp_coord_judge(ta, tb, axis, fixture()).orient();
-        let iv = |t: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3]| {
-            [
-                plane_iv(t[0].0, t[0].1, t[0].2),
-                plane_iv(t[1].0, t[1].1, t[1].2),
-                plane_iv(t[2].0, t[2].1, t[2].2),
-            ]
-        };
-        if cmp_filter(iv(ta), iv(tb), axis).is_none() {
-            escalated += 1;
-        } else {
-            filter_resolved += 1;
-        }
-        match cmp_truth(ta, tb, axis, GT) {
-            None => skipped += 1,
-            Some(truth) => {
-                tested += 1;
-                if judged == Orient::Zero {
-                    declined += 1;
-                } else if judged != truth {
-                    wrong += 1;
+    let (mut zero_asserted, mut zero_signed) = (0usize, Vec::<Orient>::new());
+    let mut check =
+        |a: &[[WitnessPoint; 3]; 3], b: &[[WitnessPoint; 3]; 3], axis: usize, zero: bool| {
+            let (ta, tb) = (tr(a), tr(b));
+            let judged = indirect_cmp_coord_judge(ta, tb, axis, fixture()).orient();
+            let iv = |t: [(&WitnessPoint, &WitnessPoint, &WitnessPoint); 3]| {
+                [
+                    plane_iv(t[0].0, t[0].1, t[0].2),
+                    plane_iv(t[1].0, t[1].1, t[1].2),
+                    plane_iv(t[2].0, t[2].1, t[2].2),
+                ]
+            };
+            if cmp_filter(iv(ta), iv(tb), axis).is_none() {
+                escalated += 1;
+            } else {
+                filter_resolved += 1;
+            }
+            if zero {
+                zero_asserted += 1;
+                if judged != Orient::Zero {
+                    zero_signed.push(judged);
+                }
+                return;
+            }
+            match truth::cmp(ta, tb, axis, GT) {
+                None => skipped += 1,
+                Some(truth) => {
+                    tested += 1;
+                    if judged == Orient::Zero {
+                        declined += 1;
+                    } else if judged != truth {
+                        wrong += 1;
+                    }
                 }
             }
-        }
-    };
+        };
 
     // Corpus A — heterogeneous provenance (each triple its own rotation and pivot).
     let mut st = 0x6A11_C0DE_5151_2323u64;
     for _ in 0..2000 {
         let a = rand_triple(&mut st);
         let b = rand_triple(&mut st);
-        check(&a, &b, rng(&mut st, 0, 2) as usize);
+        check(&a, &b, rng(&mut st, 0, 2) as usize, false);
     }
 
     // Corpus B — near-tie in z, shared Z-rotation (a Z-rotation leaves z unchanged, so
@@ -752,12 +723,23 @@ fn indirect_cmp_coord_soundness() {
         let piv = rand_base(&mut st);
         let a = triple_pts(va, &mut st, Axis::Z, angle, piv);
         let b = triple_pts(vb, &mut st, Axis::Z, angle, piv);
-        check(&a, &b, 2);
+        check(&a, &b, 2, eps == ri(0, 1));
     }
 
     eprintln!(
-        "[indirect_cmp_coord] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
+        "[indirect_cmp_coord] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}; zero_asserted: {zero_asserted}"
     );
+    assert!(
+        zero_asserted > 0,
+        "corpus must exercise the constructed-zero path"
+    );
+    assert!(
+        zero_signed.is_empty(),
+        "indirect_cmp_coord: a constructed zero was judged with a sign — {} of {zero_asserted}, first {:?}",
+        zero_signed.len(),
+        &zero_signed[..zero_signed.len().min(5)]
+    );
+
     assert_eq!(
         wrong, 0,
         "cmp judge must never disagree with GT (soundness)"
@@ -819,40 +801,6 @@ fn well_conditioned(p: &[WitnessPoint; 3]) -> bool {
         e1[0] * e2[1] - e1[1] * e2[0],
     ];
     dot(n, n) > 1e-6 * dot(e1, e1) * dot(e2, e2)
-}
-
-/// The **raw** sign of `D` (det of the three normals) at `prec` bits — no radius, no limit.
-fn dir_d_sign_at(
-    a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    prec: usize,
-) -> Option<bool> {
-    let ph = |t: (&WitnessPoint, &WitnessPoint, &WitnessPoint)| plane_hp(t.0, t.1, t.2, prec);
-    // The **raw** sign, with no radius and no floor — see `dir_orient_at` for why the oracle
-    // must not borrow the judge's bound. `dir_sign_truth` gets its confidence from two
-    // precisions agreeing instead.
-    let (dh, _) = cramer_hp(&[ph(a), ph(b), ph(c)], prec);
-    (!dh.value.is_zero()).then(|| dh.value.is_positive())
-}
-
-/// The **GT-stable** `dir_sign` truth: `Some` only when `prec` and `prec + 128` agree
-/// on a definite sign — otherwise the config is degenerate beyond what the ground
-/// truth itself resolves, so it is `None` (skip), not a spurious "wrong". (Mirrors
-/// `indirect_truth`'s stability check.)
-fn dir_sign_truth(
-    a: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    b: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    c: (&WitnessPoint, &WitnessPoint, &WitnessPoint),
-    prec: usize,
-) -> Option<Orient> {
-    match (
-        dir_d_sign_at(a, b, c, prec),
-        dir_d_sign_at(a, b, c, prec + 128),
-    ) {
-        (Some(x), Some(y)) if x == y => Some(orient_of(x)),
-        _ => None,
-    }
 }
 
 /// Sanity: the three axis-perpendicular planes have normals `+x, −y, +z`, so their
@@ -922,6 +870,7 @@ fn dir_sign_soundness() {
     const GT: usize = 512;
     let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
         (0usize, 0, 0, 0, 0, 0);
+    let (mut zero_asserted, mut zero_signed) = (0usize, Vec::<Orient>::new());
     let mut st = 0x0D18_5160_C0C0_2323u64;
     let rand_n = |st: &mut u64| {
         [
@@ -965,7 +914,15 @@ fn dir_sign_soundness() {
         } else {
             filter_resolved += 1;
         }
-        match dir_sign_truth(t3(&pa), t3(&pb), t3(&pc), GT) {
+        let zero = eps == ri(0, 1);
+        if zero {
+            zero_asserted += 1;
+            if judged != Orient::Zero {
+                zero_signed.push(judged);
+            }
+            continue;
+        }
+        match truth::dir_sign(t3(&pa), t3(&pb), t3(&pc), GT) {
             None => skipped += 1,
             Some(truth) => {
                 tested += 1;
@@ -978,69 +935,25 @@ fn dir_sign_soundness() {
         }
     }
     eprintln!(
-        "[dir_sign] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}"
+        "[dir_sign] wrong: {wrong}/{tested}; declined: {declined}; escalated: {escalated}; filter_resolved: {filter_resolved}; skipped: {skipped}; zero_asserted: {zero_asserted}"
     );
+    assert!(
+        zero_asserted > 0,
+        "corpus must exercise the constructed-zero path"
+    );
+    assert!(
+        zero_signed.is_empty(),
+        "dir_sign: a constructed zero was judged with a sign — {} of {zero_asserted}, first {:?}",
+        zero_signed.len(),
+        &zero_signed[..zero_signed.len().min(5)]
+    );
+
     assert_eq!(wrong, 0, "dir_sign must never disagree with GT (soundness)");
     assert!(escalated > 0, "corpus must exercise the escalation path");
     assert!(
         filter_resolved > 0,
         "corpus must exercise the fast filter path"
     );
-}
-
-/// The `dir_orient3d` determinant `det[d, x−base, y−base]` at `prec` bits — the GT /
-/// escalation realization (mirrors the judge's hp path).
-fn dir_orient_at(
-    d: [Rat; 3],
-    base: &WitnessPoint,
-    x: &WitnessPoint,
-    y: &WitnessPoint,
-    prec: usize,
-) -> Option<bool> {
-    let dp = WitnessPoint::at(d);
-    let sub = |u: &HpBounded, v: &HpBounded| u.sub(v, prec);
-    let (bh, xh, yh, dh) = (
-        base.hp_coord(prec),
-        x.hp_coord(prec),
-        y.hp_coord(prec),
-        dp.hp_coord(prec),
-    );
-    let rows = [
-        dh,
-        [
-            sub(&xh[0], &bh[0]),
-            sub(&xh[1], &bh[1]),
-            sub(&xh[2], &bh[2]),
-        ],
-        [
-            sub(&yh[0], &bh[0]),
-            sub(&yh[1], &bh[1]),
-            sub(&yh[2], &bh[2]),
-        ],
-    ];
-    let det = det3_big_rows(&rows, prec);
-    // The **raw** sign at `prec` bits, with no radius and no floor. Independence from the
-    // judge is the whole point of an oracle: `dir_orient_truth` gets its confidence from two
-    // precisions agreeing, not from any bound this file also ships to production.
-    (!det.value.is_zero()).then(|| det.value.is_positive())
-}
-
-/// GT-stable truth: `Some` only when `prec` and `prec + 128` agree (else too degenerate
-/// for the ground truth itself — skip, not a spurious "wrong"). Mirrors `dir_sign_truth`.
-fn dir_orient_truth(
-    d: [Rat; 3],
-    base: &WitnessPoint,
-    x: &WitnessPoint,
-    y: &WitnessPoint,
-    prec: usize,
-) -> Option<Orient> {
-    match (
-        dir_orient_at(d, base, x, y, prec),
-        dir_orient_at(d, base, x, y, prec + 128),
-    ) {
-        (Some(a), Some(b)) if a == b => Some(orient_of(a)),
-        _ => None,
-    }
 }
 
 /// Sanity: `det[d, x−base, y−base] = d·((x−base)×(y−base))`. With `base=0, x=e_x, y=e_y`
@@ -1108,7 +1021,7 @@ fn orient3d_ray_matches_materialized() {
 /// a sign opposite to the GT; both the fast filter and astro-float paths are exercised.
 #[test]
 #[ignore = "slow astro-float ground truth (run with --ignored)"]
-fn h_dir_orient3d_soundness() {
+fn dir_orient3d_soundness() {
     const GT: usize = 512;
     let (mut wrong, mut declined, mut escalated, mut filter_resolved, mut skipped, mut tested) =
         (0usize, 0, 0, 0, 0, 0);
@@ -1157,7 +1070,7 @@ fn h_dir_orient3d_soundness() {
         } else {
             filter_resolved += 1;
         }
-        match dir_orient_truth(d, &base, &x, &y, GT) {
+        match truth::dir_orient(d, &base, &x, &y, GT) {
             None => skipped += 1,
             Some(truth) => {
                 tested += 1;
